@@ -5,7 +5,7 @@ static const char *alloc_type_names[5] = { "host", "host-pinned", "device",
                                            "managed", "managed-read-mostly" };
 
 // Round an unsigned integer up to a power of two
-size_t round_pow2(size_t x) {
+static size_t round_pow2(size_t x) {
     x -= 1;
     x |= x >> 1;   x |= x >> 2;
     x |= x >> 4;   x |= x >> 8;
@@ -34,7 +34,7 @@ void* jit_malloc(AllocType type, size_t size) {
     Stream *stream = active_stream;
     if (type == AllocType::Device) {
         if (unlikely(!stream))
-            jit_fail("jit_malloc(): device must be set using jit_set_context() "
+            jit_fail("jit_malloc(): device must be set using jit_device_set() "
                      "before allocating device pointer!");
         ai.device = stream->device;
     }
@@ -71,13 +71,14 @@ void* jit_malloc(AllocType type, size_t size) {
     // 3. Looks like we will have to allocate some memory..
     if (ptr == nullptr) {
         if (type == AllocType::Host) {
+            unlock_guard guard(state.mutex);
             int rv = posix_memalign(&ptr, 64, ai.size);
             if (rv == ENOMEM) {
                 jit_malloc_trim();
                 rv = posix_memalign(&ptr, 64, ai.size);
             }
             if (rv != 0)
-                jit_raise("jit_malloc(): out of memory!");
+                ptr = nullptr;
         } else {
             #if defined(ENOKI_CUDA)
                 cudaError_t (*alloc) (void **, size_t) = nullptr;
@@ -86,31 +87,52 @@ void* jit_malloc(AllocType type, size_t size) {
                     return cudaMallocManaged(ptr_, size_);
                 };
 
+                auto cudaMallocManagedReadMostly_ = [](void **ptr_, size_t size_) {
+                    cudaError_t ret = cudaMallocManaged(ptr_, size_);
+                    if (ret == cudaSuccess)
+                        cuda_check(cudaMemAdvise(*ptr_, size_, cudaMemAdviseSetReadMostly, 0));
+                    return ret;
+                };
+
                 switch (type) {
                     case AllocType::HostPinned:        alloc = cudaMallocHost; break;
                     case AllocType::Device:            alloc = cudaMalloc; break;
-                    case AllocType::Managed:
-                    case AllocType::ManagedReadMostly: alloc = cudaMallocManaged_; break;
+                    case AllocType::Managed:           alloc = cudaMallocManaged_; break;
+                    case AllocType::ManagedReadMostly: alloc = cudaMallocManagedReadMostly_; break;
                     default:
                         jit_fail("jit_malloc(): internal-error unsupported allocation type!");
                 }
 
-                cudaError_t ret = alloc(&ptr, ai.size);
-                if (ret != cudaSuccess) {
-                    jit_malloc_trim();
-                    cudaError_t ret = alloc(&ptr, ai.size);
-                    if (ret != cudaSuccess)
-                        throw std::runtime_error("jit_malloc(): out of memory!");
+                cudaError_t ret;
+
+                /* Temporarily release the lock */ {
+                    unlock_guard guard(state.mutex);
+                    ret = alloc(&ptr, ai.size);
                 }
 
-                if (type == AllocType::ManagedReadMostly)
-                    cuda_check(cudaMemAdvise(ptr, ai.size, cudaMemAdviseSetReadMostly, 0));
+                if (ret != cudaSuccess) {
+                    jit_malloc_trim();
+
+                    /* Temporarily release the lock */ {
+                        unlock_guard guard(state.mutex);
+                        ret = alloc(&ptr, ai.size);
+                    }
+
+                    if (ret != cudaSuccess)
+                        ptr = nullptr;
+                }
+
             #else
-                jit_fail("jit_malloc(): internal error --- unsupported allocation type!");
+                jit_fail("jit_malloc(): unsupported array type! (CUDA support was disabled.)");
             #endif
         }
         descr = "new allocation";
     }
+
+    if (ptr == nullptr)
+        jit_raise("jit_malloc(): out of memory! Could not "
+                  "allocate %zu bytes of %s memory.",
+                  size, alloc_type_names[(int) ai.type]);
 
     state.alloc_used.insert({ ptr, ai });
 
@@ -123,6 +145,7 @@ void* jit_malloc(AllocType type, size_t size) {
 
     size_t &usage     = state.alloc_usage[(int) ai.type],
            &watermark = state.alloc_watermark[(int) ai.type];
+
     usage += ai.size;
     watermark = std::max(watermark, usage);
 
@@ -154,23 +177,29 @@ void jit_free(void *ptr) {
     } else {
 #if defined(ENOKI_CUDA)
         Stream *stream = active_stream;
+        if (!stream)
+            jit_fail("jit_free(): device and stream must be set! (call "
+                     "jit_device_set() beforehand)!");
         active_stream->alloc_pending[ai].push_back(ptr);
 #else
-        jit_fail("jit_free(): internal error -- unsupported array type! (CUDA support was disabled.)");
+        jit_fail("jit_free(): unsupported array type! (CUDA support was disabled.)");
 #endif
     }
 }
 
-void jit_flush_free() {
+void jit_free_flush() {
 #if defined(ENOKI_CUDA)
     Stream *stream = active_stream;
 
-    if (!state.initialized || stream == nullptr)
-        return;
+    if (unlikely(!state.initialized))
+        jit_fail("jit_malloc(): JIT compiler is uninitialized!");
+    else if (unlikely(stream == nullptr))
+        jit_fail("jit_free_flush(): device and stream must be set! (call "
+                 "jit_device_set() beforehand)!");
 
     AllocInfoMap *pending_tmp = new AllocInfoMap(std::move(stream->alloc_pending));
 
-    jit_log(Trace, "jit_flush_free(): scheduling %zu deallocation%s.",
+    jit_log(Trace, "jit_free_flush(): scheduling %zu deallocation%s.",
             pending_tmp->size(), pending_tmp->size() > 1 ? "s" : "");
 
     cuda_check(cudaLaunchHostFunc(
@@ -179,7 +208,7 @@ void jit_flush_free() {
             lock_guard guard(state.mutex);
             AllocInfoMap *pending = (AllocInfoMap *) ptr;
 
-            jit_log(Debug, "jit_flush_free(): performing %zu deallocation%s.",
+            jit_log(Trace, "jit_free_flush(): performing %zu deallocation%s.",
                     pending->size(), pending->size() > 1 ? "s" : "");
 
             for (auto &kv: *pending) {
@@ -227,7 +256,7 @@ void jit_malloc_trim() {
                 break;
 
             default:
-                jit_fail("jit_malloc_trim(): internal error -- unsupported allocation type!");
+                jit_fail("jit_malloc_trim(): unsupported allocation type!");
         }
     }
 

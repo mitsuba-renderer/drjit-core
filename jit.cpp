@@ -8,6 +8,7 @@ State state;
     __thread Stream *active_stream = nullptr;
 #endif
 
+/// Initialize core data structures of the JIT compiler
 void jit_init() {
     if (state.initialized)
         return;
@@ -56,22 +57,29 @@ void jit_init() {
     }
 #endif
 
+    state.scatter_gather_operand = 0;
     state.initialized = true;
 }
 
+/// Release all resources used by the JIT compiler, and report reference leaks.
 void jit_shutdown() {
     if (!state.initialized)
         return;
 
-    jit_log(Info, "jit_shutdown(): releaseing resources ..");
+    jit_log(Info, "jit_shutdown(): destroying streams ..");
 
     for (auto [key, stream] : state.streams) {
-        jit_set_context(stream->device, stream->stream);
-        jit_flush_free();
-        cuda_check(cudaStreamSynchronize(stream->handle));
+        jit_device_set(stream->device, stream->stream);
+        jit_free_flush();
+        {
+            unlock_guard guard(state.mutex);
+            cuda_check(cudaStreamSynchronize(stream->handle));
+        }
+        cuda_check(cudaEventDestroy(stream->event));
         cuda_check(cudaStreamDestroy(stream->handle));
         delete stream;
     }
+    state.streams.clear();
     active_stream = nullptr;
 
     jit_malloc_shutdown();
@@ -81,10 +89,11 @@ void jit_shutdown() {
     jit_log(Info, "jit_shutdown(): done.");
 }
 
-void jit_set_context(uint32_t device, uint32_t stream) {
+/// Set the currently active device & stream
+void jit_device_set(uint32_t device, uint32_t stream) {
 #if defined(ENOKI_CUDA)
     if (device >= state.devices.size())
-        jit_raise("jit_set_context(): invalid device ID!");
+        jit_raise("jit_device_set(): invalid device ID!");
 
     std::pair<uint32_t, uint32_t> key(device, stream);
     auto it = state.streams.find(key);
@@ -94,27 +103,32 @@ void jit_set_context(uint32_t device, uint32_t stream) {
         stream_ptr = it->second;
         if (stream_ptr == active_stream_ptr)
             return;
-        jit_log(Trace, "jit_set_context(device=%i, stream=%i): selecting stream.", device, stream);
+        jit_log(Trace, "jit_device_set(device=%i, stream=%i): selecting stream.", device, stream);
         if (stream_ptr->device != active_stream_ptr->device)
             cuda_check(cudaSetDevice(state.devices[device]));
     } else {
-        jit_log(Trace, "jit_set_context(device=%i, stream=%i): creating stream.", device, stream);
+        jit_log(Trace, "jit_device_set(device=%i, stream=%i): creating stream.", device, stream);
         cudaStream_t handle = nullptr;
+        cudaEvent_t event = nullptr;
         cuda_check(cudaStreamCreateWithFlags(&handle, cudaStreamNonBlocking));
+        cuda_check(cudaEventCreateWithFlags(&event, cudaEventDisableTiming));
         stream_ptr = new Stream();
         stream_ptr->device = device;
         stream_ptr->stream = stream;
         stream_ptr->handle = handle;
+        stream_ptr->event = event;
         state.streams[key] = stream_ptr;
     }
     active_stream = stream_ptr;
 #else
-    jit_fail("jit_set_context(): unsupported! (CUDA support was disabled.)");
+    jit_fail("jit_device_set(): unsupported! (CUDA support was disabled.)");
 #endif
 }
 
+/// Wait for all computation on the current device to finish
 void jit_device_sync() {
 #if defined(ENOKI_CUDA)
+    unlock_guard guard(state.mutex);
     jit_log(Trace, "jit_device_sync(): starting..");
     cuda_check(cudaDeviceSynchronize());
     jit_log(Trace, "jit_device_sync(): done.");

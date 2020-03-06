@@ -44,7 +44,7 @@ void *jit_malloc(AllocType type, size_t size) __attribute__((malloc));
 void jit_free(void *ptr);
 
 /// Schedule a function that will reclaim pending jit_free()s
-void jit_flush_free();
+void jit_free_flush();
 
 /// Release all unused memory to the GPU / OS
 void jit_malloc_trim();

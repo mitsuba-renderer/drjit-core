@@ -26,11 +26,13 @@ uint32_t jit_trace_append(uint32_t type,
 
 /// Increase the internal reference count of a given variable
 void jit_inc_ref_int(uint32_t index);
+
 /// Decrease the internal reference count of a given variable
 void jit_dec_ref_int(uint32_t index);
 
 /// Increase the external reference count of a given variable
 void jit_inc_ref_ext(uint32_t index);
+
 /// Decrease the external reference count of a given variable
 void jit_dec_ref_ext(uint32_t index);
 
@@ -40,3 +42,5 @@ size_t jit_var_size(uint32_t index);
 // Query the pointer variable associated with a given variable
 void *jit_var_ptr(uint32_t index);
 
+// Evaluate currently queued operations
+void jit_eval();

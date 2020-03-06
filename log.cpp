@@ -1,9 +1,13 @@
 #include <cstdarg>
 #include <cstdio>
 #include <stdexcept>
+#include "jit.h"
 #include "log.h"
 
-void jit_log(LogLevel level, const char* format, ...) {
+void jit_log(LogLevel log_level, const char* format, ...) {
+    if (log_level > state.log_level)
+        return;
+
     va_list args;
     va_start(args, format);
     vfprintf(stderr, format, args);
@@ -23,7 +27,7 @@ void jit_raise(const char* format, ...) {
 void jit_fail(const char* format, ...) {
     va_list args;
     va_start(args, format);
-    fprintf(stderr, "Critical failure in JIT compiler: ");
+    fprintf(stderr, "Critical failure in Enoki JIT compiler: ");
     vfprintf(stderr, format, args);
     fputc('\n', stderr);
     va_end(args);

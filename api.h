@@ -11,7 +11,8 @@
 /**
  * \brief Initialize core data structures of the JIT compiler
  *
- * The function does nothing when the JIT compiler is already initialized.
+ * Must be called before using any of the remaining API. The function does
+ * nothing when the JIT compiler is already initialized.
  */
 extern ENOKI_EXPORT void jitc_init();
 
@@ -29,11 +30,14 @@ extern ENOKI_EXPORT void jitc_init_async();
 /// Release all resources used by the JIT compiler, and report reference leaks.
 extern ENOKI_EXPORT void jitc_shutdown();
 
+/// Set the minimum log level for messages (0: error, 1: warning, 2: info, 3: debug, 4: trace)
+extern ENOKI_EXPORT void jitc_set_log_level(int log_level);
+
 /// Return the number of target devices (excluding the "host"/CPU)
 extern ENOKI_EXPORT uint32_t jitc_device_count();
 
 /// Set the currently active device & stream
-extern ENOKI_EXPORT void jitc_set_context(uint32_t device, uint32_t stream);
+extern ENOKI_EXPORT void jitc_device_set(uint32_t device, uint32_t stream);
 
 /// Wait for all computation on the current device to finish
 extern ENOKI_EXPORT void jitc_device_sync();
@@ -94,7 +98,7 @@ extern ENOKI_EXPORT void *jitc_malloc(AllocType type, size_t size)
  * program finishes.
  *
  * For this reason, it is crucial that \ref jitc_free() is executed in the
- * right context chosen via \ref jitc_set_context().
+ * right context chosen via \ref jitc_device_set().
  */
 extern ENOKI_EXPORT void jitc_free(void *ptr);
 extern ENOKI_EXPORT void jitc_malloc_trim();
@@ -127,11 +131,13 @@ extern ENOKI_EXPORT uint32_t jitc_trace_append(uint32_t type,
 
 /// Increase the internal reference count of a given variable
 extern ENOKI_EXPORT void jitc_inc_ref_int(uint32_t index);
+
 /// Decrease the internal reference count of a given variable
 extern ENOKI_EXPORT void jitc_dec_ref_int(uint32_t index);
 
 /// Increase the external reference count of a given variable
 extern ENOKI_EXPORT void jitc_inc_ref_ext(uint32_t index);
+
 /// Decrease the external reference count of a given variable
 extern ENOKI_EXPORT void jitc_dec_ref_ext(uint32_t index);
 
@@ -141,3 +147,5 @@ extern ENOKI_EXPORT size_t jitc_var_size(uint32_t index);
 /// Query the pointer variable associated with a given variable
 extern ENOKI_EXPORT void *jitc_var_ptr(uint32_t index);
 
+// Evaluate currently queued operations
+extern ENOKI_EXPORT void jitc_eval();

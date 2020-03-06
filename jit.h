@@ -3,6 +3,7 @@
 #include "malloc.h"
 #include "cuda.h"
 #include <mutex>
+#include <condition_variable>
 #include <string.h>
 
 #define likely(x)   __builtin_expect(!!(x), 1)
@@ -18,6 +19,9 @@ struct Stream {
 
     /// Associated CUDA stream handle
     cudaStream_t handle = nullptr;
+
+    /// A CUDA event for synchronization purposes
+    cudaEvent_t event = nullptr;
 
     /// Memory regions that will be unused once the running kernel finishes
     AllocInfoMap alloc_pending;
@@ -35,14 +39,14 @@ struct Variable {
     /// Data type of this variable
     uint32_t type = (uint32_t) EnokiType::Invalid;
 
+    /// Number of entries
+    uint32_t size = 0;
+
     /// PTX instruction to compute it
     char *cmd = nullptr;
 
     /// Associated label (for debugging)
     char *label = nullptr;
-
-    /// Number of entries
-    size_t size = 0;
 
     /// Pointer to device memory
     void *data = nullptr;
@@ -59,6 +63,9 @@ struct Variable {
     /// Extra dependency (which is not directly used in arithmetic, e.g. scatter/gather)
     uint32_t extra_dep = 0;
 
+    /// Size of the instruction subtree (heuristic for instruction scheduling)
+    uint32_t tree_size = 1;
+
     /// Does the instruction have side effects (e.g. 'scatter')
     bool side_effect = false;
 
@@ -70,17 +77,6 @@ struct Variable {
 
     /// Optimization: is this a direct pointer (rather than an array which stores a pointer?)
     bool direct_pointer = false;
-
-    /// Size of the (heuristic for instruction scheduling)
-    uint32_t subtree_size = 0;
-
-    Variable() = default;
-    ~Variable() {
-        if (free_variable && data)
-            jit_free(data);
-        free(cmd);
-        free(label);
-    }
 };
 
 /// Records the full JIT compiler state
@@ -90,6 +86,9 @@ struct State {
 
     /// Indicates whether the state is initialized by \ref jit_init()
     bool initialized = false;
+
+    /// Log level
+    uint32_t log_level = 0;
 
     /// Number of available devices and their CUDA IDs
     std::vector<uint32_t> devices;
@@ -119,21 +118,58 @@ struct State {
     tsl::robin_set<uint32_t> live;
 
     /// Current variable index
-    uint32_t variable_index = 0;
+    uint32_t variable_index = 1;
+
+    /// Current operand for scatter/gather operations
+    uint32_t scatter_gather_operand = 0;
 };
 
-using lock_guard = std::lock_guard<std::mutex>;
+/// RAII helper for locking a mutex (like std::lock_guard)
+class lock_guard {
+public:
+    lock_guard(std::mutex &mutex) : m_mutex(mutex) { m_mutex.lock(); }
+    ~lock_guard() { m_mutex.unlock(); }
+    lock_guard(const lock_guard &) = delete;
+    lock_guard &operator=(const lock_guard &) = delete;
+private:
+    std::mutex &m_mutex;
+};
 
+/// RAII helper for *unlocking* a mutex
 class unlock_guard {
 public:
     unlock_guard(std::mutex &mutex) : m_mutex(mutex) { m_mutex.unlock(); }
     ~unlock_guard() { m_mutex.lock(); }
-
     unlock_guard(const unlock_guard &) = delete;
     unlock_guard &operator=(const unlock_guard &) = delete;
-
 private:
     std::mutex &m_mutex;
+};
+
+class wait_flag {
+public:
+    wait_flag() : m_flag(false) { }
+
+    void set() {
+        lock_guard g(m_mutex);
+        m_flag = true;
+        m_cond.notify_all();
+    }
+
+    void clear() {
+        lock_guard g(m_mutex);
+        m_flag = false;
+    }
+
+    void wait() {
+        std::unique_lock lock(m_mutex);
+        m_cond.wait(lock, [this]() { return m_flag; });
+    }
+
+private:
+    bool m_flag;
+    std::mutex m_mutex;
+    std::condition_variable m_cond;
 };
 
 /// Global state record shared by all threads
@@ -143,7 +179,14 @@ private:
 
 extern State state;
 
+/// Initialize core data structures of the JIT compiler
 void jit_init();
+
+/// Release all resources used by the JIT compiler, and report reference leaks.
 void jit_shutdown();
-void jit_set_context(uint32_t device, uint32_t stream);
+
+/// Set the currently active device & stream
+void jit_device_set(uint32_t device, uint32_t stream);
+
+/// Wait for all computation on the current device to finish
 void jit_device_sync();

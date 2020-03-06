@@ -3,9 +3,13 @@
 #include <iostream>
 
 int main(int argc, char **argv) {
+    (void) argc;
+    (void) argv;
+
     try {
-        jitc_init();
-        jitc_set_context(0, 0);
+        jitc_set_log_level(4);
+        jitc_init_async();
+        jitc_device_set(0, 0);
 
         void *ptr = jitc_malloc(AllocType::Device, 1024);
         void *ptr2 = jitc_malloc(AllocType::Host, 1025);
@@ -19,7 +23,7 @@ int main(int argc, char **argv) {
             jitc_free(ptr);
         }
 
-        jitc_set_context(1, 0);
+        jitc_device_set(1, 0);
         for (int i = 0; i < 3; ++i) {
             ptr = jitc_malloc(AllocType::Device, 1024);
             jitc_free(ptr);

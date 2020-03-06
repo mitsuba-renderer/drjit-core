@@ -3,13 +3,22 @@
 #include "api.h"
 #include "cuda.h"
 
-// ====================================================================
-//                              Logging
-// ====================================================================
+/// Log levels for jit_log()
+enum LogLevel {
+    Error = 0,
+    Warn  = 1,
+    Info  = 2,
+    Debug = 3,
+    Trace = 4
+};
 
-enum LogLevel { Trace, Debug, Info, Warn, Error };
+/// Print a log message with the specified log level and message
 extern ENOKI_EXPORT void jit_log(LogLevel level, const char* format, ...);
+
+/// Raise a std::runtime_error with the given message
 extern ENOKI_EXPORT void jit_raise(const char* format, ...);
+
+/// Immediately terminate the application due to a fatal internal error
 [[noreturn]] extern ENOKI_EXPORT void jit_fail(const char* format, ...);
 
 #if defined(ENOKI_CUDA)
