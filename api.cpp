@@ -22,7 +22,12 @@ void jitc_shutdown() {
     jit_shutdown();
 }
 
-void jitc_set_log_level(int log_level) {
+uint32_t jitc_set_log_level() {
+    lock_guard guard(state.mutex);
+    return state.log_level;
+}
+
+void jitc_set_log_level(uint32_t log_level) {
     lock_guard guard(state.mutex);
     state.log_level = log_level;
 }
@@ -35,6 +40,11 @@ uint32_t jitc_device_count() {
 void jitc_device_set(uint32_t device, uint32_t stream) {
     lock_guard guard(state.mutex);
     jit_device_set(device, stream);
+}
+
+void jitc_stream_sync() {
+    lock_guard guard(state.mutex);
+    jit_stream_sync();
 }
 
 void jitc_device_sync() {
@@ -50,6 +60,11 @@ void *jitc_malloc(AllocType type, size_t size) {
 void jitc_free(void *ptr) {
     lock_guard guard(state.mutex);
     jit_free(ptr);
+}
+
+void* jitc_malloc_migrate(void *ptr, AllocType type) {
+    lock_guard guard(state.mutex);
+    return jit_malloc_migrate(ptr, type);
 }
 
 void jitc_malloc_trim() {
@@ -139,6 +154,11 @@ uint32_t jitc_trace_append(uint32_t type, const char *cmd, uint32_t arg1,
                            uint32_t arg2, uint32_t arg3) {
     lock_guard guard(state.mutex);
     return jit_trace_append(type, cmd, arg1, arg2, arg3);
+}
+
+void jitc_var_migrate(uint32_t idx, AllocType type) {
+    lock_guard guard(state.mutex);
+    jit_var_migrate(idx, type);
 }
 
 void jitc_eval() {

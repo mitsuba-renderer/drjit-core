@@ -26,7 +26,7 @@ size_t jit_type_size(uint32_t type) {
 /// Access a variable by ID, terminate with an error if it doesn't exist
 Variable *jit_var(uint32_t index) {
     auto it = state.variables.find(index);
-    if (it == state.variables.end())
+    if (unlikely(it == state.variables.end()))
         jit_fail("jit_var(%u): unknown variable!", index);
     return &it.value();
 }
@@ -51,7 +51,7 @@ void jit_var_free(uint32_t index, Variable *v) {
 
     if (v->direct_pointer) {
         auto it = state.variable_from_ptr.find(v->data);
-        if (it == state.variable_from_ptr.end())
+        if (unlikely(it == state.variable_from_ptr.end()))
             jit_fail("jit_var_free(): direct pointer not found!");
         state.variable_from_ptr.erase(it);
     }
@@ -192,7 +192,7 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, bool copy) {
     }
 
     var->size = (uint32_t) size;
-    jit_log(Trace, "jit_var_set_size(%u) -> %zu.", index, size);
+    jit_log(Debug, "jit_var_set_size(%u) -> %zu.", index, size);
     return index;
 }
 
@@ -206,7 +206,7 @@ void jit_var_set_label(uint32_t index, const char *label) {
     Variable *var = jit_var(index);
     free(var->label);
     var->label = strdup(label);
-    jit_log(Trace, "jit_var_set_label(%u) -> \"%s.\"", index, label);
+    jit_log(Debug, "jit_var_set_label(%u) -> \"%s.\"", index, label);
 }
 
 /// Append a variable to the instruction trace (no operands)
@@ -416,6 +416,10 @@ uint32_t jit_var_register_ptr(const void *ptr) {
 uint32_t jit_var_copy_to_device(uint32_t type,
                                 const void *value,
                                 size_t size) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_fail("jit_var_copy_to_device(): device and stream must be set! "
+                 "(call jit_device_set() beforehand)!");
     size_t total_size = size * jit_type_size(type);
 
     void *host_ptr   = jit_malloc(AllocType::HostPinned, total_size),
@@ -423,8 +427,26 @@ uint32_t jit_var_copy_to_device(uint32_t type,
 
     memcpy(host_ptr, value, total_size);
     cuda_check(cudaMemcpyAsync(device_ptr, host_ptr, total_size,
-                               cudaMemcpyHostToDevice));
+                               cudaMemcpyHostToDevice, stream->handle));
 
     jit_free(host_ptr);
-    return jit_var_register(type, device_ptr, size, true);
+    uint32_t idx = jit_var_register(type, device_ptr, size, true);
+    jit_log(Debug, "jit_var_copy_to_device(%u, %zu).", idx, size);
+    return idx;
+}
+
+/// Migrate a variable to a different flavor of memory
+void jit_var_migrate(uint32_t idx, AllocType type) {
+    if (idx == 0)
+        return;
+
+    Variable *v = jit_var(idx);
+    if (v->data == nullptr || v->dirty) {
+        jit_eval();
+        v = jit_var(idx);
+    }
+
+    jit_log(Debug, "jit_var_migrate(%u, %p) -> %s", idx, v->data,
+            alloc_type_names[(int) type]);
+    v->data = jit_malloc_migrate(v->data, type);
 }

@@ -1,8 +1,8 @@
 #include "jit.h"
 #include "log.h"
 
-static const char *alloc_type_names[5] = { "host", "host-pinned", "device",
-                                           "managed", "managed-read-mostly" };
+const char *alloc_type_names[5] = { "host", "host-pinned", "device",
+                                    "managed", "managed-read-mostly" };
 
 // Round an unsigned integer up to a power of two
 static size_t round_pow2(size_t x) {
@@ -14,9 +14,6 @@ static size_t round_pow2(size_t x) {
 }
 
 void* jit_malloc(AllocType type, size_t size) {
-    if (unlikely(!state.initialized))
-        jit_fail("jit_malloc(): JIT compiler is uninitialized!");
-
     if (size == 0)
         return nullptr;
 
@@ -129,7 +126,7 @@ void* jit_malloc(AllocType type, size_t size) {
         descr = "new allocation";
     }
 
-    if (ptr == nullptr)
+    if (unlikely(ptr == nullptr))
         jit_raise("jit_malloc(): out of memory! Could not "
                   "allocate %zu bytes of %s memory.",
                   size, alloc_type_names[(int) ai.type]);
@@ -153,17 +150,14 @@ void* jit_malloc(AllocType type, size_t size) {
 }
 
 void jit_free(void *ptr) {
-    if (unlikely(!state.initialized))
-        jit_fail("jit_malloc(): JIT compiler is uninitialized!");
-
     if (ptr == nullptr)
         return;
 
     auto it = state.alloc_used.find(ptr);
-    if (it == state.alloc_used.end())
+    if (unlikely(it == state.alloc_used.end()))
         jit_raise("jit_free(): unknown address %p!", ptr);
 
-    AllocInfo ai = it->second;
+    AllocInfo ai = it.value();
     if (ai.type == AllocType::Device)
         jit_log(Trace, "jit_free(%p, type=%s, device=%u, size=%zu)", ptr,
                 alloc_type_names[(int) ai.type], ai.device, ai.size);
@@ -177,7 +171,7 @@ void jit_free(void *ptr) {
     } else {
 #if defined(ENOKI_CUDA)
         Stream *stream = active_stream;
-        if (!stream)
+        if (unlikely(!stream))
             jit_fail("jit_free(): device and stream must be set! (call "
                      "jit_device_set() beforehand)!");
         active_stream->alloc_pending[ai].push_back(ptr);
@@ -191,9 +185,7 @@ void jit_free_flush() {
 #if defined(ENOKI_CUDA)
     Stream *stream = active_stream;
 
-    if (unlikely(!state.initialized))
-        jit_fail("jit_malloc(): JIT compiler is uninitialized!");
-    else if (unlikely(stream == nullptr))
+    if (unlikely(stream == nullptr))
         jit_fail("jit_free_flush(): device and stream must be set! (call "
                  "jit_device_set() beforehand)!");
 
@@ -224,6 +216,33 @@ void jit_free_flush() {
         pending_tmp
     ));
 #endif
+}
+
+void* jit_malloc_migrate(void *ptr, AllocType type) {
+    auto it = state.alloc_used.find(ptr);
+    if (unlikely(it == state.alloc_used.end()))
+        jit_raise("jit_malloc_migrate(): unknown address %p!", ptr);
+
+    AllocInfo ai = it.value();
+    if (ai.type == type)
+        return ptr;
+
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_fail("jit_malloc_migrate(): device and stream must be set! "
+                 "(call jit_device_set() beforehand)!");
+
+    jit_log(Trace, "jit_malloc_migrate(%p): %s -> %s", ptr,
+            alloc_type_names[(int) ai.type],
+            alloc_type_names[(int) type]) ;
+
+    void *ptr_new = jit_malloc(type, ai.size);
+    cuda_check(cudaMemcpyAsync(ptr_new, ptr, ai.size,
+                               cudaMemcpyDefault,
+                               stream->handle));
+    jit_free(ptr);
+
+    return ptr_new;
 }
 
 void jit_malloc_trim() {
@@ -263,11 +282,11 @@ void jit_malloc_trim() {
     size_t total = trim_count[0] + trim_count[1] + trim_count[2] +
                    trim_count[3] + trim_count[4];
     if (total > 0) {
-        jit_log(Trace, "jit_malloc_trim(): freed");
+        jit_log(Debug, "jit_malloc_trim(): freed");
         for (int i = 0; i < 5; ++i) {
             if (trim_count[i] == 0)
                 continue;
-            jit_log(Trace, "%22s memory: %s in %zu allocation%s.",
+            jit_log(Debug, "%22s memory: %s in %zu allocation%s.",
                     alloc_type_names[i], jit_mem_string(trim_size[i]),
                     trim_count[i], trim_count[i] > 1 ? "s" : "");
         }
@@ -275,7 +294,6 @@ void jit_malloc_trim() {
 }
 
 void jit_malloc_shutdown() {
-    // Clear the memory cache
     jit_malloc_trim();
 
     size_t leak_count[5] { 0 }, leak_size[5] { 0 };
@@ -287,12 +305,12 @@ void jit_malloc_shutdown() {
     size_t total = leak_count[0] + leak_count[1] + leak_count[2] +
                    leak_count[3] + leak_count[4];
     if (total > 0) {
-        jit_log(Trace, "jit_malloc_shutdown(): leaked");
+        jit_log(Warn, "jit_malloc_shutdown(): leaked");
         for (int i = 0; i < 5; ++i) {
             if (leak_count[i] == 0)
                 continue;
 
-            jit_log(Trace, "%22s memory: %s in %zu allocation%s.",
+            jit_log(Warn, "%22s memory: %s in %zu allocation%s.",
                     alloc_type_names[i], jit_mem_string(leak_size[i]),
                     leak_count[i], leak_count[i] > 1 ? "s" : "");
         }

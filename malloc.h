@@ -37,17 +37,23 @@ struct AllocInfoHasher {
 
 using AllocInfoMap = tsl::robin_map<AllocInfo, std::vector<void *>, AllocInfoHasher>;
 
+/// Descriptive names for the various allocation types
+extern const char *alloc_type_names[5];
+
 /// Allocate the given flavor of memory
-void *jit_malloc(AllocType type, size_t size) __attribute__((malloc));
+extern void *jit_malloc(AllocType type, size_t size) __attribute__((malloc));
 
 /// Release the given pointer
-void jit_free(void *ptr);
+extern void jit_free(void *ptr);
 
 /// Schedule a function that will reclaim pending jit_free()s
-void jit_free_flush();
+extern void jit_free_flush();
 
 /// Release all unused memory to the GPU / OS
-void jit_malloc_trim();
+extern void jit_malloc_trim();
 
 /// Shut down the memory allocator (calls \ref jit_malloc_trim() and reports leaks)
-void jit_malloc_shutdown();
+extern void jit_malloc_shutdown();
+
+/// Change the flavor of an allocated memory region
+extern void* jit_malloc_migrate(void *ptr, AllocType type);

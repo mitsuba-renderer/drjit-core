@@ -132,6 +132,22 @@ void jit_device_set(uint32_t device, uint32_t stream) {
 #endif
 }
 
+/// Wait for all computation on the current stream to finish
+void jit_stream_sync() {
+#if defined(ENOKI_CUDA)
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_fail("jit_stream_sync(): device and stream must be set! "
+                 "(call jit_device_set() beforehand)!");
+    unlock_guard guard(state.mutex);
+    jit_log(Trace, "jit_stream_sync(): starting..");
+    cuda_check(cudaStreamSynchronize(stream->handle));
+    jit_log(Trace, "jit_stream_sync(): done.");
+#else
+    jit_raise("jit_stream_sync(): unsupported! (CUDA support was disabled.)");
+#endif
+}
+
 /// Wait for all computation on the current device to finish
 void jit_device_sync() {
 #if defined(ENOKI_CUDA)

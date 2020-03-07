@@ -215,13 +215,16 @@ private:
 extern State state;
 
 /// Initialize core data structures of the JIT compiler
-void jit_init();
+extern void jit_init();
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
-void jit_shutdown();
+extern void jit_shutdown();
 
 /// Set the currently active device & stream
-void jit_device_set(uint32_t device, uint32_t stream);
+extern void jit_device_set(uint32_t device, uint32_t stream);
+
+/// Wait for all computation on the current stream to finish
+extern void jit_stream_sync();
 
 /// Wait for all computation on the current device to finish
-void jit_device_sync();
+extern void jit_device_sync();

@@ -30,14 +30,20 @@ extern ENOKI_EXPORT void jitc_init_async();
 /// Release all resources used by the JIT compiler, and report reference leaks.
 extern ENOKI_EXPORT void jitc_shutdown();
 
+/// Return the log level for messages
+extern ENOKI_EXPORT uint32_t jitc_get_log_level();
+
 /// Set the minimum log level for messages (0: error, 1: warning, 2: info, 3: debug, 4: trace)
-extern ENOKI_EXPORT void jitc_set_log_level(int log_level);
+extern ENOKI_EXPORT void jitc_set_log_level(uint32_t log_level);
 
 /// Return the number of target devices (excluding the "host"/CPU)
 extern ENOKI_EXPORT uint32_t jitc_device_count();
 
 /// Set the currently active device & stream
 extern ENOKI_EXPORT void jitc_device_set(uint32_t device, uint32_t stream);
+
+/// Wait for all computation on the current stream to finish
+extern ENOKI_EXPORT void jitc_stream_sync();
 
 /// Wait for all computation on the current device to finish
 extern ENOKI_EXPORT void jitc_device_sync();
@@ -101,6 +107,17 @@ extern ENOKI_EXPORT void *jitc_malloc(AllocType type, size_t size)
  * right context chosen via \ref jitc_device_set().
  */
 extern ENOKI_EXPORT void jitc_free(void *ptr);
+
+/**
+ * \brief Change the flavor of an allocated memory region and return the new
+ * pointer
+ *
+ * The operation is asynchronous and will need to be followed by a \ref
+ * jitc_stream_sync() if managed memory is subsequently accessed on the CPU.
+ */
+extern ENOKI_EXPORT void* jitc_malloc_migrate(void *ptr, AllocType type);
+
+/// Release all unused memory to the GPU / OS
 extern ENOKI_EXPORT void jitc_malloc_trim();
 
 // ====================================================================
@@ -177,6 +194,14 @@ extern ENOKI_EXPORT void jitc_var_set_label(uint32_t index, const char *label);
 
 /// Query the descriptive label associated with a given variable
 extern ENOKI_EXPORT const char *jitc_var_label(uint32_t index);
+
+/**
+ * \brief Migrate a variable to a different flavor of memory
+ *
+ * The operation is asynchronous and will need to be followed by a \ref
+ * jitc_stream_sync() if managed memory is subsequently accessed on the CPU.
+ */
+extern ENOKI_EXPORT void jitc_var_migrate(uint32_t idx, AllocType type);
 
 // Evaluate currently all queued operations
 extern ENOKI_EXPORT void jitc_eval();
