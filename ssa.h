@@ -8,6 +8,9 @@ uint32_t jit_var_register(uint32_t type,
                           size_t size,
                           bool free);
 
+/// Register pointer literal as a special variable within the JIT compiler
+uint32_t jit_var_register_ptr(void *ptr);
+
 /// Append a variable to the instruction trace (no operand)
 uint32_t jit_trace_append(uint32_t type,
                           const char *cmd);

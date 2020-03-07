@@ -212,6 +212,31 @@ uint32_t jit_var_register(uint32_t type, void *ptr,
     return idx;
 }
 
+/// Register pointer literal as a special variable within the JIT compiler
+uint32_t jit_var_register_ptr(void *ptr) {
+    auto it = state.variable_from_ptr.find(ptr);
+    if (it != state.variable_from_ptr.end()) {
+        uint32_t idx = it.value();
+        jit_inc_ref_ext(idx);
+        return idx;
+    }
+
+    Variable v;
+    v.type = EnokiType::Pointer;
+    v.data = ptr;
+    v.size = 1;
+    v.tsize = 0;
+    v.free_variable = false;
+    v.direct_pointer = true;
+
+    auto [idx, vo] = jit_trace_append(v);
+    jit_log(Debug, "jit_var_register_ptr(%u): %p.", idx, ptr);
+
+    jit_inc_ref_ext(idx, vo);
+    state.variable_from_ptr[ptr] = idx;
+    return idx;
+}
+
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_trace_append(uint32_t type, const char *cmd) {
     Variable v;

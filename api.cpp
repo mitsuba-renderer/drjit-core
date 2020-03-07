@@ -107,6 +107,11 @@ uint32_t jitc_var_register(uint32_t type, void *ptr, size_t size, bool free) {
     return jit_var_register(type, ptr, size, free);
 }
 
+uint32_t jitc_var_register_ptr(void *ptr) {
+    lock_guard guard(state.mutex);
+    return jit_var_register_ptr(ptr);
+}
+
 uint32_t jitc_trace_append(uint32_t type, const char *cmd) {
     lock_guard guard(state.mutex);
     return jit_trace_append(type, cmd);
