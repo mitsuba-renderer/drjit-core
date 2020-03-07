@@ -2,15 +2,6 @@
 
 #include "api.h"
 
-/// Register an existing variable with the JIT compiler
-uint32_t jit_var_register(uint32_t type,
-                          void *ptr,
-                          size_t size,
-                          bool free);
-
-/// Register pointer literal as a special variable within the JIT compiler
-uint32_t jit_var_register_ptr(void *ptr);
-
 /// Append a variable to the instruction trace (no operand)
 uint32_t jit_trace_append(uint32_t type,
                           const char *cmd);
@@ -32,6 +23,20 @@ uint32_t jit_trace_append(uint32_t type,
                           uint32_t arg1,
                           uint32_t arg2,
                           uint32_t arg3);
+
+/// Register an existing variable with the JIT compiler
+uint32_t jit_var_register(uint32_t type,
+                          void *ptr,
+                          size_t size,
+                          bool free);
+
+/// Register pointer literal as a special variable within the JIT compiler
+uint32_t jit_var_register_ptr(const void *ptr);
+
+/// Copy a memory region onto the device and return its variable index
+uint32_t jit_var_copy_to_device(uint32_t type,
+                                const void *value,
+                                size_t size);
 
 /// Increase the internal reference count of a given variable
 void jit_inc_ref_int(uint32_t index);
@@ -59,3 +64,6 @@ void jit_var_set_label(uint32_t index, const char *label);
 
 /// Query the descriptive label associated with a given variable
 const char *jit_var_label(uint32_t index);
+
+/// Return the size of a given variable type
+size_t jit_type_size(uint32_t type);

@@ -114,7 +114,12 @@ extern ENOKI_EXPORT uint32_t jitc_var_register(uint32_t type,
                                                bool free);
 
 /// Register pointer literal as a special variable within the JIT compiler
-extern ENOKI_EXPORT uint32_t jitc_var_register_ptr(void *ptr);
+extern ENOKI_EXPORT uint32_t jitc_var_register_ptr(const void *ptr);
+
+/// Copy a memory region onto the device and return its variable index
+extern ENOKI_EXPORT uint32_t jitc_var_copy_to_device(uint32_t type,
+                                                     const void *value,
+                                                     size_t size);
 
 /// Append a variable to the instruction trace (no operand)
 extern ENOKI_EXPORT uint32_t jitc_trace_append(uint32_t type,

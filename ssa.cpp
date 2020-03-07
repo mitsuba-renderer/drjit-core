@@ -3,6 +3,26 @@
 #include "log.h"
 #include "eval.h"
 
+/// Return the size of a given variable type
+size_t jit_type_size(uint32_t type) {
+    switch (type) {
+        case EnokiType::UInt8:
+        case EnokiType::Int8:
+        case EnokiType::Bool:    return 1;
+        case EnokiType::UInt16:
+        case EnokiType::Int16:   return 2;
+        case EnokiType::UInt32:
+        case EnokiType::Int32:
+        case EnokiType::Float32: return 4;
+        case EnokiType::UInt64:
+        case EnokiType::Int64:
+        case EnokiType::Pointer:
+        case EnokiType::Float64: return 8;
+        default: jit_fail("jit_type(): invalid type!");
+    }
+}
+
+
 /// Access a variable by ID, terminate with an error if it doesn't exist
 Variable *jit_var(uint32_t index) {
     auto it = state.variables.find(index);
@@ -10,7 +30,6 @@ Variable *jit_var(uint32_t index) {
         jit_fail("jit_var(%u): unknown variable!", index);
     return &it.value();
 }
-
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
 void jit_var_free(uint32_t index, Variable *v) {
@@ -190,53 +209,6 @@ void jit_var_set_label(uint32_t index, const char *label) {
     jit_log(Trace, "jit_var_set_label(%u) -> \"%s.\"", index, label);
 }
 
-/// Register an existing variable with the JIT compiler
-uint32_t jit_var_register(uint32_t type, void *ptr,
-                          size_t size, bool free) {
-    if (unlikely(size == 0))
-        jit_raise("jit_var_register: size must be > 0!");
-
-    Variable v;
-    v.type = type;
-    v.data = ptr;
-    v.size = (uint32_t) size;
-    v.free_variable = free;
-    v.tsize = 1;
-
-    auto [idx, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_var_register(%u): %p, size=%zu, free=%i.",
-            idx, ptr, size, (int) free);
-
-    jit_inc_ref_ext(idx, vo);
-
-    return idx;
-}
-
-/// Register pointer literal as a special variable within the JIT compiler
-uint32_t jit_var_register_ptr(void *ptr) {
-    auto it = state.variable_from_ptr.find(ptr);
-    if (it != state.variable_from_ptr.end()) {
-        uint32_t idx = it.value();
-        jit_inc_ref_ext(idx);
-        return idx;
-    }
-
-    Variable v;
-    v.type = EnokiType::Pointer;
-    v.data = ptr;
-    v.size = 1;
-    v.tsize = 0;
-    v.free_variable = false;
-    v.direct_pointer = true;
-
-    auto [idx, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_var_register_ptr(%u): %p.", idx, ptr);
-
-    jit_inc_ref_ext(idx, vo);
-    state.variable_from_ptr[ptr] = idx;
-    return idx;
-}
-
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_trace_append(uint32_t type, const char *cmd) {
     Variable v;
@@ -391,4 +363,68 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
     state.live.insert(idx);
 
     return idx;
+}
+
+/// Register an existing variable with the JIT compiler
+uint32_t jit_var_register(uint32_t type, void *ptr,
+                          size_t size, bool free) {
+    if (unlikely(size == 0))
+        jit_raise("jit_var_register: size must be > 0!");
+
+    Variable v;
+    v.type = type;
+    v.data = ptr;
+    v.size = (uint32_t) size;
+    v.free_variable = free;
+    v.tsize = 1;
+
+    auto [idx, vo] = jit_trace_append(v);
+    jit_log(Debug, "jit_var_register(%u): %p, size=%zu, free=%i.",
+            idx, ptr, size, (int) free);
+
+    jit_inc_ref_ext(idx, vo);
+
+    return idx;
+}
+
+/// Register pointer literal as a special variable within the JIT compiler
+uint32_t jit_var_register_ptr(const void *ptr) {
+    auto it = state.variable_from_ptr.find(ptr);
+    if (it != state.variable_from_ptr.end()) {
+        uint32_t idx = it.value();
+        jit_inc_ref_ext(idx);
+        return idx;
+    }
+
+    Variable v;
+    v.type = EnokiType::Pointer;
+    v.data = (void *) ptr;
+    v.size = 1;
+    v.tsize = 0;
+    v.free_variable = false;
+    v.direct_pointer = true;
+
+    auto [idx, vo] = jit_trace_append(v);
+    jit_log(Debug, "jit_var_register_ptr(%u): %p.", idx, ptr);
+
+    jit_inc_ref_ext(idx, vo);
+    state.variable_from_ptr[ptr] = idx;
+    return idx;
+}
+
+/// Copy a memory region onto the device and return its variable index
+uint32_t jit_var_copy_to_device(uint32_t type,
+                                const void *value,
+                                size_t size) {
+    size_t total_size = size * jit_type_size(type);
+
+    void *host_ptr   = jit_malloc(AllocType::HostPinned, total_size),
+         *device_ptr = jit_malloc(AllocType::Device, total_size);
+
+    memcpy(host_ptr, value, total_size);
+    cuda_check(cudaMemcpyAsync(device_ptr, host_ptr, total_size,
+                               cudaMemcpyHostToDevice));
+
+    jit_free(host_ptr);
+    return jit_var_register(type, device_ptr, size, true);
 }
