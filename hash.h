@@ -2,7 +2,6 @@
 
 #include <tsl/robin_map.h>
 #include <tsl/robin_set.h>
-#include <nmmintrin.h>
 
 inline void hash_combine(size_t& seed, size_t value) {
     /// From CityHash (https://github.com/google/cityhash)
@@ -23,19 +22,6 @@ struct pair_hash {
     }
 };
 
-inline uint32_t crc32(const uint8_t *ptr, size_t size) {
-    const uint8_t *end = ptr + size;
-    uint64_t state64 = 0;
-    while (ptr + 8 < end) {
-        state64 = _mm_crc32_u64(state64, *((uint64_t *) ptr));
-        ptr += 8;
-    }
-    uint32_t state32 = (uint32_t) state64;
-    while (ptr + 4 < end) {
-        state32 = _mm_crc32_u32(state32, *((uint32_t *) ptr));
-        ptr += 4;
-    }
-    while (ptr < end)
-        state32 = _mm_crc32_u8(state32, *ptr++);
-    return state32;
-}
+
+/// CRC32 hash function
+uint32_t crc32(const void *ptr, size_t size);

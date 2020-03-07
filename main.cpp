@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <iostream>
 
+#include "hash.h"
+#include <string.h>
+
 int main(int argc, char **argv) {
     (void) argc;
     (void) argv;
@@ -16,7 +19,6 @@ int main(int argc, char **argv) {
         void *ptr3 = jitc_malloc(AllocType::HostPinned, 1025);
         void *ptr4 = jitc_malloc(AllocType::ManagedReadMostly, 1025);
         jitc_free(ptr);
-        printf("Found %u devices.\n", jitc_device_count());
 
         for (int i = 0; i < 3; ++i) {
             ptr = jitc_malloc(AllocType::Device, 1024);
