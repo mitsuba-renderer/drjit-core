@@ -161,6 +161,16 @@ void jitc_var_migrate(uint32_t idx, AllocType type) {
     jit_var_migrate(idx, type);
 }
 
+void jitc_var_mark_side_effect(uint32_t index) {
+    lock_guard guard(state.mutex);
+    jit_var_mark_side_effect(index);
+}
+
+void jitc_var_mark_dirty(uint32_t index) {
+    lock_guard guard(state.mutex);
+    jit_var_mark_side_effect(index);
+}
+
 void jitc_eval() {
     lock_guard guard(state.mutex);
     jit_eval();

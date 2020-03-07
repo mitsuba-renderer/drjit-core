@@ -70,3 +70,9 @@ extern size_t jit_type_size(uint32_t type);
 
 /// Migrate a variable to a different flavor of memory
 extern void jit_var_migrate(uint32_t idx, AllocType type);
+
+/// Indicate that evaluation of the given variable causes side effects
+extern void jit_var_mark_side_effect(uint32_t index);
+
+/// Mark variable as dirty, e.g. because of pending scatter operations
+extern void jit_var_mark_dirty(uint32_t index);

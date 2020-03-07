@@ -448,5 +448,17 @@ void jit_var_migrate(uint32_t idx, AllocType type) {
 
     jit_log(Debug, "jit_var_migrate(%u, %p) -> %s", idx, v->data,
             alloc_type_names[(int) type]);
+
     v->data = jit_malloc_migrate(v->data, type);
+}
+
+void jit_var_mark_side_effect(uint32_t index) {
+    jit_log(Debug, "jit_var_mark_side_effect(%u)", index);
+    jit_var(index)->side_effect = true;
+}
+
+void jit_var_mark_dirty(uint32_t index) {
+    jit_log(Debug, "jit_var_mark_dirty(%u)", index);
+    jit_var(index)->dirty = true;
+    state.dirty.push_back(index);
 }

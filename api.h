@@ -215,5 +215,11 @@ extern ENOKI_EXPORT const char *jitc_var_label(uint32_t index);
  */
 extern ENOKI_EXPORT void jitc_var_migrate(uint32_t idx, AllocType type);
 
+/// Indicate that evaluation of the given variable causes side effects
+extern ENOKI_EXPORT void jitc_var_mark_side_effect(uint32_t index);
+
+/// Mark variable as dirty, e.g. because of pending scatter operations
+extern ENOKI_EXPORT void jitc_var_mark_dirty(uint32_t index);
+
 // Evaluate currently all queued operations
 extern ENOKI_EXPORT void jitc_eval();

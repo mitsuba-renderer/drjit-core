@@ -149,14 +149,18 @@ struct State {
     /// Maps from pointer addresses to variable indices
     tsl::robin_map<const void *, uint32_t> variable_from_ptr;
 
-    /// Enumerates "live" (externally referenced) variables and statements with side effects
-    tsl::robin_set<uint32_t> live;
-
     /// Current variable index
     uint32_t variable_index = 1;
 
     /// Current operand for scatter/gather operations
     uint32_t scatter_gather_operand = 0;
+
+    /// TODO: maybe a TLS variable?
+    /// Enumerates "live" (externally referenced) variables and statements with side effects
+    tsl::robin_set<uint32_t> live;
+
+    /// Enumerates "dirty" variables (targets of 'scatter' operations that have not yet executed)
+    std::vector<uint32_t> dirty;
 };
 
 /// RAII helper for locking a mutex (like std::lock_guard)
