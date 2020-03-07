@@ -17,15 +17,17 @@ void jit_init() {
     // Enumerate CUDA devices and collect suitable ones
     int n_devices = 0;
     cuda_check(cudaGetDeviceCount(&n_devices));
-    std::vector<uint32_t> &devices = state.devices;
 
     jit_log(Info, "jit_init(): detecting devices ..");
     for (int i = 0; i < n_devices; ++i) {
         cudaDeviceProp prop;
         cudaGetDeviceProperties(&prop, i);
-        jit_log(Info, " - Found CUDA device %i: \"%s\" "
-                "(PCI ID %02x:%02x.%i).", i, prop.name, prop.pciBusID,
-                prop.pciDeviceID, prop.pciDomainID);
+        jit_log(Info,
+                " - Found CUDA device %i: \"%s\" "
+                "(PCI ID %02x:%02x.%i, %i SMs, %s).",
+                i, prop.name, prop.pciBusID, prop.pciDeviceID, prop.pciDomainID,
+                prop.multiProcessorCount,
+                jit_mem_string(prop.totalGlobalMem));
         if (prop.unifiedAddressing == 0) {
             jit_log(Warn, " - Warning: device does *not* support unified addressing, skipping..");
             continue;
@@ -36,27 +38,32 @@ void jit_init() {
         if (prop.concurrentManagedAccess == 0)
             jit_log(Warn, " - Warning: device does *not* support concurrent managed access.");
 
+
         cuda_check(cudaSetDevice(i));
-        devices.push_back((uint32_t) i);
+        Device device;
+        device.id = (uint32_t) i;
+        device.block_count = prop.multiProcessorCount * 4;
+        device.thread_count = 128;
+        state.devices.push_back(device);
     }
 
     // Enable P2P communication if possible
-    for (int i : devices) {
-        for (int j : devices) {
-            if (i == j)
+    for (const Device &da : state.devices) {
+        for (const Device &db : state.devices) {
+            if (da.id == db.id)
                 continue;
 
             int peer_ok = 0;
-            cuda_check(cudaDeviceCanAccessPeer(&peer_ok, i, j));
+            cuda_check(cudaDeviceCanAccessPeer(&peer_ok, da.id, db.id));
             if (peer_ok) {
-                jit_log(Debug, " - Enabling peer access from device %i -> %i.", i, j);
-                cuda_check(cudaSetDevice(i));
-                cuda_check(cudaDeviceEnablePeerAccess(j, 0));
+                jit_log(Debug, " - Enabling peer access from device %i -> %i.",
+                        da.id, db.id);
+                cuda_check(cudaSetDevice(da.id));
+                cuda_check(cudaDeviceEnablePeerAccess(db.id, 0));
             }
         }
     }
 #endif
-
     state.scatter_gather_operand = 0;
     state.initialized = true;
 }
@@ -105,7 +112,7 @@ void jit_device_set(uint32_t device, uint32_t stream) {
             return;
         jit_log(Trace, "jit_device_set(device=%i, stream=%i): selecting stream.", device, stream);
         if (stream_ptr->device != active_stream_ptr->device)
-            cuda_check(cudaSetDevice(state.devices[device]));
+            cuda_check(cudaSetDevice(state.devices[device].id));
     } else {
         jit_log(Trace, "jit_device_set(device=%i, stream=%i): creating stream.", device, stream);
         cudaStream_t handle = nullptr;

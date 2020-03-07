@@ -21,6 +21,9 @@ extern ENOKI_EXPORT void jit_raise(const char* format, ...);
 /// Immediately terminate the application due to a fatal internal error
 [[noreturn]] extern ENOKI_EXPORT void jit_fail(const char* format, ...);
 
+/// Convert a number of bytes into a human-readable string (returns static buffer!)
+extern ENOKI_EXPORT const char *jit_mem_string(size_t size);
+
 #if defined(ENOKI_CUDA)
     #define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
     ENOKI_EXPORT extern void cuda_check_impl(CUresult errval, const char *file, const int line);

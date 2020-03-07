@@ -86,6 +86,21 @@ size_t jitc_var_size(uint32_t index) {
     return jit_var_size(index);
 }
 
+uint32_t jitc_var_set_size(uint32_t index, size_t size, bool copy) {
+    lock_guard guard(state.mutex);
+    return jit_var_set_size(index, size, copy);
+}
+
+const char *jitc_var_label(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var_label(index);
+}
+
+void jitc_var_set_label(uint32_t index, const char *label) {
+    lock_guard guard(state.mutex);
+    jit_var_set_label(index, label);
+}
+
 uint32_t jitc_trace_append(uint32_t type, const char *cmd) {
     lock_guard guard(state.mutex);
     return jit_trace_append(type, cmd);

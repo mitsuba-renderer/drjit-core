@@ -10,6 +10,12 @@
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 #if defined(ENOKI_CUDA)
+struct Device {
+    uint32_t id;
+    uint32_t block_count;
+    uint32_t thread_count;
+};
+
 struct Stream {
     /// Enoki device index associated with this stream (*not* the CUDA device ID)
     uint32_t device = 0;
@@ -36,26 +42,14 @@ enum EnokiType { Invalid = 0, Int8, UInt8, Int16, UInt16,
 
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
+    /// Intermediate language statement
+    char *cmd = nullptr;
+
     /// Data type of this variable
     uint32_t type = (uint32_t) EnokiType::Invalid;
 
     /// Number of entries
     uint32_t size = 0;
-
-    /// PTX instruction to compute it
-    char *cmd = nullptr;
-
-    /// Associated label (for debugging)
-    char *label = nullptr;
-
-    /// Pointer to device memory
-    void *data = nullptr;
-
-    /// External (i.e. by Enoki) reference count
-    uint32_t ref_count_ext = 0;
-
-    /// Internal (i.e. within the PTX instruction stream) reference count
-    uint32_t ref_count_int = 0;
 
     /// Dependencies of this instruction
     uint32_t dep[3] { 0 };
@@ -63,8 +57,20 @@ struct Variable {
     /// Extra dependency (which is not directly used in arithmetic, e.g. scatter/gather)
     uint32_t extra_dep = 0;
 
+    /// Associated label (for debugging)
+    char *label = nullptr;
+
+    /// Pointer to device memory
+    void *data = nullptr;
+
+    /// External reference count (by application using Enoki)
+    uint32_t ref_count_ext = 0;
+
+    /// Internal reference count (dependencies within computation ggraph)
+    uint32_t ref_count_int = 0;
+
     /// Size of the instruction subtree (heuristic for instruction scheduling)
-    uint32_t tree_size = 1;
+    uint32_t tsize = 0;
 
     /// Does the instruction have side effects (e.g. 'scatter')
     bool side_effect = false;
@@ -79,6 +85,32 @@ struct Variable {
     bool direct_pointer = false;
 };
 
+/// Abbreviated version of the Variable data structure
+struct VariableKey {
+    char *cmd;
+    uint32_t type;
+    uint32_t size;
+    uint32_t dep[3];
+    uint32_t extra_dep;
+
+    VariableKey(const Variable &v) {
+        memcpy(this, &v, sizeof(VariableKey));
+    }
+
+    bool operator==(const VariableKey &v) const {
+        return memcmp(this, &v, sizeof(VariableKey)) == 0;
+    }
+};
+
+struct VariableKeyHasher {
+    size_t operator()(const VariableKey &k) const {
+        size_t result = crc32((const uint8_t *) k.cmd, strlen(k.cmd));
+        hash_combine(result, crc32((const uint8_t *) &k.type, sizeof(uint32_t) * 6));
+        return result;
+    }
+};
+
+
 /// Records the full JIT compiler state
 struct State {
     /// Must be held to access members
@@ -90,8 +122,8 @@ struct State {
     /// Log level
     uint32_t log_level = 0;
 
-    /// Number of available devices and their CUDA IDs
-    std::vector<uint32_t> devices;
+    /// Available devices and their CUDA IDs
+    std::vector<Device> devices;
 
 #if defined(ENOKI_CUDA)
     /// Maps Enoki (device index, stream index) pairs to a Stream data structure
@@ -111,8 +143,11 @@ struct State {
     /// Stores the mapping from variable indices to variables
     tsl::robin_map<uint32_t, Variable> variables;
 
-    /// Stores the mapping from pointer addresses to variable indices
-    tsl::robin_map<const void *, uint32_t> ptr_map;
+    /// Maps from a key characterizing a variable to its index
+    tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher> variable_from_key;
+
+    /// Maps from pointer addresses to variable indices
+    tsl::robin_map<const void *, uint32_t> variable_from_ptr;
 
     /// Enumerates "live" (externally referenced) variables and statements with side effects
     tsl::robin_set<uint32_t> live;

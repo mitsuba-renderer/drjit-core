@@ -36,11 +36,20 @@ void jit_inc_ref_ext(uint32_t index);
 /// Decrease the external reference count of a given variable
 void jit_dec_ref_ext(uint32_t index);
 
+// Query the pointer variable associated with a given variable
+void *jit_var_ptr(uint32_t index);
+
 // Query the size of a given variable
 size_t jit_var_size(uint32_t index);
 
-// Query the pointer variable associated with a given variable
-void *jit_var_ptr(uint32_t index);
+/// Set the size of a given variable (if possible, otherwise throw)
+uint32_t jit_var_set_size(uint32_t index, size_t size, bool copy);
+
+/// Assign a descriptive label to a given variable
+void jit_var_set_label(uint32_t index, const char *label);
+
+/// Query the descriptive label associated with a given variable
+const char *jit_var_label(uint32_t index);
 
 // Evaluate currently queued operations
 void jit_eval();

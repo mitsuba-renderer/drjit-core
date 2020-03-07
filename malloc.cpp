@@ -267,9 +267,9 @@ void jit_malloc_trim() {
         for (int i = 0; i < 5; ++i) {
             if (trim_count[i] == 0)
                 continue;
-            jit_log(Trace, "%22s memory: %zu bytes in %zu allocation%s.",
-                    alloc_type_names[i], trim_size[i], trim_count[i],
-                    trim_count[i] > 1 ? "s" : "");
+            jit_log(Trace, "%22s memory: %s in %zu allocation%s.",
+                    alloc_type_names[i], jit_mem_string(trim_size[i]),
+                    trim_count[i], trim_count[i] > 1 ? "s" : "");
         }
     }
 }
@@ -291,9 +291,10 @@ void jit_malloc_shutdown() {
         for (int i = 0; i < 5; ++i) {
             if (leak_count[i] == 0)
                 continue;
-            jit_log(Trace, "%22s memory: %zu bytes in %zu allocation%s.",
-                    alloc_type_names[i], leak_size[i], leak_count[i],
-                    leak_count[i] > 1 ? "s" : "");
+
+            jit_log(Trace, "%22s memory: %s in %zu allocation%s.",
+                    alloc_type_names[i], jit_mem_string(leak_size[i]),
+                    leak_count[i], leak_count[i] > 1 ? "s" : "");
         }
     }
 }

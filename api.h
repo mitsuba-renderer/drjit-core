@@ -141,11 +141,28 @@ extern ENOKI_EXPORT void jitc_inc_ref_ext(uint32_t index);
 /// Decrease the external reference count of a given variable
 extern ENOKI_EXPORT void jitc_dec_ref_ext(uint32_t index);
 
+/// Query the pointer variable associated with a given variable
+extern ENOKI_EXPORT void *jitc_var_ptr(uint32_t index);
+
 /// Query the size of a given variable
 extern ENOKI_EXPORT size_t jitc_var_size(uint32_t index);
 
-/// Query the pointer variable associated with a given variable
-extern ENOKI_EXPORT void *jitc_var_ptr(uint32_t index);
+/**
+ * Set the size of a given variable (if possible, otherwise throw)
+ *
+ * In case the variable has already been evaluated and is a scalar, Enoki
+ * can optionally perform a copy instead of failing if copy=true is specified.
+ *
+ * Returns the ID of the changed or new variable
+ */
+extern ENOKI_EXPORT uint32_t jitc_var_set_size(uint32_t index, size_t size,
+                                               bool copy = false);
+
+/// Assign a descriptive label to a given variable
+extern ENOKI_EXPORT void jitc_var_set_label(uint32_t index, const char *label);
+
+/// Query the descriptive label associated with a given variable
+extern ENOKI_EXPORT const char *jitc_var_label(uint32_t index);
 
 // Evaluate currently queued operations
 extern ENOKI_EXPORT void jitc_eval();

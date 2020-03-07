@@ -34,6 +34,24 @@ void jit_fail(const char* format, ...) {
     exit(EXIT_FAILURE);
 }
 
+static char jit_mem_string_buf[64];
+
+const char *jit_mem_string(size_t size) {
+    const char *orders[] = {
+        "B", "KiB", "MiB", "GiB",
+        "TiB", "PiB", "EiB"
+    };
+    float value = (float) size;
+
+    int i = 0;
+    for (i = 0; i < 6 && value > 1024.f; ++i)
+        value /= 1024.f;
+
+    snprintf(jit_mem_string_buf, 64, "%.3g %s", value, orders[i]);
+
+    return jit_mem_string_buf;
+}
+
 #if defined(ENOKI_CUDA)
 struct CUDAErrorList {
     CUresult id;
