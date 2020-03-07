@@ -4,6 +4,8 @@
 #include "log.h"
 
 State state;
+Buffer buffer;
+
 #if defined(ENOKI_CUDA)
     __thread Stream *active_stream = nullptr;
 #endif
@@ -158,3 +160,30 @@ void jit_device_sync() {
     jit_raise("jit_device_sync(): unsupported! (CUDA support was disabled.)");
 #endif
 }
+
+Buffer::Buffer() : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
+    const size_t size = 1024;
+    m_start = (char *) malloc(size);
+    if (unlikely(m_start == nullptr))
+        jit_fail("Buffer(): out of memory!");
+    m_end = m_start + size;
+    clear();
+}
+
+void Buffer::expand() {
+    size_t old_alloc_size = m_end - m_start,
+           new_alloc_size = 2 * old_alloc_size,
+           used_size      = m_cur - m_start,
+           copy_size      = std::min(used_size + 1, old_alloc_size);
+
+    char *tmp = (char *) malloc(new_alloc_size);
+    if (unlikely(m_start == nullptr))
+        jit_fail("Buffer::expand() out of memory!");
+    memcpy(tmp, m_start, copy_size);
+    free(m_start);
+
+    m_start = tmp;
+    m_end = m_start + new_alloc_size;
+    m_cur = m_start + used_size;
+}
+

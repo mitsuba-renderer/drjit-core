@@ -18,10 +18,29 @@ size_t jit_type_size(uint32_t type) {
         case EnokiType::Int64:
         case EnokiType::Pointer:
         case EnokiType::Float64: return 8;
-        default: jit_fail("jit_type(): invalid type!");
+        default: jit_fail("jit_type_size(): invalid type!");
     }
 }
 
+/// Return the readable name for the given variable type
+const char *jit_type_name(uint32_t type) {
+    switch (type) {
+        case EnokiType::Int8:    return "i8 "; break;
+        case EnokiType::UInt8:   return "u8 "; break;
+        case EnokiType::Int16:   return "i16"; break;
+        case EnokiType::UInt16:  return "u16"; break;
+        case EnokiType::Int32:   return "i32"; break;
+        case EnokiType::UInt32:  return "u32"; break;
+        case EnokiType::Int64:   return "i64"; break;
+        case EnokiType::UInt64:  return "u64"; break;
+        case EnokiType::Float16: return "f16"; break;
+        case EnokiType::Float32: return "f32"; break;
+        case EnokiType::Float64: return "f64"; break;
+        case EnokiType::Bool:    return "msk"; break;
+        case EnokiType::Pointer: return "ptr"; break;
+        default: jit_fail("jit_type_name(): invalid type!");
+    }
+}
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
 Variable *jit_var(uint32_t index) {
@@ -33,7 +52,7 @@ Variable *jit_var(uint32_t index) {
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
 void jit_var_free(uint32_t index, Variable *v) {
-    jit_log(Trace, "jit_var_free(%u) = %p.", index, v->data);
+    jit_log(Trace, "jit_var_free(%u) = " PTR ".", index, v->data);
 
     VariableKey key(*v);
     state.variable_from_key.erase(key);
@@ -379,7 +398,7 @@ uint32_t jit_var_register(uint32_t type, void *ptr,
     v.tsize = 1;
 
     auto [idx, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_var_register(%u): %p, size=%zu, free=%i.",
+    jit_log(Debug, "jit_var_register(%u): " PTR ", size=%zu, free=%i.",
             idx, ptr, size, (int) free);
 
     jit_inc_ref_ext(idx, vo);
@@ -405,7 +424,7 @@ uint32_t jit_var_register_ptr(const void *ptr) {
     v.direct_pointer = true;
 
     auto [idx, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_var_register_ptr(%u): %p.", idx, ptr);
+    jit_log(Debug, "jit_var_register_ptr(%u): " PTR ".", idx, ptr);
 
     jit_inc_ref_ext(idx, vo);
     state.variable_from_ptr[ptr] = idx;
@@ -446,7 +465,7 @@ void jit_var_migrate(uint32_t idx, AllocType type) {
         v = jit_var(idx);
     }
 
-    jit_log(Debug, "jit_var_migrate(%u, %p) -> %s", idx, v->data,
+    jit_log(Debug, "jit_var_migrate(%u, " PTR ") -> %s", idx, v->data,
             alloc_type_names[(int) type]);
 
     v->data = jit_malloc_migrate(v->data, type);
@@ -462,3 +481,63 @@ void jit_var_mark_dirty(uint32_t index) {
     jit_var(index)->dirty = true;
     state.dirty.push_back(index);
 }
+
+const char *jit_whos() {
+    buffer.clear();
+    buffer.put("\n  ID        Type   E/I Refs   Size        Memory     Ready    Label");
+    buffer.put("\n  =================================================================\n");
+
+    std::vector<uint32_t> indices;
+    indices.reserve(state.variables.size());
+    for (const auto& it : state.variables)
+        indices.push_back(it.first);
+    std::sort(indices.begin(), indices.end());
+
+    size_t mem_size_scheduled = 0,
+           mem_size_ready = 0,
+           mem_size_arith = 0;
+
+    for (uint32_t index: indices) {
+        const Variable *v = jit_var(index);
+        size_t mem_size = v->size * jit_type_size(v->type);
+
+        buffer.fmt("  %-9u %s    ", index, jit_type_name(v->type));
+        size_t sz = buffer.fmt("%u / %u", v->ref_count_ext, v->ref_count_int);
+        buffer.fmt("%*s%-12u%-12s[%c]     %s\n", 11 - sz, "", v->size,
+                   jit_mem_string(mem_size), v->data ? 'x' : ' ',
+                   v->label ? v->label : "");
+
+        if (v->data) {
+            mem_size_ready += mem_size;
+        } else {
+            if (v->ref_count_ext == 0)
+                mem_size_arith += mem_size;
+            else
+                mem_size_scheduled += mem_size;
+        }
+    }
+
+    buffer.put("  =================================================================\n\n");
+    buffer.put("  JIT compiler\n");
+    buffer.put("  ============\n");
+    buffer.fmt("   - Memory usage (ready)     : %s.\n",
+               jit_mem_string(mem_size_ready));
+    buffer.fmt("   - Memory usage (scheduled) : %s + %s = %s.\n",
+               jit_mem_string(mem_size_ready),
+               jit_mem_string(mem_size_scheduled),
+               jit_mem_string(mem_size_ready + mem_size_scheduled));
+    buffer.fmt("   - Memory savings           : %s.\n\n",
+               jit_mem_string(mem_size_arith));
+
+    buffer.put("  Memory allocator\n");
+    buffer.put("  ================\n");
+    for (int i = 0; i < 5; ++i)
+        buffer.fmt("   - %-20s: %s used (max. %s).\n",
+                   alloc_type_names[i],
+                   jit_mem_string(state.alloc_usage[i]),
+                   jit_mem_string(state.alloc_watermark[i]));
+
+    return buffer.get();
+}
+
+

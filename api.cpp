@@ -171,6 +171,11 @@ void jitc_var_mark_dirty(uint32_t index) {
     jit_var_mark_side_effect(index);
 }
 
+const char *jitc_whos() {
+    lock_guard guard(state.mutex);
+    return jit_whos();
+}
+
 void jitc_eval() {
     lock_guard guard(state.mutex);
     jit_eval();

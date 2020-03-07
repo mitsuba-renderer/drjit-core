@@ -5,7 +5,9 @@
 #include <mutex>
 #include <condition_variable>
 #include <string.h>
+#include <inttypes.h>
 
+#define PTR "0x%" PRIxPTR
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
@@ -211,12 +213,74 @@ private:
     std::condition_variable m_cond;
 };
 
+struct Buffer {
+public:
+    Buffer();
+
+    // Disable copy/move constructor and assignment
+    Buffer(const Buffer &) = delete;
+    Buffer(Buffer &&) = delete;
+    Buffer &operator=(const Buffer &) = delete;
+    Buffer &operator=(Buffer &&) = delete;
+
+    ~Buffer() {
+        free(m_start);
+    }
+
+    const char *get() { return m_start; }
+
+    void clear() {
+        m_cur = m_start;
+        m_start[0] = '\0';
+    }
+
+    void put(const char *str) {
+        do {
+            char *cur = (char *) memccpy(m_cur, str, '\0', m_end - m_cur);
+
+            if (likely(cur)) {
+                m_cur = cur - 1;
+                break;
+            }
+
+            expand();
+        } while (true);
+    }
+
+    size_t fmt(const char *format, ...) {
+        size_t written;
+        do {
+            size_t size = m_end - m_cur;
+            va_list args;
+            va_start(args, format);
+            written = (size_t) vsnprintf(m_cur, size, format, args);
+            va_end(args);
+
+            if (likely(written < size)) {
+                m_cur += written;
+                break;
+            }
+
+            expand();
+        } while (true);
+        return written;
+    }
+
+private:
+    void expand();
+
+private:
+    char *m_start, *m_cur, *m_end;
+};
+
+
 /// Global state record shared by all threads
 #if defined(ENOKI_CUDA)
   extern __thread Stream *active_stream;
 #endif
 
 extern State state;
+extern Buffer buffer;
 
 /// Initialize core data structures of the JIT compiler
 extern void jit_init();

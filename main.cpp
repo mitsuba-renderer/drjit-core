@@ -5,6 +5,28 @@
 #include "hash.h"
 #include <string.h>
 
+enum EnokiType { Invalid = 0, Int8, UInt8, Int16, UInt16,
+                 Int32, UInt32, Int64, UInt64, Float16,
+                 Float32, Float64, Bool, Pointer };
+
+void test_1() {
+    // Scalar initialization
+    uint32_t idx = jitc_trace_append(EnokiType::UInt32, "mov.%t0 %r0, 1234");
+    // jit_eval();
+    printf("%s\n", jitc_whos());
+
+    jitc_dec_ref_ext(idx);
+}
+
+void test_2() {
+    // Caching
+    uint32_t idx1 = jitc_trace_append(EnokiType::UInt32, "mov.%t0 %r0, 1234"),
+             idx2 = jitc_trace_append(EnokiType::UInt32, "mov.%t0 %r0, 1234");
+    // jit_eval();
+    jitc_dec_ref_ext(idx1);
+    jitc_dec_ref_ext(idx2);
+}
+
 int main(int argc, char **argv) {
     (void) argc;
     (void) argv;
@@ -14,28 +36,7 @@ int main(int argc, char **argv) {
         jitc_init_async();
         jitc_device_set(0, 0);
 
-        void *ptr = jitc_malloc(AllocType::Device, 1024);
-        void *ptr2 = jitc_malloc(AllocType::Host, 1025);
-        void *ptr3 = jitc_malloc(AllocType::HostPinned, 1025);
-        void *ptr4 = jitc_malloc(AllocType::ManagedReadMostly, 1025);
-        jitc_free(ptr);
-
-        for (int i = 0; i < 3; ++i) {
-            ptr = jitc_malloc(AllocType::Device, 1024);
-            jitc_free(ptr);
-        }
-
-        jitc_device_set(1, 0);
-        for (int i = 0; i < 3; ++i) {
-            ptr = jitc_malloc(AllocType::Device, 1024);
-            jitc_free(ptr);
-            // jitc_flush_free();
-            jitc_device_sync();
-        }
-        jitc_free(ptr2);
-        jitc_free(ptr3);
-        jitc_free(ptr4);
-
+        test_1();
 
         jitc_shutdown();
     } catch (const std::exception &e) {

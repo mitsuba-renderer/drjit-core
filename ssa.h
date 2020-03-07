@@ -76,3 +76,6 @@ extern void jit_var_mark_side_effect(uint32_t index);
 
 /// Mark variable as dirty, e.g. because of pending scatter operations
 extern void jit_var_mark_dirty(uint32_t index);
+
+/// Return a human-readable summary of registered variables
+extern const char *jit_whos();

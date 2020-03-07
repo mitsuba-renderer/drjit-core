@@ -134,10 +134,10 @@ void* jit_malloc(AllocType type, size_t size) {
     state.alloc_used.insert({ ptr, ai });
 
     if (ai.type == AllocType::Device)
-        jit_log(Trace, "jit_malloc(type=%s, device=%u, size=%zu) -> %p (%s)",
+        jit_log(Trace, "jit_malloc(type=%s, device=%u, size=%zu) -> " PTR " (%s)",
                 alloc_type_names[(int) ai.type], ai.device, ai.size, ptr, descr);
     else
-        jit_log(Trace, "jit_malloc(type=%s, size=%zu) -> %p (%s)",
+        jit_log(Trace, "jit_malloc(type=%s, size=%zu) -> " PTR " (%s)",
                 alloc_type_names[(int) ai.type], ai.size, ptr, descr);
 
     size_t &usage     = state.alloc_usage[(int) ai.type],
@@ -155,14 +155,14 @@ void jit_free(void *ptr) {
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_free(): unknown address %p!", ptr);
+        jit_raise("jit_free(): unknown address " PTR "!", ptr);
 
     AllocInfo ai = it.value();
     if (ai.type == AllocType::Device)
-        jit_log(Trace, "jit_free(%p, type=%s, device=%u, size=%zu)", ptr,
+        jit_log(Trace, "jit_free(" PTR ", type=%s, device=%u, size=%zu)", ptr,
                 alloc_type_names[(int) ai.type], ai.device, ai.size);
     else
-        jit_log(Trace, "jit_free(%p, type=%s, size=%zu)", ptr,
+        jit_log(Trace, "jit_free(" PTR ", type=%s, size=%zu)", ptr,
                 alloc_type_names[(int) ai.type], ai.size);
 
     state.alloc_used.erase(it);
@@ -226,7 +226,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_malloc_migrate(): unknown address %p!", ptr);
+        jit_raise("jit_malloc_migrate(): unknown address " PTR "!", ptr);
 
     AllocInfo ai = it.value();
 
@@ -239,7 +239,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
     if (ai.type == type && (type != AllocType::Device || ai.device == stream->device))
         return ptr;
 
-    jit_log(Trace, "jit_malloc_migrate(%p): %s -> %s", ptr,
+    jit_log(Trace, "jit_malloc_migrate(" PTR "): %s -> %s", ptr,
             alloc_type_names[(int) ai.type],
             alloc_type_names[(int) type]) ;
 

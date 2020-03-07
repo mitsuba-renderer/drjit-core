@@ -4,31 +4,31 @@
 #include "jit.h"
 #include "log.h"
 
-void jit_log(LogLevel log_level, const char* format, ...) {
+void jit_log(LogLevel log_level, const char* fmt, ...) {
     if (log_level > state.log_level)
         return;
 
     va_list args;
-    va_start(args, format);
-    vfprintf(stderr, format, args);
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
     va_end(args);
 }
 
-void jit_raise(const char* format, ...) {
+void jit_raise(const char* fmt, ...) {
     va_list args;
     char buf[1024];
-    va_start(args, format);
-    vsnprintf(buf, sizeof(buf), format, args);
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
     throw std::runtime_error(buf);
 }
 
-void jit_fail(const char* format, ...) {
+void jit_fail(const char* fmt, ...) {
     va_list args;
-    va_start(args, format);
+    va_start(args, fmt);
     fprintf(stderr, "Critical failure in Enoki JIT compiler: ");
-    vfprintf(stderr, format, args);
+    vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
     va_end(args);
     exit(EXIT_FAILURE);
