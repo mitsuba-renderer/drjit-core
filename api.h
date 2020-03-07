@@ -109,11 +109,17 @@ extern ENOKI_EXPORT void *jitc_malloc(AllocType type, size_t size)
 extern ENOKI_EXPORT void jitc_free(void *ptr);
 
 /**
- * \brief Change the flavor of an allocated memory region and return the new
- * pointer
+ * \brief Asynchronously change the flavor of an allocated memory region and
+ * return the new pointer
  *
- * The operation is asynchronous and will need to be followed by a \ref
+ * The operation is asynchronous and, hence, will need to be followed by \ref
  * jitc_stream_sync() if managed memory is subsequently accessed on the CPU.
+ *
+ * When both source & target are of type \ref AllocType::Device, and if the
+ * current device (\ref jitc_device_set()) does not match the device associated
+ * with the allocation, a peer-to-peer migration is performed.
+ *
+ * Note: Migrations involving AllocType::Host are currently not supported.
  */
 extern ENOKI_EXPORT void* jitc_malloc_migrate(void *ptr, AllocType type);
 
@@ -196,10 +202,16 @@ extern ENOKI_EXPORT void jitc_var_set_label(uint32_t index, const char *label);
 extern ENOKI_EXPORT const char *jitc_var_label(uint32_t index);
 
 /**
- * \brief Migrate a variable to a different flavor of memory
+ * \brief Asynchronously migrate a variable to a different flavor of memory
  *
- * The operation is asynchronous and will need to be followed by a \ref
+ * The operation is asynchronous and, hence, will need to be followed by \ref
  * jitc_stream_sync() if managed memory is subsequently accessed on the CPU.
+ *
+ * When both source & target are of type \ref AllocType::Device, and if the
+ * current device (\ref jitc_device_set()) does not match the device associated
+ * with the allocation, a peer-to-peer migration is performed.
+ *
+ * Note: Migrations involving AllocType::Host are currently not supported.
  */
 extern ENOKI_EXPORT void jitc_var_migrate(uint32_t idx, AllocType type);
 

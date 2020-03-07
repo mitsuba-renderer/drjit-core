@@ -219,18 +219,25 @@ void jit_free_flush() {
 }
 
 void* jit_malloc_migrate(void *ptr, AllocType type) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_fail("jit_malloc_migrate(): device and stream must be set! "
+                 "(call jit_device_set() beforehand)!");
+
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
         jit_raise("jit_malloc_migrate(): unknown address %p!", ptr);
 
     AllocInfo ai = it.value();
-    if (ai.type == type)
-        return ptr;
 
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_fail("jit_malloc_migrate(): device and stream must be set! "
-                 "(call jit_device_set() beforehand)!");
+    if (ai.type != type &&
+        (ai.type == AllocType::Host || type == AllocType::Host))
+        jit_raise("jit_malloc_migrate(): non-pinned host memory does not "
+                  "support asynchronous migration!");
+
+    // Maybe nothing needs to be done..
+    if (ai.type == type && (type != AllocType::Device || ai.device == stream->device))
+        return ptr;
 
     jit_log(Trace, "jit_malloc_migrate(%p): %s -> %s", ptr,
             alloc_type_names[(int) ai.type],

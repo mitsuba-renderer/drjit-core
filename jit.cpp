@@ -26,8 +26,7 @@ void jit_init() {
                 " - Found CUDA device %i: \"%s\" "
                 "(PCI ID %02x:%02x.%i, %i SMs, %s).",
                 i, prop.name, prop.pciBusID, prop.pciDeviceID, prop.pciDomainID,
-                prop.multiProcessorCount,
-                jit_mem_string(prop.totalGlobalMem));
+                prop.multiProcessorCount, jit_mem_string(prop.totalGlobalMem));
         if (prop.unifiedAddressing == 0) {
             jit_log(Warn, " - Warning: device does *not* support unified addressing, skipping..");
             continue;
