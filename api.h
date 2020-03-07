@@ -106,6 +106,12 @@ extern ENOKI_EXPORT void jitc_malloc_trim();
 // ====================================================================
 //                        Variable management
 // ====================================================================
+//
+/// Register an existing variable with the JIT compiler
+extern ENOKI_EXPORT uint32_t jitc_var_register(uint32_t type,
+                                               void *ptr,
+                                               size_t size,
+                                               bool free);
 
 /// Append a variable to the instruction trace (no operand)
 extern ENOKI_EXPORT uint32_t jitc_trace_append(uint32_t type,
@@ -164,5 +170,5 @@ extern ENOKI_EXPORT void jitc_var_set_label(uint32_t index, const char *label);
 /// Query the descriptive label associated with a given variable
 extern ENOKI_EXPORT const char *jitc_var_label(uint32_t index);
 
-// Evaluate currently queued operations
+// Evaluate currently all queued operations
 extern ENOKI_EXPORT void jitc_eval();

@@ -1,6 +1,7 @@
 #include "ssa.h"
 #include "jit.h"
 #include "log.h"
+#include "eval.h"
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
 Variable *jit_var(uint32_t index) {
@@ -189,6 +190,29 @@ void jit_var_set_label(uint32_t index, const char *label) {
     jit_log(Trace, "jit_var_set_label(%u) -> \"%s.\"", index, label);
 }
 
+/// Register an existing variable with the JIT compiler
+uint32_t jit_var_register(uint32_t type, void *ptr,
+                          size_t size, bool free) {
+    if (unlikely(size == 0))
+        jit_raise("jit_var_register: size must be > 0!");
+
+    Variable v;
+    v.type = type;
+    v.data = ptr;
+    v.size = (uint32_t) size;
+    v.free_variable = free;
+    v.tsize = 1;
+
+    auto [idx, vo] = jit_trace_append(v);
+    jit_log(Debug, "jit_var_register(%u): %p, size=%zu, free=%i.",
+            idx, ptr, size, (int) free);
+
+    jit_inc_ref_ext(idx, vo);
+
+    return idx;
+}
+
+/// Append a variable to the instruction trace (no operands)
 uint32_t jit_trace_append(uint32_t type, const char *cmd) {
     Variable v;
     v.type = type;
@@ -207,6 +231,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd) {
     return idx;
 }
 
+/// Append a variable to the instruction trace (1 operand)
 uint32_t jit_trace_append(uint32_t type, const char *cmd,
                           uint32_t arg1) {
     if (unlikely(arg1 == 0))
@@ -241,6 +266,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
     return idx;
 }
 
+/// Append a variable to the instruction trace (2 operands)
 uint32_t jit_trace_append(uint32_t type, const char *cmd,
                           uint32_t arg1, uint32_t arg2) {
     if (unlikely(arg1 == 0 || arg2 == 0))
@@ -285,6 +311,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
     return idx;
 }
 
+/// Append a variable to the instruction trace (3 operands)
 uint32_t jit_trace_append(uint32_t type, const char *cmd,
                           uint32_t arg1, uint32_t arg2, uint32_t arg3) {
     if (unlikely(arg1 == 0 || arg2 == 0 || arg3 == 0))
@@ -339,9 +366,4 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
     state.live.insert(idx);
 
     return idx;
-}
-
-
-void jit_eval() {
-
 }

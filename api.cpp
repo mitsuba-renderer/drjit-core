@@ -1,5 +1,6 @@
 #include "jit.h"
 #include "ssa.h"
+#include "eval.h"
 #include <thread>
 
 static wait_flag jitc_init_flag;
@@ -99,6 +100,11 @@ const char *jitc_var_label(uint32_t index) {
 void jitc_var_set_label(uint32_t index, const char *label) {
     lock_guard guard(state.mutex);
     jit_var_set_label(index, label);
+}
+
+uint32_t jitc_var_register(uint32_t type, void *ptr, size_t size, bool free) {
+    lock_guard guard(state.mutex);
+    return jit_var_register(type, ptr, size, free);
 }
 
 uint32_t jitc_trace_append(uint32_t type, const char *cmd) {

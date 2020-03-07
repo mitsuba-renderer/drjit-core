@@ -2,6 +2,12 @@
 
 #include "api.h"
 
+/// Register an existing variable with the JIT compiler
+uint32_t jit_var_register(uint32_t type,
+                          void *ptr,
+                          size_t size,
+                          bool free);
+
 /// Append a variable to the instruction trace (no operand)
 uint32_t jit_trace_append(uint32_t type,
                           const char *cmd);
@@ -50,6 +56,3 @@ void jit_var_set_label(uint32_t index, const char *label);
 
 /// Query the descriptive label associated with a given variable
 const char *jit_var_label(uint32_t index);
-
-// Evaluate currently queued operations
-void jit_eval();
