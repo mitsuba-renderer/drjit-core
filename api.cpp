@@ -176,6 +176,16 @@ const char *jitc_whos() {
     return jit_whos();
 }
 
+void jitc_set_parallel_dispatch(bool enable) {
+    lock_guard guard(state.mutex);
+    state.parallel_dispatch = enable;
+}
+
+bool jitc_parallel_dispatch() {
+    lock_guard guard(state.mutex);
+    return state.parallel_dispatch;
+}
+
 void jitc_eval() {
     lock_guard guard(state.mutex);
     jit_eval();

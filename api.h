@@ -224,5 +224,21 @@ extern ENOKI_EXPORT void jitc_var_mark_dirty(uint32_t index);
 /// Return a human-readable summary of registered variables
 extern ENOKI_EXPORT const char *jitc_whos();
 
-// Evaluate currently all queued operations
+/**
+ * \brief Dispatch computation to multiple parallel streams?
+ *
+ * The JIT compiler attempts to fuse all queued computation into a single
+ * kernel to maximize efficiency. But computation involving arrays of different
+ * size must necessarily run in separate kernels, which means that it is
+ * serialized if taking place within the same device and stream. If desired,
+ * jitc_eval() can detect this and dispatch multiple kernels to separate
+ * streams that execute in parallel. The default is 'true' (i.e. to enable
+ * parallel dispatch).
+ */
+extern ENOKI_EXPORT void jitc_set_parallel_dispatch(bool enable);
+
+/// Return whether or not parallel dispatch is enabled
+extern ENOKI_EXPORT bool jitc_parallel_dispatch();
+
+/// Evaluate all computation that is queued on the current stream
 extern ENOKI_EXPORT void jitc_eval();

@@ -85,6 +85,7 @@ void jit_shutdown() {
         }
         cuda_check(cudaEventDestroy(stream->event));
         cuda_check(cudaStreamDestroy(stream->handle));
+        delete stream->release_chain;
         delete stream;
     }
     state.streams.clear();

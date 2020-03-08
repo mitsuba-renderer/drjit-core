@@ -47,7 +47,9 @@ const char *jit_mem_string(size_t size) {
     for (i = 0; i < 6 && value > 1024.f; ++i)
         value /= 1024.f;
 
-    snprintf(jit_mem_string_buf, 64, "%.3g %s", value, orders[i]);
+    snprintf(jit_mem_string_buf, 64,
+             i > 0 ? "%.3g %s" : "%.0f %s", value,
+             orders[i]);
 
     return jit_mem_string_buf;
 }

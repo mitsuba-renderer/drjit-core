@@ -18,6 +18,11 @@ struct Device {
     uint32_t thread_count;
 };
 
+struct ReleaseChain {
+    AllocInfoMap entries;
+    ReleaseChain *next = nullptr;
+};
+
 struct Stream {
     /// Enoki device index associated with this stream (*not* the CUDA device ID)
     uint32_t device = 0;
@@ -31,8 +36,19 @@ struct Stream {
     /// A CUDA event for synchronization purposes
     cudaEvent_t event = nullptr;
 
-    /// Memory regions that will be unused once the running kernel finishes
-    AllocInfoMap alloc_pending;
+    /**
+     * Memory regions that were freed via jit_free(), but which might still be
+     * used by a currently running kernel. They will be safe to re-use once the
+     * currently running kernel has finished.
+     */
+    ReleaseChain *release_chain = nullptr;
+
+    /**
+     * Keeps track of variables that have to be computed when jit_eval() is
+     * called. This includes externally referenced variables and statements with
+     * side effects
+     */
+    tsl::robin_set<uint32_t> todo;
 };
 
 using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
@@ -133,7 +149,7 @@ struct State {
 #endif
 
     /// Map of currently allocated memory regions
-    tsl::robin_map<void *, AllocInfo> alloc_used;
+    tsl::robin_pg_map<const void *, AllocInfo> alloc_used;
 
     /// Map of currently unused memory regions
     AllocInfoMap alloc_free;
@@ -149,7 +165,7 @@ struct State {
     tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher> variable_from_key;
 
     /// Maps from pointer addresses to variable indices
-    tsl::robin_map<const void *, uint32_t> variable_from_ptr;
+    tsl::robin_pg_map<const void *, uint32_t> variable_from_ptr;
 
     /// Current variable index
     uint32_t variable_index = 1;
@@ -157,12 +173,8 @@ struct State {
     /// Current operand for scatter/gather operations
     uint32_t scatter_gather_operand = 0;
 
-    /// TODO: maybe a TLS variable?
-    /// Enumerates "live" (externally referenced) variables and statements with side effects
-    tsl::robin_set<uint32_t> live;
-
-    /// Enumerates "dirty" variables (targets of 'scatter' operations that have not yet executed)
-    std::vector<uint32_t> dirty;
+    /// Dispatch to multiple streams that run concurrently?
+    bool parallel_dispatch = true;
 };
 
 /// RAII helper for locking a mutex (like std::lock_guard)

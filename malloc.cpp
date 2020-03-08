@@ -34,19 +34,26 @@ void* jit_malloc(AllocType type, size_t size) {
             jit_fail("jit_malloc(): device must be set using jit_device_set() "
                      "before allocating device pointer!");
         ai.device = stream->device;
-    }
 
-    // 1. Check for suitable recently freed arrays on the current stream
-    if (type != AllocType::Host) {
-        auto it = stream->alloc_pending.find(ai);
+        /* 1. Check for arrays with a pending free operation on the current
+              stream. This only works for device memory, as other allocation
+              flavors (host-pinned, shared, shared-read-mostly) can be accessed
+              from both CPU & GPU and might still be used. */
+        ReleaseChain *chain = stream->release_chain;
+        while (chain) {
+            auto it = chain->entries.find(ai);
 
-        if (it != state.alloc_free.end()) {
-            std::vector<void *> &list = it.value();
-            if (!list.empty()) {
-                ptr = list.back();
-                list.pop_back();
-                descr = "reused local";
+            if (it != state.alloc_free.end()) {
+                std::vector<void *> &list = it.value();
+                if (!list.empty()) {
+                    ptr = list.back();
+                    list.pop_back();
+                    descr = "reused local";
+                    break;
+                }
             }
+
+            chain = chain->next;
         }
     }
 #endif
@@ -165,7 +172,9 @@ void jit_free(void *ptr) {
         jit_log(Trace, "jit_free(" PTR ", type=%s, size=%zu)", ptr,
                 alloc_type_names[(int) ai.type], ai.size);
 
+    state.alloc_usage[(int) ai.type] -= ai.size;
     state.alloc_used.erase(it);
+
     if (ai.type == AllocType::Host) {
         state.alloc_free[ai].push_back(ptr);
     } else {
@@ -174,7 +183,11 @@ void jit_free(void *ptr) {
         if (unlikely(!stream))
             jit_fail("jit_free(): device and stream must be set! (call "
                      "jit_device_set() beforehand)!");
-        active_stream->alloc_pending[ai].push_back(ptr);
+
+        ReleaseChain *chain = stream->release_chain;
+        if (unlikely(!chain))
+            chain = stream->release_chain = new ReleaseChain();
+        chain->entries[ai].push_back(ptr);
 #else
         jit_fail("jit_free(): unsupported array type! (CUDA support was disabled.)");
 #endif
@@ -189,31 +202,38 @@ void jit_free_flush() {
         jit_fail("jit_free_flush(): device and stream must be set! (call "
                  "jit_device_set() beforehand)!");
 
-    AllocInfoMap *pending_tmp = new AllocInfoMap(std::move(stream->alloc_pending));
+    ReleaseChain *chain = stream->release_chain;
+    if (chain == nullptr || chain->entries.empty())
+        return;
+
+    ReleaseChain *chain_new = new ReleaseChain();
+    chain_new->next = chain;
+    stream->release_chain = chain_new;
 
     jit_log(Trace, "jit_free_flush(): scheduling %zu deallocation%s.",
-            pending_tmp->size(), pending_tmp->size() > 1 ? "s" : "");
+            chain->entries.size(), chain->entries.size() > 1 ? "s" : "");
 
     cuda_check(cudaLaunchHostFunc(
         stream->handle,
         [](void *ptr) {
             lock_guard guard(state.mutex);
-            AllocInfoMap *pending = (AllocInfoMap *) ptr;
+            ReleaseChain *chain0 = (ReleaseChain *) ptr,
+                         *chain1 = chain0->next;
 
             jit_log(Trace, "jit_free_flush(): performing %zu deallocation%s.",
-                    pending->size(), pending->size() > 1 ? "s" : "");
+                    chain1->entries.size(), chain1->entries.size() > 1 ? "s" : "");
 
-            for (auto &kv: *pending) {
+            for (auto &kv: chain1->entries) {
                 const AllocInfo &ai = kv.first;
-                state.alloc_usage[(int) ai.type] -= ai.size * kv.second.size();
                 std::vector<void *> &target = state.alloc_free[ai];
                 target.insert(target.end(), kv.second.begin(), kv.second.end());
             }
 
-            delete pending;
+            delete chain1;
+            chain0->next = nullptr;
         },
 
-        pending_tmp
+        chain_new
     ));
 #endif
 }

@@ -12,9 +12,9 @@ enum EnokiType { Invalid = 0, Int8, UInt8, Int16, UInt16,
 void test_1() {
     // Scalar initialization
     uint32_t idx = jitc_trace_append(EnokiType::UInt32, "mov.%t0 %r0, 1234");
-    // jit_eval();
     printf("%s\n", jitc_whos());
-
+    jitc_eval();
+    printf("%s\n", jitc_whos());
     jitc_dec_ref_ext(idx);
 }
 

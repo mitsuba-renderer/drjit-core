@@ -121,8 +121,8 @@ void jit_dec_ref_ext(uint32_t index) {
     jit_log(Trace, "jit_dec_ref_ext(%u) -> %u", index, v->ref_count_ext - 1);
     v->ref_count_ext--;
 
-    if (v->ref_count_ext == 0 && !v->side_effect)
-        state.live.erase(index);
+    if (v->ref_count_ext == 0)
+        active_stream->todo.erase(index);
 
     if (v->ref_count_ext == 0 && v->ref_count_int == 0)
         jit_var_free(index, v);
@@ -230,6 +230,11 @@ void jit_var_set_label(uint32_t index, const char *label) {
 
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_trace_append(uint32_t type, const char *cmd) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_trace_append(): device and stream must be set! "
+                  "(call jit_device_set() beforehand)!");
+
     Variable v;
     v.type = type;
     v.size = 1;
@@ -242,7 +247,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd) {
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_inc_ref_ext(idx, vo);
-    state.live.insert(idx);
+    stream->todo.insert(idx);
 
     return idx;
 }
@@ -250,7 +255,11 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd) {
 /// Append a variable to the instruction trace (1 operand)
 uint32_t jit_trace_append(uint32_t type, const char *cmd,
                           uint32_t arg1) {
-    if (unlikely(arg1 == 0))
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_trace_append(): device and stream must be set! "
+                  "(call jit_device_set() beforehand)!");
+    else if (unlikely(arg1 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
 
@@ -277,7 +286,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_inc_ref_ext(idx, vo);
-    state.live.insert(idx);
+    stream->todo.insert(idx);
 
     return idx;
 }
@@ -285,7 +294,11 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
 /// Append a variable to the instruction trace (2 operands)
 uint32_t jit_trace_append(uint32_t type, const char *cmd,
                           uint32_t arg1, uint32_t arg2) {
-    if (unlikely(arg1 == 0 || arg2 == 0))
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_trace_append(): device and stream must be set! "
+                  "(call jit_device_set() beforehand)!");
+    else if (unlikely(arg1 == 0 || arg2 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
 
@@ -322,7 +335,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_inc_ref_ext(idx, vo);
-    state.live.insert(idx);
+    stream->todo.insert(idx);
 
     return idx;
 }
@@ -330,7 +343,11 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
 /// Append a variable to the instruction trace (3 operands)
 uint32_t jit_trace_append(uint32_t type, const char *cmd,
                           uint32_t arg1, uint32_t arg2, uint32_t arg3) {
-    if (unlikely(arg1 == 0 || arg2 == 0 || arg3 == 0))
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_trace_append(): device and stream must be set! "
+                  "(call jit_device_set() beforehand)!");
+    else if (unlikely(arg1 == 0 || arg2 == 0 || arg3 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
 
@@ -379,7 +396,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_inc_ref_ext(idx, vo);
-    state.live.insert(idx);
+    stream->todo.insert(idx);
 
     return idx;
 }
@@ -439,6 +456,7 @@ uint32_t jit_var_copy_to_device(uint32_t type,
     if (unlikely(!stream))
         jit_fail("jit_var_copy_to_device(): device and stream must be set! "
                  "(call jit_device_set() beforehand)!");
+
     size_t total_size = size * jit_type_size(type);
 
     void *host_ptr   = jit_malloc(AllocType::HostPinned, total_size),
@@ -479,7 +497,6 @@ void jit_var_mark_side_effect(uint32_t index) {
 void jit_var_mark_dirty(uint32_t index) {
     jit_log(Debug, "jit_var_mark_dirty(%u)", index);
     jit_var(index)->dirty = true;
-    state.dirty.push_back(index);
 }
 
 const char *jit_whos() {

@@ -2,5 +2,5 @@
 
 #include "api.h"
 
-// Evaluate all currently queued operations
+/// Evaluate all computation that is queued on the current stream
 void jit_eval();

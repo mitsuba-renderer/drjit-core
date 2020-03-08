@@ -2,41 +2,46 @@
 
 #include "api.h"
 
+struct Variable;
+
+/// Look up a variable by its ID
+extern Variable *jit_var(uint32_t index);
+
 /// Append a variable to the instruction trace (no operand)
 extern uint32_t jit_trace_append(uint32_t type,
-                          const char *cmd);
+                                 const char *cmd);
 
 /// Append a variable to the instruction trace (1 operand)
 extern uint32_t jit_trace_append(uint32_t type,
-                          const char *cmd,
-                          uint32_t arg1);
+                                 const char *cmd,
+                                 uint32_t arg1);
 
 /// Append a variable to the instruction trace (2 operands)
 extern uint32_t jit_trace_append(uint32_t type,
-                          const char *cmd,
-                          uint32_t arg1,
-                          uint32_t arg2);
+                                 const char *cmd,
+                                 uint32_t arg1,
+                                 uint32_t arg2);
 
 /// Append a variable to the instruction trace (3 operands)
 extern uint32_t jit_trace_append(uint32_t type,
-                          const char *cmd,
-                          uint32_t arg1,
-                          uint32_t arg2,
-                          uint32_t arg3);
+                                 const char *cmd,
+                                 uint32_t arg1,
+                                 uint32_t arg2,
+                                 uint32_t arg3);
 
 /// Register an existing variable with the JIT compiler
 extern uint32_t jit_var_register(uint32_t type,
-                          void *ptr,
-                          size_t size,
-                          bool free);
+                                 void *ptr,
+                                 size_t size,
+                                 bool free);
 
 /// Register pointer literal as a special variable within the JIT compiler
 extern uint32_t jit_var_register_ptr(const void *ptr);
 
 /// Copy a memory region onto the device and return its variable index
 extern uint32_t jit_var_copy_to_device(uint32_t type,
-                                const void *value,
-                                size_t size);
+                                       const void *value,
+                                       size_t size);
 
 /// Increase the internal reference count of a given variable
 extern void jit_inc_ref_int(uint32_t index);
