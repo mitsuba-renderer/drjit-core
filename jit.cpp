@@ -89,6 +89,13 @@ void jit_shutdown() {
         delete stream;
     }
     state.streams.clear();
+
+    for (auto [key, value] : state.kernels) {
+        free((char *) key);
+        cuda_check(cuModuleUnload(value.first));
+    }
+    state.kernels.clear();
+
     active_stream = nullptr;
 
     jit_malloc_shutdown();

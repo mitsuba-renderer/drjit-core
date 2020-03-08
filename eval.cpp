@@ -21,6 +21,9 @@ static tsl::robin_set<std::pair<uint32_t, uint32_t>, pair_hash> visited;
 /// Maps between Enoki variable indices and program variables
 static tsl::robin_map<uint32_t, uint32_t> reg_map;
 
+/// Name of the last generated kernel
+static char kernel_name[9];
+
 // ====================================================================
 
 static const char *cuda_register_type(uint32_t type) {
@@ -115,9 +118,9 @@ static void jit_var_traverse(uint32_t size, uint32_t idx) {
 
 void jit_assemble(uint32_t size) {
     const std::vector<uint32_t> &sched = schedule[size];
-
     uint32_t n_vars_in = 0, n_vars_out = 0, n_vars_total = 0;
 
+    (void) timer();
     jit_log(Trace, "jit_assemble(size=%u): register map:", size);
 
     for (uint32_t index : sched) {
@@ -155,11 +158,144 @@ void jit_assemble(uint32_t size) {
         reg_map[index] = n_vars_total++;
     }
 
+    jit_log(Debug, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
+            size, n_vars_in, n_vars_out, n_vars_total);
+
     buffer.clear();
     buffer.put(".version 6.3\n");
     buffer.put(".target sm_61\n");
     buffer.put(".address_size 64\n");
 
+    // When a kernel doesn't have too many parameters, we can pass them directly
+    uint32_t n_vars_inout = n_vars_in + n_vars_out;
+    bool parameter_direct = n_vars_inout < 128;
+
+    // auto param_ref = [&](int index) {
+    //     if (parameter_direct)
+    //         buffer.fmt("[arg%u]", index);
+    //     else
+    //         buffer.fmt("[%arg + %u]", index * 8);
+    // };
+
+    if (parameter_direct) {
+        buffer.put(".visible .entry enoki_@@@@@@@@(.param .u32 size,\n");
+        for (uint32_t index = 0; index < n_vars_inout; ++index) {
+            buffer.fmt("                               .param .u64 arg%u%s\n",
+                       index, (index + 1 < n_vars_inout) ? "," : ") {");
+        }
+    } else {
+        buffer.put(".visible .entry enoki_@@@@@@@@(.param .u32 size,\n");
+        buffer.put("                               .param .u64 arg) {\n");
+    }
+
+    buffer.fmt("    .reg.b8 %%b<%u>;\n", n_vars_total);
+    buffer.fmt("    .reg.b16 %%w<%u>;\n", n_vars_total);
+    buffer.fmt("    .reg.b32 %%r<%u>;\n", n_vars_total);
+    buffer.fmt("    .reg.b64 %%rd<%u>, %%arg;\n", n_vars_total);
+    buffer.fmt("    .reg.f32 %%f<%u>;\n", n_vars_total);
+    buffer.fmt("    .reg.f64 %%d<%u>;\n", n_vars_total);
+    buffer.fmt("    .reg.pred %%p<%u>;\n\n", n_vars_total);
+    buffer.put("    // Grid-stride loop setup\n");
+
+    if (!parameter_direct)
+        buffer.put("    ld.param.u64 %arg, [arg];\n");
+
+    buffer.put("L0:\n");
+    buffer.put("    ret;\n");
+    buffer.put("}");
+
+    /// Replace '@'s in 'enoki_@@@@@@@@' by MD5 hash
+    snprintf(kernel_name, 9, "%08x", crc32(buffer.get(), buffer.size()));
+    memcpy(strchr(buffer.get(), '@'), kernel_name, 8);
+
+    jit_log(Trace, "%s", buffer.get());
+}
+
+void jit_run() {
+    float codegen_time = timer();
+
+    auto it = state.kernels.find(buffer.get());
+    CUmodule cu_module = nullptr;
+    CUfunction cu_kernel = nullptr;
+
+    if (it == state.kernels.end()) {
+        const uintptr_t log_size = 8192;
+        std::unique_ptr<char> error_log(new char[log_size]),
+                               info_log(new char[log_size]);
+        CUjit_option arg[5] = {
+            CU_JIT_INFO_LOG_BUFFER,
+            CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
+            CU_JIT_ERROR_LOG_BUFFER,
+            CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES,
+            CU_JIT_LOG_VERBOSE
+        };
+
+        void *argv[5] = {
+            (void *) info_log.get(),
+            (void *) log_size,
+            (void *) error_log.get(),
+            (void *) log_size,
+            (void *) 1
+        };
+
+        CUlinkState link_state;
+        cuda_check(cuLinkCreate(5, arg, argv, &link_state));
+
+        int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buffer.get(),
+                               buffer.size(), nullptr, 0, nullptr, nullptr);
+        if (rt != CUDA_SUCCESS)
+            jit_fail("jit_run(): linker error: %s", error_log.get());
+
+        void *link_output = nullptr;
+        size_t link_output_size = 0;
+        cuda_check(cuLinkComplete(link_state, &link_output, &link_output_size));
+        if (rt != CUDA_SUCCESS)
+            jit_fail("jit_run(): linker error: %s", error_log.get());
+
+        float link_time = timer();
+
+        if (state.log_level >= 2) {
+            char *ptxas_details = strstr(info_log.get(), "ptxas info");
+            char *details = strstr(info_log.get(), "\ninfo    : used");
+            if (details) {
+                details += 16;
+                char *details_len = strstr(details, "registers,");
+                if (details_len)
+                    details_len[9] = '\0';
+
+                jit_log(Debug, "jit_run(): cache %s, codegen: %s, %s: %s, %s.",
+                        ptxas_details ? "miss" : "hit",
+                        std::string(jit_time_string(codegen_time)).c_str(),
+                        ptxas_details ? "link" : "load",
+                        std::string(jit_time_string(link_time)).c_str(),
+                        details);
+            }
+
+            jit_log(Trace, "Detailed linker output:\n%s", info_log.get());
+        }
+
+        CUresult ret = cuModuleLoadData(&cu_module, link_output);
+        if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
+            jit_malloc_trim();
+            ret = cuModuleLoadData(&cu_module, link_output);
+        }
+        cuda_check(ret);
+
+        // Locate the kernel entry point
+        std::string name = std::string("enoki_") + kernel_name;
+        cuda_check(cuModuleGetFunction(&cu_kernel, cu_module, name.c_str()));
+
+        // Destroy the linker invocation
+        cuda_check(cuLinkDestroy(link_state));
+
+        char *str = (char *) malloc(buffer.size());
+        memcpy(str, buffer.get(), buffer.size() + 1);
+        state.kernels[str] = { cu_module, cu_kernel };
+    } else {
+        std::tie(cu_module, cu_kernel) = it.value();
+        jit_log(Debug, "jit_run(): cache hit, codegen: %s.",
+                jit_time_string(codegen_time));
+    }
 }
 
 /// Evaluate all computation that is queued on the current device & stream
@@ -208,9 +344,7 @@ void jit_eval() {
             cuda_check(cudaStreamWaitEvent(sub_stream->handle, stream->event, 0));
         }
 
-        // jit_run(std::move(std::get<0>(result)),
-        //         std::get<1>(result),
-        //         size, stream_idx, start, mid);
+        jit_run();
 
         if (parallel_dispatch) {
             cuda_check(cudaEventRecord(sub_stream->event, sub_stream->handle));

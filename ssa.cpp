@@ -540,9 +540,9 @@ const char *jit_whos() {
     buffer.fmt("   - Memory usage (ready)     : %s.\n",
                jit_mem_string(mem_size_ready));
     buffer.fmt("   - Memory usage (scheduled) : %s + %s = %s.\n",
-               jit_mem_string(mem_size_ready),
-               jit_mem_string(mem_size_scheduled),
-               jit_mem_string(mem_size_ready + mem_size_scheduled));
+               std::string(jit_mem_string(mem_size_ready)).c_str(),
+               std::string(jit_mem_string(mem_size_scheduled)).c_str(),
+               std::string(jit_mem_string(mem_size_ready + mem_size_scheduled)).c_str());
     buffer.fmt("   - Memory savings           : %s.\n\n",
                jit_mem_string(mem_size_arith));
 
@@ -551,8 +551,8 @@ const char *jit_whos() {
     for (int i = 0; i < 5; ++i)
         buffer.fmt("   - %-20s: %s used (max. %s).\n",
                    alloc_type_names[i],
-                   jit_mem_string(state.alloc_usage[i]),
-                   jit_mem_string(state.alloc_watermark[i]));
+                   std::string(jit_mem_string(state.alloc_usage[i])).c_str(),
+                   std::string(jit_mem_string(state.alloc_watermark[i])).c_str());
 
     return buffer.get();
 }

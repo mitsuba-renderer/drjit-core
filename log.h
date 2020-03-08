@@ -24,8 +24,14 @@ extern void jit_log(LogLevel level, const char* fmt, ...);
 /// Convert a number of bytes into a human-readable string (returns static buffer!)
 extern const char *jit_mem_string(size_t size);
 
+/// Convert a time in microseconds into a human-readable string (returns static buffer!)
+extern const char *jit_time_string(float us);
+
 #if defined(ENOKI_CUDA)
     #define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
     ENOKI_EXPORT extern void cuda_check_impl(CUresult errval, const char *file, const int line);
     ENOKI_EXPORT extern void cuda_check_impl(cudaError_t errval, const char *file, const int line);
 #endif
+
+/// Return the number of microseconds since the previous timer() call
+extern float timer();

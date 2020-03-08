@@ -2,6 +2,7 @@
 
 #include <tsl/robin_map.h>
 #include <tsl/robin_set.h>
+#include <string.h>
 
 inline void hash_combine(size_t& seed, size_t value) {
     /// From CityHash (https://github.com/google/cityhash)
@@ -22,6 +23,17 @@ struct pair_hash {
     }
 };
 
-
 /// CRC32 hash function
 uint32_t crc32(const void *ptr, size_t size);
+
+struct string_hash {
+    size_t operator()(const char *str) const {
+        return (size_t) crc32(str, strlen(str));
+    }
+};
+
+struct string_eq {
+    bool operator()(const char *str1, const char *str2) const {
+        return strcmp(str1, str2) == 0;
+    }
+};

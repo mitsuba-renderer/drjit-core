@@ -34,7 +34,7 @@ void jit_fail(const char* fmt, ...) {
     exit(EXIT_FAILURE);
 }
 
-static char jit_mem_string_buf[64];
+static char jit_string_buf[64];
 
 const char *jit_mem_string(size_t size) {
     const char *orders[] = {
@@ -47,11 +47,27 @@ const char *jit_mem_string(size_t size) {
     for (i = 0; i < 6 && value > 1024.f; ++i)
         value /= 1024.f;
 
-    snprintf(jit_mem_string_buf, 64,
+    snprintf(jit_string_buf, 64,
              i > 0 ? "%.3g %s" : "%.0f %s", value,
              orders[i]);
 
-    return jit_mem_string_buf;
+    return jit_string_buf;
+}
+
+const char *jit_time_string(float value) {
+    struct Order { float factor; const char* suffix; };
+    const Order orders[] = { { 0, "us" },   { 1000, "ms" },
+                             { 1000, "s" }, { 60, "m" },
+                             { 60, "h" },   { 24, "d" },
+                             { 7, "w" },    { (float) 52.1429, "y" } };
+
+    int i = 0;
+    for (i = 0; i < 7 && value > orders[i+1].factor; ++i)
+        value /= orders[i+1].factor;
+
+    snprintf(jit_string_buf, 64, "%.5g %s", value, orders[i].suffix);
+
+    return jit_string_buf;
 }
 
 #if defined(ENOKI_CUDA)
@@ -215,6 +231,18 @@ void cuda_check_impl(cudaError_t errval, const char *file, const int line) {
                 "%s:%i.\n", (int) errval, err_msg, file, line);
         exit(EXIT_FAILURE);
     }
+}
+
+
+static timespec timer_value { 0, 0 };
+
+float timer() {
+    timespec timer_value_2;
+    clock_gettime(CLOCK_REALTIME, &timer_value_2);
+    float result = (timer_value_2.tv_sec - timer_value.tv_sec) * 1e6f +
+                   (timer_value_2.tv_nsec - timer_value.tv_nsec) * 1e-3f;
+    timer_value = timer_value_2;
+    return result;
 }
 
 #endif

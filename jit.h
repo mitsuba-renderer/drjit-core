@@ -175,6 +175,12 @@ struct State {
 
     /// Dispatch to multiple streams that run concurrently?
     bool parallel_dispatch = true;
+
+    /// Hash table of previously compiled kernels
+    using Kernel = std::pair<CUmodule, CUfunction>;
+    tsl::robin_map<const char *, Kernel, string_hash, string_eq,
+                   std::allocator<std::pair<const char *, Kernel>>,
+                   true> kernels;
 };
 
 /// RAII helper for locking a mutex (like std::lock_guard)
@@ -277,6 +283,8 @@ public:
         } while (true);
         return written;
     }
+
+    size_t size() const { return m_cur - m_start; }
 
 private:
     void expand();
