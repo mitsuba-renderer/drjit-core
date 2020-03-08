@@ -272,7 +272,21 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
     return ptr_new;
 }
 
-void jit_malloc_trim() {
+static bool jit_malloc_trim_warning = false;
+
+void jit_malloc_trim(bool warn) {
+    if (warn && !jit_malloc_trim_warning) {
+        jit_log(
+            Warn,
+            "jit_malloc_trim(): Enoki exhausted the available memory and had "
+            "to flush its allocation cache to free up additional memory. This "
+            "is an expensive operation and will have a negative effect on "
+            "performance. You may want to change your computation so that it "
+            "uses less memory. This warning will only be displayed once.");
+
+        jit_malloc_trim_warning = true;
+    }
+
     AllocInfoMap alloc_free(std::move(state.alloc_free));
     unlock_guard guard(state.mutex);
 
@@ -321,7 +335,7 @@ void jit_malloc_trim() {
 }
 
 void jit_malloc_shutdown() {
-    jit_malloc_trim();
+    jit_malloc_trim(false);
 
     size_t leak_count[5] { 0 }, leak_size[5] { 0 };
     for (auto kv : state.alloc_used) {

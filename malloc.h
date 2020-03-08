@@ -50,7 +50,7 @@ extern void jit_free(void *ptr);
 extern void jit_free_flush();
 
 /// Release all unused memory to the GPU / OS
-extern void jit_malloc_trim();
+extern void jit_malloc_trim(bool warn = true);
 
 /// Shut down the memory allocator (calls \ref jit_malloc_trim() and reports leaks)
 extern void jit_malloc_shutdown();

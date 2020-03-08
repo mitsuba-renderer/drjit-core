@@ -69,7 +69,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType type) {
 
 void jitc_malloc_trim() {
     lock_guard guard(state.mutex);
-    jit_malloc_trim();
+    jit_malloc_trim(false);
 }
 
 void jitc_inc_ref_ext(uint32_t index) {

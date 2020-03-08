@@ -188,18 +188,38 @@ void jit_assemble(uint32_t size) {
         buffer.put("                               .param .u64 arg) {\n");
     }
 
-    buffer.fmt("    .reg.b8 %%b<%u>;\n", n_vars_total);
-    buffer.fmt("    .reg.b16 %%w<%u>;\n", n_vars_total);
-    buffer.fmt("    .reg.b32 %%r<%u>;\n", n_vars_total);
-    buffer.fmt("    .reg.b64 %%rd<%u>, %%arg;\n", n_vars_total);
-    buffer.fmt("    .reg.f32 %%f<%u>;\n", n_vars_total);
-    buffer.fmt("    .reg.f64 %%d<%u>;\n", n_vars_total);
-    buffer.fmt("    .reg.pred %%p<%u>;\n\n", n_vars_total);
+    uint32_t n_vars_decl = std::max(3u, n_vars_total);
+    buffer.fmt("    .reg.b8 %%b<%u>;\n", n_vars_decl);
+    buffer.fmt("    .reg.b16 %%w<%u>;\n", n_vars_decl);
+    buffer.fmt("    .reg.b32 %%r<%u>, %%size, %%index, %%step;\n", n_vars_decl);
+    buffer.fmt("    .reg.b64 %%rd<%u>, %%arg;\n", n_vars_decl);
+    buffer.fmt("    .reg.f32 %%f<%u>;\n", n_vars_decl);
+    buffer.fmt("    .reg.f64 %%d<%u>;\n", n_vars_decl);
+    buffer.fmt("    .reg.pred %%p<%u>, %%done;\n\n", n_vars_decl);
     buffer.put("    // Grid-stride loop setup\n");
+
+    buffer.put("    ld.param.u32 %size, [size];\n");
 
     if (!parameter_direct)
         buffer.put("    ld.param.u64 %arg, [arg];\n");
 
+    buffer.put("    mov.u32 %r0, %ctaid.x;\n");
+    buffer.put("    mov.u32 %r1, %ntid.x;\n");
+    buffer.put("    mov.u32 %r2, %tid.x;\n");
+    buffer.put("    mad.lo.u32 %index, %r0, %r1, %r2;\n");
+    buffer.put("    setp.ge.u32 %done, %index, %size;\n");
+    buffer.put("    @%done bra L0;\n");
+    buffer.put("\n");
+    buffer.put("    mov.u32 %r0, %nctaid.x;\n");
+    buffer.put("    mul.lo.u32 %step, %r1, %r0;\n");
+    buffer.put("\n");
+    buffer.put("L1:\n");
+    buffer.put("    // Loop body\n");;
+    buffer.put("\n");
+    buffer.put("    add.u32     %index, %index, %step;\n");
+    buffer.put("    setp.ge.u32 %done, %index, %size;\n");
+    buffer.put("    @!%done bra L1;\n");
+    buffer.put("\n");
     buffer.put("L0:\n");
     buffer.put("    ret;\n");
     buffer.put("}");
@@ -208,7 +228,133 @@ void jit_assemble(uint32_t size) {
     snprintf(kernel_name, 9, "%08x", crc32(buffer.get(), buffer.size()));
     memcpy(strchr(buffer.get(), '@'), kernel_name, 8);
 
-    jit_log(Trace, "%s", buffer.get());
+    jit_log(Debug, "%s", buffer.get());
+
+#if 0
+    oss << "    ld.param.u32 %r1, [size];" << std::endl
+        << "    mov.u32 %r4, %tid.x;" << std::endl
+        << "    mov.u32 %r5, %ctaid.x;" << std::endl
+        << "    mov.u32 %r6, %ntid.x;" << std::endl
+        << "    mad.lo.u32 %r2, %ctaid.x, %ntid.x, %tid.x;" << std::endl
+        << "    setp.ge.u32 %p0, %r2, %r1;" << std::endl
+        << "    @%p0 bra L0;" << std::endl
+        << std::endl
+        << "    mov.u32 %r7, %nctaid.x;" << std::endl
+        << "    mul.lo.u32 %r3, %r6, %r7;" << std::endl
+        << std::endl
+        << "L1:" << std::endl
+        << "    // Loop body" << std::endl;
+
+    for (uint32_t index : sweep) {
+        Variable &var = ctx[index];
+
+        if (var.is_collected() || (var.cmd.empty() && var.data == nullptr && !var.direct_pointer))
+            throw std::runtime_error(
+                "CUDABackend: found invalid/expired variable " + std::to_string(index) + " in schedule! ");
+
+        if (var.size != 1 && var.size != size)
+            throw std::runtime_error(
+                "CUDABackend: encountered arrays of incompatible size! (" +
+                std::to_string(size) + " vs " + std::to_string(var.size) + ")");
+
+        oss << std::endl;
+        if (var.data || var.direct_pointer) {
+            size_t idx = ptrs.size();
+            ptrs.push_back(var.data);
+
+            oss << std::endl
+                << "    // Load register " << cuda_register_name(var.type) << reg_map[index];
+            if (!var.label.empty())
+                oss << ": " << var.label;
+            oss << std::endl;
+
+            if (!var.direct_pointer) {
+                oss << "    " << (parameter_direct ? "ld.param.u64 %rd8, " : "ld.global.u64 %rd8, ")
+                    << param_ref(idx) << ";" << std::endl;
+
+                const char *load_instr = "ldu";
+                if (var.size != 1) {
+                    oss << "    mul.wide.u32 %rd9, %r2, " << cuda_register_size(var.type) << ";" << std::endl
+                        << "    add.u64 %rd8, %rd8, %rd9;" << std::endl;
+                    load_instr = "ld";
+                }
+                if (var.type != EnokiType::Bool) {
+                    oss << "    " << load_instr << ".global." << cuda_register_type(var.type) << " "
+                        << cuda_register_name(var.type) << reg_map[index] << ", [%rd8]"
+                        << ";" << std::endl;
+                } else {
+                    oss << "    " << load_instr << ".global.u8 %w1, [%rd8];" << std::endl
+                        << "    setp.ne.u16 " << cuda_register_name(var.type) << reg_map[index] << ", %w1, 0;";
+                }
+            } else {
+                oss << "    " << (parameter_direct ? "ld.param.u64 " : "ldu.global.u64 ")
+                    << cuda_register_name(var.type)
+                    << reg_map[index] << ", " << param_ref(idx) << ";";
+            }
+
+            n_in++;
+        } else {
+            if (!var.label.empty())
+                oss << "    // Compute register "
+                    << cuda_register_name(var.type) << reg_map[index] << ": "
+                    << var.label << std::endl;
+            cuda_render_cmd(oss, ctx, reg_map, index);
+            n_arith++;
+
+            if (var.side_effect) {
+                n_out++;
+                continue;
+            }
+
+            if (var.ref_count_ext == 0)
+                continue;
+
+            if (var.size != size)
+                continue;
+
+            size_t size_in_bytes =
+                cuda_var_size(index) * cuda_register_size(var.type);
+
+            var.data = cuda_malloc(size_in_bytes);
+            var.subtree_size = 1;
+#if !defined(NDEBUG)
+            if (ctx.log_level >= 4)
+                std::cerr << "cuda_eval(): allocated variable " << index
+                          << " -> " << var.data << " (" << size_in_bytes
+                          << " bytes)" << std::endl;
+#endif
+            size_t idx = ptrs.size();
+            ptrs.push_back(var.data);
+            n_out++;
+
+            oss << std::endl
+                << "    // Store register " << cuda_register_name(var.type) << reg_map[index];
+            if (!var.label.empty())
+                oss << ": " << var.label;
+            oss << std::endl
+                << "    " << (parameter_direct ? "ld.param.u64 %rd8, " : "ld.global.u64 %rd8, ")
+                << param_ref(idx) << ";" << std::endl;
+            if (var.size != 1) {
+                oss << "    mul.wide.u32 %rd9, %r2, " << cuda_register_size(var.type) << ";" << std::endl
+                    << "    add.u64 %rd8, %rd8, %rd9;" << std::endl;
+            }
+            if (var.type != EnokiType::Bool) {
+                oss << "    st.global." << cuda_register_type(var.type) << " [%rd8], "
+                    << cuda_register_name(var.type) << reg_map[index] << ";"
+                    << std::endl;
+            } else {
+                oss << "    selp.u16 %w1, 1, 0, " << cuda_register_name(var.type)
+                    << reg_map[index] << ";" << std::endl;
+                oss << "    st.global.u8" << " [%rd8], %w1;" << std::endl;
+            }
+        }
+    }
+
+    oss << std::endl
+        << "    add.u32     %r2, %r2, %r3;" << std::endl
+        << "    setp.ge.u32 %p0, %r2, %r1;" << std::endl
+        << "    @!%p0 bra L1;" << std::endl;
+#endif
 }
 
 void jit_run() {
@@ -244,35 +390,19 @@ void jit_run() {
         int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buffer.get(),
                                buffer.size(), nullptr, 0, nullptr, nullptr);
         if (rt != CUDA_SUCCESS)
-            jit_fail("jit_run(): linker error: %s", error_log.get());
+            jit_fail("Assembly dump:\n\n%s\n\njit_run(): linker error:\n\n%s",
+                     buffer.get(), error_log.get());
 
         void *link_output = nullptr;
         size_t link_output_size = 0;
         cuda_check(cuLinkComplete(link_state, &link_output, &link_output_size));
         if (rt != CUDA_SUCCESS)
-            jit_fail("jit_run(): linker error: %s", error_log.get());
+            jit_fail("Assembly dump:\n\n%s\n\njit_run(): linker error:\n\n%s",
+                     buffer.get(), error_log.get());
 
         float link_time = timer();
-
-        if (state.log_level >= 2) {
-            char *ptxas_details = strstr(info_log.get(), "ptxas info");
-            char *details = strstr(info_log.get(), "\ninfo    : used");
-            if (details) {
-                details += 16;
-                char *details_len = strstr(details, "registers,");
-                if (details_len)
-                    details_len[9] = '\0';
-
-                jit_log(Debug, "jit_run(): cache %s, codegen: %s, %s: %s, %s.",
-                        ptxas_details ? "miss" : "hit",
-                        std::string(jit_time_string(codegen_time)).c_str(),
-                        ptxas_details ? "link" : "load",
-                        std::string(jit_time_string(link_time)).c_str(),
-                        details);
-            }
-
-            jit_log(Trace, "Detailed linker output:\n%s", info_log.get());
-        }
+        bool cache_hit = strstr(info_log.get(), "ptxas info") != nullptr;
+        jit_log(Debug, "Detailed linker output:\n%s", info_log.get());
 
         CUresult ret = cuModuleLoadData(&cu_module, link_output);
         if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
@@ -285,12 +415,30 @@ void jit_run() {
         std::string name = std::string("enoki_") + kernel_name;
         cuda_check(cuModuleGetFunction(&cu_kernel, cu_module, name.c_str()));
 
+        /// Enoki doesn't use shared memory at all..
+        cuda_check(cuFuncSetAttribute(
+            cu_kernel, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
+        cuda_check(cuFuncSetAttribute(
+            cu_kernel, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
+            CU_SHAREDMEM_CARVEOUT_MAX_L1));
+
+        int regs;
+        cuda_check(cuFuncGetAttribute(
+            &regs, CU_FUNC_ATTRIBUTE_NUM_REGS, cu_kernel));
+
         // Destroy the linker invocation
         cuda_check(cuLinkDestroy(link_state));
 
         char *str = (char *) malloc(buffer.size());
         memcpy(str, buffer.get(), buffer.size() + 1);
         state.kernels[str] = { cu_module, cu_kernel };
+
+        jit_log(Debug, "jit_run(): cache %s, codegen: %s, %s: %s, %i registers.",
+                cache_hit ? "miss" : "hit",
+                std::string(jit_time_string(codegen_time)).c_str(),
+                cache_hit ? "link" : "load",
+                std::string(jit_time_string(link_time)).c_str(),
+                regs);
     } else {
         std::tie(cu_module, cu_kernel) = it.value();
         jit_log(Debug, "jit_run(): cache hit, codegen: %s.",

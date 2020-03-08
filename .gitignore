@@ -1,0 +1,7 @@
+/.clangd
+/compile_commands.json
+*.cmake
+CMakeCache.txt
+CMakeFiles
+*.ninja
+\.ninja_*
