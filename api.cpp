@@ -171,6 +171,11 @@ void jitc_var_mark_dirty(uint32_t index) {
     jit_var_mark_side_effect(index);
 }
 
+void jitc_set_scatter_gather_operand(uint32_t index, bool gather) {
+    lock_guard guard(state.mutex);
+    jit_set_scatter_gather_operand(index, gather);
+}
+
 const char *jitc_whos() {
     lock_guard guard(state.mutex);
     return jit_whos();
@@ -189,4 +194,9 @@ bool jitc_parallel_dispatch() {
 void jitc_eval() {
     lock_guard guard(state.mutex);
     jit_eval();
+}
+
+void jitc_eval_var(uint32_t index) {
+    lock_guard guard(state.mutex);
+    jit_eval_var(index);
 }

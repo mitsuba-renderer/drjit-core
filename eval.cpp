@@ -595,3 +595,10 @@ void jit_eval() {
     jit_free_flush();
     jit_log(Debug, "jit_eval(): done.");
 }
+
+/// Call jit_eval() only if the variable 'index' requires evaluation
+void jit_eval_var(uint32_t index) {
+    Variable *v = jit_var(index);
+    if (v->data == nullptr || v->dirty)
+        jit_eval();
+}

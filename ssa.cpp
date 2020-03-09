@@ -489,16 +489,29 @@ void jit_var_migrate(uint32_t idx, AllocType type) {
     v->data = jit_malloc_migrate(v->data, type);
 }
 
+/// Indicate that evaluation of the given variable causes side effects
 void jit_var_mark_side_effect(uint32_t index) {
     jit_log(Debug, "jit_var_mark_side_effect(%u)", index);
     jit_var(index)->side_effect = true;
 }
 
+/// Mark variable as dirty, e.g. because of pending scatter operations
 void jit_var_mark_dirty(uint32_t index) {
     jit_log(Debug, "jit_var_mark_dirty(%u)", index);
     jit_var(index)->dirty = true;
 }
 
+/// Inform the JIT that the next scatter/gather references var. 'index'
+void jit_set_scatter_gather_operand(uint32_t index, bool gather) {
+    if (index == 0)
+        return;
+    Variable *v = jit_var(index);
+    if (v->data == nullptr || (gather && v->dirty))
+        jit_eval();
+    state.scatter_gather_operand = index;
+}
+
+/// Return a human-readable summary of registered variables
 const char *jit_whos() {
     buffer.clear();
     buffer.put("\n  ID        Type   E/I Refs   Size        Memory     Ready    Label");
@@ -556,5 +569,3 @@ const char *jit_whos() {
 
     return buffer.get();
 }
-
-

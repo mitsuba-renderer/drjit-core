@@ -242,3 +242,6 @@ extern ENOKI_EXPORT bool jitc_parallel_dispatch();
 
 /// Evaluate all computation that is queued on the current stream
 extern ENOKI_EXPORT void jitc_eval();
+
+/// Call jitc_eval() only if the variable 'index' requires evaluation
+extern ENOKI_EXPORT void jitc_eval_var(uint32_t index);
