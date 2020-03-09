@@ -148,23 +148,6 @@ void jit_assemble(uint32_t size) {
         else if (unlikely(v->data == nullptr && !v->direct_pointer && v->stmt == nullptr))
             jit_fail("jit_assemble(): schedule contains variable %u with empty statement!", index);
 
-        if (v->data || v->direct_pointer) {
-            n_vars_in++;
-            push = true;
-        } else if (!v->side_effect && v->ref_count_ext > 0 && v->size == size) {
-            size_t var_size = (size_t) size * jit_type_size(v->type);
-            v->data = jit_malloc(AllocType::Device, var_size);
-            n_vars_out++;
-            push = true;
-        }
-
-        if (push) {
-            if (kernel_args.size() < CUDA_MAX_KERNEL_PARAMETERS - 1)
-                kernel_args.push_back(v->data);
-            else
-                kernel_args_extra.push_back(v->data);
-        }
-
         if (state.log_level >= 4) {
             buffer.clear();
             buffer.fmt("   - %s%u -> %u",
@@ -183,6 +166,23 @@ void jit_assemble(uint32_t size) {
                 buffer.put(" [out]");
 
             jit_log(Trace, "%s", buffer.get());
+        }
+
+        if (v->data || v->direct_pointer) {
+            n_vars_in++;
+            push = true;
+        } else if (!v->side_effect && v->ref_count_ext > 0 && v->size == size) {
+            size_t var_size = (size_t) size * jit_type_size(v->type);
+            v->data = jit_malloc(AllocType::Device, var_size);
+            n_vars_out++;
+            push = true;
+        }
+
+        if (push) {
+            if (kernel_args.size() < CUDA_MAX_KERNEL_PARAMETERS - 1)
+                kernel_args.push_back(v->data);
+            else
+                kernel_args_extra.push_back(v->data);
         }
 
         reg_map[index] = n_vars_total++;
@@ -455,39 +455,48 @@ void jit_run(uint32_t size) {
         memcpy(str, buffer.get(), buffer.size() + 1);
 
         cuda_check(cuOccupancyMaxPotentialBlockSize(
-            &kernel.block_count, &kernel.thread_count, kernel.cu_func, nullptr,
-            0, 0));
+            &kernel.block_count, &kernel.thread_count,
+            kernel.cu_func, nullptr, 0, 0));
 
         state.kernels[str] = kernel;
 
-        jit_log(Debug, "jit_run(): cache %s, codegen: %s, %s: %s, %i registers, %i threads, %i blocks.",
+        jit_log(Debug,
+                "jit_run(): cache %s, codegen: %s, %s: %s, %i registers, %i "
+                "threads, %i blocks.",
                 cache_hit ? "miss" : "hit",
                 std::string(jit_time_string(codegen_time)).c_str(),
                 cache_hit ? "link" : "load",
-                std::string(jit_time_string(link_time)).c_str(),
-                reg_count, kernel.thread_count, kernel.block_count);
+                std::string(jit_time_string(link_time)).c_str(), reg_count,
+                kernel.thread_count, kernel.block_count);
     } else {
         kernel = it.value();
         jit_log(Debug, "jit_run(): cache hit, codegen: %s.",
                 jit_time_string(codegen_time));
     }
 
+    size_t kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
+
     void *config[] = {
         CU_LAUNCH_PARAM_BUFFER_POINTER,
         kernel_args.data(),
         CU_LAUNCH_PARAM_BUFFER_SIZE,
-        (void *) ((size_t) kernel_args.size() * sizeof(uint64_t)),
+        &kernel_args_size,
         CU_LAUNCH_PARAM_END
     };
 
-    // uint32_t thread_count = ctx.thread_count,
-    //          block_count = ctx.block_count;
-    //
-    // if (size == 1)
-    //     thread_count = block_count = 1;
-    //
-    // cuda_check(cuLaunchKernel(cu_kernel, block_count, 1, 1, thread_count,
-    //                           1, 1, 0, active_stream->handle, nullptr, config));
+    uint32_t thread_count = kernel.thread_count,
+             block_count  = kernel.block_count;
+
+    /// Reduce the number of blocks when processing a very small amount of data
+    if (size <= thread_count) {
+        block_count = 1;
+        thread_count = size;
+    } else if (size <= thread_count * block_count) {
+        block_count = (size + thread_count - 1) / thread_count;
+    }
+
+    cuda_check(cuLaunchKernel(kernel.cu_func, block_count, 1, 1, thread_count,
+                              1, 1, 0, active_stream->handle, nullptr, config));
 }
 
 /// Evaluate all computation that is queued on the current device & stream

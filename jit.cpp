@@ -94,6 +94,22 @@ void jit_shutdown() {
     }
     state.kernels.clear();
 
+    if (state.log_level >= Warn) {
+        uint32_t n_leaked = 0;
+        for (auto &var : state.variables) {
+            if (n_leaked == 0)
+                jit_log(Warn, "jit_shutdown(): detected variable leaks:");
+            if (n_leaked < 10)
+                jit_log(Warn, " - variable %u is still referenced!", var.first);
+            else if (n_leaked == 10)
+                jit_log(Warn, " - (skipping remainder)");
+            ++n_leaked;
+        }
+
+        if (n_leaked > 0)
+            jit_log(Warn, "jit_shutdown(): %u variables are still referenced!", n_leaked);
+    }
+
     jit_malloc_shutdown();
     state.devices.clear();
     state.initialized = false;
