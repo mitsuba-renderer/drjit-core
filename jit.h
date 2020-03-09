@@ -12,17 +12,21 @@
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 #if defined(ENOKI_CUDA)
-struct Device {
-    uint32_t id;
-    uint32_t block_count;
-    uint32_t thread_count;
+/// A CUDA kernel and its preferred lauch configuration
+struct Kernel {
+    CUmodule cu_module = nullptr;
+    CUfunction cu_func = nullptr;
+    int thread_count = 0;
+    int block_count = 0;
 };
 
+/// Keeps track of asynchronous deallocations via jit_free()
 struct ReleaseChain {
     AllocInfoMap entries;
     ReleaseChain *next = nullptr;
 };
 
+/// Represents a single CUDA stream and events to synchronize with others
 struct Stream {
     /// Enoki device index associated with this stream (*not* the CUDA device ID)
     uint32_t device = 0;
@@ -61,7 +65,7 @@ enum EnokiType { Invalid = 0, Int8, UInt8, Int16, UInt16,
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     /// Intermediate language statement
-    char *cmd = nullptr;
+    char *stmt = nullptr;
 
     /// Data type of this variable
     uint32_t type = (uint32_t) EnokiType::Invalid;
@@ -141,7 +145,7 @@ struct State {
     uint32_t log_level = 0;
 
     /// Available devices and their CUDA IDs
-    std::vector<Device> devices;
+    std::vector<int> devices;
 
 #if defined(ENOKI_CUDA)
     /// Maps Enoki (device index, stream index) pairs to a Stream data structure
@@ -177,7 +181,6 @@ struct State {
     bool parallel_dispatch = true;
 
     /// Hash table of previously compiled kernels
-    using Kernel = std::pair<CUmodule, CUfunction>;
     tsl::robin_map<const char *, Kernel, string_hash, string_eq,
                    std::allocator<std::pair<const char *, Kernel>>,
                    true> kernels;

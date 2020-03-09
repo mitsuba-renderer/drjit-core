@@ -41,30 +41,27 @@ void jit_init() {
 
 
         cuda_check(cudaSetDevice(i));
-        Device device;
-        device.id = (uint32_t) i;
-        device.block_count = prop.multiProcessorCount * 4;
-        device.thread_count = 128;
-        state.devices.push_back(device);
+        state.devices.push_back(i);
     }
 
     // Enable P2P communication if possible
-    for (const Device &da : state.devices) {
-        for (const Device &db : state.devices) {
-            if (da.id == db.id)
+    for (int da : state.devices) {
+        for (int db : state.devices) {
+            if (da == db)
                 continue;
 
             int peer_ok = 0;
-            cuda_check(cudaDeviceCanAccessPeer(&peer_ok, da.id, db.id));
+            cuda_check(cudaDeviceCanAccessPeer(&peer_ok, da, db));
             if (peer_ok) {
                 jit_log(Debug, " - Enabling peer access from device %i -> %i.",
-                        da.id, db.id);
-                cuda_check(cudaSetDevice(da.id));
-                cuda_check(cudaDeviceEnablePeerAccess(db.id, 0));
+                        da, db);
+                cuda_check(cudaSetDevice(da));
+                cuda_check(cudaDeviceEnablePeerAccess(db, 0));
             }
         }
     }
 #endif
+
     state.scatter_gather_operand = 0;
     state.initialized = true;
 }
@@ -89,14 +86,13 @@ void jit_shutdown() {
         delete stream;
     }
     state.streams.clear();
+    active_stream = nullptr;
 
     for (auto [key, value] : state.kernels) {
         free((char *) key);
-        cuda_check(cuModuleUnload(value.first));
+        cuda_check(cuModuleUnload(value.cu_module));
     }
     state.kernels.clear();
-
-    active_stream = nullptr;
 
     jit_malloc_shutdown();
     state.devices.clear();
@@ -121,7 +117,7 @@ void jit_device_set(uint32_t device, uint32_t stream) {
             return;
         jit_log(Trace, "jit_device_set(device=%i, stream=%i): selecting stream.", device, stream);
         if (stream_ptr->device != active_stream_ptr->device)
-            cuda_check(cudaSetDevice(state.devices[device].id));
+            cuda_check(cudaSetDevice(state.devices[device]));
     } else {
         jit_log(Trace, "jit_device_set(device=%i, stream=%i): creating stream.", device, stream);
         cudaStream_t handle = nullptr;

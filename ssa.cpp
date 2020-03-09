@@ -65,7 +65,7 @@ void jit_var_free(uint32_t index, Variable *v) {
         jit_free(v->data);
 
     // Free strings
-    free(v->cmd);
+    free(v->stmt);
     free(v->label);
 
     if (v->direct_pointer) {
@@ -146,11 +146,11 @@ void jit_dec_ref_int(uint32_t index) {
 
 /// Append the given variable to the instruction trace and return its ID
 std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
-    v.cmd = strdup(v.cmd);
+    v.stmt = strdup(v.stmt);
 
 #if defined(ENOKI_CUDA)
     if (v.type != EnokiType::Float32) {
-        char *offset = strstr(v.cmd, ".ftz");
+        char *offset = strstr(v.stmt, ".ftz");
         if (offset)
             strcat(offset, offset + 4);
     }
@@ -171,7 +171,7 @@ std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
         key_it.value() = idx;
         v_out = &var_it.value();
     } else {
-        free(v.cmd);
+        free(v.stmt);
         idx = key_it.value();
         v_out = jit_var(idx);
     }
@@ -229,7 +229,7 @@ void jit_var_set_label(uint32_t index, const char *label) {
 }
 
 /// Append a variable to the instruction trace (no operands)
-uint32_t jit_trace_append(uint32_t type, const char *cmd) {
+uint32_t jit_trace_append(uint32_t type, const char *stmt) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_trace_append(): device and stream must be set! "
@@ -238,12 +238,12 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd) {
     Variable v;
     v.type = type;
     v.size = 1;
-    v.cmd = (char *) cmd;
+    v.stmt = (char *) stmt;
     v.tsize = 1;
 
     auto [idx, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u): %s%s.",
-            idx, vo->cmd,
+            idx, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_inc_ref_ext(idx, vo);
@@ -253,7 +253,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd) {
 }
 
 /// Append a variable to the instruction trace (1 operand)
-uint32_t jit_trace_append(uint32_t type, const char *cmd,
+uint32_t jit_trace_append(uint32_t type, const char *stmt,
                           uint32_t arg1) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
@@ -268,7 +268,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
     Variable v;
     v.type = type;
     v.size = v1->size;
-    v.cmd = (char *) cmd;
+    v.stmt = (char *) stmt;
     v.dep[0] = arg1;
     v.tsize = 1 + v1->tsize;
 
@@ -282,7 +282,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
 
     auto [idx, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u): %s%s.",
-            idx, arg1, vo->cmd,
+            idx, arg1, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_inc_ref_ext(idx, vo);
@@ -292,7 +292,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
 }
 
 /// Append a variable to the instruction trace (2 operands)
-uint32_t jit_trace_append(uint32_t type, const char *cmd,
+uint32_t jit_trace_append(uint32_t type, const char *stmt,
                           uint32_t arg1, uint32_t arg2) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
@@ -308,7 +308,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
     Variable v;
     v.type = type;
     v.size = std::max(v1->size, v2->size);
-    v.cmd = (char *) cmd;
+    v.stmt = (char *) stmt;
     v.dep[0] = arg1;
     v.dep[1] = arg2;
     v.tsize = 1 + v1->tsize + v2->tsize;
@@ -318,7 +318,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
         jit_raise(
             "jit_trace_append(): arithmetic involving arrays of incompatible "
             "size (%zu and %zu). The instruction was \"%s\".",
-            v1->size, v2->size, cmd);
+            v1->size, v2->size, stmt);
     } else if (unlikely(v1->dirty || v2->dirty)) {
         jit_eval();
         v1 = jit_var(arg1);
@@ -331,7 +331,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
 
     auto [idx, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s.",
-            idx, arg1, arg2, vo->cmd,
+            idx, arg1, arg2, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_inc_ref_ext(idx, vo);
@@ -341,7 +341,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
 }
 
 /// Append a variable to the instruction trace (3 operands)
-uint32_t jit_trace_append(uint32_t type, const char *cmd,
+uint32_t jit_trace_append(uint32_t type, const char *stmt,
                           uint32_t arg1, uint32_t arg2, uint32_t arg3) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
@@ -358,7 +358,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
     Variable v;
     v.type = type;
     v.size = std::max({ v1->size, v2->size, v3->size });
-    v.cmd = (char *) cmd;
+    v.stmt = (char *) stmt;
     v.dep[0] = arg1;
     v.dep[1] = arg2;
     v.dep[2] = arg3;
@@ -370,7 +370,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
         jit_raise(
             "jit_trace_append(): arithmetic involving arrays of incompatible "
             "size (%zu, %zu, and %zu). The instruction was \"%s\".",
-            v1->size, v2->size, v3->size, cmd);
+            v1->size, v2->size, v3->size, stmt);
     } else if (unlikely(v1->dirty || v2->dirty || v3->dirty)) {
         jit_eval();
         v1 = jit_var(arg1);
@@ -384,7 +384,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
     jit_inc_ref_int(arg3, v3);
 
 #if defined(ENOKI_CUDA)
-    if (strstr(cmd, "st.global") || strstr(cmd, "atom.global.add")) {
+    if (strstr(stmt, "st.global") || strstr(stmt, "atom.global.add")) {
         v.extra_dep = state.scatter_gather_operand;
         jit_inc_ref_ext(v.extra_dep);
     }
@@ -392,7 +392,7 @@ uint32_t jit_trace_append(uint32_t type, const char *cmd,
 
     auto [idx, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s.",
-            idx, arg1, arg2, arg3, vo->cmd,
+            idx, arg1, arg2, arg3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_inc_ref_ext(idx, vo);

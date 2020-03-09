@@ -3,6 +3,8 @@
 #include "ssa.h"
 #include "eval.h"
 
+#define CUDA_MAX_KERNEL_PARAMETERS 4
+
 // ====================================================================
 //  The following data structures are temporarily used during program
 //  generation. They are declared as global variables to enable memory
@@ -23,6 +25,9 @@ static tsl::robin_map<uint32_t, uint32_t> reg_map;
 
 /// Name of the last generated kernel
 static char kernel_name[9];
+
+/// Input/output arguments of the kernel being evaluated
+static std::vector<void *> kernel_args, kernel_args_extra;
 
 // ====================================================================
 
@@ -123,16 +128,41 @@ void jit_assemble(uint32_t size) {
     (void) timer();
     jit_log(Trace, "jit_assemble(size=%u): register map:", size);
 
+    /// Push the size argument
+    void *tmp = 0;
+    memcpy(&tmp, &size, sizeof(uint32_t));
+    kernel_args.clear();
+    kernel_args_extra.clear();
+    kernel_args.push_back(tmp);
+    n_vars_in++;
+
     for (uint32_t index : sched) {
-        const Variable *v = jit_var(index);
+        Variable *v = jit_var(index);
+        bool push = true;
+
+        if (unlikely(v->ref_count_int == 0 && v->ref_count_ext == 0))
+            jit_fail("jit_assemble(): schedule contains unreferenced variable %u!", index);
+        else if (unlikely(v->size != 1 && v->size != size))
+            jit_fail("jit_assemble(): schedule contains variable %u with incompatible size "
+                     "(%u and %u)!", index, size, v->size);
+        else if (unlikely(v->data == nullptr && !v->direct_pointer && v->stmt == nullptr))
+            jit_fail("jit_assemble(): schedule contains variable %u with empty statement!", index);
 
         if (v->data || v->direct_pointer) {
             n_vars_in++;
-        } else {
-            if (!v->side_effect &&
-                 v->ref_count_ext > 0 &&
-                 v->size == size)
+            push = true;
+        } else if (!v->side_effect && v->ref_count_ext > 0 && v->size == size) {
+            size_t var_size = (size_t) size * jit_type_size(v->type);
+            v->data = jit_malloc(AllocType::Device, var_size);
             n_vars_out++;
+            push = true;
+        }
+
+        if (push) {
+            if (kernel_args.size() < CUDA_MAX_KERNEL_PARAMETERS - 1)
+                kernel_args.push_back(v->data);
+            else
+                kernel_args_extra.push_back(v->data);
         }
 
         if (state.log_level >= 4) {
@@ -158,6 +188,21 @@ void jit_assemble(uint32_t size) {
         reg_map[index] = n_vars_total++;
     }
 
+    if (!kernel_args_extra.empty()) {
+        size_t args_extra_size = kernel_args_extra.size() * sizeof(uint64_t);
+        void *args_extra_host = jit_malloc(AllocType::HostPinned, args_extra_size);
+        void *args_extra_dev  = jit_malloc(AllocType::Device, args_extra_size);
+
+        memcpy(args_extra_host, kernel_args_extra.data(), args_extra_size);
+        cuda_check(cudaMemcpyAsync(args_extra_dev, args_extra_host, args_extra_size,
+                                   cudaMemcpyHostToDevice, active_stream->handle));
+
+        kernel_args.push_back(args_extra_dev);
+        jit_free(args_extra_host);
+        // Safe, because there won't be further allocations until after this kernel has executed.
+        jit_free(args_extra_dev);
+    }
+
     jit_log(Debug, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
             size, n_vars_in, n_vars_out, n_vars_total);
 
@@ -166,33 +211,23 @@ void jit_assemble(uint32_t size) {
     buffer.put(".target sm_61\n");
     buffer.put(".address_size 64\n");
 
-    // When a kernel doesn't have too many parameters, we can pass them directly
-    uint32_t n_vars_inout = n_vars_in + n_vars_out;
-    bool parameter_direct = n_vars_inout < 128;
-
     // auto param_ref = [&](int index) {
-    //     if (parameter_direct)
+    //     if (index < CUDA_MAX_KERNEL_PARAMETERS - 1)
     //         buffer.fmt("[arg%u]", index);
     //     else
-    //         buffer.fmt("[%arg + %u]", index * 8);
+    //         buffer.fmt("[%arg_extra + %u]", index * 8);
     // };
 
-    if (parameter_direct) {
-        buffer.put(".visible .entry enoki_@@@@@@@@(.param .u32 size,\n");
-        for (uint32_t index = 0; index < n_vars_inout; ++index) {
-            buffer.fmt("                               .param .u64 arg%u%s\n",
-                       index, (index + 1 < n_vars_inout) ? "," : ") {");
-        }
-    } else {
-        buffer.put(".visible .entry enoki_@@@@@@@@(.param .u32 size,\n");
-        buffer.put("                               .param .u64 arg) {\n");
-    }
+    buffer.put(".visible .entry enoki_@@@@@@@@(.param .u32 size,\n");
+    for (uint32_t index = 1; index < kernel_args.size(); ++index)
+        buffer.fmt("                               .param .u64 arg%u%s\n",
+                   index - 1, (index + 1 < kernel_args.size()) ? "," : ") {");
 
     uint32_t n_vars_decl = std::max(3u, n_vars_total);
     buffer.fmt("    .reg.b8 %%b<%u>;\n", n_vars_decl);
     buffer.fmt("    .reg.b16 %%w<%u>;\n", n_vars_decl);
     buffer.fmt("    .reg.b32 %%r<%u>, %%size, %%index, %%step;\n", n_vars_decl);
-    buffer.fmt("    .reg.b64 %%rd<%u>, %%arg;\n", n_vars_decl);
+    buffer.fmt("    .reg.b64 %%rd<%u>, %%arg_extra;\n", n_vars_decl);
     buffer.fmt("    .reg.f32 %%f<%u>;\n", n_vars_decl);
     buffer.fmt("    .reg.f64 %%d<%u>;\n", n_vars_decl);
     buffer.fmt("    .reg.pred %%p<%u>, %%done;\n\n", n_vars_decl);
@@ -200,8 +235,9 @@ void jit_assemble(uint32_t size) {
 
     buffer.put("    ld.param.u32 %size, [size];\n");
 
-    if (!parameter_direct)
-        buffer.put("    ld.param.u64 %arg, [arg];\n");
+    if (!kernel_args_extra.empty())
+        buffer.fmt("    ld.param.u64 %arg_extra, [arg_%u];\n",
+                   CUDA_MAX_KERNEL_PARAMETERS - 1);
 
     buffer.put("    mov.u32 %r0, %ctaid.x;\n");
     buffer.put("    mov.u32 %r1, %ntid.x;\n");
@@ -216,7 +252,7 @@ void jit_assemble(uint32_t size) {
     buffer.put("L1:\n");
     buffer.put("    // Loop body\n");;
     buffer.put("\n");
-    buffer.put("    add.u32     %index, %index, %step;\n");
+    buffer.put("    add.u32 %index, %index, %step;\n");
     buffer.put("    setp.ge.u32 %done, %index, %size;\n");
     buffer.put("    @!%done bra L1;\n");
     buffer.put("\n");
@@ -231,20 +267,6 @@ void jit_assemble(uint32_t size) {
     jit_log(Debug, "%s", buffer.get());
 
 #if 0
-    oss << "    ld.param.u32 %r1, [size];" << std::endl
-        << "    mov.u32 %r4, %tid.x;" << std::endl
-        << "    mov.u32 %r5, %ctaid.x;" << std::endl
-        << "    mov.u32 %r6, %ntid.x;" << std::endl
-        << "    mad.lo.u32 %r2, %ctaid.x, %ntid.x, %tid.x;" << std::endl
-        << "    setp.ge.u32 %p0, %r2, %r1;" << std::endl
-        << "    @%p0 bra L0;" << std::endl
-        << std::endl
-        << "    mov.u32 %r7, %nctaid.x;" << std::endl
-        << "    mul.lo.u32 %r3, %r6, %r7;" << std::endl
-        << std::endl
-        << "L1:" << std::endl
-        << "    // Loop body" << std::endl;
-
     for (uint32_t index : sweep) {
         Variable &var = ctx[index];
 
@@ -357,17 +379,16 @@ void jit_assemble(uint32_t size) {
 #endif
 }
 
-void jit_run() {
+void jit_run(uint32_t size) {
     float codegen_time = timer();
 
     auto it = state.kernels.find(buffer.get());
-    CUmodule cu_module = nullptr;
-    CUfunction cu_kernel = nullptr;
+    Kernel kernel;
 
     if (it == state.kernels.end()) {
         const uintptr_t log_size = 8192;
-        std::unique_ptr<char> error_log(new char[log_size]),
-                               info_log(new char[log_size]);
+        std::unique_ptr<char[]> error_log(new char[log_size]),
+                                 info_log(new char[log_size]);
         CUjit_option arg[5] = {
             CU_JIT_INFO_LOG_BUFFER,
             CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
@@ -404,46 +425,69 @@ void jit_run() {
         bool cache_hit = strstr(info_log.get(), "ptxas info") != nullptr;
         jit_log(Debug, "Detailed linker output:\n%s", info_log.get());
 
-        CUresult ret = cuModuleLoadData(&cu_module, link_output);
+        CUresult ret = cuModuleLoadData(&kernel.cu_module, link_output);
         if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
             jit_malloc_trim();
-            ret = cuModuleLoadData(&cu_module, link_output);
+            ret = cuModuleLoadData(&kernel.cu_module, link_output);
         }
         cuda_check(ret);
 
         // Locate the kernel entry point
         std::string name = std::string("enoki_") + kernel_name;
-        cuda_check(cuModuleGetFunction(&cu_kernel, cu_module, name.c_str()));
+        cuda_check(cuModuleGetFunction(&kernel.cu_func, kernel.cu_module,
+                                       name.c_str()));
 
         /// Enoki doesn't use shared memory at all..
         cuda_check(cuFuncSetAttribute(
-            cu_kernel, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
+            kernel.cu_func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
         cuda_check(cuFuncSetAttribute(
-            cu_kernel, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
+            kernel.cu_func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
             CU_SHAREDMEM_CARVEOUT_MAX_L1));
 
-        int regs;
+        int reg_count;
         cuda_check(cuFuncGetAttribute(
-            &regs, CU_FUNC_ATTRIBUTE_NUM_REGS, cu_kernel));
+            &reg_count, CU_FUNC_ATTRIBUTE_NUM_REGS, kernel.cu_func));
 
         // Destroy the linker invocation
         cuda_check(cuLinkDestroy(link_state));
 
-        char *str = (char *) malloc(buffer.size());
+        char *str = (char *) malloc(buffer.size() + 1);
         memcpy(str, buffer.get(), buffer.size() + 1);
-        state.kernels[str] = { cu_module, cu_kernel };
 
-        jit_log(Debug, "jit_run(): cache %s, codegen: %s, %s: %s, %i registers.",
+        cuda_check(cuOccupancyMaxPotentialBlockSize(
+            &kernel.block_count, &kernel.thread_count, kernel.cu_func, nullptr,
+            0, 0));
+
+        state.kernels[str] = kernel;
+
+        jit_log(Debug, "jit_run(): cache %s, codegen: %s, %s: %s, %i registers, %i threads, %i blocks.",
                 cache_hit ? "miss" : "hit",
                 std::string(jit_time_string(codegen_time)).c_str(),
                 cache_hit ? "link" : "load",
                 std::string(jit_time_string(link_time)).c_str(),
-                regs);
+                reg_count, kernel.thread_count, kernel.block_count);
     } else {
-        std::tie(cu_module, cu_kernel) = it.value();
+        kernel = it.value();
         jit_log(Debug, "jit_run(): cache hit, codegen: %s.",
                 jit_time_string(codegen_time));
     }
+
+    void *config[] = {
+        CU_LAUNCH_PARAM_BUFFER_POINTER,
+        kernel_args.data(),
+        CU_LAUNCH_PARAM_BUFFER_SIZE,
+        (void *) ((size_t) kernel_args.size() * sizeof(uint64_t)),
+        CU_LAUNCH_PARAM_END
+    };
+
+    // uint32_t thread_count = ctx.thread_count,
+    //          block_count = ctx.block_count;
+    //
+    // if (size == 1)
+    //     thread_count = block_count = 1;
+    //
+    // cuda_check(cuLaunchKernel(cu_kernel, block_count, 1, 1, thread_count,
+    //                           1, 1, 0, active_stream->handle, nullptr, config));
 }
 
 /// Evaluate all computation that is queued on the current device & stream
@@ -492,7 +536,7 @@ void jit_eval() {
             cuda_check(cudaStreamWaitEvent(sub_stream->handle, stream->event, 0));
         }
 
-        jit_run();
+        jit_run(size);
 
         if (parallel_dispatch) {
             cuda_check(cudaEventRecord(sub_stream->event, sub_stream->handle));
@@ -524,7 +568,7 @@ void jit_eval() {
             v->side_effect = false;
             v->dirty = false;
 
-            if (v->data != nullptr && v->cmd != nullptr) {
+            // if (v->data != nullptr && v->stmt != nullptr) {
                 uint32_t dep[3], extra_dep = v->extra_dep;
                 memcpy(dep, v->dep, sizeof(uint32_t) * 3);
                 memset(v->dep, 0, sizeof(uint32_t) * 3);
@@ -532,7 +576,7 @@ void jit_eval() {
                 for (int j = 0; j < 3; ++j)
                     jit_dec_ref_int(dep[j]);
                 jit_dec_ref_ext(extra_dep);
-            }
+            // }
 
             if (side_effect)
                 jit_dec_ref_ext(idx);

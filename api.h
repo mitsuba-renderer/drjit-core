@@ -146,22 +146,22 @@ extern ENOKI_EXPORT uint32_t jitc_var_copy_to_device(uint32_t type,
 
 /// Append a variable to the instruction trace (no operand)
 extern ENOKI_EXPORT uint32_t jitc_trace_append(uint32_t type,
-                                               const char *cmd);
+                                               const char *stmt);
 
 /// Append a variable to the instruction trace (1 operand)
 extern ENOKI_EXPORT uint32_t jitc_trace_append(uint32_t type,
-                                               const char *cmd,
+                                               const char *stmt,
                                                uint32_t arg1);
 
 /// Append a variable to the instruction trace (2 operands)
 extern ENOKI_EXPORT uint32_t jitc_trace_append(uint32_t type,
-                                               const char *cmd,
+                                               const char *stmt,
                                                uint32_t arg1,
                                                uint32_t arg2);
 
 /// Append a variable to the instruction trace (3 operands)
 extern ENOKI_EXPORT uint32_t jitc_trace_append(uint32_t type,
-                                               const char *cmd,
+                                               const char *stmt,
                                                uint32_t arg1,
                                                uint32_t arg2,
                                                uint32_t arg3);

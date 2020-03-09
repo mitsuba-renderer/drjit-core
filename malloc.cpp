@@ -43,8 +43,8 @@ void* jit_malloc(AllocType type, size_t size) {
         while (chain) {
             auto it = chain->entries.find(ai);
 
-            if (it != state.alloc_free.end()) {
-                std::vector<void *> &list = it.value();
+            if (it != chain->entries.end()) {
+                auto &list = it.value();
                 if (!list.empty()) {
                     ptr = list.back();
                     list.pop_back();
@@ -206,12 +206,19 @@ void jit_free_flush() {
     if (chain == nullptr || chain->entries.empty())
         return;
 
+    size_t n_dealloc = 0;
+    for (auto &kv: chain->entries)
+        n_dealloc += kv.second.size();
+
+    if (n_dealloc == 0)
+        return;
+
     ReleaseChain *chain_new = new ReleaseChain();
     chain_new->next = chain;
     stream->release_chain = chain_new;
 
     jit_log(Trace, "jit_free_flush(): scheduling %zu deallocation%s.",
-            chain->entries.size(), chain->entries.size() > 1 ? "s" : "");
+            n_dealloc, n_dealloc > 1 ? "s" : "");
 
     cuda_check(cudaLaunchHostFunc(
         stream->handle,
@@ -220,14 +227,16 @@ void jit_free_flush() {
             ReleaseChain *chain0 = (ReleaseChain *) ptr,
                          *chain1 = chain0->next;
 
-            jit_log(Trace, "jit_free_flush(): performing %zu deallocation%s.",
-                    chain1->entries.size(), chain1->entries.size() > 1 ? "s" : "");
-
+            size_t n_dealloc_remain = 0;
             for (auto &kv: chain1->entries) {
                 const AllocInfo &ai = kv.first;
                 std::vector<void *> &target = state.alloc_free[ai];
                 target.insert(target.end(), kv.second.begin(), kv.second.end());
+                n_dealloc_remain += kv.second.size();
             }
+
+            jit_log(Trace, "jit_free_flush(): performing %zu deallocation%s.",
+                    n_dealloc_remain, n_dealloc_remain > 1 ? "s" : "");
 
             delete chain1;
             chain0->next = nullptr;
@@ -327,7 +336,7 @@ void jit_malloc_trim(bool warn) {
         for (int i = 0; i < 5; ++i) {
             if (trim_count[i] == 0)
                 continue;
-            jit_log(Debug, "%22s memory: %s in %zu allocation%s.",
+            jit_log(Debug, " - %s memory: %s in %zu allocation%s.",
                     alloc_type_names[i], jit_mem_string(trim_size[i]),
                     trim_count[i], trim_count[i] > 1 ? "s" : "");
         }
@@ -351,7 +360,7 @@ void jit_malloc_shutdown() {
             if (leak_count[i] == 0)
                 continue;
 
-            jit_log(Warn, "%22s memory: %s in %zu allocation%s.",
+            jit_log(Warn, " - %s memory: %s in %zu allocation%s.",
                     alloc_type_names[i], jit_mem_string(leak_size[i]),
                     leak_count[i], leak_count[i] > 1 ? "s" : "");
         }

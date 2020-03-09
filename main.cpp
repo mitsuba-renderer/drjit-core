@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
     (void) argv;
 
     try {
-        jitc_set_log_level(3);
+        jitc_set_log_level(4);
         jitc_init_async();
         jitc_device_set(0, 0);
 
