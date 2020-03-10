@@ -1,8 +1,12 @@
 project("jit")
 cmake_minimum_required(VERSION 3.17)
 
-option(ENOKI_ENABLE_CUDA  "Enable CUDA?"        ON)
+option(ENOKI_ENABLE_CUDA  "Enable CUDA backend?" ON)
+option(ENOKI_ENABLE_LLVM  "Enable LLVM backend?" ON)
 option(ENOKI_ENABLE_TESTS "Compile test suite?" ON)
+
+set(ENOKI_CUDA_COMPUTE_CAPABILITY "61" CACHE
+    STRING "Compute capability as specified by https://developer.nvidia.com/cuda-gpus")
 
 # Set a default build configuration (Release)
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -15,8 +19,9 @@ endif()
 include(CheckCXXSourceRuns)
 
 if (ENOKI_ENABLE_CUDA)
+  enable_language(CUDA)
   find_package(CUDAToolkit REQUIRED)
-  add_compile_options(-DENOKI_CUDA=1)
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY},code=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY} -cudart shared")
 endif()
 
 macro(CHECK_CXX_COMPILER_AND_LINKER_FLAGS _RESULT _CXX_FLAGS _LINKER_FLAGS)
@@ -56,7 +61,6 @@ elseif(MSVC)
 endif()
 
 
-add_compile_options(-Wall -Wextra -march=native -fvisibility=hidden)
 
 include_directories(
   include
@@ -73,12 +77,24 @@ add_library(
   src/eval.h           src/eval.cpp
   src/malloc.h         src/malloc.cpp
   src/hash.h           src/hash.cpp
+  src/cuda.h           src/cuda.cpp
   src/init.cpp
   src/api.cpp
 )
 
 set_property(TARGET enoki-jit PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-target_link_libraries(enoki-jit PRIVATE CUDA::cuda_driver CUDA::cudart pthread)
+target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native -fvisibility=hidden)
+
+if (ENOKI_ENABLE_CUDA)
+  add_library(
+    enoki-jit-cuda OBJECT
+    src/kernels.cu
+  )
+  target_link_libraries(enoki-jit PRIVATE CUDA::cuda_driver CUDA::cudart enoki-jit-cuda)
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_CUDA=1)
+  target_compile_definitions(enoki-jit-cuda PRIVATE -DENOKI_CUDA=1)
+  set_property(TARGET enoki-jit-cuda PROPERTY POSITION_INDEPENDENT_CODE ON)
+endif()
 
 if (ENOKI_ENABLE_TESTS)
   add_subdirectory(tests)

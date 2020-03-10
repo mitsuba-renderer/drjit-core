@@ -118,6 +118,28 @@ struct CUDAArray {
         return *this;
     }
 
-private:
+    static CUDAArray zero(size_t size) {
+        if (size == 0) {
+            return CUDAArray(0);
+        } else {
+            size_t byte_size = size * sizeof(Value);
+            void *ptr = jitc_malloc(AllocType::Device, byte_size);
+            jitc_cuda_fill_8((uint8_t *) ptr, byte_size, 0);
+            return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
+        }
+    }
+
+    const char *str() {
+        return jitc_var_str(m_index);
+    }
+
+protected:
+    static CUDAArray from_index(uint32_t index) {
+        CUDAArray result;
+        result.m_index = index;
+        return result;
+    }
+
+protected:
     uint32_t m_index;
 };

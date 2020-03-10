@@ -29,14 +29,22 @@ char *jitc_log_buffer() {
     return jit_log_buffer();
 }
 
-uint32_t jitc_log_level_set() {
+LogLevel jitc_log_level_set() {
     lock_guard guard(state.mutex);
     return state.log_level;
 }
 
-void jitc_log_level_set(uint32_t log_level) {
+void jitc_log_level_set(LogLevel log_level) {
     lock_guard guard(state.mutex);
     state.log_level = log_level;
+}
+
+void jitc_log(LogLevel level, const char* fmt, ...) {
+    lock_guard guard(state.mutex);
+    va_list args;
+    va_start(args, fmt);
+    jit_vlog(level, fmt, args);
+    va_end(args);
 }
 
 int32_t jitc_device_count() {
@@ -198,6 +206,11 @@ const char *jitc_var_whos() {
     return jit_var_whos();
 }
 
+const char *jitc_var_str(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var_str(index);
+}
+
 void jitc_eval() {
     lock_guard guard(state.mutex);
     jit_eval();
@@ -206,4 +219,24 @@ void jitc_eval() {
 void jitc_eval_var(uint32_t index) {
     lock_guard guard(state.mutex);
     jit_eval_var(index);
+}
+
+void jitc_cuda_fill_8(uint8_t *ptr, size_t size, uint8_t value) {
+    lock_guard guard(state.mutex);
+    jit_cuda_fill_8(ptr, size, value);
+}
+
+void jitc_cuda_fill_16(uint16_t *ptr, size_t size, uint16_t value) {
+    lock_guard guard(state.mutex);
+    jit_cuda_fill_16(ptr, size, value);
+}
+
+void jitc_cuda_fill_32(uint32_t *ptr, size_t size, uint32_t value) {
+    lock_guard guard(state.mutex);
+    jit_cuda_fill_32(ptr, size, value);
+}
+
+void jitc_cuda_fill_64(uint64_t *ptr, size_t size, uint64_t value) {
+    lock_guard guard(state.mutex);
+    jit_cuda_fill_64(ptr, size, value);
 }

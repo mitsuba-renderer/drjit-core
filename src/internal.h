@@ -7,22 +7,32 @@
 #include <string.h>
 #include <inttypes.h>
 
+static constexpr LogLevel Error = LogLevel::Error;
+static constexpr LogLevel Warn  = LogLevel::Warn;
+static constexpr LogLevel Info  = LogLevel::Info;
+static constexpr LogLevel Debug = LogLevel::Debug;
+static constexpr LogLevel Trace = LogLevel::Trace;
+
 #define PTR "<0x%" PRIxPTR ">"
-#define likely(x)   __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
+#if !defined(likely)
+#  define likely(x)   __builtin_expect(!!(x), 1)
+#  define unlikely(x) __builtin_expect(!!(x), 0)
+#endif
 
 #if defined(ENOKI_CUDA)
-/// A CUDA kernel and its preferred lauch configuration
-struct Kernel {
-    CUmodule cu_module = nullptr;
-    CUfunction cu_func = nullptr;
-    int thread_count = 0;
-    int block_count = 0;
+
+/// Caches basic information about a CUDA device
+struct Device {
+    /// CUDA device ID
+    int id;
+    /// Number of SMs
+    int num_sm;
 };
 
 /// Keeps track of asynchronous deallocations via jit_free()
 struct ReleaseChain {
     AllocInfoMap entries;
+    /// Pointer to next linked list entry
     ReleaseChain *next = nullptr;
 };
 
@@ -53,6 +63,14 @@ struct Stream {
      * side effects
      */
     tsl::robin_set<uint32_t> todo;
+};
+
+/// A CUDA kernel and its preferred lauch configuration
+struct Kernel {
+    CUmodule cu_module = nullptr;
+    CUfunction cu_func = nullptr;
+    int thread_count = 0;
+    int block_count = 0;
 };
 
 using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
@@ -128,6 +146,8 @@ struct VariableKeyHasher {
     }
 };
 
+using CSECache = tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher>;
+
 /// Records the full JIT compiler state
 struct State {
     /// Must be held to access members
@@ -137,10 +157,10 @@ struct State {
     bool initialized = false;
 
     /// Log level
-    uint32_t log_level = 0;
+    LogLevel log_level = LogLevel::Error;
 
     /// Available devices and their CUDA IDs
-    std::vector<int> devices;
+    std::vector<Device> devices;
 
 #if defined(ENOKI_CUDA)
     /// Maps Enoki (device index, stream index) pairs to a Stream data structure
@@ -170,7 +190,7 @@ struct State {
     tsl::robin_pg_map<const void *, uint32_t> variable_from_ptr;
 
     /// Maps from a key characterizing a variable to its index
-    tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher> cse_cache;
+    CSECache cse_cache;
 
     /// Current variable index
     uint32_t variable_index = 1;

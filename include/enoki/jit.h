@@ -125,6 +125,26 @@ extern JITC_EXPORT void jitc_sync_stream();
  */
 extern JITC_EXPORT void jitc_sync_device();
 
+// ====================================================================
+//                        Logging infrastructure
+// ====================================================================
+
+#if defined(__cplusplus)
+enum class LogLevel : uint32_t {
+    Error, Warn, Info, Debug, Trace
+};
+#else
+enum LogLevel {
+    LogLevelError, LogLevelWarn, LogLevelInfo, LogLevelDebug, LogLevelTrace
+};
+#endif
+
+/// Set the minimum log level for messages
+extern JITC_EXPORT void jitc_log_level_set(enum LogLevel log_level);
+
+/// Return the minimum log level for messages
+extern JITC_EXPORT enum LogLevel jitc_get_log_level();
+
 /**
  * \brief Control the destination of log messages
  *
@@ -143,24 +163,8 @@ extern JITC_EXPORT void jitc_log_buffer_enable(int value);
  */
 extern JITC_EXPORT char *jitc_log_buffer();
 
-/**
- * \brief Set the minimum log level for messages
- *
- * Log output will be written to \c stderr. The following log levels are
- * available:
- * <ul>
- *   <li>0: error</li>
- *   <li>1: warning</li>
- *   <li>2: info</li>
- *   <li>3: debug</li>
- *   <li>4: trace</li>
- * <ul>
- */
-extern JITC_EXPORT void jitc_log_level_set(uint32_t log_level);
-
-/// Return the log level for messages
-extern JITC_EXPORT uint32_t jitc_get_log_level();
-
+/// Print a log message with the specified log level and message
+extern JITC_EXPORT void jitc_log(LogLevel level, const char* fmt, ...);
 
 // ====================================================================
 //                         Memory allocation
@@ -219,25 +223,37 @@ extern JITC_EXPORT void *jitc_malloc(enum AllocType type, size_t size)
     __attribute__((malloc));
 
 /**
- * \brief Release the given pointer
+ * \brief Release a given pointer asynchronously
  *
- * When \c ptr is a GPU-accessible pointer (\ref AllocType::Device,
- * \ref AllocType::HostPinned, \ref AllocType::Managed,
- * \ref AllocType::ManagedReadMostly), the memory is potentially still being used
- * by a running kernel and merely scheduled to be reclaimed once this
- * program finishes.
+ * For CPU-only arrays (\ref AllocType::Host), <tt>jitc_free()</tt> is
+ * synchronous and very similar to <tt>free()</tt>, except that the released
+ * memory is placed in Enoki's internal allocation cache instead of being
+ * returned to the OS. The function \ref jitc_malloc_trim() can optionally be
+ * called to also clear this cache.
  *
- * For this reason, it is crucial that \ref jitc_free() is executed in the
- * right context chosen via \ref jitc_device_set().
+ * When \c ptr is a GPU-accessible pointer (\ref AllocType::Device, \ref
+ * AllocType::HostPinned, \ref AllocType::Managed, \ref
+ * AllocType::ManagedReadMostly), the associated memory region is quite likely
+ * still being used by a running kernel, and it is therefore merely *scheduled*
+ * to be reclaimed once this kernel finishes. Allocation thus runs in the
+ * execution context of a CUDA device, i.e., it is asynchronous with respect to
+ * the CPU. This means that some care must be taken in the context of programs
+ * that use multiple streams or GPUs: it is not permissible to e.g. allocate
+ * memory in one context, launch a kernel using it, then immediately switch
+ * context to another GPU or stream on the same GPU via \ref jitc_set_device()
+ * and release the memory region there. Calling \ref jitc_sync_stream() or
+ * \ref jitc_sync_device() before context switching defuses this situation.
  */
 extern JITC_EXPORT void jitc_free(void *ptr);
 
-/**
+/** e
  * \brief Asynchronously change the flavor of an allocated memory region and
  * return the new pointer
  *
  * The operation is asynchronous and, hence, will need to be followed by \ref
  * jitc_sync_stream() if managed memory is subsequently accessed on the CPU.
+ * Nothing needs to be done in the other direction, e.g. when migrating from
+ * host-pinned to device or managed memory.
  *
  * When both source & target are of type \ref AllocType::Device, and if the
  * current device (\ref jitc_device_set()) does not match the device associated
@@ -247,7 +263,7 @@ extern JITC_EXPORT void jitc_free(void *ptr);
  */
 extern JITC_EXPORT void* jitc_malloc_migrate(void *ptr, enum AllocType type);
 
-/// Release all unused memory to the GPU / OS
+/// Release all currently unused memory to the GPU / OS
 extern JITC_EXPORT void jitc_malloc_trim();
 
 // ====================================================================
@@ -434,14 +450,49 @@ extern JITC_EXPORT void jitc_var_mark_side_effect(uint32_t index);
 /// Mark variable as dirty, e.g. because of pending scatter operations
 extern JITC_EXPORT void jitc_var_mark_dirty(uint32_t index);
 
-/// Return a human-readable summary of registered variables
+/**
+ * \brief Return a human-readable summary of registered variables
+ *
+ * Note: the return value points into a static array, whose contents may be
+ * changed by later calls to <tt>jitc_*</tt> API functions. Either use it right
+ * away or create a copy.
+ */
 extern JITC_EXPORT const char *jitc_var_whos();
+
+/**
+ * \brief Return a human-readable summary of the contents of a variable
+ *
+ * Note: the return value points into a static array, whose contents may be
+ * changed by later calls to <tt>jitc_*</tt> API functions. Either use it right
+ * away or create a copy.
+ */
+extern JITC_EXPORT const char *jitc_var_str(uint32_t index);
+
+// ====================================================================
+//                 Kernel compilation and evaluation
+// ====================================================================
 
 /// Evaluate all computation that is queued on the current stream
 extern JITC_EXPORT void jitc_eval();
 
 /// Call jitc_eval() only if the variable 'index' requires evaluation
 extern JITC_EXPORT void jitc_eval_var(uint32_t index);
+
+// ====================================================================
+//                  CUDA backend-specific functionality
+// ====================================================================
+
+/// Fill a device memory region with 'size' 8-bit values.
+extern JITC_EXPORT void jitc_cuda_fill_8(uint8_t *ptr, size_t size, uint8_t value);
+
+/// Fill a device memory region with 'size' 16-bit values.
+extern JITC_EXPORT void jitc_cuda_fill_16(uint16_t *ptr, size_t size, uint16_t value);
+
+/// Fill a device memory region with 'size' 32-bit values.
+extern JITC_EXPORT void jitc_cuda_fill_32(uint32_t *ptr, size_t size, uint32_t value);
+
+/// Fill a device memory region with 'size' 64-bit values.
+extern JITC_EXPORT void jitc_cuda_fill_64(uint64_t *ptr, size_t size, uint64_t value);
 
 #if defined(__cplusplus)
 }

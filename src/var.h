@@ -85,6 +85,9 @@ extern void jit_var_mark_dirty(uint32_t index);
 /// Inform the JIT that the next scatter/gather references var. 'index'
 extern void jit_set_scatter_gather_operand(uint32_t index, bool gather);
 
+/// Return a human-readable summary of the contents of a variable
+const char *jit_var_str(uint32_t index);
+
 /// Return a human-readable summary of registered variables
 extern const char *jit_var_whos();
 

@@ -1,11 +1,15 @@
 #include "test.h"
 
+using Float = CUDAArray<float>;
+
 TEST_CUDA(01_creation_destruction) {
-    CUDAArray x(1234);
+    Float value(1234);
+    (void) value;
 }
 
-TEST_CUDA(02_creation_destruction) {
-    CUDAArray x(1234);
+TEST_CUDA(02_eval_scalar) {
+    CUDAArray value(1234);
+    jitc_log(LogLevel::Debug, "value=%s", value.str());
 }
 
 // void test_2() {

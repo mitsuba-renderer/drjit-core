@@ -148,7 +148,7 @@ void jit_assemble(uint32_t size) {
         else if (unlikely(v->data == nullptr && !v->direct_pointer && v->stmt == nullptr))
             jit_fail("jit_assemble(): schedule contains variable %u with empty statement!", index);
 
-        if (state.log_level >= 4) {
+        if (state.log_level >= LogLevel::Trace) {
             buffer.clear();
             buffer.fmt("   - %s%u -> %u",
                        cuda_register_name(v->type),
@@ -503,8 +503,8 @@ void jit_run(uint32_t size) {
 void jit_eval() {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_fail("jit_var_copy_to_device(): device and stream must be set! "
-                 "(call jit_device_set() beforehand)!");
+        jit_raise("jit_eval(): device and stream must be set! (call "
+                  "jit_device_set() beforehand)!");
 
     if (stream->todo.empty())
         return;

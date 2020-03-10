@@ -71,7 +71,7 @@ char* test_sanitize_log() {
 bool test_check_log(const char *test_name, const char *log, bool write_ref) {
     char test_fname[128];
 
-    snprintf(test_fname, 128, "output/%s/%s.%s", TEST_NAME,
+    snprintf(test_fname, 128, "%s_data/%s.%s", TEST_NAME,
              test_name, write_ref ? "ref" : "out");
 
     FILE *f = fopen(test_fname, "w");
@@ -90,7 +90,7 @@ bool test_check_log(const char *test_name, const char *log, bool write_ref) {
     if (write_ref)
         return true;
 
-    snprintf(test_fname, 128, "output/%s/%s.ref", TEST_NAME, test_name);
+    snprintf(test_fname, 128, "%s_data/%s.ref", TEST_NAME, test_name);
     f = fopen(test_fname, "r");
     if (!f) {
         fprintf(stderr, "\ntest_check_log(): Could not open file \"%s\"!\n", test_fname);
@@ -155,7 +155,7 @@ int main(int argc, char **argv) {
     }
 
     try {
-        jitc_log_level_set(4);
+        jitc_log_level_set(LogLevel::Trace);
         jitc_log_buffer_enable(1);
         fprintf(stdout, "\n");
 

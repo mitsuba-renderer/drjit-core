@@ -2,6 +2,7 @@
 #include "internal.h"
 #include "log.h"
 #include "eval.h"
+// #include <inttypes.h>
 
 /// Return the size of a given variable type
 size_t jit_type_size(VarType type) {
@@ -52,9 +53,11 @@ Variable *jit_var(uint32_t index) {
 
 /// Remove a variable from the cache used for common subexpression elimination
 void jit_cse_drop(uint32_t index, const Variable *v) {
-    auto it = state.cse_cache.find(VariableKey(*v));
-    if (it.value() == index)
-        state.cse_cache.erase(it);
+    if (v->stmt) {
+        auto it = state.cse_cache.find(VariableKey(*v));
+        if (it.value() == index)
+            state.cse_cache.erase(it);
+    }
 }
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
@@ -151,29 +154,36 @@ void jit_var_dec_ref_int(uint32_t index) {
 
 /// Append the given variable to the instruction trace and return its ID
 static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
-    v.stmt = strdup(v.stmt);
+    CSECache::iterator key_it;
+    bool key_inserted = false;
+
+    if (v.stmt) {
+        v.stmt = strdup(v.stmt);
 
 #if defined(ENOKI_CUDA)
-    if (v.type != VarType::Float32) {
-        char *offset = strstr(v.stmt, ".ftz");
-        if (offset)
-            strcat(offset, offset + 4);
+        if (v.type != VarType::Float32) {
+            char *offset = strstr(v.stmt, ".ftz");
+            if (offset)
+                strcat(offset, offset + 4);
+        }
+
+        // Check if this exact instruction already exists.
+        VariableKey key(v);
+
+        std::tie(key_it, key_inserted) = state.cse_cache.try_emplace(key, 0);
     }
 #endif
-
-    // Check if this exact instruction already exists.
-    VariableKey key(v);
-    auto [key_it, key_inserted] = state.cse_cache.try_emplace(key, 0);
 
     uint32_t index;
     Variable *v_out;
 
-    if (key_inserted) {
+    if (key_inserted || v.stmt == nullptr) {
         index = state.variable_index++;
         auto [var_it, var_inserted] = state.variables.try_emplace(index, v);
         if (unlikely(!var_inserted))
             jit_fail("jit_trace_append(): could not append instruction!");
-        key_it.value() = index;
+        if (key_inserted)
+            key_it.value() = index;
         v_out = &var_it.value();
     } else {
         free(v.stmt);
@@ -585,5 +595,47 @@ const char *jit_var_whos() {
                    std::string(jit_mem_string(state.alloc_usage[i])).c_str(),
                    std::string(jit_mem_string(state.alloc_watermark[i])).c_str());
 
+    return buffer.get();
+}
+
+/// Return a human-readable summary of the contents of a variable
+const char *jit_var_str(uint32_t index) {
+    const Variable *v = jit_var(index);
+    if (v->data == nullptr || v->dirty)
+        jit_eval();
+
+    uint32_t size = v->size,
+             isize = jit_type_size(v->type),
+             limit_thresh = 20,
+             limit_remainder = 10;
+
+    buffer.clear();
+    buffer.put("[");
+    uint8_t dst[8], *src = (uint8_t *) v->data;
+    for (uint32_t i = 0; i < size; ++i) {
+        if (size > limit_thresh && i == limit_remainder / 2) {
+            buffer.fmt(".. %u skipped .., ", size - limit_remainder);
+            i = size - limit_remainder / 2 - 1;
+            continue;
+        }
+        cuda_check(cudaMemcpy(dst, src + i * isize, isize, cudaMemcpyDeviceToHost));
+        const char *comma = i + 1 < size ? ", " : "";
+        switch (v->type) {
+            case VarType::Bool:    buffer.fmt("%"   PRIu8  "%s", *(( uint8_t *) dst), comma); break;
+            case VarType::Int8:    buffer.fmt("%"   PRId8  "%s", *((  int8_t *) dst), comma); break;
+            case VarType::UInt8:   buffer.fmt("%"   PRIu8  "%s", *(( uint8_t *) dst), comma); break;
+            case VarType::Int16:   buffer.fmt("%"   PRId16 "%s", *(( int16_t *) dst), comma); break;
+            case VarType::UInt16:  buffer.fmt("%"   PRIu16 "%s", *((uint16_t *) dst), comma); break;
+            case VarType::Int32:   buffer.fmt("%"   PRId32 "%s", *(( int32_t *) dst), comma); break;
+            case VarType::UInt32:  buffer.fmt("%"   PRIu32 "%s", *((uint32_t *) dst), comma); break;
+            case VarType::Int64:   buffer.fmt("%"   PRId64 "%s", *(( int64_t *) dst), comma); break;
+            case VarType::UInt64:  buffer.fmt("%"   PRIu64 "%s", *((uint64_t *) dst), comma); break;
+            case VarType::Pointer: buffer.fmt("0x%" PRIx64 "%s", *((uint64_t *) dst), comma); break;
+            case VarType::Float32: buffer.fmt("%g%s", *((float *) dst), comma); break;
+            case VarType::Float64: buffer.fmt("%g%s", *((double *) dst), comma); break;
+            default: jit_fail("jit_var_str(): invalid type!");
+        }
+    }
+    buffer.put("]");
     return buffer.get();
 }

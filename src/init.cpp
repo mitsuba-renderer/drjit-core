@@ -42,30 +42,31 @@ void jit_init() {
         if (prop.concurrentManagedAccess == 0)
             jit_log(Warn, " - Warning: device does *not* support concurrent managed access.");
 
-
-        cuda_check(cudaSetDevice(i));
-        state.devices.push_back(i);
+        state.devices.push_back(Device{i, prop.multiProcessorCount});
     }
 
     // Enable P2P communication if possible
-    for (int da : state.devices) {
-        for (int db : state.devices) {
-            if (da == db)
+    for (auto &a : state.devices) {
+        for (auto &b : state.devices) {
+            if (a.id == b.id)
                 continue;
 
             int peer_ok = 0;
-            cuda_check(cudaDeviceCanAccessPeer(&peer_ok, da, db));
+            cuda_check(cudaDeviceCanAccessPeer(&peer_ok, a.id, b.id));
             if (peer_ok) {
                 jit_log(Debug, " - Enabling peer access from device %i -> %i",
-                        da, db);
-                cuda_check(cudaSetDevice(da));
-                cudaError_t rv = cudaDeviceEnablePeerAccess(db, 0);
+                        a.id, b.id);
+                cuda_check(cudaSetDevice(a.id));
+                cudaError_t rv = cudaDeviceEnablePeerAccess(b.id, 0);
                 if (rv == cudaErrorPeerAccessAlreadyEnabled)
                     continue;
                 cuda_check(rv);
             }
         }
     }
+
+    if (state.devices.empty())
+        cuda_check(cudaSetDevice(state.devices[0].id));
 #endif
 
     state.scatter_gather_operand = 0;
@@ -152,7 +153,7 @@ void jit_device_set(int32_t device, uint32_t stream) {
             return;
         jit_log(Trace, "jit_device_set(device=%i, stream=%i): selecting stream", device, stream);
         if (stream_ptr->device != active_stream_ptr->device)
-            cuda_check(cudaSetDevice(state.devices[device]));
+            cuda_check(cudaSetDevice(state.devices[device].id));
     } else {
         jit_log(Trace, "jit_device_set(device=%i, stream=%i): creating stream", device, stream);
         cudaStream_t handle = nullptr;
