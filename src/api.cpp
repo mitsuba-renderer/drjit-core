@@ -152,9 +152,9 @@ uint32_t jitc_trace_append_3(VarType type, const char *cmd, uint32_t arg1,
     return jit_trace_append_3(type, cmd, arg1, arg2, arg3);
 }
 
-void jitc_var_migrate(uint32_t idx, AllocType type) {
+void jitc_var_migrate(uint32_t index, AllocType type) {
     lock_guard guard(state.mutex);
-    jit_var_migrate(idx, type);
+    jit_var_migrate(index, type);
 }
 
 void jitc_var_mark_side_effect(uint32_t index) {

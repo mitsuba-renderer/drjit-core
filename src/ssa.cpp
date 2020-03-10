@@ -50,12 +50,17 @@ Variable *jit_var(uint32_t index) {
     return &it.value();
 }
 
+/// Remove a variable from the cache used for common subexpression elimination
+void jit_cse_drop(uint32_t index, const Variable *v) {
+    auto it = state.cse_cache.find(VariableKey(*v));
+    if (it.value() == index)
+        state.cse_cache.erase(it);
+}
+
 /// Cleanup handler, called when the internal/external reference count reaches zero
 void jit_var_free(uint32_t index, Variable *v) {
     jit_log(Trace, "jit_var_free(%u) = " PTR ".", index, v->data);
-
-    VariableKey key(*v);
-    state.variable_from_key.erase(key);
+    jit_cse_drop(index, v);
 
     uint32_t dep[3], extra_dep = v->extra_dep;
     memcpy(dep, v->dep, sizeof(uint32_t) * 3);
@@ -158,25 +163,25 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
 
     // Check if this exact instruction already exists.
     VariableKey key(v);
-    auto [key_it, key_inserted] = state.variable_from_key.try_emplace(key, 0);
+    auto [key_it, key_inserted] = state.cse_cache.try_emplace(key, 0);
 
-    uint32_t idx;
+    uint32_t index;
     Variable *v_out;
 
     if (key_inserted) {
-        idx = state.variable_index++;
-        auto [var_it, var_inserted] = state.variables.try_emplace(idx, v);
+        index = state.variable_index++;
+        auto [var_it, var_inserted] = state.variables.try_emplace(index, v);
         if (unlikely(!var_inserted))
             jit_fail("jit_trace_append(): could not append instruction!");
-        key_it.value() = idx;
+        key_it.value() = index;
         v_out = &var_it.value();
     } else {
         free(v.stmt);
-        idx = key_it.value();
-        v_out = jit_var(idx);
+        index = key_it.value();
+        v_out = jit_var(index);
     }
 
-    return std::make_pair(idx, v_out);
+    return std::make_pair(index, v_out);
 }
 
 /// Query the pointer variable associated with a given variable
@@ -241,15 +246,15 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt) {
     v.stmt = (char *) stmt;
     v.tsize = 1;
 
-    auto [idx, vo] = jit_trace_append(v);
+    auto [index, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u): %s%s.",
-            idx, vo->stmt,
+            index, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    jit_inc_ref_ext(idx, vo);
-    stream->todo.insert(idx);
+    jit_inc_ref_ext(index, vo);
+    stream->todo.insert(index);
 
-    return idx;
+    return index;
 }
 
 /// Append a variable to the instruction trace (1 operand)
@@ -280,15 +285,15 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 
     jit_inc_ref_int(arg1, v1);
 
-    auto [idx, vo] = jit_trace_append(v);
+    auto [index, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u): %s%s.",
-            idx, arg1, vo->stmt,
+            index, arg1, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    jit_inc_ref_ext(idx, vo);
-    stream->todo.insert(idx);
+    jit_inc_ref_ext(index, vo);
+    stream->todo.insert(index);
 
-    return idx;
+    return index;
 }
 
 /// Append a variable to the instruction trace (2 operands)
@@ -336,15 +341,15 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt,
     }
 #endif
 
-    auto [idx, vo] = jit_trace_append(v);
+    auto [index, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s.",
-            idx, arg1, arg2, vo->stmt,
+            index, arg1, arg2, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    jit_inc_ref_ext(idx, vo);
-    stream->todo.insert(idx);
+    jit_inc_ref_ext(index, vo);
+    stream->todo.insert(index);
 
-    return idx;
+    return index;
 }
 
 /// Append a variable to the instruction trace (3 operands)
@@ -395,23 +400,18 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt,
         state.scatter_gather_operand != 0) {
         v.extra_dep = state.scatter_gather_operand;
         jit_inc_ref_ext(v.extra_dep);
-
-        /// Remove scattered-to variable from CSE cache
-        Variable *target = jit_var(v.extra_dep);
-        VariableKey key(*target);
-        state.variable_from_key.erase(key);
     }
 #endif
 
-    auto [idx, vo] = jit_trace_append(v);
+    auto [index, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s.",
-            idx, arg1, arg2, arg3, vo->stmt,
+            index, arg1, arg2, arg3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    jit_inc_ref_ext(idx, vo);
-    stream->todo.insert(idx);
+    jit_inc_ref_ext(index, vo);
+    stream->todo.insert(index);
 
-    return idx;
+    return index;
 }
 
 /// Register an existing variable with the JIT compiler
@@ -427,22 +427,22 @@ uint32_t jit_var_register(VarType type, void *ptr,
     v.free_variable = free != 0;
     v.tsize = 1;
 
-    auto [idx, vo] = jit_trace_append(v);
+    auto [index, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_var_register(%u): " PTR ", size=%zu, free=%i.",
-            idx, ptr, size, (int) free);
+            index, ptr, size, (int) free);
 
-    jit_inc_ref_ext(idx, vo);
+    jit_inc_ref_ext(index, vo);
 
-    return idx;
+    return index;
 }
 
 /// Register pointer literal as a special variable within the JIT compiler
 uint32_t jit_var_register_ptr(const void *ptr) {
     auto it = state.variable_from_ptr.find(ptr);
     if (it != state.variable_from_ptr.end()) {
-        uint32_t idx = it.value();
-        jit_inc_ref_ext(idx);
-        return idx;
+        uint32_t index = it.value();
+        jit_inc_ref_ext(index);
+        return index;
     }
 
     Variable v;
@@ -453,12 +453,12 @@ uint32_t jit_var_register_ptr(const void *ptr) {
     v.free_variable = false;
     v.direct_pointer = true;
 
-    auto [idx, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_var_register_ptr(%u): " PTR ".", idx, ptr);
+    auto [index, vo] = jit_trace_append(v);
+    jit_log(Debug, "jit_var_register_ptr(%u): " PTR ".", index, ptr);
 
-    jit_inc_ref_ext(idx, vo);
-    state.variable_from_ptr[ptr] = idx;
-    return idx;
+    jit_inc_ref_ext(index, vo);
+    state.variable_from_ptr[ptr] = index;
+    return index;
 }
 
 /// Copy a memory region onto the device and return its variable index
@@ -480,23 +480,23 @@ uint32_t jit_var_copy_to_device(VarType type,
                                cudaMemcpyHostToDevice, stream->handle));
 
     jit_free(host_ptr);
-    uint32_t idx = jit_var_register(type, device_ptr, size, true);
-    jit_log(Debug, "jit_var_copy_to_device(%u, %zu).", idx, size);
-    return idx;
+    uint32_t index = jit_var_register(type, device_ptr, size, true);
+    jit_log(Debug, "jit_var_copy_to_device(%u, %zu).", index, size);
+    return index;
 }
 
 /// Migrate a variable to a different flavor of memory
-void jit_var_migrate(uint32_t idx, AllocType type) {
-    if (idx == 0)
+void jit_var_migrate(uint32_t index, AllocType type) {
+    if (index == 0)
         return;
 
-    Variable *v = jit_var(idx);
+    Variable *v = jit_var(index);
     if (v->data == nullptr || v->dirty) {
         jit_eval();
-        v = jit_var(idx);
+        v = jit_var(index);
     }
 
-    jit_log(Debug, "jit_var_migrate(%u, " PTR ") -> %s", idx, v->data,
+    jit_log(Debug, "jit_var_migrate(%u, " PTR ") -> %s", index, v->data,
             alloc_type_names[(int) type]);
 
     v->data = jit_malloc_migrate(v->data, type);
@@ -511,7 +511,12 @@ void jit_var_mark_side_effect(uint32_t index) {
 /// Mark variable as dirty, e.g. because of pending scatter operations
 void jit_var_mark_dirty(uint32_t index) {
     jit_log(Debug, "jit_var_mark_dirty(%u)", index);
-    jit_var(index)->dirty = true;
+    Variable *v = jit_var(index);
+    v->dirty = true;
+
+    /* The contents of this variable no longer match up with its description,
+       hence we cannot use it as part of common subexpression elimination */
+    jit_cse_drop(index, v);
 }
 
 /// Inform the JIT that the next scatter/gather references var. 'index'

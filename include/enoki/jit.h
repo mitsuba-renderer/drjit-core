@@ -391,7 +391,7 @@ extern JITC_EXPORT const char *jitc_var_label(uint32_t index);
  *
  * Note: Migrations involving AllocType::Host are currently not supported.
  */
-extern JITC_EXPORT void jitc_var_migrate(uint32_t idx, enum AllocType type);
+extern JITC_EXPORT void jitc_var_migrate(uint32_t index, enum AllocType type);
 
 /// Indicate that evaluation of the given variable causes side effects
 extern JITC_EXPORT void jitc_var_mark_side_effect(uint32_t index);

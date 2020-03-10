@@ -1,5 +1,5 @@
 #include <enoki/jitvar.h>
-#include <iostream>
+#include <stdexcept>
 
 void test_1() {
     CUDAArray x(1234);
@@ -34,8 +34,6 @@ int main(int argc, char **argv) {
 
         jitc_shutdown();
     } catch (const std::exception &e) {
-        std::cout << "Exception: "<< e.what() << std::endl;
-    } catch (...) {
-        std::cout << "Uncaught exception!" << std::endl;
+        fprintf(stderr, "Exception: %s!\n", e.what());
     }
 }

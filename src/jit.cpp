@@ -116,6 +116,9 @@ void jit_shutdown() {
             jit_log(Warn, "jit_shutdown(): %u variables are still referenced!", n_leaked);
     }
 
+    if (state.variables.empty() && !state.cse_cache.empty())
+        jit_fail("jit_shutdown(): detected a common subexpression elimination cache leak!");
+
     jit_malloc_shutdown();
     state.devices.clear();
     state.initialized = false;

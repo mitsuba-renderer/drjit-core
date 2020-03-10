@@ -90,15 +90,15 @@ static const char *cuda_register_name(VarType type) {
 // ====================================================================
 
 /// Recursively traverse the computation graph to find variables needed by a computation
-static void jit_var_traverse(uint32_t size, uint32_t idx) {
-    std::pair<uint32_t, uint32_t> key(size, idx);
+static void jit_var_traverse(uint32_t size, uint32_t index) {
+    std::pair<uint32_t, uint32_t> key(size, index);
 
-    if (idx == 0 || visited.find(key) != visited.end())
+    if (index == 0 || visited.find(key) != visited.end())
         return;
 
     visited.insert(key);
 
-    Variable *v = jit_var(idx);
+    Variable *v = jit_var(index);
     const uint32_t *dep = v->dep;
 
     std::pair<uint32_t, uint32_t> ch[3] = {
@@ -118,7 +118,7 @@ static void jit_var_traverse(uint32_t size, uint32_t idx) {
     for (auto [id, tsize] : ch)
         jit_var_traverse(size, id);
 
-    schedule[size].push_back(idx);
+    schedule[size].push_back(index);
 }
 
 void jit_assemble(uint32_t size) {
@@ -281,7 +281,7 @@ void jit_assemble(uint32_t size) {
 
         oss << std::endl;
         if (var.data || var.direct_pointer) {
-            size_t idx = ptrs.size();
+            size_t index = ptrs.size();
             ptrs.push_back(var.data);
 
             oss << std::endl
@@ -292,7 +292,7 @@ void jit_assemble(uint32_t size) {
 
             if (!var.direct_pointer) {
                 oss << "    " << (parameter_direct ? "ld.param.u64 %rd8, " : "ld.global.u64 %rd8, ")
-                    << param_ref(idx) << ";" << std::endl;
+                    << param_ref(index) << ";" << std::endl;
 
                 const char *load_instr = "ldu";
                 if (var.size != 1) {
@@ -311,7 +311,7 @@ void jit_assemble(uint32_t size) {
             } else {
                 oss << "    " << (parameter_direct ? "ld.param.u64 " : "ldu.global.u64 ")
                     << cuda_register_name(var.type)
-                    << reg_map[index] << ", " << param_ref(idx) << ";";
+                    << reg_map[index] << ", " << param_ref(index) << ";";
             }
 
             n_in++;
@@ -345,7 +345,7 @@ void jit_assemble(uint32_t size) {
                           << " -> " << var.data << " (" << size_in_bytes
                           << " bytes)" << std::endl;
 #endif
-            size_t idx = ptrs.size();
+            size_t index = ptrs.size();
             ptrs.push_back(var.data);
             n_out++;
 
@@ -355,7 +355,7 @@ void jit_assemble(uint32_t size) {
                 oss << ": " << var.label;
             oss << std::endl
                 << "    " << (parameter_direct ? "ld.param.u64 %rd8, " : "ld.global.u64 %rd8, ")
-                << param_ref(idx) << ";" << std::endl;
+                << param_ref(index) << ";" << std::endl;
             if (var.size != 1) {
                 oss << "    mul.wide.u32 %rd9, %r2, " << cuda_register_size(var.type) << ";" << std::endl
                     << "    add.u64 %rd8, %rd8, %rd9;" << std::endl;
@@ -513,9 +513,9 @@ void jit_eval() {
     schedule.clear();
     schedule_sizes.clear();
 
-    for (uint32_t idx : stream->todo) {
-        size_t size = jit_var_size(idx);
-        jit_var_traverse(size, idx);
+    for (uint32_t index : stream->todo) {
+        size_t size = jit_var_size(index);
+        jit_var_traverse(size, index);
         schedule_sizes.push_back(size);
     }
 
@@ -534,13 +534,13 @@ void jit_eval() {
         cuda_check(cudaEventRecord(stream->event, stream->handle));
     }
 
-    uint32_t stream_idx = 1000 * stream->stream;
+    uint32_t stream_index = 1000 * stream->stream;
     for (uint32_t size : schedule_sizes) {
         jit_assemble(size);
 
         Stream *sub_stream = stream;
         if (parallel_dispatch) {
-            jit_device_set(stream->device, stream_idx);
+            jit_device_set(stream->device, stream_index);
             sub_stream = active_stream;
             cuda_check(cudaStreamWaitEvent(sub_stream->handle, stream->event, 0));
         }
@@ -552,7 +552,7 @@ void jit_eval() {
             cuda_check(cudaStreamWaitEvent(stream->handle, sub_stream->event, 0));
         }
 
-        stream_idx++;
+        stream_index++;
     }
 
     jit_device_set(stream->device, stream->stream);
@@ -567,8 +567,8 @@ void jit_eval() {
     for (uint32_t size : schedule_sizes) {
         const std::vector<uint32_t> &sched = schedule[size];
 
-        for (uint32_t idx : sched) {
-            auto it = state.variables.find(idx);
+        for (uint32_t index : sched) {
+            auto it = state.variables.find(index);
             if (it == state.variables.end())
                 continue;
 
@@ -576,6 +576,12 @@ void jit_eval() {
             bool side_effect = v->side_effect;
             v->side_effect = false;
             v->dirty = false;
+
+            if (size == 1) {
+                // Don't bother with CSE for evaluated scalar variables to replace
+                // costly loads with faster arithmetic.
+                jit_cse_drop(index, v);
+            }
 
             // if (v->data != nullptr && v->stmt != nullptr) {
                 uint32_t dep[3], extra_dep = v->extra_dep;
@@ -588,7 +594,7 @@ void jit_eval() {
             // }
 
             if (side_effect)
-                jit_dec_ref_ext(idx);
+                jit_dec_ref_ext(index);
         }
     }
 

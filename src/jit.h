@@ -105,7 +105,7 @@ struct Variable {
 
 /// Abbreviated version of the Variable data structure
 struct VariableKey {
-    char *cmd;
+    char *stmt;
     uint32_t type;
     uint32_t size;
     uint32_t dep[3];
@@ -122,7 +122,7 @@ struct VariableKey {
 
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        size_t result = crc32((const uint8_t *) k.cmd, strlen(k.cmd));
+        size_t result = crc32((const uint8_t *) k.stmt, strlen(k.stmt));
         hash_combine(result, crc32((const uint8_t *) &k.type, sizeof(uint32_t) * 6));
         return result;
     }
@@ -167,11 +167,11 @@ struct State {
     /// Stores the mapping from variable indices to variables
     tsl::robin_map<uint32_t, Variable> variables;
 
-    /// Maps from a key characterizing a variable to its index
-    tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher> variable_from_key;
-
     /// Maps from pointer addresses to variable indices
     tsl::robin_pg_map<const void *, uint32_t> variable_from_ptr;
+
+    /// Maps from a key characterizing a variable to its index
+    tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher> cse_cache;
 
     /// Current variable index
     uint32_t variable_index = 1;

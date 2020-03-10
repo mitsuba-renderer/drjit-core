@@ -74,7 +74,7 @@ extern const char *jit_var_label(uint32_t index);
 extern size_t jit_type_size(VarType type);
 
 /// Migrate a variable to a different flavor of memory
-extern void jit_var_migrate(uint32_t idx, AllocType type);
+extern void jit_var_migrate(uint32_t index, AllocType type);
 
 /// Indicate that evaluation of the given variable causes side effects
 extern void jit_var_mark_side_effect(uint32_t index);
@@ -87,3 +87,6 @@ extern void jit_set_scatter_gather_operand(uint32_t index, bool gather);
 
 /// Return a human-readable summary of registered variables
 extern const char *jit_whos();
+
+/// Remove a variable from the cache used for common subexpression elimination
+extern void jit_cse_drop(uint32_t index, const Variable *v);
