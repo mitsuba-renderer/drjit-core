@@ -32,8 +32,8 @@ void* jit_malloc(AllocType type, size_t size) {
     Stream *stream = active_stream;
     if (type == AllocType::Device) {
         if (unlikely(!stream))
-            jit_fail("jit_malloc(): device must be set using jit_device_set() "
-                     "before allocating device pointer!");
+            jit_raise("jit_malloc(): device must be set using jit_device_set() "
+                      "before allocating device pointer!");
         ai.device = stream->device;
 
         /* 1. Check for arrays with a pending free operation on the current
@@ -180,24 +180,14 @@ void jit_free(void *ptr) {
         jit_raise("jit_free(): unknown address " PTR "!", ptr);
 
     AllocInfo ai = it.value();
-    if (ai.type == AllocType::Device)
-        jit_log(Trace, "jit_free(" PTR ", type=%s, device=%u, size=%zu)", ptr,
-                alloc_type_names[(int) ai.type], ai.device, ai.size);
-    else
-        jit_log(Trace, "jit_free(" PTR ", type=%s, size=%zu)", ptr,
-                alloc_type_names[(int) ai.type], ai.size);
-
-    state.alloc_usage[(int) ai.type] -= ai.size;
-    state.alloc_used.erase(it);
-
     if (ai.type == AllocType::Host) {
         state.alloc_free[ai].push_back(ptr);
     } else {
 #if defined(ENOKI_CUDA)
         Stream *stream = active_stream;
         if (unlikely(!stream))
-            jit_fail("jit_free(): device and stream must be set! (call "
-                     "jit_device_set() beforehand)!");
+            jit_raise("jit_free(): device and stream must be set! (call "
+                      "jit_device_set() beforehand)!");
 
         ReleaseChain *chain = stream->release_chain;
         if (unlikely(!chain))
@@ -207,6 +197,16 @@ void jit_free(void *ptr) {
         jit_fail("jit_free(): unsupported array type! (CUDA support was disabled.)");
 #endif
     }
+
+    if (ai.type == AllocType::Device)
+        jit_log(Trace, "jit_free(" PTR ", type=%s, device=%u, size=%zu)", ptr,
+                alloc_type_names[(int) ai.type], ai.device, ai.size);
+    else
+        jit_log(Trace, "jit_free(" PTR ", type=%s, size=%zu)", ptr,
+                alloc_type_names[(int) ai.type], ai.size);
+
+    state.alloc_usage[(int) ai.type] -= ai.size;
+    state.alloc_used.erase(it);
 }
 
 void jit_free_flush() {
@@ -214,8 +214,8 @@ void jit_free_flush() {
     Stream *stream = active_stream;
 
     if (unlikely(stream == nullptr))
-        jit_fail("jit_free_flush(): device and stream must be set! (call "
-                 "jit_device_set() beforehand)!");
+        jit_raise("jit_free_flush(): device and stream must be set! (call "
+                  "jit_device_set() beforehand)!");
 
     ReleaseChain *chain = stream->release_chain;
     if (chain == nullptr || chain->entries.empty())
@@ -265,8 +265,8 @@ void jit_free_flush() {
 void* jit_malloc_migrate(void *ptr, AllocType type) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_fail("jit_malloc_migrate(): device and stream must be set! "
-                 "(call jit_device_set() beforehand)!");
+        jit_raise("jit_malloc_migrate(): device and stream must be set! "
+                  "(call jit_device_set() beforehand)!");
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
@@ -296,8 +296,43 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
     return ptr_new;
 }
 
+/// Asynchronously prefetch a memory region
+void jit_malloc_prefetch(void *ptr, int device) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_malloc_prefetch(): device and stream must be set! "
+                  "(call jit_device_set() beforehand)!");
+
+    if (device < 0) {
+        device = cudaCpuDeviceId;
+    } else {
+        if ((size_t) device >= state.devices.size())
+            jit_raise("jit_malloc_prefetch(): invalid device ID!");
+        device = state.devices[device].id;
+    }
+
+    auto it = state.alloc_used.find(ptr);
+    if (unlikely(it == state.alloc_used.end()))
+        jit_raise("jit_malloc_prefetch(): unknown address " PTR "!", ptr);
+
+    AllocInfo ai = it.value();
+
+    if (ai.type != AllocType::Managed &&
+        ai.type != AllocType::ManagedReadMostly)
+        jit_raise("jit_malloc_prefetch(): invalid memory type, expected "
+                  "Managed or ManagedReadMostly.", ptr);
+
+    if (device == -2) {
+        for (const Device &d : state.devices)
+            cuda_check(cudaMemPrefetchAsync(ptr, ai.size, d.id, stream->handle));
+    } else {
+        cuda_check(cudaMemPrefetchAsync(ptr, ai.size, device, stream->handle));
+    }
+}
+
 static bool jit_malloc_trim_warning = false;
 
+/// Release all unused memory to the GPU / OS
 void jit_malloc_trim(bool warn) {
     if (warn && !jit_malloc_trim_warning) {
         jit_log(

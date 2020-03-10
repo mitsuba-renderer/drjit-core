@@ -97,6 +97,11 @@ void jitc_malloc_trim() {
     jit_malloc_trim(false);
 }
 
+void jitc_malloc_prefetch(void *ptr, int device) {
+    lock_guard guard(state.mutex);
+    jit_malloc_prefetch(ptr, device);
+}
+
 void jitc_var_inc_ref_ext(uint32_t index) {
     lock_guard guard(state.mutex);
     jit_var_inc_ref_ext(index);

@@ -49,11 +49,15 @@ extern void jit_free(void *ptr);
 /// Schedule a function that will reclaim memory from pending jit_free()s
 extern void jit_free_flush();
 
+/// Change the flavor of an allocated memory region
+extern void* jit_malloc_migrate(void *ptr, AllocType type);
+
+/// Asynchronously prefetch a memory region
+extern void jit_malloc_prefetch(void *ptr, int device);
+
 /// Release all unused memory to the GPU / OS
 extern void jit_malloc_trim(bool warn = true);
 
 /// Shut down the memory allocator (calls \ref jit_malloc_trim() and reports leaks)
 extern void jit_malloc_shutdown();
 
-/// Change the flavor of an allocated memory region
-extern void* jit_malloc_migrate(void *ptr, AllocType type);

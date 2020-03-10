@@ -266,6 +266,29 @@ extern JITC_EXPORT void* jitc_malloc_migrate(void *ptr, enum AllocType type);
 /// Release all currently unused memory to the GPU / OS
 extern JITC_EXPORT void jitc_malloc_trim();
 
+/**
+ * \brief Asynchronously prefetch a memory region allocated using \ref
+ * jitc_malloc() so that it is available on a specified device
+ *
+ * This operation prefetches a memory region so that it is available on the CPU
+ * (<tt>device==-1</tt>) or specified CUDA device (<tt>device&gt;=0</tt>). This
+ * operation only make sense for allocations of type <tt>AllocType::Managed<tt>
+ * and <tt>AllocType::ManagedReadMostly</tt>. In the former case, the memory
+ * region will be fully migrated to the specified device, and page mappings
+ * established elswhere are cleared. For the latter, a read-only copy is
+ * created on the target device in addition to other copies that may exist
+ * elsewhere.
+ *
+ * The function also takes a special argument <tt>device==-2</tt>, which
+ * creates a read-only mapping on *all* available GPUs.
+ *
+ * The prefetch operation is enqueued on the current device and stream and runs
+ * asynchronously with respect to the CPU, hence a \ref jitc_sync_stream()
+ * operation is advisable if data is <tt>target==-1</tt> (i.e. prefetching into
+ * CPU memory).
+ */
+extern JITC_EXPORT void jitc_malloc_prefetch(void *ptr, int device);
+
 // ====================================================================
 //                        Variable management
 // ====================================================================
