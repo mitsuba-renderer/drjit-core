@@ -1,4 +1,4 @@
-#include "jit.h"
+#include "internal.h"
 #include "log.h"
 
 const char *alloc_type_names[(int) AllocType::Count] = {
@@ -76,11 +76,17 @@ void* jit_malloc(AllocType type, size_t size) {
     // 3. Looks like we will have to allocate some memory..
     if (ptr == nullptr) {
         if (type == AllocType::Host) {
-            unlock_guard guard(state.mutex);
-            int rv = posix_memalign(&ptr, 64, ai.size);
+            int rv;
+            /* Temporarily release the lock */ {
+                unlock_guard guard(state.mutex);
+                rv = posix_memalign(&ptr, 64, ai.size);
+            }
             if (rv == ENOMEM) {
                 jit_malloc_trim();
-                rv = posix_memalign(&ptr, 64, ai.size);
+                /* Temporarily release the lock */ {
+                    unlock_guard guard(state.mutex);
+                    rv = posix_memalign(&ptr, 64, ai.size);
+                }
             }
             if (rv != 0)
                 ptr = nullptr;
@@ -306,36 +312,40 @@ void jit_malloc_trim(bool warn) {
     }
 
     AllocInfoMap alloc_free(std::move(state.alloc_free));
-    unlock_guard guard(state.mutex);
 
     size_t trim_count[(int) AllocType::Count] = { 0 },
            trim_size [(int) AllocType::Count] = { 0 };
-    for (auto kv : alloc_free) {
-        const std::vector<void *> &entries = kv.second;
-        trim_count[(int) kv.first.type] += entries.size();
-        trim_size[(int) kv.first.type] += kv.first.size * entries.size();
-        switch (kv.first.type) {
-#if defined(ENOKI_CUDA)
-            case AllocType::Device:
-            case AllocType::Managed:
-            case AllocType::ManagedReadMostly:
-                for (void *ptr : entries)
-                    cuda_check(cudaFree(ptr));
-                break;
 
-            case AllocType::HostPinned:
-                for (void *ptr : entries)
-                    cuda_check(cudaFreeHost(ptr));
-                break;
+    /* Temporarily release the lock for cudaFree() et al. */ {
+        unlock_guard guard(state.mutex);
+
+        for (auto kv : alloc_free) {
+            const std::vector<void *> &entries = kv.second;
+            trim_count[(int) kv.first.type] += entries.size();
+            trim_size[(int) kv.first.type] += kv.first.size * entries.size();
+            switch (kv.first.type) {
+#if defined(ENOKI_CUDA)
+                case AllocType::Device:
+                case AllocType::Managed:
+                case AllocType::ManagedReadMostly:
+                    for (void *ptr : entries)
+                        cuda_check(cudaFree(ptr));
+                    break;
+
+                case AllocType::HostPinned:
+                    for (void *ptr : entries)
+                        cuda_check(cudaFreeHost(ptr));
+                    break;
 #endif
 
-            case AllocType::Host:
-                for (void *ptr : entries)
-                    free(ptr);
-                break;
+                case AllocType::Host:
+                    for (void *ptr : entries)
+                        free(ptr);
+                    break;
 
-            default:
-                jit_fail("jit_malloc_trim(): unsupported allocation type!");
+                default:
+                    jit_fail("jit_malloc_trim(): unsupported allocation type!");
+            }
         }
     }
 

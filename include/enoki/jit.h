@@ -70,24 +70,6 @@ extern JITC_EXPORT void jitc_init_async();
 extern JITC_EXPORT void jitc_shutdown();
 
 /**
- * \brief Set the minimum log level for messages
- *
- * Log output will be written to \c stderr. The following log levels are
- * available:
- * <ul>
- *   <li>0: error</li>
- *   <li>1: warning</li>
- *   <li>2: info</li>
- *   <li>3: debug</li>
- *   <li>4: trace</li>
- * <ul>
- */
-extern JITC_EXPORT void jitc_set_log_level(uint32_t log_level);
-
-/// Return the log level for messages
-extern JITC_EXPORT uint32_t jitc_get_log_level();
-
-/**
  * \brief Return the number of target devices
  *
  * This function returns the number of available devices. Note that this refers
@@ -114,18 +96,71 @@ extern JITC_EXPORT int32_t jitc_device_count();
 extern JITC_EXPORT void jitc_device_set(int32_t device, uint32_t stream);
 
 /**
+ * \brief Dispatch computation to multiple parallel streams?
+ *
+ * The JIT compiler attempts to fuse all queued computation into a single
+ * kernel to maximize efficiency. But computation involving arrays of different
+ * size must necessarily run in separate kernels, which means that it is
+ * serialized if taking place within the same device and stream. If desired,
+ * jitc_eval() can detect this and dispatch multiple kernels to separate
+ * streams that execute in parallel. The default is \c 1 (i.e. to enable
+ * parallel dispatch).
+ */
+extern JITC_EXPORT void jitc_parallel_dispatch_set(int enable);
+
+/// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
+extern JITC_EXPORT int jitc_parallel_dispatch();
+
+/**
  * \brief Wait for all computation on the current stream to finish
  *
  * No-op when the target device is the host CPU.
  */
-extern JITC_EXPORT void jitc_stream_sync();
+extern JITC_EXPORT void jitc_sync_stream();
 
 /**
  * \brief Wait for all computation on the current device to finish
  *
  * No-op when the target device is the host CPU.
  */
-extern JITC_EXPORT void jitc_device_sync();
+extern JITC_EXPORT void jitc_sync_device();
+
+/**
+ * \brief Control the destination of log messages
+ *
+ * By default, this library prints all log messages to the console (\c stderr),
+ * subject to the chosen log level (see \ref jitc_log_level_set()). If you
+ * prefer that the library logs to an internal buffer without touching the
+ * console, call this function with a value of \c 1. In this case, use \ref
+ * jitc_log_buffer() to access the log.
+ */
+extern JITC_EXPORT void jitc_log_buffer_enable(int value);
+
+/**
+ * This function returns the log buffer (See \ref jitc_log_buffer_enable()) and
+ * subsequently clears it. The return value must be released using
+ * <tt>free()</tt>.
+ */
+extern JITC_EXPORT char *jitc_log_buffer();
+
+/**
+ * \brief Set the minimum log level for messages
+ *
+ * Log output will be written to \c stderr. The following log levels are
+ * available:
+ * <ul>
+ *   <li>0: error</li>
+ *   <li>1: warning</li>
+ *   <li>2: info</li>
+ *   <li>3: debug</li>
+ *   <li>4: trace</li>
+ * <ul>
+ */
+extern JITC_EXPORT void jitc_log_level_set(uint32_t log_level);
+
+/// Return the log level for messages
+extern JITC_EXPORT uint32_t jitc_get_log_level();
+
 
 // ====================================================================
 //                         Memory allocation
@@ -202,7 +237,7 @@ extern JITC_EXPORT void jitc_free(void *ptr);
  * return the new pointer
  *
  * The operation is asynchronous and, hence, will need to be followed by \ref
- * jitc_stream_sync() if managed memory is subsequently accessed on the CPU.
+ * jitc_sync_stream() if managed memory is subsequently accessed on the CPU.
  *
  * When both source & target are of type \ref AllocType::Device, and if the
  * current device (\ref jitc_device_set()) does not match the device associated
@@ -336,16 +371,16 @@ extern JITC_EXPORT uint32_t jitc_trace_append_3(enum VarType type,
                                                 uint32_t arg3);
 
 /// Increase the internal reference count of a given variable
-extern JITC_EXPORT void jitc_inc_ref_int(uint32_t index);
+extern JITC_EXPORT void jitc_var_inc_ref_int(uint32_t index);
 
 /// Decrease the internal reference count of a given variable
-extern JITC_EXPORT void jitc_dec_ref_int(uint32_t index);
+extern JITC_EXPORT void jitc_var_dec_ref_int(uint32_t index);
 
 /// Increase the external reference count of a given variable
-extern JITC_EXPORT void jitc_inc_ref_ext(uint32_t index);
+extern JITC_EXPORT void jitc_var_inc_ref_ext(uint32_t index);
 
 /// Decrease the external reference count of a given variable
-extern JITC_EXPORT void jitc_dec_ref_ext(uint32_t index);
+extern JITC_EXPORT void jitc_var_dec_ref_ext(uint32_t index);
 
 /// Query the pointer variable associated with a given variable
 extern JITC_EXPORT void *jitc_var_ptr(uint32_t index);
@@ -374,7 +409,7 @@ extern JITC_EXPORT uint32_t jitc_var_set_size(uint32_t index,
                                               int copy);
 
 /// Assign a descriptive label to a given variable
-extern JITC_EXPORT void jitc_var_set_label(uint32_t index, const char *label);
+extern JITC_EXPORT void jitc_var_label_set(uint32_t index, const char *label);
 
 /// Query the descriptive label associated with a given variable
 extern JITC_EXPORT const char *jitc_var_label(uint32_t index);
@@ -383,7 +418,7 @@ extern JITC_EXPORT const char *jitc_var_label(uint32_t index);
  * \brief Asynchronously migrate a variable to a different flavor of memory
  *
  * The operation is asynchronous and, hence, will need to be followed by \ref
- * jitc_stream_sync() if managed memory is subsequently accessed on the CPU.
+ * jitc_sync_stream() if managed memory is subsequently accessed on the CPU.
  *
  * When both source & target are of type \ref AllocType::Device, and if the
  * current device (\ref jitc_device_set()) does not match the device associated
@@ -400,23 +435,7 @@ extern JITC_EXPORT void jitc_var_mark_side_effect(uint32_t index);
 extern JITC_EXPORT void jitc_var_mark_dirty(uint32_t index);
 
 /// Return a human-readable summary of registered variables
-extern JITC_EXPORT const char *jitc_whos();
-
-/**
- * \brief Dispatch computation to multiple parallel streams?
- *
- * The JIT compiler attempts to fuse all queued computation into a single
- * kernel to maximize efficiency. But computation involving arrays of different
- * size must necessarily run in separate kernels, which means that it is
- * serialized if taking place within the same device and stream. If desired,
- * jitc_eval() can detect this and dispatch multiple kernels to separate
- * streams that execute in parallel. The default is \c 1 (i.e. to enable
- * parallel dispatch).
- */
-extern JITC_EXPORT void jitc_set_parallel_dispatch(int enable);
-
-/// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
-extern JITC_EXPORT int jitc_parallel_dispatch();
+extern JITC_EXPORT const char *jitc_var_whos();
 
 /// Evaluate all computation that is queued on the current stream
 extern JITC_EXPORT void jitc_eval();

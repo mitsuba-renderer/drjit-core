@@ -1,6 +1,7 @@
-#include "jit.h"
-#include "ssa.h"
+#include "internal.h"
+#include "var.h"
 #include "eval.h"
+#include "log.h"
 #include <thread>
 
 void jitc_init() {
@@ -18,12 +19,22 @@ void jitc_shutdown() {
     jit_shutdown();
 }
 
-uint32_t jitc_set_log_level() {
+void jitc_log_buffer_enable(int value) {
+    lock_guard guard(state.mutex);
+    state.log_to_buffer = value != 0;
+}
+
+char *jitc_log_buffer() {
+    lock_guard guard(state.mutex);
+    return jit_log_buffer();
+}
+
+uint32_t jitc_log_level_set() {
     lock_guard guard(state.mutex);
     return state.log_level;
 }
 
-void jitc_set_log_level(uint32_t log_level) {
+void jitc_log_level_set(uint32_t log_level) {
     lock_guard guard(state.mutex);
     state.log_level = log_level;
 }
@@ -38,14 +49,24 @@ void jitc_device_set(int32_t device, uint32_t stream) {
     jit_device_set(device, stream);
 }
 
-void jitc_stream_sync() {
+void jitc_parallel_dispatch_set(int enable) {
     lock_guard guard(state.mutex);
-    jit_stream_sync();
+    state.parallel_dispatch = enable != 0;
 }
 
-void jitc_device_sync() {
+int jitc_parallel_dispatch() {
     lock_guard guard(state.mutex);
-    jit_device_sync();
+    return state.parallel_dispatch ? 1 : 0;
+}
+
+void jitc_sync_stream() {
+    lock_guard guard(state.mutex);
+    jit_sync_stream();
+}
+
+void jitc_sync_device() {
+    lock_guard guard(state.mutex);
+    jit_sync_device();
 }
 
 void *jitc_malloc(AllocType type, size_t size) {
@@ -68,24 +89,24 @@ void jitc_malloc_trim() {
     jit_malloc_trim(false);
 }
 
-void jitc_inc_ref_ext(uint32_t index) {
+void jitc_var_inc_ref_ext(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_inc_ref_ext(index);
+    jit_var_inc_ref_ext(index);
 }
 
-void jitc_dec_ref_ext(uint32_t index) {
+void jitc_var_dec_ref_ext(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_dec_ref_ext(index);
+    jit_var_dec_ref_ext(index);
 }
 
-void jitc_inc_ref_int(uint32_t index) {
+void jitc_var_inc_ref_int(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_inc_ref_int(index);
+    jit_var_inc_ref_int(index);
 }
 
-void jitc_dec_ref_int(uint32_t index) {
+void jitc_var_dec_ref_int(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_dec_ref_int(index);
+    jit_var_dec_ref_int(index);
 }
 
 void *jitc_var_ptr(uint32_t index) {
@@ -108,9 +129,9 @@ const char *jitc_var_label(uint32_t index) {
     return jit_var_label(index);
 }
 
-void jitc_var_set_label(uint32_t index, const char *label) {
+void jitc_var_label_set(uint32_t index, const char *label) {
     lock_guard guard(state.mutex);
-    jit_var_set_label(index, label);
+    jit_var_label_set(index, label);
 }
 
 uint32_t jitc_var_register(VarType type, void *ptr, size_t size, int free) {
@@ -172,19 +193,9 @@ void jitc_set_scatter_gather_operand(uint32_t index, bool gather) {
     jit_set_scatter_gather_operand(index, gather);
 }
 
-const char *jitc_whos() {
+const char *jitc_var_whos() {
     lock_guard guard(state.mutex);
-    return jit_whos();
-}
-
-void jitc_set_parallel_dispatch(int enable) {
-    lock_guard guard(state.mutex);
-    state.parallel_dispatch = enable != 0;
-}
-
-int jitc_parallel_dispatch() {
-    lock_guard guard(state.mutex);
-    return state.parallel_dispatch ? 1 : 0;
+    return jit_var_whos();
 }
 
 void jitc_eval() {

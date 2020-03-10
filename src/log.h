@@ -21,6 +21,9 @@ extern void jit_log(LogLevel level, const char* fmt, ...);
 /// Immediately terminate the application due to a fatal internal error
 [[noreturn]] extern void jit_fail(const char* fmt, ...);
 
+/// Return and clear the log buffer
+extern char *jit_log_buffer();
+
 /// Convert a number of bytes into a human-readable string (returns static buffer!)
 extern const char *jit_mem_string(size_t size);
 

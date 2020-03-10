@@ -65,14 +65,17 @@ include_directories(
 
 add_library(
   enoki-jit SHARED
+  include/enoki/jit.h
+  src/internal.h       
   src/log.h            src/log.cpp
-  src/ssa.h            src/ssa.cpp
+  src/var.h            src/var.cpp
   src/eval.h           src/eval.cpp
   src/malloc.h         src/malloc.cpp
   src/hash.h           src/hash.cpp
-  src/jit.h            src/jit.cpp
-  include/enoki/jit.h  src/api.cpp
+  src/init.cpp
+  src/api.cpp
 )
+
 set_property(TARGET enoki-jit PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
 target_link_libraries(enoki-jit PRIVATE CUDA::cuda_driver CUDA::cudart pthread)

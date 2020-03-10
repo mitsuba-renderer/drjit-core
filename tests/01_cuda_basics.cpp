@@ -25,7 +25,8 @@ int main(int argc, char **argv) {
     (void) argv;
 
     try {
-        jitc_set_log_level(4);
+        jitc_log_level_set(4);
+        jitc_log_buffer_enable(1);
         jitc_init_async();
         jitc_device_set(0, 0);
 

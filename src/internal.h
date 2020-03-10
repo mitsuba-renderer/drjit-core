@@ -182,6 +182,9 @@ struct State {
     /// Dispatch to multiple streams that run concurrently?
     bool parallel_dispatch = true;
 
+    /// Should log messages be written to an internal buffer instead of 'stderr'?
+    bool log_to_buffer = false;
+
     /// Hash table of previously compiled kernels
     tsl::robin_map<const char *, Kernel, string_hash, string_eq,
                    std::allocator<std::pair<const char *, Kernel>>,
@@ -263,6 +266,8 @@ public:
         return written;
     }
 
+    size_t vfmt(const char *format, va_list args_);
+
     size_t size() const { return m_cur - m_start; }
 
 private:
@@ -291,7 +296,7 @@ extern void jit_shutdown();
 extern void jit_device_set(int32_t device, uint32_t stream);
 
 /// Wait for all computation on the current stream to finish
-extern void jit_stream_sync();
+extern void jit_sync_stream();
 
 /// Wait for all computation on the current device to finish
-extern void jit_device_sync();
+extern void jit_sync_device();

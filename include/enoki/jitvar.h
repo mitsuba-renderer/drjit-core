@@ -23,10 +23,10 @@ struct CUDAArray {
 
     CUDAArray() = default;
 
-    ~CUDAArray() { jitc_dec_ref_ext(m_index); }
+    ~CUDAArray() { jitc_var_dec_ref_ext(m_index); }
 
     CUDAArray(const CUDAArray &a) : m_index(a.m_index) {
-        jitc_inc_ref_ext(m_index);
+        jitc_var_inc_ref_ext(m_index);
     }
 
     CUDAArray(CUDAArray &&a) : m_index(a.m_index) {
@@ -107,8 +107,8 @@ struct CUDAArray {
     }
 
     CUDAArray &operator=(const CUDAArray &a) {
-        jitc_inc_ref_ext(a.m_index);
-        jitc_dec_ref_ext(m_index);
+        jitc_var_inc_ref_ext(a.m_index);
+        jitc_var_dec_ref_ext(m_index);
         m_index = a.m_index;
         return *this;
     }

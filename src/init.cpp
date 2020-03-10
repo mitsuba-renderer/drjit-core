@@ -1,6 +1,6 @@
-#include "jit.h"
+#include "internal.h"
 #include "malloc.h"
-#include "jit.h"
+#include "internal.h"
 #include "log.h"
 
 State state;
@@ -168,54 +168,32 @@ void jit_device_set(int32_t device, uint32_t stream) {
 }
 
 /// Wait for all computation on the current stream to finish
-void jit_stream_sync() {
+void jit_sync_stream() {
 #if defined(ENOKI_CUDA)
     Stream *stream = active_stream;
     if (unlikely(!stream))
         return;
-    unlock_guard guard(state.mutex);
-    jit_log(Trace, "jit_stream_sync(): starting..");
-    cuda_check(cudaStreamSynchronize(stream->handle));
-    jit_log(Trace, "jit_stream_sync(): done.");
+    jit_log(Trace, "jit_sync_stream(): starting..");
+    /* Release mutex while synchronizing */ {
+        unlock_guard guard(state.mutex);
+        cuda_check(cudaStreamSynchronize(stream->handle));
+    }
+    jit_log(Trace, "jit_sync_stream(): done.");
 #endif
 }
 
 /// Wait for all computation on the current device to finish
-void jit_device_sync() {
+void jit_sync_device() {
 #if defined(ENOKI_CUDA)
     Stream *stream = active_stream;
     if (unlikely(!stream))
         return;
-    unlock_guard guard(state.mutex);
-    jit_log(Trace, "jit_device_sync(): starting..");
-    cuda_check(cudaDeviceSynchronize());
-    jit_log(Trace, "jit_device_sync(): done.");
+    jit_log(Trace, "jit_sync_device(): starting..");
+    /* Release mutex while synchronizing */ {
+        unlock_guard guard(state.mutex);
+        cuda_check(cudaDeviceSynchronize());
+    }
+    jit_log(Trace, "jit_sync_device(): done.");
 #endif
-}
-
-Buffer::Buffer() : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
-    const size_t size = 1024;
-    m_start = (char *) malloc(size);
-    if (unlikely(m_start == nullptr))
-        jit_fail("Buffer(): out of memory!");
-    m_end = m_start + size;
-    clear();
-}
-
-void Buffer::expand() {
-    size_t old_alloc_size = m_end - m_start,
-           new_alloc_size = 2 * old_alloc_size,
-           used_size      = m_cur - m_start,
-           copy_size      = std::min(used_size + 1, old_alloc_size);
-
-    char *tmp = (char *) malloc(new_alloc_size);
-    if (unlikely(m_start == nullptr))
-        jit_fail("Buffer::expand() out of memory!");
-    memcpy(tmp, m_start, copy_size);
-    free(m_start);
-
-    m_start = tmp;
-    m_end = m_start + new_alloc_size;
-    m_cur = m_start + used_size;
 }
 

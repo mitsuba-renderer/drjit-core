@@ -44,16 +44,16 @@ extern uint32_t jit_var_copy_to_device(VarType type,
                                        size_t size);
 
 /// Increase the internal reference count of a given variable
-extern void jit_inc_ref_int(uint32_t index);
+extern void jit_var_inc_ref_int(uint32_t index);
 
 /// Decrease the internal reference count of a given variable
-extern void jit_dec_ref_int(uint32_t index);
+extern void jit_var_dec_ref_int(uint32_t index);
 
 /// Increase the external reference count of a given variable
-extern void jit_inc_ref_ext(uint32_t index);
+extern void jit_var_inc_ref_ext(uint32_t index);
 
 /// Decrease the external reference count of a given variable
-extern void jit_dec_ref_ext(uint32_t index);
+extern void jit_var_dec_ref_ext(uint32_t index);
 
 // Query the pointer variable associated with a given variable
 extern void *jit_var_ptr(uint32_t index);
@@ -65,7 +65,7 @@ extern size_t jit_var_size(uint32_t index);
 extern uint32_t jit_var_set_size(uint32_t index, size_t size, int copy);
 
 /// Assign a descriptive label to a given variable
-extern void jit_var_set_label(uint32_t index, const char *label);
+extern void jit_var_label_set(uint32_t index, const char *label);
 
 /// Query the descriptive label associated with a given variable
 extern const char *jit_var_label(uint32_t index);
@@ -86,7 +86,7 @@ extern void jit_var_mark_dirty(uint32_t index);
 extern void jit_set_scatter_gather_operand(uint32_t index, bool gather);
 
 /// Return a human-readable summary of registered variables
-extern const char *jit_whos();
+extern const char *jit_var_whos();
 
 /// Remove a variable from the cache used for common subexpression elimination
 extern void jit_cse_drop(uint32_t index, const Variable *v);

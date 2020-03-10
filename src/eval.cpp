@@ -1,6 +1,6 @@
-#include "jit.h"
+#include "internal.h"
 #include "log.h"
-#include "ssa.h"
+#include "var.h"
 #include "eval.h"
 
 #define CUDA_MAX_KERNEL_PARAMETERS 4
@@ -215,7 +215,7 @@ void jit_assemble(uint32_t size) {
     //     if (index < CUDA_MAX_KERNEL_PARAMETERS - 1)
     //         buffer.fmt("[arg%u]", index);
     //     else
-    //         buffer.fmt("[%arg_extra + %u]", index * 8);
+    //         buffer.fmt("[%%arg_extra + %u]", index * 8);
     // };
 
     buffer.put(".visible .entry enoki_@@@@@@@@(.param .u32 size,\n");
@@ -236,7 +236,7 @@ void jit_assemble(uint32_t size) {
     buffer.put("    ld.param.u32 %size, [size];\n");
 
     if (!kernel_args_extra.empty())
-        buffer.fmt("    ld.param.u64 %arg_extra, [arg_%u];\n",
+        buffer.fmt("    ld.param.u64 %%arg_extra, [arg_%u];\n",
                    CUDA_MAX_KERNEL_PARAMETERS - 1);
 
     buffer.put("    mov.u32 %r0, %ctaid.x;\n");
@@ -589,12 +589,12 @@ void jit_eval() {
                 memset(v->dep, 0, sizeof(uint32_t) * 3);
                 v->extra_dep = 0;
                 for (int j = 0; j < 3; ++j)
-                    jit_dec_ref_int(dep[j]);
-                jit_dec_ref_ext(extra_dep);
+                    jit_var_dec_ref_int(dep[j]);
+                jit_var_dec_ref_ext(extra_dep);
             // }
 
             if (side_effect)
-                jit_dec_ref_ext(index);
+                jit_var_dec_ref_ext(index);
         }
     }
 

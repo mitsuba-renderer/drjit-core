@@ -1,8 +1,10 @@
 #include <cstdarg>
 #include <cstdio>
 #include <stdexcept>
-#include "jit.h"
+#include "internal.h"
 #include "log.h"
+
+static Buffer log_buffer;
 
 void jit_log(LogLevel log_level, const char* fmt, ...) {
     if (log_level > state.log_level)
@@ -10,18 +12,28 @@ void jit_log(LogLevel log_level, const char* fmt, ...) {
 
     va_list args;
     va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
-    fputc('\n', stderr);
+    if (likely(!state.log_to_buffer)) {
+        vfprintf(stderr, fmt, args);
+        fputc('\n', stderr);
+    } else {
+        buffer.vfmt(fmt, args);
+        buffer.put("\n");
+    }
     va_end(args);
+}
+
+char *jit_log_buffer() {
+    char *value = strdup(buffer.get());
+    buffer.clear();
+    return value;
 }
 
 void jit_raise(const char* fmt, ...) {
     va_list args;
-    char buf[1024];
     va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
+    buffer.vfmt(fmt, args);
     va_end(args);
-    throw std::runtime_error(buf);
+    throw std::runtime_error(log_buffer.get());
 }
 
 void jit_fail(const char* fmt, ...) {
@@ -68,6 +80,51 @@ const char *jit_time_string(float value) {
     snprintf(jit_string_buf, 64, "%.5g %s", value, orders[i].suffix);
 
     return jit_string_buf;
+}
+
+Buffer::Buffer() : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
+    const size_t size = 1024;
+    m_start = (char *) malloc(size);
+    if (unlikely(m_start == nullptr))
+        jit_fail("Buffer(): out of memory!");
+    m_end = m_start + size;
+    clear();
+}
+
+size_t Buffer::vfmt(const char *format, va_list args_) {
+    size_t written;
+    va_list args;
+    do {
+        size_t size = m_end - m_cur;
+        va_copy(args, args_);
+        written = (size_t) vsnprintf(m_cur, size, format, args);
+        va_end(args);
+
+        if (likely(written < size)) {
+            m_cur += written;
+            break;
+        }
+
+        expand();
+    } while (true);
+    return written;
+}
+
+void Buffer::expand() {
+    size_t old_alloc_size = m_end - m_start,
+           new_alloc_size = 2 * old_alloc_size,
+           used_size      = m_cur - m_start,
+           copy_size      = std::min(used_size + 1, old_alloc_size);
+
+    char *tmp = (char *) malloc(new_alloc_size);
+    if (unlikely(m_start == nullptr))
+        jit_fail("Buffer::expand() out of memory!");
+    memcpy(tmp, m_start, copy_size);
+    free(m_start);
+
+    m_start = tmp;
+    m_end = m_start + new_alloc_size;
+    m_cur = m_start + used_size;
 }
 
 #if defined(ENOKI_CUDA)
