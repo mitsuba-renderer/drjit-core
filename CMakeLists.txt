@@ -1,7 +1,8 @@
 project("jit")
 cmake_minimum_required(VERSION 3.17)
 
-option(ENOKI_ENABLE_CUDA "Enable CUDA" ON)
+option(ENOKI_ENABLE_CUDA  "Enable CUDA?"        ON)
+option(ENOKI_ENABLE_TESTS "Compile test suite?" ON)
 
 # Set a default build configuration (Release)
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -31,14 +32,14 @@ endmacro()
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_FLAGS MATCHES "-stdlib=libc\\+\\+")
   CHECK_CXX_COMPILER_AND_LINKER_FLAGS(HAS_LIBCPP "-stdlib=libc++" "-stdlib=libc++")
   if (HAS_LIBCPP)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -D_LIBCPP_VERSION")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -stdlib=libc++")
     message(STATUS "Enoki-JIT: using libc++.")
   else()
     CHECK_CXX_COMPILER_AND_LINKER_FLAGS(HAS_LIBCPP_AND_CPPABI "-stdlib=libc++" "-stdlib=libc++ -lc++abi")
     if (HAS_LIBCPP_AND_CPPABI)
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -D_LIBCPP_VERSION")
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
       set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
       set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
       message(STATUS "Enoki-JIT: using libc++ and libc++abi.")
@@ -77,8 +78,8 @@ add_library(
 )
 
 set_property(TARGET enoki-jit PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-
 target_link_libraries(enoki-jit PRIVATE CUDA::cuda_driver CUDA::cudart pthread)
 
-add_executable(01_cuda_basics tests/01_cuda_basics.cpp)
-target_link_libraries(01_cuda_basics PRIVATE enoki-jit)
+if (ENOKI_ENABLE_TESTS)
+  add_subdirectory(tests)
+endif()

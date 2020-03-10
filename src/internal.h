@@ -7,7 +7,7 @@
 #include <string.h>
 #include <inttypes.h>
 
-#define PTR "0x%" PRIxPTR
+#define PTR "<0x%" PRIxPTR ">"
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
@@ -128,7 +128,6 @@ struct VariableKeyHasher {
     }
 };
 
-
 /// Records the full JIT compiler state
 struct State {
     /// Must be held to access members
@@ -234,6 +233,7 @@ public:
         m_start[0] = '\0';
     }
 
+    /// Append a string to the buffer
     void put(const char *str) {
         do {
             char *cur = (char *) memccpy(m_cur, str, '\0', m_end - m_cur);
@@ -247,25 +247,10 @@ public:
         } while (true);
     }
 
-    size_t fmt(const char *format, ...) {
-        size_t written;
-        do {
-            size_t size = m_end - m_cur;
-            va_list args;
-            va_start(args, format);
-            written = (size_t) vsnprintf(m_cur, size, format, args);
-            va_end(args);
+    /// Append a formatted (printf-style) string to the buffer
+    size_t fmt(const char *format, ...);
 
-            if (likely(written < size)) {
-                m_cur += written;
-                break;
-            }
-
-            expand();
-        } while (true);
-        return written;
-    }
-
+    /// Like \ref fmt, but specify arguments through a va_list.
     size_t vfmt(const char *format, va_list args_);
 
     size_t size() const { return m_cur - m_start; }

@@ -577,11 +577,10 @@ void jit_eval() {
             v->side_effect = false;
             v->dirty = false;
 
-            if (size == 1) {
-                // Don't bother with CSE for evaluated scalar variables to replace
-                // costly loads with faster arithmetic.
+            /* Don't bother with CSE for evaluated scalar variables to replace
+               costly loads with faster arithmetic. */
+            if (size == 1)
                 jit_cse_drop(index, v);
-            }
 
             // if (v->data != nullptr && v->stmt != nullptr) {
                 uint32_t dep[3], extra_dep = v->extra_dep;

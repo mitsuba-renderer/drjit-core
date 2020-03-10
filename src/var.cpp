@@ -59,7 +59,7 @@ void jit_cse_drop(uint32_t index, const Variable *v) {
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
 void jit_var_free(uint32_t index, Variable *v) {
-    jit_log(Trace, "jit_var_free(%u) = " PTR ".", index, v->data);
+    jit_log(Trace, "jit_var_free(%u)", index);
     jit_cse_drop(index, v);
 
     uint32_t dep[3], extra_dep = v->extra_dep;
@@ -93,7 +93,7 @@ void jit_var_free(uint32_t index, Variable *v) {
 /// Increase the external reference count of a given variable
 void jit_var_inc_ref_ext(uint32_t index, Variable *v) {
     v->ref_count_ext++;
-    jit_log(Trace, "jit_var_inc_ref_ext(%u) -> %u", index, v->ref_count_ext);
+    jit_log(Trace, "jit_var_inc_ref_ext(%u): %u", index, v->ref_count_ext);
 }
 
 /// Increase the external reference count of a given variable
@@ -105,7 +105,7 @@ void jit_var_inc_ref_ext(uint32_t index) {
 /// Increase the internal reference count of a given variable
 void jit_var_inc_ref_int(uint32_t index, Variable *v) {
     v->ref_count_int++;
-    jit_log(Trace, "jit_var_inc_ref_int(%u) -> %u", index, v->ref_count_int);
+    jit_log(Trace, "jit_var_inc_ref_int(%u): %u", index, v->ref_count_int);
 }
 
 /// Increase the internal reference count of a given variable
@@ -123,7 +123,7 @@ void jit_var_dec_ref_ext(uint32_t index) {
     if (unlikely(v->ref_count_ext == 0))
         jit_fail("jit_var_dec_ref_ext(): variable %u has no external references!", index);
 
-    jit_log(Trace, "jit_var_dec_ref_ext(%u) -> %u", index, v->ref_count_ext - 1);
+    jit_log(Trace, "jit_var_dec_ref_ext(%u): %u", index, v->ref_count_ext - 1);
     v->ref_count_ext--;
 
     if (v->ref_count_ext == 0)
@@ -142,7 +142,7 @@ void jit_var_dec_ref_int(uint32_t index) {
     if (unlikely(v->ref_count_int == 0))
         jit_fail("jit_var_dec_ref_int(): variable %u has no internal references!", index);
 
-    jit_log(Trace, "jit_var_dec_ref_int(%u) -> %u", index, v->ref_count_int - 1);
+    jit_log(Trace, "jit_var_dec_ref_int(%u): %u", index, v->ref_count_int - 1);
     v->ref_count_int--;
 
     if (v->ref_count_ext == 0 && v->ref_count_int == 0)
@@ -216,7 +216,7 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
     }
 
     var->size = (uint32_t) size;
-    jit_log(Debug, "jit_var_set_size(%u) -> %zu.", index, size);
+    jit_log(Debug, "jit_var_set_size(%u): %zu", index, size);
     return index;
 }
 
@@ -230,7 +230,7 @@ void jit_var_label_set(uint32_t index, const char *label) {
     Variable *var = jit_var(index);
     free(var->label);
     var->label = strdup(label);
-    jit_log(Debug, "jit_var_label_set(%u) -> \"%s.\"", index, label);
+    jit_log(Debug, "jit_var_label_set(%u): \"%s\"", index, label);
 }
 
 /// Append a variable to the instruction trace (no operands)
@@ -247,7 +247,7 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt) {
     v.tsize = 1;
 
     auto [index, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_trace_append(%u): %s%s.",
+    jit_log(Debug, "jit_trace_append(%u): %s%s",
             index, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
@@ -286,7 +286,7 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
     jit_var_inc_ref_int(arg1, v1);
 
     auto [index, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_trace_append(%u <- %u): %s%s.",
+    jit_log(Debug, "jit_trace_append(%u <- %u): %s%s",
             index, arg1, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
@@ -342,7 +342,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt,
 #endif
 
     auto [index, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s.",
+    jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s",
             index, arg1, arg2, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
@@ -404,7 +404,7 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt,
 #endif
 
     auto [index, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s.",
+    jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s",
             index, arg1, arg2, arg3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
@@ -428,8 +428,8 @@ uint32_t jit_var_register(VarType type, void *ptr,
     v.tsize = 1;
 
     auto [index, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_var_register(%u): " PTR ", size=%zu, free=%i.",
-            index, ptr, size, (int) free);
+    jit_log(Debug, "jit_var_register(%u): " PTR ", size=%zu, free=%i",
+            index, ptr, size, (int) v.free_variable);
 
     jit_var_inc_ref_ext(index, vo);
 
@@ -454,7 +454,7 @@ uint32_t jit_var_register_ptr(const void *ptr) {
     v.direct_pointer = true;
 
     auto [index, vo] = jit_trace_append(v);
-    jit_log(Debug, "jit_var_register_ptr(%u): " PTR ".", index, ptr);
+    jit_log(Debug, "jit_var_register_ptr(%u): " PTR, index, ptr);
 
     jit_var_inc_ref_ext(index, vo);
     state.variable_from_ptr[ptr] = index;
@@ -481,7 +481,7 @@ uint32_t jit_var_copy_to_device(VarType type,
 
     jit_free(host_ptr);
     uint32_t index = jit_var_register(type, device_ptr, size, true);
-    jit_log(Debug, "jit_var_copy_to_device(%u, %zu).", index, size);
+    jit_log(Debug, "jit_var_copy_to_device(%u, %zu)", index, size);
     return index;
 }
 
@@ -496,7 +496,7 @@ void jit_var_migrate(uint32_t index, AllocType type) {
         v = jit_var(index);
     }
 
-    jit_log(Debug, "jit_var_migrate(%u, " PTR ") -> %s", index, v->data,
+    jit_log(Debug, "jit_var_migrate(%u, " PTR "): %s", index, v->data,
             alloc_type_names[(int) type]);
 
     v->data = jit_malloc_migrate(v->data, type);

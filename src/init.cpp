@@ -29,14 +29,14 @@ void jit_init() {
         cudaGetDeviceProperties(&prop, i);
         jit_log(Info,
                 " - Found CUDA device %i: \"%s\" "
-                "(PCI ID %02x:%02x.%i, %i SMs, %s).",
+                "(PCI ID %02x:%02x.%i, %i SMs, %s)",
                 i, prop.name, prop.pciBusID, prop.pciDeviceID, prop.pciDomainID,
                 prop.multiProcessorCount, jit_mem_string(prop.totalGlobalMem));
         if (prop.unifiedAddressing == 0) {
-            jit_log(Warn, " - Warning: device does *not* support unified addressing, skipping..");
+            jit_log(Warn, " - Warning: device does *not* support unified addressing, skipping ..");
             continue;
         } else if (prop.managedMemory == 0) {
-            jit_log(Warn, " - Warning: device does *not* support managed memory, skipping..");
+            jit_log(Warn, " - Warning: device does *not* support managed memory, skipping ..");
             continue;
         }
         if (prop.concurrentManagedAccess == 0)
@@ -56,10 +56,13 @@ void jit_init() {
             int peer_ok = 0;
             cuda_check(cudaDeviceCanAccessPeer(&peer_ok, da, db));
             if (peer_ok) {
-                jit_log(Debug, " - Enabling peer access from device %i -> %i.",
+                jit_log(Debug, " - Enabling peer access from device %i -> %i",
                         da, db);
                 cuda_check(cudaSetDevice(da));
-                cuda_check(cudaDeviceEnablePeerAccess(db, 0));
+                cudaError_t rv = cudaDeviceEnablePeerAccess(db, 0);
+                if (rv == cudaErrorPeerAccessAlreadyEnabled)
+                    continue;
+                cuda_check(rv);
             }
         }
     }
@@ -123,7 +126,7 @@ void jit_shutdown() {
     state.devices.clear();
     state.initialized = false;
 
-    jit_log(Info, "jit_shutdown(): done.");
+    jit_log(Info, "jit_shutdown(): done");
 }
 
 /// Set the currently active device & stream
@@ -147,11 +150,11 @@ void jit_device_set(int32_t device, uint32_t stream) {
         stream_ptr = it->second;
         if (stream_ptr == active_stream_ptr)
             return;
-        jit_log(Trace, "jit_device_set(device=%i, stream=%i): selecting stream.", device, stream);
+        jit_log(Trace, "jit_device_set(device=%i, stream=%i): selecting stream", device, stream);
         if (stream_ptr->device != active_stream_ptr->device)
             cuda_check(cudaSetDevice(state.devices[device]));
     } else {
-        jit_log(Trace, "jit_device_set(device=%i, stream=%i): creating stream.", device, stream);
+        jit_log(Trace, "jit_device_set(device=%i, stream=%i): creating stream", device, stream);
         cudaStream_t handle = nullptr;
         cudaEvent_t event = nullptr;
         cuda_check(cudaStreamCreateWithFlags(&handle, cudaStreamNonBlocking));
@@ -173,7 +176,7 @@ void jit_sync_stream() {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         return;
-    jit_log(Trace, "jit_sync_stream(): starting..");
+    jit_log(Trace, "jit_sync_stream(): starting ..");
     /* Release mutex while synchronizing */ {
         unlock_guard guard(state.mutex);
         cuda_check(cudaStreamSynchronize(stream->handle));
@@ -188,7 +191,7 @@ void jit_sync_device() {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         return;
-    jit_log(Trace, "jit_sync_device(): starting..");
+    jit_log(Trace, "jit_sync_device(): starting ..");
     /* Release mutex while synchronizing */ {
         unlock_guard guard(state.mutex);
         cuda_check(cudaDeviceSynchronize());

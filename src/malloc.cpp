@@ -148,10 +148,10 @@ void* jit_malloc(AllocType type, size_t size) {
     state.alloc_used.insert({ ptr, ai });
 
     if (ai.type == AllocType::Device)
-        jit_log(Trace, "jit_malloc(type=%s, device=%u, size=%zu) -> " PTR " (%s)",
+        jit_log(Trace, "jit_malloc(type=%s, device=%u, size=%zu): " PTR " (%s)",
                 alloc_type_names[(int) ai.type], ai.device, ai.size, ptr, descr);
     else
-        jit_log(Trace, "jit_malloc(type=%s, size=%zu) -> " PTR " (%s)",
+        jit_log(Trace, "jit_malloc(type=%s, size=%zu): " PTR " (%s)",
                 alloc_type_names[(int) ai.type], ai.size, ptr, descr);
 
     size_t &usage     = state.alloc_usage[(int) ai.type],
@@ -232,7 +232,7 @@ void jit_free_flush() {
     chain_new->next = chain;
     stream->release_chain = chain_new;
 
-    jit_log(Trace, "jit_free_flush(): scheduling %zu deallocation%s.",
+    jit_log(Trace, "jit_free_flush(): scheduling %zu deallocation%s",
             n_dealloc, n_dealloc > 1 ? "s" : "");
 
     cuda_check(cudaLaunchHostFunc(
@@ -250,7 +250,7 @@ void jit_free_flush() {
                 n_dealloc_remain += kv.second.size();
             }
 
-            jit_log(Trace, "jit_free_flush(): performing %zu deallocation%s.",
+            jit_log(Trace, "jit_free_flush(): performing %zu deallocation%s",
                     n_dealloc_remain, n_dealloc_remain > 1 ? "s" : "");
 
             delete chain1;
@@ -356,7 +356,7 @@ void jit_malloc_trim(bool warn) {
         for (int i = 0; i < 5; ++i) {
             if (trim_count[i] == 0)
                 continue;
-            jit_log(Debug, " - %s memory: %s in %zu allocation%s.",
+            jit_log(Debug, " - %s memory: %s in %zu allocation%s",
                     alloc_type_names[i], jit_mem_string(trim_size[i]),
                     trim_count[i], trim_count[i] > 1 ? "s" : "");
         }
@@ -381,7 +381,7 @@ void jit_malloc_shutdown() {
             if (leak_count[i] == 0)
                 continue;
 
-            jit_log(Warn, " - %s memory: %s in %zu allocation%s.",
+            jit_log(Warn, " - %s memory: %s in %zu allocation%s",
                     alloc_type_names[i], jit_mem_string(leak_size[i]),
                     leak_count[i], leak_count[i] > 1 ? "s" : "");
         }

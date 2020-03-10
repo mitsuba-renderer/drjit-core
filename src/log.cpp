@@ -1,6 +1,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <stdexcept>
+#include <ctime>
 #include "internal.h"
 #include "log.h"
 
@@ -16,22 +17,22 @@ void jit_log(LogLevel log_level, const char* fmt, ...) {
         vfprintf(stderr, fmt, args);
         fputc('\n', stderr);
     } else {
-        buffer.vfmt(fmt, args);
-        buffer.put("\n");
+        log_buffer.vfmt(fmt, args);
+        log_buffer.put("\n");
     }
     va_end(args);
 }
 
 char *jit_log_buffer() {
-    char *value = strdup(buffer.get());
-    buffer.clear();
+    char *value = strdup(log_buffer.get());
+    log_buffer.clear();
     return value;
 }
 
 void jit_raise(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    buffer.vfmt(fmt, args);
+    log_buffer.vfmt(fmt, args);
     va_end(args);
     throw std::runtime_error(log_buffer.get());
 }
@@ -89,6 +90,26 @@ Buffer::Buffer() : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
         jit_fail("Buffer(): out of memory!");
     m_end = m_start + size;
     clear();
+}
+
+size_t Buffer::fmt(const char *format, ...) {
+    size_t written;
+    do {
+        size_t size = m_end - m_cur;
+        va_list args;
+        va_start(args, format);
+        written = (size_t) vsnprintf(m_cur, size, format, args);
+        va_end(args);
+
+        if (likely(written < size)) {
+            m_cur += written;
+            break;
+        }
+
+        expand();
+    } while (true);
+
+    return written;
 }
 
 size_t Buffer::vfmt(const char *format, va_list args_) {
@@ -273,23 +294,16 @@ static const char *cuda_error_string(CUresult id) {
 }
 
 void cuda_check_impl(CUresult errval, const char *file, const int line) {
-    if (errval != CUDA_SUCCESS && errval != CUDA_ERROR_DEINITIALIZED) {
-        const char *err_msg = cuda_error_string(errval);
-        jit_log(Error, "cuda_check(): driver API error = %04d \"%s\" in "
-                "%s:%i.\n", (int) errval, err_msg, file, line);
-        exit(EXIT_FAILURE);
-    }
+    if (unlikely(errval != CUDA_SUCCESS && errval != CUDA_ERROR_DEINITIALIZED))
+        jit_fail("cuda_check(): driver API error = %04d \"%s\" in "
+                 "%s:%i.\n", (int) errval, cuda_error_string(errval), file, line);
 }
 
 void cuda_check_impl(cudaError_t errval, const char *file, const int line) {
-    if (errval != cudaSuccess && errval != cudaErrorCudartUnloading) {
-        const char *err_msg = cudaGetErrorName(errval);
-        jit_log(Error, "cuda_check(): runtime API error = %04d \"%s\" in "
-                "%s:%i.\n", (int) errval, err_msg, file, line);
-        exit(EXIT_FAILURE);
-    }
+    if (unlikely(errval != cudaSuccess && errval != cudaErrorCudartUnloading))
+        jit_fail("cuda_check(): runtime API error = %04d \"%s\" in "
+                 "%s:%i.\n", (int) errval, cudaGetErrorName(errval), file, line);
 }
-
 
 static timespec timer_value { 0, 0 };
 
