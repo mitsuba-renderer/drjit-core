@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api.h"
+#include <enoki/jit.h>
 #include "hash.h"
 
 /// Data structure characterizing a memory allocation

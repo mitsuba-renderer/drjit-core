@@ -5,3 +5,5 @@ CMakeCache.txt
 CMakeFiles
 *.ninja
 \.ninja_*
+
+libenoki-jit.so

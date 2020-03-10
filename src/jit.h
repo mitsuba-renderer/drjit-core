@@ -58,17 +58,13 @@ struct Stream {
 using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
 #endif
 
-enum EnokiType { Invalid = 0, Int8, UInt8, Int16, UInt16,
-                 Int32, UInt32, Int64, UInt64, Float16,
-                 Float32, Float64, Bool, Pointer };
-
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     /// Intermediate language statement
     char *stmt = nullptr;
 
     /// Data type of this variable
-    uint32_t type = (uint32_t) EnokiType::Invalid;
+    VarType type = VarType::Invalid;
 
     /// Number of entries
     uint32_t size = 0;
@@ -158,6 +154,12 @@ struct State {
     /// Map of currently unused memory regions
     AllocInfoMap alloc_free;
 
+    /// Mask defining used address bits for pointers returned by jit_malloc()
+    uintptr_t alloc_addr_mask = 0;
+
+    /// Stores a reference address used to compute the field 'alloc_addr_mask'.
+    void *alloc_addr_ref = nullptr;
+
     /// Keep track of current memory usage and a maximum watermark
     size_t alloc_usage    [(int) AllocType::Count] { 0 },
            alloc_watermark[(int) AllocType::Count] { 0 };
@@ -206,32 +208,6 @@ public:
     unlock_guard &operator=(const unlock_guard &) = delete;
 private:
     std::mutex &m_mutex;
-};
-
-class wait_flag {
-public:
-    wait_flag() : m_flag(false) { }
-
-    void set() {
-        lock_guard g(m_mutex);
-        m_flag = true;
-        m_cond.notify_all();
-    }
-
-    void clear() {
-        lock_guard g(m_mutex);
-        m_flag = false;
-    }
-
-    void wait() {
-        std::unique_lock lock(m_mutex);
-        m_cond.wait(lock, [this]() { return m_flag; });
-    }
-
-private:
-    bool m_flag;
-    std::mutex m_mutex;
-    std::condition_variable m_cond;
 };
 
 struct Buffer {
@@ -312,7 +288,7 @@ extern void jit_init();
 extern void jit_shutdown();
 
 /// Set the currently active device & stream
-extern void jit_device_set(uint32_t device, uint32_t stream);
+extern void jit_device_set(int32_t device, uint32_t stream);
 
 /// Wait for all computation on the current stream to finish
 extern void jit_stream_sync();

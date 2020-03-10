@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api.h"
+#include <enoki/jit.h>
 #include "cuda.h"
 
 /// Log levels for jit_log()
@@ -29,8 +29,8 @@ extern const char *jit_time_string(float us);
 
 #if defined(ENOKI_CUDA)
     #define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
-    ENOKI_EXPORT extern void cuda_check_impl(CUresult errval, const char *file, const int line);
-    ENOKI_EXPORT extern void cuda_check_impl(cudaError_t errval, const char *file, const int line);
+    extern void cuda_check_impl(CUresult errval, const char *file, const int line);
+    extern void cuda_check_impl(cudaError_t errval, const char *file, const int line);
 #endif
 
 /// Return the number of microseconds since the previous timer() call

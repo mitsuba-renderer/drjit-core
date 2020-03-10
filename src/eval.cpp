@@ -31,58 +31,58 @@ static std::vector<void *> kernel_args, kernel_args_extra;
 
 // ====================================================================
 
-static const char *cuda_register_type(uint32_t type) {
+static const char *cuda_register_type(VarType type) {
     switch (type) {
-        case EnokiType::UInt8:    return "u8";
-        case EnokiType::Int8:     return "s8";
-        case EnokiType::UInt16:   return "u16";
-        case EnokiType::Int16:    return "s16";
-        case EnokiType::UInt32:   return "u32";
-        case EnokiType::Int32:    return "s32";
-        case EnokiType::Pointer:
-        case EnokiType::UInt64:   return "u64";
-        case EnokiType::Int64:    return "s64";
-        case EnokiType::Float16:  return "f16";
-        case EnokiType::Float32:  return "f32";
-        case EnokiType::Float64:  return "f64";
-        case EnokiType::Bool:     return "pred";
+        case VarType::UInt8:    return "u8";
+        case VarType::Int8:     return "s8";
+        case VarType::UInt16:   return "u16";
+        case VarType::Int16:    return "s16";
+        case VarType::UInt32:   return "u32";
+        case VarType::Int32:    return "s32";
+        case VarType::Pointer:
+        case VarType::UInt64:   return "u64";
+        case VarType::Int64:    return "s64";
+        case VarType::Float16:  return "f16";
+        case VarType::Float32:  return "f32";
+        case VarType::Float64:  return "f64";
+        case VarType::Bool:     return "pred";
         default: jit_fail("cuda_register_type(): invalid type!");
     }
 }
 
-static const char *cuda_register_type_bin(uint32_t type) {
+static const char *cuda_register_type_bin(VarType type) {
     switch (type) {
-        case EnokiType::UInt8:
-        case EnokiType::Int8:    return "b8";
-        case EnokiType::UInt16:
-        case EnokiType::Float16:
-        case EnokiType::Int16:   return "b16";
-        case EnokiType::Float32:
-        case EnokiType::UInt32:
-        case EnokiType::Int32:   return "b32";
-        case EnokiType::Pointer:
-        case EnokiType::Float64:
-        case EnokiType::UInt64:
-        case EnokiType::Int64:   return "b64";
-        case EnokiType::Bool:    return "pred";
+        case VarType::UInt8:
+        case VarType::Int8:    return "b8";
+        case VarType::UInt16:
+        case VarType::Float16:
+        case VarType::Int16:   return "b16";
+        case VarType::Float32:
+        case VarType::UInt32:
+        case VarType::Int32:   return "b32";
+        case VarType::Pointer:
+        case VarType::Float64:
+        case VarType::UInt64:
+        case VarType::Int64:   return "b64";
+        case VarType::Bool:    return "pred";
         default: jit_fail("cuda_register_type_bin(): invalid type!");
     }
 }
 
-static const char *cuda_register_name(uint32_t type) {
+static const char *cuda_register_name(VarType type) {
     switch (type) {
-        case EnokiType::UInt8:
-        case EnokiType::Int8:    return "%b";
-        case EnokiType::UInt16:
-        case EnokiType::Int16:   return "%w";
-        case EnokiType::UInt32:
-        case EnokiType::Int32:   return "%r";
-        case EnokiType::Pointer:
-        case EnokiType::UInt64:
-        case EnokiType::Int64:   return "%rd";
-        case EnokiType::Float32: return "%f";
-        case EnokiType::Float64: return "%d";
-        case EnokiType::Bool:    return "%p";
+        case VarType::UInt8:
+        case VarType::Int8:    return "%b";
+        case VarType::UInt16:
+        case VarType::Int16:   return "%w";
+        case VarType::UInt32:
+        case VarType::Int32:   return "%r";
+        case VarType::Pointer:
+        case VarType::UInt64:
+        case VarType::Int64:   return "%rd";
+        case VarType::Float32: return "%f";
+        case VarType::Float64: return "%d";
+        case VarType::Bool:    return "%p";
         default: jit_fail("cuda_register_name(): invalid type!");
     }
 }
@@ -262,7 +262,7 @@ void jit_assemble(uint32_t size) {
 
     /// Replace '@'s in 'enoki_@@@@@@@@' by MD5 hash
     snprintf(kernel_name, 9, "%08x", crc32(buffer.get(), buffer.size()));
-    memcpy(strchr(buffer.get(), '@'), kernel_name, 8);
+    memcpy((void *) strchr(buffer.get(), '@'), kernel_name, 8);
 
     jit_log(Debug, "%s", buffer.get());
 
@@ -300,7 +300,7 @@ void jit_assemble(uint32_t size) {
                         << "    add.u64 %rd8, %rd8, %rd9;" << std::endl;
                     load_instr = "ld";
                 }
-                if (var.type != EnokiType::Bool) {
+                if (var.type != VarType::Bool) {
                     oss << "    " << load_instr << ".global." << cuda_register_type(var.type) << " "
                         << cuda_register_name(var.type) << reg_map[index] << ", [%rd8]"
                         << ";" << std::endl;
@@ -360,7 +360,7 @@ void jit_assemble(uint32_t size) {
                 oss << "    mul.wide.u32 %rd9, %r2, " << cuda_register_size(var.type) << ";" << std::endl
                     << "    add.u64 %rd8, %rd8, %rd9;" << std::endl;
             }
-            if (var.type != EnokiType::Bool) {
+            if (var.type != VarType::Bool) {
                 oss << "    st.global." << cuda_register_type(var.type) << " [%rd8], "
                     << cuda_register_name(var.type) << reg_map[index] << ";"
                     << std::endl;

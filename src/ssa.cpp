@@ -4,40 +4,40 @@
 #include "eval.h"
 
 /// Return the size of a given variable type
-size_t jit_type_size(uint32_t type) {
+size_t jit_type_size(VarType type) {
     switch (type) {
-        case EnokiType::UInt8:
-        case EnokiType::Int8:
-        case EnokiType::Bool:    return 1;
-        case EnokiType::UInt16:
-        case EnokiType::Int16:   return 2;
-        case EnokiType::UInt32:
-        case EnokiType::Int32:
-        case EnokiType::Float32: return 4;
-        case EnokiType::UInt64:
-        case EnokiType::Int64:
-        case EnokiType::Pointer:
-        case EnokiType::Float64: return 8;
+        case VarType::UInt8:
+        case VarType::Int8:
+        case VarType::Bool:    return 1;
+        case VarType::UInt16:
+        case VarType::Int16:   return 2;
+        case VarType::UInt32:
+        case VarType::Int32:
+        case VarType::Float32: return 4;
+        case VarType::UInt64:
+        case VarType::Int64:
+        case VarType::Pointer:
+        case VarType::Float64: return 8;
         default: jit_fail("jit_type_size(): invalid type!");
     }
 }
 
 /// Return the readable name for the given variable type
-const char *jit_type_name(uint32_t type) {
+const char *jit_type_name(VarType type) {
     switch (type) {
-        case EnokiType::Int8:    return "i8 "; break;
-        case EnokiType::UInt8:   return "u8 "; break;
-        case EnokiType::Int16:   return "i16"; break;
-        case EnokiType::UInt16:  return "u16"; break;
-        case EnokiType::Int32:   return "i32"; break;
-        case EnokiType::UInt32:  return "u32"; break;
-        case EnokiType::Int64:   return "i64"; break;
-        case EnokiType::UInt64:  return "u64"; break;
-        case EnokiType::Float16: return "f16"; break;
-        case EnokiType::Float32: return "f32"; break;
-        case EnokiType::Float64: return "f64"; break;
-        case EnokiType::Bool:    return "msk"; break;
-        case EnokiType::Pointer: return "ptr"; break;
+        case VarType::Int8:    return "i8 "; break;
+        case VarType::UInt8:   return "u8 "; break;
+        case VarType::Int16:   return "i16"; break;
+        case VarType::UInt16:  return "u16"; break;
+        case VarType::Int32:   return "i32"; break;
+        case VarType::UInt32:  return "u32"; break;
+        case VarType::Int64:   return "i64"; break;
+        case VarType::UInt64:  return "u64"; break;
+        case VarType::Float16: return "f16"; break;
+        case VarType::Float32: return "f32"; break;
+        case VarType::Float64: return "f64"; break;
+        case VarType::Bool:    return "msk"; break;
+        case VarType::Pointer: return "ptr"; break;
         default: jit_fail("jit_type_name(): invalid type!");
     }
 }
@@ -145,11 +145,11 @@ void jit_dec_ref_int(uint32_t index) {
 }
 
 /// Append the given variable to the instruction trace and return its ID
-std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
+static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
     v.stmt = strdup(v.stmt);
 
 #if defined(ENOKI_CUDA)
-    if (v.type != EnokiType::Float32) {
+    if (v.type != VarType::Float32) {
         char *offset = strstr(v.stmt, ".ftz");
         if (offset)
             strcat(offset, offset + 4);
@@ -190,15 +190,15 @@ size_t jit_var_size(uint32_t index) {
 }
 
 /// Set the size of a given variable (if possible, otherwise throw)
-uint32_t jit_var_set_size(uint32_t index, size_t size, bool copy) {
+uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
     Variable *var = jit_var(index);
     if (var->size == size)
         return index;
 
     if (var->data != nullptr || var->ref_count_int > 0) {
-        if (var->size == 1 && copy) {
+        if (var->size == 1 && copy != 0) {
             uint32_t index_new =
-                jit_trace_append(var->type, "mov.$t1 $r1, $r2", index);
+                jit_trace_append_1(var->type, "mov.$t1 $r1, $r2", index);
             jit_var(index_new)->size = size;
             jit_dec_ref_ext(index);
             return index_new;
@@ -229,7 +229,7 @@ void jit_var_set_label(uint32_t index, const char *label) {
 }
 
 /// Append a variable to the instruction trace (no operands)
-uint32_t jit_trace_append(uint32_t type, const char *stmt) {
+uint32_t jit_trace_append_0(VarType type, const char *stmt) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_trace_append(): device and stream must be set! "
@@ -253,8 +253,8 @@ uint32_t jit_trace_append(uint32_t type, const char *stmt) {
 }
 
 /// Append a variable to the instruction trace (1 operand)
-uint32_t jit_trace_append(uint32_t type, const char *stmt,
-                          uint32_t arg1) {
+uint32_t jit_trace_append_1(VarType type, const char *stmt,
+                            uint32_t arg1) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_trace_append(): device and stream must be set! "
@@ -292,8 +292,8 @@ uint32_t jit_trace_append(uint32_t type, const char *stmt,
 }
 
 /// Append a variable to the instruction trace (2 operands)
-uint32_t jit_trace_append(uint32_t type, const char *stmt,
-                          uint32_t arg1, uint32_t arg2) {
+uint32_t jit_trace_append_2(VarType type, const char *stmt,
+                            uint32_t arg1, uint32_t arg2) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_trace_append(): device and stream must be set! "
@@ -329,6 +329,13 @@ uint32_t jit_trace_append(uint32_t type, const char *stmt,
     jit_inc_ref_int(arg1, v1);
     jit_inc_ref_int(arg2, v2);
 
+#if defined(ENOKI_CUDA)
+    if (strstr(stmt, "ld.global")) {
+        v.extra_dep = state.scatter_gather_operand;
+        jit_inc_ref_ext(v.extra_dep);
+    }
+#endif
+
     auto [idx, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s.",
             idx, arg1, arg2, vo->stmt,
@@ -341,8 +348,8 @@ uint32_t jit_trace_append(uint32_t type, const char *stmt,
 }
 
 /// Append a variable to the instruction trace (3 operands)
-uint32_t jit_trace_append(uint32_t type, const char *stmt,
-                          uint32_t arg1, uint32_t arg2, uint32_t arg3) {
+uint32_t jit_trace_append_3(VarType type, const char *stmt,
+                            uint32_t arg1, uint32_t arg2, uint32_t arg3) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_trace_append(): device and stream must be set! "
@@ -384,9 +391,15 @@ uint32_t jit_trace_append(uint32_t type, const char *stmt,
     jit_inc_ref_int(arg3, v3);
 
 #if defined(ENOKI_CUDA)
-    if (strstr(stmt, "st.global") || strstr(stmt, "atom.global.add")) {
+    if ((strstr(stmt, "st.global") || strstr(stmt, "atom.global.add")) &&
+        state.scatter_gather_operand != 0) {
         v.extra_dep = state.scatter_gather_operand;
         jit_inc_ref_ext(v.extra_dep);
+
+        /// Remove scattered-to variable from CSE cache
+        Variable *target = jit_var(v.extra_dep);
+        VariableKey key(*target);
+        state.variable_from_key.erase(key);
     }
 #endif
 
@@ -402,8 +415,8 @@ uint32_t jit_trace_append(uint32_t type, const char *stmt,
 }
 
 /// Register an existing variable with the JIT compiler
-uint32_t jit_var_register(uint32_t type, void *ptr,
-                          size_t size, bool free) {
+uint32_t jit_var_register(VarType type, void *ptr,
+                          size_t size, int free) {
     if (unlikely(size == 0))
         jit_raise("jit_var_register: size must be > 0!");
 
@@ -411,7 +424,7 @@ uint32_t jit_var_register(uint32_t type, void *ptr,
     v.type = type;
     v.data = ptr;
     v.size = (uint32_t) size;
-    v.free_variable = free;
+    v.free_variable = free != 0;
     v.tsize = 1;
 
     auto [idx, vo] = jit_trace_append(v);
@@ -433,7 +446,7 @@ uint32_t jit_var_register_ptr(const void *ptr) {
     }
 
     Variable v;
-    v.type = EnokiType::Pointer;
+    v.type = VarType::Pointer;
     v.data = (void *) ptr;
     v.size = 1;
     v.tsize = 0;
@@ -449,8 +462,8 @@ uint32_t jit_var_register_ptr(const void *ptr) {
 }
 
 /// Copy a memory region onto the device and return its variable index
-uint32_t jit_var_copy_to_device(uint32_t type,
-                                const void *value,
+uint32_t jit_var_copy_to_device(VarType type,
+                                const void *ptr,
                                 size_t size) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
@@ -462,7 +475,7 @@ uint32_t jit_var_copy_to_device(uint32_t type,
     void *host_ptr   = jit_malloc(AllocType::HostPinned, total_size),
          *device_ptr = jit_malloc(AllocType::Device, total_size);
 
-    memcpy(host_ptr, value, total_size);
+    memcpy(host_ptr, ptr, total_size);
     cuda_check(cudaMemcpyAsync(device_ptr, host_ptr, total_size,
                                cudaMemcpyHostToDevice, stream->handle));
 

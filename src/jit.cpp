@@ -15,6 +15,9 @@ void jit_init() {
     if (state.initialized)
         return;
 
+    if (!state.variables.empty())
+        jit_fail("Cannot reinitialize JIT while variables are still being used!");
+
 #if defined(ENOKI_CUDA)
     // Enumerate CUDA devices and collect suitable ones
     int n_devices = 0;
@@ -63,6 +66,9 @@ void jit_init() {
 #endif
 
     state.scatter_gather_operand = 0;
+    state.alloc_addr_mask = 0;
+    state.alloc_addr_ref = nullptr;
+    state.variable_index = 1;
     state.initialized = true;
 }
 
@@ -118,11 +124,18 @@ void jit_shutdown() {
 }
 
 /// Set the currently active device & stream
-void jit_device_set(uint32_t device, uint32_t stream) {
+void jit_device_set(int32_t device, uint32_t stream) {
+    if (device == -1) {
 #if defined(ENOKI_CUDA)
-    if (device >= state.devices.size())
+        active_stream = nullptr;
+#endif
+        return;
+    }
+
+    if ((size_t) device >= state.devices.size())
         jit_raise("jit_device_set(): invalid device ID!");
 
+#if defined(ENOKI_CUDA)
     std::pair<uint32_t, uint32_t> key(device, stream);
     auto it = state.streams.find(key);
 
@@ -148,8 +161,6 @@ void jit_device_set(uint32_t device, uint32_t stream) {
         state.streams[key] = stream_ptr;
     }
     active_stream = stream_ptr;
-#else
-    jit_fail("jit_device_set(): unsupported! (CUDA support was disabled.)");
 #endif
 }
 
@@ -158,26 +169,24 @@ void jit_stream_sync() {
 #if defined(ENOKI_CUDA)
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_fail("jit_stream_sync(): device and stream must be set! "
-                 "(call jit_device_set() beforehand)!");
+        return;
     unlock_guard guard(state.mutex);
     jit_log(Trace, "jit_stream_sync(): starting..");
     cuda_check(cudaStreamSynchronize(stream->handle));
     jit_log(Trace, "jit_stream_sync(): done.");
-#else
-    jit_raise("jit_stream_sync(): unsupported! (CUDA support was disabled.)");
 #endif
 }
 
 /// Wait for all computation on the current device to finish
 void jit_device_sync() {
 #if defined(ENOKI_CUDA)
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        return;
     unlock_guard guard(state.mutex);
     jit_log(Trace, "jit_device_sync(): starting..");
     cuda_check(cudaDeviceSynchronize());
     jit_log(Trace, "jit_device_sync(): done.");
-#else
-    jit_raise("jit_device_sync(): unsupported! (CUDA support was disabled.)");
 #endif
 }
 

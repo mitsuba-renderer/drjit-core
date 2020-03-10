@@ -1,8 +1,9 @@
 #include "jit.h"
 #include "log.h"
 
-const char *alloc_type_names[5] = { "host", "host-pinned", "device",
-                                    "managed", "managed-read-mostly" };
+const char *alloc_type_names[(int) AllocType::Count] = {
+    "host", "host-pinned", "device", "managed", "managed-read-mostly"
+};
 
 // Round an unsigned integer up to a power of two
 static size_t round_pow2(size_t x) {
@@ -153,6 +154,14 @@ void* jit_malloc(AllocType type, size_t size) {
     usage += ai.size;
     watermark = std::max(watermark, usage);
 
+    if (!state.alloc_addr_ref)
+        state.alloc_addr_ref = ptr;
+
+    /* Keep track of which address bits are actually used by pointers returned
+       by jit_malloc(). This enables optimizations in jit_horiz_partition() */
+    uintptr_t bit_diff = (uintptr_t) state.alloc_addr_ref ^ (uintptr_t) ptr;
+    state.alloc_addr_mask |= bit_diff;
+
     return ptr;
 }
 
@@ -299,7 +308,8 @@ void jit_malloc_trim(bool warn) {
     AllocInfoMap alloc_free(std::move(state.alloc_free));
     unlock_guard guard(state.mutex);
 
-    size_t trim_count[5] = { 0 }, trim_size[5] = { 0 };
+    size_t trim_count[(int) AllocType::Count] = { 0 },
+           trim_size [(int) AllocType::Count] = { 0 };
     for (auto kv : alloc_free) {
         const std::vector<void *> &entries = kv.second;
         trim_count[(int) kv.first.type] += entries.size();
@@ -346,7 +356,8 @@ void jit_malloc_trim(bool warn) {
 void jit_malloc_shutdown() {
     jit_malloc_trim(false);
 
-    size_t leak_count[5] { 0 }, leak_size[5] { 0 };
+    size_t leak_count[(int) AllocType::Count] = { 0 },
+           leak_size [(int) AllocType::Count] = { 0 };
     for (auto kv : state.alloc_used) {
         leak_count[(int) kv.second.type]++;
         leak_size[(int) kv.second.type] += kv.second.size;

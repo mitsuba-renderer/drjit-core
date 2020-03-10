@@ -3,18 +3,14 @@
 #include "eval.h"
 #include <thread>
 
-static wait_flag jitc_init_flag;
-
 void jitc_init() {
     lock_guard guard(state.mutex);
-    jitc_init_flag.set();
     jit_init();
 }
 
 void jitc_init_async() {
-    jitc_init_flag.clear();
-    std::thread([]() { jitc_init(); }).detach();
-    jitc_init_flag.wait();
+    state.mutex.lock();
+    std::thread([]() { jit_init(); state.mutex.unlock(); }).detach();
 }
 
 void jitc_shutdown() {
@@ -32,12 +28,12 @@ void jitc_set_log_level(uint32_t log_level) {
     state.log_level = log_level;
 }
 
-uint32_t jitc_device_count() {
+int32_t jitc_device_count() {
     lock_guard guard(state.mutex);
-    return state.devices.size();
+    return (int32_t) state.devices.size();
 }
 
-void jitc_device_set(uint32_t device, uint32_t stream) {
+void jitc_device_set(int32_t device, uint32_t stream) {
     lock_guard guard(state.mutex);
     jit_device_set(device, stream);
 }
@@ -102,7 +98,7 @@ size_t jitc_var_size(uint32_t index) {
     return jit_var_size(index);
 }
 
-uint32_t jitc_var_set_size(uint32_t index, size_t size, bool copy) {
+uint32_t jitc_var_set_size(uint32_t index, size_t size, int copy) {
     lock_guard guard(state.mutex);
     return jit_var_set_size(index, size, copy);
 }
@@ -117,7 +113,7 @@ void jitc_var_set_label(uint32_t index, const char *label) {
     jit_var_set_label(index, label);
 }
 
-uint32_t jitc_var_register(uint32_t type, void *ptr, size_t size, bool free) {
+uint32_t jitc_var_register(VarType type, void *ptr, size_t size, int free) {
     lock_guard guard(state.mutex);
     return jit_var_register(type, ptr, size, free);
 }
@@ -127,33 +123,33 @@ uint32_t jitc_var_register_ptr(const void *ptr) {
     return jit_var_register_ptr(ptr);
 }
 
-uint32_t jitc_var_copy_to_device(uint32_t type,
+uint32_t jitc_var_copy_to_device(VarType type,
                                  const void *value,
                                  size_t size) {
     lock_guard guard(state.mutex);
     return jit_var_copy_to_device(type, value, size);
 }
 
-uint32_t jitc_trace_append(uint32_t type, const char *cmd) {
+uint32_t jitc_trace_append_0(VarType type, const char *cmd) {
     lock_guard guard(state.mutex);
-    return jit_trace_append(type, cmd);
+    return jit_trace_append_0(type, cmd);
 }
 
-uint32_t jitc_trace_append(uint32_t type, const char *cmd, uint32_t arg1) {
+uint32_t jitc_trace_append_1(VarType type, const char *cmd, uint32_t arg1) {
     lock_guard guard(state.mutex);
-    return jit_trace_append(type, cmd, arg1);
+    return jit_trace_append_1(type, cmd, arg1);
 }
 
-uint32_t jitc_trace_append(uint32_t type, const char *cmd, uint32_t arg1,
-                           uint32_t arg2) {
+uint32_t jitc_trace_append_2(VarType type, const char *cmd, uint32_t arg1,
+                            uint32_t arg2) {
     lock_guard guard(state.mutex);
-    return jit_trace_append(type, cmd, arg1, arg2);
+    return jit_trace_append_2(type, cmd, arg1, arg2);
 }
 
-uint32_t jitc_trace_append(uint32_t type, const char *cmd, uint32_t arg1,
-                           uint32_t arg2, uint32_t arg3) {
+uint32_t jitc_trace_append_3(VarType type, const char *cmd, uint32_t arg1,
+                             uint32_t arg2, uint32_t arg3) {
     lock_guard guard(state.mutex);
-    return jit_trace_append(type, cmd, arg1, arg2, arg3);
+    return jit_trace_append_3(type, cmd, arg1, arg2, arg3);
 }
 
 void jitc_var_migrate(uint32_t idx, AllocType type) {
@@ -181,14 +177,14 @@ const char *jitc_whos() {
     return jit_whos();
 }
 
-void jitc_set_parallel_dispatch(bool enable) {
+void jitc_set_parallel_dispatch(int enable) {
     lock_guard guard(state.mutex);
-    state.parallel_dispatch = enable;
+    state.parallel_dispatch = enable != 0;
 }
 
-bool jitc_parallel_dispatch() {
+int jitc_parallel_dispatch() {
     lock_guard guard(state.mutex);
-    return state.parallel_dispatch;
+    return state.parallel_dispatch ? 1 : 0;
 }
 
 void jitc_eval() {
