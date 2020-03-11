@@ -21,8 +21,12 @@ static constexpr LogLevel Trace = LogLevel::Trace;
 
 /// Caches basic information about a CUDA device
 struct Device {
+    // CUDA device context
+    CUcontext context;
+
     /// CUDA device ID
     int id;
+
     /// Number of SMs
     int num_sm;
 };
@@ -43,10 +47,10 @@ struct Stream {
     uint32_t stream = 0;
 
     /// Associated CUDA stream handle
-    cudaStream_t handle = nullptr;
+    CUstream handle = nullptr;
 
     /// A CUDA event for synchronization purposes
-    cudaEvent_t event = nullptr;
+    CUevent event = nullptr;
 
     /**
      * Memory regions that were freed via jit_free(), but which might still be

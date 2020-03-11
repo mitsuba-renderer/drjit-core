@@ -492,8 +492,7 @@ uint32_t jit_var_copy_to_device(VarType type,
          *device_ptr = jit_malloc(AllocType::Device, total_size);
 
     memcpy(host_ptr, ptr, total_size);
-    cuda_check(cudaMemcpyAsync(device_ptr, host_ptr, total_size,
-                               cudaMemcpyHostToDevice, stream->handle));
+    cuda_check(cuMemcpyAsync(device_ptr, host_ptr, total_size, stream->handle));
 
     jit_free(host_ptr);
     uint32_t index = jit_var_register(type, device_ptr, size, true);
@@ -619,19 +618,19 @@ const char *jit_var_str(uint32_t index) {
 
     buffer.clear();
     buffer.put("[");
-    uint8_t dst[8], *src = (uint8_t *) v->data;
+    uint8_t dst[8];
+    const uint8_t *src = (const uint8_t *) v->data;
     for (uint32_t i = 0; i < size; ++i) {
         if (size > limit_thresh && i == limit_remainder / 2) {
             buffer.fmt(".. %u skipped .., ", size - limit_remainder);
             i = size - limit_remainder / 2 - 1;
             continue;
         }
-        cuda_check(cudaMemcpyAsync(dst, src + i * isize, isize,
-                                   cudaMemcpyDeviceToHost,
-                                   stream->handle));
+        const uint8_t *src_offset = src + i * isize;
+        cuda_check(cuMemcpyAsync(dst, src_offset, isize, stream->handle));
         /* Temporarily release the lock while synchronizing */ {
             unlock_guard(state.mutex);
-            cuda_check(cudaStreamSynchronize(stream->handle));
+            cuda_check(cuStreamSynchronize(stream->handle));
         }
 
         const char *comma = i + 1 < size ? ", " : "";

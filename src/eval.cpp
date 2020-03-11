@@ -194,8 +194,8 @@ void jit_assemble(uint32_t size) {
         void *args_extra_dev  = jit_malloc(AllocType::Device, args_extra_size);
 
         memcpy(args_extra_host, kernel_args_extra.data(), args_extra_size);
-        cuda_check(cudaMemcpyAsync(args_extra_dev, args_extra_host, args_extra_size,
-                                   cudaMemcpyHostToDevice, active_stream->handle));
+        cuda_check(cuMemcpyAsync(args_extra_dev, args_extra_host,
+                                 args_extra_size, active_stream->handle));
 
         kernel_args.push_back(args_extra_dev);
         jit_free(args_extra_host);
@@ -389,7 +389,7 @@ void jit_run(uint32_t size) {
         const uintptr_t log_size = 8192;
         std::unique_ptr<char[]> error_log(new char[log_size]),
                                  info_log(new char[log_size]);
-        CUjit_option arg[5] = {
+        int arg[5] = {
             CU_JIT_INFO_LOG_BUFFER,
             CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
             CU_JIT_ERROR_LOG_BUFFER,
@@ -531,7 +531,7 @@ void jit_eval() {
     } else {
         jit_log(Debug, "jit_eval(): begin (parallel dispatch to %zu streams).",
                 schedule.size());
-        cuda_check(cudaEventRecord(stream->event, stream->handle));
+        cuda_check(cuEventRecord(stream->event, stream->handle));
     }
 
     uint32_t stream_index = 1000 * stream->stream;
@@ -542,14 +542,14 @@ void jit_eval() {
         if (parallel_dispatch) {
             jit_device_set(stream->device, stream_index);
             sub_stream = active_stream;
-            cuda_check(cudaStreamWaitEvent(sub_stream->handle, stream->event, 0));
+            cuda_check(cuStreamWaitEvent(sub_stream->handle, stream->event, 0));
         }
 
         jit_run(size);
 
         if (parallel_dispatch) {
-            cuda_check(cudaEventRecord(sub_stream->event, sub_stream->handle));
-            cuda_check(cudaStreamWaitEvent(stream->handle, sub_stream->event, 0));
+            cuda_check(cuEventRecord(sub_stream->event, sub_stream->handle));
+            cuda_check(cuStreamWaitEvent(stream->handle, sub_stream->event, 0));
         }
 
         stream_index++;

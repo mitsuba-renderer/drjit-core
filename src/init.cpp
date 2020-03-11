@@ -22,7 +22,7 @@ void jit_init() {
     bool has_cuda = jit_cuda_init();
 
     if (has_cuda)
-        cuda_check(cudaGetDeviceCount(&n_devices));
+        cuda_check(cuDeviceGetCount(&n_devices));
 
     for (int i = 0; i < n_devices; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
@@ -32,19 +32,20 @@ void jit_init() {
 
         cuda_check(cuDeviceTotalMem(&mem_total, i));
         cuda_check(cuDeviceGetName(name, sizeof(name), i));
-        cuda_check(cudaDeviceGetAttribute(&pci_bus_id, cudaDevAttrPciBusId, i));
-        cuda_check(cudaDeviceGetAttribute(&pci_dev_id, cudaDevAttrPciDeviceId, i));
-        cuda_check(cudaDeviceGetAttribute(&pci_dom_id, cudaDevAttrPciDomainId, i));
-        cuda_check(cudaDeviceGetAttribute(&num_sm, cudaDevAttrMultiProcessorCount, i));
-        cuda_check(cudaDeviceGetAttribute(&unified_addr, cudaDevAttrUnifiedAddressing, i));
-        cuda_check(cudaDeviceGetAttribute(&managed, cudaDevAttrManagedMemory, i));
-        cuda_check(cudaDeviceGetAttribute(&concurrent_managed, cudaDevAttrConcurrentManagedAccess, i));
+        cuda_check(cuDeviceGetAttribute(&pci_bus_id, CU_DEVICE_ATTRIBUTE_PCI_BUS_ID, i));
+        cuda_check(cuDeviceGetAttribute(&pci_dev_id, CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID, i));
+        cuda_check(cuDeviceGetAttribute(&pci_dom_id, CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID, i));
+        cuda_check(cuDeviceGetAttribute(&num_sm, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, i));
+        cuda_check(cuDeviceGetAttribute(&unified_addr, CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING, i));
+        cuda_check(cuDeviceGetAttribute(&managed, CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS, i));
+        cuda_check(cuDeviceGetAttribute(&concurrent_managed, CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY, i));
 
         jit_log(Info,
                 " - Found CUDA device %i: \"%s\" "
                 "(PCI ID %02x:%02x.%i, %i SMs, %s)",
                 i, name, pci_bus_id, pci_dev_id, pci_dom_id, num_sm,
                 jit_mem_string(mem_total));
+
         if (unified_addr == 0) {
             jit_log(Warn, " - Warning: device does *not* support unified addressing, skipping ..");
             continue;
@@ -55,7 +56,11 @@ void jit_init() {
         if (concurrent_managed == 0)
             jit_log(Warn, " - Warning: device does *not* support concurrent managed access.");
 
-        state.devices.push_back(Device{i, num_sm});
+        Device device;
+        device.id = i;
+        device.num_sm = num_sm;
+        cuda_check(cuDevicePrimaryCtxRetain(&device.context, i));
+        state.devices.push_back(device);
     }
 
     // Enable P2P communication if possible
@@ -65,13 +70,13 @@ void jit_init() {
                 continue;
 
             int peer_ok = 0;
-            cuda_check(cudaDeviceCanAccessPeer(&peer_ok, a.id, b.id));
+            cuda_check(cuDeviceCanAccessPeer(&peer_ok, a.id, b.id));
             if (peer_ok) {
                 jit_log(Debug, " - Enabling peer access from device %i -> %i",
                         a.id, b.id);
-                cuda_check(cudaSetDevice(a.id));
-                cudaError_t rv = cudaDeviceEnablePeerAccess(b.id, 0);
-                if (rv == cudaErrorPeerAccessAlreadyEnabled)
+                cuda_check(cuCtxSetCurrent(a.context));
+                CUresult rv = cuCtxEnablePeerAccess(b.context, 0);
+                if (rv == CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED)
                     continue;
                 cuda_check(rv);
             }
@@ -79,7 +84,7 @@ void jit_init() {
     }
 
     if (!state.devices.empty())
-        cuda_check(cudaSetDevice(state.devices[0].id));
+        cuda_check(cuCtxSetCurrent(state.devices[0].context));
 
     state.scatter_gather_operand = 0;
     state.alloc_addr_mask = 0;
@@ -101,10 +106,10 @@ void jit_shutdown() {
         jit_free_flush();
         {
             unlock_guard guard(state.mutex);
-            cuda_check(cudaStreamSynchronize(stream->handle));
+            cuda_check(cuStreamSynchronize(stream->handle));
         }
-        cuda_check(cudaEventDestroy(stream->event));
-        cuda_check(cudaStreamDestroy(stream->handle));
+        cuda_check(cuEventDestroy(stream->event));
+        cuda_check(cuStreamDestroy(stream->handle));
         delete stream->release_chain;
         delete stream;
     }
@@ -137,6 +142,10 @@ void jit_shutdown() {
         jit_fail("jit_shutdown(): detected a common subexpression elimination cache leak!");
 
     jit_malloc_shutdown();
+
+    cuda_check(cuCtxSetCurrent(nullptr));
+    for (auto &v : state.devices)
+        cuda_check(cuDevicePrimaryCtxRelease(v.id));
     state.devices.clear();
     state.initialized = false;
 
@@ -147,11 +156,15 @@ void jit_shutdown() {
 void jit_device_set(int32_t device, uint32_t stream) {
     if (device == -1) {
         active_stream = nullptr;
+        if (cuCtxSetCurrent)
+            cuda_check(cuCtxSetCurrent(nullptr));
         return;
     }
 
     if ((size_t) device >= state.devices.size())
         jit_raise("jit_device_set(): invalid device ID!");
+
+    cuda_check(cuCtxSetCurrent(state.devices[device].context));
 
     std::pair<uint32_t, uint32_t> key(device, stream);
     auto it = state.streams.find(key);
@@ -162,14 +175,13 @@ void jit_device_set(int32_t device, uint32_t stream) {
         if (stream_ptr == active_stream_ptr)
             return;
         jit_log(Trace, "jit_device_set(device=%i, stream=%i): selecting stream", device, stream);
-        if (stream_ptr->device != active_stream_ptr->device)
-            cuda_check(cudaSetDevice(state.devices[device].id));
     } else {
         jit_log(Trace, "jit_device_set(device=%i, stream=%i): creating stream", device, stream);
-        cudaStream_t handle = nullptr;
-        cudaEvent_t event = nullptr;
-        cuda_check(cudaStreamCreateWithFlags(&handle, cudaStreamNonBlocking));
-        cuda_check(cudaEventCreateWithFlags(&event, cudaEventDisableTiming));
+        CUstream handle = nullptr;
+        CUevent event = nullptr;
+        cuda_check(cuStreamCreate(&handle, CU_STREAM_NON_BLOCKING));
+        cuda_check(cuEventCreate(&event, CU_EVENT_DISABLE_TIMING));
+
         stream_ptr = new Stream();
         stream_ptr->device = device;
         stream_ptr->stream = stream;
@@ -177,6 +189,7 @@ void jit_device_set(int32_t device, uint32_t stream) {
         stream_ptr->event = event;
         state.streams[key] = stream_ptr;
     }
+
     active_stream = stream_ptr;
 }
 
@@ -189,7 +202,7 @@ void jit_sync_stream() {
     jit_log(Trace, "jit_sync_stream(): starting ..");
     /* Release mutex while synchronizing */ {
         unlock_guard guard(state.mutex);
-        cuda_check(cudaStreamSynchronize(stream->handle));
+        cuda_check(cuStreamSynchronize(stream->handle));
     }
     jit_log(Trace, "jit_sync_stream(): done.");
 }
@@ -203,7 +216,7 @@ void jit_sync_device() {
     jit_log(Trace, "jit_sync_device(): starting ..");
     /* Release mutex while synchronizing */ {
         unlock_guard guard(state.mutex);
-        cuda_check(cudaDeviceSynchronize());
+        cuda_check(cuCtxSynchronize());
     }
     jit_log(Trace, "jit_sync_device(): done.");
 }

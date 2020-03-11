@@ -4,7 +4,7 @@ NVCC=nvcc -gencode arch=$(COMPUTE_CAPABILITY),code=$(COMPUTE_CAPABILITY) --ptx
 all: kernels.h
 
 kernels.ptx: kernels.cu
-	$(NVCC) kernels.cu -o kernels.ptx
+	$(NVCC) kernels.cu -I cub -o kernels.ptx
 
 kernels.ptx.gz: kernels.ptx
 	rm -f kernels.ptx.gz

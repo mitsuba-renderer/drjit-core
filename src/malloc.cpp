@@ -89,36 +89,36 @@ void* jit_malloc(AllocType type, size_t size) {
             if (rv != 0)
                 ptr = nullptr;
         } else {
-            cudaError_t (*alloc) (void **, size_t) = nullptr;
+            CUresult (*alloc) (void **, size_t) = nullptr;
 
-            auto cudaMallocManaged_ = [](void **ptr_, size_t size_) {
-                return cudaMallocManaged(ptr_, size_, cudaMemAttachGlobal);
+            auto cuMemAllocManaged_ = [](void **ptr_, size_t size_) {
+                return cuMemAllocManaged(ptr_, size_, CU_MEM_ATTACH_GLOBAL);
             };
 
-            auto cudaMallocManagedReadMostly_ = [](void **ptr_, size_t size_) {
-                cudaError_t ret = cudaMallocManaged(ptr_, size_, cudaMemAttachGlobal);
-                if (ret == cudaSuccess)
-                    cuda_check(cudaMemAdvise(*ptr_, size_, cudaMemAdviseSetReadMostly, 0));
+            auto cuMemAllocManagedReadMostly_ = [](void **ptr_, size_t size_) {
+                CUresult ret = cuMemAllocManaged(ptr_, size_, CU_MEM_ATTACH_GLOBAL);
+                if (ret == CUDA_SUCCESS)
+                    cuda_check(cuMemAdvise(*ptr_, size_, CU_MEM_ADVISE_SET_READ_MOSTLY, 0));
                 return ret;
             };
 
             switch (type) {
-                case AllocType::HostPinned:        alloc = cudaMallocHost; break;
-                case AllocType::Device:            alloc = cudaMalloc; break;
-                case AllocType::Managed:           alloc = cudaMallocManaged_; break;
-                case AllocType::ManagedReadMostly: alloc = cudaMallocManagedReadMostly_; break;
+                case AllocType::HostPinned:        alloc = cuMemAllocHost; break;
+                case AllocType::Device:            alloc = cuMemAlloc; break;
+                case AllocType::Managed:           alloc = cuMemAllocManaged_; break;
+                case AllocType::ManagedReadMostly: alloc = cuMemAllocManagedReadMostly_; break;
                 default:
                     jit_fail("jit_malloc(): internal-error unsupported allocation type!");
             }
 
-            cudaError_t ret;
+            CUresult ret;
 
             /* Temporarily release the lock */ {
                 unlock_guard guard(state.mutex);
                 ret = alloc(&ptr, ai.size);
             }
 
-            if (ret != cudaSuccess) {
+            if (ret != CUDA_SUCCESS) {
                 jit_malloc_trim();
 
                 /* Temporarily release the lock */ {
@@ -126,7 +126,7 @@ void* jit_malloc(AllocType type, size_t size) {
                     ret = alloc(&ptr, ai.size);
                 }
 
-                if (ret != cudaSuccess)
+                if (ret != CUDA_SUCCESS)
                     ptr = nullptr;
             }
         }
@@ -215,7 +215,7 @@ void jit_free_flush() {
     jit_log(Trace, "jit_free_flush(): scheduling %zu deallocation%s",
             n_dealloc, n_dealloc > 1 ? "s" : "");
 
-    cuda_check(cudaLaunchHostFunc(
+    cuda_check(cuLaunchHostFunc(
         stream->handle,
         [](void *ptr) {
             lock_guard guard(state.mutex);
@@ -264,9 +264,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
             alloc_type_names[(int) type]) ;
 
     void *ptr_new = jit_malloc(type, ai.size);
-    cuda_check(cudaMemcpyAsync(ptr_new, ptr, ai.size,
-                               cudaMemcpyDefault,
-                               stream->handle));
+    cuda_check(cuMemcpyAsync(ptr_new, ptr, ai.size, stream->handle));
     jit_free(ptr);
 
     return ptr_new;
@@ -277,7 +275,7 @@ void jit_malloc_prefetch(void *ptr, int device) {
     Stream *stream = jit_get_stream("jit_malloc_prefetch");
 
     if (device < 0) {
-        device = cudaCpuDeviceId;
+        device = CU_DEVICE_CPU;
     } else {
         if ((size_t) device >= state.devices.size())
             jit_raise("jit_malloc_prefetch(): invalid device ID!");
@@ -297,9 +295,9 @@ void jit_malloc_prefetch(void *ptr, int device) {
 
     if (device == -2) {
         for (const Device &d : state.devices)
-            cuda_check(cudaMemPrefetchAsync(ptr, ai.size, d.id, stream->handle));
+            cuda_check(cuMemPrefetchAsync(ptr, ai.size, d.id, stream->handle));
     } else {
-        cuda_check(cudaMemPrefetchAsync(ptr, ai.size, device, stream->handle));
+        cuda_check(cuMemPrefetchAsync(ptr, ai.size, device, stream->handle));
     }
 }
 
@@ -336,12 +334,12 @@ void jit_malloc_trim(bool warn) {
                 case AllocType::Managed:
                 case AllocType::ManagedReadMostly:
                     for (void *ptr : entries)
-                        cuda_check(cudaFree(ptr));
+                        cuda_check(cuMemFree(ptr));
                     break;
 
                 case AllocType::HostPinned:
                     for (void *ptr : entries)
-                        cuda_check(cudaFreeHost(ptr));
+                        cuda_check(cuMemFreeHost(ptr));
                     break;
 
                 case AllocType::Host:

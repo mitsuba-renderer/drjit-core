@@ -5,61 +5,66 @@
 #include "../ptx/kernels.h"
 
 // Driver API
+CUresult (*cuCtxEnablePeerAccess)(CUcontext, unsigned int) = nullptr;
+CUresult (*cuCtxSynchronize)() = nullptr;
+CUresult (*cuDeviceCanAccessPeer)(int *, CUdevice, CUdevice) = nullptr;
+CUresult (*cuDeviceGet)(CUdevice *, int) = nullptr;
+CUresult (*cuDeviceGetAttribute)(int *, int, CUdevice) = nullptr;
+CUresult (*cuDeviceGetCount)(int *) = nullptr;
 CUresult (*cuDeviceGetName)(char *, int, CUdevice) = nullptr;
+CUresult (*cuDevicePrimaryCtxRelease)(CUdevice) = nullptr;
+CUresult (*cuDevicePrimaryCtxRetain)(CUcontext *, CUdevice) = nullptr;
 CUresult (*cuDeviceTotalMem)(size_t *, CUdevice) = nullptr;
-CUresult (*cuFuncGetAttribute)(int *, CUfunction_attribute, CUfunction) = nullptr;
-CUresult (*cuFuncSetAttribute)(CUfunction, CUfunction_attribute, int) = nullptr;
+CUresult (*cuDriverGetVersion)(int *) = nullptr;
+CUresult (*cuEventCreate)(CUevent *, unsigned int) = nullptr;
+CUresult (*cuEventDestroy)(CUevent) = nullptr;
+CUresult (*cuEventRecord)(CUevent, CUstream) = nullptr;
+CUresult (*cuFuncGetAttribute)(int *, int, CUfunction) = nullptr;
+CUresult (*cuFuncSetAttribute)(CUfunction, int, int) = nullptr;
 CUresult (*cuGetErrorString)(CUresult, const char **) = nullptr;
+CUresult (*cuInit)(unsigned int) = nullptr;
+CUresult (*cuLaunchHostFunc)(CUstream, void (*)(void *), void *) = nullptr;
 CUresult (*cuLaunchKernel)(CUfunction f, unsigned int, unsigned int,
                            unsigned int, unsigned int, unsigned int,
-                           unsigned int, unsigned int, cudaStream_t,
-                           void **, void **) = nullptr;
-CUresult (*cuLinkAddData)(CUlinkState, CUjitInputType, void *, size_t,
-                          const char *, unsigned int, CUjit_option *, void **) = nullptr;
+                           unsigned int, unsigned int, CUstream, void **,
+                           void **) = nullptr;
+CUresult (*cuLinkAddData)(CUlinkState, int, void *, size_t,
+                          const char *, unsigned int, int *,
+                          void **) = nullptr;
 CUresult (*cuLinkComplete)(CUlinkState, void **, size_t *) = nullptr;
-CUresult (*cuLinkCreate)(unsigned int, CUjit_option *, void **, CUlinkState *) = nullptr;
+CUresult (*cuLinkCreate)(unsigned int, int *, void **,
+                         CUlinkState *) = nullptr;
 CUresult (*cuLinkDestroy)(CUlinkState) = nullptr;
-CUresult (*cuMemsetD32Async)(void *, unsigned int, size_t, CUstream) = nullptr;
+CUresult (*cuMemAdvise)(void *, size_t, int, CUdevice) = nullptr;
+CUresult (*cuMemAlloc)(void **, size_t) = nullptr;
+CUresult (*cuMemAllocHost)(void **, size_t) = nullptr;
+CUresult (*cuMemAllocManaged)(void **, size_t, unsigned int) = nullptr;
+CUresult (*cuMemFree)(void *) = nullptr;
+CUresult (*cuMemFreeHost)(void *) = nullptr;
+CUresult (*cuMemPrefetchAsync)(const void *, size_t, CUdevice, CUstream) = nullptr;
+CUresult (*cuMemcpyAsync)(void *, const void *, size_t, CUstream) = nullptr;
 CUresult (*cuMemsetD16Async)(void *, unsigned short, size_t, CUstream) = nullptr;
+CUresult (*cuMemsetD32Async)(void *, unsigned int, size_t, CUstream) = nullptr;
 CUresult (*cuMemsetD8Async)(void *, unsigned char, size_t, CUstream) = nullptr;
 CUresult (*cuModuleGetFunction)(CUfunction *, CUmodule, const char *) = nullptr;
 CUresult (*cuModuleLoadData)(CUmodule *, const void *) = nullptr;
 CUresult (*cuModuleUnload)(CUmodule) = nullptr;
-CUresult (*cuOccupancyMaxPotentialBlockSize)(int *, int *, CUfunction,
-                                             void *, size_t, int) = nullptr;
-
-// Runtime API
-const char *(*cudaGetErrorName)(cudaError_t) = nullptr;
-cudaError_t (*cudaDeviceCanAccessPeer)(int *, int, int) = nullptr;
-cudaError_t (*cudaDeviceEnablePeerAccess)(int, unsigned int) = nullptr;
-cudaError_t (*cudaDeviceGetAttribute)(int *, cudaDeviceAttr, int) = nullptr;
-cudaError_t (*cudaDeviceSynchronize)() = nullptr;
-cudaError_t (*cudaEventCreateWithFlags)(cudaEvent_t *, unsigned int) = nullptr;
-cudaError_t (*cudaEventDestroy)(cudaEvent_t) = nullptr;
-cudaError_t (*cudaEventRecord)(cudaEvent_t, cudaStream_t) = nullptr;
-cudaError_t (*cudaFree)(void *devPtr) = nullptr;
-cudaError_t (*cudaFreeHost)(void *ptr) = nullptr;
-cudaError_t (*cudaGetDeviceCount)(int *) = nullptr;
-cudaError_t (*cudaLaunchHostFunc)(cudaStream_t, void (*)(void*), void *) = nullptr;
-cudaError_t (*cudaMalloc)(void **devPtr, size_t size) = nullptr;
-cudaError_t (*cudaMallocHost)(void **ptr, size_t size) = nullptr;
-cudaError_t (*cudaMallocManaged)(void **, size_t, unsigned int) = nullptr;
-cudaError_t (*cudaMemAdvise)(const void *, size_t, int, int) = nullptr;
-cudaError_t (*cudaMemPrefetchAsync)(const void *, size_t, int, cudaStream_t) = nullptr;
-cudaError_t (*cudaMemcpy)(void *, const void *, size_t, enum cudaMemcpyKind) = nullptr;
-cudaError_t (*cudaMemcpyAsync)(void *, const void *, size_t, enum cudaMemcpyKind, cudaStream_t) = nullptr;
-cudaError_t (*cudaRuntimeGetVersion)(int*) = nullptr;
-cudaError_t (*cudaSetDevice)(int) = nullptr;
-cudaError_t (*cudaStreamCreateWithFlags)(cudaStream_t *, unsigned int) = nullptr;
-cudaError_t (*cudaStreamDestroy)(cudaStream_t) = nullptr;
-cudaError_t (*cudaStreamSynchronize)(cudaStream_t) = nullptr;
-cudaError_t (*cudaStreamWaitEvent)(cudaStream_t, cudaEvent_t, unsigned int) = nullptr;
+CUresult (*cuOccupancyMaxPotentialBlockSize)(int *, int *, CUfunction, void *,
+                                             size_t, int) = nullptr;
+CUresult (*cuCtxSetCurrent)(CUcontext) = nullptr;
+CUresult (*cuStreamCreate)(CUstream *, unsigned int) = nullptr;
+CUresult (*cuStreamDestroy)(CUstream) = nullptr;
+CUresult (*cuStreamSynchronize)(CUstream) = nullptr;
+CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int) = nullptr;
 
 // Enoki API
 CUfunction kernel_fill_64 = nullptr;
 
-#define LOAD(name)                                                             \
-    name = decltype(name)(dlsym(lib, #name));                                  \
+#define LOAD(name, ...)                                                        \
+    if (strlen(__VA_ARGS__ "") > 0)                                            \
+        name = decltype(name)(dlsym(lib, #name "_" __VA_ARGS__));              \
+    else                                                                       \
+        name = decltype(name)(dlsym(lib, #name));                              \
     if (!name)                                                                 \
         return false;
 
@@ -101,84 +106,111 @@ bool jit_cuda_init() {
 
     void *lib = dlopen("libcuda.so", RTLD_NOW);
     if (!lib) {
-        jit_log(LogLevel::Warn, "libcuda.so could not be found -- disabling CUDA backend!");
+        jit_log(
+            LogLevel::Warn,
+            "jit_cuda_init(): libcuda.so not found -- disabling CUDA backend!");
         return false;
     }
 
+    LOAD(cuCtxEnablePeerAccess);
+    LOAD(cuCtxSynchronize);
+    LOAD(cuDeviceCanAccessPeer);
+    LOAD(cuDeviceGet);
+    LOAD(cuDeviceGetAttribute);
+    LOAD(cuDeviceGetCount);
     LOAD(cuDeviceGetName);
+    LOAD(cuDevicePrimaryCtxRelease);
+    LOAD(cuDevicePrimaryCtxRetain);
+    LOAD(cuDeviceTotalMem, "v2");
+    LOAD(cuDriverGetVersion);
+    LOAD(cuEventCreate);
+    LOAD(cuEventDestroy, "v2");
+    LOAD(cuEventRecord, "ptsz");
     LOAD(cuFuncGetAttribute);
     LOAD(cuFuncSetAttribute);
     LOAD(cuGetErrorString);
+    LOAD(cuInit);
+    LOAD(cuLaunchHostFunc, "ptsz");
+    LOAD(cuLaunchKernel, "ptsz");
+    LOAD(cuLinkAddData, "v2");
     LOAD(cuLinkComplete);
+    LOAD(cuLinkCreate, "v2");
     LOAD(cuLinkDestroy);
+    LOAD(cuMemAdvise);
+    LOAD(cuMemAlloc, "v2");
+    LOAD(cuMemAllocHost, "v2");
+    LOAD(cuMemAllocManaged);
+    LOAD(cuMemFree, "v2");
+    LOAD(cuMemFreeHost);
+    LOAD(cuMemPrefetchAsync, "ptsz");
+    LOAD(cuMemcpyAsync, "ptsz");
+    LOAD(cuMemsetD16Async, "ptsz");
+    LOAD(cuMemsetD32Async, "ptsz");
+    LOAD(cuMemsetD8Async, "ptsz");
     LOAD(cuModuleGetFunction);
     LOAD(cuModuleLoadData);
     LOAD(cuModuleUnload);
     LOAD(cuOccupancyMaxPotentialBlockSize);
-    LOAD_SUFFIX(cuDeviceTotalMem, "v2");
-    LOAD_SUFFIX(cuLaunchKernel, "ptsz");
-    LOAD_SUFFIX(cuLinkAddData, "v2");
-    LOAD_SUFFIX(cuLinkCreate, "v2");
-    LOAD_SUFFIX(cuMemsetD16Async, "ptsz");
-    LOAD_SUFFIX(cuMemsetD32Async, "ptsz");
-    LOAD_SUFFIX(cuMemsetD8Async, "ptsz");
+    LOAD(cuCtxSetCurrent);
+    LOAD(cuStreamCreate);
+    LOAD(cuStreamDestroy, "v2");
+    LOAD(cuStreamSynchronize, "ptsz");
+    LOAD(cuStreamWaitEvent, "ptsz");
 
-    lib = dlopen("libcudart.so", RTLD_NOW);
-    if (!lib) {
-        jit_log(LogLevel::Warn, "libcudart.so could not be found -- disabling CUDA backend!");
+
+    CUresult rv = cuInit(0);
+    if (rv != CUDA_SUCCESS) {
+        const char *msg = nullptr;
+        cuGetErrorString(rv, &msg);
+        jit_log(LogLevel::Warn,
+                "jit_cuda_init(): cuInit failed (%s) -- disabling CUDA backend", msg);
         return false;
     }
 
-    LOAD(cudaDeviceCanAccessPeer);
-    LOAD(cudaDeviceEnablePeerAccess);
-    LOAD(cudaDeviceGetAttribute);
-    LOAD(cudaDeviceSynchronize);
-    LOAD(cudaEventCreateWithFlags);
-    LOAD(cudaEventDestroy);
-    LOAD(cudaFree);
-    LOAD(cudaFreeHost);
-    LOAD(cudaGetDeviceCount);
-    LOAD(cudaGetErrorName);
-    LOAD(cudaMalloc);
-    LOAD(cudaMallocHost);
-    LOAD(cudaMallocManaged);
-    LOAD(cudaMemAdvise);
-    LOAD(cudaRuntimeGetVersion);
-    LOAD(cudaSetDevice);
-    LOAD(cudaStreamCreateWithFlags);
-    LOAD(cudaStreamDestroy);
-    LOAD_SUFFIX(cudaEventRecord, "ptsz");
-    LOAD_SUFFIX(cudaLaunchHostFunc, "ptsz");
-    LOAD_SUFFIX(cudaMemPrefetchAsync, "ptsz");
-    LOAD_SUFFIX(cudaMemcpyAsync, "ptsz");
-    LOAD_SUFFIX(cudaStreamSynchronize, "ptsz");
-    LOAD_SUFFIX(cudaStreamWaitEvent, "ptsz");
+    int n_devices = 0;
+    cuda_check(cuDeviceGetCount(&n_devices));
+
+    if (n_devices == 0) {
+        jit_log(
+            LogLevel::Warn,
+            "jit_cuda_init(): No devices found -- disabling CUDA backend!");
+        return false;
+    }
 
     int cuda_version, cuda_version_major, cuda_version_minor;
-    cuda_check(cudaRuntimeGetVersion(&cuda_version));
+    cuda_check(cuDriverGetVersion(&cuda_version));
+
     cuda_version_major = cuda_version / 1000;
     cuda_version_minor = (cuda_version % 1000) / 10;
 
-    jit_log(LogLevel::Info, "jit_cuda_init(): enabled CUDA backend (version %i.%i)",
+    jit_log(LogLevel::Info,
+            "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
             cuda_version_major, cuda_version_minor);
 
-    // Dummy operations to create a context
-    cuda_check(cudaSetDevice(0));
-    cuda_check(cudaFree(0));
+    for (int i = 0; i < n_devices; ++i) {
+        CUcontext context = nullptr;
+        cuda_check(cuDevicePrimaryCtxRetain(&context, i));
+        if (i == 0)
+            cuda_check(cuCtxSetCurrent(context));
+    }
 
     // Decompress supplemental PTX content
     std::unique_ptr<char[]> uncompressed(
         new char[kernels_ptx_uncompressed_size + 1]);
 
-    int rv = inflate(kernels_ptx_compressed,
+    int zrv = inflate(kernels_ptx_compressed,
                      (uint32_t) sizeof(kernels_ptx_compressed),
                      uncompressed.get(),
                      (uint32_t) kernels_ptx_uncompressed_size);
 
-    if (rv != (int) kernels_ptx_uncompressed_size)
+    if (zrv != (int) kernels_ptx_uncompressed_size)
         jit_fail("jit_cuda_init(): decompression of precompiled kernels failed "
-                 "(%i)!", rv);
+                 "(%i)!", zrv);
     uncompressed[kernels_ptx_uncompressed_size] = '\0';
+
+
+    void *bla;
+    cuda_check(cuDevicePrimaryCtxRetain(&bla, 0));
 
     // .. and register it with CUDA
     cuda_check(cuModuleLoadData(&jit_cuda_module, uncompressed.get()));

@@ -244,20 +244,20 @@ void jitc_eval_var(uint32_t index) {
 
 void jitc_cuda_fill_8(void *ptr, size_t size, uint8_t value) {
     lock_guard guard(state.mutex);
-    jit_cuda_fill_8(ptr, size, value);
+    jit_fill_8(ptr, size, value);
 }
 
 void jitc_cuda_fill_16(void *ptr, size_t size, uint16_t value) {
     lock_guard guard(state.mutex);
-    jit_cuda_fill_16(ptr, size, value);
+    jit_fill_16(ptr, size, value);
 }
 
 void jitc_cuda_fill_32(void *ptr, size_t size, uint32_t value) {
     lock_guard guard(state.mutex);
-    jit_cuda_fill_32(ptr, size, value);
+    jit_fill_32(ptr, size, value);
 }
 
 void jitc_cuda_fill_64(void *ptr, size_t size, uint64_t value) {
     lock_guard guard(state.mutex);
-    jit_cuda_fill_64(ptr, size, value);
+    jit_fill_64(ptr, size, value);
 }
