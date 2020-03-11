@@ -28,7 +28,6 @@ void* jit_malloc(AllocType type, size_t size) {
     const char *descr = nullptr;
     void *ptr = nullptr;
 
-#if defined(ENOKI_CUDA)
     Stream *stream = active_stream;
     if (type == AllocType::Device) {
         if (unlikely(!stream))
@@ -57,7 +56,6 @@ void* jit_malloc(AllocType type, size_t size) {
             chain = chain->next;
         }
     }
-#endif
 
     // 2. Look globally. Are there suitable freed arrays?
     if (ptr == nullptr) {
@@ -91,51 +89,46 @@ void* jit_malloc(AllocType type, size_t size) {
             if (rv != 0)
                 ptr = nullptr;
         } else {
-            #if defined(ENOKI_CUDA)
-                cudaError_t (*alloc) (void **, size_t) = nullptr;
+            cudaError_t (*alloc) (void **, size_t) = nullptr;
 
-                auto cudaMallocManaged_ = [](void **ptr_, size_t size_) {
-                    return cudaMallocManaged(ptr_, size_);
-                };
+            auto cudaMallocManaged_ = [](void **ptr_, size_t size_) {
+                return cudaMallocManaged(ptr_, size_, cudaMemAttachGlobal);
+            };
 
-                auto cudaMallocManagedReadMostly_ = [](void **ptr_, size_t size_) {
-                    cudaError_t ret = cudaMallocManaged(ptr_, size_);
-                    if (ret == cudaSuccess)
-                        cuda_check(cudaMemAdvise(*ptr_, size_, cudaMemAdviseSetReadMostly, 0));
-                    return ret;
-                };
+            auto cudaMallocManagedReadMostly_ = [](void **ptr_, size_t size_) {
+                cudaError_t ret = cudaMallocManaged(ptr_, size_, cudaMemAttachGlobal);
+                if (ret == cudaSuccess)
+                    cuda_check(cudaMemAdvise(*ptr_, size_, cudaMemAdviseSetReadMostly, 0));
+                return ret;
+            };
 
-                switch (type) {
-                    case AllocType::HostPinned:        alloc = cudaMallocHost; break;
-                    case AllocType::Device:            alloc = cudaMalloc; break;
-                    case AllocType::Managed:           alloc = cudaMallocManaged_; break;
-                    case AllocType::ManagedReadMostly: alloc = cudaMallocManagedReadMostly_; break;
-                    default:
-                        jit_fail("jit_malloc(): internal-error unsupported allocation type!");
-                }
+            switch (type) {
+                case AllocType::HostPinned:        alloc = cudaMallocHost; break;
+                case AllocType::Device:            alloc = cudaMalloc; break;
+                case AllocType::Managed:           alloc = cudaMallocManaged_; break;
+                case AllocType::ManagedReadMostly: alloc = cudaMallocManagedReadMostly_; break;
+                default:
+                    jit_fail("jit_malloc(): internal-error unsupported allocation type!");
+            }
 
-                cudaError_t ret;
+            cudaError_t ret;
+
+            /* Temporarily release the lock */ {
+                unlock_guard guard(state.mutex);
+                ret = alloc(&ptr, ai.size);
+            }
+
+            if (ret != cudaSuccess) {
+                jit_malloc_trim();
 
                 /* Temporarily release the lock */ {
                     unlock_guard guard(state.mutex);
                     ret = alloc(&ptr, ai.size);
                 }
 
-                if (ret != cudaSuccess) {
-                    jit_malloc_trim();
-
-                    /* Temporarily release the lock */ {
-                        unlock_guard guard(state.mutex);
-                        ret = alloc(&ptr, ai.size);
-                    }
-
-                    if (ret != cudaSuccess)
-                        ptr = nullptr;
-                }
-
-            #else
-                jit_fail("jit_malloc(): unsupported array type! (CUDA support was disabled.)");
-            #endif
+                if (ret != cudaSuccess)
+                    ptr = nullptr;
+            }
         }
         descr = "new allocation";
     }
@@ -183,7 +176,6 @@ void jit_free(void *ptr) {
     if (ai.type == AllocType::Host) {
         state.alloc_free[ai].push_back(ptr);
     } else {
-#if defined(ENOKI_CUDA)
         Stream *stream = active_stream;
         if (unlikely(!stream))
             jit_raise("jit_free(): device and stream must be set! (call "
@@ -193,9 +185,6 @@ void jit_free(void *ptr) {
         if (unlikely(!chain))
             chain = stream->release_chain = new ReleaseChain();
         chain->entries[ai].push_back(ptr);
-#else
-        jit_fail("jit_free(): unsupported array type! (CUDA support was disabled.)");
-#endif
     }
 
     if (ai.type == AllocType::Device)
@@ -210,7 +199,6 @@ void jit_free(void *ptr) {
 }
 
 void jit_free_flush() {
-#if defined(ENOKI_CUDA)
     Stream *stream = active_stream;
 
     if (unlikely(stream == nullptr))
@@ -259,7 +247,6 @@ void jit_free_flush() {
 
         chain_new
     ));
-#endif
 }
 
 void* jit_malloc_migrate(void *ptr, AllocType type) {
@@ -359,7 +346,6 @@ void jit_malloc_trim(bool warn) {
             trim_count[(int) kv.first.type] += entries.size();
             trim_size[(int) kv.first.type] += kv.first.size * entries.size();
             switch (kv.first.type) {
-#if defined(ENOKI_CUDA)
                 case AllocType::Device:
                 case AllocType::Managed:
                 case AllocType::ManagedReadMostly:
@@ -371,7 +357,6 @@ void jit_malloc_trim(bool warn) {
                     for (void *ptr : entries)
                         cuda_check(cudaFreeHost(ptr));
                     break;
-#endif
 
                 case AllocType::Host:
                     for (void *ptr : entries)

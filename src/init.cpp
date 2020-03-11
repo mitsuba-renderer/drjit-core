@@ -5,10 +5,7 @@
 
 State state;
 Buffer buffer;
-
-#if defined(ENOKI_CUDA)
-    __thread Stream *active_stream = nullptr;
-#endif
+__thread Stream *active_stream = nullptr;
 
 /// Initialize core data structures of the JIT compiler
 void jit_init() {
@@ -18,31 +15,48 @@ void jit_init() {
     if (!state.variables.empty())
         jit_fail("Cannot reinitialize JIT while variables are still being used!");
 
-#if defined(ENOKI_CUDA)
     // Enumerate CUDA devices and collect suitable ones
-    int n_devices = 0;
-    cuda_check(cudaGetDeviceCount(&n_devices));
 
     jit_log(Info, "jit_init(): detecting devices ..");
+
+    int n_devices = 0;
+    bool has_cuda = jit_cuda_init();
+
+    if (has_cuda)
+        cuda_check(cudaGetDeviceCount(&n_devices));
+
     for (int i = 0; i < n_devices; ++i) {
-        cudaDeviceProp prop;
-        cudaGetDeviceProperties(&prop, i);
+        int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
+            unified_addr = 0, managed = 0, concurrent_managed = 0;
+        size_t mem_total = 0;
+        char name[256];
+
+        cuda_check(cuDeviceTotalMem(&mem_total, i));
+        cuda_check(cuDeviceGetName(name, sizeof(name), i));
+        cuda_check(cudaDeviceGetAttribute(&pci_bus_id, cudaDevAttrPciBusId, i));
+        cuda_check(cudaDeviceGetAttribute(&pci_dev_id, cudaDevAttrPciDeviceId, i));
+        cuda_check(cudaDeviceGetAttribute(&pci_dom_id, cudaDevAttrPciDomainId, i));
+        cuda_check(cudaDeviceGetAttribute(&num_sm, cudaDevAttrMultiProcessorCount, i));
+        cuda_check(cudaDeviceGetAttribute(&unified_addr, cudaDevAttrUnifiedAddressing, i));
+        cuda_check(cudaDeviceGetAttribute(&managed, cudaDevAttrManagedMemory, i));
+        cuda_check(cudaDeviceGetAttribute(&concurrent_managed, cudaDevAttrConcurrentManagedAccess, i));
+
         jit_log(Info,
                 " - Found CUDA device %i: \"%s\" "
                 "(PCI ID %02x:%02x.%i, %i SMs, %s)",
-                i, prop.name, prop.pciBusID, prop.pciDeviceID, prop.pciDomainID,
-                prop.multiProcessorCount, jit_mem_string(prop.totalGlobalMem));
-        if (prop.unifiedAddressing == 0) {
+                i, name, pci_bus_id, pci_dev_id, pci_dom_id, num_sm,
+                jit_mem_string(mem_total));
+        if (unified_addr == 0) {
             jit_log(Warn, " - Warning: device does *not* support unified addressing, skipping ..");
             continue;
-        } else if (prop.managedMemory == 0) {
+        } else if (managed == 0) {
             jit_log(Warn, " - Warning: device does *not* support managed memory, skipping ..");
             continue;
         }
-        if (prop.concurrentManagedAccess == 0)
+        if (concurrent_managed == 0)
             jit_log(Warn, " - Warning: device does *not* support concurrent managed access.");
 
-        state.devices.push_back(Device{i, prop.multiProcessorCount});
+        state.devices.push_back(Device{i, num_sm});
     }
 
     // Enable P2P communication if possible
@@ -65,9 +79,8 @@ void jit_init() {
         }
     }
 
-    if (state.devices.empty())
+    if (!state.devices.empty())
         cuda_check(cudaSetDevice(state.devices[0].id));
-#endif
 
     state.scatter_gather_operand = 0;
     state.alloc_addr_mask = 0;
@@ -133,16 +146,13 @@ void jit_shutdown() {
 /// Set the currently active device & stream
 void jit_device_set(int32_t device, uint32_t stream) {
     if (device == -1) {
-#if defined(ENOKI_CUDA)
         active_stream = nullptr;
-#endif
         return;
     }
 
     if ((size_t) device >= state.devices.size())
         jit_raise("jit_device_set(): invalid device ID!");
 
-#if defined(ENOKI_CUDA)
     std::pair<uint32_t, uint32_t> key(device, stream);
     auto it = state.streams.find(key);
 
@@ -168,36 +178,33 @@ void jit_device_set(int32_t device, uint32_t stream) {
         state.streams[key] = stream_ptr;
     }
     active_stream = stream_ptr;
-#endif
 }
 
 /// Wait for all computation on the current stream to finish
 void jit_sync_stream() {
-#if defined(ENOKI_CUDA)
     Stream *stream = active_stream;
     if (unlikely(!stream))
         return;
+
     jit_log(Trace, "jit_sync_stream(): starting ..");
     /* Release mutex while synchronizing */ {
         unlock_guard guard(state.mutex);
         cuda_check(cudaStreamSynchronize(stream->handle));
     }
     jit_log(Trace, "jit_sync_stream(): done.");
-#endif
 }
 
 /// Wait for all computation on the current device to finish
 void jit_sync_device() {
-#if defined(ENOKI_CUDA)
     Stream *stream = active_stream;
     if (unlikely(!stream))
         return;
+
     jit_log(Trace, "jit_sync_device(): starting ..");
     /* Release mutex while synchronizing */ {
         unlock_guard guard(state.mutex);
         cuda_check(cudaDeviceSynchronize());
     }
     jit_log(Trace, "jit_sync_device(): done.");
-#endif
 }
 

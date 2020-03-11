@@ -1,8 +1,6 @@
 project("jit")
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.9.0)
 
-option(ENOKI_ENABLE_CUDA  "Enable CUDA backend?" ON)
-option(ENOKI_ENABLE_LLVM  "Enable LLVM backend?" ON)
 option(ENOKI_ENABLE_TESTS "Compile test suite?" ON)
 
 set(ENOKI_CUDA_COMPUTE_CAPABILITY "61" CACHE
@@ -17,12 +15,6 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 include(CheckCXXSourceRuns)
-
-if (ENOKI_ENABLE_CUDA)
-  enable_language(CUDA)
-  find_package(CUDAToolkit REQUIRED)
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY},code=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY} -cudart shared")
-endif()
 
 macro(CHECK_CXX_COMPILER_AND_LINKER_FLAGS _RESULT _CXX_FLAGS _LINKER_FLAGS)
   set(CMAKE_REQUIRED_FLAGS ${_CXX_FLAGS})
@@ -60,8 +52,6 @@ elseif(MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
 endif()
 
-
-
 include_directories(
   include
   ext/robin_map/include
@@ -78,22 +68,27 @@ add_library(
   src/malloc.h         src/malloc.cpp
   src/hash.h           src/hash.cpp
   src/cuda.h           src/cuda.cpp
+  src/cuda_api.h       src/cuda_api.cpp
   src/init.cpp
   src/api.cpp
 )
 
 set_property(TARGET enoki-jit PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native -fvisibility=hidden)
+target_link_libraries(enoki-jit PRIVATE dl)
 
 if (ENOKI_ENABLE_CUDA)
-  add_library(
-    enoki-jit-cuda OBJECT
-    src/kernels.cu
-  )
-  target_link_libraries(enoki-jit PRIVATE CUDA::cuda_driver CUDA::cudart enoki-jit-cuda)
-  target_compile_definitions(enoki-jit PRIVATE -DENOKI_CUDA=1)
-  target_compile_definitions(enoki-jit-cuda PRIVATE -DENOKI_CUDA=1)
-  set_property(TARGET enoki-jit-cuda PROPERTY POSITION_INDEPENDENT_CODE ON)
+  # add_library(
+  #   enoki-jit-cuda OBJECT
+  #   src/kernels.cu
+  # )
+  # target_link_libraries(enoki-jit PRIVATE CUDA::cuda_driver CUDA::cudart enoki-jit-cuda)
+  # target_compile_definitions(enoki-jit PRIVATE -DENOKI_CUDA=1)
+  # target_compile_definitions(enoki-jit-cuda PRIVATE -DENOKI_CUDA=1)
+#   enable_language(CUDA)
+#   find_package(CUDAToolkit REQUIRED)
+#   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY},code=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY} -cudart shared")
+  # set_property(TARGET enoki-jit-cuda PROPERTY POSITION_INDEPENDENT_CODE ON)
 endif()
 
 if (ENOKI_ENABLE_TESTS)

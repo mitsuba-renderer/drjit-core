@@ -19,8 +19,6 @@ static constexpr LogLevel Trace = LogLevel::Trace;
 #  define unlikely(x) __builtin_expect(!!(x), 0)
 #endif
 
-#if defined(ENOKI_CUDA)
-
 /// Caches basic information about a CUDA device
 struct Device {
     /// CUDA device ID
@@ -74,7 +72,6 @@ struct Kernel {
 };
 
 using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
-#endif
 
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
@@ -162,10 +159,8 @@ struct State {
     /// Available devices and their CUDA IDs
     std::vector<Device> devices;
 
-#if defined(ENOKI_CUDA)
     /// Maps Enoki (device index, stream index) pairs to a Stream data structure
     StreamMap streams;
-#endif
 
     /// Map of currently allocated memory regions
     tsl::robin_pg_map<const void *, AllocInfo> alloc_used;
@@ -284,9 +279,7 @@ private:
 
 
 /// Global state record shared by all threads
-#if defined(ENOKI_CUDA)
-  extern __thread Stream *active_stream;
-#endif
+extern __thread Stream *active_stream;
 
 extern State state;
 extern Buffer buffer;

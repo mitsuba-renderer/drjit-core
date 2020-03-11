@@ -81,7 +81,7 @@ bool test_check_log(const char *test_name, const char *log, bool write_ref) {
     }
 
     size_t log_len = strlen(log);
-    if (fwrite(log, log_len, 1, f) != 1) {
+    if (log_len > 0 && fwrite(log, log_len, 1, f) != 1) {
         fprintf(stderr, "\ntest_check_log(): Error writing to \"%s\"!\n", test_fname);
         exit(EXIT_FAILURE);
     }
@@ -155,6 +155,7 @@ int main(int argc, char **argv) {
     }
 
     try {
+        jitc_init();
         jitc_log_level_set(LogLevel::Trace);
         jitc_log_buffer_enable(1);
         fprintf(stdout, "\n");

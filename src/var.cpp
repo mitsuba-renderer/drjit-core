@@ -160,7 +160,6 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
     if (v.stmt) {
         v.stmt = strdup(v.stmt);
 
-#if defined(ENOKI_CUDA)
         if (v.type != VarType::Float32) {
             char *offset = strstr(v.stmt, ".ftz");
             if (offset)
@@ -172,7 +171,6 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
 
         std::tie(key_it, key_inserted) = state.cse_cache.try_emplace(key, 0);
     }
-#endif
 
     uint32_t index;
     Variable *v_out;
@@ -344,12 +342,10 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt,
     jit_var_inc_ref_int(arg1, v1);
     jit_var_inc_ref_int(arg2, v2);
 
-#if defined(ENOKI_CUDA)
     if (strstr(stmt, "ld.global")) {
         v.extra_dep = state.scatter_gather_operand;
         jit_var_inc_ref_ext(v.extra_dep);
     }
-#endif
 
     auto [index, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s",
@@ -405,13 +401,11 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt,
     jit_var_inc_ref_int(arg2, v2);
     jit_var_inc_ref_int(arg3, v3);
 
-#if defined(ENOKI_CUDA)
     if ((strstr(stmt, "st.global") || strstr(stmt, "atom.global.add")) &&
         state.scatter_gather_operand != 0) {
         v.extra_dep = state.scatter_gather_operand;
         jit_var_inc_ref_ext(v.extra_dep);
     }
-#endif
 
     auto [index, vo] = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s",
@@ -601,6 +595,12 @@ const char *jit_var_whos() {
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index) {
     const Variable *v = jit_var(index);
+
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_var_str(): device and stream must be set! "
+                  "(call jit_device_set() beforehand)!");
+
     if (v->data == nullptr || v->dirty)
         jit_eval();
 
@@ -618,7 +618,14 @@ const char *jit_var_str(uint32_t index) {
             i = size - limit_remainder / 2 - 1;
             continue;
         }
-        cuda_check(cudaMemcpy(dst, src + i * isize, isize, cudaMemcpyDeviceToHost));
+        cuda_check(cudaMemcpyAsync(dst, src + i * isize, isize,
+                                   cudaMemcpyDeviceToHost,
+                                   stream->handle));
+        /* Temporarily release the lock while synchronizing */ {
+            unlock_guard(state.mutex);
+            cuda_check(cudaStreamSynchronize(stream->handle));
+        }
+
         const char *comma = i + 1 < size ? ", " : "";
         switch (v->type) {
             case VarType::Bool:    buffer.fmt("%"   PRIu8  "%s", *(( uint8_t *) dst), comma); break;
