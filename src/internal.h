@@ -154,7 +154,7 @@ struct State {
     bool initialized = false;
 
     /// Log level
-    LogLevel log_level = LogLevel::Error;
+    LogLevel log_level = LogLevel::Info;
 
     /// Available devices and their CUDA IDs
     std::vector<Device> devices;
@@ -298,3 +298,6 @@ extern void jit_sync_stream();
 
 /// Wait for all computation on the current device to finish
 extern void jit_sync_device();
+
+/// Return a pointer to the current stream or raise an exception referencing 'func_name'
+extern Stream *jit_get_stream(const char *func_name);

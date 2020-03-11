@@ -54,6 +54,7 @@ using CUdevice    = int;
 using CUmodule    = void*;
 using CUfunction  = void*;
 using CUlinkState = void*;
+using CUstream    = void*;
 
 using cudaStream_t = void*;
 using cudaEvent_t  = void*;
@@ -76,13 +77,16 @@ extern CUresult (*cuFuncSetAttribute)(CUfunction, CUfunction_attribute, int);
 extern CUresult (*cuGetErrorString)(CUresult, const char **);
 extern CUresult (*cuLaunchKernel)(CUfunction f, unsigned int, unsigned int,
                                   unsigned int, unsigned int, unsigned int,
-                                  unsigned int, unsigned int, cudaStream_t,
+                                  unsigned int, unsigned int, CUstream,
                                   void **, void **);
 extern CUresult (*cuLinkComplete)(CUlinkState, void **, size_t *);
 extern CUresult (*cuLinkAddData)(CUlinkState, CUjitInputType, void *, size_t,
                                  const char *, unsigned int, CUjit_option *, void **);
 extern CUresult (*cuLinkCreate)(unsigned int, CUjit_option *, void **, CUlinkState *);
 extern CUresult (*cuLinkDestroy)(CUlinkState);
+extern CUresult (*cuMemsetD32Async)(void *, unsigned int, size_t, CUstream);
+extern CUresult (*cuMemsetD16Async)(void *, unsigned short, size_t, CUstream);
+extern CUresult (*cuMemsetD8Async)(void *, unsigned char, size_t, CUstream);
 extern CUresult (*cuModuleGetFunction)(CUfunction *, CUmodule, const char *);
 extern CUresult (*cuModuleLoadData)(CUmodule *, const void *);
 extern CUresult (*cuModuleUnload)(CUmodule);
@@ -108,6 +112,7 @@ extern cudaError_t (*cudaMallocManaged)(void **, size_t, unsigned int);
 extern cudaError_t (*cudaMemAdvise)(const void *, size_t, int, int);
 extern cudaError_t (*cudaMemPrefetchAsync)(const void *, size_t, int, cudaStream_t);
 extern cudaError_t (*cudaMemcpyAsync)(void *, const void *, size_t, enum cudaMemcpyKind, cudaStream_t);
+extern cudaError_t (*cudaRuntimeGetVersion)(int*);
 extern cudaError_t (*cudaSetDevice)(int);
 extern cudaError_t (*cudaStreamCreateWithFlags)(cudaStream_t *, unsigned int);
 extern cudaError_t (*cudaStreamDestroy)(cudaStream_t);

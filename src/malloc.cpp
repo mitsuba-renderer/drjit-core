@@ -176,11 +176,7 @@ void jit_free(void *ptr) {
     if (ai.type == AllocType::Host) {
         state.alloc_free[ai].push_back(ptr);
     } else {
-        Stream *stream = active_stream;
-        if (unlikely(!stream))
-            jit_raise("jit_free(): device and stream must be set! (call "
-                      "jit_device_set() beforehand)!");
-
+        Stream *stream = jit_get_stream("jit_free");
         ReleaseChain *chain = stream->release_chain;
         if (unlikely(!chain))
             chain = stream->release_chain = new ReleaseChain();
@@ -199,11 +195,7 @@ void jit_free(void *ptr) {
 }
 
 void jit_free_flush() {
-    Stream *stream = active_stream;
-
-    if (unlikely(stream == nullptr))
-        jit_raise("jit_free_flush(): device and stream must be set! (call "
-                  "jit_device_set() beforehand)!");
+    Stream *stream = jit_get_stream("jit_free_flush");
 
     ReleaseChain *chain = stream->release_chain;
     if (chain == nullptr || chain->entries.empty())
@@ -250,10 +242,7 @@ void jit_free_flush() {
 }
 
 void* jit_malloc_migrate(void *ptr, AllocType type) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_malloc_migrate(): device and stream must be set! "
-                  "(call jit_device_set() beforehand)!");
+    Stream *stream = jit_get_stream("jit_malloc_migrate");
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
@@ -285,10 +274,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
 
 /// Asynchronously prefetch a memory region
 void jit_malloc_prefetch(void *ptr, int device) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_malloc_prefetch(): device and stream must be set! "
-                  "(call jit_device_set() beforehand)!");
+    Stream *stream = jit_get_stream("jit_malloc_prefetch");
 
     if (device < 0) {
         device = cudaCpuDeviceId;

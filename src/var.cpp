@@ -243,10 +243,7 @@ void jit_var_label_set(uint32_t index, const char *label) {
 
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_trace_append_0(VarType type, const char *stmt) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_trace_append(): device and stream must be set! "
-                  "(call jit_device_set() beforehand)!");
+    Stream *stream = jit_get_stream("jit_trace_append_0");
 
     Variable v;
     v.type = type;
@@ -268,11 +265,9 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt) {
 /// Append a variable to the instruction trace (1 operand)
 uint32_t jit_trace_append_1(VarType type, const char *stmt,
                             uint32_t arg1) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_trace_append(): device and stream must be set! "
-                  "(call jit_device_set() beforehand)!");
-    else if (unlikely(arg1 == 0))
+    Stream *stream = jit_get_stream("jit_trace_append_1");
+
+    if (unlikely(arg1 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
 
@@ -307,11 +302,9 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 /// Append a variable to the instruction trace (2 operands)
 uint32_t jit_trace_append_2(VarType type, const char *stmt,
                             uint32_t arg1, uint32_t arg2) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_trace_append(): device and stream must be set! "
-                  "(call jit_device_set() beforehand)!");
-    else if (unlikely(arg1 == 0 || arg2 == 0))
+    Stream *stream = jit_get_stream("jit_trace_append_2");
+
+    if (unlikely(arg1 == 0 || arg2 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
 
@@ -361,11 +354,9 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt,
 /// Append a variable to the instruction trace (3 operands)
 uint32_t jit_trace_append_3(VarType type, const char *stmt,
                             uint32_t arg1, uint32_t arg2, uint32_t arg3) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_trace_append(): device and stream must be set! "
-                  "(call jit_device_set() beforehand)!");
-    else if (unlikely(arg1 == 0 || arg2 == 0 || arg3 == 0))
+    Stream *stream = jit_get_stream("jit_trace_append_3");
+
+    if (unlikely(arg1 == 0 || arg2 == 0 || arg3 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
 
@@ -469,10 +460,7 @@ uint32_t jit_var_register_ptr(const void *ptr) {
 uint32_t jit_var_copy_to_device(VarType type,
                                 const void *ptr,
                                 size_t size) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_fail("jit_var_copy_to_device(): device and stream must be set! "
-                 "(call jit_device_set() beforehand)!");
+    Stream *stream = jit_get_stream("jit_var_copy_to_device");
 
     size_t total_size = size * jit_type_size(type);
 
@@ -595,11 +583,7 @@ const char *jit_var_whos() {
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index) {
     const Variable *v = jit_var(index);
-
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_var_str(): device and stream must be set! "
-                  "(call jit_device_set() beforehand)!");
+    Stream *stream = jit_get_stream("jit_var_str");
 
     if (v->data == nullptr || v->dirty)
         jit_eval();

@@ -3,9 +3,6 @@ cmake_minimum_required(VERSION 3.9.0)
 
 option(ENOKI_ENABLE_TESTS "Compile test suite?" ON)
 
-set(ENOKI_CUDA_COMPUTE_CAPABILITY "61" CACHE
-    STRING "Compute capability as specified by https://developer.nvidia.com/cuda-gpus")
-
 # Set a default build configuration (Release)
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "Setting build type to 'Release' as none was specified.")
@@ -87,6 +84,9 @@ if (ENOKI_ENABLE_CUDA)
   # target_compile_definitions(enoki-jit-cuda PRIVATE -DENOKI_CUDA=1)
 #   enable_language(CUDA)
 #   find_package(CUDAToolkit REQUIRED)
+# set(ENOKI_CUDA_COMPUTE_CAPABILITY "61" CACHE
+#     STRING "Compute capability as specified by https://developer.nvidia.com/cuda-gpus")
+
 #   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY},code=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY} -cudart shared")
   # set_property(TARGET enoki-jit-cuda PROPERTY POSITION_INDEPENDENT_CODE ON)
 endif()

@@ -18,17 +18,20 @@ void cuda_check_impl(cudaError_t errval, const char *file, const int line) {
 
 /// Fill a device memory region with 'size' 8-bit values.
 void jit_cuda_fill_8(uint8_t *ptr, size_t size, uint8_t value) {
-    (void) ptr; (void) size; (void) value;
+    Stream *stream = jit_get_stream("jit_cuda_fill_8");
+    cuda_check(cuMemsetD8Async(ptr, value, size, stream->handle));
 }
 
 /// Fill a device memory region with 'size' 16-bit values.
 void jit_cuda_fill_16(uint16_t *ptr, size_t size, uint16_t value) {
-    (void) ptr; (void) size; (void) value;
+    Stream *stream = jit_get_stream("jit_cuda_fill_16");
+    cuda_check(cuMemsetD16Async(ptr, value, size, stream->handle));
 }
 
 /// Fill a device memory region with 'size' 32-bit values.
 void jit_cuda_fill_32(uint32_t *ptr, size_t size, uint32_t value) {
-    (void) ptr; (void) size; (void) value;
+    Stream *stream = jit_get_stream("jit_cuda_fill_32");
+    cuda_check(cuMemsetD32Async(ptr, value, size, stream->handle));
 }
 
 /// Fill a device memory region with 'size' 64-bit values.
@@ -36,3 +39,26 @@ void jit_cuda_fill_64(uint64_t *ptr, size_t size, uint64_t value) {
     (void) ptr; (void) size; (void) value;
 }
 
+#if 0
+
+void jit_cuda_fill_16(uint16_t *ptr, size_t size, uint16_t value) {
+    cudaStream_t stream;
+    int num_sm;
+    jit_cuda_get_config(&stream, &num_sm);
+    fill<<<num_sm, 1024, 0, stream>>>(ptr, value, size);
+}
+
+void jit_cuda_fill_32(uint32_t *ptr, size_t size, uint32_t value) {
+    cudaStream_t stream;
+    int num_sm;
+    jit_cuda_get_config(&stream, &num_sm);
+    fill<<<num_sm, 1024, 0, stream>>>(ptr, value, size);
+}
+
+void jit_cuda_fill_64(uint64_t *ptr, size_t size, uint64_t value) {
+    cudaStream_t stream;
+    int num_sm;
+    jit_cuda_get_config(&stream, &num_sm);
+    fill<<<num_sm, 1024, 0, stream>>>(ptr, value, size);
+}
+#endif
