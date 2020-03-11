@@ -121,17 +121,20 @@ struct Variable {
 /// Abbreviated version of the Variable data structure
 struct VariableKey {
     char *stmt;
-    uint32_t type;
+    VarType type;
     uint32_t size;
     uint32_t dep[3];
     uint32_t extra_dep;
 
-    VariableKey(const Variable &v) {
-        memcpy(this, &v, sizeof(VariableKey));
-    }
+    VariableKey(const Variable &v)
+        : stmt(v.stmt), type(v.type),
+          size(v.size), dep{ v.dep[0], v.dep[1], v.dep[2] },
+          extra_dep(v.extra_dep) { }
 
     bool operator==(const VariableKey &v) const {
-        return memcmp(this, &v, sizeof(VariableKey)) == 0;
+        return strcmp(stmt, v.stmt) == 0 && type == v.type && size == v.size &&
+               dep[0] == v.dep[0] && dep[1] == v.dep[1] && dep[2] == v.dep[2] &&
+               extra_dep == v.extra_dep;
     }
 };
 

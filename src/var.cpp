@@ -53,11 +53,13 @@ Variable *jit_var(uint32_t index) {
 
 /// Remove a variable from the cache used for common subexpression elimination
 void jit_cse_drop(uint32_t index, const Variable *v) {
-    if (v->stmt) {
-        auto it = state.cse_cache.find(VariableKey(*v));
-        if (it.value() == index)
-            state.cse_cache.erase(it);
-    }
+    if (!v->stmt)
+        return;
+
+    VariableKey key(*v);
+    CSECache::iterator it = state.cse_cache.find(key);
+    if (it != state.cse_cache.end() && it.value() == index)
+        state.cse_cache.erase(it);
 }
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
@@ -129,11 +131,12 @@ void jit_var_dec_ref_ext(uint32_t index) {
     jit_log(Trace, "jit_var_dec_ref_ext(%u): %u", index, v->ref_count_ext - 1);
     v->ref_count_ext--;
 
-    if (v->ref_count_ext == 0)
+    if (v->ref_count_ext == 0) {
         active_stream->todo.erase(index);
 
-    if (v->ref_count_ext == 0 && v->ref_count_int == 0)
-        jit_var_free(index, v);
+        if (v->ref_count_int == 0)
+            jit_var_free(index, v);
+    }
 }
 
 /// Decrease the internal reference count of a given variable
@@ -210,14 +213,14 @@ size_t jit_var_size(uint32_t index) {
 
 /// Set the size of a given variable (if possible, otherwise throw)
 uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
-    Variable *var = jit_var(index);
-    if (var->size == size)
+    Variable *v = jit_var(index);
+    if (v->size == size)
         return index;
 
-    if (var->data != nullptr || var->ref_count_int > 0) {
-        if (var->size == 1 && copy != 0) {
+    if (v->data != nullptr || v->ref_count_int > 0) {
+        if (v->size == 1 && copy != 0) {
             uint32_t index_new =
-                jit_trace_append_1(var->type, "mov.$t1 $r1, $r2", index);
+                jit_trace_append_1(v->type, "mov.$t1 $r1, $r2", index);
             jit_var(index_new)->size = size;
             jit_var_dec_ref_ext(index);
             return index_new;
@@ -226,11 +229,20 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
         jit_raise("cuda_var_set_size(): attempted to resize variable %u,"
                   "which was already allocated (current size = %zu, "
                   "requested size = %zu)",
-                  index, var->size, size);
+                  index, v->size, size);
     }
 
-    var->size = (uint32_t) size;
     jit_log(Debug, "jit_var_set_size(%u): %zu", index, size);
+
+    VariableKey key(*v), key_new(*v);
+    v->size = key_new.size = (uint32_t) size;
+
+    auto it = state.cse_cache.find(key);
+    if (it != state.cse_cache.end() && it.value() == index) {
+        state.cse_cache.erase(it);
+        state.cse_cache.try_emplace(key_new, index);
+    }
+
     return index;
 }
 

@@ -127,10 +127,12 @@ int test_register(const char *name, void (*func)(), bool cuda) {
 
 int main(int argc, char **argv) {
     char binary_path[PATH_MAX];
-    if (readlink("/proc/self/exe", binary_path, PATH_MAX) == -1) {
+    int rv = readlink("/proc/self/exe", binary_path, PATH_MAX - 1);
+    if (rv == -1) {
         fprintf(stderr, "Unable to determine binary path!");
         exit(EXIT_FAILURE);
     }
+    binary_path[rv] = '\0';
 
     char *last_slash = strrchr(binary_path, '/');
     if (!last_slash) {

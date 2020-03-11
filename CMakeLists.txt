@@ -59,6 +59,7 @@ add_library(
   enoki-jit SHARED
   include/enoki/jit.h
   src/internal.h       
+  ptx/kernels.h
   src/log.h            src/log.cpp
   src/var.h            src/var.cpp
   src/eval.h           src/eval.cpp

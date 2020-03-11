@@ -1,6 +1,8 @@
 #include "internal.h"
 #include "log.h"
 #include <dlfcn.h>
+#include <zlib.h>
+#include "../ptx/kernels.h"
 
 // Driver API
 CUresult (*cuDeviceGetName)(char *, int, CUdevice) = nullptr;
@@ -65,6 +67,29 @@ cudaError_t (*cudaStreamWaitEvent)(cudaStream_t, cudaEvent_t, unsigned int) = nu
 
 static bool jit_cuda_init_attempted = false;
 static bool jit_cuda_init_success = false;
+static CUmodule jit_cuda_module = nullptr;
+
+extern "C" {
+    extern unsigned char kernels_ptx_compressed[];
+};
+
+int inflate(const void *src, uint32_t src_size, void *dst, uint32_t dst_size) {
+    z_stream strm;
+    memset(&strm, 0, sizeof(z_stream));
+    strm.total_in = strm.avail_in = src_size;
+    strm.total_out = strm.avail_out = dst_size;
+    strm.next_in   = (unsigned char *) src;
+    strm.next_out  = (unsigned char *) dst;
+
+    int rv = inflateInit2(&strm, (15 + 32));
+    if (rv == Z_OK) {
+        rv = inflate(&strm, Z_FINISH);
+        if (rv == Z_STREAM_END)
+            rv = strm.total_out;
+    }
+    inflateEnd(&strm);
+    return rv;
+}
 
 bool jit_cuda_init() {
     if (jit_cuda_init_attempted)
@@ -133,6 +158,27 @@ bool jit_cuda_init() {
 
     jit_log(LogLevel::Info, "jit_cuda_init(): enabled CUDA backend (version %i.%i).",
             cuda_version_major, cuda_version_minor);
+
+    // Dummy operations to create a context
+    cuda_check(cudaSetDevice(0));
+    cuda_check(cudaFree(0));
+
+    // Decompress supplemental PTX content
+    std::unique_ptr<char[]> uncompressed(
+        new char[kernels_ptx_uncompressed_size + 1]);
+
+    int rv = inflate(kernels_ptx_compressed,
+                     (uint32_t) sizeof(kernels_ptx_compressed),
+                     uncompressed.get(),
+                     (uint32_t) kernels_ptx_uncompressed_size);
+
+    if (rv != (int) kernels_ptx_uncompressed_size)
+        jit_fail("jit_cuda_init(): decompression of precompiled kernels failed "
+                 "(%i)!", rv);
+    uncompressed[kernels_ptx_uncompressed_size] = '\0';
+
+    // .. and register it with CUDA
+    cuda_check(cuModuleLoadData(&jit_cuda_module, uncompressed.get()));
 
     jit_cuda_init_success = true;
     return true;
