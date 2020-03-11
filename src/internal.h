@@ -143,7 +143,8 @@ struct VariableKeyHasher {
     }
 };
 
-using CSECache = tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher>;
+using VariableMap = tsl::robin_map<uint32_t, Variable>;
+using CSECache    = tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher>;
 
 /// Records the full JIT compiler state
 struct State {
@@ -179,7 +180,7 @@ struct State {
            alloc_watermark[(int) AllocType::Count] { 0 };
 
     /// Stores the mapping from variable indices to variables
-    tsl::robin_map<uint32_t, Variable> variables;
+    VariableMap variables;
 
     /// Maps from pointer addresses to variable indices
     tsl::robin_pg_map<const void *, uint32_t> variable_from_ptr;

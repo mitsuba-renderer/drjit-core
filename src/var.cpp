@@ -177,11 +177,17 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
 
     if (key_inserted || v.stmt == nullptr) {
         index = state.variable_index++;
-        auto [var_it, var_inserted] = state.variables.try_emplace(index, v);
+
+        VariableMap::iterator var_it;
+        bool var_inserted;
+        std::tie(var_it, var_inserted) = state.variables.try_emplace(index, v);
+
         if (unlikely(!var_inserted))
             jit_fail("jit_trace_append(): could not append instruction!");
+
         if (key_inserted)
             key_it.value() = index;
+
         v_out = &var_it.value();
     } else {
         free(v.stmt);
@@ -251,7 +257,8 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt) {
     v.stmt = (char *) stmt;
     v.tsize = 1;
 
-    auto [index, vo] = jit_trace_append(v);
+    uint32_t index; Variable *vo;
+    std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u): %s%s",
             index, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
@@ -288,7 +295,8 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 
     jit_var_inc_ref_int(arg1, v1);
 
-    auto [index, vo] = jit_trace_append(v);
+    uint32_t index; Variable *vo;
+    std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u): %s%s",
             index, arg1, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
@@ -340,7 +348,8 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt,
         jit_var_inc_ref_ext(v.extra_dep);
     }
 
-    auto [index, vo] = jit_trace_append(v);
+    uint32_t index; Variable *vo;
+    std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s",
             index, arg1, arg2, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
@@ -398,7 +407,8 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt,
         jit_var_inc_ref_ext(v.extra_dep);
     }
 
-    auto [index, vo] = jit_trace_append(v);
+    uint32_t index; Variable *vo;
+    std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s",
             index, arg1, arg2, arg3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
@@ -422,7 +432,8 @@ uint32_t jit_var_register(VarType type, void *ptr,
     v.free_variable = free != 0;
     v.tsize = 1;
 
-    auto [index, vo] = jit_trace_append(v);
+    uint32_t index; Variable *vo;
+    std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_var_register(%u): " PTR ", size=%zu, free=%i",
             index, ptr, size, (int) v.free_variable);
 
@@ -448,7 +459,8 @@ uint32_t jit_var_register_ptr(const void *ptr) {
     v.free_variable = false;
     v.direct_pointer = true;
 
-    auto [index, vo] = jit_trace_append(v);
+    uint32_t index; Variable *vo;
+    std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_var_register_ptr(%u): " PTR, index, ptr);
 
     jit_var_inc_ref_ext(index, vo);

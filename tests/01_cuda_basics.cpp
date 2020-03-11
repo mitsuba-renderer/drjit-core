@@ -8,7 +8,7 @@ TEST_CUDA(01_creation_destruction) {
 }
 
 TEST_CUDA(02_eval_scalar) {
-    CUDAArray value(1234);
+    Float value(1234);
     jitc_log(LogLevel::Debug, "value=%s", value.str());
 }
 

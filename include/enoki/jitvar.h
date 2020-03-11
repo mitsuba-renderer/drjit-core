@@ -19,7 +19,7 @@
 
 template <typename Value>
 struct CUDAArray {
-    static constexpr VarType Type = var_type_v<Value>;
+    static constexpr VarType Type = var_type<Value>::value;
 
     CUDAArray() = default;
 
@@ -36,9 +36,9 @@ struct CUDAArray {
     template <typename T> CUDAArray(const CUDAArray<T> &v) {
         const char *op;
 
-        if (std::is_floating_point_v<T> && std::is_integral_v<Value>)
+        if (std::is_floating_point<T>::value && std::is_integral<Value>::value)
             op = "cvt.rzi.$t1.$t2 $r1, $r2";
-        else if (std::is_integral_v<T> && std::is_floating_point_v<Value>)
+        else if (std::is_integral<T>::value && std::is_floating_point<Value>::value)
             op = "cvt.rn.$t1.$t2 $r1, $r2";
         else
             op = "cvt.$t1.$t2 $r1, $r2";

@@ -11,6 +11,10 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     "MinSizeRel" "RelWithDebInfo")
 endif()
 
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS NO)
+
 include(CheckCXXSourceRuns)
 
 macro(CHECK_CXX_COMPILER_AND_LINKER_FLAGS _RESULT _CXX_FLAGS _LINKER_FLAGS)
@@ -43,11 +47,7 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_FLAGS MATCHES "-stdl
   endif()
 endif()
 
-if (CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|Intel)$")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
-elseif(MSVC)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
-endif()
+find_package(ZLIB)
 
 include_directories(
   include
@@ -72,24 +72,7 @@ add_library(
 
 set_property(TARGET enoki-jit PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native -fvisibility=hidden)
-target_link_libraries(enoki-jit PRIVATE dl)
-
-if (ENOKI_ENABLE_CUDA)
-  # add_library(
-  #   enoki-jit-cuda OBJECT
-  #   src/kernels.cu
-  # )
-  # target_link_libraries(enoki-jit PRIVATE CUDA::cuda_driver CUDA::cudart enoki-jit-cuda)
-  # target_compile_definitions(enoki-jit PRIVATE -DENOKI_CUDA=1)
-  # target_compile_definitions(enoki-jit-cuda PRIVATE -DENOKI_CUDA=1)
-#   enable_language(CUDA)
-#   find_package(CUDAToolkit REQUIRED)
-# set(ENOKI_CUDA_COMPUTE_CAPABILITY "61" CACHE
-#     STRING "Compute capability as specified by https://developer.nvidia.com/cuda-gpus")
-
-#   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY},code=compute_${ENOKI_CUDA_COMPUTE_CAPABILITY} -cudart shared")
-  # set_property(TARGET enoki-jit-cuda PROPERTY POSITION_INDEPENDENT_CODE ON)
-endif()
+target_link_libraries(enoki-jit PRIVATE dl ZLIB::ZLIB)
 
 if (ENOKI_ENABLE_TESTS)
   add_subdirectory(tests)

@@ -13,37 +13,37 @@
 #include <type_traits>
 #include "jit.h"
 
-template <bool Value> using enable_if_t = std::enable_if_t<Value, int>;
+template <bool Value> using enable_if_t = typename std::enable_if<Value, int>::type;
 
 template <typename T, typename = int> struct var_type {
     static constexpr VarType value = VarType::Invalid;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_integral_v<T> && sizeof(T) == 1>> {
+template <typename T> struct var_type<T, enable_if_t<std::is_integral<T>::value && sizeof(T) == 1>> {
     static constexpr VarType value =
-        std::is_signed_v<T> ? VarType::Int8 : VarType::UInt8;
+        std::is_signed<T>::value ? VarType::Int8 : VarType::UInt8;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_integral_v<T> && sizeof(T) == 2>> {
+template <typename T> struct var_type<T, enable_if_t<std::is_integral<T>::value && sizeof(T) == 2>> {
     static constexpr VarType value =
-        std::is_signed_v<T> ? VarType::Int16 : VarType::UInt16;
+        std::is_signed<T>::value ? VarType::Int16 : VarType::UInt16;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_integral_v<T> && sizeof(T) == 4>> {
+template <typename T> struct var_type<T, enable_if_t<std::is_integral<T>::value && sizeof(T) == 4>> {
     static constexpr VarType value =
-        std::is_signed_v<T> ? VarType::Int32 : VarType::UInt32;
+        std::is_signed<T>::value ? VarType::Int32 : VarType::UInt32;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_integral_v<T> && sizeof(T) == 8>> {
+template <typename T> struct var_type<T, enable_if_t<std::is_integral<T>::value && sizeof(T) == 8>> {
     static constexpr VarType value =
-        std::is_signed_v<T> ? VarType::Int64 : VarType::UInt64;
+        std::is_signed<T>::value ? VarType::Int64 : VarType::UInt64;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_enum_v<T>>> {
-    static constexpr VarType value = var_type<std::underlying_type_t<T>>::value;
+template <typename T> struct var_type<T, enable_if_t<std::is_enum<T>::value>> {
+    static constexpr VarType value = var_type<typename std::underlying_type<T>::type>::value;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_floating_point_v<T> && sizeof(T) == 2>> {
+template <typename T> struct var_type<T, enable_if_t<std::is_floating_point<T>::value && sizeof(T) == 2>> {
     static constexpr VarType value = VarType::Float16;
 };
 
@@ -62,8 +62,6 @@ template <> struct var_type<bool> {
 template <typename T> struct var_type<T *> {
     static constexpr VarType value = VarType::Pointer;
 };
-
-template <typename T> constexpr VarType var_type_v = var_type<T>::value;
 
 template <size_t Size> struct uint_with_size { };
 template <> struct uint_with_size<1> { using type = uint8_t; };

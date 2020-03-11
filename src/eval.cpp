@@ -115,8 +115,8 @@ static void jit_var_traverse(uint32_t size, uint32_t index) {
     if (ch[0].second < ch[1].second)
         std::swap(ch[0], ch[1]);
 
-    for (auto [id, tsize] : ch)
-        jit_var_traverse(size, id);
+    for (auto const &v: ch)
+        jit_var_traverse(size, v.first);
 
     schedule[size].push_back(index);
 }

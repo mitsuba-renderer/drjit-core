@@ -96,7 +96,8 @@ void jit_shutdown() {
 
     jit_log(Info, "jit_shutdown(): destroying streams ..");
 
-    for (auto [key, stream] : state.streams) {
+    for (auto &v : state.streams) {
+        const Stream *stream = v.second;
         jit_device_set(stream->device, stream->stream);
         jit_free_flush();
         {
@@ -111,9 +112,9 @@ void jit_shutdown() {
     state.streams.clear();
     active_stream = nullptr;
 
-    for (auto [key, value] : state.kernels) {
-        free((char *) key);
-        cuda_check(cuModuleUnload(value.cu_module));
+    for (auto &v : state.kernels) {
+        free((char *) v.first);
+        cuda_check(cuModuleUnload(v.second.cu_module));
     }
     state.kernels.clear();
 
