@@ -47,6 +47,22 @@ void jitc_log(LogLevel level, const char* fmt, ...) {
     va_end(args);
 }
 
+void jitc_raise(const char* fmt, ...) {
+    lock_guard guard(state.mutex);
+    va_list args;
+    va_start(args, fmt);
+    jit_vraise(fmt, args);
+    va_end(args);
+}
+
+void jitc_fail(const char* fmt, ...) {
+    lock_guard guard(state.mutex);
+    va_list args;
+    va_start(args, fmt);
+    jit_vfail(fmt, args);
+    va_end(args);
+}
+
 int32_t jitc_device_count() {
     lock_guard guard(state.mutex);
     return (int32_t) state.devices.size();
@@ -102,24 +118,24 @@ void jitc_malloc_prefetch(void *ptr, int device) {
     jit_malloc_prefetch(ptr, device);
 }
 
-void jitc_var_inc_ref_ext(uint32_t index) {
+void jitc_var_ext_ref_inc(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_var_inc_ref_ext(index);
+    jit_var_ext_ref_inc(index);
 }
 
-void jitc_var_dec_ref_ext(uint32_t index) {
+void jitc_var_ext_ref_dec(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_var_dec_ref_ext(index);
+    jit_var_ext_ref_dec(index);
 }
 
-void jitc_var_inc_ref_int(uint32_t index) {
+void jitc_var_int_ref_inc(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_var_inc_ref_int(index);
+    jit_var_int_ref_inc(index);
 }
 
-void jitc_var_dec_ref_int(uint32_t index) {
+void jitc_var_int_ref_dec(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_var_dec_ref_int(index);
+    jit_var_int_ref_dec(index);
 }
 
 void *jitc_var_ptr(uint32_t index) {
@@ -226,22 +242,22 @@ void jitc_eval_var(uint32_t index) {
     jit_eval_var(index);
 }
 
-void jitc_cuda_fill_8(uint8_t *ptr, size_t size, uint8_t value) {
+void jitc_cuda_fill_8(void *ptr, size_t size, uint8_t value) {
     lock_guard guard(state.mutex);
     jit_cuda_fill_8(ptr, size, value);
 }
 
-void jitc_cuda_fill_16(uint16_t *ptr, size_t size, uint16_t value) {
+void jitc_cuda_fill_16(void *ptr, size_t size, uint16_t value) {
     lock_guard guard(state.mutex);
     jit_cuda_fill_16(ptr, size, value);
 }
 
-void jitc_cuda_fill_32(uint32_t *ptr, size_t size, uint32_t value) {
+void jitc_cuda_fill_32(void *ptr, size_t size, uint32_t value) {
     lock_guard guard(state.mutex);
     jit_cuda_fill_32(ptr, size, value);
 }
 
-void jitc_cuda_fill_64(uint64_t *ptr, size_t size, uint64_t value) {
+void jitc_cuda_fill_64(void *ptr, size_t size, uint64_t value) {
     lock_guard guard(state.mutex);
     jit_cuda_fill_64(ptr, size, value);
 }

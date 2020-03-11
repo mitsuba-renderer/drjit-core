@@ -588,12 +588,12 @@ void jit_eval() {
                 memset(v->dep, 0, sizeof(uint32_t) * 3);
                 v->extra_dep = 0;
                 for (int j = 0; j < 3; ++j)
-                    jit_var_dec_ref_int(dep[j]);
-                jit_var_dec_ref_ext(extra_dep);
+                    jit_var_int_ref_dec(dep[j]);
+                jit_var_ext_ref_dec(extra_dep);
             // }
 
             if (side_effect)
-                jit_var_dec_ref_ext(index);
+                jit_var_ext_ref_dec(index);
         }
     }
 

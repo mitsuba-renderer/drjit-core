@@ -55,6 +55,9 @@ cudaError_t (*cudaStreamDestroy)(cudaStream_t) = nullptr;
 cudaError_t (*cudaStreamSynchronize)(cudaStream_t) = nullptr;
 cudaError_t (*cudaStreamWaitEvent)(cudaStream_t, cudaEvent_t, unsigned int) = nullptr;
 
+// Enoki API
+CUfunction kernel_fill_64 = nullptr;
+
 #define LOAD(name)                                                             \
     name = decltype(name)(dlsym(lib, #name));                                  \
     if (!name)                                                                 \
@@ -156,7 +159,7 @@ bool jit_cuda_init() {
     cuda_version_major = cuda_version / 1000;
     cuda_version_minor = (cuda_version % 1000) / 10;
 
-    jit_log(LogLevel::Info, "jit_cuda_init(): enabled CUDA backend (version %i.%i).",
+    jit_log(LogLevel::Info, "jit_cuda_init(): enabled CUDA backend (version %i.%i)",
             cuda_version_major, cuda_version_minor);
 
     // Dummy operations to create a context
@@ -179,6 +182,8 @@ bool jit_cuda_init() {
 
     // .. and register it with CUDA
     cuda_check(cuModuleLoadData(&jit_cuda_module, uncompressed.get()));
+
+    cuda_check(cuModuleGetFunction(&kernel_fill_64, jit_cuda_module, "fill_64"));
 
     jit_cuda_init_success = true;
     return true;

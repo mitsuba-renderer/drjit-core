@@ -44,16 +44,16 @@ extern uint32_t jit_var_copy_to_device(VarType type,
                                        size_t size);
 
 /// Increase the internal reference count of a given variable
-extern void jit_var_inc_ref_int(uint32_t index);
+extern void jit_var_int_ref_inc(uint32_t index);
 
 /// Decrease the internal reference count of a given variable
-extern void jit_var_dec_ref_int(uint32_t index);
+extern void jit_var_int_ref_dec(uint32_t index);
 
 /// Increase the external reference count of a given variable
-extern void jit_var_inc_ref_ext(uint32_t index);
+extern void jit_var_ext_ref_inc(uint32_t index);
 
 /// Decrease the external reference count of a given variable
-extern void jit_var_dec_ref_ext(uint32_t index);
+extern void jit_var_ext_ref_dec(uint32_t index);
 
 // Query the pointer variable associated with a given variable
 extern void *jit_var_ptr(uint32_t index);

@@ -16,7 +16,6 @@ void jit_init() {
         jit_fail("Cannot reinitialize JIT while variables are still being used!");
 
     // Enumerate CUDA devices and collect suitable ones
-
     jit_log(Info, "jit_init(): detecting devices ..");
 
     int n_devices = 0;

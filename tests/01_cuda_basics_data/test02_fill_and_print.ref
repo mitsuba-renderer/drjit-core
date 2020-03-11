@@ -1,0 +1,77 @@
+jit_device_set(device=0, stream=0): creating stream
+jit_malloc(type=device, device=0, size=8): <@> (new allocation)
+jit_var_register(1): <@>, size=5, free=1
+jit_var_ext_ref_inc(1): 1
+  int8_t: [-111, -111, -111, -111, -111]
+jit_var_ext_ref_dec(1): 0
+jit_var_free(1)
+jit_free(<@>, type=device, device=0, size=8)
+jit_malloc(type=device, device=0, size=8): <@> (reused local)
+jit_var_register(2): <@>, size=5, free=1
+jit_var_ext_ref_inc(2): 1
+ uint8_t: [222, 222, 222, 222, 222]
+jit_var_ext_ref_dec(2): 0
+jit_var_free(2)
+jit_free(<@>, type=device, device=0, size=8)
+jit_malloc(type=device, device=0, size=16): <@> (new allocation)
+jit_var_register(3): <@>, size=5, free=1
+jit_var_ext_ref_inc(3): 1
+ int16_t: [-1111, -1111, -1111, -1111, -1111]
+jit_var_ext_ref_dec(3): 0
+jit_var_free(3)
+jit_free(<@>, type=device, device=0, size=16)
+jit_malloc(type=device, device=0, size=16): <@> (reused local)
+jit_var_register(4): <@>, size=5, free=1
+jit_var_ext_ref_inc(4): 1
+uint16_t: [2222, 2222, 2222, 2222, 2222]
+jit_var_ext_ref_dec(4): 0
+jit_var_free(4)
+jit_free(<@>, type=device, device=0, size=16)
+jit_malloc(type=device, device=0, size=32): <@> (new allocation)
+jit_var_register(5): <@>, size=5, free=1
+jit_var_ext_ref_inc(5): 1
+ int32_t: [-1111111111, -1111111111, -1111111111, -1111111111, -1111111111]
+jit_var_ext_ref_dec(5): 0
+jit_var_free(5)
+jit_free(<@>, type=device, device=0, size=32)
+jit_malloc(type=device, device=0, size=32): <@> (reused local)
+jit_var_register(6): <@>, size=5, free=1
+jit_var_ext_ref_inc(6): 1
+uint32_t: [2222222222, 2222222222, 2222222222, 2222222222, 2222222222]
+jit_var_ext_ref_dec(6): 0
+jit_var_free(6)
+jit_free(<@>, type=device, device=0, size=32)
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_var_register(7): <@>, size=5, free=1
+jit_var_ext_ref_inc(7): 1
+ int64_t: [-1111111111111111111, -1111111111111111111, -1111111111111111111, -1111111111111111111, -1111111111111111111]
+jit_var_ext_ref_dec(7): 0
+jit_var_free(7)
+jit_free(<@>, type=device, device=0, size=64)
+jit_malloc(type=device, device=0, size=64): <@> (reused local)
+jit_var_register(8): <@>, size=5, free=1
+jit_var_ext_ref_inc(8): 1
+uint64_t: [2222222222222222222, 2222222222222222222, 2222222222222222222, 2222222222222222222, 2222222222222222222]
+jit_var_ext_ref_dec(8): 0
+jit_var_free(8)
+jit_free(<@>, type=device, device=0, size=64)
+jit_malloc(type=device, device=0, size=32): <@> (reused local)
+jit_var_register(9): <@>, size=5, free=1
+jit_var_ext_ref_inc(9): 1
+   float: [0.333333, 0.333333, 0.333333, 0.333333, 0.333333]
+jit_var_ext_ref_dec(9): 0
+jit_var_free(9)
+jit_free(<@>, type=device, device=0, size=32)
+jit_malloc(type=device, device=0, size=64): <@> (reused local)
+jit_var_register(10): <@>, size=5, free=1
+jit_var_ext_ref_inc(10): 1
+  double: [0.333333, 0.333333, 0.333333, 0.333333, 0.333333]
+jit_var_ext_ref_dec(10): 0
+jit_var_free(10)
+jit_free(<@>, type=device, device=0, size=64)
+jit_shutdown(): destroying streams ..
+jit_free_flush(): scheduling 4 deallocations
+jit_free_flush(): performing 4 deallocations
+jit_malloc_trim(): freed
+ - device memory: 120 B in 4 allocations
+jit_shutdown(): done

@@ -49,6 +49,11 @@ void jit_raise(const char* fmt, ...) {
     throw std::runtime_error(log_buffer.get());
 }
 
+void jit_vraise(const char* fmt, va_list args) {
+    log_buffer.vfmt(fmt, args);
+    throw std::runtime_error(log_buffer.get());
+}
+
 void jit_fail(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -56,6 +61,13 @@ void jit_fail(const char* fmt, ...) {
     vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
     va_end(args);
+    exit(EXIT_FAILURE);
+}
+
+void jit_vfail(const char* fmt, va_list args) {
+    fprintf(stderr, "Critical failure in Enoki JIT compiler: ");
+    vfprintf(stderr, fmt, args);
+    fputc('\n', stderr);
     exit(EXIT_FAILURE);
 }
 

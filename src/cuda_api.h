@@ -119,5 +119,8 @@ extern cudaError_t (*cudaStreamDestroy)(cudaStream_t);
 extern cudaError_t (*cudaStreamSynchronize)(cudaStream_t);
 extern cudaError_t (*cudaStreamWaitEvent)(cudaStream_t, cudaEvent_t, unsigned int);
 
+// Enoki API
+extern CUfunction kernel_fill_64;
+
 /// Try to load CUDA
 extern bool jit_cuda_init();

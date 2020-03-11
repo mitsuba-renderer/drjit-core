@@ -1,7 +1,8 @@
 #include <stdint.h>
+#define KERNEL_FUNC extern "C" __global__
 
-__global__ void fill_64(uint64_t *out, uint64_t value, size_t n) {
-    for (size_t i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
+KERNEL_FUNC void fill_64(uint64_t *ptr, size_t size, uint64_t value) {
+    for (size_t i = blockIdx.x * blockDim.x + threadIdx.x; i < size;
          i += blockDim.x * gridDim.x)
-        out[i] = value;
+        ptr[i] = value;
 }

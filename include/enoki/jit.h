@@ -166,6 +166,12 @@ extern JITC_EXPORT char *jitc_log_buffer();
 /// Print a log message with the specified log level and message
 extern JITC_EXPORT void jitc_log(LogLevel level, const char* fmt, ...);
 
+/// Raise an exception message with the specified message
+extern JITC_EXPORT void jitc_raise(const char* fmt, ...);
+
+/// Terminate the application due to a non-recoverable error
+extern JITC_EXPORT void jitc_fail(const char* fmt, ...);
+
 // ====================================================================
 //                         Memory allocation
 // ====================================================================
@@ -410,16 +416,16 @@ extern JITC_EXPORT uint32_t jitc_trace_append_3(enum VarType type,
                                                 uint32_t arg3);
 
 /// Increase the internal reference count of a given variable
-extern JITC_EXPORT void jitc_var_inc_ref_int(uint32_t index);
+extern JITC_EXPORT void jitc_var_int_ref_inc(uint32_t index);
 
 /// Decrease the internal reference count of a given variable
-extern JITC_EXPORT void jitc_var_dec_ref_int(uint32_t index);
+extern JITC_EXPORT void jitc_var_int_ref_dec(uint32_t index);
 
 /// Increase the external reference count of a given variable
-extern JITC_EXPORT void jitc_var_inc_ref_ext(uint32_t index);
+extern JITC_EXPORT void jitc_var_ext_ref_inc(uint32_t index);
 
 /// Decrease the external reference count of a given variable
-extern JITC_EXPORT void jitc_var_dec_ref_ext(uint32_t index);
+extern JITC_EXPORT void jitc_var_ext_ref_dec(uint32_t index);
 
 /// Query the pointer variable associated with a given variable
 extern JITC_EXPORT void *jitc_var_ptr(uint32_t index);
@@ -506,16 +512,16 @@ extern JITC_EXPORT void jitc_eval_var(uint32_t index);
 // ====================================================================
 
 /// Fill a device memory region with 'size' 8-bit values.
-extern JITC_EXPORT void jitc_cuda_fill_8(uint8_t *ptr, size_t size, uint8_t value);
+extern JITC_EXPORT void jitc_cuda_fill_8(void *ptr, size_t size, uint8_t value);
 
 /// Fill a device memory region with 'size' 16-bit values.
-extern JITC_EXPORT void jitc_cuda_fill_16(uint16_t *ptr, size_t size, uint16_t value);
+extern JITC_EXPORT void jitc_cuda_fill_16(void *ptr, size_t size, uint16_t value);
 
 /// Fill a device memory region with 'size' 32-bit values.
-extern JITC_EXPORT void jitc_cuda_fill_32(uint32_t *ptr, size_t size, uint32_t value);
+extern JITC_EXPORT void jitc_cuda_fill_32(void *ptr, size_t size, uint32_t value);
 
 /// Fill a device memory region with 'size' 64-bit values.
-extern JITC_EXPORT void jitc_cuda_fill_64(uint64_t *ptr, size_t size, uint64_t value);
+extern JITC_EXPORT void jitc_cuda_fill_64(void *ptr, size_t size, uint64_t value);
 
 #if defined(__cplusplus)
 }

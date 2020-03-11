@@ -12,8 +12,14 @@ extern void jit_vlog(LogLevel level, const char* fmt, va_list args);
 /// Raise a std::runtime_error with the given message
 [[noreturn]] extern void jit_raise(const char* fmt, ...);
 
+/// Raise a std::runtime_error with the given message
+[[noreturn]] extern void jit_vraise(const char* fmt, va_list args);
+
 /// Immediately terminate the application due to a fatal internal error
 [[noreturn]] extern void jit_fail(const char* fmt, ...);
+
+/// Immediately terminate the application due to a fatal internal error
+[[noreturn]] extern void jit_vfail(const char* fmt, va_list args);
 
 /// Return and clear the log buffer
 extern char *jit_log_buffer();

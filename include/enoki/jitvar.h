@@ -23,10 +23,10 @@ struct CUDAArray {
 
     CUDAArray() = default;
 
-    ~CUDAArray() { jitc_var_dec_ref_ext(m_index); }
+    ~CUDAArray() { jitc_var_ext_ref_dec(m_index); }
 
     CUDAArray(const CUDAArray &a) : m_index(a.m_index) {
-        jitc_var_inc_ref_ext(m_index);
+        jitc_var_ext_ref_inc(m_index);
     }
 
     CUDAArray(CUDAArray &&a) : m_index(a.m_index) {
@@ -107,8 +107,8 @@ struct CUDAArray {
     }
 
     CUDAArray &operator=(const CUDAArray &a) {
-        jitc_var_inc_ref_ext(a.m_index);
-        jitc_var_dec_ref_ext(m_index);
+        jitc_var_ext_ref_inc(a.m_index);
+        jitc_var_ext_ref_dec(m_index);
         m_index = a.m_index;
         return *this;
     }
@@ -127,6 +127,24 @@ struct CUDAArray {
             jitc_cuda_fill_8((uint8_t *) ptr, byte_size, 0);
             return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
         }
+    }
+
+    static CUDAArray full(Value value, size_t size) {
+        size_t byte_size = size * sizeof(Value);
+        void *ptr = jitc_malloc(AllocType::Device, byte_size);
+
+        uint_with_size_t<Value> value_u;
+        memcpy(&value_u, &value, sizeof(Value));
+
+        switch (sizeof(Value)) {
+            case 1: jitc_cuda_fill_8 (ptr, size, (uint8_t)  value_u); break;
+            case 2: jitc_cuda_fill_16(ptr, size, (uint16_t) value_u); break;
+            case 4: jitc_cuda_fill_32(ptr, size, (uint32_t) value_u); break;
+            case 8: jitc_cuda_fill_64(ptr, size, (uint64_t) value_u); break;
+            default: jitc_fail("CUDAArray::zero(): invalid size!");
+        }
+
+        return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
     }
 
     const char *str() {
