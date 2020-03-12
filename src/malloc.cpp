@@ -28,17 +28,17 @@ void* jit_malloc(AllocType type, size_t size) {
     const char *descr = nullptr;
     void *ptr = nullptr;
 
-    Stream *stream = active_stream;
     if (type == AllocType::Device) {
+        Stream *stream = active_stream;
         if (unlikely(!stream))
             jit_raise("jit_malloc(): device must be set using jit_device_set() "
                       "before allocating device pointer!");
         ai.device = stream->device;
 
-        /* 1. Check for arrays with a pending free operation on the current
-              stream. This only works for device memory, as other allocation
-              flavors (host-pinned, shared, shared-read-mostly) can be accessed
-              from both CPU & GPU and might still be used. */
+        /* Check for arrays with a pending free operation on the current
+           stream. This only works for device memory, as other allocation
+           flavors (host-pinned, shared, shared-read-mostly) can be accessed
+           from both CPU & GPU and might still be used. */
         ReleaseChain *chain = stream->release_chain;
         while (chain) {
             auto it = chain->entries.find(ai);
@@ -57,7 +57,7 @@ void* jit_malloc(AllocType type, size_t size) {
         }
     }
 
-    // 2. Look globally. Are there suitable freed arrays?
+    // Look globally. Are there suitable freed arrays?
     if (ptr == nullptr) {
         auto it = state.alloc_free.find(ai);
 
@@ -72,7 +72,7 @@ void* jit_malloc(AllocType type, size_t size) {
     }
 
     // 3. Looks like we will have to allocate some memory..
-    if (ptr == nullptr) {
+    if (unlikely(ptr == nullptr)) {
         if (type == AllocType::Host) {
             int rv;
             /* Temporarily release the lock */ {
@@ -131,20 +131,27 @@ void* jit_malloc(AllocType type, size_t size) {
             }
         }
         descr = "new allocation";
+
+        // Assign a unique ID to the allocation
+        uint32_t id;
+        do {
+            id = state.alloc_id_ctr++;
+            if (unlikely(id == 0)) // overflow
+                id = state.alloc_id_ctr++;
+            auto result = state.alloc_id_fwd.try_emplace(id, ptr);
+            if (likely(result.second))
+                break;
+        } while (true);
+
+        auto result = state.alloc_id_rev.try_emplace(ptr, id);
+        if (unlikely(!result.second))
+            jit_fail("jit_malloc(): internal error setting up unique ID mapping!");
     }
 
     if (unlikely(ptr == nullptr))
         jit_raise("jit_malloc(): out of memory! Could not "
                   "allocate %zu bytes of %s memory.",
                   size, alloc_type_names[(int) ai.type]);
-
-    /// Assign a unique ID to this allocation
-    // if (!state.alloc_ids.empty()) {
-    //     ai.id = state.alloc_ids.back();
-    //     state.alloc_ids.pop_back();
-    // } else {
-    //     ai.id = state.alloc_ctr++;
-    // }
 
     state.alloc_used.insert({ ptr, ai });
 
@@ -319,13 +326,32 @@ void jit_malloc_trim(bool warn) {
 
     AllocInfoMap alloc_free(std::move(state.alloc_free));
 
+    /// Clear pointer <-> ID mapping
+    for (auto& kv : alloc_free) {
+        const std::vector<void *> &entries = kv.second;
+
+        for (void *ptr : entries) {
+            auto it = state.alloc_id_rev.find(ptr);
+            if (it == state.alloc_id_rev.end())
+                jit_fail("jit_malloc(): internal error while clearing unique ID mapping (1)!");
+
+            uint32_t id = it.value();
+            auto it2 = state.alloc_id_fwd.find(id);
+            if (it2 == state.alloc_id_fwd.end())
+                jit_fail("jit_malloc(): internal error while clearing unique ID mapping (2)!");
+
+            state.alloc_id_rev.erase(it);
+            state.alloc_id_fwd.erase(it2);
+        }
+    }
+
     size_t trim_count[(int) AllocType::Count] = { 0 },
            trim_size [(int) AllocType::Count] = { 0 };
 
     /* Temporarily release the lock for cudaFree() et al. */ {
         unlock_guard guard(state.mutex);
 
-        for (auto kv : alloc_free) {
+        for (auto& kv : alloc_free) {
             const std::vector<void *> &entries = kv.second;
             trim_count[(int) kv.first.type] += entries.size();
             trim_size[(int) kv.first.type] += kv.first.size * entries.size();
@@ -389,5 +415,27 @@ void jit_malloc_shutdown() {
                     alloc_type_names[i], jit_mem_string(leak_size[i]),
                     leak_count[i], leak_count[i] > 1 ? "s" : "");
         }
+    } else {
+        if (!state.alloc_id_rev.empty() ||
+            !state.alloc_id_fwd.empty())
+            jit_fail("jit_malloc_shutdown(): leak in unique ID mapping!");
     }
+}
+
+/// Query the unique ID associated with an allocation
+uint32_t jit_malloc_to_id(void *ptr) {
+    auto it = state.alloc_id_rev.find(ptr);
+    if (it != state.alloc_id_rev.end())
+        return it.value();
+    else
+        return 0;
+}
+
+/// Query the allocation associated with a unique ID
+void *jit_malloc_from_id(uint32_t id) {
+    auto it = state.alloc_id_fwd.find(id);
+    if (it != state.alloc_id_fwd.end())
+        return it.value();
+    else
+        return 0;
 }

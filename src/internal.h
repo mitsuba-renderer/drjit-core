@@ -185,6 +185,11 @@ struct State {
     /// Maps Enoki (device index, stream index) pairs to a Stream data structure
     StreamMap streams;
 
+    /// Two-way mapping that associates every allocation with a unique 32 bit ID
+    tsl::robin_pg_map<void *, uint32_t> alloc_id_rev;
+    tsl::robin_map   <uint32_t, void *> alloc_id_fwd;
+    uint32_t alloc_id_ctr = 1;
+
     /// Map of currently allocated memory regions
     tsl::robin_pg_map<const void *, AllocInfo> alloc_used;
 

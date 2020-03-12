@@ -92,6 +92,7 @@ void jit_init() {
 
     state.scatter_gather_operand = 0;
     state.variable_index = 1;
+    state.alloc_id_ctr = 1;
     state.initialized = true;
 }
 

@@ -295,6 +295,29 @@ extern JITC_EXPORT void jitc_malloc_trim();
  */
 extern JITC_EXPORT void jitc_malloc_prefetch(void *ptr, int device);
 
+/**
+ * \brief Query the unique ID associated with an allocation
+ *
+ * The allocator assigns a unique ID to each pointer allocated via
+ * \ref jitc_malloc(). This function queries this mapping for a given
+ * pointer value, and \ref jit_malloc_from_id() goes the other way.
+ *
+ * Returns \c 0 when the pointer could not be found. Valid IDs are always
+ * nonzero.
+ */
+extern JITC_EXPORT uint32_t jitc_malloc_to_id(void *ptr);
+
+/**
+ * \brief Query the allocation associated with a unique ID
+ *
+ * The allocator assigns a unique ID to each pointer allocated via
+ * \ref jitc_malloc(). This function queries this mapping for a given
+ * ID value, and \ref jit_malloc_to_id() goes the other way.
+ *
+ * Returns \c nullptr when the ID could not be found.
+ */
+extern JITC_EXPORT void *jitc_malloc_from_id(uint32_t id);
+
 // ====================================================================
 //                        Variable management
 // ====================================================================
