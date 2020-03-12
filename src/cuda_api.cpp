@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "log.h"
+#include "var.h"
 #include <dlfcn.h>
 #include <zlib.h>
 #include "../ptx/kernels.h"
@@ -211,6 +212,20 @@ bool jit_cuda_init() {
     // .. and register it with CUDA
     cuda_check(cuModuleLoadData(&jit_cuda_module, uncompressed.get()));
     cuda_check(cuModuleGetFunction(&kernel_fill_64, jit_cuda_module, "fill_64"));
+
+
+    for (const char *reduction : { "add", "mul", "min", "max", "and", "or" }) {
+        for (const char *type : var_type_name_short) {
+            char name[16];
+            CUfunction fnc;
+            snprintf(name, sizeof(name), "reduce_%s_%s", reduction, type);
+            CUresult rv = cuModuleGetFunction(&fnc, jit_cuda_module, name);
+            if (rv == CUDA_ERROR_NOT_FOUND)
+                continue;
+            printf("Found %s!\n", name);
+            cuda_check(rv);
+        }
+    }
 
     jit_cuda_init_success = true;
     return true;

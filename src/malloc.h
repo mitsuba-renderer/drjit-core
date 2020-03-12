@@ -38,7 +38,7 @@ struct AllocInfoHasher {
 using AllocInfoMap = tsl::robin_map<AllocInfo, std::vector<void *>, AllocInfoHasher>;
 
 /// Descriptive names for the various allocation types
-extern const char *alloc_type_names[5];
+extern const char *alloc_type_name[(int) AllocType::Count];
 
 /// Allocate the given flavor of memory
 extern void *jit_malloc(AllocType type, size_t size) __attribute__((malloc));

@@ -119,32 +119,26 @@ struct CUDAArray {
     }
 
     static CUDAArray zero(size_t size) {
-        if (size == 0) {
+        if (size == 1) {
             return CUDAArray(0);
         } else {
+            uint8_t value = 0;
             size_t byte_size = size * sizeof(Value);
             void *ptr = jitc_malloc(AllocType::Device, byte_size);
-            jitc_fill_8((uint8_t *) ptr, byte_size, 0);
+            jitc_fill(VarType::UInt8, ptr, byte_size, &value);
             return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
         }
     }
 
     static CUDAArray full(Value value, size_t size) {
-        size_t byte_size = size * sizeof(Value);
-        void *ptr = jitc_malloc(AllocType::Device, byte_size);
-
-        uint_with_size_t<Value> value_u;
-        memcpy(&value_u, &value, sizeof(Value));
-
-        switch (sizeof(Value)) {
-            case 1: jitc_fill_8 (ptr, size, (uint8_t)  value_u); break;
-            case 2: jitc_fill_16(ptr, size, (uint16_t) value_u); break;
-            case 4: jitc_fill_32(ptr, size, (uint32_t) value_u); break;
-            case 8: jitc_fill_64(ptr, size, (uint64_t) value_u); break;
-            default: jitc_fail("CUDAArray::zero(): invalid size!");
+        if (size == 1) {
+            return CUDAArray(value);
+        } else {
+            size_t byte_size = size * sizeof(Value);
+            void *ptr = jitc_malloc(AllocType::Device, byte_size);
+            jitc_fill(Type, ptr, size, &value);
+            return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
         }
-
-        return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
     }
 
     const char *str() {

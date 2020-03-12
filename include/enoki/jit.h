@@ -326,13 +326,13 @@ extern JITC_EXPORT void *jitc_malloc_from_id(uint32_t id);
 /// Variable types supported by the JIT compiler
 enum class VarType : uint32_t {
     Invalid, Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64,
-    Float16, Float32, Float64, Bool, Pointer
+    Float16, Float32, Float64, Bool, Pointer, Count
 };
 #else
 enum VarType {
     VarTypeInvalid, VarTypeInt8, VarTypeUInt8, VarTypeInt16, VarTypeUInt16,
     VarTypeInt32, VarTypeUInt32, VarTypeInt64, VarTypeUInt64, VarTypeFloat16,
-    VarTypeFloat32, VarTypeFloat64, VarTypeBool, VarTypePointer
+    VarTypeFloat32, VarTypeFloat64, VarTypeBool, VarTypePointer, VarTypeCount
 };
 #endif
 
@@ -543,17 +543,15 @@ extern JITC_EXPORT void jitc_eval_var(uint32_t index);
 //                  CUDA backend-specific functionality
 // ====================================================================
 
-/// Fill a device memory region with 'size' 8-bit values.
-extern JITC_EXPORT void jitc_fill_8(void *ptr, size_t size, uint8_t value);
-
-/// Fill a device memory region with 'size' 16-bit values.
-extern JITC_EXPORT void jitc_fill_16(void *ptr, size_t size, uint16_t value);
-
-/// Fill a device memory region with 'size' 32-bit values.
-extern JITC_EXPORT void jitc_fill_32(void *ptr, size_t size, uint32_t value);
-
-/// Fill a device memory region with 'size' 64-bit values.
-extern JITC_EXPORT void jitc_fill_64(void *ptr, size_t size, uint64_t value);
+/**
+ * \brief Fill a device memory region with constants of a given type
+ *
+ * This function writes \c size values of type \c type to the output array \c
+ * ptr. The specific value is taken from \c src, which must be a CPU pointer to
+ * a single int, float, double, etc (depending on \c type).
+ */
+extern JITC_EXPORT void jitc_fill(VarType type, void *ptr, size_t size,
+                                  const void *src);
 
 #if defined(__cplusplus)
 }

@@ -172,7 +172,7 @@ void jit_assemble(uint32_t size) {
             n_vars_in++;
             push = true;
         } else if (!v->side_effect && v->ref_count_ext > 0 && v->size == size) {
-            size_t var_size = (size_t) size * jit_type_size(v->type);
+            size_t var_size = (size_t) size * (size_t) var_type_size[(int) v->type];
             v->data = jit_malloc(AllocType::Device, var_size);
             n_vars_out++;
             push = true;

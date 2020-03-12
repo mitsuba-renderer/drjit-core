@@ -1,7 +1,7 @@
 #include "internal.h"
 #include "log.h"
 
-const char *alloc_type_names[(int) AllocType::Count] = {
+const char *alloc_type_name[(int) AllocType::Count] = {
     "host", "host-pinned", "device", "managed", "managed-read-mostly"
 };
 
@@ -151,16 +151,16 @@ void* jit_malloc(AllocType type, size_t size) {
     if (unlikely(ptr == nullptr))
         jit_raise("jit_malloc(): out of memory! Could not "
                   "allocate %zu bytes of %s memory.",
-                  size, alloc_type_names[(int) ai.type]);
+                  size, alloc_type_name[(int) ai.type]);
 
     state.alloc_used.insert({ ptr, ai });
 
     if (ai.type == AllocType::Device)
         jit_log(Trace, "jit_malloc(type=%s, device=%u, size=%zu): " PTR " (%s)",
-                alloc_type_names[(int) ai.type], ai.device, ai.size, ptr, descr);
+                alloc_type_name[(int) ai.type], ai.device, ai.size, ptr, descr);
     else
         jit_log(Trace, "jit_malloc(type=%s, size=%zu): " PTR " (%s)",
-                alloc_type_names[(int) ai.type], ai.size, ptr, descr);
+                alloc_type_name[(int) ai.type], ai.size, ptr, descr);
 
     size_t &usage     = state.alloc_usage[(int) ai.type],
            &watermark = state.alloc_watermark[(int) ai.type];
@@ -192,10 +192,10 @@ void jit_free(void *ptr) {
 
     if (ai.type == AllocType::Device)
         jit_log(Trace, "jit_free(" PTR ", type=%s, device=%u, size=%zu)", ptr,
-                alloc_type_names[(int) ai.type], ai.device, ai.size);
+                alloc_type_name[(int) ai.type], ai.device, ai.size);
     else
         jit_log(Trace, "jit_free(" PTR ", type=%s, size=%zu)", ptr,
-                alloc_type_names[(int) ai.type], ai.size);
+                alloc_type_name[(int) ai.type], ai.size);
 
     state.alloc_usage[(int) ai.type] -= ai.size;
     state.alloc_used.erase(it);
@@ -267,8 +267,8 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
         return ptr;
 
     jit_log(Trace, "jit_malloc_migrate(" PTR "): %s -> %s", ptr,
-            alloc_type_names[(int) ai.type],
-            alloc_type_names[(int) type]) ;
+            alloc_type_name[(int) ai.type],
+            alloc_type_name[(int) type]) ;
 
     void *ptr_new = jit_malloc(type, ai.size);
     cuda_check(cuMemcpyAsync(ptr_new, ptr, ai.size, stream->handle));
@@ -387,7 +387,7 @@ void jit_malloc_trim(bool warn) {
             if (trim_count[i] == 0)
                 continue;
             jit_log(Debug, " - %s memory: %s in %zu allocation%s",
-                    alloc_type_names[i], jit_mem_string(trim_size[i]),
+                    alloc_type_name[i], jit_mem_string(trim_size[i]),
                     trim_count[i], trim_count[i] > 1 ? "s" : "");
         }
     }
@@ -412,7 +412,7 @@ void jit_malloc_shutdown() {
                 continue;
 
             jit_log(Warn, " - %s memory: %s in %zu allocation%s",
-                    alloc_type_names[i], jit_mem_string(leak_size[i]),
+                    alloc_type_name[i], jit_mem_string(leak_size[i]),
                     leak_count[i], leak_count[i] > 1 ? "s" : "");
         }
     } else {

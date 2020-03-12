@@ -1,5 +1,5 @@
 COMPUTE_CAPABILITY=compute_61
-NVCC=nvcc -gencode arch=$(COMPUTE_CAPABILITY),code=$(COMPUTE_CAPABILITY) --ptx
+NVCC=nvcc -m64 -gencode arch=$(COMPUTE_CAPABILITY),code=$(COMPUTE_CAPABILITY) --ptx --expt-relaxed-constexpr
 
 all: kernels.h
 

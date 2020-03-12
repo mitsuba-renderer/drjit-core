@@ -74,9 +74,6 @@ extern void jit_var_label_set(uint32_t index, const char *label);
 /// Query the descriptive label associated with a given variable
 extern const char *jit_var_label(uint32_t index);
 
-/// Return the size of a given variable type
-extern size_t jit_type_size(VarType type);
-
 /// Migrate a variable to a different flavor of memory
 extern void jit_var_migrate(uint32_t index, AllocType type);
 
@@ -97,3 +94,8 @@ extern const char *jit_var_whos();
 
 /// Remove a variable from the cache used for common subexpression elimination
 extern void jit_cse_drop(uint32_t index, const Variable *v);
+
+/// Descriptive names and byte sizes for the various variable types
+extern const char *var_type_name      [(int) VarType::Count];
+extern const char *var_type_name_short[(int) VarType::Count];
+extern const int   var_type_size      [(int) VarType::Count];

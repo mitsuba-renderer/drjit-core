@@ -3,7 +3,23 @@
 #include "log.h"
 #include "eval.h"
 
-/// Return the size of a given variable type
+/// Descriptive names for the various variable types
+const char *var_type_name[(int) VarType::Count]{
+    "invalid", "int8",   "uint8",   "int16",   "uint16",  "int32", "uint32",
+    "int64",   "uint64", "float16", "float32", "float64", "mask",  "pointer"
+};
+
+/// Descriptive names for the various variable types (extra-short version)
+const char *var_type_name_short[(int) VarType::Count]{
+    "inv", "i8", "u8", "i16", "i16", "i32", "u32",
+    "i64", "u64", "f16", "f32", "f64", "msk", "ptr"
+};
+
+/// Maps types to byte sizes
+const int var_type_size[(int) VarType::Count]{
+    0, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 1, 8
+};
+
 size_t jit_type_size(VarType type) {
     switch (type) {
         case VarType::UInt8:
@@ -19,26 +35,6 @@ size_t jit_type_size(VarType type) {
         case VarType::Pointer:
         case VarType::Float64: return 8;
         default: jit_fail("jit_type_size(): invalid type!");
-    }
-}
-
-/// Return the readable name for the given variable type
-const char *jit_type_name(VarType type) {
-    switch (type) {
-        case VarType::Int8:    return "i8 "; break;
-        case VarType::UInt8:   return "u8 "; break;
-        case VarType::Int16:   return "i16"; break;
-        case VarType::UInt16:  return "u16"; break;
-        case VarType::Int32:   return "i32"; break;
-        case VarType::UInt32:  return "u32"; break;
-        case VarType::Int64:   return "i64"; break;
-        case VarType::UInt64:  return "u64"; break;
-        case VarType::Float16: return "f16"; break;
-        case VarType::Float32: return "f32"; break;
-        case VarType::Float64: return "f64"; break;
-        case VarType::Bool:    return "msk"; break;
-        case VarType::Pointer: return "ptr"; break;
-        default: jit_fail("jit_type_name(): invalid type!");
     }
 }
 
@@ -537,7 +533,7 @@ void jit_var_migrate(uint32_t index, AllocType type) {
     }
 
     jit_log(Debug, "jit_var_migrate(%u, " PTR "): %s", index, v->data,
-            alloc_type_names[(int) type]);
+            alloc_type_name[(int) type]);
 
     v->data = jit_malloc_migrate(v->data, type);
 }
@@ -589,7 +585,7 @@ const char *jit_var_whos() {
         const Variable *v = jit_var(index);
         size_t mem_size = v->size * jit_type_size(v->type);
 
-        buffer.fmt("  %-9u %s    ", index, jit_type_name(v->type));
+        buffer.fmt("  %-9u %3s    ", index, var_type_name_short[(int) v->type]);
         size_t sz = buffer.fmt("%u / %u", v->ref_count_ext, v->ref_count_int);
         buffer.fmt("%*s%-12u%-12s[%c]     %s\n", 11 - sz, "", v->size,
                    jit_mem_string(mem_size), v->data ? 'x' : ' ',
@@ -621,7 +617,7 @@ const char *jit_var_whos() {
     buffer.put("  ================\n");
     for (int i = 0; i < 5; ++i)
         buffer.fmt("   - %-20s: %s used (max. %s).\n",
-                   alloc_type_names[i],
+                   alloc_type_name[i],
                    std::string(jit_mem_string(state.alloc_usage[i])).c_str(),
                    std::string(jit_mem_string(state.alloc_watermark[i])).c_str());
 
