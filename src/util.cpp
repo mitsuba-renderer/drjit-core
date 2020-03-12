@@ -1,14 +1,5 @@
 #include "internal.h"
-#include "log.h"
-
-void cuda_check_impl(CUresult errval, const char *file, const int line) {
-    if (unlikely(errval != CUDA_SUCCESS && errval != CUDA_ERROR_DEINITIALIZED)) {
-        const char *msg = nullptr;
-        cuGetErrorString(errval, &msg);
-        jit_fail("cuda_check(): API error = %04d (\"%s\") in "
-                 "%s:%i.", (int) errval, msg, file, line);
-    }
-}
+#include "util.h"
 
 /// Fill a device memory region with 'size' 8-bit values.
 void jit_fill_8(void *ptr, size_t size, uint8_t value) {

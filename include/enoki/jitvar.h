@@ -43,7 +43,7 @@ struct CUDAArray {
         else
             op = "cvt.$t1.$t2 $r1, $r2";
 
-        m_index = jitc_trace_append_1(Type, op, v.index_());
+        m_index = jitc_trace_append_1(Type, op, 1, v.index_());
     }
 
     CUDAArray(Value value) {
@@ -97,7 +97,7 @@ struct CUDAArray {
         memcpy(&value_uint, &value, sizeof(Value));
         snprintf(value_str, 32, fmt, value_uint);
 
-        m_index = jitc_trace_append_0(Type, value_str);
+        m_index = jitc_trace_append_0(Type, value_str, 0);
     }
 
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
@@ -124,7 +124,7 @@ struct CUDAArray {
         } else {
             size_t byte_size = size * sizeof(Value);
             void *ptr = jitc_malloc(AllocType::Device, byte_size);
-            jitc_cuda_fill_8((uint8_t *) ptr, byte_size, 0);
+            jitc_fill_8((uint8_t *) ptr, byte_size, 0);
             return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
         }
     }
@@ -137,10 +137,10 @@ struct CUDAArray {
         memcpy(&value_u, &value, sizeof(Value));
 
         switch (sizeof(Value)) {
-            case 1: jitc_cuda_fill_8 (ptr, size, (uint8_t)  value_u); break;
-            case 2: jitc_cuda_fill_16(ptr, size, (uint16_t) value_u); break;
-            case 4: jitc_cuda_fill_32(ptr, size, (uint32_t) value_u); break;
-            case 8: jitc_cuda_fill_64(ptr, size, (uint64_t) value_u); break;
+            case 1: jitc_fill_8 (ptr, size, (uint8_t)  value_u); break;
+            case 2: jitc_fill_16(ptr, size, (uint16_t) value_u); break;
+            case 4: jitc_fill_32(ptr, size, (uint32_t) value_u); break;
+            case 8: jitc_fill_64(ptr, size, (uint64_t) value_u); break;
             default: jitc_fail("CUDAArray::zero(): invalid size!");
         }
 

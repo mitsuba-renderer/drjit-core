@@ -7,6 +7,10 @@ State state;
 Buffer buffer;
 __thread Stream *active_stream = nullptr;
 
+static_assert(
+    sizeof(VariableMap::value_type) == 64,
+    "VariableMap: incorrect size, likely an issue with padding/packing!");
+
 /// Initialize core data structures of the JIT compiler
 void jit_init() {
     if (state.initialized)
@@ -87,8 +91,6 @@ void jit_init() {
         cuda_check(cuCtxSetCurrent(state.devices[0].context));
 
     state.scatter_gather_operand = 0;
-    state.alloc_addr_mask = 0;
-    state.alloc_addr_ref = nullptr;
     state.variable_index = 1;
     state.initialized = true;
 }

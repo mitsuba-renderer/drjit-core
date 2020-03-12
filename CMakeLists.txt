@@ -65,7 +65,7 @@ add_library(
   src/eval.h           src/eval.cpp
   src/malloc.h         src/malloc.cpp
   src/hash.h           src/hash.cpp
-  src/cuda.h           src/cuda.cpp
+  src/util.h           src/util.cpp
   src/cuda_api.h       src/cuda_api.cpp
   src/init.cpp
   src/api.cpp

@@ -2,7 +2,6 @@
 #include "internal.h"
 #include "log.h"
 #include "eval.h"
-// #include <inttypes.h>
 
 /// Return the size of a given variable type
 size_t jit_type_size(VarType type) {
@@ -71,14 +70,16 @@ void jit_var_free(uint32_t index, Variable *v) {
     memcpy(dep, v->dep, sizeof(uint32_t) * 3);
 
     // Release GPU memory
-    if (v->free_variable && v->data)
+    if (likely(v->data && !v->retain_data))
         jit_free(v->data);
 
     // Free strings
-    free(v->stmt);
-    free(v->label);
+    if (unlikely(v->free_strings)) {
+        free(v->stmt);
+        free(v->label);
+    }
 
-    if (v->direct_pointer) {
+    if (unlikely(v->direct_pointer)) {
         auto it = state.variable_from_ptr.find(v->data);
         if (unlikely(it == state.variable_from_ptr.end()))
             jit_fail("jit_var_free(): direct pointer not found!");
@@ -161,24 +162,31 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
     bool key_inserted = false;
 
     if (v.stmt) {
-        v.stmt = strdup(v.stmt);
-
         if (v.type != VarType::Float32) {
+            /// Strip .ftz modifiers from non-float PTX statements
             char *offset = strstr(v.stmt, ".ftz");
-            if (offset)
+            if (offset) {
+                if (!v.free_strings) {
+                    /* Need to modify the instruction, allocate memory
+                       if not already available */
+                    v.free_strings = true;
+                    v.stmt = strdup(v.stmt);
+                    offset = strstr(v.stmt, ".ftz");
+                }
                 strcat(offset, offset + 4);
+            }
         }
 
-        // Check if this exact instruction already exists.
-        VariableKey key(v);
-
-        std::tie(key_it, key_inserted) = state.cse_cache.try_emplace(key, 0);
+        // Check if this exact statement already exists ..
+        std::tie(key_it, key_inserted) =
+            state.cse_cache.try_emplace(VariableKey(v), 0);
     }
 
     uint32_t index;
     Variable *v_out;
 
     if (key_inserted || v.stmt == nullptr) {
+        // .. nope, it is new.
         index = state.variable_index++;
 
         VariableMap::iterator var_it;
@@ -193,7 +201,10 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
 
         v_out = &var_it.value();
     } else {
-        free(v.stmt);
+        // .. found a match! Deallocate 'v'.
+        if (v.free_strings)
+            free(v.stmt);
+
         index = key_it.value();
         v_out = jit_var(index);
     }
@@ -220,7 +231,7 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
     if (v->data != nullptr || v->ref_count_int > 0) {
         if (v->size == 1 && copy != 0) {
             uint32_t index_new =
-                jit_trace_append_1(v->type, "mov.$t1 $r1, $r2", index);
+                jit_trace_append_1(v->type, "mov.$t1 $r1, $r2", 1, index);
             jit_var(index_new)->size = size;
             jit_var_ext_ref_dec(index);
             return index_new;
@@ -252,22 +263,34 @@ const char *jit_var_label(uint32_t index) {
 }
 
 /// Assign a descriptive label to a given variable
-void jit_var_label_set(uint32_t index, const char *label) {
-    Variable *var = jit_var(index);
-    free(var->label);
-    var->label = strdup(label);
-    jit_log(Debug, "jit_var_label_set(%u): \"%s\"", index, label);
+void jit_var_label_set(uint32_t index, const char *label_) {
+    Variable *v = jit_var(index);
+    char *label = label_ ? strdup(label_) : nullptr;
+    char *stmt  = v->stmt ? strdup(v->stmt) : nullptr;
+
+    if (v->free_strings) {
+        free(v->stmt);
+        free(v->label);
+    }
+
+    v->label        = label;
+    v->stmt         = stmt;
+    v->free_strings = true;
+
+    jit_log(Debug, "jit_v_label_set(%u): \"%s\"", index,
+            label ? label : "(null)");
 }
 
 /// Append a variable to the instruction trace (no operands)
-uint32_t jit_trace_append_0(VarType type, const char *stmt) {
+uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
     Stream *stream = jit_get_stream("jit_trace_append_0");
 
     Variable v;
     v.type = type;
     v.size = 1;
-    v.stmt = (char *) stmt;
+    v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.tsize = 1;
+    v.free_strings = stmt_static != 0;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
@@ -283,7 +306,7 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt) {
 
 /// Append a variable to the instruction trace (1 operand)
 uint32_t jit_trace_append_1(VarType type, const char *stmt,
-                            uint32_t arg1) {
+                            int stmt_static, uint32_t arg1) {
     Stream *stream = jit_get_stream("jit_trace_append_1");
 
     if (unlikely(arg1 == 0))
@@ -295,7 +318,7 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
     Variable v;
     v.type = type;
     v.size = v1->size;
-    v.stmt = (char *) stmt;
+    v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.dep[0] = arg1;
     v.tsize = 1 + v1->tsize;
 
@@ -320,7 +343,7 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 }
 
 /// Append a variable to the instruction trace (2 operands)
-uint32_t jit_trace_append_2(VarType type, const char *stmt,
+uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
                             uint32_t arg1, uint32_t arg2) {
     Stream *stream = jit_get_stream("jit_trace_append_2");
 
@@ -334,10 +357,11 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt,
     Variable v;
     v.type = type;
     v.size = std::max(v1->size, v2->size);
-    v.stmt = (char *) stmt;
+    v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.dep[0] = arg1;
     v.dep[1] = arg2;
     v.tsize = 1 + v1->tsize + v2->tsize;
+    v.free_strings = stmt_static != 0;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size))) {
@@ -373,7 +397,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt,
 }
 
 /// Append a variable to the instruction trace (3 operands)
-uint32_t jit_trace_append_3(VarType type, const char *stmt,
+uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
                             uint32_t arg1, uint32_t arg2, uint32_t arg3) {
     Stream *stream = jit_get_stream("jit_trace_append_3");
 
@@ -388,11 +412,12 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt,
     Variable v;
     v.type = type;
     v.size = std::max({ v1->size, v2->size, v3->size });
-    v.stmt = (char *) stmt;
+    v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.dep[0] = arg1;
     v.dep[1] = arg2;
     v.dep[2] = arg3;
     v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize;
+    v.free_strings = stmt_static != 0;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size) ||
@@ -441,13 +466,13 @@ uint32_t jit_var_register(VarType type, void *ptr,
     v.type = type;
     v.data = ptr;
     v.size = (uint32_t) size;
-    v.free_variable = free != 0;
+    v.retain_data = free == 0;
     v.tsize = 1;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_var_register(%u): " PTR ", size=%zu, free=%i",
-            index, ptr, size, (int) v.free_variable);
+            index, ptr, size, (int) free);
 
     jit_var_ext_ref_inc(index, vo);
 
@@ -468,7 +493,7 @@ uint32_t jit_var_register_ptr(const void *ptr) {
     v.data = (void *) ptr;
     v.size = 1;
     v.tsize = 0;
-    v.free_variable = false;
+    v.retain_data = true;
     v.direct_pointer = true;
 
     uint32_t index; Variable *vo;

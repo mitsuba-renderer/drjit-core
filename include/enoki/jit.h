@@ -393,24 +393,33 @@ extern JITC_EXPORT uint32_t jitc_var_register_ptr(const void *ptr);
  *
  * \param stmt
  *    Intermediate language statement.
+ *
+ * \param stmt_static
+ *    When 'stmt' is a static string stored in the data segment of the
+ *    executable, it is not necessary to make a copy. In this case, set
+ *    <tt>stmt_static == 1</tt>, and <tt>0</tt> otherwise.
  */
 extern JITC_EXPORT uint32_t jitc_trace_append_0(enum VarType type,
-                                                const char *stmt);
+                                                const char *stmt,
+                                                int stmt_static);
 
 /// Append a variable to the instruction trace (1 operand)
 extern JITC_EXPORT uint32_t jitc_trace_append_1(enum VarType type,
                                                 const char *stmt,
+                                                int stmt_static,
                                                 uint32_t arg1);
 
 /// Append a variable to the instruction trace (2 operands)
 extern JITC_EXPORT uint32_t jitc_trace_append_2(enum VarType type,
                                                 const char *stmt,
+                                                int stmt_static,
                                                 uint32_t arg1,
                                                 uint32_t arg2);
 
 /// Append a variable to the instruction trace (3 operands)
 extern JITC_EXPORT uint32_t jitc_trace_append_3(enum VarType type,
                                                 const char *stmt,
+                                                int stmt_static,
                                                 uint32_t arg1,
                                                 uint32_t arg2,
                                                 uint32_t arg3);
@@ -512,16 +521,16 @@ extern JITC_EXPORT void jitc_eval_var(uint32_t index);
 // ====================================================================
 
 /// Fill a device memory region with 'size' 8-bit values.
-extern JITC_EXPORT void jitc_cuda_fill_8(void *ptr, size_t size, uint8_t value);
+extern JITC_EXPORT void jitc_fill_8(void *ptr, size_t size, uint8_t value);
 
 /// Fill a device memory region with 'size' 16-bit values.
-extern JITC_EXPORT void jitc_cuda_fill_16(void *ptr, size_t size, uint16_t value);
+extern JITC_EXPORT void jitc_fill_16(void *ptr, size_t size, uint16_t value);
 
 /// Fill a device memory region with 'size' 32-bit values.
-extern JITC_EXPORT void jitc_cuda_fill_32(void *ptr, size_t size, uint32_t value);
+extern JITC_EXPORT void jitc_fill_32(void *ptr, size_t size, uint32_t value);
 
 /// Fill a device memory region with 'size' 64-bit values.
-extern JITC_EXPORT void jitc_cuda_fill_64(void *ptr, size_t size, uint64_t value);
+extern JITC_EXPORT void jitc_fill_64(void *ptr, size_t size, uint64_t value);
 
 #if defined(__cplusplus)
 }

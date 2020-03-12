@@ -1,7 +1,7 @@
 #pragma once
 
 #include "malloc.h"
-#include "cuda.h"
+#include "cuda_api.h"
 #include <mutex>
 #include <condition_variable>
 #include <string.h>
@@ -77,50 +77,62 @@ struct Kernel {
 
 using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
 
+#pragma pack(push)
+#pragma pack(1)
+
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
-    /// Intermediate language statement
-    char *stmt = nullptr;
-
-    /// Data type of this variable
-    VarType type = VarType::Invalid;
-
-    /// Number of entries
-    uint32_t size = 0;
-
-    /// Dependencies of this instruction
-    uint32_t dep[3] { 0 };
-
-    /// Extra dependency (which is not directly used in arithmetic, e.g. scatter/gather)
-    uint32_t extra_dep = 0;
-
-    /// Associated label (for debugging)
-    char *label = nullptr;
-
-    /// Pointer to device memory
-    void *data = nullptr;
-
     /// External reference count (by application using Enoki)
-    uint32_t ref_count_ext = 0;
+    uint32_t ref_count_ext;
 
     /// Internal reference count (dependencies within computation ggraph)
-    uint32_t ref_count_int = 0;
+    uint32_t ref_count_int;
+
+    /// Dependencies of this instruction
+    uint32_t dep[3];
+
+    /// Extra dependency (which is not directly used in arithmetic, e.g. scatter/gather)
+    uint32_t extra_dep;
+
+    /// Number of entries
+    uint32_t size;
 
     /// Size of the instruction subtree (heuristic for instruction scheduling)
-    uint32_t tsize = 0;
+    uint32_t tsize;
+
+    /// Intermediate language statement
+    char *stmt;
+
+    /// Associated label (for debugging)
+    char *label;
+
+    /// Pointer to device memory
+    void *data;
+
+    /// Data type of this variable
+    VarType type : 8;
 
     /// Does the instruction have side effects (e.g. 'scatter')
-    bool side_effect = false;
+    bool side_effect : 1;
+
+    /// Don't deallocate 'data' when this variable is destructed?
+    bool retain_data : 1;
+
+    /// Free the 'label' and 'stmt' variables at destruction time?
+    bool free_strings : 1;
 
     /// A variable is 'dirty' if there are pending scatter operations to it
-    bool dirty = false;
-
-    /// Free 'data' after this variable is no longer referenced?
-    bool free_variable = true;
+    bool dirty : 1;
 
     /// Optimization: is this a direct pointer (rather than an array which stores a pointer?)
-    bool direct_pointer = false;
+    bool direct_pointer : 1;
+
+    Variable() {
+        memset(this, 0, sizeof(Variable));
+    }
 };
+
+#pragma pack(pop)
 
 /// Abbreviated version of the Variable data structure
 struct VariableKey {
@@ -153,16 +165,19 @@ struct VariableKeyHasher {
 using VariableMap = tsl::robin_map<uint32_t, Variable>;
 using CSECache    = tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher>;
 
-/// Records the full JIT compiler state
+/// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
     /// Must be held to access members
     std::mutex mutex;
 
-    /// Indicates whether the state is initialized by \ref jit_init()
-    bool initialized = false;
+    /// Stores the mapping from variable indices to variables
+    VariableMap variables;
 
     /// Log level
     LogLevel log_level = LogLevel::Info;
+
+    /// Indicates whether the state is initialized by \ref jit_init()
+    bool initialized = false;
 
     /// Available devices and their CUDA IDs
     std::vector<Device> devices;
@@ -176,18 +191,9 @@ struct State {
     /// Map of currently unused memory regions
     AllocInfoMap alloc_free;
 
-    /// Mask defining used address bits for pointers returned by jit_malloc()
-    uintptr_t alloc_addr_mask = 0;
-
-    /// Stores a reference address used to compute the field 'alloc_addr_mask'.
-    void *alloc_addr_ref = nullptr;
-
     /// Keep track of current memory usage and a maximum watermark
     size_t alloc_usage    [(int) AllocType::Count] { 0 },
            alloc_watermark[(int) AllocType::Count] { 0 };
-
-    /// Stores the mapping from variable indices to variables
-    VariableMap variables;
 
     /// Maps from pointer addresses to variable indices
     tsl::robin_pg_map<const void *, uint32_t> variable_from_ptr;

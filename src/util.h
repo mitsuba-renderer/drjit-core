@@ -14,7 +14,3 @@ extern void jit_fill_32(void *ptr, size_t size, uint32_t value);
 
 /// Fill a device memory region with 'size' 64-bit values.
 extern void jit_fill_64(void *ptr, size_t size, uint64_t value);
-
-/// Assert that a CUDA operation is correctly issued
-#define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
-extern void cuda_check_impl(CUresult errval, const char *file, const int line);

@@ -105,3 +105,7 @@ extern CUfunction kernel_fill_64;
 
 /// Try to load CUDA
 extern bool jit_cuda_init();
+
+/// Assert that a CUDA operation is correctly issued
+#define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
+extern void cuda_check_impl(CUresult errval, const char *file, const int line);

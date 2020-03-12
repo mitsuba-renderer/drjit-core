@@ -138,6 +138,14 @@ void* jit_malloc(AllocType type, size_t size) {
                   "allocate %zu bytes of %s memory.",
                   size, alloc_type_names[(int) ai.type]);
 
+    /// Assign a unique ID to this allocation
+    // if (!state.alloc_ids.empty()) {
+    //     ai.id = state.alloc_ids.back();
+    //     state.alloc_ids.pop_back();
+    // } else {
+    //     ai.id = state.alloc_ctr++;
+    // }
+
     state.alloc_used.insert({ ptr, ai });
 
     if (ai.type == AllocType::Device)
@@ -152,14 +160,6 @@ void* jit_malloc(AllocType type, size_t size) {
 
     usage += ai.size;
     watermark = std::max(watermark, usage);
-
-    if (!state.alloc_addr_ref)
-        state.alloc_addr_ref = ptr;
-
-    /* Keep track of which address bits are actually used by pointers returned
-       by jit_malloc(). This enables optimizations in jit_horiz_partition() */
-    uintptr_t bit_diff = (uintptr_t) state.alloc_addr_ref ^ (uintptr_t) ptr;
-    state.alloc_addr_mask |= bit_diff;
 
     return ptr;
 }

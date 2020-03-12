@@ -2,6 +2,7 @@
 #include "var.h"
 #include "eval.h"
 #include "log.h"
+#include "util.h"
 #include <thread>
 
 void jitc_init() {
@@ -180,26 +181,27 @@ uint32_t jitc_var_copy_to_device(VarType type,
     return jit_var_copy_to_device(type, value, size);
 }
 
-uint32_t jitc_trace_append_0(VarType type, const char *cmd) {
+uint32_t jitc_trace_append_0(VarType type, const char *stmt, int copy_stmt) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_0(type, cmd);
+    return jit_trace_append_0(type, stmt, copy_stmt);
 }
 
-uint32_t jitc_trace_append_1(VarType type, const char *cmd, uint32_t arg1) {
+uint32_t jitc_trace_append_1(VarType type, const char *stmt, int copy_stmt,
+                             uint32_t arg1) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_1(type, cmd, arg1);
+    return jit_trace_append_1(type, stmt, copy_stmt, arg1);
 }
 
-uint32_t jitc_trace_append_2(VarType type, const char *cmd, uint32_t arg1,
-                            uint32_t arg2) {
+uint32_t jitc_trace_append_2(VarType type, const char *stmt, int copy_stmt,
+                             uint32_t arg1, uint32_t arg2) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_2(type, cmd, arg1, arg2);
+    return jit_trace_append_2(type, stmt, copy_stmt, arg1, arg2);
 }
 
-uint32_t jitc_trace_append_3(VarType type, const char *cmd, uint32_t arg1,
-                             uint32_t arg2, uint32_t arg3) {
+uint32_t jitc_trace_append_3(VarType type, const char *stmt, int copy_stmt,
+                             uint32_t arg1, uint32_t arg2, uint32_t arg3) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_3(type, cmd, arg1, arg2, arg3);
+    return jit_trace_append_3(type, stmt, copy_stmt, arg1, arg2, arg3);
 }
 
 void jitc_var_migrate(uint32_t index, AllocType type) {
@@ -217,7 +219,7 @@ void jitc_var_mark_dirty(uint32_t index) {
     jit_var_mark_side_effect(index);
 }
 
-void jitc_set_scatter_gather_operand(uint32_t index, bool gather) {
+void jitc_set_scatter_gather_operand(uint32_t index, int gather) {
     lock_guard guard(state.mutex);
     jit_set_scatter_gather_operand(index, gather);
 }
@@ -242,22 +244,22 @@ void jitc_eval_var(uint32_t index) {
     jit_eval_var(index);
 }
 
-void jitc_cuda_fill_8(void *ptr, size_t size, uint8_t value) {
+void jitc_fill_8(void *ptr, size_t size, uint8_t value) {
     lock_guard guard(state.mutex);
     jit_fill_8(ptr, size, value);
 }
 
-void jitc_cuda_fill_16(void *ptr, size_t size, uint16_t value) {
+void jitc_fill_16(void *ptr, size_t size, uint16_t value) {
     lock_guard guard(state.mutex);
     jit_fill_16(ptr, size, value);
 }
 
-void jitc_cuda_fill_32(void *ptr, size_t size, uint32_t value) {
+void jitc_fill_32(void *ptr, size_t size, uint32_t value) {
     lock_guard guard(state.mutex);
     jit_fill_32(ptr, size, value);
 }
 
-void jitc_cuda_fill_64(void *ptr, size_t size, uint64_t value) {
+void jitc_fill_64(void *ptr, size_t size, uint64_t value) {
     lock_guard guard(state.mutex);
     jit_fill_64(ptr, size, value);
 }

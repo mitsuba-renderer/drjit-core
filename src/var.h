@@ -9,22 +9,26 @@ extern Variable *jit_var(uint32_t index);
 
 /// Append a variable to the instruction trace (no operand)
 extern uint32_t jit_trace_append_0(VarType type,
-                                   const char *cmd);
+                                   const char *stmt,
+                                   int stmt_static);
 
 /// Append a variable to the instruction trace (1 operand)
 extern uint32_t jit_trace_append_1(VarType type,
-                                   const char *cmd,
+                                   const char *stmt,
+                                   int stmt_static,
                                    uint32_t arg1);
 
 /// Append a variable to the instruction trace (2 operands)
 extern uint32_t jit_trace_append_2(VarType type,
-                                   const char *cmd,
+                                   const char *stmt,
+                                   int stmt_static,
                                    uint32_t arg1,
                                    uint32_t arg2);
 
 /// Append a variable to the instruction trace (3 operands)
 extern uint32_t jit_trace_append_3(VarType type,
-                                   const char *cmd,
+                                   const char *stmt,
+                                   int stmt_static,
                                    uint32_t arg1,
                                    uint32_t arg2,
                                    uint32_t arg3);
@@ -83,7 +87,7 @@ extern void jit_var_mark_side_effect(uint32_t index);
 extern void jit_var_mark_dirty(uint32_t index);
 
 /// Inform the JIT that the next scatter/gather references var. 'index'
-extern void jit_set_scatter_gather_operand(uint32_t index, bool gather);
+extern void jit_set_scatter_gather_operand(uint32_t index, int gather);
 
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index);
