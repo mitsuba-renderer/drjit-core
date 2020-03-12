@@ -1,9 +1,10 @@
 #include "internal.h"
 #include "log.h"
 #include "var.h"
+#include "util.h"
+#include "../ptx/kernels.h"
 #include <dlfcn.h>
 #include <zlib.h>
-#include "../ptx/kernels.h"
 
 // Driver API
 CUresult (*cuCtxEnablePeerAccess)(CUcontext, unsigned int) = nullptr;
@@ -43,6 +44,7 @@ CUresult (*cuMemAllocManaged)(void **, size_t, unsigned int) = nullptr;
 CUresult (*cuMemFree)(void *) = nullptr;
 CUresult (*cuMemFreeHost)(void *) = nullptr;
 CUresult (*cuMemPrefetchAsync)(const void *, size_t, CUdevice, CUstream) = nullptr;
+CUresult (*cuMemcpy)(void *, const void *, size_t) = nullptr;
 CUresult (*cuMemcpyAsync)(void *, const void *, size_t, CUstream) = nullptr;
 CUresult (*cuMemsetD16Async)(void *, unsigned short, size_t, CUstream) = nullptr;
 CUresult (*cuMemsetD32Async)(void *, unsigned int, size_t, CUstream) = nullptr;
@@ -60,6 +62,8 @@ CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int) = nullptr;
 
 // Enoki API
 CUfunction kernel_fill_64 = nullptr;
+CUfunction kernel_reductions[(int) ReductionType::Count]
+                            [(int) VarType::Count] = {};
 
 #define LOAD(name, ...)                                                        \
     if (strlen(__VA_ARGS__ "") > 0)                                            \
@@ -144,6 +148,7 @@ bool jit_cuda_init() {
     LOAD(cuMemFree, "v2");
     LOAD(cuMemFreeHost);
     LOAD(cuMemPrefetchAsync, "ptsz");
+    LOAD(cuMemcpy, "ptds");
     LOAD(cuMemcpyAsync, "ptsz");
     LOAD(cuMemsetD16Async, "ptsz");
     LOAD(cuMemsetD32Async, "ptsz");
@@ -213,17 +218,16 @@ bool jit_cuda_init() {
     cuda_check(cuModuleLoadData(&jit_cuda_module, uncompressed.get()));
     cuda_check(cuModuleGetFunction(&kernel_fill_64, jit_cuda_module, "fill_64"));
 
-
-    for (const char *reduction : { "add", "mul", "min", "max", "and", "or" }) {
-        for (const char *type : var_type_name_short) {
+    for (uint32_t i = 0; i < (uint32_t) ReductionType::Count; i++) {
+        for (uint32_t j = 0; j < (uint32_t) VarType::Count; j++) {
             char name[16];
-            CUfunction fnc;
-            snprintf(name, sizeof(name), "reduce_%s_%s", reduction, type);
-            CUresult rv = cuModuleGetFunction(&fnc, jit_cuda_module, name);
+            CUfunction func;
+            snprintf(name, sizeof(name), "reduce_%s_%s", reduction_name[i], var_type_name_short[j]);
+            CUresult rv = cuModuleGetFunction(&func, jit_cuda_module, name);
             if (rv == CUDA_ERROR_NOT_FOUND)
                 continue;
-            printf("Found %s!\n", name);
             cuda_check(rv);
+            kernel_reductions[i][j] = func;
         }
     }
 

@@ -118,6 +118,12 @@ struct CUDAArray {
         return *this;
     }
 
+    static CUDAArray empty(size_t size) {
+        size_t byte_size = size * sizeof(Value);
+        void *ptr = jitc_malloc(AllocType::Device, byte_size);
+        return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
+    }
+
     static CUDAArray zero(size_t size) {
         if (size == 1) {
             return CUDAArray(0);
@@ -145,7 +151,22 @@ struct CUDAArray {
         return jitc_var_str(m_index);
     }
 
-protected:
+    const Value *device_ptr() const {
+        return jitc_var_ptr(m_index);
+    }
+
+    Value *device_ptr() {
+        return jitc_var_ptr(m_index);
+    }
+
+    size_t size() const {
+        return jitc_var_size(m_index);
+    }
+
+    uint32_t index() const {
+        return m_index;
+    }
+
     static CUDAArray from_index(uint32_t index) {
         CUDAArray result;
         result.m_index = index;
@@ -155,3 +176,36 @@ protected:
 protected:
     uint32_t m_index;
 };
+
+
+template <typename Value> CUDAArray<Value> hsum(const CUDAArray<Value> &v) {
+    using Array = CUDAArray<Value>;
+    Array result = Array::empty(1);
+    jitc_reduce(Array::Type, ReductionType::Add, v.device_ptr(), v.size(),
+                result.device_ptr());
+    return result;
+}
+
+template <typename Value> CUDAArray<Value> hprod(const CUDAArray<Value> &v) {
+    using Array = CUDAArray<Value>;
+    Array result = Array::empty(1);
+    jitc_reduce(Array::Type, ReductionType::Mul, v.device_ptr(), v.size(),
+                result.device_ptr());
+    return result;
+}
+
+template <typename Value> CUDAArray<Value> hmax(const CUDAArray<Value> &v) {
+    using Array = CUDAArray<Value>;
+    Array result = Array::empty(1);
+    jitc_reduce(Array::Type, ReductionType::Max, v.device_ptr(), v.size(),
+                result.device_ptr());
+    return result;
+}
+
+template <typename Value> CUDAArray<Value> hmin(const CUDAArray<Value> &v) {
+    using Array = CUDAArray<Value>;
+    Array result = Array::empty(1);
+    jitc_reduce(Array::Type, ReductionType::Min, v.device_ptr(), v.size(),
+                result.device_ptr());
+    return result;
+}

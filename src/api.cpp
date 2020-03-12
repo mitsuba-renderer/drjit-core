@@ -258,3 +258,9 @@ void jitc_fill(VarType type, void *ptr, size_t size, const void *src) {
     lock_guard guard(state.mutex);
     jit_fill(type, ptr, size, src);
 }
+
+void jitc_reduce(VarType type, ReductionType rtype,
+                 const void *ptr, size_t size, void *out) {
+    lock_guard guard(state.mutex);
+    jit_reduce(type, rtype, ptr, size, out);
+}

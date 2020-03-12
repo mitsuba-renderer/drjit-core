@@ -28,9 +28,6 @@
 #include <stdint.h>
 
 #define JITC_EXPORT __attribute__ ((visibility("default")))
-#if defined(__cplusplus)
-#define JITC_ENUM_CLASS class
-#endif
 
 #if defined(__cplusplus)
 extern "C" {
@@ -540,9 +537,19 @@ extern JITC_EXPORT void jitc_eval();
 extern JITC_EXPORT void jitc_eval_var(uint32_t index);
 
 // ====================================================================
-//                  CUDA backend-specific functionality
+//  Assortment of tuned kernels for initialization, reductions, etc.
 // ====================================================================
 
+#if defined(__cplusplus)
+/// Potential reduction operations for \ref jit_reduce
+enum class ReductionType : uint32_t { Add, Mul, Min, Max, And, Or, Count };
+#else
+enum ReductionType {
+    ReductionTypeAdd, ReductionTypeMul, ReductionTypeMin,
+    ReductionTypeMax, ReductionTypeAnd, ReductionTypeOr,
+    ReductionTypeCount
+};
+#endif
 /**
  * \brief Fill a device memory region with constants of a given type
  *
@@ -552,6 +559,17 @@ extern JITC_EXPORT void jitc_eval_var(uint32_t index);
  */
 extern JITC_EXPORT void jitc_fill(VarType type, void *ptr, size_t size,
                                   const void *src);
+
+/**
+ * \brief Reduce the given array to a single value
+ *
+ * This operation reads \c size values of type \type from the input array \c
+ * ptr and performs an specified operation (e.g., addition, multplication,
+ * etc.) to combine them into a single value that is written to the device
+ * variable \c out.
+ */
+extern JITC_EXPORT void jitc_reduce(VarType type, ReductionType rtype,
+                                    const void *ptr, size_t size, void *out);
 
 #if defined(__cplusplus)
 }

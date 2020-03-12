@@ -3,8 +3,11 @@
 #include "var.h"
 #include "log.h"
 
+const char *reduction_name[(int) ReductionType::Count] = { "add", "mul", "min",
+                                                           "max", "and", "or" };
+
 /// Fill a device memory region with constants of a given type
-extern void jit_fill(VarType type, void *ptr, size_t size, const void *src) {
+void jit_fill(VarType type, void *ptr, size_t size, const void *src) {
     jit_log(Trace, "jit_fill(" PTR ", type=%s, size=%zu)", ptr, var_type_name[(int) type], size);
 
     Stream *stream = active_stream;
@@ -74,3 +77,40 @@ extern void jit_fill(VarType type, void *ptr, size_t size, const void *src) {
     }
 }
 
+void jit_reduce(VarType type, ReductionType rtype, const void *ptr, size_t size,
+                void *out) {
+    jit_log(Trace, "jit_reduce(" PTR ", type=%s, rtype=%s, size=%zu)", ptr,
+            var_type_name[(int) type], reduction_name[(int) rtype], size);
+
+    size_t type_size = var_type_size[(int) type];
+    Stream *stream = active_stream;
+
+    if (stream) {
+        if (size == 1) {
+            cuMemcpyAsync(out, ptr, type_size, stream->handle);
+        } else {
+            CUfunction func = kernel_reductions[(int) rtype][(int) type];
+            if (!func)
+                jit_raise(
+                    "jit_reduce(): no existing kernel for type=%s, rtype=%s!",
+                    var_type_name[(int) type], reduction_name[(int) rtype]);
+
+            uint32_t num_blocks = state.devices[stream->device].num_sm * 4,
+                     num_threads = 1024,
+                     shared_size = num_threads * type_size;
+
+            // First reduction
+            void *args[] = { &ptr, &size, &out };
+            cuda_check(cuLaunchKernel(func, num_blocks, 1, 1, num_threads, 1, 1,
+                                      shared_size, stream->handle, args,
+                                      nullptr));
+
+            // Second reduction
+            size = num_blocks;
+            args[0] = &out;
+            cuda_check(cuLaunchKernel(func, 1, 1, 1, num_threads, 1, 1,
+                                      shared_size, stream->handle, args,
+                                      nullptr));
+        }
+    }
+}

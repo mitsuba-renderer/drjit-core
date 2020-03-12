@@ -627,8 +627,6 @@ const char *jit_var_whos() {
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index) {
     const Variable *v = jit_var(index);
-    Stream *stream = jit_get_stream("jit_var_str");
-
     if (v->data == nullptr || v->dirty)
         jit_eval();
 
@@ -647,11 +645,11 @@ const char *jit_var_str(uint32_t index) {
             i = size - limit_remainder / 2 - 1;
             continue;
         }
+
         const uint8_t *src_offset = src + i * isize;
-        cuda_check(cuMemcpyAsync(dst, src_offset, isize, stream->handle));
         /* Temporarily release the lock while synchronizing */ {
             unlock_guard(state.mutex);
-            cuda_check(cuStreamSynchronize(stream->handle));
+            cuda_check(cuMemcpy(dst, src_offset, isize));
         }
 
         const char *comma = i + 1 < size ? ", " : "";
