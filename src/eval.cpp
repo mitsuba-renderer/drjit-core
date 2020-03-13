@@ -132,10 +132,22 @@ void jit_assemble(uint32_t size) {
         }
 
         v->reg_index  = n_vars_total++;
-        // reg_map[index] = n_vars_total++;
     }
 
-    if (!kernel_args_extra.empty()) {
+    if (unlikely(n_vars_total > 0xFFFFFFu))
+        jit_fail("jit_run(): The queued computation involves more than 16 "
+                 "million variables, which overflowed an internal counter. "
+                 "Even if Enoki could compile such a large program, it would "
+                 "not run efficiently. Please periodically run jitc_eval() to "
+                 "break down the computation into smaller chunks.");
+    else if (unlikely(n_vars_in + n_vars_out > 0xFFFFu))
+        jit_fail("jit_run(): The queued computation involves more than 65536 "
+                 "input our output arguments, which overflowed an internal counter. "
+                 "Even if Enoki could compile such a large program, it would "
+                 "not run efficiently. Please periodically run jitc_eval() to "
+                 "break down the computation into smaller chunks.");
+
+    if (unlikely(!kernel_args_extra.empty())) {
         size_t args_extra_size = kernel_args_extra.size() * sizeof(uint64_t);
         void *args_extra_host = jit_malloc(AllocType::HostPinned, args_extra_size);
         void *args_extra_dev  = jit_malloc(AllocType::Device, args_extra_size);

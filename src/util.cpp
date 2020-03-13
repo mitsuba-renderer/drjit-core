@@ -26,7 +26,7 @@ void jit_fill(VarType type, void *ptr, size_t size, const void *src) {
                 break;
 
             case 8: {
-                    int num_sm = state.devices[stream->device].num_sm;
+                    int num_sm = state.devices[stream->device].num_sm * 4;
                     void *args[] = { &ptr, &size, (void *) src };
                     cuda_check(cuLaunchKernel(kernel_fill_64, num_sm, 1, 1, 1024,
                                               1, 1, 0, stream->handle, args, nullptr));
@@ -110,7 +110,7 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, size_t size,
                                       shared_size, stream->handle, args_2,
                                       nullptr));
         } else {
-            /// This is a small array..
+            /// This is a small array, do everything in just one reduction.
             void *args[] = { &ptr, &size, &out };
             cuda_check(cuLaunchKernel(func, 1, 1, 1, num_threads, 1, 1,
                                       shared_size, stream->handle, args,

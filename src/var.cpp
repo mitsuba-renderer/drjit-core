@@ -112,8 +112,8 @@ void jit_var_free(uint32_t index, Variable *v) {
 
 /// Increase the external reference count of a given variable
 void jit_var_ext_ref_inc(uint32_t index, Variable *v) {
-    if (unlikely(++v->ref_count_ext == 0xffff))
-        jit_fail("jit_var_ext_ref_inc(): reference count overflow!", index);
+    if (unlikely(++v->ref_count_ext == 0xFFF))
+        jit_fail("jit_var_ext_ref_inc(%u): reference count overflow!", index);
     jit_log(Trace, "jit_var_ext_ref_inc(%u): %u", index, v->ref_count_ext);
 }
 
@@ -125,8 +125,8 @@ void jit_var_ext_ref_inc(uint32_t index) {
 
 /// Increase the internal reference count of a given variable
 void jit_var_int_ref_inc(uint32_t index, Variable *v) {
-    if (unlikely(++v->ref_count_int == 0xffff))
-        jit_fail("jit_var_int_ref_inc(): reference count overflow!", index);
+    if (unlikely(++v->ref_count_int == 0xFFFF))
+        jit_fail("jit_var_int_ref_inc(%u): reference count overflow!", index);
     jit_log(Trace, "jit_var_int_ref_inc(%u): %u", index, v->ref_count_int);
 }
 
@@ -203,18 +203,23 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
 
     if (key_inserted || v.stmt == nullptr) {
         // .. nope, it is new.
-        index = state.variable_index++;
 
         VariableMap::iterator var_it;
         bool var_inserted;
-        std::tie(var_it, var_inserted) = state.variables.try_emplace(index, v);
+        do {
+            index = state.variable_index++;
 
-        if (unlikely(!var_inserted))
-            jit_fail("jit_trace_append(): could not append instruction!");
+            if (unlikely(index == 0)) // overflow
+                index = state.variable_index++;
 
-        if (key_inserted)
-            key_it.value() = index;
+            std::tie(var_it, var_inserted) =
+                state.variables.try_emplace(index, v);
 
+            if (likely(var_inserted))
+                break;
+        } while (true);
+
+        key_it.value() = index;
         v_out = &var_it.value();
     } else {
         // .. found a match! Deallocate 'v'.
