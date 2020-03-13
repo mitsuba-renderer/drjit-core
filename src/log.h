@@ -3,6 +3,12 @@
 #include <enoki/jit.h>
 #include <cstdarg>
 
+#if defined(ENOKI_DISABLE_TRACE)
+#  define jit_trace(...)
+#else
+#  define jit_trace(...) jit_log(Trace, __VA_ARGS__)
+#endif
+
 /// Print a log message with the specified log level and message
 extern void jit_log(LogLevel level, const char* fmt, ...);
 

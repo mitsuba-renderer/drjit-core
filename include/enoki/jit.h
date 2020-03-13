@@ -540,6 +540,29 @@ extern JITC_EXPORT const char *jitc_var_whos();
  */
 extern JITC_EXPORT const char *jitc_var_str(uint32_t index);
 
+/**
+ * \brief Read a single element of a variable and write it to 'dst'
+ *
+ * This function fetches a single entry from the variable with \c index at
+ * offset \c offset and writes it to the CPU output buffer \c dst.
+ *
+ * This function is convenient to spot-check entries of an array, but it should
+ * never be used to extract complete array contents due to its low performance.
+ * This operation fully synchronizes the host CPU & device.
+ */
+extern JITC_EXPORT void jitc_var_read(uint32_t index, size_t offset,
+                                      void *dst);
+
+/**
+ * \brief Copy 'dst' to a single element of a variable
+ *
+ * This function implements the reverse of jit_var_read(). This function is
+ * convenient to change localized entries of an array, but it should never be
+ * used to extract complete array contents due to its low performance.
+ */
+extern JITC_EXPORT void jitc_var_write(uint32_t index, size_t offset,
+                                       const void *src);
+
 // ====================================================================
 //                 Kernel compilation and evaluation
 // ====================================================================
@@ -548,7 +571,7 @@ extern JITC_EXPORT const char *jitc_var_str(uint32_t index);
 extern JITC_EXPORT void jitc_eval();
 
 /// Call jitc_eval() only if the variable 'index' requires evaluation
-extern JITC_EXPORT void jitc_eval_var(uint32_t index);
+extern JITC_EXPORT void jitc_var_eval(uint32_t index);
 
 // ====================================================================
 //  Assortment of tuned kernels for initialization, reductions, etc.

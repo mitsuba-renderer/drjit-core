@@ -244,14 +244,24 @@ const char *jitc_var_str(uint32_t index) {
     return jit_var_str(index);
 }
 
+void jitc_var_read(uint32_t index, size_t offset, void *dst) {
+    lock_guard guard(state.mutex);
+    jit_var_read(index, offset, dst);
+}
+
+void jitc_var_write(uint32_t index, size_t offset, const void *src) {
+    lock_guard guard(state.mutex);
+    jit_var_write(index, offset, src);
+}
+
 void jitc_eval() {
     lock_guard guard(state.mutex);
     jit_eval();
 }
 
-void jitc_eval_var(uint32_t index) {
+void jitc_var_eval(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_eval_var(index);
+    jit_var_eval(index);
 }
 
 void jitc_fill(VarType type, void *ptr, size_t size, const void *src) {

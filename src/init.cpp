@@ -182,9 +182,9 @@ void jit_device_set(int32_t device, uint32_t stream) {
         stream_ptr = it->second;
         if (stream_ptr == active_stream_ptr)
             return;
-        jit_log(Trace, "jit_device_set(device=%i, stream=%i): selecting stream", device, stream);
+        jit_trace("jit_device_set(device=%i, stream=%i): selecting stream", device, stream);
     } else {
-        jit_log(Trace, "jit_device_set(device=%i, stream=%i): creating stream", device, stream);
+        jit_trace("jit_device_set(device=%i, stream=%i): creating stream", device, stream);
         CUstream handle = nullptr;
         CUevent event = nullptr;
         cuda_check(cuStreamCreate(&handle, CU_STREAM_NON_BLOCKING));
@@ -207,12 +207,12 @@ void jit_sync_stream() {
     if (unlikely(!stream))
         return;
 
-    jit_log(Trace, "jit_sync_stream(): starting ..");
+    jit_trace("jit_sync_stream(): starting ..");
     /* Release mutex while synchronizing */ {
         unlock_guard guard(state.mutex);
         cuda_check(cuStreamSynchronize(stream->handle));
     }
-    jit_log(Trace, "jit_sync_stream(): done.");
+    jit_trace("jit_sync_stream(): done.");
 }
 
 /// Wait for all computation on the current device to finish
@@ -221,12 +221,12 @@ void jit_sync_device() {
     if (unlikely(!stream))
         return;
 
-    jit_log(Trace, "jit_sync_device(): starting ..");
+    jit_trace("jit_sync_device(): starting ..");
     /* Release mutex while synchronizing */ {
         unlock_guard guard(state.mutex);
         cuda_check(cuCtxSynchronize());
     }
-    jit_log(Trace, "jit_sync_device(): done.");
+    jit_trace("jit_sync_device(): done.");
 }
 
 Stream *jit_get_stream(const char *func_name) {

@@ -34,8 +34,8 @@ const char *var_type_register_ptx[(int) VarType::Count]{
 };
 
 /// Maps types to byte sizes
-const int var_type_size[(int) VarType::Count]{
-    0, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 1, 8
+const uint32_t var_type_size[(int) VarType::Count]{
+    (uint32_t) -1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 1, 8
 };
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
@@ -59,7 +59,7 @@ void jit_cse_drop(uint32_t index, const Variable *v) {
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
 void jit_var_free(uint32_t index, Variable *v) {
-    jit_log(Trace, "jit_var_free(%u)", index);
+    jit_trace("jit_var_free(%u)", index);
     jit_cse_drop(index, v);
 
     uint32_t dep[3], extra_dep = v->extra_dep;
@@ -101,7 +101,7 @@ void jit_var_free(uint32_t index, Variable *v) {
 /// Increase the external reference count of a given variable
 void jit_var_ext_ref_inc(uint32_t index, Variable *v) {
     v->ref_count_ext++;
-    jit_log(Trace, "jit_var_ext_ref_inc(%u): %u", index, v->ref_count_ext);
+    jit_trace("jit_var_ext_ref_inc(%u): %u", index, v->ref_count_ext);
 }
 
 /// Increase the external reference count of a given variable
@@ -113,7 +113,7 @@ void jit_var_ext_ref_inc(uint32_t index) {
 /// Increase the internal reference count of a given variable
 void jit_var_int_ref_inc(uint32_t index, Variable *v) {
     v->ref_count_int++;
-    jit_log(Trace, "jit_var_int_ref_inc(%u): %u", index, v->ref_count_int);
+    jit_trace("jit_var_int_ref_inc(%u): %u", index, v->ref_count_int);
 }
 
 /// Increase the internal reference count of a given variable
@@ -131,7 +131,7 @@ void jit_var_ext_ref_dec(uint32_t index) {
     if (unlikely(v->ref_count_ext == 0))
         jit_fail("jit_var_ext_ref_dec(): variable %u has no external references!", index);
 
-    jit_log(Trace, "jit_var_ext_ref_dec(%u): %u", index, v->ref_count_ext - 1);
+    jit_trace("jit_var_ext_ref_dec(%u): %u", index, v->ref_count_ext - 1);
     v->ref_count_ext--;
 
     if (v->ref_count_ext == 0) {
@@ -151,7 +151,7 @@ void jit_var_int_ref_dec(uint32_t index) {
     if (unlikely(v->ref_count_int == 0))
         jit_fail("jit_var_int_ref_dec(): variable %u has no internal references!", index);
 
-    jit_log(Trace, "jit_var_int_ref_dec(%u): %u", index, v->ref_count_int - 1);
+    jit_trace("jit_var_int_ref_dec(%u): %u", index, v->ref_count_int - 1);
     v->ref_count_int--;
 
     if (v->ref_count_ext == 0 && v->ref_count_int == 0)
@@ -650,15 +650,16 @@ const char *jit_var_str(uint32_t index) {
     if (v->data == nullptr || v->dirty)
         jit_eval();
 
-    size_t size = v->size,
-           isize = var_type_size[(int) v->type],
-           limit_thresh = 20,
+    size_t size            = v->size,
+           isize           = var_type_size[(int) v->type],
+           limit_thresh    = 20,
            limit_remainder = 10;
+
+    uint8_t dst[8];
+    const uint8_t *src = (const uint8_t *) v->data;
 
     buffer.clear();
     buffer.putc('[');
-    uint8_t dst[8];
-    const uint8_t *src = (const uint8_t *) v->data;
     for (uint32_t i = 0; i < size; ++i) {
         if (size > limit_thresh && i == limit_remainder / 2) {
             buffer.fmt(".. %u skipped .., ", size - limit_remainder);
@@ -692,4 +693,60 @@ const char *jit_var_str(uint32_t index) {
     }
     buffer.putc(']');
     return buffer.get();
+}
+
+/// Call jit_eval() only if the variable 'index' requires evaluation
+void jit_var_eval(uint32_t index) {
+    Variable *v = jit_var(index);
+    if (v->data == nullptr || v->dirty)
+        jit_eval();
+}
+
+/// Read a single element of a variable and write it to 'dst'
+void jit_var_read(uint32_t index, size_t offset, void *dst) {
+    Stream *stream = active_stream;
+    Variable *v = jit_var(index);
+
+    if (v->data == nullptr || v->dirty)
+        jit_eval();
+
+    if (v->dirty)
+        jit_raise("jit_var_read(): element remains dirty after jit_eval()!");
+    else if (!v->data)
+        jit_raise("jit_var_read(): invalid/uninitialized variable!");
+
+    if (v->size == 1)
+        offset = 0;
+
+    uint32_t isize = var_type_size[(int) v->type];
+    const uint8_t *src = (const uint8_t *) v->data + offset * isize;
+
+    /* Temporarily release the lock while synchronizing */ {
+        unlock_guard(state.mutex);
+        cuda_check(cuMemcpyAsync(dst, src, isize, stream->handle));
+        cuda_check(cuStreamSynchronize(stream->handle));
+    }
+}
+
+/// Reverse of jit_var_read(). Copy 'dst' to a single element of a variable
+void jit_var_write(uint32_t index, size_t offset, const void *src) {
+    Stream *stream = active_stream;
+    Variable *v = jit_var(index);
+
+    if (v->data == nullptr || v->dirty)
+        jit_eval();
+
+    if (v->dirty)
+        jit_raise("jit_var_write(): element remains dirty after jit_eval()!");
+    else if (!v->data)
+        jit_raise("jit_var_write(): invalid/uninitialized variable!");
+
+    jit_cse_drop(index, v);
+
+    if (v->size == 1)
+        offset = 0;
+
+    uint32_t isize = var_type_size[(int) v->type];
+    uint8_t *dst = (uint8_t *) v->data + offset * isize;
+    cuda_check(cuMemcpyAsync(dst, src, isize, stream->handle));
 }

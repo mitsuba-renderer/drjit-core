@@ -156,11 +156,11 @@ void* jit_malloc(AllocType type, size_t size) {
     state.alloc_used.insert({ ptr, ai });
 
     if (ai.type == AllocType::Device)
-        jit_log(Trace, "jit_malloc(type=%s, device=%u, size=%zu): " PTR " (%s)",
-                alloc_type_name[(int) ai.type], ai.device, ai.size, ptr, descr);
+        jit_trace("jit_malloc(type=%s, device=%u, size=%zu): " PTR " (%s)",
+                  alloc_type_name[(int) ai.type], ai.device, ai.size, ptr, descr);
     else
-        jit_log(Trace, "jit_malloc(type=%s, size=%zu): " PTR " (%s)",
-                alloc_type_name[(int) ai.type], ai.size, ptr, descr);
+        jit_trace("jit_malloc(type=%s, size=%zu): " PTR " (%s)",
+                  alloc_type_name[(int) ai.type], ai.size, ptr, descr);
 
     size_t &usage     = state.alloc_usage[(int) ai.type],
            &watermark = state.alloc_watermark[(int) ai.type];
@@ -191,11 +191,11 @@ void jit_free(void *ptr) {
     }
 
     if (ai.type == AllocType::Device)
-        jit_log(Trace, "jit_free(" PTR ", type=%s, device=%u, size=%zu)", ptr,
-                alloc_type_name[(int) ai.type], ai.device, ai.size);
+        jit_trace("jit_free(" PTR ", type=%s, device=%u, size=%zu)", ptr,
+                  alloc_type_name[(int) ai.type], ai.device, ai.size);
     else
-        jit_log(Trace, "jit_free(" PTR ", type=%s, size=%zu)", ptr,
-                alloc_type_name[(int) ai.type], ai.size);
+        jit_trace("jit_free(" PTR ", type=%s, size=%zu)", ptr,
+                  alloc_type_name[(int) ai.type], ai.size);
 
     state.alloc_usage[(int) ai.type] -= ai.size;
     state.alloc_used.erase(it);
@@ -219,8 +219,8 @@ void jit_free_flush() {
     chain_new->next = chain;
     stream->release_chain = chain_new;
 
-    jit_log(Trace, "jit_free_flush(): scheduling %zu deallocation%s",
-            n_dealloc, n_dealloc > 1 ? "s" : "");
+    jit_trace("jit_free_flush(): scheduling %zu deallocation%s",
+              n_dealloc, n_dealloc > 1 ? "s" : "");
 
     cuda_check(cuLaunchHostFunc(
         stream->handle,
@@ -237,8 +237,8 @@ void jit_free_flush() {
                 n_dealloc_remain += kv.second.size();
             }
 
-            jit_log(Trace, "jit_free_flush(): performing %zu deallocation%s",
-                    n_dealloc_remain, n_dealloc_remain > 1 ? "s" : "");
+            jit_trace("jit_free_flush(): performing %zu deallocation%s",
+                      n_dealloc_remain, n_dealloc_remain > 1 ? "s" : "");
 
             delete chain1;
             chain0->next = nullptr;
@@ -266,9 +266,9 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
     if (ai.type == type && (type != AllocType::Device || ai.device == stream->device))
         return ptr;
 
-    jit_log(Trace, "jit_malloc_migrate(" PTR "): %s -> %s", ptr,
-            alloc_type_name[(int) ai.type],
-            alloc_type_name[(int) type]) ;
+    jit_trace("jit_malloc_migrate(" PTR "): %s -> %s", ptr,
+              alloc_type_name[(int) ai.type],
+              alloc_type_name[(int) type]) ;
 
     void *ptr_new = jit_malloc(type, ai.size);
     cuda_check(cuMemcpyAsync(ptr_new, ptr, ai.size, stream->handle));

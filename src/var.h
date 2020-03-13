@@ -89,6 +89,15 @@ extern void jit_set_scatter_gather_operand(uint32_t index, int gather);
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index);
 
+/// Read a single element of a variable and write it to 'dst'
+extern void jit_var_read(uint32_t index, size_t offset, void *dst);
+
+/// Reverse of jit_var_read(). Copy 'src' to a single element of a variable
+extern void jit_var_write(uint32_t index, size_t offset, const void *src);
+
+/// Call jit_eval() only if the variable 'index' requires evaluation
+extern void jit_var_eval(uint32_t index);
+
 /// Return a human-readable summary of registered variables
 extern const char *jit_var_whos();
 
@@ -98,7 +107,7 @@ extern void jit_cse_drop(uint32_t index, const Variable *v);
 /// Descriptive names and byte sizes for the various variable types
 extern const char *var_type_name      [(int) VarType::Count];
 extern const char *var_type_name_short[(int) VarType::Count];
-extern const int   var_type_size      [(int) VarType::Count];
+extern const uint32_t var_type_size   [(int) VarType::Count];
 
 /// CUDA PTX type & register names
 extern const char *var_type_name_ptx[(int) VarType::Count];

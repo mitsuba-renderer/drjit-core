@@ -97,10 +97,11 @@ void jit_render_stmt(uint32_t index, Variable *v) {
 
 void jit_assemble(uint32_t size) {
     const std::vector<uint32_t> &sched = schedule[size];
-    uint32_t n_vars_in = 0, n_vars_out = 0, n_vars_total = 0;
+    uint32_t n_args_in = 0, n_args_out = 0;
+    uint32_t n_regs_total = 4;
 
     (void) timer();
-    jit_log(Trace, "jit_assemble(size=%u): register map:", size);
+    jit_trace("jit_assemble(size=%u): register map:", size);
 
     /// Push the size argument
     void *tmp = 0;
@@ -108,7 +109,7 @@ void jit_assemble(uint32_t size) {
     kernel_args.clear();
     kernel_args_extra.clear();
     kernel_args.push_back(tmp);
-    n_vars_in++;
+    n_args_in++;
 
     for (uint32_t index : sched) {
         Variable *v = jit_var(index);
@@ -126,7 +127,7 @@ void jit_assemble(uint32_t size) {
             buffer.clear();
             buffer.fmt("   - %s%u -> %u",
                        var_type_register_ptx[(int) v->type],
-                       n_vars_total, index);
+                       n_regs_total, index);
 
             if (v->has_label) {
                 const char *label = jit_var_label(index);
@@ -141,24 +142,24 @@ void jit_assemble(uint32_t size) {
             else if (v->ref_count_ext > 0 && v->size == size)
                 buffer.put(" [out]");
 
-            jit_log(Trace, "%s", buffer.get());
+            jit_trace("%s", buffer.get());
         }
 
         if (v->data || v->direct_pointer) {
-            n_vars_in++;
-            push = true;
-            v->arg_index = (uint16_t) n_vars_total;
+            v->arg_index = (uint16_t) (n_args_in + n_args_out);
             v->arg_type = ArgType::Input;
+            n_args_in++;
+            push = true;
         } else if (!v->side_effect && v->ref_count_ext > 0 && v->size == size) {
             size_t var_size = (size_t) size * (size_t) var_type_size[(int) v->type];
             v->data = jit_malloc(AllocType::Device, var_size);
-            n_vars_out++;
-            push = true;
-            v->arg_index = (uint16_t) n_vars_total;
+            v->arg_index = (uint16_t) (n_args_in + n_args_out);
             v->arg_type = ArgType::Output;
             v->tsize = 1;
+            n_args_out++;
+            push = true;
         } else {
-            v->arg_index = (uint16_t) 0xffff;
+            v->arg_index = (uint16_t) 0xFFFF;
             v->arg_type = ArgType::Register;
         }
 
@@ -169,16 +170,16 @@ void jit_assemble(uint32_t size) {
                 kernel_args_extra.push_back(v->data);
         }
 
-        v->reg_index  = n_vars_total++;
+        v->reg_index  = n_regs_total++;
     }
 
-    if (unlikely(n_vars_total > 0xFFFFFFu))
+    if (unlikely(n_regs_total > 0xFFFFFFu))
         jit_fail("jit_run(): The queued computation involves more than 16 "
                  "million variables, which overflowed an internal counter. "
                  "Even if Enoki could compile such a large program, it would "
                  "not run efficiently. Please periodically run jitc_eval() to "
                  "break down the computation into smaller chunks.");
-    else if (unlikely(n_vars_in + n_vars_out > 0xFFFFu))
+    else if (unlikely(n_args_in + n_args_out > 0xFFFFu))
         jit_fail("jit_run(): The queued computation involves more than 65536 "
                  "input or output arguments, which overflowed an internal counter. "
                  "Even if Enoki could compile such a large program, it would "
@@ -203,81 +204,120 @@ void jit_assemble(uint32_t size) {
     }
 
     jit_log(Debug, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
-            size, n_vars_in, n_vars_out, n_vars_total);
+            size, n_args_in, n_args_out, n_regs_total);
+
+    auto get_parameter_addr = [](uint32_t index, const Variable *v) {
+        if (index < CUDA_MAX_KERNEL_PARAMETERS - 1)
+            buffer.fmt("    ld.param.u64 %%rd0, [arg%u];\n", v->arg_index - 1);
+        else
+            buffer.fmt("    ldu.global.u64 %%rd0, [%%rd2 + %u];\n",
+                       (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
+
+        if (v->size > 1) {
+            buffer.fmt("    mul.wide.u32 %%rd1, %%r2, %u;\n\n",
+                       var_type_size[(int) v->type]);
+            buffer.put("    add.u64 %rd0, %rd0, %rd1;\n");
+        }
+    };
 
     buffer.clear();
     buffer.put(".version 6.3\n");
     buffer.put(".target sm_61\n");
     buffer.put(".address_size 64\n");
 
-    // auto param_ref = [&](int index) {
-    //     if (index < CUDA_MAX_KERNEL_PARAMETERS - 1)
-    //         buffer.fmt("[arg%u]", index);
-    //     else
-    //         buffer.fmt("[%%arg_extra + %u]", index * 8);
-    // };
+    /* Special registers:
+
+         %r0   :  Index
+         %r1   :  Step
+         %r2   :  Size
+         %p0   :  Stopping predicate
+         %rd0  :  Temporary for parameter pointers
+         %rd1  :  Temporary for offset calculation
+         %rd2  :  'arg_extra' pointer
+
+         %b3, %w3, %r3, %rd3, %f3, %d3, %p3: reserved for use in compound
+         statements that must write a temporary result to a register.
+    */
 
     buffer.put(".visible .entry enoki_@@@@@@@@(.param .u32 size,\n");
     for (uint32_t index = 1; index < kernel_args.size(); ++index)
         buffer.fmt("                               .param .u64 arg%u%s\n",
                    index - 1, (index + 1 < kernel_args.size()) ? "," : ") {");
 
-    uint32_t n_vars_decl = std::max(3u, n_vars_total);
-    buffer.fmt("    .reg.b8 %%b<%u>;\n", n_vars_decl);
-    buffer.fmt("    .reg.b16 %%w<%u>;\n", n_vars_decl);
-    buffer.fmt("    .reg.b32 %%r<%u>, %%size, %%index, %%step;\n", n_vars_decl);
-    buffer.fmt("    .reg.b64 %%rd<%u>%s;\n", n_vars_decl,
-               kernel_args_extra.empty() ? "" : ", %%arg_extra");
-    buffer.fmt("    .reg.f32 %%f<%u>;\n", n_vars_decl);
-    buffer.fmt("    .reg.f64 %%d<%u>;\n", n_vars_decl);
-    buffer.fmt("    .reg.pred %%p<%u>, %%done;\n\n", n_vars_decl);
-    buffer.put("    // Grid-stride loop setup\n");
+    for (const char *reg_type : { "b8 %b", "b16 %w", "b32 %r", "b64 %rd",
+                                  "f32 %f", "f64 %d", "pred %p" })
+        buffer.fmt("    .reg.%s<%u>;\n", reg_type, n_regs_total);
 
-    buffer.put("    ld.param.u32 %size, [size];\n");
-
-    if (!kernel_args_extra.empty())
-        buffer.fmt("    ld.param.u64 %%arg_extra, [arg_%u];\n",
-                   CUDA_MAX_KERNEL_PARAMETERS - 1);
+    buffer.put("\n    // Grid-stride loop setup\n");
 
     buffer.put("    mov.u32 %r0, %ctaid.x;\n");
     buffer.put("    mov.u32 %r1, %ntid.x;\n");
     buffer.put("    mov.u32 %r2, %tid.x;\n");
-    buffer.put("    mad.lo.u32 %index, %r0, %r1, %r2;\n");
-    buffer.put("    setp.ge.u32 %done, %index, %size;\n");
-    buffer.put("    @%done bra L0;\n");
-    buffer.put("\n");
-    buffer.put("    mov.u32 %r0, %nctaid.x;\n");
-    buffer.put("    mul.lo.u32 %step, %r1, %r0;\n");
-    buffer.put("\n");
-    buffer.put("L1:\n");
-    buffer.put("    // Loop body\n");;
-    buffer.put("\n");
+    buffer.put("    mad.lo.u32 %r0, %r0, %r1, %r2;\n");
+    buffer.put("    ld.param.u32 %r2, [size];\n");
+    buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
+    buffer.put("    @%p0 bra L0;\n\n");
+
+    buffer.put("    mov.u32 %r3, %nctaid.x;\n");
+    buffer.put("    mul.lo.u32 %r1, %r3, %r1;\n");
+    if (!kernel_args_extra.empty())
+        buffer.fmt("    ld.param.u64 %%rd2, [arg_%u];\n",
+                   CUDA_MAX_KERNEL_PARAMETERS - 1);
+
+    buffer.put("\nL1:\n");
+    buffer.put("    // Loop body\n\n");
 
     /// Replace '@'s in 'enoki_@@@@@@@@' by MD5 hash
     snprintf(kernel_name, 9, "%08x", crc32(buffer.get(), buffer.size()));
     memcpy((void *) strchr(buffer.get(), '@'), kernel_name, 8);
 
-    jit_log(Debug, "%s", buffer.get());
-
     for (uint32_t index : sched) {
         Variable *v = jit_var(index);
 
         if (v->arg_type == ArgType::Input) {
+            get_parameter_addr(index, v);
         }
+
+        if (unlikely(state.log_level >= Trace))
+            buffer.fmt("    // Evaluate %s%u%s%s\n",
+                       var_type_register_ptx[(int) v->type],
+                       v->reg_index,
+                       v->has_label ? ": " : "",
+                       v->has_label ? jit_var_label(index) : "");
 
         jit_render_stmt(index, v);
 
         if (v->arg_type == ArgType::Output) {
+            if (unlikely(state.log_level >= Trace))
+                buffer.fmt("\n    // Store %s%u%s%s\n",
+                           var_type_register_ptx[(int) v->type],
+                           v->reg_index, v->has_label ? ": " : "",
+                           v->has_label ? jit_var_label(index) : "");
+
+            get_parameter_addr(index, v);
+
+            if (likely(v->type != VarType::Bool)) {
+                buffer.fmt("    st.global.%s [%%rd0], %s%u;\n\n",
+                       var_type_name_ptx[(int) v->type],
+                       var_type_register_ptx[(int) v->type],
+                       v->reg_index);
+            } else {
+                buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u;\n",
+                           v->reg_index);
+                buffer.put("    st.global.u8 [%rd0], %w0;\n");
+            }
         }
     }
 
-    buffer.put("    add.u32 %index, %index, %step;\n");
-    buffer.put("    setp.ge.u32 %done, %index, %size;\n");
-    buffer.put("    @!%done bra L1;\n");
+    buffer.put("    add.u32 %r0, %r0, %r1;\n");
+    buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
+    buffer.put("    @!%p0 bra L1;\n");
     buffer.put("\n");
     buffer.put("L0:\n");
     buffer.put("    ret;\n");
     buffer.put("}");
+
+    jit_log(Debug, "%s", buffer.get());
 }
 
 void jit_run(uint32_t size) {
@@ -506,9 +546,3 @@ void jit_eval() {
     jit_log(Debug, "jit_eval(): done.");
 }
 
-/// Call jit_eval() only if the variable 'index' requires evaluation
-void jit_eval_var(uint32_t index) {
-    Variable *v = jit_var(index);
-    if (v->data == nullptr || v->dirty)
-        jit_eval();
-}
