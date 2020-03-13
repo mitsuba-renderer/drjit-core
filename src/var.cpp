@@ -88,9 +88,15 @@ void jit_var_free(uint32_t index, Variable *v) {
         jit_free(v->data);
 
     // Free strings
-    if (unlikely(v->free_strings)) {
+    if (unlikely(v->free_stmt))
         free(v->stmt);
-        free(v->label);
+
+    if (unlikely(v->has_label)) {
+        auto it = state.labels.find(index);
+        if (unlikely(it == state.labels.end()))
+            jit_fail("jit_var_free(): label not found!");
+        free(it.value());
+        state.labels.erase(it);
     }
 
     if (unlikely(v->direct_pointer)) {
@@ -112,8 +118,7 @@ void jit_var_free(uint32_t index, Variable *v) {
 
 /// Increase the external reference count of a given variable
 void jit_var_ext_ref_inc(uint32_t index, Variable *v) {
-    if (unlikely(++v->ref_count_ext == 0xFFF))
-        jit_fail("jit_var_ext_ref_inc(%u): reference count overflow!", index);
+    v->ref_count_ext++;
     jit_log(Trace, "jit_var_ext_ref_inc(%u): %u", index, v->ref_count_ext);
 }
 
@@ -125,8 +130,7 @@ void jit_var_ext_ref_inc(uint32_t index) {
 
 /// Increase the internal reference count of a given variable
 void jit_var_int_ref_inc(uint32_t index, Variable *v) {
-    if (unlikely(++v->ref_count_int == 0xFFFF))
-        jit_fail("jit_var_int_ref_inc(%u): reference count overflow!", index);
+    v->ref_count_int++;
     jit_log(Trace, "jit_var_int_ref_inc(%u): %u", index, v->ref_count_int);
 }
 
@@ -182,10 +186,10 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
             /// Strip .ftz modifiers from non-float PTX statements
             char *offset = strstr(v.stmt, ".ftz");
             if (offset) {
-                if (!v.free_strings) {
+                if (!v.free_stmt) {
                     /* Need to modify the instruction, allocate memory
                        if not already available */
-                    v.free_strings = true;
+                    v.free_stmt = true;
                     v.stmt = strdup(v.stmt);
                     offset = strstr(v.stmt, ".ftz");
                 }
@@ -219,11 +223,14 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
                 break;
         } while (true);
 
-        key_it.value() = index;
+        if (key_inserted)
+            key_it.value() = index;
+
         v_out = &var_it.value();
     } else {
         // .. found a match! Deallocate 'v'.
-        if (v.free_strings)
+
+        if (v.free_stmt)
             free(v.stmt);
 
         index = key_it.value();
@@ -280,26 +287,28 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
 
 /// Query the descriptive label associated with a given variable
 const char *jit_var_label(uint32_t index) {
-    return jit_var(index)->label;
+    auto it = state.labels.find(index);
+    return it != state.labels.end() ? it.value() : nullptr;
 }
 
 /// Assign a descriptive label to a given variable
 void jit_var_label_set(uint32_t index, const char *label_) {
     Variable *v = jit_var(index);
     char *label = label_ ? strdup(label_) : nullptr;
-    char *stmt  = v->stmt ? strdup(v->stmt) : nullptr;
 
-    if (v->free_strings) {
-        free(v->stmt);
-        free(v->label);
-    }
-
-    v->label        = label;
-    v->stmt         = stmt;
-    v->free_strings = true;
-
-    jit_log(Debug, "jit_v_label_set(%u): \"%s\"", index,
+    jit_log(Debug, "jit_var_label_set(%u): \"%s\"", index,
             label ? label : "(null)");
+
+    if (v->has_label) {
+        auto it = state.labels.find(index);
+        if (it == state.labels.end())
+            jit_fail("jit_var_label_set(): previous label not found!");
+        free(it.value());
+        it.value() = label;
+    } else {
+        state.labels[index] = label;
+        v->has_label = true;
+    }
 }
 
 /// Append a variable to the instruction trace (no operands)
@@ -311,7 +320,7 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
     v.size = 1;
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.tsize = 1;
-    v.free_strings = stmt_static != 0;
+    v.free_stmt = stmt_static != 0;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
@@ -382,7 +391,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
     v.dep[0] = arg1;
     v.dep[1] = arg2;
     v.tsize = 1 + v1->tsize + v2->tsize;
-    v.free_strings = stmt_static != 0;
+    v.free_stmt = stmt_static != 0;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size))) {
@@ -438,7 +447,7 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     v.dep[1] = arg2;
     v.dep[2] = arg3;
     v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize;
-    v.free_strings = stmt_static != 0;
+    v.free_stmt = stmt_static != 0;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size) ||
@@ -612,9 +621,11 @@ const char *jit_var_whos() {
 
         buffer.fmt("  %-9u %3s    ", index, var_type_name_short[(int) v->type]);
         size_t sz = buffer.fmt("%u / %u", v->ref_count_ext, v->ref_count_int);
+        const char *label = jit_var_label(index);
+
         buffer.fmt("%*s%-12u%-12s[%c]     %s\n", 11 - sz, "", v->size,
                    jit_mem_string(mem_size), v->data ? 'x' : ' ',
-                   v->label ? v->label : "");
+                   label ? label : "");
 
         if (v->data) {
             mem_size_ready += mem_size;

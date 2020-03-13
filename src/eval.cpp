@@ -93,8 +93,10 @@ void jit_assemble(uint32_t size) {
                        var_type_register_ptx[(int) v->type],
                        n_vars_total, index);
 
-            if (v->label)
-                buffer.fmt(" \"%s\"", v->label);
+            if (v->has_label) {
+                const char *label = jit_var_label(index);
+                buffer.fmt(" \"%s\"", label ? label : "(null)");
+            }
             if (v->size == 1)
                 buffer.put(" [scalar]");
             if (v->data != nullptr || v->direct_pointer)

@@ -7,9 +7,9 @@ State state;
 Buffer buffer;
 __thread Stream *active_stream = nullptr;
 
-// static_assert(
-//     sizeof(VariableMap::value_type) == 64,
-//     "VariableMap: incorrect size, likely an issue with padding/packing!");
+static_assert(
+    sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>) == 64,
+    "VariableMap: incorrect bucket size, likely an issue with padding/packing!");
 
 /// Initialize core data structures of the JIT compiler
 void jit_init() {
@@ -93,6 +93,11 @@ void jit_init() {
     state.scatter_gather_operand = 0;
     state.variable_index = 1;
     state.alloc_id_ctr = 1;
+    state.variables.reserve(512);
+    state.alloc_used.reserve(512);
+    state.alloc_id_rev.reserve(512);
+    state.alloc_id_fwd.reserve(512);
+    state.kernels.reserve(128);
     state.initialized = true;
 }
 

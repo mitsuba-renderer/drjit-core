@@ -19,6 +19,9 @@ static constexpr LogLevel Trace = LogLevel::Trace;
 #  define unlikely(x) __builtin_expect(!!(x), 0)
 #endif
 
+/// Immediately terminate the application due to a fatal internal error
+[[noreturn]] extern void jit_fail(const char* fmt, ...);
+
 /// Caches basic information about a CUDA device
 struct Device {
     // CUDA device context
@@ -90,10 +93,10 @@ using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_h
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     /// External reference count (by application using Enoki)
-    uint16_t ref_count_ext;
+    uint32_t ref_count_ext;
 
     /// Internal reference count (dependencies within computation graph)
-    uint16_t ref_count_int;
+    uint32_t ref_count_int;
 
     /// Dependencies of this instruction
     uint32_t dep[3];
@@ -106,9 +109,6 @@ struct Variable {
 
     /// Intermediate language statement
     char *stmt;
-
-    /// Associated label (e.g. for debugging)
-    char *label;
 
     /// Pointer to device memory
     void *data;
@@ -134,8 +134,11 @@ struct Variable {
     /// Don't deallocate 'data' when this variable is destructed?
     bool retain_data : 1;
 
-    /// Free the 'label' and 'stmt' variables at destruction time?
-    bool free_strings : 1;
+    /// Free the 'stmt' variables at destruction time?
+    bool free_stmt : 1;
+
+    /// Was this variable labeled?
+    bool has_label : 1;
 
     /// A variable is 'dirty' if there are pending scatter operations to it
     bool dirty : 1;
@@ -178,7 +181,55 @@ struct VariableKeyHasher {
     }
 };
 
-using VariableMap = tsl::robin_map<uint32_t, Variable>;
+template <typename T, size_t Align = alignof(T)>
+struct aligned_allocator {
+public:
+    template <typename T2> struct rebind {
+        using other = aligned_allocator<T2, Align>;
+    };
+
+    using value_type      = T;
+    using reference       = T &;
+    using const_reference = const T &;
+    using pointer         = T *;
+    using const_pointer   = const T *;
+    using size_type       = size_t;
+    using difference_type = ptrdiff_t;
+
+    aligned_allocator() = default;
+    aligned_allocator(const aligned_allocator &) = default;
+
+    template <typename T2, size_t Align2>
+    aligned_allocator(const aligned_allocator<T2, Align2> &) { }
+
+    value_type *allocate(size_t count) {
+        void *ptr;
+        if (posix_memalign(&ptr, Align, sizeof(T) * count) != 0)
+            jit_fail("aligned_allocator::allocate(): out of memory!");
+        return (value_type *) ptr;
+    }
+
+    void deallocate(value_type *ptr, size_t) {
+        free(ptr);
+    }
+
+    template <typename T2, size_t Align2>
+    bool operator==(const aligned_allocator<T2, Align2> &) const {
+        return Align == Align2;
+    }
+
+    template <typename T2, size_t Align2>
+    bool operator!=(const aligned_allocator<T2, Align2> &) const {
+        return Align != Align2;
+    }
+};
+
+using VariableMap =
+    tsl::robin_map<uint32_t, Variable, std::hash<uint32_t>,
+                   std::equal_to<uint32_t>,
+                   aligned_allocator<std::pair<uint32_t, Variable>, 64>,
+                   false>;
+
 using CSECache    = tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher>;
 
 /// Records the full JIT compiler state (most frequently two used entries at top)
@@ -218,6 +269,9 @@ struct State {
 
     /// Maps from pointer addresses to variable indices
     tsl::robin_pg_map<const void *, uint32_t> variable_from_ptr;
+
+    /// Maps from variable indices to (optional) descriptive labels
+    tsl::robin_map<uint32_t, char *> labels;
 
     /// Maps from a key characterizing a variable to its index
     CSECache cse_cache;
