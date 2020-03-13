@@ -16,22 +16,22 @@ extern uint32_t jit_trace_append_0(VarType type,
 extern uint32_t jit_trace_append_1(VarType type,
                                    const char *stmt,
                                    int stmt_static,
-                                   uint32_t arg1);
+                                   uint32_t op1);
 
 /// Append a variable to the instruction trace (2 operands)
 extern uint32_t jit_trace_append_2(VarType type,
                                    const char *stmt,
                                    int stmt_static,
-                                   uint32_t arg1,
-                                   uint32_t arg2);
+                                   uint32_t op1,
+                                   uint32_t op2);
 
 /// Append a variable to the instruction trace (3 operands)
 extern uint32_t jit_trace_append_3(VarType type,
                                    const char *stmt,
                                    int stmt_static,
-                                   uint32_t arg1,
-                                   uint32_t arg2,
-                                   uint32_t arg3);
+                                   uint32_t op1,
+                                   uint32_t op2,
+                                   uint32_t op3);
 
 /// Register an existing variable with the JIT compiler
 extern uint32_t jit_var_register(VarType type,

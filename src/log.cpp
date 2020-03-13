@@ -17,7 +17,7 @@ void jit_log(LogLevel log_level, const char* fmt, ...) {
         fputc('\n', stderr);
     } else {
         log_buffer.vfmt(fmt, args);
-        log_buffer.put("\n");
+        log_buffer.putc('\n');
     }
     va_end(args);
 }
@@ -31,7 +31,7 @@ void jit_vlog(LogLevel log_level, const char* fmt, va_list args) {
         fputc('\n', stderr);
     } else {
         log_buffer.vfmt(fmt, args);
-        log_buffer.put("\n");
+        log_buffer.putc('\n');
     }
 }
 
@@ -57,7 +57,7 @@ void jit_vraise(const char* fmt, va_list args) {
 void jit_fail(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    fprintf(stderr, "Critical failure in Enoki JIT compiler: ");
+    fprintf(stderr, "\n\nCritical failure in Enoki JIT compiler: ");
     vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
     va_end(args);

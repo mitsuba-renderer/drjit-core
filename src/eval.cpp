@@ -60,6 +60,41 @@ static void jit_var_traverse(uint32_t size, uint32_t index) {
     schedule[size].push_back(index);
 }
 
+void jit_render_stmt(uint32_t index, Variable *v) {
+    const char *s = v->stmt;
+    char c;
+
+    buffer.put("    ");
+    while ((c = *s++) != '\0') {
+        if (c != '$') {
+            buffer.putc(c);
+        } else {
+            const char **prefix_table = nullptr, type = *s++;
+            switch (type) {
+                case 't': prefix_table = var_type_name_ptx;     break;
+                case 'b': prefix_table = var_type_name_ptx_bin; break;
+                case 'r': prefix_table = var_type_register_ptx; break;
+                default:
+                    jit_fail("jit_render_stmt(): encountered invalid \"$\" "
+                             "expression (unknown type).");
+            }
+
+            uint8_t arg_id = *s++ - '0';
+            if (unlikely(arg_id > 3))
+                jit_fail("jit_render_stmt(): encountered invalid \"$\" "
+                         "expression (argument out of bounds!).");
+
+            Variable *dep = jit_var(arg_id == 0 ? index : v->dep[arg_id - 1]);
+            buffer.put(prefix_table[(int) dep->type]);
+
+            if (type == 'r')
+                buffer.fmt("%u", dep->reg_index);
+        }
+    }
+
+    buffer.put(";\n");
+}
+
 void jit_assemble(uint32_t size) {
     const std::vector<uint32_t> &sched = schedule[size];
     uint32_t n_vars_in = 0, n_vars_out = 0, n_vars_total = 0;
@@ -121,6 +156,7 @@ void jit_assemble(uint32_t size) {
             push = true;
             v->arg_index = (uint16_t) n_vars_total;
             v->arg_type = ArgType::Output;
+            v->tsize = 1;
         } else {
             v->arg_index = (uint16_t) 0xffff;
             v->arg_type = ArgType::Register;
@@ -144,7 +180,7 @@ void jit_assemble(uint32_t size) {
                  "break down the computation into smaller chunks.");
     else if (unlikely(n_vars_in + n_vars_out > 0xFFFFu))
         jit_fail("jit_run(): The queued computation involves more than 65536 "
-                 "input our output arguments, which overflowed an internal counter. "
+                 "input or output arguments, which overflowed an internal counter. "
                  "Even if Enoki could compile such a large program, it would "
                  "not run efficiently. Please periodically run jitc_eval() to "
                  "break down the computation into smaller chunks.");
@@ -160,7 +196,9 @@ void jit_assemble(uint32_t size) {
 
         kernel_args.push_back(args_extra_dev);
         jit_free(args_extra_host);
-        // Safe, because there won't be further allocations until after this kernel has executed.
+
+        /* Safe, because there won't be further allocations on the current
+           stream until after this kernel has executed. */
         jit_free(args_extra_dev);
     }
 
@@ -214,13 +252,6 @@ void jit_assemble(uint32_t size) {
     buffer.put("L1:\n");
     buffer.put("    // Loop body\n");;
     buffer.put("\n");
-    buffer.put("    add.u32 %index, %index, %step;\n");
-    buffer.put("    setp.ge.u32 %done, %index, %size;\n");
-    buffer.put("    @!%done bra L1;\n");
-    buffer.put("\n");
-    buffer.put("L0:\n");
-    buffer.put("    ret;\n");
-    buffer.put("}");
 
     /// Replace '@'s in 'enoki_@@@@@@@@' by MD5 hash
     snprintf(kernel_name, 9, "%08x", crc32(buffer.get(), buffer.size()));
@@ -232,115 +263,21 @@ void jit_assemble(uint32_t size) {
         Variable *v = jit_var(index);
 
         if (v->arg_type == ArgType::Input) {
-
-        } else if (v->arg_type == ArgType::Output) {
-
         }
-        // cuda_render_cmd(oss, ctx, reg_map, index);
-    }
 
-#if 0
-    for (uint32_t index : sweep) {
-        Variable &var = ctx[index];
+        jit_render_stmt(index, v);
 
-        oss << std::endl;
-        if (var.data || var.direct_pointer) {
-            size_t index = ptrs.size();
-            ptrs.push_back(var.data);
-
-            oss << std::endl
-                << "    // Load register " << cuda_register_name(var.type) << reg_map[index];
-            if (!var.label.empty())
-                oss << ": " << var.label;
-            oss << std::endl;
-
-            if (!var.direct_pointer) {
-                oss << "    " << (parameter_direct ? "ld.param.u64 %rd8, " : "ld.global.u64 %rd8, ")
-                    << param_ref(index) << ";" << std::endl;
-
-                const char *load_instr = "ldu";
-                if (var.size != 1) {
-                    oss << "    mul.wide.u32 %rd9, %r2, " << cuda_register_size(var.type) << ";" << std::endl
-                        << "    add.u64 %rd8, %rd8, %rd9;" << std::endl;
-                    load_instr = "ld";
-                }
-                if (var.type != VarType::Bool) {
-                    oss << "    " << load_instr << ".global." << cuda_register_type(var.type) << " "
-                        << cuda_register_name(var.type) << reg_map[index] << ", [%rd8]"
-                        << ";" << std::endl;
-                } else {
-                    oss << "    " << load_instr << ".global.u8 %w1, [%rd8];" << std::endl
-                        << "    setp.ne.u16 " << cuda_register_name(var.type) << reg_map[index] << ", %w1, 0;";
-                }
-            } else {
-                oss << "    " << (parameter_direct ? "ld.param.u64 " : "ldu.global.u64 ")
-                    << cuda_register_name(var.type)
-                    << reg_map[index] << ", " << param_ref(index) << ";";
-            }
-
-            n_in++;
-        } else {
-            if (!var.label.empty())
-                oss << "    // Compute register "
-                    << cuda_register_name(var.type) << reg_map[index] << ": "
-                    << var.label << std::endl;
-            cuda_render_cmd(oss, ctx, reg_map, index);
-            n_arith++;
-
-            if (var.side_effect) {
-                n_out++;
-                continue;
-            }
-
-            if (var.ref_count_ext == 0)
-                continue;
-
-            if (var.size != size)
-                continue;
-
-            size_t size_in_bytes =
-                cuda_var_size(index) * cuda_register_size(var.type);
-
-            var.data = cuda_malloc(size_in_bytes);
-            var.subtree_size = 1;
-#if !defined(NDEBUG)
-            if (ctx.log_level >= 4)
-                std::cerr << "cuda_eval(): allocated variable " << index
-                          << " -> " << var.data << " (" << size_in_bytes
-                          << " bytes)" << std::endl;
-#endif
-            size_t index = ptrs.size();
-            ptrs.push_back(var.data);
-            n_out++;
-
-            oss << std::endl
-                << "    // Store register " << cuda_register_name(var.type) << reg_map[index];
-            if (!var.label.empty())
-                oss << ": " << var.label;
-            oss << std::endl
-                << "    " << (parameter_direct ? "ld.param.u64 %rd8, " : "ld.global.u64 %rd8, ")
-                << param_ref(index) << ";" << std::endl;
-            if (var.size != 1) {
-                oss << "    mul.wide.u32 %rd9, %r2, " << cuda_register_size(var.type) << ";" << std::endl
-                    << "    add.u64 %rd8, %rd8, %rd9;" << std::endl;
-            }
-            if (var.type != VarType::Bool) {
-                oss << "    st.global." << cuda_register_type(var.type) << " [%rd8], "
-                    << cuda_register_name(var.type) << reg_map[index] << ";"
-                    << std::endl;
-            } else {
-                oss << "    selp.u16 %w1, 1, 0, " << cuda_register_name(var.type)
-                    << reg_map[index] << ";" << std::endl;
-                oss << "    st.global.u8" << " [%rd8], %w1;" << std::endl;
-            }
+        if (v->arg_type == ArgType::Output) {
         }
     }
 
-    oss << std::endl
-        << "    add.u32     %r2, %r2, %r3;" << std::endl
-        << "    setp.ge.u32 %p0, %r2, %r1;" << std::endl
-        << "    @!%p0 bra L1;" << std::endl;
-#endif
+    buffer.put("    add.u32 %index, %index, %step;\n");
+    buffer.put("    setp.ge.u32 %done, %index, %size;\n");
+    buffer.put("    @!%done bra L1;\n");
+    buffer.put("\n");
+    buffer.put("L0:\n");
+    buffer.put("    ret;\n");
+    buffer.put("}");
 }
 
 void jit_run(uint32_t size) {
@@ -375,15 +312,19 @@ void jit_run(uint32_t size) {
         int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buffer.get(),
                                buffer.size(), nullptr, 0, nullptr, nullptr);
         if (rt != CUDA_SUCCESS)
-            jit_fail("Assembly dump:\n\n%s\n\njit_run(): linker error:\n\n%s",
-                     buffer.get(), error_log.get());
+            jit_fail(
+                "compilation failed. Please see the PTX assembly listing and "
+                "error message below:\n\n%s\n\njit_run(): linker error:\n\n%s",
+                buffer.get(), error_log.get());
 
         void *link_output = nullptr;
         size_t link_output_size = 0;
         cuda_check(cuLinkComplete(link_state, &link_output, &link_output_size));
         if (rt != CUDA_SUCCESS)
-            jit_fail("Assembly dump:\n\n%s\n\njit_run(): linker error:\n\n%s",
-                     buffer.get(), error_log.get());
+            jit_fail(
+                "compilation failed. Please see the PTX assembly listing and "
+                "error message below:\n\n%s\n\njit_run(): linker error:\n\n%s",
+                buffer.get(), error_log.get());
 
         float link_time = timer();
         bool cache_hit = strstr(info_log.get(), "ptxas info") != nullptr;

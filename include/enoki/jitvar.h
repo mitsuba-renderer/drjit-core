@@ -37,11 +37,11 @@ struct CUDAArray {
         const char *op;
 
         if (std::is_floating_point<T>::value && std::is_integral<Value>::value)
-            op = "cvt.rzi.$t1.$t2 $r1, $r2";
+            op = "cvt.rzi.$t0.$t1 $r0, $r1";
         else if (std::is_integral<T>::value && std::is_floating_point<Value>::value)
-            op = "cvt.rn.$t1.$t2 $r1, $r2";
+            op = "cvt.rn.$t0.$t1 $r0, $r1";
         else
-            op = "cvt.$t1.$t2 $r1, $r2";
+            op = "cvt.$t0.$t1 $r0, $r1";
 
         m_index = jitc_trace_append_1(Type, op, 1, v.index_());
     }
@@ -51,40 +51,40 @@ struct CUDAArray {
 
         switch (Type) {
             case VarType::Float16:
-                fmt = "mov.$t1 $r1, %04x";
+                fmt = "mov.$t0 $r0, %04x";
                 break;
 
             case VarType::Float32:
-                fmt = "mov.$t1 $r1, 0f%08x";
+                fmt = "mov.$t0 $r0, 0f%08x";
                 break;
 
             case VarType::Float64:
-                fmt = "mov.$t1 $r1, 0d%016llx";
+                fmt = "mov.$t0 $r0, 0d%016llx";
                 break;
 
             case VarType::Bool:
-                fmt = "mov.$t1 $r1, %i";
+                fmt = "mov.$t0 $r0, %i";
                 break;
 
             case VarType::Int8:
             case VarType::UInt8:
-                fmt = "mov.$t1 $r1, 0x%02x";
+                fmt = "mov.$t0 $r0, 0x%02x";
                 break;
 
             case VarType::Int16:
             case VarType::UInt16:
-                fmt = "mov.$t1 $r1, 0x%04x";
+                fmt = "mov.$t0 $r0, 0x%04x";
                 break;
 
             case VarType::Int32:
             case VarType::UInt32:
-                fmt = "mov.$t1 $r1, 0x%08x";
+                fmt = "mov.$t0 $r0, 0x%08x";
                 break;
 
             case VarType::Pointer:
             case VarType::Int64:
             case VarType::UInt64:
-                fmt = "mov.$t1 $r1, 0x%016llx";
+                fmt = "mov.$t0 $r0, 0x%016llx";
                 break;
 
             default:

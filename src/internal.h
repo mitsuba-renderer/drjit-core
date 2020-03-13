@@ -351,6 +351,14 @@ public:
         } while (true);
     }
 
+    /// Append a single character to the buffer
+    void putc(char c) {
+        if (unlikely(m_end == m_cur))
+            expand();
+        *m_cur++ = c;
+        *m_cur   = '\0';
+    }
+
     /// Append a formatted (printf-style) string to the buffer
     size_t fmt(const char *format, ...);
 

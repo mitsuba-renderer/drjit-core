@@ -406,7 +406,21 @@ extern JITC_EXPORT uint32_t jitc_var_register_ptr(const void *ptr);
  *
  * This function assumes that the operation does not access any operands. See
  * the other <tt>jit_trace_*</tt> functions for IR statements with 1 to 3
- * operands.
+ * additional operands. In these latter versions, the string \c stmt may
+ * contain special dollar-prefixed expressions (<tt>$rN</tt>, <tt>$tN</tt>, or
+ * <tt>$bN</tt>, where <tt>N</tt> ranges from 0-4) to refer to operands and
+ * their types. During compilation, these will then be rewritten into a
+ * register name of the variable (<tt>r</tt>), its type (<tt>t</tt>), or a
+ * generic binary type of matching size (<tt>b</tt>). Index <tt>0</tt> refers
+ * to the variable being generated, while indices <tt>1<tt>-<tt>3</tt> refer to
+ * the operands. For instance, a PTX integer addition would be encoded as
+ * follows:
+ *
+ * \code
+ * uint32_t result = jit_trace_append_2(VarType::Int32,
+ *                                      "add.$t0 $r0, $r1, $r2",
+ *                                      1, op1, op2);
+ * \endcode
  *
  * \param type
  *    Type of the variable to be created, see \ref VarType for details.
@@ -427,22 +441,22 @@ extern JITC_EXPORT uint32_t jitc_trace_append_0(enum VarType type,
 extern JITC_EXPORT uint32_t jitc_trace_append_1(enum VarType type,
                                                 const char *stmt,
                                                 int stmt_static,
-                                                uint32_t arg1);
+                                                uint32_t op1);
 
 /// Append a variable to the instruction trace (2 operands)
 extern JITC_EXPORT uint32_t jitc_trace_append_2(enum VarType type,
                                                 const char *stmt,
                                                 int stmt_static,
-                                                uint32_t arg1,
-                                                uint32_t arg2);
+                                                uint32_t op1,
+                                                uint32_t op2);
 
 /// Append a variable to the instruction trace (3 operands)
 extern JITC_EXPORT uint32_t jitc_trace_append_3(enum VarType type,
                                                 const char *stmt,
                                                 int stmt_static,
-                                                uint32_t arg1,
-                                                uint32_t arg2,
-                                                uint32_t arg3);
+                                                uint32_t op1,
+                                                uint32_t op2,
+                                                uint32_t op3);
 
 /// Increase the internal reference count of a given variable
 extern JITC_EXPORT void jitc_var_int_ref_inc(uint32_t index);
@@ -557,7 +571,7 @@ enum ReductionType {
  * ptr. The specific value is taken from \c src, which must be a CPU pointer to
  * a single int, float, double, etc (depending on \c type).
  */
-extern JITC_EXPORT void jitc_fill(VarType type, void *ptr, size_t size,
+extern JITC_EXPORT void jitc_fill(enum VarType type, void *ptr, size_t size,
                                   const void *src);
 
 /**
@@ -568,7 +582,7 @@ extern JITC_EXPORT void jitc_fill(VarType type, void *ptr, size_t size,
  * etc.) to combine them into a single value that is written to the device
  * variable \c out.
  */
-extern JITC_EXPORT void jitc_reduce(VarType type, ReductionType rtype,
+extern JITC_EXPORT void jitc_reduce(enum VarType type, enum ReductionType rtype,
                                     const void *ptr, size_t size, void *out);
 
 #if defined(__cplusplus)

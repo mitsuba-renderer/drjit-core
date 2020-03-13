@@ -428,17 +428,11 @@ void jit_malloc_shutdown() {
 /// Query the unique ID associated with an allocation
 uint32_t jit_malloc_to_id(void *ptr) {
     auto it = state.alloc_id_rev.find(ptr);
-    if (it != state.alloc_id_rev.end())
-        return it.value();
-    else
-        return 0;
+    return it != state.alloc_id_rev.end() ? it.value() : 0;
 }
 
 /// Query the allocation associated with a unique ID
 void *jit_malloc_from_id(uint32_t id) {
     auto it = state.alloc_id_fwd.find(id);
-    if (it != state.alloc_id_fwd.end())
-        return it.value();
-    else
-        return 0;
+    return it != state.alloc_id_fwd.end() ? it.value() : nullptr;
 }

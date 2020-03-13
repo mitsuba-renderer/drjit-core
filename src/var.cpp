@@ -38,24 +38,6 @@ const int var_type_size[(int) VarType::Count]{
     0, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 1, 8
 };
 
-size_t jit_type_size(VarType type) {
-    switch (type) {
-        case VarType::UInt8:
-        case VarType::Int8:
-        case VarType::Bool:    return 1;
-        case VarType::UInt16:
-        case VarType::Int16:   return 2;
-        case VarType::UInt32:
-        case VarType::Int32:
-        case VarType::Float32: return 4;
-        case VarType::UInt64:
-        case VarType::Int64:
-        case VarType::Pointer:
-        case VarType::Float64: return 8;
-        default: jit_fail("jit_type_size(): invalid type!");
-    }
-}
-
 /// Access a variable by ID, terminate with an error if it doesn't exist
 Variable *jit_var(uint32_t index) {
     auto it = state.variables.find(index);
@@ -336,34 +318,35 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
 
 /// Append a variable to the instruction trace (1 operand)
 uint32_t jit_trace_append_1(VarType type, const char *stmt,
-                            int stmt_static, uint32_t arg1) {
+                            int stmt_static, uint32_t op1) {
     Stream *stream = jit_get_stream("jit_trace_append_1");
 
-    if (unlikely(arg1 == 0))
+    if (unlikely(op1 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
 
-    Variable *v1 = jit_var(arg1);
+    Variable *v1 = jit_var(op1);
 
     Variable v;
     v.type = type;
     v.size = v1->size;
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
-    v.dep[0] = arg1;
+    v.dep[0] = op1;
     v.tsize = 1 + v1->tsize;
+    v.free_stmt = stmt_static != 0;
 
     if (unlikely(v1->dirty)) {
         jit_eval();
-        v1 = jit_var(arg1);
+        v1 = jit_var(op1);
         v.tsize = 2;
     }
 
-    jit_var_int_ref_inc(arg1, v1);
+    jit_var_int_ref_inc(op1, v1);
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u): %s%s",
-            index, arg1, vo->stmt,
+            index, op1, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_var_ext_ref_inc(index, vo);
@@ -374,22 +357,22 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 
 /// Append a variable to the instruction trace (2 operands)
 uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
-                            uint32_t arg1, uint32_t arg2) {
+                            uint32_t op1, uint32_t op2) {
     Stream *stream = jit_get_stream("jit_trace_append_2");
 
-    if (unlikely(arg1 == 0 || arg2 == 0))
+    if (unlikely(op1 == 0 || op2 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
 
-    Variable *v1 = jit_var(arg1),
-             *v2 = jit_var(arg2);
+    Variable *v1 = jit_var(op1),
+             *v2 = jit_var(op2);
 
     Variable v;
     v.type = type;
     v.size = std::max(v1->size, v2->size);
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
-    v.dep[0] = arg1;
-    v.dep[1] = arg2;
+    v.dep[0] = op1;
+    v.dep[1] = op2;
     v.tsize = 1 + v1->tsize + v2->tsize;
     v.free_stmt = stmt_static != 0;
 
@@ -401,13 +384,13 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
             v1->size, v2->size, stmt);
     } else if (unlikely(v1->dirty || v2->dirty)) {
         jit_eval();
-        v1 = jit_var(arg1);
-        v2 = jit_var(arg2);
+        v1 = jit_var(op1);
+        v2 = jit_var(op2);
         v.tsize = 3;
     }
 
-    jit_var_int_ref_inc(arg1, v1);
-    jit_var_int_ref_inc(arg2, v2);
+    jit_var_int_ref_inc(op1, v1);
+    jit_var_int_ref_inc(op2, v2);
 
     if (strstr(stmt, "ld.global")) {
         v.extra_dep = state.scatter_gather_operand;
@@ -417,7 +400,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s",
-            index, arg1, arg2, vo->stmt,
+            index, op1, op2, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_var_ext_ref_inc(index, vo);
@@ -428,24 +411,24 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
 
 /// Append a variable to the instruction trace (3 operands)
 uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
-                            uint32_t arg1, uint32_t arg2, uint32_t arg3) {
+                            uint32_t op1, uint32_t op2, uint32_t op3) {
     Stream *stream = jit_get_stream("jit_trace_append_3");
 
-    if (unlikely(arg1 == 0 || arg2 == 0 || arg3 == 0))
+    if (unlikely(op1 == 0 || op2 == 0 || op3 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
 
-    Variable *v1 = jit_var(arg1),
-             *v2 = jit_var(arg2),
-             *v3 = jit_var(arg3);
+    Variable *v1 = jit_var(op1),
+             *v2 = jit_var(op2),
+             *v3 = jit_var(op3);
 
     Variable v;
     v.type = type;
     v.size = std::max({ v1->size, v2->size, v3->size });
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
-    v.dep[0] = arg1;
-    v.dep[1] = arg2;
-    v.dep[2] = arg3;
+    v.dep[0] = op1;
+    v.dep[1] = op2;
+    v.dep[2] = op3;
     v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize;
     v.free_stmt = stmt_static != 0;
 
@@ -458,15 +441,15 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
             v1->size, v2->size, v3->size, stmt);
     } else if (unlikely(v1->dirty || v2->dirty || v3->dirty)) {
         jit_eval();
-        v1 = jit_var(arg1);
-        v2 = jit_var(arg2);
-        v3 = jit_var(arg3);
+        v1 = jit_var(op1);
+        v2 = jit_var(op2);
+        v3 = jit_var(op3);
         v.tsize = 4;
     }
 
-    jit_var_int_ref_inc(arg1, v1);
-    jit_var_int_ref_inc(arg2, v2);
-    jit_var_int_ref_inc(arg3, v3);
+    jit_var_int_ref_inc(op1, v1);
+    jit_var_int_ref_inc(op2, v2);
+    jit_var_int_ref_inc(op3, v3);
 
     if ((strstr(stmt, "st.global") || strstr(stmt, "atom.global.add")) &&
         state.scatter_gather_operand != 0) {
@@ -477,7 +460,7 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s",
-            index, arg1, arg2, arg3, vo->stmt,
+            index, op1, op2, op3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_var_ext_ref_inc(index, vo);
@@ -541,7 +524,7 @@ uint32_t jit_var_copy_to_device(VarType type,
                                 size_t size) {
     Stream *stream = jit_get_stream("jit_var_copy_to_device");
 
-    size_t total_size = size * jit_type_size(type);
+    size_t total_size = size * (size_t) var_type_size[(int) type];
 
     void *host_ptr   = jit_malloc(AllocType::HostPinned, total_size),
          *device_ptr = jit_malloc(AllocType::Device, total_size);
@@ -617,7 +600,7 @@ const char *jit_var_whos() {
 
     for (uint32_t index: indices) {
         const Variable *v = jit_var(index);
-        size_t mem_size = v->size * jit_type_size(v->type);
+        size_t mem_size = (size_t) v->size * (size_t) var_type_size[(int) v->type];
 
         buffer.fmt("  %-9u %3s    ", index, var_type_name_short[(int) v->type]);
         size_t sz = buffer.fmt("%u / %u", v->ref_count_ext, v->ref_count_int);
@@ -667,13 +650,13 @@ const char *jit_var_str(uint32_t index) {
     if (v->data == nullptr || v->dirty)
         jit_eval();
 
-    uint32_t size = v->size,
-             isize = jit_type_size(v->type),
-             limit_thresh = 20,
-             limit_remainder = 10;
+    size_t size = v->size,
+           isize = var_type_size[(int) v->type],
+           limit_thresh = 20,
+           limit_remainder = 10;
 
     buffer.clear();
-    buffer.put("[");
+    buffer.putc('[');
     uint8_t dst[8];
     const uint8_t *src = (const uint8_t *) v->data;
     for (uint32_t i = 0; i < size; ++i) {
@@ -707,6 +690,6 @@ const char *jit_var_str(uint32_t index) {
             default: jit_fail("jit_var_str(): invalid type!");
         }
     }
-    buffer.put("]");
+    buffer.putc(']');
     return buffer.get();
 }

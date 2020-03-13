@@ -1,5 +1,5 @@
 jit_device_set(device=0, stream=0): creating stream
-jit_trace_append(1): mov.$t1 $r1, 0f449a4000
+jit_trace_append(1): mov.$t0 $r0, 0f449a4000
 jit_var_ext_ref_inc(1): 1
 jit_var_ext_ref_dec(1): 0
 jit_var_free(1)
