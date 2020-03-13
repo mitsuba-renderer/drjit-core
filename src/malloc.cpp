@@ -345,6 +345,9 @@ void jit_malloc_trim(bool warn) {
         }
     }
 
+    /// Begin counting allocation IDs from the beginning again
+    state.alloc_id_ctr = 1;
+
     size_t trim_count[(int) AllocType::Count] = { 0 },
            trim_size [(int) AllocType::Count] = { 0 };
 

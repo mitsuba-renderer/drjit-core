@@ -75,6 +75,13 @@ struct Kernel {
     int block_count = 0;
 };
 
+/// Enumeration for Variable::arg_type
+enum ArgType {
+    Register,
+    Input,
+    Output
+};
+
 using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
 
 #pragma pack(push)
@@ -83,10 +90,10 @@ using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_h
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     /// External reference count (by application using Enoki)
-    uint32_t ref_count_ext;
+    uint16_t ref_count_ext;
 
-    /// Internal reference count (dependencies within computation ggraph)
-    uint32_t ref_count_int;
+    /// Internal reference count (dependencies within computation graph)
+    uint16_t ref_count_int;
 
     /// Dependencies of this instruction
     uint32_t dep[3];
@@ -97,20 +104,29 @@ struct Variable {
     /// Number of entries
     uint32_t size;
 
-    /// Size of the instruction subtree (heuristic for instruction scheduling)
-    uint32_t tsize;
-
     /// Intermediate language statement
     char *stmt;
 
-    /// Associated label (for debugging)
+    /// Associated label (e.g. for debugging)
     char *label;
 
     /// Pointer to device memory
     void *data;
 
+    /// Size of the instruction subtree (heuristic for instruction scheduling)
+    uint32_t tsize;
+
+    /// Register index (temporarily used during jit_eval())
+    uint32_t reg_index : 24;
+
+    /// Argument index (temporarily used during jit_eval())
+    uint32_t arg_index : 16;
+
     /// Data type of this variable
-    VarType type : 8;
+    VarType type : 4;
+
+    /// Argument type (register: 0, input: 1, output: 2)
+    ArgType arg_type : 2;
 
     /// Does the instruction have side effects (e.g. 'scatter')
     bool side_effect : 1;

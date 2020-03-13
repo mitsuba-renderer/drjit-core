@@ -11,8 +11,26 @@ const char *var_type_name[(int) VarType::Count]{
 
 /// Descriptive names for the various variable types (extra-short version)
 const char *var_type_name_short[(int) VarType::Count]{
-    "inv", "i8", "u8", "i16", "i16", "i32", "u32",
+    "???", "i8", "u8", "i16", "u16", "i32", "u32",
     "i64", "u64", "f16", "f32", "f64", "msk", "ptr"
+};
+
+/// CUDA PTX type names
+const char *var_type_name_ptx[(int) VarType::Count]{
+    "???", "s8", "u8", "s16", "u16", "s32", "u32",
+    "s64", "u64", "f16", "f32", "f64", "pred", "u64"
+};
+
+/// CUDA PTX type names (binary view)
+const char *var_type_name_ptx_bin[(int) VarType::Count]{
+    "???", "b8", "b8", "b16", "b16", "b32", "b32",
+    "b64", "b64", "b16", "b32", "b64", "pred", "b64"
+};
+
+/// CUDA PTX register name prefixes
+const char *var_type_register_ptx[(int) VarType::Count]{
+    "???", "%b", "%b", "%w", "%w", "%r", "%r",
+    "%rd", "%rd", "%h", "%f", "%d", "%p", "%rd"
 };
 
 /// Maps types to byte sizes
@@ -94,7 +112,8 @@ void jit_var_free(uint32_t index, Variable *v) {
 
 /// Increase the external reference count of a given variable
 void jit_var_ext_ref_inc(uint32_t index, Variable *v) {
-    v->ref_count_ext++;
+    if (unlikely(++v->ref_count_ext == 0xffff))
+        jit_fail("jit_var_ext_ref_inc(): reference count overflow!", index);
     jit_log(Trace, "jit_var_ext_ref_inc(%u): %u", index, v->ref_count_ext);
 }
 
@@ -106,7 +125,8 @@ void jit_var_ext_ref_inc(uint32_t index) {
 
 /// Increase the internal reference count of a given variable
 void jit_var_int_ref_inc(uint32_t index, Variable *v) {
-    v->ref_count_int++;
+    if (unlikely(++v->ref_count_int == 0xffff))
+        jit_fail("jit_var_int_ref_inc(): reference count overflow!", index);
     jit_log(Trace, "jit_var_int_ref_inc(%u): %u", index, v->ref_count_int);
 }
 
@@ -626,6 +646,7 @@ const char *jit_var_whos() {
 
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index) {
+    Stream *stream = active_stream;
     const Variable *v = jit_var(index);
     if (v->data == nullptr || v->dirty)
         jit_eval();
@@ -649,7 +670,8 @@ const char *jit_var_str(uint32_t index) {
         const uint8_t *src_offset = src + i * isize;
         /* Temporarily release the lock while synchronizing */ {
             unlock_guard(state.mutex);
-            cuda_check(cuMemcpy(dst, src_offset, isize));
+            cuda_check(cuMemcpyAsync(dst, src_offset, isize, stream->handle));
+            cuda_check(cuStreamSynchronize(stream->handle));
         }
 
         const char *comma = i + 1 < size ? ", " : "";

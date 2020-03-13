@@ -86,28 +86,32 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, size_t size,
     Stream *stream = active_stream;
 
     if (stream) {
-        if (size == 1) {
-            cuMemcpyAsync(out, ptr, type_size, stream->handle);
-        } else {
-            CUfunction func = kernel_reductions[(int) rtype][(int) type];
-            if (!func)
-                jit_raise(
-                    "jit_reduce(): no existing kernel for type=%s, rtype=%s!",
-                    var_type_name[(int) type], reduction_name[(int) rtype]);
+        CUfunction func = kernel_reductions[(int) rtype][(int) type];
+        if (!func)
+            jit_raise(
+                "jit_reduce(): no existing kernel for type=%s, rtype=%s!",
+                var_type_name[(int) type], reduction_name[(int) rtype]);
 
-            uint32_t num_blocks = state.devices[stream->device].num_sm * 4,
-                     num_threads = 1024,
-                     shared_size = num_threads * type_size;
+        uint32_t num_blocks = state.devices[stream->device].num_sm * 4,
+                 num_threads = 1024,
+                 shared_size = num_threads * type_size;
 
+        if (size > 1024) {
             // First reduction
-            void *args[] = { &ptr, &size, &out };
+            void *args_1[] = { &ptr, &size, &out };
             cuda_check(cuLaunchKernel(func, num_blocks, 1, 1, num_threads, 1, 1,
-                                      shared_size, stream->handle, args,
+                                      shared_size, stream->handle, args_1,
                                       nullptr));
 
             // Second reduction
             size = num_blocks;
-            args[0] = &out;
+            void *args_2[] = { &out, &size, &out };
+            cuda_check(cuLaunchKernel(func, 1, 1, 1, num_threads, 1, 1,
+                                      shared_size, stream->handle, args_2,
+                                      nullptr));
+        } else {
+            /// This is a small array..
+            void *args[] = { &ptr, &size, &out };
             cuda_check(cuLaunchKernel(func, 1, 1, 1, num_threads, 1, 1,
                                       shared_size, stream->handle, args,
                                       nullptr));

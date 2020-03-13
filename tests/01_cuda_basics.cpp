@@ -20,10 +20,10 @@ TEST_CUDA(02_fill_and_print) {
     jitc_log(Info, "  double: %s", CUDAArray<  double>::full(1.0/3.0, 5).str());
 }
 
-// TEST_CUDA(02_eval_scalar) {
-//     Float value(1234);
-//     jitc_log(Info, "value=%s", value.str());
-// }
+TEST_CUDA(03_eval_scalar) {
+    Float value(1234);
+    jitc_log(Info, "value=%s", value.str());
+}
 
 // void test_2() {
 //     CUDAArray x(1234);

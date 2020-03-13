@@ -167,6 +167,10 @@ struct CUDAArray {
         return m_index;
     }
 
+    void eval() const {
+        jitc_var_eval(m_index);
+    }
+
     static CUDAArray from_index(uint32_t index) {
         CUDAArray result;
         result.m_index = index;
@@ -180,6 +184,10 @@ protected:
 
 template <typename Value> CUDAArray<Value> hsum(const CUDAArray<Value> &v) {
     using Array = CUDAArray<Value>;
+    if (v.size() == 1)
+        return v;
+
+    v.eval();
     Array result = Array::empty(1);
     jitc_reduce(Array::Type, ReductionType::Add, v.device_ptr(), v.size(),
                 result.device_ptr());
@@ -188,6 +196,10 @@ template <typename Value> CUDAArray<Value> hsum(const CUDAArray<Value> &v) {
 
 template <typename Value> CUDAArray<Value> hprod(const CUDAArray<Value> &v) {
     using Array = CUDAArray<Value>;
+    if (v.size() == 1)
+        return v;
+
+    v.eval();
     Array result = Array::empty(1);
     jitc_reduce(Array::Type, ReductionType::Mul, v.device_ptr(), v.size(),
                 result.device_ptr());
@@ -196,6 +208,10 @@ template <typename Value> CUDAArray<Value> hprod(const CUDAArray<Value> &v) {
 
 template <typename Value> CUDAArray<Value> hmax(const CUDAArray<Value> &v) {
     using Array = CUDAArray<Value>;
+    if (v.size() == 1)
+        return v;
+
+    v.eval();
     Array result = Array::empty(1);
     jitc_reduce(Array::Type, ReductionType::Max, v.device_ptr(), v.size(),
                 result.device_ptr());
@@ -204,6 +220,10 @@ template <typename Value> CUDAArray<Value> hmax(const CUDAArray<Value> &v) {
 
 template <typename Value> CUDAArray<Value> hmin(const CUDAArray<Value> &v) {
     using Array = CUDAArray<Value>;
+    if (v.size() == 1)
+        return v;
+
+    v.eval();
     Array result = Array::empty(1);
     jitc_reduce(Array::Type, ReductionType::Min, v.device_ptr(), v.size(),
                 result.device_ptr());

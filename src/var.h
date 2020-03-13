@@ -99,3 +99,8 @@ extern void jit_cse_drop(uint32_t index, const Variable *v);
 extern const char *var_type_name      [(int) VarType::Count];
 extern const char *var_type_name_short[(int) VarType::Count];
 extern const int   var_type_size      [(int) VarType::Count];
+
+/// CUDA PTX type & register names
+extern const char *var_type_name_ptx[(int) VarType::Count];
+extern const char *var_type_name_ptx_bin[(int) VarType::Count];
+extern const char *var_type_register_ptx[(int) VarType::Count];

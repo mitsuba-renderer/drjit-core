@@ -20,72 +20,11 @@ static tsl::robin_map<uint32_t, std::vector<uint32_t>> schedule;
 /// Auxiliary data structure needed to compute 'schedule_sizes' and 'schedule'
 static tsl::robin_set<std::pair<uint32_t, uint32_t>, pair_hash> visited;
 
-/// Maps between Enoki variable indices and program variables
-static tsl::robin_map<uint32_t, uint32_t> reg_map;
-
 /// Name of the last generated kernel
 static char kernel_name[9];
 
 /// Input/output arguments of the kernel being evaluated
 static std::vector<void *> kernel_args, kernel_args_extra;
-
-// ====================================================================
-
-static const char *cuda_register_type(VarType type) {
-    switch (type) {
-        case VarType::UInt8:    return "u8";
-        case VarType::Int8:     return "s8";
-        case VarType::UInt16:   return "u16";
-        case VarType::Int16:    return "s16";
-        case VarType::UInt32:   return "u32";
-        case VarType::Int32:    return "s32";
-        case VarType::Pointer:
-        case VarType::UInt64:   return "u64";
-        case VarType::Int64:    return "s64";
-        case VarType::Float16:  return "f16";
-        case VarType::Float32:  return "f32";
-        case VarType::Float64:  return "f64";
-        case VarType::Bool:     return "pred";
-        default: jit_fail("cuda_register_type(): invalid type!");
-    }
-}
-
-static const char *cuda_register_type_bin(VarType type) {
-    switch (type) {
-        case VarType::UInt8:
-        case VarType::Int8:    return "b8";
-        case VarType::UInt16:
-        case VarType::Float16:
-        case VarType::Int16:   return "b16";
-        case VarType::Float32:
-        case VarType::UInt32:
-        case VarType::Int32:   return "b32";
-        case VarType::Pointer:
-        case VarType::Float64:
-        case VarType::UInt64:
-        case VarType::Int64:   return "b64";
-        case VarType::Bool:    return "pred";
-        default: jit_fail("cuda_register_type_bin(): invalid type!");
-    }
-}
-
-static const char *cuda_register_name(VarType type) {
-    switch (type) {
-        case VarType::UInt8:
-        case VarType::Int8:    return "%b";
-        case VarType::UInt16:
-        case VarType::Int16:   return "%w";
-        case VarType::UInt32:
-        case VarType::Int32:   return "%r";
-        case VarType::Pointer:
-        case VarType::UInt64:
-        case VarType::Int64:   return "%rd";
-        case VarType::Float32: return "%f";
-        case VarType::Float64: return "%d";
-        case VarType::Bool:    return "%p";
-        default: jit_fail("cuda_register_name(): invalid type!");
-    }
-}
 
 // ====================================================================
 
@@ -151,7 +90,7 @@ void jit_assemble(uint32_t size) {
         if (state.log_level >= LogLevel::Trace) {
             buffer.clear();
             buffer.fmt("   - %s%u -> %u",
-                       cuda_register_name(v->type),
+                       var_type_register_ptx[(int) v->type],
                        n_vars_total, index);
 
             if (v->label)
@@ -171,11 +110,18 @@ void jit_assemble(uint32_t size) {
         if (v->data || v->direct_pointer) {
             n_vars_in++;
             push = true;
+            v->arg_index = (uint16_t) n_vars_total;
+            v->arg_type = ArgType::Input;
         } else if (!v->side_effect && v->ref_count_ext > 0 && v->size == size) {
             size_t var_size = (size_t) size * (size_t) var_type_size[(int) v->type];
             v->data = jit_malloc(AllocType::Device, var_size);
             n_vars_out++;
             push = true;
+            v->arg_index = (uint16_t) n_vars_total;
+            v->arg_type = ArgType::Output;
+        } else {
+            v->arg_index = (uint16_t) 0xffff;
+            v->arg_type = ArgType::Register;
         }
 
         if (push) {
@@ -185,7 +131,8 @@ void jit_assemble(uint32_t size) {
                 kernel_args_extra.push_back(v->data);
         }
 
-        reg_map[index] = n_vars_total++;
+        v->reg_index  = n_vars_total++;
+        // reg_map[index] = n_vars_total++;
     }
 
     if (!kernel_args_extra.empty()) {
@@ -227,7 +174,8 @@ void jit_assemble(uint32_t size) {
     buffer.fmt("    .reg.b8 %%b<%u>;\n", n_vars_decl);
     buffer.fmt("    .reg.b16 %%w<%u>;\n", n_vars_decl);
     buffer.fmt("    .reg.b32 %%r<%u>, %%size, %%index, %%step;\n", n_vars_decl);
-    buffer.fmt("    .reg.b64 %%rd<%u>, %%arg_extra;\n", n_vars_decl);
+    buffer.fmt("    .reg.b64 %%rd<%u>%s;\n", n_vars_decl,
+               kernel_args_extra.empty() ? "" : ", %%arg_extra");
     buffer.fmt("    .reg.f32 %%f<%u>;\n", n_vars_decl);
     buffer.fmt("    .reg.f64 %%d<%u>;\n", n_vars_decl);
     buffer.fmt("    .reg.pred %%p<%u>, %%done;\n\n", n_vars_decl);
@@ -266,18 +214,20 @@ void jit_assemble(uint32_t size) {
 
     jit_log(Debug, "%s", buffer.get());
 
+    for (uint32_t index : sched) {
+        Variable *v = jit_var(index);
+
+        if (v->arg_type == ArgType::Input) {
+
+        } else if (v->arg_type == ArgType::Output) {
+
+        }
+        // cuda_render_cmd(oss, ctx, reg_map, index);
+    }
+
 #if 0
     for (uint32_t index : sweep) {
         Variable &var = ctx[index];
-
-        if (var.is_collected() || (var.cmd.empty() && var.data == nullptr && !var.direct_pointer))
-            throw std::runtime_error(
-                "CUDABackend: found invalid/expired variable " + std::to_string(index) + " in schedule! ");
-
-        if (var.size != 1 && var.size != size)
-            throw std::runtime_error(
-                "CUDABackend: encountered arrays of incompatible size! (" +
-                std::to_string(size) + " vs " + std::to_string(var.size) + ")");
 
         oss << std::endl;
         if (var.data || var.direct_pointer) {

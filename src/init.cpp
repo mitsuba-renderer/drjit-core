@@ -7,9 +7,9 @@ State state;
 Buffer buffer;
 __thread Stream *active_stream = nullptr;
 
-static_assert(
-    sizeof(VariableMap::value_type) == 64,
-    "VariableMap: incorrect size, likely an issue with padding/packing!");
+// static_assert(
+//     sizeof(VariableMap::value_type) == 64,
+//     "VariableMap: incorrect size, likely an issue with padding/packing!");
 
 /// Initialize core data structures of the JIT compiler
 void jit_init() {
