@@ -1,7 +1,7 @@
-#include <enoki/jitvar.h>
-#include <stdexcept>
+#include "test.h"
 #include <vector>
-#include "unistd.h"
+#include <string>
+#include <unistd.h>
 
 struct Test {
     const char *name;
@@ -10,13 +10,19 @@ struct Test {
 };
 
 static std::vector<Test> *tests = nullptr;
+std::string log_value;
+
+extern "C" void log_callback(LogLevel cb, const char *msg) {
+    log_value += msg;
+    log_value += '\n';
+}
 
 /**
  * Strip away information (pointers, etc.) to that it becomes possible to
  * compare the debug output of a test to a reference file
  */
 char* test_sanitize_log() {
-    char *buf = jitc_log_buffer(),
+    char *buf = (char *) log_value.c_str(),
          *src = buf,
          *dst = src;
 
@@ -73,7 +79,7 @@ char* test_sanitize_log() {
 bool test_check_log(const char *test_name, const char *log, bool write_ref) {
     char test_fname[128];
 
-    snprintf(test_fname, 128, "%s_data/%s.%s", TEST_NAME,
+    snprintf(test_fname, 128, "out_%s/%s.%s", TEST_NAME,
              test_name, write_ref ? "ref" : "out");
 
     FILE *f = fopen(test_fname, "w");
@@ -92,11 +98,11 @@ bool test_check_log(const char *test_name, const char *log, bool write_ref) {
     if (write_ref)
         return true;
 
-    snprintf(test_fname, 128, "%s_data/%s.ref", TEST_NAME, test_name);
+    snprintf(test_fname, 128, "out_%s/%s.ref", TEST_NAME, test_name);
     f = fopen(test_fname, "r");
     if (!f) {
         fprintf(stderr, "\ntest_check_log(): Could not open file \"%s\"!\n", test_fname);
-        exit(EXIT_FAILURE);
+        return false;
     }
 
     bool result = true;
@@ -109,11 +115,11 @@ bool test_check_log(const char *test_name, const char *log, bool write_ref) {
         char *tmp = (char *) malloc(log_len);
         if (fread(tmp, log_len, 1, f) != 1) {
             fprintf(stderr, "\ntest_check_log(): Could not read file \"%s\"!\n", test_fname);
-            exit(EXIT_FAILURE);
+            fclose(f);
+            return false;
         }
 
         result = memcmp(tmp, log, log_len) == 0;
-        free(tmp);
     }
 
     fclose(f);
@@ -128,8 +134,8 @@ int test_register(const char *name, void (*func)(), bool cuda) {
 }
 
 int main(int argc, char **argv) {
-    char binary_path[PATH_MAX];
-    int rv = readlink("/proc/self/exe", binary_path, PATH_MAX - 1);
+    char binary_path[1024];
+    int rv = readlink("/proc/self/exe", binary_path, sizeof(binary_path) - 1);
     if (rv == -1) {
         fprintf(stderr, "Unable to determine binary path!");
         exit(EXIT_FAILURE);
@@ -148,10 +154,12 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    bool write_ref = false;
+    bool write_ref = false, verbose = false;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-w") == 0) {
             write_ref = true;
+        } else if (strcmp(argv[i], "-v") == 0) {
+            verbose = true;
         } else {
             fprintf(stderr, "Invalid command line argument: \"%s\"\n", argv[i]);
             exit(EXIT_FAILURE);
@@ -160,8 +168,8 @@ int main(int argc, char **argv) {
 
     try {
         jitc_init();
-        jitc_log_level_set(LogLevel::Trace);
-        jitc_log_buffer_enable(1);
+        jitc_log_stderr_set(verbose ? LogLevel::Trace : LogLevel::Disable);
+        jitc_log_callback_set(LogLevel::Trace, log_callback);
         fprintf(stdout, "\n");
 
         if (!tests) {
@@ -179,6 +187,7 @@ int main(int argc, char **argv) {
         for (auto &test : *tests) {
             fprintf(stdout, " - %s .. ", test.name);
             fflush(stdout);
+            log_value.clear();
             jitc_init();
             jitc_device_set(test.cuda ? 0 : -1, 0);
             test.func();
@@ -192,8 +201,6 @@ int main(int argc, char **argv) {
                 tests_failed++;
                 fprintf(stdout, "FAILED!\n");
             }
-
-            free(log);
         }
 
         fprintf(stdout, "\nPassed %i/%i tests.\n", tests_passed,

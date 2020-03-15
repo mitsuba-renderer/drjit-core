@@ -83,7 +83,7 @@ extern void jit_var_mark_side_effect(uint32_t index);
 /// Mark variable as dirty, e.g. because of pending scatter operations
 extern void jit_var_mark_dirty(uint32_t index);
 
-/// Inform the JIT that the next scatter/gather references var. 'index'
+/// Set the target/source operand for scatter and gather operations
 extern void jit_set_scatter_gather_operand(uint32_t index, int gather);
 
 /// Return a human-readable summary of the contents of a variable

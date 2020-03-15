@@ -1,23 +1,25 @@
 #include "hash.h"
 #include <nmmintrin.h>
 
-uint32_t crc32(const void *ptr_, size_t size) {
+uint32_t crc32(uint32_t state, const void *ptr_, size_t size) {
 #if defined(__SSE4_2__)
     const uint8_t *ptr = (const uint8_t *) ptr_,
                   *end = ptr + size;
 
-    uint64_t state64 = 0;
     while (ptr + 8 < end) {
-        state64 = _mm_crc32_u64(state64, *((uint64_t *) ptr));
+        state = (uint32_t) _mm_crc32_u64((uint64_t) state, *((uint64_t *) ptr));
         ptr += 8;
     }
-    uint32_t state32 = (uint32_t) state64;
+
     while (ptr + 4 < end) {
-        state32 = _mm_crc32_u32(state32, *((uint32_t *) ptr));
+        state = _mm_crc32_u32(state, *((uint32_t *) ptr));
         ptr += 4;
     }
-    while (ptr < end)
-        state32 = _mm_crc32_u8(state32, *ptr++);
+
+    while (ptr < end) {
+        state = _mm_crc32_u8(state, *ptr);
+        ptr += 1;
+    }
 
 #else
     const uint32_t tbl[256] = {
@@ -90,11 +92,25 @@ uint32_t crc32(const void *ptr_, size_t size) {
     const uint8_t *ptr = (const uint8_t *) ptr_,
                   *end = ptr + size;
 
-    uint32_t state32 = 0;
+    uint32_t state = 0;
     while (ptr < end)
-      state32 = (state32 >> 8) ^ tbl[(uint8_t) state32 ^ *ptr++];
+      state = (state >> 8) ^ tbl[(uint8_t) state ^ *ptr++];
 
 #endif
 
-    return state32;
+    return state;
+}
+
+uint32_t crc32_64(uint32_t state, const uint64_t *ptr, size_t size) {
+#if defined(__SSE4_2__)
+    for (size_t i = 0; i < size; ++i)
+        state = (uint32_t) _mm_crc32_u64((uint64_t) state, ptr[i]);
+    return state;
+#else
+    return crc32(state, ptr, size * sizeof(uint64_t));
+#endif
+}
+
+uint32_t crc32_str(uint32_t state, const char *str) {
+    return crc32(state, str, strlen(str));
 }

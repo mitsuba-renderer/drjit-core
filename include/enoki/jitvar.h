@@ -17,8 +17,9 @@
 #include <cstring>
 #include <cstdio>
 
-template <typename Value>
+template <typename Value_>
 struct CUDAArray {
+    using Value = Value_;
     static constexpr VarType Type = var_type<Value>::value;
 
     CUDAArray() = default;
@@ -118,10 +119,23 @@ struct CUDAArray {
         return *this;
     }
 
+    CUDAArray operator+(const CUDAArray &v) const {
+        const char *op = std::is_floating_point<Value>::value
+            ? "add.rn.ftz.$t0 $r0, $r1, $r2"
+            : "add.$t0 $r0, $r1, $r2";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
+    }
+
+    CUDAArray& operator+=(const CUDAArray &v) {
+        return operator=(*this + v);
+    }
+
     static CUDAArray empty(size_t size) {
         size_t byte_size = size * sizeof(Value);
         void *ptr = jitc_malloc(AllocType::Device, byte_size);
-        return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
+        return from_index(jitc_var_register(Type, ptr, size, 1));
     }
 
     static CUDAArray zero(size_t size) {
@@ -132,7 +146,7 @@ struct CUDAArray {
             size_t byte_size = size * sizeof(Value);
             void *ptr = jitc_malloc(AllocType::Device, byte_size);
             jitc_fill(VarType::UInt8, ptr, byte_size, &value);
-            return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
+            return from_index(jitc_var_register(Type, ptr, size, 1));
         }
     }
 
@@ -143,21 +157,16 @@ struct CUDAArray {
             size_t byte_size = size * sizeof(Value);
             void *ptr = jitc_malloc(AllocType::Device, byte_size);
             jitc_fill(Type, ptr, size, &value);
-            return CUDAArray::from_index(jitc_var_register(Type, ptr, size, 1));
+            return from_index(jitc_var_register(Type, ptr, size, 1));
         }
     }
 
-    const char *str() {
-        return jitc_var_str(m_index);
+    CUDAArray eval() const {
+        jitc_var_eval(m_index);
+        return *this;
     }
 
-    const Value *device_ptr() const {
-        return jitc_var_ptr(m_index);
-    }
-
-    Value *device_ptr() {
-        return jitc_var_ptr(m_index);
-    }
+    bool valid() const { return m_index != 0; }
 
     size_t size() const {
         return jitc_var_size(m_index);
@@ -167,8 +176,16 @@ struct CUDAArray {
         return m_index;
     }
 
-    void eval() const {
-        jitc_var_eval(m_index);
+    const char *str() {
+        return jitc_var_str(m_index);
+    }
+
+    const Value *data() const {
+        return jitc_var_ptr(m_index);
+    }
+
+    Value *data() {
+        return jitc_var_ptr(m_index);
     }
 
     static CUDAArray from_index(uint32_t index) {
@@ -178,7 +195,7 @@ struct CUDAArray {
     }
 
 protected:
-    uint32_t m_index;
+    uint32_t m_index = 0;
 };
 
 
@@ -189,8 +206,8 @@ template <typename Value> CUDAArray<Value> hsum(const CUDAArray<Value> &v) {
 
     v.eval();
     Array result = Array::empty(1);
-    jitc_reduce(Array::Type, ReductionType::Add, v.device_ptr(), v.size(),
-                result.device_ptr());
+    jitc_reduce(Array::Type, ReductionType::Add, v.data(), v.size(),
+                result.data());
     return result;
 }
 
@@ -201,8 +218,8 @@ template <typename Value> CUDAArray<Value> hprod(const CUDAArray<Value> &v) {
 
     v.eval();
     Array result = Array::empty(1);
-    jitc_reduce(Array::Type, ReductionType::Mul, v.device_ptr(), v.size(),
-                result.device_ptr());
+    jitc_reduce(Array::Type, ReductionType::Mul, v.data(), v.size(),
+                result.data());
     return result;
 }
 
@@ -213,8 +230,8 @@ template <typename Value> CUDAArray<Value> hmax(const CUDAArray<Value> &v) {
 
     v.eval();
     Array result = Array::empty(1);
-    jitc_reduce(Array::Type, ReductionType::Max, v.device_ptr(), v.size(),
-                result.device_ptr());
+    jitc_reduce(Array::Type, ReductionType::Max, v.data(), v.size(),
+                result.data());
     return result;
 }
 
@@ -225,7 +242,7 @@ template <typename Value> CUDAArray<Value> hmin(const CUDAArray<Value> &v) {
 
     v.eval();
     Array result = Array::empty(1);
-    jitc_reduce(Array::Type, ReductionType::Min, v.device_ptr(), v.size(),
-                result.device_ptr());
+    jitc_reduce(Array::Type, ReductionType::Min, v.data(), v.size(),
+                result.data());
     return result;
 }

@@ -44,6 +44,7 @@ CUresult (*cuMemAllocManaged)(void **, size_t, unsigned int) = nullptr;
 CUresult (*cuMemFree)(void *) = nullptr;
 CUresult (*cuMemFreeHost)(void *) = nullptr;
 CUresult (*cuMemPrefetchAsync)(const void *, size_t, CUdevice, CUstream) = nullptr;
+CUresult (*cuMemcpy)(void *, const void *, size_t) = nullptr;
 CUresult (*cuMemcpyAsync)(void *, const void *, size_t, CUstream) = nullptr;
 CUresult (*cuMemsetD16Async)(void *, unsigned short, size_t, CUstream) = nullptr;
 CUresult (*cuMemsetD32Async)(void *, unsigned int, size_t, CUstream) = nullptr;
@@ -80,10 +81,6 @@ CUfunction kernel_reductions[(int) ReductionType::Count]
 static bool jit_cuda_init_attempted = false;
 static bool jit_cuda_init_success = false;
 static CUmodule jit_cuda_module = nullptr;
-
-extern "C" {
-    extern unsigned char kernels_ptx_compressed[];
-};
 
 int inflate(const void *src, uint32_t src_size, void *dst, uint32_t dst_size) {
     z_stream strm;
@@ -147,6 +144,7 @@ bool jit_cuda_init() {
     LOAD(cuMemFree, "v2");
     LOAD(cuMemFreeHost);
     LOAD(cuMemPrefetchAsync, "ptsz");
+    LOAD(cuMemcpy, "ptds");
     LOAD(cuMemcpyAsync, "ptsz");
     LOAD(cuMemsetD16Async, "ptsz");
     LOAD(cuMemsetD32Async, "ptsz");

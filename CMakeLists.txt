@@ -10,6 +10,7 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release"
     "MinSizeRel" "RelWithDebInfo")
 endif()
+string(TOUPPER "${CMAKE_BUILD_TYPE}" U_CMAKE_BUILD_TYPE)
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,13 +53,13 @@ find_package(ZLIB)
 include_directories(
   include
   ext/robin_map/include
-  ext/cub/cub
 )
 
 add_library(
   enoki-jit SHARED
   include/enoki/jit.h
-  src/internal.h       
+  src/internal.h
+  src/alloc.h
   ptx/kernels.h
   src/log.h            src/log.cpp
   src/var.h            src/var.cpp
@@ -71,9 +72,14 @@ add_library(
   src/api.cpp
 )
 
-set_property(TARGET enoki-jit PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native -fvisibility=hidden)
-target_link_libraries(enoki-jit PRIVATE dl ZLIB::ZLIB)
+target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
+if (U_CMAKE_BUILD_TYPE MATCHES REL)
+  target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
+endif()
+target_link_libraries(enoki-jit PRIVATE dl ZLIB::ZLIB pthread)
+# set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE        TRUE)
+# set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL     TRUE)
+# set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
 
 if (ENOKI_ENABLE_TESTS)
   add_subdirectory(tests)

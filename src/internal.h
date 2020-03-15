@@ -2,25 +2,25 @@
 
 #include "malloc.h"
 #include "cuda_api.h"
+#include "alloc.h"
 #include <mutex>
 #include <condition_variable>
 #include <string.h>
 #include <inttypes.h>
 
-static constexpr LogLevel Error = LogLevel::Error;
-static constexpr LogLevel Warn  = LogLevel::Warn;
-static constexpr LogLevel Info  = LogLevel::Info;
-static constexpr LogLevel Debug = LogLevel::Debug;
-static constexpr LogLevel Trace = LogLevel::Trace;
+static constexpr LogLevel Disable = LogLevel::Disable;
+static constexpr LogLevel Error   = LogLevel::Error;
+static constexpr LogLevel Warn    = LogLevel::Warn;
+static constexpr LogLevel Info    = LogLevel::Info;
+static constexpr LogLevel Debug   = LogLevel::Debug;
+static constexpr LogLevel Trace   = LogLevel::Trace;
 
 #define PTR "<0x%" PRIxPTR ">"
+
 #if !defined(likely)
 #  define likely(x)   __builtin_expect(!!(x), 1)
 #  define unlikely(x) __builtin_expect(!!(x), 0)
 #endif
-
-/// Immediately terminate the application due to a fatal internal error
-[[noreturn]] extern void jit_fail(const char* fmt, ...);
 
 /// Caches basic information about a CUDA device
 struct Device {
@@ -123,7 +123,7 @@ struct Variable {
     uint32_t arg_index : 16;
 
     /// Data type of this variable
-    VarType type : 4;
+    uint32_t type : 4;
 
     /// Argument type (register: 0, input: 1, output: 2)
     ArgType arg_type : 2;
@@ -156,71 +156,37 @@ struct Variable {
 /// Abbreviated version of the Variable data structure
 struct VariableKey {
     char *stmt;
-    VarType type;
     uint32_t size;
     uint32_t dep[3];
     uint32_t extra_dep;
+    uint16_t type;
+    uint16_t free_stmt;
 
     VariableKey(const Variable &v)
-        : stmt(v.stmt), type(v.type),
+        : stmt(v.stmt),
           size(v.size), dep{ v.dep[0], v.dep[1], v.dep[2] },
-          extra_dep(v.extra_dep) { }
+          extra_dep(v.extra_dep),
+          type((uint16_t) v.type),
+          free_stmt(v.free_stmt ? 1 : 0) { }
 
     bool operator==(const VariableKey &v) const {
-        return strcmp(stmt, v.stmt) == 0 && type == v.type && size == v.size &&
+        return strcmp(stmt, v.stmt) == 0 && size == v.size &&
                dep[0] == v.dep[0] && dep[1] == v.dep[1] && dep[2] == v.dep[2] &&
-               extra_dep == v.extra_dep;
+               extra_dep == v.extra_dep && type == v.type &&
+               free_stmt == v.free_stmt;
     }
 };
 
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        size_t result = crc32((const uint8_t *) k.stmt, strlen(k.stmt));
-        hash_combine(result, crc32((const uint8_t *) &k.type, sizeof(uint32_t) * 6));
-        return result;
-    }
-};
-
-template <typename T, size_t Align = alignof(T)>
-struct aligned_allocator {
-public:
-    template <typename T2> struct rebind {
-        using other = aligned_allocator<T2, Align>;
-    };
-
-    using value_type      = T;
-    using reference       = T &;
-    using const_reference = const T &;
-    using pointer         = T *;
-    using const_pointer   = const T *;
-    using size_type       = size_t;
-    using difference_type = ptrdiff_t;
-
-    aligned_allocator() = default;
-    aligned_allocator(const aligned_allocator &) = default;
-
-    template <typename T2, size_t Align2>
-    aligned_allocator(const aligned_allocator<T2, Align2> &) { }
-
-    value_type *allocate(size_t count) {
-        void *ptr;
-        if (posix_memalign(&ptr, Align, sizeof(T) * count) != 0)
-            jit_fail("aligned_allocator::allocate(): out of memory!");
-        return (value_type *) ptr;
-    }
-
-    void deallocate(value_type *ptr, size_t) {
-        free(ptr);
-    }
-
-    template <typename T2, size_t Align2>
-    bool operator==(const aligned_allocator<T2, Align2> &) const {
-        return Align == Align2;
-    }
-
-    template <typename T2, size_t Align2>
-    bool operator!=(const aligned_allocator<T2, Align2> &) const {
-        return Align != Align2;
+        uint32_t state;
+        if (likely(k.free_stmt == 0)) {
+            state = crc32_64(0, (const uint64_t *) &k.stmt, 4);
+        } else {
+            state = crc32_str(0, k.stmt);
+            state = crc32_64(state, (const uint64_t *) &k.size, 3);
+        }
+        return state;
     }
 };
 
@@ -228,9 +194,18 @@ using VariableMap =
     tsl::robin_map<uint32_t, Variable, std::hash<uint32_t>,
                    std::equal_to<uint32_t>,
                    aligned_allocator<std::pair<uint32_t, Variable>, 64>,
-                   false>;
+                   /* StoreHash = */ false>;
 
-using CSECache    = tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher>;
+using CSECache =
+    tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher,
+                   std::equal_to<VariableKey>,
+                   std::allocator<std::pair<VariableKey, uint32_t>>,
+                   /* StoreHash = */ true>;
+
+using KernelCache =
+    tsl::robin_map<const char *, Kernel, string_hash, string_eq,
+                   std::allocator<std::pair<const char *, Kernel>>,
+                   /* StoreHash = */ true>;
 
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
@@ -240,8 +215,14 @@ struct State {
     /// Stores the mapping from variable indices to variables
     VariableMap variables;
 
-    /// Log level
-    LogLevel log_level = LogLevel::Info;
+    /// Log level (stderr)
+    LogLevel log_level_stderr = LogLevel::Info;
+
+    /// Log level (callback)
+    LogLevel log_level_callback = LogLevel::Disable;
+
+    /// Callback for log messages
+    LogCallback log_callback = nullptr;
 
     /// Indicates whether the state is initialized by \ref jit_init()
     bool initialized = false;
@@ -285,13 +266,8 @@ struct State {
     /// Dispatch to multiple streams that run concurrently?
     bool parallel_dispatch = true;
 
-    /// Should log messages be written to an internal buffer instead of 'stderr'?
-    bool log_to_buffer = false;
-
-    /// Hash table of previously compiled kernels
-    tsl::robin_map<const char *, Kernel, string_hash, string_eq,
-                   std::allocator<std::pair<const char *, Kernel>>,
-                   true> kernels;
+    /// Cache of previously compiled kernels
+    KernelCache kernel_cache;
 };
 
 /// RAII helper for locking a mutex (like std::lock_guard)
@@ -318,7 +294,7 @@ private:
 
 struct Buffer {
 public:
-    Buffer();
+    Buffer(size_t size);
 
     // Disable copy/move constructor and assignment
     Buffer(const Buffer &) = delete;
@@ -353,7 +329,7 @@ public:
 
     /// Append a single character to the buffer
     void putc(char c) {
-        if (unlikely(m_end == m_cur))
+        if (unlikely(m_cur + 1 == m_end))
             expand();
         *m_cur++ = c;
         *m_cur   = '\0';
@@ -373,7 +349,6 @@ private:
 private:
     char *m_start, *m_cur, *m_end;
 };
-
 
 /// Global state record shared by all threads
 extern __thread Stream *active_stream;

@@ -24,11 +24,13 @@ struct pair_hash {
 };
 
 /// CRC32 hash function
-uint32_t crc32(const void *ptr, size_t size);
+extern uint32_t crc32(uint32_t stae, const void *ptr, size_t size);
+extern uint32_t crc32_64(uint32_t state, const uint64_t *ptr, size_t size);
+extern uint32_t crc32_str(uint32_t state, const char *str);
 
 struct string_hash {
     size_t operator()(const char *str) const {
-        return (size_t) crc32(str, strlen(str));
+        return (size_t) crc32_str(0, str);
     }
 };
 

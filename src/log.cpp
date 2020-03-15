@@ -4,63 +4,73 @@
 #include "internal.h"
 #include "log.h"
 
-static Buffer log_buffer;
+static Buffer log_buffer{128};
+static char jit_string_buf[64];
 
 void jit_log(LogLevel log_level, const char* fmt, ...) {
-    if (log_level > state.log_level)
-        return;
-
-    va_list args;
-    va_start(args, fmt);
-    if (likely(!state.log_to_buffer)) {
+    if (unlikely(log_level <= state.log_level_stderr)) {
+        va_list args;
+        va_start(args, fmt);
         vfprintf(stderr, fmt, args);
         fputc('\n', stderr);
-    } else {
-        log_buffer.vfmt(fmt, args);
-        log_buffer.putc('\n');
+        va_end(args);
     }
-    va_end(args);
-}
 
-void jit_vlog(LogLevel log_level, const char* fmt, va_list args) {
-    if (log_level > state.log_level)
-        return;
-
-    if (likely(!state.log_to_buffer)) {
-        vfprintf(stderr, fmt, args);
-        fputc('\n', stderr);
-    } else {
+    if (unlikely(log_level <= state.log_level_callback && state.log_callback)) {
+        va_list args;
+        va_start(args, fmt);
+        log_buffer.clear();
         log_buffer.vfmt(fmt, args);
-        log_buffer.putc('\n');
+        va_end(args);
+        state.log_callback(log_level, log_buffer.get());
     }
 }
 
-char *jit_log_buffer() {
-    char *value = strdup(log_buffer.get());
-    log_buffer.clear();
-    return value;
+void jit_vlog(LogLevel log_level, const char* fmt, va_list args_) {
+    if (unlikely(log_level <= state.log_level_stderr)) {
+        va_list args;
+        va_copy(args, args_);
+        vfprintf(stderr, fmt, args);
+        fputc('\n', stderr);
+        va_end(args);
+    }
+
+    if (unlikely(log_level <= state.log_level_callback && state.log_callback)) {
+        va_list args;
+        va_copy(args, args_);
+        log_buffer.clear();
+        log_buffer.vfmt(fmt, args);
+        va_end(args);
+        state.log_callback(log_level, log_buffer.get());
+    }
 }
 
 void jit_raise(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
+    log_buffer.clear();
     log_buffer.vfmt(fmt, args);
     va_end(args);
+
     throw std::runtime_error(log_buffer.get());
 }
 
 void jit_vraise(const char* fmt, va_list args) {
+    log_buffer.clear();
     log_buffer.vfmt(fmt, args);
+
     throw std::runtime_error(log_buffer.get());
 }
 
 void jit_fail(const char* fmt, ...) {
+    fprintf(stderr, "\n\nCritical failure in Enoki JIT compiler: ");
+
     va_list args;
     va_start(args, fmt);
-    fprintf(stderr, "\n\nCritical failure in Enoki JIT compiler: ");
     vfprintf(stderr, fmt, args);
-    fputc('\n', stderr);
     va_end(args);
+
+    fputc('\n', stderr);
     exit(EXIT_FAILURE);
 }
 
@@ -70,8 +80,6 @@ void jit_vfail(const char* fmt, va_list args) {
     fputc('\n', stderr);
     exit(EXIT_FAILURE);
 }
-
-static char jit_string_buf[64];
 
 const char *jit_mem_string(size_t size) {
     const char *orders[] = {
@@ -107,8 +115,7 @@ const char *jit_time_string(float value) {
     return jit_string_buf;
 }
 
-Buffer::Buffer() : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
-    const size_t size = 1024;
+Buffer::Buffer(const size_t size) : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
     m_start = (char *) malloc(size);
     if (unlikely(m_start == nullptr))
         jit_fail("Buffer(): out of memory!");
@@ -157,7 +164,7 @@ size_t Buffer::vfmt(const char *format, va_list args_) {
 
 void Buffer::expand() {
     size_t old_alloc_size = m_end - m_start,
-           new_alloc_size = 2 * old_alloc_size,
+           new_alloc_size = 2 * old_alloc_size + 2,
            used_size      = m_cur - m_start,
            copy_size      = std::min(used_size + 1, old_alloc_size);
 

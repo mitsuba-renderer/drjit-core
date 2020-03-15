@@ -128,37 +128,42 @@ extern JITC_EXPORT void jitc_sync_device();
 
 #if defined(__cplusplus)
 enum class LogLevel : uint32_t {
-    Error, Warn, Info, Debug, Trace
+    Disable, Error, Warn, Info, Debug, Trace
 };
 #else
 enum LogLevel {
-    LogLevelError, LogLevelWarn, LogLevelInfo, LogLevelDebug, LogLevelTrace
+    LogLevelDisable, LogLevelError, LogLevelWarn,
+    LogLevelInfo, LogLevelDebug, LogLevelTrace
 };
 #endif
 
-/// Set the minimum log level for messages
-extern JITC_EXPORT void jitc_log_level_set(enum LogLevel log_level);
-
-/// Return the minimum log level for messages
-extern JITC_EXPORT enum LogLevel jitc_get_log_level();
-
 /**
- * \brief Control the destination of log messages
+ * \brief Control the destination of log messages (stderr)
  *
- * By default, this library prints all log messages to the console (\c stderr),
- * subject to the chosen log level (see \ref jitc_log_level_set()). If you
- * prefer that the library logs to an internal buffer without touching the
- * console, call this function with a value of \c 1. In this case, use \ref
- * jitc_log_buffer() to access the log.
+ * By default, this library prints all log messages to the console (\c stderr).
+ * This function can be used to control the minimum log level for such output
+ * or prevent it entirely. In the latter case, you may wish to enable logging
+ * via a callback in \ref jitc_log_callback_set(). Both destinations can also
+ * be enabled simultaneously, pontentially using different log levels.
  */
-extern JITC_EXPORT void jitc_log_buffer_enable(int value);
+extern JITC_EXPORT void jitc_log_stderr_set(enum LogLevel level);
+
+/// Return the currently set minimum log level for output to \c stderr
+extern JITC_EXPORT enum LogLevel jitc_log_stderr();
+
 
 /**
- * This function returns the log buffer (See \ref jitc_log_buffer_enable()) and
- * subsequently clears it. The return value must be released using
- * <tt>free()</tt>.
+ * \brief Control the destination of log messages (callback)
+ *
+ * This function can be used to specify an optional callback that will be
+ * invoked with the contents of library log messages, whose severity matches or
+ * exceeds the specified \c level.
  */
-extern JITC_EXPORT char *jitc_log_buffer();
+typedef void (*LogCallback)(LogLevel, const char *);
+extern JITC_EXPORT void jitc_log_callback_set(LogLevel level, LogCallback callback);
+
+/// Return the currently set minimum log level for output to a callback
+extern JITC_EXPORT enum LogLevel jitc_log_callback();
 
 /// Print a log message with the specified log level and message
 extern JITC_EXPORT void jitc_log(LogLevel level, const char* fmt, ...);
@@ -457,12 +462,6 @@ extern JITC_EXPORT uint32_t jitc_trace_append_3(enum VarType type,
                                                 uint32_t op1,
                                                 uint32_t op2,
                                                 uint32_t op3);
-
-/// Increase the internal reference count of a given variable
-extern JITC_EXPORT void jitc_var_int_ref_inc(uint32_t index);
-
-/// Decrease the internal reference count of a given variable
-extern JITC_EXPORT void jitc_var_int_ref_dec(uint32_t index);
 
 /// Increase the external reference count of a given variable
 extern JITC_EXPORT void jitc_var_ext_ref_inc(uint32_t index);

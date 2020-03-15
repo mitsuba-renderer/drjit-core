@@ -3,7 +3,7 @@
 #include "var.h"
 #include "eval.h"
 
-#define CUDA_MAX_KERNEL_PARAMETERS 4
+#define CUDA_MAX_KERNEL_PARAMETERS 512
 
 // ====================================================================
 //  The following data structures are temporarily used during program
@@ -11,20 +11,37 @@
 //  reuse across jit_eval() calls.
 // ====================================================================
 
-/// Ordered unique list containing sizes of variables to be computed
-static std::vector<uint32_t> schedule_sizes;
+struct ScheduledVariable {
+    uint32_t size;
+    uint32_t index;
 
-/// Map variable size => ordered list of variables that should be computed
-static tsl::robin_map<uint32_t, std::vector<uint32_t>> schedule;
+    ScheduledVariable(uint32_t size, uint32_t index)
+        : size(size), index(index) { }
+};
+
+struct ScheduledGroup {
+    uint32_t size;
+    uint32_t start;
+    uint32_t end;
+
+    ScheduledGroup(uint32_t size, uint32_t start, uint32_t end)
+        : size(size), start(start), end(end) { }
+};
+
+/// Ordered list of variables that should be computed
+static std::vector<ScheduledVariable> schedule;
+
+/// Groups of variables with the same size
+static std::vector<ScheduledGroup> schedule_groups;
 
 /// Auxiliary data structure needed to compute 'schedule_sizes' and 'schedule'
 static tsl::robin_set<std::pair<uint32_t, uint32_t>, pair_hash> visited;
 
-/// Name of the last generated kernel
-static char kernel_name[9];
-
 /// Input/output arguments of the kernel being evaluated
 static std::vector<void *> kernel_args, kernel_args_extra;
+
+/// Name of the last generated kernel
+static char kernel_name[9];
 
 // ====================================================================
 
@@ -57,7 +74,7 @@ static void jit_var_traverse(uint32_t size, uint32_t index) {
     for (auto const &v: ch)
         jit_var_traverse(size, v.first);
 
-    schedule[size].push_back(index);
+    schedule.emplace_back(size, index);
 }
 
 void jit_render_stmt(uint32_t index, Variable *v) {
@@ -76,15 +93,20 @@ void jit_render_stmt(uint32_t index, Variable *v) {
                 case 'r': prefix_table = var_type_register_ptx; break;
                 default:
                     jit_fail("jit_render_stmt(): encountered invalid \"$\" "
-                             "expression (unknown type).");
+                             "expression (unknown type)!");
             }
 
-            uint8_t arg_id = *s++ - '0';
+            uint32_t arg_id = *s++ - '0';
             if (unlikely(arg_id > 3))
-                jit_fail("jit_render_stmt(): encountered invalid \"$\" "
-                         "expression (argument out of bounds!).");
+                jit_fail("jit_render_stmt(%s): encountered invalid \"$\" "
+                         "expression (argument out of bounds)!", v->stmt);
 
-            Variable *dep = jit_var(arg_id == 0 ? index : v->dep[arg_id - 1]);
+            uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
+            if (unlikely(dep_id == 0))
+                jit_fail("jit_render_stmt(%s): encountered invalid \"$\" "
+                         "expression (dependency %u is missing)!", v->stmt, arg_id);
+
+            Variable *dep = jit_var(dep_id);
             buffer.put(prefix_table[(int) dep->type]);
 
             if (type == 'r')
@@ -95,35 +117,36 @@ void jit_render_stmt(uint32_t index, Variable *v) {
     buffer.put(";\n");
 }
 
-void jit_assemble(uint32_t size) {
-    const std::vector<uint32_t> &sched = schedule[size];
-    uint32_t n_args_in = 0, n_args_out = 0;
-    uint32_t n_regs_total = 4;
+void jit_assemble(ScheduledGroup group) {
+    uint32_t n_args_in    = 0,
+             n_args_out   = 0,
+             n_regs_total = 4; // The first 4 variables are reserved
 
     (void) timer();
-    jit_trace("jit_assemble(size=%u): register map:", size);
+    jit_trace("jit_assemble(size=%u): register map:", group.size);
 
     /// Push the size argument
     void *tmp = 0;
-    memcpy(&tmp, &size, sizeof(uint32_t));
+    memcpy(&tmp, &group.size, sizeof(uint32_t));
     kernel_args.clear();
     kernel_args_extra.clear();
     kernel_args.push_back(tmp);
     n_args_in++;
 
-    for (uint32_t index : sched) {
+    for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
+        uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
-        bool push = true;
+        bool push = false;
 
         if (unlikely(v->ref_count_int == 0 && v->ref_count_ext == 0))
             jit_fail("jit_assemble(): schedule contains unreferenced variable %u!", index);
-        else if (unlikely(v->size != 1 && v->size != size))
+        else if (unlikely(v->size != 1 && v->size != group.size))
             jit_fail("jit_assemble(): schedule contains variable %u with incompatible size "
-                     "(%u and %u)!", index, size, v->size);
+                     "(%u and %u)!", index, v->size, group.size);
         else if (unlikely(v->data == nullptr && !v->direct_pointer && v->stmt == nullptr))
             jit_fail("jit_assemble(): schedule contains variable %u with empty statement!", index);
 
-        if (state.log_level >= LogLevel::Trace) {
+        if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Trace) {
             buffer.clear();
             buffer.fmt("   - %s%u -> %u",
                        var_type_register_ptx[(int) v->type],
@@ -139,7 +162,7 @@ void jit_assemble(uint32_t size) {
                 buffer.put(" [in]");
             else if (v->side_effect)
                 buffer.put(" [se]");
-            else if (v->ref_count_ext > 0 && v->size == size)
+            else if (v->ref_count_ext > 0 && v->size == group.size)
                 buffer.put(" [out]");
 
             jit_trace("%s", buffer.get());
@@ -150,8 +173,10 @@ void jit_assemble(uint32_t size) {
             v->arg_type = ArgType::Input;
             n_args_in++;
             push = true;
-        } else if (!v->side_effect && v->ref_count_ext > 0 && v->size == size) {
-            size_t var_size = (size_t) size * (size_t) var_type_size[(int) v->type];
+        } else if (!v->side_effect && v->ref_count_ext > 0 &&
+                   v->size == group.size) {
+            size_t var_size =
+                (size_t) group.size * (size_t) var_type_size[(int) v->type];
             v->data = jit_malloc(AllocType::Device, var_size);
             v->arg_index = (uint16_t) (n_args_in + n_args_out);
             v->arg_type = ArgType::Output;
@@ -204,10 +229,10 @@ void jit_assemble(uint32_t size) {
     }
 
     jit_log(Debug, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
-            size, n_args_in, n_args_out, n_regs_total);
+            group.size, n_args_in - 1, n_args_out, n_regs_total);
 
-    auto get_parameter_addr = [](uint32_t index, const Variable *v) {
-        if (index < CUDA_MAX_KERNEL_PARAMETERS - 1)
+    auto get_parameter_addr = [](const Variable *v) {
+        if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
             buffer.fmt("    ld.param.u64 %%rd0, [arg%u];\n", v->arg_index - 1);
         else
             buffer.fmt("    ldu.global.u64 %%rd0, [%%rd2 + %u];\n",
@@ -261,25 +286,29 @@ void jit_assemble(uint32_t size) {
     buffer.put("    mov.u32 %r3, %nctaid.x;\n");
     buffer.put("    mul.lo.u32 %r1, %r3, %r1;\n");
     if (!kernel_args_extra.empty())
-        buffer.fmt("    ld.param.u64 %%rd2, [arg_%u];\n",
-                   CUDA_MAX_KERNEL_PARAMETERS - 1);
+        buffer.fmt("    ld.param.u64 %%rd2, [arg%u];\n",
+                   CUDA_MAX_KERNEL_PARAMETERS - 2);
 
-    buffer.put("\nL1:\n");
-    buffer.put("    // Loop body\n\n");
+    buffer.put("\nL1: // Loop body\n");
 
     /// Replace '@'s in 'enoki_@@@@@@@@' by MD5 hash
-    snprintf(kernel_name, 9, "%08x", crc32(buffer.get(), buffer.size()));
+    snprintf(kernel_name, 9, "%08x", crc32(0, buffer.get(), buffer.size()));
     memcpy((void *) strchr(buffer.get(), '@'), kernel_name, 8);
 
-    for (uint32_t index : sched) {
+    bool log_trace = std::max(state.log_level_stderr,
+                              state.log_level_callback) >= LogLevel::Trace;
+
+
+    for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
+        uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
 
         if (v->arg_type == ArgType::Input) {
-            get_parameter_addr(index, v);
+            get_parameter_addr(v);
         }
 
-        if (unlikely(state.log_level >= Trace))
-            buffer.fmt("    // Evaluate %s%u%s%s\n",
+        if (unlikely(log_trace))
+            buffer.fmt("\n    // Evaluate %s%u%s%s\n",
                        var_type_register_ptx[(int) v->type],
                        v->reg_index,
                        v->has_label ? ": " : "",
@@ -288,16 +317,16 @@ void jit_assemble(uint32_t size) {
         jit_render_stmt(index, v);
 
         if (v->arg_type == ArgType::Output) {
-            if (unlikely(state.log_level >= Trace))
+            if (unlikely(log_trace))
                 buffer.fmt("\n    // Store %s%u%s%s\n",
                            var_type_register_ptx[(int) v->type],
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
-            get_parameter_addr(index, v);
+            get_parameter_addr(v);
 
-            if (likely(v->type != VarType::Bool)) {
-                buffer.fmt("    st.global.%s [%%rd0], %s%u;\n\n",
+            if (likely(v->type != (uint32_t) VarType::Bool)) {
+                buffer.fmt("    st.global.%s [%%rd0], %s%u;\n",
                        var_type_name_ptx[(int) v->type],
                        var_type_register_ptx[(int) v->type],
                        v->reg_index);
@@ -309,6 +338,7 @@ void jit_assemble(uint32_t size) {
         }
     }
 
+    buffer.putc('\n');
     buffer.put("    add.u32 %r0, %r0, %r1;\n");
     buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
     buffer.put("    @!%p0 bra L1;\n");
@@ -320,13 +350,13 @@ void jit_assemble(uint32_t size) {
     jit_log(Debug, "%s", buffer.get());
 }
 
-void jit_run(uint32_t size) {
+void jit_run(ScheduledGroup group) {
     float codegen_time = timer();
 
-    auto it = state.kernels.find(buffer.get());
+    auto it = state.kernel_cache.find(buffer.get());
     Kernel kernel;
 
-    if (it == state.kernels.end()) {
+    if (it == state.kernel_cache.end()) {
         const uintptr_t log_size = 8192;
         std::unique_ptr<char[]> error_log(new char[log_size]),
                                  info_log(new char[log_size]);
@@ -403,7 +433,7 @@ void jit_run(uint32_t size) {
             &kernel.block_count, &kernel.thread_count,
             kernel.cu_func, nullptr, 0, 0));
 
-        state.kernels[str] = kernel;
+        state.kernel_cache.emplace(str, kernel);
 
         jit_log(Debug,
                 "jit_run(): cache %s, codegen: %s, %s: %s, %i registers, %i "
@@ -433,11 +463,11 @@ void jit_run(uint32_t size) {
              block_count  = kernel.block_count;
 
     /// Reduce the number of blocks when processing a very small amount of data
-    if (size <= thread_count) {
+    if (group.size <= thread_count) {
         block_count = 1;
-        thread_count = size;
-    } else if (size <= thread_count * block_count) {
-        block_count = (size + thread_count - 1) / thread_count;
+        thread_count = group.size;
+    } else if (group.size <= thread_count * block_count) {
+        block_count = (group.size + thread_count - 1) / thread_count;
     }
 
     cuda_check(cuLaunchKernel(kernel.cu_func, block_count, 1, 1, thread_count,
@@ -456,32 +486,47 @@ void jit_eval() {
 
     visited.clear();
     schedule.clear();
-    schedule_sizes.clear();
+    schedule_groups.clear();
 
-    for (uint32_t index : stream->todo) {
-        size_t size = jit_var_size(index);
-        jit_var_traverse(size, index);
-        schedule_sizes.push_back(size);
-    }
-
+    // Collect variables that must be computed and their subtrees
+    for (uint32_t index : stream->todo)
+        jit_var_traverse(jit_var_size(index), index);
     stream->todo.clear();
 
-    std::sort(schedule_sizes.begin(), schedule_sizes.end(),
-              std::greater<uint32_t>());
+    // Group them from large to small sizes while preserving dependencies
+    std::stable_sort(
+        schedule.begin(), schedule.end(),
+        [](const ScheduledVariable &a, const ScheduledVariable &b) {
+            return a.size > b.size;
+        });
 
-    bool parallel_dispatch = state.parallel_dispatch && schedule.size() > 1;
+    // Are there independent groups of work that could be dispatched in parallel?
+    bool parallel_dispatch =
+        state.parallel_dispatch &&
+        schedule[0].size != schedule[schedule.size() - 1].size;
 
     if (!parallel_dispatch) {
         jit_log(Debug, "jit_eval(): begin.");
+        schedule_groups.emplace_back(schedule[0].size, 0,
+                                     (uint32_t) schedule.size());
     } else {
+        uint32_t cur = 0;
+        for (uint32_t i = 1; i < (uint32_t) schedule.size(); ++i) {
+            if (schedule[i - 1].size != schedule[i].size) {
+                schedule_groups.emplace_back(schedule[cur].size, cur, i);
+                cur = i;
+            }
+        }
+        schedule_groups.emplace_back(schedule[cur].size,
+                                     cur, (uint32_t) schedule.size());
         jit_log(Debug, "jit_eval(): begin (parallel dispatch to %zu streams).",
                 schedule.size());
         cuda_check(cuEventRecord(stream->event, stream->handle));
     }
 
     uint32_t stream_index = 1000 * stream->stream;
-    for (uint32_t size : schedule_sizes) {
-        jit_assemble(size);
+    for (ScheduledGroup &group : schedule_groups) {
+        jit_assemble(group);
 
         Stream *sub_stream = stream;
         if (parallel_dispatch) {
@@ -490,7 +535,7 @@ void jit_eval() {
             cuda_check(cuStreamWaitEvent(sub_stream->handle, stream->event, 0));
         }
 
-        jit_run(size);
+        jit_run(group);
 
         if (parallel_dispatch) {
             cuda_check(cuEventRecord(sub_stream->event, sub_stream->handle));
@@ -502,44 +547,39 @@ void jit_eval() {
 
     jit_device_set(stream->device, stream->stream);
 
-    /**
-     * At this point, all variables and their dependencies are computed, which
-     * means that we can remove internal edges between them. This in turn will
-     * cause many of the variables to be garbage-collected.
-     */
+    /* At this point, all variables and their dependencies are computed, which
+       means that we can remove internal edges between them. This in turn will
+       cause many of the variables to be garbage-collected. */
     jit_log(Debug, "jit_eval(): cleaning up..");
 
-    for (uint32_t size : schedule_sizes) {
-        const std::vector<uint32_t> &sched = schedule[size];
+    for (ScheduledVariable sv : schedule) {
+        uint32_t index = sv.index;
 
-        for (uint32_t index : sched) {
-            auto it = state.variables.find(index);
-            if (it == state.variables.end())
-                continue;
+        auto it = state.variables.find(index);
+        if (it == state.variables.end())
+            continue;
 
-            Variable *v = &it.value();
-            bool side_effect = v->side_effect;
-            v->side_effect = false;
-            v->dirty = false;
+        Variable *v = &it.value();
+        bool side_effect = v->side_effect;
+        uint32_t dep[3], extra_dep = v->extra_dep;
+        memcpy(dep, v->dep, sizeof(uint32_t) * 3);
 
-            /* Don't bother with CSE for evaluated scalar variables to replace
-               costly loads with faster arithmetic. */
-            if (size == 1)
-                jit_cse_drop(index, v);
+        v->side_effect = false;
+        v->dirty = false;
 
-            // if (v->data != nullptr && v->stmt != nullptr) {
-                uint32_t dep[3], extra_dep = v->extra_dep;
-                memcpy(dep, v->dep, sizeof(uint32_t) * 3);
-                memset(v->dep, 0, sizeof(uint32_t) * 3);
-                v->extra_dep = 0;
-                for (int j = 0; j < 3; ++j)
-                    jit_var_int_ref_dec(dep[j]);
-                jit_var_ext_ref_dec(extra_dep);
-            // }
+        /* Don't bother with CSE for evaluated scalar variables to replace
+           costly loads with faster arithmetic. */
+        if (v->size == 1)
+            jit_cse_drop(index, v);
 
-            if (side_effect)
-                jit_var_ext_ref_dec(index);
-        }
+        memset(v->dep, 0, sizeof(uint32_t) * 3);
+        v->extra_dep = 0;
+        for (int j = 0; j < 3; ++j)
+            jit_var_int_ref_dec(dep[j]);
+        jit_var_ext_ref_dec(extra_dep);
+
+        if (side_effect)
+            jit_var_ext_ref_dec(index);
     }
 
     jit_free_flush();

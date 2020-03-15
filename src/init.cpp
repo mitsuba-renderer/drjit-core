@@ -4,12 +4,15 @@
 #include "log.h"
 
 State state;
-Buffer buffer;
+Buffer buffer{1024};
 __thread Stream *active_stream = nullptr;
 
 static_assert(
     sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>) == 64,
     "VariableMap: incorrect bucket size, likely an issue with padding/packing!");
+
+static_assert(sizeof(VariableKey) == 4*8,
+    "VariableKey: incorrect size, likely an issue with padding/packing!");
 
 /// Initialize core data structures of the JIT compiler
 void jit_init() {
@@ -97,7 +100,8 @@ void jit_init() {
     state.alloc_used.reserve(512);
     state.alloc_id_rev.reserve(512);
     state.alloc_id_fwd.reserve(512);
-    state.kernels.reserve(128);
+    state.cse_cache.reserve(512);
+    state.kernel_cache.reserve(128);
     state.initialized = true;
 }
 
@@ -124,19 +128,23 @@ void jit_shutdown() {
     state.streams.clear();
     active_stream = nullptr;
 
-    for (auto &v : state.kernels) {
+    for (auto &v : state.kernel_cache) {
         free((char *) v.first);
         cuda_check(cuModuleUnload(v.second.cu_module));
     }
-    state.kernels.clear();
+    state.kernel_cache.clear();
 
-    if (state.log_level >= Warn) {
+    if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
         uint32_t n_leaked = 0;
         for (auto &var : state.variables) {
             if (n_leaked == 0)
                 jit_log(Warn, "jit_shutdown(): detected variable leaks:");
             if (n_leaked < 10)
-                jit_log(Warn, " - variable %u is still referenced!", var.first);
+                jit_log(Warn,
+                        " - variable %u is still being referenced! (internal "
+                        "references=%u, external references=%u)",
+                        var.first, var.second.ref_count_int,
+                        var.second.ref_count_ext);
             else if (n_leaked == 10)
                 jit_log(Warn, " - (skipping remainder)");
             ++n_leaked;

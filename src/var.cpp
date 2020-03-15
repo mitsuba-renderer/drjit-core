@@ -52,7 +52,7 @@ void jit_cse_drop(uint32_t index, const Variable *v) {
         return;
 
     VariableKey key(*v);
-    CSECache::iterator it = state.cse_cache.find(key);
+    auto it = state.cse_cache.find(key);
     if (it != state.cse_cache.end() && it.value() == index)
         state.cse_cache.erase(it);
 }
@@ -73,6 +73,7 @@ void jit_var_free(uint32_t index, Variable *v) {
     if (unlikely(v->free_stmt))
         free(v->stmt);
 
+    // Free descriptive label, if needed
     if (unlikely(v->has_label)) {
         auto it = state.labels.find(index);
         if (unlikely(it == state.labels.end()))
@@ -81,6 +82,7 @@ void jit_var_free(uint32_t index, Variable *v) {
         state.labels.erase(it);
     }
 
+    // Free reverse pointer table entry, if needed
     if (unlikely(v->direct_pointer)) {
         auto it = state.variable_from_ptr.find(v->data);
         if (unlikely(it == state.variable_from_ptr.end()))
@@ -88,7 +90,7 @@ void jit_var_free(uint32_t index, Variable *v) {
         state.variable_from_ptr.erase(it);
     }
 
-    // Remove from hash table ('v' invalid from here on)
+    // Remove from hash table (careful: 'v' invalid from here on)
     state.variables.erase(index);
 
     // Decrease reference count of dependencies
@@ -124,7 +126,7 @@ void jit_var_int_ref_inc(uint32_t index) {
 
 /// Decrease the external reference count of a given variable
 void jit_var_ext_ref_dec(uint32_t index) {
-    if (index == 0 || state.variables.empty())
+    if (index == 0)
         return;
     Variable *v = jit_var(index);
 
@@ -144,7 +146,7 @@ void jit_var_ext_ref_dec(uint32_t index) {
 
 /// Decrease the internal reference count of a given variable
 void jit_var_int_ref_dec(uint32_t index) {
-    if (index == 0 || state.variables.empty())
+    if (index == 0)
         return;
     Variable *v = jit_var(index);
 
@@ -164,7 +166,7 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
     bool key_inserted = false;
 
     if (v.stmt) {
-        if (v.type != VarType::Float32) {
+        if (v.type != (uint32_t) VarType::Float32) {
             /// Strip .ftz modifiers from non-float PTX statements
             char *offset = strstr(v.stmt, ".ftz");
             if (offset) {
@@ -175,7 +177,11 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
                     v.stmt = strdup(v.stmt);
                     offset = strstr(v.stmt, ".ftz");
                 }
-                strcat(offset, offset + 4);
+                do {
+                    if ((offset[0] = offset[4]) == '\0')
+                        break;
+                    offset++;
+                } while (true);
             }
         }
 
@@ -187,7 +193,7 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
     uint32_t index;
     Variable *v_out;
 
-    if (key_inserted || v.stmt == nullptr) {
+    if (likely(key_inserted || v.stmt == nullptr)) {
         // .. nope, it is new.
 
         VariableMap::iterator var_it;
@@ -211,9 +217,12 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
         v_out = &var_it.value();
     } else {
         // .. found a match! Deallocate 'v'.
-
         if (v.free_stmt)
             free(v.stmt);
+
+        for (int i = 0; i< 3; ++i)
+            jit_var_int_ref_dec(v.dep[i]);
+        jit_var_int_ref_dec(v.extra_dep);
 
         index = key_it.value();
         v_out = jit_var(index);
@@ -240,8 +249,8 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
 
     if (v->data != nullptr || v->ref_count_int > 0) {
         if (v->size == 1 && copy != 0) {
-            uint32_t index_new =
-                jit_trace_append_1(v->type, "mov.$t1 $r1, $r2", 1, index);
+            uint32_t index_new = jit_trace_append_1(
+                (VarType) v->type, "mov.$t1 $r1, $r2", 1, index);
             jit_var(index_new)->size = size;
             jit_var_ext_ref_dec(index);
             return index_new;
@@ -298,11 +307,11 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
     Stream *stream = jit_get_stream("jit_trace_append_0");
 
     Variable v;
-    v.type = type;
+    v.type = (uint32_t) type;
     v.size = 1;
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.tsize = 1;
-    v.free_stmt = stmt_static != 0;
+    v.free_stmt = stmt_static == 0;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
@@ -328,12 +337,12 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
     Variable *v1 = jit_var(op1);
 
     Variable v;
-    v.type = type;
+    v.type = (uint32_t) type;
     v.size = v1->size;
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.dep[0] = op1;
     v.tsize = 1 + v1->tsize;
-    v.free_stmt = stmt_static != 0;
+    v.free_stmt = stmt_static == 0;
 
     if (unlikely(v1->dirty)) {
         jit_eval();
@@ -368,13 +377,13 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
              *v2 = jit_var(op2);
 
     Variable v;
-    v.type = type;
+    v.type = (uint32_t) type;
     v.size = std::max(v1->size, v2->size);
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.dep[0] = op1;
     v.dep[1] = op2;
     v.tsize = 1 + v1->tsize + v2->tsize;
-    v.free_stmt = stmt_static != 0;
+    v.free_stmt = stmt_static == 0;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size))) {
@@ -423,14 +432,14 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
              *v3 = jit_var(op3);
 
     Variable v;
-    v.type = type;
+    v.type = (uint32_t) type;
     v.size = std::max({ v1->size, v2->size, v3->size });
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.dep[0] = op1;
     v.dep[1] = op2;
     v.dep[2] = op3;
     v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize;
-    v.free_stmt = stmt_static != 0;
+    v.free_stmt = stmt_static == 0;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size) ||
@@ -476,7 +485,7 @@ uint32_t jit_var_register(VarType type, void *ptr,
         jit_raise("jit_var_register: size must be > 0!");
 
     Variable v;
-    v.type = type;
+    v.type = (uint32_t) type;
     v.data = ptr;
     v.size = (uint32_t) size;
     v.retain_data = free == 0;
@@ -502,7 +511,7 @@ uint32_t jit_var_register_ptr(const void *ptr) {
     }
 
     Variable v;
-    v.type = VarType::Pointer;
+    v.type = (uint32_t) VarType::Pointer;
     v.data = (void *) ptr;
     v.size = 1;
     v.tsize = 0;
@@ -669,13 +678,13 @@ const char *jit_var_str(uint32_t index) {
 
         const uint8_t *src_offset = src + i * isize;
         /* Temporarily release the lock while synchronizing */ {
-            unlock_guard(state.mutex);
-            cuda_check(cuMemcpyAsync(dst, src_offset, isize, stream->handle));
+            unlock_guard guard(state.mutex);
             cuda_check(cuStreamSynchronize(stream->handle));
+            cuda_check(cuMemcpy(dst, src_offset, isize));
         }
 
         const char *comma = i + 1 < size ? ", " : "";
-        switch (v->type) {
+        switch ((VarType) v->type) {
             case VarType::Bool:    buffer.fmt("%"   PRIu8  "%s", *(( uint8_t *) dst), comma); break;
             case VarType::Int8:    buffer.fmt("%"   PRId8  "%s", *((  int8_t *) dst), comma); break;
             case VarType::UInt8:   buffer.fmt("%"   PRIu8  "%s", *(( uint8_t *) dst), comma); break;
@@ -702,6 +711,16 @@ void jit_var_eval(uint32_t index) {
         jit_eval();
 }
 
+/// Set the target/source operand for scatter and gather operations
+void jit_set_scatter_gather_operand(uint32_t index, int gather) {
+    if (index) {
+        Variable *v = jit_var(index);
+        if (v->data == nullptr || (gather && v->dirty))
+            jit_eval();
+    }
+    state.scatter_gather_operand = index;
+}
+
 /// Read a single element of a variable and write it to 'dst'
 void jit_var_read(uint32_t index, size_t offset, void *dst) {
     Stream *stream = active_stream;
@@ -722,9 +741,9 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
     const uint8_t *src = (const uint8_t *) v->data + offset * isize;
 
     /* Temporarily release the lock while synchronizing */ {
-        unlock_guard(state.mutex);
-        cuda_check(cuMemcpyAsync(dst, src, isize, stream->handle));
+        unlock_guard guard(state.mutex);
         cuda_check(cuStreamSynchronize(stream->handle));
+        cuda_check(cuMemcpy(dst, src, isize));
     }
 }
 

@@ -20,24 +20,25 @@ void jitc_shutdown() {
     jit_shutdown();
 }
 
-void jitc_log_buffer_enable(int value) {
+void jitc_log_stderr_set(LogLevel level) {
     lock_guard guard(state.mutex);
-    state.log_to_buffer = value != 0;
+    state.log_level_stderr = level;
 }
 
-char *jitc_log_buffer() {
+LogLevel jitc_log_stderr() {
     lock_guard guard(state.mutex);
-    return jit_log_buffer();
+    return state.log_level_stderr;
 }
 
-LogLevel jitc_log_level_set() {
+void jitc_log_callback_set(LogLevel level, LogCallback callback) {
     lock_guard guard(state.mutex);
-    return state.log_level;
+    state.log_level_callback = callback ? level : Disable;
+    state.log_callback = callback;
 }
 
-void jitc_log_level_set(LogLevel log_level) {
+LogLevel jitc_log_callback() {
     lock_guard guard(state.mutex);
-    state.log_level = log_level;
+    return state.log_level_callback;
 }
 
 void jitc_log(LogLevel level, const char* fmt, ...) {
@@ -137,16 +138,6 @@ void jitc_var_ext_ref_inc(uint32_t index) {
 void jitc_var_ext_ref_dec(uint32_t index) {
     lock_guard guard(state.mutex);
     jit_var_ext_ref_dec(index);
-}
-
-void jitc_var_int_ref_inc(uint32_t index) {
-    lock_guard guard(state.mutex);
-    jit_var_int_ref_inc(index);
-}
-
-void jitc_var_int_ref_dec(uint32_t index) {
-    lock_guard guard(state.mutex);
-    jit_var_int_ref_dec(index);
 }
 
 void *jitc_var_ptr(uint32_t index) {

@@ -1,0 +1,129 @@
+jit_device_set(device=0, stream=0): creating stream
+jit_trace_append(1): mov.$t0 $r0, 0f449a4000
+jit_var_ext_ref_inc(1): 1
+jit_trace_append(2): mov.$t0 $r0, 0f449a6000
+jit_var_ext_ref_inc(2): 1
+jit_trace_append(1): mov.$t0 $r0, 0f449a4000 (reused)
+jit_var_ext_ref_inc(1): 2
+jit_var_int_ref_inc(1): 1
+jit_var_int_ref_inc(2): 1
+jit_trace_append(3 <- 1, 2): add.rn.ftz.$t0 $r0, $r1, $r2
+jit_var_ext_ref_inc(3): 1
+jit_var_int_ref_inc(1): 2
+jit_var_int_ref_inc(1): 3
+jit_trace_append(4 <- 1, 1): add.rn.ftz.$t0 $r0, $r1, $r2
+jit_var_ext_ref_inc(4): 1
+jit_var_int_ref_inc(1): 4
+jit_var_int_ref_inc(2): 2
+jit_var_int_ref_dec(1): 3
+jit_var_int_ref_dec(2): 1
+jit_trace_append(3 <- 1, 2): add.rn.ftz.$t0 $r0, $r1, $r2 (reused)
+jit_var_ext_ref_inc(3): 2
+jit_eval(): begin.
+jit_assemble(size=1): register map:
+   - %f4 -> 1 [scalar] [out]
+jit_malloc(type=device, device=0, size=4): <@> (new allocation)
+   - %f5 -> 2 [scalar] [out]
+jit_malloc(type=device, device=0, size=4): <@> (new allocation)
+   - %f6 -> 3 [scalar] [out]
+jit_malloc(type=device, device=0, size=4): <@> (new allocation)
+   - %f7 -> 4 [scalar] [out]
+jit_malloc(type=device, device=0, size=4): <@> (new allocation)
+jit_run(): launching kernel (n=1, in=0, out=4, ops=8) ..
+.version 6.3
+.target sm_61
+.address_size 64
+.visible .entry enoki_d0bac9c5(.param .u32 size,
+                               .param .u64 arg0,
+                               .param .u64 arg1,
+                               .param .u64 arg2,
+                               .param .u64 arg3) {
+    .reg.b8 %b<8>;
+    .reg.b16 %w<8>;
+    .reg.b32 %r<8>;
+    .reg.b64 %rd<8>;
+    .reg.f32 %f<8>;
+    .reg.f64 %d<8>;
+    .reg.pred %p<8>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Evaluate %f4
+    mov.f32 %f4, 0f449a4000;
+
+    // Store %f4
+    ld.param.u64 %rd0, [arg0];
+    st.global.f32 [%rd0], %f4;
+
+    // Evaluate %f5
+    mov.f32 %f5, 0f449a6000;
+
+    // Store %f5
+    ld.param.u64 %rd0, [arg1];
+    st.global.f32 [%rd0], %f5;
+
+    // Evaluate %f6
+    add.rn.ftz.f32 %f6, %f4, %f5;
+
+    // Store %f6
+    ld.param.u64 %rd0, [arg2];
+    st.global.f32 [%rd0], %f6;
+
+    // Evaluate %f7
+    add.rn.ftz.f32 %f7, %f4, %f4;
+
+    // Store %f7
+    ld.param.u64 %rd0, [arg3];
+    st.global.f32 [%rd0], %f7;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
+jit_var_int_ref_dec(1): 2
+jit_var_int_ref_dec(2): 0
+jit_var_int_ref_dec(1): 1
+jit_var_int_ref_dec(1): 0
+jit_eval(): done.
+value_1=[1234]
+value_2=[1235]
+value_3=[1234]
+value_4=[2469]
+value_5=[2468]
+value_6=[2469]
+jit_var_ext_ref_dec(3): 1
+jit_var_ext_ref_dec(4): 0
+jit_var_free(4)
+jit_free(<@>, type=device, device=0, size=4)
+jit_var_ext_ref_dec(3): 0
+jit_var_free(3)
+jit_free(<@>, type=device, device=0, size=4)
+jit_var_ext_ref_dec(1): 1
+jit_var_ext_ref_dec(2): 0
+jit_var_free(2)
+jit_free(<@>, type=device, device=0, size=4)
+jit_var_ext_ref_dec(1): 0
+jit_var_free(1)
+jit_free(<@>, type=device, device=0, size=4)
+jit_shutdown(): destroying streams ..
+jit_free_flush(): scheduling 4 deallocations
+jit_free_flush(): performing 4 deallocations
+jit_malloc_trim(): freed
+ - device memory: 16 B in 4 allocations
+jit_shutdown(): done

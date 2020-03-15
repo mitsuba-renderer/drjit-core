@@ -1,0 +1,15 @@
+jit_device_set(device=0, stream=0): creating stream
+value=[0] vs 0
+value=[3] vs 3
+value=[36] vs 36
+value=[351] vs 351
+value=[3240] vs 3240
+value=[29403] vs 29403
+value=[265356] vs 265356
+jit_shutdown(): destroying streams ..
+jit_free_flush(): scheduling 730 deallocations
+jit_free_flush(): performing 730 deallocations
+jit_malloc_trim(): freed
+ - host-pinned memory: 2 KiB in 1 allocation
+ - device memory: 4.85 KiB in 731 allocations
+jit_shutdown(): done
