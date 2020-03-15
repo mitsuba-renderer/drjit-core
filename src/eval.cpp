@@ -228,21 +228,20 @@ void jit_assemble(ScheduledGroup group) {
         jit_free(args_extra_dev);
     }
 
-    jit_log(Debug, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
+    jit_log(Info, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
             group.size, n_args_in - 1, n_args_out, n_regs_total);
 
-    auto get_parameter_addr = [](const Variable *v) {
+    auto get_parameter_addr = [](const Variable *v, uint32_t target = 0) {
         if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
-            buffer.fmt("    ld.param.u64 %%rd0, [arg%u];\n", v->arg_index - 1);
+            buffer.fmt("    ld.param.u64 %%rd%u, [arg%u];\n", target, v->arg_index - 1);
         else
-            buffer.fmt("    ldu.global.u64 %%rd0, [%%rd2 + %u];\n",
-                       (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
+            buffer.fmt("    ldu.global.u64 %%rd%u, [%%rd2 + %u];\n",
+                       target, (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
 
-        if (v->size > 1) {
-            buffer.fmt("    mul.wide.u32 %%rd1, %%r2, %u;\n\n",
-                       var_type_size[(int) v->type]);
-            buffer.put("    add.u64 %rd0, %rd0, %rd1;\n");
-        }
+        if (v->size > 1)
+            buffer.fmt("    mul.wide.u32 %%rd1, %%r2, %u;\n"
+                       "    add.u64 %%rd%u, %%rd%u, %%rd1;\n",
+                       var_type_size[(int) v->type], target, target);
     };
 
     buffer.clear();
@@ -304,17 +303,42 @@ void jit_assemble(ScheduledGroup group) {
         Variable *v = jit_var(index);
 
         if (v->arg_type == ArgType::Input) {
-            get_parameter_addr(v);
+            if (unlikely(log_trace))
+                buffer.fmt("\n    // Load %s%u%s%s\n",
+                           var_type_register_ptx[(int) v->type],
+                           v->reg_index, v->has_label ? ": " : "",
+                           v->has_label ? jit_var_label(index) : "");
+
+            get_parameter_addr(v, v->direct_pointer ? v->reg_index : 0u);
+
+            if (likely(!v->direct_pointer)) {
+                if (likely(v->type != (uint32_t) VarType::Bool)) {
+                    buffer.fmt("    %s.global.%s %s%u, [%%rd0];\n",
+                           v->size == 1 ? "ldu" : "ld",
+                           var_type_name_ptx[(int) v->type],
+                           var_type_register_ptx[(int) v->type],
+                           v->reg_index);
+                } else {
+                    buffer.fmt("    %s.global.u8 %%w0, [%%rd0];\n",
+                           v->size == 1 ? "ldu" : "ld",
+                           var_type_name_ptx[(int) v->type],
+                           var_type_register_ptx[(int) v->type],
+                           v->reg_index);
+                    buffer.fmt("    setp.ne.u16 %s%u, %%w0, 0;",
+                           var_type_register_ptx[(int) v->type],
+                           v->reg_index);
+                }
+            }
+        } else {
+            if (unlikely(log_trace))
+                buffer.fmt("\n    // Evaluate %s%u%s%s\n",
+                           var_type_register_ptx[(int) v->type],
+                           v->reg_index,
+                           v->has_label ? ": " : "",
+                           v->has_label ? jit_var_label(index) : "");
+
+            jit_render_stmt(index, v);
         }
-
-        if (unlikely(log_trace))
-            buffer.fmt("\n    // Evaluate %s%u%s%s\n",
-                       var_type_register_ptx[(int) v->type],
-                       v->reg_index,
-                       v->has_label ? ": " : "",
-                       v->has_label ? jit_var_label(index) : "");
-
-        jit_render_stmt(index, v);
 
         if (v->arg_type == ArgType::Output) {
             if (unlikely(log_trace))

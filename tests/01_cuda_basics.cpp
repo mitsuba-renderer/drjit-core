@@ -79,5 +79,4 @@ TEST_CUDA(06_argument_inout) {
     }
 }
 
-/// read
 /// parallel dispatch
