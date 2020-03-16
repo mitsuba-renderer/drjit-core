@@ -11,4 +11,6 @@ Testing
 /ptx/kernels.ptx.gz
 
 libenoki-jit.so
+libenoki-jit.dylib
+enoki-jit.dll
 tests/test_01_cuda_basics

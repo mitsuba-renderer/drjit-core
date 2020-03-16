@@ -2,6 +2,7 @@
 
 #include "malloc.h"
 #include "cuda_api.h"
+#include "llvm_api.h"
 #include "alloc.h"
 #include <mutex>
 #include <condition_variable>
@@ -224,8 +225,11 @@ struct State {
     /// Callback for log messages
     LogCallback log_callback = nullptr;
 
-    /// Indicates whether the state is initialized by \ref jit_init()
-    bool initialized = false;
+    /// Was the LLVM backend successfully initialized?
+    bool has_llvm = false;
+
+    /// Was the CUDA backend successfully initialized?
+    bool has_cuda = false;
 
     /// Available devices and their CUDA IDs
     std::vector<Device> devices;
@@ -357,7 +361,7 @@ extern State state;
 extern Buffer buffer;
 
 /// Initialize core data structures of the JIT compiler
-extern void jit_init();
+extern void jit_init(int llvm, int cuda);
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 extern void jit_shutdown();

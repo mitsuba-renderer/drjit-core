@@ -68,6 +68,7 @@ add_library(
   src/hash.h           src/hash.cpp
   src/util.h           src/util.cpp
   src/cuda_api.h       src/cuda_api.cpp
+  src/llvm_api.h       src/llvm_api.cpp
   src/init.cpp
   src/api.cpp
 )

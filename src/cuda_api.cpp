@@ -66,17 +66,11 @@ CUfunction kernel_reductions[(int) ReductionType::Count]
                             [(int) VarType::Count] = {};
 
 #define LOAD(name, ...)                                                        \
-    if (strlen(__VA_ARGS__ "") > 0)                                            \
-        name = decltype(name)(dlsym(lib, #name "_" __VA_ARGS__));              \
-    else                                                                       \
-        name = decltype(name)(dlsym(lib, #name));                              \
+    symbol = strlen(__VA_ARGS__ "") > 0 ? (#name "_" __VA_ARGS__) : #name;     \
+    name = decltype(name)(dlsym(handle, symbol));                              \
     if (!name)                                                                 \
-        return false;
-
-#define LOAD_SUFFIX(name, suffix)                                              \
-    name = decltype(name)(dlsym(lib, #name "_" suffix));                       \
-    if (!name)                                                                 \
-        return false;
+        break;                                                                 \
+    symbol = nullptr
 
 static bool jit_cuda_init_attempted = false;
 static bool jit_cuda_init_success = false;
@@ -105,60 +99,70 @@ bool jit_cuda_init() {
         return jit_cuda_init_success;
     jit_cuda_init_attempted = true;
 
-    void *lib = dlopen("libcuda.so", RTLD_NOW);
-    if (!lib) {
+    void *handle = dlopen("libcuda.so", RTLD_NOW);
+    if (!handle) {
         jit_log(
             LogLevel::Warn,
             "jit_cuda_init(): libcuda.so not found -- disabling CUDA backend!");
         return false;
     }
 
-    LOAD(cuCtxEnablePeerAccess);
-    LOAD(cuCtxSynchronize);
-    LOAD(cuDeviceCanAccessPeer);
-    LOAD(cuDeviceGet);
-    LOAD(cuDeviceGetAttribute);
-    LOAD(cuDeviceGetCount);
-    LOAD(cuDeviceGetName);
-    LOAD(cuDevicePrimaryCtxRelease);
-    LOAD(cuDevicePrimaryCtxRetain);
-    LOAD(cuDeviceTotalMem, "v2");
-    LOAD(cuDriverGetVersion);
-    LOAD(cuEventCreate);
-    LOAD(cuEventDestroy, "v2");
-    LOAD(cuEventRecord, "ptsz");
-    LOAD(cuFuncGetAttribute);
-    LOAD(cuFuncSetAttribute);
-    LOAD(cuGetErrorString);
-    LOAD(cuInit);
-    LOAD(cuLaunchHostFunc, "ptsz");
-    LOAD(cuLaunchKernel, "ptsz");
-    LOAD(cuLinkAddData, "v2");
-    LOAD(cuLinkComplete);
-    LOAD(cuLinkCreate, "v2");
-    LOAD(cuLinkDestroy);
-    LOAD(cuMemAdvise);
-    LOAD(cuMemAlloc, "v2");
-    LOAD(cuMemAllocHost, "v2");
-    LOAD(cuMemAllocManaged);
-    LOAD(cuMemFree, "v2");
-    LOAD(cuMemFreeHost);
-    LOAD(cuMemPrefetchAsync, "ptsz");
-    LOAD(cuMemcpy, "ptds");
-    LOAD(cuMemcpyAsync, "ptsz");
-    LOAD(cuMemsetD16Async, "ptsz");
-    LOAD(cuMemsetD32Async, "ptsz");
-    LOAD(cuMemsetD8Async, "ptsz");
-    LOAD(cuModuleGetFunction);
-    LOAD(cuModuleLoadData);
-    LOAD(cuModuleUnload);
-    LOAD(cuOccupancyMaxPotentialBlockSize);
-    LOAD(cuCtxSetCurrent);
-    LOAD(cuStreamCreate);
-    LOAD(cuStreamDestroy, "v2");
-    LOAD(cuStreamSynchronize, "ptsz");
-    LOAD(cuStreamWaitEvent, "ptsz");
+    const char *symbol = nullptr;
 
+    do {
+        LOAD(cuCtxEnablePeerAccess);
+        LOAD(cuCtxSynchronize);
+        LOAD(cuDeviceCanAccessPeer);
+        LOAD(cuDeviceGet);
+        LOAD(cuDeviceGetAttribute);
+        LOAD(cuDeviceGetCount);
+        LOAD(cuDeviceGetName);
+        LOAD(cuDevicePrimaryCtxRelease);
+        LOAD(cuDevicePrimaryCtxRetain);
+        LOAD(cuDeviceTotalMem, "v2");
+        LOAD(cuDriverGetVersion);
+        LOAD(cuEventCreate);
+        LOAD(cuEventDestroy, "v2");
+        LOAD(cuEventRecord, "ptsz");
+        LOAD(cuFuncGetAttribute);
+        LOAD(cuFuncSetAttribute);
+        LOAD(cuGetErrorString);
+        LOAD(cuInit);
+        LOAD(cuLaunchHostFunc, "ptsz");
+        LOAD(cuLaunchKernel, "ptsz");
+        LOAD(cuLinkAddData, "v2");
+        LOAD(cuLinkComplete);
+        LOAD(cuLinkCreate, "v2");
+        LOAD(cuLinkDestroy);
+        LOAD(cuMemAdvise);
+        LOAD(cuMemAlloc, "v2");
+        LOAD(cuMemAllocHost, "v2");
+        LOAD(cuMemAllocManaged);
+        LOAD(cuMemFree, "v2");
+        LOAD(cuMemFreeHost);
+        LOAD(cuMemPrefetchAsync, "ptsz");
+        LOAD(cuMemcpy, "ptds");
+        LOAD(cuMemcpyAsync, "ptsz");
+        LOAD(cuMemsetD16Async, "ptsz");
+        LOAD(cuMemsetD32Async, "ptsz");
+        LOAD(cuMemsetD8Async, "ptsz");
+        LOAD(cuModuleGetFunction);
+        LOAD(cuModuleLoadData);
+        LOAD(cuModuleUnload);
+        LOAD(cuOccupancyMaxPotentialBlockSize);
+        LOAD(cuCtxSetCurrent);
+        LOAD(cuStreamCreate);
+        LOAD(cuStreamDestroy, "v2");
+        LOAD(cuStreamSynchronize, "ptsz");
+        LOAD(cuStreamWaitEvent, "ptsz");
+    } while (false);
+
+    if (symbol) {
+        jit_log(LogLevel::Warn,
+                "jit_cuda_init(): could not find symbol \"%s\" -- disabling "
+                "CUDA backend!", symbol);
+        return false;
+    }
 
     CUresult rv = cuInit(0);
     if (rv != CUDA_SUCCESS) {

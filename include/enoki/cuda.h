@@ -1,7 +1,7 @@
 /*
-    enoki/array.h -- Simple C++ array classes with operator overloading
+    enoki/cuda.h -- Simple C++ array class with operator overloading (CUDA)
 
-    This library implements convenient wrapper classes around the C API in
+    This library implements convenient wrapper class around the C API in
     'enoki/jit.h'.
 
     Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>

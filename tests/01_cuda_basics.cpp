@@ -1,35 +1,34 @@
 #include "test.h"
 
-using Float = CUDAArray<float>;
-using Int32 = CUDAArray<int32_t>;
-
-TEST_CUDA(01_creation_destruction) {
+TEST_BOTH(01_creation_destruction) {
     // Checks simple reference counting of a variable
     Float value(1234);
     (void) value;
 }
 
-TEST_CUDA(02_fill_and_print) {
+#if 0
+TEST_BOTH(02_fill_and_print) {
     /// Checks array initialization from a given pointer, jitc_fill(), and stringification
-    jitc_log(Info, "  int8_t: %s", CUDAArray<  int8_t>::full(-111, 5).str());
-    jitc_log(Info, " uint8_t: %s", CUDAArray< uint8_t>::full( 222, 5).str());
-    jitc_log(Info, " int16_t: %s", CUDAArray< int16_t>::full(-1111, 5).str());
-    jitc_log(Info, "uint16_t: %s", CUDAArray<uint16_t>::full( 2222, 5).str());
-    jitc_log(Info, " int32_t: %s", CUDAArray< int32_t>::full(-1111111111, 5).str());
-    jitc_log(Info, "uint32_t: %s", CUDAArray<uint32_t>::full( 2222222222, 5).str());
-    jitc_log(Info, " int64_t: %s", CUDAArray< int64_t>::full(-1111111111111111111, 5).str());
-    jitc_log(Info, "uint64_t: %s", CUDAArray<uint64_t>::full( 2222222222222222222, 5).str());
-    jitc_log(Info, "   float: %s", CUDAArray<   float>::full(1.f/3.f, 5).str());
-    jitc_log(Info, "  double: %s", CUDAArray<  double>::full(1.0/3.0, 5).str());
+    jitc_log(Info, "  int8_t: %s", Array<  int8_t>::full(-111, 5).str());
+    jitc_log(Info, " uint8_t: %s", Array< uint8_t>::full( 222, 5).str());
+    jitc_log(Info, " int16_t: %s", Array< int16_t>::full(-1111, 5).str());
+    jitc_log(Info, "uint16_t: %s", Array<uint16_t>::full( 2222, 5).str());
+    jitc_log(Info, " int32_t: %s", Array< int32_t>::full(-1111111111, 5).str());
+    jitc_log(Info, "uint32_t: %s", Array<uint32_t>::full( 2222222222, 5).str());
+    jitc_log(Info, " int64_t: %s", Array< int64_t>::full(-1111111111111111111, 5).str());
+    jitc_log(Info, "uint64_t: %s", Array<uint64_t>::full( 2222222222222222222, 5).str());
+    jitc_log(Info, "   float: %s", Array<   float>::full(1.f/3.f, 5).str());
+    jitc_log(Info, "  double: %s", Array<  double>::full(1.0/3.0, 5).str());
 }
+#endif
 
-TEST_CUDA(03_eval_scalar) {
+TEST_BOTH(03_eval_scalar) {
     /// Checks that we can evaluate a simple kernel
     Float value(1234);
     jitc_log(Info, "value=%s", value.str());
 }
 
-TEST_CUDA(04_eval_scalar_csa) {
+TEST_BOTH(04_eval_scalar_csa) {
     /// Checks common subexpression elimination
     Float value_1(1234),
           value_2(1235),
@@ -46,8 +45,8 @@ TEST_CUDA(04_eval_scalar_csa) {
     jitc_log(Info, "value_6=%s", value_6.str());
 }
 
-TEST_CUDA(05_argument_out) {
-    /// Test kernels with very many outputs that exceed the max. size of the CUDA parameter table
+TEST_BOTH(05_argument_out) {
+    /// Test kernels with very many outputs that exceed the max. size of the BOTH parameter table
     scoped_set_log_level ssll(LogLevel::Info);
     /* With reduced log level */ {
         Int32 value[1024];
@@ -62,8 +61,8 @@ TEST_CUDA(05_argument_out) {
     }
 }
 
-TEST_CUDA(06_argument_inout) {
-    /// Test kernels with very many inputs that exceed the max. size of the CUDA parameter table
+TEST_BOTH(06_argument_inout) {
+    /// Test kernels with very many inputs that exceed the max. size of the BOTH parameter table
     scoped_set_log_level ssll(LogLevel::Info);
     /* With reduced log level */ {
         Int32 value[1024];

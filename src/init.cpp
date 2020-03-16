@@ -15,20 +15,18 @@ static_assert(sizeof(VariableKey) == 4*8,
     "VariableKey: incorrect size, likely an issue with padding/packing!");
 
 /// Initialize core data structures of the JIT compiler
-void jit_init() {
-    if (state.initialized)
+void jit_init(int llvm, int cuda) {
+    if (state.has_llvm != 0 || state.has_cuda != 0 || (llvm == 0 && cuda == 0))
         return;
-
-    if (!state.variables.empty())
-        jit_fail("Cannot reinitialize JIT while variables are still being used!");
 
     // Enumerate CUDA devices and collect suitable ones
     jit_log(Info, "jit_init(): detecting devices ..");
 
-    int n_devices = 0;
-    bool has_cuda = jit_cuda_init();
+    state.has_llvm = llvm && jit_llvm_init();
+    state.has_cuda = cuda && jit_cuda_init();
 
-    if (has_cuda)
+    int n_devices = 0;
+    if (state.has_cuda)
         cuda_check(cuDeviceGetCount(&n_devices));
 
     for (int i = 0; i < n_devices; ++i) {
@@ -102,37 +100,35 @@ void jit_init() {
     state.alloc_id_fwd.reserve(512);
     state.cse_cache.reserve(512);
     state.kernel_cache.reserve(128);
-    state.initialized = true;
 }
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 void jit_shutdown() {
-    if (!state.initialized)
-        return;
+    if (state.has_cuda) {
+        jit_log(Info, "jit_shutdown(): destroying streams ..");
 
-    jit_log(Info, "jit_shutdown(): destroying streams ..");
-
-    for (auto &v : state.streams) {
-        const Stream *stream = v.second;
-        jit_device_set(stream->device, stream->stream);
-        jit_free_flush();
-        {
-            unlock_guard guard(state.mutex);
-            cuda_check(cuStreamSynchronize(stream->handle));
+        for (auto &v : state.streams) {
+            const Stream *stream = v.second;
+            jit_device_set(stream->device, stream->stream);
+            jit_free_flush();
+            {
+                unlock_guard guard(state.mutex);
+                cuda_check(cuStreamSynchronize(stream->handle));
+            }
+            cuda_check(cuEventDestroy(stream->event));
+            cuda_check(cuStreamDestroy(stream->handle));
+            delete stream->release_chain;
+            delete stream;
         }
-        cuda_check(cuEventDestroy(stream->event));
-        cuda_check(cuStreamDestroy(stream->handle));
-        delete stream->release_chain;
-        delete stream;
-    }
-    state.streams.clear();
-    active_stream = nullptr;
+        state.streams.clear();
+        active_stream = nullptr;
 
-    for (auto &v : state.kernel_cache) {
-        free((char *) v.first);
-        cuda_check(cuModuleUnload(v.second.cu_module));
+        for (auto &v : state.kernel_cache) {
+            free((char *) v.first);
+            cuda_check(cuModuleUnload(v.second.cu_module));
+        }
+        state.kernel_cache.clear();
     }
-    state.kernel_cache.clear();
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
         uint32_t n_leaked = 0;
@@ -159,13 +155,16 @@ void jit_shutdown() {
 
     jit_malloc_shutdown();
 
-    cuda_check(cuCtxSetCurrent(nullptr));
-    for (auto &v : state.devices)
-        cuda_check(cuDevicePrimaryCtxRelease(v.id));
-    state.devices.clear();
-    state.initialized = false;
+    if (state.has_cuda) {
+        cuda_check(cuCtxSetCurrent(nullptr));
+        for (auto &v : state.devices)
+            cuda_check(cuDevicePrimaryCtxRelease(v.id));
+        state.devices.clear();
+    }
 
     jit_log(Info, "jit_shutdown(): done");
+    state.has_cuda = false;
+    state.has_llvm = false;
 }
 
 /// Set the currently active device & stream

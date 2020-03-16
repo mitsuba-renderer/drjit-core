@@ -40,7 +40,6 @@
 #define CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED 704
 #define CUDA_SUCCESS 0
 
-
 using CUresult    = int;
 using CUdevice    = int;
 using CUcontext   = void *;

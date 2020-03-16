@@ -45,8 +45,11 @@ extern "C" {
  * nothing when initialization has already occurred. Note that it is possible
  * to re-initialize the JIT following a call to \ref jitc_shutdown(), which can
  * be useful to start from a known state, e.g., in testcases.
+ *
+ * The \c llvm and \c cuda arguments should be set to \c 1 to initialize the
+ * corresponding backend, and \c 0 otherwise.
  */
-extern JITC_EXPORT void jitc_init();
+extern JITC_EXPORT void jitc_init(int llvm, int cuda);
 
 /**
  * \brief Launch an ansynchronous thread that will execute jit_init() and
@@ -58,10 +61,19 @@ extern JITC_EXPORT void jitc_init();
  * importing this library from an interactive Python session which doesn't
  * actually need the JIT right away.
  *
+ * The \c llvm and \c cuda arguments should be set to \c 1 to initialize the
+ * corresponding backend, and \c 0 otherwise.
+ *
  * It is safe to call jitc_* API functions following \ref jitc_init_async(),
  * since it acquires a lock to the internal data structures.
  */
-extern JITC_EXPORT void jitc_init_async();
+extern JITC_EXPORT void jitc_init_async(int llvm, int cuda);
+
+/// Check whether the LLVM backend was successfully initialized
+extern JITC_EXPORT int jitc_has_llvm();
+
+/// Check whether the CUDA backend was successfully initialized
+extern JITC_EXPORT int jitc_has_cuda();
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 extern JITC_EXPORT void jitc_shutdown();

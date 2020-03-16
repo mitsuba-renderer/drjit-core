@@ -10,6 +10,8 @@
     license that can be found in the LICENSE file.
 */
 
+#pragma once
+
 #include <type_traits>
 #include "jit.h"
 

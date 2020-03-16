@@ -2,6 +2,9 @@
 #include <vector>
 #include <string>
 #include <unistd.h>
+#if defined(__APPLE__)
+#  include <mach-o/dyld.h>
+#endif
 
 struct Test {
     const char *name;
@@ -135,18 +138,26 @@ int test_register(const char *name, void (*func)(), bool cuda) {
 
 int main(int argc, char **argv) {
     char binary_path[1024];
+
+#if defined(__APPLE__)
+    uint32_t binary_path_size = sizeof(binary_path);
+    int rv = _NSGetExecutablePath(binary_path, &binary_path_size);
+#else
     int rv = readlink("/proc/self/exe", binary_path, sizeof(binary_path) - 1);
+    if (rv != -1)
+        binary_path[rv] = '\0';
+#endif
     if (rv == -1) {
         fprintf(stderr, "Unable to determine binary path!");
         exit(EXIT_FAILURE);
     }
-    binary_path[rv] = '\0';
 
     char *last_slash = strrchr(binary_path, '/');
     if (!last_slash) {
         fprintf(stderr, "Invalid binary path!");
         exit(EXIT_FAILURE);
     }
+
     *last_slash='\0';
 
     if (chdir(binary_path) == -1) {
@@ -167,7 +178,7 @@ int main(int argc, char **argv) {
     }
 
     try {
-        jitc_init();
+        jitc_init(1, 1);
         jitc_log_stderr_set(verbose ? LogLevel::Trace : LogLevel::Disable);
         jitc_log_callback_set(LogLevel::Trace, log_callback);
         fprintf(stdout, "\n");
@@ -182,13 +193,20 @@ int main(int argc, char **argv) {
         });
 
         int tests_passed = 0,
-            tests_failed = 0;
+            tests_failed = 0,
+            tests_skipped = 0;
 
         for (auto &test : *tests) {
             fprintf(stdout, " - %s .. ", test.name);
+            if ( (test.cuda && !jitc_has_cuda()) ||
+                (!test.cuda && !jitc_has_llvm())) {
+                tests_skipped++;
+                fprintf(stdout, "skipped.\n");
+                continue;
+            }
             fflush(stdout);
             log_value.clear();
-            jitc_init();
+            jitc_init(1, 1);
             jitc_device_set(test.cuda ? 0 : -1, 0);
             test.func();
             jitc_shutdown();
@@ -203,8 +221,12 @@ int main(int argc, char **argv) {
             }
         }
 
-        fprintf(stdout, "\nPassed %i/%i tests.\n", tests_passed,
-                tests_passed + tests_failed);
+        if (tests_skipped == 0)
+            fprintf(stdout, "\nPassed %i/%i tests.\n", tests_passed,
+                    tests_passed + tests_failed);
+        else
+            fprintf(stdout, "\nPassed %i/%i tests (%i skipped).\n", tests_passed,
+                    tests_passed + tests_failed, tests_skipped);
 
         return tests_failed == 0 ? 0 : EXIT_FAILURE;
     } catch (const std::exception &e) {

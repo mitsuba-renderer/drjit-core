@@ -5,14 +5,25 @@
 #include "util.h"
 #include <thread>
 
-void jitc_init() {
+void jitc_init(int llvm, int cuda) {
     lock_guard guard(state.mutex);
-    jit_init();
+    jit_init(llvm, cuda);
 }
 
-void jitc_init_async() {
+void jitc_init_async(int llvm, int cuda) {
     state.mutex.lock();
-    std::thread([]() { jit_init(); state.mutex.unlock(); }).detach();
+    std::thread([llvm, cuda]() {
+        jit_init(llvm, cuda);
+        state.mutex.unlock();
+    }).detach();
+}
+
+int jitc_has_llvm() {
+    return (int) state.has_llvm;
+}
+
+int jitc_has_cuda() {
+    return (int) state.has_cuda;
 }
 
 void jitc_shutdown() {
