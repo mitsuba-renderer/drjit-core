@@ -225,7 +225,8 @@ bool jit_cuda_init() {
         for (uint32_t j = 0; j < (uint32_t) VarType::Count; j++) {
             char name[16];
             CUfunction func;
-            snprintf(name, sizeof(name), "reduce_%s_%s", reduction_name[i], var_type_name_short[j]);
+            snprintf(name, sizeof(name), "reduce_%s_%s", reduction_name[i],
+                     var_type_name_short[j]);
             CUresult rv = cuModuleGetFunction(&func, jit_cuda_module, name);
             if (rv == CUDA_ERROR_NOT_FOUND)
                 continue;

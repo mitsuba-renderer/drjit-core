@@ -77,7 +77,7 @@ static void jit_var_traverse(uint32_t size, uint32_t index) {
     schedule.emplace_back(size, index);
 }
 
-void jit_render_stmt(uint32_t index, Variable *v) {
+void jit_render_stmt_cuda(uint32_t index, Variable *v) {
     const char *s = v->stmt;
     char c;
 
@@ -92,18 +92,18 @@ void jit_render_stmt(uint32_t index, Variable *v) {
                 case 'b': prefix_table = var_type_name_ptx_bin; break;
                 case 'r': prefix_table = var_type_register_ptx; break;
                 default:
-                    jit_fail("jit_render_stmt(): encountered invalid \"$\" "
+                    jit_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
                              "expression (unknown type)!");
             }
 
             uint32_t arg_id = *s++ - '0';
             if (unlikely(arg_id > 3))
-                jit_fail("jit_render_stmt(%s): encountered invalid \"$\" "
+                jit_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
                          "expression (argument out of bounds)!", v->stmt);
 
             uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
             if (unlikely(dep_id == 0))
-                jit_fail("jit_render_stmt(%s): encountered invalid \"$\" "
+                jit_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
                          "expression (dependency %u is missing)!", v->stmt, arg_id);
 
             Variable *dep = jit_var(dep_id);
@@ -117,120 +117,47 @@ void jit_render_stmt(uint32_t index, Variable *v) {
     buffer.put(";\n");
 }
 
-void jit_assemble(ScheduledGroup group) {
-    uint32_t n_args_in    = 0,
-             n_args_out   = 0,
-             n_regs_total = 4; // The first 4 variables are reserved
+void jit_render_stmt_llvm(uint32_t index, Variable *v) {
+    const char *s = v->stmt;
+    char c;
 
-    (void) timer();
-    jit_trace("jit_assemble(size=%u): register map:", group.size);
-
-    /// Push the size argument
-    void *tmp = 0;
-    memcpy(&tmp, &group.size, sizeof(uint32_t));
-    kernel_args.clear();
-    kernel_args_extra.clear();
-    kernel_args.push_back(tmp);
-    n_args_in++;
-
-    for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
-        uint32_t index = schedule[group_index].index;
-        Variable *v = jit_var(index);
-        bool push = false;
-
-        if (unlikely(v->ref_count_int == 0 && v->ref_count_ext == 0))
-            jit_fail("jit_assemble(): schedule contains unreferenced variable %u!", index);
-        else if (unlikely(v->size != 1 && v->size != group.size))
-            jit_fail("jit_assemble(): schedule contains variable %u with incompatible size "
-                     "(%u and %u)!", index, v->size, group.size);
-        else if (unlikely(v->data == nullptr && !v->direct_pointer && v->stmt == nullptr))
-            jit_fail("jit_assemble(): schedule contains variable %u with empty statement!", index);
-
-        if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Trace) {
-            buffer.clear();
-            buffer.fmt("   - %s%u -> %u",
-                       var_type_register_ptx[(int) v->type],
-                       n_regs_total, index);
-
-            if (v->has_label) {
-                const char *label = jit_var_label(index);
-                buffer.fmt(" \"%s\"", label ? label : "(null)");
-            }
-            if (v->size == 1)
-                buffer.put(" [scalar]");
-            if (v->data != nullptr || v->direct_pointer)
-                buffer.put(" [in]");
-            else if (v->side_effect)
-                buffer.put(" [se]");
-            else if (v->ref_count_ext > 0 && v->size == group.size)
-                buffer.put(" [out]");
-
-            jit_trace("%s", buffer.get());
-        }
-
-        if (v->data || v->direct_pointer) {
-            v->arg_index = (uint16_t) (n_args_in + n_args_out);
-            v->arg_type = ArgType::Input;
-            n_args_in++;
-            push = true;
-        } else if (!v->side_effect && v->ref_count_ext > 0 &&
-                   v->size == group.size) {
-            size_t var_size =
-                (size_t) group.size * (size_t) var_type_size[(int) v->type];
-            v->data = jit_malloc(AllocType::Device, var_size);
-            v->arg_index = (uint16_t) (n_args_in + n_args_out);
-            v->arg_type = ArgType::Output;
-            v->tsize = 1;
-            n_args_out++;
-            push = true;
+    buffer.put("    ");
+    while ((c = *s++) != '\0') {
+        if (c != '$') {
+            buffer.putc(c);
         } else {
-            v->arg_index = (uint16_t) 0xFFFF;
-            v->arg_type = ArgType::Register;
-        }
+            const char **prefix_table = nullptr, type = *s++;
+            switch (type) {
+                case 't': prefix_table = var_type_name_ptx;     break;
+                case 'b': prefix_table = var_type_name_ptx_bin; break;
+                case 'r': prefix_table = var_type_register_ptx; break;
+                default:
+                    jit_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
+                             "expression (unknown type)!");
+            }
 
-        if (push) {
-            if (kernel_args.size() < CUDA_MAX_KERNEL_PARAMETERS - 1)
-                kernel_args.push_back(v->data);
-            else
-                kernel_args_extra.push_back(v->data);
-        }
+            uint32_t arg_id = *s++ - '0';
+            if (unlikely(arg_id > 3))
+                jit_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
+                         "expression (argument out of bounds)!", v->stmt);
 
-        v->reg_index  = n_regs_total++;
+            uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
+            if (unlikely(dep_id == 0))
+                jit_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
+                         "expression (dependency %u is missing)!", v->stmt, arg_id);
+
+            Variable *dep = jit_var(dep_id);
+            buffer.put(prefix_table[(int) dep->type]);
+
+            if (type == 'r')
+                buffer.fmt("%u", dep->reg_index);
+        }
     }
 
-    if (unlikely(n_regs_total > 0xFFFFFFu))
-        jit_fail("jit_run(): The queued computation involves more than 16 "
-                 "million variables, which overflowed an internal counter. "
-                 "Even if Enoki could compile such a large program, it would "
-                 "not run efficiently. Please periodically run jitc_eval() to "
-                 "break down the computation into smaller chunks.");
-    else if (unlikely(n_args_in + n_args_out > 0xFFFFu))
-        jit_fail("jit_run(): The queued computation involves more than 65536 "
-                 "input or output arguments, which overflowed an internal counter. "
-                 "Even if Enoki could compile such a large program, it would "
-                 "not run efficiently. Please periodically run jitc_eval() to "
-                 "break down the computation into smaller chunks.");
+    buffer.put(";\n");
+}
 
-    if (unlikely(!kernel_args_extra.empty())) {
-        size_t args_extra_size = kernel_args_extra.size() * sizeof(uint64_t);
-        void *args_extra_host = jit_malloc(AllocType::HostPinned, args_extra_size);
-        void *args_extra_dev  = jit_malloc(AllocType::Device, args_extra_size);
-
-        memcpy(args_extra_host, kernel_args_extra.data(), args_extra_size);
-        cuda_check(cuMemcpyAsync(args_extra_dev, args_extra_host,
-                                 args_extra_size, active_stream->handle));
-
-        kernel_args.push_back(args_extra_dev);
-        jit_free(args_extra_host);
-
-        /* Safe, because there won't be further allocations on the current
-           stream until after this kernel has executed. */
-        jit_free(args_extra_dev);
-    }
-
-    jit_log(Info, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
-            group.size, n_args_in - 1, n_args_out, n_regs_total);
-
+void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     auto get_parameter_addr = [](const Variable *v, uint32_t target = 0) {
         if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
             buffer.fmt("    ld.param.u64 %%rd%u, [arg%u];\n", target, v->arg_index - 1);
@@ -297,7 +224,6 @@ void jit_assemble(ScheduledGroup group) {
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
 
-
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
@@ -337,7 +263,7 @@ void jit_assemble(ScheduledGroup group) {
                            v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
-            jit_render_stmt(index, v);
+            jit_render_stmt_cuda(index, v);
         }
 
         if (v->arg_type == ArgType::Output) {
@@ -370,11 +296,198 @@ void jit_assemble(ScheduledGroup group) {
     buffer.put("L0:\n");
     buffer.put("    ret;\n");
     buffer.put("}");
+}
+
+void jit_assemble_llvm(ScheduledGroup group) {
+    static int jit_llvm_kernel_id = 0;
+    (void) group;
+    uint32_t width = 8;
+
+    buffer.clear();
+    buffer.fmt("define void @enoki_%u(i64 %%start, i64 %%end, i8** %%ptrs) "
+               "norecurse nosync nounwind \"target-cpu\"=\"%s\" {\n",
+               jit_llvm_kernel_id++, jit_llvm_target_cpu);
+    buffer.put("entry:\n");
+    for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
+        uint32_t index = schedule[group_index].index;
+        Variable *v = jit_var(index);
+        if (v->arg_type == ArgType::Register)
+            continue;
+        uint32_t arg_id = v->arg_index - 1;
+        buffer.fmt("    %%a%ui = getelementptr inbounds i8*, i8** %%ptrs, i64 %u\n", arg_id, arg_id);
+        buffer.fmt("    %%a%up = load i8*, i8** %%a%ui, align 8\n", arg_id, arg_id);
+        buffer.fmt("    %%a%u = bitcast i8* %%a%up to %s*\n", arg_id, arg_id, var_type_name_llvm[(int) v->type]);
+    }
+    buffer.put("    br label %loop\n\n");
+    buffer.put("done:\n");
+    buffer.put("    ret void\n\n");
+
+    buffer.put("loop:\n");
+    buffer.put("    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]\n");
+
+    for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
+        uint32_t index = schedule[group_index].index;
+        Variable *v = jit_var(index);
+        uint32_t align = var_type_size[(int) v->type] * width,
+                 reg_id = v->reg_index, arg_id = v->arg_index - 1;
+        const char *type = var_type_name_llvm[(int) v->type];
+
+        if (v->arg_type == ArgType::Input || v->arg_type == ArgType::Output) {
+            buffer.fmt("    %%a%uo = getelementptr inbounds %s, %s* %%a%u, "
+                       "i64 %%index\n", arg_id, type, type, arg_id);
+            buffer.fmt("    %%a%um = bitcast %s* %%a%uo to <%u x %s>*\n", arg_id,
+                       type, arg_id, width, type);
+        }
+
+        if (v->arg_type == ArgType::Input)
+            buffer.fmt("    %%r%u = load <%u x %s>, <%u x %s>* %%a%um, align %u\n",
+                       reg_id, width, type, width, type, arg_id, align);
+        else
+            jit_render_stmt_llvm(index, v);
+
+        if (v->arg_type == ArgType::Output) {
+            buffer.fmt("    store <%u x %s> %%r%u, <%u x %s>* %%a%um, align %u\n",
+                       width, type, reg_id, width, type, arg_id, align);
+        }
+    }
+
+    buffer.fmt("    %%index_next = add i64 %%index, %u\n", width);
+    buffer.put("    %cond = icmp ult i64 %index_next, %end\n");
+    buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop "
+               "!{!\"llvm.loop.unroll.disable\"}\n");
+    buffer.put("}");
+}
+
+void jit_assemble(ScheduledGroup group) {
+    bool cuda = active_stream != nullptr;
+
+    uint32_t n_args_in    = 0,
+             n_args_out   = 0,
+             // The first 4 variables are reserved on the CUDA backend
+             n_regs_total = cuda ? 4 : 0;
+
+    (void) timer();
+    jit_trace("jit_assemble(size=%u): register map:", group.size);
+
+    /// Push the size argument
+    void *tmp = 0;
+    memcpy(&tmp, &group.size, sizeof(uint32_t));
+    kernel_args.clear();
+    kernel_args_extra.clear();
+    kernel_args.push_back(tmp);
+    n_args_in++;
+
+    for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
+        uint32_t index = schedule[group_index].index;
+        Variable *v = jit_var(index);
+        bool push = false;
+
+        if (unlikely(v->ref_count_int == 0 && v->ref_count_ext == 0))
+            jit_fail("jit_assemble(): schedule contains unreferenced variable %u!", index);
+        else if (unlikely(v->size != 1 && v->size != group.size))
+            jit_fail("jit_assemble(): schedule contains variable %u with incompatible size "
+                     "(%u and %u)!", index, v->size, group.size);
+        else if (unlikely(v->data == nullptr && !v->direct_pointer && v->stmt == nullptr))
+            jit_fail("jit_assemble(): schedule contains variable %u with empty statement!", index);
+
+        if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Trace) {
+            buffer.clear();
+            buffer.fmt("   - %s%u -> %u",
+                       var_type_register_ptx[(int) v->type],
+                       n_regs_total, index);
+
+            if (v->has_label) {
+                const char *label = jit_var_label(index);
+                buffer.fmt(" \"%s\"", label ? label : "(null)");
+            }
+            if (v->size == 1)
+                buffer.put(" [scalar]");
+            if (v->data != nullptr || v->direct_pointer)
+                buffer.put(" [in]");
+            else if (v->side_effect)
+                buffer.put(" [se]");
+            else if (v->ref_count_ext > 0 && v->size == group.size)
+                buffer.put(" [out]");
+
+            jit_trace("%s", buffer.get());
+        }
+
+        if (v->data || v->direct_pointer) {
+            v->arg_index = (uint16_t) (n_args_in + n_args_out);
+            v->arg_type = ArgType::Input;
+            n_args_in++;
+            push = true;
+        } else if (!v->side_effect && v->ref_count_ext > 0 &&
+                   v->size == group.size) {
+            size_t var_size =
+                (size_t) group.size * (size_t) var_type_size[(int) v->type];
+            v->data = jit_malloc(cuda ? AllocType::Device : AllocType::Host, var_size);
+            v->arg_index = (uint16_t) (n_args_in + n_args_out);
+            v->arg_type = ArgType::Output;
+            v->tsize = 1;
+            n_args_out++;
+            push = true;
+        } else {
+            v->arg_index = (uint16_t) 0xFFFF;
+            v->arg_type = ArgType::Register;
+        }
+
+        if (push) {
+            if (cuda && kernel_args.size() < CUDA_MAX_KERNEL_PARAMETERS - 1)
+                kernel_args.push_back(v->data);
+            else
+                kernel_args_extra.push_back(v->data);
+        }
+
+        v->reg_index  = n_regs_total++;
+    }
+
+    if (unlikely(n_regs_total > 0xFFFFFFu))
+        jit_fail("jit_run(): The queued computation involves more than 16 "
+                 "million variables, which overflowed an internal counter. "
+                 "Even if Enoki could compile such a large program, it would "
+                 "not run efficiently. Please periodically run jitc_eval() to "
+                 "break down the computation into smaller chunks.");
+    else if (unlikely(n_args_in + n_args_out > 0xFFFFu))
+        jit_fail("jit_run(): The queued computation involves more than 65536 "
+                 "input or output arguments, which overflowed an internal counter. "
+                 "Even if Enoki could compile such a large program, it would "
+                 "not run efficiently. Please periodically run jitc_eval() to "
+                 "break down the computation into smaller chunks.");
+
+    if (unlikely(cuda && !kernel_args_extra.empty())) {
+        size_t args_extra_size = kernel_args_extra.size() * sizeof(uint64_t);
+        void *args_extra_host = jit_malloc(AllocType::HostPinned, args_extra_size);
+        void *args_extra_dev  = jit_malloc(AllocType::Device, args_extra_size);
+
+        memcpy(args_extra_host, kernel_args_extra.data(), args_extra_size);
+        cuda_check(cuMemcpyAsync(args_extra_dev, args_extra_host,
+                                 args_extra_size, active_stream->handle));
+
+        kernel_args.push_back(args_extra_dev);
+        jit_free(args_extra_host);
+
+        /* Safe, because there won't be further allocations on the current
+           stream until after this kernel has executed. */
+        jit_free(args_extra_dev);
+    }
+
+    jit_log(Info, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
+            group.size, n_args_in - 1, n_args_out, n_regs_total);
+
+    if (cuda)
+        jit_assemble_cuda(group, n_regs_total);
+    else
+        jit_assemble_llvm(group);
 
     jit_log(Debug, "%s", buffer.get());
 }
 
-void jit_run(ScheduledGroup group) {
+void jit_run_llvm(ScheduledGroup group) {
+    (void) group;
+}
+
+void jit_run_cuda(ScheduledGroup group) {
     float codegen_time = timer();
 
     auto it = state.kernel_cache.find(buffer.get());
@@ -501,21 +614,17 @@ void jit_run(ScheduledGroup group) {
 /// Evaluate all computation that is queued on the current device & stream
 void jit_eval() {
     Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_eval(): device and stream must be set! (call "
-                  "jit_device_set() beforehand)!");
-
-    if (stream->todo.empty())
-        return;
+    bool cuda = stream != nullptr;
+    auto &todo = cuda ? stream->todo : state.todo_host;
 
     visited.clear();
     schedule.clear();
     schedule_groups.clear();
 
     // Collect variables that must be computed and their subtrees
-    for (uint32_t index : stream->todo)
+    for (uint32_t index : todo)
         jit_var_traverse(jit_var_size(index), index);
-    stream->todo.clear();
+    todo.clear();
 
     // Group them from large to small sizes while preserving dependencies
     std::stable_sort(
@@ -527,6 +636,7 @@ void jit_eval() {
     // Are there independent groups of work that could be dispatched in parallel?
     bool parallel_dispatch =
         state.parallel_dispatch &&
+        cuda &&
         schedule[0].size != schedule[schedule.size() - 1].size;
 
     if (!parallel_dispatch) {
@@ -548,28 +658,31 @@ void jit_eval() {
         cuda_check(cuEventRecord(stream->event, stream->handle));
     }
 
-    uint32_t stream_index = 1000 * stream->stream;
+    uint32_t group_idx = 0;
     for (ScheduledGroup &group : schedule_groups) {
         jit_assemble(group);
 
         Stream *sub_stream = stream;
         if (parallel_dispatch) {
+            uint32_t stream_index = 1000 * stream->stream + group_idx++;
             jit_device_set(stream->device, stream_index);
             sub_stream = active_stream;
             cuda_check(cuStreamWaitEvent(sub_stream->handle, stream->event, 0));
         }
 
-        jit_run(group);
+        if (cuda)
+            jit_run_cuda(group);
+        else
+            jit_run_llvm(group);
 
         if (parallel_dispatch) {
             cuda_check(cuEventRecord(sub_stream->event, sub_stream->handle));
             cuda_check(cuStreamWaitEvent(stream->handle, sub_stream->event, 0));
         }
-
-        stream_index++;
     }
 
-    jit_device_set(stream->device, stream->stream);
+    if (parallel_dispatch)
+        jit_device_set(stream->device, stream->stream);
 
     /* At this point, all variables and their dependencies are computed, which
        means that we can remove internal edges between them. This in turn will
@@ -606,7 +719,9 @@ void jit_eval() {
             jit_var_ext_ref_dec(index);
     }
 
-    jit_free_flush();
+    if (cuda)
+        jit_free_flush();
+
     jit_log(Debug, "jit_eval(): done.");
 }
 

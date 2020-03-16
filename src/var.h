@@ -34,18 +34,13 @@ extern uint32_t jit_trace_append_3(VarType type,
                                    uint32_t op3);
 
 /// Register an existing variable with the JIT compiler
-extern uint32_t jit_var_map(VarType type,
-                                 void *ptr,
-                                 size_t size,
-                                 int free);
+extern uint32_t jit_var_map(VarType type, void *ptr, size_t size, int free);
 
 /// Register pointer literal as a special variable within the JIT compiler
 extern uint32_t jit_var_copy_ptr(const void *ptr);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jit_var_copy(VarType type,
-                                       const void *ptr,
-                                       size_t size);
+extern uint32_t jit_var_copy(VarType type, const void *ptr, size_t size);
 
 /// Increase the internal reference count of a given variable
 extern void jit_var_int_ref_inc(uint32_t index);
@@ -110,6 +105,7 @@ extern const char *var_type_name_short[(int) VarType::Count];
 extern const uint32_t var_type_size   [(int) VarType::Count];
 
 /// CUDA PTX type & register names
-extern const char *var_type_name_ptx[(int) VarType::Count];
+extern const char *var_type_name_llvm   [(int) VarType::Count];
+extern const char *var_type_name_ptx    [(int) VarType::Count];
 extern const char *var_type_name_ptx_bin[(int) VarType::Count];
 extern const char *var_type_register_ptx[(int) VarType::Count];

@@ -35,10 +35,10 @@ using Int32L = LLVMArray<int32_t>;
 
 #define TEST_BOTH(name)                                                        \
     template <typename Float, typename Int32> void test##name();               \
-    int test##name##_l = test_register("test" #name "_cuda",                   \
-                                       test##name<FloatL, Int32L>, true);      \
-    int test##name##_c = test_register("test" #name "_llvm",                   \
-                                       test##name<FloatC, Int32C>, false);     \
+    int test##name##_c = test_register("test" #name "_cuda",                   \
+                                       test##name<FloatC, Int32C>, true);      \
+    int test##name##_l = test_register("test" #name "_llvm",                   \
+                                       test##name<FloatL, Int32L>, false);     \
     template <typename Float, typename Int32> void test##name()
 
 /// RAII helper for temporarily decreasing the log level

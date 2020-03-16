@@ -237,10 +237,3 @@ void jit_sync_device() {
     }
     jit_trace("jit_sync_device(): done.");
 }
-
-Stream *jit_get_stream(const char *func_name) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("%s(): device and stream must be set! (call jit_device_set() beforehand)!", func_name);
-    return stream;
-}

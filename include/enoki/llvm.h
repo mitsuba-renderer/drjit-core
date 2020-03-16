@@ -121,8 +121,8 @@ struct LLVMArray {
 
     LLVMArray operator+(const LLVMArray &v) const {
         const char *op = std::is_floating_point<Value>::value
-            ? "add.rn.ftz.$t0 $r0, $r1, $r2"
-            : "add.$t0 $r0, $r1, $r2";
+            ? "$r0 = fadd <$w x $t0> $r1, $r2"
+            : "$r0 = add <$w x $t0> $r1, $r2";
 
         return from_index(
             jitc_trace_append_2(Type, op, 1, m_index, v.m_index));

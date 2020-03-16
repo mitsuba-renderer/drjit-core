@@ -21,6 +21,12 @@ const char *var_type_name_ptx[(int) VarType::Count]{
     "s64", "u64", "f16", "f32", "f64", "pred", "u64"
 };
 
+/// LLVM IR type names
+const char *var_type_name_llvm[(int) VarType::Count]{
+    "???", "i8", "u8", "i16", "u16", "i32", "u32",
+    "i64", "u64", "???", "float", "double", "i1", "u64"
+};
+
 /// CUDA PTX type names (binary view)
 const char *var_type_name_ptx_bin[(int) VarType::Count]{
     "???", "b8", "b8", "b16", "b16", "b32", "b32",
@@ -138,7 +144,15 @@ void jit_var_ext_ref_dec(uint32_t index) {
 
     if (v->ref_count_ext == 0) {
         Stream *stream = active_stream;
-        auto &todo = stream ? stream->todo : state.todo_host;
+        bool cuda = stream != nullptr;
+
+        if (v->cuda != cuda)
+            jit_raise("jit_var_ext_ref_dec(): attempted to free a %s variable "
+                      "while the %s backend was activated! You must invoke "
+                      "jit_device_set() beforehand!",
+                      v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
+
+        auto &todo = cuda ? stream->todo : state.todo_host;
         todo.erase(index);
 
         if (v->ref_count_int == 0)
@@ -306,12 +320,15 @@ void jit_var_label_set(uint32_t index, const char *label_) {
 
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
+    Stream *stream = active_stream;
+
     Variable v;
     v.type = (uint32_t) type;
     v.size = 1;
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.tsize = 1;
     v.free_stmt = stmt_static == 0;
+    v.cuda = stream != nullptr;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
@@ -321,7 +338,6 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
 
     jit_var_ext_ref_inc(index, vo);
 
-    Stream *stream = active_stream;
     auto &todo = stream ? stream->todo : state.todo_host;
     todo.insert(index);
 
@@ -331,6 +347,8 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
 /// Append a variable to the instruction trace (1 operand)
 uint32_t jit_trace_append_1(VarType type, const char *stmt,
                             int stmt_static, uint32_t op1) {
+    Stream *stream = active_stream;
+
     if (unlikely(op1 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -344,6 +362,7 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
     v.dep[0] = op1;
     v.tsize = 1 + v1->tsize;
     v.free_stmt = stmt_static == 0;
+    v.cuda = stream != nullptr;
 
     if (unlikely(v1->dirty)) {
         jit_eval();
@@ -361,7 +380,6 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 
     jit_var_ext_ref_inc(index, vo);
 
-    Stream *stream = active_stream;
     auto &todo = stream ? stream->todo : state.todo_host;
     todo.insert(index);
 
@@ -371,6 +389,8 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 /// Append a variable to the instruction trace (2 operands)
 uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
                             uint32_t op1, uint32_t op2) {
+    Stream *stream = active_stream;
+
     if (unlikely(op1 == 0 || op2 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -386,6 +406,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
     v.dep[1] = op2;
     v.tsize = 1 + v1->tsize + v2->tsize;
     v.free_stmt = stmt_static == 0;
+    v.cuda = stream != nullptr;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size))) {
@@ -416,7 +437,6 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
 
     jit_var_ext_ref_inc(index, vo);
 
-    Stream *stream = active_stream;
     auto &todo = stream ? stream->todo : state.todo_host;
     todo.insert(index);
 
@@ -426,6 +446,8 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
 /// Append a variable to the instruction trace (3 operands)
 uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
                             uint32_t op1, uint32_t op2, uint32_t op3) {
+    Stream *stream = active_stream;
+
     if (unlikely(op1 == 0 || op2 == 0 || op3 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -443,6 +465,7 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     v.dep[2] = op3;
     v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize;
     v.free_stmt = stmt_static == 0;
+    v.cuda = stream != nullptr;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size) ||
@@ -475,7 +498,6 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
             index, op1, op2, op3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    Stream *stream = active_stream;
     auto &todo = stream ? stream->todo : state.todo_host;
     todo.insert(index);
 
@@ -493,6 +515,7 @@ uint32_t jit_var_map(VarType type, void *ptr, size_t size, int free) {
     v.size = (uint32_t) size;
     v.retain_data = free == 0;
     v.tsize = 1;
+    v.cuda = active_stream != nullptr;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
@@ -543,6 +566,7 @@ uint32_t jit_var_copy_ptr(const void *ptr) {
     v.tsize = 0;
     v.retain_data = true;
     v.direct_pointer = true;
+    v.cuda = active_stream != nullptr;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
@@ -552,7 +576,6 @@ uint32_t jit_var_copy_ptr(const void *ptr) {
     state.variable_from_ptr[ptr] = index;
     return index;
 }
-
 
 /// Migrate a variable to a different flavor of memory
 void jit_var_migrate(uint32_t index, AllocType type) {
@@ -662,9 +685,24 @@ const char *jit_var_whos() {
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index) {
     Stream *stream = active_stream;
+    bool cuda = stream != nullptr;
     const Variable *v = jit_var(index);
-    if (v->data == nullptr || v->dirty)
+
+    if (v->cuda != cuda)
+        jit_raise("jit_var_str(): attempted to stringify a %s variable "
+                  "while the %s backend was activated! You must invoke "
+                  "jit_device_set() beforehand!",
+                  v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
+
+    if (unlikely(v->data == nullptr || v->dirty)) {
         jit_eval();
+        v = jit_var(index);
+    }
+
+    if (unlikely(v->dirty))
+        jit_raise("jit_var_str(): element remains dirty after jit_eval()!");
+    else if (unlikely(!v->data))
+        jit_raise("jit_var_str(): invalid/uninitialized variable!");
 
     size_t size            = v->size,
            isize           = var_type_size[(int) v->type],
@@ -684,10 +722,14 @@ const char *jit_var_str(uint32_t index) {
         }
 
         const uint8_t *src_offset = src + i * isize;
-        /* Temporarily release the lock while synchronizing */ {
+
+        if (cuda) {
+            // Temporarily release the lock while synchronizing
             unlock_guard guard(state.mutex);
             cuda_check(cuStreamSynchronize(stream->handle));
             cuda_check(cuMemcpy(dst, src_offset, isize));
+        } else {
+            memcpy(dst, src_offset, isize);
         }
 
         const char *comma = i + 1 < size ? ", " : "";
@@ -731,14 +773,23 @@ void jit_set_scatter_gather_operand(uint32_t index, int gather) {
 /// Read a single element of a variable and write it to 'dst'
 void jit_var_read(uint32_t index, size_t offset, void *dst) {
     Stream *stream = active_stream;
+    bool cuda = stream != nullptr;
     Variable *v = jit_var(index);
 
-    if (v->data == nullptr || v->dirty)
-        jit_eval();
+    if (unlikely(v->cuda != cuda))
+        jit_fail("jit_var_write(): attempted to read from a %s variable "
+                 "while the %s backend was activated! You must invoke "
+                 "jit_device_set() beforehand!",
+                 v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
 
-    if (v->dirty)
+    if (unlikely(v->data == nullptr || v->dirty)) {
+        jit_eval();
+        v = jit_var(index);
+    }
+
+    if (unlikely(v->dirty))
         jit_raise("jit_var_read(): element remains dirty after jit_eval()!");
-    else if (!v->data)
+    else if (unlikely(!v->data))
         jit_raise("jit_var_read(): invalid/uninitialized variable!");
 
     if (v->size == 1)
@@ -747,24 +798,37 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
     uint32_t isize = var_type_size[(int) v->type];
     const uint8_t *src = (const uint8_t *) v->data + offset * isize;
 
-    /* Temporarily release the lock while synchronizing */ {
+    if  (cuda) {
+        // Temporarily release the lock while synchronizing
         unlock_guard guard(state.mutex);
         cuda_check(cuStreamSynchronize(stream->handle));
         cuda_check(cuMemcpy(dst, src, isize));
+    } else {
+        memcpy(dst, src, isize);
     }
 }
 
 /// Reverse of jit_var_read(). Copy 'dst' to a single element of a variable
 void jit_var_write(uint32_t index, size_t offset, const void *src) {
     Stream *stream = active_stream;
+    bool cuda = stream != nullptr;
     Variable *v = jit_var(index);
 
-    if (v->data == nullptr || v->dirty)
-        jit_eval();
+    if (unlikely(v->cuda != cuda))
+        jit_raise("jit_var_write(): attempted to write to a %s variable "
+                  "while the %s backend was activated! You must invoke "
+                  "jit_device_set() beforehand!",
+                  v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
 
-    if (v->dirty)
+    if (unlikely(v->data == nullptr || v->dirty)) {
+        jit_eval();
+        v = jit_var(index);
+    }
+
+
+    if (unlikely(v->dirty))
         jit_raise("jit_var_write(): element remains dirty after jit_eval()!");
-    else if (!v->data)
+    else if (unlikely(!v->data))
         jit_raise("jit_var_write(): invalid/uninitialized variable!");
 
     jit_cse_drop(index, v);
@@ -774,5 +838,9 @@ void jit_var_write(uint32_t index, size_t offset, const void *src) {
 
     uint32_t isize = var_type_size[(int) v->type];
     uint8_t *dst = (uint8_t *) v->data + offset * isize;
-    cuda_check(cuMemcpyAsync(dst, src, isize, stream->handle));
+
+    if (cuda)
+        cuda_check(cuMemcpyAsync(dst, src, isize, stream->handle));
+    else
+        memcpy(dst, src, isize);
 }

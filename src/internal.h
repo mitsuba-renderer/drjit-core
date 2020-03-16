@@ -147,6 +147,9 @@ struct Variable {
     /// Optimization: is this a direct pointer (rather than an array which stores a pointer?)
     bool direct_pointer : 1;
 
+    /// Is this variable registered with the CUDA backend?
+    bool cuda : 1;
+
     Variable() {
         memset(this, 0, sizeof(Variable));
     }
@@ -381,6 +384,3 @@ extern void jit_sync_stream();
 
 /// Wait for all computation on the current device to finish
 extern void jit_sync_device();
-
-/// Return a pointer to the current stream or raise an exception referencing 'func_name'
-extern Stream *jit_get_stream(const char *func_name);

@@ -173,7 +173,8 @@ bool jit_llvm_init() {
 
     LLVMModuleRef enoki_module = LLVMModuleCreateWithName("enoki");
     char *error = nullptr;
-    if (LLVMCreateMCJITCompilerForModule(&jit_llvm_engine, enoki_module, &options, sizeof(options), &error)) {
+    if (LLVMCreateMCJITCompilerForModule(&jit_llvm_engine, enoki_module,
+                                         &options, sizeof(options), &error)) {
         jit_log(Warn, "jit_llvm_init(): could not create MCJIT: %s", error);
         LLVMDisposeModule(enoki_module);
         LLVMDisasmDispose(jit_llvm_disasm);
@@ -182,7 +183,8 @@ bool jit_llvm_init() {
     }
 
     jit_llvm_target_cpu = LLVMGetHostCPUName();
-    jit_log(Info, "jit_llvm_init(): found %s, cpu=%s", triple, jit_llvm_target_cpu);
+    jit_log(Info, "jit_llvm_init(): found %s, cpu=%s", triple,
+            jit_llvm_target_cpu);
 
     LLVMDisposeMessage(triple);
 
