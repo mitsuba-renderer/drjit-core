@@ -25,11 +25,7 @@ void jit_init(int llvm, int cuda) {
     state.has_llvm = llvm && jit_llvm_init();
     state.has_cuda = cuda && jit_cuda_init();
 
-    int n_devices = 0;
-    if (state.has_cuda)
-        cuda_check(cuDeviceGetCount(&n_devices));
-
-    for (int i = 0; i < n_devices; ++i) {
+    for (int i = 0; i < jit_cuda_devices; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
             unified_addr = 0, managed = 0, concurrent_managed = 0;
         size_t mem_total = 0;
@@ -103,7 +99,7 @@ void jit_init(int llvm, int cuda) {
 }
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
-void jit_shutdown() {
+void jit_shutdown(int light) {
     if (state.has_cuda) {
         jit_log(Info, "jit_shutdown(): destroying streams ..");
 
@@ -163,6 +159,12 @@ void jit_shutdown() {
     }
 
     jit_log(Info, "jit_shutdown(): done");
+
+    if (light == 0) {
+        jit_llvm_shutdown();
+        jit_cuda_shutdown();
+    }
+
     state.has_cuda = false;
     state.has_llvm = false;
 }

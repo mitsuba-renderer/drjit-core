@@ -36,7 +36,7 @@ using Int32L = LLVMArray<int32_t>;
 #define TEST_BOTH(name)                                                        \
     template <typename Float, typename Int32> void test##name();               \
     int test##name##_l = test_register("test" #name "_cuda",                   \
-                                       test##name<FloatL, Int32L>, false);     \
+                                       test##name<FloatL, Int32L>, true);      \
     int test##name##_c = test_register("test" #name "_llvm",                   \
                                        test##name<FloatC, Int32C>, false);     \
     template <typename Float, typename Int32> void test##name()

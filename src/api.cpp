@@ -26,9 +26,9 @@ int jitc_has_cuda() {
     return (int) state.has_cuda;
 }
 
-void jitc_shutdown() {
+void jitc_shutdown(int light) {
     lock_guard guard(state.mutex);
-    jit_shutdown();
+    jit_shutdown(light);
 }
 
 void jitc_log_stderr_set(LogLevel level) {
@@ -176,21 +176,21 @@ void jitc_var_label_set(uint32_t index, const char *label) {
     jit_var_label_set(index, label);
 }
 
-uint32_t jitc_var_register(VarType type, void *ptr, size_t size, int free) {
+uint32_t jitc_var_map(VarType type, void *ptr, size_t size, int free) {
     lock_guard guard(state.mutex);
-    return jit_var_register(type, ptr, size, free);
+    return jit_var_map(type, ptr, size, free);
 }
 
-uint32_t jitc_var_register_ptr(const void *ptr) {
+uint32_t jitc_var_copy_ptr(const void *ptr) {
     lock_guard guard(state.mutex);
-    return jit_var_register_ptr(ptr);
+    return jit_var_copy_ptr(ptr);
 }
 
-uint32_t jitc_var_copy_to_device(VarType type,
+uint32_t jitc_var_copy(VarType type,
                                  const void *value,
                                  size_t size) {
     lock_guard guard(state.mutex);
-    return jit_var_copy_to_device(type, value, size);
+    return jit_var_copy(type, value, size);
 }
 
 uint32_t jitc_trace_append_0(VarType type, const char *stmt, int copy_stmt) {

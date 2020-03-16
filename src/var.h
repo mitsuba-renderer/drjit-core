@@ -34,16 +34,16 @@ extern uint32_t jit_trace_append_3(VarType type,
                                    uint32_t op3);
 
 /// Register an existing variable with the JIT compiler
-extern uint32_t jit_var_register(VarType type,
+extern uint32_t jit_var_map(VarType type,
                                  void *ptr,
                                  size_t size,
                                  int free);
 
 /// Register pointer literal as a special variable within the JIT compiler
-extern uint32_t jit_var_register_ptr(const void *ptr);
+extern uint32_t jit_var_copy_ptr(const void *ptr);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jit_var_copy_to_device(VarType type,
+extern uint32_t jit_var_copy(VarType type,
                                        const void *ptr,
                                        size_t size);
 

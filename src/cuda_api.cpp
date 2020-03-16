@@ -61,20 +61,23 @@ CUresult (*cuStreamSynchronize)(CUstream) = nullptr;
 CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int) = nullptr;
 
 // Enoki API
-CUfunction kernel_fill_64 = nullptr;
-CUfunction kernel_reductions[(int) ReductionType::Count]
-                            [(int) VarType::Count] = {};
+CUfunction jit_cuda_fill_64 = nullptr;
+CUfunction jit_cuda_reductions[(int) ReductionType::Count]
+                              [(int) VarType::Count] = {};
+int jit_cuda_devices = 0;
 
 #define LOAD(name, ...)                                                        \
     symbol = strlen(__VA_ARGS__ "") > 0 ? (#name "_" __VA_ARGS__) : #name;     \
-    name = decltype(name)(dlsym(handle, symbol));                              \
+    name = decltype(name)(dlsym(jit_cuda_handle, symbol));                     \
     if (!name)                                                                 \
         break;                                                                 \
     symbol = nullptr
+#define Z(x) x = nullptr
 
 static bool jit_cuda_init_attempted = false;
 static bool jit_cuda_init_success = false;
 static CUmodule jit_cuda_module = nullptr;
+static void *jit_cuda_handle = nullptr;
 
 int inflate(const void *src, uint32_t src_size, void *dst, uint32_t dst_size) {
     z_stream strm;
@@ -99,11 +102,9 @@ bool jit_cuda_init() {
         return jit_cuda_init_success;
     jit_cuda_init_attempted = true;
 
-    void *handle = dlopen("libcuda.so", RTLD_NOW);
-    if (!handle) {
-        jit_log(
-            LogLevel::Warn,
-            "jit_cuda_init(): libcuda.so not found -- disabling CUDA backend!");
+    jit_cuda_handle = dlopen("libcuda.so", RTLD_NOW);
+    if (!jit_cuda_handle) {
+        jit_log(Warn, "jit_cuda_init(): libcuda.so not found -- disabling CUDA backend!");
         return false;
     }
 
@@ -173,10 +174,9 @@ bool jit_cuda_init() {
         return false;
     }
 
-    int n_devices = 0;
-    cuda_check(cuDeviceGetCount(&n_devices));
+    cuda_check(cuDeviceGetCount(&jit_cuda_devices));
 
-    if (n_devices == 0) {
+    if (jit_cuda_devices == 0) {
         jit_log(
             LogLevel::Warn,
             "jit_cuda_init(): No devices found -- disabling CUDA backend!");
@@ -193,12 +193,15 @@ bool jit_cuda_init() {
             "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
             cuda_version_major, cuda_version_minor);
 
-    for (int i = 0; i < n_devices; ++i) {
+
+    CUcontext context_0 = nullptr;
+    for (int i = 0; i < jit_cuda_devices; ++i) {
         CUcontext context = nullptr;
         cuda_check(cuDevicePrimaryCtxRetain(&context, i));
         if (i == 0)
-            cuda_check(cuCtxSetCurrent(context));
+            context_0 = context;
     }
+    cuda_check(cuCtxSetCurrent(context_0));
 
     // Decompress supplemental PTX content
     std::unique_ptr<char[]> uncompressed(
@@ -216,7 +219,7 @@ bool jit_cuda_init() {
 
     // .. and register it with CUDA
     cuda_check(cuModuleLoadData(&jit_cuda_module, uncompressed.get()));
-    cuda_check(cuModuleGetFunction(&kernel_fill_64, jit_cuda_module, "fill_64"));
+    cuda_check(cuModuleGetFunction(&jit_cuda_fill_64, jit_cuda_module, "fill_64"));
 
     for (uint32_t i = 0; i < (uint32_t) ReductionType::Count; i++) {
         for (uint32_t j = 0; j < (uint32_t) VarType::Count; j++) {
@@ -227,12 +230,50 @@ bool jit_cuda_init() {
             if (rv == CUDA_ERROR_NOT_FOUND)
                 continue;
             cuda_check(rv);
-            kernel_reductions[i][j] = func;
+            jit_cuda_reductions[i][j] = func;
         }
     }
 
     jit_cuda_init_success = true;
     return true;
+}
+
+void jit_cuda_shutdown() {
+    if (!jit_cuda_init_success)
+        return;
+
+    jit_log(Info, "jit_cuda_shutdown()");
+
+    cuda_check(cuModuleUnload(jit_cuda_module));
+    cuda_check(cuCtxSetCurrent(nullptr));
+
+    for (int i = 0; i < jit_cuda_devices; ++i)
+        cuda_check(cuDevicePrimaryCtxRelease(i));
+
+    dlclose(jit_cuda_handle);
+    jit_cuda_module = nullptr;
+    jit_cuda_handle = nullptr;
+    jit_cuda_fill_64 = nullptr;
+    jit_cuda_devices = 0;
+    memset(jit_cuda_reductions, 0, sizeof(jit_cuda_reductions));
+
+    Z(cuCtxEnablePeerAccess); Z(cuCtxSynchronize); Z(cuDeviceCanAccessPeer);
+    Z(cuDeviceGet); Z(cuDeviceGetAttribute); Z(cuDeviceGetCount);
+    Z(cuDeviceGetName); Z(cuDevicePrimaryCtxRelease);
+    Z(cuDevicePrimaryCtxRetain); Z(cuDeviceTotalMem); Z(cuDriverGetVersion);
+    Z(cuEventCreate); Z(cuEventDestroy); Z(cuEventRecord);
+    Z(cuFuncGetAttribute); Z(cuFuncSetAttribute); Z(cuGetErrorString);
+    Z(cuInit); Z(cuLaunchHostFunc); Z(cuLaunchKernel); Z(cuLinkAddData);
+    Z(cuLinkComplete); Z(cuLinkCreate); Z(cuLinkDestroy); Z(cuMemAdvise);
+    Z(cuMemAlloc); Z(cuMemAllocHost); Z(cuMemAllocManaged); Z(cuMemFree);
+    Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy); Z(cuMemcpyAsync);
+    Z(cuMemsetD16Async); Z(cuMemsetD32Async); Z(cuMemsetD8Async);
+    Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleUnload);
+    Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent); Z(cuStreamCreate);
+    Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
+
+    jit_cuda_init_success = false;
+    jit_cuda_init_attempted = false;
 }
 
 void cuda_check_impl(CUresult errval, const char *file, const int line) {

@@ -183,6 +183,9 @@ int main(int argc, char **argv) {
         jitc_log_callback_set(LogLevel::Trace, log_callback);
         fprintf(stdout, "\n");
 
+        bool has_cuda = jitc_has_cuda(),
+             has_llvm = jitc_has_llvm();
+
         if (!tests) {
             fprintf(stderr, "No tests registered!\n");
             exit(EXIT_FAILURE);
@@ -198,18 +201,18 @@ int main(int argc, char **argv) {
 
         for (auto &test : *tests) {
             fprintf(stdout, " - %s .. ", test.name);
-            if ( (test.cuda && !jitc_has_cuda()) ||
-                (!test.cuda && !jitc_has_llvm())) {
+            if ( (test.cuda && !has_cuda) ||
+                (!test.cuda && !has_llvm)) {
                 tests_skipped++;
                 fprintf(stdout, "skipped.\n");
                 continue;
             }
             fflush(stdout);
             log_value.clear();
-            jitc_init(1, 1);
+            jitc_init(!test.cuda, test.cuda);
             jitc_device_set(test.cuda ? 0 : -1, 0);
             test.func();
-            jitc_shutdown();
+            jitc_shutdown(1);
 
             char *log = test_sanitize_log();
             if (test_check_log(test.name, log, write_ref)) {
@@ -220,6 +223,8 @@ int main(int argc, char **argv) {
                 fprintf(stdout, "FAILED!\n");
             }
         }
+
+        jitc_shutdown(0);
 
         if (tests_skipped == 0)
             fprintf(stdout, "\nPassed %i/%i tests.\n", tests_passed,

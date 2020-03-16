@@ -65,8 +65,8 @@ struct Stream {
 
     /**
      * Keeps track of variables that have to be computed when jit_eval() is
-     * called. This includes externally referenced variables and statements with
-     * side effects
+     * called, in particular: externally referenced variables and statements
+     * with side effects.
      */
     tsl::robin_set<uint32_t> todo;
 };
@@ -272,6 +272,13 @@ struct State {
 
     /// Cache of previously compiled kernels
     KernelCache kernel_cache;
+
+    /**
+     * Keeps track of variables that have to be computed when jit_eval() is
+     * called, in particular: externally referenced variables and statements
+     * with side effects.
+     */
+    tsl::robin_set<uint32_t> todo_host;
 };
 
 /// RAII helper for locking a mutex (like std::lock_guard)
@@ -364,7 +371,7 @@ extern Buffer buffer;
 extern void jit_init(int llvm, int cuda);
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
-extern void jit_shutdown();
+extern void jit_shutdown(int light);
 
 /// Set the currently active device & stream
 extern void jit_device_set(int32_t device, uint32_t stream);

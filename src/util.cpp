@@ -29,7 +29,7 @@ void jit_fill(VarType type, void *ptr, size_t size, const void *src) {
             case 8: {
                     int num_sm = state.devices[stream->device].num_sm * 4;
                     void *args[] = { &ptr, &size, (void *) src };
-                    cuda_check(cuLaunchKernel(kernel_fill_64, num_sm, 1, 1, 1024,
+                    cuda_check(cuLaunchKernel(jit_cuda_fill_64, num_sm, 1, 1, 1024,
                                               1, 1, 0, stream->handle, args, nullptr));
                 }
                 break;
@@ -87,7 +87,7 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, size_t size,
     Stream *stream = active_stream;
 
     if (stream) {
-        CUfunction func = kernel_reductions[(int) rtype][(int) type];
+        CUfunction func = jit_cuda_reductions[(int) rtype][(int) type];
         if (!func)
             jit_raise(
                 "jit_reduce(): no existing kernel for type=%s, rtype=%s!",

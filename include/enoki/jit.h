@@ -52,14 +52,14 @@ extern "C" {
 extern JITC_EXPORT void jitc_init(int llvm, int cuda);
 
 /**
- * \brief Launch an ansynchronous thread that will execute jit_init() and
+ * \brief Launch an ansynchronous thread that will execute jitc_init() and
  * return immediately
  *
- * On machines with several GPUs, \ref jit_init() sets up a CUDA environment on
- * all devices, which can be rather low (e.g. 1 second). This function
- * provides a convenient alternative to hide this latency, for instance when
- * importing this library from an interactive Python session which doesn't
- * actually need the JIT right away.
+ * On machines with several GPUs, \ref jitc_init() sets up a CUDA environment
+ * on all devices, which can be a rather slow operation (e.g. 1 second). This
+ * function provides a convenient alternative to hide this latency, for
+ * instance when importing this library from an interactive Python session
+ * which doesn't actually need the JIT right away.
  *
  * The \c llvm and \c cuda arguments should be set to \c 1 to initialize the
  * corresponding backend, and \c 0 otherwise.
@@ -75,8 +75,18 @@ extern JITC_EXPORT int jitc_has_llvm();
 /// Check whether the CUDA backend was successfully initialized
 extern JITC_EXPORT int jitc_has_cuda();
 
-/// Release all resources used by the JIT compiler, and report reference leaks.
-extern JITC_EXPORT void jitc_shutdown();
+/**
+ * \brief Release resources used by the JIT compiler, and report reference leaks.
+ *
+ * If <tt>light=1</tt>, this function performs a "light" shutdown, which
+ * flushes any still running computation and releases unused memory back to the
+ * OS or GPU. It will also warn about leaked variables and memory allocations.
+ *
+ * If <tt>light=0</tt>, the function furthermore completely unloads the LLVM or
+ * CUDA backends. This frees up more memory but means that a later call to \ref
+ * jitc_init() or \ref jitc_init_async() will be slow.
+ */
+extern JITC_EXPORT void jitc_shutdown(int light);
 
 /**
  * \brief Return the number of target devices
@@ -314,7 +324,7 @@ extern JITC_EXPORT void jitc_malloc_prefetch(void *ptr, int device);
  *
  * The allocator assigns a unique ID to each pointer allocated via
  * \ref jitc_malloc(). This function queries this mapping for a given
- * pointer value, and \ref jit_malloc_from_id() goes the other way.
+ * pointer value, and \ref jitc_malloc_from_id() goes the other way.
  *
  * Returns \c 0 when the pointer could not be found. Valid IDs are always
  * nonzero.
@@ -326,7 +336,7 @@ extern JITC_EXPORT uint32_t jitc_malloc_to_id(void *ptr);
  *
  * The allocator assigns a unique ID to each pointer allocated via
  * \ref jitc_malloc(). This function queries this mapping for a given
- * ID value, and \ref jit_malloc_to_id() goes the other way.
+ * ID value, and \ref jitc_malloc_to_id() goes the other way.
  *
  * Returns \c nullptr when the ID could not be found.
  */
@@ -351,27 +361,6 @@ enum VarType {
 #endif
 
 /**
- * Copy a memory region from the host to onto the device and return its
- * variable index. Its external reference count is initialized to \c 1.
- *
- * \param type
- *    Type of the variable to be created, see \ref VarType for details.
- *
- * \param ptr
- *    Point of the memory region
- *
- * \param size
- *    Number of elements, rather than the size in bytes
- *
- * \param free
- *    If free != 0, the JIT compiler will free the memory region via
- *    \ref jitc_free() once it goes out of scope.
- */
-extern JITC_EXPORT uint32_t jitc_var_copy_to_device(enum VarType type,
-                                                    const void *ptr,
-                                                    size_t size);
-
-/**
  * Register an existing memory region as a variable in the JIT compiler, and
  * return its index. Its external reference count is initialized to \c 1.
  *
@@ -387,31 +376,51 @@ extern JITC_EXPORT uint32_t jitc_var_copy_to_device(enum VarType type,
  * \param free
  *    If free != 0, the JIT compiler will free the memory region via
  *    \ref jitc_free() once it goes out of scope.
+ *
+ * \sa jitc_var_copy()
  */
-extern JITC_EXPORT uint32_t jitc_var_register(enum VarType type,
-                                              void *ptr,
-                                              size_t size,
-                                              int free);
+extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
+                                         size_t size, int free);
+
+
+/**
+ * Copy a memory region from the host to onto the device and return its
+ * variable index. Its external reference count is initialized to \c 1.
+ *
+ * \param type
+ *    Type of the variable to be created, see \ref VarType for details.
+ *
+ * \param ptr
+ *    Point of the memory region
+ *
+ * \param size
+ *    Number of elements, rather than the size in bytes
+ *
+ * \sa jitc_var_map()
+ */
+extern JITC_EXPORT uint32_t jitc_var_copy(enum VarType type,
+                                          const void *ptr,
+                                          size_t size);
 
 /**
  * Register a pointer literal as a variable within the JIT compiler
  *
  * When working with memory (gathers, scatters) using the JIT compiler, we must
- * often refer to memory addresses. These addresses should not bakied nto the
+ * often refer to memory addresses. These addresses should not baked nto the
  * JIT-compiled code, since they change over time, which limits the ability to
- * re-use compiled kernels.
+ * re-use of compiled kernels.
  *
  * This function registers a pointer literal that accomplishes this. It is
  * functionally equivalent to
  *
  * \code
  * void *my_ptr = ...;
- * uint32_t index = jitc_var_copy_to_device(VarType::Pointer, &my_ptr, 1);
+ * uint32_t index = jitc_var_copy(VarType::Pointer, &my_ptr, 1);
  * \endcode
  *
  * but results in more efficient generated code.
  */
-extern JITC_EXPORT uint32_t jitc_var_register_ptr(const void *ptr);
+extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr);
 
 /**
  * \brief Append a statement to the instruction trace.
@@ -422,7 +431,7 @@ extern JITC_EXPORT uint32_t jitc_var_register_ptr(const void *ptr);
  * statement, whose external reference count is initialized to \c 1.
  *
  * This function assumes that the operation does not access any operands. See
- * the other <tt>jit_trace_*</tt> functions for IR statements with 1 to 3
+ * the other <tt>jitc_trace_*</tt> functions for IR statements with 1 to 3
  * additional operands. In these latter versions, the string \c stmt may
  * contain special dollar-prefixed expressions (<tt>$rN</tt>, <tt>$tN</tt>, or
  * <tt>$bN</tt>, where <tt>N</tt> ranges from 0-4) to refer to operands and
@@ -434,9 +443,9 @@ extern JITC_EXPORT uint32_t jitc_var_register_ptr(const void *ptr);
  * follows:
  *
  * \code
- * uint32_t result = jit_trace_append_2(VarType::Int32,
- *                                      "add.$t0 $r0, $r1, $r2",
- *                                      1, op1, op2);
+ * uint32_t result = jitc_trace_append_2(VarType::Int32,
+ *                                       "add.$t0 $r0, $r1, $r2",
+ *                                       1, op1, op2);
  * \endcode
  *
  * \param type
@@ -567,7 +576,7 @@ extern JITC_EXPORT void jitc_var_read(uint32_t index, size_t offset,
 /**
  * \brief Copy 'dst' to a single element of a variable
  *
- * This function implements the reverse of jit_var_read(). This function is
+ * This function implements the reverse of jitc_var_read(). This function is
  * convenient to change localized entries of an array, but it should never be
  * used to extract complete array contents due to its low performance.
  */
@@ -589,7 +598,7 @@ extern JITC_EXPORT void jitc_var_eval(uint32_t index);
 // ====================================================================
 
 #if defined(__cplusplus)
-/// Potential reduction operations for \ref jit_reduce
+/// Potential reduction operations for \ref jitc_reduce
 enum class ReductionType : uint32_t { Add, Mul, Min, Max, And, Or, Count };
 #else
 enum ReductionType {

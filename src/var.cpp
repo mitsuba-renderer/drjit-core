@@ -137,7 +137,9 @@ void jit_var_ext_ref_dec(uint32_t index) {
     v->ref_count_ext--;
 
     if (v->ref_count_ext == 0) {
-        active_stream->todo.erase(index);
+        Stream *stream = active_stream;
+        auto &todo = stream ? stream->todo : state.todo_host;
+        todo.erase(index);
 
         if (v->ref_count_int == 0)
             jit_var_free(index, v);
@@ -304,8 +306,6 @@ void jit_var_label_set(uint32_t index, const char *label_) {
 
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
-    Stream *stream = jit_get_stream("jit_trace_append_0");
-
     Variable v;
     v.type = (uint32_t) type;
     v.size = 1;
@@ -320,7 +320,10 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_var_ext_ref_inc(index, vo);
-    stream->todo.insert(index);
+
+    Stream *stream = active_stream;
+    auto &todo = stream ? stream->todo : state.todo_host;
+    todo.insert(index);
 
     return index;
 }
@@ -328,8 +331,6 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
 /// Append a variable to the instruction trace (1 operand)
 uint32_t jit_trace_append_1(VarType type, const char *stmt,
                             int stmt_static, uint32_t op1) {
-    Stream *stream = jit_get_stream("jit_trace_append_1");
-
     if (unlikely(op1 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -359,7 +360,10 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_var_ext_ref_inc(index, vo);
-    stream->todo.insert(index);
+
+    Stream *stream = active_stream;
+    auto &todo = stream ? stream->todo : state.todo_host;
+    todo.insert(index);
 
     return index;
 }
@@ -367,8 +371,6 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 /// Append a variable to the instruction trace (2 operands)
 uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
                             uint32_t op1, uint32_t op2) {
-    Stream *stream = jit_get_stream("jit_trace_append_2");
-
     if (unlikely(op1 == 0 || op2 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -413,7 +415,10 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_var_ext_ref_inc(index, vo);
-    stream->todo.insert(index);
+
+    Stream *stream = active_stream;
+    auto &todo = stream ? stream->todo : state.todo_host;
+    todo.insert(index);
 
     return index;
 }
@@ -421,8 +426,6 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
 /// Append a variable to the instruction trace (3 operands)
 uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
                             uint32_t op1, uint32_t op2, uint32_t op3) {
-    Stream *stream = jit_get_stream("jit_trace_append_3");
-
     if (unlikely(op1 == 0 || op2 == 0 || op3 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -472,17 +475,17 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
             index, op1, op2, op3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    jit_var_ext_ref_inc(index, vo);
-    stream->todo.insert(index);
+    Stream *stream = active_stream;
+    auto &todo = stream ? stream->todo : state.todo_host;
+    todo.insert(index);
 
     return index;
 }
 
 /// Register an existing variable with the JIT compiler
-uint32_t jit_var_register(VarType type, void *ptr,
-                          size_t size, int free) {
+uint32_t jit_var_map(VarType type, void *ptr, size_t size, int free) {
     if (unlikely(size == 0))
-        jit_raise("jit_var_register: size must be > 0!");
+        jit_raise("jit_var_map: size must be nonzero!");
 
     Variable v;
     v.type = (uint32_t) type;
@@ -493,7 +496,7 @@ uint32_t jit_var_register(VarType type, void *ptr,
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_var_register(%u): " PTR ", size=%zu, free=%i",
+    jit_log(Debug, "jit_var_map(%u): " PTR ", size=%zu, free=%i",
             index, ptr, size, (int) free);
 
     jit_var_ext_ref_inc(index, vo);
@@ -501,8 +504,31 @@ uint32_t jit_var_register(VarType type, void *ptr,
     return index;
 }
 
+/// Copy a memory region onto the device and return its variable index
+uint32_t jit_var_copy(VarType type, const void *ptr, size_t size) {
+    Stream *stream = active_stream;
+
+    size_t total_size = size * (size_t) var_type_size[(int) type];
+    void *target_ptr;
+
+    if (stream) {
+        target_ptr = jit_malloc(AllocType::Device, total_size);
+        void *host_ptr = jit_malloc(AllocType::HostPinned, total_size);
+        memcpy(host_ptr, ptr, total_size);
+        cuda_check(cuMemcpyAsync(target_ptr, host_ptr, total_size, stream->handle));
+        jit_free(host_ptr);
+    } else {
+        target_ptr = jit_malloc(AllocType::Host, total_size);
+        memcpy(target_ptr, ptr, total_size);
+    }
+
+    uint32_t index = jit_var_map(type, target_ptr, size, true);
+    jit_log(Debug, "jit_var_copy(%u, %zu)", index, size);
+    return index;
+}
+
 /// Register pointer literal as a special variable within the JIT compiler
-uint32_t jit_var_register_ptr(const void *ptr) {
+uint32_t jit_var_copy_ptr(const void *ptr) {
     auto it = state.variable_from_ptr.find(ptr);
     if (it != state.variable_from_ptr.end()) {
         uint32_t index = it.value();
@@ -520,32 +546,13 @@ uint32_t jit_var_register_ptr(const void *ptr) {
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_var_register_ptr(%u): " PTR, index, ptr);
+    jit_log(Debug, "jit_var_copy_ptr(%u): " PTR, index, ptr);
 
     jit_var_ext_ref_inc(index, vo);
     state.variable_from_ptr[ptr] = index;
     return index;
 }
 
-/// Copy a memory region onto the device and return its variable index
-uint32_t jit_var_copy_to_device(VarType type,
-                                const void *ptr,
-                                size_t size) {
-    Stream *stream = jit_get_stream("jit_var_copy_to_device");
-
-    size_t total_size = size * (size_t) var_type_size[(int) type];
-
-    void *host_ptr   = jit_malloc(AllocType::HostPinned, total_size),
-         *device_ptr = jit_malloc(AllocType::Device, total_size);
-
-    memcpy(host_ptr, ptr, total_size);
-    cuda_check(cuMemcpyAsync(device_ptr, host_ptr, total_size, stream->handle));
-
-    jit_free(host_ptr);
-    uint32_t index = jit_var_register(type, device_ptr, size, true);
-    jit_log(Debug, "jit_var_copy_to_device(%u, %zu)", index, size);
-    return index;
-}
 
 /// Migrate a variable to a different flavor of memory
 void jit_var_migrate(uint32_t index, AllocType type) {

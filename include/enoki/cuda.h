@@ -104,7 +104,7 @@ struct CUDAArray {
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
     CUDAArray(Args&&... args) {
         Value data[] = { (Value) args... };
-        m_index = jitc_var_copy_to_device(Type, sizeof...(Args), data);
+        m_index = jitc_var_copy(Type, sizeof...(Args), data);
     }
 
     CUDAArray &operator=(const CUDAArray &a) {
@@ -135,7 +135,7 @@ struct CUDAArray {
     static CUDAArray empty(size_t size) {
         size_t byte_size = size * sizeof(Value);
         void *ptr = jitc_malloc(AllocType::Device, byte_size);
-        return from_index(jitc_var_register(Type, ptr, size, 1));
+        return from_index(jitc_var_map(Type, ptr, size, 1));
     }
 
     static CUDAArray zero(size_t size) {
@@ -146,7 +146,7 @@ struct CUDAArray {
             size_t byte_size = size * sizeof(Value);
             void *ptr = jitc_malloc(AllocType::Device, byte_size);
             jitc_fill(VarType::UInt8, ptr, byte_size, &value);
-            return from_index(jitc_var_register(Type, ptr, size, 1));
+            return from_index(jitc_var_map(Type, ptr, size, 1));
         }
     }
 
@@ -157,7 +157,7 @@ struct CUDAArray {
             size_t byte_size = size * sizeof(Value);
             void *ptr = jitc_malloc(AllocType::Device, byte_size);
             jitc_fill(Type, ptr, size, &value);
-            return from_index(jitc_var_register(Type, ptr, size, 1));
+            return from_index(jitc_var_map(Type, ptr, size, 1));
         }
     }
 

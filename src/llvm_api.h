@@ -20,10 +20,14 @@ extern void (*LLVMAddModule)(LLVMExecutionEngineRef, LLVMModuleRef);
 extern LLVMBool (*LLVMParseIRInContext)(LLVMContextRef, LLVMMemoryBufferRef,
                                  LLVMModuleRef *, char **);
 
-extern LLVMDisasmContextRef llvm_disasm;
-extern LLVMExecutionEngineRef llvm_engine;
-extern LLVMContextRef llvm_context;
-extern char *llvm_target_cpu;
+// Enoki API
+extern LLVMDisasmContextRef jit_llvm_disasm;
+extern LLVMExecutionEngineRef jit_llvm_engine;
+extern LLVMContextRef jit_llvm_context;
+extern char *jit_llvm_target_cpu;
 
+/// Try to load the LLVM backend
 extern bool jit_llvm_init();
+
+/// Fully unload LLVM
 extern void jit_llvm_shutdown();

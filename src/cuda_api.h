@@ -102,11 +102,15 @@ extern CUresult (*cuStreamSynchronize)(CUstream);
 extern CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int);
 
 // Enoki API
-extern CUfunction kernel_fill_64;
-extern CUfunction kernel_reductions[(int) ReductionType::Count][(int) VarType::Count];
+extern CUfunction jit_cuda_fill_64;
+extern CUfunction jit_cuda_reductions[(int) ReductionType::Count][(int) VarType::Count];
+extern int jit_cuda_devices;
 
-/// Try to load CUDA
+/// Try to load the CUDA backend
 extern bool jit_cuda_init();
+
+/// Fully unload CUDA
+extern void jit_cuda_shutdown();
 
 /// Assert that a CUDA operation is correctly issued
 #define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
