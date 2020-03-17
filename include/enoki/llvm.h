@@ -48,55 +48,21 @@ struct LLVMArray {
     }
 
     LLVMArray(Value value) {
-        const char *fmt = nullptr;
-
-        switch (Type) {
-            case VarType::Float16:
-                fmt = "mov.$t0 $r0, %04x";
-                break;
-
-            case VarType::Float32:
-                fmt = "mov.$t0 $r0, 0f%08x";
-                break;
-
-            case VarType::Float64:
-                fmt = "mov.$t0 $r0, 0d%016llx";
-                break;
-
-            case VarType::Bool:
-                fmt = "mov.$t0 $r0, %i";
-                break;
-
-            case VarType::Int8:
-            case VarType::UInt8:
-                fmt = "mov.$t0 $r0, 0x%02x";
-                break;
-
-            case VarType::Int16:
-            case VarType::UInt16:
-                fmt = "mov.$t0 $r0, 0x%04x";
-                break;
-
-            case VarType::Int32:
-            case VarType::UInt32:
-                fmt = "mov.$t0 $r0, 0x%08x";
-                break;
-
-            case VarType::Pointer:
-            case VarType::Int64:
-            case VarType::UInt64:
-                fmt = "mov.$t0 $r0, 0x%016llx";
-                break;
-
-            default:
-                fmt = "<<invalid format during cast>>";
-                break;
-        }
-
         uint_with_size_t<Value> value_uint;
-        char value_str[32];
         memcpy(&value_uint, &value, sizeof(Value));
-        snprintf(value_str, 32, fmt, value_uint);
+        uint64_t value_uint64 = (uint64_t) value_uint;
+
+        if (Type == VarType::Float32)
+            value_uint64 <<= 32;
+
+        char value_str[256];
+        snprintf(value_str, 256,
+            (Type == VarType::Float32 || Type == VarType::Float64) ?
+            "$r0_t = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0\n"
+            "$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer" :
+            "$r0_t = insertelement <$w x $t0> undef, $t0 %llu, i32 0\n"
+            "$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer",
+            value_uint64);
 
         m_index = jitc_trace_append_0(Type, value_str, 0);
     }

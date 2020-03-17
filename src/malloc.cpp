@@ -18,6 +18,9 @@ void* jit_malloc(AllocType type, size_t size) {
     if (size == 0)
         return nullptr;
 
+    // Round up to the next multiple of 64 bytes
+    size = (size + 63) / 64 * 64;
+
     /* Round 'size' to the next larger power of two. This is somewhat
        wasteful, but reduces the number of different sizes that an allocation
        can have to a manageable amount that facilitates re-use. */

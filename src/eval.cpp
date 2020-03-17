@@ -85,6 +85,8 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
     while ((c = *s++) != '\0') {
         if (c != '$') {
             buffer.putc(c);
+            if (unlikely(c == '\n'))
+                buffer.put("    ");
         } else {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
@@ -125,11 +127,13 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
     while ((c = *s++) != '\0') {
         if (c != '$') {
             buffer.putc(c);
+            if (unlikely(c == '\n'))
+                buffer.put("    ");
         } else {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
-                case 't': prefix_table = var_type_name_ptx;     break;
-                case 'b': prefix_table = var_type_name_ptx_bin; break;
+                case 'w': buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 't': prefix_table = var_type_name_llvm;    break;
                 case 'r': prefix_table = var_type_register_ptx; break;
                 default:
                     jit_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
@@ -299,14 +303,12 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
 }
 
 void jit_assemble_llvm(ScheduledGroup group) {
-    static int jit_llvm_kernel_id = 0;
-    (void) group;
-    uint32_t width = 8;
+    const int width = jit_llvm_vector_width;
 
     buffer.clear();
-    buffer.fmt("define void @enoki_%u(i64 %%start, i64 %%end, i8** %%ptrs) "
-               "norecurse nosync nounwind \"target-cpu\"=\"%s\" {\n",
-               jit_llvm_kernel_id++, jit_llvm_target_cpu);
+    buffer.fmt("define void @enoki_kernel(i64 %%start, i64 %%end, i8** %%ptrs) "
+               "norecurse nosync nounwind \"target-cpu\"=\"%s\" \"target-features\"=\"%s\" {\n",
+               jit_llvm_target_cpu, jit_llvm_target_features);
     buffer.put("entry:\n");
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
@@ -325,6 +327,21 @@ void jit_assemble_llvm(ScheduledGroup group) {
     buffer.put("loop:\n");
     buffer.put("    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]\n");
 
+    bool log_trace = std::max(state.log_level_stderr,
+                              state.log_level_callback) >= LogLevel::Trace;
+
+    auto get_parameter_addr = [](uint32_t size, uint32_t arg_id, const char *type) {
+        if (size == 1) {
+            buffer.fmt("    %%a%um = bitcast %s* %%a%u to <%u x %s>*\n", arg_id,
+                       type, arg_id, jit_llvm_vector_width, type);
+        } else {
+            buffer.fmt("    %%a%uo = getelementptr inbounds %s, %s* %%a%u, "
+                       "i64 %%index\n", arg_id, type, type, arg_id);
+            buffer.fmt("    %%a%um = bitcast %s* %%a%uo to <%u x %s>*\n", arg_id,
+                       type, arg_id, jit_llvm_vector_width, type);
+        }
+    };
+
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
@@ -332,25 +349,40 @@ void jit_assemble_llvm(ScheduledGroup group) {
                  reg_id = v->reg_index, arg_id = v->arg_index - 1;
         const char *type = var_type_name_llvm[(int) v->type];
 
-        if (v->arg_type == ArgType::Input || v->arg_type == ArgType::Output) {
-            buffer.fmt("    %%a%uo = getelementptr inbounds %s, %s* %%a%u, "
-                       "i64 %%index\n", arg_id, type, type, arg_id);
-            buffer.fmt("    %%a%um = bitcast %s* %%a%uo to <%u x %s>*\n", arg_id,
-                       type, arg_id, width, type);
-        }
+        if (v->arg_type == ArgType::Input) {
+            buffer.fmt("\n    ; Load %s%u%s%s\n",
+                       var_type_register_ptx[(int) v->type],
+                       v->reg_index, v->has_label ? ": " : "",
+                       v->has_label ? jit_var_label(index) : "");
 
-        if (v->arg_type == ArgType::Input)
+            get_parameter_addr(v->size, arg_id, type);
             buffer.fmt("    %%r%u = load <%u x %s>, <%u x %s>* %%a%um, align %u\n",
                        reg_id, width, type, width, type, arg_id, align);
-        else
+        } else {
+            if (unlikely(log_trace))
+                buffer.fmt("\n    ; Evaluate %s%u%s%s\n",
+                           var_type_register_ptx[(int) v->type],
+                           v->reg_index,
+                           v->has_label ? ": " : "",
+                           v->has_label ? jit_var_label(index) : "");
             jit_render_stmt_llvm(index, v);
+        }
 
         if (v->arg_type == ArgType::Output) {
-            buffer.fmt("    store <%u x %s> %%r%u, <%u x %s>* %%a%um, align %u\n",
-                       width, type, reg_id, width, type, arg_id, align);
+            if (unlikely(log_trace))
+                buffer.fmt("\n    ; Store %s%u%s%s\n",
+                           var_type_register_ptx[(int) v->type],
+                           v->reg_index, v->has_label ? ": " : "",
+                           v->has_label ? jit_var_label(index) : "");
+            get_parameter_addr(v->size, arg_id, type);
+            buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %%a%um, align %u\n",
+                       width, type,
+                       var_type_register_ptx[(int) v->type],
+                       reg_id, width, type, arg_id, align);
         }
     }
 
+    buffer.putc('\n');
     buffer.fmt("    %%index_next = add i64 %%index, %u\n", width);
     buffer.put("    %cond = icmp ult i64 %index_next, %end\n");
     buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop "
@@ -485,6 +517,7 @@ void jit_assemble(ScheduledGroup group) {
 
 void jit_run_llvm(ScheduledGroup group) {
     (void) group;
+    jit_llvm_compile(buffer.get(), buffer.size());
 }
 
 void jit_run_cuda(ScheduledGroup group) {
