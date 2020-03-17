@@ -85,11 +85,10 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
     while ((c = *s++) != '\0') {
         if (c != '$') {
             buffer.putc(c);
-            if (unlikely(c == '\n'))
-                buffer.put("    ");
         } else {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
+                case 'n': buffer.put("\n    "); continue;
                 case 't': prefix_table = var_type_name_ptx;     break;
                 case 'b': prefix_table = var_type_name_ptx_bin; break;
                 case 'r': prefix_table = var_type_register_ptx; break;
@@ -127,11 +126,10 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
     while ((c = *s++) != '\0') {
         if (c != '$') {
             buffer.putc(c);
-            if (unlikely(c == '\n'))
-                buffer.put("    ");
         } else {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
+                case 'n': buffer.put("\n    "); continue;
                 case 'w': buffer.fmt("%u", jit_llvm_vector_width); continue;
                 case 't': prefix_table = var_type_name_llvm;    break;
                 case 'r': prefix_table = var_type_register_ptx; break;
@@ -161,7 +159,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
     buffer.put(";\n");
 }
 
-void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
+uint32_t jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     auto get_parameter_addr = [](const Variable *v, uint32_t target = 0) {
         if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
             buffer.fmt("    ld.param.u64 %%rd%u, [arg%u];\n", target, v->arg_index - 1);
@@ -194,7 +192,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
          statements that must write a temporary result to a register.
     */
 
-    buffer.put(".visible .entry enoki_@@@@@@@@(.param .u32 size,\n");
+    buffer.put(".visible .entry enoki_^^^^^^^^(.param .u32 size,\n");
     for (uint32_t index = 1; index < kernel_args.size(); ++index)
         buffer.fmt("                               .param .u64 arg%u%s\n",
                    index - 1, (index + 1 < kernel_args.size()) ? "," : ") {");
@@ -220,10 +218,6 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                    CUDA_MAX_KERNEL_PARAMETERS - 2);
 
     buffer.put("\nL1: // Loop body\n");
-
-    /// Replace '@'s in 'enoki_@@@@@@@@' by MD5 hash
-    snprintf(kernel_name, 9, "%08x", crc32(0, buffer.get(), buffer.size()));
-    memcpy((void *) strchr(buffer.get(), '@'), kernel_name, 8);
 
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
@@ -300,13 +294,20 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     buffer.put("L0:\n");
     buffer.put("    ret;\n");
     buffer.put("}");
+
+    /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash
+    size_t hash_code = string_hash()(buffer.get());
+    snprintf(kernel_name, 9, "%08x", (uint32_t) hash_code);
+    memcpy((void *) strchr(buffer.get(), '^'), kernel_name, 8);
+
+    return hash_code;
 }
 
-void jit_assemble_llvm(ScheduledGroup group) {
+uint32_t jit_assemble_llvm(ScheduledGroup group) {
     const int width = jit_llvm_vector_width;
 
     buffer.clear();
-    buffer.fmt("define void @enoki_kernel(i64 %%start, i64 %%end, i8** %%ptrs) "
+    buffer.fmt("define void @enoki_^^^^^^^^(i64 %%start, i64 %%end, i8** %%ptrs) "
                "norecurse nosync nounwind \"target-cpu\"=\"%s\" \"target-features\"=\"%s\" {\n",
                jit_llvm_target_cpu, jit_llvm_target_features);
     buffer.put("entry:\n");
@@ -384,13 +385,20 @@ void jit_assemble_llvm(ScheduledGroup group) {
 
     buffer.putc('\n');
     buffer.fmt("    %%index_next = add i64 %%index, %u\n", width);
-    buffer.put("    %cond = icmp ult i64 %index_next, %end\n");
+    buffer.put("    %cond = icmp uge i64 %index_next, %end\n");
     buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop "
                "!{!\"llvm.loop.unroll.disable\"}\n");
     buffer.put("}");
+
+    /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash
+    size_t hash_code = string_hash()(buffer.get());
+    snprintf(kernel_name, 9, "%08x", (uint32_t) hash_code);
+    memcpy((void *) strchr(buffer.get(), '^'), kernel_name, 8);
+
+    return hash_code;
 }
 
-void jit_assemble(ScheduledGroup group) {
+uint32_t jit_assemble(ScheduledGroup group) {
     bool cuda = active_stream != nullptr;
 
     uint32_t n_args_in    = 0,
@@ -507,17 +515,34 @@ void jit_assemble(ScheduledGroup group) {
     jit_log(Info, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
             group.size, n_args_in - 1, n_args_out, n_regs_total);
 
+    uint32_t hash_code;
     if (cuda)
-        jit_assemble_cuda(group, n_regs_total);
+        hash_code = jit_assemble_cuda(group, n_regs_total);
     else
-        jit_assemble_llvm(group);
+        hash_code = jit_assemble_llvm(group);
 
     jit_log(Debug, "%s", buffer.get());
+    return hash_code;
 }
 
 void jit_run_llvm(ScheduledGroup group) {
-    (void) group;
-    jit_llvm_compile(buffer.get(), buffer.size());
+    float codegen_time = timer();
+    auto it = state.kernel_cache.find(buffer.get());
+    Kernel kernel;
+
+    if (it == state.kernel_cache.end()) {
+        kernel = jit_llvm_compile(buffer.get(), buffer.size());
+        float link_time = timer();
+        bool cache_hit = false;
+        jit_log(Debug, "jit_run(): cache %s, codegen: %s, %s: %s, %zu bytes.",
+                cache_hit ? "miss" : "hit",
+                std::string(jit_time_string(codegen_time)).c_str(),
+                cache_hit ? "build" : "load",
+                std::string(jit_time_string(link_time)).c_str(),
+                kernel.llvm.size);
+    }
+
+    kernel.llvm.func(0, group.size, kernel_args_extra.data());
 }
 
 void jit_run_cuda(ScheduledGroup group) {
@@ -570,28 +595,28 @@ void jit_run_cuda(ScheduledGroup group) {
         bool cache_hit = strstr(info_log.get(), "ptxas info") != nullptr;
         jit_log(Debug, "Detailed linker output:\n%s", info_log.get());
 
-        CUresult ret = cuModuleLoadData(&kernel.cu_module, link_output);
+        CUresult ret = cuModuleLoadData(&kernel.cuda.cu_module, link_output);
         if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
             jit_malloc_trim();
-            ret = cuModuleLoadData(&kernel.cu_module, link_output);
+            ret = cuModuleLoadData(&kernel.cuda.cu_module, link_output);
         }
         cuda_check(ret);
 
         // Locate the kernel entry point
         std::string name = std::string("enoki_") + kernel_name;
-        cuda_check(cuModuleGetFunction(&kernel.cu_func, kernel.cu_module,
+        cuda_check(cuModuleGetFunction(&kernel.cuda.cu_func, kernel.cuda.cu_module,
                                        name.c_str()));
 
         /// Enoki doesn't use shared memory at all..
         cuda_check(cuFuncSetAttribute(
-            kernel.cu_func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
+            kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
         cuda_check(cuFuncSetAttribute(
-            kernel.cu_func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
+            kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
             CU_SHAREDMEM_CARVEOUT_MAX_L1));
 
         int reg_count;
         cuda_check(cuFuncGetAttribute(
-            &reg_count, CU_FUNC_ATTRIBUTE_NUM_REGS, kernel.cu_func));
+            &reg_count, CU_FUNC_ATTRIBUTE_NUM_REGS, kernel.cuda.cu_func));
 
         // Destroy the linker invocation
         cuda_check(cuLinkDestroy(link_state));
@@ -600,8 +625,8 @@ void jit_run_cuda(ScheduledGroup group) {
         memcpy(str, buffer.get(), buffer.size() + 1);
 
         cuda_check(cuOccupancyMaxPotentialBlockSize(
-            &kernel.block_count, &kernel.thread_count,
-            kernel.cu_func, nullptr, 0, 0));
+            &kernel.cuda.block_count, &kernel.cuda.thread_count,
+            kernel.cuda.cu_func, nullptr, 0, 0));
 
         state.kernel_cache.emplace(str, kernel);
 
@@ -610,9 +635,9 @@ void jit_run_cuda(ScheduledGroup group) {
                 "threads, %i blocks.",
                 cache_hit ? "miss" : "hit",
                 std::string(jit_time_string(codegen_time)).c_str(),
-                cache_hit ? "link" : "load",
+                cache_hit ? "build" : "load",
                 std::string(jit_time_string(link_time)).c_str(), reg_count,
-                kernel.thread_count, kernel.block_count);
+                kernel.cuda.thread_count, kernel.cuda.block_count);
     } else {
         kernel = it.value();
         jit_log(Debug, "jit_run(): cache hit, codegen: %s.",
@@ -629,8 +654,8 @@ void jit_run_cuda(ScheduledGroup group) {
         CU_LAUNCH_PARAM_END
     };
 
-    uint32_t thread_count = kernel.thread_count,
-             block_count  = kernel.block_count;
+    uint32_t thread_count = kernel.cuda.thread_count,
+             block_count  = kernel.cuda.block_count;
 
     /// Reduce the number of blocks when processing a very small amount of data
     if (group.size <= thread_count) {
@@ -640,7 +665,7 @@ void jit_run_cuda(ScheduledGroup group) {
         block_count = (group.size + thread_count - 1) / thread_count;
     }
 
-    cuda_check(cuLaunchKernel(kernel.cu_func, block_count, 1, 1, thread_count,
+    cuda_check(cuLaunchKernel(kernel.cuda.cu_func, block_count, 1, 1, thread_count,
                               1, 1, 0, active_stream->handle, nullptr, config));
 }
 

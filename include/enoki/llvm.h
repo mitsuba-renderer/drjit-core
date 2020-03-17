@@ -58,9 +58,9 @@ struct LLVMArray {
         char value_str[256];
         snprintf(value_str, 256,
             (Type == VarType::Float32 || Type == VarType::Float64) ?
-            "$r0_t = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0\n"
+            "$r0_t = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0$n"
             "$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer" :
-            "$r0_t = insertelement <$w x $t0> undef, $t0 %llu, i32 0\n"
+            "$r0_t = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
             "$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer",
             value_uint64);
 

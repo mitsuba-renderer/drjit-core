@@ -78,4 +78,6 @@ TEST_BOTH(06_argument_inout) {
     }
 }
 
+/// Deal with scalars more efficiently.. (move out of loop, use scalar registers, etc.)
+
 /// parallel dispatch

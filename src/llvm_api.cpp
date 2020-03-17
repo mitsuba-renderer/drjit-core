@@ -3,6 +3,7 @@
 #include "log.h"
 #include <glob.h>
 #include <dlfcn.h>
+#include <sys/mman.h>
 
 /// LLVM API
 using LLVMBool = int;
@@ -67,14 +68,16 @@ static void *jit_llvm_handle                  = nullptr;
 static LLVMDisasmContextRef jit_llvm_disasm   = nullptr;
 static LLVMExecutionEngineRef jit_llvm_engine = nullptr;
 static LLVMContextRef jit_llvm_context        = nullptr;
+
 char *jit_llvm_target_cpu                     = nullptr;
 char *jit_llvm_target_features                = nullptr;
 int   jit_llvm_vector_width                   = 0;
-
+uint32_t jit_llvm_kernel_id                   = 0;
 
 static bool     jit_llvm_init_attempted = false;
-static bool     jit_llvm_init_success = false;
-static uint8_t *jit_llvm_mem_start  = nullptr;
+static bool     jit_llvm_init_success   = false;
+
+static uint8_t *jit_llvm_mem        = nullptr;
 static size_t   jit_llvm_mem_size   = 0;
 static size_t   jit_llvm_mem_offset = 0;
 
@@ -83,41 +86,24 @@ extern "C" {
 static uint8_t *jit_llvm_mem_allocate(void * /* opaque */, uintptr_t size,
                                       unsigned align, unsigned /* id */,
                                       const char *name) {
-    jit_trace("jit_llvm_mem_allocate(section=%s, size=%lu);", name, size);
-
-    if (jit_llvm_mem_offset == 0 && strstr(name, "text") == nullptr)
-        jit_fail(
-            "jit_llvm_mem_allocate_code(): started with unknown section \"%s\"",
-            name);
-
     if (align == 0)
         align = 16;
 
+    jit_trace("jit_llvm_mem_allocate(section=%s, size=%lu, align=%llu);", name,
+              size, align);
+
     size_t offset_align = (jit_llvm_mem_offset + (align - 1)) / align * align;
 
-    if (offset_align + size > jit_llvm_mem_size) {
-        size_t alloc_size =
-            std::max(jit_llvm_mem_size * 2, offset_align + size);
-        void *ptr = nullptr;
-        int rv = posix_memalign(&ptr, 64, alloc_size);
-        if (unlikely(rv))
-            jit_fail("jit_llvm_mem_allocate_code(): out of memory!");
-        if (jit_llvm_mem_start) {
-            memcpy(ptr, jit_llvm_mem_start, jit_llvm_mem_offset);
-            free(jit_llvm_mem_start);
-        }
-        jit_llvm_mem_start = (uint8_t *) ptr;
-        jit_llvm_mem_size = alloc_size;
-    }
-
     // Zero-fill padding region for alignment
-    memset(jit_llvm_mem_start + jit_llvm_mem_offset, 0,
+    memset(jit_llvm_mem + jit_llvm_mem_offset, 0,
            offset_align - jit_llvm_mem_offset);
 
-    uint8_t *target = jit_llvm_mem_start + offset_align;
     jit_llvm_mem_offset = offset_align + size;
 
-    return target;
+    if (jit_llvm_mem_offset > jit_llvm_mem_size)
+        return nullptr;
+
+    return jit_llvm_mem + offset_align;
 }
 
 static uint8_t *jit_llvm_mem_allocate_data(void *opaque, uintptr_t size,
@@ -128,24 +114,32 @@ static uint8_t *jit_llvm_mem_allocate_data(void *opaque, uintptr_t size,
 }
 
 static LLVMBool jit_llvm_mem_finalize(void * /* opaque */, char ** /* err */) {
-    jit_trace("jit_llvm_mem_finalize();");
     return 0;
 }
 
-static void jit_llvm_mem_destroy(void * /* opaque */) {
-    jit_trace("jit_llvm_mem_destroy();");
-    free(jit_llvm_mem_start);
-    jit_llvm_mem_start  = nullptr;
-    jit_llvm_mem_size   = 0;
-    jit_llvm_mem_offset = 0;
-}
-};
+static void jit_llvm_mem_destroy(void * /* opaque */) { }
 
-void jit_llvm_compile(const char *buffer, size_t buffer_size) {
+} /* extern "C" */ ;
+
+Kernel jit_llvm_compile(const char *buffer, size_t buffer_size) {
+    if (jit_llvm_mem_size <= buffer_size) {
+        // Central assumption: LLVM text IR is much larger than the resulting generated code.
+        free(jit_llvm_mem);
+        if (posix_memalign((void **) &jit_llvm_mem, 64, buffer_size))
+            jit_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", buffer_size);
+        jit_llvm_mem_size = buffer_size;
+    }
     jit_llvm_mem_offset = 0;
+
+    // Temporarily change the kernel name
+    char kernel_name_old[15], kernel_name_new[15];
+    snprintf(kernel_name_new, 15, "enoki_%08x", (uint32_t) jit_llvm_kernel_id++);
+    char *kernel_name_offset = (char *) strstr(buffer, "enoki_");
+    memcpy(kernel_name_old, kernel_name_offset, 14);
+    memcpy(kernel_name_offset, kernel_name_new, 14);
 
     LLVMMemoryBufferRef buf = LLVMCreateMemoryBufferWithMemoryRange(
-        buffer, buffer_size, "enoki_kernel", 0);
+        buffer, buffer_size, kernel_name_new, 0);
     if (unlikely(!buf))
         jit_fail("jit_run_compile(): could not create memory buffer!");
 
@@ -164,37 +158,68 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size) {
 
     LLVMAddModule(jit_llvm_engine, module);
 
-    uint8_t *ptr = (uint8_t *) LLVMGetFunctionAddress(jit_llvm_engine, "enoki_kernel");
-    // if (unlikely(ptr != jit_llvm_mem_start))
-    //     jit_fail(
-    //         "jit_llvm_compile(): internal error: address mismatch: %p vs %p.\n",
-    //         ptr, jit_llvm_mem_start);
+    uint8_t *ptr = (uint8_t *) LLVMGetFunctionAddress(jit_llvm_engine, kernel_name_new);
+    if (unlikely(ptr != jit_llvm_mem))
+        jit_fail(
+            "jit_llvm_compile(): internal error: address mismatch: %p vs %p.\n",
+            ptr, jit_llvm_mem);
 
-    char ins_buf[256];
-    do {
-        size_t cur_offset = ptr - jit_llvm_mem_start;
-        if (cur_offset >= jit_llvm_mem_offset)
-            break;
-        size_t size = LLVMDisasmInstruction(
-            jit_llvm_disasm, ptr, jit_llvm_mem_offset - cur_offset,
-            (uintptr_t) ptr, ins_buf, sizeof(ins_buf));
-        if (size == 0)
-            break;
-        char *start = ins_buf;
-        while (*start == ' ' || *start == '\t')
-            ++start;
-        jit_trace("0x%08llx   %s", cur_offset, start);
-        ptr += size;
-    } while (true);
+    /// Dump assembly representation
+    if (std::max(state.log_level_stderr, state.log_level_callback) >=
+        LogLevel::Trace) {
+        char ins_buf[256];
+        do {
+            size_t cur_offset = ptr - jit_llvm_mem;
+            if (cur_offset >= jit_llvm_mem_offset)
+                break;
+            size_t size = LLVMDisasmInstruction(
+                jit_llvm_disasm, ptr, jit_llvm_mem_offset - cur_offset,
+                (uintptr_t) ptr, ins_buf, sizeof(ins_buf));
+            if (size == 0)
+                break;
+            char *start = ins_buf;
+            while (*start == ' ' || *start == '\t')
+                ++start;
+            jit_trace("jit_llvm_compile(): 0x%08llx   %s", cur_offset, start);
+            if (strncmp(start, "ret", 3) == 0)
+                break;
+            ptr += size;
+        } while (true);
+    }
+
+    void *ptr_result =
+        mmap(nullptr, jit_llvm_mem_offset, PROT_READ | PROT_WRITE,
+             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ptr_result == MAP_FAILED)
+        jit_fail("jit_llvm_compile(): could not mmap() memory for function: %s",
+                 strerror(errno));
+    memcpy(ptr_result, jit_llvm_mem, jit_llvm_mem_offset);
+
+    if (mprotect(ptr_result, jit_llvm_mem_offset, PROT_READ | PROT_EXEC) == -1)
+        jit_fail("jit_llvm_compile(): mprotect() failed: %s", strerror(errno));
 
     LLVMRemoveModule(jit_llvm_engine, module, &module, &error);
     if (unlikely(error))
         jit_fail("jit_llvm_compile(): could remove module: %s.\n", error);
+    LLVMDisposeModule(module);
+
+    // Change the kernel name back
+    memcpy(kernel_name_offset, kernel_name_old, 8);
+
+    Kernel result;
+    result.llvm.func = (LLVMKernelFunction) ptr_result;
+    result.llvm.size = jit_llvm_mem_offset;
+    return result;
+}
+
+void jit_llvm_free(Kernel kernel) {
+    if (munmap((void *) kernel.llvm.func, kernel.llvm.size) == -1)
+        jit_fail("jit_llvm_compile(): munmap() failed!");
 }
 
 #define LOAD(name)                                                             \
     symbol = #name;                                                            \
-    name = decltype(name)(dlsym(jit_llvm_handle, symbol));                    \
+    name = decltype(name)(dlsym(jit_llvm_handle, symbol));                     \
     if (!name)                                                                 \
         break;                                                                 \
     symbol = nullptr
@@ -333,7 +358,7 @@ bool jit_llvm_init() {
     if (strstr(jit_llvm_target_features, "+avx512f"))
         jit_llvm_vector_width = 16;
 
-    jit_log(Info, "jit_llvm_init(): found %s, cpu=%s, width=%i", triple,
+    jit_log(Info, "jit_llvm_init(): found %s, cpu=%s, vector width=%i.", triple,
             jit_llvm_target_cpu, jit_llvm_vector_width);
 
     LLVMDisposeMessage(triple);
@@ -368,6 +393,12 @@ void jit_llvm_shutdown() {
     jit_llvm_target_features = nullptr;
     jit_llvm_handle = nullptr;
     jit_llvm_vector_width = 0;
+
+    free(jit_llvm_mem);
+    jit_llvm_mem        = nullptr;
+    jit_llvm_mem_size   = 0;
+    jit_llvm_mem_offset = 0;
+    jit_llvm_kernel_id = 0;
 
     Z(LLVMLinkInMCJIT); Z(LLVMInitializeX86Target);
     Z(LLVMInitializeX86TargetInfo); Z(LLVMInitializeX86TargetMC);

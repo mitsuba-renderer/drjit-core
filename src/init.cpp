@@ -121,7 +121,7 @@ void jit_shutdown(int light) {
 
         for (auto &v : state.kernel_cache) {
             free((char *) v.first);
-            cuda_check(cuModuleUnload(v.second.cu_module));
+            cuda_check(cuModuleUnload(v.second.cuda.cu_module));
         }
         state.kernel_cache.clear();
     }

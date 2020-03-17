@@ -71,15 +71,6 @@ struct Stream {
     tsl::robin_set<uint32_t> todo;
 };
 
-/// A CUDA kernel and its preferred lauch configuration
-struct Kernel {
-    CUmodule cu_module = nullptr;
-    CUfunction cu_func = nullptr;
-    int thread_count = 0;
-    int block_count = 0;
-};
-
-/// Enumeration for Variable::arg_type
 enum ArgType {
     Register,
     Input,
