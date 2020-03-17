@@ -244,10 +244,7 @@ uint32_t jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                            v->reg_index);
                 } else {
                     buffer.fmt("    %s.global.u8 %%w0, [%%rd0];\n",
-                           v->size == 1 ? "ldu" : "ld",
-                           var_type_name_ptx[(int) v->type],
-                           var_type_register_ptx[(int) v->type],
-                           v->reg_index);
+                           v->size == 1 ? "ldu" : "ld");
                     buffer.fmt("    setp.ne.u16 %s%u, %%w0, 0;",
                            var_type_register_ptx[(int) v->type],
                            v->reg_index);
@@ -304,12 +301,19 @@ uint32_t jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
 }
 
 uint32_t jit_assemble_llvm(ScheduledGroup group) {
-    const int width = jit_llvm_vector_width;
+    const int width       = jit_llvm_vector_width;
+
+    bool log_trace = std::max(state.log_level_stderr,
+                              state.log_level_callback) >= LogLevel::Trace;
 
     buffer.clear();
-    buffer.fmt("define void @enoki_^^^^^^^^(i64 %%start, i64 %%end, i8** %%ptrs) "
-               "norecurse nosync nounwind \"target-cpu\"=\"%s\" \"target-features\"=\"%s\" {\n",
-               jit_llvm_target_cpu, jit_llvm_target_features);
+    buffer.put("!0 = !{!0}\n");
+    buffer.put("!1 = !{!1, !0}\n");
+    buffer.fmt("define void @enoki_^^^^^^^^(i64 %%start, i64 %%end, i8** "
+               "%%ptrs) norecurse nosync nounwind alignstack(%i) "
+               "\"target-cpu\"=\"%s\" \"target-features\"=\"%s\" {\n",
+               width * sizeof(float), jit_llvm_target_cpu,
+               jit_llvm_target_features);
     buffer.put("entry:\n");
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
@@ -317,9 +321,15 @@ uint32_t jit_assemble_llvm(ScheduledGroup group) {
         if (v->arg_type == ArgType::Register)
             continue;
         uint32_t arg_id = v->arg_index - 1;
+        const char *type = var_type_name_llvm[(int) v->type];
+        if (unlikely(log_trace))
+            buffer.fmt("\n    ; Prepare argument %u\n", arg_id);
         buffer.fmt("    %%a%ui = getelementptr inbounds i8*, i8** %%ptrs, i64 %u\n", arg_id, arg_id);
-        buffer.fmt("    %%a%up = load i8*, i8** %%a%ui, align 8\n", arg_id, arg_id);
-        buffer.fmt("    %%a%u = bitcast i8* %%a%up to %s*\n", arg_id, arg_id, var_type_name_llvm[(int) v->type]);
+        buffer.fmt("    %%a%up = load i8*, i8** %%a%ui, align 8, !alias.scope !1\n", arg_id, arg_id);
+        buffer.fmt("    %%a%u = bitcast i8* %%a%up to %s*\n", arg_id, arg_id, type);
+        if (v->size == 1)
+            buffer.fmt("    %%a%us = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
+                       type, type, arg_id, var_type_size[(int) v->type]);
     }
     buffer.put("    br label %loop\n\n");
     buffer.put("done:\n");
@@ -327,9 +337,6 @@ uint32_t jit_assemble_llvm(ScheduledGroup group) {
 
     buffer.put("loop:\n");
     buffer.put("    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]\n");
-
-    bool log_trace = std::max(state.log_level_stderr,
-                              state.log_level_callback) >= LogLevel::Trace;
 
     auto get_parameter_addr = [](uint32_t size, uint32_t arg_id, const char *type) {
         if (size == 1) {
@@ -351,14 +358,22 @@ uint32_t jit_assemble_llvm(ScheduledGroup group) {
         const char *type = var_type_name_llvm[(int) v->type];
 
         if (v->arg_type == ArgType::Input) {
-            buffer.fmt("\n    ; Load %s%u%s%s\n",
-                       var_type_register_ptx[(int) v->type],
-                       v->reg_index, v->has_label ? ": " : "",
-                       v->has_label ? jit_var_label(index) : "");
+            if (unlikely(log_trace))
+                buffer.fmt("\n    ; Load %s%u%s%s\n",
+                           var_type_register_ptx[(int) v->type],
+                           v->reg_index, v->has_label ? ": " : "",
+                           v->has_label ? jit_var_label(index) : "");
 
-            get_parameter_addr(v->size, arg_id, type);
-            buffer.fmt("    %%r%u = load <%u x %s>, <%u x %s>* %%a%um, align %u\n",
-                       reg_id, width, type, width, type, arg_id, align);
+            if (v->size > 1) {
+                get_parameter_addr(v->size, arg_id, type);
+                buffer.fmt("    %%r%u = load <%u x %s>, <%u x %s>* %%a%um, align %u, !alias.scope !1\n",
+                           reg_id, width, type, width, type, arg_id, align);
+            } else {
+                buffer.fmt("    %%r%ut = insertelement <%u x %s> undef, %s %%a%us, i32 0\n",
+                           reg_id, width, type, type, arg_id);
+                buffer.fmt("    %%r%u = shufflevector <%u x %s> %%r%ut, <%u x %s> undef, <%u x i32> zeroinitializer\n",
+                           reg_id, width, type, reg_id, width, type, width);
+            }
         } else {
             if (unlikely(log_trace))
                 buffer.fmt("\n    ; Evaluate %s%u%s%s\n",
@@ -376,7 +391,7 @@ uint32_t jit_assemble_llvm(ScheduledGroup group) {
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
             get_parameter_addr(v->size, arg_id, type);
-            buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %%a%um, align %u\n",
+            buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %%a%um, align %u, !noalias !1\n",
                        width, type,
                        var_type_register_ptx[(int) v->type],
                        reg_id, width, type, arg_id, align);
@@ -387,7 +402,7 @@ uint32_t jit_assemble_llvm(ScheduledGroup group) {
     buffer.fmt("    %%index_next = add i64 %%index, %u\n", width);
     buffer.put("    %cond = icmp uge i64 %index_next, %end\n");
     buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop "
-               "!{!\"llvm.loop.unroll.disable\"}\n");
+               "!{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n");
     buffer.put("}");
 
     /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash

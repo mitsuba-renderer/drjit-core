@@ -8,7 +8,7 @@ const char *reduction_name[(int) ReductionType::Count] = { "add", "mul", "min",
 
 /// Fill a device memory region with constants of a given type
 void jit_fill(VarType type, void *ptr, size_t size, const void *src) {
-    jit_trace("jit_fill(" PTR ", type=%s, size=%zu)", ptr,
+    jit_trace("jit_fill(" PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
               var_type_name[(int) type], size);
 
     Stream *stream = active_stream;
@@ -80,7 +80,7 @@ void jit_fill(VarType type, void *ptr, size_t size, const void *src) {
 
 void jit_reduce(VarType type, ReductionType rtype, const void *ptr, size_t size,
                 void *out) {
-    jit_trace("jit_reduce(" PTR ", type=%s, rtype=%s, size=%zu)", ptr,
+    jit_trace("jit_reduce(" PTR ", type=%s, rtype=%s, size=%zu)", (uintptr_t) ptr,
               var_type_name[(int) type], reduction_name[(int) rtype], size);
 
     size_t type_size = var_type_size[(int) type];

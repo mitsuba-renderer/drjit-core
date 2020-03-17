@@ -341,6 +341,9 @@ public:
     }
 
     /// Append a formatted (printf-style) string to the buffer
+#if defined(__GNUC__)
+    __attribute__((__format__ (__printf__, 2, 3)))
+#endif
     size_t fmt(const char *format, ...);
 
     /// Like \ref fmt, but specify arguments through a va_list.

@@ -10,19 +10,28 @@
 #endif
 
 /// Print a log message with the specified log level and message
+#if defined(__GNUC__)
+    __attribute__((__format__ (__printf__, 2, 3)))
+#endif
 extern void jit_log(LogLevel level, const char* fmt, ...);
 
 /// Print a log message with the specified log level and message
 extern void jit_vlog(LogLevel level, const char* fmt, va_list args);
 
 /// Raise a std::runtime_error with the given message
-[[noreturn]] extern void jit_raise(const char* fmt, ...);
+#if defined(__GNUC__)
+    __attribute__((noreturn, __format__ (__printf__, 1, 2)))
+#endif
+extern void jit_raise(const char* fmt, ...);
 
 /// Raise a std::runtime_error with the given message
 [[noreturn]] extern void jit_vraise(const char* fmt, va_list args);
 
 /// Immediately terminate the application due to a fatal internal error
-[[noreturn]] extern void jit_fail(const char* fmt, ...);
+#if defined(__GNUC__)
+    __attribute__((noreturn, __format__ (__printf__, 1, 2)))
+#endif
+extern void jit_fail(const char* fmt, ...);
 
 /// Immediately terminate the application due to a fatal internal error
 [[noreturn]] extern void jit_vfail(const char* fmt, va_list args);

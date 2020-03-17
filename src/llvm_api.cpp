@@ -89,8 +89,8 @@ static uint8_t *jit_llvm_mem_allocate(void * /* opaque */, uintptr_t size,
     if (align == 0)
         align = 16;
 
-    jit_trace("jit_llvm_mem_allocate(section=%s, size=%lu, align=%llu);", name,
-              size, align);
+    jit_trace("jit_llvm_mem_allocate(section=%s, size=%llu, align=%u);", name,
+              (uint64_t) size, (uint32_t) align);
 
     size_t offset_align = (jit_llvm_mem_offset + (align - 1)) / align * align;
 
@@ -180,7 +180,7 @@ Kernel jit_llvm_compile(const char *buffer, size_t buffer_size) {
             char *start = ins_buf;
             while (*start == ' ' || *start == '\t')
                 ++start;
-            jit_trace("jit_llvm_compile(): 0x%08llx   %s", cur_offset, start);
+            jit_trace("jit_llvm_compile(): 0x%08llx   %s", (uint64_t) cur_offset, start);
             if (strncmp(start, "ret", 3) == 0)
                 break;
             ptr += size;

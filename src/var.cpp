@@ -273,9 +273,9 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
         }
 
         jit_raise("cuda_var_set_size(): attempted to resize variable %u,"
-                  "which was already allocated (current size = %zu, "
-                  "requested size = %zu)",
-                  index, v->size, size);
+                  "which was already allocated (current size = %u, "
+                  "requested size = %u)",
+                  index, v->size, (uint32_t) size);
     }
 
     jit_log(Debug, "jit_var_set_size(%u): %zu", index, size);
@@ -412,7 +412,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
                  (v2->size != 1 && v2->size != v.size))) {
         jit_raise(
             "jit_trace_append(): arithmetic involving arrays of incompatible "
-            "size (%zu and %zu). The instruction was \"%s\".",
+            "size (%u and %u). The instruction was \"%s\".",
             v1->size, v2->size, stmt);
     } else if (unlikely(v1->dirty || v2->dirty)) {
         jit_eval();
@@ -472,7 +472,7 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
                  (v3->size != 1 && v3->size != v.size))) {
         jit_raise(
             "jit_trace_append(): arithmetic involving arrays of incompatible "
-            "size (%zu, %zu, and %zu). The instruction was \"%s\".",
+            "size (%u, %u, and %u). The instruction was \"%s\".",
             v1->size, v2->size, v3->size, stmt);
     } else if (unlikely(v1->dirty || v2->dirty || v3->dirty)) {
         jit_eval();
@@ -520,7 +520,7 @@ uint32_t jit_var_map(VarType type, void *ptr, size_t size, int free) {
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_var_map(%u): " PTR ", size=%zu, free=%i",
-            index, ptr, size, (int) free);
+            index, (uintptr_t) ptr, size, (int) free);
 
     jit_var_ext_ref_inc(index, vo);
 
@@ -570,7 +570,7 @@ uint32_t jit_var_copy_ptr(const void *ptr) {
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_var_copy_ptr(%u): " PTR, index, ptr);
+    jit_log(Debug, "jit_var_copy_ptr(%u): " PTR, index, (uintptr_t) ptr);
 
     jit_var_ext_ref_inc(index, vo);
     state.variable_from_ptr[ptr] = index;
@@ -588,8 +588,8 @@ void jit_var_migrate(uint32_t index, AllocType type) {
         v = jit_var(index);
     }
 
-    jit_log(Debug, "jit_var_migrate(%u, " PTR "): %s", index, v->data,
-            alloc_type_name[(int) type]);
+    jit_log(Debug, "jit_var_migrate(%u, " PTR "): %s", index,
+            (uintptr_t) v->data, alloc_type_name[(int) type]);
 
     v->data = jit_malloc_migrate(v->data, type);
 }
@@ -645,7 +645,7 @@ const char *jit_var_whos() {
         size_t sz = buffer.fmt("%u / %u", v->ref_count_ext, v->ref_count_int);
         const char *label = jit_var_label(index);
 
-        buffer.fmt("%*s%-12u%-12s[%c]     %s\n", 11 - sz, "", v->size,
+        buffer.fmt("%*s%-12u%-12s[%c]     %s\n", 11 - (int) sz, "", v->size,
                    jit_mem_string(mem_size), v->data ? 'x' : ' ',
                    label ? label : "");
 
@@ -716,7 +716,7 @@ const char *jit_var_str(uint32_t index) {
     buffer.putc('[');
     for (uint32_t i = 0; i < size; ++i) {
         if (size > limit_thresh && i == limit_remainder / 2) {
-            buffer.fmt(".. %u skipped .., ", size - limit_remainder);
+            buffer.fmt(".. %zu skipped .., ", size - limit_remainder);
             i = size - limit_remainder / 2 - 1;
             continue;
         }
