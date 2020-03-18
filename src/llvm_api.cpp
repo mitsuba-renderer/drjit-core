@@ -1,7 +1,6 @@
 #include "llvm_api.h"
 #include "internal.h"
 #include "log.h"
-#include <glob.h>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -95,8 +94,8 @@ static uint8_t *jit_llvm_mem_allocate(void * /* opaque */, uintptr_t size,
     if (align == 0)
         align = 16;
 
-    jit_trace("jit_llvm_mem_allocate(section=%s, size=%llu, align=%u);", name,
-              (uint64_t) size, (uint32_t) align);
+    jit_trace("jit_llvm_mem_allocate(section=%s, size=%zu, align=%u);", name,
+              size, (uint32_t) align);
 
     size_t offset_align = (jit_llvm_mem_offset + (align - 1)) / align * align;
 
@@ -324,7 +323,7 @@ Kernel jit_llvm_compile(const char *buffer, size_t buffer_size, uint32_t hash, b
             char *start = ins_buf;
             while (*start == ' ' || *start == '\t')
                 ++start;
-            jit_trace("jit_llvm_compile(): 0x%08llx   %s", (uint64_t) cur_offset, start);
+            jit_trace("jit_llvm_compile(): 0x%08x   %s", (uint32_t) cur_offset, start);
             if (strncmp(start, "ret", 3) == 0)
                 break;
             ptr += size;
@@ -392,26 +391,19 @@ bool jit_llvm_init() {
     }
 
 #if defined(__linux__)
-    jit_llvm_handle = dlopen("libLLVM.so", RTLD_LAZY);
-#elif defined(__APPLE__)
-    jit_llvm_handle = dlopen("libLLVM.dylib", RTLD_LAZY);
-
-    if (!jit_llvm_handle) {
-        glob_t g;
-        if (glob("/usr/local/Cellar/llvm/*/lib/libLLVM.dylib", 0, nullptr, &g) == 0) {
-            for (size_t i = 0; i < g.gl_pathc; ++i) {
-                jit_llvm_handle = dlopen(g.gl_pathv[i], RTLD_LAZY);
-                if (jit_llvm_handle)
-                    break;
-            }
-            globfree(&g);
-        }
-    }
+    const char *llvm_fname  = "libLLVM.so",
+               *llvm_glob   = "/usr/lib/x86_64-linux-gnu/libLLVM*.so.*";
+#else
+    const char *llvm_fname  = "libLLVM.dylib",
+               *llvm_glob   = "/usr/local/Cellar/llvm/*/lib/libLLVM.dylib";
 #endif
 
+    jit_llvm_handle = jit_find_library(llvm_fname, llvm_glob, "ENOKI_LIBLLVM_PATH");
+
     if (!jit_llvm_handle) {
-        jit_log(Warn, "jit_llvm_init(): libLLVM.so/.dylib not found -- "
-                      "disabling LLVM backend!");
+        jit_log(Warn, "jit_llvm_init(): %s could not be loaded -- "
+                      "disabling LLVM backend! Set the 'ENOKI_LIBLLVM_PATH' "
+                      "environment variable to specify its path.", llvm_fname);
         return false;
     }
 

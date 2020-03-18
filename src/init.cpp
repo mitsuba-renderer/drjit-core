@@ -2,6 +2,9 @@
 #include "malloc.h"
 #include "internal.h"
 #include "log.h"
+#include <glob.h>
+#include <dlfcn.h>
+#include <sys/stat.h>
 
 State state;
 Buffer buffer{1024};
@@ -240,4 +243,49 @@ void jit_sync_device() {
         cuda_check(cuCtxSynchronize());
     }
     jit_trace("jit_sync_device(): done.");
+}
+
+void *jit_find_library(const char *fname, const char *glob_pat,
+                       const char *env_var) {
+    const char *env_var_val = env_var ? getenv(env_var) : nullptr;
+    void *handle = dlopen(env_var_val ? env_var_val : fname, RTLD_LAZY);
+
+    if (!handle & !env_var_val) {
+        glob_t g;
+        if (glob(glob_pat, 0, nullptr, &g) == 0) {
+            const char *chosen = nullptr;
+            if (g.gl_pathc > 1) {
+                jit_log(Warn, "jit_llvm_init(): Multiple versions of "
+                              "%s were found on your system!\n", fname);
+                std::sort(g.gl_pathv, g.gl_pathv + g.gl_pathc,
+                          [](const char *a, const char *b) {
+                              return strcmp(a, b) < 0;
+                          });
+                uint32_t counter = 1;
+                for (int j = 0; j < 2; ++j) {
+                    for (size_t i = 0; i < g.gl_pathc; ++i) {
+                        struct stat buf;
+                        // Skip symbolic links at first
+                        if (j == 0 && (lstat(g.gl_pathv[i], &buf) || S_ISLNK(buf.st_mode)))
+                            continue;
+                        jit_log(Warn, " %u. \"%s\"", counter++, g.gl_pathv[i]);
+                        chosen = g.gl_pathv[i];
+                    }
+                    if (chosen)
+                        break;
+                }
+                jit_log(Warn,
+                        "\nChoosing the last one. Specify a path manually "
+                        "using the environment\nvariable '%s' "
+                        "to override this behavior.\n", env_var);
+            } else if (g.gl_pathc == 1) {
+                chosen = g.gl_pathv[0];
+            }
+            if (chosen)
+                handle = dlopen(chosen, RTLD_LAZY);
+            globfree(&g);
+        }
+    }
+
+    return handle;
 }

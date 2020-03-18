@@ -403,7 +403,7 @@ void jit_assemble_llvm(ScheduledGroup group) {
     buffer.put("    %cond = icmp uge i64 %index_next, %end\n");
     buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop "
                "!{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n");
-    buffer.put("}");
+    buffer.put("}\n\n");
     buffer.put("!0 = !{!0}\n");
     buffer.put("!1 = !{!1, !0}\n");
 

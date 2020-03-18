@@ -102,9 +102,20 @@ bool jit_cuda_init() {
         return jit_cuda_init_success;
     jit_cuda_init_attempted = true;
 
-    jit_cuda_handle = dlopen("libcuda.so", RTLD_NOW);
+#if defined(__linux__)
+    const char *cuda_fname  = "libcuda.so",
+               *cuda_glob   = "/usr/lib/x86_64-linux-gnu/libcuda.so.*";
+#else
+    const char *cuda_fname  = "libcuda.dylib",
+               *cuda_glob   = cuda_fname;
+#endif
+
+    jit_cuda_handle = jit_find_library(cuda_fname, cuda_glob, "ENOKI_LIBCUDA_PATH");
+
     if (!jit_cuda_handle) {
-        jit_log(Warn, "jit_cuda_init(): libcuda.so not found -- disabling CUDA backend!");
+        jit_log(Warn, "jit_cuda_init(): %s could not be loaded -- "
+                      "disabling CUDA backend! Set the 'ENOKI_LIBCUDA_PATH' "
+                      "environment variable to specify its path.", cuda_fname);
         return false;
     }
 

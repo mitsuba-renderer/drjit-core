@@ -49,14 +49,14 @@ struct LLVMArray {
 
     LLVMArray(Value value) {
         uint_with_size_t<Value> value_uint;
-        uint64_t value_uint64;
+        unsigned long long value_ull;
 
         if (Type == VarType::Float32) {
             double d = (double) value;
-            memcpy(&value_uint64, &d, sizeof(double));
+            memcpy(&value_ull, &d, sizeof(double));
         }  else {
             memcpy(&value_uint, &value, sizeof(Value));
-            value_uint64 = (uint64_t) value_uint;
+            value_ull = (unsigned long long) value_uint;
         }
 
         char value_str[256];
@@ -66,7 +66,7 @@ struct LLVMArray {
             "$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer" :
             "$r0_t = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
             "$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer",
-            value_uint64);
+            value_ull);
 
         m_index = jitc_trace_append_0(Type, value_str, 0);
     }
