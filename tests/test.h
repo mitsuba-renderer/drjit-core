@@ -20,26 +20,30 @@ using FloatL = LLVMArray<float>;
 using Int32L = LLVMArray<int32_t>;
 
 #define TEST_CUDA(name)                                                        \
-    template <typename Float, typename Int32> void test##name();               \
-    int test##name##_c =                                                       \
-        test_register("test" #name, test##name<FloatC, Int32C>, true);         \
-    template <typename Float, typename Int32>                                  \
+    template <typename Float, typename Int32, template <class> class Array>    \
+    void test##name();                                                         \
+    int test##name##_c = test_register(                                        \
+        "test" #name, test##name<FloatC, Int32C, CUDAArray>, true);            \
+    template <typename Float, typename Int32, template <class> typename Array> \
     void test##name()
 
 #define TEST_LLVM(name)                                                        \
-    template <typename Float, typename Int32> void test##name();               \
-    int test##name##_l =                                                       \
-        test_register("test" #name, test##name<FloatL, Int32L>, false);        \
-    template <typename Float, typename Int32>                                  \
+    template <typename Float, typename Int32, template <class> class Array>    \
+    void test##name();                                                         \
+    int test##name##_l = test_register(                                        \
+        "test" #name, test##name<FloatL, Int32L, LLVMArray>, false);           \
+    template <typename Float, typename Int32, template <class> class Array>    \
     void test##name()
 
 #define TEST_BOTH(name)                                                        \
-    template <typename Float, typename Int32> void test##name();               \
-    int test##name##_c = test_register("test" #name "_cuda",                   \
-                                       test##name<FloatC, Int32C>, true);      \
-    int test##name##_l = test_register("test" #name "_llvm",                   \
-                                       test##name<FloatL, Int32L>, false);     \
-    template <typename Float, typename Int32> void test##name()
+    template <typename Float, typename Int32, template <class> class Array>    \
+    void test##name();                                                         \
+    int test##name##_c = test_register(                                        \
+        "test" #name "_cuda", test##name<FloatC, Int32C, CUDAArray>, true);    \
+    int test##name##_l = test_register(                                        \
+        "test" #name "_llvm", test##name<FloatL, Int32L, LLVMArray>, false);   \
+    template <typename Float, typename Int32, template <class> class Array>    \
+    void test##name()
 
 /// RAII helper for temporarily decreasing the log level
 struct scoped_set_log_level {

@@ -119,3 +119,4 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, size_t size,
         }
     }
 }
+

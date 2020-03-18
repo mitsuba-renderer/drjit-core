@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <unistd.h>
+
 #if defined(__APPLE__)
 #  include <mach-o/dyld.h>
 #endif
@@ -24,9 +25,8 @@ extern "C" void log_callback(LogLevel cb, const char *msg) {
  * Strip away information (pointers, etc.) to that it becomes possible to
  * compare the debug output of a test to a reference file
  */
-char* test_sanitize_log() {
-    char *buf = (char *) log_value.c_str(),
-         *src = buf,
+void test_sanitize_log(char *buf) {
+    char *src = buf,
          *dst = src;
 
     // Remove all lines starting with the following text
@@ -38,7 +38,7 @@ char* test_sanitize_log() {
         "info    :",
         "ptxas",
         "jit_run(): cache ",
-        "jit_llvm_compile(): 0x",
+        "jit_llvm_disasm()",
         "jit_llvm_mem_allocate("
     };
 
@@ -78,14 +78,12 @@ char* test_sanitize_log() {
         *dst++ = *src++;
     }
     *dst = '\0';
-    return buf;
 }
 
-bool test_check_log(const char *test_name, const char *log, bool write_ref) {
+bool test_check_log(const char *test_name, char *log, bool write_ref) {
     char test_fname[128];
 
-    snprintf(test_fname, 128, "out_%s/%s.%s", TEST_NAME,
-             test_name, write_ref ? "ref" : "out");
+    snprintf(test_fname, 128, "out_%s/%s.raw", TEST_NAME, test_name);
 
     FILE *f = fopen(test_fname, "w");
     if (!f) {
@@ -94,6 +92,24 @@ bool test_check_log(const char *test_name, const char *log, bool write_ref) {
     }
 
     size_t log_len = strlen(log);
+    if (log_len > 0 && fwrite(log, log_len, 1, f) != 1) {
+        fprintf(stderr, "\ntest_check_log(): Error writing to \"%s\"!\n", test_fname);
+        exit(EXIT_FAILURE);
+    }
+    fclose(f);
+
+    test_sanitize_log(log);
+
+    snprintf(test_fname, 128, "out_%s/%s.%s", TEST_NAME,
+             test_name, write_ref ? "ref" : "out");
+
+    f = fopen(test_fname, "w");
+    if (!f) {
+        fprintf(stderr, "\ntest_check_log(): Could not create file \"%s\"!\n", test_fname);
+        exit(EXIT_FAILURE);
+    }
+
+    log_len = strlen(log);
     if (log_len > 0 && fwrite(log, log_len, 1, f) != 1) {
         fprintf(stderr, "\ntest_check_log(): Error writing to \"%s\"!\n", test_fname);
         exit(EXIT_FAILURE);
@@ -124,7 +140,9 @@ bool test_check_log(const char *test_name, const char *log, bool write_ref) {
             return false;
         }
 
+        test_sanitize_log(tmp);
         result = memcmp(tmp, log, log_len) == 0;
+        free(tmp);
     }
 
     fclose(f);
@@ -213,11 +231,12 @@ int main(int argc, char **argv) {
             log_value.clear();
             jitc_init(!test.cuda, test.cuda);
             jitc_device_set(test.cuda ? 0 : -1, 0);
+            if (!test.cuda)
+                jitc_llvm_set_target("haswell", nullptr, 8);
             test.func();
             jitc_shutdown(1);
 
-            char *log = test_sanitize_log();
-            if (test_check_log(test.name, log, write_ref)) {
+            if (test_check_log(test.name, (char *) log_value.c_str(), write_ref)) {
                 tests_passed++;
                 fprintf(stdout, "passed.\n");
             } else {

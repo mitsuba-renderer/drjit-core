@@ -115,6 +115,28 @@ extern JITC_EXPORT int32_t jitc_device_count();
 extern JITC_EXPORT void jitc_device_set(int32_t device, uint32_t stream);
 
 /**
+ * \brief Override the target CPU, features, and vector witdth of the LLVM backend
+ *
+ * The LLVM backend normally generates code for the detected native hardware
+ * architecture akin to compiling with <tt>-march=native</tt>. This function
+ * can be used to change the following code generation-related parameters:
+ *
+ * \param target_cpu
+ *     Target CPU (e.g. <tt>haswell</tt>)
+ *
+ * \param target_features
+ *     Comma-separated list of LLVM feature flags (e.g. <tt>+avx512f</tt>).
+ *     This should be set to <tt>nullptr</tt> if you do not wish to specify
+ *     individual featureas.
+ *
+ * \param vector_width
+ *     Width of vector registers (e.g. 8 for AVX)
+ */
+extern JITC_EXPORT void jitc_llvm_set_target(const char *target_cpu,
+                                             const char *target_features,
+                                             int vector_width);
+
+/**
  * \brief Dispatch computation to multiple parallel streams?
  *
  * The JIT compiler attempts to fuse all queued computation into a single
@@ -124,12 +146,13 @@ extern JITC_EXPORT void jitc_device_set(int32_t device, uint32_t stream);
  * jitc_eval() can detect this and dispatch multiple kernels to separate
  * streams that execute in parallel. The default is \c 1 (i.e. to enable
  * parallel dispatch).
+ *
+ * This feature is currently only used in CPU mode.
  */
 extern JITC_EXPORT void jitc_parallel_dispatch_set(int enable);
 
 /// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
 extern JITC_EXPORT int jitc_parallel_dispatch();
-
 /**
  * \brief Wait for all computation on the current stream to finish
  *

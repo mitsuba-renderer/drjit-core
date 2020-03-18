@@ -33,6 +33,7 @@ static void (*LLVMInitializeX86Disassembler)() = nullptr;
 static void (*LLVMInitializeX86Target)() = nullptr;
 static void (*LLVMInitializeX86TargetInfo)() = nullptr;
 static void (*LLVMInitializeX86TargetMC)() = nullptr;
+static char *(*LLVMCreateMessage)(char *) = nullptr;
 static void (*LLVMDisposeMessage)(char *) = nullptr;
 static char *(*LLVMGetDefaultTargetTriple)() = nullptr;
 static char *(*LLVMGetHostCPUName)() = nullptr;
@@ -69,15 +70,15 @@ static size_t (*LLVMDisasmInstruction)(LLVMDisasmContextRef, uint8_t *,
 #define LLVMCodeModelSmall 3
 
 /// Enoki API
-static void *jit_llvm_handle                  = nullptr;
-static LLVMDisasmContextRef jit_llvm_disasm   = nullptr;
-static LLVMExecutionEngineRef jit_llvm_engine = nullptr;
-static LLVMContextRef jit_llvm_context        = nullptr;
+static void *jit_llvm_handle                    = nullptr;
+static LLVMDisasmContextRef jit_llvm_disasm_ctx = nullptr;
+static LLVMExecutionEngineRef jit_llvm_engine   = nullptr;
+static LLVMContextRef jit_llvm_context          = nullptr;
 
-char *jit_llvm_target_cpu                     = nullptr;
-char *jit_llvm_target_features                = nullptr;
-int   jit_llvm_vector_width                   = 0;
-uint32_t jit_llvm_kernel_id                   = 0;
+char *jit_llvm_target_cpu                       = nullptr;
+char *jit_llvm_target_features                  = nullptr;
+int   jit_llvm_vector_width                     = 0;
+uint32_t jit_llvm_kernel_id                     = 0;
 
 static bool     jit_llvm_init_attempted = false;
 static bool     jit_llvm_init_success   = false;
@@ -212,6 +213,36 @@ bool jit_llvm_load(Kernel &kernel, const char *buffer, size_t buffer_size, uint3
     return true;
 }
 
+/// Dump assembly representation
+void jit_llvm_disasm(Kernel &kernel) {
+    if (std::max(state.log_level_stderr, state.log_level_callback) <
+        LogLevel::Trace)
+    return;
+
+    uint8_t *ptr = (uint8_t *) kernel.llvm.func;
+    char ins_buf[256];
+    do {
+        size_t cur_offset = ptr - (uint8_t *) kernel.llvm.func,
+               func_offset = (uint8_t *) kernel.llvm.func - (uint8_t *) kernel.llvm.buffer,
+               remain = kernel.llvm.size - cur_offset - func_offset;
+        if (cur_offset >= kernel.llvm.size)
+            break;
+        size_t size =
+            LLVMDisasmInstruction(jit_llvm_disasm_ctx, ptr, (int) remain,
+                                  (uintptr_t) ptr, ins_buf, sizeof(ins_buf));
+        if (size == 0)
+            break;
+        char *start = ins_buf;
+        while (*start == ' ' || *start == '\t')
+            ++start;
+        jit_trace("jit_llvm_disasm(): 0x%08x   %s", (uint32_t) cur_offset, start);
+        if (strncmp(start, "ret", 3) == 0)
+            break;
+        ptr += size;
+    } while (true);
+}
+
+
 void jit_llvm_write(const char *buffer, size_t buffer_size, uint32_t hash, uint32_t func_offset) {
     char scratch[1024];
     snprintf(scratch, sizeof(scratch), "%s/.enoki/%08x.bin", getenv("HOME"), hash);
@@ -255,6 +286,7 @@ void jit_llvm_write(const char *buffer, size_t buffer_size, uint32_t hash, uint3
 Kernel jit_llvm_compile(const char *buffer, size_t buffer_size, uint32_t hash, bool &cache_hit) {
     Kernel result;
     if (jit_llvm_load(result, buffer, buffer_size, hash)) {
+        jit_llvm_disasm(result);
         cache_hit = true;
         return result;
     }
@@ -306,30 +338,6 @@ Kernel jit_llvm_compile(const char *buffer, size_t buffer_size, uint32_t hash, b
 
     uint32_t func_offset = (uint32_t) (func - jit_llvm_mem);
 
-    /// Dump assembly representation
-    if (std::max(state.log_level_stderr, state.log_level_callback) >=
-        LogLevel::Trace) {
-        uint8_t *ptr = func;
-        char ins_buf[256];
-        do {
-            size_t cur_offset = ptr - jit_llvm_mem;
-            if (cur_offset >= jit_llvm_mem_offset)
-                break;
-            size_t size = LLVMDisasmInstruction(
-                jit_llvm_disasm, ptr, jit_llvm_mem_offset - cur_offset,
-                (uintptr_t) ptr, ins_buf, sizeof(ins_buf));
-            if (size == 0)
-                break;
-            char *start = ins_buf;
-            while (*start == ' ' || *start == '\t')
-                ++start;
-            jit_trace("jit_llvm_compile(): 0x%08x   %s", (uint32_t) cur_offset, start);
-            if (strncmp(start, "ret", 3) == 0)
-                break;
-            ptr += size;
-        } while (true);
-    }
-
     void *ptr_result =
         mmap(nullptr, jit_llvm_mem_offset, PROT_READ | PROT_WRITE,
              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -356,6 +364,8 @@ Kernel jit_llvm_compile(const char *buffer, size_t buffer_size, uint32_t hash, b
     result.llvm.size = jit_llvm_mem_offset;
     result.type = KernelType::LLVM;
 
+    jit_llvm_disasm(result);
+
     cache_hit = false;
     return result;
 }
@@ -373,6 +383,23 @@ void jit_llvm_free(Kernel kernel) {
     symbol = nullptr
 
 #define Z(x) x = nullptr
+
+void jit_llvm_set_target(const char *target_cpu,
+                         const char *target_features,
+                         int vector_width) {
+    if (jit_llvm_target_cpu)
+        LLVMDisposeMessage(jit_llvm_target_cpu);
+
+    if (jit_llvm_target_features) {
+        LLVMDisposeMessage(jit_llvm_target_features);
+        jit_llvm_target_features = nullptr;
+    }
+
+    jit_llvm_vector_width = vector_width;
+    jit_llvm_target_cpu = LLVMCreateMessage((char *) target_cpu);
+    if (target_features)
+        jit_llvm_target_features = LLVMCreateMessage((char *) target_features);
+}
 
 bool jit_llvm_init() {
     if (jit_llvm_init_attempted)
@@ -419,6 +446,7 @@ bool jit_llvm_init() {
         LOAD(LLVMGetDefaultTargetTriple);
         LOAD(LLVMGetHostCPUName);
         LOAD(LLVMGetHostCPUFeatures);
+        LOAD(LLVMCreateMessage);
         LOAD(LLVMDisposeMessage);
         LOAD(LLVMCreateDisasm);
         LOAD(LLVMDisasmDispose);
@@ -458,19 +486,19 @@ bool jit_llvm_init() {
     }
 
     char* triple = LLVMGetDefaultTargetTriple();
-    jit_llvm_disasm = LLVMCreateDisasm(triple, nullptr, 0, nullptr, nullptr);
+    jit_llvm_disasm_ctx = LLVMCreateDisasm(triple, nullptr, 0, nullptr, nullptr);
 
-    if (!jit_llvm_disasm) {
+    if (!jit_llvm_disasm_ctx) {
         jit_log(Warn, "jit_llvm_init(): could not create a disassembler!");
         LLVMDisposeMessage(triple);
         return false;
     }
 
-    if (LLVMSetDisasmOptions(jit_llvm_disasm,
+    if (LLVMSetDisasmOptions(jit_llvm_disasm_ctx,
                              LLVMDisassembler_Option_PrintImmHex |
                              LLVMDisassembler_Option_AsmPrinterVariant) == 0) {
         jit_log(Warn, "jit_llvm_init(): could not configure disassembler!");
-        LLVMDisasmDispose(jit_llvm_disasm);
+        LLVMDisasmDispose(jit_llvm_disasm_ctx);
         LLVMDisposeMessage(triple);
         return false;
     }
@@ -493,7 +521,7 @@ bool jit_llvm_init() {
                                          &options, sizeof(options), &error)) {
         jit_log(Warn, "jit_llvm_init(): could not create MCJIT: %s", error);
         LLVMDisposeModule(enoki_module);
-        LLVMDisasmDispose(jit_llvm_disasm);
+        LLVMDisasmDispose(jit_llvm_disasm_ctx);
         LLVMDisposeMessage(triple);
         return -1;
     }
@@ -531,14 +559,14 @@ void jit_llvm_shutdown() {
 
     jit_log(Info, "jit_llvm_shutdown()");
 
-    LLVMDisasmDispose(jit_llvm_disasm);
+    LLVMDisasmDispose(jit_llvm_disasm_ctx);
     LLVMDisposeExecutionEngine(jit_llvm_engine);
     LLVMDisposeMessage(jit_llvm_target_cpu);
     LLVMDisposeMessage(jit_llvm_target_features);
     dlclose(jit_llvm_handle);
 
     jit_llvm_engine = nullptr;
-    jit_llvm_disasm = nullptr;
+    jit_llvm_disasm_ctx = nullptr;
     jit_llvm_context = nullptr;
     jit_llvm_target_cpu = nullptr;
     jit_llvm_target_features = nullptr;
@@ -555,11 +583,11 @@ void jit_llvm_shutdown() {
     Z(LLVMInitializeX86TargetInfo); Z(LLVMInitializeX86TargetMC);
     Z(LLVMInitializeX86AsmPrinter); Z(LLVMInitializeX86Disassembler);
     Z(LLVMGetGlobalContext); Z(LLVMGetDefaultTargetTriple);
-    Z(LLVMGetHostCPUName); Z(LLVMGetHostCPUFeatures); Z(LLVMDisposeMessage);
-    Z(LLVMCreateDisasm); Z(LLVMDisasmDispose); Z(LLVMSetDisasmOptions);
-    Z(LLVMModuleCreateWithName); Z(LLVMCreateMCJITCompilerForModule);
-    Z(LLVMCreateSimpleMCJITMemoryManager); Z(LLVMDisposeExecutionEngine);
-    Z(LLVMAddModule); Z(LLVMDisposeModule);
+    Z(LLVMGetHostCPUName); Z(LLVMGetHostCPUFeatures); Z(LLVMCreateMessage);
+    Z(LLVMDisposeMessage); Z(LLVMCreateDisasm); Z(LLVMDisasmDispose);
+    Z(LLVMSetDisasmOptions); Z(LLVMModuleCreateWithName);
+    Z(LLVMCreateMCJITCompilerForModule); Z(LLVMCreateSimpleMCJITMemoryManager);
+    Z(LLVMDisposeExecutionEngine); Z(LLVMAddModule); Z(LLVMDisposeModule);
     Z(LLVMCreateMemoryBufferWithMemoryRange); Z(LLVMParseIRInContext);
     Z(LLVMPrintModuleToString); Z(LLVMGetFunctionAddress); Z(LLVMRemoveModule);
     Z(LLVMDisasmInstruction);

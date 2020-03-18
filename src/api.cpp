@@ -276,3 +276,10 @@ void jitc_reduce(VarType type, ReductionType rtype,
     lock_guard guard(state.mutex);
     jit_reduce(type, rtype, ptr, size, out);
 }
+
+void jitc_llvm_set_target(const char *target_cpu,
+                          const char *target_features,
+                          int vector_width) {
+    lock_guard guard(state.mutex);
+    jit_llvm_set_target(target_cpu, target_features, vector_width);
+}

@@ -1,0 +1,132 @@
+jit_trace_append(1): $r0_t = insertelement <$w x $t0> undef, $t0 0x4093480000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer
+jit_var_ext_ref_inc(1): 1
+jit_trace_append(2): $r0_t = insertelement <$w x $t0> undef, $t0 0x40934c0000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer
+jit_var_ext_ref_inc(2): 1
+jit_trace_append(1): $r0_t = insertelement <$w x $t0> undef, $t0 0x4093480000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer (reused)
+jit_var_ext_ref_inc(1): 2
+jit_var_int_ref_inc(1): 1
+jit_var_int_ref_inc(2): 1
+jit_trace_append(3 <- 1, 2): $r0 = fadd <$w x $t0> $r1, $r2
+jit_var_ext_ref_inc(3): 1
+jit_var_int_ref_inc(1): 2
+jit_var_int_ref_inc(1): 3
+jit_trace_append(4 <- 1, 1): $r0 = fadd <$w x $t0> $r1, $r2
+jit_var_ext_ref_inc(4): 1
+jit_var_int_ref_inc(1): 4
+jit_var_int_ref_inc(2): 2
+jit_var_int_ref_dec(1): 3
+jit_var_int_ref_dec(2): 1
+jit_trace_append(3 <- 1, 2): $r0 = fadd <$w x $t0> $r1, $r2 (reused)
+jit_var_ext_ref_inc(3): 2
+jit_eval(): begin.
+jit_assemble(size=1): register map:
+   - %f0 -> 1 [scalar] [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+   - %f1 -> 2 [scalar] [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+   - %f2 -> 3 [scalar] [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+   - %f3 -> 4 [scalar] [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=1, in=0, out=4, ops=4) ..
+define void @enoki_0bf322aa(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+entry:
+
+    ; Prepare argument 0
+    %a0i = getelementptr inbounds i8*, i8** %ptrs, i64 0
+    %a0p = load i8*, i8** %a0i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0p to float*
+    %a0s = load float, float* %a0, align 4, !alias.scope !1
+
+    ; Prepare argument 1
+    %a1i = getelementptr inbounds i8*, i8** %ptrs, i64 1
+    %a1p = load i8*, i8** %a1i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1p to float*
+    %a1s = load float, float* %a1, align 4, !alias.scope !1
+
+    ; Prepare argument 2
+    %a2i = getelementptr inbounds i8*, i8** %ptrs, i64 2
+    %a2p = load i8*, i8** %a2i, align 8, !alias.scope !1
+    %a2 = bitcast i8* %a2p to float*
+    %a2s = load float, float* %a2, align 4, !alias.scope !1
+
+    ; Prepare argument 3
+    %a3i = getelementptr inbounds i8*, i8** %ptrs, i64 3
+    %a3p = load i8*, i8** %a3i, align 8, !alias.scope !1
+    %a3 = bitcast i8* %a3p to float*
+    %a3s = load float, float* %a3, align 4, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_t = insertelement <8 x float> undef, float 0x4093480000000000, i32 0
+    %f0 = shufflevector <8 x float> %f0_t, <8 x float> undef, <8 x i32> zeroinitializer;
+
+    ; Store %f0
+    %a0m = bitcast float* %a0 to <8 x float>*
+    store <8 x float> %f0, <8 x float>* %a0m, align 32, !noalias !1
+
+    ; Evaluate %f1
+    %f1_t = insertelement <8 x float> undef, float 0x40934c0000000000, i32 0
+    %f1 = shufflevector <8 x float> %f1_t, <8 x float> undef, <8 x i32> zeroinitializer;
+
+    ; Store %f1
+    %a1m = bitcast float* %a1 to <8 x float>*
+    store <8 x float> %f1, <8 x float>* %a1m, align 32, !noalias !1
+
+    ; Evaluate %f2
+    %f2 = fadd <8 x float> %f0, %f1;
+
+    ; Store %f2
+    %a2m = bitcast float* %a2 to <8 x float>*
+    store <8 x float> %f2, <8 x float>* %a2m, align 32, !noalias !1
+
+    ; Evaluate %f3
+    %f3 = fadd <8 x float> %f0, %f0;
+
+    ; Store %f3
+    %a3m = bitcast float* %a3 to <8 x float>*
+    store <8 x float> %f3, <8 x float>* %a3m, align 32, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+
+jit_eval(): cleaning up..
+jit_var_int_ref_dec(1): 2
+jit_var_int_ref_dec(2): 0
+jit_var_int_ref_dec(1): 1
+jit_var_int_ref_dec(1): 0
+jit_eval(): done.
+value_1=[1234]
+value_2=[1235]
+value_3=[1234]
+value_4=[2469]
+value_5=[2468]
+value_6=[2469]
+jit_var_ext_ref_dec(3): 1
+jit_var_ext_ref_dec(4): 0
+jit_var_free(4)
+jit_free(<@>, type=host, size=64)
+jit_var_ext_ref_dec(3): 0
+jit_var_free(3)
+jit_free(<@>, type=host, size=64)
+jit_var_ext_ref_dec(1): 1
+jit_var_ext_ref_dec(2): 0
+jit_var_free(2)
+jit_free(<@>, type=host, size=64)
+jit_var_ext_ref_dec(1): 0
+jit_var_free(1)
+jit_free(<@>, type=host, size=64)
+jit_malloc_trim(): freed
+ - host memory: 256 B in 4 allocations
+jit_shutdown(): done

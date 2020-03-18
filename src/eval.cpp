@@ -311,9 +311,11 @@ void jit_assemble_llvm(ScheduledGroup group) {
     buffer.clear();
     buffer.fmt("define void @enoki_^^^^^^^^(i64 %%start, i64 %%end, i8** "
                "%%ptrs) norecurse nosync nounwind alignstack(%i) "
-               "\"target-cpu\"=\"%s\" \"target-features\"=\"%s\" {\n",
-               width * (int) sizeof(float), jit_llvm_target_cpu,
-               jit_llvm_target_features);
+               "\"target-cpu\"=\"%s\"",
+               width * (int) sizeof(float), jit_llvm_target_cpu);
+    if (jit_llvm_target_features)
+        buffer.fmt(" \"target-features\"=\"%s\"", jit_llvm_target_features);
+    buffer.put(" {\n");
     buffer.put("entry:\n");
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;

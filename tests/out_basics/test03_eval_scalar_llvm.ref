@@ -1,0 +1,48 @@
+jit_trace_append(1): $r0_t = insertelement <$w x $t0> undef, $t0 0x4093480000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer
+jit_var_ext_ref_inc(1): 1
+jit_eval(): begin.
+jit_assemble(size=1): register map:
+   - %f0 -> 1 [scalar] [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=1, in=0, out=1, ops=1) ..
+define void @enoki_59804125(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+entry:
+
+    ; Prepare argument 0
+    %a0i = getelementptr inbounds i8*, i8** %ptrs, i64 0
+    %a0p = load i8*, i8** %a0i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0p to float*
+    %a0s = load float, float* %a0, align 4, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_t = insertelement <8 x float> undef, float 0x4093480000000000, i32 0
+    %f0 = shufflevector <8 x float> %f0_t, <8 x float> undef, <8 x i32> zeroinitializer;
+
+    ; Store %f0
+    %a0m = bitcast float* %a0 to <8 x float>*
+    store <8 x float> %f0, <8 x float>* %a0m, align 32, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+
+jit_eval(): cleaning up..
+jit_eval(): done.
+value=[1234]
+jit_var_ext_ref_dec(1): 0
+jit_var_free(1)
+jit_free(<@>, type=host, size=64)
+jit_malloc_trim(): freed
+ - host memory: 64 B in 1 allocation
+jit_shutdown(): done

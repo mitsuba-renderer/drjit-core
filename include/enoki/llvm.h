@@ -104,7 +104,7 @@ struct LLVMArray {
 
     static LLVMArray empty(size_t size) {
         size_t byte_size = size * sizeof(Value);
-        void *ptr = jitc_malloc(AllocType::Device, byte_size);
+        void *ptr = jitc_malloc(AllocType::Host, byte_size);
         return from_index(jitc_var_map(Type, ptr, size, 1));
     }
 
@@ -114,7 +114,7 @@ struct LLVMArray {
         } else {
             uint8_t value = 0;
             size_t byte_size = size * sizeof(Value);
-            void *ptr = jitc_malloc(AllocType::Device, byte_size);
+            void *ptr = jitc_malloc(AllocType::Host, byte_size);
             jitc_fill(VarType::UInt8, ptr, byte_size, &value);
             return from_index(jitc_var_map(Type, ptr, size, 1));
         }
@@ -125,7 +125,7 @@ struct LLVMArray {
             return LLVMArray(value);
         } else {
             size_t byte_size = size * sizeof(Value);
-            void *ptr = jitc_malloc(AllocType::Device, byte_size);
+            void *ptr = jitc_malloc(AllocType::Host, byte_size);
             jitc_fill(Type, ptr, size, &value);
             return from_index(jitc_var_map(Type, ptr, size, 1));
         }

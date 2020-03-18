@@ -53,3 +53,8 @@ extern void jit_llvm_free(Kernel kernel);
 
 /// Fully unload LLVM
 extern void jit_llvm_shutdown();
+
+/// Override the target architecture
+extern void jit_llvm_set_target(const char *target_cpu,
+                                const char *target_features,
+                                int vector_width);

@@ -6,7 +6,6 @@ TEST_BOTH(01_creation_destruction) {
     (void) value;
 }
 
-#if 0
 TEST_BOTH(02_fill_and_print) {
     /// Checks array initialization from a given pointer, jitc_fill(), and stringification
     jitc_log(Info, "  int8_t: %s", Array<  int8_t>::full(-111, 5).str());
@@ -17,10 +16,9 @@ TEST_BOTH(02_fill_and_print) {
     jitc_log(Info, "uint32_t: %s", Array<uint32_t>::full( 2222222222, 5).str());
     jitc_log(Info, " int64_t: %s", Array< int64_t>::full(-1111111111111111111, 5).str());
     jitc_log(Info, "uint64_t: %s", Array<uint64_t>::full( 2222222222222222222, 5).str());
-    jitc_log(Info, "   float: %s", Array<   float>::full(1.f/3.f, 5).str());
-    jitc_log(Info, "  double: %s", Array<  double>::full(1.0/3.0, 5).str());
+    jitc_log(Info, "   float: %s", Array<   float>::full(1.f / 3.f, 5).str());
+    jitc_log(Info, "  double: %s", Array<  double>::full(1.0 / 3.0, 5).str());
 }
-#endif
 
 TEST_BOTH(03_eval_scalar) {
     /// Checks that we can evaluate a simple kernel
