@@ -3,7 +3,10 @@
 #include "log.h"
 #include <glob.h>
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 
 /// LLVM API
 using LLVMBool = int;
@@ -121,7 +124,130 @@ static void jit_llvm_mem_destroy(void * /* opaque */) { }
 
 } /* extern "C" */ ;
 
-Kernel jit_llvm_compile(const char *buffer, size_t buffer_size) {
+bool jit_llvm_load(Kernel &kernel, const char *buffer, size_t buffer_size, uint32_t hash) {
+    uint32_t ir_size, payload_size;
+    char scratch[1024];
+    snprintf(scratch, sizeof(scratch), "%s/.enoki/%08x.bin", getenv("HOME"), hash);
+
+    int fd = open(scratch, O_RDONLY | O_EXCL);
+    if (fd == -1)
+        return false;
+
+    ssize_t rv_1 = read(fd, &ir_size, sizeof(uint32_t));
+    ssize_t rv_2 = read(fd, &payload_size, sizeof(uint32_t));
+
+    if (rv_1 != sizeof(uint32_t) || rv_2 != sizeof(uint32_t) ||
+        ir_size != buffer_size) {
+        close(fd);
+        return false;
+    }
+
+    size_t remain = buffer_size;
+    const char *ptr = buffer;
+
+    while (remain > 0) {
+        ssize_t n_read = read(fd, scratch, std::min(remain, sizeof(scratch)));
+
+        if (n_read <= 0) {
+            if (errno == EINTR) {
+                continue;
+            } else {
+                close(fd);
+                return false;
+            }
+        }
+
+        if (memcmp(ptr, scratch, (size_t) n_read) != 0) {
+            close(fd);
+            return false;
+        }
+
+        remain -= n_read;
+        ptr += n_read;
+    }
+
+    void *payload =
+        mmap(nullptr, payload_size, PROT_READ | PROT_WRITE,
+             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (payload == MAP_FAILED)
+        jit_fail("jit_llvm_load(): could not mmap() memory: %s",
+                 strerror(errno));
+
+    uint8_t *payload_ptr = (uint8_t *) payload;
+    remain = payload_size;
+
+    while (remain > 0) {
+        ssize_t n_read = read(fd, payload_ptr, remain);
+
+        if (n_read <= 0) {
+            if (errno == EINTR) {
+                continue;
+            } else {
+                close(fd);
+                munmap(payload, payload_size);
+                return false;
+            }
+        }
+        remain -= n_read;
+        payload_ptr += n_read;
+    }
+
+    close(fd);
+
+    if (mprotect(payload, payload_size, PROT_READ | PROT_EXEC) == -1)
+        jit_fail("jit_llvm_load(): mprotect() failed: %s", strerror(errno));
+
+    kernel.llvm.func = (LLVMKernelFunction) payload;
+    kernel.llvm.size = payload_size;
+    kernel.llvm.marker = (size_t) -1;
+
+    return true;
+}
+
+void jit_llvm_write(const char *buffer, size_t buffer_size, uint32_t hash) {
+    char scratch[1024];
+    snprintf(scratch, sizeof(scratch), "%s/.enoki/%08x.bin", getenv("HOME"), hash);
+    mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+    int fd = open(scratch, O_CREAT | O_WRONLY | O_EXCL, mode);
+    if (fd == -1 && errno != EEXIST)
+        jit_fail("jit_llvm_compile(): could not write compiled kernel to cache "
+                 "file \"%s/.enoki/%08x.bin\": %s",
+                 getenv("HOME"), hash, strerror(errno));
+
+    auto write_retry = [&](const uint8_t *data, size_t data_size) {
+        while (data_size > 0) {
+            ssize_t n_written = write(fd, data, data_size);
+            if (n_written <= 0) {
+                if (errno == EINTR) {
+                    continue;
+                } else {
+                    jit_fail("jit_llvm_compile(): could not write compiled kernel to cache "
+                             "file \"%s/.enoki/%08x.bin\": %s",
+                             getenv("HOME"), hash, strerror(errno));
+                }
+            }
+            data += n_written;
+            data_size -= n_written;
+        }
+    };
+
+    if (fd != -1) {
+        uint32_t data_size = (uint32_t) jit_llvm_mem_offset;
+        write_retry((const uint8_t *) &buffer_size, sizeof(uint32_t));
+        write_retry((const uint8_t *) &data_size, sizeof(uint32_t));
+        write_retry((const uint8_t *) buffer, buffer_size);
+        write_retry((const uint8_t *) jit_llvm_mem, jit_llvm_mem_offset);
+        close(fd);
+    }
+}
+
+Kernel jit_llvm_compile(const char *buffer, size_t buffer_size, uint32_t hash, bool &cache_hit) {
+    Kernel result;
+    if (jit_llvm_load(result, buffer, buffer_size, hash)) {
+        cache_hit = true;
+        return result;
+    }
+
     if (jit_llvm_mem_size <= buffer_size) {
         // Central assumption: LLVM text IR is much larger than the resulting generated code.
         free(jit_llvm_mem);
@@ -191,7 +317,7 @@ Kernel jit_llvm_compile(const char *buffer, size_t buffer_size) {
         mmap(nullptr, jit_llvm_mem_offset, PROT_READ | PROT_WRITE,
              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (ptr_result == MAP_FAILED)
-        jit_fail("jit_llvm_compile(): could not mmap() memory for function: %s",
+        jit_fail("jit_llvm_compile(): could not mmap() memory: %s",
                  strerror(errno));
     memcpy(ptr_result, jit_llvm_mem, jit_llvm_mem_offset);
 
@@ -204,11 +330,15 @@ Kernel jit_llvm_compile(const char *buffer, size_t buffer_size) {
     LLVMDisposeModule(module);
 
     // Change the kernel name back
-    memcpy(kernel_name_offset, kernel_name_old, 8);
+    memcpy(kernel_name_offset, kernel_name_old, 14);
 
-    Kernel result;
+    jit_llvm_write(buffer, buffer_size, hash);
+
     result.llvm.func = (LLVMKernelFunction) ptr_result;
     result.llvm.size = jit_llvm_mem_offset;
+    result.llvm.marker = (size_t) -1;
+
+    cache_hit = false;
     return result;
 }
 
@@ -231,6 +361,17 @@ bool jit_llvm_init() {
         return jit_llvm_init_success;
     jit_llvm_init_attempted = true;
 
+
+    char scratch[1024];
+    struct stat st = {};
+    snprintf(scratch, sizeof(scratch), "%s/.enoki", getenv("HOME"));
+    if (stat(scratch, &st) == -1) {
+        jit_log(Info, "jit_llvm_init(): creating directory \"%s\" ..", scratch);
+        if (mkdir(scratch, 0700) == -1)
+            jit_fail("jit_llvm_init(): creation of directory \"%s\" failed: %s",
+                     scratch, strerror(errno));
+    }
+
 #if defined(__linux__)
     jit_llvm_handle = dlopen("libLLVM.so", RTLD_LAZY);
 #elif defined(__APPLE__)
@@ -247,7 +388,6 @@ bool jit_llvm_init() {
             globfree(&g);
         }
     }
-
 #endif
 
     if (!jit_llvm_handle) {

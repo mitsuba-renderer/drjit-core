@@ -49,11 +49,15 @@ struct LLVMArray {
 
     LLVMArray(Value value) {
         uint_with_size_t<Value> value_uint;
-        memcpy(&value_uint, &value, sizeof(Value));
-        uint64_t value_uint64 = (uint64_t) value_uint;
+        uint64_t value_uint64;
 
-        if (Type == VarType::Float32)
-            value_uint64 <<= 32;
+        if (Type == VarType::Float32) {
+            double d = (double) value;
+            memcpy(&value_uint64, &d, sizeof(double));
+        }  else {
+            memcpy(&value_uint, &value, sizeof(Value));
+            value_uint64 = (uint64_t) value_uint;
+        }
 
         char value_str[256];
         snprintf(value_str, 256,

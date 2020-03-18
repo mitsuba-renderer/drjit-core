@@ -7,19 +7,28 @@ using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, void **ptr);
 
 /// A kernel and its preferred lauch configuration
 struct Kernel {
-    struct {
-        /// CUDA kernel variables
-        CUmodule cu_module = nullptr;
-        CUfunction cu_func = nullptr;
-        int thread_count = 0;
-        int block_count = 0;
-    } cuda;
+    union {
+        struct {
+            /// CUDA kernel variables
+            CUmodule cu_module = nullptr;
+            CUfunction cu_func = nullptr;
+            int thread_count = 0;
+            int block_count = 0;
+        } cuda;
 
-    struct {
-        /// LLVM kernel variables
-        LLVMKernelFunction func;
-        size_t size;
-    } llvm;
+        struct {
+            /// LLVM kernel variables
+            LLVMKernelFunction func;
+            size_t size;
+            size_t marker;
+        } llvm;
+    };
+
+    Kernel() { }
+
+    bool is_llvm() const {
+        return llvm.marker == (size_t) -1;
+    }
 };
 
 
@@ -36,7 +45,7 @@ extern int jit_llvm_vector_width;
 extern bool jit_llvm_init();
 
 /// Compile an IR string
-extern Kernel jit_llvm_compile(const char *str, size_t size);
+extern Kernel jit_llvm_compile(const char *str, size_t size, uint32_t hash, bool &cache_hit);
 
 /// Release a compiled function
 extern void jit_llvm_free(Kernel kernel);

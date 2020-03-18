@@ -142,22 +142,8 @@ void jit_var_ext_ref_dec(uint32_t index) {
     jit_trace("jit_var_ext_ref_dec(%u): %u", index, v->ref_count_ext - 1);
     v->ref_count_ext--;
 
-    if (v->ref_count_ext == 0) {
-        Stream *stream = active_stream;
-        bool cuda = stream != nullptr;
-
-        if (v->cuda != cuda)
-            jit_raise("jit_var_ext_ref_dec(): attempted to free a %s variable "
-                      "while the %s backend was activated! You must invoke "
-                      "jit_device_set() beforehand!",
-                      v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
-
-        auto &todo = cuda ? stream->todo : state.todo_host;
-        todo.erase(index);
-
-        if (v->ref_count_int == 0)
-            jit_var_free(index, v);
-    }
+    if (v->ref_count_ext == 0 && v->ref_count_int == 0)
+        jit_var_free(index, v);
 }
 
 /// Decrease the internal reference count of a given variable
@@ -339,7 +325,7 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
     jit_var_ext_ref_inc(index, vo);
 
     auto &todo = stream ? stream->todo : state.todo_host;
-    todo.insert(index);
+    todo.push_back(index);
 
     return index;
 }
@@ -381,7 +367,7 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
     jit_var_ext_ref_inc(index, vo);
 
     auto &todo = stream ? stream->todo : state.todo_host;
-    todo.insert(index);
+    todo.push_back(index);
 
     return index;
 }
@@ -438,7 +424,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
     jit_var_ext_ref_inc(index, vo);
 
     auto &todo = stream ? stream->todo : state.todo_host;
-    todo.insert(index);
+    todo.push_back(index);
 
     return index;
 }
@@ -499,7 +485,7 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     auto &todo = stream ? stream->todo : state.todo_host;
-    todo.insert(index);
+    todo.push_back(index);
 
     return index;
 }

@@ -118,13 +118,17 @@ void jit_shutdown(int light) {
         }
         state.streams.clear();
         active_stream = nullptr;
-
-        for (auto &v : state.kernel_cache) {
-            free((char *) v.first);
-            cuda_check(cuModuleUnload(v.second.cuda.cu_module));
-        }
-        state.kernel_cache.clear();
     }
+
+    for (auto &v : state.kernel_cache) {
+        free((char *) v.first);
+        const Kernel &kernel = v.second;
+        if (kernel.is_llvm())
+            jit_llvm_free(kernel);
+        else
+            cuda_check(cuModuleUnload(kernel.cuda.cu_module));
+    }
+    state.kernel_cache.clear();
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
         uint32_t n_leaked = 0;

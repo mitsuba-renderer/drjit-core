@@ -2,6 +2,7 @@
 #include "log.h"
 #include "var.h"
 #include "eval.h"
+#include <tsl/robin_set.h>
 
 #define CUDA_MAX_KERNEL_PARAMETERS 512
 
@@ -40,8 +41,11 @@ static tsl::robin_set<std::pair<uint32_t, uint32_t>, pair_hash> visited;
 /// Input/output arguments of the kernel being evaluated
 static std::vector<void *> kernel_args, kernel_args_extra;
 
+/// Hash code of the last generated kernel
+uint32_t kernel_hash = 0;
+
 /// Name of the last generated kernel
-static char kernel_name[9];
+static char kernel_name[9] { };
 
 // ====================================================================
 
@@ -159,7 +163,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
     buffer.put(";\n");
 }
 
-uint32_t jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
+void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     auto get_parameter_addr = [](const Variable *v, uint32_t target = 0) {
         if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
             buffer.fmt("    ld.param.u64 %%rd%u, [arg%u];\n", target, v->arg_index - 1);
@@ -293,26 +297,22 @@ uint32_t jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     buffer.put("}");
 
     /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash
-    size_t hash_code = string_hash()(buffer.get());
-    snprintf(kernel_name, 9, "%08x", (uint32_t) hash_code);
+    kernel_hash = (uint32_t) string_hash()(buffer.get());
+    snprintf(kernel_name, 9, "%08x", kernel_hash);
     memcpy((void *) strchr(buffer.get(), '^'), kernel_name, 8);
-
-    return hash_code;
 }
 
-uint32_t jit_assemble_llvm(ScheduledGroup group) {
+void jit_assemble_llvm(ScheduledGroup group) {
     const int width       = jit_llvm_vector_width;
 
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
 
     buffer.clear();
-    buffer.put("!0 = !{!0}\n");
-    buffer.put("!1 = !{!1, !0}\n");
     buffer.fmt("define void @enoki_^^^^^^^^(i64 %%start, i64 %%end, i8** "
                "%%ptrs) norecurse nosync nounwind alignstack(%i) "
                "\"target-cpu\"=\"%s\" \"target-features\"=\"%s\" {\n",
-               width * sizeof(float), jit_llvm_target_cpu,
+               width * (int) sizeof(float), jit_llvm_target_cpu,
                jit_llvm_target_features);
     buffer.put("entry:\n");
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
@@ -404,16 +404,16 @@ uint32_t jit_assemble_llvm(ScheduledGroup group) {
     buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop "
                "!{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n");
     buffer.put("}");
+    buffer.put("!0 = !{!0}\n");
+    buffer.put("!1 = !{!1, !0}\n");
 
     /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash
-    size_t hash_code = string_hash()(buffer.get());
-    snprintf(kernel_name, 9, "%08x", (uint32_t) hash_code);
+    kernel_hash = (uint32_t) string_hash()(buffer.get());
+    snprintf(kernel_name, 9, "%08x", kernel_hash);
     memcpy((void *) strchr(buffer.get(), '^'), kernel_name, 8);
-
-    return hash_code;
 }
 
-uint32_t jit_assemble(ScheduledGroup group) {
+void jit_assemble(ScheduledGroup group) {
     bool cuda = active_stream != nullptr;
 
     uint32_t n_args_in    = 0,
@@ -530,31 +530,37 @@ uint32_t jit_assemble(ScheduledGroup group) {
     jit_log(Info, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
             group.size, n_args_in - 1, n_args_out, n_regs_total);
 
-    uint32_t hash_code;
     if (cuda)
-        hash_code = jit_assemble_cuda(group, n_regs_total);
+        jit_assemble_cuda(group, n_regs_total);
     else
-        hash_code = jit_assemble_llvm(group);
+        jit_assemble_llvm(group);
 
     jit_log(Debug, "%s", buffer.get());
-    return hash_code;
 }
 
 void jit_run_llvm(ScheduledGroup group) {
     float codegen_time = timer();
-    auto it = state.kernel_cache.find(buffer.get());
+    auto it = state.kernel_cache.find(buffer.get(), (size_t) kernel_hash);
     Kernel kernel;
 
     if (it == state.kernel_cache.end()) {
-        kernel = jit_llvm_compile(buffer.get(), buffer.size());
-        float link_time = timer();
         bool cache_hit = false;
-        jit_log(Debug, "jit_run(): cache %s, codegen: %s, %s: %s, %zu bytes.",
-                cache_hit ? "miss" : "hit",
+        kernel = jit_llvm_compile(buffer.get(), buffer.size(), kernel_hash, cache_hit);
+        float link_time = timer();
+        jit_log(Info, "jit_run(): cache %s, codegen: %s, %s: %s, %s.",
+                cache_hit ? "hit" : "miss",
                 std::string(jit_time_string(codegen_time)).c_str(),
-                cache_hit ? "build" : "load",
+                cache_hit ? "load" : "build",
                 std::string(jit_time_string(link_time)).c_str(),
-                kernel.llvm.size);
+                std::string(jit_mem_string(kernel.llvm.size)).c_str());
+
+        char *str = (char *) malloc(buffer.size() + 1);
+        memcpy(str, buffer.get(), buffer.size() + 1);
+        state.kernel_cache.emplace(str, kernel);
+    } else {
+        kernel = it.value();
+        jit_log(Info, "jit_run(): cache hit, codegen: %s.",
+                jit_time_string(codegen_time));
     }
 
     kernel.llvm.func(0, group.size, kernel_args_extra.data());
@@ -562,8 +568,7 @@ void jit_run_llvm(ScheduledGroup group) {
 
 void jit_run_cuda(ScheduledGroup group) {
     float codegen_time = timer();
-
-    auto it = state.kernel_cache.find(buffer.get());
+    auto it = state.kernel_cache.find(buffer.get(), (size_t) kernel_hash);
     Kernel kernel;
 
     if (it == state.kernel_cache.end()) {
@@ -607,7 +612,7 @@ void jit_run_cuda(ScheduledGroup group) {
                 buffer.get(), error_log.get());
 
         float link_time = timer();
-        bool cache_hit = strstr(info_log.get(), "ptxas info") != nullptr;
+        bool cache_hit = strstr(info_log.get(), "ptxas info") == nullptr;
         jit_log(Debug, "Detailed linker output:\n%s", info_log.get());
 
         CUresult ret = cuModuleLoadData(&kernel.cuda.cu_module, link_output);
@@ -648,9 +653,9 @@ void jit_run_cuda(ScheduledGroup group) {
         jit_log(Debug,
                 "jit_run(): cache %s, codegen: %s, %s: %s, %i registers, %i "
                 "threads, %i blocks.",
-                cache_hit ? "miss" : "hit",
+                cache_hit ? "hit" : "miss",
                 std::string(jit_time_string(codegen_time)).c_str(),
-                cache_hit ? "build" : "load",
+                cache_hit ? "load" : "build",
                 std::string(jit_time_string(link_time)).c_str(), reg_count,
                 kernel.cuda.thread_count, kernel.cuda.block_count);
     } else {
@@ -695,8 +700,12 @@ void jit_eval() {
     schedule_groups.clear();
 
     // Collect variables that must be computed and their subtrees
-    for (uint32_t index : todo)
-        jit_var_traverse(jit_var_size(index), index);
+    for (uint32_t index : todo) {
+        Variable *v = jit_var(index);
+        if (v->ref_count_ext == 0)
+            continue;
+        jit_var_traverse(v->size, index);
+    }
     todo.clear();
 
     // Group them from large to small sizes while preserving dependencies

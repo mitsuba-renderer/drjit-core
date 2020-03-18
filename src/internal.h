@@ -68,7 +68,7 @@ struct Stream {
      * called, in particular: externally referenced variables and statements
      * with side effects.
      */
-    tsl::robin_set<uint32_t> todo;
+    std::vector<uint32_t> todo;
 };
 
 enum ArgType {
@@ -272,7 +272,7 @@ struct State {
      * called, in particular: externally referenced variables and statements
      * with side effects.
      */
-    tsl::robin_set<uint32_t> todo_host;
+    std::vector<uint32_t> todo_host;
 };
 
 /// RAII helper for locking a mutex (like std::lock_guard)
