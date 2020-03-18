@@ -648,6 +648,7 @@ void jit_run_cuda(ScheduledGroup group) {
             &kernel.cuda.block_count, &kernel.cuda.thread_count,
             kernel.cuda.cu_func, nullptr, 0, 0));
 
+        kernel.type = KernelType::CUDA;
         state.kernel_cache.emplace(str, kernel);
 
         jit_log(Debug,

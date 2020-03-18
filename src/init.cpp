@@ -123,7 +123,7 @@ void jit_shutdown(int light) {
     for (auto &v : state.kernel_cache) {
         free((char *) v.first);
         const Kernel &kernel = v.second;
-        if (kernel.is_llvm())
+        if (kernel.type == KernelType::LLVM)
             jit_llvm_free(kernel);
         else
             cuda_check(cuModuleUnload(kernel.cuda.cu_module));

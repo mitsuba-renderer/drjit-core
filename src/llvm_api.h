@@ -5,30 +5,31 @@
 
 using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, void **ptr);
 
+enum KernelType {
+    LLVM,
+    CUDA
+};
+
 /// A kernel and its preferred lauch configuration
 struct Kernel {
     union {
         struct {
             /// CUDA kernel variables
-            CUmodule cu_module = nullptr;
-            CUfunction cu_func = nullptr;
-            int thread_count = 0;
-            int block_count = 0;
+            CUmodule cu_module;
+            CUfunction cu_func;
+            int thread_count;
+            int block_count;
         } cuda;
 
         struct {
             /// LLVM kernel variables
-            LLVMKernelFunction func;
+            void *buffer;
             size_t size;
-            size_t marker;
+            LLVMKernelFunction func;
         } llvm;
     };
 
-    Kernel() { }
-
-    bool is_llvm() const {
-        return llvm.marker == (size_t) -1;
-    }
+    KernelType type;
 };
 
 

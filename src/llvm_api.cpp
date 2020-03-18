@@ -8,6 +8,9 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+/// Version number for cache files
+#define ENOKI_LLVM_CACHE_VERSION 1
+
 /// LLVM API
 using LLVMBool = int;
 using LLVMDisasmContextRef = void *;
@@ -125,7 +128,8 @@ static void jit_llvm_mem_destroy(void * /* opaque */) { }
 } /* extern "C" */ ;
 
 bool jit_llvm_load(Kernel &kernel, const char *buffer, size_t buffer_size, uint32_t hash) {
-    uint32_t ir_size, payload_size;
+    uint8_t version_number;
+    uint32_t ir_size, payload_size, func_offset;
     char scratch[1024];
     snprintf(scratch, sizeof(scratch), "%s/.enoki/%08x.bin", getenv("HOME"), hash);
 
@@ -133,11 +137,15 @@ bool jit_llvm_load(Kernel &kernel, const char *buffer, size_t buffer_size, uint3
     if (fd == -1)
         return false;
 
-    ssize_t rv_1 = read(fd, &ir_size, sizeof(uint32_t));
-    ssize_t rv_2 = read(fd, &payload_size, sizeof(uint32_t));
+    ssize_t rv_1 = read(fd, &version_number, sizeof(uint8_t));
+    ssize_t rv_2 = read(fd, &ir_size, sizeof(uint32_t));
+    ssize_t rv_3 = read(fd, &payload_size, sizeof(uint32_t));
+    ssize_t rv_4 = read(fd, &func_offset, sizeof(uint32_t));
 
-    if (rv_1 != sizeof(uint32_t) || rv_2 != sizeof(uint32_t) ||
-        ir_size != buffer_size) {
+    if (rv_1 != sizeof(uint8_t) || rv_2 != sizeof(uint32_t) ||
+        rv_3 != sizeof(uint32_t) || rv_4 != sizeof(uint32_t) ||
+        ir_size != buffer_size || func_offset >= payload_size ||
+        version_number != ENOKI_LLVM_CACHE_VERSION) {
         close(fd);
         return false;
     }
@@ -197,14 +205,15 @@ bool jit_llvm_load(Kernel &kernel, const char *buffer, size_t buffer_size, uint3
     if (mprotect(payload, payload_size, PROT_READ | PROT_EXEC) == -1)
         jit_fail("jit_llvm_load(): mprotect() failed: %s", strerror(errno));
 
-    kernel.llvm.func = (LLVMKernelFunction) payload;
+    kernel.llvm.buffer = payload;
+    kernel.llvm.func = (LLVMKernelFunction) ((uint8_t *) payload + func_offset);
     kernel.llvm.size = payload_size;
-    kernel.llvm.marker = (size_t) -1;
+    kernel.type = KernelType::LLVM;
 
     return true;
 }
 
-void jit_llvm_write(const char *buffer, size_t buffer_size, uint32_t hash) {
+void jit_llvm_write(const char *buffer, size_t buffer_size, uint32_t hash, uint32_t func_offset) {
     char scratch[1024];
     snprintf(scratch, sizeof(scratch), "%s/.enoki/%08x.bin", getenv("HOME"), hash);
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
@@ -232,9 +241,12 @@ void jit_llvm_write(const char *buffer, size_t buffer_size, uint32_t hash) {
     };
 
     if (fd != -1) {
+        uint8_t version = ENOKI_LLVM_CACHE_VERSION;
         uint32_t data_size = (uint32_t) jit_llvm_mem_offset;
+        write_retry((const uint8_t *) &version, sizeof(uint8_t));
         write_retry((const uint8_t *) &buffer_size, sizeof(uint32_t));
         write_retry((const uint8_t *) &data_size, sizeof(uint32_t));
+        write_retry((const uint8_t *) &func_offset, sizeof(uint32_t));
         write_retry((const uint8_t *) buffer, buffer_size);
         write_retry((const uint8_t *) jit_llvm_mem, jit_llvm_mem_offset);
         close(fd);
@@ -284,15 +296,21 @@ Kernel jit_llvm_compile(const char *buffer, size_t buffer_size, uint32_t hash, b
 
     LLVMAddModule(jit_llvm_engine, module);
 
-    uint8_t *ptr = (uint8_t *) LLVMGetFunctionAddress(jit_llvm_engine, kernel_name_new);
-    if (unlikely(ptr != jit_llvm_mem))
-        jit_fail(
-            "jit_llvm_compile(): internal error: address mismatch: %p vs %p.\n",
-            ptr, jit_llvm_mem);
+    uint8_t *func =
+        (uint8_t *) LLVMGetFunctionAddress(jit_llvm_engine, kernel_name_new);
+    if (unlikely(!func))
+        jit_fail("jit_llvm_compile(): internal error: could not fetch function "
+                 "address of kernel \"%s\"!\n", kernel_name_new);
+    else if (unlikely(func < jit_llvm_mem))
+        jit_fail("jit_llvm_compile(): internal error: invalid address: "
+                 "%p < %p!\n", func, jit_llvm_mem);
+
+    uint32_t func_offset = (uint32_t) (func - jit_llvm_mem);
 
     /// Dump assembly representation
     if (std::max(state.log_level_stderr, state.log_level_callback) >=
         LogLevel::Trace) {
+        uint8_t *ptr = func;
         char ins_buf[256];
         do {
             size_t cur_offset = ptr - jit_llvm_mem;
@@ -332,18 +350,19 @@ Kernel jit_llvm_compile(const char *buffer, size_t buffer_size, uint32_t hash, b
     // Change the kernel name back
     memcpy(kernel_name_offset, kernel_name_old, 14);
 
-    jit_llvm_write(buffer, buffer_size, hash);
+    jit_llvm_write(buffer, buffer_size, hash, func_offset);
 
-    result.llvm.func = (LLVMKernelFunction) ptr_result;
+    result.llvm.buffer = ptr_result;
+    result.llvm.func = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
     result.llvm.size = jit_llvm_mem_offset;
-    result.llvm.marker = (size_t) -1;
+    result.type = KernelType::LLVM;
 
     cache_hit = false;
     return result;
 }
 
 void jit_llvm_free(Kernel kernel) {
-    if (munmap((void *) kernel.llvm.func, kernel.llvm.size) == -1)
+    if (munmap((void *) kernel.llvm.buffer, kernel.llvm.size) == -1)
         jit_fail("jit_llvm_compile(): munmap() failed!");
 }
 
