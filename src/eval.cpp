@@ -116,6 +116,7 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
                 case 'n': buffer.put("\n    "); continue;
+                case 'i': buffer.put("%r0"); continue;
                 case 't': prefix_table = var_type_name_ptx;     break;
                 case 'b': prefix_table = var_type_name_ptx_bin; break;
                 case 'r': prefix_table = var_type_prefix; break;
@@ -264,7 +265,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                        target, (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
 
         if (v->size > 1)
-            buffer.fmt("    mul.wide.u32 %%rd1, %%r2, %u;\n"
+            buffer.fmt("    mul.wide.u32 %%rd1, %%r0, %u;\n"
                        "    add.u64 %%rd%u, %%rd%u, %%rd1;\n",
                        var_type_size[(int) v->type], target, target);
     };

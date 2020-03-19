@@ -37,10 +37,13 @@ struct CUDAArray {
     template <typename T> CUDAArray(const CUDAArray<T> &v) {
         const char *op;
 
-        if (std::is_floating_point<T>::value && std::is_integral<Value>::value)
-            op = "cvt.rzi.$t0.$t1 $r0, $r1";
-        else if (std::is_integral<T>::value && std::is_floating_point<Value>::value)
-            op = "cvt.rn.$t0.$t1 $r0, $r1";
+        if (std::is_floating_point<Value>::value &&
+            std::is_floating_point<T>::value && sizeof(Value) > sizeof(T))
+            op = "cvt.$t0.$t1 $r0, $r1";
+        else if (std::is_floating_point<Value>::value)
+            op = "cvt.rn.ftz.$t0.$t1 $r0, $r1";
+        else if (std::is_floating_point<T>::value && std::is_integral<Value>::value)
+            op = "cvt.rzi.ftz.$t0.$t1 $r0, $r1";
         else
             op = "cvt.$t0.$t1 $r0, $r1";
 
@@ -239,7 +242,7 @@ struct CUDAArray {
 
         using UInt32 = CUDAArray<uint32_t>;
         UInt32 index = UInt32::from_index(
-            jitc_trace_append_0(VarType::UInt32, "mov.u32, $r0, %r0", 1));
+            jitc_trace_append_0(VarType::UInt32, "mov.u32 $r0, $i", 1));
         jitc_var_set_size(index.index(), size, false);
 
         if (start == 0 && step == 1)
