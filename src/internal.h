@@ -158,10 +158,8 @@ struct VariableKey {
     uint16_t free_stmt;
 
     VariableKey(const Variable &v)
-        : stmt(v.stmt),
-          size(v.size), dep{ v.dep[0], v.dep[1], v.dep[2] },
-          extra_dep(v.extra_dep),
-          type((uint16_t) v.type),
+        : stmt(v.stmt), size(v.size), dep{ v.dep[0], v.dep[1], v.dep[2] },
+          extra_dep(v.extra_dep), type((uint16_t) v.type),
           free_stmt(v.free_stmt ? 1 : 0) { }
 
     bool operator==(const VariableKey &v) const {

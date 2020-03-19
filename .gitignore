@@ -6,6 +6,7 @@ CMakeFiles
 *.ninja
 \.ninja_*
 tests/**/*.out
+tests/**/*.raw
 Testing
 /ptx/kernels.ptx
 /ptx/kernels.ptx.gz

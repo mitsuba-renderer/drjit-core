@@ -5,14 +5,14 @@ jit_assemble(size=1): register map:
    - %f0 -> 1 [scalar] [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=1, ops=1) ..
-define void @enoki_59804125(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+define void @enoki_b64699f1(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
 entry:
 
     ; Prepare argument 0
-    %a0i = getelementptr inbounds i8*, i8** %ptrs, i64 0
-    %a0p = load i8*, i8** %a0i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0p to float*
-    %a0s = load float, float* %a0, align 4, !alias.scope !1
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to float*
+    %a0_s = load float, float* %a0, align 4, !alias.scope !1
     br label %loop
 
 done:
@@ -23,11 +23,11 @@ loop:
 
     ; Evaluate %f0
     %f0_t = insertelement <8 x float> undef, float 0x4093480000000000, i32 0
-    %f0 = shufflevector <8 x float> %f0_t, <8 x float> undef, <8 x i32> zeroinitializer;
+    %f0 = shufflevector <8 x float> %f0_t, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Store %f0
-    %a0m = bitcast float* %a0 to <8 x float>*
-    store <8 x float> %f0, <8 x float>* %a0m, align 32, !noalias !1
+    %f0_p = bitcast float* %a0 to <8 x float>*
+    store <8 x float> %f0, <8 x float>* %f0_p, align 32, !noalias !1
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end

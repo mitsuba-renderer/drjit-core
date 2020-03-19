@@ -35,16 +35,40 @@ struct LLVMArray {
     }
 
     template <typename T> LLVMArray(const LLVMArray<T> &v) {
+        static_assert(!std::is_same<T, Value>::value,
+                      "Conversion constructor called with arguments that don't "
+                      "correspond to a conversion!");
+
+        constexpr bool Signed =
+            std::is_signed<T>::value && std::is_signed<Value>::value;
+
         const char *op;
+        if (std::is_floating_point<Value>::value && std::is_integral<T>::value) {
+            op = std::is_signed<T>::value ? "$r0 = sitofp <$w x $t1> $r1 to <$w x $t0>"
+                                          : "$r0 = uitofp <$w x $t1> $r1 to <$w x $t0>";
+        } else if (std::is_integral<Value>::value && std::is_floating_point<T>::value) {
+            op = std::is_signed<Value>::value ? "$r0 = fptosi <$w x $t1> $r1 to <$w x $t0>"
+                                              : "$r0 = fptoui <$w x $t1> $r1 to <$w x $t0>";
+        } else if (std::is_floating_point<T>::value && std::is_floating_point<Value>::value) {
+            op = sizeof(T) > sizeof(Value) ? "$r0 = fptrunc <$w x $t1> $r1 to <$w x $t0>"
+                                           : "$r0 = fpext <$w x $t1> $r1 to <$w x $t0>";
+        } else if (std::is_integral<T>::value && std::is_integral<Value>::value) {
+            if (sizeof(T) == sizeof(Value)) {
+                m_index = v.index();
+                jitc_var_ext_ref_inc(m_index);
+                return;
+            } else {
+                op = sizeof(T) > sizeof(Value)
+                         ? "$r0 = trunc <$w x $t1> $r1 to <$w x $t0>"
+                         : (Signed ? "$r0 = sext <$w x $t1> $r1 to <$w x $t0>"
+                                   : "$r0 = zext <$w x $t1> $r1 to <$w x $t0>");
+            }
+        }
+        else {
+            jitc_fail("Unsupported conversion!");
+        }
 
-        if (std::is_floating_point<T>::value && std::is_integral<Value>::value)
-            op = "cvt.rzi.$t0.$t1 $r0, $r1";
-        else if (std::is_integral<T>::value && std::is_floating_point<Value>::value)
-            op = "cvt.rn.$t0.$t1 $r0, $r1";
-        else
-            op = "cvt.$t0.$t1 $r0, $r1";
-
-        m_index = jitc_trace_append_1(Type, op, 1, v.index_());
+        m_index = jitc_trace_append_1(Type, op, 1, v.index());
     }
 
     LLVMArray(Value value) {
@@ -74,7 +98,7 @@ struct LLVMArray {
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
     LLVMArray(Args&&... args) {
         Value data[] = { (Value) args... };
-        m_index = jitc_var_copy(Type, sizeof...(Args), data);
+        m_index = jitc_var_copy(Type, data, sizeof...(Args));
     }
 
     LLVMArray &operator=(const LLVMArray &a) {
@@ -98,8 +122,85 @@ struct LLVMArray {
             jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
     }
 
+    LLVMArray operator-(const LLVMArray &v) const {
+        const char *op = std::is_floating_point<Value>::value
+            ? "$r0 = fsub <$w x $t0> $r1, $r2"
+            : "$r0 = sub <$w x $t0> $r1, $r2";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
+    }
+
+    LLVMArray operator*(const LLVMArray &v) const {
+        const char *op = std::is_floating_point<Value>::value
+            ? "$r0 = fmul <$w x $t0> $r1, $r2"
+            : "$r0 = mul <$w x $t0> $r1, $r2";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
+    }
+
+    LLVMArray operator/(const LLVMArray &v) const {
+        const char *op = std::is_floating_point<Value>::value
+            ? "$r0 = fdiv <$w x $t0> $r1, $r2"
+            : "$r0 = div <$w x $t0> $r1, $r2";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
+    }
+
     LLVMArray& operator+=(const LLVMArray &v) {
         return operator=(*this + v);
+    }
+
+    LLVMArray& operator-=(const LLVMArray &v) {
+        return operator=(*this + v);
+    }
+
+    LLVMArray& operator*=(const LLVMArray &v) {
+        return operator=(*this + v);
+    }
+
+    LLVMArray& operator/=(const LLVMArray &v) {
+        return operator=(*this + v);
+    }
+
+    LLVMArray operator-() const {
+        const char *op = std::is_floating_point<Value>::value
+            ? "$r0 = fsub <$w x $t0> $Z0, $r1"
+            : "$r0 = sub <$w x $t0> $Z0, $r1";
+
+        return from_index(
+            jitc_trace_append_1(Type, op, 1, m_index));
+    }
+
+    friend LLVMArray fmadd(const LLVMArray &a, const LLVMArray &b,
+                           const LLVMArray &c) {
+        if (std::is_floating_point<Value>::value) {
+            const char *op = std::is_same<Value, float>::value
+                ? "$r0 = call <$w x $t0> @llvm.fma.v$wf32(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)"
+                : "$r0 = call <$w x $t0> @llvm.fma.v$wf64(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)";
+
+            return LLVMArray::from_index(jitc_trace_append_3(
+                Type, op, 1, a.index(), b.index(), c.index()));
+        } else {
+            return a*b + c;
+        }
+    }
+
+    friend LLVMArray fmsub(const LLVMArray &a, const LLVMArray &b,
+                           const LLVMArray &c) {
+        return fmadd(a, b, -c);
+    }
+
+    friend LLVMArray fnmadd(const LLVMArray &a, const LLVMArray &b,
+                            const LLVMArray &c) {
+        return fmadd(-a, b, c);
+    }
+
+    friend LLVMArray fnmsub(const LLVMArray &a, const LLVMArray &b,
+                            const LLVMArray &c) {
+        return fmadd(-a, b, -c);
     }
 
     static LLVMArray empty(size_t size) {
@@ -129,6 +230,30 @@ struct LLVMArray {
             jitc_fill(Type, ptr, size, &value);
             return from_index(jitc_var_map(Type, ptr, size, 1));
         }
+    }
+
+    static LLVMArray arange(size_t size) {
+        return arange(0, (size_t) size, 1);
+    }
+
+    static LLVMArray arange(ssize_t start, ssize_t stop, ssize_t step) {
+        size_t size = size_t((stop - start + step - (step > 0 ? 1 : -1)) / step);
+
+        using UInt32 = LLVMArray<uint32_t>;
+        UInt32 index = UInt32::from_index(jitc_trace_append_0(
+            VarType::UInt32,
+            "$r0_0 = trunc i64 $i to i32$n"
+            "$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n"
+            "$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, "
+            "<$w x i32> zeroinitializer$n"
+            "$r0 = add <$w x i32> $r0_2, $o0",
+            1));
+        jitc_var_set_size(index.index(), size, false);
+
+        if (start == 0 && step == 1)
+            return index;
+        else
+            return fmadd(LLVMArray(index), LLVMArray((Value) step), LLVMArray((Value) start));
     }
 
     LLVMArray eval() const {

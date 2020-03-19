@@ -21,10 +21,10 @@ const char *var_type_name_ptx[(int) VarType::Count]{
     "s64", "u64", "f16", "f32", "f64", "pred", "u64"
 };
 
-/// LLVM IR type names
+/// LLVM IR type names (does not distinguish signed vs unsigned)
 const char *var_type_name_llvm[(int) VarType::Count]{
-    "???", "i8", "u8", "i16", "u16", "i32", "u32",
-    "i64", "u64", "???", "float", "double", "i1", "u64"
+    "???", "i8", "i8", "i16", "i16", "i32", "i32",
+    "i64", "i64", "???", "float", "double", "i1", "u64"
 };
 
 /// CUDA PTX type names (binary view)
@@ -33,8 +33,8 @@ const char *var_type_name_ptx_bin[(int) VarType::Count]{
     "b64", "b64", "b16", "b32", "b64", "pred", "b64"
 };
 
-/// CUDA PTX register name prefixes
-const char *var_type_register_ptx[(int) VarType::Count]{
+/// LLVM/CUDA register name prefixes
+const char *var_type_prefix[(int) VarType::Count]{
     "???", "%b", "%b", "%w", "%w", "%r", "%r",
     "%rd", "%rd", "%h", "%f", "%d", "%p", "%rd"
 };
@@ -258,7 +258,7 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
             return index_new;
         }
 
-        jit_raise("cuda_var_set_size(): attempted to resize variable %u,"
+        jit_raise("jit_var_set_size(): attempted to resize variable %u,"
                   "which was already allocated (current size = %u, "
                   "requested size = %u)",
                   index, v->size, (uint32_t) size);
@@ -484,6 +484,8 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
             index, op1, op2, op3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
+    jit_var_ext_ref_inc(index, vo);
+
     auto &todo = stream ? stream->todo : state.todo_host;
     todo.push_back(index);
 
@@ -532,7 +534,7 @@ uint32_t jit_var_copy(VarType type, const void *ptr, size_t size) {
     }
 
     uint32_t index = jit_var_map(type, target_ptr, size, true);
-    jit_log(Debug, "jit_var_copy(%u, %zu)", index, size);
+    jit_log(Debug, "jit_var_copy(%u, size=%zu)", index, size);
     return index;
 }
 

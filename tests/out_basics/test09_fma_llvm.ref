@@ -1,0 +1,146 @@
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_var_map(1): <@>, size=4, free=1
+jit_var_ext_ref_inc(1): 1
+jit_var_copy(1, size=4)
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_var_map(2): <@>, size=4, free=1
+jit_var_ext_ref_inc(2): 1
+jit_var_copy(2, size=4)
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_var_map(3): <@>, size=4, free=1
+jit_var_ext_ref_inc(3): 1
+jit_var_copy(3, size=4)
+jit_var_int_ref_inc(1): 1
+jit_var_int_ref_inc(2): 1
+jit_var_int_ref_inc(3): 1
+jit_trace_append(4 <- 1, 2, 3): $r0 = call <$w x $t0> @llvm.fma.v$wf32(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_ext_ref_inc(4): 1
+jit_var_int_ref_inc(3): 2
+jit_trace_append(5 <- 3): $r0 = fsub <$w x $t0> $Z0, $r1
+jit_var_ext_ref_inc(5): 1
+jit_var_int_ref_inc(4): 1
+jit_var_int_ref_inc(2): 2
+jit_var_int_ref_inc(5): 1
+jit_trace_append(6 <- 4, 2, 5): $r0 = call <$w x $t0> @llvm.fma.v$wf32(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_ext_ref_inc(6): 1
+jit_var_ext_ref_dec(5): 0
+jit_eval(): begin.
+jit_assemble(size=4): register map:
+   - %f0 -> 1 [in]
+   - %f1 -> 2 [in]
+   - %f2 -> 3 [in]
+   - %f3 -> 4 [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+   - %f4 -> 5
+   - %f5 -> 6 [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=4, in=3, out=2, ops=6) ..
+define void @enoki_60754d8f(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+entry:
+
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to float*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to float*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %a2_p = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    %a2 = bitcast i8* %a2_p to float*
+
+    ; Prepare argument 3
+    %a3_i = getelementptr inbounds i8*, i8** %ptrs, i32 3
+    %a3_p = load i8*, i8** %a3_i, align 8, !alias.scope !1
+    %a3 = bitcast i8* %a3_p to float*
+
+    ; Prepare argument 4
+    %a4_i = getelementptr inbounds i8*, i8** %ptrs, i32 4
+    %a4_p = load i8*, i8** %a4_i, align 8, !alias.scope !1
+    %a4 = bitcast i8* %a4_p to float*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Load %f0
+    %f0_i = getelementptr inbounds float, float* %a0, i64 %index
+    %f0_p = bitcast float* %f0_i to <8 x float>*
+    %f0 = load <8 x float>, <8 x float>* %f0_p, align 32, !alias.scope !1
+
+    ; Load %f1
+    %f1_i = getelementptr inbounds float, float* %a1, i64 %index
+    %f1_p = bitcast float* %f1_i to <8 x float>*
+    %f1 = load <8 x float>, <8 x float>* %f1_p, align 32, !alias.scope !1
+
+    ; Load %f2
+    %f2_i = getelementptr inbounds float, float* %a2, i64 %index
+    %f2_p = bitcast float* %f2_i to <8 x float>*
+    %f2 = load <8 x float>, <8 x float>* %f2_p, align 32, !alias.scope !1
+
+    ; Evaluate %f3
+    %f3 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f0, <8 x float> %f1, <8 x float> %f2)
+
+    ; Store %f3
+    %f3_i = getelementptr inbounds float, float* %a3, i64 %index
+    %f3_p = bitcast float* %f3_i to <8 x float>*
+    store <8 x float> %f3, <8 x float>* %f3_p, align 32, !noalias !1
+
+    ; Evaluate %f4
+    %f4 = fsub <8 x float> <float -0.0, float -0.0, float -0.0, float -0.0, float -0.0, float -0.0, float -0.0, float -0.0>, %f2
+
+    ; Evaluate %f5
+    %f5 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f3, <8 x float> %f1, <8 x float> %f4)
+
+    ; Store %f5
+    %f5_i = getelementptr inbounds float, float* %a4, i64 %index
+    %f5_p = bitcast float* %f5_i to <8 x float>*
+    store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+
+declare <8 x float> @llvm.fma.v8f32(<8 x float> , <8 x float> , <8 x float> )
+
+jit_eval(): cleaning up..
+jit_var_int_ref_dec(1): 0
+jit_var_int_ref_dec(2): 1
+jit_var_int_ref_dec(3): 1
+jit_var_int_ref_dec(3): 0
+jit_var_int_ref_dec(4): 0
+jit_var_int_ref_dec(2): 0
+jit_var_int_ref_dec(5): 0
+jit_var_free(5)
+jit_eval(): done.
+value=[12, 17, 6, 20]
+value=[27, 135, 3, 100]
+jit_var_ext_ref_dec(6): 0
+jit_var_free(6)
+jit_free(<@>, type=host, size=64)
+jit_var_ext_ref_dec(4): 0
+jit_var_free(4)
+jit_free(<@>, type=host, size=64)
+jit_var_ext_ref_dec(3): 0
+jit_var_free(3)
+jit_free(<@>, type=host, size=64)
+jit_var_ext_ref_dec(2): 0
+jit_var_free(2)
+jit_free(<@>, type=host, size=64)
+jit_var_ext_ref_dec(1): 0
+jit_var_free(1)
+jit_free(<@>, type=host, size=64)
+jit_malloc_trim(): freed
+ - host memory: 320 B in 5 allocations
+jit_shutdown(): done

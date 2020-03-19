@@ -153,8 +153,12 @@ void jit_shutdown(int light) {
             jit_log(Warn, "jit_shutdown(): %u variables are still referenced!", n_leaked);
     }
 
-    if (state.variables.empty() && !state.cse_cache.empty())
+    if (state.variables.empty() && !state.cse_cache.empty()) {
+        for (auto &kv: state.cse_cache)
+            jit_log(Warn, " - %u: %u, %u, %u", kv.second, kv.first.dep[0], kv.first.dep[1], kv.first.dep[2]);
         jit_fail("jit_shutdown(): detected a common subexpression elimination cache leak!");
+    }
+
 
     jit_malloc_shutdown();
 

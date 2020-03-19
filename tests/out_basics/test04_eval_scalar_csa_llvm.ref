@@ -29,32 +29,32 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %f3 -> 4 [scalar] [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=4, ops=4) ..
-define void @enoki_0bf322aa(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+define void @enoki_89c646f2(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
 entry:
 
     ; Prepare argument 0
-    %a0i = getelementptr inbounds i8*, i8** %ptrs, i64 0
-    %a0p = load i8*, i8** %a0i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0p to float*
-    %a0s = load float, float* %a0, align 4, !alias.scope !1
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to float*
+    %a0_s = load float, float* %a0, align 4, !alias.scope !1
 
     ; Prepare argument 1
-    %a1i = getelementptr inbounds i8*, i8** %ptrs, i64 1
-    %a1p = load i8*, i8** %a1i, align 8, !alias.scope !1
-    %a1 = bitcast i8* %a1p to float*
-    %a1s = load float, float* %a1, align 4, !alias.scope !1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to float*
+    %a1_s = load float, float* %a1, align 4, !alias.scope !1
 
     ; Prepare argument 2
-    %a2i = getelementptr inbounds i8*, i8** %ptrs, i64 2
-    %a2p = load i8*, i8** %a2i, align 8, !alias.scope !1
-    %a2 = bitcast i8* %a2p to float*
-    %a2s = load float, float* %a2, align 4, !alias.scope !1
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %a2_p = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    %a2 = bitcast i8* %a2_p to float*
+    %a2_s = load float, float* %a2, align 4, !alias.scope !1
 
     ; Prepare argument 3
-    %a3i = getelementptr inbounds i8*, i8** %ptrs, i64 3
-    %a3p = load i8*, i8** %a3i, align 8, !alias.scope !1
-    %a3 = bitcast i8* %a3p to float*
-    %a3s = load float, float* %a3, align 4, !alias.scope !1
+    %a3_i = getelementptr inbounds i8*, i8** %ptrs, i32 3
+    %a3_p = load i8*, i8** %a3_i, align 8, !alias.scope !1
+    %a3 = bitcast i8* %a3_p to float*
+    %a3_s = load float, float* %a3, align 4, !alias.scope !1
     br label %loop
 
 done:
@@ -65,33 +65,33 @@ loop:
 
     ; Evaluate %f0
     %f0_t = insertelement <8 x float> undef, float 0x4093480000000000, i32 0
-    %f0 = shufflevector <8 x float> %f0_t, <8 x float> undef, <8 x i32> zeroinitializer;
+    %f0 = shufflevector <8 x float> %f0_t, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Store %f0
-    %a0m = bitcast float* %a0 to <8 x float>*
-    store <8 x float> %f0, <8 x float>* %a0m, align 32, !noalias !1
+    %f0_p = bitcast float* %a0 to <8 x float>*
+    store <8 x float> %f0, <8 x float>* %f0_p, align 32, !noalias !1
 
     ; Evaluate %f1
     %f1_t = insertelement <8 x float> undef, float 0x40934c0000000000, i32 0
-    %f1 = shufflevector <8 x float> %f1_t, <8 x float> undef, <8 x i32> zeroinitializer;
+    %f1 = shufflevector <8 x float> %f1_t, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Store %f1
-    %a1m = bitcast float* %a1 to <8 x float>*
-    store <8 x float> %f1, <8 x float>* %a1m, align 32, !noalias !1
+    %f1_p = bitcast float* %a1 to <8 x float>*
+    store <8 x float> %f1, <8 x float>* %f1_p, align 32, !noalias !1
 
     ; Evaluate %f2
-    %f2 = fadd <8 x float> %f0, %f1;
+    %f2 = fadd <8 x float> %f0, %f1
 
     ; Store %f2
-    %a2m = bitcast float* %a2 to <8 x float>*
-    store <8 x float> %f2, <8 x float>* %a2m, align 32, !noalias !1
+    %f2_p = bitcast float* %a2 to <8 x float>*
+    store <8 x float> %f2, <8 x float>* %f2_p, align 32, !noalias !1
 
     ; Evaluate %f3
-    %f3 = fadd <8 x float> %f0, %f0;
+    %f3 = fadd <8 x float> %f0, %f0
 
     ; Store %f3
-    %a3m = bitcast float* %a3 to <8 x float>*
-    store <8 x float> %f3, <8 x float>* %a3m, align 32, !noalias !1
+    %f3_p = bitcast float* %a3 to <8 x float>*
+    store <8 x float> %f3, <8 x float>* %f3_p, align 32, !noalias !1
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end

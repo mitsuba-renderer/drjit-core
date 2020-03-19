@@ -29,6 +29,23 @@ struct ScheduledGroup {
         : size(size), start(start), end(end) { }
 };
 
+struct IntrinsicHash {
+    size_t operator()(const char *a_s) const {
+        const char *a_e = strchr(a_s, '(');
+        return (size_t) (a_e ? crc32(0, a_s, a_e - a_s) : 0u);
+    }
+};
+
+struct IntrinsicEquality {
+    size_t operator()(const char *a_s, const char *b_s) const {
+        const char *a_e = strchr(a_s, '('),
+                   *b_e = strchr(b_s, '(');
+        if (!a_e || !b_e || a_e - a_s != b_e - b_s)
+            return 0;
+        return strncmp(a_s, b_s, a_e - a_s) == 0;
+    }
+};
+
 /// Ordered list of variables that should be computed
 static std::vector<ScheduledVariable> schedule;
 
@@ -46,6 +63,12 @@ uint32_t kernel_hash = 0;
 
 /// Name of the last generated kernel
 static char kernel_name[9] { };
+
+/// Dedicated buffer for intrinsic intrinsics_buffer (LLVM only)
+Buffer intrinsics_buffer{1};
+
+/// Intrinsics used by the current program (LLVM only)
+static tsl::robin_set<const char *, IntrinsicHash, IntrinsicEquality> intrinsics_set;
 
 // ====================================================================
 
@@ -95,10 +118,10 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
                 case 'n': buffer.put("\n    "); continue;
                 case 't': prefix_table = var_type_name_ptx;     break;
                 case 'b': prefix_table = var_type_name_ptx_bin; break;
-                case 'r': prefix_table = var_type_register_ptx; break;
+                case 'r': prefix_table = var_type_prefix; break;
                 default:
                     jit_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
-                             "expression (unknown type)!");
+                             "expression (unknown type \"%c\")!", type);
             }
 
             uint32_t arg_id = *s++ - '0';
@@ -124,9 +147,9 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
 
 void jit_render_stmt_llvm(uint32_t index, Variable *v) {
     const char *s = v->stmt;
-    char c;
 
     buffer.put("    ");
+    char c;
     while ((c = *s++) != '\0') {
         if (c != '$') {
             buffer.putc(c);
@@ -135,32 +158,101 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
             switch (type) {
                 case 'n': buffer.put("\n    "); continue;
                 case 'w': buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 'i': buffer.put("%index"); continue;
+                case 'z':
+                case 'Z':
+                case 'o':
                 case 't': prefix_table = var_type_name_llvm;    break;
-                case 'r': prefix_table = var_type_register_ptx; break;
+                case 'r': prefix_table = var_type_prefix; break;
+
                 default:
-                    jit_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
-                             "expression (unknown type)!");
+                    jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
+                             "expression (unknown type \"%c\")!", type);
             }
 
             uint32_t arg_id = *s++ - '0';
             if (unlikely(arg_id > 3))
-                jit_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
+                jit_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
                          "expression (argument out of bounds)!", v->stmt);
 
             uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
             if (unlikely(dep_id == 0))
-                jit_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
+                jit_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
                          "expression (dependency %u is missing)!", v->stmt, arg_id);
 
             Variable *dep = jit_var(dep_id);
-            buffer.put(prefix_table[(int) dep->type]);
+            const char *prefix = prefix_table[(int) dep->type];
+            bool is_float = (VarType) dep->type == VarType::Float16 ||
+                            (VarType) dep->type == VarType::Float32 ||
+                            (VarType) dep->type == VarType::Float64;
 
-            if (type == 'r')
-                buffer.fmt("%u", dep->reg_index);
+            switch (type) {
+                case 'r':
+                    buffer.fmt("%s%u", prefix, dep->reg_index);
+                    break;
+
+                case 't':
+                    buffer.put(prefix);
+                    break;
+
+                case 'o':
+                    buffer.putc('<');
+                    for (int i = 0; i < jit_llvm_vector_width; ++i)
+                        buffer.fmt("%s %i%s%s", prefix, i, is_float ? ".0" : "",
+                                   i + 1 < jit_llvm_vector_width ? ", " : "");
+                    buffer.putc('>');
+                    break;
+
+                case 'z':
+                case 'Z':
+                    buffer.putc('<');
+                    for (int i = 0; i < jit_llvm_vector_width; ++i)
+                        buffer.fmt("%s %s0%s%s", prefix, type == 'z' ? "+" : "-", is_float ? ".0" : "",
+                                   i + 1 < jit_llvm_vector_width ? ", " : "");
+                    buffer.putc('>');
+                    break;
+            }
         }
     }
 
-    buffer.put(";\n");
+    buffer.putc('\n');
+
+    // Check for intrinsics
+    s = strstr(v->stmt, "call");
+    if (likely(!s))
+        return;
+    s += 5;
+
+    if (intrinsics_set.find(s) != intrinsics_set.end())
+        return;
+    intrinsics_set.insert(s);
+
+    intrinsics_buffer.put("declare ");
+    while ((c = *s++) != '\0') {
+        if (c != '$') {
+            intrinsics_buffer.putc(c);
+        } else {
+            const char **prefix_table = nullptr, type = *s++;
+            switch (type) {
+                case 't': prefix_table = var_type_name_llvm; break;
+                case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 'n':
+                case 'r':
+                case 'o':
+                case 'Z':
+                case 'z': s++; continue;
+                default:
+                    jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
+                             "expression (unknown type \"%c\")!", type);
+            }
+
+            uint32_t arg_id = *s++ - '0';
+            uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
+            Variable *dep = jit_var(dep_id);
+            intrinsics_buffer.put(prefix_table[(int) dep->type]);
+        }
+    }
+    intrinsics_buffer.putc('\n');
 }
 
 void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
@@ -233,7 +325,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
         if (v->arg_type == ArgType::Input) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    // Load %s%u%s%s\n",
-                           var_type_register_ptx[(int) v->type],
+                           var_type_prefix[(int) v->type],
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
@@ -244,20 +336,20 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                     buffer.fmt("    %s.global.%s %s%u, [%%rd0];\n",
                            v->size == 1 ? "ldu" : "ld",
                            var_type_name_ptx[(int) v->type],
-                           var_type_register_ptx[(int) v->type],
+                           var_type_prefix[(int) v->type],
                            v->reg_index);
                 } else {
                     buffer.fmt("    %s.global.u8 %%w0, [%%rd0];\n",
                            v->size == 1 ? "ldu" : "ld");
                     buffer.fmt("    setp.ne.u16 %s%u, %%w0, 0;",
-                           var_type_register_ptx[(int) v->type],
+                           var_type_prefix[(int) v->type],
                            v->reg_index);
                 }
             }
         } else {
             if (unlikely(log_trace))
                 buffer.fmt("\n    // Evaluate %s%u%s%s\n",
-                           var_type_register_ptx[(int) v->type],
+                           var_type_prefix[(int) v->type],
                            v->reg_index,
                            v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
@@ -268,7 +360,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
         if (v->arg_type == ArgType::Output) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    // Store %s%u%s%s\n",
-                           var_type_register_ptx[(int) v->type],
+                           var_type_prefix[(int) v->type],
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
@@ -277,7 +369,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
             if (likely(v->type != (uint32_t) VarType::Bool)) {
                 buffer.fmt("    st.global.%s [%%rd0], %s%u;\n",
                        var_type_name_ptx[(int) v->type],
-                       var_type_register_ptx[(int) v->type],
+                       var_type_prefix[(int) v->type],
                        v->reg_index);
             } else {
                 buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u;\n",
@@ -309,6 +401,8 @@ void jit_assemble_llvm(ScheduledGroup group) {
                               state.log_level_callback) >= LogLevel::Trace;
 
     buffer.clear();
+    intrinsics_buffer.clear();
+    intrinsics_set.clear();
     buffer.fmt("define void @enoki_^^^^^^^^(i64 %%start, i64 %%end, i8** "
                "%%ptrs) norecurse nosync nounwind alignstack(%i) "
                "\"target-cpu\"=\"%s\"",
@@ -326,11 +420,11 @@ void jit_assemble_llvm(ScheduledGroup group) {
         const char *type = var_type_name_llvm[(int) v->type];
         if (unlikely(log_trace))
             buffer.fmt("\n    ; Prepare argument %u\n", arg_id);
-        buffer.fmt("    %%a%ui = getelementptr inbounds i8*, i8** %%ptrs, i64 %u\n", arg_id, arg_id);
-        buffer.fmt("    %%a%up = load i8*, i8** %%a%ui, align 8, !alias.scope !1\n", arg_id, arg_id);
-        buffer.fmt("    %%a%u = bitcast i8* %%a%up to %s*\n", arg_id, arg_id, type);
+        buffer.fmt("    %%a%u_i = getelementptr inbounds i8*, i8** %%ptrs, i32 %u\n", arg_id, arg_id);
+        buffer.fmt("    %%a%u_p = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", arg_id, arg_id);
+        buffer.fmt("    %%a%u = bitcast i8* %%a%u_p to %s*\n", arg_id, arg_id, type);
         if (v->size == 1)
-            buffer.fmt("    %%a%us = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
+            buffer.fmt("    %%a%u_s = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
                        type, type, arg_id, var_type_size[(int) v->type]);
     }
     buffer.put("    br label %loop\n\n");
@@ -340,15 +434,17 @@ void jit_assemble_llvm(ScheduledGroup group) {
     buffer.put("loop:\n");
     buffer.put("    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]\n");
 
-    auto get_parameter_addr = [](uint32_t size, uint32_t arg_id, const char *type) {
+    auto get_parameter_addr = [](uint32_t reg_id, uint32_t arg_id,
+                                 const char *reg_prefix, const char *type,
+                                 uint32_t size) {
         if (size == 1) {
-            buffer.fmt("    %%a%um = bitcast %s* %%a%u to <%u x %s>*\n", arg_id,
+            buffer.fmt("    %s%u_p = bitcast %s* %%a%u to <%u x %s>*\n", reg_prefix, reg_id,
                        type, arg_id, jit_llvm_vector_width, type);
         } else {
-            buffer.fmt("    %%a%uo = getelementptr inbounds %s, %s* %%a%u, "
-                       "i64 %%index\n", arg_id, type, type, arg_id);
-            buffer.fmt("    %%a%um = bitcast %s* %%a%uo to <%u x %s>*\n", arg_id,
-                       type, arg_id, jit_llvm_vector_width, type);
+            buffer.fmt("    %s%u_i = getelementptr inbounds %s, %s* %%a%u, "
+                       "i64 %%index\n", reg_prefix, reg_id, type, type, arg_id);
+            buffer.fmt("    %s%u_p = bitcast %s* %s%u_i to <%u x %s>*\n", reg_prefix, reg_id,
+                       type, reg_prefix, reg_id, jit_llvm_vector_width, type);
         }
     };
 
@@ -357,29 +453,30 @@ void jit_assemble_llvm(ScheduledGroup group) {
         Variable *v = jit_var(index);
         uint32_t align = var_type_size[(int) v->type] * width,
                  reg_id = v->reg_index, arg_id = v->arg_index - 1;
-        const char *type = var_type_name_llvm[(int) v->type];
+        const char *type = var_type_name_llvm[(int) v->type],
+                   *reg_prefix = var_type_prefix[(int) v->type];
 
         if (v->arg_type == ArgType::Input) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    ; Load %s%u%s%s\n",
-                           var_type_register_ptx[(int) v->type],
+                           var_type_prefix[(int) v->type],
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
             if (v->size > 1) {
-                get_parameter_addr(v->size, arg_id, type);
-                buffer.fmt("    %%r%u = load <%u x %s>, <%u x %s>* %%a%um, align %u, !alias.scope !1\n",
-                           reg_id, width, type, width, type, arg_id, align);
+                get_parameter_addr(reg_id, arg_id, reg_prefix, type, v->size);
+                buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p, align %u, !alias.scope !1\n",
+                           reg_prefix, reg_id, width, type, width, type, reg_prefix, reg_id, align);
             } else {
-                buffer.fmt("    %%r%ut = insertelement <%u x %s> undef, %s %%a%us, i32 0\n",
-                           reg_id, width, type, type, arg_id);
-                buffer.fmt("    %%r%u = shufflevector <%u x %s> %%r%ut, <%u x %s> undef, <%u x i32> zeroinitializer\n",
-                           reg_id, width, type, reg_id, width, type, width);
+                buffer.fmt("    %s%u_0 = insertelement <%u x %s> undef, %s %%a%u_s, i32 0\n",
+                           reg_prefix, reg_id, width, type, type, arg_id);
+                buffer.fmt("    %s%u = shufflevector <%u x %s> %s%u_0, <%u x %s> undef, <%u x i32> zeroinitializer\n",
+                           reg_prefix, reg_id, width, type, reg_prefix, reg_id, width, type, width);
             }
         } else {
             if (unlikely(log_trace))
                 buffer.fmt("\n    ; Evaluate %s%u%s%s\n",
-                           var_type_register_ptx[(int) v->type],
+                           var_type_prefix[(int) v->type],
                            v->reg_index,
                            v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
@@ -389,14 +486,13 @@ void jit_assemble_llvm(ScheduledGroup group) {
         if (v->arg_type == ArgType::Output) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    ; Store %s%u%s%s\n",
-                           var_type_register_ptx[(int) v->type],
+                           var_type_prefix[(int) v->type],
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
-            get_parameter_addr(v->size, arg_id, type);
-            buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %%a%um, align %u, !noalias !1\n",
-                       width, type,
-                       var_type_register_ptx[(int) v->type],
-                       reg_id, width, type, arg_id, align);
+            get_parameter_addr(reg_id, arg_id, reg_prefix, type, v->size);
+            buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p, align %u, !noalias !1\n",
+                       width, type, var_type_prefix[(int) v->type],
+                       reg_id, width, type, reg_prefix, reg_id, align);
         }
     }
 
@@ -408,6 +504,11 @@ void jit_assemble_llvm(ScheduledGroup group) {
     buffer.put("}\n\n");
     buffer.put("!0 = !{!0}\n");
     buffer.put("!1 = !{!1, !0}\n");
+
+    if (intrinsics_buffer.size() > 1) {
+        buffer.putc('\n');
+        buffer.put(intrinsics_buffer.get());
+    }
 
     /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash
     kernel_hash = (uint32_t) string_hash()(buffer.get());
@@ -450,7 +551,7 @@ void jit_assemble(ScheduledGroup group) {
         if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Trace) {
             buffer.clear();
             buffer.fmt("   - %s%u -> %u",
-                       var_type_register_ptx[(int) v->type],
+                       var_type_prefix[(int) v->type],
                        n_regs_total, index);
 
             if (v->has_label) {
@@ -718,14 +819,7 @@ void jit_eval() {
             return a.size > b.size;
         });
 
-    // Are there independent groups of work that could be dispatched in parallel?
-    bool parallel_dispatch =
-        state.parallel_dispatch &&
-        cuda &&
-        schedule[0].size != schedule[schedule.size() - 1].size;
-
-    if (!parallel_dispatch) {
-        jit_log(Debug, "jit_eval(): begin.");
+    if (schedule[0].size == schedule[schedule.size() - 1].size) {
         schedule_groups.emplace_back(schedule[0].size, 0,
                                      (uint32_t) schedule.size());
     } else {
@@ -738,6 +832,15 @@ void jit_eval() {
         }
         schedule_groups.emplace_back(schedule[cur].size,
                                      cur, (uint32_t) schedule.size());
+    }
+
+    // Are there independent groups of work that could be dispatched in parallel?
+    bool parallel_dispatch =
+        state.parallel_dispatch && cuda && schedule_groups.size() > 1;
+
+    if (!parallel_dispatch) {
+        jit_log(Debug, "jit_eval(): begin.");
+    } else {
         jit_log(Debug, "jit_eval(): begin (parallel dispatch to %zu streams).",
                 schedule.size());
         cuda_check(cuEventRecord(stream->event, stream->handle));
@@ -782,17 +885,14 @@ void jit_eval() {
             continue;
 
         Variable *v = &it.value();
+        jit_cse_drop(index, v);
+
         bool side_effect = v->side_effect;
         uint32_t dep[3], extra_dep = v->extra_dep;
         memcpy(dep, v->dep, sizeof(uint32_t) * 3);
 
         v->side_effect = false;
         v->dirty = false;
-
-        /* Don't bother with CSE for evaluated scalar variables to replace
-           costly loads with faster arithmetic. */
-        if (v->size == 1)
-            jit_cse_drop(index, v);
 
         memset(v->dep, 0, sizeof(uint32_t) * 3);
         v->extra_dep = 0;

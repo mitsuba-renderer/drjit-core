@@ -104,8 +104,8 @@ extern const char *var_type_name      [(int) VarType::Count];
 extern const char *var_type_name_short[(int) VarType::Count];
 extern const uint32_t var_type_size   [(int) VarType::Count];
 
-/// CUDA PTX type & register names
+/// Type names and register names for CUDA and LLVM
 extern const char *var_type_name_llvm   [(int) VarType::Count];
 extern const char *var_type_name_ptx    [(int) VarType::Count];
 extern const char *var_type_name_ptx_bin[(int) VarType::Count];
-extern const char *var_type_register_ptx[(int) VarType::Count];
+extern const char *var_type_prefix      [(int) VarType::Count];

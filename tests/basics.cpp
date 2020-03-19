@@ -76,4 +76,113 @@ TEST_BOTH(06_argument_inout) {
     }
 }
 
+TEST_BOTH(07_arange) {
+    UInt32 x = UInt32::arange(1024);
+    UInt32 y = UInt32::arange(3, 512, 7);
+    jitc_log(Info, "value=%s", x.str());
+    jitc_log(Info, "value=%s", y.str());
+}
+
+TEST_BOTH(08_conv) {
+    /* UInt32 */ {
+        auto src = Array<uint32_t>::arange(1024);
+        Array<uint32_t> x_u32(src);
+        Array<int32_t> x_i32(src);
+        Array<uint64_t> x_u64(src);
+        Array<int64_t> x_i64(src);
+        Array<float> x_f32(src);
+        Array<double> x_f64(src);
+
+        jitc_log(Info, "value=%s", x_u32.str());
+        jitc_log(Info, "value=%s", x_i32.str());
+        jitc_log(Info, "value=%s", x_u64.str());
+        jitc_log(Info, "value=%s", x_i64.str());
+        jitc_log(Info, "value=%s", x_f32.str());
+        jitc_log(Info, "value=%s", x_f64.str());
+    }
+
+    /* Int32 */ {
+        auto src = Array<int32_t>::arange(1024) - 512;
+        Array<int32_t> x_i32(src);
+        Array<int64_t> x_i64(src);
+        Array<float> x_f32(src);
+        Array<double> x_f64(src);
+
+        jitc_log(Info, "value=%s", x_i32.str());
+        jitc_log(Info, "value=%s", x_i64.str());
+        jitc_log(Info, "value=%s", x_f32.str());
+        jitc_log(Info, "value=%s", x_f64.str());
+    }
+
+    /* UInt64 */ {
+        auto src = Array<uint64_t>::arange(1024);
+        Array<uint32_t> x_u32(src);
+        Array<int32_t> x_i32(src);
+        Array<uint64_t> x_u64(src);
+        Array<int64_t> x_i64(src);
+        Array<float> x_f32(src);
+        Array<double> x_f64(src);
+
+        jitc_log(Info, "value=%s", x_u32.str());
+        jitc_log(Info, "value=%s", x_i32.str());
+        jitc_log(Info, "value=%s", x_u64.str());
+        jitc_log(Info, "value=%s", x_i64.str());
+        jitc_log(Info, "value=%s", x_f32.str());
+        jitc_log(Info, "value=%s", x_f64.str());
+    }
+
+    /* Int64 */ {
+        auto src = Array<int64_t>::arange(1024) - 512;
+        Array<int32_t> x_i32(src);
+        Array<int64_t> x_i64(src);
+        Array<float> x_f32(src);
+        Array<double> x_f64(src);
+
+        jitc_log(Info, "value=%s", x_i32.str());
+        jitc_log(Info, "value=%s", x_i64.str());
+        jitc_log(Info, "value=%s", x_f32.str());
+        jitc_log(Info, "value=%s", x_f64.str());
+    }
+
+    /* Float */ {
+        auto src = Array<float>::arange(1024) - 512;
+        Array<int32_t> x_i32(src);
+        Array<int64_t> x_i64(src);
+        Array<float> x_f32(src);
+        Array<double> x_f64(src);
+
+        jitc_log(Info, "value=%s", x_i32.str());
+        jitc_log(Info, "value=%s", x_i64.str());
+        jitc_log(Info, "value=%s", x_f32.str());
+        jitc_log(Info, "value=%s", x_f64.str());
+    }
+
+    /* Double */ {
+        auto src = Array<double>::arange(1024) - 512;
+        Array<int32_t> x_i32(src);
+        Array<int64_t> x_i64(src);
+        Array<float> x_f32(src);
+        Array<double> x_f64(src);
+
+        jitc_log(Info, "value=%s", x_i32.str());
+        jitc_log(Info, "value=%s", x_i64.str());
+        jitc_log(Info, "value=%s", x_f32.str());
+        jitc_log(Info, "value=%s", x_f64.str());
+    }
+}
+
+TEST_BOTH(09_fma) {
+    using Double = Array<double>;
+
+    Float a(1, 2, 3, 4);
+    Float b(3, 8, 1, 5);
+    Float c(9, 1, 3, 0);
+
+    Float d = fmadd(a, b, c);
+    Float e = fmsub(d, b, c);
+    jitc_log(Info, "value=%s", d.str());
+    jitc_log(Info, "value=%s", e.str());
+}
+// Test float FMA
+
 /// parallel dispatch

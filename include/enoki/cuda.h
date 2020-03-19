@@ -44,7 +44,7 @@ struct CUDAArray {
         else
             op = "cvt.$t0.$t1 $r0, $r1";
 
-        m_index = jitc_trace_append_1(Type, op, 1, v.index_());
+        m_index = jitc_trace_append_1(Type, op, 1, v.index());
     }
 
     CUDAArray(Value value) {
@@ -104,7 +104,7 @@ struct CUDAArray {
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
     CUDAArray(Args&&... args) {
         Value data[] = { (Value) args... };
-        m_index = jitc_var_copy(Type, sizeof...(Args), data);
+        m_index = jitc_var_copy(Type, data, sizeof...(Args));
     }
 
     CUDAArray &operator=(const CUDAArray &a) {
@@ -128,8 +128,77 @@ struct CUDAArray {
             jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
     }
 
+    CUDAArray operator-(const CUDAArray &v) const {
+        const char *op = std::is_floating_point<Value>::value
+            ? "sub.rn.ftz.$t0 $r0, $r1, $r2"
+            : "sub.$t0 $r0, $r1, $r2";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
+    }
+
+    CUDAArray operator*(const CUDAArray &v) const {
+        const char *op = std::is_floating_point<Value>::value
+            ? "mul.rn.ftz.$t0 $r0, $r1, $r2"
+            : "mul.lo.$t0 $r0, $r1, $r2";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
+    }
+
+    CUDAArray operator/(const CUDAArray &v) const {
+        const char *op = std::is_floating_point<Value>::value
+            ? "div.rn.ftz.$t0 $r0, $r1, $r2"
+            : "div.$t0 $r0, $r1, $r2";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
+    }
+
     CUDAArray& operator+=(const CUDAArray &v) {
         return operator=(*this + v);
+    }
+
+    CUDAArray& operator-=(const CUDAArray &v) {
+        return operator=(*this - v);
+    }
+
+    CUDAArray& operator*=(const CUDAArray &v) {
+        return operator=(*this * v);
+    }
+
+    CUDAArray& operator/=(const CUDAArray &v) {
+        return operator=(*this / v);
+    }
+
+    CUDAArray operator-() const {
+        return from_index(
+            jitc_trace_append_1(Type, "neg.ftz.$t0 $r0, $r1", 1, m_index));
+    }
+
+    friend CUDAArray fmadd(const CUDAArray &a, const CUDAArray &b,
+                           const CUDAArray &c) {
+        const char *op = std::is_floating_point<Value>::value
+            ? "fma.rn.ftz.$t0 $r0, $r1, $r2, $r3"
+            : "mad.lo.$t0 $r0, $r1, $r2, $r3";
+
+        return CUDAArray::from_index(
+            jitc_trace_append_3(Type, op, 1, a.index(), b.index(), c.index()));
+    }
+
+    friend CUDAArray fmsub(const CUDAArray &a, const CUDAArray &b,
+                           const CUDAArray &c) {
+        return fmadd(a, b, -c);
+    }
+
+    friend CUDAArray fnmadd(const CUDAArray &a, const CUDAArray &b,
+                            const CUDAArray &c) {
+        return fmadd(-a, b, c);
+    }
+
+    friend CUDAArray fnmsub(const CUDAArray &a, const CUDAArray &b,
+                            const CUDAArray &c) {
+        return fmadd(-a, b, -c);
     }
 
     static CUDAArray empty(size_t size) {
@@ -159,6 +228,24 @@ struct CUDAArray {
             jitc_fill(Type, ptr, size, &value);
             return from_index(jitc_var_map(Type, ptr, size, 1));
         }
+    }
+
+    static CUDAArray arange(size_t size) {
+        return arange(0, (size_t) size, 1);
+    }
+
+    static CUDAArray arange(ssize_t start, ssize_t stop, ssize_t step) {
+        size_t size = size_t((stop - start + step - (step > 0 ? 1 : -1)) / step);
+
+        using UInt32 = CUDAArray<uint32_t>;
+        UInt32 index = UInt32::from_index(
+            jitc_trace_append_0(VarType::UInt32, "mov.u32, $r0, %r0", 1));
+        jitc_var_set_size(index.index(), size, false);
+
+        if (start == 0 && step == 1)
+            return index;
+        else
+            return fmadd(CUDAArray(index), CUDAArray((Value) step), CUDAArray((Value) start));
     }
 
     CUDAArray eval() const {
