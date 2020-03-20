@@ -17,6 +17,12 @@
 #include <cstring>
 #include <cstdio>
 
+template <typename Value_> struct LLVMArray;
+
+template <typename Value>
+LLVMArray<Value> select(const LLVMArray<bool> &m, const LLVMArray<Value> &a,
+                        const LLVMArray<Value> &b);
+
 template <typename Value_>
 struct LLVMArray {
     using Value = Value_;
@@ -86,10 +92,10 @@ struct LLVMArray {
         char value_str[256];
         snprintf(value_str, 256,
             (Type == VarType::Float32 || Type == VarType::Float64) ?
-            "$r0_t = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer" :
-            "$r0_t = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer",
+            "$r0_0 = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0$n"
+            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer" :
+            "$r0_0 = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
+            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer",
             value_ull);
 
         m_index = jitc_trace_append_0(Type, value_str, 0);
@@ -149,37 +155,176 @@ struct LLVMArray {
             jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
     }
 
-    LLVMArray& operator+=(const LLVMArray &v) {
-        return operator=(*this + v);
+    LLVMArray<bool> operator>(const LLVMArray &a) const {
+        const char *op;
+        if (std::is_integral<Value>::value)
+            op = std::is_signed<Value>::value
+                     ? "$r0 = icmp sgt <$w x $t1> $r1, $r2"
+                     : "$r0 = icmp ugt <$w x $t1> $r1, $r2";
+        else
+            op = "$r0 = fcmp ogt <$w x $t1> $r1, $r2";
+
+        return LLVMArray<bool>::from_index(jitc_trace_append_2(
+            LLVMArray<bool>::Type, op, 1, m_index, a.index()));
     }
 
-    LLVMArray& operator-=(const LLVMArray &v) {
-        return operator=(*this + v);
+    LLVMArray<bool> operator>=(const LLVMArray &a) const {
+        const char *op;
+        if (std::is_integral<Value>::value)
+            op = std::is_signed<Value>::value
+                     ? "$r0 = icmp sge <$w x $t1> $r1, $r2"
+                     : "$r0 = icmp uge <$w x $t1> $r1, $r2";
+        else
+            op = "$r0 = fcmp oge <$w x $t1> $r1, $r2";
+
+        return LLVMArray<bool>::from_index(jitc_trace_append_2(
+            LLVMArray<bool>::Type, op, 1, m_index, a.index()));
     }
 
-    LLVMArray& operator*=(const LLVMArray &v) {
-        return operator=(*this + v);
+
+    LLVMArray<bool> operator<(const LLVMArray &a) const {
+        const char *op;
+        if (std::is_integral<Value>::value)
+            op = std::is_signed<Value>::value
+                     ? "$r0 = icmp slt <$w x $t1> $r1, $r2"
+                     : "$r0 = icmp ult <$w x $t1> $r1, $r2";
+        else
+            op = "$r0 = fcmp olt <$w x $t1> $r1, $r2";
+
+        return LLVMArray<bool>::from_index(jitc_trace_append_2(
+            LLVMArray<bool>::Type, op, 1, m_index, a.index()));
     }
 
-    LLVMArray& operator/=(const LLVMArray &v) {
-        return operator=(*this + v);
+    LLVMArray<bool> operator<=(const LLVMArray &a) const {
+        const char *op;
+        if (std::is_integral<Value>::value)
+            op = std::is_signed<Value>::value
+                     ? "$r0 = icmp sle <$w x $t1> $r1, $r2"
+                     : "$r0 = icmp ule <$w x $t1> $r1, $r2";
+        else
+            op = "$r0 = fcmp ole <$w x $t1> $r1, $r2";
+
+        return LLVMArray<bool>::from_index(jitc_trace_append_2(
+            LLVMArray<bool>::Type, op, 1, m_index, a.index()));
     }
 
     LLVMArray operator-() const {
         const char *op = std::is_floating_point<Value>::value
-            ? "$r0 = fsub <$w x $t0> $Z0, $r1"
-            : "$r0 = sub <$w x $t0> $Z0, $r1";
+            ? "$r0 = fneg <$w x $t0> $r1"
+            : "$r0 = sub <$w x $t0> zeroinitializer, $r1";
 
         return from_index(
             jitc_trace_append_1(Type, op, 1, m_index));
     }
 
+    LLVMArray operator~() const {
+        const char *op = std::is_integral<Value>::value
+                             ? "$r0 = xor <$w x $t1> $r1, $o0"
+                             : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
+                               "$r0_1 = xor <$w x $b0> $r0_0, $o0$n"
+                               "$r0 = bitcast <$w x $b0> $r0_1 to <$w x $t0>";
+
+        return from_index(
+            jitc_trace_append_1(Type, op, 1, m_index));
+    }
+
+    LLVMArray operator|(const LLVMArray &a) const {
+        const char *op = std::is_integral<Value>::value
+                             ? "$r0 = or <$w x $t1> $r1, $r2"
+                             : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
+                               "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
+                               "$r0_2 = or <$w x $b0> $r0_0, $r0_1"
+                               "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, a.index()));
+    }
+
+    LLVMArray operator&(const LLVMArray &a) const {
+        const char *op = std::is_integral<Value>::value
+                             ? "$r0 = and <$w x $t1> $r1, $r2"
+                             : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
+                               "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
+                               "$r0_2 = and <$w x $b0> $r0_0, $r0_1"
+                               "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, a.index()));
+    }
+
+    LLVMArray operator^(const LLVMArray &a) const {
+        const char *op = std::is_integral<Value>::value
+                             ? "$r0 = xor <$w x $t1> $r1, $r2"
+                             : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
+                               "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
+                               "$r0_2 = xor <$w x $b0> $r0_0, $r0_1"
+                               "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+
+        return from_index(
+            jitc_trace_append_2(Type, op, 1, m_index, a.index()));
+    }
+
+    LLVMArray& operator+=(const LLVMArray &v) {
+        return operator=(*this + v);
+    }
+
+    LLVMArray& operator-=(const LLVMArray &v) {
+        return operator=(*this - v);
+    }
+
+    LLVMArray& operator*=(const LLVMArray &v) {
+        return operator=(*this * v);
+    }
+
+    LLVMArray& operator/=(const LLVMArray &v) {
+        return operator=(*this / v);
+    }
+
+    LLVMArray& operator|=(const LLVMArray &v) {
+        return operator=(*this | v);
+    }
+
+    LLVMArray& operator&=(const LLVMArray &v) {
+        return operator=(*this & v);
+    }
+
+    LLVMArray& operator^=(const LLVMArray &v) {
+        return operator=(*this ^ v);
+    }
+
+    friend LLVMArray sqrt(const LLVMArray &a) {
+        const char *op =
+            std::is_same<Value, float>::value
+                ? "$r0 = call <$w x $t0> @llvm.sqrt.v$wf32(<$w x $t1> $r1)"
+                : "$r0 = call <$w x $t0> @llvm.sqrt.v$wf64(<$w x $t1> $r1)";
+
+        return LLVMArray::from_index(
+            jitc_trace_append_1(Type, op, 1, a.index()));
+    }
+
+    friend LLVMArray abs(const LLVMArray &a) {
+        if (std::is_floating_point<Value>::value) {
+            const char *op =
+                std::is_same<Value, float>::value
+                    ? "$r0 = call <$w x $t0> @llvm.abs.v$wf32(<$w x $t1> $r1)"
+                    : "$r0 = call <$w x $t0> @llvm.abs.v$wf64(<$w x $t1> $r1)";
+
+            return LLVMArray::from_index(
+                jitc_trace_append_1(Type, op, 1, a.index()));
+        } else {
+            return select(a > 0, a, -a);
+        }
+    }
+
     friend LLVMArray fmadd(const LLVMArray &a, const LLVMArray &b,
                            const LLVMArray &c) {
         if (std::is_floating_point<Value>::value) {
-            const char *op = std::is_same<Value, float>::value
-                ? "$r0 = call <$w x $t0> @llvm.fma.v$wf32(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)"
-                : "$r0 = call <$w x $t0> @llvm.fma.v$wf64(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)";
+            const char *op =
+                std::is_same<Value, float>::value
+                    ? "$r0 = call <$w x $t0> @llvm.fma.v$wf32(<$w x $t1> $r1, "
+                      "<$w x $t2> $r2, <$w x $t3> $r3)"
+                    : "$r0 = call <$w x $t0> @llvm.fma.v$wf64(<$w x $t1> $r1, "
+                      "<$w x $t2> $r2, <$w x $t3> $r3)";
 
             return LLVMArray::from_index(jitc_trace_append_3(
                 Type, op, 1, a.index(), b.index(), c.index()));
@@ -237,8 +382,6 @@ struct LLVMArray {
     }
 
     static LLVMArray arange(ssize_t start, ssize_t stop, ssize_t step) {
-        size_t size = size_t((stop - start + step - (step > 0 ? 1 : -1)) / step);
-
         using UInt32 = LLVMArray<uint32_t>;
         UInt32 index = UInt32::from_index(jitc_trace_append_0(
             VarType::UInt32,
@@ -246,8 +389,10 @@ struct LLVMArray {
             "$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n"
             "$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, "
             "<$w x i32> zeroinitializer$n"
-            "$r0 = add <$w x i32> $r0_2, $o0",
+            "$r0 = add <$w x i32> $r0_2, $l0",
             1));
+
+        size_t size = size_t((stop - start + step - (step > 0 ? 1 : -1)) / step);
         jitc_var_set_size(index.index(), size, false);
 
         if (start == 0 && step == 1)
@@ -293,6 +438,14 @@ protected:
     uint32_t m_index = 0;
 };
 
+template <typename Value>
+LLVMArray<Value> select(const LLVMArray<bool> &m, const LLVMArray<Value> &t,
+                        const LLVMArray<Value> &f) {
+    return LLVMArray<Value>::from_index(jitc_trace_append_3(
+        LLVMArray<Value>::Type,
+        "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3", 1,
+        m.index(), t.index(), f.index()));
+}
 
 template <typename Value> LLVMArray<Value> hsum(const LLVMArray<Value> &v) {
     using Array = LLVMArray<Value>;

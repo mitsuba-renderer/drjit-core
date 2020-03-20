@@ -17,6 +17,12 @@
 #include <cstring>
 #include <cstdio>
 
+template <typename Value_> struct CUDAArray;
+
+template <typename Value>
+CUDAArray<Value> select(const CUDAArray<bool> &m, const CUDAArray<Value> &a,
+                        const CUDAArray<Value> &b);
+
 template <typename Value_>
 struct CUDAArray {
     using Value = Value_;
@@ -179,6 +185,16 @@ struct CUDAArray {
             jitc_trace_append_1(Type, "neg.ftz.$t0 $r0, $r1", 1, m_index));
     }
 
+    friend CUDAArray sqrt(const CUDAArray &a) {
+        return CUDAArray::from_index(jitc_trace_append_1(Type,
+            "sqrt.rn.ftz.$t0 $r0, $r1", 1, a.index()));
+    }
+
+    friend CUDAArray abs(const CUDAArray &a) {
+        return CUDAArray::from_index(jitc_trace_append_1(Type,
+            "abs.ftz.$t0 $r0, $r1", 1, a.index()));
+    }
+
     friend CUDAArray fmadd(const CUDAArray &a, const CUDAArray &b,
                            const CUDAArray &c) {
         const char *op = std::is_floating_point<Value>::value
@@ -248,7 +264,8 @@ struct CUDAArray {
         if (start == 0 && step == 1)
             return index;
         else
-            return fmadd(CUDAArray(index), CUDAArray((Value) step), CUDAArray((Value) start));
+            return fmadd(CUDAArray(index), CUDAArray((Value) step),
+                         CUDAArray((Value) start));
     }
 
     CUDAArray eval() const {
@@ -288,6 +305,18 @@ protected:
     uint32_t m_index = 0;
 };
 
+template <typename Value>
+CUDAArray<Value> select(const CUDAArray<bool> &m, const CUDAArray<Value> &t,
+                        const CUDAArray<Value> &f) {
+    if (!std::is_same<Value, bool>::value) {
+        return CUDAArray<Value>::from_index(jitc_trace_append_3(
+            CUDAArray<Value>::Type, "selp.$t0 $r0, $r1, $r2, $r3", 1, t.index(),
+            f.index(), m.index()));
+    } else {
+        jitc_fail("Not implemented..");
+        // return (m & t) | (~m & f);
+    }
+}
 
 template <typename Value> CUDAArray<Value> hsum(const CUDAArray<Value> &v) {
     using Array = CUDAArray<Value>;

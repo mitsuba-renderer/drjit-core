@@ -1,4 +1,4 @@
-jit_trace_append(1): $r0_t = insertelement <$w x $t0> undef, $t0 0x4093480000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer
+jit_trace_append(1): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4093480000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
 jit_var_ext_ref_inc(1): 1
 jit_var_ext_ref_dec(1): 0
 jit_var_free(1)

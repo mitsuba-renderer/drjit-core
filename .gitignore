@@ -14,4 +14,4 @@ Testing
 libenoki-jit.so
 libenoki-jit.dylib
 enoki-jit.dll
-tests/test_01_cuda_basics
+tests/test_basics

@@ -161,9 +161,10 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
                 case 'w': buffer.fmt("%u", jit_llvm_vector_width); continue;
                 case 'i': buffer.put("%index"); continue;
                 case 'z':
-                case 'Z':
+                case 'l':
+                case 't': prefix_table = var_type_name_llvm; break;
                 case 'o':
-                case 't': prefix_table = var_type_name_llvm;    break;
+                case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'r': prefix_table = var_type_prefix; break;
 
                 default:
@@ -192,11 +193,12 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
                     buffer.fmt("%s%u", prefix, dep->reg_index);
                     break;
 
+                case 'b':
                 case 't':
                     buffer.put(prefix);
                     break;
 
-                case 'o':
+                case 'l':
                     buffer.putc('<');
                     for (int i = 0; i < jit_llvm_vector_width; ++i)
                         buffer.fmt("%s %i%s%s", prefix, i, is_float ? ".0" : "",
@@ -205,11 +207,17 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
                     break;
 
                 case 'z':
-                case 'Z':
                     buffer.putc('<');
                     for (int i = 0; i < jit_llvm_vector_width; ++i)
-                        buffer.fmt("%s %s0%s%s", prefix, type == 'z' ? "+" : "-", is_float ? ".0" : "",
+                        buffer.fmt("%s 0%s%s", prefix, is_float ? ".0" : "",
                                    i + 1 < jit_llvm_vector_width ? ", " : "");
+                    buffer.putc('>');
+                    break;
+
+                case 'o':
+                    buffer.putc('<');
+                    for (int i = 0; i < jit_llvm_vector_width; ++i)
+                        buffer.fmt("%s -1%s", prefix, i + 1 < jit_llvm_vector_width ? ", " : "");
                     buffer.putc('>');
                     break;
             }
@@ -236,11 +244,12 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
                 case 't': prefix_table = var_type_name_llvm; break;
+                case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 'r': s++; intrinsics_buffer.rewind(1); continue;
                 case 'n':
-                case 'r':
                 case 'o':
-                case 'Z':
+                case 'l':
                 case 'z': s++; continue;
                 default:
                     jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
@@ -396,7 +405,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
 }
 
 void jit_assemble_llvm(ScheduledGroup group) {
-    const int width       = jit_llvm_vector_width;
+    const int width = jit_llvm_vector_width;
 
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
@@ -419,14 +428,22 @@ void jit_assemble_llvm(ScheduledGroup group) {
             continue;
         uint32_t arg_id = v->arg_index - 1;
         const char *type = var_type_name_llvm[(int) v->type];
+
+        if ((VarType) v->type == VarType::Bool)
+            type = "i8";
         if (unlikely(log_trace))
             buffer.fmt("\n    ; Prepare argument %u\n", arg_id);
+
         buffer.fmt("    %%a%u_i = getelementptr inbounds i8*, i8** %%ptrs, i32 %u\n", arg_id, arg_id);
         buffer.fmt("    %%a%u_p = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", arg_id, arg_id);
+
         buffer.fmt("    %%a%u = bitcast i8* %%a%u_p to %s*\n", arg_id, arg_id, type);
-        if (v->size == 1)
+        if (v->size == 1) {
             buffer.fmt("    %%a%u_s = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
                        type, type, arg_id, var_type_size[(int) v->type]);
+            if ((VarType) v->type == VarType::Bool)
+                buffer.fmt("    %%a%u_s1 = trunc i8 %%a%u_s to i1\n", arg_id, arg_id);
+        }
     }
     buffer.put("    br label %loop\n\n");
     buffer.put("done:\n");
@@ -456,29 +473,47 @@ void jit_assemble_llvm(ScheduledGroup group) {
                  reg_id = v->reg_index, arg_id = v->arg_index - 1;
         const char *type = var_type_name_llvm[(int) v->type],
                    *reg_prefix = var_type_prefix[(int) v->type];
+        uint32_t size = v->size;
+
+        if ((VarType) v->type == VarType::Bool)
+            type = "i8";
 
         if (v->arg_type == ArgType::Input) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    ; Load %s%u%s%s\n",
-                           var_type_prefix[(int) v->type],
-                           v->reg_index, v->has_label ? ": " : "",
+                           reg_prefix, reg_id, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
-            if (v->size > 1) {
-                get_parameter_addr(reg_id, arg_id, reg_prefix, type, v->size);
-                buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p, align %u, !alias.scope !1\n",
-                           reg_prefix, reg_id, width, type, width, type, reg_prefix, reg_id, align);
+            if (size > 1)
+                get_parameter_addr(reg_id, arg_id, reg_prefix, type, size);
+
+            if ((VarType) v->type != VarType::Bool) {
+                if (size > 1) {
+                    buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p, align %u, !alias.scope !1\n",
+                               reg_prefix, reg_id, width, type, width, type, reg_prefix, reg_id, align);
+                } else {
+                    buffer.fmt("    %s%u_z = insertelement <%u x %s> undef, %s %%a%u_s, i32 0\n",
+                               reg_prefix, reg_id, width, type, type, arg_id);
+                    buffer.fmt("    %s%u = shufflevector <%u x %s> %s%u_z, <%u x %s> undef, <%u x i32> zeroinitializer\n",
+                               reg_prefix, reg_id, width, type, reg_prefix, reg_id, width, type, width);
+                }
             } else {
-                buffer.fmt("    %s%u_0 = insertelement <%u x %s> undef, %s %%a%u_s, i32 0\n",
-                           reg_prefix, reg_id, width, type, type, arg_id);
-                buffer.fmt("    %s%u = shufflevector <%u x %s> %s%u_0, <%u x %s> undef, <%u x i32> zeroinitializer\n",
-                           reg_prefix, reg_id, width, type, reg_prefix, reg_id, width, type, width);
+                if (size > 1) {
+                    buffer.fmt("    %s%u_z = load <%u x i8>, <%u x i8>* %s%u_p, align %u, !alias.scope !1\n",
+                               reg_prefix, reg_id, width, width, reg_prefix, reg_id, align);
+                    buffer.fmt("    %s%u = trunc <%u x i8> %s%u_z to <%u x i1>\n",
+                               reg_prefix, reg_id, width, reg_prefix, reg_id, width);
+                } else {
+                    buffer.fmt("    %s%u_z = insertelement <%u x i1> undef, i1 %%a%u_s1, i32 0\n",
+                               reg_prefix, reg_id, width, arg_id);
+                    buffer.fmt("    %s%u = shufflevector <%u x i1> %s%u_z, <%u x i1> undef, <%u x i32> zeroinitializer\n",
+                               reg_prefix, reg_id, width, reg_prefix, reg_id, width, width);
+                }
             }
         } else {
             if (unlikely(log_trace))
                 buffer.fmt("\n    ; Evaluate %s%u%s%s\n",
-                           var_type_prefix[(int) v->type],
-                           v->reg_index,
+                           reg_prefix, reg_id,
                            v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
             jit_render_stmt_llvm(index, v);
@@ -487,13 +522,20 @@ void jit_assemble_llvm(ScheduledGroup group) {
         if (v->arg_type == ArgType::Output) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    ; Store %s%u%s%s\n",
-                           var_type_prefix[(int) v->type],
-                           v->reg_index, v->has_label ? ": " : "",
+                           reg_prefix, reg_id, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
-            get_parameter_addr(reg_id, arg_id, reg_prefix, type, v->size);
-            buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p, align %u, !noalias !1\n",
-                       width, type, var_type_prefix[(int) v->type],
-                       reg_id, width, type, reg_prefix, reg_id, align);
+            get_parameter_addr(reg_id, arg_id, reg_prefix, type, size);
+
+            if ((VarType) v->type != VarType::Bool) {
+                buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p, align %u, !noalias !1\n",
+                           width, type, reg_prefix,
+                           reg_id, width, type, reg_prefix, reg_id, align);
+            } else {
+                buffer.fmt("    %s%u_e = zext <%u x i1> %s%u to <%u x i8>\n",
+                           reg_prefix, reg_id, width, reg_prefix, reg_id, width);
+                buffer.fmt("    store <%u x i8> %s%u_e, <%u x i8>* %s%u_p, align %u, !noalias !1\n",
+                           width, reg_prefix, reg_id, width, reg_prefix, reg_id, align);
+            }
         }
     }
 
@@ -731,7 +773,9 @@ void jit_run_cuda(ScheduledGroup group) {
         cuda_check(cuModuleGetFunction(&kernel.cuda.cu_func, kernel.cuda.cu_module,
                                        name.c_str()));
 
-        /// Enoki doesn't use shared memory at all..
+        /// Enoki doesn't use shared memory at all, prefer to have more L1 cache.
+        cuda_check(cuFuncSetAttribute(
+            kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, 0));
         cuda_check(cuFuncSetAttribute(
             kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
         cuda_check(cuFuncSetAttribute(

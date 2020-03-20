@@ -1,11 +1,11 @@
-jit_trace_append(1): $r0_t = insertelement <$w x $t0> undef, $t0 0x4093480000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_t, <$w x $t0> undef, <$w x i32> zeroinitializer
+jit_trace_append(1): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4093480000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
 jit_var_ext_ref_inc(1): 1
 jit_eval(): begin.
 jit_assemble(size=1): register map:
    - %f0 -> 1 [scalar] [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=1, ops=1) ..
-define void @enoki_b64699f1(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+define void @enoki_c1359905(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
 entry:
 
     ; Prepare argument 0
@@ -22,8 +22,8 @@ loop:
     %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
 
     ; Evaluate %f0
-    %f0_t = insertelement <8 x float> undef, float 0x4093480000000000, i32 0
-    %f0 = shufflevector <8 x float> %f0_t, <8 x float> undef, <8 x i32> zeroinitializer
+    %f0_0 = insertelement <8 x float> undef, float 0x4093480000000000, i32 0
+    %f0 = shufflevector <8 x float> %f0_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Store %f0
     %f0_p = bitcast float* %a0 to <8 x float>*

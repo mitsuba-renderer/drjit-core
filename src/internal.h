@@ -338,6 +338,13 @@ public:
         *m_cur   = '\0';
     }
 
+    /// Remove the last 'n' characters
+    void rewind(size_t n) {
+        m_cur -= n;
+        if (m_cur < m_start)
+            m_cur = m_start;
+    }
+
     /// Append a formatted (printf-style) string to the buffer
 #if defined(__GNUC__)
     __attribute__((__format__ (__printf__, 2, 3)))

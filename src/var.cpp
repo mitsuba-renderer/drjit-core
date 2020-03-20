@@ -21,16 +21,22 @@ const char *var_type_name_ptx[(int) VarType::Count]{
     "s64", "u64", "f16", "f32", "f64", "pred", "u64"
 };
 
+/// CUDA PTX type names (binary view)
+const char *var_type_name_ptx_bin[(int) VarType::Count]{
+    "???", "b8", "b8", "b16", "b16", "b32", "b32",
+    "b64", "b64", "b16", "b32", "b64", "pred", "b64"
+};
+
 /// LLVM IR type names (does not distinguish signed vs unsigned)
 const char *var_type_name_llvm[(int) VarType::Count]{
     "???", "i8", "i8", "i16", "i16", "i32", "i32",
     "i64", "i64", "???", "float", "double", "i1", "u64"
 };
 
-/// CUDA PTX type names (binary view)
-const char *var_type_name_ptx_bin[(int) VarType::Count]{
-    "???", "b8", "b8", "b16", "b16", "b32", "b32",
-    "b64", "b64", "b16", "b32", "b64", "pred", "b64"
+/// LLVM IR type names (binary view)
+const char *var_type_name_llvm_bin[(int) VarType::Count]{
+    "???", "i8", "i8", "i16", "i16", "i32", "i32",
+    "i64", "i64", "???", "i32", "i64", "i1", "u64"
 };
 
 /// LLVM/CUDA register name prefixes

@@ -1,0 +1,73 @@
+jit_trace_append(1): $r0_0 = trunc i64 $i to i32$n$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x i32> $r0_2, $o0
+jit_var_ext_ref_inc(1): 1
+jit_var_set_size(1): 10
+jit_var_int_ref_inc(1): 1
+jit_trace_append(2 <- 1): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
+jit_var_ext_ref_inc(2): 1
+jit_var_ext_ref_dec(1): 0
+jit_var_int_ref_inc(2): 1
+jit_trace_append(3 <- 2): $r0 = call <$w x $t0> @llvm.sqrt.v$wf32(<$w x $t1> $r1)
+jit_var_ext_ref_inc(3): 1
+jit_var_ext_ref_dec(2): 0
+jit_eval(): begin.
+jit_assemble(size=10): register map:
+   - %r0 -> 1
+   - %f1 -> 2
+   - %f2 -> 3 [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=10, in=0, out=1, ops=3) ..
+define void @enoki_72522a64(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+entry:
+
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to float*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <8 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <8 x i32> %r0_1, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r0 = add <8 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+
+    ; Evaluate %f1
+    %f1 = uitofp <8 x i32> %r0 to <8 x float>
+
+    ; Evaluate %f2
+    %f2 = call <8 x float> @llvm.sqrt.v8f32(<8 x float> %f1)
+
+    ; Store %f2
+    %f2_i = getelementptr inbounds float, float* %a0, i64 %index
+    %f2_p = bitcast float* %f2_i to <8 x float>*
+    store <8 x float> %f2, <8 x float>* %f2_p, align 32, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+
+declare <8 x float> @llvm.sqrt.v8f32(<8 x float> )
+
+jit_eval(): cleaning up..
+jit_var_int_ref_dec(1): 0
+jit_var_free(1)
+jit_var_int_ref_dec(2): 0
+jit_var_free(2)
+jit_eval(): done.
+value=[0, 1, 1.41421, 1.73205, 2, 2.23607, 2.44949, 2.64575, 2.82843, 3]
+jit_var_ext_ref_dec(3): 0
+jit_var_free(3)
+jit_free(<@>, type=host, size=64)
+jit_malloc_trim(): freed
+ - host memory: 64 B in 1 allocation
+jit_shutdown(): done
