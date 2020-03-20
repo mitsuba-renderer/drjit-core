@@ -1,0 +1,84 @@
+jit_device_set(device=0, stream=0): creating stream
+jit_trace_append(1): mov.u32 $r0, $i
+jit_var_ext_ref_inc(1): 1
+jit_var_set_size(1): 10
+jit_var_int_ref_inc(1): 1
+jit_trace_append(2 <- 1): cvt.rn.ftz.$t0.$t1 $r0, $r1
+jit_var_ext_ref_inc(2): 1
+jit_var_ext_ref_dec(1): 0
+jit_var_int_ref_inc(2): 1
+jit_trace_append(3 <- 2): sqrt.rn.ftz.$t0 $r0, $r1
+jit_var_ext_ref_inc(3): 1
+jit_var_ext_ref_dec(2): 0
+jit_eval(): begin.
+jit_assemble(size=10): register map:
+   - %r4 -> 1
+   - %f5 -> 2
+   - %f6 -> 3 [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=10, in=0, out=1, ops=7) ..
+.version 6.3
+.target sm_61
+.address_size 64
+.visible .entry enoki_439c0a08(.param .u32 size,
+                               .param .u64 arg0) {
+    .reg.b8 %b<7>;
+    .reg.b16 %w<7>;
+    .reg.b32 %r<7>;
+    .reg.b64 %rd<7>;
+    .reg.f32 %f<7>;
+    .reg.f64 %d<7>;
+    .reg.pred %p<7>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Evaluate %r4
+    mov.u32 %r4, %r0;
+
+    // Evaluate %f5
+    cvt.rn.ftz.f32.u32 %f5, %r4;
+
+    // Evaluate %f6
+    sqrt.rn.ftz.f32 %f6, %f5;
+
+    // Store %f6
+    ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.f32 [%rd0], %f6;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
+jit_var_int_ref_dec(1): 0
+jit_var_free(1)
+jit_var_int_ref_dec(2): 0
+jit_var_free(2)
+jit_eval(): done.
+value=[0, 1, 1.41421, 1.73205, 2, 2.23607, 2.44949, 2.64575, 2.82843, 3]
+jit_var_ext_ref_dec(3): 0
+jit_var_free(3)
+jit_free(<@>, type=device, device=0, size=64)
+jit_shutdown(): destroying streams ..
+jit_free_flush(): scheduling 1 deallocation
+jit_free_flush(): performing 1 deallocation
+jit_malloc_trim(): freed
+ - device memory: 64 B in 1 allocation
+jit_shutdown(): done

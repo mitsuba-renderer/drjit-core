@@ -25,8 +25,9 @@ using UInt32L = LLVMArray<uint32_t>;
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> class Array>                                    \
     void test##name();                                                         \
-    int test##name##_c = test_register(                                        \
-        "test" #name, test##name<FloatC, Int32C, UInt32C, CUDAArray>, true);   \
+    int test##name##_c =                                                       \
+        test_register("test" #name "_cuda",                                    \
+                      test##name<FloatC, Int32C, UInt32C, CUDAArray>, true);   \
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> typename Array>                                 \
     void test##name()
@@ -35,8 +36,9 @@ using UInt32L = LLVMArray<uint32_t>;
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> class Array>                                    \
     void test##name();                                                         \
-    int test##name##_l = test_register(                                        \
-        "test" #name, test##name<FloatL, Int32L, UInt32L, LLVMArray>, false);  \
+    int test##name##_l =                                                       \
+        test_register("test" #name "_llvm",                                    \
+                      test##name<FloatL, Int32L, UInt32L, LLVMArray>, false);  \
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> class Array>                                    \
     void test##name()

@@ -775,8 +775,6 @@ void jit_run_cuda(ScheduledGroup group) {
 
         /// Enoki doesn't use shared memory at all, prefer to have more L1 cache.
         cuda_check(cuFuncSetAttribute(
-            kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, 0));
-        cuda_check(cuFuncSetAttribute(
             kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
         cuda_check(cuFuncSetAttribute(
             kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,

@@ -1,0 +1,402 @@
+jit_device_set(device=0, stream=0): creating stream
+jit_trace_append(1): mov.u32 $r0, $i
+jit_var_ext_ref_inc(1): 1
+jit_var_set_size(1): 10
+jit_var_int_ref_inc(1): 1
+jit_trace_append(2 <- 1): cvt.rn.ftz.$t0.$t1 $r0, $r1
+jit_var_ext_ref_inc(2): 1
+jit_var_ext_ref_dec(1): 0
+jit_trace_append(3): mov.$t0 $r0, 0f40a00000
+jit_var_ext_ref_inc(3): 1
+jit_var_int_ref_inc(2): 1
+jit_var_int_ref_inc(3): 1
+jit_trace_append(4 <- 2, 3): setp.gt.$t1 $r0, $r1, $r2
+jit_var_ext_ref_inc(4): 1
+jit_var_ext_ref_dec(3): 0
+jit_var_int_ref_inc(2): 2
+jit_trace_append(5 <- 2): neg.ftz.$t0 $r0, $r1
+jit_var_ext_ref_inc(5): 1
+jit_var_int_ref_inc(5): 1
+jit_var_int_ref_inc(2): 3
+jit_var_int_ref_inc(4): 1
+jit_trace_append(6 <- 5, 2, 4): selp.$t0 $r0, $r1, $r2, $r3
+jit_var_ext_ref_inc(6): 1
+jit_var_ext_ref_dec(2): 0
+jit_var_ext_ref_dec(5): 0
+jit_eval(): begin.
+jit_assemble(size=10): register map:
+   - %r4 -> 1
+   - %f5 -> 2
+   - %f6 -> 3 [scalar]
+   - %p7 -> 4 [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+   - %f8 -> 5
+   - %f9 -> 6 [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=10, in=0, out=2, ops=10) ..
+.version 6.3
+.target sm_61
+.address_size 64
+.visible .entry enoki_80d5b308(.param .u32 size,
+                               .param .u64 arg0,
+                               .param .u64 arg1) {
+    .reg.b8 %b<10>;
+    .reg.b16 %w<10>;
+    .reg.b32 %r<10>;
+    .reg.b64 %rd<10>;
+    .reg.f32 %f<10>;
+    .reg.f64 %d<10>;
+    .reg.pred %p<10>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Evaluate %r4
+    mov.u32 %r4, %r0;
+
+    // Evaluate %f5
+    cvt.rn.ftz.f32.u32 %f5, %r4;
+
+    // Evaluate %f6
+    mov.f32 %f6, 0f40a00000;
+
+    // Evaluate %p7
+    setp.gt.f32 %p7, %f5, %f6;
+
+    // Store %p7
+    ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 1;
+    add.u64 %rd0, %rd0, %rd1;
+    selp.u16 %w0, 1, 0, %p7;
+    st.global.u8 [%rd0], %w0;
+
+    // Evaluate %f8
+    neg.ftz.f32 %f8, %f5;
+
+    // Evaluate %f9
+    selp.f32 %f9, %f8, %f5, %p7;
+
+    // Store %f9
+    ld.param.u64 %rd0, [arg1];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.f32 [%rd0], %f9;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
+jit_var_int_ref_dec(1): 0
+jit_var_free(1)
+jit_var_int_ref_dec(2): 2
+jit_var_int_ref_dec(3): 0
+jit_var_free(3)
+jit_var_int_ref_dec(2): 1
+jit_var_int_ref_dec(5): 0
+jit_var_free(5)
+jit_var_int_ref_dec(2): 0
+jit_var_free(2)
+jit_var_int_ref_dec(4): 0
+jit_eval(): done.
+value=[0, 1, 2, 3, 4, 5, -6, -7, -8, -9]
+mask=[0, 0, 0, 0, 0, 0, 1, 1, 1, 1]
+jit_trace_append(7): mov.$t0 $r0, 0f3f800000
+jit_var_ext_ref_inc(7): 1
+jit_trace_append(8): mov.$t0 $r0, 0f40000000
+jit_var_ext_ref_inc(8): 1
+jit_var_int_ref_inc(7): 1
+jit_var_int_ref_inc(8): 1
+jit_var_int_ref_inc(4): 1
+jit_trace_append(9 <- 7, 8, 4): selp.$t0 $r0, $r1, $r2, $r3
+jit_var_ext_ref_inc(9): 1
+jit_var_ext_ref_dec(8): 0
+jit_var_ext_ref_dec(7): 0
+jit_eval(): begin.
+jit_assemble(size=10): register map:
+   - %f4 -> 7 [scalar]
+   - %f5 -> 8 [scalar]
+   - %p6 -> 4 [in]
+   - %f7 -> 9 [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=10, in=1, out=1, ops=8) ..
+.version 6.3
+.target sm_61
+.address_size 64
+.visible .entry enoki_65d05abf(.param .u32 size,
+                               .param .u64 arg0,
+                               .param .u64 arg1) {
+    .reg.b8 %b<8>;
+    .reg.b16 %w<8>;
+    .reg.b32 %r<8>;
+    .reg.b64 %rd<8>;
+    .reg.f32 %f<8>;
+    .reg.f64 %d<8>;
+    .reg.pred %p<8>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Evaluate %f4
+    mov.f32 %f4, 0f3f800000;
+
+    // Evaluate %f5
+    mov.f32 %f5, 0f40000000;
+
+    // Load %p6
+    ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 1;
+    add.u64 %rd0, %rd0, %rd1;
+    ld.global.u8 %w0, [%rd0];
+    setp.ne.u16 %p6, %w0, 0;
+    // Evaluate %f7
+    selp.f32 %f7, %f4, %f5, %p6;
+
+    // Store %f7
+    ld.param.u64 %rd0, [arg1];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.f32 [%rd0], %f7;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
+jit_var_int_ref_dec(7): 0
+jit_var_free(7)
+jit_var_int_ref_dec(8): 0
+jit_var_free(8)
+jit_var_int_ref_dec(4): 0
+jit_eval(): done.
+value_2=[2, 2, 2, 2, 2, 2, 1, 1, 1, 1]
+jit_trace_append(10): mov.$t0 $r0, 1
+jit_var_ext_ref_inc(10): 1
+jit_trace_append(11): mov.$t0 $r0, 0
+jit_var_ext_ref_inc(11): 1
+jit_eval(): begin.
+jit_assemble(size=1): register map:
+   - %p4 -> 10 [scalar] [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+   - %p5 -> 11 [scalar] [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=1, in=0, out=2, ops=6) ..
+.version 6.3
+.target sm_61
+.address_size 64
+.visible .entry enoki_5a799398(.param .u32 size,
+                               .param .u64 arg0,
+                               .param .u64 arg1) {
+    .reg.b8 %b<6>;
+    .reg.b16 %w<6>;
+    .reg.b32 %r<6>;
+    .reg.b64 %rd<6>;
+    .reg.f32 %f<6>;
+    .reg.f64 %d<6>;
+    .reg.pred %p<6>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Evaluate %p4
+    mov.pred %p4, 1;
+
+    // Store %p4
+    ld.param.u64 %rd0, [arg0];
+    selp.u16 %w0, 1, 0, %p4;
+    st.global.u8 [%rd0], %w0;
+
+    // Evaluate %p5
+    mov.pred %p5, 0;
+
+    // Store %p5
+    ld.param.u64 %rd0, [arg1];
+    selp.u16 %w0, 1, 0, %p5;
+    st.global.u8 [%rd0], %w0;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
+jit_eval(): done.
+jit_trace_append(12): mov.$t0 $r0, 0f00000000
+jit_var_ext_ref_inc(12): 1
+jit_var_int_ref_inc(6): 1
+jit_var_int_ref_inc(12): 1
+jit_var_int_ref_inc(10): 1
+jit_trace_append(13 <- 6, 12, 10): selp.$t0 $r0, $r1, $r2, $r3
+jit_var_ext_ref_inc(13): 1
+jit_var_ext_ref_dec(12): 0
+jit_trace_append(12): mov.$t0 $r0, 0f00000000 (reused)
+jit_var_ext_ref_inc(12): 1
+jit_var_int_ref_inc(6): 2
+jit_var_int_ref_inc(12): 2
+jit_var_int_ref_inc(11): 1
+jit_trace_append(14 <- 6, 12, 11): selp.$t0 $r0, $r1, $r2, $r3
+jit_var_ext_ref_inc(14): 1
+jit_var_ext_ref_dec(12): 0
+jit_eval(): begin.
+jit_assemble(size=10): register map:
+   - %f4 -> 6 [in]
+   - %f5 -> 12 [scalar]
+   - %p6 -> 10 [scalar] [in]
+   - %f7 -> 13 [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+   - %p8 -> 11 [scalar] [in]
+   - %f9 -> 14 [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=10, in=3, out=2, ops=10) ..
+.version 6.3
+.target sm_61
+.address_size 64
+.visible .entry enoki_73589d2c(.param .u32 size,
+                               .param .u64 arg0,
+                               .param .u64 arg1,
+                               .param .u64 arg2,
+                               .param .u64 arg3,
+                               .param .u64 arg4) {
+    .reg.b8 %b<10>;
+    .reg.b16 %w<10>;
+    .reg.b32 %r<10>;
+    .reg.b64 %rd<10>;
+    .reg.f32 %f<10>;
+    .reg.f64 %d<10>;
+    .reg.pred %p<10>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Load %f4
+    ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    ld.global.f32 %f4, [%rd0];
+
+    // Evaluate %f5
+    mov.f32 %f5, 0f00000000;
+
+    // Load %p6
+    ld.param.u64 %rd0, [arg1];
+    ldu.global.u8 %w0, [%rd0];
+    setp.ne.u16 %p6, %w0, 0;
+    // Evaluate %f7
+    selp.f32 %f7, %f4, %f5, %p6;
+
+    // Store %f7
+    ld.param.u64 %rd0, [arg2];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.f32 [%rd0], %f7;
+
+    // Load %p8
+    ld.param.u64 %rd0, [arg3];
+    ldu.global.u8 %w0, [%rd0];
+    setp.ne.u16 %p8, %w0, 0;
+    // Evaluate %f9
+    selp.f32 %f9, %f4, %f5, %p8;
+
+    // Store %f9
+    ld.param.u64 %rd0, [arg4];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.f32 [%rd0], %f9;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
+jit_var_int_ref_dec(6): 1
+jit_var_int_ref_dec(12): 1
+jit_var_int_ref_dec(10): 0
+jit_var_int_ref_dec(6): 0
+jit_var_int_ref_dec(12): 0
+jit_var_free(12)
+jit_var_int_ref_dec(11): 0
+jit_eval(): done.
+value_3=[0, 1, 2, 3, 4, 5, -6, -7, -8, -9]
+value_4=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+jit_var_ext_ref_dec(14): 0
+jit_var_free(14)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_ext_ref_dec(13): 0
+jit_var_free(13)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_ext_ref_dec(11): 0
+jit_var_free(11)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_ext_ref_dec(10): 0
+jit_var_free(10)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_ext_ref_dec(9): 0
+jit_var_free(9)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_ext_ref_dec(4): 0
+jit_var_free(4)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_ext_ref_dec(6): 0
+jit_var_free(6)
+jit_free(<@>, type=device, device=0, size=64)
+jit_shutdown(): destroying streams ..
+jit_free_flush(): scheduling 7 deallocations
+jit_free_flush(): performing 7 deallocations
+jit_malloc_trim(): freed
+ - device memory: 448 B in 7 allocations
+jit_shutdown(): done

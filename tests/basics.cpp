@@ -196,7 +196,6 @@ TEST_BOTH(09_fma) {
     }
 }
 
-#if 0
 TEST_BOTH(10_sqrt) {
     Float x = sqrt(Float::arange(10));
     jitc_log(Info, "value=%s", x.str());
@@ -219,9 +218,8 @@ TEST_BOTH(11_mask) {
     jitc_log(Info, "value_3=%s", a.str());
     jitc_log(Info, "value_4=%s", b.str());
 }
-#endif
 
-TEST_LLVM(12_binop) {
+TEST_BOTH(12_binop) {
     UInt32 a(1, 1234);
     Float  b(1.f, 1234.f);
     Array<bool> c(true, false);
@@ -244,7 +242,7 @@ TEST_LLVM(12_binop) {
 
     int32_t x = -1;
     float y;
-    memcpy(&x, &y, 4);
+    memcpy(&y, &x, 4);
 
     UInt32 a2(0, 0xFFFFFFFF);
     Float  b2(0.f, y);
@@ -274,5 +272,3 @@ TEST_LLVM(12_binop) {
     jitc_log(Info, "XOR: value_2=%s", b5.str());
     jitc_log(Info, "XOR: value_3=%s", c5.str());
 }
-
-/// parallel dispatch

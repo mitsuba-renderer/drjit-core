@@ -1,4 +1,4 @@
-jit_trace_append(1): $r0_0 = trunc i64 $i to i32$n$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x i32> $r0_2, $o0
+jit_trace_append(1): $r0_0 = trunc i64 $i to i32$n$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x i32> $r0_2, $l0
 jit_var_ext_ref_inc(1): 1
 jit_var_set_size(1): 10
 jit_var_int_ref_inc(1): 1
@@ -16,7 +16,7 @@ jit_assemble(size=10): register map:
    - %f2 -> 3 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=10, in=0, out=1, ops=3) ..
-define void @enoki_72522a64(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+define void @enoki_7911d48c(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
 entry:
 
     ; Prepare argument 0
@@ -56,7 +56,7 @@ loop:
 !0 = !{!0}
 !1 = !{!1, !0}
 
-declare <8 x float> @llvm.sqrt.v8f32(<8 x float> )
+declare <8 x float> @llvm.sqrt.v8f32(<8 x float>)
 
 jit_eval(): cleaning up..
 jit_var_int_ref_dec(1): 0

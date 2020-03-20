@@ -164,6 +164,68 @@ struct CUDAArray {
             jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
     }
 
+    CUDAArray<bool> operator>(const CUDAArray &a) const {
+        const char *op = std::is_signed<Value>::value
+                             ? "setp.gt.$t1 $r0, $r1, $r2"
+                             : "setp.hi.$t1 $r0, $r1, $r2";
+
+        return CUDAArray<bool>::from_index(jitc_trace_append_2(
+            CUDAArray<bool>::Type, op, 1, m_index, a.index()));
+    }
+
+    CUDAArray<bool> operator>=(const CUDAArray &a) const {
+        const char *op = std::is_signed<Value>::value
+                             ? "setp.ge.$t1 $r0, $r1, $r2"
+                             : "setp.hs.$t1 $r0, $r1, $r2";
+
+        return CUDAArray<bool>::from_index(jitc_trace_append_2(
+            CUDAArray<bool>::Type, op, 1, m_index, a.index()));
+    }
+
+
+    CUDAArray<bool> operator<(const CUDAArray &a) const {
+        const char *op = std::is_signed<Value>::value
+                             ? "setp.lt.$t1 $r0, $r1, $r2"
+                             : "setp.lo.$t1 $r0, $r1, $r2";
+
+        return CUDAArray<bool>::from_index(jitc_trace_append_2(
+            CUDAArray<bool>::Type, op, 1, m_index, a.index()));
+    }
+
+    CUDAArray<bool> operator<=(const CUDAArray &a) const {
+        const char *op = std::is_signed<Value>::value
+                             ? "setp.le.$t1 $r0, $r1, $r2"
+                             : "setp.lo.$t1 $r0, $r1, $r2";
+
+        return CUDAArray<bool>::from_index(jitc_trace_append_2(
+            CUDAArray<bool>::Type, op, 1, m_index, a.index()));
+    }
+
+    CUDAArray operator-() const {
+        return from_index(
+            jitc_trace_append_1(Type, "neg.ftz.$t0 $r0, $r1", 1, m_index));
+    }
+
+    CUDAArray operator~() const {
+        return from_index(
+            jitc_trace_append_1(Type, "not.$b0 $r0, $r1", 1, m_index));
+    }
+
+    CUDAArray operator|(const CUDAArray &a) const {
+        return from_index(jitc_trace_append_2(Type, "or.$b0 $r0, $r1, $r2", 1,
+                                              m_index, a.index()));
+    }
+
+    CUDAArray operator&(const CUDAArray &a) const {
+        return from_index(jitc_trace_append_2(Type, "and.$b0 $r0, $r1, $r2", 1,
+                                              m_index, a.index()));
+    }
+
+    CUDAArray operator^(const CUDAArray &a) const {
+        return from_index(jitc_trace_append_2(Type, "xor.$b0 $r0, $r1, $r2", 1,
+                                              m_index, a.index()));
+    }
+
     CUDAArray& operator+=(const CUDAArray &v) {
         return operator=(*this + v);
     }
@@ -180,9 +242,16 @@ struct CUDAArray {
         return operator=(*this / v);
     }
 
-    CUDAArray operator-() const {
-        return from_index(
-            jitc_trace_append_1(Type, "neg.ftz.$t0 $r0, $r1", 1, m_index));
+    CUDAArray& operator|=(const CUDAArray &v) {
+        return operator=(*this | v);
+    }
+
+    CUDAArray& operator&=(const CUDAArray &v) {
+        return operator=(*this & v);
+    }
+
+    CUDAArray& operator^=(const CUDAArray &v) {
+        return operator=(*this ^ v);
     }
 
     friend CUDAArray sqrt(const CUDAArray &a) {

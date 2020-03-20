@@ -438,7 +438,7 @@ jit_var_int_ref_dec(9): 0
 jit_var_int_ref_dec(12): 0
 jit_eval(): done.
 OR: value_1=[1, 4294967295]
-OR: value_2=[1, nan]
+OR: value_2=[1, -nan]
 OR: value_3=[1, 1]
 jit_var_int_ref_inc(7): 1
 jit_var_int_ref_inc(10): 1
