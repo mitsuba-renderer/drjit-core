@@ -2,81 +2,81 @@ jit_device_set(device=0, stream=0): creating stream
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_fill(<@>, type=int8, size=5)
 jit_var_map(1): <@>, size=5, free=1
-jit_var_ext_ref_inc(1): 1
+jit_var_inc_ref_ext(1): 1
   int8_t: [-111, -111, -111, -111, -111]
-jit_var_ext_ref_dec(1): 0
+jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_fill(<@>, type=uint8, size=5)
 jit_var_map(2): <@>, size=5, free=1
-jit_var_ext_ref_inc(2): 1
+jit_var_inc_ref_ext(2): 1
  uint8_t: [222, 222, 222, 222, 222]
-jit_var_ext_ref_dec(2): 0
+jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_fill(<@>, type=int16, size=5)
 jit_var_map(3): <@>, size=5, free=1
-jit_var_ext_ref_inc(3): 1
+jit_var_inc_ref_ext(3): 1
  int16_t: [-1111, -1111, -1111, -1111, -1111]
-jit_var_ext_ref_dec(3): 0
+jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_fill(<@>, type=uint16, size=5)
 jit_var_map(4): <@>, size=5, free=1
-jit_var_ext_ref_inc(4): 1
+jit_var_inc_ref_ext(4): 1
 uint16_t: [2222, 2222, 2222, 2222, 2222]
-jit_var_ext_ref_dec(4): 0
+jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_fill(<@>, type=int32, size=5)
 jit_var_map(5): <@>, size=5, free=1
-jit_var_ext_ref_inc(5): 1
+jit_var_inc_ref_ext(5): 1
  int32_t: [-1111111111, -1111111111, -1111111111, -1111111111, -1111111111]
-jit_var_ext_ref_dec(5): 0
+jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_fill(<@>, type=uint32, size=5)
 jit_var_map(6): <@>, size=5, free=1
-jit_var_ext_ref_inc(6): 1
+jit_var_inc_ref_ext(6): 1
 uint32_t: [2222222222, 2222222222, 2222222222, 2222222222, 2222222222]
-jit_var_ext_ref_dec(6): 0
+jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_fill(<@>, type=int64, size=5)
 jit_var_map(7): <@>, size=5, free=1
-jit_var_ext_ref_inc(7): 1
+jit_var_inc_ref_ext(7): 1
  int64_t: [-1111111111111111111, -1111111111111111111, -1111111111111111111, -1111111111111111111, -1111111111111111111]
-jit_var_ext_ref_dec(7): 0
+jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_fill(<@>, type=uint64, size=5)
 jit_var_map(8): <@>, size=5, free=1
-jit_var_ext_ref_inc(8): 1
+jit_var_inc_ref_ext(8): 1
 uint64_t: [2222222222222222222, 2222222222222222222, 2222222222222222222, 2222222222222222222, 2222222222222222222]
-jit_var_ext_ref_dec(8): 0
+jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_fill(<@>, type=float32, size=5)
 jit_var_map(9): <@>, size=5, free=1
-jit_var_ext_ref_inc(9): 1
+jit_var_inc_ref_ext(9): 1
    float: [0.333333, 0.333333, 0.333333, 0.333333, 0.333333]
-jit_var_ext_ref_dec(9): 0
+jit_var_dec_ref_ext(9): 0
 jit_var_free(9)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_fill(<@>, type=float64, size=5)
 jit_var_map(10): <@>, size=5, free=1
-jit_var_ext_ref_inc(10): 1
+jit_var_inc_ref_ext(10): 1
   double: [0.333333, 0.333333, 0.333333, 0.333333, 0.333333]
-jit_var_ext_ref_dec(10): 0
+jit_var_dec_ref_ext(10): 0
 jit_var_free(10)
 jit_free(<@>, type=device, device=0, size=64)
 jit_shutdown(): destroying streams ..

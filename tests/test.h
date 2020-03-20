@@ -63,13 +63,13 @@ public:
     scoped_set_log_level(LogLevel level) {
         m_cb_level = jitc_log_callback();
         m_stderr_level = jitc_log_stderr();
-        jitc_log_callback_set(std::min(level, m_cb_level), log_callback);
-        jitc_log_stderr_set(std::min(level, m_stderr_level));
+        jitc_set_log_callback(std::min(level, m_cb_level), log_callback);
+        jitc_log_set_stderr(std::min(level, m_stderr_level));
     }
 
     ~scoped_set_log_level() {
-        jitc_log_callback_set(m_cb_level, log_callback);
-        jitc_log_stderr_set(m_stderr_level);
+        jitc_set_log_callback(m_cb_level, log_callback);
+        jitc_log_set_stderr(m_stderr_level);
     }
 
 private:

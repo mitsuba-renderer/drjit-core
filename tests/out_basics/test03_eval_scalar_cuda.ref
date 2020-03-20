@@ -1,15 +1,16 @@
 jit_device_set(device=0, stream=0): creating stream
 jit_trace_append(1): mov.$t0 $r0, 0f449a4000
-jit_var_ext_ref_inc(1): 1
+jit_var_inc_ref_ext(1): 1
+jit_var_set_label(1): "my_value"
 jit_eval(): begin.
 jit_assemble(size=1): register map:
-   - %f4 -> 1 [scalar] [out]
+   - %f4 -> 1 "my_value" [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=1, ops=5) ..
 .version 6.3
 .target sm_61
 .address_size 64
-.visible .entry enoki_a1f006a4(.param .u32 size,
+.visible .entry enoki_57a4eefa(.param .u32 size,
                                .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -33,10 +34,10 @@ jit_run(): launching kernel (n=1, in=0, out=1, ops=5) ..
 
 L1: // Loop body
 
-    // Evaluate %f4
+    // Evaluate %f4: my_value
     mov.f32 %f4, 0f449a4000;
 
-    // Store %f4
+    // Store %f4: my_value
     ld.param.u64 %rd0, [arg0];
     st.global.f32 [%rd0], %f4;
 
@@ -50,7 +51,7 @@ L0:
 jit_eval(): cleaning up..
 jit_eval(): done.
 value=[1234]
-jit_var_ext_ref_dec(1): 0
+jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=64)
 jit_shutdown(): destroying streams ..

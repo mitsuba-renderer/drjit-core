@@ -107,45 +107,45 @@ void jit_var_free(uint32_t index, Variable *v) {
 
     // Decrease reference count of dependencies
     for (int i = 0; i < 3; ++i)
-        jit_var_int_ref_dec(dep[i]);
+        jit_var_dec_ref_int(dep[i]);
 
-    jit_var_ext_ref_dec(extra_dep);
+    jit_var_dec_ref_ext(extra_dep);
 }
 
 /// Increase the external reference count of a given variable
-void jit_var_ext_ref_inc(uint32_t index, Variable *v) {
+void jit_var_inc_ref_ext(uint32_t index, Variable *v) {
     v->ref_count_ext++;
-    jit_trace("jit_var_ext_ref_inc(%u): %u", index, v->ref_count_ext);
+    jit_trace("jit_var_inc_ref_ext(%u): %u", index, v->ref_count_ext);
 }
 
 /// Increase the external reference count of a given variable
-void jit_var_ext_ref_inc(uint32_t index) {
+void jit_var_inc_ref_ext(uint32_t index) {
     if (index != 0)
-        jit_var_ext_ref_inc(index, jit_var(index));
+        jit_var_inc_ref_ext(index, jit_var(index));
 }
 
 /// Increase the internal reference count of a given variable
-void jit_var_int_ref_inc(uint32_t index, Variable *v) {
+void jit_var_inc_ref_int(uint32_t index, Variable *v) {
     v->ref_count_int++;
-    jit_trace("jit_var_int_ref_inc(%u): %u", index, v->ref_count_int);
+    jit_trace("jit_var_inc_ref_int(%u): %u", index, v->ref_count_int);
 }
 
 /// Increase the internal reference count of a given variable
-void jit_var_int_ref_inc(uint32_t index) {
+void jit_var_inc_ref_int(uint32_t index) {
     if (index != 0)
-        jit_var_int_ref_inc(index, jit_var(index));
+        jit_var_inc_ref_int(index, jit_var(index));
 }
 
 /// Decrease the external reference count of a given variable
-void jit_var_ext_ref_dec(uint32_t index) {
+void jit_var_dec_ref_ext(uint32_t index) {
     if (index == 0)
         return;
     Variable *v = jit_var(index);
 
     if (unlikely(v->ref_count_ext == 0))
-        jit_fail("jit_var_ext_ref_dec(): variable %u has no external references!", index);
+        jit_fail("jit_var_dec_ref_ext(): variable %u has no external references!", index);
 
-    jit_trace("jit_var_ext_ref_dec(%u): %u", index, v->ref_count_ext - 1);
+    jit_trace("jit_var_dec_ref_ext(%u): %u", index, v->ref_count_ext - 1);
     v->ref_count_ext--;
 
     if (v->ref_count_ext == 0 && v->ref_count_int == 0)
@@ -153,15 +153,15 @@ void jit_var_ext_ref_dec(uint32_t index) {
 }
 
 /// Decrease the internal reference count of a given variable
-void jit_var_int_ref_dec(uint32_t index) {
+void jit_var_dec_ref_int(uint32_t index) {
     if (index == 0)
         return;
     Variable *v = jit_var(index);
 
     if (unlikely(v->ref_count_int == 0))
-        jit_fail("jit_var_int_ref_dec(): variable %u has no internal references!", index);
+        jit_fail("jit_var_dec_ref_int(): variable %u has no internal references!", index);
 
-    jit_trace("jit_var_int_ref_dec(%u): %u", index, v->ref_count_int - 1);
+    jit_trace("jit_var_dec_ref_int(%u): %u", index, v->ref_count_int - 1);
     v->ref_count_int--;
 
     if (v->ref_count_ext == 0 && v->ref_count_int == 0)
@@ -229,8 +229,8 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
             free(v.stmt);
 
         for (int i = 0; i< 3; ++i)
-            jit_var_int_ref_dec(v.dep[i]);
-        jit_var_int_ref_dec(v.extra_dep);
+            jit_var_dec_ref_int(v.dep[i]);
+        jit_var_dec_ref_int(v.extra_dep);
 
         index = key_it.value();
         v_out = jit_var(index);
@@ -260,7 +260,7 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
             uint32_t index_new = jit_trace_append_1(
                 (VarType) v->type, "mov.$t1 $r1, $r2", 1, index);
             jit_var(index_new)->size = size;
-            jit_var_ext_ref_dec(index);
+            jit_var_dec_ref_ext(index);
             return index_new;
         }
 
@@ -291,17 +291,17 @@ const char *jit_var_label(uint32_t index) {
 }
 
 /// Assign a descriptive label to a given variable
-void jit_var_label_set(uint32_t index, const char *label_) {
+void jit_var_set_label(uint32_t index, const char *label_) {
     Variable *v = jit_var(index);
     char *label = label_ ? strdup(label_) : nullptr;
 
-    jit_log(Debug, "jit_var_label_set(%u): \"%s\"", index,
+    jit_log(Debug, "jit_var_set_label(%u): \"%s\"", index,
             label ? label : "(null)");
 
     if (v->has_label) {
         auto it = state.labels.find(index);
         if (it == state.labels.end())
-            jit_fail("jit_var_label_set(): previous label not found!");
+            jit_fail("jit_var_set_label(): previous label not found!");
         free(it.value());
         it.value() = label;
     } else {
@@ -328,7 +328,7 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
             index, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    jit_var_ext_ref_inc(index, vo);
+    jit_var_inc_ref_ext(index, vo);
 
     auto &todo = stream ? stream->todo : state.todo_host;
     todo.push_back(index);
@@ -362,7 +362,7 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
         v.tsize = 2;
     }
 
-    jit_var_int_ref_inc(op1, v1);
+    jit_var_inc_ref_int(op1, v1);
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
@@ -370,7 +370,7 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
             index, op1, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    jit_var_ext_ref_inc(index, vo);
+    jit_var_inc_ref_ext(index, vo);
 
     auto &todo = stream ? stream->todo : state.todo_host;
     todo.push_back(index);
@@ -413,12 +413,12 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
         v.tsize = 3;
     }
 
-    jit_var_int_ref_inc(op1, v1);
-    jit_var_int_ref_inc(op2, v2);
+    jit_var_inc_ref_int(op1, v1);
+    jit_var_inc_ref_int(op2, v2);
 
     if (strstr(stmt, "ld.global")) {
         v.extra_dep = state.scatter_gather_operand;
-        jit_var_ext_ref_inc(v.extra_dep);
+        jit_var_inc_ref_ext(v.extra_dep);
     }
 
     uint32_t index; Variable *vo;
@@ -427,7 +427,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
             index, op1, op2, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    jit_var_ext_ref_inc(index, vo);
+    jit_var_inc_ref_ext(index, vo);
 
     auto &todo = stream ? stream->todo : state.todo_host;
     todo.push_back(index);
@@ -474,14 +474,14 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
         v.tsize = 4;
     }
 
-    jit_var_int_ref_inc(op1, v1);
-    jit_var_int_ref_inc(op2, v2);
-    jit_var_int_ref_inc(op3, v3);
+    jit_var_inc_ref_int(op1, v1);
+    jit_var_inc_ref_int(op2, v2);
+    jit_var_inc_ref_int(op3, v3);
 
     if ((strstr(stmt, "st.global") || strstr(stmt, "atom.global.add")) &&
         state.scatter_gather_operand != 0) {
         v.extra_dep = state.scatter_gather_operand;
-        jit_var_ext_ref_inc(v.extra_dep);
+        jit_var_inc_ref_ext(v.extra_dep);
     }
 
     uint32_t index; Variable *vo;
@@ -490,7 +490,7 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
             index, op1, op2, op3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
-    jit_var_ext_ref_inc(index, vo);
+    jit_var_inc_ref_ext(index, vo);
 
     auto &todo = stream ? stream->todo : state.todo_host;
     todo.push_back(index);
@@ -516,7 +516,7 @@ uint32_t jit_var_map(VarType type, void *ptr, size_t size, int free) {
     jit_log(Debug, "jit_var_map(%u): " PTR ", size=%zu, free=%i",
             index, (uintptr_t) ptr, size, (int) free);
 
-    jit_var_ext_ref_inc(index, vo);
+    jit_var_inc_ref_ext(index, vo);
 
     return index;
 }
@@ -549,7 +549,7 @@ uint32_t jit_var_copy_ptr(const void *ptr) {
     auto it = state.variable_from_ptr.find(ptr);
     if (it != state.variable_from_ptr.end()) {
         uint32_t index = it.value();
-        jit_var_ext_ref_inc(index);
+        jit_var_inc_ref_ext(index);
         return index;
     }
 
@@ -566,7 +566,7 @@ uint32_t jit_var_copy_ptr(const void *ptr) {
     std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_var_copy_ptr(%u): " PTR, index, (uintptr_t) ptr);
 
-    jit_var_ext_ref_inc(index, vo);
+    jit_var_inc_ref_ext(index, vo);
     state.variable_from_ptr[ptr] = index;
     return index;
 }

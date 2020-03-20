@@ -1,24 +1,24 @@
 jit_device_set(device=0, stream=0): creating stream
 jit_trace_append(1): mov.$t0 $r0, 0f449a4000
-jit_var_ext_ref_inc(1): 1
+jit_var_inc_ref_ext(1): 1
 jit_trace_append(2): mov.$t0 $r0, 0f449a6000
-jit_var_ext_ref_inc(2): 1
+jit_var_inc_ref_ext(2): 1
 jit_trace_append(1): mov.$t0 $r0, 0f449a4000 (reused)
-jit_var_ext_ref_inc(1): 2
-jit_var_int_ref_inc(1): 1
-jit_var_int_ref_inc(2): 1
+jit_var_inc_ref_ext(1): 2
+jit_var_inc_ref_int(1): 1
+jit_var_inc_ref_int(2): 1
 jit_trace_append(3 <- 1, 2): add.rn.ftz.$t0 $r0, $r1, $r2
-jit_var_ext_ref_inc(3): 1
-jit_var_int_ref_inc(1): 2
-jit_var_int_ref_inc(1): 3
+jit_var_inc_ref_ext(3): 1
+jit_var_inc_ref_int(1): 2
+jit_var_inc_ref_int(1): 3
 jit_trace_append(4 <- 1, 1): add.rn.ftz.$t0 $r0, $r1, $r2
-jit_var_ext_ref_inc(4): 1
-jit_var_int_ref_inc(1): 4
-jit_var_int_ref_inc(2): 2
-jit_var_int_ref_dec(1): 3
-jit_var_int_ref_dec(2): 1
+jit_var_inc_ref_ext(4): 1
+jit_var_inc_ref_int(1): 4
+jit_var_inc_ref_int(2): 2
+jit_var_dec_ref_int(1): 3
+jit_var_dec_ref_int(2): 1
 jit_trace_append(3 <- 1, 2): add.rn.ftz.$t0 $r0, $r1, $r2 (reused)
-jit_var_ext_ref_inc(3): 2
+jit_var_inc_ref_ext(3): 2
 jit_eval(): begin.
 jit_assemble(size=1): register map:
    - %f4 -> 1 [scalar] [out]
@@ -96,10 +96,10 @@ L0:
     ret;
 }
 jit_eval(): cleaning up..
-jit_var_int_ref_dec(1): 2
-jit_var_int_ref_dec(2): 0
-jit_var_int_ref_dec(1): 1
-jit_var_int_ref_dec(1): 0
+jit_var_dec_ref_int(1): 2
+jit_var_dec_ref_int(2): 0
+jit_var_dec_ref_int(1): 1
+jit_var_dec_ref_int(1): 0
 jit_eval(): done.
 value_1=[1234]
 value_2=[1235]
@@ -107,18 +107,18 @@ value_3=[1234]
 value_4=[2469]
 value_5=[2468]
 value_6=[2469]
-jit_var_ext_ref_dec(3): 1
-jit_var_ext_ref_dec(4): 0
+jit_var_dec_ref_ext(3): 1
+jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
 jit_free(<@>, type=device, device=0, size=64)
-jit_var_ext_ref_dec(3): 0
+jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
 jit_free(<@>, type=device, device=0, size=64)
-jit_var_ext_ref_dec(1): 1
-jit_var_ext_ref_dec(2): 0
+jit_var_dec_ref_ext(1): 1
+jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_free(<@>, type=device, device=0, size=64)
-jit_var_ext_ref_dec(1): 0
+jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=64)
 jit_shutdown(): destroying streams ..

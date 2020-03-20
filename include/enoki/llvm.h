@@ -30,10 +30,10 @@ struct LLVMArray {
 
     LLVMArray() = default;
 
-    ~LLVMArray() { jitc_var_ext_ref_dec(m_index); }
+    ~LLVMArray() { jitc_var_dec_ref_ext(m_index); }
 
     LLVMArray(const LLVMArray &a) : m_index(a.m_index) {
-        jitc_var_ext_ref_inc(m_index);
+        jitc_var_inc_ref_ext(m_index);
     }
 
     LLVMArray(LLVMArray &&a) : m_index(a.m_index) {
@@ -61,7 +61,7 @@ struct LLVMArray {
         } else if (std::is_integral<T>::value && std::is_integral<Value>::value) {
             if (sizeof(T) == sizeof(Value)) {
                 m_index = v.index();
-                jitc_var_ext_ref_inc(m_index);
+                jitc_var_inc_ref_ext(m_index);
                 return;
             } else {
                 op = sizeof(T) > sizeof(Value)
@@ -108,8 +108,8 @@ struct LLVMArray {
     }
 
     LLVMArray &operator=(const LLVMArray &a) {
-        jitc_var_ext_ref_inc(a.m_index);
-        jitc_var_ext_ref_dec(m_index);
+        jitc_var_inc_ref_ext(a.m_index);
+        jitc_var_dec_ref_ext(m_index);
         m_index = a.m_index;
         return *this;
     }
@@ -437,6 +437,11 @@ struct LLVMArray {
 protected:
     uint32_t m_index = 0;
 };
+
+template <typename Value>
+void set_label(const LLVMArray<Value> &a, const char *label) {
+    jitc_var_set_label(a.index(), label);
+}
 
 template <typename Value>
 LLVMArray<Value> select(const LLVMArray<bool> &m, const LLVMArray<Value> &t,

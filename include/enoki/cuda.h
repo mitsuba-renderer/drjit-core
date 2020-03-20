@@ -30,10 +30,10 @@ struct CUDAArray {
 
     CUDAArray() = default;
 
-    ~CUDAArray() { jitc_var_ext_ref_dec(m_index); }
+    ~CUDAArray() { jitc_var_dec_ref_ext(m_index); }
 
     CUDAArray(const CUDAArray &a) : m_index(a.m_index) {
-        jitc_var_ext_ref_inc(m_index);
+        jitc_var_inc_ref_ext(m_index);
     }
 
     CUDAArray(CUDAArray &&a) : m_index(a.m_index) {
@@ -117,8 +117,8 @@ struct CUDAArray {
     }
 
     CUDAArray &operator=(const CUDAArray &a) {
-        jitc_var_ext_ref_inc(a.m_index);
-        jitc_var_ext_ref_dec(m_index);
+        jitc_var_inc_ref_ext(a.m_index);
+        jitc_var_dec_ref_ext(m_index);
         m_index = a.m_index;
         return *this;
     }
@@ -373,6 +373,11 @@ struct CUDAArray {
 protected:
     uint32_t m_index = 0;
 };
+
+template <typename Value>
+void set_label(const CUDAArray<Value> &a, const char *label) {
+    jitc_var_set_label(a.index(), label);
+}
 
 template <typename Value>
 CUDAArray<Value> select(const CUDAArray<bool> &m, const CUDAArray<Value> &t,

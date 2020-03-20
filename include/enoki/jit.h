@@ -149,7 +149,7 @@ extern JITC_EXPORT void jitc_llvm_set_target(const char *target_cpu,
  *
  * This feature is currently only used in CPU mode.
  */
-extern JITC_EXPORT void jitc_parallel_dispatch_set(int enable);
+extern JITC_EXPORT void jitc_parallel_set_dispatch(int enable);
 
 /// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
 extern JITC_EXPORT int jitc_parallel_dispatch();
@@ -188,10 +188,10 @@ enum LogLevel {
  * By default, this library prints all log messages to the console (\c stderr).
  * This function can be used to control the minimum log level for such output
  * or prevent it entirely. In the latter case, you may wish to enable logging
- * via a callback in \ref jitc_log_callback_set(). Both destinations can also
+ * via a callback in \ref jitc_set_log_callback(). Both destinations can also
  * be enabled simultaneously, pontentially using different log levels.
  */
-extern JITC_EXPORT void jitc_log_stderr_set(enum LogLevel level);
+extern JITC_EXPORT void jitc_log_set_stderr(enum LogLevel level);
 
 /// Return the currently set minimum log level for output to \c stderr
 extern JITC_EXPORT enum LogLevel jitc_log_stderr();
@@ -205,7 +205,7 @@ extern JITC_EXPORT enum LogLevel jitc_log_stderr();
  * exceeds the specified \c level.
  */
 typedef void (*LogCallback)(LogLevel, const char *);
-extern JITC_EXPORT void jitc_log_callback_set(LogLevel level, LogCallback callback);
+extern JITC_EXPORT void jitc_set_log_callback(LogLevel level, LogCallback callback);
 
 /// Return the currently set minimum log level for output to a callback
 extern JITC_EXPORT enum LogLevel jitc_log_callback();
@@ -508,10 +508,10 @@ extern JITC_EXPORT uint32_t jitc_trace_append_3(enum VarType type,
                                                 uint32_t op3);
 
 /// Increase the external reference count of a given variable
-extern JITC_EXPORT void jitc_var_ext_ref_inc(uint32_t index);
+extern JITC_EXPORT void jitc_var_inc_ref_ext(uint32_t index);
 
 /// Decrease the external reference count of a given variable
-extern JITC_EXPORT void jitc_var_ext_ref_dec(uint32_t index);
+extern JITC_EXPORT void jitc_var_dec_ref_ext(uint32_t index);
 
 /// Query the pointer variable associated with a given variable
 extern JITC_EXPORT void *jitc_var_ptr(uint32_t index);
@@ -540,7 +540,7 @@ extern JITC_EXPORT uint32_t jitc_var_set_size(uint32_t index,
                                               int copy);
 
 /// Assign a descriptive label to a given variable
-extern JITC_EXPORT void jitc_var_label_set(uint32_t index, const char *label);
+extern JITC_EXPORT void jitc_var_set_label(uint32_t index, const char *label);
 
 /// Query the descriptive label associated with a given variable
 extern JITC_EXPORT const char *jitc_var_label(uint32_t index);

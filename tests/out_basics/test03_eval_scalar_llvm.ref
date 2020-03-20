@@ -1,11 +1,12 @@
 jit_trace_append(1): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4093480000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
-jit_var_ext_ref_inc(1): 1
+jit_var_inc_ref_ext(1): 1
+jit_var_set_label(1): "my_value"
 jit_eval(): begin.
 jit_assemble(size=1): register map:
-   - %f0 -> 1 [scalar] [out]
+   - %f0 -> 1 "my_value" [scalar] [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=1, ops=1) ..
-define void @enoki_c1359905(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+define void @enoki_50a101f7(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
 entry:
 
     ; Prepare argument 0
@@ -21,11 +22,11 @@ done:
 loop:
     %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
 
-    ; Evaluate %f0
+    ; Evaluate %f0: my_value
     %f0_0 = insertelement <8 x float> undef, float 0x4093480000000000, i32 0
     %f0 = shufflevector <8 x float> %f0_0, <8 x float> undef, <8 x i32> zeroinitializer
 
-    ; Store %f0
+    ; Store %f0: my_value
     %f0_p = bitcast float* %a0 to <8 x float>*
     store <8 x float> %f0, <8 x float>* %f0_p, align 32, !noalias !1
 
@@ -40,7 +41,7 @@ loop:
 jit_eval(): cleaning up..
 jit_eval(): done.
 value=[1234]
-jit_var_ext_ref_dec(1): 0
+jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host, size=64)
 jit_malloc_trim(): freed

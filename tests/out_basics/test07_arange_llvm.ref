@@ -1,27 +1,27 @@
 jit_trace_append(1): $r0_0 = trunc i64 $i to i32$n$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x i32> $r0_2, $l0
-jit_var_ext_ref_inc(1): 1
+jit_var_inc_ref_ext(1): 1
 jit_var_set_size(1): 1024
 jit_trace_append(2): $r0_0 = trunc i64 $i to i32$n$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x i32> $r0_2, $l0
-jit_var_ext_ref_inc(2): 1
+jit_var_inc_ref_ext(2): 1
 jit_var_set_size(2): 73
-jit_var_ext_ref_inc(2): 2
+jit_var_inc_ref_ext(2): 2
 jit_trace_append(3): $r0_0 = insertelement <$w x $t0> undef, $t0 7, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
-jit_var_ext_ref_inc(3): 1
+jit_var_inc_ref_ext(3): 1
 jit_trace_append(4): $r0_0 = insertelement <$w x $t0> undef, $t0 3, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
-jit_var_ext_ref_inc(4): 1
-jit_var_int_ref_inc(2): 1
-jit_var_int_ref_inc(3): 1
+jit_var_inc_ref_ext(4): 1
+jit_var_inc_ref_int(2): 1
+jit_var_inc_ref_int(3): 1
 jit_trace_append(5 <- 2, 3): $r0 = mul <$w x $t0> $r1, $r2
-jit_var_ext_ref_inc(5): 1
-jit_var_int_ref_inc(5): 1
-jit_var_int_ref_inc(4): 1
+jit_var_inc_ref_ext(5): 1
+jit_var_inc_ref_int(5): 1
+jit_var_inc_ref_int(4): 1
 jit_trace_append(6 <- 5, 4): $r0 = add <$w x $t0> $r1, $r2
-jit_var_ext_ref_inc(6): 1
-jit_var_ext_ref_dec(5): 0
-jit_var_ext_ref_dec(4): 0
-jit_var_ext_ref_dec(3): 0
-jit_var_ext_ref_dec(2): 1
-jit_var_ext_ref_dec(2): 0
+jit_var_inc_ref_ext(6): 1
+jit_var_dec_ref_ext(5): 0
+jit_var_dec_ref_ext(4): 0
+jit_var_dec_ref_ext(3): 0
+jit_var_dec_ref_ext(2): 1
+jit_var_dec_ref_ext(2): 0
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r0 -> 1 [out]
@@ -118,21 +118,21 @@ loop:
 !1 = !{!1, !0}
 
 jit_eval(): cleaning up..
-jit_var_int_ref_dec(2): 0
+jit_var_dec_ref_int(2): 0
 jit_var_free(2)
-jit_var_int_ref_dec(3): 0
+jit_var_dec_ref_int(3): 0
 jit_var_free(3)
-jit_var_int_ref_dec(5): 0
+jit_var_dec_ref_int(5): 0
 jit_var_free(5)
-jit_var_int_ref_dec(4): 0
+jit_var_dec_ref_int(4): 0
 jit_var_free(4)
 jit_eval(): done.
 value=[0, 1, 2, 3, 4, .. 1014 skipped .., 1019, 1020, 1021, 1022, 1023]
 value=[3, 10, 17, 24, 31, .. 63 skipped .., 479, 486, 493, 500, 507]
-jit_var_ext_ref_dec(6): 0
+jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
 jit_free(<@>, type=host, size=512)
-jit_var_ext_ref_dec(1): 0
+jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host, size=4096)
 jit_malloc_trim(): freed

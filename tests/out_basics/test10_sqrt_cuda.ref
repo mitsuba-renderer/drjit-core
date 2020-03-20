@@ -1,15 +1,15 @@
 jit_device_set(device=0, stream=0): creating stream
 jit_trace_append(1): mov.u32 $r0, $i
-jit_var_ext_ref_inc(1): 1
+jit_var_inc_ref_ext(1): 1
 jit_var_set_size(1): 10
-jit_var_int_ref_inc(1): 1
+jit_var_inc_ref_int(1): 1
 jit_trace_append(2 <- 1): cvt.rn.ftz.$t0.$t1 $r0, $r1
-jit_var_ext_ref_inc(2): 1
-jit_var_ext_ref_dec(1): 0
-jit_var_int_ref_inc(2): 1
+jit_var_inc_ref_ext(2): 1
+jit_var_dec_ref_ext(1): 0
+jit_var_inc_ref_int(2): 1
 jit_trace_append(3 <- 2): sqrt.rn.ftz.$t0 $r0, $r1
-jit_var_ext_ref_inc(3): 1
-jit_var_ext_ref_dec(2): 0
+jit_var_inc_ref_ext(3): 1
+jit_var_dec_ref_ext(2): 0
 jit_eval(): begin.
 jit_assemble(size=10): register map:
    - %r4 -> 1
@@ -67,13 +67,13 @@ L0:
     ret;
 }
 jit_eval(): cleaning up..
-jit_var_int_ref_dec(1): 0
+jit_var_dec_ref_int(1): 0
 jit_var_free(1)
-jit_var_int_ref_dec(2): 0
+jit_var_dec_ref_int(2): 0
 jit_var_free(2)
 jit_eval(): done.
 value=[0, 1, 1.41421, 1.73205, 2, 2.23607, 2.44949, 2.64575, 2.82843, 3]
-jit_var_ext_ref_dec(3): 0
+jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
 jit_free(<@>, type=device, device=0, size=64)
 jit_shutdown(): destroying streams ..

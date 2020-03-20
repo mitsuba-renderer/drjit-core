@@ -23,6 +23,7 @@ TEST_BOTH(02_fill_and_print) {
 TEST_BOTH(03_eval_scalar) {
     /// Checks that we can evaluate a simple kernel
     Float value(1234);
+    set_label(value, "my_value");
     jitc_log(Info, "value=%s", value.str());
 }
 

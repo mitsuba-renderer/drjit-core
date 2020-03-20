@@ -31,7 +31,7 @@ void jitc_shutdown(int light) {
     jit_shutdown(light);
 }
 
-void jitc_log_stderr_set(LogLevel level) {
+void jitc_log_set_stderr(LogLevel level) {
     lock_guard guard(state.mutex);
     state.log_level_stderr = level;
 }
@@ -41,7 +41,7 @@ LogLevel jitc_log_stderr() {
     return state.log_level_stderr;
 }
 
-void jitc_log_callback_set(LogLevel level, LogCallback callback) {
+void jitc_set_log_callback(LogLevel level, LogCallback callback) {
     lock_guard guard(state.mutex);
     state.log_level_callback = callback ? level : Disable;
     state.log_callback = callback;
@@ -86,7 +86,7 @@ void jitc_device_set(int32_t device, uint32_t stream) {
     jit_device_set(device, stream);
 }
 
-void jitc_parallel_dispatch_set(int enable) {
+void jitc_parallel_set_dispatch(int enable) {
     lock_guard guard(state.mutex);
     state.parallel_dispatch = enable != 0;
 }
@@ -141,14 +141,14 @@ void *jitc_malloc_from_id(uint32_t id) {
     return jit_malloc_from_id(id);
 }
 
-void jitc_var_ext_ref_inc(uint32_t index) {
+void jitc_var_inc_ref_ext(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_var_ext_ref_inc(index);
+    jit_var_inc_ref_ext(index);
 }
 
-void jitc_var_ext_ref_dec(uint32_t index) {
+void jitc_var_dec_ref_ext(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_var_ext_ref_dec(index);
+    jit_var_dec_ref_ext(index);
 }
 
 void *jitc_var_ptr(uint32_t index) {
@@ -171,9 +171,9 @@ const char *jitc_var_label(uint32_t index) {
     return jit_var_label(index);
 }
 
-void jitc_var_label_set(uint32_t index, const char *label) {
+void jitc_var_set_label(uint32_t index, const char *label) {
     lock_guard guard(state.mutex);
-    jit_var_label_set(index, label);
+    jit_var_set_label(index, label);
 }
 
 uint32_t jitc_var_map(VarType type, void *ptr, size_t size, int free) {

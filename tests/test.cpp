@@ -199,8 +199,8 @@ int main(int argc, char **argv) {
 
     try {
         jitc_init(1, 1);
-        jitc_log_stderr_set(verbose ? LogLevel::Trace : LogLevel::Disable);
-        jitc_log_callback_set(LogLevel::Trace, log_callback);
+        jitc_log_set_stderr(verbose ? LogLevel::Trace : LogLevel::Disable);
+        jitc_set_log_callback(LogLevel::Trace, log_callback);
         fprintf(stdout, "\n");
 
         bool has_cuda = jitc_has_cuda(),
