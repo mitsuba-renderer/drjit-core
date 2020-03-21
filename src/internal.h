@@ -16,7 +16,7 @@ static constexpr LogLevel Info    = LogLevel::Info;
 static constexpr LogLevel Debug   = LogLevel::Debug;
 static constexpr LogLevel Trace   = LogLevel::Trace;
 
-#define PTR "<0x%" PRIxPTR ">"
+#define ENOKI_PTR "<0x%" PRIxPTR ">"
 
 #if !defined(likely)
 #  define likely(x)   __builtin_expect(!!(x), 1)

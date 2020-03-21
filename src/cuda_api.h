@@ -2,7 +2,7 @@
 
 #include <enoki/jit.h>
 
-#if !defined(ENOKI_CUDA_DYNAMIC)
+#if !defined(ENOKI_DYNAMIC_CUDA)
 #  include <cuda.h>
 #else
 #  define CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS 89

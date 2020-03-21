@@ -164,11 +164,11 @@ void* jit_malloc(AllocType type, size_t size) {
     state.alloc_used.insert({ ptr, ai });
 
     if (ai.type == AllocType::Device)
-        jit_trace("jit_malloc(type=%s, device=%u, size=%zu): " PTR " (%s)",
+        jit_trace("jit_malloc(type=%s, device=%u, size=%zu): " ENOKI_PTR " (%s)",
                   alloc_type_name[(int) ai.type], ai.device, ai.size,
                   (uintptr_t) ptr, descr);
     else
-        jit_trace("jit_malloc(type=%s, size=%zu): " PTR " (%s)",
+        jit_trace("jit_malloc(type=%s, size=%zu): " ENOKI_PTR " (%s)",
                   alloc_type_name[(int) ai.type], ai.size, (uintptr_t) ptr,
                   descr);
 
@@ -187,7 +187,7 @@ void jit_free(void *ptr) {
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_free(): unknown address " PTR "!", (uintptr_t) ptr);
+        jit_raise("jit_free(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
 
     AllocInfo ai = it.value();
     if (ai.type == AllocType::Host) {
@@ -205,11 +205,11 @@ void jit_free(void *ptr) {
     }
 
     if (ai.type == AllocType::Device)
-        jit_trace("jit_free(" PTR ", type=%s, device=%u, size=%zu)",
+        jit_trace("jit_free(" ENOKI_PTR ", type=%s, device=%u, size=%zu)",
                   (uintptr_t) ptr, alloc_type_name[(int) ai.type], ai.device,
                   ai.size);
     else
-        jit_trace("jit_free(" PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
+        jit_trace("jit_free(" ENOKI_PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
                   alloc_type_name[(int) ai.type], ai.size);
 
     state.alloc_usage[(int) ai.type] -= ai.size;
@@ -274,7 +274,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_malloc_migrate(): unknown address " PTR "!", (uintptr_t) ptr);
+        jit_raise("jit_malloc_migrate(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
 
     AllocInfo ai = it.value();
 
@@ -287,7 +287,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
     if (ai.type == type && (type != AllocType::Device || ai.device == stream->device))
         return ptr;
 
-    jit_trace("jit_malloc_migrate(" PTR "): %s -> %s", (uintptr_t) ptr,
+    jit_trace("jit_malloc_migrate(" ENOKI_PTR "): %s -> %s", (uintptr_t) ptr,
               alloc_type_name[(int) ai.type],
               alloc_type_name[(int) type]) ;
 
@@ -316,7 +316,7 @@ void jit_malloc_prefetch(void *ptr, int device) {
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_malloc_prefetch(): unknown address " PTR "!",
+        jit_raise("jit_malloc_prefetch(): unknown address " ENOKI_PTR "!",
                   (uintptr_t) ptr);
 
     AllocInfo ai = it.value();

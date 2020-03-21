@@ -525,7 +525,7 @@ uint32_t jit_var_map(VarType type, void *ptr, size_t size, int free) {
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_var_map(%u): " PTR ", size=%zu, free=%i",
+    jit_log(Debug, "jit_var_map(%u): " ENOKI_PTR ", size=%zu, free=%i",
             index, (uintptr_t) ptr, size, (int) free);
 
     jit_var_inc_ref_ext(index, vo);
@@ -578,7 +578,7 @@ uint32_t jit_var_copy_ptr(const void *ptr) {
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_var_copy_ptr(%u): " PTR, index, (uintptr_t) ptr);
+    jit_log(Debug, "jit_var_copy_ptr(%u): " ENOKI_PTR, index, (uintptr_t) ptr);
 
     jit_var_inc_ref_ext(index, vo);
     state.variable_from_ptr[ptr] = index;
@@ -596,7 +596,7 @@ void jit_var_migrate(uint32_t index, AllocType type) {
         v = jit_var(index);
     }
 
-    jit_log(Debug, "jit_var_migrate(%u, " PTR "): %s", index,
+    jit_log(Debug, "jit_var_migrate(%u, " ENOKI_PTR "): %s", index,
             (uintptr_t) v->data, alloc_type_name[(int) type]);
 
     v->data = jit_malloc_migrate(v->data, type);

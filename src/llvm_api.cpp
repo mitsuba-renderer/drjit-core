@@ -10,6 +10,13 @@
 /// Version number for cache files
 #define ENOKI_LLVM_CACHE_VERSION 1
 
+#if !defined(ENOKI_DYNAMIC_LLVM)
+#  include <llvm-c/Core.h>
+#  include <llvm-c/ExecutionEngine.h>
+#  include <llvm-c/Disassembler.h>
+#  include <llvm-c/IRReader.h>
+#else
+
 /// LLVM API
 using LLVMBool = int;
 using LLVMDisasmContextRef = void *;
@@ -18,6 +25,17 @@ using LLVMModuleRef = void *;
 using LLVMMemoryBufferRef = void *;
 using LLVMContextRef = void *;
 using LLVMMCJITMemoryManagerRef = void *;
+
+using LLVMMemoryManagerAllocateCodeSectionCallback =
+    uint8_t *(*) (void *, uintptr_t, unsigned, unsigned, const char *);
+
+using LLVMMemoryManagerAllocateDataSectionCallback =
+    uint8_t *(*) (void *, uintptr_t, unsigned, unsigned, const char *,
+                  LLVMBool);
+
+using LLVMMemoryManagerFinalizeMemoryCallback = LLVMBool (*)(void *, char **);
+
+using LLVMMemoryManagerDestroyCallback = void (*)(void *Opaque);
 
 struct LLVMMCJITCompilerOptions {
   unsigned OptLevel;
@@ -49,7 +67,10 @@ static LLVMBool (*LLVMCreateMCJITCompilerForModule)(LLVMExecutionEngineRef *,
                                                     LLVMMCJITCompilerOptions *,
                                                     size_t, char **) = nullptr;
 static LLVMMCJITMemoryManagerRef (*LLVMCreateSimpleMCJITMemoryManager)(
-    void *, void *, void *, void *, void *) = nullptr;
+    void *, LLVMMemoryManagerAllocateCodeSectionCallback,
+    LLVMMemoryManagerAllocateDataSectionCallback,
+    LLVMMemoryManagerFinalizeMemoryCallback,
+    LLVMMemoryManagerDestroyCallback) = nullptr;
 static void (*LLVMDisposeExecutionEngine)(LLVMExecutionEngineRef) = nullptr;
 static void (*LLVMAddModule)(LLVMExecutionEngineRef, LLVMModuleRef) = nullptr;
 static void (*LLVMDisposeModule)(LLVMModuleRef) = nullptr;
@@ -69,8 +90,10 @@ static size_t (*LLVMDisasmInstruction)(LLVMDisasmContextRef, uint8_t *,
 #define LLVMDisassembler_Option_AsmPrinterVariant 4
 #define LLVMCodeModelSmall 3
 
-/// Enoki API
 static void *jit_llvm_handle                    = nullptr;
+#endif
+
+/// Enoki API
 static LLVMDisasmContextRef jit_llvm_disasm_ctx = nullptr;
 static LLVMExecutionEngineRef jit_llvm_engine   = nullptr;
 static LLVMContextRef jit_llvm_context          = nullptr;
@@ -417,6 +440,7 @@ bool jit_llvm_init() {
                      scratch, strerror(errno));
     }
 
+#if defined(ENOKI_DYNAMIC_LLVM)
 #if defined(__linux__)
     const char *llvm_fname  = "libLLVM.so",
                *llvm_glob   = "/usr/lib/x86_64-linux-gnu/libLLVM*.so.*";
@@ -471,6 +495,7 @@ bool jit_llvm_init() {
                 "LLVM backend!", symbol);
         return false;
     }
+#endif
 
     LLVMLinkInMCJIT();
     LLVMInitializeX86TargetInfo();
@@ -510,10 +535,10 @@ bool jit_llvm_init() {
     options.EnableFastISel = false;
     options.MCJMM = LLVMCreateSimpleMCJITMemoryManager(
         nullptr,
-        (void *) jit_llvm_mem_allocate,
-        (void *) jit_llvm_mem_allocate_data,
-        (void *) jit_llvm_mem_finalize,
-        (void *) jit_llvm_mem_destroy);
+        jit_llvm_mem_allocate,
+        jit_llvm_mem_allocate_data,
+        jit_llvm_mem_finalize,
+        jit_llvm_mem_destroy);
 
     LLVMModuleRef enoki_module = LLVMModuleCreateWithName("enoki");
     char *error = nullptr;
@@ -563,14 +588,12 @@ void jit_llvm_shutdown() {
     LLVMDisposeExecutionEngine(jit_llvm_engine);
     LLVMDisposeMessage(jit_llvm_target_cpu);
     LLVMDisposeMessage(jit_llvm_target_features);
-    dlclose(jit_llvm_handle);
 
     jit_llvm_engine = nullptr;
     jit_llvm_disasm_ctx = nullptr;
     jit_llvm_context = nullptr;
     jit_llvm_target_cpu = nullptr;
     jit_llvm_target_features = nullptr;
-    jit_llvm_handle = nullptr;
     jit_llvm_vector_width = 0;
 
     free(jit_llvm_mem);
@@ -579,6 +602,7 @@ void jit_llvm_shutdown() {
     jit_llvm_mem_offset = 0;
     jit_llvm_kernel_id = 0;
 
+#if defined(ENOKI_DYNAMIC_LLVM)
     Z(LLVMLinkInMCJIT); Z(LLVMInitializeX86Target);
     Z(LLVMInitializeX86TargetInfo); Z(LLVMInitializeX86TargetMC);
     Z(LLVMInitializeX86AsmPrinter); Z(LLVMInitializeX86Disassembler);
@@ -591,6 +615,10 @@ void jit_llvm_shutdown() {
     Z(LLVMCreateMemoryBufferWithMemoryRange); Z(LLVMParseIRInContext);
     Z(LLVMPrintModuleToString); Z(LLVMGetFunctionAddress); Z(LLVMRemoveModule);
     Z(LLVMDisasmInstruction);
+
+    dlclose(jit_llvm_handle);
+    jit_llvm_handle = nullptr;
+#endif
 
     jit_llvm_init_success = false;
     jit_llvm_init_attempted = false;

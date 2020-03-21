@@ -6,7 +6,7 @@
 #include <dlfcn.h>
 #include <zlib.h>
 
-#if defined(ENOKI_CUDA_DYNAMIC)
+#if defined(ENOKI_DYNAMIC_CUDA)
 // Driver API
 CUresult (*cuCtxEnablePeerAccess)(CUcontext, unsigned int) = nullptr;
 CUresult (*cuCtxSynchronize)() = nullptr;
@@ -105,7 +105,7 @@ bool jit_cuda_init() {
         return jit_cuda_init_success;
     jit_cuda_init_attempted = true;
 
-#if defined(ENOKI_CUDA_DYNAMIC)
+#if defined(ENOKI_DYNAMIC_CUDA)
 #if defined(__linux__)
     const char *cuda_fname  = "libcuda.so",
                *cuda_glob   = "/usr/lib/x86_64-linux-gnu/libcuda.so.*";
@@ -272,7 +272,7 @@ void jit_cuda_shutdown() {
     jit_cuda_devices = 0;
     memset(jit_cuda_reductions, 0, sizeof(jit_cuda_reductions));
 
-#if defined(ENOKI_CUDA_DYNAMIC)
+#if defined(ENOKI_DYNAMIC_CUDA)
     Z(cuCtxEnablePeerAccess); Z(cuCtxSynchronize); Z(cuDeviceCanAccessPeer);
     Z(cuDeviceGet); Z(cuDeviceGetAttribute); Z(cuDeviceGetCount);
     Z(cuDeviceGetName); Z(cuDevicePrimaryCtxRelease);
