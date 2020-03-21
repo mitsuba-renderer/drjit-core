@@ -438,7 +438,7 @@ jit_var_dec_ref_int(9): 0
 jit_var_dec_ref_int(12): 0
 jit_eval(): done.
 OR: value_1=[1, 4294967295]
-OR: value_2=[1, -nan]
+OR: value_2=[1, nan]
 OR: value_3=[1, 1]
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(10): 1
@@ -758,7 +758,7 @@ jit_var_dec_ref_int(9): 0
 jit_var_dec_ref_int(12): 0
 jit_eval(): done.
 XOR: value_1=[1, 4294966061]
-XOR: value_2=[1, -0.00350571]
+XOR: value_2=[1, 0.00350571]
 XOR: value_3=[1, 1]
 jit_var_dec_ref_ext(21): 0
 jit_var_free(21)

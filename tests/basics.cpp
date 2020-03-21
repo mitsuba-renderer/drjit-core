@@ -8,16 +8,16 @@ TEST_BOTH(01_creation_destruction) {
 
 TEST_BOTH(02_fill_and_print) {
     /// Checks array initialization from a given pointer, jitc_fill(), and stringification
-    jitc_log(Info, "  int8_t: %s", Array<  int8_t>::full(-111, 5).str());
-    jitc_log(Info, " uint8_t: %s", Array< uint8_t>::full( 222, 5).str());
-    jitc_log(Info, " int16_t: %s", Array< int16_t>::full(-1111, 5).str());
-    jitc_log(Info, "uint16_t: %s", Array<uint16_t>::full( 2222, 5).str());
-    jitc_log(Info, " int32_t: %s", Array< int32_t>::full(-1111111111, 5).str());
-    jitc_log(Info, "uint32_t: %s", Array<uint32_t>::full( 2222222222, 5).str());
-    jitc_log(Info, " int64_t: %s", Array< int64_t>::full(-1111111111111111111, 5).str());
-    jitc_log(Info, "uint64_t: %s", Array<uint64_t>::full( 2222222222222222222, 5).str());
-    jitc_log(Info, "   float: %s", Array<   float>::full(1.f / 3.f, 5).str());
-    jitc_log(Info, "  double: %s", Array<  double>::full(1.0 / 3.0, 5).str());
+    jitc_log(Info, "  int8_t: %s", full<Array<  int8_t>>(-111, 5).str());
+    jitc_log(Info, " uint8_t: %s", full<Array< uint8_t>>( 222, 5).str());
+    jitc_log(Info, " int16_t: %s", full<Array< int16_t>>(-1111, 5).str());
+    jitc_log(Info, "uint16_t: %s", full<Array<uint16_t>>( 2222, 5).str());
+    jitc_log(Info, " int32_t: %s", full<Array< int32_t>>(-1111111111, 5).str());
+    jitc_log(Info, "uint32_t: %s", full<Array<uint32_t>>( 2222222222, 5).str());
+    jitc_log(Info, " int64_t: %s", full<Array< int64_t>>(-1111111111111111111, 5).str());
+    jitc_log(Info, "uint64_t: %s", full<Array<uint64_t>>( 2222222222222222222, 5).str());
+    jitc_log(Info, "   float: %s", full<Array<   float>>(1.f / 3.f, 5).str());
+    jitc_log(Info, "  double: %s", full<Array<  double>>(1.0 / 3.0, 5).str());
 }
 
 TEST_BOTH(03_eval_scalar) {
@@ -78,15 +78,15 @@ TEST_BOTH(06_argument_inout) {
 }
 
 TEST_BOTH(07_arange) {
-    UInt32 x = UInt32::arange(1024);
-    UInt32 y = UInt32::arange(3, 512, 7);
+    UInt32 x = arange<UInt32>(1024);
+    UInt32 y = arange<UInt32>(3, 512, 7);
     jitc_log(Info, "value=%s", x.str());
     jitc_log(Info, "value=%s", y.str());
 }
 
 TEST_BOTH(08_conv) {
     /* UInt32 */ {
-        auto src = Array<uint32_t>::arange(1024);
+        auto src = arange<Array<uint32_t>>(1024);
         Array<uint32_t> x_u32(src);
         Array<int32_t> x_i32(src);
         Array<uint64_t> x_u64(src);
@@ -103,7 +103,7 @@ TEST_BOTH(08_conv) {
     }
 
     /* Int32 */ {
-        auto src = Array<int32_t>::arange(1024) - 512;
+        auto src = arange<Array<int32_t>>(1024) - 512;
         Array<int32_t> x_i32(src);
         Array<int64_t> x_i64(src);
         Array<float> x_f32(src);
@@ -116,7 +116,7 @@ TEST_BOTH(08_conv) {
     }
 
     /* UInt64 */ {
-        auto src = Array<uint64_t>::arange(1024);
+        auto src = arange<Array<uint64_t>>(1024);
         Array<uint32_t> x_u32(src);
         Array<int32_t> x_i32(src);
         Array<uint64_t> x_u64(src);
@@ -133,7 +133,7 @@ TEST_BOTH(08_conv) {
     }
 
     /* Int64 */ {
-        auto src = Array<int64_t>::arange(1024) - 512;
+        auto src = arange<Array<int64_t>>(1024) - 512;
         Array<int32_t> x_i32(src);
         Array<int64_t> x_i64(src);
         Array<float> x_f32(src);
@@ -146,7 +146,7 @@ TEST_BOTH(08_conv) {
     }
 
     /* Float */ {
-        auto src = Array<float>::arange(1024) - 512;
+        auto src = arange<Array<float>>(1024) - 512;
         Array<int32_t> x_i32(src);
         Array<int64_t> x_i64(src);
         Array<float> x_f32(src);
@@ -159,7 +159,7 @@ TEST_BOTH(08_conv) {
     }
 
     /* Double */ {
-        auto src = Array<double>::arange(1024) - 512;
+        auto src = arange<Array<double>>(1024) - 512;
         Array<int32_t> x_i32(src);
         Array<int64_t> x_i64(src);
         Array<float> x_f32(src);
@@ -198,12 +198,12 @@ TEST_BOTH(09_fma) {
 }
 
 TEST_BOTH(10_sqrt) {
-    Float x = sqrt(Float::arange(10));
+    Float x = sqrt(arange<Float>(10));
     jitc_log(Info, "value=%s", x.str());
 }
 
 TEST_BOTH(11_mask) {
-    Float x = Float::arange(10);
+    Float x = arange<Float>(10);
     auto mask = x > 5;
     x = select(mask, -x, x);
     jitc_log(Info, "value=%s", x.str());
@@ -241,7 +241,7 @@ TEST_BOTH(12_binop) {
     jitc_log(Info, "XOR2: value_2=%s", b.str());
     jitc_log(Info, "XOR2: value_3=%s", c.str());
 
-    int32_t x = -1;
+    int32_t x = 0x7fffffff;
     float y;
     memcpy(&y, &x, 4);
 
@@ -275,7 +275,7 @@ TEST_BOTH(12_binop) {
 }
 
 TEST_BOTH(14_scatter_gather) {
-    Int32 l     = -Int32::arange(1024);
+    Int32 l     = -arange<Int32>(1024);
     Int32 index = Int32(34, 62, 75, 2);
     Int32 value = gather(l, index);
     jitc_log(Info, "%s", value.str());

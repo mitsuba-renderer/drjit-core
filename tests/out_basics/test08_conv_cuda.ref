@@ -3,6 +3,8 @@ jit_trace_append(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
 jit_var_set_size(1): 1024
 jit_var_inc_ref_ext(1): 2
+jit_var_dec_ref_ext(1): 1
+jit_var_inc_ref_ext(1): 2
 jit_var_inc_ref_int(1): 1
 jit_trace_append(2 <- 1): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(2): 1

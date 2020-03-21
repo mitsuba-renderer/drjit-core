@@ -427,52 +427,12 @@ struct LLVMArray {
         return fmadd(-a, b, -c);
     }
 
-    static LLVMArray empty(size_t size) {
-        size_t byte_size = size * sizeof(Value);
-        void *ptr = jitc_malloc(AllocType::Host, byte_size);
-        return from_index(jitc_var_map(Type, ptr, size, 1));
+    LLVMArray& eval() {
+        jitc_var_eval(m_index);
+        return *this;
     }
 
-    static LLVMArray zero(size_t size) {
-        if (size == 1) {
-            return LLVMArray(0);
-        } else {
-            uint8_t value = 0;
-            size_t byte_size = size * sizeof(Value);
-            void *ptr = jitc_malloc(AllocType::Host, byte_size);
-            jitc_fill(VarType::UInt8, ptr, byte_size, &value);
-            return from_index(jitc_var_map(Type, ptr, size, 1));
-        }
-    }
-
-    static LLVMArray full(Value value, size_t size) {
-        if (size == 1) {
-            return LLVMArray(value);
-        } else {
-            size_t byte_size = size * sizeof(Value);
-            void *ptr = jitc_malloc(AllocType::Host, byte_size);
-            jitc_fill(Type, ptr, size, &value);
-            return from_index(jitc_var_map(Type, ptr, size, 1));
-        }
-    }
-
-    static LLVMArray arange(size_t size) {
-        return arange(0, (size_t) size, 1);
-    }
-
-    static LLVMArray arange(ssize_t start, ssize_t stop, ssize_t step) {
-        size_t size = size_t((stop - start + step - (step > 0 ? 1 : -1)) / step);
-
-        using UInt32 = LLVMArray<uint32_t>;
-        UInt32 index = UInt32::launch_index(size);
-
-        if (start == 0 && step == 1)
-            return index;
-        else
-            return fmadd(LLVMArray(index), LLVMArray((Value) step), LLVMArray((Value) start));
-    }
-
-    LLVMArray eval() const {
+    const LLVMArray& eval() const {
         jitc_var_eval(m_index);
         return *this;
     }
@@ -547,6 +507,75 @@ protected:
 template <typename Value>
 void set_label(const LLVMArray<Value> &a, const char *label) {
     jitc_var_set_label(a.index(), label);
+}
+
+template <typename Array,
+          typename std::enable_if<Array::IsLLVM, int>::type = 0>
+Array empty(size_t size) {
+    size_t byte_size = size * sizeof(typename Array::Value);
+    void *ptr = jitc_malloc(AllocType::Host, byte_size);
+    return Array::from_index(jitc_var_map(Array::Type, ptr, size, 1));
+}
+
+template <typename Array,
+          typename std::enable_if<Array::IsLLVM, int>::type = 0>
+Array zero(size_t size) {
+    if (size == 1) {
+        return Array(0);
+    } else {
+        uint8_t value = 0;
+        size_t byte_size = size * sizeof(typename Array::Value);
+        void *ptr = jitc_malloc(AllocType::Host, byte_size);
+        jitc_fill(VarType::UInt8, ptr, byte_size, &value);
+        return Array::from_index(jitc_var_map(Array::Type, ptr, size, 1));
+    }
+}
+
+template <typename Array,
+          typename std::enable_if<Array::IsLLVM, int>::type = 0>
+Array full(typename Array::Value value, size_t size) {
+    if (size == 1) {
+        return Array(value);
+    } else {
+        size_t byte_size = size * sizeof(typename Array::Value);
+        void *ptr = jitc_malloc(AllocType::Host, byte_size);
+        jitc_fill(Array::Type, ptr, size, &value);
+        return Array::from_index(jitc_var_map(Array::Type, ptr, size, 1));
+    }
+}
+
+template <typename Array,
+          typename std::enable_if<Array::IsLLVM, int>::type = 0>
+Array arange(ssize_t start, ssize_t stop, ssize_t step) {
+    using UInt32 = LLVMArray<uint32_t>;
+    using Value = typename Array::Value;
+
+    size_t size = size_t((stop - start + step - (step > 0 ? 1 : -1)) / step);
+    UInt32 index = UInt32::launch_index(size);
+
+    if (start == 0 && step == 1)
+        return Array(index);
+    else
+        return fmadd(Array(index), Array((Value) step), Array((Value) start));
+}
+
+template <typename Array,
+          typename std::enable_if<Array::IsLLVM, int>::type = 0>
+Array arange(size_t size) {
+    return arange<Array>(0, (size_t) size, 1);
+}
+
+template <typename Array,
+          typename std::enable_if<Array::IsLLVM, int>::type = 0>
+Array linspace(typename Array::Value min, typename Array::Value max, size_t size) {
+    using UInt32 = LLVMArray<uint32_t>;
+    using Value = typename Array::Value;
+
+    using UInt32 = LLVMArray<uint32_t>;
+    UInt32 index = UInt32::launch_index(size);
+
+    Value step = (max - min) / Value(size - 1);
+    return fmadd(Array(index), Array(step), Array(min));
 }
 
 template <typename Value>
