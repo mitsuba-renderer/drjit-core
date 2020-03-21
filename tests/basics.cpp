@@ -287,3 +287,4 @@ TEST_BOTH(14_scatter_gather) {
     jitc_log(Info, "%s", value.str());
     jitc_log(Info, "%s", l.str());
 }
+/// Mask gathers/scatters!

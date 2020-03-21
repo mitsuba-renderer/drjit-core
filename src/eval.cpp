@@ -157,14 +157,15 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
         } else {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
+                case 's': continue;
                 case 'n': buffer.put("\n    "); continue;
                 case 'w': buffer.fmt("%u", jit_llvm_vector_width); continue;
-                case 'i': buffer.put("%index"); continue;
                 case 'z':
                 case 'l':
                 case 't': prefix_table = var_type_name_llvm; break;
                 case 'o':
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
+                case 'a': prefix_table = var_type_name_llvm_abbrev; break;
                 case 'r': prefix_table = var_type_prefix; break;
 
                 default:
@@ -193,6 +194,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
                     buffer.fmt("%s%u", prefix, dep->reg_index);
                     break;
 
+                case 'a':
                 case 'b':
                 case 't':
                     buffer.put(prefix);
@@ -245,12 +247,14 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
             switch (type) {
                 case 't': prefix_table = var_type_name_llvm; break;
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
+                case 'a': prefix_table = var_type_name_llvm_abbrev; break;
                 case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
                 case 'r': s++; intrinsics_buffer.rewind(1); continue;
                 case 'n':
                 case 'o':
                 case 'l':
                 case 'z': s++; continue;
+                case 's': s+= 2; continue;
                 default:
                     jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
                              "expression (unknown type \"%c\")!", type);
@@ -437,12 +441,14 @@ void jit_assemble_llvm(ScheduledGroup group) {
         buffer.fmt("    %%a%u_i = getelementptr inbounds i8*, i8** %%ptrs, i32 %u\n", arg_id, arg_id);
         buffer.fmt("    %%a%u_p = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", arg_id, arg_id);
 
-        buffer.fmt("    %%a%u = bitcast i8* %%a%u_p to %s*\n", arg_id, arg_id, type);
-        if (v->size == 1) {
-            buffer.fmt("    %%a%u_s = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
-                       type, type, arg_id, var_type_size[(int) v->type]);
-            if ((VarType) v->type == VarType::Bool)
-                buffer.fmt("    %%a%u_s1 = trunc i8 %%a%u_s to i1\n", arg_id, arg_id);
+        if (likely(!v->direct_pointer)) {
+            buffer.fmt("    %%a%u = bitcast i8* %%a%u_p to %s*\n", arg_id, arg_id, type);
+            if (v->size == 1) {
+                buffer.fmt("    %%a%u_s = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
+                           type, type, arg_id, var_type_size[(int) v->type]);
+                if ((VarType) v->type == VarType::Bool)
+                    buffer.fmt("    %%a%u_s1 = trunc i8 %%a%u_s to i1\n", arg_id, arg_id);
+            }
         }
     }
     buffer.put("    br label %loop\n\n");
@@ -483,6 +489,12 @@ void jit_assemble_llvm(ScheduledGroup group) {
                 buffer.fmt("\n    ; Load %s%u%s%s\n",
                            reg_prefix, reg_id, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
+
+            if (v->direct_pointer) {
+                buffer.fmt("    %s%u = ptrtoint i8* %%a%u_p to i64\n",
+                           reg_prefix, reg_id, arg_id);
+                continue;
+            }
 
             if (size > 1)
                 get_parameter_addr(reg_id, arg_id, reg_prefix, type, size);
@@ -951,6 +963,7 @@ void jit_eval() {
         jit_var_dec_ref_ext(extra_dep);
 
         if (unlikely(side_effect)) {
+            fprintf(stderr, "Variable with side effect on %u\n", extra_dep);
             if (extra_dep) {
                 Variable *v2 = jit_var(extra_dep);
                 v2->dirty = false;

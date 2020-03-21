@@ -192,7 +192,7 @@ void jit_free(void *ptr) {
         if (unlikely(!stream))
             jit_raise(
                 "jit_free(): attempted to free a CUDA device while the LLVM "
-                "backend as selected! (call jit_device_set() beforehand)!");
+                "backend as selected! (call jit_device_set() before)!");
         ReleaseChain *chain = stream->release_chain;
         if (unlikely(!chain))
             chain = stream->release_chain = new ReleaseChain();
@@ -215,7 +215,7 @@ void jit_free_flush() {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_free_flush(): this function should only be used with "
-                  "the CUDA backend! (call jit_device_set() beforehand)!");
+                  "the CUDA backend! (call jit_device_set() before)!");
 
     ReleaseChain *chain = stream->release_chain;
     if (chain == nullptr || chain->entries.empty())
@@ -265,7 +265,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_malloc_migrate(): this function should only be used with "
-                  "the CUDA backend! (call jit_device_set() beforehand)!");
+                  "the CUDA backend! (call jit_device_set() before)!");
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
@@ -298,7 +298,7 @@ void jit_malloc_prefetch(void *ptr, int device) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_malloc_prefetch(): this function should only be used with "
-                  "the CUDA backend! (call jit_device_set() beforehand)!");
+                  "the CUDA backend! (call jit_device_set() before)!");
 
     if (device < 0) {
         device = CU_DEVICE_CPU;

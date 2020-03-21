@@ -232,7 +232,7 @@ int main(int argc, char **argv) {
             jitc_init(!test.cuda, test.cuda);
             jitc_device_set(test.cuda ? 0 : -1, 0);
             if (!test.cuda)
-                jitc_llvm_set_target("haswell", nullptr, 8);
+                jitc_llvm_set_target("skylake", nullptr, 8);
             test.func();
             jitc_shutdown(1);
 

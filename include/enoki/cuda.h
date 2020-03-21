@@ -461,8 +461,6 @@ template <size_t Stride_ = 0, typename Value, typename Index>
 static void scatter(void *ptr, const CUDAArray<Value> &value,
                     const CUDAArray<Index> &index,
                     const CUDAArray<bool> &mask = true) {
-    constexpr size_t Stride = Stride_ != 0 ? Stride_ : sizeof(Value);
-
     if (sizeof(Index) != 4) {
         /* Prefer 32 bit index arithmetic, 64 bit multiplies are
            emulated and thus very expensive on NVIDIA GPUs.. */
@@ -471,6 +469,8 @@ static void scatter(void *ptr, const CUDAArray<Value> &value,
         scatter<Stride_>(ptr, value, CUDAArray<Int>(index), mask);
         return;
     }
+
+    constexpr size_t Stride = Stride_ != 0 ? Stride_ : sizeof(Value);
 
     const char *mul_op;
     switch (Stride) {

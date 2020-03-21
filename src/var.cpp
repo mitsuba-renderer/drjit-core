@@ -30,13 +30,19 @@ const char *var_type_name_ptx_bin[(int) VarType::Count]{
 /// LLVM IR type names (does not distinguish signed vs unsigned)
 const char *var_type_name_llvm[(int) VarType::Count]{
     "???", "i8", "i8", "i16", "i16", "i32", "i32",
-    "i64", "i64", "???", "float", "double", "i1", "u64"
+    "i64", "i64", "half", "float", "double", "i1", "i64"
+};
+
+/// Abbreviated LLVM IR type names
+const char *var_type_name_llvm_abbrev[(int) VarType::Count]{
+    "???", "i8", "i8", "i16", "i16", "i32", "i32",
+    "i64", "i64", "f16", "f32", "f64", "i1", "i64"
 };
 
 /// LLVM IR type names (binary view)
 const char *var_type_name_llvm_bin[(int) VarType::Count]{
     "???", "i8", "i8", "i16", "i16", "i32", "i32",
-    "i64", "i64", "???", "i32", "i64", "i1", "u64"
+    "i64", "i64", "i16", "i32", "i64", "i1", "i64"
 };
 
 /// LLVM/CUDA register name prefixes
@@ -420,7 +426,8 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
     jit_var_inc_ref_int(op1, v1);
     jit_var_inc_ref_int(op2, v2);
 
-    if (strstr(stmt, "ld.global")) {
+    if (state.scatter_gather_operand != 0 &&
+        (strstr(stmt, "ld.global") || strstr(stmt, "gather"))) {
         v.extra_dep = state.scatter_gather_operand;
         jit_var_inc_ref_ext(v.extra_dep);
     }
@@ -482,8 +489,9 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     jit_var_inc_ref_int(op2, v2);
     jit_var_inc_ref_int(op3, v3);
 
-    if ((strstr(stmt, "st.global") || strstr(stmt, "atom.global.add")) &&
-        state.scatter_gather_operand != 0) {
+    if (state.scatter_gather_operand != 0 &&
+        (strstr(stmt, "st.global") || strstr(stmt, "atom.global.add") ||
+         strstr(stmt, "scatter"))) {
         v.extra_dep = state.scatter_gather_operand;
         jit_var_inc_ref_ext(v.extra_dep);
     }
@@ -690,7 +698,7 @@ const char *jit_var_str(uint32_t index) {
     if (v->cuda != cuda)
         jit_raise("jit_var_str(): attempted to stringify a %s variable "
                   "while the %s backend was activated! You must invoke "
-                  "jit_device_set() beforehand!",
+                  "jit_device_set() before!",
                   v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
 
     if (unlikely(v->data == nullptr || v->dirty)) {
@@ -768,7 +776,7 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
     if (unlikely(v->cuda != cuda))
         jit_fail("jit_var_write(): attempted to read from a %s variable "
                  "while the %s backend was activated! You must invoke "
-                 "jit_device_set() beforehand!",
+                 "jit_device_set() before!",
                  v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
 
     if (unlikely(v->data == nullptr || v->dirty)) {
@@ -806,14 +814,13 @@ void jit_var_write(uint32_t index, size_t offset, const void *src) {
     if (unlikely(v->cuda != cuda))
         jit_raise("jit_var_write(): attempted to write to a %s variable "
                   "while the %s backend was activated! You must invoke "
-                  "jit_device_set() beforehand!",
+                  "jit_device_set() before!",
                   v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
 
     if (unlikely(v->data == nullptr || v->dirty)) {
         jit_eval();
         v = jit_var(index);
     }
-
 
     if (unlikely(v->dirty))
         jit_raise("jit_var_write(): element remains dirty after jit_eval()!");
