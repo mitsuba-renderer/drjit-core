@@ -275,7 +275,6 @@ TEST_BOTH(12_binop) {
     jitc_log(Info, "XOR: value_2=%s", b5.str());
     jitc_log(Info, "XOR: value_3=%s", c5.str());
 }
-#endif
 
 TEST_BOTH(14_scatter_gather) {
     Int32 l     = -Int32::arange(1024);
@@ -288,3 +287,44 @@ TEST_BOTH(14_scatter_gather) {
     jitc_log(Info, "%s", l.str());
 }
 /// Mask gathers/scatters!
+#endif
+
+TEST_LLVM(15_round) {
+    /* Single precision */ {
+        Float x(.4f, .5f, .6f, -.4f, -.5f, -.6f);
+
+        Float x_f  = floor(x),
+              x_c  = ceil(x),
+              x_t  = trunc(x),
+              x_r  = round(x),
+              x_mi = min(x_f, x_c),
+              x_ma = max(x_f, x_c);
+
+        jitc_log(Info, "floor: %s", x_f.str());
+        jitc_log(Info, "ceil:  %s", x_c.str());
+        jitc_log(Info, "trunc: %s", x_t.str());
+        jitc_log(Info, "round: %s", x_r.str());
+        jitc_log(Info, "min:   %s", x_mi.str());
+        jitc_log(Info, "max:   %s", x_ma.str());
+    }
+
+    /* Double precision */ {
+        using Double = Array<double>;
+
+        Double x(.4f, .5f, .6f, -.4f, -.5f, -.6f);
+
+        Double x_f  = floor(x),
+               x_c  = ceil(x),
+               x_t  = trunc(x),
+               x_r  = round(x),
+               x_mi = min(x_f, x_c),
+               x_ma = max(x_f, x_c);
+
+        jitc_log(Info, "floor: %s", x_f.str());
+        jitc_log(Info, "ceil:  %s", x_c.str());
+        jitc_log(Info, "trunc: %s", x_t.str());
+        jitc_log(Info, "round: %s", x_r.str());
+        jitc_log(Info, "min:   %s", x_mi.str());
+        jitc_log(Info, "max:   %s", x_ma.str());
+    }
+}

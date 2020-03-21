@@ -130,6 +130,9 @@ struct CUDAArray {
     }
 
     CUDAArray operator+(const CUDAArray &v) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "add.rn.ftz.$t0 $r0, $r1, $r2"
             : "add.$t0 $r0, $r1, $r2";
@@ -139,6 +142,9 @@ struct CUDAArray {
     }
 
     CUDAArray operator-(const CUDAArray &v) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "sub.rn.ftz.$t0 $r0, $r1, $r2"
             : "sub.$t0 $r0, $r1, $r2";
@@ -148,6 +154,9 @@ struct CUDAArray {
     }
 
     CUDAArray operator*(const CUDAArray &v) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "mul.rn.ftz.$t0 $r0, $r1, $r2"
             : "mul.lo.$t0 $r0, $r1, $r2";
@@ -157,6 +166,9 @@ struct CUDAArray {
     }
 
     CUDAArray operator/(const CUDAArray &v) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "div.rn.ftz.$t0 $r0, $r1, $r2"
             : "div.$t0 $r0, $r1, $r2";
@@ -166,6 +178,9 @@ struct CUDAArray {
     }
 
     CUDAArray<bool> operator>(const CUDAArray &a) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_signed<Value>::value
                              ? "setp.gt.$t1 $r0, $r1, $r2"
                              : "setp.hi.$t1 $r0, $r1, $r2";
@@ -175,6 +190,9 @@ struct CUDAArray {
     }
 
     CUDAArray<bool> operator>=(const CUDAArray &a) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_signed<Value>::value
                              ? "setp.ge.$t1 $r0, $r1, $r2"
                              : "setp.hs.$t1 $r0, $r1, $r2";
@@ -185,6 +203,9 @@ struct CUDAArray {
 
 
     CUDAArray<bool> operator<(const CUDAArray &a) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_signed<Value>::value
                              ? "setp.lt.$t1 $r0, $r1, $r2"
                              : "setp.lo.$t1 $r0, $r1, $r2";
@@ -194,6 +215,9 @@ struct CUDAArray {
     }
 
     CUDAArray<bool> operator<=(const CUDAArray &a) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_signed<Value>::value
                              ? "setp.le.$t1 $r0, $r1, $r2"
                              : "setp.lo.$t1 $r0, $r1, $r2";
@@ -222,6 +246,9 @@ struct CUDAArray {
     }
 
     CUDAArray operator-() const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         return from_index(
             jitc_trace_append_1(Type, "neg.ftz.$t0 $r0, $r1", 1, m_index));
     }
@@ -274,18 +301,59 @@ struct CUDAArray {
         return operator=(*this ^ v);
     }
 
-    friend CUDAArray sqrt(const CUDAArray &a) {
-        return CUDAArray::from_index(jitc_trace_append_1(Type,
-            "sqrt.rn.ftz.$t0 $r0, $r1", 1, a.index()));
-    }
-
     friend CUDAArray abs(const CUDAArray &a) {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         return CUDAArray::from_index(jitc_trace_append_1(Type,
             "abs.ftz.$t0 $r0, $r1", 1, a.index()));
     }
 
+    friend CUDAArray sqrt(const CUDAArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return CUDAArray::from_index(jitc_trace_append_1(Type,
+            "sqrt.rn.ftz.$t0 $r0, $r1", 1, a.index()));
+    }
+
+    friend CUDAArray round(const CUDAArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return CUDAArray::from_index(jitc_trace_append_1(Type,
+            "cvt.rni.$t0.$t0 $r0, $r1", 1, a.index()));
+    }
+
+    friend CUDAArray floor(const CUDAArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return CUDAArray::from_index(jitc_trace_append_1(Type,
+            "cvt.rmi.$t0.$t0 $r0, $r1", 1, a.index()));
+    }
+
+    friend CUDAArray ceil(const CUDAArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return CUDAArray::from_index(jitc_trace_append_1(Type,
+            "cvt.rpi.$t0.$t0 $r0, $r1", 1, a.index()));
+    }
+
+    friend CUDAArray trunc(const CUDAArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return CUDAArray::from_index(jitc_trace_append_1(Type,
+            "cvt.rzi.$t0.$t0 $r0, $r1", 1, a.index()));
+    }
+
     friend CUDAArray fmadd(const CUDAArray &a, const CUDAArray &b,
                            const CUDAArray &c) {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "fma.rn.ftz.$t0 $r0, $r1, $r2, $r3"
             : "mad.lo.$t0 $r0, $r1, $r2, $r3";
@@ -409,6 +477,20 @@ CUDAArray<Value> select(const CUDAArray<bool> &m, const CUDAArray<Value> &t,
     } else {
         return (m & t) | (~m & f);
     }
+}
+
+template <typename Value>
+CUDAArray<Value> min(const CUDAArray<Value> &a, const CUDAArray<Value> &b) {
+    return CUDAArray<Value>::from_index(jitc_trace_append_2(
+        CUDAArray<Value>::Type, "min.ftz.$t0 $r0, $r1, $r2", 1,
+        a.index(), b.index()));
+}
+
+template <typename Value>
+CUDAArray<Value> max(const CUDAArray<Value> &a, const CUDAArray<Value> &b) {
+    return CUDAArray<Value>::from_index(jitc_trace_append_2(
+        CUDAArray<Value>::Type, "max.ftz.$t0 $r0, $r1, $r2", 1,
+        a.index(), b.index()));
 }
 
 template <typename OutArray, size_t Stride = sizeof(typename OutArray::Value),

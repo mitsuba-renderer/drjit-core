@@ -121,6 +121,9 @@ struct LLVMArray {
     }
 
     LLVMArray operator+(const LLVMArray &v) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "$r0 = fadd <$w x $t0> $r1, $r2"
             : "$r0 = add <$w x $t0> $r1, $r2";
@@ -130,6 +133,9 @@ struct LLVMArray {
     }
 
     LLVMArray operator-(const LLVMArray &v) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "$r0 = fsub <$w x $t0> $r1, $r2"
             : "$r0 = sub <$w x $t0> $r1, $r2";
@@ -139,6 +145,9 @@ struct LLVMArray {
     }
 
     LLVMArray operator*(const LLVMArray &v) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "$r0 = fmul <$w x $t0> $r1, $r2"
             : "$r0 = mul <$w x $t0> $r1, $r2";
@@ -148,6 +157,9 @@ struct LLVMArray {
     }
 
     LLVMArray operator/(const LLVMArray &v) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "$r0 = fdiv <$w x $t0> $r1, $r2"
             : "$r0 = div <$w x $t0> $r1, $r2";
@@ -157,6 +169,9 @@ struct LLVMArray {
     }
 
     LLVMArray<bool> operator>(const LLVMArray &a) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op;
         if (std::is_integral<Value>::value)
             op = std::is_signed<Value>::value
@@ -170,6 +185,9 @@ struct LLVMArray {
     }
 
     LLVMArray<bool> operator>=(const LLVMArray &a) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op;
         if (std::is_integral<Value>::value)
             op = std::is_signed<Value>::value
@@ -184,6 +202,9 @@ struct LLVMArray {
 
 
     LLVMArray<bool> operator<(const LLVMArray &a) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op;
         if (std::is_integral<Value>::value)
             op = std::is_signed<Value>::value
@@ -197,6 +218,9 @@ struct LLVMArray {
     }
 
     LLVMArray<bool> operator<=(const LLVMArray &a) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op;
         if (std::is_integral<Value>::value)
             op = std::is_signed<Value>::value
@@ -228,6 +252,9 @@ struct LLVMArray {
     }
 
     LLVMArray operator-() const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         const char *op = std::is_floating_point<Value>::value
             ? "$r0 = fneg <$w x $t0> $r1"
             : "$r0 = sub <$w x $t0> zeroinitializer, $r1";
@@ -311,24 +338,69 @@ struct LLVMArray {
         return operator=(*this ^ v);
     }
 
-    friend LLVMArray sqrt(const LLVMArray &a) {
-        return LLVMArray::from_index(
-            "$r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)", 1,
-            a.index());
-    }
-
     friend LLVMArray abs(const LLVMArray &a) {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         if (std::is_floating_point<Value>::value) {
-            return LLVMArray::from_index(jitc_trace_append_1(
-                Type, "$r0 = call <$w x $t0> @llvm.abs.v$w$a1(<$w x $t1> $r1)",
+            return LLVMArray::from_index(jitc_trace_append_1(Type,
+                "$r0 = call <$w x $t0> @llvm.abs.v$w$a1(<$w x $t1> $r1)",
                 1, a.index()));
         } else {
             return select(a > 0, a, -a);
         }
     }
 
+    friend LLVMArray sqrt(const LLVMArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return LLVMArray::from_index(jitc_trace_append_1(Type,
+            "$r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)", 1,
+            a.index()));
+    }
+
+    friend LLVMArray round(const LLVMArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return LLVMArray::from_index(jitc_trace_append_1(Type,
+            "$r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)", 1,
+            a.index()));
+    }
+
+    friend LLVMArray floor(const LLVMArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return LLVMArray::from_index(jitc_trace_append_1(Type,
+            "$r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)", 1,
+            a.index()));
+    }
+
+    friend LLVMArray ceil(const LLVMArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return LLVMArray::from_index(jitc_trace_append_1(Type,
+            "$r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)", 1,
+            a.index()));
+    }
+
+    friend LLVMArray trunc(const LLVMArray &a) {
+        if (!jitc_is_floating_point(Type))
+            jitc_raise("Unsupported operand type");
+
+        return LLVMArray::from_index(jitc_trace_append_1(Type,
+            "$r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)", 1,
+            a.index()));
+    }
+
     friend LLVMArray fmadd(const LLVMArray &a, const LLVMArray &b,
                            const LLVMArray &c) {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
         if (std::is_floating_point<Value>::value) {
             return LLVMArray::from_index(jitc_trace_append_3(
                 Type,
@@ -477,7 +549,6 @@ void set_label(const LLVMArray<Value> &a, const char *label) {
     jitc_var_set_label(a.index(), label);
 }
 
-
 template <typename Value>
 LLVMArray<Value> select(const LLVMArray<bool> &m, const LLVMArray<Value> &t,
                         const LLVMArray<Value> &f) {
@@ -485,6 +556,22 @@ LLVMArray<Value> select(const LLVMArray<bool> &m, const LLVMArray<Value> &t,
         LLVMArray<Value>::Type,
         "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3", 1,
         m.index(), t.index(), f.index()));
+}
+
+template <typename Value>
+LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
+    return LLVMArray<Value>::from_index(jitc_trace_append_2(
+        LLVMArray<Value>::Type,
+        "$r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)", 1,
+        a.index(), b.index()));
+}
+
+template <typename Value>
+LLVMArray<Value> max(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
+    return LLVMArray<Value>::from_index(jitc_trace_append_2(
+        LLVMArray<Value>::Type,
+        "$r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)", 1,
+        a.index(), b.index()));
 }
 
 template <typename OutArray, size_t Stride = sizeof(typename OutArray::Value),

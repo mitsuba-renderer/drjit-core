@@ -151,6 +151,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
 
     buffer.put("    ");
     char c;
+
     while ((c = *s++) != '\0') {
         if (c != '$') {
             buffer.putc(c);
@@ -408,6 +409,56 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     memcpy((void *) strchr(buffer.get(), '^'), kernel_name, 8);
 }
 
+/// Replace generic LLVM intrinsics by more efficient hardware-specific ones
+static void jit_llvm_rewrite_intrinsics() {
+    const char *isa          = nullptr;
+    const char *width_suffix = nullptr;
+
+    switch (jit_llvm_vector_width) {
+        case 4:  isa = "sse";    width_suffix = "";     break;
+        case 8:  isa = "avx";    width_suffix = ".256"; break;
+        case 16: isa = "avx512"; width_suffix = ".512"; break;
+        default: return;
+    }
+
+    const char *replacements[][2] = {
+        {"minnum.v4f32",  "x86.sse.min.ps"},
+        {"maxnum.v4f32",  "x86.sse.max.ps"},
+        {"minnum.v8f32",  "x86.avx.min.ps.256"},
+        {"maxnum.v8f32",  "x86.avx.max.ps.256"},
+        {"minnum.v16f32", "x86.avx512.min.ps.512"},
+        {"maxnum.v16f32", "x86.avx512.max.ps.512"}
+    };
+
+    intrinsics_buffer.clear();
+
+    char *ptr = (char *) buffer.get();
+    while (true) {
+        char *ptr_next = strstr(ptr, "@llvm.");
+        if (!ptr_next) {
+            intrinsics_buffer.put(ptr);
+            break;
+        }
+
+        ptr_next += 6;
+        ptr_next[-1] = '\0';
+        intrinsics_buffer.put(ptr);
+        intrinsics_buffer.putc('.');
+
+        for (auto &o : replacements) {
+            if (strncmp(ptr_next, o[0], strlen(o[0])) == 0) {
+                intrinsics_buffer.put(o[1]);
+                ptr_next += strlen(o[0]);
+                break;
+            }
+        }
+
+        ptr = ptr_next;
+    }
+
+    intrinsics_buffer.swap(buffer);
+}
+
 void jit_assemble_llvm(ScheduledGroup group) {
     const int width = jit_llvm_vector_width;
 
@@ -563,6 +614,7 @@ void jit_assemble_llvm(ScheduledGroup group) {
     if (intrinsics_buffer.size() > 1) {
         buffer.putc('\n');
         buffer.put(intrinsics_buffer.get());
+        jit_llvm_rewrite_intrinsics();
     }
 
     /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash

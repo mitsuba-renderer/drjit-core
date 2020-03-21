@@ -356,6 +356,11 @@ public:
 
     size_t size() const { return m_cur - m_start; }
 
+    void swap(Buffer &b) {
+        std::swap(m_start, b.m_start);
+        std::swap(m_cur, b.m_cur);
+        std::swap(m_end, b.m_end);
+    }
 private:
     void expand();
 

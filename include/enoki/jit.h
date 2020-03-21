@@ -27,7 +27,12 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#define JITC_EXPORT __attribute__ ((visibility("default")))
+#define JITC_EXPORT    __attribute__ ((visibility("default")))
+#if defined(__cplusplus)
+#  define JITC_CONSTEXPR constexpr
+#else
+#  define JITC_CONSTEXPR inline
+#endif
 
 #if defined(__cplusplus)
 extern "C" {
@@ -204,14 +209,14 @@ extern JITC_EXPORT enum LogLevel jitc_log_stderr();
  * invoked with the contents of library log messages, whose severity matches or
  * exceeds the specified \c level.
  */
-typedef void (*LogCallback)(LogLevel, const char *);
-extern JITC_EXPORT void jitc_set_log_callback(LogLevel level, LogCallback callback);
+typedef void (*LogCallback)(enum LogLevel, const char *);
+extern JITC_EXPORT void jitc_set_log_callback(enum LogLevel level, LogCallback callback);
 
 /// Return the currently set minimum log level for output to a callback
 extern JITC_EXPORT enum LogLevel jitc_log_callback();
 
 /// Print a log message with the specified log level and message
-extern JITC_EXPORT void jitc_log(LogLevel level, const char* fmt, ...);
+extern JITC_EXPORT void jitc_log(enum LogLevel level, const char* fmt, ...);
 
 /// Raise an exception message with the specified message
 extern JITC_EXPORT void jitc_raise(const char* fmt, ...);
@@ -382,6 +387,39 @@ enum VarType {
     VarTypeFloat32, VarTypeFloat64, VarTypeBool, VarTypePointer, VarTypeCount
 };
 #endif
+
+/// Convenience function to check for an integer operand
+JITC_CONSTEXPR int jitc_is_integral(enum VarType type) {
+#if defined(__cplusplus)
+    return ((uint32_t) type >= (uint32_t) VarType::Int8 &&
+            (uint32_t) type <= (uint32_t) VarType::UInt64) ? 1 : 0;
+#else
+    return ((uint32_t) type >= (uint32_t) VarTypeInt8 &&
+            (uint32_t) type <= (uint32_t) VarTypeUInt64) ? 1 : 0;
+#endif
+}
+
+/// Convenience function to check for a floating point operand
+JITC_CONSTEXPR uint32_t jitc_is_floating_point(enum VarType type) {
+#if defined(__cplusplus)
+    return ((uint32_t) type >= (uint32_t) VarType::Float16 &&
+            (uint32_t) type <= (uint32_t) VarType::Float64) ? 1 : 0;
+#else
+    return ((uint32_t) type >= (uint32_t) VarTypeFloat16 &&
+            (uint32_t) type <= (uint32_t) VarTypeFloat64) ? 1 : 0;
+#endif
+}
+
+/// Convenience function to check for an arithmetic operand
+JITC_CONSTEXPR uint32_t jitc_is_arithmetic(enum VarType type) {
+#if defined(__cplusplus)
+    return ((uint32_t) type >= (uint32_t) VarType::Int8 &&
+            (uint32_t) type <= (uint32_t) VarType::Float64) ? 1 : 0;
+#else
+    return ((uint32_t) type >= (uint32_t) VarTypeInt8 &&
+            (uint32_t) type <= (uint32_t) VarTypeFloat64) ? 1 : 0;
+#endif
+}
 
 /**
  * Register an existing memory region as a variable in the JIT compiler, and
