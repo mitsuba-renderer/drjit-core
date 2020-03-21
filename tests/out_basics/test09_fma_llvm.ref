@@ -13,7 +13,7 @@ jit_var_copy(3, size=4)
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
-jit_trace_append(4 <- 1, 2, 3): $r0 = call <$w x $t0> @llvm.fma.v$wf32(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_trace_append(4 <- 1, 2, 3): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(3): 2
 jit_trace_append(5 <- 3): $r0 = fneg <$w x $t0> $r1
@@ -21,7 +21,7 @@ jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(4): 1
 jit_var_inc_ref_int(2): 2
 jit_var_inc_ref_int(5): 1
-jit_trace_append(6 <- 4, 2, 5): $r0 = call <$w x $t0> @llvm.fma.v$wf32(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_trace_append(6 <- 4, 2, 5): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(5): 0
 jit_eval(): begin.
@@ -35,7 +35,7 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %f5 -> 6 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=4, in=3, out=2, ops=6) ..
-define void @enoki_5aa459e1(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+define void @enoki_5aa459e1(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0
@@ -156,7 +156,7 @@ jit_var_copy(9, size=4)
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(9): 1
-jit_trace_append(10 <- 7, 8, 9): $r0 = call <$w x $t0> @llvm.fma.v$wf64(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_trace_append(10 <- 7, 8, 9): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(9): 2
 jit_trace_append(11 <- 9): $r0 = fneg <$w x $t0> $r1
@@ -164,7 +164,7 @@ jit_var_inc_ref_ext(11): 1
 jit_var_inc_ref_int(10): 1
 jit_var_inc_ref_int(8): 2
 jit_var_inc_ref_int(11): 1
-jit_trace_append(12 <- 10, 8, 11): $r0 = call <$w x $t0> @llvm.fma.v$wf64(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_trace_append(12 <- 10, 8, 11): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
 jit_var_inc_ref_ext(12): 1
 jit_var_dec_ref_ext(11): 0
 jit_eval(): begin.
@@ -178,7 +178,7 @@ jit_malloc(type=host, size=64): <@> (reused global)
    - %d5 -> 12 [out]
 jit_malloc(type=host, size=64): <@> (reused global)
 jit_run(): launching kernel (n=4, in=3, out=2, ops=6) ..
-define void @enoki_6cff5f3a(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+define void @enoki_6cff5f3a(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0

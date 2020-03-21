@@ -335,7 +335,7 @@ public:
         if (unlikely(m_cur + 1 == m_end))
             expand();
         *m_cur++ = c;
-        *m_cur   = '\0';
+        *m_cur = '\0';
     }
 
     /// Remove the last 'n' characters

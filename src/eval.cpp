@@ -411,23 +411,13 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
 
 /// Replace generic LLVM intrinsics by more efficient hardware-specific ones
 static void jit_llvm_rewrite_intrinsics() {
-    const char *isa          = nullptr;
-    const char *width_suffix = nullptr;
-
-    switch (jit_llvm_vector_width) {
-        case 4:  isa = "sse";    width_suffix = "";     break;
-        case 8:  isa = "avx";    width_suffix = ".256"; break;
-        case 16: isa = "avx512"; width_suffix = ".512"; break;
-        default: return;
-    }
-
-    const char *replacements[][2] = {
-        {"minnum.v4f32",  "x86.sse.min.ps"},
-        {"maxnum.v4f32",  "x86.sse.max.ps"},
-        {"minnum.v8f32",  "x86.avx.min.ps.256"},
-        {"maxnum.v8f32",  "x86.avx.max.ps.256"},
-        {"minnum.v16f32", "x86.avx512.min.ps.512"},
-        {"maxnum.v16f32", "x86.avx512.max.ps.512"}
+    const char *replacements[][4] = {
+        { "minnum.v4f32",     "x86.sse.min.ps",        nullptr, nullptr },
+        { "maxnum.v4f32",     "x86.sse.max.ps",        nullptr, nullptr },
+        { "minnum.v8f32",     "x86.avx.min.ps.256",    nullptr, nullptr },
+        { "maxnum.v8f32",     "x86.avx.max.ps.256",    nullptr, nullptr },
+        { "minnum.v16f32",    "x86.avx512.min.ps.512", "i32 4", "i32"},
+        { "maxnum.v16f32",    "x86.avx512.max.ps.512", "i32 4", "i32"}
     };
 
     intrinsics_buffer.clear();
@@ -440,6 +430,13 @@ static void jit_llvm_rewrite_intrinsics() {
             break;
         }
 
+        bool is_declaration = false;
+        char *line = ptr_next;
+        while (line != ptr && *line != '\n')
+            --line;
+        if (line && strncmp(line + 1, "declare", 7) == 0)
+            is_declaration = true;
+
         ptr_next += 6;
         ptr_next[-1] = '\0';
         intrinsics_buffer.put(ptr);
@@ -449,6 +446,14 @@ static void jit_llvm_rewrite_intrinsics() {
             if (strncmp(ptr_next, o[0], strlen(o[0])) == 0) {
                 intrinsics_buffer.put(o[1]);
                 ptr_next += strlen(o[0]);
+
+                char *paren = strchr(ptr_next, ')');
+                const char *suffix = is_declaration ? o[3] : o[2];
+                if (paren && suffix) {
+                    *paren = '\0';
+                    intrinsics_buffer.fmt("%s, %s)", ptr_next, suffix);
+                    ptr_next = paren + 1;
+                }
                 break;
             }
         }
@@ -1015,7 +1020,6 @@ void jit_eval() {
         jit_var_dec_ref_ext(extra_dep);
 
         if (unlikely(side_effect)) {
-            fprintf(stderr, "Variable with side effect on %u\n", extra_dep);
             if (extra_dep) {
                 Variable *v2 = jit_var(extra_dep);
                 v2->dirty = false;

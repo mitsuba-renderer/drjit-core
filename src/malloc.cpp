@@ -18,8 +18,13 @@ void* jit_malloc(AllocType type, size_t size) {
     if (size == 0)
         return nullptr;
 
-    // Round up to the next multiple of 64 bytes
-    size = (size + 63) / 64 * 64;
+    if (type != AllocType::Host || jit_llvm_vector_width < 16) {
+        // Round up to the next multiple of 64 bytes
+        size = (size + 63) / 64 * 64;
+    } else {
+        size_t packet_size = jit_llvm_vector_width * sizeof(double);
+        size = (size + packet_size - 1) / packet_size * packet_size;
+    }
 
     /* Round 'size' to the next larger power of two. This is somewhat
        wasteful, but reduces the number of different sizes that an allocation

@@ -19,7 +19,7 @@ jit_var_dec_ref_ext(4): 0
 jit_var_dec_ref_ext(3): 0
 jit_var_dec_ref_ext(2): 1
 jit_var_dec_ref_ext(2): 0
-jit_eval(): begin (parallel dispatch to 5 streams).
+jit_eval(): begin (parallel dispatch to 2 streams).
 jit_assemble(size=1024): register map:
    - %r4 -> 1 [out]
 jit_malloc(type=device, device=0, size=4096): <@> (new allocation)
@@ -67,6 +67,7 @@ L1: // Loop body
 L0:
     ret;
 }
+jit_device_set(device=0, stream=1): creating stream
 jit_assemble(size=73): register map:
    - %r4 -> 2
    - %r5 -> 3 [scalar]
@@ -126,7 +127,7 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_device_set(device=0, stream=1): creating stream
+jit_device_set(device=0, stream=2): creating stream
 jit_device_set(device=0, stream=0): selecting stream
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(2): 0
@@ -148,6 +149,7 @@ jit_shutdown(): destroying streams ..
 jit_free_flush(): scheduling 2 deallocations
 jit_free_flush(): performing 2 deallocations
 jit_device_set(device=0, stream=1): selecting stream
+jit_device_set(device=0, stream=2): selecting stream
 jit_malloc_trim(): freed
  - device memory: 4.5 KiB in 2 allocations
 jit_shutdown(): done

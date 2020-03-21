@@ -73,7 +73,8 @@ add_library(
   src/api.cpp
 )
 
-target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
+# target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
+target_compile_options(enoki-jit PRIVATE -Wall -Wextra)
 if (U_CMAKE_BUILD_TYPE MATCHES REL)
   target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
 endif()

@@ -44,7 +44,7 @@ jit_run(): launching kernel (n=2, in=3, out=3, ops=10) ..
 .version 6.3
 .target sm_61
 .address_size 64
-.visible .entry enoki_e323efd4(.param .u32 size,
+.visible .entry enoki_2ea5bcb1(.param .u32 size,
                                .param .u64 arg0,
                                .param .u64 arg1,
                                .param .u64 arg2,
@@ -109,6 +109,7 @@ L1: // Loop body
     add.u64 %rd0, %rd0, %rd1;
     ld.global.u8 %w0, [%rd0];
     setp.ne.u16 %p8, %w0, 0;
+
     // Evaluate %p9
     not.pred %p9, %p8;
 
@@ -169,7 +170,7 @@ jit_run(): launching kernel (n=2, in=3, out=3, ops=10) ..
 .version 6.3
 .target sm_61
 .address_size 64
-.visible .entry enoki_e323efd4(.param .u32 size,
+.visible .entry enoki_2ea5bcb1(.param .u32 size,
                                .param .u64 arg0,
                                .param .u64 arg1,
                                .param .u64 arg2,
@@ -234,6 +235,7 @@ L1: // Loop body
     add.u64 %rd0, %rd0, %rd1;
     ld.global.u8 %w0, [%rd0];
     setp.ne.u16 %p8, %w0, 0;
+
     // Evaluate %p9
     not.pred %p9, %p8;
 
@@ -315,7 +317,7 @@ jit_run(): launching kernel (n=2, in=6, out=3, ops=13) ..
 .version 6.3
 .target sm_61
 .address_size 64
-.visible .entry enoki_ef72977b(.param .u32 size,
+.visible .entry enoki_6a0d98f0(.param .u32 size,
                                .param .u64 arg0,
                                .param .u64 arg1,
                                .param .u64 arg2,
@@ -395,12 +397,14 @@ L1: // Loop body
     add.u64 %rd0, %rd0, %rd1;
     ld.global.u8 %w0, [%rd0];
     setp.ne.u16 %p10, %w0, 0;
+
     // Load %p11
     ld.param.u64 %rd0, [arg7];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     ld.global.u8 %w0, [%rd0];
     setp.ne.u16 %p11, %w0, 0;
+
     // Evaluate %p12
     or.pred %p12, %p10, %p11;
 
@@ -461,7 +465,7 @@ jit_run(): launching kernel (n=2, in=6, out=3, ops=13) ..
 .version 6.3
 .target sm_61
 .address_size 64
-.visible .entry enoki_bdef8680(.param .u32 size,
+.visible .entry enoki_514777ed(.param .u32 size,
                                .param .u64 arg0,
                                .param .u64 arg1,
                                .param .u64 arg2,
@@ -541,12 +545,14 @@ L1: // Loop body
     add.u64 %rd0, %rd0, %rd1;
     ld.global.u8 %w0, [%rd0];
     setp.ne.u16 %p10, %w0, 0;
+
     // Load %p11
     ld.param.u64 %rd0, [arg7];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     ld.global.u8 %w0, [%rd0];
     setp.ne.u16 %p11, %w0, 0;
+
     // Evaluate %p12
     and.pred %p12, %p10, %p11;
 
@@ -605,7 +611,7 @@ jit_run(): launching kernel (n=2, in=6, out=3, ops=13) ..
 .version 6.3
 .target sm_61
 .address_size 64
-.visible .entry enoki_9c6b3a40(.param .u32 size,
+.visible .entry enoki_94405458(.param .u32 size,
                                .param .u64 arg0,
                                .param .u64 arg1,
                                .param .u64 arg2,
@@ -685,12 +691,14 @@ L1: // Loop body
     add.u64 %rd0, %rd0, %rd1;
     ld.global.u8 %w0, [%rd0];
     setp.ne.u16 %p10, %w0, 0;
+
     // Load %p11
     ld.param.u64 %rd0, [arg7];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     ld.global.u8 %w0, [%rd0];
     setp.ne.u16 %p11, %w0, 0;
+
     // Evaluate %p12
     xor.pred %p12, %p10, %p11;
 

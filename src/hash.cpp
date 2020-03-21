@@ -92,7 +92,6 @@ uint32_t crc32(uint32_t state, const void *ptr_, size_t size) {
     const uint8_t *ptr = (const uint8_t *) ptr_,
                   *end = ptr + size;
 
-    uint32_t state = 0;
     while (ptr < end)
       state = (state >> 8) ^ tbl[(uint8_t) state ^ *ptr++];
 

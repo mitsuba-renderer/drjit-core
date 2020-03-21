@@ -1,7 +1,7 @@
-jit_trace_append(1): $r0_0 = trunc i64 $i to i32$n$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x i32> $r0_2, $l0
+jit_trace_append(1): $r0_0 = trunc i64 %index to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(1): 1
 jit_var_set_size(1): 1024
-jit_trace_append(2): $r0_0 = trunc i64 $i to i32$n$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x i32> $r0_2, $l0
+jit_trace_append(2): $r0_0 = trunc i64 %index to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(2): 1
 jit_var_set_size(2): 73
 jit_var_inc_ref_ext(2): 2
@@ -27,7 +27,7 @@ jit_assemble(size=1024): register map:
    - %r0 -> 1 [out]
 jit_malloc(type=host, size=4096): <@> (new allocation)
 jit_run(): launching kernel (n=1024, in=0, out=1, ops=1) ..
-define void @enoki_289a29eb(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+define void @enoki_289a29eb(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0
@@ -69,7 +69,7 @@ jit_assemble(size=73): register map:
    - %r4 -> 6 [out]
 jit_malloc(type=host, size=512): <@> (new allocation)
 jit_run(): launching kernel (n=73, in=0, out=1, ops=5) ..
-define void @enoki_7a45f370(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="haswell" {
+define void @enoki_7a45f370(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0

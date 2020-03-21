@@ -1,7 +1,5 @@
 #include "test.h"
 
-#if 0
-
 TEST_BOTH(01_creation_destruction) {
     // Checks simple reference counting of a variable
     Float value(1234);
@@ -286,10 +284,8 @@ TEST_BOTH(14_scatter_gather) {
     jitc_log(Info, "%s", value.str());
     jitc_log(Info, "%s", l.str());
 }
-/// Mask gathers/scatters!
-#endif
 
-TEST_LLVM(15_round) {
+TEST_BOTH(15_round) {
     /* Single precision */ {
         Float x(.4f, .5f, .6f, -.4f, -.5f, -.6f);
 
@@ -328,3 +324,5 @@ TEST_LLVM(15_round) {
         jitc_log(Info, "max:   %s", x_ma.str());
     }
 }
+
+/// Mask gathers/scatters!
