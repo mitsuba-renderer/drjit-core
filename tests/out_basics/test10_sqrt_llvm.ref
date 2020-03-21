@@ -16,7 +16,7 @@ jit_assemble(size=10): register map:
    - %f2 -> 3 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=10, in=0, out=1, ops=3) ..
-define void @enoki_7911d48c(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_7911d48c(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0

@@ -153,7 +153,6 @@ jit_assemble(size=4): register map:
    - %rd6 -> 7
    - %p7 -> 5 [scalar] [in]
    - %r8 -> 8 [out]
-jit_free_flush(): performing 1 deallocation
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=4, in=3, out=1, ops=9) ..
 .version 6.3
@@ -221,6 +220,7 @@ L1: // Loop body
 L0:
     ret;
 }
+jit_free_flush(): performing 1 deallocation
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(4): 0
 jit_var_dec_ref_int(6): 0

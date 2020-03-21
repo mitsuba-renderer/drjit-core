@@ -544,7 +544,9 @@ uint32_t jit_var_copy(VarType type, const void *ptr, size_t size) {
         target_ptr = jit_malloc(AllocType::Device, total_size);
         void *host_ptr = jit_malloc(AllocType::HostPinned, total_size);
         memcpy(host_ptr, ptr, total_size);
-        cuda_check(cuMemcpyAsync(target_ptr, host_ptr, total_size, stream->handle));
+        cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
+                                 (CUdeviceptr) host_ptr, total_size,
+                                 stream->handle));
         jit_free(host_ptr);
     } else {
         target_ptr = jit_malloc(AllocType::Host, total_size);
@@ -734,7 +736,7 @@ const char *jit_var_str(uint32_t index) {
             // Temporarily release the lock while synchronizing
             unlock_guard guard(state.mutex);
             cuda_check(cuStreamSynchronize(stream->handle));
-            cuda_check(cuMemcpy(dst, src_offset, isize));
+            cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src_offset, isize));
         } else {
             memcpy(dst, src_offset, isize);
         }
@@ -799,7 +801,7 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
         // Temporarily release the lock while synchronizing
         unlock_guard guard(state.mutex);
         cuda_check(cuStreamSynchronize(stream->handle));
-        cuda_check(cuMemcpy(dst, src, isize));
+        cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, isize));
     } else {
         memcpy(dst, src, isize);
     }
@@ -836,7 +838,8 @@ void jit_var_write(uint32_t index, size_t offset, const void *src) {
     uint8_t *dst = (uint8_t *) v->data + offset * isize;
 
     if (cuda)
-        cuda_check(cuMemcpyAsync(dst, src, isize, stream->handle));
+        cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, isize,
+                                 stream->handle));
     else
         memcpy(dst, src, isize);
 }

@@ -6,6 +6,7 @@
 #include <dlfcn.h>
 #include <zlib.h>
 
+#if defined(ENOKI_CUDA_DYNAMIC)
 // Driver API
 CUresult (*cuCtxEnablePeerAccess)(CUcontext, unsigned int) = nullptr;
 CUresult (*cuCtxSynchronize)() = nullptr;
@@ -60,6 +61,9 @@ CUresult (*cuStreamDestroy)(CUstream) = nullptr;
 CUresult (*cuStreamSynchronize)(CUstream) = nullptr;
 CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int) = nullptr;
 
+static void *jit_cuda_handle = nullptr;
+#endif
+
 // Enoki API
 CUfunction jit_cuda_fill_64 = nullptr;
 CUfunction jit_cuda_reductions[(int) ReductionType::Count]
@@ -77,7 +81,6 @@ int jit_cuda_devices = 0;
 static bool jit_cuda_init_attempted = false;
 static bool jit_cuda_init_success = false;
 static CUmodule jit_cuda_module = nullptr;
-static void *jit_cuda_handle = nullptr;
 
 int inflate(const void *src, uint32_t src_size, void *dst, uint32_t dst_size) {
     z_stream strm;
@@ -102,6 +105,7 @@ bool jit_cuda_init() {
         return jit_cuda_init_success;
     jit_cuda_init_attempted = true;
 
+#if defined(ENOKI_CUDA_DYNAMIC)
 #if defined(__linux__)
     const char *cuda_fname  = "libcuda.so",
                *cuda_glob   = "/usr/lib/x86_64-linux-gnu/libcuda.so.*";
@@ -175,6 +179,7 @@ bool jit_cuda_init() {
                 "CUDA backend!", symbol);
         return false;
     }
+#endif
 
     CUresult rv = cuInit(0);
     if (rv != CUDA_SUCCESS) {
@@ -262,13 +267,12 @@ void jit_cuda_shutdown() {
     for (int i = 0; i < jit_cuda_devices; ++i)
         cuda_check(cuDevicePrimaryCtxRelease(i));
 
-    dlclose(jit_cuda_handle);
     jit_cuda_module = nullptr;
-    jit_cuda_handle = nullptr;
     jit_cuda_fill_64 = nullptr;
     jit_cuda_devices = 0;
     memset(jit_cuda_reductions, 0, sizeof(jit_cuda_reductions));
 
+#if defined(ENOKI_CUDA_DYNAMIC)
     Z(cuCtxEnablePeerAccess); Z(cuCtxSynchronize); Z(cuDeviceCanAccessPeer);
     Z(cuDeviceGet); Z(cuDeviceGetAttribute); Z(cuDeviceGetCount);
     Z(cuDeviceGetName); Z(cuDevicePrimaryCtxRelease);
@@ -283,6 +287,10 @@ void jit_cuda_shutdown() {
     Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleUnload);
     Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent); Z(cuStreamCreate);
     Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
+
+    dlclose(jit_cuda_handle);
+    jit_cuda_handle = nullptr;
+#endif
 
     jit_cuda_init_success = false;
     jit_cuda_init_attempted = false;

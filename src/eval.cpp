@@ -474,7 +474,7 @@ void jit_assemble_llvm(ScheduledGroup group) {
     intrinsics_buffer.clear();
     intrinsics_set.clear();
     buffer.fmt("define void @enoki_^^^^^^^^(i64 %%start, i64 %%end, i8** "
-               "%%ptrs) norecurse nosync nounwind alignstack(%i) "
+               "%%ptrs) norecurse nounwind alignstack(%i) "
                "\"target-cpu\"=\"%s\"",
                width * (int) sizeof(float), jit_llvm_target_cpu);
     if (jit_llvm_target_features)
@@ -731,7 +731,7 @@ void jit_assemble(ScheduledGroup group) {
         void *args_extra_dev  = jit_malloc(AllocType::Device, args_extra_size);
 
         memcpy(args_extra_host, kernel_args_extra.data(), args_extra_size);
-        cuda_check(cuMemcpyAsync(args_extra_dev, args_extra_host,
+        cuda_check(cuMemcpyAsync((CUdeviceptr) args_extra_dev, (CUdeviceptr) args_extra_host,
                                  args_extra_size, active_stream->handle));
 
         kernel_args.push_back(args_extra_dev);
@@ -790,7 +790,7 @@ void jit_run_cuda(ScheduledGroup group) {
         const uintptr_t log_size = 8192;
         std::unique_ptr<char[]> error_log(new char[log_size]),
                                  info_log(new char[log_size]);
-        int arg[5] = {
+        CUjit_option arg[5] = {
             CU_JIT_INFO_LOG_BUFFER,
             CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
             CU_JIT_ERROR_LOG_BUFFER,

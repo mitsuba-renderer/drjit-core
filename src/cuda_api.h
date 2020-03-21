@@ -2,52 +2,57 @@
 
 #include <enoki/jit.h>
 
-#define CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS 89
-#define CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY 83
-#define CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT 16
-#define CU_DEVICE_ATTRIBUTE_PCI_BUS_ID 33
-#define CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID 34
-#define CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID 50
-#define CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING 41
+#if !defined(ENOKI_CUDA_DYNAMIC)
+#  include <cuda.h>
+#else
+#  define CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS 89
+#  define CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY 83
+#  define CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT 16
+#  define CU_DEVICE_ATTRIBUTE_PCI_BUS_ID 33
+#  define CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID 34
+#  define CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID 50
+#  define CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING 41
 
-#define CU_DEVICE_CPU -1
+#  define CU_DEVICE_CPU -1
 
-#define CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES 8
-#define CU_FUNC_ATTRIBUTE_NUM_REGS 4
-#define CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT 9
+#  define CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES 8
+#  define CU_FUNC_ATTRIBUTE_NUM_REGS 4
+#  define CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT 9
 
-#define CU_JIT_ERROR_LOG_BUFFER 5
-#define CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES 6
-#define CU_JIT_INFO_LOG_BUFFER 3
-#define CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES 4
-#define CU_JIT_INPUT_PTX 1
-#define CU_JIT_LOG_VERBOSE 12
+#  define CU_JIT_ERROR_LOG_BUFFER 5
+#  define CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES 6
+#  define CU_JIT_INFO_LOG_BUFFER 3
+#  define CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES 4
+#  define CU_JIT_INPUT_PTX 1
+#  define CU_JIT_LOG_VERBOSE 12
 
-#define CU_LAUNCH_PARAM_BUFFER_POINTER (void *) 1
-#define CU_LAUNCH_PARAM_BUFFER_SIZE (void *) 2
-#define CU_LAUNCH_PARAM_END (void *) 0
+#  define CU_LAUNCH_PARAM_BUFFER_POINTER (void *) 1
+#  define CU_LAUNCH_PARAM_BUFFER_SIZE (void *) 2
+#  define CU_LAUNCH_PARAM_END (void *) 0
 
-#define CU_MEM_ATTACH_GLOBAL 1
-#define CU_MEM_ADVISE_SET_READ_MOSTLY 1
-#define CU_SHAREDMEM_CARVEOUT_MAX_L1 0
+#  define CU_MEM_ATTACH_GLOBAL 1
+#  define CU_MEM_ADVISE_SET_READ_MOSTLY 1
+#  define CU_SHAREDMEM_CARVEOUT_MAX_L1 0
 
-#define CU_STREAM_NON_BLOCKING 1
-#define CU_EVENT_DISABLE_TIMING 2
+#  define CU_STREAM_NON_BLOCKING 1
+#  define CU_EVENT_DISABLE_TIMING 2
 
-#define CUDA_ERROR_DEINITIALIZED 4
-#define CUDA_ERROR_NOT_FOUND 500
-#define CUDA_ERROR_OUT_OF_MEMORY 2
-#define CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED 704
-#define CUDA_SUCCESS 0
+#  define CUDA_ERROR_DEINITIALIZED 4
+#  define CUDA_ERROR_NOT_FOUND 500
+#  define CUDA_ERROR_OUT_OF_MEMORY 2
+#  define CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED 704
+#  define CUDA_SUCCESS 0
 
-using CUresult    = int;
-using CUdevice    = int;
-using CUcontext   = void *;
-using CUmodule    = void *;
-using CUfunction  = void *;
-using CUlinkState = void *;
-using CUstream    = void *;
-using CUevent     = void *;
+using CUresult     = int;
+using CUdevice     = int;
+using CUcontext    = void *;
+using CUmodule     = void *;
+using CUfunction   = void *;
+using CUlinkState  = void *;
+using CUstream     = void *;
+using CUevent      = void *;
+using CUdeviceptr  = void *;
+using CUjit_option = int;
 
 // Driver API
 extern CUresult (*cuCtxEnablePeerAccess)(CUcontext, unsigned int);
@@ -100,6 +105,7 @@ extern CUresult (*cuStreamCreate)(CUstream *, unsigned int);
 extern CUresult (*cuStreamDestroy)(CUstream);
 extern CUresult (*cuStreamSynchronize)(CUstream);
 extern CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int);
+#endif
 
 // Enoki API
 extern CUfunction jit_cuda_fill_64;

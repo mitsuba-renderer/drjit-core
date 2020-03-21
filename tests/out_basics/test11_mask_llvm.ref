@@ -33,7 +33,7 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %f5 -> 6 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=10, in=0, out=2, ops=6) ..
-define void @enoki_9ae0a8e5(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_9ae0a8e5(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0
@@ -128,7 +128,7 @@ jit_assemble(size=10): register map:
    - %f3 -> 9 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=10, in=1, out=1, ops=4) ..
-define void @enoki_359b5f7b(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_359b5f7b(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0
@@ -197,7 +197,7 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %p1 -> 11 [scalar] [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=2, ops=2) ..
-define void @enoki_79a1425a(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_79a1425a(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0
@@ -276,7 +276,7 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %f5 -> 14 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=10, in=3, out=2, ops=6) ..
-define void @enoki_1f3006de(i64 %start, i64 %end, i8** %ptrs) norecurse nosync nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_1f3006de(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0

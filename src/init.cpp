@@ -185,9 +185,10 @@ void jit_shutdown(int light) {
 /// Set the currently active device & stream
 void jit_device_set(int32_t device, uint32_t stream) {
     if (device == -1) {
-        active_stream = nullptr;
-        if (cuCtxSetCurrent)
+        if (active_stream != nullptr) {
             cuda_check(cuCtxSetCurrent(nullptr));
+            active_stream = nullptr;
+        }
         return;
     }
 
@@ -254,6 +255,9 @@ void jit_sync_device() {
 void *jit_find_library(const char *fname, const char *glob_pat,
                        const char *env_var) {
     const char *env_var_val = env_var ? getenv(env_var) : nullptr;
+    if (env_var_val != nullptr && strlen(env_var_val) == 0)
+        env_var_val = nullptr;
+
     void *handle = dlopen(env_var_val ? env_var_val : fname, RTLD_LAZY);
 
     if (!handle & !env_var_val) {

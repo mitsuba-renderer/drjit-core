@@ -2,6 +2,7 @@ project("jit")
 cmake_minimum_required(VERSION 3.9.0)
 
 option(ENOKI_ENABLE_TESTS "Compile test suite?" ON)
+option(ENOKI_CUDA_DYNAMIC "Resolve CUDA dynamically at run time?" ON)
 
 # Set a default build configuration (Release)
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -78,6 +79,15 @@ target_compile_options(enoki-jit PRIVATE -Wall -Wextra)
 if (U_CMAKE_BUILD_TYPE MATCHES REL)
   target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
 endif()
+
+if (ENOKI_CUDA_DYNAMIC)
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_CUDA_DYNAMIC=1)
+else()
+  find_package(CUDA REQUIRED)
+  target_include_directories(enoki-jit PRIVATE ${CUDA_INCLUDE_DIRS})
+  target_link_libraries(enoki-jit PRIVATE cuda)
+endif()
+
 target_link_libraries(enoki-jit PRIVATE dl ZLIB::ZLIB pthread)
 # set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE        TRUE)
 # set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL     TRUE)
