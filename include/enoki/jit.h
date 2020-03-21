@@ -566,6 +566,16 @@ extern JITC_EXPORT void jitc_var_mark_side_effect(uint32_t index);
 extern JITC_EXPORT void jitc_var_mark_dirty(uint32_t index);
 
 /**
+ * \brief Mark an array as the source or destination of gather/scatter operations
+ *
+ * Enoki uses this information to keep track of dependencies and ensure
+ * consistency. The field \c gather should be set to \c 1 if gather operations
+ * are performed, and \c 0 otehrwise. Following these operations, \ref
+ * jitc_set_scatter_gather_operand() must be called with an \c index of \c 0.
+ */
+extern JITC_EXPORT void jitc_set_scatter_gather_operand(uint32_t index, int gather);
+
+/**
  * \brief Return a human-readable summary of registered variables
  *
  * Note: the return value points into a static array, whose contents may be

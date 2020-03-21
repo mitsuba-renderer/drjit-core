@@ -41,7 +41,7 @@ const char *var_type_name_llvm_bin[(int) VarType::Count]{
 
 /// LLVM/CUDA register name prefixes
 const char *var_type_prefix[(int) VarType::Count]{
-    "???", "%b", "%b", "%w", "%w", "%r", "%r",
+    "", "%b", "%b", "%w", "%w", "%r", "%r",
     "%rd", "%rd", "%h", "%f", "%d", "%p", "%rd"
 };
 
@@ -137,11 +137,7 @@ void jit_var_inc_ref_int(uint32_t index) {
 }
 
 /// Decrease the external reference count of a given variable
-void jit_var_dec_ref_ext(uint32_t index) {
-    if (index == 0)
-        return;
-    Variable *v = jit_var(index);
-
+void jit_var_dec_ref_ext(uint32_t index, Variable *v) {
     if (unlikely(v->ref_count_ext == 0))
         jit_fail("jit_var_dec_ref_ext(): variable %u has no external references!", index);
 
@@ -152,12 +148,14 @@ void jit_var_dec_ref_ext(uint32_t index) {
         jit_var_free(index, v);
 }
 
-/// Decrease the internal reference count of a given variable
-void jit_var_dec_ref_int(uint32_t index) {
-    if (index == 0)
-        return;
-    Variable *v = jit_var(index);
+/// Decrease the external reference count of a given variable
+void jit_var_dec_ref_ext(uint32_t index) {
+    if (index != 0)
+        jit_var_dec_ref_ext(index, jit_var(index));
+}
 
+/// Decrease the internal reference count of a given variable
+void jit_var_dec_ref_int(uint32_t index, Variable *v) {
     if (unlikely(v->ref_count_int == 0))
         jit_fail("jit_var_dec_ref_int(): variable %u has no internal references!", index);
 
@@ -166,6 +164,12 @@ void jit_var_dec_ref_int(uint32_t index) {
 
     if (v->ref_count_ext == 0 && v->ref_count_int == 0)
         jit_var_free(index, v);
+}
+
+/// Decrease the internal reference count of a given variable
+void jit_var_dec_ref_int(uint32_t index) {
+    if (index != 0)
+        jit_var_dec_ref_int(index, jit_var(index));
 }
 
 /// Append the given variable to the instruction trace and return its ID
@@ -606,12 +610,13 @@ void jit_var_mark_dirty(uint32_t index) {
 }
 
 /// Inform the JIT that the next scatter/gather references var. 'index'
-void jit_set_scatter_gather_operand(uint32_t index, bool gather) {
-    if (index == 0)
-        return;
-    Variable *v = jit_var(index);
-    if (v->data == nullptr || (gather && v->dirty))
-        jit_eval();
+void jit_set_scatter_gather_operand(uint32_t index, int gather) {
+    jit_log(Trace, "jit_set_scatter_gather_operand(index=%u, gather=%u)", index, gather);
+    if (index) {
+        Variable *v = jit_var(index);
+        if (v->data == nullptr || (gather && v->dirty))
+            jit_eval();
+    }
     state.scatter_gather_operand = index;
 }
 
@@ -752,16 +757,6 @@ void jit_var_eval(uint32_t index) {
     Variable *v = jit_var(index);
     if (v->data == nullptr || v->dirty)
         jit_eval();
-}
-
-/// Set the target/source operand for scatter and gather operations
-void jit_set_scatter_gather_operand(uint32_t index, int gather) {
-    if (index) {
-        Variable *v = jit_var(index);
-        if (v->data == nullptr || (gather && v->dirty))
-            jit_eval();
-    }
-    state.scatter_gather_operand = index;
 }
 
 /// Read a single element of a variable and write it to 'dst'

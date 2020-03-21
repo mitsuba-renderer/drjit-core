@@ -228,7 +228,7 @@ void jitc_var_mark_side_effect(uint32_t index) {
 
 void jitc_var_mark_dirty(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_var_mark_side_effect(index);
+    jit_var_mark_dirty(index);
 }
 
 void jitc_set_scatter_gather_operand(uint32_t index, int gather) {

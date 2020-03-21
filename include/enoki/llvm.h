@@ -27,6 +27,7 @@ template <typename Value_>
 struct LLVMArray {
     using Value = Value_;
     static constexpr VarType Type = var_type<Value>::value;
+    static constexpr bool IsLLVM = true;
 
     LLVMArray() = default;
 
@@ -206,6 +207,24 @@ struct LLVMArray {
 
         return LLVMArray<bool>::from_index(jitc_trace_append_2(
             LLVMArray<bool>::Type, op, 1, m_index, a.index()));
+    }
+
+    friend LLVMArray<bool> eq(const LLVMArray &a, const LLVMArray &b) {
+        const char *op = std::is_integral<Value>::value
+                             ? "$r0 = icmp eq <$w x $t1> $r1, $r2"
+                             : "$r0 = fcmp oeq <$w x $t1> $r1, $r2";
+
+        return LLVMArray<bool>::from_index(jitc_trace_append_2(
+            LLVMArray<bool>::Type, op, 1, a.index(), b.index()));
+    }
+
+    friend LLVMArray<bool> neq(const LLVMArray &a, const LLVMArray &b) {
+        const char *op = std::is_integral<Value>::value
+                             ? "$r0 = icmp ne <$w x $t1> $r1, $r2"
+                             : "$r0 = fcmp one <$w x $t1> $r1, $r2";
+
+        return LLVMArray<bool>::from_index(jitc_trace_append_2(
+            LLVMArray<bool>::Type, op, 1, a.index(), b.index()));
     }
 
     LLVMArray operator-() const {
@@ -421,11 +440,11 @@ struct LLVMArray {
     }
 
     const Value *data() const {
-        return jitc_var_ptr(m_index);
+        return (const Value *) jitc_var_ptr(m_index);
     }
 
     Value *data() {
-        return jitc_var_ptr(m_index);
+        return (Value *) jitc_var_ptr(m_index);
     }
 
     static LLVMArray from_index(uint32_t index) {
@@ -450,6 +469,121 @@ LLVMArray<Value> select(const LLVMArray<bool> &m, const LLVMArray<Value> &t,
         LLVMArray<Value>::Type,
         "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3", 1,
         m.index(), t.index(), f.index()));
+}
+
+template <typename OutArray, size_t Stride = sizeof(typename OutArray::Value),
+          typename Index, typename std::enable_if<OutArray::IsLLVM, int>::type = 0>
+static OutArray gather(const void *ptr, const LLVMArray<Index> &index,
+                       const LLVMArray<bool> &mask = true) {
+    using Value = typename OutArray::Value;
+
+    if (sizeof(Index) != 4) {
+        /* Prefer 32 bit index arithmetic, 64 bit multiplies are
+           emulated and thus very expensive on NVIDIA GPUs.. */
+        using Int = typename std::conditional<std::is_signed<Index>::value,
+                                              int32_t, uint32_t>::type;
+        return gather<OutArray, Stride>(ptr, LLVMArray<Int>(index), mask);
+    }
+
+    const char *mul_op;
+    switch (Stride) {
+        case 1: mul_op = "add.$t0 $r0, $r1, $r2"; break;
+        case 2: mul_op = "mul.wide.$t1 $r0, $r1, 2$n"
+                         "add.$t0 $r0, $r0, $r2"; break;
+        case 4: mul_op = "mul.wide.$t1 $r0, $r1, 4$n"
+                         "add.$t0 $r0, $r0, $r2"; break;
+        case 8: mul_op = "mul.wide.$t1 $r0, $r1, 8$n"
+                         "add.$t0 $r0, $r0, $r2"; break;
+        default: jitc_fail("Unsupported stride!");
+    }
+
+    using UInt64 = LLVMArray<uint64_t>;
+    UInt64 base = UInt64::from_index(jitc_var_copy_ptr(ptr)),
+           addr = UInt64::from_index(jitc_trace_append_2(
+               UInt64::Type, mul_op, 1, index.index(), base.index()));
+
+    if (!std::is_same<Value, bool>::value) {
+        return OutArray::from_index(jitc_trace_append_2(
+            OutArray::Type,
+            "@$r2 ld.global.$t0 $r0, [$r1]$n"
+            "@!$r2 mov.$b0 $r0, 0", 1,
+            addr.index(), mask.index()));
+    } else {
+        return neq(OutArray::from_index(jitc_trace_append_2(
+            OutArray::Type,
+            "@$r2 ld.global.u8 $r0, [$r1]$n"
+            "@!$r2 mov.$b0 $r0, 0", 1,
+            addr.index(), mask.index())), 0u);
+    }
+}
+
+template <size_t Stride_ = 0, typename Value, typename Index>
+static void scatter(void *ptr, const LLVMArray<Value> &value,
+                    const LLVMArray<Index> &index,
+                    const LLVMArray<bool> &mask = true) {
+    constexpr size_t Stride = Stride_ != 0 ? Stride_ : sizeof(Value);
+
+    if (sizeof(Index) != 4) {
+        /* Prefer 32 bit index arithmetic, 64 bit multiplies are
+           emulated and thus very expensive on NVIDIA GPUs.. */
+        using Int = typename std::conditional<std::is_signed<Index>::value,
+                                              int32_t, uint32_t>::type;
+        scatter<Stride_>(ptr, value, LLVMArray<Int>(index), mask);
+        return;
+    }
+
+    const char *mul_op;
+    switch (Stride) {
+        case 1: mul_op = "add.$t0 $r0, $r1, $r2"; break;
+        case 2: mul_op = "mul.wide.$t1 $r0, $r1, 2$n"
+                         "add.$t0 $r0, $r0, $r2"; break;
+        case 4: mul_op = "mul.wide.$t1 $r0, $r1, 4$n"
+                         "add.$t0 $r0, $r0, $r2"; break;
+        case 8: mul_op = "mul.wide.$t1 $r0, $r1, 8$n"
+                         "add.$t0 $r0, $r0, $r2"; break;
+        default: jitc_fail("Unsupported stride!");
+    }
+
+    using UInt64 = LLVMArray<uint64_t>;
+    UInt64 base = UInt64::from_index(jitc_var_copy_ptr(ptr)),
+           addr = UInt64::from_index(jitc_trace_append_2(
+               UInt64::Type, mul_op, 1, index.index(), base.index()));
+
+    uint32_t var;
+    if (!std::is_same<Value, bool>::value) {
+        var = jitc_trace_append_3(VarType::Invalid,
+                                  "@$r3 st.global.$t2 [$r1], $r2", 1,
+                                  addr.index(), value.index(), mask.index());
+    } else {
+        var = jitc_trace_append_3(VarType::Invalid,
+                                  "selp.u32 $r0, 1, 0, $r2$n"
+                                  "@$r3 st.global.u8 [$r1], $r0", 1,
+                                  addr.index(), value.index(), mask.index());
+    }
+
+    jitc_var_mark_side_effect(var);
+}
+
+template <typename Array, size_t Stride = sizeof(typename Array::Value),
+          typename Index, typename std::enable_if<Array::IsLLVM, int>::type = 0>
+Array gather(const Array &src, const LLVMArray<Index> &index,
+             const LLVMArray<bool> &mask = true) {
+
+    jitc_set_scatter_gather_operand(src.index(), 1);
+    Array result = gather<Array, Stride>(src.data(), index, mask);
+    jitc_set_scatter_gather_operand(0, 0);
+    return result;
+}
+
+template <size_t Stride = 0, typename Value, typename Index>
+void scatter(LLVMArray<Value> &dst, const LLVMArray<Value> &value,
+             const LLVMArray<Index> &index,
+             const LLVMArray<bool> &mask = true) {
+
+    jitc_set_scatter_gather_operand(dst.index(), 0);
+    scatter<Stride>(dst.data(), value, index, mask);
+    jitc_set_scatter_gather_operand(0, 0);
+    jitc_var_mark_dirty(dst.index());
 }
 
 template <typename Value> LLVMArray<Value> hsum(const LLVMArray<Value> &v) {

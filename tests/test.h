@@ -29,7 +29,7 @@ using UInt32L = LLVMArray<uint32_t>;
         test_register("test" #name "_cuda",                                    \
                       test##name<FloatC, Int32C, UInt32C, CUDAArray>, true);   \
     template <typename Float, typename Int32, typename UInt32,                 \
-              template <class> typename Array>                                 \
+              template <class> class Array>                                    \
     void test##name()
 
 #define TEST_LLVM(name)                                                        \

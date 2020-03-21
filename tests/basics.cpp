@@ -1,5 +1,7 @@
 #include "test.h"
 
+#if 0
+
 TEST_BOTH(01_creation_destruction) {
     // Checks simple reference counting of a variable
     Float value(1234);
@@ -272,4 +274,16 @@ TEST_BOTH(12_binop) {
     jitc_log(Info, "XOR: value_1=%s", a5.str());
     jitc_log(Info, "XOR: value_2=%s", b5.str());
     jitc_log(Info, "XOR: value_3=%s", c5.str());
+}
+#endif
+
+TEST_BOTH(14_scatter_gather) {
+    Int32 l     = -Int32::arange(1024);
+    Int32 index = Int32(34, 62, 75, 2);
+    Int32 value = gather(l, index);
+    jitc_log(Info, "%s", value.str());
+    scatter(l, value * 3, index);
+    value = gather(l, index);
+    jitc_log(Info, "%s", value.str());
+    jitc_log(Info, "%s", l.str());
 }

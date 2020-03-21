@@ -159,6 +159,8 @@ void jit_shutdown(int light) {
         jit_fail("jit_shutdown(): detected a common subexpression elimination cache leak!");
     }
 
+    if (state.variables.empty() && !state.variable_from_ptr.empty())
+        jit_fail("jit_shutdown(): detected a pointer-literal leak!");
 
     jit_malloc_shutdown();
 

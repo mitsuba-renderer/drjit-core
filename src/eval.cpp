@@ -115,7 +115,7 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
         } else {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
-                case 'n': buffer.put("\n    "); continue;
+                case 'n': buffer.put(";\n    "); continue;
                 case 'i': buffer.put("%r0"); continue;
                 case 't': prefix_table = var_type_name_ptx;     break;
                 case 'b': prefix_table = var_type_name_ptx_bin; break;
@@ -351,7 +351,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                 } else {
                     buffer.fmt("    %s.global.u8 %%w0, [%%rd0];\n",
                            v->size == 1 ? "ldu" : "ld");
-                    buffer.fmt("    setp.ne.u16 %s%u, %%w0, 0;",
+                    buffer.fmt("    setp.ne.u16 %s%u, %%w0, 0;\n",
                            var_type_prefix[(int) v->type],
                            v->reg_index);
                 }
@@ -761,10 +761,17 @@ void jit_run_cuda(ScheduledGroup group) {
         bool cache_hit = strstr(info_log.get(), "ptxas info") == nullptr;
         jit_log(Debug, "Detailed linker output:\n%s", info_log.get());
 
-        CUresult ret = cuModuleLoadData(&kernel.cuda.cu_module, link_output);
+        CUresult ret;
+        /* Unlock while synchronizing */ {
+            unlock_guard guard(state.mutex);
+            ret = cuModuleLoadData(&kernel.cuda.cu_module, link_output);
+        }
         if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
             jit_malloc_trim();
-            ret = cuModuleLoadData(&kernel.cuda.cu_module, link_output);
+            /* Unlock while synchronizing */ {
+                unlock_guard guard(state.mutex);
+                ret = cuModuleLoadData(&kernel.cuda.cu_module, link_output);
+            }
         }
         cuda_check(ret);
 
@@ -844,7 +851,6 @@ void jit_eval() {
 
     visited.clear();
     schedule.clear();
-    schedule_groups.clear();
 
     // Collect variables that must be computed and their subtrees
     for (uint32_t index : todo) {
@@ -855,6 +861,9 @@ void jit_eval() {
     }
     todo.clear();
 
+    if (schedule.empty())
+        return;
+
     // Group them from large to small sizes while preserving dependencies
     std::stable_sort(
         schedule.begin(), schedule.end(),
@@ -862,6 +871,7 @@ void jit_eval() {
             return a.size > b.size;
         });
 
+    schedule_groups.clear();
     if (schedule[0].size == schedule[schedule.size() - 1].size) {
         schedule_groups.emplace_back(schedule[0].size, 0,
                                      (uint32_t) schedule.size());
@@ -885,11 +895,11 @@ void jit_eval() {
         jit_log(Debug, "jit_eval(): begin.");
     } else {
         jit_log(Debug, "jit_eval(): begin (parallel dispatch to %zu streams).",
-                schedule.size());
+                schedule_groups.size());
         cuda_check(cuEventRecord(stream->event, stream->handle));
     }
 
-    uint32_t group_idx = 0;
+    uint32_t group_idx = 1;
     for (ScheduledGroup &group : schedule_groups) {
         jit_assemble(group);
 
@@ -934,17 +944,24 @@ void jit_eval() {
         uint32_t dep[3], extra_dep = v->extra_dep;
         memcpy(dep, v->dep, sizeof(uint32_t) * 3);
 
-        v->side_effect = false;
-        v->dirty = false;
-
         memset(v->dep, 0, sizeof(uint32_t) * 3);
         v->extra_dep = 0;
         for (int j = 0; j < 3; ++j)
             jit_var_dec_ref_int(dep[j]);
         jit_var_dec_ref_ext(extra_dep);
 
-        if (side_effect)
-            jit_var_dec_ref_ext(index);
+        if (unlikely(side_effect)) {
+            if (extra_dep) {
+                Variable *v2 = jit_var(extra_dep);
+                v2->dirty = false;
+            }
+
+            Variable *v2 = jit_var(index);
+            if (unlikely(v2->ref_count_ext != 1 || v2->ref_count_int != 0))
+                jit_fail("jit_eval(): invalid invalid reference for statment "
+                         "with side effects!");
+            jit_var_dec_ref_ext(index, v2);
+        }
     }
 
     if (cuda)

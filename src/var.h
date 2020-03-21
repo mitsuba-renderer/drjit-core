@@ -43,13 +43,25 @@ extern uint32_t jit_var_copy_ptr(const void *ptr);
 extern uint32_t jit_var_copy(VarType type, const void *ptr, size_t size);
 
 /// Increase the internal reference count of a given variable
+extern void jit_var_inc_ref_int(uint32_t index, Variable *v);
+
+/// Increase the internal reference count of a given variable
 extern void jit_var_inc_ref_int(uint32_t index);
+
+/// Decrease the internal reference count of a given variable
+extern void jit_var_dec_ref_int(uint32_t index, Variable *v);
 
 /// Decrease the internal reference count of a given variable
 extern void jit_var_dec_ref_int(uint32_t index);
 
 /// Increase the external reference count of a given variable
+extern void jit_var_inc_ref_ext(uint32_t index, Variable *v);
+
+/// Increase the external reference count of a given variable
 extern void jit_var_inc_ref_ext(uint32_t index);
+
+/// Decrease the external reference count of a given variable
+extern void jit_var_dec_ref_ext(uint32_t index, Variable *v);
 
 /// Decrease the external reference count of a given variable
 extern void jit_var_dec_ref_ext(uint32_t index);
