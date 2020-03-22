@@ -154,3 +154,119 @@ HORIZ_OP_ALL(reduce_max, reduction_max)
 
 HORIZ_OP(reduce_or,  reduction_or,  uint32_t, u32)
 HORIZ_OP(reduce_and, reduction_and, uint32_t, u32)
+
+// ----------------------------------------------------------------------------
+
+KERNEL void hist(const uint32_t *values, uint32_t *buckets, uint32_t size,
+                 uint32_t size_per_block, uint32_t bucket_count) {
+    uint32_t *shared = SharedMemory<uint32_t>::get();
+
+    uint32_t thread_id    = threadIdx.x,
+             thread_count = blockDim.x,
+             block_start  = blockIdx.x * size_per_block,
+             block_end    = block_start + size_per_block;
+
+    if (block_end > size)
+        block_end = size;
+
+    for (uint32_t i = thread_id; i < bucket_count; i += thread_count)
+        shared[i] = 0;
+
+    __syncthreads();
+
+    for (uint32_t i = block_start + thread_id; i < block_end;
+         i += thread_count) {
+        uint32_t value = values[i];
+        atomicAdd(shared + value, 1);
+    }
+
+    __syncthreads();
+
+    uint32_t *out = buckets + blockIdx.x * bucket_count;
+    for (uint32_t i = thread_id; i < bucket_count; i += thread_count)
+        out[i] = shared[i];
+}
+
+KERNEL void hist_global(const uint32_t *values, uint32_t *buckets_, uint32_t size,
+                            uint32_t size_per_block, uint32_t bucket_count) {
+    uint32_t thread_id    = threadIdx.x,
+             thread_count = blockDim.x,
+             block_start  = blockIdx.x * size_per_block,
+             block_end    = block_start + size_per_block;
+
+    if (block_end > size)
+        block_end = size;
+
+    uint32_t *buckets = buckets_ + blockIdx.x * bucket_count;
+    for (uint32_t i = thread_id; i < bucket_count; i += thread_count)
+        buckets[i] = 0;
+
+    __syncthreads();
+
+    for (uint32_t i = block_start + thread_id; i < block_end;
+         i += thread_count) {
+        uint32_t value = values[i];
+        atomicAdd(buckets + value, 1);
+    }
+}
+
+KERNEL void hist_serial(uint32_t *buckets, uint32_t bucket_count,
+                        uint32_t block_count) {
+    uint32_t base = 0;
+    for (int bucket = 0; bucket < bucket_count; ++bucket) {
+        for (int block = 0; block < block_count; ++block) {
+            uint32_t index = block * bucket_count + bucket,
+                     count = buckets[index];
+            buckets[index] = base;
+            base += count;
+        }
+    }
+}
+
+KERNEL void hist_mkperm(const uint32_t *values, const uint32_t *buckets,
+                        uint32_t *perm, uint32_t size, uint32_t size_per_block,
+                        uint32_t bucket_count) {
+    uint32_t *shared = SharedMemory<uint32_t>::get();
+
+    uint32_t thread_id    = threadIdx.x,
+             thread_count = blockDim.x,
+             block_start  = blockIdx.x * size_per_block,
+             block_end    = block_start + size_per_block;
+
+    if (block_end > size)
+        block_end = size;
+
+    const uint32_t *in = buckets + blockIdx.x * bucket_count;
+    for (uint32_t i = thread_id; i < bucket_count; i += thread_count)
+        shared[i] = in[i];
+
+    __syncthreads();
+
+    for (uint32_t i = block_start + thread_id; i < block_end;
+         i += thread_count) {
+        uint32_t value = values[i],
+                 index = atomicAdd(shared + value, 1);
+        perm[index] = i;
+    }
+}
+
+KERNEL void hist_mkperm_global(const uint32_t *values, uint32_t *buckets_,
+                               uint32_t *perm, uint32_t size,
+                               uint32_t size_per_block, uint32_t bucket_count) {
+    uint32_t thread_id    = threadIdx.x,
+             thread_count = blockDim.x,
+             block_start  = blockIdx.x * size_per_block,
+             block_end    = block_start + size_per_block;
+
+    if (block_end > size)
+        block_end = size;
+
+    uint32_t *buckets = buckets_ + blockIdx.x * bucket_count;
+
+    for (uint32_t i = block_start + thread_id; i < block_end;
+         i += thread_count) {
+        uint32_t value = values[i],
+                 index = atomicAdd(buckets + value, 1);
+        perm[index] = i;
+    }
+}
