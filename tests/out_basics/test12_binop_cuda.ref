@@ -139,7 +139,6 @@ jit_var_free(3)
 jit_free(<@>, type=device, device=0, size=64)
 jit_free_flush(): scheduling 6 deallocations
 jit_eval(): done.
-jit_free_flush(): performing 6 deallocations
 XOR: value_1=[4294967294, 4294966061]
 XOR: value_2=[-4, -0.00350571]
 XOR: value_3=[0, 1]
@@ -265,7 +264,6 @@ jit_var_free(6)
 jit_free(<@>, type=device, device=0, size=64)
 jit_free_flush(): scheduling 3 deallocations
 jit_eval(): done.
-jit_free_flush(): performing 3 deallocations
 XOR2: value_1=[1, 1234]
 XOR2: value_2=[1, 1234]
 XOR2: value_3=[1, 0]
@@ -431,7 +429,6 @@ jit_var_dec_ref_int(9): 0
 jit_var_dec_ref_int(12): 0
 jit_free_flush(): scheduling 3 deallocations
 jit_eval(): done.
-jit_free_flush(): performing 3 deallocations
 OR: value_1=[1, 4294967295]
 OR: value_2=[1, nan]
 OR: value_3=[1, 1]
@@ -774,7 +771,6 @@ jit_var_free(7)
 jit_free(<@>, type=device, device=0, size=64)
 jit_shutdown(): destroying streams ..
 jit_free_flush(): scheduling 15 deallocations
-jit_free_flush(): performing 15 deallocations
 jit_malloc_trim(): freed
  - host-pinned memory: 192 B in 3 allocations
  - device memory: 960 B in 15 allocations

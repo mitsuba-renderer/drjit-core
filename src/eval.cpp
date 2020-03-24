@@ -731,7 +731,8 @@ void jit_assemble(ScheduledGroup group) {
         void *args_extra_dev  = jit_malloc(AllocType::Device, args_extra_size);
 
         memcpy(args_extra_host, kernel_args_extra.data(), args_extra_size);
-        cuda_check(cuMemcpyAsync((CUdeviceptr) args_extra_dev, (CUdeviceptr) args_extra_host,
+        cuda_check(cuMemcpyAsync((CUdeviceptr) args_extra_dev,
+                                 (CUdeviceptr) args_extra_host,
                                  args_extra_size, active_stream->handle));
 
         kernel_args.push_back(args_extra_dev);
@@ -914,6 +915,12 @@ void jit_run_cuda(ScheduledGroup group) {
 
 /// Evaluate all computation that is queued on the current device & stream
 void jit_eval() {
+    /* The function 'jit_eval()' cannot be executed concurrently. Temporarily
+       release 'state.mutex' before acquiring 'state.eval_mutex'. */
+    state.mutex.unlock();
+    lock_guard guard(state.eval_mutex);
+    state.mutex.lock();
+
     Stream *stream = active_stream;
     bool cuda = stream != nullptr;
     auto &todo = cuda ? stream->todo : state.todo_host;
@@ -1022,7 +1029,7 @@ void jit_eval() {
         if (unlikely(side_effect)) {
             if (extra_dep) {
                 Variable *v2 = jit_var(extra_dep);
-                v2->dirty = false;
+                v2->pending_scatter = false;
             }
 
             Variable *v2 = jit_var(index);

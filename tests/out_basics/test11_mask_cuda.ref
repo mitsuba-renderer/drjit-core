@@ -399,7 +399,6 @@ jit_var_free(6)
 jit_free(<@>, type=device, device=0, size=64)
 jit_shutdown(): destroying streams ..
 jit_free_flush(): scheduling 7 deallocations
-jit_free_flush(): performing 7 deallocations
 jit_malloc_trim(): freed
  - device memory: 448 B in 7 allocations
 jit_shutdown(): done

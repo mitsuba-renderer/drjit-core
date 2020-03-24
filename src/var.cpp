@@ -78,6 +78,7 @@ void jit_cse_drop(uint32_t index, const Variable *v) {
 /// Cleanup handler, called when the internal/external reference count reaches zero
 void jit_var_free(uint32_t index, Variable *v) {
     jit_trace("jit_var_free(%u)", index);
+
     jit_cse_drop(index, v);
 
     uint32_t dep[3], extra_dep = v->extra_dep;
@@ -366,7 +367,7 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
     v.free_stmt = stmt_static == 0;
     v.cuda = stream != nullptr;
 
-    if (unlikely(v1->dirty)) {
+    if (unlikely(v1->pending_scatter)) {
         jit_eval();
         v1 = jit_var(op1);
         v.tsize = 2;
@@ -416,7 +417,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
             "jit_trace_append(): arithmetic involving arrays of incompatible "
             "size (%u and %u). The instruction was \"%s\".",
             v1->size, v2->size, stmt);
-    } else if (unlikely(v1->dirty || v2->dirty)) {
+    } else if (unlikely(v1->pending_scatter || v2->pending_scatter)) {
         jit_eval();
         v1 = jit_var(op1);
         v2 = jit_var(op2);
@@ -477,7 +478,7 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
             "jit_trace_append(): arithmetic involving arrays of incompatible "
             "size (%u, %u, and %u). The instruction was \"%s\".",
             v1->size, v2->size, v3->size, stmt);
-    } else if (unlikely(v1->dirty || v2->dirty || v3->dirty)) {
+    } else if (unlikely(v1->pending_scatter || v2->pending_scatter || v3->pending_scatter)) {
         jit_eval();
         v1 = jit_var(op1);
         v2 = jit_var(op2);
@@ -591,7 +592,7 @@ void jit_var_migrate(uint32_t index, AllocType type) {
         return;
 
     Variable *v = jit_var(index);
-    if (v->data == nullptr || v->dirty) {
+    if (v->data == nullptr || v->pending_scatter) {
         jit_eval();
         v = jit_var(index);
     }
@@ -608,15 +609,11 @@ void jit_var_mark_side_effect(uint32_t index) {
     jit_var(index)->side_effect = true;
 }
 
-/// Mark variable as dirty, e.g. because of pending scatter operations
+/// Mark variable as dirty due to pending scatter operations
 void jit_var_mark_dirty(uint32_t index) {
     jit_log(Debug, "jit_var_mark_dirty(%u)", index);
     Variable *v = jit_var(index);
-    v->dirty = true;
-
-    /* The contents of this variable no longer match up with its description,
-       hence we cannot use it as part of common subexpression elimination */
-    jit_cse_drop(index, v);
+    v->pending_scatter = true;
 }
 
 /// Inform the JIT that the next scatter/gather references var. 'index'
@@ -624,7 +621,7 @@ void jit_set_scatter_gather_operand(uint32_t index, int gather) {
     jit_log(Trace, "jit_set_scatter_gather_operand(index=%u, gather=%u)", index, gather);
     if (index) {
         Variable *v = jit_var(index);
-        if (v->data == nullptr || (gather && v->dirty))
+        if (v->data == nullptr || (gather && v->pending_scatter))
             jit_eval();
     }
     state.scatter_gather_operand = index;
@@ -703,12 +700,12 @@ const char *jit_var_str(uint32_t index) {
                   "jit_device_set() before!",
                   v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
 
-    if (unlikely(v->data == nullptr || v->dirty)) {
+    if (unlikely(v->data == nullptr || v->pending_scatter)) {
         jit_eval();
         v = jit_var(index);
     }
 
-    if (unlikely(v->dirty))
+    if (unlikely(v->pending_scatter))
         jit_raise("jit_var_str(): element remains dirty after jit_eval()!");
     else if (unlikely(!v->data))
         jit_raise("jit_var_str(): invalid/uninitialized variable!");
@@ -735,8 +732,10 @@ const char *jit_var_str(uint32_t index) {
         if (cuda) {
             // Temporarily release the lock while synchronizing
             unlock_guard guard(state.mutex);
+            cuda_check(cuMemcpyAsync((CUdeviceptr) dst,
+                                     (CUdeviceptr) src_offset, isize,
+                                     stream->handle));
             cuda_check(cuStreamSynchronize(stream->handle));
-            cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src_offset, isize));
         } else {
             memcpy(dst, src_offset, isize);
         }
@@ -765,7 +764,7 @@ const char *jit_var_str(uint32_t index) {
 /// Call jit_eval() only if the variable 'index' requires evaluation
 void jit_var_eval(uint32_t index) {
     Variable *v = jit_var(index);
-    if (v->data == nullptr || v->dirty)
+    if (v->data == nullptr || v->pending_scatter)
         jit_eval();
 }
 
@@ -781,12 +780,12 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
                  "jit_device_set() before!",
                  v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
 
-    if (unlikely(v->data == nullptr || v->dirty)) {
+    if (unlikely(v->data == nullptr || v->pending_scatter)) {
         jit_eval();
         v = jit_var(index);
     }
 
-    if (unlikely(v->dirty))
+    if (unlikely(v->pending_scatter))
         jit_raise("jit_var_read(): element remains dirty after jit_eval()!");
     else if (unlikely(!v->data))
         jit_raise("jit_var_read(): invalid/uninitialized variable!");
@@ -800,8 +799,9 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
     if  (cuda) {
         // Temporarily release the lock while synchronizing
         unlock_guard guard(state.mutex);
+        cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, isize,
+                                 stream->handle));
         cuda_check(cuStreamSynchronize(stream->handle));
-        cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, isize));
     } else {
         memcpy(dst, src, isize);
     }
@@ -819,17 +819,15 @@ void jit_var_write(uint32_t index, size_t offset, const void *src) {
                   "jit_device_set() before!",
                   v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
 
-    if (unlikely(v->data == nullptr || v->dirty)) {
+    if (unlikely(v->data == nullptr || v->pending_scatter)) {
         jit_eval();
         v = jit_var(index);
     }
 
-    if (unlikely(v->dirty))
+    if (unlikely(v->pending_scatter))
         jit_raise("jit_var_write(): element remains dirty after jit_eval()!");
     else if (unlikely(!v->data))
         jit_raise("jit_var_write(): invalid/uninitialized variable!");
-
-    jit_cse_drop(index, v);
 
     if (v->size == 1)
         offset = 0;

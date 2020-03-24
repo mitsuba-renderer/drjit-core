@@ -33,6 +33,9 @@ struct Device {
 
     /// Number of SMs
     int num_sm;
+
+    /// Max. bytes of shared memory per SM
+    int shared_memory_bytes;
 };
 
 /// Keeps track of asynchronous deallocations via jit_free()
@@ -126,14 +129,17 @@ struct Variable {
     /// Don't deallocate 'data' when this variable is destructed?
     bool retain_data : 1;
 
+    /// Don't decrease reference counts ('dep', 'extra_dep')
+    bool retain_references : 1;
+
     /// Free the 'stmt' variables at destruction time?
     bool free_stmt : 1;
 
     /// Was this variable labeled?
     bool has_label : 1;
 
-    /// A variable is 'dirty' if there are pending scatter operations to it
-    bool dirty : 1;
+    /// Are there pending/unevaluated scatter operations to this variable?
+    bool pending_scatter : 1;
 
     /// Optimization: is this a direct pointer (rather than an array which stores a pointer?)
     bool direct_pointer : 1;
@@ -204,6 +210,12 @@ using KernelCache =
 struct State {
     /// Must be held to access members
     std::mutex mutex;
+
+    /// Must be held to access 'stream->release_chain' and 'state.alloc_free'
+    std::mutex malloc_mutex;
+
+    /// Must be held to execute jit_eval()
+    std::mutex eval_mutex;
 
     /// Stores the mapping from variable indices to variables
     VariableMap variables;

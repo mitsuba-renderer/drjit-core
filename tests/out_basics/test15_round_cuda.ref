@@ -152,7 +152,6 @@ jit_var_dec_ref_int(2): 0
 jit_var_dec_ref_int(3): 0
 jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
-jit_free_flush(): performing 1 deallocation
 floor: [0, 0, 0, -1, -1, -1]
 ceil:  [1, 1, 1, -0, -0, -0]
 trunc: [0, 0, 0, -0, -0, -0]
@@ -333,7 +332,6 @@ jit_var_dec_ref_int(9): 0
 jit_var_dec_ref_int(10): 0
 jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
-jit_free_flush(): performing 1 deallocation
 floor: [0, 0, 0, -1, -1, -1]
 ceil:  [1, 1, 1, -0, -0, -0]
 trunc: [0, 0, 0, -0, -0, -0]
@@ -363,7 +361,6 @@ jit_var_free(8)
 jit_free(<@>, type=device, device=0, size=64)
 jit_shutdown(): destroying streams ..
 jit_free_flush(): scheduling 7 deallocations
-jit_free_flush(): performing 7 deallocations
 jit_malloc_trim(): freed
  - host-pinned memory: 64 B in 1 allocation
  - device memory: 448 B in 7 allocations

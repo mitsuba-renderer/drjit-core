@@ -12,3 +12,6 @@ extern void jit_fill(VarType type, void *ptr, size_t size, const void *src);
 /// Reduce the given array to a single value
 extern void jit_reduce(VarType type, ReductionType rtype, const void *ptr,
                        size_t size, void *out);
+
+/// Exclusive prefix sum
+extern void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size);

@@ -220,7 +220,6 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_free_flush(): performing 1 deallocation
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(4): 0
 jit_var_dec_ref_int(6): 0
@@ -233,7 +232,6 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(3): 1
 jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
-jit_free_flush(): performing 1 deallocation
 [-34, -62, -75, -2]
 jit_trace_append(9): mov.$t0 $r0, 0x00000003
 jit_var_inc_ref_ext(9): 1
@@ -514,7 +512,6 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(3): 1
 jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
-jit_free_flush(): performing 1 deallocation
 [-102, -186, -225, -6]
 [0, -1, -6, -3, -4, .. 1014 skipped .., -1019, -1020, -1021, -1022, -1023]
 jit_var_dec_ref_ext(17): 0
@@ -528,7 +525,6 @@ jit_var_free(3)
 jit_free(<@>, type=device, device=0, size=4096)
 jit_shutdown(): destroying streams ..
 jit_free_flush(): scheduling 3 deallocations
-jit_free_flush(): performing 3 deallocations
 jit_device_set(device=0, stream=1): selecting stream
 jit_device_set(device=0, stream=2): selecting stream
 jit_malloc_trim(): freed

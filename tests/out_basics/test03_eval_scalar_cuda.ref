@@ -56,7 +56,6 @@ jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=64)
 jit_shutdown(): destroying streams ..
 jit_free_flush(): scheduling 1 deallocation
-jit_free_flush(): performing 1 deallocation
 jit_malloc_trim(): freed
  - device memory: 64 B in 1 allocation
 jit_shutdown(): done

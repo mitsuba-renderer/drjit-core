@@ -37,6 +37,10 @@ struct AllocInfoHasher {
 
 using AllocInfoMap = tsl::robin_map<AllocInfo, std::vector<void *>, AllocInfoHasher>;
 
+/// Round to the next power of two
+extern size_t round_pow2(size_t x);
+extern uint32_t round_pow2(uint32_t x);
+
 /// Descriptive names for the various allocation types
 extern const char *alloc_type_name[(int) AllocType::Count];
 

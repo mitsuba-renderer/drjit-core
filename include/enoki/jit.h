@@ -600,7 +600,13 @@ extern JITC_EXPORT void jitc_var_migrate(uint32_t index, enum AllocType type);
 /// Indicate that evaluation of the given variable causes side effects
 extern JITC_EXPORT void jitc_var_mark_side_effect(uint32_t index);
 
-/// Mark variable as dirty, e.g. because of pending scatter operations
+/**
+ * \brief Mark variable contents as dirty
+ *
+ * This function must be used to inform the JIT compiler when the memory region
+ * underlying a variable is modified using scatter operations. It will then ensure
+ * that reads from this variable (while still in dirty state) will trigger jitc_eval().
+ */
 extern JITC_EXPORT void jitc_var_mark_dirty(uint32_t index);
 
 /**
@@ -698,6 +704,21 @@ extern JITC_EXPORT void jitc_fill(enum VarType type, void *ptr, size_t size,
  */
 extern JITC_EXPORT void jitc_reduce(enum VarType type, enum ReductionType rtype,
                                     const void *ptr, size_t size, void *out);
+
+/**
+ * \brief Perform an exclusive scan / prefix sum over an unsigned integer array
+ *
+ * If desired, the scan can be performed in place (i.e. with <tt>in == out</tt>).
+ *
+ * The following comment applies to the GPU implementation: when the array is
+ * larger than 4K elements, the implementation will round up size to the next
+ * largest number of 4K, hence the supplied memory region must be sufficiently
+ * large to avoid an out-of-bounds reads and writes. This is not an issue for
+ * memory obtained using \ref jitc_malloc(), which internally rounds
+ * allocations to the next largest power of two.
+ */
+extern JITC_EXPORT void jitc_scan(const uint32_t *in, uint32_t *out,
+                                  uint32_t size);
 
 #if defined(__cplusplus)
 }

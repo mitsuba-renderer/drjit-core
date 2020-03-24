@@ -30,7 +30,8 @@ void jit_init(int llvm, int cuda) {
 
     for (int i = 0; i < jit_cuda_devices; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
-            unified_addr = 0, managed = 0, concurrent_managed = 0;
+            unified_addr = 0, managed = 0, concurrent_managed = 0,
+            shared_memory_bytes = 0;
         size_t mem_total = 0;
         char name[256];
 
@@ -43,12 +44,14 @@ void jit_init(int llvm, int cuda) {
         cuda_check(cuDeviceGetAttribute(&unified_addr, CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING, i));
         cuda_check(cuDeviceGetAttribute(&managed, CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS, i));
         cuda_check(cuDeviceGetAttribute(&concurrent_managed, CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY, i));
+        cuda_check(cuDeviceGetAttribute(&shared_memory_bytes, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK, i));
 
         jit_log(Info,
                 " - Found CUDA device %i: \"%s\" "
-                "(PCI ID %02x:%02x.%i, %i SMs, %s)",
+                "(PCI ID %02x:%02x.%i, %i SMs w/%s shared mem., %s global mem.)",
                 i, name, pci_bus_id, pci_dev_id, pci_dom_id, num_sm,
-                jit_mem_string(mem_total));
+                std::string(jit_mem_string(shared_memory_bytes)).c_str(),
+                std::string(jit_mem_string(mem_total)).c_str());
 
         if (unified_addr == 0) {
             jit_log(Warn, " - Warning: device does *not* support unified addressing, skipping ..");
@@ -63,6 +66,7 @@ void jit_init(int llvm, int cuda) {
         Device device;
         device.id = i;
         device.num_sm = num_sm;
+        device.shared_memory_bytes = shared_memory_bytes;
         cuda_check(cuDevicePrimaryCtxRetain(&device.context, i));
         state.devices.push_back(device);
     }

@@ -5,6 +5,7 @@
 #if !defined(ENOKI_DYNAMIC_CUDA)
 #  include <cuda.h>
 #else
+#  define CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK 8
 #  define CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS 89
 #  define CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY 83
 #  define CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT 16
@@ -69,6 +70,7 @@ extern CUresult (*cuDriverGetVersion)(int *);
 extern CUresult (*cuEventCreate)(CUevent *, unsigned int);
 extern CUresult (*cuEventDestroy)(CUevent);
 extern CUresult (*cuEventRecord)(CUevent, CUstream);
+extern CUresult (*cuEventSynchronize)(CUevent);
 extern CUresult (*cuFuncGetAttribute)(int *, int, CUfunction);
 extern CUresult (*cuFuncSetAttribute)(CUfunction, int, int);
 extern CUresult (*cuGetErrorString)(CUresult, const char **);
@@ -90,7 +92,6 @@ extern CUresult (*cuMemAllocManaged)(void **, size_t, unsigned int);
 extern CUresult (*cuMemFree)(void *);
 extern CUresult (*cuMemFreeHost)(void *);
 extern CUresult (*cuMemPrefetchAsync)(const void *, size_t, CUdevice, CUstream);
-extern CUresult (*cuMemcpy)(void *, const void *, size_t);
 extern CUresult (*cuMemcpyAsync)(void *, const void *, size_t, CUstream);
 extern CUresult (*cuMemsetD16Async)(void *, unsigned short, size_t, CUstream);
 extern CUresult (*cuMemsetD32Async)(void *, unsigned int, size_t, CUstream);
@@ -109,6 +110,15 @@ extern CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int);
 
 // Enoki API
 extern CUfunction jit_cuda_fill_64;
+extern CUfunction jit_cuda_mkperm_phase_1_shared;
+extern CUfunction jit_cuda_mkperm_phase_1_global;
+extern CUfunction jit_cuda_mkperm_phase_2_shared;
+extern CUfunction jit_cuda_mkperm_phase_2_global;
+extern CUfunction jit_cuda_transpose;
+extern CUfunction jit_cuda_scan_small;
+extern CUfunction jit_cuda_scan_large;
+extern CUfunction jit_cuda_scan_offset;
+
 extern CUfunction jit_cuda_reductions[(int) ReductionType::Count][(int) VarType::Count];
 extern int jit_cuda_devices;
 

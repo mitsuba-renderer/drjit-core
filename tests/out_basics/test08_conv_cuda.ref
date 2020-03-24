@@ -293,7 +293,6 @@ jit_var_dec_ref_int(10): 1
 jit_var_dec_ref_int(10): 0
 jit_free_flush(): scheduling 2 deallocations
 jit_eval(): done.
-jit_free_flush(): performing 2 deallocations
 value=[-512, -511, -510, -509, -508, .. 1014 skipped .., 507, 508, 509, 510, 511]
 value=[-512, -511, -510, -509, -508, .. 1014 skipped .., 507, 508, 509, 510, 511]
 value=[-512, -511, -510, -509, -508, .. 1014 skipped .., 507, 508, 509, 510, 511]
@@ -613,7 +612,6 @@ jit_var_dec_ref_int(24): 1
 jit_var_dec_ref_int(24): 0
 jit_free_flush(): scheduling 2 deallocations
 jit_eval(): done.
-jit_free_flush(): performing 2 deallocations
 value=[-512, -511, -510, -509, -508, .. 1014 skipped .., 507, 508, 509, 510, 511]
 value=[-512, -511, -510, -509, -508, .. 1014 skipped .., 507, 508, 509, 510, 511]
 value=[-512, -511, -510, -509, -508, .. 1014 skipped .., 507, 508, 509, 510, 511]
@@ -931,7 +929,6 @@ jit_var_free(38)
 jit_free(<@>, type=device, device=0, size=8192)
 jit_shutdown(): destroying streams ..
 jit_free_flush(): scheduling 4 deallocations
-jit_free_flush(): performing 4 deallocations
 jit_malloc_trim(): freed
  - device memory: 36 KiB in 6 allocations
 jit_shutdown(): done

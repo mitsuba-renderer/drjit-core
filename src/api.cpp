@@ -86,6 +86,13 @@ void jitc_device_set(int32_t device, uint32_t stream) {
     jit_device_set(device, stream);
 }
 
+void jitc_llvm_set_target(const char *target_cpu,
+                          const char *target_features,
+                          int vector_width) {
+    lock_guard guard(state.mutex);
+    jit_llvm_set_target(target_cpu, target_features, vector_width);
+}
+
 void jitc_parallel_set_dispatch(int enable) {
     lock_guard guard(state.mutex);
     state.parallel_dispatch = enable != 0;
@@ -277,9 +284,7 @@ void jitc_reduce(VarType type, ReductionType rtype,
     jit_reduce(type, rtype, ptr, size, out);
 }
 
-void jitc_llvm_set_target(const char *target_cpu,
-                          const char *target_features,
-                          int vector_width) {
+void jitc_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
     lock_guard guard(state.mutex);
-    jit_llvm_set_target(target_cpu, target_features, vector_width);
+    jit_scan(in, out, size);
 }

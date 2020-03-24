@@ -3,8 +3,8 @@ NVCC=nvcc -m64 -gencode arch=$(COMPUTE_CAPABILITY),code=$(COMPUTE_CAPABILITY) --
 
 all: kernels.h
 
-kernels.ptx: kernels.cu
-	$(NVCC) kernels.cu -I cub -o kernels.ptx
+kernels.ptx: reduce.cuh scan.cuh mkperm.cuh misc.cuh
+	$(NVCC) kernels.cu -o kernels.ptx
 
 kernels.ptx.gz: kernels.ptx
 	rm -f kernels.ptx.gz

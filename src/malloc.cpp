@@ -6,11 +6,19 @@ const char *alloc_type_name[(int) AllocType::Count] = {
 };
 
 // Round an unsigned integer up to a power of two
-static size_t round_pow2(size_t x) {
+size_t round_pow2(size_t x) {
     x -= 1;
     x |= x >> 1;   x |= x >> 2;
     x |= x >> 4;   x |= x >> 8;
     x |= x >> 16;  x |= x >> 32;
+    return x + 1;
+}
+
+uint32_t round_pow2(uint32_t x) {
+    x -= 1;
+    x |= x >> 1;   x |= x >> 2;
+    x |= x >> 4;   x |= x >> 8;
+    x |= x >> 16;
     return x + 1;
 }
 
@@ -36,45 +44,48 @@ void* jit_malloc(AllocType type, size_t size) {
     const char *descr = nullptr;
     void *ptr = nullptr;
 
-    if (type == AllocType::Device) {
-        Stream *stream = active_stream;
-        if (unlikely(!stream))
-            jit_raise("jit_malloc(): device must be set using jit_device_set() "
-                      "before allocating device pointer!");
-        ai.device = stream->device;
+    /* Acquire lock protecting stream->release_chain and state.alloc_free */ {
+        lock_guard guard(state.malloc_mutex);
+        if (type == AllocType::Device) {
+            Stream *stream = active_stream;
+            if (unlikely(!stream))
+                jit_raise("jit_malloc(): device must be set using jit_device_set() "
+                          "before allocating device pointer!");
+            ai.device = stream->device;
 
-        /* Check for arrays with a pending free operation on the current
-           stream. This only works for device memory, as other allocation
-           flavors (host-pinned, shared, shared-read-mostly) can be accessed
-           from both CPU & GPU and might still be used. */
-        ReleaseChain *chain = stream->release_chain;
-        while (chain) {
-            auto it = chain->entries.find(ai);
+            /* Check for arrays with a pending free operation on the current
+               stream. This only works for device memory, as other allocation
+               flavors (host-pinned, shared, shared-read-mostly) can be accessed
+               from both CPU & GPU and might still be used. */
+            ReleaseChain *chain = stream->release_chain;
+            while (chain) {
+                auto it = chain->entries.find(ai);
 
-            if (it != chain->entries.end()) {
-                auto &list = it.value();
+                if (it != chain->entries.end()) {
+                    auto &list = it.value();
+                    if (!list.empty()) {
+                        ptr = list.back();
+                        list.pop_back();
+                        descr = "reused local";
+                        break;
+                    }
+                }
+
+                chain = chain->next;
+            }
+        }
+
+        // Look globally. Are there suitable freed arrays?
+        if (ptr == nullptr) {
+            auto it = state.alloc_free.find(ai);
+
+            if (it != state.alloc_free.end()) {
+                std::vector<void *> &list = it.value();
                 if (!list.empty()) {
                     ptr = list.back();
                     list.pop_back();
-                    descr = "reused local";
-                    break;
+                    descr = "reused global";
                 }
-            }
-
-            chain = chain->next;
-        }
-    }
-
-    // Look globally. Are there suitable freed arrays?
-    if (ptr == nullptr) {
-        auto it = state.alloc_free.find(ai);
-
-        if (it != state.alloc_free.end()) {
-            std::vector<void *> &list = it.value();
-            if (!list.empty()) {
-                ptr = list.back();
-                list.pop_back();
-                descr = "reused global";
             }
         }
     }
@@ -83,13 +94,13 @@ void* jit_malloc(AllocType type, size_t size) {
     if (unlikely(ptr == nullptr)) {
         if (type == AllocType::Host) {
             int rv;
-            /* Temporarily release the lock */ {
+            /* Temporarily release the main lock */ {
                 unlock_guard guard(state.mutex);
                 rv = posix_memalign(&ptr, 64, ai.size);
             }
             if (rv == ENOMEM) {
                 jit_malloc_trim();
-                /* Temporarily release the lock */ {
+                /* Temporarily release the main lock */ {
                     unlock_guard guard(state.mutex);
                     rv = posix_memalign(&ptr, 64, ai.size);
                 }
@@ -121,7 +132,7 @@ void* jit_malloc(AllocType type, size_t size) {
 
             CUresult ret;
 
-            /* Temporarily release the lock */ {
+            /* Temporarily release the main lock */ {
                 unlock_guard guard(state.mutex);
                 ret = alloc((CUdeviceptr *) &ptr, ai.size);
             }
@@ -129,7 +140,7 @@ void* jit_malloc(AllocType type, size_t size) {
             if (ret != CUDA_SUCCESS) {
                 jit_malloc_trim();
 
-                /* Temporarily release the lock */ {
+                /* Temporarily release the main lock */ {
                     unlock_guard guard(state.mutex);
                     ret = alloc((CUdeviceptr *) &ptr, ai.size);
                 }
@@ -191,6 +202,8 @@ void jit_free(void *ptr) {
 
     AllocInfo ai = it.value();
     if (ai.type == AllocType::Host) {
+        // Acquire lock protecting 'state.alloc_free'
+        lock_guard guard(state.malloc_mutex);
         state.alloc_free[ai].push_back(ptr);
     } else {
         Stream *stream = active_stream;
@@ -198,6 +211,9 @@ void jit_free(void *ptr) {
             jit_raise(
                 "jit_free(): attempted to free a CUDA device while the LLVM "
                 "backend as selected! (call jit_device_set() before)!");
+
+        // Acquire lock protecting 'stream->release_chain'
+        lock_guard guard(state.malloc_mutex);
         ReleaseChain *chain = stream->release_chain;
         if (unlikely(!chain))
             chain = stream->release_chain = new ReleaseChain();
@@ -243,20 +259,16 @@ void jit_free_flush() {
     cuda_check(cuLaunchHostFunc(
         stream->handle,
         [](void *ptr) {
-            lock_guard guard(state.mutex);
+            // Acquire lock protecting stream->release_chain and state.alloc_free
+            lock_guard guard(state.malloc_mutex);
             ReleaseChain *chain0 = (ReleaseChain *) ptr,
                          *chain1 = chain0->next;
 
-            size_t n_dealloc_remain = 0;
             for (auto &kv: chain1->entries) {
                 const AllocInfo &ai = kv.first;
                 std::vector<void *> &target = state.alloc_free[ai];
                 target.insert(target.end(), kv.second.begin(), kv.second.end());
-                n_dealloc_remain += kv.second.size();
             }
-
-            jit_trace("jit_free_flush(): performing %zu deallocation%s",
-                      n_dealloc_remain, n_dealloc_remain > 1 ? "s" : "");
 
             delete chain1;
             chain0->next = nullptr;
@@ -306,7 +318,7 @@ void jit_malloc_prefetch(void *ptr, int device) {
         jit_raise("jit_malloc_prefetch(): this function should only be used with "
                   "the CUDA backend! (call jit_device_set() before)!");
 
-    if (device < 0) {
+    if (device == -1) {
         device = CU_DEVICE_CPU;
     } else {
         if ((size_t) device >= state.devices.size())
@@ -334,11 +346,11 @@ void jit_malloc_prefetch(void *ptr, int device) {
     }
 }
 
-static bool jit_malloc_trim_warning = false;
+static bool jit_malloc_trim_warned = false;
 
 /// Release all unused memory to the GPU / OS
 void jit_malloc_trim(bool warn) {
-    if (warn && !jit_malloc_trim_warning) {
+    if (warn && !jit_malloc_trim_warned) {
         jit_log(
             Warn,
             "jit_malloc_trim(): Enoki exhausted the available memory and had "
@@ -347,10 +359,14 @@ void jit_malloc_trim(bool warn) {
             "performance. You may want to change your computation so that it "
             "uses less memory. This warning will only be displayed once.");
 
-        jit_malloc_trim_warning = true;
+        jit_malloc_trim_warned = true;
     }
 
-    AllocInfoMap alloc_free(std::move(state.alloc_free));
+    AllocInfoMap alloc_free;
+    /* Critical section */ {
+        lock_guard guard(state.malloc_mutex);
+        alloc_free = std::move(state.alloc_free);
+    }
 
     /// Clear pointer <-> ID mapping
     for (auto& kv : alloc_free) {
@@ -377,7 +393,7 @@ void jit_malloc_trim(bool warn) {
     size_t trim_count[(int) AllocType::Count] = { 0 },
            trim_size [(int) AllocType::Count] = { 0 };
 
-    /* Temporarily release the lock for cudaFree() et al. */ {
+    /* Temporarily release the main lock */ {
         unlock_guard guard(state.mutex);
 
         for (auto& kv : alloc_free) {

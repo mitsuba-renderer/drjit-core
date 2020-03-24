@@ -22,6 +22,7 @@ CUresult (*cuDriverGetVersion)(int *) = nullptr;
 CUresult (*cuEventCreate)(CUevent *, unsigned int) = nullptr;
 CUresult (*cuEventDestroy)(CUevent) = nullptr;
 CUresult (*cuEventRecord)(CUevent, CUstream) = nullptr;
+CUresult (*cuEventSynchronize)(CUevent) = nullptr;
 CUresult (*cuFuncGetAttribute)(int *, int, CUfunction) = nullptr;
 CUresult (*cuFuncSetAttribute)(CUfunction, int, int) = nullptr;
 CUresult (*cuGetErrorString)(CUresult, const char **) = nullptr;
@@ -45,7 +46,6 @@ CUresult (*cuMemAllocManaged)(void **, size_t, unsigned int) = nullptr;
 CUresult (*cuMemFree)(void *) = nullptr;
 CUresult (*cuMemFreeHost)(void *) = nullptr;
 CUresult (*cuMemPrefetchAsync)(const void *, size_t, CUdevice, CUstream) = nullptr;
-CUresult (*cuMemcpy)(void *, const void *, size_t) = nullptr;
 CUresult (*cuMemcpyAsync)(void *, const void *, size_t, CUstream) = nullptr;
 CUresult (*cuMemsetD16Async)(void *, unsigned short, size_t, CUstream) = nullptr;
 CUresult (*cuMemsetD32Async)(void *, unsigned int, size_t, CUstream) = nullptr;
@@ -66,6 +66,15 @@ static void *jit_cuda_handle = nullptr;
 
 // Enoki API
 CUfunction jit_cuda_fill_64 = nullptr;
+CUfunction jit_cuda_mkperm_phase_1_shared = nullptr;
+CUfunction jit_cuda_mkperm_phase_1_global = nullptr;
+CUfunction jit_cuda_mkperm_phase_2_shared = nullptr;
+CUfunction jit_cuda_mkperm_phase_2_global = nullptr;
+CUfunction jit_cuda_transpose = nullptr;
+CUfunction jit_cuda_scan_small = nullptr;
+CUfunction jit_cuda_scan_large = nullptr;
+CUfunction jit_cuda_scan_offset = nullptr;
+
 CUfunction jit_cuda_reductions[(int) ReductionType::Count]
                               [(int) VarType::Count] = {};
 int jit_cuda_devices = 0;
@@ -140,6 +149,7 @@ bool jit_cuda_init() {
         LOAD(cuEventCreate);
         LOAD(cuEventDestroy, "v2");
         LOAD(cuEventRecord, "ptsz");
+        LOAD(cuEventSynchronize);
         LOAD(cuFuncGetAttribute);
         LOAD(cuFuncSetAttribute);
         LOAD(cuGetErrorString);
@@ -157,7 +167,6 @@ bool jit_cuda_init() {
         LOAD(cuMemFree, "v2");
         LOAD(cuMemFreeHost);
         LOAD(cuMemPrefetchAsync, "ptsz");
-        LOAD(cuMemcpy, "ptds");
         LOAD(cuMemcpyAsync, "ptsz");
         LOAD(cuMemsetD16Async, "ptsz");
         LOAD(cuMemsetD32Async, "ptsz");
@@ -236,6 +245,14 @@ bool jit_cuda_init() {
     // .. and register it with CUDA
     cuda_check(cuModuleLoadData(&jit_cuda_module, uncompressed.get()));
     cuda_check(cuModuleGetFunction(&jit_cuda_fill_64, jit_cuda_module, "fill_64"));
+    cuda_check(cuModuleGetFunction(&jit_cuda_mkperm_phase_1_shared, jit_cuda_module, "mkperm_phase_1_shared"));
+    cuda_check(cuModuleGetFunction(&jit_cuda_mkperm_phase_2_shared, jit_cuda_module, "mkperm_phase_2_shared"));
+    cuda_check(cuModuleGetFunction(&jit_cuda_mkperm_phase_1_global, jit_cuda_module, "mkperm_phase_1_global"));
+    cuda_check(cuModuleGetFunction(&jit_cuda_mkperm_phase_2_global, jit_cuda_module, "mkperm_phase_2_global"));
+    cuda_check(cuModuleGetFunction(&jit_cuda_transpose, jit_cuda_module, "transpose"));
+    cuda_check(cuModuleGetFunction(&jit_cuda_scan_small, jit_cuda_module, "scan_small"));
+    cuda_check(cuModuleGetFunction(&jit_cuda_scan_large, jit_cuda_module, "scan_large"));
+    cuda_check(cuModuleGetFunction(&jit_cuda_scan_offset, jit_cuda_module, "scan_offset"));
 
     for (uint32_t i = 0; i < (uint32_t) ReductionType::Count; i++) {
         for (uint32_t j = 0; j < (uint32_t) VarType::Count; j++) {
@@ -268,8 +285,18 @@ void jit_cuda_shutdown() {
         cuda_check(cuDevicePrimaryCtxRelease(i));
 
     jit_cuda_module = nullptr;
-    jit_cuda_fill_64 = nullptr;
     jit_cuda_devices = 0;
+
+    jit_cuda_fill_64 = nullptr;
+    jit_cuda_mkperm_phase_1_shared = nullptr;
+    jit_cuda_mkperm_phase_2_shared = nullptr;
+    jit_cuda_mkperm_phase_1_global = nullptr;
+    jit_cuda_mkperm_phase_2_global = nullptr;
+    jit_cuda_transpose = nullptr;
+    jit_cuda_scan_small = nullptr;
+    jit_cuda_scan_large = nullptr;
+    jit_cuda_scan_offset = nullptr;
+
     memset(jit_cuda_reductions, 0, sizeof(jit_cuda_reductions));
 
 #if defined(ENOKI_DYNAMIC_CUDA)
@@ -278,15 +305,16 @@ void jit_cuda_shutdown() {
     Z(cuDeviceGetName); Z(cuDevicePrimaryCtxRelease);
     Z(cuDevicePrimaryCtxRetain); Z(cuDeviceTotalMem); Z(cuDriverGetVersion);
     Z(cuEventCreate); Z(cuEventDestroy); Z(cuEventRecord);
-    Z(cuFuncGetAttribute); Z(cuFuncSetAttribute); Z(cuGetErrorString);
-    Z(cuInit); Z(cuLaunchHostFunc); Z(cuLaunchKernel); Z(cuLinkAddData);
-    Z(cuLinkComplete); Z(cuLinkCreate); Z(cuLinkDestroy); Z(cuMemAdvise);
-    Z(cuMemAlloc); Z(cuMemAllocHost); Z(cuMemAllocManaged); Z(cuMemFree);
-    Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy); Z(cuMemcpyAsync);
-    Z(cuMemsetD16Async); Z(cuMemsetD32Async); Z(cuMemsetD8Async);
-    Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleUnload);
-    Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent); Z(cuStreamCreate);
-    Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
+    Z(cuEventSynchronize); Z(cuFuncGetAttribute); Z(cuFuncSetAttribute);
+    Z(cuGetErrorString); Z(cuInit); Z(cuLaunchHostFunc); Z(cuLaunchKernel);
+    Z(cuLinkAddData); Z(cuLinkComplete); Z(cuLinkCreate); Z(cuLinkDestroy);
+    Z(cuMemAdvise); Z(cuMemAlloc); Z(cuMemAllocHost); Z(cuMemAllocManaged);
+    Z(cuMemFree); Z(cuMemFreeHost); Z(cuMemPrefetchAsync);
+    Z(cuMemcpyAsync); Z(cuMemsetD16Async); Z(cuMemsetD32Async);
+    Z(cuMemsetD8Async); Z(cuModuleGetFunction); Z(cuModuleLoadData);
+    Z(cuModuleUnload); Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent);
+    Z(cuStreamCreate); Z(cuStreamDestroy); Z(cuStreamSynchronize);
+    Z(cuStreamWaitEvent);
 
     dlclose(jit_cuda_handle);
     jit_cuda_handle = nullptr;

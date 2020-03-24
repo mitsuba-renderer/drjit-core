@@ -185,12 +185,14 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    bool write_ref = false, verbose = false;
+    int log_level_stderr = (int) LogLevel::Disable;
+
+    bool write_ref = false;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-w") == 0) {
             write_ref = true;
         } else if (strcmp(argv[i], "-v") == 0) {
-            verbose = true;
+            log_level_stderr = std::max((int) LogLevel::Info, log_level_stderr + 1);
         } else {
             fprintf(stderr, "Invalid command line argument: \"%s\"\n", argv[i]);
             exit(EXIT_FAILURE);
@@ -199,7 +201,7 @@ int main(int argc, char **argv) {
 
     try {
         jitc_init(1, 1);
-        jitc_log_set_stderr(verbose ? LogLevel::Trace : LogLevel::Disable);
+        jitc_log_set_stderr((LogLevel) log_level_stderr);
         jitc_set_log_callback(LogLevel::Trace, log_callback);
         fprintf(stdout, "\n");
 
