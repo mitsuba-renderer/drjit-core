@@ -5,11 +5,6 @@
 
 using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, void **ptr);
 
-enum KernelType {
-    LLVM,
-    CUDA
-};
-
 /// A kernel and its preferred lauch configuration
 struct Kernel {
     union {
@@ -28,8 +23,6 @@ struct Kernel {
             LLVMKernelFunction func;
         } llvm;
     };
-
-    KernelType type;
 };
 
 
@@ -46,7 +39,8 @@ extern int jit_llvm_vector_width;
 extern bool jit_llvm_init();
 
 /// Compile an IR string
-extern Kernel jit_llvm_compile(const char *str, size_t size, uint32_t hash, bool &cache_hit);
+extern Kernel jit_llvm_compile(const char *str, size_t size, uint32_t hash,
+                               bool &cache_hit);
 
 /// Release a compiled function
 extern void jit_llvm_free(Kernel kernel);

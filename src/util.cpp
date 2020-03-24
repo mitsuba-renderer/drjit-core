@@ -30,6 +30,7 @@ void jit_fill(VarType type, void *ptr, size_t size, const void *src) {
                 break;
 
             case 8: {
+                    const Device &device = state.devices[stream->device];
                     int num_threads, num_blocks;
                     if (size < 1024) {
                         num_threads = size;
@@ -38,11 +39,13 @@ void jit_fill(VarType type, void *ptr, size_t size, const void *src) {
                         num_threads = 1024;
                         num_blocks = std::min(
                             (uint32_t) size / num_threads,
-                            (uint32_t) state.devices[stream->device].num_sm);
+                            (uint32_t) device.num_sm);
                     }
                     void *args[] = { &ptr, &size, (void *) src };
-                    cuda_check(cuLaunchKernel(jit_cuda_fill_64, num_blocks, 1, 1, num_threads,
-                                              1, 1, 0, stream->handle, args, nullptr));
+                    CUfunction kernel = jit_cuda_fill_64[device.id];
+                    cuda_check(cuLaunchKernel(kernel, num_blocks, 1, 1,
+                                              num_threads, 1, 1, 0,
+                                              stream->handle, args, nullptr));
                 }
                 break;
 
@@ -100,13 +103,13 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, size_t size,
     Stream *stream = active_stream;
 
     if (stream) {
-        CUfunction func = jit_cuda_reductions[(int) rtype][(int) type];
+        const Device &device = state.devices[stream->device];
+        CUfunction func = jit_cuda_reductions[(int) rtype][(int) type][device.id];
         if (!func)
-            jit_raise(
-                "jit_reduce(): no existing kernel for type=%s, rtype=%s!",
-                var_type_name[(int) type], reduction_name[(int) rtype]);
+            jit_raise("jit_reduce(): no existing kernel for type=%s, rtype=%s!",
+                      var_type_name[(int) type], reduction_name[(int) rtype]);
 
-        uint32_t num_blocks = state.devices[stream->device].num_sm * 4,
+        uint32_t num_blocks = device.num_sm * 4,
                  num_threads = 1024,
                  shared_size = num_threads * type_size;
 
@@ -138,6 +141,8 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
     Stream *stream = active_stream;
 
     if (stream) {
+        const Device &device = state.devices[stream->device];
+
         /// Exclusive prefix scan processes 4K elements / block, 4 per thread
         uint32_t block_count      = (size + 4096 - 1) / 4096,
                  thread_count     = std::min(round_pow2((size + 3u) / 4u), 1024u),
@@ -156,7 +161,7 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
                                        stream->handle));
         } else if (size <= 4096) {
             void *args[] = { &in, &out, &size };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_small, 1, 1, 1,
+            cuda_check(cuLaunchKernel(jit_cuda_scan_small[device.id], 1, 1, 1,
                                       thread_count, 1, 1, shared_size,
                                       stream->handle, args, nullptr));
         } else {
@@ -164,14 +169,14 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
                 AllocType::Device, block_count * sizeof(uint32_t));
 
             void *args[] = { &in, &out, &block_sums };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_large, block_count, 1, 1,
+            cuda_check(cuLaunchKernel(jit_cuda_scan_large[device.id], block_count, 1, 1,
                                       thread_count, 1, 1, shared_size,
                                       stream->handle, args, nullptr));
 
             jit_scan(block_sums, block_sums, block_count);
 
             void *args_2[] = { &out, &block_sums };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_offset, block_count, 1, 1,
+            cuda_check(cuLaunchKernel(jit_cuda_scan_offset[device.id], block_count, 1, 1,
                                       thread_count, 1, 1, 0, stream->handle,
                                       args_2, nullptr));
             jit_free(block_sums);
@@ -191,10 +196,12 @@ void jit_transpose(uint32_t *data, uint32_t rows, uint32_t cols) {
     Stream *stream = active_stream;
 
     if (stream) {
+        const Device &device = state.devices[stream->device];
         void *args[] = { &data, &rows, &cols };
-        cuda_check(cuLaunchKernel(jit_cuda_transpose, (cols + 31) / 32,
-                                  (rows + 31) / 32, 1, 32, 32, 1, 0,
-                                  stream->handle, args, nullptr));
+        cuda_check(cuLaunchKernel(jit_cuda_transpose[device.id],
+                                  (cols + 31) / 32, (rows + 31) / 32, 1,
+                                  32, 32, 1, 0, stream->handle,
+                                  args, nullptr));
     } else {
         unlock_guard guard(state.mutex);
         for (uint32_t r = 0; r < rows; ++r) {
@@ -231,12 +238,12 @@ void jit_mkperm(const uint32_t *values, uint32_t size, uint32_t bucket_count,
     CUfunction phase_1, phase_2;
 
     if (shared_memory_small <= (uint32_t) device.shared_memory_bytes) {
-        phase_1 = jit_cuda_mkperm_phase_1_shared;
-        phase_2 = jit_cuda_mkperm_phase_2_shared;
+        phase_1 = jit_cuda_mkperm_phase_1_shared[device.id];
+        phase_2 = jit_cuda_mkperm_phase_2_shared[device.id];
         shared_memory = shared_memory_small;
     } else {
-        phase_1 = jit_cuda_mkperm_phase_1_global;
-        phase_2 = jit_cuda_mkperm_phase_2_global;
+        phase_1 = jit_cuda_mkperm_phase_1_global[device.id];
+        phase_2 = jit_cuda_mkperm_phase_2_global[device.id];
         shared_memory = 0;
     }
 

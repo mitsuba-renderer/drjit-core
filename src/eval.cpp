@@ -404,7 +404,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     buffer.put("}");
 
     /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash
-    kernel_hash = (uint32_t) string_hash()(buffer.get());
+    kernel_hash = hash_kernel(buffer.get());
     snprintf(kernel_name, 9, "%08x", kernel_hash);
     memcpy((void *) strchr(buffer.get(), '^'), kernel_name, 8);
 }
@@ -623,7 +623,7 @@ void jit_assemble_llvm(ScheduledGroup group) {
     }
 
     /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash
-    kernel_hash = (uint32_t) string_hash()(buffer.get());
+    kernel_hash = hash_kernel(buffer.get());
     snprintf(kernel_name, 9, "%08x", kernel_hash);
     memcpy((void *) strchr(buffer.get(), '^'), kernel_name, 8);
 }
@@ -756,7 +756,9 @@ void jit_assemble(ScheduledGroup group) {
 
 void jit_run_llvm(ScheduledGroup group) {
     float codegen_time = timer();
-    auto it = state.kernel_cache.find(buffer.get(), (size_t) kernel_hash);
+    KernelKey kernel_key((char *) buffer.get(), -1);
+    size_t hash_code = KernelHash::hash(kernel_hash, -1);
+    auto it = state.kernel_cache.find(kernel_key, hash_code);
     Kernel kernel;
 
     if (it == state.kernel_cache.end()) {
@@ -770,9 +772,9 @@ void jit_run_llvm(ScheduledGroup group) {
                 std::string(jit_time_string(link_time)).c_str(),
                 std::string(jit_mem_string(kernel.llvm.size)).c_str());
 
-        char *str = (char *) malloc(buffer.size() + 1);
-        memcpy(str, buffer.get(), buffer.size() + 1);
-        state.kernel_cache.emplace(str, kernel);
+        kernel_key.str = (char *) malloc(buffer.size() + 1);
+        memcpy(kernel_key.str, buffer.get(), buffer.size() + 1);
+        state.kernel_cache.emplace(kernel_key, kernel);
     } else {
         kernel = it.value();
         jit_log(Info, "jit_run(): cache hit, codegen: %s.",
@@ -783,8 +785,12 @@ void jit_run_llvm(ScheduledGroup group) {
 }
 
 void jit_run_cuda(ScheduledGroup group) {
+    Stream *stream = active_stream;
+
     float codegen_time = timer();
-    auto it = state.kernel_cache.find(buffer.get(), (size_t) kernel_hash);
+    KernelKey kernel_key((char *) buffer.get(), stream->device);
+    size_t hash_code = KernelHash::hash(kernel_hash, stream->device);
+    auto it = state.kernel_cache.find(kernel_key, hash_code);
     Kernel kernel;
 
     if (it == state.kernel_cache.end()) {
@@ -856,6 +862,7 @@ void jit_run_cuda(ScheduledGroup group) {
         cuda_check(cuFuncSetAttribute(
             kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
             CU_SHAREDMEM_CARVEOUT_MAX_L1));
+        cuda_check(cuFuncSetCacheConfig(kernel.cuda.cu_func, CU_FUNC_CACHE_PREFER_L1));
 
         int reg_count;
         cuda_check(cuFuncGetAttribute(
@@ -864,15 +871,14 @@ void jit_run_cuda(ScheduledGroup group) {
         // Destroy the linker invocation
         cuda_check(cuLinkDestroy(link_state));
 
-        char *str = (char *) malloc(buffer.size() + 1);
-        memcpy(str, buffer.get(), buffer.size() + 1);
+        kernel_key.str = (char *) malloc(buffer.size() + 1);
+        memcpy(kernel_key.str, buffer.get(), buffer.size() + 1);
 
         cuda_check(cuOccupancyMaxPotentialBlockSize(
             &kernel.cuda.block_count, &kernel.cuda.thread_count,
             kernel.cuda.cu_func, nullptr, 0, 0));
 
-        kernel.type = KernelType::CUDA;
-        state.kernel_cache.emplace(str, kernel);
+        state.kernel_cache.emplace(kernel_key, kernel);
 
         jit_log(Debug,
                 "jit_run(): cache %s, codegen: %s, %s: %s, %i registers, %i "

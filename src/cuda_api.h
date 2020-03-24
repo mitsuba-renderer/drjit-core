@@ -19,6 +19,7 @@
 #  define CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES 8
 #  define CU_FUNC_ATTRIBUTE_NUM_REGS 4
 #  define CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT 9
+#  define CU_FUNC_CACHE_PREFER_L1 2
 
 #  define CU_JIT_ERROR_LOG_BUFFER 5
 #  define CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES 6
@@ -73,6 +74,7 @@ extern CUresult (*cuEventRecord)(CUevent, CUstream);
 extern CUresult (*cuEventSynchronize)(CUevent);
 extern CUresult (*cuFuncGetAttribute)(int *, int, CUfunction);
 extern CUresult (*cuFuncSetAttribute)(CUfunction, int, int);
+extern CUresult (*cuFuncSetCacheConfig)(CUfunction, int);
 extern CUresult (*cuGetErrorString)(CUresult, const char **);
 extern CUresult (*cuInit)(unsigned int);
 extern CUresult (*cuLaunchHostFunc)(CUstream, void (*)(void *), void *);
@@ -109,17 +111,17 @@ extern CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int);
 #endif
 
 // Enoki API
-extern CUfunction jit_cuda_fill_64;
-extern CUfunction jit_cuda_mkperm_phase_1_shared;
-extern CUfunction jit_cuda_mkperm_phase_1_global;
-extern CUfunction jit_cuda_mkperm_phase_2_shared;
-extern CUfunction jit_cuda_mkperm_phase_2_global;
-extern CUfunction jit_cuda_transpose;
-extern CUfunction jit_cuda_scan_small;
-extern CUfunction jit_cuda_scan_large;
-extern CUfunction jit_cuda_scan_offset;
+extern CUfunction *jit_cuda_fill_64;
+extern CUfunction *jit_cuda_mkperm_phase_1_shared;
+extern CUfunction *jit_cuda_mkperm_phase_1_global;
+extern CUfunction *jit_cuda_mkperm_phase_2_shared;
+extern CUfunction *jit_cuda_mkperm_phase_2_global;
+extern CUfunction *jit_cuda_transpose;
+extern CUfunction *jit_cuda_scan_small;
+extern CUfunction *jit_cuda_scan_large;
+extern CUfunction *jit_cuda_scan_offset;
 
-extern CUfunction jit_cuda_reductions[(int) ReductionType::Count][(int) VarType::Count];
+extern CUfunction *jit_cuda_reductions[(int) ReductionType::Count][(int) VarType::Count];
 extern int jit_cuda_devices;
 
 /// Try to load the CUDA backend

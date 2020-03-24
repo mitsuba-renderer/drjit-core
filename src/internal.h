@@ -201,9 +201,32 @@ using CSECache =
                    std::allocator<std::pair<VariableKey, uint32_t>>,
                    /* StoreHash = */ true>;
 
+struct KernelKey {
+    char *str = nullptr;
+    int device = 0;
+
+    KernelKey(char *str, int device) : str(str), device(device) { }
+
+    bool operator==(const KernelKey &k) const {
+        return strcmp(k.str, str) == 0 && device == k.device;
+    }
+};
+
+struct KernelHash {
+    size_t operator()(const KernelKey &k) const {
+        return hash(hash_kernel(k.str), k.device);
+    }
+
+    static size_t hash(uint32_t kernel_hash, int device) {
+        size_t hash = kernel_hash;
+        hash_combine(hash, device + 1);
+        return hash;
+    }
+};
+
 using KernelCache =
-    tsl::robin_map<const char *, Kernel, string_hash, string_eq,
-                   std::allocator<std::pair<const char *, Kernel>>,
+    tsl::robin_map<KernelKey, Kernel, KernelHash, std::equal_to<KernelKey>,
+                   std::allocator<std::pair<KernelKey, Kernel>>,
                    /* StoreHash = */ true>;
 
 /// Records the full JIT compiler state (most frequently two used entries at top)

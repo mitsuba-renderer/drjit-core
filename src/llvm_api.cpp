@@ -231,7 +231,6 @@ bool jit_llvm_load(Kernel &kernel, const char *buffer, size_t buffer_size, uint3
     kernel.llvm.buffer = payload;
     kernel.llvm.func = (LLVMKernelFunction) ((uint8_t *) payload + func_offset);
     kernel.llvm.size = payload_size;
-    kernel.type = KernelType::LLVM;
 
     return true;
 }
@@ -385,7 +384,6 @@ Kernel jit_llvm_compile(const char *buffer, size_t buffer_size, uint32_t hash, b
     result.llvm.buffer = ptr_result;
     result.llvm.func = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
     result.llvm.size = jit_llvm_mem_offset;
-    result.type = KernelType::LLVM;
 
     jit_llvm_disasm(result);
 

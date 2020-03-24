@@ -27,19 +27,4 @@ extern uint32_t crc32(uint32_t state, const void *ptr, size_t size);
 extern uint32_t crc32_64(uint32_t state, const uint64_t *ptr, size_t size);
 extern uint32_t crc32_str(uint32_t state, const char *str);
 
-struct string_hash {
-    size_t operator()(const char *str) const {
-        const char *offset = strchr(str, '{');
-
-        if (offset == nullptr)
-            return 0;
-        else
-            return (size_t) crc32_str(0, offset);
-    }
-};
-
-struct string_eq {
-    bool operator()(const char *str1, const char *str2) const {
-        return strcmp(str1, str2) == 0;
-    }
-};
+extern uint32_t hash_kernel(const char *str);

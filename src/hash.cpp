@@ -113,3 +113,12 @@ uint32_t crc32_64(uint32_t state, const uint64_t *ptr, size_t size) {
 uint32_t crc32_str(uint32_t state, const char *str) {
     return crc32(state, str, strlen(str));
 }
+
+uint32_t hash_kernel(const char *str) {
+    const char *offset = strchr(str, '{');
+
+    if (offset)
+        return crc32_str(0u, offset);
+    else
+        return 0u;
+}

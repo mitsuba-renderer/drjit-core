@@ -28,7 +28,7 @@ void jit_init(int llvm, int cuda) {
     state.has_llvm = llvm && jit_llvm_init();
     state.has_cuda = cuda && jit_cuda_init();
 
-    for (int i = 0; i < jit_cuda_devices; ++i) {
+    for (int i = 0; cuda && i < jit_cuda_devices; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
             unified_addr = 0, managed = 0, concurrent_managed = 0,
             shared_memory_bytes = 0;
@@ -128,12 +128,18 @@ void jit_shutdown(int light) {
     }
 
     for (auto &v : state.kernel_cache) {
-        free((char *) v.first);
+        const KernelKey &key = v.first;
         const Kernel &kernel = v.second;
-        if (kernel.type == KernelType::LLVM)
+
+        if (key.device == -1) {
             jit_llvm_free(kernel);
-        else
+        } else {
+            const Device &device = state.devices.at(key.device);
+            cuda_check(cuCtxSetCurrent(device.context));
             cuda_check(cuModuleUnload(kernel.cuda.cu_module));
+        }
+
+        free(key.str);
     }
     state.kernel_cache.clear();
 
