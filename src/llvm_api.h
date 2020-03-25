@@ -12,8 +12,8 @@ struct Kernel {
             /// CUDA kernel variables
             CUmodule cu_module;
             CUfunction cu_func;
-            int thread_count;
-            int block_count;
+            int min_grid_size;
+            int block_size;
         } cuda;
 
         struct {

@@ -50,17 +50,18 @@ KERNEL void mkperm_phase_1_global(const uint32_t *values, uint32_t *buckets, uin
 }
 
 /// Detect non-empty buckets and record their offsets
-KERNEL void mkperm_phase_3(const uint32_t *buckets, uint32_t bucket_count, uint32_t size, uint32_t *offsets) {
+KERNEL void mkperm_phase_3(const uint32_t *buckets, uint32_t bucket_count,
+                           uint32_t size, uint32_t *counter,
+                           uint32_t *offsets) {
     for (uint32_t i = blockIdx.x * blockDim.x + threadIdx.x; i < bucket_count;
          i += blockDim.x * gridDim.x) {
         uint32_t offset_a = buckets[i],
                  offset_b = (i + 1 < bucket_count) ? buckets[i + 1] : size;
 
         if (offset_a != offset_b) {
-            uint32_t k = atomicAdd(&offsets[0], 1) * 3 + 1;
-            offsets[k]     = i;
-            offsets[k + 1] = offset_a;
-            offsets[k + 2] = offset_b;
+            uint32_t k = atomicAdd(counter, 1);
+            ((uint3 *) offsets + 1)[k] =
+                make_uint3(i, offset_a, offset_b - offset_a);
         }
     }
 }

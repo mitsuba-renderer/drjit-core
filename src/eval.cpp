@@ -875,19 +875,19 @@ void jit_run_cuda(ScheduledGroup group) {
         memcpy(kernel_key.str, buffer.get(), buffer.size() + 1);
 
         cuda_check(cuOccupancyMaxPotentialBlockSize(
-            &kernel.cuda.block_count, &kernel.cuda.thread_count,
+            &kernel.cuda.min_grid_size, &kernel.cuda.block_size,
             kernel.cuda.cu_func, nullptr, 0, 0));
 
         state.kernel_cache.emplace(kernel_key, kernel);
 
         jit_log(Debug,
-                "jit_run(): cache %s, codegen: %s, %s: %s, %i registers, %i "
-                "threads, %i blocks.",
+                "jit_run(): cache %s, codegen: %s, %s: %s, %i registers, min. %i "
+                "blocks , %i threads.",
                 cache_hit ? "hit" : "miss",
                 std::string(jit_time_string(codegen_time)).c_str(),
                 cache_hit ? "load" : "build",
                 std::string(jit_time_string(link_time)).c_str(), reg_count,
-                kernel.cuda.thread_count, kernel.cuda.block_count);
+                kernel.cuda.min_grid_size, kernel.cuda.block_size);
     } else {
         kernel = it.value();
         jit_log(Debug, "jit_run(): cache hit, codegen: %s.",
@@ -904,16 +904,10 @@ void jit_run_cuda(ScheduledGroup group) {
         CU_LAUNCH_PARAM_END
     };
 
-    uint32_t thread_count = kernel.cuda.thread_count,
-             block_count  = kernel.cuda.block_count;
-
-    /// Reduce the number of blocks when processing a very small amount of data
-    if (group.size <= thread_count) {
-        block_count = 1;
-        thread_count = group.size;
-    } else if (group.size <= thread_count * block_count) {
-        block_count = (group.size + thread_count - 1) / thread_count;
-    }
+    uint32_t block_count, thread_count;
+    const Device &device = state.devices[stream->device];
+    device.get_launch_config(&block_count, &thread_count, group.size,
+                             (uint32_t) kernel.cuda.block_size);
 
     cuda_check(cuLaunchKernel(kernel.cuda.cu_func, block_count, 1, 1, thread_count,
                               1, 1, 0, active_stream->handle, nullptr, config));

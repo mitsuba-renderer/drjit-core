@@ -1,7 +1,7 @@
 #include "common.h"
 
 template <typename Value, typename Reduce, uint32_t BlockSize>
-__device__ void reduce(const Value *data, size_t size, Value *out) {
+__device__ void reduce(const Value *data, uint32_t size, Value *out) {
     Value *shared = SharedMemory<Value>::get();
 
     uint32_t tid    = threadIdx.x,
@@ -107,7 +107,7 @@ template <typename Value> struct reduction_and {
 // ----------------------------------------------------------------------------
 
 #define HORIZ_OP(Name, Reduction, Type, Suffix)                                \
-    KERNEL void Name##_##Suffix(const Type *data, size_t size, Type *out) {    \
+    KERNEL void Name##_##Suffix(const Type *data, uint32_t size, Type *out) {  \
         reduce<Type, Reduction<Type>, 1024>(data, size, out);                  \
     }
 

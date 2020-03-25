@@ -691,7 +691,7 @@ enum ReductionType {
  * ptr. The specific value is taken from \c src, which must be a CPU pointer to
  * a single int, float, double, etc (depending on \c type).
  */
-extern JITC_EXPORT void jitc_fill(enum VarType type, void *ptr, size_t size,
+extern JITC_EXPORT void jitc_fill(enum VarType type, void *ptr, uint32_t size,
                                   const void *src);
 
 /**
@@ -703,7 +703,7 @@ extern JITC_EXPORT void jitc_fill(enum VarType type, void *ptr, size_t size,
  * variable \c out.
  */
 extern JITC_EXPORT void jitc_reduce(enum VarType type, enum ReductionType rtype,
-                                    const void *ptr, size_t size, void *out);
+                                    const void *ptr, uint32_t size, void *out);
 
 /**
  * \brief Perform an exclusive scan / prefix sum over an unsigned integer array
@@ -751,12 +751,19 @@ extern JITC_EXPORT bool jitc_any(bool *values, uint32_t size);
  * implementation is much more efficient than the alternative of actually
  * sorting the array.
  *
- * The permutation is written to address specified using the parameter \c perm,
- * which must point to a buffer of size <tt>size * sizeof(uint32_t)</tt>. When
- * \c offset is non-NULL, the parameter must point to a managed memory region
- * of size <tt>(bucket_count + 1) * sizeof(uint32_t)<tt> that will be used to
- * record the start and end of each bucket. In particular, bucket \c i begins
- * at offset <tt>offsets[i]<tt> and has size <tt>offsets[i+1]-offsets[i]</tt>.
+ * \param perm
+ *     The permutation is written to address specified using the parameter \c
+ *     perm, which must point to a buffer of size <tt>size *
+ *     sizeof(uint32_t)</tt>.
+ *
+ * \param offsets
+ *     When \c offset is non-NULL, the parameter must point to a host-pinned
+ *     memory region with a size of at least <tt>(bucket_count*3 + 1) *
+ *     sizeof(uint32_t)<tt> bytes that will be used to record the details of
+ *     non-empty buckets. In particular, the first entry records the number of
+ *     nonzero buckets, and the remainder contains triples <tt>(index, start,
+ *     size)<tt> where \c index is the bucket index, and \c start and \c end
+ *     specify the associated entries of the \c perm array.
  */
 extern JITC_EXPORT void jitc_mkperm(const uint32_t *values, uint32_t size,
                                     uint32_t bucket_count, uint32_t *perm,

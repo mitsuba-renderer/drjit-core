@@ -273,13 +273,13 @@ void jitc_var_eval(uint32_t index) {
     jit_var_eval(index);
 }
 
-void jitc_fill(VarType type, void *ptr, size_t size, const void *src) {
+void jitc_fill(VarType type, void *ptr, uint32_t size, const void *src) {
     lock_guard guard(state.mutex);
     jit_fill(type, ptr, size, src);
 }
 
 void jitc_reduce(VarType type, ReductionType rtype,
-                 const void *ptr, size_t size, void *out) {
+                 const void *ptr, uint32_t size, void *out) {
     lock_guard guard(state.mutex);
     jit_reduce(type, rtype, ptr, size, out);
 }

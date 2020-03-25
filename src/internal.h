@@ -36,6 +36,35 @@ struct Device {
 
     /// Max. bytes of shared memory per SM
     int shared_memory_bytes;
+
+    /// Compute a good configuration for a grid-stride loop
+    void get_launch_config(uint32_t *blocks_out, uint32_t *threads_out,
+                           uint32_t size, uint32_t max_threads = 1024,
+                           uint32_t max_blocks_per_sm = 4) const {
+        uint32_t blocks_avail  = (size + max_threads - 1) / max_threads;
+
+        uint32_t blocks;
+        if (blocks_avail < (uint32_t) num_sm) {
+            // Not enough work for 1 full wave
+            blocks = blocks_avail;
+        } else {
+            // Don't produce more than 4 blocks per SM
+            uint32_t blocks_per_sm = blocks_avail / num_sm;
+            if (blocks_per_sm > max_blocks_per_sm)
+                blocks_per_sm = max_blocks_per_sm;
+            blocks = blocks_per_sm * num_sm;
+        }
+
+        uint32_t threads = max_threads;
+        if (blocks <= 1 && size < max_threads)
+            threads = size;
+
+        if (blocks_out)
+            *blocks_out  = blocks;
+
+        if (threads_out)
+            *threads_out = threads;
+    }
 };
 
 /// Keeps track of asynchronous deallocations via jit_free()

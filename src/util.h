@@ -7,11 +7,11 @@
 extern const char *reduction_name[(int) ReductionType::Count];
 
 /// Fill a device memory region with constants of a given type
-extern void jit_fill(VarType type, void *ptr, size_t size, const void *src);
+extern void jit_fill(VarType type, void *ptr, uint32_t size, const void *src);
 
 /// Reduce the given array to a single value
 extern void jit_reduce(VarType type, ReductionType rtype, const void *ptr,
-                       size_t size, void *out);
+                       uint32_t size, void *out);
 
 /// 'All' reduction for boolean arrays
 extern bool jit_all(bool *values, uint32_t size);

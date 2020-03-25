@@ -732,10 +732,9 @@ const char *jit_var_str(uint32_t index) {
         if (cuda) {
             // Temporarily release the lock while synchronizing
             unlock_guard guard(state.mutex);
-            cuda_check(cuMemcpyAsync((CUdeviceptr) dst,
-                                     (CUdeviceptr) src_offset, isize,
-                                     stream->handle));
             cuda_check(cuStreamSynchronize(stream->handle));
+            cuda_check(cuMemcpy((CUdeviceptr) dst,
+                                (CUdeviceptr) src_offset, isize));
         } else {
             memcpy(dst, src_offset, isize);
         }
@@ -799,9 +798,8 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
     if  (cuda) {
         // Temporarily release the lock while synchronizing
         unlock_guard guard(state.mutex);
-        cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, isize,
-                                 stream->handle));
         cuda_check(cuStreamSynchronize(stream->handle));
+        cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, isize));
     } else {
         memcpy(dst, src, isize);
     }
