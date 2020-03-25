@@ -114,14 +114,18 @@ extern CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int);
 extern CUfunction *jit_cuda_fill_64;
 extern CUfunction *jit_cuda_mkperm_phase_1_shared;
 extern CUfunction *jit_cuda_mkperm_phase_1_global;
-extern CUfunction *jit_cuda_mkperm_phase_2_shared;
-extern CUfunction *jit_cuda_mkperm_phase_2_global;
+extern CUfunction *jit_cuda_mkperm_phase_3;
+extern CUfunction *jit_cuda_mkperm_phase_4_shared;
+extern CUfunction *jit_cuda_mkperm_phase_4_global;
 extern CUfunction *jit_cuda_transpose;
-extern CUfunction *jit_cuda_scan_small;
-extern CUfunction *jit_cuda_scan_large;
+extern CUfunction *jit_cuda_scan_small_u8;
+extern CUfunction *jit_cuda_scan_small_u32;
+extern CUfunction *jit_cuda_scan_large_u8;
+extern CUfunction *jit_cuda_scan_large_u32;
 extern CUfunction *jit_cuda_scan_offset;
 
-extern CUfunction *jit_cuda_reductions[(int) ReductionType::Count][(int) VarType::Count];
+extern CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
+                                      [(int) VarType::Count];
 extern int jit_cuda_devices;
 
 /// Try to load the CUDA backend

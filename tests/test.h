@@ -57,6 +57,12 @@ using UInt32L = LLVMArray<uint32_t>;
               template <class> class Array>                                    \
     void test##name()
 
+#define jitc_assert(cond)                                                      \
+    do {                                                                       \
+        if (!(cond))                                                           \
+            jitc_fail("Assertion failure: " #cond);                            \
+    } while (0)
+
 /// RAII helper for temporarily decreasing the log level
 struct scoped_set_log_level {
 public:

@@ -113,27 +113,88 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, size_t size,
                  num_threads = 1024,
                  shared_size = num_threads * type_size;
 
-        if (size > 1024) {
+        if (size <= 1024) {
+            /// This is a small array, do everything in just one reduction.
+            void *args[] = { &ptr, &size, &out };
+            cuda_check(cuLaunchKernel(func, 1, 1, 1, num_threads, 1, 1,
+                                      shared_size, stream->handle, args,
+                                      nullptr));
+        } else {
+            void *temp = jit_malloc(AllocType::Device, num_blocks * type_size);
+
             // First reduction
-            void *args_1[] = { &ptr, &size, &out };
+            void *args_1[] = { &ptr, &size, &temp };
             cuda_check(cuLaunchKernel(func, num_blocks, 1, 1, num_threads, 1, 1,
                                       shared_size, stream->handle, args_1,
                                       nullptr));
 
             // Second reduction
             size = num_blocks;
-            void *args_2[] = { &out, &size, &out };
+            void *args_2[] = { &temp, &size, &out };
             cuda_check(cuLaunchKernel(func, 1, 1, 1, num_threads, 1, 1,
                                       shared_size, stream->handle, args_2,
                                       nullptr));
-        } else {
-            /// This is a small array, do everything in just one reduction.
-            void *args[] = { &ptr, &size, &out };
-            cuda_check(cuLaunchKernel(func, 1, 1, 1, num_threads, 1, 1,
-                                      shared_size, stream->handle, args,
-                                      nullptr));
+            jit_free(temp);
         }
     }
+}
+
+/// 'All' reduction for boolean arrays
+bool jit_all(bool *values, uint32_t size) {
+    Stream *stream = active_stream;
+    uint32_t reduced_size = (size + 3) / 4,
+             trailing     = reduced_size * 4 - size;
+
+    jit_log(Debug, "jit_all(" ENOKI_PTR ", size=%u)",
+            (uintptr_t) values, size);
+
+    bool result;
+    if (stream) {
+        if (trailing)
+            cuda_check(cuMemsetD8Async(values + size, 0x01, trailing, stream->handle));
+        uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
+        jit_reduce(VarType::UInt32, ReductionType::And, values, reduced_size, out);
+        cuda_check(cuStreamSynchronize(stream->handle));
+        result = (out[0] & out[1] & out[2] & out[3]) != 0;
+        jit_free(out);
+    } else {
+        if (trailing)
+            memset(values + size, 0x01, trailing);
+        uint8_t out[4];
+        jit_reduce(VarType::UInt32, ReductionType::And, values, reduced_size, out);
+        result = (out[0] & out[1] & out[2] & out[3]) != 0;
+    }
+
+    return result;
+}
+
+/// 'Any' reduction for boolean arrays
+bool jit_any(bool *values, uint32_t size) {
+    Stream *stream = active_stream;
+    uint32_t reduced_size = (size + 3) / 4,
+             trailing     = reduced_size * 4 - size;
+
+    jit_log(Debug, "jit_any(" ENOKI_PTR ", size=%u)",
+            (uintptr_t) values, size);
+
+    bool result;
+    if (stream) {
+        if (trailing)
+            cuda_check(cuMemsetD8Async(values + size, 0x00, trailing, stream->handle));
+        uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
+        jit_reduce(VarType::UInt32, ReductionType::Or, values, reduced_size, out);
+        cuda_check(cuStreamSynchronize(stream->handle));
+        result = (out[0] | out[1] | out[2] | out[3]) != 0;
+        jit_free(out);
+    } else {
+        if (trailing)
+            memset(values + size, 0x00, trailing);
+        uint8_t out[4];
+        jit_reduce(VarType::UInt32, ReductionType::Or, values, reduced_size, out);
+        result = (out[0] | out[1] | out[2] | out[3]) != 0;
+    }
+
+    return result;
 }
 
 /// Exclusive prefix sum
@@ -161,7 +222,7 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
                                        stream->handle));
         } else if (size <= 4096) {
             void *args[] = { &in, &out, &size };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_small[device.id], 1, 1, 1,
+            cuda_check(cuLaunchKernel(jit_cuda_scan_small_u32[device.id], 1, 1, 1,
                                       thread_count, 1, 1, shared_size,
                                       stream->handle, args, nullptr));
         } else {
@@ -169,7 +230,7 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
                 AllocType::Device, block_count * sizeof(uint32_t));
 
             void *args[] = { &in, &out, &block_sums };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_large[device.id], block_count, 1, 1,
+            cuda_check(cuLaunchKernel(jit_cuda_scan_large_u32[device.id], block_count, 1, 1,
                                       thread_count, 1, 1, shared_size,
                                       stream->handle, args, nullptr));
 
@@ -219,7 +280,7 @@ void jit_transpose(uint32_t *data, uint32_t rows, uint32_t cols) {
 }
 
 void jit_mkperm(const uint32_t *values, uint32_t size, uint32_t bucket_count,
-                uint32_t **perm_out, uint32_t **offsets_out) {
+                uint32_t *perm, uint32_t *offsets) {
     Stream *stream = active_stream;
     const Device &device = state.devices[stream->device];
 
@@ -235,23 +296,20 @@ void jit_mkperm(const uint32_t *values, uint32_t size, uint32_t bucket_count,
     /* If there is a sufficient amount of shared memory, atomically accumulate into a
        shared memory buffer. Otherwise, use global memory, which is much slower. */
     uint32_t shared_memory, shared_memory_small = sizeof(uint32_t) * bucket_count;
-    CUfunction phase_1, phase_2;
+    CUfunction phase_1, phase_4;
 
     if (shared_memory_small <= (uint32_t) device.shared_memory_bytes) {
         phase_1 = jit_cuda_mkperm_phase_1_shared[device.id];
-        phase_2 = jit_cuda_mkperm_phase_2_shared[device.id];
+        phase_4 = jit_cuda_mkperm_phase_4_shared[device.id];
         shared_memory = shared_memory_small;
     } else {
         phase_1 = jit_cuda_mkperm_phase_1_global[device.id];
-        phase_2 = jit_cuda_mkperm_phase_2_global[device.id];
+        phase_4 = jit_cuda_mkperm_phase_4_global[device.id];
         shared_memory = 0;
     }
 
-    uint32_t *buckets = (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all),
-             *offsets = (uint32_t *) jit_malloc(AllocType::HostPinned, bucket_size_1 + sizeof(uint32_t)),
-             *perm    = (uint32_t *) jit_malloc(AllocType::Device, size);
-
-    offsets[bucket_count] = size;
+    uint32_t *buckets =
+        (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all);
 
     // Phase 1: Count the number of occurrences per block
     void *args_1[] = { &values, &buckets, &size, &size_per_block,
@@ -260,27 +318,32 @@ void jit_mkperm(const uint32_t *values, uint32_t size, uint32_t bucket_count,
     cuda_check(cuLaunchKernel(phase_1, block_count, 1, 1, thread_count, 1, 1,
                               shared_memory, stream->handle, args_1, nullptr));
 
-    // Phase 1.5: exclusive prefix sum over transposed buckets
+    // Phase 2: exclusive prefix sum over transposed buckets
     jit_transpose(buckets, bucket_count, block_count);
     jit_scan(buckets, buckets, bucket_count * block_count);
-    cuda_check(cuMemcpyAsync((CUdeviceptr) offsets, (CUdeviceptr) buckets,
-                             bucket_size_1, active_stream->handle));
-    cuda_check(cuEventRecord(stream->event, stream->handle));
     jit_transpose(buckets, block_count, bucket_count);
 
-    // Phase 2: write out permutation based on bucket counts
-    void *args_2[] = { &values, &buckets, &perm, &size, &size_per_block,
-                       &bucket_count };
-    cuda_check(cuLaunchKernel(phase_2, block_count, 1, 1, thread_count, 1, 1,
-                              shared_memory, stream->handle, args_2, nullptr));
+    if (likely(offsets)) {
+        // Phase 3: collect non-empty buckets
+        void *args_3[] = { &buckets, &bucket_count, &size, &offsets, &offsets };
 
-    /* Unlock while synchronizing */ {
+        cuda_check(cuLaunchKernel(jit_cuda_mkperm_phase_3, device.num_sm, 1, 1,
+                                  1024, 1, 1, 0, stream->handle, args_3,
+                                  nullptr));
+
+        cuda_check(cuEventRecord(stream->event, stream->handle));
+    }
+
+    // Phase 4: write out permutation based on bucket counts
+    void *args_4[] = { &values, &buckets, &perm, &size, &size_per_block,
+                       &bucket_count };
+    cuda_check(cuLaunchKernel(phase_4, block_count, 1, 1, thread_count, 1, 1,
+                              shared_memory, stream->handle, args_4, nullptr));
+
+    if (likely(offsets)) {
         unlock_guard guard(state.mutex);
         cuda_check(cuEventSynchronize(stream->event));
     }
 
     jit_free(buckets);
-
-    *perm_out    = perm;
-    *offsets_out = offsets;
 }

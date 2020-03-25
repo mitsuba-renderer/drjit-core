@@ -38,7 +38,51 @@ inline __device__ uint4 scan_4(uint4 value, uint32_t size, uint32_t *sum_out) {
     return sum;
 }
 
-KERNEL void scan_small(const uint32_t *in, uint32_t *out, uint32_t size) {
+KERNEL void scan_small_u8(const uint8_t *in, uint32_t *out, uint32_t size) {
+    uint32_t i = threadIdx.x * 4;
+
+    uint4 value = make_uint4(
+        i     < size ? (uint32_t) in[i]     : 0u,
+        i + 1 < size ? (uint32_t) in[i + 1] : 0u,
+        i + 2 < size ? (uint32_t) in[i + 2] : 0u,
+        i + 3 < size ? (uint32_t) in[i + 3] : 0u
+    );
+
+    value = scan_4(value, blockDim.x, nullptr);
+
+    if (i < size)
+        out[i] = value.x;
+    if (i + 1 < size)
+        out[i + 1] = value.y;
+    if (i + 2 < size)
+        out[i + 2] = value.z;
+    if (i + 3 < size)
+        out[i + 3] = value.w;
+}
+
+KERNEL void scan_large_u8(const uint32_t *in, uint32_t *out, uint32_t *block_sums) {
+    uint32_t thread_count = 1024,
+             i            = blockIdx.x * thread_count + threadIdx.x;
+
+    uint32_t v32 = in[i];
+
+    uint4 value = make_uint4(
+       (v32      ) & 0xFF,
+       (v32 >> 8 ) & 0xFF,
+       (v32 >> 16) & 0xFF,
+       (v32 >> 24) & 0xFF
+    );
+
+    uint32_t sum;
+    value = scan_4(value, thread_count, &sum);
+
+    ((uint4 *) out)[i] = value;
+
+    if (threadIdx.x == thread_count - 1)
+        block_sums[blockIdx.x] = sum;
+}
+
+KERNEL void scan_small_u32(const uint32_t *in, uint32_t *out, uint32_t size) {
     uint32_t i = threadIdx.x * 4;
 
     uint4 value = make_uint4(
@@ -60,7 +104,7 @@ KERNEL void scan_small(const uint32_t *in, uint32_t *out, uint32_t size) {
         out[i + 3] = value.w;
 }
 
-KERNEL void scan_large(const uint32_t *in, uint32_t *out, uint32_t *block_sums) {
+KERNEL void scan_large_u32(const uint32_t *in, uint32_t *out, uint32_t *block_sums) {
     uint32_t thread_count = 1024,
              i            = blockIdx.x * thread_count + threadIdx.x;
 

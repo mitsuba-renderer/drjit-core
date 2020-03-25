@@ -13,5 +13,16 @@ extern void jit_fill(VarType type, void *ptr, size_t size, const void *src);
 extern void jit_reduce(VarType type, ReductionType rtype, const void *ptr,
                        size_t size, void *out);
 
+/// 'All' reduction for boolean arrays
+extern bool jit_all(bool *values, uint32_t size);
+
+/// 'Any' reduction for boolean arrays
+extern bool jit_any(bool *values, uint32_t size);
+
 /// Exclusive prefix sum
 extern void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size);
+
+/// Compute a permutation to reorder an integer array into discrete groups
+extern void jit_mkperm(const uint32_t *values, uint32_t size,
+                       uint32_t bucket_count, uint32_t *perm,
+                       uint32_t *offsets);

@@ -67,14 +67,18 @@ static void *jit_cuda_handle = nullptr;
 
 // Enoki API
 static CUmodule *jit_cuda_module = nullptr;
+
 CUfunction *jit_cuda_fill_64 = nullptr;
 CUfunction *jit_cuda_mkperm_phase_1_shared = nullptr;
 CUfunction *jit_cuda_mkperm_phase_1_global = nullptr;
-CUfunction *jit_cuda_mkperm_phase_2_shared = nullptr;
-CUfunction *jit_cuda_mkperm_phase_2_global = nullptr;
+CUfunction *jit_cuda_mkperm_phase_3 = nullptr;
+CUfunction *jit_cuda_mkperm_phase_4_shared = nullptr;
+CUfunction *jit_cuda_mkperm_phase_4_global = nullptr;
 CUfunction *jit_cuda_transpose = nullptr;
-CUfunction *jit_cuda_scan_small = nullptr;
-CUfunction *jit_cuda_scan_large = nullptr;
+CUfunction *jit_cuda_scan_small_u8 = nullptr;
+CUfunction *jit_cuda_scan_small_u32 = nullptr;
+CUfunction *jit_cuda_scan_large_u8 = nullptr;
+CUfunction *jit_cuda_scan_large_u32 = nullptr;
 CUfunction *jit_cuda_scan_offset = nullptr;
 
 CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
@@ -261,12 +265,15 @@ bool jit_cuda_init() {
 
         LOAD(fill_64);
         LOAD(mkperm_phase_1_shared);
-        LOAD(mkperm_phase_2_shared);
         LOAD(mkperm_phase_1_global);
-        LOAD(mkperm_phase_2_global);
+        LOAD(mkperm_phase_3);
+        LOAD(mkperm_phase_4_shared);
+        LOAD(mkperm_phase_4_global);
         LOAD(transpose);
-        LOAD(scan_small);
-        LOAD(scan_large);
+        LOAD(scan_small_u8);
+        LOAD(scan_small_u32);
+        LOAD(scan_large_u8);
+        LOAD(scan_large_u32);
         LOAD(scan_offset);
 
         #undef LOAD
@@ -318,12 +325,15 @@ void jit_cuda_shutdown() {
 
     Z(jit_cuda_fill_64);
     Z(jit_cuda_mkperm_phase_1_shared);
-    Z(jit_cuda_mkperm_phase_2_shared);
     Z(jit_cuda_mkperm_phase_1_global);
-    Z(jit_cuda_mkperm_phase_2_global);
+    Z(jit_cuda_mkperm_phase_3);
+    Z(jit_cuda_mkperm_phase_4_shared);
+    Z(jit_cuda_mkperm_phase_4_global);
     Z(jit_cuda_transpose);
-    Z(jit_cuda_scan_small);
-    Z(jit_cuda_scan_large);
+    Z(jit_cuda_scan_small_u8);
+    Z(jit_cuda_scan_small_u32);
+    Z(jit_cuda_scan_large_u8);
+    Z(jit_cuda_scan_large_u32);
     Z(jit_cuda_scan_offset);
     Z(jit_cuda_module);
 

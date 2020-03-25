@@ -288,3 +288,19 @@ void jitc_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
     lock_guard guard(state.mutex);
     jit_scan(in, out, size);
 }
+
+bool jitc_all(bool *values, uint32_t size) {
+    lock_guard guard(state.mutex);
+    return jit_all(values, size);
+}
+
+bool jitc_any(bool *values, uint32_t size) {
+    lock_guard guard(state.mutex);
+    return jit_any(values, size);
+}
+
+void jitc_mkperm(const uint32_t *values, uint32_t size, uint32_t bucket_count,
+                 uint32_t *perm, uint32_t *offsets) {
+    lock_guard guard(state.mutex);
+    jit_mkperm(values, size, bucket_count, perm, offsets);
+}

@@ -711,14 +711,56 @@ extern JITC_EXPORT void jitc_reduce(enum VarType type, enum ReductionType rtype,
  * If desired, the scan can be performed in place (i.e. with <tt>in == out</tt>).
  *
  * The following comment applies to the GPU implementation: when the array is
- * larger than 4K elements, the implementation will round up size to the next
- * largest number of 4K, hence the supplied memory region must be sufficiently
- * large to avoid an out-of-bounds reads and writes. This is not an issue for
- * memory obtained using \ref jitc_malloc(), which internally rounds
- * allocations to the next largest power of two.
+ * larger than 4K elements, the implementation will round up \c size to the
+ * next largest number of 4K, hence the supplied memory region must be
+ * sufficiently large to avoid an out-of-bounds reads and writes. This is not
+ * an issue for memory obtained using \ref jitc_malloc(), which internally
+ * rounds allocations to the next largest power of two.
  */
 extern JITC_EXPORT void jitc_scan(const uint32_t *in, uint32_t *out,
                                   uint32_t size);
+
+/**
+ * \brief Reduce an array of boolean values to a single value (AND case)
+ *
+ * When \c size is not a multiple of 4, the implementation will initialize up
+ * to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
+ * reduction algorithm can be used. This is fine for allocations made using
+ * \ref jitc_malloc(), which allow for this.
+ */
+extern JITC_EXPORT bool jitc_all(bool *values, uint32_t size);
+
+/**
+ * \brief Reduce an array of boolean values to a single value (OR case)
+ *
+ * When \c size is not a multiple of 4, the implementation will initialize up
+ * to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
+ * reduction algorithm can be used. This is fine for allocations made using
+ * \ref jitc_malloc(), which allow for this.
+ */
+extern JITC_EXPORT bool jitc_any(bool *values, uint32_t size);
+
+/**
+ * \brief Compute a permutation to reorder an integer array into a sorted
+ * configuration
+ *
+ * Given an unsigned integer array \c values of size \c size with entries in
+ * the range <tt>0 .. bucket_count - 1</tt>, compute a permutation that can be
+ * used to reorder the inputs into a sorted (but non-stable) configuration.
+ * When <tt>bucket_count</tt> is relatively small (e.g. < 10K), the
+ * implementation is much more efficient than the alternative of actually
+ * sorting the array.
+ *
+ * The permutation is written to address specified using the parameter \c perm,
+ * which must point to a buffer of size <tt>size * sizeof(uint32_t)</tt>. When
+ * \c offset is non-NULL, the parameter must point to a managed memory region
+ * of size <tt>(bucket_count + 1) * sizeof(uint32_t)<tt> that will be used to
+ * record the start and end of each bucket. In particular, bucket \c i begins
+ * at offset <tt>offsets[i]<tt> and has size <tt>offsets[i+1]-offsets[i]</tt>.
+ */
+extern JITC_EXPORT void jitc_mkperm(const uint32_t *values, uint32_t size,
+                                    uint32_t bucket_count, uint32_t *perm,
+                                    uint32_t *offsets);
 
 #if defined(__cplusplus)
 }

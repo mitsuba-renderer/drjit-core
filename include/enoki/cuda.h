@@ -245,6 +245,14 @@ struct CUDAArray {
             CUDAArray<bool>::Type, op, 1, a.index(), b.index()));
     }
 
+    bool operator==(const CUDAArray &a) const {
+        return all(eq(*this, a));
+    }
+
+    bool operator!=(const CUDAArray &a) const {
+        return any(neq(*this, a));
+    }
+
     CUDAArray operator-() const {
         if (!jitc_is_arithmetic(Type))
             jitc_raise("Unsupported operand type");
@@ -407,6 +415,16 @@ struct CUDAArray {
 
     Value *data() {
         return (Value *) jitc_var_ptr(m_index);
+    }
+
+    Value read(uint32_t offset) const {
+        Value out;
+        jitc_var_read(m_index, offset, &out);
+        return out;
+    }
+
+    void write(uint32_t offset, Value value) {
+        jitc_var_write(m_index, offset, &value);
     }
 
     static CUDAArray from_index(uint32_t index) {
@@ -635,6 +653,20 @@ void scatter(CUDAArray<Value> &dst, const CUDAArray<Value> &value,
     scatter<Stride>(dst.data(), value, index, mask);
     jitc_set_scatter_gather_operand(0, 0);
     jitc_var_mark_dirty(dst.index());
+}
+
+inline bool all(const CUDAArray<bool> &v) {
+    v.eval();
+    return jitc_all((bool *) v.data(), v.size());
+}
+
+inline bool any(const CUDAArray<bool> &v) {
+    v.eval();
+    return jitc_any((bool *) v.data(), v.size());
+}
+
+inline bool none(const CUDAArray<bool> &v) {
+    return !any(v);
 }
 
 template <typename Value> CUDAArray<Value> hsum(const CUDAArray<Value> &v) {
