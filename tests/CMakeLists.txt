@@ -20,4 +20,3 @@ foreach (TEST_FILE ${TEST_FILES})
 endforeach()
 
 add_custom_target(test COMMAND CTEST_OUTPUT_ON_FAILURE=1 ${CMAKE_CTEST_COMMAND})
-add_custom_target(scan COMMAND CTEST_OUTPUT_ON_FAILURE=1 ${CMAKE_CTEST_COMMAND})

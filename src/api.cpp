@@ -238,9 +238,9 @@ void jitc_var_mark_dirty(uint32_t index) {
     jit_var_mark_dirty(index);
 }
 
-void jitc_set_scatter_gather_operand(uint32_t index, int gather) {
+void jitc_var_set_extra_dep(uint32_t index, uint32_t dep) {
     lock_guard guard(state.mutex);
-    jit_set_scatter_gather_operand(index, gather);
+    jit_var_set_extra_dep(index, dep);
 }
 
 const char *jitc_var_whos() {

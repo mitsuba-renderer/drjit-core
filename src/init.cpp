@@ -94,7 +94,6 @@ void jit_init(int llvm, int cuda) {
     if (!state.devices.empty())
         cuda_check(cuCtxSetCurrent(state.devices[0].context));
 
-    state.scatter_gather_operand = 0;
     state.variable_index = 1;
     state.alloc_id_ctr = 1;
     state.variables.reserve(512);

@@ -320,9 +320,6 @@ struct State {
     /// Current variable index
     uint32_t variable_index = 1;
 
-    /// Current operand for scatter/gather operations
-    uint32_t scatter_gather_operand = 0;
-
     /// Dispatch to multiple streams that run concurrently?
     bool parallel_dispatch = true;
 

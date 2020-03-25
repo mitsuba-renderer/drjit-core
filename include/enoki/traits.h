@@ -72,3 +72,5 @@ template <> struct uint_with_size<4> { using type = uint32_t; };
 template <> struct uint_with_size<8> { using type = uint64_t; };
 
 template <typename T> using uint_with_size_t = typename uint_with_size<sizeof(T)>::type;
+
+struct void_t { };

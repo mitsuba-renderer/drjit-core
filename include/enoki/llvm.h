@@ -623,8 +623,8 @@ LLVMArray<Value> max(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
 
 template <typename OutArray, size_t Stride = sizeof(typename OutArray::Value),
           typename Index, typename std::enable_if<OutArray::IsLLVM, int>::type = 0>
-static OutArray gather(const void *ptr, const LLVMArray<Index> &index,
-                       LLVMArray<bool> mask = true) {
+OutArray gather(const void *ptr, const LLVMArray<Index> &index,
+                LLVMArray<bool> mask = true) {
 
     using UInt64 = LLVMArray<uint64_t>;
     UInt64 base = UInt64::from_index(jitc_var_copy_ptr(ptr));
@@ -669,9 +669,9 @@ static OutArray gather(const void *ptr, const LLVMArray<Index> &index,
 }
 
 template <size_t Stride_ = 0, typename Value, typename Index>
-static void scatter(void *ptr, const LLVMArray<Value> &value,
-                    const LLVMArray<Index> &index,
-                    LLVMArray<bool> mask = true) {
+LLVMArray<void_t> scatter(void *ptr, const LLVMArray<Value> &value,
+                          const LLVMArray<Index> &index,
+                          LLVMArray<bool> mask = true) {
 
     constexpr size_t Stride = Stride_ != 0 ? Stride_ : sizeof(Value);
 
@@ -720,28 +720,32 @@ static void scatter(void *ptr, const LLVMArray<Value> &value,
                                        addr.index(), mask.index());
 
     jitc_var_mark_side_effect(var);
+    jitc_var_inc_ref_ext(var);
+
+    return LLVMArray<void_t>::from_index(var);
 }
 
 template <typename Array, size_t Stride = sizeof(typename Array::Value),
           typename Index, typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array gather(const Array &src, const LLVMArray<Index> &index,
              const LLVMArray<bool> &mask = true) {
-
-    jitc_set_scatter_gather_operand(src.index(), 1);
+    jitc_var_eval(src.index());
     Array result = gather<Array, Stride>(src.data(), index, mask);
-    jitc_set_scatter_gather_operand(0, 0);
+    jitc_var_set_extra_dep(result.index(), src.index());
     return result;
 }
 
 template <size_t Stride = 0, typename Value, typename Index>
-void scatter(LLVMArray<Value> &dst, const LLVMArray<Value> &value,
-             const LLVMArray<Index> &index,
-             const LLVMArray<bool> &mask = true) {
+LLVMArray<void_t> scatter(LLVMArray<Value> &dst, const LLVMArray<Value> &value,
+                          const LLVMArray<Index> &index,
+                          const LLVMArray<bool> &mask = true) {
+    if (dst.data() == nullptr)
+        jitc_var_eval(dst.index());
 
-    jitc_set_scatter_gather_operand(dst.index(), 0);
-    scatter<Stride>(dst.data(), value, index, mask);
-    jitc_set_scatter_gather_operand(0, 0);
+    LLVMArray<void_t> result = scatter<Stride>(dst.data(), value, index, mask);
+    jitc_var_set_extra_dep(result.index(), dst.index());
     jitc_var_mark_dirty(dst.index());
+    return result;
 }
 
 inline bool all(const LLVMArray<bool> &v) {

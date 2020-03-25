@@ -1014,7 +1014,13 @@ void jit_eval() {
             continue;
 
         Variable *v = &it.value();
+        if (!v->stmt)
+            continue;
+
         jit_cse_drop(index, v);
+
+        if (unlikely(v->free_stmt))
+            free(v->stmt);
 
         bool side_effect = v->side_effect;
         uint32_t dep[3], extra_dep = v->extra_dep;
@@ -1022,6 +1028,8 @@ void jit_eval() {
 
         memset(v->dep, 0, sizeof(uint32_t) * 3);
         v->extra_dep = 0;
+        v->stmt = nullptr;
+
         for (int j = 0; j < 3; ++j)
             jit_var_dec_ref_int(dep[j]);
         jit_var_dec_ref_ext(extra_dep);

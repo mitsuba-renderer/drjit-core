@@ -66,9 +66,6 @@ Variable *jit_var(uint32_t index) {
 
 /// Remove a variable from the cache used for common subexpression elimination
 void jit_cse_drop(uint32_t index, const Variable *v) {
-    if (!v->stmt)
-        return;
-
     VariableKey key(*v);
     auto it = state.cse_cache.find(key);
     if (it != state.cse_cache.end() && it.value() == index)
@@ -79,7 +76,8 @@ void jit_cse_drop(uint32_t index, const Variable *v) {
 void jit_var_free(uint32_t index, Variable *v) {
     jit_trace("jit_var_free(%u)", index);
 
-    jit_cse_drop(index, v);
+    if (v->stmt)
+        jit_cse_drop(index, v);
 
     uint32_t dep[3], extra_dep = v->extra_dep;
     memcpy(dep, v->dep, sizeof(uint32_t) * 3);
@@ -427,12 +425,6 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
     jit_var_inc_ref_int(op1, v1);
     jit_var_inc_ref_int(op2, v2);
 
-    if (state.scatter_gather_operand != 0 &&
-        (strstr(stmt, "ld.global") || strstr(stmt, "gather"))) {
-        v.extra_dep = state.scatter_gather_operand;
-        jit_var_inc_ref_ext(v.extra_dep);
-    }
-
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s",
@@ -490,13 +482,6 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     jit_var_inc_ref_int(op2, v2);
     jit_var_inc_ref_int(op3, v3);
 
-    if (state.scatter_gather_operand != 0 &&
-        (strstr(stmt, "st.global") || strstr(stmt, "atom.global.add") ||
-         strstr(stmt, "scatter"))) {
-        v.extra_dep = state.scatter_gather_operand;
-        jit_var_inc_ref_ext(v.extra_dep);
-    }
-
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s",
@@ -509,6 +494,27 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     todo.push_back(index);
 
     return index;
+}
+
+void jit_var_set_extra_dep(uint32_t index, uint32_t dep) {
+    jit_trace("jit_var_set_extra_dep(%u, %u)", index, dep);
+
+    Variable *v = jit_var(index);
+
+    if (unlikely(v->extra_dep)) {
+        jit_var_dec_ref_ext(v->extra_dep);
+        v = jit_var(index);
+    }
+
+    VariableKey key(*v), key_new(*v);
+    v->extra_dep = key_new.extra_dep = dep;
+    jit_var_inc_ref_ext(dep);
+
+    auto it = state.cse_cache.find(key);
+    if (it != state.cse_cache.end() && it.value() == index) {
+        state.cse_cache.erase(it);
+        state.cse_cache.try_emplace(key_new, index);
+    }
 }
 
 /// Register an existing variable with the JIT compiler
@@ -614,17 +620,6 @@ void jit_var_mark_dirty(uint32_t index) {
     jit_log(Debug, "jit_var_mark_dirty(%u)", index);
     Variable *v = jit_var(index);
     v->pending_scatter = true;
-}
-
-/// Inform the JIT that the next scatter/gather references var. 'index'
-void jit_set_scatter_gather_operand(uint32_t index, int gather) {
-    jit_log(Trace, "jit_set_scatter_gather_operand(index=%u, gather=%u)", index, gather);
-    if (index) {
-        Variable *v = jit_var(index);
-        if (v->data == nullptr || (gather && v->pending_scatter))
-            jit_eval();
-    }
-    state.scatter_gather_operand = index;
 }
 
 /// Return a human-readable summary of registered variables

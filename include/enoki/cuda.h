@@ -16,6 +16,7 @@
 #include <enoki/traits.h>
 #include <cstring>
 #include <cstdio>
+#include <vector>
 
 template <typename Value_> struct CUDAArray;
 
@@ -542,8 +543,8 @@ CUDAArray<Value> max(const CUDAArray<Value> &a, const CUDAArray<Value> &b) {
 
 template <typename OutArray, size_t Stride = sizeof(typename OutArray::Value),
           typename Index, typename std::enable_if<OutArray::IsCUDA, int>::type = 0>
-static OutArray gather(const void *ptr, const CUDAArray<Index> &index,
-                       const CUDAArray<bool> &mask = true) {
+OutArray gather(const void *ptr, const CUDAArray<Index> &index,
+                const CUDAArray<bool> &mask = true) {
     using Value = typename OutArray::Value;
 
     if (sizeof(Index) != 4) {
@@ -587,16 +588,15 @@ static OutArray gather(const void *ptr, const CUDAArray<Index> &index,
 }
 
 template <size_t Stride_ = 0, typename Value, typename Index>
-static void scatter(void *ptr, const CUDAArray<Value> &value,
-                    const CUDAArray<Index> &index,
-                    const CUDAArray<bool> &mask = true) {
+CUDAArray<void_t> scatter(void *ptr, const CUDAArray<Value> &value,
+                          const CUDAArray<Index> &index,
+                          const CUDAArray<bool> &mask = true) {
     if (sizeof(Index) != 4) {
         /* Prefer 32 bit index arithmetic, 64 bit multiplies are
            emulated and thus very expensive on NVIDIA GPUs.. */
         using Int = typename std::conditional<std::is_signed<Index>::value,
                                               int32_t, uint32_t>::type;
-        scatter<Stride_>(ptr, value, CUDAArray<Int>(index), mask);
-        return;
+        return scatter<Stride_>(ptr, value, CUDAArray<Int>(index), mask);
     }
 
     constexpr size_t Stride = Stride_ != 0 ? Stride_ : sizeof(Value);
@@ -630,29 +630,33 @@ static void scatter(void *ptr, const CUDAArray<Value> &value,
                                   addr.index(), value.index(), mask.index());
     }
 
+    jitc_var_inc_ref_ext(var);
     jitc_var_mark_side_effect(var);
+
+    return CUDAArray<void_t>::from_index(var);
 }
 
 template <typename Array, size_t Stride = sizeof(typename Array::Value),
           typename Index, typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array gather(const Array &src, const CUDAArray<Index> &index,
              const CUDAArray<bool> &mask = true) {
-
-    jitc_set_scatter_gather_operand(src.index(), 1);
+    jitc_var_eval(src.index());
     Array result = gather<Array, Stride>(src.data(), index, mask);
-    jitc_set_scatter_gather_operand(0, 0);
+    jitc_var_set_extra_dep(result.index(), src.index());
     return result;
 }
 
 template <size_t Stride = 0, typename Value, typename Index>
-void scatter(CUDAArray<Value> &dst, const CUDAArray<Value> &value,
-             const CUDAArray<Index> &index,
-             const CUDAArray<bool> &mask = true) {
+CUDAArray<void_t> scatter(CUDAArray<Value> &dst, const CUDAArray<Value> &value,
+                          const CUDAArray<Index> &index,
+                          const CUDAArray<bool> &mask = true) {
+    if (dst.data() == nullptr)
+        jitc_var_eval(dst.index());
 
-    jitc_set_scatter_gather_operand(dst.index(), 0);
-    scatter<Stride>(dst.data(), value, index, mask);
-    jitc_set_scatter_gather_operand(0, 0);
+    CUDAArray<void_t> result = scatter<Stride>(dst.data(), value, index, mask);
+    jitc_var_set_extra_dep(result.index(), dst.index());
     jitc_var_mark_dirty(dst.index());
+    return result;
 }
 
 inline bool all(const CUDAArray<bool> &v) {
@@ -714,5 +718,43 @@ template <typename Value> CUDAArray<Value> hmin(const CUDAArray<Value> &v) {
     Array result = Array::empty(1);
     jitc_reduce(Array::Type, ReductionType::Min, v.data(), v.size(),
                 result.data());
+    return result;
+}
+
+inline std::vector<std::pair<uint32_t, CUDAArray<uint32_t>>>
+mkperm(const CUDAArray<uint32_t> &v, uint32_t bucket_count) {
+    using UInt32 = CUDAArray<uint32_t>;
+
+    size_t size         = v.size(),
+           perm_size    = size * sizeof(uint32_t),
+           offsets_size = (bucket_count * 3 + 1) * sizeof(uint32_t);
+
+    v.eval();
+
+    uint32_t *offsets = (uint32_t *) jitc_malloc(AllocType::HostPinned, offsets_size),
+             *perm    = (uint32_t *) jitc_malloc(AllocType::Device, perm_size);
+
+    jitc_mkperm(v.data(), (uint32_t) size, bucket_count, perm, offsets);
+
+    uint32_t unique_count = offsets[0];
+    std::vector<std::pair<uint32_t, CUDAArray<uint32_t>>> result;
+    result.reserve(unique_count);
+
+    UInt32 parent =
+        UInt32::from_index(jitc_var_map(UInt32::Type, perm, size, 1));
+
+    for (uint32_t i = 0; i < unique_count; ++i) {
+        uint32_t bucket_id     = offsets[i * 3 + 1],
+                 bucket_offset = offsets[i * 3 + 2],
+                 bucket_size   = offsets[i * 3 + 2];
+
+        uint32_t var_idx =
+            jitc_var_map(UInt32::Type, perm + bucket_offset, bucket_size, 0);
+
+        result.emplace_back(bucket_id, UInt32::from_index(var_idx));
+    }
+
+    jitc_free(offsets);
+
     return result;
 }

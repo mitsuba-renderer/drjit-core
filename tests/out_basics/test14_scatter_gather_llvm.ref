@@ -13,7 +13,6 @@ jit_var_inc_ref_ext(3): 1
 jit_var_copy(3, size=4)
 jit_trace_append(4): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
 jit_var_inc_ref_ext(4): 1
-jit_set_scatter_gather_operand(index=2, gather=1)
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r0 -> 1
@@ -125,13 +124,13 @@ jit_trace_append(10 <- 5, 3): $r0_0 = inttoptr $t1 $r1 to $t0*$n$r0 = getelement
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(10): 1
 jit_var_inc_ref_int(9): 1
-jit_var_inc_ref_ext(2): 2
 jit_trace_append(11 <- 10, 9): $r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r1, i32$s 4, <$w x $t2> $r2, <$w x $t0> $z0)
 jit_var_inc_ref_ext(11): 1
 jit_var_dec_ref_ext(10): 0
 jit_var_dec_ref_ext(5): 0
 jit_var_dec_ref_ext(9): 0
-jit_set_scatter_gather_operand(index=0, gather=0)
+jit_var_set_extra_dep(11, 2)
+jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(4): 0
 jit_eval(): begin.
 jit_assemble(size=4): register map:
@@ -256,7 +255,6 @@ jit_trace_append(13 <- 11, 12): $r0 = mul <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(13): 1
 jit_trace_append(14): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
 jit_var_inc_ref_ext(14): 1
-jit_set_scatter_gather_operand(index=2, gather=0)
 jit_var_inc_ref_ext(14): 2
 jit_var_copy_ptr(15): <@>
 jit_var_inc_ref_ext(15): 1
@@ -284,21 +282,22 @@ jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_int(13): 1
 jit_var_inc_ref_int(20): 1
 jit_var_inc_ref_int(19): 1
-jit_var_inc_ref_ext(2): 2
 jit_trace_append(21 <- 13, 20, 19): call <$w x $t1> @llvm.masked.scatter.v$w$a1(<$w x $t1> $r1, <$w x $t1*> $r2, i32$s 4, <$w x $t3> $r3)
 jit_var_inc_ref_ext(21): 1
 jit_var_mark_side_effect(21)
+jit_var_inc_ref_ext(21): 2
 jit_var_dec_ref_ext(20): 0
 jit_var_dec_ref_ext(15): 0
 jit_var_dec_ref_ext(19): 0
-jit_set_scatter_gather_operand(index=0, gather=0)
+jit_var_set_extra_dep(21, 2)
+jit_var_inc_ref_ext(2): 2
 jit_var_mark_dirty(2)
+jit_var_dec_ref_ext(21): 1
 jit_var_dec_ref_ext(14): 0
 jit_var_dec_ref_ext(13): 0
 jit_var_dec_ref_ext(12): 0
 jit_trace_append(14): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer (reused)
 jit_var_inc_ref_ext(14): 1
-jit_set_scatter_gather_operand(index=2, gather=1)
 jit_eval(): begin.
 jit_assemble(size=4): register map:
    - %r0 -> 16
@@ -484,13 +483,13 @@ jit_trace_append(27 <- 22, 3): $r0_0 = inttoptr $t1 $r1 to $t0*$n$r0 = getelemen
 jit_var_inc_ref_ext(27): 1
 jit_var_inc_ref_int(27): 1
 jit_var_inc_ref_int(26): 1
-jit_var_inc_ref_ext(2): 2
 jit_trace_append(28 <- 27, 26): $r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r1, i32$s 4, <$w x $t2> $r2, <$w x $t0> $z0)
 jit_var_inc_ref_ext(28): 1
 jit_var_dec_ref_ext(27): 0
 jit_var_dec_ref_ext(22): 0
 jit_var_dec_ref_ext(26): 0
-jit_set_scatter_gather_operand(index=0, gather=0)
+jit_var_set_extra_dep(28, 2)
+jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(11): 0
 jit_var_free(11)
 jit_free(<@>, type=host, size=64)

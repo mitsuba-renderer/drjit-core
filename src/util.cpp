@@ -274,7 +274,7 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     const Device &device = state.devices[stream->device];
 
     uint32_t block_count, thread_count;
-    device.get_launch_config(&block_count, &thread_count, size, 1024);
+    device.get_launch_config(&block_count, &thread_count, size, 1024, 1);
 
     uint32_t bucket_size_1    = sizeof(uint32_t) * bucket_count,
              bucket_size_all  = bucket_size_1 * block_count;
@@ -325,8 +325,8 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 
         void *args_3[] = { &buckets, &bucket_count, &size, &counter, &offsets };
 
-        cuda_check(cuLaunchKernel(jit_cuda_mkperm_phase_3, device.num_sm, 1, 1,
-                                  1024, 1, 1, 0, stream->handle, args_3,
+        cuda_check(cuLaunchKernel(jit_cuda_mkperm_phase_3, block_count, 1, 1,
+                                  thread_count, 1, 1, 0, stream->handle, args_3,
                                   nullptr));
 
         cuda_check(cuMemcpyAsync((CUdeviceptr) offsets, (CUdeviceptr) counter,

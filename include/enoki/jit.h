@@ -610,14 +610,28 @@ extern JITC_EXPORT void jitc_var_mark_side_effect(uint32_t index);
 extern JITC_EXPORT void jitc_var_mark_dirty(uint32_t index);
 
 /**
- * \brief Mark an array as the source or destination of gather/scatter operations
+ * \brief Attach an extra dependency to an existing variables
  *
- * Enoki uses this information to keep track of dependencies and ensure
- * consistency. The field \c gather should be set to \c 1 if gather operations
- * are performed, and \c 0 otehrwise. Following these operations, \ref
- * jitc_set_scatter_gather_operand() must be called with an \c index of \c 0.
+ * This operation informs the JIT compiler about an additional intra-variable
+ * dependency of the variable \c index on \c dep. Such dependencies are
+ * required e.g. by gather and scatter operations: under no circumstances
+ * should it be possible that the source/target region is garbage collected
+ * before the operation had a chance to execute.
+ *
+ * Depending on the state of the variable \c index the extra dependency
+ * manifests in two different ways:
+ *
+ * <ol>
+ *    <li>When \c index is an non-evaluated variable, Enoki guarantees that
+ *        the variable \c dep is kept alive until \c index has been evaluated.</li>
+ *
+ *    <li>When \c index was already evaluated, or when it refers to a memory region
+ *        that has been mapped (\ref jitc_var_map()) or copied (\ref
+ *        jitc_var_copy), Enoki guarantees that the variable \c dep is kept
+ *        alive until \c index is itself garbage-collected.</li>
+ * <ol>
  */
-extern JITC_EXPORT void jitc_set_scatter_gather_operand(uint32_t index, int gather);
+extern JITC_EXPORT void jitc_var_set_extra_dep(uint32_t index, uint32_t dep);
 
 /**
  * \brief Return a human-readable summary of registered variables
