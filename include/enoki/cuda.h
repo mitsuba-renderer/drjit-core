@@ -428,6 +428,15 @@ struct CUDAArray {
         jitc_var_write(m_index, offset, &value);
     }
 
+    static CUDAArray map(void *ptr, size_t size, bool free = false) {
+        return from_index(
+            jitc_var_map(Type, ptr, (uint32_t) size, free ? 1 : 0));
+    }
+
+    static CUDAArray copy(const void *ptr, size_t size) {
+        return from_index(jitc_var_copy(Type, ptr, (uint32_t) size));
+    }
+
     static CUDAArray from_index(uint32_t index) {
         CUDAArray result;
         result.m_index = index;

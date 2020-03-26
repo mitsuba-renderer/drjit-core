@@ -477,6 +477,15 @@ struct LLVMArray {
         jitc_var_write(m_index, offset, &value);
     }
 
+    static LLVMArray map(void *ptr, size_t size, bool free = false) {
+        return from_index(
+            jitc_var_map(Type, ptr, (uint32_t) size, free ? 1 : 0));
+    }
+
+    static LLVMArray copy(const void *ptr, size_t size) {
+        return from_index(jitc_var_copy(Type, ptr, (uint32_t) size));
+    }
+
     static LLVMArray from_index(uint32_t index) {
         LLVMArray result;
         result.m_index = index;
