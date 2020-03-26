@@ -2,9 +2,11 @@
 #include "log.h"
 #include "var.h"
 #include "util.h"
+#include "io.h"
 #include "../ptx/kernels.h"
 #include <dlfcn.h>
 #include <zlib.h>
+#include <lz4.h>
 
 #if defined(ENOKI_DYNAMIC_CUDA)
 // Driver API
@@ -23,7 +25,6 @@ CUresult (*cuEventCreate)(CUevent *, unsigned int) = nullptr;
 CUresult (*cuEventDestroy)(CUevent) = nullptr;
 CUresult (*cuEventRecord)(CUevent, CUstream) = nullptr;
 CUresult (*cuEventSynchronize)(CUevent) = nullptr;
-CUresult (*cuFuncGetAttribute)(int *, int, CUfunction) = nullptr;
 CUresult (*cuFuncSetAttribute)(CUfunction, int, int) = nullptr;
 CUresult (*cuFuncSetCacheConfig)(CUfunction, int) = nullptr;
 CUresult (*cuGetErrorString)(CUresult, const char **) = nullptr;
@@ -89,28 +90,17 @@ int jit_cuda_devices = 0;
 static bool jit_cuda_init_attempted = false;
 static bool jit_cuda_init_success = false;
 
-int inflate(const void *src, uint32_t src_size, void *dst, uint32_t dst_size) {
-    z_stream strm;
-    memset(&strm, 0, sizeof(z_stream));
-    strm.total_in = strm.avail_in = src_size;
-    strm.total_out = strm.avail_out = dst_size;
-    strm.next_in   = (unsigned char *) src;
-    strm.next_out  = (unsigned char *) dst;
-
-    int rv = inflateInit2(&strm, (15 + 32));
-    if (rv == Z_OK) {
-        rv = inflate(&strm, Z_FINISH);
-        if (rv == Z_STREAM_END)
-            rv = strm.total_out;
-    }
-    inflateEnd(&strm);
-    return rv;
-}
-
 bool jit_cuda_init() {
     if (jit_cuda_init_attempted)
         return jit_cuda_init_success;
     jit_cuda_init_attempted = true;
+
+    // We have our own caching scheme, disable CUDA's JIT cache
+#ifdef _MSC_VER
+    _putenv("CUDA_CACHE_DISABLE=1");
+#else
+    putenv((char *) "CUDA_CACHE_DISABLE=1");
+#endif
 
 #if defined(ENOKI_DYNAMIC_CUDA)
 #if defined(__linux__)
@@ -156,7 +146,6 @@ bool jit_cuda_init() {
         LOAD(cuEventDestroy, "v2");
         LOAD(cuEventRecord, "ptsz");
         LOAD(cuEventSynchronize);
-        LOAD(cuFuncGetAttribute);
         LOAD(cuFuncSetAttribute);
         LOAD(cuFuncSetCacheConfig);
         LOAD(cuGetErrorString);
@@ -229,40 +218,52 @@ bool jit_cuda_init() {
             cuda_version_major, cuda_version_minor);
 
     // Decompress supplemental PTX content
-    std::unique_ptr<char[]> uncompressed(
-        new char[kernels_ptx_uncompressed_size + 1]);
+    char *uncompressed =
+        (char *) malloc_check(kernels_ptx_size_uncompressed + 1);
 
-    int zrv = inflate(kernels_ptx_compressed,
-                     (uint32_t) sizeof(kernels_ptx_compressed),
-                     uncompressed.get(),
-                     (uint32_t) kernels_ptx_uncompressed_size);
+    if (LZ4_decompress_safe((const char *) kernels_ptx,
+                            uncompressed,
+                            (int) kernels_ptx_size_compressed,
+                            (int) kernels_ptx_size_uncompressed) !=
+        (int) kernels_ptx_size_uncompressed)
+        jit_fail("jit_cuda_init(): decompression of precompiled kernels failed!");
 
-    if (zrv != (int) kernels_ptx_uncompressed_size)
-        jit_fail("jit_cuda_init(): decompression of precompiled kernels failed "
-                 "(%i)!", zrv);
-    uncompressed[kernels_ptx_uncompressed_size] = '\0';
+    uncompressed[kernels_ptx_size_uncompressed] = '\0';
 
     for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++)
         for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++)
             jit_cuda_reductions[j][k] =
-                (CUfunction *) malloc(sizeof(CUfunction) * jit_cuda_devices);
+                (CUfunction *) malloc_check(sizeof(CUfunction) * jit_cuda_devices);
 
-    jit_cuda_module = (CUmodule *) malloc(sizeof(CUmodule) * jit_cuda_devices);
+    jit_cuda_module = (CUmodule *) malloc_check(sizeof(CUmodule) * jit_cuda_devices);
 
     for (int i = 0; i < jit_cuda_devices; ++i) {
         CUcontext context = nullptr;
         cuda_check(cuDevicePrimaryCtxRetain(&context, i));
         cuda_check(cuCtxSetCurrent(context));
+        int cc_minor, cc_major;
+
+        cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
+        cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
+
+        size_t id = cc_minor + cc_major * 10;
+
+        Kernel kernel;
+        if (!jit_kernel_load(uncompressed, kernels_ptx_size_uncompressed, false, id, kernel)) {
+            jit_cuda_compile(uncompressed, kernels_ptx_size_uncompressed, kernel);
+            jit_kernel_write(uncompressed, kernels_ptx_size_uncompressed, false, id, kernel);
+        }
 
         // .. and register it with CUDA
         CUmodule m;
-        cuda_check(cuModuleLoadData(&m, uncompressed.get()));
+        cuda_check(cuModuleLoadData(&m, kernel.data));
+        free(kernel.data);
         jit_cuda_module[i] = m;
 
-        #define LOAD(name)                                                        \
-            if (i == 0)                                                           \
-                jit_cuda_##name =                                                 \
-                    (CUfunction *) malloc(sizeof(CUfunction) * jit_cuda_devices); \
+        #define LOAD(name)                                                       \
+            if (i == 0)                                                          \
+                jit_cuda_##name = (CUfunction *) malloc_check(                   \
+                    sizeof(CUfunction) * jit_cuda_devices);                      \
             cuda_check(cuModuleGetFunction(&jit_cuda_##name[i], m, #name));
 
         LOAD(fill_64);
@@ -291,16 +292,65 @@ bool jit_cuda_init() {
                     continue;
                 cuda_check(rv);
                 if (i == 0)
-                    jit_cuda_reductions[j][k] = (CUfunction *) malloc(
+                    jit_cuda_reductions[j][k] = (CUfunction *) malloc_check(
                         sizeof(CUfunction) * jit_cuda_devices);
                 jit_cuda_reductions[j][k][i] = func;
             }
         }
     }
     cuda_check(cuCtxSetCurrent(nullptr));
+    free(uncompressed);
 
     jit_cuda_init_success = true;
     return true;
+}
+
+void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
+    const uintptr_t log_size = 4096;
+    char error_log[log_size], info_log[log_size];
+
+    CUjit_option arg[5] = {
+        CU_JIT_INFO_LOG_BUFFER,
+        CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
+        CU_JIT_ERROR_LOG_BUFFER,
+        CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES,
+        CU_JIT_LOG_VERBOSE
+    };
+
+    void *argv[5] = {
+        (void *) info_log,
+        (void *) log_size,
+        (void *) error_log,
+        (void *) log_size,
+        (void *) 1
+    };
+
+    CUlinkState link_state;
+    cuda_check(cuLinkCreate(5, arg, argv, &link_state));
+
+    int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buffer,
+                           buffer_size, nullptr, 0, nullptr, nullptr);
+    if (rt != CUDA_SUCCESS)
+        jit_fail("jit_llvm_compile(): compilation failed. Please see the PTX "
+                 "assembly listing and error message below:\n\n%s\n\n%s",
+                 buffer, error_log);
+
+    void *link_output = nullptr;
+    size_t link_output_size = 0;
+    cuda_check(cuLinkComplete(link_state, &link_output, &link_output_size));
+    if (rt != CUDA_SUCCESS)
+        jit_fail("jit_llvm_compile(): compilation failed. Please see the PTX "
+                 "assembly listing and error message below:\n\n%s\n\n%s",
+                 buffer, error_log);
+
+    jit_trace("Detailed linker output:\n%s", info_log);
+
+    kernel.data = malloc_check(link_output_size);
+    kernel.size = link_output_size;
+    memcpy(kernel.data, link_output, link_output_size);
+
+    // Destroy the linker invocation
+    cuda_check(cuLinkDestroy(link_state));
 }
 
 void jit_cuda_shutdown() {
@@ -353,16 +403,16 @@ void jit_cuda_shutdown() {
     Z(cuDeviceGetName); Z(cuDevicePrimaryCtxRelease);
     Z(cuDevicePrimaryCtxRetain); Z(cuDeviceTotalMem); Z(cuDriverGetVersion);
     Z(cuEventCreate); Z(cuEventDestroy); Z(cuEventRecord);
-    Z(cuEventSynchronize); Z(cuFuncGetAttribute); Z(cuFuncSetAttribute);
-    Z(cuFuncSetCacheConfig); Z(cuGetErrorString); Z(cuInit);
-    Z(cuLaunchHostFunc); Z(cuLaunchKernel); Z(cuLinkAddData);
-    Z(cuLinkComplete); Z(cuLinkCreate); Z(cuLinkDestroy); Z(cuMemAdvise);
-    Z(cuMemAlloc); Z(cuMemAllocHost); Z(cuMemAllocManaged); Z(cuMemFree);
-    Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy); Z(cuMemcpyAsync);
-    Z(cuMemsetD16Async); Z(cuMemsetD32Async); Z(cuMemsetD8Async);
-    Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleUnload);
-    Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent); Z(cuStreamCreate);
-    Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
+    Z(cuEventSynchronize); Z(cuFuncSetAttribute); Z(cuFuncSetCacheConfig);
+    Z(cuGetErrorString); Z(cuInit); Z(cuLaunchHostFunc); Z(cuLaunchKernel);
+    Z(cuLinkAddData); Z(cuLinkComplete); Z(cuLinkCreate); Z(cuLinkDestroy);
+    Z(cuMemAdvise); Z(cuMemAlloc); Z(cuMemAllocHost); Z(cuMemAllocManaged);
+    Z(cuMemFree); Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy);
+    Z(cuMemcpyAsync); Z(cuMemsetD16Async); Z(cuMemsetD32Async);
+    Z(cuMemsetD8Async); Z(cuModuleGetFunction); Z(cuModuleLoadData);
+    Z(cuModuleUnload); Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent);
+    Z(cuStreamCreate); Z(cuStreamDestroy); Z(cuStreamSynchronize);
+    Z(cuStreamWaitEvent);
 
     dlclose(jit_cuda_handle);
     jit_cuda_handle = nullptr;

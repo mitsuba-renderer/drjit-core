@@ -50,11 +50,10 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_FLAGS MATCHES "-stdl
   endif()
 endif()
 
-find_package(ZLIB)
-
 include_directories(
   include
   ext/robin_map/include
+  ext/lz4
 )
 
 add_library(
@@ -62,21 +61,27 @@ add_library(
   include/enoki/jit.h
   src/internal.h
   src/alloc.h
-  ptx/kernels.h
+  src/hash.h
   src/log.h            src/log.cpp
   src/var.h            src/var.cpp
   src/eval.h           src/eval.cpp
   src/malloc.h         src/malloc.cpp
-  src/hash.h           src/hash.cpp
   src/util.h           src/util.cpp
   src/cuda_api.h       src/cuda_api.cpp
   src/llvm_api.h       src/llvm_api.cpp
+  src/io.h             src/io.cpp
   src/init.cpp
   src/api.cpp
+
+  # LZ4 compression library & XXHash hash function
+  ext/lz4/lz4.h ext/lz4/lz4.c
+  ext/lz4/xxhash.h ext/lz4/xxhash.c
+
+  # Precompiled kernels in compressed PTX format
+  ptx/kernels.h
 )
 
-# target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
-target_compile_options(enoki-jit PRIVATE -Wall -Wextra)
+target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
 if (U_CMAKE_BUILD_TYPE MATCHES REL)
   target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
 endif()
@@ -97,10 +102,10 @@ else()
   target_link_libraries(enoki-jit PRIVATE LLVM)
 endif()
 
-target_link_libraries(enoki-jit PRIVATE dl ZLIB::ZLIB pthread)
-# set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE        TRUE)
-# set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL     TRUE)
-# set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
+target_link_libraries(enoki-jit PRIVATE dl pthread)
+set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE        TRUE)
+set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL     TRUE)
+set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
 
 if (ENOKI_ENABLE_TESTS)
   add_subdirectory(tests)

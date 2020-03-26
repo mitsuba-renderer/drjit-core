@@ -3,6 +3,11 @@
 #include <tsl/robin_map.h>
 #include <string.h>
 
+extern "C" {
+    extern unsigned long long XXH64(const void *ptr, size_t size,
+                                    unsigned long long seed);
+}
+
 inline void hash_combine(size_t& seed, size_t value) {
     /// From CityHash (https://github.com/google/cityhash)
     const size_t mult = 0x9ddfea08eb382d69ull;
@@ -22,9 +27,15 @@ struct pair_hash {
     }
 };
 
-/// CRC32 hash function
-extern uint32_t crc32(uint32_t state, const void *ptr, size_t size);
-extern uint32_t crc32_64(uint32_t state, const uint64_t *ptr, size_t size);
-extern uint32_t crc32_str(uint32_t state, const char *str);
+inline size_t hash(const void *ptr, size_t size, size_t seed = 0) {
+    return (size_t) XXH64(ptr, size, (unsigned long long) seed);
+}
 
-extern uint32_t hash_kernel(const char *str);
+inline size_t hash_str(const char *str, size_t seed = 0) {
+    return hash(str, strlen(str), seed);
+}
+
+inline size_t hash_kernel(const char *str, size_t seed = 0) {
+    const char *offset = strchr(str, '{');
+    return hash_str(offset ? offset : str, seed);
+}

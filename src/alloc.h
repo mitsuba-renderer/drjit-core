@@ -1,9 +1,12 @@
 #pragma once
 
 #include <cstdlib>
-//
+
 /// Immediately terminate the application due to a fatal internal error
-[[noreturn]] extern void jit_fail(const char* fmt, ...);
+#if defined(__GNUC__)
+    __attribute__((noreturn, __format__ (__printf__, 1, 2)))
+#endif
+extern void jit_fail(const char* fmt, ...);
 
 template <typename T, size_t Align = alignof(T)>
 struct aligned_allocator {

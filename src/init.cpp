@@ -31,7 +31,7 @@ void jit_init(int llvm, int cuda) {
     for (int i = 0; cuda && i < jit_cuda_devices; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
             unified_addr = 0, managed = 0, concurrent_managed = 0,
-            shared_memory_bytes = 0;
+            shared_memory_bytes = 0, cc_minor = 0, cc_major = 0;
         size_t mem_total = 0;
         char name[256];
 
@@ -45,11 +45,13 @@ void jit_init(int llvm, int cuda) {
         cuda_check(cuDeviceGetAttribute(&managed, CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS, i));
         cuda_check(cuDeviceGetAttribute(&concurrent_managed, CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY, i));
         cuda_check(cuDeviceGetAttribute(&shared_memory_bytes, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK, i));
+        cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
+        cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
 
         jit_log(Info,
                 " - Found CUDA device %i: \"%s\" "
-                "(PCI ID %02x:%02x.%i, %i SMs w/%s shared mem., %s global mem.)",
-                i, name, pci_bus_id, pci_dev_id, pci_dom_id, num_sm,
+                "(PCI ID %02x:%02x.%i, compute capability %i.%i, %i SMs w/%s shared mem., %s global mem.)",
+                i, name, pci_bus_id, pci_dev_id, pci_dom_id, cc_major, cc_minor, num_sm,
                 std::string(jit_mem_string(shared_memory_bytes)).c_str(),
                 std::string(jit_mem_string(mem_total)).c_str());
 
@@ -66,6 +68,7 @@ void jit_init(int llvm, int cuda) {
         Device device;
         device.id = i;
         device.num_sm = num_sm;
+        device.compute_capability = cc_major * 10 + cc_minor;
         device.shared_memory_bytes = shared_memory_bytes;
         cuda_check(cuDevicePrimaryCtxRetain(&device.context, i));
         state.devices.push_back(device);
@@ -124,19 +127,10 @@ void jit_shutdown(int light) {
     }
 
     for (auto &v : state.kernel_cache) {
-        const KernelKey &key = v.first;
-        const Kernel &kernel = v.second;
-
-        if (key.device == -1) {
-            jit_llvm_free(kernel);
-        } else {
-            const Device &device = state.devices.at(key.device);
-            cuda_check(cuCtxSetCurrent(device.context));
-            cuda_check(cuModuleUnload(kernel.cuda.cu_module));
-        }
-
-        free(key.str);
+        jit_kernel_free(v.first.device, v.second);
+        free(v.first.str);
     }
+
     state.kernel_cache.clear();
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
@@ -211,9 +205,11 @@ void jit_device_set(int32_t device, uint32_t stream) {
         stream_ptr = it->second;
         if (stream_ptr == active_stream_ptr)
             return;
-        jit_trace("jit_device_set(device=%i, stream=%i): selecting stream", device, stream);
+        jit_trace("jit_device_set(device=%i, stream=%i): selecting stream",
+                  device, stream);
     } else {
-        jit_trace("jit_device_set(device=%i, stream=%i): creating stream", device, stream);
+        jit_trace("jit_device_set(device=%i, stream=%i): creating stream",
+                  device, stream);
         CUstream handle = nullptr;
         CUevent event = nullptr;
         cuda_check(cuStreamCreate(&handle, CU_STREAM_NON_BLOCKING));
@@ -271,11 +267,27 @@ void *jit_find_library(const char *fname, const char *glob_pat,
         if (glob(glob_pat, 0, nullptr, &g) == 0) {
             const char *chosen = nullptr;
             if (g.gl_pathc > 1) {
-                jit_log(Warn, "jit_llvm_init(): Multiple versions of "
+                jit_log(Warn, "jit_find_library(): Multiple versions of "
                               "%s were found on your system!\n", fname);
                 std::sort(g.gl_pathv, g.gl_pathv + g.gl_pathc,
                           [](const char *a, const char *b) {
-                              return strcmp(a, b) < 0;
+                              while (a != nullptr && b != nullptr) {
+                                  while (*a == *b && *a != '\0' && !isdigit(*a)) {
+                                      ++a; ++b;
+                                  }
+                                  if (isdigit(*a) && isdigit(*b)) {
+                                      char *ap, *bp;
+                                      int ai = strtol(a, &ap, 10);
+                                      int bi = strtol(b, &bp, 10);
+                                      if (ai != bi)
+                                          return ai < bi;
+                                      a = ap;
+                                      b = bp;
+                                  } else {
+                                      return strcmp(a, b) < 0;
+                                  }
+                              }
+                              return false;
                           });
                 uint32_t counter = 1;
                 for (int j = 0; j < 2; ++j) {

@@ -31,13 +31,12 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=4, ops=8) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_d2765e70(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1,
-                               .param .u64 arg2,
-                               .param .u64 arg3) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1,
+                              .param .u64 arg2,
+                              .param .u64 arg3) {
     .reg.b8 %b<8>;
     .reg.b16 %w<8>;
     .reg.b32 %r<8>;

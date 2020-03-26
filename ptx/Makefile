@@ -6,14 +6,11 @@ all: kernels.h
 kernels.ptx: reduce.cuh scan.cuh mkperm.cuh misc.cuh
 	$(NVCC) kernels.cu -o kernels.ptx
 
-kernels.ptx.gz: kernels.ptx
-	rm -f kernels.ptx.gz
-	gzip -k -n -9 kernels.ptx
+generate: generate.c
+	$(CC) generate.c ../ext/lz4/lz4hc.c ../ext/lz4/lz4.c -o generate -I ../ext/lz4
 
-kernels.h: kernels.ptx.gz
-	$(eval SIZE := $(shell stat -c%s kernels.ptx))
-	@echo "static size_t kernels_ptx_uncompressed_size = $(SIZE);" > kernels.h
-	bin2c kernels.ptx.gz --static --name "kernels_ptx_compressed" | grep -v '^#\|^ext' | head -n -3 >> kernels.h
+kernels.h: kernels.ptx generate
+	./generate
 
 clean:
-	rm -f kernels.ptx kernels.ptx.gz kernels.h
+	rm -f kernels.ptx kernels.h generate

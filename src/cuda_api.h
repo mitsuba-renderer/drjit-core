@@ -13,11 +13,12 @@
 #  define CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID 34
 #  define CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID 50
 #  define CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING 41
+#  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR 76
+#  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR 75
 
 #  define CU_DEVICE_CPU -1
 
 #  define CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES 8
-#  define CU_FUNC_ATTRIBUTE_NUM_REGS 4
 #  define CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT 9
 #  define CU_FUNC_CACHE_PREFER_L1 2
 
@@ -72,7 +73,6 @@ extern CUresult (*cuEventCreate)(CUevent *, unsigned int);
 extern CUresult (*cuEventDestroy)(CUevent);
 extern CUresult (*cuEventRecord)(CUevent, CUstream);
 extern CUresult (*cuEventSynchronize)(CUevent);
-extern CUresult (*cuFuncGetAttribute)(int *, int, CUfunction);
 extern CUresult (*cuFuncSetAttribute)(CUfunction, int, int);
 extern CUresult (*cuFuncSetCacheConfig)(CUfunction, int);
 extern CUresult (*cuGetErrorString)(CUresult, const char **);
@@ -131,6 +131,11 @@ extern int jit_cuda_devices;
 
 /// Try to load the CUDA backend
 extern bool jit_cuda_init();
+
+struct Kernel;
+
+/// Compile an IR string
+extern void jit_cuda_compile(const char *str, size_t size, Kernel &kernel);
 
 /// Fully unload CUDA
 extern void jit_cuda_shutdown();

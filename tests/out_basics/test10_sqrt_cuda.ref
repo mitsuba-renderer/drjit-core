@@ -18,10 +18,9 @@ jit_assemble(size=10): register map:
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=10, in=0, out=1, ops=7) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_439c0a08(.param .u32 size,
-                               .param .u64 arg0) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0) {
     .reg.b8 %b<7>;
     .reg.b16 %w<7>;
     .reg.b32 %r<7>;

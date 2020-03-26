@@ -30,14 +30,17 @@ void test_sanitize_log(char *buf) {
          *dst = src;
 
     // Remove all lines starting with the following text
-    const char *excise[9] = {
+    const char *excise[12] = {
         "jit_init(): detecting",
         " - Found CUDA",
         " - Enabling peer",
+        ".target",
         "Detailed linker output:",
         "info    :",
         "ptxas",
         "jit_run(): cache ",
+        "jit_kernel_load(",
+        "jit_kernel_write(",
         "jit_llvm_disasm()",
         "jit_llvm_mem_allocate("
     };
@@ -57,6 +60,7 @@ void test_sanitize_log(char *buf) {
                     break;
                 }
             }
+
             if (found)
                 continue;
         }
@@ -74,6 +78,15 @@ void test_sanitize_log(char *buf) {
             *dst++ = '>';
             continue;
         }
+
+        if (strncmp(src, "enoki_", 6) == 0) {
+            memcpy(dst, "enoki_@@@@@@@@@@@@@@@@", 22);
+            src += 22;
+            dst += 22;
+        }
+
+        if (strncmp(src, " (compute capability ", 6) == 0)
+            src += 24;
 
         *dst++ = *src++;
     }

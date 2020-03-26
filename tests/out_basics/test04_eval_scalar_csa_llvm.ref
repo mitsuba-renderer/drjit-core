@@ -29,7 +29,7 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %f3 -> 4 [scalar] [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=4, ops=4) ..
-define void @enoki_eff9d9f7(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
 entry:
 
     ; Prepare argument 0

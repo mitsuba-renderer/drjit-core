@@ -116,9 +116,7 @@ const char *jit_time_string(float value) {
 }
 
 Buffer::Buffer(const size_t size) : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
-    m_start = (char *) malloc(size);
-    if (unlikely(m_start == nullptr))
-        jit_fail("Buffer(): out of memory!");
+    m_start = (char *) malloc_check(size);
     m_end = m_start + size;
     clear();
 }
@@ -168,9 +166,7 @@ void Buffer::expand() {
            used_size      = m_cur - m_start,
            copy_size      = std::min(used_size + 1, old_alloc_size);
 
-    char *tmp = (char *) malloc(new_alloc_size);
-    if (unlikely(m_start == nullptr))
-        jit_fail("Buffer::expand() out of memory!");
+    char *tmp = (char *) malloc_check(new_alloc_size);
     memcpy(tmp, m_start, copy_size);
     free(m_start);
 

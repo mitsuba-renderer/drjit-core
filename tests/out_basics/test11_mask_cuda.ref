@@ -35,11 +35,10 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=10, in=0, out=2, ops=10) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_80d5b308(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1) {
     .reg.b8 %b<10>;
     .reg.b16 %w<10>;
     .reg.b32 %r<10>;
@@ -135,11 +134,10 @@ jit_assemble(size=10): register map:
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=10, in=1, out=1, ops=8) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_3597d757(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1) {
     .reg.b8 %b<8>;
     .reg.b16 %w<8>;
     .reg.b32 %r<8>;
@@ -211,11 +209,10 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=2, ops=6) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_5a799398(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1) {
     .reg.b8 %b<6>;
     .reg.b16 %w<6>;
     .reg.b32 %r<6>;
@@ -291,14 +288,13 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=10, in=3, out=2, ops=10) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_f4fa71cd(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1,
-                               .param .u64 arg2,
-                               .param .u64 arg3,
-                               .param .u64 arg4) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1,
+                              .param .u64 arg2,
+                              .param .u64 arg3,
+                              .param .u64 arg4) {
     .reg.b8 %b<10>;
     .reg.b16 %w<10>;
     .reg.b32 %r<10>;

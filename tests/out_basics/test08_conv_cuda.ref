@@ -36,15 +36,14 @@ jit_malloc(type=device, device=0, size=4096): <@> (new allocation)
 jit_malloc(type=device, device=0, size=8192): <@> (new allocation)
 jit_run(): launching kernel (n=1024, in=0, out=6, ops=10) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_627f1dd3(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1,
-                               .param .u64 arg2,
-                               .param .u64 arg3,
-                               .param .u64 arg4,
-                               .param .u64 arg5) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1,
+                              .param .u64 arg2,
+                              .param .u64 arg3,
+                              .param .u64 arg4,
+                              .param .u64 arg5) {
     .reg.b8 %b<10>;
     .reg.b16 %w<10>;
     .reg.b32 %r<10>;
@@ -200,13 +199,12 @@ jit_malloc(type=device, device=0, size=4096): <@> (reused local)
 jit_malloc(type=device, device=0, size=8192): <@> (reused local)
 jit_run(): launching kernel (n=1024, in=0, out=4, ops=11) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_4315def4(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1,
-                               .param .u64 arg2,
-                               .param .u64 arg3) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1,
+                              .param .u64 arg2,
+                              .param .u64 arg3) {
     .reg.b8 %b<11>;
     .reg.b16 %w<11>;
     .reg.b32 %r<11>;
@@ -350,15 +348,14 @@ jit_malloc(type=device, device=0, size=4096): <@> (reused global)
 jit_malloc(type=device, device=0, size=8192): <@> (reused global)
 jit_run(): launching kernel (n=1024, in=0, out=6, ops=11) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_c6959596(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1,
-                               .param .u64 arg2,
-                               .param .u64 arg3,
-                               .param .u64 arg4,
-                               .param .u64 arg5) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1,
+                              .param .u64 arg2,
+                              .param .u64 arg3,
+                              .param .u64 arg4,
+                              .param .u64 arg5) {
     .reg.b8 %b<11>;
     .reg.b16 %w<11>;
     .reg.b32 %r<11>;
@@ -519,13 +516,12 @@ jit_malloc(type=device, device=0, size=4096): <@> (reused local)
 jit_malloc(type=device, device=0, size=8192): <@> (reused local)
 jit_run(): launching kernel (n=1024, in=0, out=4, ops=11) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_330bc8d2(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1,
-                               .param .u64 arg2,
-                               .param .u64 arg3) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1,
+                              .param .u64 arg2,
+                              .param .u64 arg3) {
     .reg.b8 %b<11>;
     .reg.b16 %w<11>;
     .reg.b32 %r<11>;
@@ -669,13 +665,12 @@ jit_malloc(type=device, device=0, size=8192): <@> (reused local)
 jit_malloc(type=device, device=0, size=8192): <@> (reused local)
 jit_run(): launching kernel (n=1024, in=0, out=4, ops=11) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_8fcba077(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1,
-                               .param .u64 arg2,
-                               .param .u64 arg3) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1,
+                              .param .u64 arg2,
+                              .param .u64 arg3) {
     .reg.b8 %b<11>;
     .reg.b16 %w<11>;
     .reg.b32 %r<11>;
@@ -818,13 +813,12 @@ jit_malloc(type=device, device=0, size=8192): <@> (reused local)
 jit_malloc(type=device, device=0, size=4096): <@> (reused local)
 jit_run(): launching kernel (n=1024, in=0, out=4, ops=11) ..
 .version 6.3
-.target sm_61
 .address_size 64
-.visible .entry enoki_e3d057a4(.param .u32 size,
-                               .param .u64 arg0,
-                               .param .u64 arg1,
-                               .param .u64 arg2,
-                               .param .u64 arg3) {
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1,
+                              .param .u64 arg2,
+                              .param .u64 arg3) {
     .reg.b8 %b<11>;
     .reg.b16 %w<11>;
     .reg.b32 %r<11>;

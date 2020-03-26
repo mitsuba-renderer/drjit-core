@@ -1,12 +1,17 @@
 #pragma once
 
 #include <enoki/jit.h>
-#include <cstdarg>
+#include <stdarg.h>
 
 #if defined(ENOKI_DISABLE_TRACE)
 #  define jit_trace(...)
 #else
 #  define jit_trace(...) jit_log(Trace, __VA_ARGS__)
+#endif
+
+#if !defined(likely)
+#  define likely(x)   __builtin_expect(!!(x), 1)
+#  define unlikely(x) __builtin_expect(!!(x), 0)
 #endif
 
 /// Print a log message with the specified log level and message
@@ -47,3 +52,11 @@ extern const char *jit_time_string(float us);
 
 /// Return the number of microseconds since the previous timer() call
 extern float timer();
+
+ __attribute__((malloc)) inline void* malloc_check(size_t size) {
+    void *ptr = malloc(size);
+    if (unlikely(!ptr))
+        jit_fail("malloc_check(): failed to allocate %zu bytes!", size);
+    return ptr;
+}
+

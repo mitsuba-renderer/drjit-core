@@ -4,6 +4,7 @@
 #include "cuda_api.h"
 #include "llvm_api.h"
 #include "alloc.h"
+#include "io.h"
 #include <mutex>
 #include <condition_variable>
 #include <string.h>
@@ -36,6 +37,9 @@ struct Device {
 
     /// Max. bytes of shared memory per SM
     int shared_memory_bytes;
+
+    /// Device compute capability (major * 10 + minor)
+    int compute_capability;
 
     /// Compute a good configuration for a grid-stride loop
     void get_launch_config(uint32_t *blocks_out, uint32_t *threads_out,
@@ -207,12 +211,12 @@ struct VariableKey {
 
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        uint32_t state;
+        size_t state;
         if (likely(k.free_stmt == 0)) {
-            state = crc32_64(0, (const uint64_t *) &k.stmt, 4);
+            state = hash(&k, sizeof(VariableKey));
         } else {
-            state = crc32_str(0, k.stmt);
-            state = crc32_64(state, (const uint64_t *) &k.size, 3);
+            state = hash_str(k.stmt);
+            state = hash(&k.size, sizeof(uint32_t) * 6, state);
         }
         return state;
     }
@@ -243,10 +247,10 @@ struct KernelKey {
 
 struct KernelHash {
     size_t operator()(const KernelKey &k) const {
-        return hash(hash_kernel(k.str), k.device);
+        return compute_hash(hash_kernel(k.str), k.device);
     }
 
-    static size_t hash(uint32_t kernel_hash, int device) {
+    static size_t compute_hash(size_t kernel_hash, int device) {
         size_t hash = kernel_hash;
         hash_combine(hash, device + 1);
         return hash;
