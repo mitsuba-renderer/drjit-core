@@ -304,7 +304,7 @@ extern JITC_EXPORT void *jitc_malloc(enum AllocType type, size_t size)
  */
 extern JITC_EXPORT void jitc_free(void *ptr);
 
-/** e
+/**
  * \brief Asynchronously change the flavor of an allocated memory region and
  * return the new pointer
  *
@@ -313,9 +313,11 @@ extern JITC_EXPORT void jitc_free(void *ptr);
  * Nothing needs to be done in the other direction, e.g. when migrating from
  * host-pinned to device or managed memory.
  *
- * When both source & target are of type \ref AllocType::Device, and if the
- * current device (\ref jitc_device_set()) does not match the device associated
- * with the allocation, a peer-to-peer migration is performed.
+ * The provided pointer is automatically freed (via \ref jitc_free()) if a
+ * migration was necessary. When both source & target are of type \ref
+ * AllocType::Device, and if the current device (\ref jitc_device_set()) does
+ * not match the device associated with the allocation, a peer-to-peer
+ * migration is performed.
  *
  * Note: Migrations involving AllocType::Host are currently not supported.
  */

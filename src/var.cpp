@@ -612,7 +612,9 @@ void jit_var_migrate(uint32_t index, AllocType type) {
 /// Indicate that evaluation of the given variable causes side effects
 void jit_var_mark_side_effect(uint32_t index) {
     jit_log(Debug, "jit_var_mark_side_effect(%u)", index);
-    jit_var(index)->side_effect = true;
+    Variable *v = jit_var(index);
+    v->side_effect = true;
+    jit_cse_drop(index, v);
 }
 
 /// Mark variable as dirty due to pending scatter operations

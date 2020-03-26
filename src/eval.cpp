@@ -688,10 +688,15 @@ void jit_assemble(ScheduledGroup group) {
             n_args_in++;
             push = true;
         } else if (!v->side_effect && v->ref_count_ext > 0 &&
-                   v->size == group.size) {
+                    v->size == group.size) {
             size_t var_size =
                 (size_t) group.size * (size_t) var_type_size[(int) v->type];
-            v->data = jit_malloc(cuda ? AllocType::Device : AllocType::Host, var_size);
+            void *data = jit_malloc(cuda ? AllocType::Device : AllocType::Host, var_size);
+
+            // jit_malloc() may temporarily release the lock, variable pointer might have changed
+            v = jit_var(index);
+
+            v->data = data;
             v->arg_index = (uint16_t) (n_args_in + n_args_out);
             v->arg_type = ArgType::Output;
             v->tsize = 1;

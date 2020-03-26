@@ -113,10 +113,7 @@ void jit_shutdown(int light) {
             const Stream *stream = v.second;
             jit_device_set(stream->device, stream->stream);
             jit_free_flush();
-            {
-                unlock_guard guard(state.mutex);
-                cuda_check(cuStreamSynchronize(stream->handle));
-            }
+            cuda_check(cuStreamSynchronize(stream->handle));
             cuda_check(cuEventDestroy(stream->event));
             cuda_check(cuStreamDestroy(stream->handle));
             delete stream->release_chain;

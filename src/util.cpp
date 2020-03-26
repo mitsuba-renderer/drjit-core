@@ -18,15 +18,21 @@ void jit_fill(VarType type, void *ptr, uint32_t size, const void *src) {
     if (stream) {
         switch (var_type_size[(int) type]) {
             case 1:
-                cuda_check(cuMemsetD8Async((CUdeviceptr) ptr, ((uint8_t *) src)[0], size, stream->handle));
+                cuda_check(cuMemsetD8Async((CUdeviceptr) ptr,
+                                           ((uint8_t *) src)[0], size,
+                                           stream->handle));
                 break;
 
             case 2:
-                cuda_check(cuMemsetD16Async((CUdeviceptr) ptr, ((uint16_t *) src)[0], size, stream->handle));
+                cuda_check(cuMemsetD16Async((CUdeviceptr) ptr,
+                                            ((uint16_t *) src)[0], size,
+                                            stream->handle));
                 break;
 
             case 4:
-                cuda_check(cuMemsetD32Async((CUdeviceptr) ptr, ((uint32_t *) src)[0], size, stream->handle));
+                cuda_check(cuMemsetD32Async((CUdeviceptr) ptr,
+                                            ((uint32_t *) src)[0], size,
+                                            stream->handle));
                 break;
 
             case 8: {
