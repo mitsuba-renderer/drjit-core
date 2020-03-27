@@ -200,16 +200,27 @@ int main(int argc, char **argv) {
 
     int log_level_stderr = (int) LogLevel::Disable;
 
-    bool write_ref = false;
+    bool write_ref = false, help = false;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-w") == 0) {
             write_ref = true;
         } else if (strcmp(argv[i], "-v") == 0) {
             log_level_stderr = std::max((int) LogLevel::Info, log_level_stderr + 1);
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            help = true;
         } else {
             fprintf(stderr, "Invalid command line argument: \"%s\"\n", argv[i]);
-            exit(EXIT_FAILURE);
+            help = true;
         }
+    }
+
+    if (help) {
+        printf("Syntax: %s [options]\n\n", argv[0]);
+        printf("Options:\n\n");
+        printf(" -h   Display this help text.\n\n");
+        printf(" -w   Write reference output to tests/out_*.\n\n");
+        printf(" -v   Be more verbose (can be repeated)\n\n");
+        return 0;
     }
 
     try {

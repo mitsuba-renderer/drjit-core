@@ -45,6 +45,8 @@ CUresult (*cuMemAdvise)(void *, size_t, int, CUdevice) = nullptr;
 CUresult (*cuMemAlloc)(void **, size_t) = nullptr;
 CUresult (*cuMemAllocHost)(void **, size_t) = nullptr;
 CUresult (*cuMemAllocManaged)(void **, size_t, unsigned int) = nullptr;
+CUresult (*cuMemHostRegister)(void*, size_t, unsigned int) = nullptr;
+CUresult (*cuMemHostUnregister)(void*) = nullptr;
 CUresult (*cuMemFree)(void *) = nullptr;
 CUresult (*cuMemFreeHost)(void *) = nullptr;
 CUresult (*cuMemPrefetchAsync)(const void *, size_t, CUdevice, CUstream) = nullptr;
@@ -162,6 +164,8 @@ bool jit_cuda_init() {
         LOAD(cuMemAllocManaged);
         LOAD(cuMemFree, "v2");
         LOAD(cuMemFreeHost);
+        LOAD(cuMemHostRegister, "v2");
+        LOAD(cuMemHostUnregister);
         LOAD(cuMemPrefetchAsync, "ptsz");
         LOAD(cuMemcpy, "ptds");
         LOAD(cuMemcpyAsync, "ptsz");
@@ -412,12 +416,12 @@ void jit_cuda_shutdown() {
     Z(cuGetErrorString); Z(cuInit); Z(cuLaunchHostFunc); Z(cuLaunchKernel);
     Z(cuLinkAddData); Z(cuLinkComplete); Z(cuLinkCreate); Z(cuLinkDestroy);
     Z(cuMemAdvise); Z(cuMemAlloc); Z(cuMemAllocHost); Z(cuMemAllocManaged);
-    Z(cuMemFree); Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy);
-    Z(cuMemcpyAsync); Z(cuMemsetD16Async); Z(cuMemsetD32Async);
-    Z(cuMemsetD8Async); Z(cuModuleGetFunction); Z(cuModuleLoadData);
-    Z(cuModuleUnload); Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent);
-    Z(cuStreamCreate); Z(cuStreamDestroy); Z(cuStreamSynchronize);
-    Z(cuStreamWaitEvent);
+    Z(cuMemHostRegister); Z(cuMemHostUnregister); Z(cuMemFree);
+    Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy); Z(cuMemcpyAsync);
+    Z(cuMemsetD16Async); Z(cuMemsetD32Async); Z(cuMemsetD8Async);
+    Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleUnload);
+    Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent); Z(cuStreamCreate);
+    Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
 
     dlclose(jit_cuda_handle);
     jit_cuda_handle = nullptr;

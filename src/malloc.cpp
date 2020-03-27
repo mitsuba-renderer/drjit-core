@@ -212,12 +212,22 @@ void jit_free(void *ptr) {
                 "jit_free(): attempted to free a CUDA device while the LLVM "
                 "backend as selected! (call jit_device_set() before)!");
 
-        // Acquire lock protecting 'stream->release_chain'
-        lock_guard guard(state.malloc_mutex);
-        ReleaseChain *chain = stream->release_chain;
-        if (unlikely(!chain))
-            chain = stream->release_chain = new ReleaseChain();
-        chain->entries[ai].push_back(ptr);
+        std::vector<void *> alloc_unmap;
+
+        /* Acquire lock protecting 'stream->release_chain'
+           and 'alloc_unmap' */ {
+            lock_guard guard(state.malloc_mutex);
+            ReleaseChain *chain = stream->release_chain;
+            if (unlikely(!chain))
+                chain = stream->release_chain = new ReleaseChain();
+            chain->entries[ai].push_back(ptr);
+            alloc_unmap.swap(state.alloc_unmap);
+        }
+
+        for (void *ptr: alloc_unmap) {
+            cuda_check(cuMemHostUnregister(ptr));
+            jit_free(ptr);
+        }
     }
 
     if (ai.type == AllocType::Device)
@@ -290,11 +300,6 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
 
     AllocInfo ai = it.value();
 
-    if (ai.type != type &&
-        (ai.type == AllocType::Host || type == AllocType::Host))
-        jit_raise("jit_malloc_migrate(): non-pinned host memory does not "
-                  "support asynchronous migration!");
-
     // Maybe nothing needs to be done..
     if (ai.type == type && (type != AllocType::Device || ai.device == stream->device))
         return ptr;
@@ -304,9 +309,35 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
               alloc_type_name[(int) type]) ;
 
     void *ptr_new = jit_malloc(type, ai.size);
-    cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new, (CUdeviceptr) ptr, ai.size,
-                             stream->handle));
-    jit_free(ptr);
+    if (ai.type == AllocType::Host) {
+        /* Temporarily release the main lock */ {
+            unlock_guard guard(state.mutex);
+            cuda_check(cuMemHostRegister(ptr, ai.size, 0));
+        }
+        cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
+                                 (CUdeviceptr) ptr, ai.size,
+                                 stream->handle));
+        cuda_check(cuLaunchHostFunc(
+            stream->handle,
+            [](void *ptr) {
+                lock_guard guard(state.malloc_mutex);
+                state.alloc_unmap.push_back(ptr);
+            },
+            ptr
+        ));
+    } else if (type == AllocType::Host) {
+        /* Temporarily release the lock while synchronizing */ {
+            unlock_guard guard(state.mutex);
+            cuda_check(cuStreamSynchronize(stream->handle));
+            cuda_check(cuMemcpy((CUdeviceptr) ptr_new, (CUdeviceptr) ptr, ai.size));
+        }
+        jit_free(ptr);
+    } else {
+        cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
+                                 (CUdeviceptr) ptr, ai.size,
+                                 stream->handle));
+        jit_free(ptr);
+    }
 
     return ptr_new;
 }
@@ -363,9 +394,12 @@ void jit_malloc_trim(bool warn) {
     }
 
     AllocInfoMap alloc_free;
+    std::vector<void *> alloc_unmap;
+
     /* Critical section */ {
         lock_guard guard(state.malloc_mutex);
         alloc_free = std::move(state.alloc_free);
+        alloc_unmap = std::move(state.alloc_unmap);
     }
 
     /// Clear pointer <-> ID mapping
@@ -385,6 +419,12 @@ void jit_malloc_trim(bool warn) {
             state.alloc_id_rev.erase(it);
             state.alloc_id_fwd.erase(it2);
         }
+    }
+
+    // Unmap remaining mapped memory regions
+    for (void *ptr: alloc_unmap) {
+        cuda_check(cuMemHostUnregister(ptr));
+        jit_free(ptr);
     }
 
     /// Begin counting allocation IDs from the beginning again

@@ -218,7 +218,6 @@ bool jit_kernel_write(const char *source, uint32_t source_size,
         success = false;
     }
 
-
     if (unlink(filename_tmp) != 0) {
         jit_raise("jit_kernel_write(): could not unlink temporary "
                   "file \"%s\": %s",

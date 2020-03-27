@@ -93,6 +93,8 @@ extern CUresult (*cuMemAllocHost)(void **, size_t);
 extern CUresult (*cuMemAllocManaged)(void **, size_t, unsigned int);
 extern CUresult (*cuMemFree)(void *);
 extern CUresult (*cuMemFreeHost)(void *);
+extern CUresult (*cuMemHostUnregister)(void*);
+extern CUresult (*cuMemHostRegister)(void*, size_t, unsigned int);
 extern CUresult (*cuMemPrefetchAsync)(const void *, size_t, CUdevice, CUstream);
 extern CUresult (*cuMemcpy)(void *, const void *, size_t);
 extern CUresult (*cuMemcpyAsync)(void *, const void *, size_t, CUstream);

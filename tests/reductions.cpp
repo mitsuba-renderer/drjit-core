@@ -53,9 +53,8 @@ TEST_CUDA(03_mkperm) {
     srand(0);
     for (uint32_t i = 0; i < 100; ++i) {
         uint32_t size = 23*i*i*i + 1;
-        fprintf(stderr, "Iteration %i\n", i);
         for (uint32_t j = 0; j < 100; ++j) {
-            uint32_t *buf = (uint32_t *) jitc_malloc(AllocType::HostPinned,
+            uint32_t *buf = (uint32_t *) jitc_malloc(AllocType::Host,
                                                      size * sizeof(uint32_t));
             uint32_t n_buckets = 23*i*i*i + 1;
             for (size_t i = 0; i < size; ++i)
