@@ -78,7 +78,7 @@ add_library(
   ext/lz4/xxhash.h ext/lz4/xxhash.c
 
   # Precompiled kernels in compressed PTX format
-  ptx/kernels.h
+  ptx/kernels.h ptx/kernels.c
 )
 
 target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)

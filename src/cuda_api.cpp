@@ -219,16 +219,20 @@ bool jit_cuda_init() {
 
     // Decompress supplemental PTX content
     char *uncompressed =
-        (char *) malloc_check(kernels_ptx_size_uncompressed + 1);
+        (char *) malloc_check(kernels_ptx_size_uncompressed + kernels_dict_size + 1);
+    memcpy(uncompressed, kernels_dict, kernels_dict_size);
 
-    if (LZ4_decompress_safe((const char *) kernels_ptx,
-                            uncompressed,
+    if (LZ4_decompress_safe_usingDict((const char *) kernels_ptx,
+                            uncompressed + kernels_dict_size,
                             (int) kernels_ptx_size_compressed,
-                            (int) kernels_ptx_size_uncompressed) !=
+                            (int) kernels_ptx_size_uncompressed,
+                            uncompressed,
+                            (int) kernels_dict_size) !=
         (int) kernels_ptx_size_uncompressed)
         jit_fail("jit_cuda_init(): decompression of precompiled kernels failed!");
 
-    uncompressed[kernels_ptx_size_uncompressed] = '\0';
+    char *uncompressed_ptx = uncompressed + kernels_dict_size;
+    uncompressed_ptx[kernels_ptx_size_uncompressed] = '\0';
 
     for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++)
         for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++)
@@ -246,12 +250,13 @@ bool jit_cuda_init() {
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
 
-        size_t id = cc_minor + cc_major * 10;
+        size_t hash = kernels_ptx_hash;
+        hash_combine(hash, cc_minor + cc_major * 10);
 
         Kernel kernel;
-        if (!jit_kernel_load(uncompressed, kernels_ptx_size_uncompressed, false, id, kernel)) {
-            jit_cuda_compile(uncompressed, kernels_ptx_size_uncompressed, kernel);
-            jit_kernel_write(uncompressed, kernels_ptx_size_uncompressed, false, id, kernel);
+        if (!jit_kernel_load(uncompressed_ptx, kernels_ptx_size_uncompressed, false, hash, kernel)) {
+            jit_cuda_compile(uncompressed_ptx, kernels_ptx_size_uncompressed, kernel);
+            jit_kernel_write(uncompressed_ptx, kernels_ptx_size_uncompressed, false, hash, kernel);
         }
 
         // .. and register it with CUDA

@@ -213,8 +213,8 @@ int main(int argc, char **argv) {
     }
 
     try {
-        jitc_init(1, 1);
         jitc_log_set_stderr((LogLevel) log_level_stderr);
+        jitc_init(1, 1);
         jitc_set_log_callback(LogLevel::Trace, log_callback);
         fprintf(stdout, "\n");
 

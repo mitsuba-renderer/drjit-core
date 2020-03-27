@@ -15,5 +15,4 @@ libenoki-jit.so
 libenoki-jit.dylib
 enoki-jit.dll
 tests/test_basics
-tests/test_scan
 tests/test_reductions
