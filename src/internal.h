@@ -309,7 +309,7 @@ struct State {
     AllocInfoMap alloc_free;
 
     /// Host memory regions mapped into unified memory & pending release
-    std::vector<void *> alloc_unmap;
+    std::vector<std::pair<bool, void *>> alloc_unmap;
 
     /// Keep track of current memory usage and a maximum watermark
     size_t alloc_usage    [(int) AllocType::Count] { 0 },

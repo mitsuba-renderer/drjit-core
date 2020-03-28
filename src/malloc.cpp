@@ -212,7 +212,7 @@ void jit_free(void *ptr) {
                 "jit_free(): attempted to free a CUDA device while the LLVM "
                 "backend as selected! (call jit_device_set() before)!");
 
-        std::vector<void *> alloc_unmap;
+        std::vector<std::pair<bool, void *>> alloc_unmap;
 
         /* Acquire lock protecting 'stream->release_chain'
            and 'alloc_unmap' */ {
@@ -224,9 +224,10 @@ void jit_free(void *ptr) {
             alloc_unmap.swap(state.alloc_unmap);
         }
 
-        for (void *ptr: alloc_unmap) {
-            cuda_check(cuMemHostUnregister(ptr));
-            jit_free(ptr);
+        for (auto kv: alloc_unmap) {
+            cuda_check(cuMemHostUnregister(kv.second));
+            if (kv.first)
+                jit_free(kv.second);
         }
     }
 
@@ -321,16 +322,27 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
             stream->handle,
             [](void *ptr) {
                 lock_guard guard(state.malloc_mutex);
-                state.alloc_unmap.push_back(ptr);
+                state.alloc_unmap.emplace_back(true, ptr);
             },
             ptr
         ));
     } else if (type == AllocType::Host) {
-        /* Temporarily release the lock while synchronizing */ {
+        /* Temporarily release the main lock */ {
             unlock_guard guard(state.mutex);
-            cuda_check(cuStreamSynchronize(stream->handle));
-            cuda_check(cuMemcpy((CUdeviceptr) ptr_new, (CUdeviceptr) ptr, ai.size));
+            cuda_check(cuMemHostRegister(ptr_new, ai.size, 0));
         }
+        cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
+                                 (CUdeviceptr) ptr, ai.size,
+                                 stream->handle));
+        cuda_check(cuLaunchHostFunc(
+            stream->handle,
+            [](void *ptr) {
+                lock_guard guard(state.malloc_mutex);
+                state.alloc_unmap.emplace_back(false, ptr);
+            },
+            ptr_new
+        ));
+
         jit_free(ptr);
     } else {
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
@@ -394,7 +406,7 @@ void jit_malloc_trim(bool warn) {
     }
 
     AllocInfoMap alloc_free;
-    std::vector<void *> alloc_unmap;
+    std::vector<std::pair<bool, void *>> alloc_unmap;
 
     /* Critical section */ {
         lock_guard guard(state.malloc_mutex);
@@ -422,9 +434,10 @@ void jit_malloc_trim(bool warn) {
     }
 
     // Unmap remaining mapped memory regions
-    for (void *ptr: alloc_unmap) {
-        cuda_check(cuMemHostUnregister(ptr));
-        jit_free(ptr);
+    for (auto kv: alloc_unmap) {
+        cuda_check(cuMemHostUnregister(kv.second));
+        if (kv.first)
+            jit_free(kv.second);
     }
 
     /// Begin counting allocation IDs from the beginning again

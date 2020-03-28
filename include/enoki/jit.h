@@ -308,18 +308,20 @@ extern JITC_EXPORT void jitc_free(void *ptr);
  * \brief Asynchronously change the flavor of an allocated memory region and
  * return the new pointer
  *
- * The operation is asynchronous and, hence, will need to be followed by \ref
- * jitc_sync_stream() if managed memory is subsequently accessed on the CPU.
- * Nothing needs to be done in the other direction, e.g. when migrating from
- * host-pinned to device or managed memory.
+ * The operation is *always* asynchronous and, hence, will need to be followed
+ * by an explicit synchronization via \ref jitc_sync_stream() if memory is
+ * migrated from the GPU to the CPU and expected to be accessed on the CPU
+ * before the transfer has finished. Nothing needs to be done in the other
+ * direction, e.g. when migrating memory that is subsequently accessed by
+ * a GPU kernel.
  *
- * The provided pointer is automatically freed (via \ref jitc_free()) if a
- * migration was necessary. When both source & target are of type \ref
- * AllocType::Device, and if the current device (\ref jitc_device_set()) does
- * not match the device associated with the allocation, a peer-to-peer
- * migration is performed.
- *
- * Note: Migrations involving AllocType::Host are currently not supported.
+ * When no migration is necessary, the function simply returns the input
+ * pointer. Otherwise, it returns a new pointer and asynchronously frees the
+ * old one via (via \ref jitc_free()). When both source and target are of
+ * type \ref AllocType::Device, and when the currently active device
+ * (determined by the last call to \ref jitc_device_set()) does not match the
+ * device associated with the allocation, a peer-to-peer migration is
+ * performed.
  */
 extern JITC_EXPORT void* jitc_malloc_migrate(void *ptr, enum AllocType type);
 

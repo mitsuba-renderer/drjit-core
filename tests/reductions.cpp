@@ -73,6 +73,7 @@ TEST_CUDA(03_mkperm) {
             data = (uint32_t *) jitc_malloc_migrate(data, AllocType::Device);
             jitc_mkperm(data, size, n_buckets, perm, offsets);
             perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
+            jitc_sync_stream();
 
             struct Bucket {
                 uint32_t id;
