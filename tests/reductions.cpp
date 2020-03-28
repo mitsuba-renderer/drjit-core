@@ -61,7 +61,7 @@ TEST_CUDA(03_mkperm) {
             uint32_t *data = (uint32_t *) jitc_malloc(AllocType::Host, size * sizeof(uint32_t)),
                      *perm = (uint32_t *) jitc_malloc(AllocType::Device, size * sizeof(uint32_t)),
                      *offsets = (uint32_t *) jitc_malloc(AllocType::HostPinned,
-                                                         (n_buckets * 3 + 1) * sizeof(uint32_t));
+                                                         (n_buckets * 4 + 1) * sizeof(uint32_t));
             uint64_t *ref = new uint64_t[size];
 
             for (size_t i = 0; i < size; ++i) {
@@ -71,7 +71,7 @@ TEST_CUDA(03_mkperm) {
             }
 
             data = (uint32_t *) jitc_malloc_migrate(data, AllocType::Device);
-            jitc_mkperm(data, size, n_buckets, perm, offsets);
+            uint32_t num_unique = jitc_mkperm(data, size, n_buckets, perm, offsets);
             perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
             jitc_sync_stream();
 
@@ -79,10 +79,10 @@ TEST_CUDA(03_mkperm) {
                 uint32_t id;
                 uint32_t start;
                 uint32_t size;
+                uint32_t unused;
             };
 
-            uint32_t num_unique = offsets[0];
-            Bucket *buckets = (Bucket *) (offsets + 1);
+            Bucket *buckets = (Bucket *) offsets;
 
             std::sort(ref, ref + size);
             std::sort(buckets, buckets + num_unique,

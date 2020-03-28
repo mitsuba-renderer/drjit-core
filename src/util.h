@@ -23,9 +23,9 @@ extern uint8_t jit_any(uint8_t *values, uint32_t size);
 extern void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size);
 
 /// Compute a permutation to reorder an integer array into discrete groups
-extern void jit_mkperm(const uint32_t *values, uint32_t size,
-                       uint32_t bucket_count, uint32_t *perm,
-                       uint32_t *offsets);
+extern uint32_t jit_mkperm(const uint32_t *values, uint32_t size,
+                           uint32_t bucket_count, uint32_t *perm,
+                           uint32_t *offsets);
 
 /// Perform a synchronous copy operation
 extern void jit_memcpy(void *dst, const void *src, size_t size);

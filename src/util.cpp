@@ -305,10 +305,10 @@ void jit_transpose(const uint32_t *in, uint32_t *out, uint32_t rows, uint32_t co
     }
 }
 
-void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
-                uint32_t *perm, uint32_t *offsets) {
+uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
+                    uint32_t *perm, uint32_t *offsets) {
     if (size == 0)
-        return;
+        return 0;
     else if (unlikely(bucket_count == 0))
         jitc_fail("jit_mkperm(): bucket_count cannot be zero!");
 
@@ -334,18 +334,18 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     CUfunction phase_1 = nullptr, phase_4 = nullptr;
     bool initialize_buckets = false;
 
-    if (bucket_size_1 * warp_count <= (uint32_t) device.shared_memory_bytes) {
+    if (bucket_size_1 * warp_count <= device.shared_memory_bytes) {
         /* "Tiny" variant, which uses shared memory atomics to produce a stable
-           permutation. Handles up to 384 buckets with 48KiB of shared memory. */
+           permutation. Handles up to 512 buckets with 64KiB of shared memory. */
 
         phase_1 = jit_cuda_mkperm_phase_1_tiny[device.id];
         phase_4 = jit_cuda_mkperm_phase_4_tiny[device.id];
         shared_size = bucket_size_1 * warp_count;
         bucket_size_all *= warp_count;
         variant = "tiny";
-    } else if (bucket_size_1 <= (uint32_t) device.shared_memory_bytes) {
+    } else if (bucket_size_1 <= device.shared_memory_bytes) {
         /* "Small" variant, which uses shared memory atomics and handles up to
-           12288 buckets with 48KiB of shared memory. The permutation can be
+           16K buckets with 64KiB of shared memory. The permutation can be
            somewhat unstable due to scheduling variations when performing atomic
            operations (although some effort is made to keep it stable within
            each group of 32 elements by performing an intra-warp reduction.) */
@@ -385,9 +385,8 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     }
 
     if (initialize_buckets)
-        cuda_check(cuMemsetD8Async((CUdeviceptr) buckets_1, 0, bucket_size_all,
-                                   stream->handle));
-
+        cuda_check(cuMemsetD8Async((CUdeviceptr) buckets_1, 0,
+                                   bucket_size_all, stream->handle));
 
     /* Determine the amount of work to be done per block, and ensure that it is
        divisible by the warp size (the kernel implementation assumes this.) */
@@ -425,14 +424,21 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
         device.get_launch_config(&block_count_3, &thread_count_3,
                                  bucket_count * block_count);
 
-        void *args_3[] = { &buckets_1, &bucket_count, &size, &counter, &offsets };
+        // Round up to a multiple of the thread count
+        uint32_t bucket_count_rounded =
+            (bucket_count + thread_count_3 - 1) / thread_count_3 * thread_count_3;
+
+        void *args_3[] = { &buckets_1, &bucket_count, &bucket_count_rounded,
+                           &size,      &counter,      &offsets };
 
         cuda_check(cuLaunchKernel(jit_cuda_mkperm_phase_3[device.id],
-                                  block_count_3, 1, 1, thread_count_3, 1, 1, 0,
+                                  block_count_3, 1, 1, thread_count_3, 1, 1,
+                                  sizeof(uint32_t) * thread_count_3,
                                   stream->handle, args_3, nullptr));
 
-        cuda_check(cuMemcpyAsync((CUdeviceptr) offsets, (CUdeviceptr) counter,
-                                 sizeof(uint32_t), stream->handle));
+        cuda_check(cuMemcpyAsync((CUdeviceptr) (offsets + 4 * bucket_count),
+                                 (CUdeviceptr) counter, sizeof(uint32_t),
+                                 stream->handle));
 
         cuda_check(cuEventRecord(stream->event, stream->handle));
     }
@@ -452,4 +458,6 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     if (needs_transpose)
         jit_free(buckets_2);
     jit_free(counter);
+
+    return offsets ? offsets[4 * bucket_count] : 0u;
 }

@@ -307,8 +307,8 @@ uint8_t jitc_any(uint8_t *values, uint32_t size) {
     return jit_any(values, size);
 }
 
-void jitc_mkperm(const uint32_t *values, uint32_t size, uint32_t bucket_count,
-                 uint32_t *perm, uint32_t *offsets) {
+uint32_t jitc_mkperm(const uint32_t *values, uint32_t size,
+                     uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
     lock_guard guard(state.mutex);
-    jit_mkperm(values, size, bucket_count, perm, offsets);
+    return jit_mkperm(values, size, bucket_count, perm, offsets);
 }

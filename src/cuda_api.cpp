@@ -239,10 +239,13 @@ bool jit_cuda_init() {
         CUcontext context = nullptr;
         cuda_check(cuDevicePrimaryCtxRetain(&context, i));
         cuda_check(cuCtxSetCurrent(context));
-        int cc_minor, cc_major;
+        int cc_minor, cc_major, shared_memory_bytes;
 
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
+        cuda_check(cuDeviceGetAttribute(
+            &shared_memory_bytes,
+            CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN, i));
 
         const char *kernels = cc_major >= 7 ? kernels_70 : kernels_50;
         int kernels_size_uncompressed = cc_major >= 7
@@ -291,7 +294,7 @@ bool jit_cuda_init() {
             if (i == 0)                                                          \
                 jit_cuda_##name = (CUfunction *) malloc_check(                   \
                     sizeof(CUfunction) * jit_cuda_devices);                      \
-            cuda_check(cuModuleGetFunction(&jit_cuda_##name[i], m, #name));
+            cuda_check(cuModuleGetFunction(&jit_cuda_##name[i], m, #name))
 
         LOAD(fill_64);
         LOAD(mkperm_phase_1_tiny);
@@ -309,6 +312,20 @@ bool jit_cuda_init() {
         LOAD(scan_offset);
 
         #undef LOAD
+
+        #define MAXIMIZE_SHARED(name)                                            \
+            cuda_check(cuFuncSetAttribute(                                       \
+                jit_cuda_##name[i],                                              \
+                CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,                 \
+                shared_memory_bytes))
+
+        // Max out the amount of shared memory available to the following kernels
+        MAXIMIZE_SHARED(mkperm_phase_1_tiny);
+        MAXIMIZE_SHARED(mkperm_phase_1_small);
+        MAXIMIZE_SHARED(mkperm_phase_4_tiny);
+        MAXIMIZE_SHARED(mkperm_phase_4_small);
+
+        #undef MAXIMIZE_SHARED
 
         for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++) {
             for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {

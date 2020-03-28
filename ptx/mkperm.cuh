@@ -81,7 +81,7 @@ inline __device__ uint32_t reduce_atomic(uint32_t active, uint32_t value, uint32
  * \brief Generate a histogram of values in the range (0 .. bucket_count - 1).
  *
  * "Tiny" variant, which uses shared memory atomics to produce a stable
- * permutation. Handles up to 384 buckets with 48KiB of shared memory. Should be
+ * permutation. Handles up to 512 buckets with 64KiB of shared memory. Should be
  * combined with \ref mkperm_phase_4_tiny.
  */
 KERNEL void mkperm_phase_1_tiny(const uint32_t *values, uint32_t *buckets, uint32_t size,
@@ -111,6 +111,8 @@ KERNEL void mkperm_phase_1_tiny(const uint32_t *values, uint32_t *buckets, uint3
 
         if (active)
             reduce(active_mask, values[i], shared_warp);
+
+        __syncwarp();
     }
 
     __syncthreads();
@@ -123,8 +125,8 @@ KERNEL void mkperm_phase_1_tiny(const uint32_t *values, uint32_t *buckets, uint3
 /**
  * \brief Generate a histogram of values in the range (0 .. bucket_count - 1).
  *
- * "Small" variant, which uses shared memory atomics and handles up to 12288
- * buckets with 48KiB of shared memory. The permutation can be somewhat
+ * "Small" variant, which uses shared memory atomics and handles up to 16K
+ * buckets with 64KiB of shared memory. The permutation can be somewhat
  * unstable due to scheduling variations when performing atomic operations
  * (although some effort is made to keep it stable within each group of 32
  * elements by performing an intra-warp reduction.) Should be combined with
@@ -194,20 +196,53 @@ KERNEL void mkperm_phase_1_large(const uint32_t *values, uint32_t *buckets_, uin
 }
 
 /// Detect non-empty buckets and record their offsets
-KERNEL void mkperm_phase_3(uint32_t *buckets, uint32_t bucket_count,
-                           uint32_t size,
+KERNEL void mkperm_phase_3(uint32_t *buckets,
+                           uint32_t bucket_count,
+                           uint32_t bucket_count_rounded,
+                           uint32_t perm_size,
                            uint32_t *counter,
-                           uint32_t *offsets) {
-    for (uint32_t i = blockIdx.x * blockDim.x + threadIdx.x; i < bucket_count;
-         i += blockDim.x * gridDim.x) {
-        uint32_t offset_a = buckets[i],
-                 offset_b = (i + 1 < bucket_count) ? buckets[i + 1] : size;
+                           uint4 *offsets) {
+    uint32_t *shared = SharedMemory<uint32_t>::get();
 
-        if (offset_a != offset_b) {
-            uint32_t k = atomicAdd(counter, 1u) * 3 + 1;
-            offsets[k] = i;
-            offsets[k + 1] = offset_a;
-            offsets[k + 2] = offset_b - offset_a;
+    // Thread's position within warp
+    uint32_t lane_idx = threadIdx.x & (warpSize - 1);
+
+    for (uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+         i < bucket_count_rounded; i += blockDim.x * gridDim.x) {
+
+        uint32_t offset_a, offset_b;
+
+        offset_a = (i < bucket_count) ? buckets[i] : perm_size;
+        shared[threadIdx.x] = offset_a;
+        __syncthreads();
+
+        if (threadIdx.x + 1 < blockDim.x)
+            offset_b = shared[threadIdx.x + 1];
+        else
+            offset_b = (i + 1 < bucket_count) ? buckets[i + 1] : perm_size;
+
+        // Did we find a non-empty bucket?
+        bool found = offset_a != offset_b;
+
+        // Peers within the same warp that also found one
+        uint32_t peers = __ballot_sync(0xFFFFFFFF, found);
+
+        if (found) {
+            // Designate a leader thread within the set of peers
+            uint32_t leader_idx  = __ffs(peers) - 1;
+
+            // If the current thread is the leader, perform atomic op.
+            uint32_t offset = 0;
+            if (lane_idx == leader_idx)
+                offset = atomicAdd(counter, __popc(peers));
+
+            // Fetch offset into output array from leader
+            offset = __shfl_sync(peers, offset, leader_idx);
+
+            // Determine current thread's position within peer group
+            offset += __popc(peers << (32 - lane_idx));
+
+            offsets[offset] = make_uint4(i, offset_a, offset_b - offset_a, 0);
         }
     }
 }

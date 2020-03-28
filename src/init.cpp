@@ -44,13 +44,13 @@ void jit_init(int llvm, int cuda) {
         cuda_check(cuDeviceGetAttribute(&unified_addr, CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING, i));
         cuda_check(cuDeviceGetAttribute(&managed, CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS, i));
         cuda_check(cuDeviceGetAttribute(&concurrent_managed, CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY, i));
-        cuda_check(cuDeviceGetAttribute(&shared_memory_bytes, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK, i));
+        cuda_check(cuDeviceGetAttribute(&shared_memory_bytes, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN, i));
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
 
         jit_log(Info,
                 " - Found CUDA device %i: \"%s\" "
-                "(PCI ID %02x:%02x.%i, compute capability %i.%i, %i SMs w/%s shared mem., %s global mem.)",
+                "(PCI ID %02x:%02x.%i, compute cap. %i.%i, %i SMs w/%s shared mem., %s global mem.)",
                 i, name, pci_bus_id, pci_dev_id, pci_dom_id, cc_major, cc_minor, num_sm,
                 std::string(jit_mem_string(shared_memory_bytes)).c_str(),
                 std::string(jit_mem_string(mem_total)).c_str());
@@ -67,9 +67,9 @@ void jit_init(int llvm, int cuda) {
 
         Device device;
         device.id = i;
-        device.num_sm = num_sm;
         device.compute_capability = cc_major * 10 + cc_minor;
-        device.shared_memory_bytes = shared_memory_bytes;
+        device.shared_memory_bytes = (uint32_t) shared_memory_bytes;
+        device.num_sm = (uint32_t) num_sm;
         cuda_check(cuDevicePrimaryCtxRetain(&device.context, i));
         state.devices.push_back(device);
     }

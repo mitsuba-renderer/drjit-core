@@ -32,14 +32,14 @@ struct Device {
     /// CUDA device ID
     int id;
 
-    /// Number of SMs
-    int num_sm;
-
-    /// Max. bytes of shared memory per SM
-    int shared_memory_bytes;
-
     /// Device compute capability (major * 10 + minor)
     int compute_capability;
+
+    /// Number of SMs
+    uint32_t num_sm;
+
+    /// Max. bytes of shared memory per SM
+    uint32_t shared_memory_bytes;
 
     /// Compute a good configuration for a grid-stride loop
     void get_launch_config(uint32_t *blocks_out, uint32_t *threads_out,
@@ -48,7 +48,7 @@ struct Device {
         uint32_t blocks_avail  = (size + max_threads - 1) / max_threads;
 
         uint32_t blocks;
-        if (blocks_avail < (uint32_t) num_sm) {
+        if (blocks_avail < num_sm) {
             // Not enough work for 1 full wave
             blocks = blocks_avail;
         } else {

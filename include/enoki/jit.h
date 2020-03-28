@@ -777,22 +777,25 @@ extern JITC_EXPORT uint8_t jitc_any(uint8_t *values, uint32_t size);
  * sorting the array.
  *
  * \param perm
- *     The permutation is written to address specified using the parameter \c
- *     perm, which must point to a buffer of size <tt>size *
- *     sizeof(uint32_t)</tt>.
+ *     The permutation is written to \c perm, which must point to a buffer in
+ *     device memory having size <tt>size * sizeof(uint32_t)</tt>.
  *
  * \param offsets
- *     When \c offset is non-NULL, the parameter must point to a host-pinned
- *     memory region with a size of at least <tt>(bucket_count*3 + 1) *
+ *     When \c offset is non-NULL, the parameter should point to a host-pinned
+ *     memory region with a size of at least <tt>(bucket_count * 4 + 1) *
  *     sizeof(uint32_t)<tt> bytes that will be used to record the details of
- *     non-empty buckets. In particular, the first entry records the number of
- *     nonzero buckets, and the remainder contains triples <tt>(index, start,
- *     size)<tt> where \c index is the bucket index, and \c start and \c end
- *     specify the associated entries of the \c perm array.
+ *     non-empty buckets. It will contain quadruples <tt>(index, start, size,
+ *     unused)<tt> where \c index is the bucket index, and \c start and \c end
+ *     specify the associated entries of the \c perm array. The last entry
+ *     is padding for 16 byte alignment.
+ *
+ * \return
+ *     When \c offsets != NULL, the function returns the number of unique
+ *     values found in \c values. Otherwise, it returns zero.
  */
-extern JITC_EXPORT void jitc_mkperm(const uint32_t *values, uint32_t size,
-                                    uint32_t bucket_count, uint32_t *perm,
-                                    uint32_t *offsets);
+extern JITC_EXPORT uint32_t jitc_mkperm(const uint32_t *values, uint32_t size,
+                                        uint32_t bucket_count, uint32_t *perm,
+                                        uint32_t *offsets);
 
 #if defined(__cplusplus)
 }
