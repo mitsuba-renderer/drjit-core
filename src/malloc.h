@@ -64,9 +64,3 @@ extern void jit_malloc_trim(bool warn = true);
 
 /// Shut down the memory allocator (calls \ref jit_malloc_trim() and reports leaks)
 extern void jit_malloc_shutdown();
-
-/// Query the unique ID associated with an allocation
-extern uint32_t jit_malloc_to_id(void *ptr);
-
-/// Query the allocation associated with a unique ID
-extern void *jit_malloc_from_id(uint32_t id);

@@ -66,6 +66,7 @@ add_library(
   src/var.h            src/var.cpp
   src/eval.h           src/eval.cpp
   src/malloc.h         src/malloc.cpp
+  src/registry.h       src/registry.cpp
   src/util.h           src/util.cpp
   src/cuda_api.h       src/cuda_api.cpp
   src/llvm_api.h       src/llvm_api.cpp

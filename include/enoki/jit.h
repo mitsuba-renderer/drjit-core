@@ -351,28 +351,66 @@ extern JITC_EXPORT void jitc_malloc_trim();
  */
 extern JITC_EXPORT void jitc_malloc_prefetch(void *ptr, int device);
 
-/**
- * \brief Query the unique ID associated with an allocation
- *
- * The allocator assigns a unique ID to each pointer allocated via
- * \ref jitc_malloc(). This function queries this mapping for a given
- * pointer value, and \ref jitc_malloc_from_id() goes the other way.
- *
- * Returns \c 0 when the pointer could not be found. Valid IDs are always
- * nonzero.
- */
-extern JITC_EXPORT uint32_t jitc_malloc_to_id(void *ptr);
+
+// ====================================================================
+//                          Pointer registry
+// ====================================================================
 
 /**
- * \brief Query the allocation associated with a unique ID
+ * \brief Register a pointer with Enoki's pointer registry
  *
- * The allocator assigns a unique ID to each pointer allocated via
- * \ref jitc_malloc(). This function queries this mapping for a given
- * ID value, and \ref jitc_malloc_to_id() goes the other way.
+ * Enoki provides a central registry that maps registered pointer values to
+ * low-valued 32-bit IDs. The main application is efficient virtual function
+ * dispatch via \ref jitc_mkperm_registered(), through the registry could be
+ * used for other applications as well.
  *
- * Returns \c nullptr when the ID could not be found.
+ * This function registers the specified pointer \c ptr with the registry,
+ * returning the associated ID value, which is guaranteed to be unique within
+ * the specified domain \c domain. The domain is normally an identifier that is
+ * associated with the "flavor" of the pointer (e.g. instances of a particular
+ * class), and which ensures that the returned ID values are as low as
+ * possible.
+ *
+ * Caution: for reasons of efficiency, the \c domain parameter is assumed to a
+ * static constant that will remain alive. The RTTI identifier
+ * <tt>typeid(MyClass).name()<tt> is a reasonable choice that satisfies this
+ * requirement.
+ *
+ * Returns zero if <tt>ptr == nullptr</tt> and throws if the pointer is already
+ * registered (with *any* domain).
  */
-extern JITC_EXPORT void *jitc_malloc_from_id(uint32_t id);
+extern JITC_EXPORT uint32_t jitc_registry_put(const char *domain, void *ptr);
+
+/**
+ * \brief Remove a pointer from the registry
+ *
+ * No-op if <tt>ptr == nullptr</tt>. Throws an exception if the pointer is not
+ * currently registered.
+ */
+extern JITC_EXPORT void jitc_registry_remove(void *ptr);
+
+/**
+ * \brief Query the ID associated a registered pointer
+ *
+ * Returns 0 if <tt>ptr==nullptr</tt> and throws if the pointer is not known.
+ */
+extern JITC_EXPORT uint32_t jitc_registry_get_id(const void *ptr);
+
+/**
+ * \brief Query the domain associated a registered pointer
+ *
+ * Returns \c nullptr if <tt>ptr==nullptr</tt> and throws if the pointer is not
+ * known.
+ */
+extern JITC_EXPORT const char *jitc_registry_get_domain(const void *ptr);
+
+/**
+ * \brief Query the pointer associated a given domain and ID
+ *
+ * Returns \c nullptr if <tt>id==0</tt> and throws if the (domain, ID)
+ * combination is not known.
+ */
+extern JITC_EXPORT void *jitc_registry_get_ptr(const char *domain, uint32_t id);
 
 // ====================================================================
 //                        Variable management
@@ -681,6 +719,7 @@ extern JITC_EXPORT void jitc_var_write(uint32_t index, size_t offset,
 // ====================================================================
 //                 Kernel compilation and evaluation
 // ====================================================================
+//
 
 /// Evaluate all computation that is queued on the current stream
 extern JITC_EXPORT void jitc_eval();

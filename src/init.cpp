@@ -2,6 +2,7 @@
 #include "malloc.h"
 #include "internal.h"
 #include "log.h"
+#include "registry.h"
 #include <glob.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
@@ -98,13 +99,6 @@ void jit_init(int llvm, int cuda) {
         cuda_check(cuCtxSetCurrent(state.devices[0].context));
 
     state.variable_index = 1;
-    state.alloc_id_ctr = 1;
-    state.variables.reserve(512);
-    state.alloc_used.reserve(512);
-    state.alloc_id_rev.reserve(512);
-    state.alloc_id_fwd.reserve(512);
-    state.cse_cache.reserve(512);
-    state.kernel_cache.reserve(128);
 }
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
@@ -162,6 +156,7 @@ void jit_shutdown(int light) {
     if (state.variables.empty() && !state.variable_from_ptr.empty())
         jit_fail("jit_shutdown(): detected a pointer-literal leak!");
 
+    jit_registry_shutdown();
     jit_malloc_shutdown();
 
     if (state.has_cuda) {

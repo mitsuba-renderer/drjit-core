@@ -329,4 +329,64 @@ TEST_BOTH(15_round) {
     }
 }
 
+TEST_LLVM(16_pointer_registry) {
+    const char *key_1 = "MyKey1";
+    const char *key_2 = "MyKey2";
+
+    uint32_t id_1 = jitc_registry_put(key_1, (void *) 0xA);
+    uint32_t id_2 = jitc_registry_put(key_1, (void *) 0xB);
+    uint32_t id_a = jitc_registry_put(key_2, (void *) 0xC);
+    uint32_t id_3 = jitc_registry_put(key_1, (void *) 0xD);
+
+    jitc_assert(id_1 == 1u);
+    jitc_assert(id_2 == 2u);
+    jitc_assert(id_a == 1u);
+    jitc_assert(id_3 == 3u);
+
+    jitc_assert(jitc_registry_get_domain((void *) 0xA) == key_1);
+    jitc_assert(jitc_registry_get_domain((void *) 0xB) == key_1);
+    jitc_assert(jitc_registry_get_domain((void *) 0xC) == key_2);
+    jitc_assert(jitc_registry_get_domain((void *) 0xD) == key_1);
+
+    jitc_assert(jitc_registry_get_id((void *) 0xA) == 1u);
+    jitc_assert(jitc_registry_get_id((void *) 0xB) == 2u);
+    jitc_assert(jitc_registry_get_id((void *) 0xC) == 1u);
+    jitc_assert(jitc_registry_get_id((void *) 0xD) == 3u);
+
+    jitc_assert(jitc_registry_get_ptr(key_1, 1) == (void *) 0xA);
+    jitc_assert(jitc_registry_get_ptr(key_1, 2) == (void *) 0xB);
+    jitc_assert(jitc_registry_get_ptr(key_2, 1) == (void *) 0xC);
+    jitc_assert(jitc_registry_get_ptr(key_1, 3) == (void *) 0xD);
+
+    jitc_registry_remove((void *) 0xA);
+    jitc_registry_remove((void *) 0xB);
+    jitc_registry_remove((void *) 0xC);
+
+    id_1 = jitc_registry_put(key_1, (void *) 0xE);
+    id_2 = jitc_registry_put(key_1, (void *) 0xF);
+    id_a = jitc_registry_put(key_1, (void *) 0x1);
+
+    jitc_assert(id_1 == 2u);
+    jitc_assert(id_2 == 1u);
+    jitc_assert(id_a == 4u);
+
+    jitc_assert(jitc_registry_get_domain((void *) 0xE) == key_1);
+    jitc_assert(jitc_registry_get_domain((void *) 0xF) == key_1);
+    jitc_assert(jitc_registry_get_domain((void *) 0x1) == key_1);
+
+    jitc_assert(jitc_registry_get_id((void *) 0xE) == 2u);
+    jitc_assert(jitc_registry_get_id((void *) 0xF) == 1u);
+    jitc_assert(jitc_registry_get_id((void *) 0x1) == 4u);
+
+    jitc_assert(jitc_registry_get_ptr(key_1, 1) == (void *) 0xF);
+    jitc_assert(jitc_registry_get_ptr(key_1, 2) == (void *) 0xE);
+    jitc_assert(jitc_registry_get_ptr(key_1, 3) == (void *) 0xD);
+    jitc_assert(jitc_registry_get_ptr(key_1, 4) == (void *) 0x1);
+
+    jitc_registry_remove((void *) 0xD);
+    jitc_registry_remove((void *) 0xE);
+    jitc_registry_remove((void *) 0xF);
+    jitc_registry_remove((void *) 0x1);
+}
+
 /// Mask gathers/scatters!

@@ -8,7 +8,7 @@ CMakeFiles
 tests/**/*.out
 tests/**/*.raw
 Testing
-/ptx/kernels.ptx
+/ptx/kernels_*.ptx
 /ptx/generate
 
 libenoki-jit.so

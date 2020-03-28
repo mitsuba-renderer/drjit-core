@@ -113,8 +113,6 @@ enum ArgType {
     Output
 };
 
-using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
-
 #pragma pack(push)
 #pragma pack(1)
 
@@ -209,6 +207,7 @@ struct VariableKey {
     }
 };
 
+/// Helper class to hash VariableKey instances
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
         size_t state;
@@ -222,18 +221,21 @@ struct VariableKeyHasher {
     }
 };
 
-using VariableMap =
-    tsl::robin_map<uint32_t, Variable, std::hash<uint32_t>,
-                   std::equal_to<uint32_t>,
-                   aligned_allocator<std::pair<uint32_t, Variable>, 64>,
-                   /* StoreHash = */ false>;
-
+/// Cache data structure for common subexpression elimination
 using CSECache =
     tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher,
                    std::equal_to<VariableKey>,
                    std::allocator<std::pair<VariableKey, uint32_t>>,
                    /* StoreHash = */ true>;
 
+/// Maps from variable ID to a Variable instance
+using VariableMap =
+    tsl::robin_map<uint32_t, Variable, std::hash<uint32_t>,
+                   std::equal_to<uint32_t>,
+                   aligned_allocator<std::pair<uint32_t, Variable>, 64>,
+                   /* StoreHash = */ false>;
+
+/// Key data structure for kernel source code & device ID
 struct KernelKey {
     char *str = nullptr;
     int device = 0;
@@ -245,6 +247,7 @@ struct KernelKey {
     }
 };
 
+/// Helper class to hash KernelKey instances
 struct KernelHash {
     size_t operator()(const KernelKey &k) const {
         return compute_hash(hash_kernel(k.str), k.device);
@@ -257,24 +260,53 @@ struct KernelHash {
     }
 };
 
+/// Data structure, which maps from kernel source code to compiled kernels
 using KernelCache =
     tsl::robin_map<KernelKey, Kernel, KernelHash, std::equal_to<KernelKey>,
                    std::allocator<std::pair<KernelKey, Kernel>>,
                    /* StoreHash = */ true>;
+
+// Key associated with a pointer registerered in Enoki's pointer registry
+struct RegistryKey {
+    const char *domain;
+    uint32_t id;
+    RegistryKey(const char *domain, uint32_t id) : domain(domain), id(id) { }
+
+    bool operator==(const RegistryKey &k) const {
+        return id == k.id && strcmp(domain, k.domain) == 0;
+    }
+};
+
+/// Helper class to hash RegistryKey instances
+struct RegistryKeyHasher {
+    size_t operator()(const RegistryKey &k) const {
+        return hash_str(k.domain, k.id);
+    }
+};
+
+using RegistryFwdMap = tsl::robin_map<RegistryKey, void *, RegistryKeyHasher,
+                                      std::equal_to<RegistryKey>,
+                                      std::allocator<std::pair<RegistryKey, void *>>,
+                                      /* StoreHash = */ true>;
+
+using RegistryRevMap = tsl::robin_pg_map<const void *, RegistryKey>;
+
+// Maps (device ID, stream ID) to a Stream instance
+using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
 
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
     /// Must be held to access members
     std::mutex mutex;
 
+    /// Stores the mapping from variable indices to variables
+    VariableMap variables;
+
     /// Must be held to access 'stream->release_chain' and 'state.alloc_free'
     std::mutex malloc_mutex;
 
     /// Must be held to execute jit_eval()
     std::mutex eval_mutex;
-
-    /// Stores the mapping from variable indices to variables
-    VariableMap variables;
 
     /// Log level (stderr)
     LogLevel log_level_stderr = LogLevel::Info;
@@ -298,9 +330,8 @@ struct State {
     StreamMap streams;
 
     /// Two-way mapping that associates every allocation with a unique 32 bit ID
-    tsl::robin_pg_map<void *, uint32_t> alloc_id_rev;
-    tsl::robin_map   <uint32_t, void *> alloc_id_fwd;
-    uint32_t alloc_id_ctr = 1;
+    RegistryFwdMap registry_fwd;
+    RegistryRevMap registry_rev;
 
     /// Map of currently allocated memory regions
     tsl::robin_pg_map<const void *, AllocInfo> alloc_used;

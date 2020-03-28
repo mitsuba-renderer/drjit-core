@@ -150,21 +150,6 @@ void* jit_malloc(AllocType type, size_t size) {
             }
         }
         descr = "new allocation";
-
-        // Assign a unique ID to the allocation
-        uint32_t id;
-        do {
-            id = state.alloc_id_ctr++;
-            if (unlikely(id == 0)) // overflow
-                id = state.alloc_id_ctr++;
-            auto result = state.alloc_id_fwd.try_emplace(id, ptr);
-            if (likely(result.second))
-                break;
-        } while (true);
-
-        auto result = state.alloc_id_rev.try_emplace(ptr, id);
-        if (unlikely(!result.second))
-            jit_fail("jit_malloc(): internal error setting up unique ID mapping!");
     }
 
     if (unlikely(ptr == nullptr))
@@ -414,34 +399,12 @@ void jit_malloc_trim(bool warn) {
         alloc_unmap = std::move(state.alloc_unmap);
     }
 
-    /// Clear pointer <-> ID mapping
-    for (auto& kv : alloc_free) {
-        const std::vector<void *> &entries = kv.second;
-
-        for (void *ptr : entries) {
-            auto it = state.alloc_id_rev.find(ptr);
-            if (it == state.alloc_id_rev.end())
-                jit_fail("jit_malloc(): internal error while clearing unique ID mapping (1)!");
-
-            uint32_t id = it.value();
-            auto it2 = state.alloc_id_fwd.find(id);
-            if (it2 == state.alloc_id_fwd.end())
-                jit_fail("jit_malloc(): internal error while clearing unique ID mapping (2)!");
-
-            state.alloc_id_rev.erase(it);
-            state.alloc_id_fwd.erase(it2);
-        }
-    }
-
     // Unmap remaining mapped memory regions
     for (auto kv: alloc_unmap) {
         cuda_check(cuMemHostUnregister(kv.second));
         if (kv.first)
             jit_free(kv.second);
     }
-
-    /// Begin counting allocation IDs from the beginning again
-    state.alloc_id_ctr = 1;
 
     size_t trim_count[(int) AllocType::Count] = { 0 },
            trim_size [(int) AllocType::Count] = { 0 };
@@ -513,21 +476,5 @@ void jit_malloc_shutdown() {
                     alloc_type_name[i], jit_mem_string(leak_size[i]),
                     leak_count[i], leak_count[i] > 1 ? "s" : "");
         }
-    } else {
-        if (!state.alloc_id_rev.empty() ||
-            !state.alloc_id_fwd.empty())
-            jit_fail("jit_malloc_shutdown(): leak in unique ID mapping!");
     }
-}
-
-/// Query the unique ID associated with an allocation
-uint32_t jit_malloc_to_id(void *ptr) {
-    auto it = state.alloc_id_rev.find(ptr);
-    return it != state.alloc_id_rev.end() ? it.value() : 0;
-}
-
-/// Query the allocation associated with a unique ID
-void *jit_malloc_from_id(uint32_t id) {
-    auto it = state.alloc_id_fwd.find(id);
-    return it != state.alloc_id_fwd.end() ? it.value() : nullptr;
 }

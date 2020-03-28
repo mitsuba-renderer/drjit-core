@@ -3,6 +3,7 @@
 #include "eval.h"
 #include "log.h"
 #include "util.h"
+#include "registry.h"
 #include <thread>
 
 void jitc_init(int llvm, int cuda) {
@@ -136,16 +137,6 @@ void jitc_malloc_trim() {
 void jitc_malloc_prefetch(void *ptr, int device) {
     lock_guard guard(state.mutex);
     jit_malloc_prefetch(ptr, device);
-}
-
-uint32_t jitc_malloc_to_id(void *ptr) {
-    lock_guard guard(state.mutex);
-    return jit_malloc_to_id(ptr);
-}
-
-void *jitc_malloc_from_id(uint32_t id) {
-    lock_guard guard(state.mutex);
-    return jit_malloc_from_id(id);
 }
 
 void jitc_var_inc_ref_ext(uint32_t index) {
@@ -311,4 +302,29 @@ uint32_t jitc_mkperm(const uint32_t *values, uint32_t size,
                      uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
     lock_guard guard(state.mutex);
     return jit_mkperm(values, size, bucket_count, perm, offsets);
+}
+
+uint32_t jitc_registry_put(const char *domain, void *ptr) {
+    lock_guard guard(state.mutex);
+    return jit_registry_put(domain, ptr);
+}
+
+void jitc_registry_remove(void *ptr) {
+    lock_guard guard(state.mutex);
+    jit_registry_remove(ptr);
+}
+
+uint32_t jitc_registry_get_id(const void *ptr) {
+    lock_guard guard(state.mutex);
+    return jit_registry_get_id(ptr);
+}
+
+const char *jitc_registry_get_domain(const void *ptr) {
+    lock_guard guard(state.mutex);
+    return jit_registry_get_domain(ptr);
+}
+
+void *jitc_registry_get_ptr(const char *domain, uint32_t id) {
+    lock_guard guard(state.mutex);
+    return jit_registry_get_ptr(domain, id);
 }

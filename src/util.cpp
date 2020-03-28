@@ -305,6 +305,7 @@ void jit_transpose(const uint32_t *in, uint32_t *out, uint32_t rows, uint32_t co
     }
 }
 
+/// Compute a permutation to reorder an integer array into a sorted configuration
 uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
                     uint32_t *perm, uint32_t *offsets) {
     if (size == 0)
