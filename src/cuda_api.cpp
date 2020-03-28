@@ -74,13 +74,14 @@ static void *jit_cuda_handle = nullptr;
 static CUmodule *jit_cuda_module = nullptr;
 
 CUfunction *jit_cuda_fill_64 = nullptr;
-CUfunction *jit_cuda_mkperm_phase_1_shared = nullptr;
-CUfunction *jit_cuda_mkperm_phase_1_global = nullptr;
+CUfunction *jit_cuda_mkperm_phase_1_tiny = nullptr;
+CUfunction *jit_cuda_mkperm_phase_1_small = nullptr;
+CUfunction *jit_cuda_mkperm_phase_1_large = nullptr;
 CUfunction *jit_cuda_mkperm_phase_3 = nullptr;
-CUfunction *jit_cuda_mkperm_phase_4_shared = nullptr;
-CUfunction *jit_cuda_mkperm_phase_4_global = nullptr;
+CUfunction *jit_cuda_mkperm_phase_4_tiny = nullptr;
+CUfunction *jit_cuda_mkperm_phase_4_small = nullptr;
+CUfunction *jit_cuda_mkperm_phase_4_large = nullptr;
 CUfunction *jit_cuda_transpose = nullptr;
-CUfunction *jit_cuda_transpose_inplace = nullptr;
 CUfunction *jit_cuda_scan_small_u8 = nullptr;
 CUfunction *jit_cuda_scan_small_u32 = nullptr;
 CUfunction *jit_cuda_scan_large_u8 = nullptr;
@@ -293,13 +294,14 @@ bool jit_cuda_init() {
             cuda_check(cuModuleGetFunction(&jit_cuda_##name[i], m, #name));
 
         LOAD(fill_64);
-        LOAD(mkperm_phase_1_shared);
-        LOAD(mkperm_phase_1_global);
+        LOAD(mkperm_phase_1_tiny);
+        LOAD(mkperm_phase_1_small);
+        LOAD(mkperm_phase_1_large);
         LOAD(mkperm_phase_3);
-        LOAD(mkperm_phase_4_shared);
-        LOAD(mkperm_phase_4_global);
+        LOAD(mkperm_phase_4_tiny);
+        LOAD(mkperm_phase_4_small);
+        LOAD(mkperm_phase_4_large);
         LOAD(transpose);
-        LOAD(transpose_inplace);
         LOAD(scan_small_u8);
         LOAD(scan_small_u32);
         LOAD(scan_large_u8);
@@ -402,13 +404,14 @@ void jit_cuda_shutdown() {
     #define Z(x) do { free(x); x = nullptr; } while (0)
 
     Z(jit_cuda_fill_64);
-    Z(jit_cuda_mkperm_phase_1_shared);
-    Z(jit_cuda_mkperm_phase_1_global);
+    Z(jit_cuda_mkperm_phase_1_tiny);
+    Z(jit_cuda_mkperm_phase_1_small);
+    Z(jit_cuda_mkperm_phase_1_large);
     Z(jit_cuda_mkperm_phase_3);
-    Z(jit_cuda_mkperm_phase_4_shared);
-    Z(jit_cuda_mkperm_phase_4_global);
+    Z(jit_cuda_mkperm_phase_4_tiny);
+    Z(jit_cuda_mkperm_phase_4_small);
+    Z(jit_cuda_mkperm_phase_4_large);
     Z(jit_cuda_transpose);
-    Z(jit_cuda_transpose_inplace);
     Z(jit_cuda_scan_small_u8);
     Z(jit_cuda_scan_small_u32);
     Z(jit_cuda_scan_large_u8);

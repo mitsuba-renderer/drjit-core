@@ -116,13 +116,14 @@ extern CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int);
 
 // Enoki API
 extern CUfunction *jit_cuda_fill_64;
-extern CUfunction *jit_cuda_mkperm_phase_1_shared;
-extern CUfunction *jit_cuda_mkperm_phase_1_global;
+extern CUfunction *jit_cuda_mkperm_phase_1_tiny;
+extern CUfunction *jit_cuda_mkperm_phase_1_small;
+extern CUfunction *jit_cuda_mkperm_phase_1_large;
 extern CUfunction *jit_cuda_mkperm_phase_3;
-extern CUfunction *jit_cuda_mkperm_phase_4_shared;
-extern CUfunction *jit_cuda_mkperm_phase_4_global;
+extern CUfunction *jit_cuda_mkperm_phase_4_tiny;
+extern CUfunction *jit_cuda_mkperm_phase_4_small;
+extern CUfunction *jit_cuda_mkperm_phase_4_large;
 extern CUfunction *jit_cuda_transpose;
-extern CUfunction *jit_cuda_transpose_inplace;
 extern CUfunction *jit_cuda_scan_small_u8;
 extern CUfunction *jit_cuda_scan_small_u32;
 extern CUfunction *jit_cuda_scan_large_u8;

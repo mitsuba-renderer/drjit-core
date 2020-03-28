@@ -15,7 +15,7 @@ kernels.dict:
 generate: generate.c
 	$(CC) generate.c ../ext/lz4/lz4hc.c ../ext/lz4/lz4.c ../ext/lz4/xxhash.c -o generate -I ../ext/lz4
 
-kernels.h: kernels.ptx generate
+kernels.h: kernels_50.ptx kernels_70.ptx generate
 	./generate
 
 clean:

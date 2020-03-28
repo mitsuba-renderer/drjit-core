@@ -308,36 +308,68 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     Stream *stream = active_stream;
     const Device &device = state.devices[stream->device];
 
+    // Don't use more than 1 block/SM due to shared memory requirement
+    const uint32_t warp_size = 32;
     uint32_t block_count, thread_count;
     device.get_launch_config(&block_count, &thread_count, size, 1024, 1);
+
+    // Always launch full warps (the kernel impl. assumes that this is the case)
+    uint32_t warp_count = (thread_count + warp_size - 1) / warp_size;
+    thread_count = warp_count * warp_size;
 
     uint32_t bucket_size_1   = bucket_count * sizeof(uint32_t),
              bucket_size_all = bucket_size_1 * block_count;
 
-    uint32_t *buckets_1 = (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all),
-             *buckets_2 = buckets_1,
-             *counter   = nullptr;
-
-    if (block_count > 1)
-        buckets_2 = (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all);
-
     /* If there is a sufficient amount of shared memory, atomically accumulate into a
        shared memory buffer. Otherwise, use global memory, which is much slower. */
-    uint32_t shared_size;
-    CUfunction phase_1, phase_4;
-    if (bucket_size_1 <= (uint32_t) device.shared_memory_bytes) {
-        // zero-initialization automatically done by kernel
-        phase_1 = jit_cuda_mkperm_phase_1_shared[device.id];
-        phase_4 = jit_cuda_mkperm_phase_4_shared[device.id];
+    uint32_t shared_size = 0;
+    const char *variant = nullptr;
+    CUfunction phase_1 = nullptr, phase_4 = nullptr;
+    bool initialize_buckets = false;
+
+    if (bucket_size_1 * warp_count <= (uint32_t) device.shared_memory_bytes) {
+        /* "Tiny" variant, which uses shared memory atomics to produce a stable
+           permutation. Handles up to 384 buckets with 48KiB of shared memory. */
+
+        phase_1 = jit_cuda_mkperm_phase_1_tiny[device.id];
+        phase_4 = jit_cuda_mkperm_phase_4_tiny[device.id];
+        shared_size = bucket_size_1 * warp_count;
+        bucket_size_all *= warp_count;
+        variant = "tiny";
+    } else if (bucket_size_1 <= (uint32_t) device.shared_memory_bytes) {
+        /* "Small" variant, which uses shared memory atomics and handles up to
+           12288 buckets with 48KiB of shared memory. The permutation can be
+           somewhat unstable due to scheduling variations when performing atomic
+           operations (although some effort is made to keep it stable within
+           each group of 32 elements by performing an intra-warp reduction.) */
+
+        phase_1 = jit_cuda_mkperm_phase_1_small[device.id];
+        phase_4 = jit_cuda_mkperm_phase_4_small[device.id];
         shared_size = bucket_size_1;
+        variant = "small";
     } else {
-        // zero-initialize buckets explicitly
-        cuda_check(cuMemsetD8Async((CUdeviceptr) buckets_1, 0, bucket_size_all,
-                                   stream->handle));
-        phase_1 = jit_cuda_mkperm_phase_1_global[device.id];
-        phase_4 = jit_cuda_mkperm_phase_4_global[device.id];
-        shared_size = 0;
+        /* "Large" variant, which uses global memory atomics and handles
+           arbitrarily many elements (though this is somewhat slower than the
+           previous two shared memory variants). The permutation can be somewhat
+           unstable due to scheduling variations when performing atomic
+           operations (although some effort is made to keep it stable within
+           each group of 32 elements by performing an intra-warp reduction.)
+           Buckets must be zero-initialized explicitly. */
+
+        phase_1 = jit_cuda_mkperm_phase_1_large[device.id];
+        phase_4 = jit_cuda_mkperm_phase_4_large[device.id];
+        variant = "large";
+        initialize_buckets = true;
     }
+
+    bool needs_transpose = bucket_size_1 != bucket_size_all;
+    uint32_t *buckets_1, *buckets_2, *counter = nullptr;
+    buckets_1 = buckets_2 =
+        (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all);
+
+    // Scratch space for matrix transpose operation
+    if (needs_transpose)
+        buckets_2 = (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all);
 
     if (offsets) {
         counter = (uint32_t *) jit_malloc(AllocType::Device, sizeof(uint32_t)),
@@ -345,16 +377,22 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
                                    stream->handle));
     }
 
-    // Determine the amount of work to be done per SM
+    if (initialize_buckets)
+        cuda_check(cuMemsetD8Async((CUdeviceptr) buckets_1, 0, bucket_size_all,
+                                   stream->handle));
+
+
+    /* Determine the amount of work to be done per block, and ensure that it is
+       divisible by the warp size (the kernel implementation assumes this.) */
     uint32_t size_per_block = (size + block_count - 1) / block_count;
-    size_per_block = (size_per_block + thread_count - 1) / thread_count * thread_count;
+    size_per_block = (size_per_block + warp_size - 1) / warp_size * warp_size;
 
     jit_log(Info,
             "jit_mkperm(" ENOKI_PTR
             ", size=%u, bucket_count=%u, block_count=%u, thread_count=%u, "
-            "size_per_block=%u, shared_size=%u)",
+            "size_per_block=%u, variant=%s, shared_size=%u)",
             (uintptr_t) ptr, size, bucket_count, block_count, thread_count,
-            size_per_block, shared_size);
+            size_per_block, variant, shared_size);
 
     // Phase 1: Count the number of occurrences per block
     void *args_1[] = { &ptr, &buckets_1, &size, &size_per_block,
@@ -364,13 +402,15 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
                               shared_size, stream->handle, args_1, nullptr));
 
     // Phase 2: exclusive prefix sum over transposed buckets
-    if (block_count > 1)
-        jit_transpose(buckets_1, buckets_2, block_count, bucket_count);
+    if (needs_transpose)
+        jit_transpose(buckets_1, buckets_2, bucket_size_all / bucket_size_1,
+                      bucket_count);
 
-    jit_scan(buckets_2, buckets_2, bucket_count * block_count);
+    jit_scan(buckets_2, buckets_2, bucket_size_all / sizeof(uint32_t));
 
-    if (block_count > 1)
-        jit_transpose(buckets_2, buckets_1, bucket_count, block_count);
+    if (needs_transpose)
+        jit_transpose(buckets_2, buckets_1, bucket_count,
+                      bucket_size_all / bucket_size_1);
 
     // Phase 3: collect non-empty buckets (optional)
     if (likely(offsets)) {
@@ -402,7 +442,7 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     }
 
     jit_free(buckets_1);
-    if (buckets_1 != buckets_2)
+    if (needs_transpose)
         jit_free(buckets_2);
     jit_free(counter);
 }
