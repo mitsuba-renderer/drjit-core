@@ -715,6 +715,10 @@ extern JITC_EXPORT void jitc_fill(enum VarType type, void *ptr, uint32_t size,
 /// Perform a synchronous copy operation
 extern JITC_EXPORT void jitc_memcpy(void *dst, const void *src, size_t size);
 
+/// Perform an asynchronous copy operation
+extern JITC_EXPORT void jitc_memcpy_async(void *dst, const void *src,
+                                          size_t size);
+
 /**
  * \brief Reduce the given array to a single value
  *

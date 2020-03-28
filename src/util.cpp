@@ -104,6 +104,17 @@ void jit_memcpy(void *dst, const void *src, size_t size) {
     }
 }
 
+/// Perform an assynchronous copy operation
+void jit_memcpy_async(void *dst, const void *src, size_t size) {
+    Stream *stream = active_stream;
+
+    if  (stream)
+        cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
+                                 stream->handle));
+    else
+        memcpy(dst, src, size);
+}
+
 void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t size,
                 void *out) {
     jit_log(Debug, "jit_reduce(" ENOKI_PTR ", type=%s, rtype=%s, size=%u)",
@@ -269,22 +280,18 @@ void jit_transpose(const uint32_t *in, uint32_t *out, uint32_t rows, uint32_t co
     if (stream) {
         const Device &device = state.devices[stream->device];
 
-        uint32_t blocks_x = (cols + 31u) / 32u,
-                 blocks_y = (rows + 31u) / 32u,
-                 threads_x = std::min(32u, cols),
-                 threads_y = std::min(32u, rows);
+        uint16_t blocks_x = (cols + 15u) / 16u,
+                 blocks_y = (rows + 15u) / 16u;
 
         jit_log(Debug,
                 "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
-                ", rows=%u, cols=%u, blocks=%ux%u, threads=%ux%u)",
-                (uintptr_t) in, (uintptr_t) out, rows, cols, blocks_x, blocks_y,
-                threads_x, threads_y);
+                ", rows=%u, cols=%u, blocks=%ux%u)",
+                (uintptr_t) in, (uintptr_t) out, rows, cols, blocks_x, blocks_y);
 
         void *args[] = { &in, &out, &rows, &cols };
-        cuda_check(cuLaunchKernel(jit_cuda_transpose[device.id],
-                                  blocks_x, blocks_y, 1,
-                                  threads_x, threads_y, 1,
-                                  0, stream->handle, args, nullptr));
+        cuda_check(cuLaunchKernel(
+            jit_cuda_transpose[device.id], blocks_x, blocks_y, 1, 16, 16, 1,
+            16 * 17 * sizeof(uint32_t), stream->handle, args, nullptr));
     } else {
         jit_log(Debug,
                 "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
@@ -387,7 +394,7 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     uint32_t size_per_block = (size + block_count - 1) / block_count;
     size_per_block = (size_per_block + warp_size - 1) / warp_size * warp_size;
 
-    jit_log(Info,
+    jit_log(Debug,
             "jit_mkperm(" ENOKI_PTR
             ", size=%u, bucket_count=%u, block_count=%u, thread_count=%u, "
             "size_per_block=%u, variant=%s, shared_size=%u)",

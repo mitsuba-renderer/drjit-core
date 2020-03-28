@@ -29,3 +29,6 @@ extern void jit_mkperm(const uint32_t *values, uint32_t size,
 
 /// Perform a synchronous copy operation
 extern void jit_memcpy(void *dst, const void *src, size_t size);
+
+/// Perform an assynchronous copy operation
+extern void jit_memcpy_async(void *dst, const void *src, size_t size);

@@ -303,9 +303,27 @@ KERNEL void mkperm_phase_4_large(const uint32_t *values, uint32_t *buckets_,
     }
 }
 
-KERNEL void transpose(const uint32_t *in, uint32_t *out, uint32_t rows, uint32_t cols) {
-    uint32_t r = blockIdx.y * blockDim.y + threadIdx.y,
-             c = blockIdx.x * blockDim.x + threadIdx.x;
-    if (r < rows && c < cols)
-        out[r + c * rows] = in[c + r * cols];
+KERNEL void transpose(const uint32_t *in, uint32_t *out, uint32_t i_rows, uint32_t i_cols) {
+    uint32_t *shared = SharedMemory<uint32_t>::get();
+    const uint32_t dim = 16;
+
+    uint32_t i_c = blockIdx.x * dim + threadIdx.x,
+             i_r = blockIdx.y * dim + threadIdx.y;
+
+    bool valid = i_r < i_rows && i_c < i_cols;
+
+    if (valid)
+        shared[threadIdx.y * (dim + 1) + threadIdx.x] = in[i_r * i_cols + i_c];
+
+    __syncthreads();
+
+    uint32_t o_rows = i_cols,
+             o_cols = i_rows,
+             o_c = blockIdx.y * dim + threadIdx.x,
+             o_r = blockIdx.x * dim + threadIdx.y;
+
+    valid = o_r < o_rows && o_c < o_cols;
+
+    if (valid)
+        out[o_r * o_cols + o_c] = shared[threadIdx.x * (dim + 1) + threadIdx.y];
 }

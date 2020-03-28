@@ -281,6 +281,11 @@ void jitc_memcpy(void *dst, const void *src, size_t size) {
     jit_memcpy(dst, src, size);
 }
 
+void jitc_memcpy_async(void *dst, const void *src, size_t size) {
+    lock_guard guard(state.mutex);
+    jit_memcpy_async(dst, src, size);
+}
+
 void jitc_reduce(VarType type, ReductionType rtype,
                  const void *ptr, uint32_t size, void *out) {
     lock_guard guard(state.mutex);
