@@ -670,12 +670,12 @@ CUDAArray<void_t> scatter(CUDAArray<Value> &dst, const CUDAArray<Value> &value,
 
 inline bool all(const CUDAArray<bool> &v) {
     v.eval();
-    return jitc_all((bool *) v.data(), v.size());
+    return (bool) jitc_all((uint8_t *) v.data(), v.size());
 }
 
 inline bool any(const CUDAArray<bool> &v) {
     v.eval();
-    return jitc_any((bool *) v.data(), v.size());
+    return (bool) jitc_any((uint8_t *) v.data(), v.size());
 }
 
 inline bool none(const CUDAArray<bool> &v) {
@@ -755,7 +755,7 @@ mkperm(const CUDAArray<uint32_t> &v, uint32_t bucket_count) {
     for (uint32_t i = 0; i < unique_count; ++i) {
         uint32_t bucket_id     = offsets[i * 3 + 1],
                  bucket_offset = offsets[i * 3 + 2],
-                 bucket_size   = offsets[i * 3 + 2];
+                 bucket_size   = offsets[i * 3 + 3];
 
         uint32_t var_idx =
             jitc_var_map(UInt32::Type, perm + bucket_offset, bucket_size, 0);

@@ -710,6 +710,9 @@ enum ReductionType {
 extern JITC_EXPORT void jitc_fill(enum VarType type, void *ptr, uint32_t size,
                                   const void *src);
 
+/// Perform a synchronous copy operation
+extern JITC_EXPORT void jitc_memcpy(void *dst, const void *src, size_t size);
+
 /**
  * \brief Reduce the given array to a single value
  *
@@ -744,7 +747,7 @@ extern JITC_EXPORT void jitc_scan(const uint32_t *in, uint32_t *out,
  * reduction algorithm can be used. This is fine for allocations made using
  * \ref jitc_malloc(), which allow for this.
  */
-extern JITC_EXPORT bool jitc_all(bool *values, uint32_t size);
+extern JITC_EXPORT uint8_t jitc_all(uint8_t *values, uint32_t size);
 
 /**
  * \brief Reduce an array of boolean values to a single value (OR case)
@@ -754,7 +757,7 @@ extern JITC_EXPORT bool jitc_all(bool *values, uint32_t size);
  * reduction algorithm can be used. This is fine for allocations made using
  * \ref jitc_malloc(), which allow for this.
  */
-extern JITC_EXPORT bool jitc_any(bool *values, uint32_t size);
+extern JITC_EXPORT uint8_t jitc_any(uint8_t *values, uint32_t size);
 
 /**
  * \brief Compute a permutation to reorder an integer array into a sorted

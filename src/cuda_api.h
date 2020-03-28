@@ -46,14 +46,14 @@
 #  define CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED 704
 #  define CUDA_SUCCESS 0
 
+using CUcontext    = struct CUctx_st *;
+using CUmodule     = struct CUmod_st *;
+using CUfunction   = struct CUfunc_st *;
+using CUlinkState  = struct CUlinkState_st *;
+using CUstream     = struct CUstream_st *;
+using CUevent      = struct CUevent_st *;
 using CUresult     = int;
 using CUdevice     = int;
-using CUcontext    = void *;
-using CUmodule     = void *;
-using CUfunction   = void *;
-using CUlinkState  = void *;
-using CUstream     = void *;
-using CUevent      = void *;
 using CUdeviceptr  = void *;
 using CUjit_option = int;
 
@@ -75,6 +75,7 @@ extern CUresult (*cuEventRecord)(CUevent, CUstream);
 extern CUresult (*cuEventSynchronize)(CUevent);
 extern CUresult (*cuFuncSetAttribute)(CUfunction, int, int);
 extern CUresult (*cuFuncSetCacheConfig)(CUfunction, int);
+extern CUresult (*cuGetErrorName)(CUresult, const char **);
 extern CUresult (*cuGetErrorString)(CUresult, const char **);
 extern CUresult (*cuInit)(unsigned int);
 extern CUresult (*cuLaunchHostFunc)(CUstream, void (*)(void *), void *);
@@ -121,6 +122,7 @@ extern CUfunction *jit_cuda_mkperm_phase_3;
 extern CUfunction *jit_cuda_mkperm_phase_4_shared;
 extern CUfunction *jit_cuda_mkperm_phase_4_global;
 extern CUfunction *jit_cuda_transpose;
+extern CUfunction *jit_cuda_transpose_inplace;
 extern CUfunction *jit_cuda_scan_small_u8;
 extern CUfunction *jit_cuda_scan_small_u32;
 extern CUfunction *jit_cuda_scan_large_u8;

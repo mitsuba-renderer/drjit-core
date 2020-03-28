@@ -27,6 +27,7 @@ CUresult (*cuEventRecord)(CUevent, CUstream) = nullptr;
 CUresult (*cuEventSynchronize)(CUevent) = nullptr;
 CUresult (*cuFuncSetAttribute)(CUfunction, int, int) = nullptr;
 CUresult (*cuFuncSetCacheConfig)(CUfunction, int) = nullptr;
+CUresult (*cuGetErrorName)(CUresult, const char **) = nullptr;
 CUresult (*cuGetErrorString)(CUresult, const char **) = nullptr;
 CUresult (*cuInit)(unsigned int) = nullptr;
 CUresult (*cuLaunchHostFunc)(CUstream, void (*)(void *), void *) = nullptr;
@@ -79,6 +80,7 @@ CUfunction *jit_cuda_mkperm_phase_3 = nullptr;
 CUfunction *jit_cuda_mkperm_phase_4_shared = nullptr;
 CUfunction *jit_cuda_mkperm_phase_4_global = nullptr;
 CUfunction *jit_cuda_transpose = nullptr;
+CUfunction *jit_cuda_transpose_inplace = nullptr;
 CUfunction *jit_cuda_scan_small_u8 = nullptr;
 CUfunction *jit_cuda_scan_small_u32 = nullptr;
 CUfunction *jit_cuda_scan_large_u8 = nullptr;
@@ -150,6 +152,7 @@ bool jit_cuda_init() {
         LOAD(cuEventSynchronize);
         LOAD(cuFuncSetAttribute);
         LOAD(cuFuncSetCacheConfig);
+        LOAD(cuGetErrorName);
         LOAD(cuGetErrorString);
         LOAD(cuInit);
         LOAD(cuLaunchHostFunc, "ptsz");
@@ -221,22 +224,6 @@ bool jit_cuda_init() {
             "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
             cuda_version_major, cuda_version_minor);
 
-    // Decompress supplemental PTX content
-    char *uncompressed =
-        (char *) malloc_check(kernels_ptx_size_uncompressed + kernels_dict_size + 1);
-    memcpy(uncompressed, kernels_dict, kernels_dict_size);
-
-    if (LZ4_decompress_safe_usingDict((const char *) kernels_ptx,
-                            uncompressed + kernels_dict_size,
-                            (int) kernels_ptx_size_compressed,
-                            (int) kernels_ptx_size_uncompressed,
-                            uncompressed,
-                            (int) kernels_dict_size) !=
-        (int) kernels_ptx_size_uncompressed)
-        jit_fail("jit_cuda_init(): decompression of precompiled kernels failed!");
-
-    char *uncompressed_ptx = uncompressed + kernels_dict_size;
-    uncompressed_ptx[kernels_ptx_size_uncompressed] = '\0';
 
     for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++)
         for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++)
@@ -244,6 +231,8 @@ bool jit_cuda_init() {
                 (CUfunction *) malloc_check(sizeof(CUfunction) * jit_cuda_devices);
 
     jit_cuda_module = (CUmodule *) malloc_check(sizeof(CUmodule) * jit_cuda_devices);
+
+    jit_lz4_init();
 
     for (int i = 0; i < jit_cuda_devices; ++i) {
         CUcontext context = nullptr;
@@ -254,14 +243,42 @@ bool jit_cuda_init() {
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
 
-        size_t hash = kernels_ptx_hash;
-        hash_combine(hash, cc_minor + cc_major * 10);
+        const char *kernels = cc_major >= 7 ? kernels_70 : kernels_50;
+        int kernels_size_uncompressed = cc_major >= 7
+                                            ? kernels_70_size_uncompressed
+                                            : kernels_50_size_uncompressed;
+        int kernels_size_compressed   = cc_major >= 7
+                                            ? kernels_70_size_compressed
+                                            : kernels_50_size_compressed;
+        size_t kernels_hash           = cc_major >= 7
+                                            ? kernels_70_hash
+                                            : kernels_50_hash;
+
+        // Decompress supplemental PTX content
+        char *uncompressed =
+            (char *) malloc_check(kernels_size_uncompressed + jit_lz4_dict_size + 1);
+        memcpy(uncompressed, jit_lz4_dict, jit_lz4_dict_size);
+        char *uncompressed_ptx = uncompressed + jit_lz4_dict_size;
+
+        if (LZ4_decompress_safe_usingDict(
+                kernels, uncompressed_ptx,
+                kernels_size_compressed,
+                kernels_size_uncompressed,
+                uncompressed,
+                jit_lz4_dict_size) != kernels_size_uncompressed)
+            jit_fail("jit_cuda_init(): decompression of builtin kernels failed!");
+
+        uncompressed_ptx[kernels_size_uncompressed] = '\0';
+
+        hash_combine(kernels_hash, cc_minor + cc_major * 10);
 
         Kernel kernel;
-        if (!jit_kernel_load(uncompressed_ptx, kernels_ptx_size_uncompressed, false, hash, kernel)) {
-            jit_cuda_compile(uncompressed_ptx, kernels_ptx_size_uncompressed, kernel);
-            jit_kernel_write(uncompressed_ptx, kernels_ptx_size_uncompressed, false, hash, kernel);
+        if (!jit_kernel_load(uncompressed_ptx, kernels_size_uncompressed, false, kernels_hash, kernel)) {
+            jit_cuda_compile(uncompressed_ptx, kernels_size_uncompressed, kernel);
+            jit_kernel_write(uncompressed_ptx, kernels_size_uncompressed, false, kernels_hash, kernel);
         }
+
+        free(uncompressed);
 
         // .. and register it with CUDA
         CUmodule m;
@@ -282,6 +299,7 @@ bool jit_cuda_init() {
         LOAD(mkperm_phase_4_shared);
         LOAD(mkperm_phase_4_global);
         LOAD(transpose);
+        LOAD(transpose_inplace);
         LOAD(scan_small_u8);
         LOAD(scan_small_u32);
         LOAD(scan_large_u8);
@@ -308,7 +326,6 @@ bool jit_cuda_init() {
         }
     }
     cuda_check(cuCtxSetCurrent(nullptr));
-    free(uncompressed);
 
     jit_cuda_init_success = true;
     return true;
@@ -391,6 +408,7 @@ void jit_cuda_shutdown() {
     Z(jit_cuda_mkperm_phase_4_shared);
     Z(jit_cuda_mkperm_phase_4_global);
     Z(jit_cuda_transpose);
+    Z(jit_cuda_transpose_inplace);
     Z(jit_cuda_scan_small_u8);
     Z(jit_cuda_scan_small_u32);
     Z(jit_cuda_scan_large_u8);
@@ -413,15 +431,16 @@ void jit_cuda_shutdown() {
     Z(cuDevicePrimaryCtxRetain); Z(cuDeviceTotalMem); Z(cuDriverGetVersion);
     Z(cuEventCreate); Z(cuEventDestroy); Z(cuEventRecord);
     Z(cuEventSynchronize); Z(cuFuncSetAttribute); Z(cuFuncSetCacheConfig);
-    Z(cuGetErrorString); Z(cuInit); Z(cuLaunchHostFunc); Z(cuLaunchKernel);
-    Z(cuLinkAddData); Z(cuLinkComplete); Z(cuLinkCreate); Z(cuLinkDestroy);
-    Z(cuMemAdvise); Z(cuMemAlloc); Z(cuMemAllocHost); Z(cuMemAllocManaged);
-    Z(cuMemHostRegister); Z(cuMemHostUnregister); Z(cuMemFree);
-    Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy); Z(cuMemcpyAsync);
-    Z(cuMemsetD16Async); Z(cuMemsetD32Async); Z(cuMemsetD8Async);
-    Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleUnload);
-    Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent); Z(cuStreamCreate);
-    Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
+    Z(cuGetErrorName); Z(cuGetErrorString); Z(cuInit); Z(cuLaunchHostFunc);
+    Z(cuLaunchKernel); Z(cuLinkAddData); Z(cuLinkComplete); Z(cuLinkCreate);
+    Z(cuLinkDestroy); Z(cuMemAdvise); Z(cuMemAlloc); Z(cuMemAllocHost);
+    Z(cuMemAllocManaged); Z(cuMemHostRegister); Z(cuMemHostUnregister);
+    Z(cuMemFree); Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy);
+    Z(cuMemcpyAsync); Z(cuMemsetD16Async); Z(cuMemsetD32Async);
+    Z(cuMemsetD8Async); Z(cuModuleGetFunction); Z(cuModuleLoadData);
+    Z(cuModuleUnload); Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent);
+    Z(cuStreamCreate); Z(cuStreamDestroy); Z(cuStreamSynchronize);
+    Z(cuStreamWaitEvent);
 
     dlclose(jit_cuda_handle);
     jit_cuda_handle = nullptr;
@@ -435,9 +454,10 @@ void jit_cuda_shutdown() {
 
 void cuda_check_impl(CUresult errval, const char *file, const int line) {
     if (unlikely(errval != CUDA_SUCCESS && errval != CUDA_ERROR_DEINITIALIZED)) {
-        const char *msg = nullptr;
+        const char *name = nullptr, *msg = nullptr;
+        cuGetErrorName(errval, &name);
         cuGetErrorString(errval, &msg);
-        jit_fail("cuda_check(): API error = %04d (\"%s\") in "
-                 "%s:%i.", (int) errval, msg, file, line);
+        jit_fail("cuda_check(): API error %04i (%s): \"%s\" in "
+                 "%s:%i.", (int) errval, name, msg, file, line);
     }
 }

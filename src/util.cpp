@@ -91,6 +91,19 @@ void jit_fill(VarType type, void *ptr, uint32_t size, const void *src) {
     }
 }
 
+/// Perform a synchronous copy operation
+void jit_memcpy(void *dst, const void *src, size_t size) {
+    Stream *stream = active_stream;
+    // Temporarily release the lock while copying
+    unlock_guard guard(state.mutex);
+    if  (stream) {
+        cuda_check(cuStreamSynchronize(stream->handle));
+        cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
+    } else {
+        memcpy(dst, src, size);
+    }
+}
+
 void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t size,
                 void *out) {
     jit_log(Debug, "jit_reduce(" ENOKI_PTR ", type=%s, rtype=%s, size=%u)",
@@ -140,17 +153,18 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
 }
 
 /// 'All' reduction for boolean arrays
-bool jit_all(bool *values, uint32_t size) {
+uint8_t jit_all(uint8_t *values, uint32_t size) {
     Stream *stream = active_stream;
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
     jit_log(Debug, "jit_all(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
 
-    bool result;
+    uint8_t result;
     if (stream) {
         if (trailing)
-            cuda_check(cuMemsetD8Async(values + size, 0x01, trailing, stream->handle));
+            cuda_check(cuMemsetD8Async((CUdeviceptr)(values + size), 0x01,
+                                       trailing, stream->handle));
         uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
         jit_reduce(VarType::UInt32, ReductionType::And, values, reduced_size, out);
         cuda_check(cuStreamSynchronize(stream->handle));
@@ -168,17 +182,18 @@ bool jit_all(bool *values, uint32_t size) {
 }
 
 /// 'Any' reduction for boolean arrays
-bool jit_any(bool *values, uint32_t size) {
+uint8_t jit_any(uint8_t *values, uint32_t size) {
     Stream *stream = active_stream;
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
     jit_log(Debug, "jit_any(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
 
-    bool result;
+    uint8_t result;
     if (stream) {
         if (trailing)
-            cuda_check(cuMemsetD8Async(values + size, 0x00, trailing, stream->handle));
+            cuda_check(cuMemsetD8Async((CUdeviceptr)(values + size), 0x00,
+                                       trailing, stream->handle));
         uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
         jit_reduce(VarType::UInt32, ReductionType::Or, values, reduced_size, out);
         cuda_check(cuStreamSynchronize(stream->handle));
@@ -248,102 +263,135 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
     }
 }
 
-void jit_transpose(uint32_t *data, uint32_t rows, uint32_t cols) {
+void jit_transpose(const uint32_t *in, uint32_t *out, uint32_t rows, uint32_t cols) {
     Stream *stream = active_stream;
 
     if (stream) {
         const Device &device = state.devices[stream->device];
-        void *args[] = { &data, &rows, &cols };
-        cuda_check(cuLaunchKernel(jit_cuda_transpose[device.id],
-                                  (cols + 31) / 32, (rows + 31) / 32, 1,
-                                  32, 32, 1, 0, stream->handle,
-                                  args, nullptr));
-    } else {
-        unlock_guard guard(state.mutex);
-        for (uint32_t r = 0; r < rows; ++r) {
-            for (uint32_t c = 0; c < cols; ++c) {
-                uint32_t idx0 = c + r * cols,
-                         idx1 = r + c * rows,
-                         val0 = data[idx0],
-                         val1 = data[idx1];
 
-                data[idx0] = val1;
-                data[idx1] = val0;
-            }
-        }
+        uint32_t blocks_x = (cols + 31u) / 32u,
+                 blocks_y = (rows + 31u) / 32u,
+                 threads_x = std::min(32u, cols),
+                 threads_y = std::min(32u, rows);
+
+        jit_log(Debug,
+                "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
+                ", rows=%u, cols=%u, blocks=%ux%u, threads=%ux%u)",
+                (uintptr_t) in, (uintptr_t) out, rows, cols, blocks_x, blocks_y,
+                threads_x, threads_y);
+
+        void *args[] = { &in, &out, &rows, &cols };
+        cuda_check(cuLaunchKernel(jit_cuda_transpose[device.id],
+                                  blocks_x, blocks_y, 1,
+                                  threads_x, threads_y, 1,
+                                  0, stream->handle, args, nullptr));
+    } else {
+        jit_log(Debug,
+                "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
+                ", rows=%u, cols=%u)",
+                (uintptr_t) in, (uintptr_t) out, rows, cols);
+
+        unlock_guard guard(state.mutex);
+        for (uint32_t r = 0; r < rows; ++r)
+            for (uint32_t c = 0; c < cols; ++c)
+                out[r + c * rows] = in[c + r * cols];
     }
 }
 
 void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
                 uint32_t *perm, uint32_t *offsets) {
+    if (size == 0)
+        return;
+    else if (unlikely(bucket_count == 0))
+        jitc_fail("jit_mkperm(): bucket_count cannot be zero!");
+
     Stream *stream = active_stream;
     const Device &device = state.devices[stream->device];
 
     uint32_t block_count, thread_count;
     device.get_launch_config(&block_count, &thread_count, size, 1024, 1);
 
-    uint32_t bucket_size_1    = sizeof(uint32_t) * bucket_count,
-             bucket_size_all  = bucket_size_1 * block_count;
+    uint32_t bucket_size_1   = bucket_count * sizeof(uint32_t),
+             bucket_size_all = bucket_size_1 * block_count;
 
-    /// Determine the amount of work to be done per SM
-    uint32_t size_per_block = (size + block_count - 1) / block_count;
-    size_per_block = (size_per_block + thread_count - 1) / thread_count * thread_count;
+    uint32_t *buckets_1 = (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all),
+             *buckets_2 = buckets_1,
+             *counter   = nullptr;
+
+    if (block_count > 1)
+        buckets_2 = (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all);
 
     /* If there is a sufficient amount of shared memory, atomically accumulate into a
        shared memory buffer. Otherwise, use global memory, which is much slower. */
-    uint32_t shared_size, shared_size_small = sizeof(uint32_t) * bucket_count;
+    uint32_t shared_size;
     CUfunction phase_1, phase_4;
-
-    if (shared_size_small <= (uint32_t) device.shared_memory_bytes) {
+    if (bucket_size_1 <= (uint32_t) device.shared_memory_bytes) {
+        // zero-initialization automatically done by kernel
         phase_1 = jit_cuda_mkperm_phase_1_shared[device.id];
         phase_4 = jit_cuda_mkperm_phase_4_shared[device.id];
-        shared_size = shared_size_small;
-
+        shared_size = bucket_size_1;
     } else {
+        // zero-initialize buckets explicitly
+        cuda_check(cuMemsetD8Async((CUdeviceptr) buckets_1, 0, bucket_size_all,
+                                   stream->handle));
         phase_1 = jit_cuda_mkperm_phase_1_global[device.id];
         phase_4 = jit_cuda_mkperm_phase_4_global[device.id];
         shared_size = 0;
     }
 
-    jit_trace("jit_mkperm(" ENOKI_PTR
-              ", size=%u, block_count=%u, thread_count=%u, size_per_block_%u, shared_size=%u)",
-              (uintptr_t) ptr, size, block_count, thread_count, size_per_block, shared_size);
+    if (offsets) {
+        counter = (uint32_t *) jit_malloc(AllocType::Device, sizeof(uint32_t)),
+        cuda_check(cuMemsetD8Async((CUdeviceptr) counter, 0, sizeof(uint32_t),
+                                   stream->handle));
+    }
 
-    uint32_t *buckets =
-        (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all);
+    // Determine the amount of work to be done per SM
+    uint32_t size_per_block = (size + block_count - 1) / block_count;
+    size_per_block = (size_per_block + thread_count - 1) / thread_count * thread_count;
+
+    jit_log(Info,
+            "jit_mkperm(" ENOKI_PTR
+            ", size=%u, bucket_count=%u, block_count=%u, thread_count=%u, "
+            "size_per_block=%u, shared_size=%u)",
+            (uintptr_t) ptr, size, bucket_count, block_count, thread_count,
+            size_per_block, shared_size);
 
     // Phase 1: Count the number of occurrences per block
-    void *args_1[] = { &ptr, &buckets, &size, &size_per_block,
+    void *args_1[] = { &ptr, &buckets_1, &size, &size_per_block,
                        &bucket_count };
 
     cuda_check(cuLaunchKernel(phase_1, block_count, 1, 1, thread_count, 1, 1,
                               shared_size, stream->handle, args_1, nullptr));
 
     // Phase 2: exclusive prefix sum over transposed buckets
-    jit_transpose(buckets, bucket_count, block_count);
-    jit_scan(buckets, buckets, bucket_count * block_count);
-    jit_transpose(buckets, block_count, bucket_count);
+    if (block_count > 1)
+        jit_transpose(buckets_1, buckets_2, block_count, bucket_count);
+
+    jit_scan(buckets_2, buckets_2, bucket_count * block_count);
+
+    if (block_count > 1)
+        jit_transpose(buckets_2, buckets_1, bucket_count, block_count);
 
     // Phase 3: collect non-empty buckets (optional)
     if (likely(offsets)) {
-        uint32_t *counter = (uint32_t *) jit_malloc(AllocType::Device, sizeof(uint32_t));
-        cuda_check(cuMemsetD8Async(counter, 0, sizeof(uint32_t), stream->handle));
+        uint32_t block_count_3, thread_count_3;
+        device.get_launch_config(&block_count_3, &thread_count_3,
+                                 bucket_count * block_count);
 
-        void *args_3[] = { &buckets, &bucket_count, &size, &counter, &offsets };
+        void *args_3[] = { &buckets_1, &bucket_count, &size, &counter, &offsets };
 
-        cuda_check(cuLaunchKernel(jit_cuda_mkperm_phase_3, block_count, 1, 1,
-                                  thread_count, 1, 1, 0, stream->handle, args_3,
-                                  nullptr));
+        cuda_check(cuLaunchKernel(jit_cuda_mkperm_phase_3[device.id],
+                                  block_count_3, 1, 1, thread_count_3, 1, 1, 0,
+                                  stream->handle, args_3, nullptr));
 
         cuda_check(cuMemcpyAsync((CUdeviceptr) offsets, (CUdeviceptr) counter,
                                  sizeof(uint32_t), stream->handle));
 
         cuda_check(cuEventRecord(stream->event, stream->handle));
-        jit_free(counter);
     }
 
     // Phase 4: write out permutation based on bucket counts
-    void *args_4[] = { &ptr, &buckets, &perm, &size, &size_per_block,
+    void *args_4[] = { &ptr, &buckets_1, &perm, &size, &size_per_block,
                        &bucket_count };
     cuda_check(cuLaunchKernel(phase_4, block_count, 1, 1, thread_count, 1, 1,
                               shared_size, stream->handle, args_4, nullptr));
@@ -353,5 +401,8 @@ void jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
         cuda_check(cuEventSynchronize(stream->event));
     }
 
-    jit_free(buckets);
+    jit_free(buckets_1);
+    if (buckets_1 != buckets_2)
+        jit_free(buckets_2);
+    jit_free(counter);
 }

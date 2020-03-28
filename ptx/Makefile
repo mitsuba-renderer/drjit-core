@@ -1,10 +1,13 @@
-COMPUTE_CAPABILITY=compute_61
-NVCC=nvcc -m64 -gencode arch=$(COMPUTE_CAPABILITY),code=$(COMPUTE_CAPABILITY) --ptx --expt-relaxed-constexpr
+COMPUTE_CAPABILITY=compute_70
+NVCC=nvcc -m64 --ptx --expt-relaxed-constexpr
 
 all: kernels.h
 
-kernels.ptx: reduce.cuh scan.cuh mkperm.cuh misc.cuh
-	$(NVCC) kernels.cu -o kernels.ptx
+kernels_50.ptx: reduce.cuh scan.cuh mkperm.cuh misc.cuh kernels.cu
+	$(NVCC) -gencode arch=compute_50,code=compute_50 kernels.cu -o kernels_50.ptx
+
+kernels_70.ptx: reduce.cuh scan.cuh mkperm.cuh misc.cuh kernels.cu
+	$(NVCC) -gencode arch=compute_70,code=compute_70 kernels.cu -o kernels_70.ptx
 
 kernels.dict:
 	zstd --train train/* --maxdict=65536 -o kernels.dict

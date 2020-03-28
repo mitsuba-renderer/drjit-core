@@ -26,11 +26,31 @@ struct CacheFileHeader {
     uint32_t kernel_size;
     uint32_t func_offset;
 };
-
 #pragma pack(pop)
+
+char jit_lz4_dict[jit_lz4_dict_size];
+static bool jit_lz4_dict_ready = false;
+
+void jit_lz4_init() {
+    if (jit_lz4_dict_ready)
+        return;
+
+    if (jit_lz4_dict_size != kernels_dict_size_uncompressed)
+        jit_fail("jit_init_lz4(): dictionary has invalid size!");
+
+    if (LZ4_decompress_safe(kernels_dict, jit_lz4_dict,
+                            kernels_dict_size_compressed,
+                            kernels_dict_size_uncompressed) !=
+        (int) kernels_dict_size_uncompressed)
+        jit_fail("jit_init_lz4(): decompression of dictionary failed!");
+
+    jit_lz4_dict_ready = true;
+}
 
 bool jit_kernel_load(const char *source, uint32_t source_size,
                      bool llvm, size_t hash, Kernel &kernel) {
+    jit_lz4_init();
+
     char filename[1024];
     snprintf(filename, sizeof(filename), "%s/.enoki/%016llx.%s.bin",
              getenv("HOME"), (unsigned long long) hash,
@@ -57,10 +77,11 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
         }
     };
 
-    uint8_t *compressed = nullptr, *uncompressed = nullptr;
+    char *compressed = nullptr, *uncompressed = nullptr;
 
     CacheFileHeader header;
     bool success = true;
+
     try {
         read_retry((uint8_t *) &header, sizeof(CacheFileHeader));
 
@@ -76,16 +97,16 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
 
         uint32_t uncompressed_size = source_size + header.kernel_size;
 
-        compressed = (uint8_t *) malloc_check(header.compressed_size);
-        uncompressed = (uint8_t *) malloc_check(uncompressed_size + kernels_dict_size);
-        memcpy(uncompressed, kernels_dict, kernels_dict_size);
+        compressed = (char *) malloc_check(header.compressed_size);
+        uncompressed = (char *) malloc_check(uncompressed_size + jit_lz4_dict_size);
+        memcpy(uncompressed, jit_lz4_dict, jit_lz4_dict_size);
 
-        read_retry(compressed, header.compressed_size);
+        read_retry((uint8_t *) compressed, header.compressed_size);
 
         uint32_t rv = (uint32_t) LZ4_decompress_safe_usingDict(
-            (const char *) compressed, (char *) uncompressed + kernels_dict_size,
+            compressed, uncompressed + jit_lz4_dict_size,
             (int) header.compressed_size, (int) uncompressed_size,
-            (char *) uncompressed, (int) kernels_dict_size);
+            (char *) uncompressed, jit_lz4_dict_size);
 
         if (rv != uncompressed_size)
             jit_raise("jit_kernel_read(): cache file \"%s\" is malformed.",
@@ -95,7 +116,7 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
         success = false;
     }
 
-    uint8_t *uncompressed_data = uncompressed + kernels_dict_size;
+    char *uncompressed_data = uncompressed + jit_lz4_dict_size;
 
     if (success && memcmp(uncompressed_data, source, source_size) != 0)
         success = false; // cache collision
@@ -133,6 +154,8 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
 
 bool jit_kernel_write(const char *source, uint32_t source_size,
                       bool llvm, size_t hash, const Kernel &kernel) {
+    jit_lz4_init();
+
     char filename[1024], filename_tmp[1024];
     snprintf(filename, sizeof(filename), "%s/.enoki/%016llx.%s.bin",
              getenv("HOME"), (unsigned long long) hash,
@@ -177,7 +200,7 @@ bool jit_kernel_write(const char *source, uint32_t source_size,
 
     LZ4_stream_t stream;
     LZ4_resetStream_fast(&stream);
-    LZ4_loadDict(&stream, (const char *) kernels_dict, (int) kernels_dict_size);
+    LZ4_loadDict(&stream, jit_lz4_dict, jit_lz4_dict_size);
 
     CacheFileHeader header;
     header.version = ENOKI_CACHE_VERSION;

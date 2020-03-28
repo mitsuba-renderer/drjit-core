@@ -50,18 +50,83 @@ TEST_CUDA(02_scan) {
 #endif
 
 TEST_CUDA(03_mkperm) {
+    scoped_set_log_level ssll(LogLevel::Info);
     srand(0);
-    for (uint32_t i = 0; i < 100; ++i) {
+    for (uint32_t i = 0; i < 30; ++i) {
         uint32_t size = 23*i*i*i + 1;
-        for (uint32_t j = 0; j < 100; ++j) {
-            uint32_t *buf = (uint32_t *) jitc_malloc(AllocType::Host,
-                                                     size * sizeof(uint32_t));
-            uint32_t n_buckets = 23*i*i*i + 1;
-            for (size_t i = 0; i < size; ++i)
-                buf[i] = i % n_buckets;
-            buf = (uint32_t *) jitc_malloc_migrate(buf, AllocType::Device);
-            UInt32 buf_c = UInt32::map(buf, size);
-            jitc_free(buf);
+        for (uint32_t j = 0; j <= i; ++j) {
+            uint32_t n_buckets = 23*j*j*j + 1;
+
+            jitc_log(LogLevel::Info, "===== size=%u, buckets=%u =====", size, n_buckets);
+            uint32_t *data = (uint32_t *) jitc_malloc(AllocType::Host, size * sizeof(uint32_t)),
+                     *perm = (uint32_t *) jitc_malloc(AllocType::Device, size * sizeof(uint32_t)),
+                     *offsets = (uint32_t *) jitc_malloc(AllocType::HostPinned,
+                                                         (n_buckets * 3 + 1) * sizeof(uint32_t));
+            uint64_t *ref = new uint64_t[size];
+
+            for (size_t i = 0; i < size; ++i) {
+                uint32_t value = rand() % n_buckets;
+                data[i] = value;
+                ref[i] = (((uint64_t) value) << 32) | i;
+            }
+
+            data = (uint32_t *) jitc_malloc_migrate(data, AllocType::Device);
+            jitc_mkperm(data, size, n_buckets, perm, offsets);
+            perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
+
+            struct Bucket {
+                uint32_t id;
+                uint32_t start;
+                uint32_t size;
+            };
+
+            uint32_t num_unique = offsets[0];
+            Bucket *buckets = (Bucket *) (offsets + 1);
+
+            std::sort(ref, ref + size);
+            std::sort(buckets, buckets + num_unique,
+                [](const Bucket &a, const Bucket &b) {
+                    return a.id < b.id;
+                }
+            );
+
+            uint32_t total_size = 0;
+            for (uint32_t i = 0; i < num_unique; ++i)
+                total_size += buckets[i].size;
+            if (total_size != size)
+                jitc_fail("Size mismatch: %u vs %u\n", total_size, size);
+
+            const uint64_t *ref_ptr = ref;
+            for (uint32_t i = 0; i < num_unique; ++i) {
+                const Bucket &entry = buckets[i];
+                uint32_t *perm_cur = perm + entry.start;
+
+#if 0
+                for (size_t j = 0; j < entry.size; ++j) {
+                    uint64_t ref_value = ref_ptr[j];
+                    uint32_t bucket_id = (uint32_t) (ref_value >> 32);
+                    uint32_t perm_index = (uint32_t) ref_value;
+                    fprintf(stderr, "id=%u/%u perm=%u/%u\n", entry.id, bucket_id, perm_cur[j], perm_index);
+                }
+#endif
+
+                std::sort(perm_cur, perm_cur + entry.size);
+
+                for (size_t j = 0; j < entry.size; ++j) {
+                    uint64_t ref_value = *ref_ptr++;
+                    uint32_t bucket_id = (uint32_t) (ref_value >> 32);
+                    uint32_t perm_index = (uint32_t) ref_value;
+
+                    if (bucket_id != entry.id)
+                        jitc_fail("Mismatched bucket ID");
+                    if (perm_index != perm_cur[j])
+                        jitc_fail("Mismatched permutation index");
+                }
+            }
+            jitc_free(data);
+            jitc_free(perm);
+            jitc_free(offsets);
+            delete[] ref;
         }
     }
 }

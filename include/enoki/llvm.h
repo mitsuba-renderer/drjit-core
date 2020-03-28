@@ -758,11 +758,13 @@ LLVMArray<void_t> scatter(LLVMArray<Value> &dst, const LLVMArray<Value> &value,
 }
 
 inline bool all(const LLVMArray<bool> &v) {
-    return jitc_all((bool *) v.data(), v.size());
+    v.eval();
+    return (bool) jitc_all((uint8_t *) v.data(), v.size());
 }
 
 inline bool any(const LLVMArray<bool> &v) {
-    return jitc_any((bool *) v.data(), v.size());
+    v.eval();
+    return (bool) jitc_any((uint8_t *) v.data(), v.size());
 }
 
 inline bool none(const LLVMArray<bool> &v) {

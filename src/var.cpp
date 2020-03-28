@@ -2,6 +2,7 @@
 #include "internal.h"
 #include "log.h"
 #include "eval.h"
+#include "util.h"
 
 /// Descriptive names for the various variable types
 const char *var_type_name[(int) VarType::Count]{
@@ -726,15 +727,7 @@ const char *jit_var_str(uint32_t index) {
 
         const uint8_t *src_offset = src + i * isize;
 
-        if (cuda) {
-            // Temporarily release the lock while synchronizing
-            unlock_guard guard(state.mutex);
-            cuda_check(cuStreamSynchronize(stream->handle));
-            cuda_check(cuMemcpy((CUdeviceptr) dst,
-                                (CUdeviceptr) src_offset, isize));
-        } else {
-            memcpy(dst, src_offset, isize);
-        }
+        jit_memcpy(dst, src_offset, isize);
 
         const char *comma = i + 1 < size ? ", " : "";
         switch ((VarType) v->type) {
@@ -792,14 +785,7 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
     uint32_t isize = var_type_size[(int) v->type];
     const uint8_t *src = (const uint8_t *) v->data + offset * isize;
 
-    if  (cuda) {
-        // Temporarily release the lock while synchronizing
-        unlock_guard guard(state.mutex);
-        cuda_check(cuStreamSynchronize(stream->handle));
-        cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, isize));
-    } else {
-        memcpy(dst, src, isize);
-    }
+    jit_memcpy(dst, src, isize);
 }
 
 /// Reverse of jit_var_read(). Copy 'dst' to a single element of a variable

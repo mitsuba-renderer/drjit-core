@@ -123,7 +123,7 @@ void jitc_free(void *ptr) {
     jit_free(ptr);
 }
 
-void* jitc_malloc_migrate(void *ptr, AllocType type) {
+void *jitc_malloc_migrate(void *ptr, AllocType type) {
     lock_guard guard(state.mutex);
     return jit_malloc_migrate(ptr, type);
 }
@@ -193,9 +193,7 @@ uint32_t jitc_var_copy_ptr(const void *ptr) {
     return jit_var_copy_ptr(ptr);
 }
 
-uint32_t jitc_var_copy(VarType type,
-                                 const void *value,
-                                 size_t size) {
+uint32_t jitc_var_copy(VarType type, const void *value, size_t size) {
     lock_guard guard(state.mutex);
     return jit_var_copy(type, value, size);
 }
@@ -278,6 +276,11 @@ void jitc_fill(VarType type, void *ptr, uint32_t size, const void *src) {
     jit_fill(type, ptr, size, src);
 }
 
+void jitc_memcpy(void *dst, const void *src, size_t size) {
+    lock_guard guard(state.mutex);
+    jit_memcpy(dst, src, size);
+}
+
 void jitc_reduce(VarType type, ReductionType rtype,
                  const void *ptr, uint32_t size, void *out) {
     lock_guard guard(state.mutex);
@@ -289,12 +292,12 @@ void jitc_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
     jit_scan(in, out, size);
 }
 
-bool jitc_all(bool *values, uint32_t size) {
+uint8_t jitc_all(uint8_t *values, uint32_t size) {
     lock_guard guard(state.mutex);
     return jit_all(values, size);
 }
 
-bool jitc_any(bool *values, uint32_t size) {
+uint8_t jitc_any(uint8_t *values, uint32_t size) {
     lock_guard guard(state.mutex);
     return jit_any(values, size);
 }

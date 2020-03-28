@@ -14,10 +14,10 @@ extern void jit_reduce(VarType type, ReductionType rtype, const void *ptr,
                        uint32_t size, void *out);
 
 /// 'All' reduction for boolean arrays
-extern bool jit_all(bool *values, uint32_t size);
+extern uint8_t jit_all(uint8_t *values, uint32_t size);
 
-/// 'Any' reduction for boolean arrays
-extern bool jit_any(bool *values, uint32_t size);
+/// 'Any' reduction for uint8_tean arrays
+extern uint8_t jit_any(uint8_t *values, uint32_t size);
 
 /// Exclusive prefix sum
 extern void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size);
@@ -26,3 +26,6 @@ extern void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size);
 extern void jit_mkperm(const uint32_t *values, uint32_t size,
                        uint32_t bucket_count, uint32_t *perm,
                        uint32_t *offsets);
+
+/// Perform a synchronous copy operation
+extern void jit_memcpy(void *dst, const void *src, size_t size);
