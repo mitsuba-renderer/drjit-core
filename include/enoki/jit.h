@@ -361,8 +361,8 @@ extern JITC_EXPORT void jitc_malloc_prefetch(void *ptr, int device);
  *
  * Enoki provides a central registry that maps registered pointer values to
  * low-valued 32-bit IDs. The main application is efficient virtual function
- * dispatch via \ref jitc_mkperm_registered(), through the registry could be
- * used for other applications as well.
+ * dispatch via \ref jitc_vcall(), through the registry could be used for other
+ * applications as well.
  *
  * This function registers the specified pointer \c ptr with the registry,
  * returning the associated ID value, which is guaranteed to be unique within
@@ -411,6 +411,17 @@ extern JITC_EXPORT const char *jitc_registry_get_domain(const void *ptr);
  * combination is not known.
  */
 extern JITC_EXPORT void *jitc_registry_get_ptr(const char *domain, uint32_t id);
+
+/// Provide a bound (<=) on the largest ID associated with a domain
+extern JITC_EXPORT uint32_t jitc_registry_get_max(const char *domain);
+
+/**
+ * \brief Compact the registry and release unused IDs
+ *
+ * It's a good idea to call this function following a large number of calls to
+ * \ref jitc_registry_remove().
+ */
+extern JITC_EXPORT void jitc_registry_trim();
 
 // ====================================================================
 //                        Variable management

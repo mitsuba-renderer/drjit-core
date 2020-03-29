@@ -179,7 +179,7 @@ void jit_var_dec_ref_int(uint32_t index) {
 }
 
 /// Append the given variable to the instruction trace and return its ID
-static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
+std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
     CSECache::iterator key_it;
     bool key_inserted = false;
 
@@ -240,7 +240,7 @@ static std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
 
         for (int i = 0; i< 3; ++i)
             jit_var_dec_ref_int(v.dep[i]);
-        jit_var_dec_ref_int(v.extra_dep);
+        jit_var_dec_ref_ext(v.extra_dep);
 
         index = key_it.value();
         v_out = jit_var(index);

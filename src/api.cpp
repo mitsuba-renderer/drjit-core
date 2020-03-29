@@ -328,3 +328,13 @@ void *jitc_registry_get_ptr(const char *domain, uint32_t id) {
     lock_guard guard(state.mutex);
     return jit_registry_get_ptr(domain, id);
 }
+
+uint32_t jitc_registry_get_max(const char *domain) {
+    lock_guard guard(state.mutex);
+    return jit_registry_get_max(domain);
+}
+
+void jitc_registry_trim() {
+    lock_guard guard(state.mutex);
+    jit_registry_trim();
+}

@@ -141,12 +141,47 @@ void *jit_registry_get_ptr(const char *domain, uint32_t id) {
     return it.value();
 }
 
-void jit_registry_shutdown() {
-    if (state.registry_rev.empty()) {
-        state.registry_fwd.clear();
-    } else {
-        jit_log(Warn, "jit_registry_shutdown(): leaked %zu pointer mappings!",
-                state.registry_rev.size());
+/// Compact the registry and release unused IDs
+void jit_registry_trim() {
+    RegistryFwdMap registry_fwd;
+
+    for (auto &kv : state.registry_fwd) {
+        const char *domain = kv.first.domain;
+        uint32_t id = kv.first.id;
+        void *ptr = kv.second;
+
+        if (id != 0 &&
+            ((uint32_t) (uintptr_t) ptr != 0u ||
+             state.registry_rev.find(ptr) != state.registry_rev.end())) {
+            registry_fwd.insert(kv);
+
+            auto it_head =
+                registry_fwd.try_emplace(RegistryKey(domain, 0), nullptr);
+
+            uintptr_t &value_head = (uintptr_t &) it_head.first.value();
+            value_head = std::max(value_head, (uintptr_t) id);
+        }
     }
+
+    state.registry_fwd = std::move(registry_fwd);
 }
 
+/// Provide a bound (<=) on the largest ID associated with a domain
+uint32_t jit_registry_get_max(const char *domain) {
+    // Get the bookkeeping record associated with the domain
+    auto it_head = state.registry_fwd.find(RegistryKey(domain, 0));
+    if (unlikely(it_head == state.registry_fwd.end()))
+        return 0;
+
+    uintptr_t value_head = (uintptr_t) it_head.value();
+    return (uint32_t) value_head; // extract counter field
+}
+
+void jit_registry_shutdown() {
+    jit_registry_trim();
+
+    if (!state.registry_fwd.empty() || !state.registry_rev.empty())
+        jit_log(Warn, "jit_registry_shutdown(): leaked %zu forward "
+                "and %zu reverse mappings!",
+                state.registry_fwd.size(), state.registry_rev.size());
+}

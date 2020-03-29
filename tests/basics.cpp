@@ -333,10 +333,24 @@ TEST_LLVM(16_pointer_registry) {
     const char *key_1 = "MyKey1";
     const char *key_2 = "MyKey2";
 
+    jitc_assert(jitc_registry_get_max(key_1) == 0u);
+    jitc_assert(jitc_registry_get_max(key_2) == 0u);
+
     uint32_t id_1 = jitc_registry_put(key_1, (void *) 0xA);
+    jitc_assert(jitc_registry_get_max(key_1) == 1u);
+    jitc_assert(jitc_registry_get_max(key_2) == 0u);
+
     uint32_t id_2 = jitc_registry_put(key_1, (void *) 0xB);
+    jitc_assert(jitc_registry_get_max(key_1) == 2u);
+    jitc_assert(jitc_registry_get_max(key_2) == 0u);
+
     uint32_t id_a = jitc_registry_put(key_2, (void *) 0xC);
+    jitc_assert(jitc_registry_get_max(key_1) == 2u);
+    jitc_assert(jitc_registry_get_max(key_2) == 1u);
+
     uint32_t id_3 = jitc_registry_put(key_1, (void *) 0xD);
+    jitc_assert(jitc_registry_get_max(key_1) == 3u);
+    jitc_assert(jitc_registry_get_max(key_2) == 1u);
 
     jitc_assert(id_1 == 1u);
     jitc_assert(id_2 == 2u);
@@ -357,6 +371,9 @@ TEST_LLVM(16_pointer_registry) {
     jitc_assert(jitc_registry_get_ptr(key_1, 2) == (void *) 0xB);
     jitc_assert(jitc_registry_get_ptr(key_2, 1) == (void *) 0xC);
     jitc_assert(jitc_registry_get_ptr(key_1, 3) == (void *) 0xD);
+
+    jitc_assert(jitc_registry_get_max(key_1) == 3u);
+    jitc_assert(jitc_registry_get_max(key_2) == 1u);
 
     jitc_registry_remove((void *) 0xA);
     jitc_registry_remove((void *) 0xB);
@@ -387,6 +404,14 @@ TEST_LLVM(16_pointer_registry) {
     jitc_registry_remove((void *) 0xE);
     jitc_registry_remove((void *) 0xF);
     jitc_registry_remove((void *) 0x1);
+
+    jitc_assert(jitc_registry_get_max(key_1) == 4u);
+    jitc_assert(jitc_registry_get_max(key_2) == 1u);
+
+    jitc_registry_trim();
+
+    jitc_assert(jitc_registry_get_max(key_1) == 0u);
+    jitc_assert(jitc_registry_get_max(key_2) == 0u);
 }
 
 /// Mask gathers/scatters!

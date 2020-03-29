@@ -60,7 +60,7 @@ using UInt32L = LLVMArray<uint32_t>;
 #define jitc_assert(cond)                                                      \
     do {                                                                       \
         if (!(cond))                                                           \
-            jitc_fail("Assertion failure: " #cond);                            \
+            jitc_fail("Assertion failure: %s in line %u.", #cond, __LINE__);   \
     } while (0)
 
 /// RAII helper for temporarily decreasing the log level

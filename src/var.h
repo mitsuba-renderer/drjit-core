@@ -111,6 +111,9 @@ extern const char *jit_var_whos();
 /// Remove a variable from the cache used for common subexpression elimination
 extern void jit_cse_drop(uint32_t index, const Variable *v);
 
+/// Append the given variable to the instruction trace and return its ID
+extern std::pair<uint32_t, Variable *> jit_trace_append(Variable &v);
+
 /// Descriptive names and byte sizes for the various variable types
 extern const char *var_type_name      [(int) VarType::Count];
 extern const char *var_type_name_short[(int) VarType::Count];
