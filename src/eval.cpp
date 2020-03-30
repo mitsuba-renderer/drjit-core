@@ -945,10 +945,16 @@ void jit_eval() {
 
     // Collect variables that must be computed and their subtrees
     for (uint32_t index : todo) {
-        Variable *v = jit_var(index);
-        if (v->ref_count_ext == 0)
+        auto it = state.variables.find(index);
+        if (it == state.variables.end())
             continue;
-        jit_var_traverse(v->size, index);
+
+        const Variable &v = it.value();
+
+        if (v.ref_count_ext == 0)
+            continue;
+
+        jit_var_traverse(v.size, index);
     }
     todo.clear();
 

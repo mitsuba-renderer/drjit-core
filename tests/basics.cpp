@@ -439,3 +439,35 @@ TEST_BOTH(17_scatter_gather_mask) {
     scatter(result, even, l2*2 + 1);
     jitc_log(Info, "Mask: %s", result.str());
 }
+
+TEST_BOTH(18_mask_propagation) {
+    using Mask    = Array<bool>;
+
+    Mask t(true), f(false), g(true, false);
+
+    jitc_assert( t.is_all_true());
+    jitc_assert(!t.is_all_false());
+    jitc_assert(!f.is_all_true());
+    jitc_assert( f.is_all_false());
+    jitc_assert(!g.is_all_true());
+    jitc_assert(!g.is_all_false());
+
+    jitc_assert((t && f).is_all_false());
+    jitc_assert((f && t).is_all_false());
+    jitc_assert((g && f).is_all_false());
+    jitc_assert((f && g).is_all_false());
+
+    jitc_assert((t || f).is_all_true());
+    jitc_assert((f || t).is_all_true());
+    jitc_assert((t || g).is_all_true());
+    jitc_assert((g || t).is_all_true());
+
+    jitc_assert((t ^ f).is_all_true());
+    jitc_assert((f ^ t).is_all_true());
+    jitc_assert((f ^ g).index() == g.index());
+    jitc_assert((g ^ f).index() == g.index());
+
+    UInt32 a(1, 2), b(3, 4);
+    jitc_assert(select(f, a, b).index() == b.index());
+    jitc_assert(select(t, a, b).index() == a.index());
+}

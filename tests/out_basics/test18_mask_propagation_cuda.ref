@@ -1,0 +1,70 @@
+jit_device_set(device=0, stream=0): creating stream
+jit_trace_append(1): mov.$t0 $r0, 1
+jit_var_inc_ref_ext(1): 1
+jit_trace_append(2): mov.$t0 $r0, 0
+jit_var_inc_ref_ext(2): 1
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_malloc(type=host-pinned, size=64): <@> (new allocation)
+jit_free(<@>, type=host-pinned, size=64)
+jit_var_map(3): <@>, size=2, free=1
+jit_var_inc_ref_ext(3): 1
+jit_var_copy(3, size=2)
+jit_var_inc_ref_ext(2): 2
+jit_var_dec_ref_ext(2): 1
+jit_var_inc_ref_ext(2): 2
+jit_var_dec_ref_ext(2): 1
+jit_var_inc_ref_ext(2): 2
+jit_var_dec_ref_ext(2): 1
+jit_var_inc_ref_ext(2): 2
+jit_var_dec_ref_ext(2): 1
+jit_var_inc_ref_ext(1): 2
+jit_var_dec_ref_ext(1): 1
+jit_var_inc_ref_ext(1): 2
+jit_var_dec_ref_ext(1): 1
+jit_var_inc_ref_ext(1): 2
+jit_var_dec_ref_ext(1): 1
+jit_var_inc_ref_ext(1): 2
+jit_var_dec_ref_ext(1): 1
+jit_var_inc_ref_ext(1): 2
+jit_var_dec_ref_ext(1): 1
+jit_var_inc_ref_ext(1): 2
+jit_var_dec_ref_ext(1): 1
+jit_var_inc_ref_ext(3): 2
+jit_var_dec_ref_ext(3): 1
+jit_var_inc_ref_ext(3): 2
+jit_var_dec_ref_ext(3): 1
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_malloc(type=host-pinned, size=64): <@> (new allocation)
+jit_free(<@>, type=host-pinned, size=64)
+jit_var_map(4): <@>, size=2, free=1
+jit_var_inc_ref_ext(4): 1
+jit_var_copy(4, size=2)
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_malloc(type=host-pinned, size=64): <@> (new allocation)
+jit_free(<@>, type=host-pinned, size=64)
+jit_var_map(5): <@>, size=2, free=1
+jit_var_inc_ref_ext(5): 1
+jit_var_copy(5, size=2)
+jit_var_inc_ref_ext(5): 2
+jit_var_dec_ref_ext(5): 1
+jit_var_inc_ref_ext(4): 2
+jit_var_dec_ref_ext(4): 1
+jit_var_dec_ref_ext(5): 0
+jit_var_free(5)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_dec_ref_ext(4): 0
+jit_var_free(4)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_dec_ref_ext(3): 0
+jit_var_free(3)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_dec_ref_ext(2): 0
+jit_var_free(2)
+jit_var_dec_ref_ext(1): 0
+jit_var_free(1)
+jit_shutdown(): destroying streams ..
+jit_free_flush(): scheduling 6 deallocations
+jit_malloc_trim(): freed
+ - host-pinned memory: 192 B in 3 allocations
+ - device memory: 192 B in 3 allocations
+jit_shutdown(): done

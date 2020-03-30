@@ -283,6 +283,14 @@ struct LLVMArray {
     }
 
     LLVMArray operator|(const LLVMArray &a) const {
+        // Simple constant propagation for masks
+        if (std::is_same<Value, bool>::value) {
+            if (is_all_true() || a.is_all_false())
+                return *this;
+            else if (a.is_all_true() || is_all_false())
+                return a;
+        }
+
         const char *op = std::is_integral<Value>::value
                              ? "$r0 = or <$w x $t1> $r1, $r2"
                              : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
@@ -295,6 +303,14 @@ struct LLVMArray {
     }
 
     LLVMArray operator&(const LLVMArray &a) const {
+        // Simple constant propagation for masks
+        if (std::is_same<Value, bool>::value) {
+            if (is_all_true() || a.is_all_false())
+                return a;
+            else if (a.is_all_true() || is_all_false())
+                return *this;
+        }
+
         const char *op = std::is_integral<Value>::value
                              ? "$r0 = and <$w x $t1> $r1, $r2"
                              : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
@@ -307,6 +323,14 @@ struct LLVMArray {
     }
 
     LLVMArray operator^(const LLVMArray &a) const {
+        // Simple constant propagation for masks
+        if (std::is_same<Value, bool>::value) {
+            if (is_all_false())
+                return a;
+            else if (a.is_all_false())
+                return *this;
+        }
+
         const char *op = std::is_integral<Value>::value
                              ? "$r0 = xor <$w x $t1> $r1, $r2"
                              : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
@@ -344,6 +368,24 @@ struct LLVMArray {
 
     LLVMArray& operator^=(const LLVMArray &v) {
         return operator=(*this ^ v);
+    }
+
+    LLVMArray operator&&(const LLVMArray &a) const {
+        if (!jitc_is_mask(Type))
+            jitc_raise("Unsupported operand type");
+        return operator&(a);
+    }
+
+    LLVMArray operator||(const LLVMArray &a) const {
+        if (!jitc_is_mask(Type))
+            jitc_raise("Unsupported operand type");
+        return operator|(a);
+    }
+
+    LLVMArray operator!() const {
+        if (!jitc_is_mask(Type))
+            jitc_raise("Unsupported operand type");
+        return operator~();
     }
 
     friend LLVMArray abs(const LLVMArray &a) {
@@ -446,6 +488,9 @@ struct LLVMArray {
     }
 
     bool valid() const { return m_index != 0; }
+
+    bool is_all_true() const { return (bool) jitc_var_is_all_true(m_index); }
+    bool is_all_false() const { return (bool) jitc_var_is_all_false(m_index); }
 
     size_t size() const {
         return jitc_var_size(m_index);
@@ -581,12 +626,20 @@ Array linspace(typename Array::Value min, typename Array::Value max, size_t size
 }
 
 template <typename Value>
-LLVMArray<Value> select(const LLVMArray<bool> &m, const LLVMArray<Value> &t,
+LLVMArray<Value> select(const LLVMArray<bool> &m,
+                        const LLVMArray<Value> &t,
                         const LLVMArray<Value> &f) {
-    return LLVMArray<Value>::from_index(jitc_trace_append_3(
-        LLVMArray<Value>::Type,
-        "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3", 1,
-        m.index(), t.index(), f.index()));
+    // Simple constant propagation for masks
+    if (m.is_all_true()) {
+        return t;
+    } else if (m.is_all_false()) {
+        return f;
+    } else {
+        return LLVMArray<Value>::from_index(jitc_trace_append_3(
+            LLVMArray<Value>::Type,
+            "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3", 1,
+            m.index(), t.index(), f.index()));
+    }
 }
 
 template <typename Value>
@@ -608,13 +661,16 @@ LLVMArray<Value> max(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
 template <typename OutArray, typename Index,
           typename std::enable_if<OutArray::IsLLVM, int>::type = 0>
 OutArray gather(const void *ptr, const LLVMArray<Index> &index,
-                LLVMArray<bool> mask = LLVMArray<bool>()) {
+                const LLVMArray<bool> &mask = true) {
     using UInt64 = LLVMArray<uint64_t>;
     UInt64 base = UInt64::from_index(jitc_var_copy_ptr(ptr));
     using Value = typename OutArray::Value;
     constexpr size_t Size = sizeof(Value);
 
-    if (Size != 1) {
+    uint32_t var;
+    if (mask.is_all_false()) {
+        return OutArray((Value) 0);
+    } else if (Size != 1) {
         OutArray addr = OutArray::from_index(jitc_trace_append_2(
             OutArray::Type,
             "$r0_0 = inttoptr $t1 $r1 to $t0*$n"
@@ -622,18 +678,18 @@ OutArray gather(const void *ptr, const LLVMArray<Index> &index,
             1, base.index(), index.index()
         ));
 
-        if (mask.index() != 0)
-            return OutArray::from_index(jitc_trace_append_2(
-                OutArray::Type,
-                "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
-                "(<$w x $t0*> $r1, i32 $s0, <$w x $t2> $r2, <$w x $t0> $z0)",
-                1, addr.index(), mask.index()));
-        else
-            return OutArray::from_index(jitc_trace_append_1(
+        if (mask.is_all_true())
+            var = jitc_trace_append_1(
                 OutArray::Type,
                 "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
                 "(<$w x $t0*> $r1, i32 $s0, <$w x i1> $O, <$w x $t0> $z0)",
-                1, addr.index()));
+                1, addr.index());
+        else
+            var = jitc_trace_append_2(
+                OutArray::Type,
+                "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
+                "(<$w x $t0*> $r1, i32 $s0, <$w x $t2> $r2, <$w x $t0> $z0)",
+                1, addr.index(), mask.index());
     } else {
         using UInt32 = LLVMArray<uint32_t>;
 
@@ -645,30 +701,30 @@ OutArray gather(const void *ptr, const LLVMArray<Index> &index,
             1, base.index(), index.index()
         ));
 
-        OutArray result;
-        if (mask.index() != 0)
-            return OutArray::from_index(jitc_trace_append_2(
-                OutArray::Type,
-                "$r0_0 = call <$w x i32> @llvm.masked.gather.v$wi32"
-                "(<$w x i32*> $r1, i32 $s0, <$w x $t2> $r2, <$w x i32> $z1)$n"
-                "$r0 = trunc <$w x i32> $r0_0 to <$w x $t0>",
-                1, addr.index(), mask.index()));
-        else
-            return OutArray::from_index(jitc_trace_append_1(
+        if (mask.is_all_true())
+            var = jitc_trace_append_1(
                 OutArray::Type,
                 "$r0_0 = call <$w x i32> @llvm.masked.gather.v$wi32"
                 "(<$w x i32*> $r1, i32 $s0, <$w x i1> $O, <$w x i32> $z1)$n"
                 "$r0 = trunc <$w x i32> $r0_0 to <$w x $t0>",
-                1, addr.index()));
+                1, addr.index());
+        else
+            var = jitc_trace_append_2(
+                OutArray::Type,
+                "$r0_0 = call <$w x i32> @llvm.masked.gather.v$wi32"
+                "(<$w x i32*> $r1, i32 $s0, <$w x $t2> $r2, <$w x i32> $z1)$n"
+                "$r0 = trunc <$w x i32> $r0_0 to <$w x $t0>",
+                1, addr.index(), mask.index());
     }
+
+    return OutArray::from_index(var);
 }
 
 template <typename Value, typename Index>
 LLVMArray<void_t> scatter(void *ptr,
                           const LLVMArray<Value> &value,
                           const LLVMArray<Index> &index,
-                          LLVMArray<bool> mask = LLVMArray<bool>()) {
-
+                          const LLVMArray<bool> &mask = true) {
     using UInt64 = LLVMArray<uint64_t>;
     UInt64 base = UInt64::from_index(jitc_var_copy_ptr(ptr));
 
@@ -679,18 +735,21 @@ LLVMArray<void_t> scatter(void *ptr,
         1, base.index(), index.index()));
 
     uint32_t var;
-    if (mask.index() != 0)
-        var = jitc_trace_append_3(
-            VarType::Invalid,
-            "call void @llvm.masked.scatter.v$w$a1"
-            "(<$w x $t1> $r1, <$w x $t1*> $r2, i32 $s1, <$w x $t3> $r3)",
-            1, value.index(), addr.index(), mask.index());
-    else
+    if (mask.is_all_false()) {
+        return LLVMArray<void_t>();
+    } else if (mask.is_all_true()) {
         var = jitc_trace_append_2(
             VarType::Invalid,
             "call void @llvm.masked.scatter.v$w$a1"
             "(<$w x $t1> $r1, <$w x $t1*> $r2, i32 $s1, <$w x i1> $O)",
             1, value.index(), addr.index());
+    } else {
+        var = jitc_trace_append_3(
+            VarType::Invalid,
+            "call void @llvm.masked.scatter.v$w$a1"
+            "(<$w x $t1> $r1, <$w x $t1*> $r2, i32 $s1, <$w x $t3> $r3)",
+            1, value.index(), addr.index(), mask.index());
+    }
 
     jitc_var_mark_side_effect(var);
     jitc_var_inc_ref_ext(var);
@@ -701,7 +760,10 @@ LLVMArray<void_t> scatter(void *ptr,
 template <typename Array, typename Index,
           typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array gather(const Array &src, const LLVMArray<Index> &index,
-             const LLVMArray<bool> mask = LLVMArray<bool>()) {
+             const LLVMArray<bool> &mask = true) {
+    if (mask.is_all_false())
+        return Array(typename Array::Value(0));
+
     jitc_var_eval(src.index());
     Array result = gather<Array>(src.data(), index, mask);
     jitc_var_set_extra_dep(result.index(), src.index());
@@ -712,7 +774,10 @@ template <typename Value, typename Index>
 LLVMArray<void_t> scatter(LLVMArray<Value> &dst,
                           const LLVMArray<Value> &value,
                           const LLVMArray<Index> &index,
-                          const LLVMArray<bool> mask = LLVMArray<bool>()) {
+                          const LLVMArray<bool> &mask = true) {
+    if (mask.is_all_false())
+        return LLVMArray<void_t>();
+
     if (dst.data() == nullptr)
         jitc_var_eval(dst.index());
 
@@ -723,13 +788,25 @@ LLVMArray<void_t> scatter(LLVMArray<Value> &dst,
 }
 
 inline bool all(const LLVMArray<bool> &v) {
-    v.eval();
-    return (bool) jitc_all((uint8_t *) v.data(), v.size());
+    if (v.is_all_true()) {
+        return true;
+    } else if (v.is_all_false()) {
+        return false;
+    } else {
+        v.eval();
+        return (bool) jitc_all((uint8_t *) v.data(), (uint32_t) v.size());
+    }
 }
 
 inline bool any(const LLVMArray<bool> &v) {
-    v.eval();
-    return (bool) jitc_any((uint8_t *) v.data(), v.size());
+    if (v.is_all_true()) {
+        return true;
+    } else if (v.is_all_false()) {
+        return false;
+    } else {
+        v.eval();
+        return (bool) jitc_any((uint8_t *) v.data(), (uint32_t) v.size());
+    }
 }
 
 inline bool none(const LLVMArray<bool> &v) {
@@ -743,7 +820,7 @@ template <typename Value> LLVMArray<Value> hsum(const LLVMArray<Value> &v) {
 
     v.eval();
     Array result = Array::empty(1);
-    jitc_reduce(Array::Type, ReductionType::Add, v.data(), v.size(),
+    jitc_reduce(Array::Type, ReductionType::Add, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
 }
@@ -755,7 +832,7 @@ template <typename Value> LLVMArray<Value> hprod(const LLVMArray<Value> &v) {
 
     v.eval();
     Array result = Array::empty(1);
-    jitc_reduce(Array::Type, ReductionType::Mul, v.data(), v.size(),
+    jitc_reduce(Array::Type, ReductionType::Mul, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
 }
@@ -767,7 +844,7 @@ template <typename Value> LLVMArray<Value> hmax(const LLVMArray<Value> &v) {
 
     v.eval();
     Array result = Array::empty(1);
-    jitc_reduce(Array::Type, ReductionType::Max, v.data(), v.size(),
+    jitc_reduce(Array::Type, ReductionType::Max, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
 }
@@ -779,7 +856,7 @@ template <typename Value> LLVMArray<Value> hmin(const LLVMArray<Value> &v) {
 
     v.eval();
     Array result = Array::empty(1);
-    jitc_reduce(Array::Type, ReductionType::Min, v.data(), v.size(),
+    jitc_reduce(Array::Type, ReductionType::Min, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
 }

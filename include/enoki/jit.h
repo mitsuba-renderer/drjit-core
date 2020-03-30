@@ -474,6 +474,15 @@ JITC_CONSTEXPR uint32_t jitc_is_arithmetic(enum VarType type) {
 #endif
 }
 
+/// Convenience function to check for a mask operand
+JITC_CONSTEXPR int jitc_is_mask(enum VarType type) {
+#if defined(__cplusplus)
+    return type == VarType::Bool;
+#else
+    return type == VarTypeBool;
+#endif
+}
+
 /**
  * Register an existing memory region as a variable in the JIT compiler, and
  * return its index. Its external reference count is initialized to \c 1.
@@ -690,6 +699,24 @@ extern JITC_EXPORT void jitc_var_mark_dirty(uint32_t index);
  * <ol>
  */
 extern JITC_EXPORT void jitc_var_set_extra_dep(uint32_t index, uint32_t dep);
+
+/**
+ * \brief Is the given variable a mask that has all bits set to '0'?
+ *
+ * This function can be used to implement simple constant propagation of masks,
+ * which unlocks a number of optimizations. Note that this function can only
+ * detect matching masks if they have not yet been evaluated.
+ */
+extern JITC_EXPORT int jitc_var_is_all_false(uint32_t index);
+
+/**
+ * \brief Is the given variable a mask that has all bits set to '1'?
+ *
+ * This function can be used to implement simple constant propagation of masks,
+ * which unlocks a number of optimizations. Note that this function can only
+ * detect matching masks if they have not yet been evaluated.
+ */
+extern JITC_EXPORT int jitc_var_is_all_true(uint32_t index);
 
 /**
  * \brief Return a human-readable summary of registered variables

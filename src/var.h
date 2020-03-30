@@ -94,6 +94,12 @@ extern void jit_var_mark_dirty(uint32_t index);
 /// Keep track of an extra dependency of 'index' on 'dep'
 extern void jit_var_set_extra_dep(uint32_t index, uint32_t dep);
 
+/// Is the given variable a mask that has all bits set to '0'?
+extern int jit_var_is_all_false(uint32_t index);
+
+/// Is the given variable a mask that has all bits set to '1'?
+extern int jit_var_is_all_true(uint32_t index);
+
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index);
 

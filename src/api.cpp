@@ -232,6 +232,16 @@ void jitc_var_set_extra_dep(uint32_t index, uint32_t dep) {
     jit_var_set_extra_dep(index, dep);
 }
 
+int jitc_var_is_all_false(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var_is_all_false(index);
+}
+
+int jitc_var_is_all_true(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var_is_all_true(index);
+}
+
 const char *jitc_var_whos() {
     lock_guard guard(state.mutex);
     return jit_var_whos();

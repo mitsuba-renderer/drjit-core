@@ -629,6 +629,42 @@ void jit_var_mark_dirty(uint32_t index) {
     v->pending_scatter = true;
 }
 
+/// Is the given variable a mask that has all bits set to '0'?
+int jit_var_is_all_false(uint32_t index) {
+    Variable *v = jit_var(index);
+
+    int rv;
+    if (!v->stmt || (VarType) v->type != VarType::Bool)
+        rv = 1;
+    else if (v->cuda)
+        rv = strcmp(v->stmt, "mov.$t0 $r0, 0");
+    else
+        rv = strcmp(v->stmt,
+                    "$r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n"
+                    "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
+                    "<$w x i32> zeroinitializer");
+
+    return rv == 0;
+}
+
+/// Is the given variable a mask that has all bits set to '1'?
+int jit_var_is_all_true(uint32_t index) {
+    Variable *v = jit_var(index);
+
+    int rv;
+    if (!v->stmt || (VarType) v->type != VarType::Bool)
+        rv = 1;
+    else if (v->cuda)
+        rv = strcmp(v->stmt, "mov.$t0 $r0, 1");
+    else
+        rv = strcmp(v->stmt,
+                    "$r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n"
+                    "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
+                    "<$w x i32> zeroinitializer");
+
+    return rv == 0;
+}
+
 /// Return a human-readable summary of registered variables
 const char *jit_var_whos() {
     buffer.clear();
