@@ -495,3 +495,11 @@ TEST_BOTH(19_register_ptr) {
     jitc_assert(idx_1 == 3);
     jitc_var_dec_ref_ext(idx_1);
 }
+
+TEST_BOTH(20_reinterpret_cast) {
+    UInt32 result = reinterpret_array<UInt32>(Float(1.f, 2.f, 3.f));
+    jitc_log(Info, "As integer: %s", result.str());
+
+    Float result2 = reinterpret_array<Float>(result);
+    jitc_log(Info, "As float: %s", result2.str());
+}

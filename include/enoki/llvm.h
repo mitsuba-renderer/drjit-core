@@ -642,6 +642,22 @@ LLVMArray<Value> select(const LLVMArray<bool> &m,
     }
 }
 
+template <typename OutArray, typename ValueIn> OutArray reinterpret_array(const LLVMArray<ValueIn> &input) {
+    using ValueOut = typename OutArray::Value;
+
+    static_assert(
+        sizeof(ValueIn) == sizeof(ValueOut),
+        "reinterpret_array requires arrays with equal-sized element types!");
+
+    if (std::is_integral<ValueIn>::value != std::is_integral<ValueOut>::value) {
+        return OutArray::from_index(jitc_trace_append_1(
+            OutArray::Type, "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>", 1, input.index()));
+    } else {
+        jitc_var_inc_ref_ext(input.index());
+        return OutArray::from_index(input.index());
+    }
+}
+
 template <typename Value>
 LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
     return LLVMArray<Value>::from_index(jitc_trace_append_2(
