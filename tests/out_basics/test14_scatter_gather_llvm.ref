@@ -65,7 +65,7 @@ jit_var_inc_ref_int(3): 1
 jit_trace_append(5 <- 4, 3): $r0_0 = inttoptr $t1 $r1 to $t0*$n$r0 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2
 jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(5): 1
-jit_trace_append(6 <- 5): $r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r1, i32 $s1, <$w x i1> $O, <$w x $t0> $z0)
+jit_trace_append(6 <- 5): $r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r1, i32 $s0, <$w x i1> $O, <$w x $t0> $z0)
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(5): 0
 jit_var_dec_ref_ext(4): 0
@@ -175,14 +175,15 @@ loop:
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
-declare <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*>, i32, <8 x i1> , <8 x i32> )
-declare <1 x i32> @llvm.masked.gather.v1i32(<1 x i32*>, i32, <1 x i1> , <1 x i32> )
+declare <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*>, i32, <8 x i1>, <8 x i32>)
+declare <1 x i32> @llvm.masked.gather.v1i32(<1 x i32*>, i32, <1 x i1>, <1 x i32>)
 
 !0 = !{!0}
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+jit_kernel_read(): cache collision in file "/home/wjakob/.enoki/fc2275961d15499a.llvm.bin": size mismatch (3459 vs 3455 bytes).
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(4): 0
 jit_var_free(4)
@@ -206,7 +207,7 @@ jit_trace_append(10 <- 9, 3): $r0_0 = inttoptr $t1 $r1 to $t0*$n$r0 = getelement
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(10): 1
-jit_trace_append(11 <- 8, 10): call <$w x $t1> @llvm.masked.scatter.v$w$a1(<$w x $t1> $r1, <$w x $t1*> $r2, i32 $s1, <$w x i1> $O)
+jit_trace_append(11 <- 8, 10): call void @llvm.masked.scatter.v$w$a1(<$w x $t1> $r1, <$w x $t1*> $r2, i32 $s1, <$w x i1> $O)
 jit_var_inc_ref_ext(11): 1
 jit_var_mark_side_effect(11)
 jit_var_inc_ref_ext(11): 2
@@ -276,7 +277,7 @@ loop:
     %r5 = getelementptr i32, i32* %r5_0, <8 x i32> %r3
 
     ; Evaluate 6
-    call <8 x i32> @llvm.masked.scatter.v8i32(<8 x i32> %r2, <8 x i32*> %r5, i32 4, <8 x i1> <i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1>)
+    call void @llvm.masked.scatter.v8i32(<8 x i32> %r2, <8 x i32*> %r5, i32 4, <8 x i1> <i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1>)
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
@@ -331,21 +332,22 @@ loop:
     %r5 = getelementptr i32, i32* %r5_0, <1 x i32> %r3
 
     ; Evaluate 6
-    call <1 x i32> @llvm.masked.scatter.v1i32(<1 x i32> %r2, <1 x i32*> %r5, i32 4, <1 x i1> <i1 1>)
+    call void @llvm.masked.scatter.v1i32(<1 x i32> %r2, <1 x i32*> %r5, i32 4, <1 x i1> <i1 1>)
 
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
-declare <8 x i32> @llvm.masked.scatter.v8i32(<8 x i32>, <8 x i32*>, i32, <8 x i1> )
-declare <1 x i32> @llvm.masked.scatter.v1i32(<1 x i32>, <1 x i32*>, i32, <1 x i1> )
+declare void @llvm.masked.scatter.v8i32(<8 x i32>, <8 x i32*>, i32, <8 x i1>)
+declare void @llvm.masked.scatter.v1i32(<1 x i32>, <1 x i32*>, i32, <1 x i1>)
 
 !0 = !{!0}
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+jit_kernel_read(): cache collision in file "/home/wjakob/.enoki/4a9358059f7c8d2c.llvm.bin": size mismatch (3802 vs 3800 bytes).
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(6): 0
 jit_var_dec_ref_int(7): 0
@@ -368,7 +370,7 @@ jit_var_inc_ref_int(3): 1
 jit_trace_append(13 <- 12, 3): $r0_0 = inttoptr $t1 $r1 to $t0*$n$r0 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2
 jit_var_inc_ref_ext(13): 1
 jit_var_inc_ref_int(13): 1
-jit_trace_append(14 <- 13): $r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r1, i32 $s1, <$w x i1> $O, <$w x $t0> $z0)
+jit_trace_append(14 <- 13): $r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r1, i32 $s0, <$w x i1> $O, <$w x $t0> $z0)
 jit_var_inc_ref_ext(14): 1
 jit_var_dec_ref_ext(13): 0
 jit_var_dec_ref_ext(12): 0
@@ -481,8 +483,8 @@ loop:
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
-declare <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*>, i32, <8 x i1> , <8 x i32> )
-declare <1 x i32> @llvm.masked.gather.v1i32(<1 x i32*>, i32, <1 x i1> , <1 x i32> )
+declare <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*>, i32, <8 x i1>, <8 x i32>)
+declare <1 x i32> @llvm.masked.gather.v1i32(<1 x i32*>, i32, <1 x i1>, <1 x i32>)
 
 !0 = !{!0}
 !1 = !{!1, !0}

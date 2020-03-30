@@ -611,26 +611,56 @@ OutArray gather(const void *ptr, const LLVMArray<Index> &index,
                 LLVMArray<bool> mask = LLVMArray<bool>()) {
     using UInt64 = LLVMArray<uint64_t>;
     UInt64 base = UInt64::from_index(jitc_var_copy_ptr(ptr));
+    using Value = typename OutArray::Value;
+    constexpr size_t Size = sizeof(Value);
 
-    OutArray addr = OutArray::from_index(jitc_trace_append_2(
-        OutArray::Type,
-        "$r0_0 = inttoptr $t1 $r1 to $t0*$n"
-        "$r0 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2",
-        1, base.index(), index.index()
-    ));
+    if (Size != 1) {
+        OutArray addr = OutArray::from_index(jitc_trace_append_2(
+            OutArray::Type,
+            "$r0_0 = inttoptr $t1 $r1 to $t0*$n"
+            "$r0 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2",
+            1, base.index(), index.index()
+        ));
 
-    if (mask.index() != 0)
-        return OutArray::from_index(jitc_trace_append_2(
-            OutArray::Type,
-            "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
-            "(<$w x $t0*> $r1, i32 $s1, <$w x $t2> $r2, <$w x $t0> $z0)",
-            1, addr.index(), mask.index()));
-    else
-        return OutArray::from_index(jitc_trace_append_1(
-            OutArray::Type,
-            "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
-            "(<$w x $t0*> $r1, i32 $s1, <$w x i1> $O, <$w x $t0> $z0)",
-            1, addr.index()));
+        if (mask.index() != 0)
+            return OutArray::from_index(jitc_trace_append_2(
+                OutArray::Type,
+                "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
+                "(<$w x $t0*> $r1, i32 $s0, <$w x $t2> $r2, <$w x $t0> $z0)",
+                1, addr.index(), mask.index()));
+        else
+            return OutArray::from_index(jitc_trace_append_1(
+                OutArray::Type,
+                "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
+                "(<$w x $t0*> $r1, i32 $s0, <$w x i1> $O, <$w x $t0> $z0)",
+                1, addr.index()));
+    } else {
+        using UInt32 = LLVMArray<uint32_t>;
+
+        UInt32 addr = UInt32::from_index(jitc_trace_append_2(
+            UInt32::Type,
+            "$r0_0 = inttoptr $t1 $r1 to i1*$n"
+            "$r0_1 = getelementptr i1, i1* $r0_0, <$w x $t2> $r2$n"
+            "$r0   = bitcast <$w x i1*> $r0_1 to <$w x i32*>",
+            1, base.index(), index.index()
+        ));
+
+        OutArray result;
+        if (mask.index() != 0)
+            return OutArray::from_index(jitc_trace_append_2(
+                OutArray::Type,
+                "$r0_0 = call <$w x i32> @llvm.masked.gather.v$wi32"
+                "(<$w x i32*> $r1, i32 $s0, <$w x $t2> $r2, <$w x i32> $z1)$n"
+                "$r0 = trunc <$w x i32> $r0_0 to <$w x $t0>",
+                1, addr.index(), mask.index()));
+        else
+            return OutArray::from_index(jitc_trace_append_1(
+                OutArray::Type,
+                "$r0_0 = call <$w x i32> @llvm.masked.gather.v$wi32"
+                "(<$w x i32*> $r1, i32 $s0, <$w x i1> $O, <$w x i32> $z1)$n"
+                "$r0 = trunc <$w x i32> $r0_0 to <$w x $t0>",
+                1, addr.index()));
+    }
 }
 
 template <typename Value, typename Index>
@@ -652,13 +682,13 @@ LLVMArray<void_t> scatter(void *ptr,
     if (mask.index() != 0)
         var = jitc_trace_append_3(
             VarType::Invalid,
-            "call <$w x $t1> @llvm.masked.scatter.v$w$a1"
+            "call void @llvm.masked.scatter.v$w$a1"
             "(<$w x $t1> $r1, <$w x $t1*> $r2, i32 $s1, <$w x $t3> $r3)",
             1, value.index(), addr.index(), mask.index());
     else
         var = jitc_trace_append_2(
             VarType::Invalid,
-            "call <$w x $t1> @llvm.masked.scatter.v$w$a1"
+            "call void @llvm.masked.scatter.v$w$a1"
             "(<$w x $t1> $r1, <$w x $t1*> $r2, i32 $s1, <$w x i1> $O)",
             1, value.index(), addr.index());
 

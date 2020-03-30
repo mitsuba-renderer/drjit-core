@@ -268,22 +268,26 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
             intrinsics_buffer.putc(c);
         } else {
             const char **prefix_table = nullptr, type = *s++;
+            bool stop = false;
+
             switch (type) {
-                case 'O': continue;
+                case 'O': intrinsics_buffer.rewind(1); continue;
                 case 't': prefix_table = var_type_name_llvm; break;
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'a': prefix_table = var_type_name_llvm_abbrev; break;
                 case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
                 case 's':
+                case 'z':
                 case 'r': s++; intrinsics_buffer.rewind(1); continue;
-                case 'n':
+                case 'n': stop = true; break;
                 case 'o':
-                case 'l':
-                case 'z': s++; continue;
+                case 'l': s++; continue;
                 default:
                     jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
                              "expression (unknown type \"%c\")!", type);
             }
+            if (stop)
+                break;
 
             uint32_t arg_id = *s++ - '0';
             uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
@@ -708,6 +712,10 @@ void jit_assemble(ScheduledGroup group) {
                     v->size == group.size) {
             size_t isize    = (size_t) var_type_size[(int) v->type],
                    var_size = (size_t) group.size * isize;
+
+            // Padding to support out-of-bounds accesses in LLVM gather operations
+            if (cuda && isize < 4)
+                isize += 4 - isize;
 
             void *data = jit_malloc(cuda ? AllocType::Device : AllocType::Host, var_size);
 
