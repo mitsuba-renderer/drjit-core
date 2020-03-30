@@ -86,6 +86,12 @@ TEST_BOTH(07_arange) {
     UInt32 y = arange<UInt32>(3, 512, 7);
     jitc_log(Info, "value=%s", x.str());
     jitc_log(Info, "value=%s", y.str());
+
+    using Int64 = Array<int64_t>;
+    Int64 x2 = arange<Int64>(1024);
+    Int64 y2 = arange<Int64>(-3, 506, 7);
+    jitc_log(Info, "value=%s", x2.str());
+    jitc_log(Info, "value=%s", y2.str());
 }
 
 TEST_BOTH(08_conv) {
@@ -470,4 +476,22 @@ TEST_BOTH(18_mask_propagation) {
     UInt32 a(1, 2), b(3, 4);
     jitc_assert(select(f, a, b).index() == b.index());
     jitc_assert(select(t, a, b).index() == a.index());
+}
+
+TEST_BOTH(19_register_ptr) {
+    uint32_t idx_1 = jitc_var_copy_ptr((const void *) 0x01),
+             idx_2 = jitc_var_copy_ptr((const void *) 0x02),
+             idx_3 = jitc_var_copy_ptr((const void *) 0x01);
+
+    jitc_assert(idx_1 == 1);
+    jitc_assert(idx_2 == 2);
+    jitc_assert(idx_3 == 1);
+
+    jitc_var_dec_ref_ext(idx_1);
+    jitc_var_dec_ref_ext(idx_2);
+    jitc_var_dec_ref_ext(idx_3);
+
+    idx_1 = jitc_var_copy_ptr((const void *) 0x01);
+    jitc_assert(idx_1 == 3);
+    jitc_var_dec_ref_ext(idx_1);
 }

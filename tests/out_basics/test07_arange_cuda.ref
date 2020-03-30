@@ -137,6 +137,166 @@ jit_var_free(4)
 jit_eval(): done.
 value=[0, 1, 2, 3, 4, .. 1014 skipped .., 1019, 1020, 1021, 1022, 1023]
 value=[3, 10, 17, 24, 31, .. 63 skipped .., 479, 486, 493, 500, 507]
+jit_trace_append(6): mov.u32 $r0, $i
+jit_var_inc_ref_ext(6): 1
+jit_var_inc_ref_int(6): 1
+jit_trace_append(7 <- 6): cvt.$t0.$t1 $r0, $r1
+jit_var_inc_ref_ext(7): 1
+jit_var_dec_ref_ext(6): 0
+jit_trace_append(8): mov.u32 $r0, $i
+jit_var_inc_ref_ext(8): 1
+jit_var_inc_ref_int(8): 1
+jit_trace_append(9 <- 8): cvt.$t0.$t1 $r0, $r1
+jit_var_inc_ref_ext(9): 1
+jit_trace_append(10): mov.$t0 $r0, 0x0000000000000007
+jit_var_inc_ref_ext(10): 1
+jit_trace_append(11): mov.$t0 $r0, 0xfffffffffffffffd
+jit_var_inc_ref_ext(11): 1
+jit_var_inc_ref_int(9): 1
+jit_var_inc_ref_int(10): 1
+jit_var_inc_ref_int(11): 1
+jit_trace_append(12 <- 9, 10, 11): mad.lo.$t0 $r0, $r1, $r2, $r3
+jit_var_inc_ref_ext(12): 1
+jit_var_dec_ref_ext(11): 0
+jit_var_dec_ref_ext(10): 0
+jit_var_dec_ref_ext(9): 0
+jit_var_dec_ref_ext(8): 0
+jit_eval(): begin (parallel dispatch to 2 streams).
+jit_assemble(size=1024): register map:
+   - %r4 -> 6
+   - %rd5 -> 7 [out]
+jit_malloc(type=device, device=0, size=8192): <@> (new allocation)
+jit_run(): launching kernel (n=1024, in=0, out=1, ops=6) ..
+.version 6.3
+.address_size 64
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0) {
+    .reg.b8 %b<6>;
+    .reg.b16 %w<6>;
+    .reg.b32 %r<6>;
+    .reg.b64 %rd<6>;
+    .reg.f32 %f<6>;
+    .reg.f64 %d<6>;
+    .reg.pred %p<6>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Evaluate %r4
+    mov.u32 %r4, %r0;
+
+    // Evaluate %rd5
+    cvt.s64.u32 %rd5, %r4;
+
+    // Store %rd5
+    ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 8;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.s64 [%rd0], %rd5;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_device_set(device=0, stream=1): selecting stream
+jit_assemble(size=73): register map:
+   - %r4 -> 8
+   - %rd5 -> 9
+   - %rd6 -> 10 [scalar]
+   - %rd7 -> 11 [scalar]
+   - %rd8 -> 12 [out]
+jit_malloc(type=device, device=0, size=1024): <@> (new allocation)
+jit_run(): launching kernel (n=73, in=0, out=1, ops=9) ..
+.version 6.3
+.address_size 64
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0) {
+    .reg.b8 %b<9>;
+    .reg.b16 %w<9>;
+    .reg.b32 %r<9>;
+    .reg.b64 %rd<9>;
+    .reg.f32 %f<9>;
+    .reg.f64 %d<9>;
+    .reg.pred %p<9>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Evaluate %r4
+    mov.u32 %r4, %r0;
+
+    // Evaluate %rd5
+    cvt.s64.u32 %rd5, %r4;
+
+    // Evaluate %rd6
+    mov.s64 %rd6, 0x0000000000000007;
+
+    // Evaluate %rd7
+    mov.s64 %rd7, 0xfffffffffffffffd;
+
+    // Evaluate %rd8
+    mad.lo.s64 %rd8, %rd5, %rd6, %rd7;
+
+    // Store %rd8
+    ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 8;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.s64 [%rd0], %rd8;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_device_set(device=0, stream=2): selecting stream
+jit_device_set(device=0, stream=0): selecting stream
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(6): 0
+jit_var_free(6)
+jit_var_dec_ref_int(8): 0
+jit_var_free(8)
+jit_var_dec_ref_int(9): 0
+jit_var_free(9)
+jit_var_dec_ref_int(10): 0
+jit_var_free(10)
+jit_var_dec_ref_int(11): 0
+jit_var_free(11)
+jit_eval(): done.
+value=[0, 1, 2, 3, 4, .. 1014 skipped .., 1019, 1020, 1021, 1022, 1023]
+value=[-3, 4, 11, 18, 25, .. 63 skipped .., 473, 480, 487, 494, 501]
+jit_var_dec_ref_ext(12): 0
+jit_var_free(12)
+jit_free(<@>, type=device, device=0, size=1024)
+jit_var_dec_ref_ext(7): 0
+jit_var_free(7)
+jit_free(<@>, type=device, device=0, size=8192)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
 jit_free(<@>, type=device, device=0, size=512)
@@ -144,9 +304,9 @@ jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=4096)
 jit_shutdown(): destroying streams ..
-jit_free_flush(): scheduling 2 deallocations
+jit_free_flush(): scheduling 4 deallocations
 jit_device_set(device=0, stream=1): selecting stream
 jit_device_set(device=0, stream=2): selecting stream
 jit_malloc_trim(): freed
- - device memory: 4.5 KiB in 2 allocations
+ - device memory: 13.5 KiB in 4 allocations
 jit_shutdown(): done

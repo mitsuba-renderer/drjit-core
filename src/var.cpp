@@ -186,7 +186,7 @@ void jit_var_dec_ref_int(uint32_t index) {
 /// Append the given variable to the instruction trace and return its ID
 std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
     CSECache::iterator key_it;
-    bool disable_cse = v.stmt == nullptr,
+    bool disable_cse = v.stmt == nullptr || v.direct_pointer,
          cse_key_inserted = false;
 
     if (v.stmt) {
@@ -210,8 +210,9 @@ std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
         }
 
         // Check if this exact statement already exists ..
-        std::tie(key_it, cse_key_inserted) =
-            state.cse_cache.try_emplace(VariableKey(v), 0);
+        if (!disable_cse)
+            std::tie(key_it, cse_key_inserted) =
+                state.cse_cache.try_emplace(VariableKey(v), 0);
     }
 
     uint32_t index;
