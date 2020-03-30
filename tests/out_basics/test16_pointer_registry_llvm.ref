@@ -11,5 +11,7 @@ jit_registry_put(<@>, domain="MyKey1"): 4 (new)
 jit_registry_remove(<@>)
 jit_registry_remove(<@>)
 jit_registry_remove(<@>)
+jit_registry_trim(): removed 5 / 7 entries.
 jit_registry_remove(<@>)
+jit_registry_trim(): removed 2 / 2 entries.
 jit_shutdown(): done

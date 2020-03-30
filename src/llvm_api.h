@@ -12,7 +12,7 @@ extern char *jit_llvm_target_cpu;
 extern char *jit_llvm_target_features;
 
 /// Vector width used by the LLVM backend
-extern int jit_llvm_vector_width;
+extern uint32_t jit_llvm_vector_width;
 
 /// Try to load the LLVM backend
 extern bool jit_llvm_init();

@@ -163,6 +163,11 @@ void jit_registry_trim() {
         }
     }
 
+    if (state.registry_fwd.size() != registry_fwd.size())
+        jit_trace("jit_registry_trim(): removed %zu / %zu entries.",
+                  state.registry_fwd.size() - registry_fwd.size(),
+                  state.registry_fwd.size());
+
     state.registry_fwd = std::move(registry_fwd);
 }
 

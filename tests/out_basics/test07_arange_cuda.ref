@@ -1,12 +1,10 @@
 jit_device_set(device=0, stream=0): creating stream
 jit_trace_append(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
-jit_var_set_size(1): 1024
 jit_var_inc_ref_ext(1): 2
 jit_var_dec_ref_ext(1): 1
 jit_trace_append(2): mov.u32 $r0, $i
 jit_var_inc_ref_ext(2): 1
-jit_var_set_size(2): 73
 jit_var_inc_ref_ext(2): 2
 jit_trace_append(3): mov.$t0 $r0, 0x00000007
 jit_var_inc_ref_ext(3): 1
@@ -59,7 +57,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.u32 [%rd0], %r4;
+    st.global.cs.u32 [%rd0], %r4;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -118,7 +116,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.u32 [%rd0], %r7;
+    st.global.cs.u32 [%rd0], %r7;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;

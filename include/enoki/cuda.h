@@ -109,13 +109,13 @@ struct CUDAArray {
         memcpy(&value_uint, &value, sizeof(Value));
         snprintf(value_str, 32, fmt, value_uint);
 
-        m_index = jitc_trace_append_0(Type, value_str, 0);
+        m_index = jitc_trace_append_0(Type, value_str, 0, 1);
     }
 
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
     CUDAArray(Args&&... args) {
         Value data[] = { (Value) args... };
-        m_index = jitc_var_copy(Type, data, sizeof...(Args));
+        m_index = jitc_var_copy(Type, data, (uint32_t) sizeof...(Args));
     }
 
     CUDAArray &operator=(const CUDAArray &a) {
@@ -457,7 +457,7 @@ template <typename Array,
 Array empty(size_t size) {
     size_t byte_size = size * sizeof(typename Array::Value);
     void *ptr = jitc_malloc(AllocType::Device, byte_size);
-    return Array::from_index(jitc_var_map(Array::Type, ptr, size, 1));
+    return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
 }
 
 template <typename Array,
@@ -470,7 +470,7 @@ Array zero(size_t size) {
         size_t byte_size = size * sizeof(typename Array::Value);
         void *ptr = jitc_malloc(AllocType::Device, byte_size);
         jitc_fill(VarType::UInt8, ptr, byte_size, &value);
-        return Array::from_index(jitc_var_map(Array::Type, ptr, size, 1));
+        return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
     }
 }
 
@@ -483,7 +483,7 @@ Array full(typename Array::Value value, size_t size) {
         size_t byte_size = size * sizeof(typename Array::Value);
         void *ptr = jitc_malloc(AllocType::Device, byte_size);
         jitc_fill(Array::Type, ptr, size, &value);
-        return Array::from_index(jitc_var_map(Array::Type, ptr, size, 1));
+        return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
     }
 }
 
@@ -495,8 +495,7 @@ Array arange(ssize_t start, ssize_t stop, ssize_t step) {
 
     size_t size = size_t((stop - start + step - (step > 0 ? 1 : -1)) / step);
     UInt32 index = UInt32::from_index(
-        jitc_trace_append_0(VarType::UInt32, "mov.u32 $r0, $i", 1));
-    jitc_var_set_size(index.index(), size, false);
+        jitc_trace_append_0(VarType::UInt32, "mov.u32 $r0, $i", 1, (uint32_t) size));
 
     if (start == 0 && step == 1)
         return Array(index);
@@ -517,8 +516,7 @@ Array linspace(typename Array::Value min, typename Array::Value max, size_t size
     using Value = typename Array::Value;
 
     UInt32 index = UInt32::from_index(
-        jitc_trace_append_0(VarType::UInt32, "mov.u32 $r0, $i", 1));
-    jitc_var_set_size(index.index(), size, false);
+        jitc_trace_append_0(VarType::UInt32, "mov.u32 $r0, $i", 1, (uint32_t) size));
 
     Value step = (max - min) / Value(size - 1);
     return fmadd(Array(index), Array(step), Array(min));
@@ -550,22 +548,29 @@ CUDAArray<Value> max(const CUDAArray<Value> &a, const CUDAArray<Value> &b) {
         a.index(), b.index()));
 }
 
-template <typename OutArray, size_t Stride = sizeof(typename OutArray::Value),
+template <typename OutArray,
           typename Index, typename std::enable_if<OutArray::IsCUDA, int>::type = 0>
-OutArray gather(const void *ptr, const CUDAArray<Index> &index,
-                const CUDAArray<bool> &mask = true) {
+OutArray gather(const void *ptr,
+                const CUDAArray<Index> &index,
+                const CUDAArray<bool> &mask = CUDAArray<bool>()) {
     using Value = typename OutArray::Value;
+    constexpr size_t Size = sizeof(Value);
 
-    if (sizeof(Index) != 4) {
+    if (sizeof(Index) != 4 && Size != 1) {
         /* Prefer 32 bit index arithmetic, 64 bit multiplies are
            emulated and thus very expensive on NVIDIA GPUs.. */
         using Int = typename std::conditional<std::is_signed<Index>::value,
                                               int32_t, uint32_t>::type;
-        return gather<OutArray, Stride>(ptr, CUDAArray<Int>(index), mask);
+        return gather<OutArray>(ptr, CUDAArray<Int>(index), mask);
+    } else if (sizeof(Index) != 8 && Size == 1) {
+        // Exception: stride == 1
+        using Int = typename std::conditional<std::is_signed<Index>::value,
+                                              int64_t, uint64_t>::type;
+        return gather<OutArray>(ptr, CUDAArray<Int>(index), mask);
     }
 
     const char *mul_op;
-    switch (Stride) {
+    switch (Size) {
         case 1: mul_op = "add.$t0 $r0, $r1, $r2"; break;
         case 2: mul_op = "mul.wide.$t1 $r0, $r1, 2$n"
                          "add.$t0 $r0, $r0, $r2"; break;
@@ -573,7 +578,7 @@ OutArray gather(const void *ptr, const CUDAArray<Index> &index,
                          "add.$t0 $r0, $r0, $r2"; break;
         case 8: mul_op = "mul.wide.$t1 $r0, $r1, 8$n"
                          "add.$t0 $r0, $r0, $r2"; break;
-        default: jitc_fail("Unsupported stride!");
+        default: jitc_fail("CUDAArray::gather(): unsupported type!");
     }
 
     using UInt64 = CUDAArray<uint64_t>;
@@ -581,37 +586,58 @@ OutArray gather(const void *ptr, const CUDAArray<Index> &index,
            addr = UInt64::from_index(jitc_trace_append_2(
                UInt64::Type, mul_op, 1, index.index(), base.index()));
 
-    if (!std::is_same<Value, bool>::value) {
-        return OutArray::from_index(jitc_trace_append_2(
-            OutArray::Type,
-            "@$r2 ld.global.$t0 $r0, [$r1]$n"
-            "@!$r2 mov.$b0 $r0, 0", 1,
-            addr.index(), mask.index()));
+    if (mask.index() != 0) {
+        if (!std::is_same<Value, bool>::value) {
+            return OutArray::from_index(jitc_trace_append_2(
+                OutArray::Type,
+                "@$r2 ld.global.nc.$t0 $r0, [$r1]$n"
+                "@!$r2 mov.$b0 $r0, 0", 1,
+                addr.index(), mask.index()));
+        } else {
+            return neq(OutArray::from_index(jitc_trace_append_2(
+                OutArray::Type,
+                "@$r2 ld.global.nc.u8 %w0, [$r1]$n"
+                "@!$r2 mov.u16 %w0, 0$n"
+                "setp.ne.u16 $r0, %w0, 0", 1,
+                addr.index(), mask.index())), 0u);
+        }
     } else {
-        return neq(OutArray::from_index(jitc_trace_append_2(
-            OutArray::Type,
-            "@$r2 ld.global.u8 $r0, [$r1]$n"
-            "@!$r2 mov.$b0 $r0, 0", 1,
-            addr.index(), mask.index())), 0u);
+        if (!std::is_same<Value, bool>::value) {
+            return OutArray::from_index(jitc_trace_append_1(
+                OutArray::Type,
+                "ld.global.nc.$t0 $r0, [$r1]", 1,
+                addr.index()));
+        } else {
+            return neq(OutArray::from_index(jitc_trace_append_1(
+                OutArray::Type,
+                "ld.global.nc.u8 %w0, [$r1]$n"
+                "setp.ne.u16 $r0, %w0, 0", 1,
+                addr.index())), 0u);
+        }
     }
 }
 
-template <size_t Stride_ = 0, typename Value, typename Index>
-CUDAArray<void_t> scatter(void *ptr, const CUDAArray<Value> &value,
+template <typename Value, typename Index>
+CUDAArray<void_t> scatter(void *ptr,
+                          const CUDAArray<Value> &value,
                           const CUDAArray<Index> &index,
-                          const CUDAArray<bool> &mask = true) {
-    if (sizeof(Index) != 4) {
+                          const CUDAArray<bool> &mask = CUDAArray<bool>()) {
+    constexpr size_t Size = sizeof(Value);
+
+    if (sizeof(Index) != 4 && Size != 1) {
         /* Prefer 32 bit index arithmetic, 64 bit multiplies are
            emulated and thus very expensive on NVIDIA GPUs.. */
         using Int = typename std::conditional<std::is_signed<Index>::value,
                                               int32_t, uint32_t>::type;
-        return scatter<Stride_>(ptr, value, CUDAArray<Int>(index), mask);
+        return scatter(ptr, value, CUDAArray<Int>(index), mask);
+    } else if (sizeof(Index) != 8 && Size == 1) {
+        using Int = typename std::conditional<std::is_signed<Index>::value,
+                                              int64_t, uint64_t>::type;
+        return scatter(ptr, value, CUDAArray<Int>(index), mask);
     }
 
-    constexpr size_t Stride = Stride_ != 0 ? Stride_ : sizeof(Value);
-
     const char *mul_op;
-    switch (Stride) {
+    switch (Size) {
         case 1: mul_op = "add.$t0 $r0, $r1, $r2"; break;
         case 2: mul_op = "mul.wide.$t1 $r0, $r1, 2$n"
                          "add.$t0 $r0, $r0, $r2"; break;
@@ -619,7 +645,7 @@ CUDAArray<void_t> scatter(void *ptr, const CUDAArray<Value> &value,
                          "add.$t0 $r0, $r0, $r2"; break;
         case 8: mul_op = "mul.wide.$t1 $r0, $r1, 8$n"
                          "add.$t0 $r0, $r0, $r2"; break;
-        default: jitc_fail("Unsupported stride!");
+        default: jitc_fail("CUDAArray::gather(): unsupported type!");
     }
 
     using UInt64 = CUDAArray<uint64_t>;
@@ -628,15 +654,29 @@ CUDAArray<void_t> scatter(void *ptr, const CUDAArray<Value> &value,
                UInt64::Type, mul_op, 1, index.index(), base.index()));
 
     uint32_t var;
-    if (!std::is_same<Value, bool>::value) {
-        var = jitc_trace_append_3(VarType::Invalid,
-                                  "@$r3 st.global.$t2 [$r1], $r2", 1,
-                                  addr.index(), value.index(), mask.index());
+
+    if (mask.index() != 0) {
+        if (!std::is_same<Value, bool>::value) {
+            var = jitc_trace_append_3(VarType::Invalid,
+                                      "@$r3 st.global.$t2 [$r1], $r2", 1,
+                                      addr.index(), value.index(), mask.index());
+        } else {
+            var = jitc_trace_append_3(VarType::Invalid,
+                                      "selp.u16 %w0, 1, 0, $r2$n"
+                                      "@$r3 st.global.u8 [$r1], %w0", 1,
+                                      addr.index(), value.index(), mask.index());
+        }
     } else {
-        var = jitc_trace_append_3(VarType::Invalid,
-                                  "selp.u32 $r0, 1, 0, $r2$n"
-                                  "@$r3 st.global.u8 [$r1], $r0", 1,
-                                  addr.index(), value.index(), mask.index());
+        if (!std::is_same<Value, bool>::value) {
+            var = jitc_trace_append_2(VarType::Invalid,
+                                      "st.global.$t2 [$r1], $r2", 1,
+                                      addr.index(), value.index());
+        } else {
+            var = jitc_trace_append_2(VarType::Invalid,
+                                      "selp.u16 %w0, 1, 0, $r2$n"
+                                      "st.global.u8 [$r1], %w0", 1,
+                                      addr.index(), value.index());
+        }
     }
 
     jitc_var_inc_ref_ext(var);
@@ -645,24 +685,25 @@ CUDAArray<void_t> scatter(void *ptr, const CUDAArray<Value> &value,
     return CUDAArray<void_t>::from_index(var);
 }
 
-template <typename Array, size_t Stride = sizeof(typename Array::Value),
-          typename Index, typename std::enable_if<Array::IsCUDA, int>::type = 0>
+template <typename Array, typename Index,
+          typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array gather(const Array &src, const CUDAArray<Index> &index,
-             const CUDAArray<bool> &mask = true) {
+             const CUDAArray<bool> &mask = CUDAArray<bool>()) {
     jitc_var_eval(src.index());
-    Array result = gather<Array, Stride>(src.data(), index, mask);
+    Array result = gather<Array>(src.data(), index, mask);
     jitc_var_set_extra_dep(result.index(), src.index());
     return result;
 }
 
-template <size_t Stride = 0, typename Value, typename Index>
-CUDAArray<void_t> scatter(CUDAArray<Value> &dst, const CUDAArray<Value> &value,
+template <typename Value, typename Index>
+CUDAArray<void_t> scatter(CUDAArray<Value> &dst,
+                          const CUDAArray<Value> &value,
                           const CUDAArray<Index> &index,
-                          const CUDAArray<bool> &mask = true) {
+                          const CUDAArray<bool> &mask = CUDAArray<bool>()) {
     if (dst.data() == nullptr)
         jitc_var_eval(dst.index());
 
-    CUDAArray<void_t> result = scatter<Stride>(dst.data(), value, index, mask);
+    CUDAArray<void_t> result = scatter(dst.data(), value, index, mask);
     jitc_var_set_extra_dep(result.index(), dst.index());
     jitc_var_mark_dirty(dst.index());
     return result;
@@ -750,7 +791,7 @@ mkperm(const CUDAArray<uint32_t> &v, uint32_t bucket_count) {
     result.reserve(unique_count);
 
     UInt32 parent =
-        UInt32::from_index(jitc_var_map(UInt32::Type, perm, size, 1));
+        UInt32::from_index(jitc_var_map(UInt32::Type, perm, (uint32_t) size, 1));
 
     for (uint32_t i = 0; i < unique_count; ++i) {
         uint32_t bucket_id     = offsets[i * 3 + 1],

@@ -64,28 +64,36 @@ L1: // Loop body
 
     // Store %f4
     ld.param.u64 %rd0, [arg0];
-    st.global.f32 [%rd0], %f4;
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.f32 [%rd0], %f4;
 
     // Evaluate %f5
     mov.f32 %f5, 0f449a6000;
 
     // Store %f5
     ld.param.u64 %rd0, [arg1];
-    st.global.f32 [%rd0], %f5;
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.f32 [%rd0], %f5;
 
     // Evaluate %f6
     add.rn.ftz.f32 %f6, %f4, %f5;
 
     // Store %f6
     ld.param.u64 %rd0, [arg2];
-    st.global.f32 [%rd0], %f6;
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.f32 [%rd0], %f6;
 
     // Evaluate %f7
     add.rn.ftz.f32 %f7, %f4, %f4;
 
     // Store %f7
     ld.param.u64 %rd0, [arg3];
-    st.global.f32 [%rd0], %f7;
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.f32 [%rd0], %f7;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;

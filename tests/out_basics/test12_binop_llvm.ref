@@ -34,9 +34,8 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %p5 -> 6 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=2, in=3, out=3, ops=6) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
-
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -119,12 +118,14 @@ loop:
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
 !0 = !{!0}
 !1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
 jit_var_free(1)
@@ -163,9 +164,8 @@ jit_malloc(type=host, size=64): <@> (reused global)
    - %p5 -> 9 [out]
 jit_malloc(type=host, size=64): <@> (reused global)
 jit_run(): launching kernel (n=2, in=3, out=3, ops=6) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
-
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -248,12 +248,14 @@ loop:
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
 !0 = !{!0}
 !1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(4): 0
 jit_var_free(4)
@@ -307,9 +309,8 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %p8 -> 15 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=2, in=6, out=3, ops=9) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
-
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -423,12 +424,14 @@ loop:
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
 !0 = !{!0}
 !1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_dec_ref_int(10): 0
@@ -467,9 +470,8 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %p8 -> 18 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=2, in=6, out=3, ops=9) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
-
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -583,12 +585,14 @@ loop:
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
 !0 = !{!0}
 !1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_dec_ref_int(10): 0
@@ -627,9 +631,8 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %p8 -> 21 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=2, in=6, out=3, ops=9) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
-
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -743,12 +746,14 @@ loop:
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
 !0 = !{!0}
 !1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_dec_ref_int(10): 0

@@ -95,7 +95,7 @@ static LLVMContextRef jit_llvm_context          = nullptr;
 
 char *jit_llvm_target_cpu                       = nullptr;
 char *jit_llvm_target_features                  = nullptr;
-int   jit_llvm_vector_width                     = 0;
+uint32_t jit_llvm_vector_width                  = 0;
 size_t jit_llvm_kernel_id                       = 0;
 
 static bool     jit_llvm_init_attempted = false;
@@ -151,11 +151,15 @@ void jit_llvm_disasm(const Kernel &kernel) {
         LogLevel::Trace)
         return;
 
-    uint8_t *ptr = (uint8_t *) kernel.llvm.func;
+    uint8_t *func_base = std::min((uint8_t *) kernel.llvm.func,
+                                  (uint8_t *) kernel.llvm.func_scalar),
+            *ptr = func_base;
     char ins_buf[256];
+    int ret_count = 0;
+    jit_trace("jit_llvm_disasm(): =====================");
     do {
         size_t offset      = ptr - (uint8_t *) kernel.data,
-               func_offset = ptr - (uint8_t *) kernel.llvm.func;
+               func_offset = ptr - func_base;
         if (offset >= kernel.size)
             break;
         size_t size =
@@ -166,9 +170,16 @@ void jit_llvm_disasm(const Kernel &kernel) {
         char *start = ins_buf;
         while (*start == ' ' || *start == '\t')
             ++start;
+        if (strcmp(start, "nop") == 0) {
+            ptr += size;
+            continue;
+        }
         jit_trace("jit_llvm_disasm(): 0x%08x   %s", (uint32_t) func_offset, start);
-        if (strncmp(start, "ret", 3) == 0)
-            break;
+        if (strncmp(start, "ret", 3) == 0) {
+            jit_trace("jit_llvm_disasm(): =====================");
+            if (kernel.llvm.func == kernel.llvm.func_scalar || ++ret_count == 2)
+                break;
+        }
         ptr += size;
     } while (true);
 }
@@ -184,11 +195,18 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     jit_llvm_mem_offset = 0;
 
     // Temporarily change the kernel name
-    char kernel_name_old[23], kernel_name_new[23];
-    snprintf(kernel_name_new, 23, "enoki_%016llx", (long long) jit_llvm_kernel_id++);
-    char *kernel_name_offset = (char *) strstr(buffer, "enoki_");
-    memcpy(kernel_name_old, kernel_name_offset, 22);
-    memcpy(kernel_name_offset, kernel_name_new, 22);
+    char kernel_name_old[23], kernel_name_new[30];
+    snprintf(kernel_name_new, 23, "enoki_%016llx", (long long) jit_llvm_kernel_id);
+
+    char *offset = (char *) buffer;
+    do {
+        offset = (char *) strstr(offset, "enoki_");
+        if (offset == nullptr)
+            break;
+        memcpy(kernel_name_old, offset, 22);
+        memcpy(offset, kernel_name_new, 22);
+        offset += 22;
+    } while (true);
 
     LLVMMemoryBufferRef buf = LLVMCreateMemoryBufferWithMemoryRange(
         buffer, buffer_size, kernel_name_new, 0);
@@ -219,7 +237,14 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
         jit_fail("jit_llvm_compile(): internal error: invalid address: "
                  "%p < %p!\n", func, jit_llvm_mem);
 
-    uint32_t func_offset = (uint32_t) (func - jit_llvm_mem);
+    snprintf(kernel_name_new, 30, "enoki_%016llx_scalar", (long long) jit_llvm_kernel_id++);
+    uint8_t *func_scalar =
+        (uint8_t *) LLVMGetFunctionAddress(jit_llvm_engine, kernel_name_new);
+    if (!func_scalar)
+        func_scalar = func;
+
+    uint32_t func_offset        = (uint32_t) (func        - jit_llvm_mem),
+             func_offset_scalar = (uint32_t) (func_scalar - jit_llvm_mem);
 
     void *ptr_result =
         mmap(nullptr, jit_llvm_mem_offset, PROT_READ | PROT_WRITE,
@@ -238,11 +263,20 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     LLVMDisposeModule(module);
 
     // Change the kernel name back
-    memcpy(kernel_name_offset, kernel_name_old, 22);
+    offset = (char *) buffer;
+    do {
+        offset = (char *) strstr(offset, "enoki_");
+        if (offset == nullptr)
+            break;
+        memcpy(offset, kernel_name_old, 22);
+        offset += 22;
+    } while (true);
 
     kernel.data = ptr_result;
     kernel.size = jit_llvm_mem_offset;
-    kernel.llvm.func = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
+    kernel.llvm.func        = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
+    kernel.llvm.func_scalar = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset_scalar);
+    jit_llvm_kernel_id++;
 }
 
 #define LOAD(name)                                                             \

@@ -20,6 +20,7 @@ struct Kernel {
 
         struct {
             LLVMKernelFunction func;
+            LLVMKernelFunction func_scalar;
         } llvm;
     };
 };

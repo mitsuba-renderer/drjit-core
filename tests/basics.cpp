@@ -403,10 +403,16 @@ TEST_LLVM(16_pointer_registry) {
     jitc_registry_remove((void *) 0xD);
     jitc_registry_remove((void *) 0xE);
     jitc_registry_remove((void *) 0xF);
-    jitc_registry_remove((void *) 0x1);
 
     jitc_assert(jitc_registry_get_max(key_1) == 4u);
     jitc_assert(jitc_registry_get_max(key_2) == 1u);
+
+    jitc_registry_trim();
+
+    jitc_registry_remove((void *) 0x1);
+
+    jitc_assert(jitc_registry_get_max(key_1) == 4u);
+    jitc_assert(jitc_registry_get_max(key_2) == 0u);
 
     jitc_registry_trim();
 
@@ -414,4 +420,22 @@ TEST_LLVM(16_pointer_registry) {
     jitc_assert(jitc_registry_get_max(key_2) == 0u);
 }
 
-/// Mask gathers/scatters!
+TEST_BOTH(17_scatter_gather_mask) {
+    using Mask    = Array<bool>;
+    Int32 l       = arange<Int32>(1022);
+    set_label(l, "l");
+    Mask result   = neq(l & Int32(1), 0);
+    set_label(result, "result");
+    Int32 l2      = arange<Int32>(510);
+    set_label(l2, "l2");
+    Mask even = gather(result, l2*2);
+    set_label(even, "even");
+    Mask odd  = gather(result, l2*2 + 1);
+    set_label(odd, "odd");
+    jitc_log(Info, "Mask  : %s", result.str());
+    jitc_log(Info, "Even  : %s", even.str());
+    jitc_log(Info, "Odd   : %s", odd.str());
+    scatter(result, odd, l2*2);
+    scatter(result, even, l2*2 + 1);
+    jitc_log(Info, "Mask: %s", result.str());
+}

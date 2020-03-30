@@ -154,12 +154,12 @@ void *jitc_var_ptr(uint32_t index) {
     return jit_var_ptr(index);
 }
 
-size_t jitc_var_size(uint32_t index) {
+uint32_t jitc_var_size(uint32_t index) {
     lock_guard guard(state.mutex);
     return jit_var_size(index);
 }
 
-uint32_t jitc_var_set_size(uint32_t index, size_t size, int copy) {
+uint32_t jitc_var_set_size(uint32_t index, uint32_t size, int copy) {
     lock_guard guard(state.mutex);
     return jit_var_set_size(index, size, copy);
 }
@@ -174,7 +174,7 @@ void jitc_var_set_label(uint32_t index, const char *label) {
     jit_var_set_label(index, label);
 }
 
-uint32_t jitc_var_map(VarType type, void *ptr, size_t size, int free) {
+uint32_t jitc_var_map(VarType type, void *ptr, uint32_t size, int free) {
     lock_guard guard(state.mutex);
     return jit_var_map(type, ptr, size, free);
 }
@@ -184,32 +184,32 @@ uint32_t jitc_var_copy_ptr(const void *ptr) {
     return jit_var_copy_ptr(ptr);
 }
 
-uint32_t jitc_var_copy(VarType type, const void *value, size_t size) {
+uint32_t jitc_var_copy(VarType type, const void *value, uint32_t size) {
     lock_guard guard(state.mutex);
     return jit_var_copy(type, value, size);
 }
 
-uint32_t jitc_trace_append_0(VarType type, const char *stmt, int copy_stmt) {
+uint32_t jitc_trace_append_0(VarType type, const char *stmt, int stmt_static, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_0(type, stmt, copy_stmt);
+    return jit_trace_append_0(type, stmt, stmt_static, size);
 }
 
-uint32_t jitc_trace_append_1(VarType type, const char *stmt, int copy_stmt,
+uint32_t jitc_trace_append_1(VarType type, const char *stmt, int stmt_static,
                              uint32_t arg1) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_1(type, stmt, copy_stmt, arg1);
+    return jit_trace_append_1(type, stmt, stmt_static, arg1);
 }
 
-uint32_t jitc_trace_append_2(VarType type, const char *stmt, int copy_stmt,
+uint32_t jitc_trace_append_2(VarType type, const char *stmt, int stmt_static,
                              uint32_t arg1, uint32_t arg2) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_2(type, stmt, copy_stmt, arg1, arg2);
+    return jit_trace_append_2(type, stmt, stmt_static, arg1, arg2);
 }
 
-uint32_t jitc_trace_append_3(VarType type, const char *stmt, int copy_stmt,
+uint32_t jitc_trace_append_3(VarType type, const char *stmt, int stmt_static,
                              uint32_t arg1, uint32_t arg2, uint32_t arg3) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_3(type, stmt, copy_stmt, arg1, arg2, arg3);
+    return jit_trace_append_3(type, stmt, stmt_static, arg1, arg2, arg3);
 }
 
 void jitc_var_migrate(uint32_t index, AllocType type) {

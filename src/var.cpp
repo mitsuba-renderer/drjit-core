@@ -5,56 +5,61 @@
 #include "util.h"
 
 /// Descriptive names for the various variable types
-const char *var_type_name[(int) VarType::Count]{
+const char *var_type_name[(int) VarType::Count] {
     "invalid", "int8",   "uint8",   "int16",   "uint16",  "int32", "uint32",
     "int64",   "uint64", "float16", "float32", "float64", "mask",  "pointer"
 };
 
 /// Descriptive names for the various variable types (extra-short version)
-const char *var_type_name_short[(int) VarType::Count]{
+const char *var_type_name_short[(int) VarType::Count] {
     "???", "i8", "u8", "i16", "u16", "i32", "u32",
     "i64", "u64", "f16", "f32", "f64", "msk", "ptr"
 };
 
 /// CUDA PTX type names
-const char *var_type_name_ptx[(int) VarType::Count]{
+const char *var_type_name_ptx[(int) VarType::Count] {
     "???", "s8", "u8", "s16", "u16", "s32", "u32",
     "s64", "u64", "f16", "f32", "f64", "pred", "u64"
 };
 
 /// CUDA PTX type names (binary view)
-const char *var_type_name_ptx_bin[(int) VarType::Count]{
+const char *var_type_name_ptx_bin[(int) VarType::Count] {
     "???", "b8", "b8", "b16", "b16", "b32", "b32",
     "b64", "b64", "b16", "b32", "b64", "pred", "b64"
 };
 
 /// LLVM IR type names (does not distinguish signed vs unsigned)
-const char *var_type_name_llvm[(int) VarType::Count]{
+const char *var_type_name_llvm[(int) VarType::Count] {
     "???", "i8", "i8", "i16", "i16", "i32", "i32",
     "i64", "i64", "half", "float", "double", "i1", "i64"
 };
 
 /// Abbreviated LLVM IR type names
-const char *var_type_name_llvm_abbrev[(int) VarType::Count]{
+const char *var_type_name_llvm_abbrev[(int) VarType::Count] {
     "???", "i8", "i8", "i16", "i16", "i32", "i32",
     "i64", "i64", "f16", "f32", "f64", "i1", "i64"
 };
 
 /// LLVM IR type names (binary view)
-const char *var_type_name_llvm_bin[(int) VarType::Count]{
+const char *var_type_name_llvm_bin[(int) VarType::Count] {
     "???", "i8", "i8", "i16", "i16", "i32", "i32",
     "i64", "i64", "i16", "i32", "i64", "i1", "i64"
 };
 
 /// LLVM/CUDA register name prefixes
-const char *var_type_prefix[(int) VarType::Count]{
+const char *var_type_prefix[(int) VarType::Count] {
     "", "%b", "%b", "%w", "%w", "%r", "%r",
     "%rd", "%rd", "%h", "%f", "%d", "%p", "%rd"
 };
 
 /// Maps types to byte sizes
-const uint32_t var_type_size[(int) VarType::Count]{
+const uint32_t var_type_size[(int) VarType::Count] {
     (uint32_t) -1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 1, 8
+};
+
+/// String version of the above
+const char *var_type_size_str[(int) VarType::Count] {
+    "-1", "1", "1", "2", "2", "4", "4", "8", "8", "2", "4", "8", "1", "8"
 };
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
@@ -181,7 +186,8 @@ void jit_var_dec_ref_int(uint32_t index) {
 /// Append the given variable to the instruction trace and return its ID
 std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
     CSECache::iterator key_it;
-    bool key_inserted = false;
+    bool disable_cse = v.stmt == nullptr,
+         cse_key_inserted = false;
 
     if (v.stmt) {
         if (v.type != (uint32_t) VarType::Float32) {
@@ -204,14 +210,14 @@ std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
         }
 
         // Check if this exact statement already exists ..
-        std::tie(key_it, key_inserted) =
+        std::tie(key_it, cse_key_inserted) =
             state.cse_cache.try_emplace(VariableKey(v), 0);
     }
 
     uint32_t index;
     Variable *v_out;
 
-    if (likely(key_inserted || v.stmt == nullptr)) {
+    if (likely(disable_cse || cse_key_inserted)) {
         // .. nope, it is new.
 
         VariableMap::iterator var_it;
@@ -224,12 +230,9 @@ std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
 
             std::tie(var_it, var_inserted) =
                 state.variables.try_emplace(index, v);
+        } while (!var_inserted);
 
-            if (likely(var_inserted))
-                break;
-        } while (true);
-
-        if (key_inserted)
+        if (cse_key_inserted)
             key_it.value() = index;
 
         v_out = &var_it.value();
@@ -255,18 +258,18 @@ void *jit_var_ptr(uint32_t index) {
 }
 
 /// Query the size of a given variable
-size_t jit_var_size(uint32_t index) {
+uint32_t jit_var_size(uint32_t index) {
     return jit_var(index)->size;
 }
 
 /// Set the size of a given variable (if possible, otherwise throw)
-uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
+uint32_t jit_var_set_size(uint32_t index, uint32_t size, int copy) {
     Variable *v = jit_var(index);
     if (v->size == size)
         return index;
 
     if (v->data != nullptr || v->ref_count_int > 0) {
-        if (v->size == 1 && copy != 0) {
+        if (v->size == 1 && copy) {
             uint32_t index_new = jit_trace_append_1(
                 (VarType) v->type, "mov.$t1 $r1, $r2", 1, index);
             jit_var(index_new)->size = size;
@@ -280,7 +283,7 @@ uint32_t jit_var_set_size(uint32_t index, size_t size, int copy) {
                   index, v->size, (uint32_t) size);
     }
 
-    jit_log(Debug, "jit_var_set_size(%u): %zu", index, size);
+    jit_log(Debug, "jit_var_set_size(%u): %u", index, size);
 
     VariableKey key(*v), key_new(*v);
     v->size = key_new.size = (uint32_t) size;
@@ -321,12 +324,13 @@ void jit_var_set_label(uint32_t index, const char *label_) {
 }
 
 /// Append a variable to the instruction trace (no operands)
-uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static) {
+uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static,
+                            uint32_t size) {
     Stream *stream = active_stream;
 
     Variable v;
     v.type = (uint32_t) type;
-    v.size = 1;
+    v.size = size;
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.tsize = 1;
     v.free_stmt = stmt_static == 0;
@@ -519,21 +523,21 @@ void jit_var_set_extra_dep(uint32_t index, uint32_t dep) {
 }
 
 /// Register an existing variable with the JIT compiler
-uint32_t jit_var_map(VarType type, void *ptr, size_t size, int free) {
+uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free) {
     if (unlikely(size == 0))
         jit_raise("jit_var_map: size must be nonzero!");
 
     Variable v;
     v.type = (uint32_t) type;
     v.data = ptr;
-    v.size = (uint32_t) size;
+    v.size = size;
     v.retain_data = free == 0;
     v.tsize = 1;
     v.cuda = active_stream != nullptr;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_var_map(%u): " ENOKI_PTR ", size=%zu, free=%i",
+    jit_log(Debug, "jit_var_map(%u): " ENOKI_PTR ", size=%u, free=%i",
             index, (uintptr_t) ptr, size, (int) free);
 
     jit_var_inc_ref_ext(index, vo);
@@ -542,10 +546,10 @@ uint32_t jit_var_map(VarType type, void *ptr, size_t size, int free) {
 }
 
 /// Copy a memory region onto the device and return its variable index
-uint32_t jit_var_copy(VarType type, const void *ptr, size_t size) {
+uint32_t jit_var_copy(VarType type, const void *ptr, uint32_t size) {
     Stream *stream = active_stream;
 
-    size_t total_size = size * (size_t) var_type_size[(int) type];
+    size_t total_size = (size_t) size * (size_t) var_type_size[(int) type];
     void *target_ptr;
 
     if (stream) {
@@ -562,7 +566,7 @@ uint32_t jit_var_copy(VarType type, const void *ptr, size_t size) {
     }
 
     uint32_t index = jit_var_map(type, target_ptr, size, true);
-    jit_log(Debug, "jit_var_copy(%u, size=%zu)", index, size);
+    jit_log(Debug, "jit_var_copy(%u, size=%u)", index, size);
     return index;
 }
 
@@ -758,7 +762,7 @@ void jit_var_eval(uint32_t index) {
 }
 
 /// Read a single element of a variable and write it to 'dst'
-void jit_var_read(uint32_t index, size_t offset, void *dst) {
+void jit_var_read(uint32_t index, uint32_t offset, void *dst) {
     Stream *stream = active_stream;
     bool cuda = stream != nullptr;
     Variable *v = jit_var(index);
@@ -782,14 +786,14 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
     if (v->size == 1)
         offset = 0;
 
-    uint32_t isize = var_type_size[(int) v->type];
-    const uint8_t *src = (const uint8_t *) v->data + offset * isize;
+    size_t isize = var_type_size[(int) v->type];
+    const uint8_t *src = (const uint8_t *) v->data + (size_t) offset * isize;
 
     jit_memcpy(dst, src, isize);
 }
 
 /// Reverse of jit_var_read(). Copy 'dst' to a single element of a variable
-void jit_var_write(uint32_t index, size_t offset, const void *src) {
+void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
     Stream *stream = active_stream;
     bool cuda = stream != nullptr;
     Variable *v = jit_var(index);
@@ -813,8 +817,8 @@ void jit_var_write(uint32_t index, size_t offset, const void *src) {
     if (v->size == 1)
         offset = 0;
 
-    uint32_t isize = var_type_size[(int) v->type];
-    uint8_t *dst = (uint8_t *) v->data + offset * isize;
+    size_t isize = var_type_size[(int) v->type];
+    uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
 
     if (cuda)
         cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, isize,

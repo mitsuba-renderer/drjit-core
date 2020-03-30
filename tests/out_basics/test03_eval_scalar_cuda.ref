@@ -38,7 +38,9 @@ L1: // Loop body
 
     // Store %f4: my_value
     ld.param.u64 %rd0, [arg0];
-    st.global.f32 [%rd0], %f4;
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.f32 [%rd0], %f4;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -92,7 +94,9 @@ L1: // Loop body
 
     // Store %f4: my_value
     ld.param.u64 %rd0, [arg0];
-    st.global.f32 [%rd0], %f4;
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.f32 [%rd0], %f4;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;

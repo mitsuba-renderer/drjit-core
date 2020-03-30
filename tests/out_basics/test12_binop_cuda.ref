@@ -76,7 +76,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u32 %r4, [%rd0];
+    ld.global.cs.u32 %r4, [%rd0];
 
     // Evaluate %r5
     not.b32 %r5, %r4;
@@ -85,13 +85,13 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.u32 [%rd0], %r5;
+    st.global.cs.u32 [%rd0], %r5;
 
     // Load %f6
     ld.param.u64 %rd0, [arg2];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f6, [%rd0];
+    ld.global.cs.f32 %f6, [%rd0];
 
     // Evaluate %f7
     not.b32 %f7, %f6;
@@ -100,13 +100,13 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg3];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f7;
+    st.global.cs.f32 [%rd0], %f7;
 
     // Load %p8
     ld.param.u64 %rd0, [arg4];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u8 %w0, [%rd0];
+    ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p8, %w0, 0;
 
     // Evaluate %p9
@@ -117,7 +117,7 @@ L1: // Loop body
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     selp.u16 %w0, 1, 0, %p9;
-    st.global.u8 [%rd0], %w0;
+    st.global.cs.u8 [%rd0], %w0;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -200,7 +200,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u32 %r4, [%rd0];
+    ld.global.cs.u32 %r4, [%rd0];
 
     // Evaluate %r5
     not.b32 %r5, %r4;
@@ -209,13 +209,13 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.u32 [%rd0], %r5;
+    st.global.cs.u32 [%rd0], %r5;
 
     // Load %f6
     ld.param.u64 %rd0, [arg2];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f6, [%rd0];
+    ld.global.cs.f32 %f6, [%rd0];
 
     // Evaluate %f7
     not.b32 %f7, %f6;
@@ -224,13 +224,13 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg3];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f7;
+    st.global.cs.f32 [%rd0], %f7;
 
     // Load %p8
     ld.param.u64 %rd0, [arg4];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u8 %w0, [%rd0];
+    ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p8, %w0, 0;
 
     // Evaluate %p9
@@ -241,7 +241,7 @@ L1: // Loop body
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     selp.u16 %w0, 1, 0, %p9;
-    st.global.u8 [%rd0], %w0;
+    st.global.cs.u8 [%rd0], %w0;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -348,13 +348,13 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u32 %r4, [%rd0];
+    ld.global.cs.u32 %r4, [%rd0];
 
     // Load %r5
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u32 %r5, [%rd0];
+    ld.global.cs.u32 %r5, [%rd0];
 
     // Evaluate %r6
     or.b32 %r6, %r4, %r5;
@@ -363,19 +363,19 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg2];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.u32 [%rd0], %r6;
+    st.global.cs.u32 [%rd0], %r6;
 
     // Load %f7
     ld.param.u64 %rd0, [arg3];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f7, [%rd0];
+    ld.global.cs.f32 %f7, [%rd0];
 
     // Load %f8
     ld.param.u64 %rd0, [arg4];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f8, [%rd0];
+    ld.global.cs.f32 %f8, [%rd0];
 
     // Evaluate %f9
     or.b32 %f9, %f7, %f8;
@@ -384,20 +384,20 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg5];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f9;
+    st.global.cs.f32 [%rd0], %f9;
 
     // Load %p10
     ld.param.u64 %rd0, [arg6];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u8 %w0, [%rd0];
+    ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p10, %w0, 0;
 
     // Load %p11
     ld.param.u64 %rd0, [arg7];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u8 %w0, [%rd0];
+    ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p11, %w0, 0;
 
     // Evaluate %p12
@@ -408,7 +408,7 @@ L1: // Loop body
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     selp.u16 %w0, 1, 0, %p12;
-    st.global.u8 [%rd0], %w0;
+    st.global.cs.u8 [%rd0], %w0;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -494,13 +494,13 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u32 %r4, [%rd0];
+    ld.global.cs.u32 %r4, [%rd0];
 
     // Load %r5
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u32 %r5, [%rd0];
+    ld.global.cs.u32 %r5, [%rd0];
 
     // Evaluate %r6
     and.b32 %r6, %r4, %r5;
@@ -509,19 +509,19 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg2];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.u32 [%rd0], %r6;
+    st.global.cs.u32 [%rd0], %r6;
 
     // Load %f7
     ld.param.u64 %rd0, [arg3];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f7, [%rd0];
+    ld.global.cs.f32 %f7, [%rd0];
 
     // Load %f8
     ld.param.u64 %rd0, [arg4];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f8, [%rd0];
+    ld.global.cs.f32 %f8, [%rd0];
 
     // Evaluate %f9
     and.b32 %f9, %f7, %f8;
@@ -530,20 +530,20 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg5];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f9;
+    st.global.cs.f32 [%rd0], %f9;
 
     // Load %p10
     ld.param.u64 %rd0, [arg6];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u8 %w0, [%rd0];
+    ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p10, %w0, 0;
 
     // Load %p11
     ld.param.u64 %rd0, [arg7];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u8 %w0, [%rd0];
+    ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p11, %w0, 0;
 
     // Evaluate %p12
@@ -554,7 +554,7 @@ L1: // Loop body
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     selp.u16 %w0, 1, 0, %p12;
-    st.global.u8 [%rd0], %w0;
+    st.global.cs.u8 [%rd0], %w0;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -639,13 +639,13 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u32 %r4, [%rd0];
+    ld.global.cs.u32 %r4, [%rd0];
 
     // Load %r5
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u32 %r5, [%rd0];
+    ld.global.cs.u32 %r5, [%rd0];
 
     // Evaluate %r6
     xor.b32 %r6, %r4, %r5;
@@ -654,19 +654,19 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg2];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.u32 [%rd0], %r6;
+    st.global.cs.u32 [%rd0], %r6;
 
     // Load %f7
     ld.param.u64 %rd0, [arg3];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f7, [%rd0];
+    ld.global.cs.f32 %f7, [%rd0];
 
     // Load %f8
     ld.param.u64 %rd0, [arg4];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f8, [%rd0];
+    ld.global.cs.f32 %f8, [%rd0];
 
     // Evaluate %f9
     xor.b32 %f9, %f7, %f8;
@@ -675,20 +675,20 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg5];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f9;
+    st.global.cs.f32 [%rd0], %f9;
 
     // Load %p10
     ld.param.u64 %rd0, [arg6];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u8 %w0, [%rd0];
+    ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p10, %w0, 0;
 
     // Load %p11
     ld.param.u64 %rd0, [arg7];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u8 %w0, [%rd0];
+    ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p11, %w0, 0;
 
     // Evaluate %p12
@@ -699,7 +699,7 @@ L1: // Loop body
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     selp.u16 %w0, 1, 0, %p12;
-    st.global.u8 [%rd0], %w0;
+    st.global.cs.u8 [%rd0], %w0;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;

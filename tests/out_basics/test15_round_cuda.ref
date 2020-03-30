@@ -77,7 +77,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f4, [%rd0];
+    ld.global.cs.f32 %f4, [%rd0];
 
     // Evaluate %f5
     cvt.rmi.f32.f32 %f5, %f4;
@@ -86,7 +86,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f5;
+    st.global.cs.f32 [%rd0], %f5;
 
     // Evaluate %f6
     cvt.rpi.f32.f32 %f6, %f4;
@@ -95,7 +95,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg2];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f6;
+    st.global.cs.f32 [%rd0], %f6;
 
     // Evaluate %f7
     cvt.rzi.f32.f32 %f7, %f4;
@@ -104,7 +104,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg3];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f7;
+    st.global.cs.f32 [%rd0], %f7;
 
     // Evaluate %f8
     cvt.rni.f32.f32 %f8, %f4;
@@ -113,7 +113,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg4];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f8;
+    st.global.cs.f32 [%rd0], %f8;
 
     // Evaluate %f9
     min.ftz.f32 %f9, %f5, %f6;
@@ -122,7 +122,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg5];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f9;
+    st.global.cs.f32 [%rd0], %f9;
 
     // Evaluate %f10
     max.ftz.f32 %f10, %f5, %f6;
@@ -131,7 +131,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg6];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f10;
+    st.global.cs.f32 [%rd0], %f10;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -256,7 +256,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 8;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f64 %d4, [%rd0];
+    ld.global.cs.f64 %d4, [%rd0];
 
     // Evaluate %d5
     cvt.rmi.f64.f64 %d5, %d4;
@@ -265,7 +265,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 8;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f64 [%rd0], %d5;
+    st.global.cs.f64 [%rd0], %d5;
 
     // Evaluate %d6
     cvt.rpi.f64.f64 %d6, %d4;
@@ -274,7 +274,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg2];
     mul.wide.u32 %rd1, %r0, 8;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f64 [%rd0], %d6;
+    st.global.cs.f64 [%rd0], %d6;
 
     // Evaluate %d7
     cvt.rzi.f64.f64 %d7, %d4;
@@ -283,7 +283,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg3];
     mul.wide.u32 %rd1, %r0, 8;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f64 [%rd0], %d7;
+    st.global.cs.f64 [%rd0], %d7;
 
     // Evaluate %d8
     cvt.rni.f64.f64 %d8, %d4;
@@ -292,7 +292,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg4];
     mul.wide.u32 %rd1, %r0, 8;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f64 [%rd0], %d8;
+    st.global.cs.f64 [%rd0], %d8;
 
     // Evaluate %d9
     min.f64 %d9, %d5, %d6;
@@ -301,7 +301,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg5];
     mul.wide.u32 %rd1, %r0, 8;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f64 [%rd0], %d9;
+    st.global.cs.f64 [%rd0], %d9;
 
     // Evaluate %d10
     max.f64 %d10, %d5, %d6;
@@ -310,7 +310,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg6];
     mul.wide.u32 %rd1, %r0, 8;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f64 [%rd0], %d10;
+    st.global.cs.f64 [%rd0], %d10;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;

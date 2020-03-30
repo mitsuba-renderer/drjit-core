@@ -466,6 +466,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 
 uint32_t jit_vcall(const char *domain, const uint32_t *ptr, uint32_t size) {
     uint32_t bucket_count = jit_registry_get_max(domain) + 1;
+    bool cuda = active_stream != nullptr;
 
     jit_log(Debug, "jit_vcall(" ENOKI_PTR ", domain=\"%s\", size=%u, bucket_count=%u)",
             (uintptr_t) ptr, domain, size, bucket_count);
@@ -477,38 +478,45 @@ uint32_t jit_vcall(const char *domain, const uint32_t *ptr, uint32_t size) {
              *perm    = (uint32_t *) jitc_malloc(AllocType::Device, perm_size);
 
     // Compute permutation
-    uint32_t unique_count = jit_mkperm(ptr, size, bucket_count, perm, offsets);
+    uint32_t unique_count     = jit_mkperm(ptr, size, bucket_count, perm, offsets),
+             unique_count_out = unique_count;
 
     // Register permutation variable with JIT backend and transfer ownership
     uint32_t perm_var = jit_var_map(VarType::UInt32, perm, size, 1);
+
+    Variable v;
+    v.type = (uint32_t) VarType::UInt32;
+    v.extra_dep = perm_var;
+    v.retain_data = true;
+    v.tsize = 1;
+    v.cuda = cuda;
 
     for (uint32_t i = 0; i < unique_count; ++i) {
         uint32_t bucket_id     = offsets[i * 4 + 0],
                  bucket_offset = offsets[i * 4 + 1],
                  bucket_size   = offsets[i * 4 + 2];
 
+        if (bucket_id == 0) {
+            --unique_count_out;
+            continue;
+        }
+
         /// Crete variable for permutation subrange
-        Variable v;
-        v.type = (uint32_t) VarType::UInt32;
         v.data = perm + bucket_offset;
         v.size = bucket_size;
-        v.extra_dep = perm_var;
-        v.retain_data = true;
-        v.tsize = 1;
-        v.cuda = active_stream != nullptr;
-        jit_var_inc_ref_ext(perm_var);
 
         uint32_t index;
         Variable *vo;
         std::tie(index, vo) = jit_trace_append(v);
 
+        jit_var_inc_ref_ext(perm_var);
         jit_var_inc_ref_ext(index, vo);
 
         void *ptr = jit_registry_get_ptr(domain, bucket_id);
-
         memcpy(&offsets[i * 4 + 0], ptr, sizeof(void *));
-        offsets[i * 4 + 3] = index;
+
+        offsets[i * 4 + 2] = index;
     }
 
-    return unique_count;
+    return unique_count_out;
 }

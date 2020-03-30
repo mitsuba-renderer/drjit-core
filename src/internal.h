@@ -444,6 +444,11 @@ public:
             m_cur = m_start;
     }
 
+    /// Check if the buffer contains a given substring
+    bool contains(const char *needle) const {
+        return strstr(m_start, needle) != nullptr;
+    }
+
     /// Append a formatted (printf-style) string to the buffer
 #if defined(__GNUC__)
     __attribute__((__format__ (__printf__, 2, 3)))

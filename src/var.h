@@ -10,7 +10,8 @@ extern Variable *jit_var(uint32_t index);
 /// Append a variable to the instruction trace (no operand)
 extern uint32_t jit_trace_append_0(VarType type,
                                    const char *stmt,
-                                   int stmt_static);
+                                   int stmt_static,
+                                   uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
 extern uint32_t jit_trace_append_1(VarType type,
@@ -34,13 +35,13 @@ extern uint32_t jit_trace_append_3(VarType type,
                                    uint32_t op3);
 
 /// Register an existing variable with the JIT compiler
-extern uint32_t jit_var_map(VarType type, void *ptr, size_t size, int free);
+extern uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free);
 
 /// Register pointer literal as a special variable within the JIT compiler
 extern uint32_t jit_var_copy_ptr(const void *ptr);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jit_var_copy(VarType type, const void *ptr, size_t size);
+extern uint32_t jit_var_copy(VarType type, const void *ptr, uint32_t size);
 
 /// Increase the internal reference count of a given variable
 extern void jit_var_inc_ref_int(uint32_t index, Variable *v);
@@ -70,10 +71,10 @@ extern void jit_var_dec_ref_ext(uint32_t index);
 extern void *jit_var_ptr(uint32_t index);
 
 // Query the size of a given variable
-extern size_t jit_var_size(uint32_t index);
+extern uint32_t jit_var_size(uint32_t index);
 
 /// Set the size of a given variable (if possible, otherwise throw)
-extern uint32_t jit_var_set_size(uint32_t index, size_t size, int copy);
+extern uint32_t jit_var_set_size(uint32_t index, uint32_t size, int copy);
 
 /// Assign a descriptive label to a given variable
 extern void jit_var_set_label(uint32_t index, const char *label);
@@ -97,10 +98,10 @@ extern void jit_var_set_extra_dep(uint32_t index, uint32_t dep);
 const char *jit_var_str(uint32_t index);
 
 /// Read a single element of a variable and write it to 'dst'
-extern void jit_var_read(uint32_t index, size_t offset, void *dst);
+extern void jit_var_read(uint32_t index, uint32_t offset, void *dst);
 
 /// Reverse of jit_var_read(). Copy 'src' to a single element of a variable
-extern void jit_var_write(uint32_t index, size_t offset, const void *src);
+extern void jit_var_write(uint32_t index, uint32_t offset, const void *src);
 
 /// Call jit_eval() only if the variable 'index' requires evaluation
 extern void jit_var_eval(uint32_t index);
@@ -126,3 +127,4 @@ extern const char *var_type_name_llvm_abbrev[(int) VarType::Count];
 extern const char *var_type_name_ptx        [(int) VarType::Count];
 extern const char *var_type_name_ptx_bin    [(int) VarType::Count];
 extern const char *var_type_prefix          [(int) VarType::Count];
+extern const char *var_type_size_str        [(int) VarType::Count];

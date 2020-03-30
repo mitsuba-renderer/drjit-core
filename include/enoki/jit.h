@@ -494,7 +494,7 @@ JITC_CONSTEXPR uint32_t jitc_is_arithmetic(enum VarType type) {
  * \sa jitc_var_copy()
  */
 extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
-                                         size_t size, int free);
+                                         uint32_t size, int free);
 
 
 /**
@@ -514,7 +514,7 @@ extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
  */
 extern JITC_EXPORT uint32_t jitc_var_copy(enum VarType type,
                                           const void *ptr,
-                                          size_t size);
+                                          uint32_t size);
 
 /**
  * Register a pointer literal as a variable within the JIT compiler
@@ -572,10 +572,15 @@ extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr);
  *    When 'stmt' is a static string stored in the data segment of the
  *    executable, it is not necessary to make a copy. In this case, set
  *    <tt>stmt_static == 1</tt>, and <tt>0</tt> otherwise.
+ *
+ * \param size
+ *    Size of the resulting variable. The size is automatically inferred from
+ *    the operands and must only be specified for the zero-argument form.
  */
 extern JITC_EXPORT uint32_t jitc_trace_append_0(enum VarType type,
                                                 const char *stmt,
-                                                int stmt_static);
+                                                int stmt_static,
+                                                uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
 extern JITC_EXPORT uint32_t jitc_trace_append_1(enum VarType type,
@@ -608,7 +613,7 @@ extern JITC_EXPORT void jitc_var_dec_ref_ext(uint32_t index);
 extern JITC_EXPORT void *jitc_var_ptr(uint32_t index);
 
 /// Query the size of a given variable
-extern JITC_EXPORT size_t jitc_var_size(uint32_t index);
+extern JITC_EXPORT uint32_t jitc_var_size(uint32_t index);
 
 /**
  * Set the size of a given variable (if possible, otherwise throw an
@@ -627,7 +632,7 @@ extern JITC_EXPORT size_t jitc_var_size(uint32_t index);
  * Returns the ID of the changed or new variable
  */
 extern JITC_EXPORT uint32_t jitc_var_set_size(uint32_t index,
-                                              size_t size,
+                                              uint32_t size,
                                               int copy);
 
 /// Assign a descriptive label to a given variable
@@ -714,7 +719,7 @@ extern JITC_EXPORT const char *jitc_var_str(uint32_t index);
  * never be used to extract complete array contents due to its low performance.
  * This operation fully synchronizes the host CPU & device.
  */
-extern JITC_EXPORT void jitc_var_read(uint32_t index, size_t offset,
+extern JITC_EXPORT void jitc_var_read(uint32_t index, uint32_t offset,
                                       void *dst);
 
 /**
@@ -724,7 +729,7 @@ extern JITC_EXPORT void jitc_var_read(uint32_t index, size_t offset,
  * convenient to change localized entries of an array, but it should never be
  * used to extract complete array contents due to its low performance.
  */
-extern JITC_EXPORT void jitc_var_write(uint32_t index, size_t offset,
+extern JITC_EXPORT void jitc_var_write(uint32_t index, uint32_t offset,
                                        const void *src);
 
 // ====================================================================

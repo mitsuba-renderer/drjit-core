@@ -35,9 +35,8 @@ jit_malloc(type=host, size=64): <@> (new allocation)
    - %f5 -> 6 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=4, in=3, out=2, ops=6) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
-
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -106,14 +105,16 @@ loop:
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
-
-!0 = !{!0}
-!1 = !{!1, !0}
 
 declare <8 x float> @llvm.fma.v8f32(<8 x float>, <8 x float>, <8 x float>)
 
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_int(2): 1
@@ -178,9 +179,8 @@ jit_malloc(type=host, size=64): <@> (reused global)
    - %d5 -> 12 [out]
 jit_malloc(type=host, size=64): <@> (reused global)
 jit_run(): launching kernel (n=4, in=3, out=2, ops=6) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
-
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -249,14 +249,16 @@ loop:
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
-
-!0 = !{!0}
-!1 = !{!1, !0}
 
 declare <8 x double> @llvm.fma.v8f64(<8 x double>, <8 x double>, <8 x double>)
 
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_dec_ref_int(8): 1

@@ -24,7 +24,8 @@ struct CacheFileHeader {
     uint32_t compressed_size;
     uint32_t source_size;
     uint32_t kernel_size;
-    uint32_t func_offset;
+    uint32_t func_offset_wide;
+    uint32_t func_offset_scalar;
 };
 #pragma pack(pop)
 
@@ -91,6 +92,10 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
                       "your ~/.enoki directory.", filename);
 
         if (header.source_size != source_size) {
+            jit_log(Warn,
+                    "jit_kernel_read(): cache collision in file \"%s\": size "
+                    "mismatch (%u vs %u bytes).",
+                    filename, header.source_size, source_size);
             close(fd);
             return false;
         }
@@ -118,8 +123,10 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
 
     char *uncompressed_data = uncompressed + jit_lz4_dict_size;
 
-    if (success && memcmp(uncompressed_data, source, source_size) != 0)
-        success = false; // cache collision
+    if (success && memcmp(uncompressed_data, source, source_size) != 0) {
+        jit_log(Warn, "jit_kernel_read(): cache collision in file \"%s\".", filename);
+        success = false;
+    }
 
     if (success) {
         jit_trace("jit_kernel_load(\"%s\")", filename);
@@ -136,8 +143,10 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
             if (mprotect(kernel.data, header.kernel_size, PROT_READ | PROT_EXEC) == -1)
                 jit_fail("jit_llvm_load(): mprotect() failed: %s", strerror(errno));
 
-            kernel.llvm.func = (LLVMKernelFunction)((uint8_t *) kernel.data +
-                                                    header.func_offset);
+            kernel.llvm.func = (LLVMKernelFunction)(
+                (uint8_t *) kernel.data + header.func_offset_wide);
+            kernel.llvm.func_scalar = (LLVMKernelFunction)(
+                (uint8_t *) kernel.data + header.func_offset_scalar);
         } else {
             kernel.data = malloc_check(header.kernel_size);
             memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
@@ -210,10 +219,13 @@ bool jit_kernel_write(const char *source, uint32_t source_size,
         &stream, (const char *) temp_in, (char *) temp_out, (int) in_size,
         (int) out_size, 1);
 
-    header.func_offset = 0;
-    if (llvm)
-        header.func_offset =
+    header.func_offset_wide = header.func_offset_scalar = 0;
+    if (llvm) {
+        header.func_offset_wide =
             (uint8_t *) kernel.llvm.func - (uint8_t *) kernel.data;
+        header.func_offset_scalar =
+            (uint8_t *) kernel.llvm.func_scalar - (uint8_t *) kernel.data;
+    }
 
     bool success = true;
     try {
@@ -235,9 +247,10 @@ bool jit_kernel_write(const char *source, uint32_t source_size,
     close(fd);
 
     if (link(filename_tmp, filename) != 0) {
-        jit_raise("jit_kernel_write(): could not link cache "
-                  "file \"%s\" into file system: %s",
-                  filename, strerror(errno));
+        jit_log(Warn,
+                "jit_kernel_write(): could not link cache "
+                "file \"%s\" into file system: %s",
+                filename, strerror(errno));
         success = false;
     }
 

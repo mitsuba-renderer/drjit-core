@@ -1,11 +1,9 @@
-jit_trace_append(1): $r0_0 = trunc i64 %index to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_trace_append(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(1): 1
-jit_var_set_size(1): 1024
 jit_var_inc_ref_ext(1): 2
 jit_var_dec_ref_ext(1): 1
-jit_trace_append(2): $r0_0 = trunc i64 %index to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_trace_append(2): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(2): 1
-jit_var_set_size(2): 73
 jit_var_inc_ref_ext(2): 2
 jit_trace_append(3): $r0_0 = insertelement <$w x $t0> undef, $t0 7, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
 jit_var_inc_ref_ext(3): 1
@@ -29,9 +27,8 @@ jit_assemble(size=1024): register map:
    - %r0 -> 1 [out]
 jit_malloc(type=host, size=4096): <@> (new allocation)
 jit_run(): launching kernel (n=1024, in=0, out=1, ops=1) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
-
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -57,12 +54,14 @@ loop:
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
 !0 = !{!0}
 !1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_assemble(size=73): register map:
    - %r0 -> 2
    - %r1 -> 3 [scalar]
@@ -71,9 +70,8 @@ jit_assemble(size=73): register map:
    - %r4 -> 6 [out]
 jit_malloc(type=host, size=512): <@> (new allocation)
 jit_run(): launching kernel (n=73, in=0, out=1, ops=5) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) norecurse nounwind alignstack(32) "target-cpu"="skylake" {
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
-
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -113,12 +111,14 @@ loop:
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
 !0 = !{!0}
 !1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(2): 0
 jit_var_free(2)

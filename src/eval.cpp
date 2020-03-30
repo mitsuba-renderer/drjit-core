@@ -31,22 +31,31 @@ struct ScheduledGroup {
         : size(size), start(start), end(end) { }
 };
 
+struct Intrinsic {
+    uint32_t width;
+    const char *str;
+
+    Intrinsic(uint32_t width, const char *str) : width(width), str(str) { }
+};
+
 /// Hash function for keeping track of LLVM intrinsics
 struct IntrinsicHash {
-    size_t operator()(const char *a_s) const {
-        const char *a_e = strchr(a_s, '(');
-        return a_e ? hash(a_s, a_e - a_s) : (size_t) 0;
+    size_t operator()(const Intrinsic &a) const {
+        const char *end = strchr(a.str, '(');
+        return end ? hash(a.str, end - a.str, (uint32_t) a.width) : (size_t) 0u;
     }
 };
 
 /// Equality operation for keeping track of LLVM intrinsics
 struct IntrinsicEquality {
-    size_t operator()(const char *a_s, const char *b_s) const {
-        const char *a_e = strchr(a_s, '('),
-                   *b_e = strchr(b_s, '(');
-        if (!a_e || !b_e || a_e - a_s != b_e - b_s)
+    size_t operator()(const Intrinsic &a, const Intrinsic &b) const {
+        const char *end_a = strchr(a.str, '('),
+                   *end_b = strchr(b.str, '(');
+        const size_t strlen_a = end_a - a.str,
+                     strlen_b = end_b - b.str;
+        if (a.width != b.width || !end_a || !end_b || strlen_a != strlen_b)
             return 0;
-        return strncmp(a_s, b_s, a_e - a_s) == 0;
+        return strncmp(a.str, b.str, strlen_a) == 0;
     }
 };
 
@@ -72,7 +81,7 @@ static char kernel_name[17] { };
 Buffer intrinsics_buffer{1};
 
 /// Intrinsics used by the current program (LLVM only)
-static tsl::robin_set<const char *, IntrinsicHash, IntrinsicEquality> intrinsics_set;
+static tsl::robin_set<Intrinsic, IntrinsicHash, IntrinsicEquality> intrinsics_set;
 
 // ====================================================================
 
@@ -164,16 +173,23 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
         } else {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
-                case 's': continue;
                 case 'n': buffer.put("\n    "); continue;
+                case 'i': buffer.put("%index"); continue;
                 case 'w': buffer.fmt("%u", jit_llvm_vector_width); continue;
                 case 'z':
                 case 'l':
                 case 't': prefix_table = var_type_name_llvm; break;
+                case 's': prefix_table = var_type_size_str; break;
                 case 'o':
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'a': prefix_table = var_type_name_llvm_abbrev; break;
                 case 'r': prefix_table = var_type_prefix; break;
+                case 'O':
+                    buffer.putc('<');
+                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i)
+                        buffer.fmt("i1 1%s", i + 1 < jit_llvm_vector_width ? ", " : "");
+                    buffer.putc('>');
+                    continue;
 
                 default:
                     jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
@@ -203,13 +219,14 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
 
                 case 'a':
                 case 'b':
+                case 's':
                 case 't':
                     buffer.put(prefix);
                     break;
 
                 case 'l':
                     buffer.putc('<');
-                    for (int i = 0; i < jit_llvm_vector_width; ++i)
+                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i)
                         buffer.fmt("%s %i%s%s", prefix, i, is_float ? ".0" : "",
                                    i + 1 < jit_llvm_vector_width ? ", " : "");
                     buffer.putc('>');
@@ -217,7 +234,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
 
                 case 'z':
                     buffer.putc('<');
-                    for (int i = 0; i < jit_llvm_vector_width; ++i)
+                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i)
                         buffer.fmt("%s 0%s%s", prefix, is_float ? ".0" : "",
                                    i + 1 < jit_llvm_vector_width ? ", " : "");
                     buffer.putc('>');
@@ -225,7 +242,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
 
                 case 'o':
                     buffer.putc('<');
-                    for (int i = 0; i < jit_llvm_vector_width; ++i)
+                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i)
                         buffer.fmt("%s -1%s", prefix, i + 1 < jit_llvm_vector_width ? ", " : "");
                     buffer.putc('>');
                     break;
@@ -241,9 +258,9 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
         return;
     s += 5;
 
-    if (intrinsics_set.find(s) != intrinsics_set.end())
+    if (intrinsics_set.find({ jit_llvm_vector_width, s }) != intrinsics_set.end())
         return;
-    intrinsics_set.insert(s);
+    intrinsics_set.insert({ jit_llvm_vector_width, s });
 
     intrinsics_buffer.put("declare ");
     while ((c = *s++) != '\0') {
@@ -252,16 +269,17 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
         } else {
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
+                case 'O': continue;
                 case 't': prefix_table = var_type_name_llvm; break;
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'a': prefix_table = var_type_name_llvm_abbrev; break;
                 case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 's':
                 case 'r': s++; intrinsics_buffer.rewind(1); continue;
                 case 'n':
                 case 'o':
                 case 'l':
                 case 'z': s++; continue;
-                case 's': s+= 2; continue;
                 default:
                     jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
                              "expression (unknown type \"%c\")!", type);
@@ -277,22 +295,22 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
 }
 
 void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
-    auto get_parameter_addr = [](const Variable *v, uint32_t target = 0) {
+    auto get_parameter_addr = [](const Variable *v, bool load, uint32_t target = 0) {
         if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
             buffer.fmt("    ld.param.u64 %%rd%u, [arg%u];\n", target, v->arg_index - 1);
         else
             buffer.fmt("    ldu.global.u64 %%rd%u, [%%rd2 + %u];\n",
                        target, (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
 
-        if (v->size > 1)
+        if (v->size > 1 || !load)
             buffer.fmt("    mul.wide.u32 %%rd1, %%r0, %u;\n"
                        "    add.u64 %%rd%u, %%rd%u, %%rd1;\n",
                        var_type_size[(int) v->type], target, target);
     };
 
-    buffer.clear();
-    buffer.put(".version 6.3\n");
     const Device &device = state.devices[active_stream->device];
+
+    buffer.put(".version 6.3\n");
     buffer.fmt(".target sm_%i\n", device.compute_capability);
     buffer.put(".address_size 64\n");
 
@@ -352,18 +370,18 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
-            get_parameter_addr(v, v->direct_pointer ? v->reg_index : 0u);
+            get_parameter_addr(v, true, v->direct_pointer ? v->reg_index : 0u);
 
             if (likely(!v->direct_pointer)) {
                 if (likely(v->type != (uint32_t) VarType::Bool)) {
-                    buffer.fmt("    %s.global.%s %s%u, [%%rd0];\n",
-                           v->size == 1 ? "ldu" : "ld",
+                    buffer.fmt("    %s.%s %s%u, [%%rd0];\n",
+                           v->size == 1 ? "ldu.global" : "ld.global.cs",
                            var_type_name_ptx[(int) v->type],
                            var_type_prefix[(int) v->type],
                            v->reg_index);
                 } else {
-                    buffer.fmt("    %s.global.u8 %%w0, [%%rd0];\n",
-                           v->size == 1 ? "ldu" : "ld");
+                    buffer.fmt("    %s.u8 %%w0, [%%rd0];\n",
+                           v->size == 1 ? "ldu.global" : "ld.global.cs");
                     buffer.fmt("    setp.ne.u16 %s%u, %%w0, 0;\n",
                            var_type_prefix[(int) v->type],
                            v->reg_index);
@@ -387,17 +405,17 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
-            get_parameter_addr(v);
+            get_parameter_addr(v, false);
 
             if (likely(v->type != (uint32_t) VarType::Bool)) {
-                buffer.fmt("    st.global.%s [%%rd0], %s%u;\n",
+                buffer.fmt("    st.global.cs.%s [%%rd0], %s%u;\n",
                        var_type_name_ptx[(int) v->type],
                        var_type_prefix[(int) v->type],
                        v->reg_index);
             } else {
                 buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u;\n",
                            v->reg_index);
-                buffer.put("    st.global.u8 [%rd0], %w0;\n");
+                buffer.put("    st.global.cs.u8 [%rd0], %w0;\n");
             }
         }
     }
@@ -410,11 +428,6 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     buffer.put("L0:\n");
     buffer.put("    ret;\n");
     buffer.put("}");
-
-    /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash
-    kernel_hash = hash_kernel(buffer.get());
-    snprintf(kernel_name, 17, "%016llx", (unsigned long long) kernel_hash);
-    memcpy((void *) strchr(buffer.get(), '^'), kernel_name, 16);
 }
 
 /// Replace generic LLVM intrinsics by more efficient hardware-specific ones
@@ -472,23 +485,17 @@ static void jit_llvm_rewrite_intrinsics() {
     intrinsics_buffer.swap(buffer);
 }
 
-void jit_assemble_llvm(ScheduledGroup group) {
+void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
     const int width = jit_llvm_vector_width;
 
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
 
-    buffer.clear();
-    intrinsics_buffer.clear();
-    intrinsics_set.clear();
-    buffer.fmt("define void @enoki_^^^^^^^^^^^^^^^^(i64 %%start, i64 %%end, i8** "
-               "%%ptrs) norecurse nounwind alignstack(%i) "
-               "\"target-cpu\"=\"%s\"",
-               width * (int) sizeof(float), jit_llvm_target_cpu);
-    if (jit_llvm_target_features)
-        buffer.fmt(" \"target-features\"=\"%s\"", jit_llvm_target_features);
-    buffer.put(" {\n");
-    buffer.put("entry:\n");
+    buffer.fmt("define void @enoki_^^^^^^^^^^^^^^^^%s(i64 %%start, "
+               "i64 %%end, i8** %%ptrs) #0", suffix);
+    if (width > 1)
+        buffer.fmt(" alignstack(%u)", std::max(16u, width * (uint32_t) sizeof(float)));
+    buffer.put(" {\nentry:");
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
@@ -618,22 +625,24 @@ void jit_assemble_llvm(ScheduledGroup group) {
     buffer.putc('\n');
     buffer.fmt("    %%index_next = add i64 %%index, %u\n", width);
     buffer.put("    %cond = icmp uge i64 %index_next, %end\n");
-    buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop "
-               "!{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n");
+    buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop !2\n");
     buffer.put("}\n\n");
-    buffer.put("!0 = !{!0}\n");
-    buffer.put("!1 = !{!1, !0}\n");
+}
 
+void jit_assemble_llvm_suffix() {
     if (intrinsics_buffer.size() > 1) {
-        buffer.putc('\n');
         buffer.put(intrinsics_buffer.get());
         jit_llvm_rewrite_intrinsics();
+        buffer.putc('\n');
     }
 
-    /// Replace '^'s in 'enoki_^^^^^^^^' by CRC32 hash
-    kernel_hash = hash_kernel(buffer.get());
-    snprintf(kernel_name, 17, "%016llx", (unsigned long long) kernel_hash);
-    memcpy((void *) strchr(buffer.get(), '^'), kernel_name, 16);
+    buffer.put("!0 = !{!0}\n");
+    buffer.put("!1 = !{!1, !0}\n");
+    buffer.put("!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
+    buffer.fmt("attributes #0 = { norecurse nounwind \"target-cpu\"=\"%s\"", jit_llvm_target_cpu);
+    if (jit_llvm_target_features)
+        buffer.fmt(" \"target-features\"=\"%s\"", jit_llvm_target_features);
+    buffer.put(" }");
 }
 
 void jit_assemble(ScheduledGroup group) {
@@ -697,8 +706,9 @@ void jit_assemble(ScheduledGroup group) {
             push = true;
         } else if (!v->side_effect && v->ref_count_ext > 0 &&
                     v->size == group.size) {
-            size_t var_size =
-                (size_t) group.size * (size_t) var_type_size[(int) v->type];
+            size_t isize    = (size_t) var_type_size[(int) v->type],
+                   var_size = (size_t) group.size * isize;
+
             void *data = jit_malloc(cuda ? AllocType::Device : AllocType::Host, var_size);
 
             // jit_malloc() may temporarily release the lock, variable pointer might have changed
@@ -759,10 +769,41 @@ void jit_assemble(ScheduledGroup group) {
     jit_log(Info, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
             group.size, n_args_in - 1, n_args_out, n_regs_total);
 
-    if (cuda)
+    intrinsics_buffer.clear();
+    intrinsics_set.clear();
+    buffer.clear();
+
+    if (cuda) {
         jit_assemble_cuda(group, n_regs_total);
-    else
+    } else {
         jit_assemble_llvm(group);
+
+        /* Compile a separate scalar variant of the kernel if it uses
+           scatter/gather intrinsics. This is needed to deal with the last
+           packet, where not all lanes are guaranteed to be valid. */
+        if (jit_llvm_vector_width != 1 &&
+            (intrinsics_buffer.contains("@llvm.masked.scatter") ||
+             intrinsics_buffer.contains("@llvm.masked.gather"))) {
+            uint32_t vector_width = 1;
+            std::swap(jit_llvm_vector_width, vector_width);
+            jit_assemble_llvm(group, "_scalar");
+            std::swap(jit_llvm_vector_width, vector_width);
+        }
+
+        jit_assemble_llvm_suffix();
+    }
+
+    /// Replace '^'s in 'enoki_^^^^^^^^' by hash code
+    kernel_hash = hash_kernel(buffer.get());
+    snprintf(kernel_name, 17, "%016llx", (unsigned long long) kernel_hash);
+
+    char *offset = (char *) buffer.get();
+    do {
+        offset = strchr(offset, '^');
+        if (!offset)
+            break;
+        memcpy(offset, kernel_name, 16);
+    } while (true);
 
     jit_log(Debug, "%s", buffer.get());
 }
@@ -826,7 +867,6 @@ void jit_run(Stream *stream, ScheduledGroup group) {
             cuda_check(cuFuncSetAttribute(
                 kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
                 CU_SHAREDMEM_CARVEOUT_MAX_L1));
-            cuda_check(cuFuncSetCacheConfig(kernel.cuda.cu_func, CU_FUNC_CACHE_PREFER_L1));
 
             free(kernel.data);
             kernel.data = nullptr;
@@ -850,7 +890,15 @@ void jit_run(Stream *stream, ScheduledGroup group) {
     }
 
     if (llvm) {
-        kernel.llvm.func(0, group.size, kernel_args_extra.data());
+        uint32_t width = kernel.llvm.func != kernel.llvm.func_scalar
+                             ? jit_llvm_vector_width : 1u,
+                 rounded = group.size / width * width;
+
+        if (likely(rounded > 0))
+            kernel.llvm.func(0, rounded, kernel_args_extra.data());
+
+        if (unlikely(rounded != group.size))
+            kernel.llvm.func_scalar(rounded, group.size, kernel_args_extra.data());
     } else {
         size_t kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
 
@@ -918,6 +966,7 @@ void jit_eval() {
                 cur = i;
             }
         }
+
         schedule_groups.emplace_back(schedule[cur].size,
                                      cur, (uint32_t) schedule.size());
     }

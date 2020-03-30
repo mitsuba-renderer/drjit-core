@@ -8,6 +8,16 @@ extern "C" {
                                     unsigned long long seed);
 }
 
+#if !defined(likely)
+#  define likely(x)   __builtin_expect(!!(x), 1)
+#  define unlikely(x) __builtin_expect(!!(x), 0)
+#endif
+
+#if defined(__GNUC__)
+    __attribute__((noreturn, __format__ (__printf__, 1, 2)))
+#endif
+extern void jit_fail(const char* fmt, ...);
+
 inline void hash_combine(size_t& seed, size_t value) {
     /// From CityHash (https://github.com/google/cityhash)
     const size_t mult = 0x9ddfea08eb382d69ull;
@@ -36,6 +46,9 @@ inline size_t hash_str(const char *str, size_t seed = 0) {
 }
 
 inline size_t hash_kernel(const char *str, size_t seed = 0) {
-    const char *offset = strchr(str, '{');
-    return hash_str(offset ? offset : str, seed);
+    const char *offset_1 = strchr(str, '{'),
+               *offset_2 = strchr(str, '}');
+    if (unlikely(!offset_1 || !offset_2 || offset_1 >= offset_2))
+        jit_fail("hash_kernel(): invalid input!");
+    return hash(offset_1, offset_2 - offset_1, seed);
 }

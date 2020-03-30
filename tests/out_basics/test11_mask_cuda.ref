@@ -1,7 +1,6 @@
 jit_device_set(device=0, stream=0): creating stream
 jit_trace_append(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
-jit_var_set_size(1): 10
 jit_var_inc_ref_int(1): 1
 jit_trace_append(2 <- 1): cvt.rn.ftz.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(2): 1
@@ -78,7 +77,7 @@ L1: // Loop body
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     selp.u16 %w0, 1, 0, %p7;
-    st.global.u8 [%rd0], %w0;
+    st.global.cs.u8 [%rd0], %w0;
 
     // Evaluate %f8
     neg.ftz.f32 %f8, %f5;
@@ -90,7 +89,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f9;
+    st.global.cs.f32 [%rd0], %f9;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -170,7 +169,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.u8 %w0, [%rd0];
+    ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p6, %w0, 0;
 
     // Evaluate %f7
@@ -180,7 +179,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f7;
+    st.global.cs.f32 [%rd0], %f7;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -240,16 +239,20 @@ L1: // Loop body
 
     // Store %p4
     ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 1;
+    add.u64 %rd0, %rd0, %rd1;
     selp.u16 %w0, 1, 0, %p4;
-    st.global.u8 [%rd0], %w0;
+    st.global.cs.u8 [%rd0], %w0;
 
     // Evaluate %p5
     mov.pred %p5, 0;
 
     // Store %p5
     ld.param.u64 %rd0, [arg1];
+    mul.wide.u32 %rd1, %r0, 1;
+    add.u64 %rd0, %rd0, %rd1;
     selp.u16 %w0, 1, 0, %p5;
-    st.global.u8 [%rd0], %w0;
+    st.global.cs.u8 [%rd0], %w0;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -321,7 +324,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    ld.global.f32 %f4, [%rd0];
+    ld.global.cs.f32 %f4, [%rd0];
 
     // Evaluate %f5
     mov.f32 %f5, 0f00000000;
@@ -338,7 +341,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg2];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f7;
+    st.global.cs.f32 [%rd0], %f7;
 
     // Load %p8
     ld.param.u64 %rd0, [arg3];
@@ -352,7 +355,7 @@ L1: // Loop body
     ld.param.u64 %rd0, [arg4];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.f32 [%rd0], %f9;
+    st.global.cs.f32 [%rd0], %f9;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
