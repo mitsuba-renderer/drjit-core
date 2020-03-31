@@ -677,3 +677,115 @@ TEST_LLVM(25_wide_intrinsics) {
     jitc_assert(all(mask));
     jitc_llvm_set_target("skylake", "", 8);
 }
+
+#if 0
+TEST_LLVM(26_avx512_intrinsics) {
+    jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl", 32);
+    Float a = arange<Float>(64);
+    Float b = arange<Float>(64) + 0.1f;
+    Float c = max(a, b);
+    Float d = fmadd(a, b, c);
+    auto mask = eq(b, c);
+    jitc_log(Info, "value=%s", c.str());
+    jitc_log(Info, "value=%s", d.str());
+    jitc_assert(all(mask));
+    jitc_llvm_set_target("skylake", "", 8);
+}
+
+TEST_BOTH(27_avx512_intrinsics_round2int) {
+    using Int64 = Array<int64_t>;
+    using UInt64 = Array<uint64_t>;
+    using Double = Array<double>;
+
+    jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl", 32);
+    Float f(-1.1, -0.6f, -0.5f, -0.4f, 0.4f, 0.5f, 0.6f, 1.1, (float) 0xffffffff);
+    Double d(f);
+    jitc_eval();
+
+    {
+        auto f_i32 = ceil2int<Int32> (f);
+        auto f_u32 = ceil2int<UInt32>(f);
+        auto f_i64 = ceil2int<Int64> (f);
+        auto f_u64 = ceil2int<UInt64>(f);
+        auto d_i32 = ceil2int<Int32> (d);
+        auto d_u32 = ceil2int<UInt32>(d);
+        auto d_i64 = ceil2int<Int64> (d);
+        auto d_u64 = ceil2int<UInt64>(d);
+        jitc_eval();
+        jitc_log(Info, "input=%s", f.str());
+        jitc_log(Info, "ceil_f_i32=%s", f_i32.str());
+        jitc_log(Info, "ceil_f_i64=%s", f_i64.str());
+        jitc_log(Info, "ceil_d_i32=%s", d_i32.str());
+        jitc_log(Info, "ceil_d_i64=%s", d_i64.str());
+        jitc_log(Info, "ceil_f_u32=%s", f_u32.str());
+        jitc_log(Info, "ceil_f_u64=%s", f_u64.str());
+        jitc_log(Info, "ceil_d_u32=%s", d_u32.str());
+        jitc_log(Info, "ceil_d_u64=%s", d_u64.str());
+    }
+
+    {
+        auto f_i32 = floor2int<Int32> (f);
+        auto f_u32 = floor2int<UInt32>(f);
+        auto f_i64 = floor2int<Int64> (f);
+        auto f_u64 = floor2int<UInt64>(f);
+        auto d_i32 = floor2int<Int32> (d);
+        auto d_u32 = floor2int<UInt32>(d);
+        auto d_i64 = floor2int<Int64> (d);
+        auto d_u64 = floor2int<UInt64>(d);
+        jitc_eval();
+        jitc_log(Info, "input=%s", f.str());
+        jitc_log(Info, "floor_f_i32=%s", f_i32.str());
+        jitc_log(Info, "floor_f_i64=%s", f_i64.str());
+        jitc_log(Info, "floor_d_i32=%s", d_i32.str());
+        jitc_log(Info, "floor_d_i64=%s", d_i64.str());
+        jitc_log(Info, "floor_f_u32=%s", f_u32.str());
+        jitc_log(Info, "floor_f_u64=%s", f_u64.str());
+        jitc_log(Info, "floor_d_u32=%s", d_u32.str());
+        jitc_log(Info, "floor_d_u64=%s", d_u64.str());
+    }
+
+    {
+        auto f_i32 = trunc2int<Int32> (f);
+        auto f_u32 = trunc2int<UInt32>(f);
+        auto f_i64 = trunc2int<Int64> (f);
+        auto f_u64 = trunc2int<UInt64>(f);
+        auto d_i32 = trunc2int<Int32> (d);
+        auto d_u32 = trunc2int<UInt32>(d);
+        auto d_i64 = trunc2int<Int64> (d);
+        auto d_u64 = trunc2int<UInt64>(d);
+        jitc_eval();
+        jitc_log(Info, "input=%s", f.str());
+        jitc_log(Info, "trunc_f_i32=%s", f_i32.str());
+        jitc_log(Info, "trunc_f_i64=%s", f_i64.str());
+        jitc_log(Info, "trunc_d_i32=%s", d_i32.str());
+        jitc_log(Info, "trunc_d_i64=%s", d_i64.str());
+        jitc_log(Info, "trunc_f_u32=%s", f_u32.str());
+        jitc_log(Info, "trunc_f_u64=%s", f_u64.str());
+        jitc_log(Info, "trunc_d_u32=%s", d_u32.str());
+        jitc_log(Info, "trunc_d_u64=%s", d_u64.str());
+    }
+
+    {
+        auto f_i32 = round2int<Int32> (f);
+        auto f_u32 = round2int<UInt32>(f);
+        auto f_i64 = round2int<Int64> (f);
+        auto f_u64 = round2int<UInt64>(f);
+        auto d_i32 = round2int<Int32> (d);
+        auto d_u32 = round2int<UInt32>(d);
+        auto d_i64 = round2int<Int64> (d);
+        auto d_u64 = round2int<UInt64>(d);
+        jitc_eval();
+        jitc_log(Info, "input=%s", f.str());
+        jitc_log(Info, "round_f_i32=%s", f_i32.str());
+        jitc_log(Info, "round_f_i64=%s", f_i64.str());
+        jitc_log(Info, "round_d_i32=%s", d_i32.str());
+        jitc_log(Info, "round_d_i64=%s", d_i64.str());
+        jitc_log(Info, "round_f_u32=%s", f_u32.str());
+        jitc_log(Info, "round_f_u64=%s", f_u64.str());
+        jitc_log(Info, "round_d_u32=%s", d_u32.str());
+        jitc_log(Info, "round_d_u64=%s", d_u64.str());
+    }
+
+    jitc_llvm_set_target("skylake", "", 8);
+}
+#endif

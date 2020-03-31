@@ -673,6 +673,47 @@ CUDAArray<Value> max(const CUDAArray<Value> &a, const CUDAArray<Value> &b) {
         a.index(), b.index()));
 }
 
+template <typename OutArray, typename ValueIn>
+OutArray round2int(const CUDAArray<ValueIn> &a) {
+    if (!jitc_is_floating_point(CUDAArray<ValueIn>::Type) ||
+        !jitc_is_integral(OutArray::Type))
+        jitc_raise("Unsupported operand type");
+
+    return OutArray::from_index(jitc_trace_append_1(
+        OutArray::Type, "cvt.rni.$t0.$t1 $r0, $r1", 1, a.index()));
+}
+
+template <typename OutArray, typename ValueIn>
+OutArray floor2int(const CUDAArray<ValueIn> &a) {
+    if (!jitc_is_floating_point(CUDAArray<ValueIn>::Type) ||
+        !jitc_is_integral(OutArray::Type))
+        jitc_raise("Unsupported operand type");
+
+    return OutArray::from_index(jitc_trace_append_1(
+        OutArray::Type, "cvt.rmi.$t0.$t1 $r0, $r1", 1, a.index()));
+}
+
+template <typename OutArray, typename ValueIn>
+OutArray ceil2int(const CUDAArray<ValueIn> &a) {
+    if (!jitc_is_floating_point(CUDAArray<ValueIn>::Type) ||
+        !jitc_is_integral(OutArray::Type))
+        jitc_raise("Unsupported operand type");
+
+    return OutArray::from_index(jitc_trace_append_1(
+        OutArray::Type, "cvt.rpi.$t0.$t1 $r0, $r1", 1, a.index()));
+}
+
+template <typename OutArray, typename ValueIn>
+OutArray trunc2int(const CUDAArray<ValueIn> &a) {
+    if (!jitc_is_floating_point(CUDAArray<ValueIn>::Type) ||
+        !jitc_is_integral(OutArray::Type))
+        jitc_raise("Unsupported operand type");
+
+    return OutArray::from_index(jitc_trace_append_1(
+        OutArray::Type, "cvt.rzi.$t0.$t1 $r0, $r1", 1, a.index()));
+}
+
+
 template <typename OutArray,
           typename Index, typename std::enable_if<OutArray::IsCUDA, int>::type = 0>
 OutArray gather(const void *ptr,

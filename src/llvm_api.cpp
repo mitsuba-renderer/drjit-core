@@ -164,6 +164,7 @@ void jit_llvm_disasm(const Kernel &kernel) {
             *ptr = func_base;
     char ins_buf[256];
     int ret_count = 0;
+    bool last_nop = false;
     jit_trace("jit_llvm_disasm(): =====================");
     do {
         size_t offset      = ptr - (uint8_t *) kernel.data,
@@ -179,9 +180,13 @@ void jit_llvm_disasm(const Kernel &kernel) {
         while (*start == ' ' || *start == '\t')
             ++start;
         if (strcmp(start, "nop") == 0) {
+            if (!last_nop)
+                jit_trace("jit_llvm_disasm(): ...");
+            last_nop = true;
             ptr += size;
             continue;
         }
+        last_nop = false;
         jit_trace("jit_llvm_disasm(): 0x%08x   %s", (uint32_t) func_offset, start);
         if (strncmp(start, "ret", 3) == 0) {
             jit_trace("jit_llvm_disasm(): =====================");

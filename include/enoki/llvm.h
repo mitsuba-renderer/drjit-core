@@ -744,7 +744,7 @@ LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
             op = "$4$r0 = call <$w x $t0> @llvm.x86.sse.min.ps(<$w x $t1> $r1, "
                  "<$w x $t2> $r2)";
         }
-    } else if (std::is_same<Value, float>::value) {
+    } else if (std::is_same<Value, double>::value) {
         if (jitc_llvm_if_at_least(8, "+avx512f")) {
             op = "$1$r0 = call <$w x $t0> @llvm.x86.avx512.min.pd.512(<$w x $t1> "
                  "$r1, <$w x $t2> $r2, i32 4)";
@@ -770,30 +770,91 @@ LLVMArray<Value> max(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
     // Prefer an X86-specific intrinsic (produces nicer machine code)
     if (std::is_same<Value, float>::value) {
         if (jitc_llvm_if_at_least(16, "+avx512f")) {
-            op = "$2$r0 = call <$w x $t0> @llvm.x86.avx512.max.ps.512(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2, i32 4)";
+            op = "$4$r0 = call <$w x $t0> @llvm.x86.avx512.max.ps.512(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2, i32$S 4)";
         } else if (jitc_llvm_if_at_least(8, "+avx")) {
             op = "$3$r0 = call <$w x $t0> @llvm.x86.avx.max.ps.256(<$w x $t1> "
                  "$r1, <$w x $t2> $r2)";
         } else if (jitc_llvm_if_at_least(4, "+sse4.2")) {
-            op = "$4$r0 = call <$w x $t0> @llvm.x86.sse.max.ps(<$w x $t1> $r1, "
+            op = "$2$r0 = call <$w x $t0> @llvm.x86.sse.max.ps(<$w x $t1> $r1, "
                  "<$w x $t2> $r2)";
         }
-    } else if (std::is_same<Value, float>::value) {
+    } else if (std::is_same<Value, double>::value) {
         if (jitc_llvm_if_at_least(8, "+avx512f")) {
-            op = "$1$r0 = call <$w x $t0> @llvm.x86.avx512.max.pd.512(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2, i32 4)";
+            op = "$3$r0 = call <$w x $t0> @llvm.x86.avx512.max.pd.512(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2, i32$S 4)";
         } else if (jitc_llvm_if_at_least(4, "+avx")) {
             op = "$2$r0 = call <$w x $t0> @llvm.x86.avx.max.pd.256(<$w x $t1> "
                  "$r1, <$w x $t2> $r2)";
         } else if (jitc_llvm_if_at_least(2, "+sse4.2")) {
-            op = "$3$r0 = call <$w x $t0> @llvm.x86.sse.max.pd(<$w x $t1> $r1, "
+            op = "$1$r0 = call <$w x $t0> @llvm.x86.sse.max.pd(<$w x $t1> $r1, "
                  "<$w x $t2> $r2)";
         }
     }
 
     return LLVMArray<Value>::from_index(jitc_trace_append_2(
         LLVMArray<Value>::Type, op, 1, a.index(), b.index()));
+}
+
+template <typename OutArray, typename ValueIn>
+OutArray jitc_llvm_f2i_cast(const LLVMArray<ValueIn> &a, int mode) {
+    using ValueOut = typename OutArray::Value;
+    constexpr bool Signed = std::is_signed<ValueOut>::value;
+    constexpr size_t SizeIn = sizeof(ValueIn), SizeOut = sizeof(ValueOut);
+
+    if (!jitc_is_floating_point(LLVMArray<ValueIn>::Type) ||
+        !jitc_is_integral(LLVMArray<ValueOut>::Type))
+        jitc_raise("Unsupported operand type");
+
+    if (!((SizeIn == 4 && SizeOut == 4 &&
+           jitc_llvm_if_at_least(16, "+avx512f")) ||
+          ((SizeIn == 4 || SizeIn == 8) && (SizeOut == 4 || SizeOut == 8) &&
+           jitc_llvm_if_at_least(8, "+avx512vl"))))
+        return 0u;
+
+    const char *in_t = SizeIn == 4 ? "ps" : "pd";
+    const char *out_t =
+        SizeOut == 4 ? (Signed ? "dq" : "udq") : (Signed ? "qq" : "uqq");
+
+    char op[128];
+    snprintf(op, sizeof(op),
+             "$%i$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvt%s2%s.512(<$w "
+             "x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S %i)",
+             (SizeIn == 4 && SizeOut == 4) ? 4 : 3, in_t, out_t, mode);
+
+    return OutArray::from_index(jitc_trace_append_1(OutArray::Type, op, 0, a.index()));
+}
+
+template <typename OutArray, typename ValueIn>
+OutArray round2int(const LLVMArray<ValueIn> &a) {
+    OutArray out = jitc_llvm_f2i_cast<OutArray>(a, 8);
+    if (!out.valid())
+        out = OutArray(round(a));
+    return out;
+}
+
+template <typename OutArray, typename ValueIn>
+OutArray floor2int(const LLVMArray<ValueIn> &a) {
+    OutArray out = jitc_llvm_f2i_cast<OutArray>(a, 9);
+    if (!out.valid())
+        out = OutArray(floor(a));
+    return out;
+}
+
+template <typename OutArray, typename ValueIn>
+OutArray ceil2int(const LLVMArray<ValueIn> &a) {
+    OutArray out = jitc_llvm_f2i_cast<OutArray>(a, 10);
+    if (!out.valid())
+        out = OutArray(ceil(a));
+    return out;
+}
+
+template <typename OutArray, typename ValueIn>
+OutArray trunc2int(const LLVMArray<ValueIn> &a) {
+    OutArray out = jitc_llvm_f2i_cast<OutArray>(a, 11);
+    if (!out.valid())
+        out = OutArray(trunc(a));
+    return out;
 }
 
 template <typename OutArray, typename Index,
@@ -1049,7 +1110,7 @@ Array lzcnt(const LLVMArray<Value> &a) {
 
     return Array::from_index(jitc_trace_append_1(
         Array::Type,
-        "$r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1 $S0)",
+        "$r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1$S 0)",
         1, a.index()));
 }
 
@@ -1060,6 +1121,6 @@ Array tzcnt(const LLVMArray<Value> &a) {
 
     return Array::from_index(jitc_trace_append_1(
         Array::Type,
-        "$r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1 $S0)",
+        "$r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1$S 0)",
         1, a.index()));
 }

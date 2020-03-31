@@ -283,8 +283,8 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'a': prefix_table = var_type_name_llvm_abbrev; break;
                 case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 'S': while (*s != ',' && *s != ')' && *s != '\0') { ++s; } continue;
                 case 's':
-                case 'S':
                 case 'r': s++; intrinsics_buffer.rewind(1); continue;
                 case 'n': stop = true; break;
                 case 'o':
