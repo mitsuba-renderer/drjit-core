@@ -503,3 +503,16 @@ TEST_BOTH(20_reinterpret_cast) {
     Float result2 = reinterpret_array<Float>(result);
     jitc_log(Info, "As float: %s", result2.str());
 }
+
+TEST_BOTH(21_shifts) {
+    UInt32 x(1234, (uint32_t) -1234);
+    Int32  y(1234,            -1234);
+
+    UInt32 xs1 = x >> 1, xs2 = x << 1;
+    Int32  ys1 = y >> 1, ys2 = y << 1;
+
+    jitc_log(Info, "xs1 : %s", xs1.str());
+    jitc_log(Info, "xs2 : %s", xs2.str());
+    jitc_log(Info, "ys1 : %s", ys1.str());
+    jitc_log(Info, "ys2 : %s", ys2.str());
+}

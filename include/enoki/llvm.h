@@ -342,6 +342,20 @@ struct LLVMArray {
             jitc_trace_append_2(Type, op, 1, m_index, a.index()));
     }
 
+    LLVMArray operator<<(const LLVMArray<uint32_t> &v) const {
+        return LLVMArray::from_index(jitc_trace_append_2(
+            Type, "$r0 = shl <$w x $t0> $r1, $r2", 1, index(), v.index()));
+    }
+
+    LLVMArray operator>>(const LLVMArray<uint32_t> &v) const {
+        if (std::is_integral<Value>::value && std::is_signed<Value>::value)
+            return LLVMArray::from_index(jitc_trace_append_2(
+                Type, "$r0 = ashr <$w x $t0> $r1, $r2", 1, index(), v.index()));
+        else
+            return LLVMArray::from_index(jitc_trace_append_2(
+                Type, "$r0 = lshr <$w x $t0> $r1, $r2", 1, index(), v.index()));
+    }
+
     LLVMArray& operator+=(const LLVMArray &v) {
         return operator=(*this + v);
     }
@@ -368,6 +382,14 @@ struct LLVMArray {
 
     LLVMArray& operator^=(const LLVMArray &v) {
         return operator=(*this ^ v);
+    }
+
+    LLVMArray& operator<<=(const LLVMArray<uint32_t> &v) {
+        return operator=(*this << v);
+    }
+
+    LLVMArray& operator>>=(const LLVMArray<uint32_t> &v) {
+        return operator=(*this >> v);
     }
 
     LLVMArray operator&&(const LLVMArray &a) const {

@@ -306,6 +306,20 @@ struct CUDAArray {
                                               m_index, a.index()));
     }
 
+    CUDAArray operator<<(const CUDAArray<uint32_t> &v) const {
+        return CUDAArray::from_index(jitc_trace_append_2(
+            Type, "shl.$b0 $r0, $r1, $r2", 1, index(), v.index()));
+    }
+
+    CUDAArray operator>>(const CUDAArray<uint32_t> &v) const {
+        if (std::is_integral<Value>::value && std::is_signed<Value>::value)
+            return CUDAArray::from_index(jitc_trace_append_2(
+                Type, "shr.$t0 $r0, $r1, $r2", 1, index(), v.index()));
+        else
+            return CUDAArray::from_index(jitc_trace_append_2(
+                Type, "shr.$b0 $r0, $r1, $r2", 1, index(), v.index()));
+    }
+
     CUDAArray& operator+=(const CUDAArray &v) {
         return operator=(*this + v);
     }
@@ -332,6 +346,14 @@ struct CUDAArray {
 
     CUDAArray& operator^=(const CUDAArray &v) {
         return operator=(*this ^ v);
+    }
+
+    CUDAArray& operator<<=(const CUDAArray<uint32_t> &v) {
+        return operator=(*this << v);
+    }
+
+    CUDAArray& operator>>=(const CUDAArray<uint32_t> &v) {
+        return operator=(*this >> v);
     }
 
     CUDAArray operator&&(const CUDAArray &a) const {
