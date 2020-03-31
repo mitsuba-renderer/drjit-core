@@ -1,4 +1,4 @@
-jit_trace_append(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_trace_append(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_ext(1): 2
 jit_var_dec_ref_ext(1): 1
@@ -145,11 +145,11 @@ jit_var_dec_ref_ext(1): 1
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host, size=4096)
-jit_trace_append(6): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_trace_append(6): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_ext(6): 2
 jit_var_dec_ref_ext(6): 1
-jit_trace_append(7): $r0_0 = insertelement <$w x $t0> undef, $t0 512, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
+jit_trace_append(7): $r0_0 = insertelement <$w x $t0> undef, $t0 512, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(7): 1
@@ -287,7 +287,7 @@ jit_var_dec_ref_ext(8): 1
 jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
 jit_free(<@>, type=host, size=4096)
-jit_trace_append(12): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_trace_append(12): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(12): 1
 jit_trace_append(13 <- 12): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
@@ -442,13 +442,13 @@ jit_free(<@>, type=host, size=4096)
 jit_var_dec_ref_ext(13): 0
 jit_var_free(13)
 jit_free(<@>, type=host, size=8192)
-jit_trace_append(18): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_trace_append(18): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(18): 1
 jit_var_inc_ref_int(18): 1
 jit_trace_append(19 <- 18): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(19): 1
 jit_var_dec_ref_ext(18): 0
-jit_trace_append(20): $r0_0 = insertelement <$w x $t0> undef, $t0 512, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
+jit_trace_append(20): $r0_0 = insertelement <$w x $t0> undef, $t0 512, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_int(19): 1
 jit_var_inc_ref_int(20): 1
@@ -592,13 +592,13 @@ jit_free(<@>, type=host, size=4096)
 jit_var_dec_ref_ext(21): 0
 jit_var_free(21)
 jit_free(<@>, type=host, size=8192)
-jit_trace_append(25): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_trace_append(25): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(25): 1
 jit_var_inc_ref_int(25): 1
 jit_trace_append(26 <- 25): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(26): 1
 jit_var_dec_ref_ext(25): 0
-jit_trace_append(27): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4080000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
+jit_trace_append(27): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4080000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(27): 1
 jit_var_inc_ref_int(26): 1
 jit_var_inc_ref_int(27): 1
@@ -742,13 +742,13 @@ jit_free(<@>, type=host, size=4096)
 jit_var_dec_ref_ext(28): 0
 jit_var_free(28)
 jit_free(<@>, type=host, size=4096)
-jit_trace_append(32): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_trace_append(32): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(32): 1
 jit_var_inc_ref_int(32): 1
 jit_trace_append(33 <- 32): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(33): 1
 jit_var_dec_ref_ext(32): 0
-jit_trace_append(34): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4080000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer
+jit_trace_append(34): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4080000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(34): 1
 jit_var_inc_ref_int(33): 1
 jit_var_inc_ref_int(34): 1

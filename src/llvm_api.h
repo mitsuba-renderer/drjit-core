@@ -29,4 +29,8 @@ extern void jit_llvm_shutdown();
 /// Override the target architecture
 extern void jit_llvm_set_target(const char *target_cpu,
                                 const char *target_features,
-                                int vector_width);
+                                uint32_t vector_width);
+
+/// Convenience function for intrinsic function selection
+extern int jit_llvm_if_at_least(uint32_t vector_width,
+                                const char *feature);

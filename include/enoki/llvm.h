@@ -98,9 +98,9 @@ struct LLVMArray {
         snprintf(value_str, 256,
             (Type == VarType::Float32 || Type == VarType::Float64) ?
             "$r0_0 = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer" :
+            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z" :
             "$r0_0 = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> zeroinitializer",
+            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z",
             value_ull);
 
         m_index = jitc_trace_append_0(Type, value_str, 0, 1);
@@ -269,7 +269,7 @@ struct LLVMArray {
 
         const char *op = std::is_floating_point<Value>::value
             ? "$r0 = fneg <$w x $t0> $r1"
-            : "$r0 = sub <$w x $t0> zeroinitializer, $r1";
+            : "$r0 = sub <$w x $t0> $z, $r1";
 
         return from_index(
             jitc_trace_append_1(Type, op, 1, m_index));
@@ -609,7 +609,7 @@ struct LLVMArray {
             "$r0_0 = trunc i64 $i to $t0$n"
             "$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n"
             "$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, "
-                "<$w x i32> zeroinitializer$n"
+                "<$w x i32> $z$n"
             "$r0 = add <$w x $t0> $r0_2, $l0", 1, (uint32_t) size));
     }
 
@@ -728,18 +728,72 @@ OutArray reinterpret_array(const LLVMArray<ValueIn> &input) {
 
 template <typename Value>
 LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
+    // Portable intrinsic as a last resort
+    const char *op = "$r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> "
+                     "$r1, <$w x $t2> $r2)";
+
+    // Prefer an X86-specific intrinsic (produces nicer machine code)
+    if (std::is_same<Value, float>::value) {
+        if (jitc_llvm_if_at_least(16, "+avx512f")) {
+            op = "$2$r0 = call <$w x $t0> @llvm.x86.avx512.min.ps.512(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2, i32 4)";
+        } else if (jitc_llvm_if_at_least(8, "+avx")) {
+            op = "$3$r0 = call <$w x $t0> @llvm.x86.avx.min.ps.256(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2)";
+        } else if (jitc_llvm_if_at_least(4, "+sse4.2")) {
+            op = "$4$r0 = call <$w x $t0> @llvm.x86.sse.min.ps(<$w x $t1> $r1, "
+                 "<$w x $t2> $r2)";
+        }
+    } else if (std::is_same<Value, float>::value) {
+        if (jitc_llvm_if_at_least(8, "+avx512f")) {
+            op = "$1$r0 = call <$w x $t0> @llvm.x86.avx512.min.pd.512(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2, i32 4)";
+        } else if (jitc_llvm_if_at_least(4, "+avx")) {
+            op = "$2$r0 = call <$w x $t0> @llvm.x86.avx.min.pd.256(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2)";
+        } else if (jitc_llvm_if_at_least(2, "+sse4.2")) {
+            op = "$3$r0 = call <$w x $t0> @llvm.x86.sse.min.pd(<$w x $t1> $r1, "
+                 "<$w x $t2> $r2)";
+        }
+    }
+
     return LLVMArray<Value>::from_index(jitc_trace_append_2(
-        LLVMArray<Value>::Type,
-        "$r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)", 1,
-        a.index(), b.index()));
+        LLVMArray<Value>::Type, op, 1, a.index(), b.index()));
 }
 
 template <typename Value>
 LLVMArray<Value> max(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
+    // Portable intrinsic as a last resort
+    const char *op = "$r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> "
+                     "$r1, <$w x $t2> $r2)";
+
+    // Prefer an X86-specific intrinsic (produces nicer machine code)
+    if (std::is_same<Value, float>::value) {
+        if (jitc_llvm_if_at_least(16, "+avx512f")) {
+            op = "$2$r0 = call <$w x $t0> @llvm.x86.avx512.max.ps.512(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2, i32 4)";
+        } else if (jitc_llvm_if_at_least(8, "+avx")) {
+            op = "$3$r0 = call <$w x $t0> @llvm.x86.avx.max.ps.256(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2)";
+        } else if (jitc_llvm_if_at_least(4, "+sse4.2")) {
+            op = "$4$r0 = call <$w x $t0> @llvm.x86.sse.max.ps(<$w x $t1> $r1, "
+                 "<$w x $t2> $r2)";
+        }
+    } else if (std::is_same<Value, float>::value) {
+        if (jitc_llvm_if_at_least(8, "+avx512f")) {
+            op = "$1$r0 = call <$w x $t0> @llvm.x86.avx512.max.pd.512(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2, i32 4)";
+        } else if (jitc_llvm_if_at_least(4, "+avx")) {
+            op = "$2$r0 = call <$w x $t0> @llvm.x86.avx.max.pd.256(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2)";
+        } else if (jitc_llvm_if_at_least(2, "+sse4.2")) {
+            op = "$3$r0 = call <$w x $t0> @llvm.x86.sse.max.pd(<$w x $t1> $r1, "
+                 "<$w x $t2> $r2)";
+        }
+    }
+
     return LLVMArray<Value>::from_index(jitc_trace_append_2(
-        LLVMArray<Value>::Type,
-        "$r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)", 1,
-        a.index(), b.index()));
+        LLVMArray<Value>::Type, op, 1, a.index(), b.index()));
 }
 
 template <typename OutArray, typename Index,
@@ -766,13 +820,13 @@ OutArray gather(const void *ptr, const LLVMArray<Index> &index,
             var = jitc_trace_append_1(
                 OutArray::Type,
                 "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
-                "(<$w x $t0*> $r1, i32 $s0, <$w x i1> $O, <$w x $t0> $z0)",
+                "(<$w x $t0*> $r1, i32 $s0, <$w x i1> $O, <$w x $t0> $z)",
                 1, addr.index());
         else
             var = jitc_trace_append_2(
                 OutArray::Type,
                 "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
-                "(<$w x $t0*> $r1, i32 $s0, <$w x $t2> $r2, <$w x $t0> $z0)",
+                "(<$w x $t0*> $r1, i32 $s0, <$w x $t2> $r2, <$w x $t0> $z)",
                 1, addr.index(), mask.index());
     } else {
         using UInt32 = LLVMArray<uint32_t>;
@@ -789,14 +843,14 @@ OutArray gather(const void *ptr, const LLVMArray<Index> &index,
             var = jitc_trace_append_1(
                 OutArray::Type,
                 "$r0_0 = call <$w x i32> @llvm.masked.gather.v$wi32"
-                "(<$w x i32*> $r1, i32 $s0, <$w x i1> $O, <$w x i32> $z1)$n"
+                "(<$w x i32*> $r1, i32 $s0, <$w x i1> $O, <$w x i32> $z)$n"
                 "$r0 = trunc <$w x i32> $r0_0 to <$w x $t0>",
                 1, addr.index());
         else
             var = jitc_trace_append_2(
                 OutArray::Type,
                 "$r0_0 = call <$w x i32> @llvm.masked.gather.v$wi32"
-                "(<$w x i32*> $r1, i32 $s0, <$w x $t2> $r2, <$w x i32> $z1)$n"
+                "(<$w x i32*> $r1, i32 $s0, <$w x $t2> $r2, <$w x i32> $z)$n"
                 "$r0 = trunc <$w x i32> $r0_0 to <$w x $t0>",
                 1, addr.index(), mask.index());
     }

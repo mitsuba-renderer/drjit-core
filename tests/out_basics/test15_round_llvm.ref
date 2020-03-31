@@ -120,7 +120,7 @@ loop:
     store <8 x float> %f4, <8 x float>* %f4_p, align 32, !noalias !1
 
     ; Evaluate %f5
-    %f5 = call <8 x float> @llvm.x86.avx.min.ps.256(<8 x float> %f1, <8 x float> %f2)
+    %f5 = call <8 x float> @llvm.minnum.v8f32(<8 x float> %f1, <8 x float> %f2)
 
     ; Store %f5
     %f5_i = getelementptr inbounds float, float* %a5, i64 %index
@@ -128,7 +128,7 @@ loop:
     store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
 
     ; Evaluate %f6
-    %f6 = call <8 x float> @llvm.x86.avx.max.ps.256(<8 x float> %f1, <8 x float> %f2)
+    %f6 = call <8 x float> @llvm.maxnum.v8f32(<8 x float> %f1, <8 x float> %f2)
 
     ; Store %f6
     %f6_i = getelementptr inbounds float, float* %a6, i64 %index
@@ -144,8 +144,8 @@ declare <8 x float> @llvm.floor.v8f32(<8 x float>)
 declare <8 x float> @llvm.ceil.v8f32(<8 x float>)
 declare <8 x float> @llvm.trunc.v8f32(<8 x float>)
 declare <8 x float> @llvm.nearbyint.v8f32(<8 x float>)
-declare <8 x float> @llvm.x86.avx.min.ps.256(<8 x float>, <8 x float>)
-declare <8 x float> @llvm.x86.avx.max.ps.256(<8 x float>, <8 x float>)
+declare <8 x float> @llvm.minnum.v8f32(<8 x float>, <8 x float>)
+declare <8 x float> @llvm.maxnum.v8f32(<8 x float>, <8 x float>)
 
 !0 = !{!0}
 !1 = !{!1, !0}

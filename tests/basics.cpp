@@ -664,3 +664,16 @@ TEST_BOTH(24_bitop) {
     jitc_log(Info, "lz   : %s", v_tz.str());
     jitc_log(Info, "tz   : %s", v_lz.str());
 }
+
+TEST_LLVM(25_wide_intrinsics) {
+    jitc_llvm_set_target("skylake", "+avx2", 32);
+    Float a = arange<Float>(64);
+    Float b = arange<Float>(64) + 0.1f;
+    Float c = max(a, b);
+    Float d = fmadd(a, b, c);
+    auto mask = eq(b, c);
+    jitc_log(Info, "value=%s", c.str());
+    jitc_log(Info, "value=%s", d.str());
+    jitc_assert(all(mask));
+    jitc_llvm_set_target("skylake", "", 8);
+}

@@ -308,7 +308,7 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
 
 void jit_llvm_set_target(const char *target_cpu,
                          const char *target_features,
-                         int vector_width) {
+                         uint32_t vector_width) {
     if (jit_llvm_target_cpu)
         LLVMDisposeMessage(jit_llvm_target_cpu);
 
@@ -321,6 +321,13 @@ void jit_llvm_set_target(const char *target_cpu,
     jit_llvm_target_cpu = LLVMCreateMessage((char *) target_cpu);
     if (target_features)
         jit_llvm_target_features = LLVMCreateMessage((char *) target_features);
+}
+
+/// Convenience function for intrinsic function selection
+int jit_llvm_if_at_least(uint32_t vector_width, const char *feature) {
+    return jit_llvm_vector_width >= vector_width &&
+           jit_llvm_target_features != nullptr &&
+           strstr(jit_llvm_target_features, feature) != nullptr;
 }
 
 bool jit_llvm_init() {

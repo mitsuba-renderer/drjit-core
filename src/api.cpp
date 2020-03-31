@@ -89,9 +89,14 @@ void jitc_device_set(int32_t device, uint32_t stream) {
 
 void jitc_llvm_set_target(const char *target_cpu,
                           const char *target_features,
-                          int vector_width) {
+                          uint32_t vector_width) {
     lock_guard guard(state.mutex);
     jit_llvm_set_target(target_cpu, target_features, vector_width);
+}
+
+int jitc_llvm_if_at_least(uint32_t vector_width, const char *feature) {
+    lock_guard guard(state.mutex);
+    return jit_llvm_if_at_least(vector_width, feature);
 }
 
 void jitc_parallel_set_dispatch(int enable) {

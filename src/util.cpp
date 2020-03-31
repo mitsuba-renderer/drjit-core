@@ -1,3 +1,4 @@
+#include <enoki/traits.h>
 #include "internal.h"
 #include "util.h"
 #include "var.h"
@@ -116,6 +117,94 @@ void jit_memcpy_async(void *dst, const void *src, size_t size) {
         memcpy(dst, src, size);
 }
 
+template <typename Value> struct reduction_add {
+    Value init() { return (Value) 0; }
+    Value operator()(Value a, Value b) const {
+        return a + b;
+    }
+};
+
+template <typename Value> struct reduction_mul {
+    Value init() { return (Value) 1; }
+    Value operator()(Value a, Value b) const {
+        return a * b;
+    }
+};
+
+template <typename Value> struct reduction_max {
+    Value init() {
+        return std::is_integral<Value>::value
+                   ?  std::numeric_limits<Value>::min()
+                   : -std::numeric_limits<Value>::infinity();
+    }
+    Value operator()(Value a, Value b) const {
+        return std::max(a, b);
+    }
+};
+
+template <typename Value> struct reduction_min {
+    Value init() {
+        return std::is_integral<Value>::value
+                   ? std::numeric_limits<Value>::max()
+                   : std::numeric_limits<Value>::infinity();
+    }
+    Value operator()(Value a, Value b) const {
+        return std::min(a, b);
+    }
+};
+
+template <typename Value> struct reduction_or {
+    Value init() { return (Value) 0; }
+    Value operator()(Value a, Value b) const {
+        return a | b;
+    }
+};
+
+template <typename Value> struct reduction_and {
+    Value init() { return (Value) -1; }
+    Value operator()(Value a, Value b) const {
+        return a & b;
+    }
+};
+
+template <typename Reduction, typename Value>
+void jit_reduce_cpu(const Value *ptr, uint32_t size, Value *out) {
+    unlock_guard guard(state.mutex);
+    Reduction reduction;
+    Value value = reduction.init();
+    for (uint32_t i = 0; i < size; ++i)
+        value = reduction(value, ptr[i]);
+    *out = value;
+}
+
+template <typename Value>
+void jit_reduce_cpu(ReductionType rtype, const Value *ptr, uint32_t size,
+                    Value *out) {
+    using UInt = uint_with_size_t<Value>;
+    switch (rtype) {
+        case ReductionType::Add:
+            jit_reduce_cpu<reduction_add<Value>>(ptr, size, out);
+            break;
+        case ReductionType::Mul:
+            jit_reduce_cpu<reduction_mul<Value>>(ptr, size, out);
+            break;
+        case ReductionType::Min:
+            jit_reduce_cpu<reduction_min<Value>>(ptr, size, out);
+            break;
+        case ReductionType::Max:
+            jit_reduce_cpu<reduction_max<Value>>(ptr, size, out);
+            break;
+        case ReductionType::And:
+            jit_reduce_cpu<reduction_and<UInt>>((const UInt *) ptr, size, (UInt *) out);
+            break;
+        case ReductionType::Or:
+            jit_reduce_cpu<reduction_or<UInt>>((const UInt *) ptr, size, (UInt *) out);
+            break;
+
+        default: jit_raise("jit_reduce(): unsupported reduction type!");
+    }
+}
+
 void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t size,
                 void *out) {
     jit_log(Debug, "jit_reduce(" ENOKI_PTR ", type=%s, rtype=%s, size=%u)",
@@ -160,6 +249,34 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
                                       nullptr));
 
             jit_free(temp);
+        }
+    } else {
+        switch (type) {
+            case VarType::Int32:
+                jit_reduce_cpu<int32_t>(rtype, (const int32_t *) ptr, size, (int32_t *) out);
+                break;
+
+            case VarType::UInt32:
+                jit_reduce_cpu<uint32_t>(rtype, (const uint32_t *) ptr, size, (uint32_t *) out);
+                break;
+
+            case VarType::Int64:
+                jit_reduce_cpu<int64_t>(rtype, (const int64_t *) ptr, size, (int64_t *) out);
+                break;
+
+            case VarType::UInt64:
+                jit_reduce_cpu<uint64_t>(rtype, (const uint64_t *) ptr, size, (uint64_t *) out);
+                break;
+
+            case VarType::Float32:
+                jit_reduce_cpu<float>(rtype, (const float *) ptr, size, (float *) out);
+                break;
+
+            case VarType::Float64:
+                jit_reduce_cpu<double>(rtype, (const double *) ptr, size, (double *) out);
+                break;
+
+            default: jit_raise("jit_reduce(): unsupported data type!");
         }
     }
 }

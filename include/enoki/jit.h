@@ -139,7 +139,17 @@ extern JITC_EXPORT void jitc_device_set(int32_t device, uint32_t stream);
  */
 extern JITC_EXPORT void jitc_llvm_set_target(const char *target_cpu,
                                              const char *target_features,
-                                             int vector_width);
+                                             uint32_t vector_width);
+
+/**
+ * \brief Convenience function for intrinsic function selection
+ *
+ * Returns \c 1 if the current vector width is is at least as large as a
+ * provided value, and when the host CPU provides a given target feature (e.g.
+ * "+avx512f").
+ */
+extern JITC_EXPORT int jitc_llvm_if_at_least(uint32_t vector_width,
+                                             const char *feature);
 
 /**
  * \brief Dispatch computation to multiple parallel streams?

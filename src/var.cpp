@@ -643,7 +643,7 @@ int jit_var_is_all_false(uint32_t index) {
         rv = strcmp(v->stmt,
                     "$r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n"
                     "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
-                    "<$w x i32> zeroinitializer");
+                    "<$w x i32> $z");
 
     return rv == 0;
 }
@@ -661,7 +661,7 @@ int jit_var_is_all_true(uint32_t index) {
         rv = strcmp(v->stmt,
                     "$r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n"
                     "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
-                    "<$w x i32> zeroinitializer");
+                    "<$w x i32> $z");
 
     return rv == 0;
 }

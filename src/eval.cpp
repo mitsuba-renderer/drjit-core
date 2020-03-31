@@ -85,6 +85,9 @@ static tsl::robin_set<Intrinsic, IntrinsicHash, IntrinsicEquality> intrinsics_se
 
 // ====================================================================
 
+/// Forward declaration
+void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v);
+
 /// Recursively traverse the computation graph to find variables needed by a computation
 static void jit_var_traverse(uint32_t size, uint32_t index) {
     std::pair<uint32_t, uint32_t> key(size, index);
@@ -161,8 +164,18 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
 }
 
 /// Convert an IR template with '$' expressions into valid IR (LLVM variant)
-void jit_render_stmt_llvm(uint32_t index, Variable *v) {
+void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") {
     const char *s = v->stmt;
+
+    if (s[0] == '$' && s[1] > '0' && s[1] <= '9') {
+        uint32_t width = 1 << (s[1] - '0');
+        if (width != jit_llvm_vector_width) {
+            jit_render_stmt_llvm_unroll(index, v);
+            return;
+        } else {
+            s += 2;
+        }
+    }
 
     buffer.put("    ");
     char c;
@@ -176,8 +189,8 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
                 case 'n': buffer.put("\n    "); continue;
                 case 'i': buffer.put("%index"); continue;
                 case 'w': buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 'z': buffer.put("zeroinitializer"); continue;
                 case 'S': continue;
-                case 'z':
                 case 'l':
                 case 't': prefix_table = var_type_name_llvm; break;
                 case 's': prefix_table = var_type_size_str; break;
@@ -215,7 +228,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
 
             switch (type) {
                 case 'r':
-                    buffer.fmt("%s%u", prefix, dep->reg_index);
+                    buffer.fmt("%s%u%s", prefix, dep->reg_index, suffix);
                     break;
 
                 case 'a':
@@ -229,14 +242,6 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
                     buffer.putc('<');
                     for (uint32_t i = 0; i < jit_llvm_vector_width; ++i)
                         buffer.fmt("%s %i%s%s", prefix, i, is_float ? ".0" : "",
-                                   i + 1 < jit_llvm_vector_width ? ", " : "");
-                    buffer.putc('>');
-                    break;
-
-                case 'z':
-                    buffer.putc('<');
-                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i)
-                        buffer.fmt("%s 0%s%s", prefix, is_float ? ".0" : "",
                                    i + 1 < jit_llvm_vector_width ? ", " : "");
                     buffer.putc('>');
                     break;
@@ -272,6 +277,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
             bool stop = false;
 
             switch (type) {
+                case 'z':
                 case 'O': intrinsics_buffer.rewind(1); continue;
                 case 't': prefix_table = var_type_name_llvm; break;
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
@@ -279,7 +285,6 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
                 case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
                 case 's':
                 case 'S':
-                case 'z':
                 case 'r': s++; intrinsics_buffer.rewind(1); continue;
                 case 'n': stop = true; break;
                 case 'o':
@@ -298,6 +303,103 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v) {
         }
     }
     intrinsics_buffer.putc('\n');
+}
+
+/// Expand fixed-length LLVM intrinsics by calling them multiple times
+void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v) {
+    const char *s = v->stmt;
+    uint32_t width       = 1 << (s[1] - '0'),
+             width_host  = jit_llvm_vector_width,
+             last_level  = 0;
+
+
+    /// Recursively partition dependencies into arrays of size 'width'
+    for (uint32_t i = 0; i < 3; ++i) {
+        if (v->dep[i] == 0)
+            continue;
+        Variable *dep = jit_var(v->dep[i]);
+        for (uint32_t l = 0; ; ++l) {
+            uint32_t w = width_host / (2u << l);
+            if (w < width)
+                break;
+
+            for (uint32_t j = 0; j < (1u << l); ++j) {
+                for (uint32_t k = 0; k < 2; ++k) {
+                    char source[64];
+                    if (l == 0)
+                        snprintf(source, sizeof(source), "%s%u",
+                                 var_type_prefix[(int) dep->type], dep->reg_index);
+                    else
+                        snprintf(source, sizeof(source), "%s%u_unroll_%s%u_%u_%u",
+                                 var_type_prefix[(int) dep->type], dep->reg_index,
+                                 var_type_prefix[(int) v->type] + 1, v->reg_index,
+                                 l - 1, j);
+
+                    buffer.fmt("    %s%u_unroll_%s%u_%u_%u = shufflevector <%u "
+                               "x %s> %s, <%u x "
+                               "%s> undef, <%u x i32> <",
+                               var_type_prefix[(int) dep->type], dep->reg_index,
+                               var_type_prefix[(int) v->type] + 1, v->reg_index,
+                               l, 2 * j + k, w * 2u,
+                               var_type_name_llvm[(int) dep->type], source,
+                               w * 2u, var_type_name_llvm[(int) dep->type], w);
+                    for (uint32_t r = 0; r < w; ++r)
+                        buffer.fmt("i32 %u%s", r + k*w, r + 1 < w ? ", " : "");
+                    buffer.put(">\n");
+                }
+            }
+            buffer.put("\n");
+
+            last_level = l;
+        }
+    }
+
+    jit_llvm_vector_width = width;
+
+    for (uint32_t j = 0; j < width_host / width; ++j) {
+        char suffix[64];
+        snprintf(suffix, 64, "_unroll_%s%u_%u_%u",
+                 var_type_prefix[(int) v->type] + 1,
+                 v->reg_index, last_level, j);
+        jit_render_stmt_llvm(index, v, suffix);
+    }
+    buffer.putc('\n');
+
+    jit_llvm_vector_width = width_host;
+
+    /// Recursively reassemble and output array of size 'width_host'
+    for (uint32_t l = last_level; ; l /= 2) {
+        uint32_t w = width_host / (2u << l);
+        for (uint32_t j = 0; j < (1u << l); ++j) {
+            char target[64];
+            if (l == 0)
+                snprintf(target, sizeof(target), "%s%u",
+                         var_type_prefix[(int) v->type], v->reg_index);
+            else
+                snprintf(target, sizeof(target), "%s%u_unroll_%s%u_%u_%u",
+                         var_type_prefix[(int) v->type], v->reg_index,
+                         var_type_prefix[(int) v->type] + 1, v->reg_index,
+                         l - 1, j);
+
+            buffer.fmt("    %s = shufflevector <%u "
+                       "x %s> %s%u_unroll_%s%u_%u_%u, <%u x "
+                       "%s> %s%u_unroll_%s%u_%u_%u, <%u x i32> <",
+                       target,
+                       w, var_type_name_llvm[(int) v->type],
+                       var_type_prefix[(int) v->type], v->reg_index,
+                       var_type_prefix[(int) v->type] + 1, v->reg_index, l, 2*j,
+                       w, var_type_name_llvm[(int) v->type],
+                       var_type_prefix[(int) v->type], v->reg_index,
+                       var_type_prefix[(int) v->type] + 1, v->reg_index, l, 2*j+1,
+                       w*2u);
+            for (uint32_t r = 0; r < 2 * w; ++r)
+                buffer.fmt("i32 %u%s", r, r + 1 < 2 * w ? ", " : "");
+            buffer.put(">\n");
+        }
+        if (l == 0)
+            break;
+        buffer.put("\n");
+    }
 }
 
 void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
@@ -434,61 +536,6 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     buffer.put("L0:\n");
     buffer.put("    ret;\n");
     buffer.put("}");
-}
-
-/// Replace generic LLVM intrinsics by more efficient hardware-specific ones
-static void jit_llvm_rewrite_intrinsics() {
-    const char *replacements[][4] = {
-        { "minnum.v4f32",     "x86.sse.min.ps",        nullptr, nullptr },
-        { "maxnum.v4f32",     "x86.sse.max.ps",        nullptr, nullptr },
-        { "minnum.v8f32",     "x86.avx.min.ps.256",    nullptr, nullptr },
-        { "maxnum.v8f32",     "x86.avx.max.ps.256",    nullptr, nullptr },
-        { "minnum.v16f32",    "x86.avx512.min.ps.512", "i32 4", "i32"},
-        { "maxnum.v16f32",    "x86.avx512.max.ps.512", "i32 4", "i32"}
-    };
-
-    intrinsics_buffer.clear();
-
-    char *ptr = (char *) buffer.get();
-    while (true) {
-        char *ptr_next = strstr(ptr, "@llvm.");
-        if (!ptr_next) {
-            intrinsics_buffer.put(ptr);
-            break;
-        }
-
-        bool is_declaration = false;
-        char *line = ptr_next;
-        while (line != ptr && *line != '\n')
-            --line;
-        if (line && strncmp(line + 1, "declare", 7) == 0)
-            is_declaration = true;
-
-        ptr_next += 6;
-        ptr_next[-1] = '\0';
-        intrinsics_buffer.put(ptr);
-        intrinsics_buffer.putc('.');
-
-        for (auto &o : replacements) {
-            if (strncmp(ptr_next, o[0], strlen(o[0])) == 0) {
-                intrinsics_buffer.put(o[1]);
-                ptr_next += strlen(o[0]);
-
-                char *paren = strchr(ptr_next, ')');
-                const char *suffix = is_declaration ? o[3] : o[2];
-                if (paren && suffix) {
-                    *paren = '\0';
-                    intrinsics_buffer.fmt("%s, %s)", ptr_next, suffix);
-                    ptr_next = paren + 1;
-                }
-                break;
-            }
-        }
-
-        ptr = ptr_next;
-    }
-
-    intrinsics_buffer.swap(buffer);
 }
 
 void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
@@ -638,7 +685,6 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
 void jit_assemble_llvm_suffix() {
     if (intrinsics_buffer.size() > 1) {
         buffer.put(intrinsics_buffer.get());
-        jit_llvm_rewrite_intrinsics();
         buffer.putc('\n');
     }
 
