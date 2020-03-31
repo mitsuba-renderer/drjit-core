@@ -1,0 +1,147 @@
+jit_device_set(device=0, stream=0): creating stream
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_malloc(type=host-pinned, size=64): <@> (new allocation)
+jit_free(<@>, type=host-pinned, size=64)
+jit_var_map(1): <@>, size=3, free=1
+jit_var_inc_ref_ext(1): 1
+jit_var_copy(1, size=3)
+jit_var_inc_ref_int(1): 1
+jit_trace_append(2 <- 1): mov.$b0 $r0, $r1
+jit_var_inc_ref_ext(2): 1
+jit_var_dec_ref_ext(1): 0
+jit_eval(): begin.
+jit_assemble(size=3): register map:
+   - %f4 -> 1 [in]
+   - %r5 -> 2 [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=3, in=1, out=1, ops=6) ..
+.version 6.3
+.address_size 64
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1) {
+    .reg.b8 %b<6>;
+    .reg.b16 %w<6>;
+    .reg.b32 %r<6>;
+    .reg.b64 %rd<6>;
+    .reg.f32 %f<6>;
+    .reg.f64 %d<6>;
+    .reg.pred %p<6>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Load %f4
+    ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    ld.global.cs.f32 %f4, [%rd0];
+
+    // Evaluate %r5
+    mov.b32 %r5, %f4;
+
+    // Store %r5
+    ld.param.u64 %rd0, [arg1];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.u32 [%rd0], %r5;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(1): 0
+jit_var_free(1)
+jit_free(<@>, type=device, device=0, size=64)
+jit_free_flush(): scheduling 2 deallocations
+jit_eval(): done.
+As integer: [1065353216, 1073741824, 1077936128]
+jit_var_inc_ref_int(2): 1
+jit_trace_append(3 <- 2): mov.$b0 $r0, $r1
+jit_var_inc_ref_ext(3): 1
+jit_eval(): begin.
+jit_assemble(size=3): register map:
+   - %r4 -> 2 [in]
+   - %f5 -> 3 [out]
+jit_malloc(type=device, device=0, size=64): <@> (reused global)
+jit_run(): launching kernel (n=3, in=1, out=1, ops=6) ..
+.version 6.3
+.address_size 64
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1) {
+    .reg.b8 %b<6>;
+    .reg.b16 %w<6>;
+    .reg.b32 %r<6>;
+    .reg.b64 %rd<6>;
+    .reg.f32 %f<6>;
+    .reg.f64 %d<6>;
+    .reg.pred %p<6>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Load %r4
+    ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    ld.global.cs.u32 %r4, [%rd0];
+
+    // Evaluate %f5
+    mov.b32 %f5, %r4;
+
+    // Store %f5
+    ld.param.u64 %rd0, [arg1];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.f32 [%rd0], %f5;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(2): 0
+jit_eval(): done.
+As float: [1, 2, 3]
+jit_var_dec_ref_ext(3): 0
+jit_var_free(3)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_dec_ref_ext(2): 0
+jit_var_free(2)
+jit_free(<@>, type=device, device=0, size=64)
+jit_shutdown(): destroying streams ..
+jit_free_flush(): scheduling 2 deallocations
+jit_malloc_trim(): freed
+ - host-pinned memory: 64 B in 1 allocation
+ - device memory: 128 B in 2 allocations
+jit_shutdown(): done

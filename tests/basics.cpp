@@ -561,3 +561,91 @@ TEST_BOTH(22_and_or_mask) {
     jitc_log(Info, "z_o : %s", z_o.str());
     jitc_log(Info, "z_a : %s", z_a.str());
 }
+
+template <typename T, typename T2, typename S = typename T::Value>
+T poly2(const T &x, const T2 &c0, const T2 &c1, const T2 &c2) {
+    T x2 = x * x;
+    return fmadd(x2, S(c2), fmadd(x, S(c1), S(c0)));
+}
+
+template <typename Value, typename Mask, typename Int>
+void sincos_approx(const Value &x, Value &s_out, Value &c_out) {
+    /* Joint sine & cosine function approximation based on CEPHES.
+       Excellent accuracy in the domain |x| < 8192
+
+       Redistributed under a BSD license with permission of the author, see
+       https://github.com/deepmind/torch-cephes/blob/master/LICENSE.txt
+
+     - sin (in [-8192, 8192]):
+       * avg abs. err = 6.61896e-09
+       * avg rel. err = 1.37888e-08
+          -> in ULPs  = 0.166492
+       * max abs. err = 5.96046e-08
+         (at x=-8191.31)
+       * max rel. err = 1.76826e-06
+         -> in ULPs   = 19
+         (at x=-6374.29)
+
+     - cos (in [-8192, 8192]):
+       * avg abs. err = 6.59965e-09
+       * avg rel. err = 1.37432e-08
+          -> in ULPs  = 0.166141
+       * max abs. err = 5.96046e-08
+         (at x=-8191.05)
+       * max rel. err = 3.13993e-06
+         -> in ULPs   = 47
+         (at x=-6199.93)
+    */
+
+    using Scalar = float;
+
+    Value xa = abs(x);
+
+    /* Scale by 4/Pi and get the integer part */
+    Int j(xa * Scalar(1.2732395447351626862));
+
+    /* Map zeros to origin; if (j & 1) j += 1 */
+    j = (j + uint32_t(1)) & uint32_t(~1u);
+
+    /* Cast back to a floating point value */
+    Value y(j);
+
+    // Determine sign of result
+    uint32_t Shift = sizeof(Scalar) * 8 - 3;
+    Value sign_sin = reinterpret_array<Value>(j << Shift) ^ x;
+    Value sign_cos = reinterpret_array<Value>((~(j - uint32_t(2))) << Shift);
+
+    // Extended precision modular arithmetic
+    y = xa - y * Scalar(0.78515625)
+           - y * Scalar(2.4187564849853515625e-4)
+           - y * Scalar(3.77489497744594108e-8);
+
+    Value z = y * y, s, c;
+    z |= eq(xa, std::numeric_limits<Scalar>::infinity());
+
+    s = poly2(z, -1.6666654611e-1,
+                  8.3321608736e-3,
+                 -1.9515295891e-4) * z;
+
+    c = poly2(z,  4.166664568298827e-2,
+                 -1.388731625493765e-3,
+                  2.443315711809948e-5) * z;
+
+    s = fmadd(s, y, y);
+    c = fmadd(c, z, fmadd(z, Scalar(-0.5), Scalar(1)));
+
+    Mask polymask(eq(j & uint32_t(2), Int(0)));
+
+    s_out = mulsign(select(polymask, s, c), sign_sin);
+    c_out = mulsign(select(polymask, c, s), sign_cos);
+}
+
+TEST_BOTH(23_sincos) {
+    using Mask = Array<bool>;
+    Float x = linspace<Float>(0, 1, 10);
+    Float xs, xc;
+    sincos_approx<Float, Mask, Int32>(x, xs, xc);
+
+    jitc_log(Info, "xs : %s", xs.str());
+    jitc_log(Info, "xc : %s", xc.str());
+}

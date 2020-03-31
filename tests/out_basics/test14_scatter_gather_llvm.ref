@@ -421,7 +421,6 @@ declare void @llvm.masked.scatter.v1i32(<1 x i32>, <1 x i32*>, i32, <1 x i1>)
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
-jit_kernel_read(): cache collision in file "/home/wjakob/.enoki/4a9358059f7c8d2c.llvm.bin": size mismatch (3802 vs 3800 bytes).
 jit_assemble(size=1): register map:
    - %p0 -> 14 [scalar] [out]
 jit_malloc(type=host, size=64): <@> (reused global)

@@ -88,3 +88,8 @@ template <typename Value> Value sign_mask() {
     using UInt = uint_with_size_t<Value>;
     return memcpy_cast<Value>(UInt(1) << (sizeof(UInt) * 8 - 1));
 }
+
+template <typename Value> Value sign_mask_neg() {
+    using UInt = uint_with_size_t<Value>;
+    return memcpy_cast<Value>(~(UInt(1) << (sizeof(UInt) * 8 - 1)));
+}

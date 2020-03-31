@@ -371,7 +371,7 @@ struct LLVMArray {
                              ? "$r0 = xor <$w x $t1> $r1, $r2"
                              : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
                                "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
-                               "$r0_2 = xor <$w x $b0> $r0_0, $r0_1"
+                               "$r0_2 = xor <$w x $b0> $r0_0, $r0_1$n"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
         return from_index(
@@ -416,6 +416,16 @@ struct LLVMArray {
         return operator=(*this & v);
     }
 
+    template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
+    LLVMArray& operator|=(const LLVMArray<bool> &v) {
+        return operator=(*this | v);
+    }
+
+    template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
+    LLVMArray& operator&=(const LLVMArray<bool> &v) {
+        return operator=(*this & v);
+    }
+
     LLVMArray& operator^=(const LLVMArray &v) {
         return operator=(*this ^ v);
     }
@@ -450,13 +460,10 @@ struct LLVMArray {
         if (!jitc_is_arithmetic(Type))
             jitc_raise("Unsupported operand type");
 
-        if (std::is_floating_point<Value>::value) {
-            return LLVMArray::from_index(jitc_trace_append_1(Type,
-                "$r0 = call <$w x $t0> @llvm.abs.v$w$a1(<$w x $t1> $r1)",
-                1, a.index()));
-        } else {
+        if (std::is_floating_point<Value>::value)
+            return LLVMArray<Value>(sign_mask_neg<Value>()) & a;
+        else
             return select(a > 0, a, -a);
-        }
     }
 
     friend LLVMArray sqrt(const LLVMArray &a) {

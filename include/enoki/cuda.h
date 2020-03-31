@@ -369,6 +369,16 @@ struct CUDAArray {
         return operator=(*this & v);
     }
 
+    template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
+    CUDAArray& operator|=(const CUDAArray<bool> &v) {
+        return operator=(*this | v);
+    }
+
+    template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
+    CUDAArray& operator&=(const CUDAArray<bool> &v) {
+        return operator=(*this & v);
+    }
+
     CUDAArray& operator^=(const CUDAArray &v) {
         return operator=(*this ^ v);
     }

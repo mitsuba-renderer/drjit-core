@@ -30,7 +30,7 @@ void test_sanitize_log(char *buf) {
          *dst = src;
 
     // Remove all lines starting with the following text
-    const char *excise[12] = {
+    const char *excise[13] = {
         "jit_init(): detecting",
         " - Found CUDA",
         " - Enabling peer",
@@ -42,7 +42,8 @@ void test_sanitize_log(char *buf) {
         "jit_kernel_load(",
         "jit_kernel_write(",
         "jit_llvm_disasm()",
-        "jit_llvm_mem_allocate("
+        "jit_llvm_mem_allocate(",
+        "jit_kernel_read(): cache collision"
     };
 
     while (*src != '\0') {

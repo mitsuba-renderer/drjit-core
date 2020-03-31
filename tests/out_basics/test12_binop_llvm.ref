@@ -610,7 +610,7 @@ jit_trace_append(19 <- 7, 10): $r0 = xor <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(11): 1
-jit_trace_append(20 <- 8, 11): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = xor <$w x $b0> $r0_0, $r0_1$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
+jit_trace_append(20 <- 8, 11): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = xor <$w x $b0> $r0_0, $r0_1$n$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
 jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(12): 1
@@ -716,7 +716,8 @@ loop:
     ; Evaluate %f5
     %f5_0 = bitcast <8 x float> %f3 to <8 x i32>
     %f5_1 = bitcast <8 x float> %f4 to <8 x i32>
-    %f5_2 = xor <8 x i32> %f5_0, %f5_1%f5 = bitcast <8 x i32> %f5_2 to <8 x float>
+    %f5_2 = xor <8 x i32> %f5_0, %f5_1
+    %f5 = bitcast <8 x i32> %f5_2 to <8 x float>
 
     ; Store %f5
     %f5_i = getelementptr inbounds float, float* %a5, i64 %index
