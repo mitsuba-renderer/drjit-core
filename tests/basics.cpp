@@ -649,3 +649,16 @@ TEST_BOTH(23_sincos) {
     jitc_log(Info, "xs : %s", xs.str());
     jitc_log(Info, "xc : %s", xc.str());
 }
+
+TEST_BOTH(24_bitop) {
+    UInt32 v(0, 1, 1234, 0xFFFFFFFF);
+
+    UInt32 v_pop = popcnt(v),
+           v_lz  = lzcnt(v),
+           v_tz  = tzcnt(v);
+
+    jitc_log(Info, "orig : %s", v.str());
+    jitc_log(Info, "pop  : %s", v_pop.str());
+    jitc_log(Info, "lz   : %s", v_tz.str());
+    jitc_log(Info, "tz   : %s", v_lz.str());
+}

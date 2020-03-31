@@ -975,3 +975,36 @@ template <typename Value> LLVMArray<Value> hmin(const LLVMArray<Value> &v) {
                 result.data());
     return result;
 }
+
+template <typename Value, typename Array = LLVMArray<Value>>
+Array popcnt(const LLVMArray<Value> &a) {
+    if (!jitc_is_integral(Array::Type))
+        jitc_raise("Unsupported operand type");
+
+    return Array::from_index(jitc_trace_append_1(
+        Array::Type,
+        "$r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)",
+        1, a.index()));
+}
+
+template <typename Value, typename Array = LLVMArray<Value>>
+Array lzcnt(const LLVMArray<Value> &a) {
+    if (!jitc_is_integral(Array::Type))
+        jitc_raise("Unsupported operand type");
+
+    return Array::from_index(jitc_trace_append_1(
+        Array::Type,
+        "$r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1 $S0)",
+        1, a.index()));
+}
+
+template <typename Value, typename Array = LLVMArray<Value>>
+Array tzcnt(const LLVMArray<Value> &a) {
+    if (!jitc_is_integral(Array::Type))
+        jitc_raise("Unsupported operand type");
+
+    return Array::from_index(jitc_trace_append_1(
+        Array::Type,
+        "$r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1 $S0)",
+        1, a.index()));
+}

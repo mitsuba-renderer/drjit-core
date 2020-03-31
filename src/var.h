@@ -1,6 +1,7 @@
 #pragma once
 
 #include <enoki/jit.h>
+#include <utility>
 
 struct Variable;
 

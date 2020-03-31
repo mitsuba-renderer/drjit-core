@@ -978,3 +978,30 @@ mkperm(const CUDAArray<uint32_t> &v, uint32_t bucket_count) {
 
     return result;
 }
+
+template <typename Value, typename Array = CUDAArray<Value>>
+Array popcnt(const CUDAArray<Value> &a) {
+    if (!jitc_is_integral(Array::Type))
+        jitc_raise("Unsupported operand type");
+
+    return Array::from_index(
+        jitc_trace_append_1(Array::Type, "popc.$b0 $r0, $r1", 1, a.index()));
+}
+
+template <typename Value, typename Array = CUDAArray<Value>>
+Array lzcnt(const CUDAArray<Value> &a) {
+    if (!jitc_is_integral(Array::Type))
+        jitc_raise("Unsupported operand type");
+
+    return Array::from_index(
+        jitc_trace_append_1(Array::Type, "clz.$b0 $r0, $r1", 1, a.index()));
+}
+
+template <typename Value, typename Array = CUDAArray<Value>>
+Array tzcnt(const CUDAArray<Value> &a) {
+    if (!jitc_is_integral(Array::Type))
+        jitc_raise("Unsupported operand type");
+
+    return Array::from_index(jitc_trace_append_1(
+        Array::Type, "brev.$b0 $r0, $r1$nclz.$b0 $r0, $r0", 1, a.index()));
+}
