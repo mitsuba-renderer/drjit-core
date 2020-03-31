@@ -21,7 +21,8 @@
 template <typename Value_> struct CUDAArray;
 
 template <typename Value>
-CUDAArray<Value> select(const CUDAArray<bool> &m, const CUDAArray<Value> &a,
+CUDAArray<Value> select(const CUDAArray<bool> &m,
+                        const CUDAArray<Value> &a,
                         const CUDAArray<Value> &b);
 
 template <typename Value_>
@@ -280,6 +281,18 @@ struct CUDAArray {
                                               m_index, a.index()));
     }
 
+    template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
+    CUDAArray operator|(const CUDAArray<bool> &m) const {
+        // Simple constant propagation for masks
+        if (m.is_all_false())
+            return *this;
+        else if (m.is_all_true())
+            return CUDAArray(memcpy_cast<Value>(uint_with_size_t<Value>(-1)));
+
+        return from_index(jitc_trace_append_2(Type, "selp.$b0 $r0, -1, $r1, $r2",
+                                              1, index(), m.index()));
+    }
+
     CUDAArray operator&(const CUDAArray &a) const {
         // Simple constant propagation for masks
         if (std::is_same<Value, bool>::value) {
@@ -291,6 +304,18 @@ struct CUDAArray {
 
         return from_index(jitc_trace_append_2(Type, "and.$b0 $r0, $r1, $r2", 1,
                                               m_index, a.index()));
+    }
+
+    template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
+    CUDAArray operator&(const CUDAArray<bool> &m) const {
+        // Simple constant propagation for masks
+        if (m.is_all_true())
+            return *this;
+        else if (m.is_all_false())
+            return CUDAArray(Value(0));
+
+        return from_index(jitc_trace_append_2(Type, "selp.$b0 $r0, $r1, 0, $r2",
+                                              1, index(), m.index()));
     }
 
     CUDAArray operator^(const CUDAArray &a) const {
@@ -607,7 +632,8 @@ CUDAArray<Value> select(const CUDAArray<bool> &m,
     }
 }
 
-template <typename OutArray, typename ValueIn> OutArray reinterpret_array(const CUDAArray<ValueIn> &input) {
+template <typename OutArray, typename ValueIn>
+OutArray reinterpret_array(const CUDAArray<ValueIn> &input) {
     using ValueOut = typename OutArray::Value;
 
     static_assert(
@@ -797,6 +823,38 @@ CUDAArray<void_t> scatter(CUDAArray<Value> &dst,
     jitc_var_set_extra_dep(result.index(), dst.index());
     jitc_var_mark_dirty(dst.index());
     return result;
+}
+
+template <typename Value>
+CUDAArray<Value> copysign(const CUDAArray<Value> &v1,
+                          const CUDAArray<Value> &v2) {
+    if (!jitc_is_floating_point(CUDAArray<Value>::Type))
+        jitc_raise("Unsupported operand type");
+    return abs(v1) | (CUDAArray<Value>(sign_mask<Value>()) & v2);
+}
+
+template <typename Value>
+CUDAArray<Value> copysign_neg(const CUDAArray<Value> &v1,
+                              const CUDAArray<Value> &v2) {
+    if (!jitc_is_floating_point(CUDAArray<Value>::Type))
+        jitc_raise("Unsupported operand type");
+    return abs(v1) | (CUDAArray<Value>(sign_mask<Value>()) & ~v2);
+}
+
+template <typename Value>
+CUDAArray<Value> mulsign(const CUDAArray<Value> &v1,
+                         const CUDAArray<Value> &v2) {
+    if (!jitc_is_floating_point(CUDAArray<Value>::Type))
+        jitc_raise("Unsupported operand type");
+    return v1 ^ (CUDAArray<Value>(sign_mask<Value>()) & v2);
+}
+
+template <typename Value>
+CUDAArray<Value> mulsign_neg(const CUDAArray<Value> &v1,
+                             const CUDAArray<Value> &v2) {
+    if (!jitc_is_floating_point(CUDAArray<Value>::Type))
+        jitc_raise("Unsupported operand type");
+    return v1 ^ (CUDAArray<Value>(sign_mask<Value>()) & ~v2);
 }
 
 inline bool all(const CUDAArray<bool> &v) {

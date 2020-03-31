@@ -20,8 +20,12 @@
 template <typename Value_> struct LLVMArray;
 
 template <typename Value>
-LLVMArray<Value> select(const LLVMArray<bool> &m, const LLVMArray<Value> &a,
+LLVMArray<Value> select(const LLVMArray<bool> &m,
+                        const LLVMArray<Value> &a,
                         const LLVMArray<Value> &b);
+
+template <typename OutArray, typename ValueIn>
+OutArray reinterpret_array(const LLVMArray<ValueIn> &input);
 
 template <typename Value_>
 struct LLVMArray {
@@ -302,6 +306,22 @@ struct LLVMArray {
             jitc_trace_append_2(Type, op, 1, m_index, a.index()));
     }
 
+    template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
+    LLVMArray operator|(const LLVMArray<bool> &m) const {
+        // Simple constant propagation for masks
+        if (m.is_all_false())
+            return *this;
+        else if (m.is_all_true())
+            return LLVMArray(memcpy_cast<Value>(uint_with_size_t<Value>(-1)));
+
+        using UInt = LLVMArray<uint_with_size_t<Value>>;
+        UInt x = UInt::from_index(jitc_trace_append_1(
+            UInt::Type, "$r0 = sext <$w x $t1> $r1 to <$w x $b0>", 1,
+            m.index()));
+
+        return *this | reinterpret_array<LLVMArray>(x);
+    }
+
     LLVMArray operator&(const LLVMArray &a) const {
         // Simple constant propagation for masks
         if (std::is_same<Value, bool>::value) {
@@ -320,6 +340,22 @@ struct LLVMArray {
 
         return from_index(
             jitc_trace_append_2(Type, op, 1, m_index, a.index()));
+    }
+
+    template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
+    LLVMArray operator&(const LLVMArray<bool> &m) const {
+        // Simple constant propagation for masks
+        if (m.is_all_true())
+            return *this;
+        else if (m.is_all_false())
+            return LLVMArray(Value(0));
+
+        using UInt = LLVMArray<uint_with_size_t<Value>>;
+        UInt x = UInt::from_index(jitc_trace_append_1(
+            UInt::Type, "$r0 = sext <$w x $t1> $r1 to <$w x $b0>", 1,
+            m.index()));
+
+        return *this & reinterpret_array<LLVMArray>(x);
     }
 
     LLVMArray operator^(const LLVMArray &a) const {
@@ -664,7 +700,8 @@ LLVMArray<Value> select(const LLVMArray<bool> &m,
     }
 }
 
-template <typename OutArray, typename ValueIn> OutArray reinterpret_array(const LLVMArray<ValueIn> &input) {
+template <typename OutArray, typename ValueIn>
+OutArray reinterpret_array(const LLVMArray<ValueIn> &input) {
     using ValueOut = typename OutArray::Value;
 
     static_assert(
@@ -673,7 +710,8 @@ template <typename OutArray, typename ValueIn> OutArray reinterpret_array(const 
 
     if (std::is_integral<ValueIn>::value != std::is_integral<ValueOut>::value) {
         return OutArray::from_index(jitc_trace_append_1(
-            OutArray::Type, "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>", 1, input.index()));
+            OutArray::Type, "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>", 1,
+            input.index()));
     } else {
         jitc_var_inc_ref_ext(input.index());
         return OutArray::from_index(input.index());
@@ -823,6 +861,38 @@ LLVMArray<void_t> scatter(LLVMArray<Value> &dst,
     jitc_var_set_extra_dep(result.index(), dst.index());
     jitc_var_mark_dirty(dst.index());
     return result;
+}
+
+template <typename Value>
+LLVMArray<Value> copysign(const LLVMArray<Value> &v1,
+                          const LLVMArray<Value> &v2) {
+    if (!jitc_is_floating_point(LLVMArray<Value>::Type))
+        jitc_raise("Unsupported operand type");
+    return abs(v1) | (LLVMArray<Value>(sign_mask<Value>()) & v2);
+}
+
+template <typename Value>
+LLVMArray<Value> copysign_neg(const LLVMArray<Value> &v1,
+                              const LLVMArray<Value> &v2) {
+    if (!jitc_is_floating_point(LLVMArray<Value>::Type))
+        jitc_raise("Unsupported operand type");
+    return abs(v1) | (LLVMArray<Value>(sign_mask<Value>()) & ~v2);
+}
+
+template <typename Value>
+LLVMArray<Value> mulsign(const LLVMArray<Value> &v1,
+                         const LLVMArray<Value> &v2) {
+    if (!jitc_is_floating_point(LLVMArray<Value>::Type))
+        jitc_raise("Unsupported operand type");
+    return v1 ^ (LLVMArray<Value>(sign_mask<Value>()) & v2);
+}
+
+template <typename Value>
+LLVMArray<Value> mulsign_neg(const LLVMArray<Value> &v1,
+                             const LLVMArray<Value> &v2) {
+    if (!jitc_is_floating_point(LLVMArray<Value>::Type))
+        jitc_raise("Unsupported operand type");
+    return v1 ^ (LLVMArray<Value>(sign_mask<Value>()) & ~v2);
 }
 
 inline bool all(const LLVMArray<bool> &v) {

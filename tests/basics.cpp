@@ -516,3 +516,48 @@ TEST_BOTH(21_shifts) {
     jitc_log(Info, "ys1 : %s", ys1.str());
     jitc_log(Info, "ys2 : %s", ys2.str());
 }
+
+TEST_BOTH(22_and_or_mask) {
+    using Mask = Array<bool>;
+
+    UInt32 x(0, 1);
+    Int32  y(0, 1);
+    Float  z(0.f, 1.f);
+
+    Mask m(true, false);
+
+    UInt32 x_o = x | m, x_a = x & m;
+    Int32  y_o = y | m, y_a = y & m;
+    Float  z_o = z | m, z_a = z & m;
+
+    jitc_log(Info, "x_o : %s", x_o.str());
+    jitc_log(Info, "x_a : %s", x_a.str());
+    jitc_log(Info, "y_o : %s", y_o.str());
+    jitc_log(Info, "y_a : %s", y_a.str());
+    jitc_log(Info, "z_o : %s", z_o.str());
+    jitc_log(Info, "z_a : %s", z_a.str());
+
+    m = Mask(true);
+    x_o = x | m; x_a = x & m;
+    y_o = y | m; y_a = y & m;
+    z_o = z | m; z_a = z & m;
+
+    jitc_log(Info, "x_o : %s", x_o.str());
+    jitc_log(Info, "x_a : %s", x_a.str());
+    jitc_log(Info, "y_o : %s", y_o.str());
+    jitc_log(Info, "y_a : %s", y_a.str());
+    jitc_log(Info, "z_o : %s", z_o.str());
+    jitc_log(Info, "z_a : %s", z_a.str());
+
+    m = Mask(false);
+    x_o = x | m; x_a = x & m;
+    y_o = y | m; y_a = y & m;
+    z_o = z | m; z_a = z & m;
+
+    jitc_log(Info, "x_o : %s", x_o.str());
+    jitc_log(Info, "x_a : %s", x_a.str());
+    jitc_log(Info, "y_o : %s", y_o.str());
+    jitc_log(Info, "y_a : %s", y_a.str());
+    jitc_log(Info, "z_o : %s", z_o.str());
+    jitc_log(Info, "z_a : %s", z_a.str());
+}

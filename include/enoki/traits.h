@@ -13,6 +13,7 @@
 #pragma once
 
 #include <type_traits>
+#include <cstring>
 #include "jit.h"
 
 template <bool Value> using enable_if_t = typename std::enable_if<Value, int>::type;
@@ -74,3 +75,16 @@ template <> struct uint_with_size<8> { using type = uint64_t; };
 template <typename T> using uint_with_size_t = typename uint_with_size<sizeof(T)>::type;
 
 struct void_t { };
+
+/// Reinterpret the binary represesentation of a data type
+template<typename Target, typename Source> Target memcpy_cast(const Source &source) {
+    static_assert(sizeof(Source) == sizeof(Target), "memcpy_cast: sizes did not match!");
+    Target target;
+    std::memcpy(&target, &source, sizeof(Target));
+    return target;
+}
+
+template <typename Value> Value sign_mask() {
+    using UInt = uint_with_size_t<Value>;
+    return memcpy_cast<Value>(UInt(1) << (sizeof(UInt) * 8 - 1));
+}
