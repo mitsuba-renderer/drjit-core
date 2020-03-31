@@ -55,7 +55,7 @@ void test_sanitize_log(char *buf) {
                 if (strncmp(str, src, strlen(str)) == 0) {
                     while (*src != '\0' && src[0] != '\n')
                         src++;
-                    if (*src == '\n')
+                    if (*src == '\n' && *src != '\0')
                         src++;
                     found = true;
                     break;
@@ -84,10 +84,13 @@ void test_sanitize_log(char *buf) {
             memcpy(dst, "enoki_@@@@@@@@@@@@@@@@", 22);
             src += 22;
             dst += 22;
+            continue;
         }
 
-        if (strncmp(src, " (compute capability ", 6) == 0)
+        if (strncmp(src, " (compute capability ", 21) == 0) {
             src += 24;
+            continue;
+        }
 
         *dst++ = *src++;
     }
@@ -147,12 +150,13 @@ bool test_check_log(const char *test_name, char *log, bool write_ref) {
     fseek(f, 0, SEEK_SET);
 
     if (result) {
-        char *tmp = (char *) malloc(log_len);
+        char *tmp = (char *) malloc(log_len + 1);
         if (fread(tmp, log_len, 1, f) != 1) {
             fprintf(stderr, "\ntest_check_log(): Could not read file \"%s\"!\n", test_fname);
             fclose(f);
             return false;
         }
+        tmp[log_len] = '\0';
 
         test_sanitize_log(tmp);
         result = memcmp(tmp, log, log_len) == 0;

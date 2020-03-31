@@ -464,6 +464,7 @@ struct LLVMArray {
             return LLVMArray<Value>(sign_mask_neg<Value>()) & a;
         else
             return select(a > 0, a, -a);
+
     }
 
     friend LLVMArray sqrt(const LLVMArray &a) {

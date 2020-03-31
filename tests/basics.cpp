@@ -529,6 +529,7 @@ TEST_BOTH(22_and_or_mask) {
     UInt32 x_o = x | m, x_a = x & m;
     Int32  y_o = y | m, y_a = y & m;
     Float  z_o = z | m, z_a = z & m;
+    z_o = abs(z_o);
 
     jitc_log(Info, "x_o : %s", x_o.str());
     jitc_log(Info, "x_a : %s", x_a.str());
@@ -541,6 +542,7 @@ TEST_BOTH(22_and_or_mask) {
     x_o = x | m; x_a = x & m;
     y_o = y | m; y_a = y & m;
     z_o = z | m; z_a = z & m;
+    z_o = abs(z_o);
 
     jitc_log(Info, "x_o : %s", x_o.str());
     jitc_log(Info, "x_a : %s", x_a.str());

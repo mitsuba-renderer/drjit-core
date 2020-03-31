@@ -1,0 +1,119 @@
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_var_map(1): <@>, size=4, free=1
+jit_var_inc_ref_ext(1): 1
+jit_var_copy(1, size=4)
+jit_var_inc_ref_int(1): 1
+jit_trace_append(2 <- 1): $r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)
+jit_var_inc_ref_ext(2): 1
+jit_var_inc_ref_int(1): 2
+jit_trace_append(3 <- 1): $r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1 $S0)
+jit_var_inc_ref_ext(3): 1
+jit_var_inc_ref_int(1): 3
+jit_trace_append(4 <- 1): $r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1 $S0)
+jit_var_inc_ref_ext(4): 1
+orig : [0, 1, 1234, 4294967295]
+jit_eval(): begin.
+jit_assemble(size=4): register map:
+   - %r0 -> 1 [in]
+   - %r1 -> 2 [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+   - %r2 -> 3 [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+   - %r3 -> 4 [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=4, in=1, out=3, ops=4) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i32*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i32*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %a2_p = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    %a2 = bitcast i8* %a2_p to i32*
+
+    ; Prepare argument 3
+    %a3_i = getelementptr inbounds i8*, i8** %ptrs, i32 3
+    %a3_p = load i8*, i8** %a3_i, align 8, !alias.scope !1
+    %a3 = bitcast i8* %a3_p to i32*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Load %r0
+    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_p = bitcast i32* %r0_i to <8 x i32>*
+    %r0 = load <8 x i32>, <8 x i32>* %r0_p, align 32, !alias.scope !1
+
+    ; Evaluate %r1
+    %r1 = call <8 x i32> @llvm.ctpop.v8i32(<8 x i32> %r0)
+
+    ; Store %r1
+    %r1_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r1_p = bitcast i32* %r1_i to <8 x i32>*
+    store <8 x i32> %r1, <8 x i32>* %r1_p, align 32, !noalias !1
+
+    ; Evaluate %r2
+    %r2 = call <8 x i32> @llvm.ctlz.v8i32(<8 x i32> %r0, i1 0)
+
+    ; Store %r2
+    %r2_i = getelementptr inbounds i32, i32* %a2, i64 %index
+    %r2_p = bitcast i32* %r2_i to <8 x i32>*
+    store <8 x i32> %r2, <8 x i32>* %r2_p, align 32, !noalias !1
+
+    ; Evaluate %r3
+    %r3 = call <8 x i32> @llvm.cttz.v8i32(<8 x i32> %r0, i1 0)
+
+    ; Store %r3
+    %r3_i = getelementptr inbounds i32, i32* %a3, i64 %index
+    %r3_p = bitcast i32* %r3_i to <8 x i32>*
+    store <8 x i32> %r3, <8 x i32>* %r3_p, align 32, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+declare <8 x i32> @llvm.ctpop.v8i32(<8 x i32>)
+declare <8 x i32> @llvm.ctlz.v8i32(<8 x i32>, i1)
+declare <8 x i32> @llvm.cttz.v8i32(<8 x i32>, i1)
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(1): 2
+jit_var_dec_ref_int(1): 1
+jit_var_dec_ref_int(1): 0
+jit_eval(): done.
+pop  : [0, 1, 5, 32]
+lz   : [32, 0, 1, 0]
+tz   : [32, 31, 21, 0]
+jit_var_dec_ref_ext(4): 0
+jit_var_free(4)
+jit_free(<@>, type=host, size=64)
+jit_var_dec_ref_ext(3): 0
+jit_var_free(3)
+jit_free(<@>, type=host, size=64)
+jit_var_dec_ref_ext(2): 0
+jit_var_free(2)
+jit_free(<@>, type=host, size=64)
+jit_var_dec_ref_ext(1): 0
+jit_var_free(1)
+jit_free(<@>, type=host, size=64)
+jit_malloc_trim(): freed
+ - host memory: 256 B in 4 allocations
+jit_shutdown(): done
