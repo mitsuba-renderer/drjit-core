@@ -115,13 +115,18 @@ bool jit_cuda_init() {
                *cuda_glob   = cuda_fname;
 #endif
 
-    jit_cuda_handle = jit_find_library(cuda_fname, cuda_glob, "ENOKI_LIBCUDA_PATH");
+    // Don't dlopen libcuda.so if it was loaded by another library
+    if (dlsym(RTLD_NEXT, "cuInit")) {
+        jit_cuda_handle = RTLD_NEXT;
+    } else {
+        jit_cuda_handle = jit_find_library(cuda_fname, cuda_glob, "ENOKI_LIBCUDA_PATH");
 
-    if (!jit_cuda_handle) {
-        jit_log(Warn, "jit_cuda_init(): %s could not be loaded -- "
-                      "disabling CUDA backend! Set the 'ENOKI_LIBCUDA_PATH' "
-                      "environment variable to specify its path.", cuda_fname);
-        return false;
+        if (!jit_cuda_handle) {
+            jit_log(Warn, "jit_cuda_init(): %s could not be loaded -- "
+                          "disabling CUDA backend! Set the 'ENOKI_LIBCUDA_PATH' "
+                          "environment variable to specify its path.", cuda_fname);
+            return false;
+        }
     }
 
     const char *symbol = nullptr;
@@ -459,7 +464,8 @@ void jit_cuda_shutdown() {
     Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent); Z(cuStreamCreate);
     Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
 
-    dlclose(jit_cuda_handle);
+    if (jit_cuda_handle != RTLD_NEXT)
+        dlclose(jit_cuda_handle);
     jit_cuda_handle = nullptr;
 
     #undef Z

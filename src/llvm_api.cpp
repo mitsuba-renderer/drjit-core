@@ -330,13 +330,18 @@ bool jit_llvm_init() {
                *llvm_glob   = "/usr/local/Cellar/llvm/*/lib/libLLVM.dylib";
 #endif
 
-    jit_llvm_handle = jit_find_library(llvm_fname, llvm_glob, "ENOKI_LIBLLVM_PATH");
+    // Don't dlopen libLLVM.so if it was loaded by another library
+    if (dlsym(RTLD_NEXT, "LLVMLinkInMCJIT")) {
+        jit_llvm_handle = RTLD_NEXT;
+    } else {
+        jit_llvm_handle = jit_find_library(llvm_fname, llvm_glob, "ENOKI_LIBLLVM_PATH");
 
-    if (!jit_llvm_handle) {
-        jit_log(Warn, "jit_llvm_init(): %s could not be loaded -- "
-                      "disabling LLVM backend! Set the 'ENOKI_LIBLLVM_PATH' "
-                      "environment variable to specify its path.", llvm_fname);
-        return false;
+        if (!jit_llvm_handle) {
+            jit_log(Warn, "jit_llvm_init(): %s could not be loaded -- "
+                          "disabling LLVM backend! Set the 'ENOKI_LIBLLVM_PATH' "
+                          "environment variable to specify its path.", llvm_fname);
+            return false;
+        }
     }
 
     const char *symbol = nullptr;
@@ -497,7 +502,8 @@ void jit_llvm_shutdown() {
     Z(LLVMPrintModuleToString); Z(LLVMGetFunctionAddress); Z(LLVMRemoveModule);
     Z(LLVMDisasmInstruction);
 
-    dlclose(jit_llvm_handle);
+    if (jit_llvm_handle != RTLD_NEXT)
+        dlclose(jit_llvm_handle);
     jit_llvm_handle = nullptr;
 #endif
 
