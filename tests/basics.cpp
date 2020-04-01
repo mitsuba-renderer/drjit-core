@@ -1,4 +1,5 @@
 #include "test.h"
+#if 0
 
 TEST_BOTH(01_creation_destruction) {
     // Checks simple reference counting of a variable
@@ -789,3 +790,12 @@ TEST_BOTH(27_avx512_intrinsics_round2int) {
     jitc_llvm_set_target("skylake", "", 8);
 }
 #endif
+
+#endif
+TEST_BOTH(28_scatter_add) {
+    Float target = zero<Float>(16);
+    UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
+
+    scatter_add(target, Float(1), index);
+    jitc_log(Info, "target=%s", target.str());
+}

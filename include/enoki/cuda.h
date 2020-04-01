@@ -804,7 +804,8 @@ CUDAArray<void_t> scatter(void *ptr,
                          "add.$t0 $r0, $r0, $r2"; break;
         case 8: mul_op = "mul.wide.$t1 $r0, $r1, 8$n"
                          "add.$t0 $r0, $r0, $r2"; break;
-        default: jitc_fail("CUDAArray::gather(): unsupported type!");
+        default:
+            jitc_fail("CUDAArray::scatter_add(): unsupported type!");
     }
 
     using UInt64 = CUDAArray<uint64_t>;
@@ -845,6 +846,65 @@ CUDAArray<void_t> scatter(void *ptr,
     return CUDAArray<void_t>::from_index(var);
 }
 
+template <typename Value, typename Index>
+CUDAArray<void_t> scatter_add(void *ptr,
+                              const CUDAArray<Value> &value,
+                              const CUDAArray<Index> &index,
+                              const CUDAArray<bool> &mask = true) {
+    if (!jitc_is_floating_point(CUDAArray<Value>::Type))
+        jitc_raise("Unsupported operand type");
+
+    constexpr size_t Size = sizeof(Value);
+
+    if (sizeof(Index) != 4 && Size != 1) {
+        /* Prefer 32 bit index arithmetic, 64 bit multiplies are
+           emulated and thus very expensive on NVIDIA GPUs.. */
+        using Int = typename std::conditional<std::is_signed<Index>::value,
+                                              int32_t, uint32_t>::type;
+        return scatter(ptr, value, CUDAArray<Int>(index), mask);
+    } else if (sizeof(Index) != 8 && Size == 1) {
+        using Int = typename std::conditional<std::is_signed<Index>::value,
+                                              int64_t, uint64_t>::type;
+        return scatter(ptr, value, CUDAArray<Int>(index), mask);
+    }
+
+    const char *mul_op;
+    switch (Size) {
+        case 1: mul_op = "add.$t0 $r0, $r1, $r2"; break;
+        case 2: mul_op = "mul.wide.$t1 $r0, $r1, 2$n"
+                         "add.$t0 $r0, $r0, $r2"; break;
+        case 4: mul_op = "mul.wide.$t1 $r0, $r1, 4$n"
+                         "add.$t0 $r0, $r0, $r2"; break;
+        case 8: mul_op = "mul.wide.$t1 $r0, $r1, 8$n"
+                         "add.$t0 $r0, $r0, $r2"; break;
+        default:
+            jitc_fail("CUDAArray::scatter_add(): unsupported type!");
+    }
+
+    using UInt64 = CUDAArray<uint64_t>;
+    UInt64 base = UInt64::from_index(jitc_var_copy_ptr(ptr)),
+           addr = UInt64::from_index(jitc_trace_append_2(
+               UInt64::Type, mul_op, 1, index.index(), base.index()));
+
+    uint32_t var;
+    if (mask.is_all_false()) {
+        return CUDAArray<void_t>();
+    } else if (mask.is_all_true()) {
+        var = jitc_trace_append_2(VarType::Invalid,
+                                  "red.global.add.$t2 [$r1], $r2", 1,
+                                  addr.index(), value.index());
+    } else {
+        var = jitc_trace_append_3(VarType::Invalid,
+                                  "@$r3 red.global.add.$t2 [$r1], $r2", 1,
+                                  addr.index(), value.index(), mask.index());
+    }
+
+    jitc_var_inc_ref_ext(var);
+    jitc_var_mark_side_effect(var);
+
+    return CUDAArray<void_t>::from_index(var);
+}
+
 template <typename Array, typename Index,
           typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array gather(const Array &src, const CUDAArray<Index> &index,
@@ -871,6 +931,23 @@ CUDAArray<void_t> scatter(CUDAArray<Value> &dst,
         jitc_var_eval(dst.index());
 
     CUDAArray<void_t> result = scatter(dst.data(), value, index, mask);
+    jitc_var_set_extra_dep(result.index(), dst.index());
+    jitc_var_mark_dirty(dst.index());
+    return result;
+}
+
+template <typename Value, typename Index>
+CUDAArray<void_t> scatter_add(CUDAArray<Value> &dst,
+                              const CUDAArray<Value> &value,
+                              const CUDAArray<Index> &index,
+                              const CUDAArray<bool> &mask = true) {
+    if (mask.is_all_false())
+        return CUDAArray<void_t>();
+
+    if (dst.data() == nullptr)
+        jitc_var_eval(dst.index());
+
+    CUDAArray<void_t> result = scatter_add(dst.data(), value, index, mask);
     jitc_var_set_extra_dep(result.index(), dst.index());
     jitc_var_mark_dirty(dst.index());
     return result;

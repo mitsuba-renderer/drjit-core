@@ -956,6 +956,54 @@ LLVMArray<void_t> scatter(void *ptr,
     return LLVMArray<void_t>::from_index(var);
 }
 
+template <typename Value, typename Index>
+LLVMArray<void_t> scatter_add(void *ptr,
+                              const LLVMArray<Value> &value,
+                              const LLVMArray<Index> &index,
+                              const LLVMArray<bool> &mask = true) {
+    using UInt64 = LLVMArray<uint64_t>;
+
+    uint32_t ptr_base_idx = jitc_var_copy_ptr(ptr);
+
+    UInt64 addr = UInt64::from_index(jitc_trace_append_1(
+        UInt64::Type,
+        "$r0_0 = insertelement <$w x $t0> undef, $t1 $r1, i32 0$n"
+        "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z",
+        1, ptr_base_idx));
+
+    jitc_var_dec_ref_ext(ptr_base_idx);
+
+    addr += UInt64(index * (Index) sizeof(Value));
+
+    uint32_t var;
+    if (mask.is_all_false()) {
+        return LLVMArray<void_t>();
+    } else if (mask.is_all_true()) {
+        var = jitc_trace_append_2(
+            VarType::Invalid,
+		    "$0$r0_1 = extractelement <$w x $t2> $r2, i32 0$n"
+            "$r0_2 = inttoptr $t2 $r0_1 to <$w x $t1>*$n"
+		    "$r0_3 = call <$w x $t1> @llvm.masked.load.v$w$a1(<$w x $t1>* $r0$S_2, i32 $s1, <$w x i1>$S <i1 1>, <$w x $t1> $z)$n"
+		    "$r0_4 = fadd <$w x $t1> $r0_3, $r1$n"
+		    "call void @llvm.masked.store.v$w$a1(<$w x $t1> $r0$S_4, <$w x $t1>* $r0$S_2, i32 $s1, <$w x i1>$S <i1 1>)$n",
+            1, value.index(), addr.index());
+    } else {
+        var = jitc_trace_append_3(
+            VarType::Invalid,
+		    "$0$r0_1 = extractelement <$w x $t2> $r2, i32 0$n"
+            "$r0_2 = inttoptr $t2 $r0_1 to <$w x $t1>*$n"
+		    "$r0_3 = call <$w x $t1> @llvm.masked.load.v$w$a1(<$w x $t1>* $r0$S_2, i32 $s1, <$w x $t3> $r3, <$w x $t1> $z)$n"
+		    "$r0_4 = fadd <$w x $t1> $r0_3, $r1$n"
+		    "call void @llvm.masked.store.v$w$a1(<$w x $t1> $r0$S_4, <$w x $t1>* $r0$S_2, i32 $s1, <$w x $t3> $r3)$n",
+            1, value.index(), addr.index(), mask.index());
+    }
+
+    jitc_var_mark_side_effect(var);
+    jitc_var_inc_ref_ext(var);
+
+    return LLVMArray<void_t>::from_index(var);
+}
+
 template <typename Array, typename Index,
           typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array gather(const Array &src, const LLVMArray<Index> &index,
@@ -981,6 +1029,23 @@ LLVMArray<void_t> scatter(LLVMArray<Value> &dst,
         jitc_var_eval(dst.index());
 
     LLVMArray<void_t> result = scatter(dst.data(), value, index, mask);
+    jitc_var_set_extra_dep(result.index(), dst.index());
+    jitc_var_mark_dirty(dst.index());
+    return result;
+}
+
+template <typename Value, typename Index>
+LLVMArray<void_t> scatter_add(LLVMArray<Value> &dst,
+                              const LLVMArray<Value> &value,
+                              const LLVMArray<Index> &index,
+                              const LLVMArray<bool> &mask = true) {
+    if (mask.is_all_false())
+        return LLVMArray<void_t>();
+
+    if (dst.data() == nullptr)
+        jitc_var_eval(dst.index());
+
+    LLVMArray<void_t> result = scatter_add(dst.data(), value, index, mask);
     jitc_var_set_extra_dep(result.index(), dst.index());
     jitc_var_mark_dirty(dst.index());
     return result;

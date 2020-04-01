@@ -48,7 +48,7 @@ const char *var_type_name_llvm_bin[(int) VarType::Count] {
 
 /// LLVM/CUDA register name prefixes
 const char *var_type_prefix[(int) VarType::Count] {
-    "", "%b", "%b", "%w", "%w", "%r", "%r",
+    "%u", "%b", "%b", "%w", "%w", "%r", "%r",
     "%rd", "%rd", "%h", "%f", "%d", "%p", "%rd"
 };
 
