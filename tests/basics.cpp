@@ -792,7 +792,8 @@ TEST_BOTH(27_avx512_intrinsics_round2int) {
 #endif
 
 #endif
-TEST_BOTH(28_scatter_add) {
+TEST_LLVM(28_scatter_add) {
+    jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
     Float target = zero<Float>(16);
     UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
 

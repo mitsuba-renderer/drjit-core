@@ -2,7 +2,7 @@
 #include "log.h"
 #include "internal.h"
 #include "cuda_api.h"
-#include "../ptx/kernels.h"
+#include "../kernels/kernels.h"
 #include <stdexcept>
 #include <stdio.h>
 #include <fcntl.h>
@@ -159,7 +159,6 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
     close(fd);
     return success;
 }
-
 
 bool jit_kernel_write(const char *source, uint32_t source_size,
                       bool llvm, size_t hash, const Kernel &kernel) {

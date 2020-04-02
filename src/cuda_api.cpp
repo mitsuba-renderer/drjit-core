@@ -3,7 +3,7 @@
 #include "var.h"
 #include "util.h"
 #include "io.h"
-#include "../ptx/kernels.h"
+#include "../kernels/kernels.h"
 #include <dlfcn.h>
 #include <zlib.h>
 #include <lz4.h>

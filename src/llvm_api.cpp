@@ -4,12 +4,15 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <lz4.h>
+#include "../kernels/kernels.h"
 
 #if !defined(ENOKI_DYNAMIC_LLVM)
 #  include <llvm-c/Core.h>
 #  include <llvm-c/ExecutionEngine.h>
 #  include <llvm-c/Disassembler.h>
 #  include <llvm-c/IRReader.h>
+#  include <llvm-c/Transforms/IPO.h>
 #else
 
 /// LLVM API
@@ -19,6 +22,7 @@ using LLVMExecutionEngineRef = void *;
 using LLVMModuleRef = void *;
 using LLVMMemoryBufferRef = void *;
 using LLVMContextRef = void *;
+using LLVMPassManagerRef = void *;
 using LLVMMCJITMemoryManagerRef = void *;
 
 using LLVMMemoryManagerAllocateCodeSectionCallback =
@@ -92,6 +96,7 @@ static void *jit_llvm_handle                    = nullptr;
 static LLVMDisasmContextRef jit_llvm_disasm_ctx = nullptr;
 static LLVMExecutionEngineRef jit_llvm_engine   = nullptr;
 static LLVMContextRef jit_llvm_context          = nullptr;
+static LLVMPassManagerRef jit_llvm_pass_manager = nullptr;
 
 char *jit_llvm_target_cpu                       = nullptr;
 char *jit_llvm_target_features                  = nullptr;
@@ -197,7 +202,34 @@ void jit_llvm_disasm(const Kernel &kernel) {
     } while (true);
 }
 
-void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
+void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
+                      bool include_supplemental_kernels) {
+    char *temp = nullptr;
+    if (include_supplemental_kernels) {
+        jit_lz4_init();
+
+        size_t temp_size = jit_lz4_dict_size + llvm_kernels_size_uncompressed + buffer_size + 1;
+
+        // Decompress supplemental kernel IR content
+        temp = (char *) malloc_check(temp_size);
+        memcpy(temp, jit_lz4_dict, jit_lz4_dict_size);
+        char *buffer_new = temp + jit_lz4_dict_size;
+
+        if (LZ4_decompress_safe_usingDict(
+                llvm_kernels, buffer_new,
+                llvm_kernels_size_compressed,
+                llvm_kernels_size_uncompressed,
+                temp,
+                jit_lz4_dict_size) != llvm_kernels_size_uncompressed)
+            jit_fail("jit_cuda_init(): decompression of builtin kernels failed!");
+
+        memcpy(buffer_new + llvm_kernels_size_uncompressed, buffer, buffer_size);
+        buffer_new[llvm_kernels_size_uncompressed + buffer_size] = '\0';
+        buffer_size += llvm_kernels_size_uncompressed;
+        buffer = buffer_new;
+        fprintf(stderr, "%s\n", buffer);
+    }
+
     if (jit_llvm_mem_size <= buffer_size) {
         // Central assumption: LLVM text IR is much larger than the resulting generated code.
         free(jit_llvm_mem);
@@ -227,19 +259,20 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
         jit_fail("jit_run_compile(): could not create memory buffer!");
 
     // 'buf' is consumed by this function.
-    LLVMModuleRef module = nullptr;
+    LLVMModuleRef llvm_module = nullptr;
     char *error = nullptr;
-    LLVMParseIRInContext(jit_llvm_context, buf, &module, &error);
+    LLVMParseIRInContext(jit_llvm_context, buf, &llvm_module, &error);
     if (unlikely(error))
         jit_fail("jit_llvm_compile(): could not parse IR: %s.\n", error);
 
     if (false) {
-        char *llvm_ir = LLVMPrintModuleToString(module);
+        char *llvm_ir = LLVMPrintModuleToString(llvm_module);
         jit_trace("jit_llvm_compile(): Parsed LLVM IR:\n%s", llvm_ir);
         LLVMDisposeMessage(llvm_ir);
     }
 
-    LLVMAddModule(jit_llvm_engine, module);
+    LLVMRunPassManager(jit_llvm_pass_manager, llvm_module);
+    LLVMAddModule(jit_llvm_engine, llvm_module);
 
     uint8_t *func =
         (uint8_t *) LLVMGetFunctionAddress(jit_llvm_engine, kernel_name_new);
@@ -280,10 +313,10 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     if (mprotect(ptr_result, jit_llvm_mem_offset, PROT_READ | PROT_EXEC) == -1)
         jit_fail("jit_llvm_compile(): mprotect() failed: %s", strerror(errno));
 
-    LLVMRemoveModule(jit_llvm_engine, module, &module, &error);
+    LLVMRemoveModule(jit_llvm_engine, llvm_module, &llvm_module, &error);
     if (unlikely(error))
         jit_fail("jit_llvm_compile(): could remove module: %s.\n", error);
-    LLVMDisposeModule(module);
+    LLVMDisposeModule(llvm_module);
 
     // Change the kernel name back
     offset = (char *) buffer;
@@ -300,6 +333,7 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     kernel.llvm.func        = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
     kernel.llvm.func_scalar = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset_scalar);
     jit_llvm_kernel_id++;
+    free(temp);
 }
 
 #define LOAD(name)                                                             \
@@ -339,7 +373,6 @@ bool jit_llvm_init() {
     if (jit_llvm_init_attempted)
         return jit_llvm_init_success;
     jit_llvm_init_attempted = true;
-
 
     char scratch[1024];
     struct stat st = {};
@@ -467,6 +500,9 @@ bool jit_llvm_init() {
         return -1;
     }
 
+    jit_llvm_pass_manager = LLVMCreatePassManager();
+    LLVMAddAlwaysInlinerPass(jit_llvm_pass_manager);
+
     jit_llvm_target_cpu = LLVMGetHostCPUName();
     jit_llvm_target_features = LLVMGetHostCPUFeatures();
     jit_llvm_vector_width = 1;
@@ -504,10 +540,12 @@ void jit_llvm_shutdown() {
     LLVMDisposeExecutionEngine(jit_llvm_engine);
     LLVMDisposeMessage(jit_llvm_target_cpu);
     LLVMDisposeMessage(jit_llvm_target_features);
+    LLVMDisposePassManager(jit_llvm_pass_manager);
 
     jit_llvm_engine = nullptr;
     jit_llvm_disasm_ctx = nullptr;
     jit_llvm_context = nullptr;
+    jit_llvm_pass_manager = nullptr;
     jit_llvm_target_cpu = nullptr;
     jit_llvm_target_features = nullptr;
     jit_llvm_vector_width = 0;

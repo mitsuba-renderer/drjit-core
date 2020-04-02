@@ -80,6 +80,7 @@ int main(int argc, char **argv) {
     append(f, "kernels.dict", "kernels_dict", NULL, 0);
     append(f, "kernels_50.ptx", "kernels_50", kernels_dict, kernels_dict_size);
     append(f, "kernels_70.ptx", "kernels_70", kernels_dict, kernels_dict_size);
+    append(f, "llvm_kernels.ll", "llvm_kernels", kernels_dict, kernels_dict_size);
 
     f = fopen("kernels.h", "w");
     if (!f) {
@@ -104,6 +105,10 @@ int main(int argc, char **argv) {
     fprintf(f, "extern int    kernels_70_size_compressed;\n");
     fprintf(f, "extern size_t kernels_70_hash;\n");
     fprintf(f, "extern char   kernels_70[];\n\n");
+    fprintf(f, "extern int    llvm_kernels_size_uncompressed;\n");
+    fprintf(f, "extern int    llvm_kernels_size_compressed;\n");
+    fprintf(f, "extern size_t llvm_kernels_hash;\n");
+    fprintf(f, "extern char   llvm_kernels[];\n\n");
     fprintf(f, "#if defined(__cplusplus)\n");
     fprintf(f, "}\n");
     fprintf(f, "#endif");

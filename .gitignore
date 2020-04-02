@@ -8,8 +8,8 @@ CMakeFiles
 tests/**/*.out
 tests/**/*.raw
 Testing
-/ptx/kernels_*.ptx
-/ptx/generate
+/kernels/kernels_*.ptx
+/kernels/generate
 
 libenoki-jit.so
 libenoki-jit.dylib

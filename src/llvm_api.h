@@ -18,7 +18,8 @@ extern uint32_t jit_llvm_vector_width;
 extern bool jit_llvm_init();
 
 /// Compile an IR string
-extern void jit_llvm_compile(const char *str, size_t size, Kernel &kernel);
+extern void jit_llvm_compile(const char *str, size_t size, Kernel &kernel,
+                             bool include_supplemental_kernels = false);
 
 /// Dump disassembly for the given kernel
 extern void jit_llvm_disasm(const Kernel &kernel);

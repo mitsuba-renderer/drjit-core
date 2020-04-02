@@ -261,7 +261,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
 
     // Check for intrinsics
     while (true) {
-        s = strstr(s, "call");
+        s = strstr(s, "call @llvm");
         if (likely(!s))
             return;
         s += 5;
@@ -889,7 +889,7 @@ void jit_run(Stream *stream, ScheduledGroup group) {
 
         if (!cache_hit) {
             if (llvm)
-                jit_llvm_compile(buffer.get(), buffer.size(), kernel);
+                jit_llvm_compile(buffer.get(), buffer.size(), kernel, true);
             else
                 jit_cuda_compile(buffer.get(), buffer.size(), kernel);
 

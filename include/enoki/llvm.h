@@ -963,15 +963,13 @@ LLVMArray<void_t> scatter_add(void *ptr,
                               const LLVMArray<bool> &mask = true) {
     using UInt64 = LLVMArray<uint64_t>;
 
-    uint32_t ptr_base_idx = jitc_var_copy_ptr(ptr);
+    UInt64 ptr_base = UInt64::from_index(jitc_var_copy_ptr(ptr));
 
     UInt64 addr = UInt64::from_index(jitc_trace_append_1(
         UInt64::Type,
         "$r0_0 = insertelement <$w x $t0> undef, $t1 $r1, i32 0$n"
         "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z",
-        1, ptr_base_idx));
-
-    jitc_var_dec_ref_ext(ptr_base_idx);
+        1, ptr_base.index()));
 
     addr += UInt64(index * (Index) sizeof(Value));
 
@@ -979,15 +977,26 @@ LLVMArray<void_t> scatter_add(void *ptr,
     if (mask.is_all_false()) {
         return LLVMArray<void_t>();
     } else if (mask.is_all_true()) {
-        var = jitc_trace_append_2(
+        if (sizeof(Index) != sizeof(Value)) {
+            using UIntSame = LLVMArray<uint_with_size_t<Value>>;
+            return scatter_add(ptr, value, UIntSame(index), mask);
+        }
+        var = jitc_trace_append_3(
             VarType::Invalid,
-		    "$0$r0_1 = extractelement <$w x $t2> $r2, i32 0$n"
-            "$r0_2 = inttoptr $t2 $r0_1 to <$w x $t1>*$n"
-		    "$r0_3 = call <$w x $t1> @llvm.masked.load.v$w$a1(<$w x $t1>* $r0$S_2, i32 $s1, <$w x i1>$S <i1 1>, <$w x $t1> $z)$n"
-		    "$r0_4 = fadd <$w x $t1> $r0_3, $r1$n"
-		    "call void @llvm.masked.store.v$w$a1(<$w x $t1> $r0$S_4, <$w x $t1>* $r0$S_2, i32 $s1, <$w x i1>$S <i1 1>)$n",
-            1, value.index(), addr.index());
+            "$r0_1 = inttoptr $t1 $r1 to i8 *$n"
+		    "call void @ek_scatter_add_v$w$a2(i8* $r0$S_1, <$w x $t2> $r2, <$w x $t3> $r3)",
+            1, ptr_base.index(), value.index(), index.index());
+
+        // var = jitc_trace_append_2(
+        //     VarType::Invalid,
+		//     "$0$r0_1 = extractelement <$w x $t2> $r2, i32 0$n"
+        //     "$r0_2 = inttoptr $t2 $r0_1 to <$w x $t1>*$n"
+		//     "$r0_3 = call <$w x $t1> @llvm.masked.load.v$w$a1(<$w x $t1>* $r0$S_2, i32 $s1, <$w x i1>$S <i1 1>, <$w x $t1> $z)$n"
+		//     "$r0_4 = fadd <$w x $t1> $r0_3, $r1$n"
+		//     "call void @llvm.masked.store.v$w$a1(<$w x $t1> $r0$S_4, <$w x $t1>* $r0$S_2, i32 $s1, <$w x i1>$S <i1 1>)$n",
+        //     1, value.index(), addr.index());
     } else {
+        exit(-1);
         var = jitc_trace_append_3(
             VarType::Invalid,
 		    "$0$r0_1 = extractelement <$w x $t2> $r2, i32 0$n"
