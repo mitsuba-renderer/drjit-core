@@ -83,6 +83,8 @@ Buffer intrinsics_buffer{1};
 /// Intrinsics used by the current program (LLVM only)
 static tsl::robin_set<Intrinsic, IntrinsicHash, IntrinsicEquality> intrinsics_set;
 
+bool jit_llvm_supplement = false;
+
 // ====================================================================
 
 /// Forward declaration
@@ -100,19 +102,24 @@ static void jit_var_traverse(uint32_t size, uint32_t index) {
     Variable *v = jit_var(index);
     const uint32_t *dep = v->dep;
 
-    std::pair<uint32_t, uint32_t> ch[3] = {
+    std::pair<uint32_t, uint32_t> ch[4] = {
         { dep[0], dep[0] ? jit_var(dep[0])->tsize : 0 },
         { dep[1], dep[1] ? jit_var(dep[1])->tsize : 0 },
-        { dep[2], dep[2] ? jit_var(dep[2])->tsize : 0 }
+        { dep[2], dep[2] ? jit_var(dep[2])->tsize : 0 },
+        { dep[3], dep[3] ? jit_var(dep[3])->tsize : 0 }
     };
 
     // Simple sorting network
-    if (ch[1].second < ch[2].second)
-        std::swap(ch[1], ch[2]);
-    if (ch[0].second < ch[2].second)
-        std::swap(ch[0], ch[2]);
-    if (ch[0].second < ch[1].second)
-        std::swap(ch[0], ch[1]);
+    #define SWAP(i, j) \
+        if (ch[i].second < ch[j].second) \
+            std::swap(ch[i], ch[j]);
+    SWAP(0, 1);
+    SWAP(2, 3);
+    SWAP(0, 2);
+    SWAP(1, 3);
+    SWAP(1, 2);
+
+    #undef SWAP
 
     for (auto const &v: ch)
         jit_var_traverse(size, v.first);
@@ -143,7 +150,7 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
             }
 
             uint32_t arg_id = *s++ - '0';
-            if (unlikely(arg_id > 3))
+            if (unlikely(arg_id > 4))
                 jit_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
                          "expression (argument out of bounds)!", v->stmt);
 
@@ -169,7 +176,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
 
     if (s[0] == '$' && s[1] >= '0' && s[1] <= '9') {
         uint32_t width = 1 << (s[1] - '0');
-        if (width != jit_llvm_vector_width) {
+        if (width < jit_llvm_vector_width) {
             jit_render_stmt_llvm_unroll(index, v);
             return;
         } else {
@@ -211,7 +218,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
             }
 
             uint32_t arg_id = *s++ - '0';
-            if (unlikely(arg_id > 3))
+            if (unlikely(arg_id > 4))
                 jit_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
                          "expression (argument out of bounds)!", v->stmt);
 
@@ -228,7 +235,8 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
 
             switch (type) {
                 case 'r':
-                    buffer.fmt("%s%u%s", prefix, dep->reg_index, suffix);
+                    buffer.fmt("%s%u%s", prefix, dep->reg_index,
+                               dep->direct_pointer ? "" : suffix);
                     break;
 
                 case 'a':
@@ -261,7 +269,13 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
 
     // Check for intrinsics
     while (true) {
-        s = strstr(s, "call @llvm");
+        const char *ek = strstr(s, "@ek.");
+        if (ek) {
+            jit_llvm_supplement = true;
+            return;
+        }
+
+        s = strstr(s, "call ");
         if (likely(!s))
             return;
         s += 5;
@@ -315,12 +329,13 @@ void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v) {
              width_host  = jit_llvm_vector_width,
              last_level  = 0;
 
-
     /// Recursively partition dependencies into arrays of size 'width'
-    for (uint32_t i = 0; i < 3; ++i) {
+    for (uint32_t i = 0; i < 4; ++i) {
         if (v->dep[i] == 0)
             continue;
         Variable *dep = jit_var(v->dep[i]);
+        if (dep->direct_pointer)
+            continue;
         for (uint32_t l = 0; ; ++l) {
             uint32_t w = width_host / (2u << l);
             if (w < width)
@@ -561,7 +576,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
         Variable *v = jit_var(index);
         if (v->arg_type == ArgType::Register)
             continue;
-        uint32_t arg_id = v->arg_index - 1;
+        uint32_t reg_id = v->reg_index, arg_id = v->arg_index - 1;
         const char *type = var_type_name_llvm[(int) v->type];
 
         if ((VarType) v->type == VarType::Bool)
@@ -570,9 +585,9 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
             buffer.fmt("\n    ; Prepare argument %u\n", arg_id);
 
         buffer.fmt("    %%a%u_i = getelementptr inbounds i8*, i8** %%ptrs, i32 %u\n", arg_id, arg_id);
-        buffer.fmt("    %%a%u_p = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", arg_id, arg_id);
 
         if (likely(!v->direct_pointer)) {
+            buffer.fmt("    %%a%u_p = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", arg_id, arg_id);
             buffer.fmt("    %%a%u = bitcast i8* %%a%u_p to %s*\n", arg_id, arg_id, type);
             if (v->size == 1) {
                 buffer.fmt("    %%a%u_s = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
@@ -580,6 +595,8 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
                 if ((VarType) v->type == VarType::Bool)
                     buffer.fmt("    %%a%u_s1 = trunc i8 %%a%u_s to i1\n", arg_id, arg_id);
             }
+        } else {
+            buffer.fmt("    %%rd%u = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", reg_id, arg_id);
         }
     }
     buffer.put("    br label %loop\n\n");
@@ -616,16 +633,13 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
             type = "i8";
 
         if (v->arg_type == ArgType::Input) {
+            if (v->direct_pointer)
+                continue;
+
             if (unlikely(log_trace))
                 buffer.fmt("\n    ; Load %s%u%s%s\n",
                            reg_prefix, reg_id, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
-
-            if (v->direct_pointer) {
-                buffer.fmt("    %s%u = ptrtoint i8* %%a%u_p to i64\n",
-                           reg_prefix, reg_id, arg_id);
-                continue;
-            }
 
             if (size > 1)
                 get_parameter_addr(reg_id, arg_id, reg_prefix, type, size);
@@ -832,6 +846,7 @@ void jit_assemble(ScheduledGroup group) {
     jit_log(Info, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
             group.size, n_args_in - 1, n_args_out, n_regs_total);
 
+    jit_llvm_supplement = false;
     intrinsics_buffer.clear();
     intrinsics_set.clear();
     buffer.clear();
@@ -848,7 +863,8 @@ void jit_assemble(ScheduledGroup group) {
             (intrinsics_buffer.contains("@llvm.masked.load") ||
              intrinsics_buffer.contains("@llvm.masked.store") ||
              intrinsics_buffer.contains("@llvm.masked.scatter") ||
-             intrinsics_buffer.contains("@llvm.masked.gather"))) {
+             intrinsics_buffer.contains("@llvm.masked.gather") ||
+             jit_llvm_supplement)) {
             uint32_t vector_width = 1;
             std::swap(jit_llvm_vector_width, vector_width);
             jit_assemble_llvm(group, "_scalar");
@@ -889,7 +905,8 @@ void jit_run(Stream *stream, ScheduledGroup group) {
 
         if (!cache_hit) {
             if (llvm)
-                jit_llvm_compile(buffer.get(), buffer.size(), kernel, true);
+                jit_llvm_compile(buffer.get(), buffer.size(), kernel,
+                                 jit_llvm_supplement);
             else
                 jit_cuda_compile(buffer.get(), buffer.size(), kernel);
 
@@ -964,6 +981,9 @@ void jit_run(Stream *stream, ScheduledGroup group) {
 
         if (unlikely(rounded != group.size))
             kernel.llvm.func_scalar(rounded, group.size, kernel_args_extra.data());
+
+        jit_log(Trace, "jit_run(): processing %u packet(s) and %u scalar entries",
+                rounded / width, group.size - rounded);
     } else {
         size_t kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
 
@@ -1099,14 +1119,14 @@ void jit_eval() {
             free(v->stmt);
 
         bool side_effect = v->side_effect;
-        uint32_t dep[3], extra_dep = v->extra_dep;
-        memcpy(dep, v->dep, sizeof(uint32_t) * 3);
+        uint32_t dep[4], extra_dep = v->extra_dep;
+        memcpy(dep, v->dep, sizeof(uint32_t) * 4);
 
-        memset(v->dep, 0, sizeof(uint32_t) * 3);
+        memset(v->dep, 0, sizeof(uint32_t) * 4);
         v->extra_dep = 0;
         v->stmt = nullptr;
 
-        for (int j = 0; j < 3; ++j)
+        for (int j = 0; j < 4; ++j)
             jit_var_dec_ref_int(dep[j]);
         jit_var_dec_ref_ext(extra_dep);
 

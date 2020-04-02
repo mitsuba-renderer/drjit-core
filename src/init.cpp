@@ -15,8 +15,6 @@ static_assert(
     sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>) == 64,
     "VariableMap: incorrect bucket size, likely an issue with padding/packing!");
 
-static_assert(sizeof(VariableKey) == 4*8,
-    "VariableKey: incorrect size, likely an issue with padding/packing!");
 
 /// Initialize core data structures of the JIT compiler
 void jit_init(int llvm, int cuda) {
@@ -149,7 +147,8 @@ void jit_shutdown(int light) {
 
     if (state.variables.empty() && !state.cse_cache.empty()) {
         for (auto &kv: state.cse_cache)
-            jit_log(Warn, " - %u: %u, %u, %u", kv.second, kv.first.dep[0], kv.first.dep[1], kv.first.dep[2]);
+            jit_log(Warn, " - %u: %u, %u, %u, %u", kv.second, kv.first.dep[0],
+                    kv.first.dep[1], kv.first.dep[2], kv.first.dep[3]);
         jit_fail("jit_shutdown(): detected a common subexpression elimination cache leak!");
     }
 

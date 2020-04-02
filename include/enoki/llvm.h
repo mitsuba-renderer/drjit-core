@@ -870,50 +870,43 @@ OutArray gather(const void *ptr, const LLVMArray<Index> &index,
     if (mask.is_all_false()) {
         return OutArray((Value) 0);
     } else if (Size != 1) {
-        OutArray addr = OutArray::from_index(jitc_trace_append_2(
-            OutArray::Type,
-            "$r0_0 = inttoptr $t1 $r1 to $t0*$n"
-            "$r0 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2",
-            1, base.index(), index.index()
-        ));
-
         if (mask.is_all_true())
-            var = jitc_trace_append_1(
-                OutArray::Type,
-                "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
-                "(<$w x $t0*> $r1, i32 $s0, <$w x i1> $O, <$w x $t0> $z)",
-                1, addr.index());
-        else
             var = jitc_trace_append_2(
                 OutArray::Type,
+                "$r0_0 = bitcast $t1 $r1 to $t0*$n"
+                "$r0_1 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2$n"
                 "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
-                "(<$w x $t0*> $r1, i32 $s0, <$w x $t2> $r2, <$w x $t0> $z)",
-                1, addr.index(), mask.index());
+                "(<$w x $t0*> $r0$S_1, i32 $s0, <$w x i1> $O, <$w x $t0> $z)",
+                1, base.index(), index.index());
+        else
+            var = jitc_trace_append_3(
+                OutArray::Type,
+                "$r0_0 = bitcast $t1 $r1 to $t0*$n"
+                "$r0_1 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2$n"
+                "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
+                "(<$w x $t0*> $r0$S_1, i32 $s0, <$w x $t3> $r3, <$w x $t0> $z)",
+                1, base.index(), index.index(), mask.index());
     } else {
-        using UInt32 = LLVMArray<uint32_t>;
-
-        UInt32 addr = UInt32::from_index(jitc_trace_append_2(
-            UInt32::Type,
-            "$r0_0 = inttoptr $t1 $r1 to i1*$n"
-            "$r0_1 = getelementptr i1, i1* $r0_0, <$w x $t2> $r2$n"
-            "$r0   = bitcast <$w x i1*> $r0_1 to <$w x i32*>",
-            1, base.index(), index.index()
-        ));
-
         if (mask.is_all_true())
-            var = jitc_trace_append_1(
-                OutArray::Type,
-                "$r0_0 = call <$w x i32> @llvm.masked.gather.v$wi32"
-                "(<$w x i32*> $r1, i32 $s0, <$w x i1> $O, <$w x i32> $z)$n"
-                "$r0 = trunc <$w x i32> $r0_0 to <$w x $t0>",
-                1, addr.index());
-        else
             var = jitc_trace_append_2(
                 OutArray::Type,
-                "$r0_0 = call <$w x i32> @llvm.masked.gather.v$wi32"
-                "(<$w x i32*> $r1, i32 $s0, <$w x $t2> $r2, <$w x i32> $z)$n"
-                "$r0 = trunc <$w x i32> $r0_0 to <$w x $t0>",
-                1, addr.index(), mask.index());
+                "$r0_0 = bitcast $t1 $r1 to i8*$n"
+                "$r0_1 = getelementptr i8, i8* $r0_0, <$w x $t2> $r2$n"
+                "$r0_2 = bitcast <$w x i8*> $r0_1 to <$w x i32*>$n"
+                "$r0_3 = call <$w x i32> @llvm.masked.gather.v$wi32"
+                "(<$w x i32*> $r0$S_2, i32 $s0, <$w x i1> $O, <$w x i32> $z)$n"
+                "$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>",
+                1, base.index(), index.index());
+        else
+            var = jitc_trace_append_3(
+                OutArray::Type,
+                "$r0_0 = bitcast $t1 $r1 to i8*$n"
+                "$r0_1 = getelementptr i8, i8* $r0_0, <$w x $t2> $r2$n"
+                "$r0_2 = bitcast <$w x i8*> $r0_1 to <$w x i32*>$n"
+                "$r0_3 = call <$w x i32> @llvm.masked.gather.v$wi32"
+                "(<$w x i32*> $r0$S_2, i32 $s0, <$w x $t3> $r3, <$w x i32> $z)$n"
+                "$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>",
+                1, base.index(), index.index(), mask.index());
     }
 
     return OutArray::from_index(var);
@@ -927,27 +920,25 @@ LLVMArray<void_t> scatter(void *ptr,
     using UInt64 = LLVMArray<uint64_t>;
     UInt64 base = UInt64::from_index(jitc_var_copy_ptr(ptr));
 
-    LLVMArray<Value> addr = LLVMArray<Value>::from_index(jitc_trace_append_2(
-        LLVMArray<Value>::Type,
-        "$r0_0 = inttoptr $t1 $r1 to $t0*$n"
-        "$r0 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2",
-        1, base.index(), index.index()));
-
     uint32_t var;
     if (mask.is_all_false()) {
         return LLVMArray<void_t>();
     } else if (mask.is_all_true()) {
-        var = jitc_trace_append_2(
-            VarType::Invalid,
-            "call void @llvm.masked.scatter.v$w$a1"
-            "(<$w x $t1> $r1, <$w x $t1*> $r2, i32 $s1, <$w x i1> $O)",
-            1, value.index(), addr.index());
-    } else {
         var = jitc_trace_append_3(
             VarType::Invalid,
-            "call void @llvm.masked.scatter.v$w$a1"
-            "(<$w x $t1> $r1, <$w x $t1*> $r2, i32 $s1, <$w x $t3> $r3)",
-            1, value.index(), addr.index(), mask.index());
+            "$r0_0 = bitcast $t1 $r1 to $t2*$n"
+            "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
+            "call void @llvm.masked.scatter.v$w$a2"
+            "(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x i1> $O)",
+            1, base.index(), value.index(), index.index());
+    } else {
+        var = jitc_trace_append_4(
+            VarType::Invalid,
+            "$r0_0 = bitcast $t1 $r1 to $t2*$n"
+            "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
+            "call void @llvm.masked.scatter.v$w$a2"
+            "(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x $t4> $r4)",
+            1, base.index(), value.index(), index.index(), mask.index());
     }
 
     jitc_var_mark_side_effect(var);
@@ -961,50 +952,40 @@ LLVMArray<void_t> scatter_add(void *ptr,
                               const LLVMArray<Value> &value,
                               const LLVMArray<Index> &index,
                               const LLVMArray<bool> &mask = true) {
-    using UInt64 = LLVMArray<uint64_t>;
+    if (mask.is_all_false())
+        return LLVMArray<void_t>();
 
-    UInt64 ptr_base = UInt64::from_index(jitc_var_copy_ptr(ptr));
+    if (sizeof(Index) != sizeof(Value)) {
+        using UIntSame = LLVMArray<uint_with_size_t<Value>>;
+        return scatter_add(ptr, value, UIntSame(index), mask);
+    }
 
-    UInt64 addr = UInt64::from_index(jitc_trace_append_1(
-        UInt64::Type,
-        "$r0_0 = insertelement <$w x $t0> undef, $t1 $r1, i32 0$n"
-        "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z",
-        1, ptr_base.index()));
-
-    addr += UInt64(index * (Index) sizeof(Value));
+    using Pointer = LLVMArray<void *>;
+    Pointer base = Pointer::from_index(jitc_var_copy_ptr(ptr));
 
     uint32_t var;
-    if (mask.is_all_false()) {
-        return LLVMArray<void_t>();
-    } else if (mask.is_all_true()) {
-        if (sizeof(Index) != sizeof(Value)) {
-            using UIntSame = LLVMArray<uint_with_size_t<Value>>;
-            return scatter_add(ptr, value, UIntSame(index), mask);
-        }
-        var = jitc_trace_append_3(
-            VarType::Invalid,
-            "$r0_1 = inttoptr $t1 $r1 to i8 *$n"
-		    "call void @ek_scatter_add_v$w$a2(i8* $r0$S_1, <$w x $t2> $r2, <$w x $t3> $r3)",
-            1, ptr_base.index(), value.index(), index.index());
+    if (mask.is_all_true()) {
+        const char *op;
+        if (sizeof(Value) == 4 && jitc_llvm_if_at_least(16, "+avx512dq") != 0)
+            op = "$4call void @ek.scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3)";
+        else if (sizeof(Value) == 8 && jitc_llvm_if_at_least(8, "+avx512dq") != 0)
+            op = "$3call void @ek.scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3)";
+        else
+            op = "$0call void @ek.scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3)";
 
-        // var = jitc_trace_append_2(
-        //     VarType::Invalid,
-		//     "$0$r0_1 = extractelement <$w x $t2> $r2, i32 0$n"
-        //     "$r0_2 = inttoptr $t2 $r0_1 to <$w x $t1>*$n"
-		//     "$r0_3 = call <$w x $t1> @llvm.masked.load.v$w$a1(<$w x $t1>* $r0$S_2, i32 $s1, <$w x i1>$S <i1 1>, <$w x $t1> $z)$n"
-		//     "$r0_4 = fadd <$w x $t1> $r0_3, $r1$n"
-		//     "call void @llvm.masked.store.v$w$a1(<$w x $t1> $r0$S_4, <$w x $t1>* $r0$S_2, i32 $s1, <$w x i1>$S <i1 1>)$n",
-        //     1, value.index(), addr.index());
+        var = jitc_trace_append_3(VarType::Invalid, op, 1, base.index(),
+                                  value.index(), index.index());
     } else {
-        exit(-1);
-        var = jitc_trace_append_3(
-            VarType::Invalid,
-		    "$0$r0_1 = extractelement <$w x $t2> $r2, i32 0$n"
-            "$r0_2 = inttoptr $t2 $r0_1 to <$w x $t1>*$n"
-		    "$r0_3 = call <$w x $t1> @llvm.masked.load.v$w$a1(<$w x $t1>* $r0$S_2, i32 $s1, <$w x $t3> $r3, <$w x $t1> $z)$n"
-		    "$r0_4 = fadd <$w x $t1> $r0_3, $r1$n"
-		    "call void @llvm.masked.store.v$w$a1(<$w x $t1> $r0$S_4, <$w x $t1>* $r0$S_2, i32 $s1, <$w x $t3> $r3)$n",
-            1, value.index(), addr.index(), mask.index());
+        const char *op;
+        if (sizeof(Value) == 4 && jitc_llvm_if_at_least(16, "+avx512dq"))
+            op = "$4call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)";
+        else if (sizeof(Value) == 8 && jitc_llvm_if_at_least(8, "+avx512dq"))
+            op = "$3call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)";
+        else
+            op = "$0call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)";
+
+        var = jitc_trace_append_4(VarType::Invalid, op, 1, base.index(),
+                                  value.index(), index.index(), mask.index());
     }
 
     jitc_var_mark_side_effect(var);

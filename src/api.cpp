@@ -217,6 +217,13 @@ uint32_t jitc_trace_append_3(VarType type, const char *stmt, int stmt_static,
     return jit_trace_append_3(type, stmt, stmt_static, arg1, arg2, arg3);
 }
 
+uint32_t jitc_trace_append_4(VarType type, const char *stmt, int stmt_static,
+                             uint32_t arg1, uint32_t arg2, uint32_t arg3,
+                             uint32_t arg4) {
+    lock_guard guard(state.mutex);
+    return jit_trace_append_4(type, stmt, stmt_static, arg1, arg2, arg3, arg4);
+}
+
 void jitc_var_migrate(uint32_t index, AllocType type) {
     lock_guard guard(state.mutex);
     jit_var_migrate(index, type);

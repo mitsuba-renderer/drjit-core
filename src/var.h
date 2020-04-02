@@ -35,6 +35,15 @@ extern uint32_t jit_trace_append_3(VarType type,
                                    uint32_t op2,
                                    uint32_t op3);
 
+/// Append a variable to the instruction trace (4 operands)
+extern uint32_t jit_trace_append_4(VarType type,
+                                   const char *stmt,
+                                   int stmt_static,
+                                   uint32_t op1,
+                                   uint32_t op2,
+                                   uint32_t op3,
+                                   uint32_t op4);
+
 /// Register an existing variable with the JIT compiler
 extern uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free);
 

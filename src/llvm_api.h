@@ -19,7 +19,7 @@ extern bool jit_llvm_init();
 
 /// Compile an IR string
 extern void jit_llvm_compile(const char *str, size_t size, Kernel &kernel,
-                             bool include_supplemental_kernels = false);
+                             bool include_supplement = false);
 
 /// Dump disassembly for the given kernel
 extern void jit_llvm_disasm(const Kernel &kernel);

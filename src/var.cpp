@@ -31,13 +31,13 @@ const char *var_type_name_ptx_bin[(int) VarType::Count] {
 /// LLVM IR type names (does not distinguish signed vs unsigned)
 const char *var_type_name_llvm[(int) VarType::Count] {
     "???", "i8", "i8", "i16", "i16", "i32", "i32",
-    "i64", "i64", "half", "float", "double", "i1", "i64"
+    "i64", "i64", "half", "float", "double", "i1", "i8*"
 };
 
 /// Abbreviated LLVM IR type names
 const char *var_type_name_llvm_abbrev[(int) VarType::Count] {
     "???", "i8", "i8", "i16", "i16", "i32", "i32",
-    "i64", "i64", "f16", "f32", "f64", "i1", "i64"
+    "i64", "i64", "f16", "f32", "f64", "i1", "i8*"
 };
 
 /// LLVM IR type names (binary view)
@@ -85,8 +85,8 @@ void jit_var_free(uint32_t index, Variable *v) {
     if (v->stmt)
         jit_cse_drop(index, v);
 
-    uint32_t dep[3], extra_dep = v->extra_dep;
-    memcpy(dep, v->dep, sizeof(uint32_t) * 3);
+    uint32_t dep[4], extra_dep = v->extra_dep;
+    memcpy(dep, v->dep, sizeof(uint32_t) * 4);
 
     // Release GPU memory
     if (likely(v->data && !v->retain_data))
@@ -117,7 +117,7 @@ void jit_var_free(uint32_t index, Variable *v) {
     state.variables.erase(index);
 
     // Decrease reference count of dependencies
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 4; ++i)
         jit_var_dec_ref_int(dep[i]);
 
     jit_var_dec_ref_ext(extra_dep);
@@ -125,6 +125,9 @@ void jit_var_free(uint32_t index, Variable *v) {
 
 /// Increase the external reference count of a given variable
 void jit_var_inc_ref_ext(uint32_t index, Variable *v) {
+    if (unlikely(v->ref_count_ext == 0xFFFF))
+        jit_fail("jit_var_inc_ref_ext(%u): reference count overflow!", index);
+
     v->ref_count_ext++;
     jit_trace("jit_var_inc_ref_ext(%u): %u", index, v->ref_count_ext);
 }
@@ -137,6 +140,8 @@ void jit_var_inc_ref_ext(uint32_t index) {
 
 /// Increase the internal reference count of a given variable
 void jit_var_inc_ref_int(uint32_t index, Variable *v) {
+    if (unlikely(v->ref_count_int == 0xFFFF))
+        jit_fail("jit_var_inc_ref_ext(%u): reference count overflow!", index);
     v->ref_count_int++;
     jit_trace("jit_var_inc_ref_int(%u): %u", index, v->ref_count_int);
 }
@@ -242,7 +247,7 @@ std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
         if (v.free_stmt)
             free(v.stmt);
 
-        for (int i = 0; i< 3; ++i)
+        for (int i = 0; i < 4; ++i)
             jit_var_dec_ref_int(v.dep[i]);
         jit_var_dec_ref_ext(v.extra_dep);
 
@@ -492,6 +497,70 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     std::tie(index, vo) = jit_trace_append(v);
     jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s",
             index, op1, op2, op3, vo->stmt,
+            vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
+
+    jit_var_inc_ref_ext(index, vo);
+
+    auto &todo = stream ? stream->todo : state.todo_host;
+    todo.push_back(index);
+
+    return index;
+}
+
+/// Append a variable to the instruction trace (4 operands)
+uint32_t jit_trace_append_4(VarType type, const char *stmt, int stmt_static,
+                            uint32_t op1, uint32_t op2, uint32_t op3,
+                            uint32_t op4) {
+    Stream *stream = active_stream;
+
+    if (unlikely(op1 == 0 || op2 == 0 || op3 == 0 || op4 == 0))
+        jit_raise("jit_trace_append(): arithmetic involving "
+                  "uninitialized variable!");
+
+    Variable *v1 = jit_var(op1),
+             *v2 = jit_var(op2),
+             *v3 = jit_var(op3),
+             *v4 = jit_var(op4);
+
+    Variable v;
+    v.type = (uint32_t) type;
+    v.size = std::max({ v1->size, v2->size, v3->size, v4->size });
+    v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
+    v.dep[0] = op1;
+    v.dep[1] = op2;
+    v.dep[2] = op3;
+    v.dep[3] = op4;
+    v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize + v4->tsize;
+    v.free_stmt = stmt_static == 0;
+    v.cuda = stream != nullptr;
+
+    if (unlikely((v1->size != 1 && v1->size != v.size) ||
+                 (v2->size != 1 && v2->size != v.size) ||
+                 (v3->size != 1 && v3->size != v.size) ||
+                 (v4->size != 1 && v4->size != v.size))) {
+        jit_raise(
+            "jit_trace_append(): arithmetic involving arrays of incompatible "
+            "size (%u, %u, %u, and %u). The instruction was \"%s\".",
+            v1->size, v2->size, v3->size, v4->size, stmt);
+    } else if (unlikely(v1->pending_scatter || v2->pending_scatter ||
+                        v3->pending_scatter || v4->pending_scatter)) {
+        jit_eval();
+        v1 = jit_var(op1);
+        v2 = jit_var(op2);
+        v3 = jit_var(op3);
+        v4 = jit_var(op4);
+        v.tsize = 5;
+    }
+
+    jit_var_inc_ref_int(op1, v1);
+    jit_var_inc_ref_int(op2, v2);
+    jit_var_inc_ref_int(op3, v3);
+    jit_var_inc_ref_int(op4, v4);
+
+    uint32_t index; Variable *vo;
+    std::tie(index, vo) = jit_trace_append(v);
+    jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u, %u): %s%s",
+            index, op1, op2, op3, op4, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
     jit_var_inc_ref_ext(index, vo);

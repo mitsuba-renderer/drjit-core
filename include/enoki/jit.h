@@ -564,7 +564,7 @@ extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr);
  * statement, whose external reference count is initialized to \c 1.
  *
  * This function assumes that the operation does not access any operands. See
- * the other <tt>jitc_trace_*</tt> functions for IR statements with 1 to 3
+ * the other <tt>jitc_trace_*</tt> functions for IR statements with 1 to 4
  * additional operands. In these latter versions, the string \c stmt may
  * contain special dollar-prefixed expressions (<tt>$rN</tt>, <tt>$tN</tt>, or
  * <tt>$bN</tt>, where <tt>N</tt> ranges from 0-4) to refer to operands and
@@ -621,6 +621,15 @@ extern JITC_EXPORT uint32_t jitc_trace_append_3(enum VarType type,
                                                 uint32_t op1,
                                                 uint32_t op2,
                                                 uint32_t op3);
+
+/// Append a variable to the instruction trace (4 operands)
+extern JITC_EXPORT uint32_t jitc_trace_append_4(enum VarType type,
+                                                const char *stmt,
+                                                int stmt_static,
+                                                uint32_t op1,
+                                                uint32_t op2,
+                                                uint32_t op3,
+                                                uint32_t op4);
 
 /// Increase the external reference count of a given variable
 extern JITC_EXPORT void jitc_var_inc_ref_ext(uint32_t index);

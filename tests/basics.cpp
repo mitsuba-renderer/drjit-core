@@ -426,8 +426,9 @@ TEST_LLVM(16_pointer_registry) {
     jitc_assert(jitc_registry_get_max(key_1) == 0u);
     jitc_assert(jitc_registry_get_max(key_2) == 0u);
 }
+#endif
 
-TEST_BOTH(17_scatter_gather_mask) {
+TEST_LLVM(17_scatter_gather_mask) {
     using Mask    = Array<bool>;
     Int32 l       = arange<Int32>(1022);
     set_label(l, "l");
@@ -447,6 +448,7 @@ TEST_BOTH(17_scatter_gather_mask) {
     jitc_log(Info, "Mask: %s", result.str());
 }
 
+#if 0
 TEST_BOTH(18_mask_propagation) {
     using Mask    = Array<bool>;
 
@@ -789,14 +791,78 @@ TEST_BOTH(27_avx512_intrinsics_round2int) {
 
     jitc_llvm_set_target("skylake", "", 8);
 }
-#endif
 
-#endif
 TEST_LLVM(28_scatter_add) {
     jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
-    Float target = zero<Float>(16);
-    UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
+    using Double = Array<double>;
+    {
+        Float target = zero<Float>(16);
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
 
-    scatter_add(target, Float(1), index);
-    jitc_log(Info, "target=%s", target.str());
+        scatter_add(target, Float(1), index);
+        jitc_log(Info, "target=%s", target.str());
+    }
+
+    {
+        Float target = zero<Float>(16);
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
+
+        scatter_add(target, Float(1), index);
+        jitc_log(Info, "target=%s", target.str());
+    }
+
+    {
+        Double target = zero<Double>(16);
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
+
+        scatter_add(target, Double(1), index);
+        jitc_log(Info, "target=%s", target.str());
+    }
+
+    {
+        Double target = zero<Double>(16);
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
+
+        scatter_add(target, Double(1), index);
+        jitc_log(Info, "target=%s", target.str());
+    }
+
+    {
+        Float target = zero<Float>(16);
+        auto mask = arange<Float>(15) < 8.f;
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
+
+        scatter_add(target, Float(1), index, mask);
+        jitc_log(Info, "target=%s", target.str());
+    }
+
+    {
+        Float target = zero<Float>(16);
+        auto mask = arange<Float>(16) < 8.f;
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
+
+        scatter_add(target, Float(1), index, mask);
+        jitc_log(Info, "target=%s", target.str());
+    }
+
+    {
+        Double target = zero<Double>(16);
+        auto mask = arange<Double>(15) < 8.f;
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
+
+        scatter_add(target, Double(1), index, mask);
+        jitc_log(Info, "target=%s", target.str());
+    }
+
+    {
+        Double target = zero<Double>(16);
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
+        auto mask = arange<Double>(16) < 8.f;
+
+        scatter_add(target, Double(1), index, mask);
+        jitc_log(Info, "target=%s", target.str());
+    }
 }
+#endif
+#endif
+

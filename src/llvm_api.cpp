@@ -84,6 +84,10 @@ static LLVMBool (*LLVMRemoveModule)(LLVMExecutionEngineRef, LLVMModuleRef,
 static size_t (*LLVMDisasmInstruction)(LLVMDisasmContextRef, uint8_t *,
                                        uint64_t, uint64_t, char *,
                                        size_t) = nullptr;
+static LLVMPassManagerRef (*LLVMCreatePassManager)() = nullptr;
+static void (*LLVMRunPassManager)(LLVMPassManagerRef, LLVMModuleRef) = nullptr;
+static void (*LLVMDisposePassManager)(LLVMPassManagerRef) = nullptr;
+static void (*LLVMAddAlwaysInlinerPass)(LLVMPassManagerRef);
 
 #define LLVMDisassembler_Option_PrintImmHex       2
 #define LLVMDisassembler_Option_AsmPrinterVariant 4
@@ -98,10 +102,10 @@ static LLVMExecutionEngineRef jit_llvm_engine   = nullptr;
 static LLVMContextRef jit_llvm_context          = nullptr;
 static LLVMPassManagerRef jit_llvm_pass_manager = nullptr;
 
-char *jit_llvm_target_cpu                       = nullptr;
-char *jit_llvm_target_features                  = nullptr;
-uint32_t jit_llvm_vector_width                  = 0;
-size_t jit_llvm_kernel_id                       = 0;
+char *jit_llvm_target_cpu      = nullptr;
+char *jit_llvm_target_features = nullptr;
+uint32_t jit_llvm_vector_width = 0;
+size_t jit_llvm_kernel_id      = 0;
 
 static bool     jit_llvm_init_attempted = false;
 static bool     jit_llvm_init_success   = false;
@@ -203,9 +207,9 @@ void jit_llvm_disasm(const Kernel &kernel) {
 }
 
 void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
-                      bool include_supplemental_kernels) {
+                      bool include_supplement) {
     char *temp = nullptr;
-    if (include_supplemental_kernels) {
+    if (include_supplement) {
         jit_lz4_init();
 
         size_t temp_size = jit_lz4_dict_size + llvm_kernels_size_uncompressed + buffer_size + 1;
@@ -218,10 +222,9 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
         if (LZ4_decompress_safe_usingDict(
                 llvm_kernels, buffer_new,
                 llvm_kernels_size_compressed,
-                llvm_kernels_size_uncompressed,
-                temp,
+                llvm_kernels_size_uncompressed, temp,
                 jit_lz4_dict_size) != llvm_kernels_size_uncompressed)
-            jit_fail("jit_cuda_init(): decompression of builtin kernels failed!");
+            jit_fail("jit_cuda_init(): decompression of supplemental kernel fragments failed!");
 
         memcpy(buffer_new + llvm_kernels_size_uncompressed, buffer, buffer_size);
         buffer_new[llvm_kernels_size_uncompressed + buffer_size] = '\0';
@@ -271,7 +274,10 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
         LLVMDisposeMessage(llvm_ir);
     }
 
-    LLVMRunPassManager(jit_llvm_pass_manager, llvm_module);
+    // Inline supplemental code fragments into currently compiled kernel
+    if (include_supplement)
+        LLVMRunPassManager(jit_llvm_pass_manager, llvm_module);
+
     LLVMAddModule(jit_llvm_engine, llvm_module);
 
     uint8_t *func =
@@ -436,6 +442,10 @@ bool jit_llvm_init() {
         LOAD(LLVMGetFunctionAddress);
         LOAD(LLVMRemoveModule);
         LOAD(LLVMDisasmInstruction);
+        LOAD(LLVMCreatePassManager);
+        LOAD(LLVMRunPassManager);
+        LOAD(LLVMDisposePassManager);
+        LOAD(LLVMAddAlwaysInlinerPass);
     } while (false);
 
     if (symbol) {
@@ -569,7 +579,8 @@ void jit_llvm_shutdown() {
     Z(LLVMDisposeExecutionEngine); Z(LLVMAddModule); Z(LLVMDisposeModule);
     Z(LLVMCreateMemoryBufferWithMemoryRange); Z(LLVMParseIRInContext);
     Z(LLVMPrintModuleToString); Z(LLVMGetFunctionAddress); Z(LLVMRemoveModule);
-    Z(LLVMDisasmInstruction);
+    Z(LLVMDisasmInstruction); Z(LLVMCreatePassManager); Z(LLVMRunPassManager);
+    Z(LLVMDisposePassManager); Z(LLVMAddAlwaysInlinerPass);
 
     if (jit_llvm_handle != RTLD_NEXT)
         dlclose(jit_llvm_handle);

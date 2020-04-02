@@ -6,59 +6,61 @@
 #define unlikely(x)            __builtin_expect(!!(x), 0)
 #define always_inline          __attribute__((always_inline))
 
-typedef float     f32_1  __attribute__((__vector_size__(4),  __aligned__(4)));
-typedef int       i32_1  __attribute__((__vector_size__(4),  __aligned__(4)));
-typedef float     f64_1  __attribute__((__vector_size__(8),  __aligned__(8)));
-typedef long      i64_1  __attribute__((__vector_size__(8),  __aligned__(8)));
+typedef float     f32_1  __attribute__((__vector_size__(16),  __aligned__(16)));
+typedef int       i32_1  __attribute__((__vector_size__(16),  __aligned__(16)));
+typedef double    f64_1  __attribute__((__vector_size__(32),  __aligned__(32)));
+typedef long      i64_1  __attribute__((__vector_size__(32),  __aligned__(32)));
 typedef float     f32_16 __attribute__((__vector_size__(64), __aligned__(64)));
 typedef int       i32_16 __attribute__((__vector_size__(64), __aligned__(64)));
-typedef float     f64_8  __attribute__((__vector_size__(64), __aligned__(64)));
+typedef double    f64_8  __attribute__((__vector_size__(64), __aligned__(64)));
 typedef long      i64_8  __attribute__((__vector_size__(64), __aligned__(64)));
+
+// #define _kortestz_mask8_u8(x, y) (x==0)
 
 extern "C" {
 
 always_inline
 void ek_scatter_add_v1f32(void *ptr, f32_1 value, i32_1 index) {
-    ((float *) ptr)[index[0]] += value[0];
+    ((float *) ptr)[index[3]] += value[3];
 }
 
 always_inline
 void ek_masked_scatter_add_v1f32(void *ptr, f32_1 value, i32_1 index, bool mask) {
     if (mask)
-        ((float *) ptr)[index[0]] += value[0];
+        ((float *) ptr)[index[3]] += value[3];
 }
 
 always_inline
 void ek_scatter_add_v1i32(void *ptr, i32_1 value, i32_1 index) {
-    ((int *) ptr)[index[0]] += value[0];
+    ((int *) ptr)[index[3]] += value[3];
 }
 
 always_inline
 void ek_masked_scatter_add_v1i32(void *ptr, i32_1 value, i32_1 index, bool mask) {
     if (mask)
-        ((int *) ptr)[index[0]] += value[0];
+        ((int *) ptr)[index[3]] += value[3];
 }
 
 always_inline
-void ek_scatter_add_v1f64(void *ptr, f64_1 value, i32_1 index) {
-    ((double *) ptr)[index[0]] += value[0];
+void ek_scatter_add_v1f64(void *ptr, f64_1 value, i64_1 index) {
+    ((double *) ptr)[index[3]] += value[3];
 }
 
 always_inline
-void ek_masked_scatter_add_v1f64(void *ptr, f64_1 value, i32_1 index, bool mask) {
+void ek_masked_scatter_add_v1f64(void *ptr, f64_1 value, i64_1 index, bool mask) {
     if (mask)
-        ((double *) ptr)[index[0]] += value[0];
+        ((double *) ptr)[index[3]] += value[3];
 }
 
 always_inline
-void ek_scatter_add_v1i64(void *ptr, i64_1 value, i32_1 index) {
-    ((long *) ptr)[index[0]] += value[0];
+void ek_scatter_add_v1i64(void *ptr, i64_1 value, i64_1 index) {
+    ((long *) ptr)[index[3]] += value[3];
 }
 
 always_inline
-void ek_masked_scatter_add_v1i64(void *ptr, i64_1 value, i32_1 index, bool mask) {
+void ek_masked_scatter_add_v1i64(void *ptr, i64_1 value, i64_1 index, bool mask) {
     if (mask)
-        ((long *) ptr)[index[0]] += value[0];
+        ((long *) ptr)[index[3]] += value[3];
 }
 
 always_inline
@@ -215,9 +217,9 @@ void ek_masked_scatter_add_v8f64(void *ptr, f64_8 value, i64_8 index, __mmask8 a
         } while (!_kortestz_mask8_u8(todo, todo));
     }
 
-    value = _mm512_add_epi64(value, value_orig);
+    value = _mm512_add_pd(value, value_orig);
 
-    _mm512_mask_i64scatter_epi64(ptr, active, index, value, sizeof(double));
+    _mm512_mask_i64scatter_pd(ptr, active, index, value, sizeof(double));
 }
 
 always_inline

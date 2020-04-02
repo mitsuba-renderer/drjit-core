@@ -119,13 +119,13 @@ enum ArgType {
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     /// External reference count (by application using Enoki)
-    uint32_t ref_count_ext;
+    uint16_t ref_count_ext;
 
     /// Internal reference count (dependencies within computation graph)
-    uint32_t ref_count_int;
+    uint16_t ref_count_int;
 
     /// Dependencies of this instruction
-    uint32_t dep[3];
+    uint32_t dep[4];
 
     /// Extra dependency (which is not directly used in arithmetic, e.g. scatter/gather)
     uint32_t extra_dep;
@@ -160,9 +160,6 @@ struct Variable {
     /// Don't deallocate 'data' when this variable is destructed?
     bool retain_data : 1;
 
-    /// Don't decrease reference counts ('dep', 'extra_dep')
-    bool retain_references : 1;
-
     /// Free the 'stmt' variables at destruction time?
     bool free_stmt : 1;
 
@@ -183,39 +180,42 @@ struct Variable {
     }
 };
 
-#pragma pack(pop)
-
 /// Abbreviated version of the Variable data structure
 struct VariableKey {
     char *stmt;
     uint32_t size;
-    uint32_t dep[3];
+    uint32_t dep[4];
     uint32_t extra_dep;
     uint16_t type;
-    uint16_t free_stmt;
+    uint16_t flags;
 
     VariableKey(const Variable &v)
-        : stmt(v.stmt), size(v.size), dep{ v.dep[0], v.dep[1], v.dep[2] },
+        : stmt(v.stmt), size(v.size), dep{ v.dep[0], v.dep[1], v.dep[2], v.dep[3] },
           extra_dep(v.extra_dep), type((uint16_t) v.type),
-          free_stmt(v.free_stmt ? 1 : 0) { }
+          flags((v.free_stmt ? 1 : 0) + (v.cuda ? 2 : 0)) { }
 
     bool operator==(const VariableKey &v) const {
         return strcmp(stmt, v.stmt) == 0 && size == v.size &&
-               dep[0] == v.dep[0] && dep[1] == v.dep[1] && dep[2] == v.dep[2] &&
-               extra_dep == v.extra_dep && type == v.type &&
-               free_stmt == v.free_stmt;
+               dep[0] == v.dep[0] && dep[1] == v.dep[1] &&
+               dep[2] == v.dep[2] && dep[3] == v.dep[3] &&
+               extra_dep == v.extra_dep &&
+               type == v.type && flags == v.flags;
     }
 };
+
+#pragma pack(pop)
 
 /// Helper class to hash VariableKey instances
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
         size_t state;
-        if (likely(k.free_stmt == 0)) {
-            state = hash(&k, sizeof(VariableKey));
-        } else {
+        if (unlikely(k.flags & 1)) {
+            // Dynamically allocated string, hash its contents
             state = hash_str(k.stmt);
-            state = hash(&k.size, sizeof(uint32_t) * 6, state);
+            state = hash(&k.size, sizeof(VariableKey) - sizeof(char *), state);
+        } else {
+            // Statically allocated string, hash its address
+            state = hash(&k, sizeof(VariableKey));
         }
         return state;
     }
