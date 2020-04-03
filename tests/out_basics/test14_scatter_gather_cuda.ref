@@ -270,7 +270,7 @@ jit_assemble(size=4): register map:
    - %r7 -> 4 [in]
    - %rd8 -> 12 [scalar] [in]
    - %rd9 -> 13
-   - 10 -> 14 [se]
+   - %u10 -> 14 [se]
 jit_run(): launching kernel (n=4, in=3, out=0, ops=11) ..
 .version 6.3
 .address_size 64
@@ -325,7 +325,7 @@ L1: // Loop body
     mul.wide.s32 %rd9, %r7, 4;
     add.u64 %rd9, %rd9, %rd8;
 
-    // Evaluate 10
+    // Evaluate %u10
     st.global.s32 [%rd9], %r6;
 
     add.u32 %r0, %r0, %r1;

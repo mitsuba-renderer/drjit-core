@@ -62,6 +62,7 @@ loop:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+jit_run(): processing 128 packets and 0 scalar entries
 jit_assemble(size=73): register map:
    - %r0 -> 2
    - %r1 -> 3 [scalar]
@@ -119,6 +120,7 @@ loop:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+jit_run(): processing 10 packets and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(2): 0
 jit_var_free(2)
@@ -203,6 +205,7 @@ loop:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+jit_run(): processing 128 packets and 0 scalar entries
 jit_assemble(size=73): register map:
    - %r0 -> 9
    - %rd1 -> 10
@@ -264,6 +267,7 @@ loop:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+jit_run(): processing 10 packets and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_free(7)

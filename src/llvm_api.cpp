@@ -230,7 +230,6 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
         buffer_new[llvm_kernels_size_uncompressed + buffer_size] = '\0';
         buffer_size += llvm_kernels_size_uncompressed;
         buffer = buffer_new;
-        fprintf(stderr, "%s\n", buffer);
     }
 
     if (jit_llvm_mem_size <= buffer_size) {

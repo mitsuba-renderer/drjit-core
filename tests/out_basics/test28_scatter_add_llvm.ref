@@ -1,0 +1,1445 @@
+jit_malloc(type=host, size=128): <@> (new allocation)
+jit_fill(<@>, type=uint8, size=64)
+jit_var_map(1): <@>, size=16, free=1
+jit_var_inc_ref_ext(1): 1
+jit_malloc(type=host, size=128): <@> (new allocation)
+jit_var_map(2): <@>, size=15, free=1
+jit_var_inc_ref_ext(2): 1
+jit_var_copy(2, size=15)
+jit_trace_append(3): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(3): 1
+jit_trace_append(4): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(4): 1
+jit_var_copy_ptr(5): <@>
+jit_var_inc_ref_ext(5): 1
+jit_var_inc_ref_int(5): 1
+jit_var_inc_ref_int(3): 1
+jit_var_inc_ref_int(2): 1
+jit_trace_append(6 <- 5, 3, 2): $4call void @ek.scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_inc_ref_ext(6): 1
+jit_var_mark_side_effect(6)
+jit_var_inc_ref_ext(6): 2
+jit_var_dec_ref_ext(5): 0
+jit_var_set_extra_dep(6, 1)
+jit_var_inc_ref_ext(1): 2
+jit_var_mark_dirty(1)
+jit_var_dec_ref_ext(6): 1
+jit_var_dec_ref_ext(4): 0
+jit_var_free(4)
+jit_var_dec_ref_ext(3): 0
+jit_eval(): begin.
+jit_assemble(size=15): register map:
+   - %f0 -> 3 [scalar]
+   - %r1 -> 2 [in]
+   - %rd2 -> 5 [scalar] [in]
+   - %u3 -> 6 [se]
+jit_run(): launching kernel (n=15, in=2, out=0, ops=4) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i32*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %rd2 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_0 = insertelement <16 x float> undef, float 0x3ff0000000000000, i32 0
+    %f0 = shufflevector <16 x float> %f0_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Load %r1
+    %r1_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r1_p = bitcast i32* %r1_i to <16 x i32>*
+    %r1 = load <16 x i32>, <16 x i32>* %r1_p, align 64, !alias.scope !1
+
+    ; Evaluate %u3
+    call void @ek.scatter_add_v16f32(i8* %rd2, <16 x float> %f0, <16 x i32> %r1)
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i32*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %rd2 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_0 = insertelement <1 x float> undef, float 0x3ff0000000000000, i32 0
+    %f0 = shufflevector <1 x float> %f0_0, <1 x float> undef, <1 x i32> zeroinitializer
+
+    ; Load %r1
+    %r1_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r1_p = bitcast i32* %r1_i to <1 x i32>*
+    %r1 = load <1 x i32>, <1 x i32>* %r1_p, align 4, !alias.scope !1
+
+    ; Evaluate %u3
+    call void @ek.scatter_add_v1f32(i8* %rd2, <1 x float> %f0, <1 x i32> %r1)
+
+    %index_next = add i64 %index, 1
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 0 packets and 15 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(5): 0
+jit_var_free(5)
+jit_var_dec_ref_int(3): 0
+jit_var_free(3)
+jit_var_dec_ref_int(2): 0
+jit_var_dec_ref_ext(1): 1
+jit_var_dec_ref_ext(6): 0
+jit_var_free(6)
+jit_eval(): done.
+target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
+jit_var_dec_ref_ext(2): 0
+jit_var_free(2)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(1): 0
+jit_var_free(1)
+jit_free(<@>, type=host, size=128)
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_fill(<@>, type=uint8, size=64)
+jit_var_map(7): <@>, size=16, free=1
+jit_var_inc_ref_ext(7): 1
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_var_map(8): <@>, size=16, free=1
+jit_var_inc_ref_ext(8): 1
+jit_var_copy(8, size=16)
+jit_trace_append(9): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(9): 1
+jit_trace_append(10): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(10): 1
+jit_var_copy_ptr(11): <@>
+jit_var_inc_ref_ext(11): 1
+jit_var_inc_ref_int(11): 1
+jit_var_inc_ref_int(9): 1
+jit_var_inc_ref_int(8): 1
+jit_trace_append(12 <- 11, 9, 8): $4call void @ek.scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_inc_ref_ext(12): 1
+jit_var_mark_side_effect(12)
+jit_var_inc_ref_ext(12): 2
+jit_var_dec_ref_ext(11): 0
+jit_var_set_extra_dep(12, 7)
+jit_var_inc_ref_ext(7): 2
+jit_var_mark_dirty(7)
+jit_var_dec_ref_ext(12): 1
+jit_var_dec_ref_ext(10): 0
+jit_var_free(10)
+jit_var_dec_ref_ext(9): 0
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %f0 -> 9 [scalar]
+   - %r1 -> 8 [in]
+   - %rd2 -> 11 [scalar] [in]
+   - %u3 -> 12 [se]
+jit_run(): launching kernel (n=16, in=2, out=0, ops=4) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i32*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %rd2 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_0 = insertelement <16 x float> undef, float 0x3ff0000000000000, i32 0
+    %f0 = shufflevector <16 x float> %f0_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Load %r1
+    %r1_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r1_p = bitcast i32* %r1_i to <16 x i32>*
+    %r1 = load <16 x i32>, <16 x i32>* %r1_p, align 64, !alias.scope !1
+
+    ; Evaluate %u3
+    call void @ek.scatter_add_v16f32(i8* %rd2, <16 x float> %f0, <16 x i32> %r1)
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i32*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %rd2 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_0 = insertelement <1 x float> undef, float 0x3ff0000000000000, i32 0
+    %f0 = shufflevector <1 x float> %f0_0, <1 x float> undef, <1 x i32> zeroinitializer
+
+    ; Load %r1
+    %r1_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r1_p = bitcast i32* %r1_i to <1 x i32>*
+    %r1 = load <1 x i32>, <1 x i32>* %r1_p, align 4, !alias.scope !1
+
+    ; Evaluate %u3
+    call void @ek.scatter_add_v1f32(i8* %rd2, <1 x float> %f0, <1 x i32> %r1)
+
+    %index_next = add i64 %index, 1
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(11): 0
+jit_var_free(11)
+jit_var_dec_ref_int(9): 0
+jit_var_free(9)
+jit_var_dec_ref_int(8): 0
+jit_var_dec_ref_ext(7): 1
+jit_var_dec_ref_ext(12): 0
+jit_var_free(12)
+jit_eval(): done.
+target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0]
+jit_var_dec_ref_ext(8): 0
+jit_var_free(8)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(7): 0
+jit_var_free(7)
+jit_free(<@>, type=host, size=128)
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_fill(<@>, type=uint8, size=128)
+jit_var_map(13): <@>, size=16, free=1
+jit_var_inc_ref_ext(13): 1
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_var_map(14): <@>, size=15, free=1
+jit_var_inc_ref_ext(14): 1
+jit_var_copy(14, size=15)
+jit_trace_append(15): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(15): 1
+jit_trace_append(16): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(14): 1
+jit_trace_append(17 <- 14): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
+jit_var_inc_ref_ext(17): 1
+jit_var_copy_ptr(18): <@>
+jit_var_inc_ref_ext(18): 1
+jit_var_inc_ref_int(18): 1
+jit_var_inc_ref_int(15): 1
+jit_var_inc_ref_int(17): 1
+jit_trace_append(19 <- 18, 15, 17): $3call void @ek.scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_inc_ref_ext(19): 1
+jit_var_mark_side_effect(19)
+jit_var_inc_ref_ext(19): 2
+jit_var_dec_ref_ext(18): 0
+jit_var_dec_ref_ext(17): 0
+jit_var_set_extra_dep(19, 13)
+jit_var_inc_ref_ext(13): 2
+jit_var_mark_dirty(13)
+jit_var_dec_ref_ext(19): 1
+jit_var_dec_ref_ext(16): 0
+jit_var_free(16)
+jit_var_dec_ref_ext(15): 0
+jit_eval(): begin.
+jit_assemble(size=15): register map:
+   - %r0 -> 14 [in]
+   - %rd1 -> 17
+   - %d2 -> 15 [scalar]
+   - %rd3 -> 18 [scalar] [in]
+   - %u4 -> 19 [se]
+jit_run(): launching kernel (n=15, in=2, out=0, ops=5) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i32*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %rd3 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Load %r0
+    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_p = bitcast i32* %r0_i to <16 x i32>*
+    %r0 = load <16 x i32>, <16 x i32>* %r0_p, align 64, !alias.scope !1
+
+    ; Evaluate %rd1
+    %rd1 = zext <16 x i32> %r0 to <16 x i64>
+
+    ; Evaluate %d2
+    %d2_0 = insertelement <16 x double> undef, double 0x3ff0000000000000, i32 0
+    %d2 = shufflevector <16 x double> %d2_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %u4
+    %d2_unroll_u4_0_0 = shufflevector <16 x double> %d2, <16 x double> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %d2_unroll_u4_0_1 = shufflevector <16 x double> %d2, <16 x double> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    %rd1_unroll_u4_0_0 = shufflevector <16 x i64> %rd1, <16 x i64> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %rd1_unroll_u4_0_1 = shufflevector <16 x i64> %rd1, <16 x i64> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    call void @ek.scatter_add_v8f64(i8* %rd3, <8 x double> %d2_unroll_u4_0_0, <8 x i64> %rd1_unroll_u4_0_0)
+    call void @ek.scatter_add_v8f64(i8* %rd3, <8 x double> %d2_unroll_u4_0_1, <8 x i64> %rd1_unroll_u4_0_1)
+
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i32*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %rd3 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Load %r0
+    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_p = bitcast i32* %r0_i to <1 x i32>*
+    %r0 = load <1 x i32>, <1 x i32>* %r0_p, align 4, !alias.scope !1
+
+    ; Evaluate %rd1
+    %rd1 = zext <1 x i32> %r0 to <1 x i64>
+
+    ; Evaluate %d2
+    %d2_0 = insertelement <1 x double> undef, double 0x3ff0000000000000, i32 0
+    %d2 = shufflevector <1 x double> %d2_0, <1 x double> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %u4
+    call void @ek.scatter_add_v1f64(i8* %rd3, <1 x double> %d2, <1 x i64> %rd1)
+
+    %index_next = add i64 %index, 1
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 0 packets and 15 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(14): 0
+jit_var_dec_ref_int(18): 0
+jit_var_free(18)
+jit_var_dec_ref_int(15): 0
+jit_var_free(15)
+jit_var_dec_ref_int(17): 0
+jit_var_free(17)
+jit_var_dec_ref_ext(13): 1
+jit_var_dec_ref_ext(19): 0
+jit_var_free(19)
+jit_eval(): done.
+target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
+jit_var_dec_ref_ext(14): 0
+jit_var_free(14)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(13): 0
+jit_var_free(13)
+jit_free(<@>, type=host, size=128)
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_fill(<@>, type=uint8, size=128)
+jit_var_map(20): <@>, size=16, free=1
+jit_var_inc_ref_ext(20): 1
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_var_map(21): <@>, size=16, free=1
+jit_var_inc_ref_ext(21): 1
+jit_var_copy(21, size=16)
+jit_trace_append(22): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(22): 1
+jit_trace_append(23): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(23): 1
+jit_var_inc_ref_int(21): 1
+jit_trace_append(24 <- 21): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
+jit_var_inc_ref_ext(24): 1
+jit_var_copy_ptr(25): <@>
+jit_var_inc_ref_ext(25): 1
+jit_var_inc_ref_int(25): 1
+jit_var_inc_ref_int(22): 1
+jit_var_inc_ref_int(24): 1
+jit_trace_append(26 <- 25, 22, 24): $3call void @ek.scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_inc_ref_ext(26): 1
+jit_var_mark_side_effect(26)
+jit_var_inc_ref_ext(26): 2
+jit_var_dec_ref_ext(25): 0
+jit_var_dec_ref_ext(24): 0
+jit_var_set_extra_dep(26, 20)
+jit_var_inc_ref_ext(20): 2
+jit_var_mark_dirty(20)
+jit_var_dec_ref_ext(26): 1
+jit_var_dec_ref_ext(23): 0
+jit_var_free(23)
+jit_var_dec_ref_ext(22): 0
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %r0 -> 21 [in]
+   - %rd1 -> 24
+   - %d2 -> 22 [scalar]
+   - %rd3 -> 25 [scalar] [in]
+   - %u4 -> 26 [se]
+jit_run(): launching kernel (n=16, in=2, out=0, ops=5) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i32*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %rd3 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Load %r0
+    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_p = bitcast i32* %r0_i to <16 x i32>*
+    %r0 = load <16 x i32>, <16 x i32>* %r0_p, align 64, !alias.scope !1
+
+    ; Evaluate %rd1
+    %rd1 = zext <16 x i32> %r0 to <16 x i64>
+
+    ; Evaluate %d2
+    %d2_0 = insertelement <16 x double> undef, double 0x3ff0000000000000, i32 0
+    %d2 = shufflevector <16 x double> %d2_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %u4
+    %d2_unroll_u4_0_0 = shufflevector <16 x double> %d2, <16 x double> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %d2_unroll_u4_0_1 = shufflevector <16 x double> %d2, <16 x double> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    %rd1_unroll_u4_0_0 = shufflevector <16 x i64> %rd1, <16 x i64> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %rd1_unroll_u4_0_1 = shufflevector <16 x i64> %rd1, <16 x i64> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    call void @ek.scatter_add_v8f64(i8* %rd3, <8 x double> %d2_unroll_u4_0_0, <8 x i64> %rd1_unroll_u4_0_0)
+    call void @ek.scatter_add_v8f64(i8* %rd3, <8 x double> %d2_unroll_u4_0_1, <8 x i64> %rd1_unroll_u4_0_1)
+
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i32*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %rd3 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Load %r0
+    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_p = bitcast i32* %r0_i to <1 x i32>*
+    %r0 = load <1 x i32>, <1 x i32>* %r0_p, align 4, !alias.scope !1
+
+    ; Evaluate %rd1
+    %rd1 = zext <1 x i32> %r0 to <1 x i64>
+
+    ; Evaluate %d2
+    %d2_0 = insertelement <1 x double> undef, double 0x3ff0000000000000, i32 0
+    %d2 = shufflevector <1 x double> %d2_0, <1 x double> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %u4
+    call void @ek.scatter_add_v1f64(i8* %rd3, <1 x double> %d2, <1 x i64> %rd1)
+
+    %index_next = add i64 %index, 1
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(21): 0
+jit_var_dec_ref_int(25): 0
+jit_var_free(25)
+jit_var_dec_ref_int(22): 0
+jit_var_free(22)
+jit_var_dec_ref_int(24): 0
+jit_var_free(24)
+jit_var_dec_ref_ext(20): 1
+jit_var_dec_ref_ext(26): 0
+jit_var_free(26)
+jit_eval(): done.
+target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0]
+jit_var_dec_ref_ext(21): 0
+jit_var_free(21)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(20): 0
+jit_var_free(20)
+jit_free(<@>, type=host, size=128)
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_fill(<@>, type=uint8, size=64)
+jit_var_map(27): <@>, size=16, free=1
+jit_var_inc_ref_ext(27): 1
+jit_trace_append(28): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_var_inc_ref_ext(28): 1
+jit_var_inc_ref_int(28): 1
+jit_trace_append(29 <- 28): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
+jit_var_inc_ref_ext(29): 1
+jit_var_dec_ref_ext(28): 0
+jit_trace_append(30): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4020000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(30): 1
+jit_var_inc_ref_int(29): 1
+jit_var_inc_ref_int(30): 1
+jit_trace_append(31 <- 29, 30): $r0 = fcmp olt <$w x $t1> $r1, $r2
+jit_var_inc_ref_ext(31): 1
+jit_var_dec_ref_ext(30): 0
+jit_var_dec_ref_ext(29): 0
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_var_map(32): <@>, size=15, free=1
+jit_var_inc_ref_ext(32): 1
+jit_var_copy(32, size=15)
+jit_trace_append(33): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(33): 1
+jit_var_copy_ptr(34): <@>
+jit_var_inc_ref_ext(34): 1
+jit_var_inc_ref_int(34): 1
+jit_var_inc_ref_int(33): 1
+jit_var_inc_ref_int(32): 1
+jit_var_inc_ref_int(31): 1
+jit_trace_append(35 <- 34, 33, 32, 31): $4call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)
+jit_var_inc_ref_ext(35): 1
+jit_var_mark_side_effect(35)
+jit_var_inc_ref_ext(35): 2
+jit_var_dec_ref_ext(34): 0
+jit_var_set_extra_dep(35, 27)
+jit_var_inc_ref_ext(27): 2
+jit_var_mark_dirty(27)
+jit_var_dec_ref_ext(35): 1
+jit_var_dec_ref_ext(33): 0
+jit_eval(): begin.
+jit_assemble(size=15): register map:
+   - %r0 -> 28
+   - %f1 -> 29
+   - %f2 -> 30 [scalar]
+   - %p3 -> 31 [out]
+jit_malloc(type=host, size=128): <@> (new allocation)
+   - %r4 -> 32 [in]
+   - %f5 -> 33 [scalar]
+   - %rd6 -> 34 [scalar] [in]
+   - %u7 -> 35 [se]
+jit_run(): launching kernel (n=15, in=2, out=1, ops=8) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i32*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %rd6 = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <16 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <16 x i32> %r0_1, <16 x i32> undef, <16 x i32> zeroinitializer
+    %r0 = add <16 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    ; Evaluate %f1
+    %f1 = uitofp <16 x i32> %r0 to <16 x float>
+
+    ; Evaluate %f2
+    %f2_0 = insertelement <16 x float> undef, float 0x4020000000000000, i32 0
+    %f2 = shufflevector <16 x float> %f2_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %p3
+    %p3 = fcmp olt <16 x float> %f1, %f2
+
+    ; Store %p3
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %p3_p = bitcast i8* %p3_i to <16 x i8>*
+    %p3_e = zext <16 x i1> %p3 to <16 x i8>
+    store <16 x i8> %p3_e, <16 x i8>* %p3_p, align 16, !noalias !1
+
+    ; Load %r4
+    %r4_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r4_p = bitcast i32* %r4_i to <16 x i32>*
+    %r4 = load <16 x i32>, <16 x i32>* %r4_p, align 64, !alias.scope !1
+
+    ; Evaluate %f5
+    %f5_0 = insertelement <16 x float> undef, float 0x3ff0000000000000, i32 0
+    %f5 = shufflevector <16 x float> %f5_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %u7
+    call void @ek.masked_scatter_add_v16f32(i8* %rd6, <16 x float> %f5, <16 x i32> %r4, <16 x i1> %p3)
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i32*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %rd6 = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <1 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <1 x i32> %r0_1, <1 x i32> undef, <1 x i32> zeroinitializer
+    %r0 = add <1 x i32> %r0_2, <i32 0>
+
+    ; Evaluate %f1
+    %f1 = uitofp <1 x i32> %r0 to <1 x float>
+
+    ; Evaluate %f2
+    %f2_0 = insertelement <1 x float> undef, float 0x4020000000000000, i32 0
+    %f2 = shufflevector <1 x float> %f2_0, <1 x float> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %p3
+    %p3 = fcmp olt <1 x float> %f1, %f2
+
+    ; Store %p3
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %p3_p = bitcast i8* %p3_i to <1 x i8>*
+    %p3_e = zext <1 x i1> %p3 to <1 x i8>
+    store <1 x i8> %p3_e, <1 x i8>* %p3_p, align 1, !noalias !1
+
+    ; Load %r4
+    %r4_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r4_p = bitcast i32* %r4_i to <1 x i32>*
+    %r4 = load <1 x i32>, <1 x i32>* %r4_p, align 4, !alias.scope !1
+
+    ; Evaluate %f5
+    %f5_0 = insertelement <1 x float> undef, float 0x3ff0000000000000, i32 0
+    %f5 = shufflevector <1 x float> %f5_0, <1 x float> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %u7
+    call void @ek.masked_scatter_add_v1f32(i8* %rd6, <1 x float> %f5, <1 x i32> %r4, <1 x i1> %p3)
+
+    %index_next = add i64 %index, 1
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 0 packets and 15 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(28): 0
+jit_var_free(28)
+jit_var_dec_ref_int(29): 0
+jit_var_free(29)
+jit_var_dec_ref_int(30): 0
+jit_var_free(30)
+jit_var_dec_ref_int(34): 0
+jit_var_free(34)
+jit_var_dec_ref_int(33): 0
+jit_var_free(33)
+jit_var_dec_ref_int(32): 0
+jit_var_dec_ref_int(31): 0
+jit_var_dec_ref_ext(27): 1
+jit_var_dec_ref_ext(35): 0
+jit_var_free(35)
+jit_eval(): done.
+target=[2, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+jit_var_dec_ref_ext(32): 0
+jit_var_free(32)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(31): 0
+jit_var_free(31)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(27): 0
+jit_var_free(27)
+jit_free(<@>, type=host, size=128)
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_fill(<@>, type=uint8, size=64)
+jit_var_map(36): <@>, size=16, free=1
+jit_var_inc_ref_ext(36): 1
+jit_trace_append(37): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_var_inc_ref_ext(37): 1
+jit_var_inc_ref_int(37): 1
+jit_trace_append(38 <- 37): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
+jit_var_inc_ref_ext(38): 1
+jit_var_dec_ref_ext(37): 0
+jit_trace_append(39): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4020000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(39): 1
+jit_var_inc_ref_int(38): 1
+jit_var_inc_ref_int(39): 1
+jit_trace_append(40 <- 38, 39): $r0 = fcmp olt <$w x $t1> $r1, $r2
+jit_var_inc_ref_ext(40): 1
+jit_var_dec_ref_ext(39): 0
+jit_var_dec_ref_ext(38): 0
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_var_map(41): <@>, size=16, free=1
+jit_var_inc_ref_ext(41): 1
+jit_var_copy(41, size=16)
+jit_trace_append(42): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(42): 1
+jit_var_copy_ptr(43): <@>
+jit_var_inc_ref_ext(43): 1
+jit_var_inc_ref_int(43): 1
+jit_var_inc_ref_int(42): 1
+jit_var_inc_ref_int(41): 1
+jit_var_inc_ref_int(40): 1
+jit_trace_append(44 <- 43, 42, 41, 40): $4call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)
+jit_var_inc_ref_ext(44): 1
+jit_var_mark_side_effect(44)
+jit_var_inc_ref_ext(44): 2
+jit_var_dec_ref_ext(43): 0
+jit_var_set_extra_dep(44, 36)
+jit_var_inc_ref_ext(36): 2
+jit_var_mark_dirty(36)
+jit_var_dec_ref_ext(44): 1
+jit_var_dec_ref_ext(42): 0
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %r0 -> 37
+   - %f1 -> 38
+   - %f2 -> 39 [scalar]
+   - %p3 -> 40 [out]
+jit_malloc(type=host, size=128): <@> (reused global)
+   - %r4 -> 41 [in]
+   - %f5 -> 42 [scalar]
+   - %rd6 -> 43 [scalar] [in]
+   - %u7 -> 44 [se]
+jit_run(): launching kernel (n=16, in=2, out=1, ops=8) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i32*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %rd6 = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <16 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <16 x i32> %r0_1, <16 x i32> undef, <16 x i32> zeroinitializer
+    %r0 = add <16 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    ; Evaluate %f1
+    %f1 = uitofp <16 x i32> %r0 to <16 x float>
+
+    ; Evaluate %f2
+    %f2_0 = insertelement <16 x float> undef, float 0x4020000000000000, i32 0
+    %f2 = shufflevector <16 x float> %f2_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %p3
+    %p3 = fcmp olt <16 x float> %f1, %f2
+
+    ; Store %p3
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %p3_p = bitcast i8* %p3_i to <16 x i8>*
+    %p3_e = zext <16 x i1> %p3 to <16 x i8>
+    store <16 x i8> %p3_e, <16 x i8>* %p3_p, align 16, !noalias !1
+
+    ; Load %r4
+    %r4_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r4_p = bitcast i32* %r4_i to <16 x i32>*
+    %r4 = load <16 x i32>, <16 x i32>* %r4_p, align 64, !alias.scope !1
+
+    ; Evaluate %f5
+    %f5_0 = insertelement <16 x float> undef, float 0x3ff0000000000000, i32 0
+    %f5 = shufflevector <16 x float> %f5_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %u7
+    call void @ek.masked_scatter_add_v16f32(i8* %rd6, <16 x float> %f5, <16 x i32> %r4, <16 x i1> %p3)
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i32*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %rd6 = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <1 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <1 x i32> %r0_1, <1 x i32> undef, <1 x i32> zeroinitializer
+    %r0 = add <1 x i32> %r0_2, <i32 0>
+
+    ; Evaluate %f1
+    %f1 = uitofp <1 x i32> %r0 to <1 x float>
+
+    ; Evaluate %f2
+    %f2_0 = insertelement <1 x float> undef, float 0x4020000000000000, i32 0
+    %f2 = shufflevector <1 x float> %f2_0, <1 x float> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %p3
+    %p3 = fcmp olt <1 x float> %f1, %f2
+
+    ; Store %p3
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %p3_p = bitcast i8* %p3_i to <1 x i8>*
+    %p3_e = zext <1 x i1> %p3 to <1 x i8>
+    store <1 x i8> %p3_e, <1 x i8>* %p3_p, align 1, !noalias !1
+
+    ; Load %r4
+    %r4_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r4_p = bitcast i32* %r4_i to <1 x i32>*
+    %r4 = load <1 x i32>, <1 x i32>* %r4_p, align 4, !alias.scope !1
+
+    ; Evaluate %f5
+    %f5_0 = insertelement <1 x float> undef, float 0x3ff0000000000000, i32 0
+    %f5 = shufflevector <1 x float> %f5_0, <1 x float> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %u7
+    call void @ek.masked_scatter_add_v1f32(i8* %rd6, <1 x float> %f5, <1 x i32> %r4, <1 x i1> %p3)
+
+    %index_next = add i64 %index, 1
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(37): 0
+jit_var_free(37)
+jit_var_dec_ref_int(38): 0
+jit_var_free(38)
+jit_var_dec_ref_int(39): 0
+jit_var_free(39)
+jit_var_dec_ref_int(43): 0
+jit_var_free(43)
+jit_var_dec_ref_int(42): 0
+jit_var_free(42)
+jit_var_dec_ref_int(41): 0
+jit_var_dec_ref_int(40): 0
+jit_var_dec_ref_ext(36): 1
+jit_var_dec_ref_ext(44): 0
+jit_var_free(44)
+jit_eval(): done.
+target=[2, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+jit_var_dec_ref_ext(41): 0
+jit_var_free(41)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(40): 0
+jit_var_free(40)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(36): 0
+jit_var_free(36)
+jit_free(<@>, type=host, size=128)
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_fill(<@>, type=uint8, size=128)
+jit_var_map(45): <@>, size=16, free=1
+jit_var_inc_ref_ext(45): 1
+jit_trace_append(46): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_var_inc_ref_ext(46): 1
+jit_var_inc_ref_int(46): 1
+jit_trace_append(47 <- 46): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
+jit_var_inc_ref_ext(47): 1
+jit_var_dec_ref_ext(46): 0
+jit_trace_append(48): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4020000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(48): 1
+jit_var_inc_ref_int(47): 1
+jit_var_inc_ref_int(48): 1
+jit_trace_append(49 <- 47, 48): $r0 = fcmp olt <$w x $t1> $r1, $r2
+jit_var_inc_ref_ext(49): 1
+jit_var_dec_ref_ext(48): 0
+jit_var_dec_ref_ext(47): 0
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_var_map(50): <@>, size=15, free=1
+jit_var_inc_ref_ext(50): 1
+jit_var_copy(50, size=15)
+jit_trace_append(51): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(51): 1
+jit_var_inc_ref_int(50): 1
+jit_trace_append(52 <- 50): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
+jit_var_inc_ref_ext(52): 1
+jit_var_copy_ptr(53): <@>
+jit_var_inc_ref_ext(53): 1
+jit_var_inc_ref_int(53): 1
+jit_var_inc_ref_int(51): 1
+jit_var_inc_ref_int(52): 1
+jit_var_inc_ref_int(49): 1
+jit_trace_append(54 <- 53, 51, 52, 49): $3call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)
+jit_var_inc_ref_ext(54): 1
+jit_var_mark_side_effect(54)
+jit_var_inc_ref_ext(54): 2
+jit_var_dec_ref_ext(53): 0
+jit_var_dec_ref_ext(52): 0
+jit_var_set_extra_dep(54, 45)
+jit_var_inc_ref_ext(45): 2
+jit_var_mark_dirty(45)
+jit_var_dec_ref_ext(54): 1
+jit_var_dec_ref_ext(51): 0
+jit_eval(): begin.
+jit_assemble(size=15): register map:
+   - %r0 -> 46
+   - %d1 -> 47
+   - %d2 -> 48 [scalar]
+   - %p3 -> 49 [out]
+jit_malloc(type=host, size=128): <@> (reused global)
+   - %r4 -> 50 [in]
+   - %rd5 -> 52
+   - %d6 -> 51 [scalar]
+   - %rd7 -> 53 [scalar] [in]
+   - %u8 -> 54 [se]
+jit_run(): launching kernel (n=15, in=2, out=1, ops=9) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i32*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %rd7 = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <16 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <16 x i32> %r0_1, <16 x i32> undef, <16 x i32> zeroinitializer
+    %r0 = add <16 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    ; Evaluate %d1
+    %d1 = uitofp <16 x i32> %r0 to <16 x double>
+
+    ; Evaluate %d2
+    %d2_0 = insertelement <16 x double> undef, double 0x4020000000000000, i32 0
+    %d2 = shufflevector <16 x double> %d2_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %p3
+    %p3 = fcmp olt <16 x double> %d1, %d2
+
+    ; Store %p3
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %p3_p = bitcast i8* %p3_i to <16 x i8>*
+    %p3_e = zext <16 x i1> %p3 to <16 x i8>
+    store <16 x i8> %p3_e, <16 x i8>* %p3_p, align 16, !noalias !1
+
+    ; Load %r4
+    %r4_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r4_p = bitcast i32* %r4_i to <16 x i32>*
+    %r4 = load <16 x i32>, <16 x i32>* %r4_p, align 64, !alias.scope !1
+
+    ; Evaluate %rd5
+    %rd5 = zext <16 x i32> %r4 to <16 x i64>
+
+    ; Evaluate %d6
+    %d6_0 = insertelement <16 x double> undef, double 0x3ff0000000000000, i32 0
+    %d6 = shufflevector <16 x double> %d6_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %u8
+    %d6_unroll_u8_0_0 = shufflevector <16 x double> %d6, <16 x double> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %d6_unroll_u8_0_1 = shufflevector <16 x double> %d6, <16 x double> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    %rd5_unroll_u8_0_0 = shufflevector <16 x i64> %rd5, <16 x i64> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %rd5_unroll_u8_0_1 = shufflevector <16 x i64> %rd5, <16 x i64> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    %p3_unroll_u8_0_0 = shufflevector <16 x i1> %p3, <16 x i1> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %p3_unroll_u8_0_1 = shufflevector <16 x i1> %p3, <16 x i1> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    call void @ek.masked_scatter_add_v8f64(i8* %rd7, <8 x double> %d6_unroll_u8_0_0, <8 x i64> %rd5_unroll_u8_0_0, <8 x i1> %p3_unroll_u8_0_0)
+    call void @ek.masked_scatter_add_v8f64(i8* %rd7, <8 x double> %d6_unroll_u8_0_1, <8 x i64> %rd5_unroll_u8_0_1, <8 x i1> %p3_unroll_u8_0_1)
+
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i32*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %rd7 = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <1 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <1 x i32> %r0_1, <1 x i32> undef, <1 x i32> zeroinitializer
+    %r0 = add <1 x i32> %r0_2, <i32 0>
+
+    ; Evaluate %d1
+    %d1 = uitofp <1 x i32> %r0 to <1 x double>
+
+    ; Evaluate %d2
+    %d2_0 = insertelement <1 x double> undef, double 0x4020000000000000, i32 0
+    %d2 = shufflevector <1 x double> %d2_0, <1 x double> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %p3
+    %p3 = fcmp olt <1 x double> %d1, %d2
+
+    ; Store %p3
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %p3_p = bitcast i8* %p3_i to <1 x i8>*
+    %p3_e = zext <1 x i1> %p3 to <1 x i8>
+    store <1 x i8> %p3_e, <1 x i8>* %p3_p, align 1, !noalias !1
+
+    ; Load %r4
+    %r4_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r4_p = bitcast i32* %r4_i to <1 x i32>*
+    %r4 = load <1 x i32>, <1 x i32>* %r4_p, align 4, !alias.scope !1
+
+    ; Evaluate %rd5
+    %rd5 = zext <1 x i32> %r4 to <1 x i64>
+
+    ; Evaluate %d6
+    %d6_0 = insertelement <1 x double> undef, double 0x3ff0000000000000, i32 0
+    %d6 = shufflevector <1 x double> %d6_0, <1 x double> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %u8
+    call void @ek.masked_scatter_add_v1f64(i8* %rd7, <1 x double> %d6, <1 x i64> %rd5, <1 x i1> %p3)
+
+    %index_next = add i64 %index, 1
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 0 packets and 15 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(46): 0
+jit_var_free(46)
+jit_var_dec_ref_int(47): 0
+jit_var_free(47)
+jit_var_dec_ref_int(48): 0
+jit_var_free(48)
+jit_var_dec_ref_int(50): 0
+jit_var_dec_ref_int(53): 0
+jit_var_free(53)
+jit_var_dec_ref_int(51): 0
+jit_var_free(51)
+jit_var_dec_ref_int(52): 0
+jit_var_free(52)
+jit_var_dec_ref_int(49): 0
+jit_var_dec_ref_ext(45): 1
+jit_var_dec_ref_ext(54): 0
+jit_var_free(54)
+jit_eval(): done.
+target=[2, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+jit_var_dec_ref_ext(50): 0
+jit_var_free(50)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(49): 0
+jit_var_free(49)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(45): 0
+jit_var_free(45)
+jit_free(<@>, type=host, size=128)
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_fill(<@>, type=uint8, size=128)
+jit_var_map(55): <@>, size=16, free=1
+jit_var_inc_ref_ext(55): 1
+jit_malloc(type=host, size=128): <@> (reused global)
+jit_var_map(56): <@>, size=16, free=1
+jit_var_inc_ref_ext(56): 1
+jit_var_copy(56, size=16)
+jit_trace_append(57): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_var_inc_ref_ext(57): 1
+jit_var_inc_ref_int(57): 1
+jit_trace_append(58 <- 57): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
+jit_var_inc_ref_ext(58): 1
+jit_var_dec_ref_ext(57): 0
+jit_trace_append(59): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4020000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(59): 1
+jit_var_inc_ref_int(58): 1
+jit_var_inc_ref_int(59): 1
+jit_trace_append(60 <- 58, 59): $r0 = fcmp olt <$w x $t1> $r1, $r2
+jit_var_inc_ref_ext(60): 1
+jit_var_dec_ref_ext(59): 0
+jit_var_dec_ref_ext(58): 0
+jit_trace_append(61): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(61): 1
+jit_var_inc_ref_int(56): 1
+jit_trace_append(62 <- 56): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
+jit_var_inc_ref_ext(62): 1
+jit_var_copy_ptr(63): <@>
+jit_var_inc_ref_ext(63): 1
+jit_var_inc_ref_int(63): 1
+jit_var_inc_ref_int(61): 1
+jit_var_inc_ref_int(62): 1
+jit_var_inc_ref_int(60): 1
+jit_trace_append(64 <- 63, 61, 62, 60): $3call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)
+jit_var_inc_ref_ext(64): 1
+jit_var_mark_side_effect(64)
+jit_var_inc_ref_ext(64): 2
+jit_var_dec_ref_ext(63): 0
+jit_var_dec_ref_ext(62): 0
+jit_var_set_extra_dep(64, 55)
+jit_var_inc_ref_ext(55): 2
+jit_var_mark_dirty(55)
+jit_var_dec_ref_ext(64): 1
+jit_var_dec_ref_ext(61): 0
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %r0 -> 57
+   - %d1 -> 58
+   - %d2 -> 59 [scalar]
+   - %p3 -> 60 [out]
+jit_malloc(type=host, size=128): <@> (reused global)
+   - %r4 -> 56 [in]
+   - %rd5 -> 62
+   - %d6 -> 61 [scalar]
+   - %rd7 -> 63 [scalar] [in]
+   - %u8 -> 64 [se]
+jit_run(): launching kernel (n=16, in=2, out=1, ops=9) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i32*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %rd7 = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <16 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <16 x i32> %r0_1, <16 x i32> undef, <16 x i32> zeroinitializer
+    %r0 = add <16 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    ; Evaluate %d1
+    %d1 = uitofp <16 x i32> %r0 to <16 x double>
+
+    ; Evaluate %d2
+    %d2_0 = insertelement <16 x double> undef, double 0x4020000000000000, i32 0
+    %d2 = shufflevector <16 x double> %d2_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %p3
+    %p3 = fcmp olt <16 x double> %d1, %d2
+
+    ; Store %p3
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %p3_p = bitcast i8* %p3_i to <16 x i8>*
+    %p3_e = zext <16 x i1> %p3 to <16 x i8>
+    store <16 x i8> %p3_e, <16 x i8>* %p3_p, align 16, !noalias !1
+
+    ; Load %r4
+    %r4_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r4_p = bitcast i32* %r4_i to <16 x i32>*
+    %r4 = load <16 x i32>, <16 x i32>* %r4_p, align 64, !alias.scope !1
+
+    ; Evaluate %rd5
+    %rd5 = zext <16 x i32> %r4 to <16 x i64>
+
+    ; Evaluate %d6
+    %d6_0 = insertelement <16 x double> undef, double 0x3ff0000000000000, i32 0
+    %d6 = shufflevector <16 x double> %d6_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Evaluate %u8
+    %d6_unroll_u8_0_0 = shufflevector <16 x double> %d6, <16 x double> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %d6_unroll_u8_0_1 = shufflevector <16 x double> %d6, <16 x double> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    %rd5_unroll_u8_0_0 = shufflevector <16 x i64> %rd5, <16 x i64> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %rd5_unroll_u8_0_1 = shufflevector <16 x i64> %rd5, <16 x i64> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    %p3_unroll_u8_0_0 = shufflevector <16 x i1> %p3, <16 x i1> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %p3_unroll_u8_0_1 = shufflevector <16 x i1> %p3, <16 x i1> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    call void @ek.masked_scatter_add_v8f64(i8* %rd7, <8 x double> %d6_unroll_u8_0_0, <8 x i64> %rd5_unroll_u8_0_0, <8 x i1> %p3_unroll_u8_0_0)
+    call void @ek.masked_scatter_add_v8f64(i8* %rd7, <8 x double> %d6_unroll_u8_0_1, <8 x i64> %rd5_unroll_u8_0_1, <8 x i1> %p3_unroll_u8_0_1)
+
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i32*
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %rd7 = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <1 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <1 x i32> %r0_1, <1 x i32> undef, <1 x i32> zeroinitializer
+    %r0 = add <1 x i32> %r0_2, <i32 0>
+
+    ; Evaluate %d1
+    %d1 = uitofp <1 x i32> %r0 to <1 x double>
+
+    ; Evaluate %d2
+    %d2_0 = insertelement <1 x double> undef, double 0x4020000000000000, i32 0
+    %d2 = shufflevector <1 x double> %d2_0, <1 x double> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %p3
+    %p3 = fcmp olt <1 x double> %d1, %d2
+
+    ; Store %p3
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %p3_p = bitcast i8* %p3_i to <1 x i8>*
+    %p3_e = zext <1 x i1> %p3 to <1 x i8>
+    store <1 x i8> %p3_e, <1 x i8>* %p3_p, align 1, !noalias !1
+
+    ; Load %r4
+    %r4_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r4_p = bitcast i32* %r4_i to <1 x i32>*
+    %r4 = load <1 x i32>, <1 x i32>* %r4_p, align 4, !alias.scope !1
+
+    ; Evaluate %rd5
+    %rd5 = zext <1 x i32> %r4 to <1 x i64>
+
+    ; Evaluate %d6
+    %d6_0 = insertelement <1 x double> undef, double 0x3ff0000000000000, i32 0
+    %d6 = shufflevector <1 x double> %d6_0, <1 x double> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %u8
+    call void @ek.masked_scatter_add_v1f64(i8* %rd7, <1 x double> %d6, <1 x i64> %rd5, <1 x i1> %p3)
+
+    %index_next = add i64 %index, 1
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(57): 0
+jit_var_free(57)
+jit_var_dec_ref_int(58): 0
+jit_var_free(58)
+jit_var_dec_ref_int(59): 0
+jit_var_free(59)
+jit_var_dec_ref_int(56): 0
+jit_var_dec_ref_int(63): 0
+jit_var_free(63)
+jit_var_dec_ref_int(61): 0
+jit_var_free(61)
+jit_var_dec_ref_int(62): 0
+jit_var_free(62)
+jit_var_dec_ref_int(60): 0
+jit_var_dec_ref_ext(55): 1
+jit_var_dec_ref_ext(64): 0
+jit_var_free(64)
+jit_eval(): done.
+target=[2, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+jit_var_dec_ref_ext(60): 0
+jit_var_free(60)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(56): 0
+jit_var_free(56)
+jit_free(<@>, type=host, size=128)
+jit_var_dec_ref_ext(55): 0
+jit_var_free(55)
+jit_free(<@>, type=host, size=128)
+jit_malloc_trim(): freed
+ - host memory: 384 B in 3 allocations
+jit_shutdown(): done

@@ -1,5 +1,4 @@
 #include "test.h"
-#if 0
 
 TEST_BOTH(01_creation_destruction) {
     // Checks simple reference counting of a variable
@@ -426,9 +425,8 @@ TEST_LLVM(16_pointer_registry) {
     jitc_assert(jitc_registry_get_max(key_1) == 0u);
     jitc_assert(jitc_registry_get_max(key_2) == 0u);
 }
-#endif
 
-TEST_LLVM(17_scatter_gather_mask) {
+TEST_BOTH(17_scatter_gather_mask) {
     using Mask    = Array<bool>;
     Int32 l       = arange<Int32>(1022);
     set_label(l, "l");
@@ -448,7 +446,6 @@ TEST_LLVM(17_scatter_gather_mask) {
     jitc_log(Info, "Mask: %s", result.str());
 }
 
-#if 0
 TEST_BOTH(18_mask_propagation) {
     using Mask    = Array<bool>;
 
@@ -681,7 +678,6 @@ TEST_LLVM(25_wide_intrinsics) {
     jitc_llvm_set_target("skylake", "", 8);
 }
 
-#if 0
 TEST_LLVM(26_avx512_intrinsics) {
     jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl", 32);
     Float a = arange<Float>(64);
@@ -792,7 +788,7 @@ TEST_BOTH(27_avx512_intrinsics_round2int) {
     jitc_llvm_set_target("skylake", "", 8);
 }
 
-TEST_LLVM(28_scatter_add) {
+TEST_BOTH(28_scatter_add) {
     jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
     using Double = Array<double>;
     {
@@ -862,7 +858,6 @@ TEST_LLVM(28_scatter_add) {
         scatter_add(target, Double(1), index, mask);
         jitc_log(Info, "target=%s", target.str());
     }
+    jitc_llvm_set_target("skylake", "", 8);
 }
-#endif
-#endif
 

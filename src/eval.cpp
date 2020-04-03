@@ -268,58 +268,56 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
     s = v->stmt;
 
     // Check for intrinsics
-    while (true) {
-        const char *ek = strstr(s, "@ek.");
-        if (ek) {
-            jit_llvm_supplement = true;
-            return;
-        }
-
-        s = strstr(s, "call ");
-        if (likely(!s))
-            return;
-        s += 5;
-
-        if (intrinsics_set.find({ jit_llvm_vector_width, s }) != intrinsics_set.end())
-            return;
-        intrinsics_set.insert({ jit_llvm_vector_width, s });
-
-        intrinsics_buffer.put("declare ");
-        while ((c = *s++) != '\0') {
-            if (c != '$') {
-                intrinsics_buffer.putc(c);
-            } else {
-                const char **prefix_table = nullptr, type = *s++;
-                bool stop = false;
-
-                switch (type) {
-                    case 'z':
-                    case 'O': intrinsics_buffer.rewind(1); continue;
-                    case 't': prefix_table = var_type_name_llvm; break;
-                    case 'b': prefix_table = var_type_name_llvm_bin; break;
-                    case 'a': prefix_table = var_type_name_llvm_abbrev; break;
-                    case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
-                    case 'S': while (*s != ',' && *s != ')' && *s != '\0') { ++s; } continue;
-                    case 's':
-                    case 'r': s++; intrinsics_buffer.rewind(1); continue;
-                    case 'n': stop = true; break;
-                    case 'o':
-                    case 'l': s++; continue;
-                    default:
-                        jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
-                                 "expression (unknown type \"%c\")!", type);
-                }
-                if (stop)
-                    break;
-
-                uint32_t arg_id = *s++ - '0';
-                uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
-                Variable *dep = jit_var(dep_id);
-                intrinsics_buffer.put(prefix_table[(int) dep->type]);
-            }
-        }
-        intrinsics_buffer.putc('\n');
+    const char *ek = strstr(s, "@ek.");
+    if (ek) {
+        jit_llvm_supplement = true;
+        return;
     }
+
+    s = strstr(s, "call ");
+    if (likely(!s))
+        return;
+    s += 5;
+
+    if (intrinsics_set.find({ jit_llvm_vector_width, s }) != intrinsics_set.end())
+        return;
+    intrinsics_set.insert({ jit_llvm_vector_width, s });
+
+    intrinsics_buffer.put("declare ");
+    while ((c = *s++) != '\0') {
+        if (c != '$') {
+            intrinsics_buffer.putc(c);
+        } else {
+            const char **prefix_table = nullptr, type = *s++;
+            bool stop = false;
+
+            switch (type) {
+                case 'z':
+                case 'O': intrinsics_buffer.rewind(1); continue;
+                case 't': prefix_table = var_type_name_llvm; break;
+                case 'b': prefix_table = var_type_name_llvm_bin; break;
+                case 'a': prefix_table = var_type_name_llvm_abbrev; break;
+                case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 'S': while (*s != ',' && *s != ')' && *s != '\0') { ++s; } continue;
+                case 's':
+                case 'r': s++; intrinsics_buffer.rewind(1); continue;
+                case 'n': stop = true; break;
+                case 'o':
+                case 'l': s++; continue;
+                default:
+                    jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
+                             "expression (unknown type \"%c\")!", type);
+            }
+            if (stop)
+                break;
+
+            uint32_t arg_id = *s++ - '0';
+            uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
+            Variable *dep = jit_var(dep_id);
+            intrinsics_buffer.put(prefix_table[(int) dep->type]);
+        }
+    }
+    intrinsics_buffer.putc('\n');
 }
 
 /// Expand fixed-length LLVM intrinsics by calling them multiple times
@@ -976,14 +974,15 @@ void jit_run(Stream *stream, ScheduledGroup group) {
                              ? jit_llvm_vector_width : 1u,
                  rounded = group.size / width * width;
 
+        uint32_t packets = (rounded + jit_llvm_vector_width - 1) / jit_llvm_vector_width;
+        jit_log(Trace, "jit_run(): processing %u packet%s and %u scalar entries",
+                packets, packets == 1 ? "": "s", group.size - rounded);
+
         if (likely(rounded > 0))
             kernel.llvm.func(0, rounded, kernel_args_extra.data());
 
         if (unlikely(rounded != group.size))
             kernel.llvm.func_scalar(rounded, group.size, kernel_args_extra.data());
-
-        jit_log(Trace, "jit_run(): processing %u packet(s) and %u scalar entries",
-                rounded / width, group.size - rounded);
     } else {
         size_t kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
 

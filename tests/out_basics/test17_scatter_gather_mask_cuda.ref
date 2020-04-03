@@ -562,13 +562,13 @@ jit_assemble(size=510): register map:
    - %rd8 -> 28 [scalar] [in]
    - %rd9 -> 29
    - %p10 -> 23 "odd" [in]
-   - 11 -> 30 [se]
+   - %u11 -> 30 [se]
    - %r12 -> 31 [scalar]
    - %r13 -> 32
    - %rd14 -> 34
    - %rd15 -> 35
    - %p16 -> 15 "even" [in]
-   - 17 -> 36 [se]
+   - %u17 -> 36 [se]
 jit_run(): launching kernel (n=510, in=4, out=0, ops=18) ..
 .version 6.3
 .address_size 64
@@ -627,7 +627,7 @@ L1: // Loop body
     ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p10, %w0, 0;
 
-    // Evaluate 11
+    // Evaluate %u11
     selp.u16 %w0, 1, 0, %p10;
     st.global.u8 [%rd9], %w0;
 
@@ -650,7 +650,7 @@ L1: // Loop body
     ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p16, %w0, 0;
 
-    // Evaluate 17
+    // Evaluate %u17
     selp.u16 %w0, 1, 0, %p16;
     st.global.u8 [%rd15], %w0;
 
