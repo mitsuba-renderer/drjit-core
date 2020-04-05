@@ -109,7 +109,8 @@ struct LLVMArray {
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
     LLVMArray(Args&&... args) {
         Value data[] = { (Value) args... };
-        m_index = jitc_var_copy_from_host(Type, data, (uint32_t) sizeof...(Args));
+        m_index = jitc_var_copy(AllocType::Host, Type, data,
+                                (uint32_t) sizeof...(Args));
     }
 
     LLVMArray &operator=(const LLVMArray &a) {
@@ -615,8 +616,9 @@ struct LLVMArray {
     void write(uint32_t offset, Value value) {
         if (jitc_var_int_ref(m_index) > 0) {
             eval();
-            *this = LLVMArray::from_index(jitc_var_copy_from_host(
-                LLVMArray<Value>::Type, data(), (uint32_t) size()));
+            *this = LLVMArray::from_index(
+                jitc_var_copy(AllocType::Host, LLVMArray<Value>::Type, data(),
+                              (uint32_t) size()));
         }
 
         jitc_var_write(m_index, offset, &value);
@@ -628,7 +630,8 @@ struct LLVMArray {
     }
 
     static LLVMArray copy(const void *ptr, size_t size) {
-        return from_index(jitc_var_copy_from_host(Type, ptr, (uint32_t) size));
+        return from_index(
+            jitc_var_copy(AllocType::Host, Type, ptr, (uint32_t) size));
     }
 
     static LLVMArray from_index(uint32_t index) {
@@ -983,8 +986,8 @@ void scatter(LLVMArray<Value> &dst,
     }
 
     if (jitc_var_int_ref(dst.index()) > 0) {
-        dst = LLVMArray<Value>::from_index(
-            jitc_var_copy_from_host(LLVMArray<Value>::Type, ptr, dst.size()));
+        dst = LLVMArray<Value>::from_index(jitc_var_copy(
+            AllocType::Host, LLVMArray<Value>::Type, ptr, dst.size()));
         ptr = dst.data();
     }
 
@@ -1033,8 +1036,8 @@ void scatter_add(LLVMArray<Value> &dst,
     }
 
     if (jitc_var_int_ref(dst.index()) > 0) {
-        dst = LLVMArray<Value>::from_index(
-            jitc_var_copy_from_host(LLVMArray<Value>::Type, ptr, dst.size()));
+        dst = LLVMArray<Value>::from_index(jitc_var_copy(
+            AllocType::Host, LLVMArray<Value>::Type, ptr, dst.size()));
         ptr = dst.data();
     }
 

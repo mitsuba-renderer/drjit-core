@@ -199,9 +199,10 @@ uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index) {
     return jit_var_copy_ptr(ptr, index);
 }
 
-uint32_t jitc_var_copy_from_host(VarType type, const void *value, uint32_t size) {
+uint32_t jitc_var_copy(AllocType atype, VarType vtype, const void *value,
+                       uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_var_copy_from_host(type, value, size);
+    return jit_var_copy(atype, vtype, value, size);
 }
 
 uint32_t jitc_trace_append_0(VarType type, const char *stmt, int stmt_static, uint32_t size) {

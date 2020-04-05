@@ -51,7 +51,8 @@ extern uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free);
 extern uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jit_var_copy_from_host(VarType type, const void *ptr, uint32_t size);
+extern uint32_t jit_var_copy(AllocType atype, VarType vtype, const void *ptr,
+                             uint32_t size);
 
 /// Increase the internal reference count of a given variable
 extern void jit_var_inc_ref_int(uint32_t index, Variable *v);

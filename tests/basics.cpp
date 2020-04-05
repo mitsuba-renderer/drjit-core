@@ -959,6 +959,6 @@ TEST_BOTH(30_scatter_ordering) {
 
     UInt32 z = x + 1;
     jitc_log(Info, "x:%s", x.str());
-    jitc_log(Info, "x:%s", y.str());
-    jitc_log(Info, "x:%s", z.str());
+    jitc_log(Info, "y:%s", y.str());
+    jitc_log(Info, "z:%s", z.str());
 }

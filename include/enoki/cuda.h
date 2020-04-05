@@ -116,7 +116,8 @@ struct CUDAArray {
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
     CUDAArray(Args&&... args) {
         Value data[] = { (Value) args... };
-        m_index = jitc_var_copy_from_host(Type, data, (uint32_t) sizeof...(Args));
+        m_index = jitc_var_copy(AllocType::Host, Type, data,
+                                (uint32_t) sizeof...(Args));
     }
 
     CUDAArray &operator=(const CUDAArray &a) {
@@ -574,8 +575,9 @@ struct CUDAArray {
     void write(uint32_t offset, Value value) {
         if (jitc_var_int_ref(m_index) > 0) {
             eval();
-            *this = CUDAArray::from_index(jitc_var_copy_from_host(
-                CUDAArray<Value>::Type, data(), (uint32_t) size()));
+            *this = CUDAArray::from_index(
+                jitc_var_copy(AllocType::Device, CUDAArray<Value>::Type, data(),
+                              (uint32_t) size()));
         }
 
         jitc_var_write(m_index, offset, &value);
@@ -587,7 +589,7 @@ struct CUDAArray {
     }
 
     static CUDAArray copy(const void *ptr, size_t size) {
-        return from_index(jitc_var_copy_from_host(Type, ptr, (uint32_t) size));
+        return from_index(jitc_var_copy(AllocType::Host, Type, ptr, (uint32_t) size));
     }
 
     static CUDAArray from_index(uint32_t index) {
@@ -866,8 +868,8 @@ void scatter(CUDAArray<Value> &dst,
     }
 
     if (jitc_var_int_ref(dst.index()) > 0) {
-        dst = CUDAArray<Value>::from_index(
-            jitc_var_copy_from_host(CUDAArray<Value>::Type, ptr, dst.size()));
+        dst = CUDAArray<Value>::from_index(jitc_var_copy(
+            AllocType::Device, CUDAArray<Value>::Type, ptr, dst.size()));
         ptr = dst.data();
     }
 
@@ -937,8 +939,8 @@ void scatter_add(CUDAArray<Value> &dst,
     }
 
     if (jitc_var_int_ref(dst.index()) > 0) {
-        dst = CUDAArray<Value>::from_index(
-            jitc_var_copy_from_host(CUDAArray<Value>::Type, ptr, dst.size()));
+        dst = CUDAArray<Value>::from_index(jitc_var_copy(
+            AllocType::Device, CUDAArray<Value>::Type, ptr, dst.size()));
         ptr = dst.data();
     }
 

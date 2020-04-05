@@ -515,17 +515,20 @@ JITC_CONSTEXPR int jitc_is_mask(enum VarType type) {
  *    If free != 0, the JIT compiler will free the memory region via
  *    \ref jitc_free() once it goes out of scope.
  *
- * \sa jitc_var_copy_from_host()
+ * \sa jitc_var_copy()
  */
 extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
                                          uint32_t size, int free);
 
 
 /**
- * Copy a memory region from the host to onto the device and return its
- * variable index. Its external reference count is initialized to \c 1.
+ * Copy a memory region onto the device and return its variable index. Its
+ * external reference count is initialized to \c 1.
  *
- * \param type
+ * \param atype
+ *    Enumeration characterizing the "flavor" of the source memory
+ *
+ * \param vtype
  *    Type of the variable to be created, see \ref VarType for details.
  *
  * \param ptr
@@ -536,9 +539,10 @@ extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
  *
  * \sa jitc_var_map()
  */
-extern JITC_EXPORT uint32_t jitc_var_copy_from_host(enum VarType type,
-                                                    const void *ptr,
-                                                    uint32_t size);
+extern JITC_EXPORT uint32_t jitc_var_copy(enum AllocType atype,
+                                          enum VarType vtype,
+                                          const void *ptr,
+                                          uint32_t size);
 
 /**
  * Register a pointer literal as a variable within the JIT compiler
@@ -553,7 +557,7 @@ extern JITC_EXPORT uint32_t jitc_var_copy_from_host(enum VarType type,
  *
  * \code
  * void *my_ptr = ...;
- * uint32_t index_out = jitc_var_copy_from_host(VarType::Pointer, &my_ptr, 1);
+ * uint32_t index_out = jitc_var_copy(VarType::Pointer, &my_ptr, 1);
  * \endcode
  *
  * but generates code that is more efficient.
