@@ -1,17 +1,19 @@
-jit_run(): launching kernel (n=1, in=0, out=2, ops=2) ..
+jit_device_set(device=-1, stream=0): creating stream
+jit_run(): launching kernel (n=1, in=0, out=1, ops=1) ..
 value=[0] vs 0
-jit_run(): launching kernel (n=1, in=0, out=4, ops=6) ..
+jit_run(): launching kernel (n=1, in=0, out=4, ops=4) ..
 value=[3] vs 3
-jit_run(): launching kernel (n=1, in=0, out=10, ops=18) ..
+jit_run(): launching kernel (n=1, in=0, out=10, ops=16) ..
 value=[36] vs 36
-jit_run(): launching kernel (n=1, in=0, out=28, ops=54) ..
+jit_run(): launching kernel (n=1, in=0, out=28, ops=52) ..
 value=[351] vs 351
-jit_run(): launching kernel (n=1, in=0, out=82, ops=162) ..
+jit_run(): launching kernel (n=1, in=0, out=82, ops=160) ..
 value=[3240] vs 3240
-jit_run(): launching kernel (n=1, in=0, out=244, ops=486) ..
+jit_run(): launching kernel (n=1, in=0, out=244, ops=484) ..
 value=[29403] vs 29403
-jit_run(): launching kernel (n=1, in=0, out=730, ops=1458) ..
+jit_run(): launching kernel (n=1, in=0, out=730, ops=1456) ..
 value=[265356] vs 265356
+jit_shutdown(): destroying streams ..
 jit_malloc_trim(): freed
  - host memory: 45.6 KiB in 730 allocations
 jit_shutdown(): done

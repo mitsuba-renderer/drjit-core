@@ -2,7 +2,7 @@ jit_device_set(device=0, stream=0): creating stream
 jit_trace_append(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
-jit_trace_append(2 <- 1): cvt.rn.ftz.$t0.$t1 $r0, $r1
+jit_trace_append(2 <- 1): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(2): 1
 jit_trace_append(3): mov.$t0 $r0, 0f3de38e39
 jit_var_inc_ref_ext(3): 1
@@ -24,7 +24,7 @@ jit_trace_append(7): mov.$t0 $r0, 0f3fa2f983
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(7): 1
-jit_trace_append(8 <- 6, 7): mul.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(8 <- 6, 7): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_int(8): 1
 jit_trace_append(9 <- 8): cvt.rzi.$t0.$t1 $r0, $r1
@@ -48,7 +48,7 @@ jit_var_dec_ref_ext(12): 0
 jit_var_dec_ref_ext(11): 0
 jit_var_dec_ref_ext(10): 0
 jit_var_inc_ref_int(13): 1
-jit_trace_append(14 <- 13): cvt.rn.ftz.$t0.$t1 $r0, $r1
+jit_trace_append(14 <- 13): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(14): 1
 jit_trace_append(15): mov.$t0 $r0, 0x0000001d
 jit_var_inc_ref_ext(15): 1
@@ -93,31 +93,31 @@ jit_trace_append(24): mov.$t0 $r0, 0f3f490000
 jit_var_inc_ref_ext(24): 1
 jit_var_inc_ref_int(14): 1
 jit_var_inc_ref_int(24): 1
-jit_trace_append(25 <- 14, 24): mul.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(25 <- 14, 24): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(25): 1
 jit_var_inc_ref_int(6): 2
 jit_var_inc_ref_int(25): 1
-jit_trace_append(26 <- 6, 25): sub.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(26 <- 6, 25): sub.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(26): 1
 jit_trace_append(27): mov.$t0 $r0, 0f397da000
 jit_var_inc_ref_ext(27): 1
 jit_var_inc_ref_int(14): 2
 jit_var_inc_ref_int(27): 1
-jit_trace_append(28 <- 14, 27): mul.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(28 <- 14, 27): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(28): 1
 jit_var_inc_ref_int(26): 1
 jit_var_inc_ref_int(28): 1
-jit_trace_append(29 <- 26, 28): sub.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(29 <- 26, 28): sub.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(29): 1
 jit_trace_append(30): mov.$t0 $r0, 0f33222169
 jit_var_inc_ref_ext(30): 1
 jit_var_inc_ref_int(14): 3
 jit_var_inc_ref_int(30): 1
-jit_trace_append(31 <- 14, 30): mul.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(31 <- 14, 30): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(31): 1
 jit_var_inc_ref_int(29): 1
 jit_var_inc_ref_int(31): 1
-jit_trace_append(32 <- 29, 31): sub.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(32 <- 29, 31): sub.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(32): 1
 jit_var_dec_ref_ext(14): 0
 jit_var_dec_ref_ext(31): 0
@@ -130,7 +130,7 @@ jit_var_dec_ref_ext(25): 0
 jit_var_dec_ref_ext(24): 0
 jit_var_inc_ref_int(32): 1
 jit_var_inc_ref_int(32): 2
-jit_trace_append(33 <- 32, 32): mul.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(33 <- 32, 32): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(33): 1
 jit_trace_append(34): mov.$t0 $r0, 0f7f800000
 jit_var_inc_ref_ext(34): 1
@@ -147,7 +147,7 @@ jit_var_dec_ref_ext(35): 0
 jit_var_dec_ref_ext(34): 0
 jit_var_inc_ref_int(36): 1
 jit_var_inc_ref_int(36): 2
-jit_trace_append(37 <- 36, 36): mul.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(37 <- 36, 36): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(37): 1
 jit_trace_append(38): mov.$t0 $r0, 0fb94ca1f9
 jit_var_inc_ref_ext(38): 1
@@ -172,14 +172,14 @@ jit_var_dec_ref_ext(38): 0
 jit_var_dec_ref_ext(37): 0
 jit_var_inc_ref_int(42): 1
 jit_var_inc_ref_int(36): 4
-jit_trace_append(43 <- 42, 36): mul.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(43 <- 42, 36): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(43): 1
 jit_var_dec_ref_ext(42): 0
 jit_var_inc_ref_int(36): 5
 jit_var_inc_ref_int(36): 6
 jit_var_dec_ref_int(36): 5
 jit_var_dec_ref_int(36): 4
-jit_trace_append(37 <- 36, 36): mul.rn.ftz.$t0 $r0, $r1, $r2 (reused)
+jit_trace_append(37 <- 36, 36): mul.ftz.$t0 $r0, $r1, $r2 (reused)
 jit_var_inc_ref_ext(37): 1
 jit_trace_append(44): mov.$t0 $r0, 0f37ccf5ce
 jit_var_inc_ref_ext(44): 1
@@ -204,7 +204,7 @@ jit_var_dec_ref_ext(44): 0
 jit_var_dec_ref_ext(37): 0
 jit_var_inc_ref_int(48): 1
 jit_var_inc_ref_int(36): 6
-jit_trace_append(49 <- 48, 36): mul.rn.ftz.$t0 $r0, $r1, $r2
+jit_trace_append(49 <- 48, 36): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(49): 1
 jit_var_dec_ref_ext(48): 0
 jit_var_inc_ref_int(43): 1
@@ -297,8 +297,7 @@ jit_assemble(size=10): register map:
    - %f5 -> 2
    - %f6 -> 3 [scalar]
    - %f7 -> 4 [scalar]
-   - %f8 -> 5 [out]
-jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+   - %f8 -> 5
    - %f9 -> 6
    - %f10 -> 7 [scalar]
    - %f11 -> 8
@@ -360,13 +359,12 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
    - %f66 -> 63
    - %f67 -> 64 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=0, out=3, ops=68) ..
+jit_run(): launching kernel (n=10, in=0, out=2, ops=68) ..
 .version 6.3
 .address_size 64
 .entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
                               .param .u64 arg0,
-                              .param .u64 arg1,
-                              .param .u64 arg2) {
+                              .param .u64 arg1) {
     .reg.b8 %b<68>;
     .reg.b16 %w<68>;
     .reg.b32 %r<68>;
@@ -393,7 +391,7 @@ L1: // Loop body
     mov.u32 %r4, %r0;
 
     // Evaluate %f5
-    cvt.rn.ftz.f32.u32 %f5, %r4;
+    cvt.rn.f32.u32 %f5, %r4;
 
     // Evaluate %f6
     mov.f32 %f6, 0f3de38e39;
@@ -404,12 +402,6 @@ L1: // Loop body
     // Evaluate %f8
     fma.rn.ftz.f32 %f8, %f5, %f6, %f7;
 
-    // Store %f8
-    ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
-    st.global.cs.f32 [%rd0], %f8;
-
     // Evaluate %f9
     abs.ftz.f32 %f9, %f8;
 
@@ -417,7 +409,7 @@ L1: // Loop body
     mov.f32 %f10, 0f3fa2f983;
 
     // Evaluate %f11
-    mul.rn.ftz.f32 %f11, %f9, %f10;
+    mul.ftz.f32 %f11, %f9, %f10;
 
     // Evaluate %r12
     cvt.rzi.s32.f32 %r12, %f11;
@@ -435,37 +427,37 @@ L1: // Loop body
     and.b32 %r16, %r14, %r15;
 
     // Evaluate %f17
-    cvt.rn.ftz.f32.s32 %f17, %r16;
+    cvt.rn.f32.s32 %f17, %r16;
 
     // Evaluate %f18
     mov.f32 %f18, 0f3f490000;
 
     // Evaluate %f19
-    mul.rn.ftz.f32 %f19, %f17, %f18;
+    mul.ftz.f32 %f19, %f17, %f18;
 
     // Evaluate %f20
-    sub.rn.ftz.f32 %f20, %f9, %f19;
+    sub.ftz.f32 %f20, %f9, %f19;
 
     // Evaluate %f21
     mov.f32 %f21, 0f397da000;
 
     // Evaluate %f22
-    mul.rn.ftz.f32 %f22, %f17, %f21;
+    mul.ftz.f32 %f22, %f17, %f21;
 
     // Evaluate %f23
-    sub.rn.ftz.f32 %f23, %f20, %f22;
+    sub.ftz.f32 %f23, %f20, %f22;
 
     // Evaluate %f24
     mov.f32 %f24, 0f33222169;
 
     // Evaluate %f25
-    mul.rn.ftz.f32 %f25, %f17, %f24;
+    mul.ftz.f32 %f25, %f17, %f24;
 
     // Evaluate %f26
-    sub.rn.ftz.f32 %f26, %f23, %f25;
+    sub.ftz.f32 %f26, %f23, %f25;
 
     // Evaluate %f27
-    mul.rn.ftz.f32 %f27, %f26, %f26;
+    mul.ftz.f32 %f27, %f26, %f26;
 
     // Evaluate %f28
     mov.f32 %f28, 0f7f800000;
@@ -477,7 +469,7 @@ L1: // Loop body
     selp.b32 %f30, -1, %f27, %p29;
 
     // Evaluate %f31
-    mul.rn.ftz.f32 %f31, %f30, %f30;
+    mul.ftz.f32 %f31, %f30, %f30;
 
     // Evaluate %f32
     mov.f32 %f32, 0fbab6061a;
@@ -495,7 +487,7 @@ L1: // Loop body
     fma.rn.ftz.f32 %f36, %f31, %f35, %f34;
 
     // Evaluate %f37
-    mul.rn.ftz.f32 %f37, %f36, %f30;
+    mul.ftz.f32 %f37, %f36, %f30;
 
     // Evaluate %f38
     mov.f32 %f38, 0fbf000000;
@@ -525,7 +517,7 @@ L1: // Loop body
     fma.rn.ftz.f32 %f46, %f31, %f45, %f44;
 
     // Evaluate %f47
-    mul.rn.ftz.f32 %f47, %f46, %f30;
+    mul.ftz.f32 %f47, %f46, %f30;
 
     // Evaluate %f48
     fma.rn.ftz.f32 %f48, %f47, %f26, %f26;
@@ -567,7 +559,7 @@ L1: // Loop body
     xor.b32 %f60, %f53, %f59;
 
     // Store %f60
-    ld.param.u64 %rd0, [arg1];
+    ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
     st.global.cs.f32 [%rd0], %f60;
@@ -594,7 +586,7 @@ L1: // Loop body
     xor.b32 %f67, %f61, %f66;
 
     // Store %f67
-    ld.param.u64 %rd0, [arg2];
+    ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
     st.global.cs.f32 [%rd0], %f67;
@@ -607,154 +599,146 @@ L0:
     ret;
 }
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(1): 0
-jit_var_free(1)
-jit_var_dec_ref_int(2): 0
-jit_var_free(2)
-jit_var_dec_ref_int(3): 0
-jit_var_free(3)
-jit_var_dec_ref_int(4): 0
-jit_var_free(4)
-jit_var_dec_ref_int(5): 1
-jit_var_dec_ref_int(6): 2
-jit_var_dec_ref_int(7): 0
-jit_var_free(7)
-jit_var_dec_ref_int(8): 0
-jit_var_free(8)
-jit_var_dec_ref_int(9): 0
-jit_var_free(9)
-jit_var_dec_ref_int(10): 0
-jit_var_free(10)
-jit_var_dec_ref_int(11): 0
-jit_var_free(11)
-jit_var_dec_ref_int(12): 0
-jit_var_free(12)
+jit_var_dec_ref_int(58): 0
+jit_var_free(58)
+jit_var_dec_ref_int(50): 1
+jit_var_dec_ref_int(54): 1
+jit_var_dec_ref_int(57): 1
+jit_var_dec_ref_int(60): 0
+jit_var_free(60)
+jit_var_dec_ref_int(59): 1
+jit_var_dec_ref_int(18): 0
+jit_var_free(18)
+jit_var_dec_ref_int(17): 0
+jit_var_free(17)
+jit_var_dec_ref_int(16): 0
+jit_var_free(16)
 jit_var_dec_ref_int(13): 3
-jit_var_dec_ref_int(14): 2
-jit_var_dec_ref_int(24): 0
-jit_var_free(24)
-jit_var_dec_ref_int(6): 1
-jit_var_dec_ref_int(25): 0
-jit_var_free(25)
-jit_var_dec_ref_int(14): 1
-jit_var_dec_ref_int(27): 0
-jit_var_free(27)
-jit_var_dec_ref_int(26): 0
-jit_var_free(26)
-jit_var_dec_ref_int(28): 0
-jit_var_free(28)
-jit_var_dec_ref_int(14): 0
-jit_var_free(14)
-jit_var_dec_ref_int(30): 0
-jit_var_free(30)
-jit_var_dec_ref_int(29): 0
-jit_var_free(29)
-jit_var_dec_ref_int(31): 0
-jit_var_free(31)
-jit_var_dec_ref_int(32): 3
-jit_var_dec_ref_int(32): 2
-jit_var_dec_ref_int(6): 0
-jit_var_free(6)
-jit_var_dec_ref_int(34): 0
-jit_var_free(34)
-jit_var_dec_ref_int(33): 0
-jit_var_free(33)
-jit_var_dec_ref_int(35): 0
-jit_var_free(35)
-jit_var_dec_ref_int(36): 7
-jit_var_dec_ref_int(36): 6
-jit_var_dec_ref_int(36): 5
-jit_var_dec_ref_int(45): 0
-jit_var_free(45)
-jit_var_dec_ref_int(46): 0
-jit_var_free(46)
+jit_var_dec_ref_int(15): 1
+jit_var_dec_ref_int(5): 1
+jit_var_dec_ref_int(62): 0
+jit_var_free(62)
+jit_var_dec_ref_int(54): 0
+jit_var_free(54)
+jit_var_dec_ref_int(49): 0
+jit_var_free(49)
+jit_var_dec_ref_int(48): 0
+jit_var_free(48)
 jit_var_dec_ref_int(37): 1
 jit_var_dec_ref_int(44): 0
 jit_var_free(44)
 jit_var_dec_ref_int(47): 0
 jit_var_free(47)
-jit_var_dec_ref_int(48): 0
-jit_var_free(48)
+jit_var_dec_ref_int(36): 7
+jit_var_dec_ref_int(45): 0
+jit_var_free(45)
+jit_var_dec_ref_int(46): 0
+jit_var_free(46)
+jit_var_dec_ref_int(36): 6
+jit_var_dec_ref_int(36): 5
+jit_var_dec_ref_int(53): 0
+jit_var_free(53)
 jit_var_dec_ref_int(36): 4
-jit_var_dec_ref_int(36): 3
 jit_var_dec_ref_int(51): 0
 jit_var_free(51)
 jit_var_dec_ref_int(52): 0
 jit_var_free(52)
-jit_var_dec_ref_int(49): 0
-jit_var_free(49)
+jit_var_dec_ref_int(50): 0
+jit_var_free(50)
+jit_var_dec_ref_int(43): 0
+jit_var_free(43)
+jit_var_dec_ref_int(42): 0
+jit_var_free(42)
+jit_var_dec_ref_int(37): 0
+jit_var_free(37)
+jit_var_dec_ref_int(36): 3
 jit_var_dec_ref_int(36): 2
-jit_var_dec_ref_int(53): 0
-jit_var_free(53)
+jit_var_dec_ref_int(38): 0
+jit_var_free(38)
+jit_var_dec_ref_int(41): 0
+jit_var_free(41)
 jit_var_dec_ref_int(36): 1
 jit_var_dec_ref_int(39): 0
 jit_var_free(39)
 jit_var_dec_ref_int(40): 0
 jit_var_free(40)
-jit_var_dec_ref_int(37): 0
-jit_var_free(37)
-jit_var_dec_ref_int(38): 0
-jit_var_free(38)
-jit_var_dec_ref_int(41): 0
-jit_var_free(41)
-jit_var_dec_ref_int(42): 0
-jit_var_free(42)
 jit_var_dec_ref_int(36): 0
 jit_var_free(36)
-jit_var_dec_ref_int(43): 0
-jit_var_free(43)
+jit_var_dec_ref_int(33): 0
+jit_var_free(33)
+jit_var_dec_ref_int(32): 3
+jit_var_dec_ref_int(32): 2
+jit_var_dec_ref_int(35): 0
+jit_var_free(35)
+jit_var_dec_ref_int(6): 2
+jit_var_dec_ref_int(34): 0
+jit_var_free(34)
 jit_var_dec_ref_int(32): 1
 jit_var_dec_ref_int(32): 0
 jit_var_free(32)
+jit_var_dec_ref_int(29): 0
+jit_var_free(29)
+jit_var_dec_ref_int(26): 0
+jit_var_free(26)
+jit_var_dec_ref_int(6): 1
+jit_var_dec_ref_int(25): 0
+jit_var_free(25)
+jit_var_dec_ref_int(14): 2
+jit_var_dec_ref_int(24): 0
+jit_var_free(24)
+jit_var_dec_ref_int(28): 0
+jit_var_free(28)
+jit_var_dec_ref_int(14): 1
+jit_var_dec_ref_int(27): 0
+jit_var_free(27)
+jit_var_dec_ref_int(31): 0
+jit_var_free(31)
+jit_var_dec_ref_int(14): 0
+jit_var_free(14)
 jit_var_dec_ref_int(13): 2
-jit_var_dec_ref_int(19): 1
-jit_var_dec_ref_int(55): 0
-jit_var_free(55)
-jit_var_dec_ref_int(56): 0
-jit_var_free(56)
-jit_var_dec_ref_int(50): 1
-jit_var_dec_ref_int(54): 1
-jit_var_dec_ref_int(57): 1
-jit_var_dec_ref_int(13): 1
-jit_var_dec_ref_int(15): 1
-jit_var_dec_ref_int(16): 0
-jit_var_free(16)
-jit_var_dec_ref_int(17): 0
-jit_var_free(17)
-jit_var_dec_ref_int(5): 0
-jit_var_dec_ref_int(59): 1
-jit_var_dec_ref_int(18): 0
-jit_var_free(18)
-jit_var_dec_ref_int(58): 0
-jit_var_free(58)
-jit_var_dec_ref_int(60): 0
-jit_var_free(60)
-jit_var_dec_ref_int(54): 0
-jit_var_free(54)
-jit_var_dec_ref_int(50): 0
-jit_var_free(50)
+jit_var_dec_ref_int(30): 0
+jit_var_free(30)
 jit_var_dec_ref_int(57): 0
 jit_var_free(57)
-jit_var_dec_ref_int(13): 0
-jit_var_free(13)
-jit_var_dec_ref_int(19): 0
-jit_var_free(19)
-jit_var_dec_ref_int(20): 0
-jit_var_free(20)
-jit_var_dec_ref_int(21): 0
-jit_var_free(21)
-jit_var_dec_ref_int(15): 0
-jit_var_free(15)
-jit_var_dec_ref_int(22): 0
-jit_var_free(22)
+jit_var_dec_ref_int(55): 0
+jit_var_free(55)
+jit_var_dec_ref_int(13): 1
+jit_var_dec_ref_int(19): 1
+jit_var_dec_ref_int(56): 0
+jit_var_free(56)
+jit_var_dec_ref_int(63): 0
+jit_var_free(63)
 jit_var_dec_ref_int(59): 0
 jit_var_free(59)
 jit_var_dec_ref_int(23): 0
 jit_var_free(23)
-jit_var_dec_ref_int(62): 0
-jit_var_free(62)
-jit_var_dec_ref_int(63): 0
-jit_var_free(63)
+jit_var_dec_ref_int(22): 0
+jit_var_free(22)
+jit_var_dec_ref_int(21): 0
+jit_var_free(21)
+jit_var_dec_ref_int(20): 0
+jit_var_free(20)
+jit_var_dec_ref_int(13): 0
+jit_var_free(13)
+jit_var_dec_ref_int(11): 0
+jit_var_free(11)
+jit_var_dec_ref_int(9): 0
+jit_var_free(9)
+jit_var_dec_ref_int(8): 0
+jit_var_free(8)
+jit_var_dec_ref_int(6): 0
+jit_var_free(6)
+jit_var_dec_ref_int(5): 0
+jit_var_dec_ref_int(7): 0
+jit_var_free(7)
+jit_var_dec_ref_int(10): 0
+jit_var_free(10)
+jit_var_dec_ref_int(12): 0
+jit_var_free(12)
+jit_var_dec_ref_int(19): 0
+jit_var_free(19)
+jit_var_dec_ref_int(15): 0
+jit_var_free(15)
 jit_eval(): done.
 xs : [0, 0.110883, 0.220398, 0.327195, 0.429956, 0.527415, 0.61837, 0.701698, 0.776372, 0.841471]
 xc : [1, 0.993834, 0.97541, 0.944957, 0.90285, 0.849608, 0.785887, 0.712475, 0.630275, 0.540302]
@@ -766,9 +750,16 @@ jit_var_free(61)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
-jit_free(<@>, type=device, device=0, size=64)
+jit_var_dec_ref_int(2): 0
+jit_var_free(2)
+jit_var_dec_ref_int(1): 0
+jit_var_free(1)
+jit_var_dec_ref_int(3): 0
+jit_var_free(3)
+jit_var_dec_ref_int(4): 0
+jit_var_free(4)
 jit_shutdown(): destroying streams ..
-jit_free_flush(): scheduling 3 deallocations
+jit_free_flush(): scheduling 2 deallocations
 jit_malloc_trim(): freed
- - device memory: 192 B in 3 allocations
+ - device memory: 128 B in 2 allocations
 jit_shutdown(): done

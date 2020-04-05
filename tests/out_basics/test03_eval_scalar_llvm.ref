@@ -1,3 +1,4 @@
+jit_device_set(device=-1, stream=0): creating stream
 jit_trace_append(1): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4093480000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(1): 1
 jit_var_set_label(1): "my_value"
@@ -94,6 +95,7 @@ value=[1234]
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_free(<@>, type=host, size=64)
+jit_shutdown(): destroying streams ..
 jit_malloc_trim(): freed
  - host memory: 64 B in 1 allocation
 jit_shutdown(): done

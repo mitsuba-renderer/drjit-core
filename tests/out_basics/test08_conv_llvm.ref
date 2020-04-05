@@ -1,3 +1,4 @@
+jit_device_set(device=-1, stream=0): creating stream
 jit_trace_append(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_ext(1): 2
@@ -569,10 +570,10 @@ loop:
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_run(): processing 128 packets and 0 scalar entries
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(18): 0
-jit_var_free(18)
 jit_var_dec_ref_int(19): 0
 jit_var_free(19)
+jit_var_dec_ref_int(18): 0
+jit_var_free(18)
 jit_var_dec_ref_int(20): 0
 jit_var_free(20)
 jit_var_dec_ref_int(21): 2
@@ -720,10 +721,10 @@ loop:
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_run(): processing 128 packets and 0 scalar entries
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(25): 0
-jit_var_free(25)
 jit_var_dec_ref_int(26): 0
 jit_var_free(26)
+jit_var_dec_ref_int(25): 0
+jit_var_free(25)
 jit_var_dec_ref_int(27): 0
 jit_var_free(27)
 jit_var_dec_ref_int(28): 2
@@ -871,10 +872,10 @@ loop:
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_run(): processing 128 packets and 0 scalar entries
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(32): 0
-jit_var_free(32)
 jit_var_dec_ref_int(33): 0
 jit_var_free(33)
+jit_var_dec_ref_int(32): 0
+jit_var_free(32)
 jit_var_dec_ref_int(34): 0
 jit_var_free(34)
 jit_var_dec_ref_int(35): 2
@@ -898,6 +899,7 @@ jit_free(<@>, type=host, size=4096)
 jit_var_dec_ref_ext(35): 0
 jit_var_free(35)
 jit_free(<@>, type=host, size=8192)
+jit_shutdown(): destroying streams ..
 jit_malloc_trim(): freed
  - host memory: 36 KiB in 6 allocations
 jit_shutdown(): done

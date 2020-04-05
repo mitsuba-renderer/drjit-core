@@ -7,7 +7,7 @@
     multi-device computation, kernel caching and reuse, common subexpression
     elimination, etc.
 
-    While the library is internally implemented using C++17, this header file
+    While the library is internally implemented using C++11, this header file
     provides a compact C99-compatible API that can be used to access all
     functionality. The library is thread-safe: multiple threads can
     simultaneously dispatch computation to one or more CPUs/GPUs.
@@ -60,17 +60,18 @@ extern JITC_EXPORT void jitc_init(int llvm, int cuda);
  * \brief Launch an ansynchronous thread that will execute jitc_init() and
  * return immediately
  *
- * On machines with several GPUs, \ref jitc_init() sets up a CUDA environment
- * on all devices, which can be a rather slow operation (e.g. 1 second). This
- * function provides a convenient alternative to hide this latency, for
- * instance when importing this library from an interactive Python session
- * which doesn't actually need the JIT right away.
+ * On machines with several GPUs, \ref jitc_init() will set up a CUDA
+ * environment on all devices when <tt>cuda=true</tt> is specified. This can be
+ * a rather slow operation (e.g. 1 second). This function provides a convenient
+ * alternative to hide this latency, for instance when importing this library
+ * from an interactive Python session which doesn't need the JIT right away.
  *
  * The \c llvm and \c cuda arguments should be set to \c 1 to initialize the
  * corresponding backend, and \c 0 otherwise.
  *
- * It is safe to call jitc_* API functions following \ref jitc_init_async(),
- * since it acquires a lock to the internal data structures.
+ * Note that it is safe to call <tt>jitc_*</tt> API functions following
+ * initialization via \ref jitc_init_async(), since it acquires a lock to the
+ * internal data structures.
  */
 extern JITC_EXPORT void jitc_init_async(int llvm, int cuda);
 
@@ -111,11 +112,10 @@ extern JITC_EXPORT int32_t jitc_device_count();
  *     the first GPU (execution via CUDA), <tt>1</tt> is the second GPU, etc.
  *
  * \param stream
- *     CUDA devices can concurrently execute computation from multiple streams.
  *     When accessing the JIT compiler in a multi-threaded program, each thread
- *     should specify a separate stream to exploit this additional opportunity
- *     for parallelization. When executing on the host CPU
- *     (<tt>device==-1</tt>), this argument is ignored.
+ *     msut run in a separate stream that is provided via this argument. The
+ *     streams don't have to be numbered in any particular way, but they need
+ *     to be just be unique per thread.
  */
 extern JITC_EXPORT void jitc_device_set(int32_t device, uint32_t stream);
 
@@ -135,11 +135,15 @@ extern JITC_EXPORT void jitc_device_set(int32_t device, uint32_t stream);
  *     individual featureas.
  *
  * \param vector_width
- *     Width of vector registers (e.g. 8 for AVX)
+ *     Width of vector registers (e.g. 8 for AVX). Must be a power of two, and
+ *     can be a multiple of the hardware register size to enable unrolling.
  */
 extern JITC_EXPORT void jitc_llvm_set_target(const char *target_cpu,
                                              const char *target_features,
                                              uint32_t vector_width);
+
+/// Return the major version of the LLVM library
+extern JITC_EXPORT int jitc_llvm_version_major();
 
 /**
  * \brief Convenience function for intrinsic function selection
@@ -162,12 +166,13 @@ extern JITC_EXPORT int jitc_llvm_if_at_least(uint32_t vector_width,
  * streams that execute in parallel. The default is \c 1 (i.e. to enable
  * parallel dispatch).
  *
- * This feature is currently only used in CPU mode.
+ * This feature is only relevant for GPU mode.
  */
 extern JITC_EXPORT void jitc_parallel_set_dispatch(int enable);
 
 /// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
 extern JITC_EXPORT int jitc_parallel_dispatch();
+
 /**
  * \brief Wait for all computation on the current stream to finish
  *
@@ -504,13 +509,13 @@ JITC_CONSTEXPR int jitc_is_mask(enum VarType type) {
  *    Point of the memory region
  *
  * \param size
- *    Number of elements, rather than the size in bytes
+ *    Number of elements (and *not* the size in bytes)
  *
  * \param free
  *    If free != 0, the JIT compiler will free the memory region via
  *    \ref jitc_free() once it goes out of scope.
  *
- * \sa jitc_var_copy()
+ * \sa jitc_var_copy_from_host()
  */
 extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
                                          uint32_t size, int free);
@@ -527,33 +532,39 @@ extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
  *    Point of the memory region
  *
  * \param size
- *    Number of elements, rather than the size in bytes
+ *    Number of elements (and *not* the size in bytes)
  *
  * \sa jitc_var_map()
  */
-extern JITC_EXPORT uint32_t jitc_var_copy(enum VarType type,
-                                          const void *ptr,
-                                          uint32_t size);
+extern JITC_EXPORT uint32_t jitc_var_copy_from_host(enum VarType type,
+                                                    const void *ptr,
+                                                    uint32_t size);
 
 /**
  * Register a pointer literal as a variable within the JIT compiler
  *
  * When working with memory (gathers, scatters) using the JIT compiler, we must
- * often refer to memory addresses. These addresses should not baked nto the
- * JIT-compiled code, since they change over time, which limits the ability to
- * re-use of compiled kernels.
+ * often refer to memory addresses. These addresses change over time and should
+ * not baked into the JIT-compiled code, since this would impede the re-use of
+ * previously compiled kernels.
  *
  * This function registers a pointer literal that accomplishes this. It is
  * functionally equivalent to
  *
  * \code
  * void *my_ptr = ...;
- * uint32_t index = jitc_var_copy(VarType::Pointer, &my_ptr, 1);
+ * uint32_t index_out = jitc_var_copy_from_host(VarType::Pointer, &my_ptr, 1);
  * \endcode
  *
- * but results in more efficient generated code.
+ * but generates code that is more efficient.
+ *
+ * As an optional extra feature, the variable index of the underlying storage
+ * region can be specified via the \c index argument. The system will then
+ * guarantee that this variable is kept alive while the created variable (i.e.
+ * the returned variable index) is alive. Specifying <tt>index=0</tt> disables
+ * this behavior.
  */
-extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr);
+extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index);
 
 /**
  * \brief Append a statement to the instruction trace.
@@ -631,6 +642,12 @@ extern JITC_EXPORT uint32_t jitc_trace_append_4(enum VarType type,
                                                 uint32_t op3,
                                                 uint32_t op4);
 
+/// Return the external reference count of a given variable
+extern JITC_EXPORT uint32_t jitc_var_ext_ref(uint32_t index);
+
+/// Return the internal reference count of a given variable
+extern JITC_EXPORT uint32_t jitc_var_int_ref(uint32_t index);
+
 /// Increase the external reference count of a given variable
 extern JITC_EXPORT void jitc_var_inc_ref_ext(uint32_t index);
 
@@ -642,26 +659,6 @@ extern JITC_EXPORT void *jitc_var_ptr(uint32_t index);
 
 /// Query the size of a given variable
 extern JITC_EXPORT uint32_t jitc_var_size(uint32_t index);
-
-/**
- * Set the size of a given variable (if possible, otherwise throw an
- * exception.)
- *
- * \param index
- *     Index of the variable, whose size should be modified
- *
- * \param size
- *     Target size value
- *
- * \param copy
- *     When the variable has already been evaluated and is a scalar, Enoki can
- *     optionally perform a copy instead of failing if <tt>copy != 0</tt>.
- *
- * Returns the ID of the changed or new variable
- */
-extern JITC_EXPORT uint32_t jitc_var_set_size(uint32_t index,
-                                              uint32_t size,
-                                              int copy);
 
 /// Assign a descriptive label to a given variable
 extern JITC_EXPORT void jitc_var_set_label(uint32_t index, const char *label);
@@ -678,64 +675,41 @@ extern JITC_EXPORT const char *jitc_var_label(uint32_t index);
  * When both source & target are of type \ref AllocType::Device, and if the
  * current device (\ref jitc_device_set()) does not match the device associated
  * with the allocation, a peer-to-peer migration is performed.
- *
- * Note: Migrations involving AllocType::Host are currently not supported.
  */
 extern JITC_EXPORT void jitc_var_migrate(uint32_t index, enum AllocType type);
 
-/// Indicate that evaluation of the given variable causes side effects
-extern JITC_EXPORT void jitc_var_mark_side_effect(uint32_t index);
-
 /**
- * \brief Mark variable contents as dirty
+ * \brief Mark a variable as a scatter operation
  *
  * This function must be used to inform the JIT compiler when the memory region
- * underlying a variable is modified using scatter operations. It will then ensure
- * that reads from this variable (while still in dirty state) will trigger jitc_eval().
+ * underlying a variable \c target is modified by a scatter operation with
+ * index \c index. It will mark the target variable as dirty to ensure that
+ * future reads from this variable (while still in dirty state) will trigger
+ * an evaluation via \ref jitc_eval().
  */
-extern JITC_EXPORT void jitc_var_mark_dirty(uint32_t index);
+extern JITC_EXPORT void jitc_var_mark_scatter(uint32_t index, uint32_t target);
 
 /**
- * \brief Attach an extra dependency to an existing variables
+ * \brief Is the given variable a literal that equals zero?
  *
- * This operation informs the JIT compiler about an additional intra-variable
- * dependency of the variable \c index on \c dep. Such dependencies are
- * required e.g. by gather and scatter operations: under no circumstances
- * should it be possible that the source/target region is garbage collected
- * before the operation had a chance to execute.
- *
- * Depending on the state of the variable \c index the extra dependency
- * manifests in two different ways:
- *
- * <ol>
- *    <li>When \c index is an non-evaluated variable, Enoki guarantees that
- *        the variable \c dep is kept alive until \c index has been evaluated.</li>
- *
- *    <li>When \c index was already evaluated, or when it refers to a memory region
- *        that has been mapped (\ref jitc_var_map()) or copied (\ref
- *        jitc_var_copy), Enoki guarantees that the variable \c dep is kept
- *        alive until \c index is itself garbage-collected.</li>
- * <ol>
+ * This function can be used to implement very rudimentary constant propagation
+ * of arithmetic and masks, which can often significantly reduce the size of
+ * the IR representation that is passed onto the backend for further
+ * optimization. Note that this function can only detect matching variables if
+ * they have not been explicitly evaluated.
  */
-extern JITC_EXPORT void jitc_var_set_extra_dep(uint32_t index, uint32_t dep);
+extern JITC_EXPORT int jitc_var_is_literal_zero(uint32_t index);
 
 /**
- * \brief Is the given variable a mask that has all bits set to '0'?
+ * \brief Is the given variable a literal that equals one?
  *
- * This function can be used to implement simple constant propagation of masks,
- * which unlocks a number of optimizations. Note that this function can only
- * detect matching masks if they have not yet been evaluated.
+ * This function can be used to implement very rudimentary constant propagation
+ * of arithmetic and masks, which can often significantly reduce the size of
+ * the IR representation that is passed onto the backend for further
+ * optimization. Note that this function can only detect matching variables if
+ * they have not been explicitly evaluated.
  */
-extern JITC_EXPORT int jitc_var_is_all_false(uint32_t index);
-
-/**
- * \brief Is the given variable a mask that has all bits set to '1'?
- *
- * This function can be used to implement simple constant propagation of masks,
- * which unlocks a number of optimizations. Note that this function can only
- * detect matching masks if they have not yet been evaluated.
- */
-extern JITC_EXPORT int jitc_var_is_all_true(uint32_t index);
+extern JITC_EXPORT int jitc_var_is_literal_one(uint32_t index);
 
 /**
  * \brief Return a human-readable summary of registered variables
@@ -781,13 +755,15 @@ extern JITC_EXPORT void jitc_var_write(uint32_t index, uint32_t offset,
 // ====================================================================
 //                 Kernel compilation and evaluation
 // ====================================================================
-//
 
-/// Evaluate all computation that is queued on the current stream
-extern JITC_EXPORT void jitc_eval();
+/// Schedule a variable \c index for future evaluation via \ref jitc_eval()
+extern JITC_EXPORT void jitc_var_schedule(uint32_t index);
 
-/// Call jitc_eval() only if the variable 'index' requires evaluation
+/// Evaluate the variable \c index right away, if it is unevaluated/dirty.
 extern JITC_EXPORT void jitc_var_eval(uint32_t index);
+
+/// Evaluate all computation that is scheduled on the current stream
+extern JITC_EXPORT void jitc_eval();
 
 // ====================================================================
 //  Assortment of tuned kernels for initialization, reductions, etc.

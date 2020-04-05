@@ -48,9 +48,10 @@ void* jit_malloc(AllocType type, size_t size) {
         lock_guard guard(state.malloc_mutex);
         if (type == AllocType::Device) {
             Stream *stream = active_stream;
-            if (unlikely(!stream))
-                jit_raise("jit_malloc(): device must be set using jit_device_set() "
-                          "before allocating device pointer!");
+            if (unlikely(!stream || !stream->cuda))
+                jit_raise(
+                    "jit_malloc(): you must specify an active CUDA device using "
+                    "jit_device_set() before allocating a device pointer!");
             ai.device = stream->device;
 
             /* Check for arrays with a pending free operation on the current
@@ -192,10 +193,10 @@ void jit_free(void *ptr) {
         state.alloc_free[ai].push_back(ptr);
     } else {
         Stream *stream = active_stream;
-        if (unlikely(!stream))
-            jit_raise(
-                "jit_free(): attempted to free a CUDA device while the LLVM "
-                "backend as selected! (call jit_device_set() before)!");
+        if (unlikely(!stream || !stream->cuda))
+            jit_raise("jit_free(): you must specify an active CUDA device "
+                      "using jit_device_set() before freeing a "
+                      "device/managed/host-pinned pointer!");
 
         std::vector<std::pair<bool, void *>> alloc_unmap;
 
@@ -230,9 +231,8 @@ void jit_free(void *ptr) {
 
 void jit_free_flush() {
     Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_free_flush(): this function should only be used with "
-                  "the CUDA backend! (call jit_device_set() before)!");
+    if (unlikely(!stream || !stream->cuda))
+        return;
 
     ReleaseChain *chain = stream->release_chain;
     if (chain == nullptr || chain->entries.empty())
@@ -276,9 +276,10 @@ void jit_free_flush() {
 
 void* jit_malloc_migrate(void *ptr, AllocType type) {
     Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_malloc_migrate(): this function should only be used with "
-                  "the CUDA backend! (call jit_device_set() before)!");
+    if (unlikely(!stream || !stream->cuda))
+        jit_raise(
+            "jit_malloc_migrate(): you must specify an active CUDA device "
+            "using jit_device_set() before invoking this function!");
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
@@ -342,9 +343,10 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
 /// Asynchronously prefetch a memory region
 void jit_malloc_prefetch(void *ptr, int device) {
     Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_malloc_prefetch(): this function should only be used with "
-                  "the CUDA backend! (call jit_device_set() before)!");
+    if (unlikely(!stream || !stream->cuda))
+        jit_raise(
+            "jit_malloc_prefetch(): you must specify an active CUDA device "
+            "using jit_device_set() before invoking this function!");
 
     if (device == -1) {
         device = CU_DEVICE_CPU;
@@ -414,8 +416,10 @@ void jit_malloc_trim(bool warn) {
 
         for (auto& kv : alloc_free) {
             const std::vector<void *> &entries = kv.second;
+
             trim_count[(int) kv.first.type] += entries.size();
             trim_size[(int) kv.first.type] += kv.first.size * entries.size();
+
             switch (kv.first.type) {
                 case AllocType::Device:
                 case AllocType::Managed:

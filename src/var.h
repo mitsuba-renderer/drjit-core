@@ -48,10 +48,10 @@ extern uint32_t jit_trace_append_4(VarType type,
 extern uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free);
 
 /// Register pointer literal as a special variable within the JIT compiler
-extern uint32_t jit_var_copy_ptr(const void *ptr);
+extern uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jit_var_copy(VarType type, const void *ptr, uint32_t size);
+extern uint32_t jit_var_copy_from_host(VarType type, const void *ptr, uint32_t size);
 
 /// Increase the internal reference count of a given variable
 extern void jit_var_inc_ref_int(uint32_t index, Variable *v);
@@ -83,9 +83,6 @@ extern void *jit_var_ptr(uint32_t index);
 // Query the size of a given variable
 extern uint32_t jit_var_size(uint32_t index);
 
-/// Set the size of a given variable (if possible, otherwise throw)
-extern uint32_t jit_var_set_size(uint32_t index, uint32_t size, int copy);
-
 /// Assign a descriptive label to a given variable
 extern void jit_var_set_label(uint32_t index, const char *label);
 
@@ -95,20 +92,14 @@ extern const char *jit_var_label(uint32_t index);
 /// Migrate a variable to a different flavor of memory
 extern void jit_var_migrate(uint32_t index, AllocType type);
 
-/// Indicate that evaluation of the given variable causes side effects
-extern void jit_var_mark_side_effect(uint32_t index);
+/// Mark a variable as a scatter operation that writes to 'target'
+extern void jit_var_mark_scatter(uint32_t index, uint32_t target);
 
-/// Mark variable as dirty, e.g. because of pending scatter operations
-extern void jit_var_mark_dirty(uint32_t index);
+/// Is the given variable a literal that equals zero?
+extern int jit_var_is_literal_zero(uint32_t index);
 
-/// Keep track of an extra dependency of 'index' on 'dep'
-extern void jit_var_set_extra_dep(uint32_t index, uint32_t dep);
-
-/// Is the given variable a mask that has all bits set to '0'?
-extern int jit_var_is_all_false(uint32_t index);
-
-/// Is the given variable a mask that has all bits set to '1'?
-extern int jit_var_is_all_true(uint32_t index);
+/// Is the given variable a literal that equals one?
+extern int jit_var_is_literal_one(uint32_t index);
 
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index);
@@ -119,7 +110,10 @@ extern void jit_var_read(uint32_t index, uint32_t offset, void *dst);
 /// Reverse of jit_var_read(). Copy 'src' to a single element of a variable
 extern void jit_var_write(uint32_t index, uint32_t offset, const void *src);
 
-/// Call jit_eval() only if the variable 'index' requires evaluation
+/// Schedule a variable \c index for future evaluation via \ref jitc_eval()
+extern void jit_var_schedule(uint32_t index);
+
+/// Evaluate the variable \c index right away, if it is unevaluated/dirty.
 extern void jit_var_eval(uint32_t index);
 
 /// Return a human-readable summary of registered variables

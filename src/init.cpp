@@ -101,22 +101,22 @@ void jit_init(int llvm, int cuda) {
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 void jit_shutdown(int light) {
-    if (state.has_cuda) {
-        jit_log(Info, "jit_shutdown(): destroying streams ..");
+    jit_log(Info, "jit_shutdown(): destroying streams ..");
 
-        for (auto &v : state.streams) {
-            const Stream *stream = v.second;
-            jit_device_set(stream->device, stream->stream);
+    for (auto &v : state.streams) {
+        const Stream *stream = v.second;
+        jit_device_set(stream->device, stream->stream);
+        if (stream->cuda) {
             jit_free_flush();
             cuda_check(cuStreamSynchronize(stream->handle));
             cuda_check(cuEventDestroy(stream->event));
             cuda_check(cuStreamDestroy(stream->handle));
             delete stream->release_chain;
-            delete stream;
         }
-        state.streams.clear();
-        active_stream = nullptr;
+        delete stream;
     }
+    state.streams.clear();
+    active_stream = nullptr;
 
     for (auto &v : state.kernel_cache) {
         jit_kernel_free(v.first.device, v.second);
@@ -178,21 +178,9 @@ void jit_shutdown(int light) {
 
 /// Set the currently active device & stream
 void jit_device_set(int32_t device, uint32_t stream) {
-    if (device == -1) {
-        if (active_stream != nullptr) {
-            cuda_check(cuCtxSetCurrent(nullptr));
-            active_stream = nullptr;
-        }
-        return;
-    }
-
-    if ((size_t) device >= state.devices.size())
-        jit_raise("jit_device_set(): invalid device ID!");
-
-    cuda_check(cuCtxSetCurrent(state.devices[device].context));
-
     std::pair<uint32_t, uint32_t> key(device, stream);
     auto it = state.streams.find(key);
+    bool cuda = device != -1;
 
     Stream *stream_ptr, *active_stream_ptr = active_stream;
     if (it != state.streams.end()) {
@@ -201,15 +189,32 @@ void jit_device_set(int32_t device, uint32_t stream) {
             return;
         jit_trace("jit_device_set(device=%i, stream=%i): selecting stream",
                   device, stream);
+
+        if (state.has_cuda)
+            cuda_check(cuCtxSetCurrent(
+                cuda ? state.devices[device].context : nullptr));
     } else {
+        if (cuda && (!state.has_cuda || device >= (int32_t) state.devices.size()))
+            jit_raise("jit_device_set(): invalid device ID!");
+
         jit_trace("jit_device_set(device=%i, stream=%i): creating stream",
                   device, stream);
+
         CUstream handle = nullptr;
         CUevent event = nullptr;
-        cuda_check(cuStreamCreate(&handle, CU_STREAM_NON_BLOCKING));
-        cuda_check(cuEventCreate(&event, CU_EVENT_DISABLE_TIMING));
+
+        if (state.has_cuda) {
+            cuda_check(cuCtxSetCurrent(
+                device == -1 ? nullptr : state.devices[device].context));
+
+            if (cuda) {
+                cuda_check(cuStreamCreate(&handle, CU_STREAM_NON_BLOCKING));
+                cuda_check(cuEventCreate(&event, CU_EVENT_DISABLE_TIMING));
+            }
+        }
 
         stream_ptr = new Stream();
+        stream_ptr->cuda = cuda;
         stream_ptr->device = device;
         stream_ptr->stream = stream;
         stream_ptr->handle = handle;
@@ -223,29 +228,27 @@ void jit_device_set(int32_t device, uint32_t stream) {
 /// Wait for all computation on the current stream to finish
 void jit_sync_stream() {
     Stream *stream = active_stream;
-    if (unlikely(!stream))
-        return;
-
-    jit_trace("jit_sync_stream(): starting ..");
-    /* Release mutex while synchronizing */ {
-        unlock_guard guard(state.mutex);
-        cuda_check(cuStreamSynchronize(stream->handle));
+    if (stream->cuda) {
+        jit_trace("jit_sync_stream(): starting ..");
+        /* Release mutex while synchronizing */ {
+            unlock_guard guard(state.mutex);
+            cuda_check(cuStreamSynchronize(stream->handle));
+        }
+        jit_trace("jit_sync_stream(): done.");
     }
-    jit_trace("jit_sync_stream(): done.");
 }
 
 /// Wait for all computation on the current device to finish
 void jit_sync_device() {
     Stream *stream = active_stream;
-    if (unlikely(!stream))
-        return;
-
-    jit_trace("jit_sync_device(): starting ..");
-    /* Release mutex while synchronizing */ {
-        unlock_guard guard(state.mutex);
-        cuda_check(cuCtxSynchronize());
+    if (stream->cuda) {
+        jit_trace("jit_sync_device(): starting ..");
+        /* Release mutex while synchronizing */ {
+            unlock_guard guard(state.mutex);
+            cuda_check(cuCtxSynchronize());
+        }
+        jit_trace("jit_sync_device(): done.");
     }
-    jit_trace("jit_sync_device(): done.");
 }
 
 void *jit_find_library(const char *fname, const char *glob_pat,

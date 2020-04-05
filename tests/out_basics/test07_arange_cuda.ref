@@ -6,9 +6,9 @@ jit_var_dec_ref_ext(1): 1
 jit_trace_append(2): mov.u32 $r0, $i
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_ext(2): 2
-jit_trace_append(3): mov.$t0 $r0, 0x00000007
+jit_trace_append(3): mov.$b0 $r0, 0x00000007
 jit_var_inc_ref_ext(3): 1
-jit_trace_append(4): mov.$t0 $r0, 0x00000003
+jit_trace_append(4): mov.$b0 $r0, 0x00000003
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
@@ -66,7 +66,7 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_device_set(device=0, stream=1): creating stream
+jit_device_set(device=0, stream=1001): creating stream
 jit_assemble(size=73): register map:
    - %r4 -> 2
    - %r5 -> 3 [scalar]
@@ -104,10 +104,10 @@ L1: // Loop body
     mov.u32 %r4, %r0;
 
     // Evaluate %r5
-    mov.u32 %r5, 0x00000007;
+    mov.b32 %r5, 0x00000007;
 
     // Evaluate %r6
-    mov.u32 %r6, 0x00000003;
+    mov.b32 %r6, 0x00000003;
 
     // Evaluate %r7
     mad.lo.u32 %r7, %r4, %r5, %r6;
@@ -125,8 +125,7 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_device_set(device=0, stream=2): creating stream
-jit_device_set(device=0, stream=0): selecting stream
+jit_device_set(device=0, stream=1002): creating stream
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(2): 0
 jit_var_free(2)
@@ -148,9 +147,9 @@ jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_int(8): 1
 jit_trace_append(9 <- 8): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(9): 1
-jit_trace_append(10): mov.$t0 $r0, 0x0000000000000007
+jit_trace_append(10): mov.$b0 $r0, 0x0000000000000007
 jit_var_inc_ref_ext(10): 1
-jit_trace_append(11): mov.$t0 $r0, 0xfffffffffffffffd
+jit_trace_append(11): mov.$b0 $r0, 0xfffffffffffffffd
 jit_var_inc_ref_ext(11): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(10): 1
@@ -212,7 +211,7 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_device_set(device=0, stream=1): selecting stream
+jit_device_set(device=0, stream=1001): selecting stream
 jit_assemble(size=73): register map:
    - %r4 -> 8
    - %rd5 -> 9
@@ -254,10 +253,10 @@ L1: // Loop body
     cvt.s64.u32 %rd5, %r4;
 
     // Evaluate %rd6
-    mov.s64 %rd6, 0x0000000000000007;
+    mov.b64 %rd6, 0x0000000000000007;
 
     // Evaluate %rd7
-    mov.s64 %rd7, 0xfffffffffffffffd;
+    mov.b64 %rd7, 0xfffffffffffffffd;
 
     // Evaluate %rd8
     mad.lo.s64 %rd8, %rd5, %rd6, %rd7;
@@ -275,15 +274,14 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_device_set(device=0, stream=2): selecting stream
-jit_device_set(device=0, stream=0): selecting stream
+jit_device_set(device=0, stream=1002): selecting stream
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(6): 0
 jit_var_free(6)
-jit_var_dec_ref_int(8): 0
-jit_var_free(8)
 jit_var_dec_ref_int(9): 0
 jit_var_free(9)
+jit_var_dec_ref_int(8): 0
+jit_var_free(8)
 jit_var_dec_ref_int(10): 0
 jit_var_free(10)
 jit_var_dec_ref_int(11): 0
@@ -305,8 +303,8 @@ jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=4096)
 jit_shutdown(): destroying streams ..
 jit_free_flush(): scheduling 4 deallocations
-jit_device_set(device=0, stream=1): selecting stream
-jit_device_set(device=0, stream=2): selecting stream
+jit_device_set(device=0, stream=1001): selecting stream
+jit_device_set(device=0, stream=1002): selecting stream
 jit_malloc_trim(): freed
  - device memory: 13.5 KiB in 4 allocations
 jit_shutdown(): done

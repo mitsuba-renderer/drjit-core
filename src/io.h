@@ -33,10 +33,10 @@ extern char jit_lz4_dict[];
 extern void jit_lz4_init();
 
 extern bool jit_kernel_load(const char *source, uint32_t source_size,
-                            bool llvm, size_t hash, Kernel &kernel);
+                            bool cuda, size_t hash, Kernel &kernel);
 
 extern bool jit_kernel_write(const char *source, uint32_t source_size,
-                             bool llvm, size_t hash, const Kernel &kernel);
+                             bool cuda, size_t hash, const Kernel &kernel);
 
 extern void jit_kernel_free(int device_id, const Kernel kernel);
 

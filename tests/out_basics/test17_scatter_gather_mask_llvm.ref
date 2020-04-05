@@ -1,3 +1,4 @@
+jit_device_set(device=-1, stream=0): creating stream
 jit_trace_append(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_ext(1): 2
@@ -34,25 +35,19 @@ jit_trace_append(9): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 =
 jit_var_inc_ref_ext(9): 1
 jit_eval(): begin.
 jit_assemble(size=1022): register map:
-   - %r0 -> 1 "l" [out]
-jit_malloc(type=host, size=4096): <@> (new allocation)
+   - %r0 -> 1 "l"
    - %r1 -> 2 [scalar]
    - %r2 -> 3
    - %r3 -> 4 [scalar]
    - %p4 -> 5 "result" [out]
 jit_malloc(type=host, size=1024): <@> (new allocation)
-jit_run(): launching kernel (n=1022, in=0, out=2, ops=5) ..
+jit_run(): launching kernel (n=1022, in=0, out=1, ops=5) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0_p to i32*
-
-    ; Prepare argument 1
-    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
-    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
-    %a1 = bitcast i8* %a1_p to i8*
+    %a0 = bitcast i8* %a0_p to i8*
     br label %loop
 
 done:
@@ -66,11 +61,6 @@ loop:
     %r0_1 = insertelement <8 x i32> undef, i32 %r0_0, i32 0
     %r0_2 = shufflevector <8 x i32> %r0_1, <8 x i32> undef, <8 x i32> zeroinitializer
     %r0 = add <8 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
-
-    ; Store %r0: l
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
-    %r0_p = bitcast i32* %r0_i to <8 x i32>*
-    store <8 x i32> %r0, <8 x i32>* %r0_p, align 32, !noalias !1
 
     ; Evaluate %r1
     %r1_0 = insertelement <8 x i32> undef, i32 1, i32 0
@@ -87,7 +77,7 @@ loop:
     %p4 = icmp ne <8 x i32> %r2, %r3
 
     ; Store %p4: result
-    %p4_i = getelementptr inbounds i8, i8* %a1, i64 %index
+    %p4_i = getelementptr inbounds i8, i8* %a0, i64 %index
     %p4_p = bitcast i8* %p4_i to <8 x i8>*
     %p4_e = zext <8 x i1> %p4 to <8 x i8>
     store <8 x i8> %p4_e, <8 x i8>* %p4_p, align 8, !noalias !1
@@ -103,24 +93,77 @@ loop:
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_run(): processing 128 packets and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(3): 0
+jit_var_free(3)
+jit_var_dec_ref_int(1): 0
+jit_var_dec_ref_int(2): 0
+jit_var_free(2)
+jit_var_dec_ref_int(4): 0
+jit_var_free(4)
+jit_eval(): done.
+jit_var_inc_ref_ext(5): 2
+jit_var_copy_ptr(10 <- 5): <@>
+jit_var_inc_ref_ext(10): 1
+jit_var_inc_ref_int(10): 1
+jit_var_inc_ref_int(8): 1
+jit_trace_append(11 <- 10, 8): $r0_0 = bitcast $t1 $r1 to i8*$n$r0_1 = getelementptr i8, i8* $r0_0, <$w x $t2> $r2$n$r0_2 = bitcast <$w x i8*> $r0_1 to <$w x i32*>$n$r0_3 = call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0$S_2, i32 $s0, <$w x i1> $O, <$w x i32> $z)$n$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>
+jit_var_inc_ref_ext(11): 1
+jit_var_dec_ref_ext(10): 0
+jit_var_dec_ref_ext(9): 0
+jit_var_free(9)
+jit_var_dec_ref_ext(8): 0
+jit_var_dec_ref_ext(7): 0
+jit_var_set_label(11): "even"
+jit_trace_append(7): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
+jit_var_inc_ref_ext(7): 1
+jit_var_inc_ref_int(6): 2
+jit_var_inc_ref_int(7): 2
+jit_var_dec_ref_int(6): 1
+jit_var_dec_ref_int(7): 1
+jit_trace_append(8 <- 6, 7): $r0 = mul <$w x $t0> $r1, $r2 (reused)
+jit_var_inc_ref_ext(8): 1
+jit_trace_append(12): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(12): 1
+jit_var_inc_ref_int(8): 2
+jit_var_inc_ref_int(12): 1
+jit_trace_append(13 <- 8, 12): $r0 = add <$w x $t0> $r1, $r2
+jit_var_inc_ref_ext(13): 1
+jit_trace_append(14): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(14): 1
+jit_var_inc_ref_ext(10): 1
+jit_var_inc_ref_int(10): 2
+jit_var_inc_ref_int(13): 1
+jit_trace_append(15 <- 10, 13): $r0_0 = bitcast $t1 $r1 to i8*$n$r0_1 = getelementptr i8, i8* $r0_0, <$w x $t2> $r2$n$r0_2 = bitcast <$w x i8*> $r0_1 to <$w x i32*>$n$r0_3 = call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0$S_2, i32 $s0, <$w x i1> $O, <$w x i32> $z)$n$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>
+jit_var_inc_ref_ext(15): 1
+jit_var_dec_ref_ext(10): 0
+jit_var_dec_ref_ext(14): 0
+jit_var_free(14)
+jit_var_dec_ref_ext(13): 0
+jit_var_dec_ref_ext(12): 0
+jit_var_dec_ref_ext(8): 0
+jit_var_dec_ref_ext(7): 0
+jit_var_set_label(15): "odd"
+Mask  : [0, 1, 0, 1, 0, .. 1012 skipped .., 1, 0, 1, 0, 1]
+jit_eval(): begin.
 jit_assemble(size=510): register map:
-   - %r0 -> 6 "l2" [out]
-jit_malloc(type=host, size=2048): <@> (new allocation)
+   - %r0 -> 6 "l2"
    - %r1 -> 7 [scalar]
-   - %r2 -> 8 [out]
-jit_malloc(type=host, size=2048): <@> (new allocation)
-jit_run(): launching kernel (n=510, in=0, out=2, ops=3) ..
+   - %r2 -> 8
+   - %rd3 -> 10 [scalar] [in]
+   - %p4 -> 11 "even" [out]
+jit_malloc(type=host, size=512): <@> (new allocation)
+jit_run(): launching kernel (n=510, in=1, out=1, ops=5) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
-    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0_p to i32*
+    %rd3 = load i8*, i8** %a0_i, align 8, !alias.scope !1
 
     ; Prepare argument 1
     %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
     %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
-    %a1 = bitcast i8* %a1_p to i32*
+    %a1 = bitcast i8* %a1_p to i8*
     br label %loop
 
 done:
@@ -135,11 +178,6 @@ loop:
     %r0_2 = shufflevector <8 x i32> %r0_1, <8 x i32> undef, <8 x i32> zeroinitializer
     %r0 = add <8 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
 
-    ; Store %r0: l2
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
-    %r0_p = bitcast i32* %r0_i to <8 x i32>*
-    store <8 x i32> %r0, <8 x i32>* %r0_p, align 32, !noalias !1
-
     ; Evaluate %r1
     %r1_0 = insertelement <8 x i32> undef, i32 2, i32 0
     %r1 = shufflevector <8 x i32> %r1_0, <8 x i32> undef, <8 x i32> zeroinitializer
@@ -147,243 +185,18 @@ loop:
     ; Evaluate %r2
     %r2 = mul <8 x i32> %r0, %r1
 
-    ; Store %r2
-    %r2_i = getelementptr inbounds i32, i32* %a1, i64 %index
-    %r2_p = bitcast i32* %r2_i to <8 x i32>*
-    store <8 x i32> %r2, <8 x i32>* %r2_p, align 32, !noalias !1
+    ; Evaluate %p4: even
+    %p4_0 = bitcast i8* %rd3 to i8*
+    %p4_1 = getelementptr i8, i8* %p4_0, <8 x i32> %r2
+    %p4_2 = bitcast <8 x i8*> %p4_1 to <8 x i32*>
+    %p4_3 = call <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*> %p4_2, i32 1, <8 x i1> <i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1>, <8 x i32> zeroinitializer)
+    %p4 = trunc <8 x i32> %p4_3 to <8 x i1>
 
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !2
-}
-
-!0 = !{!0}
-!1 = !{!1, !0}
-!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
-
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
-jit_run(): processing 64 packets and 0 scalar entries
-jit_assemble(size=1): register map:
-   - %r0 -> 7 [scalar] [out]
-jit_malloc(type=host, size=64): <@> (new allocation)
-   - %p1 -> 9 [scalar] [out]
-jit_malloc(type=host, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=1, in=0, out=2, ops=2) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
-entry:
-    ; Prepare argument 0
-    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
-    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0_p to i32*
-    %a0_s = load i32, i32* %a0, align 4, !alias.scope !1
-
-    ; Prepare argument 1
-    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
-    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
-    %a1 = bitcast i8* %a1_p to i8*
-    %a1_s = load i8, i8* %a1, align 1, !alias.scope !1
-    %a1_s1 = trunc i8 %a1_s to i1
-    br label %loop
-
-done:
-    ret void
-
-loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
-
-    ; Evaluate %r0
-    %r0_0 = insertelement <8 x i32> undef, i32 2, i32 0
-    %r0 = shufflevector <8 x i32> %r0_0, <8 x i32> undef, <8 x i32> zeroinitializer
-
-    ; Store %r0
-    %r0_p = bitcast i32* %a0 to <8 x i32>*
-    store <8 x i32> %r0, <8 x i32>* %r0_p, align 32, !noalias !1
-
-    ; Evaluate %p1
-    %p1_0 = insertelement <8 x i1> undef, i1 1, i32 0
-    %p1 = shufflevector <8 x i1> %p1_0, <8 x i1> undef, <8 x i32> zeroinitializer
-
-    ; Store %p1
-    %p1_p = bitcast i8* %a1 to <8 x i8>*
-    %p1_e = zext <8 x i1> %p1 to <8 x i8>
-    store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
-
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !2
-}
-
-!0 = !{!0}
-!1 = !{!1, !0}
-!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
-
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
-jit_run(): processing 1 packet and 0 scalar entries
-jit_eval(): cleaning up..
-jit_var_dec_ref_int(1): 0
-jit_var_dec_ref_int(2): 0
-jit_var_free(2)
-jit_var_dec_ref_int(3): 0
-jit_var_free(3)
-jit_var_dec_ref_int(4): 0
-jit_var_free(4)
-jit_var_dec_ref_int(6): 0
-jit_var_dec_ref_int(7): 0
-jit_eval(): done.
-jit_var_copy_ptr(10): <@>
-jit_var_inc_ref_ext(10): 1
-jit_var_inc_ref_int(10): 1
-jit_var_inc_ref_int(8): 1
-jit_var_inc_ref_int(9): 1
-jit_trace_append(11 <- 10, 8, 9): $r0_0 = bitcast $t1 $r1 to i8*$n$r0_1 = getelementptr i8, i8* $r0_0, <$w x $t2> $r2$n$r0_2 = bitcast <$w x i8*> $r0_1 to <$w x i32*>$n$r0_3 = call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0$S_2, i32 $s0, <$w x $t3> $r3, <$w x i32> $z)$n$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>
-jit_var_inc_ref_ext(11): 1
-jit_var_dec_ref_ext(10): 0
-jit_var_set_extra_dep(11, 5)
-jit_var_inc_ref_ext(5): 2
-jit_var_dec_ref_ext(9): 0
-jit_var_dec_ref_ext(8): 0
-jit_var_dec_ref_ext(7): 0
-jit_var_free(7)
-jit_free(<@>, type=host, size=64)
-jit_var_set_label(11): "even"
-jit_trace_append(12): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
-jit_var_inc_ref_ext(12): 1
-jit_var_inc_ref_int(6): 1
-jit_var_inc_ref_int(12): 1
-jit_trace_append(13 <- 6, 12): $r0 = mul <$w x $t0> $r1, $r2
-jit_var_inc_ref_ext(13): 1
-jit_trace_append(14): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
-jit_var_inc_ref_ext(14): 1
-jit_var_inc_ref_int(13): 1
-jit_var_inc_ref_int(14): 1
-jit_trace_append(15 <- 13, 14): $r0 = add <$w x $t0> $r1, $r2
-jit_var_inc_ref_ext(15): 1
-jit_trace_append(16): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
-jit_var_inc_ref_ext(16): 1
-jit_var_inc_ref_ext(10): 1
-jit_var_inc_ref_int(10): 2
-jit_var_inc_ref_int(15): 1
-jit_trace_append(17 <- 10, 15): $r0_0 = bitcast $t1 $r1 to i8*$n$r0_1 = getelementptr i8, i8* $r0_0, <$w x $t2> $r2$n$r0_2 = bitcast <$w x i8*> $r0_1 to <$w x i32*>$n$r0_3 = call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0$S_2, i32 $s0, <$w x i1> $O, <$w x i32> $z)$n$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>
-jit_var_inc_ref_ext(17): 1
-jit_var_dec_ref_ext(10): 0
-jit_var_set_extra_dep(17, 5)
-jit_var_inc_ref_ext(5): 3
-jit_var_dec_ref_ext(16): 0
-jit_var_free(16)
-jit_var_dec_ref_ext(15): 0
-jit_var_dec_ref_ext(14): 0
-jit_var_dec_ref_ext(13): 0
-jit_var_dec_ref_ext(12): 0
-jit_var_set_label(17): "odd"
-Mask  : [0, 1, 0, 1, 0, .. 1012 skipped .., 1, 0, 1, 0, 1]
-jit_eval(): begin.
-jit_assemble(size=510): register map:
-   - %r0 -> 8 [in]
-   - %p1 -> 9 [scalar] [in]
-   - %rd2 -> 10 [scalar] [in]
-   - %p3 -> 11 "even" [out]
-jit_malloc(type=host, size=512): <@> (new allocation)
-   - %r4 -> 6 "l2" [in]
-   - %r5 -> 12 [scalar]
-   - %r6 -> 13
-   - %r7 -> 14 [scalar]
-   - %r8 -> 15
-   - %p9 -> 17 "odd" [out]
-jit_malloc(type=host, size=512): <@> (new allocation)
-jit_run(): launching kernel (n=510, in=4, out=2, ops=10) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
-entry:
-    ; Prepare argument 0
-    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
-    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0_p to i32*
-
-    ; Prepare argument 1
-    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
-    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
-    %a1 = bitcast i8* %a1_p to i8*
-    %a1_s = load i8, i8* %a1, align 1, !alias.scope !1
-    %a1_s1 = trunc i8 %a1_s to i1
-
-    ; Prepare argument 2
-    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
-    %rd2 = load i8*, i8** %a2_i, align 8, !alias.scope !1
-
-    ; Prepare argument 3
-    %a3_i = getelementptr inbounds i8*, i8** %ptrs, i32 3
-    %a3_p = load i8*, i8** %a3_i, align 8, !alias.scope !1
-    %a3 = bitcast i8* %a3_p to i8*
-
-    ; Prepare argument 4
-    %a4_i = getelementptr inbounds i8*, i8** %ptrs, i32 4
-    %a4_p = load i8*, i8** %a4_i, align 8, !alias.scope !1
-    %a4 = bitcast i8* %a4_p to i32*
-
-    ; Prepare argument 5
-    %a5_i = getelementptr inbounds i8*, i8** %ptrs, i32 5
-    %a5_p = load i8*, i8** %a5_i, align 8, !alias.scope !1
-    %a5 = bitcast i8* %a5_p to i8*
-    br label %loop
-
-done:
-    ret void
-
-loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
-
-    ; Load %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
-    %r0_p = bitcast i32* %r0_i to <8 x i32>*
-    %r0 = load <8 x i32>, <8 x i32>* %r0_p, align 32, !alias.scope !1
-
-    ; Load %p1
-    %p1_z = insertelement <8 x i1> undef, i1 %a1_s1, i32 0
-    %p1 = shufflevector <8 x i1> %p1_z, <8 x i1> undef, <8 x i32> zeroinitializer
-
-    ; Evaluate %p3: even
-    %p3_0 = bitcast i8* %rd2 to i8*
-    %p3_1 = getelementptr i8, i8* %p3_0, <8 x i32> %r0
-    %p3_2 = bitcast <8 x i8*> %p3_1 to <8 x i32*>
-    %p3_3 = call <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*> %p3_2, i32 1, <8 x i1> %p1, <8 x i32> zeroinitializer)
-    %p3 = trunc <8 x i32> %p3_3 to <8 x i1>
-
-    ; Store %p3: even
-    %p3_i = getelementptr inbounds i8, i8* %a3, i64 %index
-    %p3_p = bitcast i8* %p3_i to <8 x i8>*
-    %p3_e = zext <8 x i1> %p3 to <8 x i8>
-    store <8 x i8> %p3_e, <8 x i8>* %p3_p, align 8, !noalias !1
-
-    ; Load %r4: l2
-    %r4_i = getelementptr inbounds i32, i32* %a4, i64 %index
-    %r4_p = bitcast i32* %r4_i to <8 x i32>*
-    %r4 = load <8 x i32>, <8 x i32>* %r4_p, align 32, !alias.scope !1
-
-    ; Evaluate %r5
-    %r5_0 = insertelement <8 x i32> undef, i32 2, i32 0
-    %r5 = shufflevector <8 x i32> %r5_0, <8 x i32> undef, <8 x i32> zeroinitializer
-
-    ; Evaluate %r6
-    %r6 = mul <8 x i32> %r4, %r5
-
-    ; Evaluate %r7
-    %r7_0 = insertelement <8 x i32> undef, i32 1, i32 0
-    %r7 = shufflevector <8 x i32> %r7_0, <8 x i32> undef, <8 x i32> zeroinitializer
-
-    ; Evaluate %r8
-    %r8 = add <8 x i32> %r6, %r7
-
-    ; Evaluate %p9: odd
-    %p9_0 = bitcast i8* %rd2 to i8*
-    %p9_1 = getelementptr i8, i8* %p9_0, <8 x i32> %r8
-    %p9_2 = bitcast <8 x i8*> %p9_1 to <8 x i32*>
-    %p9_3 = call <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*> %p9_2, i32 1, <8 x i1> <i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1>, <8 x i32> zeroinitializer)
-    %p9 = trunc <8 x i32> %p9_3 to <8 x i1>
-
-    ; Store %p9: odd
-    %p9_i = getelementptr inbounds i8, i8* %a5, i64 %index
-    %p9_p = bitcast i8* %p9_i to <8 x i8>*
-    %p9_e = zext <8 x i1> %p9 to <8 x i8>
-    store <8 x i8> %p9_e, <8 x i8>* %p9_p, align 8, !noalias !1
+    ; Store %p4: even
+    %p4_i = getelementptr inbounds i8, i8* %a1, i64 %index
+    %p4_p = bitcast i8* %p4_i to <8 x i8>*
+    %p4_e = zext <8 x i1> %p4 to <8 x i8>
+    store <8 x i8> %p4_e, <8 x i8>* %p4_p, align 8, !noalias !1
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
@@ -394,34 +207,12 @@ define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
-    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0_p to i32*
+    %rd3 = load i8*, i8** %a0_i, align 8, !alias.scope !1
 
     ; Prepare argument 1
     %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
     %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
     %a1 = bitcast i8* %a1_p to i8*
-    %a1_s = load i8, i8* %a1, align 1, !alias.scope !1
-    %a1_s1 = trunc i8 %a1_s to i1
-
-    ; Prepare argument 2
-    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
-    %rd2 = load i8*, i8** %a2_i, align 8, !alias.scope !1
-
-    ; Prepare argument 3
-    %a3_i = getelementptr inbounds i8*, i8** %ptrs, i32 3
-    %a3_p = load i8*, i8** %a3_i, align 8, !alias.scope !1
-    %a3 = bitcast i8* %a3_p to i8*
-
-    ; Prepare argument 4
-    %a4_i = getelementptr inbounds i8*, i8** %ptrs, i32 4
-    %a4_p = load i8*, i8** %a4_i, align 8, !alias.scope !1
-    %a4 = bitcast i8* %a4_p to i32*
-
-    ; Prepare argument 5
-    %a5_i = getelementptr inbounds i8*, i8** %ptrs, i32 5
-    %a5_p = load i8*, i8** %a5_i, align 8, !alias.scope !1
-    %a5 = bitcast i8* %a5_p to i8*
     br label %loop
 
 done:
@@ -430,59 +221,31 @@ done:
 loop:
     %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
 
-    ; Load %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
-    %r0_p = bitcast i32* %r0_i to <1 x i32>*
-    %r0 = load <1 x i32>, <1 x i32>* %r0_p, align 4, !alias.scope !1
+    ; Evaluate %r0: l2
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <1 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <1 x i32> %r0_1, <1 x i32> undef, <1 x i32> zeroinitializer
+    %r0 = add <1 x i32> %r0_2, <i32 0>
 
-    ; Load %p1
-    %p1_z = insertelement <1 x i1> undef, i1 %a1_s1, i32 0
-    %p1 = shufflevector <1 x i1> %p1_z, <1 x i1> undef, <1 x i32> zeroinitializer
+    ; Evaluate %r1
+    %r1_0 = insertelement <1 x i32> undef, i32 2, i32 0
+    %r1 = shufflevector <1 x i32> %r1_0, <1 x i32> undef, <1 x i32> zeroinitializer
 
-    ; Evaluate %p3: even
-    %p3_0 = bitcast i8* %rd2 to i8*
-    %p3_1 = getelementptr i8, i8* %p3_0, <1 x i32> %r0
-    %p3_2 = bitcast <1 x i8*> %p3_1 to <1 x i32*>
-    %p3_3 = call <1 x i32> @llvm.masked.gather.v1i32(<1 x i32*> %p3_2, i32 1, <1 x i1> %p1, <1 x i32> zeroinitializer)
-    %p3 = trunc <1 x i32> %p3_3 to <1 x i1>
+    ; Evaluate %r2
+    %r2 = mul <1 x i32> %r0, %r1
 
-    ; Store %p3: even
-    %p3_i = getelementptr inbounds i8, i8* %a3, i64 %index
-    %p3_p = bitcast i8* %p3_i to <1 x i8>*
-    %p3_e = zext <1 x i1> %p3 to <1 x i8>
-    store <1 x i8> %p3_e, <1 x i8>* %p3_p, align 1, !noalias !1
+    ; Evaluate %p4: even
+    %p4_0 = bitcast i8* %rd3 to i8*
+    %p4_1 = getelementptr i8, i8* %p4_0, <1 x i32> %r2
+    %p4_2 = bitcast <1 x i8*> %p4_1 to <1 x i32*>
+    %p4_3 = call <1 x i32> @llvm.masked.gather.v1i32(<1 x i32*> %p4_2, i32 1, <1 x i1> <i1 1>, <1 x i32> zeroinitializer)
+    %p4 = trunc <1 x i32> %p4_3 to <1 x i1>
 
-    ; Load %r4: l2
-    %r4_i = getelementptr inbounds i32, i32* %a4, i64 %index
-    %r4_p = bitcast i32* %r4_i to <1 x i32>*
-    %r4 = load <1 x i32>, <1 x i32>* %r4_p, align 4, !alias.scope !1
-
-    ; Evaluate %r5
-    %r5_0 = insertelement <1 x i32> undef, i32 2, i32 0
-    %r5 = shufflevector <1 x i32> %r5_0, <1 x i32> undef, <1 x i32> zeroinitializer
-
-    ; Evaluate %r6
-    %r6 = mul <1 x i32> %r4, %r5
-
-    ; Evaluate %r7
-    %r7_0 = insertelement <1 x i32> undef, i32 1, i32 0
-    %r7 = shufflevector <1 x i32> %r7_0, <1 x i32> undef, <1 x i32> zeroinitializer
-
-    ; Evaluate %r8
-    %r8 = add <1 x i32> %r6, %r7
-
-    ; Evaluate %p9: odd
-    %p9_0 = bitcast i8* %rd2 to i8*
-    %p9_1 = getelementptr i8, i8* %p9_0, <1 x i32> %r8
-    %p9_2 = bitcast <1 x i8*> %p9_1 to <1 x i32*>
-    %p9_3 = call <1 x i32> @llvm.masked.gather.v1i32(<1 x i32*> %p9_2, i32 1, <1 x i1> <i1 1>, <1 x i32> zeroinitializer)
-    %p9 = trunc <1 x i32> %p9_3 to <1 x i1>
-
-    ; Store %p9: odd
-    %p9_i = getelementptr inbounds i8, i8* %a5, i64 %index
-    %p9_p = bitcast i8* %p9_i to <1 x i8>*
-    %p9_e = zext <1 x i1> %p9 to <1 x i8>
-    store <1 x i8> %p9_e, <1 x i8>* %p9_p, align 1, !noalias !1
+    ; Store %p4: even
+    %p4_i = getelementptr inbounds i8, i8* %a1, i64 %index
+    %p4_p = bitcast i8* %p4_i to <1 x i8>*
+    %p4_e = zext <1 x i1> %p4 to <1 x i8>
+    store <1 x i8> %p4_e, <1 x i8>* %p4_p, align 1, !noalias !1
 
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
@@ -500,122 +263,30 @@ attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_run(): processing 63 packets and 6 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(10): 1
-jit_var_dec_ref_int(8): 0
-jit_var_free(8)
-jit_free(<@>, type=host, size=2048)
-jit_var_dec_ref_int(9): 0
-jit_var_free(9)
-jit_free(<@>, type=host, size=64)
-jit_var_dec_ref_ext(5): 2
-jit_var_dec_ref_int(6): 0
-jit_var_dec_ref_int(12): 0
-jit_var_free(12)
-jit_var_dec_ref_int(13): 0
-jit_var_free(13)
-jit_var_dec_ref_int(14): 0
-jit_var_free(14)
-jit_var_dec_ref_int(10): 0
-jit_var_free(10)
-jit_var_dec_ref_int(15): 0
-jit_var_free(15)
-jit_var_dec_ref_ext(5): 1
+jit_var_dec_ref_int(8): 1
 jit_eval(): done.
 Even  : [0, 0, 0, 0, 0, .. 500 skipped .., 0, 0, 0, 0, 0]
-Odd   : [1, 1, 1, 1, 1, .. 500 skipped .., 1, 1, 1, 1, 1]
-jit_trace_append(18): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
-jit_var_inc_ref_ext(18): 1
-jit_var_inc_ref_int(6): 1
-jit_var_inc_ref_int(18): 1
-jit_trace_append(19 <- 6, 18): $r0 = mul <$w x $t0> $r1, $r2
-jit_var_inc_ref_ext(19): 1
-jit_trace_append(20): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
-jit_var_inc_ref_ext(20): 1
-jit_var_copy_ptr(21): <@>
-jit_var_inc_ref_ext(21): 1
-jit_var_inc_ref_int(21): 1
-jit_var_inc_ref_int(17): 1
-jit_var_inc_ref_int(19): 1
-jit_trace_append(22 <- 21, 17, 19): $r0_0 = bitcast $t1 $r1 to $t2*$n$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$ncall void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x i1> $O)
-jit_var_inc_ref_ext(22): 1
-jit_var_mark_side_effect(22)
-jit_var_inc_ref_ext(22): 2
-jit_var_dec_ref_ext(21): 0
-jit_var_set_extra_dep(22, 5)
-jit_var_inc_ref_ext(5): 2
-jit_var_mark_dirty(5)
-jit_var_dec_ref_ext(22): 1
-jit_var_dec_ref_ext(20): 0
-jit_var_free(20)
-jit_var_dec_ref_ext(19): 0
-jit_var_dec_ref_ext(18): 0
-jit_trace_append(18): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
-jit_var_inc_ref_ext(18): 1
-jit_var_inc_ref_int(6): 2
-jit_var_inc_ref_int(18): 2
-jit_var_dec_ref_int(6): 1
-jit_var_dec_ref_int(18): 1
-jit_trace_append(19 <- 6, 18): $r0 = mul <$w x $t0> $r1, $r2 (reused)
-jit_var_inc_ref_ext(19): 1
-jit_trace_append(23): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
-jit_var_inc_ref_ext(23): 1
-jit_var_inc_ref_int(19): 2
-jit_var_inc_ref_int(23): 1
-jit_trace_append(24 <- 19, 23): $r0 = add <$w x $t0> $r1, $r2
-jit_var_inc_ref_ext(24): 1
-jit_trace_append(25): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
-jit_var_inc_ref_ext(25): 1
-jit_var_inc_ref_ext(21): 1
-jit_var_inc_ref_int(21): 2
-jit_var_inc_ref_int(11): 1
-jit_var_inc_ref_int(24): 1
-jit_trace_append(26 <- 21, 11, 24): $r0_0 = bitcast $t1 $r1 to $t2*$n$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$ncall void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x i1> $O)
-jit_var_inc_ref_ext(26): 1
-jit_var_mark_side_effect(26)
-jit_var_inc_ref_ext(26): 2
-jit_var_dec_ref_ext(21): 0
-jit_var_set_extra_dep(26, 5)
-jit_var_inc_ref_ext(5): 3
-jit_var_mark_dirty(5)
-jit_var_dec_ref_ext(26): 1
-jit_var_dec_ref_ext(25): 0
-jit_var_free(25)
-jit_var_dec_ref_ext(24): 0
-jit_var_dec_ref_ext(23): 0
-jit_var_dec_ref_ext(19): 0
-jit_var_dec_ref_ext(18): 0
 jit_eval(): begin.
 jit_assemble(size=510): register map:
-   - %r0 -> 6 "l2" [in]
-   - %r1 -> 18 [scalar]
-   - %r2 -> 19
-   - %p3 -> 17 "odd" [in]
-   - %rd4 -> 21 [scalar] [in]
-   - %u5 -> 22 [se]
-   - %r6 -> 23 [scalar]
-   - %r7 -> 24
-   - %p8 -> 11 "even" [in]
-   - %u9 -> 26 [se]
-jit_run(): launching kernel (n=510, in=4, out=0, ops=10) ..
+   - %r0 -> 6 "l2"
+   - %r1 -> 7 [scalar]
+   - %r2 -> 8
+   - %r3 -> 12 [scalar]
+   - %r4 -> 13
+   - %rd5 -> 10 [scalar] [in]
+   - %p6 -> 15 "odd" [out]
+jit_malloc(type=host, size=512): <@> (new allocation)
+jit_run(): launching kernel (n=510, in=1, out=1, ops=7) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
-    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0_p to i32*
+    %rd5 = load i8*, i8** %a0_i, align 8, !alias.scope !1
 
     ; Prepare argument 1
     %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
     %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
     %a1 = bitcast i8* %a1_p to i8*
-
-    ; Prepare argument 2
-    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
-    %rd4 = load i8*, i8** %a2_i, align 8, !alias.scope !1
-
-    ; Prepare argument 3
-    %a3_i = getelementptr inbounds i8*, i8** %ptrs, i32 3
-    %a3_p = load i8*, i8** %a3_i, align 8, !alias.scope !1
-    %a3 = bitcast i8* %a3_p to i8*
     br label %loop
 
 done:
@@ -624,10 +295,217 @@ done:
 loop:
     %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
 
-    ; Load %r0: l2
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
-    %r0_p = bitcast i32* %r0_i to <8 x i32>*
-    %r0 = load <8 x i32>, <8 x i32>* %r0_p, align 32, !alias.scope !1
+    ; Evaluate %r0: l2
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <8 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <8 x i32> %r0_1, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r0 = add <8 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+
+    ; Evaluate %r1
+    %r1_0 = insertelement <8 x i32> undef, i32 2, i32 0
+    %r1 = shufflevector <8 x i32> %r1_0, <8 x i32> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %r2
+    %r2 = mul <8 x i32> %r0, %r1
+
+    ; Evaluate %r3
+    %r3_0 = insertelement <8 x i32> undef, i32 1, i32 0
+    %r3 = shufflevector <8 x i32> %r3_0, <8 x i32> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %r4
+    %r4 = add <8 x i32> %r2, %r3
+
+    ; Evaluate %p6: odd
+    %p6_0 = bitcast i8* %rd5 to i8*
+    %p6_1 = getelementptr i8, i8* %p6_0, <8 x i32> %r4
+    %p6_2 = bitcast <8 x i8*> %p6_1 to <8 x i32*>
+    %p6_3 = call <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*> %p6_2, i32 1, <8 x i1> <i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1, i1 1>, <8 x i32> zeroinitializer)
+    %p6 = trunc <8 x i32> %p6_3 to <8 x i1>
+
+    ; Store %p6: odd
+    %p6_i = getelementptr inbounds i8, i8* %a1, i64 %index
+    %p6_p = bitcast i8* %p6_i to <8 x i8>*
+    %p6_e = zext <8 x i1> %p6 to <8 x i8>
+    store <8 x i8> %p6_e, <8 x i8>* %p6_p, align 8, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %rd5 = load i8*, i8** %a0_i, align 8, !alias.scope !1
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %a1 = bitcast i8* %a1_p to i8*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0: l2
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <1 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <1 x i32> %r0_1, <1 x i32> undef, <1 x i32> zeroinitializer
+    %r0 = add <1 x i32> %r0_2, <i32 0>
+
+    ; Evaluate %r1
+    %r1_0 = insertelement <1 x i32> undef, i32 2, i32 0
+    %r1 = shufflevector <1 x i32> %r1_0, <1 x i32> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %r2
+    %r2 = mul <1 x i32> %r0, %r1
+
+    ; Evaluate %r3
+    %r3_0 = insertelement <1 x i32> undef, i32 1, i32 0
+    %r3 = shufflevector <1 x i32> %r3_0, <1 x i32> undef, <1 x i32> zeroinitializer
+
+    ; Evaluate %r4
+    %r4 = add <1 x i32> %r2, %r3
+
+    ; Evaluate %p6: odd
+    %p6_0 = bitcast i8* %rd5 to i8*
+    %p6_1 = getelementptr i8, i8* %p6_0, <1 x i32> %r4
+    %p6_2 = bitcast <1 x i8*> %p6_1 to <1 x i32*>
+    %p6_3 = call <1 x i32> @llvm.masked.gather.v1i32(<1 x i32*> %p6_2, i32 1, <1 x i1> <i1 1>, <1 x i32> zeroinitializer)
+    %p6 = trunc <1 x i32> %p6_3 to <1 x i1>
+
+    ; Store %p6: odd
+    %p6_i = getelementptr inbounds i8, i8* %a1, i64 %index
+    %p6_p = bitcast i8* %p6_i to <1 x i8>*
+    %p6_e = zext <1 x i1> %p6 to <1 x i8>
+    store <1 x i8> %p6_e, <1 x i8>* %p6_p, align 1, !noalias !1
+
+    %index_next = add i64 %index, 1
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+declare <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*>, i32, <8 x i1>, <8 x i32>)
+declare <1 x i32> @llvm.masked.gather.v1i32(<1 x i32*>, i32, <1 x i1>, <1 x i32>)
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+jit_run(): processing 63 packets and 6 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(10): 0
+jit_var_free(10)
+jit_var_dec_ref_ext(5): 1
+jit_var_dec_ref_int(13): 0
+jit_var_free(13)
+jit_var_dec_ref_int(8): 0
+jit_var_free(8)
+jit_var_dec_ref_int(6): 0
+jit_var_dec_ref_int(7): 0
+jit_var_free(7)
+jit_var_dec_ref_int(12): 0
+jit_var_free(12)
+jit_eval(): done.
+Odd   : [1, 1, 1, 1, 1, .. 500 skipped .., 1, 1, 1, 1, 1]
+jit_trace_append(16): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(6): 1
+jit_var_inc_ref_int(16): 1
+jit_trace_append(17 <- 6, 16): $r0 = mul <$w x $t0> $r1, $r2
+jit_var_inc_ref_ext(17): 1
+jit_trace_append(18): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(18): 1
+jit_var_inc_ref_ext(5): 2
+jit_var_copy_ptr(19 <- 5): <@>
+jit_var_inc_ref_ext(19): 1
+jit_var_inc_ref_int(19): 1
+jit_var_inc_ref_int(15): 1
+jit_var_inc_ref_int(17): 1
+jit_trace_append(20 <- 19, 15, 17): $r0_0 = bitcast $t1 $r1 to $t2*$n$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$ncall void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x i1> $O)
+jit_var_inc_ref_ext(20): 1
+jit_var_mark_scatter(20, 5)
+jit_var_dec_ref_ext(19): 0
+jit_var_dec_ref_ext(18): 0
+jit_var_free(18)
+jit_var_dec_ref_ext(17): 0
+jit_var_dec_ref_ext(16): 0
+jit_trace_append(16): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(6): 2
+jit_var_inc_ref_int(16): 2
+jit_var_dec_ref_int(6): 1
+jit_var_dec_ref_int(16): 1
+jit_trace_append(17 <- 6, 16): $r0 = mul <$w x $t0> $r1, $r2 (reused)
+jit_var_inc_ref_ext(17): 1
+jit_trace_append(21): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(21): 1
+jit_var_inc_ref_int(17): 2
+jit_var_inc_ref_int(21): 1
+jit_trace_append(22 <- 17, 21): $r0 = add <$w x $t0> $r1, $r2
+jit_var_inc_ref_ext(22): 1
+jit_trace_append(23): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(23): 1
+jit_var_inc_ref_ext(19): 1
+jit_var_inc_ref_int(19): 2
+jit_var_inc_ref_int(11): 1
+jit_var_inc_ref_int(22): 1
+jit_trace_append(24 <- 19, 11, 22): $r0_0 = bitcast $t1 $r1 to $t2*$n$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$ncall void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x i1> $O)
+jit_var_inc_ref_ext(24): 1
+jit_var_mark_scatter(24, 5)
+jit_var_dec_ref_ext(19): 0
+jit_var_dec_ref_ext(23): 0
+jit_var_free(23)
+jit_var_dec_ref_ext(22): 0
+jit_var_dec_ref_ext(21): 0
+jit_var_dec_ref_ext(17): 0
+jit_var_dec_ref_ext(16): 0
+jit_eval(): begin.
+jit_assemble(size=510): register map:
+   - %r0 -> 6 "l2"
+   - %r1 -> 16 [scalar]
+   - %r2 -> 17
+   - %p3 -> 15 "odd" [in]
+   - %rd4 -> 19 [scalar] [in]
+   - %u5 -> 20 [scat]
+   - %r6 -> 21 [scalar]
+   - %r7 -> 22
+   - %p8 -> 11 "even" [in]
+   - %u9 -> 24 [scat]
+jit_run(): launching kernel (n=510, in=3, out=0, ops=10) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+
+    ; Prepare argument 1
+    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
+    %rd4 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+
+    ; Prepare argument 2
+    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
+    %a2_p = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    %a2 = bitcast i8* %a2_p to i8*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0: l2
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <8 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <8 x i32> %r0_1, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r0 = add <8 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
 
     ; Evaluate %r1
     %r1_0 = insertelement <8 x i32> undef, i32 2, i32 0
@@ -637,7 +515,7 @@ loop:
     %r2 = mul <8 x i32> %r0, %r1
 
     ; Load %p3: odd
-    %p3_i = getelementptr inbounds i8, i8* %a1, i64 %index
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
     %p3_p = bitcast i8* %p3_i to <8 x i8>*
     %p3_z = load <8 x i8>, <8 x i8>* %p3_p, align 8, !alias.scope !1
     %p3 = trunc <8 x i8> %p3_z to <8 x i1>
@@ -655,7 +533,7 @@ loop:
     %r7 = add <8 x i32> %r2, %r6
 
     ; Load %p8: even
-    %p8_i = getelementptr inbounds i8, i8* %a3, i64 %index
+    %p8_i = getelementptr inbounds i8, i8* %a2, i64 %index
     %p8_p = bitcast i8* %p8_i to <8 x i8>*
     %p8_z = load <8 x i8>, <8 x i8>* %p8_p, align 8, !alias.scope !1
     %p8 = trunc <8 x i8> %p8_z to <8 x i1>
@@ -675,21 +553,16 @@ entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0_p to i32*
+    %a0 = bitcast i8* %a0_p to i8*
 
     ; Prepare argument 1
     %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
-    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
-    %a1 = bitcast i8* %a1_p to i8*
+    %rd4 = load i8*, i8** %a1_i, align 8, !alias.scope !1
 
     ; Prepare argument 2
     %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
-    %rd4 = load i8*, i8** %a2_i, align 8, !alias.scope !1
-
-    ; Prepare argument 3
-    %a3_i = getelementptr inbounds i8*, i8** %ptrs, i32 3
-    %a3_p = load i8*, i8** %a3_i, align 8, !alias.scope !1
-    %a3 = bitcast i8* %a3_p to i8*
+    %a2_p = load i8*, i8** %a2_i, align 8, !alias.scope !1
+    %a2 = bitcast i8* %a2_p to i8*
     br label %loop
 
 done:
@@ -698,10 +571,11 @@ done:
 loop:
     %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
 
-    ; Load %r0: l2
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
-    %r0_p = bitcast i32* %r0_i to <1 x i32>*
-    %r0 = load <1 x i32>, <1 x i32>* %r0_p, align 4, !alias.scope !1
+    ; Evaluate %r0: l2
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <1 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <1 x i32> %r0_1, <1 x i32> undef, <1 x i32> zeroinitializer
+    %r0 = add <1 x i32> %r0_2, <i32 0>
 
     ; Evaluate %r1
     %r1_0 = insertelement <1 x i32> undef, i32 2, i32 0
@@ -711,7 +585,7 @@ loop:
     %r2 = mul <1 x i32> %r0, %r1
 
     ; Load %p3: odd
-    %p3_i = getelementptr inbounds i8, i8* %a1, i64 %index
+    %p3_i = getelementptr inbounds i8, i8* %a0, i64 %index
     %p3_p = bitcast i8* %p3_i to <1 x i8>*
     %p3_z = load <1 x i8>, <1 x i8>* %p3_p, align 1, !alias.scope !1
     %p3 = trunc <1 x i8> %p3_z to <1 x i1>
@@ -729,7 +603,7 @@ loop:
     %r7 = add <1 x i32> %r2, %r6
 
     ; Load %p8: even
-    %p8_i = getelementptr inbounds i8, i8* %a3, i64 %index
+    %p8_i = getelementptr inbounds i8, i8* %a2, i64 %index
     %p8_p = bitcast i8* %p8_i to <1 x i8>*
     %p8_z = load <1 x i8>, <1 x i8>* %p8_p, align 1, !alias.scope !1
     %p8 = trunc <1 x i8> %p8_z to <1 x i1>
@@ -754,44 +628,42 @@ declare void @llvm.masked.scatter.v1i1(<1 x i1>, <1 x i1*>, i32, <1 x i1>)
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_run(): processing 63 packets and 6 scalar entries
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(6): 0
-jit_var_dec_ref_int(18): 0
-jit_var_free(18)
-jit_var_dec_ref_int(21): 1
-jit_var_dec_ref_int(17): 0
+jit_var_dec_ref_ext(20): 0
+jit_var_free(20)
 jit_var_dec_ref_int(19): 1
-jit_var_dec_ref_ext(5): 2
-jit_var_dec_ref_ext(22): 0
-jit_var_free(22)
+jit_var_dec_ref_int(15): 0
+jit_var_dec_ref_int(17): 1
+jit_var_dec_ref_ext(24): 0
+jit_var_free(24)
 jit_var_dec_ref_int(19): 0
 jit_var_free(19)
-jit_var_dec_ref_int(23): 0
-jit_var_free(23)
+jit_var_dec_ref_ext(5): 1
+jit_var_dec_ref_int(11): 0
+jit_var_dec_ref_int(22): 0
+jit_var_free(22)
+jit_var_dec_ref_int(17): 0
+jit_var_free(17)
+jit_var_dec_ref_int(6): 0
+jit_var_dec_ref_int(16): 0
+jit_var_free(16)
 jit_var_dec_ref_int(21): 0
 jit_var_free(21)
-jit_var_dec_ref_int(11): 0
-jit_var_dec_ref_int(24): 0
-jit_var_free(24)
-jit_var_dec_ref_ext(5): 1
-jit_var_dec_ref_ext(26): 0
-jit_var_free(26)
 jit_eval(): done.
 Mask: [1, 0, 1, 0, 1, .. 1012 skipped .., 0, 1, 0, 0, 1]
-jit_var_dec_ref_ext(17): 0
-jit_var_free(17)
+jit_var_dec_ref_ext(15): 0
+jit_var_free(15)
 jit_free(<@>, type=host, size=512)
 jit_var_dec_ref_ext(11): 0
 jit_var_free(11)
 jit_free(<@>, type=host, size=512)
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
-jit_free(<@>, type=host, size=2048)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
 jit_free(<@>, type=host, size=1024)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_free(<@>, type=host, size=4096)
+jit_shutdown(): destroying streams ..
 jit_malloc_trim(): freed
- - host memory: 10.1 KiB in 8 allocations
+ - host memory: 2 KiB in 3 allocations
 jit_shutdown(): done

@@ -78,19 +78,16 @@ struct ReleaseChain {
     ReleaseChain *next = nullptr;
 };
 
-/// Represents a single CUDA stream and events to synchronize with others
+/// Represents a single stream of a parallel comunication
 struct Stream {
+    /// Is this a CUDA stream?
+    bool cuda;
+
     /// Enoki device index associated with this stream (*not* the CUDA device ID)
     uint32_t device = 0;
 
     /// Index of this stream
     uint32_t stream = 0;
-
-    /// Associated CUDA stream handle
-    CUstream handle = nullptr;
-
-    /// A CUDA event for synchronization purposes
-    CUevent event = nullptr;
 
     /**
      * Memory regions that were freed via jit_free(), but which might still be
@@ -105,6 +102,14 @@ struct Stream {
      * with side effects.
      */
     std::vector<uint32_t> todo;
+
+    /// ---------------------------- CUDA-specific ----------------------------
+
+    /// Associated CUDA stream handle
+    CUstream handle = nullptr;
+
+    /// A CUDA event for synchronization purposes
+    CUevent event = nullptr;
 };
 
 enum ArgType {
@@ -119,16 +124,13 @@ enum ArgType {
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     /// External reference count (by application using Enoki)
-    uint16_t ref_count_ext;
+    uint32_t ref_count_ext;
 
     /// Internal reference count (dependencies within computation graph)
-    uint16_t ref_count_int;
+    uint32_t ref_count_int;
 
     /// Dependencies of this instruction
     uint32_t dep[4];
-
-    /// Extra dependency (which is not directly used in arithmetic, e.g. scatter/gather)
-    uint32_t extra_dep;
 
     /// Number of entries
     uint32_t size;
@@ -154,8 +156,8 @@ struct Variable {
     /// Argument type (register: 0, input: 1, output: 2)
     ArgType arg_type : 2;
 
-    /// Does the instruction have side effects (e.g. 'scatter')
-    bool side_effect : 1;
+    /// Is this variable registered with the CUDA backend?
+    bool cuda : 1;
 
     /// Don't deallocate 'data' when this variable is destructed?
     bool retain_data : 1;
@@ -166,14 +168,17 @@ struct Variable {
     /// Was this variable labeled?
     bool has_label : 1;
 
-    /// Are there pending/unevaluated scatter operations to this variable?
+    /// Is this a scatter operation?
+    bool scatter : 1;
+
+    /// Are there pending scatter operations to this variable?
     bool pending_scatter : 1;
 
     /// Optimization: is this a direct pointer (rather than an array which stores a pointer?)
     bool direct_pointer : 1;
 
-    /// Is this variable registered with the CUDA backend?
-    bool cuda : 1;
+    /// Is this variable marked as an output? (temporarily used during jit_eval())
+    bool output_flag : 1;
 
     Variable() {
         memset(this, 0, sizeof(Variable));
@@ -185,20 +190,18 @@ struct VariableKey {
     char *stmt;
     uint32_t size;
     uint32_t dep[4];
-    uint32_t extra_dep;
     uint16_t type;
     uint16_t flags;
 
     VariableKey(const Variable &v)
         : stmt(v.stmt), size(v.size), dep{ v.dep[0], v.dep[1], v.dep[2], v.dep[3] },
-          extra_dep(v.extra_dep), type((uint16_t) v.type),
+          type((uint16_t) v.type),
           flags((v.free_stmt ? 1 : 0) + (v.cuda ? 2 : 0)) { }
 
     bool operator==(const VariableKey &v) const {
         return strcmp(stmt, v.stmt) == 0 && size == v.size &&
                dep[0] == v.dep[0] && dep[1] == v.dep[1] &&
                dep[2] == v.dep[2] && dep[3] == v.dep[3] &&
-               extra_dep == v.extra_dep &&
                type == v.type && flags == v.flags;
     }
 };
@@ -329,7 +332,7 @@ struct State {
     /// Maps Enoki (device index, stream index) pairs to a Stream data structure
     StreamMap streams;
 
-    /// Two-way mapping that associates every allocation with a unique 32 bit ID
+    /// Two-way mapping that can be used to associate pointers with unique 32 bit IDs
     RegistryFwdMap registry_fwd;
     RegistryRevMap registry_rev;
 
@@ -363,13 +366,6 @@ struct State {
 
     /// Cache of previously compiled kernels
     KernelCache kernel_cache;
-
-    /**
-     * Keeps track of variables that have to be computed when jit_eval() is
-     * called, in particular: externally referenced variables and statements
-     * with side effects.
-     */
-    std::vector<uint32_t> todo_host;
 };
 
 /// RAII helper for locking a mutex (like std::lock_guard)

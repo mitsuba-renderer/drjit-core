@@ -280,9 +280,9 @@ bool jit_cuda_init() {
         hash_combine(kernels_hash, cc_minor + cc_major * 10);
 
         Kernel kernel;
-        if (!jit_kernel_load(uncompressed_ptx, kernels_size_uncompressed, false, kernels_hash, kernel)) {
+        if (!jit_kernel_load(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel)) {
             jit_cuda_compile(uncompressed_ptx, kernels_size_uncompressed, kernel);
-            jit_kernel_write(uncompressed_ptx, kernels_size_uncompressed, false, kernels_hash, kernel);
+            jit_kernel_write(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel);
         }
 
         free(uncompressed);

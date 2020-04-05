@@ -431,21 +431,25 @@ L31:
 }
 
 declare <16 x float> @llvm.x86.avx512.mask.gather.dps.512(<16 x float>, i8*, <16 x i32>, <16 x i1>, i32)
-declare void @llvm.x86.avx512.mask.scatter.dps.512(i8*, <16 x i1>, <16 x i32>, <16 x float>, i32)
-declare <16 x i32> @llvm.x86.avx512.mask.gather.dpi.512(<16 x i32>, i8*, <16 x i32>, <16 x i1>, i32)
-declare void @llvm.x86.avx512.mask.scatter.dpi.512(i8*, <16 x i1>, <16 x i32>, <16 x i32>, i32)
+declare <16 x i32>   @llvm.x86.avx512.mask.gather.dpi.512(<16 x i32>, i8*, <16 x i32>, <16 x i1>, i32)
 declare <8 x double> @llvm.x86.avx512.mask.gather.qpd.512(<8 x double>, i8*, <8 x i64>, <8 x i1>, i32)
-declare void @llvm.x86.avx512.mask.scatter.qpd.512(i8*, <8 x i1>, <8 x i64>, <8 x double>, i32)
-declare <8 x i64> @llvm.x86.avx512.mask.gather.qpq.512(<8 x i64>, i8*, <8 x i64>, <8 x i1>, i32)
-declare void @llvm.x86.avx512.mask.scatter.qpq.512(i8*, <8 x i1>, <8 x i64>, <8 x i64>, i32)
-declare <16 x i32> @llvm.x86.avx512.conflict.d.512(<16 x i32>)
-declare <16 x i32> @llvm.ctlz.v16i32(<16 x i32>, i1)
+declare <8 x i64>    @llvm.x86.avx512.mask.gather.qpq.512(<8 x i64>, i8*, <8 x i64>, <8 x i1>, i32)
+
+declare void         @llvm.x86.avx512.mask.scatter.dps.512(i8*, <16 x i1>, <16 x i32>, <16 x float>, i32)
+declare void         @llvm.x86.avx512.mask.scatter.dpi.512(i8*, <16 x i1>, <16 x i32>, <16 x i32>, i32)
+declare void         @llvm.x86.avx512.mask.scatter.qpd.512(i8*, <8 x i1>, <8 x i64>, <8 x double>, i32)
+declare void         @llvm.x86.avx512.mask.scatter.qpq.512(i8*, <8 x i1>, <8 x i64>, <8 x i64>, i32)
+
 declare <16 x float> @llvm.x86.avx512.permvar.sf.512(<16 x float>, <16 x i32>)
-declare <16 x i32> @llvm.x86.avx512.permvar.si.512(<16 x i32>, <16 x i32>)
-declare <8 x i64> @llvm.x86.avx512.conflict.q.512(<8 x i64>)
-declare <8 x i64> @llvm.ctlz.v8i64(<8 x i64>, i1)
+declare <16 x i32>   @llvm.x86.avx512.permvar.si.512(<16 x i32>, <16 x i32>)
 declare <8 x double> @llvm.x86.avx512.permvar.df.512(<8 x double>, <8 x i64>)
-declare <8 x i64> @llvm.x86.avx512.permvar.di.512(<8 x i64>, <8 x i64>)
+declare <8 x i64>    @llvm.x86.avx512.permvar.di.512(<8 x i64>, <8 x i64>)
+
+declare <16 x i32>   @llvm.x86.avx512.conflict.d.512(<16 x i32>)
+declare <8 x i64>    @llvm.x86.avx512.conflict.q.512(<8 x i64>)
+
+declare <16 x i32>   @llvm.ctlz.v16i32(<16 x i32>, i1)
+declare <8 x i64>    @llvm.ctlz.v8i64(<8 x i64>, i1)
 
 attributes #1 = { alwaysinline norecurse nounwind "frame-pointer"="none" "target-features"="+sse,+sse2,+sse3,+sse4.1,+sse4.2,+ssse3,+avx512f,+avx512vl,+avx512dq,+avx512cd" }
 attributes #2 = { alwaysinline norecurse nounwind "frame-pointer"="none" "target-features"="+sse,+sse2,+sse3,+sse4.1,+sse4.2,+ssse3" }

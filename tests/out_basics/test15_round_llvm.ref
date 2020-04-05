@@ -1,7 +1,8 @@
+jit_device_set(device=-1, stream=0): creating stream
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map(1): <@>, size=6, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy(1, size=6)
+jit_var_copy_from_host(1, size=6)
 jit_var_inc_ref_int(1): 1
 jit_trace_append(2 <- 1): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(2): 1
@@ -193,7 +194,7 @@ jit_free(<@>, type=host, size=64)
 jit_malloc(type=host, size=64): <@> (reused global)
 jit_var_map(8): <@>, size=6, free=1
 jit_var_inc_ref_ext(8): 1
-jit_var_copy(8, size=6)
+jit_var_copy_from_host(8, size=6)
 jit_var_inc_ref_int(8): 1
 jit_trace_append(9 <- 8): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(9): 1
@@ -382,6 +383,7 @@ jit_free(<@>, type=host, size=64)
 jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
 jit_free(<@>, type=host, size=64)
+jit_shutdown(): destroying streams ..
 jit_malloc_trim(): freed
  - host memory: 448 B in 7 allocations
 jit_shutdown(): done

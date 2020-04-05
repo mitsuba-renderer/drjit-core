@@ -4,19 +4,19 @@ jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(1): <@>, size=4, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy(1, size=4)
+jit_var_copy_from_host(1, size=4)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(2): <@>, size=4, free=1
 jit_var_inc_ref_ext(2): 1
-jit_var_copy(2, size=4)
+jit_var_copy_from_host(2, size=4)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(3): <@>, size=4, free=1
 jit_var_inc_ref_ext(3): 1
-jit_var_copy(3, size=4)
+jit_var_copy_from_host(3, size=4)
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
@@ -122,11 +122,11 @@ jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_int(2): 1
 jit_var_dec_ref_int(3): 1
-jit_var_dec_ref_int(3): 0
 jit_var_dec_ref_int(4): 0
 jit_var_dec_ref_int(2): 0
 jit_var_dec_ref_int(5): 0
 jit_var_free(5)
+jit_var_dec_ref_int(3): 0
 jit_free_flush(): scheduling 3 deallocations
 jit_eval(): done.
 value=[12, 17, 6, 20]
@@ -151,19 +151,19 @@ jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(7): <@>, size=4, free=1
 jit_var_inc_ref_ext(7): 1
-jit_var_copy(7, size=4)
+jit_var_copy_from_host(7, size=4)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(8): <@>, size=4, free=1
 jit_var_inc_ref_ext(8): 1
-jit_var_copy(8, size=4)
+jit_var_copy_from_host(8, size=4)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(9): <@>, size=4, free=1
 jit_var_inc_ref_ext(9): 1
-jit_var_copy(9, size=4)
+jit_var_copy_from_host(9, size=4)
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(9): 1
@@ -269,11 +269,11 @@ jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_dec_ref_int(8): 1
 jit_var_dec_ref_int(9): 1
-jit_var_dec_ref_int(9): 0
 jit_var_dec_ref_int(10): 0
 jit_var_dec_ref_int(8): 0
 jit_var_dec_ref_int(11): 0
 jit_var_free(11)
+jit_var_dec_ref_int(9): 0
 jit_free_flush(): scheduling 3 deallocations
 jit_eval(): done.
 value=[12, 17, 6, 20]

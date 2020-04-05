@@ -1,3 +1,4 @@
+jit_device_set(device=-1, stream=0): creating stream
 jit_trace_append(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
@@ -60,15 +61,16 @@ declare <8 x float> @llvm.sqrt.v8f32(<8 x float>)
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_run(): processing 2 packets and 0 scalar entries
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(1): 0
-jit_var_free(1)
 jit_var_dec_ref_int(2): 0
 jit_var_free(2)
+jit_var_dec_ref_int(1): 0
+jit_var_free(1)
 jit_eval(): done.
 value=[0, 1, 1.41421, 1.73205, 2, 2.23607, 2.44949, 2.64575, 2.82843, 3]
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
 jit_free(<@>, type=host, size=64)
+jit_shutdown(): destroying streams ..
 jit_malloc_trim(): freed
  - host memory: 64 B in 1 allocation
 jit_shutdown(): done

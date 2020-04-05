@@ -1,3 +1,4 @@
+jit_device_set(device=-1, stream=0): creating stream
 jit_trace_append(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
@@ -9,10 +10,10 @@ jit_trace_append(4): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
-jit_var_inc_ref_int(4): 1
-jit_trace_append(5 <- 2, 3, 4): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_trace_append(5 <- 2, 3): $r0 = fmul <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(5): 1
 jit_var_dec_ref_ext(4): 0
+jit_var_free(4)
 jit_var_dec_ref_ext(3): 0
 jit_var_dec_ref_ext(2): 0
 jit_var_dec_ref_ext(1): 0
@@ -307,90 +308,70 @@ jit_assemble(size=10): register map:
    - %r0 -> 1
    - %f1 -> 2
    - %f2 -> 3 [scalar]
-   - %f3 -> 4 [scalar]
-   - %f4 -> 5 [out]
+   - %f3 -> 5
+   - %f4 -> 6 [scalar]
+   - %f5 -> 7
+   - %f6 -> 8 [scalar]
+   - %f7 -> 9
+   - %r8 -> 10
+   - %r9 -> 11 [scalar]
+   - %r10 -> 12
+   - %r11 -> 13 [scalar]
+   - %r12 -> 14
+   - %f13 -> 15
+   - %f14 -> 25 [scalar]
+   - %f15 -> 26
+   - %f16 -> 27
+   - %f17 -> 28 [scalar]
+   - %f18 -> 29
+   - %f19 -> 30
+   - %f20 -> 31 [scalar]
+   - %f21 -> 32
+   - %f22 -> 33
+   - %f23 -> 34
+   - %f24 -> 35 [scalar]
+   - %p25 -> 36
+   - %r26 -> 37
+   - %f27 -> 38
+   - %f28 -> 39
+   - %f29 -> 40
+   - %f30 -> 48 [scalar]
+   - %f31 -> 49 [scalar]
+   - %f32 -> 50
+   - %f33 -> 47 [scalar]
+   - %f34 -> 51
+   - %f35 -> 52
+   - %f36 -> 54 [scalar]
+   - %f37 -> 55 [scalar]
+   - %f38 -> 56
+   - %f39 -> 57
+   - %f40 -> 42 [scalar]
+   - %f41 -> 43 [scalar]
+   - %f42 -> 44
+   - %f43 -> 41 [scalar]
+   - %f44 -> 45
+   - %f45 -> 46
+   - %f46 -> 53
+   - %r47 -> 20 [scalar]
+   - %r48 -> 58
+   - %r49 -> 59 [scalar]
+   - %p50 -> 60
+   - %f51 -> 61
+   - %r52 -> 16 [scalar]
+   - %r53 -> 17
+   - %f54 -> 18
+   - %f55 -> 19
+   - %f56 -> 62 [scalar]
+   - %f57 -> 63
+   - %f58 -> 64 [out]
 jit_malloc(type=host, size=64): <@> (new allocation)
-   - %f5 -> 6 [scalar]
-   - %f6 -> 7
-   - %f7 -> 8 [scalar]
-   - %f8 -> 9
-   - %r9 -> 10
-   - %r10 -> 11 [scalar]
-   - %r11 -> 12
-   - %r12 -> 13 [scalar]
-   - %r13 -> 14
-   - %f14 -> 15
-   - %f15 -> 25 [scalar]
-   - %f16 -> 26
-   - %f17 -> 27
-   - %f18 -> 28 [scalar]
-   - %f19 -> 29
-   - %f20 -> 30
-   - %f21 -> 31 [scalar]
-   - %f22 -> 32
-   - %f23 -> 33
-   - %f24 -> 34
-   - %f25 -> 35 [scalar]
-   - %p26 -> 36
-   - %r27 -> 37
-   - %f28 -> 38
-   - %f29 -> 39
-   - %f30 -> 40
-   - %f31 -> 48 [scalar]
-   - %f32 -> 49 [scalar]
-   - %f33 -> 50
-   - %f34 -> 47 [scalar]
-   - %f35 -> 51
-   - %f36 -> 52
-   - %f37 -> 54 [scalar]
-   - %f38 -> 55 [scalar]
-   - %f39 -> 56
-   - %f40 -> 57
-   - %f41 -> 42 [scalar]
-   - %f42 -> 43 [scalar]
-   - %f43 -> 44
-   - %f44 -> 41 [scalar]
-   - %f45 -> 45
-   - %f46 -> 46
-   - %f47 -> 53
-   - %r48 -> 20 [scalar]
-   - %r49 -> 58
-   - %r50 -> 59 [scalar]
-   - %p51 -> 60
-   - %f52 -> 61
-   - %r53 -> 16 [scalar]
-   - %r54 -> 17
-   - %f55 -> 18
-   - %f56 -> 19
-   - %f57 -> 62 [scalar]
-   - %f58 -> 63
-   - %f59 -> 64 [out]
-jit_malloc(type=host, size=64): <@> (new allocation)
-   - %f60 -> 65
-   - %r61 -> 21
-   - %r62 -> 22
-   - %r63 -> 23
-   - %f64 -> 24
-   - %f65 -> 66
-   - %f66 -> 67 [out]
-jit_malloc(type=host, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=0, out=3, ops=67) ..
+jit_run(): launching kernel (n=10, in=0, out=1, ops=59) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
     %a0 = bitcast i8* %a0_p to float*
-
-    ; Prepare argument 1
-    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
-    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
-    %a1 = bitcast i8* %a1_p to float*
-
-    ; Prepare argument 2
-    %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
-    %a2_p = load i8*, i8** %a2_i, align 8, !alias.scope !1
-    %a2 = bitcast i8* %a2_p to float*
     br label %loop
 
 done:
@@ -413,249 +394,209 @@ loop:
     %f2 = shufflevector <8 x float> %f2_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f3
-    %f3_0 = insertelement <8 x float> undef, float 0x0, i32 0
-    %f3 = shufflevector <8 x float> %f3_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f3 = fmul <8 x float> %f1, %f2
 
     ; Evaluate %f4
-    %f4 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f1, <8 x float> %f2, <8 x float> %f3)
-
-    ; Store %f4
-    %f4_i = getelementptr inbounds float, float* %a0, i64 %index
-    %f4_p = bitcast float* %f4_i to <8 x float>*
-    store <8 x float> %f4, <8 x float>* %f4_p, align 32, !noalias !1
+    %f4_0 = insertelement <8 x float> undef, float 0x7fffffffe0000000, i32 0
+    %f4 = shufflevector <8 x float> %f4_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f5
-    %f5_0 = insertelement <8 x float> undef, float 0x7fffffffe0000000, i32 0
-    %f5 = shufflevector <8 x float> %f5_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f5_0 = bitcast <8 x float> %f4 to <8 x i32>
+    %f5_1 = bitcast <8 x float> %f3 to <8 x i32>
+    %f5_2 = and <8 x i32> %f5_0, %f5_1%f5 = bitcast <8 x i32> %f5_2 to <8 x float>
 
     ; Evaluate %f6
-    %f6_0 = bitcast <8 x float> %f5 to <8 x i32>
-    %f6_1 = bitcast <8 x float> %f4 to <8 x i32>
-    %f6_2 = and <8 x i32> %f6_0, %f6_1%f6 = bitcast <8 x i32> %f6_2 to <8 x float>
+    %f6_0 = insertelement <8 x float> undef, float 0x3ff45f3060000000, i32 0
+    %f6 = shufflevector <8 x float> %f6_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f7
-    %f7_0 = insertelement <8 x float> undef, float 0x3ff45f3060000000, i32 0
-    %f7 = shufflevector <8 x float> %f7_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f7 = fmul <8 x float> %f5, %f6
 
-    ; Evaluate %f8
-    %f8 = fmul <8 x float> %f6, %f7
+    ; Evaluate %r8
+    %r8 = fptosi <8 x float> %f7 to <8 x i32>
 
     ; Evaluate %r9
-    %r9 = fptosi <8 x float> %f8 to <8 x i32>
+    %r9_0 = insertelement <8 x i32> undef, i32 1, i32 0
+    %r9 = shufflevector <8 x i32> %r9_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %r10
-    %r10_0 = insertelement <8 x i32> undef, i32 1, i32 0
-    %r10 = shufflevector <8 x i32> %r10_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r10 = add <8 x i32> %r8, %r9
 
     ; Evaluate %r11
-    %r11 = add <8 x i32> %r9, %r10
+    %r11_0 = insertelement <8 x i32> undef, i32 4294967294, i32 0
+    %r11 = shufflevector <8 x i32> %r11_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %r12
-    %r12_0 = insertelement <8 x i32> undef, i32 4294967294, i32 0
-    %r12 = shufflevector <8 x i32> %r12_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r12 = and <8 x i32> %r10, %r11
 
-    ; Evaluate %r13
-    %r13 = and <8 x i32> %r11, %r12
+    ; Evaluate %f13
+    %f13 = sitofp <8 x i32> %r12 to <8 x float>
 
     ; Evaluate %f14
-    %f14 = sitofp <8 x i32> %r13 to <8 x float>
+    %f14_0 = insertelement <8 x float> undef, float 0x3fe9200000000000, i32 0
+    %f14 = shufflevector <8 x float> %f14_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f15
-    %f15_0 = insertelement <8 x float> undef, float 0x3fe9200000000000, i32 0
-    %f15 = shufflevector <8 x float> %f15_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f15 = fmul <8 x float> %f13, %f14
 
     ; Evaluate %f16
-    %f16 = fmul <8 x float> %f14, %f15
+    %f16 = fsub <8 x float> %f5, %f15
 
     ; Evaluate %f17
-    %f17 = fsub <8 x float> %f6, %f16
+    %f17_0 = insertelement <8 x float> undef, float 0x3f2fb40000000000, i32 0
+    %f17 = shufflevector <8 x float> %f17_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f18
-    %f18_0 = insertelement <8 x float> undef, float 0x3f2fb40000000000, i32 0
-    %f18 = shufflevector <8 x float> %f18_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f18 = fmul <8 x float> %f13, %f17
 
     ; Evaluate %f19
-    %f19 = fmul <8 x float> %f14, %f18
+    %f19 = fsub <8 x float> %f16, %f18
 
     ; Evaluate %f20
-    %f20 = fsub <8 x float> %f17, %f19
+    %f20_0 = insertelement <8 x float> undef, float 0x3e64442d20000000, i32 0
+    %f20 = shufflevector <8 x float> %f20_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f21
-    %f21_0 = insertelement <8 x float> undef, float 0x3e64442d20000000, i32 0
-    %f21 = shufflevector <8 x float> %f21_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f21 = fmul <8 x float> %f13, %f20
 
     ; Evaluate %f22
-    %f22 = fmul <8 x float> %f14, %f21
+    %f22 = fsub <8 x float> %f19, %f21
 
     ; Evaluate %f23
-    %f23 = fsub <8 x float> %f20, %f22
+    %f23 = fmul <8 x float> %f22, %f22
 
     ; Evaluate %f24
-    %f24 = fmul <8 x float> %f23, %f23
+    %f24_0 = insertelement <8 x float> undef, float 0x7ff0000000000000, i32 0
+    %f24 = shufflevector <8 x float> %f24_0, <8 x float> undef, <8 x i32> zeroinitializer
 
-    ; Evaluate %f25
-    %f25_0 = insertelement <8 x float> undef, float 0x7ff0000000000000, i32 0
-    %f25 = shufflevector <8 x float> %f25_0, <8 x float> undef, <8 x i32> zeroinitializer
+    ; Evaluate %p25
+    %p25 = fcmp oeq <8 x float> %f5, %f24
 
-    ; Evaluate %p26
-    %p26 = fcmp oeq <8 x float> %f6, %f25
+    ; Evaluate %r26
+    %r26 = sext <8 x i1> %p25 to <8 x i32>
 
-    ; Evaluate %r27
-    %r27 = sext <8 x i1> %p26 to <8 x i32>
+    ; Evaluate %f27
+    %f27 = bitcast <8 x i32> %r26 to <8 x float>
 
     ; Evaluate %f28
-    %f28 = bitcast <8 x i32> %r27 to <8 x float>
+    %f28_0 = bitcast <8 x float> %f23 to <8 x i32>
+    %f28_1 = bitcast <8 x float> %f27 to <8 x i32>
+    %f28_2 = or <8 x i32> %f28_0, %f28_1%f28 = bitcast <8 x i32> %f28_2 to <8 x float>
 
     ; Evaluate %f29
-    %f29_0 = bitcast <8 x float> %f24 to <8 x i32>
-    %f29_1 = bitcast <8 x float> %f28 to <8 x i32>
-    %f29_2 = or <8 x i32> %f29_0, %f29_1%f29 = bitcast <8 x i32> %f29_2 to <8 x float>
+    %f29 = fmul <8 x float> %f28, %f28
 
     ; Evaluate %f30
-    %f30 = fmul <8 x float> %f29, %f29
+    %f30_0 = insertelement <8 x float> undef, float 0xbf56c0c340000000, i32 0
+    %f30 = shufflevector <8 x float> %f30_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f31
-    %f31_0 = insertelement <8 x float> undef, float 0xbf56c0c340000000, i32 0
+    %f31_0 = insertelement <8 x float> undef, float 0x3fa55554a0000000, i32 0
     %f31 = shufflevector <8 x float> %f31_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f32
-    %f32_0 = insertelement <8 x float> undef, float 0x3fa55554a0000000, i32 0
-    %f32 = shufflevector <8 x float> %f32_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f32 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f28, <8 x float> %f30, <8 x float> %f31)
 
     ; Evaluate %f33
-    %f33 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f31, <8 x float> %f32)
+    %f33_0 = insertelement <8 x float> undef, float 0x3ef99eb9c0000000, i32 0
+    %f33 = shufflevector <8 x float> %f33_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f34
-    %f34_0 = insertelement <8 x float> undef, float 0x3ef99eb9c0000000, i32 0
-    %f34 = shufflevector <8 x float> %f34_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f34 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f33, <8 x float> %f32)
 
     ; Evaluate %f35
-    %f35 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f34, <8 x float> %f33)
+    %f35 = fmul <8 x float> %f34, %f28
 
     ; Evaluate %f36
-    %f36 = fmul <8 x float> %f35, %f29
+    %f36_0 = insertelement <8 x float> undef, float 0xbfe0000000000000, i32 0
+    %f36 = shufflevector <8 x float> %f36_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f37
-    %f37_0 = insertelement <8 x float> undef, float 0xbfe0000000000000, i32 0
+    %f37_0 = insertelement <8 x float> undef, float 0x3ff0000000000000, i32 0
     %f37 = shufflevector <8 x float> %f37_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f38
-    %f38_0 = insertelement <8 x float> undef, float 0x3ff0000000000000, i32 0
-    %f38 = shufflevector <8 x float> %f38_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f38 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f28, <8 x float> %f36, <8 x float> %f37)
 
     ; Evaluate %f39
-    %f39 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f37, <8 x float> %f38)
+    %f39 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f35, <8 x float> %f28, <8 x float> %f38)
 
     ; Evaluate %f40
-    %f40 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f36, <8 x float> %f29, <8 x float> %f39)
+    %f40_0 = insertelement <8 x float> undef, float 0x3f811073c0000000, i32 0
+    %f40 = shufflevector <8 x float> %f40_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f41
-    %f41_0 = insertelement <8 x float> undef, float 0x3f811073c0000000, i32 0
+    %f41_0 = insertelement <8 x float> undef, float 0xbfc5555460000000, i32 0
     %f41 = shufflevector <8 x float> %f41_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f42
-    %f42_0 = insertelement <8 x float> undef, float 0xbfc5555460000000, i32 0
-    %f42 = shufflevector <8 x float> %f42_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f42 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f28, <8 x float> %f40, <8 x float> %f41)
 
     ; Evaluate %f43
-    %f43 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f41, <8 x float> %f42)
+    %f43_0 = insertelement <8 x float> undef, float 0xbf29943f20000000, i32 0
+    %f43 = shufflevector <8 x float> %f43_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f44
-    %f44_0 = insertelement <8 x float> undef, float 0xbf29943f20000000, i32 0
-    %f44 = shufflevector <8 x float> %f44_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f44 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f43, <8 x float> %f42)
 
     ; Evaluate %f45
-    %f45 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f44, <8 x float> %f43)
+    %f45 = fmul <8 x float> %f44, %f28
 
     ; Evaluate %f46
-    %f46 = fmul <8 x float> %f45, %f29
+    %f46 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f45, <8 x float> %f22, <8 x float> %f22)
 
-    ; Evaluate %f47
-    %f47 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f46, <8 x float> %f23, <8 x float> %f23)
+    ; Evaluate %r47
+    %r47_0 = insertelement <8 x i32> undef, i32 2, i32 0
+    %r47 = shufflevector <8 x i32> %r47_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %r48
-    %r48_0 = insertelement <8 x i32> undef, i32 2, i32 0
-    %r48 = shufflevector <8 x i32> %r48_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r48 = and <8 x i32> %r12, %r47
 
     ; Evaluate %r49
-    %r49 = and <8 x i32> %r13, %r48
+    %r49_0 = insertelement <8 x i32> undef, i32 0, i32 0
+    %r49 = shufflevector <8 x i32> %r49_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
-    ; Evaluate %r50
-    %r50_0 = insertelement <8 x i32> undef, i32 0, i32 0
-    %r50 = shufflevector <8 x i32> %r50_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    ; Evaluate %p50
+    %p50 = icmp eq <8 x i32> %r48, %r49
 
-    ; Evaluate %p51
-    %p51 = icmp eq <8 x i32> %r49, %r50
+    ; Evaluate %f51
+    %f51 = select <8 x i1> %p50, <8 x float> %f46, <8 x float> %f39
 
-    ; Evaluate %f52
-    %f52 = select <8 x i1> %p51, <8 x float> %f47, <8 x float> %f40
+    ; Evaluate %r52
+    %r52_0 = insertelement <8 x i32> undef, i32 29, i32 0
+    %r52 = shufflevector <8 x i32> %r52_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %r53
-    %r53_0 = insertelement <8 x i32> undef, i32 29, i32 0
-    %r53 = shufflevector <8 x i32> %r53_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r53 = shl <8 x i32> %r12, %r52
 
-    ; Evaluate %r54
-    %r54 = shl <8 x i32> %r13, %r53
+    ; Evaluate %f54
+    %f54 = bitcast <8 x i32> %r53 to <8 x float>
 
     ; Evaluate %f55
-    %f55 = bitcast <8 x i32> %r54 to <8 x float>
+    %f55_0 = bitcast <8 x float> %f54 to <8 x i32>
+    %f55_1 = bitcast <8 x float> %f3 to <8 x i32>
+    %f55_2 = xor <8 x i32> %f55_0, %f55_1
+    %f55 = bitcast <8 x i32> %f55_2 to <8 x float>
 
     ; Evaluate %f56
-    %f56_0 = bitcast <8 x float> %f55 to <8 x i32>
-    %f56_1 = bitcast <8 x float> %f4 to <8 x i32>
-    %f56_2 = xor <8 x i32> %f56_0, %f56_1
-    %f56 = bitcast <8 x i32> %f56_2 to <8 x float>
+    %f56_0 = insertelement <8 x float> undef, float 0x8000000000000000, i32 0
+    %f56 = shufflevector <8 x float> %f56_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f57
-    %f57_0 = insertelement <8 x float> undef, float 0x8000000000000000, i32 0
-    %f57 = shufflevector <8 x float> %f57_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f57_0 = bitcast <8 x float> %f56 to <8 x i32>
+    %f57_1 = bitcast <8 x float> %f55 to <8 x i32>
+    %f57_2 = and <8 x i32> %f57_0, %f57_1%f57 = bitcast <8 x i32> %f57_2 to <8 x float>
 
     ; Evaluate %f58
-    %f58_0 = bitcast <8 x float> %f57 to <8 x i32>
-    %f58_1 = bitcast <8 x float> %f56 to <8 x i32>
-    %f58_2 = and <8 x i32> %f58_0, %f58_1%f58 = bitcast <8 x i32> %f58_2 to <8 x float>
+    %f58_0 = bitcast <8 x float> %f51 to <8 x i32>
+    %f58_1 = bitcast <8 x float> %f57 to <8 x i32>
+    %f58_2 = xor <8 x i32> %f58_0, %f58_1
+    %f58 = bitcast <8 x i32> %f58_2 to <8 x float>
 
-    ; Evaluate %f59
-    %f59_0 = bitcast <8 x float> %f52 to <8 x i32>
-    %f59_1 = bitcast <8 x float> %f58 to <8 x i32>
-    %f59_2 = xor <8 x i32> %f59_0, %f59_1
-    %f59 = bitcast <8 x i32> %f59_2 to <8 x float>
-
-    ; Store %f59
-    %f59_i = getelementptr inbounds float, float* %a1, i64 %index
-    %f59_p = bitcast float* %f59_i to <8 x float>*
-    store <8 x float> %f59, <8 x float>* %f59_p, align 32, !noalias !1
-
-    ; Evaluate %f60
-    %f60 = select <8 x i1> %p51, <8 x float> %f40, <8 x float> %f47
-
-    ; Evaluate %r61
-    %r61 = sub <8 x i32> %r13, %r48
-
-    ; Evaluate %r62
-    %r62 = xor <8 x i32> %r61, <i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1>
-
-    ; Evaluate %r63
-    %r63 = shl <8 x i32> %r62, %r53
-
-    ; Evaluate %f64
-    %f64 = bitcast <8 x i32> %r63 to <8 x float>
-
-    ; Evaluate %f65
-    %f65_0 = bitcast <8 x float> %f57 to <8 x i32>
-    %f65_1 = bitcast <8 x float> %f64 to <8 x i32>
-    %f65_2 = and <8 x i32> %f65_0, %f65_1%f65 = bitcast <8 x i32> %f65_2 to <8 x float>
-
-    ; Evaluate %f66
-    %f66_0 = bitcast <8 x float> %f60 to <8 x i32>
-    %f66_1 = bitcast <8 x float> %f65 to <8 x i32>
-    %f66_2 = xor <8 x i32> %f66_0, %f66_1
-    %f66 = bitcast <8 x i32> %f66_2 to <8 x float>
-
-    ; Store %f66
-    %f66_i = getelementptr inbounds float, float* %a2, i64 %index
-    %f66_p = bitcast float* %f66_i to <8 x float>*
-    store <8 x float> %f66, <8 x float>* %f66_p, align 32, !noalias !1
+    ; Store %f58
+    %f58_i = getelementptr inbounds float, float* %a0, i64 %index
+    %f58_p = bitcast float* %f58_i to <8 x float>*
+    store <8 x float> %f58, <8 x float>* %f58_p, align 32, !noalias !1
 
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
@@ -671,162 +612,465 @@ declare <8 x float> @llvm.fma.v8f32(<8 x float>, <8 x float>, <8 x float>)
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
 jit_run(): processing 2 packets and 0 scalar entries
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(1): 0
-jit_var_free(1)
-jit_var_dec_ref_int(2): 0
-jit_var_free(2)
-jit_var_dec_ref_int(3): 0
-jit_var_free(3)
-jit_var_dec_ref_int(4): 0
-jit_var_free(4)
-jit_var_dec_ref_int(6): 0
-jit_var_free(6)
-jit_var_dec_ref_int(5): 1
-jit_var_dec_ref_int(7): 2
-jit_var_dec_ref_int(8): 0
-jit_var_free(8)
-jit_var_dec_ref_int(9): 0
-jit_var_free(9)
-jit_var_dec_ref_int(10): 0
-jit_var_free(10)
-jit_var_dec_ref_int(11): 0
-jit_var_free(11)
-jit_var_dec_ref_int(12): 0
-jit_var_free(12)
-jit_var_dec_ref_int(13): 0
-jit_var_free(13)
+jit_var_dec_ref_int(61): 0
+jit_var_free(61)
+jit_var_dec_ref_int(60): 1
+jit_var_dec_ref_int(53): 1
+jit_var_dec_ref_int(57): 1
+jit_var_dec_ref_int(63): 0
+jit_var_free(63)
+jit_var_dec_ref_int(62): 1
+jit_var_dec_ref_int(19): 0
+jit_var_free(19)
+jit_var_dec_ref_int(18): 0
+jit_var_free(18)
+jit_var_dec_ref_int(17): 0
+jit_var_free(17)
 jit_var_dec_ref_int(14): 3
-jit_var_dec_ref_int(15): 2
-jit_var_dec_ref_int(25): 0
-jit_var_free(25)
-jit_var_dec_ref_int(7): 1
-jit_var_dec_ref_int(26): 0
-jit_var_free(26)
-jit_var_dec_ref_int(15): 1
-jit_var_dec_ref_int(28): 0
-jit_var_free(28)
-jit_var_dec_ref_int(27): 0
-jit_var_free(27)
-jit_var_dec_ref_int(29): 0
-jit_var_free(29)
-jit_var_dec_ref_int(15): 0
-jit_var_free(15)
-jit_var_dec_ref_int(31): 0
-jit_var_free(31)
-jit_var_dec_ref_int(30): 0
-jit_var_free(30)
-jit_var_dec_ref_int(32): 0
-jit_var_free(32)
-jit_var_dec_ref_int(33): 3
-jit_var_dec_ref_int(33): 2
-jit_var_dec_ref_int(7): 0
-jit_var_free(7)
-jit_var_dec_ref_int(35): 0
-jit_var_free(35)
-jit_var_dec_ref_int(36): 0
-jit_var_free(36)
-jit_var_dec_ref_int(37): 0
-jit_var_free(37)
-jit_var_dec_ref_int(34): 0
-jit_var_free(34)
-jit_var_dec_ref_int(38): 0
-jit_var_free(38)
-jit_var_dec_ref_int(39): 7
-jit_var_dec_ref_int(39): 6
-jit_var_dec_ref_int(39): 5
-jit_var_dec_ref_int(48): 0
-jit_var_free(48)
-jit_var_dec_ref_int(49): 0
-jit_var_free(49)
+jit_var_dec_ref_int(16): 1
+jit_var_dec_ref_int(5): 1
+jit_eval(): done.
+xs : [0, 0.110883, 0.220398, 0.327195, 0.429956, 0.527415, 0.61837, 0.701698, 0.776372, 0.841471]
+jit_eval(): begin.
+jit_assemble(size=10): register map:
+   - %r0 -> 1
+   - %f1 -> 2
+   - %f2 -> 3 [scalar]
+   - %f3 -> 5
+   - %f4 -> 6 [scalar]
+   - %f5 -> 7
+   - %f6 -> 8 [scalar]
+   - %f7 -> 9
+   - %r8 -> 10
+   - %r9 -> 11 [scalar]
+   - %r10 -> 12
+   - %r11 -> 13 [scalar]
+   - %r12 -> 14
+   - %f13 -> 15
+   - %f14 -> 25 [scalar]
+   - %f15 -> 26
+   - %f16 -> 27
+   - %f17 -> 28 [scalar]
+   - %f18 -> 29
+   - %f19 -> 30
+   - %f20 -> 31 [scalar]
+   - %f21 -> 32
+   - %f22 -> 33
+   - %f23 -> 34
+   - %f24 -> 35 [scalar]
+   - %p25 -> 36
+   - %r26 -> 37
+   - %f27 -> 38
+   - %f28 -> 39
+   - %f29 -> 40
+   - %f30 -> 48 [scalar]
+   - %f31 -> 49 [scalar]
+   - %f32 -> 50
+   - %f33 -> 47 [scalar]
+   - %f34 -> 51
+   - %f35 -> 52
+   - %f36 -> 54 [scalar]
+   - %f37 -> 55 [scalar]
+   - %f38 -> 56
+   - %f39 -> 57
+   - %f40 -> 42 [scalar]
+   - %f41 -> 43 [scalar]
+   - %f42 -> 44
+   - %f43 -> 41 [scalar]
+   - %f44 -> 45
+   - %f45 -> 46
+   - %f46 -> 53
+   - %r47 -> 20 [scalar]
+   - %r48 -> 58
+   - %r49 -> 59 [scalar]
+   - %p50 -> 60
+   - %f51 -> 65
+   - %r52 -> 21
+   - %r53 -> 22
+   - %r54 -> 16 [scalar]
+   - %r55 -> 23
+   - %f56 -> 24
+   - %f57 -> 62 [scalar]
+   - %f58 -> 66
+   - %f59 -> 67 [out]
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=10, in=0, out=1, ops=60) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to float*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = trunc i64 %index to i32
+    %r0_1 = insertelement <8 x i32> undef, i32 %r0_0, i32 0
+    %r0_2 = shufflevector <8 x i32> %r0_1, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r0 = add <8 x i32> %r0_2, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+
+    ; Evaluate %f1
+    %f1 = uitofp <8 x i32> %r0 to <8 x float>
+
+    ; Evaluate %f2
+    %f2_0 = insertelement <8 x float> undef, float 0x3fbc71c720000000, i32 0
+    %f2 = shufflevector <8 x float> %f2_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f3
+    %f3 = fmul <8 x float> %f1, %f2
+
+    ; Evaluate %f4
+    %f4_0 = insertelement <8 x float> undef, float 0x7fffffffe0000000, i32 0
+    %f4 = shufflevector <8 x float> %f4_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f5
+    %f5_0 = bitcast <8 x float> %f4 to <8 x i32>
+    %f5_1 = bitcast <8 x float> %f3 to <8 x i32>
+    %f5_2 = and <8 x i32> %f5_0, %f5_1%f5 = bitcast <8 x i32> %f5_2 to <8 x float>
+
+    ; Evaluate %f6
+    %f6_0 = insertelement <8 x float> undef, float 0x3ff45f3060000000, i32 0
+    %f6 = shufflevector <8 x float> %f6_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f7
+    %f7 = fmul <8 x float> %f5, %f6
+
+    ; Evaluate %r8
+    %r8 = fptosi <8 x float> %f7 to <8 x i32>
+
+    ; Evaluate %r9
+    %r9_0 = insertelement <8 x i32> undef, i32 1, i32 0
+    %r9 = shufflevector <8 x i32> %r9_0, <8 x i32> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %r10
+    %r10 = add <8 x i32> %r8, %r9
+
+    ; Evaluate %r11
+    %r11_0 = insertelement <8 x i32> undef, i32 4294967294, i32 0
+    %r11 = shufflevector <8 x i32> %r11_0, <8 x i32> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %r12
+    %r12 = and <8 x i32> %r10, %r11
+
+    ; Evaluate %f13
+    %f13 = sitofp <8 x i32> %r12 to <8 x float>
+
+    ; Evaluate %f14
+    %f14_0 = insertelement <8 x float> undef, float 0x3fe9200000000000, i32 0
+    %f14 = shufflevector <8 x float> %f14_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f15
+    %f15 = fmul <8 x float> %f13, %f14
+
+    ; Evaluate %f16
+    %f16 = fsub <8 x float> %f5, %f15
+
+    ; Evaluate %f17
+    %f17_0 = insertelement <8 x float> undef, float 0x3f2fb40000000000, i32 0
+    %f17 = shufflevector <8 x float> %f17_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f18
+    %f18 = fmul <8 x float> %f13, %f17
+
+    ; Evaluate %f19
+    %f19 = fsub <8 x float> %f16, %f18
+
+    ; Evaluate %f20
+    %f20_0 = insertelement <8 x float> undef, float 0x3e64442d20000000, i32 0
+    %f20 = shufflevector <8 x float> %f20_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f21
+    %f21 = fmul <8 x float> %f13, %f20
+
+    ; Evaluate %f22
+    %f22 = fsub <8 x float> %f19, %f21
+
+    ; Evaluate %f23
+    %f23 = fmul <8 x float> %f22, %f22
+
+    ; Evaluate %f24
+    %f24_0 = insertelement <8 x float> undef, float 0x7ff0000000000000, i32 0
+    %f24 = shufflevector <8 x float> %f24_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %p25
+    %p25 = fcmp oeq <8 x float> %f5, %f24
+
+    ; Evaluate %r26
+    %r26 = sext <8 x i1> %p25 to <8 x i32>
+
+    ; Evaluate %f27
+    %f27 = bitcast <8 x i32> %r26 to <8 x float>
+
+    ; Evaluate %f28
+    %f28_0 = bitcast <8 x float> %f23 to <8 x i32>
+    %f28_1 = bitcast <8 x float> %f27 to <8 x i32>
+    %f28_2 = or <8 x i32> %f28_0, %f28_1%f28 = bitcast <8 x i32> %f28_2 to <8 x float>
+
+    ; Evaluate %f29
+    %f29 = fmul <8 x float> %f28, %f28
+
+    ; Evaluate %f30
+    %f30_0 = insertelement <8 x float> undef, float 0xbf56c0c340000000, i32 0
+    %f30 = shufflevector <8 x float> %f30_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f31
+    %f31_0 = insertelement <8 x float> undef, float 0x3fa55554a0000000, i32 0
+    %f31 = shufflevector <8 x float> %f31_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f32
+    %f32 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f28, <8 x float> %f30, <8 x float> %f31)
+
+    ; Evaluate %f33
+    %f33_0 = insertelement <8 x float> undef, float 0x3ef99eb9c0000000, i32 0
+    %f33 = shufflevector <8 x float> %f33_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f34
+    %f34 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f33, <8 x float> %f32)
+
+    ; Evaluate %f35
+    %f35 = fmul <8 x float> %f34, %f28
+
+    ; Evaluate %f36
+    %f36_0 = insertelement <8 x float> undef, float 0xbfe0000000000000, i32 0
+    %f36 = shufflevector <8 x float> %f36_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f37
+    %f37_0 = insertelement <8 x float> undef, float 0x3ff0000000000000, i32 0
+    %f37 = shufflevector <8 x float> %f37_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f38
+    %f38 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f28, <8 x float> %f36, <8 x float> %f37)
+
+    ; Evaluate %f39
+    %f39 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f35, <8 x float> %f28, <8 x float> %f38)
+
+    ; Evaluate %f40
+    %f40_0 = insertelement <8 x float> undef, float 0x3f811073c0000000, i32 0
+    %f40 = shufflevector <8 x float> %f40_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f41
+    %f41_0 = insertelement <8 x float> undef, float 0xbfc5555460000000, i32 0
+    %f41 = shufflevector <8 x float> %f41_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f42
+    %f42 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f28, <8 x float> %f40, <8 x float> %f41)
+
+    ; Evaluate %f43
+    %f43_0 = insertelement <8 x float> undef, float 0xbf29943f20000000, i32 0
+    %f43 = shufflevector <8 x float> %f43_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f44
+    %f44 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f43, <8 x float> %f42)
+
+    ; Evaluate %f45
+    %f45 = fmul <8 x float> %f44, %f28
+
+    ; Evaluate %f46
+    %f46 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f45, <8 x float> %f22, <8 x float> %f22)
+
+    ; Evaluate %r47
+    %r47_0 = insertelement <8 x i32> undef, i32 2, i32 0
+    %r47 = shufflevector <8 x i32> %r47_0, <8 x i32> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %r48
+    %r48 = and <8 x i32> %r12, %r47
+
+    ; Evaluate %r49
+    %r49_0 = insertelement <8 x i32> undef, i32 0, i32 0
+    %r49 = shufflevector <8 x i32> %r49_0, <8 x i32> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %p50
+    %p50 = icmp eq <8 x i32> %r48, %r49
+
+    ; Evaluate %f51
+    %f51 = select <8 x i1> %p50, <8 x float> %f39, <8 x float> %f46
+
+    ; Evaluate %r52
+    %r52 = sub <8 x i32> %r12, %r47
+
+    ; Evaluate %r53
+    %r53 = xor <8 x i32> %r52, <i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1>
+
+    ; Evaluate %r54
+    %r54_0 = insertelement <8 x i32> undef, i32 29, i32 0
+    %r54 = shufflevector <8 x i32> %r54_0, <8 x i32> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %r55
+    %r55 = shl <8 x i32> %r53, %r54
+
+    ; Evaluate %f56
+    %f56 = bitcast <8 x i32> %r55 to <8 x float>
+
+    ; Evaluate %f57
+    %f57_0 = insertelement <8 x float> undef, float 0x8000000000000000, i32 0
+    %f57 = shufflevector <8 x float> %f57_0, <8 x float> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %f58
+    %f58_0 = bitcast <8 x float> %f57 to <8 x i32>
+    %f58_1 = bitcast <8 x float> %f56 to <8 x i32>
+    %f58_2 = and <8 x i32> %f58_0, %f58_1%f58 = bitcast <8 x i32> %f58_2 to <8 x float>
+
+    ; Evaluate %f59
+    %f59_0 = bitcast <8 x float> %f51 to <8 x i32>
+    %f59_1 = bitcast <8 x float> %f58 to <8 x i32>
+    %f59_2 = xor <8 x i32> %f59_0, %f59_1
+    %f59 = bitcast <8 x i32> %f59_2 to <8 x float>
+
+    ; Store %f59
+    %f59_i = getelementptr inbounds float, float* %a0, i64 %index
+    %f59_p = bitcast float* %f59_i to <8 x float>*
+    store <8 x float> %f59, <8 x float>* %f59_p, align 32, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+declare <8 x float> @llvm.fma.v8f32(<8 x float>, <8 x float>, <8 x float>)
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+jit_run(): processing 2 packets and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(65): 0
+jit_var_free(65)
+jit_var_dec_ref_int(60): 0
+jit_var_free(60)
+jit_var_dec_ref_int(58): 0
+jit_var_free(58)
+jit_var_dec_ref_int(14): 2
+jit_var_dec_ref_int(20): 1
+jit_var_dec_ref_int(59): 0
+jit_var_free(59)
+jit_var_dec_ref_int(57): 0
+jit_var_free(57)
+jit_var_dec_ref_int(52): 0
+jit_var_free(52)
+jit_var_dec_ref_int(51): 0
+jit_var_free(51)
 jit_var_dec_ref_int(40): 1
 jit_var_dec_ref_int(47): 0
 jit_var_free(47)
 jit_var_dec_ref_int(50): 0
 jit_var_free(50)
-jit_var_dec_ref_int(51): 0
-jit_var_free(51)
+jit_var_dec_ref_int(39): 7
+jit_var_dec_ref_int(48): 0
+jit_var_free(48)
+jit_var_dec_ref_int(49): 0
+jit_var_free(49)
+jit_var_dec_ref_int(39): 6
+jit_var_dec_ref_int(39): 5
+jit_var_dec_ref_int(56): 0
+jit_var_free(56)
 jit_var_dec_ref_int(39): 4
-jit_var_dec_ref_int(39): 3
 jit_var_dec_ref_int(54): 0
 jit_var_free(54)
 jit_var_dec_ref_int(55): 0
 jit_var_free(55)
-jit_var_dec_ref_int(52): 0
-jit_var_free(52)
+jit_var_dec_ref_int(53): 0
+jit_var_free(53)
+jit_var_dec_ref_int(46): 0
+jit_var_free(46)
+jit_var_dec_ref_int(45): 0
+jit_var_free(45)
+jit_var_dec_ref_int(40): 0
+jit_var_free(40)
+jit_var_dec_ref_int(39): 3
 jit_var_dec_ref_int(39): 2
-jit_var_dec_ref_int(56): 0
-jit_var_free(56)
+jit_var_dec_ref_int(41): 0
+jit_var_free(41)
+jit_var_dec_ref_int(44): 0
+jit_var_free(44)
 jit_var_dec_ref_int(39): 1
 jit_var_dec_ref_int(42): 0
 jit_var_free(42)
 jit_var_dec_ref_int(43): 0
 jit_var_free(43)
-jit_var_dec_ref_int(40): 0
-jit_var_free(40)
-jit_var_dec_ref_int(41): 0
-jit_var_free(41)
-jit_var_dec_ref_int(44): 0
-jit_var_free(44)
-jit_var_dec_ref_int(45): 0
-jit_var_free(45)
 jit_var_dec_ref_int(39): 0
 jit_var_free(39)
-jit_var_dec_ref_int(46): 0
-jit_var_free(46)
+jit_var_dec_ref_int(34): 0
+jit_var_free(34)
+jit_var_dec_ref_int(33): 3
+jit_var_dec_ref_int(33): 2
+jit_var_dec_ref_int(38): 0
+jit_var_free(38)
+jit_var_dec_ref_int(37): 0
+jit_var_free(37)
+jit_var_dec_ref_int(36): 0
+jit_var_free(36)
+jit_var_dec_ref_int(7): 2
+jit_var_dec_ref_int(35): 0
+jit_var_free(35)
 jit_var_dec_ref_int(33): 1
 jit_var_dec_ref_int(33): 0
 jit_var_free(33)
-jit_var_dec_ref_int(14): 2
-jit_var_dec_ref_int(20): 1
-jit_var_dec_ref_int(58): 0
-jit_var_free(58)
-jit_var_dec_ref_int(59): 0
-jit_var_free(59)
-jit_var_dec_ref_int(60): 1
-jit_var_dec_ref_int(53): 1
-jit_var_dec_ref_int(57): 1
+jit_var_dec_ref_int(30): 0
+jit_var_free(30)
+jit_var_dec_ref_int(27): 0
+jit_var_free(27)
+jit_var_dec_ref_int(7): 1
+jit_var_dec_ref_int(26): 0
+jit_var_free(26)
+jit_var_dec_ref_int(15): 2
+jit_var_dec_ref_int(25): 0
+jit_var_free(25)
+jit_var_dec_ref_int(29): 0
+jit_var_free(29)
+jit_var_dec_ref_int(15): 1
+jit_var_dec_ref_int(28): 0
+jit_var_free(28)
+jit_var_dec_ref_int(32): 0
+jit_var_free(32)
+jit_var_dec_ref_int(15): 0
+jit_var_free(15)
 jit_var_dec_ref_int(14): 1
-jit_var_dec_ref_int(16): 1
-jit_var_dec_ref_int(17): 0
-jit_var_free(17)
-jit_var_dec_ref_int(18): 0
-jit_var_free(18)
-jit_var_dec_ref_int(5): 0
-jit_var_dec_ref_int(62): 1
-jit_var_dec_ref_int(19): 0
-jit_var_free(19)
-jit_var_dec_ref_int(61): 0
-jit_var_free(61)
-jit_var_dec_ref_int(63): 0
-jit_var_free(63)
-jit_var_dec_ref_int(60): 0
-jit_var_free(60)
-jit_var_dec_ref_int(57): 0
-jit_var_free(57)
-jit_var_dec_ref_int(53): 0
-jit_var_free(53)
-jit_var_dec_ref_int(14): 0
-jit_var_free(14)
-jit_var_dec_ref_int(20): 0
-jit_var_free(20)
-jit_var_dec_ref_int(21): 0
-jit_var_free(21)
-jit_var_dec_ref_int(22): 0
-jit_var_free(22)
-jit_var_dec_ref_int(16): 0
-jit_var_free(16)
-jit_var_dec_ref_int(23): 0
-jit_var_free(23)
+jit_var_dec_ref_int(31): 0
+jit_var_free(31)
+jit_var_dec_ref_int(66): 0
+jit_var_free(66)
 jit_var_dec_ref_int(62): 0
 jit_var_free(62)
 jit_var_dec_ref_int(24): 0
 jit_var_free(24)
-jit_var_dec_ref_int(65): 0
-jit_var_free(65)
-jit_var_dec_ref_int(66): 0
-jit_var_free(66)
+jit_var_dec_ref_int(23): 0
+jit_var_free(23)
+jit_var_dec_ref_int(22): 0
+jit_var_free(22)
+jit_var_dec_ref_int(21): 0
+jit_var_free(21)
+jit_var_dec_ref_int(14): 0
+jit_var_free(14)
+jit_var_dec_ref_int(12): 0
+jit_var_free(12)
+jit_var_dec_ref_int(10): 0
+jit_var_free(10)
+jit_var_dec_ref_int(9): 0
+jit_var_free(9)
+jit_var_dec_ref_int(7): 0
+jit_var_free(7)
+jit_var_dec_ref_int(6): 0
+jit_var_free(6)
+jit_var_dec_ref_int(5): 0
+jit_var_dec_ref_int(8): 0
+jit_var_free(8)
+jit_var_dec_ref_int(11): 0
+jit_var_free(11)
+jit_var_dec_ref_int(13): 0
+jit_var_free(13)
+jit_var_dec_ref_int(20): 0
+jit_var_free(20)
+jit_var_dec_ref_int(16): 0
+jit_var_free(16)
 jit_eval(): done.
-xs : [0, 0.110883, 0.220398, 0.327195, 0.429956, 0.527415, 0.61837, 0.701698, 0.776372, 0.841471]
 xc : [1, 0.993834, 0.97541, 0.944957, 0.90285, 0.849608, 0.785887, 0.712475, 0.630275, 0.540302]
 jit_var_dec_ref_ext(67): 0
 jit_var_free(67)
@@ -836,7 +1080,13 @@ jit_var_free(64)
 jit_free(<@>, type=host, size=64)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
-jit_free(<@>, type=host, size=64)
+jit_var_dec_ref_int(2): 0
+jit_var_free(2)
+jit_var_dec_ref_int(1): 0
+jit_var_free(1)
+jit_var_dec_ref_int(3): 0
+jit_var_free(3)
+jit_shutdown(): destroying streams ..
 jit_malloc_trim(): freed
- - host memory: 192 B in 3 allocations
+ - host memory: 128 B in 2 allocations
 jit_shutdown(): done

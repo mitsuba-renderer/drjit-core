@@ -204,13 +204,19 @@ int main(int argc, char **argv) {
     }
 
     int log_level_stderr = (int) LogLevel::Disable;
-
-    bool write_ref = false, help = false;
+    bool fail_fast = false, test_cuda = true, test_llvm = true,
+         write_ref = false, help = false;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-w") == 0) {
             write_ref = true;
         } else if (strcmp(argv[i], "-v") == 0) {
             log_level_stderr = std::max((int) LogLevel::Info, log_level_stderr + 1);
+        } else if (strcmp(argv[i], "-e") == 0) {
+            fail_fast = true;
+        } else if (strcmp(argv[i], "-c") == 0) {
+            test_llvm = false;
+        } else if (strcmp(argv[i], "-l") == 0) {
+            test_cuda = false;
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             help = true;
         } else {
@@ -224,13 +230,16 @@ int main(int argc, char **argv) {
         printf("Options:\n\n");
         printf(" -h   Display this help text.\n\n");
         printf(" -w   Write reference output to tests/out_*.\n\n");
+        printf(" -e   Stop after the first failing test\n\n");
+        printf(" -c   Only run CUDA tests\n\n");
+        printf(" -l   Only run LLVM tests\n\n");
         printf(" -v   Be more verbose (can be repeated)\n\n");
         return 0;
     }
 
     try {
         jitc_log_set_stderr((LogLevel) log_level_stderr);
-        jitc_init(1, 1);
+        jitc_init(test_llvm, test_cuda);
         jitc_set_log_callback(LogLevel::Trace, log_callback);
         fprintf(stdout, "\n");
 
@@ -247,14 +256,12 @@ int main(int argc, char **argv) {
         });
 
         int tests_passed = 0,
-            tests_failed = 0,
-            tests_skipped = 0;
+            tests_failed = 0;
 
         for (auto &test : *tests) {
             fprintf(stdout, " - %s .. ", test.name);
             if ( (test.cuda && !has_cuda) ||
                 (!test.cuda && !has_llvm)) {
-                tests_skipped++;
                 fprintf(stdout, "skipped.\n");
                 continue;
             }
@@ -272,12 +279,18 @@ int main(int argc, char **argv) {
                 fprintf(stdout, "passed.\n");
             } else {
                 tests_failed++;
-                fprintf(stdout, "FAILED!\n");
+                if (fail_fast) {
+                    fprintf(stdout, "FAILED! (skipping remaining tests).\n");
+                    break;
+                } else {
+                    fprintf(stdout, "FAILED!\n");
+                }
             }
         }
 
         jitc_shutdown(0);
 
+        int tests_skipped = (int) tests->size() - tests_passed - tests_failed;
         if (tests_skipped == 0)
             fprintf(stdout, "\nPassed %i/%i tests.\n", tests_passed,
                     tests_passed + tests_failed);

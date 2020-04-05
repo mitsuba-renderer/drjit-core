@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <lz4hc.h>
 #include <xxhash.h>
 
@@ -47,6 +48,7 @@ void append(FILE *f, const char *filename, const char *prefix, char *dict, int d
     unsigned long long hash = XXH64(buf, size, 0);
 
     LZ4_streamHC_t stream;
+    memset(&stream, 0, sizeof(LZ4_streamHC_t));
     LZ4_resetStreamHC_fast(&stream, LZ4HC_CLEVEL_MAX);
     if (dict)
         LZ4_loadDictHC(&stream, dict, dict_size);
@@ -80,7 +82,8 @@ int main(int argc, char **argv) {
     append(f, "kernels.dict", "kernels_dict", NULL, 0);
     append(f, "kernels_50.ptx", "kernels_50", kernels_dict, kernels_dict_size);
     append(f, "kernels_70.ptx", "kernels_70", kernels_dict, kernels_dict_size);
-    append(f, "llvm_kernels.ll", "llvm_kernels", kernels_dict, kernels_dict_size);
+    append(f, "llvm_kernels_7.ll", "llvm_kernels_7", kernels_dict, kernels_dict_size);
+    append(f, "llvm_kernels_9.ll", "llvm_kernels_9", kernels_dict, kernels_dict_size);
 
     f = fopen("kernels.h", "w");
     if (!f) {
@@ -105,10 +108,14 @@ int main(int argc, char **argv) {
     fprintf(f, "extern int    kernels_70_size_compressed;\n");
     fprintf(f, "extern size_t kernels_70_hash;\n");
     fprintf(f, "extern char   kernels_70[];\n\n");
-    fprintf(f, "extern int    llvm_kernels_size_uncompressed;\n");
-    fprintf(f, "extern int    llvm_kernels_size_compressed;\n");
-    fprintf(f, "extern size_t llvm_kernels_hash;\n");
-    fprintf(f, "extern char   llvm_kernels[];\n\n");
+    fprintf(f, "extern int    llvm_kernels_7_size_uncompressed;\n");
+    fprintf(f, "extern int    llvm_kernels_7_size_compressed;\n");
+    fprintf(f, "extern size_t llvm_kernels_7_hash;\n");
+    fprintf(f, "extern char   llvm_kernels_7[];\n\n");
+    fprintf(f, "extern int    llvm_kernels_9_size_uncompressed;\n");
+    fprintf(f, "extern int    llvm_kernels_9_size_compressed;\n");
+    fprintf(f, "extern size_t llvm_kernels_9_hash;\n");
+    fprintf(f, "extern char   llvm_kernels_9[];\n\n");
     fprintf(f, "#if defined(__cplusplus)\n");
     fprintf(f, "}\n");
     fprintf(f, "#endif");

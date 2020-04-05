@@ -1,7 +1,7 @@
 jit_device_set(device=0, stream=0): creating stream
-jit_var_copy_ptr(1): <@>
+jit_var_copy_ptr(1 <- 0): <@>
 jit_var_inc_ref_ext(1): 1
-jit_var_copy_ptr(2): <@>
+jit_var_copy_ptr(2 <- 0): <@>
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_ext(1): 2
 jit_var_dec_ref_ext(1): 1
@@ -9,7 +9,7 @@ jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_var_copy_ptr(3): <@>
+jit_var_copy_ptr(3 <- 0): <@>
 jit_var_inc_ref_ext(3): 1
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)

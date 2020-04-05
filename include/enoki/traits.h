@@ -93,3 +93,16 @@ template <typename Value> Value sign_mask_neg() {
     using UInt = uint_with_size_t<Value>;
     return memcpy_cast<Value>(~(UInt(1) << (sizeof(UInt) * 8 - 1)));
 }
+
+template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
+void jitc_schedule(Args&&... args) {
+    bool unused[] = { (jitc_schedule(args), false)..., false };
+    (void) unused;
+}
+
+template <typename... Args, enable_if_t<(sizeof...(Args) > 0)> = 0>
+void jitc_eval(Args&&... args) {
+    jitc_schedule(args...);
+    if (sizeof...(Args) > 0)
+        jitc_eval();
+}

@@ -1,72 +1,21 @@
+jit_device_set(device=-1, stream=0): creating stream
 jit_malloc(type=host, size=256): <@> (new allocation)
 jit_var_map(1): <@>, size=9, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy(1, size=9)
+jit_var_copy_from_host(1, size=9)
 jit_var_inc_ref_int(1): 1
 jit_trace_append(2 <- 1): $r0 = fpext <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(2): 1
-jit_eval(): begin.
-jit_assemble(size=9): register map:
-   - %f0 -> 1 [in]
-   - %d1 -> 2 [out]
-jit_malloc(type=host, size=256): <@> (new allocation)
-jit_run(): launching kernel (n=9, in=1, out=1, ops=2) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
-entry:
-    ; Prepare argument 0
-    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
-    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0_p to float*
-
-    ; Prepare argument 1
-    %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
-    %a1_p = load i8*, i8** %a1_i, align 8, !alias.scope !1
-    %a1 = bitcast i8* %a1_p to double*
-    br label %loop
-
-done:
-    ret void
-
-loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
-
-    ; Load %f0
-    %f0_i = getelementptr inbounds float, float* %a0, i64 %index
-    %f0_p = bitcast float* %f0_i to <32 x float>*
-    %f0 = load <32 x float>, <32 x float>* %f0_p, align 128, !alias.scope !1
-
-    ; Evaluate %d1
-    %d1 = fpext <32 x float> %f0 to <32 x double>
-
-    ; Store %d1
-    %d1_i = getelementptr inbounds double, double* %a1, i64 %index
-    %d1_p = bitcast double* %d1_i to <32 x double>*
-    store <32 x double> %d1, <32 x double>* %d1_p, align 256, !noalias !1
-
-    %index_next = add i64 %index, 32
-    %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !2
-}
-
-!0 = !{!0}
-!1 = !{!1, !0}
-!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
-
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl" }
-jit_run(): processing 1 packet and 0 scalar entries
-jit_eval(): cleaning up..
-jit_var_dec_ref_int(1): 0
-jit_eval(): done.
-jit_var_inc_ref_int(1): 1
+jit_var_inc_ref_int(1): 2
 jit_trace_append(3 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 10)
 jit_var_inc_ref_ext(3): 1
-jit_var_inc_ref_int(1): 2
+jit_var_inc_ref_int(1): 3
 jit_trace_append(4 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 10)
 jit_var_inc_ref_ext(4): 1
-jit_var_inc_ref_int(1): 3
+jit_var_inc_ref_int(1): 4
 jit_trace_append(5 <- 1): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 10)
 jit_var_inc_ref_ext(5): 1
-jit_var_inc_ref_int(1): 4
+jit_var_inc_ref_int(1): 5
 jit_trace_append(6 <- 1): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 10)
 jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_int(2): 1
@@ -81,6 +30,7 @@ jit_var_inc_ref_ext(9): 1
 jit_var_inc_ref_int(2): 4
 jit_trace_append(10 <- 2): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 10)
 jit_var_inc_ref_ext(10): 1
+input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): begin.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
@@ -92,7 +42,7 @@ jit_malloc(type=host, size=256): <@> (new allocation)
 jit_malloc(type=host, size=256): <@> (new allocation)
    - %rd4 -> 6 [out]
 jit_malloc(type=host, size=256): <@> (new allocation)
-   - %d5 -> 2 [in]
+   - %d5 -> 2
    - %r6 -> 7 [out]
 jit_malloc(type=host, size=256): <@> (new allocation)
    - %r7 -> 8 [out]
@@ -101,7 +51,7 @@ jit_malloc(type=host, size=256): <@> (new allocation)
 jit_malloc(type=host, size=256): <@> (new allocation)
    - %rd9 -> 10 [out]
 jit_malloc(type=host, size=256): <@> (new allocation)
-jit_run(): launching kernel (n=9, in=2, out=8, ops=10) ..
+jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
     ; Prepare argument 0
@@ -132,7 +82,7 @@ entry:
     ; Prepare argument 5
     %a5_i = getelementptr inbounds i8*, i8** %ptrs, i32 5
     %a5_p = load i8*, i8** %a5_i, align 8, !alias.scope !1
-    %a5 = bitcast i8* %a5_p to double*
+    %a5 = bitcast i8* %a5_p to i32*
 
     ; Prepare argument 6
     %a6_i = getelementptr inbounds i8*, i8** %ptrs, i32 6
@@ -142,17 +92,12 @@ entry:
     ; Prepare argument 7
     %a7_i = getelementptr inbounds i8*, i8** %ptrs, i32 7
     %a7_p = load i8*, i8** %a7_i, align 8, !alias.scope !1
-    %a7 = bitcast i8* %a7_p to i32*
+    %a7 = bitcast i8* %a7_p to i64*
 
     ; Prepare argument 8
     %a8_i = getelementptr inbounds i8*, i8** %ptrs, i32 8
     %a8_p = load i8*, i8** %a8_i, align 8, !alias.scope !1
     %a8 = bitcast i8* %a8_p to i64*
-
-    ; Prepare argument 9
-    %a9_i = getelementptr inbounds i8*, i8** %ptrs, i32 9
-    %a9_p = load i8*, i8** %a9_i, align 8, !alias.scope !1
-    %a9 = bitcast i8* %a9_p to i64*
     br label %loop
 
 done:
@@ -242,10 +187,8 @@ loop:
     %rd4_p = bitcast i64* %rd4_i to <32 x i64>*
     store <32 x i64> %rd4, <32 x i64>* %rd4_p, align 256, !noalias !1
 
-    ; Load %d5
-    %d5_i = getelementptr inbounds double, double* %a5, i64 %index
-    %d5_p = bitcast double* %d5_i to <32 x double>*
-    %d5 = load <32 x double>, <32 x double>* %d5_p, align 256, !alias.scope !1
+    ; Evaluate %d5
+    %d5 = fpext <32 x float> %f0 to <32 x double>
 
     ; Evaluate %r6
     %d5_unroll_r6_0_0 = shufflevector <32 x double> %d5, <32 x double> undef, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
@@ -267,7 +210,7 @@ loop:
     %r6 = shufflevector <16 x i32> %r6_unroll_r6_0_0, <16 x i32> %r6_unroll_r6_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %r6
-    %r6_i = getelementptr inbounds i32, i32* %a6, i64 %index
+    %r6_i = getelementptr inbounds i32, i32* %a5, i64 %index
     %r6_p = bitcast i32* %r6_i to <32 x i32>*
     store <32 x i32> %r6, <32 x i32>* %r6_p, align 128, !noalias !1
 
@@ -291,7 +234,7 @@ loop:
     %r7 = shufflevector <16 x i32> %r7_unroll_r7_0_0, <16 x i32> %r7_unroll_r7_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %r7
-    %r7_i = getelementptr inbounds i32, i32* %a7, i64 %index
+    %r7_i = getelementptr inbounds i32, i32* %a6, i64 %index
     %r7_p = bitcast i32* %r7_i to <32 x i32>*
     store <32 x i32> %r7, <32 x i32>* %r7_p, align 128, !noalias !1
 
@@ -315,7 +258,7 @@ loop:
     %rd8 = shufflevector <16 x i64> %rd8_unroll_rd8_0_0, <16 x i64> %rd8_unroll_rd8_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %rd8
-    %rd8_i = getelementptr inbounds i64, i64* %a8, i64 %index
+    %rd8_i = getelementptr inbounds i64, i64* %a7, i64 %index
     %rd8_p = bitcast i64* %rd8_i to <32 x i64>*
     store <32 x i64> %rd8, <32 x i64>* %rd8_p, align 256, !noalias !1
 
@@ -339,7 +282,7 @@ loop:
     %rd9 = shufflevector <16 x i64> %rd9_unroll_rd9_0_0, <16 x i64> %rd9_unroll_rd9_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %rd9
-    %rd9_i = getelementptr inbounds i64, i64* %a9, i64 %index
+    %rd9_i = getelementptr inbounds i64, i64* %a8, i64 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
 
@@ -364,16 +307,15 @@ declare <8 x i64> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x double>, <8 x i64>, i
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
+jit_var_dec_ref_int(1): 4
 jit_var_dec_ref_int(1): 3
 jit_var_dec_ref_int(1): 2
 jit_var_dec_ref_int(1): 1
-jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_int(2): 3
 jit_var_dec_ref_int(2): 2
 jit_var_dec_ref_int(2): 1
 jit_var_dec_ref_int(2): 0
 jit_eval(): done.
-input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 ceil_f_i32=[-1, 0, 0, 0, 1, 1, 1, 2, -2147483648]
 ceil_f_i64=[-1, 0, 0, 0, 1, 1, 1, 2, 4294967296]
 ceil_d_i32=[-1, 0, 0, 0, 1, 1, 1, 2, -2147483648]
@@ -406,16 +348,16 @@ jit_free(<@>, type=host, size=256)
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
 jit_free(<@>, type=host, size=256)
-jit_var_inc_ref_int(1): 1
+jit_var_inc_ref_int(1): 2
 jit_trace_append(11 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 9)
 jit_var_inc_ref_ext(11): 1
-jit_var_inc_ref_int(1): 2
+jit_var_inc_ref_int(1): 3
 jit_trace_append(12 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 9)
 jit_var_inc_ref_ext(12): 1
-jit_var_inc_ref_int(1): 3
+jit_var_inc_ref_int(1): 4
 jit_trace_append(13 <- 1): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 9)
 jit_var_inc_ref_ext(13): 1
-jit_var_inc_ref_int(1): 4
+jit_var_inc_ref_int(1): 5
 jit_trace_append(14 <- 1): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 9)
 jit_var_inc_ref_ext(14): 1
 jit_var_inc_ref_int(2): 1
@@ -430,6 +372,7 @@ jit_var_inc_ref_ext(17): 1
 jit_var_inc_ref_int(2): 4
 jit_trace_append(18 <- 2): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 9)
 jit_var_inc_ref_ext(18): 1
+input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): begin.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
@@ -441,7 +384,7 @@ jit_malloc(type=host, size=256): <@> (reused global)
 jit_malloc(type=host, size=256): <@> (reused global)
    - %rd4 -> 14 [out]
 jit_malloc(type=host, size=256): <@> (reused global)
-   - %d5 -> 2 [in]
+   - %d5 -> 2
    - %r6 -> 15 [out]
 jit_malloc(type=host, size=256): <@> (reused global)
    - %r7 -> 16 [out]
@@ -450,7 +393,7 @@ jit_malloc(type=host, size=256): <@> (reused global)
 jit_malloc(type=host, size=256): <@> (reused global)
    - %rd9 -> 18 [out]
 jit_malloc(type=host, size=256): <@> (reused global)
-jit_run(): launching kernel (n=9, in=2, out=8, ops=10) ..
+jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
     ; Prepare argument 0
@@ -481,7 +424,7 @@ entry:
     ; Prepare argument 5
     %a5_i = getelementptr inbounds i8*, i8** %ptrs, i32 5
     %a5_p = load i8*, i8** %a5_i, align 8, !alias.scope !1
-    %a5 = bitcast i8* %a5_p to double*
+    %a5 = bitcast i8* %a5_p to i32*
 
     ; Prepare argument 6
     %a6_i = getelementptr inbounds i8*, i8** %ptrs, i32 6
@@ -491,17 +434,12 @@ entry:
     ; Prepare argument 7
     %a7_i = getelementptr inbounds i8*, i8** %ptrs, i32 7
     %a7_p = load i8*, i8** %a7_i, align 8, !alias.scope !1
-    %a7 = bitcast i8* %a7_p to i32*
+    %a7 = bitcast i8* %a7_p to i64*
 
     ; Prepare argument 8
     %a8_i = getelementptr inbounds i8*, i8** %ptrs, i32 8
     %a8_p = load i8*, i8** %a8_i, align 8, !alias.scope !1
     %a8 = bitcast i8* %a8_p to i64*
-
-    ; Prepare argument 9
-    %a9_i = getelementptr inbounds i8*, i8** %ptrs, i32 9
-    %a9_p = load i8*, i8** %a9_i, align 8, !alias.scope !1
-    %a9 = bitcast i8* %a9_p to i64*
     br label %loop
 
 done:
@@ -591,10 +529,8 @@ loop:
     %rd4_p = bitcast i64* %rd4_i to <32 x i64>*
     store <32 x i64> %rd4, <32 x i64>* %rd4_p, align 256, !noalias !1
 
-    ; Load %d5
-    %d5_i = getelementptr inbounds double, double* %a5, i64 %index
-    %d5_p = bitcast double* %d5_i to <32 x double>*
-    %d5 = load <32 x double>, <32 x double>* %d5_p, align 256, !alias.scope !1
+    ; Evaluate %d5
+    %d5 = fpext <32 x float> %f0 to <32 x double>
 
     ; Evaluate %r6
     %d5_unroll_r6_0_0 = shufflevector <32 x double> %d5, <32 x double> undef, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
@@ -616,7 +552,7 @@ loop:
     %r6 = shufflevector <16 x i32> %r6_unroll_r6_0_0, <16 x i32> %r6_unroll_r6_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %r6
-    %r6_i = getelementptr inbounds i32, i32* %a6, i64 %index
+    %r6_i = getelementptr inbounds i32, i32* %a5, i64 %index
     %r6_p = bitcast i32* %r6_i to <32 x i32>*
     store <32 x i32> %r6, <32 x i32>* %r6_p, align 128, !noalias !1
 
@@ -640,7 +576,7 @@ loop:
     %r7 = shufflevector <16 x i32> %r7_unroll_r7_0_0, <16 x i32> %r7_unroll_r7_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %r7
-    %r7_i = getelementptr inbounds i32, i32* %a7, i64 %index
+    %r7_i = getelementptr inbounds i32, i32* %a6, i64 %index
     %r7_p = bitcast i32* %r7_i to <32 x i32>*
     store <32 x i32> %r7, <32 x i32>* %r7_p, align 128, !noalias !1
 
@@ -664,7 +600,7 @@ loop:
     %rd8 = shufflevector <16 x i64> %rd8_unroll_rd8_0_0, <16 x i64> %rd8_unroll_rd8_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %rd8
-    %rd8_i = getelementptr inbounds i64, i64* %a8, i64 %index
+    %rd8_i = getelementptr inbounds i64, i64* %a7, i64 %index
     %rd8_p = bitcast i64* %rd8_i to <32 x i64>*
     store <32 x i64> %rd8, <32 x i64>* %rd8_p, align 256, !noalias !1
 
@@ -688,7 +624,7 @@ loop:
     %rd9 = shufflevector <16 x i64> %rd9_unroll_rd9_0_0, <16 x i64> %rd9_unroll_rd9_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %rd9
-    %rd9_i = getelementptr inbounds i64, i64* %a9, i64 %index
+    %rd9_i = getelementptr inbounds i64, i64* %a8, i64 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
 
@@ -713,16 +649,15 @@ declare <8 x i64> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x double>, <8 x i64>, i
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
+jit_var_dec_ref_int(1): 4
 jit_var_dec_ref_int(1): 3
 jit_var_dec_ref_int(1): 2
 jit_var_dec_ref_int(1): 1
-jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_int(2): 3
 jit_var_dec_ref_int(2): 2
 jit_var_dec_ref_int(2): 1
 jit_var_dec_ref_int(2): 0
 jit_eval(): done.
-input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 floor_f_i32=[-2, -1, -1, -1, 0, 0, 0, 1, -2147483648]
 floor_f_i64=[-2, -1, -1, -1, 0, 0, 0, 1, 4294967296]
 floor_d_i32=[-2, -1, -1, -1, 0, 0, 0, 1, -2147483648]
@@ -755,16 +690,16 @@ jit_free(<@>, type=host, size=256)
 jit_var_dec_ref_ext(11): 0
 jit_var_free(11)
 jit_free(<@>, type=host, size=256)
-jit_var_inc_ref_int(1): 1
+jit_var_inc_ref_int(1): 2
 jit_trace_append(19 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 11)
 jit_var_inc_ref_ext(19): 1
-jit_var_inc_ref_int(1): 2
+jit_var_inc_ref_int(1): 3
 jit_trace_append(20 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 11)
 jit_var_inc_ref_ext(20): 1
-jit_var_inc_ref_int(1): 3
+jit_var_inc_ref_int(1): 4
 jit_trace_append(21 <- 1): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 11)
 jit_var_inc_ref_ext(21): 1
-jit_var_inc_ref_int(1): 4
+jit_var_inc_ref_int(1): 5
 jit_trace_append(22 <- 1): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 11)
 jit_var_inc_ref_ext(22): 1
 jit_var_inc_ref_int(2): 1
@@ -779,6 +714,7 @@ jit_var_inc_ref_ext(25): 1
 jit_var_inc_ref_int(2): 4
 jit_trace_append(26 <- 2): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 11)
 jit_var_inc_ref_ext(26): 1
+input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): begin.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
@@ -790,7 +726,7 @@ jit_malloc(type=host, size=256): <@> (reused global)
 jit_malloc(type=host, size=256): <@> (reused global)
    - %rd4 -> 22 [out]
 jit_malloc(type=host, size=256): <@> (reused global)
-   - %d5 -> 2 [in]
+   - %d5 -> 2
    - %r6 -> 23 [out]
 jit_malloc(type=host, size=256): <@> (reused global)
    - %r7 -> 24 [out]
@@ -799,7 +735,7 @@ jit_malloc(type=host, size=256): <@> (reused global)
 jit_malloc(type=host, size=256): <@> (reused global)
    - %rd9 -> 26 [out]
 jit_malloc(type=host, size=256): <@> (reused global)
-jit_run(): launching kernel (n=9, in=2, out=8, ops=10) ..
+jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
     ; Prepare argument 0
@@ -830,7 +766,7 @@ entry:
     ; Prepare argument 5
     %a5_i = getelementptr inbounds i8*, i8** %ptrs, i32 5
     %a5_p = load i8*, i8** %a5_i, align 8, !alias.scope !1
-    %a5 = bitcast i8* %a5_p to double*
+    %a5 = bitcast i8* %a5_p to i32*
 
     ; Prepare argument 6
     %a6_i = getelementptr inbounds i8*, i8** %ptrs, i32 6
@@ -840,17 +776,12 @@ entry:
     ; Prepare argument 7
     %a7_i = getelementptr inbounds i8*, i8** %ptrs, i32 7
     %a7_p = load i8*, i8** %a7_i, align 8, !alias.scope !1
-    %a7 = bitcast i8* %a7_p to i32*
+    %a7 = bitcast i8* %a7_p to i64*
 
     ; Prepare argument 8
     %a8_i = getelementptr inbounds i8*, i8** %ptrs, i32 8
     %a8_p = load i8*, i8** %a8_i, align 8, !alias.scope !1
     %a8 = bitcast i8* %a8_p to i64*
-
-    ; Prepare argument 9
-    %a9_i = getelementptr inbounds i8*, i8** %ptrs, i32 9
-    %a9_p = load i8*, i8** %a9_i, align 8, !alias.scope !1
-    %a9 = bitcast i8* %a9_p to i64*
     br label %loop
 
 done:
@@ -940,10 +871,8 @@ loop:
     %rd4_p = bitcast i64* %rd4_i to <32 x i64>*
     store <32 x i64> %rd4, <32 x i64>* %rd4_p, align 256, !noalias !1
 
-    ; Load %d5
-    %d5_i = getelementptr inbounds double, double* %a5, i64 %index
-    %d5_p = bitcast double* %d5_i to <32 x double>*
-    %d5 = load <32 x double>, <32 x double>* %d5_p, align 256, !alias.scope !1
+    ; Evaluate %d5
+    %d5 = fpext <32 x float> %f0 to <32 x double>
 
     ; Evaluate %r6
     %d5_unroll_r6_0_0 = shufflevector <32 x double> %d5, <32 x double> undef, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
@@ -965,7 +894,7 @@ loop:
     %r6 = shufflevector <16 x i32> %r6_unroll_r6_0_0, <16 x i32> %r6_unroll_r6_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %r6
-    %r6_i = getelementptr inbounds i32, i32* %a6, i64 %index
+    %r6_i = getelementptr inbounds i32, i32* %a5, i64 %index
     %r6_p = bitcast i32* %r6_i to <32 x i32>*
     store <32 x i32> %r6, <32 x i32>* %r6_p, align 128, !noalias !1
 
@@ -989,7 +918,7 @@ loop:
     %r7 = shufflevector <16 x i32> %r7_unroll_r7_0_0, <16 x i32> %r7_unroll_r7_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %r7
-    %r7_i = getelementptr inbounds i32, i32* %a7, i64 %index
+    %r7_i = getelementptr inbounds i32, i32* %a6, i64 %index
     %r7_p = bitcast i32* %r7_i to <32 x i32>*
     store <32 x i32> %r7, <32 x i32>* %r7_p, align 128, !noalias !1
 
@@ -1013,7 +942,7 @@ loop:
     %rd8 = shufflevector <16 x i64> %rd8_unroll_rd8_0_0, <16 x i64> %rd8_unroll_rd8_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %rd8
-    %rd8_i = getelementptr inbounds i64, i64* %a8, i64 %index
+    %rd8_i = getelementptr inbounds i64, i64* %a7, i64 %index
     %rd8_p = bitcast i64* %rd8_i to <32 x i64>*
     store <32 x i64> %rd8, <32 x i64>* %rd8_p, align 256, !noalias !1
 
@@ -1037,7 +966,7 @@ loop:
     %rd9 = shufflevector <16 x i64> %rd9_unroll_rd9_0_0, <16 x i64> %rd9_unroll_rd9_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %rd9
-    %rd9_i = getelementptr inbounds i64, i64* %a9, i64 %index
+    %rd9_i = getelementptr inbounds i64, i64* %a8, i64 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
 
@@ -1062,16 +991,15 @@ declare <8 x i64> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x double>, <8 x i64>, i
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
+jit_var_dec_ref_int(1): 4
 jit_var_dec_ref_int(1): 3
 jit_var_dec_ref_int(1): 2
 jit_var_dec_ref_int(1): 1
-jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_int(2): 3
 jit_var_dec_ref_int(2): 2
 jit_var_dec_ref_int(2): 1
 jit_var_dec_ref_int(2): 0
 jit_eval(): done.
-input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 trunc_f_i32=[-1, 0, 0, 0, 0, 0, 0, 1, -2147483648]
 trunc_f_i64=[-1, 0, 0, 0, 0, 0, 0, 1, 4294967296]
 trunc_d_i32=[-1, 0, 0, 0, 0, 0, 0, 1, -2147483648]
@@ -1104,16 +1032,16 @@ jit_free(<@>, type=host, size=256)
 jit_var_dec_ref_ext(19): 0
 jit_var_free(19)
 jit_free(<@>, type=host, size=256)
-jit_var_inc_ref_int(1): 1
+jit_var_inc_ref_int(1): 2
 jit_trace_append(27 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 8)
 jit_var_inc_ref_ext(27): 1
-jit_var_inc_ref_int(1): 2
+jit_var_inc_ref_int(1): 3
 jit_trace_append(28 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 8)
 jit_var_inc_ref_ext(28): 1
-jit_var_inc_ref_int(1): 3
+jit_var_inc_ref_int(1): 4
 jit_trace_append(29 <- 1): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 8)
 jit_var_inc_ref_ext(29): 1
-jit_var_inc_ref_int(1): 4
+jit_var_inc_ref_int(1): 5
 jit_trace_append(30 <- 1): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 8)
 jit_var_inc_ref_ext(30): 1
 jit_var_inc_ref_int(2): 1
@@ -1128,6 +1056,7 @@ jit_var_inc_ref_ext(33): 1
 jit_var_inc_ref_int(2): 4
 jit_trace_append(34 <- 2): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 8)
 jit_var_inc_ref_ext(34): 1
+input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): begin.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
@@ -1139,7 +1068,7 @@ jit_malloc(type=host, size=256): <@> (reused global)
 jit_malloc(type=host, size=256): <@> (reused global)
    - %rd4 -> 30 [out]
 jit_malloc(type=host, size=256): <@> (reused global)
-   - %d5 -> 2 [in]
+   - %d5 -> 2
    - %r6 -> 31 [out]
 jit_malloc(type=host, size=256): <@> (reused global)
    - %r7 -> 32 [out]
@@ -1148,7 +1077,7 @@ jit_malloc(type=host, size=256): <@> (reused global)
 jit_malloc(type=host, size=256): <@> (reused global)
    - %rd9 -> 34 [out]
 jit_malloc(type=host, size=256): <@> (reused global)
-jit_run(): launching kernel (n=9, in=2, out=8, ops=10) ..
+jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
     ; Prepare argument 0
@@ -1179,7 +1108,7 @@ entry:
     ; Prepare argument 5
     %a5_i = getelementptr inbounds i8*, i8** %ptrs, i32 5
     %a5_p = load i8*, i8** %a5_i, align 8, !alias.scope !1
-    %a5 = bitcast i8* %a5_p to double*
+    %a5 = bitcast i8* %a5_p to i32*
 
     ; Prepare argument 6
     %a6_i = getelementptr inbounds i8*, i8** %ptrs, i32 6
@@ -1189,17 +1118,12 @@ entry:
     ; Prepare argument 7
     %a7_i = getelementptr inbounds i8*, i8** %ptrs, i32 7
     %a7_p = load i8*, i8** %a7_i, align 8, !alias.scope !1
-    %a7 = bitcast i8* %a7_p to i32*
+    %a7 = bitcast i8* %a7_p to i64*
 
     ; Prepare argument 8
     %a8_i = getelementptr inbounds i8*, i8** %ptrs, i32 8
     %a8_p = load i8*, i8** %a8_i, align 8, !alias.scope !1
     %a8 = bitcast i8* %a8_p to i64*
-
-    ; Prepare argument 9
-    %a9_i = getelementptr inbounds i8*, i8** %ptrs, i32 9
-    %a9_p = load i8*, i8** %a9_i, align 8, !alias.scope !1
-    %a9 = bitcast i8* %a9_p to i64*
     br label %loop
 
 done:
@@ -1289,10 +1213,8 @@ loop:
     %rd4_p = bitcast i64* %rd4_i to <32 x i64>*
     store <32 x i64> %rd4, <32 x i64>* %rd4_p, align 256, !noalias !1
 
-    ; Load %d5
-    %d5_i = getelementptr inbounds double, double* %a5, i64 %index
-    %d5_p = bitcast double* %d5_i to <32 x double>*
-    %d5 = load <32 x double>, <32 x double>* %d5_p, align 256, !alias.scope !1
+    ; Evaluate %d5
+    %d5 = fpext <32 x float> %f0 to <32 x double>
 
     ; Evaluate %r6
     %d5_unroll_r6_0_0 = shufflevector <32 x double> %d5, <32 x double> undef, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
@@ -1314,7 +1236,7 @@ loop:
     %r6 = shufflevector <16 x i32> %r6_unroll_r6_0_0, <16 x i32> %r6_unroll_r6_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %r6
-    %r6_i = getelementptr inbounds i32, i32* %a6, i64 %index
+    %r6_i = getelementptr inbounds i32, i32* %a5, i64 %index
     %r6_p = bitcast i32* %r6_i to <32 x i32>*
     store <32 x i32> %r6, <32 x i32>* %r6_p, align 128, !noalias !1
 
@@ -1338,7 +1260,7 @@ loop:
     %r7 = shufflevector <16 x i32> %r7_unroll_r7_0_0, <16 x i32> %r7_unroll_r7_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %r7
-    %r7_i = getelementptr inbounds i32, i32* %a7, i64 %index
+    %r7_i = getelementptr inbounds i32, i32* %a6, i64 %index
     %r7_p = bitcast i32* %r7_i to <32 x i32>*
     store <32 x i32> %r7, <32 x i32>* %r7_p, align 128, !noalias !1
 
@@ -1362,7 +1284,7 @@ loop:
     %rd8 = shufflevector <16 x i64> %rd8_unroll_rd8_0_0, <16 x i64> %rd8_unroll_rd8_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %rd8
-    %rd8_i = getelementptr inbounds i64, i64* %a8, i64 %index
+    %rd8_i = getelementptr inbounds i64, i64* %a7, i64 %index
     %rd8_p = bitcast i64* %rd8_i to <32 x i64>*
     store <32 x i64> %rd8, <32 x i64>* %rd8_p, align 256, !noalias !1
 
@@ -1386,7 +1308,7 @@ loop:
     %rd9 = shufflevector <16 x i64> %rd9_unroll_rd9_0_0, <16 x i64> %rd9_unroll_rd9_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %rd9
-    %rd9_i = getelementptr inbounds i64, i64* %a9, i64 %index
+    %rd9_i = getelementptr inbounds i64, i64* %a8, i64 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
 
@@ -1411,16 +1333,15 @@ declare <8 x i64> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x double>, <8 x i64>, i
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
+jit_var_dec_ref_int(1): 4
 jit_var_dec_ref_int(1): 3
 jit_var_dec_ref_int(1): 2
 jit_var_dec_ref_int(1): 1
-jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_int(2): 3
 jit_var_dec_ref_int(2): 2
 jit_var_dec_ref_int(2): 1
 jit_var_dec_ref_int(2): 0
 jit_eval(): done.
-input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 round_f_i32=[-1, -1, 0, 0, 0, 0, 1, 1, -2147483648]
 round_f_i64=[-1, -1, 0, 0, 0, 0, 1, 1, 4294967296]
 round_d_i32=[-1, -1, 0, 0, 0, 0, 1, 1, -2147483648]
@@ -1455,10 +1376,11 @@ jit_var_free(27)
 jit_free(<@>, type=host, size=256)
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
-jit_free(<@>, type=host, size=256)
+jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host, size=256)
+jit_shutdown(): destroying streams ..
 jit_malloc_trim(): freed
- - host memory: 2.5 KiB in 10 allocations
+ - host memory: 2.25 KiB in 9 allocations
 jit_shutdown(): done

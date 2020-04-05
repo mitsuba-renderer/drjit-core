@@ -94,6 +94,11 @@ void jitc_llvm_set_target(const char *target_cpu,
     jit_llvm_set_target(target_cpu, target_features, vector_width);
 }
 
+int jitc_llvm_version_major() {
+    lock_guard guard(state.mutex);
+    return jit_llvm_version_major;
+}
+
 int jitc_llvm_if_at_least(uint32_t vector_width, const char *feature) {
     lock_guard guard(state.mutex);
     return jit_llvm_if_at_least(vector_width, feature);
@@ -154,6 +159,16 @@ void jitc_var_dec_ref_ext(uint32_t index) {
     jit_var_dec_ref_ext(index);
 }
 
+uint32_t jitc_var_ext_ref(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var(index)->ref_count_ext;
+}
+
+uint32_t jitc_var_int_ref(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var(index)->ref_count_int;
+}
+
 void *jitc_var_ptr(uint32_t index) {
     lock_guard guard(state.mutex);
     return jit_var_ptr(index);
@@ -162,11 +177,6 @@ void *jitc_var_ptr(uint32_t index) {
 uint32_t jitc_var_size(uint32_t index) {
     lock_guard guard(state.mutex);
     return jit_var_size(index);
-}
-
-uint32_t jitc_var_set_size(uint32_t index, uint32_t size, int copy) {
-    lock_guard guard(state.mutex);
-    return jit_var_set_size(index, size, copy);
 }
 
 const char *jitc_var_label(uint32_t index) {
@@ -184,14 +194,14 @@ uint32_t jitc_var_map(VarType type, void *ptr, uint32_t size, int free) {
     return jit_var_map(type, ptr, size, free);
 }
 
-uint32_t jitc_var_copy_ptr(const void *ptr) {
+uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index) {
     lock_guard guard(state.mutex);
-    return jit_var_copy_ptr(ptr);
+    return jit_var_copy_ptr(ptr, index);
 }
 
-uint32_t jitc_var_copy(VarType type, const void *value, uint32_t size) {
+uint32_t jitc_var_copy_from_host(VarType type, const void *value, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_var_copy(type, value, size);
+    return jit_var_copy_from_host(type, value, size);
 }
 
 uint32_t jitc_trace_append_0(VarType type, const char *stmt, int stmt_static, uint32_t size) {
@@ -229,29 +239,19 @@ void jitc_var_migrate(uint32_t index, AllocType type) {
     jit_var_migrate(index, type);
 }
 
-void jitc_var_mark_side_effect(uint32_t index) {
+void jitc_var_mark_scatter(uint32_t index, uint32_t target) {
     lock_guard guard(state.mutex);
-    jit_var_mark_side_effect(index);
+    jit_var_mark_scatter(index, target);
 }
 
-void jitc_var_mark_dirty(uint32_t index) {
+int jitc_var_is_literal_zero(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_var_mark_dirty(index);
+    return jit_var_is_literal_zero(index);
 }
 
-void jitc_var_set_extra_dep(uint32_t index, uint32_t dep) {
+int jitc_var_is_literal_one(uint32_t index) {
     lock_guard guard(state.mutex);
-    jit_var_set_extra_dep(index, dep);
-}
-
-int jitc_var_is_all_false(uint32_t index) {
-    lock_guard guard(state.mutex);
-    return jit_var_is_all_false(index);
-}
-
-int jitc_var_is_all_true(uint32_t index) {
-    lock_guard guard(state.mutex);
-    return jit_var_is_all_true(index);
+    return jit_var_is_literal_one(index);
 }
 
 const char *jitc_var_whos() {
@@ -282,6 +282,11 @@ void jitc_eval() {
 void jitc_var_eval(uint32_t index) {
     lock_guard guard(state.mutex);
     jit_var_eval(index);
+}
+
+void jitc_var_schedule(uint32_t index) {
+    lock_guard guard(state.mutex);
+    jit_var_schedule(index);
 }
 
 void jitc_fill(VarType type, void *ptr, uint32_t size, const void *src) {

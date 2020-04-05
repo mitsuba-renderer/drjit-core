@@ -94,19 +94,20 @@ void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v);
 static void jit_var_traverse(uint32_t size, uint32_t index) {
     std::pair<uint32_t, uint32_t> key(size, index);
 
-    if (index == 0 || visited.find(key) != visited.end())
+    if (visited.find(key) != visited.end())
         return;
 
     visited.insert(key);
 
     Variable *v = jit_var(index);
+
     const uint32_t *dep = v->dep;
 
     std::pair<uint32_t, uint32_t> ch[4] = {
-        { dep[0], dep[0] ? jit_var(dep[0])->tsize : 0 },
-        { dep[1], dep[1] ? jit_var(dep[1])->tsize : 0 },
-        { dep[2], dep[2] ? jit_var(dep[2])->tsize : 0 },
-        { dep[3], dep[3] ? jit_var(dep[3])->tsize : 0 }
+        { dep[0], dep[0] ? jit_var(dep[0])->tsize : 0u },
+        { dep[1], dep[1] ? jit_var(dep[1])->tsize : 0u },
+        { dep[2], dep[2] ? jit_var(dep[2])->tsize : 0u },
+        { dep[3], dep[3] ? jit_var(dep[3])->tsize : 0u }
     };
 
     // Simple sorting network
@@ -121,9 +122,14 @@ static void jit_var_traverse(uint32_t size, uint32_t index) {
 
     #undef SWAP
 
-    for (auto const &v: ch)
-        jit_var_traverse(size, v.first);
+    if (likely(!v->direct_pointer)) {
+        for (auto &sub: ch) {
+            if (sub.first)
+                jit_var_traverse(size, sub.first);
+        }
+    }
 
+    v->output_flag = false;
     schedule.emplace_back(size, index);
 }
 
@@ -143,6 +149,7 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
                 case 'i': buffer.put("%r0"); continue;
                 case 't': prefix_table = var_type_name_ptx;     break;
                 case 'b': prefix_table = var_type_name_ptx_bin; break;
+                case 's': prefix_table = var_type_size_str; break;
                 case 'r': prefix_table = var_type_prefix; break;
                 default:
                     jit_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
@@ -575,10 +582,9 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
         if (v->arg_type == ArgType::Register)
             continue;
         uint32_t reg_id = v->reg_index, arg_id = v->arg_index - 1;
-        const char *type = var_type_name_llvm[(int) v->type];
+        const char *type = (VarType) v->type == VarType::Bool
+                               ? "i8" : var_type_name_llvm[(int) v->type];
 
-        if ((VarType) v->type == VarType::Bool)
-            type = "i8";
         if (unlikely(log_trace))
             buffer.fmt("\n    ; Prepare argument %u\n", arg_id);
 
@@ -623,12 +629,10 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
         Variable *v = jit_var(index);
         uint32_t align = var_type_size[(int) v->type] * width,
                  reg_id = v->reg_index, arg_id = v->arg_index - 1;
-        const char *type = var_type_name_llvm[(int) v->type],
-                   *reg_prefix = var_type_prefix[(int) v->type];
+        const char *reg_prefix = var_type_prefix[(int) v->type],
+                   *type = (VarType) v->type == VarType::Bool
+                               ? "i8" : var_type_name_llvm[(int) v->type];
         uint32_t size = v->size;
-
-        if ((VarType) v->type == VarType::Bool)
-            type = "i8";
 
         if (v->arg_type == ArgType::Input) {
             if (v->direct_pointer)
@@ -716,8 +720,8 @@ void jit_assemble_llvm_suffix() {
     buffer.put(" }");
 }
 
-void jit_assemble(ScheduledGroup group) {
-    bool cuda = active_stream != nullptr;
+void jit_assemble(Stream *stream, ScheduledGroup group) {
+    bool cuda = stream->cuda;
 
     uint32_t n_args_in    = 0,
              n_args_out   = 0,
@@ -762,9 +766,9 @@ void jit_assemble(ScheduledGroup group) {
                 buffer.put(" [scalar]");
             if (v->data != nullptr || v->direct_pointer)
                 buffer.put(" [in]");
-            else if (v->side_effect)
-                buffer.put(" [se]");
-            else if (v->ref_count_ext > 0 && v->size == group.size)
+            else if (v->scatter)
+                buffer.put(" [scat]");
+            else if (v->output_flag > 0 && v->size == group.size)
                 buffer.put(" [out]");
 
             jit_trace("%s", buffer.get());
@@ -775,8 +779,7 @@ void jit_assemble(ScheduledGroup group) {
             v->arg_type = ArgType::Input;
             n_args_in++;
             push = true;
-        } else if (!v->side_effect && v->ref_count_ext > 0 &&
-                    v->size == group.size) {
+        } else if (v->output_flag && !v->scatter && v->size == group.size) {
             size_t isize    = (size_t) var_type_size[(int) v->type],
                    var_size = (size_t) group.size * isize;
 
@@ -888,30 +891,28 @@ void jit_assemble(ScheduledGroup group) {
 }
 
 void jit_run(Stream *stream, ScheduledGroup group) {
-    bool llvm = stream == nullptr;
-    int device_id = llvm ? -1 : stream->device;
-
     float codegen_time = timer();
-    KernelKey kernel_key((char *) buffer.get(), device_id);
-    size_t hash_code = KernelHash::compute_hash(kernel_hash, device_id);
+    KernelKey kernel_key((char *) buffer.get(), stream->device);
+    size_t hash_code = KernelHash::compute_hash(kernel_hash, stream->device);
     auto it = state.kernel_cache.find(kernel_key, hash_code);
     Kernel kernel;
 
     if (it == state.kernel_cache.end()) {
         bool cache_hit = jit_kernel_load(
-            buffer.get(), buffer.size(), llvm, kernel_hash, kernel);
+            buffer.get(), buffer.size(), stream->cuda, kernel_hash, kernel);
 
         if (!cache_hit) {
-            if (llvm)
+            if (stream->cuda)
+                jit_cuda_compile(buffer.get(), buffer.size(), kernel);
+            else
                 jit_llvm_compile(buffer.get(), buffer.size(), kernel,
                                  jit_llvm_supplement);
-            else
-                jit_cuda_compile(buffer.get(), buffer.size(), kernel);
 
-            jit_kernel_write(buffer.get(), buffer.size(), llvm, kernel_hash, kernel);
+            jit_kernel_write(buffer.get(), buffer.size(), stream->cuda,
+                             kernel_hash, kernel);
         }
 
-        if (llvm) {
+        if (!stream->cuda) {
             jit_llvm_disasm(kernel);
         } else {
             CUresult ret;
@@ -969,7 +970,25 @@ void jit_run(Stream *stream, ScheduledGroup group) {
                 jit_time_string(codegen_time));
     }
 
-    if (llvm) {
+    if (stream->cuda) {
+        size_t kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
+
+        void *config[] = {
+            CU_LAUNCH_PARAM_BUFFER_POINTER,
+            kernel_args.data(),
+            CU_LAUNCH_PARAM_BUFFER_SIZE,
+            &kernel_args_size,
+            CU_LAUNCH_PARAM_END
+        };
+
+        uint32_t block_count, thread_count;
+        const Device &device = state.devices[stream->device];
+        device.get_launch_config(&block_count, &thread_count, group.size,
+                                 (uint32_t) kernel.cuda.block_size);
+
+        cuda_check(cuLaunchKernel(kernel.cuda.cu_func, block_count, 1, 1, thread_count,
+                                  1, 1, 0, active_stream->handle, nullptr, config));
+    } else {
         uint32_t width = kernel.llvm.func != kernel.llvm.func_scalar
                              ? jit_llvm_vector_width : 1u,
                  rounded = group.size / width * width;
@@ -983,24 +1002,6 @@ void jit_run(Stream *stream, ScheduledGroup group) {
 
         if (unlikely(rounded != group.size))
             kernel.llvm.func_scalar(rounded, group.size, kernel_args_extra.data());
-    } else {
-        size_t kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
-
-        void *config[] = {
-            CU_LAUNCH_PARAM_BUFFER_POINTER,
-            kernel_args.data(),
-            CU_LAUNCH_PARAM_BUFFER_SIZE,
-            &kernel_args_size,
-            CU_LAUNCH_PARAM_END
-        };
-
-        uint32_t block_count, thread_count;
-        const Device &device = state.devices[device_id];
-        device.get_launch_config(&block_count, &thread_count, group.size,
-                                 (uint32_t) kernel.cuda.block_size);
-
-        cuda_check(cuLaunchKernel(kernel.cuda.cu_func, block_count, 1, 1, thread_count,
-                                  1, 1, 0, active_stream->handle, nullptr, config));
     }
 }
 
@@ -1013,26 +1014,28 @@ void jit_eval() {
     state.mutex.lock();
 
     Stream *stream = active_stream;
-    bool cuda = stream != nullptr;
-    auto &todo = cuda ? stream->todo : state.todo_host;
+    if (unlikely(!stream))
+        jit_raise(
+            "jit_eval(): you must invoke jit_device_set() to choose a target "
+            "device before evaluating expressions using the JIT compiler.");
 
     visited.clear();
     schedule.clear();
 
     // Collect variables that must be computed and their subtrees
-    for (uint32_t index : todo) {
+    for (uint32_t index : stream->todo) {
         auto it = state.variables.find(index);
         if (it == state.variables.end())
             continue;
 
-        const Variable &v = it.value();
-
-        if (v.ref_count_ext == 0)
+        Variable *v = &it.value();
+        if (v->ref_count_ext == 0 || v->data != nullptr)
             continue;
 
-        jit_var_traverse(v.size, index);
+        jit_var_traverse(v->size, index);
+        v->output_flag = true;
     }
-    todo.clear();
+    stream->todo.clear();
 
     if (schedule.empty())
         return;
@@ -1063,7 +1066,7 @@ void jit_eval() {
 
     // Are there independent groups of work that could be dispatched in parallel?
     bool parallel_dispatch =
-        state.parallel_dispatch && cuda && schedule_groups.size() > 1;
+        state.parallel_dispatch && stream->cuda && schedule_groups.size() > 1;
 
     if (!parallel_dispatch) {
         jit_log(Debug, "jit_eval(): begin.");
@@ -1075,14 +1078,15 @@ void jit_eval() {
 
     uint32_t group_idx = 1;
     for (ScheduledGroup &group : schedule_groups) {
-        jit_assemble(group);
+        jit_assemble(stream, group);
 
         Stream *sub_stream = stream;
         if (parallel_dispatch) {
-            uint32_t stream_index = 1000 * stream->stream + group_idx++;
+            uint32_t stream_index = 1000 * (stream->stream + 1) + group_idx++;
             jit_device_set(stream->device, stream_index);
             sub_stream = active_stream;
             cuda_check(cuStreamWaitEvent(sub_stream->handle, stream->event, 0));
+            active_stream = stream;
         }
 
         jit_run(stream, group);
@@ -1092,9 +1096,6 @@ void jit_eval() {
             cuda_check(cuStreamWaitEvent(stream->handle, sub_stream->event, 0));
         }
     }
-
-    if (parallel_dispatch)
-        jit_device_set(stream->device, stream->stream);
 
     /* At this point, all variables and their dependencies are computed, which
        means that we can remove internal edges between them. This in turn will
@@ -1109,7 +1110,7 @@ void jit_eval() {
             continue;
 
         Variable *v = &it.value();
-        if (!v->stmt)
+        if (!(v->stmt && !v->direct_pointer && (v->data || v->scatter)))
             continue;
 
         jit_cse_drop(index, v);
@@ -1117,35 +1118,29 @@ void jit_eval() {
         if (unlikely(v->free_stmt))
             free(v->stmt);
 
-        bool side_effect = v->side_effect;
-        uint32_t dep[4], extra_dep = v->extra_dep;
+        bool scatter = v->scatter;
+        uint32_t dep[4];
         memcpy(dep, v->dep, sizeof(uint32_t) * 4);
-
         memset(v->dep, 0, sizeof(uint32_t) * 4);
-        v->extra_dep = 0;
         v->stmt = nullptr;
 
-        for (int j = 0; j < 4; ++j)
-            jit_var_dec_ref_int(dep[j]);
-        jit_var_dec_ref_ext(extra_dep);
-
-        if (unlikely(side_effect)) {
-            if (extra_dep) {
-                Variable *v2 = jit_var(extra_dep);
-                v2->pending_scatter = false;
-            }
+        if (unlikely(scatter)) {
+            Variable *ptr = jit_var(dep[0]);
+            if (unlikely(!ptr->direct_pointer))
+                jit_fail("jit_eval(): invalid scatter target!");
+            Variable *target = jit_var(ptr->dep[0]);
+            target->pending_scatter = false;
 
             Variable *v2 = jit_var(index);
             if (unlikely(v2->ref_count_ext != 1 || v2->ref_count_int != 0))
-                jit_fail("jit_eval(): invalid invalid reference for statment "
-                         "with side effects!");
+                jit_fail("jit_eval(): invalid invalid reference for scatter operation");
             jit_var_dec_ref_ext(index, v2);
         }
+
+        for (int j = 0; j < 4; ++j)
+            jit_var_dec_ref_int(dep[j]);
     }
 
-    if (cuda)
-        jit_free_flush();
-
+    jit_free_flush();
     jit_log(Debug, "jit_eval(): done.");
 }
-

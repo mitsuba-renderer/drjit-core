@@ -85,8 +85,10 @@ void jit_var_free(uint32_t index, Variable *v) {
     if (v->stmt)
         jit_cse_drop(index, v);
 
-    uint32_t dep[4], extra_dep = v->extra_dep;
+    uint32_t dep[4];
     memcpy(dep, v->dep, sizeof(uint32_t) * 4);
+    void *data = v->data;
+    bool direct_pointer = v->direct_pointer;
 
     // Release GPU memory
     if (likely(v->data && !v->retain_data))
@@ -105,29 +107,27 @@ void jit_var_free(uint32_t index, Variable *v) {
         state.labels.erase(it);
     }
 
-    // Free reverse pointer table entry, if needed
-    if (unlikely(v->direct_pointer)) {
-        auto it = state.variable_from_ptr.find(v->data);
-        if (unlikely(it == state.variable_from_ptr.end()))
-            jit_fail("jit_var_free(): direct pointer not found!");
-        state.variable_from_ptr.erase(it);
-    }
-
     // Remove from hash table (careful: 'v' invalid from here on)
     state.variables.erase(index);
 
-    // Decrease reference count of dependencies
-    for (int i = 0; i < 4; ++i)
-        jit_var_dec_ref_int(dep[i]);
+    if (likely(!direct_pointer)) {
+        // Decrease reference count of dependencies
+        for (int i = 0; i < 4; ++i)
+            jit_var_dec_ref_int(dep[i]);
+    } else {
+        // Free reverse pointer table entry, if needed
+        auto it = state.variable_from_ptr.find(data);
+        if (unlikely(it == state.variable_from_ptr.end()))
+            jit_fail("jit_var_free(): direct pointer not found!");
+        state.variable_from_ptr.erase(it);
 
-    jit_var_dec_ref_ext(extra_dep);
+        // Decrease reference count of dependencies
+        jit_var_dec_ref_ext(dep[0]);
+    }
 }
 
 /// Increase the external reference count of a given variable
 void jit_var_inc_ref_ext(uint32_t index, Variable *v) {
-    if (unlikely(v->ref_count_ext == 0xFFFF))
-        jit_fail("jit_var_inc_ref_ext(%u): reference count overflow!", index);
-
     v->ref_count_ext++;
     jit_trace("jit_var_inc_ref_ext(%u): %u", index, v->ref_count_ext);
 }
@@ -140,8 +140,6 @@ void jit_var_inc_ref_ext(uint32_t index) {
 
 /// Increase the internal reference count of a given variable
 void jit_var_inc_ref_int(uint32_t index, Variable *v) {
-    if (unlikely(v->ref_count_int == 0xFFFF))
-        jit_fail("jit_var_inc_ref_ext(%u): reference count overflow!", index);
     v->ref_count_int++;
     jit_trace("jit_var_inc_ref_int(%u): %u", index, v->ref_count_int);
 }
@@ -190,42 +188,28 @@ void jit_var_dec_ref_int(uint32_t index) {
 
 /// Append the given variable to the instruction trace and return its ID
 std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_trace_append(): you must invoke jit_device_set() to "
+                  "choose a target device before performing computation using "
+                  "the JIT compiler.");
+
+    v.cuda = stream->cuda;
+
     CSECache::iterator key_it;
     bool disable_cse = v.stmt == nullptr || v.direct_pointer,
          cse_key_inserted = false;
 
-    if (v.stmt) {
-        if (v.type != (uint32_t) VarType::Float32) {
-            /// Strip .ftz modifiers from non-float PTX statements
-            char *offset = strstr(v.stmt, ".ftz");
-            if (offset) {
-                if (!v.free_stmt) {
-                    /* Need to modify the instruction, allocate memory
-                       if not already available */
-                    v.free_stmt = true;
-                    v.stmt = strdup(v.stmt);
-                    offset = strstr(v.stmt, ".ftz");
-                }
-                do {
-                    if ((offset[0] = offset[4]) == '\0')
-                        break;
-                    offset++;
-                } while (true);
-            }
-        }
-
-        // Check if this exact statement already exists ..
-        if (!disable_cse)
-            std::tie(key_it, cse_key_inserted) =
-                state.cse_cache.try_emplace(VariableKey(v), 0);
-    }
+    // Check if this exact statement already exists ..
+    if (!disable_cse)
+        std::tie(key_it, cse_key_inserted) =
+            state.cse_cache.try_emplace(VariableKey(v), 0);
 
     uint32_t index;
     Variable *v_out;
 
     if (likely(disable_cse || cse_key_inserted)) {
         // .. nope, it is new.
-
         VariableMap::iterator var_it;
         bool var_inserted;
         do {
@@ -249,7 +233,6 @@ std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
 
         for (int i = 0; i < 4; ++i)
             jit_var_dec_ref_int(v.dep[i]);
-        jit_var_dec_ref_ext(v.extra_dep);
 
         index = key_it.value();
         v_out = jit_var(index);
@@ -266,41 +249,6 @@ void *jit_var_ptr(uint32_t index) {
 /// Query the size of a given variable
 uint32_t jit_var_size(uint32_t index) {
     return jit_var(index)->size;
-}
-
-/// Set the size of a given variable (if possible, otherwise throw)
-uint32_t jit_var_set_size(uint32_t index, uint32_t size, int copy) {
-    Variable *v = jit_var(index);
-    if (v->size == size)
-        return index;
-
-    if (v->data != nullptr || v->ref_count_int > 0) {
-        if (v->size == 1 && copy) {
-            uint32_t index_new = jit_trace_append_1(
-                (VarType) v->type, "mov.$t1 $r1, $r2", 1, index);
-            jit_var(index_new)->size = size;
-            jit_var_dec_ref_ext(index);
-            return index_new;
-        }
-
-        jit_raise("jit_var_set_size(): attempted to resize variable %u,"
-                  "which was already allocated (current size = %u, "
-                  "requested size = %u)",
-                  index, v->size, (uint32_t) size);
-    }
-
-    jit_log(Debug, "jit_var_set_size(%u): %u", index, size);
-
-    VariableKey key(*v), key_new(*v);
-    v->size = key_new.size = (uint32_t) size;
-
-    auto it = state.cse_cache.find(key);
-    if (it != state.cse_cache.end() && it.value() == index) {
-        state.cse_cache.erase(it);
-        state.cse_cache.try_emplace(key_new, index);
-    }
-
-    return index;
 }
 
 /// Query the descriptive label associated with a given variable
@@ -332,15 +280,12 @@ void jit_var_set_label(uint32_t index, const char *label_) {
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static,
                             uint32_t size) {
-    Stream *stream = active_stream;
-
     Variable v;
     v.type = (uint32_t) type;
     v.size = size;
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.tsize = 1;
     v.free_stmt = stmt_static == 0;
-    v.cuda = stream != nullptr;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
@@ -350,17 +295,12 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static,
 
     jit_var_inc_ref_ext(index, vo);
 
-    auto &todo = stream ? stream->todo : state.todo_host;
-    todo.push_back(index);
-
     return index;
 }
 
 /// Append a variable to the instruction trace (1 operand)
 uint32_t jit_trace_append_1(VarType type, const char *stmt,
                             int stmt_static, uint32_t op1) {
-    Stream *stream = active_stream;
-
     if (unlikely(op1 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -374,7 +314,6 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
     v.dep[0] = op1;
     v.tsize = 1 + v1->tsize;
     v.free_stmt = stmt_static == 0;
-    v.cuda = stream != nullptr;
 
     if (unlikely(v1->pending_scatter)) {
         jit_eval();
@@ -392,17 +331,12 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 
     jit_var_inc_ref_ext(index, vo);
 
-    auto &todo = stream ? stream->todo : state.todo_host;
-    todo.push_back(index);
-
     return index;
 }
 
 /// Append a variable to the instruction trace (2 operands)
 uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
                             uint32_t op1, uint32_t op2) {
-    Stream *stream = active_stream;
-
     if (unlikely(op1 == 0 || op2 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -418,7 +352,6 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
     v.dep[1] = op2;
     v.tsize = 1 + v1->tsize + v2->tsize;
     v.free_stmt = stmt_static == 0;
-    v.cuda = stream != nullptr;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size))) {
@@ -444,17 +377,12 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
 
     jit_var_inc_ref_ext(index, vo);
 
-    auto &todo = stream ? stream->todo : state.todo_host;
-    todo.push_back(index);
-
     return index;
 }
 
 /// Append a variable to the instruction trace (3 operands)
 uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
                             uint32_t op1, uint32_t op2, uint32_t op3) {
-    Stream *stream = active_stream;
-
     if (unlikely(op1 == 0 || op2 == 0 || op3 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -472,7 +400,6 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     v.dep[2] = op3;
     v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize;
     v.free_stmt = stmt_static == 0;
-    v.cuda = stream != nullptr;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size) ||
@@ -501,9 +428,6 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
 
     jit_var_inc_ref_ext(index, vo);
 
-    auto &todo = stream ? stream->todo : state.todo_host;
-    todo.push_back(index);
-
     return index;
 }
 
@@ -511,8 +435,6 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
 uint32_t jit_trace_append_4(VarType type, const char *stmt, int stmt_static,
                             uint32_t op1, uint32_t op2, uint32_t op3,
                             uint32_t op4) {
-    Stream *stream = active_stream;
-
     if (unlikely(op1 == 0 || op2 == 0 || op3 == 0 || op4 == 0))
         jit_raise("jit_trace_append(): arithmetic involving "
                   "uninitialized variable!");
@@ -532,7 +454,6 @@ uint32_t jit_trace_append_4(VarType type, const char *stmt, int stmt_static,
     v.dep[3] = op4;
     v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize + v4->tsize;
     v.free_stmt = stmt_static == 0;
-    v.cuda = stream != nullptr;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size) ||
@@ -565,31 +486,7 @@ uint32_t jit_trace_append_4(VarType type, const char *stmt, int stmt_static,
 
     jit_var_inc_ref_ext(index, vo);
 
-    auto &todo = stream ? stream->todo : state.todo_host;
-    todo.push_back(index);
-
     return index;
-}
-
-void jit_var_set_extra_dep(uint32_t index, uint32_t dep) {
-    jit_trace("jit_var_set_extra_dep(%u, %u)", index, dep);
-
-    Variable *v = jit_var(index);
-
-    if (unlikely(v->extra_dep)) {
-        jit_var_dec_ref_ext(v->extra_dep);
-        v = jit_var(index);
-    }
-
-    VariableKey key(*v), key_new(*v);
-    v->extra_dep = key_new.extra_dep = dep;
-    jit_var_inc_ref_ext(dep);
-
-    auto it = state.cse_cache.find(key);
-    if (it != state.cse_cache.end() && it.value() == index) {
-        state.cse_cache.erase(it);
-        state.cse_cache.try_emplace(key_new, index);
-    }
 }
 
 /// Register an existing variable with the JIT compiler
@@ -603,7 +500,6 @@ uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free) {
     v.size = size;
     v.retain_data = free == 0;
     v.tsize = 1;
-    v.cuda = active_stream != nullptr;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);
@@ -616,32 +512,43 @@ uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free) {
 }
 
 /// Copy a memory region onto the device and return its variable index
-uint32_t jit_var_copy(VarType type, const void *ptr, uint32_t size) {
+uint32_t jit_var_copy(AllocType atype, VarType vtype, const void *ptr, uint32_t size) {
     Stream *stream = active_stream;
 
-    size_t total_size = (size_t) size * (size_t) var_type_size[(int) type];
+    if (unlikely(!stream))
+        jit_raise("jit_var_copy(): you must invoke jit_device_set() to "
+                  "choose a target device before using this function.");
+
+    size_t total_size = (size_t) size * (size_t) var_type_size[(int) vtype];
     void *target_ptr;
 
-    if (stream) {
+    if (stream->cuda) {
         target_ptr = jit_malloc(AllocType::Device, total_size);
-        void *host_ptr = jit_malloc(AllocType::HostPinned, total_size);
-        memcpy(host_ptr, ptr, total_size);
-        cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
-                                 (CUdeviceptr) host_ptr, total_size,
-                                 stream->handle));
-        jit_free(host_ptr);
+
+        if (atype == AllocType::Host) {
+            void *host_ptr = jit_malloc(AllocType::HostPinned, total_size);
+            memcpy(host_ptr, ptr, total_size);
+            cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
+                                     (CUdeviceptr) host_ptr, total_size,
+                                     stream->handle));
+            jit_free(host_ptr);
+        } else {
+            cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
+                                     (CUdeviceptr) ptr, total_size,
+                                     stream->handle));
+        }
     } else {
         target_ptr = jit_malloc(AllocType::Host, total_size);
         memcpy(target_ptr, ptr, total_size);
     }
 
-    uint32_t index = jit_var_map(type, target_ptr, size, true);
+    uint32_t index = jit_var_map(vtype, target_ptr, size, true);
     jit_log(Debug, "jit_var_copy(%u, size=%u)", index, size);
     return index;
 }
 
 /// Register pointer literal as a special variable within the JIT compiler
-uint32_t jit_var_copy_ptr(const void *ptr) {
+uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index) {
     auto it = state.variable_from_ptr.find(ptr);
     if (it != state.variable_from_ptr.end()) {
         uint32_t index = it.value();
@@ -655,16 +562,19 @@ uint32_t jit_var_copy_ptr(const void *ptr) {
     v.size = 1;
     v.tsize = 0;
     v.retain_data = true;
+    v.dep[0] = index;
     v.direct_pointer = true;
-    v.cuda = active_stream != nullptr;
 
-    uint32_t index; Variable *vo;
-    std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_var_copy_ptr(%u): " ENOKI_PTR, index, (uintptr_t) ptr);
+    jit_var_inc_ref_ext(index);
 
-    jit_var_inc_ref_ext(index, vo);
-    state.variable_from_ptr[ptr] = index;
-    return index;
+    uint32_t index_o; Variable *vo;
+    std::tie(index_o, vo) = jit_trace_append(v);
+    jit_log(Debug, "jit_var_copy_ptr(%u <- %u): " ENOKI_PTR, index_o, index,
+            (uintptr_t) ptr);
+
+    jit_var_inc_ref_ext(index_o, vo);
+    state.variable_from_ptr[ptr] = index_o;
+    return index_o;
 }
 
 /// Migrate a variable to a different flavor of memory
@@ -684,55 +594,149 @@ void jit_var_migrate(uint32_t index, AllocType type) {
     v->data = jit_malloc_migrate(v->data, type);
 }
 
-/// Indicate that evaluation of the given variable causes side effects
-void jit_var_mark_side_effect(uint32_t index) {
-    jit_log(Debug, "jit_var_mark_side_effect(%u)", index);
-    Variable *v = jit_var(index);
-    v->side_effect = true;
-    jit_cse_drop(index, v);
-}
+/// Mark a variable as a scatter operation that writes to 'target'
+void jit_var_mark_scatter(uint32_t index, uint32_t target) {
+    jit_log(Debug, "jit_var_mark_scatter(%u, %u)", index, target);
 
-/// Mark variable as dirty due to pending scatter operations
-void jit_var_mark_dirty(uint32_t index) {
-    jit_log(Debug, "jit_var_mark_dirty(%u)", index);
+    // Update scatter operation
     Variable *v = jit_var(index);
+    jit_cse_drop(index, v);
+    v->scatter = true;
+    active_stream->todo.push_back(index);
+
+    // Update target variable
+    v = jit_var(target);
     v->pending_scatter = true;
 }
 
-/// Is the given variable a mask that has all bits set to '0'?
-int jit_var_is_all_false(uint32_t index) {
+/// Is the given variable a literal that equals zero?
+int jit_var_is_literal_zero(uint32_t index) {
     Variable *v = jit_var(index);
 
-    int rv;
-    if (!v->stmt || (VarType) v->type != VarType::Bool)
-        rv = 1;
-    else if (v->cuda)
-        rv = strcmp(v->stmt, "mov.$t0 $r0, 0");
-    else
-        rv = strcmp(v->stmt,
-                    "$r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n"
-                    "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
-                    "<$w x i32> $z");
+    if (!v->stmt)
+        return false;
 
-    return rv == 0;
+    const char *s = nullptr;
+    if (v->cuda) {
+        switch ((VarType) v->type) {
+            case VarType::Float16:
+                s = "mov.$b0 $r0, 0x0000";
+                break;
+
+            case VarType::Float32:
+                s = "mov.$t0 $r0, 0f00000000";
+                break;
+
+            case VarType::Float64:
+                s = "mov.$t0 $r0, 0d0000000000000000";
+                break;
+
+            case VarType::Bool:
+                s = "mov.$t0 $r0, 0";
+                break;
+
+            case VarType::Int8:
+            case VarType::UInt8:
+                s = "mov.$b0 $r0, 0x00";
+                break;
+
+            case VarType::Int16:
+            case VarType::UInt16:
+                s = "mov.$b0 $r0, 0x0000";
+                break;
+
+            case VarType::Int32:
+            case VarType::UInt32:
+                s = "mov.$b0 $r0, 0x00000000";
+                break;
+
+            case VarType::Pointer:
+            case VarType::Int64:
+            case VarType::UInt64:
+                s = "mov.$b0 $r0, 0x0000000000000000";
+                break;
+
+            default:
+                jit_fail("jit_var_is_literal_zero(): unsupported variable type!");
+        }
+    } else {
+        if ((VarType) v->type == VarType::Float32 ||
+            (VarType) v->type == VarType::Float64)
+            s = "$r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n"
+                "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
+                "<$w x i32> $z";
+        else
+            s = "$r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n"
+                "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
+                "<$w x i32> $z";
+    }
+
+    return strcmp(v->stmt, s) == 0;
 }
 
-/// Is the given variable a mask that has all bits set to '1'?
-int jit_var_is_all_true(uint32_t index) {
+/// Is the given variable a literal that equals one?
+int jit_var_is_literal_one(uint32_t index) {
     Variable *v = jit_var(index);
 
-    int rv;
-    if (!v->stmt || (VarType) v->type != VarType::Bool)
-        rv = 1;
-    else if (v->cuda)
-        rv = strcmp(v->stmt, "mov.$t0 $r0, 1");
-    else
-        rv = strcmp(v->stmt,
-                    "$r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n"
-                    "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
-                    "<$w x i32> $z");
+    if (!v->stmt)
+        return false;
 
-    return rv == 0;
+    const char *s = nullptr;
+    if (v->cuda) {
+        switch ((VarType) v->type) {
+            case VarType::Float16:
+                s = "mov.$b0 $r0, 0x3c00";
+                break;
+
+            case VarType::Float32:
+                s = "mov.$t0 $r0, 0f3f800000";
+                break;
+
+            case VarType::Float64:
+                s = "mov.$t0 $r0, 0d3ff0000000000000";
+                break;
+
+            case VarType::Bool:
+                s = "mov.$t0 $r0, 1";
+                break;
+
+            case VarType::Int8:
+            case VarType::UInt8:
+                s = "mov.$b0 $r0, 0x01";
+                break;
+
+            case VarType::Int16:
+            case VarType::UInt16:
+                s = "mov.$b0 $r0, 0x0001";
+                break;
+
+            case VarType::Int32:
+            case VarType::UInt32:
+                s = "mov.$b0 $r0, 0x00000001";
+                break;
+
+            case VarType::Pointer:
+            case VarType::Int64:
+            case VarType::UInt64:
+                s = "mov.$b0 $r0, 0x0000000000000001";
+                break;
+
+            default:
+                jit_fail("jit_var_is_literal_one(): unsupported variable type!");
+        }
+    } else {
+        if ((VarType) v->type == VarType::Float32 ||
+            (VarType) v->type == VarType::Float64)
+            s = "$r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n"
+                "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
+                "<$w x i32> $z";
+        else
+            s = "$r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n"
+                "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
+                "<$w x i32> $z";
+    }
+
+    return strcmp(v->stmt, s) == 0;
 }
 
 /// Return a human-readable summary of registered variables
@@ -747,9 +751,8 @@ const char *jit_var_whos() {
         indices.push_back(it.first);
     std::sort(indices.begin(), indices.end());
 
-    size_t mem_size_scheduled = 0,
-           mem_size_ready = 0,
-           mem_size_arith = 0;
+    size_t mem_size_evaluated = 0,
+           mem_size_unevaluated = 0;
 
     for (uint32_t index: indices) {
         const Variable *v = jit_var(index);
@@ -763,27 +766,21 @@ const char *jit_var_whos() {
                    jit_mem_string(mem_size), v->data ? 'x' : ' ',
                    label ? label : "");
 
-        if (v->data) {
-            mem_size_ready += mem_size;
-        } else {
-            if (v->ref_count_ext == 0)
-                mem_size_arith += mem_size;
-            else
-                mem_size_scheduled += mem_size;
-        }
+        if (v->direct_pointer)
+            continue;
+        else if (v->data)
+            mem_size_evaluated += mem_size;
+        else
+            mem_size_unevaluated += mem_size;
     }
 
     buffer.put("  =================================================================\n\n");
     buffer.put("  JIT compiler\n");
     buffer.put("  ============\n");
-    buffer.fmt("   - Memory usage (ready)     : %s.\n",
-               jit_mem_string(mem_size_ready));
-    buffer.fmt("   - Memory usage (scheduled) : %s + %s = %s.\n",
-               std::string(jit_mem_string(mem_size_ready)).c_str(),
-               std::string(jit_mem_string(mem_size_scheduled)).c_str(),
-               std::string(jit_mem_string(mem_size_ready + mem_size_scheduled)).c_str());
-    buffer.fmt("   - Memory savings           : %s.\n\n",
-               jit_mem_string(mem_size_arith));
+    buffer.fmt("   - Memory usage (evaluated)   : %s.\n",
+               jit_mem_string(mem_size_evaluated));
+    buffer.fmt("   - Memory usage (unevaluated) : %s.\n\n",
+               jit_mem_string(mem_size_unevaluated));
 
     buffer.put("  Memory allocator\n");
     buffer.put("  ================\n");
@@ -798,23 +795,18 @@ const char *jit_var_whos() {
 
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index) {
+    jit_var_eval(index);
+
     Stream *stream = active_stream;
-    bool cuda = stream != nullptr;
     const Variable *v = jit_var(index);
 
-    if (v->cuda != cuda)
+    if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_str(): attempted to stringify a %s variable "
                   "while the %s backend was activated! You must invoke "
                   "jit_device_set() before!",
-                  v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
-
-    if (unlikely(v->data == nullptr || v->pending_scatter)) {
-        jit_eval();
-        v = jit_var(index);
-    }
-
-    if (unlikely(v->pending_scatter))
-        jit_raise("jit_var_str(): element remains dirty after jit_eval()!");
+                  v->cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
+    else if (unlikely(v->pending_scatter))
+        jit_raise("jit_var_str(): element remains dirty after evaluation!");
     else if (unlikely(!v->data))
         jit_raise("jit_var_str(): invalid/uninitialized variable!");
 
@@ -860,32 +852,47 @@ const char *jit_var_str(uint32_t index) {
     return buffer.get();
 }
 
-/// Call jit_eval() only if the variable 'index' requires evaluation
-void jit_var_eval(uint32_t index) {
+/// Schedule a variable \c index for future evaluation via \ref jitc_eval()
+void jit_var_schedule(uint32_t index) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_var_schedule(): you must invoke jit_device_set() to "
+                  "choose a target device before using this function.");
+
     Variable *v = jit_var(index);
-    if (v->data == nullptr || v->pending_scatter)
+    if (v->data == nullptr)
+        stream->todo.push_back(index);
+}
+
+/// Evaluate the variable \c index right away, if it is unevaluated/dirty.
+void jit_var_eval(uint32_t index) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_var_eval(): you must invoke jit_device_set() to "
+                  "choose a target device before using this function.");
+
+    Variable *v = jit_var(index);
+    if (v->data == nullptr || v->pending_scatter) {
+        if (v->data == nullptr)
+            stream->todo.push_back(index);
         jit_eval();
+    }
 }
 
 /// Read a single element of a variable and write it to 'dst'
 void jit_var_read(uint32_t index, uint32_t offset, void *dst) {
+    jit_var_eval(index);
+
     Stream *stream = active_stream;
-    bool cuda = stream != nullptr;
     Variable *v = jit_var(index);
 
-    if (unlikely(v->cuda != cuda))
-        jit_fail("jit_var_write(): attempted to read from a %s variable "
-                 "while the %s backend was activated! You must invoke "
-                 "jit_device_set() before!",
-                 v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
-
-    if (unlikely(v->data == nullptr || v->pending_scatter)) {
-        jit_eval();
-        v = jit_var(index);
-    }
-
-    if (unlikely(v->pending_scatter))
-        jit_raise("jit_var_read(): element remains dirty after jit_eval()!");
+    if (unlikely(v->cuda != stream->cuda))
+        jit_raise("jit_var_read(): attempted to read from a %s variable "
+                  "while the %s backend was activated! You must invoke "
+                  "jit_device_set() before!", v->cuda ? "CUDA" : "LLVM",
+                  stream->cuda ? "CUDA" : "LLVM");
+    else if (unlikely(v->pending_scatter))
+        jit_raise("jit_var_read(): element remains dirty after evaluation!");
     else if (unlikely(!v->data))
         jit_raise("jit_var_read(): invalid/uninitialized variable!");
 
@@ -900,23 +907,18 @@ void jit_var_read(uint32_t index, uint32_t offset, void *dst) {
 
 /// Reverse of jit_var_read(). Copy 'dst' to a single element of a variable
 void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
+    jit_var_eval(index);
+
     Stream *stream = active_stream;
-    bool cuda = stream != nullptr;
     Variable *v = jit_var(index);
 
-    if (unlikely(v->cuda != cuda))
+    if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_write(): attempted to write to a %s variable "
                   "while the %s backend was activated! You must invoke "
-                  "jit_device_set() before!",
-                  v->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
-
-    if (unlikely(v->data == nullptr || v->pending_scatter)) {
-        jit_eval();
-        v = jit_var(index);
-    }
-
-    if (unlikely(v->pending_scatter))
-        jit_raise("jit_var_write(): element remains dirty after jit_eval()!");
+                  "jit_device_set() before!", v->cuda ? "CUDA" : "LLVM",
+                  stream->cuda ? "CUDA" : "LLVM");
+    else if (unlikely(v->pending_scatter))
+        jit_raise("jit_var_write(): element remains dirty after evaluation!");
     else if (unlikely(!v->data))
         jit_raise("jit_var_write(): invalid/uninitialized variable!");
 
@@ -926,7 +928,7 @@ void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
     size_t isize = var_type_size[(int) v->type];
     uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
 
-    if (cuda)
+    if (stream->cuda)
         cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, isize,
                                  stream->handle));
     else

@@ -1,11 +1,12 @@
+jit_device_set(device=-1, stream=0): creating stream
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map(1): <@>, size=2, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy(1, size=2)
+jit_var_copy_from_host(1, size=2)
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map(2): <@>, size=2, free=1
 jit_var_inc_ref_ext(2): 1
-jit_var_copy(2, size=2)
+jit_var_copy_from_host(2, size=2)
 jit_trace_append(3): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(1): 1
@@ -177,6 +178,7 @@ jit_free(<@>, type=host, size=64)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host, size=64)
+jit_shutdown(): destroying streams ..
 jit_malloc_trim(): freed
  - host memory: 384 B in 6 allocations
 jit_shutdown(): done

@@ -24,6 +24,8 @@ using LLVMMemoryBufferRef = void *;
 using LLVMContextRef = void *;
 using LLVMPassManagerRef = void *;
 using LLVMMCJITMemoryManagerRef = void *;
+using LLVMTargetMachineRef = void *;
+using LLVMCodeModel = int;
 
 using LLVMMemoryManagerAllocateCodeSectionCallback =
     uint8_t *(*) (void *, uintptr_t, unsigned, unsigned, const char *);
@@ -38,7 +40,7 @@ using LLVMMemoryManagerDestroyCallback = void (*)(void *Opaque);
 
 struct LLVMMCJITCompilerOptions {
   unsigned OptLevel;
-  int CodeModel;
+  LLVMCodeModel CodeModel;
   LLVMBool NoFramePointerElim;
   LLVMBool EnableFastISel;
   void *MCJMM;
@@ -87,11 +89,12 @@ static size_t (*LLVMDisasmInstruction)(LLVMDisasmContextRef, uint8_t *,
 static LLVMPassManagerRef (*LLVMCreatePassManager)() = nullptr;
 static void (*LLVMRunPassManager)(LLVMPassManagerRef, LLVMModuleRef) = nullptr;
 static void (*LLVMDisposePassManager)(LLVMPassManagerRef) = nullptr;
-static void (*LLVMAddAlwaysInlinerPass)(LLVMPassManagerRef);
+static void (*LLVMAddAlwaysInlinerPass)(LLVMPassManagerRef) = nullptr;
+static LLVMTargetMachineRef (*LLVMGetExecutionEngineTargetMachine)(
+    LLVMExecutionEngineRef) = nullptr;
 
 #define LLVMDisassembler_Option_PrintImmHex       2
 #define LLVMDisassembler_Option_AsmPrinterVariant 4
-#define LLVMCodeModelSmall 3
 
 static void *jit_llvm_handle                    = nullptr;
 #endif
@@ -102,18 +105,22 @@ static LLVMExecutionEngineRef jit_llvm_engine   = nullptr;
 static LLVMContextRef jit_llvm_context          = nullptr;
 static LLVMPassManagerRef jit_llvm_pass_manager = nullptr;
 
-char *jit_llvm_target_cpu      = nullptr;
-char *jit_llvm_target_features = nullptr;
-uint32_t jit_llvm_vector_width = 0;
-size_t jit_llvm_kernel_id      = 0;
+char    *jit_llvm_triple          = nullptr;
+char    *jit_llvm_target_cpu      = nullptr;
+char    *jit_llvm_target_features = nullptr;
+uint32_t jit_llvm_vector_width    = 0;
+size_t   jit_llvm_kernel_id       = 0;
+uint32_t jit_llvm_version_major   = 0;
+uint32_t jit_llvm_version_minor   = 0;
+uint32_t jit_llvm_version_patch   = 0;
 
 static bool     jit_llvm_init_attempted = false;
 static bool     jit_llvm_init_success   = false;
 
-static uint8_t *jit_llvm_mem        = nullptr;
-static size_t   jit_llvm_mem_size   = 0;
-static size_t   jit_llvm_mem_offset = 0;
-static bool     jit_llvm_got        = false;
+static uint8_t *jit_llvm_mem           = nullptr;
+static size_t   jit_llvm_mem_size      = 0;
+static size_t   jit_llvm_mem_offset    = 0;
+static bool     jit_llvm_got           = false;
 
 extern "C" {
 
@@ -135,7 +142,7 @@ static uint8_t *jit_llvm_mem_allocate(void * /* opaque */, uintptr_t size,
 
     size_t offset_align = (jit_llvm_mem_offset + (align - 1)) / align * align;
 
-    // Zero-fill padding region for alignment
+    // Zero-fill including padding region
     memset(jit_llvm_mem + jit_llvm_mem_offset, 0,
            offset_align - jit_llvm_mem_offset);
 
@@ -212,7 +219,16 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     if (include_supplement) {
         jit_lz4_init();
 
-        size_t temp_size = jit_lz4_dict_size + llvm_kernels_size_uncompressed + buffer_size + 1;
+        /* Use one of two different variants of the supplemental
+           kernels depending on the version of the LLVM IR. */
+        bool legacy = jit_llvm_version_major < 9;
+        int size_uncompressed = legacy ? llvm_kernels_7_size_uncompressed
+                                       : llvm_kernels_9_size_uncompressed;
+        int size_compressed   = legacy ? llvm_kernels_7_size_compressed
+                                       : llvm_kernels_9_size_compressed;
+        const char *kernels   = legacy ? llvm_kernels_7 : llvm_kernels_9;
+
+        size_t temp_size = jit_lz4_dict_size + size_uncompressed + buffer_size + 1;
 
         // Decompress supplemental kernel IR content
         temp = (char *) malloc_check(temp_size);
@@ -220,15 +236,14 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
         char *buffer_new = temp + jit_lz4_dict_size;
 
         if (LZ4_decompress_safe_usingDict(
-                llvm_kernels, buffer_new,
-                llvm_kernels_size_compressed,
-                llvm_kernels_size_uncompressed, temp,
-                jit_lz4_dict_size) != llvm_kernels_size_uncompressed)
-            jit_fail("jit_cuda_init(): decompression of supplemental kernel fragments failed!");
+                kernels, buffer_new, size_compressed, size_uncompressed, temp,
+                jit_lz4_dict_size) != size_uncompressed)
+            jit_fail("jit_cuda_init(): decompression of supplemental kernel "
+                     "fragments failed!");
 
-        memcpy(buffer_new + llvm_kernels_size_uncompressed, buffer, buffer_size);
-        buffer_new[llvm_kernels_size_uncompressed + buffer_size] = '\0';
-        buffer_size += llvm_kernels_size_uncompressed;
+        memcpy(buffer_new + size_uncompressed, buffer, buffer_size);
+        buffer_new[size_uncompressed + buffer_size] = '\0';
+        buffer_size += size_uncompressed;
         buffer = buffer_new;
     }
 
@@ -288,11 +303,14 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
         jit_fail("jit_llvm_compile(): internal error: invalid address: "
                  "%p < %p!\n", func, jit_llvm_mem);
 
-    snprintf(kernel_name_new, 30, "enoki_%016llx_scalar", (long long) jit_llvm_kernel_id++);
-    uint8_t *func_scalar =
-        (uint8_t *) LLVMGetFunctionAddress(jit_llvm_engine, kernel_name_new);
-    if (!func_scalar)
-        func_scalar = func;
+    uint8_t *func_scalar = func;
+    if (strstr(buffer, "_scalar")) {
+        snprintf(kernel_name_new, 30, "enoki_%016llx_scalar", (long long) jit_llvm_kernel_id++);
+        func_scalar = (uint8_t *) LLVMGetFunctionAddress(jit_llvm_engine, kernel_name_new);
+        if (unlikely(!func_scalar))
+            jit_fail("jit_llvm_compile(): internal error: could not fetch function "
+                     "address of kernel \"%s\"!\n", kernel_name_new);
+    }
 
     if (jit_llvm_got)
         jit_fail(
@@ -301,8 +319,7 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
             "by the target architecture. Enoki cannot handle this case "
             "and will terminate the application now. For reference, the "
             "following kernel code was responsible for this problem:\n\n%s",
-            buffer
-        );
+            buffer);
 
     uint32_t func_offset        = (uint32_t) (func        - jit_llvm_mem),
              func_offset_scalar = (uint32_t) (func_scalar - jit_llvm_mem);
@@ -445,6 +462,7 @@ bool jit_llvm_init() {
         LOAD(LLVMRunPassManager);
         LOAD(LLVMDisposePassManager);
         LOAD(LLVMAddAlwaysInlinerPass);
+        LOAD(LLVMGetExecutionEngineTargetMachine);
     } while (false);
 
     if (symbol) {
@@ -454,6 +472,40 @@ bool jit_llvm_init() {
         return false;
     }
 #endif
+
+#if defined(ENOKI_DYNAMIC_LLVM)
+    void *dlsym_src = jit_llvm_handle;
+#else
+    void *dlsym_src = RTLD_NEXT;
+#endif
+
+    auto get_version_string = (const char * (*) ()) dlsym(
+        dlsym_src, "_ZN4llvm16LTOCodeGenerator16getVersionStringEv");
+
+    if (!get_version_string) {
+        jit_log(Warn, "jit_llvm_init(): could not detect LLVM version.");
+        return false;
+    }
+
+    const char *version_string = get_version_string();
+    if (sscanf(version_string, "LLVM version %u.%u.%u", &jit_llvm_version_major,
+               &jit_llvm_version_minor, &jit_llvm_version_patch) != 3) {
+        jit_log(Warn,
+                "jit_llvm_init(): could not parse LLVM version string \"%s\".",
+                version_string);
+        return false;
+    }
+    printf("Gotcha %s\n", version_string);
+
+    if (jit_llvm_version_major < 7) {
+        jit_log(Warn,
+                "jit_llvm_init(): LLVM version 7 or later must be used. (found "
+                "%s). You may want to define the 'ENOKI_LIBLLVM_PATH' "
+                "environment variable to specify the path to "
+                "libLLVM.so/dylib/dll of a particular LLVM version.",
+                version_string);
+    }
+
 
     LLVMLinkInMCJIT();
     LLVMInitializeX86TargetInfo();
@@ -468,12 +520,18 @@ bool jit_llvm_init() {
         return false;
     }
 
-    char* triple = LLVMGetDefaultTargetTriple();
-    jit_llvm_disasm_ctx = LLVMCreateDisasm(triple, nullptr, 0, nullptr, nullptr);
+    jit_llvm_triple = LLVMGetDefaultTargetTriple();
+    jit_llvm_target_cpu = LLVMGetHostCPUName();
+    jit_llvm_target_features = LLVMGetHostCPUFeatures();
+
+    jit_llvm_disasm_ctx =
+        LLVMCreateDisasm(jit_llvm_triple, nullptr, 0, nullptr, nullptr);
 
     if (!jit_llvm_disasm_ctx) {
         jit_log(Warn, "jit_llvm_init(): could not create a disassembler!");
-        LLVMDisposeMessage(triple);
+        LLVMDisposeMessage(jit_llvm_triple);
+        LLVMDisposeMessage(jit_llvm_target_cpu);
+        LLVMDisposeMessage(jit_llvm_target_features);
         return false;
     }
 
@@ -482,13 +540,16 @@ bool jit_llvm_init() {
                              LLVMDisassembler_Option_AsmPrinterVariant) == 0) {
         jit_log(Warn, "jit_llvm_init(): could not configure disassembler!");
         LLVMDisasmDispose(jit_llvm_disasm_ctx);
-        LLVMDisposeMessage(triple);
+        LLVMDisposeMessage(jit_llvm_triple);
+        LLVMDisposeMessage(jit_llvm_target_cpu);
+        LLVMDisposeMessage(jit_llvm_target_features);
         return false;
     }
 
     LLVMMCJITCompilerOptions options;
     options.OptLevel = 3;
-    options.CodeModel = LLVMCodeModelSmall;
+    options.CodeModel =
+        (LLVMCodeModel)(jit_llvm_version_major == 7 ? 2 : 3); /* Small */
     options.NoFramePointerElim = false;
     options.EnableFastISel = false;
     options.MCJMM = LLVMCreateSimpleMCJITMemoryManager(
@@ -505,15 +566,58 @@ bool jit_llvm_init() {
         jit_log(Warn, "jit_llvm_init(): could not create MCJIT: %s", error);
         LLVMDisposeModule(enoki_module);
         LLVMDisasmDispose(jit_llvm_disasm_ctx);
-        LLVMDisposeMessage(triple);
-        return -1;
+        LLVMDisposeMessage(jit_llvm_triple);
+        LLVMDisposeMessage(jit_llvm_target_cpu);
+        LLVMDisposeMessage(jit_llvm_target_features);
+        return false;
     }
+
+    /**
+       The following is horrible, but it works and was without alternative.
+
+       LLVM MCJIT uses a 'static' relocation model by default. But that's not
+       good for us: we want a 'pic' relocation model that allows for *relocatable
+       code*. This is important because generated kernels can be reloaded from
+       the cache, at which point they may end up anywhere in memory.
+
+       The LLVM C API is quite nice, but it's missing a function to adjust this
+       crucial aspect. While we could in principle use C++ API, this totally
+       infeasible without a hard dependency on the LLVM headers and being being
+       permanently tied to a specific version.
+
+       The code below simply hot-patches the TargetMachine* instance, which
+       contains the following 3 fields (around byte offset 568 on my machine)
+
+          Reloc::Model RM = Reloc::Static;
+          CodeModel::Model CMModel = CodeModel::Small;
+          CodeGenOpt::Level OptLevel = CodeGenOpt::Default;
+
+       Which are all 32 bit integers. This interface has been stable since
+       ancient times (LLVM 4), and the good thing is that we know the values of
+       these fields and can therefore use them as a 12-byte key to find the
+       precise byte offset and them overwrite the 'RM' field.
+    */
+
+    LLVMTargetMachineRef target_machine =
+        LLVMGetExecutionEngineTargetMachine(jit_llvm_engine);
+
+    int key[3] = { 0, jit_llvm_version_major == 7 ? 0 : 1, 3 };
+    void *found = memmem(target_machine, 900, key, sizeof(key));
+    if (!found) {
+        jit_log(Warn, "jit_llvm_init(): could not hot-patch TargetMachine relocation model!");
+        LLVMDisposeModule(enoki_module);
+        LLVMDisasmDispose(jit_llvm_disasm_ctx);
+        LLVMDisposeMessage(jit_llvm_triple);
+        LLVMDisposeMessage(jit_llvm_target_cpu);
+        LLVMDisposeMessage(jit_llvm_target_features);
+        return false;
+    }
+    key[0] = 1;
+    memcpy(found, key, sizeof(uint32_t));
 
     jit_llvm_pass_manager = LLVMCreatePassManager();
     LLVMAddAlwaysInlinerPass(jit_llvm_pass_manager);
 
-    jit_llvm_target_cpu = LLVMGetHostCPUName();
-    jit_llvm_target_features = LLVMGetHostCPUFeatures();
     jit_llvm_vector_width = 1;
 
     if (strstr(jit_llvm_target_features, "+sse4.2"))
@@ -523,10 +627,10 @@ bool jit_llvm_init() {
     if (strstr(jit_llvm_target_features, "+avx512f"))
         jit_llvm_vector_width = 16;
 
-    jit_log(Info, "jit_llvm_init(): found %s, cpu=%s, vector width=%i.", triple,
-            jit_llvm_target_cpu, jit_llvm_vector_width);
-
-    LLVMDisposeMessage(triple);
+    jit_log(Info,
+            "jit_llvm_init(): found %s, target=%s, cpu=%s, vector width=%i.",
+            version_string, jit_llvm_triple, jit_llvm_target_cpu,
+            jit_llvm_vector_width);
 
     jit_llvm_init_success = jit_llvm_vector_width > 1;
 
@@ -547,6 +651,7 @@ void jit_llvm_shutdown() {
 
     LLVMDisasmDispose(jit_llvm_disasm_ctx);
     LLVMDisposeExecutionEngine(jit_llvm_engine);
+    LLVMDisposeMessage(jit_llvm_triple);
     LLVMDisposeMessage(jit_llvm_target_cpu);
     LLVMDisposeMessage(jit_llvm_target_features);
     LLVMDisposePassManager(jit_llvm_pass_manager);
@@ -580,6 +685,7 @@ void jit_llvm_shutdown() {
     Z(LLVMPrintModuleToString); Z(LLVMGetFunctionAddress); Z(LLVMRemoveModule);
     Z(LLVMDisasmInstruction); Z(LLVMCreatePassManager); Z(LLVMRunPassManager);
     Z(LLVMDisposePassManager); Z(LLVMAddAlwaysInlinerPass);
+    Z(LLVMGetExecutionEngineTargetMachine);
 
     if (jit_llvm_handle != RTLD_NEXT)
         dlclose(jit_llvm_handle);

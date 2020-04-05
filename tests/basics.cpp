@@ -1,4 +1,5 @@
 #include "test.h"
+#if 0
 
 TEST_BOTH(01_creation_destruction) {
     // Checks simple reference counting of a variable
@@ -39,7 +40,7 @@ TEST_BOTH(04_eval_scalar_csa) {
           value_4 = value_1 + value_2,
           value_5 = value_1 + value_3,
           value_6 = value_1 + value_2;
-    jitc_eval();
+    jitc_eval(value_1, value_2, value_3, value_4, value_5, value_6);
     jitc_log(Info, "value_1=%s", value_1.str());
     jitc_log(Info, "value_2=%s", value_2.str());
     jitc_log(Info, "value_3=%s", value_3.str());
@@ -57,7 +58,7 @@ TEST_BOTH(05_argument_out) {
             Int32 out = 0;
             for (int j = 0; j < i; ++j) {
                 value[j] = j;
-                out += value[j];
+                out += value[j].schedule();
             }
             jitc_log(Info, "value=%s vs %u", out.str(), i * (i - 1) / 2);
         }
@@ -74,7 +75,7 @@ TEST_BOTH(06_argument_inout) {
             for (int j = 0; j < i; ++j) {
                 if (!value[j].valid())
                     value[j] = j;
-                out += value[j];
+                out += value[j].schedule();
             }
             jitc_log(Info, "value=%s vs %u", out.str(), i * (i - 1) / 2);
         }
@@ -82,14 +83,17 @@ TEST_BOTH(06_argument_inout) {
 }
 
 TEST_BOTH(07_arange) {
+    /// Tests arange, and dispatch to parallel streams
     UInt32 x = arange<UInt32>(1024);
     UInt32 y = arange<UInt32>(3, 512, 7);
+    jitc_schedule(x, y);
     jitc_log(Info, "value=%s", x.str());
     jitc_log(Info, "value=%s", y.str());
 
     using Int64 = Array<int64_t>;
     Int64 x2 = arange<Int64>(1024);
     Int64 y2 = arange<Int64>(-3, 506, 7);
+    jitc_schedule(x2, y2);
     jitc_log(Info, "value=%s", x2.str());
     jitc_log(Info, "value=%s", y2.str());
 }
@@ -104,6 +108,7 @@ TEST_BOTH(08_conv) {
         Array<float> x_f32(src);
         Array<double> x_f64(src);
 
+        jitc_schedule(x_u32, x_i32, x_u64, x_i64, x_f32, x_f64);
         jitc_log(Info, "value=%s", x_u32.str());
         jitc_log(Info, "value=%s", x_i32.str());
         jitc_log(Info, "value=%s", x_u64.str());
@@ -119,6 +124,7 @@ TEST_BOTH(08_conv) {
         Array<float> x_f32(src);
         Array<double> x_f64(src);
 
+        jitc_schedule(x_i32, x_i64, x_f32, x_f64);
         jitc_log(Info, "value=%s", x_i32.str());
         jitc_log(Info, "value=%s", x_i64.str());
         jitc_log(Info, "value=%s", x_f32.str());
@@ -134,6 +140,7 @@ TEST_BOTH(08_conv) {
         Array<float> x_f32(src);
         Array<double> x_f64(src);
 
+        jitc_schedule(x_u32, x_i32, x_u64, x_i64, x_f32, x_f64);
         jitc_log(Info, "value=%s", x_u32.str());
         jitc_log(Info, "value=%s", x_i32.str());
         jitc_log(Info, "value=%s", x_u64.str());
@@ -149,6 +156,7 @@ TEST_BOTH(08_conv) {
         Array<float> x_f32(src);
         Array<double> x_f64(src);
 
+        jitc_schedule(x_i32, x_i64, x_f32, x_f64);
         jitc_log(Info, "value=%s", x_i32.str());
         jitc_log(Info, "value=%s", x_i64.str());
         jitc_log(Info, "value=%s", x_f32.str());
@@ -162,6 +170,7 @@ TEST_BOTH(08_conv) {
         Array<float> x_f32(src);
         Array<double> x_f64(src);
 
+        jitc_schedule(x_i32, x_i64, x_f32, x_f64);
         jitc_log(Info, "value=%s", x_i32.str());
         jitc_log(Info, "value=%s", x_i64.str());
         jitc_log(Info, "value=%s", x_f32.str());
@@ -175,6 +184,7 @@ TEST_BOTH(08_conv) {
         Array<float> x_f32(src);
         Array<double> x_f64(src);
 
+        jitc_schedule(x_i32, x_i64, x_f32, x_f64);
         jitc_log(Info, "value=%s", x_i32.str());
         jitc_log(Info, "value=%s", x_i64.str());
         jitc_log(Info, "value=%s", x_f32.str());
@@ -189,7 +199,8 @@ TEST_BOTH(09_fma) {
         Float c(9, 1, 3, 0);
 
         Float d = fmadd(a, b, c);
-        Float e = fmsub(d, b, c);
+        Float e = fmadd(d, b, -c);
+        jitc_schedule(d, e);
         jitc_log(Info, "value=%s", d.str());
         jitc_log(Info, "value=%s", e.str());
     }
@@ -201,7 +212,8 @@ TEST_BOTH(09_fma) {
         Double c(9, 1, 3, 0);
 
         Double d = fmadd(a, b, c);
-        Double e = fmsub(d, b, c);
+        Double e = fmadd(d, b, -c);
+        jitc_schedule(d, e);
         jitc_log(Info, "value=%s", d.str());
         jitc_log(Info, "value=%s", e.str());
     }
@@ -216,6 +228,7 @@ TEST_BOTH(11_mask) {
     Float x = arange<Float>(10);
     auto mask = x > 5;
     x = select(mask, -x, x);
+    jitc_schedule(mask, x);
     jitc_log(Info, "value=%s", x.str());
     jitc_log(Info, "mask=%s", mask.str());
     Float y = select(mask, Float(1.f), Float(2.f));
@@ -223,9 +236,10 @@ TEST_BOTH(11_mask) {
 
     Array<bool> mask_scalar_t = true;
     Array<bool> mask_scalar_f = false;
-    jitc_eval();
+    jitc_eval(mask_scalar_t, mask_scalar_f);
     Float a = select(mask_scalar_t, x, Float(0));
     Float b = select(mask_scalar_f, x, Float(0));
+    jitc_schedule(a, b);
     jitc_log(Info, "value_3=%s", a.str());
     jitc_log(Info, "value_4=%s", b.str());
 }
@@ -239,6 +253,7 @@ TEST_BOTH(12_binop) {
     b = ~b;
     c = ~c;
 
+    jitc_schedule(a, b, c);
     jitc_log(Info, "XOR: value_1=%s", a.str());
     jitc_log(Info, "XOR: value_2=%s", b.str());
     jitc_log(Info, "XOR: value_3=%s", c.str());
@@ -247,6 +262,7 @@ TEST_BOTH(12_binop) {
     b = ~b;
     c = ~c;
 
+    jitc_schedule(a, b, c);
     jitc_log(Info, "XOR2: value_1=%s", a.str());
     jitc_log(Info, "XOR2: value_2=%s", b.str());
     jitc_log(Info, "XOR2: value_3=%s", c.str());
@@ -263,6 +279,7 @@ TEST_BOTH(12_binop) {
     auto b3 = b | b2;
     auto c3 = c | c2;
 
+    jitc_schedule(a3, b3, c3);
     jitc_log(Info, "OR: value_1=%s", a3.str());
     jitc_log(Info, "OR: value_2=%s", b3.str());
     jitc_log(Info, "OR: value_3=%s", c3.str());
@@ -271,6 +288,7 @@ TEST_BOTH(12_binop) {
     auto b4 = b & b2;
     auto c4 = c & c2;
 
+    jitc_schedule(a4, b4, c4);
     jitc_log(Info, "AND: value_1=%s", a4.str());
     jitc_log(Info, "AND: value_2=%s", b4.str());
     jitc_log(Info, "AND: value_3=%s", c4.str());
@@ -279,16 +297,18 @@ TEST_BOTH(12_binop) {
     auto b5 = b ^ b2;
     auto c5 = c ^ c2;
 
+    jitc_schedule(a5, b5, c5);
     jitc_log(Info, "XOR: value_1=%s", a5.str());
     jitc_log(Info, "XOR: value_2=%s", b5.str());
     jitc_log(Info, "XOR: value_3=%s", c5.str());
 }
 
 TEST_BOTH(14_scatter_gather) {
-    Int32 l     = -arange<Int32>(1024);
-    Int32 index = Int32(34, 62, 75, 2);
+    Int32 l = (-arange<Int32>(1024)).schedule();
+    UInt32 index = UInt32(34, 62, 75, 2);
     Int32 value = gather(l, index);
     jitc_log(Info, "%s", value.str());
+    jitc_log(Info, "%s", l.str());
     scatter(l, value * 3, index);
     value = gather(l, index);
     jitc_log(Info, "%s", value.str());
@@ -306,6 +326,7 @@ TEST_BOTH(15_round) {
               x_mi = min(x_f, x_c),
               x_ma = max(x_f, x_c);
 
+        jitc_schedule(x_f, x_c, x_t, x_r, x_mi, x_ma);
         jitc_log(Info, "floor: %s", x_f.str());
         jitc_log(Info, "ceil:  %s", x_c.str());
         jitc_log(Info, "trunc: %s", x_t.str());
@@ -326,6 +347,7 @@ TEST_BOTH(15_round) {
                x_mi = min(x_f, x_c),
                x_ma = max(x_f, x_c);
 
+        jitc_schedule(x_f, x_c, x_t, x_r, x_mi, x_ma);
         jitc_log(Info, "floor: %s", x_f.str());
         jitc_log(Info, "ceil:  %s", x_c.str());
         jitc_log(Info, "trunc: %s", x_t.str());
@@ -431,6 +453,7 @@ TEST_BOTH(17_scatter_gather_mask) {
     Int32 l       = arange<Int32>(1022);
     set_label(l, "l");
     Mask result   = neq(l & Int32(1), 0);
+
     set_label(result, "result");
     Int32 l2      = arange<Int32>(510);
     set_label(l2, "l2");
@@ -441,8 +464,9 @@ TEST_BOTH(17_scatter_gather_mask) {
     jitc_log(Info, "Mask  : %s", result.str());
     jitc_log(Info, "Even  : %s", even.str());
     jitc_log(Info, "Odd   : %s", odd.str());
-    scatter(result, odd, l2*2);
-    scatter(result, even, l2*2 + 1);
+
+    scatter(result, odd, l2 * 2);
+    scatter(result, even, l2 * 2 + 1);
     jitc_log(Info, "Mask: %s", result.str());
 }
 
@@ -451,25 +475,25 @@ TEST_BOTH(18_mask_propagation) {
 
     Mask t(true), f(false), g(true, false);
 
-    jitc_assert( t.is_all_true());
-    jitc_assert(!t.is_all_false());
-    jitc_assert(!f.is_all_true());
-    jitc_assert( f.is_all_false());
-    jitc_assert(!g.is_all_true());
-    jitc_assert(!g.is_all_false());
+    jitc_assert( t.is_literal_one());
+    jitc_assert(!t.is_literal_zero());
+    jitc_assert(!f.is_literal_one());
+    jitc_assert( f.is_literal_zero());
+    jitc_assert(!g.is_literal_one());
+    jitc_assert(!g.is_literal_zero());
 
-    jitc_assert((t && f).is_all_false());
-    jitc_assert((f && t).is_all_false());
-    jitc_assert((g && f).is_all_false());
-    jitc_assert((f && g).is_all_false());
+    jitc_assert((t && f).is_literal_zero());
+    jitc_assert((f && t).is_literal_zero());
+    jitc_assert((g && f).is_literal_zero());
+    jitc_assert((f && g).is_literal_zero());
 
-    jitc_assert((t || f).is_all_true());
-    jitc_assert((f || t).is_all_true());
-    jitc_assert((t || g).is_all_true());
-    jitc_assert((g || t).is_all_true());
+    jitc_assert((t || f).is_literal_one());
+    jitc_assert((f || t).is_literal_one());
+    jitc_assert((t || g).is_literal_one());
+    jitc_assert((g || t).is_literal_one());
 
-    jitc_assert((t ^ f).is_all_true());
-    jitc_assert((f ^ t).is_all_true());
+    jitc_assert((t ^ f).is_literal_one());
+    jitc_assert((f ^ t).is_literal_one());
     jitc_assert((f ^ g).index() == g.index());
     jitc_assert((g ^ f).index() == g.index());
 
@@ -479,9 +503,9 @@ TEST_BOTH(18_mask_propagation) {
 }
 
 TEST_BOTH(19_register_ptr) {
-    uint32_t idx_1 = jitc_var_copy_ptr((const void *) 0x01),
-             idx_2 = jitc_var_copy_ptr((const void *) 0x02),
-             idx_3 = jitc_var_copy_ptr((const void *) 0x01);
+    uint32_t idx_1 = jitc_var_copy_ptr((const void *) 0x01, 0),
+             idx_2 = jitc_var_copy_ptr((const void *) 0x02, 0),
+             idx_3 = jitc_var_copy_ptr((const void *) 0x01, 0);
 
     jitc_assert(idx_1 == 1);
     jitc_assert(idx_2 == 2);
@@ -491,7 +515,7 @@ TEST_BOTH(19_register_ptr) {
     jitc_var_dec_ref_ext(idx_2);
     jitc_var_dec_ref_ext(idx_3);
 
-    idx_1 = jitc_var_copy_ptr((const void *) 0x01);
+    idx_1 = jitc_var_copy_ptr((const void *) 0x01, 0);
     jitc_assert(idx_1 == 3);
     jitc_var_dec_ref_ext(idx_1);
 }
@@ -511,6 +535,7 @@ TEST_BOTH(21_shifts) {
     UInt32 xs1 = x >> 1, xs2 = x << 1;
     Int32  ys1 = y >> 1, ys2 = y << 1;
 
+    jitc_schedule(xs1, xs2, ys1, ys2);
     jitc_log(Info, "xs1 : %s", xs1.str());
     jitc_log(Info, "xs2 : %s", xs2.str());
     jitc_log(Info, "ys1 : %s", ys1.str());
@@ -531,6 +556,7 @@ TEST_BOTH(22_and_or_mask) {
     Float  z_o = z | m, z_a = z & m;
     z_o = abs(z_o);
 
+    jitc_schedule(x_o, x_a, y_o, y_a, z_o, z_a);
     jitc_log(Info, "x_o : %s", x_o.str());
     jitc_log(Info, "x_a : %s", x_a.str());
     jitc_log(Info, "y_o : %s", y_o.str());
@@ -544,6 +570,7 @@ TEST_BOTH(22_and_or_mask) {
     z_o = z | m; z_a = z & m;
     z_o = abs(z_o);
 
+    jitc_schedule(x_o, x_a, y_o, y_a, z_o, z_a);
     jitc_log(Info, "x_o : %s", x_o.str());
     jitc_log(Info, "x_a : %s", x_a.str());
     jitc_log(Info, "y_o : %s", y_o.str());
@@ -556,6 +583,7 @@ TEST_BOTH(22_and_or_mask) {
     y_o = y | m; y_a = y & m;
     z_o = z | m; z_a = z & m;
 
+    jitc_schedule(x_o, x_a, y_o, y_a, z_o, z_a);
     jitc_log(Info, "x_o : %s", x_o.str());
     jitc_log(Info, "x_a : %s", x_a.str());
     jitc_log(Info, "y_o : %s", y_o.str());
@@ -642,7 +670,7 @@ void sincos_approx(const Value &x, Value &s_out, Value &c_out) {
     c_out = mulsign(select(polymask, c, s), sign_cos);
 }
 
-TEST_BOTH(23_sincos) {
+TEST_LLVM(23_sincos) {
     using Mask = Array<bool>;
     Float x = linspace<Float>(0, 1, 10);
     Float xs, xc;
@@ -659,6 +687,7 @@ TEST_BOTH(24_bitop) {
            v_lz  = lzcnt(v),
            v_tz  = tzcnt(v);
 
+    jitc_schedule(v_pop, v_lz, v_tz);
     jitc_log(Info, "orig : %s", v.str());
     jitc_log(Info, "pop  : %s", v_pop.str());
     jitc_log(Info, "lz   : %s", v_tz.str());
@@ -672,6 +701,7 @@ TEST_LLVM(25_wide_intrinsics) {
     Float c = max(a, b);
     Float d = fmadd(a, b, c);
     auto mask = eq(b, c);
+    jitc_schedule(c, d, mask);
     jitc_log(Info, "value=%s", c.str());
     jitc_log(Info, "value=%s", d.str());
     jitc_assert(all(mask));
@@ -685,6 +715,7 @@ TEST_LLVM(26_avx512_intrinsics) {
     Float c = max(a, b);
     Float d = fmadd(a, b, c);
     auto mask = eq(b, c);
+    jitc_schedule(c, d, mask);
     jitc_log(Info, "value=%s", c.str());
     jitc_log(Info, "value=%s", d.str());
     jitc_assert(all(mask));
@@ -710,7 +741,7 @@ TEST_BOTH(27_avx512_intrinsics_round2int) {
         auto d_u32 = ceil2int<UInt32>(d);
         auto d_i64 = ceil2int<Int64> (d);
         auto d_u64 = ceil2int<UInt64>(d);
-        jitc_eval();
+        jitc_schedule(f_i32, f_u32, f_i64, f_u64, d_i32, d_u32, d_i64, d_u64);
         jitc_log(Info, "input=%s", f.str());
         jitc_log(Info, "ceil_f_i32=%s", f_i32.str());
         jitc_log(Info, "ceil_f_i64=%s", f_i64.str());
@@ -731,7 +762,7 @@ TEST_BOTH(27_avx512_intrinsics_round2int) {
         auto d_u32 = floor2int<UInt32>(d);
         auto d_i64 = floor2int<Int64> (d);
         auto d_u64 = floor2int<UInt64>(d);
-        jitc_eval();
+        jitc_schedule(f_i32, f_u32, f_i64, f_u64, d_i32, d_u32, d_i64, d_u64);
         jitc_log(Info, "input=%s", f.str());
         jitc_log(Info, "floor_f_i32=%s", f_i32.str());
         jitc_log(Info, "floor_f_i64=%s", f_i64.str());
@@ -752,7 +783,7 @@ TEST_BOTH(27_avx512_intrinsics_round2int) {
         auto d_u32 = trunc2int<UInt32>(d);
         auto d_i64 = trunc2int<Int64> (d);
         auto d_u64 = trunc2int<UInt64>(d);
-        jitc_eval();
+        jitc_schedule(f_i32, f_u32, f_i64, f_u64, d_i32, d_u32, d_i64, d_u64);
         jitc_log(Info, "input=%s", f.str());
         jitc_log(Info, "trunc_f_i32=%s", f_i32.str());
         jitc_log(Info, "trunc_f_i64=%s", f_i64.str());
@@ -773,7 +804,7 @@ TEST_BOTH(27_avx512_intrinsics_round2int) {
         auto d_u32 = round2int<UInt32>(d);
         auto d_i64 = round2int<Int64> (d);
         auto d_u64 = round2int<UInt64>(d);
-        jitc_eval();
+        jitc_schedule(f_i32, f_u32, f_i64, f_u64, d_i32, d_u32, d_i64, d_u64);
         jitc_log(Info, "input=%s", f.str());
         jitc_log(Info, "round_f_i32=%s", f_i32.str());
         jitc_log(Info, "round_f_i64=%s", f_i64.str());
@@ -861,3 +892,73 @@ TEST_BOTH(28_scatter_add) {
     jitc_llvm_set_target("skylake", "", 8);
 }
 
+TEST_BOTH(29_arithmetic_propagation) {
+    {
+        UInt32 z(0), o(1);
+
+        jitc_assert( z.is_literal_zero());
+        jitc_assert(!z.is_literal_one());
+        jitc_assert(!o.is_literal_zero());
+        jitc_assert( o.is_literal_one());
+
+        UInt32 a = o + z;
+        UInt32 b = o * z;
+        jitc_assert(a.index() == o.index());
+        jitc_assert(b.index() == z.index());
+    }
+    {
+        using Int64 = Array<int64_t>;
+        Int64 z(0), o(1);
+
+        jitc_assert( z.is_literal_zero());
+        jitc_assert(!z.is_literal_one());
+        jitc_assert(!o.is_literal_zero());
+        jitc_assert( o.is_literal_one());
+
+        Int64 a = o + z;
+        Int64 b = o * z;
+        jitc_assert(a.index() == o.index());
+        jitc_assert(b.index() == z.index());
+    }
+    {
+        Float z(0), o(1);
+
+        jitc_assert( z.is_literal_zero());
+        jitc_assert(!z.is_literal_one());
+        jitc_assert(!o.is_literal_zero());
+        jitc_assert( o.is_literal_one());
+
+        Float a = o + z;
+        Float b = o * z;
+        jitc_assert(a.index() == o.index());
+        jitc_assert(b.index() == z.index());
+    }
+    {
+        using Double = Array<double>;
+        Double z(0), o(1);
+
+        jitc_assert( z.is_literal_zero());
+        jitc_assert(!z.is_literal_one());
+        jitc_assert(!o.is_literal_zero());
+        jitc_assert( o.is_literal_one());
+
+        Double a = o + z;
+        Double b = o * z;
+        jitc_assert(a.index() == o.index());
+        jitc_assert(b.index() == z.index());
+    }
+}
+#endif
+
+TEST_BOTH(30_scatter_ordering) {
+    UInt32 x = zero<UInt32>(16),
+           y = x + 1;
+    UInt32 indices = UInt32(2, 4, 6);
+
+    scatter(x, UInt32(1), indices);
+
+    UInt32 z = x + 1;
+    jitc_log(Info, "x:%s", x.str());
+    jitc_log(Info, "x:%s", y.str());
+    jitc_log(Info, "x:%s", z.str());
+}

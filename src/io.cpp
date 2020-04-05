@@ -49,13 +49,13 @@ void jit_lz4_init() {
 }
 
 bool jit_kernel_load(const char *source, uint32_t source_size,
-                     bool llvm, size_t hash, Kernel &kernel) {
+                     bool cuda, size_t hash, Kernel &kernel) {
     jit_lz4_init();
 
     char filename[1024];
     snprintf(filename, sizeof(filename), "%s/.enoki/%016llx.%s.bin",
              getenv("HOME"), (unsigned long long) hash,
-             llvm ? "llvm" : "cuda");
+             cuda ? "cuda" : "llvm");
     int fd = open(filename, O_RDONLY);
     if (fd == -1)
         return false;
@@ -131,7 +131,10 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
     if (success) {
         jit_trace("jit_kernel_load(\"%s\")", filename);
         kernel.size = header.kernel_size;
-        if (llvm) {
+        if (cuda) {
+            kernel.data = malloc_check(header.kernel_size);
+            memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
+        } else {
             kernel.data = mmap(nullptr, header.kernel_size, PROT_READ | PROT_WRITE,
                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (kernel.data == MAP_FAILED)
@@ -147,9 +150,6 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
                 (uint8_t *) kernel.data + header.func_offset_wide);
             kernel.llvm.func_scalar = (LLVMKernelFunction)(
                 (uint8_t *) kernel.data + header.func_offset_scalar);
-        } else {
-            kernel.data = malloc_check(header.kernel_size);
-            memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
         }
     }
 
@@ -161,13 +161,13 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
 }
 
 bool jit_kernel_write(const char *source, uint32_t source_size,
-                      bool llvm, size_t hash, const Kernel &kernel) {
+                      bool cuda, size_t hash, const Kernel &kernel) {
     jit_lz4_init();
 
     char filename[1024], filename_tmp[1024];
     snprintf(filename, sizeof(filename), "%s/.enoki/%016llx.%s.bin",
              getenv("HOME"), (unsigned long long) hash,
-             llvm ? "llvm" : "cuda");
+             cuda ? "cuda" : "llvm");
     snprintf(filename_tmp, sizeof(filename_tmp), "%s.tmp", filename);
 
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
@@ -207,6 +207,7 @@ bool jit_kernel_write(const char *source, uint32_t source_size,
     memcpy(temp_in + source_size, kernel.data, kernel.size);
 
     LZ4_stream_t stream;
+    memset(&stream, 0, sizeof(LZ4_stream_t));
     LZ4_resetStream_fast(&stream);
     LZ4_loadDict(&stream, jit_lz4_dict, jit_lz4_dict_size);
 
@@ -219,7 +220,7 @@ bool jit_kernel_write(const char *source, uint32_t source_size,
         (int) out_size, 1);
 
     header.func_offset_wide = header.func_offset_scalar = 0;
-    if (llvm) {
+    if (!cuda) {
         header.func_offset_wide =
             (uint8_t *) kernel.llvm.func - (uint8_t *) kernel.data;
         header.func_offset_scalar =
@@ -263,7 +264,7 @@ bool jit_kernel_write(const char *source, uint32_t source_size,
 #if ENOKI_CACHE_TRAIN == 1
     snprintf(filename, sizeof(filename), "%s/.enoki/%016llx.%s.trn",
              getenv("HOME"), (unsigned long long) hash,
-             llvm ? "llvm" : "cuda");
+             cuda ? "cuda" : "llvm");
     fd = open(filename, O_CREAT | O_WRONLY, mode);
     if (fd) {
         write_retry(temp_in, in_size);

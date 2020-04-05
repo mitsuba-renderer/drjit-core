@@ -10,14 +10,19 @@ const char *reduction_name[(int) ReductionType::Count] = { "add", "mul", "min",
 
 /// Fill a device memory region with constants of a given type
 void jit_fill(VarType type, void *ptr, uint32_t size, const void *src) {
+    Stream *stream = active_stream;
+
+    if (unlikely(!stream))
+        jit_raise("jit_fill(): you must invoke jit_device_set() to "
+                  "choose a target device before calling this function.");
+
     jit_trace("jit_fill(" ENOKI_PTR ", type=%s, size=%u)", (uintptr_t) ptr,
               var_type_name[(int) type], size);
 
     if (size == 0)
         return;
 
-    Stream *stream = active_stream;
-    if (stream) {
+    if (stream->cuda) {
         switch (var_type_size[(int) type]) {
             case 1:
                 cuda_check(cuMemsetD8Async((CUdeviceptr) ptr,
@@ -96,9 +101,13 @@ void jit_fill(VarType type, void *ptr, uint32_t size, const void *src) {
 /// Perform a synchronous copy operation
 void jit_memcpy(void *dst, const void *src, size_t size) {
     Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_memcpy(): you must invoke jit_device_set() to choose a "
+                  "target device before calling this function.");
+
     // Temporarily release the lock while copying
     unlock_guard guard(state.mutex);
-    if  (stream) {
+    if  (stream->cuda) {
         cuda_check(cuStreamSynchronize(stream->handle));
         cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
     } else {
@@ -109,8 +118,11 @@ void jit_memcpy(void *dst, const void *src, size_t size) {
 /// Perform an assynchronous copy operation
 void jit_memcpy_async(void *dst, const void *src, size_t size) {
     Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_memcpy_async(): you must invoke jit_device_set() to "
+                  "choose a target device before calling this function.");
 
-    if  (stream)
+    if  (stream->cuda)
         cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
                                  stream->handle));
     else
@@ -207,14 +219,18 @@ void jit_reduce_cpu(ReductionType rtype, const Value *ptr, uint32_t size,
 
 void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t size,
                 void *out) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_reduce(): you must invoke jit_device_set() to "
+                  "choose a target device before calling this function.");
+
     jit_log(Debug, "jit_reduce(" ENOKI_PTR ", type=%s, rtype=%s, size=%u)",
             (uintptr_t) ptr, var_type_name[(int) type],
             reduction_name[(int) rtype], size);
 
     uint32_t type_size = var_type_size[(int) type];
-    Stream *stream = active_stream;
 
-    if (stream) {
+    if (stream->cuda) {
         const Device &device = state.devices[stream->device];
         CUfunction func = jit_cuda_reductions[(int) rtype][(int) type][device.id];
         if (!func)
@@ -284,13 +300,17 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
 /// 'All' reduction for boolean arrays
 uint8_t jit_all(uint8_t *values, uint32_t size) {
     Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_all(): you must invoke jit_device_set() to "
+                  "choose a target device before calling this function.");
+
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
     jit_log(Debug, "jit_all(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
 
     uint8_t result;
-    if (stream) {
+    if (stream->cuda) {
         if (trailing)
             cuda_check(cuMemsetD8Async((CUdeviceptr)(values + size), 0x01,
                                        trailing, stream->handle));
@@ -342,8 +362,11 @@ uint8_t jit_any(uint8_t *values, uint32_t size) {
 /// Exclusive prefix sum
 void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
     Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_scan(): you must invoke jit_device_set() to "
+                  "choose a target device before calling this function.");
 
-    if (stream) {
+    if (stream->cuda) {
         const Device &device = state.devices[stream->device];
 
         /// Exclusive prefix scan processes 4K elements / block, 4 per thread
@@ -394,8 +417,11 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
 
 void jit_transpose(const uint32_t *in, uint32_t *out, uint32_t rows, uint32_t cols) {
     Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_transpose(): you must invoke jit_device_set() to "
+                  "choose a target device before calling this function.");
 
-    if (stream) {
+    if (stream->cuda) {
         const Device &device = state.devices[stream->device];
 
         uint16_t blocks_x = (cols + 15u) / 16u,
@@ -603,7 +629,7 @@ uint32_t jit_vcall(const char *domain, const uint32_t *ptr, uint32_t size) {
 
     Variable v;
     v.type = (uint32_t) VarType::UInt32;
-    v.extra_dep = perm_var;
+    v.dep[0] = perm_var;
     v.retain_data = true;
     v.tsize = 1;
     v.cuda = cuda;
@@ -626,7 +652,7 @@ uint32_t jit_vcall(const char *domain, const uint32_t *ptr, uint32_t size) {
         Variable *vo;
         std::tie(index, vo) = jit_trace_append(v);
 
-        jit_var_inc_ref_ext(perm_var);
+        jit_var_inc_ref_int(perm_var);
         jit_var_inc_ref_ext(index, vo);
 
         void *ptr = jit_registry_get_ptr(domain, bucket_id);
