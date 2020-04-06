@@ -180,6 +180,9 @@ struct Variable {
     /// Is this variable marked as an output? (temporarily used during jit_eval())
     bool output_flag : 1;
 
+    /// Are we currently caching the result of a jitc_vcall()?
+    bool vcall_cached : 1;
+
     Variable() {
         memset(this, 0, sizeof(Variable));
     }
@@ -354,6 +357,9 @@ struct State {
 
     /// Maps from variable indices to (optional) descriptive labels
     tsl::robin_map<uint32_t, char *> labels;
+
+    /// Maps from variable indices to cached results from jitc_vcall()
+    tsl::robin_map<uint32_t, std::pair<uint32_t, VCallBucket *>> vcall_cache;
 
     /// Maps from a key characterizing a variable to its index
     CSECache cse_cache;

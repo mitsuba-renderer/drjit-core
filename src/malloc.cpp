@@ -23,6 +23,9 @@ uint32_t round_pow2(uint32_t x) {
 }
 
 void* jit_malloc(AllocType type, size_t size) {
+    jit_trace("start jit_malloc(type=%s,  size=%zu).",
+              alloc_type_name[(int)type], size);
+
     if (size == 0)
         return nullptr;
 
@@ -215,6 +218,8 @@ void jit_free(void *ptr) {
             if (kv.first)
                 jit_free(kv.second);
         }
+
+        it = state.alloc_used.find(ptr);
     }
 
     if (ai.type == AllocType::Device)
@@ -276,10 +281,10 @@ void jit_free_flush() {
 
 void* jit_malloc_migrate(void *ptr, AllocType type) {
     Stream *stream = active_stream;
-    if (unlikely(!stream || !stream->cuda))
-        jit_raise(
-            "jit_malloc_migrate(): you must specify an active CUDA device "
-            "using jit_device_set() before invoking this function!");
+    if (unlikely(!stream))
+        jit_raise("jit_malloc_miggrate(): you must invoke jit_device_set() to "
+                  "choose a target device before evaluating expressions using "
+                  "the JIT compiler.");
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
@@ -290,6 +295,12 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
     // Maybe nothing needs to be done..
     if (ai.type == type && (type != AllocType::Device || ai.device == stream->device))
         return ptr;
+
+    if (!stream->cuda)
+        jit_raise(
+            "jit_malloc_migrate(): you must specify an active CUDA device "
+            "using jit_device_set() before invoking this function with a "
+            "device/managed/host-pinned pointer!");
 
     jit_trace("jit_malloc_migrate(" ENOKI_PTR "): %s -> %s", (uintptr_t) ptr,
               alloc_type_name[(int) ai.type],

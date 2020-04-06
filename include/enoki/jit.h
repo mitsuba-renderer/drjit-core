@@ -862,13 +862,13 @@ extern JITC_EXPORT uint8_t jitc_any(uint8_t *values, uint32_t size);
  *     device memory having size <tt>size * sizeof(uint32_t)</tt>.
  *
  * \param offsets
- *     When \c offset is non-NULL, the parameter should point to a host-pinned
- *     memory region with a size of at least <tt>(bucket_count * 4 + 1) *
- *     sizeof(uint32_t)<tt> bytes that will be used to record the details of
- *     non-empty buckets. It will contain quadruples <tt>(index, start, size,
- *     unused)<tt> where \c index is the bucket index, and \c start and \c end
- *     specify the associated entries of the \c perm array. The last entry
- *     is padding for 16 byte alignment.
+ *     When \c offset is non-NULL, the parameter should point to a host (LLVM)
+ *     or host-pinned (CUDA) memory region with a size of at least
+ *     <tt>(bucket_count * 4 + 1) * sizeof(uint32_t)<tt> bytes that will be
+ *     used to record the details of non-empty buckets. It will contain
+ *     quadruples <tt>(index, start, size, unused)<tt> where \c index is the
+ *     bucket index, and \c start and \c end specify the associated entries of
+ *     the \c perm array. The 'unused' field is padding for 16 byte alignment.
  *
  * \return
  *     When \c offsets != NULL, the function returns the number of unique
@@ -877,6 +877,38 @@ extern JITC_EXPORT uint8_t jitc_any(uint8_t *values, uint32_t size);
 extern JITC_EXPORT uint32_t jitc_mkperm(const uint32_t *values, uint32_t size,
                                         uint32_t bucket_count, uint32_t *perm,
                                         uint32_t *offsets);
+
+/// Helper data structure for vector method calls, see \ref jitc_vcall()
+struct VCallBucket {
+    /// Resolved pointer address associated with this bucket
+    void *ptr;
+
+    /// Variable index of a uint32 array storing a partial permutation
+    uint32_t index;
+
+    /// Padding
+    uint32_t unused;
+};
+
+/**
+ * \brief Compute a permutation to reorder an array of registered pointers
+ * in preparation for a vectorized method call
+ *
+ * This function expects an array of integers, whose entries correspond to
+ * pointers that have previously been registered using the function \ref
+ * jitc_registry_put() using the domain \c domain. It then invokes \ref
+ * jit_mkperm() to compute a permutation that reorders the array into coherent
+ * buckets. The buckets are returned using an array of type \ref VCallBucket,
+ * which contains both the resolved pointer address (obtained via \ref
+ * jitc_registry_get_ptr()) and the variable index of an unsigned 32 bit array
+ * containing the corresponding entries of the input array. The total number of
+ * buckets is returned via the \c bucket_count_out argument.
+ *
+ * Note: zero-valued array entries are allowed and will be excised by the the
+ * returned pertmutation.
+ */
+extern JITC_EXPORT struct VCallBucket *
+jitc_vcall(const char *domain, uint32_t index, uint32_t *bucket_count_out);
 
 #if defined(__cplusplus)
 }

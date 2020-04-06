@@ -122,7 +122,7 @@ static void jit_var_traverse(uint32_t size, uint32_t index) {
 
     #undef SWAP
 
-    if (likely(!v->direct_pointer)) {
+    if (likely(!v->direct_pointer && !v->data)) {
         for (auto &sub: ch) {
             if (sub.first)
                 jit_var_traverse(size, sub.first);

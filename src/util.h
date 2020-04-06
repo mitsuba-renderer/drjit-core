@@ -32,3 +32,7 @@ extern void jit_memcpy(void *dst, const void *src, size_t size);
 
 /// Perform an assynchronous copy operation
 extern void jit_memcpy_async(void *dst, const void *src, size_t size);
+
+// Compute a permutation to reorder an array of registered pointers
+extern VCallBucket *jit_vcall(const char *domain, uint32_t index,
+                              uint32_t *bucket_count_out);

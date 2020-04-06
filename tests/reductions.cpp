@@ -49,7 +49,7 @@ TEST_CUDA(02_scan) {
 
 #endif
 
-TEST_CUDA(03_mkperm) {
+TEST_BOTH(03_mkperm) {
     scoped_set_log_level ssll(LogLevel::Info);
     srand(0);
     for (uint32_t i = 0; i < 30; ++i) {
@@ -58,9 +58,12 @@ TEST_CUDA(03_mkperm) {
             uint32_t n_buckets = 23*j*j*j + 1;
 
             jitc_log(LogLevel::Info, "===== size=%u, buckets=%u =====", size, n_buckets);
-            uint32_t *data = (uint32_t *) jitc_malloc(AllocType::Host, size * sizeof(uint32_t)),
-                     *perm = (uint32_t *) jitc_malloc(AllocType::Device, size * sizeof(uint32_t)),
-                     *offsets = (uint32_t *) jitc_malloc(AllocType::HostPinned,
+            uint32_t *data    = (uint32_t *) jitc_malloc(AllocType::Host, size * sizeof(uint32_t)),
+                     *perm    = (uint32_t *) jitc_malloc(Float::IsCUDA ? AllocType::Device :
+                                                                         AllocType::Host,
+                                                         size * sizeof(uint32_t)),
+                     *offsets = (uint32_t *) jitc_malloc(Float::IsCUDA ? AllocType::HostPinned :
+                                                                         AllocType::Host,
                                                          (n_buckets * 4 + 1) * sizeof(uint32_t));
             uint64_t *ref = new uint64_t[size];
 
@@ -70,7 +73,7 @@ TEST_CUDA(03_mkperm) {
                 ref[i] = (((uint64_t) value) << 32) | i;
             }
 
-            data = (uint32_t *) jitc_malloc_migrate(data, AllocType::Device);
+            data = (uint32_t *) jitc_malloc_migrate(data, Float::IsCUDA ? AllocType::Device : AllocType::Host);
             uint32_t num_unique = jitc_mkperm(data, size, n_buckets, perm, offsets);
             perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
             jitc_sync_stream();

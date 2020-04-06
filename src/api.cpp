@@ -366,3 +366,9 @@ void jitc_registry_trim() {
     lock_guard guard(state.mutex);
     jit_registry_trim();
 }
+
+VCallBucket *jitc_vcall(const char *domain, uint32_t index,
+                        uint32_t *bucket_count_out) {
+    lock_guard guard(state.mutex);
+    return jit_vcall(domain, index, bucket_count_out);
+}

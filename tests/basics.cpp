@@ -670,7 +670,7 @@ void sincos_approx(const Value &x, Value &s_out, Value &c_out) {
     c_out = mulsign(select(polymask, c, s), sign_cos);
 }
 
-TEST_LLVM(23_sincos) {
+TEST_BOTH(23_sincos) {
     using Mask = Array<bool>;
     Float x = linspace<Float>(0, 1, 10);
     Float xs, xc;
@@ -948,7 +948,6 @@ TEST_BOTH(29_arithmetic_propagation) {
         jitc_assert(b.index() == z.index());
     }
 }
-#endif
 
 TEST_BOTH(30_scatter_ordering) {
     UInt32 x = zero<UInt32>(16),
@@ -961,4 +960,33 @@ TEST_BOTH(30_scatter_ordering) {
     jitc_log(Info, "x:%s", x.str());
     jitc_log(Info, "y:%s", y.str());
     jitc_log(Info, "z:%s", z.str());
+}
+#endif
+
+TEST_BOTH(31_vcall) {
+    const char *domain = "MyKey";
+    uint32_t i0 = jitc_registry_put(domain, (void *) 0xA);
+    uint32_t i1 = jitc_registry_put(domain, (void *) 0xB);
+    uint32_t i2 = jitc_registry_put(domain, (void *) 0xC);
+
+    UInt32 pointers(i1, 0u, i1, i2, 0u, i1, i0, i0, i1, i2);
+
+    std::vector<std::pair<void *, UInt32>> perm   = vcall(domain, pointers);
+    std::vector<std::pair<void *, UInt32>> perm_2 = vcall(domain, pointers);
+
+    jitc_assert(perm.size() == 3 && perm_2.size() == 3);
+    jitc_assert(perm[0].second.index() == perm_2[0].second.index());
+    jitc_assert(perm[1].second.index() == perm_2[1].second.index());
+    jitc_assert(perm[2].second.index() == perm_2[2].second.index());
+    jitc_assert(perm[0].first == (void *) 0x0A && perm_2[0].first == (void *) 0x0A);
+    jitc_assert(perm[1].first == (void *) 0x0B && perm_2[1].first == (void *) 0x0B);
+    jitc_assert(perm[2].first == (void *) 0x0C && perm_2[2].first == (void *) 0x0C);
+
+    jitc_assert(perm[0].second == UInt32(6, 7));
+    jitc_assert(perm[1].second == UInt32(0, 2, 5, 8));
+    jitc_assert(perm[2].second == UInt32(3, 9));
+
+    jitc_registry_remove((void *) 0xA);
+    jitc_registry_remove((void *) 0xB);
+    jitc_registry_remove((void *) 0xC);
 }

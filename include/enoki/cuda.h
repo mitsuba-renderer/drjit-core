@@ -30,6 +30,7 @@ struct CUDAArray {
     using Value = Value_;
     static constexpr VarType Type = var_type<Value>::value;
     static constexpr bool IsCUDA = true;
+    static constexpr bool IsLLVM = false;
 
     CUDAArray() = default;
 
@@ -1140,4 +1141,20 @@ Array tzcnt(const CUDAArray<Value> &a) {
 
 template <typename T> void jitc_schedule(const CUDAArray<T> &a) {
     a.schedule();
+}
+
+inline std::vector<std::pair<void *, CUDAArray<uint32_t>>>
+vcall(const char *domain, const CUDAArray<uint32_t> &a) {
+    uint32_t bucket_count = 0;
+    VCallBucket *buckets = jitc_vcall(domain, a.index(), &bucket_count);
+
+    std::vector<std::pair<void *, CUDAArray<uint32_t>>> result;
+    result.reserve(bucket_count);
+    for (uint32_t i = 0; i < bucket_count; ++i) {
+        jitc_var_inc_ref_ext(buckets[i].index);
+        result.emplace_back(buckets[i].ptr,
+                            CUDAArray<uint32_t>::from_index(buckets[i].index));
+    }
+
+    return result;
 }

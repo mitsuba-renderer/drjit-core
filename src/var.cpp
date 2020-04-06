@@ -89,6 +89,7 @@ void jit_var_free(uint32_t index, Variable *v) {
     memcpy(dep, v->dep, sizeof(uint32_t) * 4);
     void *data = v->data;
     bool direct_pointer = v->direct_pointer;
+    bool vcall_cached = v->vcall_cached;
 
     // Release GPU memory
     if (likely(v->data && !v->retain_data))
@@ -107,8 +108,24 @@ void jit_var_free(uint32_t index, Variable *v) {
         state.labels.erase(it);
     }
 
-    // Remove from hash table (careful: 'v' invalid from here on)
+    // Remove from hash table. 'v' is not guaranteed to be valid from here on.
     state.variables.erase(index);
+
+    if (unlikely(vcall_cached)) {
+        auto it = state.vcall_cache.find(index);
+        if (unlikely(it == state.vcall_cache.end()))
+            jit_fail("jit_var_free(): cached vcall entry not found!");
+
+        uint32_t bucket_count = it.value().first;
+        VCallBucket *buckets = it.value().second;
+
+        for (uint32_t i = 0; i < bucket_count; ++i)
+            jit_var_dec_ref_ext(buckets[i].index);
+
+        jit_free(buckets);
+
+        state.vcall_cache.erase(it);
+    }
 
     if (likely(!direct_pointer)) {
         // Decrease reference count of dependencies
