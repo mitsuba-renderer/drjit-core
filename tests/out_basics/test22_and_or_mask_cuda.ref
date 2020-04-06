@@ -4,25 +4,25 @@ jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(1): <@>, size=2, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy_from_host(1, size=2)
+jit_var_copy(1, size=2)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(2): <@>, size=2, free=1
 jit_var_inc_ref_ext(2): 1
-jit_var_copy_from_host(2, size=2)
+jit_var_copy(2, size=2)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(3): <@>, size=2, free=1
 jit_var_inc_ref_ext(3): 1
-jit_var_copy_from_host(3, size=2)
+jit_var_copy(3, size=2)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(4): <@>, size=2, free=1
 jit_var_inc_ref_ext(4): 1
-jit_var_copy_from_host(4, size=2)
+jit_var_copy(4, size=2)
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(4): 1
 jit_trace_append(5 <- 1, 4): selp.$b0 $r0, -1, $r1, $r2

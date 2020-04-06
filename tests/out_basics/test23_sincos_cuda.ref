@@ -10,10 +10,10 @@ jit_trace_append(4): mov.$t0 $r0, 0f00000000
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
-jit_var_inc_ref_int(4): 1
-jit_trace_append(5 <- 2, 3, 4): fma.rn.ftz.$t0 $r0, $r1, $r2, $r3
+jit_trace_append(5 <- 2, 3): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(5): 1
 jit_var_dec_ref_ext(4): 0
+jit_var_free(4)
 jit_var_dec_ref_ext(3): 0
 jit_var_dec_ref_ext(2): 0
 jit_var_dec_ref_ext(1): 0
@@ -31,13 +31,13 @@ jit_trace_append(9 <- 8): cvt.rzi.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(9): 1
 jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
-jit_trace_append(10): mov.$t0 $r0, 0x00000001
+jit_trace_append(10): mov.$b0 $r0, 0x00000001
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(10): 1
 jit_trace_append(11 <- 9, 10): add.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(11): 1
-jit_trace_append(12): mov.$t0 $r0, 0xfffffffe
+jit_trace_append(12): mov.$b0 $r0, 0xfffffffe
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(11): 1
 jit_var_inc_ref_int(12): 1
@@ -50,7 +50,7 @@ jit_var_dec_ref_ext(10): 0
 jit_var_inc_ref_int(13): 1
 jit_trace_append(14 <- 13): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(14): 1
-jit_trace_append(15): mov.$t0 $r0, 0x0000001d
+jit_trace_append(15): mov.$b0 $r0, 0x0000001d
 jit_var_inc_ref_ext(15): 1
 jit_var_inc_ref_int(13): 2
 jit_var_inc_ref_int(15): 1
@@ -66,7 +66,7 @@ jit_var_inc_ref_ext(18): 1
 jit_var_dec_ref_ext(17): 0
 jit_var_dec_ref_ext(16): 0
 jit_var_dec_ref_ext(15): 0
-jit_trace_append(19): mov.$t0 $r0, 0x00000002
+jit_trace_append(19): mov.$b0 $r0, 0x00000002
 jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(13): 3
 jit_var_inc_ref_int(19): 1
@@ -75,7 +75,7 @@ jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_int(20): 1
 jit_trace_append(21 <- 20): not.$b0 $r0, $r1
 jit_var_inc_ref_ext(21): 1
-jit_trace_append(15): mov.$t0 $r0, 0x0000001d (reused)
+jit_trace_append(15): mov.$b0 $r0, 0x0000001d (reused)
 jit_var_inc_ref_ext(15): 1
 jit_var_inc_ref_int(21): 1
 jit_var_inc_ref_int(15): 2
@@ -231,13 +231,13 @@ jit_var_dec_ref_ext(49): 0
 jit_var_dec_ref_ext(53): 0
 jit_var_dec_ref_ext(52): 0
 jit_var_dec_ref_ext(51): 0
-jit_trace_append(19): mov.$t0 $r0, 0x00000002 (reused)
+jit_trace_append(19): mov.$b0 $r0, 0x00000002 (reused)
 jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(13): 4
 jit_var_inc_ref_int(19): 2
 jit_trace_append(55 <- 13, 19): and.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(55): 1
-jit_trace_append(56): mov.$t0 $r0, 0x00000000
+jit_trace_append(56): mov.$b0 $r0, 0x00000000
 jit_var_inc_ref_ext(56): 1
 jit_var_inc_ref_int(55): 1
 jit_var_inc_ref_int(56): 1
@@ -296,82 +296,72 @@ jit_assemble(size=10): register map:
    - %r4 -> 1
    - %f5 -> 2
    - %f6 -> 3 [scalar]
-   - %f7 -> 4 [scalar]
-   - %f8 -> 5
-   - %f9 -> 6
-   - %f10 -> 7 [scalar]
-   - %f11 -> 8
-   - %r12 -> 9
-   - %r13 -> 10 [scalar]
-   - %r14 -> 11
-   - %r15 -> 12 [scalar]
-   - %r16 -> 13
-   - %f17 -> 14
-   - %f18 -> 24 [scalar]
-   - %f19 -> 25
-   - %f20 -> 26
-   - %f21 -> 27 [scalar]
-   - %f22 -> 28
-   - %f23 -> 29
-   - %f24 -> 30 [scalar]
-   - %f25 -> 31
-   - %f26 -> 32
-   - %f27 -> 33
-   - %f28 -> 34 [scalar]
-   - %p29 -> 35
-   - %f30 -> 36
-   - %f31 -> 37
-   - %f32 -> 45 [scalar]
-   - %f33 -> 46 [scalar]
-   - %f34 -> 47
-   - %f35 -> 44 [scalar]
-   - %f36 -> 48
-   - %f37 -> 49
-   - %f38 -> 51 [scalar]
-   - %f39 -> 52 [scalar]
-   - %f40 -> 53
-   - %f41 -> 54
-   - %f42 -> 39 [scalar]
-   - %f43 -> 40 [scalar]
-   - %f44 -> 41
-   - %f45 -> 38 [scalar]
-   - %f46 -> 42
-   - %f47 -> 43
-   - %f48 -> 50
-   - %r49 -> 19 [scalar]
-   - %r50 -> 55
-   - %r51 -> 56 [scalar]
-   - %p52 -> 57
-   - %f53 -> 58
-   - %r54 -> 15 [scalar]
-   - %r55 -> 16
-   - %f56 -> 17
-   - %f57 -> 18
-   - %f58 -> 59 [scalar]
-   - %f59 -> 60
-   - %f60 -> 61 [out]
+   - %f7 -> 5
+   - %f8 -> 6
+   - %f9 -> 7 [scalar]
+   - %f10 -> 8
+   - %r11 -> 9
+   - %r12 -> 10 [scalar]
+   - %r13 -> 11
+   - %r14 -> 12 [scalar]
+   - %r15 -> 13
+   - %f16 -> 14
+   - %f17 -> 24 [scalar]
+   - %f18 -> 25
+   - %f19 -> 26
+   - %f20 -> 27 [scalar]
+   - %f21 -> 28
+   - %f22 -> 29
+   - %f23 -> 30 [scalar]
+   - %f24 -> 31
+   - %f25 -> 32
+   - %f26 -> 33
+   - %f27 -> 34 [scalar]
+   - %p28 -> 35
+   - %f29 -> 36
+   - %f30 -> 37
+   - %f31 -> 45 [scalar]
+   - %f32 -> 46 [scalar]
+   - %f33 -> 47
+   - %f34 -> 44 [scalar]
+   - %f35 -> 48
+   - %f36 -> 49
+   - %f37 -> 51 [scalar]
+   - %f38 -> 52 [scalar]
+   - %f39 -> 53
+   - %f40 -> 54
+   - %f41 -> 39 [scalar]
+   - %f42 -> 40 [scalar]
+   - %f43 -> 41
+   - %f44 -> 38 [scalar]
+   - %f45 -> 42
+   - %f46 -> 43
+   - %f47 -> 50
+   - %r48 -> 19 [scalar]
+   - %r49 -> 55
+   - %r50 -> 56 [scalar]
+   - %p51 -> 57
+   - %f52 -> 58
+   - %r53 -> 15 [scalar]
+   - %r54 -> 16
+   - %f55 -> 17
+   - %f56 -> 18
+   - %f57 -> 59 [scalar]
+   - %f58 -> 60
+   - %f59 -> 61 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-   - %f61 -> 62
-   - %r62 -> 20
-   - %r63 -> 21
-   - %r64 -> 22
-   - %f65 -> 23
-   - %f66 -> 63
-   - %f67 -> 64 [out]
-jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=0, out=2, ops=68) ..
+jit_run(): launching kernel (n=10, in=0, out=1, ops=60) ..
 .version 6.3
 .address_size 64
 .entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
-                              .param .u64 arg0,
-                              .param .u64 arg1) {
-    .reg.b8 %b<68>;
-    .reg.b16 %w<68>;
-    .reg.b32 %r<68>;
-    .reg.b64 %rd<68>;
-    .reg.f32 %f<68>;
-    .reg.f64 %d<68>;
-    .reg.pred %p<68>;
+                              .param .u64 arg0) {
+    .reg.b8 %b<60>;
+    .reg.b16 %w<60>;
+    .reg.b32 %r<60>;
+    .reg.b64 %rd<60>;
+    .reg.f32 %f<60>;
+    .reg.f64 %d<60>;
+    .reg.pred %p<60>;
 
     // Grid-stride loop setup
     mov.u32 %r0, %ctaid.x;
@@ -397,199 +387,169 @@ L1: // Loop body
     mov.f32 %f6, 0f3de38e39;
 
     // Evaluate %f7
-    mov.f32 %f7, 0f00000000;
+    mul.ftz.f32 %f7, %f5, %f6;
 
     // Evaluate %f8
-    fma.rn.ftz.f32 %f8, %f5, %f6, %f7;
+    abs.ftz.f32 %f8, %f7;
 
     // Evaluate %f9
-    abs.ftz.f32 %f9, %f8;
+    mov.f32 %f9, 0f3fa2f983;
 
     // Evaluate %f10
-    mov.f32 %f10, 0f3fa2f983;
+    mul.ftz.f32 %f10, %f8, %f9;
 
-    // Evaluate %f11
-    mul.ftz.f32 %f11, %f9, %f10;
+    // Evaluate %r11
+    cvt.rzi.s32.f32 %r11, %f10;
 
     // Evaluate %r12
-    cvt.rzi.s32.f32 %r12, %f11;
+    mov.b32 %r12, 0x00000001;
 
     // Evaluate %r13
-    mov.s32 %r13, 0x00000001;
+    add.s32 %r13, %r11, %r12;
 
     // Evaluate %r14
-    add.s32 %r14, %r12, %r13;
+    mov.b32 %r14, 0xfffffffe;
 
     // Evaluate %r15
-    mov.s32 %r15, 0xfffffffe;
+    and.b32 %r15, %r13, %r14;
 
-    // Evaluate %r16
-    and.b32 %r16, %r14, %r15;
+    // Evaluate %f16
+    cvt.rn.f32.s32 %f16, %r15;
 
     // Evaluate %f17
-    cvt.rn.f32.s32 %f17, %r16;
+    mov.f32 %f17, 0f3f490000;
 
     // Evaluate %f18
-    mov.f32 %f18, 0f3f490000;
+    mul.ftz.f32 %f18, %f16, %f17;
 
     // Evaluate %f19
-    mul.ftz.f32 %f19, %f17, %f18;
+    sub.ftz.f32 %f19, %f8, %f18;
 
     // Evaluate %f20
-    sub.ftz.f32 %f20, %f9, %f19;
+    mov.f32 %f20, 0f397da000;
 
     // Evaluate %f21
-    mov.f32 %f21, 0f397da000;
+    mul.ftz.f32 %f21, %f16, %f20;
 
     // Evaluate %f22
-    mul.ftz.f32 %f22, %f17, %f21;
+    sub.ftz.f32 %f22, %f19, %f21;
 
     // Evaluate %f23
-    sub.ftz.f32 %f23, %f20, %f22;
+    mov.f32 %f23, 0f33222169;
 
     // Evaluate %f24
-    mov.f32 %f24, 0f33222169;
+    mul.ftz.f32 %f24, %f16, %f23;
 
     // Evaluate %f25
-    mul.ftz.f32 %f25, %f17, %f24;
+    sub.ftz.f32 %f25, %f22, %f24;
 
     // Evaluate %f26
-    sub.ftz.f32 %f26, %f23, %f25;
+    mul.ftz.f32 %f26, %f25, %f25;
 
     // Evaluate %f27
-    mul.ftz.f32 %f27, %f26, %f26;
+    mov.f32 %f27, 0f7f800000;
 
-    // Evaluate %f28
-    mov.f32 %f28, 0f7f800000;
+    // Evaluate %p28
+    setp.eq.f32 %p28, %f8, %f27;
 
-    // Evaluate %p29
-    setp.eq.f32 %p29, %f9, %f28;
+    // Evaluate %f29
+    selp.b32 %f29, -1, %f26, %p28;
 
     // Evaluate %f30
-    selp.b32 %f30, -1, %f27, %p29;
+    mul.ftz.f32 %f30, %f29, %f29;
 
     // Evaluate %f31
-    mul.ftz.f32 %f31, %f30, %f30;
+    mov.f32 %f31, 0fbab6061a;
 
     // Evaluate %f32
-    mov.f32 %f32, 0fbab6061a;
+    mov.f32 %f32, 0f3d2aaaa5;
 
     // Evaluate %f33
-    mov.f32 %f33, 0f3d2aaaa5;
+    fma.rn.ftz.f32 %f33, %f29, %f31, %f32;
 
     // Evaluate %f34
-    fma.rn.ftz.f32 %f34, %f30, %f32, %f33;
+    mov.f32 %f34, 0f37ccf5ce;
 
     // Evaluate %f35
-    mov.f32 %f35, 0f37ccf5ce;
+    fma.rn.ftz.f32 %f35, %f30, %f34, %f33;
 
     // Evaluate %f36
-    fma.rn.ftz.f32 %f36, %f31, %f35, %f34;
+    mul.ftz.f32 %f36, %f35, %f29;
 
     // Evaluate %f37
-    mul.ftz.f32 %f37, %f36, %f30;
+    mov.f32 %f37, 0fbf000000;
 
     // Evaluate %f38
-    mov.f32 %f38, 0fbf000000;
+    mov.f32 %f38, 0f3f800000;
 
     // Evaluate %f39
-    mov.f32 %f39, 0f3f800000;
+    fma.rn.ftz.f32 %f39, %f29, %f37, %f38;
 
     // Evaluate %f40
-    fma.rn.ftz.f32 %f40, %f30, %f38, %f39;
+    fma.rn.ftz.f32 %f40, %f36, %f29, %f39;
 
     // Evaluate %f41
-    fma.rn.ftz.f32 %f41, %f37, %f30, %f40;
+    mov.f32 %f41, 0f3c08839e;
 
     // Evaluate %f42
-    mov.f32 %f42, 0f3c08839e;
+    mov.f32 %f42, 0fbe2aaaa3;
 
     // Evaluate %f43
-    mov.f32 %f43, 0fbe2aaaa3;
+    fma.rn.ftz.f32 %f43, %f29, %f41, %f42;
 
     // Evaluate %f44
-    fma.rn.ftz.f32 %f44, %f30, %f42, %f43;
+    mov.f32 %f44, 0fb94ca1f9;
 
     // Evaluate %f45
-    mov.f32 %f45, 0fb94ca1f9;
+    fma.rn.ftz.f32 %f45, %f30, %f44, %f43;
 
     // Evaluate %f46
-    fma.rn.ftz.f32 %f46, %f31, %f45, %f44;
+    mul.ftz.f32 %f46, %f45, %f29;
 
     // Evaluate %f47
-    mul.ftz.f32 %f47, %f46, %f30;
+    fma.rn.ftz.f32 %f47, %f46, %f25, %f25;
 
-    // Evaluate %f48
-    fma.rn.ftz.f32 %f48, %f47, %f26, %f26;
+    // Evaluate %r48
+    mov.b32 %r48, 0x00000002;
 
     // Evaluate %r49
-    mov.s32 %r49, 0x00000002;
+    and.b32 %r49, %r15, %r48;
 
     // Evaluate %r50
-    and.b32 %r50, %r16, %r49;
+    mov.b32 %r50, 0x00000000;
 
-    // Evaluate %r51
-    mov.s32 %r51, 0x00000000;
+    // Evaluate %p51
+    setp.eq.s32 %p51, %r49, %r50;
 
-    // Evaluate %p52
-    setp.eq.s32 %p52, %r50, %r51;
+    // Evaluate %f52
+    selp.f32 %f52, %f47, %f40, %p51;
 
-    // Evaluate %f53
-    selp.f32 %f53, %f48, %f41, %p52;
+    // Evaluate %r53
+    mov.b32 %r53, 0x0000001d;
 
     // Evaluate %r54
-    mov.u32 %r54, 0x0000001d;
+    shl.b32 %r54, %r15, %r53;
 
-    // Evaluate %r55
-    shl.b32 %r55, %r16, %r54;
+    // Evaluate %f55
+    mov.b32 %f55, %r54;
 
     // Evaluate %f56
-    mov.b32 %f56, %r55;
+    xor.b32 %f56, %f55, %f7;
 
     // Evaluate %f57
-    xor.b32 %f57, %f56, %f8;
+    mov.f32 %f57, 0f80000000;
 
     // Evaluate %f58
-    mov.f32 %f58, 0f80000000;
+    and.b32 %f58, %f57, %f56;
 
     // Evaluate %f59
-    and.b32 %f59, %f58, %f57;
+    xor.b32 %f59, %f52, %f58;
 
-    // Evaluate %f60
-    xor.b32 %f60, %f53, %f59;
-
-    // Store %f60
+    // Store %f59
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 4;
     add.u64 %rd0, %rd0, %rd1;
-    st.global.cs.f32 [%rd0], %f60;
-
-    // Evaluate %f61
-    selp.f32 %f61, %f41, %f48, %p52;
-
-    // Evaluate %r62
-    sub.s32 %r62, %r16, %r49;
-
-    // Evaluate %r63
-    not.b32 %r63, %r62;
-
-    // Evaluate %r64
-    shl.b32 %r64, %r63, %r54;
-
-    // Evaluate %f65
-    mov.b32 %f65, %r64;
-
-    // Evaluate %f66
-    and.b32 %f66, %f58, %f65;
-
-    // Evaluate %f67
-    xor.b32 %f67, %f61, %f66;
-
-    // Store %f67
-    ld.param.u64 %rd0, [arg1];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
-    st.global.cs.f32 [%rd0], %f67;
+    st.global.cs.f32 [%rd0], %f59;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -616,6 +576,280 @@ jit_var_free(16)
 jit_var_dec_ref_int(13): 3
 jit_var_dec_ref_int(15): 1
 jit_var_dec_ref_int(5): 1
+jit_eval(): done.
+xs : [0, 0.110883, 0.220398, 0.327195, 0.429956, 0.527415, 0.61837, 0.701698, 0.776372, 0.841471]
+jit_eval(): begin.
+jit_assemble(size=10): register map:
+   - %r4 -> 1
+   - %f5 -> 2
+   - %f6 -> 3 [scalar]
+   - %f7 -> 5
+   - %f8 -> 6
+   - %f9 -> 7 [scalar]
+   - %f10 -> 8
+   - %r11 -> 9
+   - %r12 -> 10 [scalar]
+   - %r13 -> 11
+   - %r14 -> 12 [scalar]
+   - %r15 -> 13
+   - %f16 -> 14
+   - %f17 -> 24 [scalar]
+   - %f18 -> 25
+   - %f19 -> 26
+   - %f20 -> 27 [scalar]
+   - %f21 -> 28
+   - %f22 -> 29
+   - %f23 -> 30 [scalar]
+   - %f24 -> 31
+   - %f25 -> 32
+   - %f26 -> 33
+   - %f27 -> 34 [scalar]
+   - %p28 -> 35
+   - %f29 -> 36
+   - %f30 -> 37
+   - %f31 -> 45 [scalar]
+   - %f32 -> 46 [scalar]
+   - %f33 -> 47
+   - %f34 -> 44 [scalar]
+   - %f35 -> 48
+   - %f36 -> 49
+   - %f37 -> 51 [scalar]
+   - %f38 -> 52 [scalar]
+   - %f39 -> 53
+   - %f40 -> 54
+   - %f41 -> 39 [scalar]
+   - %f42 -> 40 [scalar]
+   - %f43 -> 41
+   - %f44 -> 38 [scalar]
+   - %f45 -> 42
+   - %f46 -> 43
+   - %f47 -> 50
+   - %r48 -> 19 [scalar]
+   - %r49 -> 55
+   - %r50 -> 56 [scalar]
+   - %p51 -> 57
+   - %f52 -> 62
+   - %r53 -> 20
+   - %r54 -> 21
+   - %r55 -> 15 [scalar]
+   - %r56 -> 22
+   - %f57 -> 23
+   - %f58 -> 59 [scalar]
+   - %f59 -> 63
+   - %f60 -> 64 [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=10, in=0, out=1, ops=61) ..
+.version 6.3
+.address_size 64
+.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+                              .param .u64 arg0) {
+    .reg.b8 %b<61>;
+    .reg.b16 %w<61>;
+    .reg.b32 %r<61>;
+    .reg.b64 %rd<61>;
+    .reg.f32 %f<61>;
+    .reg.f64 %d<61>;
+    .reg.pred %p<61>;
+
+    // Grid-stride loop setup
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Evaluate %r4
+    mov.u32 %r4, %r0;
+
+    // Evaluate %f5
+    cvt.rn.f32.u32 %f5, %r4;
+
+    // Evaluate %f6
+    mov.f32 %f6, 0f3de38e39;
+
+    // Evaluate %f7
+    mul.ftz.f32 %f7, %f5, %f6;
+
+    // Evaluate %f8
+    abs.ftz.f32 %f8, %f7;
+
+    // Evaluate %f9
+    mov.f32 %f9, 0f3fa2f983;
+
+    // Evaluate %f10
+    mul.ftz.f32 %f10, %f8, %f9;
+
+    // Evaluate %r11
+    cvt.rzi.s32.f32 %r11, %f10;
+
+    // Evaluate %r12
+    mov.b32 %r12, 0x00000001;
+
+    // Evaluate %r13
+    add.s32 %r13, %r11, %r12;
+
+    // Evaluate %r14
+    mov.b32 %r14, 0xfffffffe;
+
+    // Evaluate %r15
+    and.b32 %r15, %r13, %r14;
+
+    // Evaluate %f16
+    cvt.rn.f32.s32 %f16, %r15;
+
+    // Evaluate %f17
+    mov.f32 %f17, 0f3f490000;
+
+    // Evaluate %f18
+    mul.ftz.f32 %f18, %f16, %f17;
+
+    // Evaluate %f19
+    sub.ftz.f32 %f19, %f8, %f18;
+
+    // Evaluate %f20
+    mov.f32 %f20, 0f397da000;
+
+    // Evaluate %f21
+    mul.ftz.f32 %f21, %f16, %f20;
+
+    // Evaluate %f22
+    sub.ftz.f32 %f22, %f19, %f21;
+
+    // Evaluate %f23
+    mov.f32 %f23, 0f33222169;
+
+    // Evaluate %f24
+    mul.ftz.f32 %f24, %f16, %f23;
+
+    // Evaluate %f25
+    sub.ftz.f32 %f25, %f22, %f24;
+
+    // Evaluate %f26
+    mul.ftz.f32 %f26, %f25, %f25;
+
+    // Evaluate %f27
+    mov.f32 %f27, 0f7f800000;
+
+    // Evaluate %p28
+    setp.eq.f32 %p28, %f8, %f27;
+
+    // Evaluate %f29
+    selp.b32 %f29, -1, %f26, %p28;
+
+    // Evaluate %f30
+    mul.ftz.f32 %f30, %f29, %f29;
+
+    // Evaluate %f31
+    mov.f32 %f31, 0fbab6061a;
+
+    // Evaluate %f32
+    mov.f32 %f32, 0f3d2aaaa5;
+
+    // Evaluate %f33
+    fma.rn.ftz.f32 %f33, %f29, %f31, %f32;
+
+    // Evaluate %f34
+    mov.f32 %f34, 0f37ccf5ce;
+
+    // Evaluate %f35
+    fma.rn.ftz.f32 %f35, %f30, %f34, %f33;
+
+    // Evaluate %f36
+    mul.ftz.f32 %f36, %f35, %f29;
+
+    // Evaluate %f37
+    mov.f32 %f37, 0fbf000000;
+
+    // Evaluate %f38
+    mov.f32 %f38, 0f3f800000;
+
+    // Evaluate %f39
+    fma.rn.ftz.f32 %f39, %f29, %f37, %f38;
+
+    // Evaluate %f40
+    fma.rn.ftz.f32 %f40, %f36, %f29, %f39;
+
+    // Evaluate %f41
+    mov.f32 %f41, 0f3c08839e;
+
+    // Evaluate %f42
+    mov.f32 %f42, 0fbe2aaaa3;
+
+    // Evaluate %f43
+    fma.rn.ftz.f32 %f43, %f29, %f41, %f42;
+
+    // Evaluate %f44
+    mov.f32 %f44, 0fb94ca1f9;
+
+    // Evaluate %f45
+    fma.rn.ftz.f32 %f45, %f30, %f44, %f43;
+
+    // Evaluate %f46
+    mul.ftz.f32 %f46, %f45, %f29;
+
+    // Evaluate %f47
+    fma.rn.ftz.f32 %f47, %f46, %f25, %f25;
+
+    // Evaluate %r48
+    mov.b32 %r48, 0x00000002;
+
+    // Evaluate %r49
+    and.b32 %r49, %r15, %r48;
+
+    // Evaluate %r50
+    mov.b32 %r50, 0x00000000;
+
+    // Evaluate %p51
+    setp.eq.s32 %p51, %r49, %r50;
+
+    // Evaluate %f52
+    selp.f32 %f52, %f40, %f47, %p51;
+
+    // Evaluate %r53
+    sub.s32 %r53, %r15, %r48;
+
+    // Evaluate %r54
+    not.b32 %r54, %r53;
+
+    // Evaluate %r55
+    mov.b32 %r55, 0x0000001d;
+
+    // Evaluate %r56
+    shl.b32 %r56, %r54, %r55;
+
+    // Evaluate %f57
+    mov.b32 %f57, %r56;
+
+    // Evaluate %f58
+    mov.f32 %f58, 0f80000000;
+
+    // Evaluate %f59
+    and.b32 %f59, %f58, %f57;
+
+    // Evaluate %f60
+    xor.b32 %f60, %f52, %f59;
+
+    // Store %f60
+    ld.param.u64 %rd0, [arg0];
+    mul.wide.u32 %rd1, %r0, 4;
+    add.u64 %rd0, %rd0, %rd1;
+    st.global.cs.f32 [%rd0], %f60;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
 jit_var_dec_ref_int(62): 0
 jit_var_free(62)
 jit_var_dec_ref_int(54): 0
@@ -740,7 +974,6 @@ jit_var_free(19)
 jit_var_dec_ref_int(15): 0
 jit_var_free(15)
 jit_eval(): done.
-xs : [0, 0.110883, 0.220398, 0.327195, 0.429956, 0.527415, 0.61837, 0.701698, 0.776372, 0.841471]
 xc : [1, 0.993834, 0.97541, 0.944957, 0.90285, 0.849608, 0.785887, 0.712475, 0.630275, 0.540302]
 jit_var_dec_ref_ext(64): 0
 jit_var_free(64)
@@ -756,8 +989,6 @@ jit_var_dec_ref_int(1): 0
 jit_var_free(1)
 jit_var_dec_ref_int(3): 0
 jit_var_free(3)
-jit_var_dec_ref_int(4): 0
-jit_var_free(4)
 jit_shutdown(): destroying streams ..
 jit_free_flush(): scheduling 2 deallocations
 jit_malloc_trim(): freed

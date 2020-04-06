@@ -687,6 +687,7 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
     v2.retain_data = true;
     v2.tsize = 1;
     v2.cuda = active_stream->cuda;
+    v2.unaligned = 1;
 
     uint32_t *offsets_out = offsets;
 

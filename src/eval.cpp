@@ -627,7 +627,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
-        uint32_t align = var_type_size[(int) v->type] * width,
+        uint32_t align = v->unaligned ? 1 : (var_type_size[(int) v->type] * width),
                  reg_id = v->reg_index, arg_id = v->arg_index - 1;
         const char *reg_prefix = var_type_prefix[(int) v->type],
                    *type = (VarType) v->type == VarType::Bool

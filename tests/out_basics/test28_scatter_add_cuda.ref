@@ -8,7 +8,7 @@ jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(2): <@>, size=15, free=1
 jit_var_inc_ref_ext(2): 1
-jit_var_copy_from_host(2, size=15)
+jit_var_copy(2, size=15)
 jit_trace_append(3): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(3): 1
 jit_trace_append(4): mov.$t0 $r0, 1
@@ -111,7 +111,7 @@ jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(8): <@>, size=16, free=1
 jit_var_inc_ref_ext(8): 1
-jit_var_copy_from_host(8, size=16)
+jit_var_copy(8, size=16)
 jit_trace_append(9): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(9): 1
 jit_trace_append(10): mov.$t0 $r0, 1
@@ -214,7 +214,7 @@ jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(14): <@>, size=15, free=1
 jit_var_inc_ref_ext(14): 1
-jit_var_copy_from_host(14, size=15)
+jit_var_copy(14, size=15)
 jit_trace_append(15): mov.$t0 $r0, 0d3ff0000000000000
 jit_var_inc_ref_ext(15): 1
 jit_trace_append(16): mov.$t0 $r0, 1
@@ -317,7 +317,7 @@ jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(20): <@>, size=16, free=1
 jit_var_inc_ref_ext(20): 1
-jit_var_copy_from_host(20, size=16)
+jit_var_copy(20, size=16)
 jit_trace_append(21): mov.$t0 $r0, 0d3ff0000000000000
 jit_var_inc_ref_ext(21): 1
 jit_trace_append(22): mov.$t0 $r0, 1
@@ -434,7 +434,7 @@ jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(30): <@>, size=15, free=1
 jit_var_inc_ref_ext(30): 1
-jit_var_copy_from_host(30, size=15)
+jit_var_copy(30, size=15)
 jit_trace_append(31): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(31): 1
 jit_var_inc_ref_ext(25): 2
@@ -573,7 +573,7 @@ jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(39): <@>, size=16, free=1
 jit_var_inc_ref_ext(39): 1
-jit_var_copy_from_host(39, size=16)
+jit_var_copy(39, size=16)
 jit_trace_append(40): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(40): 1
 jit_var_inc_ref_ext(34): 2
@@ -712,7 +712,7 @@ jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(48): <@>, size=15, free=1
 jit_var_inc_ref_ext(48): 1
-jit_var_copy_from_host(48, size=15)
+jit_var_copy(48, size=15)
 jit_trace_append(49): mov.$t0 $r0, 0d3ff0000000000000
 jit_var_inc_ref_ext(49): 1
 jit_var_inc_ref_ext(43): 2
@@ -837,7 +837,7 @@ jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(53): <@>, size=16, free=1
 jit_var_inc_ref_ext(53): 1
-jit_var_copy_from_host(53, size=16)
+jit_var_copy(53, size=16)
 jit_trace_append(54): mov.u32 $r0, $i
 jit_var_inc_ref_ext(54): 1
 jit_var_inc_ref_int(54): 1

@@ -4,7 +4,7 @@ jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(1): <@>, size=3, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy_from_host(1, size=3)
+jit_var_copy(1, size=3)
 jit_var_inc_ref_int(1): 1
 jit_trace_append(2 <- 1): mov.$b0 $r0, $r1
 jit_var_inc_ref_ext(2): 1

@@ -495,7 +495,6 @@ bool jit_llvm_init() {
                 version_string);
         return false;
     }
-    printf("Gotcha %s\n", version_string);
 
     if (jit_llvm_version_major < 7) {
         jit_log(Warn,

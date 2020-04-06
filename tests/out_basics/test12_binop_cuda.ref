@@ -4,19 +4,19 @@ jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(1): <@>, size=2, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy_from_host(1, size=2)
+jit_var_copy(1, size=2)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(2): <@>, size=2, free=1
 jit_var_inc_ref_ext(2): 1
-jit_var_copy_from_host(2, size=2)
+jit_var_copy(2, size=2)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(3): <@>, size=2, free=1
 jit_var_inc_ref_ext(3): 1
-jit_var_copy_from_host(3, size=2)
+jit_var_copy(3, size=2)
 jit_var_inc_ref_int(1): 1
 jit_trace_append(4 <- 1): not.$b0 $r0, $r1
 jit_var_inc_ref_ext(4): 1
@@ -270,19 +270,19 @@ jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(10): <@>, size=2, free=1
 jit_var_inc_ref_ext(10): 1
-jit_var_copy_from_host(10, size=2)
+jit_var_copy(10, size=2)
 jit_malloc(type=device, device=0, size=64): <@> (reused global)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(11): <@>, size=2, free=1
 jit_var_inc_ref_ext(11): 1
-jit_var_copy_from_host(11, size=2)
+jit_var_copy(11, size=2)
 jit_malloc(type=device, device=0, size=64): <@> (reused global)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(12): <@>, size=2, free=1
 jit_var_inc_ref_ext(12): 1
-jit_var_copy_from_host(12, size=2)
+jit_var_copy(12, size=2)
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(10): 1
 jit_trace_append(13 <- 7, 10): or.$b0 $r0, $r1, $r2

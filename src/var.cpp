@@ -511,12 +511,17 @@ uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free) {
     if (unlikely(size == 0))
         jit_raise("jit_var_map: size must be nonzero!");
 
+    uintptr_t align =
+        std::min(64u, jit_llvm_vector_width * var_type_size[(int) type]);
+
     Variable v;
     v.type = (uint32_t) type;
     v.data = ptr;
     v.size = size;
     v.retain_data = free == 0;
     v.tsize = 1;
+    if (!active_stream->cuda)
+        v.unaligned = uintptr_t(ptr) % align != 0;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_trace_append(v);

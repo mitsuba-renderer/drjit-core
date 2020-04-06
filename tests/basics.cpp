@@ -1,5 +1,4 @@
 #include "test.h"
-#if 0
 
 TEST_BOTH(01_creation_destruction) {
     // Checks simple reference counting of a variable
@@ -961,7 +960,6 @@ TEST_BOTH(30_scatter_ordering) {
     jitc_log(Info, "y:%s", y.str());
     jitc_log(Info, "z:%s", z.str());
 }
-#endif
 
 TEST_BOTH(31_vcall) {
     const char *domain = "MyKey";

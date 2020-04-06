@@ -23,9 +23,6 @@ uint32_t round_pow2(uint32_t x) {
 }
 
 void* jit_malloc(AllocType type, size_t size) {
-    jit_trace("start jit_malloc(type=%s,  size=%zu).",
-              alloc_type_name[(int)type], size);
-
     if (size == 0)
         return nullptr;
 
