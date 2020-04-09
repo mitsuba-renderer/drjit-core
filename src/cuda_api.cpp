@@ -81,11 +81,9 @@ CUfunction *jit_cuda_mkperm_phase_4_tiny = nullptr;
 CUfunction *jit_cuda_mkperm_phase_4_small = nullptr;
 CUfunction *jit_cuda_mkperm_phase_4_large = nullptr;
 CUfunction *jit_cuda_transpose = nullptr;
-CUfunction *jit_cuda_scan_small_u8 = nullptr;
 CUfunction *jit_cuda_scan_small_u32 = nullptr;
-CUfunction *jit_cuda_scan_large_u8 = nullptr;
 CUfunction *jit_cuda_scan_large_u32 = nullptr;
-CUfunction *jit_cuda_scan_offset = nullptr;
+CUfunction *jit_cuda_scan_large_u32_init = nullptr;
 
 CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
                                [(int) VarType::Count] = {};
@@ -308,11 +306,9 @@ bool jit_cuda_init() {
         LOAD(mkperm_phase_4_small);
         LOAD(mkperm_phase_4_large);
         LOAD(transpose);
-        LOAD(scan_small_u8);
         LOAD(scan_small_u32);
-        LOAD(scan_large_u8);
         LOAD(scan_large_u32);
-        LOAD(scan_offset);
+        LOAD(scan_large_u32_init);
 
         #undef LOAD
 
@@ -432,11 +428,9 @@ void jit_cuda_shutdown() {
     Z(jit_cuda_mkperm_phase_4_small);
     Z(jit_cuda_mkperm_phase_4_large);
     Z(jit_cuda_transpose);
-    Z(jit_cuda_scan_small_u8);
     Z(jit_cuda_scan_small_u32);
-    Z(jit_cuda_scan_large_u8);
     Z(jit_cuda_scan_large_u32);
-    Z(jit_cuda_scan_offset);
+    Z(jit_cuda_scan_large_u32_init);
     Z(jit_cuda_module);
 
     for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++)

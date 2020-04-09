@@ -123,11 +123,9 @@ extern CUfunction *jit_cuda_mkperm_phase_4_tiny;
 extern CUfunction *jit_cuda_mkperm_phase_4_small;
 extern CUfunction *jit_cuda_mkperm_phase_4_large;
 extern CUfunction *jit_cuda_transpose;
-extern CUfunction *jit_cuda_scan_small_u8;
 extern CUfunction *jit_cuda_scan_small_u32;
-extern CUfunction *jit_cuda_scan_large_u8;
 extern CUfunction *jit_cuda_scan_large_u32;
-extern CUfunction *jit_cuda_scan_offset;
+extern CUfunction *jit_cuda_scan_large_u32_init;
 
 extern CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
                                       [(int) VarType::Count];

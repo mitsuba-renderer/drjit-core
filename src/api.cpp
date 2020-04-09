@@ -312,9 +312,14 @@ void jitc_reduce(VarType type, ReductionType rtype,
     jit_reduce(type, rtype, ptr, size, out);
 }
 
-void jitc_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
+void jitc_scan_u32(const uint32_t *in, uint32_t *out, uint32_t size) {
     lock_guard guard(state.mutex);
-    jit_scan(in, out, size);
+    jit_scan_u32(in, out, size);
+}
+
+void jitc_scan_u8(const uint8_t *in, uint32_t *out, uint32_t size) {
+    lock_guard guard(state.mutex);
+    jit_scan_u8(in, out, size);
 }
 
 uint8_t jitc_all(uint8_t *values, uint32_t size) {

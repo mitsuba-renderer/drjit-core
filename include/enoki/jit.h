@@ -858,21 +858,23 @@ extern JITC_EXPORT void jitc_reduce(enum VarType type, enum ReductionType rtype,
                                     const void *ptr, uint32_t size, void *out);
 
 /**
- * \brief Perform an exclusive scan / prefix sum over an unsigned integer array
+ * \brief Perform an exclusive scan / prefix sum over an unsigned 32 bit integer
+ * array
  *
- * If desired, the scan can be performed in place (i.e. with <tt>in == out</tt>).
+ * If desired, the scan can be performed in-place (i.e. <tt>in == out</tt>).
  *
  * The following comment applies to the GPU implementation: when the array is
- * larger than 4K elements, the implementation will round up \c size to the
- * next largest number of 4K, hence the supplied memory region must be
- * sufficiently large to avoid an out-of-bounds reads and writes. This is not
- * an issue for memory obtained using \ref jitc_malloc(), which internally
- * rounds allocations to the next largest power of two.
+ * larger than 4K elements, the implementation will switch to an optimized
+ * kernel for large arrays, which rounds \c size up to the next multiple of 2K,
+ * hence the supplied memory regions must be sufficiently large to avoid both
+ * out-of-bounds reads and writes. This is not an issue for memory obtained
+ * using \ref jitc_malloc(), which internally rounds allocations to the next
+ * largest power of two.
  *
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jitc_scan(const uint32_t *in, uint32_t *out,
-                                  uint32_t size);
+extern JITC_EXPORT void jitc_scan_u32(const uint32_t *in, uint32_t *out,
+                                      uint32_t size);
 
 /**
  * \brief Reduce an array of boolean values to a single value (AND case)

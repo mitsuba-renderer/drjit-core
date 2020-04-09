@@ -436,23 +436,15 @@ uint8_t jit_any(uint8_t *values, uint32_t size) {
     return result;
 }
 
-/// Exclusive prefix sum
-void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
+/// Exclusive prefix sum (32 -> 32 bit)
+void jit_scan_u32(const uint32_t *in, uint32_t *out, uint32_t size) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_scan(): you must invoke jit_device_set() to "
+        jit_raise("jit_scan_u32(): you must invoke jit_device_set() to "
                   "choose a target device before calling this function.");
 
     if (stream->cuda) {
         const Device &device = state.devices[stream->device];
-
-        /// Exclusive prefix scan processes 4K elements / block, 4 per thread
-        uint32_t block_count      = (size + 4096 - 1) / 4096,
-                 thread_count     = std::min(round_pow2((size + 3u) / 4u), 1024u),
-                 shared_size      = thread_count * 2 * sizeof(uint32_t);
-
-        jit_log(Debug, "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR ", size=%u)",
-                (uintptr_t) in, (uintptr_t) out, size);
 
         if (size == 0) {
             return;
@@ -460,26 +452,59 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
             cuda_check(cuMemsetD8Async((CUdeviceptr) out, 0, sizeof(uint32_t),
                                        stream->handle));
         } else if (size <= 4096) {
+            /// Kernel for small arrays
+            uint32_t items_per_thread = 4,
+                     thread_count     = round_pow2((size + items_per_thread - 1)
+                                                    / items_per_thread),
+                     shared_size      = thread_count * 2 * sizeof(uint32_t);
+
+            jit_log(Debug,
+                    "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR
+                    ", size=%u, type=small, threads=%u, shared=%u)",
+                    (uintptr_t) in, (uintptr_t) out, size, thread_count,
+                    shared_size);
+
             void *args[] = { &in, &out, &size };
             cuda_check(cuLaunchKernel(jit_cuda_scan_small_u32[device.id], 1, 1, 1,
                                       thread_count, 1, 1, shared_size,
                                       stream->handle, args, nullptr));
         } else {
-            uint32_t *block_sums = (uint32_t *) jit_malloc(
-                AllocType::Device, block_count * sizeof(uint32_t));
+            /// Kernel for large arrays
+            uint32_t items_per_thread = 16,
+                     thread_count     = 128,
+                     items_per_block  = items_per_thread * thread_count,
+                     block_count      = (size + items_per_block - 1) / items_per_block,
+                     shared_size      = items_per_block * sizeof(uint32_t),
+                     scratch_items    = block_count + 32;
 
-            void *args[] = { &in, &out, &block_sums };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_large_u32[device.id], block_count, 1, 1,
-                                      thread_count, 1, 1, shared_size,
+            jit_log(Debug,
+                    "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR
+                    ", size=%u, type=large, blocks=%u, threads=%u, shared=%u, "
+                    "scratch=%u)",
+                    (uintptr_t) in, (uintptr_t) out, size, block_count,
+                    thread_count, shared_size, scratch_items * 4);
+
+            uint64_t *scratch = (uint64_t *) jit_malloc(
+                AllocType::Device, scratch_items * sizeof(uint64_t));
+
+            /// Initialize scratch space and padding
+            uint32_t block_count_init, thread_count_init;
+            device.get_launch_config(&block_count_init, &thread_count_init,
+                                     scratch_items);
+
+            void *args[] = { &scratch, &scratch_items };
+            cuda_check(cuLaunchKernel(jit_cuda_scan_large_u32_init[device.id],
+                                      block_count_init, 1, 1, thread_count_init, 1, 1, 0,
                                       stream->handle, args, nullptr));
 
-            jit_scan(block_sums, block_sums, block_count);
+            scratch += 32; // move beyond padding area
+            void *args_2[] = { &in, &out, &scratch };
+            cuda_check(cuLaunchKernel(jit_cuda_scan_large_u32[device.id], block_count, 1, 1,
+                                      thread_count, 1, 1, shared_size,
+                                      stream->handle, args_2, nullptr));
+            scratch -= 32;
 
-            void *args_2[] = { &out, &block_sums };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_offset[device.id], block_count, 1, 1,
-                                      thread_count, 1, 1, 0, stream->handle,
-                                      args_2, nullptr));
-            jit_free(block_sums);
+            jit_free(scratch);
         }
     } else {
 #if defined(ENOKI_TBB)
@@ -651,7 +676,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
             cuda_transpose(stream, buckets_1, buckets_2,
                            bucket_size_all / bucket_size_1, bucket_count);
 
-        jit_scan(buckets_2, buckets_2, bucket_size_all / sizeof(uint32_t));
+        jit_scan_u32(buckets_2, buckets_2, bucket_size_all / sizeof(uint32_t));
 
         if (needs_transpose)
             cuda_transpose(stream, buckets_2, buckets_1, bucket_count,

@@ -1,134 +1,168 @@
 #include "common.h"
 
-inline __device__ uint4 scan_4(uint4 value, uint32_t size, uint32_t *sum_out) {
-    uint32_t *shared = SharedMemory<uint32_t>::get();
-    uint32_t si = threadIdx.x;
-
-    uint4 sum = value;
-
-    // Unrolled inclusive scan over 4 elements
-    sum.y += sum.x;
-    sum.z += sum.y;
-    sum.w += sum.z;
-
-    // Reduce using shared memory
-    shared[si] = 0;
-    si += size;
-    shared[si] = sum.w;
-
-    uint32_t sum4_inclusive = sum.w;
-    for (uint32_t offset = 1; offset < size; offset <<= 1) {
-        __syncthreads();
-        sum4_inclusive = shared[si] + shared[si - offset];
-        __syncthreads();
-        shared[si] = sum4_inclusive;
-    }
-
-    uint32_t sum4_exclusive = sum4_inclusive - sum.w;
-
-    // Convert back to exclusive scan
-    sum.x  = sum4_exclusive;
-    sum.y += sum4_exclusive - value.y;
-    sum.z += sum4_exclusive - value.z;
-    sum.w += sum4_exclusive - value.w;
-
-    if (sum_out)
-        *sum_out = sum4_inclusive;
-
-    return sum;
-}
-
-KERNEL void scan_small_u8(const uint8_t *in, uint32_t *out, uint32_t size) {
-    uint32_t i = threadIdx.x * 4;
-
-    uint4 value = make_uint4(
-        i     < size ? (uint32_t) in[i]     : 0u,
-        i + 1 < size ? (uint32_t) in[i + 1] : 0u,
-        i + 2 < size ? (uint32_t) in[i + 2] : 0u,
-        i + 3 < size ? (uint32_t) in[i + 3] : 0u
-    );
-
-    value = scan_4(value, blockDim.x, nullptr);
-
-    if (i < size)
-        out[i] = value.x;
-    if (i + 1 < size)
-        out[i + 1] = value.y;
-    if (i + 2 < size)
-        out[i + 2] = value.z;
-    if (i + 3 < size)
-        out[i + 3] = value.w;
-}
-
-KERNEL void scan_large_u8(const uint32_t *in, uint32_t *out, uint32_t *block_sums) {
-    uint32_t thread_count = 1024,
-             i            = blockIdx.x * thread_count + threadIdx.x;
-
-    uint32_t v32 = in[i];
-
-    uint4 value = make_uint4(
-       (v32      ) & 0xFF,
-       (v32 >> 8 ) & 0xFF,
-       (v32 >> 16) & 0xFF,
-       (v32 >> 24) & 0xFF
-    );
-
-    uint32_t sum;
-    value = scan_4(value, thread_count, &sum);
-
-    ((uint4 *) out)[i] = value;
-
-    if (threadIdx.x == thread_count - 1)
-        block_sums[blockIdx.x] = sum;
-}
-
 KERNEL void scan_small_u32(const uint32_t *in, uint32_t *out, uint32_t size) {
+    uint32_t *shared = SharedMemory<uint32_t>::get();
     uint32_t i = threadIdx.x * 4;
 
-    uint4 value = make_uint4(
+    uint64_t values[4] = {
         i     < size ? in[i]     : 0u,
         i + 1 < size ? in[i + 1] : 0u,
         i + 2 < size ? in[i + 2] : 0u,
         i + 3 < size ? in[i + 3] : 0u
-    );
+    };
 
-    value = scan_4(value, blockDim.x, nullptr);
+    // Unrolled exclusive scan
+    uint32_t sum_local = 0;
+    for (int i = 0; i < 4; ++i) {
+        uint32_t v = values[i];
+        values[i] = sum_local;
+        sum_local += v;
+    }
+
+    // Reduce using shared memory
+    uint32_t si = threadIdx.x;
+    shared[si] = 0;
+    si += blockDim.x;
+    shared[si] = sum_local;
+
+    uint32_t sum_block = sum_local;
+    for (uint32_t offset = 1; offset < blockDim.x; offset <<= 1) {
+        __syncthreads();
+        sum_block = shared[si] + shared[si - offset];
+        __syncthreads();
+        shared[si] = sum_block;
+    }
+
+    sum_block -= sum_local;
+    for (int i = 0; i < 4; ++i)
+        values[i] += sum_block;
 
     if (i < size)
-        out[i] = value.x;
+        out[i] = values[0];
     if (i + 1 < size)
-        out[i + 1] = value.y;
+        out[i + 1] = values[1];
     if (i + 2 < size)
-        out[i + 2] = value.z;
+        out[i + 2] = values[2];
     if (i + 3 < size)
-        out[i + 3] = value.w;
+        out[i + 3] = values[3];
 }
 
-KERNEL void scan_large_u32(const uint32_t *in, uint32_t *out, uint32_t *block_sums) {
-    uint32_t thread_count = 1024,
-             i            = blockIdx.x * thread_count + threadIdx.x;
+__device__ __forceinline__ void store_cg(uint64_t *ptr, uint64_t val) {
+    asm volatile("st.cg.u64 [%0], %1;" : : "l"(ptr), "l"(val));
+}
 
-    uint4 value = ((const uint4 *) in)[i];
+__device__ __forceinline__ uint64_t load_cg(uint64_t *ptr) {
+    uint64_t retval;
+    asm volatile("ld.cg.u64 %0, [%1];" : "=l"(retval) : "l"(ptr));
+    return retval;
+}
 
-    uint32_t sum;
-    value = scan_4(value, thread_count, &sum);
+KERNEL void scan_large_u32_init(uint64_t *out, uint32_t size) {
+    for (uint32_t i = blockIdx.x * blockDim.x + threadIdx.x; i < size;
+         i += blockDim.x * gridDim.x)
+        out[i] = (i < 32) ? 2 : 0;
+}
 
-    ((uint4 *) out)[i] = value;
+KERNEL void scan_large_u32(const uint32_t *in, uint32_t *out, uint64_t *scratch) {
+    uint32_t *shared = SharedMemory<uint32_t>::get();
+    uint32_t thread_count = 128;
 
+    /* Transpose inputs in shared memory using blocks of 16 values */ {
+        uint4 v[4];
+        for (int i = 0; i < 4; ++i)
+            v[i] = ((const uint4 *) in)[(blockIdx.x * 4 + i) * thread_count + threadIdx.x];
+
+        for (int i = 0; i < 4; ++i)
+            ((uint4 *) shared)[i * thread_count + threadIdx.x] = v[i];
+    }
+
+    __syncthreads();
+
+    // Fetch input from shared memory
+    uint32_t values[16];
+    for (int i = 0; i < 4; ++i)
+        ((uint4 *) values)[i] = ((const uint4 *) shared)[threadIdx.x * 4 + i];
+
+    // Unrolled exclusive scan
+    uint32_t sum_local = 0;
+    for (int i = 0; i < 16; ++i) {
+        uint32_t v = values[i];
+        values[i] = sum_local;
+        sum_local += v;
+    }
+
+    __syncthreads();
+
+    // Block-level reduction of partial sum over 16 elements via shared memory
+    uint32_t si = threadIdx.x;
+    shared[si] = 0;
+    si += thread_count;
+    shared[si] = sum_local;
+
+    uint32_t sum_block = sum_local;
+    for (uint32_t offset = 1; offset < thread_count; offset <<= 1) {
+        __syncthreads();
+        sum_block = shared[si] + shared[si - offset];
+        __syncthreads();
+        shared[si] = sum_block;
+    }
+
+    // Store block-level partial inclusive scan value in global memory
+    scratch += blockIdx.x;
     if (threadIdx.x == thread_count - 1)
-        block_sums[blockIdx.x] = sum;
-}
+        store_cg(scratch, (((uint64_t) sum_block) << 32) | 1ull);
 
-KERNEL void scan_offset(uint32_t *data, const uint32_t *block_sums) {
-    const uint32_t thread_count = 1024;
+    uint32_t lane = threadIdx.x & (warpSize - 1);
+    uint32_t prefix = 0;
+    int32_t shift = lane - warpSize;
 
-    uint32_t i      = blockIdx.x * thread_count + threadIdx.x,
-             offset = block_sums[blockIdx.x];
+    /* Compute prefix due to previous blocks using warp-level primitives.
+       Based on "Single-pass Parallel Prefix Scan with Decoupled Look-back"
+       by Duane Merrill and Michael Garland */
+    while (true) {
+        /// Prevent loop invariant code motion of loads
+        uint64_t temp = load_cg(scratch + shift);
+        uint32_t flag = (uint32_t) temp;
 
-    uint4 value = ((const uint4 *) data)[i];
+        if (__any_sync(0xFFFFFFFF, flag == 0))
+            continue;
 
-    value.x += offset; value.y += offset;
-    value.z += offset; value.w += offset;
+        uint32_t mask  = __ballot_sync(0xFFFFFFFF, flag == 2),
+                 value = (uint32_t) (temp >> 32);
+        if (mask == 0) {
+            prefix += value;
+            shift -= warpSize;
+        } else {
+            uint32_t index = 31 - __clz(mask);
+            if (lane >= index)
+                prefix += value;
+            break;
+        }
+    }
 
-    ((uint4 *) data)[i] = value;
+    // Warp-level reduction
+    for (int offset = 16; offset > 0; offset /= 2)
+        prefix += __shfl_down_sync(0xFFFFFFFF, prefix, offset, 32);
+    sum_block += __shfl_sync(0xFFFFFFFF, prefix, 0);
+
+    // Store block-level complete inclusive scan value in global memory
+    if (threadIdx.x == thread_count - 1)
+        store_cg(scratch, (((uint64_t) sum_block) << 32) | 2ull);
+
+    sum_block -= sum_local;
+    for (int i = 0; i < 16; ++i)
+        values[i] += sum_block;
+
+    // Store input into shared memory
+    for (int i = 0; i < 4; ++i)
+        ((uint4 *) shared)[threadIdx.x*4 + i] = ((const uint4 *) values)[i];
+
+    __syncthreads();
+
+    /* Transpose inputs in shared memory using blocks of 16 values */ {
+        for (int i = 0; i < 4; ++i) {
+            uint4 v = ((const uint4 *) shared)[i * thread_count + threadIdx.x];
+            ((uint4 *) out)[(blockIdx.x * 4 + i) * thread_count + threadIdx.x] = v;
+        }
+    }
 }

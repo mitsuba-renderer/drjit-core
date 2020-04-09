@@ -44,12 +44,22 @@ TEST_BOTH(02_scan) {
             ref    = arange<UInt32>(size);
         }
         jitc_eval(result, ref);
-        jitc_scan(result.data(), result.data(), size);
+        jitc_scan_u32(result.data(), result.data(), size);
         jitc_assert(result == ref);
     }
 }
 
-TEST_BOTH(03_mkperm) {
+#if 0
+TEST_BOTH(03_scan_u8) {
+    Array<bool> mask(false, false, true, false, true, true, false, true);
+    UInt32 result = empty<UInt32>(mask.size());
+    jitc_scan_u8((const uint8_t *) mask.data(), result.data(), mask.size());
+    jitc_log(Debug, "mask  =%s", mask.str());
+    jitc_log(Debug, "result=%s", result.str());
+}
+#endif
+
+TEST_BOTH(04_mkperm) {
     scoped_set_log_level ssll(LogLevel::Info);
     srand(0);
     for (uint32_t i = 0; i < 30; ++i) {
