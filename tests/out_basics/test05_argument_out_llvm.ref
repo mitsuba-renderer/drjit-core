@@ -13,7 +13,9 @@ jit_run(): launching kernel (n=1, in=0, out=244, ops=484) ..
 value=[29403] vs 29403
 jit_run(): launching kernel (n=1, in=0, out=730, ops=1456) ..
 value=[265356] vs 265356
-jit_shutdown(): destroying streams ..
+jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 730 deallocations
+jit_shutdown(): releasing 7 kernels ..
 jit_malloc_trim(): freed
- - host memory: 45.6 KiB in 730 allocations
+ - host-async memory: 45.6 KiB in 730 allocations
 jit_shutdown(): done

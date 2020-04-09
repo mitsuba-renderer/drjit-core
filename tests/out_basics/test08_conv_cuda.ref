@@ -915,8 +915,9 @@ jit_free(<@>, type=device, device=0, size=4096)
 jit_var_dec_ref_ext(38): 0
 jit_var_free(38)
 jit_free(<@>, type=device, device=0, size=8192)
-jit_shutdown(): destroying streams ..
+jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 4 deallocations
+jit_shutdown(): releasing 6 kernels ..
 jit_malloc_trim(): freed
  - device memory: 36 KiB in 6 allocations
 jit_shutdown(): done

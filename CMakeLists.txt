@@ -1,5 +1,6 @@
 project("jit")
 cmake_minimum_required(VERSION 3.9.0)
+cmake_policy(SET CMP0074 NEW)
 
 option(ENOKI_ENABLE_TESTS "Compile test suite?" ON)
 option(ENOKI_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
@@ -50,6 +51,28 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_FLAGS MATCHES "-stdl
   endif()
 endif()
 
+# Try to detect TBB
+set(CMAKE_MODULE_PATH cmake)
+find_package(TBB)
+
+if (TBB_FOUND)
+  message(STATUS "Enoki-JIT: enabling TBB.")
+else()
+  message(STATUS "Enoki-JIT: Intel Thread Building Blocks (TBB) could not be found! Computation involving LLVM arrays will run single-threaded.")
+endif()
+
+if (ENOKI_DYNAMIC_CUDA)
+  message(STATUS "Enoki-JIT: CUDA will be loaded dynamically at runtime.")
+else()
+  message(STATUS "Enoki-JIT: Linking against CUDA shared libraries.")
+endif()
+
+if (ENOKI_DYNAMIC_LLVM)
+  message(STATUS "Enoki-JIT: LLVM will be loaded dynamically at runtime.")
+else()
+  message(STATUS "Enoki-JIT: Linking against LLVM shared libraries.")
+endif()
+
 include_directories(
   include
   ext/robin_map/include
@@ -71,6 +94,7 @@ add_library(
   src/cuda_api.h       src/cuda_api.cpp
   src/llvm_api.h       src/llvm_api.cpp
   src/io.h             src/io.cpp
+  src/tbb.h            src/tbb.cpp
   src/init.cpp
   src/api.cpp
 
@@ -82,8 +106,7 @@ add_library(
   kernels/kernels.h kernels/kernels.c
 )
 
-# target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
-target_compile_options(enoki-jit PRIVATE -Wall -Wextra)
+target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
 if (U_CMAKE_BUILD_TYPE MATCHES REL)
   target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
   target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)
@@ -103,6 +126,11 @@ else()
   find_package(LLVM REQUIRED)
   target_include_directories(enoki-jit PRIVATE ${LLVM_INCLUDE_DIRS})
   target_link_libraries(enoki-jit PRIVATE LLVM)
+endif()
+
+if (TBB_FOUND)
+  target_link_libraries(enoki-jit PRIVATE TBB::tbb)
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_TBB=1)
 endif()
 
 target_link_libraries(enoki-jit PRIVATE dl pthread)

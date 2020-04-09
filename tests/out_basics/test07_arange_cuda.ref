@@ -301,10 +301,11 @@ jit_free(<@>, type=device, device=0, size=512)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=4096)
-jit_shutdown(): destroying streams ..
+jit_shutdown(): releasing 3 streams ..
 jit_free_flush(): scheduling 4 deallocations
 jit_device_set(device=0, stream=1001): selecting stream
 jit_device_set(device=0, stream=1002): selecting stream
+jit_shutdown(): releasing 4 kernels ..
 jit_malloc_trim(): freed
  - device memory: 13.5 KiB in 4 allocations
 jit_shutdown(): done

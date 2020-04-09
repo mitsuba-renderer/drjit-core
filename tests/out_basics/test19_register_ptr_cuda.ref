@@ -13,5 +13,5 @@ jit_var_copy_ptr(3 <- 0): <@>
 jit_var_inc_ref_ext(3): 1
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
-jit_shutdown(): destroying streams ..
+jit_shutdown(): releasing 1 stream ..
 jit_shutdown(): done

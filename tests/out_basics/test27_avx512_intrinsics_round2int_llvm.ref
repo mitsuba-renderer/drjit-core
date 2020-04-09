@@ -35,22 +35,22 @@ jit_eval(): begin.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 3 [out]
-jit_malloc(type=host, size=256): <@> (new allocation)
+jit_malloc(type=host-async, size=256): <@> (new allocation)
    - %r2 -> 4 [out]
-jit_malloc(type=host, size=256): <@> (new allocation)
+jit_malloc(type=host-async, size=256): <@> (new allocation)
    - %rd3 -> 5 [out]
-jit_malloc(type=host, size=256): <@> (new allocation)
+jit_malloc(type=host-async, size=256): <@> (new allocation)
    - %rd4 -> 6 [out]
-jit_malloc(type=host, size=256): <@> (new allocation)
+jit_malloc(type=host-async, size=256): <@> (new allocation)
    - %d5 -> 2
    - %r6 -> 7 [out]
-jit_malloc(type=host, size=256): <@> (new allocation)
+jit_malloc(type=host-async, size=256): <@> (new allocation)
    - %r7 -> 8 [out]
-jit_malloc(type=host, size=256): <@> (new allocation)
+jit_malloc(type=host-async, size=256): <@> (new allocation)
    - %rd8 -> 9 [out]
-jit_malloc(type=host, size=256): <@> (new allocation)
+jit_malloc(type=host-async, size=256): <@> (new allocation)
    - %rd9 -> 10 [out]
-jit_malloc(type=host, size=256): <@> (new allocation)
+jit_malloc(type=host-async, size=256): <@> (new allocation)
 jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
@@ -326,28 +326,28 @@ ceil_d_u32=[4294967295, 0, 0, 0, 1, 1, 1, 2, 4294967295]
 ceil_d_u64=[18446744073709551615, 0, 0, 0, 1, 1, 1, 2, 4294967296]
 jit_var_dec_ref_ext(10): 0
 jit_var_free(10)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(9): 0
 jit_var_free(9)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_inc_ref_int(1): 2
 jit_trace_append(11 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 9)
 jit_var_inc_ref_ext(11): 1
@@ -377,22 +377,22 @@ jit_eval(): begin.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 11 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %r2 -> 12 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd3 -> 13 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd4 -> 14 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %d5 -> 2
    - %r6 -> 15 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %r7 -> 16 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd8 -> 17 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd9 -> 18 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
 jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
@@ -668,28 +668,28 @@ floor_d_u32=[4294967295, 4294967295, 4294967295, 4294967295, 0, 0, 0, 1, 4294967
 floor_d_u64=[18446744073709551615, 18446744073709551615, 18446744073709551615, 18446744073709551615, 0, 0, 0, 1, 4294967296]
 jit_var_dec_ref_ext(18): 0
 jit_var_free(18)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(17): 0
 jit_var_free(17)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(16): 0
 jit_var_free(16)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(15): 0
 jit_var_free(15)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(14): 0
 jit_var_free(14)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(13): 0
 jit_var_free(13)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(12): 0
 jit_var_free(12)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(11): 0
 jit_var_free(11)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_inc_ref_int(1): 2
 jit_trace_append(19 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 11)
 jit_var_inc_ref_ext(19): 1
@@ -719,22 +719,22 @@ jit_eval(): begin.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 19 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %r2 -> 20 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd3 -> 21 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd4 -> 22 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %d5 -> 2
    - %r6 -> 23 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %r7 -> 24 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd8 -> 25 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd9 -> 26 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
 jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
@@ -1010,28 +1010,28 @@ trunc_d_u32=[4294967295, 0, 0, 0, 0, 0, 0, 1, 4294967295]
 trunc_d_u64=[18446744073709551615, 0, 0, 0, 0, 0, 0, 1, 4294967296]
 jit_var_dec_ref_ext(26): 0
 jit_var_free(26)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(25): 0
 jit_var_free(25)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(24): 0
 jit_var_free(24)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(23): 0
 jit_var_free(23)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(22): 0
 jit_var_free(22)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(21): 0
 jit_var_free(21)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(20): 0
 jit_var_free(20)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(19): 0
 jit_var_free(19)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_inc_ref_int(1): 2
 jit_trace_append(27 <- 1): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S 8)
 jit_var_inc_ref_ext(27): 1
@@ -1061,22 +1061,22 @@ jit_eval(): begin.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 27 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %r2 -> 28 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd3 -> 29 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd4 -> 30 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %d5 -> 2
    - %r6 -> 31 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %r7 -> 32 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd8 -> 33 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd9 -> 34 [out]
-jit_malloc(type=host, size=256): <@> (reused global)
+jit_malloc(type=host-async, size=256): <@> (reused local)
 jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
@@ -1352,35 +1352,37 @@ round_d_u32=[4294967295, 4294967295, 0, 0, 0, 0, 1, 1, 4294967295]
 round_d_u64=[18446744073709551615, 18446744073709551615, 0, 0, 0, 0, 1, 1, 4294967296]
 jit_var_dec_ref_ext(34): 0
 jit_var_free(34)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(33): 0
 jit_var_free(33)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(32): 0
 jit_var_free(32)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(31): 0
 jit_var_free(31)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(30): 0
 jit_var_free(30)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(29): 0
 jit_var_free(29)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(28): 0
 jit_var_free(28)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(27): 0
 jit_var_free(27)
-jit_free(<@>, type=host, size=256)
+jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_free(<@>, type=host, size=256)
-jit_shutdown(): destroying streams ..
+jit_free(<@>, type=host-async, size=256)
+jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 9 deallocations
+jit_shutdown(): releasing 4 kernels ..
 jit_malloc_trim(): freed
- - host memory: 2.25 KiB in 9 allocations
+ - host-async memory: 2.25 KiB in 9 allocations
 jit_shutdown(): done

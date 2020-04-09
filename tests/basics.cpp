@@ -7,7 +7,7 @@ TEST_BOTH(01_creation_destruction) {
 }
 
 TEST_BOTH(02_fill_and_print) {
-    /// Checks array initialization from a given pointer, jitc_fill(), and stringification
+    /// Checks array initialization from a given pointer, jitc_memset(), and stringification
     jitc_log(Info, "  int8_t: %s", full<Array<  int8_t>>(-111, 5).str());
     jitc_log(Info, " uint8_t: %s", full<Array< uint8_t>>( 222, 5).str());
     jitc_log(Info, " int16_t: %s", full<Array< int16_t>>(-1111, 5).str());
@@ -20,7 +20,7 @@ TEST_BOTH(02_fill_and_print) {
     jitc_log(Info, "  double: %s", full<Array<  double>>(1.0 / 3.0, 5).str());
 }
 
-TEST_BOTH(03_eval_scalar) {
+TEST_LLVM(03_eval_scalar) {
     /// Checks that we can evaluate a simple kernel, and that kernels are reused
     Float value(1234);
     set_label(value, "my_value");
@@ -49,7 +49,7 @@ TEST_BOTH(04_eval_scalar_csa) {
 }
 
 TEST_BOTH(05_argument_out) {
-    /// Test kernels with very many outputs that exceed the max. size of the BOTH parameter table
+    /// Test kernels with very many outputs that exceed the max. size of the CUDA parameter list
     scoped_set_log_level ssll(LogLevel::Info);
     /* With reduced log level */ {
         Int32 value[1024];
@@ -65,7 +65,7 @@ TEST_BOTH(05_argument_out) {
 }
 
 TEST_BOTH(06_argument_inout) {
-    /// Test kernels with very many inputs that exceed the max. size of the BOTH parameter table
+    /// Test kernels with very many inputs that exceed the max. size of the CUDA parameter list
     scoped_set_log_level ssll(LogLevel::Info);
     /* With reduced log level */ {
         Int32 value[1024];

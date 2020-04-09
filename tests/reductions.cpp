@@ -1,15 +1,16 @@
 #include "test.h"
 
-#if 0
-
-TEST_CUDA(01_all_any) {
+TEST_BOTH(01_all_any) {
     using Bool = Array<bool>;
 
+    scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
         uint32_t size = 23*i*i*i + 1;
 
         Bool f = full<Bool>(false, size),
              t = full<Bool>(true, size);
+
+        jitc_eval(f, t);
 
         jitc_assert(all(t) && any(t) && !all(f) && !any(f));
 
@@ -28,7 +29,8 @@ TEST_CUDA(01_all_any) {
     }
 }
 
-TEST_CUDA(02_scan) {
+TEST_BOTH(02_scan) {
+    scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
         uint32_t size = 23*i*i*i + 1;
 
@@ -41,13 +43,11 @@ TEST_CUDA(02_scan) {
             result = full<UInt32>(1, size);
             ref    = arange<UInt32>(size);
         }
-        jitc_eval();
+        jitc_eval(result, ref);
         jitc_scan(result.data(), result.data(), size);
         jitc_assert(result == ref);
     }
 }
-
-#endif
 
 TEST_BOTH(03_mkperm) {
     scoped_set_log_level ssll(LogLevel::Info);

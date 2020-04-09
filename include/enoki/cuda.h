@@ -61,57 +61,7 @@ struct CUDAArray {
     }
 
     CUDAArray(Value value) {
-        const char *fmt = nullptr;
-
-        switch (Type) {
-            case VarType::Float16:
-                fmt = "mov.$b0 $r0, 0x%04x";
-                break;
-
-            case VarType::Float32:
-                fmt = "mov.$t0 $r0, 0f%08x";
-                break;
-
-            case VarType::Float64:
-                fmt = "mov.$t0 $r0, 0d%016llx";
-                break;
-
-            case VarType::Bool:
-                fmt = "mov.$t0 $r0, %i";
-                break;
-
-            case VarType::Int8:
-            case VarType::UInt8:
-                fmt = "mov.$b0 $r0, 0x%02x";
-                break;
-
-            case VarType::Int16:
-            case VarType::UInt16:
-                fmt = "mov.$b0 $r0, 0x%04x";
-                break;
-
-            case VarType::Int32:
-            case VarType::UInt32:
-                fmt = "mov.$b0 $r0, 0x%08x";
-                break;
-
-            case VarType::Pointer:
-            case VarType::Int64:
-            case VarType::UInt64:
-                fmt = "mov.$b0 $r0, 0x%016llx";
-                break;
-
-            default:
-                fmt = "<<invalid format during cast>>";
-                break;
-        }
-
-        uint_with_size_t<Value> value_uint;
-        char value_str[32];
-        memcpy(&value_uint, &value, sizeof(Value));
-        snprintf(value_str, 32, fmt, value_uint);
-
-        m_index = jitc_trace_append_0(Type, value_str, 0, 1);
+        m_index = mkfull_(value, 1);
     }
 
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
@@ -170,12 +120,8 @@ struct CUDAArray {
         // Simple constant propagation
         if (is_literal_one())
             return v;
-        else if (is_literal_zero())
-            return *this;
         else if (v.is_literal_one())
             return *this;
-        else if (v.is_literal_zero())
-            return v;
 
         const char *op;
         if (std::is_floating_point<Value>::value)
@@ -202,6 +148,24 @@ struct CUDAArray {
 
         return from_index(
             jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
+    }
+
+    CUDAArray operator/(Value value) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
+        // Simple constant propagation
+        if (value == (Value) 1)
+            return *this;
+
+        if (std::is_floating_point<Value>::value) {
+            return operator*(Value(1) / value);
+        } else if ((value & (value - 1)) == 0) {
+            int shift = sizeof(Value) * 8 - 1 - __builtin_clz(value);
+            return operator>>(shift);
+        }
+
+        return operator/(CUDAArray(value));
     }
 
     CUDAArray<bool> operator>(const CUDAArray &a) const {
@@ -387,6 +351,10 @@ struct CUDAArray {
     }
 
     CUDAArray& operator/=(const CUDAArray &v) {
+        return operator=(*this / v);
+    }
+
+    CUDAArray& operator/=(Value v) {
         return operator=(*this / v);
     }
 
@@ -599,6 +567,60 @@ struct CUDAArray {
         return result;
     }
 
+    static uint32_t mkfull_(Value value, uint32_t size) {
+        const char *fmt = nullptr;
+
+        switch (Type) {
+            case VarType::Float16:
+                fmt = "mov.$b0 $r0, 0x%04x";
+                break;
+
+            case VarType::Float32:
+                fmt = "mov.$t0 $r0, 0f%08x";
+                break;
+
+            case VarType::Float64:
+                fmt = "mov.$t0 $r0, 0d%016llx";
+                break;
+
+            case VarType::Bool:
+                fmt = "mov.$t0 $r0, %i";
+                break;
+
+            case VarType::Int8:
+            case VarType::UInt8:
+                fmt = "mov.b16 %w1, 0x%02x$ncvt.u8.u16 $r0, %w1";
+                break;
+
+            case VarType::Int16:
+            case VarType::UInt16:
+                fmt = "mov.$b0 $r0, 0x%04x";
+                break;
+
+            case VarType::Int32:
+            case VarType::UInt32:
+                fmt = "mov.$b0 $r0, 0x%08x";
+                break;
+
+            case VarType::Pointer:
+            case VarType::Int64:
+            case VarType::UInt64:
+                fmt = "mov.$b0 $r0, 0x%016llx";
+                break;
+
+            default:
+                fmt = "<<invalid format during cast>>";
+                break;
+        }
+
+        uint_with_size_t<Value> value_uint;
+        char value_str[48];
+        memcpy(&value_uint, &value, sizeof(Value));
+        snprintf(value_str, 48, fmt, value_uint);
+
+        return jitc_trace_append_0(Type, value_str, 0, size);
+    }
+
 protected:
     uint32_t m_index = 0;
 };
@@ -619,28 +641,13 @@ Array empty(size_t size) {
 template <typename Array,
           typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array zero(size_t size) {
-    if (size == 1) {
-        return Array(0);
-    } else {
-        uint8_t value = 0;
-        size_t byte_size = size * sizeof(typename Array::Value);
-        void *ptr = jitc_malloc(AllocType::Device, byte_size);
-        jitc_fill(VarType::UInt8, ptr, byte_size, &value);
-        return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
-    }
+    return Array::from_index(Array::mkfull_(typename Array::Value(0), size));
 }
 
 template <typename Array,
           typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array full(typename Array::Value value, size_t size) {
-    if (size == 1) {
-        return Array(value);
-    } else {
-        size_t byte_size = size * sizeof(typename Array::Value);
-        void *ptr = jitc_malloc(AllocType::Device, byte_size);
-        jitc_fill(Array::Type, ptr, size, &value);
-        return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
-    }
+    return Array::from_index(Array::mkfull_(value, size));
 }
 
 template <typename Array,

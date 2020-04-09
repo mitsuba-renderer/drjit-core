@@ -84,27 +84,7 @@ struct LLVMArray {
     }
 
     LLVMArray(Value value) {
-        uint_with_size_t<Value> value_uint;
-        unsigned long long value_ull;
-
-        if (Type == VarType::Float32) {
-            double d = (double) value;
-            memcpy(&value_ull, &d, sizeof(double));
-        }  else {
-            memcpy(&value_uint, &value, sizeof(Value));
-            value_ull = (unsigned long long) value_uint;
-        }
-
-        char value_str[256];
-        snprintf(value_str, 256,
-            (Type == VarType::Float32 || Type == VarType::Float64) ?
-            "$r0_0 = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z" :
-            "$r0_0 = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z",
-            value_ull);
-
-        m_index = jitc_trace_append_0(Type, value_str, 0, 1);
+        m_index = mkfull_(value, 1);
     }
 
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
@@ -163,12 +143,8 @@ struct LLVMArray {
         // Simple constant propagation
         if (is_literal_one())
             return v;
-        else if (is_literal_zero())
-            return *this;
         else if (v.is_literal_one())
             return *this;
-        else if (v.is_literal_zero())
-            return v;
 
         const char *op = std::is_floating_point<Value>::value
             ? "$r0 = fmul <$w x $t0> $r1, $r2"
@@ -182,12 +158,34 @@ struct LLVMArray {
         if (!jitc_is_arithmetic(Type))
             jitc_raise("Unsupported operand type");
 
+        // Simple constant propagation
+        if (v.is_literal_one())
+            return *this;
+
         const char *op = std::is_floating_point<Value>::value
             ? "$r0 = fdiv <$w x $t0> $r1, $r2"
             : "$r0 = div <$w x $t0> $r1, $r2";
 
         return from_index(
             jitc_trace_append_2(Type, op, 1, m_index, v.m_index));
+    }
+
+    LLVMArray operator/(Value value) const {
+        if (!jitc_is_arithmetic(Type))
+            jitc_raise("Unsupported operand type");
+
+        // Simple constant propagation
+        if (value == (Value) 1)
+            return *this;
+
+        if (std::is_floating_point<Value>::value) {
+            return operator*(Value(1) / value);
+        } else if ((value & (value - 1)) == 0) {
+            int shift = sizeof(Value) * 8 - 1 - __builtin_clz(value);
+            return operator>>(shift);
+        }
+
+        return operator/(LLVMArray(value));
     }
 
     LLVMArray<bool> operator>(const LLVMArray &a) const {
@@ -432,6 +430,10 @@ struct LLVMArray {
         return operator=(*this / v);
     }
 
+    LLVMArray& operator/=(Value v) {
+        return operator=(*this / v);
+    }
+
     LLVMArray& operator|=(const LLVMArray &v) {
         return operator=(*this | v);
     }
@@ -618,7 +620,7 @@ struct LLVMArray {
         if (jitc_var_int_ref(m_index) > 0) {
             eval();
             *this = LLVMArray::from_index(
-                jitc_var_copy(AllocType::Host, LLVMArray<Value>::Type, data(),
+                jitc_var_copy(AllocType::HostAsync, LLVMArray<Value>::Type, data(),
                               (uint32_t) size()));
         }
 
@@ -651,6 +653,30 @@ struct LLVMArray {
             "$r0 = add <$w x $t0> $r0_2, $l0", 1, (uint32_t) size));
     }
 
+    static uint32_t mkfull_(Value value, uint32_t size) {
+        uint_with_size_t<Value> value_uint;
+        unsigned long long value_ull;
+
+        if (Type == VarType::Float32) {
+            double d = (double) value;
+            memcpy(&value_ull, &d, sizeof(double));
+        }  else {
+            memcpy(&value_uint, &value, sizeof(Value));
+            value_ull = (unsigned long long) value_uint;
+        }
+
+        char value_str[256];
+        snprintf(value_str, 256,
+            (Type == VarType::Float32 || Type == VarType::Float64) ?
+            "$r0_0 = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0$n"
+            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z" :
+            "$r0_0 = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
+            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z",
+            value_ull);
+
+        return jitc_trace_append_0(Type, value_str, 0, size);
+    }
+
 protected:
     uint32_t m_index = 0;
 };
@@ -664,35 +690,20 @@ template <typename Array,
           typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array empty(size_t size) {
     size_t byte_size = size * sizeof(typename Array::Value);
-    void *ptr = jitc_malloc(AllocType::Host, byte_size);
+    void *ptr = jitc_malloc(AllocType::HostAsync, byte_size);
     return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
 }
 
 template <typename Array,
           typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array zero(size_t size) {
-    if (size == 1) {
-        return Array(0);
-    } else {
-        uint8_t value = 0;
-        size_t byte_size = size * sizeof(typename Array::Value);
-        void *ptr = jitc_malloc(AllocType::Host, byte_size);
-        jitc_fill(VarType::UInt8, ptr, byte_size, &value);
-        return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
-    }
+    return Array::from_index(Array::mkfull_(typename Array::Value(0), size));
 }
 
 template <typename Array,
           typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array full(typename Array::Value value, size_t size) {
-    if (size == 1) {
-        return Array(value);
-    } else {
-        size_t byte_size = size * sizeof(typename Array::Value);
-        void *ptr = jitc_malloc(AllocType::Host, byte_size);
-        jitc_fill(Array::Type, ptr, size, &value);
-        return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
-    }
+    return Array::from_index(Array::mkfull_(value, size));
 }
 
 template <typename Array,
@@ -988,7 +999,7 @@ void scatter(LLVMArray<Value> &dst,
 
     if (jitc_var_int_ref(dst.index()) > 0) {
         dst = LLVMArray<Value>::from_index(jitc_var_copy(
-            AllocType::Host, LLVMArray<Value>::Type, ptr, dst.size()));
+            AllocType::HostAsync, LLVMArray<Value>::Type, ptr, dst.size()));
         ptr = dst.data();
     }
 
@@ -1038,7 +1049,7 @@ void scatter_add(LLVMArray<Value> &dst,
 
     if (jitc_var_int_ref(dst.index()) > 0) {
         dst = LLVMArray<Value>::from_index(jitc_var_copy(
-            AllocType::Host, LLVMArray<Value>::Type, ptr, dst.size()));
+            AllocType::HostAsync, LLVMArray<Value>::Type, ptr, dst.size()));
         ptr = dst.data();
     }
 

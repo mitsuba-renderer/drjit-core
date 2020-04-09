@@ -4,6 +4,7 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <thread>
 #include <lz4.h>
 #include "../kernels/kernels.h"
 
@@ -113,6 +114,7 @@ size_t   jit_llvm_kernel_id       = 0;
 uint32_t jit_llvm_version_major   = 0;
 uint32_t jit_llvm_version_minor   = 0;
 uint32_t jit_llvm_version_patch   = 0;
+uint32_t jit_llvm_thread_count    = 0;
 
 static bool     jit_llvm_init_attempted = false;
 static bool     jit_llvm_init_success   = false;
@@ -626,10 +628,17 @@ bool jit_llvm_init() {
     if (strstr(jit_llvm_target_features, "+avx512f"))
         jit_llvm_vector_width = 16;
 
+#if defined(ENOKI_TBB)
+    jit_llvm_thread_count =
+        std::max(1u, (uint32_t) std::thread::hardware_concurrency());
+#else
+    jit_llvm_thread_count = 1;
+#endif
+
     jit_log(Info,
-            "jit_llvm_init(): found %s, target=%s, cpu=%s, vector width=%i.",
+            "jit_llvm_init(): found %s, target=%s, cpu=%s, vector width=%u, threads=%u.",
             version_string, jit_llvm_triple, jit_llvm_target_cpu,
-            jit_llvm_vector_width);
+            jit_llvm_vector_width, jit_llvm_thread_count);
 
     jit_llvm_init_success = jit_llvm_vector_width > 1;
 

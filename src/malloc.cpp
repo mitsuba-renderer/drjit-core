@@ -1,8 +1,10 @@
 #include "internal.h"
 #include "log.h"
+#include "tbb.h"
 
 const char *alloc_type_name[(int) AllocType::Count] = {
-    "host", "host-pinned", "device", "managed", "managed-read-mostly"
+    "host",   "host-async", "host-pinned",
+    "device", "managed",    "managed-read-mostly"
 };
 
 // Round an unsigned integer up to a power of two
@@ -26,13 +28,20 @@ void* jit_malloc(AllocType type, size_t size) {
     if (size == 0)
         return nullptr;
 
-    if (type != AllocType::Host || jit_llvm_vector_width < 16) {
+    if ((type != AllocType::Host && type != AllocType::HostAsync) ||
+        jit_llvm_vector_width < 16) {
         // Round up to the next multiple of 64 bytes
         size = (size + 63) / 64 * 64;
     } else {
         size_t packet_size = jit_llvm_vector_width * sizeof(double);
         size = (size + packet_size - 1) / packet_size * packet_size;
     }
+
+#if !defined(ENOKI_TBB)
+    /// There are no streams / host-asynchronous allocations when TBB is disabled
+    if (type == AllocType::HostAsync)
+        type = AllocType::Host;
+#endif
 
     /* Round 'size' to the next larger power of two. This is somewhat
        wasteful, but reduces the number of different sizes that an allocation
@@ -46,18 +55,22 @@ void* jit_malloc(AllocType type, size_t size) {
 
     /* Acquire lock protecting stream->release_chain and state.alloc_free */ {
         lock_guard guard(state.malloc_mutex);
+        Stream *stream = active_stream;
+
         if (type == AllocType::Device) {
-            Stream *stream = active_stream;
             if (unlikely(!stream || !stream->cuda))
                 jit_raise(
                     "jit_malloc(): you must specify an active CUDA device using "
                     "jit_device_set() before allocating a device pointer!");
             ai.device = stream->device;
+        }
 
+        if (type == AllocType::Device || type == AllocType::HostAsync) {
             /* Check for arrays with a pending free operation on the current
-               stream. This only works for device memory, as other allocation
-               flavors (host-pinned, shared, shared-read-mostly) can be accessed
-               from both CPU & GPU and might still be used. */
+               stream. This only works for device or host-async memory, as other
+               allocation flavors (host-pinned, shared, shared-read-mostly) can be
+               accessed from both CPU & GPU and might still be used. */
+
             ReleaseChain *chain = stream->release_chain;
             while (chain) {
                 auto it = chain->entries.find(ai);
@@ -93,7 +106,7 @@ void* jit_malloc(AllocType type, size_t size) {
 
     // 3. Looks like we will have to allocate some memory..
     if (unlikely(ptr == nullptr)) {
-        if (type == AllocType::Host) {
+        if (type == AllocType::Host || type == AllocType::HostAsync) {
             int rv;
             /* Temporarily release the main lock */ {
                 unlock_guard guard(state.mutex);
@@ -193,7 +206,7 @@ void jit_free(void *ptr) {
         state.alloc_free[ai].push_back(ptr);
     } else {
         Stream *stream = active_stream;
-        if (unlikely(!stream || !stream->cuda))
+        if (unlikely(!stream || (ai.type != AllocType::HostAsync && !stream->cuda)))
             jit_raise("jit_free(): you must specify an active CUDA device "
                       "using jit_device_set() before freeing a "
                       "device/managed/host-pinned pointer!");
@@ -210,13 +223,15 @@ void jit_free(void *ptr) {
             alloc_unmap.swap(state.alloc_unmap);
         }
 
-        for (auto kv: alloc_unmap) {
-            cuda_check(cuMemHostUnregister(kv.second));
-            if (kv.first)
-                jit_free(kv.second);
-        }
+        if (stream->cuda) {
+            for (auto kv: alloc_unmap) {
+                cuda_check(cuMemHostUnregister(kv.second));
+                if (kv.first)
+                    jit_free(kv.second);
+            }
 
-        it = state.alloc_used.find(ptr);
+            it = state.alloc_used.find(ptr);
+        }
     }
 
     if (ai.type == AllocType::Device)
@@ -233,7 +248,7 @@ void jit_free(void *ptr) {
 
 void jit_free_flush() {
     Stream *stream = active_stream;
-    if (unlikely(!stream || !stream->cuda))
+    if (unlikely(!stream))
         return;
 
     ReleaseChain *chain = stream->release_chain;
@@ -254,32 +269,60 @@ void jit_free_flush() {
     jit_trace("jit_free_flush(): scheduling %zu deallocation%s",
               n_dealloc, n_dealloc > 1 ? "s" : "");
 
-    cuda_check(cuLaunchHostFunc(
-        stream->handle,
-        [](void *ptr) {
-            // Acquire lock protecting stream->release_chain and state.alloc_free
-            lock_guard guard(state.malloc_mutex);
-            ReleaseChain *chain0 = (ReleaseChain *) ptr,
-                         *chain1 = chain0->next;
+    if (stream->cuda) {
+        cuda_check(cuLaunchHostFunc(
+            stream->handle,
+            [](void *ptr) -> void {
+                /* Acquire lock protecting stream->release_chain and
+                   state.alloc_free */
+                lock_guard guard(state.malloc_mutex);
+                ReleaseChain *chain0 = (ReleaseChain *) ptr,
+                             *chain1 = chain0->next;
 
-            for (auto &kv: chain1->entries) {
-                const AllocInfo &ai = kv.first;
-                std::vector<void *> &target = state.alloc_free[ai];
-                target.insert(target.end(), kv.second.begin(), kv.second.end());
-            }
+                for (auto &kv : chain1->entries) {
+                    const AllocInfo &ai = kv.first;
+                    std::vector<void *> &target = state.alloc_free[ai];
+                    target.insert(target.end(), kv.second.begin(),
+                                  kv.second.end());
+                }
 
-            delete chain1;
-            chain0->next = nullptr;
-        },
+                delete chain1;
+                chain0->next = nullptr;
+            },
+            chain_new));
+    } else {
+#if defined(ENOKI_TBB)
+        tbb_stream_enqueue_func(
+            stream,
+            [](void *ptr_) -> void {
+                void *ptr = *((void **) ptr_);
+                /* Acquire lock protecting stream->release_chain and
+                   state.alloc_free */
+                lock_guard guard(state.malloc_mutex);
+                ReleaseChain *chain0 = (ReleaseChain *) ptr,
+                             *chain1 = chain0->next;
 
-        chain_new
-    ));
+                for (auto &kv : chain1->entries) {
+                    const AllocInfo &ai = kv.first;
+                    std::vector<void *> &target = state.alloc_free[ai];
+                    target.insert(target.end(), kv.second.begin(),
+                                  kv.second.end());
+                }
+
+                delete chain1;
+                chain0->next = nullptr;
+            },
+            &chain_new, sizeof(void *));
+#else
+        jitc_fail("jit_free_flush(): should never get here!");
+#endif
+    }
 }
 
 void* jit_malloc_migrate(void *ptr, AllocType type) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_malloc_miggrate(): you must invoke jit_device_set() to "
+        jit_raise("jit_malloc_migrate(): you must invoke jit_device_set() to "
                   "choose a target device before evaluating expressions using "
                   "the JIT compiler.");
 
@@ -290,8 +333,18 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
     AllocInfo ai = it.value();
 
     // Maybe nothing needs to be done..
-    if (ai.type == type && (type != AllocType::Device || ai.device == stream->device))
+    if (ai.type == type && (type != AllocType::Device || ai.device == stream->device)) {
         return ptr;
+    } else if ((ai.type == AllocType::Host && type == AllocType::HostAsync) ||
+               (ai.type == AllocType::HostAsync && type == AllocType::Host)) {
+#if !defined(ENOKI_TBB)
+        jit_raise("jit_malloc_migrate(): host-asynchronous memory is only "
+                  "available when TBB is enabled.");
+#else
+        it.value().type = type;
+        return ptr;
+#endif
+    }
 
     if (!stream->cuda)
         jit_raise(
@@ -304,7 +357,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
               alloc_type_name[(int) type]) ;
 
     void *ptr_new = jit_malloc(type, ai.size);
-    if (ai.type == AllocType::Host) {
+    if (ai.type == AllocType::Host || ai.type == AllocType::HostAsync) {
         /* Temporarily release the main lock */ {
             unlock_guard guard(state.mutex);
             cuda_check(cuMemHostRegister(ptr, ai.size, 0));
@@ -320,7 +373,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
             },
             ptr
         ));
-    } else if (type == AllocType::Host) {
+    } else if (type == AllocType::Host || type == AllocType::HostAsync) {
         /* Temporarily release the main lock */ {
             unlock_guard guard(state.mutex);
             cuda_check(cuMemHostRegister(ptr_new, ai.size, 0));
@@ -378,9 +431,11 @@ void jit_malloc_prefetch(void *ptr, int device) {
 
     if (device == -2) {
         for (const Device &d : state.devices)
-            cuda_check(cuMemPrefetchAsync((CUdeviceptr) ptr, ai.size, d.id, stream->handle));
+            cuda_check(cuMemPrefetchAsync((CUdeviceptr) ptr, ai.size, d.id,
+                                          stream->handle));
     } else {
-        cuda_check(cuMemPrefetchAsync((CUdeviceptr) ptr, ai.size, device, stream->handle));
+        cuda_check(cuMemPrefetchAsync((CUdeviceptr) ptr, ai.size, device,
+                                      stream->handle));
     }
 }
 
@@ -442,6 +497,7 @@ void jit_malloc_trim(bool warn) {
                     break;
 
                 case AllocType::Host:
+                case AllocType::HostAsync:
                     for (void *ptr : entries)
                         free(ptr);
                     break;
@@ -452,11 +508,13 @@ void jit_malloc_trim(bool warn) {
         }
     }
 
-    size_t total = trim_count[0] + trim_count[1] + trim_count[2] +
-                   trim_count[3] + trim_count[4];
+    size_t total = 0;
+    for (int i = 0; i < (int) AllocType::Count; ++i)
+        total += trim_count[i];
+
     if (total > 0) {
         jit_log(Debug, "jit_malloc_trim(): freed");
-        for (int i = 0; i < 5; ++i) {
+        for (int i = 0; i < (int) AllocType::Count; ++i) {
             if (trim_count[i] == 0)
                 continue;
             jit_log(Debug, " - %s memory: %s in %zu allocation%s",
@@ -476,11 +534,13 @@ void jit_malloc_shutdown() {
         leak_size[(int) kv.second.type] += kv.second.size;
     }
 
-    size_t total = leak_count[0] + leak_count[1] + leak_count[2] +
-                   leak_count[3] + leak_count[4];
+    size_t total = 0;
+    for (int i = 0; i < (int) AllocType::Count; ++i)
+        total += leak_count[i];
+
     if (total > 0) {
         jit_log(Warn, "jit_malloc_shutdown(): leaked");
-        for (int i = 0; i < 5; ++i) {
+        for (int i = 0; i < (int) AllocType::Count; ++i) {
             if (leak_count[i] == 0)
                 continue;
 

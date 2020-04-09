@@ -47,5 +47,5 @@ jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
 jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
-jit_shutdown(): destroying streams ..
+jit_shutdown(): releasing 1 stream ..
 jit_shutdown(): done

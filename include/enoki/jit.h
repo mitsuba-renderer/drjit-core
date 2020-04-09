@@ -245,24 +245,66 @@ extern JITC_EXPORT void jitc_fail(const char* fmt, ...);
 
 #if defined(__cplusplus)
 enum class AllocType : uint32_t {
-    /// Memory that is located on the host (i.e., the CPU)
+    /**
+     * Memory that is located on the host (i.e., the CPU). When allocated via
+     * \ref jitc_malloc(), host memory is immediately ready for use, and
+     * its later release via \ref jitc_free() also occurs instantaneously.
+     *
+     * Note, however, that released memory is kept within a cache and not
+     * immediately given back to the operating system. Call \ref
+     * jitc_malloc_trim() to also flush this cache.
+     */
     Host,
+
+    /**
+     * Like \c Host memory, except that it may only be used *asynchronously*
+     * within the current computation stream (ref see \ref jitc_device_set()).
+     *
+     * In particular, host-asynchronous memory obtained via \ref jitc_malloc()
+     * should not be written to directly, since it may still be used by a
+     * currently running kernel. It is legal to write to it from asynchronous
+     * computation that is enqueued in the computation stream, however.
+     * Similarly, releasing memory via \ref jitc_free() also occurs
+     * asynchronously in the context of the computation stream.
+     *
+     * This type of memory is used internally when running code via the LLVM
+     * backend, and when this process is furthermore parallelized using Intels'
+     * Thread Building Blocks (TBB).
+     */
+    HostAsync,
 
     /**
      * Memory on the host that is "pinned" and thus cannot be paged out.
      * Host-pinned memory is accessible (albeit slowly) from CUDA-capable GPUs
      * as part of the unified memory model, and it also can be a source or
      * destination of asynchronous host <-> device memcpy operations.
+     *
+     * Host-pinned memory has asynchronous semantics similar to \c HostAsync.
      */
     HostPinned,
 
-    /// Memory that is located on a device (i.e., one of potentially several GPUs)
+    /**
+     * Memory that is located on a device (i.e., one of potentially several
+     * GPUs).
+     *
+     * Device memory has asynchronous semantics similar to \c HostAsync.
+     */
     Device,
 
-    /// Memory that is mapped in the address space of both host & all GPU devices
+    /**
+     * Memory that is mapped in the address space of the host & all GPUs.
+     *
+     * Managed memory has asynchronous semantics similar to \c HostAsync.
+     */
     Managed,
 
-    /// Like \c Managed, but more efficient when almost all accesses are reads
+    /**
+     * Like \c Managed, but more efficient when accesses are mostly reads. In
+     * this case, the system will distribute multiple read-only copies instead
+     * of moving memory back and forth.
+     *
+     * This type of memory has asynchronous semantics similar to \c HostAsync.
+     */
     ManagedReadMostly,
 
     /// Number of AllocType entries
@@ -304,18 +346,18 @@ extern JITC_EXPORT void *jitc_malloc(enum AllocType type, size_t size)
  * returned to the OS. The function \ref jitc_malloc_trim() can optionally be
  * called to also clear this cache.
  *
- * When \c ptr is a GPU-accessible pointer (\ref AllocType::Device, \ref
- * AllocType::HostPinned, \ref AllocType::Managed, \ref
- * AllocType::ManagedReadMostly), the associated memory region is quite likely
- * still being used by a running kernel, and it is therefore merely *scheduled*
- * to be reclaimed once this kernel finishes. Allocation thus runs in the
- * execution context of a CUDA device, i.e., it is asynchronous with respect to
- * the CPU. This means that some care must be taken in the context of programs
- * that use multiple streams or GPUs: it is not permissible to e.g. allocate
- * memory in one context, launch a kernel using it, then immediately switch
- * context to another GPU or stream on the same GPU via \ref jitc_set_device()
- * and release the memory region there. Calling \ref jitc_sync_stream() or
- * \ref jitc_sync_device() before context switching defuses this situation.
+ * When \c ptr is an asynchronous host pointer (\ref AllocType::HostAsync) or
+ * GPU-accessible pointer (\ref AllocType::Device, \ref AllocType::HostPinned,
+ * \ref AllocType::Managed, \ref AllocType::ManagedReadMostly), the associated
+ * memory region is quite likely still being used by a running kernel, and it
+ * is therefore merely *scheduled* to be reclaimed once this kernel finishes.
+ * All memory-related operations thus occur in the context of a stream, and
+ * this also means that extra care must be taken in the context of programs
+ * that use multiple streams: it is not permissible to e.g. allocate memory in
+ * one stream, launch a kernel using it, then immediately switch to a different
+ * device and/or stream via \ref jitc_set_device() and release the memory
+ * region there. Calling \ref jitc_sync_stream() before context switching
+ * streams defuses this situation.
  */
 extern JITC_EXPORT void jitc_free(void *ptr);
 
@@ -783,14 +825,16 @@ enum ReductionType {
     ReductionTypeCount
 };
 #endif
+
 /**
  * \brief Fill a device memory region with constants of a given type
  *
- * This function writes \c size values of type \c type to the output array \c
+ * This function writes \c size values of size \c isize to the output array \c
  * ptr. The specific value is taken from \c src, which must be a CPU pointer to
- * a single int, float, double, etc (depending on \c type).
+ * a single int, float, double, etc. (\c isize can be 1, 2, 4, or 8).
+ * Runs asynchronously.
  */
-extern JITC_EXPORT void jitc_fill(enum VarType type, void *ptr, uint32_t size,
+extern JITC_EXPORT void jitc_memset(void *ptr, uint32_t size, uint32_t isize,
                                   const void *src);
 
 /// Perform a synchronous copy operation
@@ -807,6 +851,8 @@ extern JITC_EXPORT void jitc_memcpy_async(void *dst, const void *src,
  * ptr and performs an specified operation (e.g., addition, multplication,
  * etc.) to combine them into a single value that is written to the device
  * variable \c out.
+ *
+ * Runs asynchronously.
  */
 extern JITC_EXPORT void jitc_reduce(enum VarType type, enum ReductionType rtype,
                                     const void *ptr, uint32_t size, void *out);
@@ -822,6 +868,8 @@ extern JITC_EXPORT void jitc_reduce(enum VarType type, enum ReductionType rtype,
  * sufficiently large to avoid an out-of-bounds reads and writes. This is not
  * an issue for memory obtained using \ref jitc_malloc(), which internally
  * rounds allocations to the next largest power of two.
+ *
+ * Runs asynchronously.
  */
 extern JITC_EXPORT void jitc_scan(const uint32_t *in, uint32_t *out,
                                   uint32_t size);
@@ -833,6 +881,8 @@ extern JITC_EXPORT void jitc_scan(const uint32_t *in, uint32_t *out,
  * to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
  * reduction algorithm can be used. This is fine for allocations made using
  * \ref jitc_malloc(), which allow for this.
+ *
+ * Runs synchronously.
  */
 extern JITC_EXPORT uint8_t jitc_all(uint8_t *values, uint32_t size);
 
@@ -843,6 +893,8 @@ extern JITC_EXPORT uint8_t jitc_all(uint8_t *values, uint32_t size);
  * to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
  * reduction algorithm can be used. This is fine for allocations made using
  * \ref jitc_malloc(), which allow for this.
+ *
+ * Runs synchronously.
  */
 extern JITC_EXPORT uint8_t jitc_any(uint8_t *values, uint32_t size);
 

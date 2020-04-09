@@ -7,8 +7,11 @@
 #include "io.h"
 #include <mutex>
 #include <condition_variable>
+#include <deque>
 #include <string.h>
 #include <inttypes.h>
+
+namespace tbb { class task; };
 
 static constexpr LogLevel Disable = LogLevel::Disable;
 static constexpr LogLevel Error   = LogLevel::Error;
@@ -102,6 +105,22 @@ struct Stream {
      * with side effects.
      */
     std::vector<uint32_t> todo;
+
+    /// ---------------------------- LLVM-specific ----------------------------
+
+#if defined(ENOKI_TBB)
+    /// Mutex protecting 'tbb_task_queue'
+    std::mutex tbb_task_queue_mutex;
+
+    /// Per-stream task queue that will be processed in FIFO order
+    std::deque<tbb::task *> tbb_task_queue;
+
+    /// Kernel task that will receive queued computation
+    tbb::task *tbb_kernel_task = nullptr;
+
+    /// Root task of the entire stream, for synchronization purposes
+    tbb::task *tbb_task_root = nullptr;
+#endif
 
     /// ---------------------------- CUDA-specific ----------------------------
 

@@ -764,8 +764,9 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
 jit_free(<@>, type=device, device=0, size=64)
-jit_shutdown(): destroying streams ..
+jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 15 deallocations
+jit_shutdown(): releasing 4 kernels ..
 jit_malloc_trim(): freed
  - host-pinned memory: 192 B in 3 allocations
  - device memory: 960 B in 15 allocations

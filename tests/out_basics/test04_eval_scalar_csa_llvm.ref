@@ -22,13 +22,13 @@ jit_var_inc_ref_ext(3): 2
 jit_eval(): begin.
 jit_assemble(size=1): register map:
    - %f0 -> 1 [scalar] [out]
-jit_malloc(type=host, size=64): <@> (new allocation)
+jit_malloc(type=host-async, size=64): <@> (new allocation)
    - %f1 -> 2 [scalar] [out]
-jit_malloc(type=host, size=64): <@> (new allocation)
+jit_malloc(type=host-async, size=64): <@> (new allocation)
    - %f2 -> 3 [scalar] [out]
-jit_malloc(type=host, size=64): <@> (new allocation)
+jit_malloc(type=host-async, size=64): <@> (new allocation)
    - %f3 -> 4 [scalar] [out]
-jit_malloc(type=host, size=64): <@> (new allocation)
+jit_malloc(type=host-async, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=4, ops=4) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
@@ -119,18 +119,20 @@ value_6=[2469]
 jit_var_dec_ref_ext(3): 1
 jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
-jit_free(<@>, type=host, size=64)
+jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
-jit_free(<@>, type=host, size=64)
+jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(1): 1
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
-jit_free(<@>, type=host, size=64)
+jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_free(<@>, type=host, size=64)
-jit_shutdown(): destroying streams ..
+jit_free(<@>, type=host-async, size=64)
+jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 4 deallocations
+jit_shutdown(): releasing 1 kernel ..
 jit_malloc_trim(): freed
- - host memory: 256 B in 4 allocations
+ - host-async memory: 256 B in 4 allocations
 jit_shutdown(): done

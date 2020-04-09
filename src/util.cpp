@@ -4,26 +4,42 @@
 #include "var.h"
 #include "registry.h"
 #include "log.h"
+#include "tbb.h"
+
+#if defined(ENOKI_TBB)
+#  include <tbb/tbb.h>
+#endif
 
 const char *reduction_name[(int) ReductionType::Count] = { "add", "mul", "min",
                                                            "max", "and", "or" };
 
 /// Fill a device memory region with constants of a given type
-void jit_fill(VarType type, void *ptr, uint32_t size, const void *src) {
+void jit_memset(void *ptr, uint32_t size_, uint32_t isize, const void *src) {
     Stream *stream = active_stream;
 
     if (unlikely(!stream))
-        jit_raise("jit_fill(): you must invoke jit_device_set() to "
+        jit_raise("jit_memset(): you must invoke jit_device_set() to "
                   "choose a target device before calling this function.");
+    else if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
+        jit_raise("jit_memset(): invalid element size (must be 1, 2, 4, or 8)!");
 
-    jit_trace("jit_fill(" ENOKI_PTR ", type=%s, size=%u)", (uintptr_t) ptr,
-              var_type_name[(int) type], size);
+    jit_trace("jit_memset(" ENOKI_PTR ", isize=%u, size=%u)",
+              (uintptr_t) ptr, isize, size_);
 
-    if (size == 0)
+    if (size_ == 0)
         return;
 
+    size_t size = size_;
+
+    // Try to convert into ordinary memset if possible
+    uint64_t zero = 0;
+    if (memcmp(src, &zero, isize) == 0) {
+        size *= isize;
+        isize = 1;
+    }
+
     if (stream->cuda) {
-        switch (var_type_size[(int) type]) {
+        switch (isize) {
             case 1:
                 cuda_check(cuMemsetD8Async((CUdeviceptr) ptr,
                                            ((uint8_t *) src)[0], size,
@@ -46,55 +62,67 @@ void jit_fill(VarType type, void *ptr, uint32_t size, const void *src) {
                     const Device &device = state.devices[stream->device];
                     uint32_t block_count, thread_count;
                     device.get_launch_config(&block_count, &thread_count, size);
-                    void *args[] = { &ptr, &size, (void *) src };
+                    void *args[] = { &ptr, &size_, (void *) src };
                     CUfunction kernel = jit_cuda_fill_64[device.id];
                     cuda_check(cuLaunchKernel(kernel, block_count, 1, 1,
                                               thread_count, 1, 1, 0,
                                               stream->handle, args, nullptr));
                 }
                 break;
-
-            default:
-                jit_raise("jit_fill(): unknown type!");
         }
     } else {
+        struct Inputs {
+            void *ptr;
+            size_t size;
+            uint32_t isize;
+            uint8_t src[8];
+        };
+
+        Inputs inputs;
+        inputs.ptr = ptr;
+        inputs.size = size;
+        inputs.isize = isize;
+        memcpy(inputs.src, src, isize);
+
+        auto func = [](void *inputs_) {
+            Inputs inputs = *((Inputs *) inputs_);
+            switch (inputs.isize) {
+                case 1:
+                    memset(inputs.ptr, inputs.src[0], inputs.size);
+                    break;
+
+                case 2: {
+                        uint16_t value = ((uint16_t *) inputs.src)[0],
+                                 *p    = (uint16_t *) inputs.ptr;
+                        for (uint32_t i = 0; i < inputs.size; ++i)
+                            p[i] = value;
+                    }
+                    break;
+
+                case 4: {
+                        uint32_t value = ((uint32_t *) inputs.src)[0],
+                                 *p    = (uint32_t *) inputs.ptr;
+                        for (uint32_t i = 0; i < inputs.size; ++i)
+                            p[i] = value;
+                    }
+                    break;
+
+                case 8: {
+                        uint64_t value = ((uint64_t *) inputs.src)[0],
+                                 *p    = (uint64_t *) inputs.ptr;
+                        for (uint32_t i = 0; i < inputs.size; ++i)
+                            p[i] = value;
+                    }
+                    break;
+            }
+        };
+
+#if defined(ENOKI_TBB)
+        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+#else
         unlock_guard guard(state.mutex);
-        switch (var_type_size[(int) type]) {
-            case 1: {
-                    uint8_t value = ((uint8_t *) src)[0],
-                            *p    = (uint8_t *) ptr;
-                    for (uint32_t i = 0; i < size; ++i)
-                        p[i] = value;
-                }
-                break;
-
-            case 2: {
-                    uint16_t value = ((uint16_t *) src)[0],
-                             *p    = (uint16_t *) ptr;
-                    for (uint32_t i = 0; i < size; ++i)
-                        p[i] = value;
-                }
-                break;
-
-            case 4: {
-                    uint32_t value = ((uint32_t *) src)[0],
-                             *p    = (uint32_t *) ptr;
-                    for (uint32_t i = 0; i < size; ++i)
-                        p[i] = value;
-                }
-                break;
-
-            case 8: {
-                    uint64_t value = ((uint64_t *) src)[0],
-                             *p    = (uint64_t *) ptr;
-                    for (uint32_t i = 0; i < size; ++i)
-                        p[i] = value;
-                }
-                break;
-
-            default:
-                jit_raise("jit_fill(): unknown type!");
-        }
+        func(&inputs);
+#endif
     }
 }
 
@@ -111,6 +139,9 @@ void jit_memcpy(void *dst, const void *src, size_t size) {
         cuda_check(cuStreamSynchronize(stream->handle));
         cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
     } else {
+#if defined(ENOKI_TBB)
+        tbb_stream_sync(stream);
+#endif
         memcpy(dst, src, size);
     }
 }
@@ -122,98 +153,114 @@ void jit_memcpy_async(void *dst, const void *src, size_t size) {
         jit_raise("jit_memcpy_async(): you must invoke jit_device_set() to "
                   "choose a target device before calling this function.");
 
-    if  (stream->cuda)
+    if  (stream->cuda) {
         cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
                                  stream->handle));
-    else
-        memcpy(dst, src, size);
+    } else {
+        struct Inputs {
+            void *dst;
+            const void *src;
+            size_t size;
+        };
+
+        Inputs inputs { dst, src, size };
+
+        auto func = [](void *inputs_) {
+            Inputs inputs = *((Inputs *) inputs_);
+            memcpy(inputs.dst, inputs.src, inputs.size);
+        };
+
+#if defined(ENOKI_TBB)
+        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+#else
+        unlock_guard guard(state.mutex);
+        func(&inputs);
+#endif
+    }
 }
 
-template <typename Value> struct reduction_add {
-    Value init() { return (Value) 0; }
-    Value operator()(Value a, Value b) const {
-        return a + b;
-    }
-};
-
-template <typename Value> struct reduction_mul {
-    Value init() { return (Value) 1; }
-    Value operator()(Value a, Value b) const {
-        return a * b;
-    }
-};
-
-template <typename Value> struct reduction_max {
-    Value init() {
-        return std::is_integral<Value>::value
-                   ?  std::numeric_limits<Value>::min()
-                   : -std::numeric_limits<Value>::infinity();
-    }
-    Value operator()(Value a, Value b) const {
-        return std::max(a, b);
-    }
-};
-
-template <typename Value> struct reduction_min {
-    Value init() {
-        return std::is_integral<Value>::value
-                   ? std::numeric_limits<Value>::max()
-                   : std::numeric_limits<Value>::infinity();
-    }
-    Value operator()(Value a, Value b) const {
-        return std::min(a, b);
-    }
-};
-
-template <typename Value> struct reduction_or {
-    Value init() { return (Value) 0; }
-    Value operator()(Value a, Value b) const {
-        return a | b;
-    }
-};
-
-template <typename Value> struct reduction_and {
-    Value init() { return (Value) -1; }
-    Value operator()(Value a, Value b) const {
-        return a & b;
-    }
-};
-
-template <typename Reduction, typename Value>
-void jit_reduce_cpu(const Value *ptr, uint32_t size, Value *out) {
-    unlock_guard guard(state.mutex);
-    Reduction reduction;
-    Value value = reduction.init();
-    for (uint32_t i = 0; i < size; ++i)
-        value = reduction(value, ptr[i]);
-    *out = value;
-}
+using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
 
 template <typename Value>
-void jit_reduce_cpu(ReductionType rtype, const Value *ptr, uint32_t size,
-                    Value *out) {
+static Reduction jit_reduce_create(ReductionType rtype) {
     using UInt = uint_with_size_t<Value>;
+
     switch (rtype) {
         case ReductionType::Add:
-            jit_reduce_cpu<reduction_add<Value>>(ptr, size, out);
-            break;
-        case ReductionType::Mul:
-            jit_reduce_cpu<reduction_mul<Value>>(ptr, size, out);
-            break;
-        case ReductionType::Min:
-            jit_reduce_cpu<reduction_min<Value>>(ptr, size, out);
-            break;
-        case ReductionType::Max:
-            jit_reduce_cpu<reduction_max<Value>>(ptr, size, out);
-            break;
-        case ReductionType::And:
-            jit_reduce_cpu<reduction_and<UInt>>((const UInt *) ptr, size, (UInt *) out);
-            break;
-        case ReductionType::Or:
-            jit_reduce_cpu<reduction_or<UInt>>((const UInt *) ptr, size, (UInt *) out);
-            break;
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const Value *ptr = (const Value *) ptr_;
+                Value result = 0;
+                for (uint32_t i = start; i != end; ++i)
+                    result += ptr[i];
+                *((Value *) out) = result;
+            };
 
-        default: jit_raise("jit_reduce(): unsupported reduction type!");
+        case ReductionType::Mul:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const Value *ptr = (const Value *) ptr_;
+                Value result = 1;
+                for (uint32_t i = start; i != end; ++i)
+                    result *= ptr[i];
+                *((Value *) out) = result;
+            };
+
+        case ReductionType::Max:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const Value *ptr = (const Value *) ptr_;
+                Value result = std::is_integral<Value>::value
+                                   ?  std::numeric_limits<Value>::min()
+                                   : -std::numeric_limits<Value>::infinity();
+                for (uint32_t i = start; i != end; ++i)
+                    result = std::max(result, ptr[i]);
+                *((Value *) out) = result;
+            };
+
+        case ReductionType::Min:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const Value *ptr = (const Value *) ptr_;
+                Value result = std::is_integral<Value>::value
+                                   ?  std::numeric_limits<Value>::max()
+                                   :  std::numeric_limits<Value>::infinity();
+                for (uint32_t i = start; i != end; ++i)
+                    result = std::max(result, ptr[i]);
+                *((Value *) out) = result;
+            };
+
+        case ReductionType::Or:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const UInt *ptr = (const UInt *) ptr_;
+                UInt result = 0;
+                for (uint32_t i = start; i != end; ++i)
+                    result |= ptr[i];
+                *((UInt *) out) = result;
+            };
+
+        case ReductionType::And:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const UInt *ptr = (const UInt *) ptr_;
+                UInt result = (UInt) -1;
+                for (uint32_t i = start; i != end; ++i)
+                    result &= ptr[i];
+                *((UInt *) out) = result;
+            };
+
+        default: jit_raise("jit_reduce_create(): unsupported reduction type!");
+    }
+}
+
+static Reduction jit_reduce_create(VarType type, ReductionType rtype) {
+    switch (type) {
+        case VarType::Int8:    return jit_reduce_create<int8_t  >(rtype);
+        case VarType::UInt8:   return jit_reduce_create<uint8_t >(rtype);
+        case VarType::Int16:   return jit_reduce_create<int16_t >(rtype);
+        case VarType::UInt16:  return jit_reduce_create<uint16_t>(rtype);
+        case VarType::Int32:   return jit_reduce_create<int32_t >(rtype);
+        case VarType::UInt32:  return jit_reduce_create<uint32_t>(rtype);
+        case VarType::Int64:   return jit_reduce_create<int64_t >(rtype);
+        case VarType::UInt64:  return jit_reduce_create<uint64_t>(rtype);
+        case VarType::Float32: return jit_reduce_create<float   >(rtype);
+        case VarType::Float64: return jit_reduce_create<double  >(rtype);
+        default: jit_raise("jit_reduce_create(): unsupported data type!");
     }
 }
 
@@ -267,33 +314,61 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
             jit_free(temp);
         }
     } else {
-        switch (type) {
-            case VarType::Int32:
-                jit_reduce_cpu<int32_t>(rtype, (const int32_t *) ptr, size, (int32_t *) out);
-                break;
+        Reduction reduction = jit_reduce_create(type, rtype);
 
-            case VarType::UInt32:
-                jit_reduce_cpu<uint32_t>(rtype, (const uint32_t *) ptr, size, (uint32_t *) out);
-                break;
+#if defined(ENOKI_TBB)
+        struct Inputs {
+            uint32_t size;
+            uint32_t isize;
+            Reduction reduction;
+            const void *ptr;
+            void *out;
+        };
 
-            case VarType::Int64:
-                jit_reduce_cpu<int64_t>(rtype, (const int64_t *) ptr, size, (int64_t *) out);
-                break;
+        auto func = [](void *inputs_) {
+            Inputs inputs = *((Inputs *) inputs_);
+            Reduction reduction = inputs.reduction;
+            uint32_t size = inputs.size;
+            uint32_t isize = inputs.isize;
+            const void *ptr = inputs.ptr;
+            void *out = inputs.out;
 
-            case VarType::UInt64:
-                jit_reduce_cpu<uint64_t>(rtype, (const uint64_t *) ptr, size, (uint64_t *) out);
-                break;
+            uint64_t identity = 0;
+            inputs.reduction(nullptr, 0, 0, &identity);
 
-            case VarType::Float32:
-                jit_reduce_cpu<float>(rtype, (const float *) ptr, size, (float *) out);
-                break;
+            uint64_t result = tbb::parallel_deterministic_reduce(
+                tbb::blocked_range<uint32_t>(0, size, 16384),
+                identity,
+                [reduction, ptr, isize](const tbb::blocked_range<uint32_t> &range, uint64_t value) {
+                    uint8_t temp[16] { };
+                    memcpy(temp, &value, isize);
+                    reduction(ptr, range.begin(), range.end(), temp + isize);
+                    reduction(temp, 0, 2, temp);
+                    return *((uint64_t *) temp);
+                },
+                [reduction, isize](uint64_t a, uint64_t b) {
+                    uint8_t temp[16] { };
+                    memcpy(temp, &a, isize);
+                    memcpy(temp + isize, &b, isize);
+                    reduction(temp, 0, 2, &temp);
+                    return *((uint64_t *) temp);
+                }
+            );
 
-            case VarType::Float64:
-                jit_reduce_cpu<double>(rtype, (const double *) ptr, size, (double *) out);
-                break;
+            memcpy(out, &result, isize);
+        };
 
-            default: jit_raise("jit_reduce(): unsupported data type!");
-        }
+        Inputs inputs;
+        inputs.size = size;
+        inputs.isize = var_type_size[(int) type];
+        inputs.reduction = reduction;
+        inputs.ptr = ptr;
+        inputs.out = out;
+
+        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+#else
+        reduction(ptr, 0, size, out);
+#endif
     }
 }
 
@@ -309,21 +384,22 @@ uint8_t jit_all(uint8_t *values, uint32_t size) {
 
     jit_log(Debug, "jit_all(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
 
+    if (trailing) {
+        bool filler = true;
+        jit_memset(values + size, trailing, sizeof(bool), &filler);
+    }
+
     uint8_t result;
     if (stream->cuda) {
-        if (trailing)
-            cuda_check(cuMemsetD8Async((CUdeviceptr)(values + size), 0x01,
-                                       trailing, stream->handle));
         uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
         jit_reduce(VarType::UInt32, ReductionType::And, values, reduced_size, out);
-        cuda_check(cuStreamSynchronize(stream->handle));
+        jit_sync_stream();
         result = (out[0] & out[1] & out[2] & out[3]) != 0;
         jit_free(out);
     } else {
-        if (trailing)
-            memset(values + size, 0x01, trailing);
         uint8_t out[4];
         jit_reduce(VarType::UInt32, ReductionType::And, values, reduced_size, out);
+        jit_sync_stream();
         result = (out[0] & out[1] & out[2] & out[3]) != 0;
     }
 
@@ -338,21 +414,22 @@ uint8_t jit_any(uint8_t *values, uint32_t size) {
 
     jit_log(Debug, "jit_any(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
 
+    if (trailing) {
+        bool filler = false;
+        jit_memset(values + size, trailing, sizeof(bool), &filler);
+    }
+
     uint8_t result;
-    if (stream) {
-        if (trailing)
-            cuda_check(cuMemsetD8Async((CUdeviceptr)(values + size), 0x00,
-                                       trailing, stream->handle));
+    if (stream->cuda) {
         uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
         jit_reduce(VarType::UInt32, ReductionType::Or, values, reduced_size, out);
-        cuda_check(cuStreamSynchronize(stream->handle));
+        jit_sync_stream();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
         jit_free(out);
     } else {
-        if (trailing)
-            memset(values + size, 0x00, trailing);
         uint8_t out[4];
         jit_reduce(VarType::UInt32, ReductionType::Or, values, reduced_size, out);
+        jit_sync_stream();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
     }
 
@@ -405,6 +482,36 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
             jit_free(block_sums);
         }
     } else {
+#if defined(ENOKI_TBB)
+        struct Inputs {
+            const uint32_t *in;
+            uint32_t *out;
+            uint32_t size;
+        };
+        auto func = [](void *inputs_) {
+            Inputs inputs = *((Inputs *) inputs_);
+            tbb::parallel_scan(
+                tbb::blocked_range<uint32_t>(0u, inputs.size, 4096u), 0u,
+                [inputs](const tbb::blocked_range<uint32_t> &range, uint32_t sum,
+                          bool final_scan) -> uint32_t {
+                    if (final_scan) {
+                        for (uint32_t i = range.begin(); i < range.end(); ++i) {
+                            uint32_t backup = sum;
+                            sum += inputs.in[i];
+                            inputs.out[i] = backup;
+                        }
+                    } else {
+                        for (uint32_t i = range.begin(); i < range.end(); ++i)
+                            sum += inputs.in[i];
+
+                    }
+                    return sum;
+                },
+                [](uint32_t v0, uint32_t v1) -> uint32_t { return v0 + v1; });
+        };
+        Inputs inputs { in, out, size };
+        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+#else
         unlock_guard guard(state.mutex);
         uint32_t accum = 0;
         for (uint32_t i = 0; i < size; ++i) {
@@ -412,41 +519,26 @@ void jit_scan(const uint32_t *in, uint32_t *out, uint32_t size) {
             out[i] = accum;
             accum += value;
         }
+#endif
     }
 }
 
-void jit_transpose(const uint32_t *in, uint32_t *out, uint32_t rows, uint32_t cols) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_transpose(): you must invoke jit_device_set() to "
-                  "choose a target device before calling this function.");
+static void cuda_transpose(Stream *stream, const uint32_t *in, uint32_t *out,
+                           uint32_t rows, uint32_t cols) {
+    const Device &device = state.devices[stream->device];
 
-    if (stream->cuda) {
-        const Device &device = state.devices[stream->device];
+    uint16_t blocks_x = (cols + 15u) / 16u,
+             blocks_y = (rows + 15u) / 16u;
 
-        uint16_t blocks_x = (cols + 15u) / 16u,
-                 blocks_y = (rows + 15u) / 16u;
+    jit_log(Debug,
+            "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
+            ", rows=%u, cols=%u, blocks=%ux%u)",
+            (uintptr_t) in, (uintptr_t) out, rows, cols, blocks_x, blocks_y);
 
-        jit_log(Debug,
-                "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
-                ", rows=%u, cols=%u, blocks=%ux%u)",
-                (uintptr_t) in, (uintptr_t) out, rows, cols, blocks_x, blocks_y);
-
-        void *args[] = { &in, &out, &rows, &cols };
-        cuda_check(cuLaunchKernel(
-            jit_cuda_transpose[device.id], blocks_x, blocks_y, 1, 16, 16, 1,
-            16 * 17 * sizeof(uint32_t), stream->handle, args, nullptr));
-    } else {
-        jit_log(Debug,
-                "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
-                ", rows=%u, cols=%u)",
-                (uintptr_t) in, (uintptr_t) out, rows, cols);
-
-        unlock_guard guard(state.mutex);
-        for (uint32_t r = 0; r < rows; ++r)
-            for (uint32_t c = 0; c < cols; ++c)
-                out[r + c * rows] = in[c + r * cols];
-    }
+    void *args[] = { &in, &out, &rows, &cols };
+    cuda_check(cuLaunchKernel(
+        jit_cuda_transpose[device.id], blocks_x, blocks_y, 1, 16, 16, 1,
+        16 * 17 * sizeof(uint32_t), stream->handle, args, nullptr));
 }
 
 /// Compute a permutation to reorder an integer array into a sorted configuration
@@ -556,14 +648,14 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 
         // Phase 2: exclusive prefix sum over transposed buckets
         if (needs_transpose)
-            jit_transpose(buckets_1, buckets_2, bucket_size_all / bucket_size_1,
-                          bucket_count);
+            cuda_transpose(stream, buckets_1, buckets_2,
+                           bucket_size_all / bucket_size_1, bucket_count);
 
         jit_scan(buckets_2, buckets_2, bucket_size_all / sizeof(uint32_t));
 
         if (needs_transpose)
-            jit_transpose(buckets_2, buckets_1, bucket_count,
-                          bucket_size_all / bucket_size_1);
+            cuda_transpose(stream, buckets_2, buckets_1, bucket_count,
+                           bucket_size_all / bucket_size_1);
 
         // Phase 3: collect non-empty buckets (optional)
         if (likely(offsets)) {
@@ -608,6 +700,79 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 
         return offsets ? offsets[4 * bucket_count] : 0u;
     } else { // if (!stream->cuda)
+#if defined(ENOKI_TBB)
+        jit_sync_stream(); /// XXX can we also enqueue this asynchronously?
+
+        uint32_t num_tasks      = jit_llvm_thread_count * 4,
+                 items_per_task = std::max(4096u, (size + num_tasks - 1) / num_tasks);
+        num_tasks = (size + items_per_task - 1) / items_per_task;
+
+        size_t bucket_size_local = sizeof(uint32_t) * (size_t) bucket_count;
+
+        uint32_t **buckets =
+            (uint32_t **) jit_malloc(AllocType::Host, sizeof(uint32_t *) * num_tasks);
+
+        for (uint32_t i = 0; i < num_tasks; ++i)
+            buckets[i] =
+                (uint32_t *) jit_malloc(AllocType::Host, bucket_size_local);
+
+        tbb::parallel_for(
+            tbb::blocked_range<uint32_t>(0u, num_tasks, 1u),
+            [&](const tbb::blocked_range<uint32_t> &range) {
+                uint32_t start = range.begin() * items_per_task,
+                         end = std::min(size, start + items_per_task);
+
+                uint32_t *buckets_local = buckets[range.begin()];
+
+                memset(buckets_local, 0, bucket_size_local);
+                for (uint32_t i = start; i != end; ++i)
+                    buckets_local[ptr[i]]++;
+            },
+            tbb::simple_partitioner()
+        );
+
+        uint32_t sum = 0, unique_count = 0;
+        for (uint32_t i = 0; i < bucket_count; ++i) {
+            uint32_t sum_local = 0;
+            for (uint32_t j = 0; j < num_tasks; ++j) {
+                uint32_t value = buckets[j][i];
+                buckets[j][i] = sum + sum_local;
+                sum_local += value;
+            }
+            if (sum_local > 0) {
+                if (offsets) {
+                    offsets[unique_count*4] = i;
+                    offsets[unique_count*4 + 1] = sum;
+                    offsets[unique_count*4 + 2] = sum_local;
+                    offsets[unique_count*4 + 3] = 0;
+                }
+                unique_count++;
+                sum += sum_local;
+            }
+        }
+
+        tbb::parallel_for(
+            tbb::blocked_range<uint32_t>(0u, num_tasks, 1u),
+            [&](const tbb::blocked_range<uint32_t> &range) {
+                uint32_t start = range.begin() * items_per_task,
+                         end = std::min(size, start + items_per_task);
+
+                uint32_t *buckets_local = buckets[range.begin()];
+
+                for (uint32_t i = start; i != end; ++i) {
+                    uint32_t index = buckets_local[ptr[i]]++;
+                    perm[index] = i;
+                }
+            },
+            tbb::simple_partitioner()
+        );
+
+        for (uint32_t i = 0; i < num_tasks; ++i)
+            jit_free(buckets[i]);
+        jit_free(buckets);
+
+        return unique_count;
+#else
         size_t bucket_size = sizeof(uint32_t) * (size_t) bucket_count;
         uint32_t *buckets = (uint32_t *) jit_malloc(AllocType::Host, bucket_size);
         memset(buckets, 0, bucket_size);
@@ -639,6 +804,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 
         jit_free(buckets);
         return unique_count;
+#endif
     }
 }
 
@@ -675,8 +841,14 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
         cuda ? AllocType::Device : AllocType::Host, perm_size);
 
     // Compute permutation
-    uint32_t unique_count     = jit_mkperm((const uint32_t *) ptr, size, bucket_count, perm, offsets),
+    uint32_t unique_count = jit_mkperm((const uint32_t *) ptr, size,
+                                       bucket_count, perm, offsets),
              unique_count_out = unique_count;
+
+#if defined(ENOKI_TBB)
+    if (!stream->cuda)
+        perm = (uint32_t *) jit_malloc_migrate(perm, AllocType::HostAsync);
+#endif
 
     // Register permutation variable with JIT backend and transfer ownership
     uint32_t perm_var = jit_var_map(VarType::UInt32, perm, size, 1);

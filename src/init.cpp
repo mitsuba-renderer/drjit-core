@@ -3,6 +3,7 @@
 #include "internal.h"
 #include "log.h"
 #include "registry.h"
+#include "tbb.h"
 #include <glob.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
@@ -101,29 +102,44 @@ void jit_init(int llvm, int cuda) {
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 void jit_shutdown(int light) {
-    jit_log(Info, "jit_shutdown(): destroying streams ..");
 
-    for (auto &v : state.streams) {
-        const Stream *stream = v.second;
-        jit_device_set(stream->device, stream->stream);
-        if (stream->cuda) {
-            jit_free_flush();
-            cuda_check(cuStreamSynchronize(stream->handle));
-            cuda_check(cuEventDestroy(stream->event));
-            cuda_check(cuStreamDestroy(stream->handle));
-            delete stream->release_chain;
+    if (!state.streams.empty()) {
+        jit_log(Info, "jit_shutdown(): releasing %zu stream%s ..",
+                state.streams.size(), state.streams.size() > 1 ? "s" : "");
+
+        for (auto &v : state.streams) {
+            Stream *stream = v.second;
+            jit_device_set(stream->device, stream->stream);
+            if (stream->cuda) {
+                jit_free_flush();
+                cuda_check(cuStreamSynchronize(stream->handle));
+                cuda_check(cuEventDestroy(stream->event));
+                cuda_check(cuStreamDestroy(stream->handle));
+                delete stream->release_chain;
+            } else {
+#if defined(ENOKI_TBB)
+                jit_free_flush();
+                tbb_stream_shutdown(stream);
+#endif
+            }
+            delete stream;
         }
-        delete stream;
-    }
-    state.streams.clear();
-    active_stream = nullptr;
-
-    for (auto &v : state.kernel_cache) {
-        jit_kernel_free(v.first.device, v.second);
-        free(v.first.str);
+        state.streams.clear();
+        active_stream = nullptr;
     }
 
-    state.kernel_cache.clear();
+    if (!state.kernel_cache.empty()) {
+        jit_log(Info, "jit_shutdown(): releasing %zu kernel%s ..",
+                state.kernel_cache.size(),
+                state.kernel_cache.size() > 1 ? "s" : "");
+
+        for (auto &v : state.kernel_cache) {
+            jit_kernel_free(v.first.device, v.second);
+            free(v.first.str);
+        }
+
+        state.kernel_cache.clear();
+    }
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
         uint32_t n_leaked = 0;
@@ -219,6 +235,11 @@ void jit_device_set(int32_t device, uint32_t stream) {
         stream_ptr->stream = stream;
         stream_ptr->handle = handle;
         stream_ptr->event = event;
+
+#if defined(ENOKI_TBB)
+        tbb_stream_init(stream_ptr);
+#endif
+
         state.streams[key] = stream_ptr;
     }
 
@@ -229,12 +250,13 @@ void jit_device_set(int32_t device, uint32_t stream) {
 void jit_sync_stream() {
     Stream *stream = active_stream;
     if (stream->cuda) {
-        jit_trace("jit_sync_stream(): starting ..");
-        /* Release mutex while synchronizing */ {
-            unlock_guard guard(state.mutex);
-            cuda_check(cuStreamSynchronize(stream->handle));
-        }
-        jit_trace("jit_sync_stream(): done.");
+        unlock_guard guard(state.mutex);
+        cuda_check(cuStreamSynchronize(stream->handle));
+    } else {
+#if defined(ENOKI_TBB)
+        unlock_guard guard(state.mutex);
+        tbb_stream_sync(stream);
+#endif
     }
 }
 
@@ -242,12 +264,15 @@ void jit_sync_stream() {
 void jit_sync_device() {
     Stream *stream = active_stream;
     if (stream->cuda) {
-        jit_trace("jit_sync_device(): starting ..");
         /* Release mutex while synchronizing */ {
             unlock_guard guard(state.mutex);
             cuda_check(cuCtxSynchronize());
         }
-        jit_trace("jit_sync_device(): done.");
+    } else {
+#if defined(ENOKI_TBB)
+        jit_fail("jit_sync_device() is not currently supported by LLVM+TBB. "
+                 "Use jit_sync_stream() instead.");
+#endif
     }
 }
 

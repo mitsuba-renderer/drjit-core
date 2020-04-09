@@ -2,6 +2,7 @@
 #include "log.h"
 #include "var.h"
 #include "eval.h"
+#include "tbb.h"
 #include <tsl/robin_set.h>
 
 #define CUDA_MAX_KERNEL_PARAMETERS 512
@@ -787,7 +788,16 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
             if (cuda && isize < 4)
                 isize += 4 - isize;
 
-            void *data = jit_malloc(cuda ? AllocType::Device : AllocType::Host, var_size);
+            AllocType alloc_type = AllocType::Device;
+            if (!cuda) {
+#if defined(ENOKI_TBB)
+                alloc_type = AllocType::HostAsync;
+#else
+                alloc_type = AllocType::Host;
+#endif
+            }
+
+            void *data = jit_malloc(alloc_type, var_size);
 
             // jit_malloc() may temporarily release the lock, variable pointer might have changed
             v = jit_var(index);
@@ -997,11 +1007,24 @@ void jit_run(Stream *stream, ScheduledGroup group) {
         jit_log(Trace, "jit_run(): processing %u packet%s and %u scalar entries",
                 packets, packets == 1 ? "": "s", group.size - rounded);
 
+#if defined(ENOKI_TBB)
+        if (likely(rounded > 0))
+            tbb_stream_enqueue_kernel(
+                stream, kernel.llvm.func, 0, rounded,
+                (uint32_t) kernel_args_extra.size(), kernel_args_extra.data());
+
+        if (unlikely(rounded != group.size))
+            tbb_stream_enqueue_kernel(
+                stream, kernel.llvm.func_scalar, rounded, group.size,
+                (uint32_t) kernel_args_extra.size(), kernel_args_extra.data());
+#else
+        unlock_guard guard(state.mutex);
         if (likely(rounded > 0))
             kernel.llvm.func(0, rounded, kernel_args_extra.data());
 
         if (unlikely(rounded != group.size))
             kernel.llvm.func_scalar(rounded, group.size, kernel_args_extra.data());
+#endif
     }
 }
 
@@ -1140,6 +1163,11 @@ void jit_eval() {
         for (int j = 0; j < 4; ++j)
             jit_var_dec_ref_int(dep[j]);
     }
+
+    #if defined(ENOKI_TBB)
+    if (!stream->cuda)
+        tbb_stream_submit_kernel(stream);
+    #endif
 
     jit_free_flush();
     jit_log(Debug, "jit_eval(): done.");

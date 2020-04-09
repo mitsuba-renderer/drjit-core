@@ -5,7 +5,7 @@ jit_var_set_label(1): "my_value"
 jit_eval(): begin.
 jit_assemble(size=1): register map:
    - %f0 -> 1 "my_value" [scalar] [out]
-jit_malloc(type=host, size=64): <@> (new allocation)
+jit_malloc(type=host-async, size=64): <@> (new allocation)
 jit_run(): launching kernel (n=1, in=0, out=1, ops=1) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
@@ -48,12 +48,12 @@ jit_trace_append(2): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4093480000000
 jit_var_inc_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_free(<@>, type=host, size=64)
+jit_free(<@>, type=host-async, size=64)
 jit_var_set_label(2): "my_value"
 jit_eval(): begin.
 jit_assemble(size=1): register map:
    - %f0 -> 2 "my_value" [scalar] [out]
-jit_malloc(type=host, size=64): <@> (reused global)
+jit_malloc(type=host-async, size=64): <@> (reused local)
 jit_run(): launching kernel (n=1, in=0, out=1, ops=1) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
@@ -94,8 +94,10 @@ jit_eval(): done.
 value=[1234]
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
-jit_free(<@>, type=host, size=64)
-jit_shutdown(): destroying streams ..
+jit_free(<@>, type=host-async, size=64)
+jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 1 deallocation
+jit_shutdown(): releasing 1 kernel ..
 jit_malloc_trim(): freed
- - host memory: 64 B in 1 allocation
+ - host-async memory: 64 B in 1 allocation
 jit_shutdown(): done

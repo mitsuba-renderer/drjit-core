@@ -547,7 +547,9 @@ uint32_t jit_var_copy(AllocType atype, VarType vtype, const void *ptr, uint32_t 
     if (stream->cuda) {
         target_ptr = jit_malloc(AllocType::Device, total_size);
 
-        if (atype == AllocType::Host) {
+        if (atype == AllocType::HostAsync) {
+            jit_fail("jit_var_copy(): copy from HostAsync to GPU memory not supported!");
+        } else if (atype == AllocType::Host) {
             void *host_ptr = jit_malloc(AllocType::HostPinned, total_size);
             memcpy(host_ptr, ptr, total_size);
             cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
@@ -560,8 +562,16 @@ uint32_t jit_var_copy(AllocType atype, VarType vtype, const void *ptr, uint32_t 
                                      stream->handle));
         }
     } else {
-        target_ptr = jit_malloc(AllocType::Host, total_size);
-        memcpy(target_ptr, ptr, total_size);
+        if (atype == AllocType::HostAsync) {
+            target_ptr = jit_malloc(AllocType::HostAsync, total_size);
+            jit_memcpy_async(target_ptr, ptr, size);
+        } else if (atype == AllocType::Host) {
+            target_ptr = jit_malloc(AllocType::Host, total_size);
+            memcpy(target_ptr, ptr, total_size);
+            target_ptr = jit_malloc_migrate(target_ptr, AllocType::HostAsync);
+        } else {
+            jit_fail("jit_var_copy(): copy from GPU to HostAsync memory not supported!");
+        }
     }
 
     uint32_t index = jit_var_map(vtype, target_ptr, size, true);
@@ -882,6 +892,12 @@ void jit_var_schedule(uint32_t index) {
                   "choose a target device before using this function.");
 
     Variable *v = jit_var(index);
+    if (unlikely(v->cuda != stream->cuda))
+        jit_raise("jit_var_schedule(): attempted to schedule a %s variable "
+                  "while the %s backend was activated! You must invoke "
+                  "jit_device_set() before!", v->cuda ? "CUDA" : "LLVM",
+                  stream->cuda ? "CUDA" : "LLVM");
+
     if (v->data == nullptr)
         stream->todo.push_back(index);
 }
@@ -894,10 +910,21 @@ void jit_var_eval(uint32_t index) {
                   "choose a target device before using this function.");
 
     Variable *v = jit_var(index);
+    if (unlikely(v->cuda != stream->cuda))
+        jit_raise("jit_var_eval(): attempted to evaluate a %s variable "
+                  "while the %s backend was activated! You must invoke "
+                  "jit_device_set() before!", v->cuda ? "CUDA" : "LLVM",
+                  stream->cuda ? "CUDA" : "LLVM");
+
     if (v->data == nullptr || v->pending_scatter) {
         if (v->data == nullptr)
             stream->todo.push_back(index);
         jit_eval();
+
+        if (unlikely(v->pending_scatter))
+            jit_raise("jit_var_eval(): element remains dirty after evaluation!");
+        else if (unlikely(!v->data))
+            jit_raise("jit_var_eval(): invalid/uninitialized variable!");
     }
 }
 
@@ -905,19 +932,7 @@ void jit_var_eval(uint32_t index) {
 void jit_var_read(uint32_t index, uint32_t offset, void *dst) {
     jit_var_eval(index);
 
-    Stream *stream = active_stream;
     Variable *v = jit_var(index);
-
-    if (unlikely(v->cuda != stream->cuda))
-        jit_raise("jit_var_read(): attempted to read from a %s variable "
-                  "while the %s backend was activated! You must invoke "
-                  "jit_device_set() before!", v->cuda ? "CUDA" : "LLVM",
-                  stream->cuda ? "CUDA" : "LLVM");
-    else if (unlikely(v->pending_scatter))
-        jit_raise("jit_var_read(): element remains dirty after evaluation!");
-    else if (unlikely(!v->data))
-        jit_raise("jit_var_read(): invalid/uninitialized variable!");
-
     if (v->size == 1)
         offset = 0;
 
@@ -931,28 +946,12 @@ void jit_var_read(uint32_t index, uint32_t offset, void *dst) {
 void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
     jit_var_eval(index);
 
-    Stream *stream = active_stream;
     Variable *v = jit_var(index);
-
-    if (unlikely(v->cuda != stream->cuda))
-        jit_raise("jit_var_write(): attempted to write to a %s variable "
-                  "while the %s backend was activated! You must invoke "
-                  "jit_device_set() before!", v->cuda ? "CUDA" : "LLVM",
-                  stream->cuda ? "CUDA" : "LLVM");
-    else if (unlikely(v->pending_scatter))
-        jit_raise("jit_var_write(): element remains dirty after evaluation!");
-    else if (unlikely(!v->data))
-        jit_raise("jit_var_write(): invalid/uninitialized variable!");
-
     if (v->size == 1)
         offset = 0;
 
     size_t isize = var_type_size[(int) v->type];
     uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
 
-    if (stream->cuda)
-        cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, isize,
-                                 stream->handle));
-    else
-        memcpy(dst, src, isize);
+    jit_memcpy(dst, src, isize);
 }

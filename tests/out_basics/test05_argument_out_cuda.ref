@@ -13,8 +13,9 @@ jit_run(): launching kernel (n=1, in=0, out=244, ops=488) ..
 value=[29403] vs 29403
 jit_run(): launching kernel (n=1, in=0, out=730, ops=1460) ..
 value=[265356] vs 265356
-jit_shutdown(): destroying streams ..
+jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 730 deallocations
+jit_shutdown(): releasing 7 kernels ..
 jit_malloc_trim(): freed
  - host-pinned memory: 2 KiB in 1 allocation
  - device memory: 47.6 KiB in 731 allocations

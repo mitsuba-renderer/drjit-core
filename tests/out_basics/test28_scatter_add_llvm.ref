@@ -1,7 +1,5 @@
 jit_device_set(device=-1, stream=0): creating stream
-jit_malloc(type=host, size=128): <@> (new allocation)
-jit_fill(<@>, type=uint8, size=64)
-jit_var_map(1): <@>, size=16, free=1
+jit_trace_append(1): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(1): 1
 jit_malloc(type=host, size=128): <@> (new allocation)
 jit_var_map(2): <@>, size=15, free=1
@@ -11,6 +9,47 @@ jit_trace_append(3): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000
 jit_var_inc_ref_ext(3): 1
 jit_trace_append(4): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(4): 1
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %f0 -> 1 [out]
+jit_malloc(type=host-async, size=128): <@> (new allocation)
+jit_run(): launching kernel (n=16, in=0, out=1, ops=1) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to float*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_0 = insertelement <16 x float> undef, float 0x0, i32 0
+    %f0 = shufflevector <16 x float> %f0_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Store %f0
+    %f0_i = getelementptr inbounds float, float* %a0, i64 %index
+    %f0_p = bitcast float* %f0_i to <16 x float>*
+    store <16 x float> %f0, <16 x float>* %f0_p, align 64, !noalias !1
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_eval(): done.
 jit_var_inc_ref_ext(1): 2
 jit_var_copy_ptr(5 <- 1): <@>
 jit_var_inc_ref_ext(5): 1
@@ -120,15 +159,13 @@ jit_eval(): done.
 target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
-jit_free(<@>, type=host, size=128)
+jit_free(<@>, type=host-async, size=128)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_free(<@>, type=host, size=128)
-jit_malloc(type=host, size=128): <@> (reused global)
-jit_fill(<@>, type=uint8, size=64)
-jit_var_map(7): <@>, size=16, free=1
+jit_free(<@>, type=host-async, size=128)
+jit_trace_append(7): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(7): 1
-jit_malloc(type=host, size=128): <@> (reused global)
+jit_malloc(type=host, size=128): <@> (new allocation)
 jit_var_map(8): <@>, size=16, free=1
 jit_var_inc_ref_ext(8): 1
 jit_var_copy(8, size=16)
@@ -136,6 +173,48 @@ jit_trace_append(9): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000
 jit_var_inc_ref_ext(9): 1
 jit_trace_append(10): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(10): 1
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %f0 -> 7 [out]
+jit_malloc(type=host-async, size=128): <@> (reused local)
+jit_run(): launching kernel (n=16, in=0, out=1, ops=1) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to float*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_0 = insertelement <16 x float> undef, float 0x0, i32 0
+    %f0 = shufflevector <16 x float> %f0_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Store %f0
+    %f0_i = getelementptr inbounds float, float* %a0, i64 %index
+    %f0_p = bitcast float* %f0_i to <16 x float>*
+    store <16 x float> %f0, <16 x float>* %f0_p, align 64, !noalias !1
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_free_flush(): scheduling 1 deallocation
+jit_eval(): done.
 jit_var_inc_ref_ext(7): 2
 jit_var_copy_ptr(11 <- 7): <@>
 jit_var_inc_ref_ext(11): 1
@@ -245,15 +324,13 @@ jit_eval(): done.
 target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
-jit_free(<@>, type=host, size=128)
+jit_free(<@>, type=host-async, size=128)
 jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
-jit_free(<@>, type=host, size=128)
-jit_malloc(type=host, size=128): <@> (reused global)
-jit_fill(<@>, type=uint8, size=128)
-jit_var_map(13): <@>, size=16, free=1
+jit_free(<@>, type=host-async, size=128)
+jit_trace_append(13): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(13): 1
-jit_malloc(type=host, size=128): <@> (reused global)
+jit_malloc(type=host, size=128): <@> (new allocation)
 jit_var_map(14): <@>, size=15, free=1
 jit_var_inc_ref_ext(14): 1
 jit_var_copy(14, size=15)
@@ -264,6 +341,48 @@ jit_var_inc_ref_ext(16): 1
 jit_var_inc_ref_int(14): 1
 jit_trace_append(17 <- 14): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(17): 1
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %d0 -> 13 [out]
+jit_malloc(type=host-async, size=128): <@> (reused local)
+jit_run(): launching kernel (n=16, in=0, out=1, ops=1) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to double*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %d0
+    %d0_0 = insertelement <16 x double> undef, double 0x0, i32 0
+    %d0 = shufflevector <16 x double> %d0_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Store %d0
+    %d0_i = getelementptr inbounds double, double* %a0, i64 %index
+    %d0_p = bitcast double* %d0_i to <16 x double>*
+    store <16 x double> %d0, <16 x double>* %d0_p, align 128, !noalias !1
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_free_flush(): scheduling 1 deallocation
+jit_eval(): done.
 jit_var_inc_ref_ext(13): 2
 jit_var_copy_ptr(18 <- 13): <@>
 jit_var_inc_ref_ext(18): 1
@@ -391,15 +510,13 @@ jit_eval(): done.
 target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(14): 0
 jit_var_free(14)
-jit_free(<@>, type=host, size=128)
+jit_free(<@>, type=host-async, size=128)
 jit_var_dec_ref_ext(13): 0
 jit_var_free(13)
-jit_free(<@>, type=host, size=128)
-jit_malloc(type=host, size=128): <@> (reused global)
-jit_fill(<@>, type=uint8, size=128)
-jit_var_map(20): <@>, size=16, free=1
+jit_free(<@>, type=host-async, size=128)
+jit_trace_append(20): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(20): 1
-jit_malloc(type=host, size=128): <@> (reused global)
+jit_malloc(type=host, size=128): <@> (new allocation)
 jit_var_map(21): <@>, size=16, free=1
 jit_var_inc_ref_ext(21): 1
 jit_var_copy(21, size=16)
@@ -410,6 +527,48 @@ jit_var_inc_ref_ext(23): 1
 jit_var_inc_ref_int(21): 1
 jit_trace_append(24 <- 21): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(24): 1
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %d0 -> 20 [out]
+jit_malloc(type=host-async, size=128): <@> (reused local)
+jit_run(): launching kernel (n=16, in=0, out=1, ops=1) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to double*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %d0
+    %d0_0 = insertelement <16 x double> undef, double 0x0, i32 0
+    %d0 = shufflevector <16 x double> %d0_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Store %d0
+    %d0_i = getelementptr inbounds double, double* %a0, i64 %index
+    %d0_p = bitcast double* %d0_i to <16 x double>*
+    store <16 x double> %d0, <16 x double>* %d0_p, align 128, !noalias !1
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_free_flush(): scheduling 1 deallocation
+jit_eval(): done.
 jit_var_inc_ref_ext(20): 2
 jit_var_copy_ptr(25 <- 20): <@>
 jit_var_inc_ref_ext(25): 1
@@ -537,13 +696,11 @@ jit_eval(): done.
 target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(21): 0
 jit_var_free(21)
-jit_free(<@>, type=host, size=128)
+jit_free(<@>, type=host-async, size=128)
 jit_var_dec_ref_ext(20): 0
 jit_var_free(20)
-jit_free(<@>, type=host, size=128)
-jit_malloc(type=host, size=128): <@> (reused global)
-jit_fill(<@>, type=uint8, size=64)
-jit_var_map(27): <@>, size=16, free=1
+jit_free(<@>, type=host-async, size=128)
+jit_trace_append(27): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(27): 1
 jit_trace_append(28): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(28): 1
@@ -559,12 +716,54 @@ jit_trace_append(31 <- 29, 30): $r0 = fcmp olt <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(31): 1
 jit_var_dec_ref_ext(30): 0
 jit_var_dec_ref_ext(29): 0
-jit_malloc(type=host, size=128): <@> (reused global)
+jit_malloc(type=host, size=128): <@> (new allocation)
 jit_var_map(32): <@>, size=15, free=1
 jit_var_inc_ref_ext(32): 1
 jit_var_copy(32, size=15)
 jit_trace_append(33): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(33): 1
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %f0 -> 27 [out]
+jit_malloc(type=host-async, size=128): <@> (reused local)
+jit_run(): launching kernel (n=16, in=0, out=1, ops=1) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to float*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_0 = insertelement <16 x float> undef, float 0x0, i32 0
+    %f0 = shufflevector <16 x float> %f0_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Store %f0
+    %f0_i = getelementptr inbounds float, float* %a0, i64 %index
+    %f0_p = bitcast float* %f0_i to <16 x float>*
+    store <16 x float> %f0, <16 x float>* %f0_p, align 64, !noalias !1
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_free_flush(): scheduling 1 deallocation
+jit_eval(): done.
 jit_var_inc_ref_ext(27): 2
 jit_var_copy_ptr(34 <- 27): <@>
 jit_var_inc_ref_ext(34): 1
@@ -710,7 +909,7 @@ jit_eval(): done.
 target=[2, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(32): 0
 jit_var_free(32)
-jit_free(<@>, type=host, size=128)
+jit_free(<@>, type=host-async, size=128)
 jit_var_dec_ref_ext(31): 0
 jit_var_free(31)
 jit_var_dec_ref_int(29): 0
@@ -721,10 +920,8 @@ jit_var_dec_ref_int(30): 0
 jit_var_free(30)
 jit_var_dec_ref_ext(27): 0
 jit_var_free(27)
-jit_free(<@>, type=host, size=128)
-jit_malloc(type=host, size=128): <@> (reused global)
-jit_fill(<@>, type=uint8, size=64)
-jit_var_map(36): <@>, size=16, free=1
+jit_free(<@>, type=host-async, size=128)
+jit_trace_append(36): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(36): 1
 jit_trace_append(37): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(37): 1
@@ -740,12 +937,54 @@ jit_trace_append(40 <- 38, 39): $r0 = fcmp olt <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(40): 1
 jit_var_dec_ref_ext(39): 0
 jit_var_dec_ref_ext(38): 0
-jit_malloc(type=host, size=128): <@> (reused global)
+jit_malloc(type=host, size=128): <@> (new allocation)
 jit_var_map(41): <@>, size=16, free=1
 jit_var_inc_ref_ext(41): 1
 jit_var_copy(41, size=16)
 jit_trace_append(42): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(42): 1
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %f0 -> 36 [out]
+jit_malloc(type=host-async, size=128): <@> (reused local)
+jit_run(): launching kernel (n=16, in=0, out=1, ops=1) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to float*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %f0
+    %f0_0 = insertelement <16 x float> undef, float 0x0, i32 0
+    %f0 = shufflevector <16 x float> %f0_0, <16 x float> undef, <16 x i32> zeroinitializer
+
+    ; Store %f0
+    %f0_i = getelementptr inbounds float, float* %a0, i64 %index
+    %f0_p = bitcast float* %f0_i to <16 x float>*
+    store <16 x float> %f0, <16 x float>* %f0_p, align 64, !noalias !1
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_free_flush(): scheduling 1 deallocation
+jit_eval(): done.
 jit_var_inc_ref_ext(36): 2
 jit_var_copy_ptr(43 <- 36): <@>
 jit_var_inc_ref_ext(43): 1
@@ -891,7 +1130,7 @@ jit_eval(): done.
 target=[2, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(41): 0
 jit_var_free(41)
-jit_free(<@>, type=host, size=128)
+jit_free(<@>, type=host-async, size=128)
 jit_var_dec_ref_ext(40): 0
 jit_var_free(40)
 jit_var_dec_ref_int(38): 0
@@ -902,10 +1141,8 @@ jit_var_dec_ref_int(39): 0
 jit_var_free(39)
 jit_var_dec_ref_ext(36): 0
 jit_var_free(36)
-jit_free(<@>, type=host, size=128)
-jit_malloc(type=host, size=128): <@> (reused global)
-jit_fill(<@>, type=uint8, size=128)
-jit_var_map(45): <@>, size=16, free=1
+jit_free(<@>, type=host-async, size=128)
+jit_trace_append(45): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(45): 1
 jit_trace_append(46): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(46): 1
@@ -921,7 +1158,7 @@ jit_trace_append(49 <- 47, 48): $r0 = fcmp olt <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(49): 1
 jit_var_dec_ref_ext(48): 0
 jit_var_dec_ref_ext(47): 0
-jit_malloc(type=host, size=128): <@> (reused global)
+jit_malloc(type=host, size=128): <@> (new allocation)
 jit_var_map(50): <@>, size=15, free=1
 jit_var_inc_ref_ext(50): 1
 jit_var_copy(50, size=15)
@@ -930,6 +1167,48 @@ jit_var_inc_ref_ext(51): 1
 jit_var_inc_ref_int(50): 1
 jit_trace_append(52 <- 50): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(52): 1
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %d0 -> 45 [out]
+jit_malloc(type=host-async, size=128): <@> (reused local)
+jit_run(): launching kernel (n=16, in=0, out=1, ops=1) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to double*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %d0
+    %d0_0 = insertelement <16 x double> undef, double 0x0, i32 0
+    %d0 = shufflevector <16 x double> %d0_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Store %d0
+    %d0_i = getelementptr inbounds double, double* %a0, i64 %index
+    %d0_p = bitcast double* %d0_i to <16 x double>*
+    store <16 x double> %d0, <16 x double>* %d0_p, align 128, !noalias !1
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_free_flush(): scheduling 1 deallocation
+jit_eval(): done.
 jit_var_inc_ref_ext(45): 2
 jit_var_copy_ptr(53 <- 45): <@>
 jit_var_inc_ref_ext(53): 1
@@ -1096,7 +1375,7 @@ jit_eval(): done.
 target=[2, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(50): 0
 jit_var_free(50)
-jit_free(<@>, type=host, size=128)
+jit_free(<@>, type=host-async, size=128)
 jit_var_dec_ref_ext(49): 0
 jit_var_free(49)
 jit_var_dec_ref_int(47): 0
@@ -1107,12 +1386,10 @@ jit_var_dec_ref_int(48): 0
 jit_var_free(48)
 jit_var_dec_ref_ext(45): 0
 jit_var_free(45)
-jit_free(<@>, type=host, size=128)
-jit_malloc(type=host, size=128): <@> (reused global)
-jit_fill(<@>, type=uint8, size=128)
-jit_var_map(55): <@>, size=16, free=1
+jit_free(<@>, type=host-async, size=128)
+jit_trace_append(55): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(55): 1
-jit_malloc(type=host, size=128): <@> (reused global)
+jit_malloc(type=host, size=128): <@> (new allocation)
 jit_var_map(56): <@>, size=16, free=1
 jit_var_inc_ref_ext(56): 1
 jit_var_copy(56, size=16)
@@ -1135,6 +1412,48 @@ jit_var_inc_ref_ext(61): 1
 jit_var_inc_ref_int(56): 1
 jit_trace_append(62 <- 56): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(62): 1
+jit_eval(): begin.
+jit_assemble(size=16): register map:
+   - %d0 -> 55 [out]
+jit_malloc(type=host-async, size=128): <@> (reused local)
+jit_run(): launching kernel (n=16, in=0, out=1, ops=1) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to double*
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %d0
+    %d0_0 = insertelement <16 x double> undef, double 0x0, i32 0
+    %d0 = shufflevector <16 x double> %d0_0, <16 x double> undef, <16 x i32> zeroinitializer
+
+    ; Store %d0
+    %d0_i = getelementptr inbounds double, double* %a0, i64 %index
+    %d0_p = bitcast double* %d0_i to <16 x double>*
+    store <16 x double> %d0, <16 x double>* %d0_p, align 128, !noalias !1
+
+    %index_next = add i64 %index, 16
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_free_flush(): scheduling 1 deallocation
+jit_eval(): done.
 jit_var_inc_ref_ext(55): 2
 jit_var_copy_ptr(63 <- 55): <@>
 jit_var_inc_ref_ext(63): 1
@@ -1309,11 +1628,13 @@ jit_var_dec_ref_int(59): 0
 jit_var_free(59)
 jit_var_dec_ref_ext(56): 0
 jit_var_free(56)
-jit_free(<@>, type=host, size=128)
+jit_free(<@>, type=host-async, size=128)
 jit_var_dec_ref_ext(55): 0
 jit_var_free(55)
-jit_free(<@>, type=host, size=128)
-jit_shutdown(): destroying streams ..
+jit_free(<@>, type=host-async, size=128)
+jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 2 deallocations
+jit_shutdown(): releasing 6 kernels ..
 jit_malloc_trim(): freed
- - host memory: 256 B in 2 allocations
+ - host-async memory: 1.12 KiB in 9 allocations
 jit_shutdown(): done

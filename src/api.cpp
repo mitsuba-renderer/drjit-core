@@ -265,12 +265,13 @@ const char *jitc_var_str(uint32_t index) {
     return jit_var_str(index);
 }
 
-void jitc_var_read(uint32_t index, size_t offset, void *dst) {
+void jitc_var_read(uint32_t index, uint32_t offset, void *dst) {
     lock_guard guard(state.mutex);
     jit_var_read(index, offset, dst);
 }
 
-void jitc_var_write(uint32_t index, size_t offset, const void *src) {
+
+void jitc_var_write(uint32_t index, uint32_t offset, const void *src) {
     lock_guard guard(state.mutex);
     jit_var_write(index, offset, src);
 }
@@ -290,9 +291,9 @@ void jitc_var_schedule(uint32_t index) {
     jit_var_schedule(index);
 }
 
-void jitc_fill(VarType type, void *ptr, uint32_t size, const void *src) {
+void jitc_memset(void *ptr, uint32_t size, uint32_t isize, const void *src) {
     lock_guard guard(state.mutex);
-    jit_fill(type, ptr, size, src);
+    jit_memset(ptr, size, isize, src);
 }
 
 void jitc_memcpy(void *dst, const void *src, size_t size) {

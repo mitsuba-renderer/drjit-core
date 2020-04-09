@@ -989,8 +989,9 @@ jit_var_dec_ref_int(1): 0
 jit_var_free(1)
 jit_var_dec_ref_int(3): 0
 jit_var_free(3)
-jit_shutdown(): destroying streams ..
+jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 2 deallocations
+jit_shutdown(): releasing 2 kernels ..
 jit_malloc_trim(): freed
  - device memory: 128 B in 2 allocations
 jit_shutdown(): done

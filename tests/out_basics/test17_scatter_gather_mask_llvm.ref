@@ -40,7 +40,7 @@ jit_assemble(size=1022): register map:
    - %r2 -> 3
    - %r3 -> 4 [scalar]
    - %p4 -> 5 "result" [out]
-jit_malloc(type=host, size=1024): <@> (new allocation)
+jit_malloc(type=host-async, size=1024): <@> (new allocation)
 jit_run(): launching kernel (n=1022, in=0, out=1, ops=5) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
@@ -152,7 +152,7 @@ jit_assemble(size=510): register map:
    - %r2 -> 8
    - %rd3 -> 10 [scalar] [in]
    - %p4 -> 11 "even" [out]
-jit_malloc(type=host, size=512): <@> (new allocation)
+jit_malloc(type=host-async, size=512): <@> (new allocation)
 jit_run(): launching kernel (n=510, in=1, out=1, ops=5) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
@@ -275,7 +275,7 @@ jit_assemble(size=510): register map:
    - %r4 -> 13
    - %rd5 -> 10 [scalar] [in]
    - %p6 -> 15 "odd" [out]
-jit_malloc(type=host, size=512): <@> (new allocation)
+jit_malloc(type=host-async, size=512): <@> (new allocation)
 jit_run(): launching kernel (n=510, in=1, out=1, ops=7) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
@@ -652,18 +652,20 @@ jit_eval(): done.
 Mask: [1, 0, 1, 0, 1, .. 1012 skipped .., 0, 1, 0, 0, 1]
 jit_var_dec_ref_ext(15): 0
 jit_var_free(15)
-jit_free(<@>, type=host, size=512)
+jit_free(<@>, type=host-async, size=512)
 jit_var_dec_ref_ext(11): 0
 jit_var_free(11)
-jit_free(<@>, type=host, size=512)
+jit_free(<@>, type=host-async, size=512)
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
-jit_free(<@>, type=host, size=1024)
+jit_free(<@>, type=host-async, size=1024)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_shutdown(): destroying streams ..
+jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 3 deallocations
+jit_shutdown(): releasing 4 kernels ..
 jit_malloc_trim(): freed
- - host memory: 2 KiB in 3 allocations
+ - host-async memory: 2 KiB in 3 allocations
 jit_shutdown(): done
