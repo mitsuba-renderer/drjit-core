@@ -352,12 +352,16 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
             "using jit_device_set() before invoking this function with a "
             "device/managed/host-pinned pointer!");
 
-    jit_trace("jit_malloc_migrate(" ENOKI_PTR "): %s -> %s", (uintptr_t) ptr,
-              alloc_type_name[(int) ai.type],
-              alloc_type_name[(int) type]) ;
-
     void *ptr_new = jit_malloc(type, ai.size);
-    if (ai.type == AllocType::Host || ai.type == AllocType::HostAsync) {
+    jit_trace("jit_malloc_migrate(" ENOKI_PTR "): " ENOKI_PTR " (%s -> %s)",
+              (uintptr_t) ptr, (uintptr_t) ptr_new,
+              alloc_type_name[(int) ai.type], alloc_type_name[(int) type]);
+
+    if (type == AllocType::HostAsync || ai.type == AllocType::HostAsync)
+        jit_raise("jit_malloc_migrate(): migrations between CUDA and "
+                  "host-asynchronous memory are not supported.");
+
+    if (ai.type == AllocType::Host) {
         /* Temporarily release the main lock */ {
             unlock_guard guard(state.mutex);
             cuda_check(cuMemHostRegister(ptr, ai.size, 0));
@@ -373,7 +377,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
             },
             ptr
         ));
-    } else if (type == AllocType::Host || type == AllocType::HostAsync) {
+    } else if (type == AllocType::Host) {
         /* Temporarily release the main lock */ {
             unlock_guard guard(state.mutex);
             cuda_check(cuMemHostRegister(ptr_new, ai.size, 0));

@@ -1225,7 +1225,6 @@ Array tzcnt(const LLVMArray<Value> &a) {
 
 template <typename T> void jitc_schedule(const LLVMArray<T> &a) {
     a.schedule();
-
 }
 
 inline std::vector<std::pair<void *, LLVMArray<uint32_t>>>
@@ -1240,6 +1239,19 @@ vcall(const char *domain, const LLVMArray<uint32_t> &a) {
         result.emplace_back(buckets[i].ptr,
                             LLVMArray<uint32_t>::from_index(buckets[i].index));
     }
+
+    return result;
+}
+
+inline LLVMArray<uint32_t> compress(const LLVMArray<bool> &a) {
+    uint32_t *perm = (uint32_t *) jitc_malloc(AllocType::Host, a.size() * sizeof(uint32_t));
+    uint32_t size = 0;
+
+    jitc_compress((const uint8_t *) a.data(), a.size(), perm, &size);
+    jitc_sync_stream();
+
+    LLVMArray<uint32_t> result = LLVMArray<uint32_t>::from_index(
+        jitc_var_map(VarType::UInt32, perm, size, 1));
 
     return result;
 }

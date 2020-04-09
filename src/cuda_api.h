@@ -126,6 +126,8 @@ extern CUfunction *jit_cuda_transpose;
 extern CUfunction *jit_cuda_scan_small_u32;
 extern CUfunction *jit_cuda_scan_large_u32;
 extern CUfunction *jit_cuda_scan_large_u32_init;
+extern CUfunction *jit_cuda_compress_small;
+extern CUfunction *jit_cuda_compress_large;
 
 extern CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
                                       [(int) VarType::Count];

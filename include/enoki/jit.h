@@ -862,19 +862,43 @@ extern JITC_EXPORT void jitc_reduce(enum VarType type, enum ReductionType rtype,
  * array
  *
  * If desired, the scan can be performed in-place (i.e. <tt>in == out</tt>).
+ * Note that the CUDA implementation will round up \c size to the maximum of
+ * the following three values for performance reasons:
  *
- * The following comment applies to the GPU implementation: when the array is
- * larger than 4K elements, the implementation will switch to an optimized
- * kernel for large arrays, which rounds \c size up to the next multiple of 2K,
- * hence the supplied memory regions must be sufficiently large to avoid both
- * out-of-bounds reads and writes. This is not an issue for memory obtained
- * using \ref jitc_malloc(), which internally rounds allocations to the next
- * largest power of two.
+ * - 4
+ * - the next highest power of two (when size <= 4096),
+ * - the next highest multiple of 2K (when size > 4096),
+ *
+ * For this reason, the the supplied memory regions must be sufficiently large
+ * to avoid both out-of-bounds reads and writes. This is not an issue for
+ * memory obtained using \ref jitc_malloc(), which internally rounds
+ * allocations to the next largest power of two and enforces a 64 byte minimum
+ * allocation size.
  *
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jitc_scan_u32(const uint32_t *in, uint32_t *out,
-                                      uint32_t size);
+extern JITC_EXPORT void jitc_scan_u32(const uint32_t *in, uint32_t size,
+                                      uint32_t *out);
+
+/**
+ * \brief Compress a mask into a list of nonzero indices
+ *
+ * This function takes an 8-bit mask array \c in with size \c size as input,
+ * whose entries are required to equal either zero or one. It then writes the
+ * indices of nonzero entries to \c out (in increasing order), and it
+ * furthermore stores the total number of nonzero mask entries in
+ * <tt>*count_out</tt>. The parameter \c out should point to a conservatively
+ * sized device-allocated array.
+ *
+ * The internals resemble \ref jitc_scan_u32(), and the CUDA implementation may
+ * similarly access regions beyond the end of \c in and \c out.
+ *
+ * Runs asynchronously. Accessing \c count_out on the host (e.g. when using the
+ * LLVM+TBB backend, or when the address points to host-pinned memory allocated
+ * via CUDA) requires prior synchronization.
+ */
+extern JITC_EXPORT void jitc_compress(const uint8_t *in, uint32_t size,
+                                      uint32_t *out, uint32_t *count_out);
 
 /**
  * \brief Reduce an array of boolean values to a single value (AND case)
@@ -899,6 +923,7 @@ extern JITC_EXPORT uint8_t jitc_all(uint8_t *values, uint32_t size);
  * Runs synchronously.
  */
 extern JITC_EXPORT uint8_t jitc_any(uint8_t *values, uint32_t size);
+
 
 /**
  * \brief Compute a permutation to reorder an integer array into a sorted

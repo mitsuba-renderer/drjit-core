@@ -55,13 +55,13 @@ void append(FILE *f, const char *filename, const char *prefix, char *dict, int d
     compressed_size = LZ4_compress_HC_continue(&stream, buf,
             compressed, size, compressed_size);
 
-    free(buf);
-    free(compressed);
-
     fprintf(f, "int %s_size_uncompressed = %zu;\n", prefix, size);
     fprintf(f, "int %s_size_compressed   = %i;\n", prefix, compressed_size);
     fprintf(f, "size_t  %s_hash          = %lluull;\n\n", prefix, hash);
     dump_hex(f, prefix, compressed, compressed_size);
+    free(buf);
+    free(compressed);
+
 }
 
 int main(int argc, char **argv) {

@@ -19,11 +19,12 @@ extern uint8_t jit_all(uint8_t *values, uint32_t size);
 /// 'Any' reduction for uint8_tean arrays
 extern uint8_t jit_any(uint8_t *values, uint32_t size);
 
-/// Exclusive prefix sum (8 -> 32 bit)
-extern void jit_scan_u8(const uint8_t *in, uint32_t *out, uint32_t size);
+/// Exclusive prefix sum
+extern void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out);
 
-/// Exclusive prefix sum (32 -> 32 bit)
-extern void jit_scan_u32(const uint32_t *in, uint32_t *out, uint32_t size);
+/// Mask compression
+extern void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out,
+                         uint32_t *count_out);
 
 /// Compute a permutation to reorder an integer array into discrete groups
 extern uint32_t jit_mkperm(const uint32_t *values, uint32_t size,

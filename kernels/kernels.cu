@@ -1,4 +1,5 @@
 #include "reduce.cuh"
 #include "scan.cuh"
+#include "compress.cuh"
 #include "mkperm.cuh"
 #include "misc.cuh"

@@ -64,13 +64,13 @@ endif()
 if (ENOKI_DYNAMIC_CUDA)
   message(STATUS "Enoki-JIT: CUDA will be loaded dynamically at runtime.")
 else()
-  message(STATUS "Enoki-JIT: Linking against CUDA shared libraries.")
+  message(STATUS "Enoki-JIT: linking against CUDA shared libraries.")
 endif()
 
 if (ENOKI_DYNAMIC_LLVM)
   message(STATUS "Enoki-JIT: LLVM will be loaded dynamically at runtime.")
 else()
-  message(STATUS "Enoki-JIT: Linking against LLVM shared libraries.")
+  message(STATUS "Enoki-JIT: linking against LLVM shared libraries.")
 endif()
 
 include_directories(

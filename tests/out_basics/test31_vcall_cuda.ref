@@ -14,7 +14,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_mkperm(<@>, size=10, bucket_count=4, block_count=1, thread_count=32, size_per_block=32, variant=tiny, shared_size=16)
-jit_scan(<@> -> <@>, size=4)
+jit_scan(<@> -> <@>, size=4, type=small, threads=1, shared=8)
 jit_free(<@>, type=device, device=0, size=64)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_map(2): <@>, size=10, free=1

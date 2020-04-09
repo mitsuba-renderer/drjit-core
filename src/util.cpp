@@ -8,6 +8,7 @@
 
 #if defined(ENOKI_TBB)
 #  include <tbb/tbb.h>
+#  include <condition_variable>
 #endif
 
 const char *reduction_name[(int) ReductionType::Count] = { "add", "mul", "min",
@@ -436,8 +437,8 @@ uint8_t jit_any(uint8_t *values, uint32_t size) {
     return result;
 }
 
-/// Exclusive prefix sum (32 -> 32 bit)
-void jit_scan_u32(const uint32_t *in, uint32_t *out, uint32_t size) {
+/// Exclusive prefix sum
+void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_scan_u32(): you must invoke jit_device_set() to "
@@ -520,15 +521,14 @@ void jit_scan_u32(const uint32_t *in, uint32_t *out, uint32_t size) {
                 [inputs](const tbb::blocked_range<uint32_t> &range, uint32_t sum,
                           bool final_scan) -> uint32_t {
                     if (final_scan) {
-                        for (uint32_t i = range.begin(); i < range.end(); ++i) {
+                        for (uint32_t i = range.begin(); i != range.end(); ++i) {
                             uint32_t backup = sum;
                             sum += inputs.in[i];
                             inputs.out[i] = backup;
                         }
                     } else {
-                        for (uint32_t i = range.begin(); i < range.end(); ++i)
+                        for (uint32_t i = range.begin(); i != range.end(); ++i)
                             sum += inputs.in[i];
-
                     }
                     return sum;
                 },
@@ -544,6 +544,130 @@ void jit_scan_u32(const uint32_t *in, uint32_t *out, uint32_t size) {
             out[i] = accum;
             accum += value;
         }
+#endif
+    }
+}
+
+/// Mask compression
+void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out, uint32_t *count_out) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_compress(): you must invoke jit_device_set() to "
+                  "choose a target device before calling this function.");
+
+    if (stream->cuda) {
+        const Device &device = state.devices[stream->device];
+
+        if (size == 0) {
+            return;
+        } if (size <= 4096) {
+            /// Kernel for small arrays
+            uint32_t items_per_thread = 4,
+                     thread_count     = round_pow2((size + items_per_thread - 1)
+                                                    / items_per_thread),
+                     shared_size      = thread_count * 2 * sizeof(uint32_t),
+                     trailer          = thread_count * items_per_thread - size;
+
+            jit_log(Debug,
+                    "jit_compress(" ENOKI_PTR " -> " ENOKI_PTR
+                    ", size=%u, type=small, threads=%u, shared=%u)",
+                    (uintptr_t) in, (uintptr_t) out, size, thread_count,
+                    shared_size);
+
+            if (trailer > 0)
+                cuda_check(cuMemsetD8Async((CUdeviceptr) (in + size), 0, trailer,
+                                           stream->handle));
+
+            void *args[] = { &in, &out, &size, &count_out };
+            cuda_check(cuLaunchKernel(jit_cuda_compress_small[device.id], 1, 1, 1,
+                                      thread_count, 1, 1, shared_size,
+                                      stream->handle, args, nullptr));
+        } else {
+            /// Kernel for large arrays
+            uint32_t items_per_thread = 16,
+                     thread_count     = 128,
+                     items_per_block  = items_per_thread * thread_count,
+                     block_count      = (size + items_per_block - 1) / items_per_block,
+                     shared_size      = items_per_block * sizeof(uint32_t),
+                     scratch_items    = block_count + 32,
+                     trailer          = items_per_block * block_count - size;
+
+            jit_log(Debug,
+                    "jit_compress(" ENOKI_PTR " -> " ENOKI_PTR
+                    ", size=%u, type=large, blocks=%u, threads=%u, shared=%u, "
+                    "scratch=%u)",
+                    (uintptr_t) in, (uintptr_t) out, size, block_count,
+                    thread_count, shared_size, scratch_items * 4);
+
+            uint64_t *scratch = (uint64_t *) jit_malloc(
+                AllocType::Device, scratch_items * sizeof(uint64_t));
+
+            /// Initialize scratch space and padding
+            uint32_t block_count_init, thread_count_init;
+            device.get_launch_config(&block_count_init, &thread_count_init,
+                                     scratch_items);
+
+            void *args[] = { &scratch, &scratch_items };
+            cuda_check(cuLaunchKernel(jit_cuda_scan_large_u32_init[device.id],
+                                      block_count_init, 1, 1, thread_count_init, 1, 1, 0,
+                                      stream->handle, args, nullptr));
+
+            if (trailer > 0)
+                cuda_check(cuMemsetD8Async((CUdeviceptr) (in + size), 0, trailer,
+                                           stream->handle));
+
+            scratch += 32; // move beyond padding area
+            void *args_2[] = { &in, &out, &scratch, &count_out };
+            cuda_check(cuLaunchKernel(jit_cuda_compress_large[device.id], block_count, 1, 1,
+                                      thread_count, 1, 1, shared_size,
+                                      stream->handle, args_2, nullptr));
+            scratch -= 32;
+
+            jit_free(scratch);
+        }
+    } else {
+#if defined(ENOKI_TBB)
+        struct Inputs {
+            const uint8_t *in;
+            uint32_t *out;
+            uint32_t *count_out;
+            uint32_t size;
+        };
+        auto func = [](void *inputs_) {
+            Inputs inputs = *((Inputs *) inputs_);
+            tbb::parallel_scan(
+                tbb::blocked_range<uint32_t>(0u, inputs.size, 4096u), 0u,
+                [inputs](const tbb::blocked_range<uint32_t> &range, uint32_t sum,
+                         bool final_scan) -> uint32_t {
+                    if (final_scan) {
+                        for (uint32_t i = range.begin(); i != range.end(); ++i) {
+                            uint32_t backup = sum, value = inputs.in[i];
+                            sum += value;
+                            if (value)
+                                inputs.out[backup] = i;
+                        }
+                        if (range.end() == inputs.size)
+                            *inputs.count_out = sum;
+                    } else {
+                        for (uint32_t i = range.begin(); i != range.end(); ++i)
+                            sum += inputs.in[i];
+                    }
+                    return sum;
+                },
+                [](uint32_t v0, uint32_t v1) -> uint32_t { return v0 + v1; });
+        };
+        Inputs inputs { in, out, count_out, size };
+        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+#else
+        unlock_guard guard(state.mutex);
+        uint32_t accum = 0;
+        for (uint32_t i = 0; i < size; ++i) {
+            uint32_t value = in[i];
+            if (value)
+                out[accum] = i;
+            accum += value;
+        }
+        *count_out = accum;
 #endif
     }
 }
@@ -676,7 +800,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
             cuda_transpose(stream, buckets_1, buckets_2,
                            bucket_size_all / bucket_size_1, bucket_count);
 
-        jit_scan_u32(buckets_2, buckets_2, bucket_size_all / sizeof(uint32_t));
+        jit_scan_u32(buckets_2, bucket_size_all / sizeof(uint32_t), buckets_2);
 
         if (needs_transpose)
             cuda_transpose(stream, buckets_2, buckets_1, bucket_count,
@@ -726,77 +850,110 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
         return offsets ? offsets[4 * bucket_count] : 0u;
     } else { // if (!stream->cuda)
 #if defined(ENOKI_TBB)
-        jit_sync_stream(); /// XXX can we also enqueue this asynchronously?
+        struct UniqueCount {
+            uint32_t value = 0xFFFFFFFF;
+            std::mutex mutex;
+            std::condition_variable cond;
+            uint32_t *offsets;
+        } unique_count;
 
-        uint32_t num_tasks      = jit_llvm_thread_count * 4,
-                 items_per_task = std::max(4096u, (size + num_tasks - 1) / num_tasks);
-        num_tasks = (size + items_per_task - 1) / items_per_task;
+        struct Inputs {
+            const uint32_t *ptr;
+            uint32_t size;
+            uint32_t bucket_count;
+            uint32_t *perm;
+            UniqueCount *unique_count;
+        };
 
-        size_t bucket_size_local = sizeof(uint32_t) * (size_t) bucket_count;
+        Inputs inputs { ptr, size, bucket_count, perm, &unique_count };
+        unique_count.offsets = offsets;
 
-        uint32_t **buckets =
-            (uint32_t **) jit_malloc(AllocType::Host, sizeof(uint32_t *) * num_tasks);
+        auto func = [](void *inputs_) {
+            Inputs inputs = *((Inputs *) inputs_);
 
-        for (uint32_t i = 0; i < num_tasks; ++i)
-            buckets[i] =
-                (uint32_t *) jit_malloc(AllocType::Host, bucket_size_local);
+            uint32_t num_tasks      = jit_llvm_thread_count * 4,
+                     items_per_task = std::max(4096u, (inputs.size + num_tasks - 1) / num_tasks);
+            num_tasks = (inputs.size + items_per_task - 1) / items_per_task;
 
-        tbb::parallel_for(
-            tbb::blocked_range<uint32_t>(0u, num_tasks, 1u),
-            [&](const tbb::blocked_range<uint32_t> &range) {
-                uint32_t start = range.begin() * items_per_task,
-                         end = std::min(size, start + items_per_task);
+            size_t bucket_size_local = sizeof(uint32_t) * (size_t) inputs.bucket_count;
 
-                uint32_t *buckets_local = buckets[range.begin()];
+            uint32_t **buckets =
+                (uint32_t **) jit_malloc(AllocType::Host, sizeof(uint32_t *) * num_tasks);
 
-                memset(buckets_local, 0, bucket_size_local);
-                for (uint32_t i = start; i != end; ++i)
-                    buckets_local[ptr[i]]++;
-            },
-            tbb::simple_partitioner()
-        );
+            for (uint32_t i = 0; i < num_tasks; ++i)
+                buckets[i] =
+                    (uint32_t *) jit_malloc(AllocType::Host, bucket_size_local);
 
-        uint32_t sum = 0, unique_count = 0;
-        for (uint32_t i = 0; i < bucket_count; ++i) {
-            uint32_t sum_local = 0;
-            for (uint32_t j = 0; j < num_tasks; ++j) {
-                uint32_t value = buckets[j][i];
-                buckets[j][i] = sum + sum_local;
-                sum_local += value;
-            }
-            if (sum_local > 0) {
-                if (offsets) {
-                    offsets[unique_count*4] = i;
-                    offsets[unique_count*4 + 1] = sum;
-                    offsets[unique_count*4 + 2] = sum_local;
-                    offsets[unique_count*4 + 3] = 0;
+            tbb::parallel_for(
+                tbb::blocked_range<uint32_t>(0u, num_tasks, 1u),
+                [&](const tbb::blocked_range<uint32_t> &range) {
+                    uint32_t start = range.begin() * items_per_task,
+                             end = std::min(inputs.size, start + items_per_task);
+
+                    uint32_t *buckets_local = buckets[range.begin()];
+
+                    memset(buckets_local, 0, bucket_size_local);
+                    for (uint32_t i = start; i != end; ++i)
+                        buckets_local[inputs.ptr[i]]++;
+                },
+                tbb::simple_partitioner()
+            );
+
+            uint32_t sum = 0, unique_count = 0;
+            auto offsets = inputs.unique_count->offsets;
+            for (uint32_t i = 0; i < inputs.bucket_count; ++i) {
+                uint32_t sum_local = 0;
+                for (uint32_t j = 0; j < num_tasks; ++j) {
+                    uint32_t value = buckets[j][i];
+                    buckets[j][i] = sum + sum_local;
+                    sum_local += value;
                 }
-                unique_count++;
-                sum += sum_local;
-            }
-        }
-
-        tbb::parallel_for(
-            tbb::blocked_range<uint32_t>(0u, num_tasks, 1u),
-            [&](const tbb::blocked_range<uint32_t> &range) {
-                uint32_t start = range.begin() * items_per_task,
-                         end = std::min(size, start + items_per_task);
-
-                uint32_t *buckets_local = buckets[range.begin()];
-
-                for (uint32_t i = start; i != end; ++i) {
-                    uint32_t index = buckets_local[ptr[i]]++;
-                    perm[index] = i;
+                if (sum_local > 0) {
+                    if (offsets) {
+                        offsets[unique_count*4] = i;
+                        offsets[unique_count*4 + 1] = sum;
+                        offsets[unique_count*4 + 2] = sum_local;
+                        offsets[unique_count*4 + 3] = 0;
+                    }
+                    unique_count++;
+                    sum += sum_local;
                 }
-            },
-            tbb::simple_partitioner()
-        );
+            }
 
-        for (uint32_t i = 0; i < num_tasks; ++i)
-            jit_free(buckets[i]);
-        jit_free(buckets);
+            /* Update total */ {
+                std::lock_guard<std::mutex> guard(inputs.unique_count->mutex);
+                inputs.unique_count->value = unique_count;
+                inputs.unique_count->cond.notify_one();
+            }
 
-        return unique_count;
+            tbb::parallel_for(
+                tbb::blocked_range<uint32_t>(0u, num_tasks, 1u),
+                [&](const tbb::blocked_range<uint32_t> &range) {
+                    uint32_t start = range.begin() * items_per_task,
+                             end = std::min(inputs.size, start + items_per_task);
+
+                    uint32_t *buckets_local = buckets[range.begin()];
+
+                    for (uint32_t i = start; i != end; ++i) {
+                        uint32_t index = buckets_local[inputs.ptr[i]]++;
+                        inputs.perm[index] = i;
+                    }
+                },
+                tbb::simple_partitioner()
+            );
+
+            for (uint32_t i = 0; i < num_tasks; ++i)
+                jit_free(buckets[i]);
+            jit_free(buckets);
+        };
+
+        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+
+        std::unique_lock<std::mutex> guard(inputs.unique_count->mutex);
+        while (unique_count.value == 0xFFFFFFFF)
+            unique_count.cond.wait(guard);
+
+        return unique_count.value;
 #else
         size_t bucket_size = sizeof(uint32_t) * (size_t) bucket_count;
         uint32_t *buckets = (uint32_t *) jit_malloc(AllocType::Host, bucket_size);

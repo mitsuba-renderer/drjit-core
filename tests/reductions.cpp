@@ -44,20 +44,57 @@ TEST_BOTH(02_scan) {
             ref    = arange<UInt32>(size);
         }
         jitc_eval(result, ref);
-        jitc_scan_u32(result.data(), result.data(), size);
+        jitc_scan_u32(result.data(), size, result.data());
         jitc_assert(result == ref);
     }
 }
 
-#if 0
-TEST_BOTH(03_scan_u8) {
-    Array<bool> mask(false, false, true, false, true, true, false, true);
-    UInt32 result = empty<UInt32>(mask.size());
-    jitc_scan_u8((const uint8_t *) mask.data(), result.data(), mask.size());
-    jitc_log(Debug, "mask  =%s", mask.str());
-    jitc_log(Debug, "result=%s", result.str());
+TEST_BOTH(03_compress) {
+    scoped_set_log_level ssll(LogLevel::Info);
+    for (uint32_t i = 0; i < 30; ++i) {
+        uint32_t size = 23*i*i*i + 1;
+        for (uint32_t j = 0; j <= i; ++j) {
+            uint32_t n_ones = 23*j*j*j + 1;
+
+            jitc_log(LogLevel::Info, "===== size=%u, ones=%u =====", size, n_ones);
+            uint8_t *data      = (uint8_t *) jitc_malloc(AllocType::Host, size);
+            uint32_t *perm     = (uint32_t *) jitc_malloc(Float::IsCUDA ? AllocType::Device :
+                                                                          AllocType::Host,
+                                                          size * sizeof(uint32_t)),
+                     *perm_ref = (uint32_t *) jitc_malloc(AllocType::Host, size * sizeof(uint32_t)),
+                     *count    = (uint32_t *) jitc_malloc(Float::IsCUDA ? AllocType::HostPinned :
+                                                                          AllocType::Host,
+                                                          sizeof(uint32_t));
+            memset(data, 0, size);
+
+            for (size_t i = 0; i < n_ones; ++i) {
+                uint32_t index = rand() % size;
+                data[index] = 1;
+            }
+
+            uint32_t ref_count = 0;
+            for (size_t i = 0; i < size; ++i) {
+                if (data[i])
+                    perm_ref[ref_count++] = i;
+            }
+
+            data = (uint8_t *) jitc_malloc_migrate(
+                data, Float::IsCUDA ? AllocType::Device : AllocType::Host);
+
+            jitc_compress(data, size, perm, count);
+            perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
+            jitc_sync_stream();
+
+            jitc_assert(*count == ref_count);
+            jitc_assert(memcmp(perm, perm_ref, ref_count * sizeof(uint32_t)) == 0);
+
+            jitc_free(data);
+            jitc_free(perm);
+            jitc_free(perm_ref);
+            jitc_free(count);
+        }
+    }
 }
-#endif
 
 TEST_BOTH(04_mkperm) {
     scoped_set_log_level ssll(LogLevel::Info);

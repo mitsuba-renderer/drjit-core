@@ -84,6 +84,8 @@ CUfunction *jit_cuda_transpose = nullptr;
 CUfunction *jit_cuda_scan_small_u32 = nullptr;
 CUfunction *jit_cuda_scan_large_u32 = nullptr;
 CUfunction *jit_cuda_scan_large_u32_init = nullptr;
+CUfunction *jit_cuda_compress_small = nullptr;
+CUfunction *jit_cuda_compress_large = nullptr;
 
 CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
                                [(int) VarType::Count] = {};
@@ -309,6 +311,8 @@ bool jit_cuda_init() {
         LOAD(scan_small_u32);
         LOAD(scan_large_u32);
         LOAD(scan_large_u32_init);
+        LOAD(compress_small);
+        LOAD(compress_large);
 
         #undef LOAD
 
@@ -431,6 +435,8 @@ void jit_cuda_shutdown() {
     Z(jit_cuda_scan_small_u32);
     Z(jit_cuda_scan_large_u32);
     Z(jit_cuda_scan_large_u32_init);
+    Z(jit_cuda_compress_small);
+    Z(jit_cuda_compress_large);
     Z(jit_cuda_module);
 
     for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++)
