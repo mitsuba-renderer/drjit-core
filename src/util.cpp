@@ -949,9 +949,10 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 
         tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
 
-        std::unique_lock<std::mutex> guard(inputs.unique_count->mutex);
+        unlock_guard guard_1(state.mutex);
+        std::unique_lock<std::mutex> guard_2(inputs.unique_count->mutex);
         while (unique_count.value == 0xFFFFFFFF)
-            unique_count.cond.wait(guard);
+            unique_count.cond.wait(guard_2);
 
         return unique_count.value;
 #else
@@ -1086,4 +1087,12 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
         std::make_pair(unique_count_out, (VCallBucket *) offsets);
 
     return (VCallBucket *) offsets;
+}
+
+/// Replicate individual input elements to larger blocks
+void jit_block_copy(enum VarType type, uint32_t block_size, const void *in, uint32_t size, void *out) {
+}
+
+/// Sum over elements within blocks
+void jit_block_sum(enum VarType type, uint32_t block_size, const void *in, uint32_t size, void *out) {
 }

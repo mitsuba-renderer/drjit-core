@@ -989,6 +989,47 @@ struct VCallBucket {
 extern JITC_EXPORT struct VCallBucket *
 jitc_vcall(const char *domain, uint32_t index, uint32_t *bucket_count_out);
 
+/**
+ * \brief Replicate individual input elements across larger blocks
+ *
+ * This function copies each element of the input array \c to a contiguous
+ * block of size \c block_size in the output array \c out. For example, <tt>a,
+ * b, c</tt> turns into <tt>a, a, b, b, c, c</tt> when the \c block_size is set
+ * to \c 2. The output array must have space for <tt>size * block_size</tt>
+ * elements.
+ */
+extern JITC_EXPORT void jitc_block_copy(enum VarType type, const void *in,
+                                        uint32_t size, void *out,
+                                        uint32_t block_size);
+
+/**
+ * \brief Sum over elements within blocks
+ *
+ * This function adds all elements of contiguous blocks of size \c block_size
+ * in the input array \c in and writes them to \c out. For example, <tt>a, b,
+ * c, d, e, f</tt> turns into <tt>a+b, c+d, e+f</tt> when the \c block_size is
+ * set to \c 2. The parameter \c size must be divisible by \c block_size, and
+ * the output array must have space for <tt>size / block_size</tt> elements.
+ */
+extern JITC_EXPORT void jitc_block_sum(enum VarType type, const void *in,
+                                       uint32_t size, void *out,
+                                       uint32_t block_size);
+
+
+#define ENOKI_USE_ALLOCATOR(Type)                                              \
+    void *operator new(size_t size) { return jitc_malloc(Type, size); }        \
+    void *operator new(size_t size, std::align_val_t) {                        \
+        return jitc_malloc(Type, size);                                        \
+    }                                                                          \
+    void *operator new[](size_t size) { return jitc_malloc(Type, size); }      \
+    void *operator new[](size_t size, std::align_val_t) {                      \
+        return jitc_malloc(Type, size);                                        \
+    }                                                                          \
+    void operator delete(void *ptr) { jitc_free(ptr); }                        \
+    void operator delete(void *ptr, std::align_val_t) { jitc_free(ptr); }      \
+    void operator delete[](void *ptr) { jitc_free(ptr); }                      \
+    void operator delete[](void *ptr, std::align_val_t) { jitc_free(ptr); }
+
 #if defined(__cplusplus)
 }
 #endif

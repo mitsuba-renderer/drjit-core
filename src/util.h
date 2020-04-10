@@ -40,3 +40,11 @@ extern void jit_memcpy_async(void *dst, const void *src, size_t size);
 // Compute a permutation to reorder an array of registered pointers
 extern VCallBucket *jit_vcall(const char *domain, uint32_t index,
                               uint32_t *bucket_count_out);
+
+/// Replicate individual input elements to larger blocks
+extern void jit_block_copy(enum VarType type, uint32_t block_size,
+                           const void *in, uint32_t size, void *out);
+
+/// Sum over elements within blocks
+extern void jit_block_sum(enum VarType type, uint32_t block_size,
+                          const void *in, uint32_t size, void *out);

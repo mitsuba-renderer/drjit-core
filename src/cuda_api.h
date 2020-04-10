@@ -128,7 +128,8 @@ extern CUfunction *jit_cuda_scan_large_u32;
 extern CUfunction *jit_cuda_scan_large_u32_init;
 extern CUfunction *jit_cuda_compress_small;
 extern CUfunction *jit_cuda_compress_large;
-
+extern CUfunction *jit_cuda_block_copy[(int) ReductionType::Count];
+extern CUfunction *jit_cuda_block_sum [(int) ReductionType::Count];
 extern CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
                                       [(int) VarType::Count];
 extern int jit_cuda_devices;
