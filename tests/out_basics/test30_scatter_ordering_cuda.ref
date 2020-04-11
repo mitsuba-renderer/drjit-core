@@ -84,7 +84,7 @@ jit_eval(): begin.
 jit_assemble(size=3): register map:
    - %r4 -> 2 [scalar]
    - %r5 -> 3 [in]
-   - %rd6 -> 5 [scalar] [in]
+   - %rd6 -> 5 [scalar] [direct_pointer]
    - %u7 -> 6 [scat]
 jit_run(): launching kernel (n=3, in=2, out=0, ops=8) ..
 .version 6.3

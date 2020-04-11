@@ -78,7 +78,7 @@ jit_eval(): begin.
 jit_assemble(size=15): register map:
    - %f4 -> 3 [scalar]
    - %r5 -> 2 [in]
-   - %rd6 -> 5 [scalar] [in]
+   - %rd6 -> 5 [scalar] [direct_pointer]
    - %u7 -> 6 [scat]
 jit_run(): launching kernel (n=15, in=2, out=0, ops=8) ..
 .version 6.3
@@ -228,7 +228,7 @@ jit_eval(): begin.
 jit_assemble(size=16): register map:
    - %f4 -> 9 [scalar]
    - %r5 -> 8 [in]
-   - %rd6 -> 11 [scalar] [in]
+   - %rd6 -> 11 [scalar] [direct_pointer]
    - %u7 -> 12 [scat]
 jit_run(): launching kernel (n=16, in=2, out=0, ops=8) ..
 .version 6.3
@@ -378,7 +378,7 @@ jit_eval(): begin.
 jit_assemble(size=15): register map:
    - %d4 -> 15 [scalar]
    - %r5 -> 14 [in]
-   - %rd6 -> 17 [scalar] [in]
+   - %rd6 -> 17 [scalar] [direct_pointer]
    - %u7 -> 18 [scat]
 jit_run(): launching kernel (n=15, in=2, out=0, ops=8) ..
 .version 6.3
@@ -528,7 +528,7 @@ jit_eval(): begin.
 jit_assemble(size=16): register map:
    - %d4 -> 21 [scalar]
    - %r5 -> 20 [in]
-   - %rd6 -> 23 [scalar] [in]
+   - %rd6 -> 23 [scalar] [direct_pointer]
    - %u7 -> 24 [scat]
 jit_run(): launching kernel (n=16, in=2, out=0, ops=8) ..
 .version 6.3
@@ -693,7 +693,7 @@ jit_assemble(size=15): register map:
    - %p7 -> 29
    - %r8 -> 30 [in]
    - %f9 -> 31 [scalar]
-   - %rd10 -> 32 [scalar] [in]
+   - %rd10 -> 32 [scalar] [direct_pointer]
    - %u11 -> 33 [scat]
 jit_run(): launching kernel (n=15, in=2, out=0, ops=12) ..
 .version 6.3
@@ -879,7 +879,7 @@ jit_assemble(size=16): register map:
    - %p7 -> 38
    - %r8 -> 39 [in]
    - %f9 -> 40 [scalar]
-   - %rd10 -> 41 [scalar] [in]
+   - %rd10 -> 41 [scalar] [direct_pointer]
    - %u11 -> 42 [scat]
 jit_run(): launching kernel (n=16, in=2, out=0, ops=12) ..
 .version 6.3
@@ -1065,7 +1065,7 @@ jit_assemble(size=15): register map:
    - %p7 -> 47
    - %r8 -> 48 [in]
    - %d9 -> 49 [scalar]
-   - %rd10 -> 50 [scalar] [in]
+   - %rd10 -> 50 [scalar] [direct_pointer]
    - %u11 -> 51 [scat]
 jit_run(): launching kernel (n=15, in=2, out=0, ops=12) ..
 .version 6.3
@@ -1251,7 +1251,7 @@ jit_assemble(size=16): register map:
    - %p7 -> 57
    - %r8 -> 53 [in]
    - %d9 -> 58 [scalar]
-   - %rd10 -> 59 [scalar] [in]
+   - %rd10 -> 59 [scalar] [direct_pointer]
    - %u11 -> 60 [scat]
 jit_run(): launching kernel (n=16, in=2, out=0, ops=12) ..
 .version 6.3

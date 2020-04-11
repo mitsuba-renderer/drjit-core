@@ -795,9 +795,9 @@ const char *jit_var_whos() {
 
     for (uint32_t index: indices) {
         const Variable *v = jit_var(index);
-        size_t mem_size = (size_t) v->size * (size_t) var_type_size[(int) v->type];
+        size_t mem_size = (size_t) v->size * (size_t) var_type_size[v->type];
 
-        buffer.fmt("  %-9u %3s    ", index, var_type_name_short[(int) v->type]);
+        buffer.fmt("  %-9u %3s    ", index, var_type_name_short[v->type]);
         size_t sz = buffer.fmt("%u / %u", v->ref_count_ext, v->ref_count_int);
         const char *label = jit_var_label(index);
 
@@ -850,7 +850,7 @@ const char *jit_var_str(uint32_t index) {
         jit_raise("jit_var_str(): invalid/uninitialized variable!");
 
     size_t size            = v->size,
-           isize           = var_type_size[(int) v->type],
+           isize           = var_type_size[v->type],
            limit_remainder = std::min(5u, (state.print_limit + 3) / 4) * 2;
 
     uint8_t dst[8];
@@ -942,7 +942,7 @@ void jit_var_read(uint32_t index, uint32_t offset, void *dst) {
     if (v->size == 1)
         offset = 0;
 
-    size_t isize = var_type_size[(int) v->type];
+    size_t isize = var_type_size[v->type];
     const uint8_t *src = (const uint8_t *) v->data + (size_t) offset * isize;
 
     jit_memcpy(dst, src, isize);
@@ -956,7 +956,7 @@ void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
     if (v->size == 1)
         offset = 0;
 
-    size_t isize = var_type_size[(int) v->type];
+    size_t isize = var_type_size[v->type];
     uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
 
     jit_memcpy(dst, src, isize);

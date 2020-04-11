@@ -12,9 +12,13 @@
 #include "tbb.h"
 #include "internal.h"
 #include "llvm_api.h"
+#include "var.h"
 #include <deque>
 #include <mutex>
 #include <tbb/tbb.h>
+
+extern std::vector<std::pair<uint32_t, uint32_t>> jit_llvm_scatter_add_variables;
+tsl::robin_map<uint32_t, std::vector<void *>*> tbb_scatter_add;
 
 /**
  * Task base class, provides the ability to fetch the next job from the
@@ -135,6 +139,10 @@ void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
            tasks_desired = jit_llvm_thread_count * 4,
            grain_size    = 4096;
 
+    // Scatter-add operations increase the cost of having many tasks
+    if (!jit_llvm_scatter_add_variables.empty())
+        tasks_desired = jit_llvm_thread_count;
+
     // Items to be processed per task (must be >= grain size, round up to packet size)
     size_t items_per_task =
         std::max((size + tasks_desired - 1u) / tasks_desired, grain_size);
@@ -149,18 +157,47 @@ void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
         stream->tbb_kernel_task = new (stream->tbb_task_root->allocate_child())
             EnokiKernelTask(stream);
 
-    std::shared_ptr<void*> args(new void*[argc], std::default_delete<void*[]>());
-    memcpy(args.get(), argv, sizeof(void*) * argc);
+    if (jit_llvm_scatter_add_variables.empty()) {
+        /// Easy case: the kernel doesn't contain any 'scatter_add' instruction
+        std::shared_ptr<void*> args(new void*[argc], std::default_delete<void*[]>());
+        memcpy(args.get(), argv, sizeof(void*) * argc);
 
-    for (uint32_t i = 0; i < task_count; ++i) {
-        uint32_t j = task_count - 1 - i;
-        tbb::task *task = new (stream->tbb_kernel_task->allocate_child())
-            EnokiKernelTaskRange(kernel,
-                                 (uint32_t) (start + j * items_per_task),
-                                 (uint32_t) (start + std::min(size, (j + 1) * items_per_task)),
-                                 args);
+        for (uint32_t i = 0; i < task_count; ++i) {
+            uint32_t j = task_count - 1 - i;
+            tbb::task *task = new (stream->tbb_kernel_task->allocate_child())
+                EnokiKernelTaskRange(kernel,
+                                     (uint32_t) (start + j * items_per_task),
+                                     (uint32_t) (start + std::min(size, (j + 1) * items_per_task)),
+                                     args);
 
-        ((EnokiKernelTask *) stream->tbb_kernel_task)->append(task);
+            ((EnokiKernelTask *) stream->tbb_kernel_task)->append(task);
+        }
+    } else {
+        /// Hard case: create a separate output array per thread, accumulate afterwards
+        for (uint32_t i = 0; i < task_count; ++i) {
+            std::shared_ptr<void*> args(new void*[argc], std::default_delete<void*[]>());
+            memcpy(args.get(), argv, sizeof(void*) * argc);
+
+            for (auto kv : jit_llvm_scatter_add_variables) {
+                const Variable *v = jit_var(kv.second);
+                size_t size = (size_t) v->size * var_type_size[v->type];
+                void *ptr = jit_malloc(AllocType::HostAsync, size);
+                auto vec = tbb_scatter_add[kv.second];
+                if (!vec)
+                    vec = tbb_scatter_add[kv.second] = new std::vector<void*>();
+                vec->push_back(ptr);
+                args.get()[kv.first] = ptr;
+            }
+
+            uint32_t j = task_count - 1 - i;
+            tbb::task *task = new (stream->tbb_kernel_task->allocate_child())
+                EnokiKernelTaskRange(kernel,
+                                     (uint32_t) (start + j * items_per_task),
+                                     (uint32_t) (start + std::min(size, (j + 1) * items_per_task)),
+                                     args);
+
+            ((EnokiKernelTask *) stream->tbb_kernel_task)->append(task);
+        }
     }
 }
 
@@ -172,6 +209,103 @@ static void enqueue(Stream *stream, tbb::task *task) {
         tbb::task::spawn(*task);
 }
 
+/// Scatter-add special handling (to be called just before a kernel launch)
+void tbb_scatter_add_pre(Stream *stream) {
+    for (auto &kv : tbb_scatter_add) {
+        const Variable *v = jit_var(kv.first);
+        struct Inputs {
+            size_t size;
+            std::vector<void *> *ptrs;
+        };
+        Inputs inputs { (size_t) v->size * var_type_size[v->type], kv.second };
+
+        auto func = [](void *inputs_) {
+            Inputs inputs = *(Inputs *) inputs_;
+            tbb::parallel_for(
+                tbb::blocked_range<uint32_t>(0, (uint32_t) inputs.ptrs->size(), 1),
+                [&](const tbb::blocked_range<uint32_t> &range) {
+                    for (uint32_t i = range.begin(); i != range.end(); ++i)
+                        memset((*inputs.ptrs)[i], 0, inputs.size);
+                },
+                tbb::simple_partitioner()
+            );
+        };
+        enqueue(stream, new (stream->tbb_task_root->allocate_child())
+                            EnokiFuncTask(stream, func, &inputs, sizeof(Inputs)));
+    }
+}
+
+/// Scatter-add special handling (to be called just after a kernel launch)
+void tbb_scatter_add_post(Stream *stream) {
+    for (auto &kv : tbb_scatter_add) {
+        const Variable *v = jit_var(kv.first);
+        struct Inputs {
+            void *out;
+            uint32_t size;
+            VarType type;
+            std::vector<void *> *ptrs;
+            Stream *stream;
+        };
+        Inputs inputs { v->data, v->size, (VarType) v->type, kv.second, stream };
+
+        auto func = [](void *inputs_) {
+            Inputs inputs = *(Inputs *) inputs_;
+            tbb::parallel_for(
+                tbb::blocked_range<uint32_t>(0, inputs.size, 4096),
+                [&](const tbb::blocked_range<uint32_t> &range) {
+                    uint32_t ptr_size = (uint32_t) inputs.ptrs->size();
+                    void **ptr_val = inputs.ptrs->data();
+
+                    switch (inputs.type) {
+                        case VarType::Int32:
+                        case VarType::UInt32:
+                            for (uint32_t i = range.begin(); i != range.end(); ++i) {
+                                for (uint32_t j = 0; j < ptr_size; ++j)
+                                    ((uint32_t *) inputs.out)[i] += ((const uint32_t *) ptr_val[j])[i];
+                            }
+                            break;
+
+                        case VarType::Int64:
+                        case VarType::UInt64:
+                            for (uint32_t i = range.begin(); i != range.end(); ++i) {
+                                for (uint32_t j = 0; j < ptr_size; ++j)
+                                    ((uint64_t *) inputs.out)[i] += ((const uint64_t *) ptr_val[j])[i];
+                            }
+                            break;
+
+                        case VarType::Float32:
+                            for (uint32_t i = range.begin(); i != range.end(); ++i) {
+                                for (uint32_t j = 0; j < ptr_size; ++j)
+                                    ((float *) inputs.out)[i] += ((const float *) ptr_val[j])[i];
+                            }
+                            break;
+
+                        case VarType::Float64:
+                            for (uint32_t i = range.begin(); i != range.end(); ++i) {
+                                for (uint32_t j = 0; j < ptr_size; ++j)
+                                    ((double *) inputs.out)[i] += ((const double *) ptr_val[j])[i];
+                            }
+                            break;
+
+                        default:
+                            jitc_fail("tbb_scatter_add_post(): variable type "
+                                      "%s not handled!",
+                                      var_type_name[(int) inputs.type]);
+                    }
+                }
+            );
+            std::swap(active_stream, inputs.stream);
+            for (auto p : *inputs.ptrs)
+                jitc_free(p);
+            std::swap(active_stream, inputs.stream);
+            delete inputs.ptrs;
+        };
+        enqueue(stream, new (stream->tbb_task_root->allocate_child())
+                            EnokiFuncTask(stream, func, &inputs, sizeof(Inputs)));
+    }
+    tbb_scatter_add.clear();
+}
+
 /// Submit a set of kernel tasks to the TBB task scheduler
 void tbb_stream_submit_kernel(Stream *stream) {
     std::lock_guard<std::mutex> guard(stream->tbb_task_queue_mutex);
@@ -179,8 +313,14 @@ void tbb_stream_submit_kernel(Stream *stream) {
         ((EnokiKernelTask *) stream->tbb_kernel_task)->empty())
         return;
 
+    if (unlikely(!tbb_scatter_add.empty()))
+        tbb_scatter_add_pre(stream);
+
     enqueue(stream, stream->tbb_kernel_task);
     stream->tbb_kernel_task = nullptr;
+
+    if (unlikely(!tbb_scatter_add.empty()))
+        tbb_scatter_add_post(stream);
 }
 
 /// Enqueue a function for asynchronous execution

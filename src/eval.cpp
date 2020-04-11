@@ -88,12 +88,17 @@ size_t kernel_hash = 0;
 static char kernel_name[17] { };
 
 /// Dedicated buffer for intrinsic intrinsics_buffer (LLVM only)
-Buffer intrinsics_buffer{1};
+static Buffer intrinsics_buffer{1};
 
 /// Intrinsics used by the current program (LLVM only)
 static tsl::robin_set<Intrinsic, IntrinsicHash, IntrinsicEquality> intrinsics_set;
 
-bool jit_llvm_supplement = false;
+/// LLVM: Does the kernel require the supplemental IR? (Used for 'scatter_add' atm.)
+static bool jit_llvm_supplement = false;
+
+#if defined(ENOKI_TBB)
+std::vector<std::pair<uint32_t, uint32_t>> jit_llvm_scatter_add_variables;
+#endif
 
 // ====================================================================
 
@@ -365,14 +370,14 @@ void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v) {
                     else
                         snprintf(source, sizeof(source), "%s%u_unroll_%s%u_%u_%u",
                                  var_type_prefix[(int) dep->type], dep->reg_index,
-                                 var_type_prefix[(int) v->type] + 1, v->reg_index,
+                                 var_type_prefix[v->type] + 1, v->reg_index,
                                  l - 1, j);
 
                     buffer.fmt("    %s%u_unroll_%s%u_%u_%u = shufflevector <%u "
                                "x %s> %s, <%u x "
                                "%s> undef, <%u x i32> <",
                                var_type_prefix[(int) dep->type], dep->reg_index,
-                               var_type_prefix[(int) v->type] + 1, v->reg_index,
+                               var_type_prefix[v->type] + 1, v->reg_index,
                                l, 2 * j + k, w * 2u,
                                var_type_name_llvm[(int) dep->type], source,
                                w * 2u, var_type_name_llvm[(int) dep->type], w);
@@ -392,7 +397,7 @@ void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v) {
     for (uint32_t j = 0; j < width_host / width; ++j) {
         char suffix[64];
         snprintf(suffix, 64, "_unroll_%s%u_%u_%u",
-                 var_type_prefix[(int) v->type] + 1,
+                 var_type_prefix[v->type] + 1,
                  v->reg_index, last_level, j);
         jit_render_stmt_llvm(index, v, suffix);
     }
@@ -411,23 +416,23 @@ void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v) {
             char target[64];
             if (l == 0)
                 snprintf(target, sizeof(target), "%s%u",
-                         var_type_prefix[(int) v->type], v->reg_index);
+                         var_type_prefix[v->type], v->reg_index);
             else
                 snprintf(target, sizeof(target), "%s%u_unroll_%s%u_%u_%u",
-                         var_type_prefix[(int) v->type], v->reg_index,
-                         var_type_prefix[(int) v->type] + 1, v->reg_index,
+                         var_type_prefix[v->type], v->reg_index,
+                         var_type_prefix[v->type] + 1, v->reg_index,
                          l - 1, j);
 
             buffer.fmt("    %s = shufflevector <%u "
                        "x %s> %s%u_unroll_%s%u_%u_%u, <%u x "
                        "%s> %s%u_unroll_%s%u_%u_%u, <%u x i32> <",
                        target,
-                       w, var_type_name_llvm[(int) v->type],
-                       var_type_prefix[(int) v->type], v->reg_index,
-                       var_type_prefix[(int) v->type] + 1, v->reg_index, l, 2*j,
-                       w, var_type_name_llvm[(int) v->type],
-                       var_type_prefix[(int) v->type], v->reg_index,
-                       var_type_prefix[(int) v->type] + 1, v->reg_index, l, 2*j+1,
+                       w, var_type_name_llvm[v->type],
+                       var_type_prefix[v->type], v->reg_index,
+                       var_type_prefix[v->type] + 1, v->reg_index, l, 2*j,
+                       w, var_type_name_llvm[v->type],
+                       var_type_prefix[v->type], v->reg_index,
+                       var_type_prefix[v->type] + 1, v->reg_index, l, 2*j+1,
                        w*2u);
             for (uint32_t r = 0; r < 2 * w; ++r)
                 buffer.fmt("i32 %u%s", r, r + 1 < 2 * w ? ", " : "");
@@ -450,7 +455,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
         if (v->size > 1 || !load)
             buffer.fmt("    mul.wide.u32 %%rd1, %%r0, %u;\n"
                        "    add.u64 %%rd%u, %%rd%u, %%rd1;\n",
-                       var_type_size[(int) v->type], target, target);
+                       var_type_size[v->type], target, target);
     };
 
     const Device &device = state.devices[active_stream->device];
@@ -511,7 +516,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
         if (v->arg_type == ArgType::Input) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    // Load %s%u%s%s\n",
-                           var_type_prefix[(int) v->type],
+                           var_type_prefix[v->type],
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
@@ -521,21 +526,21 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                 if (likely(v->type != (uint32_t) VarType::Bool)) {
                     buffer.fmt("    %s.%s %s%u, [%%rd0];\n",
                            v->size == 1 ? "ldu.global" : "ld.global.cs",
-                           var_type_name_ptx[(int) v->type],
-                           var_type_prefix[(int) v->type],
+                           var_type_name_ptx[v->type],
+                           var_type_prefix[v->type],
                            v->reg_index);
                 } else {
                     buffer.fmt("    %s.u8 %%w0, [%%rd0];\n",
                            v->size == 1 ? "ldu.global" : "ld.global.cs");
                     buffer.fmt("    setp.ne.u16 %s%u, %%w0, 0;\n",
-                           var_type_prefix[(int) v->type],
+                           var_type_prefix[v->type],
                            v->reg_index);
                 }
             }
         } else {
             if (unlikely(log_trace))
                 buffer.fmt("\n    // Evaluate %s%u%s%s\n",
-                           var_type_prefix[(int) v->type],
+                           var_type_prefix[v->type],
                            v->reg_index,
                            v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
@@ -546,7 +551,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
         if (v->arg_type == ArgType::Output) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    // Store %s%u%s%s\n",
-                           var_type_prefix[(int) v->type],
+                           var_type_prefix[v->type],
                            v->reg_index, v->has_label ? ": " : "",
                            v->has_label ? jit_var_label(index) : "");
 
@@ -554,8 +559,8 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
 
             if (likely(v->type != (uint32_t) VarType::Bool)) {
                 buffer.fmt("    st.global.cs.%s [%%rd0], %s%u;\n",
-                       var_type_name_ptx[(int) v->type],
-                       var_type_prefix[(int) v->type],
+                       var_type_name_ptx[v->type],
+                       var_type_prefix[v->type],
                        v->reg_index);
             } else {
                 buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u;\n",
@@ -593,7 +598,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
             continue;
         uint32_t reg_id = v->reg_index, arg_id = v->arg_index - 1;
         const char *type = (VarType) v->type == VarType::Bool
-                               ? "i8" : var_type_name_llvm[(int) v->type];
+                               ? "i8" : var_type_name_llvm[v->type];
 
         if (unlikely(log_trace))
             buffer.fmt("\n    ; Prepare argument %u\n", arg_id);
@@ -605,7 +610,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
             buffer.fmt("    %%a%u = bitcast i8* %%a%u_p to %s*\n", arg_id, arg_id, type);
             if (v->size == 1) {
                 buffer.fmt("    %%a%u_s = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
-                           type, type, arg_id, var_type_size[(int) v->type]);
+                           type, type, arg_id, var_type_size[v->type]);
                 if ((VarType) v->type == VarType::Bool)
                     buffer.fmt("    %%a%u_s1 = trunc i8 %%a%u_s to i1\n", arg_id, arg_id);
             }
@@ -637,11 +642,11 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
-        uint32_t align = v->unaligned ? 1 : (var_type_size[(int) v->type] * width),
+        uint32_t align = v->unaligned ? 1 : (var_type_size[v->type] * width),
                  reg_id = v->reg_index, arg_id = v->arg_index - 1;
-        const char *reg_prefix = var_type_prefix[(int) v->type],
+        const char *reg_prefix = var_type_prefix[v->type],
                    *type = (VarType) v->type == VarType::Bool
-                               ? "i8" : var_type_name_llvm[(int) v->type];
+                               ? "i8" : var_type_name_llvm[v->type];
         uint32_t size = v->size;
 
         if (v->arg_type == ArgType::Input) {
@@ -750,6 +755,10 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
     kernel_args.push_back(tmp);
     n_args_in++;
 
+#if defined(ENOKI_TBB)
+    jit_llvm_scatter_add_variables.clear();
+#endif
+
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
@@ -766,7 +775,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
         if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Trace) {
             buffer.clear();
             buffer.fmt("   - %s%u -> %u",
-                       var_type_prefix[(int) v->type],
+                       var_type_prefix[v->type],
                        n_regs_total, index);
 
             if (v->has_label) {
@@ -775,7 +784,9 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
             }
             if (v->size == 1)
                 buffer.put(" [scalar]");
-            if (v->data != nullptr || v->direct_pointer)
+            if (v->direct_pointer)
+                buffer.put(" [direct_pointer]");
+            else if (v->data != nullptr)
                 buffer.put(" [in]");
             else if (v->scatter)
                 buffer.put(" [scat]");
@@ -791,7 +802,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
             n_args_in++;
             push = true;
         } else if (v->output_flag && !v->scatter && v->size == group.size) {
-            size_t isize    = (size_t) var_type_size[(int) v->type],
+            size_t isize    = (size_t) var_type_size[v->type],
                    var_size = (size_t) group.size * isize;
 
             // Padding to support out-of-bounds accesses in LLVM gather operations
@@ -822,6 +833,20 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
             v->arg_index = (uint16_t) 0xFFFF;
             v->arg_type = ArgType::Register;
         }
+
+#if defined(ENOKI_TBB)
+        /// LLVM: parallel scatter_add into the same array requires extra precautions
+        if (unlikely(!cuda && v->scatter && strstr(v->stmt, "ek.scatter_add"))) {
+            Variable *base_ptr = jit_var(v->dep[0]);
+            if (unlikely(!base_ptr->direct_pointer))
+                jit_fail("jit_run(): invalid error while handling ek.scatter_add (1).");
+            Variable *base = jit_var(base_ptr->dep[0]);
+            if (unlikely(base->data != base_ptr->data))
+                jit_fail("jit_run(): invalid error while handling ek.scatter_add (2).");
+            jit_llvm_scatter_add_variables.push_back(
+                { base_ptr->arg_index - 1, base_ptr->dep[0] });
+        }
+#endif
 
         if (push) {
             if (cuda && kernel_args.size() < CUDA_MAX_KERNEL_PARAMETERS - 1)

@@ -67,7 +67,7 @@ jit_eval(): begin.
 jit_assemble(size=15): register map:
    - %f0 -> 3 [scalar]
    - %r1 -> 2 [in]
-   - %rd2 -> 5 [scalar] [in]
+   - %rd2 -> 5 [scalar] [direct_pointer]
    - %u3 -> 6 [scat]
 jit_run(): launching kernel (n=15, in=2, out=0, ops=4) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
@@ -146,6 +146,7 @@ loop:
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 0 packets and 15 scalar entries
+jit_malloc(type=host-async, size=128): <@> (new allocation)
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
@@ -156,6 +157,7 @@ jit_var_dec_ref_int(3): 0
 jit_var_free(3)
 jit_var_dec_ref_int(2): 0
 jit_eval(): done.
+jit_free(<@>, type=host-async, size=128)
 target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
@@ -213,7 +215,7 @@ loop:
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
-jit_free_flush(): scheduling 1 deallocation
+jit_free_flush(): scheduling 2 deallocations
 jit_eval(): done.
 jit_var_inc_ref_ext(7): 2
 jit_var_copy_ptr(11 <- 7): <@>
@@ -232,7 +234,7 @@ jit_eval(): begin.
 jit_assemble(size=16): register map:
    - %f0 -> 9 [scalar]
    - %r1 -> 8 [in]
-   - %rd2 -> 11 [scalar] [in]
+   - %rd2 -> 11 [scalar] [direct_pointer]
    - %u3 -> 12 [scat]
 jit_run(): launching kernel (n=16, in=2, out=0, ops=4) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
@@ -311,6 +313,7 @@ loop:
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
+jit_malloc(type=host-async, size=128): <@> (reused global)
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(12): 0
 jit_var_free(12)
@@ -321,6 +324,7 @@ jit_var_dec_ref_int(9): 0
 jit_var_free(9)
 jit_var_dec_ref_int(8): 0
 jit_eval(): done.
+jit_free(<@>, type=host-async, size=128)
 target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
@@ -381,7 +385,7 @@ loop:
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
-jit_free_flush(): scheduling 1 deallocation
+jit_free_flush(): scheduling 2 deallocations
 jit_eval(): done.
 jit_var_inc_ref_ext(13): 2
 jit_var_copy_ptr(18 <- 13): <@>
@@ -402,7 +406,7 @@ jit_assemble(size=15): register map:
    - %r0 -> 14 [in]
    - %rd1 -> 17
    - %d2 -> 15 [scalar]
-   - %rd3 -> 18 [scalar] [in]
+   - %rd3 -> 18 [scalar] [direct_pointer]
    - %u4 -> 19 [scat]
 jit_run(): launching kernel (n=15, in=2, out=0, ops=5) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
@@ -495,6 +499,7 @@ loop:
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 0 packets and 15 scalar entries
+jit_malloc(type=host-async, size=128): <@> (reused global)
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(19): 0
 jit_var_free(19)
@@ -507,6 +512,7 @@ jit_var_dec_ref_int(17): 0
 jit_var_free(17)
 jit_var_dec_ref_int(14): 0
 jit_eval(): done.
+jit_free(<@>, type=host-async, size=128)
 target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(14): 0
 jit_var_free(14)
@@ -567,7 +573,7 @@ loop:
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
-jit_free_flush(): scheduling 1 deallocation
+jit_free_flush(): scheduling 2 deallocations
 jit_eval(): done.
 jit_var_inc_ref_ext(20): 2
 jit_var_copy_ptr(25 <- 20): <@>
@@ -588,7 +594,7 @@ jit_assemble(size=16): register map:
    - %r0 -> 21 [in]
    - %rd1 -> 24
    - %d2 -> 22 [scalar]
-   - %rd3 -> 25 [scalar] [in]
+   - %rd3 -> 25 [scalar] [direct_pointer]
    - %u4 -> 26 [scat]
 jit_run(): launching kernel (n=16, in=2, out=0, ops=5) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
@@ -681,6 +687,7 @@ loop:
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
+jit_malloc(type=host-async, size=128): <@> (reused global)
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(26): 0
 jit_var_free(26)
@@ -693,6 +700,7 @@ jit_var_dec_ref_int(24): 0
 jit_var_free(24)
 jit_var_dec_ref_int(21): 0
 jit_eval(): done.
+jit_free(<@>, type=host-async, size=128)
 target=[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0]
 jit_var_dec_ref_ext(21): 0
 jit_var_free(21)
@@ -762,7 +770,7 @@ loop:
 attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
-jit_free_flush(): scheduling 1 deallocation
+jit_free_flush(): scheduling 2 deallocations
 jit_eval(): done.
 jit_var_inc_ref_ext(27): 2
 jit_var_copy_ptr(34 <- 27): <@>
@@ -784,7 +792,7 @@ jit_assemble(size=15): register map:
    - %p3 -> 31
    - %r4 -> 32 [in]
    - %f5 -> 33 [scalar]
-   - %rd6 -> 34 [scalar] [in]
+   - %rd6 -> 34 [scalar] [direct_pointer]
    - %u7 -> 35 [scat]
 jit_run(): launching kernel (n=15, in=2, out=0, ops=8) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
@@ -1005,7 +1013,7 @@ jit_assemble(size=16): register map:
    - %p3 -> 40
    - %r4 -> 41 [in]
    - %f5 -> 42 [scalar]
-   - %rd6 -> 43 [scalar] [in]
+   - %rd6 -> 43 [scalar] [direct_pointer]
    - %u7 -> 44 [scat]
 jit_run(): launching kernel (n=16, in=2, out=0, ops=8) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
@@ -1231,7 +1239,7 @@ jit_assemble(size=15): register map:
    - %r4 -> 50 [in]
    - %rd5 -> 52
    - %d6 -> 51 [scalar]
-   - %rd7 -> 53 [scalar] [in]
+   - %rd7 -> 53 [scalar] [direct_pointer]
    - %u8 -> 54 [scat]
 jit_run(): launching kernel (n=15, in=2, out=0, ops=9) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
@@ -1476,7 +1484,7 @@ jit_assemble(size=16): register map:
    - %r4 -> 56 [in]
    - %rd5 -> 62
    - %d6 -> 61 [scalar]
-   - %rd7 -> 63 [scalar] [in]
+   - %rd7 -> 63 [scalar] [direct_pointer]
    - %u8 -> 64 [scat]
 jit_run(): launching kernel (n=16, in=2, out=0, ops=9) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
@@ -1636,5 +1644,5 @@ jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 2 deallocations
 jit_shutdown(): releasing 6 kernels ..
 jit_malloc_trim(): freed
- - host-async memory: 1.12 KiB in 9 allocations
+ - host-async memory: 1.25 KiB in 10 allocations
 jit_shutdown(): done

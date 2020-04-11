@@ -163,7 +163,7 @@ jit_assemble(size=510): register map:
    - %r5 -> 8 "l2"
    - %r6 -> 9 [scalar]
    - %r7 -> 10
-   - %rd8 -> 12 [scalar] [in]
+   - %rd8 -> 12 [scalar] [direct_pointer]
    - %p9 -> 13 "even" [out]
 jit_malloc(type=device, device=0, size=512): <@> (new allocation)
 jit_run(): launching kernel (n=510, in=1, out=1, ops=10) ..
@@ -242,7 +242,7 @@ jit_assemble(size=510): register map:
    - %r7 -> 10
    - %r8 -> 14 [scalar]
    - %r9 -> 15
-   - %rd10 -> 12 [scalar] [in]
+   - %rd10 -> 12 [scalar] [direct_pointer]
    - %p11 -> 17 "odd" [out]
 jit_malloc(type=device, device=0, size=512): <@> (new allocation)
 jit_run(): launching kernel (n=510, in=1, out=1, ops=12) ..
@@ -388,7 +388,7 @@ jit_assemble(size=510): register map:
    - %r6 -> 18 [scalar]
    - %r7 -> 19
    - %p8 -> 17 "odd" [in]
-   - %rd9 -> 21 [scalar] [in]
+   - %rd9 -> 21 [scalar] [direct_pointer]
    - %u10 -> 22 [scat]
    - %r11 -> 23 [scalar]
    - %r12 -> 24

@@ -353,9 +353,10 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
 
 #if defined(ENOKI_TBB)
     if ((ai.type == AllocType::Host && type == AllocType::HostAsync) ||
-        (ai.type == AllocType::HostAsync && type == AllocType::Host))
+        (ai.type == AllocType::HostAsync && type == AllocType::Host)) {
         it.value().type = type;
         return ptr;
+    }
 #else
     if (type == AllocType::HostAsync)
         type = AllocType::Host;

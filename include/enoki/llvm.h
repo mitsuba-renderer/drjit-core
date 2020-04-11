@@ -120,8 +120,7 @@ struct LLVMArray {
             ? "$r0 = fadd <$w x $t0> $r1, $r2"
             : "$r0 = add <$w x $t0> $r1, $r2";
 
-        return from_index(
-            jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
     }
 
     LLVMArray operator-(const LLVMArray &v) const {
@@ -132,8 +131,7 @@ struct LLVMArray {
             ? "$r0 = fsub <$w x $t0> $r1, $r2"
             : "$r0 = sub <$w x $t0> $r1, $r2";
 
-        return from_index(
-            jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
     }
 
     LLVMArray operator*(const LLVMArray &v) const {
@@ -150,8 +148,7 @@ struct LLVMArray {
             ? "$r0 = fmul <$w x $t0> $r1, $r2"
             : "$r0 = mul <$w x $t0> $r1, $r2";
 
-        return from_index(
-            jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
     }
 
     LLVMArray operator/(const LLVMArray &v) const {
@@ -166,8 +163,7 @@ struct LLVMArray {
             ? "$r0 = fdiv <$w x $t0> $r1, $r2"
             : "$r0 = div <$w x $t0> $r1, $r2";
 
-        return from_index(
-            jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
     }
 
     LLVMArray operator/(Value value) const {
@@ -293,8 +289,7 @@ struct LLVMArray {
             op = "$r0 = sub <$w x $t0> $z, $r1";
         }
 
-        return from_index(
-            jitc_var_new_1(Type, op, 1, m_index));
+        return from_index(jitc_var_new_1(Type, op, 1, m_index));
     }
 
     LLVMArray operator~() const {
@@ -304,8 +299,7 @@ struct LLVMArray {
                                "$r0_1 = xor <$w x $b0> $r0_0, $o0$n"
                                "$r0 = bitcast <$w x $b0> $r0_1 to <$w x $t0>";
 
-        return from_index(
-            jitc_var_new_1(Type, op, 1, m_index));
+        return from_index(jitc_var_new_1(Type, op, 1, m_index));
     }
 
     LLVMArray operator|(const LLVMArray &a) const {
@@ -324,8 +318,7 @@ struct LLVMArray {
                                "$r0_2 = or <$w x $b0> $r0_0, $r0_1"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
-        return from_index(
-            jitc_var_new_2(Type, op, 1, m_index, a.index()));
+        return from_index(jitc_var_new_2(Type, op, 1, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -360,8 +353,7 @@ struct LLVMArray {
                                "$r0_2 = and <$w x $b0> $r0_0, $r0_1"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
-        return from_index(
-            jitc_var_new_2(Type, op, 1, m_index, a.index()));
+        return from_index(jitc_var_new_2(Type, op, 1, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -396,8 +388,7 @@ struct LLVMArray {
                                "$r0_2 = xor <$w x $b0> $r0_0, $r0_1$n"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
-        return from_index(
-            jitc_var_new_2(Type, op, 1, m_index, a.index()));
+        return from_index(jitc_var_new_2(Type, op, 1, m_index, a.index()));
     }
 
     LLVMArray operator<<(const LLVMArray<uint32_t> &v) const {
@@ -1067,7 +1058,7 @@ void scatter_add(LLVMArray<Value> &dst,
             op = "$0call void @ek.scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3)";
 
         var = jitc_var_new_3(VarType::Invalid, op, 1, base.index(),
-                                  value.index(), index.index());
+                             value.index(), index.index());
     } else {
         const char *op;
         if (sizeof(Value) == 4 && jitc_llvm_if_at_least(16, "+avx512dq"))
@@ -1078,7 +1069,7 @@ void scatter_add(LLVMArray<Value> &dst,
             op = "$0call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)";
 
         var = jitc_var_new_4(VarType::Invalid, op, 1, base.index(),
-                                  value.index(), index.index(), mask.index());
+                             value.index(), index.index(), mask.index());
     }
 
     jitc_var_mark_scatter(var, dst.index());

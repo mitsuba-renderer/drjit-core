@@ -150,7 +150,7 @@ jit_assemble(size=510): register map:
    - %r0 -> 6 "l2"
    - %r1 -> 7 [scalar]
    - %r2 -> 8
-   - %rd3 -> 10 [scalar] [in]
+   - %rd3 -> 10 [scalar] [direct_pointer]
    - %p4 -> 11 "even" [out]
 jit_malloc(type=host-async, size=512): <@> (new allocation)
 jit_run(): launching kernel (n=510, in=1, out=1, ops=5) ..
@@ -273,7 +273,7 @@ jit_assemble(size=510): register map:
    - %r2 -> 8
    - %r3 -> 12 [scalar]
    - %r4 -> 13
-   - %rd5 -> 10 [scalar] [in]
+   - %rd5 -> 10 [scalar] [direct_pointer]
    - %p6 -> 15 "odd" [out]
 jit_malloc(type=host-async, size=512): <@> (new allocation)
 jit_run(): launching kernel (n=510, in=1, out=1, ops=7) ..
@@ -471,7 +471,7 @@ jit_assemble(size=510): register map:
    - %r1 -> 16 [scalar]
    - %r2 -> 17
    - %p3 -> 15 "odd" [in]
-   - %rd4 -> 19 [scalar] [in]
+   - %rd4 -> 19 [scalar] [direct_pointer]
    - %u5 -> 20 [scat]
    - %r6 -> 21 [scalar]
    - %r7 -> 22

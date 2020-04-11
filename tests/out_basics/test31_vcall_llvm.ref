@@ -11,8 +11,6 @@ jit_malloc(type=host, size=128): <@> (new allocation)
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_free(<@>, type=host, size=64)
-jit_free(<@>, type=host, size=64)
 jit_var_map(2): <@>, size=10, free=1
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(2): 1
@@ -28,6 +26,8 @@ jit_var_dec_ref_ext(2): 0
 jit_var_inc_ref_ext(3): 2
 jit_var_inc_ref_ext(4): 2
 jit_var_inc_ref_ext(5): 2
+jit_free(<@>, type=host, size=64)
+jit_free(<@>, type=host, size=64)
 jit_var_inc_ref_ext(3): 3
 jit_var_inc_ref_ext(4): 3
 jit_var_inc_ref_ext(5): 3

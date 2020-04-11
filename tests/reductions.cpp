@@ -188,3 +188,14 @@ TEST_BOTH(05_block_ops) {
     jitc_log(Info, "block_copy: %s\n", block_copy(a, 3).str());
     jitc_log(Info, "block_sum:  %s\n", block_sum(a, 3).str());
 }
+
+TEST_LLVM(06_parallel_scatter_add, "avx512") {
+    scoped_set_log_level ssll(LogLevel::Info);
+    jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl", 32);
+    UInt32 a = zero<UInt32>(10);
+
+    UInt32 index = block_copy(arange<UInt32>(10), 1024 * 1024 + 10);
+    scatter_add(a, UInt32(1.f), index);
+    UInt32 ref = full<UInt32>(1024 * 1024 + 10, 10);
+    jitc_assert(ref == a);
+}

@@ -73,7 +73,7 @@ jit_eval(): begin.
 jit_assemble(size=3): register map:
    - %r0 -> 2 [scalar]
    - %r1 -> 3 [in]
-   - %rd2 -> 5 [scalar] [in]
+   - %rd2 -> 5 [scalar] [direct_pointer]
    - %u3 -> 6 [scat]
 jit_run(): launching kernel (n=3, in=2, out=0, ops=4) ..
 define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
