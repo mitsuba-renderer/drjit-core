@@ -42,9 +42,9 @@ extern VCallBucket *jit_vcall(const char *domain, uint32_t index,
                               uint32_t *bucket_count_out);
 
 /// Replicate individual input elements to larger blocks
-extern void jit_block_copy(enum VarType type, uint32_t block_size,
-                           const void *in, uint32_t size, void *out);
+extern void jit_block_copy(enum VarType type, const void *in, void *out,
+                           uint32_t size, uint32_t block_size);
 
 /// Sum over elements within blocks
-extern void jit_block_sum(enum VarType type, uint32_t block_size,
-                          const void *in, uint32_t size, void *out);
+extern void jit_block_sum(enum VarType type, const void *in, void *out,
+                          uint32_t size, uint32_t block_size);

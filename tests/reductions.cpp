@@ -181,3 +181,10 @@ TEST_BOTH(04_mkperm) {
         }
     }
 }
+
+TEST_BOTH(05_block_ops) {
+    Float a(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f);
+
+    jitc_log(Info, "block_copy: %s\n", block_copy(a, 3).str());
+    jitc_log(Info, "block_sum:  %s\n", block_sum(a, 3).str());
+}

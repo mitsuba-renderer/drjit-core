@@ -1,0 +1,31 @@
+jit_device_set(device=-1, stream=0): creating stream
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_var_map(1): <@>, size=9, free=1
+jit_var_inc_ref_ext(1): 1
+jit_var_copy(1, size=9)
+jit_malloc(type=host-async, size=128): <@> (new allocation)
+jit_var_map(2): <@>, size=27, free=1
+jit_var_inc_ref_ext(2): 1
+jit_block_copy(<@> -> <@>, type=float32, block_size=3, size=9)
+block_copy: [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 8]
+
+jit_var_dec_ref_ext(2): 0
+jit_var_free(2)
+jit_free(<@>, type=host-async, size=128)
+jit_malloc(type=host-async, size=64): <@> (new allocation)
+jit_var_map(3): <@>, size=3, free=1
+jit_var_inc_ref_ext(3): 1
+jit_block_sum(<@> -> <@>, type=float32, block_size=3, size=3)
+block_sum:  [3, 12, 21]
+
+jit_var_dec_ref_ext(3): 0
+jit_var_free(3)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(1): 0
+jit_var_free(1)
+jit_free(<@>, type=host-async, size=64)
+jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 3 deallocations
+jit_malloc_trim(): freed
+ - host-async memory: 256 B in 3 allocations
+jit_shutdown(): done

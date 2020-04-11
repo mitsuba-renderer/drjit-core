@@ -1012,11 +1012,11 @@ jitc_vcall(const char *domain, uint32_t index, uint32_t *bucket_count_out);
  * This function copies each element of the input array \c to a contiguous
  * block of size \c block_size in the output array \c out. For example, <tt>a,
  * b, c</tt> turns into <tt>a, a, b, b, c, c</tt> when the \c block_size is set
- * to \c 2. The output array must have space for <tt>size * block_size</tt>
- * elements.
+ * to \c 2. The input array must contain <tt>size</tt> elements, and the output
+ * array must have space for <tt>size * block_size</tt> elements.
  */
 extern JITC_EXPORT void jitc_block_copy(enum VarType type, const void *in,
-                                        uint32_t size, void *out,
+                                        void *out, uint32_t size,
                                         uint32_t block_size);
 
 /**
@@ -1025,11 +1025,11 @@ extern JITC_EXPORT void jitc_block_copy(enum VarType type, const void *in,
  * This function adds all elements of contiguous blocks of size \c block_size
  * in the input array \c in and writes them to \c out. For example, <tt>a, b,
  * c, d, e, f</tt> turns into <tt>a+b, c+d, e+f</tt> when the \c block_size is
- * set to \c 2. The parameter \c size must be divisible by \c block_size, and
- * the output array must have space for <tt>size / block_size</tt> elements.
+ * set to \c 2. The input array must contain <tt>size * block_size</tt> elements,
+ * and the output array must have space for <tt>size</tt> elements.
  */
 extern JITC_EXPORT void jitc_block_sum(enum VarType type, const void *in,
-                                       uint32_t size, void *out,
+                                       void *out, uint32_t size,
                                        uint32_t block_size);
 
 

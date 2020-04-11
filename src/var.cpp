@@ -844,8 +844,7 @@ const char *jit_var_str(uint32_t index) {
 
     size_t size            = v->size,
            isize           = var_type_size[(int) v->type],
-           limit_thresh    = 20,
-           limit_remainder = 10;
+           limit_remainder = std::min(5u, (state.print_limit + 3) / 4) * 2;
 
     uint8_t dst[8];
     const uint8_t *src = (const uint8_t *) v->data;
@@ -853,7 +852,7 @@ const char *jit_var_str(uint32_t index) {
     buffer.clear();
     buffer.putc('[');
     for (uint32_t i = 0; i < size; ++i) {
-        if (size > limit_thresh && i == limit_remainder / 2) {
+        if (size > state.print_limit && i == limit_remainder / 2) {
             buffer.fmt(".. %zu skipped .., ", size - limit_remainder);
             i = (uint32_t) (size - limit_remainder / 2 - 1);
             continue;

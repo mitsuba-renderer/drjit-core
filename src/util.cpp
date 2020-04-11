@@ -1097,10 +1097,206 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
     return (VCallBucket *) offsets;
 }
 
-/// Replicate individual input elements to larger blocks
-void jit_block_copy(enum VarType type, uint32_t block_size, const void *in, uint32_t size, void *out) {
+using BlockOp = void (*) (const void *ptr, void *out, uint32_t start, uint32_t end, uint32_t block_size);
+
+template <typename Value> static BlockOp jit_block_copy_create() {
+    return [](const void *in_, void *out_, uint32_t start, uint32_t end, uint32_t block_size) {
+        const Value *in = (const Value *) in_ + start;
+        Value *out = (Value *) out_ + start * block_size;
+        for (uint32_t i = start; i != end; ++i) {
+            Value value = *in++;
+            for (uint32_t j = 0; j != block_size; ++j)
+                *out++ = value;
+        }
+    };
 }
 
+template <typename Value> static BlockOp jit_block_sum_create() {
+    return [](const void *in_, void *out_, uint32_t start, uint32_t end, uint32_t block_size) {
+        const Value *in = (const Value *) in_ + start * block_size;
+        Value *out = (Value *) out_ + start;
+        for (uint32_t i = start; i != end; ++i) {
+            Value sum = 0;
+            for (uint32_t j = 0; j != block_size; ++j)
+                sum += *in++;
+            *out++ = sum;
+        }
+    };
+}
+
+static BlockOp jit_block_copy_create(VarType type) {
+    switch (type) {
+        case VarType::UInt8:   return jit_block_copy_create<uint8_t >();
+        case VarType::UInt16:  return jit_block_copy_create<uint16_t>();
+        case VarType::UInt32:  return jit_block_copy_create<uint32_t>();
+        case VarType::UInt64:  return jit_block_copy_create<uint64_t>();
+        case VarType::Float32: return jit_block_copy_create<float   >();
+        case VarType::Float64: return jit_block_copy_create<double  >();
+        default: jit_raise("jit_block_copy_create(): unsupported data type!");
+            return nullptr;
+    }
+}
+
+static BlockOp jit_block_sum_create(VarType type) {
+    switch (type) {
+        case VarType::UInt8:   return jit_block_sum_create<uint8_t >();
+        case VarType::UInt16:  return jit_block_sum_create<uint16_t>();
+        case VarType::UInt32:  return jit_block_sum_create<uint32_t>();
+        case VarType::UInt64:  return jit_block_sum_create<uint64_t>();
+        case VarType::Float32: return jit_block_sum_create<float   >();
+        case VarType::Float64: return jit_block_sum_create<double  >();
+        default: jit_raise("jit_block_sum_create(): unsupported data type!");
+            return nullptr;
+    }
+}
+
+static VarType make_int_type_unsigned(VarType type) {
+    switch (type) {
+        case VarType::Int8:  return VarType::UInt8;
+        case VarType::Int16: return VarType::UInt16;
+        case VarType::Int32: return VarType::UInt16;
+        case VarType::Int64: return VarType::UInt16;
+        default: return type;
+    }
+}
+
+/// Replicate individual input elements to larger blocks
+void jit_block_copy(enum VarType type, const void *in, void *out, uint32_t size,
+                    uint32_t block_size) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_block_copy(): you must invoke jit_device_set() to "
+                  "choose a target device before calling this function.");
+    else if (block_size == 0)
+        jit_raise("jit_block_copy(): block_size cannot be zero!");
+
+    jit_log(Debug,
+            "jit_block_copy(" ENOKI_PTR " -> " ENOKI_PTR
+            ", type=%s, block_size=%u, size=%u)",
+            (uintptr_t) in, (uintptr_t) out,
+            var_type_name[(int) type], block_size, size);
+
+    if (block_size == 1) {
+        uint32_t type_size = var_type_size[(int) type];
+        jit_memcpy_async(out, in, size * type_size);
+        return;
+    }
+
+    type = make_int_type_unsigned(type);
+
+    if (stream->cuda) {
+        const Device &device = state.devices[stream->device];
+        size *= block_size;
+
+        CUfunction func = jit_cuda_block_copy[(int) type][device.id];
+        if (!func)
+            jit_raise("jit_block_copy(): no existing kernel for type=%s!",
+                      var_type_name[(int) type]);
+
+        uint32_t thread_count = std::min(size, 1024u),
+                 block_count  = (size + thread_count - 1) / thread_count;
+
+        void *args[] = { &in, &out, &size, &block_size };
+        cuda_check(cuLaunchKernel(func, block_count, 1, 1, thread_count, 1, 1,
+                                  0, stream->handle, args, nullptr));
+    } else {
+        BlockOp op = jit_block_copy_create(type);
+
+#if defined(ENOKI_TBB)
+        struct Inputs {
+            const void *in;
+            void *out;
+            uint32_t size;
+            uint32_t block_size;
+            BlockOp op;
+        };
+        Inputs inputs{ in, out, size, block_size, op };
+
+        auto func = [](void *inputs_) {
+            Inputs inputs = *(Inputs *) inputs_;
+
+            tbb::parallel_for(
+                tbb::blocked_range<uint32_t>(0u, inputs.size, 4096u),
+                [&](const tbb::blocked_range<uint32_t> &range) {
+                    inputs.op(inputs.in, inputs.out, range.begin(), range.end(),
+                              inputs.block_size);
+                });
+        };
+
+        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+#else
+        op(in, out, 0, size, block_size);
+#endif
+    }
+}
+
+
 /// Sum over elements within blocks
-void jit_block_sum(enum VarType type, uint32_t block_size, const void *in, uint32_t size, void *out) {
+void jit_block_sum(enum VarType type, const void *in, void *out, uint32_t size,
+                   uint32_t block_size) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_block_sum(): you must invoke jit_device_set() to "
+                  "choose a target device before calling this function.");
+    else if (block_size == 0)
+        jit_raise("jit_block_sum(): block_size cannot be zero!");
+
+    jit_log(Debug,
+            "jit_block_sum(" ENOKI_PTR " -> " ENOKI_PTR
+            ", type=%s, block_size=%u, size=%u)",
+            (uintptr_t) in, (uintptr_t) out,
+            var_type_name[(int) type], block_size, size);
+
+    if (block_size == 1) {
+        uint32_t type_size = var_type_size[(int) type];
+        jit_memcpy_async(out, in, size * type_size);
+        return;
+    }
+
+    type = make_int_type_unsigned(type);
+
+    if (stream->cuda) {
+        const Device &device = state.devices[stream->device];
+        size *= block_size;
+
+        CUfunction func = jit_cuda_block_sum[(int) type][device.id];
+        if (!func)
+            jit_raise("jit_block_sum(): no existing kernel for type=%s!",
+                      var_type_name[(int) type]);
+
+        uint32_t thread_count = std::min(size, 1024u),
+                 block_count  = (size + thread_count - 1) / thread_count;
+
+        void *args[] = { &in, &out, &size, &block_size };
+        cuda_check(cuLaunchKernel(func, block_count, 1, 1, thread_count, 1, 1,
+                                  0, stream->handle, args, nullptr));
+    } else {
+        BlockOp op = jit_block_sum_create(type);
+
+#if defined(ENOKI_TBB)
+        struct Inputs {
+            const void *in;
+            void *out;
+            uint32_t size;
+            uint32_t block_size;
+            BlockOp op;
+        };
+        Inputs inputs{ in, out, size, block_size, op };
+
+        auto func = [](void *inputs_) {
+            Inputs inputs = *(Inputs *) inputs_;
+
+            tbb::parallel_for(
+                tbb::blocked_range<uint32_t>(0u, inputs.size, 4096u),
+                [&](const tbb::blocked_range<uint32_t> &range) {
+                    inputs.op(inputs.in, inputs.out, range.begin(), range.end(),
+                              inputs.block_size);
+                });
+        };
+
+        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+#else
+        op(in, out, 0, size, block_size);
+#endif
+    }
 }

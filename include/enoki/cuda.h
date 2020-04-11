@@ -1179,3 +1179,22 @@ inline CUDAArray<uint32_t> compress(const CUDAArray<bool> &a) {
     jitc_free(size);
     return result;
 }
+
+template <typename T>
+inline CUDAArray<T> block_copy(const CUDAArray<T> &a, uint32_t block_size) {
+    size_t size = a.eval().size();
+    CUDAArray<T> output = empty<CUDAArray<T>>(size * block_size);
+    jitc_block_copy(CUDAArray<T>::Type, a.data(), output.data(), size, block_size);
+    return output;
+}
+
+template <typename T>
+inline CUDAArray<T> block_sum(const CUDAArray<T> &a, uint32_t block_size) {
+    size_t size = a.eval().size();
+    if (size % block_size != 0)
+        jitc_raise("block_sum(): array size must be divisible by block size (%u)!", block_size);
+    size /= block_size;
+    CUDAArray<T> output = empty<CUDAArray<T>>(size);
+    jitc_block_sum(CUDAArray<T>::Type, a.data(), output.data(), size, block_size);
+    return output;
+}

@@ -393,6 +393,9 @@ struct State {
     /// Current variable index
     uint32_t variable_index = 1;
 
+    /// Limit the output of jitc_var_str()?
+    uint32_t print_limit = 20;
+
     /// Dispatch to multiple streams that run concurrently?
     bool parallel_dispatch = true;
 

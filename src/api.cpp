@@ -360,16 +360,16 @@ uint32_t jitc_mkperm(const uint32_t *values, uint32_t size,
     return jit_mkperm(values, size, bucket_count, perm, offsets);
 }
 
-void jitc_block_copy(enum VarType type, uint32_t block_size, const void *in,
-                     uint32_t size, void *out) {
+void jitc_block_copy(enum VarType type, const void *in, void *out,
+                     uint32_t size, uint32_t block_size) {
     lock_guard guard(state.mutex);
-    jit_block_copy(type, block_size, in, size, out);
+    jit_block_copy(type, in, out, size, block_size);
 }
 
-void jitc_block_sum(enum VarType type, uint32_t block_size, const void *in,
-                    uint32_t size, void *out) {
+void jitc_block_sum(enum VarType type, const void *in, void *out,
+                     uint32_t size, uint32_t block_size) {
     lock_guard guard(state.mutex);
-    jit_block_sum(type, block_size, in, size, out);
+    jit_block_sum(type, in, out, size, block_size);
 }
 
 uint32_t jitc_registry_put(const char *domain, void *ptr) {
