@@ -1,24 +1,24 @@
 jit_device_set(device=0, stream=0): creating stream
-jit_trace_append(1): mov.u32 $r0, $i
+jit_var_new(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
-jit_trace_append(2 <- 1): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(2 <- 1): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0
-jit_trace_append(3): mov.$t0 $r0, 0f40a00000
+jit_var_new(3): mov.$t0 $r0, 0f40a00000
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
-jit_trace_append(4 <- 2, 3): setp.gt.$t1 $r0, $r1, $r2
+jit_var_new(4 <- 2, 3): setp.gt.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(4): 1
 jit_var_dec_ref_ext(3): 0
 jit_var_inc_ref_int(2): 2
-jit_trace_append(5 <- 2): neg.ftz.$t0 $r0, $r1
+jit_var_new(5 <- 2): neg.ftz.$t0 $r0, $r1
 jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(5): 1
 jit_var_inc_ref_int(2): 3
 jit_var_inc_ref_int(4): 1
-jit_trace_append(6 <- 5, 2, 4): selp.$t0 $r0, $r1, $r2, $r3
+jit_var_new(6 <- 5, 2, 4): selp.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(2): 0
 jit_var_dec_ref_ext(5): 0
@@ -113,14 +113,14 @@ jit_var_dec_ref_int(4): 0
 jit_eval(): done.
 value=[0, 1, 2, 3, 4, 5, -6, -7, -8, -9]
 mask=[0, 0, 0, 0, 0, 0, 1, 1, 1, 1]
-jit_trace_append(7): mov.$t0 $r0, 0f3f800000
+jit_var_new(7): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(7): 1
-jit_trace_append(8): mov.$t0 $r0, 0f40000000
+jit_var_new(8): mov.$t0 $r0, 0f40000000
 jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(4): 1
-jit_trace_append(9 <- 7, 8, 4): selp.$t0 $r0, $r1, $r2, $r3
+jit_var_new(9 <- 7, 8, 4): selp.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(9): 1
 jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
@@ -196,9 +196,9 @@ jit_var_free(8)
 jit_var_dec_ref_int(4): 0
 jit_eval(): done.
 value_2=[2, 2, 2, 2, 2, 2, 1, 1, 1, 1]
-jit_trace_append(10): mov.$t0 $r0, 1
+jit_var_new(10): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(10): 1
-jit_trace_append(11): mov.$t0 $r0, 0
+jit_var_new(11): mov.$t0 $r0, 0
 jit_var_inc_ref_ext(11): 1
 jit_eval(): begin.
 jit_assemble(size=1): register map:
@@ -263,20 +263,20 @@ L0:
 }
 jit_eval(): cleaning up..
 jit_eval(): done.
-jit_trace_append(12): mov.$t0 $r0, 0f00000000
+jit_var_new(12): mov.$t0 $r0, 0f00000000
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(12): 1
 jit_var_inc_ref_int(10): 1
-jit_trace_append(13 <- 6, 12, 10): selp.$t0 $r0, $r1, $r2, $r3
+jit_var_new(13 <- 6, 12, 10): selp.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(13): 1
 jit_var_dec_ref_ext(12): 0
-jit_trace_append(12): mov.$t0 $r0, 0f00000000 (reused)
+jit_var_new(12): mov.$t0 $r0, 0f00000000 (reused)
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(6): 2
 jit_var_inc_ref_int(12): 2
 jit_var_inc_ref_int(11): 1
-jit_trace_append(14 <- 6, 12, 11): selp.$t0 $r0, $r1, $r2, $r3
+jit_var_new(14 <- 6, 12, 11): selp.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(14): 1
 jit_var_dec_ref_ext(12): 0
 jit_eval(): begin.

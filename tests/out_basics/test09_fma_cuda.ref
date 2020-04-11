@@ -20,15 +20,15 @@ jit_var_copy(3, size=4)
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
-jit_trace_append(4 <- 1, 2, 3): fma.rn.ftz.$t0 $r0, $r1, $r2, $r3
+jit_var_new(4 <- 1, 2, 3): fma.rn.ftz.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(3): 2
-jit_trace_append(5 <- 3): neg.ftz.$t0 $r0, $r1
+jit_var_new(5 <- 3): neg.ftz.$t0 $r0, $r1
 jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(4): 1
 jit_var_inc_ref_int(2): 2
 jit_var_inc_ref_int(5): 1
-jit_trace_append(6 <- 4, 2, 5): fma.rn.ftz.$t0 $r0, $r1, $r2, $r3
+jit_var_new(6 <- 4, 2, 5): fma.rn.ftz.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(5): 0
 jit_eval(): begin.
@@ -167,15 +167,15 @@ jit_var_copy(9, size=4)
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(9): 1
-jit_trace_append(10 <- 7, 8, 9): fma.rn.$t0 $r0, $r1, $r2, $r3
+jit_var_new(10 <- 7, 8, 9): fma.rn.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(9): 2
-jit_trace_append(11 <- 9): neg.$t0 $r0, $r1
+jit_var_new(11 <- 9): neg.$t0 $r0, $r1
 jit_var_inc_ref_ext(11): 1
 jit_var_inc_ref_int(10): 1
 jit_var_inc_ref_int(8): 2
 jit_var_inc_ref_int(11): 1
-jit_trace_append(12 <- 10, 8, 11): fma.rn.$t0 $r0, $r1, $r2, $r3
+jit_var_new(12 <- 10, 8, 11): fma.rn.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(12): 1
 jit_var_dec_ref_ext(11): 0
 jit_eval(): begin.

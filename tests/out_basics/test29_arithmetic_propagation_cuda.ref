@@ -1,7 +1,7 @@
 jit_device_set(device=0, stream=0): creating stream
-jit_trace_append(1): mov.$b0 $r0, 0x00000000
+jit_var_new(1): mov.$b0 $r0, 0x00000000
 jit_var_inc_ref_ext(1): 1
-jit_trace_append(2): mov.$b0 $r0, 0x00000001
+jit_var_new(2): mov.$b0 $r0, 0x00000001
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_ext(2): 2
 jit_var_inc_ref_ext(1): 2
@@ -11,9 +11,9 @@ jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_trace_append(3): mov.$b0 $r0, 0x0000000000000000
+jit_var_new(3): mov.$b0 $r0, 0x0000000000000000
 jit_var_inc_ref_ext(3): 1
-jit_trace_append(4): mov.$b0 $r0, 0x0000000000000001
+jit_var_new(4): mov.$b0 $r0, 0x0000000000000001
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_ext(4): 2
 jit_var_inc_ref_ext(3): 2
@@ -23,9 +23,9 @@ jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
-jit_trace_append(5): mov.$t0 $r0, 0f00000000
+jit_var_new(5): mov.$t0 $r0, 0f00000000
 jit_var_inc_ref_ext(5): 1
-jit_trace_append(6): mov.$t0 $r0, 0f3f800000
+jit_var_new(6): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_ext(6): 2
 jit_var_inc_ref_ext(5): 2
@@ -35,9 +35,9 @@ jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
-jit_trace_append(7): mov.$t0 $r0, 0d0000000000000000
+jit_var_new(7): mov.$t0 $r0, 0d0000000000000000
 jit_var_inc_ref_ext(7): 1
-jit_trace_append(8): mov.$t0 $r0, 0d3ff0000000000000
+jit_var_new(8): mov.$t0 $r0, 0d3ff0000000000000
 jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_ext(8): 2
 jit_var_inc_ref_ext(7): 2

@@ -4,13 +4,13 @@ jit_var_map(1): <@>, size=4, free=1
 jit_var_inc_ref_ext(1): 1
 jit_var_copy(1, size=4)
 jit_var_inc_ref_int(1): 1
-jit_trace_append(2 <- 1): $r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)
+jit_var_new(2 <- 1): $r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(1): 2
-jit_trace_append(3 <- 1): $r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1$S 0)
+jit_var_new(3 <- 1): $r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1$S 0)
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(1): 3
-jit_trace_append(4 <- 1): $r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1$S 0)
+jit_var_new(4 <- 1): $r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1$S 0)
 jit_var_inc_ref_ext(4): 1
 orig : [0, 1, 1234, 4294967295]
 jit_eval(): begin.

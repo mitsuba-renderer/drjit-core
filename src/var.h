@@ -1,3 +1,12 @@
+/*
+    src/var.h -- Variable/computation graph-related functions.
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #pragma once
 
 #include <enoki/jit.h>
@@ -9,40 +18,40 @@ struct Variable;
 extern Variable *jit_var(uint32_t index);
 
 /// Append a variable to the instruction trace (no operand)
-extern uint32_t jit_trace_append_0(VarType type,
-                                   const char *stmt,
-                                   int stmt_static,
-                                   uint32_t size);
+extern uint32_t jit_var_new_0(VarType type,
+                              const char *stmt,
+                              int stmt_static,
+                              uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
-extern uint32_t jit_trace_append_1(VarType type,
-                                   const char *stmt,
-                                   int stmt_static,
-                                   uint32_t op1);
+extern uint32_t jit_var_new_1(VarType type,
+                              const char *stmt,
+                              int stmt_static,
+                              uint32_t op1);
 
 /// Append a variable to the instruction trace (2 operands)
-extern uint32_t jit_trace_append_2(VarType type,
-                                   const char *stmt,
-                                   int stmt_static,
-                                   uint32_t op1,
-                                   uint32_t op2);
+extern uint32_t jit_var_new_2(VarType type,
+                              const char *stmt,
+                              int stmt_static,
+                              uint32_t op1,
+                              uint32_t op2);
 
 /// Append a variable to the instruction trace (3 operands)
-extern uint32_t jit_trace_append_3(VarType type,
-                                   const char *stmt,
-                                   int stmt_static,
-                                   uint32_t op1,
-                                   uint32_t op2,
-                                   uint32_t op3);
+extern uint32_t jit_var_new_3(VarType type,
+                              const char *stmt,
+                              int stmt_static,
+                              uint32_t op1,
+                              uint32_t op2,
+                              uint32_t op3);
 
 /// Append a variable to the instruction trace (4 operands)
-extern uint32_t jit_trace_append_4(VarType type,
-                                   const char *stmt,
-                                   int stmt_static,
-                                   uint32_t op1,
-                                   uint32_t op2,
-                                   uint32_t op3,
-                                   uint32_t op4);
+extern uint32_t jit_var_new_4(VarType type,
+                              const char *stmt,
+                              int stmt_static,
+                              uint32_t op1,
+                              uint32_t op2,
+                              uint32_t op3,
+                              uint32_t op4);
 
 /// Register an existing variable with the JIT compiler
 extern uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free);
@@ -124,7 +133,7 @@ extern const char *jit_var_whos();
 extern void jit_cse_drop(uint32_t index, const Variable *v);
 
 /// Append the given variable to the instruction trace and return its ID
-extern std::pair<uint32_t, Variable *> jit_trace_append(Variable &v);
+extern std::pair<uint32_t, Variable *> jit_var_new(Variable &v);
 
 /// Descriptive names and byte sizes for the various variable types
 extern const char *var_type_name      [(int) VarType::Count];

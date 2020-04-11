@@ -1,37 +1,37 @@
 jit_device_set(device=-1, stream=0): creating stream
-jit_trace_append(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
+jit_var_new(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
-jit_trace_append(2 <- 1): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
+jit_var_new(2 <- 1): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0
-jit_trace_append(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0 (reused)
+jit_var_new(1): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0 (reused)
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 2
 jit_var_dec_ref_int(1): 1
-jit_trace_append(2 <- 1): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0> (reused)
+jit_var_new(2 <- 1): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0> (reused)
 jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(1): 0
-jit_trace_append(3): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3fb99999a0000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new(3): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3fb99999a0000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
-jit_trace_append(4 <- 2, 3): $r0 = fadd <$w x $t0> $r1, $r2
+jit_var_new(4 <- 2, 3): $r0 = fadd <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(4): 1
 jit_var_dec_ref_ext(3): 0
 jit_var_dec_ref_ext(2): 1
 jit_var_inc_ref_int(2): 2
 jit_var_inc_ref_int(4): 1
-jit_trace_append(5 <- 2, 4): $3$r0 = call <$w x $t0> @llvm.x86.avx.max.ps.256(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_new(5 <- 2, 4): $3$r0 = call <$w x $t0> @llvm.x86.avx.max.ps.256(<$w x $t1> $r1, <$w x $t2> $r2)
 jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(2): 3
 jit_var_inc_ref_int(4): 2
 jit_var_inc_ref_int(5): 1
-jit_trace_append(6 <- 2, 4, 5): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_new(6 <- 2, 4, 5): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
 jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_int(4): 3
 jit_var_inc_ref_int(5): 2
-jit_trace_append(7 <- 4, 5): $r0 = fcmp oeq <$w x $t1> $r1, $r2
+jit_var_new(7 <- 4, 5): $r0 = fcmp oeq <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(7): 1
 jit_eval(): begin.
 jit_assemble(size=64): register map:

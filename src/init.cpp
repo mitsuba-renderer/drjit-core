@@ -1,3 +1,12 @@
+/*
+    src/init.cpp -- Initialization and shutdown of Enoki-JIT
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #include "internal.h"
 #include "malloc.h"
 #include "internal.h"

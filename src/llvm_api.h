@@ -1,3 +1,12 @@
+/*
+    src/llvm_api.h -- Low-level interface to LLVM driver API
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #pragma once
 
 #include <stdlib.h>

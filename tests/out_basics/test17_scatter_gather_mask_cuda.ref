@@ -1,41 +1,41 @@
 jit_device_set(device=0, stream=0): creating stream
-jit_trace_append(1): mov.u32 $r0, $i
+jit_var_new(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
-jit_trace_append(2 <- 1): cvt.$t0.$t1 $r0, $r1
+jit_var_new(2 <- 1): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0
 jit_var_set_label(2): "l"
-jit_trace_append(3): mov.$b0 $r0, 0x00000001
+jit_var_new(3): mov.$b0 $r0, 0x00000001
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
-jit_trace_append(4 <- 2, 3): and.$b0 $r0, $r1, $r2
+jit_var_new(4 <- 2, 3): and.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(4): 1
-jit_trace_append(5): mov.$b0 $r0, 0x00000000
+jit_var_new(5): mov.$b0 $r0, 0x00000000
 jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(4): 1
 jit_var_inc_ref_int(5): 1
-jit_trace_append(6 <- 4, 5): setp.ne.$t1 $r0, $r1, $r2
+jit_var_new(6 <- 4, 5): setp.ne.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(5): 0
 jit_var_dec_ref_ext(4): 0
 jit_var_dec_ref_ext(3): 0
 jit_var_set_label(6): "result"
-jit_trace_append(7): mov.u32 $r0, $i
+jit_var_new(7): mov.u32 $r0, $i
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(7): 1
-jit_trace_append(8 <- 7): cvt.$t0.$t1 $r0, $r1
+jit_var_new(8 <- 7): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(8): 1
 jit_var_dec_ref_ext(7): 0
 jit_var_set_label(8): "l2"
-jit_trace_append(9): mov.$b0 $r0, 0x00000002
+jit_var_new(9): mov.$b0 $r0, 0x00000002
 jit_var_inc_ref_ext(9): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(9): 1
-jit_trace_append(10 <- 8, 9): mul.lo.$t0 $r0, $r1, $r2
+jit_var_new(10 <- 8, 9): mul.lo.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(10): 1
-jit_trace_append(11): mov.$t0 $r0, 1
+jit_var_new(11): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(11): 1
 jit_eval(): begin.
 jit_assemble(size=1022): register map:
@@ -119,7 +119,7 @@ jit_var_copy_ptr(12 <- 6): <@>
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(12): 1
 jit_var_inc_ref_int(10): 1
-jit_trace_append(13 <- 12, 10): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.u8 %w0, [%rd3]$nsetp.ne.u16 $r0, %w0, 0
+jit_var_new(13 <- 12, 10): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.u8 %w0, [%rd3]$nsetp.ne.u16 $r0, %w0, 0
 jit_var_inc_ref_ext(13): 1
 jit_var_dec_ref_ext(12): 0
 jit_var_dec_ref_ext(11): 0
@@ -127,26 +127,26 @@ jit_var_free(11)
 jit_var_dec_ref_ext(10): 0
 jit_var_dec_ref_ext(9): 0
 jit_var_set_label(13): "even"
-jit_trace_append(9): mov.$b0 $r0, 0x00000002 (reused)
+jit_var_new(9): mov.$b0 $r0, 0x00000002 (reused)
 jit_var_inc_ref_ext(9): 1
 jit_var_inc_ref_int(8): 2
 jit_var_inc_ref_int(9): 2
 jit_var_dec_ref_int(8): 1
 jit_var_dec_ref_int(9): 1
-jit_trace_append(10 <- 8, 9): mul.lo.$t0 $r0, $r1, $r2 (reused)
+jit_var_new(10 <- 8, 9): mul.lo.$t0 $r0, $r1, $r2 (reused)
 jit_var_inc_ref_ext(10): 1
-jit_trace_append(14): mov.$b0 $r0, 0x00000001
+jit_var_new(14): mov.$b0 $r0, 0x00000001
 jit_var_inc_ref_ext(14): 1
 jit_var_inc_ref_int(10): 2
 jit_var_inc_ref_int(14): 1
-jit_trace_append(15 <- 10, 14): add.$t0 $r0, $r1, $r2
+jit_var_new(15 <- 10, 14): add.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(15): 1
-jit_trace_append(16): mov.$t0 $r0, 1
+jit_var_new(16): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(16): 1
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(12): 2
 jit_var_inc_ref_int(15): 1
-jit_trace_append(17 <- 12, 15): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.u8 %w0, [%rd3]$nsetp.ne.u16 $r0, %w0, 0
+jit_var_new(17 <- 12, 15): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.u8 %w0, [%rd3]$nsetp.ne.u16 $r0, %w0, 0
 jit_var_inc_ref_ext(17): 1
 jit_var_dec_ref_ext(12): 0
 jit_var_dec_ref_ext(16): 0
@@ -329,13 +329,13 @@ jit_var_dec_ref_int(14): 0
 jit_var_free(14)
 jit_eval(): done.
 Odd   : [1, 1, 1, 1, 1, .. 500 skipped .., 1, 1, 1, 1, 1]
-jit_trace_append(18): mov.$b0 $r0, 0x00000002
+jit_var_new(18): mov.$b0 $r0, 0x00000002
 jit_var_inc_ref_ext(18): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(18): 1
-jit_trace_append(19 <- 8, 18): mul.lo.$t0 $r0, $r1, $r2
+jit_var_new(19 <- 8, 18): mul.lo.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(19): 1
-jit_trace_append(20): mov.$t0 $r0, 1
+jit_var_new(20): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_ext(6): 2
 jit_var_copy_ptr(21 <- 6): <@>
@@ -343,7 +343,7 @@ jit_var_inc_ref_ext(21): 1
 jit_var_inc_ref_int(21): 1
 jit_var_inc_ref_int(17): 1
 jit_var_inc_ref_int(19): 1
-jit_trace_append(22 <- 21, 17, 19): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nselp.u16 %w0, 1, 0, $r2$nst.global.u8 [%rd3], %w0
+jit_var_new(22 <- 21, 17, 19): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nselp.u16 %w0, 1, 0, $r2$nst.global.u8 [%rd3], %w0
 jit_var_inc_ref_ext(22): 1
 jit_var_mark_scatter(22, 6)
 jit_var_dec_ref_ext(21): 0
@@ -351,27 +351,27 @@ jit_var_dec_ref_ext(20): 0
 jit_var_free(20)
 jit_var_dec_ref_ext(19): 0
 jit_var_dec_ref_ext(18): 0
-jit_trace_append(18): mov.$b0 $r0, 0x00000002 (reused)
+jit_var_new(18): mov.$b0 $r0, 0x00000002 (reused)
 jit_var_inc_ref_ext(18): 1
 jit_var_inc_ref_int(8): 2
 jit_var_inc_ref_int(18): 2
 jit_var_dec_ref_int(8): 1
 jit_var_dec_ref_int(18): 1
-jit_trace_append(19 <- 8, 18): mul.lo.$t0 $r0, $r1, $r2 (reused)
+jit_var_new(19 <- 8, 18): mul.lo.$t0 $r0, $r1, $r2 (reused)
 jit_var_inc_ref_ext(19): 1
-jit_trace_append(23): mov.$b0 $r0, 0x00000001
+jit_var_new(23): mov.$b0 $r0, 0x00000001
 jit_var_inc_ref_ext(23): 1
 jit_var_inc_ref_int(19): 2
 jit_var_inc_ref_int(23): 1
-jit_trace_append(24 <- 19, 23): add.$t0 $r0, $r1, $r2
+jit_var_new(24 <- 19, 23): add.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(24): 1
-jit_trace_append(25): mov.$t0 $r0, 1
+jit_var_new(25): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(25): 1
 jit_var_inc_ref_ext(21): 1
 jit_var_inc_ref_int(21): 2
 jit_var_inc_ref_int(13): 1
 jit_var_inc_ref_int(24): 1
-jit_trace_append(26 <- 21, 13, 24): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nselp.u16 %w0, 1, 0, $r2$nst.global.u8 [%rd3], %w0
+jit_var_new(26 <- 21, 13, 24): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nselp.u16 %w0, 1, 0, $r2$nst.global.u8 [%rd3], %w0
 jit_var_inc_ref_ext(26): 1
 jit_var_mark_scatter(26, 6)
 jit_var_dec_ref_ext(21): 0

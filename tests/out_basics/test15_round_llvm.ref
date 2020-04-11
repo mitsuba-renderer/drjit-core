@@ -4,24 +4,24 @@ jit_var_map(1): <@>, size=6, free=1
 jit_var_inc_ref_ext(1): 1
 jit_var_copy(1, size=6)
 jit_var_inc_ref_int(1): 1
-jit_trace_append(2 <- 1): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
+jit_var_new(2 <- 1): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(1): 2
-jit_trace_append(3 <- 1): $r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)
+jit_var_new(3 <- 1): $r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(1): 3
-jit_trace_append(4 <- 1): $r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)
+jit_var_new(4 <- 1): $r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(1): 4
-jit_trace_append(5 <- 1): $r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)
+jit_var_new(5 <- 1): $r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
-jit_trace_append(6 <- 2, 3): $r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_new(6 <- 2, 3): $r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
 jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_int(2): 2
 jit_var_inc_ref_int(3): 2
-jit_trace_append(7 <- 2, 3): $r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_new(7 <- 2, 3): $r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
 jit_var_inc_ref_ext(7): 1
 jit_eval(): begin.
 jit_assemble(size=6): register map:
@@ -196,24 +196,24 @@ jit_var_map(8): <@>, size=6, free=1
 jit_var_inc_ref_ext(8): 1
 jit_var_copy(8, size=6)
 jit_var_inc_ref_int(8): 1
-jit_trace_append(9 <- 8): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
+jit_var_new(9 <- 8): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(9): 1
 jit_var_inc_ref_int(8): 2
-jit_trace_append(10 <- 8): $r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)
+jit_var_new(10 <- 8): $r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(8): 3
-jit_trace_append(11 <- 8): $r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)
+jit_var_new(11 <- 8): $r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(11): 1
 jit_var_inc_ref_int(8): 4
-jit_trace_append(12 <- 8): $r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)
+jit_var_new(12 <- 8): $r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(10): 1
-jit_trace_append(13 <- 9, 10): $r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_new(13 <- 9, 10): $r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
 jit_var_inc_ref_ext(13): 1
 jit_var_inc_ref_int(9): 2
 jit_var_inc_ref_int(10): 2
-jit_trace_append(14 <- 9, 10): $r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_new(14 <- 9, 10): $r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
 jit_var_inc_ref_ext(14): 1
 jit_eval(): begin.
 jit_assemble(size=6): register map:

@@ -1,3 +1,12 @@
+/*
+    kernels/mkperm.cuh -- CUDA, exclusive scan for 32 bit unsigned integers
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #include "common.h"
 
 KERNEL void scan_small_u32(const uint32_t *in, uint32_t *out, uint32_t size) {

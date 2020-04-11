@@ -638,7 +638,7 @@ extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index);
  * statement, whose external reference count is initialized to \c 1.
  *
  * This function assumes that the operation does not access any operands. See
- * the other <tt>jitc_trace_*</tt> functions for IR statements with 1 to 4
+ * the other <tt>jitc_var_*</tt> functions for IR statements with 1 to 4
  * additional operands. In these latter versions, the string \c stmt may
  * contain special dollar-prefixed expressions (<tt>$rN</tt>, <tt>$tN</tt>, or
  * <tt>$bN</tt>, where <tt>N</tt> ranges from 0-4) to refer to operands and
@@ -650,7 +650,7 @@ extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index);
  * follows:
  *
  * \code
- * uint32_t result = jitc_trace_append_2(VarType::Int32,
+ * uint32_t result = jitc_var_new_2(VarType::Int32,
  *                                       "add.$t0 $r0, $r1, $r2",
  *                                       1, op1, op2);
  * \endcode
@@ -670,40 +670,40 @@ extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index);
  *    Size of the resulting variable. The size is automatically inferred from
  *    the operands and must only be specified for the zero-argument form.
  */
-extern JITC_EXPORT uint32_t jitc_trace_append_0(enum VarType type,
-                                                const char *stmt,
-                                                int stmt_static,
-                                                uint32_t size);
+extern JITC_EXPORT uint32_t jitc_var_new_0(enum VarType type,
+                                           const char *stmt,
+                                           int stmt_static,
+                                           uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
-extern JITC_EXPORT uint32_t jitc_trace_append_1(enum VarType type,
-                                                const char *stmt,
-                                                int stmt_static,
-                                                uint32_t op1);
+extern JITC_EXPORT uint32_t jitc_var_new_1(enum VarType type,
+                                           const char *stmt,
+                                           int stmt_static,
+                                           uint32_t op1);
 
 /// Append a variable to the instruction trace (2 operands)
-extern JITC_EXPORT uint32_t jitc_trace_append_2(enum VarType type,
-                                                const char *stmt,
-                                                int stmt_static,
-                                                uint32_t op1,
-                                                uint32_t op2);
+extern JITC_EXPORT uint32_t jitc_var_new_2(enum VarType type,
+                                           const char *stmt,
+                                           int stmt_static,
+                                           uint32_t op1,
+                                           uint32_t op2);
 
 /// Append a variable to the instruction trace (3 operands)
-extern JITC_EXPORT uint32_t jitc_trace_append_3(enum VarType type,
-                                                const char *stmt,
-                                                int stmt_static,
-                                                uint32_t op1,
-                                                uint32_t op2,
-                                                uint32_t op3);
+extern JITC_EXPORT uint32_t jitc_var_new_3(enum VarType type,
+                                           const char *stmt,
+                                           int stmt_static,
+                                           uint32_t op1,
+                                           uint32_t op2,
+                                           uint32_t op3);
 
 /// Append a variable to the instruction trace (4 operands)
-extern JITC_EXPORT uint32_t jitc_trace_append_4(enum VarType type,
-                                                const char *stmt,
-                                                int stmt_static,
-                                                uint32_t op1,
-                                                uint32_t op2,
-                                                uint32_t op3,
-                                                uint32_t op4);
+extern JITC_EXPORT uint32_t jitc_var_new_4(enum VarType type,
+                                           const char *stmt,
+                                           int stmt_static,
+                                           uint32_t op1,
+                                           uint32_t op2,
+                                           uint32_t op3,
+                                           uint32_t op4);
 
 /// Return the external reference count of a given variable
 extern JITC_EXPORT uint32_t jitc_var_ext_ref(uint32_t index);

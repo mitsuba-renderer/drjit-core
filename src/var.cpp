@@ -1,3 +1,12 @@
+/*
+    src/var.cpp -- Variable/computation graph-related functions.
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #include "var.h"
 #include "internal.h"
 #include "log.h"
@@ -204,10 +213,10 @@ void jit_var_dec_ref_int(uint32_t index) {
 }
 
 /// Append the given variable to the instruction trace and return its ID
-std::pair<uint32_t, Variable *> jit_trace_append(Variable &v) {
+std::pair<uint32_t, Variable *> jit_var_new(Variable &v) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_trace_append(): you must invoke jit_device_set() to "
+        jit_raise("jit_var_new(): you must invoke jit_device_set() to "
                   "choose a target device before performing computation using "
                   "the JIT compiler.");
 
@@ -295,8 +304,8 @@ void jit_var_set_label(uint32_t index, const char *label_) {
 }
 
 /// Append a variable to the instruction trace (no operands)
-uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static,
-                            uint32_t size) {
+uint32_t jit_var_new_0(VarType type, const char *stmt, int stmt_static,
+                       uint32_t size) {
     Variable v;
     v.type = (uint32_t) type;
     v.size = size;
@@ -305,8 +314,8 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static,
     v.free_stmt = stmt_static == 0;
 
     uint32_t index; Variable *vo;
-    std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_trace_append(%u): %s%s",
+    std::tie(index, vo) = jit_var_new(v);
+    jit_log(Debug, "jit_var_new(%u): %s%s",
             index, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
@@ -316,10 +325,10 @@ uint32_t jit_trace_append_0(VarType type, const char *stmt, int stmt_static,
 }
 
 /// Append a variable to the instruction trace (1 operand)
-uint32_t jit_trace_append_1(VarType type, const char *stmt,
-                            int stmt_static, uint32_t op1) {
+uint32_t jit_var_new_1(VarType type, const char *stmt, int stmt_static,
+                       uint32_t op1) {
     if (unlikely(op1 == 0))
-        jit_raise("jit_trace_append(): arithmetic involving "
+        jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
 
     Variable *v1 = jit_var(op1);
@@ -341,8 +350,8 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
     jit_var_inc_ref_int(op1, v1);
 
     uint32_t index; Variable *vo;
-    std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_trace_append(%u <- %u): %s%s",
+    std::tie(index, vo) = jit_var_new(v);
+    jit_log(Debug, "jit_var_new(%u <- %u): %s%s",
             index, op1, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
@@ -352,10 +361,10 @@ uint32_t jit_trace_append_1(VarType type, const char *stmt,
 }
 
 /// Append a variable to the instruction trace (2 operands)
-uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
+uint32_t jit_var_new_2(VarType type, const char *stmt, int stmt_static,
                             uint32_t op1, uint32_t op2) {
     if (unlikely(op1 == 0 || op2 == 0))
-        jit_raise("jit_trace_append(): arithmetic involving "
+        jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
 
     Variable *v1 = jit_var(op1),
@@ -373,7 +382,7 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size))) {
         jit_raise(
-            "jit_trace_append(): arithmetic involving arrays of incompatible "
+            "jit_var_new(): arithmetic involving arrays of incompatible "
             "size (%u and %u). The instruction was \"%s\".",
             v1->size, v2->size, stmt);
     } else if (unlikely(v1->pending_scatter || v2->pending_scatter)) {
@@ -387,8 +396,8 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
     jit_var_inc_ref_int(op2, v2);
 
     uint32_t index; Variable *vo;
-    std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_trace_append(%u <- %u, %u): %s%s",
+    std::tie(index, vo) = jit_var_new(v);
+    jit_log(Debug, "jit_var_new(%u <- %u, %u): %s%s",
             index, op1, op2, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
@@ -398,10 +407,10 @@ uint32_t jit_trace_append_2(VarType type, const char *stmt, int stmt_static,
 }
 
 /// Append a variable to the instruction trace (3 operands)
-uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
-                            uint32_t op1, uint32_t op2, uint32_t op3) {
+uint32_t jit_var_new_3(VarType type, const char *stmt, int stmt_static,
+                       uint32_t op1, uint32_t op2, uint32_t op3) {
     if (unlikely(op1 == 0 || op2 == 0 || op3 == 0))
-        jit_raise("jit_trace_append(): arithmetic involving "
+        jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
 
     Variable *v1 = jit_var(op1),
@@ -421,10 +430,9 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size) ||
                  (v3->size != 1 && v3->size != v.size))) {
-        jit_raise(
-            "jit_trace_append(): arithmetic involving arrays of incompatible "
-            "size (%u, %u, and %u). The instruction was \"%s\".",
-            v1->size, v2->size, v3->size, stmt);
+        jit_raise("jit_var_new(): arithmetic involving arrays of incompatible "
+                  "size (%u, %u, and %u). The instruction was \"%s\".",
+                  v1->size, v2->size, v3->size, stmt);
     } else if (unlikely(v1->pending_scatter || v2->pending_scatter || v3->pending_scatter)) {
         jit_eval();
         v1 = jit_var(op1);
@@ -438,8 +446,8 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
     jit_var_inc_ref_int(op3, v3);
 
     uint32_t index; Variable *vo;
-    std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u): %s%s",
+    std::tie(index, vo) = jit_var_new(v);
+    jit_log(Debug, "jit_var_new(%u <- %u, %u, %u): %s%s",
             index, op1, op2, op3, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
@@ -449,11 +457,10 @@ uint32_t jit_trace_append_3(VarType type, const char *stmt, int stmt_static,
 }
 
 /// Append a variable to the instruction trace (4 operands)
-uint32_t jit_trace_append_4(VarType type, const char *stmt, int stmt_static,
-                            uint32_t op1, uint32_t op2, uint32_t op3,
-                            uint32_t op4) {
+uint32_t jit_var_new_4(VarType type, const char *stmt, int stmt_static,
+                       uint32_t op1, uint32_t op2, uint32_t op3, uint32_t op4) {
     if (unlikely(op1 == 0 || op2 == 0 || op3 == 0 || op4 == 0))
-        jit_raise("jit_trace_append(): arithmetic involving "
+        jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
 
     Variable *v1 = jit_var(op1),
@@ -477,7 +484,7 @@ uint32_t jit_trace_append_4(VarType type, const char *stmt, int stmt_static,
                  (v3->size != 1 && v3->size != v.size) ||
                  (v4->size != 1 && v4->size != v.size))) {
         jit_raise(
-            "jit_trace_append(): arithmetic involving arrays of incompatible "
+            "jit_var_new(): arithmetic involving arrays of incompatible "
             "size (%u, %u, %u, and %u). The instruction was \"%s\".",
             v1->size, v2->size, v3->size, v4->size, stmt);
     } else if (unlikely(v1->pending_scatter || v2->pending_scatter ||
@@ -496,8 +503,8 @@ uint32_t jit_trace_append_4(VarType type, const char *stmt, int stmt_static,
     jit_var_inc_ref_int(op4, v4);
 
     uint32_t index; Variable *vo;
-    std::tie(index, vo) = jit_trace_append(v);
-    jit_log(Debug, "jit_trace_append(%u <- %u, %u, %u, %u): %s%s",
+    std::tie(index, vo) = jit_var_new(v);
+    jit_log(Debug, "jit_var_new(%u <- %u, %u, %u, %u): %s%s",
             index, op1, op2, op3, op4, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
@@ -524,7 +531,7 @@ uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free) {
         v.unaligned = uintptr_t(ptr) % align != 0;
 
     uint32_t index; Variable *vo;
-    std::tie(index, vo) = jit_trace_append(v);
+    std::tie(index, vo) = jit_var_new(v);
     jit_log(Debug, "jit_var_map(%u): " ENOKI_PTR ", size=%u, free=%i",
             index, (uintptr_t) ptr, size, (int) free);
 
@@ -600,7 +607,7 @@ uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index) {
     jit_var_inc_ref_ext(index);
 
     uint32_t index_o; Variable *vo;
-    std::tie(index_o, vo) = jit_trace_append(v);
+    std::tie(index_o, vo) = jit_var_new(v);
     jit_log(Debug, "jit_var_copy_ptr(%u <- %u): " ENOKI_PTR, index_o, index,
             (uintptr_t) ptr);
 

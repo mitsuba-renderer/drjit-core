@@ -1,3 +1,12 @@
+/*
+    src/util.cpp -- Parallel reductions and miscellaneous utility routines.
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #include <enoki/traits.h>
 #include "internal.h"
 #include "util.h"
@@ -1070,7 +1079,7 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
 
         uint32_t index;
         Variable *vo;
-        std::tie(index, vo) = jit_trace_append(v2);
+        std::tie(index, vo) = jit_var_new(v2);
 
         jit_var_inc_ref_int(perm_var);
         jit_var_inc_ref_ext(index, vo);

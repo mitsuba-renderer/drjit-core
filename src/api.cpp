@@ -1,3 +1,12 @@
+/*
+    src/api.cpp -- C -> C++ API locking wrappers
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #include "internal.h"
 #include "var.h"
 #include "eval.h"
@@ -227,34 +236,34 @@ uint32_t jitc_var_copy(AllocType atype, VarType vtype, const void *value,
     return jit_var_copy(atype, vtype, value, size);
 }
 
-uint32_t jitc_trace_append_0(VarType type, const char *stmt, int stmt_static, uint32_t size) {
+uint32_t jitc_var_new_0(VarType type, const char *stmt, int stmt_static, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_0(type, stmt, stmt_static, size);
+    return jit_var_new_0(type, stmt, stmt_static, size);
 }
 
-uint32_t jitc_trace_append_1(VarType type, const char *stmt, int stmt_static,
-                             uint32_t arg1) {
+uint32_t jitc_var_new_1(VarType type, const char *stmt, int stmt_static,
+                        uint32_t arg1) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_1(type, stmt, stmt_static, arg1);
+    return jit_var_new_1(type, stmt, stmt_static, arg1);
 }
 
-uint32_t jitc_trace_append_2(VarType type, const char *stmt, int stmt_static,
-                             uint32_t arg1, uint32_t arg2) {
+uint32_t jitc_var_new_2(VarType type, const char *stmt, int stmt_static,
+                        uint32_t arg1, uint32_t arg2) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_2(type, stmt, stmt_static, arg1, arg2);
+    return jit_var_new_2(type, stmt, stmt_static, arg1, arg2);
 }
 
-uint32_t jitc_trace_append_3(VarType type, const char *stmt, int stmt_static,
-                             uint32_t arg1, uint32_t arg2, uint32_t arg3) {
+uint32_t jitc_var_new_3(VarType type, const char *stmt, int stmt_static,
+                        uint32_t arg1, uint32_t arg2, uint32_t arg3) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_3(type, stmt, stmt_static, arg1, arg2, arg3);
+    return jit_var_new_3(type, stmt, stmt_static, arg1, arg2, arg3);
 }
 
-uint32_t jitc_trace_append_4(VarType type, const char *stmt, int stmt_static,
-                             uint32_t arg1, uint32_t arg2, uint32_t arg3,
-                             uint32_t arg4) {
+uint32_t jitc_var_new_4(VarType type, const char *stmt, int stmt_static,
+                        uint32_t arg1, uint32_t arg2, uint32_t arg3,
+                        uint32_t arg4) {
     lock_guard guard(state.mutex);
-    return jit_trace_append_4(type, stmt, stmt_static, arg1, arg2, arg3, arg4);
+    return jit_var_new_4(type, stmt, stmt_static, arg1, arg2, arg3, arg4);
 }
 
 void jitc_var_migrate(uint32_t index, AllocType type) {

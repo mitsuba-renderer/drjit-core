@@ -1,23 +1,23 @@
 jit_device_set(device=0, stream=0): creating stream
-jit_trace_append(1): mov.u32 $r0, $i
+jit_var_new(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_ext(1): 2
 jit_var_dec_ref_ext(1): 1
 jit_var_inc_ref_ext(1): 2
 jit_var_inc_ref_int(1): 1
-jit_trace_append(2 <- 1): cvt.$t0.$t1 $r0, $r1
+jit_var_new(2 <- 1): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(1): 2
-jit_trace_append(3 <- 1): cvt.$t0.$t1 $r0, $r1
+jit_var_new(3 <- 1): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(1): 3
-jit_trace_append(4 <- 1): cvt.$t0.$t1 $r0, $r1
+jit_var_new(4 <- 1): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(1): 4
-jit_trace_append(5 <- 1): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(5 <- 1): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(1): 5
-jit_trace_append(6 <- 1): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(6 <- 1): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(6): 1
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
@@ -158,29 +158,29 @@ jit_var_dec_ref_ext(1): 1
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=4096)
-jit_trace_append(7): mov.u32 $r0, $i
+jit_var_new(7): mov.u32 $r0, $i
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(7): 1
-jit_trace_append(8 <- 7): cvt.$t0.$t1 $r0, $r1
+jit_var_new(8 <- 7): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(8): 1
 jit_var_dec_ref_ext(7): 0
-jit_trace_append(9): mov.$b0 $r0, 0x00000200
+jit_var_new(9): mov.$b0 $r0, 0x00000200
 jit_var_inc_ref_ext(9): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(9): 1
-jit_trace_append(10 <- 8, 9): sub.$t0 $r0, $r1, $r2
+jit_var_new(10 <- 8, 9): sub.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(10): 1
 jit_var_dec_ref_ext(9): 0
 jit_var_dec_ref_ext(8): 0
 jit_var_inc_ref_ext(10): 2
 jit_var_inc_ref_int(10): 1
-jit_trace_append(11 <- 10): cvt.$t0.$t1 $r0, $r1
+jit_var_new(11 <- 10): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(11): 1
 jit_var_inc_ref_int(10): 2
-jit_trace_append(12 <- 10): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(12 <- 10): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(10): 3
-jit_trace_append(13 <- 10): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(13 <- 10): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(13): 1
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
@@ -306,27 +306,27 @@ jit_var_dec_ref_ext(10): 1
 jit_var_dec_ref_ext(10): 0
 jit_var_free(10)
 jit_free(<@>, type=device, device=0, size=4096)
-jit_trace_append(14): mov.u32 $r0, $i
+jit_var_new(14): mov.u32 $r0, $i
 jit_var_inc_ref_ext(14): 1
 jit_var_inc_ref_int(14): 1
-jit_trace_append(15 <- 14): cvt.$t0.$t1 $r0, $r1
+jit_var_new(15 <- 14): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(15): 1
 jit_var_dec_ref_ext(14): 0
 jit_var_inc_ref_int(15): 1
-jit_trace_append(16 <- 15): cvt.$t0.$t1 $r0, $r1
+jit_var_new(16 <- 15): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(16): 1
 jit_var_inc_ref_int(15): 2
-jit_trace_append(17 <- 15): cvt.$t0.$t1 $r0, $r1
+jit_var_new(17 <- 15): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(17): 1
 jit_var_inc_ref_ext(15): 2
 jit_var_inc_ref_int(15): 3
-jit_trace_append(18 <- 15): cvt.$t0.$t1 $r0, $r1
+jit_var_new(18 <- 15): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(18): 1
 jit_var_inc_ref_int(15): 4
-jit_trace_append(19 <- 15): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(19 <- 15): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(15): 5
-jit_trace_append(20 <- 15): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(20 <- 15): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(20): 1
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
@@ -473,29 +473,29 @@ jit_free(<@>, type=device, device=0, size=4096)
 jit_var_dec_ref_ext(15): 0
 jit_var_free(15)
 jit_free(<@>, type=device, device=0, size=8192)
-jit_trace_append(21): mov.u32 $r0, $i
+jit_var_new(21): mov.u32 $r0, $i
 jit_var_inc_ref_ext(21): 1
 jit_var_inc_ref_int(21): 1
-jit_trace_append(22 <- 21): cvt.$t0.$t1 $r0, $r1
+jit_var_new(22 <- 21): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(22): 1
 jit_var_dec_ref_ext(21): 0
-jit_trace_append(23): mov.$b0 $r0, 0x0000000000000200
+jit_var_new(23): mov.$b0 $r0, 0x0000000000000200
 jit_var_inc_ref_ext(23): 1
 jit_var_inc_ref_int(22): 1
 jit_var_inc_ref_int(23): 1
-jit_trace_append(24 <- 22, 23): sub.$t0 $r0, $r1, $r2
+jit_var_new(24 <- 22, 23): sub.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(24): 1
 jit_var_dec_ref_ext(23): 0
 jit_var_dec_ref_ext(22): 0
 jit_var_inc_ref_int(24): 1
-jit_trace_append(25 <- 24): cvt.$t0.$t1 $r0, $r1
+jit_var_new(25 <- 24): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(25): 1
 jit_var_inc_ref_ext(24): 2
 jit_var_inc_ref_int(24): 2
-jit_trace_append(26 <- 24): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(26 <- 24): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(26): 1
 jit_var_inc_ref_int(24): 3
-jit_trace_append(27 <- 24): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(27 <- 24): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(27): 1
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
@@ -621,29 +621,29 @@ jit_free(<@>, type=device, device=0, size=4096)
 jit_var_dec_ref_ext(24): 0
 jit_var_free(24)
 jit_free(<@>, type=device, device=0, size=8192)
-jit_trace_append(28): mov.u32 $r0, $i
+jit_var_new(28): mov.u32 $r0, $i
 jit_var_inc_ref_ext(28): 1
 jit_var_inc_ref_int(28): 1
-jit_trace_append(29 <- 28): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(29 <- 28): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(29): 1
 jit_var_dec_ref_ext(28): 0
-jit_trace_append(30): mov.$t0 $r0, 0f44000000
+jit_var_new(30): mov.$t0 $r0, 0f44000000
 jit_var_inc_ref_ext(30): 1
 jit_var_inc_ref_int(29): 1
 jit_var_inc_ref_int(30): 1
-jit_trace_append(31 <- 29, 30): sub.ftz.$t0 $r0, $r1, $r2
+jit_var_new(31 <- 29, 30): sub.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(31): 1
 jit_var_dec_ref_ext(30): 0
 jit_var_dec_ref_ext(29): 0
 jit_var_inc_ref_int(31): 1
-jit_trace_append(32 <- 31): cvt.rzi.$t0.$t1 $r0, $r1
+jit_var_new(32 <- 31): cvt.rzi.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(32): 1
 jit_var_inc_ref_int(31): 2
-jit_trace_append(33 <- 31): cvt.rzi.$t0.$t1 $r0, $r1
+jit_var_new(33 <- 31): cvt.rzi.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(33): 1
 jit_var_inc_ref_ext(31): 2
 jit_var_inc_ref_int(31): 3
-jit_trace_append(34 <- 31): cvt.$t0.$t1 $r0, $r1
+jit_var_new(34 <- 31): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(34): 1
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
@@ -768,28 +768,28 @@ jit_free(<@>, type=device, device=0, size=4096)
 jit_var_dec_ref_ext(31): 0
 jit_var_free(31)
 jit_free(<@>, type=device, device=0, size=4096)
-jit_trace_append(35): mov.u32 $r0, $i
+jit_var_new(35): mov.u32 $r0, $i
 jit_var_inc_ref_ext(35): 1
 jit_var_inc_ref_int(35): 1
-jit_trace_append(36 <- 35): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(36 <- 35): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(36): 1
 jit_var_dec_ref_ext(35): 0
-jit_trace_append(37): mov.$t0 $r0, 0d4080000000000000
+jit_var_new(37): mov.$t0 $r0, 0d4080000000000000
 jit_var_inc_ref_ext(37): 1
 jit_var_inc_ref_int(36): 1
 jit_var_inc_ref_int(37): 1
-jit_trace_append(38 <- 36, 37): sub.$t0 $r0, $r1, $r2
+jit_var_new(38 <- 36, 37): sub.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(38): 1
 jit_var_dec_ref_ext(37): 0
 jit_var_dec_ref_ext(36): 0
 jit_var_inc_ref_int(38): 1
-jit_trace_append(39 <- 38): cvt.rzi.$t0.$t1 $r0, $r1
+jit_var_new(39 <- 38): cvt.rzi.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(39): 1
 jit_var_inc_ref_int(38): 2
-jit_trace_append(40 <- 38): cvt.rzi.$t0.$t1 $r0, $r1
+jit_var_new(40 <- 38): cvt.rzi.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(40): 1
 jit_var_inc_ref_int(38): 3
-jit_trace_append(41 <- 38): cvt.rn.$t0.$t1 $r0, $r1
+jit_var_new(41 <- 38): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(41): 1
 jit_var_inc_ref_ext(38): 2
 jit_eval(): begin.

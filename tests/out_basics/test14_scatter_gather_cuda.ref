@@ -1,12 +1,12 @@
 jit_device_set(device=0, stream=0): creating stream
-jit_trace_append(1): mov.u32 $r0, $i
+jit_var_new(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
-jit_trace_append(2 <- 1): cvt.$t0.$t1 $r0, $r1
+jit_var_new(2 <- 1): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0
 jit_var_inc_ref_int(2): 1
-jit_trace_append(3 <- 2): neg.$t0 $r0, $r1
+jit_var_new(3 <- 2): neg.$t0 $r0, $r1
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_ext(3): 2
 jit_var_dec_ref_ext(3): 1
@@ -17,7 +17,7 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(4): <@>, size=4, free=1
 jit_var_inc_ref_ext(4): 1
 jit_var_copy(4, size=4)
-jit_trace_append(5): mov.$t0 $r0, 1
+jit_var_new(5): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(5): 1
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
@@ -86,7 +86,7 @@ jit_var_copy_ptr(6 <- 3): <@>
 jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(4): 1
-jit_trace_append(7 <- 6, 4): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.$t0 $r0, [%rd3]
+jit_var_new(7 <- 6, 4): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.$t0 $r0, [%rd3]
 jit_var_inc_ref_ext(7): 1
 jit_var_dec_ref_ext(6): 0
 jit_var_dec_ref_ext(5): 0
@@ -161,13 +161,13 @@ jit_var_dec_ref_int(4): 0
 jit_eval(): done.
 [-34, -62, -75, -2]
 [0, -1, -2, -3, -4, .. 1014 skipped .., -1019, -1020, -1021, -1022, -1023]
-jit_trace_append(8): mov.$b0 $r0, 0x00000003
+jit_var_new(8): mov.$b0 $r0, 0x00000003
 jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(8): 1
-jit_trace_append(9 <- 7, 8): mul.lo.$t0 $r0, $r1, $r2
+jit_var_new(9 <- 7, 8): mul.lo.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(9): 1
-jit_trace_append(10): mov.$t0 $r0, 1
+jit_var_new(10): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_ext(3): 2
 jit_var_copy_ptr(11 <- 3): <@>
@@ -175,7 +175,7 @@ jit_var_inc_ref_ext(11): 1
 jit_var_inc_ref_int(11): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(4): 1
-jit_trace_append(12 <- 11, 9, 4): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nst.global.$t2 [%rd3], $r2
+jit_var_new(12 <- 11, 9, 4): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nst.global.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(12): 1
 jit_var_mark_scatter(12, 3)
 jit_var_dec_ref_ext(11): 0
@@ -183,7 +183,7 @@ jit_var_dec_ref_ext(10): 0
 jit_var_free(10)
 jit_var_dec_ref_ext(9): 0
 jit_var_dec_ref_ext(8): 0
-jit_trace_append(13): mov.$t0 $r0, 1
+jit_var_new(13): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(13): 1
 jit_eval(): begin.
 jit_assemble(size=4): register map:
@@ -273,7 +273,7 @@ jit_var_copy_ptr(14 <- 3): <@>
 jit_var_inc_ref_ext(14): 1
 jit_var_inc_ref_int(14): 1
 jit_var_inc_ref_int(4): 1
-jit_trace_append(15 <- 14, 4): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.$t0 $r0, [%rd3]
+jit_var_new(15 <- 14, 4): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.$t0 $r0, [%rd3]
 jit_var_inc_ref_ext(15): 1
 jit_var_dec_ref_ext(14): 0
 jit_var_dec_ref_ext(7): 0

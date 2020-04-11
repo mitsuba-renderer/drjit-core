@@ -18,15 +18,15 @@ jit_var_map(3): <@>, size=2, free=1
 jit_var_inc_ref_ext(3): 1
 jit_var_copy(3, size=2)
 jit_var_inc_ref_int(1): 1
-jit_trace_append(4 <- 1): not.$b0 $r0, $r1
+jit_var_new(4 <- 1): not.$b0 $r0, $r1
 jit_var_inc_ref_ext(4): 1
 jit_var_dec_ref_ext(1): 0
 jit_var_inc_ref_int(2): 1
-jit_trace_append(5 <- 2): not.$b0 $r0, $r1
+jit_var_new(5 <- 2): not.$b0 $r0, $r1
 jit_var_inc_ref_ext(5): 1
 jit_var_dec_ref_ext(2): 0
 jit_var_inc_ref_int(3): 1
-jit_trace_append(6 <- 3): not.$b0 $r0, $r1
+jit_var_new(6 <- 3): not.$b0 $r0, $r1
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(3): 0
 jit_eval(): begin.
@@ -142,15 +142,15 @@ XOR: value_1=[4294967294, 4294966061]
 XOR: value_2=[-4, -0.00350571]
 XOR: value_3=[0, 1]
 jit_var_inc_ref_int(4): 1
-jit_trace_append(7 <- 4): not.$b0 $r0, $r1
+jit_var_new(7 <- 4): not.$b0 $r0, $r1
 jit_var_inc_ref_ext(7): 1
 jit_var_dec_ref_ext(4): 0
 jit_var_inc_ref_int(5): 1
-jit_trace_append(8 <- 5): not.$b0 $r0, $r1
+jit_var_new(8 <- 5): not.$b0 $r0, $r1
 jit_var_inc_ref_ext(8): 1
 jit_var_dec_ref_ext(5): 0
 jit_var_inc_ref_int(6): 1
-jit_trace_append(9 <- 6): not.$b0 $r0, $r1
+jit_var_new(9 <- 6): not.$b0 $r0, $r1
 jit_var_inc_ref_ext(9): 1
 jit_var_dec_ref_ext(6): 0
 jit_eval(): begin.
@@ -285,15 +285,15 @@ jit_var_inc_ref_ext(12): 1
 jit_var_copy(12, size=2)
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(10): 1
-jit_trace_append(13 <- 7, 10): or.$b0 $r0, $r1, $r2
+jit_var_new(13 <- 7, 10): or.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(13): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(11): 1
-jit_trace_append(14 <- 8, 11): or.$b0 $r0, $r1, $r2
+jit_var_new(14 <- 8, 11): or.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(14): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(12): 1
-jit_trace_append(15 <- 9, 12): or.$b0 $r0, $r1, $r2
+jit_var_new(15 <- 9, 12): or.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(15): 1
 jit_eval(): begin.
 jit_assemble(size=2): register map:
@@ -431,15 +431,15 @@ OR: value_2=[1, nan]
 OR: value_3=[1, 1]
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(10): 1
-jit_trace_append(16 <- 7, 10): and.$b0 $r0, $r1, $r2
+jit_var_new(16 <- 7, 10): and.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(16): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(11): 1
-jit_trace_append(17 <- 8, 11): and.$b0 $r0, $r1, $r2
+jit_var_new(17 <- 8, 11): and.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(17): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(12): 1
-jit_trace_append(18 <- 9, 12): and.$b0 $r0, $r1, $r2
+jit_var_new(18 <- 9, 12): and.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(18): 1
 jit_eval(): begin.
 jit_assemble(size=2): register map:
@@ -576,15 +576,15 @@ AND: value_2=[0, 1234]
 AND: value_3=[0, 0]
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(10): 1
-jit_trace_append(19 <- 7, 10): xor.$b0 $r0, $r1, $r2
+jit_var_new(19 <- 7, 10): xor.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(8): 1
 jit_var_inc_ref_int(11): 1
-jit_trace_append(20 <- 8, 11): xor.$b0 $r0, $r1, $r2
+jit_var_new(20 <- 8, 11): xor.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(12): 1
-jit_trace_append(21 <- 9, 12): xor.$b0 $r0, $r1, $r2
+jit_var_new(21 <- 9, 12): xor.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(21): 1
 jit_eval(): begin.
 jit_assemble(size=2): register map:

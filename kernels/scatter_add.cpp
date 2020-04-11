@@ -1,3 +1,19 @@
+/*
+    kernels/scatter_add.cpp -- Specialized kernels for the 'scatter_add' Enoki
+    operation.
+
+    Note that the LLVM IR resulting from this file had to be significantly
+    modified (partly by 'llvm_kernels.py', and partly by hand). The output is
+    available in 'llvm_kernels_7.ll' and 'llvm_kernels_9.ll'. It is likely that
+    this file won't be needed again in the future, but it's but checked in here
+    just in case..
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #include <immintrin.h>
 #include <stdio.h>
 #include <string.h>

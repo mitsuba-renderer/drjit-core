@@ -1,3 +1,12 @@
+/*
+    kernels/misc.cuh -- Miscellaneous CUDA kernels
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #include "common.h"
 
 KERNEL void fill_64(uint64_t *out, uint32_t size, uint64_t value) {
