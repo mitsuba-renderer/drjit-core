@@ -110,13 +110,23 @@ void* jit_malloc(AllocType type, size_t size) {
             int rv;
             /* Temporarily release the main lock */ {
                 unlock_guard guard(state.mutex);
+#if !defined(_WIN32)
                 rv = posix_memalign(&ptr, 64, ai.size);
+#else
+                ptr = _aligned_malloc(ai.size, 64);
+                rv = ptr == nullptr ? ENOMEM : 0;
+#endif
             }
             if (rv == ENOMEM) {
                 jit_malloc_trim();
                 /* Temporarily release the main lock */ {
                     unlock_guard guard(state.mutex);
+#if !defined(_WIN32)
                     rv = posix_memalign(&ptr, 64, ai.size);
+#else
+                    ptr = _aligned_malloc(ai.size, 64);
+                    rv = ptr == nullptr ? ENOMEM : 0;
+#endif
                 }
             }
             if (rv != 0)
@@ -332,19 +342,19 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
 
     AllocInfo ai = it.value();
 
-    // Maybe nothing needs to be done..
-    if (ai.type == type && (type != AllocType::Device || ai.device == stream->device)) {
-        return ptr;
-    } else if ((ai.type == AllocType::Host && type == AllocType::HostAsync) ||
-               (ai.type == AllocType::HostAsync && type == AllocType::Host)) {
-#if !defined(ENOKI_TBB)
-        jit_raise("jit_malloc_migrate(): host-asynchronous memory is only "
-                  "available when TBB is enabled.");
-#else
+#if defined(ENOKI_TBB)
+    if ((ai.type == AllocType::Host && type == AllocType::HostAsync) ||
+        (ai.type == AllocType::HostAsync && type == AllocType::Host))
         it.value().type = type;
         return ptr;
+#else
+    if (type == AllocType::HostAsync)
+        type = AllocType::Host;
 #endif
-    }
+
+    // Maybe nothing needs to be done..
+    if (ai.type == type && (type != AllocType::Device || ai.device == stream->device))
+        return ptr;
 
     if (!stream->cuda)
         jit_raise(
@@ -502,8 +512,13 @@ void jit_malloc_trim(bool warn) {
 
                 case AllocType::Host:
                 case AllocType::HostAsync:
+#if !defined(_WIN32)
                     for (void *ptr : entries)
                         free(ptr);
+#else
+                    for (void* ptr : entries)
+                        _aligned_free(ptr);
+#endif
                     break;
 
                 default:

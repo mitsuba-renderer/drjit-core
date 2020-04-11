@@ -1,7 +1,13 @@
 #include "test.h"
 #include <vector>
 #include <string>
-#include <unistd.h>
+
+#if defined(_WIN32)
+#  include <windows.h>
+#  include <direct.h>
+#else
+#  include <unistd.h>
+#endif
 
 #if defined(__APPLE__)
 #  include <mach-o/dyld.h>
@@ -11,6 +17,7 @@ struct Test {
     const char *name;
     void (*func)();
     bool cuda;
+    const char *flags;
 };
 
 static std::vector<Test> *tests = nullptr;
@@ -167,38 +174,56 @@ bool test_check_log(const char *test_name, char *log, bool write_ref) {
     return result;
 }
 
-int test_register(const char *name, void (*func)(), bool cuda) {
+int test_register(const char *name, void (*func)(), bool cuda, const char *flags) {
     if (!tests)
         tests = new std::vector<Test>();
-    tests->push_back(Test{ name, func, cuda });
+    tests->push_back(Test{ name, func, cuda, flags });
     return 0;
 }
 
 int main(int argc, char **argv) {
-    char binary_path[1024];
-
 #if defined(__APPLE__)
+    char binary_path[1024];
     uint32_t binary_path_size = sizeof(binary_path);
     int rv = _NSGetExecutablePath(binary_path, &binary_path_size);
+#elif defined(_WIN32)
+    wchar_t binary_path[1024];
+    int rv = GetModuleFileNameW(nullptr, binary_path, sizeof(binary_path) / sizeof(wchar_t));
 #else
+    char binary_path[1024];
     int rv = readlink("/proc/self/exe", binary_path, sizeof(binary_path) - 1);
     if (rv != -1)
         binary_path[rv] = '\0';
 #endif
-    if (rv == -1) {
+
+    if (rv < 0) {
         fprintf(stderr, "Unable to determine binary path!");
         exit(EXIT_FAILURE);
     }
 
+#if !defined(_WIN32)
     char *last_slash = strrchr(binary_path, '/');
     if (!last_slash) {
         fprintf(stderr, "Invalid binary path!");
         exit(EXIT_FAILURE);
     }
-
     *last_slash='\0';
+#else
+    wchar_t* last_backslash = wcsrchr(binary_path, L'\\');
+    if (!last_backslash) {
+        fprintf(stderr, "Invalid binary path!");
+        exit(EXIT_FAILURE);
+    }
+    *last_backslash = L'\0';
+#endif
 
-    if (chdir(binary_path) == -1) {
+#if defined(_WIN32)
+    rv = _wchdir(binary_path);
+#else
+    rv = chdir(binary_path);
+#endif
+
+    if (rv == -1) {
         fprintf(stderr, "Could not change working directory!");
         exit(EXIT_FAILURE);
     }
@@ -258,10 +283,15 @@ int main(int argc, char **argv) {
         int tests_passed = 0,
             tests_failed = 0;
 
+        bool has_avx512 =
+            has_llvm && strstr(jitc_llvm_target_features(), "+avx512f");
+
         for (auto &test : *tests) {
             fprintf(stdout, " - %s .. ", test.name);
-            if ( (test.cuda && !has_cuda) ||
-                (!test.cuda && !has_llvm)) {
+
+            if (( test.cuda && !has_cuda) ||
+                (!test.cuda && !has_llvm) ||
+                (!test.cuda && test.flags && strstr(test.flags, "avx512") && !has_avx512)) {
                 fprintf(stdout, "skipped.\n");
                 continue;
             }

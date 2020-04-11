@@ -27,7 +27,18 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#define JITC_EXPORT    __attribute__ ((visibility("default")))
+#if defined(_MSC_VER)
+#  if defined(ENOKI_BUILD)
+#    define JITC_EXPORT    __declspec(dllexport)
+#  else
+#    define JITC_EXPORT    __declspec(dllimport)
+#  endif
+#  define JITC_MALLOC
+#else
+#  define JITC_EXPORT    __attribute__ ((visibility("default")))
+#  define JITC_MALLOC    __attribute__((malloc))
+#endif
+
 #if defined(__cplusplus)
 #  define JITC_CONSTEXPR constexpr
 #else
@@ -141,6 +152,12 @@ extern JITC_EXPORT void jitc_device_set(int32_t device, uint32_t stream);
 extern JITC_EXPORT void jitc_llvm_set_target(const char *target_cpu,
                                              const char *target_features,
                                              uint32_t vector_width);
+
+/// Get the CPU that is currently targeted by the LLVM backend
+extern JITC_EXPORT const char *jitc_llvm_target_cpu();
+
+/// Get the list of CPU features currently used by the LLVM backend
+extern JITC_EXPORT const char *jitc_llvm_target_features();
 
 /// Return the major version of the LLVM library
 extern JITC_EXPORT int jitc_llvm_version_major();
@@ -335,7 +352,7 @@ enum AllocType {
  *
  */
 extern JITC_EXPORT void *jitc_malloc(enum AllocType type, size_t size)
-    __attribute__((malloc));
+    JITC_MALLOC;
 
 /**
  * \brief Release a given pointer asynchronously

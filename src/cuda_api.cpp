@@ -4,8 +4,11 @@
 #include "util.h"
 #include "io.h"
 #include "../kernels/kernels.h"
-#include <dlfcn.h>
-#include <zlib.h>
+#if defined(_WIN32)
+#  include <windows.h>
+#else
+#  include <dlfcn.h>
+#endif
 #include <lz4.h>
 
 #if defined(ENOKI_DYNAMIC_CUDA)
@@ -86,8 +89,8 @@ CUfunction *jit_cuda_scan_large_u32 = nullptr;
 CUfunction *jit_cuda_scan_large_u32_init = nullptr;
 CUfunction *jit_cuda_compress_small = nullptr;
 CUfunction *jit_cuda_compress_large = nullptr;
-CUfunction *jit_cuda_block_copy[(int) ReductionType::Count] { };
-CUfunction *jit_cuda_block_sum[(int) ReductionType::Count] { };
+CUfunction *jit_cuda_block_copy[(int)VarType::Count] { };
+CUfunction *jit_cuda_block_sum [(int)VarType::Count] { };
 CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
                                [(int) VarType::Count] = { };
 int jit_cuda_devices = 0;
@@ -101,25 +104,33 @@ bool jit_cuda_init() {
     jit_cuda_init_attempted = true;
 
     // We have our own caching scheme, disable CUDA's JIT cache
-#ifdef _MSC_VER
-    _putenv("CUDA_CACHE_DISABLE=1");
+#if !defined(_WIN32)
+    putenv((char*)"CUDA_CACHE_DISABLE=1");
 #else
-    putenv((char *) "CUDA_CACHE_DISABLE=1");
+    (void) _wputenv(L"CUDA_CACHE_DISABLE=1");
 #endif
 
 #if defined(ENOKI_DYNAMIC_CUDA)
-#if defined(__linux__)
+    jit_cuda_handle = nullptr;
+#  if defined(_WIN32)
+#    define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
+    const char* cuda_fname = "nvcuda.dll",
+              * cuda_glob = nullptr;
+#  elif defined(__linux__)
     const char *cuda_fname  = "libcuda.so",
                *cuda_glob   = "/usr/lib/x86_64-linux-gnu/libcuda.so.*";
-#else
+#  else
     const char *cuda_fname  = "libcuda.dylib",
                *cuda_glob   = cuda_fname;
-#endif
+#  endif
 
+#  if !defined(_WIN32)
     // Don't dlopen libcuda.so if it was loaded by another library
-    if (dlsym(RTLD_NEXT, "cuInit")) {
+    if (dlsym(RTLD_NEXT, "cuInit"))
         jit_cuda_handle = RTLD_NEXT;
-    } else {
+#  endif
+
+    if (!jit_cuda_handle) {
         jit_cuda_handle = jit_find_library(cuda_fname, cuda_glob, "ENOKI_LIBCUDA_PATH");
 
         if (!jit_cuda_handle) {
@@ -264,7 +275,7 @@ bool jit_cuda_init() {
 
         // Decompress supplemental PTX content
         char *uncompressed =
-            (char *) malloc_check(kernels_size_uncompressed + jit_lz4_dict_size + 1);
+            (char *) malloc_check(size_t(kernels_size_uncompressed) + jit_lz4_dict_size + 1);
         memcpy(uncompressed, jit_lz4_dict, jit_lz4_dict_size);
         char *uncompressed_ptx = uncompressed + jit_lz4_dict_size;
 
@@ -278,7 +289,7 @@ bool jit_cuda_init() {
 
         uncompressed_ptx[kernels_size_uncompressed] = '\0';
 
-        hash_combine(kernels_hash, cc_minor + cc_major * 10);
+        hash_combine(kernels_hash, cc_minor + size_t(cc_major) * 10);
 
         Kernel kernel;
         if (!jit_kernel_load(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel)) {
@@ -415,7 +426,7 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     jit_trace("Detailed linker output:\n%s", info_log);
 
     kernel.data = malloc_check(link_output_size);
-    kernel.size = link_output_size;
+    kernel.size = (uint32_t) link_output_size;
     memcpy(kernel.data, link_output, link_output_size);
 
     // Destroy the linker invocation
@@ -488,8 +499,13 @@ void jit_cuda_shutdown() {
     Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent); Z(cuStreamCreate);
     Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
 
+#if !defined(_WIN32)
     if (jit_cuda_handle != RTLD_NEXT)
         dlclose(jit_cuda_handle);
+#else
+    FreeLibrary((HMODULE) jit_cuda_handle);
+#endif
+
     jit_cuda_handle = nullptr;
 
     #undef Z

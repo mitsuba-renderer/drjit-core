@@ -855,7 +855,7 @@ const char *jit_var_str(uint32_t index) {
     for (uint32_t i = 0; i < size; ++i) {
         if (size > limit_thresh && i == limit_remainder / 2) {
             buffer.fmt(".. %zu skipped .., ", size - limit_remainder);
-            i = size - limit_remainder / 2 - 1;
+            i = (uint32_t) (size - limit_remainder / 2 - 1);
             continue;
         }
 
@@ -863,7 +863,7 @@ const char *jit_var_str(uint32_t index) {
 
         jit_memcpy(dst, src_offset, isize);
 
-        const char *comma = i + 1 < size ? ", " : "";
+        const char *comma = i + 1 < (uint32_t) size ? ", " : "";
         switch ((VarType) v->type) {
             case VarType::Bool:    buffer.fmt("%"   PRIu8  "%s", *(( uint8_t *) dst), comma); break;
             case VarType::Int8:    buffer.fmt("%"   PRId8  "%s", *((  int8_t *) dst), comma); break;

@@ -5,9 +5,9 @@
 
 /// Data structure characterizing a memory allocation
 struct AllocInfo {
-    AllocType type;
-    uint32_t device;
-    size_t size;
+    AllocType type = AllocType::Host;
+    uint32_t device = 0;
+    size_t size = 0;
 
     AllocInfo() { }
 
@@ -45,7 +45,7 @@ extern uint32_t round_pow2(uint32_t x);
 extern const char *alloc_type_name[(int) AllocType::Count];
 
 /// Allocate the given flavor of memory
-extern void *jit_malloc(AllocType type, size_t size) __attribute__((malloc));
+extern void *jit_malloc(AllocType type, size_t size) JITC_MALLOC;
 
 /// Release the given pointer
 extern void jit_free(void *ptr);

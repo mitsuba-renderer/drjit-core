@@ -46,7 +46,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_eval(): done.
@@ -144,7 +144,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 0 packets and 15 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(6): 0
@@ -210,7 +210,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_free_flush(): scheduling 1 deallocation
@@ -309,7 +309,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(12): 0
@@ -378,7 +378,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_free_flush(): scheduling 1 deallocation
@@ -493,7 +493,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 0 packets and 15 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(19): 0
@@ -564,7 +564,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_free_flush(): scheduling 1 deallocation
@@ -679,7 +679,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(26): 0
@@ -759,7 +759,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_free_flush(): scheduling 1 deallocation
@@ -893,7 +893,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 0 packets and 15 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(35): 0
@@ -980,7 +980,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_free_flush(): scheduling 1 deallocation
@@ -1114,7 +1114,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(44): 0
@@ -1204,7 +1204,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_free_flush(): scheduling 1 deallocation
@@ -1357,7 +1357,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 0 packets and 15 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(54): 0
@@ -1449,7 +1449,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_free_flush(): scheduling 1 deallocation
@@ -1602,7 +1602,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(64): 0

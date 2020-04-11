@@ -23,8 +23,13 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 #define ENOKI_PTR "<0x%" PRIxPTR ">"
 
 #if !defined(likely)
-#  define likely(x)   __builtin_expect(!!(x), 1)
-#  define unlikely(x) __builtin_expect(!!(x), 0)
+#  if !defined(_MSC_VER)
+#    define likely(x)   __builtin_expect(!!(x), 1)
+#    define unlikely(x) __builtin_expect(!!(x), 0)
+#  else
+#    define unlikely(x) x
+#    define likely(x) x
+#  endif
 #endif
 
 /// Caches basic information about a CUDA device
@@ -84,7 +89,7 @@ struct ReleaseChain {
 /// Represents a single stream of a parallel comunication
 struct Stream {
     /// Is this a CUDA stream?
-    bool cuda;
+    bool cuda = false;
 
     /// Enoki device index associated with this stream (*not* the CUDA device ID)
     uint32_t device = 0;
@@ -137,8 +142,7 @@ enum ArgType {
     Output
 };
 
-#pragma pack(push)
-#pragma pack(1)
+#pragma pack(push, 1)
 
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
@@ -151,14 +155,14 @@ struct Variable {
     /// Dependencies of this instruction
     uint32_t dep[4];
 
-    /// Number of entries
-    uint32_t size;
-
     /// Intermediate language statement
     char *stmt;
 
     /// Pointer to device memory
     void *data;
+
+    /// Number of entries
+    uint32_t size;
 
     /// Size of the instruction subtree (heuristic for instruction scheduling)
     uint32_t tsize;
@@ -173,37 +177,37 @@ struct Variable {
     uint32_t type : 4;
 
     /// Argument type (register: 0, input: 1, output: 2)
-    ArgType arg_type : 2;
+    uint32_t arg_type : 2;
 
     /// Is this variable registered with the CUDA backend?
-    bool cuda : 1;
+    uint32_t cuda : 1;
 
     /// Don't deallocate 'data' when this variable is destructed?
-    bool retain_data : 1;
+    uint32_t retain_data : 1;
 
     /// Free the 'stmt' variables at destruction time?
-    bool free_stmt : 1;
+    uint32_t free_stmt : 1;
 
     /// Was this variable labeled?
-    bool has_label : 1;
+    uint32_t has_label : 1;
 
     /// Is this a scatter operation?
-    bool scatter : 1;
+    uint32_t scatter : 1;
 
     /// Are there pending scatter operations to this variable?
-    bool pending_scatter : 1;
+    uint32_t pending_scatter : 1;
 
     /// Optimization: is this a direct pointer (rather than an array which stores a pointer?)
-    bool direct_pointer : 1;
+    uint32_t direct_pointer : 1;
 
     /// Do the variable contents have irregular alignment? (e.g. due to jit_var_map())
-    bool unaligned : 1;
+    uint32_t unaligned : 1;
 
     /// Is this variable marked as an output? (temporarily used during jit_eval())
-    bool output_flag : 1;
+    uint32_t output_flag : 1;
 
     /// Are we currently caching the result of a jitc_vcall()?
-    bool vcall_cached : 1;
+    uint32_t vcall_cached : 1;
 
     Variable() {
         memset(this, 0, sizeof(Variable));
@@ -283,7 +287,7 @@ struct KernelHash {
 
     static size_t compute_hash(size_t kernel_hash, int device) {
         size_t hash = kernel_hash;
-        hash_combine(hash, device + 1);
+        hash_combine(hash, size_t(device) + 1);
         return hash;
     }
 };
@@ -442,7 +446,7 @@ public:
     /// Append a string to the buffer
     void put(const char *str) {
         do {
-            char *cur = (char *) memccpy(m_cur, str, '\0', m_end - m_cur);
+            char* cur = (char*) memccpy(m_cur, str, '\0', m_end - m_cur);
 
             if (likely(cur)) {
                 m_cur = cur - 1;
@@ -497,10 +501,20 @@ private:
 };
 
 /// Global state record shared by all threads
-extern __thread Stream *active_stream;
+#if defined(_MSC_VER)
+  extern __declspec(thread) Stream* active_stream;
+#else
+  extern __thread Stream* active_stream;
+#endif
 
 extern State state;
 extern Buffer buffer;
+
+#if !defined(_WIN32)
+  extern char *jit_temp_path;
+#else
+  extern wchar_t *jit_temp_path;
+#endif
 
 /// Initialize core data structures of the JIT compiler
 extern void jit_init(int llvm, int cuda);

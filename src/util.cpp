@@ -11,6 +11,10 @@
 #  include <condition_variable>
 #endif
 
+#if defined(_MSC_VER)
+#  pragma warning (disable: 4146) // unary minus operator applied to unsigned type, result still unsigned
+#endif
+
 const char *reduction_name[(int) ReductionType::Count] = { "add", "mul", "min",
                                                            "max", "and", "or" };
 
@@ -62,7 +66,7 @@ void jit_memset(void *ptr, uint32_t size_, uint32_t isize, const void *src) {
             case 8: {
                     const Device &device = state.devices[stream->device];
                     uint32_t block_count, thread_count;
-                    device.get_launch_config(&block_count, &thread_count, size);
+                    device.get_launch_config(&block_count, &thread_count, size_);
                     void *args[] = { &ptr, &size_, (void *) src };
                     CUfunction kernel = jit_cuda_fill_64[device.id];
                     cuda_check(cuLaunchKernel(kernel, block_count, 1, 1,
@@ -246,6 +250,7 @@ static Reduction jit_reduce_create(ReductionType rtype) {
             };
 
         default: jit_raise("jit_reduce_create(): unsupported reduction type!");
+            return nullptr;
     }
 }
 
@@ -262,6 +267,7 @@ static Reduction jit_reduce_create(VarType type, ReductionType rtype) {
         case VarType::Float32: return jit_reduce_create<float   >(rtype);
         case VarType::Float64: return jit_reduce_create<double  >(rtype);
         default: jit_raise("jit_reduce_create(): unsupported data type!");
+            return nullptr;
     }
 }
 
@@ -298,7 +304,7 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
                                       shared_size, stream->handle, args,
                                       nullptr));
         } else {
-            void *temp = jit_malloc(AllocType::Device, block_count * type_size);
+            void *temp = jit_malloc(AllocType::Device, size_t(block_count) * type_size);
 
             // First reduction
             void *args_1[] = { &ptr, &size, &temp };
@@ -824,7 +830,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
                                       sizeof(uint32_t) * thread_count_3,
                                       stream->handle, args_3, nullptr));
 
-            cuda_check(cuMemcpyAsync((CUdeviceptr) (offsets + 4 * bucket_count),
+            cuda_check(cuMemcpyAsync((CUdeviceptr) (offsets + 4 * size_t(bucket_count)),
                                      (CUdeviceptr) counter, sizeof(uint32_t),
                                      stream->handle));
 
@@ -878,11 +884,11 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
             size_t bucket_size_local = sizeof(uint32_t) * (size_t) inputs.bucket_count;
 
             uint32_t **buckets =
-                (uint32_t **) jit_malloc(AllocType::Host, sizeof(uint32_t *) * num_tasks);
+                (uint32_t **) jitc_malloc(AllocType::Host, sizeof(uint32_t *) * num_tasks);
 
             for (uint32_t i = 0; i < num_tasks; ++i)
                 buckets[i] =
-                    (uint32_t *) jit_malloc(AllocType::Host, bucket_size_local);
+                    (uint32_t *) jitc_malloc(AllocType::Host, bucket_size_local);
 
             tbb::parallel_for(
                 tbb::blocked_range<uint32_t>(0u, num_tasks, 1u),
@@ -921,7 +927,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
             }
 
             /* Update total */ {
-                std::lock_guard<std::mutex> guard(inputs.unique_count->mutex);
+                lock_guard guard(inputs.unique_count->mutex);
                 inputs.unique_count->value = unique_count;
                 inputs.unique_count->cond.notify_one();
             }
@@ -943,16 +949,18 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
             );
 
             for (uint32_t i = 0; i < num_tasks; ++i)
-                jit_free(buckets[i]);
-            jit_free(buckets);
+                jitc_free(buckets[i]);
+            jitc_free(buckets);
         };
 
         tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
 
-        unlock_guard guard_1(state.mutex);
-        std::unique_lock<std::mutex> guard_2(inputs.unique_count->mutex);
-        while (unique_count.value == 0xFFFFFFFF)
-            unique_count.cond.wait(guard_2);
+        unlock_guard guard(state.mutex);
+        {
+            std::unique_lock<std::mutex> guard_2(unique_count.mutex);
+            while (unique_count.value == 0xFFFFFFFF)
+                unique_count.cond.wait(guard_2);
+        }
 
         return unique_count.value;
 #else
@@ -1016,7 +1024,7 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
     jit_log(Debug, "jit_vcall(%u, domain=\"%s\")", index, domain);
 
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
-           offsets_size = (bucket_count * 4 + 1) * sizeof(uint32_t);
+           offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
 
     uint32_t *offsets = (uint32_t *) jit_malloc(
         cuda ? AllocType::HostPinned : AllocType::Host, offsets_size);

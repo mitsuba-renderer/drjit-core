@@ -1,3 +1,9 @@
+# This (very hacky) script was used to convert Clang LLVM IR output for
+# 'scatter_add.c' into extra-compatible IR that works with LLVM 7/8/9/10,
+# and which has the right calling conventions so that we can invoke it
+# from Enoki kernels. It is very likely never needed again but checked
+# in here just in case..
+
 import re
 
 x = open("scatter_add.ll", "r").read()

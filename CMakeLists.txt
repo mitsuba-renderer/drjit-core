@@ -1,8 +1,9 @@
-project("jit")
+project(enoki-jit)
 cmake_minimum_required(VERSION 3.9.0)
 cmake_policy(SET CMP0074 NEW)
 
 option(ENOKI_ENABLE_TESTS "Compile test suite?" ON)
+option(ENOKI_ENABLE_TBB   "Use Intel Thread Building Blocks (TBB) with LLVM backend?" ON)
 option(ENOKI_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
 option(ENOKI_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 
@@ -51,11 +52,13 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_FLAGS MATCHES "-stdl
   endif()
 endif()
 
-# Try to detect TBB
-set(CMAKE_MODULE_PATH cmake)
-find_package(TBB)
+if (ENOKI_ENABLE_TBB)
+  # Try to detect TBB
+  set(CMAKE_MODULE_PATH cmake)
+  find_package(TBB)
+endif()
 
-if (TBB_FOUND)
+if (ENOKI_ENABLE_TBB AND TBB_FOUND)
   message(STATUS "Enoki-JIT: enabling TBB.")
 else()
   message(STATUS "Enoki-JIT: Intel Thread Building Blocks (TBB) could not be found! Computation involving LLVM arrays will run single-threaded.")
@@ -73,6 +76,10 @@ else()
   message(STATUS "Enoki-JIT: linking against LLVM shared libraries.")
 endif()
 
+if (MSVC)
+   add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -DNOMINMAX)
+endif()
+
 include_directories(
   include
   ext/robin_map/include
@@ -82,6 +89,10 @@ include_directories(
 add_library(
   enoki-jit SHARED
   include/enoki/jit.h
+  include/enoki/traits.h
+  include/enoki/cuda.h
+  include/enoki/llvm.h
+
   src/internal.h
   src/alloc.h
   src/hash.h
@@ -106,11 +117,16 @@ add_library(
   kernels/kernels.h kernels/kernels.c
 )
 
-target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
-if (U_CMAKE_BUILD_TYPE MATCHES REL)
-  target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
-  target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)
+target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)
+
+if (NOT MSVC)
+  target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
+  if (U_CMAKE_BUILD_TYPE MATCHES REL)
+    target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
+  endif()
 endif()
+
+target_compile_definitions(enoki-jit PRIVATE -DENOKI_BUILD=1)
 
 if (ENOKI_DYNAMIC_CUDA)
   target_compile_definitions(enoki-jit PRIVATE -DENOKI_DYNAMIC_CUDA=1)
@@ -128,12 +144,15 @@ else()
   target_link_libraries(enoki-jit PRIVATE LLVM)
 endif()
 
-if (TBB_FOUND)
+if (ENOKI_ENABLE_TBB AND TBB_FOUND)
   target_link_libraries(enoki-jit PRIVATE TBB::tbb)
   target_compile_definitions(enoki-jit PRIVATE -DENOKI_TBB=1)
 endif()
 
-target_link_libraries(enoki-jit PRIVATE dl pthread)
+if (UNIX)
+  target_link_libraries(enoki-jit PRIVATE dl pthread)
+endif()
+
 set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE        TRUE)
 set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL     TRUE)
 set_target_properties(enoki-jit PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)

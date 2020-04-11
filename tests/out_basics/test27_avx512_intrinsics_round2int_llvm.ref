@@ -304,7 +304,7 @@ declare <8 x i64> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x double>, <8 x i64>, i
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
@@ -646,7 +646,7 @@ declare <8 x i64> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x double>, <8 x i64>, i
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
@@ -988,7 +988,7 @@ declare <8 x i64> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x double>, <8 x i64>, i
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
@@ -1330,7 +1330,7 @@ declare <8 x i64> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x double>, <8 x i64>, i
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "target-features"="+avx512f,+avx512dq,+avx512vl" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4

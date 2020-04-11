@@ -4,7 +4,9 @@
 
 /// Immediately terminate the application due to a fatal internal error
 #if defined(__GNUC__)
-    __attribute__((noreturn, __format__ (__printf__, 1, 2)))
+    __attribute__((noreturn, __format__(__printf__, 1, 2)))
+#else
+    [[noreturn]]
 #endif
 extern void jit_fail(const char* fmt, ...);
 
@@ -31,13 +33,22 @@ public:
 
     value_type *allocate(size_t count) {
         void *ptr;
+#if !defined(_WIN32)
         if (posix_memalign(&ptr, Align, sizeof(T) * count) != 0)
             jit_fail("aligned_allocator::allocate(): out of memory!");
+#else
+        if ((ptr = _aligned_malloc(sizeof(T) * count, Align)) == nullptr)
+            jit_fail("aligned_allocator::allocate(): out of memory!");
+#endif
         return (value_type *) ptr;
     }
 
     void deallocate(value_type *ptr, size_t) {
+#if !defined(_WIN32)
         free(ptr);
+#else
+        _aligned_free(ptr);
+#endif
     }
 
     template <typename T2, size_t Align2>

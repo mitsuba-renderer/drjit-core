@@ -10,8 +10,13 @@
 #endif
 
 #if !defined(likely)
-#  define likely(x)   __builtin_expect(!!(x), 1)
-#  define unlikely(x) __builtin_expect(!!(x), 0)
+#  if !defined(_MSC_VER)
+#    define likely(x)   __builtin_expect(!!(x), 1)
+#    define unlikely(x) __builtin_expect(!!(x), 0)
+#  else
+#    define unlikely(x) x
+#    define likely(x) x
+#  endif
 #endif
 
 /// Print a log message with the specified log level and message
@@ -26,6 +31,8 @@ extern void jit_vlog(LogLevel level, const char* fmt, va_list args);
 /// Raise a std::runtime_error with the given message
 #if defined(__GNUC__)
     __attribute__((noreturn, __format__ (__printf__, 1, 2)))
+#else
+    [[noreturn]]
 #endif
 extern void jit_raise(const char* fmt, ...);
 
@@ -35,6 +42,8 @@ extern void jit_raise(const char* fmt, ...);
 /// Immediately terminate the application due to a fatal internal error
 #if defined(__GNUC__)
     __attribute__((noreturn, __format__ (__printf__, 1, 2)))
+#else
+   [[noreturn]]
 #endif
 extern void jit_fail(const char* fmt, ...);
 
@@ -53,7 +62,7 @@ extern const char *jit_time_string(float us);
 /// Return the number of microseconds since the previous timer() call
 extern float timer();
 
- __attribute__((malloc)) inline void* malloc_check(size_t size) {
+ JITC_MALLOC inline void* malloc_check(size_t size) {
     void *ptr = malloc(size);
     if (unlikely(!ptr))
         jit_fail("malloc_check(): failed to allocate %zu bytes!", size);

@@ -12,11 +12,23 @@ void jitc_init(int llvm, int cuda) {
 }
 
 void jitc_init_async(int llvm, int cuda) {
-    state.mutex.lock();
-    std::thread([llvm, cuda]() {
+    std::unique_lock<std::mutex> guard(state.mutex);
+    struct Sync {
+        bool flag = false;
+        std::condition_variable cv;
+
+    };
+    std::shared_ptr<Sync> sync = std::make_shared<Sync>();
+
+    std::thread([llvm, cuda, sync]() {
+        lock_guard guard2(state.mutex);
+        sync->flag = true;
+        sync->cv.notify_one();
         jit_init(llvm, cuda);
-        state.mutex.unlock();
     }).detach();
+
+    while (!sync->flag)
+        sync->cv.wait(guard);
 }
 
 int jitc_has_llvm() {
@@ -92,6 +104,16 @@ void jitc_llvm_set_target(const char *target_cpu,
                           uint32_t vector_width) {
     lock_guard guard(state.mutex);
     jit_llvm_set_target(target_cpu, target_features, vector_width);
+}
+
+const char *jitc_llvm_target_cpu() {
+    lock_guard guard(state.mutex);
+    return jit_llvm_target_cpu;
+}
+
+const char *jitc_llvm_target_features() {
+    lock_guard guard(state.mutex);
+    return jit_llvm_target_features;
 }
 
 int jitc_llvm_version_major() {

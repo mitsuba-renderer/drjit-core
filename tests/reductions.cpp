@@ -75,7 +75,7 @@ TEST_BOTH(03_compress) {
             uint32_t ref_count = 0;
             for (size_t i = 0; i < size; ++i) {
                 if (data[i])
-                    perm_ref[ref_count++] = i;
+                    perm_ref[ref_count++] = (uint32_t) i;
             }
 
             data = (uint8_t *) jitc_malloc_migrate(

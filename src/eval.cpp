@@ -467,7 +467,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     buffer.put(".entry enoki_^^^^^^^^^^^^^^^^(.param .u32 size,\n");
     for (uint32_t index = 1; index < kernel_args.size(); ++index)
         buffer.fmt("                              .param .u64 arg%u%s\n",
-                   index - 1, (index + 1 < kernel_args.size()) ? "," : ") {");
+                   index - 1, (index + 1 < (uint32_t) kernel_args.size()) ? "," : ") {");
 
     for (const char *reg_type : { "b8 %b", "b16 %w", "b32 %r", "b64 %rd",
                                   "f32 %f", "f64 %d", "pred %p" })
@@ -715,7 +715,8 @@ void jit_assemble_llvm_suffix() {
     buffer.put("!0 = !{!0}\n");
     buffer.put("!1 = !{!1, !0}\n");
     buffer.put("!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
-    buffer.fmt("attributes #0 = { norecurse nounwind \"target-cpu\"=\"%s\"", jit_llvm_target_cpu);
+    buffer.fmt("attributes #0 = { norecurse nounwind \"target-cpu\"=\"%s\" "
+               "\"stack-probe-size\"=\"%u\"", jit_llvm_target_cpu, 1024*1024*1024);
     if (jit_llvm_target_features)
         buffer.fmt(" \"target-features\"=\"%s\"", jit_llvm_target_features);
     buffer.put(" }");
@@ -769,7 +770,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
                 buffer.put(" [in]");
             else if (v->scatter)
                 buffer.put(" [scat]");
-            else if (v->output_flag > 0 && v->size == group.size)
+            else if (v->output_flag && v->size == group.size)
                 buffer.put(" [out]");
 
             jit_trace("%s", buffer.get());
@@ -909,7 +910,7 @@ void jit_run(Stream *stream, ScheduledGroup group) {
 
     if (it == state.kernel_cache.end()) {
         bool cache_hit = jit_kernel_load(
-            buffer.get(), buffer.size(), stream->cuda, kernel_hash, kernel);
+            buffer.get(), (uint32_t) buffer.size(), stream->cuda, kernel_hash, kernel);
 
         if (!cache_hit) {
             if (stream->cuda)
@@ -918,7 +919,7 @@ void jit_run(Stream *stream, ScheduledGroup group) {
                 jit_llvm_compile(buffer.get(), buffer.size(), kernel,
                                  jit_llvm_supplement);
 
-            jit_kernel_write(buffer.get(), buffer.size(), stream->cuda,
+            jit_kernel_write(buffer.get(), (uint32_t) buffer.size(), stream->cuda,
                              kernel_hash, kernel);
         }
 

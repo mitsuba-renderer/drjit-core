@@ -1,9 +1,14 @@
 #include "llvm_api.h"
 #include "internal.h"
 #include "log.h"
-#include <dlfcn.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
+
+#if defined(_WIN32)
+#  include <windows.h>
+#else
+#  include <dlfcn.h>
+#  include <sys/mman.h>
+#endif
+
 #include <thread>
 #include <lz4.h>
 #include "../kernels/kernels.h"
@@ -230,7 +235,7 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
                                        : llvm_kernels_9_size_compressed;
         const char *kernels   = legacy ? llvm_kernels_7 : llvm_kernels_9;
 
-        size_t temp_size = jit_lz4_dict_size + size_uncompressed + buffer_size + 1;
+        size_t temp_size = buffer_size + jit_lz4_dict_size + size_uncompressed + 1;
 
         // Decompress supplemental kernel IR content
         temp = (char *) malloc_check(temp_size);
@@ -251,15 +256,22 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
 
     if (jit_llvm_mem_size <= buffer_size) {
         // Central assumption: LLVM text IR is much larger than the resulting generated code.
+#if !defined(_WIN32)
         free(jit_llvm_mem);
         if (posix_memalign((void **) &jit_llvm_mem, 64, buffer_size))
             jit_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", buffer_size);
+#else
+        _aligned_free(jit_llvm_mem);
+        jit_llvm_mem = (uint8_t *) _aligned_malloc(buffer_size, 64);
+        if (!jit_llvm_mem)
+            jit_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", buffer_size);
+#endif
         jit_llvm_mem_size = buffer_size;
     }
     jit_llvm_mem_offset = 0;
 
     // Temporarily change the kernel name
-    char kernel_name_old[23], kernel_name_new[30];
+    char kernel_name_old[23]{}, kernel_name_new[30]{};
     snprintf(kernel_name_new, 23, "enoki_%016llx", (long long) jit_llvm_kernel_id);
 
     char *offset = (char *) buffer;
@@ -326,6 +338,7 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     uint32_t func_offset        = (uint32_t) (func        - jit_llvm_mem),
              func_offset_scalar = (uint32_t) (func_scalar - jit_llvm_mem);
 
+#if !defined(_WIN32)
     void *ptr_result =
         mmap(nullptr, jit_llvm_mem_offset, PROT_READ | PROT_WRITE,
              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -336,6 +349,15 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
 
     if (mprotect(ptr_result, jit_llvm_mem_offset, PROT_READ | PROT_EXEC) == -1)
         jit_fail("jit_llvm_compile(): mprotect() failed: %s", strerror(errno));
+#else
+    void* ptr_result = VirtualAlloc(nullptr, jit_llvm_mem_offset, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (!ptr_result)
+        jit_fail("jit_llvm_compile(): could not VirtualAlloc() memory: %u", GetLastError());
+    memcpy(ptr_result, jit_llvm_mem, jit_llvm_mem_offset);
+    DWORD unused;
+    if (VirtualProtect(ptr_result, jit_llvm_mem_offset, PAGE_EXECUTE_READ, &unused) == 0)
+        jit_fail("jit_llvm_compile(): VirtualProtect() failed: %u", GetLastError());
+#endif
 
     LLVMRemoveModule(jit_llvm_engine, llvm_module, &llvm_module, &error);
     if (unlikely(error))
@@ -353,21 +375,12 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     } while (true);
 
     kernel.data = ptr_result;
-    kernel.size = jit_llvm_mem_offset;
+    kernel.size = (uint32_t) jit_llvm_mem_offset;
     kernel.llvm.func        = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
     kernel.llvm.func_scalar = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset_scalar);
     jit_llvm_kernel_id++;
     free(temp);
 }
-
-#define LOAD(name)                                                             \
-    symbol = #name;                                                            \
-    name = decltype(name)(dlsym(jit_llvm_handle, symbol));                     \
-    if (!name)                                                                 \
-        break;                                                                 \
-    symbol = nullptr
-
-#define Z(x) x = nullptr
 
 void jit_llvm_set_target(const char *target_cpu,
                          const char *target_features,
@@ -398,29 +411,27 @@ bool jit_llvm_init() {
         return jit_llvm_init_success;
     jit_llvm_init_attempted = true;
 
-    char scratch[1024];
-    struct stat st = {};
-    snprintf(scratch, sizeof(scratch), "%s/.enoki", getenv("HOME"));
-    if (stat(scratch, &st) == -1) {
-        jit_log(Info, "jit_llvm_init(): creating directory \"%s\" ..", scratch);
-        if (mkdir(scratch, 0700) == -1)
-            jit_fail("jit_llvm_init(): creation of directory \"%s\" failed: %s",
-                     scratch, strerror(errno));
-    }
-
 #if defined(ENOKI_DYNAMIC_LLVM)
-#if defined(__linux__)
+    jit_llvm_handle = nullptr;
+#  if defined(_WIN32)
+#    define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
+    const char *llvm_fname = "LLVM-C.dll",
+               *llvm_glob  = nullptr;
+#  elif defined(__linux__)
     const char *llvm_fname  = "libLLVM.so",
                *llvm_glob   = "/usr/lib/x86_64-linux-gnu/libLLVM*.so.*";
-#else
+#  else
     const char *llvm_fname  = "libLLVM.dylib",
                *llvm_glob   = "/usr/local/Cellar/llvm/*/lib/libLLVM.dylib";
-#endif
+#  endif
 
+#  if !defined(_WIN32)
     // Don't dlopen libLLVM.so if it was loaded by another library
-    if (dlsym(RTLD_NEXT, "LLVMLinkInMCJIT")) {
+    if (dlsym(RTLD_NEXT, "LLVMLinkInMCJIT"))
         jit_llvm_handle = RTLD_NEXT;
-    } else {
+#  endif
+
+    if (!jit_llvm_handle) {
         jit_llvm_handle = jit_find_library(llvm_fname, llvm_glob, "ENOKI_LIBLLVM_PATH");
 
         if (!jit_llvm_handle) {
@@ -430,6 +441,13 @@ bool jit_llvm_init() {
             return false;
         }
     }
+
+    #define LOAD(name)                                                         \
+        symbol = #name;                                                        \
+        name = decltype(name)(dlsym(jit_llvm_handle, symbol));                 \
+        if (!name)                                                             \
+            break;                                                             \
+        symbol = nullptr
 
     const char *symbol = nullptr;
     do {
@@ -484,29 +502,29 @@ bool jit_llvm_init() {
     auto get_version_string = (const char * (*) ()) dlsym(
         dlsym_src, "_ZN4llvm16LTOCodeGenerator16getVersionStringEv");
 
-    if (!get_version_string) {
-        jit_log(Warn, "jit_llvm_init(): could not detect LLVM version.");
-        return false;
-    }
+    if (get_version_string) {
+        const char* version_string = get_version_string();
+        if (sscanf(version_string, "LLVM version %u.%u.%u", &jit_llvm_version_major,
+                   &jit_llvm_version_minor, &jit_llvm_version_patch) != 3) {
+            jit_log(Warn,
+                    "jit_llvm_init(): could not parse LLVM version string \"%s\".",
+                    version_string);
+            return false;
+        }
 
-    const char *version_string = get_version_string();
-    if (sscanf(version_string, "LLVM version %u.%u.%u", &jit_llvm_version_major,
-               &jit_llvm_version_minor, &jit_llvm_version_patch) != 3) {
-        jit_log(Warn,
-                "jit_llvm_init(): could not parse LLVM version string \"%s\".",
-                version_string);
-        return false;
+        if (jit_llvm_version_major < 7) {
+            jit_log(Warn,
+                    "jit_llvm_init(): LLVM version 7 or later must be used. (found "
+                    "%s). You may want to define the 'ENOKI_LIBLLVM_PATH' "
+                    "environment variable to specify the path to "
+                    "libLLVM.so/dylib/dll of a particular LLVM version.",
+                    version_string);
+        }
+    } else {
+        jit_llvm_version_major = 10;
+        jit_llvm_version_minor = 0;
+        jit_llvm_version_patch = 0;
     }
-
-    if (jit_llvm_version_major < 7) {
-        jit_log(Warn,
-                "jit_llvm_init(): LLVM version 7 or later must be used. (found "
-                "%s). You may want to define the 'ENOKI_LIBLLVM_PATH' "
-                "environment variable to specify the path to "
-                "libLLVM.so/dylib/dll of a particular LLVM version.",
-                version_string);
-    }
-
 
     LLVMLinkInMCJIT();
     LLVMInitializeX86TargetInfo();
@@ -599,11 +617,19 @@ bool jit_llvm_init() {
        precise byte offset and them overwrite the 'RM' field.
     */
 
-    LLVMTargetMachineRef target_machine =
-        LLVMGetExecutionEngineTargetMachine(jit_llvm_engine);
+    uint32_t *patch_loc =
+        (uint32_t *) LLVMGetExecutionEngineTargetMachine(jit_llvm_engine) + 142 - 16;
 
     int key[3] = { 0, jit_llvm_version_major == 7 ? 0 : 1, 3 };
-    void *found = memmem(target_machine, 900, key, sizeof(key));
+    bool found = false;
+    for (int i = 0; i < 30; ++i) {
+        if (memcmp(patch_loc, key, sizeof(uint32_t) * 3) == 0) {
+            found = true;
+            break;
+        }
+        patch_loc += 1;
+    }
+
     if (!found) {
         jit_log(Warn, "jit_llvm_init(): could not hot-patch TargetMachine relocation model!");
         LLVMDisposeModule(enoki_module);
@@ -613,8 +639,7 @@ bool jit_llvm_init() {
         LLVMDisposeMessage(jit_llvm_target_features);
         return false;
     }
-    key[0] = 1;
-    memcpy(found, key, sizeof(uint32_t));
+    patch_loc[0] = 1;
 
     jit_llvm_pass_manager = LLVMCreatePassManager();
     LLVMAddAlwaysInlinerPass(jit_llvm_pass_manager);
@@ -636,9 +661,9 @@ bool jit_llvm_init() {
 #endif
 
     jit_log(Info,
-            "jit_llvm_init(): found %s, target=%s, cpu=%s, vector width=%u, threads=%u.",
-            version_string, jit_llvm_triple, jit_llvm_target_cpu,
-            jit_llvm_vector_width, jit_llvm_thread_count);
+            "jit_llvm_init(): found LLVM %u.%u.%u, target=%s, cpu=%s, vector width=%u, threads=%u.",
+            jit_llvm_version_major, jit_llvm_version_minor, jit_llvm_version_patch, jit_llvm_triple,
+            jit_llvm_target_cpu, jit_llvm_vector_width, jit_llvm_thread_count);
 
     jit_llvm_init_success = jit_llvm_vector_width > 1;
 
@@ -672,7 +697,12 @@ void jit_llvm_shutdown() {
     jit_llvm_target_features = nullptr;
     jit_llvm_vector_width = 0;
 
+#if !defined(_WIN32)
     free(jit_llvm_mem);
+#else
+    _aligned_free(jit_llvm_mem);
+#endif
+
     jit_llvm_mem        = nullptr;
     jit_llvm_mem_size   = 0;
     jit_llvm_mem_offset = 0;
@@ -680,6 +710,8 @@ void jit_llvm_shutdown() {
     jit_llvm_got        = false;
 
 #if defined(ENOKI_DYNAMIC_LLVM)
+    #define Z(x) x = nullptr
+
     Z(LLVMLinkInMCJIT); Z(LLVMInitializeX86Target);
     Z(LLVMInitializeX86TargetInfo); Z(LLVMInitializeX86TargetMC);
     Z(LLVMInitializeX86AsmPrinter); Z(LLVMInitializeX86Disassembler);
@@ -695,8 +727,13 @@ void jit_llvm_shutdown() {
     Z(LLVMDisposePassManager); Z(LLVMAddAlwaysInlinerPass);
     Z(LLVMGetExecutionEngineTargetMachine);
 
+#  if !defined(_WIN32)
     if (jit_llvm_handle != RTLD_NEXT)
         dlclose(jit_llvm_handle);
+#  else
+    FreeLibrary((HMODULE) jit_llvm_handle);
+#  endif
+
     jit_llvm_handle = nullptr;
 #endif
 

@@ -1,11 +1,11 @@
+#if defined(ENOKI_TBB)
+
 #include "tbb.h"
 #include "internal.h"
 #include "llvm_api.h"
 #include <deque>
 #include <mutex>
 #include <tbb/tbb.h>
-
-#if defined(ENOKI_TBB)
 
 /**
  * Task base class, provides the ability to fetch the next job from the

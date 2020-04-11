@@ -16,6 +16,10 @@
 #include <cstring>
 #include "jit.h"
 
+#if defined(_MSC_VER)
+#  include <intrin.h>
+#endif
+
 template <bool Value> using enable_if_t = typename std::enable_if<Value, int>::type;
 
 template <typename T, typename = int> struct var_type {
@@ -106,3 +110,31 @@ void jitc_eval(Args&&... args) {
     if (sizeof...(Args) > 0)
         jitc_eval();
 }
+
+#if defined(_MSC_VER)
+using ssize_t = typename std::make_signed<size_t>::type;
+
+inline int clz(uint32_t value) {
+    unsigned long result = 0;
+    if (_BitScanReverse(&result, value))
+        return 31 - result;
+    else
+        return 32;
+}
+
+inline int clz(uint64_t value) {
+    unsigned long result = 0;
+    if (_BitScanReverse64(&result, value))
+        return 63 - result;
+    else
+        return 64;
+}
+#else
+inline int clz(uint32_t value) {
+    return __builtin_clz(value);
+}
+inline int clz(uint64_t value) {
+    return __builtin_clz(value);
+}
+#endif
+

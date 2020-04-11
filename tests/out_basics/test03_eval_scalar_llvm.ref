@@ -39,7 +39,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_eval(): done.
@@ -87,7 +87,7 @@ loop:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" }
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_eval(): done.

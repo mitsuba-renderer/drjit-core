@@ -1,6 +1,16 @@
 #pragma once
 
+#if defined (_MSC_VER)
+#  pragma warning (push)
+#  pragma warning (disable:26451)
+#endif
+
 #include <tsl/robin_map.h>
+
+#if defined (_MSC_VER)
+#  pragma warning (pop)
+#endif
+
 #include <string.h>
 
 extern "C" {
@@ -9,12 +19,19 @@ extern "C" {
 }
 
 #if !defined(likely)
-#  define likely(x)   __builtin_expect(!!(x), 1)
-#  define unlikely(x) __builtin_expect(!!(x), 0)
+#  if !defined(_MSC_VER)
+#    define likely(x)   __builtin_expect(!!(x), 1)
+#    define unlikely(x) __builtin_expect(!!(x), 0)
+#  else
+#    define unlikely(x) x
+#    define likely(x) x
+#  endif
 #endif
 
 #if defined(__GNUC__)
-    __attribute__((noreturn, __format__ (__printf__, 1, 2)))
+    __attribute__((noreturn, __format__(__printf__, 1, 2)))
+#else
+    [[noreturn]]
 #endif
 extern void jit_fail(const char* fmt, ...);
 

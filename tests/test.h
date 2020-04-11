@@ -11,7 +11,7 @@ static constexpr LogLevel Info  = LogLevel::Info;
 static constexpr LogLevel Debug = LogLevel::Debug;
 static constexpr LogLevel Trace = LogLevel::Trace;
 
-extern int test_register(const char *name, void (*func)(), bool cuda);
+extern int test_register(const char *name, void (*func)(), bool cuda, const char *flags = nullptr);
 extern "C" void log_callback(LogLevel cb, const char *msg);
 
 using FloatC  = CUDAArray<float>;
@@ -21,38 +21,38 @@ using FloatL  = LLVMArray<float>;
 using Int32L  = LLVMArray<int32_t>;
 using UInt32L = LLVMArray<uint32_t>;
 
-#define TEST_CUDA(name)                                                        \
+#define TEST_CUDA(name, ...)                                                   \
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> class Array>                                    \
     void test##name();                                                         \
-    int test##name##_c =                                                       \
-        test_register("test" #name "_cuda",                                    \
-                      test##name<FloatC, Int32C, UInt32C, CUDAArray>, true);   \
+    int test##name##_c = test_register(                                        \
+        "test" #name "_cuda", test##name<FloatC, Int32C, UInt32C, CUDAArray>,  \
+        true, ##__VA_ARGS__);                                                  \
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> class Array>                                    \
     void test##name()
 
-#define TEST_LLVM(name)                                                        \
+#define TEST_LLVM(name, ...)                                                   \
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> class Array>                                    \
     void test##name();                                                         \
-    int test##name##_l =                                                       \
-        test_register("test" #name "_llvm",                                    \
-                      test##name<FloatL, Int32L, UInt32L, LLVMArray>, false);  \
+    int test##name##_l = test_register(                                        \
+        "test" #name "_llvm", test##name<FloatL, Int32L, UInt32L, LLVMArray>,  \
+        false, ##__VA_ARGS__);                                                 \
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> class Array>                                    \
     void test##name()
 
-#define TEST_BOTH(name)                                                        \
+#define TEST_BOTH(name, ...)                                                   \
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> class Array>                                    \
     void test##name();                                                         \
-    int test##name##_c =                                                       \
-        test_register("test" #name "_cuda",                                    \
-                      test##name<FloatC, Int32C, UInt32C, CUDAArray>, true);   \
-    int test##name##_l =                                                       \
-        test_register("test" #name "_llvm",                                    \
-                      test##name<FloatL, Int32L, UInt32L, LLVMArray>, false);  \
+    int test##name##_c = test_register(                                        \
+        "test" #name "_cuda", test##name<FloatC, Int32C, UInt32C, CUDAArray>,  \
+        true, ##__VA_ARGS__);                                                  \
+    int test##name##_l = test_register(                                        \
+        "test" #name "_llvm", test##name<FloatL, Int32L, UInt32L, LLVMArray>,  \
+        false, ##__VA_ARGS__);                                                 \
     template <typename Float, typename Int32, typename UInt32,                 \
               template <class> class Array>                                    \
     void test##name()

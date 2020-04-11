@@ -4,6 +4,10 @@
 #include "internal.h"
 #include "log.h"
 
+#if defined(_WIN32)
+#  include <windows.h>
+#endif
+
 static Buffer log_buffer{128};
 static char jit_string_buf[64];
 
@@ -175,6 +179,7 @@ void Buffer::expand() {
     m_cur = m_start + used_size;
 }
 
+#if !defined(_WIN32)
 static timespec timer_value { 0, 0 };
 
 float timer() {
@@ -185,3 +190,20 @@ float timer() {
     timer_value = timer_value_2;
     return result;
 }
+#else
+static LARGE_INTEGER timer_value{};
+static LARGE_INTEGER timer_frequency{};
+
+float timer() {
+    LARGE_INTEGER value;
+    QueryPerformanceCounter(&value);
+
+    if (timer_frequency.QuadPart == 0)
+        QueryPerformanceFrequency(&timer_frequency);
+
+    float result = (float)(value.QuadPart - timer_value.QuadPart) / timer_frequency.QuadPart * 1e6f;
+    timer_value = value;
+
+    return result;
+}
+#endif

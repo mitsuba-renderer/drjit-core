@@ -4,23 +4,70 @@
 #include "log.h"
 #include "registry.h"
 #include "tbb.h"
-#include <glob.h>
-#include <dlfcn.h>
 #include <sys/stat.h>
+
+#if defined(_WIN32)
+#  include <windows.h>
+#  include <direct.h>
+#  define mkdir(name, flags) _wmkdir(name##_w)
+#else
+#  include <glob.h>
+#  include <dlfcn.h>
+#endif
 
 State state;
 Buffer buffer{1024};
-__thread Stream *active_stream = nullptr;
+
+#if !defined(_WIN32)
+  char* jit_temp_path = nullptr;
+#else
+  wchar_t* jit_temp_path = nullptr;
+#endif
+
+#if defined(_MSC_VER)
+  __declspec(thread) Stream* active_stream;
+#else
+  __thread Stream* active_stream;
+#endif
 
 static_assert(
     sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>) == 64,
     "VariableMap: incorrect bucket size, likely an issue with padding/packing!");
 
-
 /// Initialize core data structures of the JIT compiler
 void jit_init(int llvm, int cuda) {
     if (state.has_llvm != 0 || state.has_cuda != 0 || (llvm == 0 && cuda == 0))
         return;
+
+#if !defined(_WIN32)
+    char temp_path[512];
+    snprintf(temp_path, sizeof(temp_path), "%s/.enoki", getenv("HOME"));
+    struct stat st = {};
+    int rv = stat(temp_path, &st);
+    size_t temp_path_size = (strlen(temp_path) + 1) * sizeof(char);
+    jit_temp_path = (char*) malloc(temp_path_size);
+    memcpy(jit_temp_path, temp_path, temp_path_size);
+
+#else
+    wchar_t temp_path_w[512];
+    char temp_path[512];
+    if (GetTempPathW(sizeof(temp_path_w) / sizeof(wchar_t), temp_path_w) == 0)
+        jit_fail("jit_init(): could not obtain path to temporary directory!");
+    wcsncat(temp_path_w, L"enoki", sizeof(temp_path) / sizeof(wchar_t));
+    struct _stat st = {};
+    int rv = _wstat(temp_path_w, &st);
+    size_t temp_path_size = (wcslen(temp_path_w) + 1) * sizeof(wchar_t);
+    jit_temp_path = (wchar_t*) malloc(temp_path_size);
+    memcpy(jit_temp_path, temp_path_w, temp_path_size);
+    wcstombs(temp_path, temp_path_w, sizeof(temp_path));
+#endif
+
+    if (rv == -1) {
+        jit_log(Info, "jit_init(): creating directory \"%s\" ..", temp_path);
+        if (mkdir(temp_path, 0700) == -1)
+            jit_fail("jit_init(): creation of directory \"%s\" failed: %s",
+                temp_path, strerror(errno));
+    }
 
     // Enumerate CUDA devices and collect suitable ones
     jit_log(Info, "jit_init(): detecting devices ..");
@@ -188,6 +235,9 @@ void jit_shutdown(int light) {
         jit_cuda_shutdown();
     }
 
+    free(jit_temp_path);
+    jit_temp_path = nullptr;
+
     state.has_cuda = false;
     state.has_llvm = false;
 }
@@ -276,13 +326,15 @@ void jit_sync_device() {
     }
 }
 
+
 void *jit_find_library(const char *fname, const char *glob_pat,
                        const char *env_var) {
-    const char *env_var_val = env_var ? getenv(env_var) : nullptr;
+#if !defined(_WIN32)
+    const char* env_var_val = env_var ? getenv(env_var) : nullptr;
     if (env_var_val != nullptr && strlen(env_var_val) == 0)
         env_var_val = nullptr;
 
-    void *handle = dlopen(env_var_val ? env_var_val : fname, RTLD_LAZY);
+    void* handle = dlopen(env_var_val ? env_var_val : fname, RTLD_LAZY);
 
     if (!handle & !env_var_val) {
         glob_t g;
@@ -336,6 +388,17 @@ void *jit_find_library(const char *fname, const char *glob_pat,
             globfree(&g);
         }
     }
+#else
+    wchar_t buffer[1024];
+    mbstowcs(buffer, env_var, sizeof(buffer) / sizeof(wchar_t));
+
+    const wchar_t* env_var_val = env_var ? _wgetenv(buffer) : nullptr;
+    if (env_var_val != nullptr && wcslen(env_var_val) == 0)
+        env_var_val = nullptr;
+
+    mbstowcs(buffer, fname, sizeof(buffer) / sizeof(wchar_t));
+    void* handle = (void *) LoadLibraryW(env_var_val ? env_var_val : buffer);
+#endif
 
     return handle;
 }

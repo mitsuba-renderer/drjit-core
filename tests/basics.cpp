@@ -707,7 +707,7 @@ TEST_LLVM(25_wide_intrinsics) {
     jitc_llvm_set_target("skylake", "", 8);
 }
 
-TEST_LLVM(26_avx512_intrinsics) {
+TEST_LLVM(26_avx512_intrinsics, "avx512") {
     jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl", 32);
     Float a = arange<Float>(64);
     Float b = arange<Float>(64) + 0.1f;
@@ -721,7 +721,7 @@ TEST_LLVM(26_avx512_intrinsics) {
     jitc_llvm_set_target("skylake", "", 8);
 }
 
-TEST_BOTH(27_avx512_intrinsics_round2int) {
+TEST_BOTH(27_avx512_intrinsics_round2int, "avx512") {
     using Int64 = Array<int64_t>;
     using UInt64 = Array<uint64_t>;
     using Double = Array<double>;
@@ -818,7 +818,7 @@ TEST_BOTH(27_avx512_intrinsics_round2int) {
     jitc_llvm_set_target("skylake", "", 8);
 }
 
-TEST_BOTH(28_scatter_add) {
+TEST_BOTH(28_scatter_add, "avx512") {
     jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
     using Double = Array<double>;
     {
