@@ -10,6 +10,8 @@ tests/**/*.raw
 Testing
 /kernels/kernels_*.ptx
 /kernels/generate
+build
+.vscode
 
 libenoki-jit.so
 libenoki-jit.dylib
