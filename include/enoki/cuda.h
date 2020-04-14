@@ -1184,7 +1184,7 @@ template <typename T>
 inline CUDAArray<T> block_copy(const CUDAArray<T> &a, uint32_t block_size) {
     size_t size = a.eval().size();
     CUDAArray<T> output = empty<CUDAArray<T>>(size * block_size);
-    jitc_block_copy(CUDAArray<T>::Type, a.data(), output.data(), size, block_size);
+    jitc_block_copy(CUDAArray<T>::Type, a.data(), output.data(), (uint32_t) size, block_size);
     return output;
 }
 
@@ -1195,6 +1195,6 @@ inline CUDAArray<T> block_sum(const CUDAArray<T> &a, uint32_t block_size) {
         jitc_raise("block_sum(): array size must be divisible by block size (%u)!", block_size);
     size /= block_size;
     CUDAArray<T> output = empty<CUDAArray<T>>(size);
-    jitc_block_sum(CUDAArray<T>::Type, a.data(), output.data(), size, block_size);
+    jitc_block_sum(CUDAArray<T>::Type, a.data(), output.data(), (uint32_t) size, block_size);
     return output;
 }

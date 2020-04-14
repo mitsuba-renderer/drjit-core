@@ -1255,7 +1255,9 @@ template <typename T>
 inline LLVMArray<T> block_copy(const LLVMArray<T> &a, uint32_t block_size) {
     size_t size = a.eval().size();
     LLVMArray<T> output = empty<LLVMArray<T>>(size * block_size);
-    jitc_block_copy(LLVMArray<T>::Type, a.data(), output.data(), size, block_size); return output; }
+    jitc_block_copy(LLVMArray<T>::Type, a.data(), output.data(), (uint32_t) size, block_size);
+    return output;
+}
 
 template <typename T>
 inline LLVMArray<T> block_sum(const LLVMArray<T> &a, uint32_t block_size) {
@@ -1264,6 +1266,6 @@ inline LLVMArray<T> block_sum(const LLVMArray<T> &a, uint32_t block_size) {
         jitc_raise("block_sum(): array size must be divisible by block size (%u)!", block_size);
     size /= block_size;
     LLVMArray<T> output = empty<LLVMArray<T>>(size);
-    jitc_block_sum(LLVMArray<T>::Type, a.data(), output.data(), size, block_size);
+    jitc_block_sum(LLVMArray<T>::Type, a.data(), output.data(), (uint32_t) size, block_size);
     return output;
 }

@@ -18,10 +18,12 @@ TEST_BOTH(01_all_any) {
             uint32_t index = (uint32_t) rand() % size;
             f.write(index, true);
             t.write(index, false);
+
             if (size == 1)
                 jitc_assert(!all(t) && !any(t) && all(f) && any(f));
             else
                 jitc_assert(!all(t) && any(t) && !all(f) && any(f));
+
             f.write(index, false);
             t.write(index, true);
             jitc_assert(all(t) && any(t) && !all(f) && !any(f));
@@ -195,7 +197,7 @@ TEST_LLVM(06_parallel_scatter_add, "avx512") {
     UInt32 a = zero<UInt32>(10);
 
     UInt32 index = block_copy(arange<UInt32>(10), 1024 * 1024 + 10);
-    scatter_add(a, UInt32(1.f), index);
+    scatter_add(a, UInt32(1), index);
     UInt32 ref = full<UInt32>(1024 * 1024 + 10, 10);
     jitc_assert(ref == a);
 }
