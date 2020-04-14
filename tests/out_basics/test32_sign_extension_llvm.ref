@@ -1,0 +1,271 @@
+jit_device_set(device=-1, stream=0): creating stream
+jit_var_new(1): $r0_0 = insertelement <$w x $t0> undef, $t0 4294967295, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(1): 1
+jit_var_new(2): $r0_0 = insertelement <$w x $t0> undef, $t0 4294967295, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(2): 1
+jit_var_new(3): $r0_0 = insertelement <$w x $t0> undef, $t0 18446744073709551615, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(3): 1
+jit_var_new(4): $r0_0 = insertelement <$w x $t0> undef, $t0 18446744073709551615, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_inc_ref_ext(4): 1
+jit_var_new(1): $r0_0 = insertelement <$w x $t0> undef, $t0 4294967295, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
+jit_var_inc_ref_ext(1): 2
+jit_var_inc_ref_int(1): 1
+jit_var_inc_ref_int(1): 2
+jit_var_new(5 <- 1, 1): $r0 = icmp eq <$w x $t1> $r1, $r2
+jit_var_inc_ref_ext(5): 1
+jit_eval(): begin.
+jit_assemble(size=1): register map:
+   - %r0 -> 1 [scalar]
+   - %p1 -> 5 [scalar] [out]
+jit_malloc(type=host-async, size=64): <@> (new allocation)
+jit_run(): launching kernel (n=1, in=0, out=1, ops=2) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+    %a0_s = load i8, i8* %a0, align 1, !alias.scope !1
+    %a0_s1 = trunc i8 %a0_s to i1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = insertelement <8 x i32> undef, i32 4294967295, i32 0
+    %r0 = shufflevector <8 x i32> %r0_0, <8 x i32> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %p1
+    %p1 = icmp eq <8 x i32> %r0, %r0
+
+    ; Store %p1
+    %p1_p = bitcast i8* %a0 to <8 x i8>*
+    %p1_e = zext <8 x i1> %p1 to <8 x i8>
+    store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(1): 1
+jit_var_dec_ref_int(1): 0
+jit_eval(): done.
+jit_all(<@>, size=1)
+jit_memset(<@>, isize=1, size=3)
+jit_reduce(<@>, type=uint32, rtype=and, size=1)
+jit_var_dec_ref_ext(5): 0
+jit_var_free(5)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(1): 1
+jit_var_new(2): $r0_0 = insertelement <$w x $t0> undef, $t0 4294967295, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
+jit_var_inc_ref_ext(2): 2
+jit_var_inc_ref_int(2): 1
+jit_var_inc_ref_int(2): 2
+jit_var_new(6 <- 2, 2): $r0 = icmp eq <$w x $t1> $r1, $r2
+jit_var_inc_ref_ext(6): 1
+jit_eval(): begin.
+jit_assemble(size=1): register map:
+   - %r0 -> 2 [scalar]
+   - %p1 -> 6 [scalar] [out]
+jit_malloc(type=host-async, size=64): <@> (reused local)
+jit_run(): launching kernel (n=1, in=0, out=1, ops=2) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+    %a0_s = load i8, i8* %a0, align 1, !alias.scope !1
+    %a0_s1 = trunc i8 %a0_s to i1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %r0
+    %r0_0 = insertelement <8 x i32> undef, i32 4294967295, i32 0
+    %r0 = shufflevector <8 x i32> %r0_0, <8 x i32> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %p1
+    %p1 = icmp eq <8 x i32> %r0, %r0
+
+    ; Store %p1
+    %p1_p = bitcast i8* %a0 to <8 x i8>*
+    %p1_e = zext <8 x i1> %p1 to <8 x i8>
+    store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(2): 1
+jit_var_dec_ref_int(2): 0
+jit_eval(): done.
+jit_all(<@>, size=1)
+jit_memset(<@>, isize=1, size=3)
+jit_reduce(<@>, type=uint32, rtype=and, size=1)
+jit_var_dec_ref_ext(6): 0
+jit_var_free(6)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(2): 1
+jit_var_new(3): $r0_0 = insertelement <$w x $t0> undef, $t0 18446744073709551615, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
+jit_var_inc_ref_ext(3): 2
+jit_var_inc_ref_int(3): 1
+jit_var_inc_ref_int(3): 2
+jit_var_new(7 <- 3, 3): $r0 = icmp eq <$w x $t1> $r1, $r2
+jit_var_inc_ref_ext(7): 1
+jit_eval(): begin.
+jit_assemble(size=1): register map:
+   - %rd0 -> 3 [scalar]
+   - %p1 -> 7 [scalar] [out]
+jit_malloc(type=host-async, size=64): <@> (reused local)
+jit_run(): launching kernel (n=1, in=0, out=1, ops=2) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+    %a0_s = load i8, i8* %a0, align 1, !alias.scope !1
+    %a0_s1 = trunc i8 %a0_s to i1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %rd0
+    %rd0_0 = insertelement <8 x i64> undef, i64 18446744073709551615, i32 0
+    %rd0 = shufflevector <8 x i64> %rd0_0, <8 x i64> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %p1
+    %p1 = icmp eq <8 x i64> %rd0, %rd0
+
+    ; Store %p1
+    %p1_p = bitcast i8* %a0 to <8 x i8>*
+    %p1_e = zext <8 x i1> %p1 to <8 x i8>
+    store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(3): 1
+jit_var_dec_ref_int(3): 0
+jit_eval(): done.
+jit_all(<@>, size=1)
+jit_memset(<@>, isize=1, size=3)
+jit_reduce(<@>, type=uint32, rtype=and, size=1)
+jit_var_dec_ref_ext(7): 0
+jit_var_free(7)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(3): 1
+jit_var_new(4): $r0_0 = insertelement <$w x $t0> undef, $t0 18446744073709551615, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
+jit_var_inc_ref_ext(4): 2
+jit_var_inc_ref_int(4): 1
+jit_var_inc_ref_int(4): 2
+jit_var_new(8 <- 4, 4): $r0 = icmp eq <$w x $t1> $r1, $r2
+jit_var_inc_ref_ext(8): 1
+jit_eval(): begin.
+jit_assemble(size=1): register map:
+   - %rd0 -> 4 [scalar]
+   - %p1 -> 8 [scalar] [out]
+jit_malloc(type=host-async, size=64): <@> (reused local)
+jit_run(): launching kernel (n=1, in=0, out=1, ops=2) ..
+define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+entry:
+    ; Prepare argument 0
+    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
+    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
+    %a0 = bitcast i8* %a0_p to i8*
+    %a0_s = load i8, i8* %a0, align 1, !alias.scope !1
+    %a0_s1 = trunc i8 %a0_s to i1
+    br label %loop
+
+done:
+    ret void
+
+loop:
+    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+
+    ; Evaluate %rd0
+    %rd0_0 = insertelement <8 x i64> undef, i64 18446744073709551615, i32 0
+    %rd0 = shufflevector <8 x i64> %rd0_0, <8 x i64> undef, <8 x i32> zeroinitializer
+
+    ; Evaluate %p1
+    %p1 = icmp eq <8 x i64> %rd0, %rd0
+
+    ; Store %p1
+    %p1_p = bitcast i8* %a0 to <8 x i8>*
+    %p1_e = zext <8 x i1> %p1 to <8 x i8>
+    store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
+
+    %index_next = add i64 %index, 8
+    %cond = icmp uge i64 %index_next, %end
+    br i1 %cond, label %done, label %loop, !llvm.loop !2
+}
+
+!0 = !{!0}
+!1 = !{!1, !0}
+!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
+
+attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+jit_run(): processing 1 packet and 0 scalar entries
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(4): 1
+jit_var_dec_ref_int(4): 0
+jit_eval(): done.
+jit_all(<@>, size=1)
+jit_memset(<@>, isize=1, size=3)
+jit_reduce(<@>, type=uint32, rtype=and, size=1)
+jit_var_dec_ref_ext(8): 0
+jit_var_free(8)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(4): 1
+jit_var_dec_ref_ext(4): 0
+jit_var_free(4)
+jit_var_dec_ref_ext(3): 0
+jit_var_free(3)
+jit_var_dec_ref_ext(2): 0
+jit_var_free(2)
+jit_var_dec_ref_ext(1): 0
+jit_var_free(1)
+jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 1 deallocation
+jit_shutdown(): releasing 2 kernels ..
+jit_malloc_trim(): freed
+ - host-async memory: 64 B in 1 allocation
+jit_shutdown(): done

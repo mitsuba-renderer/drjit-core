@@ -988,3 +988,23 @@ TEST_BOTH(31_vcall) {
     jitc_registry_remove((void *) 0xB);
     jitc_registry_remove((void *) 0xC);
 }
+
+TEST_BOTH(32_sign_extension) {
+    int32_t  i32 = -1;
+    uint32_t u32 = i32;
+    int64_t  i64 = i32;
+    uint64_t u64 = i32;
+
+    using Int64 = Array<int64_t>;
+    using UInt64 = Array<uint64_t>;
+
+    Int32  a_i32(i32);
+    UInt32 a_u32(i32);
+    Int64  a_i64(i32);
+    UInt64 a_u64(i32);
+
+    jitc_assert(a_i32 == i32);
+    jitc_assert(a_u32 == u32);
+    jitc_assert(a_i64 == i64);
+    jitc_assert(a_u64 == u64);
+}

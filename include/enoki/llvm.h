@@ -51,9 +51,6 @@ struct LLVMArray {
                       "Conversion constructor called with arguments that don't "
                       "correspond to a conversion!");
 
-        constexpr bool Signed =
-            std::is_signed<T>::value && std::is_signed<Value>::value;
-
         const char *op;
         if (std::is_floating_point<Value>::value && std::is_integral<T>::value) {
             op = std::is_signed<T>::value ? "$r0 = sitofp <$w x $t1> $r1 to <$w x $t0>"
@@ -72,11 +69,11 @@ struct LLVMArray {
             } else {
                 op = sizeof(T) > sizeof(Value)
                          ? "$r0 = trunc <$w x $t1> $r1 to <$w x $t0>"
-                         : (Signed ? "$r0 = sext <$w x $t1> $r1 to <$w x $t0>"
-                                   : "$r0 = zext <$w x $t1> $r1 to <$w x $t0>");
+                         : (std::is_signed<T>::value
+                                ? "$r0 = sext <$w x $t1> $r1 to <$w x $t0>"
+                                : "$r0 = zext <$w x $t1> $r1 to <$w x $t0>");
             }
-        }
-        else {
+        } else {
             jitc_fail("Unsupported conversion!");
         }
 

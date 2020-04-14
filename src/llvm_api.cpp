@@ -394,6 +394,9 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
 void jit_llvm_set_target(const char *target_cpu,
                          const char *target_features,
                          uint32_t vector_width) {
+    if (!jit_llvm_init_success)
+        return;
+
     if (jit_llvm_target_cpu)
         LLVMDisposeMessage(jit_llvm_target_cpu);
 
