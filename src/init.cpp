@@ -86,8 +86,8 @@ void jit_init(int llvm, int cuda) {
 
     for (int i = 0; cuda && i < jit_cuda_devices; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
-            unified_addr = 0, managed = 0, concurrent_managed = 0,
-            shared_memory_bytes = 0, cc_minor = 0, cc_major = 0;
+            unified_addr = 0, managed = 0, shared_memory_bytes = 0,
+            cc_minor = 0, cc_major = 0;
         size_t mem_total = 0;
         char name[256];
 
@@ -99,7 +99,6 @@ void jit_init(int llvm, int cuda) {
         cuda_check(cuDeviceGetAttribute(&num_sm, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, i));
         cuda_check(cuDeviceGetAttribute(&unified_addr, CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING, i));
         cuda_check(cuDeviceGetAttribute(&managed, CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY, i));
-        cuda_check(cuDeviceGetAttribute(&concurrent_managed, CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS, i));
         cuda_check(cuDeviceGetAttribute(&shared_memory_bytes, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN, i));
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
@@ -118,8 +117,6 @@ void jit_init(int llvm, int cuda) {
             jit_log(Warn, " - Warning: device does *not* support managed memory, skipping ..");
             continue;
         }
-        if (concurrent_managed == 0)
-            jit_log(Warn, " - Warning: device does *not* support concurrent managed access.");
 
         Device device;
         device.id = i;
