@@ -582,7 +582,7 @@ struct CUDAArray {
 
             case VarType::Int8:
             case VarType::UInt8:
-                fmt = "mov.b16 %w1, 0x%02x$ncvt.u8.u16 $r0, %w1";
+                fmt = "mov.b16 %%w1, 0x%02x$ncvt.u8.u16 $r0, %%w1";
                 break;
 
             case VarType::Int16:

@@ -245,6 +245,14 @@ bool jit_cuda_init() {
     cuda_version_major = cuda_version / 1000;
     cuda_version_minor = (cuda_version % 1000) / 10;
 
+    if (cuda_version_major < 10) {
+        jit_log(LogLevel::Warn,
+                "jit_cuda_init(): your version of CUDA is too old (found %i.%i, "
+                "at least 10.x is required) -- disabling CUDA backend!",
+                cuda_version_major, cuda_version_minor);
+        return false;
+    }
+
     jit_log(LogLevel::Info,
             "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
             cuda_version_major, cuda_version_minor);
@@ -420,7 +428,7 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buffer,
                            buffer_size, nullptr, 0, nullptr, nullptr);
     if (rt != CUDA_SUCCESS)
-        jit_fail("jit_llvm_compile(): compilation failed. Please see the PTX "
+        jit_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
                  "assembly listing and error message below:\n\n%s\n\n%s",
                  buffer, error_log);
 
@@ -428,7 +436,7 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     size_t link_output_size = 0;
     cuda_check(cuLinkComplete(link_state, &link_output, &link_output_size));
     if (rt != CUDA_SUCCESS)
-        jit_fail("jit_llvm_compile(): compilation failed. Please see the PTX "
+        jit_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
                  "assembly listing and error message below:\n\n%s\n\n%s",
                  buffer, error_log);
 
