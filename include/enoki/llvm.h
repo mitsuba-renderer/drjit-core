@@ -705,12 +705,8 @@ Array arange(ssize_t start, ssize_t stop, ssize_t step) {
 
     if (start == 0 && step == 1)
         return Array(index);
-    else {
-        Array a0 = Array(index),
-              a1 = Array((Value) step),
-              a2 = Array((Value) start);
-        return fmadd(a0, a1, a2);
-    }
+    else
+        return fmadd(Array(index), Array((Value) step), Array((Value) start));
 }
 
 template <typename Array,
@@ -729,10 +725,7 @@ Array linspace(typename Array::Value min, typename Array::Value max, size_t size
     UInt32 index = UInt32::launch_index(size);
 
     Value step = (max - min) / Value(size - 1);
-    Array a0 = Array(index),
-          a1 = Array(step),
-          a2 = Array(min);
-    return fmadd(a0, a1, a2);
+    return fmadd(Array(index), Array(step), Array(min));
 }
 
 template <typename Value>
