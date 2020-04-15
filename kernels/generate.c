@@ -13,7 +13,8 @@ char *read_file(const char *fname, size_t *size_out) {
 
     fseek(f, 0, SEEK_END);
     size_t size = ftell(f);
-    char *buf = malloc(size);
+    char *buf = malloc(size + 1);
+    buf[size] = '\0';
     fseek(f, 0, SEEK_SET);
 
     if (fread(buf, size, 1, f) != 1) {
@@ -27,7 +28,7 @@ char *read_file(const char *fname, size_t *size_out) {
 }
 
 void dump_hex(FILE *f, const char *name, const char *data, size_t size) {
-    fprintf(f, "char %s[] = {\n", name);
+    fprintf(f, "const char %s[] = {\n", name);
     for (size_t i = 0; i < size; ++i)
         fprintf(f, "%s0x%02x%s%s",
                 i % 8 == 0 ? "    " : "",
@@ -55,9 +56,9 @@ void append(FILE *f, const char *filename, const char *prefix, char *dict, int d
     compressed_size = LZ4_compress_HC_continue(&stream, buf,
             compressed, size, compressed_size);
 
-    fprintf(f, "int %s_size_uncompressed = %zu;\n", prefix, size);
-    fprintf(f, "int %s_size_compressed   = %i;\n", prefix, compressed_size);
-    fprintf(f, "size_t  %s_hash          = %lluull;\n\n", prefix, hash);
+    fprintf(f, "const int %s_size_uncompressed = %zu;\n", prefix, size);
+    fprintf(f, "const int %s_size_compressed   = %i;\n", prefix, compressed_size);
+    fprintf(f, "const size_t  %s_hash          = %lluull;\n\n", prefix, hash);
     dump_hex(f, prefix, compressed, compressed_size);
     free(buf);
     free(compressed);
@@ -82,8 +83,28 @@ int main(int argc, char **argv) {
     append(f, "kernels.dict", "kernels_dict", NULL, 0);
     append(f, "kernels_50.ptx", "kernels_50", kernels_dict, kernels_dict_size);
     append(f, "kernels_70.ptx", "kernels_70", kernels_dict, kernels_dict_size);
+
+    fprintf(f, "const char *kernels_list = \"");
+    size_t size = 0;
+    char *buf = read_file("kernels_70.ptx", &size),
+         *ptr = buf;
+    while (ptr) {
+        ptr = strstr(ptr, ".entry ");
+        if (!ptr)
+            break;
+        ptr += 7;
+        char *next = strstr(ptr, "(");
+        if (!next)
+            break;
+        fwrite(ptr, next-ptr, 1, f);
+        fputc(',', f);
+        ptr = next;
+    }
+    fprintf(f, "\";\n\n");
+
     append(f, "llvm_kernels_7.ll", "llvm_kernels_7", kernels_dict, kernels_dict_size);
     append(f, "llvm_kernels_9.ll", "llvm_kernels_9", kernels_dict, kernels_dict_size);
+
 
     f = fopen("kernels.h", "w");
     if (!f) {
@@ -96,26 +117,27 @@ int main(int argc, char **argv) {
     fprintf(f, "#if defined(__cplusplus)\n");
     fprintf(f, "extern \"C\" {\n");
     fprintf(f, "#endif\n\n");
-    fprintf(f, "extern int    kernels_dict_size_uncompressed;\n");
-    fprintf(f, "extern int    kernels_dict_size_compressed;\n");
-    fprintf(f, "extern size_t kernels_dict_hash;\n");
-    fprintf(f, "extern char   kernels_dict[];\n\n");
-    fprintf(f, "extern int    kernels_50_size_uncompressed;\n");
-    fprintf(f, "extern int    kernels_50_size_compressed;\n");
-    fprintf(f, "extern size_t kernels_50_hash;\n");
-    fprintf(f, "extern char   kernels_50[];\n\n");
-    fprintf(f, "extern int    kernels_70_size_uncompressed;\n");
-    fprintf(f, "extern int    kernels_70_size_compressed;\n");
-    fprintf(f, "extern size_t kernels_70_hash;\n");
-    fprintf(f, "extern char   kernels_70[];\n\n");
-    fprintf(f, "extern int    llvm_kernels_7_size_uncompressed;\n");
-    fprintf(f, "extern int    llvm_kernels_7_size_compressed;\n");
-    fprintf(f, "extern size_t llvm_kernels_7_hash;\n");
-    fprintf(f, "extern char   llvm_kernels_7[];\n\n");
-    fprintf(f, "extern int    llvm_kernels_9_size_uncompressed;\n");
-    fprintf(f, "extern int    llvm_kernels_9_size_compressed;\n");
-    fprintf(f, "extern size_t llvm_kernels_9_hash;\n");
-    fprintf(f, "extern char   llvm_kernels_9[];\n\n");
+    fprintf(f, "extern const int    kernels_dict_size_uncompressed;\n");
+    fprintf(f, "extern const int    kernels_dict_size_compressed;\n");
+    fprintf(f, "extern const size_t kernels_dict_hash;\n");
+    fprintf(f, "extern const char   kernels_dict[];\n\n");
+    fprintf(f, "extern const int    kernels_50_size_uncompressed;\n");
+    fprintf(f, "extern const int    kernels_50_size_compressed;\n");
+    fprintf(f, "extern const size_t kernels_50_hash;\n");
+    fprintf(f, "extern const char   kernels_50[];\n\n");
+    fprintf(f, "extern const int    kernels_70_size_uncompressed;\n");
+    fprintf(f, "extern const int    kernels_70_size_compressed;\n");
+    fprintf(f, "extern const size_t kernels_70_hash;\n");
+    fprintf(f, "extern const char   kernels_70[];\n\n");
+    fprintf(f, "extern const char   *kernels_list;\n\n");
+    fprintf(f, "extern const int    llvm_kernels_7_size_uncompressed;\n");
+    fprintf(f, "extern const int    llvm_kernels_7_size_compressed;\n");
+    fprintf(f, "extern const size_t llvm_kernels_7_hash;\n");
+    fprintf(f, "extern const char   llvm_kernels_7[];\n\n");
+    fprintf(f, "extern const int    llvm_kernels_9_size_uncompressed;\n");
+    fprintf(f, "extern const int    llvm_kernels_9_size_compressed;\n");
+    fprintf(f, "extern const size_t llvm_kernels_9_hash;\n");
+    fprintf(f, "extern const char   llvm_kernels_9[];\n\n");
     fprintf(f, "#if defined(__cplusplus)\n");
     fprintf(f, "}\n");
     fprintf(f, "#endif");

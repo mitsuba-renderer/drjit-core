@@ -24,7 +24,7 @@
 #  pragma warning (disable: 4146) // unary minus operator applied to unsigned type, result still unsigned
 #endif
 
-const char *reduction_name[(int) ReductionType::Count] = { "add", "mul", "min",
+const char *reduction_name[(int) ReductionType::Count] = { "sum", "mul", "min",
                                                            "max", "and", "or" };
 
 /// Fill a device memory region with constants of a given type

@@ -1,10 +1,10 @@
 #include "kernels.h"
 
-int kernels_dict_size_uncompressed = 65536;
-int kernels_dict_size_compressed   = 17244;
-size_t  kernels_dict_hash          = 1479018777864767474ull;
+const int kernels_dict_size_uncompressed = 65536;
+const int kernels_dict_size_compressed   = 17244;
+const size_t  kernels_dict_hash          = 1479018777864767474ull;
 
-char kernels_dict[] = {
+const char kernels_dict[] = {
     0xf2, 0x8f, 0x37, 0xa4, 0x30, 0xec, 0x09, 0xbf,
     0x51, 0x63, 0x50, 0x10, 0x60, 0x77, 0x35, 0x00,
     0x63, 0xf1, 0xf0, 0x14, 0x77, 0xcc, 0x25, 0xd8,
@@ -2163,11 +2163,11 @@ char kernels_dict[] = {
     0x20, 0x20, 0x20, 0x20
 };
 
-int kernels_50_size_uncompressed = 130232;
-int kernels_50_size_compressed   = 15951;
-size_t  kernels_50_hash          = 18366918312417476318ull;
+const int kernels_50_size_uncompressed = 130232;
+const int kernels_50_size_compressed   = 15951;
+const size_t  kernels_50_hash          = 18366918312417476318ull;
 
-char kernels_50[] = {
+const char kernels_50[] = {
     0x30, 0x2f, 0x2f, 0x0a, 0x9b, 0x06, 0xf2, 0x12,
     0x65, 0x6e, 0x65, 0x72, 0x61, 0x74, 0x65, 0x64,
     0x20, 0x62, 0x79, 0x20, 0x4e, 0x56, 0x49, 0x44,
@@ -4164,11 +4164,11 @@ char kernels_50[] = {
     0xb3, 0x50, 0x0a, 0x7d, 0x0a, 0x0a, 0x0a
 };
 
-int kernels_70_size_uncompressed = 128297;
-int kernels_70_size_compressed   = 15445;
-size_t  kernels_70_hash          = 10150647494870640158ull;
+const int kernels_70_size_uncompressed = 128297;
+const int kernels_70_size_compressed   = 15445;
+const size_t  kernels_70_hash          = 10150647494870640158ull;
 
-char kernels_70[] = {
+const char kernels_70[] = {
     0x30, 0x2f, 0x2f, 0x0a, 0x9b, 0x06, 0xf2, 0x12,
     0x65, 0x6e, 0x65, 0x72, 0x61, 0x74, 0x65, 0x64,
     0x20, 0x62, 0x79, 0x20, 0x4e, 0x56, 0x49, 0x44,
@@ -6102,11 +6102,13 @@ char kernels_70[] = {
     0x0a, 0x7d, 0x0a, 0x0a, 0x0a
 };
 
-int llvm_kernels_7_size_uncompressed = 20448;
-int llvm_kernels_7_size_compressed   = 2651;
-size_t  llvm_kernels_7_hash          = 3727862056773440292ull;
+const char *kernels_list = "reduce_sum_i32,reduce_sum_u32,reduce_sum_i64,reduce_sum_u64,reduce_sum_f32,reduce_sum_f64,reduce_mul_i32,reduce_mul_u32,reduce_mul_i64,reduce_mul_u64,reduce_mul_f32,reduce_mul_f64,reduce_min_i32,reduce_min_u32,reduce_min_i64,reduce_min_u64,reduce_min_f32,reduce_min_f64,reduce_max_i32,reduce_max_u32,reduce_max_i64,reduce_max_u64,reduce_max_f32,reduce_max_f64,reduce_or_u32,reduce_and_u32,scan_small_u32,scan_large_u32_init,scan_large_u32,compress_small,compress_large,mkperm_phase_1_tiny,mkperm_phase_1_small,mkperm_phase_1_large,mkperm_phase_3,mkperm_phase_4_tiny,mkperm_phase_4_small,mkperm_phase_4_large,transpose,fill_64,block_copy_u32,block_sum_u32,block_copy_u64,block_sum_u64,block_copy_f32,block_sum_f32,block_copy_f64,block_sum_f64,";
 
-char llvm_kernels_7[] = {
+const int llvm_kernels_7_size_uncompressed = 20448;
+const int llvm_kernels_7_size_compressed   = 2651;
+const size_t  llvm_kernels_7_hash          = 3727862056773440292ull;
+
+const char llvm_kernels_7[] = {
     0x0f, 0x9f, 0xf3, 0x06, 0x0f, 0x27, 0x9a, 0x03,
     0x50, 0x6e, 0x6f, 0x63, 0x61, 0x70, 0xba, 0x98,
     0x09, 0x2c, 0x9a, 0x07, 0x28, 0x9a, 0x0f, 0x94,
@@ -6441,11 +6443,11 @@ char llvm_kernels_7[] = {
     0x20, 0x7d, 0x0a
 };
 
-int llvm_kernels_9_size_uncompressed = 20948;
-int llvm_kernels_9_size_compressed   = 2668;
-size_t  llvm_kernels_9_hash          = 13976663567282998464ull;
+const int llvm_kernels_9_size_uncompressed = 20948;
+const int llvm_kernels_9_size_compressed   = 2668;
+const size_t  llvm_kernels_9_hash          = 13976663567282998464ull;
 
-char llvm_kernels_9[] = {
+const char llvm_kernels_9[] = {
     0x0f, 0x9f, 0xf3, 0x06, 0x0f, 0x27, 0x9a, 0x03,
     0x50, 0x6e, 0x6f, 0x63, 0x61, 0x70, 0xba, 0x98,
     0x09, 0x2c, 0x9a, 0x07, 0x28, 0x9a, 0x0f, 0x94,

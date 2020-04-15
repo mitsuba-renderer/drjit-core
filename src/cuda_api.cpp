@@ -257,11 +257,16 @@ bool jit_cuda_init() {
             "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
             cuda_version_major, cuda_version_minor);
 
-
-    for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++)
-        for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++)
+    for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
+        for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++) {
             jit_cuda_reductions[j][k] =
                 (CUfunction *) malloc_check(sizeof(CUfunction) * jit_cuda_devices);
+        }
+        jit_cuda_block_copy[k] = (CUfunction *) malloc_check(
+            sizeof(CUfunction) * jit_cuda_devices);
+        jit_cuda_block_sum[k] = (CUfunction *) malloc_check(
+            sizeof(CUfunction) * jit_cuda_devices);
+    }
 
     jit_cuda_module = (CUmodule *) malloc_check(sizeof(CUmodule) * jit_cuda_devices);
 
@@ -363,35 +368,29 @@ bool jit_cuda_init() {
         CUfunction func;
         for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
             snprintf(name, sizeof(name), "block_copy_%s", var_type_name_short[k]);
-            CUresult rv = cuModuleGetFunction(&func, m, name);
-            if (rv != CUDA_ERROR_NOT_FOUND) {
-                cuda_check(rv);
-                if (i == 0)
-                    jit_cuda_block_copy[k] = (CUfunction *) malloc_check(
-                        sizeof(CUfunction) * jit_cuda_devices);
+            if (strstr(kernels_list, name)) {
+                cuda_check(cuModuleGetFunction(&func, m, name));
                 jit_cuda_block_copy[k][i] = func;
+            } else {
+                jit_cuda_block_copy[k][i] = nullptr;
             }
 
             snprintf(name, sizeof(name), "block_sum_%s", var_type_name_short[k]);
-            rv = cuModuleGetFunction(&func, m, name);
-            if (rv != CUDA_ERROR_NOT_FOUND) {
-                cuda_check(rv);
-                if (i == 0)
-                    jit_cuda_block_sum[k] = (CUfunction *) malloc_check(
-                        sizeof(CUfunction) * jit_cuda_devices);
+            if (strstr(kernels_list, name)) {
+                cuda_check(cuModuleGetFunction(&func, m, name));
                 jit_cuda_block_sum[k][i] = func;
+            } else {
+                jit_cuda_block_sum[k][i] = nullptr;
             }
 
             for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++) {
                 snprintf(name, sizeof(name), "reduce_%s_%s", reduction_name[j],
                          var_type_name_short[k]);
-                rv = cuModuleGetFunction(&func, m, name);
-                if (rv != CUDA_ERROR_NOT_FOUND) {
-                    cuda_check(rv);
-                    if (i == 0)
-                        jit_cuda_reductions[j][k] = (CUfunction *) malloc_check(
-                            sizeof(CUfunction) * jit_cuda_devices);
+                if (strstr(kernels_list, name)) {
+                    cuda_check(cuModuleGetFunction(&func, m, name));
                     jit_cuda_reductions[j][k][i] = func;
+                } else {
+                    jit_cuda_reductions[j][k][i] = nullptr;
                 }
             }
         }
