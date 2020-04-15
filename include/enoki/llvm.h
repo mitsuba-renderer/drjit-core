@@ -1136,7 +1136,7 @@ template <typename Value> LLVMArray<Value> hsum(const LLVMArray<Value> &v) {
         return v;
 
     v.eval();
-    Array result = Array::empty(1);
+    Array result = empty<Array>(1);
     jitc_reduce(Array::Type, ReductionType::Add, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
@@ -1148,7 +1148,7 @@ template <typename Value> LLVMArray<Value> hprod(const LLVMArray<Value> &v) {
         return v;
 
     v.eval();
-    Array result = Array::empty(1);
+    Array result = empty<Array>(1);
     jitc_reduce(Array::Type, ReductionType::Mul, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
@@ -1160,7 +1160,7 @@ template <typename Value> LLVMArray<Value> hmax(const LLVMArray<Value> &v) {
         return v;
 
     v.eval();
-    Array result = Array::empty(1);
+    Array result = empty<Array>(1);
     jitc_reduce(Array::Type, ReductionType::Max, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
@@ -1172,7 +1172,7 @@ template <typename Value> LLVMArray<Value> hmin(const LLVMArray<Value> &v) {
         return v;
 
     v.eval();
-    Array result = Array::empty(1);
+    Array result = empty<Array>(1);
     jitc_reduce(Array::Type, ReductionType::Min, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;

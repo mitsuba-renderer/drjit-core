@@ -1032,7 +1032,7 @@ template <typename Value> CUDAArray<Value> hsum(const CUDAArray<Value> &v) {
         return v;
 
     v.eval();
-    Array result = Array::empty(1);
+    Array result = empty<Array>(1);
     jitc_reduce(Array::Type, ReductionType::Add, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
@@ -1044,7 +1044,7 @@ template <typename Value> CUDAArray<Value> hprod(const CUDAArray<Value> &v) {
         return v;
 
     v.eval();
-    Array result = Array::empty(1);
+    Array result = empty<Array>(1);
     jitc_reduce(Array::Type, ReductionType::Mul, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
@@ -1056,7 +1056,7 @@ template <typename Value> CUDAArray<Value> hmax(const CUDAArray<Value> &v) {
         return v;
 
     v.eval();
-    Array result = Array::empty(1);
+    Array result = empty<Array>(1);
     jitc_reduce(Array::Type, ReductionType::Max, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
@@ -1068,7 +1068,7 @@ template <typename Value> CUDAArray<Value> hmin(const CUDAArray<Value> &v) {
         return v;
 
     v.eval();
-    Array result = Array::empty(1);
+    Array result = empty<Array>(1);
     jitc_reduce(Array::Type, ReductionType::Min, v.data(), (uint32_t) v.size(),
                 result.data());
     return result;
