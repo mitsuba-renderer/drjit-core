@@ -1,5 +1,5 @@
 /*
-    enoki/cuda.h -- Simple C++ array class with operator overloading (CUDA)
+    enoki-jit/cuda.h -- Simple C++ array class with operator overloading (CUDA)
 
     This library implements convenient wrapper class around the C API in
     'enoki/jit.h'.
@@ -12,11 +12,11 @@
 
 #pragma once
 
-#include <enoki/jit.h>
-#include <enoki/traits.h>
-#include <cstring>
+#include <enoki-jit/util.h>
 #include <cstdio>
 #include <vector>
+
+NAMESPACE_BEGIN(enoki)
 
 template <typename Value_> struct CUDAArray;
 
@@ -1191,3 +1191,5 @@ inline CUDAArray<T> block_sum(const CUDAArray<T> &a, uint32_t block_size) {
     jitc_block_sum(CUDAArray<T>::Type, a.data(), output.data(), (uint32_t) size, block_size);
     return output;
 }
+
+NAMESPACE_END(enoki)

@@ -7,15 +7,16 @@
     license that can be found in the LICENSE file.
 */
 
-#include <enoki/traits.h>
+#include <enoki-jit/util.h>
 #include "internal.h"
 #include "util.h"
 #include "var.h"
+#include "eval.h"
 #include "registry.h"
 #include "log.h"
 #include "tbb.h"
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
 #  include <tbb/tbb.h>
 #  include <condition_variable>
 #endif
@@ -131,7 +132,7 @@ void jit_memset_async(void *ptr, uint32_t size_, uint32_t isize, const void *src
             }
         };
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
 #else
         unlock_guard guard(state.mutex);
@@ -153,7 +154,7 @@ void jit_memcpy(void *dst, const void *src, size_t size) {
         cuda_check(cuStreamSynchronize(stream->handle));
         cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
     } else {
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         tbb_stream_sync(stream);
 #endif
         memcpy(dst, src, size);
@@ -184,7 +185,7 @@ void jit_memcpy_async(void *dst, const void *src, size_t size) {
             memcpy(inputs.dst, inputs.src, inputs.size);
         };
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
 #else
         unlock_guard guard(state.mutex);
@@ -197,7 +198,7 @@ using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void 
 
 template <typename Value>
 static Reduction jit_reduce_create(ReductionType rtype) {
-    using UInt = uint_with_size_t<Value>;
+    using UInt = enoki::uint_with_size_t<Value>;
 
     switch (rtype) {
         case ReductionType::Add:
@@ -332,7 +333,7 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
     } else {
         Reduction reduction = jit_reduce_create(type, rtype);
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         struct Inputs {
             uint32_t size;
             uint32_t isize;
@@ -523,7 +524,7 @@ void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
             jit_free(scratch);
         }
     } else {
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         struct Inputs {
             const uint32_t *in;
             uint32_t *out;
@@ -641,7 +642,7 @@ void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out, uint32_t *cou
             jit_free(scratch);
         }
     } else {
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         struct Inputs {
             const uint8_t *in;
             uint32_t *out;
@@ -864,7 +865,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 
         return offsets ? offsets[4 * bucket_count] : 0u;
     } else { // if (!stream->cuda)
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         struct UniqueCount {
             uint32_t value = 0xFFFFFFFF;
             std::mutex mutex;
@@ -1045,7 +1046,7 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
                                        bucket_count, perm, offsets),
              unique_count_out = unique_count;
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
     if (!stream->cuda)
         perm = (uint32_t *) jit_malloc_migrate(perm, AllocType::HostAsync);
 #endif
@@ -1211,7 +1212,7 @@ void jit_block_copy(enum VarType type, const void *in, void *out, uint32_t size,
     } else {
         BlockOp op = jit_block_copy_create(type);
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         struct Inputs {
             const void *in;
             void *out;
@@ -1282,7 +1283,7 @@ void jit_block_sum(enum VarType type, const void *in, void *out, uint32_t size,
     } else {
         BlockOp op = jit_block_sum_create(type);
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         struct Inputs {
             const void *in;
             void *out;

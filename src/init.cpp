@@ -170,7 +170,7 @@ void jit_shutdown(int light) {
                 cuda_check(cuStreamDestroy(stream->handle));
                 delete stream->release_chain;
             } else {
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
                 jit_free_flush();
                 tbb_stream_shutdown(stream);
 #endif
@@ -292,7 +292,7 @@ void jit_device_set(int32_t device, uint32_t stream) {
         stream_ptr->handle = handle;
         stream_ptr->event = event;
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         tbb_stream_init(stream_ptr);
 #endif
 
@@ -309,7 +309,7 @@ void jit_sync_stream() {
         unlock_guard guard(state.mutex);
         cuda_check(cuStreamSynchronize(stream->handle));
     } else {
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         unlock_guard guard(state.mutex);
         tbb_stream_sync(stream);
 #endif
@@ -325,7 +325,7 @@ void jit_sync_device() {
             cuda_check(cuCtxSynchronize());
         }
     } else {
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         jit_fail("jit_sync_device() is not currently supported by LLVM+TBB. "
                  "Use jit_sync_stream() instead.");
 #endif

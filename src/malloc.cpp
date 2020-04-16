@@ -46,7 +46,7 @@ void* jit_malloc(AllocType type, size_t size) {
         size = (size + packet_size - 1) / packet_size * packet_size;
     }
 
-#if !defined(ENOKI_TBB)
+#if !defined(ENOKI_ENABLE_TBB)
     /// There are no streams / host-asynchronous allocations when TBB is disabled
     if (type == AllocType::HostAsync)
         type = AllocType::Host;
@@ -310,7 +310,7 @@ void jit_free_flush() {
             },
             chain_new));
     } else {
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         tbb_stream_enqueue_func(
             stream,
             [](void *ptr_) -> void {
@@ -351,7 +351,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
 
     AllocInfo ai = it.value();
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
     if ((ai.type == AllocType::Host && type == AllocType::HostAsync) ||
         (ai.type == AllocType::HostAsync && type == AllocType::Host)) {
         it.value().type = type;

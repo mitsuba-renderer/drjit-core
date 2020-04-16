@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include <enoki/jit.h>
+#include <enoki-jit/jit.h>
 #include "hash.h"
 
 /// Data structure characterizing a memory allocation

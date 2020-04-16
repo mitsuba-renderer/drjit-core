@@ -7,7 +7,7 @@
     license that can be found in the LICENSE file.
 */
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
 
 #include <stdlib.h>
 #include <stdint.h>

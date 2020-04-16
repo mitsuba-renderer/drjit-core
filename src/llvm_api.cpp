@@ -665,7 +665,7 @@ bool jit_llvm_init() {
     if (strstr(jit_llvm_target_features, "+avx512f"))
         jit_llvm_vector_width = 16;
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
     jit_llvm_thread_count =
         std::max(1u, (uint32_t) std::thread::hardware_concurrency());
 #else

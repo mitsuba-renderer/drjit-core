@@ -2,10 +2,10 @@ project(enoki-jit)
 cmake_minimum_required(VERSION 3.9.0)
 cmake_policy(SET CMP0074 NEW)
 
-option(ENOKI_ENABLE_TESTS "Compile test suite?" ON)
 option(ENOKI_ENABLE_TBB   "Use Intel Thread Building Blocks (TBB) with LLVM backend?" ON)
 option(ENOKI_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
 option(ENOKI_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
+option(ENOKI_ENABLE_TESTS "Build Enoki test suite?" OFF)
 
 # Set a default build configuration (Release)
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -54,7 +54,7 @@ endif()
 
 if (ENOKI_ENABLE_TBB)
   # Try to detect TBB
-  set(CMAKE_MODULE_PATH cmake)
+  set(CMAKE_MODULE_PATH $CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
   find_package(TBB)
 endif()
 
@@ -88,10 +88,10 @@ include_directories(
 
 add_library(
   enoki-jit SHARED
-  include/enoki/jit.h
-  include/enoki/traits.h
-  include/enoki/cuda.h
-  include/enoki/llvm.h
+  include/enoki-jit/jit.h
+  include/enoki-jit/traits.h
+  include/enoki-jit/cuda.h
+  include/enoki-jit/llvm.h
 
   src/internal.h
   src/alloc.h
@@ -126,7 +126,7 @@ if (NOT MSVC)
   endif()
 endif()
 
-target_compile_definitions(enoki-jit PRIVATE -DENOKI_BUILD=1)
+target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_BUILD=1)
 
 if (ENOKI_DYNAMIC_CUDA)
   target_compile_definitions(enoki-jit PRIVATE -DENOKI_DYNAMIC_CUDA=1)
@@ -146,7 +146,7 @@ endif()
 
 if (ENOKI_ENABLE_TBB AND TBB_FOUND)
   target_link_libraries(enoki-jit PRIVATE TBB::tbb)
-  target_compile_definitions(enoki-jit PRIVATE -DENOKI_TBB=1)
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_ENABLE_TBB=1)
 endif()
 
 if (UNIX)

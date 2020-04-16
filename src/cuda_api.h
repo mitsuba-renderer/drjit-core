@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include <enoki/jit.h>
+#include <enoki-jit/jit.h>
 
 #if !defined(ENOKI_DYNAMIC_CUDA)
 #  include <cuda.h>

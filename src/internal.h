@@ -122,7 +122,7 @@ struct Stream {
 
     /// ---------------------------- LLVM-specific ----------------------------
 
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
     /// Mutex protecting 'tbb_task_queue'
     std::mutex tbb_task_queue_mutex;
 

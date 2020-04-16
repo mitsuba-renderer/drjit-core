@@ -1,5 +1,5 @@
 /*
-    enoki/jit.h -- Self-contained JIT compiler for CUDA & LLVM.
+    enoki-jit/jit.h -- Self-contained JIT compiler for CUDA & LLVM.
 
     This library implements a self-contained tracing JIT compiler that supports
     both CUDA PTX and LLVM IR as intermediate languages. It takes care of many
@@ -28,7 +28,7 @@
 #include <stdint.h>
 
 #if defined(_MSC_VER)
-#  if defined(ENOKI_BUILD)
+#  if defined(ENOKI_JIT_BUILD)
 #    define JITC_EXPORT    __declspec(dllexport)
 #  else
 #    define JITC_EXPORT    __declspec(dllimport)
@@ -502,7 +502,12 @@ extern JITC_EXPORT void jitc_registry_trim();
 // ====================================================================
 
 #if defined(__cplusplus)
-/// Variable types supported by the JIT compiler
+/**
+ * \brief Variable types supported by the JIT compiler.
+ *
+ * A type promotion routine in the Enoki Python bindings depends on on this
+ * exact ordering, so please don't change.
+ */
 enum class VarType : uint32_t {
     Invalid, Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64,
     Float16, Float32, Float64, Bool, Pointer, Count
@@ -545,6 +550,21 @@ JITC_CONSTEXPR uint32_t jitc_is_arithmetic(enum VarType type) {
 #else
     return ((uint32_t) type >= (uint32_t) VarTypeInt8 &&
             (uint32_t) type <= (uint32_t) VarTypeFloat64) ? 1 : 0;
+#endif
+}
+
+/// Convenience function to check for an unsigned operand
+JITC_CONSTEXPR uint32_t jitc_is_unsigned(enum VarType type) {
+#if defined(__cplusplus)
+    return ((uint32_t) type == (uint32_t) VarType::UInt8 ||
+            (uint32_t) type == (uint32_t) VarType::UInt16 ||
+            (uint32_t) type == (uint32_t) VarType::UInt32 ||
+            (uint32_t) type == (uint32_t) VarType::UInt64);
+#else
+    return ((uint32_t) type == (uint32_t) VarTypeUInt8 ||
+            (uint32_t) type == (uint32_t) VarTypeUInt16 ||
+            (uint32_t) type == (uint32_t) VarTypeUInt32 ||
+            (uint32_t) type == (uint32_t) VarTypeUInt64);
 #endif
 }
 
