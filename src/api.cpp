@@ -322,9 +322,9 @@ void jitc_var_schedule(uint32_t index) {
     jit_var_schedule(index);
 }
 
-void jitc_memset(void *ptr, uint32_t size, uint32_t isize, const void *src) {
+void jitc_memset_async(void *ptr, uint32_t size, uint32_t isize, const void *src) {
     lock_guard guard(state.mutex);
-    jit_memset(ptr, size, isize, src);
+    jit_memset_async(ptr, size, isize, src);
 }
 
 void jitc_memcpy(void *dst, const void *src, size_t size) {

@@ -16,7 +16,8 @@
 extern const char *reduction_name[(int) ReductionType::Count];
 
 /// Fill a device memory region with constants of a given type
-extern void jit_memset(void *ptr, uint32_t size, uint32_t isize, const void *src);
+extern void jit_memset_async(void *ptr, uint32_t size, uint32_t isize,
+                             const void *src);
 
 /// Reduce the given array to a single value
 extern void jit_reduce(VarType type, ReductionType rtype, const void *ptr,
@@ -57,3 +58,6 @@ extern void jit_block_copy(enum VarType type, const void *in, void *out,
 /// Sum over elements within blocks
 extern void jit_block_sum(enum VarType type, const void *in, void *out,
                           uint32_t size, uint32_t block_size);
+
+/// Asynchronously update a single element in memory
+extern void jit_poke(void *dst, const void *src, uint32_t size);

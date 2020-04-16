@@ -28,16 +28,16 @@ const char *reduction_name[(int) ReductionType::Count] = { "sum", "mul", "min",
                                                            "max", "and", "or" };
 
 /// Fill a device memory region with constants of a given type
-void jit_memset(void *ptr, uint32_t size_, uint32_t isize, const void *src) {
+void jit_memset_async(void *ptr, uint32_t size_, uint32_t isize, const void *src) {
     Stream *stream = active_stream;
 
     if (unlikely(!stream))
-        jit_raise("jit_memset(): you must invoke jit_device_set() to "
+        jit_raise("jit_memset_async(): you must invoke jit_device_set() to "
                   "choose a target device before calling this function.");
     else if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
-        jit_raise("jit_memset(): invalid element size (must be 1, 2, 4, or 8)!");
+        jit_raise("jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
 
-    jit_trace("jit_memset(" ENOKI_PTR ", isize=%u, size=%u)",
+    jit_trace("jit_memset_async(" ENOKI_PTR ", isize=%u, size=%u)",
               (uintptr_t) ptr, isize, size_);
 
     if (size_ == 0)
@@ -402,7 +402,7 @@ uint8_t jit_all(uint8_t *values, uint32_t size) {
 
     if (trailing) {
         bool filler = true;
-        jit_memset(values + size, trailing, sizeof(bool), &filler);
+        jit_memset_async(values + size, trailing, sizeof(bool), &filler);
     }
 
     uint8_t result;
@@ -432,7 +432,7 @@ uint8_t jit_any(uint8_t *values, uint32_t size) {
 
     if (trailing) {
         bool filler = false;
-        jit_memset(values + size, trailing, sizeof(bool), &filler);
+        jit_memset_async(values + size, trailing, sizeof(bool), &filler);
     }
 
     uint8_t result;
@@ -1306,6 +1306,52 @@ void jit_block_sum(enum VarType type, const void *in, void *out, uint32_t size,
         tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
 #else
         op(in, out, 0, size, block_size);
+#endif
+    }
+}
+
+/// Asynchronously update a single element in memory
+void jit_poke(void *dst, const void *src, uint32_t size) {
+    Stream *stream = active_stream;
+
+    jit_log(Debug, "jit_poke(" ENOKI_PTR ", size=%u)", (uintptr_t) dst, size);
+
+    VarType type;
+    switch (size) {
+        case 1: type = VarType::UInt8; break;
+        case 2: type = VarType::UInt16; break;
+        case 4: type = VarType::UInt32; break;
+        case 8: type = VarType::UInt64; break;
+        default:
+            jit_raise("jit_poke(): only size=1, 2, 4 or 8 are supported!");
+    }
+
+    if (stream->cuda) {
+        const Device &device = state.devices[stream->device];
+        CUfunction func = jit_cuda_poke[(int) type][device.id];
+        void *args[] = { &dst, (void *) src };
+        cuda_check(cuLaunchKernel(func, 1, 1, 1, 1, 1, 1,
+                                  0, stream->handle, args, nullptr));
+    } else {
+#if defined(ENOKI_TBB)
+        struct Inputs {
+            void *dst;
+            uint8_t src[8];
+            uint32_t size;
+        };
+        Inputs inputs;
+        inputs.dst = dst;
+        inputs.size = size;
+        memcpy(&inputs.src, src, size);
+
+        auto func = [](void *inputs_) {
+            Inputs inputs = *(Inputs *) inputs_;
+            memcpy(inputs.dst, &inputs.src, inputs.size);
+        };
+
+        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+#else
+        memcpy(dst, src, size);
 #endif
     }
 }

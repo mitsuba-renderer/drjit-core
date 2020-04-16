@@ -799,8 +799,9 @@ extern JITC_EXPORT const char *jitc_var_str(uint32_t index);
  * offset \c offset and writes it to the CPU output buffer \c dst.
  *
  * This function is convenient to spot-check entries of an array, but it should
- * never be used to extract complete array contents due to its low performance.
- * This operation fully synchronizes the host CPU & device.
+ * never be used to extract complete array contents due to its low performance
+ * (every read will be performed via an individual transaction). This operation
+ * fully synchronizes the host CPU & device.
  */
 extern JITC_EXPORT void jitc_var_read(uint32_t index, uint32_t offset,
                                       void *dst);
@@ -809,8 +810,10 @@ extern JITC_EXPORT void jitc_var_read(uint32_t index, uint32_t offset,
  * \brief Copy 'dst' to a single element of a variable
  *
  * This function implements the reverse of jitc_var_read(). This function is
- * convenient to change localized entries of an array, but it should never be
- * used to extract complete array contents due to its low performance.
+ * convenient for testing, and to change localized entries of an array, but it
+ * should never be used to access the complete contents of an array due to its
+ * low performance (every write will be performed via an individual
+ * asynchronous transaction).
  */
 extern JITC_EXPORT void jitc_var_write(uint32_t index, uint32_t offset,
                                        const void *src);
@@ -851,8 +854,8 @@ enum ReductionType {
  * a single int, float, double, etc. (\c isize can be 1, 2, 4, or 8).
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jitc_memset(void *ptr, uint32_t size, uint32_t isize,
-                                  const void *src);
+extern JITC_EXPORT void jitc_memset_async(void *ptr, uint32_t size,
+                                          uint32_t isize, const void *src);
 
 /// Perform a synchronous copy operation
 extern JITC_EXPORT void jitc_memcpy(void *dst, const void *src, size_t size);

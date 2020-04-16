@@ -98,6 +98,7 @@ CUfunction *jit_cuda_scan_large_u32 = nullptr;
 CUfunction *jit_cuda_scan_large_u32_init = nullptr;
 CUfunction *jit_cuda_compress_small = nullptr;
 CUfunction *jit_cuda_compress_large = nullptr;
+CUfunction *jit_cuda_poke[(int)VarType::Count] { };
 CUfunction *jit_cuda_block_copy[(int)VarType::Count] { };
 CUfunction *jit_cuda_block_sum [(int)VarType::Count] { };
 CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
@@ -262,6 +263,8 @@ bool jit_cuda_init() {
             jit_cuda_reductions[j][k] =
                 (CUfunction *) malloc_check(sizeof(CUfunction) * jit_cuda_devices);
         }
+        jit_cuda_poke[k] = (CUfunction *) malloc_check(
+            sizeof(CUfunction) * jit_cuda_devices);
         jit_cuda_block_copy[k] = (CUfunction *) malloc_check(
             sizeof(CUfunction) * jit_cuda_devices);
         jit_cuda_block_sum[k] = (CUfunction *) malloc_check(
@@ -367,6 +370,14 @@ bool jit_cuda_init() {
         char name[16];
         CUfunction func;
         for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
+            snprintf(name, sizeof(name), "poke_%s", var_type_name_short[k]);
+            if (strstr(kernels_list, name)) {
+                cuda_check(cuModuleGetFunction(&func, m, name));
+                jit_cuda_poke[k][i] = func;
+            } else {
+                jit_cuda_poke[k][i] = nullptr;
+            }
+
             snprintf(name, sizeof(name), "block_copy_%s", var_type_name_short[k]);
             if (strstr(kernels_list, name)) {
                 cuda_check(cuModuleGetFunction(&func, m, name));
@@ -488,6 +499,7 @@ void jit_cuda_shutdown() {
     Z(jit_cuda_module);
 
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
+        Z(jit_cuda_poke[k]);
         Z(jit_cuda_block_copy[k]);
         Z(jit_cuda_block_sum[k]);
         for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++)

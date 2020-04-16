@@ -5204,6 +5204,73 @@ BB38_4:
 	ret;
 }
 
+	// .globl	poke_u8
+.visible .entry poke_u8(
+	.param .u64 poke_u8_param_0,
+	.param .u8 poke_u8_param_1
+)
+{
+	.reg .b16 	%rs<2>;
+	.reg .b64 	%rd<3>;
+
+
+	ld.param.u64 	%rd1, [poke_u8_param_0];
+	cvta.to.global.u64 	%rd2, %rd1;
+	ld.param.u8 	%rs1, [poke_u8_param_1];
+	st.global.u8 	[%rd2], %rs1;
+	ret;
+}
+
+	// .globl	poke_u16
+.visible .entry poke_u16(
+	.param .u64 poke_u16_param_0,
+	.param .u16 poke_u16_param_1
+)
+{
+	.reg .b16 	%rs<2>;
+	.reg .b64 	%rd<3>;
+
+
+	ld.param.u64 	%rd1, [poke_u16_param_0];
+	ld.param.u16 	%rs1, [poke_u16_param_1];
+	cvta.to.global.u64 	%rd2, %rd1;
+	st.global.u16 	[%rd2], %rs1;
+	ret;
+}
+
+	// .globl	poke_u32
+.visible .entry poke_u32(
+	.param .u64 poke_u32_param_0,
+	.param .u32 poke_u32_param_1
+)
+{
+	.reg .b32 	%r<2>;
+	.reg .b64 	%rd<3>;
+
+
+	ld.param.u64 	%rd1, [poke_u32_param_0];
+	ld.param.u32 	%r1, [poke_u32_param_1];
+	cvta.to.global.u64 	%rd2, %rd1;
+	st.global.u32 	[%rd2], %r1;
+	ret;
+}
+
+	// .globl	poke_u64
+.visible .entry poke_u64(
+	.param .u64 poke_u64_param_0,
+	.param .u64 poke_u64_param_1
+)
+{
+	.reg .b64 	%rd<4>;
+
+
+	ld.param.u64 	%rd1, [poke_u64_param_0];
+	ld.param.u64 	%rd2, [poke_u64_param_1];
+	cvta.to.global.u64 	%rd3, %rd1;
+	st.global.u64 	[%rd3], %rd2;
+	ret;
+}
+
 	// .globl	fill_64
 .visible .entry fill_64(
 	.param .u64 fill_64_param_0,
@@ -5224,21 +5291,21 @@ BB38_4:
 	mov.u32 	%r8, %tid.x;
 	mad.lo.s32 	%r10, %r1, %r7, %r8;
 	setp.ge.u32	%p1, %r10, %r6;
-	@%p1 bra 	BB39_3;
+	@%p1 bra 	BB43_3;
 
 	mov.u32 	%r9, %nctaid.x;
 	mul.lo.s32 	%r3, %r9, %r1;
 	cvta.to.global.u64 	%rd1, %rd2;
 
-BB39_2:
+BB43_2:
 	mul.wide.u32 	%rd4, %r10, 8;
 	add.s64 	%rd5, %rd1, %rd4;
 	st.global.u64 	[%rd5], %rd3;
 	add.s32 	%r10, %r3, %r10;
 	setp.lt.u32	%p2, %r10, %r6;
-	@%p2 bra 	BB39_2;
+	@%p2 bra 	BB43_2;
 
-BB39_3:
+BB43_3:
 	ret;
 }
 
@@ -5264,7 +5331,7 @@ BB39_3:
 	mov.u32 	%r6, %tid.x;
 	mad.lo.s32 	%r1, %r5, %r4, %r6;
 	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB40_2;
+	@%p1 bra 	BB44_2;
 
 	cvta.to.global.u64 	%rd3, %rd1;
 	div.u32 	%r7, %r1, %r2;
@@ -5276,7 +5343,7 @@ BB39_3:
 	add.s64 	%rd8, %rd6, %rd7;
 	st.global.u32 	[%rd8], %r8;
 
-BB40_2:
+BB44_2:
 	ret;
 }
 
@@ -5302,7 +5369,7 @@ BB40_2:
 	mov.u32 	%r6, %tid.x;
 	mad.lo.s32 	%r1, %r5, %r4, %r6;
 	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB41_2;
+	@%p1 bra 	BB45_2;
 
 	cvta.to.global.u64 	%rd3, %rd1;
 	div.u32 	%r7, %r1, %r2;
@@ -5314,7 +5381,7 @@ BB40_2:
 	ld.global.u32 	%r8, [%rd8];
 	atom.global.add.u32 	%r9, [%rd6], %r8;
 
-BB41_2:
+BB45_2:
 	ret;
 }
 
@@ -5340,7 +5407,7 @@ BB41_2:
 	mov.u32 	%r6, %tid.x;
 	mad.lo.s32 	%r1, %r5, %r4, %r6;
 	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB42_2;
+	@%p1 bra 	BB46_2;
 
 	cvta.to.global.u64 	%rd3, %rd1;
 	div.u32 	%r7, %r1, %r2;
@@ -5352,7 +5419,7 @@ BB41_2:
 	add.s64 	%rd9, %rd7, %rd8;
 	st.global.u64 	[%rd9], %rd6;
 
-BB42_2:
+BB46_2:
 	ret;
 }
 
@@ -5378,7 +5445,7 @@ BB42_2:
 	mov.u32 	%r6, %tid.x;
 	mad.lo.s32 	%r1, %r5, %r4, %r6;
 	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB43_2;
+	@%p1 bra 	BB47_2;
 
 	cvta.to.global.u64 	%rd3, %rd1;
 	div.u32 	%r7, %r1, %r2;
@@ -5390,7 +5457,7 @@ BB42_2:
 	ld.global.u64 	%rd9, [%rd8];
 	atom.global.add.u64 	%rd10, [%rd6], %rd9;
 
-BB43_2:
+BB47_2:
 	ret;
 }
 
@@ -5417,7 +5484,7 @@ BB43_2:
 	mov.u32 	%r6, %tid.x;
 	mad.lo.s32 	%r1, %r5, %r4, %r6;
 	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB44_2;
+	@%p1 bra 	BB48_2;
 
 	cvta.to.global.u64 	%rd3, %rd1;
 	div.u32 	%r7, %r1, %r2;
@@ -5429,7 +5496,7 @@ BB43_2:
 	add.s64 	%rd8, %rd6, %rd7;
 	st.global.f32 	[%rd8], %f1;
 
-BB44_2:
+BB48_2:
 	ret;
 }
 
@@ -5456,7 +5523,7 @@ BB44_2:
 	mov.u32 	%r6, %tid.x;
 	mad.lo.s32 	%r1, %r5, %r4, %r6;
 	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB45_2;
+	@%p1 bra 	BB49_2;
 
 	cvta.to.global.u64 	%rd3, %rd1;
 	div.u32 	%r7, %r1, %r2;
@@ -5468,7 +5535,7 @@ BB44_2:
 	ld.global.f32 	%f1, [%rd8];
 	atom.global.add.f32 	%f2, [%rd6], %f1;
 
-BB45_2:
+BB49_2:
 	ret;
 }
 
@@ -5495,7 +5562,7 @@ BB45_2:
 	mov.u32 	%r6, %tid.x;
 	mad.lo.s32 	%r1, %r5, %r4, %r6;
 	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB46_2;
+	@%p1 bra 	BB50_2;
 
 	cvta.to.global.u64 	%rd3, %rd1;
 	div.u32 	%r7, %r1, %r2;
@@ -5507,7 +5574,7 @@ BB45_2:
 	add.s64 	%rd8, %rd6, %rd7;
 	st.global.f64 	[%rd8], %fd1;
 
-BB46_2:
+BB50_2:
 	ret;
 }
 
@@ -5534,7 +5601,7 @@ BB46_2:
 	mov.u32 	%r6, %tid.x;
 	mad.lo.s32 	%r1, %r5, %r4, %r6;
 	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB47_2;
+	@%p1 bra 	BB51_2;
 
 	cvta.to.global.u64 	%rd3, %rd1;
 	div.u32 	%r7, %r1, %r2;
@@ -5546,7 +5613,7 @@ BB46_2:
 	ld.global.f64 	%fd1, [%rd8];
 	atom.global.add.f64 	%fd2, [%rd6], %fd1;
 
-BB47_2:
+BB51_2:
 	ret;
 }
 

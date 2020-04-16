@@ -9,6 +9,22 @@
 
 #include "common.h"
 
+KERNEL void poke_u8(uint8_t *out, uint8_t value) {
+    *out = value;
+}
+
+KERNEL void poke_u16(uint16_t *out, uint16_t value) {
+    *out = value;
+}
+
+KERNEL void poke_u32(uint32_t *out, uint32_t value) {
+    *out = value;
+}
+
+KERNEL void poke_u64(uint64_t *out, uint64_t value) {
+    *out = value;
+}
+
 KERNEL void fill_64(uint64_t *out, uint32_t size, uint64_t value) {
     for (uint32_t i = blockIdx.x * blockDim.x + threadIdx.x; i < size;
          i += blockDim.x * gridDim.x)

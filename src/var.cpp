@@ -958,6 +958,5 @@ void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
 
     size_t isize = var_type_size[v->type];
     uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
-
-    jit_memcpy(dst, src, isize);
+    jit_poke(dst, src, isize);
 }
