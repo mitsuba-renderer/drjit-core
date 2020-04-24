@@ -1,9 +1,11 @@
 #pragma once
 
-#include <enoki/cuda.h>
-#include <enoki/llvm.h>
+#include <enoki-jit/cuda.h>
+#include <enoki-jit/llvm.h>
 #include <stdexcept>
 #include <algorithm>
+
+using namespace enoki;
 
 static constexpr LogLevel Error = LogLevel::Error;
 static constexpr LogLevel Warn  = LogLevel::Warn;

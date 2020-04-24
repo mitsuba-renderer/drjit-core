@@ -185,7 +185,7 @@ extern JITC_EXPORT int jitc_llvm_if_at_least(uint32_t vector_width,
  *
  * This feature is only relevant for GPU mode.
  */
-extern JITC_EXPORT void jitc_parallel_set_dispatch(int enable);
+extern JITC_EXPORT void jitc_set_parallel_dispatch(int enable);
 
 /// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
 extern JITC_EXPORT int jitc_parallel_dispatch();

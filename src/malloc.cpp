@@ -341,7 +341,7 @@ void jit_free_flush() {
 void* jit_malloc_migrate(void *ptr, AllocType type) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_malloc_migrate(): you must invoke jit_device_set() to "
+        jit_raise("jit_malloc_migrate(): you must invoke jitc_device_set() to "
                   "choose a target device before evaluating expressions using "
                   "the JIT compiler.");
 

@@ -21,18 +21,23 @@ void jitc_init(int llvm, int cuda) {
 }
 
 void jitc_init_async(int llvm, int cuda) {
-    std::unique_lock<std::mutex> guard(state.mutex);
+    /// Probably overkill for a simple wait flag..
     struct Sync {
         bool flag = false;
+        std::mutex mutex;
         std::condition_variable cv;
-
     };
+
     std::shared_ptr<Sync> sync = std::make_shared<Sync>();
+    std::unique_lock<std::mutex> guard(sync->mutex);
 
     std::thread([llvm, cuda, sync]() {
         lock_guard guard2(state.mutex);
-        sync->flag = true;
-        sync->cv.notify_one();
+        {
+            lock_guard guard2(sync->mutex);
+            sync->flag = true;
+            sync->cv.notify_one();
+        }
         jit_init(llvm, cuda);
     }).detach();
 
@@ -54,12 +59,12 @@ void jitc_shutdown(int light) {
 }
 
 void jitc_log_set_stderr(LogLevel level) {
-    lock_guard guard(state.mutex);
+    /// Allow changing this variable without acquiring a lock
     state.log_level_stderr = level;
 }
 
 LogLevel jitc_log_stderr() {
-    lock_guard guard(state.mutex);
+    /// Allow reading this variable without acquiring a lock
     return state.log_level_stderr;
 }
 
@@ -135,7 +140,7 @@ int jitc_llvm_if_at_least(uint32_t vector_width, const char *feature) {
     return jit_llvm_if_at_least(vector_width, feature);
 }
 
-void jitc_parallel_set_dispatch(int enable) {
+void jitc_set_parallel_dispatch(int enable) {
     lock_guard guard(state.mutex);
     state.parallel_dispatch = enable != 0;
 }
@@ -181,11 +186,15 @@ void jitc_malloc_prefetch(void *ptr, int device) {
 }
 
 void jitc_var_inc_ref_ext(uint32_t index) {
+    if (index == 0)
+        return;
     lock_guard guard(state.mutex);
     jit_var_inc_ref_ext(index);
 }
 
 void jitc_var_dec_ref_ext(uint32_t index) {
+    if (index == 0)
+        return;
     lock_guard guard(state.mutex);
     jit_var_dec_ref_ext(index);
 }

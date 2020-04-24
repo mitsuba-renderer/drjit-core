@@ -1074,7 +1074,7 @@ void jit_eval() {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise(
-            "jit_eval(): you must invoke jit_device_set() to choose a target "
+            "jit_eval(): you must invoke jitc_device_set() to choose a target "
             "device before evaluating expressions using the JIT compiler.");
 
     visited.clear();
