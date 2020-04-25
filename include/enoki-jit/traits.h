@@ -75,4 +75,8 @@ template <typename T> struct var_type<T *> {
     static constexpr VarType value = VarType::Pointer;
 };
 
+#if __cplusplus >= 201703L
+   template <typename T> constexpr VarType var_type_v = var_type<T>::value;
+#endif
+
 NAMESPACE_END(enoki)

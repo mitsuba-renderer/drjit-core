@@ -33,7 +33,7 @@ void jit_memset_async(void *ptr, uint32_t size_, uint32_t isize, const void *src
     Stream *stream = active_stream;
 
     if (unlikely(!stream))
-        jit_raise("jit_memset_async(): you must invoke jitc_device_set() to "
+        jit_raise("jit_memset_async(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
     else if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
         jit_raise("jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
@@ -145,7 +145,7 @@ void jit_memset_async(void *ptr, uint32_t size_, uint32_t isize, const void *src
 void jit_memcpy(void *dst, const void *src, size_t size) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_memcpy(): you must invoke jitc_device_set() to choose a "
+        jit_raise("jit_memcpy(): you must invoke jitc_set_device() to choose a "
                   "target device before calling this function.");
 
     // Temporarily release the lock while copying
@@ -165,7 +165,7 @@ void jit_memcpy(void *dst, const void *src, size_t size) {
 void jit_memcpy_async(void *dst, const void *src, size_t size) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_memcpy_async(): you must invoke jitc_device_set() to "
+        jit_raise("jit_memcpy_async(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
 
     if  (stream->cuda) {
@@ -285,7 +285,7 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
                 void *out) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_reduce(): you must invoke jitc_device_set() to "
+        jit_raise("jit_reduce(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
 
     jit_log(Debug, "jit_reduce(" ENOKI_PTR ", type=%s, rtype=%s, size=%u)",
@@ -393,7 +393,7 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
 uint8_t jit_all(uint8_t *values, uint32_t size) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_all(): you must invoke jitc_device_set() to "
+        jit_raise("jit_all(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
 
     uint32_t reduced_size = (size + 3) / 4,
@@ -457,7 +457,7 @@ uint8_t jit_any(uint8_t *values, uint32_t size) {
 void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_scan_u32(): you must invoke jitc_device_set() to "
+        jit_raise("jit_scan_u32(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
 
     if (stream->cuda) {
@@ -568,7 +568,7 @@ void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
 void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out, uint32_t *count_out) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_compress(): you must invoke jitc_device_set() to "
+        jit_raise("jit_compress(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
 
     if (stream->cuda) {
@@ -1014,7 +1014,7 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
                        uint32_t *bucket_count_out) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_vcall(): you must invoke jitc_device_set() to "
+        jit_raise("jit_vcall(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
     bool cuda = stream->cuda;
 
@@ -1175,7 +1175,7 @@ void jit_block_copy(enum VarType type, const void *in, void *out, uint32_t size,
                     uint32_t block_size) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_block_copy(): you must invoke jitc_device_set() to "
+        jit_raise("jit_block_copy(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
     else if (block_size == 0)
         jit_raise("jit_block_copy(): block_size cannot be zero!");
@@ -1246,7 +1246,7 @@ void jit_block_sum(enum VarType type, const void *in, void *out, uint32_t size,
                    uint32_t block_size) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_block_sum(): you must invoke jitc_device_set() to "
+        jit_raise("jit_block_sum(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
     else if (block_size == 0)
         jit_raise("jit_block_sum(): block_size cannot be zero!");

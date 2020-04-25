@@ -155,14 +155,13 @@ void jit_init(int llvm, int cuda) {
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 void jit_shutdown(int light) {
-
     if (!state.streams.empty()) {
         jit_log(Info, "jit_shutdown(): releasing %zu stream%s ..",
                 state.streams.size(), state.streams.size() > 1 ? "s" : "");
 
         for (auto &v : state.streams) {
             Stream *stream = v.second;
-            jit_device_set(stream->device, stream->stream);
+            jit_set_device(stream->device, stream->stream);
             if (stream->cuda) {
                 jit_free_flush();
                 cuda_check(cuStreamSynchronize(stream->handle));
@@ -249,7 +248,7 @@ void jit_shutdown(int light) {
 }
 
 /// Set the currently active device & stream
-void jit_device_set(int32_t device, uint32_t stream) {
+void jit_set_device(int32_t device, uint32_t stream) {
     std::pair<uint32_t, uint32_t> key(device, stream);
     auto it = state.streams.find(key);
     bool cuda = device != -1;
@@ -259,7 +258,7 @@ void jit_device_set(int32_t device, uint32_t stream) {
         stream_ptr = it->second;
         if (stream_ptr == active_stream_ptr)
             return;
-        jit_trace("jit_device_set(device=%i, stream=%i): selecting stream",
+        jit_trace("jit_set_device(device=%i, stream=%i): selecting stream",
                   device, stream);
 
         if (state.has_cuda)
@@ -267,9 +266,15 @@ void jit_device_set(int32_t device, uint32_t stream) {
                 cuda ? state.devices[device].context : nullptr));
     } else {
         if (cuda && (!state.has_cuda || device >= (int32_t) state.devices.size()))
-            jit_raise("jit_device_set(): invalid device ID!");
+            jit_raise(
+                "jit_set_device(): Attempted to select an unknown CUDA device! "
+                "(Was the library correctly initialized jitc_init()?)");
+        else if (!cuda && !state.has_llvm)
+            jit_raise(
+                "jit_set_device(): Attempted to select an unknown LLVM device! "
+                "(Was the library correctly initialized jitc_init()?)");
 
-        jit_trace("jit_device_set(device=%i, stream=%i): creating stream",
+        jit_trace("jit_set_device(device=%i, stream=%i): creating stream",
                   device, stream);
 
         CUstream handle = nullptr;
@@ -347,7 +352,7 @@ void *jit_find_library(const char *fname, const char *glob_pat,
         if (glob(glob_pat, 0, nullptr, &g) == 0) {
             const char *chosen = nullptr;
             if (g.gl_pathc > 1) {
-                jit_log(Warn, "jit_find_library(): Multiple versions of "
+                jit_log(Info, "jit_find_library(): Multiple versions of "
                               "%s were found on your system!\n", fname);
                 std::sort(g.gl_pathv, g.gl_pathv + g.gl_pathc,
                           [](const char *a, const char *b) {
@@ -376,13 +381,13 @@ void *jit_find_library(const char *fname, const char *glob_pat,
                         // Skip symbolic links at first
                         if (j == 0 && (lstat(g.gl_pathv[i], &buf) || S_ISLNK(buf.st_mode)))
                             continue;
-                        jit_log(Warn, " %u. \"%s\"", counter++, g.gl_pathv[i]);
+                        jit_log(Info, " %u. \"%s\"", counter++, g.gl_pathv[i]);
                         chosen = g.gl_pathv[i];
                     }
                     if (chosen)
                         break;
                 }
-                jit_log(Warn,
+                jit_log(Info,
                         "\nChoosing the last one. Specify a path manually "
                         "using the environment\nvariable '%s' "
                         "to override this behavior.\n", env_var);

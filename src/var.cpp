@@ -216,7 +216,7 @@ void jit_var_dec_ref_int(uint32_t index) {
 std::pair<uint32_t, Variable *> jit_var_new(Variable &v) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_var_new(): you must invoke jitc_device_set() to "
+        jit_raise("jit_var_new(): you must invoke jitc_set_device() to "
                   "choose a target device before performing computation using "
                   "the JIT compiler.");
 
@@ -545,7 +545,7 @@ uint32_t jit_var_copy(AllocType atype, VarType vtype, const void *ptr, uint32_t 
     Stream *stream = active_stream;
 
     if (unlikely(!stream))
-        jit_raise("jit_var_copy(): you must invoke jitc_device_set() to "
+        jit_raise("jit_var_copy(): you must invoke jitc_set_device() to "
                   "choose a target device before using this function.");
 
     size_t total_size = (size_t) size * (size_t) var_type_size[(int) vtype];
@@ -842,7 +842,7 @@ const char *jit_var_str(uint32_t index) {
     if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_str(): attempted to stringify a %s variable "
                   "while the %s backend was activated! You must invoke "
-                  "jit_device_set() before!",
+                  "jit_set_device() before!",
                   v->cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
     else if (unlikely(v->pending_scatter))
         jit_raise("jit_var_str(): element remains dirty after evaluation!");
@@ -894,14 +894,14 @@ const char *jit_var_str(uint32_t index) {
 void jit_var_schedule(uint32_t index) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_var_schedule(): you must invoke jitc_device_set() to "
+        jit_raise("jit_var_schedule(): you must invoke jitc_set_device() to "
                   "choose a target device before using this function.");
 
     Variable *v = jit_var(index);
     if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_schedule(): attempted to schedule a %s variable "
                   "while the %s backend was activated! You must invoke "
-                  "jit_device_set() before!", v->cuda ? "CUDA" : "LLVM",
+                  "jit_set_device() before!", v->cuda ? "CUDA" : "LLVM",
                   stream->cuda ? "CUDA" : "LLVM");
 
     if (v->data == nullptr)
@@ -912,14 +912,14 @@ void jit_var_schedule(uint32_t index) {
 void jit_var_eval(uint32_t index) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_var_eval(): you must invoke jitc_device_set() to "
+        jit_raise("jit_var_eval(): you must invoke jitc_set_device() to "
                   "choose a target device before using this function.");
 
     Variable *v = jit_var(index);
     if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_eval(): attempted to evaluate a %s variable "
                   "while the %s backend was activated! You must invoke "
-                  "jit_device_set() before!", v->cuda ? "CUDA" : "LLVM",
+                  "jit_set_device() before!", v->cuda ? "CUDA" : "LLVM",
                   stream->cuda ? "CUDA" : "LLVM");
 
     if (v->data == nullptr || v->pending_scatter) {

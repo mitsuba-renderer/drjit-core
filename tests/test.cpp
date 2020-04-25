@@ -298,7 +298,7 @@ int main(int argc, char **argv) {
             fflush(stdout);
             log_value.clear();
             jitc_init(!test.cuda, test.cuda);
-            jitc_device_set(test.cuda ? 0 : -1, 0);
+            jitc_set_device(test.cuda ? 0 : -1, 0);
             if (!test.cuda)
                 jitc_llvm_set_target("skylake", nullptr, 8);
             test.func();

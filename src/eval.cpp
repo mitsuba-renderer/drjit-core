@@ -1074,7 +1074,7 @@ void jit_eval() {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise(
-            "jit_eval(): you must invoke jitc_device_set() to choose a target "
+            "jit_eval(): you must invoke jitc_set_device() to choose a target "
             "device before evaluating expressions using the JIT compiler.");
 
     visited.clear();
@@ -1141,7 +1141,7 @@ void jit_eval() {
         Stream *sub_stream = stream;
         if (parallel_dispatch) {
             uint32_t stream_index = 1000 * (stream->stream + 1) + group_idx++;
-            jit_device_set(stream->device, stream_index);
+            jit_set_device(stream->device, stream_index);
             sub_stream = active_stream;
             cuda_check(cuStreamWaitEvent(sub_stream->handle, stream->event, 0));
             active_stream = stream;

@@ -156,9 +156,14 @@ struct LLVMArray {
         if (v.is_literal_one())
             return *this;
 
-        const char *op = std::is_floating_point<Value>::value
-            ? "$r0 = fdiv <$w x $t0> $r1, $r2"
-            : "$r0 = div <$w x $t0> $r1, $r2";
+        const char *op;
+
+        if (std::is_floating_point<Value>::value)
+            op = "$r0 = fdiv <$w x $t0> $r1, $r2";
+        else if (std::is_signed<Value>::value)
+            op = "$r0 = sdiv <$w x $t0> $r1, $r2";
+        else
+            op = "$r0 = udiv <$w x $t0> $r1, $r2";
 
         return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
     }
@@ -478,7 +483,6 @@ struct LLVMArray {
             return LLVMArray<Value>(sign_mask_neg<Value>()) & a;
         else
             return select(a > 0, a, -a);
-
     }
 
     friend LLVMArray sqrt(const LLVMArray &a) {

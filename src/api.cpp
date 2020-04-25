@@ -108,9 +108,9 @@ int32_t jitc_device_count() {
     return (int32_t) state.devices.size();
 }
 
-void jitc_device_set(int32_t device, uint32_t stream) {
+void jitc_set_device(int32_t device, uint32_t stream) {
     lock_guard guard(state.mutex);
-    jit_device_set(device, stream);
+    jit_set_device(device, stream);
 }
 
 void jitc_llvm_set_target(const char *target_cpu,
@@ -215,6 +215,8 @@ void *jitc_var_ptr(uint32_t index) {
 }
 
 uint32_t jitc_var_size(uint32_t index) {
+    if (index == 0)
+        return 0;
     lock_guard guard(state.mutex);
     return jit_var_size(index);
 }

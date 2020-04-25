@@ -128,7 +128,7 @@ extern JITC_EXPORT int32_t jitc_device_count();
  *     streams don't have to be numbered in any particular way, but they need
  *     to be just be unique per thread.
  */
-extern JITC_EXPORT void jitc_device_set(int32_t device, uint32_t stream);
+extern JITC_EXPORT void jitc_set_device(int32_t device, uint32_t stream);
 
 /**
  * \brief Override the target CPU, features, and vector witdth of the LLVM backend
@@ -275,7 +275,7 @@ enum class AllocType : uint32_t {
 
     /**
      * Like \c Host memory, except that it may only be used *asynchronously*
-     * within the current computation stream (ref see \ref jitc_device_set()).
+     * within the current computation stream (ref see \ref jitc_set_device()).
      *
      * In particular, host-asynchronous memory obtained via \ref jitc_malloc()
      * should not be written to directly, since it may still be used by a
@@ -393,7 +393,7 @@ extern JITC_EXPORT void jitc_free(void *ptr);
  * pointer. Otherwise, it returns a new pointer and asynchronously frees the
  * old one via (via \ref jitc_free()). When both source and target are of
  * type \ref AllocType::Device, and when the currently active device
- * (determined by the last call to \ref jitc_device_set()) does not match the
+ * (determined by the last call to \ref jitc_set_device()) does not match the
  * device associated with the allocation, a peer-to-peer migration is
  * performed.
  */
@@ -756,7 +756,7 @@ extern JITC_EXPORT const char *jitc_var_label(uint32_t index);
  * jitc_sync_stream() if managed memory is subsequently accessed on the CPU.
  *
  * When both source & target are of type \ref AllocType::Device, and if the
- * current device (\ref jitc_device_set()) does not match the device associated
+ * current device (\ref jitc_set_device()) does not match the device associated
  * with the allocation, a peer-to-peer migration is performed.
  */
 extern JITC_EXPORT void jitc_var_migrate(uint32_t index, enum AllocType type);

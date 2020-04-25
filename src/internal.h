@@ -535,7 +535,7 @@ extern void jit_init(int llvm, int cuda);
 extern void jit_shutdown(int light);
 
 /// Set the currently active device & stream
-extern void jit_device_set(int32_t device, uint32_t stream);
+extern void jit_set_device(int32_t device, uint32_t stream);
 
 /// Wait for all computation on the current stream to finish
 extern void jit_sync_stream();
