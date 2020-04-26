@@ -1,4 +1,4 @@
-jit_device_set(device=-1, stream=0): creating stream
+jit_set_device(device=-1, stream=0): creating stream
 jit_var_copy_ptr(1 <- 0): <@>
 jit_var_inc_ref_ext(1): 1
 jit_var_copy_ptr(2 <- 0): <@>

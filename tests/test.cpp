@@ -23,7 +23,7 @@ struct Test {
 static std::vector<Test> *tests = nullptr;
 std::string log_value;
 
-extern "C" void log_callback(LogLevel cb, const char *msg) {
+extern "C" void log_level_callback(LogLevel cb, const char *msg) {
     log_value += msg;
     log_value += '\n';
 }
@@ -263,9 +263,9 @@ int main(int argc, char **argv) {
     }
 
     try {
-        jitc_log_set_stderr((LogLevel) log_level_stderr);
+        jitc_set_log_level_stderr((LogLevel) log_level_stderr);
         jitc_init(test_llvm, test_cuda);
-        jitc_set_log_callback(LogLevel::Trace, log_callback);
+        jitc_set_log_level_callback(LogLevel::Trace, log_level_callback);
         fprintf(stdout, "\n");
 
         bool has_cuda = jitc_has_cuda(),

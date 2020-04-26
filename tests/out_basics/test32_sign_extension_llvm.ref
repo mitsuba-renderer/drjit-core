@@ -1,4 +1,4 @@
-jit_device_set(device=-1, stream=0): creating stream
+jit_set_device(device=-1, stream=0): creating stream
 jit_var_new(1): $r0_0 = insertelement <$w x $t0> undef, $t0 4294967295, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(1): 1
 jit_var_new(2): $r0_0 = insertelement <$w x $t0> undef, $t0 4294967295, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
@@ -63,7 +63,7 @@ jit_var_dec_ref_int(1): 1
 jit_var_dec_ref_int(1): 0
 jit_eval(): done.
 jit_all(<@>, size=1)
-jit_memset(<@>, isize=1, size=3)
+jit_memset_async(<@>, isize=1, size=3)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
@@ -125,7 +125,7 @@ jit_var_dec_ref_int(2): 1
 jit_var_dec_ref_int(2): 0
 jit_eval(): done.
 jit_all(<@>, size=1)
-jit_memset(<@>, isize=1, size=3)
+jit_memset_async(<@>, isize=1, size=3)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
@@ -187,7 +187,7 @@ jit_var_dec_ref_int(3): 1
 jit_var_dec_ref_int(3): 0
 jit_eval(): done.
 jit_all(<@>, size=1)
-jit_memset(<@>, isize=1, size=3)
+jit_memset_async(<@>, isize=1, size=3)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
@@ -249,7 +249,7 @@ jit_var_dec_ref_int(4): 1
 jit_var_dec_ref_int(4): 0
 jit_eval(): done.
 jit_all(<@>, size=1)
-jit_memset(<@>, isize=1, size=3)
+jit_memset_async(<@>, isize=1, size=3)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_var_dec_ref_ext(8): 0
 jit_var_free(8)

@@ -1,4 +1,4 @@
-jit_device_set(device=0, stream=0): creating stream
+jit_set_device(device=0, stream=0): creating stream
 jit_var_new(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_ext(1): 2
@@ -66,7 +66,7 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_device_set(device=0, stream=1001): creating stream
+jit_set_device(device=0, stream=1001): creating stream
 jit_assemble(size=73): register map:
    - %r4 -> 2
    - %r5 -> 3 [scalar]
@@ -125,7 +125,7 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_device_set(device=0, stream=1002): creating stream
+jit_set_device(device=0, stream=1002): creating stream
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(2): 0
 jit_var_free(2)
@@ -211,7 +211,7 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_device_set(device=0, stream=1001): selecting stream
+jit_set_device(device=0, stream=1001): selecting stream
 jit_assemble(size=73): register map:
    - %r4 -> 8
    - %rd5 -> 9
@@ -274,7 +274,7 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_device_set(device=0, stream=1002): selecting stream
+jit_set_device(device=0, stream=1002): selecting stream
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(6): 0
 jit_var_free(6)
@@ -303,8 +303,8 @@ jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=4096)
 jit_shutdown(): releasing 3 streams ..
 jit_free_flush(): scheduling 4 deallocations
-jit_device_set(device=0, stream=1001): selecting stream
-jit_device_set(device=0, stream=1002): selecting stream
+jit_set_device(device=0, stream=1001): selecting stream
+jit_set_device(device=0, stream=1002): selecting stream
 jit_shutdown(): releasing 4 kernels ..
 jit_malloc_trim(): freed
  - device memory: 13.5 KiB in 4 allocations

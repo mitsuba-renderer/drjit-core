@@ -1,4 +1,4 @@
-jit_device_set(device=0, stream=0): creating stream
+jit_set_device(device=0, stream=0): creating stream
 ===== size=1, buckets=1 =====
 ===== size=24, buckets=1 =====
 ===== size=24, buckets=24 =====

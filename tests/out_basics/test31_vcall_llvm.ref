@@ -1,4 +1,4 @@
-jit_device_set(device=-1, stream=0): creating stream
+jit_set_device(device=-1, stream=0): creating stream
 jit_registry_put(<@>, domain="MyKey"): 1 (new)
 jit_registry_put(<@>, domain="MyKey"): 2 (new)
 jit_registry_put(<@>, domain="MyKey"): 3 (new)
@@ -11,6 +11,8 @@ jit_malloc(type=host, size=128): <@> (new allocation)
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_malloc(type=host, size=64): <@> (new allocation)
+jit_free(<@>, type=host, size=64)
+jit_free(<@>, type=host, size=64)
 jit_var_map(2): <@>, size=10, free=1
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(2): 1
@@ -29,7 +31,7 @@ jit_var_inc_ref_ext(5): 2
 jit_var_inc_ref_ext(3): 3
 jit_var_inc_ref_ext(4): 3
 jit_var_inc_ref_ext(5): 3
-jit_malloc(type=host, size=64): <@> (new allocation)
+jit_malloc(type=host, size=64): <@> (reused global)
 jit_var_map(6): <@>, size=2, free=1
 jit_var_inc_ref_ext(6): 1
 jit_var_copy(6, size=2)
@@ -103,10 +105,8 @@ jit_var_dec_ref_int(3): 0
 jit_var_dec_ref_int(6): 0
 jit_eval(): done.
 jit_all(<@>, size=2)
-jit_memset(<@>, isize=1, size=2)
+jit_memset_async(<@>, isize=1, size=2)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
-jit_free(<@>, type=host, size=64)
-jit_free(<@>, type=host, size=64)
 jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
 jit_free(<@>, type=host-async, size=64)
@@ -195,7 +195,7 @@ jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
 jit_free(<@>, type=host-async, size=64)
-jit_malloc(type=host, size=64): <@> (reused global)
+jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map(10): <@>, size=2, free=1
 jit_var_inc_ref_ext(10): 1
 jit_var_copy(10, size=2)
@@ -270,7 +270,7 @@ jit_var_dec_ref_int(10): 0
 jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
 jit_all(<@>, size=2)
-jit_memset(<@>, isize=1, size=2)
+jit_memset_async(<@>, isize=1, size=2)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_var_dec_ref_ext(11): 0
 jit_var_free(11)

@@ -1,4 +1,4 @@
-jit_device_set(device=0, stream=0): creating stream
+jit_set_device(device=0, stream=0): creating stream
 jit_var_new(1): mov.$b0 $r0, 0xffffffff
 jit_var_inc_ref_ext(1): 1
 jit_var_new(2): mov.$b0 $r0, 0xffffffff
@@ -70,7 +70,7 @@ jit_var_dec_ref_int(1): 1
 jit_var_dec_ref_int(1): 0
 jit_eval(): done.
 jit_all(<@>, size=1)
-jit_memset(<@>, isize=1, size=3)
+jit_memset_async(<@>, isize=1, size=3)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_free(<@>, type=host-pinned, size=64)
@@ -142,7 +142,7 @@ jit_var_dec_ref_int(2): 0
 jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
 jit_all(<@>, size=1)
-jit_memset(<@>, isize=1, size=3)
+jit_memset_async(<@>, isize=1, size=3)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_free(<@>, type=host-pinned, size=64)
@@ -214,7 +214,7 @@ jit_var_dec_ref_int(3): 0
 jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
 jit_all(<@>, size=1)
-jit_memset(<@>, isize=1, size=3)
+jit_memset_async(<@>, isize=1, size=3)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_free(<@>, type=host-pinned, size=64)
@@ -286,7 +286,7 @@ jit_var_dec_ref_int(4): 0
 jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
 jit_all(<@>, size=1)
-jit_memset(<@>, isize=1, size=3)
+jit_memset_async(<@>, isize=1, size=3)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_free(<@>, type=host-pinned, size=64)

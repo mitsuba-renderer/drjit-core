@@ -168,7 +168,7 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
                 case 'r': prefix_table = var_type_prefix; break;
                 default:
                     jit_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
-                             "expression (unknown type \"%c\")!", type);
+                             "expression (unknown type \"%c\") in \"%s\"!", type, v->stmt);
             }
 
             uint32_t arg_id = *s++ - '0';
@@ -1089,6 +1089,13 @@ void jit_eval() {
         Variable *v = &it.value();
         if (v->ref_count_ext == 0 || v->data != nullptr)
             continue;
+
+        if (unlikely(v->cuda != stream->cuda))
+            jit_raise("jit_eval(): attempted to evaluate variable %u "
+                      "associated with the %s backend, while the %s backend "
+                      "was selected via jitc_set_device()!",
+                      index, v->cuda ? "CUDA" : "LLVM",
+                      stream->cuda ? "CUDA" : "LLVM");
 
         jit_var_traverse(v->size, index);
         v->output_flag = true;

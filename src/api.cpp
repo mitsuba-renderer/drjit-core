@@ -58,23 +58,23 @@ void jitc_shutdown(int light) {
     jit_shutdown(light);
 }
 
-void jitc_log_set_stderr(LogLevel level) {
+void jitc_set_log_level_stderr(LogLevel level) {
     /// Allow changing this variable without acquiring a lock
     state.log_level_stderr = level;
 }
 
-LogLevel jitc_log_stderr() {
+LogLevel jitc_log_level_stderr() {
     /// Allow reading this variable without acquiring a lock
     return state.log_level_stderr;
 }
 
-void jitc_set_log_callback(LogLevel level, LogCallback callback) {
+void jitc_set_log_level_callback(LogLevel level, LogCallback callback) {
     lock_guard guard(state.mutex);
     state.log_level_callback = callback ? level : Disable;
     state.log_callback = callback;
 }
 
-LogLevel jitc_log_callback() {
+LogLevel jitc_log_level_callback() {
     lock_guard guard(state.mutex);
     return state.log_level_callback;
 }

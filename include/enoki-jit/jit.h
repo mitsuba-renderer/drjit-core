@@ -225,13 +225,13 @@ enum LogLevel {
  * By default, this library prints all log messages to the console (\c stderr).
  * This function can be used to control the minimum log level for such output
  * or prevent it entirely. In the latter case, you may wish to enable logging
- * via a callback in \ref jitc_set_log_callback(). Both destinations can also
+ * via a callback in \ref jitc_set_log_level_callback(). Both destinations can also
  * be enabled simultaneously, pontentially using different log levels.
  */
-extern JITC_EXPORT void jitc_log_set_stderr(enum LogLevel level);
+extern JITC_EXPORT void jitc_set_log_level_stderr(enum LogLevel level);
 
 /// Return the currently set minimum log level for output to \c stderr
-extern JITC_EXPORT enum LogLevel jitc_log_stderr();
+extern JITC_EXPORT enum LogLevel jitc_log_level_stderr();
 
 
 /**
@@ -242,10 +242,10 @@ extern JITC_EXPORT enum LogLevel jitc_log_stderr();
  * exceeds the specified \c level.
  */
 typedef void (*LogCallback)(enum LogLevel, const char *);
-extern JITC_EXPORT void jitc_set_log_callback(enum LogLevel level, LogCallback callback);
+extern JITC_EXPORT void jitc_set_log_level_callback(enum LogLevel level, LogCallback callback);
 
 /// Return the currently set minimum log level for output to a callback
-extern JITC_EXPORT enum LogLevel jitc_log_callback();
+extern JITC_EXPORT enum LogLevel jitc_log_level_callback();
 
 /// Print a log message with the specified log level and message
 extern JITC_EXPORT void jitc_log(enum LogLevel level, const char* fmt, ...);

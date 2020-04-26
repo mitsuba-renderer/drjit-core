@@ -1,4 +1,4 @@
-jit_device_set(device=0, stream=0): creating stream
+jit_set_device(device=0, stream=0): creating stream
 jit_var_new(1): mov.$t0 $r0, 0f449a4000
 jit_var_inc_ref_ext(1): 1
 jit_var_dec_ref_ext(1): 0

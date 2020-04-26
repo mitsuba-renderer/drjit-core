@@ -1,4 +1,4 @@
-jit_device_set(device=0, stream=0): creating stream
+jit_set_device(device=0, stream=0): creating stream
 jit_run(): launching kernel (n=1, in=0, out=1, ops=5) ..
 value=[0] vs 0
 jit_run(): launching kernel (n=1, in=1, out=3, ops=9) ..

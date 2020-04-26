@@ -1,4 +1,4 @@
-jit_device_set(device=-1, stream=0): creating stream
+jit_set_device(device=-1, stream=0): creating stream
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map(1): <@>, size=6, free=1
 jit_var_inc_ref_ext(1): 1

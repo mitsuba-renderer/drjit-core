@@ -14,7 +14,7 @@ static constexpr LogLevel Debug = LogLevel::Debug;
 static constexpr LogLevel Trace = LogLevel::Trace;
 
 extern int test_register(const char *name, void (*func)(), bool cuda, const char *flags = nullptr);
-extern "C" void log_callback(LogLevel cb, const char *msg);
+extern "C" void log_level_callback(LogLevel cb, const char *msg);
 
 using FloatC  = CUDAArray<float>;
 using Int32C  = CUDAArray<int32_t>;
@@ -69,15 +69,15 @@ using UInt32L = LLVMArray<uint32_t>;
 struct scoped_set_log_level {
 public:
     scoped_set_log_level(LogLevel level) {
-        m_cb_level = jitc_log_callback();
-        m_stderr_level = jitc_log_stderr();
-        jitc_set_log_callback(std::min(level, m_cb_level), log_callback);
-        jitc_log_set_stderr(std::min(level, m_stderr_level));
+        m_cb_level = jitc_log_level_callback();
+        m_stderr_level = jitc_log_level_stderr();
+        jitc_set_log_level_callback(std::min(level, m_cb_level), log_level_callback);
+        jitc_set_log_level_stderr(std::min(level, m_stderr_level));
     }
 
     ~scoped_set_log_level() {
-        jitc_set_log_callback(m_cb_level, log_callback);
-        jitc_log_set_stderr(m_stderr_level);
+        jitc_set_log_level_callback(m_cb_level, log_level_callback);
+        jitc_set_log_level_stderr(m_stderr_level);
     }
 
 private:
