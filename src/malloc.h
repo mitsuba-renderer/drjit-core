@@ -52,6 +52,7 @@ extern uint32_t round_pow2(uint32_t x);
 
 /// Descriptive names for the various allocation types
 extern const char *alloc_type_name[(int) AllocType::Count];
+extern const char *alloc_type_name_short[(int) AllocType::Count];
 
 /// Allocate the given flavor of memory
 extern void *jit_malloc(AllocType type, size_t size) JITC_MALLOC;

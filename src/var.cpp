@@ -781,8 +781,8 @@ int jit_var_is_literal_one(uint32_t index) {
 /// Return a human-readable summary of registered variables
 const char *jit_var_whos() {
     buffer.clear();
-    buffer.put("\n  ID        Type   E/I Refs   Size        Memory     Ready    Label");
-    buffer.put("\n  =================================================================\n");
+    buffer.put("\n  ID        Type       Status       E/I Refs  Entries     Storage    Label");
+    buffer.put("\n  ========================================================================\n");
 
     std::vector<uint32_t> indices;
     indices.reserve(state.variables.size());
@@ -797,13 +797,29 @@ const char *jit_var_whos() {
         const Variable *v = jit_var(index);
         size_t mem_size = (size_t) v->size * (size_t) var_type_size[v->type];
 
-        buffer.fmt("  %-9u %3s    ", index, var_type_name_short[v->type]);
-        size_t sz = buffer.fmt("%u / %u", v->ref_count_ext, v->ref_count_int);
+        buffer.fmt("  %-9u %s %3s   ", index, v->cuda ? "cuda" : "llvm", var_type_name_short[v->type]);
+
+        if (v->direct_pointer) {
+            buffer.put("device     ");
+        } else if (v->data) {
+            auto it = state.alloc_used.find(v->data);
+            if (unlikely(it == state.alloc_used.end()))
+                jit_raise("jit_var_whos(): Cannot resolve pointer to actual allocation!");
+            AllocInfo ai = it.value();
+
+            if (ai.type == AllocType::Device)
+                buffer.fmt("device %4i", ai.device);
+            else
+                buffer.put(alloc_type_name_short[(int) ai.type]);
+        } else {
+            buffer.put("[uneval.  ]");
+        }
+
+        size_t sz = buffer.fmt("  %u / %u", v->ref_count_ext, v->ref_count_int);
         const char *label = jit_var_label(index);
 
-        buffer.fmt("%*s%-12u%-12s[%c]     %s\n", 11 - (int) sz, "", v->size,
-                   jit_mem_string(mem_size), v->data ? 'x' : ' ',
-                   label ? label : "");
+        buffer.fmt("%*s%-12u%-8s   %s\n", 12 - (int) sz, "", v->size,
+                   jit_mem_string(mem_size), label ? label : "");
 
         if (v->direct_pointer)
             continue;
@@ -812,8 +828,10 @@ const char *jit_var_whos() {
         else
             mem_size_unevaluated += mem_size;
     }
+    if (indices.empty())
+        buffer.put("                       -- No variables registered --\n");
 
-    buffer.put("  =================================================================\n\n");
+    buffer.put("  ========================================================================\n\n");
     buffer.put("  JIT compiler\n");
     buffer.put("  ============\n");
     buffer.fmt("   - Memory usage (evaluated)   : %s.\n",

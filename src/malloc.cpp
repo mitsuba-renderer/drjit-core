@@ -16,6 +16,15 @@ const char *alloc_type_name[(int) AllocType::Count] = {
     "device", "managed",    "managed-read-mostly"
 };
 
+const char *alloc_type_name_short[(int) AllocType::Count] = {
+    "host       ",
+    "host-async ",
+    "host-pinned",
+    "device     ",
+    "managed    ",
+    "managed/rm "
+};
+
 // Round an unsigned integer up to a power of two
 size_t round_pow2(size_t x) {
     x -= 1;
