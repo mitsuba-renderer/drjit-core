@@ -139,9 +139,13 @@ struct CUDAArray {
         if (v.is_literal_one())
             return *this;
 
-        const char *op = std::is_same<Value, float>::value
-                             ? "div.ftz.$t0 $r0, $r1, $r2"
-                             : "div.$t0 $r0, $r1, $r2";
+        const char *op;
+        if (std::is_same<Value, float>::value)
+            op = "div.rn.ftz.$t0 $r0, $r1, $r2";
+        else if (std::is_same<Value, double>::value)
+            op = "div.rn.$t0 $r0, $r1, $r2";
+        else
+            op = "div.$t0 $r0, $r1, $r2";
 
         return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
     }
