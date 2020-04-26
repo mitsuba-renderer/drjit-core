@@ -1008,3 +1008,12 @@ TEST_BOTH(32_sign_extension) {
     jitc_assert(a_i64 == i64);
     jitc_assert(a_u64 == u64);
 }
+
+TEST_BOTH(33_minmax_int) {
+    UInt32 s(2), l(3);
+    UInt32 minval = min(s, l);
+    UInt32 maxval = max(s, l);
+    jitc_eval(minval, maxval);
+    jitc_assert(minval == s);
+    jitc_assert(maxval == l);
+}

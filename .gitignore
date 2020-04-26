@@ -3,6 +3,7 @@
 *.cmake
 CMakeCache.txt
 CMakeFiles
+Makefile
 *.ninja
 \.ninja_*
 tests/**/*.out

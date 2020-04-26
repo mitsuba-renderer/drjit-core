@@ -323,17 +323,19 @@ struct CUDAArray {
     }
 
     CUDAArray operator<<(const CUDAArray<uint32_t> &v) const {
-        return CUDAArray::from_index(jitc_var_new_2(
+        return from_index(jitc_var_new_2(
             Type, "shl.$b0 $r0, $r1, $r2", 1, index(), v.index()));
     }
 
     CUDAArray operator>>(const CUDAArray<uint32_t> &v) const {
-        if (std::is_integral<Value>::value && std::is_signed<Value>::value)
-            return CUDAArray::from_index(jitc_var_new_2(
-                Type, "shr.$t0 $r0, $r1, $r2", 1, index(), v.index()));
+        const char *op;
+        if (std::is_signed<Value>::value)
+            op = "shr.$t0 $r0, $r1, $r2";
         else
-            return CUDAArray::from_index(jitc_var_new_2(
-                Type, "shr.$b0 $r0, $r1, $r2", 1, index(), v.index()));
+            op = "shr.$b0 $r0, $r1, $r2";
+
+        return from_index(
+            jitc_var_new_2(Type, op, 1, index(), v.index()));
     }
 
     CUDAArray& operator+=(const CUDAArray &v) {
@@ -541,7 +543,7 @@ struct CUDAArray {
     void write(uint32_t offset, Value value) {
         if (jitc_var_int_ref(m_index) > 0) {
             eval();
-            *this = CUDAArray::from_index(
+            *this = from_index(
                 jitc_var_copy(AllocType::Device, CUDAArray<Value>::Type, data(),
                               (uint32_t) size()));
         }

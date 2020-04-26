@@ -394,17 +394,18 @@ struct LLVMArray {
     }
 
     LLVMArray operator<<(const LLVMArray<uint32_t> &v) const {
-        return LLVMArray::from_index(jitc_var_new_2(
-            Type, "$r0 = shl <$w x $t0> $r1, $r2", 1, index(), v.index()));
+        return from_index(jitc_var_new_2(Type, "$r0 = shl <$w x $t0> $r1, $r2",
+                                         1, index(), v.index()));
     }
 
     LLVMArray operator>>(const LLVMArray<uint32_t> &v) const {
-        if (std::is_integral<Value>::value && std::is_signed<Value>::value)
-            return LLVMArray::from_index(jitc_var_new_2(
-                Type, "$r0 = ashr <$w x $t0> $r1, $r2", 1, index(), v.index()));
+        const char *op;
+        if (std::is_signed<Value>::value)
+            op = "$r0 = ashr <$w x $t0> $r1, $r2";
         else
-            return LLVMArray::from_index(jitc_var_new_2(
-                Type, "$r0 = lshr <$w x $t0> $r1, $r2", 1, index(), v.index()));
+            op = "$r0 = lshr <$w x $t0> $r1, $r2";
+
+        return from_index(jitc_var_new_2(Type, op, 1, index(), v.index()));
     }
 
     LLVMArray& operator+=(const LLVMArray &v) {
@@ -611,7 +612,7 @@ struct LLVMArray {
     void write(uint32_t offset, Value value) {
         if (jitc_var_int_ref(m_index) > 0) {
             eval();
-            *this = LLVMArray::from_index(
+            *this = from_index(
                 jitc_var_copy(AllocType::HostAsync, LLVMArray<Value>::Type, data(),
                               (uint32_t) size()));
         }
@@ -769,6 +770,9 @@ OutArray reinterpret_array(const LLVMArray<ValueIn> &input) {
 
 template <typename Value>
 LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
+    if (std::is_integral<Value>::value)
+        return select(a < b, a, b);
+
     // Portable intrinsic as a last resort
     const char *op = "$r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> "
                      "$r1, <$w x $t2> $r2)";
@@ -776,24 +780,24 @@ LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
     // Prefer an X86-specific intrinsic (produces nicer machine code)
     if (std::is_same<Value, float>::value) {
         if (jitc_llvm_if_at_least(16, "+avx512f")) {
-            op = "$2$r0 = call <$w x $t0> @llvm.x86.avx512.min.ps.512(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2, i32 4)";
+            op = "$4$r0 = call <$w x $t0> @llvm.x86.avx512.min.ps.512(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2, i32$S 4)";
         } else if (jitc_llvm_if_at_least(8, "+avx")) {
             op = "$3$r0 = call <$w x $t0> @llvm.x86.avx.min.ps.256(<$w x $t1> "
                  "$r1, <$w x $t2> $r2)";
         } else if (jitc_llvm_if_at_least(4, "+sse4.2")) {
-            op = "$4$r0 = call <$w x $t0> @llvm.x86.sse.min.ps(<$w x $t1> $r1, "
+            op = "$2$r0 = call <$w x $t0> @llvm.x86.sse.min.ps(<$w x $t1> $r1, "
                  "<$w x $t2> $r2)";
         }
     } else if (std::is_same<Value, double>::value) {
         if (jitc_llvm_if_at_least(8, "+avx512f")) {
-            op = "$1$r0 = call <$w x $t0> @llvm.x86.avx512.min.pd.512(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2, i32 4)";
+            op = "$3$r0 = call <$w x $t0> @llvm.x86.avx512.min.pd.512(<$w x $t1> "
+                 "$r1, <$w x $t2> $r2, i32$S 4)";
         } else if (jitc_llvm_if_at_least(4, "+avx")) {
             op = "$2$r0 = call <$w x $t0> @llvm.x86.avx.min.pd.256(<$w x $t1> "
                  "$r1, <$w x $t2> $r2)";
         } else if (jitc_llvm_if_at_least(2, "+sse4.2")) {
-            op = "$3$r0 = call <$w x $t0> @llvm.x86.sse.min.pd(<$w x $t1> $r1, "
+            op = "$1$r0 = call <$w x $t0> @llvm.x86.sse.min.pd(<$w x $t1> $r1, "
                  "<$w x $t2> $r2)";
         }
     }
@@ -804,6 +808,9 @@ LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
 
 template <typename Value>
 LLVMArray<Value> max(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
+    if (std::is_integral<Value>::value)
+        return select(a < b, b, a);
+
     // Portable intrinsic as a last resort
     const char *op = "$r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> "
                      "$r1, <$w x $t2> $r2)";
