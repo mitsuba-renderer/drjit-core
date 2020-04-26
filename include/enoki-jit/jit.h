@@ -509,14 +509,14 @@ extern JITC_EXPORT void jitc_registry_trim();
  * exact ordering, so please don't change.
  */
 enum class VarType : uint32_t {
-    Invalid, Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64,
-    Float16, Float32, Float64, Bool, Pointer, Count
+    Invalid, Bool, Int8, UInt8, Int16, UInt16, Int32, UInt32,
+    Int64, UInt64, Float16, Float32, Float64, Pointer, Count
 };
 #else
 enum VarType {
-    VarTypeInvalid, VarTypeInt8, VarTypeUInt8, VarTypeInt16, VarTypeUInt16,
-    VarTypeInt32, VarTypeUInt32, VarTypeInt64, VarTypeUInt64, VarTypeFloat16,
-    VarTypeFloat32, VarTypeFloat64, VarTypeBool, VarTypePointer, VarTypeCount
+    VarTypeInvalid, VarTypeBool, VarTypeInt8, VarTypeUInt8, VarTypeInt16,
+    VarTypeUInt16, VarTypeInt32, VarTypeUInt32, VarTypeInt64, VarTypeUInt64,
+    VarTypeFloat16, VarTypeFloat32, VarTypeFloat64, VarTypePointer, VarTypeCount
 };
 #endif
 

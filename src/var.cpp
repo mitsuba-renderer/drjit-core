@@ -14,61 +14,61 @@
 #include "util.h"
 
 /// Descriptive names for the various variable types
-const char *var_type_name[(int) VarType::Count] {
-    "invalid", "int8",   "uint8",   "int16",   "uint16",  "int32", "uint32",
-    "int64",   "uint64", "float16", "float32", "float64", "mask",  "pointer"
+const char *var_type_name[(int) VarType::Count]{
+    "invalid", "mask",  "int8",   "uint8",   "int16",   "uint16",  "int32",
+    "uint32",  "int64", "uint64", "float16", "float32", "float64", "pointer"
 };
 
 /// Descriptive names for the various variable types (extra-short version)
-const char *var_type_name_short[(int) VarType::Count] {
-    "???", "i8", "u8", "i16", "u16", "i32", "u32",
-    "i64", "u64", "f16", "f32", "f64", "msk", "ptr"
+const char *var_type_name_short[(int) VarType::Count]{
+    "???", "msk", "i8",  "u8",  "i16", "u16", "i32",
+    "u32", "i64", "u64", "f16", "f32", "f64", "ptr"
 };
 
 /// CUDA PTX type names
-const char *var_type_name_ptx[(int) VarType::Count] {
-    "???", "s8", "u8", "s16", "u16", "s32", "u32",
-    "s64", "u64", "f16", "f32", "f64", "pred", "u64"
+const char *var_type_name_ptx[(int) VarType::Count]{
+    "???", "pred", "s8",  "u8",  "s16", "u16", "s32",
+    "u32", "s64",  "u64", "f16", "f32", "f64", "u64"
 };
 
 /// CUDA PTX type names (binary view)
-const char *var_type_name_ptx_bin[(int) VarType::Count] {
-    "???", "b8", "b8", "b16", "b16", "b32", "b32",
-    "b64", "b64", "b16", "b32", "b64", "pred", "b64"
+const char *var_type_name_ptx_bin[(int) VarType::Count]{
+    "???", "pred", "b8",  "b8",  "b16", "b16", "b32",
+    "b32", "b64",  "b64", "b16", "b32", "b64", "b64"
 };
 
 /// LLVM IR type names (does not distinguish signed vs unsigned)
-const char *var_type_name_llvm[(int) VarType::Count] {
-    "???", "i8", "i8", "i16", "i16", "i32", "i32",
-    "i64", "i64", "half", "float", "double", "i1", "i8*"
+const char *var_type_name_llvm[(int) VarType::Count]{
+    "???", "i1",  "i8",  "i8",   "i16",   "i16",    "i32",
+    "i32", "i64", "i64", "half", "float", "double", "i8*"
 };
 
 /// Abbreviated LLVM IR type names
-const char *var_type_name_llvm_abbrev[(int) VarType::Count] {
-    "???", "i8", "i8", "i16", "i16", "i32", "i32",
-    "i64", "i64", "f16", "f32", "f64", "i1", "i8*"
+const char *var_type_name_llvm_abbrev[(int) VarType::Count]{
+    "???", "i1",  "i8",  "i8",  "i16", "i16", "i32",
+    "i32", "i64", "i64", "f16", "f32", "f64", "i8*"
 };
 
 /// LLVM IR type names (binary view)
-const char *var_type_name_llvm_bin[(int) VarType::Count] {
-    "???", "i8", "i8", "i16", "i16", "i32", "i32",
-    "i64", "i64", "i16", "i32", "i64", "i1", "i64"
+const char *var_type_name_llvm_bin[(int) VarType::Count]{
+    "???", "i1",  "i8",  "i8",  "i16", "i16", "i32",
+    "i32", "i64", "i64", "i16", "i32", "i64", "i64"
 };
 
 /// LLVM/CUDA register name prefixes
 const char *var_type_prefix[(int) VarType::Count] {
-    "%u", "%b", "%b", "%w", "%w", "%r", "%r",
-    "%rd", "%rd", "%h", "%f", "%d", "%p", "%rd"
+    "%u", "%p", "%b", "%b", "%w", "%w", "%r",
+    "%r", "%rd", "%rd", "%h", "%f", "%d", "%rd"
 };
 
 /// Maps types to byte sizes
 const uint32_t var_type_size[(int) VarType::Count] {
-    (uint32_t) -1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 1, 8
+    (uint32_t) -1, 1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 8
 };
 
 /// String version of the above
 const char *var_type_size_str[(int) VarType::Count] {
-    "-1", "1", "1", "2", "2", "4", "4", "8", "8", "2", "4", "8", "1", "8"
+    "-1", "1", "1", "1", "2", "2", "4", "4", "8", "8", "2", "4", "8", "8"
 };
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
@@ -812,7 +812,7 @@ const char *jit_var_whos() {
             else
                 buffer.put(alloc_type_name_short[(int) ai.type]);
         } else {
-            buffer.put("[uneval.  ]");
+            buffer.put("[not ready]");
         }
 
         size_t sz = buffer.fmt("  %u / %u", v->ref_count_ext, v->ref_count_int);
