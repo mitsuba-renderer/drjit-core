@@ -800,7 +800,7 @@ const char *jit_var_whos() {
         buffer.fmt("  %-9u %s %3s   ", index, v->cuda ? "cuda" : "llvm", var_type_name_short[v->type]);
 
         if (v->direct_pointer) {
-            buffer.put("device     ");
+            buffer.put("direct ptr.");
         } else if (v->data) {
             auto it = state.alloc_used.find(v->data);
             if (unlikely(it == state.alloc_used.end()))
@@ -808,7 +808,7 @@ const char *jit_var_whos() {
             AllocInfo ai = it.value();
 
             if (ai.type == AllocType::Device)
-                buffer.fmt("device %4i", ai.device);
+                buffer.fmt("device %-4i", ai.device);
             else
                 buffer.put(alloc_type_name_short[(int) ai.type]);
         } else {
@@ -922,8 +922,11 @@ void jit_var_schedule(uint32_t index) {
                   "jit_set_device() before!", v->cuda ? "CUDA" : "LLVM",
                   stream->cuda ? "CUDA" : "LLVM");
 
-    if (v->data == nullptr)
+
+    if (v->data == nullptr && !v->direct_pointer) {
         stream->todo.push_back(index);
+        jit_log(Debug, "jit_var_schedule(%u)", index);
+    }
 }
 
 /// Evaluate the variable \c index right away, if it is unevaluated/dirty.
@@ -940,8 +943,10 @@ void jit_var_eval(uint32_t index) {
                   "jit_set_device() before!", v->cuda ? "CUDA" : "LLVM",
                   stream->cuda ? "CUDA" : "LLVM");
 
-    if (v->data == nullptr || v->pending_scatter) {
-        if (v->data == nullptr)
+    bool unevaluated = v->data == nullptr && !v->direct_pointer;
+
+    if (unevaluated || v->pending_scatter) {
+        if (unevaluated)
             stream->todo.push_back(index);
         jit_eval();
 
