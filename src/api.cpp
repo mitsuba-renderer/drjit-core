@@ -324,11 +324,15 @@ void jitc_eval() {
 }
 
 void jitc_var_eval(uint32_t index) {
+    if (index == 0)
+        return;
     lock_guard guard(state.mutex);
     jit_var_eval(index);
 }
 
 void jitc_var_schedule(uint32_t index) {
+    if (index == 0)
+        return;
     lock_guard guard(state.mutex);
     jit_var_schedule(index);
 }

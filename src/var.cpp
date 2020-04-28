@@ -791,6 +791,7 @@ const char *jit_var_whos() {
     std::sort(indices.begin(), indices.end());
 
     size_t mem_size_evaluated = 0,
+           mem_size_saved = 0,
            mem_size_unevaluated = 0;
 
     for (uint32_t index: indices) {
@@ -825,6 +826,8 @@ const char *jit_var_whos() {
             continue;
         else if (v->data)
             mem_size_evaluated += mem_size;
+        else if (v->ref_count_ext == 0)
+            mem_size_saved += mem_size;
         else
             mem_size_unevaluated += mem_size;
     }
@@ -836,12 +839,14 @@ const char *jit_var_whos() {
     buffer.put("  ============\n");
     buffer.fmt("   - Memory usage (evaluated)   : %s.\n",
                jit_mem_string(mem_size_evaluated));
-    buffer.fmt("   - Memory usage (unevaluated) : %s.\n\n",
+    buffer.fmt("   - Memory usage (unevaluated) : %s.\n",
                jit_mem_string(mem_size_unevaluated));
+    buffer.fmt("   - Memory usage (saved)       : %s.\n\n",
+               jit_mem_string(mem_size_saved));
 
     buffer.put("  Memory allocator\n");
     buffer.put("  ================\n");
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < (int) AllocType::Count; ++i)
         buffer.fmt("   - %-20s: %s used (max. %s).\n",
                    alloc_type_name[i],
                    std::string(jit_mem_string(state.alloc_usage[i])).c_str(),
