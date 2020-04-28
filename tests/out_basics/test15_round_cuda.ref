@@ -25,6 +25,12 @@ jit_var_inc_ref_int(2): 2
 jit_var_inc_ref_int(3): 2
 jit_var_new(7 <- 2, 3): max.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(7): 1
+jit_var_schedule(2)
+jit_var_schedule(3)
+jit_var_schedule(4)
+jit_var_schedule(5)
+jit_var_schedule(6)
+jit_var_schedule(7)
 jit_eval(): begin.
 jit_assemble(size=6): register map:
    - %f4 -> 1 [in]
@@ -204,6 +210,12 @@ jit_var_inc_ref_int(9): 2
 jit_var_inc_ref_int(10): 2
 jit_var_new(14 <- 9, 10): max.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(14): 1
+jit_var_schedule(9)
+jit_var_schedule(10)
+jit_var_schedule(11)
+jit_var_schedule(12)
+jit_var_schedule(13)
+jit_var_schedule(14)
 jit_eval(): begin.
 jit_assemble(size=6): register map:
    - %d4 -> 8 [in]

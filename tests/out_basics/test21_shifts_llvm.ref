@@ -35,6 +35,10 @@ jit_var_inc_ref_int(3): 4
 jit_var_new(7 <- 2, 3): $r0 = shl <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(7): 1
 jit_var_dec_ref_ext(3): 0
+jit_var_schedule(4)
+jit_var_schedule(5)
+jit_var_schedule(6)
+jit_var_schedule(7)
 jit_eval(): begin.
 jit_assemble(size=2): register map:
    - %r0 -> 1 [in]

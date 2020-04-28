@@ -32,6 +32,14 @@ jit_var_inc_ref_ext(9): 1
 jit_var_inc_ref_int(2): 4
 jit_var_new(10 <- 2): cvt.rpi.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(10): 1
+jit_var_schedule(3)
+jit_var_schedule(4)
+jit_var_schedule(5)
+jit_var_schedule(6)
+jit_var_schedule(7)
+jit_var_schedule(8)
+jit_var_schedule(9)
+jit_var_schedule(10)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): begin.
 jit_assemble(size=9): register map:
@@ -243,6 +251,14 @@ jit_var_inc_ref_ext(17): 1
 jit_var_inc_ref_int(2): 4
 jit_var_new(18 <- 2): cvt.rmi.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(18): 1
+jit_var_schedule(11)
+jit_var_schedule(12)
+jit_var_schedule(13)
+jit_var_schedule(14)
+jit_var_schedule(15)
+jit_var_schedule(16)
+jit_var_schedule(17)
+jit_var_schedule(18)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): begin.
 jit_assemble(size=9): register map:
@@ -453,6 +469,14 @@ jit_var_inc_ref_ext(25): 1
 jit_var_inc_ref_int(2): 4
 jit_var_new(26 <- 2): cvt.rzi.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(26): 1
+jit_var_schedule(19)
+jit_var_schedule(20)
+jit_var_schedule(21)
+jit_var_schedule(22)
+jit_var_schedule(23)
+jit_var_schedule(24)
+jit_var_schedule(25)
+jit_var_schedule(26)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): begin.
 jit_assemble(size=9): register map:
@@ -663,6 +687,14 @@ jit_var_inc_ref_ext(33): 1
 jit_var_inc_ref_int(2): 4
 jit_var_new(34 <- 2): cvt.rni.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(34): 1
+jit_var_schedule(27)
+jit_var_schedule(28)
+jit_var_schedule(29)
+jit_var_schedule(30)
+jit_var_schedule(31)
+jit_var_schedule(32)
+jit_var_schedule(33)
+jit_var_schedule(34)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): begin.
 jit_assemble(size=9): register map:

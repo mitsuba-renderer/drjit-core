@@ -106,41 +106,44 @@ std::vector<std::pair<uint32_t, uint32_t>> jit_llvm_scatter_add_variables;
 void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v);
 
 /// Recursively traverse the computation graph to find variables needed by a computation
-static void jit_var_traverse(uint32_t size, uint32_t index) {
-    std::pair<uint32_t, uint32_t> key(size, index);
-
-    if (visited.find(key) != visited.end())
+static void jit_var_traverse(uint32_t size, uint32_t index, Variable *v) {
+    if (!visited.emplace(size, index).second)
         return;
 
-    visited.insert(key);
-
-    Variable *v = jit_var(index);
-
-    const uint32_t *dep = v->dep;
-
-    std::pair<uint32_t, uint32_t> ch[4] = {
-        { dep[0], dep[0] ? jit_var(dep[0])->tsize : 0u },
-        { dep[1], dep[1] ? jit_var(dep[1])->tsize : 0u },
-        { dep[2], dep[2] ? jit_var(dep[2])->tsize : 0u },
-        { dep[3], dep[3] ? jit_var(dep[3])->tsize : 0u }
-    };
-
-    // Simple sorting network
-    #define SWAP(i, j) \
-        if (ch[i].second < ch[j].second) \
-            std::swap(ch[i], ch[j]);
-    SWAP(0, 1);
-    SWAP(2, 3);
-    SWAP(0, 2);
-    SWAP(1, 3);
-    SWAP(1, 2);
-
-    #undef SWAP
-
     if (likely(!v->direct_pointer && !v->data)) {
-        for (auto &sub: ch) {
-            if (sub.first)
-                jit_var_traverse(size, sub.first);
+        struct Dep {
+            uint32_t index;
+            uint32_t tsize;
+            Variable *v;
+        } depv[4];
+
+        memset(depv, 0, sizeof(depv));
+        for (int i = 0; i < 4; ++i) {
+            uint32_t dep_index = v->dep[i];
+            if (dep_index == 0)
+                break;
+            Variable *v = jit_var(dep_index);
+            depv[i].index = dep_index;
+            depv[i].tsize = v->tsize;
+            depv[i].v = v;
+        }
+
+        // Simple sorting network
+        #define SWAP(i, j) \
+            if (depv[i].tsize < depv[j].tsize) \
+                std::swap(depv[i], depv[j]);
+        SWAP(0, 1);
+        SWAP(2, 3);
+        SWAP(0, 2);
+        SWAP(1, 3);
+        SWAP(1, 2);
+
+        #undef SWAP
+
+        for (auto &dep: depv) {
+            if (!dep.index)
+                break;
+            jit_var_traverse(size, dep.index, dep.v);
         }
     }
 
@@ -154,6 +157,7 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
     char c;
 
     buffer.put("    ");
+
     while ((c = *s++) != '\0') {
         if (c != '$') {
             buffer.putc(c);
@@ -185,9 +189,9 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
             buffer.put(prefix_table[(int) dep->type]);
 
             if (type == 'r')
-                buffer.fmt("%u", dep->reg_index);
+                buffer.put_uint32(dep->reg_index);
         }
-    }
+    } while (c != '\0');
 
     buffer.put(";\n");
 }
@@ -217,7 +221,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
             switch (type) {
                 case 'n': buffer.put("\n    "); continue;
                 case 'i': buffer.put("%index"); continue;
-                case 'w': buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 'w': buffer.put_uint32(jit_llvm_vector_width); continue;
                 case 'z': buffer.put("zeroinitializer"); continue;
                 case 'S': continue;
                 case 'l':
@@ -229,8 +233,11 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
                 case 'r': prefix_table = var_type_prefix; break;
                 case 'O':
                     buffer.putc('<');
-                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i)
-                        buffer.fmt("i1 1%s", i + 1 < jit_llvm_vector_width ? ", " : "");
+                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i) {
+                        buffer.put("i1 1");
+                        if (i + 1 < jit_llvm_vector_width)
+                            buffer.put(", ");
+                    }
                     buffer.putc('>');
                     continue;
 
@@ -257,8 +264,10 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
 
             switch (type) {
                 case 'r':
-                    buffer.fmt("%s%u%s", prefix, dep->reg_index,
-                               dep->direct_pointer ? "" : suffix);
+                    buffer.put(prefix);
+                    buffer.put_uint32(dep->reg_index);
+                    if (!dep->direct_pointer)
+                        buffer.put(suffix);
                     break;
 
                 case 'a':
@@ -270,16 +279,27 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
 
                 case 'l':
                     buffer.putc('<');
-                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i)
-                        buffer.fmt("%s %i%s%s", prefix, i, is_float ? ".0" : "",
-                                   i + 1 < jit_llvm_vector_width ? ", " : "");
+                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i) {
+                        buffer.put(prefix);
+                        buffer.putc(' ');
+                        buffer.put_uint32(i);
+                        if (is_float)
+                            buffer.put(".0");
+                        if (i + 1 < jit_llvm_vector_width)
+                            buffer.put(", ");
+                    }
                     buffer.putc('>');
                     break;
 
                 case 'o':
                     buffer.putc('<');
-                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i)
-                        buffer.fmt("%s -1%s", prefix, i + 1 < jit_llvm_vector_width ? ", " : "");
+                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i) {
+                        buffer.put(prefix);
+                        buffer.put(" -1");
+                        if (i + 1 < jit_llvm_vector_width)
+                            buffer.put(", ");
+                    }
+
                     buffer.putc('>');
                     break;
             }
@@ -319,7 +339,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
                 case 't': prefix_table = var_type_name_llvm; break;
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'a': prefix_table = var_type_name_llvm_abbrev; break;
-                case 'w': intrinsics_buffer.fmt("%u", jit_llvm_vector_width); continue;
+                case 'w': intrinsics_buffer.put_uint32(jit_llvm_vector_width); continue;
                 case 'S': while (*s != ',' && *s != ')' && *s != '\0') { ++s; } continue;
                 case 's':
                 case 'r': s++; intrinsics_buffer.rewind(1); continue;
@@ -889,9 +909,6 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
         jit_free(args_extra_dev);
     }
 
-    jit_log(Info, "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u) ..",
-            group.size, n_args_in - 1, n_args_out, n_regs_total);
-
     jit_llvm_supplement = false;
     intrinsics_buffer.clear();
     intrinsics_set.clear();
@@ -932,11 +949,17 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
         memcpy(offset, kernel_name, 16);
     } while (true);
 
+    float codegen_time = timer();
+    jit_log(Info,
+            "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u, "
+            "took %s) ..",
+            group.size, n_args_in - 1, n_args_out, n_regs_total,
+            jit_time_string(codegen_time));
+
     jit_log(Debug, "%s", buffer.get());
 }
 
 void jit_run(Stream *stream, ScheduledGroup group) {
-    float codegen_time = timer();
     KernelKey kernel_key((char *) buffer.get(), stream->device);
     size_t hash_code = KernelHash::compute_hash(kernel_hash, stream->device);
     auto it = state.kernel_cache.find(kernel_key, hash_code);
@@ -999,9 +1022,8 @@ void jit_run(Stream *stream, ScheduledGroup group) {
         }
 
         float link_time = timer();
-        jit_log(Info, "jit_run(): cache %s, codegen: %s, %s: %s, %s.",
+        jit_log(Info, "jit_run(): cache %s, %s: %s, %s.",
                 cache_hit ? "hit" : "miss",
-                std::string(jit_time_string(codegen_time)).c_str(),
                 cache_hit ? "load" : "build",
                 std::string(jit_time_string(link_time)).c_str(),
                 std::string(jit_mem_string(kernel.size)).c_str());
@@ -1011,8 +1033,6 @@ void jit_run(Stream *stream, ScheduledGroup group) {
         state.kernel_cache.emplace(kernel_key, kernel);
     } else {
         kernel = it.value();
-        jit_log(Debug, "jit_run(): cache hit, codegen: %s.",
-                jit_time_string(codegen_time));
     }
 
     if (stream->cuda) {
@@ -1068,7 +1088,7 @@ void jit_eval() {
     /* The function 'jit_eval()' cannot be executed concurrently. Temporarily
        release 'state.mutex' before acquiring 'state.eval_mutex'. */
     state.mutex.unlock();
-    lock_guard guard(state.eval_mutex);
+    lock_guard_t<std::mutex> guard(state.eval_mutex);
     state.mutex.lock();
 
     Stream *stream = active_stream;
@@ -1097,7 +1117,7 @@ void jit_eval() {
                       index, v->cuda ? "CUDA" : "LLVM",
                       stream->cuda ? "CUDA" : "LLVM");
 
-        jit_var_traverse(v->size, index);
+        jit_var_traverse(v->size, index, v);
         v->output_flag = true;
     }
     stream->todo.clear();

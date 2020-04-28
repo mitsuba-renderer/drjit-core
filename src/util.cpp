@@ -937,7 +937,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
             }
 
             /* Update total */ {
-                lock_guard guard(inputs.unique_count->mutex);
+                lock_guard_t<std::mutex> guard(inputs.unique_count->mutex);
                 inputs.unique_count->value = unique_count;
                 inputs.unique_count->cond.notify_one();
             }

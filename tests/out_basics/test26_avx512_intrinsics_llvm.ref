@@ -33,6 +33,9 @@ jit_var_inc_ref_int(4): 3
 jit_var_inc_ref_int(5): 2
 jit_var_new(7 <- 4, 5): $r0 = fcmp oeq <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(7): 1
+jit_var_schedule(5)
+jit_var_schedule(6)
+jit_var_schedule(7)
 jit_eval(): begin.
 jit_assemble(size=64): register map:
    - %r0 -> 1

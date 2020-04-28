@@ -19,6 +19,8 @@ jit_var_dec_ref_ext(4): 0
 jit_var_dec_ref_ext(3): 0
 jit_var_dec_ref_ext(2): 1
 jit_var_dec_ref_ext(2): 0
+jit_var_schedule(1)
+jit_var_schedule(5)
 jit_eval(): begin (parallel dispatch to 2 streams).
 jit_assemble(size=1024): register map:
    - %r4 -> 1 [out]
@@ -160,6 +162,8 @@ jit_var_dec_ref_ext(11): 0
 jit_var_dec_ref_ext(10): 0
 jit_var_dec_ref_ext(9): 0
 jit_var_dec_ref_ext(8): 0
+jit_var_schedule(7)
+jit_var_schedule(12)
 jit_eval(): begin (parallel dispatch to 2 streams).
 jit_assemble(size=1024): register map:
    - %r4 -> 6

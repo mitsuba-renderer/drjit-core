@@ -173,9 +173,9 @@ size_t Buffer::vfmt(const char *format, va_list args_) {
     return written;
 }
 
-void Buffer::expand() {
+void Buffer::expand(size_t minval) {
     size_t old_alloc_size = m_end - m_start,
-           new_alloc_size = 2 * old_alloc_size + 2,
+           new_alloc_size = 2 * old_alloc_size + minval,
            used_size      = m_cur - m_start,
            copy_size      = std::min(used_size + 1, old_alloc_size);
 

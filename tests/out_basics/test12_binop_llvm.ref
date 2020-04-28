@@ -23,6 +23,9 @@ jit_var_inc_ref_int(3): 1
 jit_var_new(6 <- 3): $r0 = xor <$w x $t1> $r1, $o0
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(3): 0
+jit_var_schedule(4)
+jit_var_schedule(5)
+jit_var_schedule(6)
 jit_eval(): begin.
 jit_assemble(size=2): register map:
    - %r0 -> 1 [in]
@@ -155,6 +158,9 @@ jit_var_inc_ref_int(6): 1
 jit_var_new(9 <- 6): $r0 = xor <$w x $t1> $r1, $o0
 jit_var_inc_ref_ext(9): 1
 jit_var_dec_ref_ext(6): 0
+jit_var_schedule(7)
+jit_var_schedule(8)
+jit_var_schedule(9)
 jit_eval(): begin.
 jit_assemble(size=2): register map:
    - %r0 -> 4 [in]
@@ -299,6 +305,9 @@ jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(12): 1
 jit_var_new(15 <- 9, 12): $r0 = or <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(15): 1
+jit_var_schedule(13)
+jit_var_schedule(14)
+jit_var_schedule(15)
 jit_eval(): begin.
 jit_assemble(size=2): register map:
    - %r0 -> 7 [in]
@@ -461,6 +470,9 @@ jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(12): 1
 jit_var_new(18 <- 9, 12): $r0 = and <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(18): 1
+jit_var_schedule(16)
+jit_var_schedule(17)
+jit_var_schedule(18)
 jit_eval(): begin.
 jit_assemble(size=2): register map:
    - %r0 -> 7 [in]
@@ -623,6 +635,9 @@ jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(12): 1
 jit_var_new(21 <- 9, 12): $r0 = xor <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(21): 1
+jit_var_schedule(19)
+jit_var_schedule(20)
+jit_var_schedule(21)
 jit_eval(): begin.
 jit_assemble(size=2): register map:
    - %r0 -> 7 [in]

@@ -121,7 +121,7 @@ target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)
 
 if (NOT MSVC)
   target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
-  if (U_CMAKE_BUILD_TYPE MATCHES REL)
+  if (U_CMAKE_BUILD_TYPE MATCHES RELEASE OR U_CMAKE_BUILD_TYPE MATCHES MINSIZEREL)
     target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
   endif()
 endif()

@@ -93,6 +93,12 @@ jit_var_new(14 <- 13, 11): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 =
 jit_var_inc_ref_ext(14): 1
 jit_var_dec_ref_ext(13): 0
 jit_var_dec_ref_ext(11): 0
+jit_var_schedule(6)
+jit_var_schedule(7)
+jit_var_schedule(8)
+jit_var_schedule(9)
+jit_var_schedule(14)
+jit_var_schedule(12)
 jit_eval(): begin.
 jit_assemble(size=2): register map:
    - %p0 -> 4 [in]
@@ -342,6 +348,9 @@ jit_var_new(20 <- 19, 18): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 =
 jit_var_inc_ref_ext(20): 1
 jit_var_dec_ref_ext(19): 0
 jit_var_dec_ref_ext(18): 0
+jit_var_schedule(16)
+jit_var_schedule(17)
+jit_var_schedule(20)
 jit_eval(): begin.
 jit_assemble(size=1): register map:
    - %r0 -> 16 [scalar] [out]
@@ -462,6 +471,9 @@ jit_free(<@>, type=host-async, size=64)
 jit_var_new(24): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(24): 1
 jit_var_dec_ref_ext(3): 2
+jit_var_schedule(22)
+jit_var_schedule(23)
+jit_var_schedule(24)
 x_o : [0, 1]
 jit_eval(): begin.
 jit_assemble(size=1): register map:

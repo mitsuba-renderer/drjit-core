@@ -87,6 +87,12 @@ void test_sanitize_log(char *buf) {
             continue;
         }
 
+        /// Excise timing values
+        if (strncmp(src, ", took ", 7) == 0) {
+            while (*src != ')')
+                ++src;
+        }
+
         if (strncmp(src, "enoki_", 6) == 0) {
             memcpy(dst, "enoki_@@@@@@@@@@@@@@@@", 22);
             src += 22;

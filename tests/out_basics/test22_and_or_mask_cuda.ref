@@ -51,6 +51,12 @@ jit_var_inc_ref_int(9): 1
 jit_var_new(11 <- 9): abs.ftz.$t0 $r0, $r1
 jit_var_inc_ref_ext(11): 1
 jit_var_dec_ref_ext(9): 0
+jit_var_schedule(5)
+jit_var_schedule(6)
+jit_var_schedule(7)
+jit_var_schedule(8)
+jit_var_schedule(11)
+jit_var_schedule(10)
 jit_eval(): begin.
 jit_assemble(size=2): register map:
    - %r4 -> 1 [in]
@@ -254,6 +260,9 @@ jit_var_inc_ref_int(15): 1
 jit_var_new(16 <- 15): abs.ftz.$t0 $r0, $r1
 jit_var_inc_ref_ext(16): 1
 jit_var_dec_ref_ext(15): 0
+jit_var_schedule(13)
+jit_var_schedule(14)
+jit_var_schedule(16)
 jit_eval(): begin.
 jit_assemble(size=1): register map:
    - %r4 -> 13 [scalar] [out]
@@ -365,6 +374,9 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_new(20): mov.$t0 $r0, 0f00000000
 jit_var_inc_ref_ext(20): 1
 jit_var_dec_ref_ext(3): 2
+jit_var_schedule(18)
+jit_var_schedule(19)
+jit_var_schedule(20)
 x_o : [0, 1]
 jit_eval(): begin.
 jit_assemble(size=1): register map:

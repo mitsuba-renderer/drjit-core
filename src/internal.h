@@ -20,7 +20,17 @@
 #include <string.h>
 #include <inttypes.h>
 
+#if defined(ENOKI_ENABLE_TBB)
+#  include <tbb/spin_mutex.h>
+#endif
+
 namespace tbb { class task; };
+
+#if defined(ENOKI_ENABLE_TBB)
+  using FastMutex = tbb::spin_mutex;
+#else
+  using FastMutex = std::mutex;
+#endif
 
 static constexpr LogLevel Disable = LogLevel::Disable;
 static constexpr LogLevel Error   = LogLevel::Error;
@@ -338,13 +348,13 @@ using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_h
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
     /// Must be held to access members
-    std::mutex mutex;
+    FastMutex mutex;
+
+    /// Must be held to access 'stream->release_chain' and 'state.alloc_free'
+    FastMutex malloc_mutex;
 
     /// Stores the mapping from variable indices to variables
     VariableMap variables;
-
-    /// Must be held to access 'stream->release_chain' and 'state.alloc_free'
-    std::mutex malloc_mutex;
 
     /// Must be held to execute jit_eval()
     std::mutex eval_mutex;
@@ -413,26 +423,30 @@ struct State {
 };
 
 /// RAII helper for locking a mutex (like std::lock_guard)
-class lock_guard {
+template <typename T> class lock_guard_t {
 public:
-    lock_guard(std::mutex &mutex) : m_mutex(mutex) { m_mutex.lock(); }
-    ~lock_guard() { m_mutex.unlock(); }
-    lock_guard(const lock_guard &) = delete;
-    lock_guard &operator=(const lock_guard &) = delete;
+    lock_guard_t(T &mutex) : m_mutex(mutex) { m_mutex.lock(); }
+    ~lock_guard_t() { m_mutex.unlock(); }
+    lock_guard_t(const lock_guard_t &) = delete;
+    lock_guard_t &operator=(const lock_guard_t &) = delete;
 private:
-    std::mutex &m_mutex;
+    T &m_mutex;
 };
 
 /// RAII helper for *unlocking* a mutex
-class unlock_guard {
+template <typename T> class unlock_guard_t {
 public:
-    unlock_guard(std::mutex &mutex) : m_mutex(mutex) { m_mutex.unlock(); }
-    ~unlock_guard() { m_mutex.lock(); }
-    unlock_guard(const unlock_guard &) = delete;
-    unlock_guard &operator=(const unlock_guard &) = delete;
+    unlock_guard_t(T &mutex) : m_mutex(mutex) { m_mutex.unlock(); }
+    ~unlock_guard_t() { m_mutex.lock(); }
+    unlock_guard_t(const unlock_guard_t &) = delete;
+    unlock_guard_t &operator=(const unlock_guard_t &) = delete;
 private:
-    std::mutex &m_mutex;
+    T &m_mutex;
 };
+
+using lock_guard   =   lock_guard_t<FastMutex>;
+using unlock_guard = unlock_guard_t<FastMutex>;
+
 
 struct Buffer {
 public:
@@ -467,6 +481,30 @@ public:
 
             expand();
         } while (true);
+    }
+
+    /// Append a string with the specified length
+    void put(const char *str, size_t size) {
+        if (unlikely(m_cur + size >= m_end))
+            expand(size);
+        memcpy(m_cur, str, size); m_cur += size;
+        *m_cur = '\0';
+    }
+
+    /// Append an unsigned 32 bit integer
+    void put_uint32(uint32_t value) {
+        if (unlikely(m_cur + 10 >= m_end))
+            expand(10);
+
+        const char *num = "0123456789";
+        char buf[11];
+        buf[10] = '\0';
+        int i = 9;
+        do {
+            buf[--i] = num[value % 10];
+            value /= 10;
+        } while (value);
+        put(buf + i, 9 - i);
     }
 
     /// Append a single character to the buffer
@@ -506,7 +544,7 @@ public:
         std::swap(m_end, b.m_end);
     }
 private:
-    void expand();
+    void expand(size_t minval = 2);
 
 private:
     char *m_start, *m_cur, *m_end;

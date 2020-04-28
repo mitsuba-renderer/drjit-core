@@ -34,7 +34,7 @@ void jitc_init_async(int llvm, int cuda) {
     std::thread([llvm, cuda, sync]() {
         lock_guard guard2(state.mutex);
         {
-            lock_guard guard2(sync->mutex);
+            lock_guard_t<std::mutex> guard2(sync->mutex);
             sync->flag = true;
             sync->cv.notify_one();
         }

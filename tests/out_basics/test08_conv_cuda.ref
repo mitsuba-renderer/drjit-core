@@ -19,6 +19,12 @@ jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(1): 5
 jit_var_new(6 <- 1): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(6): 1
+jit_var_schedule(1)
+jit_var_schedule(2)
+jit_var_schedule(3)
+jit_var_schedule(4)
+jit_var_schedule(5)
+jit_var_schedule(6)
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r4 -> 1 [out]
@@ -182,6 +188,10 @@ jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(10): 3
 jit_var_new(13 <- 10): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(13): 1
+jit_var_schedule(10)
+jit_var_schedule(11)
+jit_var_schedule(12)
+jit_var_schedule(13)
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r4 -> 7
@@ -328,6 +338,12 @@ jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(15): 5
 jit_var_new(20 <- 15): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(20): 1
+jit_var_schedule(16)
+jit_var_schedule(17)
+jit_var_schedule(15)
+jit_var_schedule(18)
+jit_var_schedule(19)
+jit_var_schedule(20)
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r4 -> 14
@@ -497,6 +513,10 @@ jit_var_inc_ref_ext(26): 1
 jit_var_inc_ref_int(24): 3
 jit_var_new(27 <- 24): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(27): 1
+jit_var_schedule(25)
+jit_var_schedule(24)
+jit_var_schedule(26)
+jit_var_schedule(27)
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r4 -> 21
@@ -645,6 +665,10 @@ jit_var_inc_ref_ext(31): 2
 jit_var_inc_ref_int(31): 3
 jit_var_new(34 <- 31): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(34): 1
+jit_var_schedule(32)
+jit_var_schedule(33)
+jit_var_schedule(31)
+jit_var_schedule(34)
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r4 -> 28
@@ -792,6 +816,10 @@ jit_var_inc_ref_int(38): 3
 jit_var_new(41 <- 38): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(41): 1
 jit_var_inc_ref_ext(38): 2
+jit_var_schedule(39)
+jit_var_schedule(40)
+jit_var_schedule(41)
+jit_var_schedule(38)
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r4 -> 35

@@ -15,17 +15,13 @@
 #endif
 
 #include <tsl/robin_map.h>
+#include <xxh3.h>
 
 #if defined (_MSC_VER)
 #  pragma warning (pop)
 #endif
 
 #include <string.h>
-
-extern "C" {
-    extern unsigned long long XXH64(const void *ptr, size_t size,
-                                    unsigned long long seed);
-}
 
 #if !defined(likely)
 #  if !defined(_MSC_VER)
@@ -64,7 +60,7 @@ struct pair_hash {
 };
 
 inline size_t hash(const void *ptr, size_t size, size_t seed = 0) {
-    return (size_t) XXH64(ptr, size, (unsigned long long) seed);
+    return (size_t) XXH3_64bits_withSeed(ptr, size, (unsigned long long) seed);
 }
 
 inline size_t hash_str(const char *str, size_t seed = 0) {

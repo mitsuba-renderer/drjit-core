@@ -11,6 +11,8 @@ jit_var_inc_ref_int(1): 2
 jit_var_inc_ref_int(2): 2
 jit_var_new(4 <- 1, 2): max.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(4): 1
+jit_var_schedule(3)
+jit_var_schedule(4)
 jit_eval(): begin.
 jit_assemble(size=1): register map:
    - %r4 -> 1 [scalar]

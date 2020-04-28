@@ -31,6 +31,8 @@ jit_var_inc_ref_int(5): 1
 jit_var_new(6 <- 4, 2, 5): fma.rn.ftz.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(5): 0
+jit_var_schedule(4)
+jit_var_schedule(6)
 jit_eval(): begin.
 jit_assemble(size=4): register map:
    - %f4 -> 1 [in]
@@ -178,6 +180,8 @@ jit_var_inc_ref_int(11): 1
 jit_var_new(12 <- 10, 8, 11): fma.rn.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(12): 1
 jit_var_dec_ref_ext(11): 0
+jit_var_schedule(10)
+jit_var_schedule(12)
 jit_eval(): begin.
 jit_assemble(size=4): register map:
    - %d4 -> 7 [in]

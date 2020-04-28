@@ -6,6 +6,7 @@ jit_var_dec_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
 jit_var_new(2 <- 1): $r0 = sub <$w x $t0> $z, $r1
 jit_var_inc_ref_ext(2): 1
+jit_var_schedule(2)
 jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0

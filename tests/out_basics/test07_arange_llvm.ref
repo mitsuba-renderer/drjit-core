@@ -23,6 +23,8 @@ jit_var_dec_ref_ext(4): 0
 jit_var_dec_ref_ext(3): 0
 jit_var_dec_ref_ext(2): 1
 jit_var_dec_ref_ext(2): 0
+jit_var_schedule(1)
+jit_var_schedule(6)
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r0 -> 1 [out]
@@ -162,6 +164,8 @@ jit_var_dec_ref_ext(12): 0
 jit_var_dec_ref_ext(11): 0
 jit_var_dec_ref_ext(10): 0
 jit_var_dec_ref_ext(9): 0
+jit_var_schedule(8)
+jit_var_schedule(14)
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
    - %r0 -> 7
