@@ -236,9 +236,9 @@ void jitc_var_set_label(uint32_t index, const char *label) {
     jit_var_set_label(index, label);
 }
 
-uint32_t jitc_var_map(VarType type, void *ptr, uint32_t size, int free) {
+uint32_t jitc_var_map(VarType type, int cuda, void *ptr, uint32_t size, int free) {
     lock_guard guard(state.mutex);
-    return jit_var_map(type, ptr, size, free);
+    return jit_var_map(type, cuda, ptr, size, free);
 }
 
 uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index) {
@@ -246,40 +246,41 @@ uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index) {
     return jit_var_copy_ptr(ptr, index);
 }
 
-uint32_t jitc_var_copy(AllocType atype, VarType vtype, const void *value,
-                       uint32_t size) {
+uint32_t jitc_var_copy(AllocType atype, VarType vtype, int cuda,
+                       const void *value, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_var_copy(atype, vtype, value, size);
+    return jit_var_copy(atype, vtype, cuda, value, size);
 }
 
-uint32_t jitc_var_new_0(VarType type, const char *stmt, int stmt_static, uint32_t size) {
+uint32_t jitc_var_new_0(VarType type, const char *stmt, int stmt_static,
+                        int cuda, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_var_new_0(type, stmt, stmt_static, size);
+    return jit_var_new_0(type, stmt, stmt_static, cuda, size);
 }
 
 uint32_t jitc_var_new_1(VarType type, const char *stmt, int stmt_static,
-                        uint32_t arg1) {
+                        int cuda, uint32_t arg1) {
     lock_guard guard(state.mutex);
-    return jit_var_new_1(type, stmt, stmt_static, arg1);
+    return jit_var_new_1(type, stmt, stmt_static, cuda, arg1);
 }
 
 uint32_t jitc_var_new_2(VarType type, const char *stmt, int stmt_static,
-                        uint32_t arg1, uint32_t arg2) {
+                        int cuda, uint32_t arg1, uint32_t arg2) {
     lock_guard guard(state.mutex);
-    return jit_var_new_2(type, stmt, stmt_static, arg1, arg2);
+    return jit_var_new_2(type, stmt, stmt_static, cuda, arg1, arg2);
 }
 
 uint32_t jitc_var_new_3(VarType type, const char *stmt, int stmt_static,
-                        uint32_t arg1, uint32_t arg2, uint32_t arg3) {
+                        int cuda, uint32_t arg1, uint32_t arg2, uint32_t arg3) {
     lock_guard guard(state.mutex);
-    return jit_var_new_3(type, stmt, stmt_static, arg1, arg2, arg3);
+    return jit_var_new_3(type, stmt, stmt_static, cuda, arg1, arg2, arg3);
 }
 
 uint32_t jitc_var_new_4(VarType type, const char *stmt, int stmt_static,
-                        uint32_t arg1, uint32_t arg2, uint32_t arg3,
+                        int cuda, uint32_t arg1, uint32_t arg2, uint32_t arg3,
                         uint32_t arg4) {
     lock_guard guard(state.mutex);
-    return jit_var_new_4(type, stmt, stmt_static, arg1, arg2, arg3, arg4);
+    return jit_var_new_4(type, stmt, stmt_static, cuda, arg1, arg2, arg3, arg4);
 }
 
 void jitc_var_migrate(uint32_t index, AllocType type) {

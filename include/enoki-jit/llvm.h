@@ -77,7 +77,7 @@ struct LLVMArray {
             jitc_fail("Unsupported conversion!");
         }
 
-        m_index = jitc_var_new_1(Type, op, 1, v.index());
+        m_index = jitc_var_new_1(Type, op, 1, 0, v.index());
     }
 
     LLVMArray(Value value) {
@@ -117,7 +117,7 @@ struct LLVMArray {
             ? "$r0 = fadd <$w x $t0> $r1, $r2"
             : "$r0 = add <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
     }
 
     LLVMArray operator-(const LLVMArray &v) const {
@@ -128,7 +128,7 @@ struct LLVMArray {
             ? "$r0 = fsub <$w x $t0> $r1, $r2"
             : "$r0 = sub <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
     }
 
     LLVMArray operator*(const LLVMArray &v) const {
@@ -145,7 +145,7 @@ struct LLVMArray {
             ? "$r0 = fmul <$w x $t0> $r1, $r2"
             : "$r0 = mul <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
     }
 
     LLVMArray operator/(const LLVMArray &v) const {
@@ -165,7 +165,7 @@ struct LLVMArray {
         else
             op = "$r0 = udiv <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
     }
 
     LLVMArray operator/(Value value) const {
@@ -199,7 +199,7 @@ struct LLVMArray {
             op = "$r0 = fcmp ogt <$w x $t1> $r1, $r2";
 
         return LLVMArray<bool>::from_index(jitc_var_new_2(
-            LLVMArray<bool>::Type, op, 1, m_index, a.index()));
+            LLVMArray<bool>::Type, op, 1, 0, m_index, a.index()));
     }
 
     LLVMArray<bool> operator>=(const LLVMArray &a) const {
@@ -215,7 +215,7 @@ struct LLVMArray {
             op = "$r0 = fcmp oge <$w x $t1> $r1, $r2";
 
         return LLVMArray<bool>::from_index(jitc_var_new_2(
-            LLVMArray<bool>::Type, op, 1, m_index, a.index()));
+            LLVMArray<bool>::Type, op, 1, 0, m_index, a.index()));
     }
 
 
@@ -232,7 +232,7 @@ struct LLVMArray {
             op = "$r0 = fcmp olt <$w x $t1> $r1, $r2";
 
         return LLVMArray<bool>::from_index(jitc_var_new_2(
-            LLVMArray<bool>::Type, op, 1, m_index, a.index()));
+            LLVMArray<bool>::Type, op, 1, 0, m_index, a.index()));
     }
 
     LLVMArray<bool> operator<=(const LLVMArray &a) const {
@@ -248,7 +248,7 @@ struct LLVMArray {
             op = "$r0 = fcmp ole <$w x $t1> $r1, $r2";
 
         return LLVMArray<bool>::from_index(jitc_var_new_2(
-            LLVMArray<bool>::Type, op, 1, m_index, a.index()));
+            LLVMArray<bool>::Type, op, 1, 0, m_index, a.index()));
     }
 
     friend LLVMArray<bool> eq(const LLVMArray &a, const LLVMArray &b) {
@@ -257,7 +257,7 @@ struct LLVMArray {
                              : "$r0 = fcmp oeq <$w x $t1> $r1, $r2";
 
         return LLVMArray<bool>::from_index(jitc_var_new_2(
-            LLVMArray<bool>::Type, op, 1, a.index(), b.index()));
+            LLVMArray<bool>::Type, op, 1, 0, a.index(), b.index()));
     }
 
     friend LLVMArray<bool> neq(const LLVMArray &a, const LLVMArray &b) {
@@ -266,7 +266,7 @@ struct LLVMArray {
                              : "$r0 = fcmp one <$w x $t1> $r1, $r2";
 
         return LLVMArray<bool>::from_index(jitc_var_new_2(
-            LLVMArray<bool>::Type, op, 1, a.index(), b.index()));
+            LLVMArray<bool>::Type, op, 1, 0, a.index(), b.index()));
     }
 
     bool operator==(const LLVMArray &a) const {
@@ -291,7 +291,7 @@ struct LLVMArray {
             op = "$r0 = sub <$w x $t0> $z, $r1";
         }
 
-        return from_index(jitc_var_new_1(Type, op, 1, m_index));
+        return from_index(jitc_var_new_1(Type, op, 1, 0, m_index));
     }
 
     LLVMArray operator~() const {
@@ -301,7 +301,7 @@ struct LLVMArray {
                                "$r0_1 = xor <$w x $b0> $r0_0, $o0$n"
                                "$r0 = bitcast <$w x $b0> $r0_1 to <$w x $t0>";
 
-        return from_index(jitc_var_new_1(Type, op, 1, m_index));
+        return from_index(jitc_var_new_1(Type, op, 1, 0, m_index));
     }
 
     LLVMArray operator|(const LLVMArray &a) const {
@@ -320,7 +320,7 @@ struct LLVMArray {
                                "$r0_2 = or <$w x $b0> $r0_0, $r0_1"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, a.index()));
+        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -333,7 +333,7 @@ struct LLVMArray {
 
         using UInt = LLVMArray<uint_with_size_t<Value>>;
         UInt x = UInt::from_index(jitc_var_new_1(
-            UInt::Type, "$r0 = sext <$w x $t1> $r1 to <$w x $b0>", 1,
+            UInt::Type, "$r0 = sext <$w x $t1> $r1 to <$w x $b0>", 1, 0,
             m.index()));
 
         return *this | reinterpret_array<LLVMArray>(x);
@@ -355,7 +355,7 @@ struct LLVMArray {
                                "$r0_2 = and <$w x $b0> $r0_0, $r0_1"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, a.index()));
+        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -368,7 +368,7 @@ struct LLVMArray {
 
         using UInt = LLVMArray<uint_with_size_t<Value>>;
         UInt x = UInt::from_index(jitc_var_new_1(
-            UInt::Type, "$r0 = sext <$w x $t1> $r1 to <$w x $b0>", 1,
+            UInt::Type, "$r0 = sext <$w x $t1> $r1 to <$w x $b0>", 1, 0,
             m.index()));
 
         return *this & reinterpret_array<LLVMArray>(x);
@@ -390,12 +390,12 @@ struct LLVMArray {
                                "$r0_2 = xor <$w x $b0> $r0_0, $r0_1$n"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, a.index()));
+        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
     }
 
     LLVMArray operator<<(const LLVMArray<uint32_t> &v) const {
         return from_index(jitc_var_new_2(Type, "$r0 = shl <$w x $t0> $r1, $r2",
-                                         1, index(), v.index()));
+                                         1, 0, index(), v.index()));
     }
 
     LLVMArray operator>>(const LLVMArray<uint32_t> &v) const {
@@ -405,7 +405,7 @@ struct LLVMArray {
         else
             op = "$r0 = lshr <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, index(), v.index()));
+        return from_index(jitc_var_new_2(Type, op, 1, 0, index(), v.index()));
     }
 
     LLVMArray& operator+=(const LLVMArray &v) {
@@ -491,7 +491,7 @@ struct LLVMArray {
             jitc_raise("Unsupported operand type");
 
         return LLVMArray::from_index(jitc_var_new_1(Type,
-            "$r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)", 1,
+            "$r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
 
@@ -500,7 +500,7 @@ struct LLVMArray {
             jitc_raise("Unsupported operand type");
 
         return LLVMArray::from_index(jitc_var_new_1(Type,
-            "$r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)", 1,
+            "$r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
 
@@ -509,7 +509,7 @@ struct LLVMArray {
             jitc_raise("Unsupported operand type");
 
         return LLVMArray::from_index(jitc_var_new_1(Type,
-            "$r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)", 1,
+            "$r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
 
@@ -518,7 +518,7 @@ struct LLVMArray {
             jitc_raise("Unsupported operand type");
 
         return LLVMArray::from_index(jitc_var_new_1(Type,
-            "$r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)", 1,
+            "$r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
 
@@ -527,7 +527,7 @@ struct LLVMArray {
             jitc_raise("Unsupported operand type");
 
         return LLVMArray::from_index(jitc_var_new_1(Type,
-            "$r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)", 1,
+            "$r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
 
@@ -552,7 +552,7 @@ struct LLVMArray {
                 Type,
                 "$r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, "
                 "<$w x $t2> $r2, <$w x $t3> $r3)",
-                1, a.index(), b.index(), c.index()));
+                1, 0, a.index(), b.index(), c.index()));
         } else {
             return a*b + c;
         }
@@ -643,7 +643,7 @@ struct LLVMArray {
             "$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n"
             "$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, "
                 "<$w x i32> $z$n"
-            "$r0 = add <$w x $t0> $r0_2, $l0", 1, (uint32_t) size));
+            "$r0 = add <$w x $t0> $r0_2, $l0", 1, 0, (uint32_t) size));
     }
 
     static uint32_t mkfull_(Value value, uint32_t size) {
@@ -667,7 +667,7 @@ struct LLVMArray {
             "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z",
             value_ull);
 
-        return jitc_var_new_0(Type, value_str, 0, size);
+        return jitc_var_new_0(Type, value_str, 0, 0, size);
     }
 
 protected:
@@ -745,7 +745,7 @@ LLVMArray<Value> select(const LLVMArray<bool> &m,
     } else {
         return LLVMArray<Value>::from_index(jitc_var_new_3(
             LLVMArray<Value>::Type,
-            "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3", 1,
+            "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3", 1, 0,
             m.index(), t.index(), f.index()));
     }
 }
@@ -760,7 +760,7 @@ OutArray reinterpret_array(const LLVMArray<ValueIn> &input) {
 
     if (std::is_integral<ValueIn>::value != std::is_integral<ValueOut>::value) {
         return OutArray::from_index(jitc_var_new_1(
-            OutArray::Type, "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>", 1,
+            OutArray::Type, "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>", 1, 0,
             input.index()));
     } else {
         jitc_var_inc_ref_ext(input.index());
@@ -803,7 +803,7 @@ LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
     }
 
     return LLVMArray<Value>::from_index(jitc_var_new_2(
-        LLVMArray<Value>::Type, op, 1, a.index(), b.index()));
+        LLVMArray<Value>::Type, op, 1, 0, a.index(), b.index()));
 }
 
 template <typename Value>
@@ -841,7 +841,7 @@ LLVMArray<Value> max(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
     }
 
     return LLVMArray<Value>::from_index(jitc_var_new_2(
-        LLVMArray<Value>::Type, op, 1, a.index(), b.index()));
+        LLVMArray<Value>::Type, op, 1, 0, a.index(), b.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -870,7 +870,7 @@ OutArray jitc_llvm_f2i_cast(const LLVMArray<ValueIn> &a, int mode) {
              "x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S %i)",
              (SizeIn == 4 && SizeOut == 4) ? 4 : 3, in_t, out_t, mode);
 
-    return OutArray::from_index(jitc_var_new_1(OutArray::Type, op, 0, a.index()));
+    return OutArray::from_index(jitc_var_new_1(OutArray::Type, op, 0, 0, a.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -926,7 +926,7 @@ Array gather_impl(const void *src_ptr,
                 "$r0_1 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2$n"
                 "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
                 "(<$w x $t0*> $r0$S_1, i32 $s0, <$w x i1> $O, <$w x $t0> $z)",
-                1, base.index(), index.index());
+                1, 0, base.index(), index.index());
         else
             var = jitc_var_new_3(
                 Array::Type,
@@ -934,7 +934,7 @@ Array gather_impl(const void *src_ptr,
                 "$r0_1 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2$n"
                 "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
                 "(<$w x $t0*> $r0$S_1, i32 $s0, <$w x $t3> $r3, <$w x $t0> $z)",
-                1, base.index(), index.index(), mask.index());
+                1, 0, base.index(), index.index(), mask.index());
     } else {
         if (mask.is_literal_one())
             var = jitc_var_new_2(
@@ -945,7 +945,7 @@ Array gather_impl(const void *src_ptr,
                 "$r0_3 = call <$w x i32> @llvm.masked.gather.v$wi32"
                 "(<$w x i32*> $r0$S_2, i32 $s0, <$w x i1> $O, <$w x i32> $z)$n"
                 "$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>",
-                1, base.index(), index.index());
+                1, 0, base.index(), index.index());
         else
             var = jitc_var_new_3(
                 Array::Type,
@@ -955,7 +955,7 @@ Array gather_impl(const void *src_ptr,
                 "$r0_3 = call <$w x i32> @llvm.masked.gather.v$wi32"
                 "(<$w x i32*> $r0$S_2, i32 $s0, <$w x $t3> $r3, <$w x i32> $z)$n"
                 "$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>",
-                1, base.index(), index.index(), mask.index());
+                1, 0, base.index(), index.index(), mask.index());
     }
 
     return Array::from_index(var);
@@ -1013,7 +1013,7 @@ void scatter(LLVMArray<Value> &dst,
             "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
             "call void @llvm.masked.scatter.v$w$a2"
             "(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x i1> $O)",
-            1, base.index(), value.index(), index.index());
+            1, 0, base.index(), value.index(), index.index());
     } else {
         var = jitc_var_new_4(
             VarType::Invalid,
@@ -1021,7 +1021,7 @@ void scatter(LLVMArray<Value> &dst,
             "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
             "call void @llvm.masked.scatter.v$w$a2"
             "(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x $t4> $r4)",
-            1, base.index(), value.index(), index.index(), mask.index());
+            1, 0, base.index(), value.index(), index.index(), mask.index());
     }
 
     jitc_var_mark_scatter(var, dst.index());
@@ -1065,7 +1065,7 @@ void scatter_add(LLVMArray<Value> &dst,
         else
             op = "$0call void @ek.scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3)";
 
-        var = jitc_var_new_3(VarType::Invalid, op, 1, base.index(),
+        var = jitc_var_new_3(VarType::Invalid, op, 1, 0, base.index(),
                              value.index(), index.index());
     } else {
         const char *op;
@@ -1076,7 +1076,7 @@ void scatter_add(LLVMArray<Value> &dst,
         else
             op = "$0call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)";
 
-        var = jitc_var_new_4(VarType::Invalid, op, 1, base.index(),
+        var = jitc_var_new_4(VarType::Invalid, op, 1, 0, base.index(),
                              value.index(), index.index(), mask.index());
     }
 
@@ -1197,7 +1197,7 @@ Array popcnt(const LLVMArray<Value> &a) {
     return Array::from_index(jitc_var_new_1(
         Array::Type,
         "$r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)",
-        1, a.index()));
+        1, 0, a.index()));
 }
 
 template <typename Value, typename Array = LLVMArray<Value>>
@@ -1208,7 +1208,7 @@ Array lzcnt(const LLVMArray<Value> &a) {
     return Array::from_index(jitc_var_new_1(
         Array::Type,
         "$r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1$S 0)",
-        1, a.index()));
+        1, 0, a.index()));
 }
 
 template <typename Value, typename Array = LLVMArray<Value>>
@@ -1219,7 +1219,7 @@ Array tzcnt(const LLVMArray<Value> &a) {
     return Array::from_index(jitc_var_new_1(
         Array::Type,
         "$r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1$S 0)",
-        1, a.index()));
+        1, 0, a.index()));
 }
 
 template <typename T> void jitc_schedule(const LLVMArray<T> &a) {

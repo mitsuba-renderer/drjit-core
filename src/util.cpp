@@ -1052,7 +1052,7 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
 #endif
 
     // Register permutation variable with JIT backend and transfer ownership
-    uint32_t perm_var = jit_var_map(VarType::UInt32, perm, size, 1);
+    uint32_t perm_var = jit_var_map(VarType::UInt32, cuda, perm, size, 1);
 
     Variable v2;
     v2.type = (uint32_t) VarType::UInt32;

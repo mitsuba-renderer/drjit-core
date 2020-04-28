@@ -215,12 +215,16 @@ void jit_var_dec_ref_int(uint32_t index) {
 /// Append the given variable to the instruction trace and return its ID
 std::pair<uint32_t, Variable *> jit_var_new(Variable &v) {
     Stream *stream = active_stream;
-    if (unlikely(!stream))
+    if (unlikely(!stream)) {
         jit_raise("jit_var_new(): you must invoke jitc_set_device() to "
                   "choose a target device before performing computation using "
                   "the JIT compiler.");
-
-    v.cuda = stream->cuda;
+    } else if (unlikely(v.cuda != stream->cuda)) {
+        jit_raise("jit_var_new(): attempted to issue %s computation "
+                  "to the %s backend! You must invoke jit_set_device() to set "
+                  "the right backend!", v.cuda ? "CUDA" : "LLVM",
+                  stream->cuda ? "CUDA" : "LLVM");
+    }
 
     CSECache::iterator key_it;
     bool disable_cse = v.stmt == nullptr || v.direct_pointer,
@@ -305,13 +309,14 @@ void jit_var_set_label(uint32_t index, const char *label_) {
 
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_var_new_0(VarType type, const char *stmt, int stmt_static,
-                       uint32_t size) {
+                       int cuda, uint32_t size) {
     Variable v;
     v.type = (uint32_t) type;
     v.size = size;
     v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v.tsize = 1;
     v.free_stmt = stmt_static == 0;
+    v.cuda = cuda;
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_var_new(v);
@@ -326,7 +331,7 @@ uint32_t jit_var_new_0(VarType type, const char *stmt, int stmt_static,
 
 /// Append a variable to the instruction trace (1 operand)
 uint32_t jit_var_new_1(VarType type, const char *stmt, int stmt_static,
-                       uint32_t op1) {
+                       int cuda, uint32_t op1) {
     if (unlikely(op1 == 0))
         jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
@@ -340,6 +345,7 @@ uint32_t jit_var_new_1(VarType type, const char *stmt, int stmt_static,
     v.dep[0] = op1;
     v.tsize = 1 + v1->tsize;
     v.free_stmt = stmt_static == 0;
+    v.cuda = cuda;
 
     if (unlikely(v1->pending_scatter)) {
         jit_eval();
@@ -362,7 +368,7 @@ uint32_t jit_var_new_1(VarType type, const char *stmt, int stmt_static,
 
 /// Append a variable to the instruction trace (2 operands)
 uint32_t jit_var_new_2(VarType type, const char *stmt, int stmt_static,
-                            uint32_t op1, uint32_t op2) {
+                       int cuda, uint32_t op1, uint32_t op2) {
     if (unlikely(op1 == 0 || op2 == 0))
         jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
@@ -378,6 +384,7 @@ uint32_t jit_var_new_2(VarType type, const char *stmt, int stmt_static,
     v.dep[1] = op2;
     v.tsize = 1 + v1->tsize + v2->tsize;
     v.free_stmt = stmt_static == 0;
+    v.cuda = cuda;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size))) {
@@ -408,7 +415,7 @@ uint32_t jit_var_new_2(VarType type, const char *stmt, int stmt_static,
 
 /// Append a variable to the instruction trace (3 operands)
 uint32_t jit_var_new_3(VarType type, const char *stmt, int stmt_static,
-                       uint32_t op1, uint32_t op2, uint32_t op3) {
+                       int cuda, uint32_t op1, uint32_t op2, uint32_t op3) {
     if (unlikely(op1 == 0 || op2 == 0 || op3 == 0))
         jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
@@ -426,6 +433,7 @@ uint32_t jit_var_new_3(VarType type, const char *stmt, int stmt_static,
     v.dep[2] = op3;
     v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize;
     v.free_stmt = stmt_static == 0;
+    v.cuda = cuda;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size) ||
@@ -458,7 +466,8 @@ uint32_t jit_var_new_3(VarType type, const char *stmt, int stmt_static,
 
 /// Append a variable to the instruction trace (4 operands)
 uint32_t jit_var_new_4(VarType type, const char *stmt, int stmt_static,
-                       uint32_t op1, uint32_t op2, uint32_t op3, uint32_t op4) {
+                       int cuda, uint32_t op1, uint32_t op2, uint32_t op3,
+                       uint32_t op4) {
     if (unlikely(op1 == 0 || op2 == 0 || op3 == 0 || op4 == 0))
         jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
@@ -478,6 +487,7 @@ uint32_t jit_var_new_4(VarType type, const char *stmt, int stmt_static,
     v.dep[3] = op4;
     v.tsize = 1 + v1->tsize + v2->tsize + v3->tsize + v4->tsize;
     v.free_stmt = stmt_static == 0;
+    v.cuda = cuda;
 
     if (unlikely((v1->size != 1 && v1->size != v.size) ||
                  (v2->size != 1 && v2->size != v.size) ||
@@ -514,12 +524,9 @@ uint32_t jit_var_new_4(VarType type, const char *stmt, int stmt_static,
 }
 
 /// Register an existing variable with the JIT compiler
-uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free) {
+uint32_t jit_var_map(VarType type, int cuda, void *ptr, uint32_t size, int free) {
     if (unlikely(size == 0))
         jit_raise("jit_var_map: size must be nonzero!");
-
-    uintptr_t align =
-        std::min(64u, jit_llvm_vector_width * var_type_size[(int) type]);
 
     Variable v;
     v.type = (uint32_t) type;
@@ -527,8 +534,12 @@ uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free) {
     v.size = size;
     v.retain_data = free == 0;
     v.tsize = 1;
-    if (!active_stream->cuda)
+    v.cuda = cuda;
+    if (cuda == 0) {
+        uintptr_t align =
+            std::min(64u, jit_llvm_vector_width * var_type_size[(int) type]);
         v.unaligned = uintptr_t(ptr) % align != 0;
+    }
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_var_new(v);
@@ -541,12 +552,20 @@ uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free) {
 }
 
 /// Copy a memory region onto the device and return its variable index
-uint32_t jit_var_copy(AllocType atype, VarType vtype, const void *ptr, uint32_t size) {
+uint32_t jit_var_copy(AllocType atype, VarType vtype, int cuda, const void *ptr,
+                      uint32_t size) {
     Stream *stream = active_stream;
 
-    if (unlikely(!stream))
+    if (unlikely(!stream)) {
         jit_raise("jit_var_copy(): you must invoke jitc_set_device() to "
                   "choose a target device before using this function.");
+    } else if (unlikely(cuda != stream->cuda)) {
+        jit_raise(
+            "jit_var_copy(): attempted to copy to a %s array while the %s "
+            "backend was active! You must invoke jit_set_device() to set "
+            "the right backend!",
+            cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
+    }
 
     size_t total_size = (size_t) size * (size_t) var_type_size[(int) vtype];
     void *target_ptr;
@@ -581,7 +600,7 @@ uint32_t jit_var_copy(AllocType atype, VarType vtype, const void *ptr, uint32_t 
         }
     }
 
-    uint32_t index = jit_var_map(vtype, target_ptr, size, true);
+    uint32_t index = jit_var_map(vtype, cuda, target_ptr, size, true);
     jit_log(Debug, "jit_var_copy(%u, size=%u)", index, size);
     return index;
 }
@@ -603,6 +622,7 @@ uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index) {
     v.retain_data = true;
     v.dep[0] = index;
     v.direct_pointer = true;
+    v.cuda = active_stream->cuda;
 
     jit_var_inc_ref_ext(index);
 
@@ -865,7 +885,7 @@ const char *jit_var_str(uint32_t index) {
     if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_str(): attempted to stringify a %s variable "
                   "while the %s backend was activated! You must invoke "
-                  "jit_set_device() before!",
+                  "jit_set_device() to set the right backend!",
                   v->cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
     else if (unlikely(v->pending_scatter))
         jit_raise("jit_var_str(): element remains dirty after evaluation!");
@@ -924,8 +944,8 @@ void jit_var_schedule(uint32_t index) {
     if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_schedule(): attempted to schedule a %s variable "
                   "while the %s backend was activated! You must invoke "
-                  "jit_set_device() before!", v->cuda ? "CUDA" : "LLVM",
-                  stream->cuda ? "CUDA" : "LLVM");
+                  "jit_set_device() to set the right backend!",
+                  v->cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
 
 
     if (v->data == nullptr && !v->direct_pointer) {
@@ -945,8 +965,8 @@ void jit_var_eval(uint32_t index) {
     if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_eval(): attempted to evaluate a %s variable "
                   "while the %s backend was activated! You must invoke "
-                  "jit_set_device() before!", v->cuda ? "CUDA" : "LLVM",
-                  stream->cuda ? "CUDA" : "LLVM");
+                  "jit_set_device() to set the right backend!",
+                  v->cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
 
     bool unevaluated = v->data == nullptr && !v->direct_pointer;
 

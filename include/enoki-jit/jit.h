@@ -580,6 +580,9 @@ JITC_CONSTEXPR int jitc_is_mask(enum VarType type) {
  * \param type
  *    Type of the variable to be created, see \ref VarType for details.
  *
+ * \param cuda
+ *    Is this a CUDA variable?
+ *
  * \param ptr
  *    Point of the memory region
  *
@@ -592,8 +595,8 @@ JITC_CONSTEXPR int jitc_is_mask(enum VarType type) {
  *
  * \sa jitc_var_copy()
  */
-extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
-                                         uint32_t size, int free);
+extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, int cuda,
+                                         void *ptr, uint32_t size, int free);
 
 
 /**
@@ -606,6 +609,9 @@ extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
  * \param vtype
  *    Type of the variable to be created, see \ref VarType for details.
  *
+ * \param cuda
+ *    Is this a CUDA variable?
+ *
  * \param ptr
  *    Point of the memory region
  *
@@ -616,6 +622,7 @@ extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, void *ptr,
  */
 extern JITC_EXPORT uint32_t jitc_var_copy(enum AllocType atype,
                                           enum VarType vtype,
+                                          int cuda,
                                           const void *ptr,
                                           uint32_t size);
 
@@ -682,18 +689,24 @@ extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index);
  *    executable, it is not necessary to make a copy. In this case, set
  *    <tt>stmt_static == 1</tt>, and <tt>0</tt> otherwise.
  *
+ * \param cuda
+ *    Specifies whether 'stmt' contains a CUDA PTX (<tt>cuda == 1</tt>) or LLVM
+ *    IR (<tt>cuda == 0</tt>) instruction.
+ *
  * \param size
  *    Size of the resulting variable. The size is automatically inferred from
  *    the operands and must only be specified for the zero-argument form.
  */
 extern JITC_EXPORT uint32_t jitc_var_new_0(enum VarType type,
                                            const char *stmt,
+                                           int cuda,
                                            int stmt_static,
                                            uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
 extern JITC_EXPORT uint32_t jitc_var_new_1(enum VarType type,
                                            const char *stmt,
+                                           int cuda,
                                            int stmt_static,
                                            uint32_t op1);
 
@@ -701,6 +714,7 @@ extern JITC_EXPORT uint32_t jitc_var_new_1(enum VarType type,
 extern JITC_EXPORT uint32_t jitc_var_new_2(enum VarType type,
                                            const char *stmt,
                                            int stmt_static,
+                                           int cuda,
                                            uint32_t op1,
                                            uint32_t op2);
 
@@ -708,6 +722,7 @@ extern JITC_EXPORT uint32_t jitc_var_new_2(enum VarType type,
 extern JITC_EXPORT uint32_t jitc_var_new_3(enum VarType type,
                                            const char *stmt,
                                            int stmt_static,
+                                           int cuda,
                                            uint32_t op1,
                                            uint32_t op2,
                                            uint32_t op3);
@@ -716,6 +731,7 @@ extern JITC_EXPORT uint32_t jitc_var_new_3(enum VarType type,
 extern JITC_EXPORT uint32_t jitc_var_new_4(enum VarType type,
                                            const char *stmt,
                                            int stmt_static,
+                                           int cuda,
                                            uint32_t op1,
                                            uint32_t op2,
                                            uint32_t op3,

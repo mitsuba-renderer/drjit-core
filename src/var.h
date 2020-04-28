@@ -21,18 +21,21 @@ extern Variable *jit_var(uint32_t index);
 extern uint32_t jit_var_new_0(VarType type,
                               const char *stmt,
                               int stmt_static,
+                              int cuda,
                               uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
 extern uint32_t jit_var_new_1(VarType type,
                               const char *stmt,
                               int stmt_static,
+                              int cuda,
                               uint32_t op1);
 
 /// Append a variable to the instruction trace (2 operands)
 extern uint32_t jit_var_new_2(VarType type,
                               const char *stmt,
                               int stmt_static,
+                              int cuda,
                               uint32_t op1,
                               uint32_t op2);
 
@@ -40,6 +43,7 @@ extern uint32_t jit_var_new_2(VarType type,
 extern uint32_t jit_var_new_3(VarType type,
                               const char *stmt,
                               int stmt_static,
+                              int cuda,
                               uint32_t op1,
                               uint32_t op2,
                               uint32_t op3);
@@ -48,20 +52,22 @@ extern uint32_t jit_var_new_3(VarType type,
 extern uint32_t jit_var_new_4(VarType type,
                               const char *stmt,
                               int stmt_static,
+                              int cuda,
                               uint32_t op1,
                               uint32_t op2,
                               uint32_t op3,
                               uint32_t op4);
 
 /// Register an existing variable with the JIT compiler
-extern uint32_t jit_var_map(VarType type, void *ptr, uint32_t size, int free);
+extern uint32_t jit_var_map(VarType type, int cuda, void *ptr, uint32_t size,
+                            int free);
 
 /// Register pointer literal as a special variable within the JIT compiler
 extern uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jit_var_copy(AllocType atype, VarType vtype, const void *ptr,
-                             uint32_t size);
+extern uint32_t jit_var_copy(AllocType atype, VarType vtype, int cuda,
+                             const void *ptr, uint32_t size);
 
 /// Increase the internal reference count of a given variable
 extern void jit_var_inc_ref_int(uint32_t index, Variable *v);

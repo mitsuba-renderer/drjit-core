@@ -57,7 +57,7 @@ struct CUDAArray {
         else
             op = "cvt.$t0.$t1 $r0, $r1";
 
-        m_index = jitc_var_new_1(Type, op, 1, v.index());
+        m_index = jitc_var_new_1(Type, op, 1, 1, v.index());
     }
 
     CUDAArray(Value value) {
@@ -97,7 +97,7 @@ struct CUDAArray {
                              ? "add.ftz.$t0 $r0, $r1, $r2"
                              : "add.$t0 $r0, $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, 1, m_index, v.m_index));
     }
 
     CUDAArray operator-(const CUDAArray &v) const {
@@ -108,7 +108,7 @@ struct CUDAArray {
                              ? "sub.ftz.$t0 $r0, $r1, $r2"
                              : "sub.$t0 $r0, $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, 1, m_index, v.m_index));
     }
 
     CUDAArray operator*(const CUDAArray &v) const {
@@ -128,7 +128,7 @@ struct CUDAArray {
         else
             op = "mul.lo.$t0 $r0, $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, 1, m_index, v.m_index));
     }
 
     CUDAArray operator/(const CUDAArray &v) const {
@@ -147,7 +147,7 @@ struct CUDAArray {
         else
             op = "div.$t0 $r0, $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(Type, op, 1, 1, m_index, v.m_index));
     }
 
     CUDAArray operator/(Value value) const {
@@ -177,7 +177,7 @@ struct CUDAArray {
                              : "setp.hi.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, m_index, a.index()));
+            CUDAArray<bool>::Type, op, 1, 1, m_index, a.index()));
     }
 
     CUDAArray<bool> operator>=(const CUDAArray &a) const {
@@ -189,7 +189,7 @@ struct CUDAArray {
                              : "setp.hs.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, m_index, a.index()));
+            CUDAArray<bool>::Type, op, 1, 1, m_index, a.index()));
     }
 
 
@@ -202,7 +202,7 @@ struct CUDAArray {
                              : "setp.lo.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, m_index, a.index()));
+            CUDAArray<bool>::Type, op, 1, 1, m_index, a.index()));
     }
 
     CUDAArray<bool> operator<=(const CUDAArray &a) const {
@@ -214,7 +214,7 @@ struct CUDAArray {
                              : "setp.lo.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, m_index, a.index()));
+            CUDAArray<bool>::Type, op, 1, 1, m_index, a.index()));
     }
 
     friend CUDAArray<bool> eq(const CUDAArray &a, const CUDAArray &b) {
@@ -224,7 +224,7 @@ struct CUDAArray {
               "not.$t1 $r0, $r0";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, a.index(), b.index()));
+            CUDAArray<bool>::Type, op, 1, 1, a.index(), b.index()));
     }
 
     friend CUDAArray<bool> neq(const CUDAArray &a, const CUDAArray &b) {
@@ -233,7 +233,7 @@ struct CUDAArray {
               "xor.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, a.index(), b.index()));
+            CUDAArray<bool>::Type, op, 1, 1, a.index(), b.index()));
     }
 
     bool operator==(const CUDAArray &a) const {
@@ -252,11 +252,11 @@ struct CUDAArray {
                              ? "neg.ftz.$t0 $r0, $r1"
                              : "neg.$t0 $r0, $r1";
 
-        return from_index(jitc_var_new_1(Type, op, 1, m_index));
+        return from_index(jitc_var_new_1(Type, op, 1, 1, m_index));
     }
 
     CUDAArray operator~() const {
-        return from_index(jitc_var_new_1(Type, "not.$b0 $r0, $r1", 1, m_index));
+        return from_index(jitc_var_new_1(Type, "not.$b0 $r0, $r1", 1, 1, m_index));
     }
 
     CUDAArray operator|(const CUDAArray &a) const {
@@ -268,8 +268,8 @@ struct CUDAArray {
                 return a;
         }
 
-        return from_index(jitc_var_new_2(Type, "or.$b0 $r0, $r1, $r2", 1,
-                                         m_index, a.index()));
+        return from_index(jitc_var_new_2(Type, "or.$b0 $r0, $r1, $r2",
+                                         1, 1, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -280,8 +280,8 @@ struct CUDAArray {
         else if (m.is_literal_one())
             return CUDAArray(memcpy_cast<Value>(uint_with_size_t<Value>(-1)));
 
-        return from_index(jitc_var_new_2(Type, "selp.$b0 $r0, -1, $r1, $r2", 1,
-                                         index(), m.index()));
+        return from_index(jitc_var_new_2(Type, "selp.$b0 $r0, -1, $r1, $r2",
+                                         1, 1, index(), m.index()));
     }
 
     CUDAArray operator&(const CUDAArray &a) const {
@@ -293,8 +293,8 @@ struct CUDAArray {
                 return *this;
         }
 
-        return from_index(jitc_var_new_2(Type, "and.$b0 $r0, $r1, $r2", 1,
-                                         m_index, a.index()));
+        return from_index(jitc_var_new_2(Type, "and.$b0 $r0, $r1, $r2",
+                                         1, 1, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -305,8 +305,8 @@ struct CUDAArray {
         else if (m.is_literal_zero())
             return CUDAArray(Value(0));
 
-        return from_index(jitc_var_new_2(Type, "selp.$b0 $r0, $r1, 0, $r2", 1,
-                                         index(), m.index()));
+        return from_index(jitc_var_new_2(Type, "selp.$b0 $r0, $r1, 0, $r2",
+                                         1, 1, index(), m.index()));
     }
 
     CUDAArray operator^(const CUDAArray &a) const {
@@ -318,13 +318,13 @@ struct CUDAArray {
                 return *this;
         }
 
-        return from_index(jitc_var_new_2(Type, "xor.$b0 $r0, $r1, $r2", 1,
-                                         m_index, a.index()));
+        return from_index(jitc_var_new_2(Type, "xor.$b0 $r0, $r1, $r2",
+                                         1, 1, m_index, a.index()));
     }
 
     CUDAArray operator<<(const CUDAArray<uint32_t> &v) const {
         return from_index(jitc_var_new_2(
-            Type, "shl.$b0 $r0, $r1, $r2", 1, index(), v.index()));
+            Type, "shl.$b0 $r0, $r1, $r2", 1, 1, index(), v.index()));
     }
 
     CUDAArray operator>>(const CUDAArray<uint32_t> &v) const {
@@ -335,7 +335,7 @@ struct CUDAArray {
             op = "shr.$b0 $r0, $r1, $r2";
 
         return from_index(
-            jitc_var_new_2(Type, op, 1, index(), v.index()));
+            jitc_var_new_2(Type, op, 1, 1, index(), v.index()));
     }
 
     CUDAArray& operator+=(const CUDAArray &v) {
@@ -415,7 +415,7 @@ struct CUDAArray {
                              : "abs.$t0 $r0, $r1";
 
         return CUDAArray::from_index(
-            jitc_var_new_1(Type, op, 1, a.index()));
+            jitc_var_new_1(Type, op, 1, 1, a.index()));
     }
 
     friend CUDAArray sqrt(const CUDAArray &a) {
@@ -426,7 +426,7 @@ struct CUDAArray {
                              ? "sqrt.rn.ftz.$t0 $r0, $r1"
                              : "sqrt.rn.$t0 $r0, $r1";
 
-        return CUDAArray::from_index(jitc_var_new_1(Type, op, 1, a.index()));
+        return CUDAArray::from_index(jitc_var_new_1(Type, op, 1, 1, a.index()));
     }
 
     friend CUDAArray round(const CUDAArray &a) {
@@ -434,7 +434,7 @@ struct CUDAArray {
             jitc_raise("Unsupported operand type");
 
         return CUDAArray::from_index(jitc_var_new_1(Type,
-            "cvt.rni.$t0.$t0 $r0, $r1", 1, a.index()));
+            "cvt.rni.$t0.$t0 $r0, $r1", 1, 1, a.index()));
     }
 
     friend CUDAArray floor(const CUDAArray &a) {
@@ -442,7 +442,7 @@ struct CUDAArray {
             jitc_raise("Unsupported operand type");
 
         return CUDAArray::from_index(jitc_var_new_1(Type,
-            "cvt.rmi.$t0.$t0 $r0, $r1", 1, a.index()));
+            "cvt.rmi.$t0.$t0 $r0, $r1", 1, 1, a.index()));
     }
 
     friend CUDAArray ceil(const CUDAArray &a) {
@@ -450,7 +450,7 @@ struct CUDAArray {
             jitc_raise("Unsupported operand type");
 
         return CUDAArray::from_index(jitc_var_new_1(Type,
-            "cvt.rpi.$t0.$t0 $r0, $r1", 1, a.index()));
+            "cvt.rpi.$t0.$t0 $r0, $r1", 1, 1, a.index()));
     }
 
     friend CUDAArray trunc(const CUDAArray &a) {
@@ -458,7 +458,7 @@ struct CUDAArray {
             jitc_raise("Unsupported operand type");
 
         return CUDAArray::from_index(jitc_var_new_1(Type,
-            "cvt.rzi.$t0.$t0 $r0, $r1", 1, a.index()));
+            "cvt.rzi.$t0.$t0 $r0, $r1", 1, 1, a.index()));
     }
 
     friend CUDAArray fmadd(const CUDAArray &a, const CUDAArray &b,
@@ -486,7 +486,7 @@ struct CUDAArray {
             op = "mad.lo.$t0 $r0, $r1, $r2, $r3";
 
         return CUDAArray::from_index(
-            jitc_var_new_3(Type, op, 1, a.index(), b.index(), c.index()));
+            jitc_var_new_3(Type, op, 1, 1, a.index(), b.index(), c.index()));
     }
 
     CUDAArray& schedule() {
@@ -617,7 +617,7 @@ struct CUDAArray {
         memcpy(&value_uint, &value, sizeof(Value));
         snprintf(value_str, 48, fmt, value_uint);
 
-        return jitc_var_new_0(Type, value_str, 0, size);
+        return jitc_var_new_0(Type, value_str, 0, 1, size);
     }
 
 protected:
@@ -657,7 +657,7 @@ Array arange(ssize_t start, ssize_t stop, ssize_t step) {
 
     size_t size = size_t((stop - start + step - (step > 0 ? 1 : -1)) / step);
     UInt32 index = UInt32::from_index(
-        jitc_var_new_0(VarType::UInt32, "mov.u32 $r0, $i", 1, (uint32_t) size));
+        jitc_var_new_0(VarType::UInt32, "mov.u32 $r0, $i", 1, 1, (uint32_t) size));
 
     if (start == 0 && step == 1)
         return Array(index);
@@ -678,7 +678,7 @@ Array linspace(typename Array::Value min, typename Array::Value max, size_t size
     using Value = typename Array::Value;
 
     UInt32 index = UInt32::from_index(
-        jitc_var_new_0(VarType::UInt32, "mov.u32 $r0, $i", 1, (uint32_t) size));
+        jitc_var_new_0(VarType::UInt32, "mov.u32 $r0, $i", 1, 1, (uint32_t) size));
 
     Value step = (max - min) / Value(size - 1);
     return fmadd(Array(index), Array(step), Array(min));
@@ -695,8 +695,8 @@ CUDAArray<Value> select(const CUDAArray<bool> &m,
         return f;
     } else if (!std::is_same<Value, bool>::value) {
         return CUDAArray<Value>::from_index(jitc_var_new_3(
-            CUDAArray<Value>::Type, "selp.$t0 $r0, $r1, $r2, $r3", 1, t.index(),
-            f.index(), m.index()));
+            CUDAArray<Value>::Type, "selp.$t0 $r0, $r1, $r2, $r3", 1, 1,
+            t.index(), f.index(), m.index()));
     } else {
         return (m & t) | (~m & f);
     }
@@ -712,7 +712,7 @@ OutArray reinterpret_array(const CUDAArray<ValueIn> &input) {
 
     if (std::is_integral<ValueIn>::value != std::is_integral<ValueOut>::value) {
         return OutArray::from_index(jitc_var_new_1(
-            OutArray::Type, "mov.$b0 $r0, $r1", 1, input.index()));
+            OutArray::Type, "mov.$b0 $r0, $r1", 1, 1, input.index()));
     } else {
         jitc_var_inc_ref_ext(input.index());
         return OutArray::from_index(input.index());
@@ -726,7 +726,7 @@ CUDAArray<Value> min(const CUDAArray<Value> &a, const CUDAArray<Value> &b) {
                          : "min.$t0 $r0, $r1, $r2";
 
     return CUDAArray<Value>::from_index(jitc_var_new_2(
-        CUDAArray<Value>::Type, op, 1, a.index(), b.index()));
+        CUDAArray<Value>::Type, op, 1, 1, a.index(), b.index()));
 }
 
 template <typename Value>
@@ -736,7 +736,7 @@ CUDAArray<Value> max(const CUDAArray<Value> &a, const CUDAArray<Value> &b) {
                          : "max.$t0 $r0, $r1, $r2";
 
     return CUDAArray<Value>::from_index(jitc_var_new_2(
-        CUDAArray<Value>::Type, op, 1, a.index(), b.index()));
+        CUDAArray<Value>::Type, op, 1, 1, a.index(), b.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -746,7 +746,7 @@ OutArray round2int(const CUDAArray<ValueIn> &a) {
         jitc_raise("Unsupported operand type");
 
     return OutArray::from_index(jitc_var_new_1(
-        OutArray::Type, "cvt.rni.$t0.$t1 $r0, $r1", 1, a.index()));
+        OutArray::Type, "cvt.rni.$t0.$t1 $r0, $r1", 1, 1, a.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -756,7 +756,7 @@ OutArray floor2int(const CUDAArray<ValueIn> &a) {
         jitc_raise("Unsupported operand type");
 
     return OutArray::from_index(jitc_var_new_1(
-        OutArray::Type, "cvt.rmi.$t0.$t1 $r0, $r1", 1, a.index()));
+        OutArray::Type, "cvt.rmi.$t0.$t1 $r0, $r1", 1, 1, a.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -766,7 +766,7 @@ OutArray ceil2int(const CUDAArray<ValueIn> &a) {
         jitc_raise("Unsupported operand type");
 
     return OutArray::from_index(jitc_var_new_1(
-        OutArray::Type, "cvt.rpi.$t0.$t1 $r0, $r1", 1, a.index()));
+        OutArray::Type, "cvt.rpi.$t0.$t1 $r0, $r1", 1, 1, a.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -776,7 +776,7 @@ OutArray trunc2int(const CUDAArray<ValueIn> &a) {
         jitc_raise("Unsupported operand type");
 
     return OutArray::from_index(jitc_var_new_1(
-        OutArray::Type, "cvt.rzi.$t0.$t1 $r0, $r1", 1, a.index()));
+        OutArray::Type, "cvt.rzi.$t0.$t1 $r0, $r1", 1, 1, a.index()));
 }
 
 
@@ -813,7 +813,7 @@ Array gather_impl(const void *src_ptr,
                                         "add.$t1 %rd3, %rd3, $r1$n"
                                         "ld.global.nc.u8 %w0, [%rd3]$n"
                                         "setp.ne.u16 $r0, %w0, 0",
-                                  1, base.index(), index.index());
+                                  1, 1, base.index(), index.index());
     } else {
         var = jitc_var_new_3(Array::Type,
                                   !std::is_same<Value, bool>::value
@@ -826,7 +826,7 @@ Array gather_impl(const void *src_ptr,
                                         "@$r3 ld.global.nc.u8 %w0, [$r1]$n"
                                         "@!$r3 mov.u16 %w0, 0$n"
                                         "setp.ne.u16 $r0, %w0, 0",
-                                  1, base.index(), index.index(), mask.index());
+                                  1, 1, base.index(), index.index(), mask.index());
     }
 
     return Array::from_index(var);
@@ -890,7 +890,7 @@ void scatter(CUDAArray<Value> &dst,
                                       "mul.wide.$t3 %rd3, $r3, $s2$n"
                                       "add.$t1 %rd3, %rd3, $r1$n"
                                       "st.global.$t2 [%rd3], $r2",
-                                      1, base.index(), value.index(),
+                                      1, 1, base.index(), value.index(),
                                       index.index());
         } else {
             var = jitc_var_new_3(VarType::Invalid,
@@ -898,7 +898,7 @@ void scatter(CUDAArray<Value> &dst,
                                       "add.$t1 %rd3, %rd3, $r1$n"
                                       "selp.u16 %w0, 1, 0, $r2$n"
                                       "st.global.u8 [%rd3], %w0",
-                                      1, base.index(), value.index(),
+                                      1, 1, base.index(), value.index(),
                                       index.index());
         }
     } else {
@@ -907,7 +907,7 @@ void scatter(CUDAArray<Value> &dst,
                                       "mul.wide.$t3 %rd3, $r3, $s2$n"
                                       "add.$t1 %rd3, %rd3, $r1$n"
                                       "@$r4 st.global.$t2 [%rd3], $r2",
-                                      1, base.index(), value.index(),
+                                      1, 1, base.index(), value.index(),
                                       index.index(), mask.index());
         } else {
             var = jitc_var_new_4(VarType::Invalid,
@@ -915,7 +915,7 @@ void scatter(CUDAArray<Value> &dst,
                                       "add.$t1 %rd3, %rd3, $r1$n"
                                       "selp.u16 %w0, 1, 0, $r2$n"
                                       "@$r4 st.global.u8 [%rd3], %w0",
-                                      1, base.index(), value.index(),
+                                      1, 1, base.index(), value.index(),
                                       index.index(), mask.index());
         }
     }
@@ -960,14 +960,14 @@ void scatter_add(CUDAArray<Value> &dst,
                                   "mul.wide.$t3 %rd3, $r3, $s2$n"
                                   "add.$t1 %rd3, %rd3, $r1$n"
                                   "red.global.add.$t2 [%rd3], $r2",
-                                  1, base.index(), value.index(),
+                                  1, 1, base.index(), value.index(),
                                   index.index());
     } else {
         var = jitc_var_new_4(VarType::Invalid,
                                   "mul.wide.$t3 %rd3, $r3, $s2$n"
                                   "add.$t1 %rd3, %rd3, $r1$n"
                                   "@$r4 red.global.add.$t2 [%rd3], $r2",
-                                  1, base.index(), value.index(),
+                                  1, 1, base.index(), value.index(),
                                   index.index(), mask.index());
     }
 
@@ -1124,7 +1124,7 @@ Array popcnt(const CUDAArray<Value> &a) {
         jitc_raise("Unsupported operand type");
 
     return Array::from_index(
-        jitc_var_new_1(Array::Type, "popc.$b0 $r0, $r1", 1, a.index()));
+        jitc_var_new_1(Array::Type, "popc.$b0 $r0, $r1", 1, 1, a.index()));
 }
 
 template <typename Value, typename Array = CUDAArray<Value>>
@@ -1133,7 +1133,7 @@ Array lzcnt(const CUDAArray<Value> &a) {
         jitc_raise("Unsupported operand type");
 
     return Array::from_index(
-        jitc_var_new_1(Array::Type, "clz.$b0 $r0, $r1", 1, a.index()));
+        jitc_var_new_1(Array::Type, "clz.$b0 $r0, $r1", 1, 1, a.index()));
 }
 
 template <typename Value, typename Array = CUDAArray<Value>>
@@ -1142,7 +1142,7 @@ Array tzcnt(const CUDAArray<Value> &a) {
         jitc_raise("Unsupported operand type");
 
     return Array::from_index(jitc_var_new_1(
-        Array::Type, "brev.$b0 $r0, $r1$nclz.$b0 $r0, $r0", 1, a.index()));
+        Array::Type, "brev.$b0 $r0, $r1$nclz.$b0 $r0, $r0", 1, 1, a.index()));
 }
 
 template <typename T> void jitc_schedule(const CUDAArray<T> &a) {

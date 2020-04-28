@@ -75,11 +75,15 @@ void* jit_malloc(AllocType type, size_t size) {
         lock_guard guard(state.malloc_mutex);
         Stream *stream = active_stream;
 
-        if (type == AllocType::Device) {
-            if (unlikely(!stream || !stream->cuda))
+        if (type == AllocType::Device || type == AllocType::HostAsync) {
+            if (unlikely(!stream))
                 jit_raise(
-                    "jit_malloc(): you must specify an active CUDA device using "
-                    "jit_set_device() before allocating a device pointer!");
+                    "jit_malloc(): you must specify an active device using "
+                    "jit_set_device() before allocating a device/host-async memory!");
+            else if (unlikely(!stream->cuda == (type == AllocType::Device)))
+                jit_raise("jit_malloc(): you must specify the right backend "
+                          "via jit_set_device() before allocating a "
+                          "device/host-async memory!");
             ai.device = stream->device;
         }
 
