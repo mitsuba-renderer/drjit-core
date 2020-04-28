@@ -160,6 +160,11 @@ void jitc_sync_device() {
     jit_sync_device();
 }
 
+void jitc_sync_all_devices() {
+    lock_guard guard(state.mutex);
+    jit_sync_all_devices();
+}
+
 void *jitc_malloc(AllocType type, size_t size) {
     lock_guard guard(state.mutex);
     return jit_malloc(type, size);

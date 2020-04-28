@@ -235,37 +235,38 @@ void jit_free(void *ptr) {
     } else {
         Stream *stream = active_stream;
         bool cuda = ai.type != AllocType::HostAsync;
-        if (unlikely(!stream))
-            jit_raise("jit_free(): you must specify an active LLVM/CUDA device "
-                      "using jitc_set_device() before freeing a "
-                      "device/managed/host-pinned/host-async pointer!");
-        else if (unlikely(cuda != stream->cuda))
-            jit_raise("jit_free(): jitc_set_device() was previously called to "
-                      "activate the %s backend. Pointers to memory allocated via "
-                      "the %s backend cannot be freed in this state!",
-                      stream->cuda ? "CUDA" : "LLVM", cuda ? "CUDA" : "LLVM");
+        if (likely(stream && cuda == stream->cuda)) {
+            // Standard case -- free asynchronously
+            std::vector<std::pair<bool, void *>> alloc_unmap;
 
-        std::vector<std::pair<bool, void *>> alloc_unmap;
-
-        /* Acquire lock protecting 'stream->release_chain'
-           and 'alloc_unmap' */ {
-            lock_guard guard(state.malloc_mutex);
-            ReleaseChain *chain = stream->release_chain;
-            if (unlikely(!chain))
-                chain = stream->release_chain = new ReleaseChain();
-            chain->entries[ai].push_back(ptr);
-            if (stream->cuda)
-                alloc_unmap.swap(state.alloc_unmap);
-        }
-
-        if (stream->cuda) {
-            for (auto kv: alloc_unmap) {
-                cuda_check(cuMemHostUnregister(kv.second));
-                if (kv.first)
-                    jit_free(kv.second);
+            /* Acquire lock protecting 'stream->release_chain'
+               and 'alloc_unmap' */ {
+                lock_guard guard(state.malloc_mutex);
+                ReleaseChain *chain = stream->release_chain;
+                if (unlikely(!chain))
+                    chain = stream->release_chain = new ReleaseChain();
+                chain->entries[ai].push_back(ptr);
+                if (stream->cuda)
+                    alloc_unmap.swap(state.alloc_unmap);
             }
 
-            it = state.alloc_used.find(ptr);
+            if (stream->cuda) {
+                for (auto kv: alloc_unmap) {
+                    cuda_check(cuMemHostUnregister(kv.second));
+                    if (kv.first)
+                        jit_free(kv.second);
+                }
+
+                it = state.alloc_used.find(ptr);
+            }
+        } else {
+            /* This is bad -- freeing a pointer outside of an active
+               stream, or with the wrong backend activated. That pointer may
+               still be used in a kernel that is currently being executed
+               asynchronously. The only thing we can do at this point is to
+               flush all streams. */
+            jit_sync_all_devices();
+            state.alloc_free[ai].push_back(ptr);
         }
     }
 

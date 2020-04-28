@@ -190,19 +190,15 @@ extern JITC_EXPORT void jitc_set_parallel_dispatch(int enable);
 /// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
 extern JITC_EXPORT int jitc_parallel_dispatch();
 
-/**
- * \brief Wait for all computation on the current stream to finish
- *
- * No-op when the target device is the host CPU.
- */
+/// Wait for all computation on the current stream to finish
 extern JITC_EXPORT void jitc_sync_stream();
 
-/**
- * \brief Wait for all computation on the current device to finish
- *
- * No-op when the target device is the host CPU.
- */
+/// Wait for all computation on the current device to finish
 extern JITC_EXPORT void jitc_sync_device();
+
+/// Wait for all computation on the *all devices* to finish
+extern JITC_EXPORT void jitc_sync_all_devices();
+
 
 // ====================================================================
 //                        Logging infrastructure

@@ -310,6 +310,10 @@ void jit_set_device(int32_t device, uint32_t stream) {
 /// Wait for all computation on the current stream to finish
 void jit_sync_stream() {
     Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_sync_stream(): you must invoke jitc_set_device() to "
+                  "choose a target device and stream before synchronizing.");
+
     if (stream->cuda) {
         unlock_guard guard(state.mutex);
         cuda_check(cuStreamSynchronize(stream->handle));
@@ -324,6 +328,10 @@ void jit_sync_stream() {
 /// Wait for all computation on the current device to finish
 void jit_sync_device() {
     Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_sync_device(): you must invoke jitc_set_device() to "
+                  "choose a target device before synchronizing.");
+
     if (stream->cuda) {
         /* Release mutex while synchronizing */ {
             unlock_guard guard(state.mutex);
@@ -331,9 +339,39 @@ void jit_sync_device() {
         }
     } else {
 #if defined(ENOKI_ENABLE_TBB)
-        jit_fail("jit_sync_device() is not currently supported by LLVM+TBB. "
-                 "Use jit_sync_stream() instead.");
+        StreamMap streams = state.streams;
+        unlock_guard guard(state.mutex);
+        for (auto &kv: streams) {
+            Stream *stream = kv.second;
+            if (stream->cuda)
+                continue;
+            tbb_stream_sync(stream);
+        }
 #endif
+    }
+}
+
+void jit_sync_all_devices() {
+    StreamMap streams = state.streams;
+    unlock_guard guard(state.mutex);
+    for (auto &kv: streams) {
+        Stream *stream = kv.second;
+        if (stream->cuda) {
+            cuda_check(cuCtxSetCurrent(
+                state.devices[stream->device].context));
+            cuda_check(cuStreamSynchronize(stream->handle));
+        } else {
+#if defined(ENOKI_ENABLE_TBB)
+            tbb_stream_sync(stream);
+#endif
+        }
+    }
+
+    if (state.has_cuda) {
+        cuda_check(
+            cuCtxSetCurrent(active_stream && active_stream->cuda
+                                ? state.devices[active_stream->device].context
+                                : nullptr));
     }
 }
 

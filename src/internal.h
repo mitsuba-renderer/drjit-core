@@ -581,6 +581,9 @@ extern void jit_sync_stream();
 /// Wait for all computation on the current device to finish
 extern void jit_sync_device();
 
+/// Wait for all computation on *all devices* to finish
+extern void jit_sync_all_devices();
+
 /// Search for a shared library and dlopen it if possible
 void *jit_find_library(const char *fname, const char *glob_pat,
                        const char *env_var);
