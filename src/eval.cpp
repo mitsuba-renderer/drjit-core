@@ -158,10 +158,14 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
 
     buffer.put("    ");
 
-    while ((c = *s++) != '\0') {
-        if (c != '$') {
-            buffer.putc(c);
-        } else {
+    do {
+        const char *start = s;
+        while (c = *s, c != '\0' && c != '$')
+            s++;
+        buffer.put(start, s - start);
+
+        if (c == '$') {
+            s++;
             const char **prefix_table = nullptr, type = *s++;
             switch (type) {
                 case 'n': buffer.put(";\n    "); continue;
