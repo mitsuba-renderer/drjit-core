@@ -351,6 +351,7 @@ void jit_sync_device() {
     }
 }
 
+/// Wait for all computation on *all devices* to finish
 void jit_sync_all_devices() {
     StreamMap streams = state.streams;
     unlock_guard guard(state.mutex);
@@ -375,7 +376,7 @@ void jit_sync_all_devices() {
     }
 }
 
-
+/// Glob for a shared library and try to load the most recent version
 void *jit_find_library(const char *fname, const char *glob_pat,
                        const char *env_var) {
 #if !defined(_WIN32)
@@ -387,7 +388,7 @@ void *jit_find_library(const char *fname, const char *glob_pat,
 
     if (!handle & !env_var_val) {
         glob_t g;
-        if (glob(glob_pat, 0, nullptr, &g) == 0) {
+        if (glob(glob_pat, GLOB_BRACE, nullptr, &g) == 0) {
             const char *chosen = nullptr;
             if (g.gl_pathc > 1) {
                 jit_log(Info, "jit_find_library(): Multiple versions of "

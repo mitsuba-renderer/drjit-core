@@ -128,7 +128,7 @@ bool jit_cuda_init() {
               * cuda_glob = nullptr;
 #  elif defined(__linux__)
     const char *cuda_fname  = "libcuda.so",
-               *cuda_glob   = "/usr/lib/x86_64-linux-gnu/libcuda.so.*";
+               *cuda_glob   = "/usr/lib/{x86_64-linux-gnu,aarch64-linux-gnu}/libcuda.so.*";
 #  else
     const char *cuda_fname  = "libcuda.dylib",
                *cuda_glob   = cuda_fname;

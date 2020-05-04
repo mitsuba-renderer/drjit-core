@@ -87,7 +87,7 @@ struct LLVMArray {
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
     LLVMArray(Args&&... args) {
         Value data[] = { (Value) args... };
-        m_index = jitc_var_copy(AllocType::Host, Type, data,
+        m_index = jitc_var_copy(AllocType::Host, Type, 0, data,
                                 (uint32_t) sizeof...(Args));
     }
 
@@ -613,8 +613,8 @@ struct LLVMArray {
         if (jitc_var_int_ref(m_index) > 0) {
             eval();
             *this = from_index(
-                jitc_var_copy(AllocType::HostAsync, LLVMArray<Value>::Type, data(),
-                              (uint32_t) size()));
+                jitc_var_copy(AllocType::HostAsync, LLVMArray<Value>::Type, 0,
+                              data(), (uint32_t) size()));
         }
 
         jitc_var_write(m_index, offset, &value);
@@ -622,12 +622,12 @@ struct LLVMArray {
 
     static LLVMArray map(void *ptr, size_t size, bool free = false) {
         return from_index(
-            jitc_var_map(Type, ptr, (uint32_t) size, free ? 1 : 0));
+            jitc_var_map(Type, 0, ptr, (uint32_t) size, free ? 1 : 0));
     }
 
     static LLVMArray copy(const void *ptr, size_t size) {
         return from_index(
-            jitc_var_copy(AllocType::Host, Type, ptr, (uint32_t) size));
+            jitc_var_copy(AllocType::Host, Type, 0, ptr, (uint32_t) size));
     }
 
     static LLVMArray from_index(uint32_t index) {
@@ -684,7 +684,7 @@ template <typename Array,
 Array empty(size_t size) {
     size_t byte_size = size * sizeof(typename Array::Value);
     void *ptr = jitc_malloc(AllocType::HostAsync, byte_size);
-    return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
+    return Array::from_index(jitc_var_map(Array::Type, 0, ptr, (uint32_t) size, 1));
 }
 
 template <typename Array,
@@ -998,7 +998,8 @@ void scatter(LLVMArray<Value> &dst,
 
     if (jitc_var_int_ref(dst.index()) > 0) {
         dst = LLVMArray<Value>::from_index(jitc_var_copy(
-            AllocType::HostAsync, LLVMArray<Value>::Type, ptr, (uint32_t) dst.size()));
+            AllocType::HostAsync, LLVMArray<Value>::Type, 0,
+            ptr, (uint32_t) dst.size()));
         ptr = dst.data();
     }
 
@@ -1048,7 +1049,8 @@ void scatter_add(LLVMArray<Value> &dst,
 
     if (jitc_var_int_ref(dst.index()) > 0) {
         dst = LLVMArray<Value>::from_index(jitc_var_copy(
-            AllocType::HostAsync, LLVMArray<Value>::Type, ptr, (uint32_t) dst.size()));
+            AllocType::HostAsync, LLVMArray<Value>::Type, 0,
+            ptr, (uint32_t) dst.size()));
         ptr = dst.data();
     }
 
@@ -1250,7 +1252,7 @@ inline LLVMArray<uint32_t> compress(const LLVMArray<bool> &a) {
     jitc_sync_stream();
 
     LLVMArray<uint32_t> result = LLVMArray<uint32_t>::from_index(
-        jitc_var_map(VarType::UInt32, perm, size, 1));
+        jitc_var_map(VarType::UInt32, 0, perm, size, 1));
 
     return result;
 }

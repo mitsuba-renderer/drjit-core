@@ -128,7 +128,7 @@ const char *jit_time_string(float value) {
     return jit_string_buf;
 }
 
-Buffer::Buffer(const size_t size) : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
+Buffer::Buffer(size_t size) : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
     m_start = (char *) malloc_check(size);
     m_end = m_start + size;
     clear();

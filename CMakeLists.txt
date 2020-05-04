@@ -6,6 +6,7 @@ option(ENOKI_ENABLE_TBB   "Use Intel Thread Building Blocks (TBB) with LLVM back
 option(ENOKI_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
 option(ENOKI_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 option(ENOKI_ENABLE_TESTS "Build Enoki test suite?" OFF)
+set(ENOKI_NATIVE_FLAGS "-march=native" CACHE STRING "Compilation flags used to target the host processor architecture.")
 
 # Set a default build configuration (Release)
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -54,7 +55,7 @@ endif()
 
 if (ENOKI_ENABLE_TBB)
   # Try to detect TBB
-  set(CMAKE_MODULE_PATH $CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+  set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
   find_package(TBB)
 endif()
 
@@ -111,7 +112,7 @@ add_library(
 
   # LZ4 compression library & XXHash hash function
   ext/lz4/lz4.h ext/lz4/lz4.c
-  ext/lz4/xxhash.h ext/lz4/xxhash.c
+  ext/lz4/xxhash.h ext/lz4/xxh3.h ext/lz4/xxhash.c
 
   # Precompiled kernels in compressed PTX format
   kernels/kernels.h kernels/kernels.c
@@ -120,7 +121,7 @@ add_library(
 target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)
 
 if (NOT MSVC)
-  target_compile_options(enoki-jit PRIVATE -Wall -Wextra -march=native)
+  target_compile_options(enoki-jit PRIVATE -Wall -Wextra ${ENOKI_NATIVE_FLAGS})
   if (U_CMAKE_BUILD_TYPE MATCHES RELEASE OR U_CMAKE_BUILD_TYPE MATCHES MINSIZEREL)
     target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
   endif()

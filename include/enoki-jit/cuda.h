@@ -67,7 +67,7 @@ struct CUDAArray {
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
     CUDAArray(Args&&... args) {
         Value data[] = { (Value) args... };
-        m_index = jitc_var_copy(AllocType::Host, Type, data,
+        m_index = jitc_var_copy(AllocType::Host, Type, 1, data,
                                 (uint32_t) sizeof...(Args));
     }
 
@@ -544,8 +544,8 @@ struct CUDAArray {
         if (jitc_var_int_ref(m_index) > 0) {
             eval();
             *this = from_index(
-                jitc_var_copy(AllocType::Device, CUDAArray<Value>::Type, data(),
-                              (uint32_t) size()));
+                jitc_var_copy(AllocType::Device, CUDAArray<Value>::Type, 1,
+                              data(), (uint32_t) size()));
         }
 
         jitc_var_write(m_index, offset, &value);
@@ -553,11 +553,11 @@ struct CUDAArray {
 
     static CUDAArray map(void *ptr, size_t size, bool free = false) {
         return from_index(
-            jitc_var_map(Type, ptr, (uint32_t) size, free ? 1 : 0));
+            jitc_var_map(Type, 1, ptr, (uint32_t) size, free ? 1 : 0));
     }
 
     static CUDAArray copy(const void *ptr, size_t size) {
-        return from_index(jitc_var_copy(AllocType::Host, Type, ptr, (uint32_t) size));
+        return from_index(jitc_var_copy(AllocType::Host, Type, 1, ptr, (uint32_t) size));
     }
 
     static CUDAArray from_index(uint32_t index) {
@@ -634,7 +634,7 @@ template <typename Array,
 Array empty(size_t size) {
     size_t byte_size = size * sizeof(typename Array::Value);
     void *ptr = jitc_malloc(AllocType::Device, byte_size);
-    return Array::from_index(jitc_var_map(Array::Type, ptr, (uint32_t) size, 1));
+    return Array::from_index(jitc_var_map(Array::Type, 1, ptr, (uint32_t) size, 1));
 }
 
 template <typename Array,
@@ -876,7 +876,7 @@ void scatter(CUDAArray<Value> &dst,
 
     if (jitc_var_int_ref(dst.index()) > 0) {
         dst = CUDAArray<Value>::from_index(jitc_var_copy(
-            AllocType::Device, CUDAArray<Value>::Type, ptr, (uint32_t) dst.size()));
+            AllocType::Device, CUDAArray<Value>::Type, 1, ptr, (uint32_t) dst.size()));
         ptr = dst.data();
     }
 
@@ -947,7 +947,7 @@ void scatter_add(CUDAArray<Value> &dst,
 
     if (jitc_var_int_ref(dst.index()) > 0) {
         dst = CUDAArray<Value>::from_index(jitc_var_copy(
-            AllocType::Device, CUDAArray<Value>::Type, ptr, (uint32_t) dst.size()));
+            AllocType::Device, CUDAArray<Value>::Type, 1, ptr, (uint32_t) dst.size()));
         ptr = dst.data();
     }
 
@@ -1100,7 +1100,7 @@ mkperm(const CUDAArray<uint32_t> &v, uint32_t bucket_count) {
     result.reserve(unique_count);
 
     UInt32 parent =
-        UInt32::from_index(jitc_var_map(UInt32::Type, perm, (uint32_t) size, 1));
+        UInt32::from_index(jitc_var_map(UInt32::Type, 1, perm, (uint32_t) size, 1));
 
     for (uint32_t i = 0; i < unique_count; ++i) {
         uint32_t bucket_id     = offsets[i * 3 + 1],
@@ -1108,7 +1108,7 @@ mkperm(const CUDAArray<uint32_t> &v, uint32_t bucket_count) {
                  bucket_size   = offsets[i * 3 + 3];
 
         uint32_t var_idx =
-            jitc_var_map(UInt32::Type, perm + bucket_offset, bucket_size, 0);
+            jitc_var_map(UInt32::Type, 1, perm + bucket_offset, bucket_size, 0);
 
         result.emplace_back(bucket_id, UInt32::from_index(var_idx));
     }
@@ -1173,7 +1173,7 @@ inline CUDAArray<uint32_t> compress(const CUDAArray<bool> &a) {
     jitc_sync_stream();
 
     CUDAArray<uint32_t> result = CUDAArray<uint32_t>::from_index(
-        jitc_var_map(VarType::UInt32, perm, *size, 1));
+        jitc_var_map(VarType::UInt32, 1, perm, *size, 1));
 
     jitc_free(size);
     return result;

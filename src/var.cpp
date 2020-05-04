@@ -664,8 +664,10 @@ void jit_var_mark_scatter(uint32_t index, uint32_t target) {
     active_stream->todo.push_back(index);
 
     // Update target variable
-    v = jit_var(target);
-    v->pending_scatter = true;
+    if (target) {
+        v = jit_var(target);
+        v->pending_scatter = true;
+    }
 }
 
 /// Is the given variable a literal that equals zero?
@@ -957,12 +959,12 @@ void jit_var_schedule(uint32_t index) {
 /// Evaluate the variable \c index right away, if it is unevaluated/dirty.
 void jit_var_eval(uint32_t index) {
     Stream *stream = active_stream;
+    Variable *v = jit_var(index);
+
     if (unlikely(!stream))
         jit_raise("jit_var_eval(): you must invoke jitc_set_device() to "
                   "choose a target device before using this function.");
-
-    Variable *v = jit_var(index);
-    if (unlikely(v->cuda != stream->cuda))
+    else if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_eval(): attempted to evaluate a %s variable "
                   "while the %s backend was activated! You must invoke "
                   "jit_set_device() to set the right backend!",
