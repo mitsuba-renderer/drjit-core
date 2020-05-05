@@ -134,7 +134,7 @@ void tbb_stream_sync(Stream *stream) {
 /// Append a kernel execution, but do not submit it to the queue yet
 void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
                                uint32_t start, uint32_t stop, uint32_t argc,
-                               void **argv) {
+                               void **argv, bool parallel_dispatch) {
     size_t size          = stop - start,
            tasks_desired = jit_llvm_thread_count * 4,
            grain_size    = 4096;
@@ -152,6 +152,11 @@ void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
 
     // Given that, how many tasks should we launch (might be smaller than 'tasks_desired')
     size_t task_count = (size + items_per_task - 1u) / items_per_task;
+
+    if (unlikely(!parallel_dispatch)) {
+        task_count = 1;
+        items_per_task = size;
+    }
 
     if (!stream->tbb_kernel_task)
         stream->tbb_kernel_task = new (stream->tbb_task_root->allocate_child())
@@ -199,6 +204,9 @@ void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
             ((EnokiKernelTask *) stream->tbb_kernel_task)->append(task);
         }
     }
+
+    if (unlikely(!parallel_dispatch))
+        tbb_stream_submit_kernel(stream);
 }
 
 static void enqueue(Stream *stream, tbb::task *task) {

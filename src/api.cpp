@@ -142,12 +142,12 @@ int jitc_llvm_if_at_least(uint32_t vector_width, const char *feature) {
 
 void jitc_set_parallel_dispatch(int enable) {
     lock_guard guard(state.mutex);
-    state.parallel_dispatch = enable != 0;
+    jit_set_parallel_dispatch(enable != 0);
 }
 
 int jitc_parallel_dispatch() {
     lock_guard guard(state.mutex);
-    return state.parallel_dispatch ? 1 : 0;
+    return jit_parallel_dispatch() ? 1 : 0;
 }
 
 void jitc_sync_stream() {

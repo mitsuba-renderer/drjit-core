@@ -1070,12 +1070,14 @@ void jit_run(Stream *stream, ScheduledGroup group) {
         if (likely(rounded > 0))
             tbb_stream_enqueue_kernel(
                 stream, kernel.llvm.func, 0, rounded,
-                (uint32_t) kernel_args_extra.size(), kernel_args_extra.data());
+                (uint32_t) kernel_args_extra.size(), kernel_args_extra.data(),
+                stream->parallel_dispatch);
 
         if (unlikely(rounded != group.size))
             tbb_stream_enqueue_kernel(
                 stream, kernel.llvm.func_scalar, rounded, group.size,
-                (uint32_t) kernel_args_extra.size(), kernel_args_extra.data());
+                (uint32_t) kernel_args_extra.size(), kernel_args_extra.data(),
+                stream->parallel_dispatch);
 #else
         unlock_guard guard(state.mutex);
         if (likely(rounded > 0))
@@ -1154,10 +1156,10 @@ void jit_eval() {
     }
 
     // Are there independent groups of work that could be dispatched in parallel?
-    bool parallel_dispatch =
-        state.parallel_dispatch && stream->cuda && schedule_groups.size() > 1;
+    bool cuda_parallel_dispatch =
+        stream->parallel_dispatch && stream->cuda && schedule_groups.size() > 1;
 
-    if (!parallel_dispatch) {
+    if (!cuda_parallel_dispatch) {
         jit_log(Debug, "jit_eval(): begin.");
     } else {
         jit_log(Debug, "jit_eval(): begin (parallel dispatch to %zu streams).",
@@ -1170,7 +1172,7 @@ void jit_eval() {
         jit_assemble(stream, group);
 
         Stream *sub_stream = stream;
-        if (parallel_dispatch) {
+        if (cuda_parallel_dispatch) {
             uint32_t stream_index = 1000 * (stream->stream + 1) + group_idx++;
             jit_set_device(stream->device, stream_index);
             sub_stream = active_stream;
@@ -1180,11 +1182,16 @@ void jit_eval() {
 
         jit_run(stream, group);
 
-        if (parallel_dispatch) {
+        if (cuda_parallel_dispatch) {
             cuda_check(cuEventRecord(sub_stream->event, sub_stream->handle));
             cuda_check(cuStreamWaitEvent(stream->handle, sub_stream->event, 0));
         }
     }
+
+#if defined(ENOKI_ENABLE_TBB)
+    if (!stream->cuda)
+        tbb_stream_submit_kernel(stream);
+#endif
 
     /* At this point, all variables and their dependencies are computed, which
        means that we can remove internal edges between them. This in turn will
@@ -1229,11 +1236,6 @@ void jit_eval() {
         for (int j = 0; j < 4; ++j)
             jit_var_dec_ref_int(dep[j]);
     }
-
-    #if defined(ENOKI_ENABLE_TBB)
-    if (!stream->cuda)
-        tbb_stream_submit_kernel(stream);
-    #endif
 
     jit_free_flush();
     jit_log(Debug, "jit_eval(): done.");

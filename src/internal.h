@@ -110,6 +110,9 @@ struct Stream {
     /// Is this a CUDA stream?
     bool cuda = false;
 
+    /// Parallelize work queued up in this stream?
+    bool parallel_dispatch = true;
+
     /// Enoki device index associated with this stream (*not* the CUDA device ID)
     uint32_t device = 0;
 
@@ -415,9 +418,6 @@ struct State {
     /// Limit the output of jitc_var_str()?
     uint32_t print_limit = 20;
 
-    /// Dispatch to multiple streams that run concurrently?
-    bool parallel_dispatch = true;
-
     /// Cache of previously compiled kernels
     KernelCache kernel_cache;
 };
@@ -583,6 +583,12 @@ extern void jit_sync_device();
 
 /// Wait for all computation on *all devices* to finish
 extern void jit_sync_all_devices();
+
+/// Return whether or not parallel dispatch is enabled
+extern bool jit_parallel_dispatch();
+
+/// Specify whether or not parallel dispatch is enabled
+extern void jit_set_parallel_dispatch(bool value);
 
 /// Search for a shared library and dlopen it if possible
 void *jit_find_library(const char *fname, const char *glob_pat,

@@ -211,7 +211,7 @@ struct CUDAArray {
 
         const char *op = std::is_signed<Value>::value
                              ? "setp.le.$t1 $r0, $r1, $r2"
-                             : "setp.lo.$t1 $r0, $r1, $r2";
+                             : "setp.ls.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
             CUDAArray<bool>::Type, op, 1, 1, m_index, a.index()));

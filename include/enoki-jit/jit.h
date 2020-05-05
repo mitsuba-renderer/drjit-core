@@ -173,17 +173,31 @@ extern JITC_EXPORT int jitc_llvm_if_at_least(uint32_t vector_width,
                                              const char *feature);
 
 /**
- * \brief Dispatch computation to multiple parallel streams?
+ * \brief Dispatch computation to multiple CUDA streams or CPU cores?
  *
- * The JIT compiler attempts to fuse all queued computation into a single
- * kernel to maximize efficiency. But computation involving arrays of different
- * size must necessarily run in separate kernels, which means that it is
- * serialized if taking place within the same device and stream. If desired,
- * jitc_eval() can detect this and dispatch multiple kernels to separate
- * streams that execute in parallel. The default is \c 1 (i.e. to enable
- * parallel dispatch).
+ * This parameter has slightly different meanings depending on the backend
+ * that is used:
  *
- * This feature is only relevant for GPU mode.
+ * <ul>
+ * <li><b>CUDA backend</b>: The JIT compiler attempts to fuse all queued
+ * computation into a single kernel to maximize efficiency, and this kernel
+ * runs in parallel using all streaming multiprocessors available on the GPU.
+ * But computation involving arrays of different size must necessarily run in
+ * separate kernels, which means that it is serialized if taking place within
+ * the same device and stream. In some cases, kernels only involve very small
+ * inputs and outputs, in which case scheduling overheads can become
+ * significant. If desired, jitc_eval() can detect this and dispatch multiple
+ * kernels to separate streams that execute in parallel <em>in addition to the
+ * parallel execution of individual kernels</em>.</li>
+ *
+ * <li><b>LLVM backend</b>: If Enoki-JIT is compiled with Intel's Thread
+ * Building Blocks (TBB), execution will parallelize over all available cores
+ * if this parameter is set to \c 1. Otherwise, execution will be
+ * serialized.</li>
+ * </ul>
+ *
+ * The default is \c 1 (i.e. to enable parallel dispatch) for both LLVM/CUDA
+ * backends.
  */
 extern JITC_EXPORT void jitc_set_parallel_dispatch(int enable);
 

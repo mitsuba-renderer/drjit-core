@@ -351,6 +351,24 @@ void jit_sync_device() {
     }
 }
 
+/// Return whether or not parallel dispatch is enabled
+bool jit_parallel_dispatch() {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_parallel_dispatch(): you must invoke jitc_set_device() "
+                  "to choose a target device before using this function.");
+    return stream->parallel_dispatch;
+}
+
+/// Specify whether or not parallel dispatch is enabled
+void jit_set_parallel_dispatch(bool value) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_set_parallel_dispatch(): you must invoke jitc_set_device() "
+                  "to choose a target device before using this function.");
+    stream->parallel_dispatch = value;
+}
+
 /// Wait for all computation on *all devices* to finish
 void jit_sync_all_devices() {
     StreamMap streams = state.streams;
