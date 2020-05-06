@@ -830,6 +830,16 @@ extern JITC_EXPORT int jitc_var_is_literal_one(uint32_t index);
 extern JITC_EXPORT const char *jitc_var_whos();
 
 /**
+ * \brief Return a GraphViz representation of registered variables and their
+ * dependencies
+ *
+ * Note: the return value points into a static array, whose contents may be
+ * changed by later calls to <tt>jitc_*</tt> API functions. Either use it right
+ * away or create a copy.
+ */
+extern JITC_EXPORT const char *jitc_var_graphviz();
+
+/**
  * \brief Return a human-readable summary of the contents of a variable
  *
  * Note: the return value points into a static array, whose contents may be

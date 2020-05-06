@@ -135,6 +135,9 @@ extern void jit_var_eval(uint32_t index);
 /// Return a human-readable summary of registered variables
 extern const char *jit_var_whos();
 
+/// Return a GraphViz representation of registered variables
+extern const char *jit_var_graphviz();
+
 /// Remove a variable from the cache used for common subexpression elimination
 extern void jit_cse_drop(uint32_t index, const Variable *v);
 

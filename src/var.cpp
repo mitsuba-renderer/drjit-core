@@ -877,6 +877,70 @@ const char *jit_var_whos() {
     return buffer.get();
 }
 
+/// Return a GraphViz representation of registered variables
+const char *jit_var_graphviz() {
+    std::vector<uint32_t> indices;
+    indices.reserve(state.variables.size());
+    for (const auto& it : state.variables)
+        indices.push_back(it.first);
+
+    std::sort(indices.begin(), indices.end());
+    buffer.clear();
+    buffer.put("digraph {\n");
+    buffer.put("  graph [dpi=50];\n");
+    buffer.put("  node [shape=record fontname=Consolas];\n");
+    buffer.put("  edge [fontname=Consolas];\n");
+    for (uint32_t index: indices) {
+        const Variable *v = jit_var(index);
+
+        const char *color = "";
+        const char *stmt = v->stmt;
+        if (v->direct_pointer) {
+            color = " fillcolor=wheat style=filled";
+            stmt = "[direct pointer]";
+        } else if (v->data) {
+            color = " fillcolor=salmon style=filled";
+            stmt = "[evaluated array]";
+        } else if (v->scatter) {
+            color = " fillcolor=cornflowerblue style=filled";
+        }
+
+        char *out = (char *) malloc(strlen(stmt) * 2 + 1),
+             *ptr = out;
+        for (int j = 0; ; ++j) {
+            if (stmt[j] == '$' && stmt[j + 1] == 'n') {
+                *ptr++='\\';
+                continue;
+            } else if (stmt[j] == '<' || stmt[j] == '>') {
+                *ptr++='\\';
+            }
+            *ptr++ = stmt[j];
+            if (stmt[j] == '\0')
+                break;
+        }
+
+        buffer.fmt("  %u [label=\"{%s%s%s%s%s|{Type: %s %s|Size: %u}|{ID "
+                   "#%u|E:%u|I:%u}}\"%s];\n",
+                   index, out, v->has_label ? "|Label: \\\"" : "",
+                   v->has_label ? jit_var_label(index) : "",
+                   v->has_label ? "\\\"" : "",
+                   v->pending_scatter ? "| ** DIRTY **" : "",
+                   v->cuda ? "cuda" : "llvm",
+                   v->type == (int) VarType::Invalid ? "none"
+                                 : var_type_name_short[v->type],
+                   v->size, index, v->ref_count_ext, v->ref_count_int, color);
+
+        free(out);
+
+        for (uint32_t i = 0; i< 4; ++i) {
+            if (v->dep[i])
+                buffer.fmt("  %u -> %u [label=\"%u\"];\n", v->dep[i], index, i + 1);
+        }
+    }
+    buffer.put("}\n");
+    return buffer.get();
+}
+
 /// Return a human-readable summary of the contents of a variable
 const char *jit_var_str(uint32_t index) {
     jit_var_eval(index);

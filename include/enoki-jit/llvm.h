@@ -14,6 +14,7 @@
 
 #include <enoki-jit/util.h>
 #include <cstdio>
+#include <vector>
 
 NAMESPACE_BEGIN(enoki)
 

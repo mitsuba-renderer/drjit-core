@@ -308,6 +308,11 @@ const char *jitc_var_whos() {
     return jit_var_whos();
 }
 
+const char *jitc_var_graphviz() {
+    lock_guard guard(state.mutex);
+    return jit_var_graphviz();
+}
+
 const char *jitc_var_str(uint32_t index) {
     lock_guard guard(state.mutex);
     return jit_var_str(index);
