@@ -672,6 +672,9 @@ void jit_var_mark_scatter(uint32_t index, uint32_t target) {
 
 /// Is the given variable a literal that equals zero?
 int jit_var_is_literal_zero(uint32_t index) {
+    if (index == 0)
+        return 0;
+
     Variable *v = jit_var(index);
 
     if (!v->stmt)
@@ -737,6 +740,9 @@ int jit_var_is_literal_zero(uint32_t index) {
 
 /// Is the given variable a literal that equals one?
 int jit_var_is_literal_one(uint32_t index) {
+    if (index == 0)
+        return 0;
+
     Variable *v = jit_var(index);
 
     if (!v->stmt)
@@ -1047,6 +1053,7 @@ void jit_var_eval(uint32_t index) {
         if (unevaluated)
             stream->todo.push_back(index);
         jit_eval();
+        v = jit_var(index);
 
         if (unlikely(v->pending_scatter))
             jit_raise("jit_var_eval(): element remains dirty after evaluation!");
