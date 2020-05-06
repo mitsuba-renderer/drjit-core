@@ -45,6 +45,10 @@ static_assert(
 
 /// Initialize core data structures of the JIT compiler
 void jit_init(int llvm, int cuda) {
+#if defined(__APPLE__)
+    cuda = 0;
+#endif
+
     if (state.has_llvm != 0 || state.has_cuda != 0 || (llvm == 0 && cuda == 0))
         return;
 
