@@ -942,7 +942,11 @@ void jit_var_schedule(uint32_t index) {
         jit_raise("jit_var_schedule(): you must invoke jitc_set_device() to "
                   "choose a target device before using this function.");
 
-    Variable *v = jit_var(index);
+    auto it = state.variables.find(index);
+    if (unlikely(it == state.variables.end()))
+        jit_raise("jit_var_schedule(%u): unknown variable!", index);
+    Variable *v = &it.value();
+
     if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_schedule(): attempted to schedule a %s variable "
                   "while the %s backend was activated! You must invoke "
@@ -959,7 +963,10 @@ void jit_var_schedule(uint32_t index) {
 /// Evaluate the variable \c index right away, if it is unevaluated/dirty.
 void jit_var_eval(uint32_t index) {
     Stream *stream = active_stream;
-    Variable *v = jit_var(index);
+    auto it = state.variables.find(index);
+    if (unlikely(it == state.variables.end()))
+        jit_raise("jit_var_eval(%u): unknown variable!", index);
+    Variable *v = &it.value();
 
     if (unlikely(!stream))
         jit_raise("jit_var_eval(): you must invoke jitc_set_device() to "
