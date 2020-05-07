@@ -84,7 +84,7 @@ void* jit_malloc(AllocType type, size_t size) {
                 jit_raise("jit_malloc(): you must specify the right backend "
                           "via jit_set_device() before allocating a "
                           "device/host-async memory!");
-            ai.device = stream->device;
+            ai.device = stream->cuda ? stream->device : 0;
         }
 
         if (type == AllocType::Device || type == AllocType::HostAsync) {
@@ -96,7 +96,6 @@ void* jit_malloc(AllocType type, size_t size) {
             ReleaseChain *chain = stream->release_chain;
             while (chain) {
                 auto it = chain->entries.find(ai);
-
                 if (it != chain->entries.end()) {
                     auto &list = it.value();
                     if (!list.empty()) {
@@ -203,7 +202,7 @@ void* jit_malloc(AllocType type, size_t size) {
                   "allocate %zu bytes of %s memory.",
                   size, alloc_type_name[(int) ai.type]);
 
-    state.alloc_used.insert({ ptr, ai });
+    state.alloc_used.emplace(ptr, ai);
 
     if (ai.type == AllocType::Device)
         jit_trace("jit_malloc(type=%s, device=%u, size=%zu): " ENOKI_PTR " (%s)",
@@ -232,6 +231,7 @@ void jit_free(void *ptr) {
         jit_raise("jit_free(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
 
     AllocInfo ai = it.value();
+
     if (ai.type == AllocType::Host) {
         // Acquire lock protecting 'state.alloc_free'
         lock_guard guard(state.malloc_mutex);
@@ -255,13 +255,17 @@ void jit_free(void *ptr) {
             }
 
             if (stream->cuda) {
+                bool reload = false;
                 for (auto kv: alloc_unmap) {
                     cuda_check(cuMemHostUnregister(kv.second));
-                    if (kv.first)
+                    if (kv.first) {
+                        reload = true;
                         jit_free(kv.second);
+                    }
                 }
 
-                it = state.alloc_used.find(ptr);
+                if (reload)
+                    it = state.alloc_used.find(ptr);
             }
         } else {
             /* This is bad -- freeing a pointer outside of an active

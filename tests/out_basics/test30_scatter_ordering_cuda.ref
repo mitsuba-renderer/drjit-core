@@ -15,56 +15,8 @@ jit_var_new(2): mov.$b0 $r0, 0x00000001 (reused)
 jit_var_inc_ref_ext(2): 2
 jit_var_new(4): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(4): 1
-jit_eval(): begin.
-jit_assemble(size=16): register map:
-   - %r4 -> 1 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=16, in=0, out=1, ops=5) ..
-.version 6.3
-.address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
-                              .param .u64 arg0) {
-    .reg.b8 %b<5>;
-    .reg.b16 %w<5>;
-    .reg.b32 %r<5>;
-    .reg.b64 %rd<5>;
-    .reg.f32 %f<5>;
-    .reg.f64 %d<5>;
-    .reg.pred %p<5>;
-
-    // Grid-stride loop setup
-    mov.u32 %r0, %ctaid.x;
-    mov.u32 %r1, %ntid.x;
-    mov.u32 %r2, %tid.x;
-    mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [size];
-    setp.ge.u32 %p0, %r0, %r2;
-    @%p0 bra L0;
-
-    mov.u32 %r3, %nctaid.x;
-    mul.lo.u32 %r1, %r3, %r1;
-
-L1: // Loop body
-
-    // Evaluate %r4
-    mov.b32 %r4, 0x00000000;
-
-    // Store %r4
-    ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
-    st.global.cs.u32 [%rd0], %r4;
-
-    add.u32 %r0, %r0, %r1;
-    setp.ge.u32 %p0, %r0, %r2;
-    @!%p0 bra L1;
-
-L0:
-    ret;
-}
-jit_eval(): cleaning up..
-jit_free_flush(): scheduling 1 deallocation
-jit_eval(): done.
+jit_memset_async(<@>, isize=4, size=16)
 jit_var_inc_ref_ext(1): 2
 jit_var_copy_ptr(5 <- 1): <@>
 jit_var_inc_ref_ext(5): 1
@@ -146,6 +98,7 @@ jit_var_free(5)
 jit_var_dec_ref_ext(1): 1
 jit_var_dec_ref_int(2): 0
 jit_var_dec_ref_int(3): 0
+jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1
@@ -283,7 +236,7 @@ jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=64)
 jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 4 deallocations
-jit_shutdown(): releasing 4 kernels ..
+jit_shutdown(): releasing 3 kernels ..
 jit_malloc_trim(): freed
  - host-pinned memory: 64 B in 1 allocation
  - device memory: 256 B in 4 allocations

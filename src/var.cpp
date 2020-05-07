@@ -671,14 +671,9 @@ void jit_var_mark_scatter(uint32_t index, uint32_t target) {
 }
 
 /// Is the given variable a literal that equals zero?
-int jit_var_is_literal_zero(uint32_t index) {
-    if (index == 0)
-        return 0;
-
-    Variable *v = jit_var(index);
-
+int jit_var_is_literal_zero(Variable *v) {
     if (!v->stmt)
-        return false;
+        return 0;
 
     const char *s = nullptr;
     if (v->cuda) {
@@ -736,6 +731,14 @@ int jit_var_is_literal_zero(uint32_t index) {
     }
 
     return strcmp(v->stmt, s) == 0;
+}
+
+/// Is the given variable a literal that equals zero?
+int jit_var_is_literal_zero(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    return jit_var_is_literal_zero(jit_var(index));
 }
 
 /// Is the given variable a literal that equals one?
@@ -1050,8 +1053,33 @@ void jit_var_eval(uint32_t index) {
     bool unevaluated = v->data == nullptr && !v->direct_pointer;
 
     if (unevaluated || v->pending_scatter) {
-        if (unevaluated)
-            stream->todo.push_back(index);
+        if (unevaluated) {
+            if (jit_var_is_literal_zero(v)) {
+                /* Optimization: don't bother building a kernel just to
+                   zero-initialize a single variable and use an
+                   jit_memset_async() call instead. This fits the common use
+                   case of creating an arrays of zero and then scattering into
+                   it (which will call jit_var_eval() on the target array)*/
+
+                jit_cse_drop(index, v);
+                if (v->free_stmt) {
+                    free(v->stmt);
+                    v->free_stmt = 0;
+                }
+                v->stmt = nullptr;
+
+                uint32_t isize = var_type_size[v->type];
+                v->data = jit_malloc(stream->cuda ? AllocType::Device
+                                                  : AllocType::HostAsync,
+                                     (size_t) v->size * (size_t) isize);
+
+                uint64_t zero = 0;
+                jit_memset_async(v->data, v->size, isize, &zero);
+                return;
+            } else {
+                stream->todo.push_back(index);
+            }
+        }
         jit_eval();
         v = jit_var(index);
 

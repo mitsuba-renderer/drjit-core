@@ -1,5 +1,4 @@
 jit_set_device(device=-1, stream=0): creating stream
-jit_run(): launching kernel (n=1, in=0, out=1, ops=1) ..
 value=[0] vs 0
 jit_run(): launching kernel (n=1, in=1, out=3, ops=5) ..
 value=[3] vs 3
@@ -15,7 +14,7 @@ jit_run(): launching kernel (n=1, in=243, out=487, ops=1457) ..
 value=[265356] vs 265356
 jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 730 deallocations
-jit_shutdown(): releasing 7 kernels ..
+jit_shutdown(): releasing 6 kernels ..
 jit_malloc_trim(): freed
  - host-async memory: 45.6 KiB in 730 allocations
 jit_shutdown(): done

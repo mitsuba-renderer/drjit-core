@@ -13,47 +13,8 @@ jit_var_new(2): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shuf
 jit_var_inc_ref_ext(2): 2
 jit_var_new(4): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(4): 1
-jit_eval(): begin.
-jit_assemble(size=16): register map:
-   - %r0 -> 1 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=16, in=0, out=1, ops=1) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
-entry:
-    ; Prepare argument 0
-    %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
-    %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
-    %a0 = bitcast i8* %a0_p to i32*
-    br label %loop
-
-done:
-    ret void
-
-loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
-
-    ; Evaluate %r0
-    %r0_0 = insertelement <8 x i32> undef, i32 0, i32 0
-    %r0 = shufflevector <8 x i32> %r0_0, <8 x i32> undef, <8 x i32> zeroinitializer
-
-    ; Store %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
-    %r0_p = bitcast i32* %r0_i to <8 x i32>*
-    store <8 x i32> %r0, <8 x i32>* %r0_p, align 32, !noalias !1
-
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
-    br i1 %cond, label %done, label %loop, !llvm.loop !2
-}
-
-!0 = !{!0}
-!1 = !{!1, !0}
-!2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
-
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 2 packets and 0 scalar entries
-jit_eval(): cleaning up..
-jit_eval(): done.
+jit_memset_async(<@>, isize=4, size=16)
 jit_var_inc_ref_ext(1): 2
 jit_var_copy_ptr(5 <- 1): <@>
 jit_var_inc_ref_ext(5): 1
@@ -295,7 +256,7 @@ jit_var_free(1)
 jit_free(<@>, type=host-async, size=64)
 jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 4 deallocations
-jit_shutdown(): releasing 4 kernels ..
+jit_shutdown(): releasing 3 kernels ..
 jit_malloc_trim(): freed
  - host-async memory: 256 B in 4 allocations
 jit_shutdown(): done
