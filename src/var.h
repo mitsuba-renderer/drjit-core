@@ -99,6 +99,9 @@ extern void *jit_var_ptr(uint32_t index);
 // Query the size of a given variable
 extern uint32_t jit_var_size(uint32_t index);
 
+// Resize a scalar variable
+extern uint32_t jit_var_set_size(uint32_t index, uint32_t size);
+
 /// Assign a descriptive label to a given variable
 extern void jit_var_set_label(uint32_t index, const char *label);
 

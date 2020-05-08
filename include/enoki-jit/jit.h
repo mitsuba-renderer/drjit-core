@@ -769,6 +769,9 @@ extern JITC_EXPORT void *jitc_var_ptr(uint32_t index);
 /// Query the size of a given variable
 extern JITC_EXPORT uint32_t jitc_var_size(uint32_t index);
 
+// Try to resize a scalar variable, potentially returns a new index
+extern JITC_EXPORT uint32_t jitc_var_set_size(uint32_t index, uint32_t size);
+
 /// Assign a descriptive label to a given variable
 extern JITC_EXPORT void jitc_var_set_label(uint32_t index, const char *label);
 

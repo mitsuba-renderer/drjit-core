@@ -1017,3 +1017,24 @@ TEST_BOTH(33_minmax_int) {
     jitc_assert(minval == s);
     jitc_assert(maxval == l);
 }
+
+TEST_BOTH(34_resize) {
+    {
+        UInt32 x = 1;
+        x += 1;
+        x.resize(3);
+        jitc_log(Info, "%s", x.str());
+    }
+    {
+        UInt32 x = 1, y = 1;
+        y = x + y;
+        x.resize(3);
+        jitc_log(Info, "%s", x.str());
+    }
+    {
+        UInt32 x = 1;
+        x.eval();
+        x.resize(3);
+        jitc_log(Info, "%s", x.str());
+    }
+}

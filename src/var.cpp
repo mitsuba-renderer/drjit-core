@@ -281,6 +281,41 @@ uint32_t jit_var_size(uint32_t index) {
     return jit_var(index)->size;
 }
 
+// Resize a scalar variable
+uint32_t jit_var_set_size(uint32_t index, uint32_t size) {
+    Variable *v = jit_var(index);
+    jit_log(Debug, "jit_var_set_size(%u): %u", index, size);
+    if (v->size == size) {
+        jit_var_inc_ref_ext(index, v);
+        return index; // Nothing to do
+    } else if (v->size != 1) {
+        jit_raise("jit_var_set_size(): variable %u must be a scalar variable!", index);
+    } else if (v->stmt && v->ref_count_int == 0) {
+        jit_var_inc_ref_ext(index, v);
+        jit_cse_drop(index, v);
+        v->size = size;
+        return index;
+    } else {
+        Stream *stream = active_stream;
+        uint32_t index_new;
+        if (stream->cuda) {
+            index_new = jit_var_new_1((VarType) v->type, "mov.$t0 $r0, $r1", 1,
+                                      1, index);
+        } else {
+
+            const char *op = jitc_is_floating_point((VarType) v->type)
+                                 ? "$r0 = fadd <$w x $t0> $r1, $z"
+                                 : "$r0 = add <$w x $t0> $r1, $z";
+            index_new = jit_var_new_1((VarType) v->type, op, 1, 0, index);
+        }
+
+        Variable *v2 = jit_var(index_new);
+        jit_cse_drop(index_new, v2);
+        v2->size = size;
+        return index_new;
+    }
+}
+
 /// Query the descriptive label associated with a given variable
 const char *jit_var_label(uint32_t index) {
     auto it = state.labels.find(index);

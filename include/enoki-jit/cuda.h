@@ -518,6 +518,12 @@ struct CUDAArray {
         return jitc_var_size(m_index);
     }
 
+    void resize(size_t size) {
+        uint32_t index = jitc_var_set_size(m_index, (uint32_t) size);
+        jitc_var_dec_ref_ext(m_index);
+        m_index = index;
+    }
+
     uint32_t index() const {
         return m_index;
     }

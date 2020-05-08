@@ -226,6 +226,11 @@ uint32_t jitc_var_size(uint32_t index) {
     return jit_var_size(index);
 }
 
+uint32_t jitc_var_set_size(uint32_t index, uint32_t size) {
+    lock_guard guard(state.mutex);
+    return jit_var_set_size(index, size);
+}
+
 const char *jitc_var_label(uint32_t index) {
     lock_guard guard(state.mutex);
     return jit_var_label(index);
