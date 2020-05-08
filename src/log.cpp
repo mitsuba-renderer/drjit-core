@@ -84,6 +84,7 @@ void jit_fail(const char* fmt, ...) {
     va_end(args);
 
     fputc('\n', stderr);
+    state.mutex.unlock();
     exit(EXIT_FAILURE);
 }
 
