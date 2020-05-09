@@ -63,12 +63,15 @@ struct LLVMArray {
             op = sizeof(T) > sizeof(Value) ? "$r0 = fptrunc <$w x $t1> $r1 to <$w x $t0>"
                                            : "$r0 = fpext <$w x $t1> $r1 to <$w x $t0>";
         } else if (std::is_integral<T>::value && std::is_integral<Value>::value) {
-            if (sizeof(T) == sizeof(Value)) {
+            size_t size_1 = std::is_same<T,     bool>::value ? 0 : sizeof(T),
+                   size_2 = std::is_same<Value, bool>::value ? 0 : sizeof(Value);
+
+            if (size_1 == size_2) {
                 m_index = v.index();
                 jitc_var_inc_ref_ext(m_index);
                 return;
             } else {
-                op = sizeof(T) > sizeof(Value)
+                op = size_1 > size_2
                          ? "$r0 = trunc <$w x $t1> $r1 to <$w x $t0>"
                          : (std::is_signed<T>::value
                                 ? "$r0 = sext <$w x $t1> $r1 to <$w x $t0>"
@@ -993,6 +996,7 @@ void scatter(LLVMArray<Value> &dst,
              const LLVMArray<Value> &value,
              const LLVMArray<Index> &index,
              const LLVMArray<bool> &mask = true) {
+
     if (mask.is_literal_zero())
         return;
 
@@ -1013,6 +1017,14 @@ void scatter(LLVMArray<Value> &dst,
     LLVMArray<void *> base = LLVMArray<void *>::from_index(
         jitc_var_copy_ptr(ptr, dst.index()));
 
+    uint32_t value_idx = value.index();
+    LLVMArray<uint8_t> temp;
+
+    if (std::is_same<Value, bool>::value) {
+        temp = LLVMArray<uint8_t>(value);
+        value_idx = temp.index();
+    }
+
     uint32_t var;
     if (mask.is_literal_one()) {
         var = jitc_var_new_3(
@@ -1021,7 +1033,7 @@ void scatter(LLVMArray<Value> &dst,
             "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
             "call void @llvm.masked.scatter.v$w$a2"
             "(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x i1> $O)",
-            1, 0, base.index(), value.index(), index.index());
+            1, 0, base.index(), value_idx, index.index());
     } else {
         var = jitc_var_new_4(
             VarType::Invalid,
@@ -1029,7 +1041,7 @@ void scatter(LLVMArray<Value> &dst,
             "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
             "call void @llvm.masked.scatter.v$w$a2"
             "(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x $t4> $r4)",
-            1, 0, base.index(), value.index(), index.index(), mask.index());
+            1, 0, base.index(), value_idx, index.index(), mask.index());
     }
 
     jitc_var_mark_scatter(var, dst.index());
