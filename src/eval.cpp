@@ -43,16 +43,17 @@ struct ScheduledGroup {
 
 struct Intrinsic {
     uint32_t width;
+    uint32_t types;
     const char *str;
 
-    Intrinsic(uint32_t width, const char *str) : width(width), str(str) { }
+    Intrinsic(uint32_t width, uint32_t types, const char *str) : width(width), types(types), str(str) { }
 };
 
 /// Hash function for keeping track of LLVM intrinsics
 struct IntrinsicHash {
     size_t operator()(const Intrinsic &a) const {
         const char *end = strchr(a.str, '(');
-        return end ? hash(a.str, end - a.str, (uint32_t) a.width) : (size_t) 0u;
+        return end ? hash(a.str, end - a.str, a.width ^ a.types) : (size_t) 0u;
     }
 };
 
@@ -63,7 +64,8 @@ struct IntrinsicEquality {
                    *end_b = strchr(b.str, '(');
         const size_t strlen_a = end_a - a.str,
                      strlen_b = end_b - b.str;
-        if (a.width != b.width || !end_a || !end_b || strlen_a != strlen_b)
+        if (a.width != b.width || a.types != b.types || !end_a || !end_b ||
+            strlen_a != strlen_b)
             return 0;
         return strncmp(a.str, b.str, strlen_a) == 0;
     }
@@ -325,9 +327,16 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
         return;
     s += 5;
 
-    if (intrinsics_set.find({ jit_llvm_vector_width, s }) != intrinsics_set.end())
+    uint32_t types = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (!v->dep[i])
+            break;
+        types = types * 16 + jit_var(v->dep[i])->type;
+    }
+
+    Intrinsic intrin(jit_llvm_vector_width, types, s);
+    if (!intrinsics_set.insert(intrin).second)
         return;
-    intrinsics_set.insert({ jit_llvm_vector_width, s });
 
     intrinsics_buffer.put("declare ");
     while ((c = *s++) != '\0') {
