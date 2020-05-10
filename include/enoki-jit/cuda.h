@@ -48,14 +48,20 @@ struct CUDAArray {
         const char *op;
 
         if (std::is_floating_point<Value>::value &&
-            std::is_floating_point<T>::value && sizeof(Value) > sizeof(T))
+            std::is_floating_point<T>::value && sizeof(Value) > sizeof(T)) {
             op = "cvt.$t0.$t1 $r0, $r1";
-        else if (std::is_floating_point<Value>::value)
-            op = "cvt.rn.$t0.$t1 $r0, $r1";
-        else if (std::is_floating_point<T>::value && std::is_integral<Value>::value)
-            op = "cvt.rzi.$t0.$t1 $r0, $r1";
-        else
+        } else if (std::is_floating_point<Value>::value) {
+                op = "cvt.rn.$t0.$t1 $r0, $r1";
+        } else if (std::is_floating_point<T>::value && std::is_integral<Value>::value) {
+                op = "cvt.rzi.$t0.$t1 $r0, $r1";
+        } else {
+            if (sizeof(T) == sizeof(Value)) {
+                m_index = v.index();
+                jitc_var_inc_ref_ext(m_index);
+                return;
+            }
             op = "cvt.$t0.$t1 $r0, $r1";
+        }
 
         m_index = jitc_var_new_1(Type, op, 1, 1, v.index());
     }

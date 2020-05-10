@@ -1,63 +1,58 @@
 jit_set_device(device=0, stream=0): creating stream
 jit_var_new(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
-jit_var_inc_ref_int(1): 1
-jit_var_new(2 <- 1): cvt.$t0.$t1 $r0, $r1
+jit_var_inc_ref_ext(1): 2
+jit_var_dec_ref_ext(1): 1
+jit_var_set_label(1): "l"
+jit_var_new(2): mov.$b0 $r0, 0x00000001
 jit_var_inc_ref_ext(2): 1
-jit_var_dec_ref_ext(1): 0
-jit_var_set_label(2): "l"
-jit_var_new(3): mov.$b0 $r0, 0x00000001
-jit_var_inc_ref_ext(3): 1
+jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1
-jit_var_inc_ref_int(3): 1
-jit_var_new(4 <- 2, 3): and.$b0 $r0, $r1, $r2
+jit_var_new(3 <- 1, 2): and.$b0 $r0, $r1, $r2
+jit_var_inc_ref_ext(3): 1
+jit_var_new(4): mov.$b0 $r0, 0x00000000
 jit_var_inc_ref_ext(4): 1
-jit_var_new(5): mov.$b0 $r0, 0x00000000
-jit_var_inc_ref_ext(5): 1
+jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(4): 1
-jit_var_inc_ref_int(5): 1
-jit_var_new(6 <- 4, 5): setp.ne.$t1 $r0, $r1, $r2
-jit_var_inc_ref_ext(6): 1
-jit_var_dec_ref_ext(5): 0
+jit_var_new(5 <- 3, 4): setp.ne.$t1 $r0, $r1, $r2
+jit_var_inc_ref_ext(5): 1
 jit_var_dec_ref_ext(4): 0
 jit_var_dec_ref_ext(3): 0
-jit_var_set_label(6): "result"
-jit_var_new(7): mov.u32 $r0, $i
+jit_var_dec_ref_ext(2): 0
+jit_var_set_label(5): "result"
+jit_var_new(6): mov.u32 $r0, $i
+jit_var_inc_ref_ext(6): 1
+jit_var_inc_ref_ext(6): 2
+jit_var_dec_ref_ext(6): 1
+jit_var_set_label(6): "l2"
+jit_var_new(7): mov.$b0 $r0, 0x00000002
 jit_var_inc_ref_ext(7): 1
+jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(7): 1
-jit_var_new(8 <- 7): cvt.$t0.$t1 $r0, $r1
+jit_var_new(8 <- 6, 7): mul.lo.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(8): 1
-jit_var_dec_ref_ext(7): 0
-jit_var_set_label(8): "l2"
-jit_var_new(9): mov.$b0 $r0, 0x00000002
+jit_var_new(9): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(9): 1
-jit_var_inc_ref_int(8): 1
-jit_var_inc_ref_int(9): 1
-jit_var_new(10 <- 8, 9): mul.lo.$t0 $r0, $r1, $r2
-jit_var_inc_ref_ext(10): 1
-jit_var_new(11): mov.$t0 $r0, 1
-jit_var_inc_ref_ext(11): 1
 jit_eval(): begin.
 jit_assemble(size=1022): register map:
-   - %r4 -> 1
-   - %r5 -> 2 "l"
-   - %r6 -> 3 [scalar]
-   - %r7 -> 4
-   - %r8 -> 5 [scalar]
-   - %p9 -> 6 "result" [out]
+   - %r4 -> 1 "l"
+   - %r5 -> 2 [scalar]
+   - %r6 -> 3
+   - %r7 -> 4 [scalar]
+   - %p8 -> 5 "result" [out]
 jit_malloc(type=device, device=0, size=1024): <@> (new allocation)
-jit_run(): launching kernel (n=1022, in=0, out=1, ops=10) ..
+jit_run(): launching kernel (n=1022, in=0, out=1, ops=9) ..
 .version 6.3
 .address_size 64
 .entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
                               .param .u64 arg0) {
-    .reg.b8 %b<10>;
-    .reg.b16 %w<10>;
-    .reg.b32 %r<10>;
-    .reg.b64 %rd<10>;
-    .reg.f32 %f<10>;
-    .reg.f64 %d<10>;
-    .reg.pred %p<10>;
+    .reg.b8 %b<9>;
+    .reg.b16 %w<9>;
+    .reg.b32 %r<9>;
+    .reg.b64 %rd<9>;
+    .reg.f32 %f<9>;
+    .reg.f64 %d<9>;
+    .reg.pred %p<9>;
 
     // Grid-stride loop setup
     mov.u32 %r0, %ctaid.x;
@@ -73,29 +68,26 @@ jit_run(): launching kernel (n=1022, in=0, out=1, ops=10) ..
 
 L1: // Loop body
 
-    // Evaluate %r4
+    // Evaluate %r4: l
     mov.u32 %r4, %r0;
 
-    // Evaluate %r5: l
-    cvt.s32.u32 %r5, %r4;
+    // Evaluate %r5
+    mov.b32 %r5, 0x00000001;
 
     // Evaluate %r6
-    mov.b32 %r6, 0x00000001;
+    and.b32 %r6, %r4, %r5;
 
     // Evaluate %r7
-    and.b32 %r7, %r5, %r6;
+    mov.b32 %r7, 0x00000000;
 
-    // Evaluate %r8
-    mov.b32 %r8, 0x00000000;
+    // Evaluate %p8: result
+    setp.ne.s32 %p8, %r6, %r7;
 
-    // Evaluate %p9: result
-    setp.ne.s32 %p9, %r7, %r8;
-
-    // Store %p9: result
+    // Store %p8: result
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    selp.u16 %w0, 1, 0, %p9;
+    selp.u16 %w0, 1, 0, %p8;
     st.global.cs.u8 [%rd0], %w0;
 
     add.u32 %r0, %r0, %r1;
@@ -106,79 +98,78 @@ L0:
     ret;
 }
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(4): 0
-jit_var_free(4)
-jit_var_dec_ref_int(2): 0
 jit_var_dec_ref_int(3): 0
 jit_var_free(3)
-jit_var_dec_ref_int(5): 0
-jit_var_free(5)
+jit_var_dec_ref_int(1): 0
+jit_var_dec_ref_int(2): 0
+jit_var_free(2)
+jit_var_dec_ref_int(4): 0
+jit_var_free(4)
 jit_eval(): done.
-jit_var_inc_ref_ext(6): 2
-jit_var_copy_ptr(12 <- 6): <@>
-jit_var_inc_ref_ext(12): 1
-jit_var_inc_ref_int(12): 1
-jit_var_inc_ref_int(10): 1
-jit_var_new(13 <- 12, 10): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.u8 %w0, [%rd3]$nsetp.ne.u16 $r0, %w0, 0
-jit_var_inc_ref_ext(13): 1
-jit_var_dec_ref_ext(12): 0
-jit_var_dec_ref_ext(11): 0
-jit_var_free(11)
-jit_var_dec_ref_ext(10): 0
-jit_var_dec_ref_ext(9): 0
-jit_var_set_label(13): "even"
-jit_var_new(9): mov.$b0 $r0, 0x00000002 (reused)
-jit_var_inc_ref_ext(9): 1
-jit_var_inc_ref_int(8): 2
-jit_var_inc_ref_int(9): 2
-jit_var_dec_ref_int(8): 1
-jit_var_dec_ref_int(9): 1
-jit_var_new(10 <- 8, 9): mul.lo.$t0 $r0, $r1, $r2 (reused)
+jit_var_inc_ref_ext(5): 2
+jit_var_copy_ptr(10 <- 5): <@>
 jit_var_inc_ref_ext(10): 1
-jit_var_new(14): mov.$b0 $r0, 0x00000001
-jit_var_inc_ref_ext(14): 1
-jit_var_inc_ref_int(10): 2
-jit_var_inc_ref_int(14): 1
-jit_var_new(15 <- 10, 14): add.$t0 $r0, $r1, $r2
-jit_var_inc_ref_ext(15): 1
-jit_var_new(16): mov.$t0 $r0, 1
-jit_var_inc_ref_ext(16): 1
-jit_var_inc_ref_ext(12): 1
-jit_var_inc_ref_int(12): 2
-jit_var_inc_ref_int(15): 1
-jit_var_new(17 <- 12, 15): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.u8 %w0, [%rd3]$nsetp.ne.u16 $r0, %w0, 0
-jit_var_inc_ref_ext(17): 1
-jit_var_dec_ref_ext(12): 0
-jit_var_dec_ref_ext(16): 0
-jit_var_free(16)
-jit_var_dec_ref_ext(15): 0
-jit_var_dec_ref_ext(14): 0
+jit_var_inc_ref_int(10): 1
+jit_var_inc_ref_int(8): 1
+jit_var_new(11 <- 10, 8): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.u8 %w0, [%rd3]$nsetp.ne.u16 $r0, %w0, 0
+jit_var_inc_ref_ext(11): 1
 jit_var_dec_ref_ext(10): 0
 jit_var_dec_ref_ext(9): 0
-jit_var_set_label(17): "odd"
+jit_var_free(9)
+jit_var_dec_ref_ext(8): 0
+jit_var_dec_ref_ext(7): 0
+jit_var_set_label(11): "even"
+jit_var_new(7): mov.$b0 $r0, 0x00000002 (reused)
+jit_var_inc_ref_ext(7): 1
+jit_var_inc_ref_int(6): 2
+jit_var_inc_ref_int(7): 2
+jit_var_dec_ref_int(6): 1
+jit_var_dec_ref_int(7): 1
+jit_var_new(8 <- 6, 7): mul.lo.$t0 $r0, $r1, $r2 (reused)
+jit_var_inc_ref_ext(8): 1
+jit_var_new(12): mov.$b0 $r0, 0x00000001
+jit_var_inc_ref_ext(12): 1
+jit_var_inc_ref_int(8): 2
+jit_var_inc_ref_int(12): 1
+jit_var_new(13 <- 8, 12): add.$t0 $r0, $r1, $r2
+jit_var_inc_ref_ext(13): 1
+jit_var_new(14): mov.$t0 $r0, 1
+jit_var_inc_ref_ext(14): 1
+jit_var_inc_ref_ext(10): 1
+jit_var_inc_ref_int(10): 2
+jit_var_inc_ref_int(13): 1
+jit_var_new(15 <- 10, 13): mul.wide.$t2 %rd3, $r2, $s0$nadd.$t1 %rd3, %rd3, $r1$nld.global.nc.u8 %w0, [%rd3]$nsetp.ne.u16 $r0, %w0, 0
+jit_var_inc_ref_ext(15): 1
+jit_var_dec_ref_ext(10): 0
+jit_var_dec_ref_ext(14): 0
+jit_var_free(14)
+jit_var_dec_ref_ext(13): 0
+jit_var_dec_ref_ext(12): 0
+jit_var_dec_ref_ext(8): 0
+jit_var_dec_ref_ext(7): 0
+jit_var_set_label(15): "odd"
 Mask  : [0, 1, 0, 1, 0, .. 1012 skipped .., 1, 0, 1, 0, 1]
 jit_eval(): begin.
 jit_assemble(size=510): register map:
-   - %r4 -> 7
-   - %r5 -> 8 "l2"
-   - %r6 -> 9 [scalar]
-   - %r7 -> 10
-   - %rd8 -> 12 [scalar] [direct_pointer]
-   - %p9 -> 13 "even" [out]
+   - %r4 -> 6 "l2"
+   - %r5 -> 7 [scalar]
+   - %r6 -> 8
+   - %rd7 -> 10 [scalar] [direct_pointer]
+   - %p8 -> 11 "even" [out]
 jit_malloc(type=device, device=0, size=512): <@> (new allocation)
-jit_run(): launching kernel (n=510, in=1, out=1, ops=10) ..
+jit_run(): launching kernel (n=510, in=1, out=1, ops=9) ..
 .version 6.3
 .address_size 64
 .entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<10>;
-    .reg.b16 %w<10>;
-    .reg.b32 %r<10>;
-    .reg.b64 %rd<10>;
-    .reg.f32 %f<10>;
-    .reg.f64 %d<10>;
-    .reg.pred %p<10>;
+    .reg.b8 %b<9>;
+    .reg.b16 %w<9>;
+    .reg.b32 %r<9>;
+    .reg.b64 %rd<9>;
+    .reg.f32 %f<9>;
+    .reg.f64 %d<9>;
+    .reg.pred %p<9>;
 
     // Grid-stride loop setup
     mov.u32 %r0, %ctaid.x;
@@ -194,32 +185,29 @@ jit_run(): launching kernel (n=510, in=1, out=1, ops=10) ..
 
 L1: // Loop body
 
-    // Evaluate %r4
+    // Evaluate %r4: l2
     mov.u32 %r4, %r0;
 
-    // Evaluate %r5: l2
-    cvt.s32.u32 %r5, %r4;
+    // Evaluate %r5
+    mov.b32 %r5, 0x00000002;
 
     // Evaluate %r6
-    mov.b32 %r6, 0x00000002;
+    mul.lo.s32 %r6, %r4, %r5;
 
-    // Evaluate %r7
-    mul.lo.s32 %r7, %r5, %r6;
+    // Load %rd7
+    ld.param.u64 %rd7, [arg0];
 
-    // Load %rd8
-    ld.param.u64 %rd8, [arg0];
-
-    // Evaluate %p9: even
-    mul.wide.s32 %rd3, %r7, 1;
-    add.u64 %rd3, %rd3, %rd8;
+    // Evaluate %p8: even
+    mul.wide.s32 %rd3, %r6, 1;
+    add.u64 %rd3, %rd3, %rd7;
     ld.global.nc.u8 %w0, [%rd3];
-    setp.ne.u16 %p9, %w0, 0;
+    setp.ne.u16 %p8, %w0, 0;
 
-    // Store %p9: even
+    // Store %p8: even
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    selp.u16 %w0, 1, 0, %p9;
+    selp.u16 %w0, 1, 0, %p8;
     st.global.cs.u8 [%rd0], %w0;
 
     add.u32 %r0, %r0, %r1;
@@ -230,34 +218,33 @@ L0:
     ret;
 }
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(12): 1
 jit_var_dec_ref_int(10): 1
+jit_var_dec_ref_int(8): 1
 jit_eval(): done.
 Even  : [0, 0, 0, 0, 0, .. 500 skipped .., 0, 0, 0, 0, 0]
 jit_eval(): begin.
 jit_assemble(size=510): register map:
-   - %r4 -> 7
-   - %r5 -> 8 "l2"
-   - %r6 -> 9 [scalar]
-   - %r7 -> 10
-   - %r8 -> 14 [scalar]
-   - %r9 -> 15
-   - %rd10 -> 12 [scalar] [direct_pointer]
-   - %p11 -> 17 "odd" [out]
+   - %r4 -> 6 "l2"
+   - %r5 -> 7 [scalar]
+   - %r6 -> 8
+   - %r7 -> 12 [scalar]
+   - %r8 -> 13
+   - %rd9 -> 10 [scalar] [direct_pointer]
+   - %p10 -> 15 "odd" [out]
 jit_malloc(type=device, device=0, size=512): <@> (new allocation)
-jit_run(): launching kernel (n=510, in=1, out=1, ops=12) ..
+jit_run(): launching kernel (n=510, in=1, out=1, ops=11) ..
 .version 6.3
 .address_size 64
 .entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<12>;
-    .reg.b16 %w<12>;
-    .reg.b32 %r<12>;
-    .reg.b64 %rd<12>;
-    .reg.f32 %f<12>;
-    .reg.f64 %d<12>;
-    .reg.pred %p<12>;
+    .reg.b8 %b<11>;
+    .reg.b16 %w<11>;
+    .reg.b32 %r<11>;
+    .reg.b64 %rd<11>;
+    .reg.f32 %f<11>;
+    .reg.f64 %d<11>;
+    .reg.pred %p<11>;
 
     // Grid-stride loop setup
     mov.u32 %r0, %ctaid.x;
@@ -273,38 +260,35 @@ jit_run(): launching kernel (n=510, in=1, out=1, ops=12) ..
 
 L1: // Loop body
 
-    // Evaluate %r4
+    // Evaluate %r4: l2
     mov.u32 %r4, %r0;
 
-    // Evaluate %r5: l2
-    cvt.s32.u32 %r5, %r4;
+    // Evaluate %r5
+    mov.b32 %r5, 0x00000002;
 
     // Evaluate %r6
-    mov.b32 %r6, 0x00000002;
+    mul.lo.s32 %r6, %r4, %r5;
 
     // Evaluate %r7
-    mul.lo.s32 %r7, %r5, %r6;
+    mov.b32 %r7, 0x00000001;
 
     // Evaluate %r8
-    mov.b32 %r8, 0x00000001;
+    add.s32 %r8, %r6, %r7;
 
-    // Evaluate %r9
-    add.s32 %r9, %r7, %r8;
+    // Load %rd9
+    ld.param.u64 %rd9, [arg0];
 
-    // Load %rd10
-    ld.param.u64 %rd10, [arg0];
-
-    // Evaluate %p11: odd
-    mul.wide.s32 %rd3, %r9, 1;
-    add.u64 %rd3, %rd3, %rd10;
+    // Evaluate %p10: odd
+    mul.wide.s32 %rd3, %r8, 1;
+    add.u64 %rd3, %rd3, %rd9;
     ld.global.nc.u8 %w0, [%rd3];
-    setp.ne.u16 %p11, %w0, 0;
+    setp.ne.u16 %p10, %w0, 0;
 
-    // Store %p11: odd
+    // Store %p10: odd
     ld.param.u64 %rd0, [arg1];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
-    selp.u16 %w0, 1, 0, %p11;
+    selp.u16 %w0, 1, 0, %p10;
     st.global.cs.u8 [%rd0], %w0;
 
     add.u32 %r0, %r0, %r1;
@@ -315,99 +299,98 @@ L0:
     ret;
 }
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(12): 0
-jit_var_free(12)
-jit_var_dec_ref_ext(6): 1
-jit_var_dec_ref_int(15): 0
-jit_var_free(15)
 jit_var_dec_ref_int(10): 0
 jit_var_free(10)
+jit_var_dec_ref_ext(5): 1
+jit_var_dec_ref_int(13): 0
+jit_var_free(13)
 jit_var_dec_ref_int(8): 0
-jit_var_dec_ref_int(9): 0
-jit_var_free(9)
-jit_var_dec_ref_int(14): 0
-jit_var_free(14)
+jit_var_free(8)
+jit_var_dec_ref_int(6): 0
+jit_var_dec_ref_int(7): 0
+jit_var_free(7)
+jit_var_dec_ref_int(12): 0
+jit_var_free(12)
 jit_eval(): done.
 Odd   : [1, 1, 1, 1, 1, .. 500 skipped .., 1, 1, 1, 1, 1]
-jit_var_new(18): mov.$b0 $r0, 0x00000002
+jit_var_new(16): mov.$b0 $r0, 0x00000002
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(6): 1
+jit_var_inc_ref_int(16): 1
+jit_var_new(17 <- 6, 16): mul.lo.$t0 $r0, $r1, $r2
+jit_var_inc_ref_ext(17): 1
+jit_var_new(18): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(18): 1
-jit_var_inc_ref_int(8): 1
-jit_var_inc_ref_int(18): 1
-jit_var_new(19 <- 8, 18): mul.lo.$t0 $r0, $r1, $r2
+jit_var_inc_ref_ext(5): 2
+jit_var_copy_ptr(19 <- 5): <@>
 jit_var_inc_ref_ext(19): 1
-jit_var_new(20): mov.$t0 $r0, 1
-jit_var_inc_ref_ext(20): 1
-jit_var_inc_ref_ext(6): 2
-jit_var_copy_ptr(21 <- 6): <@>
-jit_var_inc_ref_ext(21): 1
-jit_var_inc_ref_int(21): 1
-jit_var_inc_ref_int(17): 1
 jit_var_inc_ref_int(19): 1
-jit_var_new(22 <- 21, 17, 19): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nselp.u16 %w0, 1, 0, $r2$nst.global.u8 [%rd3], %w0
-jit_var_inc_ref_ext(22): 1
-jit_var_mark_scatter(22, 6)
-jit_var_dec_ref_ext(21): 0
-jit_var_dec_ref_ext(20): 0
-jit_var_free(20)
+jit_var_inc_ref_int(15): 1
+jit_var_inc_ref_int(17): 1
+jit_var_new(20 <- 19, 15, 17): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nselp.u16 %w0, 1, 0, $r2$nst.global.u8 [%rd3], %w0
+jit_var_inc_ref_ext(20): 1
+jit_var_mark_scatter(20, 5)
 jit_var_dec_ref_ext(19): 0
 jit_var_dec_ref_ext(18): 0
-jit_var_new(18): mov.$b0 $r0, 0x00000002 (reused)
-jit_var_inc_ref_ext(18): 1
-jit_var_inc_ref_int(8): 2
-jit_var_inc_ref_int(18): 2
-jit_var_dec_ref_int(8): 1
-jit_var_dec_ref_int(18): 1
-jit_var_new(19 <- 8, 18): mul.lo.$t0 $r0, $r1, $r2 (reused)
-jit_var_inc_ref_ext(19): 1
-jit_var_new(23): mov.$b0 $r0, 0x00000001
-jit_var_inc_ref_ext(23): 1
-jit_var_inc_ref_int(19): 2
-jit_var_inc_ref_int(23): 1
-jit_var_new(24 <- 19, 23): add.$t0 $r0, $r1, $r2
-jit_var_inc_ref_ext(24): 1
-jit_var_new(25): mov.$t0 $r0, 1
-jit_var_inc_ref_ext(25): 1
+jit_var_free(18)
+jit_var_dec_ref_ext(17): 0
+jit_var_dec_ref_ext(16): 0
+jit_var_new(16): mov.$b0 $r0, 0x00000002 (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(6): 2
+jit_var_inc_ref_int(16): 2
+jit_var_dec_ref_int(6): 1
+jit_var_dec_ref_int(16): 1
+jit_var_new(17 <- 6, 16): mul.lo.$t0 $r0, $r1, $r2 (reused)
+jit_var_inc_ref_ext(17): 1
+jit_var_new(21): mov.$b0 $r0, 0x00000001
 jit_var_inc_ref_ext(21): 1
-jit_var_inc_ref_int(21): 2
-jit_var_inc_ref_int(13): 1
-jit_var_inc_ref_int(24): 1
-jit_var_new(26 <- 21, 13, 24): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nselp.u16 %w0, 1, 0, $r2$nst.global.u8 [%rd3], %w0
-jit_var_inc_ref_ext(26): 1
-jit_var_mark_scatter(26, 6)
-jit_var_dec_ref_ext(21): 0
-jit_var_dec_ref_ext(25): 0
-jit_var_free(25)
-jit_var_dec_ref_ext(24): 0
-jit_var_dec_ref_ext(23): 0
+jit_var_inc_ref_int(17): 2
+jit_var_inc_ref_int(21): 1
+jit_var_new(22 <- 17, 21): add.$t0 $r0, $r1, $r2
+jit_var_inc_ref_ext(22): 1
+jit_var_new(23): mov.$t0 $r0, 1
+jit_var_inc_ref_ext(23): 1
+jit_var_inc_ref_ext(19): 1
+jit_var_inc_ref_int(19): 2
+jit_var_inc_ref_int(11): 1
+jit_var_inc_ref_int(22): 1
+jit_var_new(24 <- 19, 11, 22): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nselp.u16 %w0, 1, 0, $r2$nst.global.u8 [%rd3], %w0
+jit_var_inc_ref_ext(24): 1
+jit_var_mark_scatter(24, 5)
 jit_var_dec_ref_ext(19): 0
-jit_var_dec_ref_ext(18): 0
+jit_var_dec_ref_ext(23): 0
+jit_var_free(23)
+jit_var_dec_ref_ext(22): 0
+jit_var_dec_ref_ext(21): 0
+jit_var_dec_ref_ext(17): 0
+jit_var_dec_ref_ext(16): 0
 jit_eval(): begin.
 jit_assemble(size=510): register map:
-   - %r4 -> 7
-   - %r5 -> 8 "l2"
-   - %r6 -> 18 [scalar]
-   - %r7 -> 19
-   - %p8 -> 17 "odd" [in]
-   - %rd9 -> 21 [scalar] [direct_pointer]
-   - %u10 -> 22 [scat]
-   - %r11 -> 23 [scalar]
-   - %r12 -> 24
-   - %p13 -> 13 "even" [in]
-   - %u14 -> 26 [scat]
-jit_run(): launching kernel (n=510, in=3, out=0, ops=15) ..
+   - %r4 -> 6 "l2"
+   - %r5 -> 16 [scalar]
+   - %r6 -> 17
+   - %p7 -> 15 "odd" [in]
+   - %rd8 -> 19 [scalar] [direct_pointer]
+   - %u9 -> 20 [scat]
+   - %r10 -> 21 [scalar]
+   - %r11 -> 22
+   - %p12 -> 11 "even" [in]
+   - %u13 -> 24 [scat]
+jit_run(): launching kernel (n=510, in=3, out=0, ops=14) ..
 .version 6.3
 .address_size 64
 .entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2) {
-    .reg.b8 %b<15>;
-    .reg.b16 %w<15>;
-    .reg.b32 %r<15>;
-    .reg.b64 %rd<15>;
-    .reg.f32 %f<15>;
-    .reg.f64 %d<15>;
-    .reg.pred %p<15>;
+    .reg.b8 %b<14>;
+    .reg.b16 %w<14>;
+    .reg.b32 %r<14>;
+    .reg.b64 %rd<14>;
+    .reg.f32 %f<14>;
+    .reg.f64 %d<14>;
+    .reg.pred %p<14>;
 
     // Grid-stride loop setup
     mov.u32 %r0, %ctaid.x;
@@ -423,51 +406,48 @@ jit_run(): launching kernel (n=510, in=3, out=0, ops=15) ..
 
 L1: // Loop body
 
-    // Evaluate %r4
+    // Evaluate %r4: l2
     mov.u32 %r4, %r0;
 
-    // Evaluate %r5: l2
-    cvt.s32.u32 %r5, %r4;
+    // Evaluate %r5
+    mov.b32 %r5, 0x00000002;
 
     // Evaluate %r6
-    mov.b32 %r6, 0x00000002;
+    mul.lo.s32 %r6, %r4, %r5;
 
-    // Evaluate %r7
-    mul.lo.s32 %r7, %r5, %r6;
-
-    // Load %p8: odd
+    // Load %p7: odd
     ld.param.u64 %rd0, [arg0];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     ld.global.cs.u8 %w0, [%rd0];
-    setp.ne.u16 %p8, %w0, 0;
+    setp.ne.u16 %p7, %w0, 0;
 
-    // Load %rd9
-    ld.param.u64 %rd9, [arg1];
+    // Load %rd8
+    ld.param.u64 %rd8, [arg1];
 
-    // Evaluate %u10
-    mul.wide.s32 %rd3, %r7, 1;
-    add.u64 %rd3, %rd3, %rd9;
-    selp.u16 %w0, 1, 0, %p8;
+    // Evaluate %u9
+    mul.wide.s32 %rd3, %r6, 1;
+    add.u64 %rd3, %rd3, %rd8;
+    selp.u16 %w0, 1, 0, %p7;
     st.global.u8 [%rd3], %w0;
 
+    // Evaluate %r10
+    mov.b32 %r10, 0x00000001;
+
     // Evaluate %r11
-    mov.b32 %r11, 0x00000001;
+    add.s32 %r11, %r6, %r10;
 
-    // Evaluate %r12
-    add.s32 %r12, %r7, %r11;
-
-    // Load %p13: even
+    // Load %p12: even
     ld.param.u64 %rd0, [arg2];
     mul.wide.u32 %rd1, %r0, 1;
     add.u64 %rd0, %rd0, %rd1;
     ld.global.cs.u8 %w0, [%rd0];
-    setp.ne.u16 %p13, %w0, 0;
+    setp.ne.u16 %p12, %w0, 0;
 
-    // Evaluate %u14
-    mul.wide.s32 %rd3, %r12, 1;
-    add.u64 %rd3, %rd3, %rd9;
-    selp.u16 %w0, 1, 0, %p13;
+    // Evaluate %u13
+    mul.wide.s32 %rd3, %r11, 1;
+    add.u64 %rd3, %rd3, %rd8;
+    selp.u16 %w0, 1, 0, %p12;
     st.global.u8 [%rd3], %w0;
 
     add.u32 %r0, %r0, %r1;
@@ -478,44 +458,40 @@ L0:
     ret;
 }
 jit_eval(): cleaning up..
-jit_var_dec_ref_ext(22): 0
-jit_var_free(22)
-jit_var_dec_ref_int(21): 1
-jit_var_dec_ref_int(17): 0
+jit_var_dec_ref_ext(20): 0
+jit_var_free(20)
 jit_var_dec_ref_int(19): 1
-jit_var_dec_ref_ext(26): 0
-jit_var_free(26)
-jit_var_dec_ref_int(21): 0
-jit_var_free(21)
-jit_var_dec_ref_ext(6): 1
-jit_var_dec_ref_int(13): 0
-jit_var_dec_ref_int(24): 0
+jit_var_dec_ref_int(15): 0
+jit_var_dec_ref_int(17): 1
+jit_var_dec_ref_ext(24): 0
 jit_var_free(24)
 jit_var_dec_ref_int(19): 0
 jit_var_free(19)
-jit_var_dec_ref_int(8): 0
-jit_var_dec_ref_int(18): 0
-jit_var_free(18)
-jit_var_dec_ref_int(23): 0
-jit_var_free(23)
+jit_var_dec_ref_ext(5): 1
+jit_var_dec_ref_int(11): 0
+jit_var_dec_ref_int(22): 0
+jit_var_free(22)
+jit_var_dec_ref_int(17): 0
+jit_var_free(17)
+jit_var_dec_ref_int(6): 0
+jit_var_dec_ref_int(16): 0
+jit_var_free(16)
+jit_var_dec_ref_int(21): 0
+jit_var_free(21)
 jit_eval(): done.
 Mask: [1, 0, 1, 0, 1, .. 1012 skipped .., 0, 1, 0, 0, 1]
-jit_var_dec_ref_ext(17): 0
-jit_var_free(17)
+jit_var_dec_ref_ext(15): 0
+jit_var_free(15)
 jit_free(<@>, type=device, device=0, size=512)
-jit_var_dec_ref_ext(13): 0
-jit_var_free(13)
+jit_var_dec_ref_ext(11): 0
+jit_var_free(11)
 jit_free(<@>, type=device, device=0, size=512)
-jit_var_dec_ref_ext(8): 0
-jit_var_free(8)
-jit_var_dec_ref_int(7): 0
-jit_var_free(7)
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
+jit_var_dec_ref_ext(5): 0
+jit_var_free(5)
 jit_free(<@>, type=device, device=0, size=1024)
-jit_var_dec_ref_ext(2): 0
-jit_var_free(2)
-jit_var_dec_ref_int(1): 0
+jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 3 deallocations
