@@ -344,6 +344,9 @@ void jit_var_set_label(uint32_t index, const char *label_) {
 
 uint32_t jit_var_new_literal(VarType type, int cuda,
                              uint64_t value, uint32_t size) {
+    if (unlikely(size == 0))
+        return 0;
+
     const char *fmt = nullptr;
     char buffer[256];
 
@@ -441,6 +444,9 @@ uint32_t jit_var_new_literal(VarType type, int cuda,
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_var_new_0(VarType type, const char *stmt, int stmt_static,
                        int cuda, uint32_t size) {
+    if (unlikely(size == 0))
+        return 0;
+
     Variable v;
     v.type = (uint32_t) type;
     v.size = size;
@@ -657,7 +663,7 @@ uint32_t jit_var_new_4(VarType type, const char *stmt, int stmt_static,
 /// Register an existing variable with the JIT compiler
 uint32_t jit_var_map(VarType type, int cuda, void *ptr, uint32_t size, int free) {
     if (unlikely(size == 0))
-        jit_raise("jit_var_map: size must be nonzero!");
+        return 0;
 
     Variable v;
     v.type = (uint32_t) type;
