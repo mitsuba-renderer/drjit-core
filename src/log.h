@@ -78,3 +78,9 @@ extern float timer();
     return ptr;
 }
 
+ JITC_MALLOC inline void* realloc_check(void *orig, size_t size) {
+    void *ptr = realloc(orig, size);
+    if (unlikely(!ptr))
+        jit_fail("realloc_check(): could not resize memory region to %zu bytes!", size);
+    return ptr;
+}
