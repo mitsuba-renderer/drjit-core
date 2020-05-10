@@ -453,6 +453,17 @@ void jitc_registry_trim() {
     jit_registry_trim();
 }
 
+void jitc_registry_set_attr(void *self, const char *name, const void *value,
+                            size_t size) {
+    lock_guard guard(state.mutex);
+    jit_registry_set_attr(self, name, value, size);
+}
+
+const void *jitc_registry_attr_data(const char *domain, const char *name) {
+    lock_guard guard(state.mutex);
+    return jit_registry_attr_data(domain, name);
+}
+
 VCallBucket *jitc_vcall(const char *domain, uint32_t index,
                         uint32_t *bucket_count_out) {
     lock_guard guard(state.mutex);

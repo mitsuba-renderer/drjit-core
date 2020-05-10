@@ -379,6 +379,8 @@ TEST_LLVM(16_pointer_registry) {
     jitc_assert(jitc_registry_get_max(key_1) == 3u);
     jitc_assert(jitc_registry_get_max(key_2) == 1u);
 
+    jitc_registry_trim(); // should be a no-op
+
     jitc_assert(id_1 == 1u);
     jitc_assert(id_2 == 2u);
     jitc_assert(id_a == 1u);
@@ -1037,4 +1039,38 @@ TEST_BOTH(34_resize) {
         x.resize(3);
         jitc_log(Info, "%s", x.str());
     }
+}
+
+TEST_LLVM(35_pointer_registry_attribute) {
+    const char *domain = "MyKey";
+    for (int i = 1; i < 36; ++i)
+        jitc_registry_put(domain, (void *) (uintptr_t) i);
+    for (int i = 1; i < 36; ++i) {
+        float value = (float) i;
+        jitc_registry_set_attr((void *) (uintptr_t) i, "my_value", &value, sizeof(float));
+    }
+    float *ptr = (float *) jitc_registry_attr_data(domain, "my_value");
+    for (int i = 1; i < 36; ++i)
+        jitc_assert(ptr[jitc_registry_get_id((void *) (uintptr_t) i)] == i);
+    for (int i = 35; i >= 1; --i) {
+        float value = -(float) i;
+        jitc_registry_set_attr((void *) (uintptr_t) i, "my_value", &value, sizeof(float));
+    }
+    for (int i = 1; i < 36; ++i)
+        jitc_assert(ptr[jitc_registry_get_id((void *) (uintptr_t) i)] == -i);
+    for (int i = 35; i >= 10; --i)
+        jitc_registry_remove((void *) (uintptr_t) i);
+    jitc_registry_trim();
+    for (int i = 9; i >= 1; --i)
+        jitc_registry_remove((void *) (uintptr_t) i);
+    jitc_registry_trim();
+
+    bool success;
+    try {
+        ptr = (float *) jitc_registry_attr_data(domain, "my_value");
+        success = false;
+    } catch (...) {
+        success = true;
+    }
+    jitc_assert(success);
 }

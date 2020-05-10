@@ -72,6 +72,7 @@ CUresult (*cuModuleLoadData)(CUmodule *, const void *) = nullptr;
 CUresult (*cuModuleUnload)(CUmodule) = nullptr;
 CUresult (*cuOccupancyMaxPotentialBlockSize)(int *, int *, CUfunction, void *,
                                              size_t, int) = nullptr;
+CUresult (*cuCtxGetCurrent)(CUcontext*) = nullptr;
 CUresult (*cuCtxSetCurrent)(CUcontext) = nullptr;
 CUresult (*cuStreamCreate)(CUstream *, unsigned int) = nullptr;
 CUresult (*cuStreamDestroy)(CUstream) = nullptr;
@@ -205,6 +206,7 @@ bool jit_cuda_init() {
         LOAD(cuModuleLoadData);
         LOAD(cuModuleUnload);
         LOAD(cuOccupancyMaxPotentialBlockSize);
+        LOAD(cuCtxGetCurrent);
         LOAD(cuCtxSetCurrent);
         LOAD(cuStreamCreate);
         LOAD(cuStreamDestroy, "v2");

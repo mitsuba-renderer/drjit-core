@@ -115,6 +115,7 @@ extern CUresult (*cuModuleLoadData)(CUmodule *, const void *);
 extern CUresult (*cuModuleUnload)(CUmodule);
 extern CUresult (*cuOccupancyMaxPotentialBlockSize)(int *, int *, CUfunction,
                                                     void *, size_t, int);
+extern CUresult (*cuCtxGetCurrent)(CUcontext *);
 extern CUresult (*cuCtxSetCurrent)(CUcontext);
 extern CUresult (*cuStreamCreate)(CUstream *, unsigned int);
 extern CUresult (*cuStreamDestroy)(CUstream);

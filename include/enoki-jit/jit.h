@@ -500,12 +500,52 @@ extern JITC_EXPORT void *jitc_registry_get_ptr(const char *domain, uint32_t id);
 extern JITC_EXPORT uint32_t jitc_registry_get_max(const char *domain);
 
 /**
- * \brief Compact the registry and release unused IDs
+ * \brief Compact the registry and release unused IDs and attributes
  *
  * It's a good idea to call this function following a large number of calls to
  * \ref jitc_registry_remove().
  */
 extern JITC_EXPORT void jitc_registry_trim();
+
+/**
+ * \brief Set a custom per-pointer attribute
+ *
+ * The pointer registry can optionally associate one or more read-only
+ * attribute with each pointer that can be set using this function. Such
+ * pointer attributes provide an efficient way to avoid expensive vectorized
+ * method calls (via \ref jit_vcall()) for simple getter-like functions. In
+ * particular, this feature would be used in conjunction with \ref
+ * jitc_registry_attr_data(), which returns a pointer to a linear array
+ * containing all attributes. A vector of 32-bit IDs (returned by \ref
+ * jitc_registry_put() or \ref jitc_registry_get_id()) can then be used to
+ * gather from this address.
+ *
+ * \param ptr
+ *     Pointer, whose attribute should be set. Must have been previously
+ *     registered using \ref jitc_registry_put()
+ *
+ * \param name
+ *     Name of the attribute to be set.
+ *
+ * \param value
+ *     Pointer to the attribute value (in CPU memory)
+ *
+ * \param size
+ *     Size of the pointed-to region.
+ */
+extern JITC_EXPORT void jitc_registry_set_attr(void *ptr,
+                                               const char *name,
+                                               const void *value,
+                                               size_t size);
+
+/**
+ * \brief Return a pointer to a contiguous array containing a specific
+ * attribute associated with a specific domain
+ *
+ * \sa jitc_registry_set_attr
+ */
+extern JITC_EXPORT const void *jitc_registry_attr_data(const char *domain,
+                                                       const char *name);
 
 // ====================================================================
 //                        Variable management

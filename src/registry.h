@@ -34,3 +34,10 @@ extern void jit_registry_trim();
 
 /// Shut down the pointer registry (reports leaks)
 extern void jit_registry_shutdown();
+
+/// Set a custom per-pointer attribute
+extern void jit_registry_set_attr(void *ptr, const char *name,
+                                  const void *value, size_t size);
+
+/// Retrieve a pointer to a buffer storing a specific attribute
+extern const void *jit_registry_attr_data(const char *domain, const char *name);

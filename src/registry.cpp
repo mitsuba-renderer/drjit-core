@@ -14,8 +14,8 @@ static_assert(sizeof(void*) == 8, "32 bit architectures are not supported!");
 
 /// Register a pointer with Enoki's pointer registry
 uint32_t jit_registry_put(const char *domain, void *ptr) {
-    if (ptr == nullptr)
-        return 0;
+    if (unlikely(ptr == nullptr))
+        jit_raise("jit_registry_put(): cannot register the null pointer!");
 
     // Create the rev. map. first and throw if the pointer is already registered
     auto it_rev = state.registry_rev.try_emplace(ptr, RegistryKey(domain, 0));
@@ -150,7 +150,7 @@ void *jit_registry_get_ptr(const char *domain, uint32_t id) {
     return it.value();
 }
 
-/// Compact the registry and release unused IDs
+/// Compact the registry and release unused IDs and attributes
 void jit_registry_trim() {
     RegistryFwdMap registry_fwd;
 
@@ -172,12 +172,32 @@ void jit_registry_trim() {
         }
     }
 
-    if (state.registry_fwd.size() != registry_fwd.size())
+    if (state.registry_fwd.size() != registry_fwd.size()) {
         jit_trace("jit_registry_trim(): removed %zu / %zu entries.",
                   state.registry_fwd.size() - registry_fwd.size(),
                   state.registry_fwd.size());
 
-    state.registry_fwd = std::move(registry_fwd);
+        state.registry_fwd = std::move(registry_fwd);
+    }
+
+    AttributeMap attributes;
+    for (auto &kv : state.attributes) {
+        if (state.registry_fwd.find(RegistryKey(kv.first.domain, 0)) != state.registry_fwd.end()) {
+            attributes.insert(kv);
+        } else {
+            if (state.has_cuda)
+                cuda_check(cuMemFree((CUdeviceptr) kv.second.ptr));
+            else
+                free(kv.second.ptr);
+        }
+    }
+
+    if (state.attributes.size() != attributes.size()) {
+        jit_trace("jit_registry_trim(): removed %zu / %zu attributes.",
+                  state.attributes.size() - attributes.size(),
+                  state.attributes.size());
+        state.attributes = std::move(attributes);
+    }
 }
 
 /// Provide a bound (<=) on the largest ID associated with a domain
@@ -196,6 +216,75 @@ void jit_registry_shutdown() {
 
     if (!state.registry_fwd.empty() || !state.registry_rev.empty())
         jit_log(Warn, "jit_registry_shutdown(): leaked %zu forward "
-                "and %zu reverse mappings!",
-                state.registry_fwd.size(), state.registry_rev.size());
+                "and %zu reverse mappings!", state.registry_fwd.size(),
+                state.registry_rev.size());
+
+    if (!state.attributes.empty())
+        jit_log(Warn, "jit_registry_shutdown(): leaked %zu attributes!",
+                state.attributes.size());
+}
+
+void jit_registry_set_attr(void *ptr, const char *name,
+                           const void *value, size_t isize) {
+    auto it = state.registry_rev.find(ptr);
+    if (unlikely(it == state.registry_rev.end()))
+        jit_raise("jit_registry_set_attr(): pointer %p could not be found!", ptr);
+
+    const char *domain = it.value().domain;
+    uint32_t id = it.value().id;
+
+    jit_trace("jit_registry_set_attr(" ENOKI_PTR ", id=%u, name=\"%s\", size=%zu)",
+              (uintptr_t) ptr, id, name, isize);
+
+    AttributeValue &attr = state.attributes[AttributeKey(domain, name)];
+    if (attr.isize == 0)
+        attr.isize = isize;
+    else if (attr.isize != isize)
+        jit_raise("jit_registry_set_attr(): incompatible size!");
+
+    if (id >= attr.count) {
+        uint32_t new_count = std::max(id + 1, std::max(8u, attr.count * 2u));
+        size_t old_size = (size_t) attr.count * (size_t) isize;
+        size_t new_size = (size_t) new_count * (size_t) isize;
+        void *ptr;
+
+        if (state.has_cuda) {
+            CUcontext ctx;
+            cuda_check(cuCtxGetCurrent(&ctx));
+            if (!ctx)
+                cuda_check(cuCtxSetCurrent(state.devices[0].context));
+            CUresult ret = cuMemAllocManaged((CUdeviceptr *) &ptr, new_size, CU_MEM_ATTACH_GLOBAL);
+            if (ret != CUDA_SUCCESS) {
+                jit_malloc_trim();
+                cuda_check(cuMemAllocManaged((CUdeviceptr *) &ptr, new_size, CU_MEM_ATTACH_GLOBAL));
+            }
+            cuda_check(cuMemAdvise((CUdeviceptr) ptr, new_size, CU_MEM_ADVISE_SET_READ_MOSTLY, 0));
+            if (!ctx)
+                cuda_check(cuCtxSetCurrent(ctx));
+        } else {
+            ptr = malloc_check(new_size);
+        }
+
+        if (old_size != 0)
+            memcpy(ptr, attr.ptr, old_size);
+        memset((uint8_t *) ptr + old_size, 0, new_size - old_size);
+
+        if (state.has_cuda)
+            cuda_check(cuMemFree((CUdeviceptr) attr.ptr));
+        else
+            free(attr.ptr);
+
+        attr.ptr = ptr;
+        attr.count = new_count;
+    }
+
+    memcpy((uint8_t *) attr.ptr + id * isize, value, isize);
+}
+
+const void *jit_registry_attr_data(const char *domain, const char *name) {
+    auto it = state.attributes.find(AttributeKey(domain, name));
+    if (unlikely(it == state.attributes.end()))
+        jit_raise("jit_registry_attr_data(): entry with domain=\"%s\", "
+                  "name=\"%s\" not found!", domain, name);
+    return it.value().ptr;
 }

@@ -351,6 +351,35 @@ using RegistryFwdMap = tsl::robin_map<RegistryKey, void *, RegistryKeyHasher,
 
 using RegistryRevMap = tsl::robin_pg_map<const void *, RegistryKey>;
 
+struct AttributeKey {
+    const char *domain;
+    const char *name;
+
+    AttributeKey(const char *domain, const char *name) : domain(domain), name(name) { }
+
+    bool operator==(const AttributeKey &k) const {
+        return strcmp(domain, k.domain) == 0 && strcmp(name, k.name) == 0;
+    }
+};
+
+struct AttributeValue {
+    uint32_t isize = 0;
+    uint32_t count = 0;
+    void *ptr = nullptr;
+};
+
+/// Helper class to hash AttributeKey instances
+struct AttributeKeyHasher {
+    size_t operator()(const AttributeKey &k) const {
+        return hash_str(k.domain, hash_str(k.name));
+    }
+};
+
+using AttributeMap = tsl::robin_map<AttributeKey, AttributeValue, AttributeKeyHasher,
+                                    std::equal_to<AttributeKey>,
+                                    std::allocator<std::pair<AttributeKey, AttributeValue>>,
+                                    /* StoreHash = */ true>;
+
 // Maps (device ID, stream ID) to a Stream instance
 using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
 
@@ -392,6 +421,9 @@ struct State {
     /// Two-way mapping that can be used to associate pointers with unique 32 bit IDs
     RegistryFwdMap registry_fwd;
     RegistryRevMap registry_rev;
+
+    /// Per-pointer attributes provided by the pointer registry
+    AttributeMap attributes;
 
     /// Map of currently allocated memory regions
     tsl::robin_pg_map<const void *, AllocInfo> alloc_used;
