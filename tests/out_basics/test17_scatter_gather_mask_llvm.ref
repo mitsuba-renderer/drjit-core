@@ -4,13 +4,13 @@ jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_ext(1): 2
 jit_var_dec_ref_ext(1): 1
 jit_var_set_label(1): "l"
-jit_var_new(2): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(2): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1
 jit_var_new(3 <- 1, 2): $r0 = and <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(3): 1
-jit_var_new(4): $r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(4): $r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(4): 1
@@ -25,13 +25,13 @@ jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_ext(6): 2
 jit_var_dec_ref_ext(6): 1
 jit_var_set_label(6): "l2"
-jit_var_new(7): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(7): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(7): 1
 jit_var_new(8 <- 6, 7): $r0 = mul <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(8): 1
-jit_var_new(9): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(9): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(9): 1
 jit_eval(): begin.
 jit_assemble(size=1022): register map:
@@ -115,7 +115,7 @@ jit_var_free(9)
 jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
 jit_var_set_label(11): "even"
-jit_var_new(7): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
+jit_var_new_literal(7): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(6): 2
 jit_var_inc_ref_int(7): 2
@@ -123,13 +123,13 @@ jit_var_dec_ref_int(6): 1
 jit_var_dec_ref_int(7): 1
 jit_var_new(8 <- 6, 7): $r0 = mul <$w x $t0> $r1, $r2 (reused)
 jit_var_inc_ref_ext(8): 1
-jit_var_new(12): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(12): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(8): 2
 jit_var_inc_ref_int(12): 1
 jit_var_new(13 <- 8, 12): $r0 = add <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(13): 1
-jit_var_new(14): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(14): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(14): 1
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(10): 2
@@ -413,13 +413,13 @@ jit_var_dec_ref_int(12): 0
 jit_var_free(12)
 jit_eval(): done.
 Odd   : [1, 1, 1, 1, 1, .. 500 skipped .., 1, 1, 1, 1, 1]
-jit_var_new(16): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(16): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(16): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(16): 1
 jit_var_new(17 <- 6, 16): $r0 = mul <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(17): 1
-jit_var_new(18): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(18): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(18): 1
 jit_var_inc_ref_ext(5): 2
 jit_var_copy_ptr(19 <- 5): <@>
@@ -439,7 +439,7 @@ jit_var_dec_ref_ext(18): 0
 jit_var_free(18)
 jit_var_dec_ref_ext(17): 0
 jit_var_dec_ref_ext(16): 0
-jit_var_new(16): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
+jit_var_new_literal(16): $r0_0 = insertelement <$w x $t0> undef, $t0 2, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
 jit_var_inc_ref_ext(16): 1
 jit_var_inc_ref_int(6): 2
 jit_var_inc_ref_int(16): 2
@@ -447,13 +447,13 @@ jit_var_dec_ref_int(6): 1
 jit_var_dec_ref_int(16): 1
 jit_var_new(17 <- 6, 16): $r0 = mul <$w x $t0> $r1, $r2 (reused)
 jit_var_inc_ref_ext(17): 1
-jit_var_new(22): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(22): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(22): 1
 jit_var_inc_ref_int(17): 2
 jit_var_inc_ref_int(22): 1
 jit_var_new(23 <- 17, 22): $r0 = add <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(23): 1
-jit_var_new(24): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(24): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(24): 1
 jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(11): 1

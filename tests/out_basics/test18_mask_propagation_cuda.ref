@@ -1,7 +1,7 @@
 jit_set_device(device=0, stream=0): creating stream
-jit_var_new(1): mov.$t0 $r0, 1
+jit_var_new_literal(1): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(1): 1
-jit_var_new(2): mov.$t0 $r0, 0
+jit_var_new_literal(2): mov.$t0 $r0, 0
 jit_var_inc_ref_ext(2): 1
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)

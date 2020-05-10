@@ -67,7 +67,9 @@ struct CUDAArray {
     }
 
     CUDAArray(Value value) {
-        m_index = mkfull_(value, 1);
+        uint64_t tmp = 0;
+        memcpy(&tmp, &value, sizeof(Value));
+        m_index = jitc_var_new_literal(Type, 1, tmp, 1);
     }
 
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
@@ -578,60 +580,6 @@ struct CUDAArray {
         return result;
     }
 
-    static uint32_t mkfull_(Value value, uint32_t size) {
-        const char *fmt = nullptr;
-
-        switch (Type) {
-            case VarType::Float16:
-                fmt = "mov.$b0 $r0, 0x%04x";
-                break;
-
-            case VarType::Float32:
-                fmt = "mov.$t0 $r0, 0f%08x";
-                break;
-
-            case VarType::Float64:
-                fmt = "mov.$t0 $r0, 0d%016llx";
-                break;
-
-            case VarType::Bool:
-                fmt = "mov.$t0 $r0, %i";
-                break;
-
-            case VarType::Int8:
-            case VarType::UInt8:
-                fmt = "mov.b16 %%w1, 0x%02x$ncvt.u8.u16 $r0, %%w1";
-                break;
-
-            case VarType::Int16:
-            case VarType::UInt16:
-                fmt = "mov.$b0 $r0, 0x%04x";
-                break;
-
-            case VarType::Int32:
-            case VarType::UInt32:
-                fmt = "mov.$b0 $r0, 0x%08x";
-                break;
-
-            case VarType::Pointer:
-            case VarType::Int64:
-            case VarType::UInt64:
-                fmt = "mov.$b0 $r0, 0x%016llx";
-                break;
-
-            default:
-                fmt = "<<invalid format during cast>>";
-                break;
-        }
-
-        uint_with_size_t<Value> value_uint;
-        char value_str[48];
-        memcpy(&value_uint, &value, sizeof(Value));
-        snprintf(value_str, 48, fmt, value_uint);
-
-        return jitc_var_new_0(Type, value_str, 0, 1, size);
-    }
-
 protected:
     uint32_t m_index = 0;
 };
@@ -652,13 +600,15 @@ Array empty(size_t size) {
 template <typename Array,
           typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array zero(size_t size) {
-    return Array::from_index(Array::mkfull_(typename Array::Value(0), (uint32_t) size));
+    return Array::from_index(jitc_var_new_literal(Array::Type, 1, 0, (uint32_t) size));
 }
 
 template <typename Array,
           typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array full(typename Array::Value value, size_t size) {
-    return Array::from_index(Array::mkfull_(value, (uint32_t) size));
+    uint64_t tmp = 0;
+    memcpy(&tmp, &value, sizeof(typename Array::Value));
+    return Array::from_index(jitc_var_new_literal(Array::Type, 1, tmp, (uint32_t) size));
 }
 
 template <typename Array,

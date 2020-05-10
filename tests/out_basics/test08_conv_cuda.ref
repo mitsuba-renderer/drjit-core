@@ -151,7 +151,7 @@ jit_var_new(6): mov.u32 $r0, $i
 jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_ext(6): 2
 jit_var_dec_ref_ext(6): 1
-jit_var_new(7): mov.$b0 $r0, 0x00000200
+jit_var_new_literal(7): mov.$b0 $r0, 0x00000200
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(7): 1
@@ -453,7 +453,7 @@ jit_var_inc_ref_int(18): 1
 jit_var_new(19 <- 18): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(19): 1
 jit_var_dec_ref_ext(18): 0
-jit_var_new(20): mov.$b0 $r0, 0x0000000000000200
+jit_var_new_literal(20): mov.$b0 $r0, 0x0000000000000200
 jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_int(19): 1
 jit_var_inc_ref_int(20): 1
@@ -605,7 +605,7 @@ jit_var_inc_ref_int(25): 1
 jit_var_new(26 <- 25): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(26): 1
 jit_var_dec_ref_ext(25): 0
-jit_var_new(27): mov.$t0 $r0, 0f44000000
+jit_var_new_literal(27): mov.$t0 $r0, 0f44000000
 jit_var_inc_ref_ext(27): 1
 jit_var_inc_ref_int(26): 1
 jit_var_inc_ref_int(27): 1
@@ -756,7 +756,7 @@ jit_var_inc_ref_int(32): 1
 jit_var_new(33 <- 32): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(33): 1
 jit_var_dec_ref_ext(32): 0
-jit_var_new(34): mov.$t0 $r0, 0d4080000000000000
+jit_var_new_literal(34): mov.$t0 $r0, 0d4080000000000000
 jit_var_inc_ref_ext(34): 1
 jit_var_inc_ref_int(33): 1
 jit_var_inc_ref_int(34): 1

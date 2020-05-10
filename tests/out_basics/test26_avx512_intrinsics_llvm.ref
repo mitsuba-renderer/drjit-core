@@ -12,7 +12,7 @@ jit_var_dec_ref_int(1): 1
 jit_var_new(2 <- 1): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0> (reused)
 jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(1): 0
-jit_var_new(3): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3fb99999a0000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(3): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3fb99999a0000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1

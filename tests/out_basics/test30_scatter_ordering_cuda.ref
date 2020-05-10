@@ -1,7 +1,7 @@
 jit_set_device(device=0, stream=0): creating stream
-jit_var_new(1): mov.$b0 $r0, 0x00000000
+jit_var_new_literal(1): mov.$b0 $r0, 0x00000000
 jit_var_inc_ref_ext(1): 1
-jit_var_new(2): mov.$b0 $r0, 0x00000001
+jit_var_new_literal(2): mov.$b0 $r0, 0x00000001
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(2): 1
@@ -11,9 +11,9 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(3): <@>, size=3, free=1
 jit_var_inc_ref_ext(3): 1
 jit_var_copy(3, size=3)
-jit_var_new(2): mov.$b0 $r0, 0x00000001 (reused)
+jit_var_new_literal(2): mov.$b0 $r0, 0x00000001 (reused)
 jit_var_inc_ref_ext(2): 2
-jit_var_new(4): mov.$t0 $r0, 1
+jit_var_new_literal(4): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(4): 1
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_memset_async(<@>, isize=4, size=16)
@@ -30,7 +30,7 @@ jit_var_dec_ref_ext(5): 0
 jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
 jit_var_dec_ref_ext(2): 1
-jit_var_new(2): mov.$b0 $r0, 0x00000001 (reused)
+jit_var_new_literal(2): mov.$b0 $r0, 0x00000001 (reused)
 jit_var_inc_ref_ext(2): 2
 jit_eval(): begin.
 jit_assemble(size=3): register map:

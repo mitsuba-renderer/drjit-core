@@ -6,9 +6,9 @@ jit_var_dec_ref_ext(1): 1
 jit_var_new(2): mov.u32 $r0, $i
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_ext(2): 2
-jit_var_new(3): mov.$b0 $r0, 0x00000007
+jit_var_new_literal(3): mov.$b0 $r0, 0x00000007
 jit_var_inc_ref_ext(3): 1
-jit_var_new(4): mov.$b0 $r0, 0x00000003
+jit_var_new_literal(4): mov.$b0 $r0, 0x00000003
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
@@ -149,9 +149,9 @@ jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_int(8): 1
 jit_var_new(9 <- 8): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(9): 1
-jit_var_new(10): mov.$b0 $r0, 0x0000000000000007
+jit_var_new_literal(10): mov.$b0 $r0, 0x0000000000000007
 jit_var_inc_ref_ext(10): 1
-jit_var_new(11): mov.$b0 $r0, 0xfffffffffffffffd
+jit_var_new_literal(11): mov.$b0 $r0, 0xfffffffffffffffd
 jit_var_inc_ref_ext(11): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(10): 1

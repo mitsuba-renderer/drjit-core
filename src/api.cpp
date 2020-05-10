@@ -288,6 +288,12 @@ uint32_t jitc_var_new_4(VarType type, const char *stmt, int stmt_static,
     return jit_var_new_4(type, stmt, stmt_static, cuda, arg1, arg2, arg3, arg4);
 }
 
+uint32_t jitc_var_new_literal(VarType type, int cuda, uint64_t value,
+                              uint32_t size) {
+    lock_guard guard(state.mutex);
+    return jit_var_new_literal(type, cuda, value, size);
+}
+
 void jitc_var_migrate(uint32_t index, AllocType type) {
     lock_guard guard(state.mutex);
     jit_var_migrate(index, type);

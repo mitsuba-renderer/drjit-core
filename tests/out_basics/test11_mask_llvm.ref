@@ -5,7 +5,7 @@ jit_var_inc_ref_int(1): 1
 jit_var_new(2 <- 1): $r0 = uitofp <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0
-jit_var_new(3): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4014000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(3): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4014000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
@@ -113,9 +113,9 @@ jit_var_free(1)
 jit_eval(): done.
 value=[0, 1, 2, 3, 4, 5, -6, -7, -8, -9]
 mask=[0, 0, 0, 0, 0, 0, 1, 1, 1, 1]
-jit_var_new(7): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(7): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(7): 1
-jit_var_new(8): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4000000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(8): $r0_0 = insertelement <$w x $t0> undef, $t0 0x4000000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_int(4): 1
 jit_var_inc_ref_int(7): 1
@@ -192,9 +192,9 @@ jit_var_dec_ref_int(8): 0
 jit_var_free(8)
 jit_eval(): done.
 value_2=[2, 2, 2, 2, 2, 2, 1, 1, 1, 1]
-jit_var_new(10): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(10): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(10): 1
-jit_var_new(11): $r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(11): $r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(11): 1
 jit_var_schedule(10)
 jit_var_schedule(11)
@@ -259,7 +259,7 @@ attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="
 jit_run(): processing 1 packet and 0 scalar entries
 jit_eval(): cleaning up..
 jit_eval(): done.
-jit_var_new(12): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(12): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(10): 1
 jit_var_inc_ref_int(6): 1
@@ -267,7 +267,7 @@ jit_var_inc_ref_int(12): 1
 jit_var_new(13 <- 10, 6, 12): $r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3
 jit_var_inc_ref_ext(13): 1
 jit_var_dec_ref_ext(12): 0
-jit_var_new(12): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
+jit_var_new_literal(12): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(11): 1
 jit_var_inc_ref_int(6): 2

@@ -342,6 +342,102 @@ void jit_var_set_label(uint32_t index, const char *label_) {
     }
 }
 
+uint32_t jit_var_new_literal(VarType type, int cuda,
+                             uint64_t value, uint32_t size) {
+    const char *fmt = nullptr;
+    char buffer[256];
+
+    bool is_literal_one, is_literal_zero = value == 0;
+    switch (type) {
+        case VarType::Float16: is_literal_one = value == 0x3c00ull; break;
+        case VarType::Float32: is_literal_one = value == 0x3f800000ull; break;
+        case VarType::Float64: is_literal_one = value == 0x3ff0000000000000ull; break;
+        default:               is_literal_one = value == 1; break;
+    }
+
+    if (cuda) {
+        switch (type) {
+            case VarType::Float16:
+                fmt = "mov.$b0 $r0, 0x%04llx";
+                break;
+
+            case VarType::Float32:
+                fmt = "mov.$t0 $r0, 0f%08llx";
+                break;
+
+            case VarType::Float64:
+                fmt = "mov.$t0 $r0, 0d%016llx";
+                break;
+
+            case VarType::Bool:
+                fmt = "mov.$t0 $r0, %llu";
+                break;
+
+            case VarType::Int8:
+            case VarType::UInt8:
+                fmt = "mov.b16 %%w1, 0x%02llx$ncvt.u8.u16 $r0, %%w1";
+                break;
+
+            case VarType::Int16:
+            case VarType::UInt16:
+                fmt = "mov.$b0 $r0, 0x%04llx";
+                break;
+
+            case VarType::Int32:
+            case VarType::UInt32:
+                fmt = "mov.$b0 $r0, 0x%08llx";
+                break;
+
+            case VarType::Pointer:
+            case VarType::Int64:
+            case VarType::UInt64:
+                fmt = "mov.$b0 $r0, 0x%016llx";
+                break;
+
+            default:
+                jit_raise("jit_var_new_literal(): invalid type!");
+        }
+    } else {
+        if (type == VarType::Float32) {
+            float f = 0.f;
+            memcpy(&f, &value, sizeof(float));
+            double d = (double) f;
+            memcpy(&value, &d, sizeof(double));
+        }
+
+        fmt = (type == VarType::Float32 || type == VarType::Float64) ?
+            "$r0_0 = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0$n"
+            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z" :
+            "$r0_0 = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
+            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z";
+
+    }
+
+    int stmt_size = snprintf(buffer, sizeof(buffer), fmt, (long long unsigned) value) + 1;
+    char *stmt = (char *) malloc_check(stmt_size);
+    memcpy(stmt, buffer, stmt_size);
+
+    Variable v;
+    v.type = (uint32_t) type;
+    v.size = size;
+    v.stmt = stmt;
+    v.tsize = 1;
+    v.free_stmt = 1;
+    v.cuda = cuda;
+
+    v.is_literal_zero = is_literal_zero;
+    v.is_literal_one = is_literal_one;
+
+    uint32_t index; Variable *vo;
+    std::tie(index, vo) = jit_var_new(v);
+    jit_log(Debug, "jit_var_new_literal(%u): %s%s", index, vo->stmt,
+            vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
+
+    jit_var_inc_ref_ext(index, vo);
+
+    return index;
+}
+
 /// Append a variable to the instruction trace (no operands)
 uint32_t jit_var_new_0(VarType type, const char *stmt, int stmt_static,
                        int cuda, uint32_t size) {
@@ -706,142 +802,17 @@ void jit_var_mark_scatter(uint32_t index, uint32_t target) {
 }
 
 /// Is the given variable a literal that equals zero?
-int jit_var_is_literal_zero(Variable *v) {
-    if (!v->stmt)
-        return 0;
-
-    const char *s = nullptr;
-    if (v->cuda) {
-        switch ((VarType) v->type) {
-            case VarType::Float16:
-                s = "mov.$b0 $r0, 0x0000";
-                break;
-
-            case VarType::Float32:
-                s = "mov.$t0 $r0, 0f00000000";
-                break;
-
-            case VarType::Float64:
-                s = "mov.$t0 $r0, 0d0000000000000000";
-                break;
-
-            case VarType::Bool:
-                s = "mov.$t0 $r0, 0";
-                break;
-
-            case VarType::Int8:
-            case VarType::UInt8:
-                s = "mov.$b0 $r0, 0x00";
-                break;
-
-            case VarType::Int16:
-            case VarType::UInt16:
-                s = "mov.$b0 $r0, 0x0000";
-                break;
-
-            case VarType::Int32:
-            case VarType::UInt32:
-                s = "mov.$b0 $r0, 0x00000000";
-                break;
-
-            case VarType::Pointer:
-            case VarType::Int64:
-            case VarType::UInt64:
-                s = "mov.$b0 $r0, 0x0000000000000000";
-                break;
-
-            default:
-                jit_fail("jit_var_is_literal_zero(): unsupported variable type!");
-        }
-    } else {
-        if ((VarType) v->type == VarType::Float32 ||
-            (VarType) v->type == VarType::Float64)
-            s = "$r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n"
-                "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
-                "<$w x i32> $z";
-        else
-            s = "$r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n"
-                "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
-                "<$w x i32> $z";
-    }
-
-    return strcmp(v->stmt, s) == 0;
-}
-
-/// Is the given variable a literal that equals zero?
 int jit_var_is_literal_zero(uint32_t index) {
     if (index == 0)
         return 0;
-
-    return jit_var_is_literal_zero(jit_var(index));
+    return jit_var(index)->is_literal_zero;
 }
 
 /// Is the given variable a literal that equals one?
 int jit_var_is_literal_one(uint32_t index) {
     if (index == 0)
         return 0;
-
-    Variable *v = jit_var(index);
-
-    if (!v->stmt)
-        return false;
-
-    const char *s = nullptr;
-    if (v->cuda) {
-        switch ((VarType) v->type) {
-            case VarType::Float16:
-                s = "mov.$b0 $r0, 0x3c00";
-                break;
-
-            case VarType::Float32:
-                s = "mov.$t0 $r0, 0f3f800000";
-                break;
-
-            case VarType::Float64:
-                s = "mov.$t0 $r0, 0d3ff0000000000000";
-                break;
-
-            case VarType::Bool:
-                s = "mov.$t0 $r0, 1";
-                break;
-
-            case VarType::Int8:
-            case VarType::UInt8:
-                s = "mov.$b0 $r0, 0x01";
-                break;
-
-            case VarType::Int16:
-            case VarType::UInt16:
-                s = "mov.$b0 $r0, 0x0001";
-                break;
-
-            case VarType::Int32:
-            case VarType::UInt32:
-                s = "mov.$b0 $r0, 0x00000001";
-                break;
-
-            case VarType::Pointer:
-            case VarType::Int64:
-            case VarType::UInt64:
-                s = "mov.$b0 $r0, 0x0000000000000001";
-                break;
-
-            default:
-                jit_fail("jit_var_is_literal_one(): unsupported variable type!");
-        }
-    } else {
-        if ((VarType) v->type == VarType::Float32 ||
-            (VarType) v->type == VarType::Float64)
-            s = "$r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n"
-                "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
-                "<$w x i32> $z";
-        else
-            s = "$r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n"
-                "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
-                "<$w x i32> $z";
-    }
-
-    return strcmp(v->stmt, s) == 0;
+    return jit_var(index)->is_literal_one;
 }
 
 /// Return a human-readable summary of registered variables
@@ -1089,7 +1060,7 @@ void jit_var_eval(uint32_t index) {
 
     if (unevaluated || v->pending_scatter) {
         if (unevaluated) {
-            if (jit_var_is_literal_zero(v)) {
+            if (v->is_literal_zero) {
                 /* Optimization: don't bother building a kernel just to
                    zero-initialize a single variable and use an
                    jit_memset_async() call instead. This fits the common use
@@ -1102,6 +1073,7 @@ void jit_var_eval(uint32_t index) {
                     v->free_stmt = 0;
                 }
                 v->stmt = nullptr;
+                v->is_literal_zero = false;
 
                 uint32_t isize = var_type_size[v->type];
                 v->data = jit_malloc(stream->cuda ? AllocType::Device

@@ -6,9 +6,9 @@ jit_var_dec_ref_ext(1): 1
 jit_var_new(2): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_ext(2): 2
-jit_var_new(3): $r0_0 = insertelement <$w x $t0> undef, $t0 7, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(3): $r0_0 = insertelement <$w x $t0> undef, $t0 7, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(3): 1
-jit_var_new(4): $r0_0 = insertelement <$w x $t0> undef, $t0 3, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(4): $r0_0 = insertelement <$w x $t0> undef, $t0 3, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
@@ -147,9 +147,9 @@ jit_var_inc_ref_ext(9): 1
 jit_var_inc_ref_int(9): 1
 jit_var_new(10 <- 9): $r0 = zext <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(10): 1
-jit_var_new(11): $r0_0 = insertelement <$w x $t0> undef, $t0 7, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(11): $r0_0 = insertelement <$w x $t0> undef, $t0 7, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(11): 1
-jit_var_new(12): $r0_0 = insertelement <$w x $t0> undef, $t0 18446744073709551613, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(12): $r0_0 = insertelement <$w x $t0> undef, $t0 18446744073709551613, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(10): 1
 jit_var_inc_ref_int(11): 1

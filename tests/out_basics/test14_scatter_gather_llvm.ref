@@ -14,7 +14,7 @@ jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map(3): <@>, size=4, free=1
 jit_var_inc_ref_ext(3): 1
 jit_var_copy(3, size=4)
-jit_var_new(4): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(4): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(4): 1
 jit_eval(): begin.
 jit_assemble(size=1024): register map:
@@ -185,13 +185,13 @@ jit_var_dec_ref_int(3): 0
 jit_eval(): done.
 [-34, -62, -75, -2]
 [0, -1, -2, -3, -4, .. 1014 skipped .., -1019, -1020, -1021, -1022, -1023]
-jit_var_new(7): $r0_0 = insertelement <$w x $t0> undef, $t0 3, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(7): $r0_0 = insertelement <$w x $t0> undef, $t0 3, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(7): 1
 jit_var_new(8 <- 6, 7): $r0 = mul <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(8): 1
-jit_var_new(9): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(9): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(9): 1
 jit_var_inc_ref_ext(2): 2
 jit_var_copy_ptr(10 <- 2): <@>
@@ -207,7 +207,7 @@ jit_var_dec_ref_ext(9): 0
 jit_var_free(9)
 jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
-jit_var_new(12): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(12): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(12): 1
 jit_eval(): begin.
 jit_assemble(size=4): register map:

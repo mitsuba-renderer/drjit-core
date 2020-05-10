@@ -1,7 +1,7 @@
 jit_set_device(device=0, stream=0): creating stream
-jit_var_new(1): mov.$b0 $r0, 0x00000002
+jit_var_new_literal(1): mov.$b0 $r0, 0x00000002
 jit_var_inc_ref_ext(1): 1
-jit_var_new(2): mov.$b0 $r0, 0x00000003
+jit_var_new_literal(2): mov.$b0 $r0, 0x00000003
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1

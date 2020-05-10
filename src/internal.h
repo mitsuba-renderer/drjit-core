@@ -231,6 +231,12 @@ struct Variable {
     /// Are we currently caching the result of a jitc_vcall()?
     uint32_t vcall_cached : 1;
 
+    /// Does this variable store a number literal equal to '0'?
+    uint32_t is_literal_zero : 1;
+
+    /// Does this variable store a number literal equal to '1'?
+    uint32_t is_literal_one : 1;
+
     Variable() {
         memset(this, 0, sizeof(Variable));
     }

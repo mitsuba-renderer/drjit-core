@@ -1,5 +1,5 @@
 jit_set_device(device=0, stream=0): creating stream
-jit_var_new(1): mov.$t0 $r0, 0f00000000
+jit_var_new_literal(1): mov.$t0 $r0, 0f00000000
 jit_var_inc_ref_ext(1): 1
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
@@ -7,9 +7,9 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(2): <@>, size=15, free=1
 jit_var_inc_ref_ext(2): 1
 jit_var_copy(2, size=15)
-jit_var_new(3): mov.$t0 $r0, 0f3f800000
+jit_var_new_literal(3): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(3): 1
-jit_var_new(4): mov.$t0 $r0, 1
+jit_var_new_literal(4): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(4): 1
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_memset_async(<@>, isize=4, size=16)
@@ -102,7 +102,7 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=64)
-jit_var_new(7): mov.$t0 $r0, 0f00000000
+jit_var_new_literal(7): mov.$t0 $r0, 0f00000000
 jit_var_inc_ref_ext(7): 1
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
@@ -110,9 +110,9 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(8): <@>, size=16, free=1
 jit_var_inc_ref_ext(8): 1
 jit_var_copy(8, size=16)
-jit_var_new(9): mov.$t0 $r0, 0f3f800000
+jit_var_new_literal(9): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(9): 1
-jit_var_new(10): mov.$t0 $r0, 1
+jit_var_new_literal(10): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(10): 1
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_memset_async(<@>, isize=4, size=16)
@@ -205,7 +205,7 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
 jit_free(<@>, type=device, device=0, size=64)
-jit_var_new(13): mov.$t0 $r0, 0d0000000000000000
+jit_var_new_literal(13): mov.$t0 $r0, 0d0000000000000000
 jit_var_inc_ref_ext(13): 1
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
@@ -213,9 +213,9 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(14): <@>, size=15, free=1
 jit_var_inc_ref_ext(14): 1
 jit_var_copy(14, size=15)
-jit_var_new(15): mov.$t0 $r0, 0d3ff0000000000000
+jit_var_new_literal(15): mov.$t0 $r0, 0d3ff0000000000000
 jit_var_inc_ref_ext(15): 1
-jit_var_new(16): mov.$t0 $r0, 1
+jit_var_new_literal(16): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(16): 1
 jit_malloc(type=device, device=0, size=128): <@> (new allocation)
 jit_memset_async(<@>, isize=8, size=16)
@@ -308,7 +308,7 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(13): 0
 jit_var_free(13)
 jit_free(<@>, type=device, device=0, size=128)
-jit_var_new(19): mov.$t0 $r0, 0d0000000000000000
+jit_var_new_literal(19): mov.$t0 $r0, 0d0000000000000000
 jit_var_inc_ref_ext(19): 1
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
@@ -316,9 +316,9 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(20): <@>, size=16, free=1
 jit_var_inc_ref_ext(20): 1
 jit_var_copy(20, size=16)
-jit_var_new(21): mov.$t0 $r0, 0d3ff0000000000000
+jit_var_new_literal(21): mov.$t0 $r0, 0d3ff0000000000000
 jit_var_inc_ref_ext(21): 1
-jit_var_new(22): mov.$t0 $r0, 1
+jit_var_new_literal(22): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(22): 1
 jit_malloc(type=device, device=0, size=128): <@> (reused local)
 jit_memset_async(<@>, isize=8, size=16)
@@ -411,7 +411,7 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(19): 0
 jit_var_free(19)
 jit_free(<@>, type=device, device=0, size=128)
-jit_var_new(25): mov.$t0 $r0, 0f00000000
+jit_var_new_literal(25): mov.$t0 $r0, 0f00000000
 jit_var_inc_ref_ext(25): 1
 jit_var_new(26): mov.u32 $r0, $i
 jit_var_inc_ref_ext(26): 1
@@ -419,7 +419,7 @@ jit_var_inc_ref_int(26): 1
 jit_var_new(27 <- 26): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(27): 1
 jit_var_dec_ref_ext(26): 0
-jit_var_new(28): mov.$t0 $r0, 0f41000000
+jit_var_new_literal(28): mov.$t0 $r0, 0f41000000
 jit_var_inc_ref_ext(28): 1
 jit_var_inc_ref_int(27): 1
 jit_var_inc_ref_int(28): 1
@@ -433,7 +433,7 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(30): <@>, size=15, free=1
 jit_var_inc_ref_ext(30): 1
 jit_var_copy(30, size=15)
-jit_var_new(31): mov.$t0 $r0, 0f3f800000
+jit_var_new_literal(31): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(31): 1
 jit_malloc(type=device, device=0, size=64): <@> (reused global)
 jit_memset_async(<@>, isize=4, size=16)
@@ -550,7 +550,7 @@ jit_var_free(28)
 jit_var_dec_ref_ext(25): 0
 jit_var_free(25)
 jit_free(<@>, type=device, device=0, size=64)
-jit_var_new(34): mov.$t0 $r0, 0f00000000
+jit_var_new_literal(34): mov.$t0 $r0, 0f00000000
 jit_var_inc_ref_ext(34): 1
 jit_var_new(35): mov.u32 $r0, $i
 jit_var_inc_ref_ext(35): 1
@@ -558,7 +558,7 @@ jit_var_inc_ref_int(35): 1
 jit_var_new(36 <- 35): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(36): 1
 jit_var_dec_ref_ext(35): 0
-jit_var_new(37): mov.$t0 $r0, 0f41000000
+jit_var_new_literal(37): mov.$t0 $r0, 0f41000000
 jit_var_inc_ref_ext(37): 1
 jit_var_inc_ref_int(36): 1
 jit_var_inc_ref_int(37): 1
@@ -572,7 +572,7 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(39): <@>, size=16, free=1
 jit_var_inc_ref_ext(39): 1
 jit_var_copy(39, size=16)
-jit_var_new(40): mov.$t0 $r0, 0f3f800000
+jit_var_new_literal(40): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(40): 1
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_memset_async(<@>, isize=4, size=16)
@@ -689,7 +689,7 @@ jit_var_free(37)
 jit_var_dec_ref_ext(34): 0
 jit_var_free(34)
 jit_free(<@>, type=device, device=0, size=64)
-jit_var_new(43): mov.$t0 $r0, 0d0000000000000000
+jit_var_new_literal(43): mov.$t0 $r0, 0d0000000000000000
 jit_var_inc_ref_ext(43): 1
 jit_var_new(44): mov.u32 $r0, $i
 jit_var_inc_ref_ext(44): 1
@@ -697,7 +697,7 @@ jit_var_inc_ref_int(44): 1
 jit_var_new(45 <- 44): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(45): 1
 jit_var_dec_ref_ext(44): 0
-jit_var_new(46): mov.$t0 $r0, 0d4020000000000000
+jit_var_new_literal(46): mov.$t0 $r0, 0d4020000000000000
 jit_var_inc_ref_ext(46): 1
 jit_var_inc_ref_int(45): 1
 jit_var_inc_ref_int(46): 1
@@ -711,7 +711,7 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map(48): <@>, size=15, free=1
 jit_var_inc_ref_ext(48): 1
 jit_var_copy(48, size=15)
-jit_var_new(49): mov.$t0 $r0, 0d3ff0000000000000
+jit_var_new_literal(49): mov.$t0 $r0, 0d3ff0000000000000
 jit_var_inc_ref_ext(49): 1
 jit_malloc(type=device, device=0, size=128): <@> (reused global)
 jit_memset_async(<@>, isize=8, size=16)
@@ -828,7 +828,7 @@ jit_var_free(46)
 jit_var_dec_ref_ext(43): 0
 jit_var_free(43)
 jit_free(<@>, type=device, device=0, size=128)
-jit_var_new(52): mov.$t0 $r0, 0d0000000000000000
+jit_var_new_literal(52): mov.$t0 $r0, 0d0000000000000000
 jit_var_inc_ref_ext(52): 1
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
@@ -842,7 +842,7 @@ jit_var_inc_ref_int(54): 1
 jit_var_new(55 <- 54): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(55): 1
 jit_var_dec_ref_ext(54): 0
-jit_var_new(56): mov.$t0 $r0, 0d4020000000000000
+jit_var_new_literal(56): mov.$t0 $r0, 0d4020000000000000
 jit_var_inc_ref_ext(56): 1
 jit_var_inc_ref_int(55): 1
 jit_var_inc_ref_int(56): 1
@@ -850,7 +850,7 @@ jit_var_new(57 <- 55, 56): setp.lt.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(57): 1
 jit_var_dec_ref_ext(56): 0
 jit_var_dec_ref_ext(55): 0
-jit_var_new(58): mov.$t0 $r0, 0d3ff0000000000000
+jit_var_new_literal(58): mov.$t0 $r0, 0d3ff0000000000000
 jit_var_inc_ref_ext(58): 1
 jit_malloc(type=device, device=0, size=128): <@> (reused local)
 jit_memset_async(<@>, isize=8, size=16)

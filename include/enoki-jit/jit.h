@@ -751,6 +751,12 @@ extern JITC_EXPORT uint32_t jitc_var_new_4(enum VarType type,
                                            uint32_t op3,
                                            uint32_t op4);
 
+/// Append a new variable storing 'size' entries of a literal constant
+extern JITC_EXPORT uint32_t jitc_var_new_literal(enum VarType type,
+                                                 int cuda,
+                                                 uint64_t value,
+                                                 uint32_t size);
+
 /// Return the external reference count of a given variable
 extern JITC_EXPORT uint32_t jitc_var_ext_ref(uint32_t index);
 

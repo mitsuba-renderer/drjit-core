@@ -85,7 +85,9 @@ struct LLVMArray {
     }
 
     LLVMArray(Value value) {
-        m_index = mkfull_(value, 1);
+        uint64_t tmp = 0;
+        memcpy(&tmp, &value, sizeof(Value));
+        m_index = jitc_var_new_literal(Type, 0, tmp, 1);
     }
 
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
@@ -656,30 +658,6 @@ struct LLVMArray {
             "$r0 = add <$w x $t0> $r0_2, $l0", 1, 0, (uint32_t) size));
     }
 
-    static uint32_t mkfull_(Value value, uint32_t size) {
-        uint_with_size_t<Value> value_uint;
-        unsigned long long value_ull;
-
-        if (Type == VarType::Float32) {
-            double d = (double) value;
-            memcpy(&value_ull, &d, sizeof(double));
-        }  else {
-            memcpy(&value_uint, &value, sizeof(Value));
-            value_ull = (unsigned long long) value_uint;
-        }
-
-        char value_str[256];
-        snprintf(value_str, 256,
-            (Type == VarType::Float32 || Type == VarType::Float64) ?
-            "$r0_0 = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z" :
-            "$r0_0 = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z",
-            value_ull);
-
-        return jitc_var_new_0(Type, value_str, 0, 0, size);
-    }
-
 protected:
     uint32_t m_index = 0;
 };
@@ -700,13 +678,15 @@ Array empty(size_t size) {
 template <typename Array,
           typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array zero(size_t size) {
-    return Array::from_index(Array::mkfull_(typename Array::Value(0), (uint32_t) size));
+    return Array::from_index(jitc_var_new_literal(Array::Type, 0, 0, (uint32_t) size));
 }
 
 template <typename Array,
           typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array full(typename Array::Value value, size_t size) {
-    return Array::from_index(Array::mkfull_(value, (uint32_t) size));
+    uint64_t tmp = 0;
+    memcpy(&tmp, &value, sizeof(typename Array::Value));
+    return Array::from_index(jitc_var_new_literal(Array::Type, 0, tmp, (uint32_t) size));
 }
 
 template <typename Array,

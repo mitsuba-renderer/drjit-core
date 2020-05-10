@@ -1220,6 +1220,7 @@ void jit_eval() {
 
         jit_cse_drop(index, v);
 
+        v->is_literal_one = v->is_literal_zero = false;
         if (unlikely(v->free_stmt))
             free(v->stmt);
 

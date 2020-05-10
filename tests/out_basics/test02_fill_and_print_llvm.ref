@@ -1,5 +1,5 @@
 jit_set_device(device=-1, stream=0): creating stream
-jit_var_new(1): $r0_0 = insertelement <$w x $t0> undef, $t0 145, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(1): $r0_0 = insertelement <$w x $t0> undef, $t0 145, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(1): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:
@@ -46,7 +46,7 @@ jit_eval(): done.
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host-async, size=64)
-jit_var_new(2): $r0_0 = insertelement <$w x $t0> undef, $t0 222, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(2): $r0_0 = insertelement <$w x $t0> undef, $t0 222, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(2): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:
@@ -93,7 +93,7 @@ jit_eval(): done.
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_free(<@>, type=host-async, size=64)
-jit_var_new(3): $r0_0 = insertelement <$w x $t0> undef, $t0 64425, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(3): $r0_0 = insertelement <$w x $t0> undef, $t0 64425, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(3): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:
@@ -140,7 +140,7 @@ jit_eval(): done.
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
 jit_free(<@>, type=host-async, size=64)
-jit_var_new(4): $r0_0 = insertelement <$w x $t0> undef, $t0 2222, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(4): $r0_0 = insertelement <$w x $t0> undef, $t0 2222, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(4): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:
@@ -187,7 +187,7 @@ uint16_t: [2222, 2222, 2222, 2222, 2222]
 jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
 jit_free(<@>, type=host-async, size=64)
-jit_var_new(5): $r0_0 = insertelement <$w x $t0> undef, $t0 3183856185, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(5): $r0_0 = insertelement <$w x $t0> undef, $t0 3183856185, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(5): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:
@@ -234,7 +234,7 @@ jit_eval(): done.
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
 jit_free(<@>, type=host-async, size=64)
-jit_var_new(6): $r0_0 = insertelement <$w x $t0> undef, $t0 2222222222, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(6): $r0_0 = insertelement <$w x $t0> undef, $t0 2222222222, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(6): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:
@@ -281,7 +281,7 @@ uint32_t: [2222222222, 2222222222, 2222222222, 2222222222, 2222222222]
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
 jit_free(<@>, type=host-async, size=64)
-jit_var_new(7): $r0_0 = insertelement <$w x $t0> undef, $t0 17335632962598440505, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(7): $r0_0 = insertelement <$w x $t0> undef, $t0 17335632962598440505, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(7): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:
@@ -328,7 +328,7 @@ jit_eval(): done.
 jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
 jit_free(<@>, type=host-async, size=64)
-jit_var_new(8): $r0_0 = insertelement <$w x $t0> undef, $t0 2222222222222222222, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(8): $r0_0 = insertelement <$w x $t0> undef, $t0 2222222222222222222, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(8): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:
@@ -375,7 +375,7 @@ uint64_t: [2222222222222222222, 2222222222222222222, 2222222222222222222, 222222
 jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
 jit_free(<@>, type=host-async, size=64)
-jit_var_new(9): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3fd5555560000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(9): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3fd5555560000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(9): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:
@@ -422,7 +422,7 @@ jit_eval(): done.
 jit_var_dec_ref_ext(9): 0
 jit_var_free(9)
 jit_free(<@>, type=host-async, size=64)
-jit_var_new(10): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3fd5555555555555, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
+jit_var_new_literal(10): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3fd5555555555555, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(10): 1
 jit_eval(): begin.
 jit_assemble(size=5): register map:

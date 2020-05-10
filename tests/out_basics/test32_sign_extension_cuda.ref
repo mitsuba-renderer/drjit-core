@@ -1,13 +1,13 @@
 jit_set_device(device=0, stream=0): creating stream
-jit_var_new(1): mov.$b0 $r0, 0xffffffff
+jit_var_new_literal(1): mov.$b0 $r0, 0xffffffff
 jit_var_inc_ref_ext(1): 1
-jit_var_new(2): mov.$b0 $r0, 0xffffffff
+jit_var_new_literal(2): mov.$b0 $r0, 0xffffffff
 jit_var_inc_ref_ext(2): 1
-jit_var_new(3): mov.$b0 $r0, 0xffffffffffffffff
+jit_var_new_literal(3): mov.$b0 $r0, 0xffffffffffffffff
 jit_var_inc_ref_ext(3): 1
-jit_var_new(4): mov.$b0 $r0, 0xffffffffffffffff
+jit_var_new_literal(4): mov.$b0 $r0, 0xffffffffffffffff
 jit_var_inc_ref_ext(4): 1
-jit_var_new(1): mov.$b0 $r0, 0xffffffff (reused)
+jit_var_new_literal(1): mov.$b0 $r0, 0xffffffff (reused)
 jit_var_inc_ref_ext(1): 2
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(1): 2
@@ -78,7 +78,7 @@ jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(1): 1
-jit_var_new(2): mov.$b0 $r0, 0xffffffff (reused)
+jit_var_new_literal(2): mov.$b0 $r0, 0xffffffff (reused)
 jit_var_inc_ref_ext(2): 2
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(2): 2
@@ -150,7 +150,7 @@ jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(2): 1
-jit_var_new(3): mov.$b0 $r0, 0xffffffffffffffff (reused)
+jit_var_new_literal(3): mov.$b0 $r0, 0xffffffffffffffff (reused)
 jit_var_inc_ref_ext(3): 2
 jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(3): 2
@@ -222,7 +222,7 @@ jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(3): 1
-jit_var_new(4): mov.$b0 $r0, 0xffffffffffffffff (reused)
+jit_var_new_literal(4): mov.$b0 $r0, 0xffffffffffffffff (reused)
 jit_var_inc_ref_ext(4): 2
 jit_var_inc_ref_int(4): 1
 jit_var_inc_ref_int(4): 2

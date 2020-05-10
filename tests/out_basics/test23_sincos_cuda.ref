@@ -4,9 +4,9 @@ jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
 jit_var_new(2 <- 1): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(2): 1
-jit_var_new(3): mov.$t0 $r0, 0f3de38e39
+jit_var_new_literal(3): mov.$t0 $r0, 0f3de38e39
 jit_var_inc_ref_ext(3): 1
-jit_var_new(4): mov.$t0 $r0, 0f00000000
+jit_var_new_literal(4): mov.$t0 $r0, 0f00000000
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
@@ -20,7 +20,7 @@ jit_var_dec_ref_ext(1): 0
 jit_var_inc_ref_int(5): 1
 jit_var_new(6 <- 5): abs.ftz.$t0 $r0, $r1
 jit_var_inc_ref_ext(6): 1
-jit_var_new(7): mov.$t0 $r0, 0f3fa2f983
+jit_var_new_literal(7): mov.$t0 $r0, 0f3fa2f983
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(7): 1
@@ -31,13 +31,13 @@ jit_var_new(9 <- 8): cvt.rzi.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(9): 1
 jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
-jit_var_new(10): mov.$b0 $r0, 0x00000001
+jit_var_new_literal(10): mov.$b0 $r0, 0x00000001
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(10): 1
 jit_var_new(11 <- 9, 10): add.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(11): 1
-jit_var_new(12): mov.$b0 $r0, 0xfffffffe
+jit_var_new_literal(12): mov.$b0 $r0, 0xfffffffe
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(11): 1
 jit_var_inc_ref_int(12): 1
@@ -50,7 +50,7 @@ jit_var_dec_ref_ext(10): 0
 jit_var_inc_ref_int(13): 1
 jit_var_new(14 <- 13): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(14): 1
-jit_var_new(15): mov.$b0 $r0, 0x0000001d
+jit_var_new_literal(15): mov.$b0 $r0, 0x0000001d
 jit_var_inc_ref_ext(15): 1
 jit_var_inc_ref_int(13): 2
 jit_var_inc_ref_int(15): 1
@@ -66,7 +66,7 @@ jit_var_inc_ref_ext(18): 1
 jit_var_dec_ref_ext(17): 0
 jit_var_dec_ref_ext(16): 0
 jit_var_dec_ref_ext(15): 0
-jit_var_new(19): mov.$b0 $r0, 0x00000002
+jit_var_new_literal(19): mov.$b0 $r0, 0x00000002
 jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(13): 3
 jit_var_inc_ref_int(19): 1
@@ -75,7 +75,7 @@ jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_int(20): 1
 jit_var_new(21 <- 20): not.$b0 $r0, $r1
 jit_var_inc_ref_ext(21): 1
-jit_var_new(15): mov.$b0 $r0, 0x0000001d (reused)
+jit_var_new_literal(15): mov.$b0 $r0, 0x0000001d (reused)
 jit_var_inc_ref_ext(15): 1
 jit_var_inc_ref_int(21): 1
 jit_var_inc_ref_int(15): 2
@@ -89,7 +89,7 @@ jit_var_dec_ref_ext(15): 0
 jit_var_dec_ref_ext(21): 0
 jit_var_dec_ref_ext(20): 0
 jit_var_dec_ref_ext(19): 0
-jit_var_new(24): mov.$t0 $r0, 0f3f490000
+jit_var_new_literal(24): mov.$t0 $r0, 0f3f490000
 jit_var_inc_ref_ext(24): 1
 jit_var_inc_ref_int(14): 1
 jit_var_inc_ref_int(24): 1
@@ -99,7 +99,7 @@ jit_var_inc_ref_int(6): 2
 jit_var_inc_ref_int(25): 1
 jit_var_new(26 <- 6, 25): sub.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(26): 1
-jit_var_new(27): mov.$t0 $r0, 0f397da000
+jit_var_new_literal(27): mov.$t0 $r0, 0f397da000
 jit_var_inc_ref_ext(27): 1
 jit_var_inc_ref_int(14): 2
 jit_var_inc_ref_int(27): 1
@@ -109,7 +109,7 @@ jit_var_inc_ref_int(26): 1
 jit_var_inc_ref_int(28): 1
 jit_var_new(29 <- 26, 28): sub.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(29): 1
-jit_var_new(30): mov.$t0 $r0, 0f33222169
+jit_var_new_literal(30): mov.$t0 $r0, 0f33222169
 jit_var_inc_ref_ext(30): 1
 jit_var_inc_ref_int(14): 3
 jit_var_inc_ref_int(30): 1
@@ -132,7 +132,7 @@ jit_var_inc_ref_int(32): 1
 jit_var_inc_ref_int(32): 2
 jit_var_new(33 <- 32, 32): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(33): 1
-jit_var_new(34): mov.$t0 $r0, 0f7f800000
+jit_var_new_literal(34): mov.$t0 $r0, 0f7f800000
 jit_var_inc_ref_ext(34): 1
 jit_var_inc_ref_int(6): 3
 jit_var_inc_ref_int(34): 1
@@ -149,11 +149,11 @@ jit_var_inc_ref_int(36): 1
 jit_var_inc_ref_int(36): 2
 jit_var_new(37 <- 36, 36): mul.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(37): 1
-jit_var_new(38): mov.$t0 $r0, 0fb94ca1f9
+jit_var_new_literal(38): mov.$t0 $r0, 0fb94ca1f9
 jit_var_inc_ref_ext(38): 1
-jit_var_new(39): mov.$t0 $r0, 0f3c08839e
+jit_var_new_literal(39): mov.$t0 $r0, 0f3c08839e
 jit_var_inc_ref_ext(39): 1
-jit_var_new(40): mov.$t0 $r0, 0fbe2aaaa3
+jit_var_new_literal(40): mov.$t0 $r0, 0fbe2aaaa3
 jit_var_inc_ref_ext(40): 1
 jit_var_inc_ref_int(36): 3
 jit_var_inc_ref_int(39): 1
@@ -181,11 +181,11 @@ jit_var_dec_ref_int(36): 5
 jit_var_dec_ref_int(36): 4
 jit_var_new(37 <- 36, 36): mul.ftz.$t0 $r0, $r1, $r2 (reused)
 jit_var_inc_ref_ext(37): 1
-jit_var_new(44): mov.$t0 $r0, 0f37ccf5ce
+jit_var_new_literal(44): mov.$t0 $r0, 0f37ccf5ce
 jit_var_inc_ref_ext(44): 1
-jit_var_new(45): mov.$t0 $r0, 0fbab6061a
+jit_var_new_literal(45): mov.$t0 $r0, 0fbab6061a
 jit_var_inc_ref_ext(45): 1
-jit_var_new(46): mov.$t0 $r0, 0f3d2aaaa5
+jit_var_new_literal(46): mov.$t0 $r0, 0f3d2aaaa5
 jit_var_inc_ref_ext(46): 1
 jit_var_inc_ref_int(36): 5
 jit_var_inc_ref_int(45): 1
@@ -213,9 +213,9 @@ jit_var_inc_ref_int(32): 4
 jit_var_new(50 <- 43, 32, 32): fma.rn.ftz.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(50): 1
 jit_var_dec_ref_ext(43): 0
-jit_var_new(51): mov.$t0 $r0, 0fbf000000
+jit_var_new_literal(51): mov.$t0 $r0, 0fbf000000
 jit_var_inc_ref_ext(51): 1
-jit_var_new(52): mov.$t0 $r0, 0f3f800000
+jit_var_new_literal(52): mov.$t0 $r0, 0f3f800000
 jit_var_inc_ref_ext(52): 1
 jit_var_inc_ref_int(36): 7
 jit_var_inc_ref_int(51): 1
@@ -231,13 +231,13 @@ jit_var_dec_ref_ext(49): 0
 jit_var_dec_ref_ext(53): 0
 jit_var_dec_ref_ext(52): 0
 jit_var_dec_ref_ext(51): 0
-jit_var_new(19): mov.$b0 $r0, 0x00000002 (reused)
+jit_var_new_literal(19): mov.$b0 $r0, 0x00000002 (reused)
 jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(13): 4
 jit_var_inc_ref_int(19): 2
 jit_var_new(55 <- 13, 19): and.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(55): 1
-jit_var_new(56): mov.$b0 $r0, 0x00000000
+jit_var_new_literal(56): mov.$b0 $r0, 0x00000000
 jit_var_inc_ref_ext(56): 1
 jit_var_inc_ref_int(55): 1
 jit_var_inc_ref_int(56): 1
@@ -251,7 +251,7 @@ jit_var_inc_ref_int(54): 1
 jit_var_inc_ref_int(57): 1
 jit_var_new(58 <- 50, 54, 57): selp.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(58): 1
-jit_var_new(59): mov.$t0 $r0, 0f80000000
+jit_var_new_literal(59): mov.$t0 $r0, 0f80000000
 jit_var_inc_ref_ext(59): 1
 jit_var_inc_ref_int(59): 1
 jit_var_inc_ref_int(18): 1
@@ -269,7 +269,7 @@ jit_var_inc_ref_int(50): 2
 jit_var_inc_ref_int(57): 2
 jit_var_new(62 <- 54, 50, 57): selp.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(62): 1
-jit_var_new(59): mov.$t0 $r0, 0f80000000 (reused)
+jit_var_new_literal(59): mov.$t0 $r0, 0f80000000 (reused)
 jit_var_inc_ref_ext(59): 1
 jit_var_inc_ref_int(59): 2
 jit_var_inc_ref_int(23): 1
