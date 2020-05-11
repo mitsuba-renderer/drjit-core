@@ -41,8 +41,10 @@
 
 #if defined(__cplusplus)
 #  define JITC_CONSTEXPR constexpr
+#  define JITC_DEF(x) = x
 #else
 #  define JITC_CONSTEXPR inline
+#  define JITC_DEF(x)
 #endif
 
 #if defined(__cplusplus)
@@ -65,7 +67,8 @@ extern "C" {
  * The \c llvm and \c cuda arguments should be set to \c 1 to initialize the
  * corresponding backend, and \c 0 otherwise.
  */
-extern JITC_EXPORT void jitc_init(int llvm, int cuda);
+extern JITC_EXPORT void jitc_init(int llvm JITC_DEF(1),
+                                  int cuda JITC_DEF(1));
 
 /**
  * \brief Launch an ansynchronous thread that will execute jitc_init() and
@@ -84,7 +87,8 @@ extern JITC_EXPORT void jitc_init(int llvm, int cuda);
  * initialization via \ref jitc_init_async(), since it acquires a lock to the
  * internal data structures.
  */
-extern JITC_EXPORT void jitc_init_async(int llvm, int cuda);
+extern JITC_EXPORT void jitc_init_async(int llvm JITC_DEF(1),
+                                        int cuda JITC_DEF(1));
 
 /// Check whether the LLVM backend was successfully initialized
 extern JITC_EXPORT int jitc_has_llvm();
@@ -103,7 +107,7 @@ extern JITC_EXPORT int jitc_has_cuda();
  * CUDA backends. This frees up more memory but means that a later call to \ref
  * jitc_init() or \ref jitc_init_async() will be slow.
  */
-extern JITC_EXPORT void jitc_shutdown(int light);
+extern JITC_EXPORT void jitc_shutdown(int light JITC_DEF(0));
 
 /**
  * \brief Return the number of target devices
@@ -128,7 +132,7 @@ extern JITC_EXPORT int32_t jitc_device_count();
  *     streams don't have to be numbered in any particular way, but they need
  *     to be just be unique per thread.
  */
-extern JITC_EXPORT void jitc_set_device(int32_t device, uint32_t stream);
+extern JITC_EXPORT void jitc_set_device(int32_t device, uint32_t stream JITC_DEF(0));
 
 /**
  * \brief Override the target CPU, features, and vector witdth of the LLVM backend
