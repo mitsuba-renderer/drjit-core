@@ -1110,6 +1110,9 @@ void jit_var_read(uint32_t index, uint32_t offset, void *dst) {
     Variable *v = jit_var(index);
     if (v->size == 1)
         offset = 0;
+    else if (unlikely(offset >= v->size))
+        jit_raise("jit_var_read(): attempted to access entry %u in an array of "
+                  "size %u!", offset, v->size);
 
     size_t isize = var_type_size[v->type];
     const uint8_t *src = (const uint8_t *) v->data + (size_t) offset * isize;
@@ -1122,8 +1125,9 @@ void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
     jit_var_eval(index);
 
     Variable *v = jit_var(index);
-    if (v->size == 1)
-        offset = 0;
+    if (unlikely(offset >= v->size))
+        jit_raise("jit_var_write(): attempted to access entry %u in an array of "
+                  "size %u!", offset, v->size);
 
     size_t isize = var_type_size[v->type];
     uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
