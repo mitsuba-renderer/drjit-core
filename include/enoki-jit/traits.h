@@ -75,7 +75,7 @@ template <typename T> struct var_type<T *> {
     static constexpr VarType value = VarType::Pointer;
 };
 
-#if __cplusplus >= 201703L
+#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG > 201402)
    template <typename T> constexpr VarType var_type_v = var_type<T>::value;
 #endif
 
