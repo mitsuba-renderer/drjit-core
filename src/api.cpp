@@ -175,9 +175,9 @@ void jitc_free(void *ptr) {
     jit_free(ptr);
 }
 
-void *jitc_malloc_migrate(void *ptr, AllocType type) {
+void *jitc_malloc_migrate(void *ptr, AllocType type, int move) {
     lock_guard guard(state.mutex);
-    return jit_malloc_migrate(ptr, type);
+    return jit_malloc_migrate(ptr, type, move);
 }
 
 void jitc_malloc_trim() {
@@ -294,9 +294,9 @@ uint32_t jitc_var_new_literal(VarType type, int cuda, uint64_t value,
     return jit_var_new_literal(type, cuda, value, size);
 }
 
-void jitc_var_migrate(uint32_t index, AllocType type) {
+uint32_t jitc_var_migrate(uint32_t index, AllocType type) {
     lock_guard guard(state.mutex);
-    jit_var_migrate(index, type);
+    return jit_var_migrate(index, type);
 }
 
 void jitc_var_mark_scatter(uint32_t index, uint32_t target) {
@@ -345,18 +345,18 @@ void jitc_eval() {
     jit_eval();
 }
 
-void jitc_var_eval(uint32_t index) {
+int jitc_var_eval(uint32_t index) {
     if (index == 0)
-        return;
+        return 0;
     lock_guard guard(state.mutex);
-    jit_var_eval(index);
+    return jit_var_eval(index);
 }
 
-void jitc_var_schedule(uint32_t index) {
+int jitc_var_schedule(uint32_t index) {
     if (index == 0)
-        return;
+        return 0;
     lock_guard guard(state.mutex);
-    jit_var_schedule(index);
+    return jit_var_schedule(index);
 }
 
 void jitc_memset_async(void *ptr, uint32_t size, uint32_t isize, const void *src) {

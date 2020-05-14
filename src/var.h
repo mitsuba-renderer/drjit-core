@@ -113,7 +113,7 @@ extern void jit_var_set_label(uint32_t index, const char *label);
 extern const char *jit_var_label(uint32_t index);
 
 /// Migrate a variable to a different flavor of memory
-extern void jit_var_migrate(uint32_t index, AllocType type);
+extern uint32_t jit_var_migrate(uint32_t index, AllocType type);
 
 /// Mark a variable as a scatter operation that writes to 'target'
 extern void jit_var_mark_scatter(uint32_t index, uint32_t target);
@@ -134,10 +134,10 @@ extern void jit_var_read(uint32_t index, uint32_t offset, void *dst);
 extern void jit_var_write(uint32_t index, uint32_t offset, const void *src);
 
 /// Schedule a variable \c index for future evaluation via \ref jitc_eval()
-extern void jit_var_schedule(uint32_t index);
+extern int jit_var_schedule(uint32_t index);
 
 /// Evaluate the variable \c index right away, if it is unevaluated/dirty.
-extern void jit_var_eval(uint32_t index);
+extern int jit_var_eval(uint32_t index);
 
 /// Return a human-readable summary of registered variables
 extern const char *jit_var_whos();

@@ -731,7 +731,7 @@ uint32_t jit_var_copy(AllocType atype, VarType vtype, int cuda, const void *ptr,
         } else if (atype == AllocType::Host) {
             target_ptr = jit_malloc(AllocType::Host, total_size);
             memcpy(target_ptr, ptr, total_size);
-            target_ptr = jit_malloc_migrate(target_ptr, AllocType::HostAsync);
+            target_ptr = jit_malloc_migrate(target_ptr, AllocType::HostAsync, 1);
         } else {
             jit_fail("jit_var_copy(): copy from GPU to HostAsync memory not supported!");
         }
@@ -774,20 +774,44 @@ uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index) {
 }
 
 /// Migrate a variable to a different flavor of memory
-void jit_var_migrate(uint32_t index, AllocType type) {
-    if (index == 0)
-        return;
+uint32_t jit_var_migrate(uint32_t src_index, AllocType dst_type) {
+    if (src_index == 0)
+        return src_index;
 
-    Variable *v = jit_var(index);
-    if (v->data == nullptr || v->pending_scatter) {
-        jit_eval();
-        v = jit_var(index);
+    jit_var_eval(src_index);
+
+    Variable *v = jit_var(src_index);
+    auto it = state.alloc_used.find(v->data);
+    if (unlikely(it == state.alloc_used.end()))
+        jit_raise("jit_var_migrate(): Cannot resolve pointer to actual allocation!");
+    AllocInfo ai = it.value();
+
+    uint32_t dst_index = src_index;
+
+    void *src_ptr = v->data,
+         *dst_ptr = jit_malloc_migrate(src_ptr, dst_type, 0);
+
+    if (src_ptr != dst_ptr) {
+        Variable v2 = *v;
+        v2.data = dst_ptr;
+        v2.retain_data = false;
+        v2.ref_count_int = 0;
+        v2.ref_count_ext = 0;
+        std::tie(dst_index, v) = jit_var_new(v2);
+        v->cuda =
+            dst_type == AllocType::Device ||
+            dst_type == AllocType::Managed ||
+            dst_type == AllocType::ManagedReadMostly ||
+            dst_type == AllocType::HostPinned;
     }
 
-    jit_log(Debug, "jit_var_migrate(%u, " ENOKI_PTR "): %s", index,
-            (uintptr_t) v->data, alloc_type_name[(int) type]);
+    jit_var_inc_ref_ext(dst_index, v);
 
-    v->data = jit_malloc_migrate(v->data, type);
+    jit_log(Debug, "jit_var_migrate(%u -> %u, " ENOKI_PTR " -> " ENOKI_PTR ", %s -> %s)",
+            src_index, dst_index, (uintptr_t) src_ptr, (uintptr_t) dst_ptr,
+            alloc_type_name[(int) ai.type], alloc_type_name[(int) dst_type]);
+
+    return dst_index;
 }
 
 /// Mark a variable as a scatter operation that writes to 'target'
@@ -1021,7 +1045,7 @@ const char *jit_var_str(uint32_t index) {
 }
 
 /// Schedule a variable \c index for future evaluation via \ref jitc_eval()
-void jit_var_schedule(uint32_t index) {
+int jit_var_schedule(uint32_t index) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_var_schedule(): you must invoke jitc_set_device() to "
@@ -1032,39 +1056,41 @@ void jit_var_schedule(uint32_t index) {
         jit_raise("jit_var_schedule(%u): unknown variable!", index);
     Variable *v = &it.value();
 
-    if (unlikely(v->cuda != stream->cuda))
-        jit_raise("jit_var_schedule(): attempted to schedule a %s variable "
-                  "while the %s backend was activated! You must invoke "
-                  "jit_set_device() to set the right backend!",
-                  v->cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
-
-
     if (v->data == nullptr && !v->direct_pointer) {
+        if (unlikely(v->cuda != stream->cuda))
+            jit_raise("jit_var_schedule(): attempted to schedule a %s variable "
+                      "while the %s backend was activated! You must invoke "
+                      "jit_set_device() to set the right backend!",
+                      v->cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
+
         stream->todo.push_back(index);
         jit_log(Debug, "jit_var_schedule(%u)", index);
+
+        return 1;
     }
+    return 0;
 }
 
 /// Evaluate the variable \c index right away, if it is unevaluated/dirty.
-void jit_var_eval(uint32_t index) {
+int jit_var_eval(uint32_t index) {
     Stream *stream = active_stream;
     auto it = state.variables.find(index);
     if (unlikely(it == state.variables.end()))
         jit_raise("jit_var_eval(%u): unknown variable!", index);
     Variable *v = &it.value();
 
-    if (unlikely(!stream))
-        jit_raise("jit_var_eval(): you must invoke jitc_set_device() to "
-                  "choose a target device before using this function.");
-    else if (unlikely(v->cuda != stream->cuda))
-        jit_raise("jit_var_eval(): attempted to evaluate a %s variable "
-                  "while the %s backend was activated! You must invoke "
-                  "jit_set_device() to set the right backend!",
-                  v->cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
-
     bool unevaluated = v->data == nullptr && !v->direct_pointer;
 
     if (unevaluated || v->pending_scatter) {
+        if (unlikely(!stream))
+            jit_raise("jit_var_eval(): you must invoke jitc_set_device() to "
+                      "choose a target device before using this function.");
+        else if (unlikely(v->cuda != stream->cuda))
+            jit_raise("jit_var_eval(): attempted to evaluate a %s variable "
+                      "while the %s backend was activated! You must invoke "
+                      "jit_set_device() to set the right backend!",
+                      v->cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
+
         if (unevaluated) {
             if (v->is_literal_zero) {
                 /* Optimization: don't bother building a kernel just to
@@ -1088,7 +1114,8 @@ void jit_var_eval(uint32_t index) {
 
                 uint64_t zero = 0;
                 jit_memset_async(v->data, v->size, isize, &zero);
-                return;
+
+                return 1;
             } else {
                 stream->todo.push_back(index);
             }
@@ -1100,7 +1127,11 @@ void jit_var_eval(uint32_t index) {
             jit_raise("jit_var_eval(): element remains dirty after evaluation!");
         else if (unlikely(!v->data))
             jit_raise("jit_var_eval(): invalid/uninitialized variable!");
+
+        return 1;
     }
+
+    return 0;
 }
 
 /// Read a single element of a variable and write it to 'dst'

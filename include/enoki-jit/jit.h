@@ -404,14 +404,19 @@ extern JITC_EXPORT void jitc_free(void *ptr);
  * a GPU kernel.
  *
  * When no migration is necessary, the function simply returns the input
- * pointer. Otherwise, it returns a new pointer and asynchronously frees the
- * old one via (via \ref jitc_free()). When both source and target are of
- * type \ref AllocType::Device, and when the currently active device
- * (determined by the last call to \ref jitc_set_device()) does not match the
- * device associated with the allocation, a peer-to-peer migration is
- * performed.
+ * pointer. If migration is necessary, the behavior depends on the supplied
+ * <tt>move</tt> parameter. When <tt>move==0</tt>, the implementation schedules
+ * an asynchronous copy and leaves the old pointer undisturbed. If
+ * <tt>move==1</tt>, the old pointer is asynchronously freed once the copy
+ * operation finishes.
+ *
+ * When both source and target are of type \ref AllocType::Device, and
+ * when the currently active device (determined by the last call to \ref
+ * jitc_set_device()) does not match the device associated with the allocation,
+ * a peer-to-peer migration is performed.
  */
-extern JITC_EXPORT void* jitc_malloc_migrate(void *ptr, enum AllocType type);
+extern JITC_EXPORT void *jitc_malloc_migrate(void *ptr, enum AllocType type,
+                                             int move JITC_DEF(1));
 
 /// Release all currently unused memory to the GPU / OS
 extern JITC_EXPORT void jitc_malloc_trim();
@@ -831,14 +836,18 @@ extern JITC_EXPORT const char *jitc_var_label(uint32_t index);
 /**
  * \brief Asynchronously migrate a variable to a different flavor of memory
  *
- * The operation is asynchronous and, hence, will need to be followed by \ref
- * jitc_sync_stream() if managed memory is subsequently accessed on the CPU.
+ * Returns the resulting variable index and increases its external reference
+ * count by one. When source and target type are identical, this function does
+ * not perform a migration and simply returns the input index (though it
+ * increases the reference count even in this case). When the source and target
+ * types are different, the implementation schedules an asynchronous copy and
+ * generates a new variable index.
  *
  * When both source & target are of type \ref AllocType::Device, and if the
  * current device (\ref jitc_set_device()) does not match the device associated
  * with the allocation, a peer-to-peer migration is performed.
  */
-extern JITC_EXPORT void jitc_var_migrate(uint32_t index, enum AllocType type);
+extern JITC_EXPORT uint32_t jitc_var_migrate(uint32_t index, enum AllocType type);
 
 /**
  * \brief Mark a variable as a scatter operation
@@ -931,11 +940,19 @@ extern JITC_EXPORT void jitc_var_write(uint32_t index, uint32_t offset,
 //                 Kernel compilation and evaluation
 // ====================================================================
 
-/// Schedule a variable \c index for future evaluation via \ref jitc_eval()
-extern JITC_EXPORT void jitc_var_schedule(uint32_t index);
+/**
+ * \brief Schedule a variable \c index for future evaluation via \ref jitc_eval()
+ *
+ * Returns \c 1 if anything was scheduled, and \c 0 otherwise.
+ */
+extern JITC_EXPORT int jitc_var_schedule(uint32_t index);
 
-/// Evaluate the variable \c index right away, if it is unevaluated/dirty.
-extern JITC_EXPORT void jitc_var_eval(uint32_t index);
+/**
+ * \brief Evaluate the variable \c index right away, if it is unevaluated/dirty.
+ *
+ * Returns \c 1 if anything was evaluated, and \c 0 otherwise.
+ */
+extern JITC_EXPORT int jitc_var_eval(uint32_t index);
 
 /// Evaluate all computation that is scheduled on the current stream
 extern JITC_EXPORT void jitc_eval();

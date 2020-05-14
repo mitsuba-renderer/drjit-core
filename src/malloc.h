@@ -64,7 +64,7 @@ extern void jit_free(void *ptr);
 extern void jit_free_flush();
 
 /// Change the flavor of an allocated memory region
-extern void* jit_malloc_migrate(void *ptr, AllocType type);
+extern void* jit_malloc_migrate(void *ptr, AllocType type, int move);
 
 /// Asynchronously prefetch a memory region
 extern void jit_malloc_prefetch(void *ptr, int device);

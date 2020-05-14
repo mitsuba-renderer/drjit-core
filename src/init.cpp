@@ -151,9 +151,7 @@ void jit_init(int llvm, int cuda) {
         }
     }
 
-    if (!state.devices.empty())
-        cuda_check(cuCtxSetCurrent(state.devices[0].context));
-
+    cuda_check(cuCtxSetCurrent(nullptr));
     state.variable_index = 1;
 }
 

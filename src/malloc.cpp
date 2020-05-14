@@ -10,6 +10,7 @@
 #include "internal.h"
 #include "log.h"
 #include "tbb.h"
+#include "util.h"
 
 const char *alloc_type_name[(int) AllocType::Count] = {
     "host",   "host-async", "host-pinned",
@@ -363,7 +364,7 @@ void jit_free_flush() {
     }
 }
 
-void* jit_malloc_migrate(void *ptr, AllocType type) {
+void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_malloc_migrate(): you must invoke jitc_set_device() to "
@@ -379,8 +380,10 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
 #if defined(ENOKI_ENABLE_TBB)
     if ((ai.type == AllocType::Host && type == AllocType::HostAsync) ||
         (ai.type == AllocType::HostAsync && type == AllocType::Host)) {
-        it.value().type = type;
-        return ptr;
+        if (move) {
+            it.value().type = type;
+            return ptr;
+        }
     }
 #else
     if (type == AllocType::HostAsync)
@@ -398,13 +401,13 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
             "device/managed/host-pinned pointer!");
 
     void *ptr_new = jit_malloc(type, ai.size);
-    jit_trace("jit_malloc_migrate(" ENOKI_PTR "): " ENOKI_PTR " (%s -> %s)",
+    jit_trace("jit_malloc_migrate(" ENOKI_PTR " -> " ENOKI_PTR ", %s -> %s)",
               (uintptr_t) ptr, (uintptr_t) ptr_new,
               alloc_type_name[(int) ai.type], alloc_type_name[(int) type]);
 
     if (type == AllocType::HostAsync || ai.type == AllocType::HostAsync)
         jit_raise("jit_malloc_migrate(): migrations between CUDA and "
-                  "host-asynchronous memory are not supported.");
+                  "host-asynchronous memory are not currently supported.");
 
     if (ai.type == AllocType::Host) {
         /* Temporarily release the main lock */ {
@@ -416,10 +419,15 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
                                  stream->handle));
         cuda_check(cuLaunchHostFunc(
             stream->handle,
-            [](void *ptr) {
-                lock_guard guard(state.malloc_mutex);
-                state.alloc_unmap.emplace_back(true, ptr);
-            },
+            move ?
+                [](void *ptr) {
+                    lock_guard guard(state.malloc_mutex);
+                    state.alloc_unmap.emplace_back(true, ptr);
+                } :
+                [](void *ptr) {
+                    lock_guard guard(state.malloc_mutex);
+                    state.alloc_unmap.emplace_back(false, ptr);
+                },
             ptr
         ));
     } else if (type == AllocType::Host) {
@@ -439,12 +447,15 @@ void* jit_malloc_migrate(void *ptr, AllocType type) {
             ptr_new
         ));
 
-        jit_free(ptr);
+        if (move)
+            jit_free(ptr);
     } else {
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
                                  (CUdeviceptr) ptr, ai.size,
                                  stream->handle));
-        jit_free(ptr);
+
+        if (move)
+            jit_free(ptr);
     }
 
     return ptr_new;

@@ -1039,17 +1039,12 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
     uint32_t *offsets = (uint32_t *) jit_malloc(
         cuda ? AllocType::HostPinned : AllocType::Host, offsets_size);
     uint32_t *perm = (uint32_t *) jit_malloc(
-        cuda ? AllocType::Device : AllocType::Host, perm_size);
+        cuda ? AllocType::Device : AllocType::HostAsync, perm_size);
 
     // Compute permutation
     uint32_t unique_count = jit_mkperm((const uint32_t *) ptr, size,
                                        bucket_count, perm, offsets),
              unique_count_out = unique_count;
-
-#if defined(ENOKI_ENABLE_TBB)
-    if (!stream->cuda)
-        perm = (uint32_t *) jit_malloc_migrate(perm, AllocType::HostAsync);
-#endif
 
     // Register permutation variable with JIT backend and transfer ownership
     uint32_t perm_var = jit_var_map(VarType::UInt32, cuda, perm, size, 1);
