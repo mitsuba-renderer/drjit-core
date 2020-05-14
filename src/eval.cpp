@@ -1140,6 +1140,8 @@ void jit_eval() {
     if (schedule.empty())
         return;
 
+    scoped_set_context_maybe guard2(stream->context);
+
     // Group them from large to small sizes while preserving dependencies
     std::stable_sort(
         schedule.begin(), schedule.end(),

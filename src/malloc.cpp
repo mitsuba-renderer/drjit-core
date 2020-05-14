@@ -75,10 +75,10 @@ void* jit_malloc(AllocType type, size_t size) {
 
     const char *descr = nullptr;
     void *ptr = nullptr;
+    Stream *stream = active_stream;
 
     /* Acquire lock protecting stream->release_chain and state.alloc_free */ {
         lock_guard guard(state.malloc_mutex);
-        Stream *stream = active_stream;
 
         if (type == AllocType::Device || type == AllocType::HostAsync) {
             if (unlikely(!stream))
@@ -158,6 +158,7 @@ void* jit_malloc(AllocType type, size_t size) {
             if (rv != 0)
                 ptr = nullptr;
         } else {
+            scoped_set_context guard(stream->context);
             CUresult (*alloc) (CUdeviceptr *, size_t) = nullptr;
 
             auto cuMemAllocManaged_ = [](CUdeviceptr *ptr_, size_t size_) {
@@ -319,6 +320,7 @@ void jit_free_flush() {
               n_dealloc, n_dealloc > 1 ? "s" : "");
 
     if (stream->cuda) {
+        scoped_set_context guard(stream->context);
         cuda_check(cuLaunchHostFunc(
             stream->handle,
             [](void *ptr) -> void {
@@ -413,6 +415,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
         jit_raise("jit_malloc_migrate(): migrations between CUDA and "
                   "host-asynchronous memory are not currently supported.");
 
+    scoped_set_context guard(stream->context);
     if ((AllocType) ai.type == AllocType::Host) {
         /* Temporarily release the main lock */ {
             unlock_guard guard(state.mutex);
@@ -493,6 +496,7 @@ void jit_malloc_prefetch(void *ptr, int device) {
         jit_raise("jit_malloc_prefetch(): invalid memory type, expected "
                   "Managed or ManagedReadMostly.");
 
+    scoped_set_context guard(stream->context);
     if (device == -2) {
         for (const Device &d : state.devices)
             cuda_check(cuMemPrefetchAsync((CUdeviceptr) ptr, ai.size, d.id,

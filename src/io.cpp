@@ -410,7 +410,7 @@ void jit_kernel_free(int device_id, const Kernel kernel) {
 #endif
     } else {
         const Device &device = state.devices.at(device_id);
-        cuda_check(cuCtxSetCurrent(device.context));
+        scoped_set_context guard(device.context);
         cuda_check(cuModuleUnload(kernel.cuda.cu_module));
         free(kernel.data);
     }

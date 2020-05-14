@@ -101,6 +101,7 @@ struct Device {
 /// Keeps track of asynchronous deallocations via jit_free()
 struct ReleaseChain {
     AllocInfoMap entries;
+
     /// Pointer to next linked list entry
     ReleaseChain *next = nullptr;
 };
@@ -150,6 +151,9 @@ struct Stream {
 #endif
 
     /// ---------------------------- CUDA-specific ----------------------------
+
+    /// Redundant copy of the device context
+    CUcontext context = nullptr;
 
     /// Associated CUDA stream handle
     CUstream handle = nullptr;
@@ -605,7 +609,7 @@ extern Buffer buffer;
 #endif
 
 /// Initialize core data structures of the JIT compiler
-extern void jit_init(int llvm, int cuda);
+extern void jit_init(int llvm, int cuda, Stream **stream);
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 extern void jit_shutdown(int light);

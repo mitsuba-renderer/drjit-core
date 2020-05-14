@@ -115,8 +115,8 @@ extern CUresult (*cuModuleLoadData)(CUmodule *, const void *);
 extern CUresult (*cuModuleUnload)(CUmodule);
 extern CUresult (*cuOccupancyMaxPotentialBlockSize)(int *, int *, CUfunction,
                                                     void *, size_t, int);
-extern CUresult (*cuCtxGetCurrent)(CUcontext *);
-extern CUresult (*cuCtxSetCurrent)(CUcontext);
+extern CUresult (*cuCtxPushCurrent)(CUcontext);
+extern CUresult (*cuCtxPopCurrent)(CUcontext*);
 extern CUresult (*cuStreamCreate)(CUstream *, unsigned int);
 extern CUresult (*cuStreamDestroy)(CUstream);
 extern CUresult (*cuStreamSynchronize)(CUstream);
@@ -159,3 +159,24 @@ extern void jit_cuda_shutdown();
 /// Assert that a CUDA operation is correctly issued
 #define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
 extern void cuda_check_impl(CUresult errval, const char *file, const int line);
+
+struct scoped_set_context {
+    scoped_set_context(CUcontext ctx) {
+        cuda_check(cuCtxPushCurrent(ctx));
+    }
+    ~scoped_set_context() {
+        cuda_check(cuCtxPopCurrent(nullptr));
+    }
+};
+
+struct scoped_set_context_maybe {
+    scoped_set_context_maybe(CUcontext ctx) : active(ctx != nullptr) {
+        if (active)
+            cuda_check(cuCtxPushCurrent(ctx));
+    }
+    ~scoped_set_context_maybe() {
+        if (active)
+            cuda_check(cuCtxPopCurrent(nullptr));
+    }
+    bool active;
+};

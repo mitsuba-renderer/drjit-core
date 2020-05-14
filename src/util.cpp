@@ -54,6 +54,7 @@ void jit_memset_async(void *ptr, uint32_t size_, uint32_t isize, const void *src
     }
 
     if (stream->cuda) {
+        scoped_set_context guard(stream->context);
         switch (isize) {
             case 1:
                 cuda_check(cuMemsetD8Async((CUdeviceptr) ptr,
@@ -151,6 +152,7 @@ void jit_memcpy(void *dst, const void *src, size_t size) {
     // Temporarily release the lock while copying
     unlock_guard guard(state.mutex);
     if  (stream->cuda) {
+        scoped_set_context guard(stream->context);
         cuda_check(cuStreamSynchronize(stream->handle));
         cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
     } else {
@@ -161,7 +163,7 @@ void jit_memcpy(void *dst, const void *src, size_t size) {
     }
 }
 
-/// Perform an assynchronous copy operation
+/// Perform an asynchronous copy operation
 void jit_memcpy_async(void *dst, const void *src, size_t size) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
@@ -169,6 +171,7 @@ void jit_memcpy_async(void *dst, const void *src, size_t size) {
                   "choose a target device before calling this function.");
 
     if  (stream->cuda) {
+        scoped_set_context guard(stream->context);
         cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
                                  stream->handle));
     } else {
@@ -295,6 +298,7 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
     uint32_t type_size = var_type_size[(int) type];
 
     if (stream->cuda) {
+        scoped_set_context guard(stream->context);
         const Device &device = state.devices[stream->device];
         CUfunction func = jit_cuda_reductions[(int) rtype][(int) type][device.id];
         if (!func)
@@ -462,6 +466,7 @@ void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
 
     if (stream->cuda) {
         const Device &device = state.devices[stream->device];
+        scoped_set_context guard(stream->context);
 
         if (size == 0) {
             return;
@@ -573,6 +578,7 @@ void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out, uint32_t *cou
 
     if (stream->cuda) {
         const Device &device = state.devices[stream->device];
+        scoped_set_context guard(stream->context);
 
         if (size == 0) {
             return;
@@ -695,6 +701,8 @@ static void cuda_transpose(Stream *stream, const uint32_t *in, uint32_t *out,
     uint16_t blocks_x = (cols + 15u) / 16u,
              blocks_y = (rows + 15u) / 16u;
 
+
+    scoped_set_context guard(stream->context);
     jit_log(Debug,
             "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
             ", rows=%u, cols=%u, blocks=%ux%u)",
@@ -717,6 +725,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     Stream *stream = active_stream;
 
     if (stream->cuda) {
+        scoped_set_context guard(stream->context);
         const Device &device = state.devices[stream->device];
 
         // Don't use more than 1 block/SM due to shared memory requirement
@@ -1024,12 +1033,14 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
         return it.value().second;
     }
 
+    uint32_t bucket_count = jit_registry_get_max(domain) + 1;
+    if (unlikely(bucket_count == 1))
+        jit_raise("jit_vcall(): no instances registered for domain \"%s\"\n!", domain);
+
     jit_var_eval(index);
     Variable *v = jit_var(index);
     const void *ptr = v->data;
     uint32_t size = v->size;
-
-    uint32_t bucket_count = jit_registry_get_max(domain) + 1;
 
     jit_log(Debug, "jit_vcall(%u, domain=\"%s\")", index, domain);
 
@@ -1190,6 +1201,7 @@ void jit_block_copy(enum VarType type, const void *in, void *out, uint32_t size,
     type = make_int_type_unsigned(type);
 
     if (stream->cuda) {
+        scoped_set_context guard(stream->context);
         const Device &device = state.devices[stream->device];
         size *= block_size;
 
@@ -1261,6 +1273,7 @@ void jit_block_sum(enum VarType type, const void *in, void *out, uint32_t size,
     type = make_int_type_unsigned(type);
 
     if (stream->cuda) {
+        scoped_set_context guard(stream->context);
         const Device &device = state.devices[stream->device];
         size *= block_size;
 
@@ -1323,6 +1336,7 @@ void jit_poke(void *dst, const void *src, uint32_t size) {
     }
 
     if (stream->cuda) {
+        scoped_set_context guard(stream->context);
         const Device &device = state.devices[stream->device];
         CUfunction func = jit_cuda_poke[(int) type][device.id];
         void *args[] = { &dst, (void *) src };

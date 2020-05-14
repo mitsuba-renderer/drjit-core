@@ -17,7 +17,7 @@
 
 void jitc_init(int llvm, int cuda) {
     lock_guard guard(state.mutex);
-    jit_init(llvm, cuda);
+    jit_init(llvm, cuda, nullptr);
 }
 
 void jitc_init_async(int llvm, int cuda) {
@@ -31,14 +31,16 @@ void jitc_init_async(int llvm, int cuda) {
     std::shared_ptr<Sync> sync = std::make_shared<Sync>();
     std::unique_lock<std::mutex> guard(sync->mutex);
 
-    std::thread([llvm, cuda, sync]() {
+    Stream **stream = &active_stream;
+
+    std::thread([llvm, cuda, sync, stream]() {
         lock_guard guard2(state.mutex);
         {
             lock_guard_t<std::mutex> guard2(sync->mutex);
             sync->flag = true;
             sync->cv.notify_one();
         }
-        jit_init(llvm, cuda);
+        jit_init(llvm, cuda, stream);
     }).detach();
 
     while (!sync->flag)

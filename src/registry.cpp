@@ -248,19 +248,14 @@ void jit_registry_set_attr(void *ptr, const char *name,
         size_t new_size = (size_t) new_count * (size_t) isize;
         void *ptr;
 
-        if (state.has_cuda) {
-            CUcontext ctx;
-            cuda_check(cuCtxGetCurrent(&ctx));
-            if (!ctx)
-                cuda_check(cuCtxSetCurrent(state.devices[0].context));
+        if (state.has_cuda && !state.devices.empty()) {
+            scoped_set_context guard(state.devices[0].context);
             CUresult ret = cuMemAllocManaged((CUdeviceptr *) &ptr, new_size, CU_MEM_ATTACH_GLOBAL);
             if (ret != CUDA_SUCCESS) {
                 jit_malloc_trim();
                 cuda_check(cuMemAllocManaged((CUdeviceptr *) &ptr, new_size, CU_MEM_ATTACH_GLOBAL));
             }
             cuda_check(cuMemAdvise((CUdeviceptr) ptr, new_size, CU_MEM_ADVISE_SET_READ_MOSTLY, 0));
-            if (!ctx)
-                cuda_check(cuCtxSetCurrent(ctx));
         } else {
             ptr = malloc_check(new_size);
         }

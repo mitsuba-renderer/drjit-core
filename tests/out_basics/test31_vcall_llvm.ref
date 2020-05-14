@@ -8,9 +8,10 @@ jit_var_inc_ref_ext(1): 1
 jit_var_copy(1, size=10)
 jit_vcall(1, domain="MyKey")
 jit_malloc(type=host, size=128): <@> (new allocation)
+jit_malloc(type=host-async, size=64): <@> (new allocation)
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_malloc(type=host, size=64): <@> (new allocation)
+jit_free(<@>, type=host, size=64)
 jit_free(<@>, type=host, size=64)
 jit_var_map(2): <@>, size=10, free=1
 jit_var_inc_ref_ext(2): 1
@@ -24,7 +25,6 @@ jit_var_inc_ref_int(2): 3
 jit_var_inc_ref_ext(5): 1
 jit_vcall(): registered variable 5: bucket 3 (0xc) of size 2.
 jit_var_dec_ref_ext(2): 0
-jit_free(<@>, type=host, size=64)
 jit_var_inc_ref_ext(3): 2
 jit_var_inc_ref_ext(4): 2
 jit_var_inc_ref_ext(5): 2

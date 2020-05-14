@@ -44,7 +44,7 @@ static_assert(
     "VariableMap: incorrect bucket size, likely an issue with padding/packing!");
 
 /// Initialize core data structures of the JIT compiler
-void jit_init(int llvm, int cuda) {
+void jit_init(int llvm, int cuda, Stream **stream) {
 #if defined(__APPLE__)
     cuda = 0;
 #endif
@@ -138,11 +138,11 @@ void jit_init(int llvm, int cuda) {
                 continue;
 
             int peer_ok = 0;
+            scoped_set_context guard(a.context);
             cuda_check(cuDeviceCanAccessPeer(&peer_ok, a.id, b.id));
             if (peer_ok) {
                 jit_log(Debug, " - Enabling peer access from device %i -> %i",
                         a.id, b.id);
-                cuda_check(cuCtxSetCurrent(a.context));
                 CUresult rv = cuCtxEnablePeerAccess(b.context, 0);
                 if (rv == CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED)
                     continue;
@@ -151,8 +151,14 @@ void jit_init(int llvm, int cuda) {
         }
     }
 
-    cuda_check(cuCtxSetCurrent(nullptr));
     state.variable_index = 1;
+    if (state.has_cuda && !state.devices.empty())
+        jit_set_device(0, 0);
+    else if (state.has_llvm)
+        jit_set_device(-1, 0);
+
+    if (stream)
+        *stream = active_stream;
 }
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
@@ -166,6 +172,7 @@ void jit_shutdown(int light) {
             jit_set_device(stream->device, stream->stream);
             if (stream->cuda) {
                 jit_free_flush();
+                scoped_set_context guard(stream->context);
                 cuda_check(cuStreamSynchronize(stream->handle));
                 cuda_check(cuEventDestroy(stream->event));
                 cuda_check(cuStreamDestroy(stream->handle));
@@ -229,7 +236,6 @@ void jit_shutdown(int light) {
     jit_malloc_shutdown();
 
     if (state.has_cuda) {
-        cuda_check(cuCtxSetCurrent(nullptr));
         for (auto &v : state.devices)
             cuda_check(cuDevicePrimaryCtxRelease(v.id));
         state.devices.clear();
@@ -262,10 +268,6 @@ void jit_set_device(int32_t device, uint32_t stream) {
             return;
         jit_trace("jit_set_device(device=%i, stream=%i): selecting stream",
                   device, stream);
-
-        if (state.has_cuda)
-            cuda_check(cuCtxSetCurrent(
-                cuda ? state.devices[device].context : nullptr));
     } else {
         if (cuda && (!state.has_cuda || device >= (int32_t) state.devices.size()))
             jit_raise(
@@ -279,17 +281,15 @@ void jit_set_device(int32_t device, uint32_t stream) {
         jit_trace("jit_set_device(device=%i, stream=%i): creating stream",
                   device, stream);
 
+        CUcontext context = nullptr;
         CUstream handle = nullptr;
         CUevent event = nullptr;
 
-        if (state.has_cuda) {
-            cuda_check(cuCtxSetCurrent(
-                device == -1 ? nullptr : state.devices[device].context));
-
-            if (cuda) {
-                cuda_check(cuStreamCreate(&handle, CU_STREAM_NON_BLOCKING));
-                cuda_check(cuEventCreate(&event, CU_EVENT_DISABLE_TIMING));
-            }
+        if (state.has_cuda && cuda) {
+            context = state.devices[device].context;
+            scoped_set_context guard(context);
+            cuda_check(cuStreamCreate(&handle, CU_STREAM_NON_BLOCKING));
+            cuda_check(cuEventCreate(&event, CU_EVENT_DISABLE_TIMING));
         }
 
         stream_ptr = new Stream();
@@ -298,6 +298,7 @@ void jit_set_device(int32_t device, uint32_t stream) {
         stream_ptr->stream = stream;
         stream_ptr->handle = handle;
         stream_ptr->event = event;
+        stream_ptr->context = context;
 
 #if defined(ENOKI_ENABLE_TBB)
         tbb_stream_init(stream_ptr);
@@ -318,6 +319,7 @@ void jit_sync_stream() {
 
     if (stream->cuda) {
         unlock_guard guard(state.mutex);
+        scoped_set_context guard2(stream->context);
         cuda_check(cuStreamSynchronize(stream->handle));
     } else {
 #if defined(ENOKI_ENABLE_TBB)
@@ -337,6 +339,7 @@ void jit_sync_device() {
     if (stream->cuda) {
         /* Release mutex while synchronizing */ {
             unlock_guard guard(state.mutex);
+            scoped_set_context guard2(stream->context);
             cuda_check(cuCtxSynchronize());
         }
     } else {
@@ -378,21 +381,13 @@ void jit_sync_all_devices() {
     for (auto &kv: streams) {
         Stream *stream = kv.second;
         if (stream->cuda) {
-            cuda_check(cuCtxSetCurrent(
-                state.devices[stream->device].context));
+            scoped_set_context guard(stream->context);
             cuda_check(cuStreamSynchronize(stream->handle));
         } else {
 #if defined(ENOKI_ENABLE_TBB)
             tbb_stream_sync(stream);
 #endif
         }
-    }
-
-    if (state.has_cuda) {
-        cuda_check(
-            cuCtxSetCurrent(active_stream && active_stream->cuda
-                                ? state.devices[active_stream->device].context
-                                : nullptr));
     }
 }
 

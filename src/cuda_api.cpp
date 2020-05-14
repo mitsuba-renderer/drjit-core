@@ -72,8 +72,8 @@ CUresult (*cuModuleLoadData)(CUmodule *, const void *) = nullptr;
 CUresult (*cuModuleUnload)(CUmodule) = nullptr;
 CUresult (*cuOccupancyMaxPotentialBlockSize)(int *, int *, CUfunction, void *,
                                              size_t, int) = nullptr;
-CUresult (*cuCtxGetCurrent)(CUcontext*) = nullptr;
-CUresult (*cuCtxSetCurrent)(CUcontext) = nullptr;
+CUresult (*cuCtxPushCurrent)(CUcontext) = nullptr;
+CUresult (*cuCtxPopCurrent)(CUcontext*) = nullptr;
 CUresult (*cuStreamCreate)(CUstream *, unsigned int) = nullptr;
 CUresult (*cuStreamDestroy)(CUstream) = nullptr;
 CUresult (*cuStreamSynchronize)(CUstream) = nullptr;
@@ -206,8 +206,8 @@ bool jit_cuda_init() {
         LOAD(cuModuleLoadData);
         LOAD(cuModuleUnload);
         LOAD(cuOccupancyMaxPotentialBlockSize);
-        LOAD(cuCtxGetCurrent);
-        LOAD(cuCtxSetCurrent);
+        LOAD(cuCtxPushCurrent, "v2");
+        LOAD(cuCtxPopCurrent, "v2");
         LOAD(cuStreamCreate);
         LOAD(cuStreamDestroy, "v2");
         LOAD(cuStreamSynchronize, "ptsz");
@@ -280,7 +280,7 @@ bool jit_cuda_init() {
     for (int i = 0; i < jit_cuda_devices; ++i) {
         CUcontext context = nullptr;
         cuda_check(cuDevicePrimaryCtxRetain(&context, i));
-        cuda_check(cuCtxSetCurrent(context));
+        scoped_set_context guard(context);
         int cc_minor, cc_major, shared_memory_bytes;
 
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
@@ -408,7 +408,6 @@ bool jit_cuda_init() {
             }
         }
     }
-    cuda_check(cuCtxSetCurrent(nullptr));
 
     jit_cuda_init_success = true;
     return true;
@@ -495,13 +494,10 @@ void jit_cuda_shutdown() {
     for (int i = 0; i < jit_cuda_devices; ++i) {
         CUcontext context = nullptr;
         cuda_check(cuDevicePrimaryCtxRetain(&context, i));
-        cuda_check(cuCtxSetCurrent(nullptr));
         cuda_check(cuModuleUnload(jit_cuda_module[i]));
         cuda_check(cuDevicePrimaryCtxRelease(i));
         cuda_check(cuDevicePrimaryCtxRelease(i));
     }
-
-    cuda_check(cuCtxSetCurrent(nullptr));
 
     jit_cuda_devices = 0;
 
@@ -549,7 +545,8 @@ void jit_cuda_shutdown() {
     Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy); Z(cuMemcpyAsync);
     Z(cuMemsetD16Async); Z(cuMemsetD32Async); Z(cuMemsetD8Async);
     Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleUnload);
-    Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxSetCurrent); Z(cuStreamCreate);
+    Z(cuOccupancyMaxPotentialBlockSize); 
+    Z(cuCtxPushCurrent); Z(cuCtxPopCurrent); Z(cuStreamCreate);
     Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
 
 #if !defined(_WIN32)

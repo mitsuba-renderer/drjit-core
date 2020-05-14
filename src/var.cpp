@@ -710,6 +710,7 @@ uint32_t jit_var_copy(AllocType atype, VarType vtype, int cuda, const void *ptr,
     if (stream->cuda) {
         target_ptr = jit_malloc(AllocType::Device, total_size);
 
+        scoped_set_context guard(stream->context);
         if (atype == AllocType::HostAsync) {
             jit_fail("jit_var_copy(): copy from HostAsync to GPU memory not supported!");
         } else if (atype == AllocType::Host) {
