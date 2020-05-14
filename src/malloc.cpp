@@ -12,6 +12,10 @@
 #include "tbb.h"
 #include "util.h"
 
+static_assert(
+    sizeof(tsl::detail_robin_hash::bucket_entry<AllocUsedMap::value_type, false>) == 24,
+    "AllocUsedMap: incorrect bucket size, likely an issue with padding/packing!");
+
 const char *alloc_type_name[(int) AllocType::Count] = {
     "host",   "host-async", "host-pinned",
     "device", "managed",    "managed-read-mostly"
@@ -67,7 +71,7 @@ void* jit_malloc(AllocType type, size_t size) {
        can have to a manageable amount that facilitates re-use. */
     size = round_pow2(size);
 
-    AllocInfo ai(type, 0, size);
+    AllocInfo ai(size, type, 0);
 
     const char *descr = nullptr;
     void *ptr = nullptr;
@@ -201,21 +205,21 @@ void* jit_malloc(AllocType type, size_t size) {
     if (unlikely(ptr == nullptr))
         jit_raise("jit_malloc(): out of memory! Could not "
                   "allocate %zu bytes of %s memory.",
-                  size, alloc_type_name[(int) ai.type]);
+                  size, alloc_type_name[ai.type]);
 
     state.alloc_used.emplace(ptr, ai);
 
-    if (ai.type == AllocType::Device)
+    if ((AllocType) ai.type == AllocType::Device)
         jit_trace("jit_malloc(type=%s, device=%u, size=%zu): " ENOKI_PTR " (%s)",
-                  alloc_type_name[(int) ai.type], ai.device, ai.size,
+                  alloc_type_name[ai.type], ai.device, ai.size,
                   (uintptr_t) ptr, descr);
     else
         jit_trace("jit_malloc(type=%s, size=%zu): " ENOKI_PTR " (%s)",
-                  alloc_type_name[(int) ai.type], ai.size, (uintptr_t) ptr,
+                  alloc_type_name[ai.type], ai.size, (uintptr_t) ptr,
                   descr);
 
-    size_t &usage     = state.alloc_usage[(int) ai.type],
-           &watermark = state.alloc_watermark[(int) ai.type];
+    size_t &usage     = state.alloc_usage[ai.type],
+           &watermark = state.alloc_watermark[ai.type];
 
     usage += ai.size;
     watermark = std::max(watermark, usage);
@@ -233,13 +237,13 @@ void jit_free(void *ptr) {
 
     AllocInfo ai = it.value();
 
-    if (ai.type == AllocType::Host) {
+    if ((AllocType) ai.type == AllocType::Host) {
         // Acquire lock protecting 'state.alloc_free'
         lock_guard guard(state.malloc_mutex);
         state.alloc_free[ai].push_back(ptr);
     } else {
         Stream *stream = active_stream;
-        bool cuda = ai.type != AllocType::HostAsync;
+        bool cuda = (AllocType) ai.type != AllocType::HostAsync;
         if (likely(stream && cuda == stream->cuda)) {
             // Standard case -- free asynchronously
             std::vector<std::pair<bool, void *>> alloc_unmap;
@@ -279,15 +283,15 @@ void jit_free(void *ptr) {
         }
     }
 
-    if (ai.type == AllocType::Device)
+    if ((AllocType) ai.type == AllocType::Device)
         jit_trace("jit_free(" ENOKI_PTR ", type=%s, device=%u, size=%zu)",
-                  (uintptr_t) ptr, alloc_type_name[(int) ai.type], ai.device,
+                  (uintptr_t) ptr, alloc_type_name[ai.type], ai.device,
                   ai.size);
     else
         jit_trace("jit_free(" ENOKI_PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
-                  alloc_type_name[(int) ai.type], ai.size);
+                  alloc_type_name[ai.type], ai.size);
 
-    state.alloc_usage[(int) ai.type] -= ai.size;
+    state.alloc_usage[ai.type] -= ai.size;
     state.alloc_used.erase(it);
 }
 
@@ -359,7 +363,7 @@ void jit_free_flush() {
             },
             &chain_new, sizeof(void *));
 #else
-        jitc_fail("jit_free_flush(): should never get here!");
+        jit_fail("jit_free_flush(): should never get here!");
 #endif
     }
 }
@@ -378,10 +382,10 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
     AllocInfo ai = it.value();
 
 #if defined(ENOKI_ENABLE_TBB)
-    if ((ai.type == AllocType::Host && type == AllocType::HostAsync) ||
-        (ai.type == AllocType::HostAsync && type == AllocType::Host)) {
+    if (((AllocType) ai.type == AllocType::Host && type == AllocType::HostAsync) ||
+        ((AllocType) ai.type == AllocType::HostAsync && type == AllocType::Host)) {
         if (move) {
-            it.value().type = type;
+            it.value().type = (uint32_t) type;
             return ptr;
         }
     }
@@ -391,7 +395,7 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
 #endif
 
     // Maybe nothing needs to be done..
-    if (ai.type == type && (type != AllocType::Device || ai.device == stream->device))
+    if ((AllocType) ai.type == type && (type != AllocType::Device || ai.device == stream->device))
         return ptr;
 
     if (!stream->cuda)
@@ -403,13 +407,13 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
     void *ptr_new = jit_malloc(type, ai.size);
     jit_trace("jit_malloc_migrate(" ENOKI_PTR " -> " ENOKI_PTR ", %s -> %s)",
               (uintptr_t) ptr, (uintptr_t) ptr_new,
-              alloc_type_name[(int) ai.type], alloc_type_name[(int) type]);
+              alloc_type_name[ai.type], alloc_type_name[(int) type]);
 
-    if (type == AllocType::HostAsync || ai.type == AllocType::HostAsync)
+    if (type == AllocType::HostAsync || (AllocType) ai.type == AllocType::HostAsync)
         jit_raise("jit_malloc_migrate(): migrations between CUDA and "
                   "host-asynchronous memory are not currently supported.");
 
-    if (ai.type == AllocType::Host) {
+    if ((AllocType) ai.type == AllocType::Host) {
         /* Temporarily release the main lock */ {
             unlock_guard guard(state.mutex);
             cuda_check(cuMemHostRegister(ptr, ai.size, 0));
@@ -484,8 +488,8 @@ void jit_malloc_prefetch(void *ptr, int device) {
 
     AllocInfo ai = it.value();
 
-    if (ai.type != AllocType::Managed &&
-        ai.type != AllocType::ManagedReadMostly)
+    if ((AllocType) ai.type != AllocType::Managed &&
+        (AllocType) ai.type != AllocType::ManagedReadMostly)
         jit_raise("jit_malloc_prefetch(): invalid memory type, expected "
                   "Managed or ManagedReadMostly.");
 
@@ -543,7 +547,7 @@ void jit_malloc_trim(bool warn) {
             trim_count[(int) kv.first.type] += entries.size();
             trim_size[(int) kv.first.type] += kv.first.size * entries.size();
 
-            switch (kv.first.type) {
+            switch ((AllocType) kv.first.type) {
                 case AllocType::Device:
                 case AllocType::Managed:
                 case AllocType::ManagedReadMostly:
@@ -587,6 +591,22 @@ void jit_malloc_trim(bool warn) {
                     trim_count[i], trim_count[i] > 1 ? "s" : "");
         }
     }
+}
+
+/// Query the flavor of a memory allocation made using \ref jit_malloc()
+AllocType jit_malloc_get_type(void *ptr) {
+    auto it = state.alloc_used.find(ptr);
+    if (unlikely(it == state.alloc_used.end()))
+        jit_raise("jit_malloc_get_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+    return (AllocType) it->second.type;
+}
+
+/// Query the device associated with a memory allocation made using \ref jit_malloc()
+int jit_malloc_get_device(void *ptr) {
+    auto it = state.alloc_used.find(ptr);
+    if (unlikely(it == state.alloc_used.end()))
+        jit_raise("jit_malloc_get_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+    return it->second.device;
 }
 
 void jit_malloc_shutdown() {

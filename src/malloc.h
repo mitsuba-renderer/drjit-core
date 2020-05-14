@@ -13,15 +13,16 @@
 #include "hash.h"
 
 /// Data structure characterizing a memory allocation
+#pragma pack(push, 1)
 struct AllocInfo {
-    AllocType type = AllocType::Host;
-    uint32_t device = 0;
-    size_t size = 0;
+    size_t size: 48;
+    uint32_t type : 8;
+    int device : 8;
 
-    AllocInfo() { }
+    AllocInfo() { memset(this, 0, sizeof(AllocInfo)); }
 
-    AllocInfo(AllocType type, uint32_t device, size_t size)
-        : type(type), device(device), size(size) { }
+    AllocInfo(size_t size, AllocType type, int device)
+        : size(size), type((uint32_t) type), device(device) { }
 
     bool operator==(const AllocInfo &at) const {
         return type == at.type && device == at.device &&
@@ -33,18 +34,19 @@ struct AllocInfo {
                size != at.size;
     }
 };
+#pragma pack(pop)
 
 /// Custom hasher for \ref AllocInfo
 struct AllocInfoHasher {
     size_t operator()(const AllocInfo &at) const {
         size_t result = std::hash<size_t>()(at.size);
-        hash_combine(result, std::hash<uint32_t>()(at.device));
-        hash_combine(result, std::hash<uint32_t>()((uint32_t) at.type));
+        hash_combine(result, std::hash<uint32_t>()((uint32_t) at.device << 8) + at.type);
         return result;
     }
 };
 
 using AllocInfoMap = tsl::robin_map<AllocInfo, std::vector<void *>, AllocInfoHasher>;
+using AllocUsedMap = tsl::robin_pg_map<const void *, AllocInfo>;
 
 /// Round to the next power of two
 extern size_t round_pow2(size_t x);
@@ -74,3 +76,9 @@ extern void jit_malloc_trim(bool warn = true);
 
 /// Shut down the memory allocator (calls \ref jit_malloc_trim() and reports leaks)
 extern void jit_malloc_shutdown();
+
+/// Query the flavor of a memory allocation made using \ref jit_malloc()
+extern AllocType jit_malloc_get_type(void *ptr);
+
+/// Query the device associated with a memory allocation made using \ref jit_malloc()
+extern int jit_malloc_get_device(void *ptr);

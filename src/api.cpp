@@ -175,11 +175,6 @@ void jitc_free(void *ptr) {
     jit_free(ptr);
 }
 
-void *jitc_malloc_migrate(void *ptr, AllocType type, int move) {
-    lock_guard guard(state.mutex);
-    return jit_malloc_migrate(ptr, type, move);
-}
-
 void jitc_malloc_trim() {
     lock_guard guard(state.mutex);
     jit_malloc_trim(false);
@@ -188,6 +183,31 @@ void jitc_malloc_trim() {
 void jitc_malloc_prefetch(void *ptr, int device) {
     lock_guard guard(state.mutex);
     jit_malloc_prefetch(ptr, device);
+}
+
+enum AllocType jitc_malloc_get_type(void *ptr) {
+    lock_guard guard(state.mutex);
+    return jit_malloc_get_type(ptr);
+}
+
+int jitc_malloc_get_device(void *ptr) {
+    lock_guard guard(state.mutex);
+    return jit_malloc_get_device(ptr);
+}
+
+void *jitc_malloc_migrate(void *ptr, AllocType type, int move) {
+    lock_guard guard(state.mutex);
+    return jit_malloc_migrate(ptr, type, move);
+}
+
+enum AllocType jitc_var_get_alloc_type(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var_get_alloc_type(index);
+}
+
+int jitc_var_get_device(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var_get_device(index);
 }
 
 void jitc_var_inc_ref_ext(uint32_t index) {

@@ -392,32 +392,6 @@ extern JITC_EXPORT void *jitc_malloc(enum AllocType type, size_t size)
  */
 extern JITC_EXPORT void jitc_free(void *ptr);
 
-/**
- * \brief Asynchronously change the flavor of an allocated memory region and
- * return the new pointer
- *
- * The operation is *always* asynchronous and, hence, will need to be followed
- * by an explicit synchronization via \ref jitc_sync_stream() if memory is
- * migrated from the GPU to the CPU and expected to be accessed on the CPU
- * before the transfer has finished. Nothing needs to be done in the other
- * direction, e.g. when migrating memory that is subsequently accessed by
- * a GPU kernel.
- *
- * When no migration is necessary, the function simply returns the input
- * pointer. If migration is necessary, the behavior depends on the supplied
- * <tt>move</tt> parameter. When <tt>move==0</tt>, the implementation schedules
- * an asynchronous copy and leaves the old pointer undisturbed. If
- * <tt>move==1</tt>, the old pointer is asynchronously freed once the copy
- * operation finishes.
- *
- * When both source and target are of type \ref AllocType::Device, and
- * when the currently active device (determined by the last call to \ref
- * jitc_set_device()) does not match the device associated with the allocation,
- * a peer-to-peer migration is performed.
- */
-extern JITC_EXPORT void *jitc_malloc_migrate(void *ptr, enum AllocType type,
-                                             int move JITC_DEF(1));
-
 /// Release all currently unused memory to the GPU / OS
 extern JITC_EXPORT void jitc_malloc_trim();
 
@@ -444,6 +418,37 @@ extern JITC_EXPORT void jitc_malloc_trim();
  */
 extern JITC_EXPORT void jitc_malloc_prefetch(void *ptr, int device);
 
+/// Query the flavor of a memory allocation made using \ref jitc_malloc()
+extern JITC_EXPORT enum AllocType jitc_malloc_get_type(void *ptr);
+
+/// Query the device associated with a memory allocation made using \ref jitc_malloc()
+extern JITC_EXPORT int jitc_malloc_get_device(void *ptr);
+
+/**
+ * \brief Asynchronously change the flavor of an allocated memory region and
+ * return the new pointer
+ *
+ * The operation is *always* asynchronous and, hence, will need to be followed
+ * by an explicit synchronization via \ref jitc_sync_stream() if memory is
+ * migrated from the GPU to the CPU and expected to be accessed on the CPU
+ * before the transfer has finished. Nothing needs to be done in the other
+ * direction, e.g. when migrating memory that is subsequently accessed by
+ * a GPU kernel.
+ *
+ * When no migration is necessary, the function simply returns the input
+ * pointer. If migration is necessary, the behavior depends on the supplied
+ * <tt>move</tt> parameter. When <tt>move==0</tt>, the implementation schedules
+ * an asynchronous copy and leaves the old pointer undisturbed. If
+ * <tt>move==1</tt>, the old pointer is asynchronously freed once the copy
+ * operation finishes.
+ *
+ * When both source and target are of type \ref AllocType::Device, and
+ * when the currently active device (determined by the last call to \ref
+ * jitc_set_device()) does not match the device associated with the allocation,
+ * a peer-to-peer migration is performed.
+ */
+extern JITC_EXPORT void *jitc_malloc_migrate(void *ptr, enum AllocType type,
+                                             int move JITC_DEF(1));
 
 // ====================================================================
 //                          Pointer registry
@@ -849,6 +854,12 @@ extern JITC_EXPORT const char *jitc_var_label(uint32_t index);
  */
 extern JITC_EXPORT uint32_t jitc_var_migrate(uint32_t index, enum AllocType type);
 
+/// Query the current (or future, if not yet evaluated) allocation flavor of a variable
+extern JITC_EXPORT enum AllocType jitc_var_get_alloc_type(uint32_t index);
+
+/// Query the device (or future, if not yet evaluated) associated with a variable
+extern JITC_EXPORT int jitc_var_get_device(uint32_t index);
+
 /**
  * \brief Mark a variable as a scatter operation
  *
@@ -935,6 +946,7 @@ extern JITC_EXPORT void jitc_var_read(uint32_t index, uint32_t offset,
  */
 extern JITC_EXPORT void jitc_var_write(uint32_t index, uint32_t offset,
                                        const void *src);
+
 
 // ====================================================================
 //                 Kernel compilation and evaluation

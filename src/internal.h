@@ -114,7 +114,7 @@ struct Stream {
     bool parallel_dispatch = true;
 
     /// Enoki device index associated with this stream (*not* the CUDA device ID)
-    uint32_t device = 0;
+    int device = 0;
 
     /// Index of this stream
     uint32_t stream = 0;
@@ -426,7 +426,7 @@ struct State {
     AttributeMap attributes;
 
     /// Map of currently allocated memory regions
-    tsl::robin_pg_map<const void *, AllocInfo> alloc_used;
+    AllocUsedMap alloc_used;
 
     /// Map of currently unused memory regions
     AllocInfoMap alloc_free;

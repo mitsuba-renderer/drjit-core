@@ -151,6 +151,12 @@ extern void jit_cse_drop(uint32_t index, const Variable *v);
 /// Append the given variable to the instruction trace and return its ID
 extern std::pair<uint32_t, Variable *> jit_var_new(Variable &v);
 
+/// Query the current (or future, if not yet evaluated) allocation flavor of a variable
+extern AllocType jit_var_get_alloc_type(uint32_t index);
+
+/// Query the device (or future, if not yet evaluated) associated with a variable
+extern int jit_var_get_device(uint32_t index);
+
 /// Descriptive names and byte sizes for the various variable types
 extern const char *var_type_name      [(int) VarType::Count];
 extern const char *var_type_name_short[(int) VarType::Count];

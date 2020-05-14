@@ -809,9 +809,34 @@ uint32_t jit_var_migrate(uint32_t src_index, AllocType dst_type) {
 
     jit_log(Debug, "jit_var_migrate(%u -> %u, " ENOKI_PTR " -> " ENOKI_PTR ", %s -> %s)",
             src_index, dst_index, (uintptr_t) src_ptr, (uintptr_t) dst_ptr,
-            alloc_type_name[(int) ai.type], alloc_type_name[(int) dst_type]);
+            alloc_type_name[ai.type], alloc_type_name[(int) dst_type]);
 
     return dst_index;
+}
+
+/// Query the current (or future, if not yet evaluated) allocation flavor of a variable
+AllocType jit_var_get_alloc_type(uint32_t index) {
+    const Variable *v = jit_var(index);
+
+    if (v->data)
+        return jit_malloc_get_type(v->data);
+
+    return v->cuda ? AllocType::Device : AllocType::HostAsync;
+}
+
+/// Query the device (or future, if not yet evaluated) associated with a variable
+int jit_var_get_device(uint32_t index) {
+    const Variable *v = jit_var(index);
+
+    if (v->data)
+        return jit_malloc_get_device(v->data);
+
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_var_get_device(): you must invoke jitc_set_device() to "
+                  "choose a target device before using this function.");
+
+    return stream->device;
 }
 
 /// Mark a variable as a scatter operation that writes to 'target'
@@ -875,10 +900,10 @@ const char *jit_var_whos() {
                 jit_raise("jit_var_whos(): Cannot resolve pointer to actual allocation!");
             AllocInfo ai = it.value();
 
-            if (ai.type == AllocType::Device)
+            if ((AllocType) ai.type == AllocType::Device)
                 buffer.fmt("device %-4i", ai.device);
             else
-                buffer.put(alloc_type_name_short[(int) ai.type]);
+                buffer.put(alloc_type_name_short[ai.type]);
         } else {
             buffer.put("[not ready]");
         }
@@ -990,9 +1015,9 @@ const char *jit_var_graphviz() {
 const char *jit_var_str(uint32_t index) {
     jit_var_eval(index);
 
-    Stream *stream = active_stream;
     const Variable *v = jit_var(index);
 
+    Stream *stream = active_stream;
     if (unlikely(v->cuda != stream->cuda))
         jit_raise("jit_var_str(): attempted to stringify a %s variable "
                   "while the %s backend was activated! You must invoke "
