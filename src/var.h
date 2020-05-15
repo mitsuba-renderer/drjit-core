@@ -149,7 +149,8 @@ extern const char *jit_var_graphviz();
 extern void jit_cse_drop(uint32_t index, const Variable *v);
 
 /// Append the given variable to the instruction trace and return its ID
-extern std::pair<uint32_t, Variable *> jit_var_new(Variable &v);
+extern std::pair<uint32_t, Variable *> jit_var_new(Variable &v,
+                                                   bool disable_cse = false);
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable
 extern AllocType jit_var_get_alloc_type(uint32_t index);

@@ -215,7 +215,7 @@ void jit_var_dec_ref_int(uint32_t index) {
 }
 
 /// Append the given variable to the instruction trace and return its ID
-std::pair<uint32_t, Variable *> jit_var_new(Variable &v) {
+std::pair<uint32_t, Variable *> jit_var_new(Variable &v, bool disable_cse_) {
     Stream *stream = active_stream;
     if (unlikely(!stream)) {
         jit_raise("jit_var_new(): you must invoke jitc_set_device() to "
@@ -229,8 +229,8 @@ std::pair<uint32_t, Variable *> jit_var_new(Variable &v) {
     }
 
     CSECache::iterator key_it;
-    bool disable_cse =
-             v.stmt == nullptr || v.direct_pointer || !state.enable_cse,
+    bool disable_cse = v.stmt == nullptr || v.direct_pointer ||
+                       !state.enable_cse || disable_cse_,
          cse_key_inserted = false;
 
     // Check if this exact statement already exists ..
@@ -435,7 +435,7 @@ uint32_t jit_var_new_literal(VarType type, int cuda,
     v.is_literal_one = is_literal_one;
 
     uint32_t index; Variable *vo;
-    std::tie(index, vo) = jit_var_new(v);
+    std::tie(index, vo) = jit_var_new(v, size != 1);
     jit_log(Debug, "jit_var_new_literal(%u): %s%s", index, vo->stmt,
             vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
 
