@@ -1005,7 +1005,7 @@ const char *jit_var_graphviz() {
 
         for (uint32_t i = 0; i< 4; ++i) {
             if (v->dep[i])
-                buffer.fmt("  %u -> %u [label=\"%u\"];\n", v->dep[i], index, i + 1);
+                buffer.fmt("  %u -> %u [label=\" %u\"];\n", v->dep[i], index, i + 1);
         }
     }
     buffer.put("}\n");
