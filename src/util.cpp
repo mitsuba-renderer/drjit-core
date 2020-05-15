@@ -1075,11 +1075,6 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
                  bucket_offset = offsets[i * 4 + 1],
                  bucket_size   = offsets[i * 4 + 2];
 
-        if (bucket_id == 0) {
-            --unique_count_out;
-            continue;
-        }
-
         /// Crete variable for permutation subrange
         v2.data = perm + bucket_offset;
         v2.size = bucket_size;
