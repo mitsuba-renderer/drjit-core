@@ -947,6 +947,18 @@ extern JITC_EXPORT void jitc_var_read(uint32_t index, uint32_t offset,
 extern JITC_EXPORT void jitc_var_write(uint32_t index, uint32_t offset,
                                        const void *src);
 
+/**
+ * \brief Enable/disable common subexpression elimination
+ *
+ * By default, Enoki aggressively collapses variables that repeat computation
+ * that is already currently registered in the system. In rare case, this may
+ * be undesirable and can be turned off by calling this function with the
+ * argument '0'. Note that this is a global flag.
+ */
+extern JITC_EXPORT void jitc_set_cse(int value);
+
+/// Return whether or not common subexpression elimination is enabled
+extern JITC_EXPORT int jitc_cse();
 
 // ====================================================================
 //                 Kernel compilation and evaluation

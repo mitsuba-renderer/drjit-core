@@ -454,6 +454,9 @@ struct State {
     /// Maps from a key characterizing a variable to its index
     CSECache cse_cache;
 
+    /// Should the CSE cache be used at all?
+    bool enable_cse = true;
+
     /// Current variable index
     uint32_t variable_index = 1;
 

@@ -81,6 +81,8 @@ Variable *jit_var(uint32_t index) {
 
 /// Remove a variable from the cache used for common subexpression elimination
 void jit_cse_drop(uint32_t index, const Variable *v) {
+    if (state.cse_cache.empty())
+        return;
     VariableKey key(*v);
     auto it = state.cse_cache.find(key);
     if (it != state.cse_cache.end() && it.value() == index)
@@ -227,7 +229,8 @@ std::pair<uint32_t, Variable *> jit_var_new(Variable &v) {
     }
 
     CSECache::iterator key_it;
-    bool disable_cse = v.stmt == nullptr || v.direct_pointer,
+    bool disable_cse =
+             v.stmt == nullptr || v.direct_pointer || !state.enable_cse,
          cse_key_inserted = false;
 
     // Check if this exact statement already exists ..

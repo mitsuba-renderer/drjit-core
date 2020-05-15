@@ -356,7 +356,6 @@ void jitc_var_read(uint32_t index, uint32_t offset, void *dst) {
     jit_var_read(index, offset, dst);
 }
 
-
 void jitc_var_write(uint32_t index, uint32_t offset, const void *src) {
     lock_guard guard(state.mutex);
     jit_var_write(index, offset, src);
@@ -379,6 +378,18 @@ int jitc_var_schedule(uint32_t index) {
         return 0;
     lock_guard guard(state.mutex);
     return jit_var_schedule(index);
+}
+
+/// Enable/disable common subexpression elimination
+void jitc_set_cse(int value) {
+    lock_guard guard(state.mutex);
+    state.enable_cse = value != 0;
+}
+
+/// Return whether or not common subexpression elimination is enabled
+int jitc_cse() {
+    lock_guard guard(state.mutex);
+    return state.enable_cse ? 1 : 0;
 }
 
 void jitc_memset_async(void *ptr, uint32_t size, uint32_t isize, const void *src) {
