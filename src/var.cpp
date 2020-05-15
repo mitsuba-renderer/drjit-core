@@ -664,7 +664,7 @@ uint32_t jit_var_new_4(VarType type, const char *stmt, int stmt_static,
 }
 
 /// Register an existing variable with the JIT compiler
-uint32_t jit_var_map(VarType type, int cuda, void *ptr, uint32_t size, int free) {
+uint32_t jit_var_map_mem(VarType type, int cuda, void *ptr, uint32_t size, int free) {
     if (unlikely(size == 0))
         return 0;
 
@@ -683,7 +683,7 @@ uint32_t jit_var_map(VarType type, int cuda, void *ptr, uint32_t size, int free)
 
     uint32_t index; Variable *vo;
     std::tie(index, vo) = jit_var_new(v);
-    jit_log(Debug, "jit_var_map(%u): " ENOKI_PTR ", size=%u, free=%i",
+    jit_log(Debug, "jit_var_map_mem(%u): " ENOKI_PTR ", size=%u, free=%i",
             index, (uintptr_t) ptr, size, (int) free);
 
     jit_var_inc_ref_ext(index, vo);
@@ -692,16 +692,16 @@ uint32_t jit_var_map(VarType type, int cuda, void *ptr, uint32_t size, int free)
 }
 
 /// Copy a memory region onto the device and return its variable index
-uint32_t jit_var_copy(AllocType atype, VarType vtype, int cuda, const void *ptr,
-                      uint32_t size) {
+uint32_t jit_var_copy_mem(AllocType atype, VarType vtype, int cuda, const void *ptr,
+                          uint32_t size) {
     Stream *stream = active_stream;
 
     if (unlikely(!stream)) {
-        jit_raise("jit_var_copy(): you must invoke jitc_set_device() to "
+        jit_raise("jit_var_copy_mem(): you must invoke jitc_set_device() to "
                   "choose a target device before using this function.");
     } else if (unlikely(cuda != stream->cuda)) {
         jit_raise(
-            "jit_var_copy(): attempted to copy to a %s array while the %s "
+            "jit_var_copy_mem(): attempted to copy to a %s array while the %s "
             "backend was active! You must invoke jit_set_device() to set "
             "the right backend!",
             cuda ? "CUDA" : "LLVM", stream->cuda ? "CUDA" : "LLVM");
@@ -715,7 +715,7 @@ uint32_t jit_var_copy(AllocType atype, VarType vtype, int cuda, const void *ptr,
 
         scoped_set_context guard(stream->context);
         if (atype == AllocType::HostAsync) {
-            jit_fail("jit_var_copy(): copy from HostAsync to GPU memory not supported!");
+            jit_fail("jit_var_copy_mem(): copy from HostAsync to GPU memory not supported!");
         } else if (atype == AllocType::Host) {
             void *host_ptr = jit_malloc(AllocType::HostPinned, total_size);
             memcpy(host_ptr, ptr, total_size);
@@ -737,12 +737,12 @@ uint32_t jit_var_copy(AllocType atype, VarType vtype, int cuda, const void *ptr,
             memcpy(target_ptr, ptr, total_size);
             target_ptr = jit_malloc_migrate(target_ptr, AllocType::HostAsync, 1);
         } else {
-            jit_fail("jit_var_copy(): copy from GPU to HostAsync memory not supported!");
+            jit_fail("jit_var_copy_mem(): copy from GPU to HostAsync memory not supported!");
         }
     }
 
-    uint32_t index = jit_var_map(vtype, cuda, target_ptr, size, true);
-    jit_log(Debug, "jit_var_copy(%u, size=%u)", index, size);
+    uint32_t index = jit_var_map_mem(vtype, cuda, target_ptr, size, true);
+    jit_log(Debug, "jit_var_copy_mem(%u, size=%u)", index, size);
     return index;
 }
 
@@ -777,10 +777,45 @@ uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index) {
     return index_o;
 }
 
+uint32_t jit_var_copy_var(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    Variable *v = jit_var(index);
+    if (v->pending_scatter) {
+        jit_var_eval(index);
+        v = jit_var(index);
+    }
+
+    if (v->ref_count_int == 0 && v->ref_count_ext == 1) {
+        jit_var_inc_ref_ext(index, v);
+        return index;
+    }
+
+    uint32_t index_old = index;
+    if (v->data) {
+        index = jit_var_copy_mem(v->cuda ? AllocType::Device : AllocType::HostAsync,
+                                 (VarType) v->type, v->cuda, v->data, v->size);
+    } else {
+        Variable v2 = *v;
+        v2.ref_count_int = 0;
+        v2.ref_count_ext = 0;
+        v2.has_label = 0;
+
+        if (v2.free_stmt)
+            v2.stmt = strdup(v2.stmt);
+
+        std::tie(index, v) = jit_var_new(v2, true);
+        jit_var_inc_ref_ext(index, v);
+    }
+    jit_log(Debug, "jit_var_copy_var(%u <- %u)", index, index_old);
+    return index;
+}
+
 /// Migrate a variable to a different flavor of memory
 uint32_t jit_var_migrate(uint32_t src_index, AllocType dst_type) {
     if (src_index == 0)
-        return src_index;
+        return 0;
 
     jit_var_eval(src_index);
 

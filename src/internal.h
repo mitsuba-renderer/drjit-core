@@ -226,7 +226,7 @@ struct Variable {
     /// Optimization: is this a direct pointer (rather than an array which stores a pointer?)
     uint32_t direct_pointer : 1;
 
-    /// Do the variable contents have irregular alignment? (e.g. due to jit_var_map())
+    /// Do the variable contents have irregular alignment? (e.g. due to jit_var_map_mem())
     uint32_t unaligned : 1;
 
     /// Is this variable marked as an output? (temporarily used during jit_eval())

@@ -974,17 +974,18 @@ TEST_BOTH(31_vcall) {
     std::vector<std::pair<void *, UInt32>> perm   = vcall(domain, pointers);
     std::vector<std::pair<void *, UInt32>> perm_2 = vcall(domain, pointers);
 
-    jitc_assert(perm.size() == 3 && perm_2.size() == 3);
-    jitc_assert(perm[0].second.index() == perm_2[0].second.index());
+    jitc_assert(perm.size() == 4 && perm_2.size() == 4);
     jitc_assert(perm[1].second.index() == perm_2[1].second.index());
     jitc_assert(perm[2].second.index() == perm_2[2].second.index());
-    jitc_assert(perm[0].first == (void *) 0x0A && perm_2[0].first == (void *) 0x0A);
-    jitc_assert(perm[1].first == (void *) 0x0B && perm_2[1].first == (void *) 0x0B);
-    jitc_assert(perm[2].first == (void *) 0x0C && perm_2[2].first == (void *) 0x0C);
+    jitc_assert(perm[3].second.index() == perm_2[3].second.index());
+    jitc_assert(perm[1].first == (void *) 0x0A && perm_2[1].first == (void *) 0x0A);
+    jitc_assert(perm[2].first == (void *) 0x0B && perm_2[2].first == (void *) 0x0B);
+    jitc_assert(perm[3].first == (void *) 0x0C && perm_2[3].first == (void *) 0x0C);
 
-    jitc_assert(perm[0].second == UInt32(6, 7));
-    jitc_assert(perm[1].second == UInt32(0, 2, 5, 8));
-    jitc_assert(perm[2].second == UInt32(3, 9));
+    jitc_assert(perm[0].second == UInt32(1, 4));
+    jitc_assert(perm[1].second == UInt32(6, 7));
+    jitc_assert(perm[2].second == UInt32(0, 2, 5, 8));
+    jitc_assert(perm[3].second == UInt32(3, 9));
 
     jitc_registry_remove((void *) 0xA);
     jitc_registry_remove((void *) 0xB);

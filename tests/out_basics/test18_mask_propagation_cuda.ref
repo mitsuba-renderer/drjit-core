@@ -6,9 +6,9 @@ jit_var_inc_ref_ext(2): 1
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
-jit_var_map(3): <@>, size=2, free=1
+jit_var_map_mem(3): <@>, size=2, free=1
 jit_var_inc_ref_ext(3): 1
-jit_var_copy(3, size=2)
+jit_var_copy_mem(3, size=2)
 jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(2): 1
 jit_var_inc_ref_ext(2): 2
@@ -36,15 +36,15 @@ jit_var_dec_ref_ext(3): 1
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
-jit_var_map(4): <@>, size=2, free=1
+jit_var_map_mem(4): <@>, size=2, free=1
 jit_var_inc_ref_ext(4): 1
-jit_var_copy(4, size=2)
+jit_var_copy_mem(4, size=2)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
-jit_var_map(5): <@>, size=2, free=1
+jit_var_map_mem(5): <@>, size=2, free=1
 jit_var_inc_ref_ext(5): 1
-jit_var_copy(5, size=2)
+jit_var_copy_mem(5, size=2)
 jit_var_inc_ref_ext(5): 2
 jit_var_dec_ref_ext(5): 1
 jit_var_inc_ref_ext(4): 2

@@ -1,8 +1,8 @@
 jit_set_device(device=-1, stream=0): creating stream
 jit_malloc(type=host, size=256): <@> (new allocation)
-jit_var_map(1): <@>, size=9, free=1
+jit_var_map_mem(1): <@>, size=9, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy(1, size=9)
+jit_var_copy_mem(1, size=9)
 jit_var_inc_ref_int(1): 1
 jit_var_new(2 <- 1): $r0 = fpext <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(2): 1

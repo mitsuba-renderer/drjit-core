@@ -1,16 +1,16 @@
 jit_set_device(device=-1, stream=0): creating stream
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map(1): <@>, size=2, free=1
+jit_var_map_mem(1): <@>, size=2, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy(1, size=2)
+jit_var_copy_mem(1, size=2)
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map(2): <@>, size=2, free=1
+jit_var_map_mem(2): <@>, size=2, free=1
 jit_var_inc_ref_ext(2): 1
-jit_var_copy(2, size=2)
+jit_var_copy_mem(2, size=2)
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map(3): <@>, size=2, free=1
+jit_var_map_mem(3): <@>, size=2, free=1
 jit_var_inc_ref_ext(3): 1
-jit_var_copy(3, size=2)
+jit_var_copy_mem(3, size=2)
 jit_var_inc_ref_int(1): 1
 jit_var_new(4 <- 1): $r0 = xor <$w x $t1> $r1, $o0
 jit_var_inc_ref_ext(4): 1
@@ -282,17 +282,17 @@ XOR2: value_1=[1, 1234]
 XOR2: value_2=[1, 1234]
 XOR2: value_3=[1, 0]
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map(10): <@>, size=2, free=1
+jit_var_map_mem(10): <@>, size=2, free=1
 jit_var_inc_ref_ext(10): 1
-jit_var_copy(10, size=2)
+jit_var_copy_mem(10, size=2)
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map(11): <@>, size=2, free=1
+jit_var_map_mem(11): <@>, size=2, free=1
 jit_var_inc_ref_ext(11): 1
-jit_var_copy(11, size=2)
+jit_var_copy_mem(11, size=2)
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map(12): <@>, size=2, free=1
+jit_var_map_mem(12): <@>, size=2, free=1
 jit_var_inc_ref_ext(12): 1
-jit_var_copy(12, size=2)
+jit_var_copy_mem(12, size=2)
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(10): 1
 jit_var_new(13 <- 7, 10): $r0 = or <$w x $t1> $r1, $r2

@@ -2,9 +2,9 @@ jit_set_device(device=-1, stream=0): creating stream
 jit_var_new_literal(1): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(1): 1
 jit_malloc(type=host, size=128): <@> (new allocation)
-jit_var_map(2): <@>, size=15, free=1
+jit_var_map_mem(2): <@>, size=15, free=1
 jit_var_inc_ref_ext(2): 1
-jit_var_copy(2, size=15)
+jit_var_copy_mem(2, size=15)
 jit_var_new_literal(3): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(3): 1
 jit_var_new_literal(4): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
@@ -129,9 +129,9 @@ jit_free(<@>, type=host-async, size=128)
 jit_var_new_literal(7): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(7): 1
 jit_malloc(type=host, size=128): <@> (new allocation)
-jit_var_map(8): <@>, size=16, free=1
+jit_var_map_mem(8): <@>, size=16, free=1
 jit_var_inc_ref_ext(8): 1
-jit_var_copy(8, size=16)
+jit_var_copy_mem(8, size=16)
 jit_var_new_literal(9): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(9): 1
 jit_var_new_literal(10): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
@@ -257,9 +257,9 @@ jit_free(<@>, type=host-async, size=128)
 jit_var_new_literal(13): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(13): 1
 jit_malloc(type=host, size=128): <@> (new allocation)
-jit_var_map(14): <@>, size=15, free=1
+jit_var_map_mem(14): <@>, size=15, free=1
 jit_var_inc_ref_ext(14): 1
-jit_var_copy(14, size=15)
+jit_var_copy_mem(14, size=15)
 jit_var_new_literal(15): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(15): 1
 jit_var_new_literal(16): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
@@ -406,9 +406,9 @@ jit_free(<@>, type=host-async, size=128)
 jit_var_new_literal(20): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(20): 1
 jit_malloc(type=host, size=128): <@> (new allocation)
-jit_var_map(21): <@>, size=16, free=1
+jit_var_map_mem(21): <@>, size=16, free=1
 jit_var_inc_ref_ext(21): 1
-jit_var_copy(21, size=16)
+jit_var_copy_mem(21, size=16)
 jit_var_new_literal(22): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(22): 1
 jit_var_new_literal(23): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
@@ -569,9 +569,9 @@ jit_var_inc_ref_ext(31): 1
 jit_var_dec_ref_ext(30): 0
 jit_var_dec_ref_ext(29): 0
 jit_malloc(type=host, size=128): <@> (new allocation)
-jit_var_map(32): <@>, size=15, free=1
+jit_var_map_mem(32): <@>, size=15, free=1
 jit_var_inc_ref_ext(32): 1
-jit_var_copy(32, size=15)
+jit_var_copy_mem(32, size=15)
 jit_var_new_literal(33): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(33): 1
 jit_malloc(type=host-async, size=128): <@> (reused local)
@@ -751,9 +751,9 @@ jit_var_inc_ref_ext(40): 1
 jit_var_dec_ref_ext(39): 0
 jit_var_dec_ref_ext(38): 0
 jit_malloc(type=host, size=128): <@> (new allocation)
-jit_var_map(41): <@>, size=16, free=1
+jit_var_map_mem(41): <@>, size=16, free=1
 jit_var_inc_ref_ext(41): 1
-jit_var_copy(41, size=16)
+jit_var_copy_mem(41, size=16)
 jit_var_new_literal(42): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(42): 1
 jit_malloc(type=host-async, size=128): <@> (reused local)
@@ -933,9 +933,9 @@ jit_var_inc_ref_ext(49): 1
 jit_var_dec_ref_ext(48): 0
 jit_var_dec_ref_ext(47): 0
 jit_malloc(type=host, size=128): <@> (new allocation)
-jit_var_map(50): <@>, size=15, free=1
+jit_var_map_mem(50): <@>, size=15, free=1
 jit_var_inc_ref_ext(50): 1
-jit_var_copy(50, size=15)
+jit_var_copy_mem(50, size=15)
 jit_var_new_literal(51): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff0000000000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(51): 1
 jit_var_inc_ref_int(50): 1
@@ -1125,9 +1125,9 @@ jit_free(<@>, type=host-async, size=128)
 jit_var_new_literal(55): $r0_0 = insertelement <$w x $t0> undef, $t0 0x0, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(55): 1
 jit_malloc(type=host, size=128): <@> (new allocation)
-jit_var_map(56): <@>, size=16, free=1
+jit_var_map_mem(56): <@>, size=16, free=1
 jit_var_inc_ref_ext(56): 1
-jit_var_copy(56, size=16)
+jit_var_copy_mem(56, size=16)
 jit_var_new(57): $r0_0 = trunc i64 $i to $t0$n$r0_1 = insertelement <$w x $t0> undef, $t0 $r0_0, i32 0$n$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> $z$n$r0 = add <$w x $t0> $r0_2, $l0
 jit_var_inc_ref_ext(57): 1
 jit_var_inc_ref_int(57): 1

@@ -661,10 +661,10 @@ JITC_CONSTEXPR int jitc_is_mask(enum VarType type) {
  *    If free != 0, the JIT compiler will free the memory region via
  *    \ref jitc_free() once it goes out of scope.
  *
- * \sa jitc_var_copy()
+ * \sa jitc_var_copy_mem()
  */
-extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, int cuda,
-                                         void *ptr, uint32_t size, int free);
+extern JITC_EXPORT uint32_t jitc_var_map_mem(enum VarType type, int cuda,
+                                             void *ptr, uint32_t size, int free);
 
 
 /**
@@ -686,13 +686,13 @@ extern JITC_EXPORT uint32_t jitc_var_map(enum VarType type, int cuda,
  * \param size
  *    Number of elements (and *not* the size in bytes)
  *
- * \sa jitc_var_map()
+ * \sa jitc_var_map_mem()
  */
-extern JITC_EXPORT uint32_t jitc_var_copy(enum AllocType atype,
-                                          enum VarType vtype,
-                                          int cuda,
-                                          const void *ptr,
-                                          uint32_t size);
+extern JITC_EXPORT uint32_t jitc_var_copy_mem(enum AllocType atype,
+                                              enum VarType vtype,
+                                              int cuda,
+                                              const void *ptr,
+                                              uint32_t size);
 
 /**
  * Register a pointer literal as a variable within the JIT compiler
@@ -707,7 +707,7 @@ extern JITC_EXPORT uint32_t jitc_var_copy(enum AllocType atype,
  *
  * \code
  * void *my_ptr = ...;
- * uint32_t index_out = jitc_var_copy(VarType::Pointer, &my_ptr, 1);
+ * uint32_t index_out = jitc_var_copy_mem(VarType::Pointer, &my_ptr, 1);
  * \endcode
  *
  * but generates code that is more efficient.
@@ -719,6 +719,18 @@ extern JITC_EXPORT uint32_t jitc_var_copy(enum AllocType atype,
  * this behavior.
  */
 extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index);
+
+/**
+ * \brief Create an identical copy of the given variable
+ *
+ * This function creates an exact copy of the variable 'index', but only if is
+ * internally referenced by some computation, or when the external reference
+ * count is > 1 (otherwise, the copy would be redundant). In either case, it
+ * returns a variable index and increases the associated external reference
+ * count. This method supports both unevaluated and evaluated variables (in the
+ * latter case, a copy of the associated memory region is made)
+ */
+extern JITC_EXPORT uint32_t jitc_var_copy_var(uint32_t index);
 
 /**
  * \brief Append a statement to the instruction trace.

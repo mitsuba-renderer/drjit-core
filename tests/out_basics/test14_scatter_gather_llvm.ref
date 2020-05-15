@@ -11,9 +11,9 @@ jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map(3): <@>, size=4, free=1
+jit_var_map_mem(3): <@>, size=4, free=1
 jit_var_inc_ref_ext(3): 1
-jit_var_copy(3, size=4)
+jit_var_copy_mem(3, size=4)
 jit_var_new_literal(4): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(4): 1
 jit_eval(): begin.

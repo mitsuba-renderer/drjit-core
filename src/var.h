@@ -63,15 +63,18 @@ extern uint32_t jit_var_new_literal(VarType type, int cuda,
                                     uint64_t value, uint32_t size);
 
 /// Register an existing variable with the JIT compiler
-extern uint32_t jit_var_map(VarType type, int cuda, void *ptr, uint32_t size,
-                            int free);
+extern uint32_t jit_var_map_mem(VarType type, int cuda, void *ptr, uint32_t size,
+                                int free);
 
 /// Register pointer literal as a special variable within the JIT compiler
 extern uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jit_var_copy(AllocType atype, VarType vtype, int cuda,
-                             const void *ptr, uint32_t size);
+extern uint32_t jit_var_copy_mem(AllocType atype, VarType vtype, int cuda,
+                                 const void *ptr, uint32_t size);
+
+/// Duplicate a variable
+extern uint32_t jit_var_copy_var(uint32_t index);
 
 /// Increase the internal reference count of a given variable
 extern void jit_var_inc_ref_int(uint32_t index, Variable *v);

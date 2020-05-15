@@ -1,8 +1,8 @@
 jit_set_device(device=-1, stream=0): creating stream
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map(1): <@>, size=6, free=1
+jit_var_map_mem(1): <@>, size=6, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy(1, size=6)
+jit_var_copy_mem(1, size=6)
 jit_var_inc_ref_int(1): 1
 jit_var_new(2 <- 1): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(2): 1
@@ -198,9 +198,9 @@ jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host-async, size=64)
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map(8): <@>, size=6, free=1
+jit_var_map_mem(8): <@>, size=6, free=1
 jit_var_inc_ref_ext(8): 1
-jit_var_copy(8, size=6)
+jit_var_copy_mem(8, size=6)
 jit_var_inc_ref_int(8): 1
 jit_var_new(9 <- 8): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(9): 1

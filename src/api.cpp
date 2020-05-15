@@ -263,9 +263,9 @@ void jitc_var_set_label(uint32_t index, const char *label) {
     jit_var_set_label(index, label);
 }
 
-uint32_t jitc_var_map(VarType type, int cuda, void *ptr, uint32_t size, int free) {
+uint32_t jitc_var_map_mem(VarType type, int cuda, void *ptr, uint32_t size, int free) {
     lock_guard guard(state.mutex);
-    return jit_var_map(type, cuda, ptr, size, free);
+    return jit_var_map_mem(type, cuda, ptr, size, free);
 }
 
 uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index) {
@@ -273,10 +273,15 @@ uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index) {
     return jit_var_copy_ptr(ptr, index);
 }
 
-uint32_t jitc_var_copy(AllocType atype, VarType vtype, int cuda,
-                       const void *value, uint32_t size) {
+uint32_t jitc_var_copy_mem(AllocType atype, VarType vtype, int cuda,
+                           const void *value, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_var_copy(atype, vtype, cuda, value, size);
+    return jit_var_copy_mem(atype, vtype, cuda, value, size);
+}
+
+uint32_t jitc_var_copy_var(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var_copy_var(index);
 }
 
 uint32_t jitc_var_new_0(VarType type, const char *stmt, int stmt_static,
