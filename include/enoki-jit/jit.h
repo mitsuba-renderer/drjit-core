@@ -34,17 +34,21 @@
 #    define JITC_EXPORT    __declspec(dllimport)
 #  endif
 #  define JITC_MALLOC
+#  define JITC_INLINE    __forceinline
 #else
 #  define JITC_EXPORT    __attribute__ ((visibility("default")))
 #  define JITC_MALLOC    __attribute__((malloc))
+#  define JITC_INLINE    __attribute__ ((always_inline)) inline
 #endif
 
 #if defined(__cplusplus)
 #  define JITC_CONSTEXPR constexpr
 #  define JITC_DEF(x) = x
+#  define JITC_NOEXCEPT noexcept(true)
 #else
 #  define JITC_CONSTEXPR inline
 #  define JITC_DEF(x)
+#  define JITC_NOEXCEPT
 #endif
 
 #if defined(__cplusplus)

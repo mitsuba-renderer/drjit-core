@@ -212,14 +212,14 @@ int jitc_var_get_device(uint32_t index) {
     return jit_var_get_device(index);
 }
 
-void jitc_var_inc_ref_ext(uint32_t index) {
+void jitc_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {
     if (index == 0)
         return;
     lock_guard guard(state.mutex);
     jit_var_inc_ref_ext(index);
 }
 
-void jitc_var_dec_ref_ext(uint32_t index) {
+void jitc_var_dec_ref_ext_impl(uint32_t index) noexcept(true) {
     if (index == 0)
         return;
     lock_guard guard(state.mutex);

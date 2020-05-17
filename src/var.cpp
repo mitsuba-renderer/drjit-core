@@ -155,31 +155,31 @@ void jit_var_free(uint32_t index, Variable *v) {
 }
 
 /// Increase the external reference count of a given variable
-void jit_var_inc_ref_ext(uint32_t index, Variable *v) {
+void jit_var_inc_ref_ext(uint32_t index, Variable *v) noexcept(true) {
     v->ref_count_ext++;
     jit_trace("jit_var_inc_ref_ext(%u): %u", index, v->ref_count_ext);
 }
 
 /// Increase the external reference count of a given variable
-void jit_var_inc_ref_ext(uint32_t index) {
+void jit_var_inc_ref_ext(uint32_t index) noexcept(true) {
     if (index != 0)
         jit_var_inc_ref_ext(index, jit_var(index));
 }
 
 /// Increase the internal reference count of a given variable
-void jit_var_inc_ref_int(uint32_t index, Variable *v) {
+void jit_var_inc_ref_int(uint32_t index, Variable *v) noexcept(true) {
     v->ref_count_int++;
     jit_trace("jit_var_inc_ref_int(%u): %u", index, v->ref_count_int);
 }
 
 /// Increase the internal reference count of a given variable
-void jit_var_inc_ref_int(uint32_t index) {
+void jit_var_inc_ref_int(uint32_t index) noexcept(true) {
     if (index != 0)
         jit_var_inc_ref_int(index, jit_var(index));
 }
 
 /// Decrease the external reference count of a given variable
-void jit_var_dec_ref_ext(uint32_t index, Variable *v) {
+void jit_var_dec_ref_ext(uint32_t index, Variable *v) noexcept(true) {
     if (unlikely(v->ref_count_ext == 0))
         jit_fail("jit_var_dec_ref_ext(): variable %u has no external references!", index);
 
@@ -191,13 +191,13 @@ void jit_var_dec_ref_ext(uint32_t index, Variable *v) {
 }
 
 /// Decrease the external reference count of a given variable
-void jit_var_dec_ref_ext(uint32_t index) {
+void jit_var_dec_ref_ext(uint32_t index) noexcept(true) {
     if (index != 0)
         jit_var_dec_ref_ext(index, jit_var(index));
 }
 
 /// Decrease the internal reference count of a given variable
-void jit_var_dec_ref_int(uint32_t index, Variable *v) {
+void jit_var_dec_ref_int(uint32_t index, Variable *v) noexcept(true) {
     if (unlikely(v->ref_count_int == 0))
         jit_fail("jit_var_dec_ref_int(): variable %u has no internal references!", index);
 
@@ -209,7 +209,7 @@ void jit_var_dec_ref_int(uint32_t index, Variable *v) {
 }
 
 /// Decrease the internal reference count of a given variable
-void jit_var_dec_ref_int(uint32_t index) {
+void jit_var_dec_ref_int(uint32_t index) noexcept(true) {
     if (index != 0)
         jit_var_dec_ref_int(index, jit_var(index));
 }

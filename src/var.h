@@ -77,28 +77,28 @@ extern uint32_t jit_var_copy_mem(AllocType atype, VarType vtype, int cuda,
 extern uint32_t jit_var_copy_var(uint32_t index);
 
 /// Increase the internal reference count of a given variable
-extern void jit_var_inc_ref_int(uint32_t index, Variable *v);
+extern void jit_var_inc_ref_int(uint32_t index, Variable *v) noexcept(true);
 
 /// Increase the internal reference count of a given variable
-extern void jit_var_inc_ref_int(uint32_t index);
+extern void jit_var_inc_ref_int(uint32_t index) noexcept(true);
 
 /// Decrease the internal reference count of a given variable
-extern void jit_var_dec_ref_int(uint32_t index, Variable *v);
+extern void jit_var_dec_ref_int(uint32_t index, Variable *v) noexcept(true);
 
 /// Decrease the internal reference count of a given variable
-extern void jit_var_dec_ref_int(uint32_t index);
+extern void jit_var_dec_ref_int(uint32_t index) noexcept(true);
 
 /// Increase the external reference count of a given variable
-extern void jit_var_inc_ref_ext(uint32_t index, Variable *v);
+extern void jit_var_inc_ref_ext(uint32_t index, Variable *v) noexcept(true);
 
 /// Increase the external reference count of a given variable
-extern void jit_var_inc_ref_ext(uint32_t index);
+extern void jit_var_inc_ref_ext(uint32_t index) noexcept(true);
 
 /// Decrease the external reference count of a given variable
-extern void jit_var_dec_ref_ext(uint32_t index, Variable *v);
+extern void jit_var_dec_ref_ext(uint32_t index, Variable *v) noexcept(true);
 
 /// Decrease the external reference count of a given variable
-extern void jit_var_dec_ref_ext(uint32_t index);
+extern void jit_var_dec_ref_ext(uint32_t index) noexcept(true);
 
 // Query the pointer variable associated with a given variable
 extern void *jit_var_ptr(uint32_t index);
