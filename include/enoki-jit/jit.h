@@ -834,10 +834,26 @@ extern JITC_EXPORT uint32_t jitc_var_ext_ref(uint32_t index);
 extern JITC_EXPORT uint32_t jitc_var_int_ref(uint32_t index);
 
 /// Increase the external reference count of a given variable
-extern JITC_EXPORT void jitc_var_inc_ref_ext(uint32_t index);
+extern JITC_EXPORT void jitc_var_inc_ref_ext_impl(uint32_t index) JITC_NOEXCEPT;
 
 /// Decrease the external reference count of a given variable
-extern JITC_EXPORT void jitc_var_dec_ref_ext(uint32_t index);
+extern JITC_EXPORT void jitc_var_dec_ref_ext_impl(uint32_t index) JITC_NOEXCEPT;
+
+#if defined(__GNUC__)
+JITC_INLINE void jitc_var_inc_ref_ext(uint32_t index) JITC_NOEXCEPT {
+    /* If 'index' is known at compile time, it can only be zero, in
+       which case we can skip the redundant call to jitc_var_dec_ref_ext */
+    if (!__builtin_constant_p(index) || index != 0)
+        jitc_var_inc_ref_ext_impl(index);
+}
+JITC_INLINE void jitc_var_dec_ref_ext(uint32_t index) JITC_NOEXCEPT {
+    if (!__builtin_constant_p(index) || index != 0)
+        jitc_var_dec_ref_ext_impl(index);
+}
+#else
+#define jitc_var_dec_ref_ext jitc_var_dec_ref_ext_impl
+#define jitc_var_inc_ref_ext jitc_var_inc_ref_ext_impl
+#endif
 
 /// Query the pointer variable associated with a given variable
 extern JITC_EXPORT void *jitc_var_ptr(uint32_t index);
