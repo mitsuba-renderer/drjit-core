@@ -1176,17 +1176,21 @@ struct VCallBucket {
  * in preparation for a vectorized method call
  *
  * This function expects an array of integers, whose entries correspond to
- * pointers that have previously been registered using the function \ref
- * jitc_registry_put() using the domain \c domain. It then invokes \ref
- * jit_mkperm() to compute a permutation that reorders the array into coherent
- * buckets. The buckets are returned using an array of type \ref VCallBucket,
- * which contains both the resolved pointer address (obtained via \ref
+ * pointers that have previously been registered by calling \ref
+ * jitc_registry_put() with domain \c domain. It then invokes \ref jit_mkperm()
+ * to compute a permutation that reorders the array into coherent buckets. The
+ * buckets are returned using an array of type \ref VCallBucket, which contains
+ * both the resolved pointer address (obtained via \ref
  * jitc_registry_get_ptr()) and the variable index of an unsigned 32 bit array
  * containing the corresponding entries of the input array. The total number of
  * buckets is returned via the \c bucket_count_out argument.
  *
- * Note: zero-valued array entries are allowed and will be excised by the the
- * returned pertmutation.
+ * The memory region accessible via the \c VCallBucket pointer will remain
+ * accessible until the variable \c index is itself freed (i.e. when its
+ * internal and external reference counts both become equal to zero). Until
+ * then, additional calls to \ref jitc_vcall() will return the previously
+ * computed result. This is an important optimization in situations where
+ * multiple vector function calls are executed on the same set of instances.
  */
 extern JITC_EXPORT struct VCallBucket *
 jitc_vcall(const char *domain, uint32_t index, uint32_t *bucket_count_out);
