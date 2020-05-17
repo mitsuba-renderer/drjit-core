@@ -160,6 +160,9 @@ void jit_init(int llvm, int cuda, Stream **stream) {
 
     if (stream)
         *stream = active_stream;
+
+    state.kernel_hard_misses = state.kernel_soft_misses = 0;
+    state.kernel_hits = state.kernel_launches = 0;
 }
 
 /// Release all resources used by the JIT compiler, and report reference leaks.

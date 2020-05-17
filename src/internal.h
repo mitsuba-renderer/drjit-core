@@ -463,6 +463,12 @@ struct State {
     /// Limit the output of jitc_var_str()?
     uint32_t print_limit = 20;
 
+    /// Statistics on kernel launches
+    size_t kernel_hard_misses = 0;
+    size_t kernel_soft_misses = 0;
+    size_t kernel_hits = 0;
+    size_t kernel_launches = 0;
+
     /// Cache of previously compiled kernels
     KernelCache kernel_cache;
 };

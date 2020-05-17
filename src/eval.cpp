@@ -1044,9 +1044,15 @@ void jit_run(Stream *stream, ScheduledGroup group) {
         kernel_key.str = (char *) malloc_check(buffer.size() + 1);
         memcpy(kernel_key.str, buffer.get(), buffer.size() + 1);
         state.kernel_cache.emplace(kernel_key, kernel);
+        if (cache_hit)
+            state.kernel_soft_misses++;
+        else
+            state.kernel_hard_misses++;
     } else {
         kernel = it.value();
+        state.kernel_hits++;
     }
+    state.kernel_launches++;
 
     if (stream->cuda) {
         size_t kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);

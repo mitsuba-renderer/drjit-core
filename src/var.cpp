@@ -972,8 +972,12 @@ const char *jit_var_whos() {
                jit_mem_string(mem_size_evaluated));
     buffer.fmt("   - Memory usage (unevaluated) : %s.\n",
                jit_mem_string(mem_size_unevaluated));
-    buffer.fmt("   - Memory usage (saved)       : %s.\n\n",
+    buffer.fmt("   - Memory usage (saved)       : %s.\n",
                jit_mem_string(mem_size_saved));
+    buffer.fmt("   - Kernel launches            : %zu (%zu cache hits, "
+               "%zu soft, %zu hard misses).\n\n",
+               state.kernel_launches, state.kernel_hits,
+               state.kernel_soft_misses, state.kernel_hard_misses);
 
     buffer.put("  Memory allocator\n");
     buffer.put("  ================\n");
