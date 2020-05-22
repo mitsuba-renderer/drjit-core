@@ -292,7 +292,8 @@ uint32_t jit_var_set_size(uint32_t index, uint32_t size) {
         jit_var_inc_ref_ext(index, v);
         return index; // Nothing to do
     } else if (v->size != 1) {
-        jit_raise("jit_var_set_size(): variable %u must be a scalar variable!", index);
+        jit_raise("jit_var_set_size(): variable %u must be a scalar variable!",
+                  index);
     } else if (v->stmt && v->ref_count_int == 0) {
         jit_var_inc_ref_ext(index, v);
         jit_cse_drop(index, v);

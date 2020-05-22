@@ -41,6 +41,10 @@ Buffer buffer{1024};
 #endif
 
 static_assert(
+    sizeof(VariableKey) == 8 * sizeof(uint32_t),
+    "VariableKey: incorrect size, likely an issue with padding/packing!");
+
+static_assert(
     sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>) == 64,
     "VariableMap: incorrect bucket size, likely an issue with padding/packing!");
 
