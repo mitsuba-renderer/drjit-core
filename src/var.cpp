@@ -298,6 +298,8 @@ uint32_t jit_var_set_size(uint32_t index, uint32_t size) {
         jit_cse_drop(index, v);
         v->size = size;
         return index;
+    } else if (v->is_literal_zero) {
+        return jit_var_new_literal((VarType) v->type, v->cuda, 0, size);
     } else {
         Stream *stream = active_stream;
         uint32_t index_new;
