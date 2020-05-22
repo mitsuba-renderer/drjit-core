@@ -1338,7 +1338,7 @@ void jit_poke(void *dst, const void *src, uint32_t size) {
         cuda_check(cuLaunchKernel(func, 1, 1, 1, 1, 1, 1,
                                   0, stream->handle, args, nullptr));
     } else {
-#if defined(ENOKI_TBB)
+#if defined(ENOKI_ENABLE_TBB)
         struct Inputs {
             void *dst;
             uint8_t src[8];
