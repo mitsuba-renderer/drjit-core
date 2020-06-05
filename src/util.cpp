@@ -1088,7 +1088,7 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
 
         void *ptr = jit_registry_get_ptr(domain, bucket_id);
         memcpy(offsets_out, &ptr, sizeof(void *));
-        memcpy(offsets_out + 2, &index, sizeof(uint32_t *));
+        memcpy(offsets_out + 2, &index, sizeof(uint32_t));
         offsets_out += 4;
 
         jit_trace(

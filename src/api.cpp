@@ -115,6 +115,24 @@ void jitc_set_device(int32_t device, uint32_t stream) {
     jit_set_device(device, stream);
 }
 
+uint32_t jitc_device() {
+    lock_guard guard(state.mutex);
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_device(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    return stream->device;
+}
+
+uint32_t jitc_stream() {
+    lock_guard guard(state.mutex);
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_device(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    return stream->stream;
+}
+
 void jitc_llvm_set_target(const char *target_cpu,
                           const char *target_features,
                           uint32_t vector_width) {
@@ -187,14 +205,14 @@ void jitc_malloc_prefetch(void *ptr, int device) {
     jit_malloc_prefetch(ptr, device);
 }
 
-enum AllocType jitc_malloc_get_type(void *ptr) {
+enum AllocType jitc_malloc_type(void *ptr) {
     lock_guard guard(state.mutex);
-    return jit_malloc_get_type(ptr);
+    return jit_malloc_type(ptr);
 }
 
-int jitc_malloc_get_device(void *ptr) {
+int jitc_malloc_device(void *ptr) {
     lock_guard guard(state.mutex);
-    return jit_malloc_get_device(ptr);
+    return jit_malloc_device(ptr);
 }
 
 void *jitc_malloc_migrate(void *ptr, AllocType type, int move) {
@@ -202,14 +220,14 @@ void *jitc_malloc_migrate(void *ptr, AllocType type, int move) {
     return jit_malloc_migrate(ptr, type, move);
 }
 
-enum AllocType jitc_var_get_alloc_type(uint32_t index) {
+enum AllocType jitc_var_alloc_type(uint32_t index) {
     lock_guard guard(state.mutex);
-    return jit_var_get_alloc_type(index);
+    return jit_var_alloc_type(index);
 }
 
-int jitc_var_get_device(uint32_t index) {
+int jitc_var_device(uint32_t index) {
     lock_guard guard(state.mutex);
-    return jit_var_get_device(index);
+    return jit_var_device(index);
 }
 
 void jitc_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {

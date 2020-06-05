@@ -598,18 +598,18 @@ void jit_malloc_trim(bool warn) {
 }
 
 /// Query the flavor of a memory allocation made using \ref jit_malloc()
-AllocType jit_malloc_get_type(void *ptr) {
+AllocType jit_malloc_type(void *ptr) {
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_malloc_get_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jit_raise("jit_malloc_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
     return (AllocType) it->second.type;
 }
 
 /// Query the device associated with a memory allocation made using \ref jit_malloc()
-int jit_malloc_get_device(void *ptr) {
+int jit_malloc_device(void *ptr) {
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_malloc_get_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jit_raise("jit_malloc_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
     return it->second.device;
 }
 

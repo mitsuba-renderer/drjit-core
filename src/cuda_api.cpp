@@ -53,6 +53,7 @@ CUresult (*cuLinkComplete)(CUlinkState, void **, size_t *) = nullptr;
 CUresult (*cuLinkCreate)(unsigned int, int *, void **,
                          CUlinkState *) = nullptr;
 CUresult (*cuLinkDestroy)(CUlinkState) = nullptr;
+CUresult (*cuPointerGetAttribute)(void* data, int, void*) = nullptr;
 CUresult (*cuMemAdvise)(void *, size_t, int, CUdevice) = nullptr;
 CUresult (*cuMemAlloc)(void **, size_t) = nullptr;
 CUresult (*cuMemAllocHost)(void **, size_t) = nullptr;
@@ -115,10 +116,15 @@ bool jit_cuda_init() {
     jit_cuda_init_attempted = true;
 
     // We have our own caching scheme, disable CUDA's JIT cache
-#if !defined(_WIN32)
-    putenv((char*)"CUDA_CACHE_DISABLE=1");
-#else
-    (void) _wputenv(L"CUDA_CACHE_DISABLE=1");
+#if 0
+    // On hinsight, this is potentially dangerous because it also disables
+    // important caching functionality in PyTorch/Tensorflow/etc.
+
+    // #if !defined(_WIN32)
+    //     putenv((char*)"CUDA_CACHE_DISABLE=1");
+    // #else
+    //     (void) _wputenv(L"CUDA_CACHE_DISABLE=1");
+    // #endif
 #endif
 
 #if defined(ENOKI_DYNAMIC_CUDA)
@@ -212,6 +218,7 @@ bool jit_cuda_init() {
         LOAD(cuStreamDestroy, "v2");
         LOAD(cuStreamSynchronize, "ptsz");
         LOAD(cuStreamWaitEvent, "ptsz");
+        LOAD(cuPointerGetAttribute);
 
         #undef LOAD
     } while (false);
@@ -545,9 +552,9 @@ void jit_cuda_shutdown() {
     Z(cuMemFreeHost); Z(cuMemPrefetchAsync); Z(cuMemcpy); Z(cuMemcpyAsync);
     Z(cuMemsetD16Async); Z(cuMemsetD32Async); Z(cuMemsetD8Async);
     Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleUnload);
-    Z(cuOccupancyMaxPotentialBlockSize); 
-    Z(cuCtxPushCurrent); Z(cuCtxPopCurrent); Z(cuStreamCreate);
-    Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
+    Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxPushCurrent);
+    Z(cuCtxPopCurrent); Z(cuStreamCreate); Z(cuStreamDestroy);
+    Z(cuStreamSynchronize); Z(cuStreamWaitEvent); Z(cuPointerGetAttribute);
 
 #if !defined(_WIN32)
     if (jit_cuda_handle != RTLD_NEXT)

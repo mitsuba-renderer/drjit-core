@@ -716,6 +716,16 @@ uint32_t jit_var_copy_mem(AllocType atype, VarType vtype, int cuda, const void *
     if (stream->cuda) {
         target_ptr = jit_malloc(AllocType::Device, total_size);
 
+        if (atype == AllocType::Auto) {
+            unsigned int result = 0;
+            CUresult rv = cuPointerGetAttribute(
+                &result, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr) ptr);
+            if (rv == CUDA_ERROR_INVALID_VALUE || result == CU_MEMORYTYPE_HOST)
+                atype = AllocType::Host;
+            else
+                atype = AllocType::Device;
+        }
+
         scoped_set_context guard(stream->context);
         if (atype == AllocType::HostAsync) {
             jit_fail("jit_var_copy_mem(): copy from HostAsync to GPU memory not supported!");
@@ -857,25 +867,25 @@ uint32_t jit_var_migrate(uint32_t src_index, AllocType dst_type) {
 }
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable
-AllocType jit_var_get_alloc_type(uint32_t index) {
+AllocType jit_var_alloc_type(uint32_t index) {
     const Variable *v = jit_var(index);
 
     if (v->data)
-        return jit_malloc_get_type(v->data);
+        return jit_malloc_type(v->data);
 
     return v->cuda ? AllocType::Device : AllocType::HostAsync;
 }
 
 /// Query the device (or future, if not yet evaluated) associated with a variable
-int jit_var_get_device(uint32_t index) {
+int jit_var_device(uint32_t index) {
     const Variable *v = jit_var(index);
 
     if (v->data)
-        return jit_malloc_get_device(v->data);
+        return jit_malloc_device(v->data);
 
     Stream *stream = active_stream;
     if (unlikely(!stream))
-        jit_raise("jit_var_get_device(): you must invoke jitc_set_device() to "
+        jit_raise("jit_var_device(): you must invoke jitc_set_device() to "
                   "choose a target device before using this function.");
 
     return stream->device;

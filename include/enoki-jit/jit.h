@@ -138,6 +138,12 @@ extern JITC_EXPORT int32_t jitc_device_count();
  */
 extern JITC_EXPORT void jitc_set_device(int32_t device, uint32_t stream JITC_DEF(0));
 
+/// Return the currently active device
+extern JITC_EXPORT uint32_t jitc_device();
+
+/// Return the currently active stream
+extern JITC_EXPORT uint32_t jitc_stream();
+
 /**
  * \brief Override the target CPU, features, and vector witdth of the LLVM backend
  *
@@ -342,8 +348,11 @@ enum class AllocType : uint32_t {
      */
     ManagedReadMostly,
 
-    /// Number of AllocType entries
-    Count
+    /// Number of possible allocation types
+    Count,
+
+    /// Auto-detect the type of an allocation
+    Auto
 };
 #else
 enum AllocType {
@@ -353,6 +362,7 @@ enum AllocType {
     AllocTypeManaged,
     AllocTypeManagedReadMostly,
     AllocTypeCount,
+    AllocTypeAuto
 };
 #endif
 
@@ -423,10 +433,10 @@ extern JITC_EXPORT void jitc_malloc_trim();
 extern JITC_EXPORT void jitc_malloc_prefetch(void *ptr, int device);
 
 /// Query the flavor of a memory allocation made using \ref jitc_malloc()
-extern JITC_EXPORT enum AllocType jitc_malloc_get_type(void *ptr);
+extern JITC_EXPORT enum AllocType jitc_malloc_type(void *ptr);
 
 /// Query the device associated with a memory allocation made using \ref jitc_malloc()
-extern JITC_EXPORT int jitc_malloc_get_device(void *ptr);
+extern JITC_EXPORT int jitc_malloc_device(void *ptr);
 
 /**
  * \brief Asynchronously change the flavor of an allocated memory region and
@@ -645,6 +655,57 @@ JITC_CONSTEXPR int jitc_is_mask(enum VarType type) {
 #endif
 }
 
+JITC_INLINE uint32_t jitc_size(enum VarType type) {
+    switch (type) {
+#if defined(__cplusplus)
+        case VarType::Bool:
+        case VarType::Int8:
+        case VarType::UInt8:
+            return 1;
+
+        case VarType::Int16:
+        case VarType::UInt16:
+        case VarType::Float16:
+            return 2;
+
+        case VarType::Int32:
+        case VarType::UInt32:
+        case VarType::Float32:
+            return 4;
+
+        case VarType::Int64:
+        case VarType::UInt64:
+        case VarType::Float64:
+        case VarType::Pointer:
+            return 8;
+#else
+        case VarTypeBool:
+        case VarTypeInt8:
+        case VarTypeUInt8:
+            return 1;
+
+        case VarTypeInt16:
+        case VarTypeUInt16:
+        case VarTypeFloat16:
+            return 2;
+
+        case VarTypeInt32:
+        case VarTypeUInt32:
+        case VarTypeFloat32:
+            return 4;
+
+        case VarTypeInt64:
+        case VarTypeUInt64:
+        case VarTypeFloat64:
+        case VarTypePointer:
+            return 8;
+#endif
+
+        default:
+            return (uint32_t) -1;
+    }
+}
+
 /**
  * Register an existing memory region as a variable in the JIT compiler, and
  * return its index. Its external reference count is initialized to \c 1.
@@ -676,7 +737,10 @@ extern JITC_EXPORT uint32_t jitc_var_map_mem(enum VarType type, int cuda,
  * external reference count is initialized to \c 1.
  *
  * \param atype
- *    Enumeration characterizing the "flavor" of the source memory
+ *    Enumeration characterizing the "flavor" of the source memory. When a GPU
+ *    device has been activated using \ref jitc_set_device(), the value
+ *    \ref AllocType::Auto may optionally be specified here to auto-detect
+ *    whether copying from CPU or GPU memory).
  *
  * \param vtype
  *    Type of the variable to be created, see \ref VarType for details.
@@ -887,10 +951,10 @@ extern JITC_EXPORT const char *jitc_var_label(uint32_t index);
 extern JITC_EXPORT uint32_t jitc_var_migrate(uint32_t index, enum AllocType type);
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable
-extern JITC_EXPORT enum AllocType jitc_var_get_alloc_type(uint32_t index);
+extern JITC_EXPORT enum AllocType jitc_var_alloc_type(uint32_t index);
 
 /// Query the device (or future, if not yet evaluated) associated with a variable
-extern JITC_EXPORT int jitc_var_get_device(uint32_t index);
+extern JITC_EXPORT int jitc_var_device(uint32_t index);
 
 /**
  * \brief Mark a variable as a scatter operation

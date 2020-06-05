@@ -48,7 +48,10 @@
 
 #  define CU_STREAM_NON_BLOCKING 1
 #  define CU_EVENT_DISABLE_TIMING 2
+#  define CU_MEMORYTYPE_HOST 1
+#  define CU_POINTER_ATTRIBUTE_MEMORY_TYPE 2
 
+#  define CUDA_ERROR_INVALID_VALUE 1
 #  define CUDA_ERROR_DEINITIALIZED 4
 #  define CUDA_ERROR_NOT_FOUND 500
 #  define CUDA_ERROR_OUT_OF_MEMORY 2
@@ -96,6 +99,7 @@ extern CUresult (*cuLinkAddData)(CUlinkState, int, void *, size_t, const char *,
 extern CUresult (*cuLinkComplete)(CUlinkState, void **, size_t *);
 extern CUresult (*cuLinkCreate)(unsigned int, int *, void **, CUlinkState *);
 extern CUresult (*cuLinkDestroy)(CUlinkState);
+extern CUresult (*cuPointerGetAttribute)(void* data, int, void*);
 extern CUresult (*cuMemAdvise)(void *, size_t, int, CUdevice);
 extern CUresult (*cuMemAlloc)(void **, size_t);
 extern CUresult (*cuMemAllocHost)(void **, size_t);

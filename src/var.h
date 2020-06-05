@@ -156,10 +156,10 @@ extern std::pair<uint32_t, Variable *> jit_var_new(Variable &v,
                                                    bool disable_cse = false);
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable
-extern AllocType jit_var_get_alloc_type(uint32_t index);
+extern AllocType jit_var_alloc_type(uint32_t index);
 
 /// Query the device (or future, if not yet evaluated) associated with a variable
-extern int jit_var_get_device(uint32_t index);
+extern int jit_var_device(uint32_t index);
 
 /// Descriptive names and byte sizes for the various variable types
 extern const char *var_type_name      [(int) VarType::Count];

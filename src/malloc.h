@@ -78,7 +78,7 @@ extern void jit_malloc_trim(bool warn = true);
 extern void jit_malloc_shutdown();
 
 /// Query the flavor of a memory allocation made using \ref jit_malloc()
-extern AllocType jit_malloc_get_type(void *ptr);
+extern AllocType jit_malloc_type(void *ptr);
 
 /// Query the device associated with a memory allocation made using \ref jit_malloc()
-extern int jit_malloc_get_device(void *ptr);
+extern int jit_malloc_device(void *ptr);
