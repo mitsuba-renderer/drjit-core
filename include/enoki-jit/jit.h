@@ -934,6 +934,11 @@ extern JITC_EXPORT void jitc_var_set_label(uint32_t index, const char *label);
 /// Query the descriptive label associated with a given variable
 extern JITC_EXPORT const char *jitc_var_label(uint32_t index);
 
+/// Assign a callback function that is invoked when the given variable is freed
+extern JITC_EXPORT void jitc_var_set_free_callback(uint32_t index,
+                                                   void (*callback)(void *),
+                                                   void *payload);
+
 /**
  * \brief Asynchronously migrate a variable to a different flavor of memory
  *

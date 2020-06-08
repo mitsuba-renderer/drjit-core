@@ -246,32 +246,12 @@ void jit_free(void *ptr) {
         Stream *stream = active_stream;
         bool cuda = (AllocType) ai.type != AllocType::HostAsync;
         if (likely(stream && cuda == stream->cuda)) {
-            // Standard case -- free asynchronously
-            std::vector<std::pair<bool, void *>> alloc_unmap;
-
-            /* Acquire lock protecting 'stream->release_chain'
-               and 'alloc_unmap' */ {
+            /* Acquire lock protecting 'stream->release_chain' */ {
                 lock_guard guard(state.malloc_mutex);
                 ReleaseChain *chain = stream->release_chain;
                 if (unlikely(!chain))
                     chain = stream->release_chain = new ReleaseChain();
                 chain->entries[ai].push_back(ptr);
-                if (stream->cuda)
-                    alloc_unmap.swap(state.alloc_unmap);
-            }
-
-            if (stream->cuda) {
-                bool reload = false;
-                for (auto kv: alloc_unmap) {
-                    cuda_check(cuMemHostUnregister(kv.second));
-                    if (kv.first) {
-                        reload = true;
-                        jit_free(kv.second);
-                    }
-                }
-
-                if (reload)
-                    it = state.alloc_used.find(ptr);
             }
         } else {
             /* This is bad -- freeing a pointer outside of an active
@@ -400,70 +380,43 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
     if ((AllocType) ai.type == type && (type != AllocType::Device || ai.device == stream->device))
         return ptr;
 
+    /// At this point, source or destination is a GPU array, so let's check for CUDA
     if (!stream->cuda)
         jit_raise(
             "jit_malloc_migrate(): you must specify an active CUDA device "
             "using jit_set_device() before invoking this function with a "
             "device/managed/host-pinned pointer!");
 
+    if (type == AllocType::HostAsync || (AllocType) ai.type == AllocType::HostAsync)
+        jit_raise("jit_malloc_migrate(): migrations between CUDA and "
+                  "host-asynchronous memory are not supported.");
+
+    if (type == AllocType::Host) // Upgrade from host to host-pinned memory
+        type = AllocType::HostPinned;
+
     void *ptr_new = jit_malloc(type, ai.size);
     jit_trace("jit_malloc_migrate(" ENOKI_PTR " -> " ENOKI_PTR ", %s -> %s)",
               (uintptr_t) ptr, (uintptr_t) ptr_new,
               alloc_type_name[ai.type], alloc_type_name[(int) type]);
 
-    if (type == AllocType::HostAsync || (AllocType) ai.type == AllocType::HostAsync)
-        jit_raise("jit_malloc_migrate(): migrations between CUDA and "
-                  "host-asynchronous memory are not currently supported.");
-
     scoped_set_context guard(stream->context);
     if ((AllocType) ai.type == AllocType::Host) {
-        /* Temporarily release the main lock */ {
-            unlock_guard guard(state.mutex);
-            cuda_check(cuMemHostRegister(ptr, ai.size, 0));
-        }
+        /// Host -> Device memory, create an intermediate host-pinned array
+        void *tmp = jit_malloc(AllocType::HostPinned, ai.size);
+        memcpy(tmp, ptr, ai.size);
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
                                  (CUdeviceptr) ptr, ai.size,
                                  stream->handle));
-        cuda_check(cuLaunchHostFunc(
-            stream->handle,
-            move ?
-                [](void *ptr) {
-                    lock_guard guard(state.malloc_mutex);
-                    state.alloc_unmap.emplace_back(true, ptr);
-                } :
-                [](void *ptr) {
-                    lock_guard guard(state.malloc_mutex);
-                    state.alloc_unmap.emplace_back(false, ptr);
-                },
-            ptr
-        ));
-    } else if (type == AllocType::Host) {
-        /* Temporarily release the main lock */ {
-            unlock_guard guard(state.mutex);
-            cuda_check(cuMemHostRegister(ptr_new, ai.size, 0));
-        }
-        cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
-                                 (CUdeviceptr) ptr, ai.size,
-                                 stream->handle));
-        cuda_check(cuLaunchHostFunc(
-            stream->handle,
-            [](void *ptr) {
-                lock_guard guard(state.malloc_mutex);
-                state.alloc_unmap.emplace_back(false, ptr);
-            },
-            ptr_new
-        ));
-
-        if (move)
-            jit_free(ptr);
+        jit_free(tmp);
     } else {
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
                                  (CUdeviceptr) ptr, ai.size,
                                  stream->handle));
 
-        if (move)
-            jit_free(ptr);
     }
+
+    if (move)
+        jit_free(ptr);
 
     return ptr_new;
 }
@@ -524,19 +477,10 @@ void jit_malloc_trim(bool warn) {
     }
 
     AllocInfoMap alloc_free;
-    std::vector<std::pair<bool, void *>> alloc_unmap;
 
     /* Critical section */ {
         lock_guard guard(state.malloc_mutex);
         alloc_free = std::move(state.alloc_free);
-        alloc_unmap = std::move(state.alloc_unmap);
-    }
-
-    // Unmap remaining mapped memory regions
-    for (auto kv: alloc_unmap) {
-        cuda_check(cuMemHostUnregister(kv.second));
-        if (kv.first)
-            jit_free(kv.second);
     }
 
     size_t trim_count[(int) AllocType::Count] = { 0 },
@@ -610,7 +554,11 @@ int jit_malloc_device(void *ptr) {
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
         jit_raise("jit_malloc_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
-    return it->second.device;
+    const AllocInfo &ai = it.value();
+    if (ai.type == (int) AllocType::Host || ai.type == (int) AllocType::HostAsync)
+        return -1;
+    else
+        return ai.device;
 }
 
 void jit_malloc_shutdown() {

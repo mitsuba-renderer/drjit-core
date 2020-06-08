@@ -236,6 +236,11 @@ void jit_shutdown(int light) {
 
         if (n_leaked > 0)
             jit_log(Warn, "jit_shutdown(): %u variables are still referenced!", n_leaked);
+
+        if (state.variables.empty() && !state.extra.empty())
+            jit_log(Warn,
+                    "jit_shutdown(): %zu empty records were not cleaned up!",
+                    state.extra.size());
     }
 
     if (state.variables.empty() && !state.cse_cache.empty()) {

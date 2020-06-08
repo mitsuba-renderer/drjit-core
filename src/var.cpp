@@ -99,8 +99,8 @@ void jit_var_free(uint32_t index, Variable *v) {
     uint32_t dep[4];
     memcpy(dep, v->dep, sizeof(uint32_t) * 4);
     void *data = v->data;
-    bool direct_pointer = v->direct_pointer;
-    bool vcall_cached = v->vcall_cached;
+    bool direct_pointer = v->direct_pointer,
+         has_extra = v->has_extra;
 
     // Release GPU memory
     if (likely(v->data && !v->retain_data))
@@ -110,33 +110,8 @@ void jit_var_free(uint32_t index, Variable *v) {
     if (unlikely(v->free_stmt))
         free(v->stmt);
 
-    // Free descriptive label, if needed
-    if (unlikely(v->has_label)) {
-        auto it = state.labels.find(index);
-        if (unlikely(it == state.labels.end()))
-            jit_fail("jit_var_free(): label not found!");
-        free(it.value());
-        state.labels.erase(it);
-    }
-
-    // Remove from hash table. 'v' is not guaranteed to be valid from here on.
+    // Remove from hash table. 'v' should not be accessed from here on.
     state.variables.erase(index);
-
-    if (unlikely(vcall_cached)) {
-        auto it = state.vcall_cache.find(index);
-        if (unlikely(it == state.vcall_cache.end()))
-            jit_fail("jit_var_free(): cached vcall entry not found!");
-
-        uint32_t bucket_count = it.value().first;
-        VCallBucket *buckets = it.value().second;
-
-        for (uint32_t i = 0; i < bucket_count; ++i)
-            jit_var_dec_ref_ext(buckets[i].index);
-
-        jit_free(buckets);
-
-        state.vcall_cache.erase(it);
-    }
 
     if (likely(!direct_pointer)) {
         // Decrease reference count of dependencies
@@ -151,6 +126,28 @@ void jit_var_free(uint32_t index, Variable *v) {
 
         // Decrease reference count of dependencies
         jit_var_dec_ref_ext(dep[0]);
+    }
+
+    if (unlikely(has_extra)) {
+        auto it = state.extra.find(index);
+        if (it == state.extra.end())
+            jit_fail("jit_var_free(): entry in 'extra' hash table not found!");
+        Extra extra = it.value();
+        state.extra.erase(it);
+
+        // Free descriptive label
+        free(extra.label);
+
+        if (extra.free_callback) {
+            unlock_guard guard(state.mutex);
+            extra.free_callback(extra.callback_payload);
+        }
+
+        if (extra.vcall_bucket_count) {
+            for (uint32_t i = 0; i < extra.vcall_bucket_count; ++i)
+                jit_var_dec_ref_ext(extra.vcall_buckets[i].index);
+            jit_free(extra.vcall_buckets);
+        }
     }
 }
 
@@ -324,28 +321,35 @@ uint32_t jit_var_set_size(uint32_t index, uint32_t size) {
 
 /// Query the descriptive label associated with a given variable
 const char *jit_var_label(uint32_t index) {
-    auto it = state.labels.find(index);
-    return it != state.labels.end() ? it.value() : nullptr;
+    ExtraMap::iterator it = state.extra.find(index);
+    return it != state.extra.end() ? it.value().label : nullptr;
 }
 
 /// Assign a descriptive label to a given variable
-void jit_var_set_label(uint32_t index, const char *label_) {
+void jit_var_set_label(uint32_t index, const char *label) {
     Variable *v = jit_var(index);
-    char *label = label_ ? strdup(label_) : nullptr;
 
     jit_log(Debug, "jit_var_set_label(%u): \"%s\"", index,
             label ? label : "(null)");
 
-    if (v->has_label) {
-        auto it = state.labels.find(index);
-        if (it == state.labels.end())
-            jit_fail("jit_var_set_label(): previous label not found!");
-        free(it.value());
-        it.value() = label;
-    } else {
-        state.labels[index] = label;
-        v->has_label = true;
-    }
+    v->has_extra = true;
+    Extra &extra = state.extra[index];
+    free(extra.label);
+    extra.label = label ? strdup(label) : nullptr;
+}
+
+void jit_var_set_free_callback(uint32_t index, void (*callback)(void *), void *payload) {
+    Variable *v = jit_var(index);
+
+    jit_log(Debug, "jit_var_set_callback(%u): " ENOKI_PTR " (" ENOKI_PTR ")",
+            index, (uintptr_t) callback, (uintptr_t) payload);
+
+    v->has_extra = true;
+    Extra &extra = state.extra[index];
+    if (unlikely(extra.free_callback))
+        jit_fail("jit_var_set_free_callback(): a callback was already set!");
+    extra.free_callback = callback;
+    extra.callback_payload = payload;
 }
 
 uint32_t jit_var_new_literal(VarType type, int cuda,
@@ -813,7 +817,7 @@ uint32_t jit_var_copy_var(uint32_t index) {
         Variable v2 = *v;
         v2.ref_count_int = 0;
         v2.ref_count_ext = 0;
-        v2.has_label = 0;
+        v2.has_extra = 0;
 
         if (v2.free_stmt)
             v2.stmt = strdup(v2.stmt);
@@ -1045,11 +1049,11 @@ const char *jit_var_graphviz() {
                 break;
         }
 
+        const char *label = jit_var_label(index);
         buffer.fmt("  %u [label=\"{%s%s%s%s%s|{Type: %s %s|Size: %u}|{ID "
                    "#%u|E:%u|I:%u}}\"%s];\n",
-                   index, out, v->has_label ? "|Label: \\\"" : "",
-                   v->has_label ? jit_var_label(index) : "",
-                   v->has_label ? "\\\"" : "",
+                   index, out, label ? "|Label: \\\"" : "",
+                   label ? label : "", label ? "\\\"" : "",
                    v->pending_scatter ? "| ** DIRTY **" : "",
                    v->cuda ? "cuda" : "llvm",
                    v->type == (int) VarType::Invalid ? "none"

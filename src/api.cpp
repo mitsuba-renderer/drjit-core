@@ -281,6 +281,12 @@ void jitc_var_set_label(uint32_t index, const char *label) {
     jit_var_set_label(index, label);
 }
 
+void jitc_var_set_free_callback(uint32_t index, void (*callback)(void *),
+                                void *payload) {
+    lock_guard guard(state.mutex);
+    jit_var_set_free_callback(index, callback, payload);
+}
+
 uint32_t jitc_var_map_mem(VarType type, int cuda, void *ptr, uint32_t size, int free) {
     lock_guard guard(state.mutex);
     return jit_var_map_mem(type, cuda, ptr, size, free);

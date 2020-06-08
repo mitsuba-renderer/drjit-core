@@ -1021,21 +1021,19 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 // Compute a permutation to reorder an array of registered pointers
 VCallBucket *jit_vcall(const char *domain, uint32_t index,
                        uint32_t *bucket_count_out) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_vcall(): you must invoke jitc_set_device() to "
-                  "choose a target device before calling this function.");
-    bool cuda = stream->cuda;
-
-    auto it = state.vcall_cache.find(index);
-    if (it != state.vcall_cache.end()) {
-        *bucket_count_out = it.value().first;
-        return it.value().second;
+    auto it = state.extra.find(index);
+    if (it != state.extra.end()) {
+        auto &v = it.value();
+        if (v.vcall_bucket_count) {
+            *bucket_count_out = v.vcall_bucket_count;
+            return v.vcall_buckets;
+        }
     }
 
     uint32_t bucket_count = jit_registry_get_max(domain) + 1;
     if (unlikely(bucket_count == 1))
         jit_raise("jit_vcall(): no instances registered for domain \"%s\"\n!", domain);
+
 
     jit_var_eval(index);
     Variable *v = jit_var(index);
@@ -1047,6 +1045,12 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
            offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
 
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_vcall(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function.");
+
+    bool cuda = stream->cuda;
     uint32_t *offsets = (uint32_t *) jit_malloc(
         cuda ? AllocType::HostPinned : AllocType::Host, offsets_size);
     uint32_t *perm = (uint32_t *) jit_malloc(
@@ -1065,7 +1069,7 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
     v2.dep[0] = perm_var;
     v2.retain_data = true;
     v2.tsize = 1;
-    v2.cuda = active_stream->cuda;
+    v2.cuda = cuda;
     v2.unaligned = 1;
 
     uint32_t *offsets_out = offsets;
@@ -1101,11 +1105,11 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
     *bucket_count_out = unique_count_out;
 
     v = jit_var(index);
-    v->vcall_cached = true;
-    state.vcall_cache[index] =
-        std::make_pair(unique_count_out, (VCallBucket *) offsets);
-
-    return (VCallBucket *) offsets;
+    v->has_extra = true;
+    Extra &extra = state.extra[index];
+    extra.vcall_bucket_count = unique_count_out;
+    extra.vcall_buckets = (VCallBucket *) offsets;
+    return extra.vcall_buckets;
 }
 
 using BlockOp = void (*) (const void *ptr, void *out, uint32_t start, uint32_t end, uint32_t block_size);

@@ -545,13 +545,14 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
+        const char *label = log_trace ? jit_var_label(index) : nullptr;
 
         if (v->arg_type == ArgType::Input) {
-            if (unlikely(log_trace))
+            if (unlikely(log_trace)) {
                 buffer.fmt("\n    // Load %s%u%s%s\n",
                            var_type_prefix[v->type],
-                           v->reg_index, v->has_label ? ": " : "",
-                           v->has_label ? jit_var_label(index) : "");
+                           v->reg_index, label ? ": " : "", label);
+            }
 
             get_parameter_addr(v, true, v->direct_pointer ? v->reg_index : 0u);
 
@@ -573,10 +574,8 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
         } else {
             if (unlikely(log_trace))
                 buffer.fmt("\n    // Evaluate %s%u%s%s\n",
-                           var_type_prefix[v->type],
-                           v->reg_index,
-                           v->has_label ? ": " : "",
-                           v->has_label ? jit_var_label(index) : "");
+                           var_type_prefix[v->type], v->reg_index,
+                           label ? ": " : "", label ? label : "");
 
             jit_render_stmt_cuda(index, v);
         }
@@ -584,9 +583,8 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
         if (v->arg_type == ArgType::Output) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    // Store %s%u%s%s\n",
-                           var_type_prefix[v->type],
-                           v->reg_index, v->has_label ? ": " : "",
-                           v->has_label ? jit_var_label(index) : "");
+                           var_type_prefix[v->type], v->reg_index,
+                           label ? ": " : "", label ? label : "");
 
             get_parameter_addr(v, false);
 
@@ -680,6 +678,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
         const char *reg_prefix = var_type_prefix[v->type],
                    *type = (VarType) v->type == VarType::Bool
                                ? "i8" : var_type_name_llvm[v->type];
+        const char *label = log_trace ? jit_var_label(index) : nullptr;
         uint32_t size = v->size;
 
         if (v->arg_type == ArgType::Input) {
@@ -688,8 +687,8 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
 
             if (unlikely(log_trace))
                 buffer.fmt("\n    ; Load %s%u%s%s\n",
-                           reg_prefix, reg_id, v->has_label ? ": " : "",
-                           v->has_label ? jit_var_label(index) : "");
+                           reg_prefix, reg_id, label ? ": " : "",
+                           label ? label : "");
 
             if (size > 1)
                 get_parameter_addr(reg_id, arg_id, reg_prefix, type, size);
@@ -719,18 +718,15 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
             }
         } else {
             if (unlikely(log_trace))
-                buffer.fmt("\n    ; Evaluate %s%u%s%s\n",
-                           reg_prefix, reg_id,
-                           v->has_label ? ": " : "",
-                           v->has_label ? jit_var_label(index) : "");
+                buffer.fmt("\n    ; Evaluate %s%u%s%s\n", reg_prefix, reg_id,
+                           label ? ": " : "", label ? label : "");
             jit_render_stmt_llvm(index, v);
         }
 
         if (v->arg_type == ArgType::Output) {
             if (unlikely(log_trace))
-                buffer.fmt("\n    ; Store %s%u%s%s\n",
-                           reg_prefix, reg_id, v->has_label ? ": " : "",
-                           v->has_label ? jit_var_label(index) : "");
+                buffer.fmt("\n    ; Store %s%u%s%s\n", reg_prefix, reg_id,
+                           label ? ": " : "", label ? label : "");
             get_parameter_addr(reg_id, arg_id, reg_prefix, type, size);
 
             if ((VarType) v->type != VarType::Bool) {
@@ -811,10 +807,9 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
                        var_type_prefix[v->type],
                        n_regs_total, index);
 
-            if (v->has_label) {
-                const char *label = jit_var_label(index);
-                buffer.fmt(" \"%s\"", label ? label : "(null)");
-            }
+            const char *label = jit_var_label(index);
+            if (label)
+                buffer.fmt(" \"%s\"", label);
             if (v->size == 1)
                 buffer.put(" [scalar]");
             if (v->direct_pointer)

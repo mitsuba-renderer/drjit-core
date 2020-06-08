@@ -214,8 +214,8 @@ struct Variable {
     /// Free the 'stmt' variables at destruction time?
     uint32_t free_stmt : 1;
 
-    /// Was this variable labeled?
-    uint32_t has_label : 1;
+    /// Is this variable associated with extra information?
+    uint32_t has_extra : 1;
 
     /// Is this a scatter operation?
     uint32_t scatter : 1;
@@ -231,9 +231,6 @@ struct Variable {
 
     /// Is this variable marked as an output? (temporarily used during jit_eval())
     uint32_t output_flag : 1;
-
-    /// Are we currently caching the result of a jitc_vcall()?
-    uint32_t vcall_cached : 1;
 
     /// Does this variable store a number literal equal to '0'?
     uint32_t is_literal_zero : 1;
@@ -387,6 +384,21 @@ using AttributeMap = tsl::robin_map<AttributeKey, AttributeValue, AttributeKeyHa
 // Maps (device ID, stream ID) to a Stream instance
 using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
 
+struct Extra {
+    /// Optional descriptive label
+    char *label = nullptr;
+
+    /// Callback to be invoked when the variable is deallocated
+    void (*free_callback)(void *) = nullptr;
+    void *callback_payload = nullptr;
+
+    /// Bucket decomposition for virtual function calls
+    uint32_t vcall_bucket_count = 0;
+    VCallBucket *vcall_buckets = nullptr;
+};
+
+using ExtraMap = tsl::robin_map<uint32_t, Extra>;
+
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
     /// Must be held to access members
@@ -435,9 +447,6 @@ struct State {
     /// Map of currently unused memory regions
     AllocInfoMap alloc_free;
 
-    /// Host memory regions mapped into unified memory & pending release
-    std::vector<std::pair<bool, void *>> alloc_unmap;
-
     /// Keep track of current memory usage and a maximum watermark
     size_t alloc_usage    [(int) AllocType::Count] { 0 },
            alloc_watermark[(int) AllocType::Count] { 0 };
@@ -445,11 +454,8 @@ struct State {
     /// Maps from pointer addresses to variable indices
     tsl::robin_pg_map<const void *, uint32_t> variable_from_ptr;
 
-    /// Maps from variable indices to (optional) descriptive labels
-    tsl::robin_map<uint32_t, char *> labels;
-
-    /// Maps from variable indices to cached results from jitc_vcall()
-    tsl::robin_map<uint32_t, std::pair<uint32_t, VCallBucket *>> vcall_cache;
+    /// Maps from variable ID to extra information for a fraction of variables
+    ExtraMap extra;
 
     /// Maps from a key characterizing a variable to its index
     CSECache cse_cache;
