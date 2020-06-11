@@ -69,7 +69,7 @@ struct CUDAArray {
     CUDAArray(Value value) {
         uint64_t tmp = 0;
         memcpy(&tmp, &value, sizeof(Value));
-        m_index = jitc_var_new_literal(Type, 1, tmp, 1);
+        m_index = jitc_var_new_literal(Type, 1, tmp, 1, 0);
     }
 
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
@@ -600,7 +600,7 @@ Array empty(size_t size) {
 template <typename Array,
           typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array zero(size_t size) {
-    return Array::from_index(jitc_var_new_literal(Array::Type, 1, 0, (uint32_t) size));
+    return Array::from_index(jitc_var_new_literal(Array::Type, 1, 0, (uint32_t) size, 0));
 }
 
 template <typename Array,
@@ -608,7 +608,7 @@ template <typename Array,
 Array full(typename Array::Value value, size_t size) {
     uint64_t tmp = 0;
     memcpy(&tmp, &value, sizeof(typename Array::Value));
-    return Array::from_index(jitc_var_new_literal(Array::Type, 1, tmp, (uint32_t) size));
+    return Array::from_index(jitc_var_new_literal(Array::Type, 1, tmp, (uint32_t) size, 0));
 }
 
 template <typename Array,

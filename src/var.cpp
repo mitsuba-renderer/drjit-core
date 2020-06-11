@@ -297,7 +297,7 @@ uint32_t jit_var_set_size(uint32_t index, uint32_t size) {
         v->size = size;
         return index;
     } else if (v->is_literal_zero) {
-        return jit_var_new_literal((VarType) v->type, v->cuda, 0, size);
+        return jit_var_new_literal((VarType) v->type, v->cuda, 0, size, 0);
     } else {
         Stream *stream = active_stream;
         uint32_t index_new;
@@ -353,9 +353,19 @@ void jit_var_set_free_callback(uint32_t index, void (*callback)(void *), void *p
 }
 
 uint32_t jit_var_new_literal(VarType type, int cuda,
-                             uint64_t value, uint32_t size) {
+                             uint64_t value, uint32_t size,
+                             int eval) {
     if (unlikely(size == 0))
         return 0;
+
+    if (unlikely(eval)) {
+        void *ptr = jit_malloc(AllocType::Device, size * var_type_size[(int) size]);
+        if (size == 1)
+            jit_poke(ptr, &value, var_type_size[(int) type]);
+        else
+            jit_memset_async(ptr, size, var_type_size[(int) type], &value);
+        return jit_var_map_mem(type, cuda, ptr, size, true);
+    }
 
     const char *fmt = nullptr;
     char buffer[256];

@@ -60,7 +60,8 @@ extern uint32_t jit_var_new_4(VarType type,
 
 /// Append a new variable storing 'size' entries of a literal constant
 extern uint32_t jit_var_new_literal(VarType type, int cuda,
-                                    uint64_t value, uint32_t size);
+                                    uint64_t value, uint32_t size,
+                                    int eval);
 
 /// Register an existing variable with the JIT compiler
 extern uint32_t jit_var_map_mem(VarType type, int cuda, void *ptr, uint32_t size,
