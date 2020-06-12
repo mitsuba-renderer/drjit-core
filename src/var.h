@@ -175,6 +175,7 @@ extern const uint32_t var_type_size   [(int) VarType::Count];
 extern const char *var_type_name_llvm       [(int) VarType::Count];
 extern const char *var_type_name_llvm_bin   [(int) VarType::Count];
 extern const char *var_type_name_llvm_abbrev[(int) VarType::Count];
+extern const char *var_type_name_llvm_big   [(int) VarType::Count];
 extern const char *var_type_name_ptx        [(int) VarType::Count];
 extern const char *var_type_name_ptx_bin    [(int) VarType::Count];
 extern const char *var_type_prefix          [(int) VarType::Count];

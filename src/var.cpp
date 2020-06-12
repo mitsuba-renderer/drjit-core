@@ -43,6 +43,12 @@ const char *var_type_name_llvm[(int) VarType::Count]{
     "i32", "i64", "i64", "half", "float", "double", "i8*"
 };
 
+/// Double size integer arrays for mulhi()
+const char *var_type_name_llvm_big[(int) VarType::Count]{
+    "???", "???",  "i16",  "i16",   "i32",   "i32",    "i64",
+    "i64", "i128", "i128", "???", "???", "???", "???"
+};
+
 /// Abbreviated LLVM IR type names
 const char *var_type_name_llvm_abbrev[(int) VarType::Count]{
     "???", "i1",  "i8",  "i8",  "i16", "i16", "i32",

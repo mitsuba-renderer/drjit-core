@@ -232,6 +232,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
                 case 'S': continue;
                 case 'l':
                 case 't': prefix_table = var_type_name_llvm; break;
+                case 'T': prefix_table = var_type_name_llvm_big; break;
                 case 's': prefix_table = var_type_size_str; break;
                 case 'o':
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
@@ -280,6 +281,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
                 case 'b':
                 case 's':
                 case 't':
+                case 'T':
                     buffer.put(prefix);
                     break;
 
