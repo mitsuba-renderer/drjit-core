@@ -449,6 +449,7 @@ struct State {
 
     /// Keep track of current memory usage and a maximum watermark
     size_t alloc_usage    [(int) AllocType::Count] { 0 },
+           alloc_allocated[(int) AllocType::Count] { 0 },
            alloc_watermark[(int) AllocType::Count] { 0 };
 
     /// Maps from pointer addresses to variable indices

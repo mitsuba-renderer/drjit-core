@@ -199,6 +199,12 @@ void* jit_malloc(AllocType type, size_t size) {
                 if (ret != CUDA_SUCCESS)
                     ptr = nullptr;
             }
+
+            size_t &allocated = state.alloc_allocated[ai.type],
+                   &watermark = state.alloc_watermark[ai.type];
+
+            allocated += ai.size;
+            watermark = std::max(allocated, watermark);
         }
         descr = "new allocation";
     }
@@ -219,11 +225,7 @@ void* jit_malloc(AllocType type, size_t size) {
                   alloc_type_name[ai.type], ai.size, (uintptr_t) ptr,
                   descr);
 
-    size_t &usage     = state.alloc_usage[ai.type],
-           &watermark = state.alloc_watermark[ai.type];
-
-    usage += ai.size;
-    watermark = std::max(watermark, usage);
+    state.alloc_usage[ai.type] += ai.size;
 
     return ptr;
 }
@@ -524,6 +526,9 @@ void jit_malloc_trim(bool warn) {
             }
         }
     }
+
+    for (auto& kv : alloc_free)
+        state.alloc_allocated[kv.first.type] -= kv.first.size;
 
     size_t total = 0;
     for (int i = 0; i < (int) AllocType::Count; ++i)

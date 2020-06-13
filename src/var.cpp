@@ -1015,9 +1015,10 @@ const char *jit_var_whos() {
     buffer.put("  Memory allocator\n");
     buffer.put("  ================\n");
     for (int i = 0; i < (int) AllocType::Count; ++i)
-        buffer.fmt("   - %-20s: %s used (max. %s).\n",
+        buffer.fmt("   - %-20s: %s/%s used (peak: %s).\n",
                    alloc_type_name[i],
                    std::string(jit_mem_string(state.alloc_usage[i])).c_str(),
+                   std::string(jit_mem_string(state.alloc_allocated[i])).c_str(),
                    std::string(jit_mem_string(state.alloc_watermark[i])).c_str());
 
     return buffer.get();
