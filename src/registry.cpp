@@ -238,7 +238,7 @@ void jit_registry_set_attr(void *ptr, const char *name,
 
     AttributeValue &attr = state.attributes[AttributeKey(domain, name)];
     if (attr.isize == 0)
-        attr.isize = isize;
+        attr.isize = (uint32_t) isize;
     else if (attr.isize != isize)
         jit_raise("jit_registry_set_attr(): incompatible size!");
 

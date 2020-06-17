@@ -11,7 +11,7 @@
 
 #include <enoki-jit/jit.h>
 
-#if !defined(ENOKI_DYNAMIC_CUDA)
+#if !defined(ENOKI_JIT_DYNAMIC_CUDA)
 #  include <cuda.h>
 #else
 #  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR 75

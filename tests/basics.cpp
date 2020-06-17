@@ -1066,6 +1066,8 @@ TEST_LLVM(35_pointer_registry_attribute) {
         jitc_registry_remove((void *) (uintptr_t) i);
     jitc_registry_trim();
 
+#if !defined(_WIN32)
+    /// MSVC with /EHsc doesn't seem to like it if we throw a C++ exception through a C interface
     bool success;
     try {
         ptr = (float *) jitc_registry_attr_data(domain, "my_value");
@@ -1074,4 +1076,5 @@ TEST_LLVM(35_pointer_registry_attribute) {
         success = true;
     }
     jitc_assert(success);
+#endif
 }

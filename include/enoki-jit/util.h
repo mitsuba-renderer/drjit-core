@@ -69,7 +69,7 @@ inline int clz(uint32_t value) {
         value >>= 1;
         lz -= 1;
     }
-    return result;
+    return lz;
 #endif
 }
 
@@ -82,7 +82,7 @@ inline int clz(uint64_t value) {
         value >>= 1;
         lz -= 1;
     }
-    return result;
+    return lz;
 #endif
 }
 

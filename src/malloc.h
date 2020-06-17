@@ -15,14 +15,14 @@
 /// Data structure characterizing a memory allocation
 #pragma pack(push, 1)
 struct AllocInfo {
-    size_t size: 48;
-    uint32_t type : 8;
-    int device : 8;
+    uint64_t size : 48;
+    uint64_t type : 8;
+    uint64_t device : 8;
 
     AllocInfo() { memset(this, 0, sizeof(AllocInfo)); }
 
     AllocInfo(size_t size, AllocType type, int device)
-        : size(size), type((uint32_t) type), device(device) { }
+        : size(size), type((unsigned) type), device(device) { }
 
     bool operator==(const AllocInfo &at) const {
         return type == at.type && device == at.device &&

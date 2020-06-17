@@ -722,7 +722,7 @@ uint32_t jit_var_copy_mem(AllocType atype, VarType vtype, int cuda, const void *
     if (unlikely(!stream)) {
         jit_raise("jit_var_copy_mem(): you must invoke jitc_set_device() to "
                   "choose a target device before using this function.");
-    } else if (unlikely(cuda != stream->cuda)) {
+    } else if (unlikely((bool) cuda != stream->cuda)) {
         jit_raise(
             "jit_var_copy_mem(): attempted to copy to a %s array while the %s "
             "backend was active! You must invoke jit_set_device() to set "
@@ -1262,7 +1262,7 @@ void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
         jit_raise("jit_var_write(): attempted to access entry %u in an array of "
                   "size %u!", offset, v->size);
 
-    size_t isize = var_type_size[v->type];
+    uint32_t isize = var_type_size[v->type];
     uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
     jit_poke(dst, src, isize);
 }

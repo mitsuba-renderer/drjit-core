@@ -20,13 +20,13 @@
 #include <string.h>
 #include <inttypes.h>
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
 #  include <tbb/spin_mutex.h>
 #endif
 
 namespace tbb { class task; };
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
   using FastMutex = tbb::spin_mutex;
 #else
   using FastMutex = std::mutex;
@@ -136,7 +136,7 @@ struct Stream {
 
     /// ---------------------------- LLVM-specific ----------------------------
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
     /// Mutex protecting 'tbb_task_queue'
     std::mutex tbb_task_queue_mutex;
 
@@ -193,20 +193,20 @@ struct Variable {
     /// Size of the instruction subtree (heuristic for instruction scheduling)
     uint32_t tsize;
 
-    /// Register index (temporarily used during jit_eval())
-    uint32_t reg_index : 24;
-
-    /// Argument index (temporarily used during jit_eval())
-    uint32_t arg_index : 16;
-
     /// Data type of this variable
     uint32_t type : 4;
 
-    /// Argument type (register: 0, input: 1, output: 2)
-    uint32_t arg_type : 2;
-
     /// Is this variable registered with the CUDA backend?
     uint32_t cuda : 1;
+
+    /// Register index (temporarily used during jit_eval())
+    uint32_t reg_index : 24;
+
+    /// Argument type (temporarily used during jit_eval())
+    uint32_t arg_type : 2;
+
+    /// Argument index (temporarily used during jit_eval())
+    uint32_t arg_index : 16;
 
     /// Don't deallocate 'data' when this variable is destructed?
     uint32_t retain_data : 1;

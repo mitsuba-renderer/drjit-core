@@ -186,7 +186,7 @@ void jit_shutdown(int light) {
                 cuda_check(cuStreamDestroy(stream->handle));
                 delete stream->release_chain;
             } else {
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
                 jit_free_flush();
                 tbb_stream_shutdown(stream);
 #endif
@@ -321,7 +321,7 @@ void jit_set_device(int32_t device, uint32_t stream) {
         stream_ptr->event = event;
         stream_ptr->context = context;
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
         tbb_stream_init(stream_ptr);
 #endif
 
@@ -343,7 +343,7 @@ void jit_sync_stream() {
         scoped_set_context guard2(stream->context);
         cuda_check(cuStreamSynchronize(stream->handle));
     } else {
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
         unlock_guard guard(state.mutex);
         tbb_stream_sync(stream);
 #endif
@@ -364,7 +364,7 @@ void jit_sync_device() {
             cuda_check(cuCtxSynchronize());
         }
     } else {
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
         StreamMap streams = state.streams;
         unlock_guard guard(state.mutex);
         for (auto &kv: streams) {
@@ -405,7 +405,7 @@ void jit_sync_all_devices() {
             scoped_set_context guard(stream->context);
             cuda_check(cuStreamSynchronize(stream->handle));
         } else {
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
             tbb_stream_sync(stream);
 #endif
         }

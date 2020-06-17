@@ -20,7 +20,7 @@
 #endif
 #include <lz4.h>
 
-#if defined(ENOKI_DYNAMIC_CUDA)
+#if defined(ENOKI_JIT_DYNAMIC_CUDA)
 // Driver API
 CUresult (*cuCtxEnablePeerAccess)(CUcontext, unsigned int) = nullptr;
 CUresult (*cuCtxSynchronize)() = nullptr;
@@ -125,7 +125,7 @@ bool jit_cuda_init() {
     // #endif
 #endif
 
-#if defined(ENOKI_DYNAMIC_CUDA)
+#if defined(ENOKI_JIT_DYNAMIC_CUDA)
     jit_cuda_handle = nullptr;
 #  if defined(_WIN32)
 #    define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
@@ -532,7 +532,7 @@ void jit_cuda_shutdown() {
 
     #undef Z
 
-#if defined(ENOKI_DYNAMIC_CUDA)
+#if defined(ENOKI_JIT_DYNAMIC_CUDA)
     #define Z(x) x = nullptr
 
     Z(cuCtxEnablePeerAccess); Z(cuCtxSynchronize); Z(cuDeviceCanAccessPeer);

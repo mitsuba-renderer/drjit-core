@@ -22,7 +22,7 @@
 #include <lz4.h>
 #include "../kernels/kernels.h"
 
-#if !defined(ENOKI_DYNAMIC_LLVM)
+#if !defined(ENOKI_JIT_DYNAMIC_LLVM)
 #  include <llvm-c/Core.h>
 #  include <llvm-c/ExecutionEngine.h>
 #  include <llvm-c/Disassembler.h>
@@ -423,7 +423,7 @@ bool jit_llvm_init() {
         return jit_llvm_init_success;
     jit_llvm_init_attempted = true;
 
-#if defined(ENOKI_DYNAMIC_LLVM)
+#if defined(ENOKI_JIT_DYNAMIC_LLVM)
     jit_llvm_handle = nullptr;
 #  if defined(_WIN32)
 #    define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
@@ -505,7 +505,7 @@ bool jit_llvm_init() {
     }
 #endif
 
-#if defined(ENOKI_DYNAMIC_LLVM)
+#if defined(ENOKI_JIT_DYNAMIC_LLVM)
     void *dlsym_src = jit_llvm_handle;
 #else
     void *dlsym_src = RTLD_NEXT;
@@ -665,7 +665,7 @@ bool jit_llvm_init() {
     if (strstr(jit_llvm_target_features, "+avx512f"))
         jit_llvm_vector_width = 16;
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
     jit_llvm_thread_count =
         std::max(1u, (uint32_t) std::thread::hardware_concurrency());
 #else
@@ -721,7 +721,7 @@ void jit_llvm_shutdown() {
     jit_llvm_kernel_id  = 0;
     jit_llvm_got        = false;
 
-#if defined(ENOKI_DYNAMIC_LLVM)
+#if defined(ENOKI_JIT_DYNAMIC_LLVM)
     #define Z(x) x = nullptr
 
     Z(LLVMLinkInMCJIT); Z(LLVMInitializeX86Target);

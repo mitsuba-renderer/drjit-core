@@ -13,8 +13,9 @@
     simultaneously dispatch computation to one or more CPUs/GPUs.
 
     As an alternative to the fairly low-level API defined here, you may prefer
-    to use the functionality in 'enoki/jitvar.h', which provides a header-only
-    C++ array class with operator overloading, which dispatches to the C API.
+    to use the functionality in 'enoki/cuda.h' or 'enoki/llvm.h', which
+    provides a header-only C++ array class with operator overloading, which
+    dispatches to the C API.
 
     Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
 

@@ -98,7 +98,7 @@ static tsl::robin_set<Intrinsic, IntrinsicHash, IntrinsicEquality> intrinsics_se
 /// LLVM: Does the kernel require the supplemental IR? (Used for 'scatter_add' atm.)
 static bool jit_llvm_supplement = false;
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
 std::vector<std::pair<uint32_t, uint32_t>> jit_llvm_scatter_add_variables;
 #endif
 
@@ -553,7 +553,8 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
             if (unlikely(log_trace)) {
                 buffer.fmt("\n    // Load %s%u%s%s\n",
                            var_type_prefix[v->type],
-                           v->reg_index, label ? ": " : "", label);
+                           v->reg_index, label ? ": " : "",
+                           label ? label : "");
             }
 
             get_parameter_addr(v, true, v->direct_pointer ? v->reg_index : 0u);
@@ -786,7 +787,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
     kernel_args.push_back(tmp);
     n_args_in++;
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
     jit_llvm_scatter_add_variables.clear();
 #endif
 
@@ -841,7 +842,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
 
             AllocType alloc_type = AllocType::Device;
             if (!cuda) {
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
                 alloc_type = AllocType::HostAsync;
 #else
                 alloc_type = AllocType::Host;
@@ -864,7 +865,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
             v->arg_type = ArgType::Register;
         }
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
         /// LLVM: parallel scatter_add into the same array requires extra precautions
         if (unlikely(!cuda && v->scatter && strstr(v->stmt, "ek.scatter_add"))) {
             Variable *base_ptr = jit_var(v->dep[0]);
@@ -1078,7 +1079,7 @@ void jit_run(Stream *stream, ScheduledGroup group) {
         jit_log(Trace, "jit_run(): processing %u packet%s and %u scalar entries",
                 packets, packets == 1 ? "": "s", group.size - rounded);
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
         if (likely(rounded > 0))
             tbb_stream_enqueue_kernel(
                 stream, kernel.llvm.func, 0, rounded,
@@ -1202,7 +1203,7 @@ void jit_eval() {
         }
     }
 
-#if defined(ENOKI_ENABLE_TBB)
+#if defined(ENOKI_JIT_ENABLE_TBB)
     if (!stream->cuda)
         tbb_stream_submit_kernel(stream);
 #endif
