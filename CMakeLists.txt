@@ -1,5 +1,5 @@
 project(enoki-jit)
-cmake_minimum_required(VERSION 3.9.0)
+cmake_minimum_required(VERSION 3.10.0)
 cmake_policy(SET CMP0074 NEW)
 
 option(ENOKI_JIT_ENABLE_TBB   "Use Intel Thread Building Blocks (TBB) with LLVM backend?" ON)

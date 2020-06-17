@@ -13,6 +13,12 @@ Testing
 /kernels/generate
 build
 .vscode
+*.vcxproj
+*.vcxproj.filters
+enoki-jit.sln
+enoki-jit.dir
+Release
+Debug
 
 libenoki-jit.so
 libenoki-jit.dylib
