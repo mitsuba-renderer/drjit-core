@@ -218,11 +218,11 @@ void* jit_malloc(AllocType type, size_t size) {
 
     if ((AllocType) ai.type == AllocType::Device)
         jit_trace("jit_malloc(type=%s, device=%u, size=%zu): " ENOKI_PTR " (%s)",
-                  alloc_type_name[ai.type], ai.device, ai.size,
+                  alloc_type_name[ai.type], (uint32_t) ai.device, (size_t) ai.size,
                   (uintptr_t) ptr, descr);
     else
         jit_trace("jit_malloc(type=%s, size=%zu): " ENOKI_PTR " (%s)",
-                  alloc_type_name[ai.type], ai.size, (uintptr_t) ptr,
+                  alloc_type_name[ai.type], (size_t) ai.size, (uintptr_t) ptr,
                   descr);
 
     state.alloc_usage[ai.type] += ai.size;
@@ -250,8 +250,7 @@ void jit_free(void *ptr) {
         if (likely(stream && cuda == stream->cuda)) {
             /* Acquire lock protecting 'stream->release_chain' */ {
                 lock_guard guard(state.malloc_mutex);
-                ReleaseChain *chain = stream->release_chain;
-                if (unlikely(!chain))
+                ReleaseChain *chain = stream->release_chain; if (unlikely(!chain))
                     chain = stream->release_chain = new ReleaseChain();
                 chain->entries[ai].push_back(ptr);
             }
@@ -268,11 +267,11 @@ void jit_free(void *ptr) {
 
     if ((AllocType) ai.type == AllocType::Device)
         jit_trace("jit_free(" ENOKI_PTR ", type=%s, device=%u, size=%zu)",
-                  (uintptr_t) ptr, alloc_type_name[ai.type], ai.device,
-                  ai.size);
+                  (uintptr_t) ptr, alloc_type_name[ai.type],
+		  (uint32_t) ai.device, (size_t) ai.size);
     else
         jit_trace("jit_free(" ENOKI_PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
-                  alloc_type_name[ai.type], ai.size);
+                  alloc_type_name[ai.type], (size_t) ai.size);
 
     state.alloc_usage[ai.type] -= ai.size;
     state.alloc_used.erase(it);
