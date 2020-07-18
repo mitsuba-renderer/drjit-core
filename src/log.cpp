@@ -138,13 +138,13 @@ Buffer::Buffer(size_t size) : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
 size_t Buffer::fmt(const char *format, ...) {
     size_t written;
     do {
-        size_t size = m_end - m_cur;
+        size_t size = remain();
         va_list args;
         va_start(args, format);
         written = (size_t) vsnprintf(m_cur, size, format, args);
         va_end(args);
 
-        if (likely(written < size)) {
+        if (likely(written + 1 < size)) {
             m_cur += written;
             break;
         }
@@ -159,12 +159,12 @@ size_t Buffer::vfmt(const char *format, va_list args_) {
     size_t written;
     va_list args;
     do {
-        size_t size = m_end - m_cur;
+        size_t size = remain();
         va_copy(args, args_);
         written = (size_t) vsnprintf(m_cur, size, format, args);
         va_end(args);
 
-        if (likely(written < size)) {
+        if (likely(written + 1 < size)) {
             m_cur += written;
             break;
         }

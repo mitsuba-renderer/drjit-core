@@ -529,40 +529,32 @@ public:
 
     /// Append a string to the buffer
     void put(const char *str) {
-        do {
-            char* cur = (char*) memccpy(m_cur, str, '\0', m_end - m_cur);
-
-            if (likely(cur)) {
-                m_cur = cur - 1;
-                break;
-            }
-
-            expand();
-        } while (true);
+        return put(str, strlen(str));
     }
 
     /// Append a string with the specified length
     void put(const char *str, size_t size) {
         if (unlikely(m_cur + size >= m_end))
-            expand(size);
-        memcpy(m_cur, str, size); m_cur += size;
+            expand(size + 1 - remain());
+
+        memcpy(m_cur, str, size);
+        m_cur += size;
         *m_cur = '\0';
     }
 
     /// Append an unsigned 32 bit integer
     void put_uint32(uint32_t value) {
-        if (unlikely(m_cur + 10 >= m_end))
-            expand(10);
-
+        const int Digits = 10;
         const char *num = "0123456789";
-        char buf[11];
-        buf[10] = '\0';
-        int i = 9;
+        char buf[Digits];
+        int i = Digits;
+
         do {
             buf[--i] = num[value % 10];
             value /= 10;
         } while (value);
-        put(buf + i, 9 - i);
+
+        return put(buf + i, Digits - i);
     }
 
     /// Append a single character to the buffer
@@ -595,6 +587,7 @@ public:
     size_t vfmt(const char *format, va_list args_);
 
     size_t size() const { return m_cur - m_start; }
+    size_t remain() const { return m_end - m_cur; }
 
     void swap(Buffer &b) {
         std::swap(m_start, b.m_start);
