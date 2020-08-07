@@ -279,7 +279,7 @@ std::pair<uint32_t, Variable *> jit_var_new(Variable &v, bool disable_cse_) {
 
 /// Query the pointer variable associated with a given variable
 void *jit_var_ptr(uint32_t index) {
-    return jit_var(index)->data;
+    return index == 0u ? nullptr : jit_var(index)->data;
 }
 
 /// Query the size of a given variable
