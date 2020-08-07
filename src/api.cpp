@@ -133,6 +133,11 @@ uint32_t jitc_stream() {
     return stream->stream;
 }
 
+void* jitc_cuda_device_context(int32_t device) {
+    lock_guard guard(state.mutex);
+    return jit_cuda_device_context(device);
+}
+
 void jitc_llvm_set_target(const char *target_cpu,
                           const char *target_features,
                           uint32_t vector_width) {

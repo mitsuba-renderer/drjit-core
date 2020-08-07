@@ -133,7 +133,7 @@ extern JITC_EXPORT int32_t jitc_device_count();
  *
  * \param stream
  *     When accessing the JIT compiler in a multi-threaded program, each thread
- *     msut run in a separate stream that is provided via this argument. The
+ *     must run in a separate stream that is provided via this argument. The
  *     streams don't have to be numbered in any particular way, but they need
  *     to be just be unique per thread.
  */
@@ -144,6 +144,9 @@ extern JITC_EXPORT uint32_t jitc_device();
 
 /// Return the currently active stream
 extern JITC_EXPORT uint32_t jitc_stream();
+
+/// Return the CUDA context of a specified device
+extern JITC_EXPORT void* jitc_cuda_device_context(int32_t device);
 
 /**
  * \brief Override the target CPU, features, and vector witdth of the LLVM backend

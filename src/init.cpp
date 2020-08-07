@@ -169,6 +169,10 @@ void jit_init(int llvm, int cuda, Stream **stream) {
     state.kernel_hits = state.kernel_launches = 0;
 }
 
+void* jit_cuda_device_context(int32_t device) {
+    return (void*) state.devices[device].context;
+}
+
 /// Release all resources used by the JIT compiler, and report reference leaks.
 void jit_shutdown(int light) {
     if (!state.streams.empty()) {

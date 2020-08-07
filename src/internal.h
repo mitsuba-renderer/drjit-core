@@ -644,3 +644,6 @@ extern void jit_set_parallel_dispatch(bool value);
 /// Search for a shared library and dlopen it if possible
 void *jit_find_library(const char *fname, const char *glob_pat,
                        const char *env_var);
+
+/// Return a pointer to the CUDA context associated with a device
+extern void* jit_cuda_device_context(int32_t device);
