@@ -513,7 +513,11 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
          statements that must write a temporary result to a register.
     */
 
-    buffer.put(".entry enoki_^^^^^^^^^^^^^^^^(.param .u32 size,\n");
+    if (kernel_args.size() > 1)
+        buffer.put(".entry enoki_^^^^^^^^^^^^^^^^(.param .u32 size,\n");
+    else
+        buffer.put(".entry enoki_^^^^^^^^^^^^^^^^(.param .u32 size){\n");
+
     for (uint32_t index = 1; index < kernel_args.size(); ++index)
         buffer.fmt("                              .param .u64 arg%u%s\n",
                    index - 1, (index + 1 < (uint32_t) kernel_args.size()) ? "," : ") {");
