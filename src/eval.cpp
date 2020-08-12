@@ -41,35 +41,6 @@ struct ScheduledGroup {
         : size(size), start(start), end(end) { }
 };
 
-struct Intrinsic {
-    uint32_t width;
-    uint32_t types;
-    const char *str;
-
-    Intrinsic(uint32_t width, uint32_t types, const char *str) : width(width), types(types), str(str) { }
-};
-
-/// Hash function for keeping track of LLVM intrinsics
-struct IntrinsicHash {
-    size_t operator()(const Intrinsic &a) const {
-        const char *end = strchr(a.str, '(');
-        return end ? hash(a.str, end - a.str, a.width ^ a.types) : (size_t) 0u;
-    }
-};
-
-/// Equality operation for keeping track of LLVM intrinsics
-struct IntrinsicEquality {
-    size_t operator()(const Intrinsic &a, const Intrinsic &b) const {
-        const char *end_a = strchr(a.str, '('),
-                   *end_b = strchr(b.str, '(');
-        const size_t strlen_a = end_a - a.str,
-                     strlen_b = end_b - b.str;
-        if (a.width != b.width || a.types != b.types || !end_a || !end_b ||
-            strlen_a != strlen_b)
-            return 0;
-        return strncmp(a.str, b.str, strlen_a) == 0;
-    }
-};
 
 /// Ordered list of variables that should be computed
 static std::vector<ScheduledVariable> schedule;
@@ -91,9 +62,6 @@ static char kernel_name[17] { };
 
 /// Dedicated buffer for intrinsic intrinsics_buffer (LLVM only)
 static Buffer intrinsics_buffer{1};
-
-/// Intrinsics used by the current program (LLVM only)
-static tsl::robin_set<Intrinsic, IntrinsicHash, IntrinsicEquality> intrinsics_set;
 
 /// LLVM: Does the kernel require the supplemental IR? (Used for 'scatter_add' atm.)
 static bool jit_llvm_supplement = false;
@@ -336,28 +304,27 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
         types = types * 16 + jit_var(v->dep[i])->type;
     }
 
-    Intrinsic intrin(jit_llvm_vector_width, types, s);
-    if (!intrinsics_set.insert(intrin).second)
-        return;
 
-    intrinsics_buffer.put("declare ");
+    Buffer tmp_buffer{1};
+    tmp_buffer.put("declare ");
+
     while ((c = *s++) != '\0') {
         if (c != '$') {
-            intrinsics_buffer.putc(c);
+            tmp_buffer.putc(c);
         } else {
             const char **prefix_table = nullptr, type = *s++;
             bool stop = false;
 
             switch (type) {
                 case 'z':
-                case 'O': intrinsics_buffer.rewind(1); continue;
+                case 'O': tmp_buffer.rewind(1); continue;
                 case 't': prefix_table = var_type_name_llvm; break;
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'a': prefix_table = var_type_name_llvm_abbrev; break;
-                case 'w': intrinsics_buffer.put_uint32(jit_llvm_vector_width); continue;
+                case 'w': tmp_buffer.put_uint32(jit_llvm_vector_width); continue;
                 case 'S': while (*s != ',' && *s != ')' && *s != '\0') { ++s; } continue;
                 case 's':
-                case 'r': s++; intrinsics_buffer.rewind(1); continue;
+                case 'r': s++; tmp_buffer.rewind(1); continue;
                 case 'n': stop = true; break;
                 case 'o':
                 case 'l': s++; continue;
@@ -371,10 +338,13 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
             uint32_t arg_id = *s++ - '0';
             uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
             Variable *dep = jit_var(dep_id);
-            intrinsics_buffer.put(prefix_table[(int) dep->type]);
+            tmp_buffer.put(prefix_table[(int) dep->type]);
         }
     }
-    intrinsics_buffer.putc('\n');
+    tmp_buffer.putc('\n');
+
+    if (!intrinsics_buffer.contains(tmp_buffer.get()))
+        intrinsics_buffer.put(tmp_buffer.get());
 }
 
 /// Expand fixed-length LLVM intrinsics by calling them multiple times
@@ -926,7 +896,6 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
 
     jit_llvm_supplement = false;
     intrinsics_buffer.clear();
-    intrinsics_set.clear();
     buffer.clear();
 
     if (cuda) {
