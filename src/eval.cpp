@@ -63,6 +63,9 @@ static char kernel_name[17] { };
 /// Dedicated buffer for intrinsic intrinsics_buffer (LLVM only)
 static Buffer intrinsics_buffer{1};
 
+/// Temporary buffer for storing a single LLVM intrinsic (LLVM only)
+static Buffer intrinsic_buffer_tmp{1};
+
 /// LLVM: Does the kernel require the supplemental IR? (Used for 'scatter_add' atm.)
 static bool jit_llvm_supplement = false;
 
@@ -304,27 +307,26 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
         types = types * 16 + jit_var(v->dep[i])->type;
     }
 
-
-    Buffer tmp_buffer{1};
-    tmp_buffer.put("declare ");
+    intrinsic_buffer_tmp.clear();
+    intrinsic_buffer_tmp.put("declare ");
 
     while ((c = *s++) != '\0') {
         if (c != '$') {
-            tmp_buffer.putc(c);
+            intrinsic_buffer_tmp.putc(c);
         } else {
             const char **prefix_table = nullptr, type = *s++;
             bool stop = false;
 
             switch (type) {
                 case 'z':
-                case 'O': tmp_buffer.rewind(1); continue;
+                case 'O': intrinsic_buffer_tmp.rewind(1); continue;
                 case 't': prefix_table = var_type_name_llvm; break;
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'a': prefix_table = var_type_name_llvm_abbrev; break;
-                case 'w': tmp_buffer.put_uint32(jit_llvm_vector_width); continue;
+                case 'w': intrinsic_buffer_tmp.put_uint32(jit_llvm_vector_width); continue;
                 case 'S': while (*s != ',' && *s != ')' && *s != '\0') { ++s; } continue;
                 case 's':
-                case 'r': s++; tmp_buffer.rewind(1); continue;
+                case 'r': s++; intrinsic_buffer_tmp.rewind(1); continue;
                 case 'n': stop = true; break;
                 case 'o':
                 case 'l': s++; continue;
@@ -338,13 +340,13 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
             uint32_t arg_id = *s++ - '0';
             uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
             Variable *dep = jit_var(dep_id);
-            tmp_buffer.put(prefix_table[(int) dep->type]);
+            intrinsic_buffer_tmp.put(prefix_table[(int) dep->type]);
         }
     }
-    tmp_buffer.putc('\n');
+    intrinsic_buffer_tmp.putc('\n');
 
-    if (!intrinsics_buffer.contains(tmp_buffer.get()))
-        intrinsics_buffer.put(tmp_buffer.get());
+    if (!intrinsics_buffer.contains(intrinsic_buffer_tmp.get()))
+        intrinsics_buffer.put(intrinsic_buffer_tmp.get());
 }
 
 /// Expand fixed-length LLVM intrinsics by calling them multiple times
