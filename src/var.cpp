@@ -366,7 +366,7 @@ uint32_t jit_var_new_literal(VarType type, int cuda,
 
     if (unlikely(eval)) {
         void *ptr = jit_malloc(cuda ? AllocType::Device : AllocType::HostAsync,
-                               size * var_type_size[(int) size]);
+                               size * var_type_size[(int) type]);
         if (size == 1)
             jit_poke(ptr, &value, var_type_size[(int) type]);
         else
