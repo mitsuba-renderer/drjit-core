@@ -169,8 +169,10 @@ void jit_init(int llvm, int cuda, Stream **stream) {
     state.kernel_hits = state.kernel_launches = 0;
 }
 
-void* jit_cuda_device_context(int32_t device) {
-    return (void*) state.devices[device].context;
+void* jit_cuda_device_context() {
+    if (!active_stream->cuda)
+        jit_fail("jit_cuda_device_context(): only supports CUDA device");
+    return (void*) state.devices[active_stream->device].context;
 }
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
