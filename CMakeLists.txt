@@ -57,9 +57,14 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_FLAGS MATCHES "-stdl
 endif()
 
 if (ENOKI_JIT_ENABLE_TBB)
-  # Try to detect TBB
-  set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-  find_package(TBB)
+  if(TARGET tbb)
+    set(TBB_TARGET_FOUND TRUE)
+    set(TBB_FOUND TRUE)
+  else()
+    # Try to detect TBB
+    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+    find_package(TBB)
+  endif()
 endif()
 
 if (ENOKI_JIT_ENABLE_TBB)
@@ -153,7 +158,11 @@ else()
 endif()
 
 if (ENOKI_JIT_ENABLE_TBB AND TBB_FOUND)
-  target_link_libraries(enoki-jit PRIVATE TBB::tbb)
+  if (TBB_TARGET_FOUND)
+    target_link_libraries(enoki-jit PRIVATE tbb)
+  else()
+    target_link_libraries(enoki-jit PRIVATE TBB::tbb)
+  endif()
   target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_ENABLE_TBB=1)
 endif()
 

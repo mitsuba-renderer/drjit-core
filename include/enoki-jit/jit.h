@@ -149,7 +149,7 @@ extern JITC_EXPORT uint32_t jitc_stream();
 extern JITC_EXPORT void* jitc_cuda_device_context();
 
 /**
- * \brief Override the target CPU, features, and vector witdth of the LLVM backend
+ * \brief Override the target CPU, features, and vector width of the LLVM backend
  *
  * The LLVM backend normally generates code for the detected native hardware
  * architecture akin to compiling with <tt>-march=native</tt>. This function
