@@ -765,7 +765,7 @@ uint32_t jit_var_copy_mem(AllocType atype, VarType vtype, int cuda, const void *
     } else {
         if (atype == AllocType::HostAsync) {
             target_ptr = jit_malloc(AllocType::HostAsync, total_size);
-            jit_memcpy_async(target_ptr, ptr, size);
+            jit_memcpy_async(target_ptr, ptr, total_size);
         } else if (atype == AllocType::Host) {
             target_ptr = jit_malloc(AllocType::Host, total_size);
             memcpy(target_ptr, ptr, total_size);
