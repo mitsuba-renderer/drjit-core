@@ -48,10 +48,12 @@ void jitc_init_async(int llvm, int cuda) {
 }
 
 int jitc_has_llvm() {
+    lock_guard guard(state.mutex);
     return (int) state.has_llvm;
 }
 
 int jitc_has_cuda() {
+    lock_guard guard(state.mutex);
     return (int) state.has_cuda;
 }
 
