@@ -821,11 +821,6 @@ uint32_t jit_var_copy_var(uint32_t index) {
         v = jit_var(index);
     }
 
-    if (v->ref_count_int == 0 && v->ref_count_ext == 1) {
-        jit_var_inc_ref_ext(index, v);
-        return index;
-    }
-
     uint32_t index_old = index;
     if (v->data) {
         index = jit_var_copy_mem(v->cuda ? AllocType::Device : AllocType::HostAsync,
