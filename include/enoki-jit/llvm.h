@@ -323,7 +323,7 @@ struct LLVMArray {
                              ? "$r0 = or <$w x $t1> $r1, $r2"
                              : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
                                "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
-                               "$r0_2 = or <$w x $b0> $r0_0, $r0_1"
+                               "$r0_2 = or <$w x $b0> $r0_0, $r0_1$n"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
         return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
@@ -358,7 +358,7 @@ struct LLVMArray {
                              ? "$r0 = and <$w x $t1> $r1, $r2"
                              : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
                                "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
-                               "$r0_2 = and <$w x $b0> $r0_0, $r0_1"
+                               "$r0_2 = and <$w x $b0> $r0_0, $r0_1$n"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
         return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
