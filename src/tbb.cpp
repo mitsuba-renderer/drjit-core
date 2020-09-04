@@ -15,7 +15,11 @@
 #include "var.h"
 #include <deque>
 #include <mutex>
-#include <tbb/tbb.h>
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+
+#define __TBB_show_deprecation_message_task_H 1
+#include <tbb/task.h>
 
 extern std::vector<std::pair<uint32_t, uint32_t>> jit_llvm_scatter_add_variables;
 tsl::robin_map<uint32_t, std::vector<void *>*> tbb_scatter_add;

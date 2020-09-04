@@ -17,7 +17,10 @@
 #include "tbb.h"
 
 #if defined(ENOKI_JIT_ENABLE_TBB)
-#  include <tbb/tbb.h>
+#  include <tbb/parallel_reduce.h>
+#  include <tbb/parallel_scan.h>
+#  include <tbb/parallel_for.h>
+#  include <tbb/blocked_range.h>
 #  include <condition_variable>
 #endif
 
