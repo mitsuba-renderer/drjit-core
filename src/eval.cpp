@@ -840,15 +840,23 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
 
 #if defined(ENOKI_JIT_ENABLE_TBB)
         /// LLVM: parallel scatter_add into the same array requires extra precautions
-        if (unlikely(!cuda && v->scatter && strstr(v->stmt, "ek.scatter_add"))) {
+        if (unlikely(!cuda && v->scatter &&
+                         (strstr(v->stmt, "ek.scatter_add") ||
+                          strstr(v->stmt, "ek.masked_scatter_add")))) {
             Variable *base_ptr = jit_var(v->dep[0]);
             if (unlikely(!base_ptr->direct_pointer))
                 jit_fail("jit_run(): invalid error while handling ek.scatter_add (1).");
             Variable *base = jit_var(base_ptr->dep[0]);
             if (unlikely(base->data != base_ptr->data))
                 jit_fail("jit_run(): invalid error while handling ek.scatter_add (2).");
-            jit_llvm_scatter_add_variables.push_back(
-                { base_ptr->arg_index - 1, base_ptr->dep[0] });
+
+            std::pair<uint32_t, uint32_t> item(
+                base_ptr->arg_index - 1, base_ptr->dep[0]);
+
+            if (std::find(jit_llvm_scatter_add_variables.begin(),
+                          jit_llvm_scatter_add_variables.end(),
+                          item) == jit_llvm_scatter_add_variables.end())
+                jit_llvm_scatter_add_variables.push_back(item);
         }
 #endif
 
