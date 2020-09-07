@@ -155,7 +155,7 @@ void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
                      jit_llvm_vector_width * jit_llvm_vector_width;
 
     // Given that, how many tasks should we launch (might be smaller than 'tasks_desired')
-    uint32_t task_count = (size + items_per_task - 1u) / items_per_task;
+    uint32_t task_count = (uint32_t) ((size + items_per_task - 1u) / items_per_task);
 
     if (unlikely(!parallel_dispatch)) {
         task_count = 1;
