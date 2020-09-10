@@ -866,11 +866,6 @@ uint32_t jit_var_migrate(uint32_t src_index, AllocType dst_type) {
         v2.ref_count_int = 0;
         v2.ref_count_ext = 0;
         std::tie(dst_index, v) = jit_var_new(v2);
-        v->cuda =
-            dst_type == AllocType::Device ||
-            dst_type == AllocType::Managed ||
-            dst_type == AllocType::ManagedReadMostly ||
-            dst_type == AllocType::HostPinned;
     }
 
     jit_var_inc_ref_ext(dst_index, v);
