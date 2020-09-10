@@ -21,7 +21,7 @@ const char *var_type_name[(int) VarType::Count]{
 
 /// Descriptive names for the various variable types (extra-short version)
 const char *var_type_name_short[(int) VarType::Count]{
-    "???", "msk", "i8",  "u8",  "i16", "u16", "i32",
+    "inv", "msk", "i8",  "u8",  "i16", "u16", "i32",
     "u32", "i64", "u64", "f16", "f32", "f64", "ptr"
 };
 
@@ -69,12 +69,12 @@ const char *var_type_prefix[(int) VarType::Count] {
 
 /// Maps types to byte sizes
 const uint32_t var_type_size[(int) VarType::Count] {
-    (uint32_t) -1, 1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 8
+    0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 8
 };
 
 /// String version of the above
 const char *var_type_size_str[(int) VarType::Count] {
-    "-1", "1", "1", "1", "2", "2", "4", "4", "8", "8", "2", "4", "8", "8"
+    "0", "1", "1", "1", "2", "2", "4", "4", "8", "8", "2", "4", "8", "8"
 };
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
