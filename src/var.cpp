@@ -1165,7 +1165,10 @@ int jit_var_schedule(uint32_t index) {
         jit_log(Debug, "jit_var_schedule(%u)", index);
 
         return 1;
+    } else if (v->pending_scatter) {
+        return 1;
     }
+
     return 0;
 }
 
