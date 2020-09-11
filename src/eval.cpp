@@ -12,6 +12,7 @@
 #include "var.h"
 #include "eval.h"
 #include "tbb.h"
+#include "itt.h"
 #include <tsl/robin_set.h>
 
 #define CUDA_MAX_KERNEL_PARAMETERS 512
@@ -1082,8 +1083,12 @@ void jit_run(Stream *stream, ScheduledGroup group) {
     }
 }
 
+static ProfilerRegion profiler_region_eval("jit_eval");
+
 /// Evaluate all computation that is queued on the current device & stream
 void jit_eval() {
+    ProfilerPhase profiler(profiler_region_eval);
+
     /* The function 'jit_eval()' cannot be executed concurrently. Temporarily
        release 'state.mutex' before acquiring 'state.eval_mutex'. */
     state.mutex.unlock();

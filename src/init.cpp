@@ -14,6 +14,7 @@
 #include "registry.h"
 #include "tbb.h"
 #include "var.h"
+#include "itt.h"
 #include <sys/stat.h>
 
 #if defined(_WIN32)
@@ -40,6 +41,10 @@ Buffer buffer{1024};
   __thread Stream* active_stream;
 #endif
 
+#if defined(ENOKI_ITTNOTIFY)
+__itt_domain *enoki_domain = __itt_domain_create("enoki");
+#endif
+
 static_assert(
     sizeof(VariableKey) == 8 * sizeof(uint32_t),
     "VariableKey: incorrect size, likely an issue with padding/packing!");
@@ -48,8 +53,12 @@ static_assert(
     sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>) == 64,
     "VariableMap: incorrect bucket size, likely an issue with padding/packing!");
 
+static ProfilerRegion profiler_region_init("jit_init");
+
 /// Initialize core data structures of the JIT compiler
 void jit_init(int llvm, int cuda, Stream **stream) {
+    ProfilerPhase profiler(profiler_region_init);
+
 #if defined(__APPLE__)
     cuda = 0;
 #endif

@@ -13,6 +13,7 @@
 #include "internal.h"
 #include "llvm_api.h"
 #include "var.h"
+#include "itt.h"
 #include <deque>
 #include <mutex>
 #include <tbb/parallel_for.h>
@@ -77,6 +78,8 @@ private:
     uint32_t m_task_count = 0;
 };
 
+static ProfilerRegion profiler_region_kernel("enoki_kernel");
+
 /// Task that executes a kernel over a given range of inputs
 struct EnokiKernelTaskRange : public tbb::task {
 public:
@@ -85,6 +88,7 @@ public:
         : m_kernel(kernel), m_start(start), m_end(end), m_args(args) { }
 
     tbb::task *execute() {
+        ProfilerPhase phase(profiler_region_kernel);
         m_kernel(m_start, m_end, m_args.get());
         m_args.reset();
         return nullptr;

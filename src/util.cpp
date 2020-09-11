@@ -15,6 +15,7 @@
 #include "registry.h"
 #include "log.h"
 #include "tbb.h"
+#include "itt.h"
 
 #if defined(ENOKI_JIT_ENABLE_TBB)
 #  include <tbb/parallel_reduce.h>

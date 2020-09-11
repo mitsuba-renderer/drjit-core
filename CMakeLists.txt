@@ -166,6 +166,14 @@ if (ENOKI_JIT_ENABLE_TBB AND TBB_FOUND)
   target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_ENABLE_TBB=1)
 endif()
 
+if (TARGET ittnotify)
+  # Generate ITT notifications (e.g. for VTune) if part of a larger project
+  # that provides an 'ittnotify' target
+  target_link_libraries(enoki-jit PRIVATE ittnotify)
+  target_include_directories(enoki-jit PRIVATE ${ITT_INCLUDE_DIRS})
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_ITTNOTIFY=1)
+endif()
+
 if (UNIX)
   target_link_libraries(enoki-jit PRIVATE dl pthread)
 endif()
