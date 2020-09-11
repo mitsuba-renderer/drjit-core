@@ -202,8 +202,7 @@ void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
                 EnokiKernelTaskRange(kernel,
                                      (uint32_t) (start + j * items_per_task),
                                      (uint32_t) (start + std::min(size, (j + 1) * items_per_task)),
-                                     args,
-                                     itt);
+                                     args, itt);
 
             ((EnokiKernelTask *) stream->tbb_kernel_task)->append(task);
         }

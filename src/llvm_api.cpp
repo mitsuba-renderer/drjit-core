@@ -230,8 +230,11 @@ void jit_llvm_disasm(const Kernel &kernel) {
     } while (true);
 }
 
+static ProfilerRegion profiler_region_llvm_compile("jit_llvm_compile");
+
 void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
                       bool include_supplement) {
+    ProfilerPhase phase(profiler_region_llvm_compile);
     char *temp = nullptr;
     if (include_supplement) {
         jit_lz4_init();
@@ -389,7 +392,7 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     kernel.llvm.func        = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
     kernel.llvm.func_scalar = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset_scalar);
 #if defined(ENOKI_ITTNOTIFY)
-    kernel.llvm.itt = __itt_string_handle_create(kernel_name_new);
+    kernel.llvm.itt = __itt_string_handle_create(kernel_name_old);
 #endif
     jit_llvm_kernel_id++;
     free(temp);
