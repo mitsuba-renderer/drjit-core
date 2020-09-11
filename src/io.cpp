@@ -10,6 +10,7 @@
 #include "io.h"
 #include "log.h"
 #include "internal.h"
+#include "itt.h"
 #include "cuda_api.h"
 #include "../kernels/kernels.h"
 #include <stdexcept>
@@ -207,6 +208,11 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
                 (uint8_t *) kernel.data + header.func_offset_wide);
             kernel.llvm.func_scalar = (LLVMKernelFunction)(
                 (uint8_t *) kernel.data + header.func_offset_scalar);
+#if defined(ENOKI_ITTNOTIFY)
+            char name[23];
+            snprintf(name, 23, "enoki_%016llx", (long long) hash);
+            kernel.llvm.itt = __itt_string_handle_create(name);
+#endif
         }
     }
 

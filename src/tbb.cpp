@@ -78,19 +78,36 @@ private:
     uint32_t m_task_count = 0;
 };
 
-static ProfilerRegion profiler_region_kernel("enoki_kernel");
-
 /// Task that executes a kernel over a given range of inputs
 struct EnokiKernelTaskRange : public tbb::task {
 public:
     EnokiKernelTaskRange(LLVMKernelFunction kernel, uint32_t start,
-                         uint32_t end, const std::shared_ptr<void *> &args)
-        : m_kernel(kernel), m_start(start), m_end(end), m_args(args) { }
+                         uint32_t end, const std::shared_ptr<void *> &args,
+                         const void *itt)
+        : m_kernel(kernel), m_start(start), m_end(end), m_args(args) {
+#if defined(ENOKI_ITTNOTIFY)
+        m_itt = itt;
+#else
+        (void) itt;
+#endif
+    }
 
     tbb::task *execute() {
-        ProfilerPhase phase(profiler_region_kernel);
+        // Signal kernel being executed via ITT (optional)
+#if defined(ENOKI_ITTNOTIFY)
+        __itt_task_begin(enoki_domain, __itt_null, __itt_null,
+                         (__itt_string_handle *) m_itt);
+#endif
+
+        // Perform the main computation
         m_kernel(m_start, m_end, m_args.get());
+
+        // Signal termination of kernel
+#if defined(ENOKI_ITTNOTIFY)
+        __itt_task_end(enoki_domain);
+#endif
         m_args.reset();
+
         return nullptr;
     }
 
@@ -98,6 +115,9 @@ private:
     LLVMKernelFunction m_kernel;
     uint32_t m_start, m_end;
     std::shared_ptr<void *> m_args;
+#if defined(ENOKI_ITTNOTIFY)
+    const void *m_itt;
+#endif
 };
 
 /// Task that executes a function asynchronously
@@ -142,7 +162,8 @@ void tbb_stream_sync(Stream *stream) {
 /// Append a kernel execution, but do not submit it to the queue yet
 void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
                                uint32_t start, uint32_t stop, uint32_t argc,
-                               void **argv, bool parallel_dispatch) {
+                               void **argv, bool parallel_dispatch,
+                               const void *itt) {
     size_t size          = stop - start,
            tasks_desired = jit_llvm_thread_count * 4,
            grain_size    = 4096;
@@ -181,7 +202,8 @@ void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
                 EnokiKernelTaskRange(kernel,
                                      (uint32_t) (start + j * items_per_task),
                                      (uint32_t) (start + std::min(size, (j + 1) * items_per_task)),
-                                     args);
+                                     args,
+                                     itt);
 
             ((EnokiKernelTask *) stream->tbb_kernel_task)->append(task);
         }
@@ -207,7 +229,7 @@ void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
                 EnokiKernelTaskRange(kernel,
                                      (uint32_t) (start + j * items_per_task),
                                      (uint32_t) (start + std::min(size, (j + 1) * items_per_task)),
-                                     args);
+                                     args, itt);
 
             ((EnokiKernelTask *) stream->tbb_kernel_task)->append(task);
         }

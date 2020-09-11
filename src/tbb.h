@@ -28,7 +28,8 @@ extern void tbb_stream_sync(Stream *stream);
 extern void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
                                       uint32_t start, uint32_t stop,
                                       uint32_t argc, void **argv,
-                                      bool parallel_dispatch);
+                                      bool parallel_dispatch,
+                                      const void *itt);
 
 /// Submit a set of kernel tassks to the TBB task scheduler
 extern void tbb_stream_submit_kernel(Stream *stream);

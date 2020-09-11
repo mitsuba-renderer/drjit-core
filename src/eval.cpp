@@ -1061,17 +1061,23 @@ void jit_run(Stream *stream, ScheduledGroup group) {
                 packets, packets == 1 ? "": "s", group.size - rounded);
 
 #if defined(ENOKI_JIT_ENABLE_TBB)
+#  if defined(ENOKI_ITTNOTIFY)
+        const void *itt = kernel.llvm.itt;
+#  else
+        const void *itt = nullptr;
+#  endif
+
         if (likely(rounded > 0))
             tbb_stream_enqueue_kernel(
                 stream, kernel.llvm.func, 0, rounded,
                 (uint32_t) kernel_args_extra.size(), kernel_args_extra.data(),
-                stream->parallel_dispatch);
+                stream->parallel_dispatch, itt);
 
         if (unlikely(rounded != group.size))
             tbb_stream_enqueue_kernel(
                 stream, kernel.llvm.func_scalar, rounded, group.size,
                 (uint32_t) kernel_args_extra.size(), kernel_args_extra.data(),
-                stream->parallel_dispatch);
+                stream->parallel_dispatch, itt);
 #else
         unlock_guard guard(state.mutex);
         if (likely(rounded > 0))
