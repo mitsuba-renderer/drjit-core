@@ -13,7 +13,7 @@
 #include "internal.h"
 #include "llvm_api.h"
 #include "var.h"
-#include "itt.h"
+#include "profiler.h"
 #include <deque>
 #include <mutex>
 #include <tbb/parallel_for.h>
@@ -85,7 +85,7 @@ public:
                          uint32_t end, const std::shared_ptr<void *> &args,
                          const void *itt)
         : m_kernel(kernel), m_start(start), m_end(end), m_args(args) {
-#if defined(ENOKI_ITTNOTIFY)
+#if defined(ENOKI_ENABLE_ITTNOTIFY)
         m_itt = itt;
 #else
         (void) itt;
@@ -94,7 +94,7 @@ public:
 
     tbb::task *execute() {
         // Signal kernel being executed via ITT (optional)
-#if defined(ENOKI_ITTNOTIFY)
+#if defined(ENOKI_ENABLE_ITTNOTIFY)
         __itt_task_begin(enoki_domain, __itt_null, __itt_null,
                          (__itt_string_handle *) m_itt);
 #endif
@@ -103,7 +103,7 @@ public:
         m_kernel(m_start, m_end, m_args.get());
 
         // Signal termination of kernel
-#if defined(ENOKI_ITTNOTIFY)
+#if defined(ENOKI_ENABLE_ITTNOTIFY)
         __itt_task_end(enoki_domain);
 #endif
         m_args.reset();
@@ -115,7 +115,7 @@ private:
     LLVMKernelFunction m_kernel;
     uint32_t m_start, m_end;
     std::shared_ptr<void *> m_args;
-#if defined(ENOKI_ITTNOTIFY)
+#if defined(ENOKI_ENABLE_ITTNOTIFY)
     const void *m_itt;
 #endif
 };

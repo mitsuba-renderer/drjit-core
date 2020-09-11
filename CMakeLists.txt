@@ -109,6 +109,7 @@ add_library(
   src/internal.h
   src/alloc.h
   src/hash.h
+  src/profiler.h
   src/log.h            src/log.cpp
   src/var.h            src/var.cpp
   src/eval.h           src/eval.cpp
@@ -171,7 +172,12 @@ if (TARGET ittnotify)
   # that provides an 'ittnotify' target
   target_link_libraries(enoki-jit PRIVATE ittnotify)
   target_include_directories(enoki-jit PRIVATE ${ITT_INCLUDE_DIRS})
-  target_compile_definitions(enoki-jit PRIVATE -DENOKI_ITTNOTIFY=1)
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_ENABLE_ITTNOTIFY=1)
+endif()
+
+if (ENOKI_ENABLE_NVTX)
+  include_directories(${CUDA_TOOLKIT_ROOT_DIR}/include)
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_ENABLE_NVTX=1)
 endif()
 
 if (UNIX)

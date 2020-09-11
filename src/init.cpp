@@ -14,7 +14,7 @@
 #include "registry.h"
 #include "tbb.h"
 #include "var.h"
-#include "itt.h"
+#include "profiler.h"
 #include <sys/stat.h>
 
 #if defined(_WIN32)
@@ -41,7 +41,7 @@ Buffer buffer{1024};
   __thread Stream* active_stream;
 #endif
 
-#if defined(ENOKI_ITTNOTIFY)
+#if defined(ENOKI_ENABLE_ITTNOTIFY)
 __itt_domain *enoki_domain = __itt_domain_create("enoki");
 #endif
 

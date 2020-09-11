@@ -10,7 +10,7 @@
 #include "llvm_api.h"
 #include "internal.h"
 #include "log.h"
-#include "itt.h"
+#include "profiler.h"
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -391,7 +391,7 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     kernel.size = (uint32_t) jit_llvm_mem_offset;
     kernel.llvm.func        = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
     kernel.llvm.func_scalar = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset_scalar);
-#if defined(ENOKI_ITTNOTIFY)
+#if defined(ENOKI_ENABLE_ITTNOTIFY)
     kernel.llvm.itt = __itt_string_handle_create(kernel_name_old);
 #endif
     jit_llvm_kernel_id++;

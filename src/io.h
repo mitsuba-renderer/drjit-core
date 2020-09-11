@@ -30,7 +30,7 @@ struct Kernel {
         struct {
             LLVMKernelFunction func;
             LLVMKernelFunction func_scalar;
-#if defined(ENOKI_ITTNOTIFY)
+#if defined(ENOKI_ENABLE_ITTNOTIFY)
             void *itt;
 #endif
         } llvm;

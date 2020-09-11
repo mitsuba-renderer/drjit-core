@@ -12,7 +12,7 @@
 #include "var.h"
 #include "eval.h"
 #include "tbb.h"
-#include "itt.h"
+#include "profiler.h"
 #include <tsl/robin_set.h>
 
 #define CUDA_MAX_KERNEL_PARAMETERS 512
@@ -1061,7 +1061,7 @@ void jit_run(Stream *stream, ScheduledGroup group) {
                 packets, packets == 1 ? "": "s", group.size - rounded);
 
 #if defined(ENOKI_JIT_ENABLE_TBB)
-#  if defined(ENOKI_ITTNOTIFY)
+#  if defined(ENOKI_ENABLE_ITTNOTIFY)
         const void *itt = kernel.llvm.itt;
 #  else
         const void *itt = nullptr;
