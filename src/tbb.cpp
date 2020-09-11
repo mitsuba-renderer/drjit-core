@@ -118,7 +118,7 @@ public:
 
 private:
     void (*m_func)(void *);
-    uint8_t m_extra[32];
+    uint8_t m_extra[48];
 };
 
 /// Initialize TBB's task scheduler for a given Enoki stream

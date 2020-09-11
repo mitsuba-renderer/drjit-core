@@ -718,6 +718,10 @@ static void cuda_transpose(Stream *stream, const uint32_t *in, uint32_t *out,
         16 * 17 * sizeof(uint32_t), stream->handle, args, nullptr));
 }
 
+static ProfilerRegion profiler_region_mkperm("jit_mkperm");
+static ProfilerRegion profiler_region_mkperm_phase_1("jit_mkperm_phase_1");
+static ProfilerRegion profiler_region_mkperm_phase_2("jit_mkperm_phase_2");
+
 /// Compute a permutation to reorder an integer array into a sorted configuration
 uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
                     uint32_t *perm, uint32_t *offsets) {
@@ -726,6 +730,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     else if (unlikely(bucket_count == 0))
         jit_fail("jit_mkperm(): bucket_count cannot be zero!");
 
+    ProfilerPhase profiler(profiler_region_mkperm);
     Stream *stream = active_stream;
 
     if (stream->cuda) {
@@ -880,6 +885,8 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
     } else { // if (!stream->cuda)
 #if defined(ENOKI_JIT_ENABLE_TBB)
         struct UniqueCount {
+            // Careful: This data structure destructs when the function
+            // returns, which is *before* the asynchronous work has finished.
             uint32_t value = 0xFFFFFFFF;
             std::mutex mutex;
             std::condition_variable cond;
@@ -887,41 +894,47 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
         } unique_count;
 
         struct Inputs {
+            // This data structure is copied and remains alive the whole time.
             const uint32_t *ptr;
             uint32_t size;
             uint32_t bucket_count;
+            uint32_t num_tasks;
+            uint32_t items_per_task;
             uint32_t *perm;
+            uint32_t **buckets;
             UniqueCount *unique_count;
         };
 
-        Inputs inputs { ptr, size, bucket_count, perm, &unique_count };
+        uint32_t num_tasks      = jit_llvm_thread_count * 4,
+                 items_per_task = std::max(4096u, (size + num_tasks - 1) / num_tasks);
+        num_tasks = (size + items_per_task - 1) / items_per_task;
+
+        uint32_t **buckets =
+            (uint32_t **) jit_malloc(AllocType::Host, sizeof(uint32_t *) * num_tasks);
+
+        for (uint32_t i = 0; i < num_tasks; ++i)
+            buckets[i] = (uint32_t *) jit_malloc(
+                AllocType::Host,
+                sizeof(uint32_t) * (size_t) bucket_count);
+
+        Inputs inputs{ ptr,  size,    bucket_count, num_tasks,
+                       items_per_task, perm, buckets, &unique_count };
         unique_count.offsets = offsets;
 
         auto func = [](void *inputs_) {
             Inputs inputs = *((Inputs *) inputs_);
 
-            uint32_t num_tasks      = jit_llvm_thread_count * 4,
-                     items_per_task = std::max(4096u, (inputs.size + num_tasks - 1) / num_tasks);
-            num_tasks = (inputs.size + items_per_task - 1) / items_per_task;
-
-            size_t bucket_size_local = sizeof(uint32_t) * (size_t) inputs.bucket_count;
-
-            uint32_t **buckets =
-                (uint32_t **) jitc_malloc(AllocType::Host, sizeof(uint32_t *) * num_tasks);
-
-            for (uint32_t i = 0; i < num_tasks; ++i)
-                buckets[i] =
-                    (uint32_t *) jitc_malloc(AllocType::Host, bucket_size_local);
-
             tbb::parallel_for(
-                tbb::blocked_range<uint32_t>(0u, num_tasks, 1u),
+                tbb::blocked_range<uint32_t>(0u, inputs.num_tasks, 1u),
                 [&](const tbb::blocked_range<uint32_t> &range) {
-                    uint32_t start = range.begin() * items_per_task,
-                             end = std::min(inputs.size, start + items_per_task);
+                    ProfilerPhase profiler(profiler_region_mkperm_phase_1);
+                    uint32_t start = range.begin() * inputs.items_per_task,
+                             end = std::min(inputs.size, start + inputs.items_per_task);
 
-                    uint32_t *buckets_local = buckets[range.begin()];
+                    uint32_t *buckets_local = inputs.buckets[range.begin()];
 
-                    memset(buckets_local, 0, bucket_size_local);
+                    memset(buckets_local, 0,
+                           sizeof(uint32_t) * (size_t) inputs.bucket_count);
                     for (uint32_t i = start; i != end; ++i)
                         buckets_local[inputs.ptr[i]]++;
                 },
@@ -930,38 +943,40 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 
             uint32_t sum = 0, unique_count = 0;
             auto offsets = inputs.unique_count->offsets;
-            for (uint32_t i = 0; i < inputs.bucket_count; ++i) {
-                uint32_t sum_local = 0;
-                for (uint32_t j = 0; j < num_tasks; ++j) {
-                    uint32_t value = buckets[j][i];
-                    buckets[j][i] = sum + sum_local;
-                    sum_local += value;
-                }
-                if (sum_local > 0) {
-                    if (offsets) {
-                        offsets[unique_count*4] = i;
-                        offsets[unique_count*4 + 1] = sum;
-                        offsets[unique_count*4 + 2] = sum_local;
-                        offsets[unique_count*4 + 3] = 0;
-                    }
-                    unique_count++;
-                    sum += sum_local;
-                }
-            }
 
-            /* Update total */ {
+            /* Local phase */ {
+                for (uint32_t i = 0; i < inputs.bucket_count; ++i) {
+                    uint32_t sum_local = 0;
+                    for (uint32_t j = 0; j < inputs.num_tasks; ++j) {
+                        uint32_t value = inputs.buckets[j][i];
+                        inputs.buckets[j][i] = sum + sum_local;
+                        sum_local += value;
+                    }
+                    if (sum_local > 0) {
+                        if (offsets) {
+                            offsets[unique_count*4] = i;
+                            offsets[unique_count*4 + 1] = sum;
+                            offsets[unique_count*4 + 2] = sum_local;
+                            offsets[unique_count*4 + 3] = 0;
+                        }
+                        unique_count++;
+                        sum += sum_local;
+                    }
+                }
+
                 lock_guard_t<std::mutex> guard(inputs.unique_count->mutex);
                 inputs.unique_count->value = unique_count;
                 inputs.unique_count->cond.notify_one();
             }
 
             tbb::parallel_for(
-                tbb::blocked_range<uint32_t>(0u, num_tasks, 1u),
+                tbb::blocked_range<uint32_t>(0u, inputs.num_tasks, 1u),
                 [&](const tbb::blocked_range<uint32_t> &range) {
-                    uint32_t start = range.begin() * items_per_task,
-                             end = std::min(inputs.size, start + items_per_task);
+                    ProfilerPhase profiler(profiler_region_mkperm_phase_2);
+                    uint32_t start = range.begin() * inputs.items_per_task,
+                             end = std::min(inputs.size, start + inputs.items_per_task);
 
-                    uint32_t *buckets_local = buckets[range.begin()];
+                    uint32_t *buckets_local = inputs.buckets[range.begin()];
 
                     for (uint32_t i = start; i != end; ++i) {
                         uint32_t index = buckets_local[inputs.ptr[i]]++;
@@ -971,12 +986,14 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
                 tbb::simple_partitioner()
             );
 
-            for (uint32_t i = 0; i < num_tasks; ++i)
-                jitc_free(buckets[i]);
-            jitc_free(buckets);
         };
 
         tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+
+        // Free memory (happens asynchronously after the above stmt.)
+        for (uint32_t i = 0; i < num_tasks; ++i)
+            jit_free(buckets[i]);
+        jit_free(buckets);
 
         unlock_guard guard(state.mutex);
         {
