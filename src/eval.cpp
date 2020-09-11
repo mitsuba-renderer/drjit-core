@@ -1050,7 +1050,7 @@ void jit_run(Stream *stream, ScheduledGroup group) {
                                  (uint32_t) kernel.cuda.block_size);
 
         cuda_check(cuLaunchKernel(kernel.cuda.cu_func, block_count, 1, 1, thread_count,
-                                  1, 1, 0, active_stream->handle, nullptr, config));
+                                  1, 1, 0, stream->handle, nullptr, config));
     } else {
         uint32_t width = kernel.llvm.func != kernel.llvm.func_scalar
                              ? jit_llvm_vector_width : 1u,
@@ -1165,13 +1165,12 @@ void jit_eval() {
     bool cuda_parallel_dispatch =
         stream->parallel_dispatch && stream->cuda && schedule_groups.size() > 1;
 
-    if (!cuda_parallel_dispatch) {
-        jit_log(Debug, "jit_eval(): begin.");
-    } else {
-        jit_log(Debug, "jit_eval(): begin (parallel dispatch to %zu streams).",
+    if (schedule_groups.size() > 1 && stream->parallel_dispatch)
+        jit_log(Info, "jit_eval(): begin (parallel dispatch to %zu streams).",
                 schedule_groups.size());
+
+    if (cuda_parallel_dispatch)
         cuda_check(cuEventRecord(stream->event, stream->handle));
-    }
 
     uint32_t group_idx = 1;
     for (ScheduledGroup &group : schedule_groups) {
@@ -1179,14 +1178,14 @@ void jit_eval() {
 
         Stream *sub_stream = stream;
         if (cuda_parallel_dispatch) {
-            uint32_t stream_index = 1000 * (stream->stream + 1) + group_idx++;
+            uint32_t stream_index = 1000 + (group_idx++) % 8;
             jit_set_device(stream->device, stream_index);
             sub_stream = active_stream;
             cuda_check(cuStreamWaitEvent(sub_stream->handle, stream->event, 0));
             active_stream = stream;
         }
 
-        jit_run(stream, group);
+        jit_run(sub_stream, group);
 
         if (cuda_parallel_dispatch) {
             cuda_check(cuEventRecord(sub_stream->event, sub_stream->handle));
@@ -1245,5 +1244,6 @@ void jit_eval() {
     }
 
     jit_free_flush();
-    jit_log(Debug, "jit_eval(): done.");
+    if (schedule_groups.size() > 1 && stream->parallel_dispatch)
+        jit_log(Info, "jit_eval(): done.");
 }
