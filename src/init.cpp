@@ -142,6 +142,13 @@ void jit_init(int llvm, int cuda, Stream **stream) {
         device.shared_memory_bytes = (uint32_t) shared_memory_bytes;
         device.num_sm = (uint32_t) num_sm;
         cuda_check(cuDevicePrimaryCtxRetain(&device.context, i));
+
+        scoped_set_context guard(device.context);
+        for (int i = 0; i < ENOKI_SUB_STREAMS; ++i) {
+            cuda_check(cuStreamCreate(&device.sub_streams[i], CU_STREAM_NON_BLOCKING));
+            cuda_check(cuEventCreate(&device.sub_events[i], CU_EVENT_DISABLE_TIMING));
+        }
+
         state.devices.push_back(device);
     }
 
@@ -279,8 +286,16 @@ void jit_shutdown(int light) {
     jit_malloc_shutdown();
 
     if (state.has_cuda) {
-        for (auto &v : state.devices)
+        for (auto &v : state.devices) {
+            {
+                scoped_set_context guard(v.context);
+                for (int i = 0; i < ENOKI_SUB_STREAMS; ++i) {
+                    cuda_check(cuEventDestroy(v.sub_events[i]));
+                    cuda_check(cuStreamDestroy(v.sub_streams[i]));
+                }
+            }
             cuda_check(cuDevicePrimaryCtxRelease(v.id));
+        }
         state.devices.clear();
     }
 

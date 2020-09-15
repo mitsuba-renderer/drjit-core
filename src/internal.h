@@ -51,6 +51,9 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 #  endif
 #endif
 
+/// Create several worker streams per device for parallel dispatch
+#define ENOKI_SUB_STREAMS 4
+
 /// Caches basic information about a CUDA device
 struct Device {
     // CUDA device context
@@ -67,6 +70,10 @@ struct Device {
 
     /// Max. bytes of shared memory per SM
     uint32_t shared_memory_bytes;
+
+    /// Sub-streams to used to dispatch internal work
+    CUstream sub_streams[ENOKI_SUB_STREAMS];
+    CUevent sub_events[ENOKI_SUB_STREAMS];
 
     /// Compute a good configuration for a grid-stride loop
     void get_launch_config(uint32_t *blocks_out, uint32_t *threads_out,

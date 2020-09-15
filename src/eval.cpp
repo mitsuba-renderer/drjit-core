@@ -951,7 +951,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
     jit_log(Debug, "%s", buffer.get());
 }
 
-void jit_run(Stream *stream, ScheduledGroup group) {
+void jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
     KernelKey kernel_key((char *) buffer.get(), stream->device);
     size_t hash_code = KernelHash::compute_hash(kernel_hash, stream->device);
     auto it = state.kernel_cache.find(kernel_key, hash_code);
@@ -1050,7 +1050,7 @@ void jit_run(Stream *stream, ScheduledGroup group) {
                                  (uint32_t) kernel.cuda.block_size);
 
         cuda_check(cuLaunchKernel(kernel.cuda.cu_func, block_count, 1, 1, thread_count,
-                                  1, 1, 0, stream->handle, nullptr, config));
+                                  1, 1, 0, cu_stream, nullptr, config));
     } else {
         uint32_t width = kernel.llvm.func != kernel.llvm.func_scalar
                              ? jit_llvm_vector_width : 1u,
@@ -1162,34 +1162,37 @@ void jit_eval() {
     }
 
     // Are there independent groups of work that could be dispatched in parallel?
-    bool cuda_parallel_dispatch =
-        stream->parallel_dispatch && stream->cuda && schedule_groups.size() > 1;
+    size_t cuda_stream_count =
+        stream->cuda && stream->parallel_dispatch ?
+            std::min((size_t) ENOKI_SUB_STREAMS, schedule_groups.size()) : 1;
 
     if (schedule_groups.size() > 1 && stream->parallel_dispatch)
-        jit_log(Info, "jit_eval(): begin (parallel dispatch to %zu streams).",
+        jit_log(Info, "jit_eval(): begin (parallel execution of %zu kernels).",
                 schedule_groups.size());
 
-    if (cuda_parallel_dispatch)
+    Device *device = nullptr;
+    if (cuda_stream_count > 1) {
+        device = &state.devices[stream->device];
         cuda_check(cuEventRecord(stream->event, stream->handle));
+        for (size_t i = 0; i < cuda_stream_count; ++i)
+            cuda_check(cuStreamWaitEvent(device->sub_streams[i], stream->event, 0));
+    }
 
-    uint32_t group_idx = 1;
+    uint32_t group_idx = 0;
     for (ScheduledGroup &group : schedule_groups) {
         jit_assemble(stream, group);
 
-        Stream *sub_stream = stream;
-        if (cuda_parallel_dispatch) {
-            uint32_t stream_index = 1000 + (group_idx++) % 8;
-            jit_set_device(stream->device, stream_index);
-            sub_stream = active_stream;
-            cuda_check(cuStreamWaitEvent(sub_stream->handle, stream->event, 0));
-            active_stream = stream;
-        }
+        CUstream cu_stream = stream->handle;
+        if (cuda_stream_count > 1)
+            cu_stream = device->sub_streams[group_idx++ % ENOKI_SUB_STREAMS];
 
-        jit_run(sub_stream, group);
+        jit_run(stream, cu_stream, group);
+    }
 
-        if (cuda_parallel_dispatch) {
-            cuda_check(cuEventRecord(sub_stream->event, sub_stream->handle));
-            cuda_check(cuStreamWaitEvent(stream->handle, sub_stream->event, 0));
+    if (cuda_stream_count > 1) {
+        for (size_t i = 0; i < cuda_stream_count; ++i) {
+            cuda_check(cuEventRecord(device->sub_events[i], device->sub_streams[i]));
+            cuda_check(cuStreamWaitEvent(stream->handle, device->sub_events[i], 0));
         }
     }
 
