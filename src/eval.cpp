@@ -747,6 +747,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
 
     uint32_t n_args_in    = 0,
              n_args_out   = 0,
+             n_args_scat  = 0,
              // The first 4 variables are reserved on the CUDA backend
              n_regs_total = cuda ? 4 : 0;
 
@@ -835,6 +836,8 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
             n_args_out++;
             push = true;
         } else {
+            if (v->scatter)
+                n_args_scat++;
             v->arg_index = (uint16_t) 0xFFFF;
             v->arg_type = ArgType::Register;
         }
@@ -945,7 +948,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
     jit_log(Info,
             "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u, "
             "took %s) ..",
-            group.size, n_args_in - 1, n_args_out, n_regs_total,
+            group.size, n_args_in - 1, n_args_out + n_args_scat, n_regs_total,
             jit_time_string(codegen_time));
 
     jit_log(Debug, "%s", buffer.get());
