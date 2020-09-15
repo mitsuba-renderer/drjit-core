@@ -645,5 +645,8 @@ extern void jit_set_parallel_dispatch(bool value);
 void *jit_find_library(const char *fname, const char *glob_pat,
                        const char *env_var);
 
+/// Return a pointer to the CUDA stream associated with the currently active device
+extern void* jit_cuda_stream();
+
 /// Return a pointer to the CUDA context associated with the currently active device
-extern void* jit_cuda_device_context();
+extern void* jit_cuda_context();

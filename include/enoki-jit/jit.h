@@ -145,8 +145,11 @@ extern JITC_EXPORT uint32_t jitc_device();
 /// Return the currently active stream
 extern JITC_EXPORT uint32_t jitc_stream();
 
+/// Return the CUDA stream of the currently active device
+extern JITC_EXPORT void* jitc_cuda_stream();
+
 /// Return the CUDA context of the currently active device
-extern JITC_EXPORT void* jitc_cuda_device_context();
+extern JITC_EXPORT void* jitc_cuda_context();
 
 /**
  * \brief Override the target CPU, features, and vector width of the LLVM backend
