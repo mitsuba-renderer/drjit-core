@@ -1170,19 +1170,15 @@ extern JITC_EXPORT void jitc_scan_u32(const uint32_t *in, uint32_t size,
  * This function takes an 8-bit mask array \c in with size \c size as input,
  * whose entries are required to equal either zero or one. It then writes the
  * indices of nonzero entries to \c out (in increasing order), and it
- * furthermore stores the total number of nonzero mask entries in
- * <tt>*count_out</tt>. The parameter \c out should point to a conservatively
- * sized device-allocated array.
+ * furthermore returns the total number of nonzero mask entries.
  *
  * The internals resemble \ref jitc_scan_u32(), and the CUDA implementation may
  * similarly access regions beyond the end of \c in and \c out.
  *
- * Runs asynchronously. Accessing \c count_out on the host (e.g. when using the
- * LLVM+TBB backend, or when the address points to host-pinned memory allocated
- * via CUDA) requires prior synchronization.
+ * This function internally performs a synchronization step.
  */
-extern JITC_EXPORT void jitc_compress(const uint8_t *in, uint32_t size,
-                                      uint32_t *out, uint32_t *count_out);
+extern JITC_EXPORT uint32_t jitc_compress(const uint8_t *in, uint32_t size,
+                                          uint32_t *out);
 
 /**
  * \brief Reduce an array of boolean values to a single value (AND case)

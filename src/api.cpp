@@ -459,9 +459,9 @@ void jitc_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
     jit_scan_u32(in, size, out);
 }
 
-void jitc_compress(const uint8_t *in, uint32_t size, uint32_t *out, uint32_t *count_out) {
+uint32_t jitc_compress(const uint8_t *in, uint32_t size, uint32_t *out) {
     lock_guard guard(state.mutex);
-    jit_compress(in, size, out, count_out);
+    return jit_compress(in, size, out);
 }
 
 uint8_t jitc_all(uint8_t *values, uint32_t size) {

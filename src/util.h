@@ -33,8 +33,7 @@ extern uint8_t jit_any(uint8_t *values, uint32_t size);
 extern void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out);
 
 /// Mask compression
-extern void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out,
-                         uint32_t *count_out);
+extern uint32_t jit_compress(const uint8_t *in, uint32_t size, uint32_t *out);
 
 /// Compute a permutation to reorder an integer array into discrete groups
 extern uint32_t jit_mkperm(const uint32_t *values, uint32_t size,

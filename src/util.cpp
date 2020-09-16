@@ -574,19 +574,23 @@ void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
 }
 
 /// Mask compression
-void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out, uint32_t *count_out) {
+uint32_t jit_compress(const uint8_t *in, uint32_t size, uint32_t *out) {
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_compress(): you must invoke jitc_set_device() to "
                   "choose a target device before calling this function.");
 
+    if (size == 0)
+        return 0;
+
     if (stream->cuda) {
         const Device &device = state.devices[stream->device];
         scoped_set_context guard(stream->context);
 
-        if (size == 0) {
-            return;
-        } if (size <= 4096) {
+        uint32_t *count_out = (uint32_t *) jit_malloc(
+            AllocType::HostPinned, sizeof(uint32_t));
+
+        if (size <= 4096) {
             /// Kernel for small arrays
             uint32_t items_per_thread = 4,
                      thread_count     = round_pow2((size + items_per_thread - 1)
@@ -651,6 +655,10 @@ void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out, uint32_t *cou
 
             jit_free(scratch);
         }
+        jit_sync_stream();
+        uint32_t count_out_v = *count_out;
+        jit_free(count_out);
+        return count_out_v;
     } else {
 #if defined(ENOKI_JIT_ENABLE_TBB)
         struct Inputs {
@@ -659,6 +667,7 @@ void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out, uint32_t *cou
             uint32_t *count_out;
             uint32_t size;
         };
+
         auto func = [](void *inputs_) {
             Inputs inputs = *((Inputs *) inputs_);
             tbb::parallel_scan(
@@ -682,18 +691,20 @@ void jit_compress(const uint8_t *in, uint32_t size, uint32_t *out, uint32_t *cou
                 },
                 [](uint32_t v0, uint32_t v1) -> uint32_t { return v0 + v1; });
         };
-        Inputs inputs { in, out, count_out, size };
+
+        uint32_t count_out = 0;
+        Inputs inputs { in, out, &count_out, size };
         tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+        tbb_stream_sync(stream);
+        return count_out;
 #else
         unlock_guard guard(state.mutex);
         uint32_t accum = 0;
         for (uint32_t i = 0; i < size; ++i) {
-            uint32_t value = in[i];
-            if (value)
-                out[accum] = i;
-            accum += value;
+            if (in[i])
+                out[accum++] = i;
         }
-        *count_out = accum;
+        return accum;
 #endif
     }
 }
