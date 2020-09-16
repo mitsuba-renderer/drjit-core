@@ -1245,15 +1245,11 @@ vcall(const char *domain, const LLVMArray<uint32_t> &a) {
 
 inline LLVMArray<uint32_t> compress(const LLVMArray<bool> &a) {
     uint32_t *perm = (uint32_t *) jitc_malloc(AllocType::Host, a.size() * sizeof(uint32_t));
-    uint32_t size = 0;
 
-    jitc_compress((const uint8_t *) a.data(), (uint32_t) a.size(), perm, &size);
-    jitc_sync_stream();
+    uint32_t size = jitc_compress((const uint8_t *) a.data(), (uint32_t) a.size(), perm);
 
-    LLVMArray<uint32_t> result = LLVMArray<uint32_t>::from_index(
+    return LLVMArray<uint32_t>::from_index(
         jitc_var_map_mem(VarType::UInt32, 0, perm, size, 1));
-
-    return result;
 }
 
 template <typename T>

@@ -1128,17 +1128,12 @@ vcall(const char *domain, const CUDAArray<uint32_t> &a) {
 }
 
 inline CUDAArray<uint32_t> compress(const CUDAArray<bool> &a) {
-    uint32_t *perm = (uint32_t *) jitc_malloc(AllocType::Device, a.size() * sizeof(uint32_t)),
-             *size = (uint32_t *) jitc_malloc(AllocType::HostPinned, sizeof(uint32_t));
+    uint32_t *perm = (uint32_t *) jitc_malloc(AllocType::Device, a.size() * sizeof(uint32_t));
 
-    jitc_compress((const uint8_t *) a.data(), (uint32_t) a.size(), perm, size);
-    jitc_sync_stream();
+    uint32_t size = jitc_compress((const uint8_t *) a.data(), (uint32_t) a.size(), perm);
 
-    CUDAArray<uint32_t> result = CUDAArray<uint32_t>::from_index(
-        jitc_var_map_mem(VarType::UInt32, 1, perm, *size, 1));
-
-    jitc_free(size);
-    return result;
+    return CUDAArray<uint32_t>::from_index(
+        jitc_var_map_mem(VarType::UInt32, 1, perm, size, 1));
 }
 
 template <typename T>
