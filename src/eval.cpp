@@ -121,7 +121,10 @@ static void jit_var_traverse(uint32_t size, uint32_t index, Variable *v) {
         }
     }
 
-    v->output_flag = false;
+    // If we're really visiting this variable the first time, no matter its size
+    if (visited.emplace(0, index).second)
+        v->output_flag = false;
+
     schedule.emplace_back(size, index);
 }
 
