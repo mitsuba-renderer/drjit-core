@@ -459,7 +459,13 @@ void *jit_find_library(const char *fname, const char *glob_pat,
 
     void* handle = dlopen(env_var_val ? env_var_val : fname, RTLD_LAZY);
 
-    if (!handle & !env_var_val) {
+    if (!handle) {
+        if (env_var_val) {
+            jit_log(Warn, "jit_find_library(): Unable to load \"%s\": %s!",
+                    env_var_val, dlerror());
+            return nullptr;
+        }
+
         glob_t g;
         if (glob(glob_pat, GLOB_BRACE, nullptr, &g) == 0) {
             const char *chosen = nullptr;
