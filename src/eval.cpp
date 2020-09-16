@@ -948,11 +948,10 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
     } while (true);
 
     float codegen_time = timer();
-    jit_log(Info,
-            "jit_run(): launching kernel (n=%u, in=%u, out=%u, ops=%u, "
-            "took %s) ..",
-            group.size, n_args_in - 1, n_args_out + n_args_scat, n_regs_total,
-            jit_time_string(codegen_time));
+    jit_log(
+        Info, "  -> launching %16llx (n=%u, in=%u, out=%u, ops=%u, jit=%s):",
+        (unsigned long long) kernel_hash, group.size, n_args_in - 1,
+        n_args_out + n_args_scat, n_regs_total, jit_time_string(codegen_time));
 
     jit_log(Debug, "%s", buffer.get());
 }
@@ -1020,7 +1019,7 @@ void jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
         }
 
         float link_time = timer();
-        jit_log(Info, "jit_run(): cache %s, %s: %s, %s.",
+        jit_log(Info, "     cache %s, %s: %s, %s.",
                 cache_hit ? "hit" : "miss",
                 cache_hit ? "load" : "build",
                 std::string(jit_time_string(link_time)).c_str(),
@@ -1172,9 +1171,8 @@ void jit_eval() {
         stream->cuda && stream->parallel_dispatch ?
             std::min((size_t) ENOKI_SUB_STREAMS, schedule_groups.size()) : 1;
 
-    if (schedule_groups.size() > 1 && stream->parallel_dispatch)
-        jit_log(Info, "jit_eval(): begin (parallel execution of %zu kernels).",
-                schedule_groups.size());
+    jit_log(Info, "jit_eval(): launching %zu kernels.",
+            schedule_groups.size());
 
     Device *device = nullptr;
     if (cuda_stream_count > 1) {
@@ -1253,6 +1251,5 @@ void jit_eval() {
     }
 
     jit_free_flush();
-    if (schedule_groups.size() > 1 && stream->parallel_dispatch)
-        jit_log(Info, "jit_eval(): done.");
+    jit_log(Info, "jit_eval(): done.");
 }
