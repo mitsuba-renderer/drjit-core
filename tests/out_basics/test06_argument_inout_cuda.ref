@@ -1,16 +1,28 @@
 jit_set_device(device=0, stream=0): creating stream
 value=[0] vs 0
-jit_run(): launching kernel (n=1, in=1, out=3, ops=9) ..
+jit_eval(): launching 1 kernels.
+  -> launching <@> (n=1, in=1, out=3, ops=9):
+jit_eval(): done.
 value=[3] vs 3
-jit_run(): launching kernel (n=1, in=3, out=7, ops=21) ..
+jit_eval(): launching 1 kernels.
+  -> launching <@> (n=1, in=3, out=7, ops=21):
+jit_eval(): done.
 value=[36] vs 36
-jit_run(): launching kernel (n=1, in=9, out=19, ops=57) ..
+jit_eval(): launching 1 kernels.
+  -> launching <@> (n=1, in=9, out=19, ops=57):
+jit_eval(): done.
 value=[351] vs 351
-jit_run(): launching kernel (n=1, in=27, out=55, ops=165) ..
+jit_eval(): launching 1 kernels.
+  -> launching <@> (n=1, in=27, out=55, ops=165):
+jit_eval(): done.
 value=[3240] vs 3240
-jit_run(): launching kernel (n=1, in=81, out=163, ops=489) ..
+jit_eval(): launching 1 kernels.
+  -> launching <@> (n=1, in=81, out=163, ops=489):
+jit_eval(): done.
 value=[29403] vs 29403
-jit_run(): launching kernel (n=1, in=243, out=487, ops=1461) ..
+jit_eval(): launching 1 kernels.
+  -> launching <@> (n=1, in=243, out=487, ops=1461):
+jit_eval(): done.
 value=[265356] vs 265356
 jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 730 deallocations

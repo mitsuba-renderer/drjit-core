@@ -67,7 +67,7 @@ jit_var_new(10 <- 5): $r0 = bitcast <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(10): 1
-jit_var_new(11 <- 3, 10): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = or <$w x $b0> $r0_0, $r0_1$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
+jit_var_new(11 <- 3, 10): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = or <$w x $b0> $r0_0, $r0_1$n$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
 jit_var_inc_ref_ext(11): 1
 jit_var_dec_ref_ext(10): 0
 jit_var_dec_ref_ext(5): 0
@@ -81,7 +81,7 @@ jit_var_new(10 <- 5): $r0 = bitcast <$w x $t1> $r1 to <$w x $t0> (reused)
 jit_var_inc_ref_ext(10): 1
 jit_var_inc_ref_int(3): 2
 jit_var_inc_ref_int(10): 2
-jit_var_new(12 <- 3, 10): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
+jit_var_new(12 <- 3, 10): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$n$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
 jit_var_inc_ref_ext(12): 1
 jit_var_dec_ref_ext(10): 0
 jit_var_dec_ref_ext(5): 0
@@ -89,7 +89,7 @@ jit_var_new_literal(13): $r0_0 = insertelement <$w x $t0> undef, $t0 0x7fffffffe
 jit_var_inc_ref_ext(13): 1
 jit_var_inc_ref_int(13): 1
 jit_var_inc_ref_int(11): 1
-jit_var_new(14 <- 13, 11): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
+jit_var_new(14 <- 13, 11): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$n$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
 jit_var_inc_ref_ext(14): 1
 jit_var_dec_ref_ext(13): 0
 jit_var_dec_ref_ext(11): 0
@@ -99,7 +99,7 @@ jit_var_schedule(8)
 jit_var_schedule(9)
 jit_var_schedule(14)
 jit_var_schedule(12)
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=2): register map:
    - %p0 -> 4 [in]
    - %r1 -> 5
@@ -121,8 +121,8 @@ jit_malloc(type=host-async, size=64): <@> (new allocation)
 jit_malloc(type=host-async, size=64): <@> (new allocation)
    - %f13 -> 12 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=2, in=4, out=6, ops=14) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=2, in=4, out=6, ops=14):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -243,7 +243,8 @@ loop:
     ; Evaluate %f10
     %f10_0 = bitcast <8 x float> %f9 to <8 x i32>
     %f10_1 = bitcast <8 x float> %f8 to <8 x i32>
-    %f10_2 = or <8 x i32> %f10_0, %f10_1%f10 = bitcast <8 x i32> %f10_2 to <8 x float>
+    %f10_2 = or <8 x i32> %f10_0, %f10_1
+    %f10 = bitcast <8 x i32> %f10_2 to <8 x float>
 
     ; Evaluate %f11
     %f11_0 = insertelement <8 x float> undef, float 0x7fffffffe0000000, i32 0
@@ -252,7 +253,8 @@ loop:
     ; Evaluate %f12
     %f12_0 = bitcast <8 x float> %f11 to <8 x i32>
     %f12_1 = bitcast <8 x float> %f10 to <8 x i32>
-    %f12_2 = and <8 x i32> %f12_0, %f12_1%f12 = bitcast <8 x i32> %f12_2 to <8 x float>
+    %f12_2 = and <8 x i32> %f12_0, %f12_1
+    %f12 = bitcast <8 x i32> %f12_2 to <8 x float>
 
     ; Store %f12
     %f12_i = getelementptr inbounds float, float* %a8, i64 %index
@@ -262,7 +264,8 @@ loop:
     ; Evaluate %f13
     %f13_0 = bitcast <8 x float> %f9 to <8 x i32>
     %f13_1 = bitcast <8 x float> %f8 to <8 x i32>
-    %f13_2 = and <8 x i32> %f13_0, %f13_1%f13 = bitcast <8 x i32> %f13_2 to <8 x float>
+    %f13_2 = and <8 x i32> %f13_0, %f13_1
+    %f13 = bitcast <8 x i32> %f13_2 to <8 x float>
 
     ; Store %f13
     %f13_i = getelementptr inbounds float, float* %a9, i64 %index
@@ -344,14 +347,14 @@ jit_var_new_literal(19): $r0_0 = insertelement <$w x $t0> undef, $t0 0x7fffffffe
 jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(19): 1
 jit_var_inc_ref_int(18): 1
-jit_var_new(20 <- 19, 18): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
+jit_var_new(20 <- 19, 18): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$n$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
 jit_var_inc_ref_ext(20): 1
 jit_var_dec_ref_ext(19): 0
 jit_var_dec_ref_ext(18): 0
 jit_var_schedule(16)
 jit_var_schedule(17)
 jit_var_schedule(20)
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=1): register map:
    - %r0 -> 16 [scalar] [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
@@ -361,8 +364,8 @@ jit_malloc(type=host-async, size=64): <@> (reused local)
    - %f3 -> 18 [scalar]
    - %f4 -> 20 [scalar] [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
-jit_run(): launching kernel (n=1, in=0, out=3, ops=5) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=1, in=0, out=3, ops=5):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -416,7 +419,8 @@ loop:
     ; Evaluate %f4
     %f4_0 = bitcast <8 x float> %f2 to <8 x i32>
     %f4_1 = bitcast <8 x float> %f3 to <8 x i32>
-    %f4_2 = and <8 x i32> %f4_0, %f4_1%f4 = bitcast <8 x i32> %f4_2 to <8 x float>
+    %f4_2 = and <8 x i32> %f4_0, %f4_1
+    %f4 = bitcast <8 x i32> %f4_2 to <8 x float>
 
     ; Store %f4
     %f4_p = bitcast float* %a2 to <8 x float>*

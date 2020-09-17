@@ -39,7 +39,7 @@ jit_var_schedule(8)
 jit_var_schedule(9)
 jit_var_schedule(10)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 3 [out]
@@ -59,8 +59,8 @@ jit_malloc(type=host-async, size=256): <@> (new allocation)
 jit_malloc(type=host-async, size=256): <@> (new allocation)
    - %rd9 -> 10 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
+  -> launching <@> (n=9, in=1, out=8, ops=10):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -389,7 +389,7 @@ jit_var_schedule(16)
 jit_var_schedule(17)
 jit_var_schedule(18)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 11 [out]
@@ -409,8 +409,8 @@ jit_malloc(type=host-async, size=256): <@> (reused local)
 jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd9 -> 18 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
+  -> launching <@> (n=9, in=1, out=8, ops=10):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -739,7 +739,7 @@ jit_var_schedule(24)
 jit_var_schedule(25)
 jit_var_schedule(26)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 19 [out]
@@ -759,8 +759,8 @@ jit_malloc(type=host-async, size=256): <@> (reused local)
 jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd9 -> 26 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
+  -> launching <@> (n=9, in=1, out=8, ops=10):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -1089,7 +1089,7 @@ jit_var_schedule(32)
 jit_var_schedule(33)
 jit_var_schedule(34)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 27 [out]
@@ -1109,8 +1109,8 @@ jit_malloc(type=host-async, size=256): <@> (reused local)
 jit_malloc(type=host-async, size=256): <@> (reused local)
    - %rd9 -> 34 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-jit_run(): launching kernel (n=9, in=1, out=8, ops=10) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
+  -> launching <@> (n=9, in=1, out=8, ops=10):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0

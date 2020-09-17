@@ -45,7 +45,7 @@ void test_sanitize_log(char *buf) {
         "Detailed linker output:",
         "info    :",
         "ptxas",
-        "jit_run(): cache ",
+        "     cache ",
         "jit_kernel_load(",
         "jit_kernel_write(",
         "jit_llvm_disasm()",
@@ -88,15 +88,21 @@ void test_sanitize_log(char *buf) {
         }
 
         /// Excise timing values
-        if (strncmp(src, ", took ", 7) == 0) {
+        if (strncmp(src, ", jit=", 6) == 0) {
             while (*src != ')')
                 ++src;
         }
 
+        if (strncmp(src, "-> launching ", 13) == 0) {
+            memcpy(dst, "-> launching <@>", 16);
+            src += 29;
+            dst += 16;
+        }
+
         if (strncmp(src, "enoki_", 6) == 0) {
-            memcpy(dst, "enoki_@@@@@@@@@@@@@@@@", 22);
+            memcpy(dst, "enoki_<@>", 9);
             src += 22;
-            dst += 22;
+            dst += 9;
             continue;
         }
 

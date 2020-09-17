@@ -25,12 +25,12 @@ jit_var_dec_ref_ext(2): 1
 jit_var_dec_ref_ext(2): 0
 jit_var_schedule(1)
 jit_var_schedule(6)
-jit_eval(): begin.
+jit_eval(): launching 2 kernels.
 jit_assemble(size=1024): register map:
    - %r0 -> 1 [out]
 jit_malloc(type=host-async, size=4096): <@> (new allocation)
-jit_run(): launching kernel (n=1024, in=0, out=1, ops=1) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=1024, in=0, out=1, ops=1):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -73,8 +73,8 @@ jit_assemble(size=73): register map:
    - %r3 -> 4 [scalar]
    - %r4 -> 6 [out]
 jit_malloc(type=host-async, size=512): <@> (new allocation)
-jit_run(): launching kernel (n=73, in=0, out=1, ops=5) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=73, in=0, out=1, ops=5):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -166,13 +166,13 @@ jit_var_dec_ref_ext(10): 0
 jit_var_dec_ref_ext(9): 0
 jit_var_schedule(8)
 jit_var_schedule(14)
-jit_eval(): begin.
+jit_eval(): launching 2 kernels.
 jit_assemble(size=1024): register map:
    - %r0 -> 7
    - %rd1 -> 8 [out]
 jit_malloc(type=host-async, size=8192): <@> (new allocation)
-jit_run(): launching kernel (n=1024, in=0, out=1, ops=2) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=1024, in=0, out=1, ops=2):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -219,8 +219,8 @@ jit_assemble(size=73): register map:
    - %rd4 -> 12 [scalar]
    - %rd5 -> 14 [out]
 jit_malloc(type=host-async, size=1024): <@> (new allocation)
-jit_run(): launching kernel (n=73, in=0, out=1, ops=6) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=73, in=0, out=1, ops=6):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0

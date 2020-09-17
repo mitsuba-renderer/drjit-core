@@ -1,14 +1,14 @@
 jit_set_device(device=0, stream=0): creating stream
 jit_var_new_literal(1): mov.b16 %w1, 0x91$ncvt.u8.u16 $r0, %w1
 jit_var_inc_ref_ext(1): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %b4 -> 1 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -57,14 +57,14 @@ jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_new_literal(2): mov.b16 %w1, 0xde$ncvt.u8.u16 $r0, %w1
 jit_var_inc_ref_ext(2): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %b4 -> 2 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -113,14 +113,14 @@ jit_var_free(2)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_new_literal(3): mov.$b0 $r0, 0xfba9
 jit_var_inc_ref_ext(3): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %w4 -> 3 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -168,14 +168,14 @@ jit_var_free(3)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_new_literal(4): mov.$b0 $r0, 0x08ae
 jit_var_inc_ref_ext(4): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %w4 -> 4 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -223,14 +223,14 @@ jit_var_free(4)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_new_literal(5): mov.$b0 $r0, 0xbdc5ca39
 jit_var_inc_ref_ext(5): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %r4 -> 5 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -278,14 +278,14 @@ jit_var_free(5)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_new_literal(6): mov.$b0 $r0, 0x84746b8e
 jit_var_inc_ref_ext(6): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %r4 -> 6 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -333,14 +333,14 @@ jit_var_free(6)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_new_literal(7): mov.$b0 $r0, 0xf0948a54d43b8e39
 jit_var_inc_ref_ext(7): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %rd4 -> 7 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -388,14 +388,14 @@ jit_var_free(7)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_new_literal(8): mov.$b0 $r0, 0x1ed6eb565788e38e
 jit_var_inc_ref_ext(8): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %rd4 -> 8 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -443,14 +443,14 @@ jit_var_free(8)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_new_literal(9): mov.$t0 $r0, 0f3eaaaaab
 jit_var_inc_ref_ext(9): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %f4 -> 9 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -498,14 +498,14 @@ jit_var_free(9)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_new_literal(10): mov.$t0 $r0, 0d3fd5555555555555
 jit_var_inc_ref_ext(10): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=5): register map:
    - %d4 -> 10 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=5, in=0, out=1, ops=5) ..
+  -> launching <@> (n=5, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;

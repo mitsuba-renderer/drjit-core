@@ -9,14 +9,14 @@ jit_var_inc_ref_int(2): 1
 jit_var_new(3 <- 2): $r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)
 jit_var_inc_ref_ext(3): 1
 jit_var_dec_ref_ext(2): 0
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=10): register map:
    - %r0 -> 1
    - %f1 -> 2
    - %f2 -> 3 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=0, out=1, ops=3) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=10, in=0, out=1, ops=3):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0

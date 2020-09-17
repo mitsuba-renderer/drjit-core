@@ -33,7 +33,7 @@ jit_var_new(8 <- 6, 7): mul.lo.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(8): 1
 jit_var_new_literal(9): mov.$t0 $r0, 1
 jit_var_inc_ref_ext(9): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=1022): register map:
    - %r4 -> 1 "l"
    - %r5 -> 2 [scalar]
@@ -41,10 +41,10 @@ jit_assemble(size=1022): register map:
    - %r7 -> 4 [scalar]
    - %p8 -> 5 "result" [out]
 jit_malloc(type=device, device=0, size=1024): <@> (new allocation)
-jit_run(): launching kernel (n=1022, in=0, out=1, ops=9) ..
+  -> launching <@> (n=1022, in=0, out=1, ops=9):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<9>;
     .reg.b16 %w<9>;
@@ -149,7 +149,7 @@ jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
 jit_var_set_label(15): "odd"
 Mask  : [0, 1, 0, 1, 0, .. 1012 skipped .., 1, 0, 1, 0, 1]
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=510): register map:
    - %r4 -> 6 "l2"
    - %r5 -> 7 [scalar]
@@ -157,10 +157,10 @@ jit_assemble(size=510): register map:
    - %rd7 -> 10 [scalar] [direct_pointer]
    - %p8 -> 11 "even" [out]
 jit_malloc(type=device, device=0, size=512): <@> (new allocation)
-jit_run(): launching kernel (n=510, in=1, out=1, ops=9) ..
+  -> launching <@> (n=510, in=1, out=1, ops=9):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
     .reg.b8 %b<9>;
@@ -222,7 +222,7 @@ jit_var_dec_ref_int(10): 1
 jit_var_dec_ref_int(8): 1
 jit_eval(): done.
 Even  : [0, 0, 0, 0, 0, .. 500 skipped .., 0, 0, 0, 0, 0]
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=510): register map:
    - %r4 -> 6 "l2"
    - %r5 -> 7 [scalar]
@@ -232,10 +232,10 @@ jit_assemble(size=510): register map:
    - %rd9 -> 10 [scalar] [direct_pointer]
    - %p10 -> 15 "odd" [out]
 jit_malloc(type=device, device=0, size=512): <@> (new allocation)
-jit_run(): launching kernel (n=510, in=1, out=1, ops=11) ..
+  -> launching <@> (n=510, in=1, out=1, ops=11):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
     .reg.b8 %b<11>;
@@ -365,7 +365,7 @@ jit_var_dec_ref_ext(22): 0
 jit_var_dec_ref_ext(21): 0
 jit_var_dec_ref_ext(17): 0
 jit_var_dec_ref_ext(16): 0
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=510): register map:
    - %r4 -> 6 "l2"
    - %r5 -> 16 [scalar]
@@ -377,10 +377,10 @@ jit_assemble(size=510): register map:
    - %r11 -> 22
    - %p12 -> 11 "even" [in]
    - %u13 -> 24 [scat]
-jit_run(): launching kernel (n=510, in=3, out=0, ops=14) ..
+  -> launching <@> (n=510, in=3, out=2, ops=14):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2) {

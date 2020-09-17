@@ -25,7 +25,7 @@ jit_var_schedule(1)
 jit_var_schedule(3)
 jit_var_schedule(4)
 jit_var_schedule(3)
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=1): register map:
    - %f4 -> 1 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
@@ -35,10 +35,10 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
    - %f7 -> 4 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=1, in=0, out=4, ops=8) ..
+  -> launching <@> (n=1, in=0, out=4, ops=8):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2,

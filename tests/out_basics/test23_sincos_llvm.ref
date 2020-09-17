@@ -21,7 +21,7 @@ jit_var_new_literal(6): $r0_0 = insertelement <$w x $t0> undef, $t0 0x7fffffffe0
 jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(5): 1
-jit_var_new(7 <- 6, 5): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
+jit_var_new(7 <- 6, 5): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$n$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
 jit_var_inc_ref_ext(7): 1
 jit_var_dec_ref_ext(6): 0
 jit_var_new_literal(8): $r0_0 = insertelement <$w x $t0> undef, $t0 0x3ff45f3060000000, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
@@ -150,7 +150,7 @@ jit_var_new(38 <- 37): $r0 = bitcast <$w x $t1> $r1 to <$w x $t0>
 jit_var_inc_ref_ext(38): 1
 jit_var_inc_ref_int(34): 1
 jit_var_inc_ref_int(38): 1
-jit_var_new(39 <- 34, 38): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = or <$w x $b0> $r0_0, $r0_1$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
+jit_var_new(39 <- 34, 38): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = or <$w x $b0> $r0_0, $r0_1$n$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
 jit_var_inc_ref_ext(39): 1
 jit_var_dec_ref_ext(38): 0
 jit_var_dec_ref_ext(37): 0
@@ -267,7 +267,7 @@ jit_var_new_literal(62): $r0_0 = insertelement <$w x $t0> undef, $t0 0x800000000
 jit_var_inc_ref_ext(62): 1
 jit_var_inc_ref_int(62): 1
 jit_var_inc_ref_int(19): 1
-jit_var_new(63 <- 62, 19): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
+jit_var_new(63 <- 62, 19): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$n$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
 jit_var_inc_ref_ext(63): 1
 jit_var_inc_ref_int(61): 1
 jit_var_inc_ref_int(63): 1
@@ -285,7 +285,7 @@ jit_var_new_literal(62): $r0_0 = insertelement <$w x $t0> undef, $t0 0x800000000
 jit_var_inc_ref_ext(62): 1
 jit_var_inc_ref_int(62): 2
 jit_var_inc_ref_int(24): 1
-jit_var_new(66 <- 62, 24): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
+jit_var_new(66 <- 62, 24): $r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n$r0_2 = and <$w x $b0> $r0_0, $r0_1$n$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>
 jit_var_inc_ref_ext(66): 1
 jit_var_inc_ref_int(65): 1
 jit_var_inc_ref_int(66): 1
@@ -303,7 +303,7 @@ jit_var_dec_ref_ext(19): 0
 jit_var_dec_ref_ext(33): 0
 jit_var_dec_ref_ext(14): 0
 jit_var_dec_ref_ext(7): 0
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=10): register map:
    - %r0 -> 1
    - %f1 -> 2
@@ -365,8 +365,8 @@ jit_assemble(size=10): register map:
    - %f57 -> 63
    - %f58 -> 64 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=0, out=1, ops=59) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=10, in=0, out=1, ops=59):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -403,7 +403,8 @@ loop:
     ; Evaluate %f5
     %f5_0 = bitcast <8 x float> %f4 to <8 x i32>
     %f5_1 = bitcast <8 x float> %f3 to <8 x i32>
-    %f5_2 = and <8 x i32> %f5_0, %f5_1%f5 = bitcast <8 x i32> %f5_2 to <8 x float>
+    %f5_2 = and <8 x i32> %f5_0, %f5_1
+    %f5 = bitcast <8 x i32> %f5_2 to <8 x float>
 
     ; Evaluate %f6
     %f6_0 = insertelement <8 x float> undef, float 0x3ff45f3060000000, i32 0
@@ -481,7 +482,8 @@ loop:
     ; Evaluate %f28
     %f28_0 = bitcast <8 x float> %f23 to <8 x i32>
     %f28_1 = bitcast <8 x float> %f27 to <8 x i32>
-    %f28_2 = or <8 x i32> %f28_0, %f28_1%f28 = bitcast <8 x i32> %f28_2 to <8 x float>
+    %f28_2 = or <8 x i32> %f28_0, %f28_1
+    %f28 = bitcast <8 x i32> %f28_2 to <8 x float>
 
     ; Evaluate %f29
     %f29 = fmul <8 x float> %f28, %f28
@@ -585,7 +587,8 @@ loop:
     ; Evaluate %f57
     %f57_0 = bitcast <8 x float> %f56 to <8 x i32>
     %f57_1 = bitcast <8 x float> %f55 to <8 x i32>
-    %f57_2 = and <8 x i32> %f57_0, %f57_1%f57 = bitcast <8 x i32> %f57_2 to <8 x float>
+    %f57_2 = and <8 x i32> %f57_0, %f57_1
+    %f57 = bitcast <8 x i32> %f57_2 to <8 x float>
 
     ; Evaluate %f58
     %f58_0 = bitcast <8 x float> %f51 to <8 x i32>
@@ -631,7 +634,7 @@ jit_var_dec_ref_int(16): 1
 jit_var_dec_ref_int(5): 1
 jit_eval(): done.
 xs : [0, 0.110883, 0.220398, 0.327195, 0.429956, 0.527415, 0.61837, 0.701698, 0.776372, 0.841471]
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=10): register map:
    - %r0 -> 1
    - %f1 -> 2
@@ -694,8 +697,8 @@ jit_assemble(size=10): register map:
    - %f58 -> 66
    - %f59 -> 67 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=0, out=1, ops=60) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=10, in=0, out=1, ops=60):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -732,7 +735,8 @@ loop:
     ; Evaluate %f5
     %f5_0 = bitcast <8 x float> %f4 to <8 x i32>
     %f5_1 = bitcast <8 x float> %f3 to <8 x i32>
-    %f5_2 = and <8 x i32> %f5_0, %f5_1%f5 = bitcast <8 x i32> %f5_2 to <8 x float>
+    %f5_2 = and <8 x i32> %f5_0, %f5_1
+    %f5 = bitcast <8 x i32> %f5_2 to <8 x float>
 
     ; Evaluate %f6
     %f6_0 = insertelement <8 x float> undef, float 0x3ff45f3060000000, i32 0
@@ -810,7 +814,8 @@ loop:
     ; Evaluate %f28
     %f28_0 = bitcast <8 x float> %f23 to <8 x i32>
     %f28_1 = bitcast <8 x float> %f27 to <8 x i32>
-    %f28_2 = or <8 x i32> %f28_0, %f28_1%f28 = bitcast <8 x i32> %f28_2 to <8 x float>
+    %f28_2 = or <8 x i32> %f28_0, %f28_1
+    %f28 = bitcast <8 x i32> %f28_2 to <8 x float>
 
     ; Evaluate %f29
     %f29 = fmul <8 x float> %f28, %f28
@@ -914,7 +919,8 @@ loop:
     ; Evaluate %f58
     %f58_0 = bitcast <8 x float> %f57 to <8 x i32>
     %f58_1 = bitcast <8 x float> %f56 to <8 x i32>
-    %f58_2 = and <8 x i32> %f58_0, %f58_1%f58 = bitcast <8 x i32> %f58_2 to <8 x float>
+    %f58_2 = and <8 x i32> %f58_0, %f58_1
+    %f58 = bitcast <8 x i32> %f58_2 to <8 x float>
 
     ; Evaluate %f59
     %f59_0 = bitcast <8 x float> %f51 to <8 x i32>

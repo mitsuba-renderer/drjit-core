@@ -9,16 +9,16 @@ jit_var_inc_ref_int(2): 1
 jit_var_new(3 <- 2): sqrt.rn.ftz.$t0 $r0, $r1
 jit_var_inc_ref_ext(3): 1
 jit_var_dec_ref_ext(2): 0
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=10): register map:
    - %r4 -> 1
    - %f5 -> 2
    - %f6 -> 3 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=0, out=1, ops=7) ..
+  -> launching <@> (n=10, in=0, out=1, ops=7):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<7>;
     .reg.b16 %w<7>;

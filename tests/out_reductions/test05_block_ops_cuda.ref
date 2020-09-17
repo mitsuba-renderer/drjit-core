@@ -2,11 +2,11 @@ jit_set_device(device=0, stream=0): creating stream
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
-jit_var_map(1): <@>, size=9, free=1
+jit_var_map_mem(1): <@>, size=9, free=1
 jit_var_inc_ref_ext(1): 1
-jit_var_copy(1, size=9)
+jit_var_copy_mem(1, size=9)
 jit_malloc(type=device, device=0, size=128): <@> (new allocation)
-jit_var_map(2): <@>, size=27, free=1
+jit_var_map_mem(2): <@>, size=27, free=1
 jit_var_inc_ref_ext(2): 1
 jit_block_copy(<@> -> <@>, type=float32, block_size=3, size=9)
 block_copy: [0, 0, 0, 1, 1, .. 17 skipped .., 7, 7, 8, 8, 8]
@@ -15,7 +15,7 @@ jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_free(<@>, type=device, device=0, size=128)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_var_map(3): <@>, size=3, free=1
+jit_var_map_mem(3): <@>, size=3, free=1
 jit_var_inc_ref_ext(3): 1
 jit_block_sum(<@> -> <@>, type=float32, block_size=3, size=3)
 block_sum:  [3, 12, 21]

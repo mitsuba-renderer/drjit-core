@@ -1171,8 +1171,9 @@ void jit_eval() {
         stream->cuda && stream->parallel_dispatch ?
             std::min((size_t) ENOKI_SUB_STREAMS, schedule_groups.size()) : 1;
 
-    jit_log(Info, "jit_eval(): launching %zu kernels.",
-            schedule_groups.size());
+    jit_log(Info, "jit_eval(): launching %zu kernel%s.",
+            schedule_groups.size(),
+            schedule_groups.size() == 1 ? "" : "s");
 
     Device *device = nullptr;
     if (cuda_stream_count > 1) {

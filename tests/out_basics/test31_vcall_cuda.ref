@@ -50,16 +50,16 @@ jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(7): 1
 jit_var_new(8 <- 3, 7): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(8): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=2): register map:
    - %r4 -> 3 [in]
    - %r5 -> 7 [in]
    - %p6 -> 8 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=2, in=2, out=1, ops=7) ..
+  -> launching <@> (n=2, in=2, out=1, ops=7):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2) {
@@ -140,16 +140,16 @@ jit_var_inc_ref_int(4): 1
 jit_var_inc_ref_int(9): 1
 jit_var_new(10 <- 4, 9): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(10): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=2): register map:
    - %r4 -> 4 [in]
    - %r5 -> 9 [in]
    - %p6 -> 10 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=2, in=2, out=1, ops=7) ..
+  -> launching <@> (n=2, in=2, out=1, ops=7):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2) {
@@ -230,16 +230,16 @@ jit_var_inc_ref_int(5): 1
 jit_var_inc_ref_int(11): 1
 jit_var_new(12 <- 5, 11): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(12): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=4): register map:
    - %r4 -> 5 [in]
    - %r5 -> 11 [in]
    - %p6 -> 12 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=4, in=2, out=1, ops=7) ..
+  -> launching <@> (n=4, in=2, out=1, ops=7):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2) {
@@ -319,16 +319,16 @@ jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(13): 1
 jit_var_new(14 <- 6, 13): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(14): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=2): register map:
    - %r4 -> 6 [in]
    - %r5 -> 13 [in]
    - %p6 -> 14 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=2, in=2, out=1, ops=7) ..
+  -> launching <@> (n=2, in=2, out=1, ops=7):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2) {

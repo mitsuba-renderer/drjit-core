@@ -24,7 +24,7 @@ jit_var_dec_ref_ext(2): 0
 jit_var_dec_ref_ext(5): 0
 jit_var_schedule(4)
 jit_var_schedule(6)
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=10): register map:
    - %r4 -> 1
    - %f5 -> 2
@@ -34,10 +34,10 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
    - %f8 -> 5
    - %f9 -> 6 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=0, out=2, ops=10) ..
+  -> launching <@> (n=10, in=0, out=2, ops=10):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
     .reg.b8 %b<10>;
@@ -126,17 +126,17 @@ jit_var_new(9 <- 7, 8, 4): selp.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(9): 1
 jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=10): register map:
    - %f4 -> 7 [scalar]
    - %f5 -> 8 [scalar]
    - %p6 -> 4 [in]
    - %f7 -> 9 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=1, out=1, ops=8) ..
+  -> launching <@> (n=10, in=1, out=1, ops=8):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
     .reg.b8 %b<8>;
@@ -204,16 +204,16 @@ jit_var_new_literal(11): mov.$t0 $r0, 0
 jit_var_inc_ref_ext(11): 1
 jit_var_schedule(10)
 jit_var_schedule(11)
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=1): register map:
    - %p4 -> 10 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
    - %p5 -> 11 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=1, in=0, out=2, ops=6) ..
+  -> launching <@> (n=1, in=0, out=2, ops=6):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
     .reg.b8 %b<6>;
@@ -285,7 +285,7 @@ jit_var_inc_ref_ext(14): 1
 jit_var_dec_ref_ext(12): 0
 jit_var_schedule(13)
 jit_var_schedule(14)
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=10): register map:
    - %f4 -> 6 [in]
    - %f5 -> 12 [scalar]
@@ -295,10 +295,10 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
    - %p8 -> 11 [scalar] [in]
    - %f9 -> 14 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=10, in=3, out=2, ops=10) ..
+  -> launching <@> (n=10, in=3, out=2, ops=10):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2,

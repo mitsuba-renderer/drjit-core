@@ -33,7 +33,7 @@ jit_var_new(8 <- 6, 7): $r0 = mul <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(8): 1
 jit_var_new_literal(9): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(9): 1
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=1022): register map:
    - %r0 -> 1 "l"
    - %r1 -> 2 [scalar]
@@ -41,8 +41,8 @@ jit_assemble(size=1022): register map:
    - %r3 -> 4 [scalar]
    - %p4 -> 5 "result" [out]
 jit_malloc(type=host-async, size=1024): <@> (new allocation)
-jit_run(): launching kernel (n=1022, in=0, out=1, ops=5) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=1022, in=0, out=1, ops=5):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -145,7 +145,7 @@ jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
 jit_var_set_label(15): "odd"
 Mask  : [0, 1, 0, 1, 0, .. 1012 skipped .., 1, 0, 1, 0, 1]
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=510): register map:
    - %r0 -> 6 "l2"
    - %r1 -> 7 [scalar]
@@ -153,8 +153,8 @@ jit_assemble(size=510): register map:
    - %rd3 -> 10 [scalar] [direct_pointer]
    - %p4 -> 11 "even" [out]
 jit_malloc(type=host-async, size=512): <@> (new allocation)
-jit_run(): launching kernel (n=510, in=1, out=1, ops=5) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=510, in=1, out=1, ops=5):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -203,7 +203,7 @@ loop:
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
-define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -266,7 +266,7 @@ jit_var_dec_ref_int(10): 1
 jit_var_dec_ref_int(8): 1
 jit_eval(): done.
 Even  : [0, 0, 0, 0, 0, .. 500 skipped .., 0, 0, 0, 0, 0]
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=510): register map:
    - %r0 -> 6 "l2"
    - %r1 -> 7 [scalar]
@@ -276,8 +276,8 @@ jit_assemble(size=510): register map:
    - %rd5 -> 10 [scalar] [direct_pointer]
    - %p6 -> 15 "odd" [out]
 jit_malloc(type=host-async, size=512): <@> (new allocation)
-jit_run(): launching kernel (n=510, in=1, out=1, ops=7) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=510, in=1, out=1, ops=7):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -333,7 +333,7 @@ loop:
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
-define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -473,7 +473,7 @@ jit_var_dec_ref_ext(23): 0
 jit_var_dec_ref_ext(22): 0
 jit_var_dec_ref_ext(17): 0
 jit_var_dec_ref_ext(16): 0
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=510): register map:
    - %r0 -> 6 "l2"
    - %r1 -> 16 [scalar]
@@ -487,8 +487,8 @@ jit_assemble(size=510): register map:
    - %p9 -> 11 "even" [in]
    - %b10 -> 25
    - %u11 -> 26 [scat]
-jit_run(): launching kernel (n=510, in=3, out=0, ops=12) ..
-define void @enoki_@@@@@@@@@@@@@@@@(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+  -> launching <@> (n=510, in=3, out=2, ops=12):
+define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
@@ -564,7 +564,7 @@ loop:
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 }
 
-define void @enoki_@@@@@@@@@@@@@@@@_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
+define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0

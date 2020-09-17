@@ -31,7 +31,7 @@ jit_var_schedule(4)
 jit_var_schedule(5)
 jit_var_schedule(6)
 jit_var_schedule(7)
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=6): register map:
    - %f4 -> 1 [in]
    - %f5 -> 2 [out]
@@ -46,10 +46,10 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
    - %f10 -> 7 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_run(): launching kernel (n=6, in=1, out=6, ops=11) ..
+  -> launching <@> (n=6, in=1, out=6, ops=11):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2,
@@ -216,7 +216,7 @@ jit_var_schedule(11)
 jit_var_schedule(12)
 jit_var_schedule(13)
 jit_var_schedule(14)
-jit_eval(): begin.
+jit_eval(): launching 1 kernels.
 jit_assemble(size=6): register map:
    - %d4 -> 8 [in]
    - %d5 -> 9 [out]
@@ -231,10 +231,10 @@ jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
    - %d10 -> 14 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_run(): launching kernel (n=6, in=1, out=6, ops=11) ..
+  -> launching <@> (n=6, in=1, out=6, ops=11):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2,

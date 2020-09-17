@@ -21,14 +21,14 @@ jit_var_dec_ref_ext(2): 1
 jit_var_dec_ref_ext(2): 0
 jit_var_schedule(1)
 jit_var_schedule(5)
-jit_eval(): begin (parallel dispatch to 2 streams).
+jit_eval(): launching 2 kernels.
 jit_assemble(size=1024): register map:
    - %r4 -> 1 [out]
 jit_malloc(type=device, device=0, size=4096): <@> (new allocation)
-jit_run(): launching kernel (n=1024, in=0, out=1, ops=5) ..
+  -> launching <@> (n=1024, in=0, out=1, ops=5):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<5>;
     .reg.b16 %w<5>;
@@ -68,17 +68,16 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_set_device(device=0, stream=1001): creating stream
 jit_assemble(size=73): register map:
    - %r4 -> 2
    - %r5 -> 3 [scalar]
    - %r6 -> 4 [scalar]
    - %r7 -> 5 [out]
 jit_malloc(type=device, device=0, size=512): <@> (new allocation)
-jit_run(): launching kernel (n=73, in=0, out=1, ops=8) ..
+  -> launching <@> (n=73, in=0, out=1, ops=8):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<8>;
     .reg.b16 %w<8>;
@@ -127,7 +126,6 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_set_device(device=0, stream=1002): creating stream
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(2): 0
 jit_var_free(2)
@@ -164,15 +162,15 @@ jit_var_dec_ref_ext(9): 0
 jit_var_dec_ref_ext(8): 0
 jit_var_schedule(7)
 jit_var_schedule(12)
-jit_eval(): begin (parallel dispatch to 2 streams).
+jit_eval(): launching 2 kernels.
 jit_assemble(size=1024): register map:
    - %r4 -> 6
    - %rd5 -> 7 [out]
 jit_malloc(type=device, device=0, size=8192): <@> (new allocation)
-jit_run(): launching kernel (n=1024, in=0, out=1, ops=6) ..
+  -> launching <@> (n=1024, in=0, out=1, ops=6):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<6>;
     .reg.b16 %w<6>;
@@ -215,7 +213,6 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_set_device(device=0, stream=1001): selecting stream
 jit_assemble(size=73): register map:
    - %r4 -> 8
    - %rd5 -> 9
@@ -223,10 +220,10 @@ jit_assemble(size=73): register map:
    - %rd7 -> 11 [scalar]
    - %rd8 -> 12 [out]
 jit_malloc(type=device, device=0, size=1024): <@> (new allocation)
-jit_run(): launching kernel (n=73, in=0, out=1, ops=9) ..
+  -> launching <@> (n=73, in=0, out=1, ops=9):
 .version 6.3
 .address_size 64
-.entry enoki_@@@@@@@@@@@@@@@@(.param .u32 size,
+.entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
     .reg.b8 %b<9>;
     .reg.b16 %w<9>;
@@ -278,7 +275,6 @@ L1: // Loop body
 L0:
     ret;
 }
-jit_set_device(device=0, stream=1002): selecting stream
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(6): 0
 jit_var_free(6)
@@ -305,10 +301,8 @@ jit_free(<@>, type=device, device=0, size=512)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=4096)
-jit_shutdown(): releasing 3 streams ..
+jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 4 deallocations
-jit_set_device(device=0, stream=1001): selecting stream
-jit_set_device(device=0, stream=1002): selecting stream
 jit_shutdown(): releasing 4 kernels ..
 jit_malloc_trim(): freed
  - device memory: 13.5 KiB in 4 allocations

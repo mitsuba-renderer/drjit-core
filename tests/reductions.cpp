@@ -63,10 +63,7 @@ TEST_BOTH(03_compress) {
             uint32_t *perm     = (uint32_t *) jitc_malloc(Float::IsCUDA ? AllocType::Device :
                                                                           AllocType::Host,
                                                           size * sizeof(uint32_t)),
-                     *perm_ref = (uint32_t *) jitc_malloc(AllocType::Host, size * sizeof(uint32_t)),
-                     *count    = (uint32_t *) jitc_malloc(Float::IsCUDA ? AllocType::HostPinned :
-                                                                          AllocType::Host,
-                                                          sizeof(uint32_t));
+                     *perm_ref = (uint32_t *) jitc_malloc(AllocType::Host, size * sizeof(uint32_t));
             memset(data, 0, size);
 
             for (size_t i = 0; i < n_ones; ++i) {
@@ -83,17 +80,16 @@ TEST_BOTH(03_compress) {
             data = (uint8_t *) jitc_malloc_migrate(
                 data, Float::IsCUDA ? AllocType::Device : AllocType::Host);
 
-            jitc_compress(data, size, perm, count);
+            uint32_t count = jitc_compress(data, size, perm);
             perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
             jitc_sync_stream();
 
-            jitc_assert(*count == ref_count);
+            jitc_assert(count == ref_count);
             jitc_assert(memcmp(perm, perm_ref, ref_count * sizeof(uint32_t)) == 0);
 
             jitc_free(data);
             jitc_free(perm);
             jitc_free(perm_ref);
-            jitc_free(count);
         }
     }
 }
