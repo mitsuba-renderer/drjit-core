@@ -28,12 +28,12 @@ fall back to serial execution.
 ## An example
 
 Two header files
-[enoki/cuda.h](https://github.com/wjakob/enoki-jit/blob/master/include/enoki/cuda.h)
+[enoki-jit/cuda.h](https://github.com/mitsuba-renderer/enoki-jit/blob/master/include/enoki-jit/cuda.h)
 and
-[enoki/llvm.h](https://github.com/wjakob/enoki-jit/blob/master/include/enoki/llvm.h)
+[enoki-jit/llvm.h](https://github.com/mitsuba-renderer/enoki-jit/blob/master/include/enoki-jit/llvm.h)
 provide convenient C++ wrappers with operator operator overloading building on
 the C-level API
-([enoki/jit.h](https://github.com/wjakob/enoki-jit/blob/master/include/enoki/jit.h)).
+([enoki-jit/jit.h](https://github.com/mitsuba-renderer/enoki-jit/blob/master/include/enoki-jit/jit.h)).
 Here is an brief example on how these can be used:
 
 ```cpp
