@@ -264,10 +264,9 @@ struct VariableKey {
           flags((v.free_stmt ? 1 : 0) + (v.cuda ? 2 : 0)) { }
 
     bool operator==(const VariableKey &v) const {
-        return strcmp(stmt, v.stmt) == 0 && size == v.size &&
-               dep[0] == v.dep[0] && dep[1] == v.dep[1] &&
-               dep[2] == v.dep[2] && dep[3] == v.dep[3] &&
-               type == v.type && flags == v.flags;
+        if (memcmp(&size, &v.size, 6 * sizeof(uint32_t)) != 0)
+            return false;
+        return stmt == v.stmt ? true : (strcmp(stmt, v.stmt) == 0);
     }
 };
 

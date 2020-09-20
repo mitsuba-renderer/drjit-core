@@ -59,18 +59,26 @@ struct pair_hash {
     }
 };
 
-inline size_t hash(const void *ptr, size_t size, size_t seed = 0) {
+inline size_t hash(const void *ptr, size_t size, size_t seed) {
     return (size_t) XXH3_64bits_withSeed(ptr, size, (unsigned long long) seed);
 }
 
-inline size_t hash_str(const char *str, size_t seed = 0) {
+inline size_t hash(const void *ptr, size_t size) {
+    return (size_t) XXH3_64bits(ptr, size);
+}
+
+inline size_t hash_str(const char *str, size_t seed) {
     return hash(str, strlen(str), seed);
 }
 
-inline size_t hash_kernel(const char *str, size_t seed = 0) {
+inline size_t hash_str(const char *str) {
+    return hash(str, strlen(str));
+}
+
+inline size_t hash_kernel(const char *str) {
     const char *offset_1 = strchr(str, '{'),
                *offset_2 = strchr(str, '}');
     if (unlikely(!offset_1 || !offset_2 || offset_1 >= offset_2))
         jit_fail("hash_kernel(): invalid input!");
-    return hash(offset_1, offset_2 - offset_1, seed);
+    return hash(offset_1, offset_2 - offset_1);
 }

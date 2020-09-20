@@ -97,7 +97,11 @@ void jit_cse_drop(uint32_t index, const Variable *v) {
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
 void jit_var_free(uint32_t index, Variable *v) {
-    jit_trace("jit_var_free(%u)", index);
+    bool trace = std::max(state.log_level_stderr, state.log_level_callback) >=
+                 LogLevel::Trace;
+
+    if (unlikely(trace))
+        jit_trace("jit_var_free(%u)", index);
 
     if (v->stmt)
         jit_cse_drop(index, v);
@@ -121,8 +125,21 @@ void jit_var_free(uint32_t index, Variable *v) {
 
     if (likely(!direct_pointer)) {
         // Decrease reference count of dependencies
-        for (int i = 0; i < 4; ++i)
-            jit_var_dec_ref_int(dep[i]);
+        for (int i = 0; i < 4; ++i) {
+            uint32_t index2 = dep[i];
+            if (index2 == 0)
+                break;
+
+            // Inlined implementation of jit_var_dec_ref_int
+            auto it = state.variables.find(index2);
+            Variable *v2 = &it.value();
+            v2->ref_count_int--;
+
+            if (unlikely(trace))
+                jit_trace("jit_var_dec_ref_int(%u): %u", index2, v2->ref_count_int);
+            if (v2->ref_count_ext == 0 && v2->ref_count_int == 0)
+                jit_var_free(index2, v2);
+        }
     } else {
         // Free reverse pointer table entry, if needed
         auto it = state.variable_from_ptr.find(data);
