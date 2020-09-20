@@ -11,28 +11,28 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map_mem(2): <@>, size=2, free=1
 jit_var_inc_ref_ext(2): 1
 jit_var_copy_mem(2, size=2)
-jit_var_new_literal(3): mov.$b0 $r0, 0x00000001
+jit_var_new_literal(3): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(3): 1
 jit_var_new(4 <- 1, 3): shr.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(4): 1
 jit_var_dec_ref_ext(3): 0
-jit_var_new_literal(3): mov.$b0 $r0, 0x00000001 (reused)
+jit_var_new_literal(3): mov.$b0 $r0, 0x1 (reused)
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(1): 2
 jit_var_inc_ref_int(3): 2
 jit_var_new(5 <- 1, 3): shl.$b0 $r0, $r1, $r2
 jit_var_inc_ref_ext(5): 1
 jit_var_dec_ref_ext(3): 0
-jit_var_new_literal(3): mov.$b0 $r0, 0x00000001 (reused)
+jit_var_new_literal(3): mov.$b0 $r0, 0x1 (reused)
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 3
 jit_var_new(6 <- 2, 3): shr.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(3): 0
-jit_var_new_literal(3): mov.$b0 $r0, 0x00000001 (reused)
+jit_var_new_literal(3): mov.$b0 $r0, 0x1 (reused)
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(2): 2
 jit_var_inc_ref_int(3): 4
@@ -43,7 +43,7 @@ jit_var_schedule(4)
 jit_var_schedule(5)
 jit_var_schedule(6)
 jit_var_schedule(7)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r4 -> 1 [in]
    - %r5 -> 3 [scalar]
@@ -95,7 +95,7 @@ L1: // Loop body
     ld.global.cs.u32 %r4, [%rd0];
 
     // Evaluate %r5
-    mov.b32 %r5, 0x00000001;
+    mov.b32 %r5, 0x1;
 
     // Evaluate %r6
     shr.b32 %r6, %r4, %r5;

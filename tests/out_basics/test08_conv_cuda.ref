@@ -23,7 +23,7 @@ jit_var_schedule(2)
 jit_var_schedule(3)
 jit_var_schedule(4)
 jit_var_schedule(5)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r4 -> 1 [out]
 jit_malloc(type=device, device=0, size=4096): <@> (new allocation)
@@ -151,7 +151,7 @@ jit_var_new(6): mov.u32 $r0, $i
 jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_ext(6): 2
 jit_var_dec_ref_ext(6): 1
-jit_var_new_literal(7): mov.$b0 $r0, 0x00000200
+jit_var_new_literal(7): mov.$b0 $r0, 0x200
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(7): 1
@@ -173,7 +173,7 @@ jit_var_schedule(8)
 jit_var_schedule(9)
 jit_var_schedule(10)
 jit_var_schedule(11)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r4 -> 6
    - %r5 -> 7 [scalar]
@@ -219,7 +219,7 @@ L1: // Loop body
     mov.u32 %r4, %r0;
 
     // Evaluate %r5
-    mov.b32 %r5, 0x00000200;
+    mov.b32 %r5, 0x200;
 
     // Evaluate %r6
     sub.s32 %r6, %r4, %r5;
@@ -317,7 +317,7 @@ jit_var_schedule(13)
 jit_var_schedule(13)
 jit_var_schedule(16)
 jit_var_schedule(17)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r4 -> 12
    - %rd5 -> 13 [out]
@@ -453,7 +453,7 @@ jit_var_inc_ref_int(18): 1
 jit_var_new(19 <- 18): cvt.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(19): 1
 jit_var_dec_ref_ext(18): 0
-jit_var_new_literal(20): mov.$b0 $r0, 0x0000000000000200
+jit_var_new_literal(20): mov.$b0 $r0, 0x200
 jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_int(19): 1
 jit_var_inc_ref_int(20): 1
@@ -475,7 +475,7 @@ jit_var_schedule(22)
 jit_var_schedule(21)
 jit_var_schedule(23)
 jit_var_schedule(24)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r4 -> 18
    - %rd5 -> 19
@@ -525,7 +525,7 @@ L1: // Loop body
     cvt.s64.u32 %rd5, %r4;
 
     // Evaluate %rd6
-    mov.b64 %rd6, 0x0000000000000200;
+    mov.b64 %rd6, 0x200;
 
     // Evaluate %rd7
     sub.s64 %rd7, %rd5, %rd6;
@@ -605,7 +605,7 @@ jit_var_inc_ref_int(25): 1
 jit_var_new(26 <- 25): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(26): 1
 jit_var_dec_ref_ext(25): 0
-jit_var_new_literal(27): mov.$t0 $r0, 0f44000000
+jit_var_new_literal(27): mov.$b0 $r0, 0x44000000
 jit_var_inc_ref_ext(27): 1
 jit_var_inc_ref_int(26): 1
 jit_var_inc_ref_int(27): 1
@@ -627,7 +627,7 @@ jit_var_schedule(29)
 jit_var_schedule(30)
 jit_var_schedule(28)
 jit_var_schedule(31)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r4 -> 25
    - %f5 -> 26
@@ -677,7 +677,7 @@ L1: // Loop body
     cvt.rn.f32.u32 %f5, %r4;
 
     // Evaluate %f6
-    mov.f32 %f6, 0f44000000;
+    mov.b32 %f6, 0x44000000;
 
     // Evaluate %f7
     sub.ftz.f32 %f7, %f5, %f6;
@@ -756,7 +756,7 @@ jit_var_inc_ref_int(32): 1
 jit_var_new(33 <- 32): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(33): 1
 jit_var_dec_ref_ext(32): 0
-jit_var_new_literal(34): mov.$t0 $r0, 0d4080000000000000
+jit_var_new_literal(34): mov.$b0 $r0, 0x4080000000000000
 jit_var_inc_ref_ext(34): 1
 jit_var_inc_ref_int(33): 1
 jit_var_inc_ref_int(34): 1
@@ -778,7 +778,7 @@ jit_var_schedule(36)
 jit_var_schedule(37)
 jit_var_schedule(38)
 jit_var_schedule(35)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r4 -> 32
    - %d5 -> 33
@@ -828,7 +828,7 @@ L1: // Loop body
     cvt.rn.f64.u32 %d5, %r4;
 
     // Evaluate %d6
-    mov.f64 %d6, 0d4080000000000000;
+    mov.b64 %d6, 0x4080000000000000;
 
     // Evaluate %d7
     sub.f64 %d7, %d5, %d6;

@@ -1,9 +1,9 @@
 jit_set_device(device=0, stream=0): creating stream
-jit_var_new_literal(1): mov.$t0 $r0, 0f449a4000
+jit_var_new_literal(1): mov.$b0 $r0, 0x449a4000
 jit_var_inc_ref_ext(1): 1
-jit_var_new_literal(2): mov.$t0 $r0, 0f449a6000
+jit_var_new_literal(2): mov.$b0 $r0, 0x449a6000
 jit_var_inc_ref_ext(2): 1
-jit_var_new_literal(1): mov.$t0 $r0, 0f449a4000 (reused)
+jit_var_new_literal(1): mov.$b0 $r0, 0x449a4000 (reused)
 jit_var_inc_ref_ext(1): 2
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1
@@ -25,7 +25,7 @@ jit_var_schedule(1)
 jit_var_schedule(3)
 jit_var_schedule(4)
 jit_var_schedule(3)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1): register map:
    - %f4 -> 1 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
@@ -66,7 +66,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 L1: // Loop body
 
     // Evaluate %f4
-    mov.f32 %f4, 0f449a4000;
+    mov.b32 %f4, 0x449a4000;
 
     // Store %f4
     ld.param.u64 %rd0, [arg0];
@@ -75,7 +75,7 @@ L1: // Loop body
     st.global.cs.f32 [%rd0], %f4;
 
     // Evaluate %f5
-    mov.f32 %f5, 0f449a6000;
+    mov.b32 %f5, 0x449a6000;
 
     // Store %f5
     ld.param.u64 %rd0, [arg1];

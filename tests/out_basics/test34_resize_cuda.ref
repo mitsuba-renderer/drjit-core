@@ -1,7 +1,7 @@
 jit_set_device(device=0, stream=0): creating stream
-jit_var_new_literal(1): mov.$b0 $r0, 0x00000001
+jit_var_new_literal(1): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(1): 1
-jit_var_new_literal(1): mov.$b0 $r0, 0x00000001 (reused)
+jit_var_new_literal(1): mov.$b0 $r0, 0x1 (reused)
 jit_var_inc_ref_ext(1): 2
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(1): 2
@@ -12,7 +12,7 @@ jit_var_dec_ref_ext(1): 0
 jit_var_set_size(2): 3
 jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(2): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=3): register map:
    - %r4 -> 1 [scalar]
    - %r5 -> 2 [out]
@@ -45,7 +45,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 L1: // Loop body
 
     // Evaluate %r4
-    mov.b32 %r4, 0x00000001;
+    mov.b32 %r4, 0x1;
 
     // Evaluate %r5
     add.u32 %r5, %r4, %r4;
@@ -72,9 +72,9 @@ jit_eval(): done.
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_free(<@>, type=device, device=0, size=64)
-jit_var_new_literal(3): mov.$b0 $r0, 0x00000001
+jit_var_new_literal(3): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(3): 1
-jit_var_new_literal(3): mov.$b0 $r0, 0x00000001 (reused)
+jit_var_new_literal(3): mov.$b0 $r0, 0x1 (reused)
 jit_var_inc_ref_ext(3): 2
 jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(3): 2
@@ -86,7 +86,7 @@ jit_var_inc_ref_int(3): 3
 jit_var_new(5 <- 3): mov.$t0 $r0, $r1
 jit_var_inc_ref_ext(5): 1
 jit_var_dec_ref_ext(3): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=3): register map:
    - %r4 -> 3 [scalar]
    - %r5 -> 5 [out]
@@ -119,7 +119,7 @@ jit_malloc(type=device, device=0, size=64): <@> (reused local)
 L1: // Loop body
 
     // Evaluate %r4
-    mov.b32 %r4, 0x00000001;
+    mov.b32 %r4, 0x1;
 
     // Evaluate %r5
     mov.u32 %r5, %r4;
@@ -149,9 +149,9 @@ jit_var_free(3)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)
 jit_free(<@>, type=device, device=0, size=64)
-jit_var_new_literal(6): mov.$b0 $r0, 0x00000001
+jit_var_new_literal(6): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(6): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1): register map:
    - %r4 -> 6 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
@@ -183,7 +183,7 @@ jit_malloc(type=device, device=0, size=64): <@> (reused local)
 L1: // Loop body
 
     // Evaluate %r4
-    mov.b32 %r4, 0x00000001;
+    mov.b32 %r4, 0x1;
 
     // Store %r4
     ld.param.u64 %rd0, [arg0];
@@ -205,7 +205,7 @@ jit_var_inc_ref_int(6): 1
 jit_var_new(7 <- 6): mov.$t0 $r0, $r1
 jit_var_inc_ref_ext(7): 1
 jit_var_dec_ref_ext(6): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=3): register map:
    - %r4 -> 6 [scalar] [in]
    - %r5 -> 7 [out]

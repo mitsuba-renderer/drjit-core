@@ -5,7 +5,7 @@ jit_var_inc_ref_int(1): 1
 jit_var_new(2 <- 1): cvt.rn.$t0.$t1 $r0, $r1
 jit_var_inc_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0
-jit_var_new_literal(3): mov.$t0 $r0, 0f40a00000
+jit_var_new_literal(3): mov.$b0 $r0, 0x40a00000
 jit_var_inc_ref_ext(3): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
@@ -24,7 +24,7 @@ jit_var_dec_ref_ext(2): 0
 jit_var_dec_ref_ext(5): 0
 jit_var_schedule(4)
 jit_var_schedule(6)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=10): register map:
    - %r4 -> 1
    - %f5 -> 2
@@ -69,7 +69,7 @@ L1: // Loop body
     cvt.rn.f32.u32 %f5, %r4;
 
     // Evaluate %f6
-    mov.f32 %f6, 0f40a00000;
+    mov.b32 %f6, 0x40a00000;
 
     // Evaluate %p7
     setp.gt.f32 %p7, %f5, %f6;
@@ -115,9 +115,9 @@ jit_var_dec_ref_int(4): 0
 jit_eval(): done.
 value=[0, 1, 2, 3, 4, 5, -6, -7, -8, -9]
 mask=[0, 0, 0, 0, 0, 0, 1, 1, 1, 1]
-jit_var_new_literal(7): mov.$t0 $r0, 0f3f800000
+jit_var_new_literal(7): mov.$b0 $r0, 0x3f800000
 jit_var_inc_ref_ext(7): 1
-jit_var_new_literal(8): mov.$t0 $r0, 0f40000000
+jit_var_new_literal(8): mov.$b0 $r0, 0x40000000
 jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(8): 1
@@ -126,7 +126,7 @@ jit_var_new(9 <- 7, 8, 4): selp.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(9): 1
 jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=10): register map:
    - %f4 -> 7 [scalar]
    - %f5 -> 8 [scalar]
@@ -162,10 +162,10 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 L1: // Loop body
 
     // Evaluate %f4
-    mov.f32 %f4, 0f3f800000;
+    mov.b32 %f4, 0x3f800000;
 
     // Evaluate %f5
-    mov.f32 %f5, 0f40000000;
+    mov.b32 %f5, 0x40000000;
 
     // Load %p6
     ld.param.u64 %rd0, [arg0];
@@ -198,13 +198,13 @@ jit_var_free(8)
 jit_var_dec_ref_int(4): 0
 jit_eval(): done.
 value_2=[2, 2, 2, 2, 2, 2, 1, 1, 1, 1]
-jit_var_new_literal(10): mov.$t0 $r0, 1
+jit_var_new_literal(10): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(10): 1
-jit_var_new_literal(11): mov.$t0 $r0, 0
+jit_var_new_literal(11): mov.$b0 $r0, 0x0
 jit_var_inc_ref_ext(11): 1
 jit_var_schedule(10)
 jit_var_schedule(11)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1): register map:
    - %p4 -> 10 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
@@ -239,7 +239,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 L1: // Loop body
 
     // Evaluate %p4
-    mov.pred %p4, 1;
+    mov.pred %p4, 0x1;
 
     // Store %p4
     ld.param.u64 %rd0, [arg0];
@@ -249,7 +249,7 @@ L1: // Loop body
     st.global.cs.u8 [%rd0], %w0;
 
     // Evaluate %p5
-    mov.pred %p5, 0;
+    mov.pred %p5, 0x0;
 
     // Store %p5
     ld.param.u64 %rd0, [arg1];
@@ -267,7 +267,7 @@ L0:
 }
 jit_eval(): cleaning up..
 jit_eval(): done.
-jit_var_new_literal(12): mov.$t0 $r0, 0f00000000
+jit_var_new_literal(12): mov.$b0 $r0, 0x0
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(12): 1
@@ -275,7 +275,7 @@ jit_var_inc_ref_int(10): 1
 jit_var_new(13 <- 6, 12, 10): selp.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(13): 1
 jit_var_dec_ref_ext(12): 0
-jit_var_new_literal(12): mov.$t0 $r0, 0f00000000 (reused)
+jit_var_new_literal(12): mov.$b0 $r0, 0x0 (reused)
 jit_var_inc_ref_ext(12): 1
 jit_var_inc_ref_int(6): 2
 jit_var_inc_ref_int(12): 2
@@ -285,7 +285,7 @@ jit_var_inc_ref_ext(14): 1
 jit_var_dec_ref_ext(12): 0
 jit_var_schedule(13)
 jit_var_schedule(14)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=10): register map:
    - %f4 -> 6 [in]
    - %f5 -> 12 [scalar]
@@ -333,7 +333,7 @@ L1: // Loop body
     ld.global.cs.f32 %f4, [%rd0];
 
     // Evaluate %f5
-    mov.f32 %f5, 0f00000000;
+    mov.b32 %f5, 0x0;
 
     // Load %p6
     ld.param.u64 %rd0, [arg1];

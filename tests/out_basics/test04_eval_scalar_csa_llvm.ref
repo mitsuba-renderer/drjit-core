@@ -25,7 +25,7 @@ jit_var_schedule(1)
 jit_var_schedule(3)
 jit_var_schedule(4)
 jit_var_schedule(3)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1): register map:
    - %f0 -> 1 [scalar] [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)

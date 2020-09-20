@@ -39,7 +39,7 @@ jit_var_schedule(8)
 jit_var_schedule(9)
 jit_var_schedule(10)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 3 [out]
@@ -389,7 +389,7 @@ jit_var_schedule(16)
 jit_var_schedule(17)
 jit_var_schedule(18)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 11 [out]
@@ -739,7 +739,7 @@ jit_var_schedule(24)
 jit_var_schedule(25)
 jit_var_schedule(26)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 19 [out]
@@ -1089,7 +1089,7 @@ jit_var_schedule(32)
 jit_var_schedule(33)
 jit_var_schedule(34)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=9): register map:
    - %f0 -> 1 [in]
    - %r1 -> 27 [out]

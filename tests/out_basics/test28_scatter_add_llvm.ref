@@ -24,7 +24,7 @@ jit_var_dec_ref_ext(5): 0
 jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
 jit_var_dec_ref_ext(3): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=15): register map:
    - %f0 -> 3 [scalar]
    - %r1 -> 2 [in]
@@ -151,7 +151,7 @@ jit_var_dec_ref_ext(11): 0
 jit_var_dec_ref_ext(10): 0
 jit_var_free(10)
 jit_var_dec_ref_ext(9): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=16): register map:
    - %f0 -> 9 [scalar]
    - %r1 -> 8 [in]
@@ -283,7 +283,7 @@ jit_var_dec_ref_ext(17): 0
 jit_var_dec_ref_ext(16): 0
 jit_var_free(16)
 jit_var_dec_ref_ext(15): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=15): register map:
    - %r0 -> 14 [in]
    - %rd1 -> 17
@@ -432,7 +432,7 @@ jit_var_dec_ref_ext(24): 0
 jit_var_dec_ref_ext(23): 0
 jit_var_free(23)
 jit_var_dec_ref_ext(22): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=16): register map:
    - %r0 -> 21 [in]
    - %rd1 -> 24
@@ -588,7 +588,7 @@ jit_var_inc_ref_ext(35): 1
 jit_var_mark_scatter(35, 27)
 jit_var_dec_ref_ext(34): 0
 jit_var_dec_ref_ext(33): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=15): register map:
    - %r0 -> 28
    - %f1 -> 29
@@ -772,7 +772,7 @@ jit_var_inc_ref_ext(44): 1
 jit_var_mark_scatter(44, 36)
 jit_var_dec_ref_ext(43): 0
 jit_var_dec_ref_ext(42): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=16): register map:
    - %r0 -> 37
    - %f1 -> 38
@@ -960,7 +960,7 @@ jit_var_mark_scatter(54, 45)
 jit_var_dec_ref_ext(53): 0
 jit_var_dec_ref_ext(52): 0
 jit_var_dec_ref_ext(51): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=15): register map:
    - %r0 -> 46
    - %d1 -> 47
@@ -1168,7 +1168,7 @@ jit_var_mark_scatter(64, 55)
 jit_var_dec_ref_ext(63): 0
 jit_var_dec_ref_ext(62): 0
 jit_var_dec_ref_ext(61): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=16): register map:
    - %r0 -> 57
    - %d1 -> 58

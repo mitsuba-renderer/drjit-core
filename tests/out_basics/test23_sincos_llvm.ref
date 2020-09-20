@@ -303,7 +303,7 @@ jit_var_dec_ref_ext(19): 0
 jit_var_dec_ref_ext(33): 0
 jit_var_dec_ref_ext(14): 0
 jit_var_dec_ref_ext(7): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=10): register map:
    - %r0 -> 1
    - %f1 -> 2
@@ -634,7 +634,7 @@ jit_var_dec_ref_int(16): 1
 jit_var_dec_ref_int(5): 1
 jit_eval(): done.
 xs : [0, 0.110883, 0.220398, 0.327195, 0.429956, 0.527415, 0.61837, 0.701698, 0.776372, 0.841471]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=10): register map:
    - %r0 -> 1
    - %f1 -> 2

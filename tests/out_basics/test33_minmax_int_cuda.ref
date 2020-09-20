@@ -1,7 +1,7 @@
 jit_set_device(device=0, stream=0): creating stream
-jit_var_new_literal(1): mov.$b0 $r0, 0x00000002
+jit_var_new_literal(1): mov.$b0 $r0, 0x2
 jit_var_inc_ref_ext(1): 1
-jit_var_new_literal(2): mov.$b0 $r0, 0x00000003
+jit_var_new_literal(2): mov.$b0 $r0, 0x3
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1
@@ -13,7 +13,7 @@ jit_var_new(4 <- 1, 2): max.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(4): 1
 jit_var_schedule(3)
 jit_var_schedule(4)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1): register map:
    - %r4 -> 1 [scalar]
    - %r5 -> 2 [scalar]
@@ -50,10 +50,10 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 L1: // Loop body
 
     // Evaluate %r4
-    mov.b32 %r4, 0x00000002;
+    mov.b32 %r4, 0x2;
 
     // Evaluate %r5
-    mov.b32 %r5, 0x00000003;
+    mov.b32 %r5, 0x3;
 
     // Evaluate %r6
     min.u32 %r6, %r4, %r5;
@@ -90,7 +90,7 @@ jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(1): 1
 jit_var_new(5 <- 3, 1): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(5): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1): register map:
    - %r4 -> 3 [scalar] [in]
    - %r5 -> 1 [scalar]
@@ -129,7 +129,7 @@ L1: // Loop body
     ldu.global.u32 %r4, [%rd0];
 
     // Evaluate %r5
-    mov.b32 %r5, 0x00000002;
+    mov.b32 %r5, 0x2;
 
     // Evaluate %p6
     setp.eq.u32 %p6, %r4, %r5;
@@ -164,7 +164,7 @@ jit_var_inc_ref_int(4): 1
 jit_var_inc_ref_int(2): 1
 jit_var_new(6 <- 4, 2): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(6): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1): register map:
    - %r4 -> 4 [scalar] [in]
    - %r5 -> 2 [scalar]
@@ -203,7 +203,7 @@ L1: // Loop body
     ldu.global.u32 %r4, [%rd0];
 
     // Evaluate %r5
-    mov.b32 %r5, 0x00000003;
+    mov.b32 %r5, 0x3;
 
     // Evaluate %p6
     setp.eq.u32 %p6, %r4, %r5;

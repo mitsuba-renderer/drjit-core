@@ -16,7 +16,7 @@ jit_var_inc_ref_ext(3): 1
 jit_var_copy_mem(3, size=4)
 jit_var_new_literal(4): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(4): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r0 -> 1
    - %r1 -> 2 [out]
@@ -75,7 +75,7 @@ jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(5): 0
 jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
    - %r0 -> 3 [in]
    - %rd1 -> 5 [scalar] [direct_pointer]
@@ -209,7 +209,7 @@ jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
 jit_var_new_literal(12): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(12): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
    - %r0 -> 6 [in]
    - %r1 -> 7 [scalar]
@@ -353,7 +353,7 @@ jit_var_free(6)
 jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(12): 0
 jit_var_free(12)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
    - %r0 -> 3 [in]
    - %rd1 -> 13 [scalar] [direct_pointer]

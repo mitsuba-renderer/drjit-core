@@ -9,7 +9,7 @@ jit_var_inc_ref_int(1): 1
 jit_var_new(2 <- 1): mov.$b0 $r0, $r1
 jit_var_inc_ref_ext(2): 1
 jit_var_dec_ref_ext(1): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=3): register map:
    - %f4 -> 1 [in]
    - %r5 -> 2 [out]
@@ -74,7 +74,7 @@ As integer: [1065353216, 1073741824, 1077936128]
 jit_var_inc_ref_int(2): 1
 jit_var_new(3 <- 2): mov.$b0 $r0, $r1
 jit_var_inc_ref_ext(3): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=3): register map:
    - %r4 -> 2 [in]
    - %f5 -> 3 [out]

@@ -26,7 +26,7 @@ jit_var_dec_ref_ext(3): 0
 jit_var_schedule(4)
 jit_var_schedule(5)
 jit_var_schedule(6)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r0 -> 1 [in]
    - %r1 -> 4 [out]
@@ -161,7 +161,7 @@ jit_var_dec_ref_ext(6): 0
 jit_var_schedule(7)
 jit_var_schedule(8)
 jit_var_schedule(9)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r0 -> 4 [in]
    - %r1 -> 7 [out]
@@ -308,7 +308,7 @@ jit_var_inc_ref_ext(15): 1
 jit_var_schedule(13)
 jit_var_schedule(14)
 jit_var_schedule(15)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r0 -> 7 [in]
    - %r1 -> 10 [in]
@@ -474,7 +474,7 @@ jit_var_inc_ref_ext(18): 1
 jit_var_schedule(16)
 jit_var_schedule(17)
 jit_var_schedule(18)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r0 -> 7 [in]
    - %r1 -> 10 [in]
@@ -640,7 +640,7 @@ jit_var_inc_ref_ext(21): 1
 jit_var_schedule(19)
 jit_var_schedule(20)
 jit_var_schedule(21)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r0 -> 7 [in]
    - %r1 -> 10 [in]

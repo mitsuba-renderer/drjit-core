@@ -16,9 +16,9 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map_mem(3): <@>, size=4, free=1
 jit_var_inc_ref_ext(3): 1
 jit_var_copy_mem(3, size=4)
-jit_var_new_literal(4): mov.$t0 $r0, 1
+jit_var_new_literal(4): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(4): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r4 -> 1
    - %r5 -> 2 [out]
@@ -84,7 +84,7 @@ jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(5): 0
 jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
    - %r4 -> 3 [in]
    - %rd5 -> 5 [scalar] [direct_pointer]
@@ -154,13 +154,13 @@ jit_var_dec_ref_int(3): 0
 jit_eval(): done.
 [-34, -62, -75, -2]
 [0, -1, -2, -3, -4, .. 1014 skipped .., -1019, -1020, -1021, -1022, -1023]
-jit_var_new_literal(7): mov.$b0 $r0, 0x00000003
+jit_var_new_literal(7): mov.$b0 $r0, 0x3
 jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(7): 1
 jit_var_new(8 <- 6, 7): mul.lo.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(8): 1
-jit_var_new_literal(9): mov.$t0 $r0, 1
+jit_var_new_literal(9): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(9): 1
 jit_var_inc_ref_ext(2): 2
 jit_var_copy_ptr(10 <- 2): <@>
@@ -176,9 +176,9 @@ jit_var_dec_ref_ext(9): 0
 jit_var_free(9)
 jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
-jit_var_new_literal(12): mov.$t0 $r0, 1
+jit_var_new_literal(12): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(12): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
    - %r4 -> 6 [in]
    - %r5 -> 7 [scalar]
@@ -222,7 +222,7 @@ L1: // Loop body
     ld.global.cs.s32 %r4, [%rd0];
 
     // Evaluate %r5
-    mov.b32 %r5, 0x00000003;
+    mov.b32 %r5, 0x3;
 
     // Evaluate %r6
     mul.lo.s32 %r6, %r4, %r5;
@@ -274,7 +274,7 @@ jit_var_free(6)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(12): 0
 jit_var_free(12)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
    - %r4 -> 3 [in]
    - %rd5 -> 13 [scalar] [direct_pointer]

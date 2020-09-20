@@ -29,7 +29,7 @@ jit_var_schedule(4)
 jit_var_schedule(5)
 jit_var_schedule(6)
 jit_var_schedule(7)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=6): register map:
    - %f0 -> 1 [in]
    - %f1 -> 2 [out]
@@ -227,7 +227,7 @@ jit_var_schedule(11)
 jit_var_schedule(12)
 jit_var_schedule(13)
 jit_var_schedule(14)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=6): register map:
    - %d0 -> 8 [in]
    - %d1 -> 9 [out]

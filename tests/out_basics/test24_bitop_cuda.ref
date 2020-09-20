@@ -18,7 +18,7 @@ jit_var_schedule(2)
 jit_var_schedule(3)
 jit_var_schedule(4)
 orig : [0, 1, 1234, 4294967295]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
    - %r4 -> 1 [in]
    - %r5 -> 2 [out]

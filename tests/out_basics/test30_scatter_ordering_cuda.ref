@@ -1,7 +1,7 @@
 jit_set_device(device=0, stream=0): creating stream
-jit_var_new_literal(1): mov.$b0 $r0, 0x00000000
+jit_var_new_literal(1): mov.$b0 $r0, 0x0
 jit_var_inc_ref_ext(1): 1
-jit_var_new_literal(2): mov.$b0 $r0, 0x00000001
+jit_var_new_literal(2): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_ext(2): 2
 jit_var_dec_ref_ext(2): 1
@@ -11,9 +11,9 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_var_map_mem(3): <@>, size=3, free=1
 jit_var_inc_ref_ext(3): 1
 jit_var_copy_mem(3, size=3)
-jit_var_new_literal(2): mov.$b0 $r0, 0x00000001 (reused)
+jit_var_new_literal(2): mov.$b0 $r0, 0x1 (reused)
 jit_var_inc_ref_ext(2): 2
-jit_var_new_literal(4): mov.$t0 $r0, 1
+jit_var_new_literal(4): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(4): 1
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_memset_async(<@>, isize=4, size=16)
@@ -30,9 +30,9 @@ jit_var_dec_ref_ext(5): 0
 jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
 jit_var_dec_ref_ext(2): 1
-jit_var_new_literal(2): mov.$b0 $r0, 0x00000001 (reused)
+jit_var_new_literal(2): mov.$b0 $r0, 0x1 (reused)
 jit_var_inc_ref_ext(2): 2
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=3): register map:
    - %r4 -> 2 [scalar]
    - %r5 -> 3 [in]
@@ -67,7 +67,7 @@ jit_assemble(size=3): register map:
 L1: // Loop body
 
     // Evaluate %r4
-    mov.b32 %r4, 0x00000001;
+    mov.b32 %r4, 0x1;
 
     // Load %r5
     ld.param.u64 %rd0, [arg0];
@@ -106,7 +106,7 @@ jit_var_new(7 <- 1, 2): add.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(7): 1
 jit_var_dec_ref_ext(2): 1
 x:[0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1): register map:
    - %r4 -> 2 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
@@ -138,7 +138,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 L1: // Loop body
 
     // Evaluate %r4
-    mov.b32 %r4, 0x00000001;
+    mov.b32 %r4, 0x1;
 
     // Store %r4
     ld.param.u64 %rd0, [arg0];
@@ -156,7 +156,7 @@ L0:
 jit_eval(): cleaning up..
 jit_eval(): done.
 y:[1]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=16): register map:
    - %r4 -> 1 [in]
    - %r5 -> 2 [scalar] [in]

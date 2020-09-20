@@ -23,7 +23,7 @@ jit_var_schedule(2)
 jit_var_schedule(3)
 jit_var_schedule(4)
 jit_var_schedule(5)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r0 -> 1 [out]
 jit_malloc(type=host-async, size=4096): <@> (new allocation)
@@ -179,7 +179,7 @@ jit_var_schedule(8)
 jit_var_schedule(9)
 jit_var_schedule(10)
 jit_var_schedule(11)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r0 -> 6
    - %r1 -> 7 [scalar]
@@ -327,7 +327,7 @@ jit_var_schedule(13)
 jit_var_schedule(13)
 jit_var_schedule(16)
 jit_var_schedule(17)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r0 -> 12
    - %rd1 -> 13 [out]
@@ -491,7 +491,7 @@ jit_var_schedule(22)
 jit_var_schedule(21)
 jit_var_schedule(23)
 jit_var_schedule(24)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r0 -> 18
    - %rd1 -> 19
@@ -647,7 +647,7 @@ jit_var_schedule(29)
 jit_var_schedule(30)
 jit_var_schedule(28)
 jit_var_schedule(31)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r0 -> 25
    - %f1 -> 26
@@ -802,7 +802,7 @@ jit_var_schedule(36)
 jit_var_schedule(37)
 jit_var_schedule(38)
 jit_var_schedule(35)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1024): register map:
    - %r0 -> 32
    - %d1 -> 33

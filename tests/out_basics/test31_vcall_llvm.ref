@@ -44,7 +44,7 @@ jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(7): 1
 jit_var_new(8 <- 3, 7): $r0 = icmp eq <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(8): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r0 -> 3 [in]
    - %r1 -> 7 [in]
@@ -126,7 +126,7 @@ jit_var_inc_ref_int(4): 1
 jit_var_inc_ref_int(9): 1
 jit_var_new(10 <- 4, 9): $r0 = icmp eq <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(10): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r0 -> 4 [in]
    - %r1 -> 9 [in]
@@ -209,7 +209,7 @@ jit_var_inc_ref_int(5): 1
 jit_var_inc_ref_int(11): 1
 jit_var_new(12 <- 5, 11): $r0 = icmp eq <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(12): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
    - %r0 -> 5 [in]
    - %r1 -> 11 [in]
@@ -291,7 +291,7 @@ jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(13): 1
 jit_var_new(14 <- 6, 13): $r0 = icmp eq <$w x $t1> $r1, $r2
 jit_var_inc_ref_ext(14): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r0 -> 6 [in]
    - %r1 -> 13 [in]

@@ -24,7 +24,7 @@ jit_var_dec_ref_ext(2): 0
 jit_var_dec_ref_ext(5): 0
 jit_var_schedule(4)
 jit_var_schedule(6)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=10): register map:
    - %r0 -> 1
    - %f1 -> 2
@@ -124,7 +124,7 @@ jit_var_new(9 <- 4, 7, 8): $r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t
 jit_var_inc_ref_ext(9): 1
 jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=10): register map:
    - %p0 -> 4 [in]
    - %f1 -> 7 [scalar]
@@ -198,7 +198,7 @@ jit_var_new_literal(11): $r0_0 = insertelement <$w x $t0> undef, $t0 0, i32 0$n$
 jit_var_inc_ref_ext(11): 1
 jit_var_schedule(10)
 jit_var_schedule(11)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1): register map:
    - %p0 -> 10 [scalar] [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
@@ -277,7 +277,7 @@ jit_var_inc_ref_ext(14): 1
 jit_var_dec_ref_ext(12): 0
 jit_var_schedule(13)
 jit_var_schedule(14)
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=10): register map:
    - %p0 -> 10 [scalar] [in]
    - %f1 -> 6 [in]

@@ -1,26 +1,26 @@
 jit_set_device(device=-1, stream=0): creating stream
 value=[0] vs 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
   -> launching <@> (n=1, in=1, out=3, ops=5):
 jit_eval(): done.
 value=[3] vs 3
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
   -> launching <@> (n=1, in=3, out=7, ops=17):
 jit_eval(): done.
 value=[36] vs 36
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
   -> launching <@> (n=1, in=9, out=19, ops=53):
 jit_eval(): done.
 value=[351] vs 351
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
   -> launching <@> (n=1, in=27, out=55, ops=161):
 jit_eval(): done.
 value=[3240] vs 3240
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
   -> launching <@> (n=1, in=81, out=163, ops=485):
 jit_eval(): done.
 value=[29403] vs 29403
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
   -> launching <@> (n=1, in=243, out=487, ops=1457):
 jit_eval(): done.
 value=[265356] vs 265356

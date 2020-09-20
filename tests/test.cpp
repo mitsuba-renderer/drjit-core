@@ -93,13 +93,13 @@ void test_sanitize_log(char *buf) {
                 ++src;
         }
 
-        if (strncmp(src, "-> launching ", 13) == 0) {
+        if (strncmp(src, "-> launching ", 13) == 0 && src[13] != '<') {
             memcpy(dst, "-> launching <@>", 16);
             src += 29;
             dst += 16;
         }
 
-        if (strncmp(src, "enoki_", 6) == 0) {
+        if (strncmp(src, "enoki_", 6) == 0 && src[6] != '<') {
             memcpy(dst, "enoki_<@>", 9);
             src += 22;
             dst += 9;

@@ -33,7 +33,7 @@ jit_var_new(8 <- 6, 7): $r0 = mul <$w x $t0> $r1, $r2
 jit_var_inc_ref_ext(8): 1
 jit_var_new_literal(9): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(9): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=1022): register map:
    - %r0 -> 1 "l"
    - %r1 -> 2 [scalar]
@@ -145,7 +145,7 @@ jit_var_dec_ref_ext(8): 0
 jit_var_dec_ref_ext(7): 0
 jit_var_set_label(15): "odd"
 Mask  : [0, 1, 0, 1, 0, .. 1012 skipped .., 1, 0, 1, 0, 1]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=510): register map:
    - %r0 -> 6 "l2"
    - %r1 -> 7 [scalar]
@@ -266,7 +266,7 @@ jit_var_dec_ref_int(10): 1
 jit_var_dec_ref_int(8): 1
 jit_eval(): done.
 Even  : [0, 0, 0, 0, 0, .. 500 skipped .., 0, 0, 0, 0, 0]
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=510): register map:
    - %r0 -> 6 "l2"
    - %r1 -> 7 [scalar]
@@ -473,7 +473,7 @@ jit_var_dec_ref_ext(23): 0
 jit_var_dec_ref_ext(22): 0
 jit_var_dec_ref_ext(17): 0
 jit_var_dec_ref_ext(16): 0
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=510): register map:
    - %r0 -> 6 "l2"
    - %r1 -> 16 [scalar]

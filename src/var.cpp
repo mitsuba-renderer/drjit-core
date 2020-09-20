@@ -374,78 +374,99 @@ uint32_t jit_var_new_literal(VarType type, int cuda,
         return jit_var_map_mem(type, cuda, ptr, size, true);
     }
 
-    const char *fmt = nullptr;
-    char buffer[256];
-
     bool is_literal_one, is_literal_zero = value == 0;
+    bool is_float = true, is_uint8 = false;
     switch (type) {
-        case VarType::Float16: is_literal_one = value == 0x3c00ull; break;
-        case VarType::Float32: is_literal_one = value == 0x3f800000ull; break;
-        case VarType::Float64: is_literal_one = value == 0x3ff0000000000000ull; break;
-        default:               is_literal_one = value == 1; break;
+        case VarType::Float16:
+            is_literal_one = value == 0x3c00ull;
+            break;
+
+        case VarType::Float32:
+            is_literal_one = value == 0x3f800000ull;
+
+            // LLVM: double hex floats, even in single precision
+            if (!cuda) {
+                float f = 0.f;
+                memcpy(&f, &value, sizeof(float));
+                double d = (double) f;
+                memcpy(&value, &d, sizeof(double));
+            }
+            break;
+
+        case VarType::Float64:
+            is_literal_one = value == 0x3ff0000000000000ull;
+            break;
+
+        default:
+            is_literal_one = value == 1;
+            is_float = false;
+            is_uint8 = type == VarType::Int8 || type == VarType::UInt8;
+            break;
     }
 
+    const char *digits = "0123456789abcdef";
+    char digits_buf[20];
+    int n_digits = 0;
+
+    /* This is function is performance-critical. The following hand-written
+       code replaces a previous 'snprintf' implementation that was too slow. */
+    if (cuda || is_float) {
+        // Hex digits for CUDA, and floats in LLVM mode
+        do {
+            digits_buf[sizeof(digits_buf) - 1 - n_digits++] = digits[value & 0xF];
+            value >>= 4;
+        } while (value);
+    } else {
+        // Base-10 digits for LLVM integers
+        do {
+            digits_buf[sizeof(digits_buf) - 1 - n_digits++] = digits[value % 10];
+            value /= 10;
+        } while (value);
+    }
+
+    int bytes_required;
+    if (cuda)
+        bytes_required = is_uint8 ? 37 : 16;
+    else
+        bytes_required = 124;
+    bytes_required += n_digits;
+
+    char *stmt = (char *) malloc_check(bytes_required),
+         *ptr = stmt;
     if (cuda) {
-        switch (type) {
-            case VarType::Float16:
-                fmt = "mov.$b0 $r0, 0x%04llx";
-                break;
+        if (unlikely(is_uint8)) {
+            memcpy(ptr, "mov.b16 %w1, 0x", 15);
+            ptr += 15;
 
-            case VarType::Float32:
-                fmt = "mov.$t0 $r0, 0f%08llx";
-                break;
+            memcpy(ptr, digits_buf + sizeof(digits_buf) - n_digits, n_digits);
+            ptr += n_digits;
 
-            case VarType::Float64:
-                fmt = "mov.$t0 $r0, 0d%016llx";
-                break;
+            memcpy(ptr, "$ncvt.u8.u16 $r0, %w1", 21);
+            ptr += 21;
+        } else {
+            memcpy(ptr, "mov.$b0 $r0, 0x", 15);
+            ptr += 15;
 
-            case VarType::Bool:
-                fmt = "mov.$t0 $r0, %llu";
-                break;
-
-            case VarType::Int8:
-            case VarType::UInt8:
-                fmt = "mov.b16 %%w1, 0x%02llx$ncvt.u8.u16 $r0, %%w1";
-                break;
-
-            case VarType::Int16:
-            case VarType::UInt16:
-                fmt = "mov.$b0 $r0, 0x%04llx";
-                break;
-
-            case VarType::Int32:
-            case VarType::UInt32:
-                fmt = "mov.$b0 $r0, 0x%08llx";
-                break;
-
-            case VarType::Pointer:
-            case VarType::Int64:
-            case VarType::UInt64:
-                fmt = "mov.$b0 $r0, 0x%016llx";
-                break;
-
-            default:
-                jit_raise("jit_var_new_literal(): invalid type!");
+            memcpy(ptr, digits_buf + sizeof(digits_buf) - n_digits, n_digits);
+            ptr += n_digits;
         }
     } else {
-        if (type == VarType::Float32) {
-            float f = 0.f;
-            memcpy(&f, &value, sizeof(float));
-            double d = (double) f;
-            memcpy(&value, &d, sizeof(double));
+        memcpy(ptr, "$r0_0 = insertelement <$w x $t0> undef, $t0 ", 44);
+        ptr += 44;
+
+        if (type == VarType::Float32 || type == VarType::Float64) {
+            memcpy(ptr, "0x", 22);
+            ptr += 2;
         }
 
-        fmt = (type == VarType::Float32 || type == VarType::Float64) ?
-            "$r0_0 = insertelement <$w x $t0> undef, $t0 0x%llx, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z" :
-            "$r0_0 = insertelement <$w x $t0> undef, $t0 %llu, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z";
+        memcpy(ptr, digits_buf + sizeof(digits_buf) - n_digits, n_digits);
+        ptr += n_digits;
 
+        memcpy(ptr, ", i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, "
+               "<$w x $t0> undef, <$w x i32> $z", 78);
+        ptr += 78;
     }
-
-    int stmt_size = snprintf(buffer, sizeof(buffer), fmt, (long long unsigned) value) + 1;
-    char *stmt = (char *) malloc_check(stmt_size);
-    memcpy(stmt, buffer, stmt_size);
+    *ptr = '\0';
 
     Variable v;
     v.type = (uint32_t) type;
@@ -454,7 +475,6 @@ uint32_t jit_var_new_literal(VarType type, int cuda,
     v.tsize = 1;
     v.free_stmt = 1;
     v.cuda = cuda;
-
     v.is_literal_zero = is_literal_zero;
     v.is_literal_one = is_literal_one;
 

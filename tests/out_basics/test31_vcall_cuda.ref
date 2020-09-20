@@ -50,7 +50,7 @@ jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(7): 1
 jit_var_new(8 <- 3, 7): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(8): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r4 -> 3 [in]
    - %r5 -> 7 [in]
@@ -140,7 +140,7 @@ jit_var_inc_ref_int(4): 1
 jit_var_inc_ref_int(9): 1
 jit_var_new(10 <- 4, 9): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(10): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r4 -> 4 [in]
    - %r5 -> 9 [in]
@@ -230,7 +230,7 @@ jit_var_inc_ref_int(5): 1
 jit_var_inc_ref_int(11): 1
 jit_var_new(12 <- 5, 11): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(12): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
    - %r4 -> 5 [in]
    - %r5 -> 11 [in]
@@ -319,7 +319,7 @@ jit_var_inc_ref_int(6): 1
 jit_var_inc_ref_int(13): 1
 jit_var_new(14 <- 6, 13): setp.eq.$t1 $r0, $r1, $r2
 jit_var_inc_ref_ext(14): 1
-jit_eval(): launching 1 kernels.
+jit_eval(): launching 1 kernel.
 jit_assemble(size=2): register map:
    - %r4 -> 6 [in]
    - %r5 -> 13 [in]
