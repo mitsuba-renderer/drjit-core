@@ -2,6 +2,14 @@
 
 # Enoki-JIT — CUDA & LLVM just-in-time compiler
 
+| Continuous Integration |
+|         :---:          |
+|   [![rgl-ci][1]][2]    |
+
+[1]: https://rgl-ci.epfl.ch/app/rest/builds/buildType(id:EnokiJit_Build)/statusIcon.svg
+[2]: https://rgl-ci.epfl.ch/buildConfiguration/EnokiJit_Build?guest=1
+
+
 ## Introduction
 
 This project implements a lazy tracing just-in-time (JIT) compiler targeting
