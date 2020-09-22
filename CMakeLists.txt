@@ -62,7 +62,7 @@ if (ENOKI_JIT_ENABLE_TBB)
     set(TBB_FOUND TRUE)
   else()
     # Try to detect TBB
-    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ext/cmake)
     find_package(TBB)
   endif()
 endif()
