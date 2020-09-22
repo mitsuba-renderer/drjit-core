@@ -472,7 +472,7 @@ uint32_t jit_var_new_literal(VarType type, int cuda,
         ptr += 44;
 
         if (type == VarType::Float32 || type == VarType::Float64) {
-            memcpy(ptr, "0x", 22);
+            memcpy(ptr, "0x", 2);
             ptr += 2;
         }
 
@@ -1001,7 +1001,7 @@ const char *jit_var_whos() {
             AllocInfo ai = it.value();
 
             if ((AllocType) ai.type == AllocType::Device)
-                buffer.fmt("device %-4i", ai.device);
+                buffer.fmt("device %-4i", (int) ai.device);
             else
                 buffer.put(alloc_type_name_short[ai.type]);
         } else {
