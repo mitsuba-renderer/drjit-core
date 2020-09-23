@@ -484,6 +484,9 @@ void jit_malloc_trim(bool warn) {
         alloc_free = std::move(state.alloc_free);
     }
 
+    // Ensure that all computation using this memory has indeed completed.
+    jit_sync_all_devices();
+
     size_t trim_count[(int) AllocType::Count] = { 0 },
            trim_size [(int) AllocType::Count] = { 0 };
 
