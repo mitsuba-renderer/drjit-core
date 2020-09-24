@@ -46,10 +46,12 @@
 #  define JITC_CONSTEXPR constexpr
 #  define JITC_DEF(x) = x
 #  define JITC_NOEXCEPT noexcept(true)
+#  define JITC_ENUM ::
 #else
 #  define JITC_CONSTEXPR inline
 #  define JITC_DEF(x)
 #  define JITC_NOEXCEPT
+#  define JITC_ENUM enum
 #endif
 
 #if defined(__cplusplus)
@@ -259,10 +261,10 @@ enum LogLevel {
  * via a callback in \ref jitc_set_log_level_callback(). Both destinations can also
  * be enabled simultaneously, pontentially using different log levels.
  */
-extern JITC_EXPORT void jitc_set_log_level_stderr(enum LogLevel level);
+extern JITC_EXPORT void jitc_set_log_level_stderr(JITC_ENUM LogLevel level);
 
 /// Return the currently set minimum log level for output to \c stderr
-extern JITC_EXPORT enum LogLevel jitc_log_level_stderr();
+extern JITC_EXPORT JITC_ENUM LogLevel jitc_log_level_stderr();
 
 
 /**
@@ -272,14 +274,14 @@ extern JITC_EXPORT enum LogLevel jitc_log_level_stderr();
  * invoked with the contents of library log messages, whose severity matches or
  * exceeds the specified \c level.
  */
-typedef void (*LogCallback)(enum LogLevel, const char *);
-extern JITC_EXPORT void jitc_set_log_level_callback(enum LogLevel level, LogCallback callback);
+typedef void (*LogCallback)(JITC_ENUM LogLevel, const char *);
+extern JITC_EXPORT void jitc_set_log_level_callback(JITC_ENUM LogLevel level, LogCallback callback);
 
 /// Return the currently set minimum log level for output to a callback
-extern JITC_EXPORT enum LogLevel jitc_log_level_callback();
+extern JITC_EXPORT JITC_ENUM LogLevel jitc_log_level_callback();
 
 /// Print a log message with the specified log level and message
-extern JITC_EXPORT void jitc_log(enum LogLevel level, const char* fmt, ...);
+extern JITC_EXPORT void jitc_log(JITC_ENUM LogLevel level, const char* fmt, ...);
 
 /// Raise an exception message with the specified message
 extern JITC_EXPORT void jitc_raise(const char* fmt, ...);
@@ -386,7 +388,7 @@ enum AllocType {
  * of use.
  *
  */
-extern JITC_EXPORT void *jitc_malloc(enum AllocType type, size_t size)
+extern JITC_EXPORT void *jitc_malloc(JITC_ENUM AllocType type, size_t size)
     JITC_MALLOC;
 
 /**
@@ -440,7 +442,7 @@ extern JITC_EXPORT void jitc_malloc_trim();
 extern JITC_EXPORT void jitc_malloc_prefetch(void *ptr, int device);
 
 /// Query the flavor of a memory allocation made using \ref jitc_malloc()
-extern JITC_EXPORT enum AllocType jitc_malloc_type(void *ptr);
+extern JITC_EXPORT JITC_ENUM AllocType jitc_malloc_type(void *ptr);
 
 /// Query the device associated with a memory allocation made using \ref jitc_malloc()
 extern JITC_EXPORT int jitc_malloc_device(void *ptr);
@@ -468,7 +470,7 @@ extern JITC_EXPORT int jitc_malloc_device(void *ptr);
  * jitc_set_device()) does not match the device associated with the allocation,
  * a peer-to-peer migration is performed.
  */
-extern JITC_EXPORT void *jitc_malloc_migrate(void *ptr, enum AllocType type,
+extern JITC_EXPORT void *jitc_malloc_migrate(void *ptr, JITC_ENUM AllocType type,
                                              int move JITC_DEF(1));
 
 // ====================================================================
@@ -606,7 +608,7 @@ enum VarType {
 #endif
 
 /// Convenience function to check for an integer operand
-JITC_CONSTEXPR int jitc_is_integral(enum VarType type) {
+JITC_CONSTEXPR int jitc_is_integral(JITC_ENUM VarType type) {
 #if defined(__cplusplus)
     return ((uint32_t) type >= (uint32_t) VarType::Int8 &&
             (uint32_t) type <= (uint32_t) VarType::UInt64) ? 1 : 0;
@@ -617,7 +619,7 @@ JITC_CONSTEXPR int jitc_is_integral(enum VarType type) {
 }
 
 /// Convenience function to check for a floating point operand
-JITC_CONSTEXPR uint32_t jitc_is_floating_point(enum VarType type) {
+JITC_CONSTEXPR uint32_t jitc_is_floating_point(JITC_ENUM VarType type) {
 #if defined(__cplusplus)
     return ((uint32_t) type >= (uint32_t) VarType::Float16 &&
             (uint32_t) type <= (uint32_t) VarType::Float64) ? 1 : 0;
@@ -628,7 +630,7 @@ JITC_CONSTEXPR uint32_t jitc_is_floating_point(enum VarType type) {
 }
 
 /// Convenience function to check for an arithmetic operand
-JITC_CONSTEXPR uint32_t jitc_is_arithmetic(enum VarType type) {
+JITC_CONSTEXPR uint32_t jitc_is_arithmetic(JITC_ENUM VarType type) {
 #if defined(__cplusplus)
     return ((uint32_t) type >= (uint32_t) VarType::Int8 &&
             (uint32_t) type <= (uint32_t) VarType::Float64) ? 1 : 0;
@@ -639,7 +641,7 @@ JITC_CONSTEXPR uint32_t jitc_is_arithmetic(enum VarType type) {
 }
 
 /// Convenience function to check for an unsigned operand
-JITC_CONSTEXPR uint32_t jitc_is_unsigned(enum VarType type) {
+JITC_CONSTEXPR uint32_t jitc_is_unsigned(JITC_ENUM VarType type) {
 #if defined(__cplusplus)
     return ((uint32_t) type == (uint32_t) VarType::UInt8 ||
             (uint32_t) type == (uint32_t) VarType::UInt16 ||
@@ -654,7 +656,7 @@ JITC_CONSTEXPR uint32_t jitc_is_unsigned(enum VarType type) {
 }
 
 /// Convenience function to check for a mask operand
-JITC_CONSTEXPR int jitc_is_mask(enum VarType type) {
+JITC_CONSTEXPR int jitc_is_mask(JITC_ENUM VarType type) {
 #if defined(__cplusplus)
     return type == VarType::Bool;
 #else
@@ -662,7 +664,7 @@ JITC_CONSTEXPR int jitc_is_mask(enum VarType type) {
 #endif
 }
 
-JITC_INLINE uint32_t jitc_size(enum VarType type) {
+JITC_INLINE uint32_t jitc_size(JITC_ENUM VarType type) {
     switch (type) {
 #if defined(__cplusplus)
         case VarType::Bool:
@@ -735,7 +737,7 @@ JITC_INLINE uint32_t jitc_size(enum VarType type) {
  *
  * \sa jitc_var_copy_mem()
  */
-extern JITC_EXPORT uint32_t jitc_var_map_mem(enum VarType type, int cuda,
+extern JITC_EXPORT uint32_t jitc_var_map_mem(JITC_ENUM VarType type, int cuda,
                                              void *ptr, uint32_t size, int free);
 
 
@@ -763,8 +765,8 @@ extern JITC_EXPORT uint32_t jitc_var_map_mem(enum VarType type, int cuda,
  *
  * \sa jitc_var_map_mem()
  */
-extern JITC_EXPORT uint32_t jitc_var_copy_mem(enum AllocType atype,
-                                              enum VarType vtype,
+extern JITC_EXPORT uint32_t jitc_var_copy_mem(JITC_ENUM AllocType atype,
+                                              JITC_ENUM VarType vtype,
                                               int cuda,
                                               const void *ptr,
                                               uint32_t size);
@@ -852,21 +854,21 @@ extern JITC_EXPORT uint32_t jitc_var_copy_var(uint32_t index);
  *    Size of the resulting variable. The size is automatically inferred from
  *    the operands and must only be specified for the zero-argument form.
  */
-extern JITC_EXPORT uint32_t jitc_var_new_0(enum VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_0(JITC_ENUM VarType type,
                                            const char *stmt,
                                            int cuda,
                                            int stmt_static,
                                            uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
-extern JITC_EXPORT uint32_t jitc_var_new_1(enum VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_1(JITC_ENUM VarType type,
                                            const char *stmt,
                                            int cuda,
                                            int stmt_static,
                                            uint32_t op1);
 
 /// Append a variable to the instruction trace (2 operands)
-extern JITC_EXPORT uint32_t jitc_var_new_2(enum VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_2(JITC_ENUM VarType type,
                                            const char *stmt,
                                            int stmt_static,
                                            int cuda,
@@ -874,7 +876,7 @@ extern JITC_EXPORT uint32_t jitc_var_new_2(enum VarType type,
                                            uint32_t op2);
 
 /// Append a variable to the instruction trace (3 operands)
-extern JITC_EXPORT uint32_t jitc_var_new_3(enum VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_3(JITC_ENUM VarType type,
                                            const char *stmt,
                                            int stmt_static,
                                            int cuda,
@@ -883,7 +885,7 @@ extern JITC_EXPORT uint32_t jitc_var_new_3(enum VarType type,
                                            uint32_t op3);
 
 /// Append a variable to the instruction trace (4 operands)
-extern JITC_EXPORT uint32_t jitc_var_new_4(enum VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_4(JITC_ENUM VarType type,
                                            const char *stmt,
                                            int stmt_static,
                                            int cuda,
@@ -898,7 +900,7 @@ extern JITC_EXPORT uint32_t jitc_var_new_4(enum VarType type,
  * When \c eval is equal to 1, the variable is directly created in evaluated
  * form (rather than enqueuing instructions to evaluate the variable).
  */
-extern JITC_EXPORT uint32_t jitc_var_new_literal(enum VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_literal(JITC_ENUM VarType type,
                                                  int cuda,
                                                  uint64_t value,
                                                  uint32_t size,
@@ -966,10 +968,10 @@ extern JITC_EXPORT void jitc_var_set_free_callback(uint32_t index,
  * current device (\ref jitc_set_device()) does not match the device associated
  * with the allocation, a peer-to-peer migration is performed.
  */
-extern JITC_EXPORT uint32_t jitc_var_migrate(uint32_t index, enum AllocType type);
+extern JITC_EXPORT uint32_t jitc_var_migrate(uint32_t index, JITC_ENUM AllocType type);
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable
-extern JITC_EXPORT enum AllocType jitc_var_alloc_type(uint32_t index);
+extern JITC_EXPORT JITC_ENUM AllocType jitc_var_alloc_type(uint32_t index);
 
 /// Query the device (or future, if not yet evaluated) associated with a variable
 extern JITC_EXPORT int jitc_var_device(uint32_t index);
@@ -1138,7 +1140,7 @@ extern JITC_EXPORT void jitc_memcpy_async(void *dst, const void *src,
  *
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jitc_reduce(enum VarType type, enum ReductionType rtype,
+extern JITC_EXPORT void jitc_reduce(JITC_ENUM VarType type, JITC_ENUM ReductionType rtype,
                                     const void *ptr, uint32_t size, void *out);
 
 /**
@@ -1282,7 +1284,7 @@ jitc_vcall(const char *domain, uint32_t index, uint32_t *bucket_count_out);
  * to \c 2. The input array must contain <tt>size</tt> elements, and the output
  * array must have space for <tt>size * block_size</tt> elements.
  */
-extern JITC_EXPORT void jitc_block_copy(enum VarType type, const void *in,
+extern JITC_EXPORT void jitc_block_copy(JITC_ENUM VarType type, const void *in,
                                         void *out, uint32_t size,
                                         uint32_t block_size);
 
@@ -1295,7 +1297,7 @@ extern JITC_EXPORT void jitc_block_copy(enum VarType type, const void *in,
  * set to \c 2. The input array must contain <tt>size * block_size</tt> elements,
  * and the output array must have space for <tt>size</tt> elements.
  */
-extern JITC_EXPORT void jitc_block_sum(enum VarType type, const void *in,
+extern JITC_EXPORT void jitc_block_sum(JITC_ENUM VarType type, const void *in,
                                        void *out, uint32_t size,
                                        uint32_t block_size);
 
