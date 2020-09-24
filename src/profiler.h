@@ -26,7 +26,7 @@ struct ProfilerRegion {
 struct ProfilerPhase {
     ProfilerPhase(const ProfilerRegion &region) {
 #if defined(ENOKI_ENABLE_ITTNOTIFY)
-        __itt_task_begin(enoki_domain, __itt_null, __itt_null, region.handle);
+        __itt_task_begin(enoki_domain, __itt_null, __itt_null, region.itt_handle);
 #endif
 #if defined(ENOKI_ENABLE_NVTX)
         nvtxRangePush(region.name);
