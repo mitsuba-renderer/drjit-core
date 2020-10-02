@@ -107,6 +107,9 @@ extern void *jit_var_ptr(uint32_t index);
 // Query the size of a given variable
 extern uint32_t jit_var_size(uint32_t index);
 
+// Query the type of a given variable
+extern VarType jit_var_type(uint32_t index);
+
 // Resize a scalar variable
 extern uint32_t jit_var_set_size(uint32_t index, uint32_t size);
 

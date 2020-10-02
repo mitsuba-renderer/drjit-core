@@ -304,6 +304,11 @@ uint32_t jit_var_size(uint32_t index) {
     return jit_var(index)->size;
 }
 
+/// Query the type of a given variable
+VarType jit_var_type(uint32_t index) {
+    return (VarType) jit_var(index)->type;
+}
+
 // Resize a scalar variable
 uint32_t jit_var_set_size(uint32_t index, uint32_t size) {
     Variable *v = jit_var(index);

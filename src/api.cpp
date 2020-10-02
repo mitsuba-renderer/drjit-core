@@ -278,6 +278,11 @@ uint32_t jitc_var_size(uint32_t index) {
     return jit_var_size(index);
 }
 
+VarType jitc_var_type(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jit_var_type(index);
+}
+
 uint32_t jitc_var_set_size(uint32_t index, uint32_t size) {
     lock_guard guard(state.mutex);
     return jit_var_set_size(index, size);
