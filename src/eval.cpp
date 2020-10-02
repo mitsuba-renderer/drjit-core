@@ -80,44 +80,17 @@ std::vector<std::pair<uint32_t, uint32_t>> jit_llvm_scatter_add_variables;
 void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v);
 
 /// Recursively traverse the computation graph to find variables needed by a computation
-static void jit_var_traverse(uint32_t size, uint32_t index, Variable *v) {
+static void jit_var_traverse(uint32_t size, uint32_t index) {
     if (!visited.emplace(size, index).second)
         return;
 
+    Variable *v = jit_var(index);
     if (likely(!v->direct_pointer && !v->data)) {
-        struct Dep {
-            uint32_t index;
-            uint32_t tsize;
-            Variable *v;
-        } depv[4];
-
-        memset(depv, 0, sizeof(depv));
         for (int i = 0; i < 4; ++i) {
             uint32_t dep_index = v->dep[i];
             if (dep_index == 0)
                 break;
-            Variable *v = jit_var(dep_index);
-            depv[i].index = dep_index;
-            depv[i].tsize = v->tsize;
-            depv[i].v = v;
-        }
-
-        // Simple sorting network
-        #define SWAP(i, j) \
-            if (depv[i].tsize < depv[j].tsize) \
-                std::swap(depv[i], depv[j]);
-        SWAP(0, 1);
-        SWAP(2, 3);
-        SWAP(0, 2);
-        SWAP(1, 3);
-        SWAP(1, 2);
-
-        #undef SWAP
-
-        for (auto &dep: depv) {
-            if (!dep.index)
-                break;
-            jit_var_traverse(size, dep.index, dep.v);
+            jit_var_traverse(size, dep_index);
         }
     }
 
@@ -1132,7 +1105,7 @@ void jit_eval() {
                       index, v->cuda ? "CUDA" : "LLVM",
                       stream->cuda ? "CUDA" : "LLVM");
 
-        jit_var_traverse(v->size, index, v);
+        jit_var_traverse(v->size, index);
         v->output_flag = true;
     }
     stream->todo.clear();
@@ -1142,11 +1115,14 @@ void jit_eval() {
 
     scoped_set_context_maybe guard2(stream->context);
 
-    // Group them from large to small sizes while preserving dependencies
-    std::stable_sort(
+    // Group them from large to small sizes, and preserve program order
+    std::sort(
         schedule.begin(), schedule.end(),
         [](const ScheduledVariable &a, const ScheduledVariable &b) {
-            return a.size > b.size;
+            if (a.size == b.size)
+                return a.index < b.index;
+            else
+                return a.size > b.size;
         });
 
     schedule_groups.clear();
