@@ -1214,23 +1214,16 @@ void jit_eval() {
         if (unlikely(v->free_stmt))
             free(v->stmt);
 
-        bool scatter = v->scatter;
         uint32_t dep[4];
         memcpy(dep, v->dep, sizeof(uint32_t) * 4);
         memset(v->dep, 0, sizeof(uint32_t) * 4);
         v->stmt = nullptr;
 
-        if (unlikely(scatter)) {
+        if (unlikely(v->scatter)) {
             Variable *ptr = jit_var(dep[0]);
-            if (unlikely(!ptr->direct_pointer))
-                jit_fail("jit_eval(): invalid scatter target!");
-            Variable *target = jit_var(ptr->dep[0]);
-            target->pending_scatter = false;
-
-            Variable *v2 = jit_var(index);
-            if (unlikely(v2->ref_count_ext != 1 || v2->ref_count_int != 0))
-                jit_fail("jit_eval(): invalid invalid reference for scatter operation");
-            jit_var_dec_ref_ext(index, v2);
+            if (ptr->direct_pointer)
+                jit_var(ptr->dep[0])->pending_scatter = false;
+            jit_var_dec_ref_ext(index);
         }
 
         for (int j = 0; j < 4; ++j)
