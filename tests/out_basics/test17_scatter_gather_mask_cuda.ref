@@ -424,8 +424,6 @@ L1: // Loop body
 
     // Load %rd8
     ld.param.u64 %rd8, [arg1];
-
-    // Evaluate %u9
     mul.wide.s32 %rd3, %r6, 1;
     add.u64 %rd3, %rd3, %rd8;
     selp.u16 %w0, 1, 0, %p7;
@@ -443,8 +441,6 @@ L1: // Loop body
     add.u64 %rd0, %rd0, %rd1;
     ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p12, %w0, 0;
-
-    // Evaluate %u13
     mul.wide.s32 %rd3, %r11, 1;
     add.u64 %rd3, %rd3, %rd8;
     selp.u16 %w0, 1, 0, %p12;

@@ -51,6 +51,7 @@ jit_malloc(type=host-async, size=256): <@> (new allocation)
   -> launching <@> (n=64, in=0, out=3, ops=7):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -67,11 +68,8 @@ entry:
     %a2 = bitcast i8* %a2_p to i8*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -122,10 +120,15 @@ loop:
     %p6_p = bitcast i8* %p6_i to <32 x i8>*
     %p6_e = zext <32 x i1> %p6 to <32 x i8>
     store <32 x i8> %p6_e, <32 x i8>* %p6_p, align 32, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 32
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 declare <16 x float> @llvm.x86.avx512.max.ps.512(<16 x float>, <16 x float>, i32)

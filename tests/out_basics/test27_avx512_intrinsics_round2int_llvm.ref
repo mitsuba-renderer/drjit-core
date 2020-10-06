@@ -62,6 +62,7 @@ jit_malloc(type=host-async, size=256): <@> (new allocation)
   -> launching <@> (n=9, in=1, out=8, ops=10):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -108,11 +109,8 @@ entry:
     %a8 = bitcast i8* %a8_p to i64*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %f0
     %f0_i = getelementptr inbounds float, float* %a0, i64 %index
@@ -293,10 +291,15 @@ loop:
     %rd9_i = getelementptr inbounds i64, i64* %a8, i64 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 32
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 declare <16 x i32> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x float>, <16 x i32>, i16, i32)
@@ -412,6 +415,7 @@ jit_malloc(type=host-async, size=256): <@> (reused local)
   -> launching <@> (n=9, in=1, out=8, ops=10):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -458,11 +462,8 @@ entry:
     %a8 = bitcast i8* %a8_p to i64*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %f0
     %f0_i = getelementptr inbounds float, float* %a0, i64 %index
@@ -643,10 +644,15 @@ loop:
     %rd9_i = getelementptr inbounds i64, i64* %a8, i64 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 32
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 declare <16 x i32> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x float>, <16 x i32>, i16, i32)
@@ -762,6 +768,7 @@ jit_malloc(type=host-async, size=256): <@> (reused local)
   -> launching <@> (n=9, in=1, out=8, ops=10):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -808,11 +815,8 @@ entry:
     %a8 = bitcast i8* %a8_p to i64*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %f0
     %f0_i = getelementptr inbounds float, float* %a0, i64 %index
@@ -993,10 +997,15 @@ loop:
     %rd9_i = getelementptr inbounds i64, i64* %a8, i64 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 32
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 declare <16 x i32> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x float>, <16 x i32>, i16, i32)
@@ -1112,6 +1121,7 @@ jit_malloc(type=host-async, size=256): <@> (reused local)
   -> launching <@> (n=9, in=1, out=8, ops=10):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(128) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -1158,11 +1168,8 @@ entry:
     %a8 = bitcast i8* %a8_p to i64*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %f0
     %f0_i = getelementptr inbounds float, float* %a0, i64 %index
@@ -1343,10 +1350,15 @@ loop:
     %rd9_i = getelementptr inbounds i64, i64* %a8, i64 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 32
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 declare <16 x i32> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x float>, <16 x i32>, i16, i32)

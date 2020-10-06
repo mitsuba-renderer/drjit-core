@@ -77,8 +77,6 @@ L1: // Loop body
 
     // Load %rd6
     ld.param.u64 %rd6, [arg1];
-
-    // Evaluate %u7
     mul.wide.u32 %rd3, %r5, 4;
     add.u64 %rd3, %rd3, %rd6;
     st.global.u32 [%rd3], %r4;

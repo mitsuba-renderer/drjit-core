@@ -38,6 +38,7 @@ jit_malloc(type=host-async, size=8192): <@> (new allocation)
   -> launching <@> (n=1024, in=0, out=5, ops=5):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -64,11 +65,8 @@ entry:
     %a4 = bitcast i8* %a4_p to double*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -112,10 +110,15 @@ loop:
     %d4_i = getelementptr inbounds double, double* %a4, i64 %index
     %d4_p = bitcast double* %d4_i to <8 x double>*
     store <8 x double> %d4, <8 x double>* %d4_p, align 64, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -194,6 +197,7 @@ jit_malloc(type=host-async, size=8192): <@> (reused local)
   -> launching <@> (n=1024, in=0, out=4, ops=6):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -215,11 +219,8 @@ entry:
     %a3 = bitcast i8* %a3_p to double*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -262,10 +263,15 @@ loop:
     %d5_i = getelementptr inbounds double, double* %a3, i64 %index
     %d5_p = bitcast double* %d5_i to <8 x double>*
     store <8 x double> %d5, <8 x double>* %d5_p, align 64, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -343,6 +349,7 @@ jit_malloc(type=host-async, size=8192): <@> (reused local)
   -> launching <@> (n=1024, in=0, out=5, ops=6):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -369,11 +376,8 @@ entry:
     %a4 = bitcast i8* %a4_p to double*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -420,10 +424,15 @@ loop:
     %d5_i = getelementptr inbounds double, double* %a4, i64 %index
     %d5_p = bitcast double* %d5_i to <8 x double>*
     store <8 x double> %d5, <8 x double>* %d5_p, align 64, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -507,6 +516,7 @@ jit_malloc(type=host-async, size=8192): <@> (reused local)
   -> launching <@> (n=1024, in=0, out=4, ops=7):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -528,11 +538,8 @@ entry:
     %a3 = bitcast i8* %a3_p to double*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -578,10 +585,15 @@ loop:
     %d6_i = getelementptr inbounds double, double* %a3, i64 %index
     %d6_p = bitcast double* %d6_i to <8 x double>*
     store <8 x double> %d6, <8 x double>* %d6_p, align 64, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -663,6 +675,7 @@ jit_malloc(type=host-async, size=8192): <@> (reused local)
   -> launching <@> (n=1024, in=0, out=4, ops=7):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -684,11 +697,8 @@ entry:
     %a3 = bitcast i8* %a3_p to double*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -734,10 +744,15 @@ loop:
     %d6_i = getelementptr inbounds double, double* %a3, i64 %index
     %d6_p = bitcast double* %d6_i to <8 x double>*
     store <8 x double> %d6, <8 x double>* %d6_p, align 64, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -818,6 +833,7 @@ jit_malloc(type=host-async, size=4096): <@> (reused local)
   -> launching <@> (n=1024, in=0, out=4, ops=7):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -839,11 +855,8 @@ entry:
     %a3 = bitcast i8* %a3_p to float*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -889,10 +902,15 @@ loop:
     %f6_i = getelementptr inbounds float, float* %a3, i64 %index
     %f6_p = bitcast float* %f6_i to <8 x float>*
     store <8 x float> %f6, <8 x float>* %f6_p, align 32, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}

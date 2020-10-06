@@ -33,6 +33,7 @@ jit_assemble(size=15): register map:
   -> launching <@> (n=15, in=2, out=1, ops=4):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -43,11 +44,8 @@ entry:
     %rd2 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %f0
     %f0_0 = insertelement <16 x float> undef, float 0x3ff0000000000000, i32 0
@@ -57,17 +55,21 @@ loop:
     %r1_i = getelementptr inbounds i32, i32* %a0, i64 %index
     %r1_p = bitcast i32* %r1_i to <16 x i32>*
     %r1 = load <16 x i32>, <16 x i32>* %r1_p, align 64, !alias.scope !1
-
-    ; Evaluate %u3
     call void @ek.scatter_add_v16f32(i8* %rd2, <16 x float> %f0, <16 x i32> %r1)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 16
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -78,11 +80,8 @@ entry:
     %rd2 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %f0
     %f0_0 = insertelement <1 x float> undef, float 0x3ff0000000000000, i32 0
@@ -92,13 +91,16 @@ loop:
     %r1_i = getelementptr inbounds i32, i32* %a0, i64 %index
     %r1_p = bitcast i32* %r1_i to <1 x i32>*
     %r1 = load <1 x i32>, <1 x i32>* %r1_p, align 4, !alias.scope !1
-
-    ; Evaluate %u3
     call void @ek.scatter_add_v1f32(i8* %rd2, <1 x float> %f0, <1 x i32> %r1)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -160,6 +162,7 @@ jit_assemble(size=16): register map:
   -> launching <@> (n=16, in=2, out=1, ops=4):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -170,11 +173,8 @@ entry:
     %rd2 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %f0
     %f0_0 = insertelement <16 x float> undef, float 0x3ff0000000000000, i32 0
@@ -184,17 +184,21 @@ loop:
     %r1_i = getelementptr inbounds i32, i32* %a0, i64 %index
     %r1_p = bitcast i32* %r1_i to <16 x i32>*
     %r1 = load <16 x i32>, <16 x i32>* %r1_p, align 64, !alias.scope !1
-
-    ; Evaluate %u3
     call void @ek.scatter_add_v16f32(i8* %rd2, <16 x float> %f0, <16 x i32> %r1)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 16
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -205,11 +209,8 @@ entry:
     %rd2 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %f0
     %f0_0 = insertelement <1 x float> undef, float 0x3ff0000000000000, i32 0
@@ -219,13 +220,16 @@ loop:
     %r1_i = getelementptr inbounds i32, i32* %a0, i64 %index
     %r1_p = bitcast i32* %r1_i to <1 x i32>*
     %r1 = load <1 x i32>, <1 x i32>* %r1_p, align 4, !alias.scope !1
-
-    ; Evaluate %u3
     call void @ek.scatter_add_v1f32(i8* %rd2, <1 x float> %f0, <1 x i32> %r1)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -293,6 +297,7 @@ jit_assemble(size=15): register map:
   -> launching <@> (n=15, in=2, out=1, ops=5):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -303,11 +308,8 @@ entry:
     %rd3 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %r0
     %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
@@ -320,8 +322,6 @@ loop:
     ; Evaluate %d2
     %d2_0 = insertelement <16 x double> undef, double 0x3ff0000000000000, i32 0
     %d2 = shufflevector <16 x double> %d2_0, <16 x double> undef, <16 x i32> zeroinitializer
-
-    ; Evaluate %u4
     %d2_unroll_u4_0_0 = shufflevector <16 x double> %d2, <16 x double> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
     %d2_unroll_u4_0_1 = shufflevector <16 x double> %d2, <16 x double> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
 
@@ -331,14 +331,20 @@ loop:
     call void @ek.scatter_add_v8f64(i8* %rd3, <8 x double> %d2_unroll_u4_0_0, <8 x i64> %rd1_unroll_u4_0_0)
     call void @ek.scatter_add_v8f64(i8* %rd3, <8 x double> %d2_unroll_u4_0_1, <8 x i64> %rd1_unroll_u4_0_1)
 
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 16
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -349,11 +355,8 @@ entry:
     %rd3 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %r0
     %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
@@ -366,13 +369,16 @@ loop:
     ; Evaluate %d2
     %d2_0 = insertelement <1 x double> undef, double 0x3ff0000000000000, i32 0
     %d2 = shufflevector <1 x double> %d2_0, <1 x double> undef, <1 x i32> zeroinitializer
-
-    ; Evaluate %u4
     call void @ek.scatter_add_v1f64(i8* %rd3, <1 x double> %d2, <1 x i64> %rd1)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -442,6 +448,7 @@ jit_assemble(size=16): register map:
   -> launching <@> (n=16, in=2, out=1, ops=5):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -452,11 +459,8 @@ entry:
     %rd3 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %r0
     %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
@@ -469,8 +473,6 @@ loop:
     ; Evaluate %d2
     %d2_0 = insertelement <16 x double> undef, double 0x3ff0000000000000, i32 0
     %d2 = shufflevector <16 x double> %d2_0, <16 x double> undef, <16 x i32> zeroinitializer
-
-    ; Evaluate %u4
     %d2_unroll_u4_0_0 = shufflevector <16 x double> %d2, <16 x double> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
     %d2_unroll_u4_0_1 = shufflevector <16 x double> %d2, <16 x double> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
 
@@ -480,14 +482,20 @@ loop:
     call void @ek.scatter_add_v8f64(i8* %rd3, <8 x double> %d2_unroll_u4_0_0, <8 x i64> %rd1_unroll_u4_0_0)
     call void @ek.scatter_add_v8f64(i8* %rd3, <8 x double> %d2_unroll_u4_0_1, <8 x i64> %rd1_unroll_u4_0_1)
 
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 16
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -498,11 +506,8 @@ entry:
     %rd3 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %r0
     %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
@@ -515,13 +520,16 @@ loop:
     ; Evaluate %d2
     %d2_0 = insertelement <1 x double> undef, double 0x3ff0000000000000, i32 0
     %d2 = shufflevector <1 x double> %d2_0, <1 x double> undef, <1 x i32> zeroinitializer
-
-    ; Evaluate %u4
     call void @ek.scatter_add_v1f64(i8* %rd3, <1 x double> %d2, <1 x i64> %rd1)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -601,6 +609,7 @@ jit_assemble(size=15): register map:
   -> launching <@> (n=15, in=2, out=1, ops=8):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -611,11 +620,8 @@ entry:
     %rd6 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -641,17 +647,21 @@ loop:
     ; Evaluate %f5
     %f5_0 = insertelement <16 x float> undef, float 0x3ff0000000000000, i32 0
     %f5 = shufflevector <16 x float> %f5_0, <16 x float> undef, <16 x i32> zeroinitializer
-
-    ; Evaluate %u7
     call void @ek.masked_scatter_add_v16f32(i8* %rd6, <16 x float> %f5, <16 x i32> %r4, <16 x i1> %p3)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 16
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -662,11 +672,8 @@ entry:
     %rd6 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -692,13 +699,16 @@ loop:
     ; Evaluate %f5
     %f5_0 = insertelement <1 x float> undef, float 0x3ff0000000000000, i32 0
     %f5 = shufflevector <1 x float> %f5_0, <1 x float> undef, <1 x i32> zeroinitializer
-
-    ; Evaluate %u7
     call void @ek.masked_scatter_add_v1f32(i8* %rd6, <1 x float> %f5, <1 x i32> %r4, <1 x i1> %p3)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -785,6 +795,7 @@ jit_assemble(size=16): register map:
   -> launching <@> (n=16, in=2, out=1, ops=8):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -795,11 +806,8 @@ entry:
     %rd6 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -825,17 +833,21 @@ loop:
     ; Evaluate %f5
     %f5_0 = insertelement <16 x float> undef, float 0x3ff0000000000000, i32 0
     %f5 = shufflevector <16 x float> %f5_0, <16 x float> undef, <16 x i32> zeroinitializer
-
-    ; Evaluate %u7
     call void @ek.masked_scatter_add_v16f32(i8* %rd6, <16 x float> %f5, <16 x i32> %r4, <16 x i1> %p3)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 16
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -846,11 +858,8 @@ entry:
     %rd6 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -876,13 +885,16 @@ loop:
     ; Evaluate %f5
     %f5_0 = insertelement <1 x float> undef, float 0x3ff0000000000000, i32 0
     %f5 = shufflevector <1 x float> %f5_0, <1 x float> undef, <1 x i32> zeroinitializer
-
-    ; Evaluate %u7
     call void @ek.masked_scatter_add_v1f32(i8* %rd6, <1 x float> %f5, <1 x i32> %r4, <1 x i1> %p3)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -974,6 +986,7 @@ jit_assemble(size=15): register map:
   -> launching <@> (n=15, in=2, out=1, ops=9):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -984,11 +997,8 @@ entry:
     %rd7 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -1017,8 +1027,6 @@ loop:
     ; Evaluate %d6
     %d6_0 = insertelement <16 x double> undef, double 0x3ff0000000000000, i32 0
     %d6 = shufflevector <16 x double> %d6_0, <16 x double> undef, <16 x i32> zeroinitializer
-
-    ; Evaluate %u8
     %d6_unroll_u8_0_0 = shufflevector <16 x double> %d6, <16 x double> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
     %d6_unroll_u8_0_1 = shufflevector <16 x double> %d6, <16 x double> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
 
@@ -1031,14 +1039,20 @@ loop:
     call void @ek.masked_scatter_add_v8f64(i8* %rd7, <8 x double> %d6_unroll_u8_0_0, <8 x i64> %rd5_unroll_u8_0_0, <8 x i1> %p3_unroll_u8_0_0)
     call void @ek.masked_scatter_add_v8f64(i8* %rd7, <8 x double> %d6_unroll_u8_0_1, <8 x i64> %rd5_unroll_u8_0_1, <8 x i1> %p3_unroll_u8_0_1)
 
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 16
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -1049,11 +1063,8 @@ entry:
     %rd7 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -1082,13 +1093,16 @@ loop:
     ; Evaluate %d6
     %d6_0 = insertelement <1 x double> undef, double 0x3ff0000000000000, i32 0
     %d6 = shufflevector <1 x double> %d6_0, <1 x double> undef, <1 x i32> zeroinitializer
-
-    ; Evaluate %u8
     call void @ek.masked_scatter_add_v1f64(i8* %rd7, <1 x double> %d6, <1 x i64> %rd5, <1 x i1> %p3)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}
@@ -1182,6 +1196,7 @@ jit_assemble(size=16): register map:
   -> launching <@> (n=16, in=2, out=1, ops=9):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(64) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -1192,11 +1207,8 @@ entry:
     %rd7 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -1225,8 +1237,6 @@ loop:
     ; Evaluate %d6
     %d6_0 = insertelement <16 x double> undef, double 0x3ff0000000000000, i32 0
     %d6 = shufflevector <16 x double> %d6_0, <16 x double> undef, <16 x i32> zeroinitializer
-
-    ; Evaluate %u8
     %d6_unroll_u8_0_0 = shufflevector <16 x double> %d6, <16 x double> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
     %d6_unroll_u8_0_1 = shufflevector <16 x double> %d6, <16 x double> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
 
@@ -1239,14 +1249,20 @@ loop:
     call void @ek.masked_scatter_add_v8f64(i8* %rd7, <8 x double> %d6_unroll_u8_0_0, <8 x i64> %rd5_unroll_u8_0_0, <8 x i1> %p3_unroll_u8_0_0)
     call void @ek.masked_scatter_add_v8f64(i8* %rd7, <8 x double> %d6_unroll_u8_0_1, <8 x i64> %rd5_unroll_u8_0_1, <8 x i1> %p3_unroll_u8_0_1)
 
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 16
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 define void @enoki_<@>_scalar(i64 %start, i64 %end, i8** %ptrs) #0 {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -1257,11 +1273,8 @@ entry:
     %rd7 = load i8*, i8** %a1_i, align 8, !alias.scope !1
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -1290,13 +1303,16 @@ loop:
     ; Evaluate %d6
     %d6_0 = insertelement <1 x double> undef, double 0x3ff0000000000000, i32 0
     %d6 = shufflevector <1 x double> %d6_0, <1 x double> undef, <1 x i32> zeroinitializer
-
-    ; Evaluate %u8
     call void @ek.masked_scatter_add_v1f64(i8* %rd7, <1 x double> %d6, <1 x i64> %rd5, <1 x i1> %p3)
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 1
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 !0 = !{!0}

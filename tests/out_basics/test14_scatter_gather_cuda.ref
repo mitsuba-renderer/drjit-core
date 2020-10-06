@@ -235,8 +235,6 @@ L1: // Loop body
 
     // Load %rd8
     ld.param.u64 %rd8, [arg2];
-
-    // Evaluate %u9
     mul.wide.u32 %rd3, %r7, 4;
     add.u64 %rd3, %rd3, %rd8;
     st.global.s32 [%rd3], %r6;

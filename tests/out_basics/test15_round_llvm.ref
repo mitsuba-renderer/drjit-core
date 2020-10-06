@@ -47,6 +47,7 @@ jit_malloc(type=host-async, size=64): <@> (new allocation)
   -> launching <@> (n=6, in=1, out=6, ops=7):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -83,11 +84,8 @@ entry:
     %a6 = bitcast i8* %a6_p to float*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %f0
     %f0_i = getelementptr inbounds float, float* %a0, i64 %index
@@ -141,10 +139,15 @@ loop:
     %f6_i = getelementptr inbounds float, float* %a6, i64 %index
     %f6_p = bitcast float* %f6_i to <8 x float>*
     store <8 x float> %f6, <8 x float>* %f6_p, align 32, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 declare <8 x float> @llvm.floor.v8f32(<8 x float>)
@@ -245,6 +248,7 @@ jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=6, in=1, out=6, ops=7):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
@@ -281,11 +285,8 @@ entry:
     %a6 = bitcast i8* %a6_p to double*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %d0
     %d0_i = getelementptr inbounds double, double* %a0, i64 %index
@@ -339,10 +340,15 @@ loop:
     %d6_i = getelementptr inbounds double, double* %a6, i64 %index
     %d6_p = bitcast double* %d6_i to <8 x double>*
     store <8 x double> %d6, <8 x double>* %d6_p, align 64, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 declare <8 x double> @llvm.floor.v8f64(<8 x double>)

@@ -18,17 +18,15 @@ jit_malloc(type=host-async, size=64): <@> (new allocation)
   -> launching <@> (n=10, in=0, out=1, ops=3):
 define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
+
     ; Prepare argument 0
     %a0_i = getelementptr inbounds i8*, i8** %ptrs, i32 0
     %a0_p = load i8*, i8** %a0_i, align 8, !alias.scope !1
     %a0 = bitcast i8* %a0_p to float*
     br label %loop
 
-done:
-    ret void
-
 loop:
-    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]
+    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = trunc i64 %index to i32
@@ -46,10 +44,15 @@ loop:
     %f2_i = getelementptr inbounds float, float* %a0, i64 %index
     %f2_p = bitcast float* %f2_i to <8 x float>*
     store <8 x float> %f2, <8 x float>* %f2_p, align 32, !noalias !1
+    br label %loop_suffix
 
+loop_suffix:
     %index_next = add i64 %index, 8
     %cond = icmp uge i64 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
+
+done:
+    ret void
 }
 
 declare <8 x float> @llvm.sqrt.v8f32(<8 x float>)
