@@ -39,8 +39,7 @@ struct CacheFileHeader {
     uint32_t compressed_size;
     uint32_t source_size;
     uint32_t kernel_size;
-    uint32_t func_offset_wide;
-    uint32_t func_offset_scalar;
+    uint32_t func_offset;
 };
 #pragma pack(pop)
 
@@ -205,9 +204,7 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
 #endif
 
             kernel.llvm.func = (LLVMKernelFunction)(
-                (uint8_t *) kernel.data + header.func_offset_wide);
-            kernel.llvm.func_scalar = (LLVMKernelFunction)(
-                (uint8_t *) kernel.data + header.func_offset_scalar);
+                (uint8_t *) kernel.data + header.func_offset);
 #if defined(ENOKI_ENABLE_ITTNOTIFY)
             char name[23];
             snprintf(name, 23, "enoki_%016llx", (long long) hash);
@@ -337,12 +334,10 @@ bool jit_kernel_write(const char *source, uint32_t source_size,
         &stream, (const char *) temp_in, (char *) temp_out, (int) in_size,
         (int) out_size, 1);
 
-    header.func_offset_wide = header.func_offset_scalar = 0;
+    header.func_offset = 0;
     if (!cuda) {
-        header.func_offset_wide = (uint32_t)
+        header.func_offset = (uint32_t)
             ((uint8_t *) kernel.llvm.func - (uint8_t *) kernel.data);
-        header.func_offset_scalar = (uint32_t)
-            ((uint8_t *) kernel.llvm.func_scalar - (uint8_t *) kernel.data);
     }
 
     bool success = true;

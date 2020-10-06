@@ -38,7 +38,7 @@ jit_malloc(type=host-async, size=64): <@> (new allocation)
    - %p5 -> 6 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
   -> launching <@> (n=2, in=3, out=3, ops=6):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -73,10 +73,10 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r0_p = bitcast i32* %r0_i to <8 x i32>*
     %r0 = load <8 x i32>, <8 x i32>* %r0_p, align 32, !alias.scope !1
 
@@ -84,12 +84,12 @@ loop:
     %r1 = xor <8 x i32> %r0, <i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1>
 
     ; Store %r1
-    %r1_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r1_i = getelementptr inbounds i32, i32* %a1, i32 %index
     %r1_p = bitcast i32* %r1_i to <8 x i32>*
     store <8 x i32> %r1, <8 x i32>* %r1_p, align 32, !noalias !1
 
     ; Load %f2
-    %f2_i = getelementptr inbounds float, float* %a2, i64 %index
+    %f2_i = getelementptr inbounds float, float* %a2, i32 %index
     %f2_p = bitcast float* %f2_i to <8 x float>*
     %f2 = load <8 x float>, <8 x float>* %f2_p, align 32, !alias.scope !1
 
@@ -99,12 +99,12 @@ loop:
     %f3 = bitcast <8 x i32> %f3_1 to <8 x float>
 
     ; Store %f3
-    %f3_i = getelementptr inbounds float, float* %a3, i64 %index
+    %f3_i = getelementptr inbounds float, float* %a3, i32 %index
     %f3_p = bitcast float* %f3_i to <8 x float>*
     store <8 x float> %f3, <8 x float>* %f3_p, align 32, !noalias !1
 
     ; Load %p4
-    %p4_i = getelementptr inbounds i8, i8* %a4, i64 %index
+    %p4_i = getelementptr inbounds i8, i8* %a4, i32 %index
     %p4_p = bitcast i8* %p4_i to <8 x i8>*
     %p4_z = load <8 x i8>, <8 x i8>* %p4_p, align 8, !alias.scope !1
     %p4 = trunc <8 x i8> %p4_z to <8 x i1>
@@ -113,15 +113,15 @@ loop:
     %p5 = xor <8 x i1> %p4, <i1 -1, i1 -1, i1 -1, i1 -1, i1 -1, i1 -1, i1 -1, i1 -1>
 
     ; Store %p5
-    %p5_i = getelementptr inbounds i8, i8* %a5, i64 %index
+    %p5_i = getelementptr inbounds i8, i8* %a5, i32 %index
     %p5_p = bitcast i8* %p5_i to <8 x i8>*
     %p5_e = zext <8 x i1> %p5 to <8 x i8>
     store <8 x i8> %p5_e, <8 x i8>* %p5_p, align 8, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -133,7 +133,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
 jit_var_free(1)
@@ -176,7 +176,7 @@ jit_malloc(type=host-async, size=64): <@> (reused global)
    - %p5 -> 9 [out]
 jit_malloc(type=host-async, size=64): <@> (reused global)
   -> launching <@> (n=2, in=3, out=3, ops=6):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -211,10 +211,10 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r0_p = bitcast i32* %r0_i to <8 x i32>*
     %r0 = load <8 x i32>, <8 x i32>* %r0_p, align 32, !alias.scope !1
 
@@ -222,12 +222,12 @@ loop:
     %r1 = xor <8 x i32> %r0, <i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1>
 
     ; Store %r1
-    %r1_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r1_i = getelementptr inbounds i32, i32* %a1, i32 %index
     %r1_p = bitcast i32* %r1_i to <8 x i32>*
     store <8 x i32> %r1, <8 x i32>* %r1_p, align 32, !noalias !1
 
     ; Load %f2
-    %f2_i = getelementptr inbounds float, float* %a2, i64 %index
+    %f2_i = getelementptr inbounds float, float* %a2, i32 %index
     %f2_p = bitcast float* %f2_i to <8 x float>*
     %f2 = load <8 x float>, <8 x float>* %f2_p, align 32, !alias.scope !1
 
@@ -237,12 +237,12 @@ loop:
     %f3 = bitcast <8 x i32> %f3_1 to <8 x float>
 
     ; Store %f3
-    %f3_i = getelementptr inbounds float, float* %a3, i64 %index
+    %f3_i = getelementptr inbounds float, float* %a3, i32 %index
     %f3_p = bitcast float* %f3_i to <8 x float>*
     store <8 x float> %f3, <8 x float>* %f3_p, align 32, !noalias !1
 
     ; Load %p4
-    %p4_i = getelementptr inbounds i8, i8* %a4, i64 %index
+    %p4_i = getelementptr inbounds i8, i8* %a4, i32 %index
     %p4_p = bitcast i8* %p4_i to <8 x i8>*
     %p4_z = load <8 x i8>, <8 x i8>* %p4_p, align 8, !alias.scope !1
     %p4 = trunc <8 x i8> %p4_z to <8 x i1>
@@ -251,15 +251,15 @@ loop:
     %p5 = xor <8 x i1> %p4, <i1 -1, i1 -1, i1 -1, i1 -1, i1 -1, i1 -1, i1 -1, i1 -1>
 
     ; Store %p5
-    %p5_i = getelementptr inbounds i8, i8* %a5, i64 %index
+    %p5_i = getelementptr inbounds i8, i8* %a5, i32 %index
     %p5_p = bitcast i8* %p5_i to <8 x i8>*
     %p5_e = zext <8 x i1> %p5 to <8 x i8>
     store <8 x i8> %p5_e, <8 x i8>* %p5_p, align 8, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -271,7 +271,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(4): 0
 jit_var_free(4)
@@ -329,7 +329,7 @@ jit_malloc(type=host-async, size=64): <@> (reused global)
    - %p8 -> 15 [out]
 jit_malloc(type=host-async, size=64): <@> (reused global)
   -> launching <@> (n=2, in=6, out=3, ops=9):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -379,15 +379,15 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r0_p = bitcast i32* %r0_i to <8 x i32>*
     %r0 = load <8 x i32>, <8 x i32>* %r0_p, align 32, !alias.scope !1
 
     ; Load %r1
-    %r1_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r1_i = getelementptr inbounds i32, i32* %a1, i32 %index
     %r1_p = bitcast i32* %r1_i to <8 x i32>*
     %r1 = load <8 x i32>, <8 x i32>* %r1_p, align 32, !alias.scope !1
 
@@ -395,17 +395,17 @@ loop:
     %r2 = or <8 x i32> %r0, %r1
 
     ; Store %r2
-    %r2_i = getelementptr inbounds i32, i32* %a2, i64 %index
+    %r2_i = getelementptr inbounds i32, i32* %a2, i32 %index
     %r2_p = bitcast i32* %r2_i to <8 x i32>*
     store <8 x i32> %r2, <8 x i32>* %r2_p, align 32, !noalias !1
 
     ; Load %f3
-    %f3_i = getelementptr inbounds float, float* %a3, i64 %index
+    %f3_i = getelementptr inbounds float, float* %a3, i32 %index
     %f3_p = bitcast float* %f3_i to <8 x float>*
     %f3 = load <8 x float>, <8 x float>* %f3_p, align 32, !alias.scope !1
 
     ; Load %f4
-    %f4_i = getelementptr inbounds float, float* %a4, i64 %index
+    %f4_i = getelementptr inbounds float, float* %a4, i32 %index
     %f4_p = bitcast float* %f4_i to <8 x float>*
     %f4 = load <8 x float>, <8 x float>* %f4_p, align 32, !alias.scope !1
 
@@ -416,18 +416,18 @@ loop:
     %f5 = bitcast <8 x i32> %f5_2 to <8 x float>
 
     ; Store %f5
-    %f5_i = getelementptr inbounds float, float* %a5, i64 %index
+    %f5_i = getelementptr inbounds float, float* %a5, i32 %index
     %f5_p = bitcast float* %f5_i to <8 x float>*
     store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
 
     ; Load %p6
-    %p6_i = getelementptr inbounds i8, i8* %a6, i64 %index
+    %p6_i = getelementptr inbounds i8, i8* %a6, i32 %index
     %p6_p = bitcast i8* %p6_i to <8 x i8>*
     %p6_z = load <8 x i8>, <8 x i8>* %p6_p, align 8, !alias.scope !1
     %p6 = trunc <8 x i8> %p6_z to <8 x i1>
 
     ; Load %p7
-    %p7_i = getelementptr inbounds i8, i8* %a7, i64 %index
+    %p7_i = getelementptr inbounds i8, i8* %a7, i32 %index
     %p7_p = bitcast i8* %p7_i to <8 x i8>*
     %p7_z = load <8 x i8>, <8 x i8>* %p7_p, align 8, !alias.scope !1
     %p7 = trunc <8 x i8> %p7_z to <8 x i1>
@@ -436,15 +436,15 @@ loop:
     %p8 = or <8 x i1> %p6, %p7
 
     ; Store %p8
-    %p8_i = getelementptr inbounds i8, i8* %a8, i64 %index
+    %p8_i = getelementptr inbounds i8, i8* %a8, i32 %index
     %p8_p = bitcast i8* %p8_i to <8 x i8>*
     %p8_e = zext <8 x i1> %p8 to <8 x i8>
     store <8 x i8> %p8_e, <8 x i8>* %p8_p, align 8, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -456,7 +456,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_dec_ref_int(10): 0
@@ -498,7 +498,7 @@ jit_malloc(type=host-async, size=64): <@> (new allocation)
    - %p8 -> 18 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
   -> launching <@> (n=2, in=6, out=3, ops=9):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -548,15 +548,15 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r0_p = bitcast i32* %r0_i to <8 x i32>*
     %r0 = load <8 x i32>, <8 x i32>* %r0_p, align 32, !alias.scope !1
 
     ; Load %r1
-    %r1_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r1_i = getelementptr inbounds i32, i32* %a1, i32 %index
     %r1_p = bitcast i32* %r1_i to <8 x i32>*
     %r1 = load <8 x i32>, <8 x i32>* %r1_p, align 32, !alias.scope !1
 
@@ -564,17 +564,17 @@ loop:
     %r2 = and <8 x i32> %r0, %r1
 
     ; Store %r2
-    %r2_i = getelementptr inbounds i32, i32* %a2, i64 %index
+    %r2_i = getelementptr inbounds i32, i32* %a2, i32 %index
     %r2_p = bitcast i32* %r2_i to <8 x i32>*
     store <8 x i32> %r2, <8 x i32>* %r2_p, align 32, !noalias !1
 
     ; Load %f3
-    %f3_i = getelementptr inbounds float, float* %a3, i64 %index
+    %f3_i = getelementptr inbounds float, float* %a3, i32 %index
     %f3_p = bitcast float* %f3_i to <8 x float>*
     %f3 = load <8 x float>, <8 x float>* %f3_p, align 32, !alias.scope !1
 
     ; Load %f4
-    %f4_i = getelementptr inbounds float, float* %a4, i64 %index
+    %f4_i = getelementptr inbounds float, float* %a4, i32 %index
     %f4_p = bitcast float* %f4_i to <8 x float>*
     %f4 = load <8 x float>, <8 x float>* %f4_p, align 32, !alias.scope !1
 
@@ -585,18 +585,18 @@ loop:
     %f5 = bitcast <8 x i32> %f5_2 to <8 x float>
 
     ; Store %f5
-    %f5_i = getelementptr inbounds float, float* %a5, i64 %index
+    %f5_i = getelementptr inbounds float, float* %a5, i32 %index
     %f5_p = bitcast float* %f5_i to <8 x float>*
     store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
 
     ; Load %p6
-    %p6_i = getelementptr inbounds i8, i8* %a6, i64 %index
+    %p6_i = getelementptr inbounds i8, i8* %a6, i32 %index
     %p6_p = bitcast i8* %p6_i to <8 x i8>*
     %p6_z = load <8 x i8>, <8 x i8>* %p6_p, align 8, !alias.scope !1
     %p6 = trunc <8 x i8> %p6_z to <8 x i1>
 
     ; Load %p7
-    %p7_i = getelementptr inbounds i8, i8* %a7, i64 %index
+    %p7_i = getelementptr inbounds i8, i8* %a7, i32 %index
     %p7_p = bitcast i8* %p7_i to <8 x i8>*
     %p7_z = load <8 x i8>, <8 x i8>* %p7_p, align 8, !alias.scope !1
     %p7 = trunc <8 x i8> %p7_z to <8 x i1>
@@ -605,15 +605,15 @@ loop:
     %p8 = and <8 x i1> %p6, %p7
 
     ; Store %p8
-    %p8_i = getelementptr inbounds i8, i8* %a8, i64 %index
+    %p8_i = getelementptr inbounds i8, i8* %a8, i32 %index
     %p8_p = bitcast i8* %p8_i to <8 x i8>*
     %p8_e = zext <8 x i1> %p8 to <8 x i8>
     store <8 x i8> %p8_e, <8 x i8>* %p8_p, align 8, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -625,7 +625,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_dec_ref_int(10): 0
@@ -667,7 +667,7 @@ jit_malloc(type=host-async, size=64): <@> (new allocation)
    - %p8 -> 21 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
   -> launching <@> (n=2, in=6, out=3, ops=9):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -717,15 +717,15 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Load %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r0_p = bitcast i32* %r0_i to <8 x i32>*
     %r0 = load <8 x i32>, <8 x i32>* %r0_p, align 32, !alias.scope !1
 
     ; Load %r1
-    %r1_i = getelementptr inbounds i32, i32* %a1, i64 %index
+    %r1_i = getelementptr inbounds i32, i32* %a1, i32 %index
     %r1_p = bitcast i32* %r1_i to <8 x i32>*
     %r1 = load <8 x i32>, <8 x i32>* %r1_p, align 32, !alias.scope !1
 
@@ -733,17 +733,17 @@ loop:
     %r2 = xor <8 x i32> %r0, %r1
 
     ; Store %r2
-    %r2_i = getelementptr inbounds i32, i32* %a2, i64 %index
+    %r2_i = getelementptr inbounds i32, i32* %a2, i32 %index
     %r2_p = bitcast i32* %r2_i to <8 x i32>*
     store <8 x i32> %r2, <8 x i32>* %r2_p, align 32, !noalias !1
 
     ; Load %f3
-    %f3_i = getelementptr inbounds float, float* %a3, i64 %index
+    %f3_i = getelementptr inbounds float, float* %a3, i32 %index
     %f3_p = bitcast float* %f3_i to <8 x float>*
     %f3 = load <8 x float>, <8 x float>* %f3_p, align 32, !alias.scope !1
 
     ; Load %f4
-    %f4_i = getelementptr inbounds float, float* %a4, i64 %index
+    %f4_i = getelementptr inbounds float, float* %a4, i32 %index
     %f4_p = bitcast float* %f4_i to <8 x float>*
     %f4 = load <8 x float>, <8 x float>* %f4_p, align 32, !alias.scope !1
 
@@ -754,18 +754,18 @@ loop:
     %f5 = bitcast <8 x i32> %f5_2 to <8 x float>
 
     ; Store %f5
-    %f5_i = getelementptr inbounds float, float* %a5, i64 %index
+    %f5_i = getelementptr inbounds float, float* %a5, i32 %index
     %f5_p = bitcast float* %f5_i to <8 x float>*
     store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
 
     ; Load %p6
-    %p6_i = getelementptr inbounds i8, i8* %a6, i64 %index
+    %p6_i = getelementptr inbounds i8, i8* %a6, i32 %index
     %p6_p = bitcast i8* %p6_i to <8 x i8>*
     %p6_z = load <8 x i8>, <8 x i8>* %p6_p, align 8, !alias.scope !1
     %p6 = trunc <8 x i8> %p6_z to <8 x i1>
 
     ; Load %p7
-    %p7_i = getelementptr inbounds i8, i8* %a7, i64 %index
+    %p7_i = getelementptr inbounds i8, i8* %a7, i32 %index
     %p7_p = bitcast i8* %p7_i to <8 x i8>*
     %p7_z = load <8 x i8>, <8 x i8>* %p7_p, align 8, !alias.scope !1
     %p7 = trunc <8 x i8> %p7_z to <8 x i1>
@@ -774,15 +774,15 @@ loop:
     %p8 = xor <8 x i1> %p6, %p7
 
     ; Store %p8
-    %p8_i = getelementptr inbounds i8, i8* %a8, i64 %index
+    %p8_i = getelementptr inbounds i8, i8* %a8, i32 %index
     %p8_p = bitcast i8* %p8_i to <8 x i8>*
     %p8_e = zext <8 x i1> %p8 to <8 x i8>
     store <8 x i8> %p8_e, <8 x i8>* %p8_p, align 8, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -794,7 +794,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_dec_ref_int(10): 0

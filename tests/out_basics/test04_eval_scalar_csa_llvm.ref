@@ -36,7 +36,7 @@ jit_malloc(type=host-async, size=64): <@> (new allocation)
    - %f3 -> 4 [scalar] [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
   -> launching <@> (n=1, in=0, out=4, ops=4):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -65,7 +65,7 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %f0
     %f0_0 = insertelement <8 x float> undef, float 0x4093480000000000, i32 0
@@ -99,8 +99,8 @@ loop:
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -112,7 +112,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 2
 jit_var_dec_ref_int(2): 0

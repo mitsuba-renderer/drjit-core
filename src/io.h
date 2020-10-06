@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, void **ptr);
+using LLVMKernelFunction = void (*)(uint32_t start, uint32_t end, void **ptr);
 using CUmodule = struct CUmod_st *;
 using CUfunction = struct CUfunc_st *;
 
@@ -29,7 +29,6 @@ struct Kernel {
 
         struct {
             LLVMKernelFunction func;
-            LLVMKernelFunction func_scalar;
 #if defined(ENOKI_ENABLE_ITTNOTIFY)
             void *itt;
 #endif

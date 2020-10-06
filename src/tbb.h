@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 struct Stream;
-using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, void **ptr);
+using LLVMKernelFunction = void (*)(uint32_t start, uint32_t end, void **ptr);
 
 /// Initialize TBB's task scheduler for a given Enoki stream
 extern void tbb_stream_init(Stream *stream);

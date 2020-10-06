@@ -607,8 +607,8 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
 
-    buffer.fmt("define void @enoki_^^^^^^^^^^^^^^^^%s(i64 %%start, "
-               "i64 %%end, i8** %%ptrs) #0", suffix);
+    buffer.fmt("define void @enoki_^^^^^^^^^^^^^^^^%s(i32 %%start, "
+               "i32 %%end, i8** %%ptrs) #0", suffix);
     if (width > 1)
         buffer.fmt(" alignstack(%u)", std::max(16u, width * (uint32_t) sizeof(float)));
     buffer.put(" {\nentry:\n");
@@ -642,7 +642,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
     buffer.put("    br label %loop\n\n");
 
     buffer.put("loop:\n");
-    buffer.put("    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]\n");
+    buffer.put("    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]\n");
 
     auto get_parameter_addr = [](uint32_t reg_id, uint32_t arg_id,
                                  const char *reg_prefix, const char *type,
@@ -652,7 +652,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
                        type, arg_id, jit_llvm_vector_width, type);
         } else {
             buffer.fmt("    %s%u_i = getelementptr inbounds %s, %s* %%a%u, "
-                       "i64 %%index\n", reg_prefix, reg_id, type, type, arg_id);
+                       "i32 %%index\n", reg_prefix, reg_id, type, type, arg_id);
             buffer.fmt("    %s%u_p = bitcast %s* %s%u_i to <%u x %s>*\n", reg_prefix, reg_id,
                        type, reg_prefix, reg_id, jit_llvm_vector_width, type);
         }
@@ -733,15 +733,13 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
     buffer.put("    br label %loop_suffix\n");
     buffer.putc('\n');
     buffer.put("loop_suffix:\n");
-    buffer.fmt("    %%index_next = add i64 %%index, %u\n", width);
-    buffer.put("    %cond = icmp uge i64 %index_next, %end\n");
+    buffer.fmt("    %%index_next = add i32 %%index, %u\n", width);
+    buffer.put("    %cond = icmp uge i32 %index_next, %end\n");
     buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop !2\n\n");
     buffer.put("done:\n");
     buffer.put("    ret void\n");
     buffer.put("}\n\n");
-}
 
-void jit_assemble_llvm_suffix() {
     if (intrinsics_buffer.size() > 1) {
         buffer.put(intrinsics_buffer.get());
         buffer.putc('\n');
@@ -924,28 +922,10 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
     intrinsics_buffer.clear();
     buffer.clear();
 
-    if (cuda) {
+    if (cuda)
         jit_assemble_cuda(group, n_regs_total);
-    } else {
+    else
         jit_assemble_llvm(group);
-
-        /* Compile a separate scalar variant of the kernel if it uses
-           scatter/gather intrinsics. This is needed to deal with the last
-           packet, where not all lanes are guaranteed to be valid. */
-        if (jit_llvm_vector_width != 1 &&
-            (intrinsics_buffer.contains("@llvm.masked.load") ||
-             intrinsics_buffer.contains("@llvm.masked.store") ||
-             intrinsics_buffer.contains("@llvm.masked.scatter") ||
-             intrinsics_buffer.contains("@llvm.masked.gather") ||
-             jit_llvm_supplement)) {
-            uint32_t vector_width = 1;
-            std::swap(jit_llvm_vector_width, vector_width);
-            jit_assemble_llvm(group, "_scalar");
-            std::swap(jit_llvm_vector_width, vector_width);
-        }
-
-        jit_assemble_llvm_suffix();
-    }
 
     /// Replace '^'s in 'enoki_^^^^^^^^' by hash code
     kernel_hash = hash_kernel(buffer.get());
@@ -1069,13 +1049,11 @@ void jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
         cuda_check(cuLaunchKernel(kernel.cuda.cu_func, block_count, 1, 1, thread_count,
                                   1, 1, 0, cu_stream, nullptr, config));
     } else {
-        uint32_t width = kernel.llvm.func != kernel.llvm.func_scalar
-                             ? jit_llvm_vector_width : 1u,
-                 rounded = group.size / width * width;
+        uint32_t packets =
+            (group.size + jit_llvm_vector_width - 1) / jit_llvm_vector_width;
 
-        uint32_t packets = (rounded + jit_llvm_vector_width - 1) / jit_llvm_vector_width;
-        jit_log(Trace, "jit_run(): processing %u packet%s and %u scalar entries",
-                packets, packets == 1 ? "": "s", group.size - rounded);
+        jit_log(Trace, "jit_run(): scheduling %u packet%s", packets,
+                packets == 1 ? "" : "s");
 
 #if defined(ENOKI_JIT_ENABLE_TBB)
 #  if defined(ENOKI_ENABLE_ITTNOTIFY)
@@ -1084,24 +1062,13 @@ void jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
         const void *itt = nullptr;
 #  endif
 
-        if (likely(rounded > 0))
-            tbb_stream_enqueue_kernel(
-                stream, kernel.llvm.func, 0, rounded,
-                (uint32_t) kernel_args_extra.size(), kernel_args_extra.data(),
-                stream->parallel_dispatch, itt);
-
-        if (unlikely(rounded != group.size))
-            tbb_stream_enqueue_kernel(
-                stream, kernel.llvm.func_scalar, rounded, group.size,
-                (uint32_t) kernel_args_extra.size(), kernel_args_extra.data(),
-                stream->parallel_dispatch, itt);
+        tbb_stream_enqueue_kernel(
+            stream, kernel.llvm.func, 0, group.size,
+            (uint32_t) kernel_args_extra.size(), kernel_args_extra.data(),
+            stream->parallel_dispatch, itt);
 #else
         unlock_guard guard(state.mutex);
-        if (likely(rounded > 0))
-            kernel.llvm.func(0, rounded, kernel_args_extra.data());
-
-        if (unlikely(rounded != group.size))
-            kernel.llvm.func_scalar(rounded, group.size, kernel_args_extra.data());
+        kernel.llvm.func(0, rounded, kernel_args_extra.data());
 #endif
     }
 }

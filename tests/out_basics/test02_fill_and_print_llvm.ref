@@ -6,7 +6,7 @@ jit_assemble(size=5): register map:
    - %b0 -> 1 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -16,21 +16,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %b0
     %b0_0 = insertelement <8 x i8> undef, i8 145, i32 0
     %b0 = shufflevector <8 x i8> %b0_0, <8 x i8> undef, <8 x i32> zeroinitializer
 
     ; Store %b0
-    %b0_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %b0_i = getelementptr inbounds i8, i8* %a0, i32 %index
     %b0_p = bitcast i8* %b0_i to <8 x i8>*
     store <8 x i8> %b0, <8 x i8>* %b0_p, align 8, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -42,7 +42,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
   int8_t: [-111, -111, -111, -111, -111]
@@ -56,7 +56,7 @@ jit_assemble(size=5): register map:
    - %b0 -> 2 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -66,21 +66,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %b0
     %b0_0 = insertelement <8 x i8> undef, i8 222, i32 0
     %b0 = shufflevector <8 x i8> %b0_0, <8 x i8> undef, <8 x i32> zeroinitializer
 
     ; Store %b0
-    %b0_i = getelementptr inbounds i8, i8* %a0, i64 %index
+    %b0_i = getelementptr inbounds i8, i8* %a0, i32 %index
     %b0_p = bitcast i8* %b0_i to <8 x i8>*
     store <8 x i8> %b0, <8 x i8>* %b0_p, align 8, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -92,7 +92,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
  uint8_t: [222, 222, 222, 222, 222]
@@ -106,7 +106,7 @@ jit_assemble(size=5): register map:
    - %w0 -> 3 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -116,21 +116,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %w0
     %w0_0 = insertelement <8 x i16> undef, i16 64425, i32 0
     %w0 = shufflevector <8 x i16> %w0_0, <8 x i16> undef, <8 x i32> zeroinitializer
 
     ; Store %w0
-    %w0_i = getelementptr inbounds i16, i16* %a0, i64 %index
+    %w0_i = getelementptr inbounds i16, i16* %a0, i32 %index
     %w0_p = bitcast i16* %w0_i to <8 x i16>*
     store <8 x i16> %w0, <8 x i16>* %w0_p, align 16, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -142,7 +142,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
  int16_t: [-1111, -1111, -1111, -1111, -1111]
@@ -156,7 +156,7 @@ jit_assemble(size=5): register map:
    - %w0 -> 4 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -166,21 +166,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %w0
     %w0_0 = insertelement <8 x i16> undef, i16 2222, i32 0
     %w0 = shufflevector <8 x i16> %w0_0, <8 x i16> undef, <8 x i32> zeroinitializer
 
     ; Store %w0
-    %w0_i = getelementptr inbounds i16, i16* %a0, i64 %index
+    %w0_i = getelementptr inbounds i16, i16* %a0, i32 %index
     %w0_p = bitcast i16* %w0_i to <8 x i16>*
     store <8 x i16> %w0, <8 x i16>* %w0_p, align 16, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -192,7 +192,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
 uint16_t: [2222, 2222, 2222, 2222, 2222]
@@ -206,7 +206,7 @@ jit_assemble(size=5): register map:
    - %r0 -> 5 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -216,21 +216,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = insertelement <8 x i32> undef, i32 3183856185, i32 0
     %r0 = shufflevector <8 x i32> %r0_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
     ; Store %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r0_p = bitcast i32* %r0_i to <8 x i32>*
     store <8 x i32> %r0, <8 x i32>* %r0_p, align 32, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -242,7 +242,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
  int32_t: [-1111111111, -1111111111, -1111111111, -1111111111, -1111111111]
@@ -256,7 +256,7 @@ jit_assemble(size=5): register map:
    - %r0 -> 6 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -266,21 +266,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %r0
     %r0_0 = insertelement <8 x i32> undef, i32 2222222222, i32 0
     %r0 = shufflevector <8 x i32> %r0_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
     ; Store %r0
-    %r0_i = getelementptr inbounds i32, i32* %a0, i64 %index
+    %r0_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r0_p = bitcast i32* %r0_i to <8 x i32>*
     store <8 x i32> %r0, <8 x i32>* %r0_p, align 32, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -292,7 +292,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
 uint32_t: [2222222222, 2222222222, 2222222222, 2222222222, 2222222222]
@@ -306,7 +306,7 @@ jit_assemble(size=5): register map:
    - %rd0 -> 7 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -316,21 +316,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %rd0
     %rd0_0 = insertelement <8 x i64> undef, i64 17335632962598440505, i32 0
     %rd0 = shufflevector <8 x i64> %rd0_0, <8 x i64> undef, <8 x i32> zeroinitializer
 
     ; Store %rd0
-    %rd0_i = getelementptr inbounds i64, i64* %a0, i64 %index
+    %rd0_i = getelementptr inbounds i64, i64* %a0, i32 %index
     %rd0_p = bitcast i64* %rd0_i to <8 x i64>*
     store <8 x i64> %rd0, <8 x i64>* %rd0_p, align 64, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -342,7 +342,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
  int64_t: [-1111111111111111111, -1111111111111111111, -1111111111111111111, -1111111111111111111, -1111111111111111111]
@@ -356,7 +356,7 @@ jit_assemble(size=5): register map:
    - %rd0 -> 8 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -366,21 +366,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %rd0
     %rd0_0 = insertelement <8 x i64> undef, i64 2222222222222222222, i32 0
     %rd0 = shufflevector <8 x i64> %rd0_0, <8 x i64> undef, <8 x i32> zeroinitializer
 
     ; Store %rd0
-    %rd0_i = getelementptr inbounds i64, i64* %a0, i64 %index
+    %rd0_i = getelementptr inbounds i64, i64* %a0, i32 %index
     %rd0_p = bitcast i64* %rd0_i to <8 x i64>*
     store <8 x i64> %rd0, <8 x i64>* %rd0_p, align 64, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -392,7 +392,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
 uint64_t: [2222222222222222222, 2222222222222222222, 2222222222222222222, 2222222222222222222, 2222222222222222222]
@@ -406,7 +406,7 @@ jit_assemble(size=5): register map:
    - %f0 -> 9 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -416,21 +416,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %f0
     %f0_0 = insertelement <8 x float> undef, float 0x3fd5555560000000, i32 0
     %f0 = shufflevector <8 x float> %f0_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Store %f0
-    %f0_i = getelementptr inbounds float, float* %a0, i64 %index
+    %f0_i = getelementptr inbounds float, float* %a0, i32 %index
     %f0_p = bitcast float* %f0_i to <8 x float>*
     store <8 x float> %f0, <8 x float>* %f0_p, align 32, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -442,7 +442,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
    float: [0.333333, 0.333333, 0.333333, 0.333333, 0.333333]
@@ -456,7 +456,7 @@ jit_assemble(size=5): register map:
    - %d0 -> 10 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
   -> launching <@> (n=5, in=0, out=1, ops=1):
-define void @enoki_<@>(i64 %start, i64 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
     ; Prepare argument 0
@@ -466,21 +466,21 @@ entry:
     br label %loop
 
 loop:
-    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]
+    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
     ; Evaluate %d0
     %d0_0 = insertelement <8 x double> undef, double 0x3fd5555555555555, i32 0
     %d0 = shufflevector <8 x double> %d0_0, <8 x double> undef, <8 x i32> zeroinitializer
 
     ; Store %d0
-    %d0_i = getelementptr inbounds double, double* %a0, i64 %index
+    %d0_i = getelementptr inbounds double, double* %a0, i32 %index
     %d0_p = bitcast double* %d0_i to <8 x double>*
     store <8 x double> %d0, <8 x double>* %d0_p, align 64, !noalias !1
     br label %loop_suffix
 
 loop_suffix:
-    %index_next = add i64 %index, 8
-    %cond = icmp uge i64 %index_next, %end
+    %index_next = add i32 %index, 8
+    %cond = icmp uge i32 %index_next, %end
     br i1 %cond, label %done, label %loop, !llvm.loop !2
 
 done:
@@ -492,7 +492,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): processing 1 packet and 0 scalar entries
+jit_run(): scheduling 1 packet
 jit_eval(): cleaning up..
 jit_eval(): done.
   double: [0.333333, 0.333333, 0.333333, 0.333333, 0.333333]
