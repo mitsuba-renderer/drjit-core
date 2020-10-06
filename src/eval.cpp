@@ -695,7 +695,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
                 }
             }
         } else {
-            if (unlikely(log_trace))
+            if (unlikely(log_trace && (VarType) v->type != VarType::Invalid))
                 buffer.fmt("\n    ; Evaluate %s%u%s%s\n", reg_prefix, reg_id,
                            label ? ": " : "", label ? label : "");
             jit_render_stmt_llvm(index, v);
@@ -812,7 +812,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
             v->arg_type = ArgType::Input;
             n_args_in++;
             push = true;
-        } else if (v->output_flag && !v->scatter && v->size == group.size) {
+        } else if (v->output_flag && v->size == group.size && (VarType) v->type != VarType::Invalid) {
             size_t isize    = (size_t) var_type_size[v->type],
                    var_size = (size_t) group.size * isize;
 
@@ -1221,7 +1221,7 @@ void jit_eval() {
             continue;
 
         Variable *v = &it.value();
-        if (!(v->stmt && !v->direct_pointer && (v->data || v->scatter)))
+        if (!v->stmt || v->direct_pointer || (!v->data && !v->scatter))
             continue;
 
         jit_cse_drop(index, v);
