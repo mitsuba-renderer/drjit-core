@@ -121,6 +121,9 @@ struct Stream {
     /// Parallelize work queued up in this stream?
     bool parallel_dispatch = true;
 
+    /// Should the CSE cache be used?
+    bool enable_cse = true;
+
     /// Is kernel evaluation currently permitted?
     bool eval_enabled = true;
 
@@ -472,9 +475,6 @@ struct State {
 
     /// Maps from a key characterizing a variable to its index
     CSECache cse_cache;
-
-    /// Should the CSE cache be used at all?
-    bool enable_cse = true;
 
     /// Current variable index
     uint32_t variable_index = 1;

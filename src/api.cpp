@@ -457,13 +457,21 @@ int jitc_var_schedule(uint32_t index) {
 /// Enable/disable common subexpression elimination
 void jitc_set_cse(int value) {
     lock_guard guard(state.mutex);
-    state.enable_cse = value != 0;
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_set_cse(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    stream->enable_cse = value != 0;
 }
 
 /// Return whether or not common subexpression elimination is enabled
 int jitc_cse() {
     lock_guard guard(state.mutex);
-    return state.enable_cse ? 1 : 0;
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_set_cse(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    return stream->enable_cse ? 1 : 0;
 }
 
 void jitc_memset_async(void *ptr, uint32_t size, uint32_t isize, const void *src) {

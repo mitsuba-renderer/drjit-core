@@ -251,7 +251,7 @@ std::pair<uint32_t, Variable *> jit_var_new(Variable &v, bool disable_cse_) {
     CSECache::iterator key_it;
     bool is_special  = (VarType) v.type == VarType::Invalid,
          disable_cse = v.stmt == nullptr || v.direct_pointer ||
-                       !state.enable_cse || disable_cse_ ||
+                       !stream->enable_cse || disable_cse_ ||
                        is_special,
          cse_key_inserted = false;
 
