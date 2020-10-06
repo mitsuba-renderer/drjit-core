@@ -135,6 +135,24 @@ uint32_t jitc_stream() {
     return stream->stream;
 }
 
+void jitc_set_eval_enabled(int enable) {
+    lock_guard guard(state.mutex);
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_eval_enabled(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    stream->eval_enabled = enable != 0;
+}
+
+int jitc_eval_enabled() {
+    lock_guard guard(state.mutex);
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_eval_enabled(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    return stream->eval_enabled ? 1 : 0;
+}
+
 void* jitc_cuda_stream() {
     lock_guard guard(state.mutex);
     return jit_cuda_stream();

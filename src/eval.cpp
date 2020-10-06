@@ -1090,6 +1090,13 @@ void jit_eval() {
         jit_raise(
             "jit_eval(): you must invoke jitc_set_device() to choose a target "
             "device before evaluating expressions using the JIT compiler.");
+    else if (unlikely(!stream->eval_enabled))
+        jit_raise(
+            "jit_eval(): Enoki is currently either recording arithmetic into a "
+            "string IR representation, or it is executing a loop symbolically. "
+            "In such cases, you are not allowed to run operations that trigger "
+            "a kernel evaluation via jitc_eval(). Set a breakpoint on "
+            "`jit_raise` to find the offending code in your program.");
 
     visited.clear();
     schedule.clear();

@@ -147,6 +147,66 @@ extern JITC_EXPORT uint32_t jitc_device();
 /// Return the currently active stream
 extern JITC_EXPORT uint32_t jitc_stream();
 
+/// Wait for all computation on the current stream to finish
+extern JITC_EXPORT void jitc_sync_stream();
+
+/// Wait for all computation on the current device to finish
+extern JITC_EXPORT void jitc_sync_device();
+
+/// Wait for all computation on the *all devices* to finish
+extern JITC_EXPORT void jitc_sync_all_devices();
+
+/**
+ * \brief Dispatch computation to multiple CUDA streams or CPU cores?
+ *
+ * This parameter has slightly different meanings depending on the backend
+ * that is used:
+ *
+ * <ul>
+ * <li><b>CUDA backend</b>: The JIT compiler attempts to fuse all queued
+ * computation into a single kernel to maximize efficiency, and this kernel
+ * runs in parallel using all streaming multiprocessors available on the GPU.
+ * But computation involving arrays of different size must necessarily run in
+ * separate kernels, which means that it is serialized if taking place within
+ * the same device and stream. In some cases, kernels only involve very small
+ * inputs and outputs, in which case scheduling overheads can become
+ * significant. If desired, jitc_eval() can detect this and dispatch multiple
+ * kernels to separate streams that execute in parallel <em>in addition to the
+ * parallel execution of individual kernels</em>.</li>
+ *
+ * <li><b>LLVM backend</b>: If Enoki-JIT is compiled with Intel's Thread
+ * Building Blocks (TBB), execution will parallelize over all available cores
+ * if this parameter is set to \c 1. Otherwise, execution will be
+ * serialized.</li>
+ * </ul>
+ *
+ * The default is \c 1 (i.e. to enable parallel dispatch) for both LLVM/CUDA
+ * backends.
+ */
+extern JITC_EXPORT void jitc_set_parallel_dispatch(int enable);
+
+/// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
+extern JITC_EXPORT int jitc_parallel_dispatch();
+
+/**
+ * \brief Temporarily prevent kernel evaluation
+ *
+ * There are certain situations where we really don't want jitc_eval()
+ * to be executed:
+ *
+ * 1. When recording a computation into a string IR representation
+ * 2. When executing a loop symbolically (ek::loop in Enoki)
+ *
+ * In such cases, evaluation of queued computation can temporarily be
+ * "forbidden" by calling <tt>jitc_set_eval_enabled(0)</tt>, in which case
+ * calls to jitc_eval() will cause a program failure. Note: this is a
+ * per-stream property
+ */
+extern JITC_EXPORT void jitc_set_eval_enabled(int enable);
+
+/// Return whether or not evaluation is currently allowed
+extern JITC_EXPORT int jitc_eval_enabled();
+
 /// Return the CUDA stream of the currently active device
 extern JITC_EXPORT void* jitc_cuda_stream();
 
@@ -195,46 +255,6 @@ extern JITC_EXPORT int jitc_llvm_version_major();
 extern JITC_EXPORT int jitc_llvm_if_at_least(uint32_t vector_width,
                                              const char *feature);
 
-/**
- * \brief Dispatch computation to multiple CUDA streams or CPU cores?
- *
- * This parameter has slightly different meanings depending on the backend
- * that is used:
- *
- * <ul>
- * <li><b>CUDA backend</b>: The JIT compiler attempts to fuse all queued
- * computation into a single kernel to maximize efficiency, and this kernel
- * runs in parallel using all streaming multiprocessors available on the GPU.
- * But computation involving arrays of different size must necessarily run in
- * separate kernels, which means that it is serialized if taking place within
- * the same device and stream. In some cases, kernels only involve very small
- * inputs and outputs, in which case scheduling overheads can become
- * significant. If desired, jitc_eval() can detect this and dispatch multiple
- * kernels to separate streams that execute in parallel <em>in addition to the
- * parallel execution of individual kernels</em>.</li>
- *
- * <li><b>LLVM backend</b>: If Enoki-JIT is compiled with Intel's Thread
- * Building Blocks (TBB), execution will parallelize over all available cores
- * if this parameter is set to \c 1. Otherwise, execution will be
- * serialized.</li>
- * </ul>
- *
- * The default is \c 1 (i.e. to enable parallel dispatch) for both LLVM/CUDA
- * backends.
- */
-extern JITC_EXPORT void jitc_set_parallel_dispatch(int enable);
-
-/// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
-extern JITC_EXPORT int jitc_parallel_dispatch();
-
-/// Wait for all computation on the current stream to finish
-extern JITC_EXPORT void jitc_sync_stream();
-
-/// Wait for all computation on the current device to finish
-extern JITC_EXPORT void jitc_sync_device();
-
-/// Wait for all computation on the *all devices* to finish
-extern JITC_EXPORT void jitc_sync_all_devices();
 
 
 // ====================================================================
@@ -982,7 +1002,7 @@ extern JITC_EXPORT int jitc_var_device(uint32_t index);
 /**
  * \brief Mark a variable as a scatter operation
  *
- * This function must be used to inform the JIT compiler when the memory region
+ * This function should be used to inform the JIT compiler when the memory region
  * underlying a variable \c target is modified by a scatter operation with
  * index \c index. It will mark the target variable as dirty to ensure that
  * future reads from this variable (while still in dirty state) will trigger

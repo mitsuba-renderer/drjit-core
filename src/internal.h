@@ -121,6 +121,9 @@ struct Stream {
     /// Parallelize work queued up in this stream?
     bool parallel_dispatch = true;
 
+    /// Is kernel evaluation currently permitted?
+    bool eval_enabled = true;
+
     /// Enoki device index associated with this stream (*not* the CUDA device ID)
     int device = 0;
 
