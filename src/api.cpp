@@ -153,6 +153,16 @@ int jitc_eval_enabled() {
     return stream->eval_enabled ? 1 : 0;
 }
 
+uint32_t jitc_side_effect_counter() {
+    lock_guard guard(state.mutex);
+
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_side_effect_counter(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    return stream->side_effect_counter;
+}
+
 void* jitc_cuda_stream() {
     lock_guard guard(state.mutex);
     return jit_cuda_stream();

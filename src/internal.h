@@ -130,6 +130,9 @@ struct Stream {
     /// Index of this stream
     uint32_t stream = 0;
 
+    /// How many statements with side effects were executed so far?
+    uint32_t side_effect_counter = 0;
+
     /**
      * Memory regions that were freed via jit_free(), but which might still be
      * used by a currently running kernel. They will be safe to re-use once the

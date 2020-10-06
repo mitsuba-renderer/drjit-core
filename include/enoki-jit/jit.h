@@ -207,6 +207,19 @@ extern JITC_EXPORT void jitc_set_eval_enabled(int enable);
 /// Return whether or not evaluation is currently allowed
 extern JITC_EXPORT int jitc_eval_enabled();
 
+/**
+ * \brief Returns the number of operations with side effects (specifically,
+ * scatters) scheduled on the current stream so far
+ *
+ * This function can be used to easily detect whether or not some piece of
+ * code involves side effects. It is used in Enokis's `ek::loop` primitive.
+ */
+extern JITC_EXPORT uint32_t jitc_side_effect_counter();
+
+// ====================================================================
+//                    CUDA/LLVM-specific functionality
+// ====================================================================
+
 /// Return the CUDA stream of the currently active device
 extern JITC_EXPORT void* jitc_cuda_stream();
 

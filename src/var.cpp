@@ -948,12 +948,18 @@ int jit_var_device(uint32_t index) {
 
 /// Mark a variable as a scatter operation that writes to 'target'
 void jit_var_mark_scatter(uint32_t index, uint32_t target) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_var_mark_scatter(): you must invoke jitc_set_device() to "
+                  "choose a target device before using this function.");
+
     jit_log(Debug, "jit_var_mark_scatter(%u, %u)", index, target);
 
     // Update scatter operation
     Variable *v = jit_var(index);
     v->scatter = true;
-    active_stream->todo.push_back(index);
+    stream->todo.push_back(index);
+    stream->side_effect_counter++;
 
     // Update target variable
     if (target) {
