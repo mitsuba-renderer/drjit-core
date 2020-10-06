@@ -552,7 +552,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                 }
             }
         } else {
-            if (unlikely(log_trace))
+            if (unlikely(log_trace && (VarType) v->type != VarType::Invalid))
                 buffer.fmt("\n    // Evaluate %s%u%s%s\n",
                            var_type_prefix[v->type], v->reg_index,
                            label ? ": " : "", label ? label : "");
@@ -601,7 +601,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
                "i64 %%end, i8** %%ptrs) #0", suffix);
     if (width > 1)
         buffer.fmt(" alignstack(%u)", std::max(16u, width * (uint32_t) sizeof(float)));
-    buffer.put(" {\nentry:");
+    buffer.put(" {\nentry:\n");
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
         Variable *v = jit_var(index);
@@ -630,11 +630,9 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
         }
     }
     buffer.put("    br label %loop\n\n");
-    buffer.put("done:\n");
-    buffer.put("    ret void\n\n");
 
     buffer.put("loop:\n");
-    buffer.put("    %index = phi i64 [ %index_next, %loop ], [ %start, %entry ]\n");
+    buffer.put("    %index = phi i64 [ %index_next, %loop_suffix ], [ %start, %entry ]\n");
 
     auto get_parameter_addr = [](uint32_t reg_id, uint32_t arg_id,
                                  const char *reg_prefix, const char *type,
@@ -722,10 +720,14 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
         }
     }
 
+    buffer.put("    br label %loop_suffix\n");
     buffer.putc('\n');
+    buffer.put("loop_suffix:\n");
     buffer.fmt("    %%index_next = add i64 %%index, %u\n", width);
     buffer.put("    %cond = icmp uge i64 %index_next, %end\n");
-    buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop !2\n");
+    buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop !2\n\n");
+    buffer.put("done:\n");
+    buffer.put("    ret void\n");
     buffer.put("}\n\n");
 }
 
