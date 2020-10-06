@@ -181,6 +181,9 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
 void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") {
     const char *s = v->stmt;
 
+    if (unlikely(v->stmt[0] == '\0'))
+        return;
+
     if (s[0] == '$' && s[1] >= '0' && s[1] <= '9') {
         uint32_t width = 1 << (s[1] - '0');
         if (width < jit_llvm_vector_width) {
@@ -212,6 +215,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
                 case 'o':
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'a': prefix_table = var_type_name_llvm_abbrev; break;
+                case 'L':
                 case 'r': prefix_table = var_type_prefix; break;
                 case 'O':
                     buffer.putc('<');
@@ -252,6 +256,11 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
                         buffer.put(suffix);
                     break;
 
+                case 'L':
+                    buffer.putc('L');
+                    buffer.put_uint32(dep->reg_index);
+                    break;
+
                 case 'a':
                 case 'b':
                 case 's':
@@ -290,6 +299,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
     }
 
     buffer.putc('\n');
+
     s = v->stmt;
 
     // Check for intrinsics
