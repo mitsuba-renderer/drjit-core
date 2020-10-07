@@ -533,6 +533,7 @@ public:
     }
 
     const char *get() { return m_start; }
+    const char *cur() { return m_cur; }
 
     void clear() {
         m_cur = m_start;

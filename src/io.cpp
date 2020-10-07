@@ -27,7 +27,7 @@
 #endif
 
 /// Version number for cache files
-#define ENOKI_CACHE_VERSION 1
+#define ENOKI_CACHE_VERSION 2
 
 // Uncomment to write out training data for creating a compression dictionary
 // #define ENOKI_CACHE_TRAIN 1

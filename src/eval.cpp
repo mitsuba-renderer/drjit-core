@@ -133,6 +133,9 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
     const char *s = v->stmt;
     char c;
 
+    if (v->stmt[0] == '\0')
+        return;
+
     buffer.put("    ");
 
     do {
@@ -151,6 +154,7 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
                 case 'b': prefix_table = var_type_name_ptx_bin; break;
                 case 's': prefix_table = var_type_size_str; break;
                 case 'r': prefix_table = var_type_prefix; break;
+                case 'L': prefix_table = var_type_label; break;
                 default:
                     jit_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
                              "expression (unknown type \"%c\") in \"%s\"!", type, v->stmt);
@@ -169,12 +173,15 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v) {
             Variable *dep = jit_var(dep_id);
             buffer.put(prefix_table[(int) dep->type]);
 
-            if (type == 'r')
+            if (type == 'r' || type == 'L')
                 buffer.put_uint32(dep->reg_index);
         }
     } while (c != '\0');
 
-    buffer.put(";\n");
+    if (likely(*(buffer.cur() - 1) != ':'))
+        buffer.put(";\n");
+    else
+        buffer.putc('\n');
 }
 
 /// Convert an IR template with '$' expressions into valid IR (LLVM variant)
@@ -215,7 +222,7 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
                 case 'o':
                 case 'b': prefix_table = var_type_name_llvm_bin; break;
                 case 'a': prefix_table = var_type_name_llvm_abbrev; break;
-                case 'L':
+                case 'L': prefix_table = var_type_label; break;
                 case 'r': prefix_table = var_type_prefix; break;
                 case 'O':
                     buffer.putc('<');
@@ -250,15 +257,11 @@ void jit_render_stmt_llvm(uint32_t index, Variable *v, const char *suffix = "") 
 
             switch (type) {
                 case 'r':
+                case 'L':
                     buffer.put(prefix);
                     buffer.put_uint32(dep->reg_index);
                     if (!dep->direct_pointer)
                         buffer.put(suffix);
-                    break;
-
-                case 'L':
-                    buffer.putc('L');
-                    buffer.put_uint32(dep->reg_index);
                     break;
 
                 case 'a':

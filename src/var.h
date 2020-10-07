@@ -183,3 +183,4 @@ extern const char *var_type_name_ptx        [(int) VarType::Count];
 extern const char *var_type_name_ptx_bin    [(int) VarType::Count];
 extern const char *var_type_prefix          [(int) VarType::Count];
 extern const char *var_type_size_str        [(int) VarType::Count];
+extern const char *var_type_label           [(int) VarType::Count];

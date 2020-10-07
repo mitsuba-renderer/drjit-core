@@ -77,6 +77,12 @@ const char *var_type_size_str[(int) VarType::Count] {
     "0", "1", "1", "1", "2", "2", "4", "4", "8", "8", "2", "4", "8", "8"
 };
 
+/// Label prefix, doesn't depend on variable type
+const char *var_type_label[(int) VarType::Count] {
+    "L", "L", "L", "L", "L", "L", "L",
+    "L", "L", "L", "L", "L", "L", "L"
+};
+
 /// Access a variable by ID, terminate with an error if it doesn't exist
 Variable *jit_var(uint32_t index) {
     auto it = state.variables.find(index);
