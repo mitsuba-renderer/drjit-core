@@ -541,8 +541,7 @@ uint32_t jit_var_new_0(VarType type, const char *stmt, int stmt_static,
 uint32_t jit_var_new_1(VarType type, const char *stmt, int stmt_static,
                        int cuda, uint32_t op1) {
     if (unlikely(op1 == 0))
-        jit_raise("jit_var_new(): arithmetic involving "
-                  "uninitialized variable!");
+        return 0;
 
     Variable *v1 = jit_var(op1);
 
@@ -577,6 +576,8 @@ uint32_t jit_var_new_1(VarType type, const char *stmt, int stmt_static,
 /// Append a variable to the instruction trace (2 operands)
 uint32_t jit_var_new_2(VarType type, const char *stmt, int stmt_static,
                        int cuda, uint32_t op1, uint32_t op2) {
+    if (unlikely(op1 == 0 && op2 == 0))
+        return 0;
     if (unlikely(op1 == 0 || op2 == 0))
         jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
@@ -624,7 +625,9 @@ uint32_t jit_var_new_2(VarType type, const char *stmt, int stmt_static,
 /// Append a variable to the instruction trace (3 operands)
 uint32_t jit_var_new_3(VarType type, const char *stmt, int stmt_static,
                        int cuda, uint32_t op1, uint32_t op2, uint32_t op3) {
-    if (unlikely(op1 == 0 || op2 == 0 || op3 == 0))
+    if (unlikely(op1 == 0 && op2 == 0 && op3 == 0))
+        return 0;
+    else if (unlikely(op1 == 0 || op2 == 0 || op3 == 0))
         jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
 
@@ -676,7 +679,9 @@ uint32_t jit_var_new_3(VarType type, const char *stmt, int stmt_static,
 uint32_t jit_var_new_4(VarType type, const char *stmt, int stmt_static,
                        int cuda, uint32_t op1, uint32_t op2, uint32_t op3,
                        uint32_t op4) {
-    if (unlikely(op1 == 0 || op2 == 0 || op3 == 0 || op4 == 0))
+    if (unlikely(op1 == 0 && op2 == 0 && op3 == 0 && op4 == 0))
+        return 0;
+    else if (unlikely(op1 == 0 || op2 == 0 || op3 == 0 || op4 == 0))
         jit_raise("jit_var_new(): arithmetic involving "
                   "uninitialized variable!");
 
