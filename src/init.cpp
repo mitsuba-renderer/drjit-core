@@ -219,6 +219,9 @@ void jit_shutdown(int light) {
                 jit_free_flush();
                 tbb_stream_shutdown(stream);
 #endif
+                if (!stream->active_mask.empty())
+                    jit_log(Warn, "jit_shutdown(): leaked %zu active masks!",
+                            stream->active_mask.size());
             }
             delete stream;
         }

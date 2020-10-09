@@ -166,6 +166,8 @@ struct Stream {
     tbb::task *tbb_task_root = nullptr;
 #endif
 
+    std::vector<uint32_t> active_mask;
+
     /// ---------------------------- CUDA-specific ----------------------------
 
     /// Redundant copy of the device context

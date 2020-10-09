@@ -10,6 +10,7 @@
 #include "llvm_api.h"
 #include "internal.h"
 #include "log.h"
+#include "var.h"
 #include "profiler.h"
 
 #if defined(_WIN32)
@@ -742,4 +743,65 @@ void jit_llvm_shutdown() {
 
     jit_llvm_init_success = false;
     jit_llvm_init_attempted = false;
+}
+
+uint32_t jit_llvm_active_mask() {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_llvm_active_mask(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    else if (unlikely(stream->cuda))
+        jit_raise("jit_llvm_active_mask(): a CUDA stream is currently active!");
+
+    if (stream->active_mask.empty()) {
+        uint32_t index = jit_var_new_0(
+            VarType::UInt32,
+            "$r0_0 = insertelement <$w x $t0> undef, $t0 $i, $t0 0$n"
+            "$r0_1 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x $t0> $z$n"
+            "$r0 = add <$w x $t0> $r0_1, $l0", 1, 0, 1);
+
+        uint32_t mask = jit_var_new_1(
+            VarType::Bool,
+            "$r0_0 = insertelement <$w x $t1> undef, $t1 %end, $t1 0$n"
+            "$r0_1 = shufflevector <$w x $t1> $r0_0, <$w x $t1> undef, <$w x $t1> $z$n"
+            "$r0 = icmp ult <$w x $t1> $r1, $r0_1",
+            1, 0, index);
+
+        jit_var_dec_ref_ext(index);
+
+        return mask;
+    } else {
+        uint32_t index = stream->active_mask.back();
+        jit_var_inc_ref_ext(index);
+        return index;
+    }
+}
+
+void jit_llvm_active_mask_push(uint32_t index) {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_llvm_active_mask_push(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    else if (unlikely(stream->cuda))
+        jit_raise("jit_llvm_active_mask_push(): a CUDA stream is currently active!");
+
+    jit_var_inc_ref_int(index);
+    stream->active_mask.push_back(index);
+}
+
+void jit_llvm_active_mask_pop() {
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_llvm_active_mask_pop(): you must invoke jitc_set_device() to "
+                  "choose a target device before calling this function!");
+    else if (unlikely(stream->cuda))
+        jit_raise("jit_llvm_active_mask_pop(): a CUDA stream is currently active!");
+
+
+    auto &stack = stream->active_mask;
+    if (unlikely(stack.empty()))
+        jit_raise("jit_llvm_active_mask_pop(): underflow!");
+
+    jit_var_dec_ref_int(stack.back());
+    stack.pop_back();
 }

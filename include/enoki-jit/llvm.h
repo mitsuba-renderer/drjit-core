@@ -123,7 +123,7 @@ struct LLVMArray {
             ? "$r0 = fadd <$w x $t0> $r1, $r2"
             : "$r0 = add <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
+        return steal(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
     }
 
     LLVMArray operator-(const LLVMArray &v) const {
@@ -134,7 +134,7 @@ struct LLVMArray {
             ? "$r0 = fsub <$w x $t0> $r1, $r2"
             : "$r0 = sub <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
+        return steal(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
     }
 
     LLVMArray operator*(const LLVMArray &v) const {
@@ -151,7 +151,7 @@ struct LLVMArray {
             ? "$r0 = fmul <$w x $t0> $r1, $r2"
             : "$r0 = mul <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
+        return steal(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
     }
 
     LLVMArray operator/(const LLVMArray &v) const {
@@ -171,7 +171,7 @@ struct LLVMArray {
         else
             op = "$r0 = udiv <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
+        return steal(jitc_var_new_2(Type, op, 1, 0, m_index, v.m_index));
     }
 
     LLVMArray operator/(Value value) const {
@@ -204,7 +204,7 @@ struct LLVMArray {
         else
             op = "$r0 = fcmp ogt <$w x $t1> $r1, $r2";
 
-        return LLVMArray<bool>::from_index(jitc_var_new_2(
+        return LLVMArray<bool>::steal(jitc_var_new_2(
             LLVMArray<bool>::Type, op, 1, 0, m_index, a.index()));
     }
 
@@ -220,7 +220,7 @@ struct LLVMArray {
         else
             op = "$r0 = fcmp oge <$w x $t1> $r1, $r2";
 
-        return LLVMArray<bool>::from_index(jitc_var_new_2(
+        return LLVMArray<bool>::steal(jitc_var_new_2(
             LLVMArray<bool>::Type, op, 1, 0, m_index, a.index()));
     }
 
@@ -237,7 +237,7 @@ struct LLVMArray {
         else
             op = "$r0 = fcmp olt <$w x $t1> $r1, $r2";
 
-        return LLVMArray<bool>::from_index(jitc_var_new_2(
+        return LLVMArray<bool>::steal(jitc_var_new_2(
             LLVMArray<bool>::Type, op, 1, 0, m_index, a.index()));
     }
 
@@ -253,7 +253,7 @@ struct LLVMArray {
         else
             op = "$r0 = fcmp ole <$w x $t1> $r1, $r2";
 
-        return LLVMArray<bool>::from_index(jitc_var_new_2(
+        return LLVMArray<bool>::steal(jitc_var_new_2(
             LLVMArray<bool>::Type, op, 1, 0, m_index, a.index()));
     }
 
@@ -262,7 +262,7 @@ struct LLVMArray {
                              ? "$r0 = icmp eq <$w x $t1> $r1, $r2"
                              : "$r0 = fcmp oeq <$w x $t1> $r1, $r2";
 
-        return LLVMArray<bool>::from_index(jitc_var_new_2(
+        return LLVMArray<bool>::steal(jitc_var_new_2(
             LLVMArray<bool>::Type, op, 1, 0, a.index(), b.index()));
     }
 
@@ -271,7 +271,7 @@ struct LLVMArray {
                              ? "$r0 = icmp ne <$w x $t1> $r1, $r2"
                              : "$r0 = fcmp one <$w x $t1> $r1, $r2";
 
-        return LLVMArray<bool>::from_index(jitc_var_new_2(
+        return LLVMArray<bool>::steal(jitc_var_new_2(
             LLVMArray<bool>::Type, op, 1, 0, a.index(), b.index()));
     }
 
@@ -297,7 +297,7 @@ struct LLVMArray {
             op = "$r0 = sub <$w x $t0> $z, $r1";
         }
 
-        return from_index(jitc_var_new_1(Type, op, 1, 0, m_index));
+        return steal(jitc_var_new_1(Type, op, 1, 0, m_index));
     }
 
     LLVMArray operator~() const {
@@ -307,7 +307,7 @@ struct LLVMArray {
                                "$r0_1 = xor <$w x $b0> $r0_0, $o0$n"
                                "$r0 = bitcast <$w x $b0> $r0_1 to <$w x $t0>";
 
-        return from_index(jitc_var_new_1(Type, op, 1, 0, m_index));
+        return steal(jitc_var_new_1(Type, op, 1, 0, m_index));
     }
 
     LLVMArray operator|(const LLVMArray &a) const {
@@ -326,7 +326,7 @@ struct LLVMArray {
                                "$r0_2 = or <$w x $b0> $r0_0, $r0_1$n"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
+        return steal(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -338,7 +338,7 @@ struct LLVMArray {
             return LLVMArray(memcpy_cast<Value>(uint_with_size_t<Value>(-1)));
 
         using UInt = LLVMArray<uint_with_size_t<Value>>;
-        UInt x = UInt::from_index(jitc_var_new_1(
+        UInt x = UInt::steal(jitc_var_new_1(
             UInt::Type, "$r0 = sext <$w x $t1> $r1 to <$w x $b0>", 1, 0,
             m.index()));
 
@@ -361,7 +361,7 @@ struct LLVMArray {
                                "$r0_2 = and <$w x $b0> $r0_0, $r0_1$n"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
+        return steal(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -373,7 +373,7 @@ struct LLVMArray {
             return LLVMArray(Value(0));
 
         using UInt = LLVMArray<uint_with_size_t<Value>>;
-        UInt x = UInt::from_index(jitc_var_new_1(
+        UInt x = UInt::steal(jitc_var_new_1(
             UInt::Type, "$r0 = sext <$w x $t1> $r1 to <$w x $b0>", 1, 0,
             m.index()));
 
@@ -396,11 +396,11 @@ struct LLVMArray {
                                "$r0_2 = xor <$w x $b0> $r0_0, $r0_1$n"
                                "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
+        return steal(jitc_var_new_2(Type, op, 1, 0, m_index, a.index()));
     }
 
     LLVMArray operator<<(const LLVMArray<uint32_t> &v) const {
-        return from_index(jitc_var_new_2(Type, "$r0 = shl <$w x $t0> $r1, $r2",
+        return steal(jitc_var_new_2(Type, "$r0 = shl <$w x $t0> $r1, $r2",
                                          1, 0, index(), v.index()));
     }
 
@@ -411,7 +411,7 @@ struct LLVMArray {
         else
             op = "$r0 = lshr <$w x $t0> $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 0, index(), v.index()));
+        return steal(jitc_var_new_2(Type, op, 1, 0, index(), v.index()));
     }
 
     LLVMArray& operator+=(const LLVMArray &v) {
@@ -496,7 +496,7 @@ struct LLVMArray {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::from_index(jitc_var_new_1(Type,
+        return LLVMArray::steal(jitc_var_new_1(Type,
             "$r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
@@ -505,7 +505,7 @@ struct LLVMArray {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::from_index(jitc_var_new_1(Type,
+        return LLVMArray::steal(jitc_var_new_1(Type,
             "$r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
@@ -514,7 +514,7 @@ struct LLVMArray {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::from_index(jitc_var_new_1(Type,
+        return LLVMArray::steal(jitc_var_new_1(Type,
             "$r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
@@ -523,7 +523,7 @@ struct LLVMArray {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::from_index(jitc_var_new_1(Type,
+        return LLVMArray::steal(jitc_var_new_1(Type,
             "$r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
@@ -532,7 +532,7 @@ struct LLVMArray {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::from_index(jitc_var_new_1(Type,
+        return LLVMArray::steal(jitc_var_new_1(Type,
             "$r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)", 1, 0,
             a.index()));
     }
@@ -554,7 +554,7 @@ struct LLVMArray {
             return a * b;
 
         if (std::is_floating_point<Value>::value) {
-            return LLVMArray::from_index(jitc_var_new_3(
+            return LLVMArray::steal(jitc_var_new_3(
                 Type,
                 "$r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, "
                 "<$w x $t2> $r2, <$w x $t3> $r3)",
@@ -624,7 +624,7 @@ struct LLVMArray {
     void write(uint32_t offset, Value value) {
         if (jitc_var_int_ref(m_index) > 0) {
             eval();
-            *this = from_index(
+            *this = steal(
                 jitc_var_copy_mem(AllocType::HostAsync, LLVMArray<Value>::Type, 0,
                               data(), (uint32_t) size()));
         }
@@ -633,23 +633,23 @@ struct LLVMArray {
     }
 
     static LLVMArray map(void *ptr, size_t size, bool free = false) {
-        return from_index(
+        return steal(
             jitc_var_map_mem(Type, 0, ptr, (uint32_t) size, free ? 1 : 0));
     }
 
     static LLVMArray copy(const void *ptr, size_t size) {
-        return from_index(
+        return steal(
             jitc_var_copy_mem(AllocType::Host, Type, 0, ptr, (uint32_t) size));
     }
 
-    static LLVMArray from_index(uint32_t index) {
+    static LLVMArray steal(uint32_t index) {
         LLVMArray result;
         result.m_index = index;
         return result;
     }
 
     static LLVMArray launch_index(size_t size = 1) {
-        return from_index(jitc_var_new_0(
+        return steal(jitc_var_new_0(
             Type,
             "$r0_0 = insertelement <$w x $t0> undef, i32 $i, i32 0$n"
             "$r0_1 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, "
@@ -657,12 +657,8 @@ struct LLVMArray {
             "$r0 = add <$w x $t0> $r0_1, $l0", 1, 0, (uint32_t) size));
     }
 
-    static LLVMArray last_index(size_t size = 1) {
-        return from_index(jitc_var_new_0(
-            Type,
-            "$r0_0 = insertelement <$w x $t0> undef, i32 %end, i32 0$n"
-            "$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z$n",
-            1, 0, (uint32_t) size));
+    static LLVMArray<bool> active_mask() {
+        return LLVMArray<bool>::steal(jitc_llvm_active_mask());
     }
 
 protected:
@@ -679,13 +675,13 @@ template <typename Array,
 Array empty(size_t size) {
     size_t byte_size = size * sizeof(typename Array::Value);
     void *ptr = jitc_malloc(AllocType::HostAsync, byte_size);
-    return Array::from_index(jitc_var_map_mem(Array::Type, 0, ptr, (uint32_t) size, 1));
+    return Array::steal(jitc_var_map_mem(Array::Type, 0, ptr, (uint32_t) size, 1));
 }
 
 template <typename Array,
           typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array zero(size_t size) {
-    return Array::from_index(jitc_var_new_literal(Array::Type, 0, 0, (uint32_t) size, 0));
+    return Array::steal(jitc_var_new_literal(Array::Type, 0, 0, (uint32_t) size, 0));
 }
 
 template <typename Array,
@@ -693,7 +689,7 @@ template <typename Array,
 Array full(typename Array::Value value, size_t size) {
     uint64_t tmp = 0;
     memcpy(&tmp, &value, sizeof(typename Array::Value));
-    return Array::from_index(jitc_var_new_literal(Array::Type, 0, tmp, (uint32_t) size, 0));
+    return Array::steal(jitc_var_new_literal(Array::Type, 0, tmp, (uint32_t) size, 0));
 }
 
 template <typename Array,
@@ -740,7 +736,7 @@ LLVMArray<Value> select(const LLVMArray<bool> &m,
     } else if (m.is_literal_zero()) {
         return f;
     } else {
-        return LLVMArray<Value>::from_index(jitc_var_new_3(
+        return LLVMArray<Value>::steal(jitc_var_new_3(
             LLVMArray<Value>::Type,
             "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3", 1, 0,
             m.index(), t.index(), f.index()));
@@ -756,12 +752,12 @@ OutArray reinterpret_array(const LLVMArray<ValueIn> &input) {
         "reinterpret_array requires arrays with equal-sized element types!");
 
     if (std::is_integral<ValueIn>::value != std::is_integral<ValueOut>::value) {
-        return OutArray::from_index(jitc_var_new_1(
+        return OutArray::steal(jitc_var_new_1(
             OutArray::Type, "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>", 1, 0,
             input.index()));
     } else {
         jitc_var_inc_ref_ext(input.index());
-        return OutArray::from_index(input.index());
+        return OutArray::steal(input.index());
     }
 }
 
@@ -799,7 +795,7 @@ LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
         }
     }
 
-    return LLVMArray<Value>::from_index(jitc_var_new_2(
+    return LLVMArray<Value>::steal(jitc_var_new_2(
         LLVMArray<Value>::Type, op, 1, 0, a.index(), b.index()));
 }
 
@@ -837,7 +833,7 @@ LLVMArray<Value> max(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
         }
     }
 
-    return LLVMArray<Value>::from_index(jitc_var_new_2(
+    return LLVMArray<Value>::steal(jitc_var_new_2(
         LLVMArray<Value>::Type, op, 1, 0, a.index(), b.index()));
 }
 
@@ -867,7 +863,7 @@ OutArray jitc_llvm_f2i_cast(const LLVMArray<ValueIn> &a, int mode) {
              "x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S %i)",
              (SizeIn == 4 && SizeOut == 4) ? 4 : 3, in_t, out_t, mode);
 
-    return OutArray::from_index(jitc_var_new_1(OutArray::Type, op, 0, 0, a.index()));
+    return OutArray::steal(jitc_var_new_1(OutArray::Type, op, 0, 0, a.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -911,11 +907,10 @@ Array gather_impl(const void *src_ptr,
                   const LLVMArray<bool> &mask = true) {
     using Value = typename Array::Value;
 
-    LLVMArray<void *> base = LLVMArray<void *>::from_index(
+    LLVMArray<void *> base = LLVMArray<void *>::steal(
         jitc_var_copy_ptr(src_ptr, src_index));
 
-    LLVMArray<bool> mask_2 = mask && LLVMArray<uint32_t>::launch_index() <
-                                     LLVMArray<uint32_t>::last_index();
+    LLVMArray<bool> mask_2 = mask & LLVMArray<bool>::active_mask();
 
     uint32_t var;
     if (sizeof(Value) != 1) {
@@ -938,7 +933,7 @@ Array gather_impl(const void *src_ptr,
             1, 0, base.index(), index.index(), mask_2.index());
     }
 
-    return Array::from_index(var);
+    return Array::steal(var);
 }
 }
 
@@ -978,13 +973,13 @@ void scatter(LLVMArray<Value> &dst,
     }
 
     if (jitc_var_int_ref(dst.index()) > 0) {
-        dst = LLVMArray<Value>::from_index(jitc_var_copy_mem(
+        dst = LLVMArray<Value>::steal(jitc_var_copy_mem(
             AllocType::HostAsync, LLVMArray<Value>::Type, 0,
             ptr, (uint32_t) dst.size()));
         ptr = dst.data();
     }
 
-    LLVMArray<void *> base = LLVMArray<void *>::from_index(
+    LLVMArray<void *> base = LLVMArray<void *>::steal(
         jitc_var_copy_ptr(ptr, dst.index()));
 
     uint32_t value_idx = value.index();
@@ -995,8 +990,7 @@ void scatter(LLVMArray<Value> &dst,
         value_idx = temp.index();
     }
 
-    LLVMArray<bool> mask_2 = mask && LLVMArray<uint32_t>::launch_index() <
-                                     LLVMArray<uint32_t>::last_index();
+    LLVMArray<bool> mask_2 = mask & LLVMArray<bool>::active_mask();
 
     uint32_t var = jitc_var_new_4(
         VarType::Invalid,
@@ -1029,17 +1023,16 @@ void scatter_add(LLVMArray<Value> &dst,
     }
 
     if (jitc_var_int_ref(dst.index()) > 0) {
-        dst = LLVMArray<Value>::from_index(jitc_var_copy_mem(
+        dst = LLVMArray<Value>::steal(jitc_var_copy_mem(
             AllocType::HostAsync, LLVMArray<Value>::Type, 0,
             ptr, (uint32_t) dst.size()));
         ptr = dst.data();
     }
 
-    LLVMArray<void *> base = LLVMArray<void *>::from_index(
+    LLVMArray<void *> base = LLVMArray<void *>::steal(
         jitc_var_copy_ptr(ptr, dst.index()));
 
-    LLVMArray<bool> mask_2 = mask && LLVMArray<uint32_t>::launch_index() <
-                                     LLVMArray<uint32_t>::last_index();
+    LLVMArray<bool> mask_2 = mask & LLVMArray<bool>::active_mask();
 
     const char *op;
     if (sizeof(Value) == 4 && jitc_llvm_if_at_least(16, "+avx512dq"))
@@ -1166,7 +1159,7 @@ Array popcnt(const LLVMArray<Value> &a) {
     if (!jitc_is_integral(Array::Type))
         jitc_raise("Unsupported operand type");
 
-    return Array::from_index(jitc_var_new_1(
+    return Array::steal(jitc_var_new_1(
         Array::Type,
         "$r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)",
         1, 0, a.index()));
@@ -1177,7 +1170,7 @@ Array lzcnt(const LLVMArray<Value> &a) {
     if (!jitc_is_integral(Array::Type))
         jitc_raise("Unsupported operand type");
 
-    return Array::from_index(jitc_var_new_1(
+    return Array::steal(jitc_var_new_1(
         Array::Type,
         "$r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1$S 0)",
         1, 0, a.index()));
@@ -1188,7 +1181,7 @@ Array tzcnt(const LLVMArray<Value> &a) {
     if (!jitc_is_integral(Array::Type))
         jitc_raise("Unsupported operand type");
 
-    return Array::from_index(jitc_var_new_1(
+    return Array::steal(jitc_var_new_1(
         Array::Type,
         "$r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1$S 0)",
         1, 0, a.index()));
@@ -1208,7 +1201,7 @@ vcall(const char *domain, const LLVMArray<uint32_t> &a) {
     for (uint32_t i = 0; i < bucket_count; ++i) {
         jitc_var_inc_ref_ext(buckets[i].index);
         result.emplace_back(buckets[i].ptr,
-                            LLVMArray<uint32_t>::from_index(buckets[i].index));
+                            LLVMArray<uint32_t>::steal(buckets[i].index));
     }
 
     return result;
@@ -1219,7 +1212,7 @@ inline LLVMArray<uint32_t> compress(const LLVMArray<bool> &a) {
 
     uint32_t size = jitc_compress((const uint8_t *) a.data(), (uint32_t) a.size(), perm);
 
-    return LLVMArray<uint32_t>::from_index(
+    return LLVMArray<uint32_t>::steal(
         jitc_var_map_mem(VarType::UInt32, 0, perm, size, 1));
 }
 

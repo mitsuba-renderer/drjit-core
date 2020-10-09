@@ -269,6 +269,24 @@ extern JITC_EXPORT int jitc_llvm_if_at_least(uint32_t vector_width,
                                              const char *feature);
 
 
+/**
+ * \brief Returns the variable index of a boolean array designating
+ * currently active SIMD lanes
+ *
+ * This function returns code that correctly computes the active mask in
+ * general situations. In more specific cases (e.g. branching), the return
+ * value can be modified by pushing and popping masks via the next two
+ * functions.
+ *
+ * This function returns a new reference
+ */
+extern JITC_EXPORT uint32_t jitc_llvm_active_mask();
+
+/// Push a new mask value onto the stack (increases the ref. count)
+extern JITC_EXPORT void jitc_llvm_active_mask_push(uint32_t index);
+
+/// Pop the stack of active mask values, and dereference it
+extern JITC_EXPORT void jitc_llvm_active_mask_pop();
 
 // ====================================================================
 //                        Logging infrastructure

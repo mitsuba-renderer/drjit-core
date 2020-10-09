@@ -13,6 +13,7 @@
 #include "log.h"
 #include "util.h"
 #include "registry.h"
+#include "llvm_api.h"
 #include <thread>
 
 void jitc_init(int llvm, int cuda) {
@@ -198,6 +199,21 @@ int jitc_llvm_version_major() {
 int jitc_llvm_if_at_least(uint32_t vector_width, const char *feature) {
     lock_guard guard(state.mutex);
     return jit_llvm_if_at_least(vector_width, feature);
+}
+
+uint32_t jitc_llvm_active_mask() {
+    lock_guard guard(state.mutex);
+    return jit_llvm_active_mask();
+}
+
+void jitc_llvm_active_mask_push(uint32_t index) {
+    lock_guard guard(state.mutex);
+    jit_llvm_active_mask_push(index);
+}
+
+void jitc_llvm_active_mask_pop() {
+    lock_guard guard(state.mutex);
+    jit_llvm_active_mask_pop();
 }
 
 void jitc_set_parallel_dispatch(int enable) {
@@ -584,3 +600,4 @@ VCallBucket *jitc_vcall(const char *domain, uint32_t index,
     lock_guard guard(state.mutex);
     return jit_vcall(domain, index, bucket_count_out);
 }
+

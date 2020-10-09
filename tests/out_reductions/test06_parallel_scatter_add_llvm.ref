@@ -3,7 +3,7 @@ jit_eval(): launching 1 kernel.
   -> launching <@> (n=10, in=0, out=1, ops=1):
 jit_eval(): done.
 jit_eval(): launching 1 kernel.
-  -> launching <@> (n=10485860, in=2, out=1, ops=7):
+  -> launching <@> (n=10485860, in=2, out=1, ops=6):
 jit_eval(): done.
 jit_eval(): launching 1 kernel.
   -> launching <@> (n=10, in=1, out=1, ops=3):
