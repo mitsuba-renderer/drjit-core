@@ -81,6 +81,7 @@ loop:
     %r3_i = getelementptr inbounds i32, i32* %a3, i32 %index
     %r3_p = bitcast i32* %r3_i to <8 x i32>*
     store <8 x i32> %r3, <8 x i32>* %r3_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:

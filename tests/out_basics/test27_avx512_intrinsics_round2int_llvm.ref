@@ -291,6 +291,7 @@ loop:
     %rd9_i = getelementptr inbounds i64, i64* %a8, i32 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -644,6 +645,7 @@ loop:
     %rd9_i = getelementptr inbounds i64, i64* %a8, i32 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -997,6 +999,7 @@ loop:
     %rd9_i = getelementptr inbounds i64, i64* %a8, i32 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -1350,6 +1353,7 @@ loop:
     %rd9_i = getelementptr inbounds i64, i64* %a8, i32 %index
     %rd9_p = bitcast i64* %rd9_i to <32 x i64>*
     store <32 x i64> %rd9, <32 x i64>* %rd9_p, align 256, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:

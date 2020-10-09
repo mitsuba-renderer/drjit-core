@@ -78,6 +78,7 @@ loop:
     %p4_p = bitcast i8* %p4_i to <8 x i8>*
     %p4_e = zext <8 x i1> %p4 to <8 x i8>
     store <8 x i8> %p4_e, <8 x i8>* %p4_p, align 8, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -242,6 +243,7 @@ loop:
     %p7_p = bitcast i8* %p7_i to <8 x i8>*
     %p7_e = zext <8 x i1> %p7 to <8 x i8>
     store <8 x i8> %p7_e, <8 x i8>* %p7_p, align 8, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -341,6 +343,7 @@ loop:
     %p9_p = bitcast i8* %p9_i to <8 x i8>*
     %p9_e = zext <8 x i1> %p9 to <8 x i8>
     store <8 x i8> %p9_e, <8 x i8>* %p9_p, align 8, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -565,6 +568,7 @@ loop:
     %u14_0 = bitcast i8* %rd8 to i8*
     %u14_1 = getelementptr i8, i8* %u14_0, <8 x i32> %r11
     call void @llvm.masked.scatter.v8i8(<8 x i8> %b13, <8 x i8*> %u14_1, i32 8, <8 x i1> %p5)
+
     br label %loop_suffix
 
 loop_suffix:

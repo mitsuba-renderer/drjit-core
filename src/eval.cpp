@@ -733,6 +733,7 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
         }
     }
 
+    buffer.putc('\n');
     buffer.put("    br label %loop_suffix\n");
     buffer.putc('\n');
     buffer.put("loop_suffix:\n");

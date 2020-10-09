@@ -1,0 +1,16 @@
+jit_set_device(device=-1, stream=0): creating stream
+jit_eval(): launching 1 kernel.
+  -> launching <@> (n=10, in=0, out=1, ops=1):
+jit_eval(): done.
+jit_eval(): launching 1 kernel.
+  -> launching <@> (n=10485860, in=2, out=1, ops=7):
+jit_eval(): done.
+jit_eval(): launching 1 kernel.
+  -> launching <@> (n=10, in=1, out=1, ops=3):
+jit_eval(): done.
+jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 35 deallocations
+jit_shutdown(): releasing 3 kernels ..
+jit_malloc_trim(): freed
+ - host-async memory: 64 MiB in 35 allocations
+jit_shutdown(): done

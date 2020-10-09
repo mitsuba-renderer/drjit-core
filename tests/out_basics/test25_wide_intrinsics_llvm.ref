@@ -134,6 +134,7 @@ loop:
     %p6_p = bitcast i8* %p6_i to <32 x i8>*
     %p6_e = zext <32 x i1> %p6 to <32 x i8>
     store <32 x i8> %p6_e, <32 x i8>* %p6_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:

@@ -27,6 +27,7 @@ loop:
     ; Store %f0: my_value
     %f0_p = bitcast float* %a0 to <8 x float>*
     store <8 x float> %f0, <8 x float>* %f0_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -78,6 +79,7 @@ loop:
     ; Store %f0: my_value
     %f0_p = bitcast float* %a0 to <8 x float>*
     store <8 x float> %f0, <8 x float>* %f0_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:

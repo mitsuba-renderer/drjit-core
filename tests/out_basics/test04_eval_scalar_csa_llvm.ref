@@ -96,6 +96,7 @@ loop:
     ; Store %f3
     %f3_p = bitcast float* %a3 to <8 x float>*
     store <8 x float> %f3, <8 x float>* %f3_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:

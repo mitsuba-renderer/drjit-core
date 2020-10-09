@@ -46,6 +46,7 @@ loop:
     %r1_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r1_p = bitcast i32* %r1_i to <8 x i32>*
     store <8 x i32> %r1, <8 x i32>* %r1_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -149,6 +150,7 @@ loop:
     %r5_i = getelementptr inbounds i32, i32* %a2, i32 %index
     %r5_p = bitcast i32* %r5_i to <8 x i32>*
     store <8 x i32> %r5, <8 x i32>* %r5_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -285,6 +287,7 @@ loop:
     %u8_0 = bitcast i8* %rd7 to i32*
     %u8_1 = getelementptr i32, i32* %u8_0, <8 x i32> %r6
     call void @llvm.masked.scatter.v8i32(<8 x i32> %r2, <8 x i32*> %u8_1, i32 8, <8 x i1> %p5)
+
     br label %loop_suffix
 
 loop_suffix:
@@ -408,6 +411,7 @@ loop:
     %r5_i = getelementptr inbounds i32, i32* %a2, i32 %index
     %r5_p = bitcast i32* %r5_i to <8 x i32>*
     store <8 x i32> %r5, <8 x i32>* %r5_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:

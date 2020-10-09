@@ -83,6 +83,7 @@ loop:
     %f5_i = getelementptr inbounds float, float* %a1, i32 %index
     %f5_p = bitcast float* %f5_i to <8 x float>*
     store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -172,6 +173,7 @@ loop:
     %f3_i = getelementptr inbounds float, float* %a1, i32 %index
     %f3_p = bitcast float* %f3_i to <8 x float>*
     store <8 x float> %f3, <8 x float>* %f3_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -248,6 +250,7 @@ loop:
     %p1_p = bitcast i8* %a1 to <8 x i8>*
     %p1_e = zext <8 x i1> %p1 to <8 x i8>
     store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -364,6 +367,7 @@ loop:
     %f5_i = getelementptr inbounds float, float* %a4, i32 %index
     %f5_p = bitcast float* %f5_i to <8 x float>*
     store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:

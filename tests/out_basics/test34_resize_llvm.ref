@@ -41,6 +41,7 @@ loop:
     %r1_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r1_p = bitcast i32* %r1_i to <8 x i32>*
     store <8 x i32> %r1, <8 x i32>* %r1_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -110,6 +111,7 @@ loop:
     %r1_i = getelementptr inbounds i32, i32* %a0, i32 %index
     %r1_p = bitcast i32* %r1_i to <8 x i32>*
     store <8 x i32> %r1, <8 x i32>* %r1_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -166,6 +168,7 @@ loop:
     ; Store %r0
     %r0_p = bitcast i32* %a0 to <8 x i32>*
     store <8 x i32> %r0, <8 x i32>* %r0_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -225,6 +228,7 @@ loop:
     %r1_i = getelementptr inbounds i32, i32* %a1, i32 %index
     %r1_p = bitcast i32* %r1_i to <8 x i32>*
     store <8 x i32> %r1, <8 x i32>* %r1_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:

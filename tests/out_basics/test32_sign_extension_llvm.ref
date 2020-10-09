@@ -44,6 +44,7 @@ loop:
     %p1_p = bitcast i8* %a0 to <8 x i8>*
     %p1_e = zext <8 x i1> %p1 to <8 x i8>
     store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -109,6 +110,7 @@ loop:
     %p1_p = bitcast i8* %a0 to <8 x i8>*
     %p1_e = zext <8 x i1> %p1 to <8 x i8>
     store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -174,6 +176,7 @@ loop:
     %p1_p = bitcast i8* %a0 to <8 x i8>*
     %p1_e = zext <8 x i1> %p1 to <8 x i8>
     store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
@@ -239,6 +242,7 @@ loop:
     %p1_p = bitcast i8* %a0 to <8 x i8>*
     %p1_e = zext <8 x i1> %p1 to <8 x i8>
     store <8 x i8> %p1_e, <8 x i8>* %p1_p, align 8, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:

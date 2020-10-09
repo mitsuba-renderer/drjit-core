@@ -43,6 +43,7 @@ loop:
     %f2_i = getelementptr inbounds float, float* %a0, i32 %index
     %f2_p = bitcast float* %f2_i to <8 x float>*
     store <8 x float> %f2, <8 x float>* %f2_p, align 32, !noalias !1
+
     br label %loop_suffix
 
 loop_suffix:
