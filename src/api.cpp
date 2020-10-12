@@ -338,6 +338,8 @@ const char *jitc_var_label(uint32_t index) {
 }
 
 void jitc_var_set_label(uint32_t index, const char *label) {
+    if (index == 0)
+        return;
     lock_guard guard(state.mutex);
     jit_var_set_label(index, label);
 }
