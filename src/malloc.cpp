@@ -503,13 +503,17 @@ void jit_malloc_trim(bool warn) {
                 case AllocType::Device:
                 case AllocType::Managed:
                 case AllocType::ManagedReadMostly:
-                    for (void *ptr : entries)
-                        cuda_check(cuMemFree((CUdeviceptr) ptr));
+                    if (state.has_cuda) {
+                        for (void *ptr : entries)
+                            cuda_check(cuMemFree((CUdeviceptr) ptr));
+                    }
                     break;
 
                 case AllocType::HostPinned:
-                    for (void *ptr : entries)
-                        cuda_check(cuMemFreeHost(ptr));
+                    if (state.has_cuda) {
+                        for (void *ptr : entries)
+                            cuda_check(cuMemFreeHost(ptr));
+                    }
                     break;
 
                 case AllocType::Host:
