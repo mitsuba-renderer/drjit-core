@@ -1,5 +1,11 @@
-project(enoki-jit)
-cmake_minimum_required(VERSION 3.10.0)
+cmake_minimum_required(VERSION 3.13...3.18)
+
+project(enoki-jit
+  DESCRIPTION
+    "Enoki JIT compiler"
+  LANGUAGES
+    CXX C
+)
 
 option(ENOKI_JIT_ENABLE_TBB   "Use Intel Thread Building Blocks (TBB) with LLVM backend?" ON)
 option(ENOKI_JIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
