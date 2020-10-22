@@ -166,7 +166,7 @@ void tbb_stream_enqueue_kernel(Stream *stream, LLVMKernelFunction kernel,
                                const void *itt) {
     size_t size          = stop - start,
            tasks_desired = jit_llvm_thread_count * 4,
-           grain_size    = 4096;
+           grain_size    = 1024;
 
     // Scatter-add operations increase the cost of having many tasks
     if (!jit_llvm_scatter_add_variables.empty())
