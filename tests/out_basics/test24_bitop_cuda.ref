@@ -30,17 +30,14 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
   -> launching <@> (n=4, in=1, out=3, ops=8):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2,
                               .param .u64 arg3) {
-    .reg.b8 %b<8>;
-    .reg.b16 %w<8>;
-    .reg.b32 %r<8>;
-    .reg.b64 %rd<8>;
-    .reg.f32 %f<8>;
-    .reg.f64 %d<8>;
+    .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
+    .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p<8>;
 
     // Grid-stride loop setup

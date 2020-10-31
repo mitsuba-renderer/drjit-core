@@ -25,3 +25,4 @@ libenoki-jit.dylib
 enoki-jit.dll
 tests/test_basics*
 tests/test_reductions*
+tests/test_vcall*

@@ -44,14 +44,11 @@ jit_malloc(type=device, device=0, size=1024): <@> (new allocation)
   -> launching <@> (n=1022, in=0, out=1, ops=9):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0) {
-    .reg.b8 %b<9>;
-    .reg.b16 %w<9>;
-    .reg.b32 %r<9>;
-    .reg.b64 %rd<9>;
-    .reg.f32 %f<9>;
-    .reg.f64 %d<9>;
+    .reg.b8   %b <9>; .reg.b16 %w<9>; .reg.b32 %r<9>;
+    .reg.b64  %rd<9>; .reg.f32 %f<9>; .reg.f64 %d<9>;
     .reg.pred %p<9>;
 
     // Grid-stride loop setup
@@ -160,15 +157,12 @@ jit_malloc(type=device, device=0, size=512): <@> (new allocation)
   -> launching <@> (n=510, in=1, out=1, ops=9):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<9>;
-    .reg.b16 %w<9>;
-    .reg.b32 %r<9>;
-    .reg.b64 %rd<9>;
-    .reg.f32 %f<9>;
-    .reg.f64 %d<9>;
+    .reg.b8   %b <9>; .reg.b16 %w<9>; .reg.b32 %r<9>;
+    .reg.b64  %rd<9>; .reg.f32 %f<9>; .reg.f64 %d<9>;
     .reg.pred %p<9>;
 
     // Grid-stride loop setup
@@ -235,15 +229,12 @@ jit_malloc(type=device, device=0, size=512): <@> (new allocation)
   -> launching <@> (n=510, in=1, out=1, ops=11):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<11>;
-    .reg.b16 %w<11>;
-    .reg.b32 %r<11>;
-    .reg.b64 %rd<11>;
-    .reg.f32 %f<11>;
-    .reg.f64 %d<11>;
+    .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
+    .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p<11>;
 
     // Grid-stride loop setup
@@ -380,16 +371,13 @@ jit_assemble(size=510): register map:
   -> launching <@> (n=510, in=3, out=2, ops=14):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
                               .param .u64 arg2) {
-    .reg.b8 %b<14>;
-    .reg.b16 %w<14>;
-    .reg.b32 %r<14>;
-    .reg.b64 %rd<14>;
-    .reg.f32 %f<14>;
-    .reg.f64 %d<14>;
+    .reg.b8   %b <14>; .reg.b16 %w<14>; .reg.b32 %r<14>;
+    .reg.b64  %rd<14>; .reg.f32 %f<14>; .reg.f64 %d<14>;
     .reg.pred %p<14>;
 
     // Grid-stride loop setup

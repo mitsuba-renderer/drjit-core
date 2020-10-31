@@ -603,3 +603,18 @@ VCallBucket *jitc_vcall(const char *domain, uint32_t index,
     return jit_vcall(domain, index, bucket_count_out);
 }
 
+const char *jitc_eval_ir(const uint32_t *in, uint32_t n_in,
+                         const uint32_t *out, uint32_t n_out,
+                         uint32_t n_side_effects,
+                         uint64_t *hash_out) {
+    lock_guard guard(state.mutex);
+    return jit_eval_ir(in, n_in, out, n_out, n_side_effects, hash_out);
+}
+
+uint32_t jitc_eval_ir_var(const uint32_t *in, uint32_t n_in,
+                          const uint32_t *out, uint32_t n_out,
+                         uint32_t n_side_effects,
+                          uint64_t *hash_out) {
+    lock_guard guard(state.mutex);
+    return jit_eval_ir_var(in, n_in, out, n_out, n_side_effects, hash_out);
+}

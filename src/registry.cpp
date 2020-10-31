@@ -144,8 +144,7 @@ void *jit_registry_get_ptr(const char *domain, uint32_t id) {
 
     auto it = state.registry_fwd.find(RegistryKey(domain, id));
     if (unlikely(it == state.registry_fwd.end()))
-        jit_raise("jit_registry_get_ptr(): entry with domain=\"%s\", id=%u "
-                  "could not be found!", domain, id);
+        return nullptr;
 
     return it.value();
 }

@@ -35,15 +35,12 @@ jit_assemble(size=15): register map:
   -> launching <@> (n=15, in=2, out=1, ops=8):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<8>;
-    .reg.b16 %w<8>;
-    .reg.b32 %r<8>;
-    .reg.b64 %rd<8>;
-    .reg.f32 %f<8>;
-    .reg.f64 %d<8>;
+    .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
+    .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p<8>;
 
     // Grid-stride loop setup
@@ -136,15 +133,12 @@ jit_assemble(size=16): register map:
   -> launching <@> (n=16, in=2, out=1, ops=8):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<8>;
-    .reg.b16 %w<8>;
-    .reg.b32 %r<8>;
-    .reg.b64 %rd<8>;
-    .reg.f32 %f<8>;
-    .reg.f64 %d<8>;
+    .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
+    .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p<8>;
 
     // Grid-stride loop setup
@@ -237,15 +231,12 @@ jit_assemble(size=15): register map:
   -> launching <@> (n=15, in=2, out=1, ops=8):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<8>;
-    .reg.b16 %w<8>;
-    .reg.b32 %r<8>;
-    .reg.b64 %rd<8>;
-    .reg.f32 %f<8>;
-    .reg.f64 %d<8>;
+    .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
+    .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p<8>;
 
     // Grid-stride loop setup
@@ -338,15 +329,12 @@ jit_assemble(size=16): register map:
   -> launching <@> (n=16, in=2, out=1, ops=8):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<8>;
-    .reg.b16 %w<8>;
-    .reg.b32 %r<8>;
-    .reg.b64 %rd<8>;
-    .reg.f32 %f<8>;
-    .reg.f64 %d<8>;
+    .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
+    .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p<8>;
 
     // Grid-stride loop setup
@@ -454,15 +442,12 @@ jit_assemble(size=15): register map:
   -> launching <@> (n=15, in=2, out=1, ops=12):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<12>;
-    .reg.b16 %w<12>;
-    .reg.b32 %r<12>;
-    .reg.b64 %rd<12>;
-    .reg.f32 %f<12>;
-    .reg.f64 %d<12>;
+    .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
+    .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
     .reg.pred %p<12>;
 
     // Grid-stride loop setup
@@ -591,15 +576,12 @@ jit_assemble(size=16): register map:
   -> launching <@> (n=16, in=2, out=1, ops=12):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<12>;
-    .reg.b16 %w<12>;
-    .reg.b32 %r<12>;
-    .reg.b64 %rd<12>;
-    .reg.f32 %f<12>;
-    .reg.f64 %d<12>;
+    .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
+    .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
     .reg.pred %p<12>;
 
     // Grid-stride loop setup
@@ -728,15 +710,12 @@ jit_assemble(size=15): register map:
   -> launching <@> (n=15, in=2, out=1, ops=12):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<12>;
-    .reg.b16 %w<12>;
-    .reg.b32 %r<12>;
-    .reg.b64 %rd<12>;
-    .reg.f32 %f<12>;
-    .reg.f64 %d<12>;
+    .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
+    .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
     .reg.pred %p<12>;
 
     // Grid-stride loop setup
@@ -865,15 +844,12 @@ jit_assemble(size=16): register map:
   -> launching <@> (n=16, in=2, out=1, ops=12):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1) {
-    .reg.b8 %b<12>;
-    .reg.b16 %w<12>;
-    .reg.b32 %r<12>;
-    .reg.b64 %rd<12>;
-    .reg.f32 %f<12>;
-    .reg.f64 %d<12>;
+    .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
+    .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
     .reg.pred %p<12>;
 
     // Grid-stride loop setup

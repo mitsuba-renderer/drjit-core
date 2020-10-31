@@ -76,9 +76,13 @@ inline size_t hash_str(const char *str) {
 }
 
 inline size_t hash_kernel(const char *str) {
-    const char *offset_1 = strchr(str, '{'),
-               *offset_2 = strchr(str, '}');
-    if (unlikely(!offset_1 || !offset_2 || offset_1 >= offset_2))
-        jit_fail("hash_kernel(): invalid input!");
-    return hash(offset_1, offset_2 - offset_1);
+    const char *offset = strstr(str, "enoki_");
+    if (unlikely(!offset)) {
+        offset = strstr(str, "func_");
+        if (unlikely(!offset))
+            jit_fail("hash_kernel(): invalid input!");
+    }
+
+    size_t seed = hash(str, offset - str);
+    return hash_str(offset + 22, seed);
 }

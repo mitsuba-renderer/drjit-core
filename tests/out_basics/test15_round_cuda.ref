@@ -49,6 +49,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
   -> launching <@> (n=6, in=1, out=6, ops=11):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
@@ -57,12 +58,8 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
                               .param .u64 arg4,
                               .param .u64 arg5,
                               .param .u64 arg6) {
-    .reg.b8 %b<11>;
-    .reg.b16 %w<11>;
-    .reg.b32 %r<11>;
-    .reg.b64 %rd<11>;
-    .reg.f32 %f<11>;
-    .reg.f64 %d<11>;
+    .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
+    .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p<11>;
 
     // Grid-stride loop setup
@@ -234,6 +231,7 @@ jit_malloc(type=device, device=0, size=64): <@> (reused local)
   -> launching <@> (n=6, in=1, out=6, ops=11):
 .version 6.3
 .address_size 64
+
 .entry enoki_<@>(.param .u32 size,
                               .param .u64 arg0,
                               .param .u64 arg1,
@@ -242,12 +240,8 @@ jit_malloc(type=device, device=0, size=64): <@> (reused local)
                               .param .u64 arg4,
                               .param .u64 arg5,
                               .param .u64 arg6) {
-    .reg.b8 %b<11>;
-    .reg.b16 %w<11>;
-    .reg.b32 %r<11>;
-    .reg.b64 %rd<11>;
-    .reg.f32 %f<11>;
-    .reg.f64 %d<11>;
+    .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
+    .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p<11>;
 
     // Grid-stride loop setup

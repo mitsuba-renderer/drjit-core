@@ -15,71 +15,72 @@
 
 /// Descriptive names for the various variable types
 const char *var_type_name[(int) VarType::Count]{
-    "invalid", "mask",  "int8",   "uint8",   "int16",   "uint16",  "int32",
-    "uint32",  "int64", "uint64", "float16", "float32", "float64", "pointer"
+    "invalid", "global", "mask",  "int8",   "uint8",   "int16",   "uint16",
+    "int32", "uint32",  "int64", "uint64", "float16", "float32", "float64",
+    "pointer"
 };
 
 /// Descriptive names for the various variable types (extra-short version)
 const char *var_type_name_short[(int) VarType::Count]{
-    "inv", "msk", "i8",  "u8",  "i16", "u16", "i32",
+    "inv", "glo", "msk", "i8",  "u8",  "i16", "u16", "i32",
     "u32", "i64", "u64", "f16", "f32", "f64", "ptr"
 };
 
 /// CUDA PTX type names
 const char *var_type_name_ptx[(int) VarType::Count]{
-    "???", "pred", "s8",  "u8",  "s16", "u16", "s32",
+    "???", "???", "pred", "s8",  "u8",  "s16", "u16", "s32",
     "u32", "s64",  "u64", "f16", "f32", "f64", "u64"
 };
 
 /// CUDA PTX type names (binary view)
 const char *var_type_name_ptx_bin[(int) VarType::Count]{
-    "???", "pred", "b8",  "b8",  "b16", "b16", "b32",
+    "???", "???", "pred", "b8",  "b8",  "b16", "b16", "b32",
     "b32", "b64",  "b64", "b16", "b32", "b64", "b64"
 };
 
 /// LLVM IR type names (does not distinguish signed vs unsigned)
 const char *var_type_name_llvm[(int) VarType::Count]{
-    "???", "i1",  "i8",  "i8",   "i16",   "i16",    "i32",
+    "???", "???", "i1",  "i8",  "i8",   "i16",   "i16",    "i32",
     "i32", "i64", "i64", "half", "float", "double", "i8*"
 };
 
 /// Double size integer arrays for mulhi()
 const char *var_type_name_llvm_big[(int) VarType::Count]{
-    "???", "???",  "i16",  "i16",   "i32",   "i32",    "i64",
+    "???", "???", "???",  "i16",  "i16",   "i32",   "i32",    "i64",
     "i64", "i128", "i128", "???", "???", "???", "???"
 };
 
 /// Abbreviated LLVM IR type names
 const char *var_type_name_llvm_abbrev[(int) VarType::Count]{
-    "???", "i1",  "i8",  "i8",  "i16", "i16", "i32",
+    "???", "???", "i1",  "i8",  "i8",  "i16", "i16", "i32",
     "i32", "i64", "i64", "f16", "f32", "f64", "i8*"
 };
 
 /// LLVM IR type names (binary view)
 const char *var_type_name_llvm_bin[(int) VarType::Count]{
-    "???", "i1",  "i8",  "i8",  "i16", "i16", "i32",
+    "???", "???", "i1",  "i8",  "i8",  "i16", "i16", "i32",
     "i32", "i64", "i64", "i16", "i32", "i64", "i64"
 };
 
 /// LLVM/CUDA register name prefixes
 const char *var_type_prefix[(int) VarType::Count] {
-    "%u", "%p", "%b", "%b", "%w", "%w", "%r",
+    "%u", "gl", "%p", "%b", "%b", "%w", "%w", "%r",
     "%r", "%rd", "%rd", "%h", "%f", "%d", "%rd"
 };
 
 /// Maps types to byte sizes
 const uint32_t var_type_size[(int) VarType::Count] {
-    0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 8
+    0, 0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 8
 };
 
 /// String version of the above
 const char *var_type_size_str[(int) VarType::Count] {
-    "0", "1", "1", "1", "2", "2", "4", "4", "8", "8", "2", "4", "8", "8"
+    "0", "0", "1", "1", "1", "2", "2", "4", "4", "8", "8", "2", "4", "8", "8"
 };
 
 /// Label prefix, doesn't depend on variable type
 const char *var_type_label[(int) VarType::Count] {
-    "L", "L", "L", "L", "L", "L", "L",
+    "L", "L", "L", "L", "L", "L", "L", "L",
     "L", "L", "L", "L", "L", "L", "L"
 };
 

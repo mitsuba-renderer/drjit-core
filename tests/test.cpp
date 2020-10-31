@@ -99,10 +99,25 @@ void test_sanitize_log(char *buf) {
             dst += 16;
         }
 
+        if (strncmp(src, "/* direct ptr */ 0x", 19) == 0) {
+            while (*src != ';')
+                src++;
+            memcpy(dst, "<@>", 9);
+            dst += 3;
+            continue;
+        }
+
         if (strncmp(src, "enoki_", 6) == 0 && src[6] != '<') {
             memcpy(dst, "enoki_<@>", 9);
             src += 22;
             dst += 9;
+            continue;
+        }
+
+        if (strncmp(src, "func_", 5) == 0 && src[5] != '<') {
+            memcpy(dst, "func_<@>", 8);
+            src += 21;
+            dst += 8;
             continue;
         }
 

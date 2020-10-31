@@ -188,6 +188,10 @@ extern JITC_EXPORT void jitc_set_parallel_dispatch(int enable);
 /// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
 extern JITC_EXPORT int jitc_parallel_dispatch();
 
+// ====================================================================
+//       Advanced JIT usage: recording programs, loops, etc.
+// ====================================================================
+
 /**
  * \brief Temporarily prevent kernel evaluation
  *
@@ -215,6 +219,24 @@ extern JITC_EXPORT int jitc_eval_enabled();
  * code involves side effects. It is used in Enokis's `ek::loop` primitive.
  */
 extern JITC_EXPORT uint32_t jitc_side_effect_counter();
+
+/**
+ * \brief Export the intermediate representation of a calculation
+ *
+ * This function generates an IR representation (only CUDA PTX supported at the
+ * moment) that computes the values of the given outputs in terms of the
+ * specified inputs.
+ */
+extern JITC_EXPORT const char *jitc_eval_ir(const uint32_t *in, uint32_t n_in,
+                                            const uint32_t *out, uint32_t n_out,
+                                            uint32_t n_side_effects,
+                                            uint64_t *hash_out);
+
+/// Like jitc_eval_ir(), wraps result in JIT variable of type VarType::Global
+extern JITC_EXPORT uint32_t jitc_eval_ir_var(const uint32_t *in, uint32_t n_in,
+                                             const uint32_t *out, uint32_t n_out,
+                                             uint32_t n_side_effects,
+                                             uint64_t *hash_out);
 
 // ====================================================================
 //                    CUDA/LLVM-specific functionality
@@ -579,8 +601,8 @@ extern JITC_EXPORT const char *jitc_registry_get_domain(const void *ptr);
 /**
  * \brief Query the pointer associated a given domain and ID
  *
- * Returns \c nullptr if <tt>id==0</tt> and throws if the (domain, ID)
- * combination is not known.
+ * Returns \c nullptr if <tt>id==0</tt>, or when the (domain, ID) combination
+ * is not known.
  */
 extern JITC_EXPORT void *jitc_registry_get_ptr(const char *domain, uint32_t id);
 
@@ -647,14 +669,15 @@ extern JITC_EXPORT const void *jitc_registry_attr_data(const char *domain,
  * exact ordering, so please don't change.
  */
 enum class VarType : uint32_t {
-    Invalid, Bool, Int8, UInt8, Int16, UInt16, Int32, UInt32,
-    Int64, UInt64, Float16, Float32, Float64, Pointer, Count
+    Invalid, Global, Bool, Int8, UInt8, Int16, UInt16, Int32,
+    UInt32, Int64, UInt64, Float16, Float32, Float64, Pointer, Count
 };
 #else
 enum VarType {
-    VarTypeInvalid, VarTypeBool, VarTypeInt8, VarTypeUInt8, VarTypeInt16,
-    VarTypeUInt16, VarTypeInt32, VarTypeUInt32, VarTypeInt64, VarTypeUInt64,
-    VarTypeFloat16, VarTypeFloat32, VarTypeFloat64, VarTypePointer, VarTypeCount
+    VarTypeInvalid, VarTypeGlobal, VarTypeBool, VarTypeInt8,
+    VarTypeUInt8, VarTypeInt16, VarTypeUInt16, VarTypeInt32,
+    VarTypeUInt32, VarTypeInt64, VarTypeUInt64, VarTypeFloat16,
+    VarTypeFloat32, VarTypeFloat64, VarTypePointer, VarTypeCount
 };
 #endif
 
@@ -882,8 +905,8 @@ extern JITC_EXPORT uint32_t jitc_var_copy_var(uint32_t index);
  *
  * \code
  * uint32_t result = jitc_var_new_2(VarType::Int32,
- *                                       "add.$t0 $r0, $r1, $r2",
- *                                       1, op1, op2);
+ *                                  "add.$t0 $r0, $r1, $r2",
+ *                                  1, op1, op2);
  * \endcode
  *
  * \param type
@@ -907,15 +930,15 @@ extern JITC_EXPORT uint32_t jitc_var_copy_var(uint32_t index);
  */
 extern JITC_EXPORT uint32_t jitc_var_new_0(JITC_ENUM VarType type,
                                            const char *stmt,
-                                           int cuda,
                                            int stmt_static,
+                                           int cuda,
                                            uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
 extern JITC_EXPORT uint32_t jitc_var_new_1(JITC_ENUM VarType type,
                                            const char *stmt,
-                                           int cuda,
                                            int stmt_static,
+                                           int cuda,
                                            uint32_t op1);
 
 /// Append a variable to the instruction trace (2 operands)
