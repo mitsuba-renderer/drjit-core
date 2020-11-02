@@ -1020,14 +1020,19 @@ const char *jit_var_whos() {
             buffer.put("direct ptr.");
         } else if (v->data) {
             auto it = state.alloc_used.find(v->data);
-            if (unlikely(it == state.alloc_used.end()))
-                jit_raise("jit_var_whos(): Cannot resolve pointer to actual allocation!");
-            AllocInfo ai = it.value();
+            if (unlikely(it == state.alloc_used.end())) {
+                if (!v->retain_data)
+                    jit_raise("jit_var_whos(): Cannot resolve pointer to actual allocation!");
+                else
+                    buffer.put("mapped mem.");
+            } else {
+                AllocInfo ai = it.value();
 
-            if ((AllocType) ai.type == AllocType::Device)
-                buffer.fmt("device %-4i", (int) ai.device);
-            else
-                buffer.put(alloc_type_name_short[ai.type]);
+                if ((AllocType) ai.type == AllocType::Device)
+                    buffer.fmt("device %-4i", (int) ai.device);
+                else
+                    buffer.put(alloc_type_name_short[ai.type]);
+            }
         } else {
             buffer.put("[not ready]");
         }
