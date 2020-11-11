@@ -1116,7 +1116,7 @@ void jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
             stream->parallel_dispatch, itt);
 #else
         unlock_guard guard(state.mutex);
-        kernel.llvm.func(0, rounded, kernel_args_extra.data());
+        kernel.llvm.func(0, group.size, kernel_args_extra.data());
 #endif
     }
 }
