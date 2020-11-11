@@ -26,10 +26,6 @@ if(CMAKE_SIZEOF_VOID_P STREQUAL "4")
   message(FATAL_ERROR "Enoki-JIT requires a 64 bit architecture!")
 endif()
 
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS NO)
-
 include(CheckCXXSourceRuns)
 
 macro(CHECK_CXX_COMPILER_AND_LINKER_FLAGS _RESULT _CXX_FLAGS _LINKER_FLAGS)
@@ -138,6 +134,7 @@ add_library(
 )
 
 target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)
+target_compile_features(enoki-jit PRIVATE cxx_std_11)
 
 if (NOT MSVC)
   target_compile_options(enoki-jit PRIVATE -Wall -Wextra ${ENOKI_NATIVE_FLAGS})
