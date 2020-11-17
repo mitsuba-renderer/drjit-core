@@ -250,7 +250,8 @@ void jit_free(void *ptr) {
         if (likely(stream && cuda == stream->cuda)) {
             /* Acquire lock protecting 'stream->release_chain' */ {
                 lock_guard guard(state.malloc_mutex);
-                ReleaseChain *chain = stream->release_chain; if (unlikely(!chain))
+                ReleaseChain *chain = stream->release_chain;
+                if (unlikely(!chain))
                     chain = stream->release_chain = new ReleaseChain();
                 chain->entries[ai].push_back(ptr);
             }
@@ -261,6 +262,7 @@ void jit_free(void *ptr) {
                asynchronously. The only thing we can do at this point is to
                flush all streams. */
             jit_sync_all_devices();
+            lock_guard guard(state.malloc_mutex);
             state.alloc_free[ai].push_back(ptr);
         }
     }
