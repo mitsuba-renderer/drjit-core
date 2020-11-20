@@ -514,7 +514,15 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     */
 
     if (likely(eval_normal)) {
-        buffer.put(".version 6.3\n");
+        int ptx_version = 63;
+
+        if (jit_cuda_version_major == 10) {
+            ptx_version = 63 + jit_cuda_version_minor;
+        } else if (jit_cuda_version_major >= 11) {
+            ptx_version = 70 + jit_cuda_version_minor;
+        }
+
+        buffer.fmt(".version %i.%i\n", ptx_version / 10, ptx_version % 10);
         buffer.fmt(".target sm_%i\n", device.compute_capability);
         buffer.put(".address_size 64\n\n");
     }

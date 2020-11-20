@@ -147,6 +147,9 @@ extern CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
                                       [(int) VarType::Count];
 extern int jit_cuda_devices;
 
+extern int jit_cuda_version_major;
+extern int jit_cuda_version_minor;
+
 /// Try to load the CUDA backend
 extern bool jit_cuda_init();
 

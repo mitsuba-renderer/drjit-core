@@ -44,7 +44,6 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
    - %f9 -> 6 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
   -> launching <@> (n=4, in=3, out=2, ops=10):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -190,7 +189,6 @@ jit_malloc(type=device, device=0, size=64): <@> (reused local)
    - %d9 -> 12 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
   -> launching <@> (n=4, in=3, out=2, ops=10):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,

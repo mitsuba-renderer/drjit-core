@@ -106,6 +106,8 @@ CUfunction *jit_cuda_block_sum [(int)VarType::Count] { };
 CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
                                [(int) VarType::Count] = { };
 int jit_cuda_devices = 0;
+int jit_cuda_version_major = 0;
+int jit_cuda_version_minor = 0;
 
 static bool jit_cuda_init_attempted = false;
 static bool jit_cuda_init_success = false;
@@ -247,23 +249,23 @@ bool jit_cuda_init() {
         return false;
     }
 
-    int cuda_version, cuda_version_major, cuda_version_minor;
+    int cuda_version;
     cuda_check(cuDriverGetVersion(&cuda_version));
 
-    cuda_version_major = cuda_version / 1000;
-    cuda_version_minor = (cuda_version % 1000) / 10;
+    jit_cuda_version_major = cuda_version / 1000;
+    jit_cuda_version_minor = (cuda_version % 1000) / 10;
 
-    if (cuda_version_major < 10) {
+    if (jit_cuda_version_major < 10) {
         jit_log(LogLevel::Warn,
                 "jit_cuda_init(): your version of CUDA is too old (found %i.%i, "
                 "at least 10.x is required) -- disabling CUDA backend!",
-                cuda_version_major, cuda_version_minor);
+                jit_cuda_version_major, jit_cuda_version_minor);
         return false;
     }
 
     jit_log(LogLevel::Info,
             "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
-            cuda_version_major, cuda_version_minor);
+            jit_cuda_version_major, jit_cuda_version_minor);
 
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
         for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++) {

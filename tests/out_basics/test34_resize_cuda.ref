@@ -18,7 +18,6 @@ jit_assemble(size=3): register map:
    - %r5 -> 2 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
   -> launching <@> (n=3, in=0, out=1, ops=6):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -89,7 +88,6 @@ jit_assemble(size=3): register map:
    - %r5 -> 5 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
   -> launching <@> (n=3, in=0, out=1, ops=6):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -150,7 +148,6 @@ jit_assemble(size=1): register map:
    - %r4 -> 6 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
   -> launching <@> (n=1, in=0, out=1, ops=5):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -202,7 +199,6 @@ jit_assemble(size=3): register map:
    - %r5 -> 7 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
   -> launching <@> (n=3, in=1, out=1, ops=6):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,

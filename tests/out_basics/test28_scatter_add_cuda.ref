@@ -33,7 +33,6 @@ jit_assemble(size=15): register map:
    - %rd6 -> 5 [scalar] [direct_pointer]
    - %u7 -> 6 [scat]
   -> launching <@> (n=15, in=2, out=1, ops=8):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -131,7 +130,6 @@ jit_assemble(size=16): register map:
    - %rd6 -> 11 [scalar] [direct_pointer]
    - %u7 -> 12 [scat]
   -> launching <@> (n=16, in=2, out=1, ops=8):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -229,7 +227,6 @@ jit_assemble(size=15): register map:
    - %rd6 -> 17 [scalar] [direct_pointer]
    - %u7 -> 18 [scat]
   -> launching <@> (n=15, in=2, out=1, ops=8):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -327,7 +324,6 @@ jit_assemble(size=16): register map:
    - %rd6 -> 23 [scalar] [direct_pointer]
    - %u7 -> 24 [scat]
   -> launching <@> (n=16, in=2, out=1, ops=8):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -440,7 +436,6 @@ jit_assemble(size=15): register map:
    - %rd10 -> 32 [scalar] [direct_pointer]
    - %u11 -> 33 [scat]
   -> launching <@> (n=15, in=2, out=1, ops=12):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -574,7 +569,6 @@ jit_assemble(size=16): register map:
    - %rd10 -> 41 [scalar] [direct_pointer]
    - %u11 -> 42 [scat]
   -> launching <@> (n=16, in=2, out=1, ops=12):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -708,7 +702,6 @@ jit_assemble(size=15): register map:
    - %rd10 -> 50 [scalar] [direct_pointer]
    - %u11 -> 51 [scat]
   -> launching <@> (n=15, in=2, out=1, ops=12):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -842,7 +835,6 @@ jit_assemble(size=16): register map:
    - %rd10 -> 59 [scalar] [direct_pointer]
    - %u11 -> 60 [scat]
   -> launching <@> (n=16, in=2, out=1, ops=12):
-.version 6.3
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,

@@ -1003,17 +1003,13 @@ void scatter(LLVMArray<Value> &dst,
     jitc_var_mark_scatter(var, dst.index());
 }
 
-template <typename Value, typename Index>
+template <typename Value>
 void scatter_add(LLVMArray<Value> &dst,
                  const LLVMArray<Value> &value,
-                 const LLVMArray<Index> &index,
+                 const LLVMArray<uint32_t> &index,
                  const LLVMArray<bool> &mask = true) {
-    if (mask.is_literal_zero()) {
+    if (mask.is_literal_zero())
         return;
-    } else if (sizeof(Index) != sizeof(Value)) {
-        using UIntSame = LLVMArray<uint_with_size_t<Value>>;
-        return scatter_add(dst, value, UIntSame(index), mask);
-    }
 
     void *ptr = dst.data();
 
