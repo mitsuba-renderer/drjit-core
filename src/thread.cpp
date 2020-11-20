@@ -13,8 +13,11 @@
 #include <thread>
 #include <vector>
 #include <deque>
+#include <cstring>
+#include <type_traits>
 
 #if defined(_WIN32)
+#  include <windows.h>
 #  include <processthreadsapi.h>
 #endif
 
@@ -102,6 +105,8 @@ struct Task {
 #else
   static __thread uint32_t thread_id_tls = 0;
 #endif
+
+using ssize_t = typename std::make_signed<size_t>::type;
 
 struct Worker {
     Pool *pool;
