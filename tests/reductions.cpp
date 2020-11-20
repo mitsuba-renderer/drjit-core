@@ -120,6 +120,7 @@ TEST_BOTH(04_mkperm) {
 
             data = (uint32_t *) jitc_malloc_migrate(data, Float::IsCUDA ? AllocType::Device : AllocType::Host);
             uint32_t num_unique = jitc_mkperm(data, size, n_buckets, perm, offsets);
+
             perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
             jitc_sync_stream();
 
@@ -187,9 +188,8 @@ TEST_BOTH(05_block_ops) {
     jitc_log(Info, "block_sum:  %s\n", block_sum(a, 3).str());
 }
 
-TEST_LLVM(06_parallel_scatter_add, "avx512") {
+TEST_LLVM(06_parallel_scatter_add) {
     scoped_set_log_level ssll(LogLevel::Info);
-    jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl", 32);
     UInt32 a = zero<UInt32>(10);
 
     UInt32 index = block_copy(arange<UInt32>(10), 1024 * 1024 + 10);

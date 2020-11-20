@@ -105,7 +105,7 @@ declare void @llvm.masked.scatter.v8i32(<8 x i32>, <8 x i32*>, i32, <8 x i1>)
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(8): 0
 jit_var_free(8)
@@ -167,7 +167,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_eval(): done.
 y:[1]
@@ -234,7 +234,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 2 packets
+jit_run(): scheduling 2 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_int(2): 0

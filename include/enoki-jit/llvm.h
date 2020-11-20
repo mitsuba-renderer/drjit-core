@@ -1034,16 +1034,11 @@ void scatter_add(LLVMArray<Value> &dst,
 
     LLVMArray<bool> mask_2 = mask & LLVMArray<bool>::active_mask();
 
-    const char *op;
-    if (sizeof(Value) == 4 && jitc_llvm_if_at_least(16, "+avx512dq"))
-        op = "$4call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)";
-    else if (sizeof(Value) == 8 && jitc_llvm_if_at_least(8, "+avx512dq"))
-        op = "$3call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)";
-    else
-        op = "$0call void @ek.masked_scatter_add_v$w$a2($t1 $r1, <$w x $t2> $r2, <$w x $t3> $r3, <$w x $t4> $r4)";
-
-    uint32_t var = jitc_var_new_4(VarType::Invalid, op, 1, 0, base.index(),
-                                  value.index(), index.index(), mask_2.index());
+    uint32_t var = jitc_var_new_4(
+        VarType::Invalid,
+        "$0call void @ek.scatter_add_$a2($t1 $r1, <$w x $t2> $r2, "
+        "<$w x $t3> $r3, <$w x $t4> $r4)",
+        1, 0, base.index(), value.index(), index.index(), mask_2.index());
 
     jitc_var_mark_scatter(var, dst.index());
 }

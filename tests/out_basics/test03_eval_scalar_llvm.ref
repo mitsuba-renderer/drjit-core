@@ -44,7 +44,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_eval(): done.
 value=[1234]
@@ -96,7 +96,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_eval(): done.
 value=[1234]

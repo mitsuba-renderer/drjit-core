@@ -122,7 +122,7 @@ declare <8 x float> @llvm.fma.v8f32(<8 x float>, <8 x float>, <8 x float>)
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_int(2): 1
@@ -273,7 +273,7 @@ declare <8 x double> @llvm.fma.v8f64(<8 x double>, <8 x double>, <8 x double>)
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0
 jit_var_dec_ref_int(8): 1

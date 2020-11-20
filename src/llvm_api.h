@@ -23,9 +23,6 @@ extern char *jit_llvm_target_features;
 /// Vector width used by the LLVM backend
 extern uint32_t jit_llvm_vector_width;
 
-/// Number of threads to be used if TBB is enabled
-extern uint32_t jit_llvm_thread_count;
-
 /// LLVM version
 extern uint32_t jit_llvm_version_major;
 extern uint32_t jit_llvm_version_minor;

@@ -9,6 +9,7 @@ jit_var_copy_mem(1, size=10)
 jit_vcall(1, domain="MyKey")
 jit_malloc(type=host, size=128): <@> (new allocation)
 jit_malloc(type=host-async, size=64): <@> (new allocation)
+jit_mkperm(<@>, size=10, bucket_count=4, block_size=16384, blocks=1)
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_free(<@>, type=host, size=64)
@@ -17,16 +18,16 @@ jit_var_map_mem(2): <@>, size=10, free=1
 jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_ext(3): 1
-jit_vcall(): registered variable 3: bucket 0 ((nil)) of size 2.
+jit_vcall(): registered variable 3: bucket 0 (<@>) of size 2.
 jit_var_inc_ref_int(2): 2
 jit_var_inc_ref_ext(4): 1
-jit_vcall(): registered variable 4: bucket 1 (0xa) of size 2.
+jit_vcall(): registered variable 4: bucket 1 (<@>) of size 2.
 jit_var_inc_ref_int(2): 3
 jit_var_inc_ref_ext(5): 1
-jit_vcall(): registered variable 5: bucket 2 (0xb) of size 4.
+jit_vcall(): registered variable 5: bucket 2 (<@>) of size 4.
 jit_var_inc_ref_int(2): 4
 jit_var_inc_ref_ext(6): 1
-jit_vcall(): registered variable 6: bucket 3 (0xc) of size 2.
+jit_vcall(): registered variable 6: bucket 3 (<@>) of size 2.
 jit_var_dec_ref_ext(2): 0
 jit_var_inc_ref_ext(3): 2
 jit_var_inc_ref_ext(4): 2
@@ -108,7 +109,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(3): 0
 jit_var_dec_ref_int(7): 0
@@ -194,7 +195,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(4): 0
 jit_var_dec_ref_int(9): 0
@@ -281,7 +282,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(5): 0
 jit_var_dec_ref_int(11): 0
@@ -367,7 +368,7 @@ done:
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
-jit_run(): scheduling 1 packet
+jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(6): 0
 jit_var_dec_ref_int(13): 0

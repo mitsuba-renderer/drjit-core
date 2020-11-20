@@ -11,21 +11,12 @@
 
 #include <enoki-jit/jit.h>
 #include <stdarg.h>
+#include "common.h"
 
 #if defined(ENOKI_DISABLE_TRACE)
 #  define jit_trace(...)
 #else
 #  define jit_trace(...) jit_log(Trace, __VA_ARGS__)
-#endif
-
-#if !defined(likely)
-#  if !defined(_MSC_VER)
-#    define likely(x)   __builtin_expect(!!(x), 1)
-#    define unlikely(x) __builtin_expect(!!(x), 0)
-#  else
-#    define unlikely(x) x
-#    define likely(x) x
-#  endif
 #endif
 
 /// Print a log message with the specified log level and message

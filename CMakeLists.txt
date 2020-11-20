@@ -7,7 +7,6 @@ project(enoki-jit
     CXX C
 )
 
-option(ENOKI_JIT_ENABLE_TBB   "Use Intel Thread Building Blocks (TBB) with LLVM backend?" ON)
 option(ENOKI_JIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
 option(ENOKI_JIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 option(ENOKI_JIT_ENABLE_TESTS "Build Enoki test suite?" OFF)
@@ -58,27 +57,6 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_FLAGS MATCHES "-stdl
   endif()
 endif()
 
-if (ENOKI_JIT_ENABLE_TBB)
-  if(TARGET tbb)
-    set(TBB_TARGET_FOUND TRUE)
-    set(TBB_FOUND TRUE)
-  else()
-    # Try to detect TBB
-    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ext/cmake)
-    find_package(TBB)
-  endif()
-endif()
-
-if (ENOKI_JIT_ENABLE_TBB)
-  if (TBB_FOUND)
-    message(STATUS "Enoki-JIT: enabling TBB.")
-  else()
-    message(STATUS "Enoki-JIT: Intel Thread Building Blocks (TBB) could not be found! Computation involving LLVM arrays will run single-threaded.")
-  endif()
-else()
-  message(STATUS "Enoki-JIT: *not* using Intel Thread Building Blocks (TBB).")
-endif()
-
 if (ENOKI_JIT_DYNAMIC_CUDA)
   message(STATUS "Enoki-JIT: CUDA will be loaded dynamically at runtime.")
 else()
@@ -95,10 +73,10 @@ if (MSVC)
    add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -DNOMINMAX)
 endif()
 
-include_directories(
-  include
-  ext/robin_map/include
-  ext/lz4
+add_library(
+  enoki-thread SHARED
+  include/enoki-jit/thread.h
+  src/thread.cpp
 )
 
 add_library(
@@ -121,7 +99,6 @@ add_library(
   src/cuda_api.h       src/cuda_api.cpp
   src/llvm_api.h       src/llvm_api.cpp
   src/io.h             src/io.cpp
-  src/tbb.h            src/tbb.cpp
   src/init.cpp
   src/api.cpp
 
@@ -133,17 +110,26 @@ add_library(
   kernels/kernels.h kernels/kernels.c
 )
 
-target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)
 target_compile_features(enoki-jit PRIVATE cxx_std_11)
+target_compile_features(enoki-thread PRIVATE cxx_std_11)
+target_include_directories(enoki-jit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(enoki-jit PRIVATE include ext/robin_map/include ext/lz4)
+target_include_directories(enoki-thread PRIVATE include)
+target_include_directories(enoki-thread PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)
 
 if (NOT MSVC)
+  target_compile_options(enoki-thread PRIVATE -Wall -Wextra ${ENOKI_NATIVE_FLAGS})
   target_compile_options(enoki-jit PRIVATE -Wall -Wextra ${ENOKI_NATIVE_FLAGS})
   if (U_CMAKE_BUILD_TYPE MATCHES RELEASE OR U_CMAKE_BUILD_TYPE MATCHES MINSIZEREL)
+    target_compile_options(enoki-thread PRIVATE -fvisibility=hidden)
     target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
   endif()
 endif()
 
-target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_BUILD=1)
+target_compile_definitions(enoki-thread PRIVATE -DENOKI_THREAD_BUILD=1)
+target_compile_definitions(enoki-jit    PRIVATE -DENOKI_JIT_BUILD=1)
+target_link_libraries(enoki-jit PRIVATE enoki-thread)
 
 if (ENOKI_JIT_DYNAMIC_CUDA)
   target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_DYNAMIC_CUDA=1)
@@ -161,23 +147,15 @@ else()
   target_link_libraries(enoki-jit PRIVATE LLVM)
 endif()
 
-if (ENOKI_JIT_ENABLE_TBB AND TBB_FOUND)
-  if (TBB_TARGET_FOUND)
-    target_link_libraries(enoki-jit PRIVATE tbb)
-  else()
-    target_link_libraries(enoki-jit PRIVATE TBB::tbb)
-  endif()
-  target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_ENABLE_TBB=1)
-endif()
-
+# Generate ITT notifications (e.g. for VTune) if part of a larger project
+# that provides an 'ittnotify' target
 if (TARGET ittnotify)
-  # Generate ITT notifications (e.g. for VTune) if part of a larger project
-  # that provides an 'ittnotify' target
   target_link_libraries(enoki-jit PRIVATE ittnotify)
   target_include_directories(enoki-jit PRIVATE ${ITT_INCLUDE_DIRS})
   target_compile_definitions(enoki-jit PRIVATE -DENOKI_ENABLE_ITTNOTIFY=1)
 endif()
 
+# Similar notifications for NVIDIA profilers
 if (ENOKI_ENABLE_NVTX)
   include_directories(${CUDA_TOOLKIT_ROOT_DIR}/include)
   target_compile_definitions(enoki-jit PRIVATE -DENOKI_ENABLE_NVTX=1)

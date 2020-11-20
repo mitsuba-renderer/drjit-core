@@ -23,15 +23,10 @@ extern const char   kernels_70[];
 
 extern const char   *kernels_list;
 
-extern const int    llvm_kernels_7_size_uncompressed;
-extern const int    llvm_kernels_7_size_compressed;
-extern const size_t llvm_kernels_7_hash;
-extern const char   llvm_kernels_7[];
-
-extern const int    llvm_kernels_9_size_uncompressed;
-extern const int    llvm_kernels_9_size_compressed;
-extern const size_t llvm_kernels_9_hash;
-extern const char   llvm_kernels_9[];
+extern const int    llvm_kernels_size_uncompressed;
+extern const int    llvm_kernels_size_compressed;
+extern const size_t llvm_kernels_hash;
+extern const char   llvm_kernels[];
 
 #if defined(__cplusplus)
 }

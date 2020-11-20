@@ -12,6 +12,7 @@ foreach (TEST_FILE ${TEST_FILES})
   add_executable(test_${TEST_NAME} ${TEST_NAME}.cpp test.h test.cpp ${TEST_NAME}.cpp)
   target_link_libraries(test_${TEST_NAME} PRIVATE enoki-jit)
   target_compile_definitions(test_${TEST_NAME} PRIVATE -DTEST_NAME="${TEST_NAME}")
+  target_compile_features(test_${TEST_NAME} PRIVATE cxx_std_11)
   add_test(
     NAME ${TEST_NAME}
     COMMAND test_${TEST_NAME}

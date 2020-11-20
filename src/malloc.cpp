@@ -9,7 +9,6 @@
 
 #include "internal.h"
 #include "log.h"
-#include "tbb.h"
 #include "util.h"
 
 static_assert(
@@ -60,12 +59,6 @@ void* jit_malloc(AllocType type, size_t size) {
         size = (size + packet_size - 1) / packet_size * packet_size;
     }
 
-#if !defined(ENOKI_JIT_ENABLE_TBB)
-    /// There are no streams / host-asynchronous allocations when TBB is disabled
-    if (type == AllocType::HostAsync)
-        type = AllocType::Host;
-#endif
-
     /* Round 'size' to the next larger power of two. This is somewhat
        wasteful, but reduces the number of different sizes that an allocation
        can have to a manageable amount that facilitates re-use. */
@@ -76,6 +69,9 @@ void* jit_malloc(AllocType type, size_t size) {
     const char *descr = nullptr;
     void *ptr = nullptr;
     Stream *stream = active_stream;
+
+    if (type == AllocType::HostAsync && stream && !stream->parallel_dispatch)
+        type = AllocType::Host;
 
     /* Acquire lock protecting stream->release_chain and state.alloc_free */ {
         lock_guard guard(state.malloc_mutex);
@@ -324,11 +320,10 @@ void jit_free_flush() {
                 chain0->next = nullptr;
             },
             chain_new));
-    } else {
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        tbb_stream_enqueue_func(
-            stream,
-            [](void *ptr_) -> void {
+    } else if (stream->parallel_dispatch) {
+        Task *new_task = pool_task_submit(
+            nullptr, &stream->task, 1, 1,
+            [](size_t, void *ptr_) {
                 void *ptr = *((void **) ptr_);
                 /* Acquire lock protecting stream->release_chain and
                    state.alloc_free */
@@ -345,11 +340,11 @@ void jit_free_flush() {
 
                 delete chain1;
                 chain0->next = nullptr;
-            },
-            &chain_new, sizeof(void *));
-#else
-        jit_fail("jit_free_flush(): should never get here!");
-#endif
+            }, &chain_new, sizeof(void *)
+        );
+
+        pool_task_release(stream->task);
+        stream->task = new_task;
     }
 }
 
@@ -366,7 +361,6 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
 
     AllocInfo ai = it.value();
 
-#if defined(ENOKI_JIT_ENABLE_TBB)
     if (((AllocType) ai.type == AllocType::Host && type == AllocType::HostAsync) ||
         ((AllocType) ai.type == AllocType::HostAsync && type == AllocType::Host)) {
         if (move) {
@@ -374,10 +368,6 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
             return ptr;
         }
     }
-#else
-    if (type == AllocType::HostAsync)
-        type = AllocType::Host;
-#endif
 
     // Maybe nothing needs to be done..
     if ((AllocType) ai.type == type && (type != AllocType::Device || ai.device == stream->device))

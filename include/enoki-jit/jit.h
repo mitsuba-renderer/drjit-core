@@ -174,14 +174,18 @@ extern JITC_EXPORT void jitc_sync_all_devices();
  * kernels to separate streams that execute in parallel <em>in addition to the
  * parallel execution of individual kernels</em>.</li>
  *
- * <li><b>LLVM backend</b>: If Enoki-JIT is compiled with Intel's Thread
- * Building Blocks (TBB), execution will parallelize over all available cores
- * if this parameter is set to \c 1. Otherwise, execution will be
- * serialized.</li>
+ * <li><b>LLVM backend</b>: Execution will parallelize over all available CPU
+ * cores if this parameter is set to \c 1. Otherwise, execution will be
+ * serialized. Parallel execution is implemented via the thread pool for
+ * task-parallelism defined in <tt>enoki-jit/thread.h</tt> and part of the
+ * <tt>enoki-thread<tt> library. Important: the \ref
+ * jitc_set_parallel_dispatch() at the beginning of the computation -- changing
+ * it later will lead to undefined behavior.
+ * </li>
  * </ul>
  *
  * The default is \c 1 (i.e. to enable parallel dispatch) for both LLVM/CUDA
- * backends.
+ * backends. This flag can be set separately for each Enoki-JIT stream.
  */
 extern JITC_EXPORT void jitc_set_parallel_dispatch(int enable);
 
@@ -391,8 +395,8 @@ enum class AllocType : uint32_t {
      * asynchronously in the context of the computation stream.
      *
      * This type of memory is used internally when running code via the LLVM
-     * backend, and when this process is furthermore parallelized using Intels'
-     * Thread Building Blocks (TBB).
+     * backend, and when this process is furthermore parallelized using Enoki's
+     * internal thread pool.
      */
     HostAsync,
 

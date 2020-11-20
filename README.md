@@ -29,9 +29,7 @@ large library of mathematical functions.
 This project has almost no dependencies: it can be compiled without CUDA or
 LLVM actually being present on the system (it will attempt to find them at
 runtime). The library is implemented in C++11 but exposes all functionality
-through a C99-compatible interface. The LLVM backend can optionally use Intel
-Thread Building Blocks (TBB) to parallelize kernel execution and will otherwise
-fall back to serial execution. 
+through a C99-compatible interface.
 
 ## An example
 
@@ -85,7 +83,10 @@ using Float  = LLVMArray<float>;
 using UInt32 = LLVMArray<uint32_t>;
 ```
 
-switches to the functionally equivalent LLVM backend.
+switches to the functionally equivalent LLVM backend. By default, the LLVM
+backend parallelizes execution via a built-in thread pool, enabling usage that
+is very similar to the CUDA variant: a single thread issues computation that is
+then processed in parallel by all cores of the system.
 
 ## Features
 
@@ -98,9 +99,9 @@ switches to the functionally equivalent LLVM backend.
 - The internals of the JIT compiler heavily rely on hash table lookups (to keep
   track of variables) and string concatenation (to merge IR fragments into full
   kernels), and both of these steps are highly optimized. This means that the
-  overhead of generating kernel IR code is minimal (only a few microseconds),
-  with most time being spent either executing kernels or compiling from IR to
-  machine code when a kernel is encountered for the first time.
+  overhead of generating kernel IR code is minimal (only a few μs), with most
+  time being spent either executing kernels or compiling from IR to machine
+  code when a kernel is encountered for the first time.
 
 - Supports parallel kernel execution on multiple devices (JITing from several
   CPU threads, or running kernels on multiple GPUs).

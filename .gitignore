@@ -23,6 +23,9 @@ Debug
 libenoki-jit.so
 libenoki-jit.dylib
 enoki-jit.dll
+libenoki-thread.so
+libenoki-thread.dylib
+enoki-thread.dll
 tests/test_basics*
 tests/test_reductions*
 tests/test_vcall*

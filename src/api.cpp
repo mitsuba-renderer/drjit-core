@@ -15,6 +15,7 @@
 #include "registry.h"
 #include "llvm_api.h"
 #include <thread>
+#include <condition_variable>
 
 void jitc_init(int llvm, int cuda) {
     lock_guard guard(state.mutex);
@@ -30,14 +31,14 @@ void jitc_init_async(int llvm, int cuda) {
     };
 
     std::shared_ptr<Sync> sync = std::make_shared<Sync>();
-    std::unique_lock<std::mutex> guard(sync->mutex);
+    lock_guard guard(sync->mutex);
 
     Stream **stream = &active_stream;
 
     std::thread([llvm, cuda, sync, stream]() {
         lock_guard guard2(state.mutex);
         {
-            lock_guard_t<std::mutex> guard2(sync->mutex);
+            lock_guard guard2(sync->mutex);
             sync->flag = true;
             sync->cv.notify_one();
         }

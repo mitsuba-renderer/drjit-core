@@ -235,16 +235,8 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     if (include_supplement) {
         jit_lz4_init();
 
-        /* Use one of two different variants of the supplemental
-           kernels depending on the version of the LLVM IR. */
-        bool legacy = jit_llvm_version_major < 9;
-        int size_uncompressed = legacy ? llvm_kernels_7_size_uncompressed
-                                       : llvm_kernels_9_size_uncompressed;
-        int size_compressed   = legacy ? llvm_kernels_7_size_compressed
-                                       : llvm_kernels_9_size_compressed;
-        const char *kernels   = legacy ? llvm_kernels_7 : llvm_kernels_9;
-
-        size_t temp_size = buffer_size + jit_lz4_dict_size + size_uncompressed + 1;
+        size_t temp_size = buffer_size + jit_lz4_dict_size +
+                           llvm_kernels_size_uncompressed + 1;
 
         // Decompress supplemental kernel IR content
         temp = (char *) malloc_check(temp_size);
@@ -252,14 +244,15 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
         char *buffer_new = temp + jit_lz4_dict_size;
 
         if (LZ4_decompress_safe_usingDict(
-                kernels, buffer_new, size_compressed, size_uncompressed, temp,
-                jit_lz4_dict_size) != size_uncompressed)
-            jit_fail("jit_cuda_init(): decompression of supplemental kernel "
+                llvm_kernels, buffer_new, llvm_kernels_size_compressed,
+                llvm_kernels_size_uncompressed, temp,
+                jit_lz4_dict_size) != llvm_kernels_size_uncompressed)
+            jit_fail("jit_llvm_compile(): decompression of supplemental kernel "
                      "fragments failed!");
 
-        memcpy(buffer_new + size_uncompressed, buffer, buffer_size);
-        buffer_new[size_uncompressed + buffer_size] = '\0';
-        buffer_size += size_uncompressed;
+        memcpy(buffer_new + llvm_kernels_size_uncompressed, buffer, buffer_size);
+        buffer_new[llvm_kernels_size_uncompressed + buffer_size] = '\0';
+        buffer_size += llvm_kernels_size_uncompressed;
         buffer = buffer_new;
     }
 
@@ -657,17 +650,10 @@ bool jit_llvm_init() {
     if (strstr(jit_llvm_target_features, "+avx512f"))
         jit_llvm_vector_width = 16;
 
-#if defined(ENOKI_JIT_ENABLE_TBB)
-    jit_llvm_thread_count =
-        std::max(1u, (uint32_t) std::thread::hardware_concurrency());
-#else
-    jit_llvm_thread_count = 1;
-#endif
-
     jit_log(Info,
-            "jit_llvm_init(): found LLVM %u.%u.%u, target=%s, cpu=%s, vector width=%u, threads=%u.",
+            "jit_llvm_init(): found LLVM %u.%u.%u, target=%s, cpu=%s, vector width=%u.",
             jit_llvm_version_major, jit_llvm_version_minor, jit_llvm_version_patch, jit_llvm_triple,
-            jit_llvm_target_cpu, jit_llvm_vector_width, jit_llvm_thread_count);
+            jit_llvm_target_cpu, jit_llvm_vector_width);
 
     jit_llvm_init_success = jit_llvm_vector_width > 1;
 

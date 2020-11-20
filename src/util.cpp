@@ -8,22 +8,14 @@
 */
 
 #include <enoki-jit/util.h>
+#include <condition_variable>
 #include "internal.h"
 #include "util.h"
 #include "var.h"
 #include "eval.h"
 #include "registry.h"
 #include "log.h"
-#include "tbb.h"
 #include "profiler.h"
-
-#if defined(ENOKI_JIT_ENABLE_TBB)
-#  include <tbb/parallel_reduce.h>
-#  include <tbb/parallel_scan.h>
-#  include <tbb/parallel_for.h>
-#  include <tbb/blocked_range.h>
-#  include <condition_variable>
-#endif
 
 #if defined(_MSC_VER)
 #  pragma warning (disable: 4146) // unary minus operator applied to unsigned type, result still unsigned
@@ -31,6 +23,26 @@
 
 const char *reduction_name[(int) ReductionType::Count] = { "sum", "mul", "min",
                                                            "max", "and", "or" };
+
+/// Helper function: enqueue a single CPU task (synchronous or asynchronous)
+template <typename Input>
+void jit_submit_cpu(Stream *stream, void (*func)(size_t, void *), Input &input,
+                     size_t size = 1, bool release_prev = true) {
+    if (stream->parallel_dispatch) {
+        Task *new_task = pool_task_submit(
+            nullptr, &stream->task, 1, size,
+            func, &input, sizeof(Input));
+
+        if (release_prev)
+            pool_task_release(stream->task);
+
+        stream->task = new_task;
+    } else {
+        unlock_guard guard(state.mutex);
+        for (size_t i = 0; i < size; ++i)
+            func(i, &input);
+    }
+}
 
 /// Fill a device memory region with constants of a given type
 void jit_memset_async(void *ptr, uint32_t size_, uint32_t isize, const void *src) {
@@ -91,58 +103,53 @@ void jit_memset_async(void *ptr, uint32_t size_, uint32_t isize, const void *src
                 break;
         }
     } else {
-        struct Inputs {
+        struct Input {
             void *ptr;
             size_t size;
             uint32_t isize;
             uint8_t src[8];
         };
 
-        Inputs inputs;
-        inputs.ptr = ptr;
-        inputs.size = size;
-        inputs.isize = isize;
-        memcpy(inputs.src, src, isize);
+        Input input;
+        input.ptr = ptr;
+        input.size = size;
+        input.isize = isize;
+        memcpy(input.src, src, isize);
 
-        auto func = [](void *inputs_) {
-            Inputs inputs = *((Inputs *) inputs_);
-            switch (inputs.isize) {
+        auto func = [](size_t, void *input_) {
+            Input input = *((Input *) input_);
+            switch (input.isize) {
                 case 1:
-                    memset(inputs.ptr, inputs.src[0], inputs.size);
+                    memset(input.ptr, input.src[0], input.size);
                     break;
 
                 case 2: {
-                        uint16_t value = ((uint16_t *) inputs.src)[0],
-                                 *p    = (uint16_t *) inputs.ptr;
-                        for (uint32_t i = 0; i < inputs.size; ++i)
+                        uint16_t value = ((uint16_t *) input.src)[0],
+                                 *p    = (uint16_t *) input.ptr;
+                        for (uint32_t i = 0; i < input.size; ++i)
                             p[i] = value;
                     }
                     break;
 
                 case 4: {
-                        uint32_t value = ((uint32_t *) inputs.src)[0],
-                                 *p    = (uint32_t *) inputs.ptr;
-                        for (uint32_t i = 0; i < inputs.size; ++i)
+                        uint32_t value = ((uint32_t *) input.src)[0],
+                                 *p    = (uint32_t *) input.ptr;
+                        for (uint32_t i = 0; i < input.size; ++i)
                             p[i] = value;
                     }
                     break;
 
                 case 8: {
-                        uint64_t value = ((uint64_t *) inputs.src)[0],
-                                 *p    = (uint64_t *) inputs.ptr;
-                        for (uint32_t i = 0; i < inputs.size; ++i)
+                        uint64_t value = ((uint64_t *) input.src)[0],
+                                 *p    = (uint64_t *) input.ptr;
+                        for (uint32_t i = 0; i < input.size; ++i)
                             p[i] = value;
                     }
                     break;
             }
         };
 
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
-#else
-        unlock_guard guard(state.mutex);
-        func(&inputs);
-#endif
+        jit_submit_cpu(stream, func, input);
     }
 }
 
@@ -160,9 +167,7 @@ void jit_memcpy(void *dst, const void *src, size_t size) {
         cuda_check(cuStreamSynchronize(stream->handle));
         cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
     } else {
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        tbb_stream_sync(stream);
-#endif
+        jit_sync_stream(stream);
         memcpy(dst, src, size);
     }
 }
@@ -179,25 +184,21 @@ void jit_memcpy_async(void *dst, const void *src, size_t size) {
         cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
                                  stream->handle));
     } else {
-        struct Inputs {
+        struct Input {
             void *dst;
             const void *src;
             size_t size;
         };
 
-        Inputs inputs { dst, src, size };
+        Input input { dst, src, size };
 
-        auto func = [](void *inputs_) {
-            Inputs inputs = *((Inputs *) inputs_);
-            memcpy(inputs.dst, inputs.src, inputs.size);
-        };
-
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
-#else
-        unlock_guard guard(state.mutex);
-        func(&inputs);
-#endif
+        jit_submit_cpu(
+            stream,
+            [](size_t, void *input_) {
+                Input input = *((Input *) input_);
+                memcpy(input.dst, input.src, input.size);
+            },
+            input);
     }
 }
 
@@ -339,61 +340,51 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
             jit_free(temp);
         }
     } else {
-        Reduction reduction = jit_reduce_create(type, rtype);
+        uint32_t block_size = size, blocks = 1;
+        if (stream->parallel_dispatch) {
+            block_size = ENOKI_POOL_BLOCK_SIZE;
+            blocks     = (size + block_size - 1) / block_size;
+        }
 
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        struct Inputs {
+        struct Input {
+            uint32_t block_size;
             uint32_t size;
             uint32_t isize;
             Reduction reduction;
-            const void *ptr;
-            void *out;
+            const void *source;
+            void *target;
         };
 
-        auto func = [](void *inputs_) {
-            Inputs inputs = *((Inputs *) inputs_);
-            Reduction reduction = inputs.reduction;
-            uint32_t size = inputs.size;
-            uint32_t isize = inputs.isize;
-            const void *ptr = inputs.ptr;
-            void *out = inputs.out;
+        Input input;
+        input.block_size = block_size;
+        input.size = size;
+        input.isize = var_type_size[(int) type];
+        input.reduction = jit_reduce_create(type, rtype);
 
-            uint64_t identity = 0;
-            inputs.reduction(nullptr, 0, 0, &identity);
+        input.source = ptr;
+        if (blocks <= 1)
+            input.target = out;
+        else
+            input.target = jit_malloc(AllocType::HostAsync, blocks * input.isize);
 
-            uint64_t result = tbb::parallel_deterministic_reduce(
-                tbb::blocked_range<uint32_t>(0, size, 16384),
-                identity,
-                [reduction, ptr, isize](const tbb::blocked_range<uint32_t> &range, uint64_t value) {
-                    uint8_t temp[16] { };
-                    memcpy(temp, &value, isize);
-                    reduction(ptr, range.begin(), range.end(), temp + isize);
-                    reduction(temp, 0, 2, temp);
-                    return *((uint64_t *) temp);
-                },
-                [reduction, isize](uint64_t a, uint64_t b) {
-                    uint8_t temp[16] { };
-                    memcpy(temp, &a, isize);
-                    memcpy(temp + isize, &b, isize);
-                    reduction(temp, 0, 2, &temp);
-                    return *((uint64_t *) temp);
-                }
-            );
+        jit_submit_cpu(
+            stream,
+            [](size_t index, void *input_) {
+                Input input = *(Input *) input_;
+                input.reduction(
+                    input.source,
+                    index * input.block_size,
+                    std::min(((uint32_t) index + 1) * input.block_size, input.size),
+                    (uint8_t *) input.target + index * input.isize
+                );
+            },
+            input, std::max(1u, blocks)
+        );
 
-            memcpy(out, &result, isize);
-        };
-
-        Inputs inputs;
-        inputs.size = size;
-        inputs.isize = var_type_size[(int) type];
-        inputs.reduction = reduction;
-        inputs.ptr = ptr;
-        inputs.out = out;
-
-        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
-#else
-        reduction(ptr, 0, size, out);
-#endif
+        if (blocks > 1) {
+            jit_reduce(type, rtype, input.target, blocks, out);
+            jit_free(input.target);
+        }
     }
 }
 
@@ -533,43 +524,80 @@ void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
             jit_free(scratch);
         }
     } else {
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        struct Inputs {
+        uint32_t block_size = size, blocks = 1;
+        if (stream->parallel_dispatch) {
+            block_size = ENOKI_POOL_BLOCK_SIZE;
+            blocks     = (size + block_size - 1) / block_size;
+        }
+
+        jit_log(Debug,
+                "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR
+                ", size=%u, block_size=%u, blocks=%u)",
+                (uintptr_t) in, (uintptr_t) out, size, block_size, blocks);
+
+        struct Input {
+            uint32_t block_size;
+            uint32_t size;
+            uint32_t isize;
             const uint32_t *in;
             uint32_t *out;
-            uint32_t size;
+            uint32_t *scratch;
         };
-        auto func = [](void *inputs_) {
-            Inputs inputs = *((Inputs *) inputs_);
-            tbb::parallel_scan(
-                tbb::blocked_range<uint32_t>(0u, inputs.size, 4096u), 0u,
-                [inputs](const tbb::blocked_range<uint32_t> &range, uint32_t sum,
-                          bool final_scan) -> uint32_t {
-                    if (final_scan) {
-                        for (uint32_t i = range.begin(); i != range.end(); ++i) {
-                            uint32_t backup = sum;
-                            sum += inputs.in[i];
-                            inputs.out[i] = backup;
-                        }
-                    } else {
-                        for (uint32_t i = range.begin(); i != range.end(); ++i)
-                            sum += inputs.in[i];
-                    }
-                    return sum;
+
+        Input input;
+        input.block_size = block_size;
+        input.size = size;
+        input.in = in;
+        input.out = out;
+        input.scratch = nullptr;
+
+        if (blocks > 1) {
+            input.scratch = (uint32_t *) jit_malloc(AllocType::HostAsync,
+                                                    blocks * sizeof(uint32_t));
+
+            jit_submit_cpu(
+                stream,
+                [](size_t index, void *input_) {
+                    Input input = *(Input *) input_;
+                    uint32_t start = index * input.block_size,
+                             end = std::min(start + input.block_size, input.size);
+
+                    uint32_t accum = 0;
+                    for (uint32_t i = start; i != end; ++i)
+                        accum += input.in[i];
+
+                    input.scratch[index] = accum;
                 },
-                [](uint32_t v0, uint32_t v1) -> uint32_t { return v0 + v1; });
-        };
-        Inputs inputs { in, out, size };
-        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
-#else
-        unlock_guard guard(state.mutex);
-        uint32_t accum = 0;
-        for (uint32_t i = 0; i < size; ++i) {
-            uint32_t value = in[i];
-            out[i] = accum;
-            accum += value;
+
+                input, blocks
+            );
+
+            jit_scan_u32(input.scratch, blocks, input.scratch);
         }
-#endif
+
+        jit_submit_cpu(
+            stream,
+            [](size_t index, void *input_) {
+                Input input = *(Input *) input_;
+                uint32_t start = index * input.block_size,
+                         end = std::min(start + input.block_size, input.size);
+
+                uint32_t accum = 0;
+                if (input.scratch)
+                    accum = input.scratch[index];
+
+                for (uint32_t i = start; i != end; ++i) {
+                    uint32_t value = input.in[i];
+                    input.out[i] = accum;
+                    accum += value;
+                }
+            },
+
+            input, blocks
+        );
+
+        if (blocks > 1)
+            jit_free(input.scratch);
     }
 }
 
@@ -660,52 +688,84 @@ uint32_t jit_compress(const uint8_t *in, uint32_t size, uint32_t *out) {
         jit_free(count_out);
         return count_out_v;
     } else {
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        struct Inputs {
-            const uint8_t *in;
-            uint32_t *out;
-            uint32_t *count_out;
-            uint32_t size;
-        };
-
-        auto func = [](void *inputs_) {
-            Inputs inputs = *((Inputs *) inputs_);
-            tbb::parallel_scan(
-                tbb::blocked_range<uint32_t>(0u, inputs.size, 4096u), 0u,
-                [inputs](const tbb::blocked_range<uint32_t> &range, uint32_t sum,
-                         bool final_scan) -> uint32_t {
-                    if (final_scan) {
-                        for (uint32_t i = range.begin(); i != range.end(); ++i) {
-                            uint32_t backup = sum, value = inputs.in[i];
-                            sum += value;
-                            if (value)
-                                inputs.out[backup] = i;
-                        }
-                        if (range.end() == inputs.size)
-                            *inputs.count_out = sum;
-                    } else {
-                        for (uint32_t i = range.begin(); i != range.end(); ++i)
-                            sum += inputs.in[i];
-                    }
-                    return sum;
-                },
-                [](uint32_t v0, uint32_t v1) -> uint32_t { return v0 + v1; });
-        };
+        uint32_t block_size = size, blocks = 1;
+        if (stream->parallel_dispatch) {
+            block_size = ENOKI_POOL_BLOCK_SIZE;
+            blocks     = (size + block_size - 1) / block_size;
+        }
 
         uint32_t count_out = 0;
-        Inputs inputs { in, out, &count_out, size };
-        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
-        tbb_stream_sync(stream);
-        return count_out;
-#else
-        unlock_guard guard(state.mutex);
-        uint32_t accum = 0;
-        for (uint32_t i = 0; i < size; ++i) {
-            if (in[i])
-                out[accum++] = i;
+
+        jit_log(Debug,
+                "jit_compress(" ENOKI_PTR " -> " ENOKI_PTR
+                ", size=%u, block_size=%u, blocks=%u)",
+                (uintptr_t) in, (uintptr_t) out, size, block_size, blocks);
+
+        struct Input {
+            uint32_t block_size;
+            uint32_t size;
+            const uint8_t *in;
+            uint32_t *out;
+            uint32_t *scratch;
+            uint32_t *count_out;
+        };
+
+        Input input{ block_size, size, in, out, nullptr, &count_out };
+
+        if (blocks > 1) {
+            input.scratch = (uint32_t *) jit_malloc(AllocType::HostAsync,
+                                                    blocks * sizeof(uint32_t));
+
+            jit_submit_cpu(
+                stream,
+                [](size_t index, void *input_) {
+                    Input input = *(Input *) input_;
+                    uint32_t start = index * input.block_size,
+                             end = std::min(start + input.block_size, input.size);
+
+                    uint32_t accum = 0;
+                    for (uint32_t i = start; i != end; ++i)
+                        accum += (uint32_t) input.in[i];
+
+                    input.scratch[index] = accum;
+                },
+
+                input, blocks
+            );
+
+            jit_scan_u32(input.scratch, blocks, input.scratch);
         }
-        return accum;
-#endif
+
+        jit_submit_cpu(
+            stream,
+            [](size_t index, void *input_) {
+                Input input = *(Input *) input_;
+                uint32_t start = index * input.block_size,
+                         end = std::min(start + input.block_size, input.size);
+
+                uint32_t accum = 0;
+                if (input.scratch)
+                    accum = input.scratch[index];
+
+                for (uint32_t i = start; i != end; ++i) {
+                    uint32_t value = (uint32_t) input.in[i];
+                    if (value)
+                        input.out[accum] = i;
+                    accum += value;
+                }
+
+                if (end == input.size)
+                    *input.count_out = accum;
+            },
+
+            input, blocks
+        );
+
+        if (blocks > 1)
+            jit_free(input.scratch);
+
+        jit_sync_stream();
+        return count_out;
     }
 }
 
@@ -715,7 +775,6 @@ static void cuda_transpose(Stream *stream, const uint32_t *in, uint32_t *out,
 
     uint16_t blocks_x = (cols + 15u) / 16u,
              blocks_y = (rows + 15u) / 16u;
-
 
     scoped_set_context guard(stream->context);
     jit_log(Debug,
@@ -894,159 +953,133 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
 
         return offsets ? offsets[4 * bucket_count] : 0u;
     } else { // if (!stream->cuda)
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        struct UniqueCount {
-            // Careful: This data structure destructs when the function
-            // returns, which is *before* the asynchronous work has finished.
-            uint32_t value = 0xFFFFFFFF;
-            std::mutex mutex;
-            std::condition_variable cond;
-            uint32_t *offsets;
-        } unique_count;
+        uint32_t blocks = 1, block_size = size;
 
-        struct Inputs {
-            // This data structure is copied and remains alive the whole time.
-            const uint32_t *ptr;
-            uint32_t size;
-            uint32_t bucket_count;
-            uint32_t num_tasks;
-            uint32_t items_per_task;
-            uint32_t *perm;
-            uint32_t **buckets;
-            UniqueCount *unique_count;
-        };
+        if (stream->parallel_dispatch) {
+            // Try to spread out uniformly over cores
+            blocks = pool_size() * 4;
+            block_size = (size + blocks - 1) / blocks;
 
-        uint32_t num_tasks      = jit_llvm_thread_count * 4,
-                 items_per_task = std::max(4096u, (size + num_tasks - 1) / num_tasks);
-        num_tasks = (size + items_per_task - 1) / items_per_task;
+            // But don't make the blocks too small
+            block_size = std::max((uint32_t) ENOKI_POOL_BLOCK_SIZE, block_size);
+
+            // Finally re-adjust block size
+            blocks = (size + block_size - 1) / block_size;
+        }
+
+        jit_log(Debug,
+                "jit_mkperm(" ENOKI_PTR
+                ", size=%u, bucket_count=%u, block_size=%u, blocks=%u)",
+                (uintptr_t) ptr, size, bucket_count, block_size, blocks);
 
         uint32_t **buckets =
-            (uint32_t **) jit_malloc(AllocType::Host, sizeof(uint32_t *) * num_tasks);
+            (uint32_t **) jit_malloc(AllocType::Host, sizeof(uint32_t *) * blocks);
 
-        for (uint32_t i = 0; i < num_tasks; ++i)
+        for (uint32_t i = 0; i < blocks; ++i)
             buckets[i] = (uint32_t *) jit_malloc(
                 AllocType::Host,
                 sizeof(uint32_t) * (size_t) bucket_count);
 
-        Inputs inputs{ ptr,  size,    bucket_count, num_tasks,
-                       items_per_task, perm, buckets, &unique_count };
-        unique_count.offsets = offsets;
+        struct Input {
+            uint32_t size;
+            uint32_t blocks;
+            uint32_t block_size;
+            uint32_t bucket_count;
+            const uint32_t *ptr;
+            uint32_t **buckets;
+            uint32_t *perm;
+            uint32_t *offsets;
+            uint32_t *unique_count;
+        };
 
-        auto func = [](void *inputs_) {
-            Inputs inputs = *((Inputs *) inputs_);
+        uint32_t unique_count = 0;
+        Input input{ size, blocks,  block_size, bucket_count,
+                     ptr,  buckets, perm, offsets, &unique_count };
 
-            tbb::parallel_for(
-                tbb::blocked_range<uint32_t>(0u, inputs.num_tasks, 1u),
-                [&](const tbb::blocked_range<uint32_t> &range) {
-                    ProfilerPhase profiler(profiler_region_mkperm_phase_1);
-                    uint32_t start = range.begin() * inputs.items_per_task,
-                             end = std::min(inputs.size, start + inputs.items_per_task);
+        // Phase 1
+        jit_submit_cpu(
+            stream,
+            [](size_t index, void *input_) {
+                ProfilerPhase profiler(profiler_region_mkperm_phase_1);
+                Input input = *(Input *) input_;
 
-                    uint32_t *buckets_local = inputs.buckets[range.begin()];
+                uint32_t start = index * input.block_size,
+                         end = std::min(start + input.block_size, input.size);
 
-                    memset(buckets_local, 0,
-                           sizeof(uint32_t) * (size_t) inputs.bucket_count);
-                    for (uint32_t i = start; i != end; ++i)
-                        buckets_local[inputs.ptr[i]]++;
-                },
-                tbb::simple_partitioner()
-            );
+                uint32_t *buckets_local = input.buckets[index];
+                memset(buckets_local, 0,
+                       sizeof(uint32_t) * (size_t) input.bucket_count);
 
-            uint32_t sum = 0, unique_count = 0;
-            auto offsets = inputs.unique_count->offsets;
+                for (uint32_t i = start; i != end; ++i)
+                    buckets_local[input.ptr[i]]++;
+            },
 
-            /* Local phase */ {
-                for (uint32_t i = 0; i < inputs.bucket_count; ++i) {
+            input, blocks
+        );
+
+        // Local accumulation step
+        jit_submit_cpu(
+            stream,
+            [](size_t, void *input_) {
+                Input input = *(Input *) input_;
+
+                uint32_t sum = 0, unique_count = 0;
+                for (uint32_t i = 0; i < input.bucket_count; ++i) {
                     uint32_t sum_local = 0;
-                    for (uint32_t j = 0; j < inputs.num_tasks; ++j) {
-                        uint32_t value = inputs.buckets[j][i];
-                        inputs.buckets[j][i] = sum + sum_local;
+                    for (uint32_t j = 0; j < input.blocks; ++j) {
+                        uint32_t value = input.buckets[j][i];
+                        input.buckets[j][i] = sum + sum_local;
                         sum_local += value;
                     }
                     if (sum_local > 0) {
-                        if (offsets) {
-                            offsets[unique_count*4] = i;
-                            offsets[unique_count*4 + 1] = sum;
-                            offsets[unique_count*4 + 2] = sum_local;
-                            offsets[unique_count*4 + 3] = 0;
+                        if (input.offsets) {
+                            input.offsets[unique_count*4] = i;
+                            input.offsets[unique_count*4 + 1] = sum;
+                            input.offsets[unique_count*4 + 2] = sum_local;
+                            input.offsets[unique_count*4 + 3] = 0;
                         }
                         unique_count++;
                         sum += sum_local;
                     }
                 }
 
-                lock_guard_t<std::mutex> guard(inputs.unique_count->mutex);
-                inputs.unique_count->value = unique_count;
-                inputs.unique_count->cond.notify_one();
-            }
+                *input.unique_count = unique_count;
+            },
+            input, 1
+        );
 
-            tbb::parallel_for(
-                tbb::blocked_range<uint32_t>(0u, inputs.num_tasks, 1u),
-                [&](const tbb::blocked_range<uint32_t> &range) {
-                    ProfilerPhase profiler(profiler_region_mkperm_phase_2);
-                    uint32_t start = range.begin() * inputs.items_per_task,
-                             end = std::min(inputs.size, start + inputs.items_per_task);
+        Task *local_task = stream->task;
 
-                    uint32_t *buckets_local = inputs.buckets[range.begin()];
+        // Phase 2
+        jit_submit_cpu(
+            stream,
+            [](size_t index, void *input_) {
+                ProfilerPhase profiler(profiler_region_mkperm_phase_2);
+                Input input = *(Input *) input_;
 
-                    for (uint32_t i = start; i != end; ++i) {
-                        uint32_t index = buckets_local[inputs.ptr[i]]++;
-                        inputs.perm[index] = i;
-                    }
-                },
-                tbb::simple_partitioner()
-            );
+                uint32_t start = index * input.block_size,
+                         end = std::min(start + input.block_size, input.size);
 
-        };
+                uint32_t *buckets_local = input.buckets[index];
 
-        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
+                for (uint32_t i = start; i != end; ++i) {
+                    uint32_t index = buckets_local[input.ptr[i]]++;
+                    input.perm[index] = i;
+                }
+            },
+
+            input, blocks, false
+        );
 
         // Free memory (happens asynchronously after the above stmt.)
-        for (uint32_t i = 0; i < num_tasks; ++i)
+        for (uint32_t i = 0; i < blocks; ++i)
             jit_free(buckets[i]);
         jit_free(buckets);
 
-        unlock_guard guard(state.mutex);
-        {
-            std::unique_lock<std::mutex> guard_2(unique_count.mutex);
-            while (unique_count.value == 0xFFFFFFFF)
-                unique_count.cond.wait(guard_2);
-        }
+        if (stream->parallel_dispatch)
+            pool_task_wait_and_release(local_task);
 
-        return unique_count.value;
-#else
-        size_t bucket_size = sizeof(uint32_t) * (size_t) bucket_count;
-        uint32_t *buckets = (uint32_t *) jit_malloc(AllocType::Host, bucket_size);
-        memset(buckets, 0, bucket_size);
-        uint32_t unique_count = 0;
-
-        for (uint32_t i = 0; i < size; ++i)
-            buckets[ptr[i]]++;
-
-        uint32_t sum = 0;
-        for (uint32_t i = 0; i < bucket_count; ++i) {
-            if (buckets[i] > 0) {
-                if (offsets) {
-                    offsets[unique_count*4] = i;
-                    offsets[unique_count*4 + 1] = sum;
-                    offsets[unique_count*4 + 2] = buckets[i];
-                    offsets[unique_count*4 + 3] = 0;
-                }
-                unique_count++;
-            }
-            uint32_t temp = buckets[i];
-            buckets[i] = sum;
-            sum += temp;
-        }
-
-        for (uint32_t i = 0; i < size; ++i) {
-            uint32_t index = buckets[ptr[i]]++;
-            perm[index] = i;
-        }
-
-        jit_free(buckets);
         return unique_count;
-#endif
     }
 }
 
@@ -1127,9 +1160,9 @@ VCallBucket *jit_vcall(const char *domain, uint32_t index,
         memcpy(offsets_out + 2, &index, sizeof(uint32_t));
         offsets_out += 4;
 
-        jit_trace(
-            "jit_vcall(): registered variable %u: bucket %u (%p) of size %u.",
-            index, bucket_id, ptr, bucket_size);
+        jit_trace("jit_vcall(): registered variable %u: bucket %u (" ENOKI_PTR
+                  ") of size %u.", index, bucket_id,
+                  (uintptr_t) ptr, bucket_size);
     }
 
     jit_var_dec_ref_ext(perm_var);
@@ -1248,36 +1281,38 @@ void jit_block_copy(enum VarType type, const void *in, void *out, uint32_t size,
         cuda_check(cuLaunchKernel(func, block_count, 1, 1, thread_count, 1, 1,
                                   0, stream->handle, args, nullptr));
     } else {
-        BlockOp op = jit_block_copy_create(type);
+        uint32_t work_unit_size = size, work_units = 1;
+        if (stream->parallel_dispatch) {
+            work_unit_size = ENOKI_POOL_BLOCK_SIZE;
+            work_units     = (size + work_unit_size - 1) / work_unit_size;
+        }
 
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        struct Inputs {
+        struct Input {
             const void *in;
             void *out;
             uint32_t size;
             uint32_t block_size;
+            uint32_t work_unit_size;
             BlockOp op;
         };
-        Inputs inputs{ in, out, size, block_size, op };
 
-        auto func = [](void *inputs_) {
-            Inputs inputs = *(Inputs *) inputs_;
+        Input input{ in, out, size, block_size, work_unit_size,
+                     jit_block_copy_create(type) };
 
-            tbb::parallel_for(
-                tbb::blocked_range<uint32_t>(0u, inputs.size, 4096u),
-                [&](const tbb::blocked_range<uint32_t> &range) {
-                    inputs.op(inputs.in, inputs.out, range.begin(), range.end(),
-                              inputs.block_size);
-                });
-        };
+        jit_submit_cpu(
+            stream,
+            [](size_t index, void *input_) {
+                Input input = *(Input *) input_;
+                uint32_t start = index * input.work_unit_size,
+                         end = std::min(start + input.work_unit_size, input.size);
 
-        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
-#else
-        op(in, out, 0, size, block_size);
-#endif
+                input.op(input.in, input.out, start, end, input.block_size);
+            },
+
+            input, work_units
+        );
     }
 }
-
 
 /// Sum over elements within blocks
 void jit_block_sum(enum VarType type, const void *in, void *out, uint32_t size,
@@ -1320,33 +1355,36 @@ void jit_block_sum(enum VarType type, const void *in, void *out, uint32_t size,
         cuda_check(cuLaunchKernel(func, block_count, 1, 1, thread_count, 1, 1,
                                   0, stream->handle, args, nullptr));
     } else {
-        BlockOp op = jit_block_sum_create(type);
+        uint32_t work_unit_size = size, work_units = 1;
+        if (stream->parallel_dispatch) {
+            work_unit_size = ENOKI_POOL_BLOCK_SIZE;
+            work_units     = (size + work_unit_size - 1) / work_unit_size;
+        }
 
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        struct Inputs {
+        struct Input {
             const void *in;
             void *out;
             uint32_t size;
             uint32_t block_size;
+            uint32_t work_unit_size;
             BlockOp op;
         };
-        Inputs inputs{ in, out, size, block_size, op };
 
-        auto func = [](void *inputs_) {
-            Inputs inputs = *(Inputs *) inputs_;
+        Input input{ in, out, size, block_size, work_unit_size,
+                     jit_block_sum_create(type) };
 
-            tbb::parallel_for(
-                tbb::blocked_range<uint32_t>(0u, inputs.size, 4096u),
-                [&](const tbb::blocked_range<uint32_t> &range) {
-                    inputs.op(inputs.in, inputs.out, range.begin(), range.end(),
-                              inputs.block_size);
-                });
-        };
+        jit_submit_cpu(
+            stream,
+            [](size_t index, void *input_) {
+                Input input = *(Input *) input_;
+                uint32_t start = index * input.work_unit_size,
+                         end = std::min(start + input.work_unit_size, input.size);
 
-        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
-#else
-        op(in, out, 0, size, block_size);
-#endif
+                input.op(input.in, input.out, start, end, input.block_size);
+            },
+
+            input, work_units
+        );
     }
 }
 
@@ -1374,25 +1412,22 @@ void jit_poke(void *dst, const void *src, uint32_t size) {
         cuda_check(cuLaunchKernel(func, 1, 1, 1, 1, 1, 1,
                                   0, stream->handle, args, nullptr));
     } else {
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        struct Inputs {
+        struct Input {
             void *dst;
             uint8_t src[8];
             uint32_t size;
         };
-        Inputs inputs;
-        inputs.dst = dst;
-        inputs.size = size;
-        memcpy(&inputs.src, src, size);
+        Input input;
+        input.dst = dst;
+        input.size = size;
+        memcpy(&input.src, src, size);
 
-        auto func = [](void *inputs_) {
-            Inputs inputs = *(Inputs *) inputs_;
-            memcpy(inputs.dst, &inputs.src, inputs.size);
-        };
-
-        tbb_stream_enqueue_func(stream, func, &inputs, sizeof(Inputs));
-#else
-        memcpy(dst, src, size);
-#endif
+        jit_submit_cpu(
+            stream,
+            [](size_t, void *input_) {
+                Input input = *(Input *) input_;
+                memcpy(input.dst, &input.src, input.size);
+            },
+            input);
     }
 }

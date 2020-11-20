@@ -9,28 +9,16 @@
 
 #pragma once
 
+#include "common.h"
 #include "malloc.h"
 #include "cuda_api.h"
 #include "llvm_api.h"
 #include "alloc.h"
 #include "io.h"
-#include <mutex>
-#include <condition_variable>
 #include <deque>
 #include <string.h>
 #include <inttypes.h>
-
-#if defined(ENOKI_JIT_ENABLE_TBB)
-#  include <tbb/spin_mutex.h>
-#endif
-
-namespace tbb { class task; };
-
-#if defined(ENOKI_JIT_ENABLE_TBB)
-  using FastMutex = tbb::spin_mutex;
-#else
-  using FastMutex = std::mutex;
-#endif
+#include <enoki-jit/thread.h>
 
 static constexpr LogLevel Disable = LogLevel::Disable;
 static constexpr LogLevel Error   = LogLevel::Error;
@@ -41,18 +29,11 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 
 #define ENOKI_PTR "<0x%" PRIxPTR ">"
 
-#if !defined(likely)
-#  if !defined(_MSC_VER)
-#    define likely(x)   __builtin_expect(!!(x), 1)
-#    define unlikely(x) __builtin_expect(!!(x), 0)
-#  else
-#    define unlikely(x) x
-#    define likely(x) x
-#  endif
-#endif
-
 /// Create several worker streams per device for parallel dispatch
 #define ENOKI_SUB_STREAMS 4
+
+/// Number of entries to process per work unit in the parallel LLVM backend
+#define ENOKI_POOL_BLOCK_SIZE 16384
 
 /// Caches basic information about a CUDA device
 struct Device {
@@ -152,21 +133,11 @@ struct Stream {
 
     /// ---------------------------- LLVM-specific ----------------------------
 
-#if defined(ENOKI_JIT_ENABLE_TBB)
-    /// Mutex protecting 'tbb_task_queue'
-    std::mutex tbb_task_queue_mutex;
-
-    /// Per-stream task queue that will be processed in FIFO order
-    std::deque<tbb::task *> tbb_task_queue;
-
-    /// Kernel task that will receive queued computation
-    tbb::task *tbb_kernel_task = nullptr;
-
-    /// Root task of the entire stream, for synchronization purposes
-    tbb::task *tbb_task_root = nullptr;
-#endif
-
+    // Stack of variable indices storing masks of active SIMD lanes
     std::vector<uint32_t> active_mask;
+
+    // Currently active task within the thread pool
+    Task *task = nullptr;
 
     /// ---------------------------- CUDA-specific ----------------------------
 
@@ -419,10 +390,10 @@ using ExtraMap = tsl::robin_map<uint32_t, Extra>;
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
     /// Must be held to access members
-    FastMutex mutex;
+    std::mutex mutex;
 
     /// Must be held to access 'stream->release_chain' and 'state.alloc_free'
-    FastMutex malloc_mutex;
+    std::mutex malloc_mutex;
 
     /// Stores the mapping from variable indices to variables
     VariableMap variables;
@@ -493,32 +464,6 @@ struct State {
     /// Cache of previously compiled kernels
     KernelCache kernel_cache;
 };
-
-/// RAII helper for locking a mutex (like std::lock_guard)
-template <typename T> class lock_guard_t {
-public:
-    lock_guard_t(T &mutex) : m_mutex(mutex) { m_mutex.lock(); }
-    ~lock_guard_t() { m_mutex.unlock(); }
-    lock_guard_t(const lock_guard_t &) = delete;
-    lock_guard_t &operator=(const lock_guard_t &) = delete;
-private:
-    T &m_mutex;
-};
-
-/// RAII helper for *unlocking* a mutex
-template <typename T> class unlock_guard_t {
-public:
-    unlock_guard_t(T &mutex) : m_mutex(mutex) { m_mutex.unlock(); }
-    ~unlock_guard_t() { m_mutex.lock(); }
-    unlock_guard_t(const unlock_guard_t &) = delete;
-    unlock_guard_t &operator=(const unlock_guard_t &) = delete;
-private:
-    T &m_mutex;
-};
-
-using lock_guard   =   lock_guard_t<FastMutex>;
-using unlock_guard = unlock_guard_t<FastMutex>;
-
 
 struct Buffer {
 public:
@@ -643,6 +588,9 @@ extern void jit_set_device(int32_t device, uint32_t stream);
 
 /// Wait for all computation on the current stream to finish
 extern void jit_sync_stream();
+
+/// Wait for all computation on the current stream to finish
+extern void jit_sync_stream(Stream *stream);
 
 /// Wait for all computation on the current device to finish
 extern void jit_sync_device();

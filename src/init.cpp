@@ -12,7 +12,6 @@
 #include "internal.h"
 #include "log.h"
 #include "registry.h"
-#include "tbb.h"
 #include "var.h"
 #include "profiler.h"
 #include <sys/stat.h>
@@ -215,10 +214,9 @@ void jit_shutdown(int light) {
                 cuda_check(cuStreamDestroy(stream->handle));
                 delete stream->release_chain;
             } else {
-#if defined(ENOKI_JIT_ENABLE_TBB)
                 jit_free_flush();
-                tbb_stream_shutdown(stream);
-#endif
+                pool_task_wait_and_release(stream->task);
+                pool_destroy();
                 if (!stream->active_mask.empty())
                     jit_log(Warn, "jit_shutdown(): leaked %zu active masks!",
                             stream->active_mask.size());
@@ -361,14 +359,20 @@ void jit_set_device(int32_t device, uint32_t stream) {
         stream_ptr->event = event;
         stream_ptr->context = context;
 
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        tbb_stream_init(stream_ptr);
-#endif
-
         state.streams[key] = stream_ptr;
     }
 
     active_stream = stream_ptr;
+}
+
+void jit_sync_stream(Stream *stream) {
+    if (stream->cuda) {
+        scoped_set_context guard(stream->context);
+        cuda_check(cuStreamSynchronize(stream->handle));
+    } else if (stream->parallel_dispatch) {
+        pool_task_wait_and_release(stream->task);
+        stream->task = nullptr;
+    }
 }
 
 /// Wait for all computation on the current stream to finish
@@ -377,17 +381,8 @@ void jit_sync_stream() {
     if (unlikely(!stream))
         jit_raise("jit_sync_stream(): you must invoke jitc_set_device() to "
                   "choose a target device and stream before synchronizing.");
-
-    if (stream->cuda) {
-        unlock_guard guard(state.mutex);
-        scoped_set_context guard2(stream->context);
-        cuda_check(cuStreamSynchronize(stream->handle));
-    } else {
-#if defined(ENOKI_JIT_ENABLE_TBB)
-        unlock_guard guard(state.mutex);
-        tbb_stream_sync(stream);
-#endif
-    }
+    unlock_guard guard(state.mutex);
+    jit_sync_stream(stream);
 }
 
 /// Wait for all computation on the current device to finish
@@ -404,16 +399,13 @@ void jit_sync_device() {
             cuda_check(cuCtxSynchronize());
         }
     } else {
-#if defined(ENOKI_JIT_ENABLE_TBB)
         StreamMap streams = state.streams;
         unlock_guard guard(state.mutex);
         for (auto &kv: streams) {
             Stream *stream = kv.second;
-            if (stream->cuda)
-                continue;
-            tbb_stream_sync(stream);
+            if (!stream->cuda)
+                jit_sync_stream(stream);
         }
-#endif
     }
 }
 
@@ -439,17 +431,8 @@ void jit_set_parallel_dispatch(bool value) {
 void jit_sync_all_devices() {
     StreamMap streams = state.streams;
     unlock_guard guard(state.mutex);
-    for (auto &kv: streams) {
-        Stream *stream = kv.second;
-        if (stream->cuda) {
-            scoped_set_context guard(stream->context);
-            cuda_check(cuStreamSynchronize(stream->handle));
-        } else {
-#if defined(ENOKI_JIT_ENABLE_TBB)
-            tbb_stream_sync(stream);
-#endif
-        }
-    }
+    for (auto &kv: streams)
+        jit_sync_stream(kv.second);
 }
 
 /// Glob for a shared library and try to load the most recent version

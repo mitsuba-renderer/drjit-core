@@ -465,6 +465,8 @@ jit_set_device(device=-1, stream=0): creating stream
 ===== size=560948, ones=504897 =====
 ===== size=560948, ones=560948 =====
 jit_shutdown(): releasing 1 stream ..
+jit_free_flush(): scheduling 3 deallocations
 jit_malloc_trim(): freed
  - host memory: 16 MiB in 31 allocations
+ - host-async memory: 448 B in 3 allocations
 jit_shutdown(): done

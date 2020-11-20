@@ -13,11 +13,13 @@
 #include "util.h"
 #include "io.h"
 #include "../kernels/kernels.h"
+
 #if defined(_WIN32)
 #  include <windows.h>
 #else
 #  include <dlfcn.h>
 #endif
+
 #include <lz4.h>
 
 #if defined(ENOKI_JIT_DYNAMIC_CUDA)
