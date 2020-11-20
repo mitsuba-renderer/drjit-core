@@ -1,6 +1,7 @@
 #include "test.h"
 #include <vector>
 #include <string>
+#include <chrono>
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -329,12 +330,18 @@ int main(int argc, char **argv) {
             jitc_set_device(test.cuda ? 0 : -1, 0);
             if (!test.cuda)
                 jitc_llvm_set_target("skylake", nullptr, 8);
+            auto before = std::chrono::high_resolution_clock::now();
             test.func();
+            auto after = std::chrono::high_resolution_clock::now();
+            float duration =
+                std::chrono::duration_cast<
+                    std::chrono::duration<float, std::milli>>(after - before)
+                    .count();
             jitc_shutdown(1);
 
             if (test_check_log(test.name, (char *) log_value.c_str(), write_ref)) {
                 tests_passed++;
-                fprintf(stdout, "passed.\n");
+                fprintf(stdout, "passed (%.2f ms).\n", duration);
             } else {
                 tests_failed++;
                 if (fail_fast) {
