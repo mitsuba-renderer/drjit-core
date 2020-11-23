@@ -104,7 +104,7 @@ void test_sanitize_log(char *buf) {
         if (strncmp(src, "/* direct ptr */ 0x", 19) == 0) {
             while (*src != ';')
                 src++;
-            memcpy(dst, "<@>", 9);
+            memcpy(dst, "<@>", 3);
             dst += 3;
             continue;
         }

@@ -1,5 +1,6 @@
 #include "test.h"
 #include <iostream>
+#include <memory>
 
 using Float = CUDAArray<float>;
 using UInt32 = CUDAArray<uint32_t>;
@@ -101,7 +102,7 @@ template <typename... Args> auto vcall(const char *domain, UInt32 inst, const Ar
         jitc_var_dec_ref_ext(prev);
 
         buf_ptr +=
-            snprintf(buf_ptr, 23 + 1, "func_%016llx%s ",
+            snprintf(buf_ptr, 23 + 1, "func_%016llx%s",
                      (unsigned long long) hash, i + 1 < n_inst ? ", " : " ") - 1;
     }
     memcpy(buf_ptr, "};\n", 4);
