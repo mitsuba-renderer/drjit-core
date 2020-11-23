@@ -132,8 +132,8 @@ extern EK_THREAD_EXPORT uint32_t pool_thread_id();
  *     List of predecessors of size \c pred_count.
  *     \c nullptr-valued elements are ignored
  *
- * \param pred
- *     Numer of predecessor tasks
+ * \param pred_count
+ *     Number of predecessor tasks
  *
  * \param size
  *     Total number of work units, the callback \c func will be called this
