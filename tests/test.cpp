@@ -38,12 +38,10 @@ void test_sanitize_log(char *buf) {
          *dst = src;
 
     // Remove all lines starting with the following text
-    const char *excise[14] = {
+    const char *excise[12] = {
         "jit_init(): detecting",
         " - Found CUDA",
         " - Enabling peer",
-        ".target",
-        ".version",
         "Detailed linker output:",
         "info    :",
         "ptxas",

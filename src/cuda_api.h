@@ -149,6 +149,8 @@ extern int jit_cuda_devices;
 
 extern int jit_cuda_version_major;
 extern int jit_cuda_version_minor;
+extern int jit_cuda_ptx_version;
+extern int jit_cuda_compute_capability;
 
 /// Try to load the CUDA backend
 extern bool jit_cuda_init();

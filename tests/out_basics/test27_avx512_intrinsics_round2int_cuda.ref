@@ -62,6 +62,8 @@ jit_malloc(type=device, device=0, size=128): <@> (new allocation)
    - %rd13 -> 10 [out]
 jit_malloc(type=device, device=0, size=128): <@> (new allocation)
   -> launching <@> (n=9, in=1, out=8, ops=14):
+.version 6.0
+.target sm_50
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -277,6 +279,8 @@ jit_malloc(type=device, device=0, size=128): <@> (reused local)
    - %rd13 -> 18 [out]
 jit_malloc(type=device, device=0, size=128): <@> (reused local)
   -> launching <@> (n=9, in=1, out=8, ops=14):
+.version 6.0
+.target sm_50
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -491,6 +495,8 @@ jit_malloc(type=device, device=0, size=128): <@> (reused local)
    - %rd13 -> 26 [out]
 jit_malloc(type=device, device=0, size=128): <@> (reused local)
   -> launching <@> (n=9, in=1, out=8, ops=14):
+.version 6.0
+.target sm_50
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,
@@ -705,6 +711,8 @@ jit_malloc(type=device, device=0, size=128): <@> (reused local)
    - %rd13 -> 34 [out]
 jit_malloc(type=device, device=0, size=128): <@> (reused local)
   -> launching <@> (n=9, in=1, out=8, ops=14):
+.version 6.0
+.target sm_50
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,

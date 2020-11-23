@@ -108,6 +108,9 @@ CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
 int jit_cuda_devices = 0;
 int jit_cuda_version_major = 0;
 int jit_cuda_version_minor = 0;
+int jit_cuda_ptx_version = 60;
+int jit_cuda_compute_capability = 50;
+
 
 static bool jit_cuda_init_attempted = false;
 static bool jit_cuda_init_success = false;

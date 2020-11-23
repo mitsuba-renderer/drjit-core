@@ -823,6 +823,7 @@ TEST_BOTH(27_avx512_intrinsics_round2int, "avx512") {
 TEST_BOTH(28_scatter_add, "avx512") {
     jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
     using Double = Array<double>;
+
     {
         Float target = zero<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
@@ -839,6 +840,7 @@ TEST_BOTH(28_scatter_add, "avx512") {
         jitc_log(Info, "target=%s", target.str());
     }
 
+    jitc_cuda_set_codegen(60, 60);
     {
         Double target = zero<Double>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
@@ -890,6 +892,7 @@ TEST_BOTH(28_scatter_add, "avx512") {
         scatter_add(target, Double(1), index, mask);
         jitc_log(Info, "target=%s", target.str());
     }
+    jitc_cuda_set_codegen(60, 50);
     jitc_llvm_set_target("skylake", "", 8);
 }
 

@@ -36,6 +36,8 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
    - %f7 -> 4 [scalar] [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
   -> launching <@> (n=1, in=0, out=4, ops=8):
+.version 6.0
+.target sm_50
 .address_size 64
 
 .entry enoki_<@>(.param .u32 size,

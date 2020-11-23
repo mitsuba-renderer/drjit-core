@@ -175,6 +175,29 @@ void* jitc_cuda_context() {
     return jit_cuda_context();
 }
 
+/// Return the compute capability of the current device (e.g. '52')
+int jitc_cuda_compute_capability() {
+    lock_guard guard(state.mutex);
+
+    Stream *stream = active_stream;
+    if (unlikely(!stream))
+        jit_raise("jit_cuda_compute_capability(): you must invoke "
+                  "jitc_set_device() to choose a target device before calling "
+                  "this function!");
+    else if (unlikely(!stream->cuda))
+        jit_raise("jit_cuda_compute_capability(): expected a CUDA stream!");
+
+    return state.devices[stream->device].compute_capability;
+}
+
+void jitc_cuda_set_codegen(int ptx_version,
+                           int compute_capability) {
+    lock_guard guard(state.mutex);
+    jit_cuda_ptx_version = ptx_version;
+    jit_cuda_compute_capability = compute_capability;
+}
+
+
 void jitc_llvm_set_target(const char *target_cpu,
                           const char *target_features,
                           uint32_t vector_width) {

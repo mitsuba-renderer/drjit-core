@@ -252,6 +252,22 @@ extern JITC_EXPORT void* jitc_cuda_stream();
 /// Return the CUDA context of the currently active device
 extern JITC_EXPORT void* jitc_cuda_context();
 
+/// Query the compute capability of the current device (e.g. '52')
+extern JITC_EXPORT int jitc_cuda_compute_capability();
+
+/**
+ * \brief Override generated PTX version and compute capability
+ *
+ * Enoki-JIT generates code that runs on a wide variety of platforms supporting
+ * at least the PTX version and compute capability of 60, and 50, respectively.
+ * Those versions can both be bumped via this function---there is no
+ * performance advantage in doing so, though some more recent features (e.g.
+ * atomic operations involving double precision values) require specifying a
+ * newer compute capability.
+ */
+extern JITC_EXPORT void jitc_cuda_set_codegen(int ptx_version,
+                                              int compute_capability);
+
 /**
  * \brief Override the target CPU, features, and vector width of the LLVM backend
  *
