@@ -215,7 +215,7 @@ void jit_shutdown(int light) {
                 delete stream->release_chain;
             } else {
                 jit_free_flush();
-                pool_task_wait_and_release(stream->task);
+                task_wait_and_release(stream->task);
                 pool_destroy();
                 if (!stream->active_mask.empty())
                     jit_log(Warn, "jit_shutdown(): leaked %zu active masks!",
@@ -370,7 +370,7 @@ void jit_sync_stream(Stream *stream) {
         scoped_set_context guard(stream->context);
         cuda_check(cuStreamSynchronize(stream->handle));
     } else if (stream->parallel_dispatch) {
-        pool_task_wait_and_release(stream->task);
+        task_wait_and_release(stream->task);
         stream->task = nullptr;
     }
 }

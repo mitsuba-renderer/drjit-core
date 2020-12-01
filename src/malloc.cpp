@@ -275,6 +275,24 @@ void jit_free(void *ptr) {
     state.alloc_used.erase(it);
 }
 
+static void jit_free_chain(void *ptr) {
+    /* Acquire lock protecting stream->release_chain and
+       state.alloc_free */
+    lock_guard guard(state.malloc_mutex);
+    ReleaseChain *chain0 = (ReleaseChain *) ptr,
+                 *chain1 = chain0->next;
+
+    for (auto &kv : chain1->entries) {
+        const AllocInfo &ai = kv.first;
+        std::vector<void *> &target = state.alloc_free[ai];
+        target.insert(target.end(), kv.second.begin(),
+                      kv.second.end());
+    }
+
+    delete chain1;
+    chain0->next = nullptr;
+}
+
 void jit_free_flush() {
     Stream *stream = active_stream;
     if (unlikely(!stream))
@@ -300,50 +318,12 @@ void jit_free_flush() {
 
     if (stream->cuda) {
         scoped_set_context guard(stream->context);
-        cuda_check(cuLaunchHostFunc(
-            stream->handle,
-            [](void *ptr) -> void {
-                /* Acquire lock protecting stream->release_chain and
-                   state.alloc_free */
-                lock_guard guard(state.malloc_mutex);
-                ReleaseChain *chain0 = (ReleaseChain *) ptr,
-                             *chain1 = chain0->next;
-
-                for (auto &kv : chain1->entries) {
-                    const AllocInfo &ai = kv.first;
-                    std::vector<void *> &target = state.alloc_free[ai];
-                    target.insert(target.end(), kv.second.begin(),
-                                  kv.second.end());
-                }
-
-                delete chain1;
-                chain0->next = nullptr;
-            },
-            chain_new));
+        cuda_check(cuLaunchHostFunc(stream->handle, jit_free_chain, chain_new));
     } else if (stream->parallel_dispatch) {
-        Task *new_task = pool_task_submit(
-            nullptr, &stream->task, 1, 1,
-            [](size_t, void *ptr_) {
-                void *ptr = *((void **) ptr_);
-                /* Acquire lock protecting stream->release_chain and
-                   state.alloc_free */
-                lock_guard guard(state.malloc_mutex);
-                ReleaseChain *chain0 = (ReleaseChain *) ptr,
-                             *chain1 = chain0->next;
+        Task *new_task = enoki::do_async(
+            [chain_new]() { jit_free_chain(chain_new); }, { stream->task });
 
-                for (auto &kv : chain1->entries) {
-                    const AllocInfo &ai = kv.first;
-                    std::vector<void *> &target = state.alloc_free[ai];
-                    target.insert(target.end(), kv.second.begin(),
-                                  kv.second.end());
-                }
-
-                delete chain1;
-                chain0->next = nullptr;
-            }, &chain_new, sizeof(void *)
-        );
-
-        pool_task_release(stream->task);
+        task_release(stream->task);
         stream->task = new_task;
     }
 }

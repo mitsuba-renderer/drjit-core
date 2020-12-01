@@ -2,3 +2,6 @@
 	path = ext/robin_map
 	url = https://github.com/Tessil/robin-map
 
+[submodule "ext/enoki-thread"]
+	path = ext/enoki-thread
+	url = https://github.com/mitsuba-renderer/enoki-thread

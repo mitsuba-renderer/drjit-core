@@ -26,15 +26,15 @@ const char *reduction_name[(int) ReductionType::Count] = { "sum", "mul", "min",
 
 /// Helper function: enqueue a single CPU task (synchronous or asynchronous)
 template <typename Input>
-void jit_submit_cpu(Stream *stream, void (*func)(size_t, void *), Input &input,
-                     size_t size = 1, bool release_prev = true) {
+void jit_submit_cpu(Stream *stream, void (*func)(uint32_t, void *), Input &input,
+                    size_t size = 1, bool release_prev = true) {
     if (stream->parallel_dispatch) {
-        Task *new_task = pool_task_submit(
+        Task *new_task = task_submit_dep(
             nullptr, &stream->task, 1, size,
-            func, &input, sizeof(Input));
+            func, &input, sizeof(Input), nullptr, 1);
 
         if (release_prev)
-            pool_task_release(stream->task);
+            task_release(stream->task);
 
         stream->task = new_task;
     } else {
@@ -116,7 +116,7 @@ void jit_memset_async(void *ptr, uint32_t size_, uint32_t isize, const void *src
         input.isize = isize;
         memcpy(input.src, src, isize);
 
-        auto func = [](size_t, void *input_) {
+        auto func = [](uint32_t, void *input_) {
             Input input = *((Input *) input_);
             switch (input.isize) {
                 case 1:
@@ -194,7 +194,7 @@ void jit_memcpy_async(void *dst, const void *src, size_t size) {
 
         jit_submit_cpu(
             stream,
-            [](size_t, void *input_) {
+            [](uint32_t, void *input_) {
                 Input input = *((Input *) input_);
                 memcpy(input.dst, input.src, input.size);
             },
@@ -369,12 +369,12 @@ void jit_reduce(VarType type, ReductionType rtype, const void *ptr, uint32_t siz
 
         jit_submit_cpu(
             stream,
-            [](size_t index, void *input_) {
+            [](uint32_t index, void *input_) {
                 Input input = *(Input *) input_;
                 input.reduction(
                     input.source,
                     index * input.block_size,
-                    std::min(((uint32_t) index + 1) * input.block_size, input.size),
+                    std::min((index + 1) * input.block_size, input.size),
                     (uint8_t *) input.target + index * input.isize
                 );
             },
@@ -557,7 +557,7 @@ void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
 
             jit_submit_cpu(
                 stream,
-                [](size_t index, void *input_) {
+                [](uint32_t index, void *input_) {
                     Input input = *(Input *) input_;
                     uint32_t start = index * input.block_size,
                              end = std::min(start + input.block_size, input.size);
@@ -577,7 +577,7 @@ void jit_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
 
         jit_submit_cpu(
             stream,
-            [](size_t index, void *input_) {
+            [](uint32_t index, void *input_) {
                 Input input = *(Input *) input_;
                 uint32_t start = index * input.block_size,
                          end = std::min(start + input.block_size, input.size);
@@ -718,7 +718,7 @@ uint32_t jit_compress(const uint8_t *in, uint32_t size, uint32_t *out) {
 
             jit_submit_cpu(
                 stream,
-                [](size_t index, void *input_) {
+                [](uint32_t index, void *input_) {
                     Input input = *(Input *) input_;
                     uint32_t start = index * input.block_size,
                              end = std::min(start + input.block_size, input.size);
@@ -738,7 +738,7 @@ uint32_t jit_compress(const uint8_t *in, uint32_t size, uint32_t *out) {
 
         jit_submit_cpu(
             stream,
-            [](size_t index, void *input_) {
+            [](uint32_t index, void *input_) {
                 Input input = *(Input *) input_;
                 uint32_t start = index * input.block_size,
                          end = std::min(start + input.block_size, input.size);
@@ -999,7 +999,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
         // Phase 1
         jit_submit_cpu(
             stream,
-            [](size_t index, void *input_) {
+            [](uint32_t index, void *input_) {
                 ProfilerPhase profiler(profiler_region_mkperm_phase_1);
                 Input input = *(Input *) input_;
 
@@ -1020,7 +1020,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
         // Local accumulation step
         jit_submit_cpu(
             stream,
-            [](size_t, void *input_) {
+            [](uint32_t, void *input_) {
                 Input input = *(Input *) input_;
 
                 uint32_t sum = 0, unique_count = 0;
@@ -1053,7 +1053,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
         // Phase 2
         jit_submit_cpu(
             stream,
-            [](size_t index, void *input_) {
+            [](uint32_t index, void *input_) {
                 ProfilerPhase profiler(profiler_region_mkperm_phase_2);
                 Input input = *(Input *) input_;
 
@@ -1077,7 +1077,7 @@ uint32_t jit_mkperm(const uint32_t *ptr, uint32_t size, uint32_t bucket_count,
         jit_free(buckets);
 
         if (stream->parallel_dispatch)
-            pool_task_wait_and_release(local_task);
+            task_wait_and_release(local_task);
 
         return unique_count;
     }
@@ -1301,7 +1301,7 @@ void jit_block_copy(enum VarType type, const void *in, void *out, uint32_t size,
 
         jit_submit_cpu(
             stream,
-            [](size_t index, void *input_) {
+            [](uint32_t index, void *input_) {
                 Input input = *(Input *) input_;
                 uint32_t start = index * input.work_unit_size,
                          end = std::min(start + input.work_unit_size, input.size);
@@ -1375,7 +1375,7 @@ void jit_block_sum(enum VarType type, const void *in, void *out, uint32_t size,
 
         jit_submit_cpu(
             stream,
-            [](size_t index, void *input_) {
+            [](uint32_t index, void *input_) {
                 Input input = *(Input *) input_;
                 uint32_t start = index * input.work_unit_size,
                          end = std::min(start + input.work_unit_size, input.size);
@@ -1424,7 +1424,7 @@ void jit_poke(void *dst, const void *src, uint32_t size) {
 
         jit_submit_cpu(
             stream,
-            [](size_t, void *input_) {
+            [](uint32_t , void *input_) {
                 Input input = *(Input *) input_;
                 memcpy(input.dst, &input.src, input.size);
             },

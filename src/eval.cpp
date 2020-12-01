@@ -1086,7 +1086,7 @@ Task *jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
             (group.size + jit_llvm_vector_width - 1) / jit_llvm_vector_width;
 
         if (stream->parallel_dispatch) {
-            auto callback = [](size_t index, void *ptr) {
+            auto callback = [](uint32_t index, void *ptr) {
                 void **args = (void **) ptr;
                 LLVMKernelFunction kernel = (LLVMKernelFunction) args[0];
                 uint32_t size       = (uint32_t) (uintptr_t) args[1],
@@ -1122,11 +1122,12 @@ Task *jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
             jit_log(Trace, "jit_run(): scheduling %u packet%s in %u block%s ..", packets,
                     packets == 1 ? "" : "s", blocks, blocks == 1 ? "" : "s");
 
-            return pool_task_submit(
+            return task_submit_dep(
                 nullptr, &stream->task, 1, blocks,
                 callback,
                 kernel_args.data(),
-                kernel_args.size() * sizeof(void *)
+                kernel_args.size() * sizeof(void *),
+                nullptr, 1
             );
         } else {
             jit_log(Trace, "jit_run(): running kernel on %u packet%s ..", packets,
@@ -1271,11 +1272,11 @@ void jit_eval() {
         if (unlikely(scheduled_tasks.empty()))
             jit_fail("jit_eval(): no tasks generated!");
 
-        Task *new_task = pool_task_submit(nullptr, scheduled_tasks.data(),
-                                          scheduled_tasks.size());
-        pool_task_release(stream->task);
+        Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
+                                         scheduled_tasks.size());
+        task_release(stream->task);
         for (Task *t : scheduled_tasks)
-            pool_task_release(t);
+            task_release(t);
         stream->task = new_task;
     }
 

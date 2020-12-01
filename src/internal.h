@@ -18,7 +18,7 @@
 #include <deque>
 #include <string.h>
 #include <inttypes.h>
-#include <enoki-jit/thread.h>
+#include <enoki-thread/thread.h>
 
 static constexpr LogLevel Disable = LogLevel::Disable;
 static constexpr LogLevel Error   = LogLevel::Error;
