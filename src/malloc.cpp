@@ -73,7 +73,7 @@ void* jit_malloc(AllocType type, size_t size) {
     if (type == AllocType::HostAsync && stream && !stream->parallel_dispatch)
         type = AllocType::Host;
 
-    /* Acquire lock protecting stream->release_chain and state.alloc_free */ {
+    /* Acquire lock protecting stream->release_chain contents and state.alloc_free */ {
         lock_guard guard(state.malloc_mutex);
 
         if (type == AllocType::Device || type == AllocType::HostAsync) {
@@ -244,7 +244,7 @@ void jit_free(void *ptr) {
         Stream *stream = active_stream;
         bool cuda = (AllocType) ai.type != AllocType::HostAsync;
         if (likely(stream && cuda == stream->cuda)) {
-            /* Acquire lock protecting 'stream->release_chain' */ {
+            /* Acquire lock protecting 'stream->release_chain' contents */ {
                 lock_guard guard(state.malloc_mutex);
                 ReleaseChain *chain = stream->release_chain;
                 if (unlikely(!chain))
@@ -276,7 +276,7 @@ void jit_free(void *ptr) {
 }
 
 static void jit_free_chain(void *ptr) {
-    /* Acquire lock protecting stream->release_chain and
+    /* Acquire lock protecting stream->release_chain contents and
        state.alloc_free */
     lock_guard guard(state.malloc_mutex);
     ReleaseChain *chain0 = (ReleaseChain *) ptr,
@@ -320,9 +320,9 @@ void jit_free_flush() {
         scoped_set_context guard(stream->context);
         cuda_check(cuLaunchHostFunc(stream->handle, jit_free_chain, chain_new));
     } else if (stream->parallel_dispatch) {
-        Task *new_task = enoki::do_async(
-            [chain_new]() { jit_free_chain(chain_new); }, { stream->task });
-
+        Task *new_task = task_submit_dep(
+            nullptr, &stream->task, 1, 1,
+            [](uint32_t, void *ptr) { jit_free_chain(ptr); }, chain_new);
         task_release(stream->task);
         stream->task = new_task;
     }

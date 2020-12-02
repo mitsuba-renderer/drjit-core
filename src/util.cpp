@@ -31,7 +31,7 @@ void jit_submit_cpu(Stream *stream, void (*func)(uint32_t, void *), Input &input
     if (stream->parallel_dispatch) {
         Task *new_task = task_submit_dep(
             nullptr, &stream->task, 1, size,
-            func, &input, sizeof(Input), nullptr, 1);
+            func, &input, sizeof(Input), nullptr);
 
         if (release_prev)
             task_release(stream->task);

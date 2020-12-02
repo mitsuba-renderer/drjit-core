@@ -1127,7 +1127,7 @@ Task *jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
                 callback,
                 kernel_args.data(),
                 kernel_args.size() * sizeof(void *),
-                nullptr, 1
+                nullptr
             );
         } else {
             jit_log(Trace, "jit_run(): running kernel on %u packet%s ..", packets,
@@ -1271,13 +1271,17 @@ void jit_eval() {
     } else if (!stream->cuda && stream->parallel_dispatch) {
         if (unlikely(scheduled_tasks.empty()))
             jit_fail("jit_eval(): no tasks generated!");
-
-        Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
-                                         scheduled_tasks.size());
-        task_release(stream->task);
-        for (Task *t : scheduled_tasks)
-            task_release(t);
-        stream->task = new_task;
+        if (scheduled_tasks.size() == 1) {
+            task_release(stream->task);
+            stream->task = scheduled_tasks[0];
+        } else {
+            Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
+                                             scheduled_tasks.size());
+            task_release(stream->task);
+            for (Task *t : scheduled_tasks)
+                task_release(t);
+            stream->task = new_task;
+        }
     }
 
     /* At this point, all variables and their dependencies are computed, which
