@@ -299,9 +299,7 @@ jit_eval(): done.
 jit_eval(): launching 1 kernel.
   -> launching <@> (n=22316878, in=0, out=2, ops=2):
 jit_eval(): done.
-jit_shutdown(): releasing 2 streams ..
-jit_set_device(device=0, stream=0): selecting stream
-jit_set_device(device=-1, stream=0): selecting stream
+jit_shutdown(): releasing 1 stream ..
 jit_free_flush(): scheduling 3 deallocations
 jit_shutdown(): releasing 2 kernels ..
 jit_malloc_trim(): freed
