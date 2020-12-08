@@ -329,6 +329,9 @@ void jit_free_flush() {
 }
 
 void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
+    if (ptr == nullptr)
+        return nullptr;
+
     Stream *stream = active_stream;
     if (unlikely(!stream))
         jit_raise("jit_malloc_migrate(): you must invoke jitc_set_device() to "
