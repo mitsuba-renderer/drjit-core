@@ -68,25 +68,14 @@ void* jit_malloc(AllocType type, size_t size) {
 
     const char *descr = nullptr;
     void *ptr = nullptr;
-    Stream *stream = active_stream;
+    bool cuda = type != AllocType::Host && type != AllocType::HostAsync;
+    ThreadState *ts = thread_state(cuda);
 
-    if (type == AllocType::HostAsync && stream && !stream->parallel_dispatch)
-        type = AllocType::Host;
-
-    /* Acquire lock protecting stream->release_chain contents and state.alloc_free */ {
+    /* Acquire lock protecting ts->release_chain contents and state.alloc_free */ {
         lock_guard guard(state.malloc_mutex);
 
-        if (type == AllocType::Device || type == AllocType::HostAsync) {
-            if (unlikely(!stream))
-                jit_raise(
-                    "jit_malloc(): you must specify an active device using "
-                    "jit_set_device() before allocating a device/host-async memory!");
-            else if (unlikely(!stream->cuda == (type == AllocType::Device)))
-                jit_raise("jit_malloc(): you must specify the right backend "
-                          "via jit_set_device() before allocating a "
-                          "device/host-async memory!");
-            ai.device = stream->cuda ? stream->device : 0;
-        }
+        if (type == AllocType::Device)
+            ai.device = ts->device;
 
         if (type == AllocType::Device || type == AllocType::HostAsync) {
             /* Check for arrays with a pending free operation on the current
@@ -94,7 +83,7 @@ void* jit_malloc(AllocType type, size_t size) {
                allocation flavors (host-pinned, shared, shared-read-mostly) can be
                accessed from both CPU & GPU and might still be used. */
 
-            ReleaseChain *chain = stream->release_chain;
+            ReleaseChain *chain = ts->release_chain;
             while (chain) {
                 auto it = chain->entries.find(ai);
                 if (it != chain->entries.end()) {
@@ -154,7 +143,7 @@ void* jit_malloc(AllocType type, size_t size) {
             if (rv != 0)
                 ptr = nullptr;
         } else {
-            scoped_set_context guard(stream->context);
+            scoped_set_context guard(ts->context);
             CUresult (*alloc) (CUdeviceptr *, size_t) = nullptr;
 
             auto cuMemAllocManaged_ = [](CUdeviceptr *ptr_, size_t size_) {
@@ -241,14 +230,15 @@ void jit_free(void *ptr) {
         lock_guard guard(state.malloc_mutex);
         state.alloc_free[ai].push_back(ptr);
     } else {
-        Stream *stream = active_stream;
-        bool cuda = (AllocType) ai.type != AllocType::HostAsync;
-        if (likely(stream && cuda == stream->cuda)) {
-            /* Acquire lock protecting 'stream->release_chain' contents */ {
+        ThreadState *ts = (AllocType) ai.type == AllocType::HostAsync
+                              ? thread_state_llvm
+                              : thread_state_cuda;
+        if (likely(ts)) {
+            /* Acquire lock protecting 'ts->release_chain' contents */ {
                 lock_guard guard(state.malloc_mutex);
-                ReleaseChain *chain = stream->release_chain;
+                ReleaseChain *chain = ts->release_chain;
                 if (unlikely(!chain))
-                    chain = stream->release_chain = new ReleaseChain();
+                    chain = ts->release_chain = new ReleaseChain();
                 chain->entries[ai].push_back(ptr);
             }
         } else {
@@ -276,7 +266,7 @@ void jit_free(void *ptr) {
 }
 
 static void jit_free_chain(void *ptr) {
-    /* Acquire lock protecting stream->release_chain contents and
+    /* Acquire lock protecting ts->release_chain contents and
        state.alloc_free */
     lock_guard guard(state.malloc_mutex);
     ReleaseChain *chain0 = (ReleaseChain *) ptr,
@@ -293,12 +283,11 @@ static void jit_free_chain(void *ptr) {
     chain0->next = nullptr;
 }
 
-void jit_free_flush() {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
+void jit_free_flush(ThreadState *ts) {
+    if (unlikely(!ts))
         return;
 
-    ReleaseChain *chain = stream->release_chain;
+    ReleaseChain *chain = ts->release_chain;
     if (chain == nullptr || chain->entries.empty())
         return;
 
@@ -311,32 +300,26 @@ void jit_free_flush() {
 
     ReleaseChain *chain_new = new ReleaseChain();
     chain_new->next = chain;
-    stream->release_chain = chain_new;
+    ts->release_chain = chain_new;
 
     jit_trace("jit_free_flush(): scheduling %zu deallocation%s",
               n_dealloc, n_dealloc > 1 ? "s" : "");
 
-    if (stream->cuda) {
-        scoped_set_context guard(stream->context);
-        cuda_check(cuLaunchHostFunc(stream->handle, jit_free_chain, chain_new));
-    } else if (stream->parallel_dispatch) {
+    if (ts->cuda) {
+        scoped_set_context guard(ts->context);
+        cuda_check(cuLaunchHostFunc(ts->stream, jit_free_chain, chain_new));
+    } else {
         Task *new_task = task_submit_dep(
-            nullptr, &stream->task, 1, 1,
+            nullptr, &ts->task, 1, 1,
             [](uint32_t, void *ptr) { jit_free_chain(ptr); }, chain_new);
-        task_release(stream->task);
-        stream->task = new_task;
+        task_release(ts->task);
+        ts->task = new_task;
     }
 }
 
 void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
     if (ptr == nullptr)
         return nullptr;
-
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_malloc_migrate(): you must invoke jitc_set_device() to "
-                  "choose a target device before evaluating expressions using "
-                  "the JIT compiler.");
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
@@ -345,27 +328,24 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
     AllocInfo ai = it.value();
 
     if (((AllocType) ai.type == AllocType::Host && type == AllocType::HostAsync) ||
-        ((AllocType) ai.type == AllocType::HostAsync && type == AllocType::Host)) {
+        ((AllocType) ai.type == AllocType::HostAsync && type == AllocType::Host) ||
+         (AllocType) ai.type == type) {
         if (move) {
             it.value().type = (uint32_t) type;
             return ptr;
         }
     }
 
-    // Maybe nothing needs to be done..
-    if ((AllocType) ai.type == type && (type != AllocType::Device || ai.device == stream->device))
-        return ptr;
-
-    /// At this point, source or destination is a GPU array, so let's check for CUDA
-    if (!stream->cuda)
-        jit_raise(
-            "jit_malloc_migrate(): you must specify an active CUDA device "
-            "using jit_set_device() before invoking this function with a "
-            "device/managed/host-pinned pointer!");
-
     if (type == AllocType::HostAsync || (AllocType) ai.type == AllocType::HostAsync)
         jit_raise("jit_malloc_migrate(): migrations between CUDA and "
                   "host-asynchronous memory are not supported.");
+
+    /// At this point, source or destination is a GPU array, get assoc. state
+    ThreadState *ts = thread_state(true);
+
+    // Maybe nothing needs to be done..
+    if ((AllocType) ai.type == type && (type != AllocType::Device || ai.device == ts->device))
+        return ptr;
 
     if (type == AllocType::Host) // Upgrade from host to host-pinned memory
         type = AllocType::HostPinned;
@@ -375,19 +355,19 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
               (uintptr_t) ptr, (uintptr_t) ptr_new,
               alloc_type_name[ai.type], alloc_type_name[(int) type]);
 
-    scoped_set_context guard(stream->context);
+    scoped_set_context guard(ts->context);
     if ((AllocType) ai.type == AllocType::Host) {
-        /// Host -> Device memory, create an intermediate host-pinned array
+        // Host -> Device memory, create an intermediate host-pinned array
         void *tmp = jit_malloc(AllocType::HostPinned, ai.size);
         memcpy(tmp, ptr, ai.size);
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
                                  (CUdeviceptr) ptr, ai.size,
-                                 stream->handle));
+                                 ts->stream));
         jit_free(tmp);
     } else {
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
                                  (CUdeviceptr) ptr, ai.size,
-                                 stream->handle));
+                                 ts->stream));
 
     }
 
@@ -399,12 +379,6 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
 
 /// Asynchronously prefetch a memory region
 void jit_malloc_prefetch(void *ptr, int device) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream || !stream->cuda))
-        jit_raise(
-            "jit_malloc_prefetch(): you must specify an active CUDA device "
-            "using jit_set_device() before invoking this function!");
-
     if (device == -1) {
         device = CU_DEVICE_CPU;
     } else {
@@ -425,14 +399,15 @@ void jit_malloc_prefetch(void *ptr, int device) {
         jit_raise("jit_malloc_prefetch(): invalid memory type, expected "
                   "Managed or ManagedReadMostly.");
 
-    scoped_set_context guard(stream->context);
+    ThreadState *ts = thread_state(true);
+    scoped_set_context guard(ts->context);
     if (device == -2) {
         for (const Device &d : state.devices)
             cuda_check(cuMemPrefetchAsync((CUdeviceptr) ptr, ai.size, d.id,
-                                          stream->handle));
+                                          ts->stream));
     } else {
         cuda_check(cuMemPrefetchAsync((CUdeviceptr) ptr, ai.size, device,
-                                      stream->handle));
+                                      ts->stream));
     }
 }
 

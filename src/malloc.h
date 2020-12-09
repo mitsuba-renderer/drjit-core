@@ -47,6 +47,7 @@ struct AllocInfoHasher {
 
 using AllocInfoMap = tsl::robin_map<AllocInfo, std::vector<void *>, AllocInfoHasher>;
 using AllocUsedMap = tsl::robin_pg_map<const void *, AllocInfo>;
+struct ThreadState;
 
 /// Round to the next power of two
 extern size_t round_pow2(size_t x);
@@ -63,7 +64,7 @@ extern void *jit_malloc(AllocType type, size_t size) JITC_MALLOC;
 extern void jit_free(void *ptr);
 
 /// Schedule a function that will reclaim memory from pending jit_free()s
-extern void jit_free_flush();
+extern void jit_free_flush(ThreadState *ts);
 
 /// Change the flavor of an allocated memory region
 extern void* jit_malloc_migrate(void *ptr, AllocType type, int move);

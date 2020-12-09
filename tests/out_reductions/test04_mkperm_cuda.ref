@@ -1,4 +1,3 @@
-jit_set_device(device=0, stream=0): creating stream
 ===== size=1, buckets=1 =====
 ===== size=24, buckets=1 =====
 ===== size=24, buckets=24 =====
@@ -464,7 +463,7 @@ jit_set_device(device=0, stream=0): creating stream
 ===== size=560948, buckets=452710 =====
 ===== size=560948, buckets=504897 =====
 ===== size=560948, buckets=560948 =====
-jit_shutdown(): releasing 1 stream ..
+jit_shutdown(): releasing 2 thread states ..
 jit_free_flush(): scheduling 1466 deallocations
 jit_malloc_trim(): freed
  - host memory: 8 MiB in 14 allocations

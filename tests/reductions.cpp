@@ -46,7 +46,7 @@ TEST_BOTH(02_scan) {
             ref    = arange<UInt32>(size);
         }
         jitc_eval(result, ref);
-        jitc_scan_u32(result.data(), size, result.data());
+        jitc_scan_u32(Float::IsCUDA, result.data(), size, result.data());
         jitc_assert(result == ref);
     }
 }
@@ -80,7 +80,7 @@ TEST_BOTH(03_compress) {
             data = (uint8_t *) jitc_malloc_migrate(
                 data, Float::IsCUDA ? AllocType::Device : AllocType::Host);
 
-            uint32_t count = jitc_compress(data, size, perm);
+            uint32_t count = jitc_compress(Float::IsCUDA, data, size, perm);
             perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
             jitc_sync_stream();
 
@@ -119,7 +119,7 @@ TEST_BOTH(04_mkperm) {
             }
 
             data = (uint32_t *) jitc_malloc_migrate(data, Float::IsCUDA ? AllocType::Device : AllocType::Host);
-            uint32_t num_unique = jitc_mkperm(data, size, n_buckets, perm, offsets);
+            uint32_t num_unique = jitc_mkperm(Float::IsCUDA, data, size, n_buckets, perm, offsets);
 
             perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
             jitc_sync_stream();

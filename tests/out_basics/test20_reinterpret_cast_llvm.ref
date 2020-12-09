@@ -1,4 +1,3 @@
-jit_set_device(device=-1, stream=0): creating stream
 jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map_mem(1): <@>, size=3, free=1
 jit_var_inc_ref_ext(1): 1
@@ -133,7 +132,7 @@ jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_free(<@>, type=host-async, size=64)
-jit_shutdown(): releasing 1 stream ..
+jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 2 deallocations
 jit_shutdown(): releasing 2 kernels ..
 jit_malloc_trim(): freed

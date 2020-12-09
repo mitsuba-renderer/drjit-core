@@ -1,4 +1,3 @@
-jit_set_device(device=-1, stream=0): creating stream
 jit_var_new_literal(1): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z
 jit_var_inc_ref_ext(1): 1
 jit_var_new_literal(1): $r0_0 = insertelement <$w x $t0> undef, $t0 1, i32 0$n$r0 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x i32> $z (reused)
@@ -256,7 +255,7 @@ jit_eval(): done.
 jit_var_dec_ref_ext(7): 0
 jit_var_free(7)
 jit_free(<@>, type=host-async, size=64)
-jit_shutdown(): releasing 1 stream ..
+jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 1 deallocation
 jit_shutdown(): releasing 4 kernels ..
 jit_malloc_trim(): freed

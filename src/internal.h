@@ -94,25 +94,16 @@ struct ReleaseChain {
     ReleaseChain *next = nullptr;
 };
 
-/// Represents a single stream of a parallel comunication
-struct Stream {
-    /// Is this a CUDA stream?
+/// Represents a single stream of a parallel communication
+struct ThreadState {
+    /// Does this ThreadState instance refer to a CUDA device?
     bool cuda = false;
-
-    /// Parallelize work queued up in this stream?
-    bool parallel_dispatch = true;
 
     /// Should the CSE cache be used?
     bool enable_cse = true;
 
     /// Is kernel evaluation currently permitted?
     bool eval_enabled = true;
-
-    /// Enoki device index associated with this stream (*not* the CUDA device ID)
-    int device = 0;
-
-    /// Index of this stream
-    uint32_t stream = 0;
 
     /// How many statements with side effects were executed so far?
     uint32_t side_effect_counter = 0;
@@ -145,10 +136,26 @@ struct Stream {
     CUcontext context = nullptr;
 
     /// Associated CUDA stream handle
-    CUstream handle = nullptr;
+    CUstream stream = nullptr;
 
     /// A CUDA event for synchronization purposes
     CUevent event = nullptr;
+
+    /**
+     * \brief Enoki device ID associated with this device
+     *
+     * This value may differ from the CUDA device ID if the machine contains
+     * CUDA devices that are incompatible with Enoki.
+     *
+     * Set to -1 for LLVM ThreadState instances.
+     */
+    int device = 0;
+
+    /// Targeted compute compatibility
+    uint32_t compute_capability = 50;
+
+    /// Targeted PTX version (major * 10 + minor)
+    uint32_t ptx_version = 60;
 };
 
 enum ArgType {
@@ -304,7 +311,7 @@ struct KernelHash {
 
     static size_t compute_hash(size_t kernel_hash, int device) {
         size_t hash = kernel_hash;
-        hash_combine(hash, size_t(device) + 1);
+        hash_combine(hash, size_t(device + 1));
         return hash;
     }
 };
@@ -369,9 +376,6 @@ using AttributeMap = tsl::robin_map<AttributeKey, AttributeValue, AttributeKeyHa
                                     std::allocator<std::pair<AttributeKey, AttributeValue>>,
                                     /* StoreHash = */ true>;
 
-// Maps (device ID, stream ID) to a Stream instance
-using StreamMap = tsl::robin_map<std::pair<uint32_t, uint32_t>, Stream *, pair_hash>;
-
 struct Extra {
     /// Optional descriptive label
     char *label = nullptr;
@@ -419,8 +423,8 @@ struct State {
     /// Available devices and their CUDA IDs
     std::vector<Device> devices;
 
-    /// Maps Enoki (device index, stream index) pairs to a Stream data structure
-    StreamMap streams;
+    /// Maps Enoki (device index, stream index) pairs to a ThreadState data structure
+    std::vector<ThreadState *> tss;
 
     /// Two-way mapping that can be used to associate pointers with unique 32 bit IDs
     RegistryFwdMap registry_fwd;
@@ -561,12 +565,23 @@ private:
     char *m_start, *m_cur, *m_end;
 };
 
-/// Global state record shared by all threads
+/// State specific to threads
 #if defined(_MSC_VER)
-  extern __declspec(thread) Stream* active_stream;
+  extern __declspec(thread) ThreadState* thread_state_llvm;
+  extern __declspec(thread) ThreadState* thread_state_cuda;
 #else
-  extern __thread Stream* active_stream;
+  extern __thread ThreadState* thread_state_llvm;
+  extern __thread ThreadState* thread_state_cuda;
 #endif
+
+extern ThreadState *jit_init_thread_state(bool cuda);
+
+inline ThreadState *thread_state(bool cuda) {
+    ThreadState *result = cuda ? thread_state_cuda : thread_state_llvm;
+    if (unlikely(!result))
+        result = jit_init_thread_state(cuda);
+    return result;
+}
 
 extern State state;
 extern Buffer buffer;
@@ -578,19 +593,19 @@ extern Buffer buffer;
 #endif
 
 /// Initialize core data structures of the JIT compiler
-extern void jit_init(int llvm, int cuda, Stream **stream);
+extern void jit_init(int llvm, int cuda);
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 extern void jit_shutdown(int light);
 
 /// Set the currently active device & stream
-extern void jit_set_device(int32_t device, uint32_t stream);
+extern void jit_cuda_set_device(int device);
 
 /// Wait for all computation on the current stream to finish
 extern void jit_sync_stream();
 
 /// Wait for all computation on the current stream to finish
-extern void jit_sync_stream(Stream *stream);
+extern void jit_sync_stream(ThreadState *stream);
 
 /// Wait for all computation on the current device to finish
 extern void jit_sync_device();

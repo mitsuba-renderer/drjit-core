@@ -18,60 +18,60 @@ struct Variable;
 extern Variable *jit_var(uint32_t index);
 
 /// Append a variable to the instruction trace (no operand)
-extern uint32_t jit_var_new_0(VarType type,
+extern uint32_t jit_var_new_0(int cuda,
+                              VarType type,
                               const char *stmt,
                               int stmt_static,
-                              int cuda,
                               uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
-extern uint32_t jit_var_new_1(VarType type,
+extern uint32_t jit_var_new_1(int cuda,
+                              VarType type,
                               const char *stmt,
                               int stmt_static,
-                              int cuda,
                               uint32_t op1);
 
 /// Append a variable to the instruction trace (2 operands)
-extern uint32_t jit_var_new_2(VarType type,
+extern uint32_t jit_var_new_2(int cuda,
+                              VarType type,
                               const char *stmt,
                               int stmt_static,
-                              int cuda,
                               uint32_t op1,
                               uint32_t op2);
 
 /// Append a variable to the instruction trace (3 operands)
-extern uint32_t jit_var_new_3(VarType type,
+extern uint32_t jit_var_new_3(int cuda,
+                              VarType type,
                               const char *stmt,
                               int stmt_static,
-                              int cuda,
                               uint32_t op1,
                               uint32_t op2,
                               uint32_t op3);
 
 /// Append a variable to the instruction trace (4 operands)
-extern uint32_t jit_var_new_4(VarType type,
+extern uint32_t jit_var_new_4(int cuda,
+                              VarType type,
                               const char *stmt,
                               int stmt_static,
-                              int cuda,
                               uint32_t op1,
                               uint32_t op2,
                               uint32_t op3,
                               uint32_t op4);
 
 /// Append a new variable storing 'size' entries of a literal constant
-extern uint32_t jit_var_new_literal(VarType type, int cuda,
+extern uint32_t jit_var_new_literal(int cuda, VarType type,
                                     uint64_t value, uint32_t size,
                                     int eval);
 
 /// Register an existing variable with the JIT compiler
-extern uint32_t jit_var_map_mem(VarType type, int cuda, void *ptr, uint32_t size,
+extern uint32_t jit_var_map_mem(int cuda, VarType type, void *ptr, uint32_t size,
                                 int free);
 
 /// Register pointer literal as a special variable within the JIT compiler
-extern uint32_t jit_var_copy_ptr(const void *ptr, uint32_t index);
+extern uint32_t jit_var_copy_ptr(int cuda, const void *ptr, uint32_t index);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jit_var_copy_mem(AllocType atype, VarType vtype, int cuda,
+extern uint32_t jit_var_copy_mem(int cuda, AllocType atype, VarType vtype,
                                  const void *ptr, uint32_t size);
 
 /// Duplicate a variable

@@ -479,7 +479,7 @@ void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v) {
     }
 }
 
-void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
+void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_total) {
     auto get_parameter_addr = [](const Variable *v, bool load, uint32_t target = 0) {
         if (unlikely(!eval_normal))
             buffer.fmt("    ld.param.%s %s%u, [in+%u];\n",
@@ -497,8 +497,6 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
                        var_type_size[v->type], target, target);
     };
 
-    const Device &device = state.devices[active_stream->device];
-
     /* Special registers:
 
          %r0   :  Index
@@ -514,12 +512,12 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     */
 
     if (likely(eval_normal)) {
-        buffer.fmt(".version %i.%i\n"
-                   ".target sm_%i\n"
+        buffer.fmt(".version %i.%u\n"
+                   ".target sm_%u\n"
                    ".address_size 64\n\n",
-                   jit_cuda_ptx_version / 10,
-                   jit_cuda_ptx_version % 10,
-                   jit_cuda_compute_capability);
+                   ts->ptx_version / 10,
+                   ts->ptx_version % 10,
+                   ts->compute_capability);
     }
 
     uint32_t group_index = group.start;
@@ -553,7 +551,8 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
     );
 
     if (likely(eval_normal)) {
-        buffer.put("    // Grid-stride loop setup\n");
+        buffer.fmt("    // Grid-stride loop, sm_%u\n",
+                   state.devices[ts->device].compute_capability);
 
         buffer.put("    mov.u32 %r0, %ctaid.x;\n");
         buffer.put("    mov.u32 %r1, %ntid.x;\n");
@@ -569,8 +568,7 @@ void jit_assemble_cuda(ScheduledGroup group, uint32_t n_regs_total) {
             buffer.fmt("    ld.param.u64 %%rd2, [arg%u];\n",
                        CUDA_MAX_KERNEL_PARAMETERS - 2);
 
-        buffer.fmt("\nL1: // Loop body (compute capability %i)\n",
-                   device.compute_capability);
+        buffer.put("\nL1: // Loop body\n");
     }
 
     bool log_trace = std::max(state.log_level_stderr,
@@ -805,8 +803,8 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
     buffer.put(" }");
 }
 
-void jit_assemble(Stream *stream, ScheduledGroup group) {
-    bool cuda = stream->cuda;
+void jit_assemble(ThreadState *ts, ScheduledGroup group) {
+    bool cuda = ts->cuda;
 
     uint32_t n_args_in    = 1 /* size */,
              n_args_out   = 0,
@@ -820,12 +818,13 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
     kernel_args_extra.clear();
     kernel_args.clear();
 
-    if (stream->cuda) {
+    if (cuda) {
         /// Push the size argument
         void *tmp = 0;
         memcpy(&tmp, &group.size, sizeof(uint32_t));
         kernel_args.push_back(tmp);
     } else {
+        // Temporary scratch space to store # of elements
         kernel_args.push_back(nullptr);
         kernel_args.push_back(nullptr);
         kernel_args.push_back(nullptr);
@@ -882,14 +881,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
             if (cuda && isize < 4)
                 isize += 4 - isize;
 
-            AllocType alloc_type = AllocType::Device;
-            if (!cuda) {
-                if (stream->parallel_dispatch)
-                    alloc_type = AllocType::HostAsync;
-                else
-                    alloc_type = AllocType::Host;
-            }
-
+            AllocType alloc_type = cuda ? AllocType::Device : AllocType::HostAsync;
             void *data = jit_malloc(alloc_type, var_size);
 
             // jit_malloc() may temporarily release the lock, variable pointer might have changed
@@ -939,7 +931,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
         memcpy(args_extra_host, kernel_args_extra.data(), args_extra_size);
         cuda_check(cuMemcpyAsync((CUdeviceptr) args_extra_dev,
                                  (CUdeviceptr) args_extra_host,
-                                 args_extra_size, stream->handle));
+                                 args_extra_size, ts->stream));
 
         kernel_args.push_back(args_extra_dev);
         jit_free(args_extra_host);
@@ -955,7 +947,7 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
     eval_normal = true;
 
     if (cuda)
-        jit_assemble_cuda(group, n_regs_total);
+        jit_assemble_cuda(ts, group, n_regs_total);
     else
         jit_assemble_llvm(group);
 
@@ -976,28 +968,28 @@ void jit_assemble(Stream *stream, ScheduledGroup group) {
     jit_log(Debug, "%s", buffer.get());
 }
 
-Task *jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
-    KernelKey kernel_key((char *) buffer.get(), stream->device);
-    size_t hash_code = KernelHash::compute_hash(kernel_hash, stream->device);
-    auto it = state.kernel_cache.find(kernel_key, hash_code);
+Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
+    KernelKey kernel_key((char *) buffer.get(), ts->device);
+    auto it = state.kernel_cache.find(
+        kernel_key, KernelHash::compute_hash(kernel_hash, ts->device));
     Kernel kernel;
 
     if (it == state.kernel_cache.end()) {
         bool cache_hit = jit_kernel_load(
-            buffer.get(), (uint32_t) buffer.size(), stream->cuda, kernel_hash, kernel);
+            buffer.get(), (uint32_t) buffer.size(), ts->cuda, kernel_hash, kernel);
 
         if (!cache_hit) {
-            if (stream->cuda)
+            if (ts->cuda)
                 jit_cuda_compile(buffer.get(), buffer.size(), kernel);
             else
                 jit_llvm_compile(buffer.get(), buffer.size(), kernel,
                                  jit_llvm_supplement);
 
-            jit_kernel_write(buffer.get(), (uint32_t) buffer.size(), stream->cuda,
+            jit_kernel_write(buffer.get(), (uint32_t) buffer.size(), ts->cuda,
                              kernel_hash, kernel);
         }
 
-        if (!stream->cuda) {
+        if (!ts->cuda) {
             jit_llvm_disasm(kernel);
         } else {
             CUresult ret;
@@ -1058,7 +1050,7 @@ Task *jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
     }
     state.kernel_launches++;
 
-    if (stream->cuda) {
+    if (ts->cuda) {
         size_t kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
 
         void *config[] = {
@@ -1070,7 +1062,7 @@ Task *jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
         };
 
         uint32_t block_count, thread_count;
-        const Device &device = state.devices[stream->device];
+        const Device &device = state.devices[ts->device];
         device.get_launch_config(&block_count, &thread_count, group.size,
                                  (uint32_t) kernel.cuda.block_size);
 
@@ -1080,57 +1072,49 @@ Task *jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
         uint32_t packets =
             (group.size + jit_llvm_vector_width - 1) / jit_llvm_vector_width;
 
-        if (stream->parallel_dispatch) {
-            auto callback = [](uint32_t index, void *ptr) {
-                void **args = (void **) ptr;
-                LLVMKernelFunction kernel = (LLVMKernelFunction) args[0];
-                uint32_t size       = (uint32_t) (uintptr_t) args[1],
-                         block_size = (uint32_t) ((uintptr_t) args[1] >> 32),
-                         start      = index * block_size,
-                         end        = std::min(start + block_size, size);
+        auto callback = [](uint32_t index, void *ptr) {
+            void **args = (void **) ptr;
+            LLVMKernelFunction kernel = (LLVMKernelFunction) args[0];
+            uint32_t size       = (uint32_t) (uintptr_t) args[1],
+                     block_size = (uint32_t) ((uintptr_t) args[1] >> 32),
+                     start      = index * block_size,
+                     end        = std::min(start + block_size, size);
 
 #if defined(ENOKI_ENABLE_ITTNOTIFY)
-                // Signal start of kernel
-                __itt_task_begin(enoki_domain, __itt_null, __itt_null,
-                                 (__itt_string_handle *) args[2]);
+            // Signal start of kernel
+            __itt_task_begin(enoki_domain, __itt_null, __itt_null,
+                             (__itt_string_handle *) args[2]);
 #endif
 
-                // Perform the main computation
-                kernel(start, end, args + 3);
+            // Perform the main computation
+            kernel(start, end, args + 3);
 
 #if defined(ENOKI_ENABLE_ITTNOTIFY)
-                // Signal termination of kernel
-                __itt_task_end(enoki_domain);
+            // Signal termination of kernel
+            __itt_task_end(enoki_domain);
 #endif
-            };
+        };
 
-            uint32_t block_size = ENOKI_POOL_BLOCK_SIZE,
-                     blocks = (group.size + block_size - 1) / block_size;
+        uint32_t block_size = ENOKI_POOL_BLOCK_SIZE,
+                 blocks = (group.size + block_size - 1) / block_size;
 
-            kernel_args[0] = (void *) kernel.llvm.func;
-            kernel_args[1] = (void *) ((((uintptr_t) block_size) << 32) + (uintptr_t) group.size);
+        kernel_args[0] = (void *) kernel.llvm.func;
+        kernel_args[1] = (void *) ((((uintptr_t) block_size) << 32) + (uintptr_t) group.size);
 
 #if defined(ENOKI_ENABLE_ITTNOTIFY)
-            kernel_args[2] = kernel.llvm.itt;
+        kernel_args[2] = kernel.llvm.itt;
 #endif
 
-            jit_log(Trace, "jit_run(): scheduling %u packet%s in %u block%s ..", packets,
-                    packets == 1 ? "" : "s", blocks, blocks == 1 ? "" : "s");
+        jit_log(Trace, "jit_run(): scheduling %u packet%s in %u block%s ..", packets,
+                packets == 1 ? "" : "s", blocks, blocks == 1 ? "" : "s");
 
-            return task_submit_dep(
-                nullptr, &stream->task, 1, blocks,
-                callback,
-                kernel_args.data(),
-                kernel_args.size() * sizeof(void *),
-                nullptr
-            );
-        } else {
-            jit_log(Trace, "jit_run(): running kernel on %u packet%s ..", packets,
-                    packets == 1 ? "" : "s");
-
-            unlock_guard guard(state.mutex);
-            kernel.llvm.func(0, group.size, kernel_args.data() + 3);
-        }
+        return task_submit_dep(
+            nullptr, &ts->task, 1, blocks,
+            callback,
+            kernel_args.data(),
+            kernel_args.size() * sizeof(void *),
+            nullptr
+        );
     }
 
     return nullptr;
@@ -1138,8 +1122,25 @@ Task *jit_run(Stream *stream, CUstream cu_stream, ScheduledGroup group) {
 
 static ProfilerRegion profiler_region_eval("jit_eval");
 
-/// Evaluate all computation that is queued on the current device & stream
+/// Evaluate all queued computation
 void jit_eval() {
+    jit_eval_ts(thread_state_cuda);
+    jit_eval_ts(thread_state_llvm);
+}
+
+/// Evaluate all computation that is queued on the given ThreadState
+void jit_eval_ts(ThreadState *ts) {
+    if (!ts || ts->todo.empty())
+        return;
+
+    if (unlikely(!ts->eval_enabled))
+        jit_raise(
+            "jit_eval(): Enoki is currently either recording arithmetic into a "
+            "string IR representation, or it is executing a loop symbolically. "
+            "In such cases, you are not allowed to run operations that trigger "
+            "a kernel evaluation via jitc_eval(). Set a breakpoint on "
+            "`jit_raise` to find the offending code in your program.");
+
     ProfilerPhase profiler(profiler_region_eval);
 
     /* The function 'jit_eval()' modifies several global data structures
@@ -1154,48 +1155,35 @@ void jit_eval() {
     lock_guard guard(state.eval_mutex);
     state.mutex.lock();
 
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise(
-            "jit_eval(): you must invoke jitc_set_device() to choose a target "
-            "device before evaluating expressions using the JIT compiler.");
-    else if (unlikely(!stream->eval_enabled))
-        jit_raise(
-            "jit_eval(): Enoki is currently either recording arithmetic into a "
-            "string IR representation, or it is executing a loop symbolically. "
-            "In such cases, you are not allowed to run operations that trigger "
-            "a kernel evaluation via jitc_eval(). Set a breakpoint on "
-            "`jit_raise` to find the offending code in your program.");
-
     visited.clear();
     schedule.clear();
 
     // Collect variables that must be computed and their subtrees
-    for (uint32_t index : stream->todo) {
+    for (uint32_t index : ts->todo) {
         auto it = state.variables.find(index);
         if (it == state.variables.end())
             continue;
 
         Variable *v = &it.value();
+
+        // Skip variables that aren't externally referenced or already evaluated
         if (v->ref_count_ext == 0 || v->data != nullptr)
             continue;
 
-        if (unlikely(v->cuda != stream->cuda))
-            jit_raise("jit_eval(): attempted to evaluate variable %u "
-                      "associated with the %s backend, while the %s backend "
-                      "was selected via jitc_set_device()!",
-                      index, v->cuda ? "CUDA" : "LLVM",
-                      stream->cuda ? "CUDA" : "LLVM");
+        if (unlikely(v->cuda != ts->cuda))
+            jit_raise("jit_eval(): internal error -- variable scheduled in "
+                      "wrong ThreadState data structure!");
 
         jit_var_traverse(v->size, index, v);
         v->output_flag = true;
     }
-    stream->todo.clear();
+
+    ts->todo.clear();
 
     if (schedule.empty())
         return;
 
-    scoped_set_context_maybe guard2(stream->context);
+    scoped_set_context_maybe guard2(ts->context);
 
     // Group them from large to small sizes while preserving dependencies
     std::stable_sort(
@@ -1207,6 +1195,7 @@ void jit_eval() {
                 return a.size > b.size;
         });
 
+    // Partition into groups of matching size
     schedule_groups.clear();
     if (schedule[0].size == schedule[schedule.size() - 1].size) {
         schedule_groups.emplace_back(schedule[0].size, 0,
@@ -1224,58 +1213,54 @@ void jit_eval() {
                                      cur, (uint32_t) schedule.size());
     }
 
-    // Are there independent groups of work that could be dispatched in parallel?
-    size_t cuda_stream_count =
-        stream->cuda && stream->parallel_dispatch ?
-            std::min((size_t) ENOKI_SUB_STREAMS, schedule_groups.size()) : 1;
-
     jit_log(Info, "jit_eval(): launching %zu kernel%s.",
             schedule_groups.size(),
             schedule_groups.size() == 1 ? "" : "s");
 
+    // Are there independent groups of work that could be dispatched in parallel?
     Device *device = nullptr;
-    if (cuda_stream_count > 1) {
-        device = &state.devices[stream->device];
-        cuda_check(cuEventRecord(stream->event, stream->handle));
+    size_t cuda_stream_count = 1;
+
+    if (ts->cuda && schedule_groups.size() > 1) {
+        device = &state.devices[ts->device];
+        cuda_check(cuEventRecord(ts->event, ts->stream));
+        cuda_stream_count = std::min((size_t) ENOKI_SUB_STREAMS, schedule_groups.size());
         for (size_t i = 0; i < cuda_stream_count; ++i)
-            cuda_check(cuStreamWaitEvent(device->sub_streams[i], stream->event, 0));
+            cuda_check(cuStreamWaitEvent(device->sub_streams[i], ts->event, 0));
     }
 
-    uint32_t group_idx = 0;
-
     scheduled_tasks.clear();
-
+    uint32_t group_idx = 0;
     for (ScheduledGroup &group : schedule_groups) {
-        jit_assemble(stream, group);
+        jit_assemble(ts, group);
 
-        CUstream cu_stream = stream->handle;
+        CUstream cu_stream = ts->stream;
         if (cuda_stream_count > 1)
             cu_stream = device->sub_streams[group_idx++ % ENOKI_SUB_STREAMS];
 
-        Task *task = jit_run(stream, cu_stream, group);
-
-        if (!stream->cuda && stream->parallel_dispatch)
-            scheduled_tasks.push_back(task);
+        scheduled_tasks.push_back(jit_run(ts, cu_stream, group));
     }
 
     if (cuda_stream_count > 1) {
         for (size_t i = 0; i < cuda_stream_count; ++i) {
             cuda_check(cuEventRecord(device->sub_events[i], device->sub_streams[i]));
-            cuda_check(cuStreamWaitEvent(stream->handle, device->sub_events[i], 0));
+            cuda_check(cuStreamWaitEvent(ts->stream, device->sub_events[i], 0));
         }
-    } else if (!stream->cuda && stream->parallel_dispatch) {
-        if (unlikely(scheduled_tasks.empty()))
-            jit_fail("jit_eval(): no tasks generated!");
+    } else {
         if (scheduled_tasks.size() == 1) {
-            task_release(stream->task);
-            stream->task = scheduled_tasks[0];
+            task_release(ts->task);
+            ts->task = scheduled_tasks[0];
         } else {
+            if (unlikely(scheduled_tasks.empty()))
+                jit_fail("jit_eval(): no tasks generated!");
+
+            // Insert a barrier task
             Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
                                              scheduled_tasks.size());
-            task_release(stream->task);
+            task_release(ts->task);
             for (Task *t : scheduled_tasks)
                 task_release(t);
-            stream->task = new_task;
+            ts->task = new_task;
         }
     }
 
@@ -1317,23 +1302,21 @@ void jit_eval() {
             jit_var_dec_ref_int(dep[j]);
     }
 
-    jit_free_flush();
+    jit_free_flush(ts);
     jit_log(Info, "jit_eval(): done.");
 }
 
 
 /// Export the intermediate representation of a computation
-const char *jit_eval_ir(const uint32_t *in, uint32_t n_in,
+const char *jit_eval_ir(int cuda,
+                        const uint32_t *in, uint32_t n_in,
                         const uint32_t *out, uint32_t n_out,
                         uint32_t n_side_effects,
                         uint64_t *hash_out) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise(
-            "jit_eval_ir(): you must invoke jitc_set_device() to choose a target "
-            "device before evaluating expressions using the JIT compiler.");
-    else if (unlikely(!stream->cuda))
+    if (unlikely(!cuda))
         jit_raise("jit_eval_ir(): only CUDA mode is supported at the moment.");
+
+    ThreadState *ts = thread_state(cuda);
 
     // See 'jit_eval()' for details on this locking construction
     state.mutex.unlock();
@@ -1347,7 +1330,7 @@ const char *jit_eval_ir(const uint32_t *in, uint32_t n_in,
     for (uint32_t i = 0; i < n_out; ++i)
         jit_var_traverse(1, out[i], jit_var(out[i]));
 
-    auto &todo = stream->todo;
+    auto &todo = ts->todo;
     for (uint32_t i = 0, j = todo.size(); i < n_side_effects; ++i) {
         Variable *v = nullptr;
         uint32_t index = 0;
@@ -1413,7 +1396,7 @@ const char *jit_eval_ir(const uint32_t *in, uint32_t n_in,
 
     ScheduledGroup group(schedule.size(), 0, schedule.size());
     eval_normal = false;
-    jit_assemble_cuda(group, reg_count);
+    jit_assemble_cuda(ts, group, reg_count);
 
     offset_out = 0;
     for (uint32_t i = 0; i < n_out; ++i) {
@@ -1470,28 +1453,24 @@ const char *jit_eval_ir(const uint32_t *in, uint32_t n_in,
 }
 
 /// Export the intermediate representation of a computation as a variable
-uint32_t jit_eval_ir_var(const uint32_t *in, uint32_t n_in,
+uint32_t jit_eval_ir_var(int cuda,
+                         const uint32_t *in, uint32_t n_in,
                          const uint32_t *out, uint32_t n_out,
                          uint32_t n_side_effects,
                          uint64_t *hash_out) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise(
-            "jit_eval_ir_var(): you must invoke jitc_set_device() to choose a target "
-            "device before evaluating expressions using the JIT compiler.");
+    const char *str =
+        jit_eval_ir(cuda, in, n_in, out, n_out, n_side_effects, hash_out);
 
-    const char *str = jit_eval_ir(in, n_in, out, n_out, n_side_effects, hash_out);
-
-    uint32_t index = jit_var_new_0(VarType::Global, str, 0, stream->cuda, 1);
+    uint32_t index = jit_var_new_0(cuda, VarType::Global, str, 0, 1);
 
     for (auto &k : schedule) {
         if (!k.global)
             continue;
+
         uint32_t prev = index;
-        index = jit_var_new_2(VarType::Global, "", 0, stream->cuda, index, k.index);
+        index = jit_var_new_2(cuda, VarType::Global, "", 0, index, k.index);
         jit_var_dec_ref_ext(prev);
     }
 
     return index;
 }
-

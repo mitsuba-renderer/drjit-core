@@ -504,9 +504,9 @@ TEST_BOTH(18_mask_propagation) {
 }
 
 TEST_BOTH(19_register_ptr) {
-    uint32_t idx_1 = jitc_var_copy_ptr((const void *) 0x01, 0),
-             idx_2 = jitc_var_copy_ptr((const void *) 0x02, 0),
-             idx_3 = jitc_var_copy_ptr((const void *) 0x01, 0);
+    uint32_t idx_1 = jitc_var_copy_ptr(Float::IsCUDA, (const void *) 0x01, 0),
+             idx_2 = jitc_var_copy_ptr(Float::IsCUDA, (const void *) 0x02, 0),
+             idx_3 = jitc_var_copy_ptr(Float::IsCUDA, (const void *) 0x01, 0);
 
     jitc_assert(idx_1 == 1);
     jitc_assert(idx_2 == 2);
@@ -516,7 +516,7 @@ TEST_BOTH(19_register_ptr) {
     jitc_var_dec_ref_ext(idx_2);
     jitc_var_dec_ref_ext(idx_3);
 
-    idx_1 = jitc_var_copy_ptr((const void *) 0x01, 0);
+    idx_1 = jitc_var_copy_ptr(Float::IsCUDA, (const void *) 0x01, 0);
     jitc_assert(idx_1 == 3);
     jitc_var_dec_ref_ext(idx_1);
 }
@@ -821,7 +821,10 @@ TEST_BOTH(27_avx512_intrinsics_round2int, "avx512") {
 }
 
 TEST_BOTH(28_scatter_add, "avx512") {
-    jitc_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
+    if (Float::IsLLVM)
+        jitc_llvm_set_target("skylake-avx512",
+                             "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
+
     using Double = Array<double>;
 
     {
@@ -840,7 +843,9 @@ TEST_BOTH(28_scatter_add, "avx512") {
         jitc_log(Info, "target=%s", target.str());
     }
 
-    jitc_cuda_set_codegen(60, 60);
+    if (Float::IsCUDA)
+        jitc_cuda_set_target(60, 60);
+
     {
         Double target = zero<Double>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
@@ -892,8 +897,12 @@ TEST_BOTH(28_scatter_add, "avx512") {
         scatter_add(target, Double(1), index, mask);
         jitc_log(Info, "target=%s", target.str());
     }
-    jitc_cuda_set_codegen(60, 50);
-    jitc_llvm_set_target("skylake", "", 8);
+
+    if (Float::IsCUDA)
+        jitc_cuda_set_target(60, 50);
+
+    if (Float::IsLLVM)
+        jitc_llvm_set_target("skylake", "", 8);
 }
 
 TEST_BOTH(29_arithmetic_propagation) {

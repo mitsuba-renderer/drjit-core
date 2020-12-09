@@ -108,8 +108,6 @@ CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
 int jit_cuda_devices = 0;
 int jit_cuda_version_major = 0;
 int jit_cuda_version_minor = 0;
-int jit_cuda_ptx_version = 60;
-int jit_cuda_compute_capability = 50;
 
 
 static bool jit_cuda_init_attempted = false;
@@ -157,7 +155,7 @@ bool jit_cuda_init() {
 
         if (!jit_cuda_handle) {
             jit_log(Warn, "jit_cuda_init(): %s could not be loaded -- "
-                          "disabling CUDA backend! Set the 'ENOKI_LIBCUDA_PATH' "
+                          "disabling CUDA backend! Set the ENOKI_LIBCUDA_PATH "
                           "environment variable to specify its path.", cuda_fname);
             return false;
         }
@@ -291,26 +289,23 @@ bool jit_cuda_init() {
         CUcontext context = nullptr;
         cuda_check(cuDevicePrimaryCtxRetain(&context, i));
         scoped_set_context guard(context);
-        int cc_minor, cc_major, shared_memory_bytes;
 
+        // Determine the device compute capability
+        int cc_minor, cc_major;
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
-        cuda_check(cuDeviceGetAttribute(
-            &shared_memory_bytes,
-            CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN, i));
+        int cc = cc_major * 10 + cc_minor;
 
-        const char *kernels = cc_major >= 7 ? kernels_70 : kernels_50;
-        int kernels_size_uncompressed = cc_major >= 7
-                                            ? kernels_70_size_uncompressed
-                                            : kernels_50_size_uncompressed;
-        int kernels_size_compressed   = cc_major >= 7
-                                            ? kernels_70_size_compressed
-                                            : kernels_50_size_compressed;
-        size_t kernels_hash           = cc_major >= 7
-                                            ? kernels_70_hash
-                                            : kernels_50_hash;
+        // Choose an appropriate set of builtin kernels
+        const char *kernels           = cc >= 70 ? kernels_70 : kernels_50;
+        int kernels_size_uncompressed = cc >= 70 ? kernels_70_size_uncompressed
+                                                 : kernels_50_size_uncompressed;
+        int kernels_size_compressed   = cc >= 70 ? kernels_70_size_compressed
+                                                 : kernels_50_size_compressed;
+        size_t kernels_hash           = cc >= 70 ? kernels_70_hash
+                                                 : kernels_50_hash;
 
-        // Decompress supplemental PTX content
+        // Decompress the supplemental PTX content
         char *uncompressed =
             (char *) malloc_check(size_t(kernels_size_uncompressed) + jit_lz4_dict_size + 1);
         memcpy(uncompressed, jit_lz4_dict, jit_lz4_dict_size);
@@ -326,7 +321,7 @@ bool jit_cuda_init() {
 
         uncompressed_ptx[kernels_size_uncompressed] = '\0';
 
-        hash_combine(kernels_hash, cc_minor + size_t(cc_major) * 10);
+        hash_combine(kernels_hash, (size_t) cc);
 
         Kernel kernel;
         if (!jit_kernel_load(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel)) {
@@ -364,6 +359,11 @@ bool jit_cuda_init() {
         LOAD(compress_large);
 
         #undef LOAD
+
+        int shared_memory_bytes;
+        cuda_check(cuDeviceGetAttribute(
+            &shared_memory_bytes,
+            CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN, i));
 
         #define MAXIMIZE_SHARED(name)                                            \
             cuda_check(cuFuncSetAttribute(                                       \

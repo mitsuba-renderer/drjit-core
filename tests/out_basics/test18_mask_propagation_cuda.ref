@@ -1,4 +1,3 @@
-jit_set_device(device=0, stream=0): creating stream
 jit_var_new_literal(1): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(1): 1
 jit_var_new_literal(2): mov.$b0 $r0, 0x0
@@ -62,7 +61,7 @@ jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_shutdown(): releasing 1 stream ..
+jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 6 deallocations
 jit_malloc_trim(): freed
  - host-pinned memory: 192 B in 3 allocations

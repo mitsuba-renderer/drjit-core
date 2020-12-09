@@ -1,4 +1,3 @@
-jit_set_device(device=0, stream=0): creating stream
 jit_var_new(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_ext(1): 2
@@ -52,7 +51,6 @@ jit_malloc(type=device, device=0, size=1024): <@> (new allocation)
     .reg.b64  %rd<9>; .reg.f32 %f<9>; .reg.f64 %d<9>;
     .reg.pred %p<9>;
 
-    // Grid-stride loop setup
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
@@ -167,7 +165,6 @@ jit_malloc(type=device, device=0, size=512): <@> (new allocation)
     .reg.b64  %rd<9>; .reg.f32 %f<9>; .reg.f64 %d<9>;
     .reg.pred %p<9>;
 
-    // Grid-stride loop setup
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
@@ -240,7 +237,6 @@ jit_malloc(type=device, device=0, size=512): <@> (new allocation)
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p<11>;
 
-    // Grid-stride loop setup
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
@@ -384,7 +380,6 @@ jit_assemble(size=510): register map:
     .reg.b64  %rd<14>; .reg.f32 %f<14>; .reg.f64 %d<14>;
     .reg.pred %p<14>;
 
-    // Grid-stride loop setup
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
@@ -481,7 +476,7 @@ jit_var_free(5)
 jit_free(<@>, type=device, device=0, size=1024)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_shutdown(): releasing 1 stream ..
+jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 3 deallocations
 jit_shutdown(): releasing 4 kernels ..
 jit_malloc_trim(): freed

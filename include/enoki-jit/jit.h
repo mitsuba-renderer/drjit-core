@@ -2,8 +2,8 @@
     enoki-jit/jit.h -- Self-contained JIT compiler for CUDA & LLVM.
 
     This library implements a self-contained tracing JIT compiler that supports
-    both CUDA PTX and LLVM IR as intermediate languages. It takes care of many
-    tricky aspects, such as asynchronous memory allocation and release,
+    both CUDA PTX and LLVM IR as intermediate representations. It takes care of
+    many tricky aspects, such as asynchronous memory allocation and release,
     multi-device computation, kernel caching and reuse, common subexpression
     elimination, etc.
 
@@ -117,37 +117,12 @@ extern JITC_EXPORT int jitc_has_cuda();
 extern JITC_EXPORT void jitc_shutdown(int light JITC_DEF(0));
 
 /**
- * \brief Return the number of target devices
+ * \brief Wait for all computation on the current stream to finish
  *
- * This function returns the number of available devices. Note that this refers
- * to the number of compatible CUDA devices, excluding the host CPU.
+ * Each thread using Enoki-JIT will issue computation to an independent stream.
+ * This function only synchronizes with computation issued by the current
+ * thread.
  */
-extern JITC_EXPORT int32_t jitc_device_count();
-
-/**
- * Set the currently active device and stream
- *
- * \param device
- *     Specifies the device index, a number between -1 and
- *     <tt>jitc_device_count() - 1</tt>. The number <tt>-1</tt> indicates that
- *     execution should take place on the host CPU (via LLVM). <tt>0</tt> is
- *     the first GPU (execution via CUDA), <tt>1</tt> is the second GPU, etc.
- *
- * \param stream
- *     When accessing the JIT compiler in a multi-threaded program, each thread
- *     must run in a separate stream that is provided via this argument. The
- *     streams don't have to be numbered in any particular way, but they need
- *     to be just be unique per thread.
- */
-extern JITC_EXPORT void jitc_set_device(int32_t device, uint32_t stream JITC_DEF(0));
-
-/// Return the currently active device
-extern JITC_EXPORT uint32_t jitc_device();
-
-/// Return the currently active stream
-extern JITC_EXPORT uint32_t jitc_stream();
-
-/// Wait for all computation on the current stream to finish
 extern JITC_EXPORT void jitc_sync_stream();
 
 /// Wait for all computation on the current device to finish
@@ -155,42 +130,6 @@ extern JITC_EXPORT void jitc_sync_device();
 
 /// Wait for all computation on the *all devices* to finish
 extern JITC_EXPORT void jitc_sync_all_devices();
-
-/**
- * \brief Dispatch computation to multiple CUDA streams or CPU cores?
- *
- * This parameter has slightly different meanings depending on the backend
- * that is used:
- *
- * <ul>
- * <li><b>CUDA backend</b>: The JIT compiler attempts to fuse all queued
- * computation into a single kernel to maximize efficiency, and this kernel
- * runs in parallel using all streaming multiprocessors available on the GPU.
- * But computation involving arrays of different size must necessarily run in
- * separate kernels, which means that it is serialized if taking place within
- * the same device and stream. In some cases, kernels only involve very small
- * inputs and outputs, in which case scheduling overheads can become
- * significant. If desired, jitc_eval() can detect this and dispatch multiple
- * kernels to separate streams that execute in parallel <em>in addition to the
- * parallel execution of individual kernels</em>.</li>
- *
- * <li><b>LLVM backend</b>: Execution will parallelize over all available CPU
- * cores if this parameter is set to \c 1. Otherwise, execution will be
- * serialized. Parallel execution is implemented via the thread pool for
- * task-parallelism defined in <tt>enoki-jit/thread.h</tt> and part of the
- * <tt>enoki-thread<tt> library. Important: the \ref
- * jitc_set_parallel_dispatch() at the beginning of the computation -- changing
- * it later will lead to undefined behavior.
- * </li>
- * </ul>
- *
- * The default is \c 1 (i.e. to enable parallel dispatch) for both LLVM/CUDA
- * backends. This flag can be set separately for each Enoki-JIT stream.
- */
-extern JITC_EXPORT void jitc_set_parallel_dispatch(int enable);
-
-/// Return whether or not parallel dispatch is enabled. Returns \c 0 or \c 1.
-extern JITC_EXPORT int jitc_parallel_dispatch();
 
 // ====================================================================
 //       Advanced JIT usage: recording programs, loops, etc.
@@ -208,12 +147,12 @@ extern JITC_EXPORT int jitc_parallel_dispatch();
  * In such cases, evaluation of queued computation can temporarily be
  * "forbidden" by calling <tt>jitc_set_eval_enabled(0)</tt>, in which case
  * calls to jitc_eval() will cause a program failure. Note: this is a
- * per-stream property
+ * per-thread property
  */
-extern JITC_EXPORT void jitc_set_eval_enabled(int enable);
+extern JITC_EXPORT void jitc_set_eval_enabled(int cuda, int enable);
 
 /// Return whether or not evaluation is currently allowed
-extern JITC_EXPORT int jitc_eval_enabled();
+extern JITC_EXPORT int jitc_eval_enabled(int cuda);
 
 /**
  * \brief Returns the number of operations with side effects (specifically,
@@ -222,7 +161,7 @@ extern JITC_EXPORT int jitc_eval_enabled();
  * This function can be used to easily detect whether or not some piece of
  * code involves side effects. It is used in Enokis's `ek::loop` primitive.
  */
-extern JITC_EXPORT uint32_t jitc_side_effect_counter();
+extern JITC_EXPORT uint32_t jitc_side_effect_counter(int cuda);
 
 /**
  * \brief Export the intermediate representation of a calculation
@@ -231,13 +170,15 @@ extern JITC_EXPORT uint32_t jitc_side_effect_counter();
  * moment) that computes the values of the given outputs in terms of the
  * specified inputs.
  */
-extern JITC_EXPORT const char *jitc_eval_ir(const uint32_t *in, uint32_t n_in,
+extern JITC_EXPORT const char *jitc_eval_ir(int cuda,
+                                            const uint32_t *in, uint32_t n_in,
                                             const uint32_t *out, uint32_t n_out,
                                             uint32_t n_side_effects,
                                             uint64_t *hash_out);
 
 /// Like jitc_eval_ir(), wraps result in JIT variable of type VarType::Global
-extern JITC_EXPORT uint32_t jitc_eval_ir_var(const uint32_t *in, uint32_t n_in,
+extern JITC_EXPORT uint32_t jitc_eval_ir_var(int cuda,
+                                             const uint32_t *in, uint32_t n_in,
                                              const uint32_t *out, uint32_t n_out,
                                              uint32_t n_side_effects,
                                              uint64_t *hash_out);
@@ -246,10 +187,36 @@ extern JITC_EXPORT uint32_t jitc_eval_ir_var(const uint32_t *in, uint32_t n_in,
 //                    CUDA/LLVM-specific functionality
 // ====================================================================
 
-/// Return the CUDA stream of the currently active device
+/// Return the no. of available CUDA devices that are compatible with Enoki.
+extern JITC_EXPORT int jitc_cuda_device_count();
+
+/**
+ * \brief Set the active CUDA device.
+ *
+ * The argument must be between 0 and <tt>jitc_cuda_device_count() - 1</tt>,
+ * which only accounts for Enoki-compatible devices. This is a per-thread
+ * property: independent threads can issue computation to different GPUs.
+ */
+extern JITC_EXPORT void jitc_cuda_set_device(int device);
+
+/**
+ * \brief Return the CUDA device ID associated with the current thread
+ *
+ * The result is in the range of 0 and <tt>jitc_cuda_device_count() - 1</tt>.
+ * When the machine contains CUDA devices that are incompatible with Enoki (due
+ * to a lack of 64-bit addressing, uniform address space, or managed memory),
+ * this number may differ from the default CUDA device ID. Use
+ * <tt>jitc_cuda_device_raw()</tt> in that case.
+ */
+extern JITC_EXPORT int jitc_cuda_device();
+
+/// Return the raw CUDA device associated with the current thread
+extern JITC_EXPORT int jitc_cuda_device_raw();
+
+/// Return the CUDA stream associated with the current thread
 extern JITC_EXPORT void* jitc_cuda_stream();
 
-/// Return the CUDA context of the currently active device
+/// Return the CUDA context associated with the current thread
 extern JITC_EXPORT void* jitc_cuda_context();
 
 /// Query the compute capability of the current device (e.g. '52')
@@ -265,8 +232,8 @@ extern JITC_EXPORT int jitc_cuda_compute_capability();
  * atomic operations involving double precision values) require specifying a
  * newer compute capability.
  */
-extern JITC_EXPORT void jitc_cuda_set_codegen(int ptx_version,
-                                              int compute_capability);
+extern JITC_EXPORT void jitc_cuda_set_target(uint32_t ptx_version,
+                                             uint32_t compute_capability);
 
 /**
  * \brief Override the target CPU, features, and vector width of the LLVM backend
@@ -368,7 +335,8 @@ extern JITC_EXPORT JITC_ENUM LogLevel jitc_log_level_stderr();
  * exceeds the specified \c level.
  */
 typedef void (*LogCallback)(JITC_ENUM LogLevel, const char *);
-extern JITC_EXPORT void jitc_set_log_level_callback(JITC_ENUM LogLevel level, LogCallback callback);
+extern JITC_EXPORT void jitc_set_log_level_callback(JITC_ENUM LogLevel level,
+                                                    LogCallback callback);
 
 /// Return the currently set minimum log level for output to a callback
 extern JITC_EXPORT JITC_ENUM LogLevel jitc_log_level_callback();
@@ -831,7 +799,7 @@ JITC_INLINE uint32_t jitc_size(JITC_ENUM VarType type) {
  *
  * \sa jitc_var_copy_mem()
  */
-extern JITC_EXPORT uint32_t jitc_var_map_mem(JITC_ENUM VarType type, int cuda,
+extern JITC_EXPORT uint32_t jitc_var_map_mem(int cuda, JITC_ENUM VarType type,
                                              void *ptr, uint32_t size, int free);
 
 
@@ -845,11 +813,11 @@ extern JITC_EXPORT uint32_t jitc_var_map_mem(JITC_ENUM VarType type, int cuda,
  *    \ref AllocType::Auto may optionally be specified here to auto-detect
  *    whether copying from CPU or GPU memory).
  *
- * \param vtype
- *    Type of the variable to be created, see \ref VarType for details.
- *
  * \param cuda
  *    Is this a CUDA variable?
+ *
+ * \param vtype
+ *    Type of the variable to be created, see \ref VarType for details.
  *
  * \param ptr
  *    Point of the memory region
@@ -859,9 +827,9 @@ extern JITC_EXPORT uint32_t jitc_var_map_mem(JITC_ENUM VarType type, int cuda,
  *
  * \sa jitc_var_map_mem()
  */
-extern JITC_EXPORT uint32_t jitc_var_copy_mem(JITC_ENUM AllocType atype,
+extern JITC_EXPORT uint32_t jitc_var_copy_mem(int cuda,
+                                              JITC_ENUM AllocType atype,
                                               JITC_ENUM VarType vtype,
-                                              int cuda,
                                               const void *ptr,
                                               uint32_t size);
 
@@ -889,7 +857,7 @@ extern JITC_EXPORT uint32_t jitc_var_copy_mem(JITC_ENUM AllocType atype,
  * the returned variable index) is alive. Specifying <tt>index=0</tt> disables
  * this behavior.
  */
-extern JITC_EXPORT uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index);
+extern JITC_EXPORT uint32_t jitc_var_copy_ptr(int cuda, const void *ptr, uint32_t index);
 
 /**
  * \brief Create an identical copy of the given variable
@@ -929,6 +897,10 @@ extern JITC_EXPORT uint32_t jitc_var_copy_var(uint32_t index);
  *                                  1, op1, op2);
  * \endcode
  *
+ * \param cuda
+ *    Specifies whether 'stmt' contains a CUDA PTX (<tt>cuda == 1</tt>) or LLVM
+ *    IR (<tt>cuda == 0</tt>) instruction.
+ *
  * \param type
  *    Type of the variable to be created, see \ref VarType for details.
  *
@@ -940,49 +912,45 @@ extern JITC_EXPORT uint32_t jitc_var_copy_var(uint32_t index);
  *    executable, it is not necessary to make a copy. In this case, set
  *    <tt>stmt_static == 1</tt>, and <tt>0</tt> otherwise.
  *
- * \param cuda
- *    Specifies whether 'stmt' contains a CUDA PTX (<tt>cuda == 1</tt>) or LLVM
- *    IR (<tt>cuda == 0</tt>) instruction.
- *
  * \param size
  *    Size of the resulting variable. The size is automatically inferred from
  *    the operands and must only be specified for the zero-argument form.
  */
-extern JITC_EXPORT uint32_t jitc_var_new_0(JITC_ENUM VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_0(int cuda,
+                                           JITC_ENUM VarType type,
                                            const char *stmt,
                                            int stmt_static,
-                                           int cuda,
                                            uint32_t size);
 
 /// Append a variable to the instruction trace (1 operand)
-extern JITC_EXPORT uint32_t jitc_var_new_1(JITC_ENUM VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_1(int cuda,
+                                           JITC_ENUM VarType type,
                                            const char *stmt,
                                            int stmt_static,
-                                           int cuda,
                                            uint32_t op1);
 
 /// Append a variable to the instruction trace (2 operands)
-extern JITC_EXPORT uint32_t jitc_var_new_2(JITC_ENUM VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_2(int cuda,
+                                           JITC_ENUM VarType type,
                                            const char *stmt,
                                            int stmt_static,
-                                           int cuda,
                                            uint32_t op1,
                                            uint32_t op2);
 
 /// Append a variable to the instruction trace (3 operands)
-extern JITC_EXPORT uint32_t jitc_var_new_3(JITC_ENUM VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_3(int cuda,
+                                           JITC_ENUM VarType type,
                                            const char *stmt,
                                            int stmt_static,
-                                           int cuda,
                                            uint32_t op1,
                                            uint32_t op2,
                                            uint32_t op3);
 
 /// Append a variable to the instruction trace (4 operands)
-extern JITC_EXPORT uint32_t jitc_var_new_4(JITC_ENUM VarType type,
+extern JITC_EXPORT uint32_t jitc_var_new_4(int cuda,
+                                           JITC_ENUM VarType type,
                                            const char *stmt,
                                            int stmt_static,
-                                           int cuda,
                                            uint32_t op1,
                                            uint32_t op2,
                                            uint32_t op3,
@@ -994,8 +962,8 @@ extern JITC_EXPORT uint32_t jitc_var_new_4(JITC_ENUM VarType type,
  * When \c eval is equal to 1, the variable is directly created in evaluated
  * form (rather than enqueuing instructions to evaluate the variable).
  */
-extern JITC_EXPORT uint32_t jitc_var_new_literal(JITC_ENUM VarType type,
-                                                 int cuda,
+extern JITC_EXPORT uint32_t jitc_var_new_literal(int cuda,
+                                                 JITC_ENUM VarType type,
                                                  uint64_t value,
                                                  uint32_t size,
                                                  int eval);
@@ -1166,12 +1134,12 @@ extern JITC_EXPORT void jitc_var_write(uint32_t index, uint32_t offset,
  * By default, Enoki aggressively collapses variables that repeat computation
  * that is already currently registered in the system. In rare case, this may
  * be undesirable and can be turned off by calling this function with the
- * argument '0'. Note that this is a global flag.
+ * argument '0'. This is a thread-local flag.
  */
-extern JITC_EXPORT void jitc_set_cse(int value);
+extern JITC_EXPORT void jitc_set_cse(int cuda, int value);
 
 /// Return whether or not common subexpression elimination is enabled
-extern JITC_EXPORT int jitc_cse();
+extern JITC_EXPORT int jitc_cse(int cuda);
 
 // ====================================================================
 //                 Kernel compilation and evaluation
@@ -1191,7 +1159,7 @@ extern JITC_EXPORT int jitc_var_schedule(uint32_t index);
  */
 extern JITC_EXPORT int jitc_var_eval(uint32_t index);
 
-/// Evaluate all computation that is scheduled on the current stream
+/// Evaluate all scheduled computation
 extern JITC_EXPORT void jitc_eval();
 
 // ====================================================================
@@ -1217,14 +1185,14 @@ enum ReductionType {
  * a single int, float, double, etc. (\c isize can be 1, 2, 4, or 8).
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jitc_memset_async(void *ptr, uint32_t size,
+extern JITC_EXPORT void jitc_memset_async(int cuda, void *ptr, uint32_t size,
                                           uint32_t isize, const void *src);
 
 /// Perform a synchronous copy operation
-extern JITC_EXPORT void jitc_memcpy(void *dst, const void *src, size_t size);
+extern JITC_EXPORT void jitc_memcpy(int cuda, void *dst, const void *src, size_t size);
 
 /// Perform an asynchronous copy operation
-extern JITC_EXPORT void jitc_memcpy_async(void *dst, const void *src,
+extern JITC_EXPORT void jitc_memcpy_async(int cuda, void *dst, const void *src,
                                           size_t size);
 
 /**
@@ -1237,7 +1205,8 @@ extern JITC_EXPORT void jitc_memcpy_async(void *dst, const void *src,
  *
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jitc_reduce(JITC_ENUM VarType type, JITC_ENUM ReductionType rtype,
+extern JITC_EXPORT void jitc_reduce(int cuda, JITC_ENUM VarType type,
+                                    JITC_ENUM ReductionType rtype,
                                     const void *ptr, uint32_t size, void *out);
 
 /**
@@ -1260,8 +1229,8 @@ extern JITC_EXPORT void jitc_reduce(JITC_ENUM VarType type, JITC_ENUM ReductionT
  *
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jitc_scan_u32(const uint32_t *in, uint32_t size,
-                                      uint32_t *out);
+extern JITC_EXPORT void jitc_scan_u32(int cuda, const uint32_t *in,
+                                      uint32_t size, uint32_t *out);
 
 /**
  * \brief Compress a mask into a list of nonzero indices
@@ -1276,8 +1245,8 @@ extern JITC_EXPORT void jitc_scan_u32(const uint32_t *in, uint32_t size,
  *
  * This function internally performs a synchronization step.
  */
-extern JITC_EXPORT uint32_t jitc_compress(const uint8_t *in, uint32_t size,
-                                          uint32_t *out);
+extern JITC_EXPORT uint32_t jitc_compress(int cuda, const uint8_t *in,
+                                          uint32_t size, uint32_t *out);
 
 /**
  * \brief Reduce an array of boolean values to a single value (AND case)
@@ -1289,7 +1258,7 @@ extern JITC_EXPORT uint32_t jitc_compress(const uint8_t *in, uint32_t size,
  *
  * Runs synchronously.
  */
-extern JITC_EXPORT uint8_t jitc_all(uint8_t *values, uint32_t size);
+extern JITC_EXPORT uint8_t jitc_all(int cuda, uint8_t *values, uint32_t size);
 
 /**
  * \brief Reduce an array of boolean values to a single value (OR case)
@@ -1301,7 +1270,7 @@ extern JITC_EXPORT uint8_t jitc_all(uint8_t *values, uint32_t size);
  *
  * Runs synchronously.
  */
-extern JITC_EXPORT uint8_t jitc_any(uint8_t *values, uint32_t size);
+extern JITC_EXPORT uint8_t jitc_any(int cuda, uint8_t *values, uint32_t size);
 
 
 /**
@@ -1332,9 +1301,9 @@ extern JITC_EXPORT uint8_t jitc_any(uint8_t *values, uint32_t size);
  *     When \c offsets != NULL, the function returns the number of unique
  *     values found in \c values. Otherwise, it returns zero.
  */
-extern JITC_EXPORT uint32_t jitc_mkperm(const uint32_t *values, uint32_t size,
-                                        uint32_t bucket_count, uint32_t *perm,
-                                        uint32_t *offsets);
+extern JITC_EXPORT uint32_t jitc_mkperm(int cuda, const uint32_t *values,
+                                        uint32_t size, uint32_t bucket_count,
+                                        uint32_t *perm, uint32_t *offsets);
 
 /// Helper data structure for vector method calls, see \ref jitc_vcall()
 struct VCallBucket {
@@ -1369,8 +1338,9 @@ struct VCallBucket {
  * computed result. This is an important optimization in situations where
  * multiple vector function calls are executed on the same set of instances.
  */
-extern JITC_EXPORT struct VCallBucket *
-jitc_vcall(const char *domain, uint32_t index, uint32_t *bucket_count_out);
+extern JITC_EXPORT struct VCallBucket *jitc_vcall(int cuda, const char *domain,
+                                                  uint32_t index,
+                                                  uint32_t *bucket_count_out);
 
 /**
  * \brief Replicate individual input elements across larger blocks
@@ -1381,9 +1351,9 @@ jitc_vcall(const char *domain, uint32_t index, uint32_t *bucket_count_out);
  * to \c 2. The input array must contain <tt>size</tt> elements, and the output
  * array must have space for <tt>size * block_size</tt> elements.
  */
-extern JITC_EXPORT void jitc_block_copy(JITC_ENUM VarType type, const void *in,
-                                        void *out, uint32_t size,
-                                        uint32_t block_size);
+extern JITC_EXPORT void jitc_block_copy(int cuda, JITC_ENUM VarType type,
+                                        const void *in, void *out,
+                                        uint32_t size, uint32_t block_size);
 
 /**
  * \brief Sum over elements within blocks
@@ -1394,10 +1364,9 @@ extern JITC_EXPORT void jitc_block_copy(JITC_ENUM VarType type, const void *in,
  * set to \c 2. The input array must contain <tt>size * block_size</tt> elements,
  * and the output array must have space for <tt>size</tt> elements.
  */
-extern JITC_EXPORT void jitc_block_sum(JITC_ENUM VarType type, const void *in,
-                                       void *out, uint32_t size,
+extern JITC_EXPORT void jitc_block_sum(int cuda, JITC_ENUM VarType type,
+                                       const void *in, void *out, uint32_t size,
                                        uint32_t block_size);
-
 
 #define ENOKI_USE_ALLOCATOR(Type)                                              \
     void *operator new(size_t size) { return jitc_malloc(Type, size); }        \

@@ -7,6 +7,12 @@ project(enoki-jit
     CXX C
 )
 
+if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/enoki-thread/cmake")
+  message(FATAL_ERROR "The enoki-jit dependencies are missing! "
+    "You probably did not clone the project with --recursive. It is possible to recover "
+    "by invoking\n$ git submodule update --init --recursive")
+endif()
+
 include(ext/enoki-thread/cmake/EnokiDefaults.cmake)
 
 add_subdirectory(ext/enoki-thread)

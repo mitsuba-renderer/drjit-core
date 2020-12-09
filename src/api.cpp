@@ -19,7 +19,7 @@
 
 void jitc_init(int llvm, int cuda) {
     lock_guard guard(state.mutex);
-    jit_init(llvm, cuda, nullptr);
+    jit_init(llvm, cuda);
 }
 
 void jitc_init_async(int llvm, int cuda) {
@@ -33,16 +33,14 @@ void jitc_init_async(int llvm, int cuda) {
     std::shared_ptr<Sync> sync = std::make_shared<Sync>();
     lock_guard guard(sync->mutex);
 
-    Stream **stream = &active_stream;
-
-    std::thread([llvm, cuda, sync, stream]() {
+    std::thread([llvm, cuda, sync]() {
         lock_guard guard2(state.mutex);
         {
-            lock_guard guard2(sync->mutex);
+            lock_guard guard3(sync->mutex);
             sync->flag = true;
             sync->cv.notify_one();
         }
-        jit_init(llvm, cuda, stream);
+        jit_init(llvm, cuda);
     }).detach();
 
     while (!sync->flag)
@@ -56,7 +54,7 @@ int jitc_has_llvm() {
 
 int jitc_has_cuda() {
     lock_guard guard(state.mutex);
-    return (int) state.has_cuda;
+    return (int) (state.has_cuda && !state.devices.empty());
 }
 
 void jitc_shutdown(int light) {
@@ -109,60 +107,19 @@ void jitc_fail(const char* fmt, ...) {
     va_end(args);
 }
 
-int32_t jitc_device_count() {
+void jitc_set_eval_enabled(int cuda, int enable) {
     lock_guard guard(state.mutex);
-    return (int32_t) state.devices.size();
+    thread_state(cuda)->eval_enabled = enable != 0;
 }
 
-void jitc_set_device(int32_t device, uint32_t stream) {
+int jitc_eval_enabled(int cuda) {
     lock_guard guard(state.mutex);
-    jit_set_device(device, stream);
+    return thread_state(cuda)->eval_enabled ? 1 : 0;
 }
 
-uint32_t jitc_device() {
+uint32_t jitc_side_effect_counter(int cuda) {
     lock_guard guard(state.mutex);
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_device(): you must invoke jitc_set_device() to "
-                  "choose a target device before calling this function!");
-    return stream->device;
-}
-
-uint32_t jitc_stream() {
-    lock_guard guard(state.mutex);
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_device(): you must invoke jitc_set_device() to "
-                  "choose a target device before calling this function!");
-    return stream->stream;
-}
-
-void jitc_set_eval_enabled(int enable) {
-    lock_guard guard(state.mutex);
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_eval_enabled(): you must invoke jitc_set_device() to "
-                  "choose a target device before calling this function!");
-    stream->eval_enabled = enable != 0;
-}
-
-int jitc_eval_enabled() {
-    lock_guard guard(state.mutex);
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_eval_enabled(): you must invoke jitc_set_device() to "
-                  "choose a target device before calling this function!");
-    return stream->eval_enabled ? 1 : 0;
-}
-
-uint32_t jitc_side_effect_counter() {
-    lock_guard guard(state.mutex);
-
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_side_effect_counter(): you must invoke jitc_set_device() to "
-                  "choose a target device before calling this function!");
-    return stream->side_effect_counter;
+    return thread_state(cuda)->side_effect_counter;
 }
 
 void* jitc_cuda_stream() {
@@ -175,28 +132,40 @@ void* jitc_cuda_context() {
     return jit_cuda_context();
 }
 
+int jitc_cuda_device_count() {
+    lock_guard guard(state.mutex);
+    return (int) state.devices.size();
+}
+
+void jitc_cuda_set_device(int device) {
+    lock_guard guard(state.mutex);
+    jit_cuda_set_device(device);
+}
+
+int jitc_cuda_device() {
+    lock_guard guard(state.mutex);
+    return thread_state(true)->device;
+}
+
+int jitc_cuda_device_raw() {
+    lock_guard guard(state.mutex);
+    return state.devices[thread_state(true)->device].id;
+}
+
 /// Return the compute capability of the current device (e.g. '52')
 int jitc_cuda_compute_capability() {
     lock_guard guard(state.mutex);
 
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_cuda_compute_capability(): you must invoke "
-                  "jitc_set_device() to choose a target device before calling "
-                  "this function!");
-    else if (unlikely(!stream->cuda))
-        jit_raise("jit_cuda_compute_capability(): expected a CUDA stream!");
-
-    return state.devices[stream->device].compute_capability;
+    return state.devices[thread_state(true)->device].compute_capability;
 }
 
-void jitc_cuda_set_codegen(int ptx_version,
-                           int compute_capability) {
+void jitc_cuda_set_target(uint32_t ptx_version,
+                          uint32_t compute_capability) {
     lock_guard guard(state.mutex);
-    jit_cuda_ptx_version = ptx_version;
-    jit_cuda_compute_capability = compute_capability;
+    ThreadState *ts = thread_state(true);
+    ts->ptx_version = ptx_version;
+    ts->compute_capability = compute_capability;
 }
-
 
 void jitc_llvm_set_target(const char *target_cpu,
                           const char *target_features,
@@ -238,16 +207,6 @@ void jitc_llvm_active_mask_push(uint32_t index) {
 void jitc_llvm_active_mask_pop() {
     lock_guard guard(state.mutex);
     jit_llvm_active_mask_pop();
-}
-
-void jitc_set_parallel_dispatch(int enable) {
-    lock_guard guard(state.mutex);
-    jit_set_parallel_dispatch(enable != 0);
-}
-
-int jitc_parallel_dispatch() {
-    lock_guard guard(state.mutex);
-    return jit_parallel_dispatch() ? 1 : 0;
 }
 
 void jitc_sync_stream() {
@@ -374,20 +333,20 @@ void jitc_var_set_free_callback(uint32_t index, void (*callback)(void *),
     jit_var_set_free_callback(index, callback, payload);
 }
 
-uint32_t jitc_var_map_mem(VarType type, int cuda, void *ptr, uint32_t size, int free) {
+uint32_t jitc_var_map_mem(int cuda, VarType type, void *ptr, uint32_t size, int free) {
     lock_guard guard(state.mutex);
-    return jit_var_map_mem(type, cuda, ptr, size, free);
+    return jit_var_map_mem(cuda, type, ptr, size, free);
 }
 
-uint32_t jitc_var_copy_ptr(const void *ptr, uint32_t index) {
+uint32_t jitc_var_copy_ptr(int cuda, const void *ptr, uint32_t index) {
     lock_guard guard(state.mutex);
-    return jit_var_copy_ptr(ptr, index);
+    return jit_var_copy_ptr(cuda, ptr, index);
 }
 
-uint32_t jitc_var_copy_mem(AllocType atype, VarType vtype, int cuda,
+uint32_t jitc_var_copy_mem(int cuda, AllocType atype, VarType vtype,
                            const void *value, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_var_copy_mem(atype, vtype, cuda, value, size);
+    return jit_var_copy_mem(cuda, atype, vtype, value, size);
 }
 
 uint32_t jitc_var_copy_var(uint32_t index) {
@@ -395,41 +354,42 @@ uint32_t jitc_var_copy_var(uint32_t index) {
     return jit_var_copy_var(index);
 }
 
-uint32_t jitc_var_new_0(VarType type, const char *stmt, int stmt_static,
-                        int cuda, uint32_t size) {
+uint32_t jitc_var_new_0(int cuda, VarType type, const char *stmt, int stmt_static,
+                        uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_var_new_0(type, stmt, stmt_static, cuda, size);
+    return jit_var_new_0(cuda, type, stmt, stmt_static, size);
 }
 
-uint32_t jitc_var_new_1(VarType type, const char *stmt, int stmt_static,
-                        int cuda, uint32_t arg1) {
+uint32_t jitc_var_new_1(int cuda, VarType type, const char *stmt,
+                        int stmt_static, uint32_t arg1) {
     lock_guard guard(state.mutex);
-    return jit_var_new_1(type, stmt, stmt_static, cuda, arg1);
+    return jit_var_new_1(cuda, type, stmt, stmt_static, arg1);
 }
 
-uint32_t jitc_var_new_2(VarType type, const char *stmt, int stmt_static,
-                        int cuda, uint32_t arg1, uint32_t arg2) {
+uint32_t jitc_var_new_2(int cuda, VarType type, const char *stmt,
+                        int stmt_static, uint32_t arg1, uint32_t arg2) {
     lock_guard guard(state.mutex);
-    return jit_var_new_2(type, stmt, stmt_static, cuda, arg1, arg2);
+    return jit_var_new_2(cuda, type, stmt, stmt_static, arg1, arg2);
 }
 
-uint32_t jitc_var_new_3(VarType type, const char *stmt, int stmt_static,
-                        int cuda, uint32_t arg1, uint32_t arg2, uint32_t arg3) {
+uint32_t jitc_var_new_3(int cuda, VarType type, const char *stmt,
+                        int stmt_static, uint32_t arg1, uint32_t arg2,
+                        uint32_t arg3) {
     lock_guard guard(state.mutex);
-    return jit_var_new_3(type, stmt, stmt_static, cuda, arg1, arg2, arg3);
+    return jit_var_new_3(cuda, type, stmt, stmt_static, arg1, arg2, arg3);
 }
 
-uint32_t jitc_var_new_4(VarType type, const char *stmt, int stmt_static,
-                        int cuda, uint32_t arg1, uint32_t arg2, uint32_t arg3,
-                        uint32_t arg4) {
+uint32_t jitc_var_new_4(int cuda, VarType type, const char *stmt,
+                        int stmt_static, uint32_t arg1, uint32_t arg2,
+                        uint32_t arg3, uint32_t arg4) {
     lock_guard guard(state.mutex);
-    return jit_var_new_4(type, stmt, stmt_static, cuda, arg1, arg2, arg3, arg4);
+    return jit_var_new_4(cuda, type, stmt, stmt_static, arg1, arg2, arg3, arg4);
 }
 
-uint32_t jitc_var_new_literal(VarType type, int cuda, uint64_t value,
+uint32_t jitc_var_new_literal(int cuda, VarType type, uint64_t value,
                               uint32_t size, int eval) {
     lock_guard guard(state.mutex);
-    return jit_var_new_literal(type, cuda, value, size, eval);
+    return jit_var_new_literal(cuda, type, value, size, eval);
 }
 
 uint32_t jitc_var_migrate(uint32_t index, AllocType type) {
@@ -497,82 +457,75 @@ int jitc_var_schedule(uint32_t index) {
 }
 
 /// Enable/disable common subexpression elimination
-void jitc_set_cse(int value) {
+void jitc_set_cse(int cuda, int value) {
     lock_guard guard(state.mutex);
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_set_cse(): you must invoke jitc_set_device() to "
-                  "choose a target device before calling this function!");
-    stream->enable_cse = value != 0;
+    thread_state(cuda)->enable_cse = value != 0;
 }
 
 /// Return whether or not common subexpression elimination is enabled
-int jitc_cse() {
+int jitc_cse(int cuda) {
     lock_guard guard(state.mutex);
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_set_cse(): you must invoke jitc_set_device() to "
-                  "choose a target device before calling this function!");
-    return stream->enable_cse ? 1 : 0;
+    return thread_state(cuda)->enable_cse;
 }
 
-void jitc_memset_async(void *ptr, uint32_t size, uint32_t isize, const void *src) {
+void jitc_memset_async(int cuda, void *ptr, uint32_t size, uint32_t isize,
+                       const void *src) {
     lock_guard guard(state.mutex);
-    jit_memset_async(ptr, size, isize, src);
+    jit_memset_async(cuda, ptr, size, isize, src);
 }
 
-void jitc_memcpy(void *dst, const void *src, size_t size) {
+void jitc_memcpy(int cuda, void *dst, const void *src, size_t size) {
     lock_guard guard(state.mutex);
-    jit_memcpy(dst, src, size);
+    jit_memcpy(cuda, dst, src, size);
 }
 
-void jitc_memcpy_async(void *dst, const void *src, size_t size) {
+void jitc_memcpy_async(int cuda, void *dst, const void *src, size_t size) {
     lock_guard guard(state.mutex);
-    jit_memcpy_async(dst, src, size);
+    jit_memcpy_async(cuda, dst, src, size);
 }
 
-void jitc_reduce(VarType type, ReductionType rtype,
-                 const void *ptr, uint32_t size, void *out) {
+void jitc_reduce(int cuda, VarType type, ReductionType rtype, const void *ptr,
+                 uint32_t size, void *out) {
     lock_guard guard(state.mutex);
-    jit_reduce(type, rtype, ptr, size, out);
+    jit_reduce(cuda, type, rtype, ptr, size, out);
 }
 
-void jitc_scan_u32(const uint32_t *in, uint32_t size, uint32_t *out) {
+void jitc_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
     lock_guard guard(state.mutex);
-    jit_scan_u32(in, size, out);
+    jit_scan_u32(cuda, in, size, out);
 }
 
-uint32_t jitc_compress(const uint8_t *in, uint32_t size, uint32_t *out) {
+uint32_t jitc_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out) {
     lock_guard guard(state.mutex);
-    return jit_compress(in, size, out);
+    return jit_compress(cuda, in, size, out);
 }
 
-uint8_t jitc_all(uint8_t *values, uint32_t size) {
+uint8_t jitc_all(int cuda, uint8_t *values, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_all(values, size);
+    return jit_all(cuda, values, size);
 }
 
-uint8_t jitc_any(uint8_t *values, uint32_t size) {
+uint8_t jitc_any(int cuda, uint8_t *values, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jit_any(values, size);
+    return jit_any(cuda, values, size);
 }
 
-uint32_t jitc_mkperm(const uint32_t *values, uint32_t size,
+uint32_t jitc_mkperm(int cuda, const uint32_t *values, uint32_t size,
                      uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
     lock_guard guard(state.mutex);
-    return jit_mkperm(values, size, bucket_count, perm, offsets);
+    return jit_mkperm(cuda, values, size, bucket_count, perm, offsets);
 }
 
-void jitc_block_copy(enum VarType type, const void *in, void *out,
+void jitc_block_copy(int cuda, enum VarType type, const void *in, void *out,
                      uint32_t size, uint32_t block_size) {
     lock_guard guard(state.mutex);
-    jit_block_copy(type, in, out, size, block_size);
+    jit_block_copy(cuda, type, in, out, size, block_size);
 }
 
-void jitc_block_sum(enum VarType type, const void *in, void *out,
-                     uint32_t size, uint32_t block_size) {
+void jitc_block_sum(int cuda, enum VarType type, const void *in, void *out,
+                    uint32_t size, uint32_t block_size) {
     lock_guard guard(state.mutex);
-    jit_block_sum(type, in, out, size, block_size);
+    jit_block_sum(cuda, type, in, out, size, block_size);
 }
 
 uint32_t jitc_registry_put(const char *domain, void *ptr) {
@@ -621,24 +574,26 @@ const void *jitc_registry_attr_data(const char *domain, const char *name) {
     return jit_registry_attr_data(domain, name);
 }
 
-VCallBucket *jitc_vcall(const char *domain, uint32_t index,
+VCallBucket *jitc_vcall(int cuda, const char *domain, uint32_t index,
                         uint32_t *bucket_count_out) {
     lock_guard guard(state.mutex);
-    return jit_vcall(domain, index, bucket_count_out);
+    return jit_vcall(cuda, domain, index, bucket_count_out);
 }
 
-const char *jitc_eval_ir(const uint32_t *in, uint32_t n_in,
+const char *jitc_eval_ir(int cuda,
+                         const uint32_t *in, uint32_t n_in,
                          const uint32_t *out, uint32_t n_out,
                          uint32_t n_side_effects,
                          uint64_t *hash_out) {
     lock_guard guard(state.mutex);
-    return jit_eval_ir(in, n_in, out, n_out, n_side_effects, hash_out);
+    return jit_eval_ir(cuda, in, n_in, out, n_out, n_side_effects, hash_out);
 }
 
-uint32_t jitc_eval_ir_var(const uint32_t *in, uint32_t n_in,
+uint32_t jitc_eval_ir_var(int cuda,
+                          const uint32_t *in, uint32_t n_in,
                           const uint32_t *out, uint32_t n_out,
-                         uint32_t n_side_effects,
+                          uint32_t n_side_effects,
                           uint64_t *hash_out) {
     lock_guard guard(state.mutex);
-    return jit_eval_ir_var(in, n_in, out, n_out, n_side_effects, hash_out);
+    return jit_eval_ir_var(cuda, in, n_in, out, n_out, n_side_effects, hash_out);
 }

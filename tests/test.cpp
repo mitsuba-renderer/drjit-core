@@ -38,7 +38,7 @@ void test_sanitize_log(char *buf) {
          *dst = src;
 
     // Remove all lines starting with the following text
-    const char *excise[12] = {
+    const char *excise[13] = {
         "jit_init(): detecting",
         " - Found CUDA",
         " - Enabling peer",
@@ -50,7 +50,8 @@ void test_sanitize_log(char *buf) {
         "jit_kernel_write(",
         "jit_llvm_disasm()",
         "jit_llvm_mem_allocate(",
-        "jit_kernel_read(): cache collision"
+        "jit_kernel_read(): cache collision",
+        "    // Grid-stride loop"
     };
 
     while (*src != '\0') {
@@ -325,7 +326,6 @@ int main(int argc, char **argv) {
             fflush(stdout);
             log_value.clear();
             jitc_init(!test.cuda, test.cuda);
-            jitc_set_device(test.cuda ? 0 : -1, 0);
             if (!test.cuda)
                 jitc_llvm_set_target("skylake", nullptr, 8);
             auto before = std::chrono::high_resolution_clock::now();

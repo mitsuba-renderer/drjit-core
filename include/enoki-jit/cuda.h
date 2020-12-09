@@ -63,20 +63,20 @@ struct CUDAArray {
             op = "cvt.$t0.$t1 $r0, $r1";
         }
 
-        m_index = jitc_var_new_1(Type, op, 1, 1, v.index());
+        m_index = jitc_var_new_1(1, Type, op, 1, v.index());
     }
 
     CUDAArray(Value value) {
         uint64_t tmp = 0;
         memcpy(&tmp, &value, sizeof(Value));
-        m_index = jitc_var_new_literal(Type, 1, tmp, 1, 0);
+        m_index = jitc_var_new_literal(1, Type, tmp, 1, 0);
     }
 
     template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
     CUDAArray(Args&&... args) {
         Value data[] = { (Value) args... };
-        m_index = jitc_var_copy_mem(AllocType::Host, Type, 1, data,
-                                (uint32_t) sizeof...(Args));
+        m_index = jitc_var_copy_mem(1, AllocType::Host, Type, data,
+                                    (uint32_t) sizeof...(Args));
     }
 
     CUDAArray &operator=(const CUDAArray &a) {
@@ -105,7 +105,7 @@ struct CUDAArray {
                              ? "add.ftz.$t0 $r0, $r1, $r2"
                              : "add.$t0 $r0, $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(1, Type, op, 1, m_index, v.m_index));
     }
 
     CUDAArray operator-(const CUDAArray &v) const {
@@ -116,7 +116,7 @@ struct CUDAArray {
                              ? "sub.ftz.$t0 $r0, $r1, $r2"
                              : "sub.$t0 $r0, $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(1, Type, op, 1, m_index, v.m_index));
     }
 
     CUDAArray operator*(const CUDAArray &v) const {
@@ -136,7 +136,7 @@ struct CUDAArray {
         else
             op = "mul.lo.$t0 $r0, $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(1, Type, op, 1, m_index, v.m_index));
     }
 
     CUDAArray operator/(const CUDAArray &v) const {
@@ -155,7 +155,7 @@ struct CUDAArray {
         else
             op = "div.$t0 $r0, $r1, $r2";
 
-        return from_index(jitc_var_new_2(Type, op, 1, 1, m_index, v.m_index));
+        return from_index(jitc_var_new_2(1, Type, op, 1, m_index, v.m_index));
     }
 
     CUDAArray operator/(Value value) const {
@@ -185,7 +185,7 @@ struct CUDAArray {
                              : "setp.hi.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, 1, m_index, a.index()));
+            1, CUDAArray<bool>::Type, op, 1, m_index, a.index()));
     }
 
     CUDAArray<bool> operator>=(const CUDAArray &a) const {
@@ -197,7 +197,7 @@ struct CUDAArray {
                              : "setp.hs.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, 1, m_index, a.index()));
+            1, CUDAArray<bool>::Type, op, 1, m_index, a.index()));
     }
 
 
@@ -210,7 +210,7 @@ struct CUDAArray {
                              : "setp.lo.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, 1, m_index, a.index()));
+            1, CUDAArray<bool>::Type, op, 1, m_index, a.index()));
     }
 
     CUDAArray<bool> operator<=(const CUDAArray &a) const {
@@ -222,7 +222,7 @@ struct CUDAArray {
                              : "setp.ls.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, 1, m_index, a.index()));
+            1, CUDAArray<bool>::Type, op, 1, m_index, a.index()));
     }
 
     friend CUDAArray<bool> eq(const CUDAArray &a, const CUDAArray &b) {
@@ -232,7 +232,7 @@ struct CUDAArray {
               "not.$t1 $r0, $r0";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, 1, a.index(), b.index()));
+            1, CUDAArray<bool>::Type, op, 1, a.index(), b.index()));
     }
 
     friend CUDAArray<bool> neq(const CUDAArray &a, const CUDAArray &b) {
@@ -241,7 +241,7 @@ struct CUDAArray {
               "xor.$t1 $r0, $r1, $r2";
 
         return CUDAArray<bool>::from_index(jitc_var_new_2(
-            CUDAArray<bool>::Type, op, 1, 1, a.index(), b.index()));
+            1, CUDAArray<bool>::Type, op, 1, a.index(), b.index()));
     }
 
     bool operator==(const CUDAArray &a) const {
@@ -260,11 +260,11 @@ struct CUDAArray {
                              ? "neg.ftz.$t0 $r0, $r1"
                              : "neg.$t0 $r0, $r1";
 
-        return from_index(jitc_var_new_1(Type, op, 1, 1, m_index));
+        return from_index(jitc_var_new_1(1, Type, op, 1, m_index));
     }
 
     CUDAArray operator~() const {
-        return from_index(jitc_var_new_1(Type, "not.$b0 $r0, $r1", 1, 1, m_index));
+        return from_index(jitc_var_new_1(1, Type, "not.$b0 $r0, $r1", 1, m_index));
     }
 
     CUDAArray operator|(const CUDAArray &a) const {
@@ -276,8 +276,8 @@ struct CUDAArray {
                 return a;
         }
 
-        return from_index(jitc_var_new_2(Type, "or.$b0 $r0, $r1, $r2",
-                                         1, 1, m_index, a.index()));
+        return from_index(jitc_var_new_2(1, Type, "or.$b0 $r0, $r1, $r2",
+                                         1, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -288,8 +288,8 @@ struct CUDAArray {
         else if (m.is_literal_one())
             return CUDAArray(memcpy_cast<Value>(uint_with_size_t<Value>(-1)));
 
-        return from_index(jitc_var_new_2(Type, "selp.$b0 $r0, -1, $r1, $r2",
-                                         1, 1, index(), m.index()));
+        return from_index(jitc_var_new_2(1, Type, "selp.$b0 $r0, -1, $r1, $r2",
+                                         1, index(), m.index()));
     }
 
     CUDAArray operator&(const CUDAArray &a) const {
@@ -301,8 +301,8 @@ struct CUDAArray {
                 return *this;
         }
 
-        return from_index(jitc_var_new_2(Type, "and.$b0 $r0, $r1, $r2",
-                                         1, 1, m_index, a.index()));
+        return from_index(jitc_var_new_2(1, Type, "and.$b0 $r0, $r1, $r2",
+                                         1, m_index, a.index()));
     }
 
     template <typename T = Value, enable_if_t<!std::is_same<T, bool>::value> = 0>
@@ -313,8 +313,8 @@ struct CUDAArray {
         else if (m.is_literal_zero())
             return CUDAArray(Value(0));
 
-        return from_index(jitc_var_new_2(Type, "selp.$b0 $r0, $r1, 0, $r2",
-                                         1, 1, index(), m.index()));
+        return from_index(jitc_var_new_2(1, Type, "selp.$b0 $r0, $r1, 0, $r2",
+                                         1, index(), m.index()));
     }
 
     CUDAArray operator^(const CUDAArray &a) const {
@@ -326,13 +326,13 @@ struct CUDAArray {
                 return *this;
         }
 
-        return from_index(jitc_var_new_2(Type, "xor.$b0 $r0, $r1, $r2",
-                                         1, 1, m_index, a.index()));
+        return from_index(jitc_var_new_2(1, Type, "xor.$b0 $r0, $r1, $r2",
+                                         1, m_index, a.index()));
     }
 
     CUDAArray operator<<(const CUDAArray<uint32_t> &v) const {
         return from_index(jitc_var_new_2(
-            Type, "shl.$b0 $r0, $r1, $r2", 1, 1, index(), v.index()));
+            1, Type, "shl.$b0 $r0, $r1, $r2", 1, index(), v.index()));
     }
 
     CUDAArray operator>>(const CUDAArray<uint32_t> &v) const {
@@ -343,7 +343,7 @@ struct CUDAArray {
             op = "shr.$b0 $r0, $r1, $r2";
 
         return from_index(
-            jitc_var_new_2(Type, op, 1, 1, index(), v.index()));
+            jitc_var_new_2(1, Type, op, 1, index(), v.index()));
     }
 
     CUDAArray& operator+=(const CUDAArray &v) {
@@ -423,7 +423,7 @@ struct CUDAArray {
                              : "abs.$t0 $r0, $r1";
 
         return CUDAArray::from_index(
-            jitc_var_new_1(Type, op, 1, 1, a.index()));
+            jitc_var_new_1(1, Type, op, 1, a.index()));
     }
 
     friend CUDAArray sqrt(const CUDAArray &a) {
@@ -434,39 +434,39 @@ struct CUDAArray {
                              ? "sqrt.rn.ftz.$t0 $r0, $r1"
                              : "sqrt.rn.$t0 $r0, $r1";
 
-        return CUDAArray::from_index(jitc_var_new_1(Type, op, 1, 1, a.index()));
+        return CUDAArray::from_index(jitc_var_new_1(1, Type, op, 1, a.index()));
     }
 
     friend CUDAArray round(const CUDAArray &a) {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return CUDAArray::from_index(jitc_var_new_1(Type,
-            "cvt.rni.$t0.$t0 $r0, $r1", 1, 1, a.index()));
+        return CUDAArray::from_index(jitc_var_new_1(1, Type,
+            "cvt.rni.$t0.$t0 $r0, $r1", 1, a.index()));
     }
 
     friend CUDAArray floor(const CUDAArray &a) {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return CUDAArray::from_index(jitc_var_new_1(Type,
-            "cvt.rmi.$t0.$t0 $r0, $r1", 1, 1, a.index()));
+        return CUDAArray::from_index(jitc_var_new_1(1, Type,
+            "cvt.rmi.$t0.$t0 $r0, $r1", 1, a.index()));
     }
 
     friend CUDAArray ceil(const CUDAArray &a) {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return CUDAArray::from_index(jitc_var_new_1(Type,
-            "cvt.rpi.$t0.$t0 $r0, $r1", 1, 1, a.index()));
+        return CUDAArray::from_index(jitc_var_new_1(1, Type,
+            "cvt.rpi.$t0.$t0 $r0, $r1", 1, a.index()));
     }
 
     friend CUDAArray trunc(const CUDAArray &a) {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return CUDAArray::from_index(jitc_var_new_1(Type,
-            "cvt.rzi.$t0.$t0 $r0, $r1", 1, 1, a.index()));
+        return CUDAArray::from_index(jitc_var_new_1(1, Type,
+            "cvt.rzi.$t0.$t0 $r0, $r1", 1, a.index()));
     }
 
     friend CUDAArray fmadd(const CUDAArray &a, const CUDAArray &b,
@@ -494,7 +494,7 @@ struct CUDAArray {
             op = "mad.lo.$t0 $r0, $r1, $r2, $r3";
 
         return CUDAArray::from_index(
-            jitc_var_new_3(Type, op, 1, 1, a.index(), b.index(), c.index()));
+            jitc_var_new_3(1, Type, op, 1, a.index(), b.index(), c.index()));
     }
 
     CUDAArray& schedule() {
@@ -557,9 +557,9 @@ struct CUDAArray {
     void write(uint32_t offset, Value value) {
         if (jitc_var_int_ref(m_index) > 0) {
             eval();
-            *this = from_index(
-                jitc_var_copy_mem(AllocType::Device, CUDAArray<Value>::Type, 1,
-                              data(), (uint32_t) size()));
+            *this = from_index(jitc_var_copy_mem(1, AllocType::Device,
+                                                 CUDAArray<Value>::Type, data(),
+                                                 (uint32_t) size()));
         }
 
         jitc_var_write(m_index, offset, &value);
@@ -567,11 +567,11 @@ struct CUDAArray {
 
     static CUDAArray map(void *ptr, size_t size, bool free = false) {
         return from_index(
-            jitc_var_map_mem(Type, 1, ptr, (uint32_t) size, free ? 1 : 0));
+            jitc_var_map_mem(1, Type, ptr, (uint32_t) size, free ? 1 : 0));
     }
 
     static CUDAArray copy(const void *ptr, size_t size) {
-        return from_index(jitc_var_copy_mem(AllocType::Host, Type, 1, ptr, (uint32_t) size));
+        return from_index(jitc_var_copy_mem(1, AllocType::Host, Type, ptr, (uint32_t) size));
     }
 
     static CUDAArray from_index(uint32_t index) {
@@ -594,13 +594,13 @@ template <typename Array,
 Array empty(size_t size) {
     size_t byte_size = size * sizeof(typename Array::Value);
     void *ptr = jitc_malloc(AllocType::Device, byte_size);
-    return Array::from_index(jitc_var_map_mem(Array::Type, 1, ptr, (uint32_t) size, 1));
+    return Array::from_index(jitc_var_map_mem(1, Array::Type, ptr, (uint32_t) size, 1));
 }
 
 template <typename Array,
           typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array zero(size_t size) {
-    return Array::from_index(jitc_var_new_literal(Array::Type, 1, 0, (uint32_t) size, 0));
+    return Array::from_index(jitc_var_new_literal(1, Array::Type, 0, (uint32_t) size, 0));
 }
 
 template <typename Array,
@@ -608,7 +608,7 @@ template <typename Array,
 Array full(typename Array::Value value, size_t size) {
     uint64_t tmp = 0;
     memcpy(&tmp, &value, sizeof(typename Array::Value));
-    return Array::from_index(jitc_var_new_literal(Array::Type, 1, tmp, (uint32_t) size, 0));
+    return Array::from_index(jitc_var_new_literal(1, Array::Type, tmp, (uint32_t) size, 0));
 }
 
 template <typename Array,
@@ -619,7 +619,7 @@ Array arange(ssize_t start, ssize_t stop, ssize_t step) {
 
     size_t size = size_t((stop - start + step - (step > 0 ? 1 : -1)) / step);
     UInt32 index = UInt32::from_index(
-        jitc_var_new_0(VarType::UInt32, "mov.u32 $r0, $i", 1, 1, (uint32_t) size));
+        jitc_var_new_0(1, VarType::UInt32, "mov.u32 $r0, $i", 1, (uint32_t) size));
 
     if (start == 0 && step == 1)
         return Array(index);
@@ -640,7 +640,7 @@ Array linspace(typename Array::Value min, typename Array::Value max, size_t size
     using Value = typename Array::Value;
 
     UInt32 index = UInt32::from_index(
-        jitc_var_new_0(VarType::UInt32, "mov.u32 $r0, $i", 1, 1, (uint32_t) size));
+        jitc_var_new_0(1, VarType::UInt32, "mov.u32 $r0, $i", 1, (uint32_t) size));
 
     Value step = (max - min) / Value(size - 1);
     return fmadd(Array(index), Array(step), Array(min));
@@ -657,7 +657,7 @@ CUDAArray<Value> select(const CUDAArray<bool> &m,
         return f;
     } else if (!std::is_same<Value, bool>::value) {
         return CUDAArray<Value>::from_index(jitc_var_new_3(
-            CUDAArray<Value>::Type, "selp.$t0 $r0, $r1, $r2, $r3", 1, 1,
+            1, CUDAArray<Value>::Type, "selp.$t0 $r0, $r1, $r2, $r3", 1,
             t.index(), f.index(), m.index()));
     } else {
         return (m & t) | (~m & f);
@@ -674,7 +674,7 @@ OutArray reinterpret_array(const CUDAArray<ValueIn> &input) {
 
     if (std::is_integral<ValueIn>::value != std::is_integral<ValueOut>::value) {
         return OutArray::from_index(jitc_var_new_1(
-            OutArray::Type, "mov.$b0 $r0, $r1", 1, 1, input.index()));
+            1, OutArray::Type, "mov.$b0 $r0, $r1", 1, input.index()));
     } else {
         jitc_var_inc_ref_ext(input.index());
         return OutArray::from_index(input.index());
@@ -688,7 +688,7 @@ CUDAArray<Value> min(const CUDAArray<Value> &a, const CUDAArray<Value> &b) {
                          : "min.$t0 $r0, $r1, $r2";
 
     return CUDAArray<Value>::from_index(jitc_var_new_2(
-        CUDAArray<Value>::Type, op, 1, 1, a.index(), b.index()));
+        1, CUDAArray<Value>::Type, op, 1, a.index(), b.index()));
 }
 
 template <typename Value>
@@ -698,7 +698,7 @@ CUDAArray<Value> max(const CUDAArray<Value> &a, const CUDAArray<Value> &b) {
                          : "max.$t0 $r0, $r1, $r2";
 
     return CUDAArray<Value>::from_index(jitc_var_new_2(
-        CUDAArray<Value>::Type, op, 1, 1, a.index(), b.index()));
+        1, CUDAArray<Value>::Type, op, 1, a.index(), b.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -708,7 +708,7 @@ OutArray round2int(const CUDAArray<ValueIn> &a) {
         jitc_raise("Unsupported operand type");
 
     return OutArray::from_index(jitc_var_new_1(
-        OutArray::Type, "cvt.rni.$t0.$t1 $r0, $r1", 1, 1, a.index()));
+        1, OutArray::Type, "cvt.rni.$t0.$t1 $r0, $r1", 1, a.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -718,7 +718,7 @@ OutArray floor2int(const CUDAArray<ValueIn> &a) {
         jitc_raise("Unsupported operand type");
 
     return OutArray::from_index(jitc_var_new_1(
-        OutArray::Type, "cvt.rmi.$t0.$t1 $r0, $r1", 1, 1, a.index()));
+        1, OutArray::Type, "cvt.rmi.$t0.$t1 $r0, $r1", 1, a.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -728,7 +728,7 @@ OutArray ceil2int(const CUDAArray<ValueIn> &a) {
         jitc_raise("Unsupported operand type");
 
     return OutArray::from_index(jitc_var_new_1(
-        OutArray::Type, "cvt.rpi.$t0.$t1 $r0, $r1", 1, 1, a.index()));
+        1, OutArray::Type, "cvt.rpi.$t0.$t1 $r0, $r1", 1, a.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -738,7 +738,7 @@ OutArray trunc2int(const CUDAArray<ValueIn> &a) {
         jitc_raise("Unsupported operand type");
 
     return OutArray::from_index(jitc_var_new_1(
-        OutArray::Type, "cvt.rzi.$t0.$t1 $r0, $r1", 1, 1, a.index()));
+        1, OutArray::Type, "cvt.rzi.$t0.$t1 $r0, $r1", 1, a.index()));
 }
 
 
@@ -762,33 +762,33 @@ Array gather_impl(const void *src_ptr,
     }
 
     CUDAArray<void *> base = CUDAArray<void *>::from_index(
-        jitc_var_copy_ptr(src_ptr, src_index));
+        jitc_var_copy_ptr(1, src_ptr, src_index));
 
     uint32_t var = 0;
     if (mask.is_literal_one()) {
-        var = jitc_var_new_2(Array::Type,
-                                  !std::is_same<Value, bool>::value
-                                      ? "mul.wide.$t2 %rd3, $r2, $s0$n"
-                                        "add.$t1 %rd3, %rd3, $r1$n"
-                                        "ld.global.nc.$t0 $r0, [%rd3]"
-                                      : "mul.wide.$t2 %rd3, $r2, $s0$n"
-                                        "add.$t1 %rd3, %rd3, $r1$n"
-                                        "ld.global.nc.u8 %w0, [%rd3]$n"
-                                        "setp.ne.u16 $r0, %w0, 0",
-                                  1, 1, base.index(), index.index());
+        var = jitc_var_new_2(1, Array::Type,
+                             !std::is_same<Value, bool>::value
+                                 ? "mul.wide.$t2 %rd3, $r2, $s0$n"
+                                   "add.$t1 %rd3, %rd3, $r1$n"
+                                   "ld.global.nc.$t0 $r0, [%rd3]"
+                                 : "mul.wide.$t2 %rd3, $r2, $s0$n"
+                                   "add.$t1 %rd3, %rd3, $r1$n"
+                                   "ld.global.nc.u8 %w0, [%rd3]$n"
+                                   "setp.ne.u16 $r0, %w0, 0",
+                             1, base.index(), index.index());
     } else {
-        var = jitc_var_new_3(Array::Type,
-                                  !std::is_same<Value, bool>::value
-                                      ? "mul.wide.$t2 %rd3, $r2, $s0$n"
-                                        "add.$t1 %rd3, %rd3, $r1$n"
-                                        "@$r3 ld.global.nc.$t0 $r0, [$r1]$n"
-                                        "@!$r3 mov.$b0 $r0, 0"
-                                      : "mul.wide.$t2 %rd3, $r2, $s0$n"
-                                        "add.$t1 %rd3, %rd3, $r1$n"
-                                        "@$r3 ld.global.nc.u8 %w0, [$r1]$n"
-                                        "@!$r3 mov.u16 %w0, 0$n"
-                                        "setp.ne.u16 $r0, %w0, 0",
-                                  1, 1, base.index(), index.index(), mask.index());
+        var = jitc_var_new_3(1, Array::Type,
+                             !std::is_same<Value, bool>::value
+                                 ? "mul.wide.$t2 %rd3, $r2, $s0$n"
+                                   "add.$t1 %rd3, %rd3, $r1$n"
+                                   "@$r3 ld.global.nc.$t0 $r0, [$r1]$n"
+                                   "@!$r3 mov.$b0 $r0, 0"
+                                 : "mul.wide.$t2 %rd3, $r2, $s0$n"
+                                   "add.$t1 %rd3, %rd3, $r1$n"
+                                   "@$r3 ld.global.nc.u8 %w0, [$r1]$n"
+                                   "@!$r3 mov.u16 %w0, 0$n"
+                                   "setp.ne.u16 $r0, %w0, 0",
+                             1, base.index(), index.index(), mask.index());
     }
 
     return Array::from_index(var);
@@ -838,47 +838,47 @@ void scatter(CUDAArray<Value> &dst,
 
     if (jitc_var_int_ref(dst.index()) > 0) {
         dst = CUDAArray<Value>::from_index(jitc_var_copy_mem(
-            AllocType::Device, CUDAArray<Value>::Type, 1, ptr, (uint32_t) dst.size()));
+            1, AllocType::Device, CUDAArray<Value>::Type, ptr, (uint32_t) dst.size()));
         ptr = dst.data();
     }
 
     CUDAArray<void *> base = CUDAArray<void *>::from_index(
-        jitc_var_copy_ptr(ptr, dst.index()));
+        jitc_var_copy_ptr(1, ptr, dst.index()));
 
     uint32_t var;
     if (mask.is_literal_one()) {
         if (!std::is_same<Value, bool>::value) {
-            var = jitc_var_new_3(VarType::Invalid,
-                                      "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                      "add.$t1 %rd3, %rd3, $r1$n"
-                                      "st.global.$t2 [%rd3], $r2",
-                                      1, 1, base.index(), value.index(),
-                                      index.index());
+            var = jitc_var_new_3(1, VarType::Invalid,
+                                 "mul.wide.$t3 %rd3, $r3, $s2$n"
+                                 "add.$t1 %rd3, %rd3, $r1$n"
+                                 "st.global.$t2 [%rd3], $r2",
+                                 1, base.index(), value.index(),
+                                 index.index());
         } else {
-            var = jitc_var_new_3(VarType::Invalid,
-                                      "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                      "add.$t1 %rd3, %rd3, $r1$n"
-                                      "selp.u16 %w0, 1, 0, $r2$n"
-                                      "st.global.u8 [%rd3], %w0",
-                                      1, 1, base.index(), value.index(),
-                                      index.index());
+            var = jitc_var_new_3(1, VarType::Invalid,
+                                 "mul.wide.$t3 %rd3, $r3, $s2$n"
+                                 "add.$t1 %rd3, %rd3, $r1$n"
+                                 "selp.u16 %w0, 1, 0, $r2$n"
+                                 "st.global.u8 [%rd3], %w0",
+                                 1, base.index(), value.index(),
+                                 index.index());
         }
     } else {
         if (!std::is_same<Value, bool>::value) {
-            var = jitc_var_new_4(VarType::Invalid,
-                                      "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                      "add.$t1 %rd3, %rd3, $r1$n"
-                                      "@$r4 st.global.$t2 [%rd3], $r2",
-                                      1, 1, base.index(), value.index(),
-                                      index.index(), mask.index());
+            var = jitc_var_new_4(1, VarType::Invalid,
+                                 "mul.wide.$t3 %rd3, $r3, $s2$n"
+                                 "add.$t1 %rd3, %rd3, $r1$n"
+                                 "@$r4 st.global.$t2 [%rd3], $r2",
+                                 1, base.index(), value.index(),
+                                 index.index(), mask.index());
         } else {
-            var = jitc_var_new_4(VarType::Invalid,
-                                      "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                      "add.$t1 %rd3, %rd3, $r1$n"
-                                      "selp.u16 %w0, 1, 0, $r2$n"
-                                      "@$r4 st.global.u8 [%rd3], %w0",
-                                      1, 1, base.index(), value.index(),
-                                      index.index(), mask.index());
+            var = jitc_var_new_4(1, VarType::Invalid,
+                                 "mul.wide.$t3 %rd3, $r3, $s2$n"
+                                 "add.$t1 %rd3, %rd3, $r1$n"
+                                 "selp.u16 %w0, 1, 0, $r2$n"
+                                 "@$r4 st.global.u8 [%rd3], %w0",
+                                 1, base.index(), value.index(),
+                                 index.index(), mask.index());
         }
     }
 
@@ -909,28 +909,28 @@ void scatter_add(CUDAArray<Value> &dst,
 
     if (jitc_var_int_ref(dst.index()) > 0) {
         dst = CUDAArray<Value>::from_index(jitc_var_copy_mem(
-            AllocType::Device, CUDAArray<Value>::Type, 1, ptr, (uint32_t) dst.size()));
+            1, AllocType::Device, CUDAArray<Value>::Type, ptr, (uint32_t) dst.size()));
         ptr = dst.data();
     }
 
     CUDAArray<void *> base = CUDAArray<void *>::from_index(
-        jitc_var_copy_ptr(ptr, dst.index()));
+        jitc_var_copy_ptr(1, ptr, dst.index()));
 
     uint32_t var;
     if (mask.is_literal_one()) {
-        var = jitc_var_new_3(VarType::Invalid,
-                                  "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                  "add.$t1 %rd3, %rd3, $r1$n"
-                                  "red.global.add.$t2 [%rd3], $r2",
-                                  1, 1, base.index(), value.index(),
-                                  index.index());
+        var = jitc_var_new_3(1, VarType::Invalid,
+                             "mul.wide.$t3 %rd3, $r3, $s2$n"
+                             "add.$t1 %rd3, %rd3, $r1$n"
+                             "red.global.add.$t2 [%rd3], $r2",
+                             1, base.index(), value.index(),
+                             index.index());
     } else {
-        var = jitc_var_new_4(VarType::Invalid,
-                                  "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                  "add.$t1 %rd3, %rd3, $r1$n"
-                                  "@$r4 red.global.add.$t2 [%rd3], $r2",
-                                  1, 1, base.index(), value.index(),
-                                  index.index(), mask.index());
+        var = jitc_var_new_4(1, VarType::Invalid,
+                             "mul.wide.$t3 %rd3, $r3, $s2$n"
+                             "add.$t1 %rd3, %rd3, $r1$n"
+                             "@$r4 red.global.add.$t2 [%rd3], $r2",
+                             1, base.index(), value.index(),
+                             index.index(), mask.index());
     }
 
     jitc_var_mark_scatter(var, dst.index());
@@ -975,7 +975,7 @@ inline bool all(const CUDAArray<bool> &v) {
         return false;
     } else {
         v.eval();
-        return (bool) jitc_all((uint8_t *) v.data(), (uint32_t) v.size());
+        return (bool) jitc_all(1, (uint8_t *) v.data(), (uint32_t) v.size());
     }
 }
 
@@ -986,7 +986,7 @@ inline bool any(const CUDAArray<bool> &v) {
         return false;
     } else {
         v.eval();
-        return (bool) jitc_any((uint8_t *) v.data(), (uint32_t) v.size());
+        return (bool) jitc_any(1, (uint8_t *) v.data(), (uint32_t) v.size());
     }
 }
 
@@ -1001,8 +1001,8 @@ template <typename Value> CUDAArray<Value> hsum(const CUDAArray<Value> &v) {
 
     v.eval();
     Array result = empty<Array>(1);
-    jitc_reduce(Array::Type, ReductionType::Add, v.data(), (uint32_t) v.size(),
-                result.data());
+    jitc_reduce(1, Array::Type, ReductionType::Add, v.data(),
+                (uint32_t) v.size(), result.data());
     return result;
 }
 
@@ -1013,8 +1013,8 @@ template <typename Value> CUDAArray<Value> hprod(const CUDAArray<Value> &v) {
 
     v.eval();
     Array result = empty<Array>(1);
-    jitc_reduce(Array::Type, ReductionType::Mul, v.data(), (uint32_t) v.size(),
-                result.data());
+    jitc_reduce(1, Array::Type, ReductionType::Mul, v.data(),
+                (uint32_t) v.size(), result.data());
     return result;
 }
 
@@ -1025,8 +1025,8 @@ template <typename Value> CUDAArray<Value> hmax(const CUDAArray<Value> &v) {
 
     v.eval();
     Array result = empty<Array>(1);
-    jitc_reduce(Array::Type, ReductionType::Max, v.data(), (uint32_t) v.size(),
-                result.data());
+    jitc_reduce(1, Array::Type, ReductionType::Max, v.data(),
+                (uint32_t) v.size(), result.data());
     return result;
 }
 
@@ -1037,8 +1037,8 @@ template <typename Value> CUDAArray<Value> hmin(const CUDAArray<Value> &v) {
 
     v.eval();
     Array result = empty<Array>(1);
-    jitc_reduce(Array::Type, ReductionType::Min, v.data(), (uint32_t) v.size(),
-                result.data());
+    jitc_reduce(1, Array::Type, ReductionType::Min, v.data(),
+                (uint32_t) v.size(), result.data());
     return result;
 }
 
@@ -1055,14 +1055,14 @@ mkperm(const CUDAArray<uint32_t> &v, uint32_t bucket_count) {
     uint32_t *offsets = (uint32_t *) jitc_malloc(AllocType::HostPinned, offsets_size),
              *perm    = (uint32_t *) jitc_malloc(AllocType::Device, perm_size);
 
-    jitc_mkperm(v.data(), (uint32_t) size, bucket_count, perm, offsets);
+    jitc_mkperm(1, v.data(), (uint32_t) size, bucket_count, perm, offsets);
 
     uint32_t unique_count = offsets[0];
     std::vector<std::pair<uint32_t, CUDAArray<uint32_t>>> result;
     result.reserve(unique_count);
 
     UInt32 parent =
-        UInt32::from_index(jitc_var_map_mem(UInt32::Type, 1, perm, (uint32_t) size, 1));
+        UInt32::from_index(jitc_var_map_mem(1, UInt32::Type, perm, (uint32_t) size, 1));
 
     for (uint32_t i = 0; i < unique_count; ++i) {
         uint32_t bucket_id     = offsets[i * 3 + 1],
@@ -1070,7 +1070,7 @@ mkperm(const CUDAArray<uint32_t> &v, uint32_t bucket_count) {
                  bucket_size   = offsets[i * 3 + 3];
 
         uint32_t var_idx =
-            jitc_var_map_mem(UInt32::Type, 1, perm + bucket_offset, bucket_size, 0);
+            jitc_var_map_mem(1, UInt32::Type, perm + bucket_offset, bucket_size, 0);
 
         result.emplace_back(bucket_id, UInt32::from_index(var_idx));
     }
@@ -1086,7 +1086,7 @@ Array popcnt(const CUDAArray<Value> &a) {
         jitc_raise("Unsupported operand type");
 
     return Array::from_index(
-        jitc_var_new_1(Array::Type, "popc.$b0 $r0, $r1", 1, 1, a.index()));
+        jitc_var_new_1(1, Array::Type, "popc.$b0 $r0, $r1", 1, a.index()));
 }
 
 template <typename Value, typename Array = CUDAArray<Value>>
@@ -1095,7 +1095,7 @@ Array lzcnt(const CUDAArray<Value> &a) {
         jitc_raise("Unsupported operand type");
 
     return Array::from_index(
-        jitc_var_new_1(Array::Type, "clz.$b0 $r0, $r1", 1, 1, a.index()));
+        jitc_var_new_1(1, Array::Type, "clz.$b0 $r0, $r1", 1, a.index()));
 }
 
 template <typename Value, typename Array = CUDAArray<Value>>
@@ -1104,7 +1104,7 @@ Array tzcnt(const CUDAArray<Value> &a) {
         jitc_raise("Unsupported operand type");
 
     return Array::from_index(jitc_var_new_1(
-        Array::Type, "brev.$b0 $r0, $r1$nclz.$b0 $r0, $r0", 1, 1, a.index()));
+        1, Array::Type, "brev.$b0 $r0, $r1$nclz.$b0 $r0, $r0", 1, a.index()));
 }
 
 template <typename T> void jitc_schedule(const CUDAArray<T> &a) {
@@ -1114,7 +1114,7 @@ template <typename T> void jitc_schedule(const CUDAArray<T> &a) {
 inline std::vector<std::pair<void *, CUDAArray<uint32_t>>>
 vcall(const char *domain, const CUDAArray<uint32_t> &a) {
     uint32_t bucket_count = 0;
-    VCallBucket *buckets = jitc_vcall(domain, a.index(), &bucket_count);
+    VCallBucket *buckets = jitc_vcall(1, domain, a.index(), &bucket_count);
 
     std::vector<std::pair<void *, CUDAArray<uint32_t>>> result;
     result.reserve(bucket_count);
@@ -1130,17 +1130,17 @@ vcall(const char *domain, const CUDAArray<uint32_t> &a) {
 inline CUDAArray<uint32_t> compress(const CUDAArray<bool> &a) {
     uint32_t *perm = (uint32_t *) jitc_malloc(AllocType::Device, a.size() * sizeof(uint32_t));
 
-    uint32_t size = jitc_compress((const uint8_t *) a.data(), (uint32_t) a.size(), perm);
+    uint32_t size = jitc_compress(1, (const uint8_t *) a.data(), (uint32_t) a.size(), perm);
 
     return CUDAArray<uint32_t>::from_index(
-        jitc_var_map_mem(VarType::UInt32, 1, perm, size, 1));
+        jitc_var_map_mem(1, VarType::UInt32, perm, size, 1));
 }
 
 template <typename T>
 inline CUDAArray<T> block_copy(const CUDAArray<T> &a, uint32_t block_size) {
     size_t size = a.eval().size();
     CUDAArray<T> output = empty<CUDAArray<T>>(size * block_size);
-    jitc_block_copy(CUDAArray<T>::Type, a.data(), output.data(), (uint32_t) size, block_size);
+    jitc_block_copy(1, CUDAArray<T>::Type, a.data(), output.data(), (uint32_t) size, block_size);
     return output;
 }
 
@@ -1151,7 +1151,7 @@ inline CUDAArray<T> block_sum(const CUDAArray<T> &a, uint32_t block_size) {
         jitc_raise("block_sum(): array size must be divisible by block size (%u)!", block_size);
     size /= block_size;
     CUDAArray<T> output = empty<CUDAArray<T>>(size);
-    jitc_block_sum(CUDAArray<T>::Type, a.data(), output.data(), (uint32_t) size, block_size);
+    jitc_block_sum(1, CUDAArray<T>::Type, a.data(), output.data(), (uint32_t) size, block_size);
     return output;
 }
 

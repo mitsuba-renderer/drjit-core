@@ -1,4 +1,3 @@
-jit_set_device(device=-1, stream=0): creating stream
 jit_registry_put(<@>, domain="MyKey1"): 1 (new)
 jit_registry_put(<@>, domain="MyKey1"): 2 (new)
 jit_registry_put(<@>, domain="MyKey2"): 1 (new)
@@ -15,5 +14,4 @@ jit_registry_remove(<@>)
 jit_registry_trim(): removed 5 / 7 entries.
 jit_registry_remove(<@>)
 jit_registry_trim(): removed 2 / 2 entries.
-jit_shutdown(): releasing 1 stream ..
 jit_shutdown(): done

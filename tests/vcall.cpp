@@ -48,10 +48,10 @@ void write_indices(const uint32_t *out, uint32_t &index, std::pair<Float, Float>
 
 
 template <typename Func, typename... Args>
-std::pair<uint32_t, uint64_t> record(Func func, const Args&... args) {
-    uint32_t se_before = jitc_side_effect_counter();
+std::pair<uint32_t, uint64_t> record(int cuda, Func func, const Args&... args) {
+    uint32_t se_before = jitc_side_effect_counter(cuda);
     auto result = func(args...);
-    uint32_t se_total = jitc_side_effect_counter() - se_before;
+    uint32_t se_total = jitc_side_effect_counter(cuda) - se_before;
 
     uint32_t in_count = 0, out_count = 0;
     (read_indices(nullptr, in_count, args), ...);
@@ -65,13 +65,14 @@ std::pair<uint32_t, uint64_t> record(Func func, const Args&... args) {
     read_indices(out.get(), out_count, result);
 
     uint64_t func_hash = 0;
-    uint32_t id = jitc_eval_ir_var(in.get(), in_count, out.get(), out_count,
-                                   se_total, &func_hash);
+    uint32_t id = jitc_eval_ir_var(cuda, in.get(), in_count, out.get(),
+                                   out_count, se_total, &func_hash);
     return { id, func_hash };
 }
 
 template <typename... Args> auto vcall(const char *domain, UInt32 inst, const Args &... args) {
     using Result = std::pair<Float, Float>;
+    int cuda = 1;
 
     uint32_t n_inst   = jitc_registry_get_max(domain) + 1,
              buf_size = 22 + n_inst * 23 + 4;
@@ -84,35 +85,36 @@ template <typename... Args> auto vcall(const char *domain, UInt32 inst, const Ar
     memcpy(buf_ptr, ".const .u64 $r0[] = { ", 22);
     buf_ptr += 22;
 
-    uint32_t index = jitc_var_new_0(VarType::Global, "", 1, 1, 1);
+    uint32_t index = jitc_var_new_0(1, VarType::Global, "", 1, 1);
     for (uint32_t i = 0; i < n_inst; ++i) {
         Base *base = (Base *) jitc_registry_get_ptr(domain, i);
         uint32_t id, prev = index;
         uint64_t hash;
 
         if (base)
-            std::tie(id, hash) = record(
+            std::tie(id, hash) = record(cuda,
                 [&](const Args &...args) { return base->func(args...); }, empty<Float>(1), empty<Float>(1));
         else
-            std::tie(id, hash) = record(
+            std::tie(id, hash) = record(cuda,
                 [&](const Args &...) { return std::pair<Float, Float>(0, 0); }, empty<Float>(1), empty<Float>(1));
 
-        index = jitc_var_new_2(VarType::Global, "", 1, 1, index, id);
+        index = jitc_var_new_2(cuda, VarType::Global, "", 1, index, id);
         jitc_var_dec_ref_ext(id);
         jitc_var_dec_ref_ext(prev);
 
         buf_ptr +=
             snprintf(buf_ptr, 23 + 1, "func_%016llx%s",
-                     (unsigned long long) hash, i + 1 < n_inst ? ", " : " ") - 1;
+                     (unsigned long long) hash, i + 1 < n_inst ? ", " : " ");
     }
+
     memcpy(buf_ptr, "};\n", 4);
-    uint32_t call_table = jitc_var_new_1(VarType::Global, buf.get(), 0, 1, index);
+    uint32_t call_table = jitc_var_new_1(cuda, VarType::Global, buf.get(), 0, index);
     jitc_var_dec_ref_ext(index);
 
-    uint32_t offset = jitc_var_new_2(VarType::UInt64,
+    uint32_t offset = jitc_var_new_2(cuda, VarType::UInt64,
             "mov.$t0 $r0, $r2$n"
             "mad.wide.u32 $r0, $r1, 8, $r0$n"
-            "ld.const.$t0 $r0, [$r0]", 1, 1, inst.index(), call_table);
+            "ld.const.$t0 $r0, [$r0]", 1, inst.index(), call_table);
 
     const uint32_t var_type_size[(int) VarType::Count] {
         0, 0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 4, 8, 8
@@ -129,11 +131,11 @@ template <typename... Args> auto vcall(const char *domain, UInt32 inst, const Ar
     (read_indices(in.get(), in_count, args), ...);
     read_indices(out.get(), out_count, Result(0, 0));
 
-    index = jitc_var_new_0(VarType::Invalid, "", 1, 1, 1);
+    index = jitc_var_new_0(cuda, VarType::Invalid, "", 1, 1);
     uint32_t offset_in = 0, align_in = 1;
     for (uint32_t i = 0; i < in_count; ++i) {
         uint32_t prev = index;
-        index = jitc_var_new_2(VarType::Invalid, "", 1, 1, in[i], index);
+        index = jitc_var_new_2(cuda, VarType::Invalid, "", 1, in[i], index);
         jitc_var_dec_ref_ext(prev);
         uint32_t size = var_type_size[(uint32_t) jitc_var_type(in[i])];
         offset_in = (offset_in + size - 1) / size * size;
@@ -156,7 +158,7 @@ template <typename... Args> auto vcall(const char *domain, UInt32 inst, const Ar
 	        align_in, offset_in, align_out, offset_out);
 
     uint32_t prev = index;
-    index = jitc_var_new_1(VarType::Invalid, buf.get(), 0, 1, index);
+    index = jitc_var_new_1(cuda, VarType::Invalid, buf.get(), 0, index);
     jitc_var_dec_ref_ext(prev);
 
     offset_in = 0;
@@ -165,15 +167,15 @@ template <typename... Args> auto vcall(const char *domain, UInt32 inst, const Ar
         offset_in = (offset_in + size - 1) / size * size;
         snprintf(buf.get(), buf_size, "    st.param.$t1 [param_in+%u], $r1", offset_in);
         uint32_t prev = index;
-        index = jitc_var_new_2(VarType::Invalid, buf.get(), 0, 1, in[i], index);
+        index = jitc_var_new_2(cuda, VarType::Invalid, buf.get(), 0, in[i], index);
         jitc_var_dec_ref_ext(prev);
         offset_in += size;
     }
 
     prev = index;
-    index = jitc_var_new_3(VarType::Invalid,
+    index = jitc_var_new_3(cuda, VarType::Invalid,
             "    call (param_out), $r1, (param_in), $r2",
-            1, 1, offset, call_table, index);
+            1, offset, call_table, index);
     jitc_var_dec_ref_ext(prev);
     jitc_var_dec_ref_ext(offset);
     jitc_var_dec_ref_ext(call_table);
@@ -185,20 +187,20 @@ template <typename... Args> auto vcall(const char *domain, UInt32 inst, const Ar
         offset_out = (offset_out + size - 1) / size * size;
         uint32_t prev = index;
         snprintf(buf.get(), buf_size, "    ld.param.$t0 $r0, [param_out+%u]", offset_out);
-        index = jitc_var_new_1(type, buf.get(), 0, 1, index);
+        index = jitc_var_new_1(cuda, type, buf.get(), 0, index);
         out[i] = index;
         jitc_var_dec_ref_ext(prev);
         offset_out += size;
     }
 
     prev = index;
-    index = jitc_var_new_1(VarType::Invalid, "}\n",
-            1, 1, index);
+    index = jitc_var_new_1(cuda, VarType::Invalid, "}\n",
+            1, index);
     jitc_var_dec_ref_ext(prev);
 
     for (uint32_t i = 0; i < out_count; ++i) {
-        out[i] = jitc_var_new_2(jitc_var_type(out[i]),
-                                "mov.$t0 $r0, $r1", 0, 1,
+        out[i] = jitc_var_new_2(cuda, jitc_var_type(out[i]),
+                                "mov.$t0 $r0, $r1", 0,
                                 out[i], index);
     }
 
@@ -212,7 +214,7 @@ template <typename... Args> auto vcall(const char *domain, UInt32 inst, const Ar
 TEST_CUDA(01_symbolic_vcall) {
     global = arange<Float>(10);
     jitc_eval(global);
-    jitc_set_eval_enabled(0);
+    jitc_set_eval_enabled(1, 0);
 
     Class1 c1;
     Class2 c2;
@@ -223,7 +225,7 @@ TEST_CUDA(01_symbolic_vcall) {
     Float x = 1, y = 2;
     UInt32 inst = arange<UInt32>(3);
     std::pair<Float, Float> result = vcall("Base", inst, x, y);
-    jitc_set_eval_enabled(1);
+    jitc_set_eval_enabled(1, 1);
     jitc_eval(result.first, result.second);
     jitc_assert(result.first == Float(0, 3, 2));
     jitc_assert(result.second == Float(0, 4, -1));

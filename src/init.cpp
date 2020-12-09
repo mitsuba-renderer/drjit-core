@@ -19,7 +19,6 @@
 #if defined(_WIN32)
 #  include <windows.h>
 #  include <direct.h>
-#  define mkdir(name, flags) _wmkdir(name##_w)
 #else
 #  include <glob.h>
 #  include <dlfcn.h>
@@ -35,9 +34,11 @@ Buffer buffer{1024};
 #endif
 
 #if defined(_MSC_VER)
-  __declspec(thread) Stream* active_stream;
+  __declspec(thread) ThreadState* thread_state_cuda = nullptr;
+  __declspec(thread) ThreadState* thread_state_llvm = nullptr;
 #else
-  __thread Stream* active_stream;
+  __thread ThreadState* thread_state_cuda = nullptr;
+  __thread ThreadState* thread_state_llvm = nullptr;
 #endif
 
 #if defined(ENOKI_ENABLE_ITTNOTIFY)
@@ -55,7 +56,7 @@ static_assert(
 static ProfilerRegion profiler_region_init("jit_init");
 
 /// Initialize core data structures of the JIT compiler
-void jit_init(int llvm, int cuda, Stream **stream) {
+void jit_init(int llvm, int cuda) {
     ProfilerPhase profiler(profiler_region_init);
 
 #if defined(__APPLE__)
@@ -73,7 +74,6 @@ void jit_init(int llvm, int cuda, Stream **stream) {
     size_t temp_path_size = (strlen(temp_path) + 1) * sizeof(char);
     jit_temp_path = (char*) malloc(temp_path_size);
     memcpy(jit_temp_path, temp_path, temp_path_size);
-
 #else
     wchar_t temp_path_w[512];
     char temp_path[512];
@@ -90,7 +90,11 @@ void jit_init(int llvm, int cuda, Stream **stream) {
 
     if (rv == -1) {
         jit_log(Info, "jit_init(): creating directory \"%s\" ..", temp_path);
+#if !defined(_WIN32)
         if (mkdir(temp_path, 0700) == -1)
+#else
+        if (_wmkdir(temp_path_w, 0700) == -1)
+#endif
             jit_fail("jit_init(): creation of directory \"%s\" failed: %s",
                 temp_path, strerror(errno));
     }
@@ -172,60 +176,47 @@ void jit_init(int llvm, int cuda, Stream **stream) {
     }
 
     state.variable_index = 1;
-    if (state.has_cuda && !state.devices.empty())
-        jit_set_device(0, 0);
-    else if (state.has_llvm)
-        jit_set_device(-1, 0);
-
-    if (stream)
-        *stream = active_stream;
 
     state.kernel_hard_misses = state.kernel_soft_misses = 0;
     state.kernel_hits = state.kernel_launches = 0;
 }
 
 void* jit_cuda_stream() {
-    if (!active_stream->cuda)
-        jit_fail("jit_cuda_stream(): only supports CUDA device");
-
-    return (void*) active_stream->handle;
+    return (void*) thread_state(true)->stream;
 }
 
 void* jit_cuda_context() {
-    if (!active_stream->cuda)
-        jit_fail("jit_cuda_context(): only supports CUDA device");
-    return (void*) active_stream->context;
+    return (void*) thread_state(true)->context;
 }
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 void jit_shutdown(int light) {
-    if (!state.streams.empty()) {
-        jit_log(Info, "jit_shutdown(): releasing %zu stream%s ..",
-                state.streams.size(), state.streams.size() > 1 ? "s" : "");
+    if (!state.tss.empty()) {
+        jit_log(Info, "jit_shutdown(): releasing %zu thread state%s ..",
+                state.tss.size(), state.tss.size() > 1 ? "s" : "");
 
-        for (auto &v : state.streams) {
-            Stream *stream = v.second;
-            jit_set_device(stream->device, stream->stream);
-            if (stream->cuda) {
-                jit_free_flush();
-                scoped_set_context guard(stream->context);
-                cuda_check(cuStreamSynchronize(stream->handle));
-                cuda_check(cuEventDestroy(stream->event));
-                cuda_check(cuStreamDestroy(stream->handle));
-                delete stream->release_chain;
+        for (ThreadState *ts : state.tss) {
+            jit_free_flush(ts);
+            if (ts->cuda) {
+                scoped_set_context guard(ts->context);
+                cuda_check(cuStreamSynchronize(ts->stream));
+                cuda_check(cuEventDestroy(ts->event));
+                cuda_check(cuStreamDestroy(ts->stream));
             } else {
-                jit_free_flush();
-                task_wait_and_release(stream->task);
-                pool_destroy();
-                if (!stream->active_mask.empty())
+                task_wait_and_release(ts->task);
+                if (!ts->active_mask.empty())
                     jit_log(Warn, "jit_shutdown(): leaked %zu active masks!",
-                            stream->active_mask.size());
+                            ts->active_mask.size());
             }
-            delete stream;
+            delete ts->release_chain;
+            delete ts;
         }
-        state.streams.clear();
-        active_stream = nullptr;
+        pool_destroy();
+        state.tss.clear();
     }
+
+    thread_state_llvm = nullptr;
+    thread_state_cuda = nullptr;
 
     if (!state.kernel_cache.empty()) {
         jit_log(Info, "jit_shutdown(): releasing %zu kernel%s ..",
@@ -314,125 +305,143 @@ void jit_shutdown(int light) {
     state.has_llvm = false;
 }
 
-/// Set the currently active device & stream
-void jit_set_device(int32_t device, uint32_t stream) {
-    std::pair<uint32_t, uint32_t> key(device, stream);
-    auto it = state.streams.find(key);
-    bool cuda = device != -1;
 
-    Stream *stream_ptr, *active_stream_ptr = active_stream;
-    if (it != state.streams.end()) {
-        stream_ptr = it->second;
-        if (stream_ptr == active_stream_ptr)
-            return;
-        jit_trace("jit_set_device(device=%i, stream=%i): selecting stream",
-                  device, stream);
-    } else {
-        if (cuda && (!state.has_cuda || device >= (int32_t) state.devices.size()))
-            jit_raise(
-                "jit_set_device(): Attempted to select an unknown CUDA device! "
-                "(Was the library correctly initialized jitc_init()?)");
-        else if (!cuda && !state.has_llvm)
-            jit_raise(
-                "jit_set_device(): Attempted to select an unknown LLVM device! "
-                "(Was the library correctly initialized jitc_init()?)");
+ThreadState *jit_init_thread_state(bool cuda) {
+    ThreadState *ts = new ThreadState();
 
-        jit_trace("jit_set_device(device=%i, stream=%i): creating stream",
-                  device, stream);
+    if (cuda) {
+        if (!state.has_cuda) {
+            #if defined(_WIN32)
+                const char *cuda_fname = "nvcuda.dll";
+            #elif defined(__linux__)
+                const char *cuda_fname  = "libcuda.so";
+            #else
+                const char *cuda_fname  = "libcuda.dylib";
+            #endif
 
-        CUcontext context = nullptr;
-        CUstream handle = nullptr;
-        CUevent event = nullptr;
-
-        if (state.has_cuda && cuda) {
-            context = state.devices[device].context;
-            scoped_set_context guard(context);
-            cuda_check(cuStreamCreate(&handle, CU_STREAM_NON_BLOCKING));
-            cuda_check(cuEventCreate(&event, CU_EVENT_DISABLE_TIMING));
+            delete ts;
+            jit_raise("jit_init_thread_state(): the CUDA backend is inactive "
+                      "because the CUDA driver library (\"%s\") could not be "
+                      "found! Set the ENOKI_LIBCUDA_PATH environment "
+                      "variable to specify its path.",
+                      cuda_fname);
         }
 
-        stream_ptr = new Stream();
-        stream_ptr->cuda = cuda;
-        stream_ptr->device = device;
-        stream_ptr->stream = stream;
-        stream_ptr->handle = handle;
-        stream_ptr->event = event;
-        stream_ptr->context = context;
+        if (state.devices.empty()) {
+            delete ts;
+            jit_raise("jit_init_thread_state(): the CUDA backend is inactive "
+                      "because no compatible CUDA devices were found on your "
+                      "system.");
+        }
 
-        state.streams[key] = stream_ptr;
+        ts->device = 0;
+        ts->context = state.devices[ts->device].context;
+        scoped_set_context guard(ts->context);
+        cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_NON_BLOCKING));
+        cuda_check(cuEventCreate(&ts->event, CU_EVENT_DISABLE_TIMING));
+        thread_state_cuda = ts;
+    } else {
+        if (!state.has_llvm) {
+            delete ts;
+            #if defined(_WIN32)
+                const char *llvm_fname = "LLVM-C.dll";
+            #elif defined(__linux__)
+                const char *llvm_fname  = "libLLVM.so";
+            #else
+                const char *llvm_fname  = "libLLVM.dylib";
+            #endif
+
+            jit_raise("jit_init_thread_state(): the LLVM backend is inactive "
+                      "because the LLVM shared library (\"%s\") could not be "
+                      "found! Set the ENOKI_LIBLLVM_PATH environment "
+                      "variable to specify its path.",
+                      llvm_fname);
+        }
+        thread_state_llvm = ts;
+        ts->device = -1;
     }
 
-    active_stream = stream_ptr;
+    ts->cuda = cuda;
+    state.tss.push_back(ts);
+    return ts;
 }
 
-void jit_sync_stream(Stream *stream) {
-    if (stream->cuda) {
-        scoped_set_context guard(stream->context);
-        cuda_check(cuStreamSynchronize(stream->handle));
-    } else if (stream->parallel_dispatch) {
-        task_wait_and_release(stream->task);
-        stream->task = nullptr;
+void jit_cuda_set_device(int device) {
+    ThreadState *ts = thread_state(true);
+    if (ts->device == device)
+        return;
+
+    if ((size_t) device >= state.devices.size())
+        jit_raise(
+            "jit_cuda_set_device(): Attempted to select an unknown CUDA "
+            "device! (Was the library correctly initialized jitc_init()?)");
+
+    CUcontext new_context = state.devices[device].context;
+
+    /* Disassociate from old context */ {
+        scoped_set_context guard(ts->context);
+        cuda_check(cuStreamSynchronize(ts->stream));
+        cuda_check(cuEventDestroy(ts->event));
+        cuda_check(cuStreamDestroy(ts->stream));
+    }
+
+    /* Associate with new context */ {
+        ts->context = new_context;
+        ts->device = device;
+        scoped_set_context guard(ts->context);
+
+        cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_NON_BLOCKING));
+        cuda_check(cuEventCreate(&ts->event, CU_EVENT_DISABLE_TIMING));
+    }
+}
+
+void jit_sync_stream(ThreadState *ts) {
+    if (!ts)
+        return;
+    if (ts->cuda) {
+        scoped_set_context guard(ts->context);
+        cuda_check(cuStreamSynchronize(ts->stream));
+    } else {
+        task_wait_and_release(ts->task);
+        ts->task = nullptr;
     }
 }
 
 /// Wait for all computation on the current stream to finish
 void jit_sync_stream() {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_sync_stream(): you must invoke jitc_set_device() to "
-                  "choose a target device and stream before synchronizing.");
     unlock_guard guard(state.mutex);
-    jit_sync_stream(stream);
+    jit_sync_stream(thread_state_cuda);
+    jit_sync_stream(thread_state_llvm);
 }
 
 /// Wait for all computation on the current device to finish
 void jit_sync_device() {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_sync_device(): you must invoke jitc_set_device() to "
-                  "choose a target device before synchronizing.");
-
-    if (stream->cuda) {
+    ThreadState *ts = thread_state_cuda;
+    if (ts) {
         /* Release mutex while synchronizing */ {
             unlock_guard guard(state.mutex);
-            scoped_set_context guard2(stream->context);
+            scoped_set_context guard2(ts->context);
             cuda_check(cuCtxSynchronize());
         }
-    } else {
-        StreamMap streams = state.streams;
+    }
+
+    if (thread_state_llvm) {
+        std::vector<ThreadState *> tss = state.tss;
+        // Release mutex while synchronizing */
         unlock_guard guard(state.mutex);
-        for (auto &kv: streams) {
-            Stream *stream = kv.second;
-            if (!stream->cuda)
-                jit_sync_stream(stream);
+        for (ThreadState *ts : tss) {
+            if (!ts->cuda)
+                jit_sync_stream(ts);
         }
     }
 }
 
-/// Return whether or not parallel dispatch is enabled
-bool jit_parallel_dispatch() {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_parallel_dispatch(): you must invoke jitc_set_device() "
-                  "to choose a target device before using this function.");
-    return stream->parallel_dispatch;
-}
-
-/// Specify whether or not parallel dispatch is enabled
-void jit_set_parallel_dispatch(bool value) {
-    Stream *stream = active_stream;
-    if (unlikely(!stream))
-        jit_raise("jit_set_parallel_dispatch(): you must invoke jitc_set_device() "
-                  "to choose a target device before using this function.");
-    stream->parallel_dispatch = value;
-}
-
 /// Wait for all computation on *all devices* to finish
 void jit_sync_all_devices() {
-    StreamMap streams = state.streams;
+    std::vector<ThreadState *> tss = state.tss;
     unlock_guard guard(state.mutex);
-    for (auto &kv: streams)
-        jit_sync_stream(kv.second);
+    for (ThreadState *ts : tss)
+        jit_sync_stream(ts);
 }
 
 /// Glob for a shared library and try to load the most recent version
