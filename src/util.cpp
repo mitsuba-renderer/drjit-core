@@ -150,7 +150,7 @@ void jit_memcpy(int cuda, void *dst, const void *src, size_t size) {
         cuda_check(cuStreamSynchronize(ts->stream));
         cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
     } else {
-        jit_sync_stream(ts);
+        jit_sync_thread(ts);
         memcpy(dst, src, size);
     }
 }
@@ -351,13 +351,13 @@ uint8_t jit_all(int cuda, uint8_t *values, uint32_t size) {
     if (cuda) {
         uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
         jit_reduce(cuda, VarType::UInt32, ReductionType::And, values, reduced_size, out);
-        jit_sync_stream();
+        jit_sync_thread();
         result = (out[0] & out[1] & out[2] & out[3]) != 0;
         jit_free(out);
     } else {
         uint8_t out[4];
         jit_reduce(cuda, VarType::UInt32, ReductionType::And, values, reduced_size, out);
-        jit_sync_stream();
+        jit_sync_thread();
         result = (out[0] & out[1] & out[2] & out[3]) != 0;
     }
 
@@ -380,13 +380,13 @@ uint8_t jit_any(int cuda, uint8_t *values, uint32_t size) {
     if (cuda) {
         uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
         jit_reduce(cuda, VarType::UInt32, ReductionType::Or, values, reduced_size, out);
-        jit_sync_stream();
+        jit_sync_thread();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
         jit_free(out);
     } else {
         uint8_t out[4];
         jit_reduce(cuda, VarType::UInt32, ReductionType::Or, values, reduced_size, out);
-        jit_sync_stream();
+        jit_sync_thread();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
     }
 
@@ -600,7 +600,7 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
 
             jit_free(scratch);
         }
-        jit_sync_stream();
+        jit_sync_thread();
         uint32_t count_out_v = *count_out;
         jit_free(count_out);
         return count_out_v;
@@ -666,7 +666,7 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
         );
 
         jit_free(scratch);
-        jit_sync_stream();
+        jit_sync_thread();
 
         return count_out;
     }

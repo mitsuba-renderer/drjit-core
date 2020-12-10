@@ -117,13 +117,13 @@ extern JITC_EXPORT int jitc_has_cuda();
 extern JITC_EXPORT void jitc_shutdown(int light JITC_DEF(0));
 
 /**
- * \brief Wait for all computation on the current stream to finish
+ * \brief Wait for all computation scheduled by the current thread to finish
  *
- * Each thread using Enoki-JIT will issue computation to an independent stream.
- * This function only synchronizes with computation issued by the current
- * thread.
+ * Each thread using Enoki-JIT will issue computation to an independent queue.
+ * This function only synchronizes with computation issued to the queue of the
+ * calling thread.
  */
-extern JITC_EXPORT void jitc_sync_stream();
+extern JITC_EXPORT void jitc_sync_thread();
 
 /// Wait for all computation on the current device to finish
 extern JITC_EXPORT void jitc_sync_device();
@@ -156,7 +156,7 @@ extern JITC_EXPORT int jitc_eval_enabled(int cuda);
 
 /**
  * \brief Returns the number of operations with side effects (specifically,
- * scatters) scheduled on the current stream so far
+ * scatters) scheduled by the current thread so far
  *
  * This function can be used to easily detect whether or not some piece of
  * code involves side effects. It is used in Enokis's `ek::loop` primitive.
@@ -369,14 +369,13 @@ enum class AllocType : uint32_t {
 
     /**
      * Like \c Host memory, except that it may only be used *asynchronously*
-     * within the current computation stream (ref see \ref jitc_set_device()).
+     * within a computation performed by enoki-jit.
      *
      * In particular, host-asynchronous memory obtained via \ref jitc_malloc()
-     * should not be written to directly, since it may still be used by a
-     * currently running kernel. It is legal to write to it from asynchronous
-     * computation that is enqueued in the computation stream, however.
-     * Similarly, releasing memory via \ref jitc_free() also occurs
-     * asynchronously in the context of the computation stream.
+     * should not be written to directly (i.e. outside of enoki-jit), since it
+     * may still be used by a currently running kernel. Releasing
+     * host-asynchronous memory via \ref jitc_free() also occurs
+     * asynchronously.
      *
      * This type of memory is used internally when running code via the LLVM
      * backend, and when this process is furthermore parallelized using Enoki's
@@ -464,15 +463,18 @@ extern JITC_EXPORT void *jitc_malloc(JITC_ENUM AllocType type, size_t size)
  * When \c ptr is an asynchronous host pointer (\ref AllocType::HostAsync) or
  * GPU-accessible pointer (\ref AllocType::Device, \ref AllocType::HostPinned,
  * \ref AllocType::Managed, \ref AllocType::ManagedReadMostly), the associated
- * memory region is quite likely still being used by a running kernel, and it
- * is therefore merely *scheduled* to be reclaimed once this kernel finishes.
- * All memory-related operations thus occur in the context of a stream, and
- * this also means that extra care must be taken in the context of programs
- * that use multiple streams: it is not permissible to e.g. allocate memory in
- * one stream, launch a kernel using it, then immediately switch to a different
- * device and/or stream via \ref jitc_set_device() and release the memory
- * region there. Calling \ref jitc_sync_stream() before context switching
- * streams defuses this situation.
+ * memory region is possibly still being used by a running kernel, and it is
+ * therefore merely *scheduled* to be reclaimed once this kernel finishes.
+ *
+ * Kernel launches and memory-related operations (malloc, free) occur
+ * asynchronously but using a linear ordering when they are scheduled by the
+ * same thread (they will be placed into the same <i>stream</i> in CUDA
+ * terminology). Extra care must be taken in the context of multi-threaded
+ * software: it is not permissible to e.g. allocate memory on one thread,
+ * launch a kernel using it, then immediately release that memory from a
+ * different thread, because a valid ordering is not guaranteed in that case.
+ * Operations like \ref jitc_sync_thread(), \ref jitc_sync_device(), and \ref
+ * jitc_sync_all_devices() can be used to defuse such situations.
  */
 extern JITC_EXPORT void jitc_free(void *ptr);
 
@@ -480,7 +482,7 @@ extern JITC_EXPORT void jitc_free(void *ptr);
 extern JITC_EXPORT void jitc_malloc_trim();
 
 /**
- * \brief Asynchronously prefetch a memory region allocated using \ref
+ * \brief Asynchronously prefetch a managed memory region allocated using \ref
  * jitc_malloc() so that it is available on a specified device
  *
  * This operation prefetches a memory region so that it is available on the CPU
@@ -495,8 +497,8 @@ extern JITC_EXPORT void jitc_malloc_trim();
  * The function also takes a special argument <tt>device==-2</tt>, which
  * creates a read-only mapping on *all* available GPUs.
  *
- * The prefetch operation is enqueued on the current device and stream and runs
- * asynchronously with respect to the CPU, hence a \ref jitc_sync_stream()
+ * The prefetch operation is enqueued on the current device and thread and runs
+ * asynchronously with respect to the CPU, hence a \ref jitc_sync_thread()
  * operation is advisable if data is <tt>target==-1</tt> (i.e. prefetching into
  * CPU memory).
  */
@@ -513,7 +515,7 @@ extern JITC_EXPORT int jitc_malloc_device(void *ptr);
  * return the new pointer
  *
  * The operation is *always* asynchronous and, hence, will need to be followed
- * by an explicit synchronization via \ref jitc_sync_stream() if memory is
+ * by an explicit synchronization via \ref jitc_sync_thread() if memory is
  * migrated from the GPU to the CPU and expected to be accessed on the CPU
  * before the transfer has finished. Nothing needs to be done in the other
  * direction, e.g. when migrating memory that is subsequently accessed by

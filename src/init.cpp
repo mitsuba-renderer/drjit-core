@@ -395,7 +395,7 @@ void jit_cuda_set_device(int device) {
     }
 }
 
-void jit_sync_stream(ThreadState *ts) {
+void jit_sync_thread(ThreadState *ts) {
     if (!ts)
         return;
     if (ts->cuda) {
@@ -408,10 +408,10 @@ void jit_sync_stream(ThreadState *ts) {
 }
 
 /// Wait for all computation on the current stream to finish
-void jit_sync_stream() {
+void jit_sync_thread() {
     unlock_guard guard(state.mutex);
-    jit_sync_stream(thread_state_cuda);
-    jit_sync_stream(thread_state_llvm);
+    jit_sync_thread(thread_state_cuda);
+    jit_sync_thread(thread_state_llvm);
 }
 
 /// Wait for all computation on the current device to finish
@@ -431,7 +431,7 @@ void jit_sync_device() {
         unlock_guard guard(state.mutex);
         for (ThreadState *ts : tss) {
             if (!ts->cuda)
-                jit_sync_stream(ts);
+                jit_sync_thread(ts);
         }
     }
 }
@@ -441,7 +441,7 @@ void jit_sync_all_devices() {
     std::vector<ThreadState *> tss = state.tss;
     unlock_guard guard(state.mutex);
     for (ThreadState *ts : tss)
-        jit_sync_stream(ts);
+        jit_sync_thread(ts);
 }
 
 /// Glob for a shared library and try to load the most recent version

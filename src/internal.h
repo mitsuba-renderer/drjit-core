@@ -602,10 +602,10 @@ extern void jit_shutdown(int light);
 extern void jit_cuda_set_device(int device);
 
 /// Wait for all computation on the current stream to finish
-extern void jit_sync_stream();
+extern void jit_sync_thread();
 
 /// Wait for all computation on the current stream to finish
-extern void jit_sync_stream(ThreadState *stream);
+extern void jit_sync_thread(ThreadState *stream);
 
 /// Wait for all computation on the current device to finish
 extern void jit_sync_device();

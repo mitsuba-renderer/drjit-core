@@ -209,9 +209,9 @@ void jitc_llvm_active_mask_pop() {
     jit_llvm_active_mask_pop();
 }
 
-void jitc_sync_stream() {
+void jitc_sync_thread() {
     lock_guard guard(state.mutex);
-    jit_sync_stream();
+    jit_sync_thread();
 }
 
 void jitc_sync_device() {

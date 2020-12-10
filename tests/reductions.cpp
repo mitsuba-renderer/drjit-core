@@ -82,7 +82,7 @@ TEST_BOTH(03_compress) {
 
             uint32_t count = jitc_compress(Float::IsCUDA, data, size, perm);
             perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
-            jitc_sync_stream();
+            jitc_sync_thread();
 
             jitc_assert(count == ref_count);
             jitc_assert(memcmp(perm, perm_ref, ref_count * sizeof(uint32_t)) == 0);
@@ -122,7 +122,7 @@ TEST_BOTH(04_mkperm) {
             uint32_t num_unique = jitc_mkperm(Float::IsCUDA, data, size, n_buckets, perm, offsets);
 
             perm = (uint32_t *) jitc_malloc_migrate(perm, AllocType::Host);
-            jitc_sync_stream();
+            jitc_sync_thread();
 
             struct Bucket {
                 uint32_t id;
