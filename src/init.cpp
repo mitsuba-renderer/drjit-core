@@ -372,9 +372,10 @@ void jit_cuda_set_device(int device) {
         return;
 
     if ((size_t) device >= state.devices.size())
-        jit_raise(
-            "jit_cuda_set_device(): Attempted to select an unknown CUDA "
-            "device! (Was the library correctly initialized jitc_init()?)");
+        jit_raise("jit_cuda_set_device(%i): must be in the range 0..%i!",
+                  device, (int) state.devices.size() - 1);
+
+    jit_log(Info, "jit_cuda_set_device(%i)", device);
 
     CUcontext new_context = state.devices[device].context;
 

@@ -1058,7 +1058,11 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
     state.kernel_launches++;
 
     if (ts->cuda) {
-        size_t kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
+        size_t kernel_args_size;
+        if (kernel_args.size() == 1)
+            kernel_args_size = 4; // size only, without padding
+        else
+            kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
 
         void *config[] = {
             CU_LAUNCH_PARAM_BUFFER_POINTER,
