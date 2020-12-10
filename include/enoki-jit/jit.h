@@ -135,24 +135,53 @@ extern JITC_EXPORT void jitc_sync_all_devices();
 //       Advanced JIT usage: recording programs, loops, etc.
 // ====================================================================
 
+#if defined(__cplusplus)
 /**
- * \brief Temporarily prevent kernel evaluation
+ * \brief JIT compiler modes (eager vs symbolic execution)
  *
- * There are certain situations where we really don't want jitc_eval()
- * to be executed:
- *
- * 1. When recording a computation into a string IR representation
- * 2. When executing a loop symbolically (ek::loop in Enoki)
- *
- * In such cases, evaluation of queued computation can temporarily be
- * "forbidden" by calling <tt>jitc_set_eval_enabled(0)</tt>, in which case
- * calls to jitc_eval() will cause a program failure. Note: this is a
- * per-thread property
+ * enoki-jit can run in any of the three following modes, where \c Eager is
+ * active by default. This flag is used to control the behavior of loops and
+ * virtual function calls in the Enoki library (parent project).
  */
-extern JITC_EXPORT void jitc_set_eval_enabled(int cuda, int enable);
+enum class JitMode : uint32_t {
+    // Eager mode: execute complex operations at once
+    Eager,
 
-/// Return whether or not evaluation is currently allowed
-extern JITC_EXPORT int jitc_eval_enabled(int cuda);
+    // Try to record complex operations symbolically to postpone evaluation
+    SymbolicPreferred,
+
+    // *Require* symbolic execution and throw if jitc_eval() is invoked.
+    SymbolicRequired
+};
+#else
+enum JitMode {
+    JitModeEager, JitModeSymbolicPreferred, JitModeSymbolicRequired
+};
+#endif
+
+/**
+ * \brief Adjust the eagerness of the JIT compiler
+ *
+ * Certain Enoki operations can operate in two different modes: they can be
+ * executed at once, or they can be recorded symbolically to postpone
+ * evaluation to a later point. The latter is generally more efficient because
+ * it enables optimizations (fusion of multiple operations, exchange of
+ * information via registers instead of global memory, etc.). The downside is
+ * that this symbolic mode is more complex/fragile and less suitable to
+ * interactive software development (one e.g. cannot simply print array
+ * contents while something is being recorded).
+ *
+ * This flag can be used to control the behavior of the JIT compiler. The
+ * enoki-jit library actually doesn't do very much with this flag: the only
+ * changed behavior is that \ref jitc_eval() will throw an exception when it is
+ * called while <tt>mode == SymbolicRequired</tt>. The main behavioral
+ * differences will typically be in found in code using enoki-jit that queries
+ * this flag.
+ */
+extern JITC_EXPORT void jitc_set_mode(JitMode mode);
+
+/// Return the JIT compilation mode
+extern JITC_EXPORT JITC_ENUM JitMode jitc_mode();
 
 /**
  * \brief Returns the number of operations with side effects (specifically,

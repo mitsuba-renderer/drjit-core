@@ -103,7 +103,7 @@ struct ThreadState {
     bool enable_cse = true;
 
     /// Is kernel evaluation currently permitted?
-    bool eval_enabled = true;
+    bool symbolic = true;
 
     /// How many statements with side effects were executed so far?
     uint32_t side_effect_counter = 0;
@@ -628,3 +628,7 @@ extern void* jit_cuda_stream();
 
 /// Return a pointer to the CUDA context associated with the currently active device
 extern void* jit_cuda_context();
+
+extern void jit_set_mode(JitMode mode);
+
+extern JitMode jit_mode();

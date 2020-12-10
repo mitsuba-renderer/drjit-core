@@ -107,14 +107,12 @@ void jitc_fail(const char* fmt, ...) {
     va_end(args);
 }
 
-void jitc_set_eval_enabled(int cuda, int enable) {
-    lock_guard guard(state.mutex);
-    thread_state(cuda)->eval_enabled = enable != 0;
+void jitc_set_mode(JitMode mode) {
+    jit_set_mode(mode);
 }
 
-int jitc_eval_enabled(int cuda) {
-    lock_guard guard(state.mutex);
-    return thread_state(cuda)->eval_enabled ? 1 : 0;
+JitMode jitc_mode() {
+    return jit_mode();
 }
 
 uint32_t jitc_side_effect_counter(int cuda) {

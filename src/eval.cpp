@@ -1144,13 +1144,14 @@ void jit_eval_ts(ThreadState *ts) {
     if (!ts || ts->todo.empty())
         return;
 
-    if (unlikely(!ts->eval_enabled))
+    if (unlikely(jit_mode() == JitMode::SymbolicRequired))
         jit_raise(
-            "jit_eval(): Enoki is currently either recording arithmetic into a "
-            "string IR representation, or it is executing a loop symbolically. "
-            "In such cases, you are not allowed to run operations that trigger "
-            "a kernel evaluation via jitc_eval(). Set a breakpoint on "
-            "`jit_raise` to find the offending code in your program.");
+            "jit_eval(): Enoki is currently in SymbolicRequired mode, which "
+            "typically means that it is being used to symbolically record some "
+            "computation (e.g. a virtual function call or loop). In such "
+            "cases, you are not allowed to run operations that trigger a "
+            "kernel evaluation via jitc_eval(). Set a breakpoint on "
+            "jit_raise() to find the offending code in your program.");
 
     ProfilerPhase profiler(profiler_region_eval);
 
