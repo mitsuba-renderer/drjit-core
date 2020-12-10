@@ -536,11 +536,18 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
     if (likely(eval_normal)) {
         buffer.put(".entry enoki_^^^^^^^^^^^^^^^^(.param .u32 size,\n");
 
-        for (uint32_t index = 1; index < kernel_args.size(); ++index)
-            buffer.fmt("                              .param .u64 arg%u%s\n",
-                       index - 1, (index + 1 < (uint32_t) kernel_args.size()) ? "," : ") {");
+        if (unlikely(kernel_args.size() == 1)) {
+            /* Kernels without inputs/outputs may be created in rare
+               cases (e.g. when calling virtual functions symbolically
+               that have output array addresses "baked in") */
+            buffer.rewind(2);
+            buffer.put(") {\n");
+        } else {
+            for (uint32_t index = 1; index < kernel_args.size(); ++index)
+                buffer.fmt("                              .param .u64 arg%u%s\n",
+                           index - 1, (index + 1 < (uint32_t) kernel_args.size()) ? "," : ") {");
+        }
     }
-
 
     buffer.fmt(
         "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
@@ -1389,6 +1396,12 @@ const char *jit_eval_ir(int cuda,
                      "explictly declared as an input! (id=%u, type=%s)",
                      entry.index, var_type_name[v->type]);
     }
+
+    // Empty arrays are invalid in PTX
+    if (offset_in == 0)
+        offset_in = 1;
+    if (offset_out == 0)
+        offset_out = 1;
 
     buffer.fmt(".func (.param .align %u .b8 out[%u]) func_^^^^^^^^^^^^^^^^(.param .align "
                "%u .b8 in[%u]) {\n",
