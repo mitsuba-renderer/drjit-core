@@ -1084,7 +1084,7 @@ extern JITC_EXPORT int jitc_var_device(uint32_t index);
 extern JITC_EXPORT void jitc_var_mark_scatter(uint32_t index, uint32_t target);
 
 /**
- * \brief Is the given variable a literal that equals zero?
+ * \brief Is the given variable a scalar literal equal to zero?
  *
  * This function can be used to implement very rudimentary constant propagation
  * of arithmetic and masks, which can often significantly reduce the size of
@@ -1095,7 +1095,7 @@ extern JITC_EXPORT void jitc_var_mark_scatter(uint32_t index, uint32_t target);
 extern JITC_EXPORT int jitc_var_is_literal_zero(uint32_t index);
 
 /**
- * \brief Is the given variable a literal that equals one?
+ * \brief Is the given variable a scalar literal equal to one?
  *
  * This function can be used to implement very rudimentary constant propagation
  * of arithmetic and masks, which can often significantly reduce the size of

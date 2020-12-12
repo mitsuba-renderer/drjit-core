@@ -959,14 +959,16 @@ void jit_var_mark_scatter(uint32_t index, uint32_t target) {
 int jit_var_is_literal_zero(uint32_t index) {
     if (index == 0)
         return 0;
-    return jit_var(index)->is_literal_zero;
+    Variable *v = jit_var(index);
+    return v->is_literal_zero && v->size == 1;
 }
 
 /// Is the given variable a literal that equals one?
 int jit_var_is_literal_one(uint32_t index) {
     if (index == 0)
         return 0;
-    return jit_var(index)->is_literal_one;
+    Variable *v = jit_var(index);
+    return v->is_literal_one && v->size == 1;
 }
 
 /// Return a human-readable summary of registered variables
