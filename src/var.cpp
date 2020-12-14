@@ -946,10 +946,10 @@ void jit_var_mark_scatter(uint32_t index, uint32_t target) {
     stream->todo.push_back(index);
     stream->side_effect_counter++;
 
-    /* Mark target as dirty, except when recording code (in which
-       case we don't have control over when that IR fragment is actually
+    /* Mark target as dirty, except when recording a virtual function call (in
+       which case we don't have control over when that IR fragment is actually
        evaluated. */
-    if (target && jit_mode() != JitMode::SymbolicRequired) {
+    if (target && (jit_flags() & (uint32_t) JitFlag::RecordingVCall) == 0) {
         v = jit_var(target);
         v->pending_scatter = true;
     }

@@ -137,51 +137,65 @@ extern JITC_EXPORT void jitc_sync_all_devices();
 
 #if defined(__cplusplus)
 /**
- * \brief JIT compiler modes (eager vs symbolic execution)
+ * \brief Status flags to adjust/inspect the eagerness of the JIT compiler
  *
- * enoki-jit can run in any of the three following modes, where \c Eager is
- * active by default. This flag is used to control the behavior of loops and
- * virtual function calls in the Enoki library (parent project).
- */
-enum class JitMode : uint32_t {
-    // Eager mode: execute complex operations at once
-    Eager,
-
-    // Try to record complex operations symbolically to postpone evaluation
-    SymbolicPreferred,
-
-    // *Require* symbolic execution and throw if jitc_eval() is invoked.
-    SymbolicRequired
-};
-#else
-enum JitMode {
-    JitModeEager, JitModeSymbolicPreferred, JitModeSymbolicRequired
-};
-#endif
-
-/**
- * \brief Adjust the eagerness of the JIT compiler
- *
- * Certain Enoki operations can operate in two different modes: they can be
- * executed at once, or they can be recorded symbolically to postpone
- * evaluation to a later point. The latter is generally more efficient because
- * it enables optimizations (fusion of multiple operations, exchange of
- * information via registers instead of global memory, etc.). The downside is
- * that this symbolic mode is more complex/fragile and less suitable to
+ * Certain Enoki operations can operate in two different flags: they can be
+ * executed at once, or they can be recorded to postpone evaluation to a later
+ * point. The latter is generally more efficient because it enables
+ * optimizations (fusion of multiple operations, exchange of information via
+ * registers instead of global memory, etc.). The downside is that recording
+ * computation is generally more complex/fragile and less suitable to
  * interactive software development (one e.g. cannot simply print array
  * contents while something is being recorded).
  *
- * This flag can be used to control the behavior of the JIT compiler. The
- * enoki-jit library actually doesn't do very much with this flag: the only
- * changed behavior is that \ref jitc_eval() will throw an exception when it is
- * called while <tt>mode == SymbolicRequired</tt>. The main behavioral
- * differences will typically be in found in code using enoki-jit that queries
- * this flag.
+ * The following list of flags can be used to control the behavior of the JIT
+ * compiler. The enoki-jit library actually doesn't do very much with this
+ * flag: the main effect is that \ref jitc_eval() will throw an exception when
+ * it is called while the <tt>RecordingLoop</tt> and <tt>RecordingVCall<tt>
+ * flags are set. The main behavioral differences will typically be in found in
+ * code using enoki-jit that queries this flag.
  */
-extern JITC_EXPORT void jitc_set_mode(JitMode mode);
+enum class JitFlag : uint32_t {
+    // Default (eager) execute loops and virtual function calls at once
+    Default = 0x0,
 
-/// Return the JIT compilation mode
-extern JITC_EXPORT JITC_ENUM JitMode jitc_mode();
+    // Record loops to postpone their evaluation
+    RecordLoops = 1,
+
+    // Record virtual function calls to postpone their evaluation
+    RecordVCalls = 2,
+
+    // A loop is currently being recorded
+    RecordingLoop = 4,
+
+    // A virtual function call is currently being recorded
+    RecordingVCall = 8,
+
+    // A loop is currently being recorded
+    Recording = (uint32_t) RecordingLoop | (uint32_t) RecordingVCall
+
+};
+#else
+enum JitFlag {
+    JitFlagDefault = 0,
+    JitFlagRecordLoops = 1,
+    JitFlagRecordVCall = 2,
+    JitFlagRecordingLoop = 4,
+    JitFlagRecordingVCall = 8
+};
+#endif
+
+/// Set the JIT compiler status flags (see \ref JitFlags)
+extern JITC_EXPORT void jitc_set_flags(uint32_t flags);
+
+/// Retrieve the JIT compiler status flags (see \ref JitFlags)
+extern JITC_EXPORT uint32_t jitc_flags();
+
+/// Equivalent to <tt>jitc_set_flags(jitc_flags() | flag)</tt>
+extern JITC_EXPORT void jitc_set_flag(JITC_ENUM JitFlag flag);
+
+/// Equivalent to <tt>jitc_set_flags(jitc_flags() & ~flag)</tt>
+extern JITC_EXPORT void jitc_unset_flag(JITC_ENUM JitFlag flag);
 
 /**
  * \brief Returns the number of operations with side effects (specifically,

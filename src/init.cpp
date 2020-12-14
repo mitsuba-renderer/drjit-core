@@ -36,11 +36,11 @@ Buffer buffer{1024};
 #if defined(_MSC_VER)
   __declspec(thread) ThreadState* thread_state_cuda = nullptr;
   __declspec(thread) ThreadState* thread_state_llvm = nullptr;
-  __declspec(thread) JitMode jit_mode_v = JitMode::Eager;
+  __declspec(thread) uint32_t jit_flags_v = 0;
 #else
   __thread ThreadState* thread_state_cuda = nullptr;
   __thread ThreadState* thread_state_llvm = nullptr;
-  __thread JitMode jit_mode_v = JitMode::Eager;
+  __thread uint32_t jit_flags_v = 0;
 #endif
 
 #if defined(ENOKI_ENABLE_ITTNOTIFY)
@@ -530,10 +530,10 @@ void *jit_find_library(const char *fname, const char *glob_pat,
     return handle;
 }
 
-void jit_set_mode(JitMode mode) {
-    jit_mode_v = mode;
+void jit_set_flags(uint32_t flags) {
+    jit_flags_v = flags;
 }
 
-JitMode jit_mode() {
-    return jit_mode_v;
+uint32_t jit_flags() {
+    return jit_flags_v;
 }

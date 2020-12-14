@@ -107,12 +107,20 @@ void jitc_fail(const char* fmt, ...) {
     va_end(args);
 }
 
-void jitc_set_mode(JitMode mode) {
-    jit_set_mode(mode);
+void jitc_set_flags(uint32_t flags) {
+    jit_set_flags(flags);
 }
 
-JitMode jitc_mode() {
-    return jit_mode();
+uint32_t jitc_flags() {
+    return jit_flags();
+}
+
+void jitc_set_flag(JitFlag flag) {
+    jit_set_flags(jit_flags() | (uint32_t) flag);
+}
+
+void jitc_unset_flag(JitFlag flag) {
+    jit_set_flags(jit_flags() & ~(uint32_t) flag);
 }
 
 uint32_t jitc_side_effect_counter(int cuda) {

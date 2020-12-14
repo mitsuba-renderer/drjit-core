@@ -629,6 +629,6 @@ extern void* jit_cuda_stream();
 /// Return a pointer to the CUDA context associated with the currently active device
 extern void* jit_cuda_context();
 
-extern void jit_set_mode(JitMode mode);
+extern void jit_set_flags(uint32_t flags);
 
-extern JitMode jit_mode();
+extern uint32_t jit_flags();
