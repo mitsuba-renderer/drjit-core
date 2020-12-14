@@ -69,7 +69,10 @@ void* jit_malloc(AllocType type, size_t size) {
     const char *descr = nullptr;
     void *ptr = nullptr;
     bool cuda = type != AllocType::Host && type != AllocType::HostAsync;
-    ThreadState *ts = thread_state(cuda);
+    ThreadState *ts = nullptr;
+
+    if (type != AllocType::Host)
+        ts = thread_state(cuda);
 
     /* Acquire lock protecting ts->release_chain contents and state.alloc_free */ {
         lock_guard guard(state.malloc_mutex);

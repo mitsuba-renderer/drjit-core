@@ -463,7 +463,7 @@
 ===== size=560948, buckets=452710 =====
 ===== size=560948, buckets=504897 =====
 ===== size=560948, buckets=560948 =====
-jit_shutdown(): releasing 2 thread states ..
+jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 1466 deallocations
 jit_malloc_trim(): freed
  - host memory: 8 MiB in 14 allocations
