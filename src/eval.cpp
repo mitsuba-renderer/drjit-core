@@ -481,20 +481,28 @@ void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v) {
 
 void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_total) {
     auto get_parameter_addr = [](const Variable *v, bool load, uint32_t target = 0) {
-        if (unlikely(!eval_normal))
-            buffer.fmt("    ld.param.%s %s%u, [in+%u];\n",
-                       var_type_name_ptx[v->type], var_type_prefix[v->type],
-                       v->reg_index, v->arg_index);
-        else if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
-            buffer.fmt("    ld.param.u64 %%rd%u, [arg%u];\n", target, v->arg_index - 1);
-        else
-            buffer.fmt("    ldu.global.u64 %%rd%u, [%%rd2 + %u];\n",
-                       target, (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
-
-        if (v->size > 1 || !load)
-            buffer.fmt("    mul.wide.u32 %%rd1, %%r0, %u;\n"
-                       "    add.u64 %%rd%u, %%rd%u, %%rd1;\n",
-                       var_type_size[v->type], target, target);
+        if (likely(eval_normal)) {
+            if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
+                buffer.fmt("    ld.param.u64 %%rd%u, [arg%u];\n", target, v->arg_index - 1);
+            else
+                buffer.fmt("    ldu.global.u64 %%rd%u, [%%rd2 + %u];\n",
+                           target, (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
+            if (v->size > 1 || !load)
+                buffer.fmt("    mul.wide.u32 %%rd1, %%r0, %u;\n"
+                           "    add.u64 %%rd%u, %%rd%u, %%rd1;\n",
+                           var_type_size[v->type], target, target);
+        } else {
+            if (v->arg_index < 0xFFFF)
+                buffer.fmt("    ld.param.%s %s%u, [in+%u];\n",
+                           var_type_name_ptx[v->type], var_type_prefix[v->type],
+                           v->reg_index, v->arg_index);
+            else
+                buffer.fmt("    mov.u64 %%rd3, /* direct ptr */ 0x%llx;\n"
+                           "    ldu.global.%s %s%u, [%%rd3];\n",
+                           (unsigned long long) v->data,
+                           var_type_name_ptx[v->type], var_type_prefix[v->type],
+                           v->reg_index);
+        }
     };
 
     /* Special registers:
@@ -1395,11 +1403,17 @@ const char *jit_eval_ir(int cuda,
     for (auto const &entry: schedule) {
         Variable *v = jit_var(entry.index);
         if (v->arg_type == ArgType::Register && v->stmt == nullptr &&
-            (VarType) v->type != VarType::Pointer)
-            jit_raise("jit_eval_ir(): the queued computation accesses a "
-                     "variable that was already evaluated, and which was not "
-                     "explictly declared as an input! (id=%u, type=%s)",
-                     entry.index, var_type_name[v->type]);
+            (VarType) v->type != VarType::Pointer) {
+                if (v->size == 1 && v->data) {
+                    v->arg_type = ArgType::Input;
+                    v->arg_index = 0xFFFF;
+                    continue;
+                }
+                jit_raise("jit_eval_ir(): the queued computation accesses a "
+                         "variable that was already evaluated, and which was not "
+                         "explictly declared as an input! (id=%u, type=%s, size=%u)",
+                         entry.index, var_type_name[v->type], v->size);
+        }
     }
 
     // Empty arrays are invalid in PTX
