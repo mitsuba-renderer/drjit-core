@@ -931,9 +931,7 @@ int jit_var_device(uint32_t index) {
     if (v->data)
         return jit_malloc_device(v->data);
 
-    ThreadState *stream = thread_state(v->cuda);
-
-    return stream->device;
+    return thread_state(v->cuda)->device;
 }
 
 /// Mark a variable as a scatter operation that writes to 'target'
@@ -948,8 +946,10 @@ void jit_var_mark_scatter(uint32_t index, uint32_t target) {
     stream->todo.push_back(index);
     stream->side_effect_counter++;
 
-    // Update target variable
-    if (target) {
+    /* Mark target as dirty, except when recording code (in which
+       case we don't have control over when that IR fragment is actually
+       evaluated. */
+    if (target && jit_mode() != JitMode::SymbolicRequired) {
         v = jit_var(target);
         v->pending_scatter = true;
     }
