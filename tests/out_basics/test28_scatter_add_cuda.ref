@@ -41,7 +41,7 @@ jit_assemble(size=15): register map:
                               .param .u64 arg1) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
-    .reg.pred %p<8>;
+    .reg.pred %p <8>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -139,7 +139,7 @@ jit_assemble(size=16): register map:
                               .param .u64 arg1) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
-    .reg.pred %p<8>;
+    .reg.pred %p <8>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -237,7 +237,7 @@ jit_assemble(size=15): register map:
                               .param .u64 arg1) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
-    .reg.pred %p<8>;
+    .reg.pred %p <8>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -335,7 +335,7 @@ jit_assemble(size=16): register map:
                               .param .u64 arg1) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
-    .reg.pred %p<8>;
+    .reg.pred %p <8>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -448,7 +448,7 @@ jit_assemble(size=15): register map:
                               .param .u64 arg1) {
     .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
     .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
-    .reg.pred %p<12>;
+    .reg.pred %p <12>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -582,7 +582,7 @@ jit_assemble(size=16): register map:
                               .param .u64 arg1) {
     .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
     .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
-    .reg.pred %p<12>;
+    .reg.pred %p <12>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -716,7 +716,7 @@ jit_assemble(size=15): register map:
                               .param .u64 arg1) {
     .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
     .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
-    .reg.pred %p<12>;
+    .reg.pred %p <12>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -850,7 +850,7 @@ jit_assemble(size=16): register map:
                               .param .u64 arg1) {
     .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
     .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
-    .reg.pred %p<12>;
+    .reg.pred %p <12>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;

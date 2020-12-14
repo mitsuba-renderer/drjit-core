@@ -47,7 +47,7 @@ jit_malloc(type=device, device=0, size=8192): <@> (new allocation)
                               .param .u64 arg4) {
     .reg.b8   %b <9>; .reg.b16 %w<9>; .reg.b32 %r<9>;
     .reg.b64  %rd<9>; .reg.f32 %f<9>; .reg.f64 %d<9>;
-    .reg.pred %p<9>;
+    .reg.pred %p <9>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -193,7 +193,7 @@ jit_malloc(type=device, device=0, size=8192): <@> (reused local)
                               .param .u64 arg3) {
     .reg.b8   %b <10>; .reg.b16 %w<10>; .reg.b32 %r<10>;
     .reg.b64  %rd<10>; .reg.f32 %f<10>; .reg.f64 %d<10>;
-    .reg.pred %p<10>;
+    .reg.pred %p <10>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -336,7 +336,7 @@ jit_malloc(type=device, device=0, size=8192): <@> (reused local)
                               .param .u64 arg4) {
     .reg.b8   %b <10>; .reg.b16 %w<10>; .reg.b32 %r<10>;
     .reg.b64  %rd<10>; .reg.f32 %f<10>; .reg.f64 %d<10>;
-    .reg.pred %p<10>;
+    .reg.pred %p <10>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -490,7 +490,7 @@ jit_malloc(type=device, device=0, size=8192): <@> (reused local)
                               .param .u64 arg3) {
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
-    .reg.pred %p<11>;
+    .reg.pred %p <11>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -639,7 +639,7 @@ jit_malloc(type=device, device=0, size=8192): <@> (reused local)
                               .param .u64 arg3) {
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
-    .reg.pred %p<11>;
+    .reg.pred %p <11>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -787,7 +787,7 @@ jit_malloc(type=device, device=0, size=4096): <@> (reused local)
                               .param .u64 arg3) {
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
-    .reg.pred %p<11>;
+    .reg.pred %p <11>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;

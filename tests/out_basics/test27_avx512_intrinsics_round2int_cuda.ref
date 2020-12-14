@@ -77,7 +77,7 @@ jit_malloc(type=device, device=0, size=128): <@> (new allocation)
                               .param .u64 arg8) {
     .reg.b8   %b <14>; .reg.b16 %w<14>; .reg.b32 %r<14>;
     .reg.b64  %rd<14>; .reg.f32 %f<14>; .reg.f64 %d<14>;
-    .reg.pred %p<14>;
+    .reg.pred %p <14>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -293,7 +293,7 @@ jit_malloc(type=device, device=0, size=128): <@> (reused local)
                               .param .u64 arg8) {
     .reg.b8   %b <14>; .reg.b16 %w<14>; .reg.b32 %r<14>;
     .reg.b64  %rd<14>; .reg.f32 %f<14>; .reg.f64 %d<14>;
-    .reg.pred %p<14>;
+    .reg.pred %p <14>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -508,7 +508,7 @@ jit_malloc(type=device, device=0, size=128): <@> (reused local)
                               .param .u64 arg8) {
     .reg.b8   %b <14>; .reg.b16 %w<14>; .reg.b32 %r<14>;
     .reg.b64  %rd<14>; .reg.f32 %f<14>; .reg.f64 %d<14>;
-    .reg.pred %p<14>;
+    .reg.pred %p <14>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -723,7 +723,7 @@ jit_malloc(type=device, device=0, size=128): <@> (reused local)
                               .param .u64 arg8) {
     .reg.b8   %b <14>; .reg.b16 %w<14>; .reg.b32 %r<14>;
     .reg.b64  %rd<14>; .reg.f32 %f<14>; .reg.f64 %d<14>;
-    .reg.pred %p<14>;
+    .reg.pred %p <14>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;

@@ -358,7 +358,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
                               .param .u64 arg0) {
     .reg.b8   %b <60>; .reg.b16 %w<60>; .reg.b32 %r<60>;
     .reg.b64  %rd<60>; .reg.f32 %f<60>; .reg.f64 %d<60>;
-    .reg.pred %p<60>;
+    .reg.pred %p <60>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -643,7 +643,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
                               .param .u64 arg0) {
     .reg.b8   %b <61>; .reg.b16 %w<61>; .reg.b32 %r<61>;
     .reg.b64  %rd<61>; .reg.f32 %f<61>; .reg.f64 %d<61>;
-    .reg.pred %p<61>;
+    .reg.pred %p <61>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;

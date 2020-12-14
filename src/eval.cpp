@@ -552,7 +552,7 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
     buffer.fmt(
         "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
         "    .reg.b64  %%rd<%u>; .reg.f32 %%f<%u>; .reg.f64 %%d<%u>;\n"
-        "    .reg.pred %%p<%u>;\n\n",
+        "    .reg.pred %%p <%u>;\n\n",
         n_regs_total, n_regs_total, n_regs_total, n_regs_total,
         n_regs_total, n_regs_total, n_regs_total
     );
