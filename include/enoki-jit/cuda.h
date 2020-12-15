@@ -599,6 +599,13 @@ Array empty(size_t size) {
 
 template <typename Array,
           typename std::enable_if<Array::IsCUDA, int>::type = 0>
+Array placeholder() {
+    return Array::from_index(
+        jitc_var_map_mem(1, Array::Type, (void *) (uintptr_t) 1, 1, 0));
+}
+
+template <typename Array,
+          typename std::enable_if<Array::IsCUDA, int>::type = 0>
 Array zero(size_t size) {
     return Array::from_index(jitc_var_new_literal(1, Array::Type, 0, (uint32_t) size, 0));
 }

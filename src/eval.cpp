@@ -1388,13 +1388,10 @@ const char *jit_eval_ir(int cuda,
     uint32_t offset_out = 0, align_out = 1;
     for (uint32_t i = 0; i < n_out; ++i) {
         Variable *v = jit_var(out[i]);
-        if (v->data)
+        if (v->data != nullptr && v->data != (void *) 1 /* input placeholder */)
             jit_raise("jit_eval_ir(): outputs must be unevaluated Enoki arrays!");
-        v->output_flag = true;
-        v->arg_type = ArgType::Output;
         uint32_t size = var_type_size[v->type];
         offset_out = (offset_out + size - 1) / size * size;
-        v->arg_index = offset_out;
         offset_out += size;
         align_out = std::max(align_out, size);
     }
@@ -1402,8 +1399,8 @@ const char *jit_eval_ir(int cuda,
     uint32_t offset_in = 0, align_in = 1;
     for (uint32_t i = 0; i < n_in; ++i) {
         Variable *v = jit_var(in[i]);
-        if (v->data == nullptr)
-            jit_raise("jit_eval_ir(): inputs must be evaluated/placeholder Enoki arrays!");
+        if ((uintptr_t) v->data != 1)
+            jit_raise("jit_eval_ir(): inputs must be placeholder Enoki arrays!");
         v->arg_type = ArgType::Input;
         uint32_t size = var_type_size[v->type];
         offset_in = (offset_in + size - 1) / size * size;
@@ -1447,9 +1444,16 @@ const char *jit_eval_ir(int cuda,
         Variable *v = jit_var(out[i]);
         uint32_t size = var_type_size[v->type];
         offset_out = (offset_out + size - 1) / size * size;
-        buffer.fmt("    st.param.%s [out+%u], %s%u;\n",
-                   var_type_name_ptx[v->type], offset_out,
-                   var_type_prefix[v->type], v->reg_index);
+        if ((VarType) v->type != VarType::Bool) {
+            buffer.fmt("    st.param.%s [out+%u], %s%u;\n",
+                       var_type_name_ptx[v->type], offset_out,
+                       var_type_prefix[v->type], v->reg_index);
+        } else {
+            buffer.fmt("    selp.u16 %%w0, 1, 0, %s%u;\n"
+                       "    st.param.u8 [out+%u], %%w0;\n",
+                       var_type_prefix[v->type], v->reg_index,
+                       offset_out);
+        }
         offset_out += size;
     }
 

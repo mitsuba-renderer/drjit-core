@@ -680,6 +680,13 @@ Array empty(size_t size) {
 
 template <typename Array,
           typename std::enable_if<Array::IsLLVM, int>::type = 0>
+Array placeholder() {
+    return Array::from_index(
+        jitc_var_map_mem(0, Array::Type, (void *) (uintptr_t) 1, 1, 0));
+}
+
+template <typename Array,
+          typename std::enable_if<Array::IsLLVM, int>::type = 0>
 Array zero(size_t size) {
     return Array::steal(jitc_var_new_literal(0, Array::Type, 0, (uint32_t) size, 0));
 }

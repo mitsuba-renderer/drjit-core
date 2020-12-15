@@ -85,14 +85,14 @@ void jit_fail(const char* fmt, ...) {
 
     fputc('\n', stderr);
     state.mutex.unlock();
-    exit(EXIT_FAILURE);
+    abort();
 }
 
 void jit_vfail(const char* fmt, va_list args) {
     fprintf(stderr, "Critical failure in Enoki JIT compiler: ");
     vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
-    exit(EXIT_FAILURE);
+    abort();
 }
 
 const char *jit_mem_string(size_t size) {

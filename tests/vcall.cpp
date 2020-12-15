@@ -92,11 +92,14 @@ template <typename... Args> auto vcall(const char *domain, UInt32 inst, const Ar
         uint64_t hash;
 
         if (base)
-            std::tie(id, hash) = record(cuda,
-                [&](const Args &...args) { return base->func(args...); }, empty<Float>(1), empty<Float>(1));
+            std::tie(id, hash) = record(
+                cuda, [&](const Args &... args) { return base->func(args...); },
+                placeholder<Float>(), placeholder<Float>());
         else
-            std::tie(id, hash) = record(cuda,
-                [&](const Args &...) { return std::pair<Float, Float>(0, 0); }, empty<Float>(1), empty<Float>(1));
+            std::tie(id, hash) = record(
+                cuda,
+                [&](const Args &...) { return std::pair<Float, Float>(0, 0); },
+                placeholder<Float>(), placeholder<Float>());
 
         index = jitc_var_new_2(cuda, VarType::Global, "", 1, index, id);
         jitc_var_dec_ref_ext(id);
