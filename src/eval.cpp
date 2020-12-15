@@ -492,16 +492,22 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
                            "    add.u64 %%rd%u, %%rd%u, %%rd1;\n",
                            var_type_size[v->type], target, target);
         } else {
-            if (v->arg_index < 0xFFFF)
-                buffer.fmt("    ld.param.%s %s%u, [in+%u];\n",
-                           var_type_name_ptx[v->type], var_type_prefix[v->type],
-                           v->reg_index, v->arg_index);
-            else
+            if (v->arg_index < 0xFFFF) {
+                if (v->type != (uint32_t) VarType::Bool)
+                    buffer.fmt("    ld.param.%s %s%u, [in+%u];\n",
+                               var_type_name_ptx[v->type], var_type_prefix[v->type],
+                               v->reg_index, v->arg_index);
+                else
+                    buffer.fmt("    ld.param.u8 %%w0, [in+%u];\n"
+                               "    setp.ne.u16 %s%u, %%w0, 0;\n",
+                               v->arg_index, var_type_prefix[v->type], v->reg_index);
+            } else {
                 buffer.fmt("    mov.u64 %%rd3, /* direct ptr */ 0x%llx;\n"
                            "    ldu.global.%s %s%u, [%%rd3];\n",
                            (unsigned long long) v->data,
                            var_type_name_ptx[v->type], var_type_prefix[v->type],
                            v->reg_index);
+            }
         }
     };
 
