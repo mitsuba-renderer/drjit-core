@@ -30,7 +30,7 @@ jit_var_inc_ref_ext(7): 1
 jit_var_inc_ref_int(7): 1
 jit_var_inc_ref_int(2): 2
 jit_var_inc_ref_int(4): 1
-jit_var_new(8 <- 7, 2, 4): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nst.global.$t2 [%rd3], $r2
+jit_var_new(8 <- 7, 2, 4): mad.wide.$t3 %rd3, $r3, $s2, $r1$nst.global.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(8): 1
 jit_var_mark_scatter(8, 6)
 jit_var_dec_ref_ext(7): 0
@@ -81,8 +81,7 @@ L1: // Loop body
 
     // Load %rd6
     ld.param.u64 %rd6, [arg1];
-    mul.wide.u32 %rd3, %r5, 4;
-    add.u64 %rd3, %rd3, %rd6;
+    mad.wide.u32 %rd3, %r5, 4, %rd6;
     st.global.u32 [%rd3], %r4;
 
     add.u32 %r0, %r0, %r1;

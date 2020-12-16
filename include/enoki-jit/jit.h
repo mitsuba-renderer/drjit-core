@@ -139,7 +139,7 @@ extern JITC_EXPORT void jitc_sync_all_devices();
 /**
  * \brief Status flags to adjust/inspect the eagerness of the JIT compiler
  *
- * Certain Enoki operations can operate in two different flags: they can be
+ * Certain Enoki operations can operate in two different ways: they can be
  * executed at once, or they can be recorded to postpone evaluation to a later
  * point. The latter is generally more efficient because it enables
  * optimizations (fusion of multiple operations, exchange of information via
@@ -217,14 +217,18 @@ extern JITC_EXPORT const char *jitc_eval_ir(int cuda,
                                             const uint32_t *in, uint32_t n_in,
                                             const uint32_t *out, uint32_t n_out,
                                             uint32_t n_side_effects,
-                                            uint64_t *hash_out);
+                                            uint64_t *hash_out,
+                                            void ***extra_out,
+                                            uint32_t *extra_count_out);
 
 /// Like jitc_eval_ir(), wraps result in JIT variable of type VarType::Global
 extern JITC_EXPORT uint32_t jitc_eval_ir_var(int cuda,
                                              const uint32_t *in, uint32_t n_in,
                                              const uint32_t *out, uint32_t n_out,
                                              uint32_t n_side_effects,
-                                             uint64_t *hash_out);
+                                             uint64_t *hash_out,
+                                             void ***extra_out,
+                                             uint32_t *extra_count_out);
 
 // ====================================================================
 //                    CUDA/LLVM-specific functionality
@@ -1185,6 +1189,15 @@ extern JITC_EXPORT void jitc_set_cse(int cuda, int value);
 
 /// Return whether or not common subexpression elimination is enabled
 extern JITC_EXPORT int jitc_cse(int cuda);
+
+/**
+ */
+extern JITC_EXPORT void
+jitc_var_vcall(int cuda, uint32_t self, uint32_t n_inst,
+               const uint32_t *inst_ids, const uint64_t *inst_hash,
+               uint32_t n_in, const uint32_t *in, uint32_t n_out, uint32_t *out,
+               uint32_t n_extra, const void **extra,
+               const uint32_t *extra_offset, int side_effects);
 
 // ====================================================================
 //                 Kernel compilation and evaluation

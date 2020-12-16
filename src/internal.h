@@ -508,17 +508,32 @@ public:
 
     /// Append an unsigned 32 bit integer
     void put_uint32(uint32_t value) {
-        const int Digits = 10;
+        const int digits = 10;
         const char *num = "0123456789";
-        char buf[Digits];
-        int i = Digits;
+        char buf[digits];
+        int i = digits;
 
         do {
             buf[--i] = num[value % 10];
             value /= 10;
         } while (value);
 
-        return put(buf + i, Digits - i);
+        return put(buf + i, digits - i);
+    }
+
+    /// Append an unsigned 64 bit integer
+    void put_uint64(uint64_t value) {
+        const int digits = 20;
+        const char *num = "0123456789";
+        char buf[digits];
+        int i = digits;
+
+        do {
+            buf[--i] = num[value % 10];
+            value /= 10;
+        } while (value);
+
+        return put(buf + i, digits - i);
     }
 
     /// Append a single character to the buffer

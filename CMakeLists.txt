@@ -16,6 +16,7 @@ endif()
 include(ext/enoki-thread/cmake/EnokiDefaults.cmake)
 
 add_subdirectory(ext/enoki-thread)
+mark_as_advanced(ENOKI_THREAD_ENABLE_TESTS)
 
 option(ENOKI_JIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
 option(ENOKI_JIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)

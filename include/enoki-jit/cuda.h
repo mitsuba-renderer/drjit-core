@@ -775,23 +775,19 @@ Array gather_impl(const void *src_ptr,
     if (mask.is_literal_one()) {
         var = jitc_var_new_2(1, Array::Type,
                              !std::is_same<Value, bool>::value
-                                 ? "mul.wide.$t2 %rd3, $r2, $s0$n"
-                                   "add.$t1 %rd3, %rd3, $r1$n"
+                                 ? "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
                                    "ld.global.nc.$t0 $r0, [%rd3]"
-                                 : "mul.wide.$t2 %rd3, $r2, $s0$n"
-                                   "add.$t1 %rd3, %rd3, $r1$n"
+                                 : "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
                                    "ld.global.nc.u8 %w0, [%rd3]$n"
                                    "setp.ne.u16 $r0, %w0, 0",
                              1, base.index(), index.index());
     } else {
         var = jitc_var_new_3(1, Array::Type,
                              !std::is_same<Value, bool>::value
-                                 ? "mul.wide.$t2 %rd3, $r2, $s0$n"
-                                   "add.$t1 %rd3, %rd3, $r1$n"
+                                 ? "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
                                    "@$r3 ld.global.nc.$t0 $r0, [$r1]$n"
                                    "@!$r3 mov.$b0 $r0, 0"
-                                 : "mul.wide.$t2 %rd3, $r2, $s0$n"
-                                   "add.$t1 %rd3, %rd3, $r1$n"
+                                 : "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
                                    "@$r3 ld.global.nc.u8 %w0, [$r1]$n"
                                    "@!$r3 mov.u16 %w0, 0$n"
                                    "setp.ne.u16 $r0, %w0, 0",
@@ -856,15 +852,13 @@ void scatter(CUDAArray<Value> &dst,
     if (mask.is_literal_one()) {
         if (!std::is_same<Value, bool>::value) {
             var = jitc_var_new_3(1, VarType::Invalid,
-                                 "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                 "add.$t1 %rd3, %rd3, $r1$n"
+                                 "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                                  "st.global.$t2 [%rd3], $r2",
                                  1, base.index(), value.index(),
                                  index.index());
         } else {
             var = jitc_var_new_3(1, VarType::Invalid,
-                                 "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                 "add.$t1 %rd3, %rd3, $r1$n"
+                                 "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                                  "selp.u16 %w0, 1, 0, $r2$n"
                                  "st.global.u8 [%rd3], %w0",
                                  1, base.index(), value.index(),
@@ -873,15 +867,13 @@ void scatter(CUDAArray<Value> &dst,
     } else {
         if (!std::is_same<Value, bool>::value) {
             var = jitc_var_new_4(1, VarType::Invalid,
-                                 "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                 "add.$t1 %rd3, %rd3, $r1$n"
+                                 "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                                  "@$r4 st.global.$t2 [%rd3], $r2",
                                  1, base.index(), value.index(),
                                  index.index(), mask.index());
         } else {
             var = jitc_var_new_4(1, VarType::Invalid,
-                                 "mul.wide.$t3 %rd3, $r3, $s2$n"
-                                 "add.$t1 %rd3, %rd3, $r1$n"
+                                 "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                                  "selp.u16 %w0, 1, 0, $r2$n"
                                  "@$r4 st.global.u8 [%rd3], %w0",
                                  1, base.index(), value.index(),
@@ -926,15 +918,13 @@ void scatter_add(CUDAArray<Value> &dst,
     uint32_t var;
     if (mask.is_literal_one()) {
         var = jitc_var_new_3(1, VarType::Invalid,
-                             "mul.wide.$t3 %rd3, $r3, $s2$n"
-                             "add.$t1 %rd3, %rd3, $r1$n"
+                             "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                              "red.global.add.$t2 [%rd3], $r2",
                              1, base.index(), value.index(),
                              index.index());
     } else {
         var = jitc_var_new_4(1, VarType::Invalid,
-                             "mul.wide.$t3 %rd3, $r3, $s2$n"
-                             "add.$t1 %rd3, %rd3, $r1$n"
+                             "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                              "@$r4 red.global.add.$t2 [%rd3], $r2",
                              1, base.index(), value.index(),
                              index.index(), mask.index());

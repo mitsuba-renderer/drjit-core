@@ -424,7 +424,7 @@ bool jit_cuda_init() {
 }
 
 void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
-    const uintptr_t log_size = 4096;
+    const uintptr_t log_size = 16384;
     char error_log[log_size], info_log[log_size];
 
     CUjit_option arg[5] = {

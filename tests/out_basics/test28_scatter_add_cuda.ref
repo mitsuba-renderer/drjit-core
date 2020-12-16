@@ -18,7 +18,7 @@ jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(5): 1
 jit_var_inc_ref_int(3): 1
 jit_var_inc_ref_int(2): 1
-jit_var_new(6 <- 5, 3, 2): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nred.global.add.$t2 [%rd3], $r2
+jit_var_new(6 <- 5, 3, 2): mad.wide.$t3 %rd3, $r3, $s2, $r1$nred.global.add.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(6): 1
 jit_var_mark_scatter(6, 1)
 jit_var_dec_ref_ext(5): 0
@@ -67,8 +67,7 @@ L1: // Loop body
 
     // Load %rd6
     ld.param.u64 %rd6, [arg1];
-    mul.wide.u32 %rd3, %r5, 4;
-    add.u64 %rd3, %rd3, %rd6;
+    mad.wide.u32 %rd3, %r5, 4, %rd6;
     red.global.add.f32 [%rd3], %f4;
 
     add.u32 %r0, %r0, %r1;
@@ -116,7 +115,7 @@ jit_var_inc_ref_ext(11): 1
 jit_var_inc_ref_int(11): 1
 jit_var_inc_ref_int(9): 1
 jit_var_inc_ref_int(8): 1
-jit_var_new(12 <- 11, 9, 8): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nred.global.add.$t2 [%rd3], $r2
+jit_var_new(12 <- 11, 9, 8): mad.wide.$t3 %rd3, $r3, $s2, $r1$nred.global.add.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(12): 1
 jit_var_mark_scatter(12, 7)
 jit_var_dec_ref_ext(11): 0
@@ -165,8 +164,7 @@ L1: // Loop body
 
     // Load %rd6
     ld.param.u64 %rd6, [arg1];
-    mul.wide.u32 %rd3, %r5, 4;
-    add.u64 %rd3, %rd3, %rd6;
+    mad.wide.u32 %rd3, %r5, 4, %rd6;
     red.global.add.f32 [%rd3], %f4;
 
     add.u32 %r0, %r0, %r1;
@@ -214,7 +212,7 @@ jit_var_inc_ref_ext(17): 1
 jit_var_inc_ref_int(17): 1
 jit_var_inc_ref_int(15): 1
 jit_var_inc_ref_int(14): 1
-jit_var_new(18 <- 17, 15, 14): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nred.global.add.$t2 [%rd3], $r2
+jit_var_new(18 <- 17, 15, 14): mad.wide.$t3 %rd3, $r3, $s2, $r1$nred.global.add.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(18): 1
 jit_var_mark_scatter(18, 13)
 jit_var_dec_ref_ext(17): 0
@@ -263,8 +261,7 @@ L1: // Loop body
 
     // Load %rd6
     ld.param.u64 %rd6, [arg1];
-    mul.wide.u32 %rd3, %r5, 8;
-    add.u64 %rd3, %rd3, %rd6;
+    mad.wide.u32 %rd3, %r5, 8, %rd6;
     red.global.add.f64 [%rd3], %d4;
 
     add.u32 %r0, %r0, %r1;
@@ -312,7 +309,7 @@ jit_var_inc_ref_ext(23): 1
 jit_var_inc_ref_int(23): 1
 jit_var_inc_ref_int(21): 1
 jit_var_inc_ref_int(20): 1
-jit_var_new(24 <- 23, 21, 20): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$nred.global.add.$t2 [%rd3], $r2
+jit_var_new(24 <- 23, 21, 20): mad.wide.$t3 %rd3, $r3, $s2, $r1$nred.global.add.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(24): 1
 jit_var_mark_scatter(24, 19)
 jit_var_dec_ref_ext(23): 0
@@ -361,8 +358,7 @@ L1: // Loop body
 
     // Load %rd6
     ld.param.u64 %rd6, [arg1];
-    mul.wide.u32 %rd3, %r5, 8;
-    add.u64 %rd3, %rd3, %rd6;
+    mad.wide.u32 %rd3, %r5, 8, %rd6;
     red.global.add.f64 [%rd3], %d4;
 
     add.u32 %r0, %r0, %r1;
@@ -423,7 +419,7 @@ jit_var_inc_ref_int(32): 1
 jit_var_inc_ref_int(31): 1
 jit_var_inc_ref_int(30): 1
 jit_var_inc_ref_int(29): 1
-jit_var_new(33 <- 32, 31, 30, 29): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$n@$r4 red.global.add.$t2 [%rd3], $r2
+jit_var_new(33 <- 32, 31, 30, 29): mad.wide.$t3 %rd3, $r3, $s2, $r1$n@$r4 red.global.add.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(33): 1
 jit_var_mark_scatter(33, 25)
 jit_var_dec_ref_ext(32): 0
@@ -486,8 +482,7 @@ L1: // Loop body
 
     // Load %rd10
     ld.param.u64 %rd10, [arg1];
-    mul.wide.u32 %rd3, %r8, 4;
-    add.u64 %rd3, %rd3, %rd10;
+    mad.wide.u32 %rd3, %r8, 4, %rd10;
     @%p7 red.global.add.f32 [%rd3], %f9;
 
     add.u32 %r0, %r0, %r1;
@@ -557,7 +552,7 @@ jit_var_inc_ref_int(41): 1
 jit_var_inc_ref_int(40): 1
 jit_var_inc_ref_int(39): 1
 jit_var_inc_ref_int(38): 1
-jit_var_new(42 <- 41, 40, 39, 38): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$n@$r4 red.global.add.$t2 [%rd3], $r2
+jit_var_new(42 <- 41, 40, 39, 38): mad.wide.$t3 %rd3, $r3, $s2, $r1$n@$r4 red.global.add.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(42): 1
 jit_var_mark_scatter(42, 34)
 jit_var_dec_ref_ext(41): 0
@@ -620,8 +615,7 @@ L1: // Loop body
 
     // Load %rd10
     ld.param.u64 %rd10, [arg1];
-    mul.wide.u32 %rd3, %r8, 4;
-    add.u64 %rd3, %rd3, %rd10;
+    mad.wide.u32 %rd3, %r8, 4, %rd10;
     @%p7 red.global.add.f32 [%rd3], %f9;
 
     add.u32 %r0, %r0, %r1;
@@ -691,7 +685,7 @@ jit_var_inc_ref_int(50): 1
 jit_var_inc_ref_int(49): 1
 jit_var_inc_ref_int(48): 1
 jit_var_inc_ref_int(47): 1
-jit_var_new(51 <- 50, 49, 48, 47): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$n@$r4 red.global.add.$t2 [%rd3], $r2
+jit_var_new(51 <- 50, 49, 48, 47): mad.wide.$t3 %rd3, $r3, $s2, $r1$n@$r4 red.global.add.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(51): 1
 jit_var_mark_scatter(51, 43)
 jit_var_dec_ref_ext(50): 0
@@ -754,8 +748,7 @@ L1: // Loop body
 
     // Load %rd10
     ld.param.u64 %rd10, [arg1];
-    mul.wide.u32 %rd3, %r8, 8;
-    add.u64 %rd3, %rd3, %rd10;
+    mad.wide.u32 %rd3, %r8, 8, %rd10;
     @%p7 red.global.add.f64 [%rd3], %d9;
 
     add.u32 %r0, %r0, %r1;
@@ -825,7 +818,7 @@ jit_var_inc_ref_int(59): 1
 jit_var_inc_ref_int(58): 1
 jit_var_inc_ref_int(53): 1
 jit_var_inc_ref_int(57): 1
-jit_var_new(60 <- 59, 58, 53, 57): mul.wide.$t3 %rd3, $r3, $s2$nadd.$t1 %rd3, %rd3, $r1$n@$r4 red.global.add.$t2 [%rd3], $r2
+jit_var_new(60 <- 59, 58, 53, 57): mad.wide.$t3 %rd3, $r3, $s2, $r1$n@$r4 red.global.add.$t2 [%rd3], $r2
 jit_var_inc_ref_ext(60): 1
 jit_var_mark_scatter(60, 52)
 jit_var_dec_ref_ext(59): 0
@@ -888,8 +881,7 @@ L1: // Loop body
 
     // Load %rd10
     ld.param.u64 %rd10, [arg1];
-    mul.wide.u32 %rd3, %r8, 8;
-    add.u64 %rd3, %rd3, %rd10;
+    mad.wide.u32 %rd3, %r8, 8, %rd10;
     @%p7 red.global.add.f64 [%rd3], %d9;
 
     add.u32 %r0, %r0, %r1;
