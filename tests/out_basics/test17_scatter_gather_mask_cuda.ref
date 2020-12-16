@@ -81,8 +81,7 @@ L1: // Loop body
 
     // Store %p8: result
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 1;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
     selp.u16 %w0, 1, 0, %p8;
     st.global.cs.u8 [%rd0], %w0;
 
@@ -197,8 +196,7 @@ L1: // Loop body
 
     // Store %p8: even
     ld.param.u64 %rd0, [arg1];
-    mul.wide.u32 %rd1, %r0, 1;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
     selp.u16 %w0, 1, 0, %p8;
     st.global.cs.u8 [%rd0], %w0;
 
@@ -274,8 +272,7 @@ L1: // Loop body
 
     // Store %p10: odd
     ld.param.u64 %rd0, [arg1];
-    mul.wide.u32 %rd1, %r0, 1;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
     selp.u16 %w0, 1, 0, %p10;
     st.global.cs.u8 [%rd0], %w0;
 
@@ -402,8 +399,7 @@ L1: // Loop body
 
     // Load %p7: odd
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 1;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
     ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p7, %w0, 0;
 
@@ -421,8 +417,7 @@ L1: // Loop body
 
     // Load %p12: even
     ld.param.u64 %rd0, [arg2];
-    mul.wide.u32 %rd1, %r0, 1;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
     ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p12, %w0, 0;
     mad.wide.s32 %rd3, %r11, 1, %rd8;

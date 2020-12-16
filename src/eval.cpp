@@ -137,8 +137,9 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v, bool indent = true) {
 
     if (unlikely(!s)) {
         if (!eval_normal && (VarType) v->type == VarType::Pointer) {
-            buffer.fmt("    ldu.global.u64 %%rd%u, [extra + %u];\n",
-                       v->reg_index, (uint32_t) kernel_args_extra.size());
+            buffer.fmt("    ld.global.nc.u64 %%rd%u, [extra+%u];\n",
+                       v->reg_index,
+                       (uint32_t) (sizeof(void *) * kernel_args_extra.size()));
             kernel_args_extra.push_back(v->data);
         } else {
             jit_fail("jit_render_stmt_cuda(): internal error - missing statement!");
@@ -490,9 +491,8 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
                 buffer.fmt("    ldu.global.u64 %%rd%u, [%%rd2 + %u];\n",
                            target, (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
             if (v->size > 1 || !load)
-                buffer.fmt("    mul.wide.u32 %%rd1, %%r0, %u;\n"
-                           "    add.u64 %%rd%u, %%rd%u, %%rd1;\n",
-                           var_type_size[v->type], target, target);
+                buffer.fmt("    mad.wide.u32 %%rd%u, %%r0, %u, %%rd%u;\n",
+                           target, var_type_size[v->type], target);
         } else {
             if (v->arg_index < 0xFFFF) {
                 if (v->type != (uint32_t) VarType::Bool)
@@ -504,15 +504,15 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
                                "    setp.ne.u16 %s%u, %%w0, 0;\n",
                                v->arg_index, var_type_prefix[v->type], v->reg_index);
             } else {
-                buffer.fmt("    ldu.global.u64 %%rd3, [extra + %u];\n",
-                           (uint32_t) kernel_args_extra.size());
+                buffer.fmt("    ld.global.nc.u64 %%rd3, [extra+%u];\n",
+                           (uint32_t) (sizeof(void *) * kernel_args_extra.size()));
                 kernel_args_extra.push_back(v->data);
                 if (v->type != (uint32_t) VarType::Bool) {
-                    buffer.fmt("    ldu.global.%s %s%u, [%%rd3];\n",
+                    buffer.fmt("    ld.global.nc.%s %s%u, [%%rd3];\n",
                                var_type_name_ptx[v->type],
                                var_type_prefix[v->type], v->reg_index);
                 } else {
-                    buffer.fmt("    ldu.global.u8 %%w0, [%%rd3];\n"
+                    buffer.fmt("    ld.global.nc.u8 %%w0, [%%rd3];\n"
                                "    setp.ne.u16 %s%u, %%w0, 0;\n",
                                var_type_prefix[v->type], v->reg_index);
                 }

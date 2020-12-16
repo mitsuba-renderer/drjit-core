@@ -72,20 +72,17 @@ L1: // Loop body
 
     // Load %f4
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.f32 %f4, [%rd0];
 
     // Load %f5
     ld.param.u64 %rd0, [arg1];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.f32 %f5, [%rd0];
 
     // Load %f6
     ld.param.u64 %rd0, [arg2];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.f32 %f6, [%rd0];
 
     // Evaluate %f7
@@ -93,8 +90,7 @@ L1: // Loop body
 
     // Store %f7
     ld.param.u64 %rd0, [arg3];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f7;
 
     // Evaluate %f8
@@ -105,8 +101,7 @@ L1: // Loop body
 
     // Store %f9
     ld.param.u64 %rd0, [arg4];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f9;
 
     add.u32 %r0, %r0, %r1;
@@ -218,20 +213,17 @@ L1: // Loop body
 
     // Load %d4
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 8;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 8, %rd0;
     ld.global.cs.f64 %d4, [%rd0];
 
     // Load %d5
     ld.param.u64 %rd0, [arg1];
-    mul.wide.u32 %rd1, %r0, 8;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 8, %rd0;
     ld.global.cs.f64 %d5, [%rd0];
 
     // Load %d6
     ld.param.u64 %rd0, [arg2];
-    mul.wide.u32 %rd1, %r0, 8;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 8, %rd0;
     ld.global.cs.f64 %d6, [%rd0];
 
     // Evaluate %d7
@@ -239,8 +231,7 @@ L1: // Loop body
 
     // Store %d7
     ld.param.u64 %rd0, [arg3];
-    mul.wide.u32 %rd1, %r0, 8;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 8, %rd0;
     st.global.cs.f64 [%rd0], %d7;
 
     // Evaluate %d8
@@ -251,8 +242,7 @@ L1: // Loop body
 
     // Store %d9
     ld.param.u64 %rd0, [arg4];
-    mul.wide.u32 %rd1, %r0, 8;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 8, %rd0;
     st.global.cs.f64 [%rd0], %d9;
 
     add.u32 %r0, %r0, %r1;

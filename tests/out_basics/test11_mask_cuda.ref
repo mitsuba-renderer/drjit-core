@@ -72,8 +72,7 @@ L1: // Loop body
 
     // Store %p7
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 1;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
     selp.u16 %w0, 1, 0, %p7;
     st.global.cs.u8 [%rd0], %w0;
 
@@ -85,8 +84,7 @@ L1: // Loop body
 
     // Store %f9
     ld.param.u64 %rd0, [arg1];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f9;
 
     add.u32 %r0, %r0, %r1;
@@ -162,8 +160,7 @@ L1: // Loop body
 
     // Load %p6
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 1;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
     ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p6, %w0, 0;
 
@@ -172,8 +169,7 @@ L1: // Loop body
 
     // Store %f7
     ld.param.u64 %rd0, [arg1];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f7;
 
     add.u32 %r0, %r0, %r1;
@@ -233,8 +229,7 @@ L1: // Loop body
 
     // Store %p4
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 1;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
     selp.u16 %w0, 1, 0, %p4;
     st.global.cs.u8 [%rd0], %w0;
 
@@ -243,8 +238,7 @@ L1: // Loop body
 
     // Store %p5
     ld.param.u64 %rd0, [arg1];
-    mul.wide.u32 %rd1, %r0, 1;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
     selp.u16 %w0, 1, 0, %p5;
     st.global.cs.u8 [%rd0], %w0;
 
@@ -315,8 +309,7 @@ L1: // Loop body
 
     // Load %f4
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.f32 %f4, [%rd0];
 
     // Evaluate %f5
@@ -332,8 +325,7 @@ L1: // Loop body
 
     // Store %f7
     ld.param.u64 %rd0, [arg2];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f7;
 
     // Load %p8
@@ -346,8 +338,7 @@ L1: // Loop body
 
     // Store %f9
     ld.param.u64 %rd0, [arg4];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f9;
 
     add.u32 %r0, %r0, %r1;

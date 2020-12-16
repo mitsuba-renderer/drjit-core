@@ -61,8 +61,7 @@ L1: // Loop body
 
     // Load %r5
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r5, [%rd0];
 
     // Load %rd6
@@ -158,8 +157,7 @@ L1: // Loop body
 
     // Load %r5
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r5, [%rd0];
 
     // Load %rd6
@@ -255,8 +253,7 @@ L1: // Loop body
 
     // Load %r5
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r5, [%rd0];
 
     // Load %rd6
@@ -352,8 +349,7 @@ L1: // Loop body
 
     // Load %r5
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r5, [%rd0];
 
     // Load %rd6
@@ -473,8 +469,7 @@ L1: // Loop body
 
     // Load %r8
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r8, [%rd0];
 
     // Evaluate %f9
@@ -606,8 +601,7 @@ L1: // Loop body
 
     // Load %r8
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r8, [%rd0];
 
     // Evaluate %f9
@@ -739,8 +733,7 @@ L1: // Loop body
 
     // Load %r8
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r8, [%rd0];
 
     // Evaluate %d9
@@ -872,8 +865,7 @@ L1: // Loop body
 
     // Load %r8
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r8, [%rd0];
 
     // Evaluate %d9

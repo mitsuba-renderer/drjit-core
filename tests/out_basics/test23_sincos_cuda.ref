@@ -543,8 +543,7 @@ L1: // Loop body
 
     // Store %f59
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f59;
 
     add.u32 %r0, %r0, %r1;
@@ -831,8 +830,7 @@ L1: // Loop body
 
     // Store %f60
     ld.param.u64 %rd0, [arg0];
-    mul.wide.u32 %rd1, %r0, 4;
-    add.u64 %rd0, %rd0, %rd1;
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f60;
 
     add.u32 %r0, %r0, %r1;
