@@ -463,29 +463,6 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
 
     jit_trace("Detailed linker output:\n%s", info_log);
 
-    /// Try to parse the ptxas output to see if there were any spills
-    char *spill_str = strstr(info_log, " bytes spill stores");
-    if (spill_str) {
-        --spill_str;
-        while (spill_str > info_log && *spill_str != ' ')
-            --spill_str;
-        if (spill_str > info_log) {
-            char *end = nullptr;
-            long result = strtol(spill_str + 1, &end, 10);
-            if (end != nullptr && end != spill_str) {
-                if (result > 0) {
-                    jit_log(Warn,
-                            "The compiled kernel requires more registers than "
-                            "what is natively available, and some of the "
-                            "associated memory had to be spilled into global "
-                            "memory. This is costly and will impact "
-                            "performance. You may want to partition your "
-                            "computation into smaller pieces to avoid this.");
-                }
-            }
-        }
-    }
-
     kernel.data = malloc_check(link_output_size);
     kernel.size = (uint32_t) link_output_size;
     memcpy(kernel.data, link_output, link_output_size);
