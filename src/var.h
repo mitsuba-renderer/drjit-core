@@ -144,6 +144,10 @@ extern void jit_var_read(uint32_t index, uint32_t offset, void *dst);
 /// Reverse of jit_var_read(). Copy 'src' to a single element of a variable
 extern void jit_var_write(uint32_t index, uint32_t offset, const void *src);
 
+/// Insert a print statement into the kernel
+extern void jit_var_printf(int cuda, const char *fmt, uint32_t narg,
+                           const uint32_t *arg);
+
 /// Schedule a variable \c index for future evaluation via \ref jitc_eval()
 extern int jit_var_schedule(uint32_t index);
 

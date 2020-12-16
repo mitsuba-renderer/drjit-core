@@ -619,3 +619,9 @@ void jitc_var_vcall(int cuda, uint32_t self, uint32_t n_inst,
     jit_var_vcall(cuda, self, n_inst, inst_ids, inst_hash, n_in, in, n_out, out,
                   n_extra, extra, extra_offset, side_effects);
 }
+
+void jitc_var_printf(int cuda, const char *fmt, uint32_t narg,
+                     const uint32_t *arg) {
+    lock_guard guard(state.mutex);
+    jit_var_printf(cuda, fmt, narg, arg);
+}

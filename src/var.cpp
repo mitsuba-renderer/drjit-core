@@ -1278,3 +1278,73 @@ void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
     uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
     jit_poke(v->cuda, dst, src, isize);
 }
+
+void jit_var_printf(int cuda, const char *fmt, uint32_t narg,
+                    const uint32_t *arg) {
+    if (!cuda)
+        jit_raise("jit_var_printf(): only supported in CUDA mode at the moment.");
+    buffer.clear();
+    buffer.put(
+        "{\n"
+        "        .global .align 1 .b8 fmt[] = { ");
+
+    for (uint32_t i = 0; ; ++i) {
+        buffer.put_uint32((uint32_t) fmt[i]);
+        if (fmt[i] == '\0')
+            break;
+        buffer.put(", ");
+    }
+    buffer.put(" };\n");
+    buffer.fmt("        .local .align 8 .b8 buf[%u];\n", 8 * narg);
+
+    for (uint32_t i = 0; i < narg; ++i) {
+        VarType vt = jit_var_type(arg[i]);
+        if (vt == VarType::Float32) {
+            buffer.fmt("        cvt.f64.f32 %%d0, $r%u;\n"
+                       "        st.local.f64 [buf+%u], %%d0;\n",
+                       i + 1, i * 8);
+        } else {
+            buffer.fmt("        st.local.$t%u [buf+%u], $r%u;\n", i + 1, i * 8,
+                       i + 1);
+        }
+    }
+
+    buffer.put("\n        .reg.b64 %fmt_r, %buf_r;\n"
+               "        cvta.global.u64 %fmt_r, fmt;\n"
+               "        cvta.local.u64 %buf_r, buf;\n"
+               "        {\n"
+               "            .param .b64 fmt_p;\n"
+               "            .param .b64 buf_p;\n"
+               "            .param .b32 rv_p;\n"
+               "            st.param.b64 [fmt_p], %fmt_r;\n"
+               "            st.param.b64 [buf_p], %buf_r;\n"
+               "            call (rv_p), vprintf, (fmt_p, buf_p);\n"
+               "        }\n"
+               "    }\n");
+
+    uint32_t decl = jit_var_new_0(cuda, VarType::Global,
+                                  ".extern .func (.param .b32 rv) vprintf "
+                                  "(.param .b64 fmt, .param .b64 buf);\n",
+                                  1, 1);
+
+    uint32_t idx = 0;
+    switch (narg) {
+        case 0:
+            idx = jit_var_new_1(cuda, VarType::Invalid, buffer.get(), 0, decl);
+            break;
+        case 1:
+            idx = jit_var_new_2(cuda, VarType::Invalid, buffer.get(), 0, arg[0], decl);
+            break;
+        case 2:
+            idx = jit_var_new_3(cuda, VarType::Invalid, buffer.get(), 0, arg[0], arg[1], decl);
+            break;
+        case 3:
+            idx = jit_var_new_4(cuda, VarType::Invalid, buffer.get(), 0, arg[0], arg[1], arg[2], decl);
+            break;
+        default:
+            jit_raise("jitc_var_printf(): max 3 arguments supported!");
+    }
+
+    jit_var_dec_ref_ext(decl);
+    jit_var_mark_scatter(idx, 0);
+}

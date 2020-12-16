@@ -1178,6 +1178,18 @@ extern JITC_EXPORT void jitc_var_write(uint32_t index, uint32_t offset,
                                        const void *src);
 
 /**
+ * \brief Print the specified variable contents from the kernel
+ *
+ * This function inserts a print statement directly into the kernel being
+ * generated. Note that this may produce a very large volume of output.
+ * Up to 3 variables can be referenced at once.
+ *
+ * Example: <tt>jitc_var_printf(1, "Hello world: %f\n", 1, &my_variable_id);</tt>
+ */
+extern JITC_EXPORT void jitc_var_printf(int cuda, const char *fmt,
+                                        uint32_t narg, const uint32_t *arg);
+
+/**
  * \brief Enable/disable common subexpression elimination
  *
  * By default, Enoki aggressively collapses variables that repeat computation
