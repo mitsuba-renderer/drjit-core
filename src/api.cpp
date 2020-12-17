@@ -591,11 +591,11 @@ const char *jitc_eval_ir(int cuda,
                          const uint32_t *out, uint32_t n_out,
                          uint32_t n_side_effects,
                          uint64_t *hash_out,
-                         void ***ptr_out,
-                         uint32_t *ptr_count_out) {
+                         uint32_t **extra_out,
+                         uint32_t *extra_count_out) {
     lock_guard guard(state.mutex);
     return jit_eval_ir(cuda, in, n_in, out, n_out, n_side_effects, hash_out,
-                       ptr_out, ptr_count_out);
+                       extra_out, extra_count_out);
 }
 
 uint32_t jitc_eval_ir_var(int cuda,
@@ -603,17 +603,17 @@ uint32_t jitc_eval_ir_var(int cuda,
                           const uint32_t *out, uint32_t n_out,
                           uint32_t n_side_effects,
                           uint64_t *hash_out,
-                          void ***ptr_out,
-                          uint32_t *ptr_count_out) {
+                          uint32_t **extra_out,
+                          uint32_t *extra_count_out) {
     lock_guard guard(state.mutex);
     return jit_eval_ir_var(cuda, in, n_in, out, n_out, n_side_effects, hash_out,
-                           ptr_out, ptr_count_out);
+                           extra_out, extra_count_out);
 }
 
 void jitc_var_vcall(int cuda, uint32_t self, uint32_t n_inst,
                     const uint32_t *inst_ids, const uint64_t *inst_hash,
                     uint32_t n_in, const uint32_t *in, uint32_t n_out,
-                    uint32_t *out, uint32_t n_extra, const void **extra,
+                    uint32_t *out, uint32_t n_extra, const uint32_t *extra,
                     const uint32_t *extra_offset, int side_effects) {
     lock_guard guard(state.mutex);
     jit_var_vcall(cuda, self, n_inst, inst_ids, inst_hash, n_in, in, n_out, out,

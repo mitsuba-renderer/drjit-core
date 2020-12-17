@@ -131,11 +131,10 @@ jit_var_new(17 <- 10, 11, 11): fma.rn.ftz.$t0 $r0, $r1, $r2, $r3
 jit_var_inc_ref_ext(17): 1
 jit_var_dec_ref_ext(11): 1
 jit_var_dec_ref_ext(10): 1
+jit_var_inc_ref_ext(14): 1
 jit_var_dec_ref_ext(15): 0
 jit_var_free(15)
 jit_var_dec_ref_int(14): 0
-jit_var_free(14)
-jit_var_dec_ref_ext(2): 1
 jit_var_dec_ref_int(11): 3
 jit_var_dec_ref_int(12): 0
 jit_var_free(12)
@@ -264,109 +263,113 @@ jit_var_inc_ref_int(28): 1
 jit_var_new(29 <- 5, 28): mov.$t0 $r0, $r2$nmad.wide.u32 $r0, $r1, 8, $r0$nld.const.$t0 $r0, [$r0]
 jit_var_inc_ref_ext(29): 1
 jit_var_dec_ref_ext(28): 0
-jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-jit_malloc(type=host-pinned, size=64): <@> (new allocation)
-jit_free(<@>, type=host-pinned, size=64)
-jit_var_map_mem(30): <@>, size=3, free=1
+jit_var_inc_ref_int(27): 2
+jit_var_new(30 <- 27): 
 jit_var_inc_ref_ext(30): 1
-jit_var_copy_mem(30, size=3)
+jit_var_dec_ref_ext(27): 0
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
-jit_var_map_mem(31): <@>, size=1, free=1
+jit_var_map_mem(31): <@>, size=3, free=1
 jit_var_inc_ref_ext(31): 1
-jit_var_copy_mem(31, size=1)
-jit_var_inc_ref_ext(30): 2
-jit_var_copy_ptr(32 <- 30): <@>
+jit_var_copy_mem(31, size=3)
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+jit_malloc(type=host-pinned, size=64): <@> (new allocation)
+jit_free(<@>, type=host-pinned, size=64)
+jit_var_map_mem(32): <@>, size=1, free=1
 jit_var_inc_ref_ext(32): 1
+jit_var_copy_mem(32, size=1)
 jit_var_inc_ref_ext(31): 2
 jit_var_copy_ptr(33 <- 31): <@>
 jit_var_inc_ref_ext(33): 1
-jit_var_dec_ref_ext(30): 1
-jit_var_dec_ref_ext(31): 1
-jit_var_inc_ref_int(5): 2
-jit_var_inc_ref_int(32): 1
-jit_var_inc_ref_int(33): 1
-jit_var_new(34 <- 5, 32, 33): mov.$t0 $r0, $r2$nmad.wide.u32 $r0, $r1, 4, $r0$nld.global.nc.u32 %rd3, [$r0]$nadd.u64 $r0, %rd3, $r3
+jit_var_inc_ref_ext(32): 2
+jit_var_copy_ptr(34 <- 32): <@>
 jit_var_inc_ref_ext(34): 1
-jit_var_dec_ref_ext(32): 0
-jit_var_dec_ref_ext(33): 0
-jit_var_inc_ref_int(29): 1
+jit_var_dec_ref_ext(31): 1
+jit_var_dec_ref_ext(32): 1
+jit_var_inc_ref_int(5): 2
+jit_var_inc_ref_int(33): 1
 jit_var_inc_ref_int(34): 1
-jit_var_inc_ref_int(27): 2
-jit_var_new(35 <- 29, 34, 27): 
+jit_var_new(35 <- 5, 33, 34): mad.wide.u32 $r0, $r1, 4, $r2$nld.global.nc.u32 %rd3, [$r0]$nadd.u64 $r0, $r3, %rd3
 jit_var_inc_ref_ext(35): 1
-jit_var_dec_ref_ext(29): 0
+jit_var_dec_ref_ext(33): 0
 jit_var_dec_ref_ext(34): 0
-jit_var_dec_ref_ext(27): 0
+jit_var_inc_ref_int(29): 1
+jit_var_inc_ref_int(35): 1
+jit_var_inc_ref_int(30): 1
+jit_var_new(36 <- 29, 35, 30): 
+jit_var_inc_ref_ext(36): 1
+jit_var_dec_ref_ext(29): 0
+jit_var_dec_ref_ext(35): 0
+jit_var_dec_ref_ext(30): 0
 jit_var_inc_ref_ext(3): 2
 jit_var_inc_ref_int(3): 1
-jit_var_inc_ref_int(35): 1
-jit_var_new(36 <- 3, 35): 
-jit_var_inc_ref_ext(36): 1
+jit_var_inc_ref_int(36): 1
+jit_var_new(37 <- 3, 36): 
+jit_var_inc_ref_ext(37): 1
 jit_var_dec_ref_ext(3): 1
-jit_var_dec_ref_ext(35): 0
+jit_var_dec_ref_ext(36): 0
 jit_var_inc_ref_ext(4): 2
 jit_var_inc_ref_int(4): 1
-jit_var_inc_ref_int(36): 1
-jit_var_new(37 <- 4, 36): 
-jit_var_inc_ref_ext(37): 1
-jit_var_dec_ref_ext(4): 1
-jit_var_dec_ref_ext(36): 0
 jit_var_inc_ref_int(37): 1
-jit_var_new(38 <- 37): 
+jit_var_new(38 <- 4, 37): 
+jit_var_inc_ref_ext(38): 1
+jit_var_dec_ref_ext(4): 1
+jit_var_dec_ref_ext(37): 0
+jit_var_inc_ref_int(38): 1
+jit_var_new(39 <- 38): 
     {
         .param .align 4 .b8 param_in[8];
         .param .align 4 .b8 param_out[8]
-jit_var_inc_ref_ext(38): 1
-jit_var_dec_ref_ext(37): 0
-jit_var_inc_ref_int(3): 2
-jit_var_inc_ref_int(38): 1
-jit_var_new(39 <- 3, 38):     st.param.$t1 [param_in+0], $r1
 jit_var_inc_ref_ext(39): 1
 jit_var_dec_ref_ext(38): 0
-jit_var_inc_ref_int(4): 2
+jit_var_inc_ref_int(3): 2
 jit_var_inc_ref_int(39): 1
-jit_var_new(40 <- 4, 39):     st.param.$t1 [param_in+4], $r1
+jit_var_new(40 <- 3, 39):     st.param.$t1 [param_in+0], $r1
 jit_var_inc_ref_ext(40): 1
 jit_var_dec_ref_ext(39): 0
-jit_var_inc_ref_int(29): 2
-jit_var_inc_ref_int(34): 2
-jit_var_inc_ref_int(28): 2
+jit_var_inc_ref_int(4): 2
 jit_var_inc_ref_int(40): 1
-jit_var_new(41 <- 29, 34, 28, 40):     call (param_out), $r1, ($r2, param_in), $r3
+jit_var_new(41 <- 4, 40):     st.param.$t1 [param_in+4], $r1
 jit_var_inc_ref_ext(41): 1
 jit_var_dec_ref_ext(40): 0
+jit_var_inc_ref_int(29): 2
+jit_var_inc_ref_int(35): 2
+jit_var_inc_ref_int(28): 2
 jit_var_inc_ref_int(41): 1
-jit_var_new(42 <- 41):     ld.param.$t0 $r0, [param_out+0]
+jit_var_new(42 <- 29, 35, 28, 41):     call (param_out), $r1, ($r2, param_in), $r3
 jit_var_inc_ref_ext(42): 1
 jit_var_dec_ref_ext(41): 0
 jit_var_inc_ref_int(42): 1
-jit_var_new(43 <- 42):     ld.param.$t0 $r0, [param_out+4]
+jit_var_new(43 <- 42):     ld.param.$t0 $r0, [param_out+0]
 jit_var_inc_ref_ext(43): 1
 jit_var_dec_ref_ext(42): 0
 jit_var_inc_ref_int(43): 1
-jit_var_new(44 <- 43): }
-
+jit_var_new(44 <- 43):     ld.param.$t0 $r0, [param_out+4]
 jit_var_inc_ref_ext(44): 1
 jit_var_dec_ref_ext(43): 0
-jit_var_inc_ref_ext(44): 2
-jit_var_mark_scatter(44, 0)
-jit_var_inc_ref_int(42): 2
 jit_var_inc_ref_int(44): 1
-jit_var_new(45 <- 42, 44): mov.$t0 $r0, $r1
+jit_var_new(45 <- 44): }
+
 jit_var_inc_ref_ext(45): 1
+jit_var_dec_ref_ext(44): 0
+jit_var_inc_ref_ext(45): 2
+jit_var_mark_scatter(45, 0)
 jit_var_inc_ref_int(43): 2
-jit_var_inc_ref_int(44): 2
-jit_var_new(46 <- 43, 44): mov.$t0 $r0, $r1
+jit_var_inc_ref_int(45): 1
+jit_var_new(46 <- 43, 45): mov.$t0 $r0, $r1
 jit_var_inc_ref_ext(46): 1
-jit_var_dec_ref_ext(44): 1
+jit_var_inc_ref_int(44): 2
+jit_var_inc_ref_int(45): 2
+jit_var_new(47 <- 44, 45): mov.$t0 $r0, $r1
+jit_var_inc_ref_ext(47): 1
+jit_var_dec_ref_ext(45): 1
 jit_var_dec_ref_ext(6): 1
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
 jit_var_dec_ref_ext(5): 1
-jit_var_schedule(45)
 jit_var_schedule(46)
+jit_var_schedule(47)
 jit_eval(): launching 1 kernel.
 jit_assemble(size=3): register map:
    - gl4 -> 9 [scalar]
@@ -379,26 +382,27 @@ jit_assemble(size=3): register map:
    - %u11 -> 27 [scalar]
    - %r12 -> 5
    - %rd13 -> 29
-   - %rd14 -> 32 [scalar] [direct_pointer]
+   - %u14 -> 30 [scalar]
    - %rd15 -> 33 [scalar] [direct_pointer]
-   - %rd16 -> 34
-   - %u17 -> 35
-   - %f18 -> 3 [scalar]
-   - %u19 -> 36
-   - %f20 -> 4 [scalar]
-   - %u21 -> 37
+   - %rd16 -> 34 [scalar] [direct_pointer]
+   - %rd17 -> 35
+   - %u18 -> 36
+   - %f19 -> 3 [scalar]
+   - %u20 -> 37
+   - %f21 -> 4 [scalar]
    - %u22 -> 38
    - %u23 -> 39
    - %u24 -> 40
    - %u25 -> 41
-   - %f26 -> 42
+   - %u26 -> 42
    - %f27 -> 43
-   - %u28 -> 44 [scat]
-   - %f29 -> 45 [out]
-jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+   - %f28 -> 44
+   - %u29 -> 45 [scat]
    - %f30 -> 46 [out]
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
-  -> launching <@> (n=3, in=2, out=3, ops=31):
+   - %f31 -> 47 [out]
+jit_malloc(type=device, device=0, size=64): <@> (new allocation)
+  -> launching <@> (n=3, in=2, out=3, ops=32):
 .version 6.0
 .target sm_50
 .address_size 64
@@ -475,9 +479,9 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
                               .param .u64 arg1,
                               .param .u64 arg2,
                               .param .u64 arg3) {
-    .reg.b8   %b <31>; .reg.b16 %w<31>; .reg.b32 %r<31>;
-    .reg.b64  %rd<31>; .reg.f32 %f<31>; .reg.f64 %d<31>;
-    .reg.pred %p <31>;
+    .reg.b8   %b <32>; .reg.b16 %w<32>; .reg.b32 %r<32>;
+    .reg.b64  %rd<32>; .reg.f32 %f<32>; .reg.f64 %d<32>;
+    .reg.pred %p <32>;
 
     mov.u32 %r0, %ctaid.x;
     mov.u32 %r1, %ntid.x;
@@ -500,54 +504,53 @@ L1: // Loop body
     mad.wide.u32 %rd13, %r12, 8, %rd13;
     ld.const.u64 %rd13, [%rd13];
 
-    // Load %rd14
-    ld.param.u64 %rd14, [arg0];
-
     // Load %rd15
-    ld.param.u64 %rd15, [arg1];
+    ld.param.u64 %rd15, [arg0];
 
-    // Evaluate %rd16
-    mov.u64 %rd16, %rd14;
-    mad.wide.u32 %rd16, %r12, 4, %rd16;
-    ld.global.nc.u32 %rd3, [%rd16];
-    add.u64 %rd16, %rd3, %rd15;
+    // Load %rd16
+    ld.param.u64 %rd16, [arg1];
 
-    // Evaluate %f18
-    mov.b32 %f18, 0x3f800000;
+    // Evaluate %rd17
+    mad.wide.u32 %rd17, %r12, 4, %rd15;
+    ld.global.nc.u32 %rd3, [%rd17];
+    add.u64 %rd17, %rd16, %rd3;
 
-    // Evaluate %f20
-    mov.b32 %f20, 0x40000000;
+    // Evaluate %f19
+    mov.b32 %f19, 0x3f800000;
+
+    // Evaluate %f21
+    mov.b32 %f21, 0x40000000;
     
     {
         .param .align 4 .b8 param_in[8];
         .param .align 4 .b8 param_out[8];
-        st.param.f32 [param_in+0], %f18;
-        st.param.f32 [param_in+4], %f20;
-        call (param_out), %rd13, (%rd16, param_in), gl7;
-
-    // Evaluate %f26
-        ld.param.f32 %f26, [param_out+0];
+        st.param.f32 [param_in+0], %f19;
+        st.param.f32 [param_in+4], %f21;
+        call (param_out), %rd13, (%rd17, param_in), gl7;
 
     // Evaluate %f27
-        ld.param.f32 %f27, [param_out+4];
+        ld.param.f32 %f27, [param_out+0];
+
+    // Evaluate %f28
+        ld.param.f32 %f28, [param_out+4];
     }
 
-
-    // Evaluate %f29
-    mov.f32 %f29, %f26;
-
-    // Store %f29
-    ld.param.u64 %rd0, [arg2];
-    mad.wide.u32 %rd0, %r0, 4, %rd0;
-    st.global.cs.f32 [%rd0], %f29;
 
     // Evaluate %f30
     mov.f32 %f30, %f27;
 
     // Store %f30
-    ld.param.u64 %rd0, [arg3];
+    ld.param.u64 %rd0, [arg2];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f30;
+
+    // Evaluate %f31
+    mov.f32 %f31, %f28;
+
+    // Store %f31
+    ld.param.u64 %rd0, [arg3];
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
+    st.global.cs.f32 [%rd0], %f31;
 
     add.u32 %r0, %r0, %r1;
     setp.ge.u32 %p0, %r0, %r2;
@@ -557,54 +560,56 @@ L0:
     ret;
 }
 jit_eval(): cleaning up..
-jit_var_dec_ref_ext(44): 0
-jit_var_dec_ref_int(43): 1
-jit_var_dec_ref_int(42): 1
+jit_var_dec_ref_ext(45): 0
 jit_var_dec_ref_int(44): 1
+jit_var_dec_ref_int(43): 1
+jit_var_dec_ref_int(45): 1
+jit_var_dec_ref_int(44): 0
+jit_var_free(44)
 jit_var_dec_ref_int(43): 0
 jit_var_free(43)
 jit_var_dec_ref_int(42): 0
 jit_var_free(42)
+jit_var_dec_ref_int(29): 1
+jit_var_dec_ref_int(35): 1
+jit_var_dec_ref_int(28): 1
 jit_var_dec_ref_int(41): 0
 jit_var_free(41)
-jit_var_dec_ref_int(29): 1
-jit_var_dec_ref_int(34): 1
-jit_var_dec_ref_int(28): 1
+jit_var_dec_ref_int(4): 1
 jit_var_dec_ref_int(40): 0
 jit_var_free(40)
-jit_var_dec_ref_int(4): 1
+jit_var_dec_ref_int(3): 1
 jit_var_dec_ref_int(39): 0
 jit_var_free(39)
-jit_var_dec_ref_int(3): 1
 jit_var_dec_ref_int(38): 0
 jit_var_free(38)
+jit_var_dec_ref_int(4): 0
 jit_var_dec_ref_int(37): 0
 jit_var_free(37)
-jit_var_dec_ref_int(4): 0
+jit_var_dec_ref_int(3): 0
 jit_var_dec_ref_int(36): 0
 jit_var_free(36)
-jit_var_dec_ref_int(3): 0
-jit_var_dec_ref_int(35): 0
-jit_var_free(35)
 jit_var_dec_ref_int(29): 0
 jit_var_free(29)
 jit_var_dec_ref_int(5): 1
 jit_var_dec_ref_int(28): 0
 jit_var_free(28)
 jit_var_dec_ref_int(27): 1
-jit_var_dec_ref_int(34): 0
-jit_var_free(34)
+jit_var_dec_ref_int(35): 0
+jit_var_free(35)
 jit_var_dec_ref_int(5): 0
-jit_var_dec_ref_int(32): 0
-jit_var_free(32)
-jit_var_dec_ref_ext(30): 0
-jit_var_free(30)
-jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_int(33): 0
 jit_var_free(33)
 jit_var_dec_ref_ext(31): 0
 jit_var_free(31)
 jit_free(<@>, type=device, device=0, size=64)
+jit_var_dec_ref_int(34): 0
+jit_var_free(34)
+jit_var_dec_ref_ext(32): 0
+jit_var_free(32)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_dec_ref_int(30): 0
+jit_var_free(30)
 jit_var_dec_ref_int(27): 0
 jit_var_free(27)
 jit_var_dec_ref_int(23): 0
@@ -619,109 +624,28 @@ jit_var_dec_ref_int(9): 0
 jit_var_free(9)
 jit_var_dec_ref_int(24): 0
 jit_var_free(24)
-jit_var_dec_ref_int(44): 0
-jit_var_free(44)
+jit_var_dec_ref_ext(14): 0
+jit_var_free(14)
+jit_var_dec_ref_ext(2): 1
+jit_var_dec_ref_int(45): 0
+jit_var_free(45)
 jit_free_flush(): scheduling 4 deallocations
 jit_eval(): done.
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_malloc(type=host-pinned, size=64): <@> (new allocation)
 jit_free(<@>, type=host-pinned, size=64)
-jit_var_map_mem(47): <@>, size=3, free=1
-jit_var_inc_ref_ext(47): 1
-jit_var_copy_mem(47, size=3)
-jit_var_inc_ref_int(45): 1
-jit_var_inc_ref_int(47): 1
-jit_var_new(48 <- 45, 47): setp.eq.$t1 $r0, $r1, $r2
+jit_var_map_mem(48): <@>, size=3, free=1
 jit_var_inc_ref_ext(48): 1
-jit_eval(): launching 1 kernel.
-jit_assemble(size=3): register map:
-   - %f4 -> 45 [in]
-   - %f5 -> 47 [in]
-   - %p6 -> 48 [out]
-jit_malloc(type=device, device=0, size=64): <@> (reused local)
-  -> launching <@> (n=3, in=2, out=1, ops=7):
-.version 6.0
-.target sm_50
-.address_size 64
-
-.entry enoki_<@>(.param .u32 size,
-                              .param .u64 arg0,
-                              .param .u64 arg1,
-                              .param .u64 arg2) {
-    .reg.b8   %b <7>; .reg.b16 %w<7>; .reg.b32 %r<7>;
-    .reg.b64  %rd<7>; .reg.f32 %f<7>; .reg.f64 %d<7>;
-    .reg.pred %p <7>;
-
-    mov.u32 %r0, %ctaid.x;
-    mov.u32 %r1, %ntid.x;
-    mov.u32 %r2, %tid.x;
-    mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [size];
-    setp.ge.u32 %p0, %r0, %r2;
-    @%p0 bra L0;
-
-    mov.u32 %r3, %nctaid.x;
-    mul.lo.u32 %r1, %r3, %r1;
-
-L1: // Loop body
-
-    // Load %f4
-    ld.param.u64 %rd0, [arg0];
-    mad.wide.u32 %rd0, %r0, 4, %rd0;
-    ld.global.cs.f32 %f4, [%rd0];
-
-    // Load %f5
-    ld.param.u64 %rd0, [arg1];
-    mad.wide.u32 %rd0, %r0, 4, %rd0;
-    ld.global.cs.f32 %f5, [%rd0];
-
-    // Evaluate %p6
-    setp.eq.f32 %p6, %f4, %f5;
-
-    // Store %p6
-    ld.param.u64 %rd0, [arg2];
-    mad.wide.u32 %rd0, %r0, 1, %rd0;
-    selp.u16 %w0, 1, 0, %p6;
-    st.global.cs.u8 [%rd0], %w0;
-
-    add.u32 %r0, %r0, %r1;
-    setp.ge.u32 %p0, %r0, %r2;
-    @!%p0 bra L1;
-
-L0:
-    ret;
-}
-jit_eval(): cleaning up..
-jit_var_dec_ref_int(45): 0
-jit_var_dec_ref_int(47): 0
-jit_free_flush(): scheduling 1 deallocation
-jit_eval(): done.
-jit_all(<@>, size=3)
-jit_memset_async(<@>, isize=1, size=1)
-jit_malloc(type=host-pinned, size=64): <@> (reused global)
-jit_reduce(<@>, type=uint32, rtype=and, size=1)
-jit_free(<@>, type=host-pinned, size=64)
-jit_var_dec_ref_ext(48): 0
-jit_var_free(48)
-jit_free(<@>, type=device, device=0, size=64)
-jit_var_dec_ref_ext(47): 0
-jit_var_free(47)
-jit_free(<@>, type=device, device=0, size=64)
-jit_malloc(type=device, device=0, size=64): <@> (reused local)
-jit_malloc(type=host-pinned, size=64): <@> (reused global)
-jit_free(<@>, type=host-pinned, size=64)
-jit_var_map_mem(49): <@>, size=3, free=1
-jit_var_inc_ref_ext(49): 1
-jit_var_copy_mem(49, size=3)
+jit_var_copy_mem(48, size=3)
 jit_var_inc_ref_int(46): 1
-jit_var_inc_ref_int(49): 1
-jit_var_new(50 <- 46, 49): setp.eq.$t1 $r0, $r1, $r2
-jit_var_inc_ref_ext(50): 1
+jit_var_inc_ref_int(48): 1
+jit_var_new(49 <- 46, 48): setp.eq.$t1 $r0, $r1, $r2
+jit_var_inc_ref_ext(49): 1
 jit_eval(): launching 1 kernel.
 jit_assemble(size=3): register map:
    - %f4 -> 46 [in]
-   - %f5 -> 49 [in]
-   - %p6 -> 50 [out]
+   - %f5 -> 48 [in]
+   - %p6 -> 49 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
   -> launching <@> (n=3, in=2, out=1, ops=7):
 .version 6.0
@@ -777,7 +701,91 @@ L0:
 }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(46): 0
-jit_var_dec_ref_int(49): 0
+jit_var_dec_ref_int(48): 0
+jit_free_flush(): scheduling 1 deallocation
+jit_eval(): done.
+jit_all(<@>, size=3)
+jit_memset_async(<@>, isize=1, size=1)
+jit_malloc(type=host-pinned, size=64): <@> (reused global)
+jit_reduce(<@>, type=uint32, rtype=and, size=1)
+jit_free(<@>, type=host-pinned, size=64)
+jit_var_dec_ref_ext(49): 0
+jit_var_free(49)
+jit_free(<@>, type=device, device=0, size=64)
+jit_var_dec_ref_ext(48): 0
+jit_var_free(48)
+jit_free(<@>, type=device, device=0, size=64)
+jit_malloc(type=device, device=0, size=64): <@> (reused local)
+jit_malloc(type=host-pinned, size=64): <@> (reused global)
+jit_free(<@>, type=host-pinned, size=64)
+jit_var_map_mem(50): <@>, size=3, free=1
+jit_var_inc_ref_ext(50): 1
+jit_var_copy_mem(50, size=3)
+jit_var_inc_ref_int(47): 1
+jit_var_inc_ref_int(50): 1
+jit_var_new(51 <- 47, 50): setp.eq.$t1 $r0, $r1, $r2
+jit_var_inc_ref_ext(51): 1
+jit_eval(): launching 1 kernel.
+jit_assemble(size=3): register map:
+   - %f4 -> 47 [in]
+   - %f5 -> 50 [in]
+   - %p6 -> 51 [out]
+jit_malloc(type=device, device=0, size=64): <@> (reused local)
+  -> launching <@> (n=3, in=2, out=1, ops=7):
+.version 6.0
+.target sm_50
+.address_size 64
+
+.entry enoki_<@>(.param .u32 size,
+                              .param .u64 arg0,
+                              .param .u64 arg1,
+                              .param .u64 arg2) {
+    .reg.b8   %b <7>; .reg.b16 %w<7>; .reg.b32 %r<7>;
+    .reg.b64  %rd<7>; .reg.f32 %f<7>; .reg.f64 %d<7>;
+    .reg.pred %p <7>;
+
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.u32 %r0, %r0, %r1, %r2;
+    ld.param.u32 %r2, [size];
+    setp.ge.u32 %p0, %r0, %r2;
+    @%p0 bra L0;
+
+    mov.u32 %r3, %nctaid.x;
+    mul.lo.u32 %r1, %r3, %r1;
+
+L1: // Loop body
+
+    // Load %f4
+    ld.param.u64 %rd0, [arg0];
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
+    ld.global.cs.f32 %f4, [%rd0];
+
+    // Load %f5
+    ld.param.u64 %rd0, [arg1];
+    mad.wide.u32 %rd0, %r0, 4, %rd0;
+    ld.global.cs.f32 %f5, [%rd0];
+
+    // Evaluate %p6
+    setp.eq.f32 %p6, %f4, %f5;
+
+    // Store %p6
+    ld.param.u64 %rd0, [arg2];
+    mad.wide.u32 %rd0, %r0, 1, %rd0;
+    selp.u16 %w0, 1, 0, %p6;
+    st.global.cs.u8 [%rd0], %w0;
+
+    add.u32 %r0, %r0, %r1;
+    setp.ge.u32 %p0, %r0, %r2;
+    @!%p0 bra L1;
+
+L0:
+    ret;
+}
+jit_eval(): cleaning up..
+jit_var_dec_ref_int(47): 0
+jit_var_dec_ref_int(50): 0
 jit_free_flush(): scheduling 2 deallocations
 jit_eval(): done.
 jit_all(<@>, size=3)
@@ -785,27 +793,27 @@ jit_memset_async(<@>, isize=1, size=1)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_reduce(<@>, type=uint32, rtype=and, size=1)
 jit_free(<@>, type=host-pinned, size=64)
+jit_var_dec_ref_ext(51): 0
+jit_var_free(51)
+jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(50): 0
 jit_var_free(50)
-jit_free(<@>, type=device, device=0, size=64)
-jit_var_dec_ref_ext(49): 0
-jit_var_free(49)
 jit_free(<@>, type=device, device=0, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_free(<@>, type=host-pinned, size=64)
-jit_var_map_mem(51): <@>, size=10, free=1
-jit_var_inc_ref_ext(51): 1
-jit_var_copy_mem(51, size=10)
-jit_var_inc_ref_int(2): 1
-jit_var_inc_ref_int(51): 1
-jit_var_new(52 <- 2, 51): setp.eq.$t1 $r0, $r1, $r2
+jit_var_map_mem(52): <@>, size=10, free=1
 jit_var_inc_ref_ext(52): 1
+jit_var_copy_mem(52, size=10)
+jit_var_inc_ref_int(2): 1
+jit_var_inc_ref_int(52): 1
+jit_var_new(53 <- 2, 52): setp.eq.$t1 $r0, $r1, $r2
+jit_var_inc_ref_ext(53): 1
 jit_eval(): launching 1 kernel.
 jit_assemble(size=10): register map:
    - %f4 -> 2 [in]
-   - %f5 -> 51 [in]
-   - %p6 -> 52 [out]
+   - %f5 -> 52 [in]
+   - %p6 -> 53 [out]
 jit_malloc(type=device, device=0, size=64): <@> (reused local)
   -> launching <@> (n=10, in=2, out=1, ops=7):
 .version 6.0
@@ -861,7 +869,7 @@ L0:
 }
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(2): 0
-jit_var_dec_ref_int(51): 0
+jit_var_dec_ref_int(52): 0
 jit_free_flush(): scheduling 2 deallocations
 jit_eval(): done.
 jit_all(<@>, size=10)
@@ -869,22 +877,22 @@ jit_memset_async(<@>, isize=1, size=2)
 jit_malloc(type=host-pinned, size=64): <@> (reused global)
 jit_reduce(<@>, type=uint32, rtype=and, size=3)
 jit_free(<@>, type=host-pinned, size=64)
+jit_var_dec_ref_ext(53): 0
+jit_var_free(53)
+jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(52): 0
 jit_var_free(52)
-jit_free(<@>, type=device, device=0, size=64)
-jit_var_dec_ref_ext(51): 0
-jit_var_free(51)
 jit_free(<@>, type=device, device=0, size=64)
 jit_registry_remove(<@>)
 jit_registry_remove(<@>)
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_free(<@>, type=device, device=0, size=64)
+jit_var_dec_ref_ext(47): 0
+jit_var_free(47)
+jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(46): 0
 jit_var_free(46)
-jit_free(<@>, type=device, device=0, size=64)
-jit_var_dec_ref_ext(45): 0
-jit_var_free(45)
 jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(5): 0
 jit_var_free(5)

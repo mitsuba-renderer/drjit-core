@@ -1006,7 +1006,7 @@ VCallBucket *jit_vcall(int cuda, const char *domain, uint32_t index,
 
     Variable v2;
     v2.type = (uint32_t) VarType::UInt32;
-    v2.dep[0] = perm_var;
+    v2.dep[3] = perm_var;
     v2.retain_data = true;
     v2.tsize = 1;
     v2.cuda = cuda;
@@ -1027,7 +1027,7 @@ VCallBucket *jit_vcall(int cuda, const char *domain, uint32_t index,
         Variable *vo;
         std::tie(index, vo) = jit_var_new(v2);
 
-        jit_var_inc_ref_int(perm_var);
+        jit_var_inc_ref_ext(perm_var);
         jit_var_inc_ref_ext(index, vo);
 
         void *ptr = jit_registry_get_ptr(domain, bucket_id);

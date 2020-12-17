@@ -48,7 +48,7 @@ void write_indices(const uint32_t *out, uint32_t &index,
 }
 
 template <typename Func, typename... Args>
-bool record(int cuda, uint32_t &id, uint64_t &hash, std::vector<void *> &extra,
+bool record(int cuda, uint32_t &id, uint64_t &hash, std::vector<uint32_t> &extra,
             Func func, const Args &... args) {
 
     uint32_t se_before = jitc_side_effect_counter(cuda);
@@ -60,19 +60,19 @@ bool record(int cuda, uint32_t &id, uint64_t &hash, std::vector<void *> &extra,
     read_indices(nullptr, out_count, result);
 
     std::unique_ptr<uint32_t[]> in(new uint32_t[in_count]),
-        out(new uint32_t[out_count]);
+                               out(new uint32_t[out_count]);
 
     in_count = 0, out_count = 0;
     (read_indices(in.get(), in_count, args), ...);
     read_indices(out.get(), out_count, result);
 
-    void **ptrs        = nullptr;
-    uint32_t ptr_count = 0;
+    uint32_t *extra_p = nullptr;
+    uint32_t extra_count_p = 0;
     id = jitc_eval_ir_var(cuda, in.get(), in_count, out.get(), out_count,
-                          se_total, &hash, &ptrs, &ptr_count);
+                          se_total, &hash, &extra_p, &extra_count_p);
 
-    for (int i = 0; i < ptr_count; ++i)
-        extra.push_back(ptrs[i]);
+    for (int i = 0; i < extra_count_p; ++i)
+        extra.push_back(extra_p[i]);
 
     return se_total != 0;
 }
@@ -87,14 +87,14 @@ auto vcall(const char *domain, UInt32 self, const Args &... args) {
     std::unique_ptr<uint32_t[]> call_id(new uint32_t[n_inst]);
     std::unique_ptr<uint64_t[]> call_hash(new uint64_t[n_inst]);
     std::unique_ptr<uint32_t[]> extra_offset(new uint32_t[n_inst]);
-    std::vector<void *> extra;
+    std::vector<uint32_t> extra;
     bool side_effects = false;
     Result result(0, 0);
 
     for (uint32_t i = 0; i < n_inst; ++i) {
         Base *base = (Base *) jitc_registry_get_ptr(domain, i);
 
-        extra_offset[i] = (uint32_t)(extra.size() * sizeof(void *));
+        extra_offset[i] = (uint32_t) (extra.size() * sizeof(void *));
 
         if (base)
             side_effects |= record(
@@ -124,8 +124,7 @@ auto vcall(const char *domain, UInt32 self, const Args &... args) {
 
     jitc_var_vcall(cuda, self.index(), n_inst, call_id.get(), call_hash.get(),
                    in_count, in.get(), out_count, out.get(), extra.size(),
-                   (const void **) extra.data(), extra_offset.get(),
-                   side_effects);
+                   extra.data(), extra_offset.get(), side_effects);
 
     out_count = 0;
     write_indices(out.get(), out_count, result);

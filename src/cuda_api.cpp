@@ -427,7 +427,7 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     const uintptr_t log_size = 16384;
     char error_log[log_size], info_log[log_size];
 
-    CUjit_option arg[5] = {
+    CUjit_option arg[] = {
         CU_JIT_INFO_LOG_BUFFER,
         CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
         CU_JIT_ERROR_LOG_BUFFER,
@@ -435,7 +435,7 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
         CU_JIT_LOG_VERBOSE
     };
 
-    void *argv[5] = {
+    void *argv[] = {
         (void *) info_log,
         (void *) log_size,
         (void *) error_log,

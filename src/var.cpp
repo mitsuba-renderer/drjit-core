@@ -130,32 +130,32 @@ void jit_var_free(uint32_t index, Variable *v) {
     // Remove from hash table. 'v' should not be accessed from here on.
     state.variables.erase(index);
 
-    if (likely(!direct_pointer)) {
-        // Decrease reference count of dependencies
-        for (int i = 0; i < 4; ++i) {
-            uint32_t index2 = dep[i];
-            if (index2 == 0)
-                break;
+    // Decrease reference count of dependencies
+    for (int i = 0; i < 4; ++i) {
+        uint32_t index2 = dep[i];
+        if (index2 == 0)
+            break;
 
-            // Inlined implementation of jit_var_dec_ref_int
-            auto it = state.variables.find(index2);
-            Variable *v2 = &it.value();
-            v2->ref_count_int--;
+        // Inlined implementation of jit_var_dec_ref_int
+        auto it = state.variables.find(index2);
+        Variable *v2 = &it.value();
+        v2->ref_count_int--;
 
-            if (unlikely(trace))
-                jit_trace("jit_var_dec_ref_int(%u): %u", index2, v2->ref_count_int);
-            if (v2->ref_count_ext == 0 && v2->ref_count_int == 0)
-                jit_var_free(index2, v2);
-        }
-    } else {
+        if (unlikely(trace))
+            jit_trace("jit_var_dec_ref_int(%u): %u", index2, v2->ref_count_int);
+        if (v2->ref_count_ext == 0 && v2->ref_count_int == 0)
+            jit_var_free(index2, v2);
+    }
+
+    if (dep[2] == 0 && dep[3] != 0)
+        jit_var_dec_ref_ext(dep[3]);
+
+    if (likely(direct_pointer)) {
         // Free reverse pointer table entry, if needed
         auto it = state.variable_from_ptr.find(data);
         if (unlikely(it == state.variable_from_ptr.end()))
             jit_fail("jit_var_free(): direct pointer not found!");
         state.variable_from_ptr.erase(it);
-
-        // Decrease reference count of dependencies
-        jit_var_dec_ref_ext(dep[0]);
     }
 
     if (unlikely(has_extra)) {
@@ -831,7 +831,7 @@ uint32_t jit_var_copy_ptr(int cuda, const void *ptr, uint32_t dep) {
     v.size = 1;
     v.tsize = 0;
     v.retain_data = true;
-    v.dep[0] = dep;
+    v.dep[3] = dep;
     v.direct_pointer = true;
     v.cuda = cuda;
 
@@ -1347,4 +1347,189 @@ void jit_var_printf(int cuda, const char *fmt, uint32_t narg,
 
     jit_var_dec_ref_ext(decl);
     jit_var_mark_scatter(idx, 0);
+}
+
+
+void jit_var_vcall(int cuda,
+                   uint32_t self,
+                   uint32_t n_inst,
+                   const uint32_t *inst_ids,
+                   const uint64_t *inst_hash,
+                   uint32_t n_in, const uint32_t *in,
+                   uint32_t n_out, uint32_t *out,
+                   uint32_t n_extra,
+                   const uint32_t *extra,
+                   const uint32_t *extra_offset,
+                   int side_effects) {
+    state.mutex.unlock();
+    lock_guard guard(state.eval_mutex);
+    state.mutex.lock();
+
+    jit_log(Info,
+            "jit_var_vcall(): %u instances, "
+            "%u in, %u out, %u extra, %s.",
+            n_inst, n_in, n_out, n_extra,
+            side_effects ? "side effects" : "no side effects");
+
+    uint32_t index = jit_var_new_0(cuda, VarType::Invalid, "", 1, 1);
+
+    buffer.clear();
+    buffer.put(".const .u64 $r0[] = { ");
+    for (uint32_t i = 0; i < n_inst; ++i) {
+        buffer.fmt("func_%016llx%s", (unsigned long long) inst_hash[i],
+                   i + 1 < n_inst ? ", " : "");
+        uint32_t prev = index;
+        index = jit_var_new_2(cuda, VarType::Invalid, "", 1, inst_ids[i], index);
+        jit_var_dec_ref_ext(prev);
+        jit_var_dec_ref_ext(inst_ids[i]);
+    }
+    buffer.put(" };\n");
+
+    uint32_t call_table =
+        jit_var_new_1(cuda, VarType::Global, buffer.get(), 0, index);
+    uint32_t call_target = jit_var_new_2(cuda, VarType::UInt64,
+                                         "mov.$t0 $r0, $r2$n"
+                                         "mad.wide.u32 $r0, $r1, 8, $r0$n"
+                                         "ld.const.$t0 $r0, [$r0]",
+                                         1, self, call_table);
+    jit_var_dec_ref_ext(call_table);
+
+    uint32_t extra_id;
+    if (n_extra > 0) {
+        std::unique_ptr<void *[]> tmp(new void *[n_extra]);
+        for (uint32_t i = 0; i < n_extra; ++i) {
+            uint32_t id = extra[i];
+            tmp[i] = jit_var(id)->data;
+            uint32_t prev = index;
+            index = jit_var_new_1(cuda, VarType::Invalid, "", 1, index);
+            jit_var(index)->dep[3] = id;
+            jit_var_dec_ref_ext(prev);
+        }
+
+        uint32_t extra_offset_buf = jit_var_copy_mem(
+            cuda, AllocType::Host, VarType::UInt32, extra_offset, n_inst);
+        uint32_t extra_buf = jit_var_copy_mem(
+            cuda, AllocType::Host, VarType::UInt64, tmp.get(), n_extra);
+
+        uint32_t extra_offset_ptr =
+            jit_var_copy_ptr(cuda, jit_var_ptr(extra_offset_buf), extra_offset_buf);
+        uint32_t extra_ptr =
+            jit_var_copy_ptr(cuda, jit_var_ptr(extra_buf), extra_buf);
+
+        jit_var_dec_ref_ext(extra_offset_buf);
+        jit_var_dec_ref_ext(extra_buf);
+
+        extra_id = jit_var_new_3(cuda, VarType::UInt64,
+                "mad.wide.u32 $r0, $r1, 4, $r2$n"
+                "ld.global.nc.u32 %rd3, [$r0]$n"
+                "add.u64 $r0, $r3, %rd3",
+                1, self, extra_offset_ptr, extra_ptr);
+
+        jit_var_dec_ref_ext(extra_offset_ptr);
+        jit_var_dec_ref_ext(extra_ptr);
+    } else {
+        extra_id = jit_var_new_0(cuda, VarType::UInt64, "mov.$t0 $r0, 0", 1, 1);
+    }
+
+    uint32_t prev = index;
+    index = jit_var_new_3(cuda, VarType::Invalid, "", 1, call_target, extra_id,
+                          index);
+    jit_var_dec_ref_ext(call_target);
+    jit_var_dec_ref_ext(extra_id);
+    jit_var_dec_ref_ext(prev);
+
+    std::unique_ptr<uint32_t[]> in_new(new uint32_t[n_in]);
+    uint32_t offset_in = 0, align_in = 1;
+    for (uint32_t i = 0; i < n_in; ++i) {
+        VarType vt = jit_var_type(in[i]);
+        uint32_t size = var_type_size[(uint32_t) vt], prev2 = index;
+
+        if (vt == VarType::Bool) {
+            in_new[i] = jit_var_new_1(cuda, VarType::UInt16,
+                                       "selp.$t0 $r0, 1, 0, $r1", 1, in[i]);
+        } else {
+            in_new[i] = in[i];
+            jit_var_inc_ref_ext(in[i]);
+        }
+
+        index = jit_var_new_2(cuda, VarType::Invalid, "", 1, in_new[i], index);
+        jit_var_dec_ref_ext(in_new[i]);
+        jit_var_dec_ref_ext(prev2);
+        offset_in = (offset_in + size - 1) / size * size;
+        offset_in += size;
+        align_in = std::max(align_in, size);
+    }
+
+    uint32_t offset_out = 0, align_out = 1;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        uint32_t size = var_type_size[(uint32_t) jit_var_type(out[i])];
+        offset_out = (offset_out + size - 1) / size * size;
+        offset_out += size;
+        align_out = std::max(align_out, size);
+    }
+
+    if (offset_in == 0)
+        offset_in = 1;
+    if (offset_out == 0)
+        offset_out = 1;
+
+    buffer.clear();
+    buffer.fmt("\n    {\n"
+	        "        .param .align %u .b8 param_in[%u];\n"
+	        "        .param .align %u .b8 param_out[%u]",
+	        align_in, offset_in, align_out, offset_out);
+
+    prev = index;
+    index = jit_var_new_1(cuda, VarType::Invalid, buffer.get(), 0, index);
+    jit_var_dec_ref_ext(prev);
+
+    offset_in = 0;
+    for (uint32_t i = 0; i < n_in; ++i) {
+        VarType vt = jit_var_type(in[i]);
+        uint32_t size = var_type_size[(uint32_t) vt], prev2 = index;
+        offset_in = (offset_in + size - 1) / size * size;
+        buffer.clear();
+        buffer.fmt("    st.param.%s [param_in+%u], $r1",
+                   vt == VarType::Bool ? "u8" : "$t1", offset_in);
+        index = jit_var_new_2(cuda, VarType::Invalid, buffer.get(), 0,
+                              in_new[i], index);
+        jit_var_dec_ref_ext(prev2);
+        offset_in += size;
+    }
+
+    prev  = index;
+    index = jit_var_new_4(cuda, VarType::Invalid,
+                          "    call (param_out), $r1, ($r2, param_in), $r3", 1,
+                          call_target, extra_id, call_table, index);
+    jit_var_dec_ref_ext(prev);
+
+    offset_out = 0;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        VarType type = jit_var_type(out[i]);
+        uint32_t size = var_type_size[(uint32_t) type];
+        offset_out = (offset_out + size - 1) / size * size;
+        uint32_t prev2 = index;
+        buffer.clear();
+        buffer.fmt("    ld.param.$t0 $r0, [param_out+%u]", offset_out);
+        index = jit_var_new_1(cuda, type, buffer.get(), 0, index);
+        out[i] = index;
+        jit_var_dec_ref_ext(prev2);
+        offset_out += size;
+    }
+
+    prev = index;
+    index = jit_var_new_1(cuda, VarType::Invalid, "}\n", 1, index);
+    jit_var_dec_ref_ext(prev);
+
+    if (side_effects) {
+        jit_var_inc_ref_ext(index);
+        jit_var_mark_scatter(index, 0);
+    }
+
+    for (uint32_t i = 0; i < n_out; ++i)
+        out[i] = jit_var_new_2(cuda, jit_var_type(out[i]),
+                               "mov.$t0 $r0, $r1",
+                               1, out[i], index);
+
+    jit_var_dec_ref_ext(index);
 }

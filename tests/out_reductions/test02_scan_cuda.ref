@@ -602,6 +602,6 @@ jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 5 deallocations
 jit_shutdown(): releasing 4 kernels ..
 jit_malloc_trim(): freed
- - host-pinned memory: 64 B in 1 allocation
+ - host-pinned memory: 128 B in 2 allocations
  - device memory: 512 MiB in 42 allocations
 jit_shutdown(): done
