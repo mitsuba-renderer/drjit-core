@@ -18,9 +18,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .u32 size,
-                              .param .u64 arg0,
-                              .param .u64 arg1) {
+.entry enoki_<@>(.param .align 8 .b8 in[24]) {
     .reg.b8   %b <6>; .reg.b16 %w<6>; .reg.b32 %r<6>;
     .reg.b64  %rd<6>; .reg.f32 %f<6>; .reg.f64 %d<6>;
     .reg.pred %p <6>;
@@ -29,7 +27,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [size];
+    ld.param.u32 %r2, [in];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -39,7 +37,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 L1: // Loop body
 
     // Load %f4
-    ld.param.u64 %rd0, [arg0];
+    ld.param.u64 %rd0, [in+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.f32 %f4, [%rd0];
 
@@ -47,7 +45,7 @@ L1: // Loop body
     mov.b32 %r5, %f4;
 
     // Store %r5
-    ld.param.u64 %rd0, [arg1];
+    ld.param.u64 %rd0, [in+16];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.u32 [%rd0], %r5;
 
@@ -78,9 +76,7 @@ jit_malloc(type=device, device=0, size=64): <@> (reused global)
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .u32 size,
-                              .param .u64 arg0,
-                              .param .u64 arg1) {
+.entry enoki_<@>(.param .align 8 .b8 in[24]) {
     .reg.b8   %b <6>; .reg.b16 %w<6>; .reg.b32 %r<6>;
     .reg.b64  %rd<6>; .reg.f32 %f<6>; .reg.f64 %d<6>;
     .reg.pred %p <6>;
@@ -89,7 +85,7 @@ jit_malloc(type=device, device=0, size=64): <@> (reused global)
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [size];
+    ld.param.u32 %r2, [in];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -99,7 +95,7 @@ jit_malloc(type=device, device=0, size=64): <@> (reused global)
 L1: // Loop body
 
     // Load %r4
-    ld.param.u64 %rd0, [arg0];
+    ld.param.u64 %rd0, [in+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r4, [%rd0];
 
@@ -107,7 +103,7 @@ L1: // Loop body
     mov.b32 %f5, %r4;
 
     // Store %f5
-    ld.param.u64 %rd0, [arg1];
+    ld.param.u64 %rd0, [in+16];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f5;
 

@@ -75,7 +75,8 @@ const uint32_t var_type_size[(int) VarType::Count] {
 
 /// String version of the above
 const char *var_type_size_str[(int) VarType::Count] {
-    "0", "0", "1", "1", "1", "2", "2", "4", "4", "8", "8", "2", "4", "8", "8"
+    "0", "0", "1", "1", "1", "2", "2", "4", "4",
+    "8", "8", "2", "4", "8", "8"
 };
 
 /// Label prefix, doesn't depend on variable type
@@ -1297,16 +1298,23 @@ void jit_var_printf(int cuda, const char *fmt, uint32_t narg,
     buffer.put(" };\n");
     buffer.fmt("        .local .align 8 .b8 buf[%u];\n", 8 * narg);
 
-    for (uint32_t i = 0; i < narg; ++i) {
+    for (uint32_t i = 0, offset = 0; i < narg; ++i) {
         VarType vt = jit_var_type(arg[i]);
+        uint32_t size = var_type_size[(int) vt];
+        if (vt == VarType::Float32)
+            size = 8;
+
+        offset = (offset + size - 1) / size * size;
+
         if (vt == VarType::Float32) {
             buffer.fmt("        cvt.f64.f32 %%d0, $r%u;\n"
                        "        st.local.f64 [buf+%u], %%d0;\n",
-                       i + 1, i * 8);
+                       i + 1, offset);
         } else {
-            buffer.fmt("        st.local.$t%u [buf+%u], $r%u;\n", i + 1, i * 8,
-                       i + 1);
+            buffer.fmt("        st.local.$t%u [buf+%u], $r%u;\n",
+                       i + 1, offset, i + 1);
         }
+        offset += size;
     }
 
     buffer.put("\n        .reg.b64 %fmt_r, %buf_r;\n"
@@ -1374,7 +1382,7 @@ void jit_var_vcall(int cuda,
     uint32_t index = jit_var_new_0(cuda, VarType::Invalid, "", 1, 1);
 
     buffer.clear();
-    buffer.put(".const .u64 $r0[] = { ");
+    buffer.put(".global .u64 $r0[] = { ");
     for (uint32_t i = 0; i < n_inst; ++i) {
         buffer.fmt("func_%016llx%s", (unsigned long long) inst_hash[i],
                    i + 1 < n_inst ? ", " : "");
@@ -1390,7 +1398,7 @@ void jit_var_vcall(int cuda,
     uint32_t call_target = jit_var_new_2(cuda, VarType::UInt64,
                                          "mov.$t0 $r0, $r2$n"
                                          "mad.wide.u32 $r0, $r1, 8, $r0$n"
-                                         "ld.const.$t0 $r0, [$r0]",
+                                         "ld.global.$t0 $r0, [$r0]",
                                          1, self, call_table);
     jit_var_dec_ref_ext(call_table);
 
@@ -1446,7 +1454,7 @@ void jit_var_vcall(int cuda,
 
         if (vt == VarType::Bool) {
             in_new[i] = jit_var_new_1(cuda, VarType::UInt16,
-                                       "selp.$t0 $r0, 1, 0, $r1", 1, in[i]);
+                                      "selp.$t0 $r0, 1, 0, $r1", 1, in[i]);
         } else {
             in_new[i] = in[i];
             jit_var_inc_ref_ext(in[i]);
@@ -1475,9 +1483,12 @@ void jit_var_vcall(int cuda,
 
     buffer.clear();
     buffer.fmt("\n    {\n"
+	        "        .param .align %u .b8 param_out[%u];\n"
 	        "        .param .align %u .b8 param_in[%u];\n"
-	        "        .param .align %u .b8 param_out[%u]",
-	        align_in, offset_in, align_out, offset_out);
+	        "        Fproto: .callprototype (.param .align %u .b8 _[%u]) _ (.reg .u64 _, .param .align %u .b8 _[%u]);\n",
+	        align_out, offset_out, align_in, offset_in,
+	        align_out, offset_out, align_in, offset_in
+    );
 
     prev = index;
     index = jit_var_new_1(cuda, VarType::Invalid, buffer.get(), 0, index);
@@ -1498,9 +1509,10 @@ void jit_var_vcall(int cuda,
     }
 
     prev  = index;
-    index = jit_var_new_4(cuda, VarType::Invalid,
-                          "    call (param_out), $r1, ($r2, param_in), $r3", 1,
-                          call_target, extra_id, call_table, index);
+    index = jit_var_new_3(cuda, VarType::Invalid,
+                          "    call (param_out), $r1, ($r2, param_in), Fproto", 1,
+                          call_target, extra_id, index);
+
     jit_var_dec_ref_ext(prev);
 
     offset_out = 0;

@@ -485,7 +485,7 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
     auto get_parameter_addr = [](uint32_t index, const Variable *v, bool load, uint32_t target = 0) {
         if (likely(eval_normal)) {
             if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
-                buffer.fmt("    ld.param.u64 %%rd%u, [arg%u];\n", target, v->arg_index - 1);
+                buffer.fmt("    ld.param.u64 %%rd%u, [in+%u];\n", target, v->arg_index * 8);
             else
                 buffer.fmt("    ldu.global.u64 %%rd%u, [%%rd2 + %u];\n",
                            target, (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
@@ -556,21 +556,10 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
         }
     }
 
-    if (likely(eval_normal)) {
-        buffer.put(".entry enoki_^^^^^^^^^^^^^^^^(.param .u32 size,\n");
-
-        if (unlikely(kernel_args.size() == 1)) {
-            /* Kernels without inputs/outputs may be created in rare
-               cases (e.g. when calling virtual functions symbolically
-               that have output array addresses "baked in") */
-            buffer.rewind(2);
-            buffer.put(") {\n");
-        } else {
-            for (uint32_t index = 1; index < kernel_args.size(); ++index)
-                buffer.fmt("                              .param .u64 arg%u%s\n",
-                           index - 1, (index + 1 < (uint32_t) kernel_args.size()) ? "," : ") {");
-        }
-    }
+    if (likely(eval_normal))
+        buffer.fmt(
+            ".entry enoki_^^^^^^^^^^^^^^^^(.param .align 8 .b8 in[%u]) {\n",
+            (uint32_t) kernel_args.size() * 8);
 
     buffer.fmt(
         "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
@@ -588,15 +577,15 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
         buffer.put("    mov.u32 %r1, %ntid.x;\n");
         buffer.put("    mov.u32 %r2, %tid.x;\n");
         buffer.put("    mad.lo.u32 %r0, %r0, %r1, %r2;\n");
-        buffer.put("    ld.param.u32 %r2, [size];\n");
+        buffer.put("    ld.param.u32 %r2, [in];\n");
         buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
         buffer.put("    @%p0 bra L0;\n\n");
 
         buffer.put("    mov.u32 %r3, %nctaid.x;\n");
         buffer.put("    mul.lo.u32 %r1, %r3, %r1;\n");
         if (!kernel_args_extra.empty())
-            buffer.fmt("    ld.param.u64 %%rd2, [arg%u];\n",
-                       CUDA_MAX_KERNEL_PARAMETERS - 2);
+            buffer.fmt("    ld.param.u64 %%rd2, [in+%u];\n",
+                       (CUDA_MAX_KERNEL_PARAMETERS - 1) * 8);
 
         buffer.put("\nL1: // Loop body\n");
     }
@@ -1446,7 +1435,7 @@ const char *jit_eval_ir(int cuda,
     if (offset_out == 0)
         offset_out = 1;
 
-    buffer.fmt(".func (.param .align %u .b8 out[%u]) func_^^^^^^^^^^^^^^^^(.reg.u64 extra, .param .align "
+    buffer.fmt(".func (.param .align %u .b8 out[%u]) func_^^^^^^^^^^^^^^^^(.reg .u64 extra, .param .align "
                "%u .b8 in[%u]) {\n",
                align_out, offset_out, align_in, offset_in);
 

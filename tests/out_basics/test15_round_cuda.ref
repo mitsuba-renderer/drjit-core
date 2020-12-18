@@ -50,14 +50,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .u32 size,
-                              .param .u64 arg0,
-                              .param .u64 arg1,
-                              .param .u64 arg2,
-                              .param .u64 arg3,
-                              .param .u64 arg4,
-                              .param .u64 arg5,
-                              .param .u64 arg6) {
+.entry enoki_<@>(.param .align 8 .b8 in[64]) {
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p <11>;
@@ -66,7 +59,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [size];
+    ld.param.u32 %r2, [in];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -76,7 +69,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 L1: // Loop body
 
     // Load %f4
-    ld.param.u64 %rd0, [arg0];
+    ld.param.u64 %rd0, [in+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.f32 %f4, [%rd0];
 
@@ -84,7 +77,7 @@ L1: // Loop body
     cvt.rmi.f32.f32 %f5, %f4;
 
     // Store %f5
-    ld.param.u64 %rd0, [arg1];
+    ld.param.u64 %rd0, [in+16];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f5;
 
@@ -92,7 +85,7 @@ L1: // Loop body
     cvt.rpi.f32.f32 %f6, %f4;
 
     // Store %f6
-    ld.param.u64 %rd0, [arg2];
+    ld.param.u64 %rd0, [in+24];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f6;
 
@@ -100,7 +93,7 @@ L1: // Loop body
     cvt.rzi.f32.f32 %f7, %f4;
 
     // Store %f7
-    ld.param.u64 %rd0, [arg3];
+    ld.param.u64 %rd0, [in+32];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f7;
 
@@ -108,7 +101,7 @@ L1: // Loop body
     cvt.rni.f32.f32 %f8, %f4;
 
     // Store %f8
-    ld.param.u64 %rd0, [arg4];
+    ld.param.u64 %rd0, [in+40];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f8;
 
@@ -116,7 +109,7 @@ L1: // Loop body
     min.ftz.f32 %f9, %f5, %f6;
 
     // Store %f9
-    ld.param.u64 %rd0, [arg5];
+    ld.param.u64 %rd0, [in+48];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f9;
 
@@ -124,7 +117,7 @@ L1: // Loop body
     max.ftz.f32 %f10, %f5, %f6;
 
     // Store %f10
-    ld.param.u64 %rd0, [arg6];
+    ld.param.u64 %rd0, [in+56];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f10;
 
@@ -225,14 +218,7 @@ jit_malloc(type=device, device=0, size=64): <@> (reused local)
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .u32 size,
-                              .param .u64 arg0,
-                              .param .u64 arg1,
-                              .param .u64 arg2,
-                              .param .u64 arg3,
-                              .param .u64 arg4,
-                              .param .u64 arg5,
-                              .param .u64 arg6) {
+.entry enoki_<@>(.param .align 8 .b8 in[64]) {
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p <11>;
@@ -241,7 +227,7 @@ jit_malloc(type=device, device=0, size=64): <@> (reused local)
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [size];
+    ld.param.u32 %r2, [in];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -251,7 +237,7 @@ jit_malloc(type=device, device=0, size=64): <@> (reused local)
 L1: // Loop body
 
     // Load %d4
-    ld.param.u64 %rd0, [arg0];
+    ld.param.u64 %rd0, [in+8];
     mad.wide.u32 %rd0, %r0, 8, %rd0;
     ld.global.cs.f64 %d4, [%rd0];
 
@@ -259,7 +245,7 @@ L1: // Loop body
     cvt.rmi.f64.f64 %d5, %d4;
 
     // Store %d5
-    ld.param.u64 %rd0, [arg1];
+    ld.param.u64 %rd0, [in+16];
     mad.wide.u32 %rd0, %r0, 8, %rd0;
     st.global.cs.f64 [%rd0], %d5;
 
@@ -267,7 +253,7 @@ L1: // Loop body
     cvt.rpi.f64.f64 %d6, %d4;
 
     // Store %d6
-    ld.param.u64 %rd0, [arg2];
+    ld.param.u64 %rd0, [in+24];
     mad.wide.u32 %rd0, %r0, 8, %rd0;
     st.global.cs.f64 [%rd0], %d6;
 
@@ -275,7 +261,7 @@ L1: // Loop body
     cvt.rzi.f64.f64 %d7, %d4;
 
     // Store %d7
-    ld.param.u64 %rd0, [arg3];
+    ld.param.u64 %rd0, [in+32];
     mad.wide.u32 %rd0, %r0, 8, %rd0;
     st.global.cs.f64 [%rd0], %d7;
 
@@ -283,7 +269,7 @@ L1: // Loop body
     cvt.rni.f64.f64 %d8, %d4;
 
     // Store %d8
-    ld.param.u64 %rd0, [arg4];
+    ld.param.u64 %rd0, [in+40];
     mad.wide.u32 %rd0, %r0, 8, %rd0;
     st.global.cs.f64 [%rd0], %d8;
 
@@ -291,7 +277,7 @@ L1: // Loop body
     min.f64 %d9, %d5, %d6;
 
     // Store %d9
-    ld.param.u64 %rd0, [arg5];
+    ld.param.u64 %rd0, [in+48];
     mad.wide.u32 %rd0, %r0, 8, %rd0;
     st.global.cs.f64 [%rd0], %d9;
 
@@ -299,7 +285,7 @@ L1: // Loop body
     max.f64 %d10, %d5, %d6;
 
     // Store %d10
-    ld.param.u64 %rd0, [arg6];
+    ld.param.u64 %rd0, [in+56];
     mad.wide.u32 %rd0, %r0, 8, %rd0;
     st.global.cs.f64 [%rd0], %d10;
 

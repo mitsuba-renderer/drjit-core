@@ -428,23 +428,29 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     char error_log[log_size], info_log[log_size];
 
     CUjit_option arg[] = {
+        CU_JIT_OPTIMIZATION_LEVEL,
+        CU_JIT_LOG_VERBOSE,
         CU_JIT_INFO_LOG_BUFFER,
         CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
         CU_JIT_ERROR_LOG_BUFFER,
         CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES,
-        CU_JIT_LOG_VERBOSE
+        CU_JIT_GENERATE_LINE_INFO,
+        CU_JIT_GENERATE_DEBUG_INFO
     };
 
     void *argv[] = {
+        (void *) 4,
+        (void *) 1,
         (void *) info_log,
         (void *) log_size,
         (void *) error_log,
         (void *) log_size,
-        (void *) 1
+        (void *) 0,
+        (void *) 0
     };
 
     CUlinkState link_state;
-    cuda_check(cuLinkCreate(5, arg, argv, &link_state));
+    cuda_check(cuLinkCreate(sizeof(argv) / sizeof(void *), arg, argv, &link_state));
 
     int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buffer,
                            buffer_size, nullptr, 0, nullptr, nullptr);
