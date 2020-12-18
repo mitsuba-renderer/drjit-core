@@ -115,11 +115,11 @@ uint32_t jitc_flags() {
     return jit_flags();
 }
 
-void jitc_set_flag(JitFlag flag) {
+void jitc_enable_flag(JitFlag flag) {
     jit_set_flags(jit_flags() | (uint32_t) flag);
 }
 
-void jitc_unset_flag(JitFlag flag) {
+void jitc_disable_flag(JitFlag flag) {
     jit_set_flags(jit_flags() & ~(uint32_t) flag);
 }
 

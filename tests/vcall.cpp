@@ -135,7 +135,7 @@ auto vcall(const char *domain, UInt32 self, const Args &... args) {
 TEST_CUDA(01_symbolic_vcall) {
     global = arange<Float>(10);
     jitc_eval(global);
-    jitc_set_flag(JitFlag::RecordVCalls);
+    jitc_enable_flag(JitFlag::RecordVCalls);
 
     Class1 c1;
     Class2 c2;
@@ -146,7 +146,7 @@ TEST_CUDA(01_symbolic_vcall) {
     Float x = 1, y = 2;
     UInt32 inst                    = arange<UInt32>(3);
     std::pair<Float, Float> result = vcall("Base", inst, x, y);
-    jitc_unset_flag(JitFlag::RecordVCalls);
+    jitc_disable_flag(JitFlag::RecordVCalls);
     jitc_eval(result.first, result.second);
     jitc_assert(result.first == Float(0, 3, 2));
     jitc_assert(result.second == Float(0, 4, -1));

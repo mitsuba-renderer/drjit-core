@@ -192,10 +192,10 @@ extern JITC_EXPORT void jitc_set_flags(uint32_t flags);
 extern JITC_EXPORT uint32_t jitc_flags();
 
 /// Equivalent to <tt>jitc_set_flags(jitc_flags() | flag)</tt>
-extern JITC_EXPORT void jitc_set_flag(JITC_ENUM JitFlag flag);
+extern JITC_EXPORT void jitc_enable_flag(JITC_ENUM JitFlag flag);
 
 /// Equivalent to <tt>jitc_set_flags(jitc_flags() & ~flag)</tt>
-extern JITC_EXPORT void jitc_unset_flag(JITC_ENUM JitFlag flag);
+extern JITC_EXPORT void jitc_disable_flag(JITC_ENUM JitFlag flag);
 
 /**
  * \brief Returns the number of operations with side effects (specifically,
