@@ -1211,6 +1211,9 @@ jitc_var_vcall(int cuda, uint32_t self, uint32_t n_inst,
                uint32_t n_extra, const uint32_t *extra,
                const uint32_t *extra_offset, int side_effects);
 
+extern JITC_EXPORT void jitc_vcall_set_targets_explicit(int value);
+
+
 // ====================================================================
 //                 Kernel compilation and evaluation
 // ====================================================================

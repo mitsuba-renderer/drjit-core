@@ -1357,6 +1357,12 @@ void jit_var_printf(int cuda, const char *fmt, uint32_t narg,
     jit_var_mark_scatter(idx, 0);
 }
 
+static int targets_explicit = 0;
+extern "C" {
+    JITC_EXPORT void jitc_vcall_set_targets_explicit(int value) {
+        targets_explicit = value;
+    }
+};
 
 void jit_var_vcall(int cuda,
                    uint32_t self,
@@ -1400,7 +1406,6 @@ void jit_var_vcall(int cuda,
                                          "mad.wide.u32 $r0, $r1, 8, $r0$n"
                                          "ld.global.$t0 $r0, [$r0]",
                                          1, self, call_table);
-    jit_var_dec_ref_ext(call_table);
 
     uint32_t extra_id;
     if (n_extra > 0) {
@@ -1484,11 +1489,14 @@ void jit_var_vcall(int cuda,
     buffer.clear();
     buffer.fmt("\n    {\n"
 	        "        .param .align %u .b8 param_out[%u];\n"
-	        "        .param .align %u .b8 param_in[%u];\n"
-	        "        Fproto: .callprototype (.param .align %u .b8 _[%u]) _ (.reg .u64 _, .param .align %u .b8 _[%u]);\n",
-	        align_out, offset_out, align_in, offset_in,
+	        "        .param .align %u .b8 param_in[%u];\n",
 	        align_out, offset_out, align_in, offset_in
     );
+
+    if (!targets_explicit)
+        buffer.fmt("        Fproto: .callprototype (.param .align %u .b8 _[%u]) _ "
+                   "(.reg .u64 _, .param .align %u .b8 _[%u]);\n",
+                   align_out, offset_out, align_in, offset_in);
 
     prev = index;
     index = jit_var_new_1(cuda, VarType::Invalid, buffer.get(), 0, index);
@@ -1509,10 +1517,16 @@ void jit_var_vcall(int cuda,
     }
 
     prev  = index;
-    index = jit_var_new_3(cuda, VarType::Invalid,
-                          "    call (param_out), $r1, ($r2, param_in), Fproto", 1,
-                          call_target, extra_id, index);
+    if (targets_explicit)
+        index = jit_var_new_4(cuda, VarType::Invalid,
+                              "    call (param_out), $r1, ($r2, param_in), $r3", 1,
+                              call_target, extra_id, call_table, index);
+    else
+        index = jit_var_new_3(cuda, VarType::Invalid,
+                              "    call (param_out), $r1, ($r2, param_in), Fproto", 1,
+                              call_target, extra_id, index);
 
+    jit_var_dec_ref_ext(call_table);
     jit_var_dec_ref_ext(prev);
 
     offset_out = 0;
@@ -1545,3 +1559,4 @@ void jit_var_vcall(int cuda,
 
     jit_var_dec_ref_ext(index);
 }
+
