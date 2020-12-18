@@ -16,6 +16,10 @@
 #include "profiler.h"
 #include <sys/stat.h>
 
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#  include "optix_api.h"
+#endif
+
 #if defined(_WIN32)
 #  include <windows.h>
 #  include <direct.h>
@@ -43,7 +47,7 @@ Buffer buffer{1024};
   __thread uint32_t jit_flags_v = 0;
 #endif
 
-#if defined(ENOKI_ENABLE_ITTNOTIFY)
+#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
 __itt_domain *enoki_domain = __itt_domain_create("enoki");
 #endif
 
@@ -193,32 +197,19 @@ void* jit_cuda_context() {
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 void jit_shutdown(int light) {
-    if (!state.tss.empty()) {
-        jit_log(Info, "jit_shutdown(): releasing %zu thread state%s ..",
-                state.tss.size(), state.tss.size() > 1 ? "s" : "");
-
-        for (ThreadState *ts : state.tss) {
-            jit_free_flush(ts);
-            if (ts->cuda) {
-                scoped_set_context guard(ts->context);
-                cuda_check(cuStreamSynchronize(ts->stream));
-                cuda_check(cuEventDestroy(ts->event));
-                cuda_check(cuStreamDestroy(ts->stream));
-            } else {
-                task_wait_and_release(ts->task);
-                if (!ts->active_mask.empty())
-                    jit_log(Warn, "jit_shutdown(): leaked %zu active masks!",
-                            ts->active_mask.size());
-            }
-            delete ts->release_chain;
-            delete ts;
+    // Synchronize with everything
+    for (ThreadState *ts : state.tss) {
+        jit_free_flush(ts);
+        if (ts->cuda) {
+            scoped_set_context guard(ts->context);
+            cuda_check(cuStreamSynchronize(ts->stream));
+        } else {
+            task_wait_and_release(ts->task);
+            if (!ts->active_mask.empty())
+                jit_log(Warn, "jit_shutdown(): leaked %zu active masks!",
+                        ts->active_mask.size());
         }
-        pool_destroy();
-        state.tss.clear();
     }
-
-    thread_state_llvm = nullptr;
-    thread_state_cuda = nullptr;
 
     if (!state.kernel_cache.empty()) {
         jit_log(Info, "jit_shutdown(): releasing %zu kernel%s ..",
@@ -232,6 +223,30 @@ void jit_shutdown(int light) {
 
         state.kernel_cache.clear();
     }
+
+    if (!state.tss.empty()) {
+        jit_log(Info, "jit_shutdown(): releasing %zu thread state%s ..",
+                state.tss.size(), state.tss.size() > 1 ? "s" : "");
+
+        for (ThreadState *ts : state.tss) {
+            jit_free_flush(ts);
+            if (ts->cuda) {
+                scoped_set_context guard(ts->context);
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+                jit_optix_context_destroy(ts);
+#endif
+                cuda_check(cuEventDestroy(ts->event));
+                cuda_check(cuStreamDestroy(ts->stream));
+            }
+            delete ts->release_chain;
+            delete ts;
+        }
+        pool_destroy();
+        state.tss.clear();
+    }
+
+    thread_state_llvm = nullptr;
+    thread_state_cuda = nullptr;
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
         uint32_t n_leaked = 0;
@@ -297,6 +312,9 @@ void jit_shutdown(int light) {
 
     if (light == 0) {
         jit_llvm_shutdown();
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+        jit_optix_shutdown();
+#endif
         jit_cuda_shutdown();
     }
 

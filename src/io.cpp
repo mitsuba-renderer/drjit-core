@@ -12,6 +12,7 @@
 #include "internal.h"
 #include "profiler.h"
 #include "cuda_api.h"
+#include "optix_api.h"
 #include "../kernels/kernels.h"
 #include <stdexcept>
 #include <stdio.h>
@@ -205,7 +206,7 @@ bool jit_kernel_load(const char *source, uint32_t source_size,
 
             kernel.llvm.func = (LLVMKernelFunction)(
                 (uint8_t *) kernel.data + header.func_offset);
-#if defined(ENOKI_ENABLE_ITTNOTIFY)
+#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
             char name[23];
             snprintf(name, 23, "enoki_%016llx", (long long) hash);
             kernel.llvm.itt = __itt_string_handle_create(name);
@@ -411,9 +412,15 @@ void jit_kernel_free(int device_id, const Kernel kernel) {
 #endif
     } else {
         const Device &device = state.devices.at(device_id);
-        scoped_set_context guard(device.context);
-        cuda_check(cuModuleUnload(kernel.cuda.cu_module));
-        free(kernel.data);
+        if (kernel.data) {
+            scoped_set_context guard(device.context);
+            cuda_check(cuModuleUnload(kernel.cuda.mod));
+            free(kernel.data);
+        } else {
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+            jit_optix_free(kernel);
+#endif
+        }
     }
 }
 

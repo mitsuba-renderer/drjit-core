@@ -12,6 +12,7 @@
 #include "var.h"
 #include "eval.h"
 #include "profiler.h"
+#include "optix_api.h"
 #include <tsl/robin_set.h>
 
 #define CUDA_MAX_KERNEL_PARAMETERS 512
@@ -56,6 +57,10 @@ static tsl::robin_set<std::pair<uint32_t, uint32_t>, pair_hash> visited;
 static std::vector<void *> kernel_args, kernel_args_extra;
 static std::vector<uint32_t> kernel_ids;
 
+/// On-device versions of the above
+static void *kernel_args_dev = nullptr;
+static void *kernel_args_extra_dev = nullptr;
+
 /// Hash code of the last generated kernel
 size_t kernel_hash = 0;
 
@@ -74,8 +79,11 @@ static Buffer intrinsic_buffer_tmp{1};
 /// LLVM: Does the kernel require the supplemental IR? (Used for 'scatter_add' atm.)
 static bool jit_llvm_supplement = false;
 
-/// Are we performing a normal evaluation (jitc_eval()) or an IR dump? (jitc_eval_ir())
-static bool eval_normal = false;
+/// Is this a normal evaluation (jitc_eval()) or IR capture? (jitc_capture())
+static bool capture_ir = false;
+
+/// Are we recording an OptiX kernel?
+static bool uses_optix = false;
 
 // ====================================================================
 
@@ -135,7 +143,7 @@ void jit_render_stmt_cuda(uint32_t index, Variable *v, bool indent = true) {
     char c;
 
     if (unlikely(!s)) {
-        if (!eval_normal && (VarType) v->type == VarType::Pointer) {
+        if (capture_ir && (VarType) v->type == VarType::Pointer) {
             buffer.fmt("    ld.global.nc.u64 %%rd%u, [extra+%u];\n",
                        v->reg_index, (uint32_t) (kernel_ids.size() * 8));
             jit_var_inc_ref_ext(index);
@@ -483,9 +491,11 @@ void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v) {
 
 void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_total) {
     auto get_parameter_addr = [](uint32_t index, const Variable *v, bool load, uint32_t target = 0) {
-        if (likely(eval_normal)) {
+        if (likely(!capture_ir)) {
             if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
-                buffer.fmt("    ld.param.u64 %%rd%u, [in+%u];\n", target, v->arg_index * 8);
+                buffer.fmt("    ld.%s.u64 %%rd%u, [params+%u];\n",
+                           uses_optix ? "const" : "param", target,
+                           v->arg_index * 8);
             else
                 buffer.fmt("    ldu.global.u64 %%rd%u, [%%rd2 + %u];\n",
                            target, (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
@@ -495,11 +505,11 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
         } else {
             if (v->arg_index < 0xFFFF) {
                 if (v->type != (uint32_t) VarType::Bool)
-                    buffer.fmt("    ld.param.%s %s%u, [in+%u];\n",
+                    buffer.fmt("    ld.param.%s %s%u, [params+%u];\n",
                                var_type_name_ptx[v->type], var_type_prefix[v->type],
                                v->reg_index, v->arg_index);
                 else
-                    buffer.fmt("    ld.param.u8 %%w0, [in+%u];\n"
+                    buffer.fmt("    ld.param.u8 %%w0, [params+%u];\n"
                                "    setp.ne.u16 %s%u, %%w0, 0;\n",
                                v->arg_index, var_type_prefix[v->type], v->reg_index);
             } else {
@@ -534,7 +544,7 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
          statements that must write a temporary result to a register.
     */
 
-    if (likely(eval_normal)) {
+    if (likely(!capture_ir)) {
         buffer.fmt(".version %i.%u\n"
                    ".target sm_%u\n"
                    ".address_size 64\n\n",
@@ -549,17 +559,25 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
     for (; group_index != group.end; ++group_index) {
         if (!schedule[group_index].global)
             break;
-        if (likely(eval_normal)) {
+        if (likely(!capture_ir)) {
             uint32_t index = schedule[group_index].index;
             Variable *v = jit_var(index);
             jit_render_stmt_cuda(index, v, false);
         }
     }
 
-    if (likely(eval_normal))
-        buffer.fmt(
-            ".entry enoki_^^^^^^^^^^^^^^^^(.param .align 8 .b8 in[%u]) {\n",
-            (uint32_t) kernel_args.size() * 8);
+    if (likely(!capture_ir)) {
+        if (likely(!uses_optix)) {
+            buffer.fmt(
+                ".entry enoki_^^^^^^^^^^^^^^^^(.param .align 8 .b8 in[%u]) {\n",
+                (uint32_t) kernel_args.size() * 8);
+        } else {
+            buffer.fmt(
+                ".const .align 8 .b8 params[%u];\n\n"
+                ".entry __raygen__enoki_^^^^^^^^^^^^^^^^() {\n",
+                (uint32_t) kernel_args.size() * 8);
+        }
+    }
 
     buffer.fmt(
         "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
@@ -569,7 +587,7 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
         n_regs_total, n_regs_total, n_regs_total
     );
 
-    if (likely(eval_normal)) {
+    if (likely(!capture_ir)) {
         buffer.fmt("    // Grid-stride loop, sm_%u\n",
                    state.devices[ts->device].compute_capability);
 
@@ -577,14 +595,15 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
         buffer.put("    mov.u32 %r1, %ntid.x;\n");
         buffer.put("    mov.u32 %r2, %tid.x;\n");
         buffer.put("    mad.lo.u32 %r0, %r0, %r1, %r2;\n");
-        buffer.put("    ld.param.u32 %r2, [in];\n");
+        buffer.fmt("    ld.%s.u32 %%r2, [params];\n", uses_optix ? "const" : "param");
         buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
         buffer.put("    @%p0 bra L0;\n\n");
 
         buffer.put("    mov.u32 %r3, %nctaid.x;\n");
         buffer.put("    mul.lo.u32 %r1, %r3, %r1;\n");
         if (!kernel_args_extra.empty())
-            buffer.fmt("    ld.param.u64 %%rd2, [in+%u];\n",
+            buffer.fmt("    ld.%s.u64 %%rd2, [params+%u];\n",
+                       uses_optix ? "const" : "param",
                        (CUDA_MAX_KERNEL_PARAMETERS - 1) * 8);
 
         buffer.put("\nL1: // Loop body\n");
@@ -608,7 +627,7 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
 
             get_parameter_addr(index, v, true, v->direct_pointer ? v->reg_index : 0u);
 
-            if (likely(!v->direct_pointer && eval_normal)) {
+            if (likely(!v->direct_pointer && !capture_ir)) {
                 if (likely(v->type != (uint32_t) VarType::Bool)) {
                     buffer.fmt("    %s.%s %s%u, [%%rd0];\n",
                            v->size == 1 ? "ldu.global" : "ld.global.cs",
@@ -633,7 +652,7 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
             jit_render_stmt_cuda(index, v);
         }
 
-        if (v->arg_type == ArgType::Output && eval_normal) {
+        if (v->arg_type == ArgType::Output && !capture_ir) {
             if (unlikely(log_trace))
                 buffer.fmt("\n    // Store %s%u%s%s\n",
                            var_type_prefix[v->type], v->reg_index,
@@ -654,7 +673,7 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
         }
     }
 
-    if (likely(eval_normal)) {
+    if (likely(!capture_ir)) {
         buffer.putc('\n');
         buffer.put("    add.u32 %r0, %r0, %r1;\n");
         buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
@@ -836,6 +855,7 @@ void jit_assemble(ThreadState *ts, ScheduledGroup group) {
 
     kernel_args_extra.clear();
     kernel_args.clear();
+    uses_optix = false;
 
     if (cuda) {
         /// Push the size argument
@@ -917,6 +937,9 @@ void jit_assemble(ThreadState *ts, ScheduledGroup group) {
                 n_args_scat++;
             v->arg_index = (uint16_t) 0xFFFF;
             v->arg_type = ArgType::Register;
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+            uses_optix |= v->optix;
+#endif
         }
 
         if (push) {
@@ -945,25 +968,35 @@ void jit_assemble(ThreadState *ts, ScheduledGroup group) {
     if (unlikely(cuda && !kernel_args_extra.empty())) {
         size_t args_extra_size = kernel_args_extra.size() * sizeof(uint64_t);
         void *args_extra_host = jit_malloc(AllocType::HostPinned, args_extra_size);
-        void *args_extra_dev  = jit_malloc(AllocType::Device, args_extra_size);
+        kernel_args_extra_dev = jit_malloc(AllocType::Device, args_extra_size);
 
         memcpy(args_extra_host, kernel_args_extra.data(), args_extra_size);
-        cuda_check(cuMemcpyAsync((CUdeviceptr) args_extra_dev,
+        cuda_check(cuMemcpyAsync((CUdeviceptr) kernel_args_extra_dev,
                                  (CUdeviceptr) args_extra_host,
                                  args_extra_size, ts->stream));
 
-        kernel_args.push_back(args_extra_dev);
+        kernel_args.push_back(kernel_args_extra_dev);
         jit_free(args_extra_host);
-
-        /* Safe, because there won't be further allocations on the current
-           stream until after this kernel has executed. */
-        jit_free(args_extra_dev);
     }
 
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+    if (unlikely(uses_optix)) {
+        size_t args_size = kernel_args.size() * sizeof(uint64_t);
+        void *args_host = jit_malloc(AllocType::HostPinned, args_size);
+        kernel_args_dev = jit_malloc(AllocType::Device, args_size);
+
+        memcpy(args_host, kernel_args.data(), args_size);
+        cuda_check(cuMemcpyAsync((CUdeviceptr) kernel_args_dev,
+                                 (CUdeviceptr) args_host,
+                                 args_size, ts->stream));
+        jit_free(args_host);
+    }
+#endif
+
     jit_llvm_supplement = false;
+    capture_ir = false;
     intrinsics_buffer.clear();
     buffer.clear();
-    eval_normal = true;
 
     if (cuda)
         jit_assemble_cuda(ts, group, n_regs_total);
@@ -994,33 +1027,45 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
     Kernel kernel;
 
     if (it == state.kernel_cache.end()) {
-        bool cache_hit = jit_kernel_load(
-            buffer.get(), (uint32_t) buffer.size(), ts->cuda, kernel_hash, kernel);
+        bool cache_hit = false;
+
+        if (!uses_optix)
+            cache_hit = jit_kernel_load(buffer.get(), (uint32_t) buffer.size(),
+                                        ts->cuda, kernel_hash, kernel);
 
         if (!cache_hit) {
-            if (ts->cuda)
+            if (ts->cuda) {
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+                if (!uses_optix)
+                    jit_cuda_compile(buffer.get(), buffer.size(), kernel);
+                else
+                    jit_optix_compile(ts, buffer.get(), buffer.size(), kernel, kernel_hash);
+#else
                 jit_cuda_compile(buffer.get(), buffer.size(), kernel);
-            else
+#endif
+            } else {
                 jit_llvm_compile(buffer.get(), buffer.size(), kernel,
                                  jit_llvm_supplement);
+            }
 
-            jit_kernel_write(buffer.get(), (uint32_t) buffer.size(), ts->cuda,
-                             kernel_hash, kernel);
+            if (kernel.data)
+                jit_kernel_write(buffer.get(), (uint32_t) buffer.size(),
+                                 ts->cuda, kernel_hash, kernel);
         }
 
         if (!ts->cuda) {
             jit_llvm_disasm(kernel);
-        } else {
+        } else if (!uses_optix) {
             CUresult ret;
             /* Unlock while synchronizing */ {
                 unlock_guard guard(state.mutex);
-                ret = cuModuleLoadData(&kernel.cuda.cu_module, kernel.data);
+                ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
             }
             if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
                 jit_malloc_trim();
                 /* Unlock while synchronizing */ {
                     unlock_guard guard(state.mutex);
-                    ret = cuModuleLoadData(&kernel.cuda.cu_module, kernel.data);
+                    ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
                 }
             }
             cuda_check(ret);
@@ -1028,21 +1073,21 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
             // Locate the kernel entry point
             char kernel_name[23];
             snprintf(kernel_name, 23, "enoki_%016llx", (unsigned long long) kernel_hash);
-            cuda_check(cuModuleGetFunction(&kernel.cuda.cu_func, kernel.cuda.cu_module,
+            cuda_check(cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod,
                                            kernel_name));
 
             // Determine a suitable thread count to maximize occupancy
             int unused, block_size;
             cuda_check(cuOccupancyMaxPotentialBlockSize(
                 &unused, &block_size,
-                kernel.cuda.cu_func, nullptr, 0, 0));
+                kernel.cuda.func, nullptr, 0, 0));
             kernel.cuda.block_size = (uint32_t) block_size;
 
             // Enoki doesn't use shared memory at all, prefer to have more L1 cache.
             cuda_check(cuFuncSetAttribute(
-                kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
+                kernel.cuda.func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
             cuda_check(cuFuncSetAttribute(
-                kernel.cuda.cu_func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
+                kernel.cuda.func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
                 CU_SHAREDMEM_CARVEOUT_MAX_L1));
 
             free(kernel.data);
@@ -1059,6 +1104,7 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
         kernel_key.str = (char *) malloc_check(buffer.size() + 1);
         memcpy(kernel_key.str, buffer.get(), buffer.size() + 1);
         state.kernel_cache.emplace(kernel_key, kernel);
+
         if (cache_hit)
             state.kernel_soft_misses++;
         else
@@ -1070,11 +1116,16 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
     state.kernel_launches++;
 
     if (ts->cuda) {
-        size_t kernel_args_size;
-        if (kernel_args.size() == 1)
-            kernel_args_size = 4; // size only, without padding
-        else
-            kernel_args_size = (size_t) kernel_args.size() * sizeof(uint64_t);
+        size_t kernel_args_size =
+            (size_t) kernel_args.size() * sizeof(uint64_t);
+
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+        if (unlikely(uses_optix)) {
+            jit_optix_launch(ts, kernel, group.size, kernel_args_dev,
+                             kernel_args_size);
+            return nullptr;
+        }
+#endif
 
         void *config[] = {
             CU_LAUNCH_PARAM_BUFFER_POINTER,
@@ -1089,7 +1140,7 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
         device.get_launch_config(&block_count, &thread_count, group.size,
                                  (uint32_t) kernel.cuda.block_size);
 
-        cuda_check(cuLaunchKernel(kernel.cuda.cu_func, block_count, 1, 1,
+        cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,
                                   thread_count, 1, 1, 0, cu_stream, nullptr,
                                   config));
     } else {
@@ -1104,7 +1155,7 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
                      start      = index * block_size,
                      end        = std::min(start + block_size, size);
 
-#if defined(ENOKI_ENABLE_ITTNOTIFY)
+#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
             // Signal start of kernel
             __itt_task_begin(enoki_domain, __itt_null, __itt_null,
                              (__itt_string_handle *) args[2]);
@@ -1113,7 +1164,7 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
             // Perform the main computation
             kernel(start, end, args + 3);
 
-#if defined(ENOKI_ENABLE_ITTNOTIFY)
+#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
             // Signal termination of kernel
             __itt_task_end(enoki_domain);
 #endif
@@ -1125,7 +1176,7 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
         kernel_args[0] = (void *) kernel.llvm.func;
         kernel_args[1] = (void *) ((((uintptr_t) block_size) << 32) + (uintptr_t) group.size);
 
-#if defined(ENOKI_ENABLE_ITTNOTIFY)
+#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
         kernel_args[2] = kernel.llvm.itt;
 #endif
 
@@ -1270,6 +1321,11 @@ void jit_eval_ts(ThreadState *ts) {
             cu_stream = device->sub_streams[group_idx++ % ENOKI_SUB_STREAMS];
 
         scheduled_tasks.push_back(jit_run(ts, cu_stream, group));
+
+        if (ts->cuda) {
+            jit_free(kernel_args_dev);
+            jit_free(kernel_args_extra_dev);
+        }
     }
 
     if (cuda_stream_count > 1) {
@@ -1341,7 +1397,7 @@ void jit_eval_ts(ThreadState *ts) {
 
 
 /// Export the intermediate representation of a computation
-const char *jit_eval_ir(int cuda,
+const char *jit_capture(int cuda,
                         const uint32_t *in, uint32_t n_in,
                         const uint32_t *out, uint32_t n_out,
                         uint32_t n_side_effects,
@@ -1349,7 +1405,7 @@ const char *jit_eval_ir(int cuda,
                         uint32_t **extra_out,
                         uint32_t *extra_count_out) {
     if (unlikely(!cuda))
-        jit_raise("jit_eval_ir(): only CUDA mode is supported at the moment.");
+        jit_raise("jit_capture(): only CUDA mode is supported at the moment.");
 
     ThreadState *ts = thread_state(cuda);
 
@@ -1372,7 +1428,7 @@ const char *jit_eval_ir(int cuda,
         uint32_t index = 0;
         while (true) {
             if (j == 0)
-                jit_raise("jit_eval_ir(): could not find side effect!");
+                jit_raise("jit_capture(): could not find side effect!");
             index = todo[--j];
             v = jit_var(index);
             if (v->scatter)
@@ -1393,7 +1449,7 @@ const char *jit_eval_ir(int cuda,
     for (uint32_t i = 0; i < n_out; ++i) {
         Variable *v = jit_var(out[i]);
         if (v->data != nullptr && v->data != (void *) 1 /* input placeholder */)
-            jit_raise("jit_eval_ir(): outputs must be unevaluated Enoki arrays!");
+            jit_raise("jit_capture(): outputs must be unevaluated Enoki arrays!");
         uint32_t size = var_type_size[v->type];
         offset_out = (offset_out + size - 1) / size * size;
         offset_out += size;
@@ -1404,7 +1460,7 @@ const char *jit_eval_ir(int cuda,
     for (uint32_t i = 0; i < n_in; ++i) {
         Variable *v = jit_var(in[i]);
         if ((uintptr_t) v->data != 1)
-            jit_raise("jit_eval_ir(): inputs must be placeholder Enoki arrays!");
+            jit_raise("jit_capture(): inputs must be placeholder Enoki arrays!");
         v->arg_type = ArgType::Input;
         uint32_t size = var_type_size[v->type];
         offset_in = (offset_in + size - 1) / size * size;
@@ -1422,7 +1478,7 @@ const char *jit_eval_ir(int cuda,
                     v->arg_index = 0xFFFF;
                     continue;
                 }
-                jit_raise("jit_eval_ir(): the queued computation accesses a "
+                jit_raise("jit_capture(): the queued computation accesses a "
                          "variable that was already evaluated, and which was not "
                          "explictly declared as an input! (id=%u, type=%s, size=%u)",
                          entry.index, var_type_name[v->type], v->size);
@@ -1440,7 +1496,8 @@ const char *jit_eval_ir(int cuda,
                align_out, offset_out, align_in, offset_in);
 
     ScheduledGroup group(schedule.size(), 0, schedule.size());
-    eval_normal = false;
+    capture_ir = true;
+    uses_optix = false;
     jit_assemble_cuda(ts, group, reg_count);
 
     offset_out = 0;
@@ -1469,7 +1526,7 @@ const char *jit_eval_ir(int cuda,
     snprintf(kernel_name, 17, "%016llx", (unsigned long long) kernel_hash);
     const char *name_start = strchr(buffer.get(), '^');
     if (unlikely(!name_start))
-        jit_fail("jit_eval_ir(): could not find kernel name!");
+        jit_fail("jit_capture(): could not find kernel name!");
     memcpy((char *) name_start, kernel_name, 16);
 
     if (hash_out)
@@ -1508,14 +1565,14 @@ const char *jit_eval_ir(int cuda,
 }
 
 /// Export the intermediate representation of a computation as a variable
-uint32_t jit_eval_ir_var(int cuda,
+uint32_t jit_capture_var(int cuda,
                          const uint32_t *in, uint32_t n_in,
                          const uint32_t *out, uint32_t n_out,
                          uint32_t n_side_effects,
                          uint64_t *hash_out,
                          uint32_t **extra_out,
                          uint32_t *extra_count_out) {
-    const char *str = jit_eval_ir(cuda, in, n_in, out, n_out, n_side_effects,
+    const char *str = jit_capture(cuda, in, n_in, out, n_out, n_side_effects,
                                   hash_out, extra_out, extra_count_out);
 
     uint32_t index = jit_var_new_0(cuda, VarType::Global, str, 0, 1);

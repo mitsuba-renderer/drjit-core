@@ -15,6 +15,9 @@
 using LLVMKernelFunction = void (*)(uint32_t start, uint32_t end, void **ptr);
 using CUmodule = struct CUmod_st *;
 using CUfunction = struct CUfunc_st *;
+using OptixModule = void*;
+using OptixProgramGroup = void*;
+using OptixPipeline = void*;
 
 /// A kernel and its preferred lauch configuration
 struct Kernel {
@@ -22,17 +25,26 @@ struct Kernel {
     uint32_t size;
     union {
         struct {
-            CUmodule cu_module;
-            CUfunction cu_func;
+            CUmodule mod;
+            CUfunction func;
             uint32_t block_size;
         } cuda;
 
         struct {
             LLVMKernelFunction func;
-#if defined(ENOKI_ENABLE_ITTNOTIFY)
+#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
             void *itt;
 #endif
         } llvm;
+
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+        struct {
+            OptixModule mod;
+            OptixProgramGroup group;
+            OptixPipeline pipeline;
+            void *sbt_record;
+        } optix;
+#endif
     };
 };
 

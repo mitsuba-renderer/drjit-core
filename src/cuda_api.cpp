@@ -133,7 +133,6 @@ bool jit_cuda_init() {
 #if defined(ENOKI_JIT_DYNAMIC_CUDA)
     jit_cuda_handle = nullptr;
 #  if defined(_WIN32)
-#    define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
     const char* cuda_fname = "nvcuda.dll",
               * cuda_glob = nullptr;
 #  elif defined(__linux__)
@@ -482,7 +481,6 @@ void jit_cuda_shutdown() {
         return;
 
     jit_log(Info, "jit_cuda_shutdown()");
-
 
     for (int i = 0; i < jit_cuda_devices; ++i) {
         CUcontext context = nullptr;

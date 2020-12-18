@@ -369,7 +369,7 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     kernel.data = ptr_result;
     kernel.size = (uint32_t) jit_llvm_mem_offset;
     kernel.llvm.func        = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
-#if defined(ENOKI_ENABLE_ITTNOTIFY)
+#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
     kernel.llvm.itt = __itt_string_handle_create(kernel_name_old);
 #endif
     jit_llvm_kernel_id++;
@@ -411,7 +411,6 @@ bool jit_llvm_init() {
 #if defined(ENOKI_JIT_DYNAMIC_LLVM)
     jit_llvm_handle = nullptr;
 #  if defined(_WIN32)
-#    define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
     const char *llvm_fname = "LLVM-C.dll",
                *llvm_glob  = nullptr;
 #  elif defined(__linux__)

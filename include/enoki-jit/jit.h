@@ -213,7 +213,7 @@ extern JITC_EXPORT uint32_t jitc_side_effect_counter(int cuda);
  * moment) that computes the values of the given outputs in terms of the
  * specified inputs.
  */
-extern JITC_EXPORT const char *jitc_eval_ir(int cuda,
+extern JITC_EXPORT const char *jitc_capture(int cuda,
                                             const uint32_t *in, uint32_t n_in,
                                             const uint32_t *out, uint32_t n_out,
                                             uint32_t n_side_effects,
@@ -221,8 +221,8 @@ extern JITC_EXPORT const char *jitc_eval_ir(int cuda,
                                             uint32_t **extra_out,
                                             uint32_t *extra_count_out);
 
-/// Like jitc_eval_ir(), wraps result in JIT variable of type VarType::Global
-extern JITC_EXPORT uint32_t jitc_eval_ir_var(int cuda,
+/// Like jitc_capture(), wraps result in JIT variable of type VarType::Global
+extern JITC_EXPORT uint32_t jitc_capture_var(int cuda,
                                              const uint32_t *in, uint32_t n_in,
                                              const uint32_t *out, uint32_t n_out,
                                              uint32_t n_side_effects,

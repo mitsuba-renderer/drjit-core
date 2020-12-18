@@ -12,6 +12,10 @@
 #  endif
 #endif
 
+#if defined(_WIN32)
+#  define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
+#endif
+
 using lock_guard = std::unique_lock<std::mutex>;
 
 /// RAII helper for *unlocking* a mutex
@@ -28,3 +32,19 @@ private:
     std::mutex &m_mutex;
 };
 
+namespace detail {
+    template <typename Func> struct scope_guard {
+        scope_guard(const Func &func) : func(func) { }
+        scope_guard(const scope_guard &) = delete;
+        scope_guard(scope_guard &&g) : func(std::move(g.func)) {}
+        scope_guard &operator=(const scope_guard &) = delete;
+        scope_guard &operator=(scope_guard &&g) { func = std::move(g.func); }
+    private:
+        Func func;
+    };
+};
+
+template <class Func>
+detail::scope_guard<Func> scope_guard(const Func &func) {
+    return detail::scope_guard<Func>(func);
+}

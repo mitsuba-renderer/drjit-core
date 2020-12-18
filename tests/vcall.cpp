@@ -32,7 +32,7 @@ void read_indices(uint32_t *out, uint32_t &index, const Float &value) {
 }
 
 void write_indices(const uint32_t *out, uint32_t &index, Float &value) {
-    value = Float::from_index(out[index++]);
+    value = Float::steal(out[index++]);
 }
 
 void read_indices(uint32_t *out, uint32_t &index,
@@ -68,7 +68,7 @@ bool record(int cuda, uint32_t &id, uint64_t &hash, std::vector<uint32_t> &extra
 
     uint32_t *extra_p = nullptr;
     uint32_t extra_count_p = 0;
-    id = jitc_eval_ir_var(cuda, in.get(), in_count, out.get(), out_count,
+    id = jitc_capture_var(cuda, in.get(), in_count, out.get(), out_count,
                           se_total, &hash, &extra_p, &extra_count_p);
 
     for (int i = 0; i < extra_count_p; ++i)

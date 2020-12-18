@@ -20,6 +20,7 @@ mark_as_advanced(ENOKI_THREAD_ENABLE_TESTS)
 
 option(ENOKI_JIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
 option(ENOKI_JIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
+option(ENOKI_JIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
 option(ENOKI_JIT_ENABLE_TESTS "Build Enoki test suite?" OFF)
 set(ENOKI_NATIVE_FLAGS "-march=native" CACHE STRING "Compilation flags used to target the host processor architecture.")
 
@@ -35,6 +36,16 @@ else()
   message(STATUS "Enoki-JIT: linking against LLVM shared libraries.")
 endif()
 
+if (ENOKI_JIT_ENABLE_OPTIX)
+  message(STATUS "Enoki-JIT: OptiX support enabled.")
+else()
+  message(STATUS "Enoki-JIT: OptiX support disabled.")
+endif()
+
+if (ENOKI_JIT_ENABLE_OPTIX)
+  set(ENOKI_JIT_OPTIX_FILES src/optix_api.h src/optix_api.cpp)
+endif()
+
 add_library(
   enoki-jit SHARED
   include/enoki-jit/jit.h
@@ -46,17 +57,19 @@ add_library(
   src/alloc.h
   src/hash.h
   src/profiler.h
-  src/log.h            src/log.cpp
-  src/var.h            src/var.cpp
-  src/eval.h           src/eval.cpp
-  src/malloc.h         src/malloc.cpp
-  src/registry.h       src/registry.cpp
-  src/util.h           src/util.cpp
-  src/cuda_api.h       src/cuda_api.cpp
-  src/llvm_api.h       src/llvm_api.cpp
-  src/io.h             src/io.cpp
+  src/log.h           src/log.cpp
+  src/var.h           src/var.cpp
+  src/eval.h          src/eval.cpp
+  src/malloc.h        src/malloc.cpp
+  src/registry.h      src/registry.cpp
+  src/util.h          src/util.cpp
+  src/cuda_api.h      src/cuda_api.cpp
+  src/llvm_api.h      src/llvm_api.cpp
+  src/io.h            src/io.cpp
   src/init.cpp
   src/api.cpp
+
+  ${ENOKI_JIT_OPTIX_FILES}
 
   # LZ4 compression library & XXHash hash function
   ext/lz4/lz4.h ext/lz4/lz4.c
@@ -80,7 +93,6 @@ target_include_directories(enoki-jit
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-
 
 if (NOT MSVC)
   target_compile_options(enoki-jit PRIVATE -Wall -Wextra ${ENOKI_NATIVE_FLAGS})
@@ -108,18 +120,25 @@ else()
   target_link_libraries(enoki-jit PRIVATE LLVM)
 endif()
 
+if (ENOKI_JIT_ENABLE_OPTIX)
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_ENABLE_OPTIX=1)
+  if (WIN32)
+    target_link_libraries(enoki-jit PRIVATE Cfgmgr32)
+  endif()
+endif()
+
 # Generate ITT notifications (e.g. for VTune) if part of a larger project
 # that provides an 'ittnotify' target
 if (TARGET ittnotify)
   target_link_libraries(enoki-jit PRIVATE ittnotify)
   target_include_directories(enoki-jit PRIVATE ${ITT_INCLUDE_DIRS})
-  target_compile_definitions(enoki-jit PRIVATE -DENOKI_ENABLE_ITTNOTIFY=1)
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_ENABLE_ITTNOTIFY=1)
 endif()
 
 # Similar notifications for NVIDIA profilers
-if (ENOKI_ENABLE_NVTX)
+if (ENOKI_JIT_ENABLE_NVTX)
   include_directories(${CUDA_TOOLKIT_ROOT_DIR}/include)
-  target_compile_definitions(enoki-jit PRIVATE -DENOKI_ENABLE_NVTX=1)
+  target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_ENABLE_NVTX=1)
 endif()
 
 if (UNIX)

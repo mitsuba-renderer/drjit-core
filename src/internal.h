@@ -94,6 +94,11 @@ struct ReleaseChain {
     ReleaseChain *next = nullptr;
 };
 
+/// A few forward declarations
+struct OptixPipelineCompileOptions;
+struct OptixShaderBindingTable;
+using OptixProgramGroup = void *;
+
 /// Represents a single stream of a parallel communication
 struct ThreadState {
     /// Does this ThreadState instance refer to a CUDA device?
@@ -156,6 +161,22 @@ struct ThreadState {
 
     /// Targeted PTX version (major * 10 + minor)
     uint32_t ptx_version = 60;
+
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+    /// ---------------------------- OptiX-specific ----------------------------
+
+    /// OptiX device context
+    void *optix_context = nullptr;
+
+    /// Pointer to a user-provided OptiX compile options data structure
+    const OptixPipelineCompileOptions *optix_pipeline_compile_options = nullptr;
+
+    /// Pointer to a user-provided OptiX shader binding table
+    const OptixShaderBindingTable *optix_shader_binding_table = nullptr;
+
+    /// User-provided list of program groups, the first entry is used by Enoki
+    std::vector<OptixProgramGroup> optix_program_groups;
+#endif
 };
 
 enum ArgType {
@@ -233,6 +254,9 @@ struct Variable {
 
     /// Does this variable store a number literal equal to '1'?
     uint32_t is_literal_one : 1;
+
+    /// Does this variable perform an OptiX operation?
+    uint32_t optix : 1;
 
     Variable() {
         memset(this, 0, sizeof(Variable));

@@ -17,6 +17,11 @@
 #include <thread>
 #include <condition_variable>
 
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#include <enoki-jit/optix.h>
+#include "optix_api.h"
+#endif
+
 void jitc_init(int llvm, int cuda) {
     lock_guard guard(state.mutex);
     jit_init(llvm, cuda);
@@ -586,7 +591,7 @@ VCallBucket *jitc_vcall(int cuda, const char *domain, uint32_t index,
     return jit_vcall(cuda, domain, index, bucket_count_out);
 }
 
-const char *jitc_eval_ir(int cuda,
+const char *jitc_capture(int cuda,
                          const uint32_t *in, uint32_t n_in,
                          const uint32_t *out, uint32_t n_out,
                          uint32_t n_side_effects,
@@ -594,11 +599,11 @@ const char *jitc_eval_ir(int cuda,
                          uint32_t **extra_out,
                          uint32_t *extra_count_out) {
     lock_guard guard(state.mutex);
-    return jit_eval_ir(cuda, in, n_in, out, n_out, n_side_effects, hash_out,
+    return jit_capture(cuda, in, n_in, out, n_out, n_side_effects, hash_out,
                        extra_out, extra_count_out);
 }
 
-uint32_t jitc_eval_ir_var(int cuda,
+uint32_t jitc_capture_var(int cuda,
                           const uint32_t *in, uint32_t n_in,
                           const uint32_t *out, uint32_t n_out,
                           uint32_t n_side_effects,
@@ -606,7 +611,7 @@ uint32_t jitc_eval_ir_var(int cuda,
                           uint32_t **extra_out,
                           uint32_t *extra_count_out) {
     lock_guard guard(state.mutex);
-    return jit_eval_ir_var(cuda, in, n_in, out, n_out, n_side_effects, hash_out,
+    return jit_capture_var(cuda, in, n_in, out, n_out, n_side_effects, hash_out,
                            extra_out, extra_count_out);
 }
 
@@ -625,3 +630,30 @@ void jitc_var_printf(int cuda, const char *fmt, uint32_t narg,
     lock_guard guard(state.mutex);
     jit_var_printf(cuda, fmt, narg, arg);
 }
+
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+OptixDeviceContext jitc_optix_context() {
+    lock_guard guard(state.mutex);
+    return jit_optix_context();
+}
+
+void *jitc_optix_lookup(const char *name) {
+    lock_guard guard(state.mutex);
+    return jit_optix_lookup(name);
+}
+
+void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
+                          const OptixShaderBindingTable *sbt,
+                          const OptixProgramGroup *pg,
+                          uint32_t pg_count) {
+    lock_guard guard(state.mutex);
+    jit_optix_configure(pco, sbt, pg, pg_count);
+}
+
+void jitc_optix_trace(uint32_t nargs, uint32_t *args) {
+    lock_guard guard(state.mutex);
+    jit_optix_trace(nargs, args);
+}
+
+#endif
+
