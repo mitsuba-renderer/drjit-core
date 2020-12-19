@@ -36,7 +36,7 @@ jit_assemble(size=15): register map:
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -45,7 +45,7 @@ jit_assemble(size=15): register map:
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -58,12 +58,12 @@ L1: // Loop body
     mov.b32 %f4, 0x3f800000;
 
     // Load %r5
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r5, [%rd0];
 
     // Load %rd6
-    ld.param.u64 %rd6, [in+16];
+    ld.param.u64 %rd6, [params+16];
     mad.wide.u32 %rd3, %r5, 4, %rd6;
     red.global.add.f32 [%rd3], %f4;
 
@@ -130,7 +130,7 @@ jit_assemble(size=16): register map:
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -139,7 +139,7 @@ jit_assemble(size=16): register map:
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -152,12 +152,12 @@ L1: // Loop body
     mov.b32 %f4, 0x3f800000;
 
     // Load %r5
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r5, [%rd0];
 
     // Load %rd6
-    ld.param.u64 %rd6, [in+16];
+    ld.param.u64 %rd6, [params+16];
     mad.wide.u32 %rd3, %r5, 4, %rd6;
     red.global.add.f32 [%rd3], %f4;
 
@@ -224,7 +224,7 @@ jit_assemble(size=15): register map:
 .target sm_60
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -233,7 +233,7 @@ jit_assemble(size=15): register map:
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -246,12 +246,12 @@ L1: // Loop body
     mov.b64 %d4, 0x3ff0000000000000;
 
     // Load %r5
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r5, [%rd0];
 
     // Load %rd6
-    ld.param.u64 %rd6, [in+16];
+    ld.param.u64 %rd6, [params+16];
     mad.wide.u32 %rd3, %r5, 8, %rd6;
     red.global.add.f64 [%rd3], %d4;
 
@@ -318,7 +318,7 @@ jit_assemble(size=16): register map:
 .target sm_60
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -327,7 +327,7 @@ jit_assemble(size=16): register map:
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -340,12 +340,12 @@ L1: // Loop body
     mov.b64 %d4, 0x3ff0000000000000;
 
     // Load %r5
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r5, [%rd0];
 
     // Load %rd6
-    ld.param.u64 %rd6, [in+16];
+    ld.param.u64 %rd6, [params+16];
     mad.wide.u32 %rd3, %r5, 8, %rd6;
     red.global.add.f64 [%rd3], %d4;
 
@@ -427,7 +427,7 @@ jit_assemble(size=15): register map:
 .target sm_60
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
     .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
     .reg.pred %p <12>;
@@ -436,7 +436,7 @@ jit_assemble(size=15): register map:
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -458,7 +458,7 @@ L1: // Loop body
     setp.lt.f32 %p7, %f5, %f6;
 
     // Load %r8
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r8, [%rd0];
 
@@ -466,7 +466,7 @@ L1: // Loop body
     mov.b32 %f9, 0x3f800000;
 
     // Load %rd10
-    ld.param.u64 %rd10, [in+16];
+    ld.param.u64 %rd10, [params+16];
     mad.wide.u32 %rd3, %r8, 4, %rd10;
     @%p7 red.global.add.f32 [%rd3], %f9;
 
@@ -557,7 +557,7 @@ jit_assemble(size=16): register map:
 .target sm_60
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
     .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
     .reg.pred %p <12>;
@@ -566,7 +566,7 @@ jit_assemble(size=16): register map:
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -588,7 +588,7 @@ L1: // Loop body
     setp.lt.f32 %p7, %f5, %f6;
 
     // Load %r8
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r8, [%rd0];
 
@@ -596,7 +596,7 @@ L1: // Loop body
     mov.b32 %f9, 0x3f800000;
 
     // Load %rd10
-    ld.param.u64 %rd10, [in+16];
+    ld.param.u64 %rd10, [params+16];
     mad.wide.u32 %rd3, %r8, 4, %rd10;
     @%p7 red.global.add.f32 [%rd3], %f9;
 
@@ -687,7 +687,7 @@ jit_assemble(size=15): register map:
 .target sm_60
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
     .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
     .reg.pred %p <12>;
@@ -696,7 +696,7 @@ jit_assemble(size=15): register map:
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -718,7 +718,7 @@ L1: // Loop body
     setp.lt.f64 %p7, %d5, %d6;
 
     // Load %r8
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r8, [%rd0];
 
@@ -726,7 +726,7 @@ L1: // Loop body
     mov.b64 %d9, 0x3ff0000000000000;
 
     // Load %rd10
-    ld.param.u64 %rd10, [in+16];
+    ld.param.u64 %rd10, [params+16];
     mad.wide.u32 %rd3, %r8, 8, %rd10;
     @%p7 red.global.add.f64 [%rd3], %d9;
 
@@ -817,7 +817,7 @@ jit_assemble(size=16): register map:
 .target sm_60
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <12>; .reg.b16 %w<12>; .reg.b32 %r<12>;
     .reg.b64  %rd<12>; .reg.f32 %f<12>; .reg.f64 %d<12>;
     .reg.pred %p <12>;
@@ -826,7 +826,7 @@ jit_assemble(size=16): register map:
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -848,7 +848,7 @@ L1: // Loop body
     setp.lt.f64 %p7, %d5, %d6;
 
     // Load %r8
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r8, [%rd0];
 
@@ -856,7 +856,7 @@ L1: // Loop body
     mov.b64 %d9, 0x3ff0000000000000;
 
     // Load %rd10
-    ld.param.u64 %rd10, [in+16];
+    ld.param.u64 %rd10, [params+16];
     mad.wide.u32 %rd3, %r8, 8, %rd10;
     @%p7 red.global.add.f64 [%rd3], %d9;
 
@@ -894,9 +894,9 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(52): 0
 jit_var_free(52)
 jit_free(<@>, type=device, device=0, size=128)
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 2 deallocations
 jit_shutdown(): releasing 4 kernels ..
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - host-pinned memory: 64 B in 1 allocation
  - device memory: 256 B in 3 allocations

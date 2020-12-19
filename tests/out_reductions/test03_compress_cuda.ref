@@ -463,8 +463,8 @@
 ===== size=560948, ones=452710 =====
 ===== size=560948, ones=504897 =====
 ===== size=560948, ones=560948 =====
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 1413 deallocations
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - host memory: 8 MiB in 17 allocations
  - host-pinned memory: 730 MiB in 1395 allocations

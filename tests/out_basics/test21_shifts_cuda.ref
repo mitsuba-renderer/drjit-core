@@ -60,7 +60,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[56]) {
+.entry enoki_<@>(.param .align 8 .b8 params[56]) {
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p <11>;
@@ -69,7 +69,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -79,7 +79,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 L1: // Loop body
 
     // Load %r4
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.u32 %r4, [%rd0];
 
@@ -90,7 +90,7 @@ L1: // Loop body
     shr.b32 %r6, %r4, %r5;
 
     // Store %r6
-    ld.param.u64 %rd0, [in+16];
+    ld.param.u64 %rd0, [params+16];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.u32 [%rd0], %r6;
 
@@ -98,12 +98,12 @@ L1: // Loop body
     shl.b32 %r7, %r4, %r5;
 
     // Store %r7
-    ld.param.u64 %rd0, [in+24];
+    ld.param.u64 %rd0, [params+24];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.u32 [%rd0], %r7;
 
     // Load %r8
-    ld.param.u64 %rd0, [in+32];
+    ld.param.u64 %rd0, [params+32];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     ld.global.cs.s32 %r8, [%rd0];
 
@@ -111,7 +111,7 @@ L1: // Loop body
     shr.s32 %r9, %r8, %r5;
 
     // Store %r9
-    ld.param.u64 %rd0, [in+40];
+    ld.param.u64 %rd0, [params+40];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.s32 [%rd0], %r9;
 
@@ -119,7 +119,7 @@ L1: // Loop body
     shl.b32 %r10, %r8, %r5;
 
     // Store %r10
-    ld.param.u64 %rd0, [in+48];
+    ld.param.u64 %rd0, [params+48];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.s32 [%rd0], %r10;
 
@@ -164,9 +164,9 @@ jit_free(<@>, type=device, device=0, size=64)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=device, device=0, size=64)
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 6 deallocations
 jit_shutdown(): releasing 1 kernel ..
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - host-pinned memory: 128 B in 2 allocations
  - device memory: 384 B in 6 allocations

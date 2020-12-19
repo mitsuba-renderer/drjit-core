@@ -55,8 +55,8 @@ jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 3 deallocations
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - host-async memory: 192 B in 3 allocations
 jit_shutdown(): done

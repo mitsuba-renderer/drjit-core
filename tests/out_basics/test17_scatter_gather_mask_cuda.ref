@@ -45,7 +45,7 @@ jit_malloc(type=device, device=0, size=1024): <@> (new allocation)
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[16]) {
+.entry enoki_<@>(.param .align 8 .b8 params[16]) {
     .reg.b8   %b <9>; .reg.b16 %w<9>; .reg.b32 %r<9>;
     .reg.b64  %rd<9>; .reg.f32 %f<9>; .reg.f64 %d<9>;
     .reg.pred %p <9>;
@@ -54,7 +54,7 @@ jit_malloc(type=device, device=0, size=1024): <@> (new allocation)
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -79,7 +79,7 @@ L1: // Loop body
     setp.ne.s32 %p8, %r6, %r7;
 
     // Store %p8: result
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 1, %rd0;
     selp.u16 %w0, 1, 0, %p8;
     st.global.cs.u8 [%rd0], %w0;
@@ -156,7 +156,7 @@ jit_malloc(type=device, device=0, size=512): <@> (new allocation)
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <9>; .reg.b16 %w<9>; .reg.b32 %r<9>;
     .reg.b64  %rd<9>; .reg.f32 %f<9>; .reg.f64 %d<9>;
     .reg.pred %p <9>;
@@ -165,7 +165,7 @@ jit_malloc(type=device, device=0, size=512): <@> (new allocation)
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -184,7 +184,7 @@ L1: // Loop body
     mul.lo.s32 %r6, %r4, %r5;
 
     // Load %rd7
-    ld.param.u64 %rd7, [in+8];
+    ld.param.u64 %rd7, [params+8];
 
     // Evaluate %p8: even
     mad.wide.s32 %rd3, %r6, 1, %rd7;
@@ -192,7 +192,7 @@ L1: // Loop body
     setp.ne.u16 %p8, %w0, 0;
 
     // Store %p8: even
-    ld.param.u64 %rd0, [in+16];
+    ld.param.u64 %rd0, [params+16];
     mad.wide.u32 %rd0, %r0, 1, %rd0;
     selp.u16 %w0, 1, 0, %p8;
     st.global.cs.u8 [%rd0], %w0;
@@ -224,7 +224,7 @@ jit_malloc(type=device, device=0, size=512): <@> (new allocation)
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[24]) {
+.entry enoki_<@>(.param .align 8 .b8 params[24]) {
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p <11>;
@@ -233,7 +233,7 @@ jit_malloc(type=device, device=0, size=512): <@> (new allocation)
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -258,7 +258,7 @@ L1: // Loop body
     add.s32 %r8, %r6, %r7;
 
     // Load %rd9
-    ld.param.u64 %rd9, [in+8];
+    ld.param.u64 %rd9, [params+8];
 
     // Evaluate %p10: odd
     mad.wide.s32 %rd3, %r8, 1, %rd9;
@@ -266,7 +266,7 @@ L1: // Loop body
     setp.ne.u16 %p10, %w0, 0;
 
     // Store %p10: odd
-    ld.param.u64 %rd0, [in+16];
+    ld.param.u64 %rd0, [params+16];
     mad.wide.u32 %rd0, %r0, 1, %rd0;
     selp.u16 %w0, 1, 0, %p10;
     st.global.cs.u8 [%rd0], %w0;
@@ -362,7 +362,7 @@ jit_assemble(size=510): register map:
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[32]) {
+.entry enoki_<@>(.param .align 8 .b8 params[32]) {
     .reg.b8   %b <14>; .reg.b16 %w<14>; .reg.b32 %r<14>;
     .reg.b64  %rd<14>; .reg.f32 %f<14>; .reg.f64 %d<14>;
     .reg.pred %p <14>;
@@ -371,7 +371,7 @@ jit_assemble(size=510): register map:
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -390,13 +390,13 @@ L1: // Loop body
     mul.lo.s32 %r6, %r4, %r5;
 
     // Load %p7: odd
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 1, %rd0;
     ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p7, %w0, 0;
 
     // Load %rd8
-    ld.param.u64 %rd8, [in+16];
+    ld.param.u64 %rd8, [params+16];
     mad.wide.s32 %rd3, %r6, 1, %rd8;
     selp.u16 %w0, 1, 0, %p7;
     st.global.u8 [%rd3], %w0;
@@ -408,7 +408,7 @@ L1: // Loop body
     add.s32 %r11, %r6, %r10;
 
     // Load %p12: even
-    ld.param.u64 %rd0, [in+24];
+    ld.param.u64 %rd0, [params+24];
     mad.wide.u32 %rd0, %r0, 1, %rd0;
     ld.global.cs.u8 %w0, [%rd0];
     setp.ne.u16 %p12, %w0, 0;
@@ -459,9 +459,9 @@ jit_var_free(5)
 jit_free(<@>, type=device, device=0, size=1024)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 3 deallocations
 jit_shutdown(): releasing 4 kernels ..
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - device memory: 2 KiB in 3 allocations
 jit_shutdown(): done

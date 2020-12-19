@@ -411,9 +411,9 @@ jit_var_dec_ref_ext(2): 0
 jit_var_free(2)
 jit_free(<@>, type=host-async, size=64)
 jit_free(<@>, type=host, size=128)
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 4 deallocations
 jit_shutdown(): releasing 1 kernel ..
+jit_shutdown(): releasing 1 thread state ..
 jit_registry_trim(): removed 4 / 4 entries.
 jit_malloc_trim(): freed
  - host memory: 128 B in 1 allocation

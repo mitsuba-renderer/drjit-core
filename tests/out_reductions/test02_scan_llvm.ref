@@ -598,9 +598,9 @@ jit_eval(): done.
 jit_eval(): launching 1 kernel.
   -> launching <@> (n=22316878, in=2, out=1, ops=3):
 jit_eval(): done.
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 4 deallocations
 jit_shutdown(): releasing 5 kernels ..
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - host-async memory: 512 MiB in 42 allocations
 jit_shutdown(): done

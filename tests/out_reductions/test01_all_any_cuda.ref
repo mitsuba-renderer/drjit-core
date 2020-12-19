@@ -298,9 +298,9 @@ jit_eval(): done.
 jit_eval(): launching 1 kernel.
   -> launching <@> (n=22316878, in=0, out=2, ops=6):
 jit_eval(): done.
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 807 deallocations
 jit_shutdown(): releasing 1 kernel ..
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - host-pinned memory: 50.3 KiB in 805 allocations
  - device memory: 128 MiB in 38 allocations

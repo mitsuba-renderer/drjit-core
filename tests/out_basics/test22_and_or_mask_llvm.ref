@@ -520,9 +520,9 @@ jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host-async, size=64)
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 6 deallocations
 jit_shutdown(): releasing 2 kernels ..
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - host-async memory: 640 B in 10 allocations
 jit_shutdown(): done

@@ -19,7 +19,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 .target sm_50
 .address_size 64
 
-.entry enoki_<@>(.param .align 8 .b8 in[16]) {
+.entry enoki_<@>(.param .align 8 .b8 params[16]) {
     .reg.b8   %b <7>; .reg.b16 %w<7>; .reg.b32 %r<7>;
     .reg.b64  %rd<7>; .reg.f32 %f<7>; .reg.f64 %d<7>;
     .reg.pred %p <7>;
@@ -28,7 +28,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
     mov.u32 %r1, %ntid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r0, %r0, %r1, %r2;
-    ld.param.u32 %r2, [in];
+    ld.param.u32 %r2, [params];
     setp.ge.u32 %p0, %r0, %r2;
     @%p0 bra L0;
 
@@ -47,7 +47,7 @@ L1: // Loop body
     sqrt.rn.ftz.f32 %f6, %f5;
 
     // Store %f6
-    ld.param.u64 %rd0, [in+8];
+    ld.param.u64 %rd0, [params+8];
     mad.wide.u32 %rd0, %r0, 4, %rd0;
     st.global.cs.f32 [%rd0], %f6;
 
@@ -68,9 +68,9 @@ value=[0, 1, 1.41421, 1.73205, 2, 2.23607, 2.44949, 2.64575, 2.82843, 3]
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
 jit_free(<@>, type=device, device=0, size=64)
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 1 deallocation
 jit_shutdown(): releasing 1 kernel ..
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - device memory: 64 B in 1 allocation
 jit_shutdown(): done

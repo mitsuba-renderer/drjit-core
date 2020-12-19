@@ -23,9 +23,9 @@ jit_eval(): launching 1 kernel.
   -> launching <@> (n=1, in=0, out=730, ops=1456):
 jit_eval(): done.
 value=[265356] vs 265356
-jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 730 deallocations
 jit_shutdown(): releasing 6 kernels ..
+jit_shutdown(): releasing 1 thread state ..
 jit_malloc_trim(): freed
  - host-async memory: 45.6 KiB in 730 allocations
 jit_shutdown(): done
