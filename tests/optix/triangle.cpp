@@ -170,12 +170,12 @@ void demo() {
     OptixShaderBindingTable sbt {};
 
     sbt.missRecordBase =
-        jitc_malloc(AllocType::Host, OPTIX_SBT_RECORD_HEADER_SIZE);
+        jitc_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
     sbt.missRecordStrideInBytes     = OPTIX_SBT_RECORD_HEADER_SIZE;
     sbt.missRecordCount             = 1;
 
     sbt.hitgroupRecordBase =
-        jitc_malloc(AllocType::Host, OPTIX_SBT_RECORD_HEADER_SIZE);
+        jitc_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
     sbt.hitgroupRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
     sbt.hitgroupRecordCount         = 1;
 
