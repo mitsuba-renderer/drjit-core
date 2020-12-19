@@ -588,25 +588,29 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
     );
 
     if (likely(!capture_ir)) {
-        buffer.fmt("    // Grid-stride loop, sm_%u\n",
-                   state.devices[ts->device].compute_capability);
+        if (likely(!uses_optix)) {
+            buffer.fmt("    // Grid-stride loop, sm_%u\n",
+                       state.devices[ts->device].compute_capability);
 
-        buffer.put("    mov.u32 %r0, %ctaid.x;\n");
-        buffer.put("    mov.u32 %r1, %ntid.x;\n");
-        buffer.put("    mov.u32 %r2, %tid.x;\n");
-        buffer.put("    mad.lo.u32 %r0, %r0, %r1, %r2;\n");
-        buffer.fmt("    ld.%s.u32 %%r2, [params];\n", uses_optix ? "const" : "param");
-        buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
-        buffer.put("    @%p0 bra L0;\n\n");
+            buffer.put("    mov.u32 %r0, %ctaid.x;\n");
+            buffer.put("    mov.u32 %r1, %ntid.x;\n");
+            buffer.put("    mov.u32 %r2, %tid.x;\n");
+            buffer.put("    mad.lo.u32 %r0, %r0, %r1, %r2;\n");
+            buffer.fmt("    ld.%s.u32 %%r2, [params];\n", uses_optix ? "const" : "param");
+            buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
+            buffer.put("    @%p0 bra L0;\n\n");
 
-        buffer.put("    mov.u32 %r3, %nctaid.x;\n");
-        buffer.put("    mul.lo.u32 %r1, %r3, %r1;\n");
-        if (!kernel_args_extra.empty())
-            buffer.fmt("    ld.%s.u64 %%rd2, [params+%u];\n",
-                       uses_optix ? "const" : "param",
-                       (CUDA_MAX_KERNEL_PARAMETERS - 1) * 8);
+            buffer.put("    mov.u32 %r3, %nctaid.x;\n");
+            buffer.put("    mul.lo.u32 %r1, %r3, %r1;\n");
+            if (!kernel_args_extra.empty())
+                buffer.fmt("    ld.%s.u64 %%rd2, [params+%u];\n",
+                           uses_optix ? "const" : "param",
+                           (CUDA_MAX_KERNEL_PARAMETERS - 1) * 8);
 
-        buffer.put("\nL1: // Loop body\n");
+            buffer.put("\nL1: // Loop body\n");
+        } else {
+            buffer.put("    call (%r0), _optix_get_launch_index_x, ();\n");
+        }
     }
 
     bool log_trace = std::max(state.log_level_stderr,
@@ -674,12 +678,14 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
     }
 
     if (likely(!capture_ir)) {
-        buffer.putc('\n');
-        buffer.put("    add.u32 %r0, %r0, %r1;\n");
-        buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
-        buffer.put("    @!%p0 bra L1;\n");
-        buffer.put("\n");
-        buffer.put("L0:\n");
+        if (likely(!uses_optix)) {
+            buffer.putc('\n');
+            buffer.put("    add.u32 %r0, %r0, %r1;\n");
+            buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
+            buffer.put("    @!%p0 bra L1;\n");
+            buffer.put("\n");
+            buffer.put("L0:\n");
+        }
         buffer.put("    ret;\n");
         buffer.put("}");
     }
