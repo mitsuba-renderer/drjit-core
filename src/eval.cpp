@@ -569,7 +569,7 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
     if (likely(!capture_ir)) {
         if (likely(!uses_optix)) {
             buffer.fmt(
-                ".entry enoki_^^^^^^^^^^^^^^^^(.param .align 8 .b8 in[%u]) {\n",
+                ".entry enoki_^^^^^^^^^^^^^^^^(.param .align 8 .b8 params[%u]) {\n",
                 (uint32_t) kernel_args.size() * 8);
         } else {
             buffer.fmt(
@@ -1325,6 +1325,7 @@ void jit_eval_ts(ThreadState *ts) {
         if (ts->cuda) {
             jit_free(kernel_args_dev);
             jit_free(kernel_args_extra_dev);
+            kernel_args_dev = kernel_args_extra_dev = nullptr;
         }
     }
 
@@ -1492,7 +1493,7 @@ const char *jit_capture(int cuda,
         offset_out = 1;
 
     buffer.fmt(".func (.param .align %u .b8 out[%u]) func_^^^^^^^^^^^^^^^^(.reg .u64 extra, .param .align "
-               "%u .b8 in[%u]) {\n",
+               "%u .b8 params[%u]) {\n",
                align_out, offset_out, align_in, offset_in);
 
     ScheduledGroup group(schedule.size(), 0, schedule.size());

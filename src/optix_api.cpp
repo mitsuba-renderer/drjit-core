@@ -309,7 +309,8 @@ OptixDeviceContext jit_optix_context() {
 }
 
 void jit_optix_context_destroy(ThreadState *ts) {
-    jit_optix_check(optixDeviceContextDestroy(ts->optix_context));
+    if (ts->optix_context)
+        jit_optix_check(optixDeviceContextDestroy(ts->optix_context));
 }
 
 void *jit_optix_lookup(const char *name) {

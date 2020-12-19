@@ -157,31 +157,35 @@ extern JITC_EXPORT void jitc_sync_all_devices();
  */
 enum class JitFlag : uint32_t {
     // Default (eager) execute loops and virtual function calls at once
-    Default = 0x0,
+    Default        = 0,
 
     // Record loops to postpone their evaluation
-    RecordLoops = 1,
+    RecordLoops    = 1,
+
+    // Status flag indicating that a loop is *currently* being recorded
+    RecordingLoop  = 2,
 
     // Record virtual function calls to postpone their evaluation
-    RecordVCalls = 2,
+    RecordVCalls   = 4,
 
-    // A loop is currently being recorded
-    RecordingLoop = 4,
-
-    // A virtual function call is currently being recorded
+    // Status flag indicating that a vcall call is *currently* being recorded
     RecordingVCall = 8,
+
+    // Record OptiX ray tracing operations
+    RecordOptiX    = 16,
 
     // A loop is currently being recorded
     Recording = (uint32_t) RecordingLoop | (uint32_t) RecordingVCall
-
 };
 #else
 enum JitFlag {
     JitFlagDefault = 0,
     JitFlagRecordLoops = 1,
-    JitFlagRecordVCall = 2,
-    JitFlagRecordingLoop = 4,
-    JitFlagRecordingVCall = 8
+    JitFlagRecordingLoop = 2,
+    JitFlagRecordVCall = 4,
+    JitFlagRecordingVCall = 8,
+    JitFlagRecordOptiX = 16,
+    JitFlagRecording = JitFlagRecordingLoop | JitFlagRecordingVCall
 };
 #endif
 

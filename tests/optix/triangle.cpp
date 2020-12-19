@@ -217,7 +217,7 @@ void demo() {
         Float mint = 0.f, maxt = 100.f, time = 0.f;
 
         UInt64 handle = ek::full<UInt64>(gas_handle, 1, /* eval = */ true);
-        UInt32 ray_mask(255), ray_flags(0), sbt_offset(0), sbt_stride(0),
+        UInt32 ray_mask(255), ray_flags(0), sbt_offset(0), sbt_stride(1),
             miss_sbt_index(0);
 
         UInt32 payload_0(0);

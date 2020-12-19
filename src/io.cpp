@@ -407,12 +407,12 @@ void jit_kernel_free(int device_id, const Kernel kernel) {
         if (munmap((void *) kernel.data, kernel.size) == -1)
             jit_fail("jit_kernel_free(): munmap() failed!");
 #else
-        if (VirtualFree((void*)kernel.data, 0, MEM_RELEASE) == 0)
+        if (VirtualFree((void*) kernel.data, 0, MEM_RELEASE) == 0)
             jit_fail("jit_kernel_free(): VirtualFree() failed!");
 #endif
     } else {
         const Device &device = state.devices.at(device_id);
-        if (kernel.data) {
+        if (kernel.size) {
             scoped_set_context guard(device.context);
             cuda_check(cuModuleUnload(kernel.cuda.mod));
             free(kernel.data);
