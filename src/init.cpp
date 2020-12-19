@@ -99,7 +99,7 @@ void jit_init(int llvm, int cuda) {
 #if !defined(_WIN32)
         if (mkdir(temp_path, 0700) == -1)
 #else
-        if (_wmkdir(temp_path_w, 0700) == -1)
+        if (_wmkdir(temp_path_w) == -1)
 #endif
             jit_fail("jit_init(): creation of directory \"%s\" failed: %s",
                 temp_path, strerror(errno));

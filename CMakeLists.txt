@@ -53,6 +53,7 @@ add_library(
   include/enoki-jit/cuda.h
   include/enoki-jit/llvm.h
 
+  src/common.h
   src/internal.h
   src/alloc.h
   src/hash.h

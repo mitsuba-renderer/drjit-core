@@ -4,7 +4,6 @@
 #include "log.h"
 #include "var.h"
 #include "internal.h"
-#include <unistd.h>
 
 #define OPTIX_ABI_VERSION 41
 
@@ -170,7 +169,7 @@ OptixResult (*optixSbtRecordPackHeader)(OptixProgramGroup, void*) = nullptr;
 #define jit_optix_check(err) jit_optix_check_impl((err), __FILE__, __LINE__)
 extern void jit_optix_check_impl(OptixResult errval, const char *file, const int line);
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
 void *jit_optix_win32_load_alternative();
 #endif
 
@@ -297,9 +296,10 @@ OptixDeviceContext jit_optix_context() {
 #if !defined(_WIN32)
     jit_optix_check(optixDeviceContextSetCacheLocation(ctx, jit_temp_path));
 #else
-    char path[PATH_MAX];
-    wcstombs(path, jit_temp_path, PATH_MAX);
-    jit_optix_check(optixDeviceContextSetCacheLocation(ctx, path));
+    size_t len = wcstombs(nullptr, jit_temp_path, 0) + 1;
+    std::unique_ptr<char[]> temp(new char[len]);
+    wcstombs(temp.get(), jit_temp_path, len);
+    jit_optix_check(optixDeviceContextSetCacheLocation(ctx, temp.get()));
 #endif
     jit_optix_check(optixDeviceContextSetCacheEnabled(ctx, 1));
 
@@ -567,23 +567,24 @@ void jitc_optix_check_impl(int errval, const char *file, const int line) {
  * we should also enumerate all of them and double-check there.
  */
 void *jit_optix_win32_load_alternative() {
-    const wchar_t *guid        = L"{4d36e968-e325-11ce-bfc1-08002be10318}",
-          wchar_t *suffix      = L"nvoptix.dll";
-          wchar_t *driver_name = L"OpenGLDriverName";
+    const char *guid        = "{4d36e968-e325-11ce-bfc1-08002be10318}",
+               *suffix      = "nvoptix.dll",
+               *driver_name = "OpenGLDriverName";
 
-    uint32_t size = 0,
-             flags = CM_GETIDLIST_FILTER_CLASS | CM_GETIDLIST_FILTER_PRESENT;
+    unsigned long size  = 0,
+                  flags = CM_GETIDLIST_FILTER_CLASS | CM_GETIDLIST_FILTER_PRESENT,
+                  suffix_len = strlen(suffix);
 
-    if (CM_Get_Device_ID_List_SizeW(&size, guid, flags))
+    if (CM_Get_Device_ID_List_SizeA(&size, guid, flags))
         return nullptr;
 
-    std::unique_ptr<wchar_t[]> dev_names(new wchar_t[size]);
-    if (CM_Get_Device_ID_ListW(guid, dev_names.get(), size, flags))
+    std::unique_ptr<char[]> dev_names(new char[size]);
+    if (CM_Get_Device_ID_ListA(guid, dev_names.get(), size, flags))
         return nullptr;
 
-    for (wchar_t *p = dev_names.get(); *p != '\0'; p += wcslen(p) + 1) {
-        uint32_t node_handle = 0;
-        if (CM_Locate_DevNodeW(&handle, p, CM_LOCATE_DEVNODE_NORMAL))
+    for (char *p = dev_names.get(); *p != '\0'; p += strlen(p) + 1) {
+        unsigned long node_handle = 0;
+        if (CM_Locate_DevNodeA(&node_handle, p, CM_LOCATE_DEVNODE_NORMAL))
             continue;
 
         HKEY reg_key = 0;
@@ -592,24 +593,25 @@ void *jit_optix_win32_load_alternative() {
                                 CM_REGISTRY_SOFTWARE))
             continue;
 
-        scoped_guard guard([reg_key]{ RegCloseKey(reg_key); });
+        auto guard = scope_guard([reg_key]{ RegCloseKey(reg_key); });
 
-        if (RegQueryValueExW(reg_key, driver_name, 0, 0, 0, &size))
+        if (RegQueryValueExA(reg_key, driver_name, 0, 0, 0, &size))
             continue;
 
-        std::unique_ptr<wchar_t[]> path = new wchar_t[size + wcslen(suffix)];
-        if (RegQueryValueExW(reg_key, driver_name, 0, 0, path.get(), &size))
+        std::unique_ptr<char[]> path(new char[size + suffix_len]);
+        if (RegQueryValueExA(reg_key, driver_name, 0, 0, (LPBYTE) path.get(), &size))
             continue;
 
-        for (int i = (int) size - 1; i >= 0 && path[i] != L'\\'; --i)
-            path[i] = L'\0';
+        for (int i = (int) size - 1; i >= 0 && path[i] != '\\'; --i)
+            path[i] = '\0';
 
-        wcsncat(path.get(), suffix, wcslen(suffix));
-        void* handle = (void *) LoadLibraryW(path.get());
+        strncat(path.get(), suffix, suffix_len);
+        void* handle = (void *) LoadLibraryA(path.get());
 
         if (handle)
             return handle;
     }
+    return nullptr;
 }
 
 #endif
