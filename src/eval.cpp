@@ -886,7 +886,8 @@ void jit_assemble(ThreadState *ts, ScheduledGroup group) {
             jit_fail("jit_assemble(): schedule contains variable %u with incompatible size "
                      "(%u and %u)!", index, v->size, group.size);
         else if (unlikely(v->data == nullptr && !v->direct_pointer && v->stmt == nullptr))
-            jit_fail("jit_assemble(): schedule contains variable %u with empty statement!", index);
+            jit_fail("jit_assemble(): schedule contains variable %u with empty statement! "
+                     "This issue can arise when a loop involving side effects is executed multiple times.", index);
 
         if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Trace) {
             buffer.clear();
