@@ -42,7 +42,7 @@ jit_assemble(size=15): register map:
    - %rd4 -> 5 [scalar] [direct_pointer]
    - %u5 -> 8 [scat]
   -> launching <@> (n=15, in=2, out=1, ops=6):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(64) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -211,7 +211,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(8): 0
@@ -278,7 +278,7 @@ jit_assemble(size=16): register map:
    - %rd4 -> 13 [scalar] [direct_pointer]
    - %u5 -> 16 [scat]
   -> launching <@> (n=16, in=2, out=1, ops=6):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(64) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -447,7 +447,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(16): 0
@@ -515,7 +515,7 @@ jit_assemble(size=15): register map:
    - %rd4 -> 21 [scalar] [direct_pointer]
    - %u5 -> 24 [scat]
   -> launching <@> (n=15, in=2, out=1, ops=6):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(64) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -684,7 +684,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(24): 0
@@ -752,7 +752,7 @@ jit_assemble(size=16): register map:
    - %rd4 -> 29 [scalar] [direct_pointer]
    - %u5 -> 32 [scat]
   -> launching <@> (n=16, in=2, out=1, ops=6):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(64) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -921,7 +921,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(32): 0
@@ -1007,7 +1007,7 @@ jit_assemble(size=15): register map:
    - %rd9 -> 40 [scalar] [direct_pointer]
    - %u10 -> 44 [scat]
   -> launching <@> (n=15, in=2, out=1, ops=11):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(64) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -1194,7 +1194,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(44): 0
@@ -1291,7 +1291,7 @@ jit_assemble(size=16): register map:
    - %rd9 -> 52 [scalar] [direct_pointer]
    - %u10 -> 56 [scat]
   -> launching <@> (n=16, in=2, out=1, ops=11):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(64) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -1478,7 +1478,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(56): 0
@@ -1575,7 +1575,7 @@ jit_assemble(size=15): register map:
    - %rd9 -> 64 [scalar] [direct_pointer]
    - %u10 -> 68 [scat]
   -> launching <@> (n=15, in=2, out=1, ops=11):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(64) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -1762,7 +1762,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(68): 0
@@ -1859,7 +1859,7 @@ jit_assemble(size=16): register map:
    - %rd9 -> 76 [scalar] [direct_pointer]
    - %u10 -> 80 [scat]
   -> launching <@> (n=16, in=2, out=1, ops=11):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(64) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -2046,7 +2046,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(80): 0

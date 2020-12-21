@@ -29,7 +29,7 @@ jit_assemble(size=1024): register map:
    - %r0 -> 1 [out]
 jit_malloc(type=host-async, size=4096): <@> (new allocation)
   -> launching <@> (n=1024, in=0, out=1, ops=1):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -66,7 +66,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 128 packets in 1 block ..
 jit_assemble(size=73): register map:
    - %r0 -> 2
@@ -76,7 +76,7 @@ jit_assemble(size=73): register map:
    - %r4 -> 6 [out]
 jit_malloc(type=host-async, size=512): <@> (new allocation)
   -> launching <@> (n=73, in=0, out=1, ops=5):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -127,7 +127,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 10 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(5): 0
@@ -177,7 +177,7 @@ jit_assemble(size=1024): register map:
    - %rd1 -> 8 [out]
 jit_malloc(type=host-async, size=8192): <@> (new allocation)
   -> launching <@> (n=1024, in=0, out=1, ops=2):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -217,7 +217,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 128 packets in 1 block ..
 jit_assemble(size=73): register map:
    - %r0 -> 9
@@ -228,7 +228,7 @@ jit_assemble(size=73): register map:
    - %rd5 -> 14 [out]
 jit_malloc(type=host-async, size=1024): <@> (new allocation)
   -> launching <@> (n=73, in=0, out=1, ops=6):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -282,7 +282,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 10 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(7): 0

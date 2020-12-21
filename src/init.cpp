@@ -340,11 +340,12 @@ ThreadState *jit_init_thread_state(bool cuda) {
             #endif
 
             delete ts;
-            jit_raise("jit_init_thread_state(): the CUDA backend is inactive "
-                      "because the CUDA driver library (\"%s\") could not be "
-                      "found! Set the ENOKI_LIBCUDA_PATH environment "
-                      "variable to specify its path.",
-                      cuda_fname);
+            jit_raise(
+                "jit_init_thread_state(): the CUDA backend is inactive because "
+                "it has not been initialized via jitc_init(), or because the "
+                "CUDA driver library (\"%s\") could not be found! Set the "
+                "ENOKI_LIBCUDA_PATH environment variable to specify its path.",
+                cuda_fname);
         }
 
         if (state.devices.empty()) {

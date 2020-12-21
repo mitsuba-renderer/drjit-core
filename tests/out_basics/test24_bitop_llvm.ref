@@ -45,20 +45,21 @@ jit_assemble(size=4): register map:
    - gl1 -> 5 [scalar]
    - gl2 -> 7 [scalar]
    - %r3 -> 1 [in]
-   - %r4 -> 4 [out]
+   - %r4 -> 2 [scalar]
+   - %r5 -> 4 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-   - %r5 -> 6 [out]
+   - %r6 -> 6 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-   - %r6 -> 8 [out]
+   - %r7 -> 8 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-  -> launching <@> (n=4, in=1, out=3, ops=7):
+  -> launching <@> (n=4, in=1, out=3, ops=8):
 declare <8 x i32> @llvm.ctpop.v8i32(<8 x i32>)
 
 declare <8 x i32> @llvm.ctlz.v8i32(<8 x i32>, i1)
 
 declare <8 x i32> @llvm.cttz.v8i32(<8 x i32>, i1)
 
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -91,28 +92,30 @@ loop:
     %r3 = load <8 x i32>, <8 x i32>* %r3_p, align 32, !alias.scope !1
 
     ; Evaluate %r4
-    %r4 = call <8 x i32> @llvm.ctpop.v8i32(<8 x i32> %r3)
-
-    ; Store %r4
-    %r4_i = getelementptr inbounds i32, i32* %a1, i32 %index
-    %r4_p = bitcast i32* %r4_i to <8 x i32>*
-    store <8 x i32> %r4, <8 x i32>* %r4_p, align 32, !noalias !1
 
     ; Evaluate %r5
-    %r5 = call <8 x i32> @llvm.ctlz.v8i32(<8 x i32> %r3, i1 0)
+    %r5 = call <8 x i32> @llvm.ctpop.v8i32(<8 x i32> %r3)
 
     ; Store %r5
-    %r5_i = getelementptr inbounds i32, i32* %a2, i32 %index
+    %r5_i = getelementptr inbounds i32, i32* %a1, i32 %index
     %r5_p = bitcast i32* %r5_i to <8 x i32>*
     store <8 x i32> %r5, <8 x i32>* %r5_p, align 32, !noalias !1
 
     ; Evaluate %r6
-    %r6 = call <8 x i32> @llvm.cttz.v8i32(<8 x i32> %r3, i1 0)
+    %r6 = call <8 x i32> @llvm.ctlz.v8i32(<8 x i32> %r3, i1 0)
 
     ; Store %r6
-    %r6_i = getelementptr inbounds i32, i32* %a3, i32 %index
+    %r6_i = getelementptr inbounds i32, i32* %a2, i32 %index
     %r6_p = bitcast i32* %r6_i to <8 x i32>*
     store <8 x i32> %r6, <8 x i32>* %r6_p, align 32, !noalias !1
+
+    ; Evaluate %r7
+    %r7 = call <8 x i32> @llvm.cttz.v8i32(<8 x i32> %r3, i1 0)
+
+    ; Store %r7
+    %r7_i = getelementptr inbounds i32, i32* %a3, i32 %index
+    %r7_p = bitcast i32* %r7_i to <8 x i32>*
+    store <8 x i32> %r7, <8 x i32>* %r7_p, align 32, !noalias !1
 
     br label %loop_suffix
 
@@ -129,7 +132,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 2

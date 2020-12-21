@@ -52,7 +52,7 @@ jit_malloc(type=host-async, size=64): <@> (new allocation)
    - %r6 -> 7 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
   -> launching <@> (n=2, in=2, out=4, ops=7):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -150,7 +150,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 1

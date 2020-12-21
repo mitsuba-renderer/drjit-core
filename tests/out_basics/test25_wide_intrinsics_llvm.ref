@@ -59,18 +59,19 @@ jit_assemble(size=64): register map:
    - %f3 -> 2
    - %f4 -> 3 [scalar]
    - %f5 -> 4
-   - %f6 -> 7 [out]
+   - %f6 -> 5 [scalar]
+   - %f7 -> 7 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-   - %f7 -> 9 [out]
+   - %f8 -> 9 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-   - %p8 -> 10 [out]
+   - %p9 -> 10 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-  -> launching <@> (n=64, in=0, out=3, ops=9):
+  -> launching <@> (n=64, in=0, out=3, ops=10):
 declare <8 x float> @llvm.x86.avx.max.ps.256(<8 x float>, <8 x float>)
 
 declare <32 x float> @llvm.fma.v32f32(<32 x float>, <32 x float>, <32 x float>)
 
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(128) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -108,53 +109,55 @@ loop:
     %f5 = fadd <32 x float> %f3, %f4
 
     ; Evaluate %f6
-    %f3_unroll_f6_0_0 = shufflevector <32 x float> %f3, <32 x float> undef, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
-    %f3_unroll_f6_0_1 = shufflevector <32 x float> %f3, <32 x float> undef, <16 x i32> <i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
-
-    %f3_unroll_f6_1_0 = shufflevector <16 x float> %f3_unroll_f6_0_0, <16 x float> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
-    %f3_unroll_f6_1_1 = shufflevector <16 x float> %f3_unroll_f6_0_0, <16 x float> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
-    %f3_unroll_f6_1_2 = shufflevector <16 x float> %f3_unroll_f6_0_1, <16 x float> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
-    %f3_unroll_f6_1_3 = shufflevector <16 x float> %f3_unroll_f6_0_1, <16 x float> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
-
-    %f5_unroll_f6_0_0 = shufflevector <32 x float> %f5, <32 x float> undef, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
-    %f5_unroll_f6_0_1 = shufflevector <32 x float> %f5, <32 x float> undef, <16 x i32> <i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
-
-    %f5_unroll_f6_1_0 = shufflevector <16 x float> %f5_unroll_f6_0_0, <16 x float> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
-    %f5_unroll_f6_1_1 = shufflevector <16 x float> %f5_unroll_f6_0_0, <16 x float> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
-    %f5_unroll_f6_1_2 = shufflevector <16 x float> %f5_unroll_f6_0_1, <16 x float> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
-    %f5_unroll_f6_1_3 = shufflevector <16 x float> %f5_unroll_f6_0_1, <16 x float> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
-
-    %f6_unroll_f6_1_0 = call <8 x float> @llvm.x86.avx.max.ps.256(<8 x float> %f3_unroll_f6_1_0, <8 x float> %f5_unroll_f6_1_0)
-    %f6_unroll_f6_1_1 = call <8 x float> @llvm.x86.avx.max.ps.256(<8 x float> %f3_unroll_f6_1_1, <8 x float> %f5_unroll_f6_1_1)
-    %f6_unroll_f6_1_2 = call <8 x float> @llvm.x86.avx.max.ps.256(<8 x float> %f3_unroll_f6_1_2, <8 x float> %f5_unroll_f6_1_2)
-    %f6_unroll_f6_1_3 = call <8 x float> @llvm.x86.avx.max.ps.256(<8 x float> %f3_unroll_f6_1_3, <8 x float> %f5_unroll_f6_1_3)
-
-    %f6_unroll_f6_0_0 = shufflevector <8 x float> %f6_unroll_f6_1_0, <8 x float> %f6_unroll_f6_1_1, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
-    %f6_unroll_f6_0_1 = shufflevector <8 x float> %f6_unroll_f6_1_2, <8 x float> %f6_unroll_f6_1_3, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
-
-    %f6 = shufflevector <16 x float> %f6_unroll_f6_0_0, <16 x float> %f6_unroll_f6_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
-
-    ; Store %f6
-    %f6_i = getelementptr inbounds float, float* %a0, i32 %index
-    %f6_p = bitcast float* %f6_i to <32 x float>*
-    store <32 x float> %f6, <32 x float>* %f6_p, align 128, !noalias !1
 
     ; Evaluate %f7
-    %f7 = call <32 x float> @llvm.fma.v32f32(<32 x float> %f3, <32 x float> %f5, <32 x float> %f6)
+    %f3_unroll_f7_0_0 = shufflevector <32 x float> %f3, <32 x float> undef, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+    %f3_unroll_f7_0_1 = shufflevector <32 x float> %f3, <32 x float> undef, <16 x i32> <i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
+
+    %f3_unroll_f7_1_0 = shufflevector <16 x float> %f3_unroll_f7_0_0, <16 x float> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %f3_unroll_f7_1_1 = shufflevector <16 x float> %f3_unroll_f7_0_0, <16 x float> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+    %f3_unroll_f7_1_2 = shufflevector <16 x float> %f3_unroll_f7_0_1, <16 x float> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %f3_unroll_f7_1_3 = shufflevector <16 x float> %f3_unroll_f7_0_1, <16 x float> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    %f5_unroll_f7_0_0 = shufflevector <32 x float> %f5, <32 x float> undef, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+    %f5_unroll_f7_0_1 = shufflevector <32 x float> %f5, <32 x float> undef, <16 x i32> <i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
+
+    %f5_unroll_f7_1_0 = shufflevector <16 x float> %f5_unroll_f7_0_0, <16 x float> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %f5_unroll_f7_1_1 = shufflevector <16 x float> %f5_unroll_f7_0_0, <16 x float> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+    %f5_unroll_f7_1_2 = shufflevector <16 x float> %f5_unroll_f7_0_1, <16 x float> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %f5_unroll_f7_1_3 = shufflevector <16 x float> %f5_unroll_f7_0_1, <16 x float> undef, <8 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    %f7_unroll_f7_1_0 = call <8 x float> @llvm.x86.avx.max.ps.256(<8 x float> %f3_unroll_f7_1_0, <8 x float> %f5_unroll_f7_1_0)
+    %f7_unroll_f7_1_1 = call <8 x float> @llvm.x86.avx.max.ps.256(<8 x float> %f3_unroll_f7_1_1, <8 x float> %f5_unroll_f7_1_1)
+    %f7_unroll_f7_1_2 = call <8 x float> @llvm.x86.avx.max.ps.256(<8 x float> %f3_unroll_f7_1_2, <8 x float> %f5_unroll_f7_1_2)
+    %f7_unroll_f7_1_3 = call <8 x float> @llvm.x86.avx.max.ps.256(<8 x float> %f3_unroll_f7_1_3, <8 x float> %f5_unroll_f7_1_3)
+
+    %f7_unroll_f7_0_0 = shufflevector <8 x float> %f7_unroll_f7_1_0, <8 x float> %f7_unroll_f7_1_1, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+    %f7_unroll_f7_0_1 = shufflevector <8 x float> %f7_unroll_f7_1_2, <8 x float> %f7_unroll_f7_1_3, <16 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15>
+
+    %f7 = shufflevector <16 x float> %f7_unroll_f7_0_0, <16 x float> %f7_unroll_f7_0_1, <32 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
 
     ; Store %f7
-    %f7_i = getelementptr inbounds float, float* %a1, i32 %index
+    %f7_i = getelementptr inbounds float, float* %a0, i32 %index
     %f7_p = bitcast float* %f7_i to <32 x float>*
     store <32 x float> %f7, <32 x float>* %f7_p, align 128, !noalias !1
 
-    ; Evaluate %p8
-    %p8 = fcmp oeq <32 x float> %f5, %f6
+    ; Evaluate %f8
+    %f8 = call <32 x float> @llvm.fma.v32f32(<32 x float> %f3, <32 x float> %f5, <32 x float> %f7)
 
-    ; Store %p8
-    %p8_i = getelementptr inbounds i8, i8* %a2, i32 %index
-    %p8_p = bitcast i8* %p8_i to <32 x i8>*
-    %p8_e = zext <32 x i1> %p8 to <32 x i8>
-    store <32 x i8> %p8_e, <32 x i8>* %p8_p, align 32, !noalias !1
+    ; Store %f8
+    %f8_i = getelementptr inbounds float, float* %a1, i32 %index
+    %f8_p = bitcast float* %f8_i to <32 x float>*
+    store <32 x float> %f8, <32 x float>* %f8_p, align 128, !noalias !1
+
+    ; Evaluate %p9
+    %p9 = fcmp oeq <32 x float> %f5, %f7
+
+    ; Store %p9
+    %p9_i = getelementptr inbounds i8, i8* %a2, i32 %index
+    %p9_p = bitcast i8* %p9_i to <32 x i8>*
+    %p9_e = zext <32 x i1> %p9 to <32 x i8>
+    store <32 x i8> %p9_e, <32 x i8>* %p9_p, align 32, !noalias !1
 
     br label %loop_suffix
 
@@ -171,7 +174,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="+avx2" }
+attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="+avx2" }
 jit_run(): scheduling 2 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(2): 2

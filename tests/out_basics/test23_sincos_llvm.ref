@@ -399,38 +399,39 @@ jit_assemble(size=10): register map:
    - %f30 -> 40
    - %f31 -> 50 [scalar]
    - %f32 -> 51 [scalar]
-   - %f33 -> 52
-   - %f34 -> 49 [scalar]
-   - %f35 -> 53
-   - %f36 -> 54
-   - %f37 -> 56 [scalar]
-   - %f38 -> 57 [scalar]
-   - %f39 -> 58
-   - %f40 -> 59
-   - %f41 -> 42 [scalar]
-   - %f42 -> 43 [scalar]
-   - %f43 -> 46
-   - %f44 -> 41 [scalar]
-   - %f45 -> 47
-   - %f46 -> 48
-   - %f47 -> 55
-   - %r48 -> 20 [scalar]
-   - %r49 -> 60
-   - %r50 -> 61 [scalar]
-   - %p51 -> 62
-   - %f52 -> 63
-   - %r53 -> 16 [scalar]
-   - %r54 -> 17
-   - %f55 -> 18
-   - %f56 -> 19
-   - %f57 -> 64 [scalar]
-   - %f58 -> 65
-   - %f59 -> 66 [out]
+   - %f33 -> 44 [scalar]
+   - %f34 -> 52
+   - %f35 -> 49 [scalar]
+   - %f36 -> 53
+   - %f37 -> 54
+   - %f38 -> 56 [scalar]
+   - %f39 -> 57 [scalar]
+   - %f40 -> 58
+   - %f41 -> 59
+   - %f42 -> 42 [scalar]
+   - %f43 -> 43 [scalar]
+   - %f44 -> 46
+   - %f45 -> 41 [scalar]
+   - %f46 -> 47
+   - %f47 -> 48
+   - %f48 -> 55
+   - %r49 -> 20 [scalar]
+   - %r50 -> 60
+   - %r51 -> 61 [scalar]
+   - %p52 -> 62
+   - %f53 -> 63
+   - %r54 -> 16 [scalar]
+   - %r55 -> 17
+   - %f56 -> 18
+   - %f57 -> 19
+   - %f58 -> 64 [scalar]
+   - %f59 -> 65
+   - %f60 -> 66 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-  -> launching <@> (n=10, in=0, out=1, ops=60):
+  -> launching <@> (n=10, in=0, out=1, ops=61):
 declare <8 x float> @llvm.fma.v8f32(<8 x float>, <8 x float>, <8 x float>)
 
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -558,109 +559,111 @@ loop:
     %f32 = shufflevector <8 x float> %f32_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f33
-    %f33 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f31, <8 x float> %f32)
 
     ; Evaluate %f34
-    %f34_0 = insertelement <8 x float> undef, float 0x3ef99eb9c0000000, i32 0
-    %f34 = shufflevector <8 x float> %f34_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f34 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f31, <8 x float> %f32)
 
     ; Evaluate %f35
-    %f35 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f34, <8 x float> %f33)
+    %f35_0 = insertelement <8 x float> undef, float 0x3ef99eb9c0000000, i32 0
+    %f35 = shufflevector <8 x float> %f35_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f36
-    %f36 = fmul <8 x float> %f35, %f29
+    %f36 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f35, <8 x float> %f34)
 
     ; Evaluate %f37
-    %f37_0 = insertelement <8 x float> undef, float 0xbfe0000000000000, i32 0
-    %f37 = shufflevector <8 x float> %f37_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f37 = fmul <8 x float> %f36, %f29
 
     ; Evaluate %f38
-    %f38_0 = insertelement <8 x float> undef, float 0x3ff0000000000000, i32 0
+    %f38_0 = insertelement <8 x float> undef, float 0xbfe0000000000000, i32 0
     %f38 = shufflevector <8 x float> %f38_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f39
-    %f39 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f37, <8 x float> %f38)
+    %f39_0 = insertelement <8 x float> undef, float 0x3ff0000000000000, i32 0
+    %f39 = shufflevector <8 x float> %f39_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f40
-    %f40 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f36, <8 x float> %f29, <8 x float> %f39)
+    %f40 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f38, <8 x float> %f39)
 
     ; Evaluate %f41
-    %f41_0 = insertelement <8 x float> undef, float 0x3f811073c0000000, i32 0
-    %f41 = shufflevector <8 x float> %f41_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f41 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f37, <8 x float> %f29, <8 x float> %f40)
 
     ; Evaluate %f42
-    %f42_0 = insertelement <8 x float> undef, float 0xbfc5555460000000, i32 0
+    %f42_0 = insertelement <8 x float> undef, float 0x3f811073c0000000, i32 0
     %f42 = shufflevector <8 x float> %f42_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f43
-    %f43 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f41, <8 x float> %f42)
+    %f43_0 = insertelement <8 x float> undef, float 0xbfc5555460000000, i32 0
+    %f43 = shufflevector <8 x float> %f43_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f44
-    %f44_0 = insertelement <8 x float> undef, float 0xbf29943f20000000, i32 0
-    %f44 = shufflevector <8 x float> %f44_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f44 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f42, <8 x float> %f43)
 
     ; Evaluate %f45
-    %f45 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f44, <8 x float> %f43)
+    %f45_0 = insertelement <8 x float> undef, float 0xbf29943f20000000, i32 0
+    %f45 = shufflevector <8 x float> %f45_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f46
-    %f46 = fmul <8 x float> %f45, %f29
+    %f46 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f45, <8 x float> %f44)
 
     ; Evaluate %f47
-    %f47 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f46, <8 x float> %f23, <8 x float> %f23)
+    %f47 = fmul <8 x float> %f46, %f29
 
-    ; Evaluate %r48
-    %r48_0 = insertelement <8 x i32> undef, i32 2, i32 0
-    %r48 = shufflevector <8 x i32> %r48_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    ; Evaluate %f48
+    %f48 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f47, <8 x float> %f23, <8 x float> %f23)
 
     ; Evaluate %r49
-    %r49 = and <8 x i32> %r13, %r48
+    %r49_0 = insertelement <8 x i32> undef, i32 2, i32 0
+    %r49 = shufflevector <8 x i32> %r49_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %r50
-    %r50_0 = insertelement <8 x i32> undef, i32 0, i32 0
-    %r50 = shufflevector <8 x i32> %r50_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r50 = and <8 x i32> %r13, %r49
 
-    ; Evaluate %p51
-    %p51 = icmp eq <8 x i32> %r49, %r50
+    ; Evaluate %r51
+    %r51_0 = insertelement <8 x i32> undef, i32 0, i32 0
+    %r51 = shufflevector <8 x i32> %r51_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
-    ; Evaluate %f52
-    %f52 = select <8 x i1> %p51, <8 x float> %f47, <8 x float> %f40
+    ; Evaluate %p52
+    %p52 = icmp eq <8 x i32> %r50, %r51
 
-    ; Evaluate %r53
-    %r53_0 = insertelement <8 x i32> undef, i32 29, i32 0
-    %r53 = shufflevector <8 x i32> %r53_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    ; Evaluate %f53
+    %f53 = select <8 x i1> %p52, <8 x float> %f48, <8 x float> %f41
 
     ; Evaluate %r54
-    %r54 = shl <8 x i32> %r13, %r53
+    %r54_0 = insertelement <8 x i32> undef, i32 29, i32 0
+    %r54 = shufflevector <8 x i32> %r54_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
-    ; Evaluate %f55
-    %f55 = bitcast <8 x i32> %r54 to <8 x float>
+    ; Evaluate %r55
+    %r55 = shl <8 x i32> %r13, %r54
 
     ; Evaluate %f56
-    %f56_0 = bitcast <8 x float> %f55 to <8 x i32>
-    %f56_1 = bitcast <8 x float> %f4 to <8 x i32>
-    %f56_2 = xor <8 x i32> %f56_0, %f56_1
-    %f56 = bitcast <8 x i32> %f56_2 to <8 x float>
+    %f56 = bitcast <8 x i32> %r55 to <8 x float>
 
     ; Evaluate %f57
-    %f57_0 = insertelement <8 x float> undef, float 0x8000000000000000, i32 0
-    %f57 = shufflevector <8 x float> %f57_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f57_0 = bitcast <8 x float> %f56 to <8 x i32>
+    %f57_1 = bitcast <8 x float> %f4 to <8 x i32>
+    %f57_2 = xor <8 x i32> %f57_0, %f57_1
+    %f57 = bitcast <8 x i32> %f57_2 to <8 x float>
 
     ; Evaluate %f58
-    %f58_0 = bitcast <8 x float> %f57 to <8 x i32>
-    %f58_1 = bitcast <8 x float> %f56 to <8 x i32>
-    %f58_2 = and <8 x i32> %f58_0, %f58_1
-    %f58 = bitcast <8 x i32> %f58_2 to <8 x float>
+    %f58_0 = insertelement <8 x float> undef, float 0x8000000000000000, i32 0
+    %f58 = shufflevector <8 x float> %f58_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f59
-    %f59_0 = bitcast <8 x float> %f52 to <8 x i32>
-    %f59_1 = bitcast <8 x float> %f58 to <8 x i32>
-    %f59_2 = xor <8 x i32> %f59_0, %f59_1
+    %f59_0 = bitcast <8 x float> %f58 to <8 x i32>
+    %f59_1 = bitcast <8 x float> %f57 to <8 x i32>
+    %f59_2 = and <8 x i32> %f59_0, %f59_1
     %f59 = bitcast <8 x i32> %f59_2 to <8 x float>
 
-    ; Store %f59
-    %f59_i = getelementptr inbounds float, float* %a0, i32 %index
-    %f59_p = bitcast float* %f59_i to <8 x float>*
-    store <8 x float> %f59, <8 x float>* %f59_p, align 32, !noalias !1
+    ; Evaluate %f60
+    %f60_0 = bitcast <8 x float> %f53 to <8 x i32>
+    %f60_1 = bitcast <8 x float> %f59 to <8 x i32>
+    %f60_2 = xor <8 x i32> %f60_0, %f60_1
+    %f60 = bitcast <8 x i32> %f60_2 to <8 x float>
+
+    ; Store %f60
+    %f60_i = getelementptr inbounds float, float* %a0, i32 %index
+    %f60_p = bitcast float* %f60_i to <8 x float>*
+    store <8 x float> %f60, <8 x float>* %f60_p, align 32, !noalias !1
 
     br label %loop_suffix
 
@@ -677,7 +680,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 2 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(63): 0
@@ -734,39 +737,40 @@ jit_assemble(size=10): register map:
    - %f30 -> 40
    - %f31 -> 50 [scalar]
    - %f32 -> 51 [scalar]
-   - %f33 -> 52
-   - %f34 -> 49 [scalar]
-   - %f35 -> 53
-   - %f36 -> 54
-   - %f37 -> 56 [scalar]
-   - %f38 -> 57 [scalar]
-   - %f39 -> 58
-   - %f40 -> 59
-   - %f41 -> 42 [scalar]
-   - %f42 -> 43 [scalar]
-   - %f43 -> 46
-   - %f44 -> 41 [scalar]
-   - %f45 -> 47
-   - %f46 -> 48
-   - %f47 -> 55
-   - %r48 -> 20 [scalar]
-   - %r49 -> 60
-   - %r50 -> 61 [scalar]
-   - %p51 -> 62
-   - %f52 -> 67
-   - %r53 -> 21
-   - %r54 -> 22
-   - %r55 -> 16 [scalar]
-   - %r56 -> 23
-   - %f57 -> 24
-   - %f58 -> 64 [scalar]
-   - %f59 -> 68
-   - %f60 -> 69 [out]
+   - %f33 -> 44 [scalar]
+   - %f34 -> 52
+   - %f35 -> 49 [scalar]
+   - %f36 -> 53
+   - %f37 -> 54
+   - %f38 -> 56 [scalar]
+   - %f39 -> 57 [scalar]
+   - %f40 -> 58
+   - %f41 -> 59
+   - %f42 -> 42 [scalar]
+   - %f43 -> 43 [scalar]
+   - %f44 -> 46
+   - %f45 -> 41 [scalar]
+   - %f46 -> 47
+   - %f47 -> 48
+   - %f48 -> 55
+   - %r49 -> 20 [scalar]
+   - %r50 -> 60
+   - %r51 -> 61 [scalar]
+   - %p52 -> 62
+   - %f53 -> 67
+   - %r54 -> 21
+   - %r55 -> 22
+   - %r56 -> 16 [scalar]
+   - %r57 -> 23
+   - %f58 -> 24
+   - %f59 -> 64 [scalar]
+   - %f60 -> 68
+   - %f61 -> 69 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-  -> launching <@> (n=10, in=0, out=1, ops=61):
+  -> launching <@> (n=10, in=0, out=1, ops=62):
 declare <8 x float> @llvm.fma.v8f32(<8 x float>, <8 x float>, <8 x float>)
 
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -894,109 +898,111 @@ loop:
     %f32 = shufflevector <8 x float> %f32_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f33
-    %f33 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f31, <8 x float> %f32)
 
     ; Evaluate %f34
-    %f34_0 = insertelement <8 x float> undef, float 0x3ef99eb9c0000000, i32 0
-    %f34 = shufflevector <8 x float> %f34_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f34 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f31, <8 x float> %f32)
 
     ; Evaluate %f35
-    %f35 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f34, <8 x float> %f33)
+    %f35_0 = insertelement <8 x float> undef, float 0x3ef99eb9c0000000, i32 0
+    %f35 = shufflevector <8 x float> %f35_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f36
-    %f36 = fmul <8 x float> %f35, %f29
+    %f36 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f35, <8 x float> %f34)
 
     ; Evaluate %f37
-    %f37_0 = insertelement <8 x float> undef, float 0xbfe0000000000000, i32 0
-    %f37 = shufflevector <8 x float> %f37_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f37 = fmul <8 x float> %f36, %f29
 
     ; Evaluate %f38
-    %f38_0 = insertelement <8 x float> undef, float 0x3ff0000000000000, i32 0
+    %f38_0 = insertelement <8 x float> undef, float 0xbfe0000000000000, i32 0
     %f38 = shufflevector <8 x float> %f38_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f39
-    %f39 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f37, <8 x float> %f38)
+    %f39_0 = insertelement <8 x float> undef, float 0x3ff0000000000000, i32 0
+    %f39 = shufflevector <8 x float> %f39_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f40
-    %f40 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f36, <8 x float> %f29, <8 x float> %f39)
+    %f40 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f38, <8 x float> %f39)
 
     ; Evaluate %f41
-    %f41_0 = insertelement <8 x float> undef, float 0x3f811073c0000000, i32 0
-    %f41 = shufflevector <8 x float> %f41_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f41 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f37, <8 x float> %f29, <8 x float> %f40)
 
     ; Evaluate %f42
-    %f42_0 = insertelement <8 x float> undef, float 0xbfc5555460000000, i32 0
+    %f42_0 = insertelement <8 x float> undef, float 0x3f811073c0000000, i32 0
     %f42 = shufflevector <8 x float> %f42_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f43
-    %f43 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f41, <8 x float> %f42)
+    %f43_0 = insertelement <8 x float> undef, float 0xbfc5555460000000, i32 0
+    %f43 = shufflevector <8 x float> %f43_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f44
-    %f44_0 = insertelement <8 x float> undef, float 0xbf29943f20000000, i32 0
-    %f44 = shufflevector <8 x float> %f44_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f44 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f29, <8 x float> %f42, <8 x float> %f43)
 
     ; Evaluate %f45
-    %f45 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f44, <8 x float> %f43)
+    %f45_0 = insertelement <8 x float> undef, float 0xbf29943f20000000, i32 0
+    %f45 = shufflevector <8 x float> %f45_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f46
-    %f46 = fmul <8 x float> %f45, %f29
+    %f46 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f30, <8 x float> %f45, <8 x float> %f44)
 
     ; Evaluate %f47
-    %f47 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f46, <8 x float> %f23, <8 x float> %f23)
+    %f47 = fmul <8 x float> %f46, %f29
 
-    ; Evaluate %r48
-    %r48_0 = insertelement <8 x i32> undef, i32 2, i32 0
-    %r48 = shufflevector <8 x i32> %r48_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    ; Evaluate %f48
+    %f48 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f47, <8 x float> %f23, <8 x float> %f23)
 
     ; Evaluate %r49
-    %r49 = and <8 x i32> %r13, %r48
+    %r49_0 = insertelement <8 x i32> undef, i32 2, i32 0
+    %r49 = shufflevector <8 x i32> %r49_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %r50
-    %r50_0 = insertelement <8 x i32> undef, i32 0, i32 0
-    %r50 = shufflevector <8 x i32> %r50_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r50 = and <8 x i32> %r13, %r49
 
-    ; Evaluate %p51
-    %p51 = icmp eq <8 x i32> %r49, %r50
+    ; Evaluate %r51
+    %r51_0 = insertelement <8 x i32> undef, i32 0, i32 0
+    %r51 = shufflevector <8 x i32> %r51_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
-    ; Evaluate %f52
-    %f52 = select <8 x i1> %p51, <8 x float> %f40, <8 x float> %f47
+    ; Evaluate %p52
+    %p52 = icmp eq <8 x i32> %r50, %r51
 
-    ; Evaluate %r53
-    %r53 = sub <8 x i32> %r13, %r48
+    ; Evaluate %f53
+    %f53 = select <8 x i1> %p52, <8 x float> %f41, <8 x float> %f48
 
     ; Evaluate %r54
-    %r54 = xor <8 x i32> %r53, <i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1>
+    %r54 = sub <8 x i32> %r13, %r49
 
     ; Evaluate %r55
-    %r55_0 = insertelement <8 x i32> undef, i32 29, i32 0
-    %r55 = shufflevector <8 x i32> %r55_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r55 = xor <8 x i32> %r54, <i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1>
 
     ; Evaluate %r56
-    %r56 = shl <8 x i32> %r54, %r55
+    %r56_0 = insertelement <8 x i32> undef, i32 29, i32 0
+    %r56 = shufflevector <8 x i32> %r56_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
-    ; Evaluate %f57
-    %f57 = bitcast <8 x i32> %r56 to <8 x float>
+    ; Evaluate %r57
+    %r57 = shl <8 x i32> %r55, %r56
 
     ; Evaluate %f58
-    %f58_0 = insertelement <8 x float> undef, float 0x8000000000000000, i32 0
-    %f58 = shufflevector <8 x float> %f58_0, <8 x float> undef, <8 x i32> zeroinitializer
+    %f58 = bitcast <8 x i32> %r57 to <8 x float>
 
     ; Evaluate %f59
-    %f59_0 = bitcast <8 x float> %f58 to <8 x i32>
-    %f59_1 = bitcast <8 x float> %f57 to <8 x i32>
-    %f59_2 = and <8 x i32> %f59_0, %f59_1
-    %f59 = bitcast <8 x i32> %f59_2 to <8 x float>
+    %f59_0 = insertelement <8 x float> undef, float 0x8000000000000000, i32 0
+    %f59 = shufflevector <8 x float> %f59_0, <8 x float> undef, <8 x i32> zeroinitializer
 
     ; Evaluate %f60
-    %f60_0 = bitcast <8 x float> %f52 to <8 x i32>
-    %f60_1 = bitcast <8 x float> %f59 to <8 x i32>
-    %f60_2 = xor <8 x i32> %f60_0, %f60_1
+    %f60_0 = bitcast <8 x float> %f59 to <8 x i32>
+    %f60_1 = bitcast <8 x float> %f58 to <8 x i32>
+    %f60_2 = and <8 x i32> %f60_0, %f60_1
     %f60 = bitcast <8 x i32> %f60_2 to <8 x float>
 
-    ; Store %f60
-    %f60_i = getelementptr inbounds float, float* %a0, i32 %index
-    %f60_p = bitcast float* %f60_i to <8 x float>*
-    store <8 x float> %f60, <8 x float>* %f60_p, align 32, !noalias !1
+    ; Evaluate %f61
+    %f61_0 = bitcast <8 x float> %f53 to <8 x i32>
+    %f61_1 = bitcast <8 x float> %f60 to <8 x i32>
+    %f61_2 = xor <8 x i32> %f61_0, %f61_1
+    %f61 = bitcast <8 x i32> %f61_2 to <8 x float>
+
+    ; Store %f61
+    %f61_i = getelementptr inbounds float, float* %a0, i32 %index
+    %f61_p = bitcast float* %f61_i to <8 x float>*
+    store <8 x float> %f61, <8 x float>* %f61_p, align 32, !noalias !1
 
     br label %loop_suffix
 
@@ -1013,7 +1019,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 2 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(67): 0

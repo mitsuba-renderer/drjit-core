@@ -41,7 +41,7 @@ jit_assemble(size=1022): register map:
    - %p4 -> 5 "result" [out]
 jit_malloc(type=host-async, size=1024): <@> (new allocation)
   -> launching <@> (n=1022, in=0, out=1, ops=5):
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -93,7 +93,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 128 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(3): 0
@@ -190,7 +190,7 @@ jit_malloc(type=host-async, size=512): <@> (new allocation)
   -> launching <@> (n=510, in=1, out=1, ops=8):
 declare <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*>, i32, <8 x i1>, <8 x i32>)
 
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -256,7 +256,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 64 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(10): 1
@@ -281,7 +281,7 @@ jit_malloc(type=host-async, size=512): <@> (new allocation)
   -> launching <@> (n=510, in=1, out=1, ops=10):
 declare <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*>, i32, <8 x i1>, <8 x i32>)
 
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -354,7 +354,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 64 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(10): 0
@@ -490,23 +490,24 @@ jit_assemble(size=510): register map:
    - gl0 -> 25 [scalar]
    - %r1 -> 26 [scalar]
    - %p2 -> 27 [scalar]
-   - %p3 -> 28 [scalar]
-   - %r4 -> 6 "l2"
-   - %r5 -> 19 [scalar]
-   - %r6 -> 20
-   - %p7 -> 18 "odd" [in]
-   - %b8 -> 23
-   - %rd9 -> 22 [scalar] [direct_pointer]
-   - %u10 -> 29 [scat]
-   - %r11 -> 30 [scalar]
-   - %r12 -> 31
-   - %p13 -> 14 "even" [in]
-   - %b14 -> 33
-   - %u15 -> 34 [scat]
-  -> launching <@> (n=510, in=3, out=2, ops=16):
+   - %b3 -> 24 [scalar]
+   - %p4 -> 28 [scalar]
+   - %r5 -> 6 "l2"
+   - %r6 -> 19 [scalar]
+   - %r7 -> 20
+   - %p8 -> 18 "odd" [in]
+   - %b9 -> 23
+   - %rd10 -> 22 [scalar] [direct_pointer]
+   - %u11 -> 29 [scat]
+   - %r12 -> 30 [scalar]
+   - %r13 -> 31
+   - %p14 -> 14 "even" [in]
+   - %b15 -> 33
+   - %u16 -> 34 [scat]
+  -> launching <@> (n=510, in=3, out=2, ops=17):
 declare void @llvm.masked.scatter.v8i8(<8 x i8>, <8 x i8*>, i32, <8 x i1>)
 
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -516,7 +517,7 @@ entry:
 
     ; Prepare argument 1
     %a1_i = getelementptr inbounds i8*, i8** %ptrs, i32 1
-    %rd9 = load i8*, i8** %a1_i, align 8, !alias.scope !1
+    %rd10 = load i8*, i8** %a1_i, align 8, !alias.scope !1
 
     ; Prepare argument 2
     %a2_i = getelementptr inbounds i8*, i8** %ptrs, i32 2
@@ -537,51 +538,53 @@ loop:
     %p2_1 = shufflevector <8 x i32> %p2_0, <8 x i32> undef, <8 x i32> zeroinitializer
     %p2 = icmp ult <8 x i32> %r1, %p2_1
 
-    ; Evaluate %p3
-    %p3 = bitcast <8 x i1> %p2 to <8 x i1>
+    ; Evaluate %b3
 
-    ; Evaluate %r4: l2
-    %r4_0 = insertelement <8 x i32> undef, i32 %index, i32 0
-    %r4_1 = shufflevector <8 x i32> %r4_0, <8 x i32> undef, <8 x i32> zeroinitializer
-    %r4 = add <8 x i32> %r4_1, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    ; Evaluate %p4
+    %p4 = bitcast <8 x i1> %p2 to <8 x i1>
 
-    ; Evaluate %r5
-    %r5_0 = insertelement <8 x i32> undef, i32 2, i32 0
-    %r5 = shufflevector <8 x i32> %r5_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    ; Evaluate %r5: l2
+    %r5_0 = insertelement <8 x i32> undef, i32 %index, i32 0
+    %r5_1 = shufflevector <8 x i32> %r5_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    %r5 = add <8 x i32> %r5_1, <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
 
     ; Evaluate %r6
-    %r6 = mul <8 x i32> %r4, %r5
+    %r6_0 = insertelement <8 x i32> undef, i32 2, i32 0
+    %r6 = shufflevector <8 x i32> %r6_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
-    ; Load %p7: odd
-    %p7_i = getelementptr inbounds i8, i8* %a0, i32 %index
-    %p7_p = bitcast i8* %p7_i to <8 x i8>*
-    %p7_z = load <8 x i8>, <8 x i8>* %p7_p, align 8, !alias.scope !1
-    %p7 = trunc <8 x i8> %p7_z to <8 x i1>
+    ; Evaluate %r7
+    %r7 = mul <8 x i32> %r5, %r6
 
-    ; Evaluate %b8
-    %b8 = zext <8 x i1> %p7 to <8 x i8>
-    %u10_0 = bitcast i8* %rd9 to i8*
-    %u10_1 = getelementptr i8, i8* %u10_0, <8 x i32> %r6
-    call void @llvm.masked.scatter.v8i8(<8 x i8> %b8, <8 x i8*> %u10_1, i32 8, <8 x i1> %p3)
+    ; Load %p8: odd
+    %p8_i = getelementptr inbounds i8, i8* %a0, i32 %index
+    %p8_p = bitcast i8* %p8_i to <8 x i8>*
+    %p8_z = load <8 x i8>, <8 x i8>* %p8_p, align 8, !alias.scope !1
+    %p8 = trunc <8 x i8> %p8_z to <8 x i1>
 
-    ; Evaluate %r11
-    %r11_0 = insertelement <8 x i32> undef, i32 1, i32 0
-    %r11 = shufflevector <8 x i32> %r11_0, <8 x i32> undef, <8 x i32> zeroinitializer
+    ; Evaluate %b9
+    %b9 = zext <8 x i1> %p8 to <8 x i8>
+    %u11_0 = bitcast i8* %rd10 to i8*
+    %u11_1 = getelementptr i8, i8* %u11_0, <8 x i32> %r7
+    call void @llvm.masked.scatter.v8i8(<8 x i8> %b9, <8 x i8*> %u11_1, i32 8, <8 x i1> %p4)
 
     ; Evaluate %r12
-    %r12 = add <8 x i32> %r6, %r11
+    %r12_0 = insertelement <8 x i32> undef, i32 1, i32 0
+    %r12 = shufflevector <8 x i32> %r12_0, <8 x i32> undef, <8 x i32> zeroinitializer
 
-    ; Load %p13: even
-    %p13_i = getelementptr inbounds i8, i8* %a2, i32 %index
-    %p13_p = bitcast i8* %p13_i to <8 x i8>*
-    %p13_z = load <8 x i8>, <8 x i8>* %p13_p, align 8, !alias.scope !1
-    %p13 = trunc <8 x i8> %p13_z to <8 x i1>
+    ; Evaluate %r13
+    %r13 = add <8 x i32> %r7, %r12
 
-    ; Evaluate %b14
-    %b14 = zext <8 x i1> %p13 to <8 x i8>
-    %u15_0 = bitcast i8* %rd9 to i8*
-    %u15_1 = getelementptr i8, i8* %u15_0, <8 x i32> %r12
-    call void @llvm.masked.scatter.v8i8(<8 x i8> %b14, <8 x i8*> %u15_1, i32 8, <8 x i1> %p3)
+    ; Load %p14: even
+    %p14_i = getelementptr inbounds i8, i8* %a2, i32 %index
+    %p14_p = bitcast i8* %p14_i to <8 x i8>*
+    %p14_z = load <8 x i8>, <8 x i8>* %p14_p, align 8, !alias.scope !1
+    %p14 = trunc <8 x i8> %p14_z to <8 x i1>
+
+    ; Evaluate %b15
+    %b15 = zext <8 x i1> %p14 to <8 x i8>
+    %u16_0 = bitcast i8* %rd10 to i8*
+    %u16_1 = getelementptr i8, i8* %u16_0, <8 x i32> %r13
+    call void @llvm.masked.scatter.v8i8(<8 x i8> %b15, <8 x i8*> %u16_1, i32 8, <8 x i1> %p4)
 
     br label %loop_suffix
 
@@ -598,7 +601,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 64 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(29): 0

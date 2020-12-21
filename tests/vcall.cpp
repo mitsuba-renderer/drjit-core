@@ -3,44 +3,26 @@
 #include <memory>
 #include <vector>
 
-using Float  = CUDAArray<float>;
-using UInt32 = CUDAArray<uint32_t>;
-
-Float global;
-
-struct Base {
-    virtual std::pair<Float, Float> func(Float x, Float y) = 0;
-};
-
-struct Class1 : Base {
-    std::pair<Float, Float> func(Float x, Float y) override {
-        scatter(global, y, UInt32(5));
-        return { x + y, fmadd(x, y, y) };
-    }
-};
-
-struct Class2 : Base {
-    std::pair<Float, Float> func(Float x, Float y) override {
-        return { x * y, x - y };
-    }
-};
-
+template <typename Float>
 void read_indices(uint32_t *out, uint32_t &index, const Float &value) {
     if (out)
         out[index] = value.index();
     index += 1;
 }
 
+template <typename Float>
 void write_indices(const uint32_t *out, uint32_t &index, Float &value) {
     value = Float::steal(out[index++]);
 }
 
+template <typename Float>
 void read_indices(uint32_t *out, uint32_t &index,
                   const std::pair<Float, Float> &value) {
     read_indices(out, index, value.first);
     read_indices(out, index, value.second);
 }
 
+template <typename Float>
 void write_indices(const uint32_t *out, uint32_t &index,
                    std::pair<Float, Float> &value) {
     write_indices(out, index, value.first);
@@ -77,10 +59,10 @@ bool record(int cuda, uint32_t &id, uint64_t &hash, std::vector<uint32_t> &extra
     return se_total != 0;
 }
 
-template <typename... Args>
+template <typename Base, typename Float, typename UInt32, typename... Args>
 auto vcall(const char *domain, UInt32 self, const Args &... args) {
     using Result = std::pair<Float, Float>;
-    int cuda     = 1;
+    int cuda     = Float::IsCUDA;
 
     uint32_t n_inst = jitc_registry_get_max(domain) + 1;
 
@@ -132,20 +114,39 @@ auto vcall(const char *domain, UInt32 self, const Args &... args) {
     return result;
 }
 
-TEST_CUDA(01_symbolic_vcall) {
-    global = arange<Float>(10);
+TEST_BOTH(01_symbolic_vcall) {
+    struct Base {
+        virtual std::pair<Float, Float> func(Float x, Float y) = 0;
+    };
+
+    struct Class1 : Base {
+        Class1(Float &global) : global(global) { }
+        std::pair<Float, Float> func(Float x, Float y) override {
+            scatter(global, y, UInt32(5));
+            return { x + y, fmadd(x, y, y) };
+        }
+        Float global;
+    };
+
+    struct Class2 : Base {
+        std::pair<Float, Float> func(Float x, Float y) override {
+            return { x * y, x - y };
+        }
+    };
+
+    Float global = arange<Float>(10);
     jitc_eval(global);
     jitc_enable_flag(JitFlag::RecordVCalls);
 
-    Class1 c1;
+    Class1 c1(global);
     Class2 c2;
 
     uint32_t i1 = jitc_registry_put("Base", &c1);
     uint32_t i2 = jitc_registry_put("Base", &c2);
 
     Float x = 1, y = 2;
-    UInt32 inst                    = arange<UInt32>(3);
-    std::pair<Float, Float> result = vcall("Base", inst, x, y);
+    UInt32 inst = arange<UInt32>(3);
+    std::pair<Float, Float> result = vcall<Base, Float, UInt32>("Base", inst, x, y);
     jitc_disable_flag(JitFlag::RecordVCalls);
     jitc_eval(result.first, result.second);
     jitc_assert(result.first == Float(0, 3, 2));

@@ -21,12 +21,13 @@ jit_assemble(size=10): register map:
    - gl0 -> 4 [scalar]
    - %r1 -> 1
    - %f2 -> 2
-   - %f3 -> 5 [out]
+   - %f3 -> 3 [scalar]
+   - %f4 -> 5 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-  -> launching <@> (n=10, in=0, out=1, ops=4):
+  -> launching <@> (n=10, in=0, out=1, ops=5):
 declare <8 x float> @llvm.sqrt.v8f32(<8 x float>)
 
-define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
+define void @enoki_<@>(i32 %start, i32 %end, i8** noalias %ptrs) #0 {
 entry:
 
     ; Prepare argument 0
@@ -47,12 +48,14 @@ loop:
     %f2 = uitofp <8 x i32> %r1 to <8 x float>
 
     ; Evaluate %f3
-    %f3 = call <8 x float> @llvm.sqrt.v8f32(<8 x float> %f2)
 
-    ; Store %f3
-    %f3_i = getelementptr inbounds float, float* %a0, i32 %index
-    %f3_p = bitcast float* %f3_i to <8 x float>*
-    store <8 x float> %f3, <8 x float>* %f3_p, align 32, !noalias !1
+    ; Evaluate %f4
+    %f4 = call <8 x float> @llvm.sqrt.v8f32(<8 x float> %f2)
+
+    ; Store %f4
+    %f4_i = getelementptr inbounds float, float* %a0, i32 %index
+    %f4_p = bitcast float* %f4_i to <8 x float>*
+    store <8 x float> %f4, <8 x float>* %f4_p, align 32, !noalias !1
 
     br label %loop_suffix
 
@@ -69,7 +72,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 2 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(2): 0
