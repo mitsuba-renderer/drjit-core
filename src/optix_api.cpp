@@ -477,9 +477,11 @@ void jit_optix_trace(uint32_t nargs, uint32_t *args) {
     }
 
     buf.clear();
+    for (uint32_t i = 15; i < nargs; ++i)
+        buf.fmt(".reg.u32 $r1_%u$n", i + nargs - 15);
     buf.put("call (");
     for (uint32_t i = 15; i < nargs; ++i)
-        buf.fmt("$r1_%u%s", i, i + 1 < nargs ? ", " : "");
+        buf.fmt("$r1_%u%s", i + nargs - 15, i + 1 < nargs ? ", " : "");
     buf.fmt("), _optix_trace_%u, (", nargs - 15);
     for (uint32_t i = 0; i < nargs; ++i)
         buf.fmt("$r1_%u%s", i, i + 1 < nargs ? ", " : "");
@@ -493,7 +495,7 @@ void jit_optix_trace(uint32_t nargs, uint32_t *args) {
 
     for (uint32_t i = 15; i < nargs; ++i) {
         buf.clear();
-        buf.fmt("mov.b32 $r0, $r1_%u", i);
+        buf.fmt("mov.b32 $r0, $r1_%u", i + nargs - 15);
         args[i] = jit_var_new_2(1, (VarType) jit_var_type(args[i]), buf.get(), 0, decl, index);
     }
 
