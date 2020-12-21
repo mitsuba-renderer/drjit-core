@@ -2,48 +2,114 @@ jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map_mem(1): <@>, size=6, free=1
 jit_var_inc_ref_ext(1): 1
 jit_var_copy_mem(1, size=6)
-jit_var_inc_ref_int(1): 1
-jit_var_new(2 <- 1): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
+jit_var_new(2): 
 jit_var_inc_ref_ext(2): 1
-jit_var_inc_ref_int(1): 2
-jit_var_new(3 <- 1): $r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)
-jit_var_inc_ref_ext(3): 1
-jit_var_inc_ref_int(1): 3
-jit_var_new(4 <- 1): $r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)
-jit_var_inc_ref_ext(4): 1
-jit_var_inc_ref_int(1): 4
-jit_var_new(5 <- 1): $r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)
-jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(2): 1
+jit_var_dec_ref_ext(2): 0
+jit_var_new(3 <- 2, 0, 0, 0): declare <$w x $t1> @llvm.floor.v$w$a1(<$w x $t1>)
+jit_var_inc_ref_ext(3): 1
+jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(3): 1
-jit_var_new(6 <- 2, 3): $r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
-jit_var_inc_ref_ext(6): 1
+jit_var_new(4 <- 1, 3): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
+jit_var_inc_ref_ext(4): 1
+jit_var_dec_ref_ext(3): 0
+jit_var_new(2):  (reused)
+jit_var_inc_ref_ext(2): 1
 jit_var_inc_ref_int(2): 2
-jit_var_inc_ref_int(3): 2
-jit_var_new(7 <- 2, 3): $r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_dec_ref_ext(2): 0
+jit_var_new(5 <- 2, 0, 0, 0): declare <$w x $t1> @llvm.ceil.v$w$a1(<$w x $t1>)
+jit_var_inc_ref_ext(5): 1
+jit_var_inc_ref_int(1): 2
+jit_var_inc_ref_int(5): 1
+jit_var_new(6 <- 1, 5): $r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)
+jit_var_inc_ref_ext(6): 1
+jit_var_dec_ref_ext(5): 0
+jit_var_new(2):  (reused)
+jit_var_inc_ref_ext(2): 1
+jit_var_inc_ref_int(2): 3
+jit_var_dec_ref_ext(2): 0
+jit_var_new(7 <- 2, 0, 0, 0): declare <$w x $t1> @llvm.trunc.v$w$a1(<$w x $t1>)
 jit_var_inc_ref_ext(7): 1
-jit_var_schedule(2)
-jit_var_schedule(3)
+jit_var_inc_ref_int(1): 3
+jit_var_inc_ref_int(7): 1
+jit_var_new(8 <- 1, 7): $r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)
+jit_var_inc_ref_ext(8): 1
+jit_var_dec_ref_ext(7): 0
+jit_var_new(2):  (reused)
+jit_var_inc_ref_ext(2): 1
+jit_var_inc_ref_int(2): 4
+jit_var_dec_ref_ext(2): 0
+jit_var_new(9 <- 2, 0, 0, 0): declare <$w x $t1> @llvm.nearbyint.v$w$a1(<$w x $t1>)
+jit_var_inc_ref_ext(9): 1
+jit_var_inc_ref_int(1): 4
+jit_var_inc_ref_int(9): 1
+jit_var_new(10 <- 1, 9): $r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)
+jit_var_inc_ref_ext(10): 1
+jit_var_dec_ref_ext(9): 0
+jit_var_new(2):  (reused)
+jit_var_inc_ref_ext(2): 1
+jit_var_inc_ref_int(2): 5
+jit_var_dec_ref_ext(2): 0
+jit_var_new(11 <- 2, 0, 0, 0): declare <$w x $t1> @llvm.minnum.v$w$a1(<$w x $t1>, <$w x $t1>)
+jit_var_inc_ref_ext(11): 1
+jit_var_inc_ref_int(4): 1
+jit_var_inc_ref_int(6): 1
+jit_var_inc_ref_int(11): 1
+jit_var_new(12 <- 4, 6, 11): $r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_inc_ref_ext(12): 1
+jit_var_dec_ref_ext(11): 0
+jit_var_new(2):  (reused)
+jit_var_inc_ref_ext(2): 1
+jit_var_inc_ref_int(2): 6
+jit_var_dec_ref_ext(2): 0
+jit_var_new(13 <- 2, 0, 0, 0): declare <$w x $t1> @llvm.maxnum.v$w$a1(<$w x $t1>, <$w x $t1>)
+jit_var_inc_ref_ext(13): 1
+jit_var_inc_ref_int(4): 2
+jit_var_inc_ref_int(6): 2
+jit_var_inc_ref_int(13): 1
+jit_var_new(14 <- 4, 6, 13): $r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_inc_ref_ext(14): 1
+jit_var_dec_ref_ext(13): 0
 jit_var_schedule(4)
-jit_var_schedule(5)
 jit_var_schedule(6)
-jit_var_schedule(7)
+jit_var_schedule(8)
+jit_var_schedule(10)
+jit_var_schedule(12)
+jit_var_schedule(14)
 jit_eval(): launching 1 kernel.
 jit_assemble(size=6): register map:
-   - %f0 -> 1 [in]
-   - %f1 -> 2 [out]
+   - gl0 -> 3 [scalar]
+   - gl1 -> 5 [scalar]
+   - gl2 -> 7 [scalar]
+   - gl3 -> 9 [scalar]
+   - gl4 -> 11 [scalar]
+   - gl5 -> 13 [scalar]
+   - %f6 -> 1 [in]
+   - %f7 -> 4 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-   - %f2 -> 3 [out]
+   - %f8 -> 6 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-   - %f3 -> 4 [out]
+   - %f9 -> 8 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-   - %f4 -> 5 [out]
+   - %f10 -> 10 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-   - %f5 -> 6 [out]
+   - %f11 -> 12 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-   - %f6 -> 7 [out]
+   - %f12 -> 14 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-  -> launching <@> (n=6, in=1, out=6, ops=7):
+  -> launching <@> (n=6, in=1, out=6, ops=13):
+declare <8 x float> @llvm.floor.v8f32(<8 x float>)
+
+declare <8 x float> @llvm.ceil.v8f32(<8 x float>)
+
+declare <8 x float> @llvm.trunc.v8f32(<8 x float>)
+
+declare <8 x float> @llvm.nearbyint.v8f32(<8 x float>)
+
+declare <8 x float> @llvm.minnum.v8f32(<8 x float>, <8 x float>)
+
+declare <8 x float> @llvm.maxnum.v8f32(<8 x float>, <8 x float>)
+
 define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
@@ -86,58 +152,58 @@ entry:
 loop:
     %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
-    ; Load %f0
-    %f0_i = getelementptr inbounds float, float* %a0, i32 %index
-    %f0_p = bitcast float* %f0_i to <8 x float>*
-    %f0 = load <8 x float>, <8 x float>* %f0_p, align 32, !alias.scope !1
-
-    ; Evaluate %f1
-    %f1 = call <8 x float> @llvm.floor.v8f32(<8 x float> %f0)
-
-    ; Store %f1
-    %f1_i = getelementptr inbounds float, float* %a1, i32 %index
-    %f1_p = bitcast float* %f1_i to <8 x float>*
-    store <8 x float> %f1, <8 x float>* %f1_p, align 32, !noalias !1
-
-    ; Evaluate %f2
-    %f2 = call <8 x float> @llvm.ceil.v8f32(<8 x float> %f0)
-
-    ; Store %f2
-    %f2_i = getelementptr inbounds float, float* %a2, i32 %index
-    %f2_p = bitcast float* %f2_i to <8 x float>*
-    store <8 x float> %f2, <8 x float>* %f2_p, align 32, !noalias !1
-
-    ; Evaluate %f3
-    %f3 = call <8 x float> @llvm.trunc.v8f32(<8 x float> %f0)
-
-    ; Store %f3
-    %f3_i = getelementptr inbounds float, float* %a3, i32 %index
-    %f3_p = bitcast float* %f3_i to <8 x float>*
-    store <8 x float> %f3, <8 x float>* %f3_p, align 32, !noalias !1
-
-    ; Evaluate %f4
-    %f4 = call <8 x float> @llvm.nearbyint.v8f32(<8 x float> %f0)
-
-    ; Store %f4
-    %f4_i = getelementptr inbounds float, float* %a4, i32 %index
-    %f4_p = bitcast float* %f4_i to <8 x float>*
-    store <8 x float> %f4, <8 x float>* %f4_p, align 32, !noalias !1
-
-    ; Evaluate %f5
-    %f5 = call <8 x float> @llvm.minnum.v8f32(<8 x float> %f1, <8 x float> %f2)
-
-    ; Store %f5
-    %f5_i = getelementptr inbounds float, float* %a5, i32 %index
-    %f5_p = bitcast float* %f5_i to <8 x float>*
-    store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
-
-    ; Evaluate %f6
-    %f6 = call <8 x float> @llvm.maxnum.v8f32(<8 x float> %f1, <8 x float> %f2)
-
-    ; Store %f6
-    %f6_i = getelementptr inbounds float, float* %a6, i32 %index
+    ; Load %f6
+    %f6_i = getelementptr inbounds float, float* %a0, i32 %index
     %f6_p = bitcast float* %f6_i to <8 x float>*
-    store <8 x float> %f6, <8 x float>* %f6_p, align 32, !noalias !1
+    %f6 = load <8 x float>, <8 x float>* %f6_p, align 32, !alias.scope !1
+
+    ; Evaluate %f7
+    %f7 = call <8 x float> @llvm.floor.v8f32(<8 x float> %f6)
+
+    ; Store %f7
+    %f7_i = getelementptr inbounds float, float* %a1, i32 %index
+    %f7_p = bitcast float* %f7_i to <8 x float>*
+    store <8 x float> %f7, <8 x float>* %f7_p, align 32, !noalias !1
+
+    ; Evaluate %f8
+    %f8 = call <8 x float> @llvm.ceil.v8f32(<8 x float> %f6)
+
+    ; Store %f8
+    %f8_i = getelementptr inbounds float, float* %a2, i32 %index
+    %f8_p = bitcast float* %f8_i to <8 x float>*
+    store <8 x float> %f8, <8 x float>* %f8_p, align 32, !noalias !1
+
+    ; Evaluate %f9
+    %f9 = call <8 x float> @llvm.trunc.v8f32(<8 x float> %f6)
+
+    ; Store %f9
+    %f9_i = getelementptr inbounds float, float* %a3, i32 %index
+    %f9_p = bitcast float* %f9_i to <8 x float>*
+    store <8 x float> %f9, <8 x float>* %f9_p, align 32, !noalias !1
+
+    ; Evaluate %f10
+    %f10 = call <8 x float> @llvm.nearbyint.v8f32(<8 x float> %f6)
+
+    ; Store %f10
+    %f10_i = getelementptr inbounds float, float* %a4, i32 %index
+    %f10_p = bitcast float* %f10_i to <8 x float>*
+    store <8 x float> %f10, <8 x float>* %f10_p, align 32, !noalias !1
+
+    ; Evaluate %f11
+    %f11 = call <8 x float> @llvm.minnum.v8f32(<8 x float> %f7, <8 x float> %f8)
+
+    ; Store %f11
+    %f11_i = getelementptr inbounds float, float* %a5, i32 %index
+    %f11_p = bitcast float* %f11_i to <8 x float>*
+    store <8 x float> %f11, <8 x float>* %f11_p, align 32, !noalias !1
+
+    ; Evaluate %f12
+    %f12 = call <8 x float> @llvm.maxnum.v8f32(<8 x float> %f7, <8 x float> %f8)
+
+    ; Store %f12
+    %f12_i = getelementptr inbounds float, float* %a6, i32 %index
+    %f12_p = bitcast float* %f12_i to <8 x float>*
+    store <8 x float> %f12, <8 x float>* %f12_p, align 32, !noalias !1
 
     br label %loop_suffix
 
@@ -150,13 +216,6 @@ done:
     ret void
 }
 
-declare <8 x float> @llvm.floor.v8f32(<8 x float>)
-declare <8 x float> @llvm.ceil.v8f32(<8 x float>)
-declare <8 x float> @llvm.trunc.v8f32(<8 x float>)
-declare <8 x float> @llvm.nearbyint.v8f32(<8 x float>)
-declare <8 x float> @llvm.minnum.v8f32(<8 x float>, <8 x float>)
-declare <8 x float> @llvm.maxnum.v8f32(<8 x float>, <8 x float>)
-
 !0 = !{!0}
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
@@ -165,13 +224,32 @@ attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 3
-jit_var_dec_ref_int(1): 2
-jit_var_dec_ref_int(1): 1
-jit_var_dec_ref_int(1): 0
-jit_var_dec_ref_int(2): 1
-jit_var_dec_ref_int(3): 1
-jit_var_dec_ref_int(2): 0
 jit_var_dec_ref_int(3): 0
+jit_var_free(3)
+jit_var_dec_ref_int(2): 5
+jit_var_dec_ref_int(1): 2
+jit_var_dec_ref_int(5): 0
+jit_var_free(5)
+jit_var_dec_ref_int(2): 4
+jit_var_dec_ref_int(1): 1
+jit_var_dec_ref_int(7): 0
+jit_var_free(7)
+jit_var_dec_ref_int(2): 3
+jit_var_dec_ref_int(1): 0
+jit_var_dec_ref_int(9): 0
+jit_var_free(9)
+jit_var_dec_ref_int(2): 2
+jit_var_dec_ref_int(4): 1
+jit_var_dec_ref_int(6): 1
+jit_var_dec_ref_int(11): 0
+jit_var_free(11)
+jit_var_dec_ref_int(2): 1
+jit_var_dec_ref_int(4): 0
+jit_var_dec_ref_int(6): 0
+jit_var_dec_ref_int(13): 0
+jit_var_free(13)
+jit_var_dec_ref_int(2): 0
+jit_var_free(2)
 jit_eval(): done.
 floor: [0, 0, 0, -1, -1, -1]
 ceil:  [1, 1, 1, -0, -0, -0]
@@ -179,73 +257,139 @@ trunc: [0, 0, 0, -0, -0, -0]
 round: [0, 0, 1, -0, -0, -1]
 min:   [0, 0, 0, -1, -1, -1]
 max:   [1, 1, 1, -0, -0, -0]
-jit_var_dec_ref_ext(7): 0
-jit_var_free(7)
+jit_var_dec_ref_ext(14): 0
+jit_var_free(14)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(12): 0
+jit_var_free(12)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(10): 0
+jit_var_free(10)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(8): 0
+jit_var_free(8)
 jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
 jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(5): 0
-jit_var_free(5)
-jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
-jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(3): 0
-jit_var_free(3)
-jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(2): 0
-jit_var_free(2)
 jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host-async, size=64)
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map_mem(8): <@>, size=6, free=1
-jit_var_inc_ref_ext(8): 1
-jit_var_copy_mem(8, size=6)
-jit_var_inc_ref_int(8): 1
-jit_var_new(9 <- 8): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
-jit_var_inc_ref_ext(9): 1
-jit_var_inc_ref_int(8): 2
-jit_var_new(10 <- 8): $r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)
-jit_var_inc_ref_ext(10): 1
-jit_var_inc_ref_int(8): 3
-jit_var_new(11 <- 8): $r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)
-jit_var_inc_ref_ext(11): 1
-jit_var_inc_ref_int(8): 4
-jit_var_new(12 <- 8): $r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)
-jit_var_inc_ref_ext(12): 1
-jit_var_inc_ref_int(9): 1
-jit_var_inc_ref_int(10): 1
-jit_var_new(13 <- 9, 10): $r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
-jit_var_inc_ref_ext(13): 1
-jit_var_inc_ref_int(9): 2
-jit_var_inc_ref_int(10): 2
-jit_var_new(14 <- 9, 10): $r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
-jit_var_inc_ref_ext(14): 1
-jit_var_schedule(9)
-jit_var_schedule(10)
-jit_var_schedule(11)
-jit_var_schedule(12)
-jit_var_schedule(13)
-jit_var_schedule(14)
+jit_var_map_mem(15): <@>, size=6, free=1
+jit_var_inc_ref_ext(15): 1
+jit_var_copy_mem(15, size=6)
+jit_var_new(16): 
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 1
+jit_var_dec_ref_ext(16): 0
+jit_var_new(17 <- 16, 0, 0, 0): declare <$w x $t1> @llvm.floor.v$w$a1(<$w x $t1>)
+jit_var_inc_ref_ext(17): 1
+jit_var_inc_ref_int(15): 1
+jit_var_inc_ref_int(17): 1
+jit_var_new(18 <- 15, 17): $r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)
+jit_var_inc_ref_ext(18): 1
+jit_var_dec_ref_ext(17): 0
+jit_var_new(16):  (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 2
+jit_var_dec_ref_ext(16): 0
+jit_var_new(19 <- 16, 0, 0, 0): declare <$w x $t1> @llvm.ceil.v$w$a1(<$w x $t1>)
+jit_var_inc_ref_ext(19): 1
+jit_var_inc_ref_int(15): 2
+jit_var_inc_ref_int(19): 1
+jit_var_new(20 <- 15, 19): $r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)
+jit_var_inc_ref_ext(20): 1
+jit_var_dec_ref_ext(19): 0
+jit_var_new(16):  (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 3
+jit_var_dec_ref_ext(16): 0
+jit_var_new(21 <- 16, 0, 0, 0): declare <$w x $t1> @llvm.trunc.v$w$a1(<$w x $t1>)
+jit_var_inc_ref_ext(21): 1
+jit_var_inc_ref_int(15): 3
+jit_var_inc_ref_int(21): 1
+jit_var_new(22 <- 15, 21): $r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)
+jit_var_inc_ref_ext(22): 1
+jit_var_dec_ref_ext(21): 0
+jit_var_new(16):  (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 4
+jit_var_dec_ref_ext(16): 0
+jit_var_new(23 <- 16, 0, 0, 0): declare <$w x $t1> @llvm.nearbyint.v$w$a1(<$w x $t1>)
+jit_var_inc_ref_ext(23): 1
+jit_var_inc_ref_int(15): 4
+jit_var_inc_ref_int(23): 1
+jit_var_new(24 <- 15, 23): $r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)
+jit_var_inc_ref_ext(24): 1
+jit_var_dec_ref_ext(23): 0
+jit_var_new(16):  (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 5
+jit_var_dec_ref_ext(16): 0
+jit_var_new(25 <- 16, 0, 0, 0): declare <$w x $t1> @llvm.minnum.v$w$a1(<$w x $t1>, <$w x $t1>)
+jit_var_inc_ref_ext(25): 1
+jit_var_inc_ref_int(18): 1
+jit_var_inc_ref_int(20): 1
+jit_var_inc_ref_int(25): 1
+jit_var_new(26 <- 18, 20, 25): $r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_inc_ref_ext(26): 1
+jit_var_dec_ref_ext(25): 0
+jit_var_new(16):  (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 6
+jit_var_dec_ref_ext(16): 0
+jit_var_new(27 <- 16, 0, 0, 0): declare <$w x $t1> @llvm.maxnum.v$w$a1(<$w x $t1>, <$w x $t1>)
+jit_var_inc_ref_ext(27): 1
+jit_var_inc_ref_int(18): 2
+jit_var_inc_ref_int(20): 2
+jit_var_inc_ref_int(27): 1
+jit_var_new(28 <- 18, 20, 27): $r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)
+jit_var_inc_ref_ext(28): 1
+jit_var_dec_ref_ext(27): 0
+jit_var_schedule(18)
+jit_var_schedule(20)
+jit_var_schedule(22)
+jit_var_schedule(24)
+jit_var_schedule(26)
+jit_var_schedule(28)
 jit_eval(): launching 1 kernel.
 jit_assemble(size=6): register map:
-   - %d0 -> 8 [in]
-   - %d1 -> 9 [out]
+   - gl0 -> 17 [scalar]
+   - gl1 -> 19 [scalar]
+   - gl2 -> 21 [scalar]
+   - gl3 -> 23 [scalar]
+   - gl4 -> 25 [scalar]
+   - gl5 -> 27 [scalar]
+   - %d6 -> 15 [in]
+   - %d7 -> 18 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
-   - %d2 -> 10 [out]
+   - %d8 -> 20 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
-   - %d3 -> 11 [out]
+   - %d9 -> 22 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
-   - %d4 -> 12 [out]
+   - %d10 -> 24 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
-   - %d5 -> 13 [out]
+   - %d11 -> 26 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
-   - %d6 -> 14 [out]
+   - %d12 -> 28 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
-  -> launching <@> (n=6, in=1, out=6, ops=7):
+  -> launching <@> (n=6, in=1, out=6, ops=13):
+declare <8 x double> @llvm.floor.v8f64(<8 x double>)
+
+declare <8 x double> @llvm.ceil.v8f64(<8 x double>)
+
+declare <8 x double> @llvm.trunc.v8f64(<8 x double>)
+
+declare <8 x double> @llvm.nearbyint.v8f64(<8 x double>)
+
+declare <8 x double> @llvm.minnum.v8f64(<8 x double>, <8 x double>)
+
+declare <8 x double> @llvm.maxnum.v8f64(<8 x double>, <8 x double>)
+
 define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
@@ -288,58 +432,58 @@ entry:
 loop:
     %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
-    ; Load %d0
-    %d0_i = getelementptr inbounds double, double* %a0, i32 %index
-    %d0_p = bitcast double* %d0_i to <8 x double>*
-    %d0 = load <8 x double>, <8 x double>* %d0_p, align 64, !alias.scope !1
-
-    ; Evaluate %d1
-    %d1 = call <8 x double> @llvm.floor.v8f64(<8 x double> %d0)
-
-    ; Store %d1
-    %d1_i = getelementptr inbounds double, double* %a1, i32 %index
-    %d1_p = bitcast double* %d1_i to <8 x double>*
-    store <8 x double> %d1, <8 x double>* %d1_p, align 64, !noalias !1
-
-    ; Evaluate %d2
-    %d2 = call <8 x double> @llvm.ceil.v8f64(<8 x double> %d0)
-
-    ; Store %d2
-    %d2_i = getelementptr inbounds double, double* %a2, i32 %index
-    %d2_p = bitcast double* %d2_i to <8 x double>*
-    store <8 x double> %d2, <8 x double>* %d2_p, align 64, !noalias !1
-
-    ; Evaluate %d3
-    %d3 = call <8 x double> @llvm.trunc.v8f64(<8 x double> %d0)
-
-    ; Store %d3
-    %d3_i = getelementptr inbounds double, double* %a3, i32 %index
-    %d3_p = bitcast double* %d3_i to <8 x double>*
-    store <8 x double> %d3, <8 x double>* %d3_p, align 64, !noalias !1
-
-    ; Evaluate %d4
-    %d4 = call <8 x double> @llvm.nearbyint.v8f64(<8 x double> %d0)
-
-    ; Store %d4
-    %d4_i = getelementptr inbounds double, double* %a4, i32 %index
-    %d4_p = bitcast double* %d4_i to <8 x double>*
-    store <8 x double> %d4, <8 x double>* %d4_p, align 64, !noalias !1
-
-    ; Evaluate %d5
-    %d5 = call <8 x double> @llvm.minnum.v8f64(<8 x double> %d1, <8 x double> %d2)
-
-    ; Store %d5
-    %d5_i = getelementptr inbounds double, double* %a5, i32 %index
-    %d5_p = bitcast double* %d5_i to <8 x double>*
-    store <8 x double> %d5, <8 x double>* %d5_p, align 64, !noalias !1
-
-    ; Evaluate %d6
-    %d6 = call <8 x double> @llvm.maxnum.v8f64(<8 x double> %d1, <8 x double> %d2)
-
-    ; Store %d6
-    %d6_i = getelementptr inbounds double, double* %a6, i32 %index
+    ; Load %d6
+    %d6_i = getelementptr inbounds double, double* %a0, i32 %index
     %d6_p = bitcast double* %d6_i to <8 x double>*
-    store <8 x double> %d6, <8 x double>* %d6_p, align 64, !noalias !1
+    %d6 = load <8 x double>, <8 x double>* %d6_p, align 64, !alias.scope !1
+
+    ; Evaluate %d7
+    %d7 = call <8 x double> @llvm.floor.v8f64(<8 x double> %d6)
+
+    ; Store %d7
+    %d7_i = getelementptr inbounds double, double* %a1, i32 %index
+    %d7_p = bitcast double* %d7_i to <8 x double>*
+    store <8 x double> %d7, <8 x double>* %d7_p, align 64, !noalias !1
+
+    ; Evaluate %d8
+    %d8 = call <8 x double> @llvm.ceil.v8f64(<8 x double> %d6)
+
+    ; Store %d8
+    %d8_i = getelementptr inbounds double, double* %a2, i32 %index
+    %d8_p = bitcast double* %d8_i to <8 x double>*
+    store <8 x double> %d8, <8 x double>* %d8_p, align 64, !noalias !1
+
+    ; Evaluate %d9
+    %d9 = call <8 x double> @llvm.trunc.v8f64(<8 x double> %d6)
+
+    ; Store %d9
+    %d9_i = getelementptr inbounds double, double* %a3, i32 %index
+    %d9_p = bitcast double* %d9_i to <8 x double>*
+    store <8 x double> %d9, <8 x double>* %d9_p, align 64, !noalias !1
+
+    ; Evaluate %d10
+    %d10 = call <8 x double> @llvm.nearbyint.v8f64(<8 x double> %d6)
+
+    ; Store %d10
+    %d10_i = getelementptr inbounds double, double* %a4, i32 %index
+    %d10_p = bitcast double* %d10_i to <8 x double>*
+    store <8 x double> %d10, <8 x double>* %d10_p, align 64, !noalias !1
+
+    ; Evaluate %d11
+    %d11 = call <8 x double> @llvm.minnum.v8f64(<8 x double> %d7, <8 x double> %d8)
+
+    ; Store %d11
+    %d11_i = getelementptr inbounds double, double* %a5, i32 %index
+    %d11_p = bitcast double* %d11_i to <8 x double>*
+    store <8 x double> %d11, <8 x double>* %d11_p, align 64, !noalias !1
+
+    ; Evaluate %d12
+    %d12 = call <8 x double> @llvm.maxnum.v8f64(<8 x double> %d7, <8 x double> %d8)
+
+    ; Store %d12
+    %d12_i = getelementptr inbounds double, double* %a6, i32 %index
+    %d12_p = bitcast double* %d12_i to <8 x double>*
+    store <8 x double> %d12, <8 x double>* %d12_p, align 64, !noalias !1
 
     br label %loop_suffix
 
@@ -352,13 +496,6 @@ done:
     ret void
 }
 
-declare <8 x double> @llvm.floor.v8f64(<8 x double>)
-declare <8 x double> @llvm.ceil.v8f64(<8 x double>)
-declare <8 x double> @llvm.trunc.v8f64(<8 x double>)
-declare <8 x double> @llvm.nearbyint.v8f64(<8 x double>)
-declare <8 x double> @llvm.minnum.v8f64(<8 x double>, <8 x double>)
-declare <8 x double> @llvm.maxnum.v8f64(<8 x double>, <8 x double>)
-
 !0 = !{!0}
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
@@ -366,14 +503,33 @@ declare <8 x double> @llvm.maxnum.v8f64(<8 x double>, <8 x double>)
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(8): 3
-jit_var_dec_ref_int(8): 2
-jit_var_dec_ref_int(8): 1
-jit_var_dec_ref_int(8): 0
-jit_var_dec_ref_int(9): 1
-jit_var_dec_ref_int(10): 1
-jit_var_dec_ref_int(9): 0
-jit_var_dec_ref_int(10): 0
+jit_var_dec_ref_int(15): 3
+jit_var_dec_ref_int(17): 0
+jit_var_free(17)
+jit_var_dec_ref_int(16): 5
+jit_var_dec_ref_int(15): 2
+jit_var_dec_ref_int(19): 0
+jit_var_free(19)
+jit_var_dec_ref_int(16): 4
+jit_var_dec_ref_int(15): 1
+jit_var_dec_ref_int(21): 0
+jit_var_free(21)
+jit_var_dec_ref_int(16): 3
+jit_var_dec_ref_int(15): 0
+jit_var_dec_ref_int(23): 0
+jit_var_free(23)
+jit_var_dec_ref_int(16): 2
+jit_var_dec_ref_int(18): 1
+jit_var_dec_ref_int(20): 1
+jit_var_dec_ref_int(25): 0
+jit_var_free(25)
+jit_var_dec_ref_int(16): 1
+jit_var_dec_ref_int(18): 0
+jit_var_dec_ref_int(20): 0
+jit_var_dec_ref_int(27): 0
+jit_var_free(27)
+jit_var_dec_ref_int(16): 0
+jit_var_free(16)
 jit_free_flush(): scheduling 1 deallocation
 jit_eval(): done.
 floor: [0, 0, 0, -1, -1, -1]
@@ -382,26 +538,26 @@ trunc: [0, 0, 0, -0, -0, -0]
 round: [0, 0, 1, -0, -0, -1]
 min:   [0, 0, 0, -1, -1, -1]
 max:   [1, 1, 1, -0, -0, -0]
-jit_var_dec_ref_ext(14): 0
-jit_var_free(14)
+jit_var_dec_ref_ext(28): 0
+jit_var_free(28)
 jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(13): 0
-jit_var_free(13)
+jit_var_dec_ref_ext(26): 0
+jit_var_free(26)
 jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(12): 0
-jit_var_free(12)
+jit_var_dec_ref_ext(24): 0
+jit_var_free(24)
 jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(11): 0
-jit_var_free(11)
+jit_var_dec_ref_ext(22): 0
+jit_var_free(22)
 jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(10): 0
-jit_var_free(10)
+jit_var_dec_ref_ext(20): 0
+jit_var_free(20)
 jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(9): 0
-jit_var_free(9)
+jit_var_dec_ref_ext(18): 0
+jit_var_free(18)
 jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(8): 0
-jit_var_free(8)
+jit_var_dec_ref_ext(15): 0
+jit_var_free(15)
 jit_free(<@>, type=host-async, size=64)
 jit_free_flush(): scheduling 7 deallocations
 jit_shutdown(): releasing 2 kernels ..

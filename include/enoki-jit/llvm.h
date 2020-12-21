@@ -496,45 +496,65 @@ struct LLVMArray {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::steal(jitc_var_new_1(0, Type,
-            "$r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)", 1,
+        LLVMArray intrin = LLVMArray::steal(jitc_var_new_intrinsic(
+            0, "declare <$w x $t1> @llvm.sqrt.v$w$a1(<$w x $t1>)", 1,
             a.index()));
+
+        return LLVMArray::steal(jitc_var_new_2(
+            0, Type, "$r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)",
+            1, a.index(), intrin.index()));
     }
 
     friend LLVMArray round(const LLVMArray &a) {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::steal(jitc_var_new_1(0, Type,
-            "$r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)", 1,
+        LLVMArray intrin = LLVMArray::steal(jitc_var_new_intrinsic(
+            0, "declare <$w x $t1> @llvm.nearbyint.v$w$a1(<$w x $t1>)", 1,
             a.index()));
+
+        return LLVMArray::steal(jitc_var_new_2(0, Type,
+            "$r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)", 1,
+            a.index(), intrin.index()));
     }
 
     friend LLVMArray floor(const LLVMArray &a) {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::steal(jitc_var_new_1(0, Type,
-            "$r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)", 1,
+        LLVMArray intrin = LLVMArray::steal(jitc_var_new_intrinsic(
+            0, "declare <$w x $t1> @llvm.floor.v$w$a1(<$w x $t1>)", 1,
             a.index()));
+
+        return LLVMArray::steal(jitc_var_new_2(0, Type,
+            "$r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)", 1,
+            a.index(), intrin.index()));
     }
 
     friend LLVMArray ceil(const LLVMArray &a) {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::steal(jitc_var_new_1(0, Type,
-            "$r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)", 1,
+        LLVMArray intrin = LLVMArray::steal(jitc_var_new_intrinsic(
+            0, "declare <$w x $t1> @llvm.ceil.v$w$a1(<$w x $t1>)", 1,
             a.index()));
+
+        return LLVMArray::steal(jitc_var_new_2(0, Type,
+            "$r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)", 1,
+            a.index(), intrin.index()));
     }
 
     friend LLVMArray trunc(const LLVMArray &a) {
         if (!jitc_is_floating_point(Type))
             jitc_raise("Unsupported operand type");
 
-        return LLVMArray::steal(jitc_var_new_1(0, Type,
-            "$r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)", 1,
+        LLVMArray intrin = LLVMArray::steal(jitc_var_new_intrinsic(
+            0, "declare <$w x $t1> @llvm.trunc.v$w$a1(<$w x $t1>)", 1,
             a.index()));
+
+        return LLVMArray::steal(jitc_var_new_2(0, Type,
+            "$r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)", 1,
+            a.index(), intrin.index()));
     }
 
     friend LLVMArray fmadd(const LLVMArray &a,
@@ -554,11 +574,15 @@ struct LLVMArray {
             return a * b;
 
         if (std::is_floating_point<Value>::value) {
-            return LLVMArray::steal(jitc_var_new_3(
+            LLVMArray intrin = LLVMArray::steal(jitc_var_new_intrinsic(0,
+                "declare <$w x $t1> @llvm.fma.v$w$a1(<$w x $t1>, <$w x $t1>, "
+                "<$w x $t1>)", 1, a.index()));
+
+            return LLVMArray::steal(jitc_var_new_4(
                 0, Type,
                 "$r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, "
                 "<$w x $t2> $r2, <$w x $t3> $r3)",
-                1, a.index(), b.index(), c.index()));
+                1, a.index(), b.index(), c.index(), intrin.index()));
         } else {
             return a*b + c;
         }
@@ -774,36 +798,40 @@ LLVMArray<Value> min(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
         return select(a < b, a, b);
 
     // Portable intrinsic as a last resort
-    const char *op = "$r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> "
-                     "$r1, <$w x $t2> $r2)";
+    const char
+       *opi = "declare <$w x $t1> @llvm.minnum.v$w$a1(<$w x $t1>, <$w x $t1>)",
+       *op = "$r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)";
 
     // Prefer an X86-specific intrinsic (produces nicer machine code)
     if (std::is_same<Value, float>::value) {
         if (jitc_llvm_if_at_least(16, "+avx512f")) {
-            op = "$4$r0 = call <$w x $t0> @llvm.x86.avx512.min.ps.512(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2, i32$S 4)";
+            opi = "declare <16 x $t1> @llvm.x86.avx512.min.ps.512(<16 x $t1>, <16 x $t1>, i32)";
+            op = "$4$r0 = call <16 x $t0> @llvm.x86.avx512.min.ps.512(<16 x $t1> $r1, <16 x $t2> $r2, i32 4)";
         } else if (jitc_llvm_if_at_least(8, "+avx")) {
-            op = "$3$r0 = call <$w x $t0> @llvm.x86.avx.min.ps.256(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2)";
+            opi = "declare <8 x $t1> @llvm.x86.avx.min.ps.256(<8 x $t1>, <8 x $t1>)";
+            op = "$3$r0 = call <8 x $t0> @llvm.x86.avx.min.ps.256(<8 x $t1> $r1, <8 x $t2> $r2)";
         } else if (jitc_llvm_if_at_least(4, "+sse4.2")) {
-            op = "$2$r0 = call <$w x $t0> @llvm.x86.sse.min.ps(<$w x $t1> $r1, "
-                 "<$w x $t2> $r2)";
+            opi = "declare <4 x $t1> @llvm.x86.sse.min.ps(<4 x $t1>, <4 x $t1>)";
+            op = "$2$r0 = call <4 x $t0> @llvm.x86.sse.min.ps(<4 x $t1> $r1, <4 x $t2> $r2)";
         }
     } else if (std::is_same<Value, double>::value) {
         if (jitc_llvm_if_at_least(8, "+avx512f")) {
-            op = "$3$r0 = call <$w x $t0> @llvm.x86.avx512.min.pd.512(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2, i32$S 4)";
+            opi = "declare <8 x $t1> @llvm.x86.avx512.min.pd.512(<8 x $t1>, <8 x $t1>, i32)";
+            op = "$3$r0 = call <8 x $t0> @llvm.x86.avx512.min.pd.512(<8 x $t1> $r1, <8 x $t2> $r2, i32 4)";
         } else if (jitc_llvm_if_at_least(4, "+avx")) {
-            op = "$2$r0 = call <$w x $t0> @llvm.x86.avx.min.pd.256(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2)";
+            opi = "declare <4 x $t1> @llvm.x86.avx.min.pd.256(<4 x $t1>, <4 x $t1>)";
+            op = "$2$r0 = call <4 x $t0> @llvm.x86.avx.min.pd.256(<4 x $t1> $r1, <4 x $t2> $r2)";
         } else if (jitc_llvm_if_at_least(2, "+sse4.2")) {
-            op = "$1$r0 = call <$w x $t0> @llvm.x86.sse.min.pd(<$w x $t1> $r1, "
-                 "<$w x $t2> $r2)";
+            opi = "declare <2 x $t1> @llvm.x86.sse.min.pd(<2 x $t1>, <2 x $t1>)";
+            op = "$1$r0 = call <2 x $t0> @llvm.x86.sse.min.pd(<2 x $t1> $r1, <2 x $t2> $r2)";
         }
     }
 
-    return LLVMArray<Value>::steal(jitc_var_new_2(
-        0, LLVMArray<Value>::Type, op, 1, a.index(), b.index()));
+    LLVMArray<Value> intrin =
+        LLVMArray<Value>::steal(jitc_var_new_intrinsic(0, opi, 1, a.index()));
+
+    return LLVMArray<Value>::steal(jitc_var_new_3(
+        0, LLVMArray<Value>::Type, op, 1, a.index(), b.index(), intrin.index()));
 }
 
 template <typename Value>
@@ -812,37 +840,42 @@ LLVMArray<Value> max(const LLVMArray<Value> &a, const LLVMArray<Value> &b) {
         return select(a < b, b, a);
 
     // Portable intrinsic as a last resort
-    const char *op = "$r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> "
-                     "$r1, <$w x $t2> $r2)";
+    const char
+       *opi = "declare <$w x $t1> @llvm.maxnum.v$w$a1(<$w x $t1>, <$w x $t1>)",
+       *op = "$r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)";
 
     // Prefer an X86-specific intrinsic (produces nicer machine code)
     if (std::is_same<Value, float>::value) {
         if (jitc_llvm_if_at_least(16, "+avx512f")) {
-            op = "$4$r0 = call <$w x $t0> @llvm.x86.avx512.max.ps.512(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2, i32$S 4)";
+            opi = "declare <16 x $t1> @llvm.x86.avx512.max.ps.512(<16 x $t1>, <16 x $t1>, i32)";
+            op = "$4$r0 = call <16 x $t0> @llvm.x86.avx512.max.ps.512(<16 x $t1> $r1, <16 x $t2> $r2, i32 4)";
         } else if (jitc_llvm_if_at_least(8, "+avx")) {
-            op = "$3$r0 = call <$w x $t0> @llvm.x86.avx.max.ps.256(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2)";
+            opi = "declare <8 x $t1> @llvm.x86.avx.max.ps.256(<8 x $t1>, <8 x $t1>)";
+            op = "$3$r0 = call <8 x $t0> @llvm.x86.avx.max.ps.256(<8 x $t1> $r1, <8 x $t2> $r2)";
         } else if (jitc_llvm_if_at_least(4, "+sse4.2")) {
-            op = "$2$r0 = call <$w x $t0> @llvm.x86.sse.max.ps(<$w x $t1> $r1, "
-                 "<$w x $t2> $r2)";
+            opi = "declare <4 x $t1> @llvm.x86.sse.max.ps(<4 x $t1>, <4 x $t1>)";
+            op = "$2$r0 = call <4 x $t0> @llvm.x86.sse.max.ps(<4 x $t1> $r1, <4 x $t2> $r2)";
         }
     } else if (std::is_same<Value, double>::value) {
         if (jitc_llvm_if_at_least(8, "+avx512f")) {
-            op = "$3$r0 = call <$w x $t0> @llvm.x86.avx512.max.pd.512(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2, i32$S 4)";
+            opi = "declare <8 x $t1> @llvm.x86.avx512.max.pd.512(<8 x $t1>, <8 x $t1>, i32)";
+            op = "$3$r0 = call <8 x $t0> @llvm.x86.avx512.max.pd.512(<8 x $t1> $r1, <8 x $t2> $r2, i32 4)";
         } else if (jitc_llvm_if_at_least(4, "+avx")) {
-            op = "$2$r0 = call <$w x $t0> @llvm.x86.avx.max.pd.256(<$w x $t1> "
-                 "$r1, <$w x $t2> $r2)";
+            opi = "declare <4 x $t1> @llvm.x86.avx.max.pd.256(<4 x $t1>, <4 x $t1>)";
+            op = "$2$r0 = call <4 x $t0> @llvm.x86.avx.max.pd.256(<4 x $t1> $r1, <4 x $t2> $r2)";
         } else if (jitc_llvm_if_at_least(2, "+sse4.2")) {
-            op = "$1$r0 = call <$w x $t0> @llvm.x86.sse.max.pd(<$w x $t1> $r1, "
-                 "<$w x $t2> $r2)";
+            opi = "declare <2 x $t1> @llvm.x86.sse.max.pd(<2 x $t1>, <2 x $t1>)";
+            op = "$1$r0 = call <2 x $t0> @llvm.x86.sse.max.pd(<2 x $t1> $r1, <2 x $t2> $r2)";
         }
     }
 
-    return LLVMArray<Value>::steal(jitc_var_new_2(
-        0, LLVMArray<Value>::Type, op, 1, a.index(), b.index()));
+    LLVMArray<Value> intrin =
+        LLVMArray<Value>::steal(jitc_var_new_intrinsic(0, opi, 1, a.index()));
+
+    return LLVMArray<Value>::steal(jitc_var_new_3(
+        0, LLVMArray<Value>::Type, op, 1, a.index(), b.index(), intrin.index()));
 }
+
 
 template <typename OutArray, typename ValueIn>
 OutArray jitc_llvm_f2i_cast(const LLVMArray<ValueIn> &a, int mode) {
@@ -865,12 +898,24 @@ OutArray jitc_llvm_f2i_cast(const LLVMArray<ValueIn> &a, int mode) {
         SizeOut == 4 ? (Signed ? "dq" : "udq") : (Signed ? "qq" : "uqq");
 
     char op[128];
+    int size = (SizeIn == 4 && SizeOut == 4) ? 16 : 8;
+    snprintf(op, sizeof(op),
+             "declare <%i x $t2> @llvm.x86.avx512.mask.cvt%s2%s.512(<%i "
+             "x $t1>, <%i x $t2>, i%i, i32)",
+             size, in_t, out_t, size, size, size);
+
+    OutArray type =
+        OutArray::steal(jitc_var_new_0(0, OutArray::Type, "", 1, 1));
+    LLVMArray<void *> intrin = LLVMArray<void *>::steal(
+        jitc_var_new_intrinsic(0, op, 0, a.index(), type.index()));
+
     snprintf(op, sizeof(op),
              "$%i$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvt%s2%s.512(<$w "
-             "x $t1> $r1, <$w x $t0> $z, i$w$S -1, i32$S %i)",
+             "x $t1> $r1, <$w x $t0> $z, i$w -1, i32 %i)",
              (SizeIn == 4 && SizeOut == 4) ? 4 : 3, in_t, out_t, mode);
 
-    return OutArray::steal(jitc_var_new_1(0, OutArray::Type, op, 0, a.index()));
+    return OutArray::steal(
+        jitc_var_new_2(0, OutArray::Type, op, 0, a.index(), intrin.index()));
 }
 
 template <typename OutArray, typename ValueIn>
@@ -921,23 +966,33 @@ Array gather_impl(const void *src_ptr,
 
     uint32_t var;
     if (sizeof(Value) != 1) {
-        var = jitc_var_new_3(
+        Array type = Array::steal(jitc_var_new_0(0, Array::Type, "", 1, 1)),
+              intrin = Array::steal(jitc_var_new_intrinsic(0,
+                  "declare <$w x $t1> @llvm.masked.gather.v$w$a1(<$w x "
+                  "$t1*>, i32, <$w x i1>, <$w x $t1>)",
+                  1, type.index()));
+
+        var = jitc_var_new_4(
             0, Array::Type,
             "$r0_0 = bitcast $t1 $r1 to $t0*$n"
             "$r0_1 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2$n"
             "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0"
-            "(<$w x $t0*> $r0$S_1, i32 $s0, <$w x $t3> $r3, <$w x $t0> $z)",
-            1, base.index(), index.index(), mask_2.index());
+            "(<$w x $t0*> $r0_1, i32 $s0, <$w x $t3> $r3, <$w x $t0> $z)",
+            1, base.index(), index.index(), mask_2.index(), intrin.index());
     } else {
-        var = jitc_var_new_3(
+        Array intrin = Array::steal(jitc_var_new_intrinsic(0,
+            "declare <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*>, i32, "
+            "<$w x i1>, <$w x i32>)", 1));
+
+        var = jitc_var_new_4(
             0, Array::Type,
             "$r0_0 = bitcast $t1 $r1 to i8*$n"
             "$r0_1 = getelementptr i8, i8* $r0_0, <$w x $t2> $r2$n"
             "$r0_2 = bitcast <$w x i8*> $r0_1 to <$w x i32*>$n"
             "$r0_3 = call <$w x i32> @llvm.masked.gather.v$wi32"
-            "(<$w x i32*> $r0$S_2, i32 $s0, <$w x $t3> $r3, <$w x i32> $z)$n"
+            "(<$w x i32*> $r0_2, i32 $s0, <$w x $t3> $r3, <$w x i32> $z)$n"
             "$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>",
-            1, base.index(), index.index(), mask_2.index());
+            1, base.index(), index.index(), mask_2.index(), intrin.index());
     }
 
     return Array::steal(var);
@@ -997,15 +1052,25 @@ void scatter(LLVMArray<Value> &dst,
         value_idx = temp.index();
     }
 
+    LLVMArray<Value> intrin = LLVMArray<Value>::steal(
+        jitc_var_new_intrinsic(0,
+                               "declare void @llvm.masked.scatter.v$w$a1"
+                               "(<$w x $t1>, <$w x $t1*>, i32, <$w x i1>)",
+                               1, value_idx));
+
     LLVMArray<bool> mask_2 = mask & LLVMArray<bool>::active_mask();
 
+    LLVMArray<bool> mask_3 = LLVMArray<bool>::steal(jitc_var_new_2(
+        0, VarType::Bool, "$r0 = bitcast <$w x $t1> $r1 to <$w x $t1>", 1,
+        mask_2.index(), intrin.index()));
+
     uint32_t var = jitc_var_new_4(
-        0, VarType::Invalid,
+        0, VarType::Void,
         "$r0_0 = bitcast $t1 $r1 to $t2*$n"
         "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
         "call void @llvm.masked.scatter.v$w$a2"
-        "(<$w x $t2> $r2, <$w x $t2*> $r0$S_1, i32 $s1, <$w x $t4> $r4)",
-        1, base.index(), value_idx, index.index(), mask_2.index());
+        "(<$w x $t2> $r2, <$w x $t2*> $r0_1, i32 $s1, <$w x $t4> $r4)",
+        1, base.index(), value_idx, index.index(), mask_3.index());
 
     jitc_var_mark_scatter(var, dst.index());
 }
@@ -1038,7 +1103,7 @@ void scatter_add(LLVMArray<Value> &dst,
     LLVMArray<bool> mask_2 = mask & LLVMArray<bool>::active_mask();
 
     uint32_t var = jitc_var_new_4(
-        0, VarType::Invalid,
+        0, VarType::Void,
         "$0call void @ek.scatter_add_$a2($t1 $r1, <$w x $t2> $r2, "
         "<$w x $t3> $r3, <$w x $t4> $r4)",
         1, base.index(), value.index(), index.index(), mask_2.index());
@@ -1157,10 +1222,13 @@ Array popcnt(const LLVMArray<Value> &a) {
     if (!jitc_is_integral(Array::Type))
         jitc_raise("Unsupported operand type");
 
-    return Array::steal(jitc_var_new_1(
+    LLVMArray<Value> intrin = LLVMArray<Value>::steal(jitc_var_new_intrinsic(
+        0, "declare <$w x $t1> @llvm.ctpop.v$w$a1(<$w x $t1>)", 1, a.index()));
+
+    return Array::steal(jitc_var_new_2(
         0, Array::Type,
-        "$r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)",
-        1, a.index()));
+        "$r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)", 1,
+        a.index(), intrin.index()));
 }
 
 template <typename Value, typename Array = LLVMArray<Value>>
@@ -1168,10 +1236,14 @@ Array lzcnt(const LLVMArray<Value> &a) {
     if (!jitc_is_integral(Array::Type))
         jitc_raise("Unsupported operand type");
 
-    return Array::steal(jitc_var_new_1(
+    LLVMArray<Value> intrin = LLVMArray<Value>::steal(jitc_var_new_intrinsic(
+        0, "declare <$w x $t1> @llvm.ctlz.v$w$a1(<$w x $t1>, i1)", 1,
+        a.index()));
+
+    return Array::steal(jitc_var_new_2(
         0, Array::Type,
-        "$r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1$S 0)",
-        1, a.index()));
+        "$r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1 0)", 1,
+        a.index(), intrin.index()));
 }
 
 template <typename Value, typename Array = LLVMArray<Value>>
@@ -1179,10 +1251,14 @@ Array tzcnt(const LLVMArray<Value> &a) {
     if (!jitc_is_integral(Array::Type))
         jitc_raise("Unsupported operand type");
 
-    return Array::steal(jitc_var_new_1(
+    LLVMArray<Value> intrin = LLVMArray<Value>::steal(jitc_var_new_intrinsic(
+        0, "declare <$w x $t1> @llvm.cttz.v$w$a1(<$w x $t1>, i1)", 1,
+        a.index()));
+
+    return Array::steal(jitc_var_new_2(
         0, Array::Type,
-        "$r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1$S 0)",
-        1, a.index()));
+        "$r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1 0)", 1,
+        a.index(), intrin.index()));
 }
 
 template <typename T> void jitc_schedule(const LLVMArray<T> &a) {

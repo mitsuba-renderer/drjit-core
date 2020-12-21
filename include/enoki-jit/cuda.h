@@ -859,13 +859,13 @@ void scatter(CUDAArray<Value> &dst,
     uint32_t var;
     if (mask.is_literal_one()) {
         if (!std::is_same<Value, bool>::value) {
-            var = jitc_var_new_3(1, VarType::Invalid,
+            var = jitc_var_new_3(1, VarType::Void,
                                  "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                                  "st.global.$t2 [%rd3], $r2",
                                  1, base.index(), value.index(),
                                  index.index());
         } else {
-            var = jitc_var_new_3(1, VarType::Invalid,
+            var = jitc_var_new_3(1, VarType::Void,
                                  "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                                  "selp.u16 %w0, 1, 0, $r2$n"
                                  "st.global.u8 [%rd3], %w0",
@@ -874,13 +874,13 @@ void scatter(CUDAArray<Value> &dst,
         }
     } else {
         if (!std::is_same<Value, bool>::value) {
-            var = jitc_var_new_4(1, VarType::Invalid,
+            var = jitc_var_new_4(1, VarType::Void,
                                  "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                                  "@$r4 st.global.$t2 [%rd3], $r2",
                                  1, base.index(), value.index(),
                                  index.index(), mask.index());
         } else {
-            var = jitc_var_new_4(1, VarType::Invalid,
+            var = jitc_var_new_4(1, VarType::Void,
                                  "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                                  "selp.u16 %w0, 1, 0, $r2$n"
                                  "@$r4 st.global.u8 [%rd3], %w0",
@@ -925,13 +925,13 @@ void scatter_add(CUDAArray<Value> &dst,
 
     uint32_t var;
     if (mask.is_literal_one()) {
-        var = jitc_var_new_3(1, VarType::Invalid,
+        var = jitc_var_new_3(1, VarType::Void,
                              "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                              "red.global.add.$t2 [%rd3], $r2",
                              1, base.index(), value.index(),
                              index.index());
     } else {
-        var = jitc_var_new_4(1, VarType::Invalid,
+        var = jitc_var_new_4(1, VarType::Void,
                              "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
                              "@$r4 red.global.add.$t2 [%rd3], $r2",
                              1, base.index(), value.index(),

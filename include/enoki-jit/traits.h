@@ -28,7 +28,7 @@ NAMESPACE_BEGIN(enoki)
 template <bool Value> using enable_if_t = typename std::enable_if<Value, int>::type;
 
 template <typename T, typename = int> struct var_type {
-    static constexpr VarType value = VarType::Invalid;
+    static constexpr VarType value = VarType::Void;
 };
 
 template <typename T> struct var_type<T, enable_if_t<std::is_integral<T>::value && sizeof(T) == 1>> {

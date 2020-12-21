@@ -10,33 +10,53 @@ jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map_mem(3): <@>, size=4, free=1
 jit_var_inc_ref_ext(3): 1
 jit_var_copy_mem(3, size=4)
+jit_var_new(4): 
+jit_var_inc_ref_ext(4): 1
+jit_var_inc_ref_int(4): 1
+jit_var_dec_ref_ext(4): 0
+jit_var_new(5 <- 4, 0, 0, 0): declare <$w x $t1> @llvm.fma.v$w$a1(<$w x $t1>, <$w x $t1>, <$w x $t1>)
+jit_var_inc_ref_ext(5): 1
 jit_var_inc_ref_int(1): 1
 jit_var_inc_ref_int(2): 1
 jit_var_inc_ref_int(3): 1
-jit_var_new(4 <- 1, 2, 3): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
-jit_var_inc_ref_ext(4): 1
-jit_var_inc_ref_int(3): 2
-jit_var_new(5 <- 3): $r0 = fneg <$w x $t0> $r1
-jit_var_inc_ref_ext(5): 1
-jit_var_inc_ref_int(4): 1
-jit_var_inc_ref_int(2): 2
 jit_var_inc_ref_int(5): 1
-jit_var_new(6 <- 4, 2, 5): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_new(6 <- 1, 2, 3, 5): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(5): 0
-jit_var_schedule(4)
+jit_var_inc_ref_int(3): 2
+jit_var_new(7 <- 3): $r0 = fneg <$w x $t0> $r1
+jit_var_inc_ref_ext(7): 1
+jit_var_new(4):  (reused)
+jit_var_inc_ref_ext(4): 1
+jit_var_inc_ref_int(4): 2
+jit_var_dec_ref_ext(4): 0
+jit_var_dec_ref_int(4): 1
+jit_var_new(5 <- 4, 0, 0, 0): declare <$w x $t1> @llvm.fma.v$w$a1(<$w x $t1>, <$w x $t1>, <$w x $t1>) (reused)
+jit_var_inc_ref_ext(5): 1
+jit_var_inc_ref_int(6): 1
+jit_var_inc_ref_int(2): 2
+jit_var_inc_ref_int(7): 1
+jit_var_inc_ref_int(5): 2
+jit_var_new(8 <- 6, 2, 7, 5): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_inc_ref_ext(8): 1
+jit_var_dec_ref_ext(5): 0
+jit_var_dec_ref_ext(7): 0
 jit_var_schedule(6)
+jit_var_schedule(8)
 jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
-   - %f0 -> 1 [in]
-   - %f1 -> 2 [in]
-   - %f2 -> 3 [in]
-   - %f3 -> 4 [out]
+   - gl0 -> 5 [scalar]
+   - %f1 -> 1 [in]
+   - %f2 -> 2 [in]
+   - %f3 -> 3 [in]
+   - %f4 -> 6 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-   - %f4 -> 5
-   - %f5 -> 6 [out]
+   - %f5 -> 7
+   - %f6 -> 8 [out]
 jit_malloc(type=host-async, size=64): <@> (new allocation)
-  -> launching <@> (n=4, in=3, out=2, ops=6):
+  -> launching <@> (n=4, in=3, out=2, ops=7):
+declare <8 x float> @llvm.fma.v8f32(<8 x float>, <8 x float>, <8 x float>)
+
 define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
@@ -69,39 +89,39 @@ entry:
 loop:
     %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
-    ; Load %f0
-    %f0_i = getelementptr inbounds float, float* %a0, i32 %index
-    %f0_p = bitcast float* %f0_i to <8 x float>*
-    %f0 = load <8 x float>, <8 x float>* %f0_p, align 32, !alias.scope !1
-
     ; Load %f1
-    %f1_i = getelementptr inbounds float, float* %a1, i32 %index
+    %f1_i = getelementptr inbounds float, float* %a0, i32 %index
     %f1_p = bitcast float* %f1_i to <8 x float>*
     %f1 = load <8 x float>, <8 x float>* %f1_p, align 32, !alias.scope !1
 
     ; Load %f2
-    %f2_i = getelementptr inbounds float, float* %a2, i32 %index
+    %f2_i = getelementptr inbounds float, float* %a1, i32 %index
     %f2_p = bitcast float* %f2_i to <8 x float>*
     %f2 = load <8 x float>, <8 x float>* %f2_p, align 32, !alias.scope !1
 
-    ; Evaluate %f3
-    %f3 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f0, <8 x float> %f1, <8 x float> %f2)
-
-    ; Store %f3
-    %f3_i = getelementptr inbounds float, float* %a3, i32 %index
+    ; Load %f3
+    %f3_i = getelementptr inbounds float, float* %a2, i32 %index
     %f3_p = bitcast float* %f3_i to <8 x float>*
-    store <8 x float> %f3, <8 x float>* %f3_p, align 32, !noalias !1
+    %f3 = load <8 x float>, <8 x float>* %f3_p, align 32, !alias.scope !1
 
     ; Evaluate %f4
-    %f4 = fneg <8 x float> %f2
+    %f4 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f1, <8 x float> %f2, <8 x float> %f3)
+
+    ; Store %f4
+    %f4_i = getelementptr inbounds float, float* %a3, i32 %index
+    %f4_p = bitcast float* %f4_i to <8 x float>*
+    store <8 x float> %f4, <8 x float>* %f4_p, align 32, !noalias !1
 
     ; Evaluate %f5
-    %f5 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f3, <8 x float> %f1, <8 x float> %f4)
+    %f5 = fneg <8 x float> %f3
 
-    ; Store %f5
-    %f5_i = getelementptr inbounds float, float* %a4, i32 %index
-    %f5_p = bitcast float* %f5_i to <8 x float>*
-    store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
+    ; Evaluate %f6
+    %f6 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f4, <8 x float> %f2, <8 x float> %f5)
+
+    ; Store %f6
+    %f6_i = getelementptr inbounds float, float* %a4, i32 %index
+    %f6_p = bitcast float* %f6_i to <8 x float>*
+    store <8 x float> %f6, <8 x float>* %f6_p, align 32, !noalias !1
 
     br label %loop_suffix
 
@@ -114,8 +134,6 @@ done:
     ret void
 }
 
-declare <8 x float> @llvm.fma.v8f32(<8 x float>, <8 x float>, <8 x float>)
-
 !0 = !{!0}
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
@@ -126,19 +144,24 @@ jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
 jit_var_dec_ref_int(2): 1
 jit_var_dec_ref_int(3): 1
-jit_var_dec_ref_int(4): 0
+jit_var_dec_ref_int(5): 1
+jit_var_dec_ref_int(6): 0
 jit_var_dec_ref_int(2): 0
+jit_var_dec_ref_int(7): 0
+jit_var_free(7)
+jit_var_dec_ref_int(3): 0
 jit_var_dec_ref_int(5): 0
 jit_var_free(5)
-jit_var_dec_ref_int(3): 0
+jit_var_dec_ref_int(4): 0
+jit_var_free(4)
 jit_eval(): done.
 value=[12, 17, 6, 20]
 value=[27, 135, 3, 100]
+jit_var_dec_ref_ext(8): 0
+jit_var_free(8)
+jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(6): 0
 jit_var_free(6)
-jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(4): 0
-jit_var_free(4)
 jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
@@ -150,44 +173,64 @@ jit_var_dec_ref_ext(1): 0
 jit_var_free(1)
 jit_free(<@>, type=host-async, size=64)
 jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map_mem(7): <@>, size=4, free=1
-jit_var_inc_ref_ext(7): 1
-jit_var_copy_mem(7, size=4)
-jit_malloc(type=host, size=64): <@> (new allocation)
-jit_var_map_mem(8): <@>, size=4, free=1
-jit_var_inc_ref_ext(8): 1
-jit_var_copy_mem(8, size=4)
-jit_malloc(type=host, size=64): <@> (new allocation)
 jit_var_map_mem(9): <@>, size=4, free=1
 jit_var_inc_ref_ext(9): 1
 jit_var_copy_mem(9, size=4)
-jit_var_inc_ref_int(7): 1
-jit_var_inc_ref_int(8): 1
-jit_var_inc_ref_int(9): 1
-jit_var_new(10 <- 7, 8, 9): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_var_map_mem(10): <@>, size=4, free=1
 jit_var_inc_ref_ext(10): 1
-jit_var_inc_ref_int(9): 2
-jit_var_new(11 <- 9): $r0 = fneg <$w x $t0> $r1
+jit_var_copy_mem(10, size=4)
+jit_malloc(type=host, size=64): <@> (new allocation)
+jit_var_map_mem(11): <@>, size=4, free=1
 jit_var_inc_ref_ext(11): 1
-jit_var_inc_ref_int(10): 1
-jit_var_inc_ref_int(8): 2
-jit_var_inc_ref_int(11): 1
-jit_var_new(12 <- 10, 8, 11): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_copy_mem(11, size=4)
+jit_var_new(12): 
 jit_var_inc_ref_ext(12): 1
-jit_var_dec_ref_ext(11): 0
-jit_var_schedule(10)
-jit_var_schedule(12)
+jit_var_inc_ref_int(12): 1
+jit_var_dec_ref_ext(12): 0
+jit_var_new(13 <- 12, 0, 0, 0): declare <$w x $t1> @llvm.fma.v$w$a1(<$w x $t1>, <$w x $t1>, <$w x $t1>)
+jit_var_inc_ref_ext(13): 1
+jit_var_inc_ref_int(9): 1
+jit_var_inc_ref_int(10): 1
+jit_var_inc_ref_int(11): 1
+jit_var_inc_ref_int(13): 1
+jit_var_new(14 <- 9, 10, 11, 13): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_inc_ref_ext(14): 1
+jit_var_dec_ref_ext(13): 0
+jit_var_inc_ref_int(11): 2
+jit_var_new(15 <- 11): $r0 = fneg <$w x $t0> $r1
+jit_var_inc_ref_ext(15): 1
+jit_var_new(12):  (reused)
+jit_var_inc_ref_ext(12): 1
+jit_var_inc_ref_int(12): 2
+jit_var_dec_ref_ext(12): 0
+jit_var_dec_ref_int(12): 1
+jit_var_new(13 <- 12, 0, 0, 0): declare <$w x $t1> @llvm.fma.v$w$a1(<$w x $t1>, <$w x $t1>, <$w x $t1>) (reused)
+jit_var_inc_ref_ext(13): 1
+jit_var_inc_ref_int(14): 1
+jit_var_inc_ref_int(10): 2
+jit_var_inc_ref_int(15): 1
+jit_var_inc_ref_int(13): 2
+jit_var_new(16 <- 14, 10, 15, 13): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)
+jit_var_inc_ref_ext(16): 1
+jit_var_dec_ref_ext(13): 0
+jit_var_dec_ref_ext(15): 0
+jit_var_schedule(14)
+jit_var_schedule(16)
 jit_eval(): launching 1 kernel.
 jit_assemble(size=4): register map:
-   - %d0 -> 7 [in]
-   - %d1 -> 8 [in]
-   - %d2 -> 9 [in]
-   - %d3 -> 10 [out]
+   - gl0 -> 13 [scalar]
+   - %d1 -> 9 [in]
+   - %d2 -> 10 [in]
+   - %d3 -> 11 [in]
+   - %d4 -> 14 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
-   - %d4 -> 11
-   - %d5 -> 12 [out]
+   - %d5 -> 15
+   - %d6 -> 16 [out]
 jit_malloc(type=host-async, size=64): <@> (reused local)
-  -> launching <@> (n=4, in=3, out=2, ops=6):
+  -> launching <@> (n=4, in=3, out=2, ops=7):
+declare <8 x double> @llvm.fma.v8f64(<8 x double>, <8 x double>, <8 x double>)
+
 define void @enoki_<@>(i32 %start, i32 %end, i8** %ptrs) #0 alignstack(32) {
 entry:
 
@@ -220,39 +263,39 @@ entry:
 loop:
     %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]
 
-    ; Load %d0
-    %d0_i = getelementptr inbounds double, double* %a0, i32 %index
-    %d0_p = bitcast double* %d0_i to <8 x double>*
-    %d0 = load <8 x double>, <8 x double>* %d0_p, align 64, !alias.scope !1
-
     ; Load %d1
-    %d1_i = getelementptr inbounds double, double* %a1, i32 %index
+    %d1_i = getelementptr inbounds double, double* %a0, i32 %index
     %d1_p = bitcast double* %d1_i to <8 x double>*
     %d1 = load <8 x double>, <8 x double>* %d1_p, align 64, !alias.scope !1
 
     ; Load %d2
-    %d2_i = getelementptr inbounds double, double* %a2, i32 %index
+    %d2_i = getelementptr inbounds double, double* %a1, i32 %index
     %d2_p = bitcast double* %d2_i to <8 x double>*
     %d2 = load <8 x double>, <8 x double>* %d2_p, align 64, !alias.scope !1
 
-    ; Evaluate %d3
-    %d3 = call <8 x double> @llvm.fma.v8f64(<8 x double> %d0, <8 x double> %d1, <8 x double> %d2)
-
-    ; Store %d3
-    %d3_i = getelementptr inbounds double, double* %a3, i32 %index
+    ; Load %d3
+    %d3_i = getelementptr inbounds double, double* %a2, i32 %index
     %d3_p = bitcast double* %d3_i to <8 x double>*
-    store <8 x double> %d3, <8 x double>* %d3_p, align 64, !noalias !1
+    %d3 = load <8 x double>, <8 x double>* %d3_p, align 64, !alias.scope !1
 
     ; Evaluate %d4
-    %d4 = fneg <8 x double> %d2
+    %d4 = call <8 x double> @llvm.fma.v8f64(<8 x double> %d1, <8 x double> %d2, <8 x double> %d3)
+
+    ; Store %d4
+    %d4_i = getelementptr inbounds double, double* %a3, i32 %index
+    %d4_p = bitcast double* %d4_i to <8 x double>*
+    store <8 x double> %d4, <8 x double>* %d4_p, align 64, !noalias !1
 
     ; Evaluate %d5
-    %d5 = call <8 x double> @llvm.fma.v8f64(<8 x double> %d3, <8 x double> %d1, <8 x double> %d4)
+    %d5 = fneg <8 x double> %d3
 
-    ; Store %d5
-    %d5_i = getelementptr inbounds double, double* %a4, i32 %index
-    %d5_p = bitcast double* %d5_i to <8 x double>*
-    store <8 x double> %d5, <8 x double>* %d5_p, align 64, !noalias !1
+    ; Evaluate %d6
+    %d6 = call <8 x double> @llvm.fma.v8f64(<8 x double> %d4, <8 x double> %d2, <8 x double> %d5)
+
+    ; Store %d6
+    %d6_i = getelementptr inbounds double, double* %a4, i32 %index
+    %d6_p = bitcast double* %d6_i to <8 x double>*
+    store <8 x double> %d6, <8 x double>* %d6_p, align 64, !noalias !1
 
     br label %loop_suffix
 
@@ -265,8 +308,6 @@ done:
     ret void
 }
 
-declare <8 x double> @llvm.fma.v8f64(<8 x double>, <8 x double>, <8 x double>)
-
 !0 = !{!0}
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
@@ -274,32 +315,37 @@ declare <8 x double> @llvm.fma.v8f64(<8 x double>, <8 x double>, <8 x double>)
 attributes #0 = { norecurse nounwind "target-cpu"="skylake" "stack-probe-size"="1073741824" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
-jit_var_dec_ref_int(7): 0
-jit_var_dec_ref_int(8): 1
-jit_var_dec_ref_int(9): 1
-jit_var_dec_ref_int(10): 0
-jit_var_dec_ref_int(8): 0
-jit_var_dec_ref_int(11): 0
-jit_var_free(11)
 jit_var_dec_ref_int(9): 0
+jit_var_dec_ref_int(10): 1
+jit_var_dec_ref_int(11): 1
+jit_var_dec_ref_int(13): 1
+jit_var_dec_ref_int(14): 0
+jit_var_dec_ref_int(10): 0
+jit_var_dec_ref_int(15): 0
+jit_var_free(15)
+jit_var_dec_ref_int(11): 0
+jit_var_dec_ref_int(13): 0
+jit_var_free(13)
+jit_var_dec_ref_int(12): 0
+jit_var_free(12)
 jit_free_flush(): scheduling 3 deallocations
 jit_eval(): done.
 value=[12, 17, 6, 20]
 value=[27, 135, 3, 100]
-jit_var_dec_ref_ext(12): 0
-jit_var_free(12)
+jit_var_dec_ref_ext(16): 0
+jit_var_free(16)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(14): 0
+jit_var_free(14)
+jit_free(<@>, type=host-async, size=64)
+jit_var_dec_ref_ext(11): 0
+jit_var_free(11)
 jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(10): 0
 jit_var_free(10)
 jit_free(<@>, type=host-async, size=64)
 jit_var_dec_ref_ext(9): 0
 jit_var_free(9)
-jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(8): 0
-jit_var_free(8)
-jit_free(<@>, type=host-async, size=64)
-jit_var_dec_ref_ext(7): 0
-jit_var_free(7)
 jit_free(<@>, type=host-async, size=64)
 jit_free_flush(): scheduling 5 deallocations
 jit_shutdown(): releasing 2 kernels ..

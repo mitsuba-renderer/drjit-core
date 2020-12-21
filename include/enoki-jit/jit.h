@@ -719,12 +719,12 @@ extern JITC_EXPORT const void *jitc_registry_attr_data(const char *domain,
  * exact ordering, so please don't change.
  */
 enum class VarType : uint32_t {
-    Invalid, Global, Bool, Int8, UInt8, Int16, UInt16, Int32,
+    Void, Global, Bool, Int8, UInt8, Int16, UInt16, Int32,
     UInt32, Int64, UInt64, Float16, Float32, Float64, Pointer, Count
 };
 #else
 enum VarType {
-    VarTypeInvalid, VarTypeGlobal, VarTypeBool, VarTypeInt8,
+    VarTypeVoid, VarTypeGlobal, VarTypeBool, VarTypeInt8,
     VarTypeUInt8, VarTypeInt16, VarTypeUInt16, VarTypeInt32,
     VarTypeUInt32, VarTypeInt64, VarTypeUInt64, VarTypeFloat16,
     VarTypeFloat32, VarTypeFloat64, VarTypePointer, VarTypeCount
@@ -1017,6 +1017,24 @@ extern JITC_EXPORT uint32_t jitc_var_new_4(int cuda,
                                            uint32_t op2,
                                            uint32_t op3,
                                            uint32_t op4);
+
+/**
+ * \brief Create a global variable containing an intrinsic/function declaration
+ *
+ * This function creates a variable of type VarType::Global that will
+ * ultimately be inserted before the JIT-compiled program. This is useful for
+ * declaring types and intrinsic functions at the top level.
+ *
+ * The operands are handled unusually, in that the newly variable won't
+ * depend on op1/op2/op3/op4, but rather on their types.
+ */
+extern JITC_EXPORT uint32_t jitc_var_new_intrinsic(int cuda,
+                                                   const char *stmt,
+                                                   int stmt_static,
+                                                   uint32_t op1 JITC_DEF(0),
+                                                   uint32_t op2 JITC_DEF(0),
+                                                   uint32_t op3 JITC_DEF(0),
+                                                   uint32_t op4 JITC_DEF(0));
 
 /**
  * \brief Append a new variable storing 'size' entries of a literal constant

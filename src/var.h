@@ -58,6 +58,12 @@ extern uint32_t jit_var_new_4(int cuda,
                               uint32_t op3,
                               uint32_t op4);
 
+// Create an intrinsic declaration (mainly useful LLVM)
+extern uint32_t jit_var_new_intrinsic(int cuda, const char *stmt,
+                                      int stmt_static,
+                                      uint32_t op1, uint32_t op2,
+                                      uint32_t op3, uint32_t op4);
+
 /// Append a new variable storing 'size' entries of a literal constant
 extern uint32_t jit_var_new_literal(int cuda, VarType type,
                                     uint64_t value, uint32_t size,

@@ -403,6 +403,13 @@ uint32_t jitc_var_new_literal(int cuda, VarType type, uint64_t value,
     return jit_var_new_literal(cuda, type, value, size, eval);
 }
 
+uint32_t jitc_var_new_intrinsic(int cuda, const char *stmt, int stmt_static,
+                                uint32_t op1, uint32_t op2, uint32_t op3,
+                                uint32_t op4) {
+    lock_guard guard(state.mutex);
+    return jit_var_new_intrinsic(cuda, stmt, stmt_static, op1, op2, op3, op4);
+}
+
 uint32_t jitc_var_migrate(uint32_t index, AllocType type) {
     lock_guard guard(state.mutex);
     return jit_var_migrate(index, type);

@@ -454,7 +454,7 @@ void jit_optix_trace(uint32_t nargs, uint32_t *args) {
         }
     }
 
-    uint32_t decl = jit_var_new_0(1, VarType::Invalid, "", 1, 1), index = decl;
+    uint32_t decl = jit_var_new_0(1, VarType::Void, "", 1, 1), index = decl;
     jit_var_inc_ref_ext(index);
 
     Buffer buf(100);
@@ -472,7 +472,7 @@ void jit_optix_trace(uint32_t nargs, uint32_t *args) {
         buf.fmt(".reg.%s $r1_%u$n"
                 "mov.%s $r1_%u, $r2", tname, i, tname_bin, i);
         uint32_t prev = index;
-        index = jit_var_new_3(1, VarType::Invalid, buf.get(), 0, decl, args[i], index);
+        index = jit_var_new_3(1, VarType::Void, buf.get(), 0, decl, args[i], index);
         jit_var_dec_ref_ext(prev);
     }
 
@@ -488,7 +488,7 @@ void jit_optix_trace(uint32_t nargs, uint32_t *args) {
     buf.put(")");
 
     uint32_t prev = index;
-    index = jit_var_new_2(1, VarType::Invalid, buf.get(), 0, decl, index);
+    index = jit_var_new_2(1, VarType::Void, buf.get(), 0, decl, index);
     jit_var_dec_ref_ext(prev);
 
     jit_var(index)->optix = 1;

@@ -247,7 +247,7 @@ std::pair<uint32_t, Variable *> jit_var_new(Variable &v, bool disable_cse_) {
     ThreadState *stream = thread_state(v.cuda);
 
     CSECache::iterator key_it;
-    bool is_special  = (VarType) v.type == VarType::Invalid,
+    bool is_special  = (VarType) v.type == VarType::Void,
          disable_cse = v.stmt == nullptr || v.direct_pointer ||
                        !stream->enable_cse || disable_cse_ ||
                        is_special,
@@ -734,6 +734,41 @@ uint32_t jit_var_new_4(int cuda, VarType type, const char *stmt,
     return index;
 }
 
+uint32_t jit_var_new_intrinsic(int cuda, const char *stmt, int stmt_static,
+                               uint32_t op1, uint32_t op2, uint32_t op3,
+                               uint32_t op4) {
+    uint32_t op[] = { op1, op2, op3, op4 };
+    for (uint32_t i = 0; i < 4; ++i) {
+        if (op[i]) {
+            op[i] = jit_var_new_0(cuda, (VarType) jit_var(op[i])->type, "", 1, 1);
+            Variable *v = jit_var(op[i]);
+            jit_var_inc_ref_int(op[i], v);
+            jit_var_dec_ref_ext(op[i], v);
+        }
+    }
+
+    Variable v;
+    v.type = (int) VarType::Global;
+    v.size = 1;
+    v.stmt = stmt_static ? (char *) stmt : strdup(stmt);
+    v.tsize = 1;
+    for (int i = 0; i < 4; ++i)
+        v.dep[i] = op[i];
+    v.tsize = 1;
+    v.free_stmt = stmt_static == 0;
+    v.cuda = cuda;
+
+    uint32_t index; Variable *vo;
+    std::tie(index, vo) = jit_var_new(v);
+    jit_log(Debug, "jit_var_new(%u <- %u, %u, %u, %u): %s%s",
+            index, op[0], op[1], op[2], op[3], vo->stmt,
+            vo->ref_count_int + vo->ref_count_ext == 0 ? "" : " (reused)");
+
+    jit_var_inc_ref_ext(index, vo);
+
+    return index;
+}
+
 /// Register an existing variable with the JIT compiler
 uint32_t jit_var_map_mem(int cuda, VarType type, void *ptr, uint32_t size,
                          int free) {
@@ -1108,7 +1143,7 @@ const char *jit_var_graphviz() {
                    label ? label : "", label ? "\\\"" : "",
                    v->pending_scatter ? "| ** DIRTY **" : "",
                    v->cuda ? "cuda" : "llvm",
-                   v->type == (int) VarType::Invalid ? "none"
+                   v->type == (int) VarType::Void ? "none"
                                  : var_type_name_short[v->type],
                    v->size, index, v->ref_count_ext, v->ref_count_int, color);
 
@@ -1338,16 +1373,16 @@ void jit_var_printf(int cuda, const char *fmt, uint32_t narg,
     uint32_t idx = 0;
     switch (narg) {
         case 0:
-            idx = jit_var_new_1(cuda, VarType::Invalid, buffer.get(), 0, decl);
+            idx = jit_var_new_1(cuda, VarType::Void, buffer.get(), 0, decl);
             break;
         case 1:
-            idx = jit_var_new_2(cuda, VarType::Invalid, buffer.get(), 0, arg[0], decl);
+            idx = jit_var_new_2(cuda, VarType::Void, buffer.get(), 0, arg[0], decl);
             break;
         case 2:
-            idx = jit_var_new_3(cuda, VarType::Invalid, buffer.get(), 0, arg[0], arg[1], decl);
+            idx = jit_var_new_3(cuda, VarType::Void, buffer.get(), 0, arg[0], arg[1], decl);
             break;
         case 3:
-            idx = jit_var_new_4(cuda, VarType::Invalid, buffer.get(), 0, arg[0], arg[1], arg[2], decl);
+            idx = jit_var_new_4(cuda, VarType::Void, buffer.get(), 0, arg[0], arg[1], arg[2], decl);
             break;
         default:
             jit_raise("jitc_var_printf(): max 3 arguments supported!");
@@ -1385,7 +1420,7 @@ void jit_var_vcall(int cuda,
             n_inst, n_in, n_out, n_extra,
             side_effects ? "side effects" : "no side effects");
 
-    uint32_t index = jit_var_new_0(cuda, VarType::Invalid, "", 1, 1);
+    uint32_t index = jit_var_new_0(cuda, VarType::Void, "", 1, 1);
 
     buffer.clear();
     buffer.put(".global .u64 $r0[] = { ");
@@ -1393,7 +1428,7 @@ void jit_var_vcall(int cuda,
         buffer.fmt("func_%016llx%s", (unsigned long long) inst_hash[i],
                    i + 1 < n_inst ? ", " : "");
         uint32_t prev = index;
-        index = jit_var_new_2(cuda, VarType::Invalid, "", 1, inst_ids[i], index);
+        index = jit_var_new_2(cuda, VarType::Void, "", 1, inst_ids[i], index);
         jit_var_dec_ref_ext(prev);
         jit_var_dec_ref_ext(inst_ids[i]);
     }
@@ -1414,7 +1449,7 @@ void jit_var_vcall(int cuda,
             uint32_t id = extra[i];
             tmp[i] = jit_var(id)->data;
             uint32_t prev = index;
-            index = jit_var_new_1(cuda, VarType::Invalid, "", 1, index);
+            index = jit_var_new_1(cuda, VarType::Void, "", 1, index);
             jit_var(index)->dep[3] = id;
             jit_var_dec_ref_ext(prev);
         }
@@ -1445,7 +1480,7 @@ void jit_var_vcall(int cuda,
     }
 
     uint32_t prev = index;
-    index = jit_var_new_3(cuda, VarType::Invalid, "", 1, call_target, extra_id,
+    index = jit_var_new_3(cuda, VarType::Void, "", 1, call_target, extra_id,
                           index);
     jit_var_dec_ref_ext(call_target);
     jit_var_dec_ref_ext(extra_id);
@@ -1465,7 +1500,7 @@ void jit_var_vcall(int cuda,
             jit_var_inc_ref_ext(in[i]);
         }
 
-        index = jit_var_new_2(cuda, VarType::Invalid, "", 1, in_new[i], index);
+        index = jit_var_new_2(cuda, VarType::Void, "", 1, in_new[i], index);
         jit_var_dec_ref_ext(in_new[i]);
         jit_var_dec_ref_ext(prev2);
         offset_in = (offset_in + size - 1) / size * size;
@@ -1499,7 +1534,7 @@ void jit_var_vcall(int cuda,
                    align_out, offset_out, align_in, offset_in);
 
     prev = index;
-    index = jit_var_new_1(cuda, VarType::Invalid, buffer.get(), 0, index);
+    index = jit_var_new_1(cuda, VarType::Void, buffer.get(), 0, index);
     jit_var_dec_ref_ext(prev);
 
     offset_in = 0;
@@ -1510,7 +1545,7 @@ void jit_var_vcall(int cuda,
         buffer.clear();
         buffer.fmt("    st.param.%s [param_in+%u], $r1",
                    vt == VarType::Bool ? "u8" : "$t1", offset_in);
-        index = jit_var_new_2(cuda, VarType::Invalid, buffer.get(), 0,
+        index = jit_var_new_2(cuda, VarType::Void, buffer.get(), 0,
                               in_new[i], index);
         jit_var_dec_ref_ext(prev2);
         offset_in += size;
@@ -1518,11 +1553,11 @@ void jit_var_vcall(int cuda,
 
     prev  = index;
     if (targets_explicit)
-        index = jit_var_new_4(cuda, VarType::Invalid,
+        index = jit_var_new_4(cuda, VarType::Void,
                               "    call (param_out), $r1, ($r2, param_in), $r3", 1,
                               call_target, extra_id, call_table, index);
     else
-        index = jit_var_new_3(cuda, VarType::Invalid,
+        index = jit_var_new_3(cuda, VarType::Void,
                               "    call (param_out), $r1, ($r2, param_in), Fproto", 1,
                               call_target, extra_id, index);
 
@@ -1544,7 +1579,7 @@ void jit_var_vcall(int cuda,
     }
 
     prev = index;
-    index = jit_var_new_1(cuda, VarType::Invalid, "}\n", 1, index);
+    index = jit_var_new_1(cuda, VarType::Void, "}\n", 1, index);
     jit_var_dec_ref_ext(prev);
 
     if (side_effects) {
