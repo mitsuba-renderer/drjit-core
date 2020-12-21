@@ -978,8 +978,10 @@ VCallBucket *jit_vcall(int cuda, const char *domain, uint32_t index,
     }
 
     uint32_t bucket_count = jit_registry_get_max(domain) + 1;
-    if (unlikely(bucket_count == 1))
-        jit_raise("jit_vcall(): no instances registered for domain \"%s\"\n!", domain);
+    if (unlikely(bucket_count == 1)) {
+        *bucket_count_out = 0;
+        return nullptr;
+    }
 
     jit_var_eval(index);
     Variable *v = jit_var(index);
