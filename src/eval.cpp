@@ -691,48 +691,51 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
     }
 }
 
-void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
+void jit_assemble_llvm(ScheduledGroup group) {
     const int width = jit_llvm_vector_width;
 
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
 
-    buffer.fmt("define void @enoki_^^^^^^^^^^^^^^^^%s(i32 %%start, "
-               "i32 %%end, i8** %%ptrs) #0", suffix);
-    if (width > 1)
-        buffer.fmt(" alignstack(%u)", std::max(16u, width * (uint32_t) sizeof(float)));
-    buffer.put(" {\nentry:\n");
-    for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
-        uint32_t index = schedule[group_index].index;
-        Variable *v = jit_var(index);
-        if (v->arg_type == ArgType::Register)
-            continue;
-        uint32_t reg_id = v->reg_index, arg_id = v->arg_index - 1;
-        const char *type = (VarType) v->type == VarType::Bool
-                               ? "i8" : var_type_name_llvm[v->type];
+    if (likely(!capture_ir)) {
+        buffer.put("define void @enoki_^^^^^^^^^^^^^^^^(i32 %start, i32 %end, "
+                   "i8** %ptrs) #0");
+        if (width > 1)
+            buffer.fmt(" alignstack(%u)", std::max(16u, width * (uint32_t) sizeof(float)));
+        buffer.put(" {\nentry:\n");
 
-        if (unlikely(log_trace))
-            buffer.fmt("\n    ; Prepare argument %u\n", arg_id);
+        for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
+            uint32_t index = schedule[group_index].index;
+            Variable *v = jit_var(index);
+            if (v->arg_type == ArgType::Register)
+                continue;
+            uint32_t reg_id = v->reg_index, arg_id = v->arg_index - 1;
+            const char *type = (VarType) v->type == VarType::Bool
+                                   ? "i8" : var_type_name_llvm[v->type];
 
-        buffer.fmt("    %%a%u_i = getelementptr inbounds i8*, i8** %%ptrs, i32 %u\n", arg_id, arg_id);
+            if (unlikely(log_trace))
+                buffer.fmt("\n    ; Prepare argument %u\n", arg_id);
 
-        if (likely(!v->direct_pointer)) {
-            buffer.fmt("    %%a%u_p = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", arg_id, arg_id);
-            buffer.fmt("    %%a%u = bitcast i8* %%a%u_p to %s*\n", arg_id, arg_id, type);
-            if (v->size == 1) {
-                buffer.fmt("    %%a%u_s = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
-                           type, type, arg_id, var_type_size[v->type]);
-                if ((VarType) v->type == VarType::Bool)
-                    buffer.fmt("    %%a%u_s1 = trunc i8 %%a%u_s to i1\n", arg_id, arg_id);
+            buffer.fmt("    %%a%u_i = getelementptr inbounds i8*, i8** %%ptrs, i32 %u\n", arg_id, arg_id);
+
+            if (likely(!v->direct_pointer)) {
+                buffer.fmt("    %%a%u_p = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", arg_id, arg_id);
+                buffer.fmt("    %%a%u = bitcast i8* %%a%u_p to %s*\n", arg_id, arg_id, type);
+                if (v->size == 1) {
+                    buffer.fmt("    %%a%u_s = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
+                               type, type, arg_id, var_type_size[v->type]);
+                    if ((VarType) v->type == VarType::Bool)
+                        buffer.fmt("    %%a%u_s1 = trunc i8 %%a%u_s to i1\n", arg_id, arg_id);
+                }
+            } else {
+                buffer.fmt("    %%rd%u = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", reg_id, arg_id);
             }
-        } else {
-            buffer.fmt("    %%rd%u = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", reg_id, arg_id);
         }
-    }
-    buffer.put("    br label %loop\n\n");
+        buffer.put("    br label %loop\n\n");
 
-    buffer.put("loop:\n");
-    buffer.put("    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]\n");
+        buffer.put("loop:\n");
+        buffer.put("    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]\n");
+    }
 
     auto get_parameter_addr = [](uint32_t reg_id, uint32_t arg_id,
                                  const char *reg_prefix, const char *type,
@@ -821,30 +824,32 @@ void jit_assemble_llvm(ScheduledGroup group, const char *suffix = "") {
         }
     }
 
-    buffer.putc('\n');
-    buffer.put("    br label %loop_suffix\n");
-    buffer.putc('\n');
-    buffer.put("loop_suffix:\n");
-    buffer.fmt("    %%index_next = add i32 %%index, %u\n", width);
-    buffer.put("    %cond = icmp uge i32 %index_next, %end\n");
-    buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop !2\n\n");
-    buffer.put("done:\n");
-    buffer.put("    ret void\n");
-    buffer.put("}\n\n");
-
-    if (intrinsics_buffer.size() > 1) {
-        buffer.put(intrinsics_buffer.get());
+    if (likely(!capture_ir)) {
         buffer.putc('\n');
-    }
+        buffer.put("    br label %loop_suffix\n");
+        buffer.putc('\n');
+        buffer.put("loop_suffix:\n");
+        buffer.fmt("    %%index_next = add i32 %%index, %u\n", width);
+        buffer.put("    %cond = icmp uge i32 %index_next, %end\n");
+        buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop !2\n\n");
+        buffer.put("done:\n");
+        buffer.put("    ret void\n");
+        buffer.put("}\n\n");
 
-    buffer.put("!0 = !{!0}\n");
-    buffer.put("!1 = !{!1, !0}\n");
-    buffer.put("!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
-    buffer.fmt("attributes #0 = { norecurse nounwind \"target-cpu\"=\"%s\" "
-               "\"stack-probe-size\"=\"%u\"", jit_llvm_target_cpu, 1024*1024*1024);
-    if (jit_llvm_target_features)
-        buffer.fmt(" \"target-features\"=\"%s\"", jit_llvm_target_features);
-    buffer.put(" }");
+        if (intrinsics_buffer.size() > 1) {
+            buffer.put(intrinsics_buffer.get());
+            buffer.putc('\n');
+        }
+
+        buffer.put("!0 = !{!0}\n");
+        buffer.put("!1 = !{!1, !0}\n");
+        buffer.put("!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
+        buffer.fmt("attributes #0 = { norecurse nounwind \"target-cpu\"=\"%s\" "
+                   "\"stack-probe-size\"=\"%u\"", jit_llvm_target_cpu, 1024*1024*1024);
+        if (jit_llvm_target_features)
+            buffer.fmt(" \"target-features\"=\"%s\"", jit_llvm_target_features);
+        buffer.put(" }");
+    }
 }
 
 void jit_assemble(ThreadState *ts, ScheduledGroup group) {
@@ -1412,9 +1417,6 @@ const char *jit_capture(int cuda,
                         uint64_t *hash_out,
                         uint32_t **extra_out,
                         uint32_t *extra_count_out) {
-    if (unlikely(!cuda))
-        jit_raise("jit_capture(): only CUDA mode is supported at the moment.");
-
     ThreadState *ts = thread_state(cuda);
 
     // See 'jit_eval()' for details on this locking construction
@@ -1425,6 +1427,7 @@ const char *jit_capture(int cuda,
     visited.clear();
     schedule.clear();
     buffer.clear();
+    intrinsics_buffer.clear();
     kernel_ids.clear();
 
     for (uint32_t i = 0; i < n_out; ++i)
@@ -1453,6 +1456,9 @@ const char *jit_capture(int cuda,
         v->reg_index = reg_count++;
     }
 
+    if (!cuda)
+        buffer.put("%^^^^^^^^^^^^^^^^_in = type { ");
+
     uint32_t offset_out = 0, align_out = 1;
     for (uint32_t i = 0; i < n_out; ++i) {
         Variable *v = jit_var(out[i]);
@@ -1462,7 +1468,14 @@ const char *jit_capture(int cuda,
         offset_out = (offset_out + size - 1) / size * size;
         offset_out += size;
         align_out = std::max(align_out, size);
+
+        if (!cuda)
+            buffer.fmt("<%i x %s>%s", jit_llvm_vector_width,
+                       var_type_name_llvm[v->type], i + 1 < n_out ? ", " : "");
     }
+
+    if (!cuda)
+        buffer.put(" }\n%^^^^^^^^^^^^^^^^_out = type { ");
 
     uint32_t offset_in = 0, align_in = 1;
     for (uint32_t i = 0; i < n_in; ++i) {
@@ -1475,7 +1488,14 @@ const char *jit_capture(int cuda,
         v->arg_index = offset_in;
         offset_in += size;
         align_in = std::max(align_in, size);
+
+        if (!cuda)
+            buffer.fmt("<%i x %s>%s", jit_llvm_vector_width,
+                       var_type_name_llvm[v->type], i + 1 < n_out ? ", " : "");
     }
+
+    if (!cuda)
+        buffer.put(" }\n\n");
 
     for (auto const &entry: schedule) {
         Variable *v = jit_var(entry.index);
@@ -1499,14 +1519,29 @@ const char *jit_capture(int cuda,
     if (offset_out == 0)
         offset_out = 1;
 
-    buffer.fmt(".func (.param .align %u .b8 out[%u]) func_^^^^^^^^^^^^^^^^(.reg .u64 extra, .param .align "
-               "%u .b8 params[%u]) {\n",
-               align_out, offset_out, align_in, offset_in);
+    if (cuda) {
+        buffer.fmt(".func (.param .align %u .b8 out[%u]) func_^^^^^^^^^^^^^^^^(.reg .u64 extra, .param .align "
+                   "%u .b8 params[%u]) {\n",
+                   align_out, offset_out, align_in, offset_in);
+    } else {
+        buffer.fmt(
+            "define %%^^^^^^^^^^^^^^^^_out @func_^^^^^^^^^^^^^^^^(void* "
+            "%%extra, <%i x i1> %%mask, %%^^^^^^^^^^^^^^^^_in %%params) #0 fastcc",
+            jit_llvm_vector_width);
+        buffer.fmt(
+            " alignstack(%u)",
+            std::max(16u, jit_llvm_vector_width * (uint32_t) sizeof(float)));
+        buffer.put(" {\n");
+    }
 
     ScheduledGroup group(schedule.size(), 0, schedule.size());
     capture_ir = true;
     uses_optix = false;
-    jit_assemble_cuda(ts, group, reg_count);
+
+    if (cuda)
+        jit_assemble_cuda(ts, group, reg_count);
+    else
+        jit_assemble_llvm(group);
 
     offset_out = 0;
     for (uint32_t i = 0; i < n_out; ++i) {
@@ -1532,10 +1567,14 @@ const char *jit_capture(int cuda,
     // Replace '^'s in 'enoki_^^^^^^^^' by a hash code
     kernel_hash = hash_kernel(buffer.get());
     snprintf(kernel_name, 17, "%016llx", (unsigned long long) kernel_hash);
-    const char *name_start = strchr(buffer.get(), '^');
-    if (unlikely(!name_start))
-        jit_fail("jit_capture(): could not find kernel name!");
-    memcpy((char *) name_start, kernel_name, 16);
+
+    const char *p = buffer.get();
+    while (true) {
+        p = strchr(buffer.get(), '^');
+        if (!p)
+            break;
+        memcpy((char *) p, kernel_name, 16);
+    }
 
     if (hash_out)
         *hash_out = kernel_hash;

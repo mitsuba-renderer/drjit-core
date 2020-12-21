@@ -36,16 +36,9 @@ functionality through a C99-compatible interface.
 
 - Cross-platform: runs on Linux, macOS, and Windows.
 
-- Kernels are cached and reused when the same computation is encountered again.
-  Caching is done both in memory and on disk (``~/.enoki`` on Linux and macOS,
-  ``~/AppData/Local/Temp/enoki`` on Windows).
-
-- The internals of the JIT compiler heavily rely on hash table lookups (to keep
-  track of variables) and string concatenation (to merge IR fragments into full
-  kernels), and both of these steps are highly optimized. This means that the
-  overhead of generating kernel IR code is minimal (only a few μs), with most
-  time being spent either executing kernels or compiling from IR to machine
-  code when a kernel is encountered for the first time.
+- The CUDA backend targets NVIDIA GPUs with compute capability 5.0 or newer,
+  and the LLVM backend automatically targets the vector instruction sets
+  supported by the host machine (e.g. AVX/AVX2, or AVX512 if available).
 
 - Supports parallel kernel execution on multiple devices (JITing from several
   CPU threads, or running kernels on multiple GPUs).
@@ -53,14 +46,15 @@ functionality through a C99-compatible interface.
 - Instead of running the generated code, Enoki-JIT can also simply capture it
   return a string representation for advanced use cases (metaprogramming, etc.)
 
-- The LLVM backend automatically targets the vector instruction sets supported
-  by the host machine (e.g. AVX/AVX2, or AVX512 if available).
-
 - The library provides an *asynchronous* memory allocator, which allocates and
   releases memory in the execution stream of a device that runs asynchronously
   with respect to the host CPU. Kernels frequently request and release large
   memory buffers, which both tend to be very costly operations. For this
   reason, memory allocations are also cached and reused.
+
+- Kernels are cached and reused when the same computation is encountered again.
+  Caching is done both in memory and on disk (``~/.enoki`` on Linux and macOS,
+  ``~/AppData/Local/Temp/enoki`` on Windows).
 
 - Provides a variety of parallel reductions for convenience.
 
@@ -229,10 +223,10 @@ This step is highly optimized and takes on the order of a few microseconds.
 
 Once the final PTX string is available, two things can happen: potentially
 we've never seen this particular sequence of steps before, and in that case the
-PTX must be further compiled to machine code ("SASS", or *streaming assembly*).
-This step involves a full optimizing compiler embedded in the GPU driver, which
-tends to be very slow—usually it's a factor of 1000-10000× slower than the
-preceding steps within Enoki-JIT.
+PTX code must be further compiled to machine code ("SASS", or *streaming
+assembly*). This step involves a full optimizing compiler embedded in the GPU
+driver, which tends to be very slow: usually it's a factor of 1000-10000×
+slower than the preceding steps within Enoki-JIT.
 
 However, once a kernel has been compiled, `Enoki-JIT` will *remember* it using
 both an in-memory and an on-disk cache. In programs that perform the same
@@ -269,6 +263,10 @@ jit_shutdown(): releasing 1 thread state ..
 jit_shutdown(): done
 jit_cuda_shutdown()
 ```
+
+These log messages show that Enoki generated a single kernel within 2.4 μs.
+However, this kernel was never observed before, necessitating a compilation
+step by the CUDA driver, which took 33 ms.
 
 Note the ``Result: [...]`` line, which is the expected output of the
 calculation ``0.5 + [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]``. The extra lines are debug
@@ -354,14 +352,14 @@ L1: // Loop body
     add.f32 %f6, %f4, %f5;
 ```
 
-corresponding to our variables ``v0``, ``v1``, and ``v2``! The remaining header
-and footer establish a [grid-stride
+These lines exactly corresponding to the variables ``v0``, ``v1``, and ``v2``
+that we had previously defined. The surrounding code establishes a [grid-stride
 loop](https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/)
 that processes all array elements. This time around, the kernel compilation was
 skipped, and Enoki loaded the kernel from the on-disk cache file
 ``~/.enoki/1206b6f59d7acd71.cuda.bin`` containing a
 [LZ4](https://github.com/lz4/lz4)-compressed version of code and compilation
-output. The hexadecimal value is the
+output. The odd hexadecimal value is simply the
 [XXH3](https://cyan4973.github.io/xxHash/) hash of the kernel source code.
 
 When a kernel includes OptiX function calls (ray tracing operations), kernels
@@ -389,8 +387,13 @@ host processor. For example, ``<$w x $t0>`` will e.g. expand to ``<8 x float>``
 on a machine supporting the AVX/AVX2 instruction set, and ``<16 x float>`` on a
 machine with AVX512.
 
-A small kernel transforming a few thousands of elements will be JIT-compiled
-and executed immediately.  For large arrays, Enoki-JIT will automatically
-parallelize evaluation using the minimal
-[Enoki-Thread](https://github.com/mitsuba-renderer/enoki-thread/) thread pool
-that is included as part of this repository (as a git submodule).
+A kernel transforming less than a few thousands of elements will be
+JIT-compiled and executed immediately on the current thread. For large arrays,
+Enoki-JIT will automatically parallelize evaluation via a thread pool. The
+Enoki-JIT repository ships with
+[Enoki-Thread](https://github.com/mitsuba-renderer/enoki-thread/) (as a git
+submodule), which is a minimal implementation of the components that are
+necessary to realize this. The size of this thread pool can also be set to
+zero, in which case all computation will occur on the current thread. In this
+case, another type of parallelism is available by using Enoki-JIT from multiple
+threads at once.

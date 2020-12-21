@@ -213,9 +213,18 @@ extern JITC_EXPORT uint32_t jitc_side_effect_counter(int cuda);
 /**
  * \brief Export the intermediate representation of a calculation
  *
- * This function generates an IR representation (only CUDA PTX supported at the
- * moment) that computes the values of the given outputs in terms of the
- * specified inputs.
+ * This function generates an IR representation that computes the values of the
+ * given outputs (\c n_out variables specified in \c out in terms of the
+ * specified inputs (\c n_in variables specified in \c in).
+ *
+ * The number of side effects of this computation should be captured by
+ * evaluating \ref jitc_side_effect_counter() before and afterwards and
+ * specifying the result using the \c n_side_effects parameter.
+ *
+ * Apart from the captured IR string, the function may return a list of extra
+ * variables and an associated count via \c extra_out and \c extra_count_out.
+ * This list specifies memory regions that were accessed by the computation,
+ * and which were not part of the input variable list \c in.
  */
 extern JITC_EXPORT const char *jitc_capture(int cuda,
                                             const uint32_t *in, uint32_t n_in,
@@ -225,7 +234,7 @@ extern JITC_EXPORT const char *jitc_capture(int cuda,
                                             uint32_t **extra_out,
                                             uint32_t *extra_count_out);
 
-/// Like jitc_capture(), wraps result in JIT variable of type VarType::Global
+/// Like jitc_capture(), but returns IR via a variable of type VarType::Global
 extern JITC_EXPORT uint32_t jitc_capture_var(int cuda,
                                              const uint32_t *in, uint32_t n_in,
                                              const uint32_t *out, uint32_t n_out,
