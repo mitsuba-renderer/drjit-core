@@ -63,5 +63,5 @@ extern bool jit_kernel_load(const char *source, uint32_t source_size,
 extern bool jit_kernel_write(const char *source, uint32_t source_size,
                              bool cuda, size_t hash, const Kernel &kernel);
 
-extern void jit_kernel_free(int device_id, const Kernel kernel);
+extern void jit_kernel_free(int device_id, const Kernel &kernel);
 

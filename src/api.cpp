@@ -622,14 +622,15 @@ uint32_t jitc_capture_var(int cuda,
                            extra_out, extra_count_out);
 }
 
-void jitc_var_vcall(int cuda, uint32_t self, uint32_t n_inst,
-                    const uint32_t *inst_ids, const uint64_t *inst_hash,
-                    uint32_t n_in, const uint32_t *in, uint32_t n_out,
-                    uint32_t *out, uint32_t n_extra, const uint32_t *extra,
+void jitc_var_vcall(int cuda, const char *domain, const char *name,
+                    uint32_t self, uint32_t n_inst, const uint32_t *inst_ids,
+                    const uint64_t *inst_hash, uint32_t n_in,
+                    const uint32_t *in, uint32_t n_out, uint32_t *out,
+                    uint32_t n_extra, const uint32_t *extra,
                     const uint32_t *extra_offset, int side_effects) {
     lock_guard guard(state.mutex);
-    jit_var_vcall(cuda, self, n_inst, inst_ids, inst_hash, n_in, in, n_out, out,
-                  n_extra, extra, extra_offset, side_effects);
+    jit_var_vcall(cuda, domain, name, self, n_inst, inst_ids, inst_hash, n_in,
+                  in, n_out, out, n_extra, extra, extra_offset, side_effects);
 }
 
 void jitc_var_printf(int cuda, const char *fmt, uint32_t narg,
@@ -657,9 +658,9 @@ void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
     jit_optix_configure(pco, sbt, pg, pg_count);
 }
 
-void jitc_optix_trace(uint32_t nargs, uint32_t *args) {
+void jitc_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
     lock_guard guard(state.mutex);
-    jit_optix_trace(nargs, args);
+    jit_optix_trace(nargs, args, mask);
 }
 
 void jitc_optix_mark(uint32_t index) {

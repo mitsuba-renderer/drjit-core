@@ -1400,6 +1400,8 @@ extern "C" {
 };
 
 void jit_var_vcall(int cuda,
+                   const char *domain,
+                   const char *name,
                    uint32_t self,
                    uint32_t n_inst,
                    const uint32_t *inst_ids,
@@ -1414,11 +1416,15 @@ void jit_var_vcall(int cuda,
     lock_guard guard(state.eval_mutex);
     state.mutex.lock();
 
+    std::vector<uint32_t> sorted(inst_ids, inst_ids + n_inst);
+    std::sort(sorted.begin(), sorted.end());
+    sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+
     jit_log(Info,
-            "jit_var_vcall(): %u instances, "
+            "jit_var_vcall(): %s::%s(), %u instances, %u unique, "
             "%u in, %u out, %u extra, %s.",
-            n_inst, n_in, n_out, n_extra,
-            side_effects ? "side effects" : "no side effects");
+            domain, name, n_inst, (uint32_t) sorted.size(), n_in, n_out,
+            n_extra, side_effects ? "side effects" : "no side effects");
 
     uint32_t index = jit_var_new_0(cuda, VarType::Void, "", 1, 1);
 
@@ -1455,6 +1461,7 @@ void jit_var_vcall(int cuda,
     uint32_t call_target = 0;
 
     buffer.clear();
+    buffer.fmt("// %s::%s\n    ", domain, name);
     buffer.put("// indirect call via table $r2: ");
     for (uint32_t i = 0; i < n_inst; ++i)
         buffer.fmt("%016llx%s", (unsigned long long) inst_hash[i],

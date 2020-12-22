@@ -33,7 +33,7 @@ extern void jit_optix_configure(const OptixPipelineCompileOptions *pco,
                                 uint32_t pg_count);
 
 /// Insert a function call to optixTrace into the program
-extern void jit_optix_trace(uint32_t nargs, uint32_t *args);
+extern void jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask);
 
 /// Compile an OptiX kernel
 extern void jit_optix_compile(ThreadState *ts, const char *buffer,

@@ -36,8 +36,10 @@ extern uint32_t jit_capture_var(int cuda,
                                 uint32_t *extra_count_out);
 
 /// Insert an indirect function call into the program
-extern void jit_var_vcall(int cuda, uint32_t self, uint32_t n_inst,
+extern void jit_var_vcall(int cuda, const char *domain, const char *name,
+                          uint32_t self, uint32_t n_inst,
                           const uint32_t *inst_ids, const uint64_t *inst_hash,
                           uint32_t n_in, const uint32_t *in, uint32_t n_out,
-                          uint32_t *out, uint32_t n_extra, const uint32_t *extra,
-                          const uint32_t *extra_offset, int side_effects);
+                          uint32_t *out, uint32_t n_extra,
+                          const uint32_t *extra, const uint32_t *extra_offset,
+                          int side_effects);

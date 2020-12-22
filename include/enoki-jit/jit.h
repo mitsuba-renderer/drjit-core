@@ -1236,11 +1236,12 @@ extern JITC_EXPORT int jitc_cse(int cuda);
 /**
  */
 extern JITC_EXPORT void
-jitc_var_vcall(int cuda, uint32_t self, uint32_t n_inst,
-               const uint32_t *inst_ids, const uint64_t *inst_hash,
-               uint32_t n_in, const uint32_t *in, uint32_t n_out, uint32_t *out,
-               uint32_t n_extra, const uint32_t *extra,
-               const uint32_t *extra_offset, int side_effects);
+jitc_var_vcall(int cuda, const char *domain, const char *name, uint32_t self,
+               uint32_t n_inst, const uint32_t *inst_ids,
+               const uint64_t *inst_hash, uint32_t n_in, const uint32_t *in,
+               uint32_t n_out, uint32_t *out, uint32_t n_extra,
+               const uint32_t *extra, const uint32_t *extra_offset,
+               int side_effects);
 
 extern JITC_EXPORT void jitc_vcall_set_targets_explicit(int value);
 

@@ -51,7 +51,7 @@ jitc_optix_configure(const OptixPipelineCompileOptions *pco,
  * overwritten with the new variable indices with external reference count 1
  * containing the final payload value.
  */
-extern JITC_EXPORT void jitc_optix_trace(uint32_t nargs, uint32_t *args);
+extern JITC_EXPORT void jitc_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask);
 
 /// Mark a variable as an expression requiring compilation via OptiX
 extern JITC_EXPORT void jitc_optix_mark(uint32_t index);

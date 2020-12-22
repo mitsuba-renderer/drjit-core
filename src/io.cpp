@@ -401,7 +401,7 @@ bool jit_kernel_write(const char *source, uint32_t source_size,
     return success;
 }
 
-void jit_kernel_free(int device_id, const Kernel kernel) {
+void jit_kernel_free(int device_id, const Kernel &kernel) {
     if (device_id == -1) {
 #if !defined(_WIN32)
         if (munmap((void *) kernel.data, kernel.size) == -1)
