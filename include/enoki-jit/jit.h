@@ -171,9 +171,6 @@ enum class JitFlag : uint32_t {
     // Status flag indicating that a vcall call is *currently* being recorded
     RecordingVCall = 8,
 
-    // Record OptiX ray tracing operations
-    RecordOptiX    = 16,
-
     // A loop is currently being recorded
     Recording = (uint32_t) RecordingLoop | (uint32_t) RecordingVCall
 };
@@ -184,7 +181,6 @@ enum JitFlag {
     JitFlagRecordingLoop = 2,
     JitFlagRecordVCall = 4,
     JitFlagRecordingVCall = 8,
-    JitFlagRecordOptiX = 16,
     JitFlagRecording = JitFlagRecordingLoop | JitFlagRecordingVCall
 };
 #endif
@@ -1242,8 +1238,6 @@ jitc_var_vcall(int cuda, const char *domain, const char *name, uint32_t self,
                uint32_t n_out, uint32_t *out, uint32_t n_extra,
                const uint32_t *extra, const uint32_t *extra_offset,
                int side_effects);
-
-extern JITC_EXPORT void jitc_vcall_set_targets_explicit(int value);
 
 
 // ====================================================================

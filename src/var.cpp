@@ -1392,13 +1392,6 @@ void jit_var_printf(int cuda, const char *fmt, uint32_t narg,
     jit_var_mark_scatter(idx, 0);
 }
 
-static int targets_explicit = 0;
-extern "C" {
-    JITC_EXPORT void jitc_vcall_set_targets_explicit(int value) {
-        targets_explicit = value;
-    }
-};
-
 void jit_var_vcall(int cuda,
                    const char *domain,
                    const char *name,
@@ -1463,9 +1456,9 @@ void jit_var_vcall(int cuda,
     buffer.clear();
     buffer.fmt("// %s::%s\n    ", domain, name);
     buffer.put("// indirect call via table $r2: ");
-    for (uint32_t i = 0; i < n_inst; ++i)
-        buffer.fmt("%016llx%s", (unsigned long long) inst_hash[i],
-                   i + 1 < n_inst ? ", " : "");
+    for (size_t i = 0; i < sorted.size(); ++i)
+        buffer.fmt("%016llx%s", (unsigned long long) sorted[i],
+                   i + 1 < sorted.size() ? ", " : "");
 
     if (cuda) {
         // Don't delete comment, patch code in optix_api.cpp looks for it
@@ -1569,10 +1562,9 @@ void jit_var_vcall(int cuda,
 	        align_out, offset_out, align_in, offset_in
     );
 
-    if (!targets_explicit)
-        buffer.fmt("        Fproto: .callprototype (.param .align %u .b8 _[%u]) _ "
-                   "(.param .align %u .b8 _[%u], .reg .u64 _);\n",
-                   align_out, offset_out, align_in, offset_in);
+    buffer.fmt("        Fproto: .callprototype (.param .align %u .b8 _[%u]) _ "
+               "(.param .align %u .b8 _[%u], .reg .u64 _);\n",
+               align_out, offset_out, align_in, offset_in);
 
     prev = index;
     index = jit_var_new_1(cuda, VarType::Void, buffer.get(), 0, index);
@@ -1593,14 +1585,15 @@ void jit_var_vcall(int cuda,
     }
 
     prev  = index;
-    if (targets_explicit)
-        index = jit_var_new_4(cuda, VarType::Void,
-                              "    call (param_out), $r1, (param_in, $r2), $r3", 1,
-                              call_target, extra_id, call_table, index);
-    else
-        index = jit_var_new_3(cuda, VarType::Void,
-                              "    call (param_out), $r1, (param_in, $r2), Fproto", 1,
-                              call_target, extra_id, index);
+#if 0
+    index = jit_var_new_4(cuda, VarType::Void,
+                          "    call (param_out), $r1, (param_in, $r2), $r3", 1,
+                          call_target, extra_id, call_table, index);
+#else
+    index = jit_var_new_3(cuda, VarType::Void,
+                          "    call (param_out), $r1, (param_in, $r2), Fproto", 1,
+                          call_target, extra_id, index);
+#endif
 
     jit_var_dec_ref_ext(call_table);
     jit_var_dec_ref_ext(prev);
