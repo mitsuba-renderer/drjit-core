@@ -296,7 +296,8 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     char *error = nullptr;
     LLVMParseIRInContext(jit_llvm_context, buf, &llvm_module, &error);
     if (unlikely(error))
-        jit_fail("jit_llvm_compile(): could not parse IR: %s.\n", error);
+        jit_fail("jit_llvm_compile(): parsing failed. Please see the LLVM "
+                 "IR and error message below:\n\n%s\n\n%s", buffer, error);
 
     if (false) {
         char *llvm_ir = LLVMPrintModuleToString(llvm_module);

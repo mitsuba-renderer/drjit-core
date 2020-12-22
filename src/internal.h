@@ -267,14 +267,13 @@ struct Variable {
 struct VariableKey {
     char *stmt;
     uint32_t size;
+    uint32_t type;
     uint32_t dep[4];
-    uint16_t type;
-    uint16_t flags;
 
     VariableKey(const Variable &v)
-        : stmt(v.stmt), size(v.size), dep{ v.dep[0], v.dep[1], v.dep[2], v.dep[3] },
-          type((uint16_t) v.type),
-          flags((v.free_stmt ? 1 : 0) + (v.cuda ? 2 : 0)) { }
+        : stmt(v.stmt), size(v.size),
+          type((uint16_t) v.type), dep{ v.dep[0], v.dep[1], v.dep[2],
+                                        v.dep[3] } { }
 
     bool operator==(const VariableKey &v) const {
         if (memcmp(&size, &v.size, 6 * sizeof(uint32_t)) != 0)
@@ -288,16 +287,7 @@ struct VariableKey {
 /// Helper class to hash VariableKey instances
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        size_t state;
-        if (unlikely(k.flags & 1)) {
-            // Dynamically allocated string, hash its contents
-            state = hash_str(k.stmt);
-            state = hash(&k.size, sizeof(VariableKey) - sizeof(char *), state);
-        } else {
-            // Statically allocated string, hash its address
-            state = hash(&k, sizeof(VariableKey));
-        }
-        return state;
+        return hash(&k.size, 6 * sizeof(uint32_t), hash_str(k.stmt));
     }
 };
 

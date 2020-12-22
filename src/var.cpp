@@ -1454,18 +1454,26 @@ void jit_var_vcall(int cuda,
         jit_var_new_1(cuda, VarType::Global, buffer.get(), 0, index);
     uint32_t call_target = 0;
 
+    buffer.clear();
+    buffer.put("// indirect call via table $r2: ");
+    for (uint32_t i = 0; i < n_inst; ++i)
+        buffer.fmt("%016llx%s", (unsigned long long) inst_hash[i],
+                   i + 1 < n_inst ? ", " : "");
+
     if (cuda) {
         // Don't delete comment, patch code in optix_api.cpp looks for it
-        call_target = jit_var_new_2(1, VarType::UInt64,
-                                    "// [ vcall function pointer lookup ]$n"
-                                    "// OptiX variant: $r2$n"
-                                    "// add.u32 %r3, $r1, sbt_id_offset$n"
-                                    "// call ($r0), _optix_call_direct_callable, (%r3)$n"
-                                    "// CUDA variant:$n"
-                                    "   mov.$t0 $r0, $r2$n"
-                                    "   mad.wide.u32 $r0, $r1, 8, $r0$n"
-                                    "   ld.global.$t0 $r0, [$r0]",
-                                    1, self, call_table);
+        buffer.put(
+            "\n    "
+            "// OptiX variant:\n    "
+            "// add.u32 %r3, $r1, sbt_id_offset;\n    "
+            "// call ($r0), _optix_call_direct_callable, (%r3);\n    "
+            "// CUDA variant:\n    "
+            "   mov.$t0 $r0, $r2;\n    "
+            "   mad.wide.u32 $r0, $r1, 8, $r0;\n    "
+            "   ld.global.$t0 $r0, [$r0]"
+        );
+        call_target = jit_var_new_2(1, VarType::UInt64, buffer.get(), 0, self,
+                                    call_table);
     }
 
     uint32_t extra_id;

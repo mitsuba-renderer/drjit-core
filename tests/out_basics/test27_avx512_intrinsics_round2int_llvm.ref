@@ -11,194 +11,186 @@ jit_var_new(4):
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(4): 1
 jit_var_dec_ref_ext(4): 0
-jit_var_new(5): 
+jit_var_new(3):  (reused)
+jit_var_inc_ref_ext(3): 2
+jit_var_inc_ref_int(3): 1
+jit_var_dec_ref_ext(3): 1
+jit_var_new(5 <- 4, 3, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x $t1>, <16 x $t2>, i16, i32)
 jit_var_inc_ref_ext(5): 1
-jit_var_inc_ref_int(5): 1
-jit_var_dec_ref_ext(5): 0
-jit_var_new(6 <- 4, 5, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x $t1>, <16 x $t2>, i16, i32)
-jit_var_inc_ref_ext(6): 1
 jit_var_inc_ref_int(1): 2
-jit_var_inc_ref_int(6): 1
-jit_var_new(7 <- 1, 6): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
-jit_var_inc_ref_ext(7): 1
-jit_var_dec_ref_ext(6): 0
+jit_var_inc_ref_int(5): 1
+jit_var_new(6 <- 1, 5): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
+jit_var_inc_ref_ext(6): 1
+jit_var_dec_ref_ext(5): 0
 jit_var_dec_ref_ext(3): 0
-jit_var_free(3)
-jit_var_new(8): 
-jit_var_inc_ref_ext(8): 1
+jit_var_new(7): 
+jit_var_inc_ref_ext(7): 1
 jit_var_new(4):  (reused)
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(4): 2
 jit_var_dec_ref_ext(4): 0
-jit_var_new(9): 
-jit_var_inc_ref_ext(9): 1
-jit_var_inc_ref_int(9): 1
-jit_var_dec_ref_ext(9): 0
-jit_var_new(10 <- 4, 9, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2udq.512(<16 x $t1>, <16 x $t2>, i16, i32)
-jit_var_inc_ref_ext(10): 1
+jit_var_new(7):  (reused)
+jit_var_inc_ref_ext(7): 2
+jit_var_inc_ref_int(7): 1
+jit_var_dec_ref_ext(7): 1
+jit_var_new(8 <- 4, 7, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2udq.512(<16 x $t1>, <16 x $t2>, i16, i32)
+jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_int(1): 3
-jit_var_inc_ref_int(10): 1
-jit_var_new(11 <- 1, 10): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
-jit_var_inc_ref_ext(11): 1
-jit_var_dec_ref_ext(10): 0
+jit_var_inc_ref_int(8): 1
+jit_var_new(9 <- 1, 8): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
+jit_var_inc_ref_ext(9): 1
 jit_var_dec_ref_ext(8): 0
-jit_var_free(8)
-jit_var_new(12): 
-jit_var_inc_ref_ext(12): 1
+jit_var_dec_ref_ext(7): 0
+jit_var_new(10): 
+jit_var_inc_ref_ext(10): 1
 jit_var_new(4):  (reused)
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(4): 3
 jit_var_dec_ref_ext(4): 0
+jit_var_new(10):  (reused)
+jit_var_inc_ref_ext(10): 2
+jit_var_inc_ref_int(10): 1
+jit_var_dec_ref_ext(10): 1
+jit_var_new(11 <- 4, 10, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(11): 1
+jit_var_inc_ref_int(1): 4
+jit_var_inc_ref_int(11): 1
+jit_var_new(12 <- 1, 11): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
+jit_var_inc_ref_ext(12): 1
+jit_var_dec_ref_ext(11): 0
+jit_var_dec_ref_ext(10): 0
 jit_var_new(13): 
 jit_var_inc_ref_ext(13): 1
-jit_var_inc_ref_int(13): 1
-jit_var_dec_ref_ext(13): 0
-jit_var_new(14 <- 4, 13, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(14): 1
-jit_var_inc_ref_int(1): 4
-jit_var_inc_ref_int(14): 1
-jit_var_new(15 <- 1, 14): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
-jit_var_inc_ref_ext(15): 1
-jit_var_dec_ref_ext(14): 0
-jit_var_dec_ref_ext(12): 0
-jit_var_free(12)
-jit_var_new(16): 
-jit_var_inc_ref_ext(16): 1
 jit_var_new(4):  (reused)
 jit_var_inc_ref_ext(4): 1
 jit_var_inc_ref_int(4): 4
 jit_var_dec_ref_ext(4): 0
-jit_var_new(17): 
-jit_var_inc_ref_ext(17): 1
-jit_var_inc_ref_int(17): 1
-jit_var_dec_ref_ext(17): 0
-jit_var_new(18 <- 4, 17, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(18): 1
+jit_var_new(13):  (reused)
+jit_var_inc_ref_ext(13): 2
+jit_var_inc_ref_int(13): 1
+jit_var_dec_ref_ext(13): 1
+jit_var_new(14 <- 4, 13, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(14): 1
 jit_var_inc_ref_int(1): 5
-jit_var_inc_ref_int(18): 1
-jit_var_new(19 <- 1, 18): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
-jit_var_inc_ref_ext(19): 1
-jit_var_dec_ref_ext(18): 0
+jit_var_inc_ref_int(14): 1
+jit_var_new(15 <- 1, 14): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
+jit_var_inc_ref_ext(15): 1
+jit_var_dec_ref_ext(14): 0
+jit_var_dec_ref_ext(13): 0
+jit_var_new(3):  (reused)
+jit_var_inc_ref_ext(3): 1
+jit_var_new(16): 
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 1
 jit_var_dec_ref_ext(16): 0
-jit_var_free(16)
-jit_var_new(20): 
-jit_var_inc_ref_ext(20): 1
-jit_var_new(21): 
-jit_var_inc_ref_ext(21): 1
-jit_var_inc_ref_int(21): 1
-jit_var_dec_ref_ext(21): 0
-jit_var_new(5):  (reused)
-jit_var_inc_ref_ext(5): 1
-jit_var_inc_ref_int(5): 2
-jit_var_dec_ref_ext(5): 0
-jit_var_new(22 <- 21, 5, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2dq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(22): 1
+jit_var_new(3):  (reused)
+jit_var_inc_ref_ext(3): 2
+jit_var_inc_ref_int(3): 2
+jit_var_dec_ref_ext(3): 1
+jit_var_new(17 <- 16, 3, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2dq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(17): 1
 jit_var_inc_ref_int(2): 1
-jit_var_inc_ref_int(22): 1
-jit_var_new(23 <- 2, 22): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
-jit_var_inc_ref_ext(23): 1
-jit_var_dec_ref_ext(22): 0
-jit_var_dec_ref_ext(20): 0
-jit_var_free(20)
-jit_var_new(24): 
-jit_var_inc_ref_ext(24): 1
-jit_var_new(21):  (reused)
-jit_var_inc_ref_ext(21): 1
-jit_var_inc_ref_int(21): 2
-jit_var_dec_ref_ext(21): 0
-jit_var_new(9):  (reused)
-jit_var_inc_ref_ext(9): 1
-jit_var_inc_ref_int(9): 2
-jit_var_dec_ref_ext(9): 0
-jit_var_new(25 <- 21, 9, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2udq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(25): 1
+jit_var_inc_ref_int(17): 1
+jit_var_new(18 <- 2, 17): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
+jit_var_inc_ref_ext(18): 1
+jit_var_dec_ref_ext(17): 0
+jit_var_dec_ref_ext(3): 0
+jit_var_new(7):  (reused)
+jit_var_inc_ref_ext(7): 1
+jit_var_new(16):  (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 2
+jit_var_dec_ref_ext(16): 0
+jit_var_new(7):  (reused)
+jit_var_inc_ref_ext(7): 2
+jit_var_inc_ref_int(7): 2
+jit_var_dec_ref_ext(7): 1
+jit_var_new(19 <- 16, 7, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2udq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(19): 1
 jit_var_inc_ref_int(2): 2
-jit_var_inc_ref_int(25): 1
-jit_var_new(26 <- 2, 25): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
-jit_var_inc_ref_ext(26): 1
-jit_var_dec_ref_ext(25): 0
-jit_var_dec_ref_ext(24): 0
-jit_var_free(24)
-jit_var_new(27): 
-jit_var_inc_ref_ext(27): 1
-jit_var_new(21):  (reused)
+jit_var_inc_ref_int(19): 1
+jit_var_new(20 <- 2, 19): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
+jit_var_inc_ref_ext(20): 1
+jit_var_dec_ref_ext(19): 0
+jit_var_dec_ref_ext(7): 0
+jit_var_new(10):  (reused)
+jit_var_inc_ref_ext(10): 1
+jit_var_new(16):  (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 3
+jit_var_dec_ref_ext(16): 0
+jit_var_new(10):  (reused)
+jit_var_inc_ref_ext(10): 2
+jit_var_inc_ref_int(10): 2
+jit_var_dec_ref_ext(10): 1
+jit_var_new(21 <- 16, 10, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
 jit_var_inc_ref_ext(21): 1
-jit_var_inc_ref_int(21): 3
+jit_var_inc_ref_int(2): 3
+jit_var_inc_ref_int(21): 1
+jit_var_new(22 <- 2, 21): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
+jit_var_inc_ref_ext(22): 1
 jit_var_dec_ref_ext(21): 0
+jit_var_dec_ref_ext(10): 0
 jit_var_new(13):  (reused)
 jit_var_inc_ref_ext(13): 1
+jit_var_new(16):  (reused)
+jit_var_inc_ref_ext(16): 1
+jit_var_inc_ref_int(16): 4
+jit_var_dec_ref_ext(16): 0
+jit_var_new(13):  (reused)
+jit_var_inc_ref_ext(13): 2
 jit_var_inc_ref_int(13): 2
-jit_var_dec_ref_ext(13): 0
-jit_var_new(28 <- 21, 13, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(28): 1
-jit_var_inc_ref_int(2): 3
-jit_var_inc_ref_int(28): 1
-jit_var_new(29 <- 2, 28): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
-jit_var_inc_ref_ext(29): 1
-jit_var_dec_ref_ext(28): 0
-jit_var_dec_ref_ext(27): 0
-jit_var_free(27)
-jit_var_new(30): 
-jit_var_inc_ref_ext(30): 1
-jit_var_new(21):  (reused)
-jit_var_inc_ref_ext(21): 1
-jit_var_inc_ref_int(21): 4
-jit_var_dec_ref_ext(21): 0
-jit_var_new(17):  (reused)
-jit_var_inc_ref_ext(17): 1
-jit_var_inc_ref_int(17): 2
-jit_var_dec_ref_ext(17): 0
-jit_var_new(31 <- 21, 17, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(31): 1
+jit_var_dec_ref_ext(13): 1
+jit_var_new(23 <- 16, 13, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(23): 1
 jit_var_inc_ref_int(2): 4
-jit_var_inc_ref_int(31): 1
-jit_var_new(32 <- 2, 31): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
-jit_var_inc_ref_ext(32): 1
-jit_var_dec_ref_ext(31): 0
-jit_var_dec_ref_ext(30): 0
-jit_var_free(30)
-jit_var_schedule(7)
-jit_var_schedule(11)
+jit_var_inc_ref_int(23): 1
+jit_var_new(24 <- 2, 23): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 10)
+jit_var_inc_ref_ext(24): 1
+jit_var_dec_ref_ext(23): 0
+jit_var_dec_ref_ext(13): 0
+jit_var_schedule(6)
+jit_var_schedule(9)
+jit_var_schedule(12)
 jit_var_schedule(15)
-jit_var_schedule(19)
-jit_var_schedule(23)
-jit_var_schedule(26)
-jit_var_schedule(29)
-jit_var_schedule(32)
+jit_var_schedule(18)
+jit_var_schedule(20)
+jit_var_schedule(22)
+jit_var_schedule(24)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): launching 1 kernel.
 jit_assemble(size=9): register map:
-   - gl0 -> 6 [scalar]
-   - gl1 -> 10 [scalar]
-   - gl2 -> 14 [scalar]
-   - gl3 -> 18 [scalar]
-   - gl4 -> 22 [scalar]
-   - gl5 -> 25 [scalar]
-   - gl6 -> 28 [scalar]
-   - gl7 -> 31 [scalar]
+   - gl0 -> 5 [scalar]
+   - gl1 -> 8 [scalar]
+   - gl2 -> 11 [scalar]
+   - gl3 -> 14 [scalar]
+   - gl4 -> 17 [scalar]
+   - gl5 -> 19 [scalar]
+   - gl6 -> 21 [scalar]
+   - gl7 -> 23 [scalar]
    - %f8 -> 1 [in]
    - %f9 -> 4 [scalar]
-   - %r10 -> 5 [scalar]
-   - %r11 -> 7 [out]
+   - %r10 -> 3 [scalar]
+   - %r11 -> 6 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-   - %r12 -> 9 [scalar]
-   - %r13 -> 11 [out]
+   - %r12 -> 7 [scalar]
+   - %r13 -> 9 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-   - %rd14 -> 13 [scalar]
-   - %rd15 -> 15 [out]
+   - %rd14 -> 10 [scalar]
+   - %rd15 -> 12 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-   - %rd16 -> 17 [scalar]
-   - %rd17 -> 19 [out]
+   - %rd16 -> 13 [scalar]
+   - %rd17 -> 15 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
    - %d18 -> 2
-   - %d19 -> 21 [scalar]
-   - %r20 -> 23 [out]
+   - %d19 -> 16 [scalar]
+   - %r20 -> 18 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-   - %r21 -> 26 [out]
+   - %r21 -> 20 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-   - %rd22 -> 29 [out]
+   - %rd22 -> 22 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
-   - %rd23 -> 32 [out]
+   - %rd23 -> 24 [out]
 jit_malloc(type=host-async, size=256): <@> (new allocation)
   -> launching <@> (n=9, in=1, out=8, ops=24):
 declare <16 x i32> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x float>, <16 x i32>, i16, i32)
@@ -480,51 +472,51 @@ attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
-jit_var_dec_ref_int(6): 0
-jit_var_free(6)
-jit_var_dec_ref_int(4): 3
-jit_var_dec_ref_int(5): 1
-jit_var_dec_ref_int(1): 3
-jit_var_dec_ref_int(10): 0
-jit_var_free(10)
-jit_var_dec_ref_int(4): 2
-jit_var_dec_ref_int(9): 1
-jit_var_dec_ref_int(1): 2
-jit_var_dec_ref_int(14): 0
-jit_var_free(14)
-jit_var_dec_ref_int(4): 1
-jit_var_dec_ref_int(13): 1
-jit_var_dec_ref_int(1): 1
-jit_var_dec_ref_int(18): 0
-jit_var_free(18)
-jit_var_dec_ref_int(4): 0
-jit_var_free(4)
-jit_var_dec_ref_int(17): 1
-jit_var_dec_ref_int(2): 3
-jit_var_dec_ref_int(22): 0
-jit_var_free(22)
-jit_var_dec_ref_int(21): 3
 jit_var_dec_ref_int(5): 0
 jit_var_free(5)
-jit_var_dec_ref_int(2): 2
-jit_var_dec_ref_int(25): 0
-jit_var_free(25)
-jit_var_dec_ref_int(21): 2
-jit_var_dec_ref_int(9): 0
-jit_var_free(9)
-jit_var_dec_ref_int(2): 1
-jit_var_dec_ref_int(28): 0
-jit_var_free(28)
-jit_var_dec_ref_int(21): 1
-jit_var_dec_ref_int(13): 0
-jit_var_free(13)
-jit_var_dec_ref_int(2): 0
-jit_var_dec_ref_int(31): 0
-jit_var_free(31)
-jit_var_dec_ref_int(21): 0
-jit_var_free(21)
+jit_var_dec_ref_int(4): 3
+jit_var_dec_ref_int(3): 1
+jit_var_dec_ref_int(1): 3
+jit_var_dec_ref_int(8): 0
+jit_var_free(8)
+jit_var_dec_ref_int(4): 2
+jit_var_dec_ref_int(7): 1
+jit_var_dec_ref_int(1): 2
+jit_var_dec_ref_int(11): 0
+jit_var_free(11)
+jit_var_dec_ref_int(4): 1
+jit_var_dec_ref_int(10): 1
+jit_var_dec_ref_int(1): 1
+jit_var_dec_ref_int(14): 0
+jit_var_free(14)
+jit_var_dec_ref_int(4): 0
+jit_var_free(4)
+jit_var_dec_ref_int(13): 1
+jit_var_dec_ref_int(2): 3
 jit_var_dec_ref_int(17): 0
 jit_var_free(17)
+jit_var_dec_ref_int(16): 3
+jit_var_dec_ref_int(3): 0
+jit_var_free(3)
+jit_var_dec_ref_int(2): 2
+jit_var_dec_ref_int(19): 0
+jit_var_free(19)
+jit_var_dec_ref_int(16): 2
+jit_var_dec_ref_int(7): 0
+jit_var_free(7)
+jit_var_dec_ref_int(2): 1
+jit_var_dec_ref_int(21): 0
+jit_var_free(21)
+jit_var_dec_ref_int(16): 1
+jit_var_dec_ref_int(10): 0
+jit_var_free(10)
+jit_var_dec_ref_int(2): 0
+jit_var_dec_ref_int(23): 0
+jit_var_free(23)
+jit_var_dec_ref_int(16): 0
+jit_var_free(16)
+jit_var_dec_ref_int(13): 0
+jit_var_free(13)
 jit_eval(): done.
 ceil_f_i32=[-1, 0, 0, 0, 1, 1, 1, 2, -2147483648]
 ceil_f_i64=[-1, 0, 0, 0, 1, 1, 1, 2, 4294967296]
@@ -534,224 +526,216 @@ ceil_f_u32=[4294967295, 0, 0, 0, 1, 1, 1, 2, 4294967295]
 ceil_f_u64=[18446744073709551615, 0, 0, 0, 1, 1, 1, 2, 4294967296]
 ceil_d_u32=[4294967295, 0, 0, 0, 1, 1, 1, 2, 4294967295]
 ceil_d_u64=[18446744073709551615, 0, 0, 0, 1, 1, 1, 2, 4294967296]
-jit_var_dec_ref_ext(32): 0
-jit_var_free(32)
+jit_var_dec_ref_ext(24): 0
+jit_var_free(24)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(29): 0
-jit_var_free(29)
+jit_var_dec_ref_ext(22): 0
+jit_var_free(22)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(26): 0
-jit_var_free(26)
+jit_var_dec_ref_ext(20): 0
+jit_var_free(20)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(23): 0
-jit_var_free(23)
-jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(19): 0
-jit_var_free(19)
+jit_var_dec_ref_ext(18): 0
+jit_var_free(18)
 jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(15): 0
 jit_var_free(15)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(11): 0
-jit_var_free(11)
+jit_var_dec_ref_ext(12): 0
+jit_var_free(12)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(7): 0
-jit_var_free(7)
+jit_var_dec_ref_ext(9): 0
+jit_var_free(9)
 jit_free(<@>, type=host-async, size=256)
-jit_var_new(33): 
+jit_var_dec_ref_ext(6): 0
+jit_var_free(6)
+jit_free(<@>, type=host-async, size=256)
+jit_var_new(25): 
+jit_var_inc_ref_ext(25): 1
+jit_var_new(26): 
+jit_var_inc_ref_ext(26): 1
+jit_var_inc_ref_int(26): 1
+jit_var_dec_ref_ext(26): 0
+jit_var_new(25):  (reused)
+jit_var_inc_ref_ext(25): 2
+jit_var_inc_ref_int(25): 1
+jit_var_dec_ref_ext(25): 1
+jit_var_new(27 <- 26, 25, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x $t1>, <16 x $t2>, i16, i32)
+jit_var_inc_ref_ext(27): 1
+jit_var_inc_ref_int(1): 2
+jit_var_inc_ref_int(27): 1
+jit_var_new(28 <- 1, 27): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
+jit_var_inc_ref_ext(28): 1
+jit_var_dec_ref_ext(27): 0
+jit_var_dec_ref_ext(25): 0
+jit_var_new(29): 
+jit_var_inc_ref_ext(29): 1
+jit_var_new(26):  (reused)
+jit_var_inc_ref_ext(26): 1
+jit_var_inc_ref_int(26): 2
+jit_var_dec_ref_ext(26): 0
+jit_var_new(29):  (reused)
+jit_var_inc_ref_ext(29): 2
+jit_var_inc_ref_int(29): 1
+jit_var_dec_ref_ext(29): 1
+jit_var_new(30 <- 26, 29, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2udq.512(<16 x $t1>, <16 x $t2>, i16, i32)
+jit_var_inc_ref_ext(30): 1
+jit_var_inc_ref_int(1): 3
+jit_var_inc_ref_int(30): 1
+jit_var_new(31 <- 1, 30): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
+jit_var_inc_ref_ext(31): 1
+jit_var_dec_ref_ext(30): 0
+jit_var_dec_ref_ext(29): 0
+jit_var_new(32): 
+jit_var_inc_ref_ext(32): 1
+jit_var_new(26):  (reused)
+jit_var_inc_ref_ext(26): 1
+jit_var_inc_ref_int(26): 3
+jit_var_dec_ref_ext(26): 0
+jit_var_new(32):  (reused)
+jit_var_inc_ref_ext(32): 2
+jit_var_inc_ref_int(32): 1
+jit_var_dec_ref_ext(32): 1
+jit_var_new(33 <- 26, 32, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
 jit_var_inc_ref_ext(33): 1
-jit_var_new(34): 
+jit_var_inc_ref_int(1): 4
+jit_var_inc_ref_int(33): 1
+jit_var_new(34 <- 1, 33): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
 jit_var_inc_ref_ext(34): 1
-jit_var_inc_ref_int(34): 1
-jit_var_dec_ref_ext(34): 0
+jit_var_dec_ref_ext(33): 0
+jit_var_dec_ref_ext(32): 0
 jit_var_new(35): 
 jit_var_inc_ref_ext(35): 1
+jit_var_new(26):  (reused)
+jit_var_inc_ref_ext(26): 1
+jit_var_inc_ref_int(26): 4
+jit_var_dec_ref_ext(26): 0
+jit_var_new(35):  (reused)
+jit_var_inc_ref_ext(35): 2
 jit_var_inc_ref_int(35): 1
-jit_var_dec_ref_ext(35): 0
-jit_var_new(36 <- 34, 35, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x $t1>, <16 x $t2>, i16, i32)
+jit_var_dec_ref_ext(35): 1
+jit_var_new(36 <- 26, 35, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
 jit_var_inc_ref_ext(36): 1
-jit_var_inc_ref_int(1): 2
+jit_var_inc_ref_int(1): 5
 jit_var_inc_ref_int(36): 1
-jit_var_new(37 <- 1, 36): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
+jit_var_new(37 <- 1, 36): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
 jit_var_inc_ref_ext(37): 1
 jit_var_dec_ref_ext(36): 0
-jit_var_dec_ref_ext(33): 0
-jit_var_free(33)
+jit_var_dec_ref_ext(35): 0
+jit_var_new(25):  (reused)
+jit_var_inc_ref_ext(25): 1
 jit_var_new(38): 
 jit_var_inc_ref_ext(38): 1
-jit_var_new(34):  (reused)
-jit_var_inc_ref_ext(34): 1
-jit_var_inc_ref_int(34): 2
-jit_var_dec_ref_ext(34): 0
-jit_var_new(39): 
-jit_var_inc_ref_ext(39): 1
-jit_var_inc_ref_int(39): 1
-jit_var_dec_ref_ext(39): 0
-jit_var_new(40 <- 34, 39, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2udq.512(<16 x $t1>, <16 x $t2>, i16, i32)
-jit_var_inc_ref_ext(40): 1
-jit_var_inc_ref_int(1): 3
-jit_var_inc_ref_int(40): 1
-jit_var_new(41 <- 1, 40): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
-jit_var_inc_ref_ext(41): 1
-jit_var_dec_ref_ext(40): 0
+jit_var_inc_ref_int(38): 1
 jit_var_dec_ref_ext(38): 0
-jit_var_free(38)
-jit_var_new(42): 
+jit_var_new(25):  (reused)
+jit_var_inc_ref_ext(25): 2
+jit_var_inc_ref_int(25): 2
+jit_var_dec_ref_ext(25): 1
+jit_var_new(39 <- 38, 25, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2dq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(39): 1
+jit_var_inc_ref_int(2): 1
+jit_var_inc_ref_int(39): 1
+jit_var_new(40 <- 2, 39): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
+jit_var_inc_ref_ext(40): 1
+jit_var_dec_ref_ext(39): 0
+jit_var_dec_ref_ext(25): 0
+jit_var_new(29):  (reused)
+jit_var_inc_ref_ext(29): 1
+jit_var_new(38):  (reused)
+jit_var_inc_ref_ext(38): 1
+jit_var_inc_ref_int(38): 2
+jit_var_dec_ref_ext(38): 0
+jit_var_new(29):  (reused)
+jit_var_inc_ref_ext(29): 2
+jit_var_inc_ref_int(29): 2
+jit_var_dec_ref_ext(29): 1
+jit_var_new(41 <- 38, 29, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2udq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(41): 1
+jit_var_inc_ref_int(2): 2
+jit_var_inc_ref_int(41): 1
+jit_var_new(42 <- 2, 41): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
 jit_var_inc_ref_ext(42): 1
-jit_var_new(34):  (reused)
-jit_var_inc_ref_ext(34): 1
-jit_var_inc_ref_int(34): 3
-jit_var_dec_ref_ext(34): 0
-jit_var_new(43): 
+jit_var_dec_ref_ext(41): 0
+jit_var_dec_ref_ext(29): 0
+jit_var_new(32):  (reused)
+jit_var_inc_ref_ext(32): 1
+jit_var_new(38):  (reused)
+jit_var_inc_ref_ext(38): 1
+jit_var_inc_ref_int(38): 3
+jit_var_dec_ref_ext(38): 0
+jit_var_new(32):  (reused)
+jit_var_inc_ref_ext(32): 2
+jit_var_inc_ref_int(32): 2
+jit_var_dec_ref_ext(32): 1
+jit_var_new(43 <- 38, 32, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
 jit_var_inc_ref_ext(43): 1
+jit_var_inc_ref_int(2): 3
 jit_var_inc_ref_int(43): 1
-jit_var_dec_ref_ext(43): 0
-jit_var_new(44 <- 34, 43, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_new(44 <- 2, 43): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
 jit_var_inc_ref_ext(44): 1
-jit_var_inc_ref_int(1): 4
-jit_var_inc_ref_int(44): 1
-jit_var_new(45 <- 1, 44): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
-jit_var_inc_ref_ext(45): 1
-jit_var_dec_ref_ext(44): 0
-jit_var_dec_ref_ext(42): 0
-jit_var_free(42)
-jit_var_new(46): 
-jit_var_inc_ref_ext(46): 1
-jit_var_new(34):  (reused)
-jit_var_inc_ref_ext(34): 1
-jit_var_inc_ref_int(34): 4
-jit_var_dec_ref_ext(34): 0
-jit_var_new(47): 
-jit_var_inc_ref_ext(47): 1
-jit_var_inc_ref_int(47): 1
-jit_var_dec_ref_ext(47): 0
-jit_var_new(48 <- 34, 47, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(48): 1
-jit_var_inc_ref_int(1): 5
-jit_var_inc_ref_int(48): 1
-jit_var_new(49 <- 1, 48): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
-jit_var_inc_ref_ext(49): 1
-jit_var_dec_ref_ext(48): 0
-jit_var_dec_ref_ext(46): 0
-jit_var_free(46)
-jit_var_new(50): 
-jit_var_inc_ref_ext(50): 1
-jit_var_new(51): 
-jit_var_inc_ref_ext(51): 1
-jit_var_inc_ref_int(51): 1
-jit_var_dec_ref_ext(51): 0
+jit_var_dec_ref_ext(43): 0
+jit_var_dec_ref_ext(32): 0
 jit_var_new(35):  (reused)
 jit_var_inc_ref_ext(35): 1
+jit_var_new(38):  (reused)
+jit_var_inc_ref_ext(38): 1
+jit_var_inc_ref_int(38): 4
+jit_var_dec_ref_ext(38): 0
+jit_var_new(35):  (reused)
+jit_var_inc_ref_ext(35): 2
 jit_var_inc_ref_int(35): 2
-jit_var_dec_ref_ext(35): 0
-jit_var_new(52 <- 51, 35, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2dq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(52): 1
-jit_var_inc_ref_int(2): 1
-jit_var_inc_ref_int(52): 1
-jit_var_new(53 <- 2, 52): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
-jit_var_inc_ref_ext(53): 1
-jit_var_dec_ref_ext(52): 0
-jit_var_dec_ref_ext(50): 0
-jit_var_free(50)
-jit_var_new(54): 
-jit_var_inc_ref_ext(54): 1
-jit_var_new(51):  (reused)
-jit_var_inc_ref_ext(51): 1
-jit_var_inc_ref_int(51): 2
-jit_var_dec_ref_ext(51): 0
-jit_var_new(39):  (reused)
-jit_var_inc_ref_ext(39): 1
-jit_var_inc_ref_int(39): 2
-jit_var_dec_ref_ext(39): 0
-jit_var_new(55 <- 51, 39, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2udq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(55): 1
-jit_var_inc_ref_int(2): 2
-jit_var_inc_ref_int(55): 1
-jit_var_new(56 <- 2, 55): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
-jit_var_inc_ref_ext(56): 1
-jit_var_dec_ref_ext(55): 0
-jit_var_dec_ref_ext(54): 0
-jit_var_free(54)
-jit_var_new(57): 
-jit_var_inc_ref_ext(57): 1
-jit_var_new(51):  (reused)
-jit_var_inc_ref_ext(51): 1
-jit_var_inc_ref_int(51): 3
-jit_var_dec_ref_ext(51): 0
-jit_var_new(43):  (reused)
-jit_var_inc_ref_ext(43): 1
-jit_var_inc_ref_int(43): 2
-jit_var_dec_ref_ext(43): 0
-jit_var_new(58 <- 51, 43, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(58): 1
-jit_var_inc_ref_int(2): 3
-jit_var_inc_ref_int(58): 1
-jit_var_new(59 <- 2, 58): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
-jit_var_inc_ref_ext(59): 1
-jit_var_dec_ref_ext(58): 0
-jit_var_dec_ref_ext(57): 0
-jit_var_free(57)
-jit_var_new(60): 
-jit_var_inc_ref_ext(60): 1
-jit_var_new(51):  (reused)
-jit_var_inc_ref_ext(51): 1
-jit_var_inc_ref_int(51): 4
-jit_var_dec_ref_ext(51): 0
-jit_var_new(47):  (reused)
-jit_var_inc_ref_ext(47): 1
-jit_var_inc_ref_int(47): 2
-jit_var_dec_ref_ext(47): 0
-jit_var_new(61 <- 51, 47, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(61): 1
+jit_var_dec_ref_ext(35): 1
+jit_var_new(45 <- 38, 35, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(45): 1
 jit_var_inc_ref_int(2): 4
-jit_var_inc_ref_int(61): 1
-jit_var_new(62 <- 2, 61): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
-jit_var_inc_ref_ext(62): 1
-jit_var_dec_ref_ext(61): 0
-jit_var_dec_ref_ext(60): 0
-jit_var_free(60)
+jit_var_inc_ref_int(45): 1
+jit_var_new(46 <- 2, 45): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 9)
+jit_var_inc_ref_ext(46): 1
+jit_var_dec_ref_ext(45): 0
+jit_var_dec_ref_ext(35): 0
+jit_var_schedule(28)
+jit_var_schedule(31)
+jit_var_schedule(34)
 jit_var_schedule(37)
-jit_var_schedule(41)
-jit_var_schedule(45)
-jit_var_schedule(49)
-jit_var_schedule(53)
-jit_var_schedule(56)
-jit_var_schedule(59)
-jit_var_schedule(62)
+jit_var_schedule(40)
+jit_var_schedule(42)
+jit_var_schedule(44)
+jit_var_schedule(46)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): launching 1 kernel.
 jit_assemble(size=9): register map:
-   - gl0 -> 36 [scalar]
-   - gl1 -> 40 [scalar]
-   - gl2 -> 44 [scalar]
-   - gl3 -> 48 [scalar]
-   - gl4 -> 52 [scalar]
-   - gl5 -> 55 [scalar]
-   - gl6 -> 58 [scalar]
-   - gl7 -> 61 [scalar]
+   - gl0 -> 27 [scalar]
+   - gl1 -> 30 [scalar]
+   - gl2 -> 33 [scalar]
+   - gl3 -> 36 [scalar]
+   - gl4 -> 39 [scalar]
+   - gl5 -> 41 [scalar]
+   - gl6 -> 43 [scalar]
+   - gl7 -> 45 [scalar]
    - %f8 -> 1 [in]
-   - %f9 -> 34 [scalar]
-   - %r10 -> 35 [scalar]
-   - %r11 -> 37 [out]
+   - %f9 -> 26 [scalar]
+   - %r10 -> 25 [scalar]
+   - %r11 -> 28 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %r12 -> 39 [scalar]
-   - %r13 -> 41 [out]
+   - %r12 -> 29 [scalar]
+   - %r13 -> 31 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd14 -> 43 [scalar]
-   - %rd15 -> 45 [out]
+   - %rd14 -> 32 [scalar]
+   - %rd15 -> 34 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd16 -> 47 [scalar]
-   - %rd17 -> 49 [out]
+   - %rd16 -> 35 [scalar]
+   - %rd17 -> 37 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
    - %d18 -> 2
-   - %d19 -> 51 [scalar]
-   - %r20 -> 53 [out]
+   - %d19 -> 38 [scalar]
+   - %r20 -> 40 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %r21 -> 56 [out]
+   - %r21 -> 42 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd22 -> 59 [out]
+   - %rd22 -> 44 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd23 -> 62 [out]
+   - %rd23 -> 46 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
   -> launching <@> (n=9, in=1, out=8, ops=24):
 declare <16 x i32> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x float>, <16 x i32>, i16, i32)
@@ -1033,51 +1017,51 @@ attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
+jit_var_dec_ref_int(27): 0
+jit_var_free(27)
+jit_var_dec_ref_int(26): 3
+jit_var_dec_ref_int(25): 1
+jit_var_dec_ref_int(1): 3
+jit_var_dec_ref_int(30): 0
+jit_var_free(30)
+jit_var_dec_ref_int(26): 2
+jit_var_dec_ref_int(29): 1
+jit_var_dec_ref_int(1): 2
+jit_var_dec_ref_int(33): 0
+jit_var_free(33)
+jit_var_dec_ref_int(26): 1
+jit_var_dec_ref_int(32): 1
+jit_var_dec_ref_int(1): 1
 jit_var_dec_ref_int(36): 0
 jit_var_free(36)
-jit_var_dec_ref_int(34): 3
+jit_var_dec_ref_int(26): 0
+jit_var_free(26)
 jit_var_dec_ref_int(35): 1
-jit_var_dec_ref_int(1): 3
-jit_var_dec_ref_int(40): 0
-jit_var_free(40)
-jit_var_dec_ref_int(34): 2
-jit_var_dec_ref_int(39): 1
-jit_var_dec_ref_int(1): 2
-jit_var_dec_ref_int(44): 0
-jit_var_free(44)
-jit_var_dec_ref_int(34): 1
-jit_var_dec_ref_int(43): 1
-jit_var_dec_ref_int(1): 1
-jit_var_dec_ref_int(48): 0
-jit_var_free(48)
-jit_var_dec_ref_int(34): 0
-jit_var_free(34)
-jit_var_dec_ref_int(47): 1
 jit_var_dec_ref_int(2): 3
-jit_var_dec_ref_int(52): 0
-jit_var_free(52)
-jit_var_dec_ref_int(51): 3
-jit_var_dec_ref_int(35): 0
-jit_var_free(35)
-jit_var_dec_ref_int(2): 2
-jit_var_dec_ref_int(55): 0
-jit_var_free(55)
-jit_var_dec_ref_int(51): 2
 jit_var_dec_ref_int(39): 0
 jit_var_free(39)
+jit_var_dec_ref_int(38): 3
+jit_var_dec_ref_int(25): 0
+jit_var_free(25)
+jit_var_dec_ref_int(2): 2
+jit_var_dec_ref_int(41): 0
+jit_var_free(41)
+jit_var_dec_ref_int(38): 2
+jit_var_dec_ref_int(29): 0
+jit_var_free(29)
 jit_var_dec_ref_int(2): 1
-jit_var_dec_ref_int(58): 0
-jit_var_free(58)
-jit_var_dec_ref_int(51): 1
 jit_var_dec_ref_int(43): 0
 jit_var_free(43)
+jit_var_dec_ref_int(38): 1
+jit_var_dec_ref_int(32): 0
+jit_var_free(32)
 jit_var_dec_ref_int(2): 0
-jit_var_dec_ref_int(61): 0
-jit_var_free(61)
-jit_var_dec_ref_int(51): 0
-jit_var_free(51)
-jit_var_dec_ref_int(47): 0
-jit_var_free(47)
+jit_var_dec_ref_int(45): 0
+jit_var_free(45)
+jit_var_dec_ref_int(38): 0
+jit_var_free(38)
+jit_var_dec_ref_int(35): 0
+jit_var_free(35)
 jit_eval(): done.
 floor_f_i32=[-2, -1, -1, -1, 0, 0, 0, 1, -2147483648]
 floor_f_i64=[-2, -1, -1, -1, 0, 0, 0, 1, 4294967296]
@@ -1087,224 +1071,216 @@ floor_f_u32=[4294967295, 4294967295, 4294967295, 4294967295, 0, 0, 0, 1, 4294967
 floor_f_u64=[18446744073709551615, 18446744073709551615, 18446744073709551615, 18446744073709551615, 0, 0, 0, 1, 4294967296]
 floor_d_u32=[4294967295, 4294967295, 4294967295, 4294967295, 0, 0, 0, 1, 4294967295]
 floor_d_u64=[18446744073709551615, 18446744073709551615, 18446744073709551615, 18446744073709551615, 0, 0, 0, 1, 4294967296]
-jit_var_dec_ref_ext(62): 0
-jit_var_free(62)
+jit_var_dec_ref_ext(46): 0
+jit_var_free(46)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(59): 0
-jit_var_free(59)
+jit_var_dec_ref_ext(44): 0
+jit_var_free(44)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(56): 0
-jit_var_free(56)
+jit_var_dec_ref_ext(42): 0
+jit_var_free(42)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(53): 0
-jit_var_free(53)
-jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(49): 0
-jit_var_free(49)
-jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(45): 0
-jit_var_free(45)
-jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(41): 0
-jit_var_free(41)
+jit_var_dec_ref_ext(40): 0
+jit_var_free(40)
 jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(37): 0
 jit_var_free(37)
 jit_free(<@>, type=host-async, size=256)
-jit_var_new(63): 
-jit_var_inc_ref_ext(63): 1
-jit_var_new(64): 
-jit_var_inc_ref_ext(64): 1
-jit_var_inc_ref_int(64): 1
-jit_var_dec_ref_ext(64): 0
-jit_var_new(65): 
-jit_var_inc_ref_ext(65): 1
-jit_var_inc_ref_int(65): 1
-jit_var_dec_ref_ext(65): 0
-jit_var_new(66 <- 64, 65, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x $t1>, <16 x $t2>, i16, i32)
-jit_var_inc_ref_ext(66): 1
+jit_var_dec_ref_ext(34): 0
+jit_var_free(34)
+jit_free(<@>, type=host-async, size=256)
+jit_var_dec_ref_ext(31): 0
+jit_var_free(31)
+jit_free(<@>, type=host-async, size=256)
+jit_var_dec_ref_ext(28): 0
+jit_var_free(28)
+jit_free(<@>, type=host-async, size=256)
+jit_var_new(47): 
+jit_var_inc_ref_ext(47): 1
+jit_var_new(48): 
+jit_var_inc_ref_ext(48): 1
+jit_var_inc_ref_int(48): 1
+jit_var_dec_ref_ext(48): 0
+jit_var_new(47):  (reused)
+jit_var_inc_ref_ext(47): 2
+jit_var_inc_ref_int(47): 1
+jit_var_dec_ref_ext(47): 1
+jit_var_new(49 <- 48, 47, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x $t1>, <16 x $t2>, i16, i32)
+jit_var_inc_ref_ext(49): 1
 jit_var_inc_ref_int(1): 2
-jit_var_inc_ref_int(66): 1
-jit_var_new(67 <- 1, 66): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
-jit_var_inc_ref_ext(67): 1
-jit_var_dec_ref_ext(66): 0
-jit_var_dec_ref_ext(63): 0
-jit_var_free(63)
-jit_var_new(68): 
-jit_var_inc_ref_ext(68): 1
-jit_var_new(64):  (reused)
-jit_var_inc_ref_ext(64): 1
-jit_var_inc_ref_int(64): 2
-jit_var_dec_ref_ext(64): 0
-jit_var_new(69): 
-jit_var_inc_ref_ext(69): 1
-jit_var_inc_ref_int(69): 1
-jit_var_dec_ref_ext(69): 0
-jit_var_new(70 <- 64, 69, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2udq.512(<16 x $t1>, <16 x $t2>, i16, i32)
-jit_var_inc_ref_ext(70): 1
+jit_var_inc_ref_int(49): 1
+jit_var_new(50 <- 1, 49): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
+jit_var_inc_ref_ext(50): 1
+jit_var_dec_ref_ext(49): 0
+jit_var_dec_ref_ext(47): 0
+jit_var_new(51): 
+jit_var_inc_ref_ext(51): 1
+jit_var_new(48):  (reused)
+jit_var_inc_ref_ext(48): 1
+jit_var_inc_ref_int(48): 2
+jit_var_dec_ref_ext(48): 0
+jit_var_new(51):  (reused)
+jit_var_inc_ref_ext(51): 2
+jit_var_inc_ref_int(51): 1
+jit_var_dec_ref_ext(51): 1
+jit_var_new(52 <- 48, 51, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2udq.512(<16 x $t1>, <16 x $t2>, i16, i32)
+jit_var_inc_ref_ext(52): 1
 jit_var_inc_ref_int(1): 3
-jit_var_inc_ref_int(70): 1
-jit_var_new(71 <- 1, 70): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
-jit_var_inc_ref_ext(71): 1
-jit_var_dec_ref_ext(70): 0
-jit_var_dec_ref_ext(68): 0
-jit_var_free(68)
-jit_var_new(72): 
-jit_var_inc_ref_ext(72): 1
-jit_var_new(64):  (reused)
-jit_var_inc_ref_ext(64): 1
-jit_var_inc_ref_int(64): 3
-jit_var_dec_ref_ext(64): 0
-jit_var_new(73): 
-jit_var_inc_ref_ext(73): 1
-jit_var_inc_ref_int(73): 1
-jit_var_dec_ref_ext(73): 0
-jit_var_new(74 <- 64, 73, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(74): 1
+jit_var_inc_ref_int(52): 1
+jit_var_new(53 <- 1, 52): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
+jit_var_inc_ref_ext(53): 1
+jit_var_dec_ref_ext(52): 0
+jit_var_dec_ref_ext(51): 0
+jit_var_new(54): 
+jit_var_inc_ref_ext(54): 1
+jit_var_new(48):  (reused)
+jit_var_inc_ref_ext(48): 1
+jit_var_inc_ref_int(48): 3
+jit_var_dec_ref_ext(48): 0
+jit_var_new(54):  (reused)
+jit_var_inc_ref_ext(54): 2
+jit_var_inc_ref_int(54): 1
+jit_var_dec_ref_ext(54): 1
+jit_var_new(55 <- 48, 54, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(55): 1
 jit_var_inc_ref_int(1): 4
-jit_var_inc_ref_int(74): 1
-jit_var_new(75 <- 1, 74): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
-jit_var_inc_ref_ext(75): 1
-jit_var_dec_ref_ext(74): 0
-jit_var_dec_ref_ext(72): 0
-jit_var_free(72)
-jit_var_new(76): 
-jit_var_inc_ref_ext(76): 1
-jit_var_new(64):  (reused)
-jit_var_inc_ref_ext(64): 1
-jit_var_inc_ref_int(64): 4
-jit_var_dec_ref_ext(64): 0
-jit_var_new(77): 
-jit_var_inc_ref_ext(77): 1
-jit_var_inc_ref_int(77): 1
-jit_var_dec_ref_ext(77): 0
-jit_var_new(78 <- 64, 77, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(78): 1
+jit_var_inc_ref_int(55): 1
+jit_var_new(56 <- 1, 55): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
+jit_var_inc_ref_ext(56): 1
+jit_var_dec_ref_ext(55): 0
+jit_var_dec_ref_ext(54): 0
+jit_var_new(57): 
+jit_var_inc_ref_ext(57): 1
+jit_var_new(48):  (reused)
+jit_var_inc_ref_ext(48): 1
+jit_var_inc_ref_int(48): 4
+jit_var_dec_ref_ext(48): 0
+jit_var_new(57):  (reused)
+jit_var_inc_ref_ext(57): 2
+jit_var_inc_ref_int(57): 1
+jit_var_dec_ref_ext(57): 1
+jit_var_new(58 <- 48, 57, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(58): 1
 jit_var_inc_ref_int(1): 5
-jit_var_inc_ref_int(78): 1
-jit_var_new(79 <- 1, 78): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
-jit_var_inc_ref_ext(79): 1
-jit_var_dec_ref_ext(78): 0
-jit_var_dec_ref_ext(76): 0
-jit_var_free(76)
-jit_var_new(80): 
-jit_var_inc_ref_ext(80): 1
-jit_var_new(81): 
-jit_var_inc_ref_ext(81): 1
-jit_var_inc_ref_int(81): 1
-jit_var_dec_ref_ext(81): 0
-jit_var_new(65):  (reused)
-jit_var_inc_ref_ext(65): 1
-jit_var_inc_ref_int(65): 2
-jit_var_dec_ref_ext(65): 0
-jit_var_new(82 <- 81, 65, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2dq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(82): 1
+jit_var_inc_ref_int(58): 1
+jit_var_new(59 <- 1, 58): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
+jit_var_inc_ref_ext(59): 1
+jit_var_dec_ref_ext(58): 0
+jit_var_dec_ref_ext(57): 0
+jit_var_new(47):  (reused)
+jit_var_inc_ref_ext(47): 1
+jit_var_new(60): 
+jit_var_inc_ref_ext(60): 1
+jit_var_inc_ref_int(60): 1
+jit_var_dec_ref_ext(60): 0
+jit_var_new(47):  (reused)
+jit_var_inc_ref_ext(47): 2
+jit_var_inc_ref_int(47): 2
+jit_var_dec_ref_ext(47): 1
+jit_var_new(61 <- 60, 47, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2dq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(61): 1
 jit_var_inc_ref_int(2): 1
-jit_var_inc_ref_int(82): 1
-jit_var_new(83 <- 2, 82): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
-jit_var_inc_ref_ext(83): 1
-jit_var_dec_ref_ext(82): 0
-jit_var_dec_ref_ext(80): 0
-jit_var_free(80)
-jit_var_new(84): 
-jit_var_inc_ref_ext(84): 1
-jit_var_new(81):  (reused)
-jit_var_inc_ref_ext(81): 1
-jit_var_inc_ref_int(81): 2
-jit_var_dec_ref_ext(81): 0
-jit_var_new(69):  (reused)
-jit_var_inc_ref_ext(69): 1
-jit_var_inc_ref_int(69): 2
-jit_var_dec_ref_ext(69): 0
-jit_var_new(85 <- 81, 69, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2udq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(85): 1
+jit_var_inc_ref_int(61): 1
+jit_var_new(62 <- 2, 61): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
+jit_var_inc_ref_ext(62): 1
+jit_var_dec_ref_ext(61): 0
+jit_var_dec_ref_ext(47): 0
+jit_var_new(51):  (reused)
+jit_var_inc_ref_ext(51): 1
+jit_var_new(60):  (reused)
+jit_var_inc_ref_ext(60): 1
+jit_var_inc_ref_int(60): 2
+jit_var_dec_ref_ext(60): 0
+jit_var_new(51):  (reused)
+jit_var_inc_ref_ext(51): 2
+jit_var_inc_ref_int(51): 2
+jit_var_dec_ref_ext(51): 1
+jit_var_new(63 <- 60, 51, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2udq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(63): 1
 jit_var_inc_ref_int(2): 2
-jit_var_inc_ref_int(85): 1
-jit_var_new(86 <- 2, 85): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
-jit_var_inc_ref_ext(86): 1
-jit_var_dec_ref_ext(85): 0
-jit_var_dec_ref_ext(84): 0
-jit_var_free(84)
-jit_var_new(87): 
-jit_var_inc_ref_ext(87): 1
-jit_var_new(81):  (reused)
-jit_var_inc_ref_ext(81): 1
-jit_var_inc_ref_int(81): 3
-jit_var_dec_ref_ext(81): 0
-jit_var_new(73):  (reused)
-jit_var_inc_ref_ext(73): 1
-jit_var_inc_ref_int(73): 2
-jit_var_dec_ref_ext(73): 0
-jit_var_new(88 <- 81, 73, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(88): 1
+jit_var_inc_ref_int(63): 1
+jit_var_new(64 <- 2, 63): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
+jit_var_inc_ref_ext(64): 1
+jit_var_dec_ref_ext(63): 0
+jit_var_dec_ref_ext(51): 0
+jit_var_new(54):  (reused)
+jit_var_inc_ref_ext(54): 1
+jit_var_new(60):  (reused)
+jit_var_inc_ref_ext(60): 1
+jit_var_inc_ref_int(60): 3
+jit_var_dec_ref_ext(60): 0
+jit_var_new(54):  (reused)
+jit_var_inc_ref_ext(54): 2
+jit_var_inc_ref_int(54): 2
+jit_var_dec_ref_ext(54): 1
+jit_var_new(65 <- 60, 54, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(65): 1
 jit_var_inc_ref_int(2): 3
-jit_var_inc_ref_int(88): 1
-jit_var_new(89 <- 2, 88): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
-jit_var_inc_ref_ext(89): 1
-jit_var_dec_ref_ext(88): 0
-jit_var_dec_ref_ext(87): 0
-jit_var_free(87)
-jit_var_new(90): 
-jit_var_inc_ref_ext(90): 1
-jit_var_new(81):  (reused)
-jit_var_inc_ref_ext(81): 1
-jit_var_inc_ref_int(81): 4
-jit_var_dec_ref_ext(81): 0
-jit_var_new(77):  (reused)
-jit_var_inc_ref_ext(77): 1
-jit_var_inc_ref_int(77): 2
-jit_var_dec_ref_ext(77): 0
-jit_var_new(91 <- 81, 77, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(91): 1
+jit_var_inc_ref_int(65): 1
+jit_var_new(66 <- 2, 65): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
+jit_var_inc_ref_ext(66): 1
+jit_var_dec_ref_ext(65): 0
+jit_var_dec_ref_ext(54): 0
+jit_var_new(57):  (reused)
+jit_var_inc_ref_ext(57): 1
+jit_var_new(60):  (reused)
+jit_var_inc_ref_ext(60): 1
+jit_var_inc_ref_int(60): 4
+jit_var_dec_ref_ext(60): 0
+jit_var_new(57):  (reused)
+jit_var_inc_ref_ext(57): 2
+jit_var_inc_ref_int(57): 2
+jit_var_dec_ref_ext(57): 1
+jit_var_new(67 <- 60, 57, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(67): 1
 jit_var_inc_ref_int(2): 4
-jit_var_inc_ref_int(91): 1
-jit_var_new(92 <- 2, 91): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
-jit_var_inc_ref_ext(92): 1
-jit_var_dec_ref_ext(91): 0
-jit_var_dec_ref_ext(90): 0
-jit_var_free(90)
-jit_var_schedule(67)
-jit_var_schedule(71)
-jit_var_schedule(75)
-jit_var_schedule(79)
-jit_var_schedule(83)
-jit_var_schedule(86)
-jit_var_schedule(89)
-jit_var_schedule(92)
+jit_var_inc_ref_int(67): 1
+jit_var_new(68 <- 2, 67): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 11)
+jit_var_inc_ref_ext(68): 1
+jit_var_dec_ref_ext(67): 0
+jit_var_dec_ref_ext(57): 0
+jit_var_schedule(50)
+jit_var_schedule(53)
+jit_var_schedule(56)
+jit_var_schedule(59)
+jit_var_schedule(62)
+jit_var_schedule(64)
+jit_var_schedule(66)
+jit_var_schedule(68)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): launching 1 kernel.
 jit_assemble(size=9): register map:
-   - gl0 -> 66 [scalar]
-   - gl1 -> 70 [scalar]
-   - gl2 -> 74 [scalar]
-   - gl3 -> 78 [scalar]
-   - gl4 -> 82 [scalar]
-   - gl5 -> 85 [scalar]
-   - gl6 -> 88 [scalar]
-   - gl7 -> 91 [scalar]
+   - gl0 -> 49 [scalar]
+   - gl1 -> 52 [scalar]
+   - gl2 -> 55 [scalar]
+   - gl3 -> 58 [scalar]
+   - gl4 -> 61 [scalar]
+   - gl5 -> 63 [scalar]
+   - gl6 -> 65 [scalar]
+   - gl7 -> 67 [scalar]
    - %f8 -> 1 [in]
-   - %f9 -> 64 [scalar]
-   - %r10 -> 65 [scalar]
-   - %r11 -> 67 [out]
+   - %f9 -> 48 [scalar]
+   - %r10 -> 47 [scalar]
+   - %r11 -> 50 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %r12 -> 69 [scalar]
-   - %r13 -> 71 [out]
+   - %r12 -> 51 [scalar]
+   - %r13 -> 53 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd14 -> 73 [scalar]
-   - %rd15 -> 75 [out]
+   - %rd14 -> 54 [scalar]
+   - %rd15 -> 56 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd16 -> 77 [scalar]
-   - %rd17 -> 79 [out]
+   - %rd16 -> 57 [scalar]
+   - %rd17 -> 59 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
    - %d18 -> 2
-   - %d19 -> 81 [scalar]
-   - %r20 -> 83 [out]
+   - %d19 -> 60 [scalar]
+   - %r20 -> 62 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %r21 -> 86 [out]
+   - %r21 -> 64 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd22 -> 89 [out]
+   - %rd22 -> 66 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd23 -> 92 [out]
+   - %rd23 -> 68 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
   -> launching <@> (n=9, in=1, out=8, ops=24):
 declare <16 x i32> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x float>, <16 x i32>, i16, i32)
@@ -1586,51 +1562,51 @@ attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
-jit_var_dec_ref_int(66): 0
-jit_var_free(66)
-jit_var_dec_ref_int(64): 3
-jit_var_dec_ref_int(65): 1
+jit_var_dec_ref_int(49): 0
+jit_var_free(49)
+jit_var_dec_ref_int(48): 3
+jit_var_dec_ref_int(47): 1
 jit_var_dec_ref_int(1): 3
-jit_var_dec_ref_int(70): 0
-jit_var_free(70)
-jit_var_dec_ref_int(64): 2
-jit_var_dec_ref_int(69): 1
+jit_var_dec_ref_int(52): 0
+jit_var_free(52)
+jit_var_dec_ref_int(48): 2
+jit_var_dec_ref_int(51): 1
 jit_var_dec_ref_int(1): 2
-jit_var_dec_ref_int(74): 0
-jit_var_free(74)
-jit_var_dec_ref_int(64): 1
-jit_var_dec_ref_int(73): 1
+jit_var_dec_ref_int(55): 0
+jit_var_free(55)
+jit_var_dec_ref_int(48): 1
+jit_var_dec_ref_int(54): 1
 jit_var_dec_ref_int(1): 1
-jit_var_dec_ref_int(78): 0
-jit_var_free(78)
-jit_var_dec_ref_int(64): 0
-jit_var_free(64)
-jit_var_dec_ref_int(77): 1
+jit_var_dec_ref_int(58): 0
+jit_var_free(58)
+jit_var_dec_ref_int(48): 0
+jit_var_free(48)
+jit_var_dec_ref_int(57): 1
 jit_var_dec_ref_int(2): 3
-jit_var_dec_ref_int(82): 0
-jit_var_free(82)
-jit_var_dec_ref_int(81): 3
+jit_var_dec_ref_int(61): 0
+jit_var_free(61)
+jit_var_dec_ref_int(60): 3
+jit_var_dec_ref_int(47): 0
+jit_var_free(47)
+jit_var_dec_ref_int(2): 2
+jit_var_dec_ref_int(63): 0
+jit_var_free(63)
+jit_var_dec_ref_int(60): 2
+jit_var_dec_ref_int(51): 0
+jit_var_free(51)
+jit_var_dec_ref_int(2): 1
 jit_var_dec_ref_int(65): 0
 jit_var_free(65)
-jit_var_dec_ref_int(2): 2
-jit_var_dec_ref_int(85): 0
-jit_var_free(85)
-jit_var_dec_ref_int(81): 2
-jit_var_dec_ref_int(69): 0
-jit_var_free(69)
-jit_var_dec_ref_int(2): 1
-jit_var_dec_ref_int(88): 0
-jit_var_free(88)
-jit_var_dec_ref_int(81): 1
-jit_var_dec_ref_int(73): 0
-jit_var_free(73)
+jit_var_dec_ref_int(60): 1
+jit_var_dec_ref_int(54): 0
+jit_var_free(54)
 jit_var_dec_ref_int(2): 0
-jit_var_dec_ref_int(91): 0
-jit_var_free(91)
-jit_var_dec_ref_int(81): 0
-jit_var_free(81)
-jit_var_dec_ref_int(77): 0
-jit_var_free(77)
+jit_var_dec_ref_int(67): 0
+jit_var_free(67)
+jit_var_dec_ref_int(60): 0
+jit_var_free(60)
+jit_var_dec_ref_int(57): 0
+jit_var_free(57)
 jit_eval(): done.
 trunc_f_i32=[-1, 0, 0, 0, 0, 0, 0, 1, -2147483648]
 trunc_f_i64=[-1, 0, 0, 0, 0, 0, 0, 1, 4294967296]
@@ -1640,224 +1616,216 @@ trunc_f_u32=[4294967295, 0, 0, 0, 0, 0, 0, 1, 4294967295]
 trunc_f_u64=[18446744073709551615, 0, 0, 0, 0, 0, 0, 1, 4294967296]
 trunc_d_u32=[4294967295, 0, 0, 0, 0, 0, 0, 1, 4294967295]
 trunc_d_u64=[18446744073709551615, 0, 0, 0, 0, 0, 0, 1, 4294967296]
-jit_var_dec_ref_ext(92): 0
-jit_var_free(92)
+jit_var_dec_ref_ext(68): 0
+jit_var_free(68)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(89): 0
-jit_var_free(89)
+jit_var_dec_ref_ext(66): 0
+jit_var_free(66)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(86): 0
-jit_var_free(86)
+jit_var_dec_ref_ext(64): 0
+jit_var_free(64)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(83): 0
-jit_var_free(83)
+jit_var_dec_ref_ext(62): 0
+jit_var_free(62)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(79): 0
-jit_var_free(79)
+jit_var_dec_ref_ext(59): 0
+jit_var_free(59)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(75): 0
-jit_var_free(75)
+jit_var_dec_ref_ext(56): 0
+jit_var_free(56)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(71): 0
-jit_var_free(71)
+jit_var_dec_ref_ext(53): 0
+jit_var_free(53)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(67): 0
-jit_var_free(67)
+jit_var_dec_ref_ext(50): 0
+jit_var_free(50)
 jit_free(<@>, type=host-async, size=256)
-jit_var_new(93): 
-jit_var_inc_ref_ext(93): 1
-jit_var_new(94): 
-jit_var_inc_ref_ext(94): 1
-jit_var_inc_ref_int(94): 1
-jit_var_dec_ref_ext(94): 0
-jit_var_new(95): 
-jit_var_inc_ref_ext(95): 1
-jit_var_inc_ref_int(95): 1
-jit_var_dec_ref_ext(95): 0
-jit_var_new(96 <- 94, 95, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x $t1>, <16 x $t2>, i16, i32)
-jit_var_inc_ref_ext(96): 1
+jit_var_new(69): 
+jit_var_inc_ref_ext(69): 1
+jit_var_new(70): 
+jit_var_inc_ref_ext(70): 1
+jit_var_inc_ref_int(70): 1
+jit_var_dec_ref_ext(70): 0
+jit_var_new(69):  (reused)
+jit_var_inc_ref_ext(69): 2
+jit_var_inc_ref_int(69): 1
+jit_var_dec_ref_ext(69): 1
+jit_var_new(71 <- 70, 69, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x $t1>, <16 x $t2>, i16, i32)
+jit_var_inc_ref_ext(71): 1
 jit_var_inc_ref_int(1): 2
-jit_var_inc_ref_int(96): 1
-jit_var_new(97 <- 1, 96): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
-jit_var_inc_ref_ext(97): 1
-jit_var_dec_ref_ext(96): 0
-jit_var_dec_ref_ext(93): 0
-jit_var_free(93)
-jit_var_new(98): 
-jit_var_inc_ref_ext(98): 1
-jit_var_new(94):  (reused)
-jit_var_inc_ref_ext(94): 1
-jit_var_inc_ref_int(94): 2
-jit_var_dec_ref_ext(94): 0
-jit_var_new(99): 
-jit_var_inc_ref_ext(99): 1
-jit_var_inc_ref_int(99): 1
-jit_var_dec_ref_ext(99): 0
-jit_var_new(100 <- 94, 99, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2udq.512(<16 x $t1>, <16 x $t2>, i16, i32)
-jit_var_inc_ref_ext(100): 1
+jit_var_inc_ref_int(71): 1
+jit_var_new(72 <- 1, 71): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
+jit_var_inc_ref_ext(72): 1
+jit_var_dec_ref_ext(71): 0
+jit_var_dec_ref_ext(69): 0
+jit_var_new(73): 
+jit_var_inc_ref_ext(73): 1
+jit_var_new(70):  (reused)
+jit_var_inc_ref_ext(70): 1
+jit_var_inc_ref_int(70): 2
+jit_var_dec_ref_ext(70): 0
+jit_var_new(73):  (reused)
+jit_var_inc_ref_ext(73): 2
+jit_var_inc_ref_int(73): 1
+jit_var_dec_ref_ext(73): 1
+jit_var_new(74 <- 70, 73, 0, 0): declare <16 x $t2> @llvm.x86.avx512.mask.cvtps2udq.512(<16 x $t1>, <16 x $t2>, i16, i32)
+jit_var_inc_ref_ext(74): 1
 jit_var_inc_ref_int(1): 3
-jit_var_inc_ref_int(100): 1
-jit_var_new(101 <- 1, 100): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
-jit_var_inc_ref_ext(101): 1
-jit_var_dec_ref_ext(100): 0
-jit_var_dec_ref_ext(98): 0
-jit_var_free(98)
-jit_var_new(102): 
-jit_var_inc_ref_ext(102): 1
-jit_var_new(94):  (reused)
-jit_var_inc_ref_ext(94): 1
-jit_var_inc_ref_int(94): 3
-jit_var_dec_ref_ext(94): 0
-jit_var_new(103): 
-jit_var_inc_ref_ext(103): 1
-jit_var_inc_ref_int(103): 1
-jit_var_dec_ref_ext(103): 0
-jit_var_new(104 <- 94, 103, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(104): 1
+jit_var_inc_ref_int(74): 1
+jit_var_new(75 <- 1, 74): $4$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
+jit_var_inc_ref_ext(75): 1
+jit_var_dec_ref_ext(74): 0
+jit_var_dec_ref_ext(73): 0
+jit_var_new(76): 
+jit_var_inc_ref_ext(76): 1
+jit_var_new(70):  (reused)
+jit_var_inc_ref_ext(70): 1
+jit_var_inc_ref_int(70): 3
+jit_var_dec_ref_ext(70): 0
+jit_var_new(76):  (reused)
+jit_var_inc_ref_ext(76): 2
+jit_var_inc_ref_int(76): 1
+jit_var_dec_ref_ext(76): 1
+jit_var_new(77 <- 70, 76, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(77): 1
 jit_var_inc_ref_int(1): 4
-jit_var_inc_ref_int(104): 1
-jit_var_new(105 <- 1, 104): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
-jit_var_inc_ref_ext(105): 1
-jit_var_dec_ref_ext(104): 0
-jit_var_dec_ref_ext(102): 0
-jit_var_free(102)
-jit_var_new(106): 
-jit_var_inc_ref_ext(106): 1
-jit_var_new(94):  (reused)
-jit_var_inc_ref_ext(94): 1
-jit_var_inc_ref_int(94): 4
-jit_var_dec_ref_ext(94): 0
-jit_var_new(107): 
-jit_var_inc_ref_ext(107): 1
-jit_var_inc_ref_int(107): 1
-jit_var_dec_ref_ext(107): 0
-jit_var_new(108 <- 94, 107, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(108): 1
+jit_var_inc_ref_int(77): 1
+jit_var_new(78 <- 1, 77): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
+jit_var_inc_ref_ext(78): 1
+jit_var_dec_ref_ext(77): 0
+jit_var_dec_ref_ext(76): 0
+jit_var_new(79): 
+jit_var_inc_ref_ext(79): 1
+jit_var_new(70):  (reused)
+jit_var_inc_ref_ext(70): 1
+jit_var_inc_ref_int(70): 4
+jit_var_dec_ref_ext(70): 0
+jit_var_new(79):  (reused)
+jit_var_inc_ref_ext(79): 2
+jit_var_inc_ref_int(79): 1
+jit_var_dec_ref_ext(79): 1
+jit_var_new(80 <- 70, 79, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtps2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(80): 1
 jit_var_inc_ref_int(1): 5
-jit_var_inc_ref_int(108): 1
-jit_var_new(109 <- 1, 108): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
-jit_var_inc_ref_ext(109): 1
-jit_var_dec_ref_ext(108): 0
-jit_var_dec_ref_ext(106): 0
-jit_var_free(106)
-jit_var_new(110): 
-jit_var_inc_ref_ext(110): 1
-jit_var_new(111): 
-jit_var_inc_ref_ext(111): 1
-jit_var_inc_ref_int(111): 1
-jit_var_dec_ref_ext(111): 0
-jit_var_new(95):  (reused)
-jit_var_inc_ref_ext(95): 1
-jit_var_inc_ref_int(95): 2
-jit_var_dec_ref_ext(95): 0
-jit_var_new(112 <- 111, 95, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2dq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(112): 1
+jit_var_inc_ref_int(80): 1
+jit_var_new(81 <- 1, 80): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtps2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
+jit_var_inc_ref_ext(81): 1
+jit_var_dec_ref_ext(80): 0
+jit_var_dec_ref_ext(79): 0
+jit_var_new(69):  (reused)
+jit_var_inc_ref_ext(69): 1
+jit_var_new(82): 
+jit_var_inc_ref_ext(82): 1
+jit_var_inc_ref_int(82): 1
+jit_var_dec_ref_ext(82): 0
+jit_var_new(69):  (reused)
+jit_var_inc_ref_ext(69): 2
+jit_var_inc_ref_int(69): 2
+jit_var_dec_ref_ext(69): 1
+jit_var_new(83 <- 82, 69, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2dq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(83): 1
 jit_var_inc_ref_int(2): 1
-jit_var_inc_ref_int(112): 1
-jit_var_new(113 <- 2, 112): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
-jit_var_inc_ref_ext(113): 1
-jit_var_dec_ref_ext(112): 0
-jit_var_dec_ref_ext(110): 0
-jit_var_free(110)
-jit_var_new(114): 
-jit_var_inc_ref_ext(114): 1
-jit_var_new(111):  (reused)
-jit_var_inc_ref_ext(111): 1
-jit_var_inc_ref_int(111): 2
-jit_var_dec_ref_ext(111): 0
-jit_var_new(99):  (reused)
-jit_var_inc_ref_ext(99): 1
-jit_var_inc_ref_int(99): 2
-jit_var_dec_ref_ext(99): 0
-jit_var_new(115 <- 111, 99, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2udq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(115): 1
+jit_var_inc_ref_int(83): 1
+jit_var_new(84 <- 2, 83): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2dq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
+jit_var_inc_ref_ext(84): 1
+jit_var_dec_ref_ext(83): 0
+jit_var_dec_ref_ext(69): 0
+jit_var_new(73):  (reused)
+jit_var_inc_ref_ext(73): 1
+jit_var_new(82):  (reused)
+jit_var_inc_ref_ext(82): 1
+jit_var_inc_ref_int(82): 2
+jit_var_dec_ref_ext(82): 0
+jit_var_new(73):  (reused)
+jit_var_inc_ref_ext(73): 2
+jit_var_inc_ref_int(73): 2
+jit_var_dec_ref_ext(73): 1
+jit_var_new(85 <- 82, 73, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2udq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(85): 1
 jit_var_inc_ref_int(2): 2
-jit_var_inc_ref_int(115): 1
-jit_var_new(116 <- 2, 115): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
-jit_var_inc_ref_ext(116): 1
-jit_var_dec_ref_ext(115): 0
-jit_var_dec_ref_ext(114): 0
-jit_var_free(114)
-jit_var_new(117): 
-jit_var_inc_ref_ext(117): 1
-jit_var_new(111):  (reused)
-jit_var_inc_ref_ext(111): 1
-jit_var_inc_ref_int(111): 3
-jit_var_dec_ref_ext(111): 0
-jit_var_new(103):  (reused)
-jit_var_inc_ref_ext(103): 1
-jit_var_inc_ref_int(103): 2
-jit_var_dec_ref_ext(103): 0
-jit_var_new(118 <- 111, 103, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(118): 1
+jit_var_inc_ref_int(85): 1
+jit_var_new(86 <- 2, 85): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2udq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
+jit_var_inc_ref_ext(86): 1
+jit_var_dec_ref_ext(85): 0
+jit_var_dec_ref_ext(73): 0
+jit_var_new(76):  (reused)
+jit_var_inc_ref_ext(76): 1
+jit_var_new(82):  (reused)
+jit_var_inc_ref_ext(82): 1
+jit_var_inc_ref_int(82): 3
+jit_var_dec_ref_ext(82): 0
+jit_var_new(76):  (reused)
+jit_var_inc_ref_ext(76): 2
+jit_var_inc_ref_int(76): 2
+jit_var_dec_ref_ext(76): 1
+jit_var_new(87 <- 82, 76, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2qq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(87): 1
 jit_var_inc_ref_int(2): 3
-jit_var_inc_ref_int(118): 1
-jit_var_new(119 <- 2, 118): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
-jit_var_inc_ref_ext(119): 1
-jit_var_dec_ref_ext(118): 0
-jit_var_dec_ref_ext(117): 0
-jit_var_free(117)
-jit_var_new(120): 
-jit_var_inc_ref_ext(120): 1
-jit_var_new(111):  (reused)
-jit_var_inc_ref_ext(111): 1
-jit_var_inc_ref_int(111): 4
-jit_var_dec_ref_ext(111): 0
-jit_var_new(107):  (reused)
-jit_var_inc_ref_ext(107): 1
-jit_var_inc_ref_int(107): 2
-jit_var_dec_ref_ext(107): 0
-jit_var_new(121 <- 111, 107, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
-jit_var_inc_ref_ext(121): 1
+jit_var_inc_ref_int(87): 1
+jit_var_new(88 <- 2, 87): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2qq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
+jit_var_inc_ref_ext(88): 1
+jit_var_dec_ref_ext(87): 0
+jit_var_dec_ref_ext(76): 0
+jit_var_new(79):  (reused)
+jit_var_inc_ref_ext(79): 1
+jit_var_new(82):  (reused)
+jit_var_inc_ref_ext(82): 1
+jit_var_inc_ref_int(82): 4
+jit_var_dec_ref_ext(82): 0
+jit_var_new(79):  (reused)
+jit_var_inc_ref_ext(79): 2
+jit_var_inc_ref_int(79): 2
+jit_var_dec_ref_ext(79): 1
+jit_var_new(89 <- 82, 79, 0, 0): declare <8 x $t2> @llvm.x86.avx512.mask.cvtpd2uqq.512(<8 x $t1>, <8 x $t2>, i8, i32)
+jit_var_inc_ref_ext(89): 1
 jit_var_inc_ref_int(2): 4
-jit_var_inc_ref_int(121): 1
-jit_var_new(122 <- 2, 121): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
-jit_var_inc_ref_ext(122): 1
-jit_var_dec_ref_ext(121): 0
-jit_var_dec_ref_ext(120): 0
-jit_var_free(120)
-jit_var_schedule(97)
-jit_var_schedule(101)
-jit_var_schedule(105)
-jit_var_schedule(109)
-jit_var_schedule(113)
-jit_var_schedule(116)
-jit_var_schedule(119)
-jit_var_schedule(122)
+jit_var_inc_ref_int(89): 1
+jit_var_new(90 <- 2, 89): $3$r0 = call <$w x $t0> @llvm.x86.avx512.mask.cvtpd2uqq.512(<$w x $t1> $r1, <$w x $t0> $z, i$w -1, i32 8)
+jit_var_inc_ref_ext(90): 1
+jit_var_dec_ref_ext(89): 0
+jit_var_dec_ref_ext(79): 0
+jit_var_schedule(72)
+jit_var_schedule(75)
+jit_var_schedule(78)
+jit_var_schedule(81)
+jit_var_schedule(84)
+jit_var_schedule(86)
+jit_var_schedule(88)
+jit_var_schedule(90)
 input=[-1.1, -0.6, -0.5, -0.4, 0.4, 0.5, 0.6, 1.1, 4.29497e+09]
 jit_eval(): launching 1 kernel.
 jit_assemble(size=9): register map:
-   - gl0 -> 96 [scalar]
-   - gl1 -> 100 [scalar]
-   - gl2 -> 104 [scalar]
-   - gl3 -> 108 [scalar]
-   - gl4 -> 112 [scalar]
-   - gl5 -> 115 [scalar]
-   - gl6 -> 118 [scalar]
-   - gl7 -> 121 [scalar]
+   - gl0 -> 71 [scalar]
+   - gl1 -> 74 [scalar]
+   - gl2 -> 77 [scalar]
+   - gl3 -> 80 [scalar]
+   - gl4 -> 83 [scalar]
+   - gl5 -> 85 [scalar]
+   - gl6 -> 87 [scalar]
+   - gl7 -> 89 [scalar]
    - %f8 -> 1 [in]
-   - %f9 -> 94 [scalar]
-   - %r10 -> 95 [scalar]
-   - %r11 -> 97 [out]
+   - %f9 -> 70 [scalar]
+   - %r10 -> 69 [scalar]
+   - %r11 -> 72 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %r12 -> 99 [scalar]
-   - %r13 -> 101 [out]
+   - %r12 -> 73 [scalar]
+   - %r13 -> 75 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd14 -> 103 [scalar]
-   - %rd15 -> 105 [out]
+   - %rd14 -> 76 [scalar]
+   - %rd15 -> 78 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd16 -> 107 [scalar]
-   - %rd17 -> 109 [out]
+   - %rd16 -> 79 [scalar]
+   - %rd17 -> 81 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
    - %d18 -> 2
-   - %d19 -> 111 [scalar]
-   - %r20 -> 113 [out]
+   - %d19 -> 82 [scalar]
+   - %r20 -> 84 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %r21 -> 116 [out]
+   - %r21 -> 86 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd22 -> 119 [out]
+   - %rd22 -> 88 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
-   - %rd23 -> 122 [out]
+   - %rd23 -> 90 [out]
 jit_malloc(type=host-async, size=256): <@> (reused local)
   -> launching <@> (n=9, in=1, out=8, ops=24):
 declare <16 x i32> @llvm.x86.avx512.mask.cvtps2dq.512(<16 x float>, <16 x i32>, i16, i32)
@@ -2139,51 +2107,51 @@ attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
-jit_var_dec_ref_int(96): 0
-jit_var_free(96)
-jit_var_dec_ref_int(94): 3
-jit_var_dec_ref_int(95): 1
+jit_var_dec_ref_int(71): 0
+jit_var_free(71)
+jit_var_dec_ref_int(70): 3
+jit_var_dec_ref_int(69): 1
 jit_var_dec_ref_int(1): 3
-jit_var_dec_ref_int(100): 0
-jit_var_free(100)
-jit_var_dec_ref_int(94): 2
-jit_var_dec_ref_int(99): 1
+jit_var_dec_ref_int(74): 0
+jit_var_free(74)
+jit_var_dec_ref_int(70): 2
+jit_var_dec_ref_int(73): 1
 jit_var_dec_ref_int(1): 2
-jit_var_dec_ref_int(104): 0
-jit_var_free(104)
-jit_var_dec_ref_int(94): 1
-jit_var_dec_ref_int(103): 1
+jit_var_dec_ref_int(77): 0
+jit_var_free(77)
+jit_var_dec_ref_int(70): 1
+jit_var_dec_ref_int(76): 1
 jit_var_dec_ref_int(1): 1
-jit_var_dec_ref_int(108): 0
-jit_var_free(108)
-jit_var_dec_ref_int(94): 0
-jit_var_free(94)
-jit_var_dec_ref_int(107): 1
+jit_var_dec_ref_int(80): 0
+jit_var_free(80)
+jit_var_dec_ref_int(70): 0
+jit_var_free(70)
+jit_var_dec_ref_int(79): 1
 jit_var_dec_ref_int(2): 3
-jit_var_dec_ref_int(112): 0
-jit_var_free(112)
-jit_var_dec_ref_int(111): 3
-jit_var_dec_ref_int(95): 0
-jit_var_free(95)
+jit_var_dec_ref_int(83): 0
+jit_var_free(83)
+jit_var_dec_ref_int(82): 3
+jit_var_dec_ref_int(69): 0
+jit_var_free(69)
 jit_var_dec_ref_int(2): 2
-jit_var_dec_ref_int(115): 0
-jit_var_free(115)
-jit_var_dec_ref_int(111): 2
-jit_var_dec_ref_int(99): 0
-jit_var_free(99)
+jit_var_dec_ref_int(85): 0
+jit_var_free(85)
+jit_var_dec_ref_int(82): 2
+jit_var_dec_ref_int(73): 0
+jit_var_free(73)
 jit_var_dec_ref_int(2): 1
-jit_var_dec_ref_int(118): 0
-jit_var_free(118)
-jit_var_dec_ref_int(111): 1
-jit_var_dec_ref_int(103): 0
-jit_var_free(103)
+jit_var_dec_ref_int(87): 0
+jit_var_free(87)
+jit_var_dec_ref_int(82): 1
+jit_var_dec_ref_int(76): 0
+jit_var_free(76)
 jit_var_dec_ref_int(2): 0
-jit_var_dec_ref_int(121): 0
-jit_var_free(121)
-jit_var_dec_ref_int(111): 0
-jit_var_free(111)
-jit_var_dec_ref_int(107): 0
-jit_var_free(107)
+jit_var_dec_ref_int(89): 0
+jit_var_free(89)
+jit_var_dec_ref_int(82): 0
+jit_var_free(82)
+jit_var_dec_ref_int(79): 0
+jit_var_free(79)
 jit_eval(): done.
 round_f_i32=[-1, -1, 0, 0, 0, 0, 1, 1, -2147483648]
 round_f_i64=[-1, -1, 0, 0, 0, 0, 1, 1, 4294967296]
@@ -2193,29 +2161,29 @@ round_f_u32=[4294967295, 4294967295, 0, 0, 0, 0, 1, 1, 4294967295]
 round_f_u64=[18446744073709551615, 18446744073709551615, 0, 0, 0, 0, 1, 1, 4294967296]
 round_d_u32=[4294967295, 4294967295, 0, 0, 0, 0, 1, 1, 4294967295]
 round_d_u64=[18446744073709551615, 18446744073709551615, 0, 0, 0, 0, 1, 1, 4294967296]
-jit_var_dec_ref_ext(122): 0
-jit_var_free(122)
+jit_var_dec_ref_ext(90): 0
+jit_var_free(90)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(119): 0
-jit_var_free(119)
+jit_var_dec_ref_ext(88): 0
+jit_var_free(88)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(116): 0
-jit_var_free(116)
+jit_var_dec_ref_ext(86): 0
+jit_var_free(86)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(113): 0
-jit_var_free(113)
+jit_var_dec_ref_ext(84): 0
+jit_var_free(84)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(109): 0
-jit_var_free(109)
+jit_var_dec_ref_ext(81): 0
+jit_var_free(81)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(105): 0
-jit_var_free(105)
+jit_var_dec_ref_ext(78): 0
+jit_var_free(78)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(101): 0
-jit_var_free(101)
+jit_var_dec_ref_ext(75): 0
+jit_var_free(75)
 jit_free(<@>, type=host-async, size=256)
-jit_var_dec_ref_ext(97): 0
-jit_var_free(97)
+jit_var_dec_ref_ext(72): 0
+jit_var_free(72)
 jit_free(<@>, type=host-async, size=256)
 jit_var_dec_ref_ext(2): 0
 jit_var_free(2)

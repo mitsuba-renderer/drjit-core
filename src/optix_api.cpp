@@ -351,7 +351,7 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
                        uint64_t kernel_hash) {
     char error_log[16384];
 
-    std::unique_ptr<char[]> buffer(new char[buffer_size]);
+    std::unique_ptr<char[]> buffer(new char[buffer_size + 1]);
     memcpy(buffer.get(), buffer_, buffer_size + 1);
 
     // =====================================================
@@ -397,47 +397,39 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
         }
 
         p = buffer.get();
+        char num[14];
+
+        #define FIND(needle)                                                 \
+            p = strstr(p + 1, needle);                                       \
+            if (!p)                                                          \
+                jit_fail("Internal error in CUDA->OptiX callable tranform");
+
         while (true) {
-            p = strstr(p, "// OptiX variant: gl");
+            p = strstr(p, "// indirect call via table gl");
             if (!p)
                 break;
-            uint32_t id = (uint32_t) strtoul(p + 20, nullptr, 10);
+            uint32_t id = (uint32_t) strtoul(p + 29, nullptr, 10);
             auto it = pg_offsets.find(id);
             if (it == pg_offsets.end())
                 jit_fail("Could not find function table %u!", id);
 
-            p = strstr(p + 1, "//");
-            if (!p)
-                break;
+            // Uncomment OptiX variant
+            FIND("// add.u32");;
             p[0] = p[1] = ' ';
-
-            p = strstr(p + 1, "sbt_id_offset");
-            if (!p)
-                break;
-
-            char num[14];
+            FIND("sbt_id_offset");
             snprintf(num, 14, "%13u", it->second);
             memcpy(p, num, 13);
-
-            p = strstr(p + 1, "//");
-            if (!p)
-                break;
+            FIND("// call");
             p[0] = p[1] = ' ';
 
-            p = strstr(p + 1, "   mov.u64");
-            if (!p)
-                break;
+            // Comment out CUDA variant
+            FIND("   mov.u64");
+            p[0] = p[1] = '/';
+            FIND("   mad.wide");
+            p[0] = p[1] = '/';
+            FIND("   ld.global.u64");
             p[0] = p[1] = '/';
 
-            p = strstr(p + 1, "   mad.wide");
-            if (!p)
-                break;
-            p[0] = p[1] = '/';
-
-            p = strstr(p + 1, "   ld.global.u64");
-            if (!p)
-                break;
-            p[0] = p[1] = '/';
         }
     }
 
@@ -453,8 +445,8 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
         ts->optix_context, &module_opts, ts->optix_pipeline_compile_options,
         buffer.get(), buffer_size, error_log, &log_size, &kernel.optix.mod);
     if (rv) {
-        jit_log(Warn, "jit_optix_compile(): optixModuleCreateFromPTX(): %s",
-                error_log);
+        jit_fail("jit_optix_compile(): optixModuleCreateFromPTX() failed. Please see the PTX "
+                 "assembly listing and error message below:\n\n%s\n\n%s", buffer.get(), error_log);
         jit_optix_check(rv);
     }
 
@@ -495,8 +487,8 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
                                  pg_map.size(), &pgo, error_log,
                                  &log_size, kernel.optix.pg);
     if (rv) {
-        jit_log(Warn, "jit_optix_compile(): optixProgramGroupCreate(): %s",
-                error_log);
+        jit_fail("jit_optix_compile(): optixProgramGroupCreate() failed. Please see the PTX "
+                 "assembly listing and error message below:\n\n%s\n\n%s", buffer.get(), error_log);
         jit_optix_check(rv);
     }
 
@@ -539,8 +531,8 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
         ts->optix_program_groups.data(), ts->optix_program_groups.size(),
         error_log, &log_size, &kernel.optix.pipeline);
     if (rv) {
-        jit_log(Warn, "jit_optix_compile(): optixProgramGroupCreate(): %s",
-                error_log);
+        jit_fail("jit_optix_compile(): optixPipelineCreate() failed. Please see the PTX "
+                 "assembly listing and error message below:\n\n%s\n\n%s", buffer.get(), error_log);
         jit_optix_check(rv);
     }
 
