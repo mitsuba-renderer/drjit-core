@@ -118,9 +118,10 @@ auto vcall(const char *domain, UInt32 self, const Args &... args) {
     out_count = 0;
     read_indices(out.get(), out_count, result);
 
-    jitc_var_vcall(cuda, self.index(), n_inst, call_id.get(), call_hash.get(),
-                   in_count, in.get(), out_count, out.get(), extra.size(),
-                   extra.data(), extra_offset.get(), side_effects);
+    jitc_var_vcall(cuda, "Base", "func", self.index(), n_inst, call_id.get(),
+                   call_hash.get(), in_count, in.get(), out_count, out.get(),
+                   extra.size(), extra.data(), extra_offset.get(),
+                   side_effects);
 
     out_count = 0;
     write_indices(out.get(), out_count, result);

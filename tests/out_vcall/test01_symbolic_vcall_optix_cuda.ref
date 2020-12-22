@@ -7,7 +7,7 @@ jit_free(<@>, type=host-pinned, size=64)
 jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 jit_malloc_migrate(<@> -> <@>, host-pinned -> device)
 jit_free(<@>, type=host-pinned, size=64)
-jit_optix_configure()
+jit_optix_configure(pg_count=2)
 jit_var_new(1): mov.u32 $r0, $i
 jit_var_inc_ref_ext(1): 1
 jit_var_inc_ref_int(1): 1
@@ -244,7 +244,7 @@ jit_var_dec_ref_ext(20): 0
 jit_var_free(20)
 jit_var_dec_ref_ext(19): 0
 jit_var_free(19)
-jit_var_vcall(): 3 instances, 2 in, 2 out, 1 extra, side effects.
+jit_var_vcall(): Base::func(), 3 instances, 3 unique, 2 in, 2 out, 1 extra, side effects.
 jit_var_new(24): 
 jit_var_inc_ref_ext(24): 1
 jit_var_inc_ref_int(9): 1
@@ -271,7 +271,8 @@ jit_var_new(28 <- 27): .global .u64 $r0[] = { func_<@>, func_<@>, func_<@> };
 jit_var_inc_ref_ext(28): 1
 jit_var_inc_ref_int(5): 1
 jit_var_inc_ref_int(28): 1
-jit_var_new(29 <- 5, 28): // indirect call via table $r2: 054104e62ea9d7fc, bc6c60f31b08a550, 5f9dbfe80eee64ab
+jit_var_new(29 <- 5, 28): // Base::func
+    // indirect call via table $r2: 054104e62ea9d7fc, bc6c60f31b08a550, 5f9dbfe80eee64ab
     // OptiX variant:
     // add.u32 %r3, $r1, sbt_id_offset;
     // call ($r0), _optix_call_direct_callable, (%r3);
@@ -513,6 +514,7 @@ jit_free(<@>, type=host-pinned, size=64)
     mov.u32 %r12, %r0;
 
     // Evaluate %rd13
+    // Base::func
     // indirect call via table gl7: 054104e62ea9d7fc, bc6c60f31b08a550, 5f9dbfe80eee64ab
     // OptiX variant:
     // add.u32 %r3, %r12, sbt_id_offset;
@@ -573,12 +575,10 @@ jit_free(<@>, type=host-pinned, size=64)
     st.global.cs.f32 [%rd0], %f31;
     ret;
 }
-jit_malloc(type=host, size=128): <@> (new allocation)
-jit_malloc(type=device, device=0, size=128): <@> (new allocation)
-jit_malloc_migrate(<@> -> <@>, host -> device)
 jit_malloc(type=host-pinned, size=128): <@> (new allocation)
+jit_malloc(type=device, device=0, size=128): <@> (new allocation)
+jit_malloc_migrate(<@> -> <@>, host-pinned -> device)
 jit_free(<@>, type=host-pinned, size=128)
-jit_free(<@>, type=host, size=128)
 jit_free(<@>, type=device, device=0, size=64)
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(45): 0
@@ -919,7 +919,6 @@ jit_free(<@>, type=device, device=0, size=128)
 jit_shutdown(): releasing 1 thread state ..
 jit_free_flush(): scheduling 1 deallocation
 jit_malloc_trim(): freed
- - host memory: 128 B in 1 allocation
  - host-pinned memory: 384 B in 5 allocations
  - device memory: 512 B in 7 allocations
 jit_malloc_shutdown(): leaked

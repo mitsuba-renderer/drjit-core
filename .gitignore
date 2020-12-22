@@ -29,3 +29,4 @@ enoki-thread.dll
 tests/test_basics*
 tests/test_reductions*
 tests/test_vcall*
+tests/triangle

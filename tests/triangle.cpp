@@ -28,6 +28,7 @@ namespace ek = enoki;
 using Float = ek::CUDAArray<float>;
 using UInt32 = ek::CUDAArray<uint32_t>;
 using UInt64 = ek::CUDAArray<uint64_t>;
+using Mask = ek::CUDAArray<bool>;
 
 void demo() {
     OptixDeviceContext context = jitc_optix_context();
@@ -220,6 +221,7 @@ void demo() {
             miss_sbt_index(0);
 
         UInt32 payload_0(0);
+        Mask mask(true);
 
         // =====================================================
         // Launch a ray tracing call
@@ -235,7 +237,7 @@ void demo() {
             miss_sbt_index.index(), payload_0.index()
         };
 
-        jitc_optix_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args);
+        jitc_optix_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args, mask.index());
 
         payload_0 = UInt32::steal(trace_args[15]);
 
@@ -265,7 +267,7 @@ void demo() {
 }
 
 int main(int, char **) {
-    jitc_set_log_level_stderr(LogLevel::Trace);
+    // jitc_set_log_level_stderr(LogLevel::Trace);
     jitc_init(0, 1);
     init_optix_api();
     demo();
