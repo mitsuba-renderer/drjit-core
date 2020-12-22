@@ -330,12 +330,34 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
 
     AllocInfo ai = it.value();
 
+    // Maybe nothing needs to be done..
+    if ((AllocType) ai.type == type &&
+        (type != AllocType::Device || ai.device == thread_state(true)->device)) {
+        if (move) {
+            return ptr;
+        } else {
+            void *ptr_new = jit_malloc(type, ai.size);
+            if (type == AllocType::Host) {
+                memcpy(ptr_new, ptr, ai.size);
+            } else {
+                bool cuda = type != AllocType::Host && type != AllocType::HostAsync;
+                jit_memcpy_async(cuda, ptr_new, ptr, ai.size);
+            }
+            return ptr_new;
+        }
+    }
+
     if (((AllocType) ai.type == AllocType::Host && type == AllocType::HostAsync) ||
-        ((AllocType) ai.type == AllocType::HostAsync && type == AllocType::Host) ||
-         (AllocType) ai.type == type) {
+        ((AllocType) ai.type == AllocType::HostAsync && type == AllocType::Host)) {
         if (move) {
             it.value().type = (uint32_t) type;
             return ptr;
+        } else {
+            void *ptr_new = jit_malloc(type, ai.size);
+            jit_memcpy_async(0, ptr_new, ptr, ai.size);
+            if ((AllocType) ai.type == AllocType::Host)
+                jit_sync_thread(); // be careful when copying from host
+            return ptr_new;
         }
     }
 
@@ -345,10 +367,6 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
 
     /// At this point, source or destination is a GPU array, get assoc. state
     ThreadState *ts = thread_state(true);
-
-    // Maybe nothing needs to be done..
-    if ((AllocType) ai.type == type && (type != AllocType::Device || ai.device == ts->device))
-        return ptr;
 
     if (type == AllocType::Host) // Upgrade from host to host-pinned memory
         type = AllocType::HostPinned;
