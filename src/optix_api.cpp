@@ -494,7 +494,7 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
 
     size_t stride = OPTIX_SBT_RECORD_HEADER_SIZE;
     uint8_t *sbt_record = (uint8_t *)
-        jit_malloc(AllocType::Host, pg_map.size() * stride);
+        jit_malloc(AllocType::HostPinned, sbt_refs.size() * stride);
 
     for (size_t i = 0; i < sbt_refs.size(); ++i) {
         auto it = pg_map.find(sbt_refs[i]);
