@@ -1423,24 +1423,50 @@ void jit_var_vcall(int cuda,
     uint32_t index = jit_var_new_0(cuda, VarType::Void, "", 1, 1);
 
     buffer.clear();
-    buffer.put(".global .u64 $r0[] = { ");
-    for (uint32_t i = 0; i < n_inst; ++i) {
-        buffer.fmt("func_%016llx%s", (unsigned long long) inst_hash[i],
-                   i + 1 < n_inst ? ", " : "");
-        uint32_t prev = index;
-        index = jit_var_new_2(cuda, VarType::Void, "", 1, inst_ids[i], index);
-        jit_var_dec_ref_ext(prev);
-        jit_var_dec_ref_ext(inst_ids[i]);
+
+    uint32_t width = jit_llvm_vector_width;
+    if (cuda) {
+        buffer.put(".global .u64 $r0[] = { ");
+        for (uint32_t i = 0; i < n_inst; ++i) {
+            buffer.fmt("func_%016llx%s", (unsigned long long) inst_hash[i],
+                       i + 1 < n_inst ? ", " : "");
+            uint32_t prev = index;
+            index = jit_var_new_2(cuda, VarType::Void, "", 1, inst_ids[i], index);
+            jit_var_dec_ref_ext(prev);
+            jit_var_dec_ref_ext(inst_ids[i]);
+        }
+        buffer.put(" };\n");
+    } else {
+        buffer.fmt("@$r0 = private unnamed_addr constant [%u x void (i8*, i8*, i8**, <%u x i1>)*] [", n_inst, width);
+        for (uint32_t i = 0; i < n_inst; ++i) {
+            buffer.fmt("void (i8*, i8*, i8**, <%u x i1>)* @func_%016llx%s", width,
+                       (unsigned long long) inst_hash[i],
+                       i + 1 < n_inst ? ", " : "");
+            uint32_t prev = index;
+            index = jit_var_new_2(cuda, VarType::Void, "", 1, inst_ids[i], index);
+            jit_var_dec_ref_ext(prev);
+            jit_var_dec_ref_ext(inst_ids[i]);
+        }
+        buffer.put(" ], align 8\n");
     }
-    buffer.put(" };\n");
 
     uint32_t call_table =
         jit_var_new_1(cuda, VarType::Global, buffer.get(), 0, index);
-    uint32_t call_target = jit_var_new_2(cuda, VarType::UInt64,
-                                         "mov.$t0 $r0, $r2$n"
-                                         "mad.wide.u32 $r0, $r1, 8, $r0$n"
-                                         "ld.global.$t0 $r0, [$r0]",
-                                         1, self, call_table);
+    uint32_t call_target = 0;
+
+    if (cuda) {
+        // Don't delete comment, patch code in optix_api.cpp looks for it
+        call_target = jit_var_new_2(1, VarType::UInt64,
+                                    "// [ vcall function pointer lookup ]$n"
+                                    "// OptiX variant: $r2$n"
+                                    "// add.u32 %r3, $r1, sbt_id_offset$n"
+                                    "// call ($r0), _optix_call_direct_callable, (%r3)$n"
+                                    "// CUDA variant:$n"
+                                    "   mov.$t0 $r0, $r2$n"
+                                    "   mad.wide.u32 $r0, $r1, 8, $r0$n"
+                                    "   ld.global.$t0 $r0, [$r0]",
+                                    1, self, call_table);
+    }
 
     uint32_t extra_id;
     if (n_extra > 0) {
@@ -1530,7 +1556,7 @@ void jit_var_vcall(int cuda,
 
     if (!targets_explicit)
         buffer.fmt("        Fproto: .callprototype (.param .align %u .b8 _[%u]) _ "
-                   "(.reg .u64 _, .param .align %u .b8 _[%u]);\n",
+                   "(.param .align %u .b8 _[%u], .reg .u64 _);\n",
                    align_out, offset_out, align_in, offset_in);
 
     prev = index;
@@ -1554,11 +1580,11 @@ void jit_var_vcall(int cuda,
     prev  = index;
     if (targets_explicit)
         index = jit_var_new_4(cuda, VarType::Void,
-                              "    call (param_out), $r1, ($r2, param_in), $r3", 1,
+                              "    call (param_out), $r1, (param_in, $r2), $r3", 1,
                               call_target, extra_id, call_table, index);
     else
         index = jit_var_new_3(cuda, VarType::Void,
-                              "    call (param_out), $r1, ($r2, param_in), Fproto", 1,
+                              "    call (param_out), $r1, (param_in, $r2), Fproto", 1,
                               call_target, extra_id, index);
 
     jit_var_dec_ref_ext(call_table);

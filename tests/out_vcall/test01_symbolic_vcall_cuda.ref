@@ -55,6 +55,7 @@ jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
 jit_var_free(1)
 jit_eval(): done.
+jit_var_inc_ref_ext(2): 2
 jit_registry_put(<@>, domain="Base"): 1 (new)
 jit_registry_put(<@>, domain="Base"): 2 (new)
 jit_var_new_literal(3): mov.$b0 $r0, 0x3f800000
@@ -76,7 +77,7 @@ jit_var_map_mem(8): <@>, size=1, free=0
 jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_ext(6): 3
 jit_var_inc_ref_ext(6): 4
-jit_var_new(9): .func (.param .align 4 .b8 out[8]) func_<@>(.reg .u64 extra, .param .align 4 .b8 params[8]) {
+jit_var_new(9): .visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
     .reg.b8   %b <5>; .reg.b16 %w<5>; .reg.b32 %r<5>;
     .reg.b64  %rd<5>; .reg.f32 %f<5>; .reg.f64 %d<5>;
     .reg.pred %p <5>;
@@ -106,7 +107,7 @@ jit_var_new_literal(12): mov.$b0 $r0, 0x5
 jit_var_inc_ref_ext(12): 1
 jit_var_new_literal(13): mov.$b0 $r0, 0x1
 jit_var_inc_ref_ext(13): 1
-jit_var_inc_ref_ext(2): 2
+jit_var_inc_ref_ext(2): 3
 jit_var_copy_ptr(14 <- 2): <@>
 jit_var_inc_ref_ext(14): 1
 jit_var_inc_ref_int(14): 1
@@ -131,13 +132,7 @@ jit_var_inc_ref_ext(17): 1
 jit_var_dec_ref_ext(11): 1
 jit_var_dec_ref_ext(10): 1
 jit_var_inc_ref_ext(14): 1
-jit_var_dec_ref_ext(15): 0
-jit_var_free(15)
-jit_var_dec_ref_int(14): 0
-jit_var_dec_ref_int(11): 3
-jit_var_dec_ref_int(12): 0
-jit_var_free(12)
-jit_var_new(18): .func (.param .align 4 .b8 out[8]) func_<@>(.reg .u64 extra, .param .align 4 .b8 params[8]) {
+jit_var_new(18): .visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p <11>;
@@ -168,6 +163,12 @@ jit_var_new(18): .func (.param .align 4 .b8 out[8]) func_<@>(.reg .u64 extra, .p
 }
 
 jit_var_inc_ref_ext(18): 1
+jit_var_dec_ref_ext(15): 0
+jit_var_free(15)
+jit_var_dec_ref_int(14): 0
+jit_var_dec_ref_int(11): 3
+jit_var_dec_ref_int(12): 0
+jit_var_free(12)
 jit_var_dec_ref_ext(17): 0
 jit_var_free(17)
 jit_var_dec_ref_int(10): 1
@@ -197,7 +198,7 @@ jit_var_new(22 <- 19, 20): sub.ftz.$t0 $r0, $r1, $r2
 jit_var_inc_ref_ext(22): 1
 jit_var_dec_ref_ext(20): 1
 jit_var_dec_ref_ext(19): 1
-jit_var_new(23): .func (.param .align 4 .b8 out[8]) func_<@>(.reg .u64 extra, .param .align 4 .b8 params[8]) {
+jit_var_new(23): .visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -259,7 +260,7 @@ jit_var_new(28 <- 27): .global .u64 $r0[] = { func_<@>, func_<@>, func_<@> };
 jit_var_inc_ref_ext(28): 1
 jit_var_inc_ref_int(5): 1
 jit_var_inc_ref_int(28): 1
-jit_var_new(29 <- 5, 28): mov.$t0 $r0, $r2$nmad.wide.u32 $r0, $r1, 8, $r0$nld.global.$t0 $r0, [$r0]
+jit_var_new(29 <- 5, 28): // [ vcall function pointer lookup ]$n// OptiX variant: $r2$n// add.u32 %r3, $r1, sbt_id_offset$n// call ($r0), _optix_call_direct_callable, (%r3)$n// CUDA variant:$n   mov.$t0 $r0, $r2$n   mad.wide.u32 $r0, $r1, 8, $r0$n   ld.global.$t0 $r0, [$r0]
 jit_var_inc_ref_ext(29): 1
 jit_var_inc_ref_int(27): 2
 jit_var_new(30 <- 27): 
@@ -319,7 +320,7 @@ jit_var_new(39 <- 38):
     {
         .param .align 4 .b8 param_out[8];
         .param .align 4 .b8 param_in[8];
-        Fproto: .callprototype (.param .align 4 .b8 _[8]) _ (.reg .u64 _, .param .align 4 .b8 _[8]);
+        Fproto: .callprototype (.param .align 4 .b8 _[8]) _ (.param .align 4 .b8 _[8], .reg .u64 _);
 
 jit_var_inc_ref_ext(39): 1
 jit_var_dec_ref_ext(38): 0
@@ -336,7 +337,7 @@ jit_var_dec_ref_ext(40): 0
 jit_var_inc_ref_int(29): 2
 jit_var_inc_ref_int(35): 2
 jit_var_inc_ref_int(41): 1
-jit_var_new(42 <- 29, 35, 41):     call (param_out), $r1, ($r2, param_in), Fproto
+jit_var_new(42 <- 29, 35, 41):     call (param_out), $r1, (param_in, $r2), Fproto
 jit_var_inc_ref_ext(42): 1
 jit_var_dec_ref_ext(28): 0
 jit_var_dec_ref_ext(41): 0
@@ -407,7 +408,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 .target sm_50
 .address_size 64
 
-.func (.param .align 4 .b8 out[8]) func_<@>(.reg .u64 extra, .param .align 4 .b8 params[8]) {
+.visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
     .reg.b8   %b <5>; .reg.b16 %w<5>; .reg.b32 %r<5>;
     .reg.b64  %rd<5>; .reg.f32 %f<5>; .reg.f64 %d<5>;
     .reg.pred %p <5>;
@@ -421,7 +422,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 }
 
 
-.func (.param .align 4 .b8 out[8]) func_<@>(.reg .u64 extra, .param .align 4 .b8 params[8]) {
+.visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p <11>;
@@ -452,7 +453,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 }
 
 
-.func (.param .align 4 .b8 out[8]) func_<@>(.reg .u64 extra, .param .align 4 .b8 params[8]) {
+.visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -500,9 +501,14 @@ L1: // Loop body
     mov.u32 %r12, %r0;
 
     // Evaluate %rd13
-    mov.u64 %rd13, gl7;
-    mad.wide.u32 %rd13, %r12, 8, %rd13;
-    ld.global.u64 %rd13, [%rd13];
+    // [ vcall function pointer lookup ];
+    // OptiX variant: gl7;
+    // add.u32 %r3, %r12, sbt_id_offset;
+    // call (%rd13), _optix_call_direct_callable, (%r3);
+    // CUDA variant:;
+       mov.u64 %rd13, gl7;
+       mad.wide.u32 %rd13, %r12, 8, %rd13;
+       ld.global.u64 %rd13, [%rd13];
 
     // Load %rd15
     ld.param.u64 %rd15, [params+8];
@@ -524,11 +530,11 @@ L1: // Loop body
     {
         .param .align 4 .b8 param_out[8];
         .param .align 4 .b8 param_in[8];
-        Fproto: .callprototype (.param .align 4 .b8 _[8]) _ (.reg .u64 _, .param .align 4 .b8 _[8]);
+        Fproto: .callprototype (.param .align 4 .b8 _[8]) _ (.param .align 4 .b8 _[8], .reg .u64 _);
 
         st.param.f32 [param_in+0], %f19;
         st.param.f32 [param_in+4], %f21;
-        call (param_out), %rd13, (%rd17, param_in), Fproto;
+        call (param_out), %rd13, (param_in, %rd17), Fproto;
 
     // Evaluate %f27
         ld.param.f32 %f27, [param_out+0];
@@ -627,7 +633,7 @@ jit_var_dec_ref_int(24): 0
 jit_var_free(24)
 jit_var_dec_ref_ext(14): 0
 jit_var_free(14)
-jit_var_dec_ref_ext(2): 1
+jit_var_dec_ref_ext(2): 2
 jit_var_dec_ref_int(45): 0
 jit_var_free(45)
 jit_free_flush(): scheduling 4 deallocations
@@ -877,9 +883,8 @@ jit_var_free(52)
 jit_free(<@>, type=device, device=0, size=64)
 jit_registry_remove(<@>)
 jit_registry_remove(<@>)
-jit_var_dec_ref_ext(2): 0
-jit_var_free(2)
-jit_free(<@>, type=device, device=0, size=64)
+jit_registry_trim(): removed 3 / 3 entries.
+jit_var_dec_ref_ext(2): 1
 jit_var_dec_ref_ext(47): 0
 jit_var_free(47)
 jit_free(<@>, type=device, device=0, size=64)
@@ -892,10 +897,12 @@ jit_var_dec_ref_ext(4): 0
 jit_var_free(4)
 jit_var_dec_ref_ext(3): 0
 jit_var_free(3)
+jit_var_dec_ref_ext(2): 0
+jit_var_free(2)
+jit_free(<@>, type=device, device=0, size=64)
 jit_free_flush(): scheduling 6 deallocations
 jit_shutdown(): releasing 3 kernels ..
 jit_shutdown(): releasing 1 thread state ..
-jit_registry_trim(): removed 3 / 3 entries.
 jit_malloc_trim(): freed
  - host-pinned memory: 192 B in 3 allocations
  - device memory: 320 B in 5 allocations

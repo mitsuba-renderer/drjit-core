@@ -211,7 +211,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(8): 0
@@ -447,7 +447,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(16): 0
@@ -684,7 +684,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(24): 0
@@ -921,7 +921,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(32): 0
@@ -1194,7 +1194,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(44): 0
@@ -1478,7 +1478,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(56): 0
@@ -1762,7 +1762,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(68): 0
@@ -2046,7 +2046,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl,+avx512cd" }
+attributes #0 = { norecurse nounwind alignstack=64 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl,+avx512cd" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(80): 0

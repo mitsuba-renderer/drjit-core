@@ -1,6 +1,6 @@
 #include <enoki-jit/optix.h>
-#define OPTIX_API_IMPL
-#include "optix_api.h"
+#define OPTIX_STUBS_IMPL
+#include "optix_stubs.h"
 
 void init_optix_api() {
     jitc_optix_context(); // Ensure OptiX is initialized

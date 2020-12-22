@@ -46,3 +46,6 @@ extern void jit_optix_free(const Kernel &kernel);
 /// Perform an OptiX kernel launch
 extern void jit_optix_launch(ThreadState *ts, const Kernel &kernel, uint32_t size,
                              const void *args, uint32_t args_size);
+
+/// Mark a variable as an expression requiring compilation via OptiX
+extern void jit_optix_mark(uint32_t index);

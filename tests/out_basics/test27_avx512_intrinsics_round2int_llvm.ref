@@ -476,7 +476,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl" }
+attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
@@ -1029,7 +1029,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl" }
+attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
@@ -1582,7 +1582,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl" }
+attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4
@@ -2135,7 +2135,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="+avx512f,+avx512dq,+avx512vl" }
+attributes #0 = { norecurse nounwind alignstack=128 "target-cpu"="skylake-avx512" "stack-probe-size"="1073741824" "target-features"="-vzeroupper,+avx512f,+avx512dq,+avx512vl" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 4

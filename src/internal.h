@@ -174,7 +174,7 @@ struct ThreadState {
     /// Pointer to a user-provided OptiX shader binding table
     const OptixShaderBindingTable *optix_shader_binding_table = nullptr;
 
-    /// User-provided list of program groups, the first entry is used by Enoki
+    /// User-provided list of program groups
     std::vector<OptixProgramGroup> optix_program_groups;
 #endif
 };

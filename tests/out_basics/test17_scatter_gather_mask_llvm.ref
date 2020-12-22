@@ -93,7 +93,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 128 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(3): 0
@@ -256,7 +256,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 64 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(10): 1
@@ -354,7 +354,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 64 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(10): 0
@@ -407,7 +407,7 @@ jit_var_inc_ref_ext(27): 2
 jit_var_dec_ref_ext(27): 1
 jit_var_inc_ref_int(27): 1
 jit_var_inc_ref_int(25): 1
-jit_var_new(28 <- 27, 25): $r0 = bitcast <$w x $t1> $r1 to <$w x $t1>
+jit_var_new(28 <- 27, 25): $r0 = or <$w x $t1> $r1, $z
 jit_var_inc_ref_ext(28): 1
 jit_var_inc_ref_int(22): 1
 jit_var_inc_ref_int(23): 1
@@ -465,7 +465,7 @@ jit_var_inc_ref_int(27): 2
 jit_var_inc_ref_int(25): 2
 jit_var_dec_ref_int(27): 1
 jit_var_dec_ref_int(25): 1
-jit_var_new(28 <- 27, 25): $r0 = bitcast <$w x $t1> $r1 to <$w x $t1> (reused)
+jit_var_new(28 <- 27, 25): $r0 = or <$w x $t1> $r1, $z (reused)
 jit_var_inc_ref_ext(28): 1
 jit_var_inc_ref_int(22): 2
 jit_var_inc_ref_int(33): 1
@@ -541,7 +541,7 @@ loop:
     ; Evaluate %b3
 
     ; Evaluate %p4
-    %p4 = bitcast <8 x i1> %p2 to <8 x i1>
+    %p4 = or <8 x i1> %p2, zeroinitializer
 
     ; Evaluate %r5: l2
     %r5_0 = insertelement <8 x i32> undef, i32 %index, i32 0
@@ -601,7 +601,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 64 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(29): 0

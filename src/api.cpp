@@ -662,5 +662,10 @@ void jitc_optix_trace(uint32_t nargs, uint32_t *args) {
     jit_optix_trace(nargs, args);
 }
 
+void jitc_optix_mark(uint32_t index) {
+    lock_guard guard(state.mutex);
+    jit_optix_mark(index);
+}
+
 #endif
 

@@ -1,8 +1,7 @@
 #include <enoki-jit/cuda.h>
-#include <enoki-jit/optix.h>
 #include <stdio.h>
 
-#include "optix_api.h"
+#include "optix_stubs.h"
 
 /// A simple hit/miss shader combo
 const char *miss_and_closesthit_ptx = R"(
@@ -266,7 +265,7 @@ void demo() {
 }
 
 int main(int, char **) {
-    // jitc_set_log_level_stderr(LogLevel::Trace);
+    jitc_set_log_level_stderr(LogLevel::Trace);
     jitc_init(0, 1);
     init_optix_api();
     demo();

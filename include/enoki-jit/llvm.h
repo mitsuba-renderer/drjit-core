@@ -1061,7 +1061,7 @@ void scatter(LLVMArray<Value> &dst,
     LLVMArray<bool> mask_2 = mask & LLVMArray<bool>::active_mask();
 
     LLVMArray<bool> mask_3 = LLVMArray<bool>::steal(jitc_var_new_2(
-        0, VarType::Bool, "$r0 = bitcast <$w x $t1> $r1 to <$w x $t1>", 1,
+        0, VarType::Bool, "$r0 = or <$w x $t1> $r1, $z", 1,
         mask_2.index(), intrin.index()));
 
     uint32_t var = jitc_var_new_4(

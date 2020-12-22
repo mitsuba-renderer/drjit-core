@@ -24,7 +24,7 @@ jit_var_new(6 <- 1, 2, 3, 5): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> 
 jit_var_inc_ref_ext(6): 1
 jit_var_dec_ref_ext(5): 0
 jit_var_inc_ref_int(3): 2
-jit_var_new(7 <- 3): $r0 = fsub <$w x $t0> zeroinitializer, $r1
+jit_var_new(7 <- 3): $r0 = fneg <$w x $t0> $r1
 jit_var_inc_ref_ext(7): 1
 jit_var_new(4):  (reused)
 jit_var_inc_ref_ext(4): 1
@@ -116,7 +116,7 @@ loop:
     store <8 x float> %f5, <8 x float>* %f5_p, align 32, !noalias !1
 
     ; Evaluate %f6
-    %f6 = fsub <8 x float> zeroinitializer, %f3
+    %f6 = fneg <8 x float> %f3
 
     ; Evaluate %f7
     %f7 = call <8 x float> @llvm.fma.v8f32(<8 x float> %f5, <8 x float> %f2, <8 x float> %f6)
@@ -141,7 +141,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
@@ -201,7 +201,7 @@ jit_var_new(14 <- 9, 10, 11, 13): $r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $
 jit_var_inc_ref_ext(14): 1
 jit_var_dec_ref_ext(13): 0
 jit_var_inc_ref_int(11): 2
-jit_var_new(15 <- 11): $r0 = fsub <$w x $t0> zeroinitializer, $r1
+jit_var_new(15 <- 11): $r0 = fneg <$w x $t0> $r1
 jit_var_inc_ref_ext(15): 1
 jit_var_new(12):  (reused)
 jit_var_inc_ref_ext(12): 1
@@ -293,7 +293,7 @@ loop:
     store <8 x double> %d5, <8 x double>* %d5_p, align 64, !noalias !1
 
     ; Evaluate %d6
-    %d6 = fsub <8 x double> zeroinitializer, %d3
+    %d6 = fneg <8 x double> %d3
 
     ; Evaluate %d7
     %d7 = call <8 x double> @llvm.fma.v8f64(<8 x double> %d5, <8 x double> %d2, <8 x double> %d6)
@@ -318,7 +318,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(9): 0

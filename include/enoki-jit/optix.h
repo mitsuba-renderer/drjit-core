@@ -53,6 +53,9 @@ jitc_optix_configure(const OptixPipelineCompileOptions *pco,
  */
 extern JITC_EXPORT void jitc_optix_trace(uint32_t nargs, uint32_t *args);
 
+/// Mark a variable as an expression requiring compilation via OptiX
+extern JITC_EXPORT void jitc_optix_mark(uint32_t index);
+
 #if defined(__cplusplus)
 }
 #endif

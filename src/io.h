@@ -40,9 +40,11 @@ struct Kernel {
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
         struct {
             OptixModule mod;
-            OptixProgramGroup group;
+            OptixProgramGroup *pg;
             OptixPipeline pipeline;
-            void *sbt_record;
+            uint8_t *sbt_record;
+            uint32_t pg_count;
+            uint32_t sbt_count;
         } optix;
 #endif
     };

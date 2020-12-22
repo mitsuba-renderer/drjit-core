@@ -61,7 +61,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 128 packets in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(1): 0
@@ -175,7 +175,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(5): 0
@@ -220,7 +220,7 @@ jit_var_inc_ref_ext(19): 2
 jit_var_dec_ref_ext(19): 1
 jit_var_inc_ref_int(19): 1
 jit_var_inc_ref_int(17): 1
-jit_var_new(20 <- 19, 17): $r0 = bitcast <$w x $t1> $r1 to <$w x $t1>
+jit_var_new(20 <- 19, 17): $r0 = or <$w x $t1> $r1, $z
 jit_var_inc_ref_ext(20): 1
 jit_var_inc_ref_int(15): 1
 jit_var_inc_ref_int(13): 1
@@ -289,7 +289,7 @@ loop:
     ; Evaluate %r3
 
     ; Evaluate %p4
-    %p4 = bitcast <8 x i1> %p2 to <8 x i1>
+    %p4 = or <8 x i1> %p2, zeroinitializer
 
     ; Load %r5
     %r5_i = getelementptr inbounds i32, i32* %a0, i32 %index
@@ -326,7 +326,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_ext(21): 0
@@ -462,7 +462,7 @@ done:
 !1 = !{!1, !0}
 !2 = !{!"llvm.loop.unroll.disable", !"llvm.loop.vectorize.enable", i1 0}
 
-attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" }
+attributes #0 = { norecurse nounwind alignstack=32 "target-cpu"="skylake" "stack-probe-size"="1073741824" "target-features"="-vzeroupper" }
 jit_run(): scheduling 1 packet in 1 block ..
 jit_eval(): cleaning up..
 jit_var_dec_ref_int(23): 0

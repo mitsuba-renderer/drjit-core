@@ -1,3 +1,4 @@
+#include <enoki-jit/optix.h>
 // =====================================================
 //       Various opaque handles and enumerations
 // =====================================================
@@ -167,7 +168,7 @@ struct OptixShaderBindingTable {
 //             Commonly used OptiX functions
 // =====================================================
 
-#if defined(OPTIX_API_IMPL)
+#if defined(OPTIX_STUBS_IMPL)
 #  define D(name, ...) OptixResult (*name)(__VA_ARGS__) = nullptr;
 #else
 #  define D(name, ...) extern OptixResult (*name)(__VA_ARGS__)

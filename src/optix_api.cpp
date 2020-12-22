@@ -1,4 +1,5 @@
 #include <enoki-jit/optix.h>
+#include <tsl/robin_map.h>
 #include "optix_api.h"
 #include "internal.h"
 #include "log.h"
@@ -66,6 +67,8 @@ using OptixLogCallback = void (*)(unsigned int, const char *, const char *, void
 #define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF 0
 #define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL ((int) 0xFFFFFFFF)
 #define OPTIX_PROGRAM_GROUP_KIND_RAYGEN          0x2421
+#define OPTIX_PROGRAM_GROUP_KIND_CALLABLES       0x2425
+
 #define OPTIX_SBT_RECORD_HEADER_SIZE             32
 
 struct OptixDeviceContextOptions {
@@ -102,6 +105,13 @@ struct OptixProgramGroupHitgroup {
     const char* entryFunctionNameIS;
 };
 
+struct OptixProgramGroupCallables {
+    OptixModule moduleDC;
+    const char* entryFunctionNameDC;
+    OptixModule moduleCC;
+    const char* entryFunctionNameCC;
+};
+
 struct OptixProgramGroupDesc {
     OptixProgramGroupKind kind;
     unsigned int flags;
@@ -110,6 +120,7 @@ struct OptixProgramGroupDesc {
         OptixProgramGroupSingleModule raygen;
         OptixProgramGroupSingleModule miss;
         OptixProgramGroupSingleModule exception;
+        OptixProgramGroupCallables callables;
         OptixProgramGroupHitgroup hitgroup;
     };
 };
@@ -331,18 +342,107 @@ void jit_optix_configure(const OptixPipelineCompileOptions *pco,
     ts->optix_shader_binding_table = sbt;
 
     ts->optix_program_groups.clear();
-    ts->optix_program_groups.push_back(nullptr);
     for (uint32_t i = 0; i < pg_count; ++i)
         ts->optix_program_groups.push_back(pg[i]);
 }
 
-void jit_optix_compile(ThreadState *ts, const char *buffer,
+void jit_optix_compile(ThreadState *ts, const char *buffer_,
                        size_t buffer_size, Kernel &kernel,
                        uint64_t kernel_hash) {
     char error_log[16384];
 
+    std::unique_ptr<char[]> buffer(new char[buffer_size]);
+    memcpy(buffer.get(), buffer_, buffer_size + 1);
+
     // =====================================================
-    // 1. Compile an OptiX module
+    // 1. HACK! Turn CUDA vcalls into OptiX direct callables
+    // =====================================================
+
+    tsl::robin_map<uint64_t, uint32_t> pg_map;
+    tsl::robin_map<uint32_t, uint32_t> pg_offsets;
+    std::vector<uint64_t> sbt_refs;
+
+    pg_map.insert({ kernel_hash, 0 });
+    sbt_refs.push_back(kernel_hash);
+
+    /// Pass over all function tables, establish callable offsets
+    char *start = buffer.get();
+    while (true) {
+        start = strstr(start, ".global .u64 gl");
+        if (!start)
+            break;
+        uint32_t id = (uint32_t) strtoul(start + 15, nullptr, 10);
+        pg_offsets[id] = (uint32_t) sbt_refs.size() - 1;
+
+        char *p = strstr(start, "{") + 2;
+        while (strncmp(p, "func_", 5) == 0) {
+            uint64_t id = (uint64_t) strtoull(p + 5, nullptr, 16);
+            pg_map.insert({id, (uint32_t) pg_map.size()});
+            sbt_refs.push_back(id);
+            p += 23;
+        }
+        char *end = strstr(start, ";");
+        if (!end)
+            break;
+        memset(start, ' ', end - start + 1);
+    }
+
+    if (sbt_refs.size() > 1) {
+        char *p = buffer.get();
+        while (true) {
+            p = strstr(p, "func_");
+            if (!p)
+                break;
+            memcpy(p - 14, "__direct_callable__", 19);
+        }
+
+        p = buffer.get();
+        while (true) {
+            p = strstr(p, "// OptiX variant: gl");
+            if (!p)
+                break;
+            uint32_t id = (uint32_t) strtoul(p + 20, nullptr, 10);
+            auto it = pg_offsets.find(id);
+            if (it == pg_offsets.end())
+                jit_fail("Could not find function table %u!", id);
+
+            p = strstr(p + 1, "//");
+            if (!p)
+                break;
+            p[0] = p[1] = ' ';
+
+            p = strstr(p + 1, "sbt_id_offset");
+            if (!p)
+                break;
+
+            char num[14];
+            snprintf(num, 14, "%13u", it->second);
+            memcpy(p, num, 13);
+
+            p = strstr(p + 1, "//");
+            if (!p)
+                break;
+            p[0] = p[1] = ' ';
+
+            p = strstr(p + 1, "   mov.u64");
+            if (!p)
+                break;
+            p[0] = p[1] = '/';
+
+            p = strstr(p + 1, "   mad.wide");
+            if (!p)
+                break;
+            p[0] = p[1] = '/';
+
+            p = strstr(p + 1, "   ld.global.u64");
+            if (!p)
+                break;
+            p[0] = p[1] = '/';
+        }
+    }
+
+    // =====================================================
+    // 2. Compile an OptiX module
     // =====================================================
 
     OptixModuleCompileOptions module_opts { };
@@ -351,7 +451,7 @@ void jit_optix_compile(ThreadState *ts, const char *buffer,
     size_t log_size = sizeof(error_log);
     int rv = optixModuleCreateFromPTX(
         ts->optix_context, &module_opts, ts->optix_pipeline_compile_options,
-        buffer, buffer_size, error_log, &log_size, &kernel.optix.mod);
+        buffer.get(), buffer_size, error_log, &log_size, &kernel.optix.mod);
     if (rv) {
         jit_log(Warn, "jit_optix_compile(): optixModuleCreateFromPTX(): %s",
                 error_log);
@@ -359,44 +459,79 @@ void jit_optix_compile(ThreadState *ts, const char *buffer,
     }
 
     // =====================================================
-    // 2. Create an OptiX program group
+    // 3. Create an OptiX program group
     // =====================================================
 
-    char kernel_name[33];
-    snprintf(kernel_name, sizeof(kernel_name), "__raygen__enoki_%016llx",
-             (unsigned long long) kernel_hash);
-
     OptixProgramGroupOptions pgo { };
-    OptixProgramGroupDesc pgd { };
-    pgd.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-    pgd.raygen.module = kernel.optix.mod;
-    pgd.raygen.entryFunctionName = kernel_name;
+    std::unique_ptr<OptixProgramGroupDesc[]> pgd(
+        new OptixProgramGroupDesc[pg_map.size()]);
+    memset(pgd.get(), 0, pg_map.size() * sizeof(OptixProgramGroupDesc));
+
+    for (auto &kv : pg_map) {
+        char kernel_name[36];
+        uint32_t i = kv.second;
+        snprintf(kernel_name, sizeof(kernel_name),
+                 i == 0 ? "__raygen__enoki_%016llx"
+                        : "__direct_callable__%016llx",
+                 (unsigned long long) kv.first);
+
+        if (i == 0) {
+            pgd[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+            pgd[0].raygen.module = kernel.optix.mod;
+            pgd[0].raygen.entryFunctionName = strdup(kernel_name);
+        } else {
+            pgd[i].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+            pgd[i].callables.moduleDC = kernel.optix.mod;
+            pgd[i].callables.entryFunctionNameDC = strdup(kernel_name);
+        }
+    }
+
+    kernel.optix.pg = new OptixProgramGroup[pg_map.size()];
+    kernel.optix.pg_count = pg_map.size();
+    kernel.optix.sbt_count = sbt_refs.size();
 
     log_size = sizeof(error_log);
-    rv = optixProgramGroupCreate(ts->optix_context, &pgd, 1, &pgo, error_log,
-                                 &log_size, &kernel.optix.group);
+    rv = optixProgramGroupCreate(ts->optix_context, pgd.get(),
+                                 pg_map.size(), &pgo, error_log,
+                                 &log_size, kernel.optix.pg);
     if (rv) {
         jit_log(Warn, "jit_optix_compile(): optixProgramGroupCreate(): %s",
                 error_log);
         jit_optix_check(rv);
     }
 
-    ts->optix_program_groups[0] = kernel.optix.group;
+    size_t stride = OPTIX_SBT_RECORD_HEADER_SIZE;
+    uint8_t *sbt_record = (uint8_t *)
+        jit_malloc(AllocType::Host, pg_map.size() * stride);
 
-    void *sbt_record =
-        jit_malloc(AllocType::Host, OPTIX_SBT_RECORD_HEADER_SIZE);
-    jit_optix_check(optixSbtRecordPackHeader(kernel.optix.group, sbt_record));
+    for (size_t i = 0; i < sbt_refs.size(); ++i) {
+        auto it = pg_map.find(sbt_refs[i]);
+        if (it == pg_map.end())
+            jit_fail("Could not find raygen/callable!");
+        jit_optix_check(optixSbtRecordPackHeader(
+            kernel.optix.pg[it->second], sbt_record + stride * i));
+    }
 
-    kernel.optix.sbt_record =
+    kernel.optix.sbt_record = (uint8_t *)
         jit_malloc_migrate(sbt_record, AllocType::Device, 1);
 
     // =====================================================
-    // 3. Create an OptiX pipeline
+    // 4. Create an OptiX pipeline
     // =====================================================
 
     OptixPipelineLinkOptions link_options {};
     link_options.maxTraceDepth = 1;
     link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+
+    size_t size_before = ts->optix_program_groups.size();
+    for (uint32_t i = 0; i < pg_map.size(); ++i) {
+        if (i == 0)
+            free((char *) pgd[0].raygen.entryFunctionName);
+        else
+            free((char *) pgd[i].callables.entryFunctionNameDC);
+        ts->optix_program_groups.push_back(kernel.optix.pg[i]);
+    }
+
 
     log_size = sizeof(error_log);
     rv = optixPipelineCreate(
@@ -411,11 +546,14 @@ void jit_optix_compile(ThreadState *ts, const char *buffer,
 
     kernel.size = 0;
     kernel.data = nullptr;
+    ts->optix_program_groups.resize(size_before);
 }
 
 void jit_optix_free(const Kernel &kernel) {
     jit_optix_check(optixPipelineDestroy(kernel.optix.pipeline));
-    jit_optix_check(optixProgramGroupDestroy(kernel.optix.group));
+    for (uint32_t i = 0; i < kernel.optix.pg_count; ++i)
+        jit_optix_check(optixProgramGroupDestroy(kernel.optix.pg[i]));
+    delete[] kernel.optix.pg;
     jit_optix_check(optixModuleDestroy(kernel.optix.mod));
     jit_free(kernel.optix.sbt_record);
 }
@@ -423,9 +561,14 @@ void jit_optix_free(const Kernel &kernel) {
 void jit_optix_launch(ThreadState *ts, const Kernel &kernel, uint32_t size,
                       const void *args, uint32_t args_size) {
     OptixShaderBindingTable sbt;
-    memcpy(&sbt, ts->optix_shader_binding_table,
-           sizeof(OptixShaderBindingTable));
+    memcpy(&sbt, ts->optix_shader_binding_table, sizeof(OptixShaderBindingTable));
     sbt.raygenRecord = (CUdeviceptr) kernel.optix.sbt_record;
+
+    if (kernel.optix.sbt_count > 1) {
+        sbt.callablesRecordBase = (CUdeviceptr) (kernel.optix.sbt_record + OPTIX_SBT_RECORD_HEADER_SIZE);
+        sbt.callablesRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
+        sbt.callablesRecordCount = kernel.optix.sbt_count - 1;
+    }
 
     jit_optix_check(optixLaunch(kernel.optix.pipeline, ts->stream,
                                 (CUdeviceptr) args, args_size, &sbt, size, 1, 1));
@@ -501,6 +644,10 @@ void jit_optix_trace(uint32_t nargs, uint32_t *args) {
 
     jit_var_dec_ref_ext(index);
     jit_var_dec_ref_ext(decl);
+}
+
+void jit_optix_mark(uint32_t index) {
+    jit_var(index)->optix = true;
 }
 
 void jit_optix_shutdown() {
