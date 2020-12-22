@@ -275,7 +275,7 @@ bool jit_optix_init() {
 
 void jit_optix_log(unsigned int /* level */, const char *tag, const char *message, void *) {
     size_t len = strlen(message);
-    fprintf(stderr, "jitc_optix_log(): [%s] %s%s", tag, message,
+    fprintf(stderr, "jit_optix_log(): [%s] %s%s", tag, message,
             (len > 0 && message[len - 1] == '\n') ? "" : "\n");
 }
 
@@ -288,12 +288,12 @@ OptixDeviceContext jit_optix_context() {
     if (!jit_optix_init())
         jit_raise("Could not create OptiX context!");
 
-    int log_level = std::max(0, std::max((int) state.log_level_stderr,
-                                         (int) state.log_level_callback) - 1);
+    int log_level = std::max((int) state.log_level_stderr,
+                             (int) state.log_level_callback) + 1;
 
     OptixDeviceContextOptions ctx_opts {
-        jit_optix_log, nullptr, log_level,
-
+        jit_optix_log, nullptr,
+        std::max(0, std::min(4, log_level)),
 #if defined(NDEBUG)
         OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF
 #else
