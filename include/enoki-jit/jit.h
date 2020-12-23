@@ -223,6 +223,7 @@ extern JITC_EXPORT uint32_t jitc_side_effect_counter(int cuda);
  * and which were not part of the input variable list \c in.
  */
 extern JITC_EXPORT const char *jitc_capture(int cuda,
+                                            const char *domain, const char *name,
                                             const uint32_t *in, uint32_t n_in,
                                             const uint32_t *out, uint32_t n_out,
                                             uint32_t n_side_effects,
@@ -232,6 +233,7 @@ extern JITC_EXPORT const char *jitc_capture(int cuda,
 
 /// Like jitc_capture(), but returns IR via a variable of type VarType::Global
 extern JITC_EXPORT uint32_t jitc_capture_var(int cuda,
+                                             const char *domain, const char *name,
                                              const uint32_t *in, uint32_t n_in,
                                              const uint32_t *out, uint32_t n_out,
                                              uint32_t n_side_effects,

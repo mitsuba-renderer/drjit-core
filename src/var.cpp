@@ -1409,7 +1409,7 @@ void jit_var_vcall(int cuda,
     lock_guard guard(state.eval_mutex);
     state.mutex.lock();
 
-    std::vector<uint32_t> sorted(inst_hash, inst_hash + n_inst);
+    std::vector<uint64_t> sorted(inst_hash, inst_hash + n_inst);
     std::sort(sorted.begin(), sorted.end());
     sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
 

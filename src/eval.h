@@ -19,6 +19,7 @@ extern void jit_eval();
 
 /// Export the intermediate representation of a computation
 extern const char *jit_capture(int cuda,
+                               const char *domain, const char *name,
                                const uint32_t *in, uint32_t n_in,
                                const uint32_t *out, uint32_t n_out,
                                uint32_t n_side_effects,
@@ -28,6 +29,7 @@ extern const char *jit_capture(int cuda,
 
 /// Like jit_capture(), but returns a variable referincing the IR string
 extern uint32_t jit_capture_var(int cuda,
+                                const char *domain, const char *name,
                                 const uint32_t *in, uint32_t n_in,
                                 const uint32_t *out, uint32_t n_out,
                                 uint32_t n_side_effects,

@@ -599,6 +599,7 @@ VCallBucket *jitc_vcall(int cuda, const char *domain, uint32_t index,
 }
 
 const char *jitc_capture(int cuda,
+                         const char *domain, const char *name,
                          const uint32_t *in, uint32_t n_in,
                          const uint32_t *out, uint32_t n_out,
                          uint32_t n_side_effects,
@@ -606,11 +607,12 @@ const char *jitc_capture(int cuda,
                          uint32_t **extra_out,
                          uint32_t *extra_count_out) {
     lock_guard guard(state.mutex);
-    return jit_capture(cuda, in, n_in, out, n_out, n_side_effects, hash_out,
-                       extra_out, extra_count_out);
+    return jit_capture(cuda, domain, name, in, n_in, out, n_out, n_side_effects,
+                       hash_out, extra_out, extra_count_out);
 }
 
 uint32_t jitc_capture_var(int cuda,
+                          const char *domain, const char *name,
                           const uint32_t *in, uint32_t n_in,
                           const uint32_t *out, uint32_t n_out,
                           uint32_t n_side_effects,
@@ -618,8 +620,9 @@ uint32_t jitc_capture_var(int cuda,
                           uint32_t **extra_out,
                           uint32_t *extra_count_out) {
     lock_guard guard(state.mutex);
-    return jit_capture_var(cuda, in, n_in, out, n_out, n_side_effects, hash_out,
-                           extra_out, extra_count_out);
+    return jit_capture_var(cuda, domain, name, in, n_in, out, n_out,
+                           n_side_effects, hash_out, extra_out,
+                           extra_count_out);
 }
 
 void jitc_var_vcall(int cuda, const char *domain, const char *name,

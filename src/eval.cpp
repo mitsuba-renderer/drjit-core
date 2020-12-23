@@ -1380,6 +1380,7 @@ void jit_eval_ts(ThreadState *ts) {
 
 /// Export the intermediate representation of a computation
 const char *jit_capture(int cuda,
+                        const char *domain, const char *name,
                         const uint32_t *in, uint32_t n_in,
                         const uint32_t *out, uint32_t n_out,
                         uint32_t n_side_effects,
@@ -1483,13 +1484,15 @@ const char *jit_capture(int cuda,
     if (cuda) {
         // Spaces needed for patching by OptiX backend, which may turn func_ into __direct_callable__
         buffer.fmt(".visible .func (.param .align %u .b8 out[%u])               func_^^^^^^^^^^^^^^^^(.param .align "
-                   "%u .b8 params[%u], .reg .u64 extra) {\n",
-                   align_out, offset_out, align_in, offset_in);
+                   "%u .b8 params[%u], .reg .u64 extra) {\n"
+                   "    // Generated via %s::%s()\n",
+                   align_out, offset_out, align_in, offset_in, domain, name);
     } else {
         buffer.fmt(
             "define void @func_^^^^^^^^^^^^^^^^(i8* noalias %%params, i8* "
-            "noalias %%result, i8** noalias %%extra, <%u x i1> %%mask) #0 {\n",
-            jit_llvm_vector_width);
+            "noalias %%result, i8** noalias %%extra, <%u x i1> %%mask) #0 {\n"
+            "    ; Generated via %s::%s()\n",
+            jit_llvm_vector_width, domain, name);
     }
 
     ScheduledGroup group(schedule.size(), 0, schedule.size());
@@ -1567,14 +1570,16 @@ const char *jit_capture(int cuda,
 
 /// Export the intermediate representation of a computation as a variable
 uint32_t jit_capture_var(int cuda,
+                         const char *domain, const char *name,
                          const uint32_t *in, uint32_t n_in,
                          const uint32_t *out, uint32_t n_out,
                          uint32_t n_side_effects,
                          uint64_t *hash_out,
                          uint32_t **extra_out,
                          uint32_t *extra_count_out) {
-    const char *str = jit_capture(cuda, in, n_in, out, n_out, n_side_effects,
-                                  hash_out, extra_out, extra_count_out);
+    const char *str =
+        jit_capture(cuda, domain, name, in, n_in, in_skip, out, n_out,
+                    n_side_effects, hash_out, extra_out, extra_count_out);
 
     uint32_t index = jit_var_new_0(cuda, VarType::Global, str, 0, 1);
 
