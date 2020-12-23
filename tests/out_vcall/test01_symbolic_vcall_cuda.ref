@@ -78,6 +78,7 @@ jit_var_inc_ref_ext(8): 1
 jit_var_inc_ref_ext(6): 3
 jit_var_inc_ref_ext(6): 4
 jit_var_new(9): .visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
+    // Generated via Base::func()
     .reg.b8   %b <5>; .reg.b16 %w<5>; .reg.b32 %r<5>;
     .reg.b64  %rd<5>; .reg.f32 %f<5>; .reg.f64 %d<5>;
     .reg.pred %p <5>;
@@ -133,6 +134,7 @@ jit_var_dec_ref_ext(11): 1
 jit_var_dec_ref_ext(10): 1
 jit_var_inc_ref_ext(14): 1
 jit_var_new(18): .visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
+    // Generated via Base::func()
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p <11>;
@@ -199,6 +201,7 @@ jit_var_inc_ref_ext(22): 1
 jit_var_dec_ref_ext(20): 1
 jit_var_dec_ref_ext(19): 1
 jit_var_new(23): .visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
+    // Generated via Base::func()
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -233,7 +236,7 @@ jit_var_dec_ref_ext(20): 0
 jit_var_free(20)
 jit_var_dec_ref_ext(19): 0
 jit_var_free(19)
-jit_var_vcall(): Base::func(), 3 instances, 3 unique, 2 in, 2 out, 1 extra, side effects.
+jit_var_vcall(): Base::func(), 3 instances (0 elided), 2 inputs (0 elided), 2 outputs (0 elided), needs 1 pointers, side effects.
 jit_var_new(24): 
 jit_var_inc_ref_ext(24): 1
 jit_var_inc_ref_int(9): 1
@@ -261,7 +264,7 @@ jit_var_inc_ref_ext(28): 1
 jit_var_inc_ref_int(5): 1
 jit_var_inc_ref_int(28): 1
 jit_var_new(29 <- 5, 28): // Base::func
-    // indirect call via table $r2: 054104e62ea9d7fc, bc6c60f31b08a550, 5f9dbfe80eee64ab
+    // indirect call via table $r2: 2158915eb4282345, 22c1b2f8f523263f, c3b4aaa07b19b324
     // OptiX variant:
     // add.u32 %r3, $r1, sbt_id_offset;
     // call ($r0), _optix_call_direct_callable, (%r3);
@@ -417,6 +420,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 .address_size 64
 
 .visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
+    // Generated via Base::func()
     .reg.b8   %b <5>; .reg.b16 %w<5>; .reg.b32 %r<5>;
     .reg.b64  %rd<5>; .reg.f32 %f<5>; .reg.f64 %d<5>;
     .reg.pred %p <5>;
@@ -431,6 +435,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 
 
 .visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
+    // Generated via Base::func()
     .reg.b8   %b <11>; .reg.b16 %w<11>; .reg.b32 %r<11>;
     .reg.b64  %rd<11>; .reg.f32 %f<11>; .reg.f64 %d<11>;
     .reg.pred %p <11>;
@@ -462,6 +467,7 @@ jit_malloc(type=device, device=0, size=64): <@> (new allocation)
 
 
 .visible .func (.param .align 4 .b8 out[8])               func_<@>(.param .align 4 .b8 params[8], .reg .u64 extra) {
+    // Generated via Base::func()
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -510,7 +516,7 @@ L1: // Loop body
 
     // Evaluate %rd13
     // Base::func
-    // indirect call via table gl7: 054104e62ea9d7fc, bc6c60f31b08a550, 5f9dbfe80eee64ab
+    // indirect call via table gl7: 2158915eb4282345, 22c1b2f8f523263f, c3b4aaa07b19b324
     // OptiX variant:
     // add.u32 %r3, %r12, sbt_id_offset;
     // call (%rd13), _optix_call_direct_callable, (%r3);
@@ -662,7 +668,7 @@ jit_assemble(size=3): register map:
    - %f4 -> 46 [in]
    - %f5 -> 48 [in]
    - %p6 -> 49 [out]
-jit_malloc(type=device, device=0, size=64): <@> (reused global)
+jit_malloc(type=device, device=0, size=64): <@> (reused local)
   -> launching <@> (n=3, in=2, out=1, ops=7):
 .version 6.0
 .target sm_50

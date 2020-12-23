@@ -511,7 +511,8 @@ void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_to
             uint32_t index = schedule[group_index].index;
             Variable *v = jit_var(index);
             jit_render_stmt_cuda(index, v, false);
-            buffer.putc('\n');
+            if (strlen(v->stmt) > 0)
+                buffer.putc('\n');
         }
     }
 
@@ -1383,6 +1384,8 @@ const char *jit_capture(int cuda,
                         const char *domain, const char *name,
                         const uint32_t *in, uint32_t n_in,
                         const uint32_t *out, uint32_t n_out,
+                        uint32_t *need_in,
+                        uint32_t *need_out,
                         uint32_t n_side_effects,
                         uint64_t *hash_out,
                         uint32_t **extra_out,
@@ -1440,10 +1443,16 @@ const char *jit_capture(int cuda,
         Variable *v = jit_var(out[i]);
         if (v->data != nullptr && v->data != (void *) 1 /* input placeholder */)
             jit_raise("jit_capture(): outputs must be unevaluated Enoki arrays!");
+        if (need_out) {
+            need_out[i] += v->is_literal_zero ? 0 : 1;
+            if (need_out[i] == 0)
+                continue;
+        }
         uint32_t size = var_type_size[v->type] * (cuda ? 1 : jit_llvm_vector_width);
         offset_out = (offset_out + size - 1) / size * size;
         offset_out += size;
         align_out = std::max(align_out, size);
+        v->arg_type = ArgType::Output;
     }
 
     uint32_t offset_in = 0, align_in = 1;
@@ -1451,6 +1460,11 @@ const char *jit_capture(int cuda,
         Variable *v = jit_var(in[i]);
         if ((uintptr_t) v->data != 1)
             jit_raise("jit_capture(): inputs must be placeholder Enoki arrays!");
+        if (need_in) {
+            need_in[i] += (v->ref_count_int != 0 || v->arg_type == ArgType::Output) ? 1 : 0;
+            if (need_in[i] == 0)
+                continue;
+        }
         v->arg_type = ArgType::Input;
         uint32_t size = var_type_size[v->type] * (cuda ? 1 : jit_llvm_vector_width);
         offset_in = (offset_in + size - 1) / size * size;
@@ -1508,6 +1522,8 @@ const char *jit_capture(int cuda,
         offset_out = 0;
         for (uint32_t i = 0; i < n_out; ++i) {
             Variable *v = jit_var(out[i]);
+            if (need_out && need_out[i] == 0)
+                continue;
             uint32_t size = var_type_size[v->type];
             offset_out = (offset_out + size - 1) / size * size;
             if ((VarType) v->type != VarType::Bool) {
@@ -1573,12 +1589,14 @@ uint32_t jit_capture_var(int cuda,
                          const char *domain, const char *name,
                          const uint32_t *in, uint32_t n_in,
                          const uint32_t *out, uint32_t n_out,
+                         uint32_t *need_in,
+                         uint32_t *need_out,
                          uint32_t n_side_effects,
                          uint64_t *hash_out,
                          uint32_t **extra_out,
                          uint32_t *extra_count_out) {
     const char *str =
-        jit_capture(cuda, domain, name, in, n_in, in_skip, out, n_out,
+        jit_capture(cuda, domain, name, in, n_in, out, n_out, need_in, need_out,
                     n_side_effects, hash_out, extra_out, extra_count_out);
 
     uint32_t index = jit_var_new_0(cuda, VarType::Global, str, 0, 1);

@@ -13,6 +13,7 @@
 #include "eval.h"
 #include "util.h"
 
+
 /// Descriptive names for the various variable types
 const char *var_type_name[(int) VarType::Count]{
     "invalid", "global", "mask",  "int8",   "uint8",   "int16",   "uint16",
@@ -1401,6 +1402,8 @@ void jit_var_vcall(int cuda,
                    const uint64_t *inst_hash,
                    uint32_t n_in, const uint32_t *in,
                    uint32_t n_out, uint32_t *out,
+                   const uint32_t *need_in,
+                   const uint32_t *need_out,
                    uint32_t n_extra,
                    const uint32_t *extra,
                    const uint32_t *extra_offset,
@@ -1413,11 +1416,20 @@ void jit_var_vcall(int cuda,
     std::sort(sorted.begin(), sorted.end());
     sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
 
-    jit_log(Info,
-            "jit_var_vcall(): %s::%s(), %u instances, %u unique, "
-            "%u in, %u out, %u extra, %s.",
-            domain, name, n_inst, (uint32_t) sorted.size(), n_in, n_out,
-            n_extra, side_effects ? "side effects" : "no side effects");
+    uint32_t elided_in = 0, elided_out = 0;
+    for (uint32_t i = 0; i < n_in; ++i)
+        elided_in += need_in && need_in[i] == 0 ? 1 : 0;
+    for (uint32_t i = 0; i < n_out; ++i)
+        elided_out += need_out && need_out[i] == 0 ? 1 : 0;
+
+    jit_log(
+        Info,
+        "jit_var_vcall(): %s::%s(), %u instances (%u elided), "
+        "%u inputs (%u elided), %u outputs (%u elided), needs %u pointers, %s.",
+        domain, name, (uint32_t) sorted.size(),
+        n_inst - (uint32_t) sorted.size(), n_in - elided_in, elided_in,
+        n_out - elided_out, elided_out, n_extra,
+        side_effects ? "side effects" : "no side effects");
 
     uint32_t index = jit_var_new_0(cuda, VarType::Void, "", 1, 1);
 
@@ -1523,6 +1535,8 @@ void jit_var_vcall(int cuda,
     std::unique_ptr<uint32_t[]> in_new(new uint32_t[n_in]);
     uint32_t offset_in = 0, align_in = 1;
     for (uint32_t i = 0; i < n_in; ++i) {
+        if (need_in && need_in[i] == 0)
+            continue;
         VarType vt = jit_var_type(in[i]);
         uint32_t size = var_type_size[(uint32_t) vt], prev2 = index;
 
@@ -1544,6 +1558,8 @@ void jit_var_vcall(int cuda,
 
     uint32_t offset_out = 0, align_out = 1;
     for (uint32_t i = 0; i < n_out; ++i) {
+        if (need_out && need_out[i] == 0)
+            continue;
         uint32_t size = var_type_size[(uint32_t) jit_var_type(out[i])];
         offset_out = (offset_out + size - 1) / size * size;
         offset_out += size;
@@ -1572,6 +1588,8 @@ void jit_var_vcall(int cuda,
 
     offset_in = 0;
     for (uint32_t i = 0; i < n_in; ++i) {
+        if (need_in && need_in[i] == 0)
+            continue;
         VarType vt = jit_var_type(in[i]);
         uint32_t size = var_type_size[(uint32_t) vt], prev2 = index;
         offset_in = (offset_in + size - 1) / size * size;
@@ -1584,7 +1602,7 @@ void jit_var_vcall(int cuda,
         offset_in += size;
     }
 
-    prev  = index;
+    prev = index;
 #if 0
     index = jit_var_new_4(cuda, VarType::Void,
                           "    call (param_out), $r1, (param_in, $r2), $r3", 1,
@@ -1600,6 +1618,8 @@ void jit_var_vcall(int cuda,
 
     offset_out = 0;
     for (uint32_t i = 0; i < n_out; ++i) {
+        if (need_out && need_out[i] == 0)
+            continue;
         VarType type = jit_var_type(out[i]);
         uint32_t size = var_type_size[(uint32_t) type];
         offset_out = (offset_out + size - 1) / size * size;
@@ -1621,10 +1641,17 @@ void jit_var_vcall(int cuda,
         jit_var_mark_scatter(index, 0);
     }
 
-    for (uint32_t i = 0; i < n_out; ++i)
-        out[i] = jit_var_new_2(cuda, jit_var_type(out[i]),
-                               "mov.$t0 $r0, $r1",
-                               1, out[i], index);
+    for (uint32_t i = 0; i < n_out; ++i) {
+        if (need_out && need_out[i] == 0) {
+            out[i] = jit_var_new_1(cuda, jit_var_type(out[i]),
+                                   "mov.$b0 $r0, 0",
+                                   1, out[i]);
+        } else {
+            out[i] = jit_var_new_2(cuda, jit_var_type(out[i]),
+                                   "mov.$t0 $r0, $r1",
+                                   1, out[i], index);
+        }
+    }
 
     jit_var_dec_ref_ext(index);
 }

@@ -64,8 +64,9 @@ bool record(int cuda, uint32_t &id, uint64_t &hash, std::vector<uint32_t> &extra
 
     uint32_t *extra_p = nullptr;
     uint32_t extra_count_p = 0;
-    id = jitc_capture_var(cuda, in.get(), in_count, out.get(), out_count,
-                          se_total, &hash, &extra_p, &extra_count_p);
+    id = jitc_capture_var(cuda, "Base", "func", in.get(), in_count, out.get(),
+                          out_count, nullptr, nullptr, se_total, &hash,
+                          &extra_p, &extra_count_p);
 
     for (int i = 0; i < extra_count_p; ++i)
         extra.push_back(extra_p[i]);
@@ -120,8 +121,8 @@ auto vcall(const char *domain, UInt32 self, const Args &... args) {
 
     jitc_var_vcall(cuda, "Base", "func", self.index(), n_inst, call_id.get(),
                    call_hash.get(), in_count, in.get(), out_count, out.get(),
-                   extra.size(), extra.data(), extra_offset.get(),
-                   side_effects);
+                   nullptr, nullptr, extra.size(), extra.data(),
+                   extra_offset.get(), side_effects);
 
     out_count = 0;
     write_indices(out.get(), out_count, result);

@@ -171,6 +171,9 @@ enum class JitFlag : uint32_t {
     // Status flag indicating that a vcall call is *currently* being recorded
     RecordingVCall = 8,
 
+    // Try to optimize the calling conventions of vcalls
+    OptimizeVCalls = 16,
+
     // A loop is currently being recorded
     Recording = (uint32_t) RecordingLoop | (uint32_t) RecordingVCall
 };
@@ -226,6 +229,8 @@ extern JITC_EXPORT const char *jitc_capture(int cuda,
                                             const char *domain, const char *name,
                                             const uint32_t *in, uint32_t n_in,
                                             const uint32_t *out, uint32_t n_out,
+                                            uint32_t *need_in,
+                                            uint32_t *need_out,
                                             uint32_t n_side_effects,
                                             uint64_t *hash_out,
                                             uint32_t **extra_out,
@@ -236,6 +241,8 @@ extern JITC_EXPORT uint32_t jitc_capture_var(int cuda,
                                              const char *domain, const char *name,
                                              const uint32_t *in, uint32_t n_in,
                                              const uint32_t *out, uint32_t n_out,
+                                             uint32_t *need_in,
+                                             uint32_t *need_out,
                                              uint32_t n_side_effects,
                                              uint64_t *hash_out,
                                              uint32_t **extra_out,
@@ -1237,10 +1244,9 @@ extern JITC_EXPORT void
 jitc_var_vcall(int cuda, const char *domain, const char *name, uint32_t self,
                uint32_t n_inst, const uint32_t *inst_ids,
                const uint64_t *inst_hash, uint32_t n_in, const uint32_t *in,
-               uint32_t n_out, uint32_t *out, uint32_t n_extra,
-               const uint32_t *extra, const uint32_t *extra_offset,
-               int side_effects);
-
+               uint32_t n_out, uint32_t *out, const uint32_t *need_in,
+               const uint32_t *need_out, uint32_t n_extra, const uint32_t *extra,
+               const uint32_t *extra_offset, int side_effects);
 
 // ====================================================================
 //                 Kernel compilation and evaluation

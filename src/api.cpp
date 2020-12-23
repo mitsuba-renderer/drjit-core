@@ -602,26 +602,31 @@ const char *jitc_capture(int cuda,
                          const char *domain, const char *name,
                          const uint32_t *in, uint32_t n_in,
                          const uint32_t *out, uint32_t n_out,
+                         uint32_t *need_in,
+                         uint32_t *need_out,
                          uint32_t n_side_effects,
                          uint64_t *hash_out,
                          uint32_t **extra_out,
                          uint32_t *extra_count_out) {
     lock_guard guard(state.mutex);
-    return jit_capture(cuda, domain, name, in, n_in, out, n_out, n_side_effects,
-                       hash_out, extra_out, extra_count_out);
+    return jit_capture(cuda, domain, name, in, n_in, out, n_out, need_in,
+                       need_out, n_side_effects, hash_out, extra_out,
+                       extra_count_out);
 }
 
 uint32_t jitc_capture_var(int cuda,
                           const char *domain, const char *name,
                           const uint32_t *in, uint32_t n_in,
                           const uint32_t *out, uint32_t n_out,
+                          uint32_t *need_in,
+                          uint32_t *need_out,
                           uint32_t n_side_effects,
                           uint64_t *hash_out,
                           uint32_t **extra_out,
                           uint32_t *extra_count_out) {
     lock_guard guard(state.mutex);
-    return jit_capture_var(cuda, domain, name, in, n_in, out, n_out,
-                           n_side_effects, hash_out, extra_out,
+    return jit_capture_var(cuda, domain, name, in, n_in, out, n_out, need_in,
+                           need_out, n_side_effects, hash_out, extra_out,
                            extra_count_out);
 }
 
@@ -629,11 +634,13 @@ void jitc_var_vcall(int cuda, const char *domain, const char *name,
                     uint32_t self, uint32_t n_inst, const uint32_t *inst_ids,
                     const uint64_t *inst_hash, uint32_t n_in,
                     const uint32_t *in, uint32_t n_out, uint32_t *out,
+                    const uint32_t *need_in, const uint32_t *need_out,
                     uint32_t n_extra, const uint32_t *extra,
                     const uint32_t *extra_offset, int side_effects) {
     lock_guard guard(state.mutex);
     jit_var_vcall(cuda, domain, name, self, n_inst, inst_ids, inst_hash, n_in,
-                  in, n_out, out, n_extra, extra, extra_offset, side_effects);
+                  in, n_out, out, need_in, need_out, n_extra, extra,
+                  extra_offset, side_effects);
 }
 
 void jitc_var_printf(int cuda, const char *fmt, uint32_t narg,
