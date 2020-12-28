@@ -1625,7 +1625,13 @@ void jit_var_vcall(int cuda,
         offset_out = (offset_out + size - 1) / size * size;
         uint32_t prev2 = index;
         buffer.clear();
-        buffer.fmt("    ld.param.$t0 $r0, [param_out+%u]", offset_out);
+        if (type != VarType::Bool) {
+            buffer.fmt("    ld.param.$t0 $r0, [param_out+%u]", offset_out);
+        } else {
+            buffer.fmt("    ld.param.u8 %%w0, [param_out+%u]\n"
+                       "    setp.ne.u16 $r0, %%w0, 0;\n",
+                       offset_out);
+        }
         index = jit_var_new_1(cuda, type, buffer.get(), 0, index);
         out[i] = index;
         jit_var_dec_ref_ext(prev2);
