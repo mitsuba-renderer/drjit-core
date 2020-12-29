@@ -29,7 +29,7 @@ large library of mathematical functions.
 
 This project has almost no dependencies: it can be compiled without CUDA,
 OptiX, or LLVM actually being present on the system (it will attempt to find
-them at runtime as needed). The library is implemented in C++11 but exposes all
+them at runtime as needed). The library is implemented in C++14 but exposes all
 functionality through a C99-compatible interface.
 
 ## Features

@@ -20,6 +20,14 @@
 #include <inttypes.h>
 #include <enoki-thread/thread.h>
 
+/// Number of entries to process per work unit in the parallel LLVM backend
+#define ENOKI_POOL_BLOCK_SIZE 16384
+
+/// Can't pass more than 4096K of parameter data to a CUDA kernel
+#define ENOKI_CUDA_ARG_LIMIT 512
+
+#define ENOKI_PTR "<0x%" PRIxPTR ">"
+
 static constexpr LogLevel Disable = LogLevel::Disable;
 static constexpr LogLevel Error   = LogLevel::Error;
 static constexpr LogLevel Warn    = LogLevel::Warn;
@@ -27,13 +35,132 @@ static constexpr LogLevel Info    = LogLevel::Info;
 static constexpr LogLevel Debug   = LogLevel::Debug;
 static constexpr LogLevel Trace   = LogLevel::Trace;
 
-#define ENOKI_PTR "<0x%" PRIxPTR ">"
+#pragma pack(push, 1)
 
-/// Create several worker streams per device for parallel dispatch
-#define ENOKI_SUB_STREAMS 4
+/// Central variable data structure, which represents an assignment in SSA form
+struct Variable {
+    /// Zero-initialize by default
+    Variable() { memset(this, 0, sizeof(Variable)); }
 
-/// Number of entries to process per work unit in the parallel LLVM backend
-#define ENOKI_POOL_BLOCK_SIZE 16384
+    /// External reference count (by application using Enoki)
+    uint32_t ref_count_ext;
+
+    /// Internal reference count (dependencies within computation graph)
+    uint32_t ref_count_int;
+
+    /// Up to 4 dependencies of this instruction (further possible via 'extra')
+    uint32_t dep[4];
+
+    union {
+        // If literal == 0: Intermediate language (PTX, LLVM IR) statement
+        char *stmt;
+
+        // If literal == 1, floating point/integer value (reinterpreted as u64)
+        uint64_t value;
+    };
+
+    /// Pointer to device memory, equals NULL if the variable is not evaluated
+    void *data;
+
+    /// Number of entries
+    uint32_t size;
+
+    /// Data type of this variable
+    uint32_t type : 4;
+
+    /// Is this variable registered with the CUDA backend?
+    uint32_t cuda : 1;
+
+    /// Does this variable store a number literal?
+    uint32_t literal : 1;
+
+    /// Free the 'stmt' variables at destruction time?
+    uint32_t free_stmt : 1;
+
+    /// Don't deallocate 'data' when this variable is destructed?
+    uint32_t retain_data : 1;
+
+    /// Does evaluation of this variable have side effects on other variables?
+    uint32_t side_effect : 1;
+
+    /// Are there pending scatter operations to this variable?
+    uint32_t dirty : 1;
+
+    /// Is this variable associated with extra information?
+    uint32_t extra : 1;
+
+    /// Do the variable contents have irregular alignment? (e.g. due to jitc_var_mem_map())
+    uint32_t unaligned : 1;
+
+    /// Does this variable perform an OptiX operation?
+    uint32_t optix : 1;
+
+    // ================   Temporarily used during jitc_eval()   ================
+
+    /// Is this variable marked as an output?
+    uint32_t output_flag : 1;
+
+    /// Argument type
+    uint32_t param_type : 2;
+
+    /// Offset of the argument in the list of kernel parameters
+    uint32_t param_index;
+
+    /// Register index
+    uint32_t reg_index;
+};
+
+/// Abbreviated version of the Variable data structure
+struct VariableKey {
+    uint32_t dep[4];
+    uint32_t size;
+    uint32_t type    : 31;
+    uint32_t literal : 1;
+    union {
+        char *stmt;
+        uint64_t value;
+    };
+
+    VariableKey(const Variable &v) {
+        memcpy(dep, v.dep, sizeof(uint32_t) * 4);
+        size = v.size;
+        type = v.type;
+
+        if (v.literal) {
+            literal = 1;
+            value = v.value;
+        } else {
+            literal = 0;
+            stmt = v.stmt;
+        }
+    }
+
+    bool operator==(const VariableKey &v) const {
+        if (memcmp(this, &v, 6 * sizeof(uint32_t)) != 0)
+            return false;
+        if (literal)
+            return value == v.value;
+        else
+            return stmt == v.stmt || strcmp(stmt, v.stmt) == 0;
+    }
+};
+
+#pragma pack(pop)
+
+/// Helper class to hash VariableKey instances
+struct VariableKeyHasher {
+    size_t operator()(const VariableKey &k) const {
+        return hash(k.dep, 6 * sizeof(uint32_t),
+                    k.literal ? k.value : hash_str(k.stmt));
+    }
+};
+
+/// Cache data structure for common subexpression elimination
+using CSECache =
+    tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher,
+                   std::equal_to<VariableKey>,
+                   std::allocator<std::pair<VariableKey, uint32_t>>,
+                   /* StoreHash = */ true>;
 
 /// Caches basic information about a CUDA device
 struct Device {
@@ -51,10 +178,6 @@ struct Device {
 
     /// Max. bytes of shared memory per SM
     uint32_t shared_memory_bytes;
-
-    /// Sub-streams to used to dispatch internal work
-    CUstream sub_streams[ENOKI_SUB_STREAMS];
-    CUevent sub_events[ENOKI_SUB_STREAMS];
 
     /// Compute a good configuration for a grid-stride loop
     void get_launch_config(uint32_t *blocks_out, uint32_t *threads_out,
@@ -86,7 +209,7 @@ struct Device {
     }
 };
 
-/// Keeps track of asynchronous deallocations via jit_free()
+/// Keeps track of asynchronous deallocations via jitc_free()
 struct ReleaseChain {
     AllocInfoMap entries;
 
@@ -107,25 +230,28 @@ struct ThreadState {
     /// Should the CSE cache be used?
     bool enable_cse = true;
 
-    /// Is kernel evaluation currently permitted?
-    bool symbolic = true;
-
-    /// How many statements with side effects were executed so far?
-    uint32_t side_effect_counter = 0;
+    /// Maps from a key characterizing a variable to its index
+    CSECache cse_cache;
 
     /**
-     * Memory regions that were freed via jit_free(), but which might still be
+     * Memory regions that were freed via jitc_free(), but which might still be
      * used by a currently running kernel. They will be safe to re-use once the
      * currently running kernel has finished.
      */
     ReleaseChain *release_chain = nullptr;
 
     /**
-     * Keeps track of variables that have to be computed when jit_eval() is
-     * called, in particular: externally referenced variables and statements
-     * with side effects.
+     * List of variables that are scheduled for evaluation (via
+     * jitc_var_schedule()) that will take place at the next call to jitc_eval().
      */
-    std::vector<uint32_t> todo;
+    std::vector<uint32_t> scheduled;
+
+    /**
+     * List of special variables of type VarType::Void, whose evaluation will
+     * cause side effects that modify other variables. They will be evaluated
+     * at the next call to jitc_eval().
+     */
+    std::vector<uint32_t> side_effects;
 
     /// ---------------------------- LLVM-specific ----------------------------
 
@@ -152,7 +278,7 @@ struct ThreadState {
      * This value may differ from the CUDA device ID if the machine contains
      * CUDA devices that are incompatible with Enoki.
      *
-     * Set to -1 for LLVM ThreadState instances.
+     * Equals -1 for LLVM ThreadState instances.
      */
     int device = 0;
 
@@ -178,125 +304,6 @@ struct ThreadState {
     std::vector<OptixProgramGroup> optix_program_groups;
 #endif
 };
-
-enum ArgType {
-    Register,
-    Input,
-    Output
-};
-
-#pragma pack(push, 1)
-
-/// Central variable data structure, which represents an assignment in SSA form
-struct Variable {
-    /// External reference count (by application using Enoki)
-    uint32_t ref_count_ext;
-
-    /// Internal reference count (dependencies within computation graph)
-    uint32_t ref_count_int;
-
-    /// Dependencies of this instruction
-    uint32_t dep[4];
-
-    /// Intermediate language statement
-    char *stmt;
-
-    /// Pointer to device memory
-    void *data;
-
-    /// Number of entries
-    uint32_t size;
-
-    /// Size of the instruction subtree (heuristic for instruction scheduling)
-    uint32_t tsize;
-
-    /// Data type of this variable
-    uint32_t type : 4;
-
-    /// Is this variable registered with the CUDA backend?
-    uint32_t cuda : 1;
-
-    /// Register index (temporarily used during jit_eval())
-    uint32_t reg_index : 24;
-
-    /// Argument type (temporarily used during jit_eval())
-    uint32_t arg_type : 2;
-
-    /// Argument index (temporarily used during jit_eval())
-    uint32_t arg_index : 16;
-
-    /// Don't deallocate 'data' when this variable is destructed?
-    uint32_t retain_data : 1;
-
-    /// Free the 'stmt' variables at destruction time?
-    uint32_t free_stmt : 1;
-
-    /// Is this variable associated with extra information?
-    uint32_t has_extra : 1;
-
-    /// Is this a scatter operation?
-    uint32_t scatter : 1;
-
-    /// Are there pending scatter operations to this variable?
-    uint32_t pending_scatter : 1;
-
-    /// Optimization: is this a direct pointer (rather than an array which stores a pointer?)
-    uint32_t direct_pointer : 1;
-
-    /// Do the variable contents have irregular alignment? (e.g. due to jit_var_map_mem())
-    uint32_t unaligned : 1;
-
-    /// Is this variable marked as an output? (temporarily used during jit_eval())
-    uint32_t output_flag : 1;
-
-    /// Does this variable store a number literal equal to '0'?
-    uint32_t is_literal_zero : 1;
-
-    /// Does this variable store a number literal equal to '1'?
-    uint32_t is_literal_one : 1;
-
-    /// Does this variable perform an OptiX operation?
-    uint32_t optix : 1;
-
-    Variable() {
-        memset(this, 0, sizeof(Variable));
-    }
-};
-
-/// Abbreviated version of the Variable data structure
-struct VariableKey {
-    char *stmt;
-    uint32_t size;
-    uint32_t type;
-    uint32_t dep[4];
-
-    VariableKey(const Variable &v)
-        : stmt(v.stmt), size(v.size),
-          type((uint16_t) v.type), dep{ v.dep[0], v.dep[1], v.dep[2],
-                                        v.dep[3] } { }
-
-    bool operator==(const VariableKey &v) const {
-        if (memcmp(&size, &v.size, 6 * sizeof(uint32_t)) != 0)
-            return false;
-        return stmt == v.stmt ? true : (strcmp(stmt, v.stmt) == 0);
-    }
-};
-
-#pragma pack(pop)
-
-/// Helper class to hash VariableKey instances
-struct VariableKeyHasher {
-    size_t operator()(const VariableKey &k) const {
-        return hash(&k.size, 6 * sizeof(uint32_t), hash_str(k.stmt));
-    }
-};
-
-/// Cache data structure for common subexpression elimination
-using CSECache =
-    tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher,
-                   std::equal_to<VariableKey>,
-                   std::allocator<std::pair<VariableKey, uint32_t>>,
-                   /* StoreHash = */ true>;
 
 /// Maps from variable ID to a Variable instance
 using VariableMap =
@@ -394,6 +401,10 @@ struct Extra {
     /// Optional descriptive label
     char *label = nullptr;
 
+    /// Additional references
+    uint32_t *dep = nullptr;
+    uint32_t dep_count = 0;
+
     /// Callback to be invoked when the variable is deallocated
     void (*free_callback)(void *) = nullptr;
     void *callback_payload = nullptr;
@@ -416,7 +427,7 @@ struct State {
     /// Stores the mapping from variable indices to variables
     VariableMap variables;
 
-    /// Must be held to execute jit_eval()
+    /// Must be held to execute jitc_eval()
     std::mutex eval_mutex;
 
     /// Log level (stderr)
@@ -428,16 +439,13 @@ struct State {
     /// Callback for log messages
     LogCallback log_callback = nullptr;
 
-    /// Was the LLVM backend successfully initialized?
-    bool has_llvm = false;
-
-    /// Was the CUDA backend successfully initialized?
-    bool has_cuda = false;
+    /// Bit-mask of successfully initialized backends
+    uint32_t backends = 0;
 
     /// Available devices and their CUDA IDs
     std::vector<Device> devices;
 
-    /// Maps Enoki (device index, stream index) pairs to a ThreadState data structure
+    /// State associated with each Enoki-JIT thread
     std::vector<ThreadState *> tss;
 
     /// Two-way mapping that can be used to associate pointers with unique 32 bit IDs
@@ -458,19 +466,13 @@ struct State {
            alloc_allocated[(int) AllocType::Count] { 0 },
            alloc_watermark[(int) AllocType::Count] { 0 };
 
-    /// Maps from pointer addresses to variable indices
-    tsl::robin_pg_map<const void *, uint32_t> variable_from_ptr;
-
     /// Maps from variable ID to extra information for a fraction of variables
     ExtraMap extra;
-
-    /// Maps from a key characterizing a variable to its index
-    CSECache cse_cache;
 
     /// Current variable index
     uint32_t variable_index = 1;
 
-    /// Limit the output of jitc_var_str()?
+    /// Limit the output of jit_var_str()?
     uint32_t print_limit = 20;
 
     /// Statistics on kernel launches
@@ -502,12 +504,12 @@ public:
 
     void clear() {
         m_cur = m_start;
-        m_start[0] = '\0';
+        if (m_start != m_end)
+            m_start[0] = '\0';
     }
 
-    /// Append a string to the buffer
-    void put(const char *str) {
-        return put(str, strlen(str));
+    template <size_t N> void put(const char (&str)[N]) {
+        put(str, N - 1);
     }
 
     /// Append a string with the specified length
@@ -545,6 +547,21 @@ public:
         do {
             buf[--i] = num[value % 10];
             value /= 10;
+        } while (value);
+
+        return put(buf + i, digits - i);
+    }
+
+    /// Append an unsigned 64 bit integer (hex version)
+    void put_uint64_hex(uint64_t value) {
+        const int digits = 18;
+        const char *num = "0123456789abcdef";
+        char buf[digits];
+        int i = digits;
+
+        do {
+            buf[--i] = num[value & 0xF];
+            value >>= 4;
         } while (value);
 
         return put(buf + i, digits - i);
@@ -594,6 +611,8 @@ private:
     char *m_start, *m_cur, *m_end;
 };
 
+enum ParamType { Register, Input, Output };
+
 /// State specific to threads
 #if defined(_MSC_VER)
   extern __declspec(thread) ThreadState* thread_state_llvm;
@@ -603,12 +622,12 @@ private:
   extern __thread ThreadState* thread_state_cuda;
 #endif
 
-extern ThreadState *jit_init_thread_state(bool cuda);
+extern ThreadState *jitc_init_thread_state(bool cuda);
 
 inline ThreadState *thread_state(bool cuda) {
     ThreadState *result = cuda ? thread_state_cuda : thread_state_llvm;
     if (unlikely(!result))
-        result = jit_init_thread_state(cuda);
+        result = jitc_init_thread_state(cuda);
     return result;
 }
 
@@ -616,48 +635,42 @@ extern State state;
 extern Buffer buffer;
 
 #if !defined(_WIN32)
-  extern char *jit_temp_path;
+  extern char *jitc_temp_path;
 #else
-  extern wchar_t *jit_temp_path;
+  extern wchar_t *jitc_temp_path;
 #endif
 
 /// Initialize core data structures of the JIT compiler
-extern void jit_init(int llvm, int cuda);
+extern void jitc_init(uint32_t backends);
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
-extern void jit_shutdown(int light);
+extern void jitc_shutdown(int light);
 
 /// Set the currently active device & stream
-extern void jit_cuda_set_device(int device);
+extern void jitc_cuda_set_device(int device);
 
 /// Wait for all computation on the current stream to finish
-extern void jit_sync_thread();
+extern void jitc_sync_thread();
 
 /// Wait for all computation on the current stream to finish
-extern void jit_sync_thread(ThreadState *stream);
+extern void jitc_sync_thread(ThreadState *stream);
 
 /// Wait for all computation on the current device to finish
-extern void jit_sync_device();
+extern void jitc_sync_device();
 
 /// Wait for all computation on *all devices* to finish
-extern void jit_sync_all_devices();
-
-/// Return whether or not parallel dispatch is enabled
-extern bool jit_parallel_dispatch();
-
-/// Specify whether or not parallel dispatch is enabled
-extern void jit_set_parallel_dispatch(bool value);
+extern void jitc_sync_all_devices();
 
 /// Search for a shared library and dlopen it if possible
-void *jit_find_library(const char *fname, const char *glob_pat,
-                       const char *env_var);
+void *jitc_find_library(const char *fname, const char *glob_pat,
+                        const char *env_var);
 
 /// Return a pointer to the CUDA stream associated with the currently active device
-extern void* jit_cuda_stream();
+extern void* jitc_cuda_stream();
 
 /// Return a pointer to the CUDA context associated with the currently active device
-extern void* jit_cuda_context();
+extern void* jitc_cuda_context();
 
-extern void jit_set_flags(uint32_t flags);
+extern void jitc_set_flags(uint32_t flags);
 
-extern uint32_t jit_flags();
+extern uint32_t jitc_flags();

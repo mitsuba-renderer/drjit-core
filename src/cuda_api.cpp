@@ -80,43 +80,43 @@ CUresult (*cuStreamDestroy)(CUstream) = nullptr;
 CUresult (*cuStreamSynchronize)(CUstream) = nullptr;
 CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int) = nullptr;
 
-static void *jit_cuda_handle = nullptr;
+static void *jitc_cuda_handle = nullptr;
 #endif
 
 // Enoki API
-static CUmodule *jit_cuda_module = nullptr;
+static CUmodule *jitc_cuda_module = nullptr;
 
-CUfunction *jit_cuda_fill_64 = nullptr;
-CUfunction *jit_cuda_mkperm_phase_1_tiny = nullptr;
-CUfunction *jit_cuda_mkperm_phase_1_small = nullptr;
-CUfunction *jit_cuda_mkperm_phase_1_large = nullptr;
-CUfunction *jit_cuda_mkperm_phase_3 = nullptr;
-CUfunction *jit_cuda_mkperm_phase_4_tiny = nullptr;
-CUfunction *jit_cuda_mkperm_phase_4_small = nullptr;
-CUfunction *jit_cuda_mkperm_phase_4_large = nullptr;
-CUfunction *jit_cuda_transpose = nullptr;
-CUfunction *jit_cuda_scan_small_u32 = nullptr;
-CUfunction *jit_cuda_scan_large_u32 = nullptr;
-CUfunction *jit_cuda_scan_large_u32_init = nullptr;
-CUfunction *jit_cuda_compress_small = nullptr;
-CUfunction *jit_cuda_compress_large = nullptr;
-CUfunction *jit_cuda_poke[(int)VarType::Count] { };
-CUfunction *jit_cuda_block_copy[(int)VarType::Count] { };
-CUfunction *jit_cuda_block_sum [(int)VarType::Count] { };
-CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
+CUfunction *jitc_cuda_fill_64 = nullptr;
+CUfunction *jitc_cuda_mkperm_phase_1_tiny = nullptr;
+CUfunction *jitc_cuda_mkperm_phase_1_small = nullptr;
+CUfunction *jitc_cuda_mkperm_phase_1_large = nullptr;
+CUfunction *jitc_cuda_mkperm_phase_3 = nullptr;
+CUfunction *jitc_cuda_mkperm_phase_4_tiny = nullptr;
+CUfunction *jitc_cuda_mkperm_phase_4_small = nullptr;
+CUfunction *jitc_cuda_mkperm_phase_4_large = nullptr;
+CUfunction *jitc_cuda_transpose = nullptr;
+CUfunction *jitc_cuda_scan_small_u32 = nullptr;
+CUfunction *jitc_cuda_scan_large_u32 = nullptr;
+CUfunction *jitc_cuda_scan_large_u32_init = nullptr;
+CUfunction *jitc_cuda_compress_small = nullptr;
+CUfunction *jitc_cuda_compress_large = nullptr;
+CUfunction *jitc_cuda_poke[(int)VarType::Count] { };
+CUfunction *jitc_cuda_block_copy[(int)VarType::Count] { };
+CUfunction *jitc_cuda_block_sum [(int)VarType::Count] { };
+CUfunction *jitc_cuda_reductions[(int) ReductionType::Count]
                                [(int) VarType::Count] = { };
-int jit_cuda_devices = 0;
-int jit_cuda_version_major = 0;
-int jit_cuda_version_minor = 0;
+int jitc_cuda_devices = 0;
+int jitc_cuda_version_major = 0;
+int jitc_cuda_version_minor = 0;
 
 
-static bool jit_cuda_init_attempted = false;
-static bool jit_cuda_init_success = false;
+static bool jitc_cuda_init_attempted = false;
+static bool jitc_cuda_init_success = false;
 
-bool jit_cuda_init() {
-    if (jit_cuda_init_attempted)
-        return jit_cuda_init_success;
-    jit_cuda_init_attempted = true;
+bool jitc_cuda_init() {
+    if (jitc_cuda_init_attempted)
+        return jitc_cuda_init_success;
+    jitc_cuda_init_attempted = true;
 
     // We have our own caching scheme, disable CUDA's JIT cache
 #if 0
@@ -131,7 +131,7 @@ bool jit_cuda_init() {
 #endif
 
 #if defined(ENOKI_JIT_DYNAMIC_CUDA)
-    jit_cuda_handle = nullptr;
+    jitc_cuda_handle = nullptr;
 #  if defined(_WIN32)
     const char* cuda_fname = "nvcuda.dll",
               * cuda_glob = nullptr;
@@ -146,14 +146,14 @@ bool jit_cuda_init() {
 #  if !defined(_WIN32)
     // Don't dlopen libcuda.so if it was loaded by another library
     if (dlsym(RTLD_NEXT, "cuInit"))
-        jit_cuda_handle = RTLD_NEXT;
+        jitc_cuda_handle = RTLD_NEXT;
 #  endif
 
-    if (!jit_cuda_handle) {
-        jit_cuda_handle = jit_find_library(cuda_fname, cuda_glob, "ENOKI_LIBCUDA_PATH");
+    if (!jitc_cuda_handle) {
+        jitc_cuda_handle = jitc_find_library(cuda_fname, cuda_glob, "ENOKI_LIBCUDA_PATH");
 
-        if (!jit_cuda_handle) {
-            jit_log(Warn, "jit_cuda_init(): %s could not be loaded -- "
+        if (!jitc_cuda_handle) {
+            jitc_log(Warn, "jit_cuda_init(): %s could not be loaded -- "
                           "disabling CUDA backend! Set the ENOKI_LIBCUDA_PATH "
                           "environment variable to specify its path.", cuda_fname);
             return false;
@@ -166,7 +166,7 @@ bool jit_cuda_init() {
         #define LOAD(name, ...)                                      \
             symbol = strlen(__VA_ARGS__ "") > 0                      \
                 ? (#name "_" __VA_ARGS__) : #name;                   \
-            name = decltype(name)(dlsym(jit_cuda_handle, symbol));   \
+            name = decltype(name)(dlsym(jitc_cuda_handle, symbol));   \
             if (!name)                                               \
                 break;                                               \
             symbol = nullptr
@@ -224,7 +224,7 @@ bool jit_cuda_init() {
     } while (false);
 
     if (symbol) {
-        jit_log(LogLevel::Warn,
+        jitc_log(LogLevel::Warn,
                 "jit_cuda_init(): could not find symbol \"%s\" -- disabling "
                 "CUDA backend!", symbol);
         return false;
@@ -235,15 +235,15 @@ bool jit_cuda_init() {
     if (rv != CUDA_SUCCESS) {
         const char *msg = nullptr;
         cuGetErrorString(rv, &msg);
-        jit_log(LogLevel::Warn,
+        jitc_log(LogLevel::Warn,
                 "jit_cuda_init(): cuInit failed (%s) -- disabling CUDA backend", msg);
         return false;
     }
 
-    cuda_check(cuDeviceGetCount(&jit_cuda_devices));
+    cuda_check(cuDeviceGetCount(&jitc_cuda_devices));
 
-    if (jit_cuda_devices == 0) {
-        jit_log(
+    if (jitc_cuda_devices == 0) {
+        jitc_log(
             LogLevel::Warn,
             "jit_cuda_init(): No devices found -- disabling CUDA backend!");
         return false;
@@ -252,39 +252,39 @@ bool jit_cuda_init() {
     int cuda_version;
     cuda_check(cuDriverGetVersion(&cuda_version));
 
-    jit_cuda_version_major = cuda_version / 1000;
-    jit_cuda_version_minor = (cuda_version % 1000) / 10;
+    jitc_cuda_version_major = cuda_version / 1000;
+    jitc_cuda_version_minor = (cuda_version % 1000) / 10;
 
-    if (jit_cuda_version_major < 10) {
-        jit_log(LogLevel::Warn,
+    if (jitc_cuda_version_major < 10) {
+        jitc_log(LogLevel::Warn,
                 "jit_cuda_init(): your version of CUDA is too old (found %i.%i, "
                 "at least 10.x is required) -- disabling CUDA backend!",
-                jit_cuda_version_major, jit_cuda_version_minor);
+                jitc_cuda_version_major, jitc_cuda_version_minor);
         return false;
     }
 
-    jit_log(LogLevel::Info,
+    jitc_log(LogLevel::Info,
             "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
-            jit_cuda_version_major, jit_cuda_version_minor);
+            jitc_cuda_version_major, jitc_cuda_version_minor);
 
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
         for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++) {
-            jit_cuda_reductions[j][k] =
-                (CUfunction *) malloc_check(sizeof(CUfunction) * jit_cuda_devices);
+            jitc_cuda_reductions[j][k] =
+                (CUfunction *) malloc_check(sizeof(CUfunction) * jitc_cuda_devices);
         }
-        jit_cuda_poke[k] = (CUfunction *) malloc_check(
-            sizeof(CUfunction) * jit_cuda_devices);
-        jit_cuda_block_copy[k] = (CUfunction *) malloc_check(
-            sizeof(CUfunction) * jit_cuda_devices);
-        jit_cuda_block_sum[k] = (CUfunction *) malloc_check(
-            sizeof(CUfunction) * jit_cuda_devices);
+        jitc_cuda_poke[k] = (CUfunction *) malloc_check(
+            sizeof(CUfunction) * jitc_cuda_devices);
+        jitc_cuda_block_copy[k] = (CUfunction *) malloc_check(
+            sizeof(CUfunction) * jitc_cuda_devices);
+        jitc_cuda_block_sum[k] = (CUfunction *) malloc_check(
+            sizeof(CUfunction) * jitc_cuda_devices);
     }
 
-    jit_cuda_module = (CUmodule *) malloc_check(sizeof(CUmodule) * jit_cuda_devices);
+    jitc_cuda_module = (CUmodule *) malloc_check(sizeof(CUmodule) * jitc_cuda_devices);
 
-    jit_lz4_init();
+    jitc_lz4_init();
 
-    for (int i = 0; i < jit_cuda_devices; ++i) {
+    for (int i = 0; i < jitc_cuda_devices; ++i) {
         CUcontext context = nullptr;
         cuda_check(cuDevicePrimaryCtxRetain(&context, i));
         scoped_set_context guard(context);
@@ -306,26 +306,26 @@ bool jit_cuda_init() {
 
         // Decompress the supplemental PTX content
         char *uncompressed =
-            (char *) malloc_check(size_t(kernels_size_uncompressed) + jit_lz4_dict_size + 1);
-        memcpy(uncompressed, jit_lz4_dict, jit_lz4_dict_size);
-        char *uncompressed_ptx = uncompressed + jit_lz4_dict_size;
+            (char *) malloc_check(size_t(kernels_size_uncompressed) + jitc_lz4_dict_size + 1);
+        memcpy(uncompressed, jitc_lz4_dict, jitc_lz4_dict_size);
+        char *uncompressed_ptx = uncompressed + jitc_lz4_dict_size;
 
         if (LZ4_decompress_safe_usingDict(
                 kernels, uncompressed_ptx,
                 kernels_size_compressed,
                 kernels_size_uncompressed,
                 uncompressed,
-                jit_lz4_dict_size) != kernels_size_uncompressed)
-            jit_fail("jit_cuda_init(): decompression of builtin kernels failed!");
+                jitc_lz4_dict_size) != kernels_size_uncompressed)
+            jitc_fail("jit_cuda_init(): decompression of builtin kernels failed!");
 
         uncompressed_ptx[kernels_size_uncompressed] = '\0';
 
         hash_combine(kernels_hash, (size_t) cc);
 
         Kernel kernel;
-        if (!jit_kernel_load(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel)) {
-            jit_cuda_compile(uncompressed_ptx, kernels_size_uncompressed, kernel);
-            jit_kernel_write(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel);
+        if (!jitc_kernel_load(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel)) {
+            jitc_cuda_compile(uncompressed_ptx, kernels_size_uncompressed, kernel);
+            jitc_kernel_write(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel);
         }
 
         free(uncompressed);
@@ -334,13 +334,13 @@ bool jit_cuda_init() {
         CUmodule m;
         cuda_check(cuModuleLoadData(&m, kernel.data));
         free(kernel.data);
-        jit_cuda_module[i] = m;
+        jitc_cuda_module[i] = m;
 
         #define LOAD(name)                                                       \
             if (i == 0)                                                          \
-                jit_cuda_##name = (CUfunction *) malloc_check(                   \
-                    sizeof(CUfunction) * jit_cuda_devices);                      \
-            cuda_check(cuModuleGetFunction(&jit_cuda_##name[i], m, #name))
+                jitc_cuda_##name = (CUfunction *) malloc_check(                   \
+                    sizeof(CUfunction) * jitc_cuda_devices);                      \
+            cuda_check(cuModuleGetFunction(&jitc_cuda_##name[i], m, #name))
 
         LOAD(fill_64);
         LOAD(mkperm_phase_1_tiny);
@@ -366,7 +366,7 @@ bool jit_cuda_init() {
 
         #define MAXIMIZE_SHARED(name)                                            \
             cuda_check(cuFuncSetAttribute(                                       \
-                jit_cuda_##name[i],                                              \
+                jitc_cuda_##name[i],                                              \
                 CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,                 \
                 shared_memory_bytes))
 
@@ -384,25 +384,25 @@ bool jit_cuda_init() {
             snprintf(name, sizeof(name), "poke_%s", var_type_name_short[k]);
             if (strstr(kernels_list, name)) {
                 cuda_check(cuModuleGetFunction(&func, m, name));
-                jit_cuda_poke[k][i] = func;
+                jitc_cuda_poke[k][i] = func;
             } else {
-                jit_cuda_poke[k][i] = nullptr;
+                jitc_cuda_poke[k][i] = nullptr;
             }
 
             snprintf(name, sizeof(name), "block_copy_%s", var_type_name_short[k]);
             if (strstr(kernels_list, name)) {
                 cuda_check(cuModuleGetFunction(&func, m, name));
-                jit_cuda_block_copy[k][i] = func;
+                jitc_cuda_block_copy[k][i] = func;
             } else {
-                jit_cuda_block_copy[k][i] = nullptr;
+                jitc_cuda_block_copy[k][i] = nullptr;
             }
 
             snprintf(name, sizeof(name), "block_sum_%s", var_type_name_short[k]);
             if (strstr(kernels_list, name)) {
                 cuda_check(cuModuleGetFunction(&func, m, name));
-                jit_cuda_block_sum[k][i] = func;
+                jitc_cuda_block_sum[k][i] = func;
             } else {
-                jit_cuda_block_sum[k][i] = nullptr;
+                jitc_cuda_block_sum[k][i] = nullptr;
             }
 
             for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++) {
@@ -410,19 +410,19 @@ bool jit_cuda_init() {
                          var_type_name_short[k]);
                 if (strstr(kernels_list, name)) {
                     cuda_check(cuModuleGetFunction(&func, m, name));
-                    jit_cuda_reductions[j][k][i] = func;
+                    jitc_cuda_reductions[j][k][i] = func;
                 } else {
-                    jit_cuda_reductions[j][k][i] = nullptr;
+                    jitc_cuda_reductions[j][k][i] = nullptr;
                 }
             }
         }
     }
 
-    jit_cuda_init_success = true;
+    jitc_cuda_init_success = true;
     return true;
 }
 
-void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
+void jitc_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     const uintptr_t log_size = 16384;
     char error_log[log_size], info_log[log_size];
 
@@ -454,7 +454,7 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buffer,
                            buffer_size, nullptr, 0, nullptr, nullptr);
     if (rt != CUDA_SUCCESS)
-        jit_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
+        jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
                  "assembly listing and error message below:\n\n%s\n\n%s",
                  buffer, error_log);
 
@@ -462,11 +462,11 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     size_t link_output_size = 0;
     cuda_check(cuLinkComplete(link_state, &link_output, &link_output_size));
     if (rt != CUDA_SUCCESS)
-        jit_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
+        jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
                  "assembly listing and error message below:\n\n%s\n\n%s",
                  buffer, error_log);
 
-    jit_trace("Detailed linker output:\n%s", info_log);
+    jitc_trace("Detailed linker output:\n%s", info_log);
 
     kernel.data = malloc_check(link_output_size);
     kernel.size = (uint32_t) link_output_size;
@@ -476,46 +476,46 @@ void jit_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     cuda_check(cuLinkDestroy(link_state));
 }
 
-void jit_cuda_shutdown() {
-    if (!jit_cuda_init_success)
+void jitc_cuda_shutdown() {
+    if (!jitc_cuda_init_success)
         return;
 
-    jit_log(Info, "jit_cuda_shutdown()");
+    jitc_log(Info, "jit_cuda_shutdown()");
 
-    for (int i = 0; i < jit_cuda_devices; ++i) {
+    for (int i = 0; i < jitc_cuda_devices; ++i) {
         CUcontext context = nullptr;
         cuda_check(cuDevicePrimaryCtxRetain(&context, i));
-        cuda_check(cuModuleUnload(jit_cuda_module[i]));
+        cuda_check(cuModuleUnload(jitc_cuda_module[i]));
         cuda_check(cuDevicePrimaryCtxRelease(i));
         cuda_check(cuDevicePrimaryCtxRelease(i));
     }
 
-    jit_cuda_devices = 0;
+    jitc_cuda_devices = 0;
 
     #define Z(x) do { free(x); x = nullptr; } while (0)
 
-    Z(jit_cuda_fill_64);
-    Z(jit_cuda_mkperm_phase_1_tiny);
-    Z(jit_cuda_mkperm_phase_1_small);
-    Z(jit_cuda_mkperm_phase_1_large);
-    Z(jit_cuda_mkperm_phase_3);
-    Z(jit_cuda_mkperm_phase_4_tiny);
-    Z(jit_cuda_mkperm_phase_4_small);
-    Z(jit_cuda_mkperm_phase_4_large);
-    Z(jit_cuda_transpose);
-    Z(jit_cuda_scan_small_u32);
-    Z(jit_cuda_scan_large_u32);
-    Z(jit_cuda_scan_large_u32_init);
-    Z(jit_cuda_compress_small);
-    Z(jit_cuda_compress_large);
-    Z(jit_cuda_module);
+    Z(jitc_cuda_fill_64);
+    Z(jitc_cuda_mkperm_phase_1_tiny);
+    Z(jitc_cuda_mkperm_phase_1_small);
+    Z(jitc_cuda_mkperm_phase_1_large);
+    Z(jitc_cuda_mkperm_phase_3);
+    Z(jitc_cuda_mkperm_phase_4_tiny);
+    Z(jitc_cuda_mkperm_phase_4_small);
+    Z(jitc_cuda_mkperm_phase_4_large);
+    Z(jitc_cuda_transpose);
+    Z(jitc_cuda_scan_small_u32);
+    Z(jitc_cuda_scan_large_u32);
+    Z(jitc_cuda_scan_large_u32_init);
+    Z(jitc_cuda_compress_small);
+    Z(jitc_cuda_compress_large);
+    Z(jitc_cuda_module);
 
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
-        Z(jit_cuda_poke[k]);
-        Z(jit_cuda_block_copy[k]);
-        Z(jit_cuda_block_sum[k]);
+        Z(jitc_cuda_poke[k]);
+        Z(jitc_cuda_block_copy[k]);
+        Z(jitc_cuda_block_sum[k]);
         for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++)
-            Z(jit_cuda_reductions[j][k]);
+            Z(jitc_cuda_reductions[j][k]);
     }
 
     #undef Z
@@ -541,19 +541,19 @@ void jit_cuda_shutdown() {
     Z(cuPointerGetAttribute);
 
 #if !defined(_WIN32)
-    if (jit_cuda_handle != RTLD_NEXT)
-        dlclose(jit_cuda_handle);
+    if (jitc_cuda_handle != RTLD_NEXT)
+        dlclose(jitc_cuda_handle);
 #else
-    FreeLibrary((HMODULE) jit_cuda_handle);
+    FreeLibrary((HMODULE) jitc_cuda_handle);
 #endif
 
-    jit_cuda_handle = nullptr;
+    jitc_cuda_handle = nullptr;
 
     #undef Z
 #endif
 
-    jit_cuda_init_success = false;
-    jit_cuda_init_attempted = false;
+    jitc_cuda_init_success = false;
+    jitc_cuda_init_attempted = false;
 }
 
 void cuda_check_impl(CUresult errval, const char *file, const int line) {
@@ -561,7 +561,7 @@ void cuda_check_impl(CUresult errval, const char *file, const int line) {
         const char *name = nullptr, *msg = nullptr;
         cuGetErrorName(errval, &name);
         cuGetErrorString(errval, &msg);
-        jit_fail("cuda_check(): API error %04i (%s): \"%s\" in "
+        jitc_fail("cuda_check(): API error %04i (%s): \"%s\" in "
                  "%s:%i.", (int) errval, name, msg, file, line);
     }
 }

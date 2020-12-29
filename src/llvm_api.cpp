@@ -106,49 +106,54 @@ static size_t (*LLVMDisasmInstruction)(LLVMDisasmContextRef, uint8_t *,
 static LLVMPassManagerRef (*LLVMCreatePassManager)() = nullptr;
 static void (*LLVMRunPassManager)(LLVMPassManagerRef, LLVMModuleRef) = nullptr;
 static void (*LLVMDisposePassManager)(LLVMPassManagerRef) = nullptr;
-static void (*LLVMAddAlwaysInlinerPass)(LLVMPassManagerRef) = nullptr;
+static void (*LLVMAddLICMPass)(LLVMPassManagerRef) = nullptr;
+
 static LLVMTargetMachineRef (*LLVMGetExecutionEngineTargetMachine)(
     LLVMExecutionEngineRef) = nullptr;
 
 #define LLVMDisassembler_Option_PrintImmHex       2
 #define LLVMDisassembler_Option_AsmPrinterVariant 4
 
-static void *jit_llvm_handle                    = nullptr;
+static void *jitc_llvm_handle                    = nullptr;
 #endif
 
 /// Enoki API
-static LLVMDisasmContextRef jit_llvm_disasm_ctx = nullptr;
-static LLVMExecutionEngineRef jit_llvm_engine   = nullptr;
-static LLVMContextRef jit_llvm_context          = nullptr;
-static LLVMPassManagerRef jit_llvm_pass_manager = nullptr;
+static LLVMDisasmContextRef jitc_llvm_disasm_ctx = nullptr;
+static LLVMExecutionEngineRef jitc_llvm_engine   = nullptr;
+static LLVMContextRef jitc_llvm_context          = nullptr;
+static LLVMPassManagerRef jitc_llvm_pass_manager = nullptr;
 
-char    *jit_llvm_triple          = nullptr;
-char    *jit_llvm_target_cpu      = nullptr;
-char    *jit_llvm_target_features = nullptr;
-uint32_t jit_llvm_vector_width    = 0;
-size_t   jit_llvm_kernel_id       = 0;
-uint32_t jit_llvm_version_major   = 0;
-uint32_t jit_llvm_version_minor   = 0;
-uint32_t jit_llvm_version_patch   = 0;
-uint32_t jit_llvm_thread_count    = 0;
+char    *jitc_llvm_triple          = nullptr;
+char    *jitc_llvm_target_cpu      = nullptr;
+char    *jitc_llvm_target_features = nullptr;
+uint32_t jitc_llvm_vector_width    = 0;
+size_t   jitc_llvm_kernel_id       = 0;
+uint32_t jitc_llvm_version_major   = 0;
+uint32_t jitc_llvm_version_minor   = 0;
+uint32_t jitc_llvm_version_patch   = 0;
+uint32_t jitc_llvm_thread_count    = 0;
 
-static bool     jit_llvm_init_attempted = false;
-static bool     jit_llvm_init_success   = false;
+static bool     jitc_llvm_init_attempted = false;
+static bool     jitc_llvm_init_success   = false;
 
-static uint8_t *jit_llvm_mem           = nullptr;
-static size_t   jit_llvm_mem_size      = 0;
-static size_t   jit_llvm_mem_offset    = 0;
-static bool     jit_llvm_got           = false;
+static uint8_t *jitc_llvm_mem           = nullptr;
+static size_t   jitc_llvm_mem_size      = 0;
+static size_t   jitc_llvm_mem_offset    = 0;
+static bool     jitc_llvm_got           = false;
+
+char *jitc_llvm_vector_width_str = nullptr;
+char **jitc_llvm_ones_str = nullptr;
+char *jitc_llvm_counter_str = nullptr;
 
 extern "C" {
 
-static uint8_t *jit_llvm_mem_allocate(void * /* opaque */, uintptr_t size,
+static uint8_t *jitc_llvm_mem_allocate(void * /* opaque */, uintptr_t size,
                                       unsigned align, unsigned /* id */,
                                       const char *name) {
     if (align == 0)
         align = 16;
 
-    jit_trace("jit_llvm_mem_allocate(section=%s, size=%zu, align=%u);", name,
+    jitc_trace("jit_llvm_mem_allocate(section=%s, size=%zu, align=%u)", name,
               size, (uint32_t) align);
 
     /* It's bad news if LLVM decides to create a global offset table entry.
@@ -156,39 +161,39 @@ static uint8_t *jit_llvm_mem_allocate(void * /* opaque */, uintptr_t size,
        instruction, and a function call to an external library was generated
        along with a relocation, which we don't support. */
     if (strncmp(name, ".got", 4) == 0)
-        jit_llvm_got = true;
+        jitc_llvm_got = true;
 
-    size_t offset_align = (jit_llvm_mem_offset + (align - 1)) / align * align;
+    size_t offset_align = (jitc_llvm_mem_offset + (align - 1)) / align * align;
 
     // Zero-fill including padding region
-    memset(jit_llvm_mem + jit_llvm_mem_offset, 0,
-           offset_align - jit_llvm_mem_offset);
+    memset(jitc_llvm_mem + jitc_llvm_mem_offset, 0,
+           offset_align - jitc_llvm_mem_offset);
 
-    jit_llvm_mem_offset = offset_align + size;
+    jitc_llvm_mem_offset = offset_align + size;
 
-    if (jit_llvm_mem_offset > jit_llvm_mem_size)
+    if (jitc_llvm_mem_offset > jitc_llvm_mem_size)
         return nullptr;
 
-    return jit_llvm_mem + offset_align;
+    return jitc_llvm_mem + offset_align;
 }
 
-static uint8_t *jit_llvm_mem_allocate_data(void *opaque, uintptr_t size,
+static uint8_t *jitc_llvm_mem_allocate_data(void *opaque, uintptr_t size,
                                            unsigned align, unsigned id,
                                            const char *name,
                                            LLVMBool /* read_only */) {
-    return jit_llvm_mem_allocate(opaque, size, align, id, name);
+    return jitc_llvm_mem_allocate(opaque, size, align, id, name);
 }
 
-static LLVMBool jit_llvm_mem_finalize(void * /* opaque */, char ** /* err */) {
+static LLVMBool jitc_llvm_mem_finalize(void * /* opaque */, char ** /* err */) {
     return 0;
 }
 
-static void jit_llvm_mem_destroy(void * /* opaque */) { }
+static void jitc_llvm_mem_destroy(void * /* opaque */) { }
 
 } /* extern "C" */ ;
 
 /// Dump assembly representation
-void jit_llvm_disasm(const Kernel &kernel) {
+void jitc_llvm_disasm(const Kernel &kernel) {
     if (std::max(state.log_level_stderr, state.log_level_callback) <
         LogLevel::Trace)
         return;
@@ -197,14 +202,14 @@ void jit_llvm_disasm(const Kernel &kernel) {
             *ptr = func_base;
     char ins_buf[256];
     bool last_nop = false;
-    jit_trace("jit_llvm_disasm(): =====================");
+    jitc_trace("jit_llvm_disasm(): =====================");
     do {
         size_t offset      = ptr - (uint8_t *) kernel.data,
                func_offset = ptr - func_base;
         if (offset >= kernel.size)
             break;
         size_t size =
-            LLVMDisasmInstruction(jit_llvm_disasm_ctx, ptr, kernel.size - offset,
+            LLVMDisasmInstruction(jitc_llvm_disasm_ctx, ptr, kernel.size - offset,
                                   (uintptr_t) ptr, ins_buf, sizeof(ins_buf));
         if (size == 0)
             break;
@@ -213,13 +218,13 @@ void jit_llvm_disasm(const Kernel &kernel) {
             ++start;
         if (strcmp(start, "nop") == 0) {
             if (!last_nop)
-                jit_trace("jit_llvm_disasm(): ...");
+                jitc_trace("jit_llvm_disasm(): ...");
             last_nop = true;
             ptr += size;
             continue;
         }
         last_nop = false;
-        jit_trace("jit_llvm_disasm(): 0x%08x   %s", (uint32_t) func_offset, start);
+        jitc_trace("jit_llvm_disasm(): 0x%08x   %s", (uint32_t) func_offset, start);
         if (strncmp(start, "ret", 3) == 0)
             break;
         ptr += size;
@@ -228,26 +233,26 @@ void jit_llvm_disasm(const Kernel &kernel) {
 
 static ProfilerRegion profiler_region_llvm_compile("jit_llvm_compile");
 
-void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
+void jitc_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
                       bool include_supplement) {
     ProfilerPhase phase(profiler_region_llvm_compile);
     char *temp = nullptr;
     if (include_supplement) {
-        jit_lz4_init();
+        jitc_lz4_init();
 
-        size_t temp_size = buffer_size + jit_lz4_dict_size +
+        size_t temp_size = buffer_size + jitc_lz4_dict_size +
                            llvm_kernels_size_uncompressed + 1;
 
         // Decompress supplemental kernel IR content
         temp = (char *) malloc_check(temp_size);
-        memcpy(temp, jit_lz4_dict, jit_lz4_dict_size);
-        char *buffer_new = temp + jit_lz4_dict_size;
+        memcpy(temp, jitc_lz4_dict, jitc_lz4_dict_size);
+        char *buffer_new = temp + jitc_lz4_dict_size;
 
         if (LZ4_decompress_safe_usingDict(
                 llvm_kernels, buffer_new, llvm_kernels_size_compressed,
                 llvm_kernels_size_uncompressed, temp,
-                jit_lz4_dict_size) != llvm_kernels_size_uncompressed)
-            jit_fail("jit_llvm_compile(): decompression of supplemental kernel "
+                jitc_lz4_dict_size) != llvm_kernels_size_uncompressed)
+            jitc_fail("jit_llvm_compile(): decompression of supplemental kernel "
                      "fragments failed!");
 
         memcpy(buffer_new + llvm_kernels_size_uncompressed, buffer, buffer_size);
@@ -256,25 +261,25 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
         buffer = buffer_new;
     }
 
-    if (jit_llvm_mem_size <= buffer_size) {
+    if (jitc_llvm_mem_size <= buffer_size) {
         // Central assumption: LLVM text IR is much larger than the resulting generated code.
 #if !defined(_WIN32)
-        free(jit_llvm_mem);
-        if (posix_memalign((void **) &jit_llvm_mem, 64, buffer_size))
-            jit_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", buffer_size);
+        free(jitc_llvm_mem);
+        if (posix_memalign((void **) &jitc_llvm_mem, 64, buffer_size))
+            jitc_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", buffer_size);
 #else
-        _aligned_free(jit_llvm_mem);
-        jit_llvm_mem = (uint8_t *) _aligned_malloc(buffer_size, 64);
-        if (!jit_llvm_mem)
-            jit_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", buffer_size);
+        _aligned_free(jitc_llvm_mem);
+        jitc_llvm_mem = (uint8_t *) _aligned_malloc(buffer_size, 64);
+        if (!jitc_llvm_mem)
+            jitc_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", buffer_size);
 #endif
-        jit_llvm_mem_size = buffer_size;
+        jitc_llvm_mem_size = buffer_size;
     }
-    jit_llvm_mem_offset = 0;
+    jitc_llvm_mem_offset = 0;
 
     // Temporarily change the kernel name
     char kernel_name_old[23]{}, kernel_name_new[30]{};
-    snprintf(kernel_name_new, 23, "enoki_%016llx", (long long) jit_llvm_kernel_id);
+    snprintf(kernel_name_new, 23, "enoki_%016llx", (long long) jitc_llvm_kernel_id);
 
     char *offset = (char *) buffer;
     do {
@@ -289,39 +294,39 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     LLVMMemoryBufferRef buf = LLVMCreateMemoryBufferWithMemoryRange(
         buffer, buffer_size, kernel_name_new, 0);
     if (unlikely(!buf))
-        jit_fail("jit_run_compile(): could not create memory buffer!");
+        jitc_fail("jit_run_compile(): could not create memory buffer!");
 
     // 'buf' is consumed by this function.
     LLVMModuleRef llvm_module = nullptr;
     char *error = nullptr;
-    LLVMParseIRInContext(jit_llvm_context, buf, &llvm_module, &error);
+    LLVMParseIRInContext(jitc_llvm_context, buf, &llvm_module, &error);
     if (unlikely(error))
-        jit_fail("jit_llvm_compile(): parsing failed. Please see the LLVM "
+        jitc_fail("jit_llvm_compile(): parsing failed. Please see the LLVM "
                  "IR and error message below:\n\n%s\n\n%s", buffer, error);
 
     if (false) {
         char *llvm_ir = LLVMPrintModuleToString(llvm_module);
-        jit_trace("jit_llvm_compile(): Parsed LLVM IR:\n%s", llvm_ir);
+        jitc_trace("jit_llvm_compile(): Parsed LLVM IR:\n%s", llvm_ir);
         LLVMDisposeMessage(llvm_ir);
     }
 
     // Inline supplemental code fragments into currently compiled kernel
-    if (include_supplement)
-        LLVMRunPassManager(jit_llvm_pass_manager, llvm_module);
+    // if (include_supplement)
+        LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
 
-    LLVMAddModule(jit_llvm_engine, llvm_module);
+    LLVMAddModule(jitc_llvm_engine, llvm_module);
 
     uint8_t *func =
-        (uint8_t *) LLVMGetFunctionAddress(jit_llvm_engine, kernel_name_new);
+        (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, kernel_name_new);
     if (unlikely(!func))
-        jit_fail("jit_llvm_compile(): internal error: could not fetch function "
+        jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
                  "address of kernel \"%s\"!\n", kernel_name_new);
-    else if (unlikely(func < jit_llvm_mem))
-        jit_fail("jit_llvm_compile(): internal error: invalid address: "
-                 "%p < %p!\n", func, jit_llvm_mem);
+    else if (unlikely(func < jitc_llvm_mem))
+        jitc_fail("jit_llvm_compile(): internal error: invalid address: "
+                 "%p < %p!\n", func, jitc_llvm_mem);
 
-    if (jit_llvm_got)
-        jit_fail(
+    if (jitc_llvm_got)
+        jitc_fail(
             "jit_llvm_compile(): a global offset table was generated by LLVM, "
             "which typically means that a compiler intrinsic was not supported "
             "by the target architecture. Enoki cannot handle this case "
@@ -329,32 +334,32 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
             "following kernel code was responsible for this problem:\n\n%s",
             buffer);
 
-    uint32_t func_offset        = (uint32_t) (func        - jit_llvm_mem);
+    uint32_t func_offset = (uint32_t)(func - jitc_llvm_mem);
 
 #if !defined(_WIN32)
     void *ptr_result =
-        mmap(nullptr, jit_llvm_mem_offset, PROT_READ | PROT_WRITE,
+        mmap(nullptr, jitc_llvm_mem_offset, PROT_READ | PROT_WRITE,
              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (ptr_result == MAP_FAILED)
-        jit_fail("jit_llvm_compile(): could not mmap() memory: %s",
+        jitc_fail("jit_llvm_compile(): could not mmap() memory: %s",
                  strerror(errno));
-    memcpy(ptr_result, jit_llvm_mem, jit_llvm_mem_offset);
+    memcpy(ptr_result, jitc_llvm_mem, jitc_llvm_mem_offset);
 
-    if (mprotect(ptr_result, jit_llvm_mem_offset, PROT_READ | PROT_EXEC) == -1)
-        jit_fail("jit_llvm_compile(): mprotect() failed: %s", strerror(errno));
+    if (mprotect(ptr_result, jitc_llvm_mem_offset, PROT_READ | PROT_EXEC) == -1)
+        jitc_fail("jit_llvm_compile(): mprotect() failed: %s", strerror(errno));
 #else
-    void* ptr_result = VirtualAlloc(nullptr, jit_llvm_mem_offset, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    void* ptr_result = VirtualAlloc(nullptr, jitc_llvm_mem_offset, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!ptr_result)
-        jit_fail("jit_llvm_compile(): could not VirtualAlloc() memory: %u", GetLastError());
-    memcpy(ptr_result, jit_llvm_mem, jit_llvm_mem_offset);
+        jitc_fail("jit_llvm_compile(): could not VirtualAlloc() memory: %u", GetLastError());
+    memcpy(ptr_result, jitc_llvm_mem, jitc_llvm_mem_offset);
     DWORD unused;
-    if (VirtualProtect(ptr_result, jit_llvm_mem_offset, PAGE_EXECUTE_READ, &unused) == 0)
-        jit_fail("jit_llvm_compile(): VirtualProtect() failed: %u", GetLastError());
+    if (VirtualProtect(ptr_result, jitc_llvm_mem_offset, PAGE_EXECUTE_READ, &unused) == 0)
+        jitc_fail("jit_llvm_compile(): VirtualProtect() failed: %u", GetLastError());
 #endif
 
-    LLVMRemoveModule(jit_llvm_engine, llvm_module, &llvm_module, &error);
+    LLVMRemoveModule(jitc_llvm_engine, llvm_module, &llvm_module, &error);
     if (unlikely(error))
-        jit_fail("jit_llvm_compile(): could remove module: %s.\n", error);
+        jitc_fail("jit_llvm_compile(): could remove module: %s.\n", error);
     LLVMDisposeModule(llvm_module);
 
     // Change the kernel name back
@@ -368,49 +373,96 @@ void jit_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     } while (true);
 
     kernel.data = ptr_result;
-    kernel.size = (uint32_t) jit_llvm_mem_offset;
+    kernel.size = (uint32_t) jitc_llvm_mem_offset;
     kernel.llvm.func        = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
     kernel.llvm.itt = __itt_string_handle_create(kernel_name_old);
 #endif
-    jit_llvm_kernel_id++;
+    jitc_llvm_kernel_id++;
     free(temp);
 }
 
-void jit_llvm_set_target(const char *target_cpu,
-                         const char *target_features,
-                         uint32_t vector_width) {
-    if (!jit_llvm_init_success)
-        return;
+void jitc_llvm_update_strings() {
+    Buffer buf {100};
+    uint32_t width = jitc_llvm_vector_width;
 
-    if (jit_llvm_target_cpu)
-        LLVMDisposeMessage(jit_llvm_target_cpu);
+    // Vector width
+    buf.fmt("%u", width);
+    free(jitc_llvm_vector_width_str);
+    jitc_llvm_vector_width_str = strdup(buf.get());
 
-    if (jit_llvm_target_features) {
-        LLVMDisposeMessage(jit_llvm_target_features);
-        jit_llvm_target_features = nullptr;
+    buf.clear();
+    buf.fmt(
+        "$r0_0 = trunc i64 %%index to i32$n"
+        "$r0_1 = insertelement <%u x i32> undef, i32 $r0_0, i32 0$n"
+        "$r0_2 = shufflevector <%u x i32> $r0_1, <%u x i32> undef, <%u x i32> zeroinitializer$n"
+        "$r0 = add <%u x i32> $r0_2, <",
+        width, width, width, width, width
+    );
+
+    for (uint32_t i = 0; i < width; ++i)
+        buf.fmt("i32 %u%s", i, i + 1 < width ? ", " : ">");
+
+    free(jitc_llvm_counter_str);
+    jitc_llvm_counter_str = strdup(buf.get());
+
+    if (jitc_llvm_ones_str) {
+        for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
+            free(jitc_llvm_ones_str[i]);
+        free(jitc_llvm_ones_str);
     }
 
-    jit_llvm_vector_width = vector_width;
-    jit_llvm_target_cpu = LLVMCreateMessage((char *) target_cpu);
-    if (target_features)
-        jit_llvm_target_features = LLVMCreateMessage((char *) target_features);
+    jitc_llvm_ones_str =
+        (char **) malloc(sizeof(char *) * (uint32_t) VarType::Count);
+
+    for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i) {
+        buf.clear();
+        buf.putc('<');
+        for (uint32_t j = 0; j < width; ++j)
+            buf.fmt("%s %i%s", var_type_name_llvm[i],
+                    (VarType) i == VarType::Bool ? 1 : -1,
+                    j + 1 < width ? ", " : ">");
+        jitc_llvm_ones_str[i] = strdup(buf.get());
+    }
 }
+
+void jitc_llvm_set_target(const char *target_cpu,
+                         const char *target_features,
+                         uint32_t vector_width) {
+    if (!jitc_llvm_init_success)
+        return;
+
+    if (jitc_llvm_target_cpu)
+        LLVMDisposeMessage(jitc_llvm_target_cpu);
+
+    if (jitc_llvm_target_features) {
+        LLVMDisposeMessage(jitc_llvm_target_features);
+        jitc_llvm_target_features = nullptr;
+    }
+
+    jitc_llvm_vector_width = vector_width;
+    jitc_llvm_target_cpu = LLVMCreateMessage((char *) target_cpu);
+    if (target_features)
+        jitc_llvm_target_features = LLVMCreateMessage((char *) target_features);
+
+    jitc_llvm_update_strings();
+}
+
 
 /// Convenience function for intrinsic function selection
-int jit_llvm_if_at_least(uint32_t vector_width, const char *feature) {
-    return jit_llvm_vector_width >= vector_width &&
-           jit_llvm_target_features != nullptr &&
-           strstr(jit_llvm_target_features, feature) != nullptr;
+int jitc_llvm_if_at_least(uint32_t vector_width, const char *feature) {
+    return jitc_llvm_vector_width >= vector_width &&
+           jitc_llvm_target_features != nullptr &&
+           strstr(jitc_llvm_target_features, feature) != nullptr;
 }
 
-bool jit_llvm_init() {
-    if (jit_llvm_init_attempted)
-        return jit_llvm_init_success;
-    jit_llvm_init_attempted = true;
+bool jitc_llvm_init() {
+    if (jitc_llvm_init_attempted)
+        return jitc_llvm_init_success;
+    jitc_llvm_init_attempted = true;
 
 #if defined(ENOKI_JIT_DYNAMIC_LLVM)
-    jit_llvm_handle = nullptr;
+    jitc_llvm_handle = nullptr;
 #  if defined(_WIN32)
     const char *llvm_fname = "LLVM-C.dll",
                *llvm_glob  = nullptr;
@@ -425,14 +477,14 @@ bool jit_llvm_init() {
 #  if !defined(_WIN32)
     // Don't dlopen libLLVM.so if it was loaded by another library
     if (dlsym(RTLD_NEXT, "LLVMLinkInMCJIT"))
-        jit_llvm_handle = RTLD_NEXT;
+        jitc_llvm_handle = RTLD_NEXT;
 #  endif
 
-    if (!jit_llvm_handle) {
-        jit_llvm_handle = jit_find_library(llvm_fname, llvm_glob, "ENOKI_LIBLLVM_PATH");
+    if (!jitc_llvm_handle) {
+        jitc_llvm_handle = jitc_find_library(llvm_fname, llvm_glob, "ENOKI_LIBLLVM_PATH");
 
-        if (!jit_llvm_handle) {
-            jit_log(Warn, "jit_llvm_init(): %s could not be loaded -- "
+        if (!jitc_llvm_handle) {
+            jitc_log(Warn, "jit_llvm_init(): %s could not be loaded -- "
                           "disabling LLVM backend! Set the ENOKI_LIBLLVM_PATH "
                           "environment variable to specify its path.", llvm_fname);
             return false;
@@ -441,7 +493,7 @@ bool jit_llvm_init() {
 
     #define LOAD(name)                                                         \
         symbol = #name;                                                        \
-        name = decltype(name)(dlsym(jit_llvm_handle, symbol));                 \
+        name = decltype(name)(dlsym(jitc_llvm_handle, symbol));                 \
         if (!name)                                                             \
             break;                                                             \
         symbol = nullptr
@@ -478,12 +530,12 @@ bool jit_llvm_init() {
         LOAD(LLVMCreatePassManager);
         LOAD(LLVMRunPassManager);
         LOAD(LLVMDisposePassManager);
-        LOAD(LLVMAddAlwaysInlinerPass);
+        LOAD(LLVMAddLICMPass);
         LOAD(LLVMGetExecutionEngineTargetMachine);
     } while (false);
 
     if (symbol) {
-        jit_log(Warn,
+        jitc_log(Warn,
                 "jit_llvm_init(): could not find symbol \"%s\" -- disabling "
                 "LLVM backend!", symbol);
         return false;
@@ -491,7 +543,7 @@ bool jit_llvm_init() {
 #endif
 
 #if defined(ENOKI_JIT_DYNAMIC_LLVM)
-    void *dlsym_src = jit_llvm_handle;
+    void *dlsym_src = jitc_llvm_handle;
 #else
     void *dlsym_src = RTLD_NEXT;
 #endif
@@ -501,16 +553,16 @@ bool jit_llvm_init() {
 
     if (get_version_string) {
         const char* version_string = get_version_string();
-        if (sscanf(version_string, "LLVM version %u.%u.%u", &jit_llvm_version_major,
-                   &jit_llvm_version_minor, &jit_llvm_version_patch) != 3) {
-            jit_log(Warn,
+        if (sscanf(version_string, "LLVM version %u.%u.%u", &jitc_llvm_version_major,
+                   &jitc_llvm_version_minor, &jitc_llvm_version_patch) != 3) {
+            jitc_log(Warn,
                     "jit_llvm_init(): could not parse LLVM version string \"%s\".",
                     version_string);
             return false;
         }
 
-        if (jit_llvm_version_major < 7) {
-            jit_log(Warn,
+        if (jitc_llvm_version_major < 7) {
+            jitc_log(Warn,
                     "jit_llvm_init(): LLVM version 7 or later must be used. (found "
                     "%s). You may want to define the 'ENOKI_LIBLLVM_PATH' "
                     "environment variable to specify the path to "
@@ -518,9 +570,9 @@ bool jit_llvm_init() {
                     version_string);
         }
     } else {
-        jit_llvm_version_major = 10;
-        jit_llvm_version_minor = 0;
-        jit_llvm_version_patch = 0;
+        jitc_llvm_version_major = 10;
+        jitc_llvm_version_minor = 0;
+        jitc_llvm_version_patch = 0;
     }
 
     LLVMLinkInMCJIT();
@@ -530,61 +582,61 @@ bool jit_llvm_init() {
     LLVMInitializeX86AsmPrinter();
     LLVMInitializeX86Disassembler();
 
-    jit_llvm_context = LLVMGetGlobalContext();
-    if (!jit_llvm_context) {
-        jit_log(Warn, "jit_llvm_init(): could not obtain context!");
+    jitc_llvm_context = LLVMGetGlobalContext();
+    if (!jitc_llvm_context) {
+        jitc_log(Warn, "jit_llvm_init(): could not obtain context!");
         return false;
     }
 
-    jit_llvm_triple = LLVMGetDefaultTargetTriple();
-    jit_llvm_target_cpu = LLVMGetHostCPUName();
-    jit_llvm_target_features = LLVMGetHostCPUFeatures();
+    jitc_llvm_triple = LLVMGetDefaultTargetTriple();
+    jitc_llvm_target_cpu = LLVMGetHostCPUName();
+    jitc_llvm_target_features = LLVMGetHostCPUFeatures();
 
-    jit_llvm_disasm_ctx =
-        LLVMCreateDisasm(jit_llvm_triple, nullptr, 0, nullptr, nullptr);
+    jitc_llvm_disasm_ctx =
+        LLVMCreateDisasm(jitc_llvm_triple, nullptr, 0, nullptr, nullptr);
 
-    if (!jit_llvm_disasm_ctx) {
-        jit_log(Warn, "jit_llvm_init(): could not create a disassembler!");
-        LLVMDisposeMessage(jit_llvm_triple);
-        LLVMDisposeMessage(jit_llvm_target_cpu);
-        LLVMDisposeMessage(jit_llvm_target_features);
+    if (!jitc_llvm_disasm_ctx) {
+        jitc_log(Warn, "jit_llvm_init(): could not create a disassembler!");
+        LLVMDisposeMessage(jitc_llvm_triple);
+        LLVMDisposeMessage(jitc_llvm_target_cpu);
+        LLVMDisposeMessage(jitc_llvm_target_features);
         return false;
     }
 
-    if (LLVMSetDisasmOptions(jit_llvm_disasm_ctx,
+    if (LLVMSetDisasmOptions(jitc_llvm_disasm_ctx,
                              LLVMDisassembler_Option_PrintImmHex |
                              LLVMDisassembler_Option_AsmPrinterVariant) == 0) {
-        jit_log(Warn, "jit_llvm_init(): could not configure disassembler!");
-        LLVMDisasmDispose(jit_llvm_disasm_ctx);
-        LLVMDisposeMessage(jit_llvm_triple);
-        LLVMDisposeMessage(jit_llvm_target_cpu);
-        LLVMDisposeMessage(jit_llvm_target_features);
+        jitc_log(Warn, "jit_llvm_init(): could not configure disassembler!");
+        LLVMDisasmDispose(jitc_llvm_disasm_ctx);
+        LLVMDisposeMessage(jitc_llvm_triple);
+        LLVMDisposeMessage(jitc_llvm_target_cpu);
+        LLVMDisposeMessage(jitc_llvm_target_features);
         return false;
     }
 
     LLVMMCJITCompilerOptions options;
     options.OptLevel = 3;
     options.CodeModel =
-        (LLVMCodeModel)(jit_llvm_version_major == 7 ? 2 : 3); /* Small */
+        (LLVMCodeModel)(jitc_llvm_version_major == 7 ? 2 : 3); /* Small */
     options.NoFramePointerElim = false;
     options.EnableFastISel = false;
     options.MCJMM = LLVMCreateSimpleMCJITMemoryManager(
         nullptr,
-        jit_llvm_mem_allocate,
-        jit_llvm_mem_allocate_data,
-        jit_llvm_mem_finalize,
-        jit_llvm_mem_destroy);
+        jitc_llvm_mem_allocate,
+        jitc_llvm_mem_allocate_data,
+        jitc_llvm_mem_finalize,
+        jitc_llvm_mem_destroy);
 
     LLVMModuleRef enoki_module = LLVMModuleCreateWithName("enoki");
     char *error = nullptr;
-    if (LLVMCreateMCJITCompilerForModule(&jit_llvm_engine, enoki_module,
+    if (LLVMCreateMCJITCompilerForModule(&jitc_llvm_engine, enoki_module,
                                          &options, sizeof(options), &error)) {
-        jit_log(Warn, "jit_llvm_init(): could not create MCJIT: %s", error);
+        jitc_log(Warn, "jit_llvm_init(): could not create MCJIT: %s", error);
         LLVMDisposeModule(enoki_module);
-        LLVMDisasmDispose(jit_llvm_disasm_ctx);
-        LLVMDisposeMessage(jit_llvm_triple);
-        LLVMDisposeMessage(jit_llvm_target_cpu);
-        LLVMDisposeMessage(jit_llvm_target_features);
+        LLVMDisasmDispose(jitc_llvm_disasm_ctx);
+        LLVMDisposeMessage(jitc_llvm_triple);
+        LLVMDisposeMessage(jitc_llvm_target_cpu);
+        LLVMDisposeMessage(jitc_llvm_target_features);
         return false;
     }
 
@@ -597,7 +649,7 @@ bool jit_llvm_init() {
        the cache, at which point they may end up anywhere in memory.
 
        The LLVM C API is quite nice, but it's missing a function to adjust this
-       crucial aspect. While we could in principle use C++ API, this totally
+       crucial aspect. While we could in principle use C++ the API, this is totally
        infeasible without a hard dependency on the LLVM headers and being being
        permanently tied to a specific version.
 
@@ -615,9 +667,9 @@ bool jit_llvm_init() {
     */
 
     uint32_t *patch_loc =
-        (uint32_t *) LLVMGetExecutionEngineTargetMachine(jit_llvm_engine) + 142 - 16;
+        (uint32_t *) LLVMGetExecutionEngineTargetMachine(jitc_llvm_engine) + 142 - 16;
 
-    int key[3] = { 0, jit_llvm_version_major == 7 ? 0 : 1, 3 };
+    int key[3] = { 0, jitc_llvm_version_major == 7 ? 0 : 1, 3 };
     bool found = false;
     for (int i = 0; i < 30; ++i) {
         if (memcmp(patch_loc, key, sizeof(uint32_t) * 3) == 0) {
@@ -628,76 +680,89 @@ bool jit_llvm_init() {
     }
 
     if (!found) {
-        jit_log(Warn, "jit_llvm_init(): could not hot-patch TargetMachine relocation model!");
+        jitc_log(Warn, "jit_llvm_init(): could not hot-patch TargetMachine relocation model!");
         LLVMDisposeModule(enoki_module);
-        LLVMDisasmDispose(jit_llvm_disasm_ctx);
-        LLVMDisposeMessage(jit_llvm_triple);
-        LLVMDisposeMessage(jit_llvm_target_cpu);
-        LLVMDisposeMessage(jit_llvm_target_features);
+        LLVMDisasmDispose(jitc_llvm_disasm_ctx);
+        LLVMDisposeMessage(jitc_llvm_triple);
+        LLVMDisposeMessage(jitc_llvm_target_cpu);
+        LLVMDisposeMessage(jitc_llvm_target_features);
         return false;
     }
     patch_loc[0] = 1;
 
-    jit_llvm_pass_manager = LLVMCreatePassManager();
-    LLVMAddAlwaysInlinerPass(jit_llvm_pass_manager);
+    jitc_llvm_pass_manager = LLVMCreatePassManager();
+    LLVMAddLICMPass(jitc_llvm_pass_manager);
 
-    jit_llvm_vector_width = 1;
+    jitc_llvm_vector_width = 1;
 
-    if (strstr(jit_llvm_target_features, "+sse4.2"))
-        jit_llvm_vector_width = 4;
-    if (strstr(jit_llvm_target_features, "+avx"))
-        jit_llvm_vector_width = 8;
-    if (strstr(jit_llvm_target_features, "+avx512f"))
-        jit_llvm_vector_width = 16;
+    if (strstr(jitc_llvm_target_features, "+sse4.2"))
+        jitc_llvm_vector_width = 4;
+    if (strstr(jitc_llvm_target_features, "+avx"))
+        jitc_llvm_vector_width = 8;
+    if (strstr(jitc_llvm_target_features, "+avx512f"))
+        jitc_llvm_vector_width = 16;
 
-    jit_log(Info,
+    jitc_log(Info,
             "jit_llvm_init(): found LLVM %u.%u.%u, target=%s, cpu=%s, vector width=%u.",
-            jit_llvm_version_major, jit_llvm_version_minor, jit_llvm_version_patch, jit_llvm_triple,
-            jit_llvm_target_cpu, jit_llvm_vector_width);
+            jitc_llvm_version_major, jitc_llvm_version_minor, jitc_llvm_version_patch, jitc_llvm_triple,
+            jitc_llvm_target_cpu, jitc_llvm_vector_width);
 
-    jit_llvm_init_success = jit_llvm_vector_width > 1;
+    jitc_llvm_init_success = jitc_llvm_vector_width > 1;
 
-    if (!jit_llvm_init_success) {
-        jit_log(Warn, "jit_llvm_init(): no suitable vector ISA found, shutting "
+    if (!jitc_llvm_init_success) {
+        jitc_log(Warn, "jit_llvm_init(): no suitable vector ISA found, shutting "
                       "down LLVM backend..");
-        jit_llvm_shutdown();
+        jitc_llvm_shutdown();
     }
 
-    return jit_llvm_init_success;
+    jitc_llvm_update_strings();
+
+    return jitc_llvm_init_success;
 }
 
-void jit_llvm_shutdown() {
-    if (!jit_llvm_init_success)
+void jitc_llvm_shutdown() {
+    if (!jitc_llvm_init_success)
         return;
 
-    jit_log(Info, "jit_llvm_shutdown()");
+    jitc_log(Info, "jit_llvm_shutdown()");
 
-    LLVMDisasmDispose(jit_llvm_disasm_ctx);
-    LLVMDisposeExecutionEngine(jit_llvm_engine);
-    LLVMDisposeMessage(jit_llvm_triple);
-    LLVMDisposeMessage(jit_llvm_target_cpu);
-    LLVMDisposeMessage(jit_llvm_target_features);
-    LLVMDisposePassManager(jit_llvm_pass_manager);
+    LLVMDisasmDispose(jitc_llvm_disasm_ctx);
+    LLVMDisposeExecutionEngine(jitc_llvm_engine);
+    LLVMDisposeMessage(jitc_llvm_triple);
+    LLVMDisposeMessage(jitc_llvm_target_cpu);
+    LLVMDisposeMessage(jitc_llvm_target_features);
+    LLVMDisposePassManager(jitc_llvm_pass_manager);
 
-    jit_llvm_engine = nullptr;
-    jit_llvm_disasm_ctx = nullptr;
-    jit_llvm_context = nullptr;
-    jit_llvm_pass_manager = nullptr;
-    jit_llvm_target_cpu = nullptr;
-    jit_llvm_target_features = nullptr;
-    jit_llvm_vector_width = 0;
+    jitc_llvm_engine = nullptr;
+    jitc_llvm_disasm_ctx = nullptr;
+    jitc_llvm_context = nullptr;
+    jitc_llvm_pass_manager = nullptr;
+    jitc_llvm_target_cpu = nullptr;
+    jitc_llvm_target_features = nullptr;
+    jitc_llvm_vector_width = 0;
+
+    free(jitc_llvm_vector_width_str);
+    jitc_llvm_vector_width_str = nullptr;
+    free(jitc_llvm_counter_str);
+    jitc_llvm_counter_str = nullptr;
+    if (jitc_llvm_ones_str) {
+        for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
+            free(jitc_llvm_ones_str[i]);
+        free(jitc_llvm_ones_str);
+    }
+
 
 #if !defined(_WIN32)
-    free(jit_llvm_mem);
+    free(jitc_llvm_mem);
 #else
-    _aligned_free(jit_llvm_mem);
+    _aligned_free(jitc_llvm_mem);
 #endif
 
-    jit_llvm_mem        = nullptr;
-    jit_llvm_mem_size   = 0;
-    jit_llvm_mem_offset = 0;
-    jit_llvm_kernel_id  = 0;
-    jit_llvm_got        = false;
+    jitc_llvm_mem        = nullptr;
+    jitc_llvm_mem_size   = 0;
+    jitc_llvm_mem_offset = 0;
+    jitc_llvm_kernel_id  = 0;
+    jitc_llvm_got        = false;
 
 #if defined(ENOKI_JIT_DYNAMIC_LLVM)
     #define Z(x) x = nullptr
@@ -714,61 +779,61 @@ void jit_llvm_shutdown() {
     Z(LLVMCreateMemoryBufferWithMemoryRange); Z(LLVMParseIRInContext);
     Z(LLVMPrintModuleToString); Z(LLVMGetFunctionAddress); Z(LLVMRemoveModule);
     Z(LLVMDisasmInstruction); Z(LLVMCreatePassManager); Z(LLVMRunPassManager);
-    Z(LLVMDisposePassManager); Z(LLVMAddAlwaysInlinerPass);
+    Z(LLVMDisposePassManager); Z(LLVMAddLICMPass);
     Z(LLVMGetExecutionEngineTargetMachine);
 
 #  if !defined(_WIN32)
-    if (jit_llvm_handle != RTLD_NEXT)
-        dlclose(jit_llvm_handle);
+    if (jitc_llvm_handle != RTLD_NEXT)
+        dlclose(jitc_llvm_handle);
 #  else
-    FreeLibrary((HMODULE) jit_llvm_handle);
+    FreeLibrary((HMODULE) jitc_llvm_handle);
 #  endif
 
-    jit_llvm_handle = nullptr;
+    jitc_llvm_handle = nullptr;
 #endif
 
-    jit_llvm_init_success = false;
-    jit_llvm_init_attempted = false;
+    jitc_llvm_init_success = false;
+    jitc_llvm_init_attempted = false;
 }
 
-uint32_t jit_llvm_active_mask() {
+uint32_t jitc_llvm_active_mask() {
     ThreadState *stream = thread_state(false);
 
     if (stream->active_mask.empty()) {
-        uint32_t index = jit_var_new_0(
+        uint32_t index = jitc_var_new_stmt(
             0, VarType::UInt32,
             "$r0_0 = insertelement <$w x $t0> undef, $t0 $i, $t0 0$n"
             "$r0_1 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x $t0> $z$n"
-            "$r0 = add <$w x $t0> $r0_1, $l0", 1, 1);
+            "$r0 = add <$w x $t0> $r0_1, $l0", 1, 0, nullptr);
 
-        uint32_t mask = jit_var_new_1(
+        uint32_t mask = jitc_var_new_stmt(
             0, VarType::Bool,
             "$r0_0 = insertelement <$w x $t1> undef, $t1 %end, $t1 0$n"
             "$r0_1 = shufflevector <$w x $t1> $r0_0, <$w x $t1> undef, <$w x $t1> $z$n"
             "$r0 = icmp ult <$w x $t1> $r1, $r0_1",
-            1, index);
+            1, 1, &index);
 
-        jit_var_dec_ref_ext(index);
+        jitc_var_dec_ref_ext(index);
 
         return mask;
     } else {
         uint32_t index = stream->active_mask.back();
-        jit_var_inc_ref_ext(index);
+        jitc_var_inc_ref_ext(index);
         return index;
     }
 }
 
-void jit_llvm_active_mask_push(uint32_t index) {
-    jit_var_inc_ref_int(index);
+void jitc_llvm_active_mask_push(uint32_t index) {
+    jitc_var_inc_ref_int(index);
     thread_state(false)->active_mask.push_back(index);
 }
 
-void jit_llvm_active_mask_pop() {
+void jitc_llvm_active_mask_pop() {
     ThreadState *stream = thread_state(false);
     auto &stack = stream->active_mask;
     if (unlikely(stack.empty()))
-        jit_raise("jit_llvm_active_mask_pop(): underflow!");
+        jitc_raise("jit_llvm_active_mask_pop(): underflow!");
 
-    jit_var_dec_ref_int(stack.back());
+    jitc_var_dec_ref_int(stack.back());
     stack.pop_back();
 }

@@ -48,3 +48,13 @@ template <class Func>
 detail::scope_guard<Func> scope_guard(const Func &func) {
     return detail::scope_guard<Func>(func);
 }
+
+
+template <size_t> struct uint_with_size { };
+template <> struct uint_with_size<1> { using type = uint8_t; };
+template <> struct uint_with_size<2> { using type = uint16_t; };
+template <> struct uint_with_size<4> { using type = uint32_t; };
+template <> struct uint_with_size<8> { using type = uint64_t; };
+
+template <typename T>
+using uint_with_size_t = typename uint_with_size<sizeof(T)>::type;

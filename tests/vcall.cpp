@@ -36,20 +36,20 @@ template <typename Func, typename... Args>
 bool record(int cuda, uint32_t &id, uint64_t &hash, std::vector<uint32_t> &extra,
             Func func, const Args &... args) {
 
-    uint32_t se_before = jitc_side_effect_counter(cuda);
+    uint32_t se_before = jit_side_effect_counter(cuda);
 
     if (!cuda) {
-        uint32_t active_mask = jitc_var_new_0(
+        uint32_t active_mask = jit_var_new_0(
             0, VarType::Bool, "$r0 = or <$w x i1> %mask, $z", 1, 1);
-        jitc_llvm_active_mask_push(active_mask);
-        jitc_var_dec_ref_ext(active_mask);
+        jit_llvm_active_mask_push(active_mask);
+        jit_var_dec_ref_ext(active_mask);
     }
 
     auto result        = func(args...);
-    uint32_t se_total  = jitc_side_effect_counter(cuda) - se_before;
+    uint32_t se_total  = jit_side_effect_counter(cuda) - se_before;
 
     if (!cuda)
-        jitc_llvm_active_mask_pop();
+        jit_llvm_active_mask_pop();
 
     uint32_t in_count = 0, out_count = 0;
     (read_indices(nullptr, in_count, args), ...);
@@ -64,7 +64,7 @@ bool record(int cuda, uint32_t &id, uint64_t &hash, std::vector<uint32_t> &extra
 
     uint32_t *extra_p = nullptr;
     uint32_t extra_count_p = 0;
-    id = jitc_capture_var(cuda, "Base", "func", in.get(), in_count, out.get(),
+    id = jit_capture_var(cuda, "Base", "func", in.get(), in_count, out.get(),
                           out_count, nullptr, nullptr, se_total, &hash,
                           &extra_p, &extra_count_p);
 
@@ -79,7 +79,7 @@ auto vcall(const char *domain, UInt32 self, const Args &... args) {
     using Result = std::pair<Float, Float>;
     int cuda     = Float::IsCUDA;
 
-    uint32_t n_inst = jitc_registry_get_max(domain) + 1;
+    uint32_t n_inst = jit_registry_get_max(domain) + 1;
 
     std::unique_ptr<uint32_t[]> call_id(new uint32_t[n_inst]);
     std::unique_ptr<uint64_t[]> call_hash(new uint64_t[n_inst]);
@@ -89,7 +89,7 @@ auto vcall(const char *domain, UInt32 self, const Args &... args) {
     Result result(0, 0);
 
     for (uint32_t i = 0; i < n_inst; ++i) {
-        Base *base = (Base *) jitc_registry_get_ptr(domain, i);
+        Base *base = (Base *) jit_registry_get_ptr(domain, i);
 
         extra_offset[i] = (uint32_t) (extra.size() * sizeof(void *));
 
@@ -119,7 +119,7 @@ auto vcall(const char *domain, UInt32 self, const Args &... args) {
     out_count = 0;
     read_indices(out.get(), out_count, result);
 
-    jitc_var_vcall(cuda, "Base", "func", self.index(), n_inst, call_id.get(),
+    jit_var_vcall(cuda, "Base", "func", self.index(), n_inst, call_id.get(),
                    call_hash.get(), in_count, in.get(), out_count, out.get(),
                    nullptr, nullptr, extra.size(), extra.data(),
                    extra_offset.get(), side_effects);
@@ -151,33 +151,33 @@ TEST_CUDA(01_symbolic_vcall) {
     };
 
     Float global = arange<Float>(10);
-    jitc_eval(global);
-    jitc_enable_flag(JitFlag::RecordVCalls);
+    jit_eval(global);
+    jit_enable_flag(JitFlag::RecordVCalls);
 
     Class1 c1(global);
     Class2 c2;
 
-    uint32_t i1 = jitc_registry_put("Base", &c1);
-    uint32_t i2 = jitc_registry_put("Base", &c2);
+    uint32_t i1 = jit_registry_put("Base", &c1);
+    uint32_t i2 = jit_registry_put("Base", &c2);
 
     Float x = 1, y = 2;
     UInt32 inst = arange<UInt32>(3);
     std::pair<Float, Float> result = vcall<Base, Float, UInt32>("Base", inst, x, y);
-    jitc_eval(result.first, result.second);
-    jitc_assert(result.first == Float(0, 3, 2));
-    jitc_assert(result.second == Float(0, 4, -1));
-    jitc_assert(global == Float(0, 1, 2, 3, 4, 2, 6, 7, 8, 9));
+    jit_eval(result.first, result.second);
+    jit_assert(result.first == Float(0, 3, 2));
+    jit_assert(result.second == Float(0, 4, -1));
+    jit_assert(global == Float(0, 1, 2, 3, 4, 2, 6, 7, 8, 9));
 
-    jitc_registry_remove(&c1);
-    jitc_registry_remove(&c2);
-    jitc_registry_trim();
+    jit_registry_remove(&c1);
+    jit_registry_remove(&c2);
+    jit_registry_trim();
     global = Float();
 }
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
 TEST_CUDA(01_symbolic_vcall_optix) {
     init_optix_api();
-    OptixDeviceContext context = jitc_optix_context();
+    OptixDeviceContext context = jit_optix_context();
     OptixModuleCompileOptions module_compile_options { };
     OptixPipelineCompileOptions pipeline_compile_options { };
     pipeline_compile_options.exceptionFlags =
@@ -208,7 +208,7 @@ TEST_CUDA(01_symbolic_vcall_optix) {
 
     OptixModule mod;
     char log[1024]; size_t log_size = sizeof(log);
-    jitc_optix_check(optixModuleCreateFromPTX(
+    jit_optix_check(optixModuleCreateFromPTX(
         context, &module_compile_options, &pipeline_compile_options,
         miss_and_closesthit_ptx, strlen(miss_and_closesthit_ptx), log,
         &log_size, &mod));
@@ -228,7 +228,7 @@ TEST_CUDA(01_symbolic_vcall_optix) {
     pgd[1].hitgroup.moduleCH            = mod;
     pgd[1].hitgroup.entryFunctionNameCH = "__closesthit__ch";
 
-    jitc_optix_check(optixProgramGroupCreate(context, pgd, 2 /* two at once */,
+    jit_optix_check(optixProgramGroupCreate(context, pgd, 2 /* two at once */,
                                              &pgo, nullptr, nullptr, pg));
 
     // =====================================================
@@ -237,24 +237,24 @@ TEST_CUDA(01_symbolic_vcall_optix) {
     OptixShaderBindingTable sbt {};
 
     sbt.missRecordBase =
-        jitc_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
+        jit_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
     sbt.missRecordStrideInBytes     = OPTIX_SBT_RECORD_HEADER_SIZE;
     sbt.missRecordCount             = 1;
 
     sbt.hitgroupRecordBase =
-        jitc_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
+        jit_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
     sbt.hitgroupRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
     sbt.hitgroupRecordCount         = 1;
 
-    jitc_optix_check(optixSbtRecordPackHeader(pg[0], sbt.missRecordBase));
-    jitc_optix_check(optixSbtRecordPackHeader(pg[1], sbt.hitgroupRecordBase));
+    jit_optix_check(optixSbtRecordPackHeader(pg[0], sbt.missRecordBase));
+    jit_optix_check(optixSbtRecordPackHeader(pg[1], sbt.hitgroupRecordBase));
 
     sbt.missRecordBase =
-        jitc_malloc_migrate(sbt.missRecordBase, AllocType::Device, 1);
+        jit_malloc_migrate(sbt.missRecordBase, AllocType::Device, 1);
     sbt.hitgroupRecordBase =
-        jitc_malloc_migrate(sbt.hitgroupRecordBase, AllocType::Device, 1);
+        jit_malloc_migrate(sbt.hitgroupRecordBase, AllocType::Device, 1);
 
-    jitc_optix_configure(&pipeline_compile_options, &sbt, pg, 2);
+    jit_optix_configure(&pipeline_compile_options, &sbt, pg, 2);
 
     struct Base {
         virtual std::pair<Float, Float> func(Float x, Float y) = 0;
@@ -276,27 +276,27 @@ TEST_CUDA(01_symbolic_vcall_optix) {
     };
 
     Float global = arange<Float>(10);
-    jitc_eval(global);
-    jitc_enable_flag(JitFlag::RecordVCalls);
+    jit_eval(global);
+    jit_enable_flag(JitFlag::RecordVCalls);
 
     Class1 c1(global);
     Class2 c2;
 
-    uint32_t i1 = jitc_registry_put("Base", &c1);
-    uint32_t i2 = jitc_registry_put("Base", &c2);
+    uint32_t i1 = jit_registry_put("Base", &c1);
+    uint32_t i2 = jit_registry_put("Base", &c2);
 
     Float x = 1, y = 2;
     UInt32 inst = arange<UInt32>(3);
     std::pair<Float, Float> result = vcall<Base, Float, UInt32>("Base", inst, x, y);
-    jitc_optix_mark(x.index());
-    jitc_eval(result.first, result.second);
-    jitc_assert(result.first == Float(0, 3, 2));
-    jitc_assert(result.second == Float(0, 4, -1));
-    jitc_assert(global == Float(0, 1, 2, 3, 4, 2, 6, 7, 8, 9));
+    jit_optix_mark(x.index());
+    jit_eval(result.first, result.second);
+    jit_assert(result.first == Float(0, 3, 2));
+    jit_assert(result.second == Float(0, 4, -1));
+    jit_assert(global == Float(0, 1, 2, 3, 4, 2, 6, 7, 8, 9));
 
-    jitc_registry_remove(&c1);
-    jitc_registry_remove(&c2);
-    jitc_registry_trim();
+    jit_registry_remove(&c1);
+    jit_registry_remove(&c2);
+    jit_registry_trim();
     global = Float();
 }
 #endif

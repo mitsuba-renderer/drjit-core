@@ -26,7 +26,7 @@ const char *reduction_name[(int) ReductionType::Count] = { "sum", "mul", "min",
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
-void jit_submit_cpu(ThreadState *ts, Func &&func, uint32_t size = 1,
+void jitc_submit_cpu(ThreadState *ts, Func &&func, uint32_t size = 1,
                     bool release_prev = true) {
 
     struct Payload { Func f; };
@@ -47,11 +47,11 @@ void jit_submit_cpu(ThreadState *ts, Func &&func, uint32_t size = 1,
 }
 
 /// Fill a device memory region with constants of a given type
-void jit_memset_async(int cuda, void *ptr, uint32_t size_, uint32_t isize, const void *src) {
+void jitc_memset_async(int cuda, void *ptr, uint32_t size_, uint32_t isize, const void *src) {
     if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
-        jit_raise("jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
+        jitc_raise("jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
 
-    jit_trace("jit_memset_async(" ENOKI_PTR ", isize=%u, size=%u)",
+    jitc_trace("jit_memset_async(" ENOKI_PTR ", isize=%u, size=%u)",
               (uintptr_t) ptr, isize, size_);
 
     if (size_ == 0)
@@ -94,7 +94,7 @@ void jit_memset_async(int cuda, void *ptr, uint32_t size_, uint32_t isize, const
                     uint32_t block_count, thread_count;
                     device.get_launch_config(&block_count, &thread_count, size_);
                     void *args[] = { &ptr, &size_, (void *) src };
-                    CUfunction kernel = jit_cuda_fill_64[device.id];
+                    CUfunction kernel = jitc_cuda_fill_64[device.id];
                     cuda_check(cuLaunchKernel(kernel, block_count, 1, 1,
                                               thread_count, 1, 1, 0,
                                               ts->stream, args, nullptr));
@@ -105,7 +105,7 @@ void jit_memset_async(int cuda, void *ptr, uint32_t size_, uint32_t isize, const
         uint8_t src8[8] { };
         memcpy(&src8, src, isize);
 
-        jit_submit_cpu(ts, [ptr, src8, size, isize](uint32_t) {
+        jitc_submit_cpu(ts, [ptr, src8, size, isize](uint32_t) {
             switch (isize) {
                 case 1:
                     memset(ptr, src8[0], size);
@@ -140,7 +140,7 @@ void jit_memset_async(int cuda, void *ptr, uint32_t size_, uint32_t isize, const
 }
 
 /// Perform a synchronous copy operation
-void jit_memcpy(int cuda, void *dst, const void *src, size_t size) {
+void jitc_memcpy(int cuda, void *dst, const void *src, size_t size) {
     ThreadState *ts = thread_state(cuda);
 
     // Temporarily release the lock while copying
@@ -150,13 +150,13 @@ void jit_memcpy(int cuda, void *dst, const void *src, size_t size) {
         cuda_check(cuStreamSynchronize(ts->stream));
         cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
     } else {
-        jit_sync_thread(ts);
+        jitc_sync_thread(ts);
         memcpy(dst, src, size);
     }
 }
 
 /// Perform an asynchronous copy operation
-void jit_memcpy_async(int cuda, void *dst, const void *src, size_t size) {
+void jitc_memcpy_async(int cuda, void *dst, const void *src, size_t size) {
     ThreadState *ts = thread_state(cuda);
 
     if  (ts->cuda) {
@@ -164,7 +164,7 @@ void jit_memcpy_async(int cuda, void *dst, const void *src, size_t size) {
         cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
                                  ts->stream));
     } else {
-        jit_submit_cpu(
+        jitc_submit_cpu(
             ts,
             [dst, src, size](uint32_t) {
                 memcpy(dst, src, size);
@@ -175,8 +175,8 @@ void jit_memcpy_async(int cuda, void *dst, const void *src, size_t size) {
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
 
 template <typename Value>
-static Reduction jit_reduce_create(ReductionType rtype) {
-    using UInt = enoki::uint_with_size_t<Value>;
+static Reduction jitc_reduce_create(ReductionType rtype) {
+    using UInt = uint_with_size_t<Value>;
 
     switch (rtype) {
         case ReductionType::Add:
@@ -237,33 +237,33 @@ static Reduction jit_reduce_create(ReductionType rtype) {
                 *((UInt *) out) = result;
             };
 
-        default: jit_raise("jit_reduce_create(): unsupported reduction type!");
+        default: jitc_raise("jit_reduce_create(): unsupported reduction type!");
             return nullptr;
     }
 }
 
-static Reduction jit_reduce_create(VarType type, ReductionType rtype) {
+static Reduction jitc_reduce_create(VarType type, ReductionType rtype) {
     switch (type) {
-        case VarType::Int8:    return jit_reduce_create<int8_t  >(rtype);
-        case VarType::UInt8:   return jit_reduce_create<uint8_t >(rtype);
-        case VarType::Int16:   return jit_reduce_create<int16_t >(rtype);
-        case VarType::UInt16:  return jit_reduce_create<uint16_t>(rtype);
-        case VarType::Int32:   return jit_reduce_create<int32_t >(rtype);
-        case VarType::UInt32:  return jit_reduce_create<uint32_t>(rtype);
-        case VarType::Int64:   return jit_reduce_create<int64_t >(rtype);
-        case VarType::UInt64:  return jit_reduce_create<uint64_t>(rtype);
-        case VarType::Float32: return jit_reduce_create<float   >(rtype);
-        case VarType::Float64: return jit_reduce_create<double  >(rtype);
-        default: jit_raise("jit_reduce_create(): unsupported data type!");
+        case VarType::Int8:    return jitc_reduce_create<int8_t  >(rtype);
+        case VarType::UInt8:   return jitc_reduce_create<uint8_t >(rtype);
+        case VarType::Int16:   return jitc_reduce_create<int16_t >(rtype);
+        case VarType::UInt16:  return jitc_reduce_create<uint16_t>(rtype);
+        case VarType::Int32:   return jitc_reduce_create<int32_t >(rtype);
+        case VarType::UInt32:  return jitc_reduce_create<uint32_t>(rtype);
+        case VarType::Int64:   return jitc_reduce_create<int64_t >(rtype);
+        case VarType::UInt64:  return jitc_reduce_create<uint64_t>(rtype);
+        case VarType::Float32: return jitc_reduce_create<float   >(rtype);
+        case VarType::Float64: return jitc_reduce_create<double  >(rtype);
+        default: jitc_raise("jit_reduce_create(): unsupported data type!");
             return nullptr;
     }
 }
 
-void jit_reduce(int cuda, VarType type, ReductionType rtype, const void *ptr,
+void jitc_reduce(int cuda, VarType type, ReductionType rtype, const void *ptr,
                 uint32_t size, void *out) {
     ThreadState *ts = thread_state(cuda);
 
-    jit_log(Debug, "jit_reduce(" ENOKI_PTR ", type=%s, rtype=%s, size=%u)",
+    jitc_log(Debug, "jit_reduce(" ENOKI_PTR ", type=%s, rtype=%s, size=%u)",
             (uintptr_t) ptr, var_type_name[(int) type],
             reduction_name[(int) rtype], size);
 
@@ -272,9 +272,9 @@ void jit_reduce(int cuda, VarType type, ReductionType rtype, const void *ptr,
     if (ts->cuda) {
         scoped_set_context guard(ts->context);
         const Device &device = state.devices[ts->device];
-        CUfunction func = jit_cuda_reductions[(int) rtype][(int) type][device.id];
+        CUfunction func = jitc_cuda_reductions[(int) rtype][(int) type][device.id];
         if (!func)
-            jit_raise("jit_reduce(): no existing kernel for type=%s, rtype=%s!",
+            jitc_raise("jit_reduce(): no existing kernel for type=%s, rtype=%s!",
                       var_type_name[(int) type], reduction_name[(int) rtype]);
 
         uint32_t thread_count = 1024,
@@ -290,7 +290,7 @@ void jit_reduce(int cuda, VarType type, ReductionType rtype, const void *ptr,
                                       shared_size, ts->stream, args,
                                       nullptr));
         } else {
-            void *temp = jit_malloc(AllocType::Device, size_t(block_count) * type_size);
+            void *temp = jitc_malloc(AllocType::Device, size_t(block_count) * type_size);
 
             // First reduction
             void *args_1[] = { &ptr, &size, &temp };
@@ -304,7 +304,7 @@ void jit_reduce(int cuda, VarType type, ReductionType rtype, const void *ptr,
                                       shared_size, ts->stream, args_2,
                                       nullptr));
 
-            jit_free(temp);
+            jitc_free(temp);
         }
     } else {
         uint32_t block_size = size, blocks = 1;
@@ -316,10 +316,10 @@ void jit_reduce(int cuda, VarType type, ReductionType rtype, const void *ptr,
         void *target = out;
         uint32_t isize = var_type_size[(int) type];
         if (blocks > 1)
-            target = jit_malloc(AllocType::HostAsync, blocks * isize);
+            target = jitc_malloc(AllocType::HostAsync, blocks * isize);
 
-        Reduction reduction = jit_reduce_create(type, rtype);
-        jit_submit_cpu(
+        Reduction reduction = jitc_reduce_create(type, rtype);
+        jitc_submit_cpu(
             ts,
             [block_size, size, isize, ptr, reduction, target](uint32_t index) {
                 reduction(ptr, index * block_size,
@@ -329,35 +329,35 @@ void jit_reduce(int cuda, VarType type, ReductionType rtype, const void *ptr,
             std::max(1u, blocks));
 
         if (blocks > 1) {
-            jit_reduce(cuda, type, rtype, target, blocks, out);
-            jit_free(target);
+            jitc_reduce(cuda, type, rtype, target, blocks, out);
+            jitc_free(target);
         }
     }
 }
 
 /// 'All' reduction for boolean arrays
-uint8_t jit_all(int cuda, uint8_t *values, uint32_t size) {
+uint8_t jitc_all(int cuda, uint8_t *values, uint32_t size) {
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
-    jit_log(Debug, "jit_all(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
+    jitc_log(Debug, "jit_all(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
 
     if (trailing) {
         bool filler = true;
-        jit_memset_async(cuda, values + size, trailing, sizeof(bool), &filler);
+        jitc_memset_async(cuda, values + size, trailing, sizeof(bool), &filler);
     }
 
     uint8_t result;
     if (cuda) {
-        uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
-        jit_reduce(cuda, VarType::UInt32, ReductionType::And, values, reduced_size, out);
-        jit_sync_thread();
+        uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
+        jitc_reduce(cuda, VarType::UInt32, ReductionType::And, values, reduced_size, out);
+        jitc_sync_thread();
         result = (out[0] & out[1] & out[2] & out[3]) != 0;
-        jit_free(out);
+        jitc_free(out);
     } else {
         uint8_t out[4];
-        jit_reduce(cuda, VarType::UInt32, ReductionType::And, values, reduced_size, out);
-        jit_sync_thread();
+        jitc_reduce(cuda, VarType::UInt32, ReductionType::And, values, reduced_size, out);
+        jitc_sync_thread();
         result = (out[0] & out[1] & out[2] & out[3]) != 0;
     }
 
@@ -365,28 +365,28 @@ uint8_t jit_all(int cuda, uint8_t *values, uint32_t size) {
 }
 
 /// 'Any' reduction for boolean arrays
-uint8_t jit_any(int cuda, uint8_t *values, uint32_t size) {
+uint8_t jitc_any(int cuda, uint8_t *values, uint32_t size) {
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
-    jit_log(Debug, "jit_any(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
+    jitc_log(Debug, "jit_any(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
 
     if (trailing) {
         bool filler = false;
-        jit_memset_async(cuda, values + size, trailing, sizeof(bool), &filler);
+        jitc_memset_async(cuda, values + size, trailing, sizeof(bool), &filler);
     }
 
     uint8_t result;
     if (cuda) {
-        uint8_t *out = (uint8_t *) jit_malloc(AllocType::HostPinned, 4);
-        jit_reduce(cuda, VarType::UInt32, ReductionType::Or, values, reduced_size, out);
-        jit_sync_thread();
+        uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
+        jitc_reduce(cuda, VarType::UInt32, ReductionType::Or, values, reduced_size, out);
+        jitc_sync_thread();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
-        jit_free(out);
+        jitc_free(out);
     } else {
         uint8_t out[4];
-        jit_reduce(cuda, VarType::UInt32, ReductionType::Or, values, reduced_size, out);
-        jit_sync_thread();
+        jitc_reduce(cuda, VarType::UInt32, ReductionType::Or, values, reduced_size, out);
+        jitc_sync_thread();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
     }
 
@@ -394,7 +394,7 @@ uint8_t jit_any(int cuda, uint8_t *values, uint32_t size) {
 }
 
 /// Exclusive prefix sum
-void jit_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
+void jitc_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
     ThreadState *ts = thread_state(cuda);
 
     if (ts->cuda) {
@@ -413,14 +413,14 @@ void jit_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
                                                     / items_per_thread),
                      shared_size      = thread_count * 2 * sizeof(uint32_t);
 
-            jit_log(Debug,
+            jitc_log(Debug,
                     "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR
                     ", size=%u, type=small, threads=%u, shared=%u)",
                     (uintptr_t) in, (uintptr_t) out, size, thread_count,
                     shared_size);
 
             void *args[] = { &in, &out, &size };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_small_u32[device.id], 1, 1, 1,
+            cuda_check(cuLaunchKernel(jitc_cuda_scan_small_u32[device.id], 1, 1, 1,
                                       thread_count, 1, 1, shared_size,
                                       ts->stream, args, nullptr));
         } else {
@@ -432,14 +432,14 @@ void jit_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
                      shared_size      = items_per_block * sizeof(uint32_t),
                      scratch_items    = block_count + 32;
 
-            jit_log(Debug,
+            jitc_log(Debug,
                     "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR
                     ", size=%u, type=large, blocks=%u, threads=%u, shared=%u, "
                     "scratch=%u)",
                     (uintptr_t) in, (uintptr_t) out, size, block_count,
                     thread_count, shared_size, scratch_items * 4);
 
-            uint64_t *scratch = (uint64_t *) jit_malloc(
+            uint64_t *scratch = (uint64_t *) jitc_malloc(
                 AllocType::Device, scratch_items * sizeof(uint64_t));
 
             /// Initialize scratch space and padding
@@ -448,18 +448,18 @@ void jit_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
                                      scratch_items);
 
             void *args[] = { &scratch, &scratch_items };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_large_u32_init[device.id],
+            cuda_check(cuLaunchKernel(jitc_cuda_scan_large_u32_init[device.id],
                                       block_count_init, 1, 1, thread_count_init, 1, 1, 0,
                                       ts->stream, args, nullptr));
 
             scratch += 32; // move beyond padding area
             void *args_2[] = { &in, &out, &scratch };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_large_u32[device.id], block_count, 1, 1,
+            cuda_check(cuLaunchKernel(jitc_cuda_scan_large_u32[device.id], block_count, 1, 1,
                                       thread_count, 1, 1, shared_size,
                                       ts->stream, args_2, nullptr));
             scratch -= 32;
 
-            jit_free(scratch);
+            jitc_free(scratch);
         }
     } else {
         uint32_t block_size = size, blocks = 1;
@@ -468,7 +468,7 @@ void jit_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
             blocks     = (size + block_size - 1) / block_size;
         }
 
-        jit_log(Debug,
+        jitc_log(Debug,
                 "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR
                 ", size=%u, block_size=%u, blocks=%u)",
                 (uintptr_t) in, (uintptr_t) out, size, block_size, blocks);
@@ -476,10 +476,10 @@ void jit_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
         uint32_t *scratch = nullptr;
 
         if (blocks > 1) {
-            scratch = (uint32_t *) jit_malloc(AllocType::HostAsync,
+            scratch = (uint32_t *) jitc_malloc(AllocType::HostAsync,
                                               blocks * sizeof(uint32_t));
 
-            jit_submit_cpu(
+            jitc_submit_cpu(
                 ts,
                 [block_size, size, in, scratch](uint32_t index) {
                     uint32_t start = index * block_size,
@@ -494,10 +494,10 @@ void jit_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
                 blocks
             );
 
-            jit_scan_u32(cuda, scratch, blocks, scratch);
+            jitc_scan_u32(cuda, scratch, blocks, scratch);
         }
 
-        jit_submit_cpu(
+        jitc_submit_cpu(
             ts,
             [block_size, size, in, out, scratch](uint32_t index) {
                 uint32_t start = index * block_size,
@@ -517,12 +517,12 @@ void jit_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
             blocks
         );
 
-        jit_free(scratch);
+        jitc_free(scratch);
     }
 }
 
 /// Mask compression
-uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out) {
+uint32_t jitc_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out) {
     if (size == 0)
         return 0;
 
@@ -532,7 +532,7 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
         const Device &device = state.devices[ts->device];
         scoped_set_context guard(ts->context);
 
-        uint32_t *count_out = (uint32_t *) jit_malloc(
+        uint32_t *count_out = (uint32_t *) jitc_malloc(
             AllocType::HostPinned, sizeof(uint32_t));
 
         if (size <= 4096) {
@@ -543,7 +543,7 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
                      shared_size      = thread_count * 2 * sizeof(uint32_t),
                      trailer          = thread_count * items_per_thread - size;
 
-            jit_log(Debug,
+            jitc_log(Debug,
                     "jit_compress(" ENOKI_PTR " -> " ENOKI_PTR
                     ", size=%u, type=small, threads=%u, shared=%u)",
                     (uintptr_t) in, (uintptr_t) out, size, thread_count,
@@ -554,7 +554,7 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
                                            ts->stream));
 
             void *args[] = { &in, &out, &size, &count_out };
-            cuda_check(cuLaunchKernel(jit_cuda_compress_small[device.id], 1, 1, 1,
+            cuda_check(cuLaunchKernel(jitc_cuda_compress_small[device.id], 1, 1, 1,
                                       thread_count, 1, 1, shared_size,
                                       ts->stream, args, nullptr));
         } else {
@@ -567,14 +567,14 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
                      scratch_items    = block_count + 32,
                      trailer          = items_per_block * block_count - size;
 
-            jit_log(Debug,
+            jitc_log(Debug,
                     "jit_compress(" ENOKI_PTR " -> " ENOKI_PTR
                     ", size=%u, type=large, blocks=%u, threads=%u, shared=%u, "
                     "scratch=%u)",
                     (uintptr_t) in, (uintptr_t) out, size, block_count,
                     thread_count, shared_size, scratch_items * 4);
 
-            uint64_t *scratch = (uint64_t *) jit_malloc(
+            uint64_t *scratch = (uint64_t *) jitc_malloc(
                 AllocType::Device, scratch_items * sizeof(uint64_t));
 
             // Initialize scratch space and padding
@@ -583,7 +583,7 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
                                      scratch_items);
 
             void *args[] = { &scratch, &scratch_items };
-            cuda_check(cuLaunchKernel(jit_cuda_scan_large_u32_init[device.id],
+            cuda_check(cuLaunchKernel(jitc_cuda_scan_large_u32_init[device.id],
                                       block_count_init, 1, 1, thread_count_init, 1, 1, 0,
                                       ts->stream, args, nullptr));
 
@@ -593,16 +593,16 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
 
             scratch += 32; // move beyond padding area
             void *args_2[] = { &in, &out, &scratch, &count_out };
-            cuda_check(cuLaunchKernel(jit_cuda_compress_large[device.id], block_count, 1, 1,
+            cuda_check(cuLaunchKernel(jitc_cuda_compress_large[device.id], block_count, 1, 1,
                                       thread_count, 1, 1, shared_size,
                                       ts->stream, args_2, nullptr));
             scratch -= 32;
 
-            jit_free(scratch);
+            jitc_free(scratch);
         }
-        jit_sync_thread();
+        jitc_sync_thread();
         uint32_t count_out_v = *count_out;
-        jit_free(count_out);
+        jitc_free(count_out);
         return count_out_v;
     } else {
         uint32_t block_size = size, blocks = 1;
@@ -613,7 +613,7 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
 
         uint32_t count_out = 0;
 
-        jit_log(Debug,
+        jitc_log(Debug,
                 "jit_compress(" ENOKI_PTR " -> " ENOKI_PTR
                 ", size=%u, block_size=%u, blocks=%u)",
                 (uintptr_t) in, (uintptr_t) out, size, block_size, blocks);
@@ -621,10 +621,10 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
         uint32_t *scratch = nullptr;
 
         if (blocks > 1) {
-            scratch = (uint32_t *) jit_malloc(AllocType::HostAsync,
+            scratch = (uint32_t *) jitc_malloc(AllocType::HostAsync,
                                               blocks * sizeof(uint32_t));
 
-            jit_submit_cpu(
+            jitc_submit_cpu(
                 ts,
                 [block_size, size, in, scratch](uint32_t index) {
                     uint32_t start = index * block_size,
@@ -639,10 +639,10 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
                 blocks
             );
 
-            jit_scan_u32(cuda, scratch, blocks, scratch);
+            jitc_scan_u32(cuda, scratch, blocks, scratch);
         }
 
-        jit_submit_cpu(
+        jitc_submit_cpu(
             ts,
             [block_size, size, scratch, in, out, &count_out](uint32_t index) {
                 uint32_t start = index * block_size,
@@ -665,8 +665,8 @@ uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out)
             blocks
         );
 
-        jit_free(scratch);
-        jit_sync_thread();
+        jitc_free(scratch);
+        jitc_sync_thread();
 
         return count_out;
     }
@@ -680,14 +680,14 @@ static void cuda_transpose(ThreadState *ts, const uint32_t *in, uint32_t *out,
              blocks_y = (rows + 15u) / 16u;
 
     scoped_set_context guard(ts->context);
-    jit_log(Debug,
+    jitc_log(Debug,
             "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
             ", rows=%u, cols=%u, blocks=%ux%u)",
             (uintptr_t) in, (uintptr_t) out, rows, cols, blocks_x, blocks_y);
 
     void *args[] = { &in, &out, &rows, &cols };
     cuda_check(cuLaunchKernel(
-        jit_cuda_transpose[device.id], blocks_x, blocks_y, 1, 16, 16, 1,
+        jitc_cuda_transpose[device.id], blocks_x, blocks_y, 1, 16, 16, 1,
         16 * 17 * sizeof(uint32_t), ts->stream, args, nullptr));
 }
 
@@ -696,12 +696,12 @@ static ProfilerRegion profiler_region_mkperm_phase_1("jit_mkperm_phase_1");
 static ProfilerRegion profiler_region_mkperm_phase_2("jit_mkperm_phase_2");
 
 /// Compute a permutation to reorder an integer array into a sorted configuration
-uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
+uint32_t jitc_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
                     uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
     if (size == 0)
         return 0;
     else if (unlikely(bucket_count == 0))
-        jit_fail("jit_mkperm(): bucket_count cannot be zero!");
+        jitc_fail("jit_mkperm(): bucket_count cannot be zero!");
 
     ProfilerPhase profiler(profiler_region_mkperm);
     ThreadState *ts = thread_state(cuda);
@@ -733,8 +733,8 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
             /* "Tiny" variant, which uses shared memory atomics to produce a stable
                permutation. Handles up to 512 buckets with 64KiB of shared memory. */
 
-            phase_1 = jit_cuda_mkperm_phase_1_tiny[device.id];
-            phase_4 = jit_cuda_mkperm_phase_4_tiny[device.id];
+            phase_1 = jitc_cuda_mkperm_phase_1_tiny[device.id];
+            phase_4 = jitc_cuda_mkperm_phase_4_tiny[device.id];
             shared_size = bucket_size_1 * warp_count;
             bucket_size_all *= warp_count;
             variant = "tiny";
@@ -745,8 +745,8 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
                operations (although some effort is made to keep it stable within
                each group of 32 elements by performing an intra-warp reduction.) */
 
-            phase_1 = jit_cuda_mkperm_phase_1_small[device.id];
-            phase_4 = jit_cuda_mkperm_phase_4_small[device.id];
+            phase_1 = jitc_cuda_mkperm_phase_1_small[device.id];
+            phase_4 = jitc_cuda_mkperm_phase_4_small[device.id];
             shared_size = bucket_size_1;
             variant = "small";
         } else {
@@ -758,8 +758,8 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
                each group of 32 elements by performing an intra-warp reduction.)
                Buckets must be zero-initialized explicitly. */
 
-            phase_1 = jit_cuda_mkperm_phase_1_large[device.id];
-            phase_4 = jit_cuda_mkperm_phase_4_large[device.id];
+            phase_1 = jitc_cuda_mkperm_phase_1_large[device.id];
+            phase_4 = jitc_cuda_mkperm_phase_4_large[device.id];
             variant = "large";
             initialize_buckets = true;
         }
@@ -767,14 +767,14 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
         bool needs_transpose = bucket_size_1 != bucket_size_all;
         uint32_t *buckets_1, *buckets_2, *counter = nullptr;
         buckets_1 = buckets_2 =
-            (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all);
+            (uint32_t *) jitc_malloc(AllocType::Device, bucket_size_all);
 
         // Scratch space for matrix transpose operation
         if (needs_transpose)
-            buckets_2 = (uint32_t *) jit_malloc(AllocType::Device, bucket_size_all);
+            buckets_2 = (uint32_t *) jitc_malloc(AllocType::Device, bucket_size_all);
 
         if (offsets) {
-            counter = (uint32_t *) jit_malloc(AllocType::Device, sizeof(uint32_t)),
+            counter = (uint32_t *) jitc_malloc(AllocType::Device, sizeof(uint32_t)),
             cuda_check(cuMemsetD8Async((CUdeviceptr) counter, 0, sizeof(uint32_t),
                                        ts->stream));
         }
@@ -788,7 +788,7 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
         uint32_t size_per_block = (size + block_count - 1) / block_count;
         size_per_block = (size_per_block + warp_size - 1) / warp_size * warp_size;
 
-        jit_log(Debug,
+        jitc_log(Debug,
                 "jit_mkperm(" ENOKI_PTR
                 ", size=%u, bucket_count=%u, block_count=%u, thread_count=%u, "
                 "size_per_block=%u, variant=%s, shared_size=%u)",
@@ -807,7 +807,7 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
             cuda_transpose(ts, buckets_1, buckets_2,
                            bucket_size_all / bucket_size_1, bucket_count);
 
-        jit_scan_u32(cuda, buckets_2, bucket_size_all / sizeof(uint32_t), buckets_2);
+        jitc_scan_u32(cuda, buckets_2, bucket_size_all / sizeof(uint32_t), buckets_2);
 
         if (needs_transpose)
             cuda_transpose(ts, buckets_2, buckets_1, bucket_count,
@@ -826,7 +826,7 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
             void *args_3[] = { &buckets_1, &bucket_count, &bucket_count_rounded,
                                &size,      &counter,      &offsets };
 
-            cuda_check(cuLaunchKernel(jit_cuda_mkperm_phase_3[device.id],
+            cuda_check(cuLaunchKernel(jitc_cuda_mkperm_phase_3[device.id],
                                       block_count_3, 1, 1, thread_count_3, 1, 1,
                                       sizeof(uint32_t) * thread_count_3,
                                       ts->stream, args_3, nullptr));
@@ -849,10 +849,10 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
             cuda_check(cuEventSynchronize(ts->event));
         }
 
-        jit_free(buckets_1);
+        jitc_free(buckets_1);
         if (needs_transpose)
-            jit_free(buckets_2);
-        jit_free(counter);
+            jitc_free(buckets_2);
+        jitc_free(counter);
 
         return offsets ? offsets[4 * bucket_count] : 0u;
     } else { // if (!ts->cuda)
@@ -870,23 +870,23 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
             blocks = (size + block_size - 1) / block_size;
         }
 
-        jit_log(Debug,
+        jitc_log(Debug,
                 "jit_mkperm(" ENOKI_PTR
                 ", size=%u, bucket_count=%u, block_size=%u, blocks=%u)",
                 (uintptr_t) ptr, size, bucket_count, block_size, blocks);
 
         uint32_t **buckets =
-            (uint32_t **) jit_malloc(AllocType::Host, sizeof(uint32_t *) * blocks);
+            (uint32_t **) jitc_malloc(AllocType::Host, sizeof(uint32_t *) * blocks);
 
         for (uint32_t i = 0; i < blocks; ++i)
-            buckets[i] = (uint32_t *) jit_malloc(
+            buckets[i] = (uint32_t *) jitc_malloc(
                 AllocType::Host,
                 sizeof(uint32_t) * (size_t) bucket_count);
 
         uint32_t unique_count = 0;
 
         // Phase 1
-        jit_submit_cpu(
+        jitc_submit_cpu(
             ts,
             [block_size, size, buckets, bucket_count, ptr](uint32_t index) {
                 ProfilerPhase profiler(profiler_region_mkperm_phase_1);
@@ -905,7 +905,7 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
         );
 
         // Local accumulation step
-        jit_submit_cpu(
+        jitc_submit_cpu(
             ts,
             [bucket_count, blocks, buckets, offsets, &unique_count](uint32_t) {
                 uint32_t sum = 0, unique_count_local = 0;
@@ -935,7 +935,7 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
         Task *local_task = ts->task;
 
         // Phase 2
-        jit_submit_cpu(
+        jitc_submit_cpu(
             ts,
             [block_size, size, buckets, perm, ptr](uint32_t index) {
                 ProfilerPhase profiler(profiler_region_mkperm_phase_2);
@@ -956,8 +956,8 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
 
         // Free memory (happens asynchronously after the above stmt.)
         for (uint32_t i = 0; i < blocks; ++i)
-            jit_free(buckets[i]);
-        jit_free(buckets);
+            jitc_free(buckets[i]);
+        jitc_free(buckets);
 
         task_wait_and_release(local_task);
 
@@ -966,7 +966,7 @@ uint32_t jit_mkperm(int cuda, const uint32_t *ptr, uint32_t size,
 }
 
 // Compute a permutation to reorder an array of registered pointers
-VCallBucket *jit_vcall(int cuda, const char *domain, uint32_t index,
+VCallBucket *jitc_vcall(int cuda, const char *domain, uint32_t index,
                        uint32_t *bucket_count_out) {
     auto it = state.extra.find(index);
     if (it != state.extra.end()) {
@@ -977,40 +977,39 @@ VCallBucket *jit_vcall(int cuda, const char *domain, uint32_t index,
         }
     }
 
-    uint32_t bucket_count = jit_registry_get_max(domain) + 1;
+    uint32_t bucket_count = jitc_registry_get_max(domain) + 1;
     if (unlikely(bucket_count == 1)) {
         *bucket_count_out = 0;
         return nullptr;
     }
 
-    jit_var_eval(index);
-    Variable *v = jit_var(index);
+    jitc_var_eval(index);
+    Variable *v = jitc_var(index);
     const void *ptr = v->data;
     uint32_t size = v->size;
 
-    jit_log(Debug, "jit_vcall(%u, domain=\"%s\")", index, domain);
+    jitc_log(Debug, "jit_vcall(%u, domain=\"%s\")", index, domain);
 
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
            offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
 
-    uint32_t *offsets = (uint32_t *) jit_malloc(
+    uint32_t *offsets = (uint32_t *) jitc_malloc(
         cuda ? AllocType::HostPinned : AllocType::Host, offsets_size);
-    uint32_t *perm = (uint32_t *) jit_malloc(
+    uint32_t *perm = (uint32_t *) jitc_malloc(
         cuda ? AllocType::Device : AllocType::HostAsync, perm_size);
 
     // Compute permutation
-    uint32_t unique_count = jit_mkperm(cuda, (const uint32_t *) ptr, size,
+    uint32_t unique_count = jitc_mkperm(cuda, (const uint32_t *) ptr, size,
                                        bucket_count, perm, offsets),
              unique_count_out = unique_count;
 
     // Register permutation variable with JIT backend and transfer ownership
-    uint32_t perm_var = jit_var_map_mem(cuda, VarType::UInt32, perm, size, 1);
+    uint32_t perm_var = jitc_var_mem_map(cuda, VarType::UInt32, perm, size, 1);
 
     Variable v2;
     v2.type = (uint32_t) VarType::UInt32;
     v2.dep[3] = perm_var;
     v2.retain_data = true;
-    v2.tsize = 1;
     v2.cuda = cuda;
     v2.unaligned = 1;
 
@@ -1025,29 +1024,26 @@ VCallBucket *jit_vcall(int cuda, const char *domain, uint32_t index,
         v2.data = perm + bucket_offset;
         v2.size = bucket_size;
 
-        uint32_t index;
-        Variable *vo;
-        std::tie(index, vo) = jit_var_new(v2);
+        uint32_t index = jitc_var_new(v2);
 
-        jit_var_inc_ref_ext(perm_var);
-        jit_var_inc_ref_ext(index, vo);
+        jitc_var_inc_ref_ext(perm_var);
 
-        void *ptr = jit_registry_get_ptr(domain, bucket_id);
+        void *ptr = jitc_registry_get_ptr(domain, bucket_id);
         memcpy(offsets_out, &ptr, sizeof(void *));
         memcpy(offsets_out + 2, &index, sizeof(uint32_t));
         offsets_out += 4;
 
-        jit_trace("jit_vcall(): registered variable %u: bucket %u (" ENOKI_PTR
+        jitc_trace("jit_vcall(): registered variable %u: bucket %u (" ENOKI_PTR
                   ") of size %u.", index, bucket_id,
                   (uintptr_t) ptr, bucket_size);
     }
 
-    jit_var_dec_ref_ext(perm_var);
+    jitc_var_dec_ref_ext(perm_var);
 
     *bucket_count_out = unique_count_out;
 
-    v = jit_var(index);
-    v->has_extra = true;
+    v = jitc_var(index);
+    v->extra = true;
     Extra &extra = state.extra[index];
     extra.vcall_bucket_count = unique_count_out;
     extra.vcall_buckets = (VCallBucket *) offsets;
@@ -1056,7 +1052,7 @@ VCallBucket *jit_vcall(int cuda, const char *domain, uint32_t index,
 
 using BlockOp = void (*) (const void *ptr, void *out, uint32_t start, uint32_t end, uint32_t block_size);
 
-template <typename Value> static BlockOp jit_block_copy_create() {
+template <typename Value> static BlockOp jitc_block_copy_create() {
     return [](const void *in_, void *out_, uint32_t start, uint32_t end, uint32_t block_size) {
         const Value *in = (const Value *) in_ + start;
         Value *out = (Value *) out_ + start * block_size;
@@ -1068,7 +1064,7 @@ template <typename Value> static BlockOp jit_block_copy_create() {
     };
 }
 
-template <typename Value> static BlockOp jit_block_sum_create() {
+template <typename Value> static BlockOp jitc_block_sum_create() {
     return [](const void *in_, void *out_, uint32_t start, uint32_t end, uint32_t block_size) {
         const Value *in = (const Value *) in_ + start * block_size;
         Value *out = (Value *) out_ + start;
@@ -1081,28 +1077,28 @@ template <typename Value> static BlockOp jit_block_sum_create() {
     };
 }
 
-static BlockOp jit_block_copy_create(VarType type) {
+static BlockOp jitc_block_copy_create(VarType type) {
     switch (type) {
-        case VarType::UInt8:   return jit_block_copy_create<uint8_t >();
-        case VarType::UInt16:  return jit_block_copy_create<uint16_t>();
-        case VarType::UInt32:  return jit_block_copy_create<uint32_t>();
-        case VarType::UInt64:  return jit_block_copy_create<uint64_t>();
-        case VarType::Float32: return jit_block_copy_create<float   >();
-        case VarType::Float64: return jit_block_copy_create<double  >();
-        default: jit_raise("jit_block_copy_create(): unsupported data type!");
+        case VarType::UInt8:   return jitc_block_copy_create<uint8_t >();
+        case VarType::UInt16:  return jitc_block_copy_create<uint16_t>();
+        case VarType::UInt32:  return jitc_block_copy_create<uint32_t>();
+        case VarType::UInt64:  return jitc_block_copy_create<uint64_t>();
+        case VarType::Float32: return jitc_block_copy_create<float   >();
+        case VarType::Float64: return jitc_block_copy_create<double  >();
+        default: jitc_raise("jit_block_copy_create(): unsupported data type!");
             return nullptr;
     }
 }
 
-static BlockOp jit_block_sum_create(VarType type) {
+static BlockOp jitc_block_sum_create(VarType type) {
     switch (type) {
-        case VarType::UInt8:   return jit_block_sum_create<uint8_t >();
-        case VarType::UInt16:  return jit_block_sum_create<uint16_t>();
-        case VarType::UInt32:  return jit_block_sum_create<uint32_t>();
-        case VarType::UInt64:  return jit_block_sum_create<uint64_t>();
-        case VarType::Float32: return jit_block_sum_create<float   >();
-        case VarType::Float64: return jit_block_sum_create<double  >();
-        default: jit_raise("jit_block_sum_create(): unsupported data type!");
+        case VarType::UInt8:   return jitc_block_sum_create<uint8_t >();
+        case VarType::UInt16:  return jitc_block_sum_create<uint16_t>();
+        case VarType::UInt32:  return jitc_block_sum_create<uint32_t>();
+        case VarType::UInt64:  return jitc_block_sum_create<uint64_t>();
+        case VarType::Float32: return jitc_block_sum_create<float   >();
+        case VarType::Float64: return jitc_block_sum_create<double  >();
+        default: jitc_raise("jit_block_sum_create(): unsupported data type!");
             return nullptr;
     }
 }
@@ -1118,12 +1114,12 @@ static VarType make_int_type_unsigned(VarType type) {
 }
 
 /// Replicate individual input elements to larger blocks
-void jit_block_copy(int cuda, enum VarType type, const void *in, void *out,
+void jitc_block_copy(int cuda, enum VarType type, const void *in, void *out,
                     uint32_t size, uint32_t block_size) {
     if (block_size == 0)
-        jit_raise("jit_block_copy(): block_size cannot be zero!");
+        jitc_raise("jit_block_copy(): block_size cannot be zero!");
 
-    jit_log(Debug,
+    jitc_log(Debug,
             "jit_block_copy(" ENOKI_PTR " -> " ENOKI_PTR
             ", type=%s, block_size=%u, size=%u)",
             (uintptr_t) in, (uintptr_t) out,
@@ -1131,7 +1127,7 @@ void jit_block_copy(int cuda, enum VarType type, const void *in, void *out,
 
     if (block_size == 1) {
         uint32_t type_size = var_type_size[(int) type];
-        jit_memcpy_async(cuda, out, in, size * type_size);
+        jitc_memcpy_async(cuda, out, in, size * type_size);
         return;
     }
 
@@ -1143,9 +1139,9 @@ void jit_block_copy(int cuda, enum VarType type, const void *in, void *out,
         const Device &device = state.devices[ts->device];
         size *= block_size;
 
-        CUfunction func = jit_cuda_block_copy[(int) type][device.id];
+        CUfunction func = jitc_cuda_block_copy[(int) type][device.id];
         if (!func)
-            jit_raise("jit_block_copy(): no existing kernel for type=%s!",
+            jitc_raise("jit_block_copy(): no existing kernel for type=%s!",
                       var_type_name[(int) type]);
 
         uint32_t thread_count = std::min(size, 1024u),
@@ -1161,9 +1157,9 @@ void jit_block_copy(int cuda, enum VarType type, const void *in, void *out,
             work_units     = (size + work_unit_size - 1) / work_unit_size;
         }
 
-        BlockOp op = jit_block_copy_create(type);
+        BlockOp op = jitc_block_copy_create(type);
 
-        jit_submit_cpu(
+        jitc_submit_cpu(
             ts,
             [in, out, op, work_unit_size, size, block_size](uint32_t index) {
                 uint32_t start = index * work_unit_size,
@@ -1177,12 +1173,12 @@ void jit_block_copy(int cuda, enum VarType type, const void *in, void *out,
 }
 
 /// Sum over elements within blocks
-void jit_block_sum(int cuda, enum VarType type, const void *in, void *out,
+void jitc_block_sum(int cuda, enum VarType type, const void *in, void *out,
                    uint32_t size, uint32_t block_size) {
     if (block_size == 0)
-        jit_raise("jit_block_sum(): block_size cannot be zero!");
+        jitc_raise("jit_block_sum(): block_size cannot be zero!");
 
-    jit_log(Debug,
+    jitc_log(Debug,
             "jit_block_sum(" ENOKI_PTR " -> " ENOKI_PTR
             ", type=%s, block_size=%u, size=%u)",
             (uintptr_t) in, (uintptr_t) out,
@@ -1190,7 +1186,7 @@ void jit_block_sum(int cuda, enum VarType type, const void *in, void *out,
 
     if (block_size == 1) {
         uint32_t type_size = var_type_size[(int) type];
-        jit_memcpy_async(cuda, out, in, size * type_size);
+        jitc_memcpy_async(cuda, out, in, size * type_size);
         return;
     }
 
@@ -1202,9 +1198,9 @@ void jit_block_sum(int cuda, enum VarType type, const void *in, void *out,
         const Device &device = state.devices[ts->device];
         size *= block_size;
 
-        CUfunction func = jit_cuda_block_sum[(int) type][device.id];
+        CUfunction func = jitc_cuda_block_sum[(int) type][device.id];
         if (!func)
-            jit_raise("jit_block_sum(): no existing kernel for type=%s!",
+            jitc_raise("jit_block_sum(): no existing kernel for type=%s!",
                       var_type_name[(int) type]);
 
         uint32_t thread_count = std::min(size, 1024u),
@@ -1220,9 +1216,9 @@ void jit_block_sum(int cuda, enum VarType type, const void *in, void *out,
             work_units     = (size + work_unit_size - 1) / work_unit_size;
         }
 
-        BlockOp op = jit_block_sum_create(type);
+        BlockOp op = jitc_block_sum_create(type);
 
-        jit_submit_cpu(
+        jitc_submit_cpu(
             ts,
             [in, out, op, work_unit_size, size, block_size](uint32_t index) {
                 uint32_t start = index * work_unit_size,
@@ -1237,8 +1233,8 @@ void jit_block_sum(int cuda, enum VarType type, const void *in, void *out,
 }
 
 /// Asynchronously update a single element in memory
-void jit_poke(int cuda, void *dst, const void *src, uint32_t size) {
-    jit_log(Debug, "jit_poke(" ENOKI_PTR ", size=%u)", (uintptr_t) dst, size);
+void jitc_poke(int cuda, void *dst, const void *src, uint32_t size) {
+    jitc_log(Debug, "jit_poke(" ENOKI_PTR ", size=%u)", (uintptr_t) dst, size);
 
     VarType type;
     switch (size) {
@@ -1247,14 +1243,14 @@ void jit_poke(int cuda, void *dst, const void *src, uint32_t size) {
         case 4: type = VarType::UInt32; break;
         case 8: type = VarType::UInt64; break;
         default:
-            jit_raise("jit_poke(): only size=1, 2, 4 or 8 are supported!");
+            jitc_raise("jit_poke(): only size=1, 2, 4 or 8 are supported!");
     }
 
     ThreadState *ts = thread_state(cuda);
     if (cuda) {
         scoped_set_context guard(ts->context);
         const Device &device = state.devices[ts->device];
-        CUfunction func = jit_cuda_poke[(int) type][device.id];
+        CUfunction func = jitc_cuda_poke[(int) type][device.id];
         void *args[] = { &dst, (void *) src };
         cuda_check(cuLaunchKernel(func, 1, 1, 1, 1, 1, 1,
                                   0, ts->stream, args, nullptr));
@@ -1262,7 +1258,7 @@ void jit_poke(int cuda, void *dst, const void *src, uint32_t size) {
         uint8_t src8[8] { };
         memcpy(&src8, src, size);
 
-        jit_submit_cpu(
+        jitc_submit_cpu(
             ts,
             [src8, size, dst](uint32_t) {
                 memcpy(dst, &src8, size);

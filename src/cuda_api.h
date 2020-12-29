@@ -129,40 +129,40 @@ extern CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int);
 #endif
 
 // Enoki API
-extern CUfunction *jit_cuda_fill_64;
-extern CUfunction *jit_cuda_mkperm_phase_1_tiny;
-extern CUfunction *jit_cuda_mkperm_phase_1_small;
-extern CUfunction *jit_cuda_mkperm_phase_1_large;
-extern CUfunction *jit_cuda_mkperm_phase_3;
-extern CUfunction *jit_cuda_mkperm_phase_4_tiny;
-extern CUfunction *jit_cuda_mkperm_phase_4_small;
-extern CUfunction *jit_cuda_mkperm_phase_4_large;
-extern CUfunction *jit_cuda_transpose;
-extern CUfunction *jit_cuda_scan_small_u32;
-extern CUfunction *jit_cuda_scan_large_u32;
-extern CUfunction *jit_cuda_scan_large_u32_init;
-extern CUfunction *jit_cuda_compress_small;
-extern CUfunction *jit_cuda_compress_large;
-extern CUfunction *jit_cuda_poke[(int) VarType::Count];
-extern CUfunction *jit_cuda_block_copy[(int) VarType::Count];
-extern CUfunction *jit_cuda_block_sum [(int) VarType::Count];
-extern CUfunction *jit_cuda_reductions[(int) ReductionType::Count]
+extern CUfunction *jitc_cuda_fill_64;
+extern CUfunction *jitc_cuda_mkperm_phase_1_tiny;
+extern CUfunction *jitc_cuda_mkperm_phase_1_small;
+extern CUfunction *jitc_cuda_mkperm_phase_1_large;
+extern CUfunction *jitc_cuda_mkperm_phase_3;
+extern CUfunction *jitc_cuda_mkperm_phase_4_tiny;
+extern CUfunction *jitc_cuda_mkperm_phase_4_small;
+extern CUfunction *jitc_cuda_mkperm_phase_4_large;
+extern CUfunction *jitc_cuda_transpose;
+extern CUfunction *jitc_cuda_scan_small_u32;
+extern CUfunction *jitc_cuda_scan_large_u32;
+extern CUfunction *jitc_cuda_scan_large_u32_init;
+extern CUfunction *jitc_cuda_compress_small;
+extern CUfunction *jitc_cuda_compress_large;
+extern CUfunction *jitc_cuda_poke[(int) VarType::Count];
+extern CUfunction *jitc_cuda_block_copy[(int) VarType::Count];
+extern CUfunction *jitc_cuda_block_sum [(int) VarType::Count];
+extern CUfunction *jitc_cuda_reductions[(int) ReductionType::Count]
                                       [(int) VarType::Count];
-extern int jit_cuda_devices;
+extern int jitc_cuda_devices;
 
-extern int jit_cuda_version_major;
-extern int jit_cuda_version_minor;
+extern int jitc_cuda_version_major;
+extern int jitc_cuda_version_minor;
 
 /// Try to load the CUDA backend
-extern bool jit_cuda_init();
+extern bool jitc_cuda_init();
 
 struct Kernel;
 
 /// Compile an IR string
-extern void jit_cuda_compile(const char *str, size_t size, Kernel &kernel);
+extern void jitc_cuda_compile(const char *str, size_t size, Kernel &kernel);
 
 /// Fully unload CUDA
-extern void jit_cuda_shutdown();
+extern void jitc_cuda_shutdown();
 
 /// Assert that a CUDA operation is correctly issued
 #define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)

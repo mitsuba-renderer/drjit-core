@@ -38,7 +38,7 @@
 #else
     [[noreturn]]
 #endif
-extern void jit_fail(const char* fmt, ...);
+extern void jitc_fail(const char* fmt, ...);
 
 inline void hash_combine(size_t& seed, size_t value) {
     /// From CityHash (https://github.com/google/cityhash)
@@ -80,7 +80,7 @@ inline size_t hash_kernel(const char *str) {
     if (unlikely(!offset)) {
         offset = strstr(str, "func_");
         if (unlikely(!offset))
-            jit_fail("hash_kernel(): invalid input!");
+            jitc_fail("hash_kernel(): invalid input!");
     }
 
     size_t seed = hash(str, offset - str);

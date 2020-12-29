@@ -19,22 +19,22 @@ struct OptixPipelineCompileOptions;
 struct OptixShaderBindingTable;
 
 /// Return the OptiX device context associated with the currently active device
-extern JITC_EXPORT OptixDeviceContext jitc_optix_context();
+extern JITC_EXPORT OptixDeviceContext jit_optix_context();
 
 /// Look up an OptiX function by name
-extern JITC_EXPORT void *jitc_optix_lookup(const char *name);
+extern JITC_EXPORT void *jit_optix_lookup(const char *name);
 
 /**
  * \brief Check the return value of an OptiX function and terminate the
  * application with a helpful error message upon failure
  */
-#define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
-extern JITC_EXPORT void jitc_optix_check_impl(int errval, const char *file,
+#define jit_optix_check(err) jit_optix_check_impl((err), __FILE__, __LINE__)
+extern JITC_EXPORT void jit_optix_check_impl(int errval, const char *file,
                                               const int line);
 
 /// Inform Enoki about a partially created OptiX pipeline
 extern JITC_EXPORT void
-jitc_optix_configure(const OptixPipelineCompileOptions *pco,
+jit_optix_configure(const OptixPipelineCompileOptions *pco,
                      const OptixShaderBindingTable *sbt,
                      const OptixProgramGroup *pg,
                      uint32_t pg_count);
@@ -51,10 +51,10 @@ jitc_optix_configure(const OptixPipelineCompileOptions *pco,
  * overwritten with the new variable indices with external reference count 1
  * containing the final payload value.
  */
-extern JITC_EXPORT void jitc_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask);
+extern JITC_EXPORT void jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask);
 
 /// Mark a variable as an expression requiring compilation via OptiX
-extern JITC_EXPORT void jitc_optix_mark(uint32_t index);
+extern JITC_EXPORT void jit_optix_mark(uint32_t index);
 
 #if defined(__cplusplus)
 }

@@ -12,54 +12,39 @@
 #include "var.h"
 #include "eval.h"
 #include "profiler.h"
+#include "util.h"
 #include "optix_api.h"
-#include <tsl/robin_set.h>
-
-#define CUDA_MAX_KERNEL_PARAMETERS 512
 
 // ====================================================================
 //  The following data structures are temporarily used during program
 //  generation. They are declared as global variables to enable memory
-//  reuse across jit_eval() calls.
+//  reuse across jitc_eval() calls.
 // ====================================================================
 
-/// A single variable that is scheduled to execute for a launch with 'size' entries
-struct ScheduledVariable {
-    uint32_t size;
-    uint32_t index;
-    bool global;
-
-    ScheduledVariable(uint32_t size, uint32_t index, bool global = false)
-        : size(size), index(index), global(global) { }
-};
-
-/// Start and end index of a group of variables that will be merged into the same kernel
-struct ScheduledGroup {
-    uint32_t size;
-    uint32_t start;
-    uint32_t end;
-
-    ScheduledGroup(uint32_t size, uint32_t start, uint32_t end)
-        : size(size), start(start), end(end) { }
-};
-
+/// Are we recording an OptiX kernel?
+bool uses_optix = false;
 
 /// Ordered list of variables that should be computed
-static std::vector<ScheduledVariable> schedule;
+std::vector<ScheduledVariable> schedule;
 
 /// Groups of variables with the same size
-static std::vector<ScheduledGroup> schedule_groups;
+std::vector<ScheduledGroup> schedule_groups;
 
 /// Auxiliary data structure needed to compute 'schedule_sizes' and 'schedule'
 static tsl::robin_set<std::pair<uint32_t, uint32_t>, pair_hash> visited;
 
-/// Input/output arguments of the kernel being evaluated
-static std::vector<void *> kernel_args, kernel_args_extra;
-static std::vector<uint32_t> kernel_ids;
+/// Kernel parameter buffer and device copy
+static std::vector<void *> kernel_params;
+static uint8_t *kernel_params_global = nullptr;
 
-/// On-device versions of the above
-static void *kernel_args_dev = nullptr;
-static void *kernel_args_extra_dev = nullptr;
+/// Buffer containing global declarations
+Buffer globals { 0 };
+
+/// Ensure uniqueness of global declarations (intrinsics, virtual functions)
+GlobalsSet globals_set;
+
+/// Temporary scratch space for scheduled tasks (LLVM only)
+static std::vector<Task *> scheduled_tasks;
 
 /// Hash code of the last generated kernel
 size_t kernel_hash = 0;
@@ -67,943 +52,201 @@ size_t kernel_hash = 0;
 /// Name of the last generated kernel
 static char kernel_name[17] { };
 
-/// Temporary scratch space for scheduled tasks (LLVM only))
-static std::vector<Task *> scheduled_tasks;
-
-/// LLVM: Does the kernel require the supplemental IR? (Used for 'scatter_add' atm.)
-static bool jit_llvm_supplement = false;
-
-/// Is this a normal evaluation (jitc_eval()) or IR capture? (jitc_capture())
-static bool capturing = false;
-
-/// Are we recording an OptiX kernel?
-static bool uses_optix = false;
-
 // ====================================================================
 
-/// Forward declaration
-void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v);
-
 /// Recursively traverse the computation graph to find variables needed by a computation
-static void jit_var_traverse(uint32_t size, uint32_t index, Variable *v) {
+static void jitc_var_traverse(uint32_t size, uint32_t index) {
     if (!visited.emplace(size, index).second)
         return;
 
-    struct Dep {
-        uint32_t index;
-        uint32_t tsize;
-        Variable *v;
-    } depv[4];
-
-    memset(depv, 0, sizeof(depv));
+    Variable *v = jitc_var(index);
     for (int i = 0; i < 4; ++i) {
-        uint32_t dep_index = v->dep[i];
-        if (dep_index == 0)
+        uint32_t index2 = v->dep[i];
+        if (index2 == 0)
             break;
-        Variable *v2 = jit_var(dep_index);
-        depv[i].index = dep_index;
-        depv[i].tsize = v2->tsize;
-        depv[i].v = v2;
-    }
-
-    // Simple sorting network
-    #define SWAP(i, j) \
-        if (depv[i].tsize < depv[j].tsize) \
-            std::swap(depv[i], depv[j]);
-    SWAP(0, 1);
-    SWAP(2, 3);
-    SWAP(0, 2);
-    SWAP(1, 3);
-    SWAP(1, 2);
-
-    #undef SWAP
-
-    for (auto &dep: depv) {
-        if (!dep.index)
-            break;
-        jit_var_traverse(size, dep.index, dep.v);
+        jitc_var_traverse(size, index2);
     }
 
     // If we're really visiting this variable the first time, no matter its size
     if (visited.emplace(0, index).second)
         v->output_flag = false;
 
-    schedule.emplace_back(size, index, v->type == (uint32_t) VarType::Global);
+    schedule.emplace_back(size, index);
 }
 
-/// Convert an IR template with '$' expressions into valid IR (PTX variant)
-void jit_render_stmt_cuda(uint32_t index, Variable *v, bool indent = true) {
-    const char *s = v->stmt;
-    char c;
-
-    if (unlikely(!s)) {
-        if (capturing && (VarType) v->type == VarType::Pointer) {
-            buffer.fmt("    ld.global.nc.u64 %%rd%u, [extra+%u];\n",
-                       v->reg_index, (uint32_t) (kernel_ids.size() * 8));
-            jit_var_inc_ref_ext(index);
-            kernel_ids.push_back(index);
-        } else {
-            jit_fail("jit_render_stmt_cuda(): internal error - missing statement!");
-        }
-        return;
-    } if (s[0] == '\0') {
-        return;
-    }
-
-    if (indent)
-        buffer.put("    ");
-
-    do {
-        const char *start = s;
-        while (c = *s, c != '\0' && c != '$')
-            s++;
-        buffer.put(start, s - start);
-
-        if (c == '$') {
-            s++;
-            const char **prefix_table = nullptr, type = *s++;
-            switch (type) {
-                case 'n': buffer.put(";\n    "); continue;
-                case 'i': buffer.put("%r0"); continue;
-                case 't': prefix_table = var_type_name_ptx;     break;
-                case 'b': prefix_table = var_type_name_ptx_bin; break;
-                case 's': prefix_table = var_type_size_str; break;
-                case 'r': prefix_table = var_type_prefix; break;
-                case 'L': prefix_table = var_type_label; break;
-                default:
-                    jit_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
-                             "expression (unknown type \"%c\") in \"%s\"!", type, v->stmt);
-            }
-
-            uint32_t arg_id = *s++ - '0';
-            if (unlikely(arg_id > 4))
-                jit_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
-                         "expression (argument out of bounds)!", v->stmt);
-
-            uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
-            if (unlikely(dep_id == 0))
-                jit_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
-                         "expression (dependency %u is missing)!", v->stmt, arg_id);
-
-            Variable *dep = jit_var(dep_id);
-            buffer.put(prefix_table[(int) dep->type]);
-
-            if (type == 'r' || type == 'L')
-                buffer.put_uint32(dep->reg_index);
-        }
-    } while (c != '\0');
-
-    c = *(buffer.cur() - 1);
-    bool no_stmt = c == ':' || c == ',' || c == '{' || c == '\n';
-    buffer.put(no_stmt ? "\n" : ";\n");
-}
-
-/// Convert an IR template with '$' expressions into valid IR (LLVM variant)
-void jit_render_stmt_llvm(uint32_t index, Variable *v, bool indent = true, const char *suffix = "") {
-    const char *s = v->stmt;
-
-    if (unlikely(!s)) {
-        if (capturing && (VarType) v->type == VarType::Pointer) {
-            uint32_t id = v->reg_index;
-            buffer.fmt("    %%rd%u_i = getelementptr inbounds i8*, i8** "
-                       "%%extra, i32 %u\n", id, (uint32_t) kernel_ids.size());
-            buffer.fmt("    %%rd%u = load i8*, i8** %%rd%u_i, align 8, !alias.scope !1\n", id, id);
-            jit_var_inc_ref_ext(index);
-            kernel_ids.push_back(index);
-        } else {
-            jit_fail("jit_render_stmt_llvm(): internal error - missing statement!");
-        }
-        return;
-    } if (s[0] == '\0') {
-        return;
-    }
-
-    if (s[0] == '$' && s[1] >= '0' && s[1] <= '9') {
-        uint32_t width = 1 << (s[1] - '0');
-        if (width < jit_llvm_vector_width) {
-            jit_render_stmt_llvm_unroll(index, v);
-            return;
-        } else {
-            s += 2;
-        }
-    }
-
-    if (indent)
-        buffer.put("    ");
-    char c;
-
-    while ((c = *s++) != '\0') {
-        if (c != '$') {
-            buffer.putc(c);
-        } else {
-            const char **prefix_table = nullptr, type = *s++;
-            switch (type) {
-                case 'n': buffer.put("\n    "); continue;
-                case 'i': buffer.put("%index"); continue;
-                case 'w': buffer.put_uint32(jit_llvm_vector_width); continue;
-                case 'z': buffer.put("zeroinitializer"); continue;
-                case 'l':
-                case 't': prefix_table = var_type_name_llvm; break;
-                case 'T': prefix_table = var_type_name_llvm_big; break;
-                case 's': prefix_table = var_type_size_str; break;
-                case 'o':
-                case 'b': prefix_table = var_type_name_llvm_bin; break;
-                case 'a': prefix_table = var_type_name_llvm_abbrev; break;
-                case 'L': prefix_table = var_type_label; break;
-                case 'r': prefix_table = var_type_prefix; break;
-                case 'O':
-                    buffer.putc('<');
-                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i) {
-                        buffer.put("i1 1");
-                        if (i + 1 < jit_llvm_vector_width)
-                            buffer.put(", ");
-                    }
-                    buffer.putc('>');
-                    continue;
-
-                default:
-                    jit_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
-                             "expression (unknown type \"%c\")!", type);
-            }
-
-            uint32_t arg_id = *s++ - '0';
-            if (unlikely(arg_id > 4))
-                jit_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
-                         "expression (argument out of bounds)!", v->stmt);
-
-            uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
-            if (unlikely(dep_id == 0))
-                jit_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
-                         "expression (dependency %u is missing)!", v->stmt, arg_id);
-
-            Variable *dep = jit_var(dep_id);
-            const char *prefix = prefix_table[(int) dep->type];
-            bool is_float = (VarType) dep->type == VarType::Float16 ||
-                            (VarType) dep->type == VarType::Float32 ||
-                            (VarType) dep->type == VarType::Float64;
-
-            switch (type) {
-                case 'r':
-                case 'L':
-                    buffer.put(prefix);
-                    buffer.put_uint32(dep->reg_index);
-                    if (!dep->direct_pointer)
-                        buffer.put(suffix);
-                    break;
-
-                case 'a':
-                case 'b':
-                case 's':
-                case 't':
-                case 'T':
-                    buffer.put(prefix);
-                    break;
-
-                case 'l':
-                    buffer.putc('<');
-                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i) {
-                        buffer.put(prefix);
-                        buffer.putc(' ');
-                        buffer.put_uint32(i);
-                        if (is_float)
-                            buffer.put(".0");
-                        if (i + 1 < jit_llvm_vector_width)
-                            buffer.put(", ");
-                    }
-                    buffer.putc('>');
-                    break;
-
-                case 'o':
-                    buffer.putc('<');
-                    for (uint32_t i = 0; i < jit_llvm_vector_width; ++i) {
-                        buffer.put(prefix);
-                        buffer.put(" -1");
-                        if (i + 1 < jit_llvm_vector_width)
-                            buffer.put(", ");
-                    }
-
-                    buffer.putc('>');
-                    break;
-            }
-        }
-    }
-
-    buffer.putc('\n');
-
-    if (strstr(v->stmt, "@ek."))
-        jit_llvm_supplement = true;
-}
-
-/// Expand fixed-length LLVM intrinsics by calling them multiple times
-void jit_render_stmt_llvm_unroll(uint32_t index, Variable *v) {
-    const char *s = v->stmt;
-    uint32_t width       = 1 << (s[1] - '0'),
-             width_host  = jit_llvm_vector_width,
-             last_level  = 0;
-
-    /// Recursively partition dependencies into arrays of size 'width'
-    for (uint32_t i = 0; i < 4; ++i) {
-        if (v->dep[i] == 0)
-            continue;
-        Variable *dep = jit_var(v->dep[i]);
-        if (dep->direct_pointer || (VarType) dep->type == VarType::Global)
-            continue;
-        for (uint32_t l = 0; ; ++l) {
-            uint32_t w = width_host / (2u << l);
-            if (w < width)
-                break;
-
-            for (uint32_t j = 0; j < (1u << l); ++j) {
-                for (uint32_t k = 0; k < 2; ++k) {
-                    char source[64];
-                    if (l == 0)
-                        snprintf(source, sizeof(source), "%s%u",
-                                 var_type_prefix[(int) dep->type], dep->reg_index);
-                    else
-                        snprintf(source, sizeof(source), "%s%u_unroll_%s%u_%u_%u",
-                                 var_type_prefix[(int) dep->type], dep->reg_index,
-                                 var_type_prefix[v->type] + 1, v->reg_index,
-                                 l - 1, j);
-
-                    buffer.fmt("    %s%u_unroll_%s%u_%u_%u = shufflevector <%u "
-                               "x %s> %s, <%u x "
-                               "%s> undef, <%u x i32> <",
-                               var_type_prefix[(int) dep->type], dep->reg_index,
-                               var_type_prefix[v->type] + 1, v->reg_index,
-                               l, 2 * j + k, w * 2u,
-                               var_type_name_llvm[(int) dep->type], source,
-                               w * 2u, var_type_name_llvm[(int) dep->type], w);
-                    for (uint32_t r = 0; r < w; ++r)
-                        buffer.fmt("i32 %u%s", r + k*w, r + 1 < w ? ", " : "");
-                    buffer.put(">\n");
-                }
-            }
-            buffer.put("\n");
-
-            last_level = l;
-        }
-    }
-
-    jit_llvm_vector_width = width;
-
-    for (uint32_t j = 0; j < width_host / width; ++j) {
-        char suffix[64];
-        snprintf(suffix, 64, "_unroll_%s%u_%u_%u",
-                 var_type_prefix[v->type] + 1,
-                 v->reg_index, last_level, j);
-        jit_render_stmt_llvm(index, v, true, suffix);
-    }
-    buffer.putc('\n');
-
-    jit_llvm_vector_width = width_host;
-
-    // Stop here if the statement doesn't produce a return value
-    if ((VarType) v->type == VarType::Void ||
-        (VarType) v->type == VarType::Global)
-        return;
-
-    // Recursively reassemble and output array of size 'width_host'
-    for (uint32_t l = last_level; ; l /= 2) {
-        uint32_t w = width_host / (2u << l);
-        for (uint32_t j = 0; j < (1u << l); ++j) {
-            char target[64];
-            if (l == 0)
-                snprintf(target, sizeof(target), "%s%u",
-                         var_type_prefix[v->type], v->reg_index);
-            else
-                snprintf(target, sizeof(target), "%s%u_unroll_%s%u_%u_%u",
-                         var_type_prefix[v->type], v->reg_index,
-                         var_type_prefix[v->type] + 1, v->reg_index,
-                         l - 1, j);
-
-            buffer.fmt("    %s = shufflevector <%u "
-                       "x %s> %s%u_unroll_%s%u_%u_%u, <%u x "
-                       "%s> %s%u_unroll_%s%u_%u_%u, <%u x i32> <",
-                       target,
-                       w, var_type_name_llvm[v->type],
-                       var_type_prefix[v->type], v->reg_index,
-                       var_type_prefix[v->type] + 1, v->reg_index, l, 2*j,
-                       w, var_type_name_llvm[v->type],
-                       var_type_prefix[v->type], v->reg_index,
-                       var_type_prefix[v->type] + 1, v->reg_index, l, 2*j+1,
-                       w*2u);
-            for (uint32_t r = 0; r < 2 * w; ++r)
-                buffer.fmt("i32 %u%s", r, r + 1 < 2 * w ? ", " : "");
-            buffer.put(">\n");
-        }
-        if (l == 0)
-            break;
-        buffer.put("\n");
-    }
-}
-
-void jit_assemble_cuda(ThreadState *ts, ScheduledGroup group, uint32_t n_regs_total) {
-    auto get_parameter_addr = [](uint32_t index, const Variable *v, bool load, uint32_t target = 0) {
-        if (likely(!capturing)) {
-            if (v->arg_index < CUDA_MAX_KERNEL_PARAMETERS - 1)
-                buffer.fmt("    ld.%s.u64 %%rd%u, [params+%u];\n",
-                           uses_optix ? "const" : "param", target,
-                           v->arg_index * 8);
-            else
-                buffer.fmt("    ldu.global.u64 %%rd%u, [%%rd2 + %u];\n",
-                           target, (v->arg_index - (CUDA_MAX_KERNEL_PARAMETERS - 1)) * 8);
-            if (v->size > 1 || !load)
-                buffer.fmt("    mad.wide.u32 %%rd%u, %%r0, %u, %%rd%u;\n",
-                           target, var_type_size[v->type], target);
-        } else {
-            if (v->arg_index < 0xFFFF) {
-                if (v->type != (uint32_t) VarType::Bool)
-                    buffer.fmt("    ld.param.%s %s%u, [params+%u];\n",
-                               var_type_name_ptx[v->type], var_type_prefix[v->type],
-                               v->reg_index, v->arg_index);
-                else
-                    buffer.fmt("    ld.param.u8 %%w0, [params+%u];\n"
-                               "    setp.ne.u16 %s%u, %%w0, 0;\n",
-                               v->arg_index, var_type_prefix[v->type], v->reg_index);
-            } else {
-                buffer.fmt("    ld.global.nc.u64 %%rd3, [extra+%u];\n",
-                           (uint32_t) (kernel_ids.size() * 8));
-                jit_var_inc_ref_ext(index);
-                kernel_ids.push_back(index);
-                if (v->type != (uint32_t) VarType::Bool) {
-                    buffer.fmt("    ld.global.nc.%s %s%u, [%%rd3];\n",
-                               var_type_name_ptx[v->type],
-                               var_type_prefix[v->type], v->reg_index);
-                } else {
-                    buffer.fmt("    ld.global.nc.u8 %%w0, [%%rd3];\n"
-                               "    setp.ne.u16 %s%u, %%w0, 0;\n",
-                               var_type_prefix[v->type], v->reg_index);
-                }
-            }
-        }
-    };
-
-    /* Special registers:
-
-         %r0   :  Index
-         %r1   :  Step
-         %r2   :  Size
-         %p0   :  Stopping predicate
-         %rd0  :  Temporary for parameter pointers
-         %rd1  :  Temporary for offset calculation
-         %rd2  :  'arg_extra' pointer
-
-         %b3, %w3, %r3, %rd3, %f3, %d3, %p3: reserved for use in compound
-         statements that must write a temporary result to a register.
-    */
-
-    if (likely(!capturing)) {
-        buffer.fmt(".version %u.%u\n"
-                   ".target sm_%u\n"
-                   ".address_size 64\n\n",
-                   ts->ptx_version / 10,
-                   ts->ptx_version % 10,
-                   ts->compute_capability);
-    }
-
-    uint32_t group_index = group.start;
-
-    // Globals first
-    for (; group_index != group.end; ++group_index) {
-        if (!schedule[group_index].global)
-            break;
-        if (likely(!capturing)) {
-            uint32_t index = schedule[group_index].index;
-            Variable *v = jit_var(index);
-            jit_render_stmt_cuda(index, v, false);
-            if (strlen(v->stmt) > 0)
-                buffer.putc('\n');
-        }
-    }
-
-    if (likely(!capturing)) {
-        if (likely(!uses_optix)) {
-            buffer.fmt(
-                ".entry enoki_^^^^^^^^^^^^^^^^(.param .align 8 .b8 params[%u]) {\n",
-                (uint32_t) kernel_args.size() * 8);
-        } else {
-            buffer.fmt(
-                ".const .align 8 .b8 params[%u];\n\n"
-                ".entry __raygen__enoki_^^^^^^^^^^^^^^^^() {\n",
-                (uint32_t) kernel_args.size() * 8);
-        }
-    }
-
-    buffer.fmt(
-        "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
-        "    .reg.b64  %%rd<%u>; .reg.f32 %%f<%u>; .reg.f64 %%d<%u>;\n"
-        "    .reg.pred %%p <%u>;\n\n",
-        n_regs_total, n_regs_total, n_regs_total, n_regs_total,
-        n_regs_total, n_regs_total, n_regs_total
-    );
-
-    if (likely(!capturing)) {
-        if (likely(!uses_optix)) {
-            buffer.fmt("    // Grid-stride loop, sm_%u\n",
-                       state.devices[ts->device].compute_capability);
-
-            buffer.put("    mov.u32 %r0, %ctaid.x;\n");
-            buffer.put("    mov.u32 %r1, %ntid.x;\n");
-            buffer.put("    mov.u32 %r2, %tid.x;\n");
-            buffer.put("    mad.lo.u32 %r0, %r0, %r1, %r2;\n");
-            buffer.fmt("    ld.%s.u32 %%r2, [params];\n", uses_optix ? "const" : "param");
-            buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
-            buffer.put("    @%p0 bra L0;\n\n");
-
-            buffer.put("    mov.u32 %r3, %nctaid.x;\n");
-            buffer.put("    mul.lo.u32 %r1, %r3, %r1;\n");
-            if (!kernel_args_extra.empty())
-                buffer.fmt("    ld.%s.u64 %%rd2, [params+%u];\n",
-                           uses_optix ? "const" : "param",
-                           (CUDA_MAX_KERNEL_PARAMETERS - 1) * 8);
-
-            buffer.put("\nL1: // Loop body\n");
-        } else {
-            buffer.put("    call (%r0), _optix_get_launch_index_x, ();\n");
-        }
-    }
-
-    bool log_trace = std::max(state.log_level_stderr,
-                              state.log_level_callback) >= LogLevel::Trace;
-
-    for (; group_index != group.end; ++group_index) {
-        uint32_t index = schedule[group_index].index;
-        Variable *v = jit_var(index);
-        const char *label = log_trace ? jit_var_label(index) : nullptr;
-
-        if (v->arg_type == ArgType::Input) {
-            if (unlikely(log_trace)) {
-                buffer.fmt("\n    // Load %s%u%s%s\n",
-                           var_type_prefix[v->type],
-                           v->reg_index, label ? ": " : "",
-                           label ? label : "");
-            }
-
-            get_parameter_addr(index, v, true, v->direct_pointer ? v->reg_index : 0u);
-
-            if (likely(!v->direct_pointer && !capturing)) {
-                if (likely(v->type != (uint32_t) VarType::Bool)) {
-                    buffer.fmt("    %s.%s %s%u, [%%rd0];\n",
-                           v->size == 1 ? "ldu.global" : "ld.global.cs",
-                           var_type_name_ptx[v->type],
-                           var_type_prefix[v->type],
-                           v->reg_index);
-                } else {
-                    buffer.fmt("    %s.u8 %%w0, [%%rd0];\n",
-                           v->size == 1 ? "ldu.global" : "ld.global.cs");
-                    buffer.fmt("    setp.ne.u16 %s%u, %%w0, 0;\n",
-                           var_type_prefix[v->type],
-                           v->reg_index);
-                }
-            }
-        } else {
-            if (unlikely(log_trace && !((VarType) v->type == VarType::Void ||
-                                        (VarType) v->type == VarType::Global)))
-                buffer.fmt("\n    // Evaluate %s%u%s%s\n",
-                           var_type_prefix[v->type], v->reg_index,
-                           label ? ": " : "", label ? label : "");
-
-            jit_render_stmt_cuda(index, v);
-        }
-
-        if (v->arg_type == ArgType::Output && !capturing) {
-            if (unlikely(log_trace))
-                buffer.fmt("\n    // Store %s%u%s%s\n",
-                           var_type_prefix[v->type], v->reg_index,
-                           label ? ": " : "", label ? label : "");
-
-            get_parameter_addr(index, v, false);
-
-            if (likely(v->type != (uint32_t) VarType::Bool)) {
-                buffer.fmt("    st.global.cs.%s [%%rd0], %s%u;\n",
-                       var_type_name_ptx[v->type],
-                       var_type_prefix[v->type],
-                       v->reg_index);
-            } else {
-                buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u;\n",
-                           v->reg_index);
-                buffer.put("    st.global.cs.u8 [%rd0], %w0;\n");
-            }
-        }
-    }
-
-    if (likely(!capturing)) {
-        if (likely(!uses_optix)) {
-            buffer.putc('\n');
-            buffer.put("    add.u32 %r0, %r0, %r1;\n");
-            buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n");
-            buffer.put("    @!%p0 bra L1;\n");
-            buffer.put("\n");
-            buffer.put("L0:\n");
-        }
-        buffer.put("    ret;\n");
-        buffer.put("}");
-    }
-}
-
-void jit_assemble_llvm(ScheduledGroup group) {
-    const int width = jit_llvm_vector_width;
-
-    bool log_trace = std::max(state.log_level_stderr,
-                              state.log_level_callback) >= LogLevel::Trace;
-
-    // Globals first
-    uint32_t group_index = group.start;
-    for (; group_index != group.end; ++group_index) {
-        if (!schedule[group_index].global)
-            break;
-        if (likely(!capturing)) {
-            uint32_t index = schedule[group_index].index;
-            Variable *v = jit_var(index);
-            jit_render_stmt_llvm(index, v, false);
-            buffer.putc('\n');
-        }
-    }
-
-    if (likely(!capturing)) {
-        buffer.put("define void @enoki_^^^^^^^^^^^^^^^^(i32 %start, i32 %end, "
-                   "i8** noalias %ptrs) #0 {\nentry:\n");
-
-        for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
-            uint32_t index = schedule[group_index].index;
-            Variable *v = jit_var(index);
-            if (v->arg_type == ArgType::Register)
-                continue;
-            uint32_t reg_id = v->reg_index, arg_id = v->arg_index - 1;
-            const char *type = (VarType) v->type == VarType::Bool
-                                   ? "i8" : var_type_name_llvm[v->type];
-
-            if (unlikely(log_trace))
-                buffer.fmt("\n    ; Prepare argument %u\n", arg_id);
-
-            buffer.fmt("    %%a%u_i = getelementptr inbounds i8*, i8** %%ptrs, i32 %u\n", arg_id, arg_id);
-
-            if (likely(!v->direct_pointer)) {
-                buffer.fmt("    %%a%u_p = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", arg_id, arg_id);
-                buffer.fmt("    %%a%u = bitcast i8* %%a%u_p to %s*\n", arg_id, arg_id, type);
-                if (v->size == 1) {
-                    buffer.fmt("    %%a%u_s = load %s, %s* %%a%u, align %u, !alias.scope !1\n", arg_id,
-                               type, type, arg_id, var_type_size[v->type]);
-                    if ((VarType) v->type == VarType::Bool)
-                        buffer.fmt("    %%a%u_s1 = trunc i8 %%a%u_s to i1\n", arg_id, arg_id);
-                }
-            } else {
-                buffer.fmt("    %%rd%u = load i8*, i8** %%a%u_i, align 8, !alias.scope !1\n", reg_id, arg_id);
-            }
-        }
-        buffer.put("    br label %loop\n\n");
-
-        buffer.put("loop:\n");
-        buffer.put("    %index = phi i32 [ %index_next, %loop_suffix ], [ %start, %entry ]\n");
-    }
-
-    auto get_parameter_addr = [](uint32_t reg_id, uint32_t arg_id,
-                                 const char *reg_prefix, const char *type,
-                                 uint32_t size) {
-        if (size == 1) {
-            buffer.fmt("    %s%u_p = bitcast %s* %%a%u to <%u x %s>*\n", reg_prefix, reg_id,
-                       type, arg_id, jit_llvm_vector_width, type);
-        } else {
-            buffer.fmt("    %s%u_i = getelementptr inbounds %s, %s* %%a%u, "
-                       "i32 %%index\n", reg_prefix, reg_id, type, type, arg_id);
-            buffer.fmt("    %s%u_p = bitcast %s* %s%u_i to <%u x %s>*\n", reg_prefix, reg_id,
-                       type, reg_prefix, reg_id, jit_llvm_vector_width, type);
-        }
-    };
-
-    for (; group_index != group.end; ++group_index) {
-        uint32_t index = schedule[group_index].index;
-        Variable *v = jit_var(index);
-        uint32_t align = (v->unaligned && !capturing) ? 1 : (var_type_size[v->type] * width),
-                 reg_id = v->reg_index, arg_id = v->arg_index - 1;
-        const char *reg_prefix = var_type_prefix[v->type],
-                   *type = (VarType) v->type == VarType::Bool
-                               ? "i8" : var_type_name_llvm[v->type];
-        const char *label = log_trace ? jit_var_label(index) : nullptr;
-        uint32_t size = v->size;
-
-        if (v->arg_type == ArgType::Input) {
-            if (v->direct_pointer)
-                continue;
-
-            if (unlikely(log_trace))
-                buffer.fmt("\n    ; Load %s%u%s%s\n",
-                           reg_prefix, reg_id, label ? ": " : "",
-                           label ? label : "");
-
-            if (size > 1)
-                get_parameter_addr(reg_id, arg_id, reg_prefix, type, size);
-
-            if (likely(!capturing)) {
-                if ((VarType) v->type != VarType::Bool) {
-                    if (size > 1) {
-                        buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p, align %u, !alias.scope !1\n",
-                                   reg_prefix, reg_id, width, type, width, type, reg_prefix, reg_id, align);
-                    } else {
-                        buffer.fmt("    %s%u_z = insertelement <%u x %s> undef, %s %%a%u_s, i32 0\n",
-                                   reg_prefix, reg_id, width, type, type, arg_id);
-                        buffer.fmt("    %s%u = shufflevector <%u x %s> %s%u_z, <%u x %s> undef, <%u x i32> zeroinitializer\n",
-                                   reg_prefix, reg_id, width, type, reg_prefix, reg_id, width, type, width);
-                    }
-                } else {
-                    if (size > 1) {
-                        buffer.fmt("    %s%u_z = load <%u x i8>, <%u x i8>* %s%u_p, align %u, !alias.scope !1\n",
-                                   reg_prefix, reg_id, width, width, reg_prefix, reg_id, align);
-                        buffer.fmt("    %s%u = trunc <%u x i8> %s%u_z to <%u x i1>\n",
-                                   reg_prefix, reg_id, width, reg_prefix, reg_id, width);
-                    } else {
-                        buffer.fmt("    %s%u_z = insertelement <%u x i1> undef, i1 %%a%u_s1, i32 0\n",
-                                   reg_prefix, reg_id, width, arg_id);
-                        buffer.fmt("    %s%u = shufflevector <%u x i1> %s%u_z, <%u x i1> undef, <%u x i32> zeroinitializer\n",
-                                   reg_prefix, reg_id, width, reg_prefix, reg_id, width, width);
-                    }
-                }
-            } else {
-                buffer.fmt(
-                    "    %s%u_1 = getelementptr i8, i8* %%params, i32 %u\n"
-                    "    %s%u_2 = bitcast i8* %s%u_1 to <%u x %s> *\n"
-                    "    %s%u = load <%u x %s>, <%u x %s>* %s%u_2, align %u, !alias.scope !1\n",
-                    reg_prefix, reg_id, v->arg_index, reg_prefix, reg_id, reg_prefix, reg_id, width,
-                    type, reg_prefix, reg_id, width, type, width, type, reg_prefix, reg_id, align);
-            }
-        } else {
-            if (unlikely(log_trace && !((VarType) v->type == VarType::Void ||
-                                        (VarType) v->type == VarType::Global)))
-                buffer.fmt("\n    ; Evaluate %s%u%s%s\n", reg_prefix, reg_id,
-                           label ? ": " : "", label ? label : "");
-            jit_render_stmt_llvm(index, v);
-        }
-
-        if (v->arg_type == ArgType::Output) {
-            if (unlikely(log_trace))
-                buffer.fmt("\n    ; Store %s%u%s%s\n", reg_prefix, reg_id,
-                           label ? ": " : "", label ? label : "");
-            get_parameter_addr(reg_id, arg_id, reg_prefix, type, size);
-
-            if ((VarType) v->type != VarType::Bool) {
-                buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p, align %u, !noalias !1\n",
-                           width, type, reg_prefix,
-                           reg_id, width, type, reg_prefix, reg_id, align);
-            } else {
-                buffer.fmt("    %s%u_e = zext <%u x i1> %s%u to <%u x i8>\n",
-                           reg_prefix, reg_id, width, reg_prefix, reg_id, width);
-                buffer.fmt("    store <%u x i8> %s%u_e, <%u x i8>* %s%u_p, align %u, !noalias !1\n",
-                           width, reg_prefix, reg_id, width, reg_prefix, reg_id, align);
-            }
-        }
-    }
-
-    if (likely(!capturing)) {
-        buffer.putc('\n');
-        buffer.put("    br label %loop_suffix\n");
-        buffer.putc('\n');
-        buffer.put("loop_suffix:\n");
-        buffer.fmt("    %%index_next = add i32 %%index, %u\n", width);
-        buffer.put("    %cond = icmp uge i32 %index_next, %end\n");
-        buffer.put("    br i1 %cond, label %done, label %loop, !llvm.loop !2\n\n");
-        buffer.put("done:\n");
-        buffer.put("    ret void\n");
-        buffer.put("}\n\n");
-
-        buffer.put("!0 = !{!0}\n");
-        buffer.put("!1 = !{!1, !0}\n");
-        buffer.put("!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
-        buffer.fmt("attributes #0 = { norecurse nounwind alignstack=%u "
-                   "\"target-cpu\"=\"%s\" \"stack-probe-size\"=\"%u\" \"target-features\"=\"-vzeroupper",
-                   std::max(16u, width * (uint32_t) sizeof(float)),
-                   jit_llvm_target_cpu, 1024 * 1024 * 1024);
-        if (jit_llvm_target_features) {
-            buffer.putc(',');
-            buffer.put(jit_llvm_target_features);
-        }
-        buffer.put("\" }");
-    }
-}
-
-void jit_assemble(ThreadState *ts, ScheduledGroup group) {
+void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     bool cuda = ts->cuda;
 
-    uint32_t n_args_in    = 1 /* size */,
-             n_args_out   = 0,
-             n_args_scat  = 0,
-             // The first 4 variables are reserved on the CUDA backend
-             n_regs_total = cuda ? 4 : 0;
-
-    (void) timer();
-    jit_trace("jit_assemble(size=%u): register map:", group.size);
-
-    kernel_args_extra.clear();
-    kernel_args.clear();
     uses_optix = false;
+    kernel_params.clear();
+
+    uint32_t n_params_in      = 0,
+             n_params_out     = 0,
+             n_side_effects = 0,
+             n_regs         = 0;
 
     if (cuda) {
-        /// Push the size argument
-        void *tmp = 0;
-        memcpy(&tmp, &group.size, sizeof(uint32_t));
-        kernel_args.push_back(tmp);
+        uintptr_t size = 0;
+        memcpy(&size, &group.size, sizeof(uint32_t));
+        kernel_params.push_back((void *) size);
+
+        // The first 4 variables are reserved on the CUDA backend
+        n_regs = 4;
     } else {
-        // Temporary scratch space to store # of elements
-        kernel_args.push_back(nullptr);
-        kernel_args.push_back(nullptr);
-        kernel_args.push_back(nullptr);
+        // First 3 parameters reserved for: kernel ptr, size, ITT identifier
+        for (int i = 0; i < 3; ++i)
+        kernel_params.push_back(nullptr);
     }
+
+    (void) timer();
 
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         uint32_t index = schedule[group_index].index;
-        Variable *v = jit_var(index);
-        bool push = false;
+        Variable *v = jitc_var(index);
 
+        // Some sanity checks
+        if (unlikely(v->cuda != ts->cuda))
+            jitc_raise("jit_assemble(): variable scheduled in wrong ThreadState");
         if (unlikely(v->ref_count_int == 0 && v->ref_count_ext == 0))
-            jit_fail("jit_assemble(): schedule contains unreferenced variable %u!", index);
-        else if (unlikely(v->size != 1 && v->size != group.size))
-            jit_fail("jit_assemble(): schedule contains variable %u with incompatible size "
+            jitc_fail("jit_assemble(): schedule contains unreferenced variable %u!", index);
+        if (unlikely(v->size != 1 && v->size != group.size))
+            jitc_fail("jit_assemble(): schedule contains variable %u with incompatible size "
                      "(%u and %u)!", index, v->size, group.size);
-        else if (unlikely(v->data == nullptr && !v->direct_pointer &&
-                          v->stmt == nullptr))
-            jit_fail("jit_assemble(): schedule contains variable %u with empty "
-                     "statement! This issue can arise when a loop involving "
-                     "side effects is executed multiple times.", index);
+        if (unlikely(!v->data && !v->literal && !v->stmt))
+            jitc_fail("jit_assemble(): variable %u has no statement!", index);
+        if (unlikely((VarType) v->type == VarType::Void && v->output_flag))
+            jitc_fail("jit_assemble(): cannot evaluate variables of type 'Void'");
+        if (unlikely(v->literal && v->data))
+            jitc_fail("jit_assemble(): variable is simultaneously literal and evaluated");
+        if (unlikely(v->dirty))
+            jitc_fail("jit_assemble(): dirty variable encountered!");
 
-        if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Trace) {
-            buffer.clear();
-            buffer.fmt("   - %s%u -> %u",
-                       var_type_prefix[v->type],
-                       n_regs_total, index);
-
-            const char *label = jit_var_label(index);
-            if (label)
-                buffer.fmt(" \"%s\"", label);
-            if (v->size == 1)
-                buffer.put(" [scalar]");
-            if (v->direct_pointer)
-                buffer.put(" [direct_pointer]");
-            else if (v->data != nullptr)
-                buffer.put(" [in]");
-            else if (v->scatter)
-                buffer.put(" [scat]");
-            else if (v->output_flag && v->size == group.size)
-                buffer.put(" [out]");
-
-            jit_trace("%s", buffer.get());
-        }
-
-        if (v->data || v->direct_pointer) {
-            v->arg_index = (uint16_t) (n_args_in + n_args_out);
-            v->arg_type = ArgType::Input;
-            n_args_in++;
-            push = true;
-        } else if (v->output_flag && v->size == group.size &&
-                   !((VarType) v->type == VarType::Void ||
-                     (VarType) v->type == VarType::Global)) {
-            size_t isize    = (size_t) var_type_size[v->type],
-                   var_size = (size_t) group.size * isize;
+        if (v->data) {
+            v->param_index = (uint16_t) kernel_params.size();
+            v->param_type = ParamType::Input;
+            kernel_params.push_back(v->data);
+            n_params_in++;
+        } else if (v->output_flag && v->size == group.size) {
+            size_t isize = (size_t) var_type_size[v->type],
+                   dsize = (size_t) group.size * isize;
 
             // Padding to support out-of-bounds accesses in LLVM gather operations
-            if (cuda && isize < 4)
-                isize += 4 - isize;
+            if (!cuda && isize < 4)
+                dsize += 4 - isize;
 
-            AllocType alloc_type = cuda ? AllocType::Device : AllocType::HostAsync;
-            void *data = jit_malloc(alloc_type, var_size);
+            void *data = jitc_malloc(
+                cuda ? AllocType::Device : AllocType::HostAsync, dsize);
 
-            // jit_malloc() may temporarily release the lock, variable pointer might have changed
-            v = jit_var(index);
+            // The addr. of 'v' can change (jitc_malloc() may release the lock)
+            v = jitc_var(index);
 
             v->data = data;
-            v->arg_index = (uint16_t) (n_args_in + n_args_out);
-            v->arg_type = ArgType::Output;
-            v->tsize = 1;
-            n_args_out++;
-            push = true;
+            v->param_index = (uint16_t) kernel_params.size();
+            v->param_type = ParamType::Output;
+            kernel_params.push_back(data);
+            n_params_out++;
+        } else if (v->literal && (VarType) v->type == VarType::Pointer) {
+            v->param_index = (uint16_t) kernel_params.size();
+            v->param_type = ParamType::Input;
+            kernel_params.push_back((void *) v->value);
+            n_params_in++;
         } else {
-            if (v->scatter)
-                n_args_scat++;
-            v->arg_index = (uint16_t) 0xFFFF;
-            v->arg_type = ArgType::Register;
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+            v->param_type = ParamType::Register;
+            v->param_index = (uint16_t) 0xFFFF;
+            n_side_effects += v->side_effect;
             uses_optix |= v->optix;
-#endif
         }
 
-        if (push) {
-            if (!cuda || kernel_args.size() < CUDA_MAX_KERNEL_PARAMETERS - 1)
-                kernel_args.push_back(v->data);
-            else
-                kernel_args_extra.push_back(v->data);
-        }
-
-        v->reg_index = n_regs_total++;
+        v->reg_index = n_regs++;
     }
 
-    if (unlikely(n_regs_total > 0xFFFFFFu))
-        jit_fail("jit_run(): The queued computation involves more than 16 "
+    if (unlikely(n_regs > 0xFFFFFFu))
+        jitc_fail("jit_run(): The queued computation involves more than 16 "
                  "million variables, which overflowed an internal counter. "
-                 "Even if Enoki could compile such a large program, it would "
-                 "not run efficiently. Please periodically run jitc_eval() to "
+                 "Even if Enoki could compile such a lparame program, it would "
+                 "not run efficiently. Please periodically run jit_eval() to "
                  "break down the computation into smaller chunks.");
-    else if (unlikely(n_args_in + n_args_out > 0xFFFFu))
-        jit_fail("jit_run(): The queued computation involves more than 65536 "
-                 "input or output arguments, which overflowed an internal counter. "
-                 "Even if Enoki could compile such a large program, it would "
-                 "not run efficiently. Please periodically run jitc_eval() to "
-                 "break down the computation into smaller chunks.");
+    else if (unlikely(n_params_in + n_params_out > 0xFFFF))
+        jitc_fail("jit_run(): The queued computation involves more than 16K "
+                 "kernel parameters to pass input and output array "
+                 "addresses, scalars, etc. Even if Enoki could compile "
+                 "such a lparame program, it is unlikely that it would run "
+                 "efficiently. Please periodically run jit_eval() to break "
+                 "down the computation into smaller chunks.");
 
-    if (unlikely(cuda && !kernel_args_extra.empty())) {
-        size_t args_extra_size = kernel_args_extra.size() * sizeof(uint64_t);
-        void *args_extra_host = jit_malloc(AllocType::HostPinned, args_extra_size);
-        kernel_args_extra_dev = jit_malloc(AllocType::Device, args_extra_size);
-
-        memcpy(args_extra_host, kernel_args_extra.data(), args_extra_size);
-        cuda_check(cuMemcpyAsync((CUdeviceptr) kernel_args_extra_dev,
-                                 (CUdeviceptr) args_extra_host,
-                                 args_extra_size, ts->stream));
-
-        kernel_args.push_back(kernel_args_extra_dev);
-        jit_free(args_extra_host);
+    // Pass parameters through global memory if too lparame or on OptiX
+    if (cuda && (uses_optix || kernel_params.size() > ENOKI_CUDA_ARG_LIMIT)) {
+        size_t size = kernel_params.size() * sizeof(void *);
+        uint8_t *tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, size);
+        kernel_params_global = (uint8_t *) jitc_malloc(AllocType::Device, size);
+        memcpy(tmp, kernel_params.data(), size);
+        jitc_memcpy_async(1, kernel_params_global, tmp, size);
+        jitc_free(tmp);
+        kernel_params.clear();
+        kernel_params.push_back(kernel_params_global);
     }
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
-    if (unlikely(uses_optix)) {
-        size_t args_size = kernel_args.size() * sizeof(uint64_t);
-        void *args_host = jit_malloc(AllocType::HostPinned, args_size);
-        kernel_args_dev = jit_malloc(AllocType::Device, args_size);
+    bool trace = std::max(state.log_level_stderr, state.log_level_callback) >=
+                 LogLevel::Trace;
 
-        memcpy(args_host, kernel_args.data(), args_size);
-        cuda_check(cuMemcpyAsync((CUdeviceptr) kernel_args_dev,
-                                 (CUdeviceptr) args_host,
-                                 args_size, ts->stream));
-        jit_free(args_host);
+    if (unlikely(trace)) {
+        buffer.clear();
+        for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
+            uint32_t index = schedule[group_index].index;
+            Variable *v = jitc_var(index);
+
+            buffer.fmt("   - %s%u -> %u: ", var_type_prefix[v->type],
+                       v->reg_index, index);
+
+            const char *label = jitc_var_label(index);
+            if (label)
+                buffer.fmt("label=\"%s\", ", label);
+            if (v->param_type == ParamType::Input)
+                buffer.fmt("in, offset=%u, ", v->param_index);
+            if (v->param_type == ParamType::Output)
+                buffer.fmt("out, offset=%u, ", v->param_index);
+            if (v->literal)
+                buffer.put("literal, ");
+            if (v->size == 1 && v->param_type != ParamType::Output)
+                buffer.put("scalar, ");
+            if (v->side_effect)
+                buffer.put("side effects, ");
+            buffer.rewind(2);
+            buffer.putc('\n');
+        }
+        jitc_trace("jit_assemble(size=%u): register map:\n%s",
+                  group.size, buffer.get());
     }
-#endif
 
-    jit_llvm_supplement = false;
-    capturing = false;
+    globals.clear();
+    globals_set.clear();
     buffer.clear();
-
     if (cuda)
-        jit_assemble_cuda(ts, group, n_regs_total);
+        jitc_assemble_cuda(ts, group, n_regs, (uint32_t) kernel_params.size(),
+                          kernel_params_global != nullptr);
     else
-        jit_assemble_llvm(group);
+        jitc_assemble_llvm(ts, group);
 
     // Replace '^'s in 'enoki_^^^^^^^^' by a hash code
     kernel_hash = hash_kernel(buffer.get());
     snprintf(kernel_name, 17, "%016llx", (unsigned long long) kernel_hash);
     const char *name_start = strchr(buffer.get(), '^');
     if (unlikely(!name_start))
-        jit_fail("jit_eval(): could not find kernel name!");
+        jitc_fail("jit_eval(): could not find kernel name!");
     memcpy((char *) name_start, kernel_name, 16);
 
-    float codegen_time = timer();
-    jit_log(
-        Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, ops=%u, jit=%s):",
-        (unsigned long long) kernel_hash,
-        uses_optix ? "via OptiX, " : "",
-        group.size, n_args_in - 1,
-        n_args_out + n_args_scat, n_regs_total, jit_time_string(codegen_time));
+    if (unlikely(trace))
+        jitc_trace("%s", buffer.get());
 
-    jit_log(Debug, "%s", buffer.get());
+    float codegen_time = timer();
+    jitc_log(Info,
+            "  -> launching %016llx (%sn=%u, in=%u, out=%u, ops=%u, jit=%s):",
+            (unsigned long long) kernel_hash, uses_optix ? "via OptiX, " : "",
+            group.size, n_params_in, n_params_out + n_side_effects, n_regs,
+            jitc_time_string(codegen_time));
 }
 
-Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
+Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     KernelKey kernel_key((char *) buffer.get(), ts->device);
     auto it = state.kernel_cache.find(
         kernel_key, KernelHash::compute_hash(kernel_hash, ts->device));
@@ -1013,31 +256,31 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
         bool cache_hit = false;
 
         if (!uses_optix)
-            cache_hit = jit_kernel_load(buffer.get(), (uint32_t) buffer.size(),
+            cache_hit = jitc_kernel_load(buffer.get(), (uint32_t) buffer.size(),
                                         ts->cuda, kernel_hash, kernel);
 
         if (!cache_hit) {
             if (ts->cuda) {
+                if (!uses_optix) {
+                    jitc_cuda_compile(buffer.get(), buffer.size(), kernel);
+                } else {
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-                if (!uses_optix)
-                    jit_cuda_compile(buffer.get(), buffer.size(), kernel);
-                else
-                    jit_optix_compile(ts, buffer.get(), buffer.size(), kernel, kernel_hash);
+                    jitc_optix_compile(ts, buffer.get(), buffer.size(), kernel, kernel_hash);
 #else
-                jit_cuda_compile(buffer.get(), buffer.size(), kernel);
+                    jitc_fail("jit_run(): OptiX support was not enabled in Enoki-JIT.");
 #endif
+                }
             } else {
-                jit_llvm_compile(buffer.get(), buffer.size(), kernel,
-                                 jit_llvm_supplement);
+                jitc_llvm_compile(buffer.get(), buffer.size(), kernel);
             }
 
             if (kernel.data)
-                jit_kernel_write(buffer.get(), (uint32_t) buffer.size(),
+                jitc_kernel_write(buffer.get(), (uint32_t) buffer.size(),
                                  ts->cuda, kernel_hash, kernel);
         }
 
         if (!ts->cuda) {
-            jit_llvm_disasm(kernel);
+            jitc_llvm_disasm(kernel);
         } else if (!uses_optix) {
             CUresult ret;
             /* Unlock while synchronizing */ {
@@ -1045,7 +288,7 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
                 ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
             }
             if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
-                jit_malloc_trim();
+                jitc_malloc_trim();
                 /* Unlock while synchronizing */ {
                     unlock_guard guard(state.mutex);
                     ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
@@ -1078,11 +321,11 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
         }
 
         float link_time = timer();
-        jit_log(Info, "     cache %s, %s: %s, %s.",
+        jitc_log(Info, "     cache %s, %s: %s, %s.",
                 cache_hit ? "hit" : "miss",
                 cache_hit ? "load" : "build",
-                std::string(jit_time_string(link_time)).c_str(),
-                std::string(jit_mem_string(kernel.size)).c_str());
+                std::string(jitc_time_string(link_time)).c_str(),
+                std::string(jitc_mem_string(kernel.size)).c_str());
 
         kernel_key.str = (char *) malloc_check(buffer.size() + 1);
         memcpy(kernel_key.str, buffer.get(), buffer.size() + 1);
@@ -1099,53 +342,53 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
     state.kernel_launches++;
 
     if (ts->cuda) {
-        size_t kernel_args_size =
-            (size_t) kernel_args.size() * sizeof(uint64_t);
-
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-        if (unlikely(uses_optix)) {
-            jit_optix_launch(ts, kernel, group.size, kernel_args_dev,
-                             kernel_args_size);
-            return nullptr;
-        }
+        // if (unlikely(uses_optix)) {
+        //     jitc_optix_launch(ts, kernel, group.size, kernel_params_global,
+        //                      kernel_params_size);
+        //     return nullptr;
+        // }
 #endif
 
-        void *config[] = {
-            CU_LAUNCH_PARAM_BUFFER_POINTER,
-            kernel_args.data(),
-            CU_LAUNCH_PARAM_BUFFER_SIZE,
-            &kernel_args_size,
-            CU_LAUNCH_PARAM_END
-        };
+        if (!uses_optix) {
+            size_t kernel_params_size = kernel_params.size() * sizeof(void *);
 
-        uint32_t block_count, thread_count;
-        const Device &device = state.devices[ts->device];
-        device.get_launch_config(&block_count, &thread_count, group.size,
-                                 (uint32_t) kernel.cuda.block_size);
+            void *config[] = {
+                CU_LAUNCH_PARAM_BUFFER_POINTER,
+                kernel_params.data(),
+                CU_LAUNCH_PARAM_BUFFER_SIZE,
+                &kernel_params_size,
+                CU_LAUNCH_PARAM_END
+            };
 
-        cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,
-                                  thread_count, 1, 1, 0, cu_stream, nullptr,
-                                  config));
+            uint32_t block_count, thread_count, size = group.size;
+            const Device &device = state.devices[ts->device];
+            device.get_launch_config(&block_count, &thread_count, size,
+                                     (uint32_t) kernel.cuda.block_size);
+
+            cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,
+                                      thread_count, 1, 1, 0, ts->stream,
+                                      nullptr, config));
+        }
     } else {
         uint32_t packets =
-            (group.size + jit_llvm_vector_width - 1) / jit_llvm_vector_width;
+            (group.size + jitc_llvm_vector_width - 1) / jitc_llvm_vector_width;
 
         auto callback = [](uint32_t index, void *ptr) {
-            void **args = (void **) ptr;
-            LLVMKernelFunction kernel = (LLVMKernelFunction) args[0];
-            uint32_t size       = (uint32_t) (uintptr_t) args[1],
-                     block_size = (uint32_t) ((uintptr_t) args[1] >> 32),
+            void **params = (void **) ptr;
+            LLVMKernelFunction kernel = (LLVMKernelFunction) params[0];
+            uint32_t size       = (uint32_t) (uintptr_t) params[1],
+                     block_size = (uint32_t) ((uintptr_t) params[1] >> 32),
                      start      = index * block_size,
                      end        = std::min(start + block_size, size);
 
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
             // Signal start of kernel
             __itt_task_begin(enoki_domain, __itt_null, __itt_null,
-                             (__itt_string_handle *) args[2]);
+                             (__itt_string_handle *) params[2]);
 #endif
-
             // Perform the main computation
-            kernel(start, end, args + 3);
+            kernel(start, end, params);
 
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
             // Signal termination of kernel
@@ -1156,21 +399,21 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
         uint32_t block_size = ENOKI_POOL_BLOCK_SIZE,
                  blocks = (group.size + block_size - 1) / block_size;
 
-        kernel_args[0] = (void *) kernel.llvm.func;
-        kernel_args[1] = (void *) ((((uintptr_t) block_size) << 32) + (uintptr_t) group.size);
+        kernel_params[0] = (void *) kernel.llvm.func;
+        kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) + (uintptr_t) group.size);
 
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
-        kernel_args[2] = kernel.llvm.itt;
+        kernel_params[2] = kernel.llvm.itt;
 #endif
 
-        jit_log(Trace, "jit_run(): scheduling %u packet%s in %u block%s ..", packets,
+        jitc_log(Trace, "jit_run(): scheduling %u packet%s in %u block%s ..", packets,
                 packets == 1 ? "" : "s", blocks, blocks == 1 ? "" : "s");
 
         return task_submit_dep(
             nullptr, &ts->task, 1, blocks,
             callback,
-            kernel_args.data(),
-            kernel_args.size() * sizeof(void *),
+            kernel_params.data(),
+            kernel_params.size() * sizeof(void *),
             nullptr
         );
     }
@@ -1180,39 +423,33 @@ Task *jit_run(ThreadState *ts, CUstream cu_stream, ScheduledGroup group) {
 
 static ProfilerRegion profiler_region_eval("jit_eval");
 
-/// Evaluate all queued computation
-void jit_eval() {
-    jit_eval_ts(thread_state_cuda);
-    jit_eval_ts(thread_state_llvm);
-}
-
 /// Evaluate all computation that is queued on the given ThreadState
-void jit_eval_ts(ThreadState *ts) {
-    if (!ts || ts->todo.empty())
+void jitc_eval(ThreadState *ts) {
+    if (!ts || (ts->scheduled.empty() && ts->side_effects.empty()))
         return;
 
-    uint32_t flags = jit_flags();
+    uint32_t flags = jitc_flags();
     if (unlikely(flags & (uint32_t) JitFlag::RecordingLoop))
-        jit_raise(
+        jitc_raise(
             "jit_eval(): Enoki is currently recording a loop. In such "
             "cases, you are not allowed to run operations that trigger a "
-            "kernel evaluation via jitc_eval(). Set a breakpoint on "
+            "kernel evaluation via jit_eval(). Set a breakpoint on "
             "jit_raise() to find the offending code in your program.");
 
     if (unlikely(flags & (uint32_t) JitFlag::RecordingVCall))
-        jit_raise(
+        jitc_raise(
             "jit_eval(): Enoki is currently recording a virtual function call. "
             "In such cases, you are not allowed to run operations that trigger "
-            "a kernel evaluation via jitc_eval(). Set a breakpoint on "
+            "a kernel evaluation via jit_eval(). Set a breakpoint on "
             "jit_raise() to find the offending code in your program.");
 
     ProfilerPhase profiler(profiler_region_eval);
 
-    /* The function 'jit_eval()' modifies several global data structures
+    /* The function 'jitc_eval()' modifies several global data structures
        and should never be executed concurrently. However, there are a few
        places where it needs to temporarily release the main lock as part of
        its work, which is dangerous because another thread could use that
-       opportunity to enter 'jit_eval()' and cause corruption. The following
+       opportunity to enter 'jitc_eval()' and cause corruption. The following
        therefore temporarily unlocks 'state.mutex' and then locks a separate
        mutex 'state.eval_mutex' specifically guarding these data structures */
 
@@ -1224,38 +461,34 @@ void jit_eval_ts(ThreadState *ts) {
     schedule.clear();
 
     // Collect variables that must be computed and their subtrees
-    for (uint32_t index : ts->todo) {
-        auto it = state.variables.find(index);
-        if (it == state.variables.end())
-            continue;
+    for (auto &source : { ts->scheduled, ts->side_effects }) {
+        for (uint32_t index : source) {
+            auto it = state.variables.find(index);
+            if (it == state.variables.end())
+                continue;
 
-        Variable *v = &it.value();
+            Variable *v = &it.value();
 
-        // Skip variables that aren't externally referenced or already evaluated
-        if (v->ref_count_ext == 0 || v->data != nullptr)
-            continue;
+            // Skip variables that aren't externally referenced or already evaluated
+            if (v->ref_count_ext == 0 || v->data || v->literal)
+                continue;
 
-        if (unlikely(v->cuda != ts->cuda))
-            jit_raise("jit_eval(): internal error -- variable scheduled in "
-                      "wrong ThreadState data structure!");
-
-        jit_var_traverse(v->size, index, v);
-        v->output_flag = true;
+            jitc_var_traverse(v->size, index);
+            v->output_flag = true;
+        }
     }
 
-    ts->todo.clear();
+    ts->scheduled.clear();
+    ts->side_effects.clear();
 
     if (schedule.empty())
         return;
 
-    // Group them from large to small sizes while preserving dependencies
+    // Group them from lparame to small sizes while preserving dependencies
     std::stable_sort(
         schedule.begin(), schedule.end(),
         [](const ScheduledVariable &a, const ScheduledVariable &b) {
-            if (a.size == b.size)
-                return a.global > b.global;
-            else
-                return a.size > b.size;
+            return a.size > b.size;
         });
 
     // Partition into groups of matching size
@@ -1276,53 +509,32 @@ void jit_eval_ts(ThreadState *ts) {
                                      cur, (uint32_t) schedule.size());
     }
 
-    jit_log(Info, "jit_eval(): launching %zu kernel%s.",
+    jitc_log(Info, "jit_eval(): launching %zu kernel%s.",
             schedule_groups.size(),
             schedule_groups.size() == 1 ? "" : "s");
 
     // Are there independent groups of work that could be dispatched in parallel?
-    Device *device = nullptr;
-    size_t cuda_stream_count = 1;
     scoped_set_context_maybe guard2(ts->context);
 
-    if (ts->cuda && schedule_groups.size() > 1) {
-        device = &state.devices[ts->device];
-        cuda_check(cuEventRecord(ts->event, ts->stream));
-        cuda_stream_count = std::min((size_t) ENOKI_SUB_STREAMS, schedule_groups.size());
-        for (size_t i = 0; i < cuda_stream_count; ++i)
-            cuda_check(cuStreamWaitEvent(device->sub_streams[i], ts->event, 0));
-    }
-
     scheduled_tasks.clear();
-    uint32_t group_idx = 0;
     for (ScheduledGroup &group : schedule_groups) {
-        jit_assemble(ts, group);
+        jitc_assemble(ts, group);
 
-        CUstream cu_stream = ts->stream;
-        if (cuda_stream_count > 1)
-            cu_stream = device->sub_streams[group_idx++ % ENOKI_SUB_STREAMS];
-
-        scheduled_tasks.push_back(jit_run(ts, cu_stream, group));
+        scheduled_tasks.push_back(jitc_run(ts, group));
 
         if (ts->cuda) {
-            jit_free(kernel_args_dev);
-            jit_free(kernel_args_extra_dev);
-            kernel_args_dev = kernel_args_extra_dev = nullptr;
+            jitc_free(kernel_params_global);
+            kernel_params_global = nullptr;
         }
     }
 
-    if (cuda_stream_count > 1) {
-        for (size_t i = 0; i < cuda_stream_count; ++i) {
-            cuda_check(cuEventRecord(device->sub_events[i], device->sub_streams[i]));
-            cuda_check(cuStreamWaitEvent(ts->stream, device->sub_events[i], 0));
-        }
-    } else {
+    if (!ts->cuda) {
         if (scheduled_tasks.size() == 1) {
             task_release(ts->task);
             ts->task = scheduled_tasks[0];
         } else {
             if (unlikely(scheduled_tasks.empty()))
-                jit_fail("jit_eval(): no tasks generated!");
+                jitc_fail("jit_eval(): no tasks generated!");
 
             // Insert a barrier task
             Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
@@ -1337,7 +549,7 @@ void jit_eval_ts(ThreadState *ts) {
     /* At this point, all variables and their dependencies are computed, which
        means that we can remove internal edges between them. This in turn will
        cause many of the variables to be garbage-collected. */
-    jit_log(Debug, "jit_eval(): cleaning up..");
+    jitc_log(Debug, "jit_eval(): cleaning up..");
 
     for (ScheduledVariable sv : schedule) {
         uint32_t index = sv.index;
@@ -1347,294 +559,44 @@ void jit_eval_ts(ThreadState *ts) {
             continue;
 
         Variable *v = &it.value();
-        if (!v->stmt || v->direct_pointer || (!v->data && !v->scatter))
+        if (!(v->output_flag || v->side_effect))
             continue;
 
-        jit_cse_drop(index, v);
+        if (v->literal) {
+            jitc_var_eval_literal(index, v);
+            continue;
+        }
 
-        v->is_literal_one = v->is_literal_zero = false;
-        if (unlikely(v->free_stmt))
-            free(v->stmt);
+        jitc_cse_drop(index, v);
+
+        if (v->literal) {
+            v->literal = 0;
+            v->value = 0;
+        } else {
+            if (v->free_stmt)
+                free(v->stmt);
+            v->stmt = nullptr;
+        }
 
         uint32_t dep[4];
         memcpy(dep, v->dep, sizeof(uint32_t) * 4);
         memset(v->dep, 0, sizeof(uint32_t) * 4);
         v->stmt = nullptr;
 
-        if (unlikely(v->scatter)) {
+        if (v->side_effect) {
             if (dep[0]) {
-                Variable *ptr = jit_var(dep[0]);
-                if (ptr->direct_pointer)
-                    jit_var(ptr->dep[3])->pending_scatter = false;
+                Variable *ptr = jitc_var(dep[0]);
+                if ((VarType) ptr->type == VarType::UInt64)
+                    jitc_var(ptr->dep[3])->dirty = false;
             }
-            jit_var_dec_ref_ext(index);
+            jitc_var_dec_ref_ext(index);
         }
 
         for (int j = 0; j < 4; ++j)
-            jit_var_dec_ref_int(dep[j]);
+            jitc_var_dec_ref_int(dep[j]);
     }
 
-    jit_free_flush(ts);
-    jit_log(Info, "jit_eval(): done.");
+    jitc_free_flush(ts);
+    jitc_log(Info, "jit_eval(): done.");
 }
 
-
-/// Export the intermediate representation of a computation
-const char *jit_capture(int cuda,
-                        const char *domain, const char *name,
-                        const uint32_t *in, uint32_t n_in,
-                        const uint32_t *out, uint32_t n_out,
-                        uint32_t *need_in,
-                        uint32_t *need_out,
-                        uint32_t n_side_effects,
-                        uint64_t *hash_out,
-                        uint32_t **extra_out,
-                        uint32_t *extra_count_out) {
-    ThreadState *ts = thread_state(cuda);
-
-    // See 'jit_eval()' for details on this locking construction
-    state.mutex.unlock();
-    lock_guard guard(state.eval_mutex);
-    state.mutex.lock();
-
-    visited.clear();
-    schedule.clear();
-    buffer.clear();
-    kernel_ids.clear();
-
-    for (uint32_t i = 0; i < n_out; ++i)
-        jit_var_traverse(1, out[i], jit_var(out[i]));
-
-    auto &todo = ts->todo;
-    for (uint32_t i = 0, j = todo.size(); i < n_side_effects; ++i) {
-        Variable *v = nullptr;
-        uint32_t index = 0;
-        while (true) {
-            if (j == 0)
-                jit_raise("jit_capture(): could not find side effect!");
-            index = todo[--j];
-            v = jit_var(index);
-            if (v->scatter)
-                break;
-        }
-        todo.erase(todo.begin() + j);
-        jit_var_traverse(1, index, v);
-    }
-
-    // Group them from large to small sizes while preserving dependencies
-    std::stable_sort(
-        schedule.begin(), schedule.end(),
-        [](const ScheduledVariable &a, const ScheduledVariable &b) {
-            if (a.size == b.size)
-                return a.global > b.global;
-            else
-                return a.size > b.size;
-        });
-
-    uint32_t reg_count = 4;
-    for (auto const &entry: schedule) {
-        Variable *v = jit_var(entry.index);
-        v->arg_type = ArgType::Register;
-        v->reg_index = reg_count++;
-    }
-
-    uint32_t offset_out = 0, align_out = 1;
-    for (uint32_t i = 0; i < n_out; ++i) {
-        Variable *v = jit_var(out[i]);
-        if (v->data != nullptr && v->data != (void *) 1 /* input placeholder */)
-            jit_raise("jit_capture(): outputs must be unevaluated Enoki arrays!");
-        if (need_out) {
-            need_out[i] += v->is_literal_zero ? 0 : 1;
-            if (need_out[i] == 0)
-                continue;
-        }
-        uint32_t size = var_type_size[v->type] * (cuda ? 1 : jit_llvm_vector_width);
-        offset_out = (offset_out + size - 1) / size * size;
-        offset_out += size;
-        align_out = std::max(align_out, size);
-        v->arg_type = ArgType::Output;
-    }
-
-    uint32_t offset_in = 0, align_in = 1;
-    for (uint32_t i = 0; i < n_in; ++i) {
-        Variable *v = jit_var(in[i]);
-        if ((uintptr_t) v->data != 1)
-            jit_raise("jit_capture(): inputs must be placeholder Enoki arrays!");
-        if (need_in) {
-            need_in[i] += (v->ref_count_int != 0 || v->arg_type == ArgType::Output) ? 1 : 0;
-            if (need_in[i] == 0)
-                continue;
-        }
-        v->arg_type = ArgType::Input;
-        uint32_t size = var_type_size[v->type] * (cuda ? 1 : jit_llvm_vector_width);
-        offset_in = (offset_in + size - 1) / size * size;
-        v->arg_index = offset_in;
-        offset_in += size;
-        align_in = std::max(align_in, size);
-    }
-
-    for (auto const &entry: schedule) {
-        Variable *v = jit_var(entry.index);
-        if (v->arg_type == ArgType::Register && v->stmt == nullptr &&
-            (VarType) v->type != VarType::Pointer) {
-                if (v->size == 1 && v->data) {
-                    v->arg_type = ArgType::Input;
-                    v->arg_index = 0xFFFF;
-                    continue;
-                }
-                jit_raise("jit_capture(): the queued computation accesses a "
-                         "variable that was already evaluated, and which was not "
-                         "explictly declared as an input! (id=%u, type=%s, size=%u)",
-                         entry.index, var_type_name[v->type], v->size);
-        }
-    }
-
-    // Empty arrays are invalid in PTX
-    if (offset_in == 0)
-        offset_in = 1;
-    if (offset_out == 0)
-        offset_out = 1;
-
-    if (cuda) {
-        // Spaces needed for patching by OptiX backend, which may turn func_ into __direct_callable__
-        buffer.fmt(".visible .func (.param .align %u .b8 out[%u])               func_^^^^^^^^^^^^^^^^(.param .align "
-                   "%u .b8 params[%u], .reg .u64 extra) {\n"
-                   "    // Generated via %s::%s()\n",
-                   align_out, offset_out, align_in, offset_in, domain, name);
-    } else {
-        buffer.fmt(
-            "define void @func_^^^^^^^^^^^^^^^^(i8* noalias %%params, i8* "
-            "noalias %%result, i8** noalias %%extra, <%u x i1> %%mask) #0 {\n"
-            "    ; Generated via %s::%s()\n",
-            jit_llvm_vector_width, domain, name);
-    }
-
-    ScheduledGroup group(schedule.size(), 0, schedule.size());
-    capturing = true;
-    uses_optix = false;
-
-    if (cuda)
-        jit_assemble_cuda(ts, group, reg_count);
-    else
-        jit_assemble_llvm(group);
-
-    if (cuda) {
-        offset_out = 0;
-        for (uint32_t i = 0; i < n_out; ++i) {
-            Variable *v = jit_var(out[i]);
-            if (need_out && need_out[i] == 0)
-                continue;
-            uint32_t size = var_type_size[v->type];
-            offset_out = (offset_out + size - 1) / size * size;
-            if ((VarType) v->type != VarType::Bool) {
-                buffer.fmt("    st.param.%s [out+%u], %s%u;\n",
-                           var_type_name_ptx[v->type], offset_out,
-                           var_type_prefix[v->type], v->reg_index);
-            } else {
-                buffer.fmt("    selp.u16 %%w0, 1, 0, %s%u;\n"
-                           "    st.param.u8 [out+%u], %%w0;\n",
-                           var_type_prefix[v->type], v->reg_index,
-                           offset_out);
-            }
-            offset_out += size;
-        }
-        buffer.put("    ret;\n");
-    } else {
-        char name[20] { };
-        strncpy(name, "undef", sizeof(name));
-        uint32_t width = jit_llvm_vector_width;
-        for (uint32_t i = 0; i < n_out; ++i) {
-            Variable *v = jit_var(out[i]);
-            const char *type = var_type_name_llvm[v->type];
-            uint32_t align = jit_llvm_vector_width * (uint32_t) sizeof(float);
-            buffer.fmt("    %%rv_%u_1 = getelementptr i8, i8* %%result, i32 %u\n"
-                       "    %%rv_%u_2 = bitcast i8* %%rv_%u_1 to <%u x %s> *\n"
-                       "    %%rv_%u_3 = load <%u x %s>, <%u x %s>* %%rv_%u_2, align %i\n"
-                       "    %%rv_%u_4 = select <%u x i1> %%mask, <%u x %s> %s%u, <%u x %s> %%rv_%u_3\n"
-                       "    store <%u x %s> %%rv_%u_4, <%u x %s>* %%rv_%u_2, align %i\n",
-                       i, v->arg_index,
-                       i, i, width, type,
-                       i, width, type, width, type, i, align,
-                       i, width, width, type, var_type_prefix[v->type], v->reg_index, width, type, i,
-                       width, type, i, width, type, i, align);
-        }
-        buffer.put("    ret void;\n");
-    }
-
-    buffer.put("}\n");
-
-    // Replace '^'s in 'enoki_^^^^^^^^' by a hash code
-    kernel_hash = hash_kernel(buffer.get());
-    snprintf(kernel_name, 17, "%016llx", (unsigned long long) kernel_hash);
-
-    const char *p = buffer.get();
-    while (true) {
-        p = strchr(buffer.get(), '^');
-        if (!p)
-            break;
-        memcpy((char *) p, kernel_name, 16);
-    }
-
-    if (hash_out)
-        *hash_out = kernel_hash;
-
-    *extra_out = kernel_ids.data();
-    *extra_count_out = (uint32_t) kernel_ids.size();
-
-    return buffer.get();
-}
-
-/// Export the intermediate representation of a computation as a variable
-uint32_t jit_capture_var(int cuda,
-                         const char *domain, const char *name,
-                         const uint32_t *in, uint32_t n_in,
-                         const uint32_t *out, uint32_t n_out,
-                         uint32_t *need_in,
-                         uint32_t *need_out,
-                         uint32_t n_side_effects,
-                         uint64_t *hash_out,
-                         uint32_t **extra_out,
-                         uint32_t *extra_count_out) {
-    const char *str =
-        jit_capture(cuda, domain, name, in, n_in, out, n_out, need_in, need_out,
-                    n_side_effects, hash_out, extra_out, extra_count_out);
-
-    uint32_t index = jit_var_new_0(cuda, VarType::Global, str, 0, 1);
-
-    for (auto &k : schedule) {
-        if (!k.global)
-            continue;
-
-        uint32_t prev = index;
-        index = jit_var_new_2(cuda, VarType::Global, "", 0, index, k.index);
-        jit_var_dec_ref_ext(prev);
-    }
-
-    if (n_side_effects > 0) {
-        for (auto const &entry: schedule) {
-            uint32_t index = entry.index;
-            Variable *v = jit_var(entry.index);
-            if (!v->scatter)
-                continue;
-            jit_cse_drop(index, v);
-
-            if (unlikely(v->free_stmt))
-                free(v->stmt);
-
-            uint32_t dep[4];
-            memcpy(dep, v->dep, sizeof(uint32_t) * 4);
-            memset(v->dep, 0, sizeof(uint32_t) * 4);
-            v->stmt = nullptr;
-
-            Variable *ptr = jit_var(dep[0]);
-            if (ptr->direct_pointer)
-                jit_var(ptr->dep[3])->pending_scatter = false;
-            jit_var_dec_ref_ext(index);
-
-            for (int j = 0; j < 4; ++j)
-                jit_var_dec_ref_int(dep[j]);
-        }
-    }
-
-    return index;
-}

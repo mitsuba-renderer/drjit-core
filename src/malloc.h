@@ -58,28 +58,28 @@ extern const char *alloc_type_name[(int) AllocType::Count];
 extern const char *alloc_type_name_short[(int) AllocType::Count];
 
 /// Allocate the given flavor of memory
-extern void *jit_malloc(AllocType type, size_t size) JITC_MALLOC;
+extern void *jitc_malloc(AllocType type, size_t size) JITC_MALLOC;
 
 /// Release the given pointer
-extern void jit_free(void *ptr);
+extern void jitc_free(void *ptr);
 
-/// Schedule a function that will reclaim memory from pending jit_free()s
-extern void jit_free_flush(ThreadState *ts);
+/// Schedule a function that will reclaim memory from pending jitc_free()s
+extern void jitc_free_flush(ThreadState *ts);
 
 /// Change the flavor of an allocated memory region
-extern void* jit_malloc_migrate(void *ptr, AllocType type, int move);
+extern void* jitc_malloc_migrate(void *ptr, AllocType type, int move);
 
 /// Asynchronously prefetch a memory region
-extern void jit_malloc_prefetch(void *ptr, int device);
+extern void jitc_malloc_prefetch(void *ptr, int device);
 
 /// Release all unused memory to the GPU / OS
-extern void jit_malloc_trim(bool warn = true);
+extern void jitc_malloc_trim(bool warn = true);
 
-/// Shut down the memory allocator (calls \ref jit_malloc_trim() and reports leaks)
-extern void jit_malloc_shutdown();
+/// Shut down the memory allocator (calls \ref jitc_malloc_trim() and reports leaks)
+extern void jitc_malloc_shutdown();
 
-/// Query the flavor of a memory allocation made using \ref jit_malloc()
-extern AllocType jit_malloc_type(void *ptr);
+/// Query the flavor of a memory allocation made using \ref jitc_malloc()
+extern AllocType jitc_malloc_type(void *ptr);
 
-/// Query the device associated with a memory allocation made using \ref jit_malloc()
-extern int jit_malloc_device(void *ptr);
+/// Query the device associated with a memory allocation made using \ref jitc_malloc()
+extern int jitc_malloc_device(void *ptr);

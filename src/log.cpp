@@ -18,9 +18,9 @@
 #endif
 
 static Buffer log_buffer{128};
-static char jit_string_buf[64];
+static char jitc_string_buf[64];
 
-void jit_log(LogLevel log_level, const char* fmt, ...) {
+void jitc_log(LogLevel log_level, const char* fmt, ...) {
     if (unlikely(log_level <= state.log_level_stderr)) {
         va_list args;
         va_start(args, fmt);
@@ -39,7 +39,7 @@ void jit_log(LogLevel log_level, const char* fmt, ...) {
     }
 }
 
-void jit_vlog(LogLevel log_level, const char* fmt, va_list args_) {
+void jitc_vlog(LogLevel log_level, const char* fmt, va_list args_) {
     if (unlikely(log_level <= state.log_level_stderr)) {
         va_list args;
         va_copy(args, args_);
@@ -58,7 +58,7 @@ void jit_vlog(LogLevel log_level, const char* fmt, va_list args_) {
     }
 }
 
-void jit_raise(const char* fmt, ...) {
+void jitc_raise(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     log_buffer.clear();
@@ -68,14 +68,14 @@ void jit_raise(const char* fmt, ...) {
     throw std::runtime_error(log_buffer.get());
 }
 
-void jit_vraise(const char* fmt, va_list args) {
+void jitc_vraise(const char* fmt, va_list args) {
     log_buffer.clear();
     log_buffer.vfmt(fmt, args);
 
     throw std::runtime_error(log_buffer.get());
 }
 
-void jit_fail(const char* fmt, ...) {
+void jitc_fail(const char* fmt, ...) {
     fprintf(stderr, "\n\nCritical failure in Enoki JIT compiler: ");
 
     va_list args;
@@ -88,14 +88,14 @@ void jit_fail(const char* fmt, ...) {
     abort();
 }
 
-void jit_vfail(const char* fmt, va_list args) {
+void jitc_vfail(const char* fmt, va_list args) {
     fprintf(stderr, "Critical failure in Enoki JIT compiler: ");
     vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
     abort();
 }
 
-const char *jit_mem_string(size_t size) {
+const char *jitc_mem_string(size_t size) {
     const char *orders[] = {
         "B", "KiB", "MiB", "GiB",
         "TiB", "PiB", "EiB"
@@ -106,14 +106,14 @@ const char *jit_mem_string(size_t size) {
     for (i = 0; i < 6 && value > 1024.f; ++i)
         value /= 1024.f;
 
-    snprintf(jit_string_buf, 64,
+    snprintf(jitc_string_buf, 64,
              i > 0 ? "%.3g %s" : "%.0f %s", value,
              orders[i]);
 
-    return jit_string_buf;
+    return jitc_string_buf;
 }
 
-const char *jit_time_string(float value) {
+const char *jitc_time_string(float value) {
     struct Order { float factor; const char* suffix; };
     const Order orders[] = { { 0, "us" },   { 1000, "ms" },
                              { 1000, "s" }, { 60, "m" },
@@ -124,9 +124,9 @@ const char *jit_time_string(float value) {
     for (i = 0; i < 7 && value > orders[i+1].factor; ++i)
         value /= orders[i+1].factor;
 
-    snprintf(jit_string_buf, 64, "%.5g %s", value, orders[i].suffix);
+    snprintf(jitc_string_buf, 64, "%.5g %s", value, orders[i].suffix);
 
-    return jit_string_buf;
+    return jitc_string_buf;
 }
 
 Buffer::Buffer(size_t size) : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {

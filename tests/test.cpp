@@ -291,13 +291,14 @@ int main(int argc, char **argv) {
     }
 
     try {
-        jitc_set_log_level_stderr((LogLevel) log_level_stderr);
-        jitc_init(test_llvm, test_cuda);
-        jitc_set_log_level_callback(LogLevel::Trace, log_level_callback);
+        jit_set_log_level_stderr((LogLevel) log_level_stderr);
+        jit_init((test_llvm ? (uint32_t) JitBackend::LLVM : 0) |
+                 (test_cuda ? (uint32_t) JitBackend::CUDA : 0));
+        jit_set_log_level_callback(LogLevel::Trace, log_level_callback);
         fprintf(stdout, "\n");
 
-        bool has_cuda = jitc_has_cuda(),
-             has_llvm = jitc_has_llvm();
+        bool has_cuda = jit_has_backend(JitBackend::CUDA),
+             has_llvm = jit_has_backend(JitBackend::LLVM);
 
         if (!tests) {
             fprintf(stderr, "No tests registered!\n");
@@ -312,7 +313,7 @@ int main(int argc, char **argv) {
             tests_failed = 0;
 
         bool has_avx512 =
-            has_llvm && strstr(jitc_llvm_target_features(), "+avx512f");
+            has_llvm && strstr(jit_llvm_target_features(), "+avx512f");
 
         for (auto &test : *tests) {
             fprintf(stdout, " - %s .. ", test.name);
@@ -325,9 +326,9 @@ int main(int argc, char **argv) {
             }
             fflush(stdout);
             log_value.clear();
-            jitc_init(!test.cuda, test.cuda);
+            jit_init((uint32_t) (test.cuda ? JitBackend::CUDA : JitBackend::LLVM));
             if (!test.cuda)
-                jitc_llvm_set_target("skylake", nullptr, 8);
+                jit_llvm_set_target("skylake", nullptr, 8);
             auto before = std::chrono::high_resolution_clock::now();
             test.func();
             auto after = std::chrono::high_resolution_clock::now();
@@ -335,7 +336,7 @@ int main(int argc, char **argv) {
                 std::chrono::duration_cast<
                     std::chrono::duration<float, std::milli>>(after - before)
                     .count();
-            jitc_shutdown(1);
+            jit_shutdown(1);
 
             if (test_check_log(test.name, (char *) log_value.c_str(), write_ref)) {
                 tests_passed++;
@@ -351,7 +352,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        jitc_shutdown(0);
+        jit_shutdown(0);
 
         int tests_skipped = (int) tests->size() - tests_passed - tests_failed;
         if (tests_skipped == 0)

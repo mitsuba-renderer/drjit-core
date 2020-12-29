@@ -2,8 +2,7 @@
 
 #include <enoki-jit/cuda.h>
 #include <enoki-jit/llvm.h>
-#include <stdexcept>
-#include <algorithm>
+#include <cstdio>
 
 using namespace enoki;
 
@@ -19,65 +18,73 @@ extern "C" void log_level_callback(LogLevel cb, const char *msg);
 using FloatC  = CUDAArray<float>;
 using Int32C  = CUDAArray<int32_t>;
 using UInt32C = CUDAArray<uint32_t>;
+using MaskC   = CUDAArray<bool>;
 using FloatL  = LLVMArray<float>;
 using Int32L  = LLVMArray<int32_t>;
 using UInt32L = LLVMArray<uint32_t>;
+using MaskL   = LLVMArray<bool>;
 
 #define TEST_CUDA(name, ...)                                                   \
-    template <typename Float, typename Int32, typename UInt32,                 \
-              template <class> class Array>                                    \
+    template <bool IsCUDA, typename Float, typename Int32, typename UInt32,    \
+              typename Mask, template <class> class Array>                     \
     void test##name();                                                         \
     int test##name##_c = test_register(                                        \
-        "test" #name "_cuda", test##name<FloatC, Int32C, UInt32C, CUDAArray>,  \
-        true, ##__VA_ARGS__);                                                  \
-    template <typename Float, typename Int32, typename UInt32,                 \
-              template <class> class Array>                                    \
+        "test" #name "_cuda",                                                  \
+        test##name<true, FloatC, Int32C, UInt32C, MaskC, CUDAArray>, true,     \
+        ##__VA_ARGS__);                                                        \
+    template <bool IsCUDA, typename Float, typename Int32, typename UInt32,    \
+              typename Mask, template <class> class Array>                     \
     void test##name()
 
 #define TEST_LLVM(name, ...)                                                   \
-    template <typename Float, typename Int32, typename UInt32,                 \
-              template <class> class Array>                                    \
+    template <bool IsCUDA, typename Float, typename Int32, typename UInt32,    \
+              typename Mask, template <class> class Array>                     \
     void test##name();                                                         \
     int test##name##_l = test_register(                                        \
-        "test" #name "_llvm", test##name<FloatL, Int32L, UInt32L, LLVMArray>,  \
-        false, ##__VA_ARGS__);                                                 \
-    template <typename Float, typename Int32, typename UInt32,                 \
-              template <class> class Array>                                    \
+        "test" #name "_llvm",                                                  \
+        test##name<false, FloatL, Int32L, UInt32L, MaskL, LLVMArray>, false,   \
+        ##__VA_ARGS__);                                                        \
+    template <bool IsCUDA, typename Float, typename Int32, typename UInt32,    \
+              typename Mask, template <class> class Array>                     \
     void test##name()
 
 #define TEST_BOTH(name, ...)                                                   \
-    template <typename Float, typename Int32, typename UInt32,                 \
-              template <class> class Array>                                    \
+    template <bool IsCUDA, typename Float, typename Int32, typename UInt32,    \
+              typename Mask, template <class> class Array>                     \
     void test##name();                                                         \
     int test##name##_c = test_register(                                        \
-        "test" #name "_cuda", test##name<FloatC, Int32C, UInt32C, CUDAArray>,  \
-        true, ##__VA_ARGS__);                                                  \
+        "test" #name "_cuda",                                                  \
+        test##name<true, FloatC, Int32C, UInt32C, MaskC, CUDAArray>, true,     \
+        ##__VA_ARGS__);                                                        \
     int test##name##_l = test_register(                                        \
-        "test" #name "_llvm", test##name<FloatL, Int32L, UInt32L, LLVMArray>,  \
-        false, ##__VA_ARGS__);                                                 \
-    template <typename Float, typename Int32, typename UInt32,                 \
-              template <class> class Array>                                    \
+        "test" #name "_llvm",                                                  \
+        test##name<false, FloatL, Int32L, UInt32L, MaskL, LLVMArray>, false,   \
+        ##__VA_ARGS__);                                                        \
+    template <bool IsCUDA, typename Float, typename Int32, typename UInt32,    \
+              typename Mask, template <class> class Array>                     \
     void test##name()
 
-#define jitc_assert(cond)                                                      \
+#define jit_assert(cond)                                                      \
     do {                                                                       \
         if (!(cond))                                                           \
-            jitc_fail("Assertion failure: %s in line %u.", #cond, __LINE__);   \
+            jit_fail("Assertion failure: %s in line %u.", #cond, __LINE__);   \
     } while (0)
 
 /// RAII helper for temporarily decreasing the log level
 struct scoped_set_log_level {
 public:
     scoped_set_log_level(LogLevel level) {
-        m_cb_level = jitc_log_level_callback();
-        m_stderr_level = jitc_log_level_stderr();
-        jitc_set_log_level_callback(std::min(level, m_cb_level), log_level_callback);
-        jitc_set_log_level_stderr(std::min(level, m_stderr_level));
+        m_cb_level = jit_log_level_callback();
+        m_stderr_level = jit_log_level_stderr();
+        jit_set_log_level_callback(level < m_cb_level ? level : m_cb_level,
+                                    log_level_callback);
+        jit_set_log_level_stderr(level < m_stderr_level ? level
+                                                         : m_stderr_level);
     }
 
     ~scoped_set_log_level() {
-        jitc_set_log_level_callback(m_cb_level, log_level_callback);
-        jitc_set_log_level_stderr(m_stderr_level);
+        jit_set_log_level_callback(m_cb_level, log_level_callback);
+        jit_set_log_level_stderr(m_stderr_level);
     }
 
 private:

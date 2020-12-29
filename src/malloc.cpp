@@ -46,16 +46,16 @@ uint32_t round_pow2(uint32_t x) {
     return x + 1;
 }
 
-void* jit_malloc(AllocType type, size_t size) {
+void* jitc_malloc(AllocType type, size_t size) {
     if (size == 0)
         return nullptr;
 
     if ((type != AllocType::Host && type != AllocType::HostAsync) ||
-        jit_llvm_vector_width < 16) {
+        jitc_llvm_vector_width < 16) {
         // Round up to the next multiple of 64 bytes
         size = (size + 63) / 64 * 64;
     } else {
-        size_t packet_size = jit_llvm_vector_width * sizeof(double);
+        size_t packet_size = jitc_llvm_vector_width * sizeof(double);
         size = (size + packet_size - 1) / packet_size * packet_size;
     }
 
@@ -132,7 +132,7 @@ void* jit_malloc(AllocType type, size_t size) {
 #endif
             }
             if (rv == ENOMEM) {
-                jit_malloc_trim();
+                jitc_malloc_trim();
                 /* Temporarily release the main lock */ {
                     unlock_guard guard(state.mutex);
 #if !defined(_WIN32)
@@ -166,7 +166,7 @@ void* jit_malloc(AllocType type, size_t size) {
                 case AllocType::Managed:           alloc = cuMemAllocManaged_; break;
                 case AllocType::ManagedReadMostly: alloc = cuMemAllocManagedReadMostly_; break;
                 default:
-                    jit_fail("jit_malloc(): internal-error unsupported allocation type!");
+                    jitc_fail("jit_malloc(): internal-error unsupported allocation type!");
             }
 
             CUresult ret;
@@ -177,7 +177,7 @@ void* jit_malloc(AllocType type, size_t size) {
             }
 
             if (ret != CUDA_SUCCESS) {
-                jit_malloc_trim();
+                jitc_malloc_trim();
 
                 /* Temporarily release the main lock */ {
                     unlock_guard guard(state.mutex);
@@ -198,18 +198,18 @@ void* jit_malloc(AllocType type, size_t size) {
     }
 
     if (unlikely(ptr == nullptr))
-        jit_raise("jit_malloc(): out of memory! Could not "
+        jitc_raise("jit_malloc(): out of memory! Could not "
                   "allocate %zu bytes of %s memory.",
                   size, alloc_type_name[ai.type]);
 
     state.alloc_used.emplace(ptr, ai);
 
     if ((AllocType) ai.type == AllocType::Device)
-        jit_trace("jit_malloc(type=%s, device=%u, size=%zu): " ENOKI_PTR " (%s)",
+        jitc_trace("jit_malloc(type=%s, device=%u, size=%zu): " ENOKI_PTR " (%s)",
                   alloc_type_name[ai.type], (uint32_t) ai.device, (size_t) ai.size,
                   (uintptr_t) ptr, descr);
     else
-        jit_trace("jit_malloc(type=%s, size=%zu): " ENOKI_PTR " (%s)",
+        jitc_trace("jit_malloc(type=%s, size=%zu): " ENOKI_PTR " (%s)",
                   alloc_type_name[ai.type], (size_t) ai.size, (uintptr_t) ptr,
                   descr);
 
@@ -218,13 +218,13 @@ void* jit_malloc(AllocType type, size_t size) {
     return ptr;
 }
 
-void jit_free(void *ptr) {
+void jitc_free(void *ptr) {
     if (ptr == nullptr)
         return;
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_free(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jitc_raise("jit_free(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
 
     AllocInfo ai = it.value();
 
@@ -250,25 +250,25 @@ void jit_free(void *ptr) {
                still be used in a kernel that is currently being executed
                asynchronously. The only thing we can do at this point is to
                flush all streams. */
-            jit_sync_all_devices();
+            jitc_sync_all_devices();
             lock_guard guard(state.malloc_mutex);
             state.alloc_free[ai].push_back(ptr);
         }
     }
 
     if ((AllocType) ai.type == AllocType::Device)
-        jit_trace("jit_free(" ENOKI_PTR ", type=%s, device=%u, size=%zu)",
+        jitc_trace("jit_free(" ENOKI_PTR ", type=%s, device=%u, size=%zu)",
                   (uintptr_t) ptr, alloc_type_name[ai.type],
 		  (uint32_t) ai.device, (size_t) ai.size);
     else
-        jit_trace("jit_free(" ENOKI_PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
+        jitc_trace("jit_free(" ENOKI_PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
                   alloc_type_name[ai.type], (size_t) ai.size);
 
     state.alloc_usage[ai.type] -= ai.size;
     state.alloc_used.erase(it);
 }
 
-static void jit_free_chain(void *ptr) {
+static void jitc_free_chain(void *ptr) {
     /* Acquire lock protecting ts->release_chain contents and
        state.alloc_free */
     lock_guard guard(state.malloc_mutex);
@@ -286,7 +286,7 @@ static void jit_free_chain(void *ptr) {
     chain0->next = nullptr;
 }
 
-void jit_free_flush(ThreadState *ts) {
+void jitc_free_flush(ThreadState *ts) {
     if (unlikely(!ts))
         return;
 
@@ -305,28 +305,28 @@ void jit_free_flush(ThreadState *ts) {
     chain_new->next = chain;
     ts->release_chain = chain_new;
 
-    jit_trace("jit_free_flush(): scheduling %zu deallocation%s",
+    jitc_trace("jit_free_flush(): scheduling %zu deallocation%s",
               n_dealloc, n_dealloc > 1 ? "s" : "");
 
     if (ts->cuda) {
         scoped_set_context guard(ts->context);
-        cuda_check(cuLaunchHostFunc(ts->stream, jit_free_chain, chain_new));
+        cuda_check(cuLaunchHostFunc(ts->stream, jitc_free_chain, chain_new));
     } else {
         Task *new_task = task_submit_dep(
             nullptr, &ts->task, 1, 1,
-            [](uint32_t, void *ptr) { jit_free_chain(ptr); }, chain_new);
+            [](uint32_t, void *ptr) { jitc_free_chain(ptr); }, chain_new);
         task_release(ts->task);
         ts->task = new_task;
     }
 }
 
-void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
+void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
     if (ptr == nullptr)
         return nullptr;
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_malloc_migrate(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jitc_raise("jit_malloc_migrate(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
 
     AllocInfo ai = it.value();
 
@@ -336,12 +336,12 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
         if (move) {
             return ptr;
         } else {
-            void *ptr_new = jit_malloc(type, ai.size);
+            void *ptr_new = jitc_malloc(type, ai.size);
             if (type == AllocType::Host) {
                 memcpy(ptr_new, ptr, ai.size);
             } else {
                 bool cuda = type != AllocType::Host && type != AllocType::HostAsync;
-                jit_memcpy_async(cuda, ptr_new, ptr, ai.size);
+                jitc_memcpy_async(cuda, ptr_new, ptr, ai.size);
             }
             return ptr_new;
         }
@@ -353,16 +353,16 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
             it.value().type = (uint32_t) type;
             return ptr;
         } else {
-            void *ptr_new = jit_malloc(type, ai.size);
-            jit_memcpy_async(0, ptr_new, ptr, ai.size);
+            void *ptr_new = jitc_malloc(type, ai.size);
+            jitc_memcpy_async(0, ptr_new, ptr, ai.size);
             if ((AllocType) ai.type == AllocType::Host)
-                jit_sync_thread(); // be careful when copying from host
+                jitc_sync_thread(); // be careful when copying from host
             return ptr_new;
         }
     }
 
     if (type == AllocType::HostAsync || (AllocType) ai.type == AllocType::HostAsync)
-        jit_raise("jit_malloc_migrate(): migrations between CUDA and "
+        jitc_raise("jit_malloc_migrate(): migrations between CUDA and "
                   "host-asynchronous memory are not supported.");
 
     /// At this point, source or destination is a GPU array, get assoc. state
@@ -371,20 +371,20 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
     if (type == AllocType::Host) // Upgrade from host to host-pinned memory
         type = AllocType::HostPinned;
 
-    void *ptr_new = jit_malloc(type, ai.size);
-    jit_trace("jit_malloc_migrate(" ENOKI_PTR " -> " ENOKI_PTR ", %s -> %s)",
+    void *ptr_new = jitc_malloc(type, ai.size);
+    jitc_trace("jit_malloc_migrate(" ENOKI_PTR " -> " ENOKI_PTR ", %s -> %s)",
               (uintptr_t) ptr, (uintptr_t) ptr_new,
               alloc_type_name[ai.type], alloc_type_name[(int) type]);
 
     scoped_set_context guard(ts->context);
     if ((AllocType) ai.type == AllocType::Host) {
         // Host -> Device memory, create an intermediate host-pinned array
-        void *tmp = jit_malloc(AllocType::HostPinned, ai.size);
+        void *tmp = jitc_malloc(AllocType::HostPinned, ai.size);
         memcpy(tmp, ptr, ai.size);
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
                                  (CUdeviceptr) ptr, ai.size,
                                  ts->stream));
-        jit_free(tmp);
+        jitc_free(tmp);
     } else {
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
                                  (CUdeviceptr) ptr, ai.size,
@@ -393,31 +393,31 @@ void* jit_malloc_migrate(void *ptr, AllocType type, int move) {
     }
 
     if (move)
-        jit_free(ptr);
+        jitc_free(ptr);
 
     return ptr_new;
 }
 
 /// Asynchronously prefetch a memory region
-void jit_malloc_prefetch(void *ptr, int device) {
+void jitc_malloc_prefetch(void *ptr, int device) {
     if (device == -1) {
         device = CU_DEVICE_CPU;
     } else {
         if ((size_t) device >= state.devices.size())
-            jit_raise("jit_malloc_prefetch(): invalid device ID!");
+            jitc_raise("jit_malloc_prefetch(): invalid device ID!");
         device = state.devices[device].id;
     }
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_malloc_prefetch(): unknown address " ENOKI_PTR "!",
+        jitc_raise("jit_malloc_prefetch(): unknown address " ENOKI_PTR "!",
                   (uintptr_t) ptr);
 
     AllocInfo ai = it.value();
 
     if ((AllocType) ai.type != AllocType::Managed &&
         (AllocType) ai.type != AllocType::ManagedReadMostly)
-        jit_raise("jit_malloc_prefetch(): invalid memory type, expected "
+        jitc_raise("jit_malloc_prefetch(): invalid memory type, expected "
                   "Managed or ManagedReadMostly.");
 
     ThreadState *ts = thread_state(true);
@@ -432,12 +432,12 @@ void jit_malloc_prefetch(void *ptr, int device) {
     }
 }
 
-static bool jit_malloc_trim_warned = false;
+static bool jitc_malloc_trim_warned = false;
 
 /// Release all unused memory to the GPU / OS
-void jit_malloc_trim(bool warn) {
-    if (warn && !jit_malloc_trim_warned) {
-        jit_log(
+void jitc_malloc_trim(bool warn) {
+    if (warn && !jitc_malloc_trim_warned) {
+        jitc_log(
             Warn,
             "jit_malloc_trim(): Enoki exhausted the available memory and had "
             "to flush its allocation cache to free up additional memory. This "
@@ -445,7 +445,7 @@ void jit_malloc_trim(bool warn) {
             "performance. You may want to change your computation so that it "
             "uses less memory. This warning will only be displayed once.");
 
-        jit_malloc_trim_warned = true;
+        jitc_malloc_trim_warned = true;
     }
 
     AllocInfoMap alloc_free;
@@ -456,7 +456,7 @@ void jit_malloc_trim(bool warn) {
     }
 
     // Ensure that all computation using this memory has indeed completed.
-    jit_sync_all_devices();
+    jitc_sync_all_devices();
 
     size_t trim_count[(int) AllocType::Count] = { 0 },
            trim_size [(int) AllocType::Count] = { 0 };
@@ -474,14 +474,14 @@ void jit_malloc_trim(bool warn) {
                 case AllocType::Device:
                 case AllocType::Managed:
                 case AllocType::ManagedReadMostly:
-                    if (state.has_cuda) {
+                    if (state.backends & (uint32_t) JitBackend::CUDA) {
                         for (void *ptr : entries)
                             cuda_check(cuMemFree((CUdeviceptr) ptr));
                     }
                     break;
 
                 case AllocType::HostPinned:
-                    if (state.has_cuda) {
+                    if (state.backends & (uint32_t) JitBackend::CUDA) {
                         for (void *ptr : entries)
                             cuda_check(cuMemFreeHost(ptr));
                     }
@@ -499,7 +499,7 @@ void jit_malloc_trim(bool warn) {
                     break;
 
                 default:
-                    jit_fail("jit_malloc_trim(): unsupported allocation type!");
+                    jitc_fail("jit_malloc_trim(): unsupported allocation type!");
             }
         }
     }
@@ -512,30 +512,30 @@ void jit_malloc_trim(bool warn) {
         total += trim_count[i];
 
     if (total > 0) {
-        jit_log(Debug, "jit_malloc_trim(): freed");
+        jitc_log(Debug, "jit_malloc_trim(): freed");
         for (int i = 0; i < (int) AllocType::Count; ++i) {
             if (trim_count[i] == 0)
                 continue;
-            jit_log(Debug, " - %s memory: %s in %zu allocation%s",
-                    alloc_type_name[i], jit_mem_string(trim_size[i]),
+            jitc_log(Debug, " - %s memory: %s in %zu allocation%s",
+                    alloc_type_name[i], jitc_mem_string(trim_size[i]),
                     trim_count[i], trim_count[i] > 1 ? "s" : "");
         }
     }
 }
 
-/// Query the flavor of a memory allocation made using \ref jit_malloc()
-AllocType jit_malloc_type(void *ptr) {
+/// Query the flavor of a memory allocation made using \ref jitc_malloc()
+AllocType jitc_malloc_type(void *ptr) {
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_malloc_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jitc_raise("jit_malloc_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
     return (AllocType) it->second.type;
 }
 
-/// Query the device associated with a memory allocation made using \ref jit_malloc()
-int jit_malloc_device(void *ptr) {
+/// Query the device associated with a memory allocation made using \ref jitc_malloc()
+int jitc_malloc_device(void *ptr) {
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jit_raise("jit_malloc_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jitc_raise("jit_malloc_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
     const AllocInfo &ai = it.value();
     if (ai.type == (int) AllocType::Host || ai.type == (int) AllocType::HostAsync)
         return -1;
@@ -543,8 +543,8 @@ int jit_malloc_device(void *ptr) {
         return ai.device;
 }
 
-void jit_malloc_shutdown() {
-    jit_malloc_trim(false);
+void jitc_malloc_shutdown() {
+    jitc_malloc_trim(false);
 
     size_t leak_count[(int) AllocType::Count] = { 0 },
            leak_size [(int) AllocType::Count] = { 0 };
@@ -558,13 +558,13 @@ void jit_malloc_shutdown() {
         total += leak_count[i];
 
     if (total > 0) {
-        jit_log(Warn, "jit_malloc_shutdown(): leaked");
+        jitc_log(Warn, "jit_malloc_shutdown(): leaked");
         for (int i = 0; i < (int) AllocType::Count; ++i) {
             if (leak_count[i] == 0)
                 continue;
 
-            jit_log(Warn, " - %s memory: %s in %zu allocation%s",
-                    alloc_type_name[i], jit_mem_string(leak_size[i]),
+            jitc_log(Warn, " - %s memory: %s in %zu allocation%s",
+                    alloc_type_name[i], jitc_mem_string(leak_size[i]),
                     leak_count[i], leak_count[i] > 1 ? "s" : "");
         }
     }

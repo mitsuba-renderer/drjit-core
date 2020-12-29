@@ -32,19 +32,19 @@ State state;
 Buffer buffer{1024};
 
 #if !defined(_WIN32)
-  char* jit_temp_path = nullptr;
+  char* jitc_temp_path = nullptr;
 #else
-  wchar_t* jit_temp_path = nullptr;
+  wchar_t* jitc_temp_path = nullptr;
 #endif
 
 #if defined(_MSC_VER)
   __declspec(thread) ThreadState* thread_state_cuda = nullptr;
   __declspec(thread) ThreadState* thread_state_llvm = nullptr;
-  __declspec(thread) uint32_t jit_flags_v = 0;
+  __declspec(thread) uint32_t jitc_flags_v = 0;
 #else
   __thread ThreadState* thread_state_cuda = nullptr;
   __thread ThreadState* thread_state_llvm = nullptr;
-  __thread uint32_t jit_flags_v = 0;
+  __thread uint32_t jitc_flags_v = 0;
 #endif
 
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
@@ -62,14 +62,14 @@ static_assert(
 static ProfilerRegion profiler_region_init("jit_init");
 
 /// Initialize core data structures of the JIT compiler
-void jit_init(int llvm, int cuda) {
+void jitc_init(uint32_t backends) {
     ProfilerPhase profiler(profiler_region_init);
 
 #if defined(__APPLE__)
-    cuda = 0;
+    backends &= ~(uint32_t) JitBackend::CUDA;
 #endif
 
-    if (state.has_llvm != 0 || state.has_cuda != 0 || (llvm == 0 && cuda == 0))
+    if ((backends & ~state.backends) == 0)
         return;
 
 #if !defined(_WIN32)
@@ -78,40 +78,47 @@ void jit_init(int llvm, int cuda) {
     struct stat st = {};
     int rv = stat(temp_path, &st);
     size_t temp_path_size = (strlen(temp_path) + 1) * sizeof(char);
-    jit_temp_path = (char*) malloc(temp_path_size);
-    memcpy(jit_temp_path, temp_path, temp_path_size);
+    jitc_temp_path = (char*) malloc(temp_path_size);
+    memcpy(jitc_temp_path, temp_path, temp_path_size);
 #else
     wchar_t temp_path_w[512];
     char temp_path[512];
     if (GetTempPathW(sizeof(temp_path_w) / sizeof(wchar_t), temp_path_w) == 0)
-        jit_fail("jit_init(): could not obtain path to temporary directory!");
+        jitc_fail("jit_init(): could not obtain path to temporary directory!");
     wcsncat(temp_path_w, L"enoki", sizeof(temp_path) / sizeof(wchar_t));
     struct _stat st = {};
     int rv = _wstat(temp_path_w, &st);
     size_t temp_path_size = (wcslen(temp_path_w) + 1) * sizeof(wchar_t);
-    jit_temp_path = (wchar_t*) malloc(temp_path_size);
-    memcpy(jit_temp_path, temp_path_w, temp_path_size);
+    jitc_temp_path = (wchar_t*) malloc(temp_path_size);
+    memcpy(jitc_temp_path, temp_path_w, temp_path_size);
     wcstombs(temp_path, temp_path_w, sizeof(temp_path));
 #endif
 
     if (rv == -1) {
-        jit_log(Info, "jit_init(): creating directory \"%s\" ..", temp_path);
+        jitc_log(Info, "jit_init(): creating directory \"%s\" ..", temp_path);
 #if !defined(_WIN32)
         if (mkdir(temp_path, 0700) == -1)
 #else
         if (_wmkdir(temp_path_w) == -1)
 #endif
-            jit_fail("jit_init(): creation of directory \"%s\" failed: %s",
+            jitc_fail("jit_init(): creation of directory \"%s\" failed: %s",
                 temp_path, strerror(errno));
     }
 
     // Enumerate CUDA devices and collect suitable ones
-    jit_log(Info, "jit_init(): detecting devices ..");
+    jitc_log(Info, "jit_init(): detecting devices ..");
 
-    state.has_llvm = llvm && jit_llvm_init();
-    state.has_cuda = cuda && jit_cuda_init();
+    if ((backends & ~state.backends) == 0)
+        return;
 
-    for (int i = 0; cuda && i < jit_cuda_devices; ++i) {
+    if ((backends & (uint32_t) JitBackend::LLVM) && jitc_llvm_init())
+        state.backends |= (uint32_t) JitBackend::LLVM;
+
+    if ((backends & (uint32_t) JitBackend::CUDA) && jitc_cuda_init())
+        state.backends |= (uint32_t) JitBackend::CUDA;
+
+    bool has_cuda = state.backends & (uint32_t) JitBackend::CUDA;
+    for (int i = 0; has_cuda && i < jitc_cuda_devices; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
             unified_addr = 0, managed = 0, shared_memory_bytes = 0,
             cc_minor = 0, cc_major = 0;
@@ -130,18 +137,18 @@ void jit_init(int llvm, int cuda) {
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
 
-        jit_log(Info,
+        jitc_log(Info,
                 " - Found CUDA device %i: \"%s\" "
                 "(PCI ID %02x:%02x.%i, compute cap. %i.%i, %i SMs w/%s shared mem., %s global mem.)",
                 i, name, pci_bus_id, pci_dev_id, pci_dom_id, cc_major, cc_minor, num_sm,
-                std::string(jit_mem_string(shared_memory_bytes)).c_str(),
-                std::string(jit_mem_string(mem_total)).c_str());
+                std::string(jitc_mem_string(shared_memory_bytes)).c_str(),
+                std::string(jitc_mem_string(mem_total)).c_str());
 
         if (unified_addr == 0) {
-            jit_log(Warn, " - Warning: device does *not* support unified addressing, skipping ..");
+            jitc_log(Warn, " - Warning: device does *not* support unified addressing, skipping ..");
             continue;
         } else if (managed == 0) {
-            jit_log(Warn, " - Warning: device does *not* support managed memory, skipping ..");
+            jitc_log(Warn, " - Warning: device does *not* support managed memory, skipping ..");
             continue;
         }
 
@@ -151,13 +158,6 @@ void jit_init(int llvm, int cuda) {
         device.shared_memory_bytes = (uint32_t) shared_memory_bytes;
         device.num_sm = (uint32_t) num_sm;
         cuda_check(cuDevicePrimaryCtxRetain(&device.context, i));
-
-        scoped_set_context guard(device.context);
-        for (int i = 0; i < ENOKI_SUB_STREAMS; ++i) {
-            cuda_check(cuStreamCreate(&device.sub_streams[i], CU_STREAM_NON_BLOCKING));
-            cuda_check(cuEventCreate(&device.sub_events[i], CU_EVENT_DISABLE_TIMING));
-        }
-
         state.devices.push_back(device);
     }
 
@@ -171,7 +171,7 @@ void jit_init(int llvm, int cuda) {
             scoped_set_context guard(a.context);
             cuda_check(cuDeviceCanAccessPeer(&peer_ok, a.id, b.id));
             if (peer_ok) {
-                jit_log(Debug, " - Enabling peer access from device %i -> %i",
+                jitc_log(Debug, " - Enabling peer access from device %i -> %i",
                         a.id, b.id);
                 CUresult rv = cuCtxEnablePeerAccess(b.context, 0);
                 if (rv == CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED)
@@ -187,37 +187,37 @@ void jit_init(int llvm, int cuda) {
     state.kernel_hits = state.kernel_launches = 0;
 }
 
-void* jit_cuda_stream() {
+void* jitc_cuda_stream() {
     return (void*) thread_state(true)->stream;
 }
 
-void* jit_cuda_context() {
+void* jitc_cuda_context() {
     return (void*) thread_state(true)->context;
 }
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
-void jit_shutdown(int light) {
+void jitc_shutdown(int light) {
     // Synchronize with everything
     for (ThreadState *ts : state.tss) {
-        jit_free_flush(ts);
+        jitc_free_flush(ts);
         if (ts->cuda) {
             scoped_set_context guard(ts->context);
             cuda_check(cuStreamSynchronize(ts->stream));
         } else {
             task_wait_and_release(ts->task);
             if (!ts->active_mask.empty())
-                jit_log(Warn, "jit_shutdown(): leaked %zu active masks!",
+                jitc_log(Warn, "jit_shutdown(): leaked %zu active masks!",
                         ts->active_mask.size());
         }
     }
 
     if (!state.kernel_cache.empty()) {
-        jit_log(Info, "jit_shutdown(): releasing %zu kernel%s ..",
+        jitc_log(Info, "jit_shutdown(): releasing %zu kernel%s ..",
                 state.kernel_cache.size(),
                 state.kernel_cache.size() > 1 ? "s" : "");
 
         for (auto &v : state.kernel_cache) {
-            jit_kernel_free(v.first.device, v.second);
+            jitc_kernel_free(v.first.device, v.second);
             free(v.first.str);
         }
 
@@ -225,19 +225,35 @@ void jit_shutdown(int light) {
     }
 
     if (!state.tss.empty()) {
-        jit_log(Info, "jit_shutdown(): releasing %zu thread state%s ..",
+        jitc_log(Info, "jit_shutdown(): releasing %zu thread state%s ..",
                 state.tss.size(), state.tss.size() > 1 ? "s" : "");
 
         for (ThreadState *ts : state.tss) {
-            jit_free_flush(ts);
+            jitc_free_flush(ts);
             if (ts->cuda) {
                 scoped_set_context guard(ts->context);
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-                jit_optix_context_destroy(ts);
+                jitc_optix_context_destroy(ts);
 #endif
                 cuda_check(cuEventDestroy(ts->event));
                 cuda_check(cuStreamDestroy(ts->stream));
             }
+
+            if (state.variables.empty() && !ts->cse_cache.empty()) {
+                for (auto &kv: ts->cse_cache)
+                    jitc_log(Warn,
+                            " - id=%u: size=%u, type=%s, literal=%u, dep=[%u, "
+                            "%u, %u, %u], stmt=\"%s\", value=%lli",
+                            kv.second, kv.first.size,
+                            var_type_name[kv.first.type], kv.first.literal,
+                            kv.first.dep[0], kv.first.dep[1], kv.first.dep[2],
+                            kv.first.dep[3], kv.first.literal ? "" : kv.first.stmt,
+                            kv.first.literal ? (long long) kv.first.value : 0);
+
+                jitc_log(Warn, "jit_shutdown(): detected a common subexpression "
+                              "elimination cache leak (see above).");
+            }
+
             delete ts->release_chain;
             delete ts;
         }
@@ -250,87 +266,68 @@ void jit_shutdown(int light) {
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
         uint32_t n_leaked = 0;
-        std::vector<uint32_t> leaked_scatters;
+        std::vector<uint32_t> leaked_side_effects;
         for (auto &kv : state.variables) {
             const Variable &v = kv.second;
-            if (v.scatter && v.ref_count_ext == 1 && v.ref_count_int == 0)
-                leaked_scatters.push_back(kv.first);
+            if (v.side_effect && v.ref_count_ext == 1 && v.ref_count_int == 0)
+                leaked_side_effects.push_back(kv.first);
         }
-        for (uint32_t i : leaked_scatters)
-            jit_var_dec_ref_ext(i);
+        for (uint32_t i : leaked_side_effects)
+            jitc_var_dec_ref_ext(i);
         for (auto &var : state.variables) {
             if (n_leaked == 0)
-                jit_log(Warn, "jit_shutdown(): detected variable leaks:");
+                jitc_log(Warn, "jit_shutdown(): detected variable leaks:");
             if (n_leaked < 10)
-                jit_log(Warn,
+                jitc_log(Warn,
                         " - variable %u is still being referenced! (internal "
                         "references=%u, external references=%u)",
                         var.first, var.second.ref_count_int,
                         var.second.ref_count_ext);
             else if (n_leaked == 10)
-                jit_log(Warn, " - (skipping remainder)");
+                jitc_log(Warn, " - (skipping remainder)");
             ++n_leaked;
         }
 
         if (n_leaked > 0)
-            jit_log(Warn, "jit_shutdown(): %u variables are still referenced!", n_leaked);
+            jitc_log(Warn, "jit_shutdown(): %u variables are still referenced!", n_leaked);
 
         if (state.variables.empty() && !state.extra.empty())
-            jit_log(Warn,
+            jitc_log(Warn,
                     "jit_shutdown(): %zu empty records were not cleaned up!",
                     state.extra.size());
     }
 
-    if (state.variables.empty() && !state.cse_cache.empty()) {
-        for (auto &kv: state.cse_cache)
-            jit_log(Warn, " - %u: %u, %u, %u, %u", kv.second, kv.first.dep[0],
-                    kv.first.dep[1], kv.first.dep[2], kv.first.dep[3]);
-        jit_fail("jit_shutdown(): detected a common subexpression elimination cache leak!");
-    }
+    jitc_registry_shutdown();
+    jitc_malloc_shutdown();
 
-    if (state.variables.empty() && !state.variable_from_ptr.empty())
-        jit_fail("jit_shutdown(): detected a pointer-literal leak!");
-
-    jit_registry_shutdown();
-    jit_malloc_shutdown();
-
-    if (state.has_cuda) {
-        for (auto &v : state.devices) {
-            {
-                scoped_set_context guard(v.context);
-                for (int i = 0; i < ENOKI_SUB_STREAMS; ++i) {
-                    cuda_check(cuEventDestroy(v.sub_events[i]));
-                    cuda_check(cuStreamDestroy(v.sub_streams[i]));
-                }
-            }
+    if (state.backends & (uint32_t) JitBackend::CUDA) {
+        for (auto &v : state.devices)
             cuda_check(cuDevicePrimaryCtxRelease(v.id));
-        }
         state.devices.clear();
     }
 
-    jit_log(Info, "jit_shutdown(): done");
+    jitc_log(Info, "jit_shutdown(): done");
 
     if (light == 0) {
-        jit_llvm_shutdown();
+        jitc_llvm_shutdown();
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-        jit_optix_shutdown();
+        jitc_optix_shutdown();
 #endif
-        jit_cuda_shutdown();
+        jitc_cuda_shutdown();
     }
 
-    free(jit_temp_path);
-    jit_temp_path = nullptr;
+    free(jitc_temp_path);
+    jitc_temp_path = nullptr;
 
-    state.has_cuda = false;
-    state.has_llvm = false;
+    state.backends = 0;
 }
 
 
-ThreadState *jit_init_thread_state(bool cuda) {
+ThreadState *jitc_init_thread_state(bool cuda) {
     ThreadState *ts = new ThreadState();
 
     if (cuda) {
-        if (!state.has_cuda) {
+        if ((state.backends & (uint32_t) JitBackend::CUDA) == 0) {
             #if defined(_WIN32)
                 const char *cuda_fname = "nvcuda.dll";
             #elif defined(__linux__)
@@ -340,9 +337,9 @@ ThreadState *jit_init_thread_state(bool cuda) {
             #endif
 
             delete ts;
-            jit_raise(
+            jitc_raise(
                 "jit_init_thread_state(): the CUDA backend is inactive because "
-                "it has not been initialized via jitc_init(), or because the "
+                "it has not been initialized via jit_init(), or because the "
                 "CUDA driver library (\"%s\") could not be found! Set the "
                 "ENOKI_LIBCUDA_PATH environment variable to specify its path.",
                 cuda_fname);
@@ -350,9 +347,9 @@ ThreadState *jit_init_thread_state(bool cuda) {
 
         if (state.devices.empty()) {
             delete ts;
-            jit_raise("jit_init_thread_state(): the CUDA backend is inactive "
-                      "because no compatible CUDA devices were found on your "
-                      "system.");
+            jitc_raise("jit_init_thread_state(): the CUDA backend is inactive "
+                       "because no compatible CUDA devices were found on your "
+                       "system.");
         }
 
         ts->device = 0;
@@ -362,7 +359,7 @@ ThreadState *jit_init_thread_state(bool cuda) {
         cuda_check(cuEventCreate(&ts->event, CU_EVENT_DISABLE_TIMING));
         thread_state_cuda = ts;
     } else {
-        if (!state.has_llvm) {
+        if ((state.backends & (uint32_t) JitBackend::LLVM) == 0) {
             delete ts;
             #if defined(_WIN32)
                 const char *llvm_fname = "LLVM-C.dll";
@@ -372,7 +369,7 @@ ThreadState *jit_init_thread_state(bool cuda) {
                 const char *llvm_fname  = "libLLVM.dylib";
             #endif
 
-            jit_raise("jit_init_thread_state(): the LLVM backend is inactive "
+            jitc_raise("jit_init_thread_state(): the LLVM backend is inactive "
                       "because the LLVM shared library (\"%s\") could not be "
                       "found! Set the ENOKI_LIBLLVM_PATH environment "
                       "variable to specify its path.",
@@ -387,16 +384,16 @@ ThreadState *jit_init_thread_state(bool cuda) {
     return ts;
 }
 
-void jit_cuda_set_device(int device) {
+void jitc_cuda_set_device(int device) {
     ThreadState *ts = thread_state(true);
     if (ts->device == device)
         return;
 
     if ((size_t) device >= state.devices.size())
-        jit_raise("jit_cuda_set_device(%i): must be in the range 0..%i!",
+        jitc_raise("jit_cuda_set_device(%i): must be in the range 0..%i!",
                   device, (int) state.devices.size() - 1);
 
-    jit_log(Info, "jit_cuda_set_device(%i)", device);
+    jitc_log(Info, "jit_cuda_set_device(%i)", device);
 
     CUcontext new_context = state.devices[device].context;
 
@@ -417,7 +414,7 @@ void jit_cuda_set_device(int device) {
     }
 }
 
-void jit_sync_thread(ThreadState *ts) {
+void jitc_sync_thread(ThreadState *ts) {
     if (!ts)
         return;
     if (ts->cuda) {
@@ -430,14 +427,14 @@ void jit_sync_thread(ThreadState *ts) {
 }
 
 /// Wait for all computation on the current stream to finish
-void jit_sync_thread() {
+void jitc_sync_thread() {
     unlock_guard guard(state.mutex);
-    jit_sync_thread(thread_state_cuda);
-    jit_sync_thread(thread_state_llvm);
+    jitc_sync_thread(thread_state_cuda);
+    jitc_sync_thread(thread_state_llvm);
 }
 
 /// Wait for all computation on the current device to finish
-void jit_sync_device() {
+void jitc_sync_device() {
     ThreadState *ts = thread_state_cuda;
     if (ts) {
         /* Release mutex while synchronizing */ {
@@ -453,21 +450,21 @@ void jit_sync_device() {
         unlock_guard guard(state.mutex);
         for (ThreadState *ts : tss) {
             if (!ts->cuda)
-                jit_sync_thread(ts);
+                jitc_sync_thread(ts);
         }
     }
 }
 
 /// Wait for all computation on *all devices* to finish
-void jit_sync_all_devices() {
+void jitc_sync_all_devices() {
     std::vector<ThreadState *> tss = state.tss;
     unlock_guard guard(state.mutex);
     for (ThreadState *ts : tss)
-        jit_sync_thread(ts);
+        jitc_sync_thread(ts);
 }
 
 /// Glob for a shared library and try to load the most recent version
-void *jit_find_library(const char *fname, const char *glob_pat,
+void *jitc_find_library(const char *fname, const char *glob_pat,
                        const char *env_var) {
 #if !defined(_WIN32)
     const char* env_var_val = env_var ? getenv(env_var) : nullptr;
@@ -478,7 +475,7 @@ void *jit_find_library(const char *fname, const char *glob_pat,
 
     if (!handle) {
         if (env_var_val) {
-            jit_log(Warn, "jit_find_library(): Unable to load \"%s\": %s!",
+            jitc_log(Warn, "jit_find_library(): Unable to load \"%s\": %s!",
                     env_var_val, dlerror());
             return nullptr;
         }
@@ -487,7 +484,7 @@ void *jit_find_library(const char *fname, const char *glob_pat,
         if (glob(glob_pat, GLOB_BRACE, nullptr, &g) == 0) {
             const char *chosen = nullptr;
             if (g.gl_pathc > 1) {
-                jit_log(Info, "jit_find_library(): Multiple versions of "
+                jitc_log(Info, "jit_find_library(): Multiple versions of "
                               "%s were found on your system!\n", fname);
                 std::sort(g.gl_pathv, g.gl_pathv + g.gl_pathc,
                           [](const char *a, const char *b) {
@@ -516,13 +513,13 @@ void *jit_find_library(const char *fname, const char *glob_pat,
                         // Skip symbolic links at first
                         if (j == 0 && (lstat(g.gl_pathv[i], &buf) || S_ISLNK(buf.st_mode)))
                             continue;
-                        jit_log(Info, " %u. \"%s\"", counter++, g.gl_pathv[i]);
+                        jitc_log(Info, " %u. \"%s\"", counter++, g.gl_pathv[i]);
                         chosen = g.gl_pathv[i];
                     }
                     if (chosen)
                         break;
                 }
-                jit_log(Info,
+                jitc_log(Info,
                         "\nChoosing the last one. Specify a path manually "
                         "using the environment\nvariable '%s' to override this "
                         "behavior.\n", env_var);
@@ -549,10 +546,10 @@ void *jit_find_library(const char *fname, const char *glob_pat,
     return handle;
 }
 
-void jit_set_flags(uint32_t flags) {
-    jit_flags_v = flags;
+void jitc_set_flags(uint32_t flags) {
+    jitc_flags_v = flags;
 }
 
-uint32_t jit_flags() {
-    return jit_flags_v;
+uint32_t jitc_flags() {
+    return jitc_flags_v;
 }

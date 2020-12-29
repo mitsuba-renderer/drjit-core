@@ -15,8 +15,8 @@
 #  include <dlfcn.h>
 #endif
 
-static void *jit_optix_table[38] { };
-static const char *jit_optix_table_names[38] = {
+static void *jitc_optix_table[38] { };
+static const char *jitc_optix_table_names[38] = {
     "optixGetErrorName",
     "optixGetErrorString",
     "optixDeviceContextCreate",
@@ -126,7 +126,7 @@ struct OptixProgramGroupDesc {
 };
 
 struct OptixProgramGroupOptions {
-    int placeholder;
+    int opaque;
 };
 
 struct OptixShaderBindingTable {
@@ -177,23 +177,23 @@ OptixResult (*optixLaunch)(OptixPipeline, CUstream, CUdeviceptr, size_t,
                            unsigned int, unsigned int) = nullptr;
 OptixResult (*optixSbtRecordPackHeader)(OptixProgramGroup, void*) = nullptr;
 
-#define jit_optix_check(err) jit_optix_check_impl((err), __FILE__, __LINE__)
-extern void jit_optix_check_impl(OptixResult errval, const char *file, const int line);
+#define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
+extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
 
 #if defined(_WIN32)
-void *jit_optix_win32_load_alternative();
+void *jitc_optix_win32_load_alternative();
 #endif
 
-static bool jit_optix_init_attempted = false;
-static bool jit_optix_init_success = false;
-static void *jit_optix_handle = nullptr;
+static bool jitc_optix_init_attempted = false;
+static bool jitc_optix_init_success = false;
+static void *jitc_optix_handle = nullptr;
 
-bool jit_optix_init() {
-    if (jit_optix_init_attempted)
-        return jit_optix_init_success;
+bool jitc_optix_init() {
+    if (jitc_optix_init_attempted)
+        return jitc_optix_init_success;
 
-    jit_optix_init_attempted = true;
-    jit_optix_handle = nullptr;
+    jitc_optix_init_attempted = true;
+    jitc_optix_handle = nullptr;
 
 #if defined(_WIN32)
     const char* optix_fname = "nvoptix.dll";
@@ -206,19 +206,19 @@ bool jit_optix_init() {
 #if !defined(_WIN32)
     // Don't dlopen OptiX if it was loaded by another library
     if (dlsym(RTLD_NEXT, "optixLaunch"))
-        jit_optix_handle = RTLD_NEXT;
+        jitc_optix_handle = RTLD_NEXT;
 #endif
 
-    if (!jit_optix_handle) {
-        jit_optix_handle = jit_find_library(optix_fname, optix_fname, "ENOKI_LIBOPTIX_PATH");
+    if (!jitc_optix_handle) {
+        jitc_optix_handle = jitc_find_library(optix_fname, optix_fname, "ENOKI_LIBOPTIX_PATH");
 
 #if defined(_WIN32)
-        if (!jit_optix_handle)
-            jit_optix_handle = jit_optix_win32_load_alternative();
+        if (!jitc_optix_handle)
+            jitc_optix_handle = jitc_optix_win32_load_alternative();
 #endif
 
-        if (!jit_optix_handle) {
-            jit_log(Warn, "jit_optix_init(): %s could not be loaded -- "
+        if (!jitc_optix_handle) {
+            jitc_log(Warn, "jit_optix_init(): %s could not be loaded -- "
                           "disabling OptiX backend! Set the ENOKI_LIBOPTIX_PATH "
                           "environment variable to specify its path.", optix_fname);
             return false;
@@ -227,17 +227,17 @@ bool jit_optix_init() {
 
     // Load optixQueryFunctionTable from library
     optixQueryFunctionTable = decltype(optixQueryFunctionTable)(
-        dlsym(jit_optix_handle, "optixQueryFunctionTable"));
+        dlsym(jitc_optix_handle, "optixQueryFunctionTable"));
 
     if (!optixQueryFunctionTable) {
-        jit_log(Warn, "jit_optix_init(): could not find symbol optixQueryFunctionTable");
+        jitc_log(Warn, "jit_optix_init(): could not find symbol optixQueryFunctionTable");
         return false;
     }
 
     int rv = optixQueryFunctionTable(OPTIX_ABI_VERSION, 0, 0, 0,
-                                     &jit_optix_table, sizeof(jit_optix_table));
+                                     &jitc_optix_table, sizeof(jitc_optix_table));
     if (rv) {
-        jit_log(Warn,
+        jitc_log(Warn,
                 "jit_optix_init(): Failed to load OptiX library! Very likely, "
                 "your NVIDIA graphics driver is too old and not compatible "
                 "with the version of OptiX that is being used. In particular, "
@@ -247,7 +247,7 @@ bool jit_optix_init() {
         return false;
     }
 
-    #define LOOKUP(name) name = (decltype(name)) jit_optix_lookup(#name)
+    #define LOOKUP(name) name = (decltype(name)) jitc_optix_lookup(#name)
 
     LOOKUP(optixGetErrorName);
     LOOKUP(optixGetErrorString);
@@ -266,33 +266,33 @@ bool jit_optix_init() {
 
     #undef LOOKUP
 
-    jit_log(LogLevel::Info,
+    jitc_log(LogLevel::Info,
             "jit_optix_init(): loaded OptiX (via 7.2 ABI).");
 
-    jit_optix_init_success = true;
+    jitc_optix_init_success = true;
     return true;
 }
 
-void jit_optix_log(unsigned int /* level */, const char *tag, const char *message, void *) {
+void jitc_optix_log(unsigned int /* level */, const char *tag, const char *message, void *) {
     size_t len = strlen(message);
     fprintf(stderr, "jit_optix_log(): [%s] %s%s", tag, message,
             (len > 0 && message[len - 1] == '\n') ? "" : "\n");
 }
 
-OptixDeviceContext jit_optix_context() {
+OptixDeviceContext jitc_optix_context() {
     ThreadState *ts = thread_state(true);
 
     if (ts->optix_context)
         return ts->optix_context;
 
-    if (!jit_optix_init())
-        jit_raise("Could not create OptiX context!");
+    if (!jitc_optix_init())
+        jitc_raise("Could not create OptiX context!");
 
     int log_level = std::max((int) state.log_level_stderr,
                              (int) state.log_level_callback) + 1;
 
     OptixDeviceContextOptions ctx_opts {
-        jit_optix_log, nullptr,
+        jitc_optix_log, nullptr,
         std::max(0, std::min(4, log_level)),
 #if defined(NDEBUG)
         OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF
@@ -302,44 +302,44 @@ OptixDeviceContext jit_optix_context() {
     };
 
     OptixDeviceContext ctx;
-    jit_optix_check(optixDeviceContextCreate(ts->context, &ctx_opts, &ctx));
+    jitc_optix_check(optixDeviceContextCreate(ts->context, &ctx_opts, &ctx));
 
 #if !defined(_WIN32)
-    jit_optix_check(optixDeviceContextSetCacheLocation(ctx, jit_temp_path));
+    jitc_optix_check(optixDeviceContextSetCacheLocation(ctx, jitc_temp_path));
 #else
-    size_t len = wcstombs(nullptr, jit_temp_path, 0) + 1;
+    size_t len = wcstombs(nullptr, jitc_temp_path, 0) + 1;
     std::unique_ptr<char[]> temp(new char[len]);
-    wcstombs(temp.get(), jit_temp_path, len);
-    jit_optix_check(optixDeviceContextSetCacheLocation(ctx, temp.get()));
+    wcstombs(temp.get(), jitc_temp_path, len);
+    jitc_optix_check(optixDeviceContextSetCacheLocation(ctx, temp.get()));
 #endif
-    jit_optix_check(optixDeviceContextSetCacheEnabled(ctx, 1));
+    jitc_optix_check(optixDeviceContextSetCacheEnabled(ctx, 1));
 
     ts->optix_context = ctx;
 
     return ctx;
 }
 
-void jit_optix_context_destroy(ThreadState *ts) {
+void jitc_optix_context_destroy(ThreadState *ts) {
     if (ts->optix_context) {
-        jit_optix_check(optixDeviceContextDestroy(ts->optix_context));
+        jitc_optix_check(optixDeviceContextDestroy(ts->optix_context));
         ts->optix_context = nullptr;
     }
 }
 
-void *jit_optix_lookup(const char *name) {
+void *jitc_optix_lookup(const char *name) {
     for (int i = 0; i < 38; ++i) {
-        if (strcmp(name, jit_optix_table_names[i]) == 0)
-            return jit_optix_table[i];
+        if (strcmp(name, jitc_optix_table_names[i]) == 0)
+            return jitc_optix_table[i];
     }
-    jit_raise("jit_optix_lookup(): function \"%s\" not found!", name);
+    jitc_raise("jit_optix_lookup(): function \"%s\" not found!", name);
 }
 
-void jit_optix_configure(const OptixPipelineCompileOptions *pco,
+void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
                          const OptixShaderBindingTable *sbt,
                          const OptixProgramGroup *pg,
                          uint32_t pg_count) {
     ThreadState *ts = thread_state(true);
-    jit_log(Info, "jit_optix_configure(pg_count=%u)", pg_count);
+    jitc_log(Info, "jit_optix_configure(pg_count=%u)", pg_count);
     ts->optix_pipeline_compile_options = pco;
     ts->optix_shader_binding_table = sbt;
 
@@ -348,92 +348,10 @@ void jit_optix_configure(const OptixPipelineCompileOptions *pco,
         ts->optix_program_groups.push_back(pg[i]);
 }
 
-void jit_optix_compile(ThreadState *ts, const char *buffer_,
+void jitc_optix_compile(ThreadState *ts, const char *buffer,
                        size_t buffer_size, Kernel &kernel,
                        uint64_t kernel_hash) {
     char error_log[16384];
-
-    std::unique_ptr<char[]> buffer(new char[buffer_size + 1]);
-    memcpy(buffer.get(), buffer_, buffer_size + 1);
-
-    // =====================================================
-    // 1. HACK! Turn CUDA vcalls into OptiX direct callables
-    // =====================================================
-
-    tsl::robin_map<uint64_t, uint32_t> pg_map;
-    tsl::robin_map<uint32_t, uint32_t> pg_offsets;
-    std::vector<uint64_t> sbt_refs;
-
-    pg_map.insert({ kernel_hash, 0 });
-    sbt_refs.push_back(kernel_hash);
-
-    /// Pass over all function tables, establish callable offsets
-    char *start = buffer.get();
-    while (true) {
-        start = strstr(start, ".global .u64 gl");
-        if (!start)
-            break;
-        uint32_t id = (uint32_t) strtoul(start + 15, nullptr, 10);
-        pg_offsets[id] = (uint32_t) sbt_refs.size() - 1;
-
-        char *p = strstr(start, "{") + 2;
-        while (strncmp(p, "func_", 5) == 0) {
-            uint64_t id = (uint64_t) strtoull(p + 5, nullptr, 16);
-            pg_map.insert({id, (uint32_t) pg_map.size()});
-            sbt_refs.push_back(id);
-            p += 23;
-        }
-        char *end = strstr(start, ";");
-        if (!end)
-            break;
-        memset(start, ' ', end - start + 1);
-    }
-
-    if (sbt_refs.size() > 1) {
-        char *p = buffer.get();
-        while (true) {
-            p = strstr(p, "func_");
-            if (!p)
-                break;
-            memcpy(p - 14, "__direct_callable__", 19);
-        }
-
-        p = buffer.get();
-        char num[14];
-
-        #define FIND(needle)                                                 \
-            p = strstr(p + 1, needle);                                       \
-            if (!p)                                                          \
-                jit_fail("Internal error in CUDA->OptiX callable tranform");
-
-        while (true) {
-            p = strstr(p, "// indirect call via table gl");
-            if (!p)
-                break;
-            uint32_t id = (uint32_t) strtoul(p + 29, nullptr, 10);
-            auto it = pg_offsets.find(id);
-            if (it == pg_offsets.end())
-                jit_fail("Could not find function table %u!", id);
-
-            // Uncomment OptiX variant
-            FIND("// add.u32");;
-            p[0] = p[1] = ' ';
-            FIND("sbt_id_offset");
-            snprintf(num, 14, "%13u", it->second);
-            memcpy(p, num, 13);
-            FIND("// call");
-            p[0] = p[1] = ' ';
-
-            // Comment out CUDA variant
-            FIND("   mov.u64");
-            p[0] = p[1] = '/';
-            FIND("   mad.wide");
-            p[0] = p[1] = '/';
-            FIND("   ld.global.u64");
-            p[0] = p[1] = '/';
-
-        }
-    }
 
     // =====================================================
     // 2. Compile an OptiX module
@@ -445,11 +363,11 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
     size_t log_size = sizeof(error_log);
     int rv = optixModuleCreateFromPTX(
         ts->optix_context, &module_opts, ts->optix_pipeline_compile_options,
-        buffer.get(), buffer_size, error_log, &log_size, &kernel.optix.mod);
+        buffer, buffer_size, error_log, &log_size, &kernel.optix.mod);
     if (rv) {
-        jit_fail("jit_optix_compile(): optixModuleCreateFromPTX() failed. Please see the PTX "
-                 "assembly listing and error message below:\n\n%s\n\n%s", buffer.get(), error_log);
-        jit_optix_check(rv);
+        jitc_fail("jit_optix_compile(): optixModuleCreateFromPTX() failed. Please see the PTX "
+                 "assembly listing and error message below:\n\n%s\n\n%s", buffer, error_log);
+        jitc_optix_check(rv);
     }
 
     // =====================================================
@@ -489,25 +407,25 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
                                  pg_map.size(), &pgo, error_log,
                                  &log_size, kernel.optix.pg);
     if (rv) {
-        jit_fail("jit_optix_compile(): optixProgramGroupCreate() failed. Please see the PTX "
-                 "assembly listing and error message below:\n\n%s\n\n%s", buffer.get(), error_log);
-        jit_optix_check(rv);
+        jitc_fail("jit_optix_compile(): optixProgramGroupCreate() failed. Please see the PTX "
+                 "assembly listing and error message below:\n\n%s\n\n%s", buffer, error_log);
+        jitc_optix_check(rv);
     }
 
     size_t stride = OPTIX_SBT_RECORD_HEADER_SIZE;
     uint8_t *sbt_record = (uint8_t *)
-        jit_malloc(AllocType::HostPinned, sbt_refs.size() * stride);
+        jitc_malloc(AllocType::HostPinned, sbt_refs.size() * stride);
 
     for (size_t i = 0; i < sbt_refs.size(); ++i) {
         auto it = pg_map.find(sbt_refs[i]);
         if (it == pg_map.end())
-            jit_fail("Could not find raygen/callable!");
-        jit_optix_check(optixSbtRecordPackHeader(
+            jitc_fail("Could not find raygen/callable!");
+        jitc_optix_check(optixSbtRecordPackHeader(
             kernel.optix.pg[it->second], sbt_record + stride * i));
     }
 
     kernel.optix.sbt_record = (uint8_t *)
-        jit_malloc_migrate(sbt_record, AllocType::Device, 1);
+        jitc_malloc_migrate(sbt_record, AllocType::Device, 1);
 
     // =====================================================
     // 4. Create an OptiX pipeline
@@ -532,9 +450,9 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
         ts->optix_program_groups.data(), ts->optix_program_groups.size(),
         error_log, &log_size, &kernel.optix.pipeline);
     if (rv) {
-        jit_fail("jit_optix_compile(): optixPipelineCreate() failed. Please see the PTX "
-                 "assembly listing and error message below:\n\n%s\n\n%s", buffer.get(), error_log);
-        jit_optix_check(rv);
+        jitc_fail("jit_optix_compile(): optixPipelineCreate() failed. Please see the PTX "
+                 "assembly listing and error message below:\n\n%s\n\n%s", buffer, error_log);
+        jitc_optix_check(rv);
     }
 
     kernel.size = 0;
@@ -542,18 +460,16 @@ void jit_optix_compile(ThreadState *ts, const char *buffer_,
     ts->optix_program_groups.resize(size_before);
 }
 
-void jit_optix_free(const Kernel &kernel) {
-    if (optixProgramGroupDestroy == nullptr)
-        jit_fail("What gives?!\n");
-    jit_optix_check(optixPipelineDestroy(kernel.optix.pipeline));
+void jitc_optix_free(const Kernel &kernel) {
+    jitc_optix_check(optixPipelineDestroy(kernel.optix.pipeline));
     for (uint32_t i = 0; i < kernel.optix.pg_count; ++i)
-        jit_optix_check(optixProgramGroupDestroy(kernel.optix.pg[i]));
+        jitc_optix_check(optixProgramGroupDestroy(kernel.optix.pg[i]));
     delete[] kernel.optix.pg;
-    jit_optix_check(optixModuleDestroy(kernel.optix.mod));
-    jit_free(kernel.optix.sbt_record);
+    jitc_optix_check(optixModuleDestroy(kernel.optix.mod));
+    jitc_free(kernel.optix.sbt_record);
 }
 
-void jit_optix_launch(ThreadState *ts, const Kernel &kernel, uint32_t size,
+void jitc_optix_launch(ThreadState *ts, const Kernel &kernel, uint32_t size,
                       const void *args, uint32_t args_size) {
     OptixShaderBindingTable sbt;
     memcpy(&sbt, ts->optix_shader_binding_table, sizeof(OptixShaderBindingTable));
@@ -565,11 +481,11 @@ void jit_optix_launch(ThreadState *ts, const Kernel &kernel, uint32_t size,
         sbt.callablesRecordCount = kernel.optix.sbt_count - 1;
     }
 
-    jit_optix_check(optixLaunch(kernel.optix.pipeline, ts->stream,
+    jitc_optix_check(optixLaunch(kernel.optix.pipeline, ts->stream,
                                 (CUdeviceptr) args, args_size, &sbt, size, 1, 1));
 }
 
-void jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
+void jitc_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
     VarType types[] { VarType::UInt64,  VarType::Float32, VarType::Float32,
                       VarType::Float32, VarType::Float32, VarType::Float32,
                       VarType::Float32, VarType::Float32, VarType::Float32,
@@ -577,31 +493,31 @@ void jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
                       VarType::UInt32,  VarType::UInt32,  VarType::UInt32 };
 
     if (nargs < 15)
-        jit_raise("jit_optix_trace(): too few arguments (got %u < 15)", nargs);
+        jitc_raise("jit_optix_trace(): too few arguments (got %u < 15)", nargs);
 
     uint32_t np = nargs - 15;
     if (np > 8)
-        jit_raise("jit_optix_trace(): too many payloads (got %u > 8)", np);
+        jitc_raise("jit_optix_trace(): too many payloads (got %u > 8)", np);
 
-    jit_log(Info, "jit_optix_trace(): %u payload value%s.", np, np == 1 ? "" : "s");
+    jitc_log(Info, "jit_optix_trace(): %u payload value%s.", np, np == 1 ? "" : "s");
 
     for (uint32_t i = 0; i < nargs; ++i) {
-        VarType vt = jit_var_type(args[i]);
+        VarType vt = jitc_var_type(args[i]);
         if (i < 15) {
             if (vt != types[i])
-                jit_raise("jit_optix_trace(): type mismatch for arg. %u", i);
+                jitc_raise("jit_optix_trace(): type mismatch for arg. %u", i);
         } else {
             if (var_type_size[(int) vt] != 4)
-                jit_raise("jit_optix_trace(): size mismatch for arg. %u", i);
+                jitc_raise("jit_optix_trace(): size mismatch for arg. %u", i);
         }
     }
 
-    uint32_t decl = jit_var_new_0(1, VarType::Void, "", 1, 1), index = decl;
-    jit_var_inc_ref_ext(index);
+    uint32_t decl = jitc_var_new_0(1, VarType::Void, "", 1, 1), index = decl;
+    jitc_var_inc_ref_ext(index);
 
     Buffer buf(100);
     for (uint32_t i = 0; i < nargs; ++i) {
-        VarType vt = jit_var_type(args[i]);
+        VarType vt = jitc_var_type(args[i]);
         const char *tname = var_type_name_ptx[(int) vt],
                    *tname_bin = tname;
 
@@ -614,8 +530,8 @@ void jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
         buf.fmt(".reg.%s $r1_%u$n"
                 "mov.%s $r1_%u, $r2", tname, i, tname_bin, i);
         uint32_t prev = index;
-        index = jit_var_new_3(1, VarType::Void, buf.get(), 0, decl, args[i], index);
-        jit_var_dec_ref_ext(prev);
+        index = jitc_var_new_3(1, VarType::Void, buf.get(), 0, decl, args[i], index);
+        jitc_var_dec_ref_ext(prev);
     }
 
     buf.clear();
@@ -632,42 +548,42 @@ void jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
     buf.put(")");
 
     uint32_t prev = index;
-    index = jit_var_new_3(1, VarType::Void, buf.get(), 0, decl, mask, index);
-    jit_var_dec_ref_ext(prev);
+    index = jitc_var_new_3(1, VarType::Void, buf.get(), 0, decl, mask, index);
+    jitc_var_dec_ref_ext(prev);
 
-    jit_var(index)->optix = 1;
+    jitc_var(index)->optix = 1;
 
     for (uint32_t i = 15; i < nargs; ++i) {
         buf.clear();
         buf.fmt("mov.b32 $r0, $r1_%u", i + np);
-        args[i] = jit_var_new_2(1, (VarType) jit_var_type(args[i]), buf.get(), 0, decl, index);
+        args[i] = jitc_var_new_2(1, (VarType) jitc_var_type(args[i]), buf.get(), 0, decl, index);
     }
 
-    jit_var_dec_ref_ext(index);
-    jit_var_dec_ref_ext(decl);
+    jitc_var_dec_ref_ext(index);
+    jitc_var_dec_ref_ext(decl);
 }
 
-void jit_optix_mark(uint32_t index) {
-    jit_var(index)->optix = true;
+void jitc_optix_mark(uint32_t index) {
+    jitc_var(index)->optix = true;
 }
 
-void jit_optix_shutdown() {
-    if (!jit_optix_init_success)
+void jitc_optix_shutdown() {
+    if (!jitc_optix_init_success)
         return;
 
-    jit_log(Info, "jit_optix_shutdown()");
+    jitc_log(Info, "jit_optix_shutdown()");
 
 #if defined(ENOKI_JIT_DYNAMIC_OPTIX)
     #define Z(x) x = nullptr
 
     #if !defined(_WIN32)
-        if (jit_optix_handle != RTLD_NEXT)
-            dlclose(jit_optix_handle);
+        if (jitc_optix_handle != RTLD_NEXT)
+            dlclose(jitc_optix_handle);
     #else
-        FreeLibrary((HMODULE) jit_optix_handle);
+        FreeLibrary((HMODULE) jitc_optix_handle);
     #endif
 
-    memset(jit_optix_table, 0, sizeof(jit_optix_table));
+    memset(jitc_optix_table, 0, sizeof(jitc_optix_table));
 
     Z(optixGetErrorName);
     Z(optixGetErrorString);
@@ -684,29 +600,29 @@ void jit_optix_shutdown() {
     Z(optixLaunch);
     Z(optixSbtRecordPackHeader);
 
-    jit_optix_handle = nullptr;
+    jitc_optix_handle = nullptr;
 
     #undef Z
 #endif
 
-    jit_optix_init_success = false;
-    jit_optix_init_attempted = false;
+    jitc_optix_init_success = false;
+    jitc_optix_init_attempted = false;
 }
 
-void jit_optix_check_impl(OptixResult errval, const char *file,
+void jitc_optix_check_impl(OptixResult errval, const char *file,
                           const int line) {
     if (unlikely(errval != 0)) {
         const char *name = optixGetErrorName(errval),
                    *msg  = optixGetErrorString(errval);
-        jit_fail("jit_optix_check(): API error %04i (%s): \"%s\" in "
+        jitc_fail("jit_optix_check(): API error %04i (%s): \"%s\" in "
                  "%s:%i.", (int) errval, name, msg, file, line);
     }
 }
 
-void jitc_optix_check_impl(int errval, const char *file, const int line) {
+void jit_optix_check_impl(int errval, const char *file, const int line) {
     if (errval) {
         lock_guard guard(state.mutex);
-        jit_optix_check_impl(errval, file, line);
+        jitc_optix_check_impl(errval, file, line);
     }
 }
 
@@ -716,7 +632,7 @@ void jitc_optix_check_impl(int errval, const char *file, const int line) {
  * may not be on the path. Since it is co-located with the OpenGL drivers,
  * we should also enumerate all of them and double-check there.
  */
-void *jit_optix_win32_load_alternative() {
+void *jitc_optix_win32_load_alternative() {
     const char *guid        = "{4d36e968-e325-11ce-bfc1-08002be10318}",
                *suffix      = "nvoptix.dll",
                *driver_name = "OpenGLDriverName";

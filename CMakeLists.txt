@@ -60,13 +60,15 @@ add_library(
   src/profiler.h
   src/log.h           src/log.cpp
   src/var.h           src/var.cpp
-  src/eval.h          src/eval.cpp
+  src/op.h            src/op.cpp
+  src/eval.h          src/eval.cpp src/eval_cuda.cpp src/eval_llvm.cpp
   src/malloc.h        src/malloc.cpp
   src/registry.h      src/registry.cpp
   src/util.h          src/util.cpp
   src/cuda_api.h      src/cuda_api.cpp
   src/llvm_api.h      src/llvm_api.cpp
   src/io.h            src/io.cpp
+  # src/special.h       src/special.cpp
   src/init.cpp
   src/api.cpp
 
@@ -80,7 +82,7 @@ add_library(
   kernels/kernels.h kernels/kernels.c
 )
 
-target_compile_features(enoki-jit PRIVATE cxx_std_11)
+target_compile_features(enoki-jit PRIVATE cxx_std_14)
 target_include_directories(enoki-jit PRIVATE
   include
   ext/enoki-thread/include

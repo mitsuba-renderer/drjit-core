@@ -1,0 +1,16 @@
+/*
+    src/op.h -- Conversion of standard operations into PTX and LLVM IR
+
+    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
+#pragma once
+
+#include <enoki-jit/jit.h>
+
+/// Create a variable representing the result of a standard operation
+extern uint32_t jitc_var_new_op(OpType ot, uint32_t n_dep, const uint32_t *dep);
+

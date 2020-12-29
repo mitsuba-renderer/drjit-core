@@ -17,7 +17,7 @@
 #else
     [[noreturn]]
 #endif
-extern void jit_fail(const char* fmt, ...);
+extern void jitc_fail(const char* fmt, ...);
 
 template <typename T, size_t Align = alignof(T)>
 struct aligned_allocator {
@@ -44,10 +44,10 @@ public:
         void *ptr;
 #if !defined(_WIN32)
         if (posix_memalign(&ptr, Align, sizeof(T) * count) != 0)
-            jit_fail("aligned_allocator::allocate(): out of memory!");
+            jitc_fail("aligned_allocator::allocate(): out of memory!");
 #else
         if ((ptr = _aligned_malloc(sizeof(T) * count, Align)) == nullptr)
-            jit_fail("aligned_allocator::allocate(): out of memory!");
+            jitc_fail("aligned_allocator::allocate(): out of memory!");
 #endif
         return (value_type *) ptr;
     }

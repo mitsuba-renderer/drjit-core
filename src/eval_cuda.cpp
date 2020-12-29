@@ -1,0 +1,231 @@
+#include "eval.h"
+#include "internal.h"
+#include "var.h"
+
+// Forward declaration
+static void jitc_render_stmt_cuda(uint32_t index, const Variable *v);
+
+void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
+                       uint32_t n_regs, uint32_t n_params,
+                       int params_global) {
+    /* Special registers:
+
+         %r0   :  Index
+         %r1   :  Step
+         %r2   :  Size
+         %p0   :  Stopping predicate
+         %rd0  :  Temporary for parameter pointers
+         %rd1  :  Temporary for offset calculation
+         %rd2  :  Pointer to parameter table in global memory if too big
+
+         %b3, %w3, %r3, %rd3, %f3, %d3, %p3: reserved for use in compound
+         statements that must write a temporary result to a register.
+    */
+
+    buffer.fmt(".version %u.%u\n"
+               ".target sm_%u\n"
+               ".address_size 64\n\n",
+               ts->ptx_version / 10, ts->ptx_version % 10,
+               ts->compute_capability);
+
+    if (!uses_optix) {
+        buffer.fmt(".entry enoki_^^^^^^^^^^^^^^^^("
+                   ".param .align 8 .b8 params[%u]) { // sm_%u \n",
+                   n_params * (uint32_t) sizeof(void *),
+                   state.devices[ts->device].compute_capability);
+    } else {
+       buffer.fmt(".const .align 8 .b8 params[%u];\n\n"
+                  ".entry __raygen__enoki_^^^^^^^^^^^^^^^^() {",
+                  n_params * (uint32_t) sizeof(void *));
+    }
+
+    buffer.fmt(
+        "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
+        "    .reg.b64  %%rd<%u>; .reg.f32 %%f<%u>; .reg.f64 %%d<%u>;\n"
+        "    .reg.pred %%p <%u>;\n\n",
+        n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
+
+    if (!uses_optix) {
+        buffer.put("    mov.u32 %r0, %ctaid.x;\n"
+                   "    mov.u32 %r1, %ntid.x;\n"
+                   "    mov.u32 %r2, %tid.x;\n"
+                   "    mad.lo.u32 %r0, %r0, %r1, %r2;\n");
+
+        if (likely(!params_global)) {
+           buffer.put("    ld.param.u32 %r2, [params];\n");
+        } else {
+           buffer.put("    ld.param.u64 %rd2, [params];\n"
+                      "    ldu.global %r2, [%rd2];\n");
+        }
+
+        buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n"
+                   "    @%p0 bra done;\n"
+                   "\n"
+                   "    mov.u32 %r3, %nctaid.x;\n"
+                   "    mul.lo.u32 %r1, %r3, %r1;\n"
+                   "\n"
+                   "body:\n");
+    } else {
+        buffer.put("    call (%r0), _optix_get_launch_dimensions_y, ();\n"
+                   "    call (%r1), _optix_get_launch_index_y, ();\n"
+                   "    call (%r2), _optix_get_launch_index_x, ();\n"
+                   "    mad.lo.u32 %r0, %r0, %r1, %r2;\n"
+                   "    call (%r1), _optix_get_launch_dimensions_z, ();\n"
+                   "    call (%r2), _optix_get_launch_index_z, ();\n"
+                   "    mad.lo.u32 %r0, %r0, %r1, %r2;\n\n"
+                   "body:\n");
+    }
+
+    const char *params_base = "params",
+               *params_type = "param";
+
+    if (uses_optix) {
+        uses_optix = "const";
+    } else if (params_global) {
+        params_base = "%rd2";
+        params_type = "global";
+    }
+
+    for (uint32_t gi = group.start; gi != group.end; ++gi) {
+        uint32_t index = schedule[gi].index;
+        const Variable *v = jitc_var(index);
+
+        if (unlikely(v->extra)) {
+            const char *label = jitc_var_label(index);
+            if (label)
+                buffer.fmt("    // %s\n", label);
+        }
+
+        if (likely(v->param_type == ParamType::Input)) {
+            const char *prefix = "%rd";
+            uint32_t id = 0;
+
+            if (v->literal) {
+                prefix = var_type_prefix[v->type];
+                id = v->reg_index;
+            }
+
+            buffer.fmt("    ld.%s.u64 %s%u, [%s+%u];\n", params_type,
+                       prefix, id, params_base,
+                       v->param_index * (uint32_t) sizeof(void *));
+
+            if (v->literal)
+                continue;
+
+            if (v->size > 1)
+                buffer.fmt("    mad.wide.u32 %%rd0, %%r0, %u, %%rd0;\n",
+                           var_type_size[v->type]);
+
+            if ((VarType) v->type != VarType::Bool) {
+                buffer.fmt("    %s%s %s%u, [%%rd0];\n",
+                           v->size > 1 ? "ld.global.cs." : "ldu.global.",
+                           var_type_name_ptx[v->type],
+                           var_type_prefix[v->type],
+                           v->reg_index);
+            } else {
+                buffer.fmt("    %s %%w0, [%%rd0];\n"
+                           "    setp.ne.u16 %%p%u, %%w0, 0;\n",
+                           v->size > 1 ? "ld.global.cs.u8" : "ldu.global.u8",
+                           v->reg_index);
+            }
+            continue;
+        } else {
+            jitc_render_stmt_cuda(index, v);
+        }
+
+        if (v->param_type == ParamType::Output) {
+            buffer.fmt("    ld.%s.u64 %%rd0, [%s+%u];\n"
+                       "    mad.wide.u32 %%rd0, %%r0, %u, %%rd0;\n",
+                       params_type, params_base,
+                       v->param_index * (uint32_t) sizeof(void *),
+                       var_type_size[v->type]);
+
+            if ((VarType) v->type != VarType::Bool) {
+                buffer.fmt("    st.global.cs.%s [%%rd0], %s%u;\n",
+                           var_type_name_ptx[v->type],
+                           var_type_prefix[v->type],
+                           v->reg_index);
+            } else {
+                buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u;\n"
+                           "    st.global.cs.u8 [%%rd0], %%w0;\n",
+                           v->reg_index);
+            }
+        }
+    }
+
+    if (!uses_optix) {
+        buffer.put("\n"
+                   "    add.u32 %r0, %r0, %r1;\n"
+                   "    setp.ge.u32 %p0, %r0, %r2;\n"
+                   "    @!%p0 bra body;\n"
+                   "\n"
+                   "done:\n");
+    }
+
+    buffer.put("    ret;\n"
+               "}");
+}
+
+/// Convert an IR template with '$' expressions into valid IR
+static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
+    if (v->literal) {
+        const char *prefix = var_type_prefix[v->type],
+                   *tname = var_type_name_ptx_bin[v->type];
+
+        size_t tname_len = strlen(tname),
+               prefix_len = strlen(prefix);
+
+        buffer.put("    mov.");
+        buffer.put(tname, tname_len);
+        buffer.putc(' ');
+        buffer.put(prefix, prefix_len);
+        buffer.put_uint32(v->reg_index);
+        buffer.put(", 0x");
+        buffer.put_uint64_hex(v->value);
+        buffer.put(";\n");
+    } else {
+        const char *s = v->stmt;
+        buffer.put("    ");
+        char c;
+        do {
+            const char *start = s;
+            while (c = *s, c != '\0' && c != '$')
+                s++;
+            buffer.put(start, s - start);
+
+            if (c == '$') {
+                s++;
+                const char **prefix_table = nullptr, type = *s++;
+                switch (type) {
+                    case 'n': buffer.put(";\n    "); continue;
+                    case 't': prefix_table = var_type_name_ptx; break;
+                    case 'b': prefix_table = var_type_name_ptx_bin; break;
+                    case 's': prefix_table = var_type_size_str; break;
+                    case 'r': prefix_table = var_type_prefix; break;
+                    default:
+                        jitc_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
+                                 "expression (unknown type \"%c\") in \"%s\"!", type, v->stmt);
+                }
+
+                uint32_t arg_id = *s++ - '0';
+                if (unlikely(arg_id > 4))
+                    jitc_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
+                             "expression (argument out of bounds)!", v->stmt);
+
+                uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
+                if (unlikely(dep_id == 0))
+                    jitc_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
+                             "expression (referenced variable %u is missing)!", v->stmt, arg_id);
+
+                const Variable *dep = jitc_var(dep_id);
+                const char *prefix = prefix_table[(int) dep->type];
+                buffer.put(prefix, strlen(prefix));
+
+                if (type == 'r')
+                    buffer.put_uint32(dep->reg_index);
+            }
+        } while (c != '\0');
+
+        buffer.put(";\n");
+    }
+}

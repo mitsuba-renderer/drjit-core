@@ -31,7 +31,7 @@ using UInt64 = ek::CUDAArray<uint64_t>;
 using Mask = ek::CUDAArray<bool>;
 
 void demo() {
-    OptixDeviceContext context = jitc_optix_context();
+    OptixDeviceContext context = jit_optix_context();
 
     // =====================================================
     // Copy vertex data to device
@@ -39,8 +39,8 @@ void demo() {
     float h_vertices[9] = { -0.8f, -0.8f, 0.0f,
                              0.8f, -0.8f, 0.0f,
                              0.0f,  0.8f, 0.0f };
-    void *d_vertices = jitc_malloc(AllocType::Device, sizeof(h_vertices));
-    jitc_memcpy(1, d_vertices, h_vertices, sizeof(h_vertices));
+    void *d_vertices = jit_malloc(AllocType::Device, sizeof(h_vertices));
+    jit_memcpy(1, d_vertices, h_vertices, sizeof(h_vertices));
 
     // =====================================================
     // Build geometric acceleration data structure
@@ -61,46 +61,46 @@ void demo() {
         OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
 
     OptixAccelBufferSizes gas_buffer_sizes;
-    jitc_optix_check(optixAccelComputeMemoryUsage(
+    jit_optix_check(optixAccelComputeMemoryUsage(
         context, &accel_options, &triangle_input, 1, &gas_buffer_sizes));
 
     void *d_gas_temp =
-        jitc_malloc(AllocType::Device, gas_buffer_sizes.tempSizeInBytes);
+        jit_malloc(AllocType::Device, gas_buffer_sizes.tempSizeInBytes);
 
     void *d_gas =
-        jitc_malloc(AllocType::Device, gas_buffer_sizes.outputSizeInBytes);
+        jit_malloc(AllocType::Device, gas_buffer_sizes.outputSizeInBytes);
 
-    size_t *d_compacted_size = (size_t *) jitc_malloc(AllocType::Device, sizeof(size_t)),
+    size_t *d_compacted_size = (size_t *) jit_malloc(AllocType::Device, sizeof(size_t)),
             h_compacted_size = 0;
     OptixAccelEmitDesc build_property = {};
     build_property.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
     build_property.result = d_compacted_size;
 
     OptixTraversableHandle gas_handle;
-    jitc_optix_check(optixAccelBuild(
+    jit_optix_check(optixAccelBuild(
         context, 0, &accel_options, &triangle_input, 1, d_gas_temp,
         gas_buffer_sizes.tempSizeInBytes, d_gas,
         gas_buffer_sizes.outputSizeInBytes, &gas_handle, &build_property, 1));
 
-    jitc_free(d_gas_temp);
-    jitc_free(d_vertices);
+    jit_free(d_gas_temp);
+    jit_free(d_vertices);
 
     // =====================================================
     // Compactify geometric acceleration data structure
     // =====================================================
 
-    jitc_memcpy(1, &h_compacted_size, d_compacted_size, sizeof(size_t));
+    jit_memcpy(1, &h_compacted_size, d_compacted_size, sizeof(size_t));
 
     if (h_compacted_size < gas_buffer_sizes.outputSizeInBytes) {
-        void *d_gas_compact = jitc_malloc(AllocType::Device, h_compacted_size);
-        jitc_optix_check(optixAccelCompact(context, jitc_cuda_stream(),
+        void *d_gas_compact = jit_malloc(AllocType::Device, h_compacted_size);
+        jit_optix_check(optixAccelCompact(context, jit_cuda_stream(),
                                            gas_handle, d_gas_compact,
                                            h_compacted_size, &gas_handle));
-        jitc_free(d_gas);
+        jit_free(d_gas);
         d_gas = d_gas_compact;
     }
 
-    jitc_free(d_compacted_size);
+    jit_free(d_compacted_size);
 
     // =====================================================
     // Configure options for OptiX pipeline
@@ -142,7 +142,7 @@ void demo() {
         &log_size, &mod);
     if (rv) {
         fputs(log, stderr);
-        jitc_optix_check(rv);
+        jit_optix_check(rv);
     }
 
     // =====================================================
@@ -161,7 +161,7 @@ void demo() {
     pgd[1].hitgroup.entryFunctionNameCH = "__closesthit__ch";
 
     log_size = sizeof(log);
-    jitc_optix_check(optixProgramGroupCreate(context, pgd, 2 /* two at once */,
+    jit_optix_check(optixProgramGroupCreate(context, pgd, 2 /* two at once */,
                                              &pgo, log, &log_size, pg));
 
     // =====================================================
@@ -170,28 +170,28 @@ void demo() {
     OptixShaderBindingTable sbt {};
 
     sbt.missRecordBase =
-        jitc_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
+        jit_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
     sbt.missRecordStrideInBytes     = OPTIX_SBT_RECORD_HEADER_SIZE;
     sbt.missRecordCount             = 1;
 
     sbt.hitgroupRecordBase =
-        jitc_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
+        jit_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
     sbt.hitgroupRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
     sbt.hitgroupRecordCount         = 1;
 
-    jitc_optix_check(optixSbtRecordPackHeader(pg[0], sbt.missRecordBase));
-    jitc_optix_check(optixSbtRecordPackHeader(pg[1], sbt.hitgroupRecordBase));
+    jit_optix_check(optixSbtRecordPackHeader(pg[0], sbt.missRecordBase));
+    jit_optix_check(optixSbtRecordPackHeader(pg[1], sbt.hitgroupRecordBase));
 
     sbt.missRecordBase =
-        jitc_malloc_migrate(sbt.missRecordBase, AllocType::Device, 1);
+        jit_malloc_migrate(sbt.missRecordBase, AllocType::Device, 1);
     sbt.hitgroupRecordBase =
-        jitc_malloc_migrate(sbt.hitgroupRecordBase, AllocType::Device, 1);
+        jit_malloc_migrate(sbt.hitgroupRecordBase, AllocType::Device, 1);
 
     // =====================================================
     // Let Enoki know about all of this
     // =====================================================
 
-    jitc_optix_configure(
+    jit_optix_configure(
         &pipeline_compile_options, // <-- these pointers must stay
         &sbt,                      //     alive while Enoki runs
         pg, 2
@@ -216,7 +216,7 @@ void demo() {
 
         Float mint = 0.f, maxt = 100.f, time = 0.f;
 
-        UInt64 handle = ek::full<UInt64>(gas_handle, 1, /* eval = */ true);
+        UInt64 handle = ek::placeholder<UInt64>(gas_handle);
         UInt32 ray_mask(255), ray_flags(0), sbt_offset(0), sbt_stride(1),
             miss_sbt_index(0);
 
@@ -237,14 +237,14 @@ void demo() {
             miss_sbt_index.index(), payload_0.index()
         };
 
-        jitc_optix_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args, mask.index());
+        jit_optix_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args, mask.index());
 
         payload_0 = UInt32::steal(trace_args[15]);
 
-        jitc_var_eval(payload_0.index());
+        jit_var_eval(payload_0.index());
 
-        UInt32 payload_0_host = UInt32::steal(jitc_var_migrate(payload_0.index(), AllocType::Host));
-        jitc_sync_thread();
+        UInt32 payload_0_host = UInt32::steal(jit_var_migrate(payload_0.index(), AllocType::Host));
+        jit_sync_thread();
 
         for (int i = 0; i < res; ++i) {
             for (int j = 0; j < res; ++j)
@@ -258,21 +258,21 @@ void demo() {
     // Cleanup
     // =====================================================
 
-    jitc_free(d_gas);
-    jitc_free(sbt.missRecordBase);
-    jitc_free(sbt.hitgroupRecordBase);
-    jitc_optix_check(optixProgramGroupDestroy(pg[0]));
-    jitc_optix_check(optixProgramGroupDestroy(pg[1]));
-    jitc_optix_check(optixModuleDestroy(mod));
+    jit_free(d_gas);
+    jit_free(sbt.missRecordBase);
+    jit_free(sbt.hitgroupRecordBase);
+    jit_optix_check(optixProgramGroupDestroy(pg[0]));
+    jit_optix_check(optixProgramGroupDestroy(pg[1]));
+    jit_optix_check(optixModuleDestroy(mod));
 }
 
 int main(int, char **) {
-    // jitc_set_log_level_stderr(LogLevel::Trace);
-    jitc_init(0, 1);
+    // jit_set_log_level_stderr(LogLevel::Trace);
+    jit_init(0, 1);
     init_optix_api();
     demo();
 
     // Shut down Enoki (will destroy OptiX device context)
-    jitc_shutdown();
+    jit_shutdown();
     return 0;
 }

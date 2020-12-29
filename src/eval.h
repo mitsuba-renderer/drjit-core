@@ -9,44 +9,64 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
+#include "internal.h"
+#include <tsl/robin_set.h>
 
-/// Evaluate all computation that is queued on the current thread state
-extern void jit_eval_ts(ThreadState *ts);
+/// A single variable that is scheduled to execute for a launch with 'size' entries
+struct ScheduledVariable {
+    uint32_t size;
+    uint32_t index;
+
+    ScheduledVariable(uint32_t size, uint32_t index)
+        : size(size), index(index) { }
+};
+
+/// Start and end index of a group of variables that will be merged into the same kernel
+struct ScheduledGroup {
+    uint32_t size;
+    uint32_t start;
+    uint32_t end;
+
+    ScheduledGroup(uint32_t size, uint32_t start, uint32_t end)
+        : size(size), start(start), end(end) { }
+};
+
+/// Hashing helper for GlobalSet
+struct GlobalsHash {
+    size_t operator()(const std::string &s) const {
+        return hash_str(s.c_str(), s.length());
+    }
+};
+
+/// Cache data structure for global declarations
+using GlobalsSet =
+    tsl::robin_set<std::string, GlobalsHash,
+                   std::equal_to<std::string>,
+                   std::allocator<std::string>,
+                   /* StoreHash = */ true>;
+
+/// Buffer containing global declarations
+extern Buffer globals;
+
+/// Ensure uniqueness of global declarations (intrinsics, virtual functions)
+extern GlobalsSet globals_set;
+
+/// Are we recording an OptiX kernel?
+extern bool uses_optix;
+
+/// Ordered list of variables that should be computed
+extern std::vector<ScheduledVariable> schedule;
+
+/// Groups of variables with the same size
+extern std::vector<ScheduledGroup> schedule_groups;
 
 /// Evaluate all computation that is queued on the current thread
-extern void jit_eval();
+extern void jitc_eval(ThreadState *ts);
 
-/// Export the intermediate representation of a computation
-extern const char *jit_capture(int cuda,
-                               const char *domain, const char *name,
-                               const uint32_t *in, uint32_t n_in,
-                               const uint32_t *out, uint32_t n_out,
-                               uint32_t *need_in,
-                               uint32_t *need_out,
-                               uint32_t n_side_effects,
-                               uint64_t *hash_out,
-                               uint32_t **extra_out,
-                               uint32_t *extra_count_out);
+/// Used by jitc_eval() to generate PTX source code
+extern void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
+                               uint32_t n_regs, uint32_t n_params,
+                               int params_global);
 
-/// Like jit_capture(), but returns a variable referincing the IR string
-extern uint32_t jit_capture_var(int cuda,
-                                const char *domain, const char *name,
-                                const uint32_t *in, uint32_t n_in,
-                                const uint32_t *out, uint32_t n_out,
-                                uint32_t *need_in,
-                                uint32_t *need_out,
-                                uint32_t n_side_effects,
-                                uint64_t *hash_out,
-                                uint32_t **extra_out,
-                                uint32_t *extra_count_out);
-
-/// Insert an indirect function call into the program
-extern void jit_var_vcall(int cuda, const char *domain, const char *name,
-                          uint32_t self, uint32_t n_inst,
-                          const uint32_t *inst_ids, const uint64_t *inst_hash,
-                          uint32_t n_in, const uint32_t *in, uint32_t n_out,
-                          uint32_t *out, const uint32_t *need_in,
-                          const uint32_t *need_out, uint32_t n_extra,
-                          const uint32_t *extra, const uint32_t *extra_offset,
-                          int side_effects);
+/// Used by jitc_eval() to generate LLVM IR source code
+extern void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group);
