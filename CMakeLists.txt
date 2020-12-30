@@ -50,8 +50,7 @@ add_library(
   enoki-jit SHARED
   include/enoki-jit/jit.h
   include/enoki-jit/traits.h
-  include/enoki-jit/cuda.h
-  include/enoki-jit/llvm.h
+  include/enoki-jit/array.h
 
   src/common.h
   src/internal.h

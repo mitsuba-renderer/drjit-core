@@ -291,7 +291,7 @@ template <typename T> void test_const_prop() {
     //  Test ternary operations
     // ===============================================================
 
-    const uint32_t Small = Size / 2;
+    const uint32_t Small = Size < 4 ? 2 : (Size / 2);
     const uint32_t Small2 = Small * 2;
 
     uint32_t in_b[4] { };
@@ -316,6 +316,7 @@ template <typename T> void test_const_prop() {
             in[i] = jit_var_new_literal(Backend, T::Type, values + i, 1, i >= Small);
 
         memset(out, 0, Small2 * Small2 * Small2 * sizeof(uint32_t));
+
         for (uint32_t i = 0; i < (op == OpType::Select ? 4 : Small2); ++i) {
             for (uint32_t j = 0; j < Small2; ++j) {
                 for (uint32_t k = 0; k < Small2; ++k) {
@@ -381,6 +382,10 @@ template <typename T> void test_const_prop() {
 }
 
 TEST_BOTH(05_const_prop) {
+    /* This very large test runs every implemented operation with a variety of
+       scalar and memory inputs and compares their output. This is to ensure
+       that Enoki-JIT's builtin constant propagation pass produces results
+       that are equivalent to the native implementation. */
     test_const_prop<Float>();
     test_const_prop<Array<double>>();
     test_const_prop<UInt32>();
@@ -390,5 +395,104 @@ TEST_BOTH(05_const_prop) {
     test_const_prop<Mask>();
 }
 
-TEST_BOTH(06_select) {
+TEST_BOTH(06_cast) {
+    /* This test tries every possible type conversion, verifying constant
+       propagation to the native CUDA/LLVM implementation */
+
+    VarType types[] {
+        VarType::Float32,
+        VarType::Float64,
+        VarType::Int32,
+        VarType::UInt32,
+        VarType::Int64,
+        VarType::UInt64,
+        VarType::Bool
+    };
+    const char *type_names[(int) VarType::Count]{
+        "Void",   "Bool",  "Int8",   "UInt8",   "Int16",   "UInt16",  "Int32",
+        "UInt32", "Int64", "UInt64", "Pointer", "Float16", "Float32", "Float64"
+    };
+
+    size_t type_sizes[(int) VarType::Count]{
+        0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 8, 2, 4, 8
+    };
+
+    uint32_t source_value[20];
+    uint32_t target_value[20];
+    bool fail = false;
+
+    for (int reinterpret = 0; reinterpret < 2; ++reinterpret) {
+        for (VarType source_type : types) {
+            for (VarType target_type : types) {
+                bool test_sign =
+                    source_type != VarType::UInt32 &&
+                    source_type != VarType::UInt64 &&
+                    source_type != VarType::Bool &&
+                    target_type != VarType::UInt32 &&
+                    target_type != VarType::UInt64 &&
+                    target_type != VarType::Bool;
+
+                if (reinterpret && type_sizes[(int) source_type] !=
+                                   type_sizes[(int) target_type])
+                    continue;
+
+                int size = source_type == VarType::Bool ? 2 : 10;
+
+                for (int i = 0; i < size * 2; ++i) {
+                    int j = i % size;
+                    int64_t value = j;
+                    if (test_sign)
+                        value -= 4;
+                    if (source_type == VarType::Float32) {
+                        float f = (float) value;
+                        value = 0;
+                        memcpy(&value, &f, sizeof(float));
+                        if (std::abs(f) > 2.f)
+                            f += f * .1f;
+                    } else if (source_type == VarType::Float64) {
+                        double d = (double) value;
+                        memcpy(&value, &d, sizeof(double));
+                        if (std::abs(d) > 2.0)
+                            d += d * .1;
+                    }
+
+                    source_value[i] = jit_var_new_literal(Backend, source_type,
+                                                          &value, 1, i < size);
+                    target_value[i] = jit_var_new_cast(
+                        source_value[i], target_type, reinterpret);
+                    jit_var_schedule(target_value[i]);
+                }
+                jit_eval();
+
+                for (int i = 0; i < size; ++i) {
+                    int ref_id = target_value[i],
+                      value_id = target_value[i + size];
+                    uint64_t value = 0, ref = 0;
+                    jit_var_read(value_id, 0, &value);
+                    jit_var_read(ref_id, 0, &ref);
+
+                    if (value != ref) {
+                        char *v0 = strdup(jit_var_str(source_value[i]));
+                        char *v1 = strdup(jit_var_str(value_id));
+                        char *v2 = strdup(jit_var_str(ref_id));
+                        fprintf(stderr,
+                                "Mismatch: %scast(source_type=%s, "
+                                "target_type=%s, in=%s) == %s vs %s\n",
+                                reinterpret ? "reinterpret_" : "",
+                                type_names[(uint32_t) source_type],
+                                type_names[(uint32_t) target_type],
+                                v0, v1, v2);
+                        free(v0); free(v1); free(v2);
+                        fail = true;
+                    }
+                }
+
+                for (int i = 0; i < size * 2; ++i) {
+                    jit_var_dec_ref_ext(source_value[i]);
+                    jit_var_dec_ref_ext(target_value[i]);
+                }
+            }
+        }
+    }
+    jit_assert(!fail);
 }

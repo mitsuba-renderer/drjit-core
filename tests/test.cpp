@@ -256,7 +256,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    int log_level_stderr = (int) LogLevel::Disable;
+    int log_level_stderr = (int) LogLevel::Warn;
     bool fail_fast = false, test_cuda = true, test_llvm = true,
          write_ref = false, help = false;
     for (int i = 1; i < argc; ++i) {

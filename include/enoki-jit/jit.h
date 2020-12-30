@@ -930,9 +930,9 @@ inline uint32_t jit_var_new_op_4(JITC_ENUM OpType op, uint32_t dep0,
  * <tt>memcpy(&new_value, &old_value, sizeof(Type));</tt>), which requires that
  * source and target type are of the same size.
  */
-extern JITC_EXPORT uint32_t jitc_var_new_cast(uint32_t index,
-                                              VarType target_type,
-                                              int reinterpret);
+extern JITC_EXPORT uint32_t jit_var_new_cast(uint32_t index,
+                                             VarType target_type,
+                                             int reinterpret);
 
 /**
  * \brief Create an identical copy of the given variable

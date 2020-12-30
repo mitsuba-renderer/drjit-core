@@ -798,16 +798,10 @@ uint32_t jitc_var_resize(uint32_t index, uint32_t size) {
         v2.backend = v->backend;
         v2.size = size;
         v2.dep[0] = index;
+        v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
+                            ? "mov.$t0 $r0, $r1"
+                            : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
         jitc_var_inc_ref_int(index, v);
-        const char *stmt;
-        if ((JitBackend) v->backend == JitBackend::CUDA)
-            stmt = "mov.$t0 $r0, $r1";
-        else
-            stmt = ((VarType) v->type == VarType::Float32 ||
-                    (VarType) v->type == VarType::Float64)
-                ?  "$r0 = fadd <$w x $t0> $r1, zeroinitializer"
-                :  "$r0 = add <$w x $t0> $r1, zeroinitializer";
-        v2.stmt = (char *) stmt;
         return jitc_var_new(v2);
     }
 }

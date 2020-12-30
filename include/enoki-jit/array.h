@@ -1,5 +1,5 @@
 /*
-    enoki-jit/cuda.h -- Simple C++ array class with operator overloading
+    enoki-jit/array.h -- Simple C++ array class with operator overloading
 
     This library implements convenient wrapper class around the C API in
     'enoki/jit.h'.
