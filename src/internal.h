@@ -86,6 +86,9 @@ struct Variable {
     /// Are there pending scatter operations to this variable?
     uint32_t dirty : 1;
 
+    /// Is this a pointer variable that is used to write to some array?
+    uint32_t write_ptr : 1;
+
     /// Is this variable associated with extra information?
     uint32_t extra : 1;
 
@@ -114,8 +117,9 @@ struct Variable {
 struct VariableKey {
     uint32_t dep[4];
     uint32_t size;
-    uint32_t type    : 31;
-    uint32_t literal : 1;
+    uint32_t type      : 30;
+    uint32_t write_ptr : 1;
+    uint32_t literal   : 1;
     union {
         char *stmt;
         uint64_t value;
@@ -125,6 +129,7 @@ struct VariableKey {
         memcpy(dep, v.dep, sizeof(uint32_t) * 4);
         size = v.size;
         type = v.type;
+        write_ptr = v.write_ptr;
 
         if (v.literal) {
             literal = 1;

@@ -286,10 +286,9 @@ uint32_t jit_var_new_counter(JitBackend backend, size_t size) {
     return jitc_var_new_counter(backend, size);
 }
 
-uint32_t jit_var_new_op(JITC_ENUM JitOp ot, uint32_t n_dep,
-                         const uint32_t *dep) {
+uint32_t jit_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_op(ot, n_dep, dep);
+    return jitc_var_new_op(op, n_dep, dep);
 }
 
 uint32_t jit_var_new_cast(uint32_t index, VarType target_type,
@@ -298,10 +297,16 @@ uint32_t jit_var_new_cast(uint32_t index, VarType target_type,
     return jitc_var_new_cast(index, target_type, reinterpret);
 }
 
-uint32_t jit_var_new_pointer(JitBackend backend, const void *value,
-                             uint32_t dep) {
+uint32_t jit_var_new_gather(uint32_t src, uint32_t index,
+                            uint32_t mask) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_pointer(backend, value, dep);
+    return jitc_var_new_gather(src, index, mask);
+}
+
+uint32_t jit_var_new_pointer(JitBackend backend, const void *value,
+                             uint32_t dep, int write) {
+    lock_guard guard(state.mutex);
+    return jitc_var_new_pointer(backend, value, dep, write);
 }
 
 void jit_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {
@@ -316,15 +321,6 @@ void jit_var_dec_ref_ext_impl(uint32_t index) noexcept(true) {
         return;
     lock_guard guard(state.mutex);
     jitc_var_dec_ref_ext(index);
-}
-
-uint32_t jit_var_refs(uint32_t index, int ignore_side_effects) {
-    lock_guard guard(state.mutex);
-    Variable *v = jitc_var(index);
-    uint32_t result = v->ref_count_int + v->ref_count_ext;
-    if (v->dirty && ignore_side_effects)
-        --result;
-    return result;
 }
 
 void *jit_var_ptr(uint32_t index) {
@@ -428,9 +424,9 @@ void jit_var_read(uint32_t index, uint32_t offset, void *dst) {
     jitc_var_read(index, offset, dst);
 }
 
-void jit_var_write(uint32_t index, uint32_t offset, const void *src) {
+uint32_t jit_var_write(uint32_t index, uint32_t offset, const void *src) {
     lock_guard guard(state.mutex);
-    jitc_var_write(index, offset, src);
+    return jitc_var_write(index, offset, src);
 }
 
 void jit_eval() {

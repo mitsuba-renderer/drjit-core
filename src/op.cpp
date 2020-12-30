@@ -330,7 +330,7 @@ uint32_t jitc_var_shift(JitBackend backend, VarType vt, JitOp op,
 // ===========================================================================
 
 // Error handler
-JITC_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op,
+JIT_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op,
                                            uint32_t n_dep, const uint32_t *dep);
 
 uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
@@ -1120,7 +1120,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     }
 }
 
-JITC_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op, uint32_t n_dep, const uint32_t *dep) {
+JIT_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op, uint32_t n_dep, const uint32_t *dep) {
     switch (n_dep) {
         case 1:
             jitc_raise("jit_var_new_op(%s, %u): %s", op_name[(int) op], dep[0],
@@ -1337,7 +1337,7 @@ uint32_t jitc_var_new_gather(uint32_t src, uint32_t index_, uint32_t mask_) {
     VarType vt = (VarType) v_src->type;
 
     // Create a pointer + reference, invalidates the v_* variables
-    Ref ptr = jitc_var_new_pointer(backend, v_src->data, src);
+    Ref ptr = jitc_var_new_pointer(backend, v_src->data, src, 0);
 
     uint32_t dep[3] = { ptr.get(), index.get(), mask.get() };
     uint32_t dep_count = 3;

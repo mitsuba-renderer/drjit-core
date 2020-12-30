@@ -58,7 +58,7 @@ extern const char *alloc_type_name[(int) AllocType::Count];
 extern const char *alloc_type_name_short[(int) AllocType::Count];
 
 /// Allocate the given flavor of memory
-extern void *jitc_malloc(AllocType type, size_t size) JITC_MALLOC;
+extern void *jitc_malloc(AllocType type, size_t size) JIT_MALLOC;
 
 /// Release the given pointer
 extern void jitc_free(void *ptr);

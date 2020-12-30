@@ -35,7 +35,7 @@ extern uint32_t jitc_var_new_stmt(JitBackend backend,
 
 /// Create a variable that refers to a memory region
 extern uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
-                                     uint32_t dep);
+                                     uint32_t dep, int write);
 
 /// Register an existing variable with the JIT compiler
 extern uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
@@ -114,7 +114,7 @@ const char *jitc_var_str(uint32_t index);
 extern void jitc_var_read(uint32_t index, uint32_t offset, void *dst);
 
 /// Reverse of jitc_var_read(). Copy 'src' to a single element of a variable
-extern void jitc_var_write(uint32_t index, uint32_t offset, const void *src);
+extern uint32_t jitc_var_write(uint32_t index, uint32_t offset, const void *src);
 
 /// Insert a print statement into the kernel
 extern void jitc_var_printf(JitBackend backend, const char *fmt, uint32_t narg,

@@ -30,30 +30,30 @@
 
 #if defined(_MSC_VER)
 #  if defined(ENOKI_JIT_BUILD)
-#    define JITC_EXPORT    __declspec(dllexport)
+#    define JIT_EXPORT    __declspec(dllexport)
 #  else
-#    define JITC_EXPORT    __declspec(dllimport)
+#    define JIT_EXPORT    __declspec(dllimport)
 #  endif
-#  define JITC_MALLOC
-#  define JITC_INLINE    __forceinline
-#  define JITC_NOINLINE  __declspec(noinline)
+#  define JIT_MALLOC
+#  define JIT_INLINE    __forceinline
+#  define JIT_NOINLINE  __declspec(noinline)
 #else
-#  define JITC_EXPORT    __attribute__ ((visibility("default")))
-#  define JITC_MALLOC    __attribute__((malloc))
-#  define JITC_INLINE    __attribute__ ((always_inline)) inline
-#  define JITC_NOINLINE  __attribute__ ((noinline)) inline
+#  define JIT_EXPORT    __attribute__ ((visibility("default")))
+#  define JIT_MALLOC    __attribute__((malloc))
+#  define JIT_INLINE    __attribute__ ((always_inline)) inline
+#  define JIT_NOINLINE  __attribute__ ((noinline)) inline
 #endif
 
 #if defined(__cplusplus)
-#  define JITC_CONSTEXPR constexpr
-#  define JITC_DEF(x) = x
-#  define JITC_NOEXCEPT noexcept(true)
-#  define JITC_ENUM ::
+#  define JIT_CONSTEXPR constexpr
+#  define JIT_DEF(x) = x
+#  define JIT_NOEXCEPT noexcept(true)
+#  define JIT_ENUM ::
 #else
-#  define JITC_CONSTEXPR inline
-#  define JITC_DEF(x)
-#  define JITC_NOEXCEPT
-#  define JITC_ENUM enum
+#  define JIT_CONSTEXPR inline
+#  define JIT_DEF(x)
+#  define JIT_NOEXCEPT
+#  define JIT_ENUM enum
 #endif
 
 #if defined(__cplusplus)
@@ -97,8 +97,8 @@ enum JitBackend {
  * to \ref jit_shutdown(), which can be useful to reset the state, e.g., in
  * testcases.
  */
-extern JITC_EXPORT void
-jit_init(uint32_t backends JITC_DEF((uint32_t) JitBackend::CUDA |
+extern JIT_EXPORT void
+jit_init(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
                                     (uint32_t) JitBackend::LLVM));
 
 /**
@@ -118,12 +118,12 @@ jit_init(uint32_t backends JITC_DEF((uint32_t) JitBackend::CUDA |
  * initialization via \ref jit_init_async(), since it acquires a lock to the
  * internal data structures.
  */
-extern JITC_EXPORT void
-jit_init_async(uint32_t backends JITC_DEF((uint32_t) JitBackend::CUDA |
-                                          (uint32_t) JitBackend::LLVM));
+extern JIT_EXPORT void
+jit_init_async(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
+                                         (uint32_t) JitBackend::LLVM));
 
 /// Check whether the LLVM backend was successfully initialized
-extern JITC_EXPORT int jit_has_backend(JITC_ENUM JitBackend backend);
+extern JIT_EXPORT int jit_has_backend(JIT_ENUM JitBackend backend);
 
 /**
  * \brief Release resources used by the JIT compiler, and report reference leaks.
@@ -136,7 +136,7 @@ extern JITC_EXPORT int jit_has_backend(JITC_ENUM JitBackend backend);
  * CUDA backends. This frees up more memory but means that a later call to \ref
  * jit_init() or \ref jit_init_async() will be slow.
  */
-extern JITC_EXPORT void jit_shutdown(int light JITC_DEF(0));
+extern JIT_EXPORT void jit_shutdown(int light JIT_DEF(0));
 
 /**
  * \brief Wait for all computation scheduled by the current thread to finish
@@ -145,13 +145,13 @@ extern JITC_EXPORT void jit_shutdown(int light JITC_DEF(0));
  * This function only synchronizes with computation issued to the queue of the
  * calling thread.
  */
-extern JITC_EXPORT void jit_sync_thread();
+extern JIT_EXPORT void jit_sync_thread();
 
 /// Wait for all computation on the current device to finish
-extern JITC_EXPORT void jit_sync_device();
+extern JIT_EXPORT void jit_sync_device();
 
 /// Wait for all computation on the *all devices* to finish
-extern JITC_EXPORT void jit_sync_all_devices();
+extern JIT_EXPORT void jit_sync_all_devices();
 
 // ====================================================================
 //       Advanced JIT usage: recording programs, loops, etc.
@@ -211,16 +211,16 @@ enum JitFlag {
 #endif
 
 /// Set the JIT compiler status flags (see \ref JitFlags)
-extern JITC_EXPORT void jit_set_flags(uint32_t flags);
+extern JIT_EXPORT void jit_set_flags(uint32_t flags);
 
 /// Retrieve the JIT compiler status flags (see \ref JitFlags)
-extern JITC_EXPORT uint32_t jit_flags();
+extern JIT_EXPORT uint32_t jit_flags();
 
 /// Equivalent to <tt>jit_set_flags(jit_flags() | flag)</tt>
-extern JITC_EXPORT void jit_enable_flag(JITC_ENUM JitFlag flag);
+extern JIT_EXPORT void jit_enable_flag(JIT_ENUM JitFlag flag);
 
 /// Equivalent to <tt>jit_set_flags(jit_flags() & ~flag)</tt>
-extern JITC_EXPORT void jit_disable_flag(JITC_ENUM JitFlag flag);
+extern JIT_EXPORT void jit_disable_flag(JIT_ENUM JitFlag flag);
 
 /**
  * \brief Returns the number of operations with side effects (specifically,
@@ -230,14 +230,14 @@ extern JITC_EXPORT void jit_disable_flag(JITC_ENUM JitFlag flag);
  * code involves side effects. It is used to as part of the mechanism
  * that records loops, virtual function calls, etc.
  */
-extern JITC_EXPORT uint32_t jit_side_effects_scheduled(JitBackend backend);
+extern JIT_EXPORT uint32_t jit_side_effects_scheduled(JitBackend backend);
 
 // ====================================================================
 //                    CUDA/LLVM-specific functionality
 // ====================================================================
 
 /// Return the no. of available CUDA devices that are compatible with Enoki.
-extern JITC_EXPORT int jit_cuda_device_count();
+extern JIT_EXPORT int jit_cuda_device_count();
 
 /**
  * \brief Set the active CUDA device.
@@ -246,7 +246,7 @@ extern JITC_EXPORT int jit_cuda_device_count();
  * which only accounts for Enoki-compatible devices. This is a per-thread
  * property: independent threads can issue computation to different GPUs.
  */
-extern JITC_EXPORT void jit_cuda_set_device(int device);
+extern JIT_EXPORT void jit_cuda_set_device(int device);
 
 /**
  * \brief Return the CUDA device ID associated with the current thread
@@ -257,19 +257,19 @@ extern JITC_EXPORT void jit_cuda_set_device(int device);
  * this number may differ from the default CUDA device ID. Use
  * <tt>jit_cuda_device_raw()</tt> in that case.
  */
-extern JITC_EXPORT int jit_cuda_device();
+extern JIT_EXPORT int jit_cuda_device();
 
 /// Return the raw CUDA device associated with the current thread
-extern JITC_EXPORT int jit_cuda_device_raw();
+extern JIT_EXPORT int jit_cuda_device_raw();
 
 /// Return the CUDA stream associated with the current thread
-extern JITC_EXPORT void* jit_cuda_stream();
+extern JIT_EXPORT void* jit_cuda_stream();
 
 /// Return the CUDA context associated with the current thread
-extern JITC_EXPORT void* jit_cuda_context();
+extern JIT_EXPORT void* jit_cuda_context();
 
 /// Query the compute capability of the current device (e.g. '52')
-extern JITC_EXPORT int jit_cuda_compute_capability();
+extern JIT_EXPORT int jit_cuda_compute_capability();
 
 /**
  * \brief Override generated PTX version and compute capability
@@ -281,8 +281,8 @@ extern JITC_EXPORT int jit_cuda_compute_capability();
  * atomic operations involving double precision values) require specifying a
  * newer compute capability.
  */
-extern JITC_EXPORT void jit_cuda_set_target(uint32_t ptx_version,
-                                            uint32_t compute_capability);
+extern JIT_EXPORT void jit_cuda_set_target(uint32_t ptx_version,
+                                           uint32_t compute_capability);
 
 /**
  * \brief Override the target CPU, features, and vector width of the LLVM backend
@@ -303,18 +303,18 @@ extern JITC_EXPORT void jit_cuda_set_target(uint32_t ptx_version,
  *     Width of vector registers (e.g. 8 for AVX). Must be a power of two, and
  *     can be a multiple of the hardware register size to enable unrolling.
  */
-extern JITC_EXPORT void jit_llvm_set_target(const char *target_cpu,
-                                            const char *target_features,
-                                            uint32_t vector_width);
+extern JIT_EXPORT void jit_llvm_set_target(const char *target_cpu,
+                                           const char *target_features,
+                                           uint32_t vector_width);
 
 /// Get the CPU that is currently targeted by the LLVM backend
-extern JITC_EXPORT const char *jit_llvm_target_cpu();
+extern JIT_EXPORT const char *jit_llvm_target_cpu();
 
 /// Get the list of CPU features currently used by the LLVM backend
-extern JITC_EXPORT const char *jit_llvm_target_features();
+extern JIT_EXPORT const char *jit_llvm_target_features();
 
 /// Return the major version of the LLVM library
-extern JITC_EXPORT int jit_llvm_version_major();
+extern JIT_EXPORT int jit_llvm_version_major();
 
 /**
  * \brief Convenience function for intrinsic function selection
@@ -323,8 +323,8 @@ extern JITC_EXPORT int jit_llvm_version_major();
  * provided value, and when the host CPU provides a given target feature (e.g.
  * "+avx512f").
  */
-extern JITC_EXPORT int jit_llvm_if_at_least(uint32_t vector_width,
-                                             const char *feature);
+extern JIT_EXPORT int jit_llvm_if_at_least(uint32_t vector_width,
+                                           const char *feature);
 
 
 /**
@@ -338,13 +338,13 @@ extern JITC_EXPORT int jit_llvm_if_at_least(uint32_t vector_width,
  *
  * This function returns a new reference
  */
-extern JITC_EXPORT uint32_t jit_llvm_active_mask();
+extern JIT_EXPORT uint32_t jit_llvm_active_mask();
 
 /// Push a new mask value onto the stack (increases the ref. count)
-extern JITC_EXPORT void jit_llvm_active_mask_push(uint32_t index);
+extern JIT_EXPORT void jit_llvm_active_mask_push(uint32_t index);
 
 /// Pop the stack of active mask values, and dereference it
-extern JITC_EXPORT void jit_llvm_active_mask_pop();
+extern JIT_EXPORT void jit_llvm_active_mask_pop();
 
 // ====================================================================
 //                        Logging infrastructure
@@ -370,10 +370,10 @@ enum LogLevel {
  * via a callback in \ref jit_set_log_level_callback(). Both destinations can also
  * be enabled simultaneously, pontentially using different log levels.
  */
-extern JITC_EXPORT void jit_set_log_level_stderr(JITC_ENUM LogLevel level);
+extern JIT_EXPORT void jit_set_log_level_stderr(JIT_ENUM LogLevel level);
 
 /// Return the currently set minimum log level for output to \c stderr
-extern JITC_EXPORT JITC_ENUM LogLevel jit_log_level_stderr();
+extern JIT_EXPORT JIT_ENUM LogLevel jit_log_level_stderr();
 
 
 /**
@@ -383,21 +383,21 @@ extern JITC_EXPORT JITC_ENUM LogLevel jit_log_level_stderr();
  * invoked with the contents of library log messages, whose severity matches or
  * exceeds the specified \c level.
  */
-typedef void (*LogCallback)(JITC_ENUM LogLevel, const char *);
-extern JITC_EXPORT void jit_set_log_level_callback(JITC_ENUM LogLevel level,
-                                                    LogCallback callback);
+typedef void (*LogCallback)(JIT_ENUM LogLevel, const char *);
+extern JIT_EXPORT void jit_set_log_level_callback(JIT_ENUM LogLevel level,
+                                                  LogCallback callback);
 
 /// Return the currently set minimum log level for output to a callback
-extern JITC_EXPORT JITC_ENUM LogLevel jit_log_level_callback();
+extern JIT_EXPORT JIT_ENUM LogLevel jit_log_level_callback();
 
 /// Print a log message with the specified log level and message
-extern JITC_EXPORT void jit_log(JITC_ENUM LogLevel level, const char* fmt, ...);
+extern JIT_EXPORT void jit_log(JIT_ENUM LogLevel level, const char* fmt, ...);
 
 /// Raise an exception message with the specified message
-extern JITC_EXPORT void jit_raise(const char* fmt, ...);
+extern JIT_EXPORT void jit_raise(const char* fmt, ...);
 
 /// Terminate the application due to a non-recoverable error
-extern JITC_EXPORT void jit_fail(const char* fmt, ...);
+extern JIT_EXPORT void jit_fail(const char* fmt, ...);
 
 // ====================================================================
 //                         Memory allocation
@@ -493,8 +493,8 @@ enum AllocType {
  * of use.
  *
  */
-extern JITC_EXPORT void *jit_malloc(JITC_ENUM AllocType type, size_t size)
-    JITC_MALLOC;
+extern JIT_EXPORT void *jit_malloc(JIT_ENUM AllocType type, size_t size)
+    JIT_MALLOC;
 
 /**
  * \brief Release a given pointer asynchronously
@@ -521,10 +521,10 @@ extern JITC_EXPORT void *jit_malloc(JITC_ENUM AllocType type, size_t size)
  * Operations like \ref jit_sync_thread(), \ref jit_sync_device(), and \ref
  * jit_sync_all_devices() can be used to defuse such situations.
  */
-extern JITC_EXPORT void jit_free(void *ptr);
+extern JIT_EXPORT void jit_free(void *ptr);
 
 /// Release all currently unused memory to the GPU / OS
-extern JITC_EXPORT void jit_malloc_trim();
+extern JIT_EXPORT void jit_malloc_trim();
 
 /**
  * \brief Asynchronously prefetch a managed memory region allocated using \ref
@@ -547,13 +547,13 @@ extern JITC_EXPORT void jit_malloc_trim();
  * operation is advisable if data is <tt>target==-1</tt> (i.e. prefetching into
  * CPU memory).
  */
-extern JITC_EXPORT void jit_malloc_prefetch(void *ptr, int device);
+extern JIT_EXPORT void jit_malloc_prefetch(void *ptr, int device);
 
 /// Query the flavor of a memory allocation made using \ref jit_malloc()
-extern JITC_EXPORT JITC_ENUM AllocType jit_malloc_type(void *ptr);
+extern JIT_EXPORT JIT_ENUM AllocType jit_malloc_type(void *ptr);
 
 /// Query the device associated with a memory allocation made using \ref jit_malloc()
-extern JITC_EXPORT int jit_malloc_device(void *ptr);
+extern JIT_EXPORT int jit_malloc_device(void *ptr);
 
 /**
  * \brief Asynchronously change the flavor of an allocated memory region and
@@ -578,8 +578,8 @@ extern JITC_EXPORT int jit_malloc_device(void *ptr);
  * jit_set_device()) does not match the device associated with the allocation,
  * a peer-to-peer migration is performed.
  */
-extern JITC_EXPORT void *jit_malloc_migrate(void *ptr, JITC_ENUM AllocType type,
-                                             int move JITC_DEF(1));
+extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
+                                           int move JIT_DEF(1));
 
 // ====================================================================
 //                          Pointer registry
@@ -608,7 +608,7 @@ extern JITC_EXPORT void *jit_malloc_migrate(void *ptr, JITC_ENUM AllocType type,
  * Returns zero if <tt>ptr == nullptr</tt> and throws if the pointer is already
  * registered (with *any* domain).
  */
-extern JITC_EXPORT uint32_t jit_registry_put(const char *domain, void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_put(const char *domain, void *ptr);
 
 /**
  * \brief Remove a pointer from the registry
@@ -616,14 +616,14 @@ extern JITC_EXPORT uint32_t jit_registry_put(const char *domain, void *ptr);
  * No-op if <tt>ptr == nullptr</tt>. Throws an exception if the pointer is not
  * currently registered.
  */
-extern JITC_EXPORT void jit_registry_remove(void *ptr);
+extern JIT_EXPORT void jit_registry_remove(void *ptr);
 
 /**
  * \brief Query the ID associated a registered pointer
  *
  * Returns 0 if <tt>ptr==nullptr</tt> and throws if the pointer is not known.
  */
-extern JITC_EXPORT uint32_t jit_registry_get_id(const void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_get_id(const void *ptr);
 
 /**
  * \brief Query the domain associated a registered pointer
@@ -631,7 +631,7 @@ extern JITC_EXPORT uint32_t jit_registry_get_id(const void *ptr);
  * Returns \c nullptr if <tt>ptr==nullptr</tt> and throws if the pointer is not
  * known.
  */
-extern JITC_EXPORT const char *jit_registry_get_domain(const void *ptr);
+extern JIT_EXPORT const char *jit_registry_get_domain(const void *ptr);
 
 /**
  * \brief Query the pointer associated a given domain and ID
@@ -639,10 +639,10 @@ extern JITC_EXPORT const char *jit_registry_get_domain(const void *ptr);
  * Returns \c nullptr if <tt>id==0</tt>, or when the (domain, ID) combination
  * is not known.
  */
-extern JITC_EXPORT void *jit_registry_get_ptr(const char *domain, uint32_t id);
+extern JIT_EXPORT void *jit_registry_get_ptr(const char *domain, uint32_t id);
 
 /// Provide a bound (<=) on the largest ID associated with a domain
-extern JITC_EXPORT uint32_t jit_registry_get_max(const char *domain);
+extern JIT_EXPORT uint32_t jit_registry_get_max(const char *domain);
 
 /**
  * \brief Compact the registry and release unused IDs and attributes
@@ -650,7 +650,7 @@ extern JITC_EXPORT uint32_t jit_registry_get_max(const char *domain);
  * It's a good idea to call this function following a large number of calls to
  * \ref jit_registry_remove().
  */
-extern JITC_EXPORT void jit_registry_trim();
+extern JIT_EXPORT void jit_registry_trim();
 
 /**
  * \brief Set a custom per-pointer attribute
@@ -678,10 +678,10 @@ extern JITC_EXPORT void jit_registry_trim();
  * \param size
  *     Size of the pointed-to region.
  */
-extern JITC_EXPORT void jit_registry_set_attr(void *ptr,
-                                              const char *name,
-                                              const void *value,
-                                              size_t size);
+extern JIT_EXPORT void jit_registry_set_attr(void *ptr,
+                                             const char *name,
+                                             const void *value,
+                                             size_t size);
 
 /**
  * \brief Return a pointer to a contiguous array containing a specific
@@ -689,8 +689,8 @@ extern JITC_EXPORT void jit_registry_set_attr(void *ptr,
  *
  * \sa jit_registry_set_attr
  */
-extern JITC_EXPORT const void *jit_registry_attr_data(const char *domain,
-                                                      const char *name);
+extern JIT_EXPORT const void *jit_registry_attr_data(const char *domain,
+                                                     const char *name);
 
 // ====================================================================
 //                        Variable management
@@ -728,11 +728,11 @@ enum VarType {
  * requiring repeated compilation steps. By preemptively evaluating this
  * constant, Enoki-JIT can reuse a single kernel for all steps.
  */
-extern JITC_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
-                                                JITC_ENUM VarType type,
+extern JIT_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
+                                                JIT_ENUM VarType type,
                                                 const void *value,
-                                                size_t size JITC_DEF(1),
-                                                int eval JITC_DEF(0));
+                                                size_t size JIT_DEF(1),
+                                                int eval JIT_DEF(0));
 
 /**
  * \brief Create a counter variable
@@ -791,27 +791,27 @@ extern uint32_t jit_var_new_counter(JitBackend backend, size_t size);
  * \param dep
  *    Pointer to a list of \c n_dep valid variable indices
  */
-extern JITC_EXPORT uint32_t jit_var_new_stmt(JitBackend backend,
-                                             JITC_ENUM VarType vt,
-                                             const char *stmt,
-                                             int stmt_static,
-                                             uint32_t n_dep,
-                                             const uint32_t *dep);
+extern JIT_EXPORT uint32_t jit_var_new_stmt(JitBackend backend,
+                                            JIT_ENUM VarType vt,
+                                            const char *stmt,
+                                            int stmt_static,
+                                            uint32_t n_dep,
+                                            const uint32_t *dep);
 
 // Create a new variable with 0 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_0(JitBackend backend, JITC_ENUM VarType vt,
+inline uint32_t jit_var_new_stmt_0(JitBackend backend, JIT_ENUM VarType vt,
                                    const char *stmt) {
     return jit_var_new_stmt(backend, vt, stmt, 1, 0, nullptr);
 }
 
 // Create a new variable with 1 dependency (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_1(JitBackend backend, JITC_ENUM VarType vt,
+inline uint32_t jit_var_new_stmt_1(JitBackend backend, JIT_ENUM VarType vt,
                                    const char *stmt, uint32_t dep0) {
     return jit_var_new_stmt(backend, vt, stmt, 1, 1, &dep0);
 }
 
 // Create a new variable with 2 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_2(JitBackend backend, JITC_ENUM VarType vt,
+inline uint32_t jit_var_new_stmt_2(JitBackend backend, JIT_ENUM VarType vt,
                                    const char *stmt, uint32_t dep0,
                                    uint32_t dep1) {
     const uint32_t dep[] = { dep0, dep1 };
@@ -819,7 +819,7 @@ inline uint32_t jit_var_new_stmt_2(JitBackend backend, JITC_ENUM VarType vt,
 }
 
 // Create a new variable with 3 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_3(JitBackend backend, JITC_ENUM VarType vt,
+inline uint32_t jit_var_new_stmt_3(JitBackend backend, JIT_ENUM VarType vt,
                                    const char *stmt, uint32_t dep0,
                                    uint32_t dep1, uint32_t dep2) {
     const uint32_t dep[] = { dep0, dep1, dep2 };
@@ -827,7 +827,7 @@ inline uint32_t jit_var_new_stmt_3(JitBackend backend, JITC_ENUM VarType vt,
 }
 
 // Create a new variable with 4 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_4(JitBackend backend, JITC_ENUM VarType vt,
+inline uint32_t jit_var_new_stmt_4(JitBackend backend, JIT_ENUM VarType vt,
                                    const char *stmt, uint32_t dep0,
                                    uint32_t dep1, uint32_t dep2,
                                    uint32_t dep3) {
@@ -890,31 +890,31 @@ const char *op_name[(int) JitOp::Count] {
  * \param dep
  *    Pointer to a list of \c n_dep valid variable indices
  */
-extern JITC_EXPORT uint32_t jit_var_new_op(JITC_ENUM JitOp op,
-                                           uint32_t n_dep, const uint32_t *dep);
+extern JIT_EXPORT uint32_t jit_var_new_op(JIT_ENUM JitOp op,
+                                          uint32_t n_dep, const uint32_t *dep);
 
 // Perform an operation with 1 input (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_1(JITC_ENUM JitOp op,
+inline uint32_t jit_var_new_op_1(JIT_ENUM JitOp op,
                                  uint32_t dep0) {
     return jit_var_new_op(op, 1, &dep0);
 }
 
 // Perform an operation with 2 inputs (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_2(JITC_ENUM JitOp op, uint32_t dep0,
+inline uint32_t jit_var_new_op_2(JIT_ENUM JitOp op, uint32_t dep0,
                                  uint32_t dep1) {
     const uint32_t dep[] = { dep0, dep1 };
     return jit_var_new_op(op, 2, dep);
 }
 
 // Perform an operation with 3 inputs (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_3(JITC_ENUM JitOp op, uint32_t dep0,
+inline uint32_t jit_var_new_op_3(JIT_ENUM JitOp op, uint32_t dep0,
                                  uint32_t dep1, uint32_t dep2) {
     const uint32_t dep[] = { dep0, dep1, dep2 };
     return jit_var_new_op(op, 3, dep);
 }
 
 // Perform an operation with 4 inputs (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_4(JITC_ENUM JitOp op, uint32_t dep0,
+inline uint32_t jit_var_new_op_4(JIT_ENUM JitOp op, uint32_t dep0,
                                  uint32_t dep1, uint32_t dep2, uint32_t dep3) {
     const uint32_t dep[] = { dep0, dep1, dep2, dep3 };
     return jit_var_new_op(op, 4, dep);
@@ -930,20 +930,32 @@ inline uint32_t jit_var_new_op_4(JITC_ENUM JitOp op, uint32_t dep0,
  * <tt>memcpy(&new_value, &old_value, sizeof(Type));</tt>), which requires that
  * source and target type are of the same size.
  */
-extern JITC_EXPORT uint32_t jit_var_new_cast(uint32_t index,
-                                             VarType target_type,
-                                             int reinterpret);
+extern JIT_EXPORT uint32_t jit_var_new_cast(uint32_t index,
+                                            VarType target_type,
+                                            int reinterpret);
 
 /**
  * \brief Create a variable that refers to a memory region
  *
  * This function creates a 64 bit unsigned integer literal that refers to a
  * memory region. Optionally, if \c dep is nonzero, the created variable will
- * hold a reference to the variable \c dep until the pointer is destroyed.
+ * hold a reference to the variable \c dep until the pointer is destroyed, which
+ * is useful when implementing operations that access global memory.
+ *
+ * A nonzero value should be passed to the \c write parameter if the pointer is
+ * going to be used to perform write operations. Enoki-JIT needs to know about
+ * this to infer whether a future scatter operation to \c dep requires making a backup
+ * copy first.
  */
-extern JITC_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
-                                                const void *value,
-                                                uint32_t dep);
+extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
+                                               const void *value,
+                                               uint32_t dep,
+                                               int write);
+
+
+/// Create a variable that reads from another array
+extern JIT_EXPORT uint32_t jit_var_new_gather(uint32_t src, uint32_t index,
+                                              uint32_t mask);
 
 /**
  * \brief Create an identical copy of the given variable
@@ -951,7 +963,7 @@ extern JITC_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
  * This function creates an exact copy of the variable \c index and returns the
  * index of the copy, whose external reference count is initialized to 1.
  */
-extern JITC_EXPORT uint32_t jit_var_copy(uint32_t index);
+extern JIT_EXPORT uint32_t jit_var_copy(uint32_t index);
 
 
 /**
@@ -976,8 +988,8 @@ extern JITC_EXPORT uint32_t jit_var_copy(uint32_t index);
  *
  * \sa jit_var_mem_copy()
  */
-extern JITC_EXPORT uint32_t jit_var_mem_map(JitBackend backend, JITC_ENUM VarType type,
-                                            void *ptr, size_t size, int free);
+extern JIT_EXPORT uint32_t jit_var_mem_map(JitBackend backend, JIT_ENUM VarType type,
+                                           void *ptr, size_t size, int free);
 
 
 /**
@@ -1001,35 +1013,26 @@ extern JITC_EXPORT uint32_t jit_var_mem_map(JitBackend backend, JITC_ENUM VarTyp
  *
  * \sa jit_var_mem_map()
  */
-extern JITC_EXPORT uint32_t jit_var_mem_copy(JitBackend backend,
-                                             JITC_ENUM AllocType atype,
-                                             JITC_ENUM VarType vtype,
-                                             const void *ptr,
-                                             size_t size);
-
-/**
- * \brief Return the combined number of internal and external references to a
- * variable
- *
- * If desired, references due to pending operations with side effects (i.e.
- * scatters) can be ignored by specifying a nonzero second argument.
- */
-extern JITC_EXPORT uint32_t jit_var_refs(uint32_t index, int ignore_side_effects JITC_DEF(0));
+extern JIT_EXPORT uint32_t jit_var_mem_copy(JitBackend backend,
+                                            JIT_ENUM AllocType atype,
+                                            JIT_ENUM VarType vtype,
+                                            const void *ptr,
+                                            size_t size);
 
 /// Increase the external reference count of a given variable
-extern JITC_EXPORT void jit_var_inc_ref_ext_impl(uint32_t index) JITC_NOEXCEPT;
+extern JIT_EXPORT void jit_var_inc_ref_ext_impl(uint32_t index) JIT_NOEXCEPT;
 
 /// Decrease the external reference count of a given variable
-extern JITC_EXPORT void jit_var_dec_ref_ext_impl(uint32_t index) JITC_NOEXCEPT;
+extern JIT_EXPORT void jit_var_dec_ref_ext_impl(uint32_t index) JIT_NOEXCEPT;
 
 #if defined(__GNUC__)
-JITC_INLINE void jit_var_inc_ref_ext(uint32_t index) JITC_NOEXCEPT {
+JIT_INLINE void jit_var_inc_ref_ext(uint32_t index) JIT_NOEXCEPT {
     /* If 'index' is known at compile time, it can only be zero, in
        which case we can skip the redundant call to jit_var_dec_ref_ext */
     if (!__builtin_constant_p(index) || index != 0)
         jit_var_inc_ref_ext_impl(index);
 }
-JITC_INLINE void jit_var_dec_ref_ext(uint32_t index) JITC_NOEXCEPT {
+JIT_INLINE void jit_var_dec_ref_ext(uint32_t index) JIT_NOEXCEPT {
     if (!__builtin_constant_p(index) || index != 0)
         jit_var_dec_ref_ext_impl(index);
 }
@@ -1039,10 +1042,10 @@ JITC_INLINE void jit_var_dec_ref_ext(uint32_t index) JITC_NOEXCEPT {
 #endif
 
 /// Query the pointer variable associated with a given variable
-extern JITC_EXPORT void *jit_var_ptr(uint32_t index);
+extern JIT_EXPORT void *jit_var_ptr(uint32_t index);
 
 /// Query the size of a given variable
-extern JITC_EXPORT uint32_t jit_var_size(uint32_t index);
+extern JIT_EXPORT uint32_t jit_var_size(uint32_t index);
 
 /**
  * \brief Resize a scalar variable to a new size
@@ -1054,21 +1057,21 @@ extern JITC_EXPORT uint32_t jit_var_size(uint32_t index);
  * exactly matches \c size, the function does nothing and just increases
  * the external reference count of \c index. Otherwise, it fails.
  */
-extern JITC_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
+extern JIT_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
 
 /// Query the type of a given variable
-extern JITC_EXPORT JITC_ENUM VarType jit_var_type(uint32_t index);
+extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
 
 /// Assign a descriptive label to a given variable
-extern JITC_EXPORT void jit_var_set_label(uint32_t index, const char *label);
+extern JIT_EXPORT void jit_var_set_label(uint32_t index, const char *label);
 
 /// Query the descriptive label associated with a given variable
-extern JITC_EXPORT const char *jit_var_label(uint32_t index);
+extern JIT_EXPORT const char *jit_var_label(uint32_t index);
 
 /// Assign a callback function that is invoked when the given variable is freed
-extern JITC_EXPORT void jit_var_set_free_callback(uint32_t index,
-                                                   void (*callback)(void *),
-                                                   void *payload);
+extern JIT_EXPORT void jit_var_set_free_callback(uint32_t index,
+                                                 void (*callback)(void *),
+                                                 void *payload);
 
 /**
  * \brief Asynchronously migrate a variable to a different flavor of memory
@@ -1084,13 +1087,13 @@ extern JITC_EXPORT void jit_var_set_free_callback(uint32_t index,
  * current device (\ref jit_set_device()) does not match the device associated
  * with the allocation, a peer-to-peer migration is performed.
  */
-extern JITC_EXPORT uint32_t jit_var_migrate(uint32_t index, JITC_ENUM AllocType type);
+extern JIT_EXPORT uint32_t jit_var_migrate(uint32_t index, JIT_ENUM AllocType type);
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable
-extern JITC_EXPORT JITC_ENUM AllocType jit_var_alloc_type(uint32_t index);
+extern JIT_EXPORT JIT_ENUM AllocType jit_var_alloc_type(uint32_t index);
 
 /// Query the device (or future, if not yet evaluated) associated with a variable
-extern JITC_EXPORT int jit_var_device(uint32_t index);
+extern JIT_EXPORT int jit_var_device(uint32_t index);
 
 /**
  * \brief Mark a variable as a scatter operation
@@ -1101,7 +1104,8 @@ extern JITC_EXPORT int jit_var_device(uint32_t index);
  * future reads from this variable (while still in dirty state) will trigger
  * an evaluation via \ref jit_eval().
  */
-extern JITC_EXPORT void jit_var_mark_side_effect(uint32_t index, uint32_t target);
+extern JIT_EXPORT void jit_var_mark_side_effect(uint32_t index,
+                                                uint32_t target);
 
 /**
  * \brief Return a human-readable summary of registered variables
@@ -1110,7 +1114,7 @@ extern JITC_EXPORT void jit_var_mark_side_effect(uint32_t index, uint32_t target
  * changed by later calls to <tt>jit_*</tt> API functions. Either use it right
  * away or create a copy.
  */
-extern JITC_EXPORT const char *jit_var_whos();
+extern JIT_EXPORT const char *jit_var_whos();
 
 /**
  * \brief Return a GraphViz representation of registered variables and their
@@ -1120,7 +1124,7 @@ extern JITC_EXPORT const char *jit_var_whos();
  * changed by later calls to <tt>jit_*</tt> API functions. Either use it right
  * away or create a copy.
  */
-extern JITC_EXPORT const char *jit_var_graphviz();
+extern JIT_EXPORT const char *jit_var_graphviz();
 
 /**
  * \brief Return a human-readable summary of the contents of a variable
@@ -1129,7 +1133,7 @@ extern JITC_EXPORT const char *jit_var_graphviz();
  * changed by later calls to <tt>jit_*</tt> API functions. Either use it right
  * away or create a copy.
  */
-extern JITC_EXPORT const char *jit_var_str(uint32_t index);
+extern JIT_EXPORT const char *jit_var_str(uint32_t index);
 
 /**
  * \brief Read a single element of a variable and write it to 'dst'
@@ -1142,8 +1146,8 @@ extern JITC_EXPORT const char *jit_var_str(uint32_t index);
  * (every read will be performed via an individual transaction). This operation
  * fully synchronizes the host CPU & device.
  */
-extern JITC_EXPORT void jit_var_read(uint32_t index, uint32_t offset,
-                                     void *dst);
+extern JIT_EXPORT void jit_var_read(uint32_t index, uint32_t offset,
+                                    void *dst);
 
 /**
  * \brief Copy 'dst' to a single element of a variable
@@ -1153,9 +1157,14 @@ extern JITC_EXPORT void jit_var_read(uint32_t index, uint32_t offset,
  * should never be used to access the complete contents of an array due to its
  * low performance (every write will be performed via an individual
  * asynchronous transaction).
+ *
+ * A direct write may not be safe (e.g. if unevaluated computation references
+ * the array \c index). The function thus returns the index of a new array
+ * (which may happen to be identical to \c index), whose external reference
+ * count is increased by 1.
  */
-extern JITC_EXPORT void jit_var_write(uint32_t index, uint32_t offset,
-                                      const void *src);
+extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, uint32_t offset,
+                                         const void *src);
 
 /**
  * \brief Print the specified variable contents from the kernel
@@ -1166,18 +1175,8 @@ extern JITC_EXPORT void jit_var_write(uint32_t index, uint32_t offset,
  *
  * Example: <tt>jit_var_printf(1, "Hello world: %f\n", 1, &my_variable_id);</tt>
  */
-extern JITC_EXPORT void jit_var_printf(JitBackend backend, const char *fmt,
-                                       uint32_t narg, const uint32_t *arg);
-
-/**
- */
-extern JITC_EXPORT void
-jit_var_vcall(JitBackend backend, const char *domain, const char *name, uint32_t self,
-              uint32_t n_inst, const uint32_t *inst_ids,
-              const uint64_t *inst_hash, uint32_t n_in, const uint32_t *in,
-              uint32_t n_out, uint32_t *out, const uint32_t *need_in,
-              const uint32_t *need_out, uint32_t n_extra, const uint32_t *extra,
-              const uint32_t *extra_offset, int side_effects);
+extern JIT_EXPORT void jit_var_printf(JitBackend backend, const char *fmt,
+                                      uint32_t narg, const uint32_t *arg);
 
 // ====================================================================
 //                 Kernel compilation and evaluation
@@ -1188,17 +1187,17 @@ jit_var_vcall(JitBackend backend, const char *domain, const char *name, uint32_t
  *
  * Returns \c 1 if anything was scheduled, and \c 0 otherwise.
  */
-extern JITC_EXPORT int jit_var_schedule(uint32_t index);
+extern JIT_EXPORT int jit_var_schedule(uint32_t index);
 
 /**
  * \brief Evaluate the variable \c index right away, if it is unevaluated/dirty.
  *
  * Returns \c 1 if anything was evaluated, and \c 0 otherwise.
  */
-extern JITC_EXPORT int jit_var_eval(uint32_t index);
+extern JIT_EXPORT int jit_var_eval(uint32_t index);
 
 /// Evaluate all scheduled computation
-extern JITC_EXPORT void jit_eval();
+extern JIT_EXPORT void jit_eval();
 
 // ====================================================================
 //  Assortment of tuned kernels for initialization, reductions, etc.
@@ -1223,15 +1222,15 @@ enum ReductionType {
  * a single int, float, double, etc. (\c isize can be 1, 2, 4, or 8).
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jit_memset_async(JitBackend backend, void *ptr, uint32_t size,
-                                         uint32_t isize, const void *src);
+extern JIT_EXPORT void jit_memset_async(JitBackend backend, void *ptr, uint32_t size,
+                                        uint32_t isize, const void *src);
 
 /// Perform a synchronous copy operation
-extern JITC_EXPORT void jit_memcpy(JitBackend backend, void *dst, const void *src, size_t size);
+extern JIT_EXPORT void jit_memcpy(JitBackend backend, void *dst, const void *src, size_t size);
 
 /// Perform an asynchronous copy operation
-extern JITC_EXPORT void jit_memcpy_async(JitBackend backend, void *dst, const void *src,
-                                         size_t size);
+extern JIT_EXPORT void jit_memcpy_async(JitBackend backend, void *dst, const void *src,
+                                        size_t size);
 
 /**
  * \brief Reduce the given array to a single value
@@ -1243,8 +1242,8 @@ extern JITC_EXPORT void jit_memcpy_async(JitBackend backend, void *dst, const vo
  *
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jit_reduce(JitBackend backend, JITC_ENUM VarType type,
-                                   JITC_ENUM ReductionType rtype,
+extern JIT_EXPORT void jit_reduce(JitBackend backend, JIT_ENUM VarType type,
+                                   JIT_ENUM ReductionType rtype,
                                    const void *ptr, uint32_t size, void *out);
 
 /**
@@ -1267,8 +1266,8 @@ extern JITC_EXPORT void jit_reduce(JitBackend backend, JITC_ENUM VarType type,
  *
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jit_scan_u32(JitBackend backend, const uint32_t *in,
-                                     uint32_t size, uint32_t *out);
+extern JIT_EXPORT void jit_scan_u32(JitBackend backend, const uint32_t *in,
+                                    uint32_t size, uint32_t *out);
 
 /**
  * \brief Compress a mask into a list of nonzero indices
@@ -1283,8 +1282,8 @@ extern JITC_EXPORT void jit_scan_u32(JitBackend backend, const uint32_t *in,
  *
  * This function internally performs a synchronization step.
  */
-extern JITC_EXPORT uint32_t jit_compress(JitBackend backend, const uint8_t *in,
-                                         uint32_t size, uint32_t *out);
+extern JIT_EXPORT uint32_t jit_compress(JitBackend backend, const uint8_t *in,
+                                        uint32_t size, uint32_t *out);
 
 /**
  * \brief Reduce an array of boolean values to a single value (AND case)
@@ -1296,7 +1295,7 @@ extern JITC_EXPORT uint32_t jit_compress(JitBackend backend, const uint8_t *in,
  *
  * Runs synchronously.
  */
-extern JITC_EXPORT uint8_t jit_all(JitBackend backend, uint8_t *values, uint32_t size);
+extern JIT_EXPORT uint8_t jit_all(JitBackend backend, uint8_t *values, uint32_t size);
 
 /**
  * \brief Reduce an array of boolean values to a single value (OR case)
@@ -1308,7 +1307,7 @@ extern JITC_EXPORT uint8_t jit_all(JitBackend backend, uint8_t *values, uint32_t
  *
  * Runs synchronously.
  */
-extern JITC_EXPORT uint8_t jit_any(JitBackend backend, uint8_t *values, uint32_t size);
+extern JIT_EXPORT uint8_t jit_any(JitBackend backend, uint8_t *values, uint32_t size);
 
 
 /**
@@ -1339,9 +1338,9 @@ extern JITC_EXPORT uint8_t jit_any(JitBackend backend, uint8_t *values, uint32_t
  *     When \c offsets != NULL, the function returns the number of unique
  *     values found in \c values. Otherwise, it returns zero.
  */
-extern JITC_EXPORT uint32_t jit_mkperm(JitBackend backend, const uint32_t *values,
-                                       uint32_t size, uint32_t bucket_count,
-                                       uint32_t *perm, uint32_t *offsets);
+extern JIT_EXPORT uint32_t jit_mkperm(JitBackend backend, const uint32_t *values,
+                                      uint32_t size, uint32_t bucket_count,
+                                      uint32_t *perm, uint32_t *offsets);
 
 /// Helper data structure for vector method calls, see \ref jit_vcall()
 struct VCallBucket {
@@ -1376,9 +1375,10 @@ struct VCallBucket {
  * computed result. This is an important optimization in situations where
  * multiple vector function calls are executed on the same set of instances.
  */
-extern JITC_EXPORT struct VCallBucket *jit_vcall(JitBackend backend, const char *domain,
-                                                 uint32_t index,
-                                                 uint32_t *bucket_count_out);
+extern JIT_EXPORT struct VCallBucket *jit_vcall(JitBackend backend,
+                                                const char *domain,
+                                                uint32_t index,
+                                                uint32_t *bucket_count_out);
 
 /**
  * \brief Replicate individual input elements across larger blocks
@@ -1389,9 +1389,9 @@ extern JITC_EXPORT struct VCallBucket *jit_vcall(JitBackend backend, const char 
  * to \c 2. The input array must contain <tt>size</tt> elements, and the output
  * array must have space for <tt>size * block_size</tt> elements.
  */
-extern JITC_EXPORT void jit_block_copy(JitBackend backend, JITC_ENUM VarType type,
-                                       const void *in, void *out,
-                                       uint32_t size, uint32_t block_size);
+extern JIT_EXPORT void jit_block_copy(JitBackend backend, JIT_ENUM VarType type,
+                                      const void *in, void *out,
+                                      uint32_t size, uint32_t block_size);
 
 /**
  * \brief Sum over elements within blocks
@@ -1402,23 +1402,9 @@ extern JITC_EXPORT void jit_block_copy(JitBackend backend, JITC_ENUM VarType typ
  * set to \c 2. The input array must contain <tt>size * block_size</tt> elements,
  * and the output array must have space for <tt>size</tt> elements.
  */
-extern JITC_EXPORT void jit_block_sum(JitBackend backend, JITC_ENUM VarType type,
-                                      const void *in, void *out, uint32_t size,
-                                      uint32_t block_size);
-
-#define ENOKI_USE_ALLOCATOR(Type)                                              \
-    void *operator new(size_t size) { return jit_malloc(Type, size); }        \
-    void *operator new(size_t size, std::align_val_t) {                        \
-        return jit_malloc(Type, size);                                        \
-    }                                                                          \
-    void *operator new[](size_t size) { return jit_malloc(Type, size); }      \
-    void *operator new[](size_t size, std::align_val_t) {                      \
-        return jit_malloc(Type, size);                                        \
-    }                                                                          \
-    void operator delete(void *ptr) { jit_free(ptr); }                        \
-    void operator delete(void *ptr, std::align_val_t) { jit_free(ptr); }      \
-    void operator delete[](void *ptr) { jit_free(ptr); }                      \
-    void operator delete[](void *ptr, std::align_val_t) { jit_free(ptr); }
+extern JIT_EXPORT void jit_block_sum(JitBackend backend, JIT_ENUM VarType type,
+                                     const void *in, void *out, uint32_t size,
+                                     uint32_t block_size);
 
 #if defined(__cplusplus)
 }

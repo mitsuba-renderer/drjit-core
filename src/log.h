@@ -62,14 +62,14 @@ extern const char *jitc_time_string(float us);
 /// Return the number of microseconds since the previous timer() call
 extern float timer();
 
- JITC_MALLOC inline void* malloc_check(size_t size) {
+ JIT_MALLOC inline void* malloc_check(size_t size) {
     void *ptr = malloc(size);
     if (unlikely(!ptr))
         jitc_fail("malloc_check(): failed to allocate %zu bytes!", size);
     return ptr;
 }
 
- JITC_MALLOC inline void* realloc_check(void *orig, size_t size) {
+ JIT_MALLOC inline void* realloc_check(void *orig, size_t size) {
     void *ptr = realloc(orig, size);
     if (unlikely(!ptr))
         jitc_fail("realloc_check(): could not resize memory region to %zu bytes!", size);

@@ -18,3 +18,6 @@ extern uint32_t jitc_var_new_op(JitOp ot, uint32_t n_dep, const uint32_t *dep);
 extern uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
                                   int reinterpret);
 
+/// Create a variable that reads from another array
+extern uint32_t jitc_var_new_gather(uint32_t src, uint32_t index,
+                                    uint32_t mask);

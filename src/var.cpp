@@ -390,13 +390,17 @@ uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
 }
 
 uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
-                              uint32_t dep) {
+                              uint32_t dep, int write) {
     Variable v;
     v.type = (uint32_t) VarType::Pointer;
     v.size = 1;
     v.literal = 1;
     v.value = (uint64_t) (uintptr_t) value;
     v.backend = (uint32_t) backend;
+
+    /* This flag ensures that read and write pointers create separate entries in
+       the CSE table, which jit_var_new_scatter() uses to reason about safety */
+    v.write_ptr = write != 0;
 
     /* A literal variable (especially a pointer to some memory region) can
        specify an optional dependency to keep that memory region alive. The
@@ -672,10 +676,18 @@ void jitc_var_read(uint32_t index, uint32_t offset, void *dst) {
 }
 
 /// Reverse of jitc_var_read(). Copy 'dst' to a single element of a variable
-void jitc_var_write(uint32_t index, uint32_t offset, const void *src) {
+uint32_t jitc_var_write(uint32_t index, uint32_t offset, const void *src) {
+    Variable *v = jitc_var(index);
+    if (v->ref_count_int + v->ref_count_ext > 1) {
+        // Not safe to directly write to 'v'
+        index = jitc_var_copy(index);
+    } else {
+        jitc_var_inc_ref_ext(index);
+    }
+
     jitc_var_eval(index);
 
-    Variable *v = jitc_var(index);
+    v = jitc_var(index);
     if (unlikely(offset >= v->size))
         jitc_raise("jit_var_write(): attempted to access entry %u in an array of "
                   "size %u!", offset, v->size);
@@ -683,6 +695,8 @@ void jitc_var_write(uint32_t index, uint32_t offset, const void *src) {
     uint32_t isize = var_type_size[v->type];
     uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
     jitc_poke((JitBackend) v->backend, dst, src, isize);
+
+    return index;
 }
 
 /// Register an existing variable with the JIT compiler

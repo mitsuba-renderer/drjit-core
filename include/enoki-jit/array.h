@@ -222,10 +222,9 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
     void write(uint32_t offset, Value value) {
-        if (jit_var_refs(m_index) > 1)
-            *this = steal(jit_var_copy(m_index));
-
-        jit_var_write(m_index, offset, &value);
+        uint32_t index = jit_var_write(m_index, offset, &value);
+        jit_var_dec_ref_ext(m_index);
+        m_index = index;
     }
 
     static JitArray map(void *ptr, size_t size, bool free = false) {
