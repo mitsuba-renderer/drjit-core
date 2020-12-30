@@ -63,55 +63,55 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
     JitArray operator-() const {
-        return steal(jit_var_new_op_1(OpType::Neg, m_index));
+        return steal(jit_var_new_op_1(JitOp::Neg, m_index));
     }
 
     JitArray operator~() const {
-        return steal(jit_var_new_op_1(OpType::Not, m_index));
+        return steal(jit_var_new_op_1(JitOp::Not, m_index));
     }
 
     JitArray operator+(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::Add, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::Add, m_index, v.m_index));
     }
 
     JitArray operator-(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::Sub, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::Sub, m_index, v.m_index));
     }
 
     JitArray operator*(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::Mul, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::Mul, m_index, v.m_index));
     }
 
     JitArray operator/(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::Div, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::Div, m_index, v.m_index));
     }
 
     JitArray operator%(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::Mod, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::Mod, m_index, v.m_index));
     }
 
     Mask operator>(const JitArray &v) const {
-        return Mask::steal(jit_var_new_op_2(OpType::Gt, m_index, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Gt, m_index, v.m_index));
     }
 
     Mask operator>=(const JitArray &v) const {
-        return Mask::steal(jit_var_new_op_2(OpType::Ge, m_index, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Ge, m_index, v.m_index));
     }
 
     Mask operator<(const JitArray &v) const {
-        return Mask::steal(jit_var_new_op_2(OpType::Lt, m_index, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Lt, m_index, v.m_index));
     }
 
     Mask operator<=(const JitArray &v) const {
-        return Mask::steal(jit_var_new_op_2(OpType::Le, m_index, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Le, m_index, v.m_index));
     }
 
     friend JitArray eq(const JitArray &v1, const JitArray &v2) {
-        return Mask::steal(jit_var_new_op_2(OpType::Eq, v1.m_index, v2.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Eq, v1.m_index, v2.m_index));
     }
 
     friend JitArray neq(const JitArray &v1, const JitArray &v2) {
-        return Mask::steal(jit_var_new_op_2(OpType::Neq, v1.m_index, v2.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Neq, v1.m_index, v2.m_index));
     }
 
     bool operator==(const JitArray &v) const {
@@ -123,23 +123,23 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
     JitArray operator|(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::Or, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::Or, m_index, v.m_index));
     }
 
     JitArray operator&(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::And, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::And, m_index, v.m_index));
     }
 
     JitArray operator^(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::Xor, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::Xor, m_index, v.m_index));
     }
 
     JitArray operator<<(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::Shl, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::Shl, m_index, v.m_index));
     }
 
     JitArray operator>>(const JitArray &v) const {
-        return steal(jit_var_new_op_2(OpType::Shr, m_index, v.m_index));
+        return steal(jit_var_new_op_2(JitOp::Shr, m_index, v.m_index));
     }
 
     JitArray &operator+=(const JitArray &v) { return operator=(*this + v); }
@@ -247,39 +247,39 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 	// ------------------------------------------------------
 
     friend JitArray abs(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_2(OpType::Abs, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Abs, v.m_index));
     }
 
     friend JitArray sqrt(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_2(OpType::Sqrt, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Sqrt, v.m_index));
     }
 
     friend JitArray ceil(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_2(OpType::Ceil, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Ceil, v.m_index));
     }
 
     friend JitArray floor(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_2(OpType::Floor, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Floor, v.m_index));
     }
 
     friend JitArray round(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_2(OpType::Round, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Round, v.m_index));
     }
 
     friend JitArray trunc(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_2(OpType::Trunc, v.m_index));
+        return Mask::steal(jit_var_new_op_2(JitOp::Trunc, v.m_index));
     }
 
     friend JitArray fmadd(const JitArray &a, const JitArray &b,
                           const JitArray &c) {
         return Mask::steal(
-            jit_var_new_op_3(OpType::Fmadd, a.m_index, b.m_index.c.m_index));
+            jit_var_new_op_3(JitOp::Fmadd, a.m_index, b.m_index.c.m_index));
     }
 
     friend JitArray select(const Mask &a, const JitArray &b,
                            const JitArray &c) {
         return Mask::steal(
-            jit_var_new_op_3(OpType::Select, a.m_index, b.m_index.c.m_index));
+            jit_var_new_op_3(JitOp::Select, a.m_index, b.m_index.c.m_index));
     }
 
 	friend const char *label(const JitArray &v) {

@@ -58,3 +58,33 @@ template <> struct uint_with_size<8> { using type = uint64_t; };
 
 template <typename T>
 using uint_with_size_t = typename uint_with_size<sizeof(T)>::type;
+
+extern void jitc_var_dec_ref_ext(uint32_t) noexcept(true);
+
+struct Ref {
+    Ref() : index(0) { }
+    Ref(uint32_t index) : index(index) { }
+    ~Ref() { jitc_var_dec_ref_ext(index); }
+
+    Ref(Ref &&r) : index(r.index) { r.index = 0; }
+
+    Ref &operator=(Ref &&r) {
+        jitc_var_dec_ref_ext(index);
+        index = r.index;
+        r.index = 0;
+        return *this;
+    }
+
+    Ref(const Ref &) = delete;
+    Ref &operator=(const Ref &) = delete;
+
+    uint32_t get() const { return index; }
+    uint32_t release() {
+        uint32_t value = index;
+        index = 0;
+        return value;
+    }
+
+private:
+    uint32_t index = 0;
+};

@@ -19,11 +19,11 @@ extern Variable *jitc_var(uint32_t index);
 
 /// Create a literal constant variable of the given size
 extern uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
-                                     const void *value, uint32_t size,
+                                     const void *value, size_t size,
                                      int opaque);
 
 /// Create a variable counting from 0 ... size - 1
-extern uint32_t jitc_var_new_counter(JitBackend backend, uint32_t size);
+extern uint32_t jitc_var_new_counter(JitBackend backend, size_t size);
 
 /// Create a variable representing the result of a custom IR statement
 extern uint32_t jitc_var_new_stmt(JitBackend backend,
@@ -33,20 +33,24 @@ extern uint32_t jitc_var_new_stmt(JitBackend backend,
                                   uint32_t n_dep,
                                   const uint32_t *dep);
 
+/// Create a variable that refers to a memory region
+extern uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
+                                     uint32_t dep);
+
 /// Register an existing variable with the JIT compiler
 extern uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
-                                 uint32_t size, int free);
+                                 size_t size, int free);
 
 /// Copy a memory region onto the device and return its variable index
 extern uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype,
                                   VarType vtype, const void *ptr,
-                                  uint32_t size);
+                                  size_t size);
 
 /// Duplicate a variable
 extern uint32_t jitc_var_copy(uint32_t index);
 
 /// Create a resized copy of a variable
-extern uint32_t jitc_var_resize(uint32_t index, uint32_t size);
+extern uint32_t jitc_var_resize(uint32_t index, size_t size);
 
 /// Increase the internal reference count of a given variable
 extern void jitc_var_inc_ref_int(uint32_t index, Variable *v) noexcept(true);
@@ -142,6 +146,15 @@ extern AllocType jitc_var_alloc_type(uint32_t index);
 
 /// Query the device (or future, if not yet evaluated) associated with a variable
 extern int jitc_var_device(uint32_t index);
+
+/// Return a mask of currently active lanes
+extern uint32_t jitc_var_mask_peek(JitBackend backend);
+
+/// Push an active mask
+extern void jitc_var_mask_push(JitBackend backend, uint32_t index);
+
+/// Pop an active mask
+extern void jitc_var_mask_pop(JitBackend backend);
 
 /// Descriptive names and byte sizes for the various variable types
 extern const char *var_type_name      [(int) VarType::Count];

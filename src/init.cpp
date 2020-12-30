@@ -205,10 +205,10 @@ void jitc_shutdown(int light) {
             cuda_check(cuStreamSynchronize(ts->stream));
         } else {
             task_wait_and_release(ts->task);
-            if (!ts->active_mask.empty())
-                jitc_log(Warn, "jit_shutdown(): leaked %zu active masks!",
-                        ts->active_mask.size());
         }
+        if (!ts->mask_stack.empty())
+            jitc_log(Warn, "jit_shutdown(): leaked %zu active masks!",
+                    ts->mask_stack.size());
     }
 
     if (!state.kernel_cache.empty()) {

@@ -40,9 +40,9 @@ TEST_BOTH(02_load_store) {
                 uint32_t v0 = jit_var_new_literal(Backend, VarType::UInt32, &value, 1 + i);
                 uint32_t v1 = jit_var_new_literal(Backend, VarType::UInt32, &value, 1 + i);
 
-                uint32_t v0p = jit_var_new_op_2(OpType::Add, o, v0);
+                uint32_t v0p = jit_var_new_op_2(JitOp::Add, o, v0);
                 jit_var_dec_ref_ext(v0);
-                uint32_t v1p = jit_var_new_op_2(OpType::Add, o, v1);
+                uint32_t v1p = jit_var_new_op_2(JitOp::Add, o, v1);
                 jit_var_dec_ref_ext(v1);
 
                 jit_assert(v0p == v1p);
@@ -66,13 +66,13 @@ TEST_BOTH(03_load_store_mask) {
         uint32_t ctr = jit_var_new_counter(Backend, i == 0 ? 1 : 10);
         uint32_t one_v = 1, one = jit_var_new_literal(Backend, VarType::UInt32, &one_v);
         uint32_t zero_v = 0, zero = jit_var_new_literal(Backend, VarType::UInt32, &zero_v);
-        uint32_t odd = jit_var_new_op_2(OpType::And, ctr, one);
-        uint32_t mask = jit_var_new_op_2(OpType::Eq, odd, zero);
+        uint32_t odd = jit_var_new_op_2(JitOp::And, ctr, one);
+        uint32_t mask = jit_var_new_op_2(JitOp::Eq, odd, zero);
 
         jit_assert(strcmp(jit_var_str(mask),
                            i == 0 ? "[1]" : "[1, 0, 1, 0, 1, 0, 1, 0, 1, 0]") == 0);
 
-        uint32_t flip = jit_var_new_op_1(OpType::Not, mask);
+        uint32_t flip = jit_var_new_op_1(JitOp::Not, mask);
         jit_assert(strcmp(jit_var_str(flip),
                            i == 0 ? "[0]" : "[0, 1, 0, 1, 0, 1, 0, 1, 0, 1]") == 0);
 
@@ -103,7 +103,7 @@ TEST_BOTH(04_load_store_float) {
                     v1 = jit_var_new_literal(Backend, VarType::Float64, &d1234, 1 + j);
                 }
 
-                uint32_t v2 = jit_var_new_op_2(OpType::Add, v0, v1);
+                uint32_t v2 = jit_var_new_op_2(JitOp::Add, v0, v1);
 
                 jit_assert(strcmp(jit_var_str(v2),
                                    j == 0 ? "[1235]" : "[1235, 1235]") == 0);
@@ -140,21 +140,21 @@ template <typename T> void test_const_prop() {
     //  Test scalar operations
     // ===============================================================
 
-    for (OpType op :
-         { OpType::Not, OpType::Neg, OpType::Abs, OpType::Sqrt, OpType::Rcp,
-           OpType::Rsqrt, OpType::Ceil, OpType::Floor, OpType::Round,
-           OpType::Trunc, OpType::Popc, OpType::Clz, OpType::Ctz }) {
+    for (JitOp op :
+         { JitOp::Not, JitOp::Neg, JitOp::Abs, JitOp::Sqrt, JitOp::Rcp,
+           JitOp::Rsqrt, JitOp::Ceil, JitOp::Floor, JitOp::Round,
+           JitOp::Trunc, JitOp::Popc, JitOp::Clz, JitOp::Ctz }) {
 
-        if ((op == OpType::Popc || op == OpType::Clz || op == OpType::Ctz) && !IsInt)
+        if ((op == JitOp::Popc || op == JitOp::Clz || op == JitOp::Ctz) && !IsInt)
             continue;
-        else if (op == OpType::Not && !IsMask && !IsInt)
+        else if (op == JitOp::Not && !IsMask && !IsInt)
             continue;
-        else if ((op == OpType::Sqrt || op == OpType::Rcp ||
-                  op == OpType::Rsqrt || op == OpType::Ceil ||
-                  op == OpType::Floor || op == OpType::Round ||
-                  op == OpType::Trunc) && !IsFloat)
+        else if ((op == JitOp::Sqrt || op == JitOp::Rcp ||
+                  op == JitOp::Rsqrt || op == JitOp::Ceil ||
+                  op == JitOp::Floor || op == JitOp::Round ||
+                  op == JitOp::Trunc) && !IsFloat)
             continue;
-        else if ((op == OpType::Neg || op == OpType::Abs) && IsMask)
+        else if ((op == JitOp::Neg || op == JitOp::Abs) && IsMask)
             continue;
 
         for (int i = 0; i < Size2; ++i)
@@ -162,7 +162,7 @@ template <typename T> void test_const_prop() {
 
         for (uint32_t i = 0; i < Size2; ++i) {
             uint32_t index = 0;
-            if ((op == OpType::Rcp) && values[i] == 0) {
+            if ((op == JitOp::Rcp) && values[i] == 0) {
                 index = in[i];
                 jit_var_inc_ref_ext(index);
             } else {
@@ -191,8 +191,8 @@ template <typename T> void test_const_prop() {
                 if (std::isnan((double) value) &&
                     std::isnan((double) ref))
                     continue;
-                if ((op == OpType::Sqrt || op == OpType::Rcp ||
-                     op == OpType::Rsqrt) &&
+                if ((op == JitOp::Sqrt || op == JitOp::Rcp ||
+                     op == JitOp::Rsqrt) &&
                     (value - ref) < 1e-7)
                     continue;
                 char *v0 = strdup(jit_var_str(in[ir]));
@@ -216,16 +216,16 @@ template <typename T> void test_const_prop() {
     //  Test binary operations
     // ===============================================================
 
-    for (OpType op :
-         { OpType::Add, OpType::Sub, OpType::Mul, OpType::Div,
-           OpType::Mod, OpType::Min, OpType::Max, OpType::And, OpType::Or,
-           OpType::Xor, OpType::Shl, OpType::Shr, OpType::Eq, OpType::Neq,
-           OpType::Lt, OpType::Le, OpType::Gt, OpType::Ge }) {
-        if (op == OpType::Mod && IsFloat)
+    for (JitOp op :
+         { JitOp::Add, JitOp::Sub, JitOp::Mul, JitOp::Div,
+           JitOp::Mod, JitOp::Min, JitOp::Max, JitOp::And, JitOp::Or,
+           JitOp::Xor, JitOp::Shl, JitOp::Shr, JitOp::Eq, JitOp::Neq,
+           JitOp::Lt, JitOp::Le, JitOp::Gt, JitOp::Ge }) {
+        if (op == JitOp::Mod && IsFloat)
             continue;
-        if ((IsFloat || IsMask) && (op == OpType::Shl || op == OpType::Shr))
+        if ((IsFloat || IsMask) && (op == JitOp::Shl || op == JitOp::Shr))
             continue;
-        if (IsMask && !(op == OpType::Or || op == OpType::And || op == OpType::Xor))
+        if (IsMask && !(op == JitOp::Or || op == JitOp::And || op == JitOp::Xor))
             continue;
 
         for (int i = 0; i < Size2; ++i)
@@ -236,8 +236,8 @@ template <typename T> void test_const_prop() {
                 uint32_t deps[2] = { in[i], in[j] };
                 uint32_t index = 0;
 
-                if (((op == OpType::Div || op == OpType::Mod) && values[j] == 0) ||
-                    ((op == OpType::Shr || op == OpType::Shl) && values[j] < 0)) {
+                if (((op == JitOp::Div || op == JitOp::Mod) && values[j] == 0) ||
+                    ((op == JitOp::Shr || op == JitOp::Shl) && values[j] < 0)) {
                     index = in[j];
                     jit_var_inc_ref_ext(index);
                 } else {
@@ -266,7 +266,7 @@ template <typename T> void test_const_prop() {
                 jit_var_read(ref_id, 0, &ref);
 
                 if (memcmp(&value, &ref, sizeof(Value)) != 0) {
-                    if (op == OpType::Div && (value - ref) < 1e-6)
+                    if (op == JitOp::Div && (value - ref) < 1e-6)
                         continue;
                     char *v0 = strdup(jit_var_str(in[ir]));
                     char *v1 = strdup(jit_var_str(in[jr]));
@@ -303,8 +303,8 @@ template <typename T> void test_const_prop() {
             values[i] = (Value) (1.1f * values[i]);
     }
 
-    for (OpType op : { OpType::Fmadd, OpType::Select }) {
-        if (op == OpType::Fmadd && IsMask)
+    for (JitOp op : { JitOp::Fmadd, JitOp::Select }) {
+        if (op == JitOp::Fmadd && IsMask)
             continue;
 
         for (int i = 0; i < 4; ++i) {
@@ -317,10 +317,10 @@ template <typename T> void test_const_prop() {
 
         memset(out, 0, Small2 * Small2 * Small2 * sizeof(uint32_t));
 
-        for (uint32_t i = 0; i < (op == OpType::Select ? 4 : Small2); ++i) {
+        for (uint32_t i = 0; i < (op == JitOp::Select ? 4 : Small2); ++i) {
             for (uint32_t j = 0; j < Small2; ++j) {
                 for (uint32_t k = 0; k < Small2; ++k) {
-                    uint32_t deps[3] = { op == OpType::Select ? in_b[i] : in[i], in[j], in[k] };
+                    uint32_t deps[3] = { op == JitOp::Select ? in_b[i] : in[i], in[j], in[k] };
                     uint32_t index = jit_var_new_op(op, 3, deps);
 
                     jit_var_schedule(index);
@@ -331,11 +331,11 @@ template <typename T> void test_const_prop() {
 
         jit_eval();
 
-        for (uint32_t i = 0; i < (op == OpType::Select ? 4 : Small2); ++i) {
+        for (uint32_t i = 0; i < (op == JitOp::Select ? 4 : Small2); ++i) {
             for (uint32_t j = 0; j < Small2; ++j) {
                 for (uint32_t k = 0; k < Small2; ++k) {
                     int ir;
-                    if (op == OpType::Select)
+                    if (op == JitOp::Select)
                          ir = i < 2 ? i : i - 2;
                     else
                          ir = i < Small ? i : i - Small;
@@ -352,9 +352,9 @@ template <typename T> void test_const_prop() {
                     jit_var_read(ref_id, 0, &ref);
 
                     if (memcmp(&value, &ref, sizeof(Value)) != 0) {
-                        if (op == OpType::Fmadd && value == ref)
+                        if (op == JitOp::Fmadd && value == ref)
                             continue;
-                        char *v0 = strdup(jit_var_str(op == OpType::Select ? in_b[ir] : in[ir]));
+                        char *v0 = strdup(jit_var_str(op == JitOp::Select ? in_b[ir] : in[ir]));
                         char *v1 = strdup(jit_var_str(in[jr]));
                         char *v2 = strdup(jit_var_str(in[kr]));
                         char *v3 = strdup(jit_var_str(value_id));
@@ -495,4 +495,57 @@ TEST_BOTH(06_cast) {
         }
     }
     jit_assert(!fail);
+}
+
+TEST_BOTH(07_and_or_mixed) {
+    // Tests JitOp::And/Or applied to a non-mask type and a mask
+
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            bool b = (i & 1);
+            uint32_t v0 = jit_var_new_literal(Backend, VarType::Bool,
+                                              &b, 1, i < 2);
+
+            uint32_t u = 1234;
+            uint32_t v1 = jit_var_new_literal(Backend, VarType::UInt32,
+                                              &u, 1, j == 0);
+
+            float f = 1234;
+            uint32_t v2 = jit_var_new_literal(Backend, VarType::Float32,
+                                              &f, 1, j == 0);
+
+            uint32_t v3 = jit_var_new_op_2(JitOp::And, v1, v0);
+            uint32_t v4 = jit_var_new_op_2(JitOp::And, v2, v0);
+            uint32_t v5 = jit_var_new_op_2(JitOp::Or, v1, v0);
+            uint32_t v6 = jit_var_new_op_2(JitOp::Or, v2, v0);
+
+            jit_var_dec_ref_ext(v0);
+            jit_var_dec_ref_ext(v1);
+            jit_var_dec_ref_ext(v2);
+
+            jit_var_schedule(v3);
+            jit_var_schedule(v4);
+            jit_var_schedule(v5);
+            jit_var_schedule(v6);
+
+            uint32_t out_u = 0;
+            float out_f = 0;
+            jit_var_read(v3, 0, &out_u);
+            jit_var_read(v4, 0, &out_f);
+            jit_var_dec_ref_ext(v3);
+            jit_var_dec_ref_ext(v4);
+
+            jit_assert(out_u == (b ? 1234 : 0));
+            jit_assert(out_f == (b ? 1234 : 0));
+
+            jit_var_read(v5, 0, &out_u);
+            jit_var_read(v6, 0, &out_f);
+
+            jit_assert(out_u == (b ? 0xFFFFFFFF : 1234));
+            jit_assert(b ? std::isnan(out_f) : (out_f == 1234));
+
+            jit_var_dec_ref_ext(v5);
+            jit_var_dec_ref_ext(v6);
+        }
+    }
 }

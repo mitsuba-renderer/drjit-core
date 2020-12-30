@@ -54,12 +54,3 @@ extern void jitc_llvm_set_target(const char *target_cpu,
 /// Convenience function for intrinsic function selection
 extern int jitc_llvm_if_at_least(uint32_t vector_width,
                                  const char *feature);
-
-/// Return a mask of currently active lanes
-extern uint32_t jitc_llvm_active_mask();
-
-/// Push an active mask
-extern void jitc_llvm_active_mask_push(uint32_t index);
-
-/// Pop an active mask
-extern void jitc_llvm_active_mask_pop();

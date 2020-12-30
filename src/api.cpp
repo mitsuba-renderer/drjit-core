@@ -215,21 +215,6 @@ int jit_llvm_if_at_least(uint32_t vector_width, const char *feature) {
     return jitc_llvm_if_at_least(vector_width, feature);
 }
 
-uint32_t jit_llvm_active_mask() {
-    lock_guard guard(state.mutex);
-    return jitc_llvm_active_mask();
-}
-
-void jit_llvm_active_mask_push(uint32_t index) {
-    lock_guard guard(state.mutex);
-    jitc_llvm_active_mask_push(index);
-}
-
-void jit_llvm_active_mask_pop() {
-    lock_guard guard(state.mutex);
-    jitc_llvm_active_mask_pop();
-}
-
 void jit_sync_thread() {
     lock_guard guard(state.mutex);
     jitc_sync_thread();
@@ -291,17 +276,17 @@ int jit_var_device(uint32_t index) {
 }
 
 uint32_t jit_var_new_literal(JitBackend backend, VarType type, const void *value,
-                             uint32_t size, int eval) {
+                             size_t size, int eval) {
     lock_guard guard(state.mutex);
     return jitc_var_new_literal(backend, type, value, size, eval);
 }
 
-uint32_t jit_var_new_counter(JitBackend backend, uint32_t size) {
+uint32_t jit_var_new_counter(JitBackend backend, size_t size) {
     lock_guard guard(state.mutex);
     return jitc_var_new_counter(backend, size);
 }
 
-uint32_t jit_var_new_op(JITC_ENUM OpType ot, uint32_t n_dep,
+uint32_t jit_var_new_op(JITC_ENUM JitOp ot, uint32_t n_dep,
                          const uint32_t *dep) {
     lock_guard guard(state.mutex);
     return jitc_var_new_op(ot, n_dep, dep);
@@ -311,6 +296,12 @@ uint32_t jit_var_new_cast(uint32_t index, VarType target_type,
                           int reinterpret) {
     lock_guard guard(state.mutex);
     return jitc_var_new_cast(index, target_type, reinterpret);
+}
+
+uint32_t jit_var_new_pointer(JitBackend backend, const void *value,
+                             uint32_t dep) {
+    lock_guard guard(state.mutex);
+    return jitc_var_new_pointer(backend, value, dep);
 }
 
 void jit_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {
@@ -348,7 +339,7 @@ uint32_t jit_var_size(uint32_t index) {
     return jitc_var_size(index);
 }
 
-uint32_t jit_var_resize(uint32_t index, uint32_t size) {
+uint32_t jit_var_resize(uint32_t index, size_t size) {
     lock_guard guard(state.mutex);
     return jitc_var_resize(index, size);
 }
@@ -376,13 +367,13 @@ void jit_var_set_free_callback(uint32_t index, void (*callback)(void *),
     jitc_var_set_free_callback(index, callback, payload);
 }
 
-uint32_t jit_var_mem_map(JitBackend backend, VarType type, void *ptr, uint32_t size, int free) {
+uint32_t jit_var_mem_map(JitBackend backend, VarType type, void *ptr, size_t size, int free) {
     lock_guard guard(state.mutex);
     return jitc_var_mem_map(backend, type, ptr, size, free);
 }
 
 uint32_t jit_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
-                          const void *value, uint32_t size) {
+                          const void *value, size_t size) {
     lock_guard guard(state.mutex);
     return jitc_var_mem_copy(backend, atype, vtype, value, size);
 }
@@ -400,6 +391,21 @@ uint32_t jit_var_migrate(uint32_t index, AllocType type) {
 void jit_var_mark_side_effect(uint32_t index, uint32_t target) {
     lock_guard guard(state.mutex);
     jitc_var_mark_side_effect(index, target);
+}
+
+uint32_t jit_var_mask_peek(JitBackend backend) {
+    lock_guard guard(state.mutex);
+    return jitc_var_mask_peek(backend);
+}
+
+void jit_var_mask_push(JitBackend backend, uint32_t index) {
+    lock_guard guard(state.mutex);
+    jitc_var_mask_push(backend, index);
+}
+
+void jit_var_mask_pop(JitBackend backend) {
+    lock_guard guard(state.mutex);
+    jitc_var_mask_pop(backend);
 }
 
 const char *jit_var_whos() {

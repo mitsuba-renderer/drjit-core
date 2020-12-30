@@ -82,6 +82,12 @@ const char *var_type_size_str[(int) VarType::Count] {
 /// Temporary string buffer for miscellaneous variable-related tasks
 Buffer var_buffer(0);
 
+#define jitc_check_size(name, size)                                            \
+    if (unlikely(size > 0xFFFFFFFF))                                           \
+        jitc_raise("%s(): tried to create an array with %zu entries, which "   \
+                   "exceeds the limit of 2^32 == 4294967296 entries.",         \
+                   name, size);
+
 /// Cleanup handler, called when the internal/external reference count reaches zero
 void jitc_var_free(uint32_t index, Variable *v) {
     jitc_trace("jit_var_free(%u)", index);
@@ -158,7 +164,7 @@ void jitc_var_inc_ref_ext(uint32_t index, Variable *v) noexcept(true) {
 
 /// Increase the external reference count of a given variable
 void jitc_var_inc_ref_ext(uint32_t index) noexcept(true) {
-    if (index != 0)
+    if (index)
         jitc_var_inc_ref_ext(index, jitc_var(index));
 }
 
@@ -170,7 +176,7 @@ void jitc_var_inc_ref_int(uint32_t index, Variable *v) noexcept(true) {
 
 /// Increase the internal reference count of a given variable
 void jitc_var_inc_ref_int(uint32_t index) noexcept(true) {
-    if (index != 0)
+    if (index)
         jitc_var_inc_ref_int(index, jitc_var(index));
 }
 
@@ -356,31 +362,20 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
 }
 
 uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
-                              const void *value, uint32_t size,
+                              const void *value, size_t size,
                               int eval) {
     if (unlikely(size == 0))
         return 0;
+
+    jitc_check_size("jitc_var_new_literal", size);
 
     if (likely(eval == 0)) {
         Variable v;
         memcpy(&v.value, value, var_type_size[(uint32_t) type]);
         v.type = (uint32_t) type;
-        v.size = size;
+        v.size = (uint32_t) size;
         v.literal = 1;
         v.backend = (uint32_t) backend;
-
-#if 0
-        if (dep) {
-            /* A literal variable (especially a pointer to some memory region) can
-               specify an optional dependency to keep that memory region alive. The
-               last entry (v.dep[3]) is strategically chosen as jitc_var_traverse()
-               will ignore it given that preceding entries (v.dep[0-2]) are all
-               zero, keeping the referenced variable from being merged into
-               programs that make use of this literal. */
-            v.dep[3] = dep;
-            jitc_var_inc_ref_int(dep);
-        }
-#endif
 
         return jitc_var_new(v);
     } else {
@@ -389,12 +384,34 @@ uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
             jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
                                                     : AllocType::HostAsync,
                         size * (size_t) isize);
-        jitc_memset_async(backend, data, size, isize, value);
+        jitc_memset_async(backend, data, (uint32_t) size, isize, value);
         return jitc_var_mem_map(backend, type, data, size, 1);
     }
 }
 
-uint32_t jitc_var_new_counter(JitBackend backend, uint32_t size) {
+uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
+                              uint32_t dep) {
+    Variable v;
+    v.type = (uint32_t) VarType::Pointer;
+    v.size = 1;
+    v.literal = 1;
+    v.value = (uint64_t) (uintptr_t) value;
+    v.backend = (uint32_t) backend;
+
+    /* A literal variable (especially a pointer to some memory region) can
+       specify an optional dependency to keep that memory region alive. The
+       last entry (v.dep[3]) is strategically chosen as jitc_var_traverse()
+       will ignore it given that preceding entries (v.dep[0-2]) are all
+       zero, keeping the referenced variable from being merged into
+       programs that make use of this literal. */
+    v.dep[3] = dep;
+    jitc_var_inc_ref_int(dep);
+
+    return jitc_var_new(v);
+}
+
+uint32_t jitc_var_new_counter(JitBackend backend, size_t size) {
+    jitc_check_size("jitc_var_new_counter", size);
     Variable v;
     v.stmt = backend == JitBackend::CUDA ? (char *) "mov.u32 $r0, %r0"
                                          : jitc_llvm_counter_str;
@@ -601,10 +618,7 @@ void jitc_var_eval_literal(uint32_t index, Variable *v) {
 
 /// Evaluate the variable \c index right away if it is unevaluated/dirty.
 int jitc_var_eval(uint32_t index) {
-    auto it = state.variables.find(index);
-    if (unlikely(it == state.variables.end()))
-        jitc_raise("jit_var_eval(%u): unknown variable!", index);
-    Variable *v = &it.value();
+    Variable *v = jitc_var(index);
 
     if (!v->data || v->dirty) {
         ThreadState *ts = thread_state(v->backend);
@@ -673,9 +687,11 @@ void jitc_var_write(uint32_t index, uint32_t offset, const void *src) {
 
 /// Register an existing variable with the JIT compiler
 uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
-                          uint32_t size, int free) {
+                          size_t size, int free) {
     if (unlikely(size == 0 || ptr == nullptr))
         return 0;
+
+    jitc_check_size("jitc_var_mep_map", size);
 
     Variable v;
     v.type = (uint32_t) type;
@@ -695,12 +711,13 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
 
 /// Copy a memory region onto the device and return its variable index
 uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
-                          const void *ptr, uint32_t size) {
-    ThreadState *ts = thread_state(backend);
+                          const void *ptr, size_t size) {
+    jitc_check_size("jitc_var_mem_copy", size);
 
     size_t total_size = (size_t) size * (size_t) var_type_size[(int) vtype];
     void *target_ptr;
 
+    ThreadState *ts = thread_state(backend);
     if (backend == JitBackend::CUDA) {
         target_ptr = jitc_malloc(AllocType::Device, total_size);
 
@@ -733,7 +750,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
     }
 
     uint32_t index = jitc_var_mem_map(backend, vtype, target_ptr, size, true);
-    jitc_log(Debug, "jit_var_mem_copy(%u, size=%u)", index, size);
+    jitc_log(Debug, "jit_var_mem_copy(%u, size=%zu)", index, size);
     return index;
 }
 
@@ -770,9 +787,11 @@ uint32_t jitc_var_copy(uint32_t index) {
     return index;
 }
 
-uint32_t jitc_var_resize(uint32_t index, uint32_t size) {
+uint32_t jitc_var_resize(uint32_t index, size_t size) {
     if (index == 0 && size == 0)
         return 0;
+
+    jitc_check_size("jitc_var_resize", size);
 
     Variable *v = jitc_var(index);
     if (v->size == size) {
@@ -782,7 +801,7 @@ uint32_t jitc_var_resize(uint32_t index, uint32_t size) {
         jitc_raise("jit_var_resize(): variable %u must be scalar!", index);
     }
 
-    jitc_log(Debug, "jit_var_resize(%u, size=%u -> %u)", index, v->size, size);
+    jitc_log(Debug, "jit_var_resize(%u, size=%u -> %zu)", index, v->size, size);
 
     if (!v->data && v->ref_count_int == 0 && v->ref_count_ext == 1) {
         jitc_var_inc_ref_ext(index, v);
@@ -842,6 +861,48 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
             alloc_type_name[ai.type], alloc_type_name[(int) dst_type]);
 
     return dst_index;
+}
+
+uint32_t jitc_var_mask_peek(JitBackend backend) {
+    ThreadState *ts = thread_state(backend);
+
+    if (!ts->mask_stack.empty()) {
+        uint32_t index = ts->mask_stack.back();
+        jitc_var_inc_ref_ext(index);
+        return index;
+    }
+
+    if (backend == JitBackend::CUDA) {
+        // The default mask doesn't mask anything
+        bool value = true;
+        return jitc_var_new_literal(backend, VarType::Bool, &value, 1, 0);
+    } else {
+        // Ignore SIMD lanes that lie beyond the end of the range
+        Ref counter = jitc_var_new_counter(backend, 1);
+        uint32_t dep[1] = { counter.get() };
+        return jitc_var_new_stmt(
+            backend, VarType::Bool,
+            "$r0_0 = trunc i64 %end to i32$n"
+            "$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n"
+            "$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n"
+            "$r0 = icmp ult <$w x i32> $r1, $r0_2",
+            1, 1, dep);
+    }
+}
+
+void jitc_var_mask_push(JitBackend backend, uint32_t index) {
+    jitc_var_inc_ref_int(index);
+    thread_state(backend)->mask_stack.push_back(index);
+}
+
+void jitc_var_mask_pop(JitBackend backend) {
+    auto &stack = thread_state(backend)->mask_stack;
+    if (unlikely(stack.empty()))
+        jitc_raise("jit_var_mask_pop(): stack underflow!");
+
+    uint32_t index = stack.back();
+    stack.pop_back();
+    jitc_var_dec_ref_int(index);
 }
 
 /// Return a human-readable summary of registered variables

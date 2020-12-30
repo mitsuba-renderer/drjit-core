@@ -250,10 +250,13 @@ struct ThreadState {
      */
     std::vector<uint32_t> side_effects;
 
-    /// ---------------------------- LLVM-specific ----------------------------
+    /**
+     * Stack of variable indices indicating the list of active SIMD lanes.
+     * This is used to constrain the behavior of gather/scatter operations.
+     */
+    std::vector<uint32_t> mask_stack;
 
-    // Stack of variable indices storing masks of active SIMD lanes
-    std::vector<uint32_t> active_mask;
+    /// ---------------------------- LLVM-specific ----------------------------
 
     // Currently active task within the thread pool
     Task *task = nullptr;

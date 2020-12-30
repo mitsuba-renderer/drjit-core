@@ -731,7 +731,7 @@ enum VarType {
 extern JITC_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
                                                 JITC_ENUM VarType type,
                                                 const void *value,
-                                                uint32_t size JITC_DEF(1),
+                                                size_t size JITC_DEF(1),
                                                 int eval JITC_DEF(0));
 
 /**
@@ -740,7 +740,7 @@ extern JITC_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
  * This operation creates a variable of type \ref VarType::UInt32 that will
  * evaluate to <tt>0, ..., size - 1</tt>.
  */
-extern uint32_t jit_var_new_counter(JitBackend backend, uint32_t size);
+extern uint32_t jit_var_new_counter(JitBackend backend, size_t size);
 
 /**
  * \brief Create a new variable representing the result of a LLVM/PTX statement
@@ -836,7 +836,7 @@ inline uint32_t jit_var_new_stmt_4(JitBackend backend, JITC_ENUM VarType vt,
 }
 
 /// List of operations supported by \ref jit_var_new_op()
-enum class OpType : uint32_t {
+enum class JitOp : uint32_t {
     // ---- Unary ----
     Not, Neg, Abs, Sqrt, Rcp, Rsqrt, Ceil, Floor, Round, Trunc, Exp2, Log2,
     Popc, Clz, Ctz,
@@ -851,7 +851,7 @@ enum class OpType : uint32_t {
 };
 
 #if EK_OPNAME==1
-const char *op_name[(int) OpType::Count] {
+const char *op_name[(int) JitOp::Count] {
     "Not", "Neg", "Abs", "Sqrt", "Rcp", "Rsqrt", "Ceil", "Floor", "Round", "Trunc", "Exp2", "Log2",
 
     "Popc", "Clz", "Ctz",
@@ -890,31 +890,31 @@ const char *op_name[(int) OpType::Count] {
  * \param dep
  *    Pointer to a list of \c n_dep valid variable indices
  */
-extern JITC_EXPORT uint32_t jit_var_new_op(JITC_ENUM OpType op,
+extern JITC_EXPORT uint32_t jit_var_new_op(JITC_ENUM JitOp op,
                                            uint32_t n_dep, const uint32_t *dep);
 
 // Perform an operation with 1 input (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_1(JITC_ENUM OpType op,
+inline uint32_t jit_var_new_op_1(JITC_ENUM JitOp op,
                                  uint32_t dep0) {
     return jit_var_new_op(op, 1, &dep0);
 }
 
 // Perform an operation with 2 inputs (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_2(JITC_ENUM OpType op, uint32_t dep0,
+inline uint32_t jit_var_new_op_2(JITC_ENUM JitOp op, uint32_t dep0,
                                  uint32_t dep1) {
     const uint32_t dep[] = { dep0, dep1 };
     return jit_var_new_op(op, 2, dep);
 }
 
 // Perform an operation with 3 inputs (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_3(JITC_ENUM OpType op, uint32_t dep0,
+inline uint32_t jit_var_new_op_3(JITC_ENUM JitOp op, uint32_t dep0,
                                  uint32_t dep1, uint32_t dep2) {
     const uint32_t dep[] = { dep0, dep1, dep2 };
     return jit_var_new_op(op, 3, dep);
 }
 
 // Perform an operation with 4 inputs (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_4(JITC_ENUM OpType op, uint32_t dep0,
+inline uint32_t jit_var_new_op_4(JITC_ENUM JitOp op, uint32_t dep0,
                                  uint32_t dep1, uint32_t dep2, uint32_t dep3) {
     const uint32_t dep[] = { dep0, dep1, dep2, dep3 };
     return jit_var_new_op(op, 4, dep);
@@ -933,6 +933,17 @@ inline uint32_t jit_var_new_op_4(JITC_ENUM OpType op, uint32_t dep0,
 extern JITC_EXPORT uint32_t jit_var_new_cast(uint32_t index,
                                              VarType target_type,
                                              int reinterpret);
+
+/**
+ * \brief Create a variable that refers to a memory region
+ *
+ * This function creates a 64 bit unsigned integer literal that refers to a
+ * memory region. Optionally, if \c dep is nonzero, the created variable will
+ * hold a reference to the variable \c dep until the pointer is destroyed.
+ */
+extern JITC_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
+                                                const void *value,
+                                                uint32_t dep);
 
 /**
  * \brief Create an identical copy of the given variable
@@ -966,7 +977,7 @@ extern JITC_EXPORT uint32_t jit_var_copy(uint32_t index);
  * \sa jit_var_mem_copy()
  */
 extern JITC_EXPORT uint32_t jit_var_mem_map(JitBackend backend, JITC_ENUM VarType type,
-                                            void *ptr, uint32_t size, int free);
+                                            void *ptr, size_t size, int free);
 
 
 /**
@@ -994,7 +1005,7 @@ extern JITC_EXPORT uint32_t jit_var_mem_copy(JitBackend backend,
                                              JITC_ENUM AllocType atype,
                                              JITC_ENUM VarType vtype,
                                              const void *ptr,
-                                             uint32_t size);
+                                             size_t size);
 
 /**
  * \brief Return the combined number of internal and external references to a
@@ -1043,7 +1054,7 @@ extern JITC_EXPORT uint32_t jit_var_size(uint32_t index);
  * exactly matches \c size, the function does nothing and just increases
  * the external reference count of \c index. Otherwise, it fails.
  */
-extern JITC_EXPORT uint32_t jit_var_resize(uint32_t index, uint32_t size);
+extern JITC_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
 
 /// Query the type of a given variable
 extern JITC_EXPORT JITC_ENUM VarType jit_var_type(uint32_t index);

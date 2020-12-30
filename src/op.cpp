@@ -31,6 +31,13 @@ static bool jitc_is_float(VarType type) {
            type == VarType::Float64;
 }
 
+static bool jitc_is_sint(VarType type) {
+    return type == VarType::Int8 ||
+           type == VarType::Int16 ||
+           type == VarType::Int32 ||
+           type == VarType::Int64;
+}
+
 static bool jitc_is_uint(VarType type) {
     return type == VarType::UInt8 ||
            type == VarType::UInt16 ||
@@ -308,7 +315,7 @@ static int jitc_clz(uint64_t value) {
 #endif
 }
 
-uint32_t jitc_var_shift(JitBackend backend, VarType vt, OpType op,
+uint32_t jitc_var_shift(JitBackend backend, VarType vt, JitOp op,
                         uint32_t index, uint64_t amount) {
     amount = 63 - jitc_clz(amount);
     uint32_t shift = jitc_var_new_literal(backend, vt, &amount, 1, 0);
@@ -323,10 +330,10 @@ uint32_t jitc_var_shift(JitBackend backend, VarType vt, OpType op,
 // ===========================================================================
 
 // Error handler
-JITC_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, OpType op,
+JITC_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op,
                                            uint32_t n_dep, const uint32_t *dep);
 
-uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
+uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     uint32_t size = 0;
     bool dirty = false, literal = true, uninitialized = false;
     uint32_t vti = 0;
@@ -378,14 +385,20 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
     for (uint32_t i = 0; i < n_dep; ++i) {
         if (error)
             break;
-        else if (unlikely(v[i]->size != size && v[i]->size != 1))
+
+        else if (unlikely(v[i]->size != size && v[i]->size != 1)) {
             error = "arithmetic involving arrays of incompatible size!";
-        else if (unlikely(v[i]->type != vti &&
-                          !(op == OpType::Select && i == 0 &&
-                            (VarType) v[i]->type == VarType::Bool)))
-            error = "arithmetic involving arrays of incompatible type!";
-        else if (unlikely(v[i]->backend != backend_i))
+        } else if (unlikely(v[i]->type != vti)) {
+            // Two special cases in which mixed mask/value arguments are OK
+            bool exception_1 = op == JitOp::Select && i == 0 &&
+                               (VarType) v[i]->type == VarType::Bool;
+            bool exception_2 = (op == JitOp::And || op == JitOp::Or) && i == 1 &&
+                               (VarType) v[i]->type == VarType::Bool;
+            if (!exception_1 && !exception_2)
+                error = "arithmetic involving arrays of incompatible type!";
+        } else if (unlikely(v[i]->backend != backend_i)) {
             error = "mixed CUDA and LLVM arrays!";
+        }
     }
 
     if (unlikely(error))
@@ -409,12 +422,12 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
 
     /* Used if the result is simply the index of an input variable,
        or when the operation-specific implementation has created its own
-       variable (in that case, it must set li_decref=true below) */
+       variable (in that case, it must set li_created=true below) */
     uint32_t li = 0;
-    bool li_decref = false;
+    bool li_created = false;
 
     switch (op) {
-        case OpType::Not:
+        case JitOp::Not:
             is_valid = jitc_is_not_void(vt) && !is_float;
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_not(value); }, v[0]);
@@ -429,7 +442,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Neg:
+        case JitOp::Neg:
             is_valid = jitc_is_arithmetic(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return -value; }, v[0]);
@@ -451,7 +464,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Abs:
+        case JitOp::Abs:
             if (is_uint) {
                 li = dep[0];
             } else if (literal) {
@@ -463,8 +476,8 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                     uint64_t mask_value = ((uint64_t) 1 << (var_type_size[vti] * 8 - 1)) - 1;
                     uint32_t mask = jitc_var_new_literal(backend, vt, &mask_value, 1, 0);
                     uint32_t deps[2] = { dep[0], mask };
-                    li = jitc_var_new_op(OpType::And, 2, deps);
-                    li_decref = true;
+                    li = jitc_var_new_op(JitOp::And, 2, deps);
+                    li_created = true;
                     jitc_var_dec_ref_ext(mask);
                 } else {
                     stmt = "$r0_0 = icmp slt <$w x $t0> $r1, zeroinitializer$n"
@@ -474,7 +487,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Sqrt:
+        case JitOp::Sqrt:
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_sqrt(value); }, v[0]);
@@ -486,7 +499,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Rcp:
+        case JitOp::Rcp:
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_rcp(value); }, v[0]);
@@ -502,13 +515,13 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                                                         : (const void *) &d1,
                                                     1, 0);
                 uint32_t deps[2] = { one, dep[0] };
-                li = jitc_var_new_op(OpType::Div, 2, deps);
+                li = jitc_var_new_op(JitOp::Div, 2, deps);
                 jitc_var_dec_ref_ext(one);
-                li_decref = true;
+                li_created = true;
             }
             break;
 
-        case OpType::Rsqrt:
+        case JitOp::Rsqrt:
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_rsqrt(value); }, v[0]);
@@ -525,15 +538,15 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                                                         : (const void *) &d1,
                                                     1, 0);
                 uint32_t deps[2] = { one, dep[0] };
-                uint32_t result_1 = jitc_var_new_op(OpType::Div, 2, deps);
-                li = jitc_var_new_op(OpType::Sqrt, 1, &result_1);
-                li_decref = true;
+                uint32_t result_1 = jitc_var_new_op(JitOp::Div, 2, deps);
+                li = jitc_var_new_op(JitOp::Sqrt, 1, &result_1);
+                li_created = true;
                 jitc_var_dec_ref_ext(one);
                 jitc_var_dec_ref_ext(result_1);
             }
             break;
 
-        case OpType::Ceil:
+        case JitOp::Ceil:
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_ceil(value); }, v[0]);
@@ -544,7 +557,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Floor:
+        case JitOp::Floor:
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_floor(value); }, v[0]);
@@ -555,7 +568,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Round:
+        case JitOp::Round:
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_round(value); }, v[0]);
@@ -566,7 +579,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Trunc:
+        case JitOp::Trunc:
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_trunc(value); }, v[0]);
@@ -577,7 +590,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Popc:
+        case JitOp::Popc:
             is_valid = jitc_is_arithmetic(vt) && !is_float;
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_popc(value); }, v[0]);
@@ -591,7 +604,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Clz:
+        case JitOp::Clz:
             is_valid = jitc_is_arithmetic(vt) && !is_float;
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_clz(value); }, v[0]);
@@ -605,7 +618,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Ctz:
+        case JitOp::Ctz:
             is_valid = jitc_is_arithmetic(vt) && !is_float;
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_ctz(value); }, v[0]);
@@ -621,7 +634,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Add:
+        case JitOp::Add:
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 + v1; },
                                      v[0], v[1]);
@@ -638,7 +651,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Sub:
+        case JitOp::Sub:
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 - v1; },
                                       v[0], v[1]);
@@ -653,7 +666,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Mul:
+        case JitOp::Mul:
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 * v1; },
                                        v[0], v[1]);
@@ -662,11 +675,11 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             } else if (literal_one[1]) {
                 li = dep[0];
             } else if (is_uint && v[0]->literal && jitc_is_pow2(v[0]->value)) {
-                li = jitc_var_shift(backend, vt, OpType::Shl, dep[1], v[0]->value);
-                li_decref = true;
+                li = jitc_var_shift(backend, vt, JitOp::Shl, dep[1], v[0]->value);
+                li_created = true;
             } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value)) {
-                li = jitc_var_shift(backend, vt, OpType::Shl, dep[0], v[1]->value);
-                li_decref = true;
+                li = jitc_var_shift(backend, vt, JitOp::Shl, dep[0], v[1]->value);
+                li_created = true;
             } else if (backend == JitBackend::CUDA) {
                 if (is_single)
                     stmt = "mul.ftz.$t0 $r0, $r1, $r2";
@@ -680,20 +693,20 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Div:
+        case JitOp::Div:
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 / v1; },
                                       v[0], v[1]);
             } else if (literal_one[1]) {
                 li = dep[0];
             } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value)) {
-                li = jitc_var_shift(backend, vt, OpType::Shr, dep[0], v[1]->value);
-                li_decref = true;
+                li = jitc_var_shift(backend, vt, JitOp::Shr, dep[0], v[1]->value);
+                li_created = true;
             } else if (jitc_is_float(vt) && v[1]->literal) {
-                uint32_t recip = jitc_var_new_op(OpType::Rcp, 1, &dep[1]);
+                uint32_t recip = jitc_var_new_op(JitOp::Rcp, 1, &dep[1]);
                 uint32_t deps[2] = { dep[0], recip };
-                li = jitc_var_new_op(OpType::Mul, 2, deps);
-                li_decref = 1;
+                li = jitc_var_new_op(JitOp::Mul, 2, deps);
+                li_created = 1;
                 jitc_var_dec_ref_ext(recip);
             } else if (backend == JitBackend::CUDA) {
                 if (is_single)
@@ -712,7 +725,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Mod:
+        case JitOp::Mod:
             is_valid = jitc_is_arithmetic(vt) && !jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return eval_mod(v0, v1); },
@@ -727,7 +740,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Min:
+        case JitOp::Min:
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return std::min(v0, v1); },
                                       v[0], v[1]);
@@ -746,7 +759,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Max:
+        case JitOp::Max:
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return std::max(v0, v1); },
                                       v[0], v[1]);
@@ -766,7 +779,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Shr:
+        case JitOp::Shr:
             is_valid = jitc_is_arithmetic(vt) && !jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return eval_shr(v0, v1); },
@@ -790,7 +803,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Shl:
+        case JitOp::Shl:
             is_valid = jitc_is_arithmetic(vt) && !jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return eval_shl(v0, v1); },
@@ -807,29 +820,40 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::And:
+        case JitOp::And:
             is_valid = jitc_is_not_void(vt);
+            literal &= v[0]->type == v[1]->type;
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return eval_and(v0, v1); },
-                                      v[0], v[1]);
-            } else if ((vt == VarType::Bool && literal_one[0]) || literal_zero[1]) {
+                                       v[0], v[1]);
+            } else if (((VarType) v[0]->type == VarType::Bool && literal_one[0]) || literal_zero[1]) {
                 li = dep[1];
-            } else if ((vt == VarType::Bool && literal_one[1]) || literal_zero[0]) {
+            } else if (((VarType) v[1]->type == VarType::Bool && literal_one[1]) || literal_zero[0]) {
                 li = dep[0];
             } else if (backend == JitBackend::CUDA) {
-                stmt = "and.$b0 $r0, $r1, $r2";
+                stmt = ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool)
+                           ? "selp.$b0 $r0, $r1, 0, $r2"
+                           : "and.$b0 $r0, $r1, $r2";
             } else {
-                stmt = !is_float
-                           ? "$r0 = and <$w x $t1> $r1, $r2"
-                           : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
-                             "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
-                             "$r0_2 = and <$w x $b0> $r0_0, $r0_1$n"
-                             "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+                if ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool) {
+                    stmt = "$r0_0 = sext <$w x $t2> $r2 to <$w x $b0>$n"
+                           "$r0_1 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
+                           "$r0_2 = and <$w x $b0> $r0_0, $r0_1$n"
+                           "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+                } else {
+                    stmt = !is_float
+                               ? "$r0 = and <$w x $t1> $r1, $r2"
+                               : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
+                                 "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
+                                 "$r0_2 = and <$w x $b0> $r0_0, $r0_1$n"
+                                 "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+                }
             }
             break;
 
-        case OpType::Or:
+        case JitOp::Or:
             is_valid = jitc_is_not_void(vt);
+            literal &= v[0]->type == v[1]->type;
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return eval_or(v0, v1); },
                                       v[0], v[1]);
@@ -838,18 +862,27 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             } else if ((vt == VarType::Bool && literal_one[1]) || literal_zero[0]) {
                 li = dep[1];
             } else if (backend == JitBackend::CUDA) {
-                stmt = "or.$b0 $r0, $r1, $r2";
+                stmt = ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool)
+                           ? "selp.$b0 $r0, -1, $r1, $r2"
+                           : "or.$b0 $r0, $r1, $r2";
             } else {
-                stmt = !is_float
-                           ? "$r0 = or <$w x $t1> $r1, $r2"
-                           : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
-                             "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
-                             "$r0_2 = or <$w x $b0> $r0_0, $r0_1$n"
-                             "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+                if ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool) {
+                    stmt = "$r0_0 = sext <$w x $t2> $r2 to <$w x $b0>$n"
+                           "$r0_1 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
+                           "$r0_2 = or <$w x $b0> $r0_0, $r0_1$n"
+                           "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+                } else {
+                    stmt = !is_float
+                               ? "$r0 = or <$w x $t1> $r1, $r2"
+                               : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
+                                 "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
+                                 "$r0_2 = or <$w x $b0> $r0_0, $r0_1$n"
+                                 "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+                }
             }
             break;
 
-        case OpType::Xor:
+        case JitOp::Xor:
             is_valid = jitc_is_not_void(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return eval_xor(v0, v1); },
@@ -870,7 +903,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Eq:
+        case JitOp::Eq:
             is_valid = jitc_is_not_void(vt);
             vtr = VarType::Bool;
             if (literal) {
@@ -888,7 +921,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Neq:
+        case JitOp::Neq:
             is_valid = jitc_is_not_void(vt);
             vtr = VarType::Bool;
             if (literal) {
@@ -905,7 +938,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Lt:
+        case JitOp::Lt:
             vtr = VarType::Bool;
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 < v1; },
@@ -923,7 +956,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Le:
+        case JitOp::Le:
             vtr = VarType::Bool;
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 <= v1; },
@@ -941,7 +974,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Gt:
+        case JitOp::Gt:
             vtr = VarType::Bool;
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 > v1; },
@@ -959,7 +992,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Ge:
+        case JitOp::Ge:
             vtr = VarType::Bool;
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 >= v1; },
@@ -977,7 +1010,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Fmadd:
+        case JitOp::Fmadd:
             if (literal) {
                 lv = jitc_eval_literal(
                     [](auto v0, auto v1, auto v2) {
@@ -986,16 +1019,16 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                     v[0], v[1], v[2]);
             } else if (literal_one[0]) {
                 uint32_t deps[2] = { dep[1], dep[2] };
-                li = jitc_var_new_op(OpType::Add, 2, deps);
-                li_decref = true;
+                li = jitc_var_new_op(JitOp::Add, 2, deps);
+                li_created = true;
             } else if (literal_one[1]) {
                 uint32_t deps[2] = { dep[0], dep[2] };
-                li = jitc_var_new_op(OpType::Add, 2, deps);
-                li_decref = true;
+                li = jitc_var_new_op(JitOp::Add, 2, deps);
+                li_created = true;
             } else if (literal_zero[2]) {
                 uint32_t deps[2] = { dep[0], dep[1] };
-                li = jitc_var_new_op(OpType::Mul, 2, deps);
-                li_decref = true;
+                li = jitc_var_new_op(JitOp::Mul, 2, deps);
+                li_created = true;
             } else if (literal_zero[0] && literal_zero[1]) {
                 li = dep[2];
             } else if (backend == JitBackend::CUDA) {
@@ -1016,7 +1049,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Select:
+        case JitOp::Select:
             is_valid = (VarType) v[0]->type == VarType::Bool &&
                        v[1]->type == v[2]->type;
             if (literal_one[0]) {
@@ -1062,10 +1095,10 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
     }
 
     if (li) {
-        li = jitc_var_resize(li, size);
-        if (li_decref)
+        uint32_t result = jitc_var_resize(li, size);
+        if (li_created)
             jitc_var_dec_ref_ext(li);
-        return li;
+        return result;
     } else {
         Variable v2;
         v2.size = size;
@@ -1087,7 +1120,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
     }
 }
 
-JITC_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, OpType op, uint32_t n_dep, const uint32_t *dep) {
+JITC_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op, uint32_t n_dep, const uint32_t *dep) {
     switch (n_dep) {
         case 1:
             jitc_raise("jit_var_new_op(%s, %u): %s", op_name[(int) op], dep[0],
@@ -1130,8 +1163,7 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
     if (reinterpret && source_size != target_size) {
         jitc_raise("jit_var_new_cast(): reinterpret cast between types of "
                    "different size!");
-    } else if (!reinterpret && source_size == target_size && !source_float &&
-               !target_float) {
+    } else if (source_size == target_size && !source_float && !target_float) {
         reinterpret = 1;
     }
 
@@ -1244,3 +1276,112 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
         return jitc_var_new(v2);
     }
 }
+
+/// Combine 'mask' with top element of the mask stack
+static uint32_t jitc_scatter_gather_mask(uint32_t mask) {
+    const Variable *v_mask = jitc_var(mask);
+    if ((VarType) v_mask->type != VarType::Bool)
+        jitc_raise("jit_scatter_gather_mask(): expected a boolean array as scatter/gather mask");
+
+    Ref mask_top = jitc_var_mask_peek((JitBackend) v_mask->backend);
+    uint32_t deps[2] = { mask, mask_top.get() };
+    return jitc_var_new_op(JitOp::And, 2, deps);
+}
+
+static uint32_t jitc_scatter_gather_index(uint32_t src, uint32_t index) {
+    const Variable *v_src = jitc_var(src),
+                   *v_index = jitc_var(index);
+
+    VarType source_type = (VarType) v_index->type;
+    if (!jitc_is_uint(source_type) && !jitc_is_sint(source_type))
+        jitc_raise("jit_scatter_gather_index(): expected an integer array as scatter/gather index");
+
+    VarType target_type = VarType::UInt32;
+    // Need 64 bit indices for upper 2G entries (gather indices are signed in LLVM)
+    if (v_src->size > 0x7fffffff && (JitBackend) v_src->backend == JitBackend::LLVM)
+        target_type = VarType::UInt64;
+
+    return jitc_var_new_cast(index, target_type, 0);
+}
+
+uint32_t jitc_var_new_gather(uint32_t src, uint32_t index_, uint32_t mask_) {
+    Ref mask (jitc_scatter_gather_mask(mask_)),
+        index(jitc_scatter_gather_index(src, index_));
+
+    const Variable *v_src = jitc_var(src),
+                   *v_index = jitc_var(index.get()),
+                   *v_mask = jitc_var(mask.get());
+
+    uint32_t size = std::max(v_index->size, v_mask->size);
+
+    // Completely avoid the gather operation for trivial arguments
+    if (v_src->literal || v_src->size == 1) {
+        uint32_t deps[2] = { src, mask.get() };
+        Ref tmp = jitc_var_new_op(JitOp::And, 2, deps);
+        return jitc_var_resize(tmp.get(), size);
+    }
+
+    JitBackend backend = (JitBackend) v_src->backend;
+
+    // Ensure that the source array is fully evaluated
+    if (!v_src->data || v_src->dirty || v_index->dirty || v_mask->dirty) {
+        jitc_var_schedule(src);
+        jitc_eval(thread_state(backend));
+    }
+
+    // Location of variable may have changed
+    v_src = jitc_var(src);
+    v_mask = jitc_var(mask.get());
+
+    bool unmasked = v_mask->literal && v_mask->value == 1;
+    VarType vt = (VarType) v_src->type;
+
+    // Create a pointer + reference, invalidates the v_* variables
+    Ref ptr = jitc_var_new_pointer(backend, v_src->data, src);
+
+    uint32_t dep[3] = { ptr.get(), index.get(), mask.get() };
+    uint32_t dep_count = 3;
+
+    const char *stmt;
+    if (backend == JitBackend::CUDA) {
+        if (vt != VarType::Bool) {
+            if (unmasked)
+                stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
+                       "ld.global.nc.$t0 $r0, [%rd3]";
+            else
+                stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
+                       "@$r3 ld.global.nc.$t0 $r0, [%rd3]$n"
+                       "@!$r3 mov.$b0 $r0, 0";
+        } else {
+            if (unmasked)
+                stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
+                       "ld.global.nc.u8 %w0, [%rd3]$n"
+                       "setp.ne.u16 $r0, %w0, 0";
+            else
+                stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
+                       "@$r3 ld.global.nc.u8 %w0, [%rd3]$n"
+                       "@!$r3 mov.u16 %w0, 0$n"
+                       "setp.ne.u16 $r0, %w0, 0";
+        }
+
+        if (unmasked) {
+            dep[2] = 0;
+            dep_count = 2;
+        }
+    } else {
+        if (vt != VarType::Bool && vt != VarType::UInt8 && vt != VarType::Int8) {
+            stmt = "$r0_0 = bitcast $t1 $r1 to $t0*$n"
+                   "$r0_1 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2$n"
+                   "$r0 = $call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r0_1, i32 $s0, <$w x $t3> $r3, <$w x $t0> $z)";
+        } else {
+            stmt = "$r0_0 = bitcast $t1 $r1 to i8*$n"
+                   "$r0_1 = getelementptr i8, i8* $r0_0, <$w x $t2> $r2$n"
+                   "$r0_2 = bitcast <$w x i8*> $r0_1 to <$w x i32*>$n"
+                   "$r0_3 = $call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0_2, i32 $s0, <$w x $t3> $r3, <$w x i32> $z)$n"
+                   "$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>";
+        }
+    }
+
+    return jitc_var_new_stmt(backend, vt, stmt, 1, dep_count, dep);
+}
+
