@@ -68,11 +68,14 @@ void* jitc_malloc(AllocType type, size_t size) {
 
     const char *descr = nullptr;
     void *ptr = nullptr;
-    bool cuda = type != AllocType::Host && type != AllocType::HostAsync;
+    JitBackend backend =
+        (type != AllocType::Host && type != AllocType::HostAsync)
+            ? JitBackend::CUDA
+            : JitBackend::LLVM;
     ThreadState *ts = nullptr;
 
     if (type != AllocType::Host)
-        ts = thread_state(cuda);
+        ts = thread_state(backend);
 
     /* Acquire lock protecting ts->release_chain contents and state.alloc_free */ {
         lock_guard guard(state.malloc_mutex);
@@ -308,7 +311,7 @@ void jitc_free_flush(ThreadState *ts) {
     jitc_trace("jit_free_flush(): scheduling %zu deallocation%s",
               n_dealloc, n_dealloc > 1 ? "s" : "");
 
-    if (ts->cuda) {
+    if (ts->backend == JitBackend::CUDA) {
         scoped_set_context guard(ts->context);
         cuda_check(cuLaunchHostFunc(ts->stream, jitc_free_chain, chain_new));
     } else {
@@ -332,7 +335,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
 
     // Maybe nothing needs to be done..
     if ((AllocType) ai.type == type &&
-        (type != AllocType::Device || ai.device == thread_state(true)->device)) {
+        (type != AllocType::Device || ai.device == thread_state(JitBackend::CUDA)->device)) {
         if (move) {
             return ptr;
         } else {
@@ -340,8 +343,11 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
             if (type == AllocType::Host) {
                 memcpy(ptr_new, ptr, ai.size);
             } else {
-                bool cuda = type != AllocType::Host && type != AllocType::HostAsync;
-                jitc_memcpy_async(cuda, ptr_new, ptr, ai.size);
+                JitBackend backend =
+                    (type != AllocType::Host && type != AllocType::HostAsync)
+                        ? JitBackend::CUDA
+                        : JitBackend::LLVM;
+                jitc_memcpy_async(backend, ptr_new, ptr, ai.size);
             }
             return ptr_new;
         }
@@ -354,7 +360,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
             return ptr;
         } else {
             void *ptr_new = jitc_malloc(type, ai.size);
-            jitc_memcpy_async(0, ptr_new, ptr, ai.size);
+            jitc_memcpy_async(JitBackend::LLVM, ptr_new, ptr, ai.size);
             if ((AllocType) ai.type == AllocType::Host)
                 jitc_sync_thread(); // be careful when copying from host
             return ptr_new;
@@ -366,7 +372,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
                   "host-asynchronous memory are not supported.");
 
     /// At this point, source or destination is a GPU array, get assoc. state
-    ThreadState *ts = thread_state(true);
+    ThreadState *ts = thread_state(JitBackend::CUDA);
 
     if (type == AllocType::Host) // Upgrade from host to host-pinned memory
         type = AllocType::HostPinned;
@@ -420,7 +426,7 @@ void jitc_malloc_prefetch(void *ptr, int device) {
         jitc_raise("jit_malloc_prefetch(): invalid memory type, expected "
                   "Managed or ManagedReadMostly.");
 
-    ThreadState *ts = thread_state(true);
+    ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
     if (device == -2) {
         for (const Device &d : state.devices)

@@ -18,27 +18,29 @@ struct Variable;
 extern Variable *jitc_var(uint32_t index);
 
 /// Create a literal constant variable of the given size
-extern uint32_t jitc_var_new_literal(int cuda, VarType type,
+extern uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
                                      const void *value, uint32_t size,
                                      int opaque);
 
 /// Create a variable counting from 0 ... size - 1
-extern uint32_t jitc_var_new_counter(int cuda, uint32_t size);
+extern uint32_t jitc_var_new_counter(JitBackend backend, uint32_t size);
 
 /// Create a variable representing the result of a custom IR statement
-extern uint32_t jitc_var_new_stmt(int cuda, VarType type,
+extern uint32_t jitc_var_new_stmt(JitBackend backend,
+                                  VarType type,
                                   const char *stmt,
                                   int stmt_static,
                                   uint32_t n_dep,
                                   const uint32_t *dep);
 
 /// Register an existing variable with the JIT compiler
-extern uint32_t jitc_var_mem_map(int cuda, VarType type, void *ptr, uint32_t size,
-                                 int free);
+extern uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
+                                 uint32_t size, int free);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jitc_var_mem_copy(int cuda, AllocType atype, VarType vtype,
-                                  const void *ptr, uint32_t size);
+extern uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype,
+                                  VarType vtype, const void *ptr,
+                                  uint32_t size);
 
 /// Duplicate a variable
 extern uint32_t jitc_var_copy(uint32_t index);
@@ -111,8 +113,8 @@ extern void jitc_var_read(uint32_t index, uint32_t offset, void *dst);
 extern void jitc_var_write(uint32_t index, uint32_t offset, const void *src);
 
 /// Insert a print statement into the kernel
-extern void jitc_var_printf(int cuda, const char *fmt, uint32_t narg,
-                           const uint32_t *arg);
+extern void jitc_var_printf(JitBackend backend, const char *fmt, uint32_t narg,
+                            const uint32_t *arg);
 
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 extern int jitc_var_schedule(uint32_t index);

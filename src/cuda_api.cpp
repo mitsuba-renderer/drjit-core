@@ -323,9 +323,12 @@ bool jitc_cuda_init() {
         hash_combine(kernels_hash, (size_t) cc);
 
         Kernel kernel;
-        if (!jitc_kernel_load(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel)) {
-            jitc_cuda_compile(uncompressed_ptx, kernels_size_uncompressed, kernel);
-            jitc_kernel_write(uncompressed_ptx, kernels_size_uncompressed, true, kernels_hash, kernel);
+        if (!jitc_kernel_load(uncompressed_ptx, kernels_size_uncompressed,
+                              JitBackend::CUDA, kernels_hash, kernel)) {
+            jitc_cuda_compile(uncompressed_ptx, kernels_size_uncompressed,
+                              kernel);
+            jitc_kernel_write(uncompressed_ptx, kernels_size_uncompressed,
+                              JitBackend::CUDA, kernels_hash, kernel);
         }
 
         free(uncompressed);

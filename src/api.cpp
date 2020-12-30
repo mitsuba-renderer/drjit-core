@@ -140,9 +140,9 @@ void jit_disable_flag(JitFlag flag) {
     jitc_set_flags(jitc_flags() & ~(uint32_t) flag);
 }
 
-uint32_t jit_side_effects_scheduled(int cuda) {
+uint32_t jit_side_effects_scheduled(JitBackend backend) {
     lock_guard guard(state.mutex);
-    return (size_t) thread_state(cuda)->side_effects.size();
+    return (size_t) thread_state(backend)->side_effects.size();
 }
 
 void* jit_cuda_stream() {
@@ -167,30 +167,30 @@ void jit_cuda_set_device(int device) {
 
 int jit_cuda_device() {
     lock_guard guard(state.mutex);
-    return thread_state(true)->device;
+    return thread_state(JitBackend::CUDA)->device;
 }
 
 int jit_cuda_device_raw() {
     lock_guard guard(state.mutex);
-    return state.devices[thread_state(true)->device].id;
+    return state.devices[thread_state(JitBackend::CUDA)->device].id;
 }
 
 int jit_cuda_compute_capability() {
     lock_guard guard(state.mutex);
-    return state.devices[thread_state(true)->device].compute_capability;
+    return state.devices[thread_state(JitBackend::CUDA)->device].compute_capability;
 }
 
 void jit_cuda_set_target(uint32_t ptx_version,
                           uint32_t compute_capability) {
     lock_guard guard(state.mutex);
-    ThreadState *ts = thread_state(true);
+    ThreadState *ts = thread_state(JitBackend::CUDA);
     ts->ptx_version = ptx_version;
     ts->compute_capability = compute_capability;
 }
 
 void jit_llvm_set_target(const char *target_cpu,
-                          const char *target_features,
-                          uint32_t vector_width) {
+                         const char *target_features,
+                         uint32_t vector_width) {
     lock_guard guard(state.mutex);
     jitc_llvm_set_target(target_cpu, target_features, vector_width);
 }
@@ -290,21 +290,27 @@ int jit_var_device(uint32_t index) {
     return jitc_var_device(index);
 }
 
-uint32_t jit_var_new_literal(int cuda, VarType type, const void *value,
-                              uint32_t size, int eval) {
+uint32_t jit_var_new_literal(JitBackend backend, VarType type, const void *value,
+                             uint32_t size, int eval) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_literal(cuda, type, value, size, eval);
+    return jitc_var_new_literal(backend, type, value, size, eval);
 }
 
-uint32_t jit_var_new_counter(int cuda, uint32_t size) {
+uint32_t jit_var_new_counter(JitBackend backend, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_counter(cuda, size);
+    return jitc_var_new_counter(backend, size);
 }
 
 uint32_t jit_var_new_op(JITC_ENUM OpType ot, uint32_t n_dep,
                          const uint32_t *dep) {
     lock_guard guard(state.mutex);
     return jitc_var_new_op(ot, n_dep, dep);
+}
+
+uint32_t jit_var_new_cast(uint32_t index, VarType target_type,
+                          int reinterpret) {
+    lock_guard guard(state.mutex);
+    return jitc_var_new_cast(index, target_type, reinterpret);
 }
 
 void jit_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {
@@ -342,6 +348,11 @@ uint32_t jit_var_size(uint32_t index) {
     return jitc_var_size(index);
 }
 
+uint32_t jit_var_resize(uint32_t index, uint32_t size) {
+    lock_guard guard(state.mutex);
+    return jitc_var_resize(index, size);
+}
+
 VarType jit_var_type(uint32_t index) {
     lock_guard guard(state.mutex);
     return jitc_var_type(index);
@@ -360,20 +371,20 @@ void jit_var_set_label(uint32_t index, const char *label) {
 }
 
 void jit_var_set_free_callback(uint32_t index, void (*callback)(void *),
-                                void *payload) {
+                               void *payload) {
     lock_guard guard(state.mutex);
     jitc_var_set_free_callback(index, callback, payload);
 }
 
-uint32_t jit_var_mem_map(int cuda, VarType type, void *ptr, uint32_t size, int free) {
+uint32_t jit_var_mem_map(JitBackend backend, VarType type, void *ptr, uint32_t size, int free) {
     lock_guard guard(state.mutex);
-    return jitc_var_mem_map(cuda, type, ptr, size, free);
+    return jitc_var_mem_map(backend, type, ptr, size, free);
 }
 
-uint32_t jit_var_mem_copy(int cuda, AllocType atype, VarType vtype,
-                           const void *value, uint32_t size) {
+uint32_t jit_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
+                          const void *value, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jitc_var_mem_copy(cuda, atype, vtype, value, size);
+    return jitc_var_mem_copy(backend, atype, vtype, value, size);
 }
 
 uint32_t jit_var_copy(uint32_t index) {
@@ -436,76 +447,64 @@ int jit_var_schedule(uint32_t index) {
     return jitc_var_schedule(index);
 }
 
-/// Enable/disable common subexpression elimination
-void jit_set_cse(int cuda, int value) {
+void jit_memset_async(JitBackend backend, void *ptr, uint32_t size, uint32_t isize,
+                      const void *src) {
     lock_guard guard(state.mutex);
-    thread_state(cuda)->enable_cse = value != 0;
+    jitc_memset_async(backend, ptr, size, isize, src);
 }
 
-/// Return whether or not common subexpression elimination is enabled
-int jit_cse(int cuda) {
+void jit_memcpy(JitBackend backend, void *dst, const void *src, size_t size) {
     lock_guard guard(state.mutex);
-    return thread_state(cuda)->enable_cse;
+    jitc_memcpy(backend, dst, src, size);
 }
 
-void jit_memset_async(int cuda, void *ptr, uint32_t size, uint32_t isize,
-                       const void *src) {
+void jit_memcpy_async(JitBackend backend, void *dst, const void *src, size_t size) {
     lock_guard guard(state.mutex);
-    jitc_memset_async(cuda, ptr, size, isize, src);
+    jitc_memcpy_async(backend, dst, src, size);
 }
 
-void jit_memcpy(int cuda, void *dst, const void *src, size_t size) {
+void jit_reduce(JitBackend backend, VarType type, ReductionType rtype, const void *ptr,
+                uint32_t size, void *out) {
     lock_guard guard(state.mutex);
-    jitc_memcpy(cuda, dst, src, size);
+    jitc_reduce(backend, type, rtype, ptr, size, out);
 }
 
-void jit_memcpy_async(int cuda, void *dst, const void *src, size_t size) {
+void jit_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32_t *out) {
     lock_guard guard(state.mutex);
-    jitc_memcpy_async(cuda, dst, src, size);
+    jitc_scan_u32(backend, in, size, out);
 }
 
-void jit_reduce(int cuda, VarType type, ReductionType rtype, const void *ptr,
-                 uint32_t size, void *out) {
+uint32_t jit_compress(JitBackend backend, const uint8_t *in, uint32_t size, uint32_t *out) {
     lock_guard guard(state.mutex);
-    jitc_reduce(cuda, type, rtype, ptr, size, out);
+    return jitc_compress(backend, in, size, out);
 }
 
-void jit_scan_u32(int cuda, const uint32_t *in, uint32_t size, uint32_t *out) {
+uint8_t jit_all(JitBackend backend, uint8_t *values, uint32_t size) {
     lock_guard guard(state.mutex);
-    jitc_scan_u32(cuda, in, size, out);
+    return jitc_all(backend, values, size);
 }
 
-uint32_t jit_compress(int cuda, const uint8_t *in, uint32_t size, uint32_t *out) {
+uint8_t jit_any(JitBackend backend, uint8_t *values, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jitc_compress(cuda, in, size, out);
+    return jitc_any(backend, values, size);
 }
 
-uint8_t jit_all(int cuda, uint8_t *values, uint32_t size) {
+uint32_t jit_mkperm(JitBackend backend, const uint32_t *values, uint32_t size,
+                    uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
     lock_guard guard(state.mutex);
-    return jitc_all(cuda, values, size);
+    return jitc_mkperm(backend, values, size, bucket_count, perm, offsets);
 }
 
-uint8_t jit_any(int cuda, uint8_t *values, uint32_t size) {
-    lock_guard guard(state.mutex);
-    return jitc_any(cuda, values, size);
-}
-
-uint32_t jit_mkperm(int cuda, const uint32_t *values, uint32_t size,
-                     uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
-    lock_guard guard(state.mutex);
-    return jitc_mkperm(cuda, values, size, bucket_count, perm, offsets);
-}
-
-void jit_block_copy(int cuda, enum VarType type, const void *in, void *out,
-                     uint32_t size, uint32_t block_size) {
-    lock_guard guard(state.mutex);
-    jitc_block_copy(cuda, type, in, out, size, block_size);
-}
-
-void jit_block_sum(int cuda, enum VarType type, const void *in, void *out,
+void jit_block_copy(JitBackend backend, enum VarType type, const void *in, void *out,
                     uint32_t size, uint32_t block_size) {
     lock_guard guard(state.mutex);
-    jitc_block_sum(cuda, type, in, out, size, block_size);
+    jitc_block_copy(backend, type, in, out, size, block_size);
+}
+
+void jit_block_sum(JitBackend backend, enum VarType type, const void *in, void *out,
+                   uint32_t size, uint32_t block_size) {
+    lock_guard guard(state.mutex);
+    jitc_block_sum(backend, type, in, out, size, block_size);
 }
 
 uint32_t jit_registry_put(const char *domain, void *ptr) {
@@ -544,7 +543,7 @@ void jit_registry_trim() {
 }
 
 void jit_registry_set_attr(void *self, const char *name, const void *value,
-                            size_t size) {
+                           size_t size) {
     lock_guard guard(state.mutex);
     jitc_registry_set_attr(self, name, value, size);
 }

@@ -75,7 +75,7 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
 }
 
 void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
-    bool cuda = ts->cuda;
+    JitBackend backend = ts->backend;
 
     uses_optix = false;
     kernel_params.clear();
@@ -85,7 +85,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
              n_side_effects = 0,
              n_regs         = 0;
 
-    if (cuda) {
+    if (backend == JitBackend::CUDA) {
         uintptr_t size = 0;
         memcpy(&size, &group.size, sizeof(uint32_t));
         kernel_params.push_back((void *) size);
@@ -105,7 +105,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         Variable *v = jitc_var(index);
 
         // Some sanity checks
-        if (unlikely(v->cuda != ts->cuda))
+        if (unlikely((JitBackend) v->backend != backend))
             jitc_raise("jit_assemble(): variable scheduled in wrong ThreadState");
         if (unlikely(v->ref_count_int == 0 && v->ref_count_ext == 0))
             jitc_fail("jit_assemble(): schedule contains unreferenced variable %u!", index);
@@ -131,11 +131,13 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                    dsize = (size_t) group.size * isize;
 
             // Padding to support out-of-bounds accesses in LLVM gather operations
-            if (!cuda && isize < 4)
+            if (backend == JitBackend::LLVM && isize < 4)
                 dsize += 4 - isize;
 
-            void *data = jitc_malloc(
-                cuda ? AllocType::Device : AllocType::HostAsync, dsize);
+            void *data =
+                jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
+                                                        : AllocType::HostAsync,
+                            dsize);
 
             // The addr. of 'v' can change (jitc_malloc() may release the lock)
             v = jitc_var(index);
@@ -174,13 +176,14 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                  "efficiently. Please periodically run jit_eval() to break "
                  "down the computation into smaller chunks.");
 
-    // Pass parameters through global memory if too lparame or on OptiX
-    if (cuda && (uses_optix || kernel_params.size() > ENOKI_CUDA_ARG_LIMIT)) {
+    // Pass parameters through global memory if too large or using OptiX
+    if (backend == JitBackend::CUDA &&
+        (uses_optix || kernel_params.size() > ENOKI_CUDA_ARG_LIMIT)) {
         size_t size = kernel_params.size() * sizeof(void *);
         uint8_t *tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, size);
         kernel_params_global = (uint8_t *) jitc_malloc(AllocType::Device, size);
         memcpy(tmp, kernel_params.data(), size);
-        jitc_memcpy_async(1, kernel_params_global, tmp, size);
+        jitc_memcpy_async(backend, kernel_params_global, tmp, size);
         jitc_free(tmp);
         kernel_params.clear();
         kernel_params.push_back(kernel_params_global);
@@ -221,9 +224,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     globals.clear();
     globals_set.clear();
     buffer.clear();
-    if (cuda)
+    if (backend == JitBackend::CUDA)
         jitc_assemble_cuda(ts, group, n_regs, (uint32_t) kernel_params.size(),
-                          kernel_params_global != nullptr);
+                           kernel_params_global != nullptr);
     else
         jitc_assemble_llvm(ts, group);
 
@@ -257,10 +260,10 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
         if (!uses_optix)
             cache_hit = jitc_kernel_load(buffer.get(), (uint32_t) buffer.size(),
-                                        ts->cuda, kernel_hash, kernel);
+                                         ts->backend, kernel_hash, kernel);
 
         if (!cache_hit) {
-            if (ts->cuda) {
+            if (ts->backend == JitBackend::CUDA) {
                 if (!uses_optix) {
                     jitc_cuda_compile(buffer.get(), buffer.size(), kernel);
                 } else {
@@ -276,10 +279,10 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
             if (kernel.data)
                 jitc_kernel_write(buffer.get(), (uint32_t) buffer.size(),
-                                 ts->cuda, kernel_hash, kernel);
+                                  ts->backend, kernel_hash, kernel);
         }
 
-        if (!ts->cuda) {
+        if (ts->backend == JitBackend::LLVM) {
             jitc_llvm_disasm(kernel);
         } else if (!uses_optix) {
             CUresult ret;
@@ -341,7 +344,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
     state.kernel_launches++;
 
-    if (ts->cuda) {
+    if (ts->backend == JitBackend::CUDA) {
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
         // if (unlikely(uses_optix)) {
         //     jitc_optix_launch(ts, kernel, group.size, kernel_params_global,
@@ -522,13 +525,13 @@ void jitc_eval(ThreadState *ts) {
 
         scheduled_tasks.push_back(jitc_run(ts, group));
 
-        if (ts->cuda) {
+        if (ts->backend == JitBackend::CUDA) {
             jitc_free(kernel_params_global);
             kernel_params_global = nullptr;
         }
     }
 
-    if (!ts->cuda) {
+    if (ts->backend == JitBackend::LLVM) {
         if (scheduled_tasks.size() == 1) {
             task_release(ts->task);
             ts->task = scheduled_tasks[0];

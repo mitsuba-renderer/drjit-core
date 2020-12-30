@@ -188,11 +188,11 @@ void jitc_init(uint32_t backends) {
 }
 
 void* jitc_cuda_stream() {
-    return (void*) thread_state(true)->stream;
+    return (void*) thread_state(JitBackend::CUDA)->stream;
 }
 
 void* jitc_cuda_context() {
-    return (void*) thread_state(true)->context;
+    return (void*) thread_state(JitBackend::CUDA)->context;
 }
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
@@ -200,7 +200,7 @@ void jitc_shutdown(int light) {
     // Synchronize with everything
     for (ThreadState *ts : state.tss) {
         jitc_free_flush(ts);
-        if (ts->cuda) {
+        if (ts->backend == JitBackend::CUDA) {
             scoped_set_context guard(ts->context);
             cuda_check(cuStreamSynchronize(ts->stream));
         } else {
@@ -230,7 +230,7 @@ void jitc_shutdown(int light) {
 
         for (ThreadState *ts : state.tss) {
             jitc_free_flush(ts);
-            if (ts->cuda) {
+            if (ts->backend == JitBackend::CUDA) {
                 scoped_set_context guard(ts->context);
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
                 jitc_optix_context_destroy(ts);
@@ -323,10 +323,10 @@ void jitc_shutdown(int light) {
 }
 
 
-ThreadState *jitc_init_thread_state(bool cuda) {
+ThreadState *jitc_init_thread_state(JitBackend backend) {
     ThreadState *ts = new ThreadState();
 
-    if (cuda) {
+    if (backend == JitBackend::CUDA) {
         if ((state.backends & (uint32_t) JitBackend::CUDA) == 0) {
             #if defined(_WIN32)
                 const char *cuda_fname = "nvcuda.dll";
@@ -379,13 +379,13 @@ ThreadState *jitc_init_thread_state(bool cuda) {
         ts->device = -1;
     }
 
-    ts->cuda = cuda;
+    ts->backend = backend;
     state.tss.push_back(ts);
     return ts;
 }
 
 void jitc_cuda_set_device(int device) {
-    ThreadState *ts = thread_state(true);
+    ThreadState *ts = thread_state(JitBackend::CUDA);
     if (ts->device == device)
         return;
 
@@ -417,7 +417,7 @@ void jitc_cuda_set_device(int device) {
 void jitc_sync_thread(ThreadState *ts) {
     if (!ts)
         return;
-    if (ts->cuda) {
+    if (ts->backend == JitBackend::CUDA) {
         scoped_set_context guard(ts->context);
         cuda_check(cuStreamSynchronize(ts->stream));
     } else {
@@ -449,7 +449,7 @@ void jitc_sync_device() {
         // Release mutex while synchronizing */
         unlock_guard guard(state.mutex);
         for (ThreadState *ts : tss) {
-            if (!ts->cuda)
+            if (ts->backend == JitBackend::LLVM)
                 jitc_sync_thread(ts);
         }
     }

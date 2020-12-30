@@ -14,3 +14,7 @@
 /// Create a variable representing the result of a standard operation
 extern uint32_t jitc_var_new_op(OpType ot, uint32_t n_dep, const uint32_t *dep);
 
+/// Perform an ordinary or reinterpreting cast of the variable 'index'
+extern uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
+                                  int reinterpret);
+

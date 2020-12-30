@@ -55,7 +55,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
            buffer.put("    ld.param.u32 %r2, [params];\n");
         } else {
            buffer.put("    ld.param.u64 %rd2, [params];\n"
-                      "    ldu.global %r2, [%rd2];\n");
+                      "    ldu.global.u32 %r2, [%rd2];\n");
         }
 
         buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n"

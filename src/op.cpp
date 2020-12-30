@@ -238,7 +238,13 @@ T eval_ctz(T value) {
 template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
 T eval_fma(T a, T b, T c) { return std::fma(a, b, c); }
 
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+template <typename T, enable_if_t<!std::is_floating_point<T>::value &&
+                                  !std::is_same<T, bool>::value> = 0>
+T eval_fma(T a, T b, T c) {
+    return (T)(a * b + c);
+}
+
+template <typename T, enable_if_t<std::is_same<T, bool>::value> = 0>
 T eval_fma(T, T, T) {
     jitc_raise("eval_fma(): unsupported operands!");
 }
@@ -302,9 +308,10 @@ static int jitc_clz(uint64_t value) {
 #endif
 }
 
-uint32_t jitc_var_shift(int cuda, VarType vt, OpType op, uint32_t index, uint64_t amount) {
+uint32_t jitc_var_shift(JitBackend backend, VarType vt, OpType op,
+                        uint32_t index, uint64_t amount) {
     amount = 63 - jitc_clz(amount);
-    uint32_t shift = jitc_var_new_literal(cuda, vt, &amount, 1, 0);
+    uint32_t shift = jitc_var_new_literal(backend, vt, &amount, 1, 0);
     uint32_t deps[2] = { index, shift };
     uint32_t result = jitc_var_new_op(op, 2, deps);
     jitc_var_dec_ref_ext(shift);
@@ -324,7 +331,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
     bool dirty = false, literal = true, uninitialized = false;
     uint32_t vti = 0;
     bool literal_zero[4] { }, literal_one[4] { };
-    bool cuda = false;
+    uint32_t backend_i = 0;
     Variable *v[4] { };
 
     if (unlikely(n_dep == 0 || n_dep > 4))
@@ -336,7 +343,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             vti = std::max(vti, vi->type);
             size = std::max(size, vi->size);
             dirty |= vi->dirty;
-            cuda |= vi->cuda;
+            backend_i |= (uint32_t) vi->backend;
             v[i] = vi;
 
             if (vi->literal) {
@@ -357,6 +364,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
         }
     }
 
+    JitBackend backend = (JitBackend) backend_i;
     VarType vt  = (VarType) vti,
             vtr = vt;
 
@@ -372,9 +380,11 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             break;
         else if (unlikely(v[i]->size != size && v[i]->size != 1))
             error = "arithmetic involving arrays of incompatible size!";
-        else if (unlikely(v[i]->type != vti))
+        else if (unlikely(v[i]->type != vti &&
+                          !(op == OpType::Select && i == 0 &&
+                            (VarType) v[i]->type == VarType::Bool)))
             error = "arithmetic involving arrays of incompatible type!";
-        else if (unlikely(v[i]->cuda != cuda))
+        else if (unlikely(v[i]->backend != backend_i))
             error = "mixed CUDA and LLVM arrays!";
     }
 
@@ -382,7 +392,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
         jitc_var_new_op_fail(error, op, n_dep, dep);
 
     if (dirty) {
-        jitc_eval(thread_state(cuda));
+        jitc_eval(thread_state(backend));
         for (uint32_t i = 0; i < n_dep; ++i)
             v[i] = jitc_var(dep[i]);
     }
@@ -408,7 +418,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_not_void(vt) && !is_float;
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_not(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "not.$b0 $r0, $r1";
             } else {
                 stmt = !jitc_is_float(vt)
@@ -423,7 +433,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_arithmetic(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return -value; }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 if (is_uint) {
                     stmt = "not.$b0 $r0, $r1$n"
                            "add.$t0 $r0, $r0, 1";
@@ -446,12 +456,12 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                 li = dep[0];
             } else if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_abs(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "abs.$t0 $r0, $r1";
             } else {
                 if (is_float) {
                     uint64_t mask_value = ((uint64_t) 1 << (var_type_size[vti] * 8 - 1)) - 1;
-                    uint32_t mask = jitc_var_new_literal(cuda, vt, &mask_value, 1, 0);
+                    uint32_t mask = jitc_var_new_literal(backend, vt, &mask_value, 1, 0);
                     uint32_t deps[2] = { dep[0], mask };
                     li = jitc_var_new_op(OpType::And, 2, deps);
                     li_decref = true;
@@ -468,7 +478,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_sqrt(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_single ? "sqrt.approx.ftz.$t0 $r0, $r1"
                                  : "sqrt.rn.$t0 $r0, $r1";
             } else {
@@ -480,17 +490,17 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_rcp(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_single ? "rcp.approx.ftz.$t0 $r0, $r1"
                                  : "rcp.rn.$t0 $r0, $r1";
             } else {
                 // TODO can do better here..
                 float f1 = 1.f; double d1 = 1.0;
-                uint32_t one = jitc_var_new_literal(cuda, vt,
-                                                   vt == VarType::Float32
-                                                       ? (const void *) &f1
-                                                       : (const void *) &d1,
-                                                   1, 0);
+                uint32_t one = jitc_var_new_literal(backend, vt,
+                                                    vt == VarType::Float32
+                                                        ? (const void *) &f1
+                                                        : (const void *) &d1,
+                                                    1, 0);
                 uint32_t deps[2] = { one, dep[0] };
                 li = jitc_var_new_op(OpType::Div, 2, deps);
                 jitc_var_dec_ref_ext(one);
@@ -502,18 +512,18 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_rsqrt(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_single ? "rsqrt.approx.ftz.$t0 $r0, $r1"
                                  : "rcp.rn.$t0 $r0, $r1$n"
                                    "sqrt.rn.$t0 $r0, $r0";
             } else {
                 // TODO can do better here..
                 float f1 = 1.f; double d1 = 1.0;
-                uint32_t one = jitc_var_new_literal(cuda, vt,
-                                                   vt == VarType::Float32
-                                                       ? (const void *) &f1
-                                                       : (const void *) &d1,
-                                                   1, 0);
+                uint32_t one = jitc_var_new_literal(backend, vt,
+                                                    vt == VarType::Float32
+                                                        ? (const void *) &f1
+                                                        : (const void *) &d1,
+                                                    1, 0);
                 uint32_t deps[2] = { one, dep[0] };
                 uint32_t result_1 = jitc_var_new_op(OpType::Div, 2, deps);
                 li = jitc_var_new_op(OpType::Sqrt, 1, &result_1);
@@ -527,7 +537,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_ceil(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "cvt.rpi.$t0.$t0 $r0, $r1";
             } else {
                 stmt = "$r0 = $call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)";
@@ -538,7 +548,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_floor(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "cvt.rmi.$t0.$t0 $r0, $r1";
             } else {
                 stmt = "$r0 = $call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)";
@@ -549,7 +559,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_round(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "cvt.rni.$t0.$t0 $r0, $r1";
             } else {
                 stmt = "$r0 = $call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)";
@@ -560,7 +570,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_float(vt);
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_trunc(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "cvt.rzi.$t0.$t0 $r0, $r1";
             } else {
                 stmt = "$r0 = $call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)";
@@ -571,7 +581,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_arithmetic(vt) && !is_float;
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_popc(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = (vt == VarType::UInt32 || vt == VarType::Int32)
                            ? "popc.$b0 $r0, $r1"
                            : "popc.$b0 %r3, $r1$n"
@@ -585,7 +595,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_arithmetic(vt) && !is_float;
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_clz(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = (vt == VarType::UInt32 || vt == VarType::Int32)
                            ? "clz.$b0 $r0, $r1"
                            : "clz.$b0 %r3, $r1$n"
@@ -599,7 +609,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             is_valid = jitc_is_arithmetic(vt) && !is_float;
             if (literal) {
                 lv = jitc_eval_literal([](auto value) { return eval_ctz(value); }, v[0]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = (vt == VarType::UInt32 || vt == VarType::Int32)
                            ? "brev.$b0 %r3, $r1$n"
                              "clz.$b0 $r0, %r3"
@@ -619,7 +629,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                 li = dep[1];
             } else if (literal_zero[1]) {
                 li = dep[0];
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_single ? "add.ftz.$t0 $r0, $r1, $r2"
                                  : "add.$t0 $r0, $r1, $r2";
             } else {
@@ -634,7 +644,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                                       v[0], v[1]);
             } else if (literal_zero[1]) {
                 li = dep[0];
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_single ? "sub.ftz.$t0 $r0, $r1, $r2"
                                  : "sub.$t0 $r0, $r1, $r2";
             } else {
@@ -652,12 +662,12 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             } else if (literal_one[1]) {
                 li = dep[0];
             } else if (is_uint && v[0]->literal && jitc_is_pow2(v[0]->value)) {
-                li = jitc_var_shift(cuda, vt, OpType::Shl, dep[1], v[0]->value);
+                li = jitc_var_shift(backend, vt, OpType::Shl, dep[1], v[0]->value);
                 li_decref = true;
             } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value)) {
-                li = jitc_var_shift(cuda, vt, OpType::Shl, dep[0], v[1]->value);
+                li = jitc_var_shift(backend, vt, OpType::Shl, dep[0], v[1]->value);
                 li_decref = true;
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 if (is_single)
                     stmt = "mul.ftz.$t0 $r0, $r1, $r2";
                 else if (is_float)
@@ -677,7 +687,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             } else if (literal_one[1]) {
                 li = dep[0];
             } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value)) {
-                li = jitc_var_shift(cuda, vt, OpType::Shr, dep[0], v[1]->value);
+                li = jitc_var_shift(backend, vt, OpType::Shr, dep[0], v[1]->value);
                 li_decref = true;
             } else if (jitc_is_float(vt) && v[1]->literal) {
                 uint32_t recip = jitc_var_new_op(OpType::Rcp, 1, &dep[1]);
@@ -685,7 +695,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                 li = jitc_var_new_op(OpType::Mul, 2, deps);
                 li_decref = 1;
                 jitc_var_dec_ref_ext(recip);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 if (is_single)
                     stmt = "div.rn.ftz.$t0 $r0, $r1, $r2";
                 else if (is_float)
@@ -707,7 +717,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return eval_mod(v0, v1); },
                                       v[0], v[1]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "rem.$t0 $r0, $r1, $r2";
             } else {
                 if (is_uint)
@@ -721,7 +731,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return std::min(v0, v1); },
                                       v[0], v[1]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_single ? "min.ftz.$t0 $r0, $r1, $r2"
                                  : "min.$t0 $r0, $r1, $r2";
             } else {
@@ -740,7 +750,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return std::max(v0, v1); },
                                       v[0], v[1]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_single ? "max.ftz.$t0 $r0, $r1, $r2"
                                  : "max.$t0 $r0, $r1, $r2";
             } else {
@@ -763,7 +773,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                                       v[0], v[1]);
             } else if (literal_zero[0] || literal_zero[1]) {
                 li = dep[0];
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 if (is_uint)
                     stmt = (vt == VarType::UInt32)
                                ? "shr.$b0 $r0, $r1, $r2"
@@ -787,7 +797,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                                       v[0], v[1]);
             } else if (literal_zero[0] || literal_zero[1]) {
                 li = dep[0];
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = (vt == VarType::UInt32 || vt == VarType::Int32)
                            ? "shl.$b0 $r0, $r1, $r2"
                            : "cvt.u32.$t2 %r3, $r2$n"
@@ -806,7 +816,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                 li = dep[1];
             } else if ((vt == VarType::Bool && literal_one[1]) || literal_zero[0]) {
                 li = dep[0];
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "and.$b0 $r0, $r1, $r2";
             } else {
                 stmt = !is_float
@@ -827,7 +837,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                 li = dep[0];
             } else if ((vt == VarType::Bool && literal_one[1]) || literal_zero[0]) {
                 li = dep[1];
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "or.$b0 $r0, $r1, $r2";
             } else {
                 stmt = !is_float
@@ -848,7 +858,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                 li = dep[1];
             } else if (literal_zero[1]) {
                 li = dep[0];
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = "xor.$b0 $r0, $r1, $r2";
             } else {
                 stmt = !is_float
@@ -866,7 +876,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 == v1; },
                                       v[0], v[1]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 if (vt == VarType::Bool)
                     stmt = "xor.$t1 $r0, $r1, $r2$n"
                            "not.$t1 $r0, $r0";
@@ -878,13 +888,13 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
-        case OpType::Ne:
+        case OpType::Neq:
             is_valid = jitc_is_not_void(vt);
             vtr = VarType::Bool;
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 != v1; },
                                       v[0], v[1]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 if (vt == VarType::Bool)
                     stmt = "xor.$t1 $r0, $r1, $r2";
                 else
@@ -900,16 +910,16 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 < v1; },
                                       v[0], v[1]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_uint ? "setp.lo.$t1 $r0, $r1, $r2"
                                : "setp.lt.$t1 $r0, $r1, $r2";
             } else {
                 if (is_float)
                     stmt = "$r0 = fcmp olt <$w x $t1> $r1, $r2";
                 else if (is_uint)
-                     stmt = "$r0 = icmp ult <$w x $t1> $r1, $r2";
+                    stmt = "$r0 = icmp ult <$w x $t1> $r1, $r2";
                 else
-                     stmt = "$r0 = icmp slt <$w x $t1> $r1, $r2";
+                    stmt = "$r0 = icmp slt <$w x $t1> $r1, $r2";
             }
             break;
 
@@ -918,16 +928,16 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 <= v1; },
                                       v[0], v[1]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_uint ? "setp.ls.$t1 $r0, $r1, $r2"
                                : "setp.le.$t1 $r0, $r1, $r2";
             } else {
                 if (is_float)
                     stmt = "$r0 = fcmp ole <$w x $t1> $r1, $r2";
                 else if (is_uint)
-                     stmt = "$r0 = icmp ule <$w x $t1> $r1, $r2";
+                    stmt = "$r0 = icmp ule <$w x $t1> $r1, $r2";
                 else
-                     stmt = "$r0 = icmp sle <$w x $t1> $r1, $r2";
+                    stmt = "$r0 = icmp sle <$w x $t1> $r1, $r2";
             }
             break;
 
@@ -936,16 +946,16 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 > v1; },
                                       v[0], v[1]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_uint ? "setp.hi.$t1 $r0, $r1, $r2"
                                : "setp.gt.$t1 $r0, $r1, $r2";
             } else {
                 if (is_float)
                     stmt = "$r0 = fcmp ogt <$w x $t1> $r1, $r2";
                 else if (is_uint)
-                     stmt = "$r0 = icmp ugt <$w x $t1> $r1, $r2";
+                    stmt = "$r0 = icmp ugt <$w x $t1> $r1, $r2";
                 else
-                     stmt = "$r0 = icmp sgt <$w x $t1> $r1, $r2";
+                    stmt = "$r0 = icmp sgt <$w x $t1> $r1, $r2";
             }
             break;
 
@@ -954,21 +964,20 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 >= v1; },
                                       v[0], v[1]);
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = is_uint ? "setp.hs.$t1 $r0, $r1, $r2"
                                : "setp.ge.$t1 $r0, $r1, $r2";
             } else {
                 if (is_float)
                     stmt = "$r0 = fcmp oge <$w x $t1> $r1, $r2";
                 else if (is_uint)
-                     stmt = "$r0 = icmp uge <$w x $t1> $r1, $r2";
+                    stmt = "$r0 = icmp uge <$w x $t1> $r1, $r2";
                 else
-                     stmt = "$r0 = icmp sge <$w x $t1> $r1, $r2";
+                    stmt = "$r0 = icmp sge <$w x $t1> $r1, $r2";
             }
             break;
 
-        case OpType::Fma:
-            is_valid = is_float;
+        case OpType::Fmadd:
             if (literal) {
                 lv = jitc_eval_literal(
                     [](auto v0, auto v1, auto v2) {
@@ -989,12 +998,21 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                 li_decref = true;
             } else if (literal_zero[0] && literal_zero[1]) {
                 li = dep[2];
-            } else if (cuda) {
-                stmt = is_single ? "fma.rn.ftz.$t0 $r0, $r1, $r2, $r3"
-                                 : "fma.rn.$t0 $r0, $r1, $r2, $r3";
+            } else if (backend == JitBackend::CUDA) {
+				if (is_float) {
+					stmt = is_single ? "fma.rn.ftz.$t0 $r0, $r1, $r2, $r3"
+									 : "fma.rn.$t0 $r0, $r1, $r2, $r3";
+				} else {
+					stmt = "mad.lo.$t0 $r0, $r1, $r2, $r3";
+				}
             } else {
-                stmt = "$r0 = $call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> "
-                       "$r1, <$w x $t2> $r2, <$w x $t3> $r3)";
+				if (is_float) {
+					stmt = "$r0 = $call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> "
+						   "$r1, <$w x $t2> $r2, <$w x $t3> $r3)";
+				} else {
+                    stmt = "$r0_0 = mul <$w x $t0> $r1, $r2$n"
+                           "$r0 = add <$w x $t0> $r0_0, $r3";
+				}
             }
             break;
 
@@ -1009,7 +1027,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                 jitc_fail("jit_var_new_op(): select: internal error!");
             } else if (dep[1] == dep[2]) {
                 li = dep[1];
-            } else if (cuda) {
+            } else if (backend == JitBackend::CUDA) {
                 stmt = (VarType) v[1]->type != VarType::Bool
                            ? "selp.$t0 $r0, $r2, $r3, $r1"
                            : "not.pred %p3, $r1$n"
@@ -1017,7 +1035,7 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
                              "and.pred $r0, $r1, $r2$n"
                              "or.pred $r0, $r0, %p3";
             } else {
-                stmt = "$r0 = select <$w x $t3> $r3, <$w x $t1> $r1, <$w x $t2> $r2";
+                stmt = "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3";
             }
             break;
 
@@ -1052,14 +1070,12 @@ uint32_t jitc_var_new_op(OpType op, uint32_t n_dep, const uint32_t *dep) {
         Variable v2;
         v2.size = size;
         v2.type = (uint32_t) vtr;
-        v2.cuda = cuda;
+        v2.backend = (uint32_t) backend;
 
         if (literal) {
             v2.literal = 1;
             v2.value = lv;
         } else {
-            if (!stmt) // XXX
-                jitc_fail("Internal error! %s", op_name[(int) op]);
             v2.stmt = (char *) stmt;
             for (uint32_t i = 0; i < n_dep; ++i) {
                 v2.dep[i] = dep[i];
@@ -1087,5 +1103,137 @@ JITC_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, OpType op, uint32
                       op_name[(int) op], dep[0], dep[1], dep[2], dep[3], error);
         default:
             jitc_fail("jit_var_new_op(): invalid number of arguments!");
+    }
+}
+
+uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
+                           int reinterpret) {
+    Variable *v = jitc_var(index);
+    const VarType source_type = (VarType) v->type;
+    const JitBackend backend = (JitBackend) v->backend;
+
+    bool source_bool = source_type == VarType::Bool,
+         target_bool = target_type == VarType::Bool;
+
+    uint32_t source_size =
+                 source_bool ? 0 : var_type_size[(uint32_t) source_type],
+             target_size =
+                 target_bool ? 0 : var_type_size[(uint32_t) target_type];
+
+    if (unlikely(reinterpret && source_size != target_size))
+        jit_raise("jit_var_new_cast(): reinterpret cast between types of "
+                  "different size!");
+
+    if (v->dirty) {
+        jitc_eval(thread_state(backend));
+        v = jitc_var(index);
+    }
+
+    if (source_type == target_type) {
+        jitc_var_inc_ref_ext(index);
+        return index;
+    } else if (v->literal) {
+        uint64_t value;
+        if (reinterpret) {
+            value = v->value;
+        } else {
+            value = jitc_eval_literal([target_type](auto value) -> uint64_t {
+                switch (target_type) {
+                    case VarType::Bool:    return v2i((bool) value);
+                    case VarType::Int8:    return v2i((int8_t) value);
+                    case VarType::UInt8:   return v2i((uint8_t) value);
+                    case VarType::Int16:   return v2i((int16_t) value);
+                    case VarType::UInt16:  return v2i((uint16_t) value);
+                    case VarType::Int32:   return v2i((int32_t) value);
+                    case VarType::UInt32:  return v2i((uint32_t) value);
+                    case VarType::Int64:   return v2i((int64_t) value);
+                    case VarType::UInt64:  return v2i((uint64_t) value);
+                    case VarType::Float32: return v2i((float) value);
+                    case VarType::Float64: return v2i((double) value);
+                    default: jitc_fail("jit_var_new_cast(): unsupported variable type!");
+                }
+            }, v);
+        }
+        return jitc_var_new_literal((JitBackend) v->backend, target_type,
+                                    &value, v->size, 0);
+    } else {
+        bool source_float  = jitc_is_float(source_type),
+             target_float  = jitc_is_float(target_type),
+             source_uint   = jitc_is_uint(source_type),
+             target_uint   = jitc_is_uint(target_type);
+
+        const char *stmt = nullptr;
+        if (reinterpret) {
+            stmt = backend == JitBackend::CUDA
+                       ? "mov.$b0 $r0, $r1"
+                       : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>";
+        } else if (target_bool) {
+            if (backend == JitBackend::CUDA) {
+                stmt = "setp.ne.$t1 $r0, $r1, 0";
+            } else {
+                stmt = source_float ? "$r0 = fcmp one <$w x $t1> $r1, zeroinitializer"
+                                    : "$r0 = icmp ne <$w x $t1> $r1, zeroinitializer";
+            }
+        } else if (source_bool) {
+            if (backend == JitBackend::CUDA) {
+                stmt = "selp.$t0 $r0, 1, 0, $r1";
+            } else {
+                stmt = "$r0_1 = insertelement <$w x $t0> undef, $t0 1, i32 0$n"
+                       "$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n"
+                       "$r0 = select <$w x $t1> $r1, <$w x $t0> $r0_2, <$w x $t0> zeroinitializer";
+            }
+        } else if (!source_float && target_float) {
+            if (backend == JitBackend::CUDA) {
+                stmt = "cvt.rn.$t0.$t1 $r0, $r1";
+            } else {
+                stmt = source_uint ? "$r0 = uitofp <$w x $t1> $r1 to <$w x $t0>"
+                                   : "$r0 = sitofp <$w x $t1> $r1 to <$w x $t0>";
+            }
+        } else if (source_float && !target_float) {
+            if (backend == JitBackend::CUDA) {
+                stmt = "cvt.rzi.$t0.$t1 $r0, $r1";
+            } else {
+                stmt = target_uint ? "$r0 = fptoui <$w x $t1> $r1 to <$w x $t0>"
+                                   : "$r0 = fptosi <$w x $t1> $r1 to <$w x $t0>";
+            }
+        } else if (source_float && target_float) {
+            if (target_size < source_size) {
+                stmt = backend == JitBackend::CUDA
+                           ? "cvt.rn.$t0.$t1 $r0, $r1"
+                           : "$r0 = fptrunc <$w x $t1> $r1 to <$w x $t0>";
+            } else {
+                stmt = backend == JitBackend::CUDA
+                           ? "cvt.$t0.$t1 $r0, $r1"
+                           : "$r0 = fpext <$w x $t1> $r1 to <$w x $t0>";
+
+            }
+        } else if (!source_float && !target_float) {
+            if (source_size == target_size) {
+                jitc_var_inc_ref_ext(index);
+                return index;
+            } else {
+                if (backend == JitBackend::CUDA) {
+                    stmt = "cvt.$t0.$t1 $r0, $r1";
+                } else {
+                    stmt = target_size < source_size
+                             ? "$r0 = trunc <$w x $t1> $r1 to <$w x $t0>"
+                             : (source_uint
+                                    ? "$r0 = zext <$w x $t1> $r1 to <$w x $t0>"
+                                    : "$r0 = sext <$w x $t1> $r1 to <$w x $t0>");
+                }
+            }
+
+        } else {
+            jitc_fail("Unsupported conversion!");
+        }
+
+        Variable v2;
+        v2.size = v->size;
+        v2.type = (uint32_t) target_type;
+        v2.backend = (uint32_t) backend;
+        v2.stmt = (char *) stmt;
+        v2.dep[0] = index;
+        jitc_var_inc_ref_int(index, v);
+        return jitc_var_new(v2);
     }
 }

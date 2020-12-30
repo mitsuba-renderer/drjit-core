@@ -68,8 +68,8 @@ struct Variable {
     /// Data type of this variable
     uint32_t type : 4;
 
-    /// Is this variable registered with the CUDA backend?
-    uint32_t cuda : 1;
+    /// Backend associated with this variable
+    uint32_t backend : 2;
 
     /// Does this variable store a number literal?
     uint32_t literal : 1;
@@ -224,11 +224,8 @@ using OptixProgramGroup = void *;
 
 /// Represents a single stream of a parallel communication
 struct ThreadState {
-    /// Does this ThreadState instance refer to a CUDA device?
-    bool cuda = false;
-
-    /// Should the CSE cache be used?
-    bool enable_cse = true;
+    /// Backend type
+    JitBackend backend;
 
     /// Maps from a key characterizing a variable to its index
     CSECache cse_cache;
@@ -622,13 +619,17 @@ enum ParamType { Register, Input, Output };
   extern __thread ThreadState* thread_state_cuda;
 #endif
 
-extern ThreadState *jitc_init_thread_state(bool cuda);
+extern ThreadState *jitc_init_thread_state(JitBackend backend);
 
-inline ThreadState *thread_state(bool cuda) {
-    ThreadState *result = cuda ? thread_state_cuda : thread_state_llvm;
+inline ThreadState *thread_state(JitBackend backend) {
+    ThreadState *result = (backend == JitBackend::CUDA) ? thread_state_cuda : thread_state_llvm;
     if (unlikely(!result))
-        result = jitc_init_thread_state(cuda);
+        result = jitc_init_thread_state(backend);
     return result;
+}
+
+inline ThreadState *thread_state(uint32_t backend) {
+    return thread_state((JitBackend) backend);
 }
 
 extern State state;

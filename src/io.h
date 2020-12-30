@@ -18,6 +18,7 @@ using CUfunction = struct CUfunc_st *;
 using OptixModule = void*;
 using OptixProgramGroup = void*;
 using OptixPipeline = void*;
+enum class JitBackend: uint32_t;
 
 /// A kernel and its preferred lauch configuration
 struct Kernel {
@@ -58,10 +59,11 @@ extern char jitc_lz4_dict[];
 extern void jitc_lz4_init();
 
 extern bool jitc_kernel_load(const char *source, uint32_t source_size,
-                             bool cuda, size_t hash, Kernel &kernel);
+                             JitBackend backend, size_t hash, Kernel &kernel);
 
 extern bool jitc_kernel_write(const char *source, uint32_t source_size,
-                              bool cuda, size_t hash, const Kernel &kernel);
+                              JitBackend backend, size_t hash,
+                              const Kernel &kernel);
 
 extern void jitc_kernel_free(int device_id, const Kernel &kernel);
 

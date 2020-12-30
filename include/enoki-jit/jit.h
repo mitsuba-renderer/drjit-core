@@ -230,7 +230,7 @@ extern JITC_EXPORT void jit_disable_flag(JITC_ENUM JitFlag flag);
  * code involves side effects. It is used to as part of the mechanism
  * that records loops, virtual function calls, etc.
  */
-extern JITC_EXPORT uint32_t jit_side_effects_scheduled(int cuda);
+extern JITC_EXPORT uint32_t jit_side_effects_scheduled(JitBackend backend);
 
 // ====================================================================
 //                    CUDA/LLVM-specific functionality
@@ -728,7 +728,7 @@ enum VarType {
  * requiring repeated compilation steps. By preemptively evaluating this
  * constant, Enoki-JIT can reuse a single kernel for all steps.
  */
-extern JITC_EXPORT uint32_t jit_var_new_literal(int cuda,
+extern JITC_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
                                                 JITC_ENUM VarType type,
                                                 const void *value,
                                                 uint32_t size JITC_DEF(1),
@@ -740,7 +740,7 @@ extern JITC_EXPORT uint32_t jit_var_new_literal(int cuda,
  * This operation creates a variable of type \ref VarType::UInt32 that will
  * evaluate to <tt>0, ..., size - 1</tt>.
  */
-extern uint32_t jit_var_new_counter(int cuda, uint32_t size);
+extern uint32_t jit_var_new_counter(JitBackend backend, uint32_t size);
 
 /**
  * \brief Create a new variable representing the result of a LLVM/PTX statement
@@ -791,7 +791,7 @@ extern uint32_t jit_var_new_counter(int cuda, uint32_t size);
  * \param dep
  *    Pointer to a list of \c n_dep valid variable indices
  */
-extern JITC_EXPORT uint32_t jit_var_new_stmt(int cuda,
+extern JITC_EXPORT uint32_t jit_var_new_stmt(JitBackend backend,
                                              JITC_ENUM VarType vt,
                                              const char *stmt,
                                              int stmt_static,
@@ -799,40 +799,40 @@ extern JITC_EXPORT uint32_t jit_var_new_stmt(int cuda,
                                              const uint32_t *dep);
 
 // Create a new variable with 0 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_0(int cuda, JITC_ENUM VarType vt,
-                                    const char *stmt) {
-    return jit_var_new_stmt(cuda, vt, stmt, 1, 0, nullptr);
+inline uint32_t jit_var_new_stmt_0(JitBackend backend, JITC_ENUM VarType vt,
+                                   const char *stmt) {
+    return jit_var_new_stmt(backend, vt, stmt, 1, 0, nullptr);
 }
 
 // Create a new variable with 1 dependency (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_1(int cuda, JITC_ENUM VarType vt,
-                                    const char *stmt, uint32_t dep0) {
-    return jit_var_new_stmt(cuda, vt, stmt, 1, 1, &dep0);
+inline uint32_t jit_var_new_stmt_1(JitBackend backend, JITC_ENUM VarType vt,
+                                   const char *stmt, uint32_t dep0) {
+    return jit_var_new_stmt(backend, vt, stmt, 1, 1, &dep0);
 }
 
 // Create a new variable with 2 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_2(int cuda, JITC_ENUM VarType vt,
-                                    const char *stmt, uint32_t dep0,
-                                    uint32_t dep1) {
+inline uint32_t jit_var_new_stmt_2(JitBackend backend, JITC_ENUM VarType vt,
+                                   const char *stmt, uint32_t dep0,
+                                   uint32_t dep1) {
     const uint32_t dep[] = { dep0, dep1 };
-    return jit_var_new_stmt(cuda, vt, stmt, 1, 2, dep);
+    return jit_var_new_stmt(backend, vt, stmt, 1, 2, dep);
 }
 
 // Create a new variable with 3 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_3(int cuda, JITC_ENUM VarType vt,
-                                    const char *stmt, uint32_t dep0,
-                                    uint32_t dep1, uint32_t dep2) {
+inline uint32_t jit_var_new_stmt_3(JitBackend backend, JITC_ENUM VarType vt,
+                                   const char *stmt, uint32_t dep0,
+                                   uint32_t dep1, uint32_t dep2) {
     const uint32_t dep[] = { dep0, dep1, dep2 };
-    return jit_var_new_stmt(cuda, vt, stmt, 1, 3, dep);
+    return jit_var_new_stmt(backend, vt, stmt, 1, 3, dep);
 }
 
 // Create a new variable with 4 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_4(int cuda, JITC_ENUM VarType vt,
-                                    const char *stmt, uint32_t dep0,
-                                    uint32_t dep1, uint32_t dep2,
-                                    uint32_t dep3) {
+inline uint32_t jit_var_new_stmt_4(JitBackend backend, JITC_ENUM VarType vt,
+                                   const char *stmt, uint32_t dep0,
+                                   uint32_t dep1, uint32_t dep2,
+                                   uint32_t dep3) {
     const uint32_t dep[] = { dep0, dep1, dep2, dep3 };
-    return jit_var_new_stmt(cuda, vt, stmt, 1, 4, dep);
+    return jit_var_new_stmt(backend, vt, stmt, 1, 4, dep);
 }
 
 /// List of operations supported by \ref jit_var_new_op()
@@ -843,9 +843,9 @@ enum class OpType : uint32_t {
     // ---- Binary ----
     Add, Sub, Mul, Div, Mod, Min, Max, And, Or, Xor, Shl, Shr,
     // ---- Comparisons ----
-    Eq, Ne, Lt, Le, Gt, Ge,
+    Eq, Neq, Lt, Le, Gt, Ge,
     // ---- Ternary ----
-    Fma, Select,
+    Fmadd, Select,
 
     Count
 };
@@ -861,10 +861,10 @@ const char *op_name[(int) OpType::Count] {
     "Xor", "Shl", "Shr",
 
     // ---- Comparisons ----
-    "Eq", "Ne", "Lt", "Le", "Gt", "Ge",
+    "Eq", "Neq", "Lt", "Le", "Gt", "Ge",
 
     // ---- Ternary ----
-    "Fma", "Select"
+    "Fmadd", "Select"
 };
 #endif
 
@@ -921,6 +921,20 @@ inline uint32_t jit_var_new_op_4(JITC_ENUM OpType op, uint32_t dep0,
 }
 
 /**
+ * \brief Perform an ordinary or reinterpreting cast of a variable
+ *
+ * This function casts the variable \c index to a different type
+ * \c target_type. When \c reinterpret is zero, this is like a C-style cast (i.e.,
+ * <tt>new_value = (Type) old_value;</tt>). When \c reinterpret is nonzero, the
+ * value is reinterpreted without converting the value (i.e.,
+ * <tt>memcpy(&new_value, &old_value, sizeof(Type));</tt>), which requires that
+ * source and target type are of the same size.
+ */
+extern JITC_EXPORT uint32_t jitc_var_new_cast(uint32_t index,
+                                              VarType target_type,
+                                              int reinterpret);
+
+/**
  * \brief Create an identical copy of the given variable
  *
  * This function creates an exact copy of the variable \c index and returns the
@@ -951,7 +965,7 @@ extern JITC_EXPORT uint32_t jit_var_copy(uint32_t index);
  *
  * \sa jit_var_mem_copy()
  */
-extern JITC_EXPORT uint32_t jit_var_mem_map(int cuda, JITC_ENUM VarType type,
+extern JITC_EXPORT uint32_t jit_var_mem_map(JitBackend backend, JITC_ENUM VarType type,
                                             void *ptr, uint32_t size, int free);
 
 
@@ -976,7 +990,7 @@ extern JITC_EXPORT uint32_t jit_var_mem_map(int cuda, JITC_ENUM VarType type,
  *
  * \sa jit_var_mem_map()
  */
-extern JITC_EXPORT uint32_t jit_var_mem_copy(int cuda,
+extern JITC_EXPORT uint32_t jit_var_mem_copy(JitBackend backend,
                                              JITC_ENUM AllocType atype,
                                              JITC_ENUM VarType vtype,
                                              const void *ptr,
@@ -1018,6 +1032,18 @@ extern JITC_EXPORT void *jit_var_ptr(uint32_t index);
 
 /// Query the size of a given variable
 extern JITC_EXPORT uint32_t jit_var_size(uint32_t index);
+
+/**
+ * \brief Resize a scalar variable to a new size
+ *
+ * This function takes a scalar variable as input and changes its size
+ * to \c size, potentially creating a new copy in case something already
+ * depends on \c index. The function increases the external reference count of
+ * the returned value. When \c index is not a scalar variable and its size
+ * exactly matches \c size, the function does nothing and just increases
+ * the external reference count of \c index. Otherwise, it fails.
+ */
+extern JITC_EXPORT uint32_t jit_var_resize(uint32_t index, uint32_t size);
 
 /// Query the type of a given variable
 extern JITC_EXPORT JITC_ENUM VarType jit_var_type(uint32_t index);
@@ -1129,26 +1155,13 @@ extern JITC_EXPORT void jit_var_write(uint32_t index, uint32_t offset,
  *
  * Example: <tt>jit_var_printf(1, "Hello world: %f\n", 1, &my_variable_id);</tt>
  */
-extern JITC_EXPORT void jit_var_printf(int cuda, const char *fmt,
-                                        uint32_t narg, const uint32_t *arg);
-
-/**
- * \brief Enable/disable common subexpression elimination
- *
- * By default, Enoki aggressively collapses variables that repeat computation
- * that is already currently registered in the system. In rare case, this may
- * be undesirable and can be turned off by calling this function with the
- * argument '0'. This is a thread-local flag.
- */
-extern JITC_EXPORT void jit_set_cse(int cuda, int value);
-
-/// Return whether or not common subexpression elimination is enabled
-extern JITC_EXPORT int jit_cse(int cuda);
+extern JITC_EXPORT void jit_var_printf(JitBackend backend, const char *fmt,
+                                       uint32_t narg, const uint32_t *arg);
 
 /**
  */
 extern JITC_EXPORT void
-jit_var_vcall(int cuda, const char *domain, const char *name, uint32_t self,
+jit_var_vcall(JitBackend backend, const char *domain, const char *name, uint32_t self,
               uint32_t n_inst, const uint32_t *inst_ids,
               const uint64_t *inst_hash, uint32_t n_in, const uint32_t *in,
               uint32_t n_out, uint32_t *out, const uint32_t *need_in,
@@ -1199,14 +1212,14 @@ enum ReductionType {
  * a single int, float, double, etc. (\c isize can be 1, 2, 4, or 8).
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jit_memset_async(int cuda, void *ptr, uint32_t size,
+extern JITC_EXPORT void jit_memset_async(JitBackend backend, void *ptr, uint32_t size,
                                          uint32_t isize, const void *src);
 
 /// Perform a synchronous copy operation
-extern JITC_EXPORT void jit_memcpy(int cuda, void *dst, const void *src, size_t size);
+extern JITC_EXPORT void jit_memcpy(JitBackend backend, void *dst, const void *src, size_t size);
 
 /// Perform an asynchronous copy operation
-extern JITC_EXPORT void jit_memcpy_async(int cuda, void *dst, const void *src,
+extern JITC_EXPORT void jit_memcpy_async(JitBackend backend, void *dst, const void *src,
                                          size_t size);
 
 /**
@@ -1219,7 +1232,7 @@ extern JITC_EXPORT void jit_memcpy_async(int cuda, void *dst, const void *src,
  *
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jit_reduce(int cuda, JITC_ENUM VarType type,
+extern JITC_EXPORT void jit_reduce(JitBackend backend, JITC_ENUM VarType type,
                                    JITC_ENUM ReductionType rtype,
                                    const void *ptr, uint32_t size, void *out);
 
@@ -1243,7 +1256,7 @@ extern JITC_EXPORT void jit_reduce(int cuda, JITC_ENUM VarType type,
  *
  * Runs asynchronously.
  */
-extern JITC_EXPORT void jit_scan_u32(int cuda, const uint32_t *in,
+extern JITC_EXPORT void jit_scan_u32(JitBackend backend, const uint32_t *in,
                                      uint32_t size, uint32_t *out);
 
 /**
@@ -1259,7 +1272,7 @@ extern JITC_EXPORT void jit_scan_u32(int cuda, const uint32_t *in,
  *
  * This function internally performs a synchronization step.
  */
-extern JITC_EXPORT uint32_t jit_compress(int cuda, const uint8_t *in,
+extern JITC_EXPORT uint32_t jit_compress(JitBackend backend, const uint8_t *in,
                                          uint32_t size, uint32_t *out);
 
 /**
@@ -1272,7 +1285,7 @@ extern JITC_EXPORT uint32_t jit_compress(int cuda, const uint8_t *in,
  *
  * Runs synchronously.
  */
-extern JITC_EXPORT uint8_t jit_all(int cuda, uint8_t *values, uint32_t size);
+extern JITC_EXPORT uint8_t jit_all(JitBackend backend, uint8_t *values, uint32_t size);
 
 /**
  * \brief Reduce an array of boolean values to a single value (OR case)
@@ -1284,7 +1297,7 @@ extern JITC_EXPORT uint8_t jit_all(int cuda, uint8_t *values, uint32_t size);
  *
  * Runs synchronously.
  */
-extern JITC_EXPORT uint8_t jit_any(int cuda, uint8_t *values, uint32_t size);
+extern JITC_EXPORT uint8_t jit_any(JitBackend backend, uint8_t *values, uint32_t size);
 
 
 /**
@@ -1315,7 +1328,7 @@ extern JITC_EXPORT uint8_t jit_any(int cuda, uint8_t *values, uint32_t size);
  *     When \c offsets != NULL, the function returns the number of unique
  *     values found in \c values. Otherwise, it returns zero.
  */
-extern JITC_EXPORT uint32_t jit_mkperm(int cuda, const uint32_t *values,
+extern JITC_EXPORT uint32_t jit_mkperm(JitBackend backend, const uint32_t *values,
                                        uint32_t size, uint32_t bucket_count,
                                        uint32_t *perm, uint32_t *offsets);
 
@@ -1352,7 +1365,7 @@ struct VCallBucket {
  * computed result. This is an important optimization in situations where
  * multiple vector function calls are executed on the same set of instances.
  */
-extern JITC_EXPORT struct VCallBucket *jit_vcall(int cuda, const char *domain,
+extern JITC_EXPORT struct VCallBucket *jit_vcall(JitBackend backend, const char *domain,
                                                  uint32_t index,
                                                  uint32_t *bucket_count_out);
 
@@ -1365,7 +1378,7 @@ extern JITC_EXPORT struct VCallBucket *jit_vcall(int cuda, const char *domain,
  * to \c 2. The input array must contain <tt>size</tt> elements, and the output
  * array must have space for <tt>size * block_size</tt> elements.
  */
-extern JITC_EXPORT void jit_block_copy(int cuda, JITC_ENUM VarType type,
+extern JITC_EXPORT void jit_block_copy(JitBackend backend, JITC_ENUM VarType type,
                                        const void *in, void *out,
                                        uint32_t size, uint32_t block_size);
 
@@ -1378,7 +1391,7 @@ extern JITC_EXPORT void jit_block_copy(int cuda, JITC_ENUM VarType type,
  * set to \c 2. The input array must contain <tt>size * block_size</tt> elements,
  * and the output array must have space for <tt>size</tt> elements.
  */
-extern JITC_EXPORT void jit_block_sum(int cuda, JITC_ENUM VarType type,
+extern JITC_EXPORT void jit_block_sum(JitBackend backend, JITC_ENUM VarType type,
                                       const void *in, void *out, uint32_t size,
                                       uint32_t block_size);
 

@@ -797,17 +797,17 @@ void jitc_llvm_shutdown() {
 }
 
 uint32_t jitc_llvm_active_mask() {
-    ThreadState *stream = thread_state(false);
+    ThreadState *stream = thread_state(JitBackend::LLVM);
 
     if (stream->active_mask.empty()) {
         uint32_t index = jitc_var_new_stmt(
-            0, VarType::UInt32,
+            JitBackend::LLVM, VarType::UInt32,
             "$r0_0 = insertelement <$w x $t0> undef, $t0 $i, $t0 0$n"
             "$r0_1 = shufflevector <$w x $t0> $r0_0, <$w x $t0> undef, <$w x $t0> $z$n"
             "$r0 = add <$w x $t0> $r0_1, $l0", 1, 0, nullptr);
 
         uint32_t mask = jitc_var_new_stmt(
-            0, VarType::Bool,
+            JitBackend::LLVM, VarType::Bool,
             "$r0_0 = insertelement <$w x $t1> undef, $t1 %end, $t1 0$n"
             "$r0_1 = shufflevector <$w x $t1> $r0_0, <$w x $t1> undef, <$w x $t1> $z$n"
             "$r0 = icmp ult <$w x $t1> $r1, $r0_1",
@@ -825,11 +825,11 @@ uint32_t jitc_llvm_active_mask() {
 
 void jitc_llvm_active_mask_push(uint32_t index) {
     jitc_var_inc_ref_int(index);
-    thread_state(false)->active_mask.push_back(index);
+    thread_state(JitBackend::LLVM)->active_mask.push_back(index);
 }
 
 void jitc_llvm_active_mask_pop() {
-    ThreadState *stream = thread_state(false);
+    ThreadState *stream = thread_state(JitBackend::LLVM);
     auto &stack = stream->active_mask;
     if (unlikely(stack.empty()))
         jitc_raise("jit_llvm_active_mask_pop(): underflow!");
