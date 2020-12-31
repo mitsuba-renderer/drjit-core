@@ -24,10 +24,10 @@ extern void jitc_reduce(JitBackend backend, VarType type, ReductionType rtype,
                         const void *ptr, uint32_t size, void *out);
 
 /// 'All' reduction for boolean arrays
-extern uint8_t jitc_all(JitBackend backend, uint8_t *values, uint32_t size);
+extern bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size);
 
 /// 'Any' reduction for boolean arrays
-extern uint8_t jitc_any(JitBackend backend, uint8_t *values, uint32_t size);
+extern bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size);
 
 /// Exclusive prefix sum
 extern void jitc_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size,

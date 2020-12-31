@@ -111,10 +111,10 @@ extern int jitc_var_is_literal_one(uint32_t index);
 const char *jitc_var_str(uint32_t index);
 
 /// Read a single element of a variable and write it to 'dst'
-extern void jitc_var_read(uint32_t index, uint32_t offset, void *dst);
+extern void jitc_var_read(uint32_t index, size_t offset, void *dst);
 
 /// Reverse of jitc_var_read(). Copy 'src' to a single element of a variable
-extern uint32_t jitc_var_write(uint32_t index, uint32_t offset, const void *src);
+extern uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src);
 
 /// Insert a print statement into the kernel
 extern void jitc_var_printf(JitBackend backend, const char *fmt, uint32_t narg,
@@ -155,6 +155,9 @@ extern void jitc_var_mask_push(JitBackend backend, uint32_t index);
 
 /// Pop an active mask
 extern void jitc_var_mask_pop(JitBackend backend);
+
+extern bool jitc_var_any(uint32_t index);
+extern bool jitc_var_all(uint32_t index);
 
 /// Descriptive names and byte sizes for the various variable types
 extern const char *var_type_name      [(int) VarType::Count];

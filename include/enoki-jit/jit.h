@@ -952,10 +952,36 @@ extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
                                                uint32_t dep,
                                                int write);
 
-
-/// Create a variable that reads from another array
-extern JIT_EXPORT uint32_t jit_var_new_gather(uint32_t src, uint32_t index,
+/**
+ * \brief Create a variable that reads from another variable
+ *
+ * This operation creates a variable that performs a <em>masked gather</em>
+ * operation equivalent to <tt>mask ? source[index] : 0</tt>. The variable \c
+ * index must be an integer array, and \c mask must be a boolean array.
+ */
+extern JIT_EXPORT uint32_t jit_var_new_gather(uint32_t source, uint32_t index,
                                               uint32_t mask);
+
+/**
+ * \brief Schedule a scatter operation
+ *
+ * This operation schedules a side effect that will perform an operation
+ * equivalent to <tt>if (mask) target[index] = value</tt>. The variable \c
+ * index must be an integer array, and \c mask must be a boolean array.
+ *
+ * A direct write may not be safe (e.g. if unevaluated computation references
+ * the array \c target). The function thus returns the index of a new array
+ * (which may happen to be identical to \c target), whose external reference
+ * count is increased by 1.
+ *
+ * For performance reasons, sequences involving multiple scatters to the same
+ * array are exempt from this safety check, and these may furthermore execute
+ * in arbitrary order due to the inherent parallelism. This is fine if the
+ * written addresses do not overlap. Otherwise, explicit evaluation via
+ * <tt>jit_var_eval(target)</tt> is necessary to ensure a fixed ordering.
+ */
+extern JIT_EXPORT uint32_t jit_var_new_scatter(uint32_t target, uint32_t value,
+                                               uint32_t index, uint32_t mask);
 
 /**
  * \brief Create an identical copy of the given variable
@@ -1146,7 +1172,7 @@ extern JIT_EXPORT const char *jit_var_str(uint32_t index);
  * (every read will be performed via an individual transaction). This operation
  * fully synchronizes the host CPU & device.
  */
-extern JIT_EXPORT void jit_var_read(uint32_t index, uint32_t offset,
+extern JIT_EXPORT void jit_var_read(uint32_t index, size_t offset,
                                     void *dst);
 
 /**
@@ -1163,7 +1189,7 @@ extern JIT_EXPORT void jit_var_read(uint32_t index, uint32_t offset,
  * (which may happen to be identical to \c index), whose external reference
  * count is increased by 1.
  */
-extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, uint32_t offset,
+extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, size_t offset,
                                          const void *src);
 
 /**
@@ -1177,6 +1203,17 @@ extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, uint32_t offset,
  */
 extern JIT_EXPORT void jit_var_printf(JitBackend backend, const char *fmt,
                                       uint32_t narg, const uint32_t *arg);
+
+
+// ====================================================================
+//                          Horizontal reductions
+// ====================================================================
+
+/// Reduce (AND) a boolean array to a single value, synchronizes.
+extern JIT_EXPORT int jit_var_all(uint32_t index);
+
+/// Reduce (OR) a boolean array to a single value, synchronizes.
+extern JIT_EXPORT int jit_var_any(uint32_t index);
 
 // ====================================================================
 //                 Kernel compilation and evaluation
@@ -1284,30 +1321,6 @@ extern JIT_EXPORT void jit_scan_u32(JitBackend backend, const uint32_t *in,
  */
 extern JIT_EXPORT uint32_t jit_compress(JitBackend backend, const uint8_t *in,
                                         uint32_t size, uint32_t *out);
-
-/**
- * \brief Reduce an array of boolean values to a single value (AND case)
- *
- * When \c size is not a multiple of 4, the implementation will initialize up
- * to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
- * reduction algorithm can be used. This is fine for allocations made using
- * \ref jit_malloc(), which allow for this.
- *
- * Runs synchronously.
- */
-extern JIT_EXPORT uint8_t jit_all(JitBackend backend, uint8_t *values, uint32_t size);
-
-/**
- * \brief Reduce an array of boolean values to a single value (OR case)
- *
- * When \c size is not a multiple of 4, the implementation will initialize up
- * to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
- * reduction algorithm can be used. This is fine for allocations made using
- * \ref jit_malloc(), which allow for this.
- *
- * Runs synchronously.
- */
-extern JIT_EXPORT uint8_t jit_any(JitBackend backend, uint8_t *values, uint32_t size);
 
 
 /**

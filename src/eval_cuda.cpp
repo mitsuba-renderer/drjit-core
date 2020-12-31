@@ -89,6 +89,9 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
     for (uint32_t gi = group.start; gi != group.end; ++gi) {
         uint32_t index = schedule[gi].index;
         const Variable *v = jitc_var(index);
+        const uint32_t vti = v->type,
+                       size = v->size;
+        const VarType vt = (VarType) vti;
 
         if (unlikely(v->extra)) {
             const char *label = jitc_var_label(index);
@@ -101,7 +104,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             uint32_t id = 0;
 
             if (v->literal) {
-                prefix = var_type_prefix[v->type];
+                prefix = var_type_prefix[vti];
                 id = v->reg_index;
             }
 
@@ -112,20 +115,20 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             if (v->literal)
                 continue;
 
-            if (v->size > 1)
+            if (size > 1)
                 buffer.fmt("    mad.wide.u32 %%rd0, %%r0, %u, %%rd0;\n",
-                           var_type_size[v->type]);
+                           var_type_size[vti]);
 
-            if ((VarType) v->type != VarType::Bool) {
+            if (vt != VarType::Bool) {
                 buffer.fmt("    %s%s %s%u, [%%rd0];\n",
-                           v->size > 1 ? "ld.global.cs." : "ldu.global.",
-                           var_type_name_ptx[v->type],
-                           var_type_prefix[v->type],
+                           size > 1 ? "ld.global.cs." : "ldu.global.",
+                           var_type_name_ptx[vti],
+                           var_type_prefix[vti],
                            v->reg_index);
             } else {
                 buffer.fmt("    %s %%w0, [%%rd0];\n"
                            "    setp.ne.u16 %%p%u, %%w0, 0;\n",
-                           v->size > 1 ? "ld.global.cs.u8" : "ldu.global.u8",
+                           size > 1 ? "ld.global.cs.u8" : "ldu.global.u8",
                            v->reg_index);
             }
             continue;
@@ -138,12 +141,12 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                        "    mad.wide.u32 %%rd0, %%r0, %u, %%rd0;\n",
                        params_type, params_base,
                        v->param_index * (uint32_t) sizeof(void *),
-                       var_type_size[v->type]);
+                       var_type_size[vti]);
 
-            if ((VarType) v->type != VarType::Bool) {
+            if (vt != VarType::Bool) {
                 buffer.fmt("    st.global.cs.%s [%%rd0], %s%u;\n",
-                           var_type_name_ptx[v->type],
-                           var_type_prefix[v->type],
+                           var_type_name_ptx[vti],
+                           var_type_prefix[vti],
                            v->reg_index);
             } else {
                 buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u;\n"

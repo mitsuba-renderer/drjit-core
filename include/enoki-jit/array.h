@@ -32,7 +32,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
     template <typename T> JitArray(const JitArray<Backend_, T> &v) {
-        m_index = jit_var_new_cast(v.index(), JitArray<Backend_, T>::Type, 0);
+        m_index = jit_var_new_cast(v.index(), Type, 0);
     }
 
     JitArray(JitArray &&a) noexcept : m_index(a.m_index) {
@@ -47,7 +47,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     JitArray(Args&&... args) {
         Value data[] = { (Value) args... };
         m_index = jit_var_mem_copy(Backend, AllocType::Host, Type, data,
-                                   (uint32_t) sizeof...(Args));
+                                   sizeof...(Args));
     }
 
     JitArray &operator=(const JitArray &a) {
@@ -106,11 +106,11 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return Mask::steal(jit_var_new_op_2(JitOp::Le, m_index, v.m_index));
     }
 
-    friend JitArray eq(const JitArray &v1, const JitArray &v2) {
+    friend Mask eq(const JitArray &v1, const JitArray &v2) {
         return Mask::steal(jit_var_new_op_2(JitOp::Eq, v1.m_index, v2.m_index));
     }
 
-    friend JitArray neq(const JitArray &v1, const JitArray &v2) {
+    friend Mask neq(const JitArray &v1, const JitArray &v2) {
         return Mask::steal(jit_var_new_op_2(JitOp::Neq, v1.m_index, v2.m_index));
     }
 
@@ -194,7 +194,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
 	void resize(size_t size) {
-        uint32_t index = jit_var_resize(m_index, (uint32_t) size);
+        uint32_t index = jit_var_resize(m_index, size);
         jit_var_dec_ref_ext(m_index);
         m_index = index;
     }
@@ -215,13 +215,13 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return (Value *) jit_var_ptr(m_index);
     }
 
-    Value read(uint32_t offset) const {
+    Value read(size_t offset) const {
         Value out;
         jit_var_read(m_index, offset, &out);
         return out;
     }
 
-    void write(uint32_t offset, Value value) {
+    void write(size_t offset, Value value) {
         uint32_t index = jit_var_write(m_index, offset, &value);
         jit_var_dec_ref_ext(m_index);
         m_index = index;
@@ -229,12 +229,12 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     static JitArray map(void *ptr, size_t size, bool free = false) {
         return steal(
-            jit_var_mem_map(Backend, Type, ptr, (uint32_t) size, free ? 1 : 0));
+            jit_var_mem_map(Backend, Type, ptr, size, free ? 1 : 0));
     }
 
     static JitArray copy(const void *ptr, size_t size) {
-        return steal(jit_var_mem_copy(Backend, AllocType::Host, Type, ptr,
-                                      (uint32_t) size));
+        return steal(
+            jit_var_mem_copy(Backend, AllocType::Host, Type, ptr, size));
     }
 
     static JitArray steal(uint32_t index) {
@@ -243,7 +243,12 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return result;
     }
 
-	// ------------------------------------------------------
+    static JitArray<Backend_, uint32_t> counter(size_t size) {
+        return JitArray<Backend_, uint32_t>::steal(
+            jit_var_new_counter(Backend, size));
+    }
+
+    // ------------------------------------------------------
 
     friend JitArray abs(const JitArray &v) {
         return Mask::steal(jit_var_new_op_2(JitOp::Abs, v.m_index));
@@ -272,7 +277,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     friend JitArray fmadd(const JitArray &a, const JitArray &b,
                           const JitArray &c) {
         return Mask::steal(
-            jit_var_new_op_3(JitOp::Fmadd, a.m_index, b.m_index.c.m_index));
+            jit_var_new_op_3(JitOp::Fmadd, a.m_index, b.m_index, c.m_index));
     }
 
     friend JitArray select(const Mask &a, const JitArray &b,
@@ -280,6 +285,10 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return Mask::steal(
             jit_var_new_op_3(JitOp::Select, a.m_index, b.m_index.c.m_index));
     }
+
+    friend bool all(const JitArray &a) { return jit_var_all(a.m_index); }
+    friend bool any(const JitArray &a) { return jit_var_any(a.m_index); }
+    friend bool none(const JitArray &a) { return !jit_var_any(a.m_index); }
 
 	friend const char *label(const JitArray &v) {
 		return jit_var_label(v.m_index);
@@ -300,19 +309,33 @@ Array empty(size_t size) {
                                                       : AllocType::HostAsync,
                    byte_size);
     return Array::steal(
-        jit_var_map_mem(Array::Backend, Array::Type, ptr, (uint32_t) size, 1));
+        jit_var_map_mem(Array::Backend, Array::Type, ptr, size, 1));
 }
 
 template <typename Array>
 Array zero(size_t size) {
     return Array::steal(
-        jit_var_new_literal(Array::Backend, Array::Type, 0, (uint32_t) size));
+        jit_var_new_literal(Array::Backend, Array::Type, 0, size));
 }
 
 template <typename Array>
 Array full(const typename Array::Value &value, size_t size, bool eval = false) {
-    return Array::steal(jit_var_new_literal(Array::Backend, Array::Type, &value,
-                                            (uint32_t) size, eval));
+    return Array::steal(
+        jit_var_new_literal(Array::Backend, Array::Type, &value, size, eval));
+}
+
+template <typename Array, typename Index>
+Array gather(const Array &source, const JitArray<Array::Backend, Index> index,
+             const JitArray<Array::Backend, bool> &mask = true) {
+    return Array::steal(
+        jit_var_new_gather(source.index(), index.index(), mask.index()));
+}
+
+template <typename Array, typename Index>
+void scatter(Array &target, const Array &value, const JitArray<Array::Backend, Index> index,
+             const JitArray<Array::Backend, bool> &mask = true) {
+    target = Array::steal(
+        jit_var_new_scatter(target.index(), value.index(), index.index(), mask.index()));
 }
 
 template <typename Array>

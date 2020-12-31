@@ -19,19 +19,22 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
     for (uint32_t gi = group.start; gi != group.end; ++gi) {
         uint32_t index = schedule[gi].index;
         const Variable *v = jitc_var(index);
-        const char *prefix = var_type_prefix[v->type],
-                   *tname = (VarType) v->type == VarType::Bool
-                            ? "i8" : var_type_name_llvm[v->type];
-        uint32_t tsize = var_type_size[v->type],
+        const uint32_t vti = v->type;
+        const VarType vt = (VarType) vti;
+
+        const char *prefix = var_type_prefix[vti],
+                   *tname = vt == VarType::Bool
+                            ? "i8" : var_type_name_llvm[vti];
+        uint32_t tsize = var_type_size[vti],
                  id = v->reg_index,
-                 align = v->unaligned ? 1 : (tsize * width);
+                 align = v->unaligned ? 1 : (tsize * width),
+                 size = v->size;
 
         if (unlikely(v->extra)) {
             const char *label = jitc_var_label(index);
             if (label)
                 buffer.fmt("    ; %s\n", label);
         }
-
 
         if (v->param_type != ParamType::Register) {
             buffer.fmt(
@@ -41,7 +44,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                 prefix, id, v->param_index, prefix, id, prefix, id,
                 prefix, id, prefix, id, tname);
 
-            if (v->param_type != ParamType::Input || v->size != 1)
+            if (v->param_type != ParamType::Input || size != 1)
                 buffer.fmt("    %s%u_p4 = getelementptr inbounds %s, %s* %s%u_p3, i64 %%index\n"
                            "    %s%u_p5 = bitcast %s* %s%u_p4 to <%u x %s>*\n",
                            prefix, id, tname, tname, prefix, id, prefix, id, tname,
@@ -52,8 +55,8 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
             if (v->literal)
                 continue;
 
-            if (v->size != 1) {
-                if ((VarType) v->type != VarType::Bool) {
+            if (size != 1) {
+                if (vt != VarType::Bool) {
                     buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p5, align %u, !alias.scope !1\n",
                                prefix, id, width, tname, width, tname, prefix, id, align);
                 } else {
@@ -63,7 +66,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                                prefix, id, width, prefix, id, width);
                 }
             } else {
-                if ((VarType) v->type != VarType::Bool) {
+                if (vt != VarType::Bool) {
                     buffer.fmt("    %s%u_0 = load %s, %s* %s%u_p3, align %u, !alias.scope !1\n"
                                "    %s%u_1 = insertelement <%u x %s> undef, %s %s%u_0, i32 0\n"
                                "    %s%u = shufflevector <%u x %s> %s%u_1, <%u x %s> undef, <%u x i32> zeroinitializer\n",
@@ -86,7 +89,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
         }
 
         if (v->param_type == ParamType::Output) {
-            if ((VarType) v->type != VarType::Bool) {
+            if (vt != VarType::Bool) {
                 buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p5, align %u, !noalias !1\n",
                            width, tname, prefix, id, width, tname, prefix, id, align);
             } else {
@@ -143,6 +146,13 @@ static void jitc_llvm_process_intrinsic() {
                 s++;
         } else if (c == 'i' && s[1]== '1' && s[2] == ' ') {
             globals.put("i1");
+            while (c = *s, c != '\0' && c != ')' && c != ',')
+                s++;
+        } else if (c == 'i' && s[1]== '3' && s[2] == '2' && s[3] == ' ') {
+            globals.put("i32");
+            while (c = *s, c != '\0' && c != ')' && c != ',')
+                s++;
+        } else if (c == ' ' && s[1]== 'z' && s[2] == 'e' && s[3] == 'r') {
             while (c = *s, c != '\0' && c != ')' && c != ',')
                 s++;
         } else {

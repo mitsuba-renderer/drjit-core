@@ -1,13 +1,10 @@
 enable_testing()
 
-set(TEST_FILES "basics.cpp")
+set(TEST_FILES basics.cpp mem.cpp)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY $<1:${CMAKE_CURRENT_SOURCE_DIR}>)
 
 foreach (TEST_FILE ${TEST_FILES})
-  if (TEST_FILE MATCHES "test.cpp" OR TEST_FILE MATCHES "stubs" OR TEST_FILE MATCHES "triangle" OR TEST_FILE MATCHES "vcall")
-    continue()
-  endif()
   get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
   add_executable(test_${TEST_NAME} ${TEST_NAME}.cpp test.h test.cpp ${TEST_NAME}.cpp)
   target_link_libraries(test_${TEST_NAME} PRIVATE enoki-jit)

@@ -114,8 +114,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                      "(%u and %u)!", index, v->size, group.size);
         if (unlikely(!v->data && !v->literal && !v->stmt))
             jitc_fail("jit_assemble(): variable %u has no statement!", index);
-        if (unlikely((VarType) v->type == VarType::Void && v->output_flag))
-            jitc_fail("jit_assemble(): cannot evaluate variables of type 'Void'");
         if (unlikely(v->literal && v->data))
             jitc_fail("jit_assemble(): variable is simultaneously literal and evaluated");
         if (unlikely(v->dirty))
@@ -477,7 +475,7 @@ void jitc_eval(ThreadState *ts) {
                 continue;
 
             jitc_var_traverse(v->size, index);
-            v->output_flag = true;
+            v->output_flag = (VarType) v->type != VarType::Void;
         }
     }
 
@@ -589,7 +587,7 @@ void jitc_eval(ThreadState *ts) {
         if (v->side_effect) {
             if (dep[0]) {
                 Variable *ptr = jitc_var(dep[0]);
-                if ((VarType) ptr->type == VarType::UInt64)
+                if ((VarType) ptr->type == VarType::Pointer)
                     jitc_var(ptr->dep[3])->dirty = false;
             }
             jitc_var_dec_ref_ext(index);

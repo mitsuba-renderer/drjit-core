@@ -336,7 +336,12 @@ void jitc_reduce(JitBackend backend, VarType type, ReductionType rtype, const vo
 }
 
 /// 'All' reduction for boolean arrays
-uint8_t jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
+bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
+    /* When \c size is not a multiple of 4, the implementation will initialize up
+       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
+       reduction algorithm can be used. This is fine for allocations made using
+       \ref jit_malloc(), which allow for this. */
+
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
@@ -347,7 +352,7 @@ uint8_t jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
         jitc_memset_async(backend, values + size, trailing, sizeof(bool), &filler);
     }
 
-    uint8_t result;
+    bool result;
     if (backend == JitBackend::CUDA) {
         uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
         jitc_reduce(backend, VarType::UInt32, ReductionType::And, values, reduced_size, out);
@@ -365,7 +370,12 @@ uint8_t jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
 }
 
 /// 'Any' reduction for boolean arrays
-uint8_t jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
+bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
+    /* When \c size is not a multiple of 4, the implementation will initialize up
+       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
+       reduction algorithm can be used. This is fine for allocations made using
+       \ref jit_malloc(), which allow for this. */
+
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
@@ -376,7 +386,7 @@ uint8_t jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
         jitc_memset_async(backend, values + size, trailing, sizeof(bool), &filler);
     }
 
-    uint8_t result;
+    bool result;
     if (backend == JitBackend::CUDA) {
         uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
         jitc_reduce(backend, VarType::UInt32, ReductionType::Or, values, reduced_size, out);

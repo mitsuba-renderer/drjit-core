@@ -122,10 +122,25 @@ void test_sanitize_log(char *buf) {
             continue;
         }
 
-        if (strncmp(src, " (compute capability ", 21) == 0) {
-            src += 24;
+        if (strncmp(src, "// sm_", 6) == 0) {
+            src += 6 + 2;
             continue;
         }
+
+        if (strncmp(src, "(reused local)", 14) == 0) {
+            memcpy(dst, "(reused)", 8);
+            src += 14;
+            dst += 8;
+            continue;
+        }
+
+        if (strncmp(src, "(reused global)", 15) == 0) {
+            memcpy(dst, "(reused)", 8);
+            src += 15;
+            dst += 8;
+            continue;
+        }
+
 
         *dst++ = *src++;
     }

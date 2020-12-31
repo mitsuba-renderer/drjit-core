@@ -297,10 +297,16 @@ uint32_t jit_var_new_cast(uint32_t index, VarType target_type,
     return jitc_var_new_cast(index, target_type, reinterpret);
 }
 
-uint32_t jit_var_new_gather(uint32_t src, uint32_t index,
+uint32_t jit_var_new_gather(uint32_t source, uint32_t index,
                             uint32_t mask) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_gather(src, index, mask);
+    return jitc_var_new_gather(source, index, mask);
+}
+
+uint32_t jit_var_new_scatter(uint32_t target, uint32_t value,
+                             uint32_t index, uint32_t mask) {
+    lock_guard guard(state.mutex);
+    return jitc_var_new_scatter(target, value, index, mask);
 }
 
 uint32_t jit_var_new_pointer(JitBackend backend, const void *value,
@@ -404,6 +410,16 @@ void jit_var_mask_pop(JitBackend backend) {
     jitc_var_mask_pop(backend);
 }
 
+int jit_var_any(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jitc_var_any(index);
+}
+
+int jit_var_all(uint32_t index) {
+    lock_guard guard(state.mutex);
+    return jitc_var_all(index);
+}
+
 const char *jit_var_whos() {
     lock_guard guard(state.mutex);
     return jitc_var_whos();
@@ -419,12 +435,12 @@ const char *jit_var_str(uint32_t index) {
     return jitc_var_str(index);
 }
 
-void jit_var_read(uint32_t index, uint32_t offset, void *dst) {
+void jit_var_read(uint32_t index, size_t offset, void *dst) {
     lock_guard guard(state.mutex);
     jitc_var_read(index, offset, dst);
 }
 
-uint32_t jit_var_write(uint32_t index, uint32_t offset, const void *src) {
+uint32_t jit_var_write(uint32_t index, size_t offset, const void *src) {
     lock_guard guard(state.mutex);
     return jitc_var_write(index, offset, src);
 }
@@ -479,16 +495,6 @@ void jit_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32_
 uint32_t jit_compress(JitBackend backend, const uint8_t *in, uint32_t size, uint32_t *out) {
     lock_guard guard(state.mutex);
     return jitc_compress(backend, in, size, out);
-}
-
-uint8_t jit_all(JitBackend backend, uint8_t *values, uint32_t size) {
-    lock_guard guard(state.mutex);
-    return jitc_all(backend, values, size);
-}
-
-uint8_t jit_any(JitBackend backend, uint8_t *values, uint32_t size) {
-    lock_guard guard(state.mutex);
-    return jitc_any(backend, values, size);
 }
 
 uint32_t jit_mkperm(JitBackend backend, const uint32_t *values, uint32_t size,

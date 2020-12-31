@@ -96,7 +96,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
         // Release GPU memory
         if (!v->retain_data)
             jitc_free(v->data);
-    } else {
+    } else if (v->literal || v->stmt) {
         // Unevaluated variable, drop from CSE cache
         jitc_cse_drop(index, v);
     }
@@ -340,6 +340,10 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
                 case VarType::Int32:
                 case VarType::Int64:
                     var_buffer.fmt("%lli", (long long) v.value);
+                    break;
+
+                case VarType::Pointer:
+                    var_buffer.fmt(ENOKI_PTR, (uintptr_t) v.value);
                     break;
 
                 default:
@@ -653,7 +657,7 @@ int jitc_var_eval(uint32_t index) {
 }
 
 /// Read a single element of a variable and write it to 'dst'
-void jitc_var_read(uint32_t index, uint32_t offset, void *dst) {
+void jitc_var_read(uint32_t index, size_t offset, void *dst) {
     const Variable *v = jitc_var(index);
 
     if (!v->literal && (!v->data || v->dirty)) {
@@ -663,11 +667,11 @@ void jitc_var_read(uint32_t index, uint32_t offset, void *dst) {
 
     if (v->size == 1)
         offset = 0;
-    else if (unlikely(offset >= v->size))
-        jitc_raise("jit_var_read(): attempted to access entry %u in an array of "
+    else if (unlikely(offset >= (size_t) v->size))
+        jitc_raise("jit_var_read(): attempted to access entry %zu in an array of "
                   "size %u!", offset, v->size);
 
-    size_t isize = var_type_size[v->type];
+    uint32_t isize = var_type_size[v->type];
     if (v->literal)
         memcpy(dst, &v->value, isize);
     else
@@ -676,7 +680,7 @@ void jitc_var_read(uint32_t index, uint32_t offset, void *dst) {
 }
 
 /// Reverse of jitc_var_read(). Copy 'dst' to a single element of a variable
-uint32_t jitc_var_write(uint32_t index, uint32_t offset, const void *src) {
+uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src) {
     Variable *v = jitc_var(index);
     if (v->ref_count_int + v->ref_count_ext > 1) {
         // Not safe to directly write to 'v'
@@ -688,12 +692,12 @@ uint32_t jitc_var_write(uint32_t index, uint32_t offset, const void *src) {
     jitc_var_eval(index);
 
     v = jitc_var(index);
-    if (unlikely(offset >= v->size))
-        jitc_raise("jit_var_write(): attempted to access entry %u in an array of "
+    if (unlikely(offset >= (size_t) v->size))
+        jitc_raise("jit_var_write(): attempted to access entry %zu in an array of "
                   "size %u!", offset, v->size);
 
     uint32_t isize = var_type_size[v->type];
-    uint8_t *dst = (uint8_t *) v->data + (size_t) offset * isize;
+    uint8_t *dst = (uint8_t *) v->data + offset * isize;
     jitc_poke((JitBackend) v->backend, dst, src, isize);
 
     return index;
@@ -797,6 +801,7 @@ uint32_t jitc_var_copy(uint32_t index) {
 
         index = jitc_var_new(v2, true);
     }
+
     jitc_log(Debug, "jit_var_copy(%u <- %u)", index, index_old);
     return index;
 }
@@ -815,15 +820,14 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         jitc_raise("jit_var_resize(): variable %u must be scalar!", index);
     }
 
-    jitc_log(Debug, "jit_var_resize(%u, size=%u -> %zu)", index, v->size, size);
-
+    uint32_t result;
     if (!v->data && v->ref_count_int == 0 && v->ref_count_ext == 1) {
         jitc_var_inc_ref_ext(index, v);
         jitc_cse_drop(index, v);
         v->size = size;
-        return index;
+        result = index;
     } else if (v->literal) {
-        return jitc_var_new_literal((JitBackend) v->backend, (VarType) v->type,
+        result = jitc_var_new_literal((JitBackend) v->backend, (VarType) v->type,
                                     &v->value, size, 0);
     } else {
         Variable v2;
@@ -835,8 +839,12 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
                             ? "mov.$t0 $r0, $r1"
                             : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
         jitc_var_inc_ref_int(index, v);
-        return jitc_var_new(v2);
+        result = jitc_var_new(v2);
     }
+
+    jitc_log(Debug, "jit_var_resize(%u <- %u, size=%zu)", result, index, size);
+
+    return result;
 }
 
 
@@ -917,6 +925,36 @@ void jitc_var_mask_pop(JitBackend backend) {
     uint32_t index = stack.back();
     stack.pop_back();
     jitc_var_dec_ref_int(index);
+}
+
+bool jitc_var_any(uint32_t index) {
+    const Variable *v = jitc_var(index);
+
+    if (unlikely((VarType) v->type != VarType::Bool))
+        jitc_raise("jitc_var_any(%u): requires a boolean array as input!", index);
+
+    if (v->literal)
+        return (bool) v->value;
+
+    if (jitc_var_eval(index))
+        v = jitc_var(index);
+
+    return jitc_any((JitBackend) v->backend, (uint8_t *) v->data, v->size);
+}
+
+bool jitc_var_all(uint32_t index) {
+    const Variable *v = jitc_var(index);
+
+    if (unlikely((VarType) v->type != VarType::Bool))
+        jitc_raise("jitc_var_all(%u): requires a boolean array as input!", index);
+
+    if (v->literal)
+        return (bool) v->value;
+
+    if (jitc_var_eval(index))
+        v = jitc_var(index);
+
+    return jitc_all((JitBackend) v->backend, (uint8_t *) v->data, v->size);
 }
 
 /// Return a human-readable summary of registered variables
