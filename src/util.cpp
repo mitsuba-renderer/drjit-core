@@ -20,7 +20,7 @@
 #  pragma warning (disable: 4146) // unary minus operator applied to unsigned type, result still unsigned
 #endif
 
-const char *reduction_name[(int) ReductionType::Count] = { "sum", "mul", "min",
+const char *reduction_name[(int) ReduceOp::Count] = { "sum", "mul", "min",
                                                            "max", "and", "or" };
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
@@ -175,11 +175,11 @@ void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t si
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
 
 template <typename Value>
-static Reduction jitc_reduce_create(ReductionType rtype) {
+static Reduction jitc_reduce_create(ReduceOp rtype) {
     using UInt = uint_with_size_t<Value>;
 
     switch (rtype) {
-        case ReductionType::Add:
+        case ReduceOp::Add:
             return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
                 const Value *ptr = (const Value *) ptr_;
                 Value result = 0;
@@ -188,7 +188,7 @@ static Reduction jitc_reduce_create(ReductionType rtype) {
                 *((Value *) out) = result;
             };
 
-        case ReductionType::Mul:
+        case ReduceOp::Mul:
             return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
                 const Value *ptr = (const Value *) ptr_;
                 Value result = 1;
@@ -197,7 +197,7 @@ static Reduction jitc_reduce_create(ReductionType rtype) {
                 *((Value *) out) = result;
             };
 
-        case ReductionType::Max:
+        case ReduceOp::Max:
             return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
                 const Value *ptr = (const Value *) ptr_;
                 Value result = std::is_integral<Value>::value
@@ -208,7 +208,7 @@ static Reduction jitc_reduce_create(ReductionType rtype) {
                 *((Value *) out) = result;
             };
 
-        case ReductionType::Min:
+        case ReduceOp::Min:
             return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
                 const Value *ptr = (const Value *) ptr_;
                 Value result = std::is_integral<Value>::value
@@ -219,7 +219,7 @@ static Reduction jitc_reduce_create(ReductionType rtype) {
                 *((Value *) out) = result;
             };
 
-        case ReductionType::Or:
+        case ReduceOp::Or:
             return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
                 const UInt *ptr = (const UInt *) ptr_;
                 UInt result = 0;
@@ -228,7 +228,7 @@ static Reduction jitc_reduce_create(ReductionType rtype) {
                 *((UInt *) out) = result;
             };
 
-        case ReductionType::And:
+        case ReduceOp::And:
             return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
                 const UInt *ptr = (const UInt *) ptr_;
                 UInt result = (UInt) -1;
@@ -242,7 +242,7 @@ static Reduction jitc_reduce_create(ReductionType rtype) {
     }
 }
 
-static Reduction jitc_reduce_create(VarType type, ReductionType rtype) {
+static Reduction jitc_reduce_create(VarType type, ReduceOp rtype) {
     switch (type) {
         case VarType::Int8:    return jitc_reduce_create<int8_t  >(rtype);
         case VarType::UInt8:   return jitc_reduce_create<uint8_t >(rtype);
@@ -259,7 +259,7 @@ static Reduction jitc_reduce_create(VarType type, ReductionType rtype) {
     }
 }
 
-void jitc_reduce(JitBackend backend, VarType type, ReductionType rtype, const void *ptr,
+void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *ptr,
                 uint32_t size, void *out) {
     ThreadState *ts = thread_state(backend);
 
@@ -355,13 +355,13 @@ bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
     bool result;
     if (backend == JitBackend::CUDA) {
         uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
-        jitc_reduce(backend, VarType::UInt32, ReductionType::And, values, reduced_size, out);
+        jitc_reduce(backend, VarType::UInt32, ReduceOp::And, values, reduced_size, out);
         jitc_sync_thread();
         result = (out[0] & out[1] & out[2] & out[3]) != 0;
         jitc_free(out);
     } else {
         uint8_t out[4];
-        jitc_reduce(backend, VarType::UInt32, ReductionType::And, values, reduced_size, out);
+        jitc_reduce(backend, VarType::UInt32, ReduceOp::And, values, reduced_size, out);
         jitc_sync_thread();
         result = (out[0] & out[1] & out[2] & out[3]) != 0;
     }
@@ -389,13 +389,13 @@ bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
     bool result;
     if (backend == JitBackend::CUDA) {
         uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
-        jitc_reduce(backend, VarType::UInt32, ReductionType::Or, values, reduced_size, out);
+        jitc_reduce(backend, VarType::UInt32, ReduceOp::Or, values, reduced_size, out);
         jitc_sync_thread();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
         jitc_free(out);
     } else {
         uint8_t out[4];
-        jitc_reduce(backend, VarType::UInt32, ReductionType::Or, values, reduced_size, out);
+        jitc_reduce(backend, VarType::UInt32, ReduceOp::Or, values, reduced_size, out);
         jitc_sync_thread();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
     }

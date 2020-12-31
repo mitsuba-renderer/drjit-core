@@ -129,5 +129,40 @@ TEST_BOTH(09_safety) {
         scatter(a, Float(0), UInt32(0));
         jit_assert(index != a.index());
     }
+}
 
+TEST_BOTH(10_scatter_atomic_rmw) {
+    {
+        Float target = zero<Float>(16);
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
+
+        scatter_reduce(ReduceOp::Add, target, Float(1), index); // scatter 16 values
+
+        jit_assert(
+            strcmp(target.str(),
+                   "[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]") == 0);
+    }
+
+    {
+        Float target = zero<Float>(16);
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
+
+        scatter_reduce(ReduceOp::Add, target, Float(1), index); // scatter 17 values, tests LLVM masking
+
+        jit_assert(
+            strcmp(target.str(),
+                   "[4, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0]") == 0);
+    }
+
+    {
+        Float target = zero<Float>(16);
+        UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
+        Mask mask = neq(index, 7);
+
+        scatter_reduce(ReduceOp::Add, target, Float(1), index, mask);
+
+        jit_assert(
+            strcmp(target.str(),
+                   "[4, 1, 2, 1, 1, 1, 1, 0, 1, 1, 2, 0, 0, 0, 0, 0]") == 0);
+    }
 }

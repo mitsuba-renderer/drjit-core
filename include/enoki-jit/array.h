@@ -314,8 +314,9 @@ Array empty(size_t size) {
 
 template <typename Array>
 Array zero(size_t size) {
+    typename Array::Value value = 0;
     return Array::steal(
-        jit_var_new_literal(Array::Backend, Array::Type, 0, size));
+        jit_var_new_literal(Array::Backend, Array::Type, &value, size));
 }
 
 template <typename Array>
@@ -334,8 +335,17 @@ Array gather(const Array &source, const JitArray<Array::Backend, Index> index,
 template <typename Array, typename Index>
 void scatter(Array &target, const Array &value, const JitArray<Array::Backend, Index> index,
              const JitArray<Array::Backend, bool> &mask = true) {
-    target = Array::steal(
-        jit_var_new_scatter(target.index(), value.index(), index.index(), mask.index()));
+    target = Array::steal(jit_var_new_scatter(target.index(), value.index(),
+                                              index.index(), mask.index(),
+                                              ReduceOp::None));
+}
+
+template <typename Array, typename Index>
+void scatter_reduce(ReduceOp op, Array &target, const Array &value,
+                    const JitArray<Array::Backend, Index> index,
+                    const JitArray<Array::Backend, bool> &mask = true) {
+    target = Array::steal(jit_var_new_scatter(target.index(), value.index(),
+                                              index.index(), mask.index(), op));
 }
 
 template <typename Array>

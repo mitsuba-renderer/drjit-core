@@ -304,9 +304,10 @@ uint32_t jit_var_new_gather(uint32_t source, uint32_t index,
 }
 
 uint32_t jit_var_new_scatter(uint32_t target, uint32_t value,
-                             uint32_t index, uint32_t mask) {
+                             uint32_t index, uint32_t mask,
+                             ReduceOp reduce_op) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_scatter(target, value, index, mask);
+    return jitc_var_new_scatter(target, value, index, mask, reduce_op);
 }
 
 uint32_t jit_var_new_pointer(JitBackend backend, const void *value,
@@ -481,7 +482,7 @@ void jit_memcpy_async(JitBackend backend, void *dst, const void *src, size_t siz
     jitc_memcpy_async(backend, dst, src, size);
 }
 
-void jit_reduce(JitBackend backend, VarType type, ReductionType rtype, const void *ptr,
+void jit_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *ptr,
                 uint32_t size, void *out) {
     lock_guard guard(state.mutex);
     jitc_reduce(backend, type, rtype, ptr, size, out);

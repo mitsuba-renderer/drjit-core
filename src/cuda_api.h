@@ -146,7 +146,7 @@ extern CUfunction *jitc_cuda_compress_large;
 extern CUfunction *jitc_cuda_poke[(int) VarType::Count];
 extern CUfunction *jitc_cuda_block_copy[(int) VarType::Count];
 extern CUfunction *jitc_cuda_block_sum [(int) VarType::Count];
-extern CUfunction *jitc_cuda_reductions[(int) ReductionType::Count]
+extern CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                       [(int) VarType::Count];
 extern int jitc_cuda_devices;
 

@@ -24,4 +24,5 @@ extern uint32_t jitc_var_new_gather(uint32_t source, uint32_t index,
 
 /// Schedule a scatter opartion that writes to an array
 extern uint32_t jitc_var_new_scatter(uint32_t target, uint32_t value,
-                                     uint32_t index, uint32_t mask);
+                                     uint32_t index, uint32_t mask,
+                                     ReduceOp reduce_op);

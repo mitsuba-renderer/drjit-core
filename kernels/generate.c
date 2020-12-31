@@ -102,9 +102,6 @@ int main(int argc, char **argv) {
     }
     fprintf(f, "\";\n\n");
 
-    append(f, "llvm_kernels.ll", "llvm_kernels", kernels_dict, kernels_dict_size);
-
-
     f = fopen("kernels.h", "w");
     if (!f) {
         fprintf(stderr, "Could not open 'kernels.h'!");
@@ -129,10 +126,6 @@ int main(int argc, char **argv) {
     fprintf(f, "extern const size_t kernels_70_hash;\n");
     fprintf(f, "extern const char   kernels_70[];\n\n");
     fprintf(f, "extern const char   *kernels_list;\n\n");
-    fprintf(f, "extern const int    llvm_kernels_size_uncompressed;\n");
-    fprintf(f, "extern const int    llvm_kernels_size_compressed;\n");
-    fprintf(f, "extern const size_t llvm_kernels_hash;\n");
-    fprintf(f, "extern const char   llvm_kernels[];\n\n");
     fprintf(f, "#if defined(__cplusplus)\n");
     fprintf(f, "}\n");
     fprintf(f, "#endif");

@@ -22,7 +22,6 @@
 
 #include <thread>
 #include <lz4.h>
-#include "../kernels/kernels.h"
 
 #if !defined(ENOKI_JIT_DYNAMIC_LLVM)
 #  include <llvm-c/Core.h>
@@ -233,33 +232,8 @@ void jitc_llvm_disasm(const Kernel &kernel) {
 
 static ProfilerRegion profiler_region_llvm_compile("jit_llvm_compile");
 
-void jitc_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
-                      bool include_supplement) {
+void jitc_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     ProfilerPhase phase(profiler_region_llvm_compile);
-    char *temp = nullptr;
-    if (include_supplement) {
-        jitc_lz4_init();
-
-        size_t temp_size = buffer_size + jitc_lz4_dict_size +
-                           llvm_kernels_size_uncompressed + 1;
-
-        // Decompress supplemental kernel IR content
-        temp = (char *) malloc_check(temp_size);
-        memcpy(temp, jitc_lz4_dict, jitc_lz4_dict_size);
-        char *buffer_new = temp + jitc_lz4_dict_size;
-
-        if (LZ4_decompress_safe_usingDict(
-                llvm_kernels, buffer_new, llvm_kernels_size_compressed,
-                llvm_kernels_size_uncompressed, temp,
-                jitc_lz4_dict_size) != llvm_kernels_size_uncompressed)
-            jitc_fail("jit_llvm_compile(): decompression of supplemental kernel "
-                     "fragments failed!");
-
-        memcpy(buffer_new + llvm_kernels_size_uncompressed, buffer, buffer_size);
-        buffer_new[llvm_kernels_size_uncompressed + buffer_size] = '\0';
-        buffer_size += llvm_kernels_size_uncompressed;
-        buffer = buffer_new;
-    }
 
     if (jitc_llvm_mem_size <= buffer_size) {
         // Central assumption: LLVM text IR is much larger than the resulting generated code.
@@ -310,9 +284,7 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
         LLVMDisposeMessage(llvm_ir);
     }
 
-    // Inline supplemental code fragments into currently compiled kernel
-    // if (include_supplement)
-        LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
+    LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
 
     LLVMAddModule(jitc_llvm_engine, llvm_module);
 
@@ -379,7 +351,6 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel,
     kernel.llvm.itt = __itt_string_handle_create(kernel_name_old);
 #endif
     jitc_llvm_kernel_id++;
-    free(temp);
 }
 
 void jitc_llvm_update_strings() {

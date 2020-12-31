@@ -13,14 +13,14 @@
 #include "cuda_api.h"
 
 /// Descriptive names for the various reduction operations
-extern const char *reduction_name[(int) ReductionType::Count];
+extern const char *reduction_name[(int) ReduceOp::Count];
 
 /// Fill a device memory region with constants of a given type
 extern void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size, uint32_t isize,
                               const void *src);
 
 /// Reduce the given array to a single value
-extern void jitc_reduce(JitBackend backend, VarType type, ReductionType rtype,
+extern void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype,
                         const void *ptr, uint32_t size, void *out);
 
 /// 'All' reduction for boolean arrays

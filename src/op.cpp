@@ -1410,8 +1410,12 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     return result;
 }
 
+static const char *reduce_op_name[(int) ReduceOp::Count] = {
+    "none", "add", "mul", "min", "max", "and", "or"
+};
 
-uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_, uint32_t mask_) {
+uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
+                              uint32_t mask_, ReduceOp reduce_op) {
     Variable *v_target = jitc_var(target_);
     JitBackend backend = (JitBackend) v_target->backend;
 
@@ -1469,39 +1473,94 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     uint32_t dep[4] = { ptr.get(), value, index.get(), mask.get() };
     uint32_t dep_count = 4;
 
-    const char *stmt;
+    Buffer buf{50};
+
+    bool is_float = jitc_is_float(vt);
+
+    const char *op_name = nullptr;
+    switch (reduce_op) {
+        case ReduceOp::None:
+            break;
+        case ReduceOp::Add:
+            op_name = (is_float && backend == JitBackend::LLVM) ? "fadd" : "add";
+            break;
+        case ReduceOp::Min: op_name = "min"; break;
+        case ReduceOp::Max: op_name = "max"; break;
+        case ReduceOp::And: op_name = "and"; break;
+        case ReduceOp::Or: op_name = "or"; break;
+        default:
+            jitc_raise("jitc_var_new_scatter(): unsupported reduction!");
+    }
+
     if (backend == JitBackend::CUDA) {
-        if (vt != VarType::Bool) {
-            if (unmasked)
-                stmt = "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
-                       "st.global.$t2 [%rd3], $r2";
-            else
-                stmt = "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
-                       "@$r4 st.global.$t2 [%rd3], $r2";
-        } else {
-            if (unmasked)
-                stmt = "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
-                       "selp.u16 %w0, 1, 0, $r2$n"
-                       "st.global.u8 [%rd3], %w0";
-            else
-                stmt = "mad.wide.$t3 %rd3, $r3, $s2, $r1$n"
-                       "selp.u16 %w0, 1, 0, $r2$n"
-                       "@$r4 st.global.u8 [%rd3], %w0";
+        buf.put("mad.wide.$t3 %rd3, $r3, $s2, $r1$n");
+
+        const char *src_reg = "$r2",
+                   *src_type = "$t2";
+        if (vt == VarType::Bool) {
+            buf.put("selp.u16 %w0, 1, 0, $r2$n");
+            src_reg = "%w0";
+            src_type = "u8";
         }
+
+        if (reduce_op != ReduceOp::None)
+            buf.put(".reg.$t2 $r0_unused$n");
 
         if (unmasked) {
             dep[3] = 0;
             dep_count = 3;
+        } else {
+            buf.put("@$r4 ");
         }
+
+        if (reduce_op == ReduceOp::None)
+            buf.fmt("st.global.%s [%%rd3], %s", src_type, src_reg);
+        else // Technically, we could also use 'red.global' here, but it crashes OptiX ..
+            buf.fmt("atom.global.%s.%s $r0_unused, [%%rd3], %s", op_name,
+                    src_type, src_reg);
     } else {
-        stmt = "$r0_0 = bitcast i64* $r1_p3 to $t2*$n"
-               "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
-               "$call void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0_1, i32 $s2, <$w x $t4> $r4)";
+        if (is_float && reduce_op != ReduceOp::None &&
+            reduce_op != ReduceOp::Add)
+            jitc_raise("jitc_var_new_scatter(): LLVM %s reduction only "
+                       "supports integer values!", op_name);
+
+        if (op_name == nullptr) {
+            buf.put("$r0_0 = bitcast i64* $r1_p3 to $t2*$n"
+                    "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
+                    "$call void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0_1, i32 $s2, <$w x $t4> $r4)");
+        } else {
+            /* LLVM fallback: loop over entries and invoke 'atomicrmw' to
+               perform atomic update */
+            buf.fmt("br label %%L$i0_start\n"
+                    "\nL$i0_start:$n"
+                    "$r0_base = bitcast i64* $r1_p3 to $t2*$n"
+                    "$r0_ptrs = getelementptr $t2, $t2* $r0_base, <$w x $t3> $r3$n"
+                    "br label %%L$i0_body$n"
+                    "\nL$i0_body:$n"
+                    "$r0_index = phi i32 [ 0, %%L$i0_start ], [ $r0_next, %%L$i0_next ]$n"
+                    "$r0_mask = extractelement <$w x $t4> $r4, i32 $r0_index$n"
+                    "br i1 $r0_mask, label %%L$i0_scatter, label %%L$i0_next\n"
+                    "\nL$i0_scatter:$n"
+                    "$r0_ptr = extractelement <$w x $t2*> $r0_ptrs, i32 $r0_index$n"
+                    "$r0_value = extractelement <$w x $t2> $r2, i32 $r0_index$n"
+                    "atomicrmw %s $t2* $r0_ptr, $t2 $r0_value monotonic$n"
+                    "br label %%L$i0_next\n"
+                    "\nL$i0_next:$n"
+                    "$r0_next = add nuw nsw i32 $r0_index, 1$n"
+                    "$r0_cond = icmp eq i32 $r0_next, $w$n"
+                    "br i1 $r0_cond, label %%L$i0_done, label %%L$i0_body$n"
+                    "\nL$i0_done:", op_name);
+        }
     }
 
-    uint32_t result = jitc_var_new_stmt(backend, VarType::Void, stmt, 1, dep_count, dep);
-    jitc_log(Debug, "jit_var_new_scatter(%u <- target=%u (via %u), value=%u, index=%u, mask=%u): %s",
-             result, target.get(), ptr.get(), value, index.get(), mask.get(), copy ? "copy" : "direct");
+    uint32_t result =
+        jitc_var_new_stmt(backend, VarType::Void, buf.get(), 0, dep_count, dep);
+
+    jitc_log(Debug,
+             "jit_var_new_scatter(%u <- target=%u (via %u), value=%u, "
+             "index=%u, mask=%u, reduce_op=%s): %s",
+             result, target.get(), ptr.get(), value, index.get(), mask.get(),
+             reduce_op_name[(int) reduce_op], copy ? "copy" : "direct");
 
     jitc_var(result)->side_effect = true;
     thread_state(backend)->side_effects.push_back(result);

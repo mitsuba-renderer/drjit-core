@@ -103,7 +103,7 @@ CUfunction *jitc_cuda_compress_large = nullptr;
 CUfunction *jitc_cuda_poke[(int)VarType::Count] { };
 CUfunction *jitc_cuda_block_copy[(int)VarType::Count] { };
 CUfunction *jitc_cuda_block_sum [(int)VarType::Count] { };
-CUfunction *jitc_cuda_reductions[(int) ReductionType::Count]
+CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                [(int) VarType::Count] = { };
 int jitc_cuda_devices = 0;
 int jitc_cuda_version_major = 0;
@@ -268,7 +268,7 @@ bool jitc_cuda_init() {
             jitc_cuda_version_major, jitc_cuda_version_minor);
 
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
-        for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++) {
+        for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
             jitc_cuda_reductions[j][k] =
                 (CUfunction *) malloc_check(sizeof(CUfunction) * jitc_cuda_devices);
         }
@@ -408,7 +408,7 @@ bool jitc_cuda_init() {
                 jitc_cuda_block_sum[k][i] = nullptr;
             }
 
-            for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++) {
+            for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
                 snprintf(name, sizeof(name), "reduce_%s_%s", reduction_name[j],
                          var_type_name_short[k]);
                 if (strstr(kernels_list, name)) {
@@ -517,7 +517,7 @@ void jitc_cuda_shutdown() {
         Z(jitc_cuda_poke[k]);
         Z(jitc_cuda_block_copy[k]);
         Z(jitc_cuda_block_sum[k]);
-        for (uint32_t j = 0; j < (uint32_t) ReductionType::Count; j++)
+        for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++)
             Z(jitc_cuda_reductions[j][k]);
     }
 

@@ -262,6 +262,7 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v) {
                     case 'a': prefix_table = var_type_name_llvm_abbrev; break;
                     case 's': prefix_table = var_type_size_str; break;
                     case 'r': prefix_table = var_type_prefix; break;
+                    case 'i': prefix_table = nullptr; break;
                     case 'o': prefix_table = (const char **) jitc_llvm_ones_str; break;
                     default:
                         jitc_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
@@ -279,10 +280,12 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v) {
                              "expression (referenced variable %u is missing)!", v->stmt, arg_id);
 
                 const Variable *dep = jitc_var(dep_id);
-                const char *prefix = prefix_table[(int) dep->type];
-                buffer.put(prefix, strlen(prefix));
+                if (likely(prefix_table)) {
+                    const char *prefix = prefix_table[(int) dep->type];
+                    buffer.put(prefix, strlen(prefix));
+                }
 
-                if (tname == 'r')
+                if (tname == 'r' || tname == 'i')
                     buffer.put_uint32(dep->reg_index);
             }
         } while (c != '\0');

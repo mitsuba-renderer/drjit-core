@@ -962,8 +962,19 @@ extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
 extern JIT_EXPORT uint32_t jit_var_new_gather(uint32_t source, uint32_t index,
                                               uint32_t mask);
 
+#if defined(__cplusplus)
+/// Reduction operations for \ref jit_var_new_scatter() \ref jit_reduce()
+enum class ReduceOp : uint32_t { None, Add, Mul, Min, Max, And, Or, Count };
+#else
+enum ReduceOp {
+    ReduceOpNone, ReduceOpAdd, ReduceOpMul, ReduceOpMin, ReduceOpMax,
+    ReduceOpAnd, ReduceOpOr, ReduceOpCount
+};
+#endif
+
+
 /**
- * \brief Schedule a scatter operation
+ * \brief Schedule a scatter or atomic read-modify-write operation
  *
  * This operation schedules a side effect that will perform an operation
  * equivalent to <tt>if (mask) target[index] = value</tt>. The variable \c
@@ -979,9 +990,13 @@ extern JIT_EXPORT uint32_t jit_var_new_gather(uint32_t source, uint32_t index,
  * in arbitrary order due to the inherent parallelism. This is fine if the
  * written addresses do not overlap. Otherwise, explicit evaluation via
  * <tt>jit_var_eval(target)</tt> is necessary to ensure a fixed ordering.
+ *
+ * If <t>op != ReduceOp::None</tt>, an atomic read-modify-write operation will
+ * be used instead of simply overwriting entries of 'target'.
  */
 extern JIT_EXPORT uint32_t jit_var_new_scatter(uint32_t target, uint32_t value,
-                                               uint32_t index, uint32_t mask);
+                                               uint32_t index, uint32_t mask,
+                                               ReduceOp reduce_op);
 
 /**
  * \brief Create an identical copy of the given variable
@@ -1240,17 +1255,6 @@ extern JIT_EXPORT void jit_eval();
 //  Assortment of tuned kernels for initialization, reductions, etc.
 // ====================================================================
 
-#if defined(__cplusplus)
-/// Potential reduction operations for \ref jit_reduce
-enum class ReductionType : uint32_t { Add, Mul, Min, Max, And, Or, Count };
-#else
-enum ReductionType {
-    ReductionTypeAdd, ReductionTypeMul, ReductionTypeMin,
-    ReductionTypeMax, ReductionTypeAnd, ReductionTypeOr,
-    ReductionTypeCount
-};
-#endif
-
 /**
  * \brief Fill a device memory region with constants of a given type
  *
@@ -1280,7 +1284,7 @@ extern JIT_EXPORT void jit_memcpy_async(JitBackend backend, void *dst, const voi
  * Runs asynchronously.
  */
 extern JIT_EXPORT void jit_reduce(JitBackend backend, JIT_ENUM VarType type,
-                                   JIT_ENUM ReductionType rtype,
+                                   JIT_ENUM ReduceOp rtype,
                                    const void *ptr, uint32_t size, void *out);
 
 /**
