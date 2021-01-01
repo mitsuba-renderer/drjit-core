@@ -65,8 +65,7 @@ extern void jitc_eval(ThreadState *ts);
 
 /// Used by jitc_eval() to generate PTX source code
 extern void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
-                               uint32_t n_regs, uint32_t n_params,
-                               int params_global);
+                               uint32_t n_regs, uint32_t n_params);
 
 /// Used by jitc_eval() to generate LLVM IR source code
 extern void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group);

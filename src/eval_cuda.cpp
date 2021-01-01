@@ -6,8 +6,8 @@
 static void jitc_render_stmt_cuda(uint32_t index, const Variable *v);
 
 void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
-                       uint32_t n_regs, uint32_t n_params,
-                       int params_global) {
+                       uint32_t n_regs, uint32_t n_params) {
+    bool params_global = !uses_optix && n_params > ENOKI_CUDA_ARG_LIMIT;
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
 
@@ -38,7 +38,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                    state.devices[ts->device].compute_capability);
     } else {
        buffer.fmt(".const .align 8 .b8 params[%u];\n\n"
-                  ".entry __raygen__enoki_^^^^^^^^^^^^^^^^() {",
+                  ".entry __raygen__enoki_^^^^^^^^^^^^^^^^() {\n",
                   n_params * (uint32_t) sizeof(void *));
     }
 
@@ -69,11 +69,11 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                    "\n"
                    "body:\n");
     } else {
-        buffer.put("    call (%r0), _optix_get_launch_dimensions_y, ();\n"
+        buffer.put("    call (%r0), _optix_get_launch_dimension_y, ();\n"
                    "    call (%r1), _optix_get_launch_index_y, ();\n"
                    "    call (%r2), _optix_get_launch_index_x, ();\n"
                    "    mad.lo.u32 %r0, %r0, %r1, %r2;\n"
-                   "    call (%r1), _optix_get_launch_dimensions_z, ();\n"
+                   "    call (%r1), _optix_get_launch_dimension_z, ();\n"
                    "    call (%r2), _optix_get_launch_index_z, ();\n"
                    "    mad.lo.u32 %r0, %r0, %r1, %r2;\n\n"
                    "body:\n");
@@ -83,7 +83,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                *params_type = "param";
 
     if (uses_optix) {
-        uses_optix = "const";
+        params_type = "const";
     } else if (params_global) {
         params_base = "%rd2";
         params_type = "global";
@@ -96,10 +96,18 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                        size = v->size;
         const VarType vt = (VarType) vti;
 
-        if (unlikely(log_trace && v->extra)) {
-            const char *label = jitc_var_label(index);
-            if (label)
-                buffer.fmt("    // %s\n", label);
+        if (unlikely(v->extra)) {
+            auto it = state.extra.find(index);
+            if (it == state.extra.end())
+                jit_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
+            const Extra &extra = it->second;
+            if (log_trace && extra.label)
+                buffer.fmt("    // %s\n", extra.label);
+
+            if (extra.assemble) {
+                extra.assemble(v, extra);
+                continue;
+            }
         }
 
         if (likely(v->param_type == ParamType::Input)) {
@@ -210,18 +218,18 @@ static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
                     case 'r': prefix_table = var_type_prefix; break;
                     default:
                         jitc_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
-                                 "expression (unknown type \"%c\") in \"%s\"!", type, v->stmt);
+                                  "expression (unknown type \"%c\") in \"%s\"!", type, v->stmt);
                 }
 
                 uint32_t arg_id = *s++ - '0';
                 if (unlikely(arg_id > 4))
                     jitc_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
-                             "expression (argument out of bounds)!", v->stmt);
+                              "expression (argument out of bounds)!", v->stmt);
 
                 uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
                 if (unlikely(dep_id == 0))
                     jitc_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
-                             "expression (referenced variable %u is missing)!", v->stmt, arg_id);
+                              "expression (referenced variable %u is missing)!", v->stmt, arg_id);
 
                 const Variable *dep = jitc_var(dep_id);
                 const char *prefix = prefix_table[(int) dep->type];

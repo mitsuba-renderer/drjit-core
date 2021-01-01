@@ -328,6 +328,25 @@ uint32_t jitc_var_shift(JitBackend backend, VarType vt, JitOp op,
 // ===========================================================================
 // jitc_var_new_op(): various standard operations for Enoki-JIT variables
 // ===========================================================================
+//
+const char *op_name[(int) JitOp::Count] {
+    // ---- Unary ----
+    "not", "neg", "abs", "sqrt", "rcp", "rsqrt", "ceil", "floor", "round", "trunc", "exp2", "log2", "sin", "cos",
+    "popc", "clz", "ctz",
+
+    // ---- Binary ----
+    "add", "sub", "mul", "div", "mod", "min", "max", "and", "or",
+    "xor", "shl", "shr",
+
+    // ---- Comparisons ----
+    "eq", "neq", "lt", "le", "gt", "ge",
+
+    // ---- Ternary ----
+    "fmadd", "select"
+};
+
+static_assert(sizeof(op_name) / sizeof(const char *) == (size_t) JitOp::Count,
+              "op_name and JitOp enum are out of sync!");
 
 // Error handler
 JIT_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op,

@@ -36,6 +36,7 @@ static tsl::robin_set<std::pair<uint32_t, uint32_t>, pair_hash> visited;
 /// Kernel parameter buffer and device copy
 static std::vector<void *> kernel_params;
 static uint8_t *kernel_params_global = nullptr;
+static uint32_t kernel_param_count = 0;
 
 /// Buffer containing global declarations
 Buffer globals { 0 };
@@ -67,6 +68,19 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
         jitc_var_traverse(size, index2);
     }
 
+    if (unlikely(v->extra)) {
+        auto it = state.extra.find(index);
+        if (it == state.extra.end())
+            jit_fail("jit_var_traverse(): could not find matching 'extra' record!");
+
+        const Extra &extra = it->second;
+        for (uint32_t i = 0; i < extra.dep_count; ++i) {
+            uint32_t index2 = extra.dep[i];
+            if (index2)
+                jitc_var_traverse(size, index2);
+        }
+    }
+
     // If we're really visiting this variable the first time, no matter its size
     if (visited.emplace(0, index).second)
         v->output_flag = false;
@@ -95,7 +109,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     } else {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
         for (int i = 0; i < 3; ++i)
-        kernel_params.push_back(nullptr);
+            kernel_params.push_back(nullptr);
     }
 
     (void) timer();
@@ -174,10 +188,12 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                  "efficiently. Please periodically run jit_eval() to break "
                  "down the computation into smaller chunks.");
 
+    kernel_param_count = (uint32_t) kernel_params.size();
+
     // Pass parameters through global memory if too large or using OptiX
     if (backend == JitBackend::CUDA &&
-        (uses_optix || kernel_params.size() > ENOKI_CUDA_ARG_LIMIT)) {
-        size_t size = kernel_params.size() * sizeof(void *);
+        (uses_optix || kernel_param_count > ENOKI_CUDA_ARG_LIMIT)) {
+        size_t size = kernel_param_count * sizeof(void *);
         uint8_t *tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, size);
         kernel_params_global = (uint8_t *) jitc_malloc(AllocType::Device, size);
         memcpy(tmp, kernel_params.data(), size);
@@ -223,8 +239,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     globals_set.clear();
     buffer.clear();
     if (backend == JitBackend::CUDA)
-        jitc_assemble_cuda(ts, group, n_regs, (uint32_t) kernel_params.size(),
-                           kernel_params_global != nullptr);
+        jitc_assemble_cuda(ts, group, n_regs, kernel_param_count);
     else
         jitc_assemble_llvm(ts, group);
 
@@ -344,21 +359,21 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
     if (ts->backend == JitBackend::CUDA) {
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-        // if (unlikely(uses_optix)) {
-        //     jitc_optix_launch(ts, kernel, group.size, kernel_params_global,
-        //                      kernel_params_size);
-        //     return nullptr;
-        // }
+        if (unlikely(uses_optix)) {
+            jitc_optix_launch(ts, kernel, group.size, kernel_params_global,
+                              kernel_param_count);
+            return nullptr;
+        }
 #endif
 
         if (!uses_optix) {
-            size_t kernel_params_size = kernel_params.size() * sizeof(void *);
+            size_t buffer_size = kernel_params.size() * sizeof(void *);
 
             void *config[] = {
                 CU_LAUNCH_PARAM_BUFFER_POINTER,
                 kernel_params.data(),
                 CU_LAUNCH_PARAM_BUFFER_SIZE,
-                &kernel_params_size,
+                &buffer_size,
                 CU_LAUNCH_PARAM_END
             };
 

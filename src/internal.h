@@ -313,6 +313,11 @@ struct ThreadState {
 
     /// User-provided list of program groups
     std::vector<OptixProgramGroup> optix_program_groups;
+
+    /// Optional: desired launch configuration
+    uint32_t optix_launch_width = 0;
+    uint32_t optix_launch_height = 0;
+    uint32_t optix_launch_samples = 0;
 #endif
 };
 
@@ -423,6 +428,9 @@ struct Extra {
     /// Bucket decomposition for virtual function calls
     uint32_t vcall_bucket_count = 0;
     VCallBucket *vcall_buckets = nullptr;
+
+    /// Code generation callback
+    void (*assemble)(const Variable *v, const Extra &extra) = nullptr;
 };
 
 using ExtraMap = tsl::robin_map<uint32_t, Extra>;
@@ -580,7 +588,7 @@ public:
 
     /// Append a single character to the buffer
     void putc(char c) {
-        if (unlikely(m_cur + 1 == m_end))
+        if (unlikely(m_cur + 1 >= m_end))
             expand();
         *m_cur++ = c;
         *m_cur = '\0';

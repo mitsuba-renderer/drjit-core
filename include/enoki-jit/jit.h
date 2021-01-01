@@ -838,7 +838,7 @@ inline uint32_t jit_var_new_stmt_4(JitBackend backend, JIT_ENUM VarType vt,
 /// List of operations supported by \ref jit_var_new_op()
 enum class JitOp : uint32_t {
     // ---- Unary ----
-    Not, Neg, Abs, Sqrt, Rcp, Rsqrt, Ceil, Floor, Round, Trunc, Exp2, Log2,
+    Not, Neg, Abs, Sqrt, Rcp, Rsqrt, Ceil, Floor, Round, Trunc, Exp2, Log2, Sin, Cos,
     Popc, Clz, Ctz,
     // ---- Binary ----
     Add, Sub, Mul, Div, Mod, Min, Max, And, Or, Xor, Shl, Shr,
@@ -849,24 +849,6 @@ enum class JitOp : uint32_t {
 
     Count
 };
-
-#if EK_OPNAME==1
-const char *op_name[(int) JitOp::Count] {
-    "Not", "Neg", "Abs", "Sqrt", "Rcp", "Rsqrt", "Ceil", "Floor", "Round", "Trunc", "Exp2", "Log2",
-
-    "Popc", "Clz", "Ctz",
-
-    // ---- Binary ----
-    "Add", "Sub", "Mul", "Div", "Mod", "Min", "Max", "And", "Or",
-    "Xor", "Shl", "Shr",
-
-    // ---- Comparisons ----
-    "Eq", "Neq", "Lt", "Le", "Gt", "Ge",
-
-    // ---- Ternary ----
-    "Fmadd", "Select"
-};
-#endif
 
 
 /**

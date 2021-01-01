@@ -1,5 +1,6 @@
-#include <enoki-jit/cuda.h>
-#include <stdio.h>
+#include <enoki-jit/array.h>
+#include <cstdio>
+#include <cstring>
 
 #include "optix_stubs.h"
 
@@ -40,7 +41,7 @@ void demo() {
                              0.8f, -0.8f, 0.0f,
                              0.0f,  0.8f, 0.0f };
     void *d_vertices = jit_malloc(AllocType::Device, sizeof(h_vertices));
-    jit_memcpy(1, d_vertices, h_vertices, sizeof(h_vertices));
+    jit_memcpy(JitBackend::CUDA, d_vertices, h_vertices, sizeof(h_vertices));
 
     // =====================================================
     // Build geometric acceleration data structure
@@ -89,7 +90,7 @@ void demo() {
     // Compactify geometric acceleration data structure
     // =====================================================
 
-    jit_memcpy(1, &h_compacted_size, d_compacted_size, sizeof(size_t));
+    jit_memcpy(JitBackend::CUDA, &h_compacted_size, d_compacted_size, sizeof(size_t));
 
     if (h_compacted_size < gas_buffer_sizes.outputSizeInBytes) {
         void *d_gas_compact = jit_malloc(AllocType::Device, h_compacted_size);
@@ -197,6 +198,11 @@ void demo() {
         pg, 2
     );
 
+    // Optional, may improve coherence
+    jit_optix_set_launch_size(
+        16, 16, 1
+    );
+
     // Do twice to verify caching
     for (int i = 0; i < 2; ++i) {
         // =====================================================
@@ -216,7 +222,7 @@ void demo() {
 
         Float mint = 0.f, maxt = 100.f, time = 0.f;
 
-        UInt64 handle = ek::placeholder<UInt64>(gas_handle);
+        UInt64 handle = ek::opaque<UInt64>(gas_handle);
         UInt32 ray_mask(255), ray_flags(0), sbt_offset(0), sbt_stride(1),
             miss_sbt_index(0);
 
@@ -268,7 +274,7 @@ void demo() {
 
 int main(int, char **) {
     // jit_set_log_level_stderr(LogLevel::Trace);
-    jit_init(0, 1);
+    jit_init((int) JitBackend::CUDA);
     init_optix_api();
     demo();
 

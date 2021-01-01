@@ -198,8 +198,8 @@ template <typename T> void test_const_prop() {
                 char *v0 = strdup(jit_var_str(in[ir]));
                 char *v1 = strdup(jit_var_str(value_id));
                 char *v2 = strdup(jit_var_str(ref_id));
-                fprintf(stderr, "Mismatch: op(%s, %s) == %s vs %s\n",
-                        op_name[(int) op], v0, v1, v2);
+                fprintf(stderr, "Mismatch: op(%i, %s) == %s vs %s\n",
+                        (int) op, v0, v1, v2);
                 free(v0); free(v1); free(v2);
                 fail = true;
             }
@@ -272,8 +272,8 @@ template <typename T> void test_const_prop() {
                     char *v1 = strdup(jit_var_str(in[jr]));
                     char *v2 = strdup(jit_var_str(value_id));
                     char *v3 = strdup(jit_var_str(ref_id));
-                    fprintf(stderr, "Mismatch: op(%s, %s, %s) == %s vs %s\n",
-                            op_name[(int) op], v0, v1, v2, v3);
+                    fprintf(stderr, "Mismatch: op(%i, %s, %s) == %s vs %s\n",
+                           (int) op, v0, v1, v2, v3);
                     free(v0); free(v1); free(v2); free(v3);
                     fail = true;
                 }
@@ -359,8 +359,8 @@ template <typename T> void test_const_prop() {
                         char *v2 = strdup(jit_var_str(in[kr]));
                         char *v3 = strdup(jit_var_str(value_id));
                         char *v4 = strdup(jit_var_str(ref_id));
-                        fprintf(stderr, "Mismatch: op(%s, %s, %s, %s) == %s vs %s\n",
-                                op_name[(int) op], v0, v1, v2, v3, v4);
+                        fprintf(stderr, "Mismatch: op(%i, %s, %s, %s) == %s vs %s\n",
+                                (int) op, v0, v1, v2, v3, v4);
                         free(v0); free(v1); free(v2); free(v3); free(v4);
                         fail = true;
                     }

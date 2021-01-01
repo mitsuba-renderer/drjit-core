@@ -320,9 +320,15 @@ Array zero(size_t size) {
 }
 
 template <typename Array>
-Array full(const typename Array::Value &value, size_t size, bool eval = false) {
+Array full(const typename Array::Value &value, size_t size = 1) {
     return Array::steal(
-        jit_var_new_literal(Array::Backend, Array::Type, &value, size, eval));
+        jit_var_new_literal(Array::Backend, Array::Type, &value, size, false));
+}
+
+template <typename Array>
+Array opaque(const typename Array::Value &value, size_t size = 1) {
+    return Array::steal(
+        jit_var_new_literal(Array::Backend, Array::Type, &value, size, true));
 }
 
 template <typename Array, typename Index>

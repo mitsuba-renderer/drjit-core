@@ -572,4 +572,38 @@ const void *jit_registry_attr_data(const char *domain, const char *name) {
     return jitc_registry_attr_data(domain, name);
 }
 
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+OptixDeviceContext jit_optix_context() {
+    lock_guard guard(state.mutex);
+    return jitc_optix_context();
+}
 
+void *jit_optix_lookup(const char *name) {
+    lock_guard guard(state.mutex);
+    return jitc_optix_lookup(name);
+}
+
+void jit_optix_configure(const OptixPipelineCompileOptions *pco,
+                          const OptixShaderBindingTable *sbt,
+                          const OptixProgramGroup *pg,
+                          uint32_t pg_count) {
+    lock_guard guard(state.mutex);
+    jitc_optix_configure(pco, sbt, pg, pg_count);
+}
+
+void jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
+    lock_guard guard(state.mutex);
+    jitc_optix_trace(nargs, args, mask);
+}
+
+void jit_optix_mark(uint32_t index) {
+    lock_guard guard(state.mutex);
+    jitc_optix_mark(index);
+}
+
+void jit_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples) {
+    lock_guard guard(state.mutex);
+    jitc_optix_set_launch_size(width, height, samples);
+}
+
+#endif

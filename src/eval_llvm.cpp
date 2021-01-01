@@ -268,18 +268,18 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v) {
                     case 'o': prefix_table = (const char **) jitc_llvm_ones_str; break;
                     default:
                         jitc_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
-                                 "expression (unknown tname \"%c\") in \"%s\"!", tname, v->stmt);
+                                  "expression (unknown tname \"%c\") in \"%s\"!", tname, v->stmt);
                 }
 
                 uint32_t arg_id = *s++ - '0';
                 if (unlikely(arg_id > 4))
                     jitc_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
-                             "expression (argument out of bounds)!", v->stmt);
+                              "expression (argument out of bounds)!", v->stmt);
 
                 uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
                 if (unlikely(dep_id == 0))
                     jitc_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
-                             "expression (referenced variable %u is missing)!", v->stmt, arg_id);
+                              "expression (referenced variable %u is missing)!", v->stmt, arg_id);
 
                 const Variable *dep = jitc_var(dep_id);
                 if (likely(prefix_table)) {

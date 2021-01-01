@@ -486,7 +486,7 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
 
     for (uint32_t i = 0; i < n_dep; ++i) {
         if (v[i]->size != size && v[i]->size != 1)
-            jitc_raise("jit_var_new_stmt(): arithmetic involving  arrays of "
+            jitc_raise("jit_var_new_stmt(): arithmetic involving arrays of "
                       "incompatible size!");
     }
 
@@ -1234,6 +1234,23 @@ const char *jitc_var_graphviz() {
                 var_buffer.fmt(" [label=\" %u\"]", i + 1);
             var_buffer.put(";\n");
         }
+
+        if (unlikely(v->extra)) {
+            auto it = state.extra.find(index);
+            if (it == state.extra.end())
+                jit_fail("jit_var_graphviz(): could not find matching 'extra' "
+                         "record!");
+
+            const Extra &extra = it->second;
+            for (uint32_t i = 0; i < extra.dep_count; ++i) {
+                if (!extra.dep[i])
+                    continue;
+
+                var_buffer.fmt("    %u -> %u [label=\" %u\" color=red];",
+                               extra.dep[i], index, i + 1);
+            }
+        }
+
     }
     var_buffer.put("}\n");
 

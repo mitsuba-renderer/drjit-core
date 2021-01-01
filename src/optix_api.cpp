@@ -280,7 +280,7 @@ void jitc_optix_log(unsigned int /* level */, const char *tag, const char *messa
 }
 
 OptixDeviceContext jitc_optix_context() {
-    ThreadState *ts = thread_state(true);
+    ThreadState *ts = thread_state(JitBackend::CUDA);
 
     if (ts->optix_context)
         return ts->optix_context;
@@ -338,7 +338,7 @@ void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
                          const OptixShaderBindingTable *sbt,
                          const OptixProgramGroup *pg,
                          uint32_t pg_count) {
-    ThreadState *ts = thread_state(true);
+    ThreadState *ts = thread_state(JitBackend::CUDA);
     jitc_log(Info, "jit_optix_configure(pg_count=%u)", pg_count);
     ts->optix_pipeline_compile_options = pco;
     ts->optix_shader_binding_table = sbt;
@@ -346,6 +346,13 @@ void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
     ts->optix_program_groups.clear();
     for (uint32_t i = 0; i < pg_count; ++i)
         ts->optix_program_groups.push_back(pg[i]);
+}
+
+void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples) {
+    ThreadState *ts = thread_state(JitBackend::CUDA);
+    ts->optix_launch_width = width;
+    ts->optix_launch_height = height;
+    ts->optix_launch_samples = samples;
 }
 
 void jitc_optix_compile(ThreadState *ts, const char *buffer,
@@ -374,11 +381,15 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer,
     // 3. Create an OptiX program group
     // =====================================================
 
+    size_t n_programs = 1;
+    size_t n_program_refs = 1;
+
     OptixProgramGroupOptions pgo { };
     std::unique_ptr<OptixProgramGroupDesc[]> pgd(
-        new OptixProgramGroupDesc[pg_map.size()]);
-    memset(pgd.get(), 0, pg_map.size() * sizeof(OptixProgramGroupDesc));
+        new OptixProgramGroupDesc[n_programs]);
+    memset(pgd.get(), 0, n_programs * sizeof(OptixProgramGroupDesc));
 
+#if 0
     for (auto &kv : pg_map) {
         char kernel_name[36];
         uint32_t i = kv.second;
@@ -397,14 +408,23 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer,
             pgd[i].callables.entryFunctionNameDC = strdup(kernel_name);
         }
     }
+#else
+    char kernel_name[36];
+    snprintf(kernel_name, sizeof(kernel_name),
+             "__raygen__enoki_%016llx", (unsigned long long) kernel_hash);
+    pgd[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+    pgd[0].raygen.module = kernel.optix.mod;
+    pgd[0].raygen.entryFunctionName = strdup(kernel_name);
+#endif
 
-    kernel.optix.pg = new OptixProgramGroup[pg_map.size()];
-    kernel.optix.pg_count = pg_map.size();
-    kernel.optix.sbt_count = sbt_refs.size();
+    kernel.optix.pg = new OptixProgramGroup[n_programs];
+    kernel.optix.pg_count = n_programs;
+    // kernel.optix.sbt_count = sbt_refs.size();
+    kernel.optix.sbt_count = 1;
 
     log_size = sizeof(error_log);
     rv = optixProgramGroupCreate(ts->optix_context, pgd.get(),
-                                 pg_map.size(), &pgo, error_log,
+                                 n_programs, &pgo, error_log,
                                  &log_size, kernel.optix.pg);
     if (rv) {
         jitc_fail("jit_optix_compile(): optixProgramGroupCreate() failed. Please see the PTX "
@@ -414,8 +434,9 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer,
 
     size_t stride = OPTIX_SBT_RECORD_HEADER_SIZE;
     uint8_t *sbt_record = (uint8_t *)
-        jitc_malloc(AllocType::HostPinned, sbt_refs.size() * stride);
+        jitc_malloc(AllocType::HostPinned, n_program_refs * stride);
 
+#if 0
     for (size_t i = 0; i < sbt_refs.size(); ++i) {
         auto it = pg_map.find(sbt_refs[i]);
         if (it == pg_map.end())
@@ -423,6 +444,10 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer,
         jitc_optix_check(optixSbtRecordPackHeader(
             kernel.optix.pg[it->second], sbt_record + stride * i));
     }
+#else
+    jitc_optix_check(optixSbtRecordPackHeader(
+        kernel.optix.pg[0], sbt_record));
+#endif
 
     kernel.optix.sbt_record = (uint8_t *)
         jitc_malloc_migrate(sbt_record, AllocType::Device, 1);
@@ -436,7 +461,7 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer,
     link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 
     size_t size_before = ts->optix_program_groups.size();
-    for (uint32_t i = 0; i < pg_map.size(); ++i) {
+    for (uint32_t i = 0; i < n_programs; ++i) {
         if (i == 0)
             free((char *) pgd[0].raygen.entryFunctionName);
         else
@@ -469,8 +494,9 @@ void jitc_optix_free(const Kernel &kernel) {
     jitc_free(kernel.optix.sbt_record);
 }
 
-void jitc_optix_launch(ThreadState *ts, const Kernel &kernel, uint32_t size,
-                      const void *args, uint32_t args_size) {
+void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
+                       uint32_t launch_size, const void *args,
+                       uint32_t n_args) {
     OptixShaderBindingTable sbt;
     memcpy(&sbt, ts->optix_shader_binding_table, sizeof(OptixShaderBindingTable));
     sbt.raygenRecord = (CUdeviceptr) kernel.optix.sbt_record;
@@ -481,86 +507,124 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel, uint32_t size,
         sbt.callablesRecordCount = kernel.optix.sbt_count - 1;
     }
 
-    jitc_optix_check(optixLaunch(kernel.optix.pipeline, ts->stream,
-                                (CUdeviceptr) args, args_size, &sbt, size, 1, 1));
+    uint32_t launch_width = launch_size,
+             launch_height = 1,
+             launch_samples = 1;
+
+    uint32_t provided = ts->optix_launch_width * ts->optix_launch_height *
+                        ts->optix_launch_samples;
+
+    if (provided == launch_size) {
+        launch_width = ts->optix_launch_width;
+        launch_height = ts->optix_launch_height,
+        launch_samples = ts->optix_launch_samples;
+    } else if (provided != 0) {
+        jitc_raise(
+            "jit_optix_launch(): attempted to launch an OptiX kernel with size "
+            "%u, which is incompatible with the launch configuration (%u * %u "
+            "* %u ==l %u) previously specified via jit_optix_set_launch_size!",
+            launch_size, ts->optix_launch_width, ts->optix_launch_height,
+            ts->optix_launch_samples, provided);
+    }
+
+    jitc_optix_check(
+        optixLaunch(kernel.optix.pipeline, ts->stream, (CUdeviceptr) args,
+                    n_args * sizeof(void *), &sbt, launch_width,
+                    launch_height, launch_samples));
 }
 
-void jitc_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
-    VarType types[] { VarType::UInt64,  VarType::Float32, VarType::Float32,
-                      VarType::Float32, VarType::Float32, VarType::Float32,
-                      VarType::Float32, VarType::Float32, VarType::Float32,
-                      VarType::Float32, VarType::UInt32,  VarType::UInt32,
-                      VarType::UInt32,  VarType::UInt32,  VarType::UInt32 };
+void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
+    VarType types[]{ VarType::UInt64,  VarType::Float32, VarType::Float32,
+                     VarType::Float32, VarType::Float32, VarType::Float32,
+                     VarType::Float32, VarType::Float32, VarType::Float32,
+                     VarType::Float32, VarType::UInt32,  VarType::UInt32,
+                     VarType::UInt32,  VarType::UInt32,  VarType::UInt32,
+                     VarType::UInt32,  VarType::UInt32,  VarType::UInt32,
+                     VarType::UInt32,  VarType::UInt32,  VarType::UInt32,
+                     VarType::UInt32,  VarType::UInt32 };
 
-    if (nargs < 15)
-        jitc_raise("jit_optix_trace(): too few arguments (got %u < 15)", nargs);
+    if (n_args < 15)
+        jitc_raise("jit_optix_trace(): too few arguments (got %u < 15)", n_args);
 
-    uint32_t np = nargs - 15;
+    uint32_t np = n_args - 15, size = 0;
     if (np > 8)
         jitc_raise("jit_optix_trace(): too many payloads (got %u > 8)", np);
 
     jitc_log(Info, "jit_optix_trace(): %u payload value%s.", np, np == 1 ? "" : "s");
 
-    for (uint32_t i = 0; i < nargs; ++i) {
-        VarType vt = jitc_var_type(args[i]);
-        if (i < 15) {
-            if (vt != types[i])
-                jitc_raise("jit_optix_trace(): type mismatch for arg. %u", i);
-        } else {
-            if (var_type_size[(int) vt] != 4)
-                jitc_raise("jit_optix_trace(): size mismatch for arg. %u", i);
+    for (uint32_t i = 0; i <= n_args; ++i) {
+        uint32_t index = (i < n_args) ? args[i] : mask;
+        VarType ref = i < n_args ? types[i] : VarType::Bool;
+        const Variable *v = jitc_var(index);
+        if ((VarType) v->type != ref)
+            jitc_raise("jit_optix_trace(): type mismatch for arg. %u (got %s, "
+                       "expected %s)",
+                       i, var_type_name[v->type], var_type_name[(int) ref]);
+        size = std::max(size, v->size);
+    }
+
+    for (uint32_t i = 0; i <= n_args; ++i) {
+        uint32_t index = (i < n_args) ? args[i] : mask;
+        const Variable *v = jitc_var(index);
+        if (v->size != 1 && v->size != size)
+            jitc_raise("jit_optix_trace(): arithmetic involving arrays of "
+                      "incompatible size!");
+    }
+
+    if (jitc_var_type(mask) != VarType::Bool)
+        jitc_raise("jit_optix_trace(): type mismatch for mask argument!");
+
+    uint32_t special =
+        jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 0, nullptr);
+
+    // Associate extra record with this variable
+    Extra &extra = state.extra[special];
+    Variable *v = jitc_var(special);
+    v->extra = 1;
+    v->optix = 1;
+    v->size = size;
+
+    // Register dependencies
+    extra.dep_count = n_args + 1;
+    extra.dep = (uint32_t *) malloc(sizeof(uint32_t) * extra.dep_count);
+    memcpy(extra.dep, args, n_args * sizeof(uint32_t));
+    extra.dep[n_args] = mask;
+    for (uint32_t i = 0; i < n_args; ++i)
+        jitc_var_inc_ref_int(args[i]);
+    jitc_var_inc_ref_int(mask);
+
+    extra.assemble = [](const Variable *v2, const Extra &extra) {
+        uint32_t payload_count = extra.dep_count - 16;
+        for (uint32_t i = 0; i < payload_count; ++i)
+            buffer.fmt("    .reg.u32 %%u%u_result_%u;\n", v2->reg_index, i);
+
+        buffer.putc(' ', 4);
+        const Variable *mask_v = jitc_var(extra.dep[extra.dep_count - 1]);
+        if (!mask_v->literal || mask_v->value != 1)
+            buffer.fmt("@%s%u ", var_type_prefix[mask_v->type], mask_v->reg_index);
+        buffer.put("call (");
+
+        for (uint32_t i = 0; i < payload_count; ++i)
+            buffer.fmt("%%u%u_result_%u%s", v2->reg_index, i,
+                       i + 1 < payload_count ? ", " : "");
+        buffer.fmt("), _optix_trace_%u, (", payload_count);
+
+        for (uint32_t i = 0; i < extra.dep_count - 1; ++i) {
+            const Variable *v3 = jitc_var(extra.dep[i]);
+            buffer.fmt("%s%u%s", var_type_prefix[v3->type], v3->reg_index,
+                       (i + 1 < extra.dep_count - 1) ? ", " : "");
         }
+        buffer.put(");\n");
+    };
+
+    for (uint32_t i = 0; i < np; ++i) {
+        char tmp[50];
+        snprintf(tmp, sizeof(tmp), "mov.u32 $r0, $r1_result_%u", i);
+        args[15 + i] = jitc_var_new_stmt(JitBackend::CUDA, VarType::UInt32, tmp,
+                                         0, 1, &special);
     }
 
-    uint32_t decl = jitc_var_new_0(1, VarType::Void, "", 1, 1), index = decl;
-    jitc_var_inc_ref_ext(index);
-
-    Buffer buf(100);
-    for (uint32_t i = 0; i < nargs; ++i) {
-        VarType vt = jitc_var_type(args[i]);
-        const char *tname = var_type_name_ptx[(int) vt],
-                   *tname_bin = tname;
-
-        if (i >= 25) {
-            tname = "u32";
-            tname_bin = "b32";
-        }
-
-        buf.clear();
-        buf.fmt(".reg.%s $r1_%u$n"
-                "mov.%s $r1_%u, $r2", tname, i, tname_bin, i);
-        uint32_t prev = index;
-        index = jitc_var_new_3(1, VarType::Void, buf.get(), 0, decl, args[i], index);
-        jitc_var_dec_ref_ext(prev);
-    }
-
-    buf.clear();
-    for (uint32_t i = 15; i < nargs; ++i) {
-        buf.fmt(".reg.u32 $r1_%u$n", i + np);
-        buf.fmt("mov.u32 $r1_%u, 0$n", i + np);
-    }
-    buf.put("@$r2 call (");
-    for (uint32_t i = 15; i < nargs; ++i)
-        buf.fmt("$r1_%u%s", i + np, i + 1 < nargs ? ", " : "");
-    buf.fmt("), _optix_trace_%u, (", np);
-    for (uint32_t i = 0; i < nargs; ++i)
-        buf.fmt("$r1_%u%s", i, i + 1 < nargs ? ", " : "");
-    buf.put(")");
-
-    uint32_t prev = index;
-    index = jitc_var_new_3(1, VarType::Void, buf.get(), 0, decl, mask, index);
-    jitc_var_dec_ref_ext(prev);
-
-    jitc_var(index)->optix = 1;
-
-    for (uint32_t i = 15; i < nargs; ++i) {
-        buf.clear();
-        buf.fmt("mov.b32 $r0, $r1_%u", i + np);
-        args[i] = jitc_var_new_2(1, (VarType) jitc_var_type(args[i]), buf.get(), 0, decl, index);
-    }
-
-    jitc_var_dec_ref_ext(index);
-    jitc_var_dec_ref_ext(decl);
+    jitc_var_dec_ref_ext(special);
 }
 
 void jitc_optix_mark(uint32_t index) {
