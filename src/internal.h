@@ -261,6 +261,12 @@ struct ThreadState {
      */
     std::vector<uint32_t> mask_stack;
 
+    /// Stack of variable name prefixes, mainly useful for GraphViz exports
+    std::vector<char *> prefix_stack;
+
+    /// Combined version of the elements of 'prefix_stack'
+    char *prefix = nullptr;
+
     /// ---------------------------- LLVM-specific ----------------------------
 
     // Currently active task within the thread pool
@@ -580,6 +586,15 @@ public:
         *m_cur = '\0';
     }
 
+    /// Append multiple copies of a single character to the buffer
+    void putc(char c, size_t count) {
+        if (unlikely(m_cur + count >= m_end))
+            expand(count + 1 - remain());
+        for (size_t i = 0; i < count; ++i)
+            *m_cur++ = c;
+        *m_cur = '\0';
+    }
+
     /// Remove the last 'n' characters
     void rewind(size_t n) {
         m_cur -= n;
@@ -683,3 +698,9 @@ extern void* jitc_cuda_context();
 extern void jitc_set_flags(uint32_t flags);
 
 extern uint32_t jitc_flags();
+
+/// Push a new label onto the prefix stack
+extern void jitc_prefix_push(JitBackend backend, const char *label);
+
+/// Pop a label from the prefix stack
+extern void jitc_prefix_pop(JitBackend backend);

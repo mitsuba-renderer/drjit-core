@@ -1109,6 +1109,27 @@ extern JIT_EXPORT void jit_var_set_label(uint32_t index, const char *label);
 /// Query the descriptive label associated with a given variable
 extern JIT_EXPORT const char *jit_var_label(uint32_t index);
 
+/**
+ * \brief Push a string onto the label stack
+ *
+ * Enoki-JIT maintains a per-thread label stack that is initially empty and
+ * inactive. If values are pushed onto it, they will be used to initialize the
+ * labels of any newly created variables.
+ *
+ * For example, if <tt>"prefix"</tt> and <tt>"prefix2"</tt> are pushed via this
+ * function, any newly created variable \c index will be labeled
+ * <tt>"prefix1/prefix2/"</tt>. A subsequent call to <tt>jit_var_set_label(index,
+ * "name")</tt>; will change the label to <tt>"prefix1/prefix2/name"</tt>.
+ *
+ * This feature works hand-in-hand with \ref jit_var_graphviz(), which can
+ * de-clutter large graph vizualizations by drawing boxes around variables with
+ * a common prefix.
+ */
+extern JIT_EXPORT void jit_prefix_push(JitBackend backend, const char *value);
+
+/// Pop a string from the label stack
+extern JIT_EXPORT void jit_prefix_pop(JitBackend backend);
+
 /// Assign a callback function that is invoked when the given variable is freed
 extern JIT_EXPORT void jit_var_set_free_callback(uint32_t index,
                                                  void (*callback)(void *),

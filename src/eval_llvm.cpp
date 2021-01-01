@@ -7,6 +7,8 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v);
 
 void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
     uint32_t width = jitc_llvm_vector_width;
+    bool log_trace = std::max(state.log_level_stderr,
+                              state.log_level_callback) >= LogLevel::Trace;
 
     buffer.put("define void @enoki_^^^^^^^^^^^^^^^^(i64 %start, i64 %end, "
                "i8** noalias %params) #0 {\n"
@@ -30,7 +32,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                  align = v->unaligned ? 1 : (tsize * width),
                  size = v->size;
 
-        if (unlikely(v->extra)) {
+        if (unlikely(log_trace && v->extra)) {
             const char *label = jitc_var_label(index);
             if (label)
                 buffer.fmt("    ; %s\n", label);

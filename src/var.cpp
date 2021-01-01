@@ -22,7 +22,7 @@ const char *var_type_name[(int) VarType::Count] {
 
 /// Descriptive names for the various variable types (extra-short version)
 const char *var_type_name_short[(int) VarType::Count] {
-    "vd ", "msk", "i8",  "u8",  "i16", "u16", "i32",
+    "void ", "msk", "i8",  "u8",  "i16", "u16", "i32",
     "u32", "i64", "u64", "ptr", "f16", "f32", "f64"
 };
 
@@ -248,7 +248,12 @@ const char *jitc_var_label(uint32_t index) {
 
 /// Assign a descriptive label to a given variable
 void jitc_var_set_label(uint32_t index, const char *label) {
+    if (strchr(label, '\n') || strchr(label, '/'))
+        jitc_raise("jit_var_set_label(): invalid string (may not contain "
+                   "newline or '/' characters)");
+
     Variable *v = jitc_var(index);
+    ThreadState *ts = thread_state(v->backend);
 
     jitc_log(Debug, "jit_var_set_label(%u): \"%s\"", index,
             label ? label : "(null)");
@@ -256,9 +261,50 @@ void jitc_var_set_label(uint32_t index, const char *label) {
     v->extra = true;
     Extra &extra = state.extra[index];
     free(extra.label);
-    extra.label = label ? strdup(label) : nullptr;
+
+    if (!ts->prefix) {
+        extra.label = label ? strdup(label) : nullptr;
+    } else {
+        size_t prefix_len = strlen(ts->prefix),
+               label_len = label ? strlen(label) : 0;
+        char *combined = (char *) malloc(prefix_len + label_len + 1);
+        memcpy(combined, ts->prefix, prefix_len);
+        if (label_len)
+            memcpy(combined + prefix_len, label, label_len);
+        combined[prefix_len + label_len] = '\0';
+        extra.label = combined;
+    }
 }
 
+// Print a literal variable to 'var_buffer' (for debug/GraphViz output)
+void jitc_literal_print(const Variable *v, bool graphviz = false) {
+    #define JIT_LITERAL_PRINT(type, ptype, fmtstr)  {  \
+            type value;                                \
+            memcpy(&value, &v->value, sizeof(type));   \
+            var_buffer.fmt(fmtstr, (ptype) value);     \
+        }                                              \
+        break;
+
+    switch ((VarType) v->type) {
+        case VarType::Float32: JIT_LITERAL_PRINT(float, float, "%g");
+        case VarType::Float64: JIT_LITERAL_PRINT(double, double, "%g");
+        case VarType::Bool:    JIT_LITERAL_PRINT(bool, int, "%i");
+        case VarType::Int8:    JIT_LITERAL_PRINT(int8_t, int, "%i");
+        case VarType::Int16:   JIT_LITERAL_PRINT(int16_t, int, "%i");
+        case VarType::Int32:   JIT_LITERAL_PRINT(int32_t, int, "%i");
+        case VarType::Int64:   JIT_LITERAL_PRINT(int64_t, long long int, "%lli");
+        case VarType::UInt8:   JIT_LITERAL_PRINT(uint8_t, unsigned, "%u");
+        case VarType::UInt16:  JIT_LITERAL_PRINT(uint16_t, unsigned, "%u");
+        case VarType::UInt32:  JIT_LITERAL_PRINT(uint32_t, unsigned, "%u");
+        case VarType::UInt64:  JIT_LITERAL_PRINT(uint64_t, long long unsigned int, "%llu");
+        case VarType::Pointer: JIT_LITERAL_PRINT(uintptr_t, uintptr_t, (graphviz ? ("0x%" PRIxPTR) : (ENOKI_PTR)));
+        default:
+            jitc_fail("jitc_literal_print(): unsupported type!");
+
+    }
+
+    #undef JIT_LITERAL_PRINT
+}
 
 /// Append the given variable to the instruction trace and return its ID
 uint32_t jitc_var_new(Variable &v, bool disable_cse) {
@@ -294,6 +340,11 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
             key_it.value() = index;
 
         vo = &var_it.value();
+
+        if (unlikely(ts->prefix)) {
+            vo->extra = true;
+            state.extra[index].label = strdup(ts->prefix);
+        }
     } else {
         // .. found a match! Deallocate 'v'.
         if (v.free_stmt)
@@ -322,39 +373,13 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
             var_buffer.fmt("%s%u", i == 0 ? " <- " : ", ", v.dep[i]);
         var_buffer.fmt("): %s[%u] = ", var_type_name[v.type], v.size);
 
-        if (v.literal) {
-            float f; double d;
-            switch ((VarType) v.type) {
-                case VarType::Float32:
-                    memcpy(&f, &v.value, sizeof(float));
-                    var_buffer.fmt("%g", (double) f);
-                    break;
 
-                case VarType::Float64:
-                    memcpy(&d, &v.value, sizeof(double));
-                    var_buffer.fmt("%g", d);
-                    break;
-
-                case VarType::Int8:
-                case VarType::Int16:
-                case VarType::Int32:
-                case VarType::Int64:
-                    var_buffer.fmt("%lli", (long long) v.value);
-                    break;
-
-                case VarType::Pointer:
-                    var_buffer.fmt(ENOKI_PTR, (uintptr_t) v.value);
-                    break;
-
-                default:
-                    var_buffer.fmt("%llu", (long long) v.value);
-                    break;
-            }
-        } else if (v.data) {
+        if (v.literal)
+            jitc_literal_print(&v);
+        else if (v.data)
             var_buffer.fmt(ENOKI_PTR, (uintptr_t) v.data);
-        } else if (v.stmt) {
+        else if (v.stmt)
             var_buffer.put(v.stmt, strlen(v.stmt));
-        }
 
         if (!disable_cse && !cse_key_inserted)
             var_buffer.put(" (reused)");
@@ -977,13 +1002,13 @@ const char *jitc_var_whos() {
         const Variable *v = jitc_var(index);
         size_t mem_size = (size_t) v->size * (size_t) var_type_size[v->type];
 
-        var_buffer.fmt("  %-9u %s %3s   ", index,
+        var_buffer.fmt("  %-9u %s %-5s ", index,
                        (JitBackend) v->backend == JitBackend::CUDA ? "cuda"
                                                                    : "llvm",
                        var_type_name_short[v->type]);
 
         if (v->literal) {
-            var_buffer.put("literal    ");
+            var_buffer.put("const.     ");
         } else if (v->data) {
             auto it = state.alloc_used.find(v->data);
             if (unlikely(it == state.alloc_used.end())) {
@@ -1002,7 +1027,7 @@ const char *jitc_var_whos() {
                 }
             }
         } else {
-            var_buffer.put("unevaluated");
+            var_buffer.put("           ");
         }
 
         size_t sz = var_buffer.fmt("  %u / %u", v->ref_count_ext, v->ref_count_int);
@@ -1056,76 +1081,161 @@ const char *jitc_var_graphviz() {
 
     std::sort(indices.begin(), indices.end());
     var_buffer.clear();
-    var_buffer.put("digraph {\n");
-    var_buffer.put("  graph [dpi=50];\n");
-    var_buffer.put("  node [shape=record fontname=Consolas];\n");
-    var_buffer.put("  edge [fontname=Consolas];\n");
+    var_buffer.put("digraph {\n"
+                   "    rankdir=BT;\n"
+                   "    graph [dpi=50 fontname=Consolas];\n"
+                   "    node [shape=record fontname=Consolas];\n"
+                   "    edge [fontname=Consolas];\n");
 
-    char stmt_buf[64];
-    for (uint32_t index: indices) {
+    size_t current_hash = 0, current_depth = 1;
+
+    for (int32_t index : indices) {
+        const char *label = jitc_var_label(index),
+                   *label_without_prefix = label;
+
+        size_t prefix_hash = 0;
+        if (label) {
+            printf("Processing %u: '%s'\n", index, label);
+            const char *sep = strrchr(label, '/');
+            if (sep) {
+                prefix_hash = hash(label, sep - label);
+                label_without_prefix = sep + 1;
+            }
+        }
+
+        if (prefix_hash != current_hash) {
+            for (size_t i = current_depth - 1; i > 0; --i) {
+                var_buffer.putc(' ', 4 * i);
+                var_buffer.put("}\n");
+            }
+
+            current_hash = prefix_hash;
+            current_depth = 1;
+
+            const char *p = label;
+            while (true) {
+                const char *pn = p ? strchr(p, '/') : nullptr;
+                if (!pn)
+                    break;
+
+                var_buffer.putc(' ', 4 * current_depth);
+                var_buffer.fmt("subgraph cluster_%08llx {\n",
+                               (unsigned long long) hash(label, pn - label));
+                current_depth++;
+                var_buffer.putc(' ', 4 * current_depth);
+                var_buffer.put("label=\"");
+                var_buffer.put(p, pn - p);
+                var_buffer.put("\";\n");
+
+                p = pn + 1;
+            }
+        }
+
         const Variable *v = jitc_var(index);
+        var_buffer.putc(' ', 4 * current_depth);
+        var_buffer.put_uint32(index);
+        var_buffer.put(" [label=\"{");
 
-        const char *color = "";
-        const char *stmt = v->stmt;
+        auto print_escape = [](const char *s) {
+            char c;
+            while (c = *s++, c != '\0') {
+                bool escape = false;
+                switch (c) {
+                    case '$':
+                        if (s[0] == 'n') {
+                            s++;
+                            var_buffer.put("\\l");
+                            continue;
+                        }
+                        break;
+
+                    case '\n':
+                        var_buffer.put("\\l");
+                        continue;
+
+                    case '|':
+                    case '{':
+                    case '}':
+                    case '<':
+                    case '>':
+                        escape = true;
+                        break;
+                    default:
+                        break;
+                }
+                if (escape)
+                    var_buffer.putc('\\');
+                var_buffer.putc(c);
+            }
+        };
+
+        const char *color = nullptr;
+        bool labeled = false;
+        if (label_without_prefix && strlen(label_without_prefix) != 0) {
+            var_buffer.put("Label: \\\"");
+            print_escape(label_without_prefix);
+            var_buffer.put("\\\"|");
+            labeled = true;
+        }
+
         if (v->literal) {
-            switch (v->type) {
-                case (int) VarType::Float32: {
-                        float f;
-                        memcpy(&f, &v->value, sizeof(float));
-                        snprintf(stmt_buf, strlen(stmt_buf), "literal: %g", f);
-                    }
-                    break;
-                case (int) VarType::Float64: {
-                        double f;
-                        memcpy(&f, &v->value, sizeof(double));
-                        snprintf(stmt_buf, strlen(stmt_buf), "literal: %g", f);
-                    }
-                    break;
-                default:
-                    snprintf(stmt_buf, strlen(stmt_buf), "literal: 0x%llx",
-                             (unsigned long long) v->value);
-                    break;
-            }
-            color = " fillcolor=wheat style=filled";
-            stmt = stmt_buf;
+            var_buffer.put("Constant: ");
+            jitc_literal_print(v, true);
+            color = "gray90";
         } else if (v->data) {
-            color = " fillcolor=salmon style=filled";
-            stmt = "[evaluated array]";
-        } else if (v->side_effect) {
-            color = " fillcolor=cornflowerblue style=filled";
-        }
-
-        char *out = (char *) malloc(strlen(stmt) * 2 + 1),
-             *ptr = out;
-        for (int j = 0; ; ++j) {
-            if (stmt[j] == '$' && stmt[j + 1] == 'n') {
-                *ptr++='\\';
-                continue;
-            } else if (stmt[j] == '<' || stmt[j] == '>') {
-                *ptr++='\\';
+            if (v->dirty) {
+                var_buffer.put("Evaluated (dirty)");
+            } else {
+                var_buffer.put("Evaluated");
+                color = "cornflowerblue";
             }
-            *ptr++ = stmt[j];
-            if (stmt[j] == '\0')
-                break;
+        } else if (v->stmt) {
+            if ((VarType) v->type == VarType::Void)
+                color = "aquamarine";
+            print_escape(v->stmt);
+            var_buffer.put("\\l");
         }
 
-        const char *label = jitc_var_label(index);
-        var_buffer.fmt(
-            "  %u [label=\"{%s%s%s%s%s|{Type: %s %s|Size: %u}|{ID "
-            "#%u|E:%u|I:%u}}\"%s];\n",
-            index, out, label ? "|Label: \\\"" : "", label ? label : "",
-            label ? "\\\"" : "", v->dirty ? "| ** DIRTY **" : "",
+        if (labeled)
+            color = "wheat";
+
+        if (v->dirty)
+            color = "salmon";
+
+        var_buffer.fmt("|{Type: %s %s|Size: %u}|{ID #%u|E:%u|I:%u}}",
             (JitBackend) v->backend == JitBackend::CUDA ? "cuda" : "llvm",
             var_type_name_short[v->type], v->size, index, v->ref_count_ext,
-            v->ref_count_int, color);
+            v->ref_count_int);
 
-        free(out);
+        var_buffer.put("}\"");
+        if (color)
+            var_buffer.fmt(" fillcolor=%s style=filled", color);
+        var_buffer.put("];\n");
+    }
 
-        for (uint32_t i = 0; i< 4; ++i) {
+    for (size_t i = current_depth - 1; i > 0; --i) {
+        var_buffer.putc(' ', 4 * i);
+        var_buffer.put("}\n");
+    }
+
+    for (int32_t index : indices) {
+        const Variable *v = jitc_var(index);
+        int ndep = 0;
+        for (uint32_t i = 0; i < 4; ++i) {
             if (v->dep[i])
-                var_buffer.fmt("  %u -> %u [label=\" %u\"];\n", v->dep[i], index, i + 1);
+                ndep = i + 1;
+        }
+
+        for (uint32_t i = 0; i < 4; ++i) {
+            if (!v->dep[i])
+                continue;
+            var_buffer.fmt("    %u -> %u", v->dep[i], index);
+            if (ndep > 1)
+                var_buffer.fmt(" [label=\" %u\"]", i + 1);
+            var_buffer.put(";\n");
         }
     }
     var_buffer.put("}\n");
+
     return var_buffer.get();
 }

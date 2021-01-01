@@ -8,6 +8,9 @@ static void jitc_render_stmt_cuda(uint32_t index, const Variable *v);
 void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                        uint32_t n_regs, uint32_t n_params,
                        int params_global) {
+    bool log_trace = std::max(state.log_level_stderr,
+                              state.log_level_callback) >= LogLevel::Trace;
+
     /* Special registers:
 
          %r0   :  Index
@@ -93,7 +96,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                        size = v->size;
         const VarType vt = (VarType) vti;
 
-        if (unlikely(v->extra)) {
+        if (unlikely(log_trace && v->extra)) {
             const char *label = jitc_var_label(index);
             if (label)
                 buffer.fmt("    // %s\n", label);

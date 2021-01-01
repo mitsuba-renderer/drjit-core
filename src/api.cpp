@@ -466,6 +466,16 @@ int jit_var_schedule(uint32_t index) {
     return jitc_var_schedule(index);
 }
 
+void jit_prefix_push(JitBackend backend, const char *value) {
+    lock_guard guard(state.mutex);
+    jitc_prefix_push(backend, value);
+}
+
+void jit_prefix_pop(JitBackend backend) {
+    lock_guard guard(state.mutex);
+    jitc_prefix_pop(backend);
+}
+
 void jit_memset_async(JitBackend backend, void *ptr, uint32_t size, uint32_t isize,
                       const void *src) {
     lock_guard guard(state.mutex);

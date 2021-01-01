@@ -254,6 +254,15 @@ void jitc_shutdown(int light) {
                               "elimination cache leak (see above).");
             }
 
+            if (!ts->prefix_stack.empty()) {
+                for (char *s : ts->prefix_stack)
+                    free(s);
+                jitc_log(Warn,
+                         "jit_shutdown(): leaked %zu prefix stack entries.",
+                         ts->prefix_stack.size());
+                free(ts->prefix);
+            }
+
             delete ts->release_chain;
             delete ts;
         }
@@ -461,6 +470,48 @@ void jitc_sync_all_devices() {
     unlock_guard guard(state.mutex);
     for (ThreadState *ts : tss)
         jitc_sync_thread(ts);
+}
+
+static void jitc_rebuild_prefix(ThreadState *ts) {
+    free(ts->prefix);
+
+    if (!ts->prefix_stack.empty()) {
+        size_t size = 1;
+        for (const char *s : ts->prefix_stack)
+            size += strlen(s) + 1;
+        ts->prefix = (char *) malloc(size);
+        char *p = ts->prefix;
+
+        for (const char *s : ts->prefix_stack) {
+            size_t len = strlen(s);
+            memcpy(p, s, len);
+            p += len;
+            *p++ = '/';
+        }
+        *p++ = '\0';
+    } else {
+        ts->prefix = nullptr;
+    }
+}
+
+void jitc_prefix_push(JitBackend backend, const char *label) {
+    if (strchr(label, '\n') || strchr(label, '/'))
+        jitc_raise("jit_prefix_push(): invalid string (may not contain newline "
+                   "or '/' characters)");
+
+    ThreadState *ts = thread_state(backend);
+    ts->prefix_stack.push_back(strdup(label));
+    jitc_rebuild_prefix(ts);
+}
+
+void jitc_prefix_pop(JitBackend backend) {
+    ThreadState *ts = thread_state(backend);
+    auto &stack = ts->prefix_stack;
+    if (stack.empty())
+        jitc_raise("jit_prefix_pop(): stack underflow!");
+    free(stack.back());
+    stack.pop_back();
+    jitc_rebuild_prefix(ts);
 }
 
 /// Glob for a shared library and try to load the most recent version
