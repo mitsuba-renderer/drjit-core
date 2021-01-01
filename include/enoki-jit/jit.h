@@ -184,20 +184,11 @@ enum class JitFlag : uint32_t {
     // Record loops to postpone their evaluation
     RecordLoops    = 1,
 
-    // Status flag indicating that a loop is *currently* being recorded
-    RecordingLoop  = 2,
-
     // Record virtual function calls to postpone their evaluation
     RecordVCalls   = 4,
 
-    // Status flag indicating that a vcall call is *currently* being recorded
-    RecordingVCall = 8,
-
     // Try to optimize the calling conventions of vcalls
-    OptimizeVCalls = 16,
-
-    // A loop is currently being recorded
-    Recording = (uint32_t) RecordingLoop | (uint32_t) RecordingVCall
+    OptimizeVCalls = 16
 };
 #else
 enum JitFlag {
@@ -933,6 +924,20 @@ extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
                                                const void *value,
                                                uint32_t dep,
                                                int write);
+
+/**
+ * \brief Create a placeholder variable imitating another variable
+ *
+ * This function creates a special placeholder variable with the same type as
+ * a provided variable \c index. Placeholder variables are used to record
+ * computation symbolically. They should not be evaluated via \ref
+ * jit_var_schedule() or \ref jit_var_eval(), and these functions will raise an
+ * exception when this is attempted.
+ *
+ * The placeholder status bit propagates recursively, meaning that any
+ * operation that references a placeholder variable is similarly marked.
+ */
+extern uint32_t jit_var_new_placeholder(uint32_t index, int propagate_literals);
 
 /**
  * \brief Create a variable that reads from another variable

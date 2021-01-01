@@ -354,7 +354,7 @@ JIT_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op,
 
 uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     uint32_t size = 0;
-    bool dirty = false, literal = true, uninitialized = false;
+    bool dirty = false, literal = true, uninitialized = false, placeholder = false;
     uint32_t vti = 0;
     bool literal_zero[4] { }, literal_one[4] { };
     uint32_t backend_i = 0;
@@ -369,6 +369,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             vti = std::max(vti, vi->type);
             size = std::max(size, vi->size);
             dirty |= vi->dirty;
+            placeholder |= vi->placeholder;
             backend_i |= (uint32_t) vi->backend;
             v[i] = vi;
 
@@ -1111,6 +1112,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
         v2.size = size;
         v2.type = (uint32_t) vtr;
         v2.backend = (uint32_t) backend;
+        v2.placeholder = placeholder;
 
         if (literal) {
             v2.literal = 1;

@@ -99,7 +99,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
             if (it == state.extra.end())
-                jit_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
+                jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
             const Extra &extra = it->second;
             if (log_trace && extra.label)
                 buffer.fmt("    // %s\n", extra.label);

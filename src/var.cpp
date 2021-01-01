@@ -310,19 +310,20 @@ void jitc_literal_print(const Variable *v, bool graphviz = false) {
 uint32_t jitc_var_new(Variable &v, bool disable_cse) {
     ThreadState *ts = thread_state(v.backend);
 
-    disable_cse |= v.data || (VarType) v.type == VarType::Void;
+    bool cse = !disable_cse && (VarType) v.type != VarType::Void &&
+               (v.literal || v.stmt);
 
     // Check if this exact statement already exists ..
     CSECache::iterator key_it;
     bool cse_key_inserted = false;
-    if (!disable_cse)
+    if (cse)
         std::tie(key_it, cse_key_inserted) =
             ts->cse_cache.try_emplace(VariableKey(v), 0);
 
     uint32_t index;
     Variable *vo;
 
-    if (likely(disable_cse || cse_key_inserted)) {
+    if (likely(!cse || cse_key_inserted)) {
         // .. nope, it is new.
         VariableMap::iterator var_it;
         bool var_inserted;
@@ -381,7 +382,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
         else if (v.stmt)
             var_buffer.put(v.stmt, strlen(v.stmt));
 
-        if (!disable_cse && !cse_key_inserted)
+        if (cse && !cse_key_inserted)
             var_buffer.put(" (reused)");
 
         jitc_log(Debug, "%s", var_buffer.get());
@@ -454,11 +455,29 @@ uint32_t jitc_var_new_counter(JitBackend backend, size_t size) {
     return jitc_var_new(v);
 }
 
+uint32_t jitc_var_new_placeholder(uint32_t index, int propagate_literals) {
+    const Variable *v = jitc_var(index);
+    Variable v2;
+    v2.backend = v->backend;
+    v2.type = v->type;
+    v2.size = 1;
+    if (propagate_literals && v->literal) {
+        v2.literal = v->literal;
+        v2.value = v->value;
+    } else {
+        v2.placeholder = 1;
+    }
+    uint32_t result = jitc_var_new(v2);
+    jitc_log(Debug, "jitc_var_new_placeholder(%u, propagate_literals=%i): %u",
+             index, propagate_literals, result);
+    return result;
+}
+
 uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
                           int stmt_static, uint32_t n_dep,
                           const uint32_t *dep) {
     uint32_t size = n_dep == 0 ? 1 : 0;
-    bool dirty = false, uninitialized = false;
+    bool dirty = false, uninitialized = false, placeholder = false;
     Variable *v[4] { };
 
     if (unlikely(n_dep > 4))
@@ -469,6 +488,7 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
             Variable *vi = jitc_var(dep[i]);
             size = std::max(size, vi->size);
             dirty |= vi->dirty;
+            placeholder |= vi->placeholder;
             v[i] = vi;
         } else {
             uninitialized = true;
@@ -506,6 +526,7 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
     v2.type = (uint32_t) vt;
     v2.backend = (uint32_t) backend;
     v2.free_stmt = stmt_static == 0;
+    v2.placeholder = placeholder;
 
     return jitc_var_new(v2);
 }
@@ -618,6 +639,10 @@ int jitc_var_schedule(uint32_t index) {
         jitc_raise("jit_var_schedule(%u): unknown variable!", index);
     Variable *v = &it.value();
 
+    if (unlikely(v->placeholder))
+        jitc_raise("jit_var_eval(): placeholder variables are used to record "
+                   "computation symbolically and cannot be evaluated!");
+
     if (!v->data) {
         thread_state(v->backend)->scheduled.push_back(index);
         jitc_log(Debug, "jit_var_schedule(%u)", index);
@@ -652,6 +677,10 @@ void jitc_var_eval_literal(uint32_t index, Variable *v) {
 /// Evaluate the variable \c index right away if it is unevaluated/dirty.
 int jitc_var_eval(uint32_t index) {
     Variable *v = jitc_var(index);
+
+    if (unlikely(v->placeholder))
+        jitc_raise("jit_var_eval(): placeholder variables are used to record "
+                   "computation symbolically and cannot be evaluated!");
 
     if (!v->data || v->dirty) {
         ThreadState *ts = thread_state(v->backend);
@@ -793,7 +822,8 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
     }
 
     uint32_t index = jitc_var_mem_map(backend, vtype, target_ptr, size, true);
-    jitc_log(Debug, "jit_var_mem_copy(%u, size=%zu)", index, size);
+    jitc_log(Debug, "jit_var_mem_copy(" ENOKI_PTR ", size=%zu): %u",
+             (uintptr_t) ptr, size, index);
     return index;
 }
 
@@ -1238,7 +1268,7 @@ const char *jitc_var_graphviz() {
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
             if (it == state.extra.end())
-                jit_fail("jit_var_graphviz(): could not find matching 'extra' "
+                jitc_fail("jit_var_graphviz(): could not find matching 'extra' "
                          "record!");
 
             const Extra &extra = it->second;

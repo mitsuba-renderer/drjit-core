@@ -89,6 +89,9 @@ struct Variable {
     /// Is this a pointer variable that is used to write to some array?
     uint32_t write_ptr : 1;
 
+    /// Is this a placeholder variable used to record arithmetic symbolically?
+    uint32_t placeholder : 1;
+
     /// Is this variable associated with extra information?
     uint32_t extra : 1;
 
@@ -117,9 +120,10 @@ struct Variable {
 struct VariableKey {
     uint32_t dep[4];
     uint32_t size;
-    uint32_t type      : 30;
-    uint32_t write_ptr : 1;
-    uint32_t literal   : 1;
+    uint32_t type        : 29;
+    uint32_t write_ptr   : 1;
+    uint32_t literal     : 1;
+    uint32_t placeholder : 1;
     union {
         char *stmt;
         uint64_t value;
@@ -130,6 +134,7 @@ struct VariableKey {
         size = v.size;
         type = v.type;
         write_ptr = v.write_ptr;
+        placeholder = v.placeholder;
 
         if (v.literal) {
             literal = 1;

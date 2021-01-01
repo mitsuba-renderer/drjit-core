@@ -71,7 +71,7 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
     if (unlikely(v->extra)) {
         auto it = state.extra.find(index);
         if (it == state.extra.end())
-            jit_fail("jit_var_traverse(): could not find matching 'extra' record!");
+            jitc_fail("jit_var_traverse(): could not find matching 'extra' record!");
 
         const Extra &extra = it->second;
         for (uint32_t i = 0; i < extra.dep_count; ++i) {
@@ -444,21 +444,6 @@ void jitc_eval(ThreadState *ts) {
     if (!ts || (ts->scheduled.empty() && ts->side_effects.empty()))
         return;
 
-    uint32_t flags = jitc_flags();
-    if (unlikely(flags & (uint32_t) JitFlag::RecordingLoop))
-        jitc_raise(
-            "jit_eval(): Enoki is currently recording a loop. In such "
-            "cases, you are not allowed to run operations that trigger a "
-            "kernel evaluation via jit_eval(). Set a breakpoint on "
-            "jit_raise() to find the offending code in your program.");
-
-    if (unlikely(flags & (uint32_t) JitFlag::RecordingVCall))
-        jitc_raise(
-            "jit_eval(): Enoki is currently recording a virtual function call. "
-            "In such cases, you are not allowed to run operations that trigger "
-            "a kernel evaluation via jit_eval(). Set a breakpoint on "
-            "jit_raise() to find the offending code in your program.");
-
     ProfilerPhase profiler(profiler_region_eval);
 
     /* The function 'jitc_eval()' modifies several global data structures
@@ -488,6 +473,10 @@ void jitc_eval(ThreadState *ts) {
             // Skip variables that aren't externally referenced or already evaluated
             if (v->ref_count_ext == 0 || v->data || v->literal)
                 continue;
+
+            if (unlikely(v->placeholder))
+                jitc_raise("jit_eval(): the schedule contains a placeholder "
+                           "variable, which is not allowed");
 
             jitc_var_traverse(v->size, index);
             v->output_flag = (VarType) v->type != VarType::Void;

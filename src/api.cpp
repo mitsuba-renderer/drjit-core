@@ -68,7 +68,7 @@ int jit_has_backend(JitBackend backend) {
             break;
 
         default:
-            jit_raise("jit_has_backend(): invalid input!");
+            jitc_raise("jit_has_backend(): invalid input!");
     }
 
     return (int) result;
@@ -314,6 +314,11 @@ uint32_t jit_var_new_pointer(JitBackend backend, const void *value,
                              uint32_t dep, int write) {
     lock_guard guard(state.mutex);
     return jitc_var_new_pointer(backend, value, dep, write);
+}
+
+uint32_t jit_var_new_placeholder(uint32_t index, int propagate_literals) {
+    lock_guard guard(state.mutex);
+    return jitc_var_new_placeholder(index, propagate_literals);
 }
 
 void jit_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {
