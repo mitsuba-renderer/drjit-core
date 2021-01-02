@@ -105,17 +105,17 @@ struct Variable {
 
     // ================   Temporarily used during jitc_eval()   ================
 
-    /// Is this variable marked as an output?
-    uint32_t output_flag : 1;
-
     /// Argument type
     uint32_t param_type : 2;
 
-    /// Offset of the argument in the list of kernel parameters
-    uint32_t param_offset;
+    /// Is this variable marked as an output?
+    uint32_t output_flag : 1;
 
     /// Register index
     uint32_t reg_index;
+
+    /// Offset of the argument in the list of kernel parameters
+    uint32_t param_offset;
 };
 
 /// Abbreviated version of the Variable data structure
@@ -428,9 +428,10 @@ struct Extra {
     uint32_t *dep = nullptr;
     uint32_t n_dep = 0;
 
-    /// Callback to be invoked when the variable is deallocated
-    void (*free_callback)(void *) = nullptr;
+    /// Callback to be invoked when the variable is evaluated/deallocated
+    void (*callback)(uint32_t, int, void *) = nullptr;
     void *payload = nullptr;
+    bool callback_internal = false;
 
     /// Bucket decomposition for virtual function calls
     uint32_t vcall_bucket_count = 0;

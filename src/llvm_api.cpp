@@ -367,7 +367,7 @@ void jitc_llvm_update_strings() {
         buf.clear();
         buf.putc('<');
         for (uint32_t j = 0; j < width; ++j)
-            buf.fmt("%s %i%s", var_type_name_llvm[i],
+            buf.fmt("%s %i%s", type_name_llvm[i],
                     (VarType) i == VarType::Bool ? 1 : -1,
                     j + 1 < width ? ", " : ">");
         jitc_llvm_ones_str[i] = strdup(buf.get());

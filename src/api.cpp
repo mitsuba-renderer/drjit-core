@@ -133,12 +133,15 @@ uint32_t jit_flags() {
     return jitc_flags();
 }
 
-void jit_enable_flag(JitFlag flag) {
-    jitc_set_flags(jitc_flags() | (uint32_t) flag);
-}
+void jit_set_flag(JitFlag flag, int enable) {
+    uint32_t flags = jitc_flags();
 
-void jit_disable_flag(JitFlag flag) {
-    jitc_set_flags(jitc_flags() & ~(uint32_t) flag);
+    if (enable)
+        flags |= (uint32_t) flag;
+    else
+        flags &= ~(uint32_t) flag;
+
+    jitc_set_flags(flags);
 }
 
 uint32_t jit_side_effects_scheduled(JitBackend backend) {
@@ -336,6 +339,20 @@ void jit_var_dec_ref_ext_impl(uint32_t index) noexcept(true) {
     jitc_var_dec_ref_ext(index);
 }
 
+uint32_t jit_var_ref_int(uint32_t index) {
+    if (index == 0)
+        return 0;
+    lock_guard guard(state.mutex);
+    return jitc_var(index)->ref_count_int;
+}
+
+uint32_t jit_var_ref_ext(uint32_t index) {
+    if (index == 0)
+        return 0;
+    lock_guard guard(state.mutex);
+    return jitc_var(index)->ref_count_ext;
+}
+
 void *jit_var_ptr(uint32_t index) {
     lock_guard guard(state.mutex);
     return jitc_var_ptr(index);
@@ -370,10 +387,11 @@ void jit_var_set_label(uint32_t index, const char *label) {
     jitc_var_set_label(index, label);
 }
 
-void jit_var_set_free_callback(uint32_t index, void (*callback)(void *),
-                               void *payload) {
+void jit_var_set_callback(uint32_t index,
+                          void (*callback)(uint32_t, int, void *),
+                          void *payload) {
     lock_guard guard(state.mutex);
-    jitc_var_set_free_callback(index, callback, payload);
+    jitc_var_set_callback(index, callback, payload);
 }
 
 uint32_t jit_var_mem_map(JitBackend backend, VarType type, void *ptr, size_t size, int free) {
@@ -579,11 +597,11 @@ const void *jit_registry_attr_data(const char *domain, const char *name) {
 }
 
 void jit_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
-                   uint32_t n_in, const uint32_t *in, uint32_t n_out_all,
-                   const uint32_t *out_all, const uint32_t *n_se,
+                   uint32_t n_in, const uint32_t *in, uint32_t n_out_nested,
+                   const uint32_t *out_nested, const uint32_t *n_se,
                    uint32_t *out) {
     lock_guard guard(state.mutex);
-    jitc_var_vcall(domain, self, n_inst, n_in, in, n_out_all, out_all, n_se,
+    jitc_var_vcall(domain, self, n_inst, n_in, in, n_out_nested, out_nested, n_se,
                    out);
 }
 

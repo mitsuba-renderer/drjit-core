@@ -76,9 +76,12 @@ inline size_t hash_str(const char *str) {
 }
 
 inline XXH128_hash_t hash_kernel(const char *str) {
-    const char *offset = strchr(str, '{');
-    if (unlikely(!offset))
-        jitc_fail("hash_kernel(): invalid input!");
+    const char *offset = strstr(str, "body:");
+    if (unlikely(!offset)) {
+        offset = strchr(str, '{');
+        if (unlikely(!offset))
+            jitc_fail("hash_kernel(): invalid input!");
+    }
 
     return XXH128(offset, strlen(offset), 0);
 }

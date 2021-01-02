@@ -555,7 +555,7 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
         if ((VarType) v->type != ref)
             jitc_raise("jit_optix_trace(): type mismatch for arg. %u (got %s, "
                        "expected %s)",
-                       i, var_type_name[v->type], var_type_name[(int) ref]);
+                       i, type_name[v->type], type_name[(int) ref]);
         size = std::max(size, v->size);
     }
 
@@ -597,7 +597,7 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
         buffer.putc(' ', 4);
         const Variable *mask_v = jitc_var(extra.dep[extra.n_dep - 1]);
         if (!mask_v->literal || mask_v->value != 1)
-            buffer.fmt("@%s%u ", var_type_prefix[mask_v->type], mask_v->reg_index);
+            buffer.fmt("@%s%u ", type_prefix[mask_v->type], mask_v->reg_index);
         buffer.put("call (");
 
         for (uint32_t i = 0; i < payload_count; ++i)
@@ -607,7 +607,7 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
 
         for (uint32_t i = 0; i < extra.n_dep - 1; ++i) {
             const Variable *v3 = jitc_var(extra.dep[i]);
-            buffer.fmt("%s%u%s", var_type_prefix[v3->type], v3->reg_index,
+            buffer.fmt("%s%u%s", type_prefix[v3->type], v3->reg_index,
                        (i + 1 < extra.n_dep - 1) ? ", " : "");
         }
         buffer.put(");\n");

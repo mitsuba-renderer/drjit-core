@@ -49,7 +49,7 @@ using GlobalsSet =
 extern char kernel_name[52];
 
 /// Buffer containing global declarations
-extern Buffer globals;
+extern std::vector<std::string> globals;
 
 /// Ensure uniqueness of global declarations (intrinsics, virtual functions)
 extern GlobalsSet globals_set;
@@ -76,9 +76,15 @@ extern void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group);
 /// Used by jitc_vcall() to generate source code for vcalls
 extern XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
                                         uint32_t in_align, uint32_t out_size,
-                                        uint32_t out_align);
+                                        uint32_t out_align, uint32_t extra_size,
+                                        uint32_t n_out, const uint32_t *out,
+                                        const uint32_t *out_nested,
+                                        const char *ret_label);
 
 /// Used by jitc_vcall() to generate PTX source code for vcalls
 extern void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
                                     uint32_t in_align, uint32_t out_size,
-                                    uint32_t out_align);
+                                    uint32_t out_align, uint32_t extra_size,
+                                    uint32_t n_out, const uint32_t *out,
+                                    const uint32_t *out_nested,
+                                    const char *ret_label);

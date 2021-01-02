@@ -264,10 +264,10 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
     ThreadState *ts = thread_state(backend);
 
     jitc_log(Debug, "jit_reduce(" ENOKI_PTR ", type=%s, rtype=%s, size=%u)",
-            (uintptr_t) ptr, var_type_name[(int) type],
+            (uintptr_t) ptr, type_name[(int) type],
             reduction_name[(int) rtype], size);
 
-    uint32_t type_size = var_type_size[(int) type];
+    uint32_t tsize = type_size[(int) type];
 
     if (backend == JitBackend::CUDA) {
         scoped_set_context guard(ts->context);
@@ -275,10 +275,10 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
         CUfunction func = jitc_cuda_reductions[(int) rtype][(int) type][device.id];
         if (!func)
             jitc_raise("jit_reduce(): no existing kernel for type=%s, rtype=%s!",
-                      var_type_name[(int) type], reduction_name[(int) rtype]);
+                      type_name[(int) type], reduction_name[(int) rtype]);
 
         uint32_t thread_count = 1024,
-                 shared_size = thread_count * type_size,
+                 shared_size = thread_count * tsize,
                  block_count;
 
         device.get_launch_config(&block_count, nullptr, size, thread_count);
@@ -290,7 +290,7 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
                                       shared_size, ts->stream, args,
                                       nullptr));
         } else {
-            void *temp = jitc_malloc(AllocType::Device, size_t(block_count) * type_size);
+            void *temp = jitc_malloc(AllocType::Device, size_t(block_count) * tsize);
 
             // First reduction
             void *args_1[] = { &ptr, &size, &temp };
@@ -314,17 +314,17 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
         }
 
         void *target = out;
-        uint32_t isize = var_type_size[(int) type];
+        uint32_t tsize = type_size[(int) type];
         if (blocks > 1)
-            target = jitc_malloc(AllocType::HostAsync, blocks * isize);
+            target = jitc_malloc(AllocType::HostAsync, blocks * tsize);
 
         Reduction reduction = jitc_reduce_create(type, rtype);
         jitc_submit_cpu(
             ts,
-            [block_size, size, isize, ptr, reduction, target](uint32_t index) {
+            [block_size, size, tsize, ptr, reduction, target](uint32_t index) {
                 reduction(ptr, index * block_size,
                           std::min((index + 1) * block_size, size),
-                          (uint8_t *) target + index * isize);
+                          (uint8_t *) target + index * tsize);
             },
             std::max(1u, blocks));
 
@@ -1133,11 +1133,11 @@ void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void
             "jit_block_copy(" ENOKI_PTR " -> " ENOKI_PTR
             ", type=%s, block_size=%u, size=%u)",
             (uintptr_t) in, (uintptr_t) out,
-            var_type_name[(int) type], block_size, size);
+            type_name[(int) type], block_size, size);
 
     if (block_size == 1) {
-        uint32_t type_size = var_type_size[(int) type];
-        jitc_memcpy_async(backend, out, in, size * type_size);
+        uint32_t tsize = type_size[(int) type];
+        jitc_memcpy_async(backend, out, in, size * tsize);
         return;
     }
 
@@ -1152,7 +1152,7 @@ void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void
         CUfunction func = jitc_cuda_block_copy[(int) type][device.id];
         if (!func)
             jitc_raise("jit_block_copy(): no existing kernel for type=%s!",
-                      var_type_name[(int) type]);
+                      type_name[(int) type]);
 
         uint32_t thread_count = std::min(size, 1024u),
                  block_count  = (size + thread_count - 1) / thread_count;
@@ -1192,11 +1192,11 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
             "jit_block_sum(" ENOKI_PTR " -> " ENOKI_PTR
             ", type=%s, block_size=%u, size=%u)",
             (uintptr_t) in, (uintptr_t) out,
-            var_type_name[(int) type], block_size, size);
+            type_name[(int) type], block_size, size);
 
     if (block_size == 1) {
-        uint32_t type_size = var_type_size[(int) type];
-        jitc_memcpy_async(backend, out, in, size * type_size);
+        uint32_t tsize = type_size[(int) type];
+        jitc_memcpy_async(backend, out, in, size * tsize);
         return;
     }
 
@@ -1211,7 +1211,7 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
         CUfunction func = jitc_cuda_block_sum[(int) type][device.id];
         if (!func)
             jitc_raise("jit_block_sum(): no existing kernel for type=%s!",
-                      var_type_name[(int) type]);
+                      type_name[(int) type]);
 
         uint32_t thread_count = std::min(size, 1024u),
                  block_count  = (size + thread_count - 1) / thread_count;

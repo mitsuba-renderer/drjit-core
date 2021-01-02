@@ -4,7 +4,7 @@
     unique_ptr/vector/tuple are used by the Enoki parent project and some test
     cases in this repository. Unfortunately, the std::... versions of these
     containers pull in ~800KB / 31K LOC of headers into *every compile unit*,
-    which is insane. This file satisifies all needs with < 5KB and < 170 LOC.
+    which is insane. This file satisifies all needs with < 5KB and 170 LOC.
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -82,7 +82,6 @@ template <typename T> struct ek_vector {
     }
 
     void clear() { m_size = 0; }
-
     size_t size() const { return m_size; }
     T *data() { return m_data.get(); }
     const T *data() const { return m_data.get(); }

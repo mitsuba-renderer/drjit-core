@@ -13,9 +13,9 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
     buffer.put("define void @enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 %end, "
                "i8** noalias %params) #0 {\n"
                "entry:\n"
-               "    br label %loop\n"
+               "    br label %body\n"
                "\n"
-               "loop:\n"
+               "body:\n"
                "    %index = phi i64 [ %index_next, %suffix ], [ %start, %entry ]\n");
 
     for (uint32_t gi = group.start; gi != group.end; ++gi) {
@@ -24,10 +24,10 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
         const uint32_t vti = v->type;
         const VarType vt = (VarType) vti;
 
-        const char *prefix = var_type_prefix[vti],
+        const char *prefix = type_prefix[vti],
                    *tname = vt == VarType::Bool
-                            ? "i8" : var_type_name_llvm[vti];
-        uint32_t tsize = var_type_size[vti],
+                            ? "i8" : type_name_llvm[vti];
+        uint32_t tsize = type_size[vti],
                  id = v->reg_index,
                  align = v->unaligned ? 1 : (tsize * width),
                  size = v->size;
@@ -121,12 +121,13 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                "suffix:\n");
     buffer.fmt("    %%index_next = add i64 %%index, %u\n", width);
     buffer.put("    %cond = icmp uge i64 %index_next, %end\n"
-               "    br i1 %cond, label %done, label %loop, !llvm.loop !2\n\n"
+               "    br i1 %cond, label %done, label %body, !llvm.loop !2\n\n"
                "done:\n"
                "    ret void\n"
                "}\n"
                "\n");
-    buffer.put(globals.get(), globals.size());
+    for (const std::string &s : globals)
+        buffer.put(s.c_str(), s.length());
     buffer.put("!0 = !{!0}\n"
                "!1 = !{!1, !0}\n"
                "!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
@@ -150,8 +151,8 @@ static void jitc_llvm_process_intrinsic() {
         --s;
     s += 4;
 
-    size_t before = globals.size();
-    globals.put("declare");
+    size_t before = buffer.size();
+    buffer.put("declare");
 
     char c;
     while (c = *s, c != '\0') {
@@ -159,29 +160,30 @@ static void jitc_llvm_process_intrinsic() {
             while (c = *s, c != '\0' && c != ')' && c != ',')
                 s++;
         } else if (c == 'i' && s[1]== '1' && s[2] == ' ') {
-            globals.put("i1");
+            buffer.put("i1");
             while (c = *s, c != '\0' && c != ')' && c != ',')
                 s++;
         } else if (c == 'i' && s[1]== '3' && s[2] == '2' && s[3] == ' ') {
-            globals.put("i32");
+            buffer.put("i32");
             while (c = *s, c != '\0' && c != ')' && c != ',')
                 s++;
         } else if (c == ' ' && s[1]== 'z' && s[2] == 'e' && s[3] == 'r') {
             while (c = *s, c != '\0' && c != ')' && c != ',')
                 s++;
         } else {
-            globals.putc(c);
+            buffer.putc(c);
             if (c == ')')
                 break;
             s++;
         }
     }
-    globals.put("\n\n");
-    size_t after = globals.size();
+    buffer.put("\n\n");
+    size_t after = buffer.size();
+    std::string key(buffer.get() + before, buffer.get() + after);
+    if (globals_set.insert(key).second)
+        globals.push_back(key);
+    buffer.rewind(after - before);
 
-    std::string key(globals.get() + before, globals.get() + after);
-    if (!globals_set.insert(key).second)
-        globals.rewind(after - before);
 }
 
 /// Convert an IR template with '$' expressions into valid IR
@@ -189,8 +191,8 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v) {
     if (v->literal) {
         uint32_t reg = v->reg_index, width = jitc_llvm_vector_width;
         uint32_t vt = v->type;
-        const char *prefix = var_type_prefix[vt],
-                   *tname = var_type_name_llvm[vt];
+        const char *prefix = type_prefix[vt],
+                   *tname = type_name_llvm[vt];
         uint64_t value = v->value;
 
         if (vt == (uint32_t) VarType::Float32) {
@@ -271,11 +273,11 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v) {
                     case 'n': buffer.put("\n    "); continue;
                     case 'w': buffer.put(jitc_llvm_vector_width_str,
                                          strlen(jitc_llvm_vector_width_str)); continue;
-                    case 't': prefix_table = var_type_name_llvm; break;
-                    case 'b': prefix_table = var_type_name_llvm_bin; break;
-                    case 'a': prefix_table = var_type_name_llvm_abbrev; break;
-                    case 's': prefix_table = var_type_size_str; break;
-                    case 'r': prefix_table = var_type_prefix; break;
+                    case 't': prefix_table = type_name_llvm; break;
+                    case 'b': prefix_table = type_name_llvm_bin; break;
+                    case 'a': prefix_table = type_name_llvm_abbrev; break;
+                    case 's': prefix_table = type_size_str; break;
+                    case 'r': prefix_table = type_prefix; break;
                     case 'i': prefix_table = nullptr; break;
                     case 'o': prefix_table = (const char **) jitc_llvm_ones_str; break;
                     default:

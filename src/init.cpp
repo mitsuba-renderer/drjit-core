@@ -245,7 +245,7 @@ void jitc_shutdown(int light) {
                             " - id=%u: size=%u, type=%s, literal=%u, dep=[%u, "
                             "%u, %u, %u], stmt=\"%s\", value=%lli",
                             kv.second, kv.first.size,
-                            var_type_name[kv.first.type], kv.first.literal,
+                            type_name[kv.first.type], kv.first.literal,
                             kv.first.dep[0], kv.first.dep[1], kv.first.dep[2],
                             kv.first.dep[3], kv.first.literal ? "" : kv.first.stmt,
                             kv.first.literal ? (long long) kv.first.value : 0);

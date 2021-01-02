@@ -386,7 +386,7 @@ bool jitc_cuda_init() {
         char name[16];
         CUfunction func;
         for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
-            snprintf(name, sizeof(name), "poke_%s", var_type_name_short[k]);
+            snprintf(name, sizeof(name), "poke_%s", type_name_short[k]);
             if (strstr(kernels_list, name)) {
                 cuda_check(cuModuleGetFunction(&func, m, name));
                 jitc_cuda_poke[k][i] = func;
@@ -394,7 +394,7 @@ bool jitc_cuda_init() {
                 jitc_cuda_poke[k][i] = nullptr;
             }
 
-            snprintf(name, sizeof(name), "block_copy_%s", var_type_name_short[k]);
+            snprintf(name, sizeof(name), "block_copy_%s", type_name_short[k]);
             if (strstr(kernels_list, name)) {
                 cuda_check(cuModuleGetFunction(&func, m, name));
                 jitc_cuda_block_copy[k][i] = func;
@@ -402,7 +402,7 @@ bool jitc_cuda_init() {
                 jitc_cuda_block_copy[k][i] = nullptr;
             }
 
-            snprintf(name, sizeof(name), "block_sum_%s", var_type_name_short[k]);
+            snprintf(name, sizeof(name), "block_sum_%s", type_name_short[k]);
             if (strstr(kernels_list, name)) {
                 cuda_check(cuModuleGetFunction(&func, m, name));
                 jitc_cuda_block_sum[k][i] = func;
@@ -412,7 +412,7 @@ bool jitc_cuda_init() {
 
             for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
                 snprintf(name, sizeof(name), "reduce_%s_%s", reduction_name[j],
-                         var_type_name_short[k]);
+                         type_name_short[k]);
                 if (strstr(kernels_list, name)) {
                     cuda_check(cuModuleGetFunction(&func, m, name));
                     jitc_cuda_reductions[j][k][i] = func;

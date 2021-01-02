@@ -984,6 +984,12 @@ JIT_INLINE void jit_var_dec_ref_ext(uint32_t index) JIT_NOEXCEPT {
 #define jit_var_inc_ref_ext jit_var_inc_ref_ext_impl
 #endif
 
+/// Query the a variable's internal reference count (used by the test suite)
+extern JIT_EXPORT uint32_t jit_var_ref_int(uint32_t index);
+
+/// Query the a variable's external reference count (used by the test suite)
+extern JIT_EXPORT uint32_t jit_var_ref_ext(uint32_t index);
+
 /// Query the pointer variable associated with a given variable
 extern JIT_EXPORT void *jit_var_ptr(uint32_t index);
 
@@ -1196,14 +1202,8 @@ enum class JitFlag : uint32_t {
     // Default (eager) execute loops and virtual function calls at once
     Default        = 0,
 
-    // Record loops to postpone their evaluation
-    RecordLoops    = 1,
-
-    // Record virtual function calls to postpone their evaluation
-    RecordVCalls   = 4,
-
-    // Try to optimize the calling conventions of vcalls
-    OptimizeVCalls = 16
+    VCallOptimize  = 1,
+    VCallBranch = 2
 };
 #else
 enum JitFlag {
@@ -1219,16 +1219,22 @@ extern JIT_EXPORT void jit_set_flags(uint32_t flags);
 /// Retrieve the JIT compiler status flags (see \ref JitFlags)
 extern JIT_EXPORT uint32_t jit_flags();
 
-/// Equivalent to <tt>jit_set_flags(jit_flags() | flag)</tt>
-extern JIT_EXPORT void jit_enable_flag(JIT_ENUM JitFlag flag);
+/// Selectively enables/disables flags
+extern JIT_EXPORT void jit_set_flag(JIT_ENUM JitFlag flag, int enable);
 
-/// Equivalent to <tt>jit_set_flags(jit_flags() & ~flag)</tt>
-extern JIT_EXPORT void jit_disable_flag(JIT_ENUM JitFlag flag);
-
-/// Assign a callback function that is invoked when the given variable is freed
-extern JIT_EXPORT void jit_var_set_free_callback(uint32_t index,
-                                                 void (*callback)(void *),
-                                                 void *payload);
+/**
+ * \brief Assign a callback function that is invoked when the variable is
+ * evaluated or freed.
+ *
+ * The provided function should have the signature <tt>void callback(uint32_t
+ * index, int free, void *payload)</tt>, where \c index is the variable index,
+ * \c free == 0 indicates that the variable is evaluated, \c free == 1
+ * indicates that it is freed, and \c payload is a user-specified payload
+ * value.
+ */
+extern JIT_EXPORT void
+jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
+                     void *payload);
 
 /**
  * \brief Returns the number of operations with side effects (specifically,
@@ -1263,8 +1269,8 @@ extern JIT_EXPORT uint32_t jit_var_mask_peek();
 /// Record a virtual function call
 extern JIT_EXPORT void jit_var_vcall(const char *domain, uint32_t self,
                                      uint32_t n_inst, uint32_t n_in,
-                                     const uint32_t *in, uint32_t n_out_all,
-                                     const uint32_t *out_all,
+                                     const uint32_t *in, uint32_t n_out_nested,
+                                     const uint32_t *out_nested,
                                      const uint32_t *n_se, uint32_t *out);
 
 // ====================================================================

@@ -21,6 +21,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     using Mask = JitArray<Backend_, bool>;
     static constexpr VarType Type = var_type<Value>::value;
     static constexpr JitBackend Backend = Backend_;
+    static constexpr bool IsArray = true;
 	template <typename T> using ReplaceValue = JitArray<Backend_, T>;
 
     JitArray() = default;

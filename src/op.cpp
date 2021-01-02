@@ -493,7 +493,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 stmt = "abs.$t0 $r0, $r1";
             } else {
                 if (is_float) {
-                    uint64_t mask_value = ((uint64_t) 1 << (var_type_size[vti] * 8 - 1)) - 1;
+                    uint64_t mask_value = ((uint64_t) 1 << (type_size[vti] * 8 - 1)) - 1;
                     uint32_t mask = jitc_var_new_literal(backend, vt, &mask_value, 1, 0);
                     uint32_t deps[2] = { dep[0], mask };
                     li = jitc_var_new_op(JitOp::And, 2, deps);
@@ -1132,9 +1132,9 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     if (unlikely(std::max(state.log_level_stderr, state.log_level_callback) >=
                  LogLevel::Debug)) {
         var_buffer.clear();
-        var_buffer.fmt("jit_var_new_op(%s, %u <- ", op_name[(int) op], result);
+        var_buffer.fmt("jit_var_new_op(r%u <- %s ", result, op_name[(int) op]);
         for (uint32_t i = 0; i < n_dep; ++i)
-            var_buffer.fmt("%u%s", dep[i], i + 1 < n_dep ? ", " : ")");
+            var_buffer.fmt("r%u%s", dep[i], i + 1 < n_dep ? ", " : ")");
         if (literal)
             var_buffer.put(": literal");
         else if (li)
@@ -1148,16 +1148,16 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
 JIT_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op, uint32_t n_dep, const uint32_t *dep) {
     switch (n_dep) {
         case 1:
-            jitc_raise("jit_var_new_op(%s, %u): %s", op_name[(int) op], dep[0],
+            jitc_raise("jit_var_new_op(%s, r%u): %s", op_name[(int) op], dep[0],
                       error);
         case 2:
-            jitc_raise("jit_var_new_op(%s, %u, %u): %s", op_name[(int) op],
+            jitc_raise("jit_var_new_op(%s, r%u, r%u): %s", op_name[(int) op],
                       dep[0], dep[1], error);
         case 3:
-            jitc_raise("jit_var_new_op(%s, %u, %u, %u): %s", op_name[(int) op],
+            jitc_raise("jit_var_new_op(%s, r%u, r%u, r%u): %s", op_name[(int) op],
                       dep[0], dep[1], dep[2], error);
         case 4:
-            jitc_raise("jit_var_new_op(%s, %u, %u, %u, %u): %s",
+            jitc_raise("jit_var_new_op(%s, r%u, r%u, r%u, r%u): %s",
                       op_name[(int) op], dep[0], dep[1], dep[2], dep[3], error);
         default:
             jitc_fail("jit_var_new_op(): invalid number of arguments!");
@@ -1181,9 +1181,9 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
          target_float = jitc_is_float(target_type);
 
     uint32_t source_size =
-                 source_bool ? 0 : var_type_size[(uint32_t) source_type],
+                 source_bool ? 0 : type_size[(uint32_t) source_type],
              target_size =
-                 target_bool ? 0 : var_type_size[(uint32_t) target_type];
+                 target_bool ? 0 : type_size[(uint32_t) target_type];
 
     if (reinterpret && source_size != target_size) {
         jitc_raise("jit_var_new_cast(): reinterpret cast between types of "
@@ -1300,9 +1300,9 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
         jitc_var_inc_ref_int(index, v);
         uint32_t result = jitc_var_new(v2);
 
-        jitc_log(Debug, "jit_var_new_cast(%u, %s -> %s): %u", index,
-                 var_type_name[(int) source_type],
-                 var_type_name[(int) target_type], result);
+        jitc_log(Debug, "jit_var_new_cast(%s r%u <- %s r%u)",
+                 type_name[(int) target_type], result,
+                 type_name[(int) source_type], index);
 
         return result;
     }
@@ -1314,8 +1314,8 @@ static uint32_t jitc_scatter_gather_mask(uint32_t mask) {
     if ((VarType) v_mask->type != VarType::Bool)
         jitc_raise("jit_scatter_gather_mask(): expected a boolean array as scatter/gather mask");
 
-    Ref mask_top = jitc_var_mask_peek((JitBackend) v_mask->backend);
-    uint32_t deps[2] = { mask, mask_top.get() };
+    Ref mask_top = steal(jitc_var_mask_peek((JitBackend) v_mask->backend));
+    uint32_t deps[2] = { mask, mask_top };
     return jitc_var_new_op(JitOp::And, 2, deps);
 }
 
@@ -1345,22 +1345,22 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     // Completely avoid the gather operation for trivial arguments
     if (v_source->literal || v_source->size == 1) {
         uint32_t deps[2] = { source, mask_ };
-        Ref tmp = jitc_var_new_op(JitOp::And, 2, deps);
+        Ref tmp = steal(jitc_var_new_op(JitOp::And, 2, deps));
 
-        uint32_t result = jitc_var_resize(tmp.get(), size);
-        jitc_log(Debug, "jit_var_gather(%u <- source=%u, index=%u, mask=%u): gather elided",
+        uint32_t result = jitc_var_resize(tmp, size);
+        jitc_log(Debug, "jit_var_new_gather(r%u <- r%u[r%u] if r%u): elided",
                  result, source, index_, mask_);
 
         return result;
     }
 
-    Ref mask (jitc_scatter_gather_mask(mask_)),
-        index(jitc_scatter_gather_index(source, index_));
+    Ref mask  = steal(jitc_scatter_gather_mask(mask_)),
+        index = steal(jitc_scatter_gather_index(source, index_));
 
     // Location of variables may have changed
     v_source = jitc_var(source);
-    v_index = jitc_var(index.get());
-    v_mask = jitc_var(mask.get());
+    v_index = jitc_var(index);
+    v_mask = jitc_var(mask);
 
     JitBackend backend = (JitBackend) v_source->backend;
 
@@ -1371,17 +1371,17 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
 
         // Location of variables may have changed
         v_source = jitc_var(source);
-        // v_index = jitc_var(index.get()); (not used below)
-        v_mask = jitc_var(mask.get());
+        // v_index = jitc_var(index); (not used below)
+        v_mask = jitc_var(mask);
     }
 
     bool unmasked = v_mask->literal && v_mask->value == 1;
     VarType vt = (VarType) v_source->type;
 
     // Create a pointer + reference, invalidates the v_* variables
-    Ref ptr = jitc_var_new_pointer(backend, v_source->data, source, 0);
+    Ref ptr = steal(jitc_var_new_pointer(backend, v_source->data, source, 0));
 
-    uint32_t dep[3] = { ptr.get(), index.get(), mask.get() };
+    uint32_t dep[3] = { ptr, index, mask };
     uint32_t n_dep = 3;
 
     const char *stmt;
@@ -1425,8 +1425,9 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     }
 
     uint32_t result = jitc_var_new_stmt(backend, vt, stmt, 1, n_dep, dep);
-    jitc_log(Debug, "jit_var_new_gather(%u <- source=%u (via %u), index=%u, mask=%u)",
-             result, source, ptr.get(), index.get(), mask.get());
+    jitc_log(Debug,
+             "jit_var_new_gather(r%u <- r%u[r%u] if r%u, via ptr r%u)",
+             result, source, (uint32_t) index, (uint32_t) mask, (uint32_t) ptr);
 
     return result;
 }
@@ -1452,38 +1453,37 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     }
 
     // Create a pointer + reference (CSE will merge it with other queued scatters)
-    Ref ptr = jitc_var_new_pointer(backend, v_target->data, target_, 1);
+    Ref ptr = steal(jitc_var_new_pointer(backend, v_target->data, target_, 1));
 
     // Check if it is safe to write directly
     Ref target;
     bool copy;
     if (v_target->ref_count_ext + v_target->ref_count_int > 2) {
-        target = jitc_var_copy(target_);
-        ptr = jitc_var_new_pointer(backend, jitc_var(target.get())->data,
-                                   target.get(), 1);
+        target = steal(jitc_var_copy(target_));
+        ptr = steal(
+            jitc_var_new_pointer(backend, jitc_var(target)->data, target, 1));
         copy = true;
     } else {
-        jitc_var_inc_ref_ext(target_);
-        target = target_;
+        target = borrow(target_);
         copy = false;
     }
 
-    Ref mask (jitc_scatter_gather_mask(mask_)),
-        index(jitc_scatter_gather_index(target.get(), index_));
+    Ref mask  = steal(jitc_scatter_gather_mask(mask_)),
+        index = steal(jitc_scatter_gather_index(target, index_));
 
     // Location of variable may have changed
-    v_target = jitc_var(target.get());
+    v_target = jitc_var(target);
 
-    const Variable *v_index = jitc_var(index.get()),
-                   *v_mask = jitc_var(mask.get());
+    const Variable *v_index = jitc_var(index),
+                   *v_mask = jitc_var(mask);
 
     if (v_index->dirty || v_mask->dirty) {
         jitc_eval(thread_state(backend));
 
         // Location of variables may have changed
-        v_index = jitc_var(index.get());
-        v_mask = jitc_var(mask.get());
-        v_target = jitc_var(target.get());
+        v_index = jitc_var(index);
+        v_mask = jitc_var(mask);
+        v_target = jitc_var(target);
     }
 
     v_target->dirty = true;
@@ -1491,7 +1491,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     bool unmasked = v_mask->literal && v_mask->value == 1;
     VarType vt = (VarType) v_target->type;
 
-    uint32_t dep[4] = { ptr.get(), value, index.get(), mask.get() };
+    uint32_t dep[4] = { ptr, value, index, mask };
     uint32_t n_dep = 4;
 
     Buffer buf{50};
@@ -1578,10 +1578,11 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         jitc_var_new_stmt(backend, VarType::Void, buf.get(), 0, n_dep, dep);
 
     jitc_log(Debug,
-             "jit_var_new_scatter(%u <- target=%u (via %u), value=%u, "
-             "index=%u, mask=%u, reduce_op=%s): %s",
-             result, target.get(), ptr.get(), value, index.get(), mask.get(),
-             reduce_op_name[(int) reduce_op], copy ? "copy" : "direct");
+             "jit_var_new_scatter(r%u[r%u] <- r%u if r%u, via "
+             "ptr r%u, reduce_op=%s): r%u (%s)",
+             (uint32_t) target, (uint32_t) index, value, (uint32_t) mask,
+             (uint32_t) ptr, reduce_op_name[(int) reduce_op], result,
+             copy ? "copy" : "direct");
 
     jitc_var(result)->side_effect = true;
     thread_state(backend)->side_effects.push_back(result);

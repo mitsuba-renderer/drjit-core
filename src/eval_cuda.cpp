@@ -18,8 +18,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
          %r2   :  Size
          %p0   :  Stopping predicate
          %rd0  :  Temporary for parameter pointers
-         %rd1  :  Temporary for offset calculation
-         %rd2  :  Pointer to parameter table in global memory if too big
+         %rd1  :  Pointer to parameter table in global memory if too big
 
          %b3, %w3, %r3, %rd3, %f3, %d3, %p3: reserved for use in compound
          statements that must write a temporary result to a register.
@@ -57,8 +56,8 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
         if (likely(!params_global)) {
            buffer.put("    ld.param.u32 %r2, [params];\n");
         } else {
-           buffer.put("    ld.param.u64 %rd2, [params];\n"
-                      "    ldu.global.u32 %r2, [%rd2];\n");
+           buffer.put("    ld.param.u64 %rd1, [params];\n"
+                      "    ldu.global.u32 %r2, [%rd1];\n");
         }
 
         buffer.put("    setp.ge.u32 %p0, %r0, %r2;\n"
@@ -85,7 +84,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
     if (uses_optix) {
         params_type = "const";
     } else if (params_global) {
-        params_base = "%rd2";
+        params_base = "%rd1";
         params_type = "global";
     }
 
@@ -116,7 +115,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             uint32_t id = 0;
 
             if (v->literal) {
-                prefix = var_type_prefix[vti];
+                prefix = type_prefix[vti];
                 id = v->reg_index;
             }
 
@@ -128,13 +127,13 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
 
             if (size > 1)
                 buffer.fmt("    mad.wide.u32 %%rd0, %%r0, %u, %%rd0;\n",
-                           var_type_size[vti]);
+                           type_size[vti]);
 
             if (vt != VarType::Bool) {
                 buffer.fmt("    %s%s %s%u, [%%rd0];\n",
                            size > 1 ? "ld.global.cs." : "ldu.global.",
-                           var_type_name_ptx[vti],
-                           var_type_prefix[vti],
+                           type_name_ptx[vti],
+                           type_prefix[vti],
                            v->reg_index);
             } else {
                 buffer.fmt("    %s %%w0, [%%rd0];\n"
@@ -151,12 +150,12 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             buffer.fmt("    ld.%s.u64 %%rd0, [%s+%u];\n"
                        "    mad.wide.u32 %%rd0, %%r0, %u, %%rd0;\n",
                        params_type, params_base, v->param_offset,
-                       var_type_size[vti]);
+                       type_size[vti]);
 
             if (vt != VarType::Bool) {
                 buffer.fmt("    st.global.cs.%s [%%rd0], %s%u;\n",
-                           var_type_name_ptx[vti],
-                           var_type_prefix[vti],
+                           type_name_ptx[vti],
+                           type_prefix[vti],
                            v->reg_index);
             } else {
                 buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u;\n"
@@ -177,34 +176,72 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
 
     buffer.put("    ret;\n"
                "}\n");
-    buffer.put(globals.get(), globals.size());
+
+    size_t globals_strlen = 0;
+    for (const std::string &s : globals)
+        globals_strlen += s.length();
+
+    if (globals_strlen) {
+        size_t body_length = buffer.size();
+        buffer.putc(' ', globals_strlen);
+        char *p = (char *) strstr(buffer.get(), "\n\n") + 2;
+        memmove(p + globals_strlen, p, body_length - (p - buffer.get()));
+        for (auto it = globals.rbegin(); it != globals.rend(); ++it) {
+            const std::string &s = *it;
+            memcpy(p, s.c_str(), s.length());
+            p += s.length();
+        }
+    }
 }
 
 void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
                              uint32_t in_align, uint32_t out_size,
-                             uint32_t out_align) {
+                             uint32_t out_align, uint32_t extra_size,
+                             uint32_t n_out, const uint32_t *out,
+                             const uint32_t *out_nested,
+                             const char *ret_label) {
     bool log_trace = std::max(state.log_level_stderr,
-                              state.log_level_callback) >= LogLevel::Trace;
+                              state.log_level_callback) >= LogLevel::Trace,
+         function_interface = ret_label == nullptr;
 
-    buffer.put(".visible .func");
+    if (function_interface) {
+        buffer.put(".visible .func");
+        if (out_size)
+            buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
 
-    if (out_size)
-        buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
+        buffer.fmt(" %s_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
+                   uses_optix ? "__direct_callable__" : "func");
 
-    buffer.fmt(" %s_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(.reg.u64 extra",
-               uses_optix ? "__direct_callable__" : "func");
+        if (extra_size) {
+            buffer.put(".reg .u64 extra");
+            if (in_size)
+                buffer.put(", ");
+        }
+        if (in_size)
+            buffer.fmt(".param .align %u .b8 params[%u]", in_align, in_size);
 
-    if (in_size)
-        buffer.fmt(", .param .align %u .b8 params[%u]", in_align, in_size);
-
-    buffer.put(") {\n");
-
-    buffer.fmt(
-        "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
-        "    .reg.b64  %%rd<%u>; .reg.f32 %%f<%u>; .reg.f64 %%d<%u>;\n"
-        "    .reg.pred %%p <%u>;\n\n",
-        n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
-
+        buffer.fmt(
+            ") {\n"
+            "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
+            "    .reg.b64  %%rd<%u>; .reg.f32 %%f<%u>; .reg.f64 %%d<%u>;\n"
+            "    .reg.pred %%p <%u>;\n\n",
+            n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
+    } else {
+        // Branch-based interface
+        buffer.put("l_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^:");
+        int ctr = 0;
+        for (ScheduledVariable &sv : schedule) {
+            const Variable *v = jitc_var(sv.index);
+            if ((VarType) v->type == VarType::Void ||
+                !(v->stmt || v->literal))
+                continue;
+            buffer.fmt("%s.reg.%s %s%u;", ctr % 4 == 0 ? "\n    " : " ",
+                       type_name_ptx[v->type], type_prefix[v->type],
+                       v->reg_index);
+            ++ctr;
+        }
+        buffer.put("\n\n");
+    }
 
     for (ScheduledVariable &sv : schedule) {
         const Variable *v = jitc_var(sv.index);
@@ -228,12 +265,12 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
             }
         }
 
-        if (v->stmt) {
+        if (v->stmt || v->literal) {
             jitc_render_stmt_cuda(sv.index, v);
-        } else {
+        } else if (function_interface) {
             if (vt != VarType::Bool) {
                 buffer.fmt("    ld.param.%s %s%u, [params+%u];\n",
-                           var_type_name_ptx[vti], var_type_prefix[vti],
+                           type_name_ptx[vti], type_prefix[vti],
                            v->reg_index, v->param_offset);
             } else {
                 buffer.fmt("    ld.param.u8 %%w0, [params+%u];\n"
@@ -241,28 +278,47 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
                            v->param_offset, v->reg_index);
             }
         }
-
-        if (v->output_flag) {
-            if (vt != VarType::Bool) {
-                buffer.fmt("    st.param.%s [result+%u], %s%u;\n",
-                           var_type_name_ptx[vti], v->param_offset,
-                           var_type_prefix[vti], v->reg_index);
-            } else {
-                buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u\n"
-                           "    st.param.u8 [result+%u], %%w0;\n",
-                           v->reg_index, v->param_offset);
-            }
-        }
     }
-    buffer.put("    ret;\n");
-    buffer.put("}\n");
+
+
+    uint32_t offset = 0;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        const Variable *v = jitc_var(out_nested[i]);
+        uint32_t vti = v->type;
+        const char *tname = type_name_ptx[vti],
+                   *prefix = type_prefix[vti];
+
+        if (function_interface) {
+            if ((VarType) vti != VarType::Bool) {
+                buffer.fmt("    st.param.%s [result+%u], %s%u;\n", tname,
+                           offset, prefix, v->reg_index);
+            } else {
+                buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u;\n"
+                           "    st.param.u8 [result+%u], %%w0;\n",
+                           v->reg_index, offset);
+            }
+        } else {
+            auto it = state.variables.find(out[i]);
+            if (it != state.variables.end())
+                buffer.fmt("    mov.%s %s%u, %s%u;\n", tname, prefix,
+                           it.value().reg_index, prefix, v->reg_index);
+        }
+        offset += type_size[vti];
+    }
+
+    if (function_interface) {
+        buffer.put("    ret;\n"
+                   "}\n");
+    } else {
+        buffer.fmt("    bra %s;\n", ret_label);
+    }
 }
 
 /// Convert an IR template with '$' expressions into valid IR
 static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
     if (v->literal) {
-        const char *prefix = var_type_prefix[v->type],
-                   *tname = var_type_name_ptx_bin[v->type];
+        const char *prefix = type_prefix[v->type],
+                   *tname = type_name_ptx_bin[v->type];
 
         size_t tname_len = strlen(tname),
                prefix_len = strlen(prefix);
@@ -292,10 +348,10 @@ static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
                 const char **prefix_table = nullptr, type = *s++;
                 switch (type) {
                     case 'n': buffer.put(";\n    "); continue;
-                    case 't': prefix_table = var_type_name_ptx; break;
-                    case 'b': prefix_table = var_type_name_ptx_bin; break;
-                    case 's': prefix_table = var_type_size_str; break;
-                    case 'r': prefix_table = var_type_prefix; break;
+                    case 't': prefix_table = type_name_ptx; break;
+                    case 'b': prefix_table = type_name_ptx_bin; break;
+                    case 's': prefix_table = type_size_str; break;
+                    case 'r': prefix_table = type_prefix; break;
                     default:
                         jitc_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
                                   "expression (unknown type \"%c\") in \"%s\"!", type, v->stmt);

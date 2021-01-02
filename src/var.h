@@ -95,8 +95,9 @@ extern void jitc_var_set_label(uint32_t index, const char *label);
 extern const char *jitc_var_label(uint32_t index);
 
 /// Assign a callback function that is invoked when the given variable is freed
-extern void jitc_var_set_free_callback(uint32_t index, void (*callback)(void *),
-                                       void *payload);
+extern void jitc_var_set_callback(uint32_t index,
+                                  void (*callback)(uint32_t, int, void *),
+                                  void *payload);
 
 /// Migrate a variable to a different flavor of memory
 extern uint32_t jitc_var_migrate(uint32_t index, AllocType type);
@@ -163,17 +164,16 @@ extern bool jitc_var_any(uint32_t index);
 extern bool jitc_var_all(uint32_t index);
 
 /// Descriptive names and byte sizes for the various variable types
-extern const char *var_type_name      [(int) VarType::Count];
-extern const char *var_type_name_short[(int) VarType::Count];
-extern const uint32_t var_type_size   [(int) VarType::Count];
+extern const char *type_name      [(int) VarType::Count];
+extern const char *type_name_short[(int) VarType::Count];
+extern const uint32_t type_size   [(int) VarType::Count];
 
 /// Type names and register names for CUDA and LLVM
-extern const char *var_type_name_llvm       [(int) VarType::Count];
-extern const char *var_type_name_llvm_bin   [(int) VarType::Count];
-extern const char *var_type_name_llvm_abbrev[(int) VarType::Count];
-extern const char *var_type_name_llvm_big   [(int) VarType::Count];
-extern const char *var_type_name_ptx        [(int) VarType::Count];
-extern const char *var_type_name_ptx_bin    [(int) VarType::Count];
-extern const char *var_type_prefix          [(int) VarType::Count];
-extern const char *var_type_size_str        [(int) VarType::Count];
-extern const char *var_type_label           [(int) VarType::Count];
+extern const char *type_name_llvm       [(int) VarType::Count];
+extern const char *type_name_llvm_bin   [(int) VarType::Count];
+extern const char *type_name_llvm_abbrev[(int) VarType::Count];
+extern const char *type_name_llvm_big   [(int) VarType::Count];
+extern const char *type_name_ptx        [(int) VarType::Count];
+extern const char *type_name_ptx_bin    [(int) VarType::Count];
+extern const char *type_prefix          [(int) VarType::Count];
+extern const char *type_size_str        [(int) VarType::Count];
