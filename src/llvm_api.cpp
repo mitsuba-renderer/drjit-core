@@ -147,8 +147,8 @@ char *jitc_llvm_counter_str = nullptr;
 extern "C" {
 
 static uint8_t *jitc_llvm_mem_allocate(void * /* opaque */, uintptr_t size,
-                                      unsigned align, unsigned /* id */,
-                                      const char *name) {
+                                       unsigned align, unsigned /* id */,
+                                       const char *name) {
     if (align == 0)
         align = 16;
 
@@ -232,7 +232,8 @@ void jitc_llvm_disasm(const Kernel &kernel) {
 
 static ProfilerRegion profiler_region_llvm_compile("jit_llvm_compile");
 
-void jitc_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
+void jitc_llvm_compile(const char *buffer, size_t buffer_size,
+                       const char *kernel_name, Kernel &kernel) {
     ProfilerPhase phase(profiler_region_llvm_compile);
 
     if (jitc_llvm_mem_size <= buffer_size) {
@@ -251,22 +252,8 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     }
     jitc_llvm_mem_offset = 0;
 
-    // Temporarily change the kernel name
-    char kernel_name_old[23]{}, kernel_name_new[30]{};
-    snprintf(kernel_name_new, 23, "enoki_%016llx", (long long) jitc_llvm_kernel_id);
-
-    char *offset = (char *) buffer;
-    do {
-        offset = (char *) strstr(offset, "enoki_");
-        if (offset == nullptr)
-            break;
-        memcpy(kernel_name_old, offset, 22);
-        memcpy(offset, kernel_name_new, 22);
-        offset += 22;
-    } while (true);
-
     LLVMMemoryBufferRef buf = LLVMCreateMemoryBufferWithMemoryRange(
-        buffer, buffer_size, kernel_name_new, 0);
+        buffer, buffer_size, kernel_name, 0);
     if (unlikely(!buf))
         jitc_fail("jit_run_compile(): could not create memory buffer!");
 
@@ -289,10 +276,10 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     LLVMAddModule(jitc_llvm_engine, llvm_module);
 
     uint8_t *func =
-        (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, kernel_name_new);
+        (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, kernel_name);
     if (unlikely(!func))
         jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
-                 "address of kernel \"%s\"!\n", kernel_name_new);
+                 "address of kernel \"%s\"!\n", kernel_name);
     else if (unlikely(func < jitc_llvm_mem))
         jitc_fail("jit_llvm_compile(): internal error: invalid address: "
                  "%p < %p!\n", func, jitc_llvm_mem);
@@ -334,21 +321,11 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
         jitc_fail("jit_llvm_compile(): could remove module: %s.\n", error);
     LLVMDisposeModule(llvm_module);
 
-    // Change the kernel name back
-    offset = (char *) buffer;
-    do {
-        offset = (char *) strstr(offset, "enoki_");
-        if (offset == nullptr)
-            break;
-        memcpy(offset, kernel_name_old, 22);
-        offset += 22;
-    } while (true);
-
     kernel.data = ptr_result;
     kernel.size = (uint32_t) jitc_llvm_mem_offset;
-    kernel.llvm.func        = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
+    kernel.llvm.func = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
-    kernel.llvm.itt = __itt_string_handle_create(kernel_name_old);
+    kernel.llvm.itt = __itt_string_handle_create(kernel_name);
 #endif
     jitc_llvm_kernel_id++;
 }

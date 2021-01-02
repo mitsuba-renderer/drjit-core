@@ -66,8 +66,8 @@ add_library(
   src/cuda_api.h      src/cuda_api.cpp
   src/llvm_api.h      src/llvm_api.cpp
   src/io.h            src/io.cpp
-  src/special.h       src/special.cpp
   src/eval.h          src/eval.cpp
+  src/vcall.h         src/vcall.cpp
   src/eval_cuda.cpp
   src/eval_llvm.cpp
   src/init.cpp

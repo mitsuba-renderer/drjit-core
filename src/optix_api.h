@@ -37,8 +37,8 @@ extern void jitc_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask);
 
 /// Compile an OptiX kernel
 extern void jitc_optix_compile(ThreadState *ts, const char *buffer,
-                               size_t buffer_size, Kernel &kernel,
-                               uint64_t kernel_hash);
+                               size_t buffer_size, const char *kernel_name,
+                               Kernel &kernel);
 
 /// Free a compiled OptiX kernel
 extern void jitc_optix_free(const Kernel &kernel);

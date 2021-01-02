@@ -1310,8 +1310,8 @@ extern JIT_EXPORT void jit_memcpy_async(JitBackend backend, void *dst, const voi
  * Runs asynchronously.
  */
 extern JIT_EXPORT void jit_reduce(JitBackend backend, JIT_ENUM VarType type,
-                                   JIT_ENUM ReduceOp rtype,
-                                   const void *ptr, uint32_t size, void *out);
+                                  JIT_ENUM ReduceOp rtype,
+                                  const void *ptr, uint32_t size, void *out);
 
 /**
  * \brief Perform an exclusive scan / prefix sum over an unsigned 32 bit integer

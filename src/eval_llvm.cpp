@@ -10,7 +10,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
 
-    buffer.put("define void @enoki_^^^^^^^^^^^^^^^^(i64 %start, i64 %end, "
+    buffer.put("define void @enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 %end, "
                "i8** noalias %params) #0 {\n"
                "entry:\n"
                "    br label %loop\n"
@@ -32,10 +32,22 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                  align = v->unaligned ? 1 : (tsize * width),
                  size = v->size;
 
-        if (unlikely(log_trace && v->extra)) {
-            const char *label = jitc_var_label(index);
-            if (label)
-                buffer.fmt("    ; %s\n", label);
+        if (unlikely(v->extra)) {
+            auto it = state.extra.find(index);
+            if (it == state.extra.end())
+                jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
+
+            const Extra &extra = it->second;
+            if (log_trace && extra.label) {
+                const char *label = strrchr(extra.label, '/');
+                if (label && label[1])
+                    buffer.fmt("    ; %s\n", label + 1);
+            }
+
+            if (extra.assemble) {
+                extra.assemble(v, extra);
+                continue;
+            }
         }
 
         if (v->param_type != ParamType::Register) {
@@ -43,8 +55,8 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                 "    %s%u_p1 = getelementptr inbounds i8*, i8** %%params, i32 %u\n"
                 "    %s%u_p2 = load i8*, i8** %s%u_p1, align 8, !alias.scope !1\n"
                 "    %s%u_p3 = bitcast i8* %s%u_p2 to %s*\n",
-                prefix, id, v->param_index, prefix, id, prefix, id,
-                prefix, id, prefix, id, tname);
+                prefix, id, v->param_offset / (uint32_t) sizeof(void *), prefix, id,
+                prefix, id, prefix, id, prefix, id, tname);
 
             if (v->param_type != ParamType::Input || size != 1)
                 buffer.fmt("    %s%u_p4 = getelementptr inbounds %s, %s* %s%u_p3, i64 %%index\n"

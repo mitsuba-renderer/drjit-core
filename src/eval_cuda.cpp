@@ -6,7 +6,7 @@
 static void jitc_render_stmt_cuda(uint32_t index, const Variable *v);
 
 void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
-                       uint32_t n_regs, uint32_t n_params) {
+                        uint32_t n_regs, uint32_t n_params) {
     bool params_global = !uses_optix && n_params > ENOKI_CUDA_ARG_LIMIT;
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
@@ -32,13 +32,13 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                ts->compute_capability);
 
     if (!uses_optix) {
-        buffer.fmt(".entry enoki_^^^^^^^^^^^^^^^^("
+        buffer.fmt(".entry enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
                    ".param .align 8 .b8 params[%u]) { // sm_%u \n",
                    n_params * (uint32_t) sizeof(void *),
                    state.devices[ts->device].compute_capability);
     } else {
        buffer.fmt(".const .align 8 .b8 params[%u];\n\n"
-                  ".entry __raygen__enoki_^^^^^^^^^^^^^^^^() {\n",
+                  ".entry __raygen__enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^() {\n",
                   n_params * (uint32_t) sizeof(void *));
     }
 
@@ -100,6 +100,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             auto it = state.extra.find(index);
             if (it == state.extra.end())
                 jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
+
             const Extra &extra = it->second;
             if (log_trace && extra.label)
                 buffer.fmt("    // %s\n", extra.label);
@@ -120,8 +121,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             }
 
             buffer.fmt("    ld.%s.u64 %s%u, [%s+%u];\n", params_type,
-                       prefix, id, params_base,
-                       v->param_index * (uint32_t) sizeof(void *));
+                       prefix, id, params_base, v->param_offset);
 
             if (v->literal)
                 continue;
@@ -150,8 +150,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
         if (v->param_type == ParamType::Output) {
             buffer.fmt("    ld.%s.u64 %%rd0, [%s+%u];\n"
                        "    mad.wide.u32 %%rd0, %%r0, %u, %%rd0;\n",
-                       params_type, params_base,
-                       v->param_index * (uint32_t) sizeof(void *),
+                       params_type, params_base, v->param_offset,
                        var_type_size[vti]);
 
             if (vt != VarType::Bool) {
@@ -177,7 +176,86 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
     }
 
     buffer.put("    ret;\n"
-               "}");
+               "}\n");
+    buffer.put(globals.get(), globals.size());
+}
+
+void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
+                             uint32_t in_align, uint32_t out_size,
+                             uint32_t out_align) {
+    bool log_trace = std::max(state.log_level_stderr,
+                              state.log_level_callback) >= LogLevel::Trace;
+
+    buffer.put(".visible .func");
+
+    if (out_size)
+        buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
+
+    buffer.fmt(" %s_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(.reg.u64 extra",
+               uses_optix ? "__direct_callable__" : "func");
+
+    if (in_size)
+        buffer.fmt(", .param .align %u .b8 params[%u]", in_align, in_size);
+
+    buffer.put(") {\n");
+
+    buffer.fmt(
+        "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
+        "    .reg.b64  %%rd<%u>; .reg.f32 %%f<%u>; .reg.f64 %%d<%u>;\n"
+        "    .reg.pred %%p <%u>;\n\n",
+        n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
+
+
+    for (ScheduledVariable &sv : schedule) {
+        const Variable *v = jitc_var(sv.index);
+        const uint32_t vti = v->type;
+        const VarType vt = (VarType) vti;
+
+        if (unlikely(v->extra)) {
+            auto it = state.extra.find(sv.index);
+            if (it == state.extra.end()) jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
+
+            const Extra &extra = it->second;
+            if (log_trace && extra.label) {
+                const char *label = strrchr(extra.label, '/');
+                if (label && label[1])
+                    buffer.fmt("    // %s\n", label + 1);
+            }
+
+            if (extra.assemble) {
+                extra.assemble(v, extra);
+                continue;
+            }
+        }
+
+        if (v->stmt) {
+            jitc_render_stmt_cuda(sv.index, v);
+        } else {
+            if (vt != VarType::Bool) {
+                buffer.fmt("    ld.param.%s %s%u, [params+%u];\n",
+                           var_type_name_ptx[vti], var_type_prefix[vti],
+                           v->reg_index, v->param_offset);
+            } else {
+                buffer.fmt("    ld.param.u8 %%w0, [params+%u];\n"
+                           "    setp.ne.u16 %%p%u, %%w0, 0;\n",
+                           v->param_offset, v->reg_index);
+            }
+        }
+
+        if (v->output_flag) {
+            if (vt != VarType::Bool) {
+                buffer.fmt("    st.param.%s [result+%u], %s%u;\n",
+                           var_type_name_ptx[vti], v->param_offset,
+                           var_type_prefix[vti], v->reg_index);
+            } else {
+                buffer.fmt("    selp.u16 %%w0, 1, 0, %%p%u\n"
+                           "    st.param.u8 [result+%u], %%w0;\n",
+                           v->reg_index, v->param_offset);
+            }
+        }
+    }
+    buffer.put("    ret;\n");
+    buffer.put("}\n");
 }
 
 /// Convert an IR template with '$' expressions into valid IR

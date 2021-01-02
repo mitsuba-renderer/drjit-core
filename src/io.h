@@ -9,8 +9,7 @@
 
 #pragma once
 
-#include <stdint.h>
-#include <stdlib.h>
+#include "hash.h"
 
 using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, void **ptr);
 using CUmodule = struct CUmod_st *;
@@ -59,10 +58,11 @@ extern char jitc_lz4_dict[];
 extern void jitc_lz4_init();
 
 extern bool jitc_kernel_load(const char *source, uint32_t source_size,
-                             JitBackend backend, size_t hash, Kernel &kernel);
+                             JitBackend backend, XXH128_hash_t hash,
+                             Kernel &kernel);
 
 extern bool jitc_kernel_write(const char *source, uint32_t source_size,
-                              JitBackend backend, size_t hash,
+                              JitBackend backend, XXH128_hash_t hash,
                               const Kernel &kernel);
 
 extern void jitc_kernel_free(int device_id, const Kernel &kernel);

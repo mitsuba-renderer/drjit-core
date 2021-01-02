@@ -301,8 +301,9 @@ bool jitc_cuda_init() {
                                                  : kernels_50_size_uncompressed;
         int kernels_size_compressed   = cc >= 70 ? kernels_70_size_compressed
                                                  : kernels_50_size_compressed;
-        size_t kernels_hash           = cc >= 70 ? kernels_70_hash
-                                                 : kernels_50_hash;
+        XXH128_hash_t kernels_hash;
+        kernels_hash.low64  = cc >= 70 ? kernels_70_hash_low64  : kernels_50_hash_low64;
+        kernels_hash.high64 = cc >= 70 ? kernels_70_hash_high64 : kernels_50_hash_high64;
 
         // Decompress the supplemental PTX content
         char *uncompressed =
@@ -320,7 +321,8 @@ bool jitc_cuda_init() {
 
         uncompressed_ptx[kernels_size_uncompressed] = '\0';
 
-        hash_combine(kernels_hash, (size_t) cc);
+        hash_combine(kernels_hash.low64, (size_t) cc);
+        hash_combine(kernels_hash.high64, (size_t) cc);
 
         Kernel kernel;
         if (!jitc_kernel_load(uncompressed_ptx, kernels_size_uncompressed,
@@ -341,8 +343,8 @@ bool jitc_cuda_init() {
 
         #define LOAD(name)                                                       \
             if (i == 0)                                                          \
-                jitc_cuda_##name = (CUfunction *) malloc_check(                   \
-                    sizeof(CUfunction) * jitc_cuda_devices);                      \
+                jitc_cuda_##name = (CUfunction *) malloc_check(                  \
+                    sizeof(CUfunction) * jitc_cuda_devices);                     \
             cuda_check(cuModuleGetFunction(&jitc_cuda_##name[i], m, #name))
 
         LOAD(fill_64);
@@ -369,7 +371,7 @@ bool jitc_cuda_init() {
 
         #define MAXIMIZE_SHARED(name)                                            \
             cuda_check(cuFuncSetAttribute(                                       \
-                jitc_cuda_##name[i],                                              \
+                jitc_cuda_##name[i],                                             \
                 CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,                 \
                 shared_memory_bytes))
 

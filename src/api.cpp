@@ -15,7 +15,7 @@
 #include "registry.h"
 #include "llvm_api.h"
 #include "op.h"
-#include "special.h"
+#include "vcall.h"
 #include <thread>
 #include <condition_variable>
 

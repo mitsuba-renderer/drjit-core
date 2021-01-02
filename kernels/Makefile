@@ -18,8 +18,5 @@ generate: generate.c
 kernels.h: kernels_50.ptx kernels_70.ptx generate
 	./generate
 
-scatter_add.ll: scatter_add.cpp
-	clang++-10 scatter_add.cpp -O3 -mavx512f -mavx512vl -mavx512cd -mavx512dq -fvisibility=hidden -fomit-frame-pointer -fno-asynchronous-unwind-tables -emit-llvm -S -o scatter_add.ll
-
 clean:
 	rm -f kernels.ptx kernels.h generate

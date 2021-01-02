@@ -64,13 +64,14 @@ void jitc_lz4_init() {
 }
 
 bool jitc_kernel_load(const char *source, uint32_t source_size,
-                      JitBackend backend, size_t hash, Kernel &kernel) {
+                      JitBackend backend, XXH128_hash_t hash, Kernel &kernel) {
     jitc_lz4_init();
 
 #if !defined(_WIN32)
     char filename[512];
-    if (unlikely(snprintf(filename, sizeof(filename), "%s/%016llx.%s.bin",
-                          jitc_temp_path, (unsigned long long) hash,
+    if (unlikely(snprintf(filename, sizeof(filename), "%s/%016llx%016llx.%s.bin",
+                          jitc_temp_path, (unsigned long long) hash.high64,
+                          (unsigned long long) hash.low64,
                           backend == JitBackend::CUDA ? "cuda" : "llvm") < 0))
         jitc_fail("jit_kernel_load(): scratch space for filename insufficient!");
 
@@ -107,7 +108,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
     if (rv < 0 || rv == sizeof(filename) ||
         wcstombs(filename, filename_w, sizeof(filename)) == sizeof(filename))
         jitc_fail("jit_kernel_load(): scratch space for filename insufficient!");
- 
+
     HANDLE fd = CreateFileW(filename_w, GENERIC_READ,
         FILE_SHARE_READ, nullptr, OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -201,14 +202,16 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 
             DWORD unused;
             if (VirtualProtect(kernel.data, header.kernel_size, PAGE_EXECUTE_READ, &unused) == 0)
-                jitc_fail("jit_llvm_load(): VirtualProtect() failed: %u", GetLastError()); 
+                jitc_fail("jit_llvm_load(): VirtualProtect() failed: %u", GetLastError());
 #endif
 
             kernel.llvm.func = (LLVMKernelFunction)(
                 (uint8_t *) kernel.data + header.func_offset);
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
-            char name[23];
-            snprintf(name, 23, "enoki_%016llx", (long long) hash);
+            char name[39];
+            snprintf(name, sizeof(name), "enoki_%016llx%016llx",
+                     (unsigned long long) hash.high64,
+                     (unsigned long long) hash.low64);
             kernel.llvm.itt = __itt_string_handle_create(name);
 #endif
         }
@@ -227,13 +230,15 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 }
 
 bool jitc_kernel_write(const char *source, uint32_t source_size,
-                       JitBackend backend, size_t hash, const Kernel &kernel) {
+                       JitBackend backend, XXH128_hash_t hash,
+                       const Kernel &kernel) {
     jitc_lz4_init();
 
 #if !defined(_WIN32)
     char filename[512], filename_tmp[512];
-    if (unlikely(snprintf(filename, sizeof(filename), "%s/%016llx.%s.bin",
-                          jitc_temp_path, (unsigned long long) hash,
+    if (unlikely(snprintf(filename, sizeof(filename), "%s/%016llx%016llx.%s.bin",
+                          jitc_temp_path, (unsigned long long) hash.high64,
+                          (unsigned long long) hash.low64,
                           backend == JitBackend::CUDA ? "cuda" : "llvm") < 0))
         jitc_fail("jit_kernel_write(): scratch space for filename insufficient!");
 

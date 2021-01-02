@@ -48,10 +48,10 @@ GlobalsSet globals_set;
 static std::vector<Task *> scheduled_tasks;
 
 /// Hash code of the last generated kernel
-size_t kernel_hash = 0;
+XXH128_hash_t kernel_hash { 0, 0 };
 
 /// Name of the last generated kernel
-static char kernel_name[17] { };
+char kernel_name[52 /* strlen("__direct_callable__") + 32 + 1 */] { };
 
 // ====================================================================
 
@@ -74,7 +74,7 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
             jitc_fail("jit_var_traverse(): could not find matching 'extra' record!");
 
         const Extra &extra = it->second;
-        for (uint32_t i = 0; i < extra.dep_count; ++i) {
+        for (uint32_t i = 0; i < extra.n_dep; ++i) {
             uint32_t index2 = extra.dep[i];
             if (index2)
                 jitc_var_traverse(size, index2);
@@ -96,8 +96,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     uint32_t n_params_in      = 0,
              n_params_out     = 0,
-             n_side_effects = 0,
-             n_regs         = 0;
+             n_side_effects   = 0,
+             n_regs           = 0;
 
     if (backend == JitBackend::CUDA) {
         uintptr_t size = 0;
@@ -133,8 +133,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         if (unlikely(v->dirty))
             jitc_fail("jit_assemble(): dirty variable encountered!");
 
+        v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
         if (v->data) {
-            v->param_index = (uint16_t) kernel_params.size();
             v->param_type = ParamType::Input;
             kernel_params.push_back(v->data);
             n_params_in++;
@@ -155,18 +155,16 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             v = jitc_var(index);
 
             v->data = data;
-            v->param_index = (uint16_t) kernel_params.size();
             v->param_type = ParamType::Output;
             kernel_params.push_back(data);
             n_params_out++;
         } else if (v->literal && (VarType) v->type == VarType::Pointer) {
-            v->param_index = (uint16_t) kernel_params.size();
             v->param_type = ParamType::Input;
             kernel_params.push_back((void *) v->value);
             n_params_in++;
         } else {
             v->param_type = ParamType::Register;
-            v->param_index = (uint16_t) 0xFFFF;
+            v->param_offset = 0xFFFFFFFF;
             n_side_effects += v->side_effect;
             uses_optix |= v->optix;
         }
@@ -174,19 +172,19 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         v->reg_index = n_regs++;
     }
 
-    if (unlikely(n_regs > 0xFFFFFFu))
-        jitc_fail("jit_run(): The queued computation involves more than 16 "
-                 "million variables, which overflowed an internal counter. "
-                 "Even if Enoki could compile such a lparame program, it would "
-                 "not run efficiently. Please periodically run jit_eval() to "
-                 "break down the computation into smaller chunks.");
-    else if (unlikely(n_params_in + n_params_out > 0xFFFF))
-        jitc_fail("jit_run(): The queued computation involves more than 16K "
-                 "kernel parameters to pass input and output array "
-                 "addresses, scalars, etc. Even if Enoki could compile "
-                 "such a lparame program, it is unlikely that it would run "
-                 "efficiently. Please periodically run jit_eval() to break "
-                 "down the computation into smaller chunks.");
+    if (unlikely(n_regs > 0xFFFFF))
+        jitc_log(Warn,
+                 "jit_run(): The generated kernel uses a more than 1 million "
+                 "variables (%u) and will likely not run efficiently. Consider "
+                 "periodically running jit_eval() to break the computation "
+                 "into smaller chunks.", n_regs);
+
+    if (unlikely(kernel_params.size() > 0xFFFF))
+        jitc_log(Warn,
+                 "jit_run(): The generated kernel uses more than 64K input "
+                 "and output arrays (%u) and will likely not run efficiently. "
+                 "Consider periodically running jit_eval() to break the "
+                 "computation into smaller chunks.", n_regs);
 
     kernel_param_count = (uint32_t) kernel_params.size();
 
@@ -219,9 +217,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             if (label)
                 buffer.fmt("label=\"%s\", ", label);
             if (v->param_type == ParamType::Input)
-                buffer.fmt("in, offset=%u, ", v->param_index);
+                buffer.fmt("in, offset=%u, ", v->param_offset);
             if (v->param_type == ParamType::Output)
-                buffer.fmt("out, offset=%u, ", v->param_index);
+                buffer.fmt("out, offset=%u, ", v->param_offset);
             if (v->literal)
                 buffer.put("literal, ");
             if (v->size == 1 && v->param_type != ParamType::Output)
@@ -245,27 +243,31 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     // Replace '^'s in 'enoki_^^^^^^^^' by a hash code
     kernel_hash = hash_kernel(buffer.get());
-    snprintf(kernel_name, 17, "%016llx", (unsigned long long) kernel_hash);
+    snprintf(kernel_name, sizeof(kernel_name), "%s%016llx%016llx",
+             uses_optix ? "__raygen__" : "enoki_",
+             (unsigned long long) kernel_hash.high64,
+             (unsigned long long) kernel_hash.low64);
     const char *name_start = strchr(buffer.get(), '^');
     if (unlikely(!name_start))
         jitc_fail("jit_eval(): could not find kernel name!");
-    memcpy((char *) name_start, kernel_name, 16);
+    memcpy((char *) name_start - (uses_optix ? 10 : 6), kernel_name,
+           strlen(kernel_name));
 
     if (unlikely(trace))
         jitc_trace("%s", buffer.get());
 
     float codegen_time = timer();
-    jitc_log(Info,
-            "  -> launching %016llx (%sn=%u, in=%u, out=%u, ops=%u, jit=%s):",
-            (unsigned long long) kernel_hash, uses_optix ? "via OptiX, " : "",
-            group.size, n_params_in, n_params_out + n_side_effects, n_regs,
-            jitc_time_string(codegen_time));
+    jitc_log(
+        Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, ops=%u, jit=%s):",
+        (unsigned long long) kernel_hash.high64,
+        uses_optix ? "via OptiX, " : "", group.size, n_params_in,
+        n_params_out + n_side_effects, n_regs, jitc_time_string(codegen_time));
 }
 
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     KernelKey kernel_key((char *) buffer.get(), ts->device);
     auto it = state.kernel_cache.find(
-        kernel_key, KernelHash::compute_hash(kernel_hash, ts->device));
+        kernel_key, KernelHash::compute_hash(kernel_hash.high64, ts->device));
     Kernel kernel;
 
     if (it == state.kernel_cache.end()) {
@@ -281,13 +283,15 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                     jitc_cuda_compile(buffer.get(), buffer.size(), kernel);
                 } else {
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-                    jitc_optix_compile(ts, buffer.get(), buffer.size(), kernel, kernel_hash);
+                    jitc_optix_compile(ts, buffer.get(), buffer.size(),
+                                       kernel_name, kernel);
 #else
                     jitc_fail("jit_run(): OptiX support was not enabled in Enoki-JIT.");
 #endif
                 }
             } else {
-                jitc_llvm_compile(buffer.get(), buffer.size(), kernel);
+                jitc_llvm_compile(buffer.get(), buffer.size(), kernel_name,
+                                  kernel);
             }
 
             if (kernel.data)
@@ -313,8 +317,10 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             cuda_check(ret);
 
             // Locate the kernel entry point
-            char kernel_name[23];
-            snprintf(kernel_name, 23, "enoki_%016llx", (unsigned long long) kernel_hash);
+            char kernel_name[39];
+            snprintf(kernel_name, sizeof(kernel_name), "enoki_%016llx%016llx",
+                     (unsigned long long) kernel_hash.high64,
+                     (unsigned long long) kernel_hash.low64);
             cuda_check(cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod,
                                            kernel_name));
 
@@ -439,6 +445,41 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
 static ProfilerRegion profiler_region_eval("jit_eval");
 
+/// Convert state->scheduled and state->side_effects to a JIT schedule
+static bool jitc_eval_prepare(ThreadState *ts, bool eval) {
+    visited.clear();
+    schedule.clear();
+
+    // Collect variables that must be computed and their subtrees
+    for (auto &source : { ts->scheduled, ts->side_effects }) {
+        for (uint32_t index : source) {
+            auto it = state.variables.find(index);
+            if (it == state.variables.end())
+                continue;
+
+            Variable *v = &it.value();
+
+            if (eval) {
+                // Skip variables that aren't externally referenced or already evaluated
+                if (v->ref_count_ext == 0 || v->data || v->literal)
+                    continue;
+
+                if (unlikely(v->placeholder))
+                    jitc_raise("jit_eval_prepare(): the schedule contains a "
+                               "placeholder variable, which is not allowed");
+            }
+
+            jitc_var_traverse(v->size, index);
+            v->output_flag = (VarType) v->type != VarType::Void;
+        }
+    }
+
+    ts->scheduled.clear();
+    ts->side_effects.clear();
+
+    return !schedule.empty();
+}
+
 /// Evaluate all computation that is queued on the given ThreadState
 void jitc_eval(ThreadState *ts) {
     if (!ts || (ts->scheduled.empty() && ts->side_effects.empty()))
@@ -458,38 +499,10 @@ void jitc_eval(ThreadState *ts) {
     lock_guard guard(state.eval_mutex);
     state.mutex.lock();
 
-    visited.clear();
-    schedule.clear();
-
-    // Collect variables that must be computed and their subtrees
-    for (auto &source : { ts->scheduled, ts->side_effects }) {
-        for (uint32_t index : source) {
-            auto it = state.variables.find(index);
-            if (it == state.variables.end())
-                continue;
-
-            Variable *v = &it.value();
-
-            // Skip variables that aren't externally referenced or already evaluated
-            if (v->ref_count_ext == 0 || v->data || v->literal)
-                continue;
-
-            if (unlikely(v->placeholder))
-                jitc_raise("jit_eval(): the schedule contains a placeholder "
-                           "variable, which is not allowed");
-
-            jitc_var_traverse(v->size, index);
-            v->output_flag = (VarType) v->type != VarType::Void;
-        }
-    }
-
-    ts->scheduled.clear();
-    ts->side_effects.clear();
-
-    if (schedule.empty())
+    if (!jitc_eval_prepare(ts, true))
         return;
 
-    // Group them from lparame to small sizes while preserving dependencies
+    // Order variables from large to small while preserving dependencies
     std::stable_sort(
         schedule.begin(), schedule.end(),
         [](const ScheduledVariable &a, const ScheduledVariable &b) {
@@ -518,9 +531,7 @@ void jitc_eval(ThreadState *ts) {
             schedule_groups.size(),
             schedule_groups.size() == 1 ? "" : "s");
 
-    // Are there independent groups of work that could be dispatched in parallel?
     scoped_set_context_maybe guard2(ts->context);
-
     scheduled_tasks.clear();
     for (ScheduledGroup &group : schedule_groups) {
         jitc_assemble(ts, group);
@@ -605,3 +616,40 @@ void jitc_eval(ThreadState *ts) {
     jitc_log(Info, "jit_eval(): done.");
 }
 
+XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
+                                 uint32_t in_align, uint32_t out_size,
+                                 uint32_t out_align) {
+    if (!jitc_eval_prepare(ts, false))
+        return XXH128_hash_t{ 0, 0 };
+
+    uint32_t n_regs = ts->backend == JitBackend::CUDA ? 4 : 0;
+    for (auto &sv : schedule)
+        jitc_var(sv.index)->reg_index = n_regs++;
+
+    size_t offset = buffer.size();
+
+    if (ts->backend == JitBackend::CUDA)
+        jitc_assemble_cuda_func(n_regs, in_size, in_align, out_size, out_align);
+
+    // Replace '^'s in 'enoki_^^^^^^^^' by a hash code
+    char *kernel_str = (char *) buffer.get() + offset;
+    kernel_hash = hash_kernel(kernel_str);
+    snprintf(kernel_name, sizeof(kernel_name), "%s%016llx%016llx",
+             uses_optix ? "__direct_callable__" : "func_",
+             (unsigned long long) kernel_hash.high64,
+             (unsigned long long) kernel_hash.low64);
+    const char *name_start = strchr(kernel_str, '^');
+    if (unlikely(!name_start))
+        jitc_fail("jit_assemble_func(): could not find kernel name!");
+    memcpy((char *) name_start - (uses_optix ? 19 : 5), kernel_name,
+           strlen(kernel_name));
+
+    size_t kernel_length = buffer.size() - offset;
+    if (globals_set.insert(std::string(kernel_str, kernel_length)).second) {
+        globals.putc('\n');
+        globals.put(kernel_str, kernel_length);
+    }
+    buffer.rewind(kernel_length);
+
+    return kernel_hash;
+}

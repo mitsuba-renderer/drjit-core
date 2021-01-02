@@ -355,9 +355,8 @@ void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t sample
     ts->optix_launch_samples = samples;
 }
 
-void jitc_optix_compile(ThreadState *ts, const char *buffer,
-                       size_t buffer_size, Kernel &kernel,
-                       uint64_t kernel_hash) {
+void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
+                        const char *kernel_name, Kernel &kernel) {
     char error_log[16384];
 
     // =====================================================
@@ -409,9 +408,6 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer,
         }
     }
 #else
-    char kernel_name[36];
-    snprintf(kernel_name, sizeof(kernel_name),
-             "__raygen__enoki_%016llx", (unsigned long long) kernel_hash);
     pgd[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
     pgd[0].raygen.module = kernel.optix.mod;
     pgd[0].raygen.entryFunctionName = strdup(kernel_name);
@@ -585,8 +581,8 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
     v->size = size;
 
     // Register dependencies
-    extra.dep_count = n_args + 1;
-    extra.dep = (uint32_t *) malloc(sizeof(uint32_t) * extra.dep_count);
+    extra.n_dep = n_args + 1;
+    extra.dep = (uint32_t *) malloc(sizeof(uint32_t) * extra.n_dep);
     memcpy(extra.dep, args, n_args * sizeof(uint32_t));
     extra.dep[n_args] = mask;
     for (uint32_t i = 0; i < n_args; ++i)
@@ -594,12 +590,12 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
     jitc_var_inc_ref_int(mask);
 
     extra.assemble = [](const Variable *v2, const Extra &extra) {
-        uint32_t payload_count = extra.dep_count - 16;
+        uint32_t payload_count = extra.n_dep - 16;
         for (uint32_t i = 0; i < payload_count; ++i)
             buffer.fmt("    .reg.u32 %%u%u_result_%u;\n", v2->reg_index, i);
 
         buffer.putc(' ', 4);
-        const Variable *mask_v = jitc_var(extra.dep[extra.dep_count - 1]);
+        const Variable *mask_v = jitc_var(extra.dep[extra.n_dep - 1]);
         if (!mask_v->literal || mask_v->value != 1)
             buffer.fmt("@%s%u ", var_type_prefix[mask_v->type], mask_v->reg_index);
         buffer.put("call (");
@@ -609,10 +605,10 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
                        i + 1 < payload_count ? ", " : "");
         buffer.fmt("), _optix_trace_%u, (", payload_count);
 
-        for (uint32_t i = 0; i < extra.dep_count - 1; ++i) {
+        for (uint32_t i = 0; i < extra.n_dep - 1; ++i) {
             const Variable *v3 = jitc_var(extra.dep[i]);
             buffer.fmt("%s%u%s", var_type_prefix[v3->type], v3->reg_index,
-                       (i + 1 < extra.dep_count - 1) ? ", " : "");
+                       (i + 1 < extra.n_dep - 1) ? ", " : "");
         }
         buffer.put(");\n");
     };

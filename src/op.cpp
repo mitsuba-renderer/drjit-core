@@ -1382,7 +1382,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     Ref ptr = jitc_var_new_pointer(backend, v_source->data, source, 0);
 
     uint32_t dep[3] = { ptr.get(), index.get(), mask.get() };
-    uint32_t dep_count = 3;
+    uint32_t n_dep = 3;
 
     const char *stmt;
     if (backend == JitBackend::CUDA) {
@@ -1408,7 +1408,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
 
         if (unmasked) {
             dep[2] = 0;
-            dep_count = 2;
+            n_dep = 2;
         }
     } else {
         if (vt != VarType::Bool && vt != VarType::UInt8 && vt != VarType::Int8) {
@@ -1424,7 +1424,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         }
     }
 
-    uint32_t result = jitc_var_new_stmt(backend, vt, stmt, 1, dep_count, dep);
+    uint32_t result = jitc_var_new_stmt(backend, vt, stmt, 1, n_dep, dep);
     jitc_log(Debug, "jit_var_new_gather(%u <- source=%u (via %u), index=%u, mask=%u)",
              result, source, ptr.get(), index.get(), mask.get());
 
@@ -1492,7 +1492,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     VarType vt = (VarType) v_target->type;
 
     uint32_t dep[4] = { ptr.get(), value, index.get(), mask.get() };
-    uint32_t dep_count = 4;
+    uint32_t n_dep = 4;
 
     Buffer buf{50};
 
@@ -1529,7 +1529,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
         if (unmasked) {
             dep[3] = 0;
-            dep_count = 3;
+            n_dep = 3;
         } else {
             buf.put("@$r4 ");
         }
@@ -1575,7 +1575,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     }
 
     uint32_t result =
-        jitc_var_new_stmt(backend, VarType::Void, buf.get(), 0, dep_count, dep);
+        jitc_var_new_stmt(backend, VarType::Void, buf.get(), 0, n_dep, dep);
 
     jitc_log(Debug,
              "jit_var_new_scatter(%u <- target=%u (via %u), value=%u, "

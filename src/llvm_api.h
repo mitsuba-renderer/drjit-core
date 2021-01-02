@@ -37,7 +37,8 @@ extern char **jitc_llvm_ones_str;
 extern bool jitc_llvm_init();
 
 /// Compile an IR string
-extern void jitc_llvm_compile(const char *str, size_t size, Kernel &kernel);
+extern void jitc_llvm_compile(const char *str, size_t size,
+                              const char *kernel_name, Kernel &kernel);
 
 /// Dump disassembly for the given kernel
 extern void jitc_llvm_disasm(const Kernel &kernel);

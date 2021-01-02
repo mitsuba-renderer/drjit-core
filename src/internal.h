@@ -65,6 +65,8 @@ struct Variable {
     /// Number of entries
     uint32_t size;
 
+    // ================   Various flags (16 bits altogether)   ================
+
     /// Data type of this variable
     uint32_t type : 4;
 
@@ -110,7 +112,7 @@ struct Variable {
     uint32_t param_type : 2;
 
     /// Offset of the argument in the list of kernel parameters
-    uint32_t param_index;
+    uint32_t param_offset;
 
     /// Register index
     uint32_t reg_index;
@@ -348,7 +350,7 @@ struct KernelKey {
 /// Helper class to hash KernelKey instances
 struct KernelHash {
     size_t operator()(const KernelKey &k) const {
-        return compute_hash(hash_kernel(k.str), k.device);
+        return compute_hash(hash_kernel(k.str).high64, k.device);
     }
 
     static size_t compute_hash(size_t kernel_hash, int device) {
@@ -424,7 +426,7 @@ struct Extra {
 
     /// Additional references
     uint32_t *dep = nullptr;
-    uint32_t dep_count = 0;
+    uint32_t n_dep = 0;
 
     /// Callback to be invoked when the variable is deallocated
     void (*free_callback)(void *) = nullptr;

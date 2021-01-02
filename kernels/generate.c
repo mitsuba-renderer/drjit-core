@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <lz4hc.h>
-#include <xxhash.h>
+#include <xxh3.h>
 
 char *read_file(const char *fname, size_t *size_out) {
     FILE *f = fopen(fname, "r");
@@ -46,7 +46,7 @@ void append(FILE *f, const char *filename, const char *prefix, char *dict, int d
     int compressed_size = LZ4_compressBound(size);
     char *compressed = malloc(compressed_size);
 
-    unsigned long long hash = XXH64(buf, size, 0);
+    XXH128_hash_t hash = XXH128(buf, size, 0);
 
     LZ4_streamHC_t stream;
     memset(&stream, 0, sizeof(LZ4_streamHC_t));
@@ -56,9 +56,10 @@ void append(FILE *f, const char *filename, const char *prefix, char *dict, int d
     compressed_size = LZ4_compress_HC_continue(&stream, buf,
             compressed, size, compressed_size);
 
-    fprintf(f, "const int %s_size_uncompressed = %zu;\n", prefix, size);
-    fprintf(f, "const int %s_size_compressed   = %i;\n", prefix, compressed_size);
-    fprintf(f, "const size_t  %s_hash          = %lluull;\n\n", prefix, hash);
+    fprintf(f, "const int %s_size_uncompressed          = %zu;\n", prefix, size);
+    fprintf(f, "const int %s_size_compressed            = %i;\n", prefix, compressed_size);
+    fprintf(f, "const unsigned long long %s_hash_low64  = 0x%016llxull;\n", prefix, (unsigned long long) hash.low64);
+    fprintf(f, "const unsigned long long %s_hash_high64 = 0x%016llxull;\n\n", prefix, (unsigned long long) hash.high64);
     dump_hex(f, prefix, compressed, compressed_size);
     free(buf);
     free(compressed);
@@ -113,17 +114,20 @@ int main(int argc, char **argv) {
     fprintf(f, "#if defined(__cplusplus)\n");
     fprintf(f, "extern \"C\" {\n");
     fprintf(f, "#endif\n\n");
-    fprintf(f, "extern const int    kernels_dict_size_uncompressed;\n");
-    fprintf(f, "extern const int    kernels_dict_size_compressed;\n");
-    fprintf(f, "extern const size_t kernels_dict_hash;\n");
-    fprintf(f, "extern const char   kernels_dict[];\n\n");
-    fprintf(f, "extern const int    kernels_50_size_uncompressed;\n");
-    fprintf(f, "extern const int    kernels_50_size_compressed;\n");
-    fprintf(f, "extern const size_t kernels_50_hash;\n");
-    fprintf(f, "extern const char   kernels_50[];\n\n");
-    fprintf(f, "extern const int    kernels_70_size_uncompressed;\n");
-    fprintf(f, "extern const int    kernels_70_size_compressed;\n");
-    fprintf(f, "extern const size_t kernels_70_hash;\n");
+    fprintf(f, "extern const int                kernels_dict_size_uncompressed;\n");
+    fprintf(f, "extern const int                kernels_dict_size_compressed;\n");
+    fprintf(f, "extern const unsigned long long kernels_dict_hash_low64;\n");
+    fprintf(f, "extern const unsigned long long kernels_dict_hash_high64;\n");
+    fprintf(f, "extern const char               kernels_dict[];\n\n");
+    fprintf(f, "extern const int                kernels_50_size_uncompressed;\n");
+    fprintf(f, "extern const int                kernels_50_size_compressed;\n");
+    fprintf(f, "extern const unsigned long long kernels_50_hash_low64;\n");
+    fprintf(f, "extern const unsigned long long kernels_50_hash_high64;\n");
+    fprintf(f, "extern const char               kernels_50[];\n\n");
+    fprintf(f, "extern const int                kernels_70_size_uncompressed;\n");
+    fprintf(f, "extern const int                kernels_70_size_compressed;\n");
+    fprintf(f, "extern const unsigned long long kernels_70_hash_low64;\n");
+    fprintf(f, "extern const unsigned long long kernels_70_hash_high64;\n");
     fprintf(f, "extern const char   kernels_70[];\n\n");
     fprintf(f, "extern const char   *kernels_list;\n\n");
     fprintf(f, "#if defined(__cplusplus)\n");

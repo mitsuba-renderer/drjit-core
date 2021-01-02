@@ -75,14 +75,10 @@ inline size_t hash_str(const char *str) {
     return hash(str, strlen(str));
 }
 
-inline size_t hash_kernel(const char *str) {
-    const char *offset = strstr(str, "enoki_");
-    if (unlikely(!offset)) {
-        offset = strstr(str, "func_");
-        if (unlikely(!offset))
-            jitc_fail("hash_kernel(): invalid input!");
-    }
+inline XXH128_hash_t hash_kernel(const char *str) {
+    const char *offset = strchr(str, '{');
+    if (unlikely(!offset))
+        jitc_fail("hash_kernel(): invalid input!");
 
-    size_t seed = hash(str, offset - str);
-    return hash_str(offset + 22, seed);
+    return XXH128(offset, strlen(offset), 0);
 }

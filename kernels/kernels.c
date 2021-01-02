@@ -1,8 +1,9 @@
 #include "kernels.h"
 
-const int kernels_dict_size_uncompressed = 65536;
-const int kernels_dict_size_compressed   = 17244;
-const size_t  kernels_dict_hash          = 1479018777864767474ull;
+const int kernels_dict_size_uncompressed          = 65536;
+const int kernels_dict_size_compressed            = 17244;
+const unsigned long long kernels_dict_hash_low64  = 0x5f315461274c3b04ull;
+const unsigned long long kernels_dict_hash_high64 = 0x663e085a01a816b4ull;
 
 const char kernels_dict[] = {
     0xf2, 0x8f, 0x37, 0xa4, 0x30, 0xec, 0x09, 0xbf,
@@ -2163,9 +2164,10 @@ const char kernels_dict[] = {
     0x20, 0x20, 0x20, 0x20
 };
 
-const int kernels_50_size_uncompressed = 131428;
-const int kernels_50_size_compressed   = 16191;
-const size_t  kernels_50_hash          = 18045160002650525672ull;
+const int kernels_50_size_uncompressed          = 131428;
+const int kernels_50_size_compressed            = 16191;
+const unsigned long long kernels_50_hash_low64  = 0x0e1af84bb93f8b8eull;
+const unsigned long long kernels_50_hash_high64 = 0x76475a96b9b8496eull;
 
 const char kernels_50[] = {
     0x30, 0x2f, 0x2f, 0x0a, 0x9b, 0x06, 0xf2, 0x12,
@@ -4194,9 +4196,10 @@ const char kernels_50[] = {
     0x1c, 0x50, 0x0a, 0x7d, 0x0a, 0x0a, 0x0a
 };
 
-const int kernels_70_size_uncompressed = 129493;
-const int kernels_70_size_compressed   = 15684;
-const size_t  kernels_70_hash          = 4048371862165896700ull;
+const int kernels_70_size_uncompressed          = 129493;
+const int kernels_70_size_compressed            = 15684;
+const unsigned long long kernels_70_hash_low64  = 0xbbda904600c2399eull;
+const unsigned long long kernels_70_hash_high64 = 0x2631bfe51c3fd6d5ull;
 
 const char kernels_70[] = {
     0x30, 0x2f, 0x2f, 0x0a, 0x9b, 0x06, 0xf2, 0x12,

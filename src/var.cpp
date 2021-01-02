@@ -133,8 +133,8 @@ void jitc_var_free(uint32_t index, Variable *v) {
         }
 
         // Decrease reference counts of extra references if needed
-        if (extra.dep_count) {
-            for (uint32_t i = 0; i < extra.dep_count; ++i)
+        if (extra.n_dep) {
+            for (uint32_t i = 0; i < extra.n_dep; ++i)
                 jitc_var_dec_ref_int(extra.dep[i]);
             free(extra.dep);
         }
@@ -470,10 +470,10 @@ uint32_t jitc_var_new_placeholder(uint32_t index, int propagate_literals) {
         v2.placeholder = 1;
     }
 
-    v2.dep[0] = index;
+    v2.dep[3] = index;
     jitc_var_inc_ref_int(index);
 
-    uint32_t result = jitc_var_new(v2);
+    uint32_t result = jitc_var_new(v2, true);
     jitc_log(Debug, "jitc_var_new_placeholder(%u, propagate_literals=%i): %u",
              index, propagate_literals, result);
     return result;
@@ -1220,6 +1220,7 @@ const char *jitc_var_graphviz() {
         } else if (v->data) {
             if (v->dirty) {
                 var_buffer.put("Evaluated (dirty)");
+                color = "salmon";
             } else {
                 var_buffer.put("Evaluated");
                 color = "lightblue2";
@@ -1227,17 +1228,20 @@ const char *jitc_var_graphviz() {
         } else if (v->stmt) {
             if ((VarType) v->type == VarType::Void)
                 color = "yellowgreen";
-            print_escape(v->stmt);
-            var_buffer.put("\\l");
+
+            if (*v->stmt != '\0') {
+                print_escape(v->stmt);
+                var_buffer.put("\\l");
+            } else if (labeled) {
+                var_buffer.rewind(1);
+            }
         } else if (v->placeholder) {
             var_buffer.put("Placeholder");
         }
 
-        if (v->dirty)
-            color = "salmon";
-        if (v->placeholder)
+        if (v->placeholder && !color)
             color = "yellow";
-        if (labeled)
+        if (labeled && !color)
             color = "wheat";
 
         var_buffer.fmt("|{Type: %s %s|Size: %u}|{ID #%u|E:%u|I:%u}}",
@@ -1258,35 +1262,46 @@ const char *jitc_var_graphviz() {
 
     for (int32_t index : indices) {
         const Variable *v = jitc_var(index);
-        int ndep = 0;
-        for (uint32_t i = 0; i < 4; ++i) {
-            if (v->dep[i])
-                ndep = i + 1;
-        }
 
-        for (uint32_t i = 0; i < 4; ++i) {
-            if (!v->dep[i])
-                continue;
-            var_buffer.fmt("    %u -> %u", v->dep[i], index);
-            if (ndep > 1)
-                var_buffer.fmt(" [label=\" %u\"]", i + 1);
-            var_buffer.put(";\n");
-        }
+        int n_dep = 0;
+        for (uint32_t i = 0; i < 4; ++i)
+            n_dep += v->dep[i] ? 1 : 0;
 
+        const Extra *extra = nullptr;
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
             if (it == state.extra.end())
                 jitc_fail("jit_var_graphviz(): could not find matching 'extra' "
                          "record!");
+            extra = &it->second;
+            n_dep += extra->n_dep;
+        }
 
-            const Extra &extra = it->second;
-            for (uint32_t i = 0; i < extra.dep_count; ++i) {
-                if (!extra.dep[i])
-                    continue;
+        uint32_t edge_index = 0;
+        for (uint32_t i = 0; i < 4; ++i) {
+            if (!v->dep[i])
+                continue;
 
-                var_buffer.fmt("    %u -> %u [label=\" %u\"];",
-                               extra.dep[i], index, i + 1);
+            var_buffer.fmt("    %u -> %u", v->dep[i], index);
+            bool special = i == 3 && v->dep[2] == 0;
+            if (n_dep > 1 || special) {
+                var_buffer.put(" [");
+                if (n_dep > 1)
+                    var_buffer.fmt("label=\" %u\"", ++edge_index);
+                if (special)
+                    var_buffer.fmt("%sstyle=dashed", n_dep > 1 ? " " : "");
+                var_buffer.put("]");
             }
+            var_buffer.put(";\n");
+        }
+
+        for (uint32_t i = 0; i < (extra ? extra->n_dep : 0); ++i) {
+            if (!extra->dep[i])
+                continue;
+            var_buffer.fmt("    %u -> %u", extra->dep[i], index);
+            if (n_dep > 1)
+                var_buffer.fmt(" [label=\" %u\"]", ++edge_index);
+            var_buffer.put(";\n");
         }
     }
 
