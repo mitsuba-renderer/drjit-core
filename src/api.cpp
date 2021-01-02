@@ -1,7 +1,7 @@
 /*
     src/api.cpp -- C -> C++ API locking wrappers
 
-    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -15,6 +15,7 @@
 #include "registry.h"
 #include "llvm_api.h"
 #include "op.h"
+#include "special.h"
 #include <thread>
 #include <condition_variable>
 
@@ -575,6 +576,15 @@ void jit_registry_set_attr(void *self, const char *name, const void *value,
 const void *jit_registry_attr_data(const char *domain, const char *name) {
     lock_guard guard(state.mutex);
     return jitc_registry_attr_data(domain, name);
+}
+
+void jit_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
+                   uint32_t n_in, const uint32_t *in, uint32_t n_out_all,
+                   const uint32_t *out_all, const uint32_t *n_se,
+                   uint32_t *out) {
+    lock_guard guard(state.mutex);
+    jitc_var_vcall(domain, self, n_inst, n_in, in, n_out_all, out_all, n_se,
+                   out);
 }
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)

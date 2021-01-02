@@ -17,7 +17,7 @@
     provides a header-only C++ array class with operator overloading, which
     dispatches to the C API.
 
-    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -99,7 +99,7 @@ enum JitBackend {
  */
 extern JIT_EXPORT void
 jit_init(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
-                                    (uint32_t) JitBackend::LLVM));
+                                   (uint32_t) JitBackend::LLVM));
 
 /**
  * \brief Launch an ansynchronous thread that will execute jit_init() and
@@ -152,76 +152,6 @@ extern JIT_EXPORT void jit_sync_device();
 
 /// Wait for all computation on the *all devices* to finish
 extern JIT_EXPORT void jit_sync_all_devices();
-
-// ====================================================================
-//       Advanced JIT usage: recording programs, loops, etc.
-// ====================================================================
-
-#if defined(__cplusplus)
-/**
- * \brief Status flags to adjust/inspect the eagerness of the JIT compiler
- *
- * Certain Enoki operations can operate in two different ways: they can be
- * executed at once, or they can be recorded to postpone evaluation to a later
- * point. The latter is generally more efficient because it enables
- * optimizations (fusion of multiple operations, exchange of information via
- * registers instead of global memory, etc.). The downside is that recording
- * computation is generally more complex/fragile and less suitable to
- * interactive software development (one e.g. cannot simply print array
- * contents while something is being recorded).
- *
- * The following list of flags can be used to control the behavior of the JIT
- * compiler. The enoki-jit library actually doesn't do very much with this
- * flag: the main effect is that \ref jit_eval() will throw an exception when
- * it is called while the <tt>RecordingLoop</tt> and <tt>RecordingVCall<tt>
- * flags are set. The main behavioral differences will typically be in found in
- * code using enoki-jit that queries this flag.
- */
-enum class JitFlag : uint32_t {
-    // Default (eager) execute loops and virtual function calls at once
-    Default        = 0,
-
-    // Record loops to postpone their evaluation
-    RecordLoops    = 1,
-
-    // Record virtual function calls to postpone their evaluation
-    RecordVCalls   = 4,
-
-    // Try to optimize the calling conventions of vcalls
-    OptimizeVCalls = 16
-};
-#else
-enum JitFlag {
-    JitFlagDefault = 0,
-    JitFlagRecordLoops = 1,
-    JitFlagRecordingLoop = 2,
-    JitFlagRecordVCall = 4,
-    JitFlagRecordingVCall = 8,
-    JitFlagRecording = JitFlagRecordingLoop | JitFlagRecordingVCall
-};
-#endif
-
-/// Set the JIT compiler status flags (see \ref JitFlags)
-extern JIT_EXPORT void jit_set_flags(uint32_t flags);
-
-/// Retrieve the JIT compiler status flags (see \ref JitFlags)
-extern JIT_EXPORT uint32_t jit_flags();
-
-/// Equivalent to <tt>jit_set_flags(jit_flags() | flag)</tt>
-extern JIT_EXPORT void jit_enable_flag(JIT_ENUM JitFlag flag);
-
-/// Equivalent to <tt>jit_set_flags(jit_flags() & ~flag)</tt>
-extern JIT_EXPORT void jit_disable_flag(JIT_ENUM JitFlag flag);
-
-/**
- * \brief Returns the number of operations with side effects (specifically,
- * scatters) scheduled for evaluation on the current thread.
- *
- * This function can be used to easily detect whether or not some piece of
- * code involves side effects. It is used to as part of the mechanism
- * that records loops, virtual function calls, etc.
- */
-extern JIT_EXPORT uint32_t jit_side_effects_scheduled(JitBackend backend);
 
 // ====================================================================
 //                    CUDA/LLVM-specific functionality
@@ -316,26 +246,6 @@ extern JIT_EXPORT int jit_llvm_version_major();
  */
 extern JIT_EXPORT int jit_llvm_if_at_least(uint32_t vector_width,
                                            const char *feature);
-
-
-/**
- * \brief Returns the variable index of a boolean array designating
- * currently active SIMD lanes
- *
- * This function returns code that correctly computes the active mask in
- * general situations. In more specific cases (e.g. branching), the return
- * value can be modified by pushing and popping masks via the next two
- * functions.
- *
- * This function returns a new reference
- */
-extern JIT_EXPORT uint32_t jit_llvm_active_mask();
-
-/// Push a new mask value onto the stack (increases the ref. count)
-extern JIT_EXPORT void jit_llvm_active_mask_push(uint32_t index);
-
-/// Pop the stack of active mask values, and dereference it
-extern JIT_EXPORT void jit_llvm_active_mask_pop();
 
 // ====================================================================
 //                        Logging infrastructure
@@ -581,7 +491,7 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  *
  * Enoki provides a central registry that maps registered pointer values to
  * low-valued 32-bit IDs. The main application is efficient virtual function
- * dispatch via \ref jit_vcall(), through the registry could be used for other
+ * dispatch via \ref jit_var_vcall(), through the registry could be used for other
  * applications as well.
  *
  * This function registers the specified pointer \c ptr with the registry,
@@ -649,7 +559,7 @@ extern JIT_EXPORT void jit_registry_trim();
  * The pointer registry can optionally associate one or more read-only
  * attribute with each pointer that can be set using this function. Such
  * pointer attributes provide an efficient way to avoid expensive vectorized
- * method calls (via \ref jitc_vcall()) for simple getter-like functions. In
+ * method calls (via \ref jitc_var_vcall()) for simple getter-like functions. In
  * particular, this feature would be used in conjunction with \ref
  * jit_registry_attr_data(), which returns a pointer to a linear array
  * containing all attributes. A vector of 32-bit IDs (returned by \ref
@@ -928,14 +838,19 @@ extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
 /**
  * \brief Create a placeholder variable imitating another variable
  *
- * This function creates a special placeholder variable with the same type as
- * a provided variable \c index. Placeholder variables are used to record
- * computation symbolically. They should not be evaluated via \ref
- * jit_var_schedule() or \ref jit_var_eval(), and these functions will raise an
- * exception when this is attempted.
+ * This function creates a special placeholder variable, whose size and type
+ * matches a provided variable \c index. Placeholder variables are typically
+ * used to record computation such as the body of a loop or a function call.
+ * They should never be evaluated via \ref jit_var_schedule() or \ref
+ * jit_var_eval(), and these functions will raise an exception when this is
+ * attempted. The placeholder status bit propagates recursively, meaning that
+ * any operation that references a placeholder variable is similarly marked as
+ * a placeholder.
  *
- * The placeholder status bit propagates recursively, meaning that any
- * operation that references a placeholder variable is similarly marked.
+ * It can be useful to know whether a placeholder variable is always a constant
+ * literal to enable further optimization. If \c propagate_literals is nonzero,
+ * constant literal status propagates unchanged from \c index to the returned
+ * result.
  */
 extern uint32_t jit_var_new_placeholder(uint32_t index, int propagate_literals);
 
@@ -1087,41 +1002,6 @@ extern JIT_EXPORT uint32_t jit_var_size(uint32_t index);
  */
 extern JIT_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
 
-/// Query the type of a given variable
-extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
-
-/// Assign a descriptive label to a given variable
-extern JIT_EXPORT void jit_var_set_label(uint32_t index, const char *label);
-
-/// Query the descriptive label associated with a given variable
-extern JIT_EXPORT const char *jit_var_label(uint32_t index);
-
-/**
- * \brief Push a string onto the label stack
- *
- * Enoki-JIT maintains a per-thread label stack that is initially empty and
- * inactive. If values are pushed onto it, they will be used to initialize the
- * labels of any newly created variables.
- *
- * For example, if <tt>"prefix"</tt> and <tt>"prefix2"</tt> are pushed via this
- * function, any newly created variable \c index will be labeled
- * <tt>"prefix1/prefix2/"</tt>. A subsequent call to <tt>jit_var_set_label(index,
- * "name")</tt>; will change the label to <tt>"prefix1/prefix2/name"</tt>.
- *
- * This feature works hand-in-hand with \ref jit_var_graphviz(), which can
- * de-clutter large graph vizualizations by drawing boxes around variables with
- * a common prefix.
- */
-extern JIT_EXPORT void jit_prefix_push(JitBackend backend, const char *value);
-
-/// Pop a string from the label stack
-extern JIT_EXPORT void jit_prefix_pop(JitBackend backend);
-
-/// Assign a callback function that is invoked when the given variable is freed
-extern JIT_EXPORT void jit_var_set_free_callback(uint32_t index,
-                                                 void (*callback)(void *),
-                                                 void *payload);
-
 /**
  * \brief Asynchronously migrate a variable to a different flavor of memory
  *
@@ -1155,25 +1035,6 @@ extern JIT_EXPORT int jit_var_device(uint32_t index);
  */
 extern JIT_EXPORT void jit_var_mark_side_effect(uint32_t index,
                                                 uint32_t target);
-
-/**
- * \brief Return a human-readable summary of registered variables
- *
- * Note: the return value points into a static array, whose contents may be
- * changed by later calls to <tt>jit_*</tt> API functions. Either use it right
- * away or create a copy.
- */
-extern JIT_EXPORT const char *jit_var_whos();
-
-/**
- * \brief Return a GraphViz representation of registered variables and their
- * dependencies
- *
- * Note: the return value points into a static array, whose contents may be
- * changed by later calls to <tt>jit_*</tt> API functions. Either use it right
- * away or create a copy.
- */
-extern JIT_EXPORT const char *jit_var_graphviz();
 
 /**
  * \brief Return a human-readable summary of the contents of a variable
@@ -1229,16 +1090,6 @@ extern JIT_EXPORT void jit_var_printf(JitBackend backend, const char *fmt,
 
 
 // ====================================================================
-//                          Horizontal reductions
-// ====================================================================
-
-/// Reduce (AND) a boolean array to a single value, synchronizes.
-extern JIT_EXPORT int jit_var_all(uint32_t index);
-
-/// Reduce (OR) a boolean array to a single value, synchronizes.
-extern JIT_EXPORT int jit_var_any(uint32_t index);
-
-// ====================================================================
 //                 Kernel compilation and evaluation
 // ====================================================================
 
@@ -1258,6 +1109,173 @@ extern JIT_EXPORT int jit_var_eval(uint32_t index);
 
 /// Evaluate all scheduled computation
 extern JIT_EXPORT void jit_eval();
+
+/// Query the type of a given variable
+extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
+
+// ====================================================================
+//      Functionality for debug output and GraphViz visualizatoins
+// ====================================================================
+
+/**
+ * \brief Assign a descriptive label to a given variable
+ *
+ * The label is shown in the output of \ref jit_var_whos() and \ref
+ * jit_var_graphviz()
+ */
+extern JIT_EXPORT void jit_var_set_label(uint32_t index, const char *label);
+
+/// Query the descriptive label associated with a given variable
+extern JIT_EXPORT const char *jit_var_label(uint32_t index);
+
+/**
+ * \brief Return a human-readable summary of registered variables
+ *
+ * Note: the return value points into a static array, whose contents may be
+ * changed by later calls to <tt>jit_*</tt> API functions. Either use it right
+ * away or create a copy.
+ */
+extern JIT_EXPORT const char *jit_var_whos();
+
+/**
+ * \brief Return a GraphViz representation of registered variables and their
+ * dependencies
+ *
+ * Note: the return value points into a static array, whose contents may be
+ * changed by later calls to <tt>jit_*</tt> API functions. Either use it right
+ * away or create a copy.
+ */
+extern JIT_EXPORT const char *jit_var_graphviz();
+
+/**
+ * \brief Push a string onto the label stack
+ *
+ * Enoki-JIT maintains a per-thread label stack that is initially empty and
+ * inactive. If values are pushed onto it, they will be used to initialize the
+ * labels of any newly created variables.
+ *
+ * For example, if <tt>"prefix"</tt> and <tt>"prefix2"</tt> are pushed via this
+ * function, any newly created variable \c index will be labeled
+ * <tt>"prefix1/prefix2/"</tt>. A subsequent call to <tt>jit_var_set_label(index,
+ * "name")</tt>; will change the label to <tt>"prefix1/prefix2/name"</tt>.
+ *
+ * This feature works hand-in-hand with \ref jit_var_graphviz(), which can
+ * de-clutter large graph vizualizations by drawing boxes around variables with
+ * a common prefix.
+ */
+extern JIT_EXPORT void jit_prefix_push(JitBackend backend, const char *value);
+
+/// Pop a string from the label stack
+extern JIT_EXPORT void jit_prefix_pop(JitBackend backend);
+
+// ====================================================================
+//       Advanced JIT usage: recording programs, loops, etc.
+// ====================================================================
+
+/**
+ * \brief Status flags to adjust/inspect the eagerness of the JIT compiler
+ *
+ * Certain Enoki operations can operate in two different ways: they can be
+ * executed at once, or they can be recorded to postpone evaluation to a later
+ * point. The latter is generally more efficient because it enables
+ * optimizations (fusion of multiple operations, exchange of information via
+ * registers instead of global memory, etc.). The downside is that recording
+ * computation is generally more complex/fragile and less suitable to
+ * interactive software development (one e.g. cannot simply print array
+ * contents while something is being recorded).
+ *
+ * The following list of flags can be used to control the behavior of the JIT
+ * compiler. The enoki-jit library actually doesn't do very much with this
+ * flag: the main effect is that \ref jit_eval() will throw an exception when
+ * it is called while the <tt>RecordingLoop</tt> and <tt>RecordingVCall<tt>
+ * flags are set. The main behavioral differences will typically be in found in
+ * code using enoki-jit that queries this flag.
+ */
+#if defined(__cplusplus)
+enum class JitFlag : uint32_t {
+    // Default (eager) execute loops and virtual function calls at once
+    Default        = 0,
+
+    // Record loops to postpone their evaluation
+    RecordLoops    = 1,
+
+    // Record virtual function calls to postpone their evaluation
+    RecordVCalls   = 4,
+
+    // Try to optimize the calling conventions of vcalls
+    OptimizeVCalls = 16
+};
+#else
+enum JitFlag {
+    JitFlagDefault = 0,
+    JitFlagRecordLoops = 1,
+    JitFlagRecordVCall = 4
+};
+#endif
+
+/// Set the JIT compiler status flags (see \ref JitFlags)
+extern JIT_EXPORT void jit_set_flags(uint32_t flags);
+
+/// Retrieve the JIT compiler status flags (see \ref JitFlags)
+extern JIT_EXPORT uint32_t jit_flags();
+
+/// Equivalent to <tt>jit_set_flags(jit_flags() | flag)</tt>
+extern JIT_EXPORT void jit_enable_flag(JIT_ENUM JitFlag flag);
+
+/// Equivalent to <tt>jit_set_flags(jit_flags() & ~flag)</tt>
+extern JIT_EXPORT void jit_disable_flag(JIT_ENUM JitFlag flag);
+
+/// Assign a callback function that is invoked when the given variable is freed
+extern JIT_EXPORT void jit_var_set_free_callback(uint32_t index,
+                                                 void (*callback)(void *),
+                                                 void *payload);
+
+/**
+ * \brief Returns the number of operations with side effects (specifically,
+ * scatters) scheduled for evaluation on the current thread.
+ *
+ * This function can be used to easily detect whether or not some piece of
+ * code involves side effects. It is used to as part of the mechanism
+ * that records loops, virtual function calls, etc.
+ */
+extern JIT_EXPORT uint32_t jit_side_effects_scheduled(JitBackend backend);
+
+/**
+ * \brief Pushes a new mask variable onto the mask stack
+ *
+ * In advanced usage of Enoki-JIT (e.g. recorded loops, virtual function calls,
+ * etc.), it may be necessary to mask scatter and gather operations to prevent
+ * undefined behavior and crashes. This function can be used to push a mask
+ * onto a mask stack. The top of the stack will be combined with the mask
+ * argument supplied to subsequent \ref jit_var_new_gather() and \ref
+ * jit_var_new_scatter() operations. While on the stack, Enoki-JIT will hold
+ * an internal reference to \c index to keep it from being freed.
+ */
+extern JIT_EXPORT void jit_var_mask_push(JitBackend backend, uint32_t index);
+
+/// Pop the mask stack
+extern JIT_EXPORT void jit_var_mask_pop(JitBackend backend);
+
+/// Return the top entry of the mask stack and increase its ext. ref. count
+extern JIT_EXPORT uint32_t jit_var_mask_peek();
+
+
+/// Record a virtual function call
+extern JIT_EXPORT void jit_var_vcall(const char *domain, uint32_t self,
+                                     uint32_t n_inst, uint32_t n_in,
+                                     const uint32_t *in, uint32_t n_out_all,
+                                     const uint32_t *out_all,
+                                     const uint32_t *n_se, uint32_t *out);
+
+// ====================================================================
+//                          Horizontal reductions
+// ====================================================================
+
+/// Reduce (AND) a boolean array to a single value, synchronizes.
+extern JIT_EXPORT int jit_var_all(uint32_t index);
+
+/// Reduce (OR) a boolean array to a single value, synchronizes.
+extern JIT_EXPORT int jit_var_any(uint32_t index);
 
 // ====================================================================
 //  Assortment of tuned kernels for initialization, reductions, etc.
@@ -1367,7 +1385,7 @@ extern JIT_EXPORT uint32_t jit_mkperm(JitBackend backend, const uint32_t *values
                                       uint32_t size, uint32_t bucket_count,
                                       uint32_t *perm, uint32_t *offsets);
 
-/// Helper data structure for vector method calls, see \ref jit_vcall()
+/// Helper data structure for vector method calls, see \ref jit_var_vcall()
 struct VCallBucket {
     /// Resolved pointer address associated with this bucket
     void *ptr;
@@ -1396,14 +1414,14 @@ struct VCallBucket {
  * The memory region accessible via the \c VCallBucket pointer will remain
  * accessible until the variable \c index is itself freed (i.e. when its
  * internal and external reference counts both become equal to zero). Until
- * then, additional calls to \ref jit_vcall() will return the previously
+ * then, additional calls to \ref jit_var_vcall() will return the previously
  * computed result. This is an important optimization in situations where
  * multiple vector function calls are executed on the same set of instances.
  */
-extern JIT_EXPORT struct VCallBucket *jit_vcall(JitBackend backend,
-                                                const char *domain,
-                                                uint32_t index,
-                                                uint32_t *bucket_count_out);
+// extern JIT_EXPORT struct VCallBucket *jit_var_vcall(JitBackend backend,
+//                                                 const char *domain,
+//                                                 uint32_t index,
+//                                                 uint32_t *bucket_count_out);
 
 /**
  * \brief Replicate individual input elements across larger blocks

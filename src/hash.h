@@ -1,7 +1,7 @@
 /*
     src/hash.h -- Functionality for hashing kernels and other data (via xxHash)
 
-    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.

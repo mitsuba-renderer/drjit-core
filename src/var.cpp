@@ -1,7 +1,7 @@
 /*
     src/var.cpp -- Operations for creating and querying variables
 
-    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -129,7 +129,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
         // Notify callback that the variable is being freed
         if (extra.free_callback) {
             unlock_guard guard(state.mutex);
-            extra.free_callback(extra.callback_payload);
+            extra.free_callback(extra.payload);
         }
 
         // Decrease reference counts of extra references if needed
@@ -460,13 +460,19 @@ uint32_t jitc_var_new_placeholder(uint32_t index, int propagate_literals) {
     Variable v2;
     v2.backend = v->backend;
     v2.type = v->type;
-    v2.size = 1;
-    if (propagate_literals && v->literal) {
+    v2.size = v->size;
+
+    if (v->literal && propagate_literals &&
+        (jitc_flags() & (uint32_t) JitFlag::OptimizeVCalls)) {
         v2.literal = v->literal;
         v2.value = v->value;
     } else {
         v2.placeholder = 1;
     }
+
+    v2.dep[0] = index;
+    jitc_var_inc_ref_int(index);
+
     uint32_t result = jitc_var_new(v2);
     jitc_log(Debug, "jitc_var_new_placeholder(%u, propagate_literals=%i): %u",
              index, propagate_literals, result);
@@ -501,13 +507,13 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
         return 0;
     } else if (unlikely(uninitialized)) {
         jitc_raise("jit_var_new_stmt(): arithmetic involving an "
-                  "uninitialized variable!");
+                   "uninitialized variable!");
     }
 
     for (uint32_t i = 0; i < n_dep; ++i) {
         if (v[i]->size != size && v[i]->size != 1)
             jitc_raise("jit_var_new_stmt(): arithmetic involving arrays of "
-                      "incompatible size!");
+                       "incompatible size!");
     }
 
     if (dirty) {
@@ -542,7 +548,7 @@ void jitc_var_set_free_callback(uint32_t index, void (*callback)(void *), void *
     if (unlikely(extra.free_callback))
         jitc_fail("jit_var_set_free_callback(): a callback was already set!");
     extra.free_callback = callback;
-    extra.callback_payload = payload;
+    extra.payload = payload;
 }
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable
@@ -723,7 +729,7 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
         offset = 0;
     else if (unlikely(offset >= (size_t) v->size))
         jitc_raise("jit_var_read(): attempted to access entry %zu in an array of "
-                  "size %u!", offset, v->size);
+                   "size %u!", offset, v->size);
 
     uint32_t isize = var_type_size[v->type];
     if (v->literal)
@@ -748,7 +754,7 @@ uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src) {
     v = jitc_var(index);
     if (unlikely(offset >= (size_t) v->size))
         jitc_raise("jit_var_write(): attempted to access entry %zu in an array of "
-                  "size %u!", offset, v->size);
+                   "size %u!", offset, v->size);
 
     uint32_t isize = var_type_size[v->type];
     uint8_t *dst = (uint8_t *) v->data + offset * isize;
@@ -1112,7 +1118,7 @@ const char *jitc_var_graphviz() {
     std::sort(indices.begin(), indices.end());
     var_buffer.clear();
     var_buffer.put("digraph {\n"
-                   "    rankdir=BT;\n"
+                   "    rankdir=TB;\n"
                    "    graph [dpi=50 fontname=Consolas];\n"
                    "    node [shape=record fontname=Consolas];\n"
                    "    edge [fontname=Consolas];\n");
@@ -1125,7 +1131,6 @@ const char *jitc_var_graphviz() {
 
         size_t prefix_hash = 0;
         if (label) {
-            printf("Processing %u: '%s'\n", index, label);
             const char *sep = strrchr(label, '/');
             if (sep) {
                 prefix_hash = hash(label, sep - label);
@@ -1209,7 +1214,7 @@ const char *jitc_var_graphviz() {
         }
 
         if (v->literal) {
-            var_buffer.put("Constant: ");
+            var_buffer.put("Literal constant: ");
             jitc_literal_print(v, true);
             color = "gray90";
         } else if (v->data) {
@@ -1217,20 +1222,23 @@ const char *jitc_var_graphviz() {
                 var_buffer.put("Evaluated (dirty)");
             } else {
                 var_buffer.put("Evaluated");
-                color = "cornflowerblue";
+                color = "lightblue2";
             }
         } else if (v->stmt) {
             if ((VarType) v->type == VarType::Void)
-                color = "aquamarine";
+                color = "yellowgreen";
             print_escape(v->stmt);
             var_buffer.put("\\l");
+        } else if (v->placeholder) {
+            var_buffer.put("Placeholder");
         }
-
-        if (labeled)
-            color = "wheat";
 
         if (v->dirty)
             color = "salmon";
+        if (v->placeholder)
+            color = "yellow";
+        if (labeled)
+            color = "wheat";
 
         var_buffer.fmt("|{Type: %s %s|Size: %u}|{ID #%u|E:%u|I:%u}}",
             (JitBackend) v->backend == JitBackend::CUDA ? "cuda" : "llvm",
@@ -1276,13 +1284,23 @@ const char *jitc_var_graphviz() {
                 if (!extra.dep[i])
                     continue;
 
-                var_buffer.fmt("    %u -> %u [label=\" %u\" color=red];",
+                var_buffer.fmt("    %u -> %u [label=\" %u\"];",
                                extra.dep[i], index, i + 1);
             }
         }
-
     }
-    var_buffer.put("}\n");
+
+    var_buffer.put(
+        "    subgraph cluster_legend {\n"
+        "        label=\"Legend\";\n"
+        "        l5 [style=filled fillcolor=yellow label=\"Placeholder\"];\n"
+        "        l4 [style=filled fillcolor=yellowgreen label=\"Special\"];\n"
+        "        l3 [style=filled fillcolor=salmon label=\"Dirty\"];\n"
+        "        l2 [style=filled fillcolor=lightblue2 label=\"Evaluated\"];\n"
+        "        l1 [style=filled fillcolor=wheat label=\"Labeled\"];\n"
+        "        l0 [style=filled fillcolor=gray90 label=\"Constant\"];\n"
+        "    }\n"
+        "}\n");
 
     return var_buffer.get();
 }

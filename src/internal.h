@@ -1,7 +1,7 @@
 /*
     src/internal.h -- Central data structure definitions
 
-    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -428,7 +428,7 @@ struct Extra {
 
     /// Callback to be invoked when the variable is deallocated
     void (*free_callback)(void *) = nullptr;
-    void *callback_payload = nullptr;
+    void *payload = nullptr;
 
     /// Bucket decomposition for virtual function calls
     uint32_t vcall_bucket_count = 0;

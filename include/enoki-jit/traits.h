@@ -4,7 +4,7 @@
     This file provides helper traits that are needed by the C++ array
     wrappers defined in in 'enoki/jitvar.h'.
 
-    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -57,6 +57,10 @@ template <typename T> struct var_type<T, enable_if_t<std::is_enum<T>::value>> {
 
 template <typename T> struct var_type<T, enable_if_t<std::is_floating_point<T>::value && sizeof(T) == 2>> {
     static constexpr VarType value = VarType::Float16;
+};
+
+template <typename T> struct var_type<T, enable_if_t<std::is_pointer<T>::value>> {
+    static constexpr VarType value = VarType::UInt32;
 };
 
 template <> struct var_type<float> {

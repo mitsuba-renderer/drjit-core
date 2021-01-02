@@ -6,28 +6,26 @@
 #  include "optix_stubs.h"
 #endif
 
-template <typename Float>
-void read_indices(uint32_t *out, uint32_t &index, const Float &value) {
+template <JitBackend Backend, typename T>
+void read_indices(uint32_t *out, uint32_t &index, const JitArray<Backend, T> &value) {
     if (out)
         out[index] = value.index();
     index += 1;
 }
 
-template <typename Float>
-void write_indices(const uint32_t *out, uint32_t &index, Float &value) {
-    value = Float::steal(out[index++]);
+template <JitBackend Backend, typename T>
+void write_indices(const uint32_t *out, uint32_t &index, JitArray<Backend, T> &value) {
+    value = JitArray<Backend, T>::steal(out[index++]);
 }
 
-template <typename Float>
-void read_indices(uint32_t *out, uint32_t &index,
-                  const std::pair<Float, Float> &value) {
+template <typename T1, typename T2>
+void read_indices(uint32_t *out, uint32_t &index, const std::pair<T1, T2> &value) {
     read_indices(out, index, value.first);
     read_indices(out, index, value.second);
 }
 
-template <typename Float>
-void write_indices(const uint32_t *out, uint32_t &index,
-                   std::pair<Float, Float> &value) {
+template <typename T1, typename T2>
+void write_indices(const uint32_t *out, uint32_t &index, std::pair<T1, T2> &value) {
     write_indices(out, index, value.first);
     write_indices(out, index, value.second);
 }
@@ -37,19 +35,8 @@ bool record(int cuda, uint32_t &id, uint64_t &hash, std::vector<uint32_t> &extra
             Func func, const Args &... args) {
 
     uint32_t se_before = jit_side_effect_counter(cuda);
-
-    if (!cuda) {
-        uint32_t active_mask = jit_var_new_0(
-            0, VarType::Bool, "$r0 = or <$w x i1> %mask, $z", 1, 1);
-        jit_llvm_active_mask_push(active_mask);
-        jit_var_dec_ref_ext(active_mask);
-    }
-
     auto result        = func(args...);
     uint32_t se_total  = jit_side_effect_counter(cuda) - se_before;
-
-    if (!cuda)
-        jit_llvm_active_mask_pop();
 
     uint32_t in_count = 0, out_count = 0;
     (read_indices(nullptr, in_count, args), ...);

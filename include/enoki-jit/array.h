@@ -4,7 +4,7 @@
     This library implements convenient wrapper class around the C API in
     'enoki/jit.h'.
 
-    Copyright (c) 2020 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -313,7 +313,7 @@ Array empty(size_t size) {
 }
 
 template <typename Array>
-Array zero(size_t size) {
+Array zero(size_t size = 1) {
     typename Array::Value value = 0;
     return Array::steal(
         jit_var_new_literal(Array::Backend, Array::Type, &value, size));
@@ -329,6 +329,13 @@ template <typename Array>
 Array opaque(const typename Array::Value &value, size_t size = 1) {
     return Array::steal(
         jit_var_new_literal(Array::Backend, Array::Type, &value, size, true));
+}
+
+template <JitBackend Backend, typename Type>
+JitArray<Backend, Type> placeholder(const JitArray<Backend, Type> &array,
+                                    bool propagate_literals = true) {
+    return JitArray<Backend, Type>::steal(
+        jit_var_new_placeholder(array.index(), propagate_literals));
 }
 
 template <typename Array, typename Index>
