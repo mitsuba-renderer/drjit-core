@@ -61,13 +61,13 @@ static void jitc_var_vcall_assemble(const Variable *v, const Extra &extra) {
         if (i == 0)
             buffer.put(") _ (.reg.u64 extra");
         else
-            buffer.fmt(") asdf_%u (.reg.u64 extra", i);
+            buffer.fmt(") func_%u (.reg.u64 extra", i);
         if (in_size)
             buffer.fmt(", .param .align %u .b8 in[%u]", in_align, in_size);
         buffer.put(");\n");
     }
 
-    buffer.fmt("        .global .u64 calltbl_%u[] = { asdf_1, asdf_2 };\n", reg_index);
+    buffer.fmt("        .global .u64 calltbl_%u[] = { func_1, func_2 };\n", reg_index);
     buffer.fmt("        .reg.u64 %%target;\n"
                "        mov.u64 %%target, calltbl_%u;\n"
                "        mad.wide.u32 %%target, %s%u, 8, %%target;\n\n",
@@ -78,6 +78,18 @@ static void jitc_var_vcall_assemble(const Variable *v, const Extra &extra) {
     if (in_size)
         buffer.fmt("        .param .align %u .b8 in[%u];\n", in_align, in_size);
 
+    // Special handling for predicates
+    for (uint32_t in : vcall->in) {
+        auto it = state.variables.find(in);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+        if ((VarType) v2->type != VarType::Bool)
+            continue;
+        buffer.fmt("        selp.u16 %%w%u, 1, 0, %%p%u\n",
+                   v2->reg_index, v2->reg_index);
+    }
+
     uint32_t offset = 0;
     for (uint32_t in : vcall->in) {
         auto it = state.variables.find(in);
@@ -85,14 +97,24 @@ static void jitc_var_vcall_assemble(const Variable *v, const Extra &extra) {
             continue;
         const Variable *v2 = jitc_var(it->second.dep[0]);
         uint32_t size = var_type_size[v2->type];
-        buffer.fmt("        st.param.%s [in+%u], %s%u;\n",
-                   var_type_name_ptx[v2->type], offset,
-                   var_type_prefix[v2->type], v2->reg_index);
+
+        const char *tname = var_type_name_ptx[v2->type],
+                   *prefix = var_type_prefix[v2->type];
+
+        // Special handling for predicates (pass via u8)
+        if ((VarType) v2->type == VarType::Bool) {
+            tname = "u8";
+            prefix = "%w";
+        }
+
+        buffer.fmt("        st.param.%s [in+%u], %s%u;\n", tname, offset,
+                   prefix, v2->reg_index);
 
         offset += size;
     }
-    buffer.fmt("        call (%s), %%target, (0, %s), proto;\n",
-               out_size ? "out" : "", in_size ? "in" : "");
+
+    buffer.fmt("        call (%s), %%target, (0%s), proto;\n",
+               out_size ? "out" : "", in_size ? ", in" : "");
 
     offset = 0;
     for (uint32_t out : vcall->out) {
@@ -101,12 +123,33 @@ static void jitc_var_vcall_assemble(const Variable *v, const Extra &extra) {
             continue;
         const Variable *v2 = &it->second;
         uint32_t size = var_type_size[v2->type];
-        buffer.fmt("        ld.param.%s %s%u, [out+%u];\n",
-                   var_type_name_ptx[v2->type], var_type_prefix[v2->type],
-                   v2->reg_index, offset);
 
+        const char *tname = var_type_name_ptx[v2->type],
+                   *prefix = var_type_prefix[v2->type];
+
+        // Special handling for predicates (pass via u8)
+        if ((VarType) v2->type == VarType::Bool) {
+            tname = "u8";
+            prefix = "%w";
+        }
+
+        buffer.fmt("        ld.param.%s %s%u, [out+%u];\n",
+                   tname, prefix, v2->reg_index, offset);
         offset += size;
     }
+
+    // Special handling for predicates
+    for (uint32_t out : vcall->out) {
+        auto it = state.variables.find(out);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+        if ((VarType) v2->type != VarType::Bool)
+            continue;
+        buffer.fmt("        setp.ne.u16 %%p%u, %%w%u, 0;\n",
+                   v2->reg_index, v2->reg_index);
+    }
+
     buffer.put("    }\n");
 }
 
