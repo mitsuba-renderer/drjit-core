@@ -112,7 +112,7 @@ void test_sanitize_log(char *buf) {
 
         if (strncmp(src, "enoki_", 6) == 0 && src[6] != '<') {
             memcpy(dst, "enoki_<@>", 9);
-            src += 22;
+            src += 38;
             dst += 9;
             continue;
         }

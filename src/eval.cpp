@@ -108,7 +108,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_params.push_back((void *) size);
 
         // The first 3 variables are reserved on the CUDA backend
-        n_regs = 3;
+        n_regs = 4;
     } else {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
         for (int i = 0; i < 3; ++i)

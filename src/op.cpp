@@ -328,7 +328,7 @@ uint32_t jitc_var_shift(JitBackend backend, VarType vt, JitOp op,
 // ===========================================================================
 // jitc_var_new_op(): various standard operations for Enoki-JIT variables
 // ===========================================================================
-//
+
 const char *op_name[(int) JitOp::Count] {
     // ---- Unary ----
     "not", "neg", "abs", "sqrt", "rcp", "rsqrt", "ceil", "floor", "round", "trunc", "exp2", "log2", "sin", "cos",

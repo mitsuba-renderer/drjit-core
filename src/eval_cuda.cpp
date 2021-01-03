@@ -32,9 +32,8 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
 
     if (!uses_optix) {
         buffer.fmt(".entry enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
-                   ".param .align 8 .b8 params[%u]) { // sm_%u \n",
-                   n_params * (uint32_t) sizeof(void *),
-                   state.devices[ts->device].compute_capability);
+                   ".param .align 8 .b8 params[%u]) { \n",
+                   params_global ? 8u : (n_params * (uint32_t) sizeof(void *)));
     } else {
        buffer.fmt(".const .align 8 .b8 params[%u];\n\n"
                   ".entry __raygen__enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^() {\n",
@@ -65,8 +64,9 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                    "\n"
                    "    mov.u32 %r3, %nctaid.x;\n"
                    "    mul.lo.u32 %r1, %r3, %r1;\n"
-                   "\n"
-                   "body:\n");
+                   "\n");
+        buffer.fmt("body: // sm_%u\n",
+                   state.devices[ts->device].compute_capability);
     } else {
         buffer.put("    call (%r0), _optix_get_launch_dimension_y, ();\n"
                    "    call (%r1), _optix_get_launch_index_y, ();\n"
