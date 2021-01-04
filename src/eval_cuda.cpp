@@ -101,8 +101,11 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                 jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
 
             const Extra &extra = it->second;
-            if (log_trace && extra.label)
-                buffer.fmt("    // %s\n", extra.label);
+            if (log_trace && extra.label) {
+                const char *label = strrchr(extra.label, '/');
+                if (label && label[1])
+                    buffer.fmt("    // %s\n", label + 1);
+            }
 
             if (extra.assemble) {
                 extra.assemble(v, extra);
@@ -228,12 +231,11 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
             n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
     } else {
         // Branch-based interface
-        buffer.put("l_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^:");
+        buffer.put("l_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^: {");
         int ctr = 0;
         for (ScheduledVariable &sv : schedule) {
             const Variable *v = jitc_var(sv.index);
-            if ((VarType) v->type == VarType::Void ||
-                !(v->stmt || v->literal))
+            if ((VarType) v->type == VarType::Void || v->placeholder_iface)
                 continue;
             buffer.fmt("%s.reg.%s %s%u;", ctr % 4 == 0 ? "\n    " : " ",
                        type_name_ptx[v->type], type_prefix[v->type],
@@ -250,7 +252,9 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
 
         if (unlikely(v->extra)) {
             auto it = state.extra.find(sv.index);
-            if (it == state.extra.end()) jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
+            if (it == state.extra.end())
+                jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry "
+                          "not found!");
 
             const Extra &extra = it->second;
             if (log_trace && extra.label) {
@@ -265,9 +269,7 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
             }
         }
 
-        if (v->stmt || v->literal) {
-            jitc_render_stmt_cuda(sv.index, v);
-        } else if (function_interface) {
+        if (function_interface && v->placeholder_iface) {
             if (vt != VarType::Bool) {
                 buffer.fmt("    ld.param.%s %s%u, [params+%u];\n",
                            type_name_ptx[vti], type_prefix[vti],
@@ -277,13 +279,18 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
                            "    setp.ne.u16 %%p%u, %%w0, 0;\n",
                            v->param_offset, v->reg_index);
             }
+        } else {
+            jitc_render_stmt_cuda(sv.index, v);
         }
     }
 
 
     uint32_t offset = 0;
     for (uint32_t i = 0; i < n_out; ++i) {
-        const Variable *v = jitc_var(out_nested[i]);
+        uint32_t index = out_nested[i];
+        if (!index)
+            continue;
+        const Variable *v = jitc_var(index);
         uint32_t vti = v->type;
         const char *tname = type_name_ptx[vti],
                    *prefix = type_prefix[vti];
@@ -310,7 +317,7 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
         buffer.put("    ret;\n"
                    "}\n");
     } else {
-        buffer.fmt("    bra %s;\n", ret_label);
+        buffer.fmt("    bra %s; }\n", ret_label);
     }
 }
 

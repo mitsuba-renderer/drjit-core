@@ -354,15 +354,27 @@ uint32_t jit_var_ref_ext(uint32_t index) {
 }
 
 void *jit_var_ptr(uint32_t index) {
+    if (index == 0)
+        return nullptr;
+
     lock_guard guard(state.mutex);
-    return jitc_var_ptr(index);
+    return jitc_var(index)->data;
 }
 
-uint32_t jit_var_size(uint32_t index) {
+size_t jit_var_size(uint32_t index) {
     if (index == 0)
         return 0;
+
     lock_guard guard(state.mutex);
-    return jitc_var_size(index);
+    return (size_t) jitc_var(index)->size;
+}
+
+int jit_var_is_literal(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    lock_guard guard(state.mutex);
+    return (int) jitc_var(index)->literal;
 }
 
 uint32_t jit_var_resize(uint32_t index, size_t size) {

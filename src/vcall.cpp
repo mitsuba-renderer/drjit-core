@@ -81,7 +81,7 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     for (uint32_t i = 0; i < n_in; ++i) {
         const Variable *v = jitc_var(in[i]);
         if (v->placeholder) {
-            if (!v->dep[3])
+            if (!v->dep[0])
                 jitc_raise("jit_var_vcall(): placeholder variable does not "
                            "reference another input!");
         } else if (!v->literal) {
@@ -114,9 +114,6 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
                 "jit_var_vcall(): input/output arrays have incompatible size!");
     }
 
-    jitc_log(Info, "jit_var_vcall(n_inst=%u, in=%u, out=%u, se=%u)", n_inst,
-             n_in, n_out, n_se[n_inst - 1] - n_se[0]);
-
     // =====================================================
     // 2. Create special variable encoding the function call
     // =====================================================
@@ -137,103 +134,46 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     vcall->out.reserve(n_out);
     vcall->out_nested.reserve(n_out_nested);
     vcall->n_se = std::vector<uint32_t>(n_se, n_se + n_inst);
+    std::vector<bool> coherent(n_out, true);
 
     // Reference the nested computation until cleanup by the callback below
-    for (uint32_t i = 0; i < n_out_nested; ++i) {
-        uint32_t index = out_nested[i];
-        jitc_var_inc_ref_ext(index);
-        vcall->out_nested.push_back(index);
+    for (uint32_t i = 0; i < n_inst; ++i) {
+        for (uint32_t j = 0; j < n_out; ++j) {
+            uint32_t index = out_nested[i * n_out + j];
+            coherent[j] = coherent[j] && (index == out_nested[j]);
+            jitc_var_inc_ref_ext(index);
+            vcall->out_nested.push_back(index);
+        }
     }
+
+    uint32_t n_devirt = 0;
+
+    bool optimize = jitc_flags() & (uint32_t) JitFlag::VCallOptimize;
+    if (optimize) {
+        for (uint32_t j = 0; j < n_out; ++j) {
+            if (!coherent[j])
+                continue;
+            for (uint32_t i = 0; i < n_inst; ++i) {
+                uint32_t &index = vcall->out_nested[i * n_out + j];
+                jitc_var_dec_ref_ext(index);
+                index = 0;
+            }
+            uint32_t index = out_nested[j];
+            out[j] = jitc_var_resize(index, size);
+            n_devirt++;
+        }
+    }
+
+    jitc_log(Info,
+             "jit_var_vcall(r%u): %u instances, %u inputs, %u outputs, %u "
+             "devirtualized, %u side effects", self,
+             n_inst, n_in, n_out, n_devirt, n_se[n_inst - 1] - n_se[0]);
 
     // =====================================================
     // 4. Create output variables
     // =====================================================
 
-    char temp[128];
-    for (uint32_t i = 0; i < n_out; ++i) {
-        snprintf(temp, sizeof(temp), "VCall: %s [out %u]", domain, i);
-
-        const Variable *v = jitc_var(out_nested[i]);
-        Variable v2;
-        v2.stmt = (char *) "";
-        v2.size = size;
-        v2.type = v->type;
-        v2.backend = v->backend;
-        v2.dep[0] = special;
-        v2.extra = 1;
-        jitc_var_inc_ref_int(special);
-        uint32_t index = jitc_var_new(v2, true);
-        Extra &extra = state.extra[index];
-        extra.payload = vcall.get();
-        extra.callback_internal = true;
-        extra.label = strdup(temp);
-        vcall->out.push_back(index);
-        out[i] = index;
-    }
-
-    special.reset();
-
-    // =====================================================
-    // 5. Optimize calling conventions by reordering args
-    // =====================================================
-
-    auto comp = [](uint32_t i1, uint32_t i2) {
-        return type_size[jitc_var(i1)->type] >
-               type_size[jitc_var(i2)->type];
-    };
-
-    for (uint32_t i = 0; i < n_in; ++i) {
-        uint32_t index = in[i];
-        Variable *v = jitc_var(index);
-        if (!v->placeholder)
-            continue;
-        vcall->in.push_back(v->dep[3]);
-        vcall->in_nested.push_back(index);
-        v->dep[3] = 0; // Steal this reference
-    }
-
-    std::sort(vcall->in.begin(), vcall->in.end(), comp);
-    std::sort(vcall->out.begin(), vcall->out.end(), comp);
-    std::sort(vcall->in_nested.begin(), vcall->in_nested.end(), comp);
-    for (uint32_t i = 0; i < n_inst; ++i)
-        std::sort(vcall->out_nested.begin() + (i + 0) * n_out,
-                  vcall->out_nested.begin() + (i + 1) * n_out, comp);
-
-    // =====================================================
-    // 6. Install callbacks for call variable
-    // =====================================================
-
-    snprintf(temp, sizeof(temp), "VCall: %s", domain);
-    size_t dep_size = vcall->in.size() * sizeof(uint32_t);
-
-    Variable *v_special = jitc_var(vcall->id);
-    Extra *e_special = &state.extra[vcall->id];
-    v_special->extra = 1;
-    v_special->size = size;
-    e_special->label = strdup(temp);
-    e_special->n_dep = (uint32_t) vcall->in.size();
-    e_special->dep = (uint32_t *) malloc(dep_size);
-
-    /// Steal input dependencies from placeholder arguments
-    memcpy(e_special->dep, vcall->in.data(), dep_size);
-
-    e_special->payload = vcall.release();
-    e_special->callback = [](uint32_t, int free, void *ptr) {
-        if (free)
-            delete (VCall *) ptr;
-    };
-    e_special->callback_internal = true;
-
-    e_special->assemble = [](const Variable *v, const Extra &extra) {
-        jitc_var_vcall_assemble(jitc_var(v->dep[0])->reg_index,
-                                (VCall *) extra.payload);
-    };
-
-    // =====================================================
-    // 6. Install cleanup callbacks for output variables
-    // =====================================================
-
-    auto callback = [](uint32_t index, int free, void *ptr) {
+    auto var_callback = [](uint32_t index, int free, void *ptr) {
         if (!ptr)
             return;
 
@@ -276,10 +216,102 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
         }
     };
 
-    if (jitc_flags() & (uint32_t) JitFlag::VCallOptimize) {
-        for (uint32_t i = 0; i < n_out; ++i)
-            state.extra[out[i]].callback = callback;
+    char temp[128];
+    for (uint32_t i = 0; i < n_out; ++i) {
+        uint32_t index = vcall->out_nested[i];
+        if (!index) {
+            vcall->out.push_back(0);
+            continue;
+        }
+
+        snprintf(temp, sizeof(temp), "VCall: %s [out %u]", domain, i);
+
+        const Variable *v = jitc_var(index);
+        Variable v2;
+        v2.stmt = (char *) "";
+        v2.size = size;
+        v2.type = v->type;
+        v2.backend = v->backend;
+        v2.dep[0] = special;
+        v2.extra = 1;
+        jitc_var_inc_ref_int(special);
+        uint32_t index_2 = jitc_var_new(v2, true);
+        Extra &extra = state.extra[index_2];
+        if (optimize) {
+            extra.payload = vcall.get();
+            extra.callback = var_callback;
+            extra.callback_internal = true;
+        }
+        extra.label = strdup(temp);
+        vcall->out.push_back(index_2);
+        out[i] = index_2;
     }
+
+    special.reset();
+
+    // =====================================================
+    // 5. Optimize calling conventions by reordering args
+    // =====================================================
+
+    for (uint32_t i = 0; i < n_in; ++i) {
+        uint32_t index = in[i];
+        Variable *v = jitc_var(index);
+        if (!v->placeholder)
+            continue;
+
+        // Ignore unreferenced inputs
+        if (optimize && v->ref_count_int == 0)
+            continue;
+
+        vcall->in_nested.push_back(index);
+
+        uint32_t &index_2 = v->dep[0];
+        vcall->in.push_back(index_2);
+        jitc_var_inc_ref_int(index_2);
+    }
+
+    auto comp = [](uint32_t i0, uint32_t i1) {
+        int s0 = i0 ? type_size[jitc_var(i0)->type] : 0;
+        int s1 = i1 ? type_size[jitc_var(i1)->type] : 0;
+        return s0 > s1;
+    };
+
+    std::sort(vcall->in.begin(), vcall->in.end(), comp);
+    std::sort(vcall->out.begin(), vcall->out.end(), comp);
+    std::sort(vcall->in_nested.begin(), vcall->in_nested.end(), comp);
+    for (uint32_t i = 0; i < n_inst; ++i)
+        std::sort(vcall->out_nested.begin() + (i + 0) * n_out,
+                  vcall->out_nested.begin() + (i + 1) * n_out, comp);
+
+    // =====================================================
+    // 6. Install callbacks for call variable
+    // =====================================================
+
+    snprintf(temp, sizeof(temp), "VCall: %s", domain);
+    size_t dep_size = vcall->in.size() * sizeof(uint32_t);
+
+    Variable *v_special = jitc_var(vcall->id);
+    Extra *e_special = &state.extra[vcall->id];
+    v_special->extra = 1;
+    v_special->size = size;
+    e_special->label = strdup(temp);
+    e_special->n_dep = (uint32_t) vcall->in.size();
+    e_special->dep = (uint32_t *) malloc(dep_size);
+
+    /// Steal input dependencies from placeholder arguments
+    memcpy(e_special->dep, vcall->in.data(), dep_size);
+
+    e_special->payload = vcall.release();
+    e_special->callback = [](uint32_t, int free, void *ptr) {
+        if (free)
+            delete (VCall *) ptr;
+    };
+    e_special->callback_internal = true;
+
+    e_special->assemble = [](const Variable *v, const Extra &extra) {
+        jitc_var_vcall_assemble(jitc_var(v->dep[0])->reg_index,
+                                (VCall *) extra.payload);
+    };
 }
 
 /// Called by the JIT compiler when compiling
@@ -361,8 +393,9 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
     ThreadState *ts = thread_state(vcall->backend);
     for (uint32_t i = 0; i < vcall->n_inst; ++i)
         func_id[i] = jitc_assemble_func(
-            ts, in_size, in_align, out_size, out_align, extra_size, n_out,
-            vcall->out.data(), vcall->out_nested.data() + n_out * i,
+            ts, in_size, in_align, out_size, out_align, extra_size, n_in,
+            vcall->in.data(), n_out, vcall->out.data(),
+            vcall->out_nested.data() + n_out * i,
             vcall->branch ? ret_label : nullptr);
 
     // =====================================================
@@ -484,12 +517,22 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
                    in_size ? "in" : "");
 
         offset = 0;
-        for (uint32_t out : vcall->out) {
-            auto it = state.variables.find(out);
+        for (uint32_t i = 0; i < n_out; ++i) {
+            uint32_t index = vcall->out_nested[i],
+                     index_2 = vcall->out[i];
+            auto it = state.variables.find(index);
             if (it == state.variables.end())
                 continue;
-            const Variable *v2 = &it->second;
-            uint32_t size = type_size[v2->type];
+            uint32_t size = type_size[it->second.type],
+                     load_offset = offset;
+            offset += size;
+
+            // Skip if outer access expired
+            auto it2 = state.variables.find(index_2);
+            if (it2 == state.variables.end())
+                continue;
+
+            const Variable *v2 = &it2.value();
 
             const char *tname = type_name_ptx[v2->type],
                        *prefix = type_prefix[v2->type];
@@ -501,8 +544,7 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
             }
 
             buffer.fmt("            ld.param.%s %s%u, [out+%u];\n",
-                       tname, prefix, v2->reg_index, offset);
-            offset += size;
+                       tname, prefix, v2->reg_index, load_offset);
         }
 
         buffer.put("        }\n\n");

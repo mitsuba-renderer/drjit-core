@@ -126,7 +126,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
         }
 
         // Decrease reference counts of extra references if needed
-        if (extra.n_dep) {
+        if (extra.dep) {
             for (uint32_t i = 0; i < extra.n_dep; ++i)
                 jitc_var_dec_ref_int(extra.dep[i]);
             free(extra.dep);
@@ -228,16 +228,6 @@ void jitc_cse_drop(uint32_t index, const Variable *v) {
         cache.erase(it);
 }
 
-/// Query the pointer variable associated with a given variable
-void *jitc_var_ptr(uint32_t index) {
-    return index == 0u ? nullptr : jitc_var(index)->data;
-}
-
-/// Query the size of a given variable
-uint32_t jitc_var_size(uint32_t index) {
-    return jitc_var(index)->size;
-}
-
 /// Query the type of a given variable
 VarType jitc_var_type(uint32_t index) {
     return (VarType) jitc_var(index)->type;
@@ -302,7 +292,7 @@ void jitc_literal_print(const Variable *v, bool graphviz = false) {
         case VarType::UInt64:  JIT_LITERAL_PRINT(uint64_t, long long unsigned int, "%llu");
         case VarType::Pointer: JIT_LITERAL_PRINT(uintptr_t, uintptr_t, (graphviz ? ("0x%" PRIxPTR) : (ENOKI_PTR)));
         default:
-            jitc_fail("jitc_literal_print(): unsupported type!");
+            jitc_fail("jit_literal_print(): unsupported type!");
 
     }
 
@@ -379,15 +369,18 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
             var_buffer.put(" <- ");
         for (uint32_t i = 0; i < n_dep; ++i)
             var_buffer.fmt("r%u%s", v.dep[i], i + 1 < n_dep ? ", " : "");
-        var_buffer.fmt("): ");
+        var_buffer.putc(')');
+        if (v.literal || v.data || (v.stmt && strlen(v.stmt) != 0))
+            var_buffer.put(": ");
 
-
-        if (v.literal)
+        if (v.literal) {
+            var_buffer.put("literal = ");
             jitc_literal_print(&v);
-        else if (v.data)
+        } else if (v.data) {
             var_buffer.fmt(ENOKI_PTR, (uintptr_t) v.data);
-        else if (v.stmt)
+        } else if (v.stmt) {
             var_buffer.put(v.stmt, strlen(v.stmt));
+        }
 
         if (cse && !cse_key_inserted)
             var_buffer.put(" (reused)");
@@ -404,7 +397,7 @@ uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
     if (unlikely(size == 0))
         return 0;
 
-    jitc_check_size("jitc_var_new_literal", size);
+    jitc_check_size("jit_var_new_literal", size);
 
     if (likely(eval == 0)) {
         Variable v;
@@ -452,7 +445,7 @@ uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
 }
 
 uint32_t jitc_var_new_counter(JitBackend backend, size_t size) {
-    jitc_check_size("jitc_var_new_counter", size);
+    jitc_check_size("jit_var_new_counter", size);
     Variable v;
     v.stmt = backend == JitBackend::CUDA ? (char *) "mov.u32 $r0, %r0"
                                          : jitc_llvm_counter_str;
@@ -471,16 +464,17 @@ uint32_t jitc_var_new_placeholder(uint32_t index, int propagate_literals) {
     }
 
     Variable v2;
+    v2.stmt = (char *) "mov.$t0 $r0, $r1";
     v2.backend = v->backend;
     v2.type = v->type;
     v2.size = v->size;
-    v2.placeholder = 1;
-    v2.dep[3] = index;
+    v2.placeholder = v2.placeholder_iface = 1;
+    v2.dep[0] = index;
     jitc_var_inc_ref_int(index);
 
     uint32_t result = jitc_var_new(v2, true);
-    jitc_log(Debug, "jit_var_new_placeholder(r%u): r%u%s", index, result,
-             v2.literal ? " (propagated literal)" : "");
+    jitc_log(Debug, "jit_var_new_placeholder(r%u <- r%u)%s", result, index,
+             v2.literal ? ": propagated literal" : "");
     return result;
 }
 
@@ -777,7 +771,7 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
     if (unlikely(size == 0 || ptr == nullptr))
         return 0;
 
-    jitc_check_size("jitc_var_mep_map", size);
+    jitc_check_size("jit_var_mep_map", size);
 
     Variable v;
     v.type = (uint32_t) type;
@@ -798,7 +792,7 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
 /// Copy a memory region onto the device and return its variable index
 uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
                           const void *ptr, size_t size) {
-    jitc_check_size("jitc_var_mem_copy", size);
+    jitc_check_size("jit_var_mem_copy", size);
 
     size_t total_size = (size_t) size * (size_t) type_size[(int) vtype];
     void *target_ptr;
@@ -879,7 +873,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     if (index == 0 && size == 0)
         return 0;
 
-    jitc_check_size("jitc_var_resize", size);
+    jitc_check_size("jit_var_resize", size);
 
     Variable *v = jitc_var(index);
     if (v->size == size) {
@@ -1002,7 +996,7 @@ bool jitc_var_any(uint32_t index) {
     const Variable *v = jitc_var(index);
 
     if (unlikely((VarType) v->type != VarType::Bool))
-        jitc_raise("jitc_var_any(r%u): requires a boolean array as input!", index);
+        jitc_raise("jit_var_any(r%u): requires a boolean array as input!", index);
 
     if (v->literal)
         return (bool) v->value;
@@ -1017,7 +1011,7 @@ bool jitc_var_all(uint32_t index) {
     const Variable *v = jitc_var(index);
 
     if (unlikely((VarType) v->type != VarType::Bool))
-        jitc_raise("jitc_var_all(r%u): requires a boolean array as input!", index);
+        jitc_raise("jit_var_all(r%u): requires a boolean array as input!", index);
 
     if (v->literal)
         return (bool) v->value;

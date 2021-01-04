@@ -200,67 +200,151 @@ TEST_CUDA(02_calling_conventions) {
     jit_registry_remove(&b2);
 }
 
-#if 0
 TEST_CUDA(03_optimize_away_outputs) {
     /* This test checks that unreferenced outputs are detected by the virtual
        function call interface, and that garbage collection propagates from
        outputs to inputs. It also checks that functions with identical code are
-       collapsed. */
-    using Double = Array<double>;
+       collapsed, and that inputs which aren't referenced in the first place
+       get optimized away. */
+    struct Base {
+        virtual ek_tuple<Float, Float> f(Float p1, Float p2, Float p3) = 0;
+    };
 
+    struct C12 : Base {
+        ek_tuple<Float, Float> f(Float p1, Float p2, Float /* p3 */) override {
+            return { p2 + 2.34567f, p1 + 1.f };
+        }
+    };
+
+    struct C3 : Base {
+        ek_tuple<Float, Float> f(Float p1, Float p2, Float /* p3 */) override {
+            return { p2 + 1.f, p1 + 2.f };
+        }
+    };
+
+    C12 c1; C12 c2; C3 c3;
+    uint32_t i1 = jit_registry_put("Base", &c1);
+    uint32_t i2 = jit_registry_put("Base", &c2);
+    uint32_t i3 = jit_registry_put("Base", &c3);
+    jit_assert(i1 == 1 && i2 == 2 && i3 == 3);
+
+    Float p1 = ek::opaque<Float>(12);
+    Float p2 = ek::opaque<Float>(34);
+    Float p3 = ek::opaque<Float>(56);
+
+    using BasePtr = Array<Base *>;
+    BasePtr self = arange<UInt32>(10) % 4;
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        for (uint32_t j = 0; j < 2; ++j) {
+            jit_set_flag(JitFlag::VCallOptimize, i);
+            jit_set_flag(JitFlag::VCallBranch, j);
+
+            jit_assert(jit_var_ref_ext(p3.index()) == 1 &&
+                       jit_var_ref_int(p3.index()) == 0);
+
+            auto result =
+                vcall([](Base *self2, Float p1, Float p2, Float p3) { return self2->f(p1, p2, p3); },
+                      self, p1, p2, p3);
+
+            jit_assert(jit_var_ref_ext(p1.index()) == 1 &&
+                       jit_var_ref_int(p1.index()) == 2);
+            jit_assert(jit_var_ref_ext(p2.index()) == 1 &&
+                       jit_var_ref_int(p2.index()) == 2);
+
+            // Irrelevant input optimized away
+            jit_assert(jit_var_ref_ext(p3.index()) == 1 &&
+                       jit_var_ref_int(p3.index()) == 1 - i);
+
+            result.template get<0>() = Float(0);
+
+            jit_assert(jit_var_ref_ext(p1.index()) == 1 &&
+                       jit_var_ref_int(p1.index()) == 2);
+            jit_assert(jit_var_ref_ext(p2.index()) == 1 &&
+                       jit_var_ref_int(p2.index()) == 2 - 2*i);
+            jit_assert(jit_var_ref_ext(p3.index()) == 1 &&
+                       jit_var_ref_int(p3.index()) == 1 - i);
+
+            jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
+                              "[0, 13, 13, 14, 0, 13, 13, 14, 0, 13]") == 0);
+        }
+    }
+    jit_registry_remove(&c1);
+    jit_registry_remove(&c2);
+    jit_registry_remove(&c3);
+}
+
+TEST_CUDA(04_devirtualize) {
+    /* This test checks that outputs which produce identical values across
+       all instances are moved out of the virtual call interface. */
     struct Base {
         virtual ek_tuple<Float, Float> f(Float p1, Float p2) = 0;
     };
 
-    struct B1 : Base {
+    struct D1 : Base {
         ek_tuple<Float, Float> f(Float p1, Float p2) override {
             return { p2 + 2, p1 + 1 };
         }
     };
 
-    B1 b1; B1 b2;
-    uint32_t i1 = jit_registry_put("Base", &b1);
-    uint32_t i2 = jit_registry_put("Base", &b2);
-    jit_assert(i1 == 1 && i2 == 2);
+    struct D2 : Base {
+        ek_tuple<Float, Float> f(Float p1, Float p2) override {
+            return { p2 + 2, p1 + 2 };
+        }
+    };
 
-    Float p1 = ek::opaque<Float>(12);
-    Float p2 = ek::opaque<Float>(34);
+    D1 d1; D2 d2;
+    uint32_t i1 = jit_registry_put("Base", &d1);
+    uint32_t i2 = jit_registry_put("Base", &d2);
+    jit_assert(i1 == 1 && i2 == 2);
 
     using BasePtr = Array<Base *>;
     BasePtr self = arange<UInt32>(10) % 3;
 
-    jit_enable_flag(JitFlag::OptimizeVCalls);
-    auto result =
-        vcall([](Base *self2, Float p1, Float p2) { return self2->f(p1, p2); },
-              self, p1, p2);
+    for (uint32_t k = 0; k < 2; ++k) {
+        Float p1, p2;
+        if (k == 0) {
+            p1 = 12;
+            p2 = 34;
+        } else {
+            p1 = ek::opaque<Float>(12);
+            p2 = ek::opaque<Float>(34);
+        }
 
-    fprintf(stderr, "%s\n", jit_var_graphviz());
+        for (uint32_t i = 0; i < 2; ++i) {
+            for (uint32_t j = 0; j < 2; ++j) {
+                jit_set_flag(JitFlag::VCallOptimize, i);
+                jit_set_flag(JitFlag::VCallBranch, j);
 
-    result.template get<0>() = Float(0);
+                auto result =
+                    vcall([](Base *self2, Float p1, Float p2) { return self2->f(p1, p2); },
+                          self, p1, p2);
 
-    // jit_assert(jit_var_ref_ext(p0.index()) == 1 &&
-    //            jit_var_ref_int(p0.index()) == 1);
-    // jit_assert(jit_var_ref_ext(p4.index()) == 1 &&
-    //            jit_var_ref_int(p4.index()) == 1);
-    fprintf(stderr, "%s\n", jit_var_graphviz());
-    printf("%s\n", result.template get<1>().str());
+                jit_assert(jit_var_is_literal(result.template get<0>().index()) == ((i == 1 && k == 0) ? 1 : 0) &&
+                           jit_var_is_literal(result.template get<1>().index()) == 0);
 
+                jit_var_schedule(result.template get<0>().index());
+                jit_var_schedule(result.template get<1>().index());
 
-    // jit_assert(jit_var_ref_ext(p0.index()) == 1 &&
-    //            jit_var_ref_int(p0.index()) == 0);
-    // jit_assert(jit_var_ref_ext(p4.index()) == 1 &&
-    //            jit_var_ref_int(p4.index()) == 1);
-
-    jit_registry_remove(&b1);
-    jit_registry_remove(&b2);
+                jit_assert(
+                    strcmp(jit_var_str(result.template get<0>().index()),
+                           i == 0
+                               ? "[0, 36, 36, 0, 36, 36, 0, 36, 36, 0]"
+                               : "[36, 36, 36, 36, 36, 36, 36, 36, 36, 36]") == 0);
+                jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
+                              "[0, 13, 14, 0, 13, 14, 0, 13, 14, 0]") == 0);
+            }
+        }
+    }
+    jit_registry_remove(&d1);
+    jit_registry_remove(&d2);
 }
 
+#if 0
 /// 1 instance!
 /// function that don't receive/return *any* arrays
 /// function with only side effects
 /// accessing scalars
-/// de-virtualization
 /// evaluating multiple times, and ensuring that side effects only happen once
-/// ensure that inputs which aren't referenced in the first place get optimized away
 /// sequence of multiple vcalls..
 #endif

@@ -451,9 +451,6 @@ static ProfilerRegion profiler_region_eval("jit_eval");
 
 /// Convert state->scheduled and state->side_effects to a JIT schedule
 static bool jitc_eval_prepare(ThreadState *ts, bool eval) {
-    visited.clear();
-    schedule.clear();
-
     // Collect variables that must be computed and their subtrees
     for (auto &source : { ts->scheduled, ts->side_effects }) {
         for (uint32_t index : source) {
@@ -471,9 +468,12 @@ static bool jitc_eval_prepare(ThreadState *ts, bool eval) {
                 if (unlikely(v->placeholder))
                     jitc_raise("jit_eval_prepare(): the schedule contains a "
                                "placeholder variable, which is not allowed");
+
+                jitc_var_traverse(v->size, index);
+            } else {
+                jitc_var_traverse(1, index);
             }
 
-            jitc_var_traverse(v->size, index);
             v->output_flag = (VarType) v->type != VarType::Void;
         }
     }
@@ -502,6 +502,9 @@ void jitc_eval(ThreadState *ts) {
     state.mutex.unlock();
     lock_guard guard(state.eval_mutex);
     state.mutex.lock();
+
+    visited.clear();
+    schedule.clear();
 
     if (!jitc_eval_prepare(ts, true))
         return;
@@ -638,29 +641,41 @@ void jitc_eval(ThreadState *ts) {
 XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
                                  uint32_t in_align, uint32_t out_size,
                                  uint32_t out_align, uint32_t extra_size,
+                                 uint32_t n_in, const uint32_t *in,
                                  uint32_t n_out, const uint32_t *out,
                                  const uint32_t *out_nested,
                                  const char *ret_label) {
-    ts->scheduled.clear();
+    visited.clear();
+    schedule.clear();
+
+    for (uint32_t i = 0; i < n_in; ++i) {
+        if (in[i] == 0)
+            continue;
+        const Variable *v = jitc_var(in[i]);
+        if (!v->literal)
+            visited.emplace(1, in[i]);
+    }
     for (uint32_t i = 0; i < n_out; ++i)
         ts->scheduled.push_back(out_nested[i]);
 
     if (!jitc_eval_prepare(ts, false))
         return XXH128_hash_t{ 0, 0 };
 
-    uint32_t n_regs = ts->backend == JitBackend::CUDA ? 4 : 0;
-    if (ret_label)
-        n_regs = n_regs_used;
+    bool function_interface = ret_label == nullptr;
+    uint32_t n_regs = n_regs_used,
+             n_regs_backup = n_regs_used;
+
+    if (function_interface)
+        n_regs = ts->backend == JitBackend::CUDA ? 4 : 0;
 
     for (auto &sv : schedule) {
         Variable *v = jitc_var(sv.index);
-        if (ret_label && (!v->stmt && !v->literal))
+        if (ret_label && v->placeholder_iface)
             continue;
         v->reg_index = n_regs++;
     }
 
-    if (ret_label)
-        n_regs_used = n_regs;
+    n_regs_used = n_regs;
 
     size_t offset = buffer.size();
 
@@ -668,6 +683,8 @@ XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
         jitc_assemble_cuda_func(n_regs, in_size, in_align, out_size, out_align,
                                 extra_size, n_out, out, out_nested, ret_label);
     buffer.putc('\n');
+
+    n_regs_used = n_regs_backup;
 
     size_t kernel_length = buffer.size() - offset;
     char *kernel_str = (char *) buffer.get() + offset;

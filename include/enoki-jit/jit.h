@@ -990,11 +990,14 @@ extern JIT_EXPORT uint32_t jit_var_ref_int(uint32_t index);
 /// Query the a variable's external reference count (used by the test suite)
 extern JIT_EXPORT uint32_t jit_var_ref_ext(uint32_t index);
 
+/// Check if a variable is a constant literal
+extern JIT_EXPORT int jit_var_is_literal(uint32_t index);
+
 /// Query the pointer variable associated with a given variable
 extern JIT_EXPORT void *jit_var_ptr(uint32_t index);
 
 /// Query the size of a given variable
-extern JIT_EXPORT uint32_t jit_var_size(uint32_t index);
+extern JIT_EXPORT size_t jit_var_size(uint32_t index);
 
 /**
  * \brief Resize a scalar variable to a new size

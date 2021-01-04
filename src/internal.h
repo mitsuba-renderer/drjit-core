@@ -74,7 +74,7 @@ struct Variable {
     /// Number of entries
     uint32_t size;
 
-    // ================   Various flags (16 bits altogether)   ================
+    // ================   Various flags (17 bits altogether)   ================
 
     /// Data type of this variable
     uint32_t type : 4;
@@ -102,6 +102,9 @@ struct Variable {
 
     /// Is this a placeholder variable used to record arithmetic symbolically?
     uint32_t placeholder : 1;
+
+    /// Is this a placeholder variable used to record arithmetic symbolically?
+    uint32_t placeholder_iface : 1;
 
     /// Is this variable associated with extra information?
     uint32_t extra : 1;

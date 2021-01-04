@@ -79,12 +79,6 @@ extern void jitc_var_dec_ref_ext(uint32_t index, Variable *v) noexcept(true);
 /// Decrease the external reference count of a given variable
 extern void jitc_var_dec_ref_ext(uint32_t index) noexcept(true);
 
-// Query the pointer variable associated with a given variable
-extern void *jitc_var_ptr(uint32_t index);
-
-// Query the size of a given variable
-extern uint32_t jitc_var_size(uint32_t index);
-
 // Query the type of a given variable
 extern VarType jitc_var_type(uint32_t index);
 

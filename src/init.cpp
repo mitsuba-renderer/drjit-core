@@ -300,10 +300,17 @@ void jitc_shutdown(int light) {
         if (n_leaked > 0)
             jitc_log(Warn, "jit_shutdown(): %u variables are still referenced!", n_leaked);
 
-        if (state.variables.empty() && !state.extra.empty())
+        if (state.variables.empty() && !state.extra.empty()) {
             jitc_log(Warn,
-                    "jit_shutdown(): %zu empty records were not cleaned up!",
+                    "jit_shutdown(): %zu 'extra' records were not cleaned up:",
                     state.extra.size());
+            n_leaked = 0;
+            for (const auto &kv : state.extra) {
+                jitc_log(Warn, "- variable r%u", kv.first);
+                if (++n_leaked == 10)
+                    jitc_log(Warn, " - (skipping remainder)");
+            }
+        }
     }
 
     jitc_registry_shutdown();

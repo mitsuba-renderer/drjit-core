@@ -77,6 +77,7 @@ extern void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group);
 extern XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
                                         uint32_t in_align, uint32_t out_size,
                                         uint32_t out_align, uint32_t extra_size,
+                                        uint32_t n_in, const uint32_t *in,
                                         uint32_t n_out, const uint32_t *out,
                                         const uint32_t *out_nested,
                                         const char *ret_label);
