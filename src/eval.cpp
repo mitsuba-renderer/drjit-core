@@ -38,6 +38,9 @@ static std::vector<void *> kernel_params;
 static uint8_t *kernel_params_global = nullptr;
 static uint32_t kernel_param_count = 0;
 
+/// Does the program contain a %data register so far? (for branch-based vcalls)
+bool data_reg_global = false;
+
 /// List of global declarations
 std::vector<std::string> globals;
 
@@ -96,6 +99,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     uses_optix = false;
     kernel_params.clear();
+    data_reg_global = false;
 
     uint32_t n_params_in      = 0,
              n_params_out     = 0,
@@ -593,10 +597,10 @@ void jitc_eval(ThreadState *ts) {
 
             if (extra.callback) {
                 if (extra.callback_internal) {
-                    extra.callback(index, 0, extra.payload);
+                    extra.callback(index, 0, extra.callback_data);
                 } else {
                     unlock_guard guard(state.mutex);
-                    extra.callback(index, 0, extra.payload);
+                    extra.callback(index, 0, extra.callback_data);
                 }
                 v = jitc_var(index);
             }
@@ -640,7 +644,7 @@ void jitc_eval(ThreadState *ts) {
 
 XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
                                  uint32_t in_align, uint32_t out_size,
-                                 uint32_t out_align, uint32_t extra_size,
+                                 uint32_t out_align, bool has_data_arg,
                                  uint32_t n_in, const uint32_t *in,
                                  uint32_t n_out, const uint32_t *out,
                                  const uint32_t *out_nested,
@@ -681,7 +685,8 @@ XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
 
     if (ts->backend == JitBackend::CUDA)
         jitc_assemble_cuda_func(n_regs, in_size, in_align, out_size, out_align,
-                                extra_size, n_out, out, out_nested, ret_label);
+                                has_data_arg, n_out, out, out_nested,
+                                ret_label);
     buffer.putc('\n');
 
     n_regs_used = n_regs_backup;

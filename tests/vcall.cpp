@@ -68,7 +68,12 @@ Result vcall_impl(const Func &func, const JitArray<Backend, Base *> &self,
 
         jit_prefix_push(Backend, label);
         try {
-            collect_indices(indices_out_all, func(base, args...));
+            if constexpr (std::is_same_v<Result, std::nullptr_t>) {
+                func(base, args...);
+            } else {
+                collect_indices(indices_out_all, func(base, args...));
+
+            }
         } catch (...) {
             /// XXX reset side effects to beginning?
             jit_prefix_pop(Backend);
@@ -83,8 +88,11 @@ Result vcall_impl(const Func &func, const JitArray<Backend, Base *> &self,
                   indices_in.data(), indices_out_all.size(),
                   indices_out_all.data(), se_count.data(), indices_out.data());
 
-    uint32_t offset = 0;
-    write_indices(indices_out, result, offset);
+    if constexpr (!std::is_same_v<Result, std::nullptr_t>) {
+        uint32_t offset = 0;
+        write_indices(indices_out, result, offset);
+    }
+
     return result;
 }
 
@@ -92,7 +100,8 @@ template <typename Func, JitBackend Backend, typename Base, typename... Args>
 auto vcall(const Func &func, const JitArray<Backend, Base *> &self,
            const Args &... args) {
     using Result = decltype(func(std::declval<Base *>(), args...));
-    return vcall_impl<Result>(func, self, ek::placeholder(args)...);
+    using Result_2 = std::conditional_t<std::is_void_v<Result>, std::nullptr_t, Result>;
+    return vcall_impl<Result_2>(func, self, ek::placeholder(args)...);
 }
 
 TEST_CUDA(01_symbolic_vcall) {
@@ -340,11 +349,61 @@ TEST_CUDA(04_devirtualize) {
     jit_registry_remove(&d2);
 }
 
+TEST_CUDA(05_extra_data) {
+    using Double = Array<double>;
+
+    /// Ensure that evaluated scalar fields in instances can be accessed
+    struct Base {
+        virtual Float f(Float) = 0;
+    };
+
+    struct E1 : Base {
+        Double local_1 = 4;
+        Float local_2 = 5;
+        Float f(Float x) override { return Float(Double(x) * local_1) + local_2; }
+    };
+
+    struct E2 : Base {
+        Float local_1 = 3;
+        Double local_2 = 5;
+        Float f(Float x) override { return local_1 + Float(Double(x) * local_2); }
+    };
+
+    E1 e1; E2 e2;
+    uint32_t i1 = jit_registry_put("Base", &e1);
+    uint32_t i2 = jit_registry_put("Base", &e2);
+    jit_assert(i1 == 1 && i2 == 2);
+
+    using BasePtr = Array<Base *>;
+    BasePtr self = arange<UInt32>(10) % 3;
+    Float x = arange<Float>(10);
+
+    for (uint32_t k = 0; k < 2; ++k) {
+        if (k == 1) {
+            e1.local_1.eval();
+            e1.local_2.eval();
+            e2.local_1.eval();
+            e2.local_2.eval();
+        }
+
+        for (uint32_t i = 0; i < 2; ++i) {
+            for (uint32_t j = 0; j < 2; ++j) {
+                jit_set_flag(JitFlag::VCallOptimize, i);
+                jit_set_flag(JitFlag::VCallBranch, j);
+                Float result = vcall([](Base *self2, Float x) { return self2->f(x); }, self, x);
+                jit_assert(strcmp(result.str(), "[0, 9, 13, 0, 21, 28, 0, 33, 43, 0]") == 0);
+            }
+        }
+    }
+    jit_registry_remove(&e1);
+    jit_registry_remove(&e2);
+}
+
+
 #if 0
 /// 1 instance!
 /// function that don't receive/return *any* arrays
 /// function with only side effects
-/// accessing scalars
 /// evaluating multiple times, and ensuring that side effects only happen once
 /// sequence of multiple vcalls..
 #endif

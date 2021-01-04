@@ -118,10 +118,10 @@ void jitc_var_free(uint32_t index, Variable *v) {
         // Notify callback that the variable was freed
         if (extra.callback) {
             if (extra.callback_internal) {
-                extra.callback(index, 1, extra.payload);
+                extra.callback(index, 1, extra.callback_data);
             } else {
                 unlock_guard guard(state.mutex);
-                extra.callback(index, 1, extra.payload);
+                extra.callback(index, 1, extra.callback_data);
             }
         }
 
@@ -538,17 +538,17 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
 
 void jitc_var_set_callback(uint32_t index,
                            void (*callback)(uint32_t, int, void *),
-                           void *payload) {
+                           void *callback_data) {
     Variable *v = jitc_var(index);
 
     jitc_log(Debug, "jit_var_set_callback(r%u): " ENOKI_PTR " (" ENOKI_PTR ")",
-            index, (uintptr_t) callback, (uintptr_t) payload);
+            index, (uintptr_t) callback, (uintptr_t) callback_data);
 
     Extra &extra = state.extra[index];
     if (unlikely(extra.callback))
         jitc_fail("jit_var_set_callback(): a callback was already set!");
     extra.callback = callback;
-    extra.payload = payload;
+    extra.callback_data = callback_data;
     extra.callback_internal = false;
     v->extra = true;
 }
@@ -909,7 +909,6 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
 
     return result;
 }
-
 
 /// Migrate a variable to a different flavor of memory
 uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {

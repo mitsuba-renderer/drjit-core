@@ -11,6 +11,8 @@
 #include "log.h"
 #include "var.h"
 #include "eval.h"
+#include "util.h"
+
 
 /// Encodes information about a virtual function call
 struct VCall {
@@ -47,7 +49,12 @@ struct VCall {
 };
 
 // Forward declarations
-static void jitc_var_vcall_assemble(uint32_t self_reg, VCall *v);
+static void jitc_var_vcall_assemble(uint32_t self_reg, uint32_t offset_reg,
+                                    uint32_t data_reg, VCall *v);
+static void
+jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
+                            uint32_t &data_offset, uint32_t inst_id,
+                            uint32_t index);
 
 // Weave a virtual function call into the computation graph
 void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
@@ -115,13 +122,62 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     }
 
     // =====================================================
-    // 2. Create special variable encoding the function call
+    // 2. Allocate call data
     // =====================================================
 
-    Ref special = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0, 1, &self));
+    tsl::robin_map<uint64_t, uint32_t> data_map;
+    std::vector<uint32_t> offsets;
+    uint32_t data_size = 0;
+
+    // Collect accesses to evaluated variables/pointers
+    for (uint32_t i = 0; i < n_inst; ++i) {
+        offsets.push_back(data_size);
+        for (uint32_t j = 0; j < n_out; ++j)
+            jitc_var_vcall_collect_data(data_map, data_size, i,
+                                        out_nested[j + i * n_out]);
+        // Restore to full alignment
+        data_size = (data_size + 7) / 8 * 8;
+    }
+
+    Ref data_v, offsets_v;
+
+    if (data_size) {
+        void *offsets_d = jitc_malloc(AllocType::HostPinned, n_inst * sizeof(uint32_t));
+        memcpy(offsets_d, offsets.data(), n_inst * sizeof(uint32_t));
+        offsets_d = jitc_malloc_migrate(offsets_d, AllocType::Device, 1);
+
+        uint8_t *data_d = (uint8_t *) jitc_malloc(AllocType::Device, data_size);
+        for (auto kv : data_map) {
+            uint32_t index = (uint32_t) kv.first, offset = kv.second;
+            if (offset == (uint32_t) -1)
+                continue;
+
+            const Variable *v = jitc_var(index);
+            if ((VarType) v->type == VarType::Pointer)
+                jitc_poke(backend, data_d + offset, &v->value, sizeof(void *));
+            else
+                jitc_memcpy_async(backend, data_d + offset, v->data,
+                                  type_size[v->type]);
+        }
+
+        Ref offsets_holder = steal(jitc_var_mem_map(backend, VarType::UInt32,
+                                                   offsets_d, n_inst, 1)),
+            data_holder = steal(jitc_var_mem_map(backend, VarType::UInt8,
+                                                 data_d, data_size, 1));
+        offsets_v = steal(jitc_var_new_pointer(backend, offsets_d, offsets_holder, 0));
+        data_v = steal(jitc_var_new_pointer(backend, data_d, data_holder, 0));
+    }
 
     // =====================================================
-    // 3. Stash information about inputs and outputs
+    // 3. Create special variable encoding the function call
+    // =====================================================
+
+    uint32_t deps[3] = { self, offsets_v, data_v };
+    Ref special = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
+                                          data_size ? 3 : 1, deps));
+
+    // =====================================================
+    // 4. Stash information about inputs and outputs
     // =====================================================
 
     std::unique_ptr<VCall> vcall(new VCall());
@@ -134,17 +190,20 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     vcall->out.reserve(n_out);
     vcall->out_nested.reserve(n_out_nested);
     vcall->n_se = std::vector<uint32_t>(n_se, n_se + n_inst);
-    std::vector<bool> coherent(n_out, true);
 
-    // Reference the nested computation until cleanup by the callback below
+    std::vector<bool> coherent(n_out, true);
     for (uint32_t i = 0; i < n_inst; ++i) {
         for (uint32_t j = 0; j < n_out; ++j) {
             uint32_t index = out_nested[i * n_out + j];
             coherent[j] = coherent[j] && (index == out_nested[j]);
+
+            /* Hold a reference to the nested computation until the cleanup
+               callback callback later below is invoked. */
             jitc_var_inc_ref_ext(index);
             vcall->out_nested.push_back(index);
         }
     }
+
 
     uint32_t n_devirt = 0;
 
@@ -165,12 +224,13 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     }
 
     jitc_log(Info,
-             "jit_var_vcall(r%u): %u instances, %u inputs, %u outputs, %u "
-             "devirtualized, %u side effects", self,
-             n_inst, n_in, n_out, n_devirt, n_se[n_inst - 1] - n_se[0]);
+             "jit_var_vcall(r%u): %u instances, %u inputs, %u outputs (%u "
+             "devirtualized), %u side effects, %u bytes of call data", self,
+             n_inst, n_in, n_out, n_devirt, n_se[n_inst - 1] - n_se[0],
+             data_size);
 
     // =====================================================
-    // 4. Create output variables
+    // 5. Create output variables
     // =====================================================
 
     auto var_callback = [](uint32_t index, int free, void *ptr) {
@@ -180,7 +240,7 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
         VCall *vcall_2 = (VCall *) ptr;
         if (!free) {
             // Disable callback
-            state.extra[index].payload = nullptr;
+            state.extra[index].callback_data = nullptr;
         }
 
         // An output variable is no longer referenced. Find out which one.
@@ -238,8 +298,8 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
         uint32_t index_2 = jitc_var_new(v2, true);
         Extra &extra = state.extra[index_2];
         if (optimize) {
-            extra.payload = vcall.get();
             extra.callback = var_callback;
+            extra.callback_data = vcall.get();
             extra.callback_internal = true;
         }
         extra.label = strdup(temp);
@@ -250,7 +310,7 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     special.reset();
 
     // =====================================================
-    // 5. Optimize calling conventions by reordering args
+    // 6. Optimize calling conventions by reordering args
     // =====================================================
 
     for (uint32_t i = 0; i < n_in; ++i) {
@@ -284,7 +344,7 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
                   vcall->out_nested.begin() + (i + 1) * n_out, comp);
 
     // =====================================================
-    // 6. Install callbacks for call variable
+    // 7. Install callbacks for call variable
     // =====================================================
 
     snprintf(temp, sizeof(temp), "VCall: %s", domain);
@@ -298,24 +358,34 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     e_special->n_dep = (uint32_t) vcall->in.size();
     e_special->dep = (uint32_t *) malloc(dep_size);
 
-    /// Steal input dependencies from placeholder arguments
+    // Steal input dependencies from placeholder arguments
     memcpy(e_special->dep, vcall->in.data(), dep_size);
 
-    e_special->payload = vcall.release();
     e_special->callback = [](uint32_t, int free, void *ptr) {
         if (free)
             delete (VCall *) ptr;
     };
     e_special->callback_internal = true;
+    e_special->callback_data = vcall.release();
 
     e_special->assemble = [](const Variable *v, const Extra &extra) {
-        jitc_var_vcall_assemble(jitc_var(v->dep[0])->reg_index,
-                                (VCall *) extra.payload);
+        uint32_t self_reg = jitc_var(v->dep[0])->reg_index,
+                 offset_reg = 0, data_reg = 0;
+
+        if (v->dep[1]) {
+            offset_reg = jitc_var(v->dep[1])->reg_index;
+            data_reg = jitc_var(v->dep[2])->reg_index;
+        }
+
+        jitc_var_vcall_assemble(self_reg, offset_reg, data_reg,
+                                (VCall *) extra.callback_data);
     };
 }
 
 /// Called by the JIT compiler when compiling
 static void jitc_var_vcall_assemble(uint32_t self_reg,
+                                    uint32_t offset_reg,
+                                    uint32_t data_reg,
                                     VCall *vcall) {
     // =====================================================
     // 1. Need to backup state before we can JIT recursively
@@ -346,8 +416,7 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
              n_in = vcall->in.size(),
              n_out = vcall->out.size(),
              n_in_active = 0,
-             n_out_active = 0,
-             extra_size = 0;
+             n_out_active = 0;
 
     for (uint32_t i = 0; i < n_in; ++i) {
         auto it = state.variables.find(vcall->in[i]);
@@ -390,10 +459,11 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
     size_t globals_offset = globals.size();
 
     std::vector<XXH128_hash_t> func_id(vcall->n_inst);
+
     ThreadState *ts = thread_state(vcall->backend);
     for (uint32_t i = 0; i < vcall->n_inst; ++i)
         func_id[i] = jitc_assemble_func(
-            ts, in_size, in_align, out_size, out_align, extra_size, n_in,
+            ts, in_size, in_align, out_size, out_align, data_reg != 0, n_in,
             vcall->in.data(), n_out, vcall->out.data(),
             vcall->out_nested.data() + n_out * i,
             vcall->branch ? ret_label : nullptr);
@@ -416,15 +486,25 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
     // 5. Insert call prototypes
     // =====================================================
 
+    if (vcall->branch && data_reg) {
+        if (!data_reg_global) {
+            buffer.put("    .reg.u64 %data;\n");
+        } else {
+            buffer.fmt("    .reg.u64 %%u%u;\n"
+                       "    mov.u64 %%u%u, %%data;\n",
+                       vcall->id, vcall->id);
+        }
+    }
+
     buffer.put("    {\n");
     if (!vcall->branch) {
         buffer.put("        proto: .callprototype");
         if (out_size)
             buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
         buffer.put(" _(");
-        if (extra_size) {
-            buffer.put(".reg .u64 extra");
-            if (extra_size)
+        if (data_reg) {
+            buffer.put(".reg .u64 data");
+            if (in_size)
                 buffer.put(", ");
         }
         if (in_size)
@@ -449,17 +529,25 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
                    i + 1 < vcall->n_inst ? ",\n" : "");
     }
 
+    if (vcall->branch)
+        buffer.put(";\n\n");
+    else
+        buffer.put(" };\n\n");
+
+    buffer.fmt("        setp.ne.u32 %%p3, %%r%u, 0;\n"
+               "        sub.u32 %%r3, %%r%u, 1;\n", self_reg, self_reg);
+
+    if (data_reg) {
+        buffer.fmt("        mad.wide.u32 %%rd2, %%r3, 4, %%rd%u;\n"
+                   "        @%%p3 ld.global.u32 %%rd2, [%%rd2];\n"
+                   "        add.u64 %s, %%rd2, %%rd%u;\n",
+                   offset_reg, vcall->branch ? "%data" : "%rd2", data_reg);
+    }
+
     if (vcall->branch) {
-        buffer.fmt(";\n\n"
-                   "        setp.ne.u32 %%p3, %%r%u, 0;\n"
-                   "        sub.u32 %%r3, %%r%u, 1;\n"
-                   "        @%%p3 brx.idx %%r3, bt;\n"
-                   , self_reg, self_reg);
+        buffer.put("        @%p3 brx.idx %r3, bt;\n");
     } else {
-        buffer.fmt(" };\n\n"
-                   "        setp.ne.u32 %%p3, %%r%u, 0;\n"
-                   "        @%%p3 ld.global.u64 %%rd2, tbl[%%r%u + (-1)];\n",
-                   self_reg, self_reg);
+        buffer.put("        @%p3 ld.global.u64 %rd3, tbl[%r3];\n");
     }
 
     // =====================================================
@@ -510,11 +598,9 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
             offset += size;
         }
 
-        buffer.fmt("            @%%p3 call %s%%rd2, (%s%s%s), proto;\n",
-                   out_size ? "(out), " : "",
-                   extra_size ? "%rd3" : "",
-                   extra_size && in_size ? ", " : "",
-                   in_size ? "in" : "");
+        buffer.fmt("            @%%p3 call %s%%rd3, (%s%s%s), proto;\n",
+                   out_size ? "(out), " : "", data_reg ? "%rd2" : "",
+                   data_reg && in_size ? ", " : "", in_size ? "in" : "");
 
         offset = 0;
         for (uint32_t i = 0; i < n_out; ++i) {
@@ -582,8 +668,12 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
         buffer.putc('\n');
         for (uint32_t i = globals_offset; i < globals.size(); ++i)
             buffer.put(globals[i].c_str(), globals[i].length());
-        buffer.fmt("%s:\n", ret_label);
         globals.resize(globals_offset);
+        buffer.fmt("%s:\n", ret_label);
+        if (data_reg && data_reg_global)
+            buffer.fmt("    mov.u64 %%data, %%u%u;\n",
+                       vcall->id);
+        data_reg_global = 1;
     }
 
     std::sort(
@@ -603,3 +693,42 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
              n_in_active, n_in, in_size, n_out_active, n_out, out_size);
 
 }
+
+/// Collect scalar / pointer variables referenced by a computation
+void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
+                                 uint32_t &data_offset, uint32_t inst_id,
+                                 uint32_t index) {
+    uint64_t key = (uint64_t) index + (((uint64_t) inst_id) << 32);
+    if (data_map.find(key) != data_map.end())
+        return;
+
+    const Variable *v = jitc_var(index);
+    if (v->placeholder_iface || v->literal)
+        return;
+
+    if (v->data || (VarType) v->type == VarType::Pointer) {
+        uint32_t tsize = type_size[v->type];
+        data_offset = (data_offset + tsize - 1) / tsize * tsize;
+        data_map.emplace(key, data_offset);
+        data_offset += tsize;
+
+        if (v->size != 1)
+            jitc_raise(
+                "jit_var_vcall(): the virtual function call associated with "
+                "instance %u accesses an evaluated variable r%u of type "
+                "%s and size %u. However, only *scalar* (size == 1) "
+                "evaluated variables can be accessed while recording "
+                "virtual function calls",
+                inst_id, index, type_name[v->type], v->size);
+    } else {
+        data_map.emplace(key, (uint32_t) -1);
+        for (uint32_t i = 0; i < 4; ++i) {
+            uint32_t index_2 = v->dep[i];
+            if (!index_2)
+                break;
+
+            jitc_var_vcall_collect_data(data_map, data_offset,
+                                        inst_id, index_2);
+        }
+    }
+};

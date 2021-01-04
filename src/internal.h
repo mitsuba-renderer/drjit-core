@@ -41,7 +41,9 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 struct Variable {
     #if defined(__GNUC__)
     #  pragma GCC diagnostic push
-    #  pragma GCC diagnostic ignored "-Wclass-memaccess"
+    #  if __has_warning("-Wclass-memaccess")
+    #    pragma GCC diagnostic ignored "-Wclass-memaccess"
+    #  endif
     #endif
 
     /// Zero-initialize by default
@@ -442,7 +444,7 @@ struct Extra {
 
     /// Callback to be invoked when the variable is evaluated/deallocated
     void (*callback)(uint32_t, int, void *) = nullptr;
-    void *payload = nullptr;
+    void *callback_data = nullptr;
     bool callback_internal = false;
 
     /// Bucket decomposition for virtual function calls

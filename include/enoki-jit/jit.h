@@ -1230,10 +1230,10 @@ extern JIT_EXPORT void jit_set_flag(JIT_ENUM JitFlag flag, int enable);
  * evaluated or freed.
  *
  * The provided function should have the signature <tt>void callback(uint32_t
- * index, int free, void *payload)</tt>, where \c index is the variable index,
- * \c free == 0 indicates that the variable is evaluated, \c free == 1
- * indicates that it is freed, and \c payload is a user-specified payload
- * value.
+ * index, int free, void *callback_data)</tt>, where \c index is the variable
+ * index, \c free == 0 indicates that the variable is evaluated, \c free == 1
+ * indicates that it is freed, and \c callback_data is a user-specified value
+ * that will additionally be supplied to the callback.
  */
 extern JIT_EXPORT void
 jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),

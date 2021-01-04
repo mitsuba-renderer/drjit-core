@@ -199,13 +199,15 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
 
 void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
                              uint32_t in_align, uint32_t out_size,
-                             uint32_t out_align, uint32_t extra_size,
+                             uint32_t out_align, bool has_data_arg,
                              uint32_t n_out, const uint32_t *out,
                              const uint32_t *out_nested,
                              const char *ret_label) {
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace,
          function_interface = ret_label == nullptr;
+
+    uint32_t data_offset = 0;
 
     if (function_interface) {
         buffer.put(".visible .func");
@@ -215,8 +217,8 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
         buffer.fmt(" %s_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
                    uses_optix ? "__direct_callable__" : "func");
 
-        if (extra_size) {
-            buffer.put(".reg .u64 extra");
+        if (has_data_arg) {
+            buffer.put(".reg .u64 data");
             if (in_size)
                 buffer.put(", ");
         }
@@ -269,7 +271,7 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
             }
         }
 
-        if (function_interface && v->placeholder_iface) {
+        if (v->placeholder_iface && function_interface) {
             if (vt != VarType::Bool) {
                 buffer.fmt("    ld.param.%s %s%u, [params+%u];\n",
                            type_name_ptx[vti], type_prefix[vti],
@@ -279,11 +281,18 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
                            "    setp.ne.u16 %%p%u, %%w0, 0;\n",
                            v->param_offset, v->reg_index);
             }
+        } else if (v->data || vt == VarType::Pointer) {
+            uint32_t tsize = type_size[vti];
+            data_offset = (data_offset + tsize - 1) / tsize * tsize;
+            buffer.fmt("    ld.global.%s %s%u, [%s+%u];\n",
+                       type_name_ptx[vti], type_prefix[vti], v->reg_index,
+                       function_interface ? "data": "%data",
+                       data_offset);
+            data_offset += tsize;
         } else {
             jitc_render_stmt_cuda(sv.index, v);
         }
     }
-
 
     uint32_t offset = 0;
     for (uint32_t i = 0; i < n_out; ++i) {
