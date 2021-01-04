@@ -852,7 +852,7 @@ extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
  * constant literal status propagates unchanged from \c index to the returned
  * result.
  */
-extern uint32_t jit_var_new_placeholder(uint32_t index, int propagate_literals);
+extern JIT_EXPORT uint32_t jit_var_new_placeholder(uint32_t index, int propagate_literals);
 
 /**
  * \brief Create a variable that reads from another variable
