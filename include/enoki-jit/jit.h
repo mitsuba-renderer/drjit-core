@@ -41,7 +41,7 @@
 #  define JIT_EXPORT    __attribute__ ((visibility("default")))
 #  define JIT_MALLOC    __attribute__((malloc))
 #  define JIT_INLINE    __attribute__ ((always_inline)) inline
-#  define JIT_NOINLINE  __attribute__ ((noinline)) inline
+#  define JIT_NOINLINE  __attribute__ ((noinline))
 #endif
 
 #if defined(__cplusplus)

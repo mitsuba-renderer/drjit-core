@@ -39,8 +39,17 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
+    #if defined(__GNUC__)
+    #  pragma GCC diagnostic push
+    #  pragma GCC diagnostic ignored "-Wclass-memaccess"
+    #endif
+
     /// Zero-initialize by default
     Variable() { memset(this, 0, sizeof(Variable)); }
+
+    #if defined(__GNUC__)
+    #  pragma GCC diagnostic pop
+    #endif
 
     /// External reference count (by application using Enoki)
     uint32_t ref_count_ext;

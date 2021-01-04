@@ -59,7 +59,9 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
     JitArray &operator=(JitArray &&a) {
-        std::swap(m_index, a.m_index);
+        uint32_t tmp = m_index;
+        m_index = a.m_index;
+        a.m_index = tmp;
         return *this;
     }
 
