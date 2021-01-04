@@ -254,38 +254,38 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     // ------------------------------------------------------
 
     friend JitArray abs(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_1(JitOp::Abs, v.m_index));
+        return steal(jit_var_new_op_1(JitOp::Abs, v.m_index));
     }
 
     friend JitArray sqrt(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_1(JitOp::Sqrt, v.m_index));
+        return steal(jit_var_new_op_1(JitOp::Sqrt, v.m_index));
     }
 
     friend JitArray ceil(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_1(JitOp::Ceil, v.m_index));
+        return steal(jit_var_new_op_1(JitOp::Ceil, v.m_index));
     }
 
     friend JitArray floor(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_1(JitOp::Floor, v.m_index));
+        return steal(jit_var_new_op_1(JitOp::Floor, v.m_index));
     }
 
     friend JitArray round(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_1(JitOp::Round, v.m_index));
+        return steal(jit_var_new_op_1(JitOp::Round, v.m_index));
     }
 
     friend JitArray trunc(const JitArray &v) {
-        return Mask::steal(jit_var_new_op_1(JitOp::Trunc, v.m_index));
+        return steal(jit_var_new_op_1(JitOp::Trunc, v.m_index));
     }
 
     friend JitArray fmadd(const JitArray &a, const JitArray &b,
                           const JitArray &c) {
-        return Mask::steal(
+        return steal(
             jit_var_new_op_3(JitOp::Fmadd, a.m_index, b.m_index, c.m_index));
     }
 
     friend JitArray select(const Mask &a, const JitArray &b,
                            const JitArray &c) {
-        return Mask::steal(
+        return steal(
             jit_var_new_op_3(JitOp::Select, a.m_index, b.m_index, c.m_index));
     }
 
