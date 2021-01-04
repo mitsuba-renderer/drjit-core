@@ -641,7 +641,7 @@ extern JIT_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
  * This operation creates a variable of type \ref VarType::UInt32 that will
  * evaluate to <tt>0, ..., size - 1</tt>.
  */
-extern uint32_t jit_var_new_counter(JitBackend backend, size_t size);
+extern JIT_EXPORT uint32_t jit_var_new_counter(JitBackend backend, size_t size);
 
 /**
  * \brief Create a new variable representing the result of a LLVM/PTX statement

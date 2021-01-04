@@ -2,6 +2,7 @@
 
 #include <enoki-jit/array.h>
 #include <cstdio>
+#include <cstring>
 
 using namespace enoki;
 

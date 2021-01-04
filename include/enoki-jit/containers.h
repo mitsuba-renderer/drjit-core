@@ -15,6 +15,7 @@
 #pragma once
 
 #include <enoki-jit/jit.h>
+#include <utility>
 
 NAMESPACE_BEGIN(enoki)
 
