@@ -1438,58 +1438,42 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
 
 uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                               uint32_t mask_, ReduceOp reduce_op) {
-    Variable *v_target = jitc_var(target_);
-    JitBackend backend = (JitBackend) v_target->backend;
+    Ref ptr, target = borrow(target_);
+    JitBackend backend = (JitBackend) jitc_var(target)->backend;
+    VarType vt = (VarType) jitc_var(target)->type;
+    void *data = jitc_var(target)->data;
 
-    if (v_target->type != jitc_var(value)->type)
+    if (vt != (VarType) jitc_var(value)->type)
         jit_raise("jit_var_new_scatter(): target/value type mismatch!");
 
-    /// Ensure that 'target' exists in memory
-    if (!v_target->data) {
-        jitc_var_eval(target_);
-
-        // Location of variable may have changed
-        v_target = jitc_var(target_);
-    }
-
-    // Create a pointer + reference (CSE will merge it with other queued scatters)
-    Ref ptr = steal(jitc_var_new_pointer(backend, v_target->data, target_, 1));
+    if (data)
+        ptr = steal(jitc_var_new_pointer(backend, data, target, 1));
 
     // Check if it is safe to write directly
-    Ref target;
-    bool copy;
-    if (v_target->ref_count_ext + v_target->ref_count_int > 2) {
-        target = steal(jitc_var_copy(target_));
-        ptr = steal(
-            jitc_var_new_pointer(backend, jitc_var(target)->data, target, 1));
+    bool copy = false;
+    if (jitc_var(target)->ref_count_ext > 2 ||
+        jitc_var(target)->ref_count_int > (data ? 1 : 0)) {
+
+        target = steal(jitc_var_copy(target));
         copy = true;
-    } else {
-        target = borrow(target_);
-        copy = false;
     }
+
+    // Ensure that 'target' exists in memory
+    if (!data)
+        jitc_var_eval(target);
+
+    ptr = steal(jitc_var_new_pointer(backend, jitc_var(target)->data, target, 1));
 
     Ref mask  = steal(jitc_scatter_gather_mask(mask_)),
         index = steal(jitc_scatter_gather_index(target, index_));
 
-    // Location of variable may have changed
-    v_target = jitc_var(target);
-
-    const Variable *v_index = jitc_var(index),
-                   *v_mask = jitc_var(mask);
-
-    if (v_index->dirty || v_mask->dirty) {
+    if (jitc_var(index)->dirty || jitc_var(mask)->dirty)
         jitc_eval(thread_state(backend));
 
-        // Location of variables may have changed
-        v_index = jitc_var(index);
-        v_mask = jitc_var(mask);
-        v_target = jitc_var(target);
-    }
+    jitc_var(target)->dirty = true;
 
-    v_target->dirty = true;
-
+    const Variable *v_mask = jitc_var(mask);
     bool unmasked = v_mask->literal && v_mask->value == 1;
-    VarType vt = (VarType) v_target->type;
 
     uint32_t dep[4] = { ptr, value, index, mask };
     uint32_t n_dep = 4;
@@ -1525,7 +1509,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         }
 
         if (reduce_op != ReduceOp::None)
-            buf.put(".reg.$t2 $r0_unused$n");
+            buf.put(".reg.$t2 $r0$n");
 
         if (unmasked) {
             dep[3] = 0;
@@ -1537,7 +1521,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         if (reduce_op == ReduceOp::None)
             buf.fmt("st.global.%s [%%rd3], %s", src_type, src_reg);
         else // Technically, we could also use 'red.global' here, but it crashes OptiX ..
-            buf.fmt("atom.global.%s.%s $r0_unused, [%%rd3], %s", op_name,
+            buf.fmt("atom.global.%s.%s $r0, [%%rd3], %s", op_name,
                     src_type, src_reg);
     } else {
         if (is_float && reduce_op != ReduceOp::None &&

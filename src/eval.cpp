@@ -97,7 +97,9 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
 void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     JitBackend backend = ts->backend;
 
-    uses_optix = false;
+    uses_optix = ts->backend == JitBackend::CUDA &&
+                 (jitc_flags() & (uint32_t) JitFlag::ForceOptiX);
+
     kernel_params.clear();
     data_reg_global = false;
 
@@ -454,38 +456,33 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 static ProfilerRegion profiler_region_eval("jit_eval");
 
 /// Convert state->scheduled and state->side_effects to a JIT schedule
-static bool jitc_eval_prepare(ThreadState *ts, bool eval) {
+static void jitc_eval_prepare(std::vector<uint32_t> &source, bool eval = true) {
     // Collect variables that must be computed and their subtrees
-    for (auto &source : { ts->scheduled, ts->side_effects }) {
-        for (uint32_t index : source) {
-            auto it = state.variables.find(index);
-            if (it == state.variables.end())
+    for (uint32_t index : source) {
+        auto it = state.variables.find(index);
+        if (it == state.variables.end())
+            continue;
+
+        Variable *v = &it.value();
+
+        if (eval) {
+            // Skip variables that aren't externally referenced or already evaluated
+            if (v->ref_count_ext == 0 || v->data || v->literal)
                 continue;
 
-            Variable *v = &it.value();
+            if (unlikely(v->placeholder))
+                jitc_raise("jit_eval_prepare(): the schedule contains a "
+                           "placeholder variable, which is not allowed");
 
-            if (eval) {
-                // Skip variables that aren't externally referenced or already evaluated
-                if (v->ref_count_ext == 0 || v->data || v->literal)
-                    continue;
-
-                if (unlikely(v->placeholder))
-                    jitc_raise("jit_eval_prepare(): the schedule contains a "
-                               "placeholder variable, which is not allowed");
-
-                jitc_var_traverse(v->size, index);
-            } else {
-                jitc_var_traverse(1, index);
-            }
-
-            v->output_flag = (VarType) v->type != VarType::Void;
+            jitc_var_traverse(v->size, index);
+        } else {
+            jitc_var_traverse(1, index);
         }
+
+        v->output_flag = (VarType) v->type != VarType::Void;
     }
 
-    ts->scheduled.clear();
-    ts->side_effects.clear();
-
-    return !schedule.empty();
+    source.clear();
 }
 
 /// Evaluate all computation that is queued on the given ThreadState
@@ -510,7 +507,12 @@ void jitc_eval(ThreadState *ts) {
     visited.clear();
     schedule.clear();
 
-    if (!jitc_eval_prepare(ts, true))
+    jitc_eval_prepare(ts->scheduled);
+
+    if ((jitc_flags() & (uint32_t) JitFlag::DisableSideEffects) == 0)
+        jitc_eval_prepare(ts->side_effects);
+
+    if (schedule.empty())
         return;
 
     // Order variables from large to small while preserving dependencies
@@ -648,6 +650,7 @@ XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
                                  uint32_t n_in, const uint32_t *in,
                                  uint32_t n_out, const uint32_t *out,
                                  const uint32_t *out_nested,
+                                 uint32_t n_se, const uint32_t *se,
                                  const char *ret_label) {
     visited.clear();
     schedule.clear();
@@ -661,9 +664,10 @@ XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
     }
     for (uint32_t i = 0; i < n_out; ++i)
         ts->scheduled.push_back(out_nested[i]);
+    for (uint32_t i = 0; i < n_se; ++i)
+        ts->scheduled.push_back(se[i]);
 
-    if (!jitc_eval_prepare(ts, false))
-        return XXH128_hash_t{ 0, 0 };
+    jitc_eval_prepare(ts->scheduled, false);
 
     bool function_interface = ret_label == nullptr;
     uint32_t n_regs = n_regs_used,

@@ -229,6 +229,10 @@ void jitc_shutdown(int light) {
                 state.tss.size(), state.tss.size() > 1 ? "s" : "");
 
         for (ThreadState *ts : state.tss) {
+            for (uint32_t i : ts->side_effects) {
+                if (state.variables.find(i) != state.variables.end())
+                    jitc_var_dec_ref_ext(i);
+            }
             jitc_free_flush(ts);
             if (ts->backend == JitBackend::CUDA) {
                 scoped_set_context guard(ts->context);
@@ -275,14 +279,6 @@ void jitc_shutdown(int light) {
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
         uint32_t n_leaked = 0;
-        std::vector<uint32_t> leaked_side_effects;
-        for (auto &kv : state.variables) {
-            const Variable &v = kv.second;
-            if (v.side_effect && v.ref_count_ext == 1 && v.ref_count_int == 0)
-                leaked_side_effects.push_back(kv.first);
-        }
-        for (uint32_t i : leaked_side_effects)
-            jitc_var_dec_ref_ext(i);
         for (auto &var : state.variables) {
             if (n_leaked == 0)
                 jitc_log(Warn, "jit_shutdown(): detected variable leaks:");

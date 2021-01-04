@@ -149,6 +149,16 @@ uint32_t jit_side_effects_scheduled(JitBackend backend) {
     return (size_t) thread_state(backend)->side_effects.size();
 }
 
+void jit_side_effects_rollback(JitBackend backend, uint32_t value) {
+    lock_guard guard(state.mutex);
+    auto &se = thread_state(backend)->side_effects;
+    if (value > se.size())
+        jitc_raise("jit_side_effects_rollback(): position lies beyond the end of the queue!");
+    for (uint32_t i = value; i < se.size(); ++i)
+        jitc_var_dec_ref_ext(se[i]);
+    se.resize(value);
+}
+
 void* jit_cuda_stream() {
     lock_guard guard(state.mutex);
     return jitc_cuda_stream();
@@ -610,11 +620,11 @@ const void *jit_registry_attr_data(const char *domain, const char *name) {
 
 void jit_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out_nested,
-                   const uint32_t *out_nested, const uint32_t *n_se,
+                   const uint32_t *out_nested, const uint32_t *se_offset,
                    uint32_t *out) {
     lock_guard guard(state.mutex);
-    jitc_var_vcall(domain, self, n_inst, n_in, in, n_out_nested, out_nested, n_se,
-                   out);
+    jitc_var_vcall(domain, self, n_inst, n_in, in, n_out_nested, out_nested,
+                   se_offset, out);
 }
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)

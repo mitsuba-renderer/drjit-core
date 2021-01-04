@@ -37,14 +37,24 @@ struct VCall {
     /// Output variables *per instance*
     std::vector<uint32_t> out_nested;
 
-    /// Number of side effects *per instance*
-    std::vector<uint32_t> n_se;
+    /// Per-instance offsets into side effects list
+    std::vector<uint32_t> se_offset;
     /// Compressed side effect index list
     std::vector<uint32_t> se;
 
     ~VCall() {
         for (uint32_t index : out_nested)
             jitc_var_dec_ref_ext(index);
+        clear_side_effects();
+    }
+
+    void clear_side_effects() {
+        if (se_offset.empty() || se_offset.back() == se_offset.front())
+            return;
+        for (uint32_t index : se)
+            jitc_var_dec_ref_ext(index);
+        se.clear();
+        std::fill(se_offset.begin(), se_offset.end(), 0);
     }
 };
 
@@ -59,7 +69,7 @@ jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
 // Weave a virtual function call into the computation graph
 void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
                     uint32_t n_in, const uint32_t *in, uint32_t n_out_nested,
-                    const uint32_t *out_nested, const uint32_t *n_se,
+                    const uint32_t *out_nested, const uint32_t *se_offset,
                     uint32_t *out) {
 
     // =====================================================
@@ -121,6 +131,11 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
                 "jit_var_vcall(): input/output arrays have incompatible size!");
     }
 
+    ThreadState *ts = thread_state(backend);
+    if (ts->side_effects.size() != se_offset[n_inst])
+        jitc_raise("jitc_var_vcall(): side effect queue doesn't have the "
+                   "expected size!");
+
     // =====================================================
     // 2. Allocate call data
     // =====================================================
@@ -132,9 +147,15 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     // Collect accesses to evaluated variables/pointers
     for (uint32_t i = 0; i < n_inst; ++i) {
         offsets.push_back(data_size);
+
         for (uint32_t j = 0; j < n_out; ++j)
             jitc_var_vcall_collect_data(data_map, data_size, i,
                                         out_nested[j + i * n_out]);
+
+        for (uint32_t j = se_offset[i]; j != se_offset[i + 1]; ++j)
+            jitc_var_vcall_collect_data(data_map, data_size, i,
+                                        ts->side_effects[j]);
+
         // Restore to full alignment
         data_size = (data_size + 7) / 8 * 8;
     }
@@ -161,9 +182,10 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
         }
 
         Ref offsets_holder = steal(jitc_var_mem_map(backend, VarType::UInt32,
-                                                   offsets_d, n_inst, 1)),
+                                                    offsets_d, n_inst, 1)),
             data_holder = steal(jitc_var_mem_map(backend, VarType::UInt8,
                                                  data_d, data_size, 1));
+
         offsets_v = steal(jitc_var_new_pointer(backend, offsets_d, offsets_holder, 0));
         data_v = steal(jitc_var_new_pointer(backend, data_d, data_holder, 0));
     }
@@ -189,7 +211,21 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     vcall->in_nested.reserve(n_in);
     vcall->out.reserve(n_out);
     vcall->out_nested.reserve(n_out_nested);
-    vcall->n_se = std::vector<uint32_t>(n_se, n_se + n_inst);
+    vcall->se_offset.reserve(n_inst + 1);
+    vcall->se = std::vector<uint32_t>(
+        ts->side_effects.begin() + se_offset[0],
+        ts->side_effects.begin() + se_offset[n_inst]);
+    ts->side_effects.resize(se_offset[0]);
+
+    uint32_t se_count = se_offset[n_inst] - se_offset[0];
+    if (se_count) {
+        /* The call has side effects. Preserve this information via a dummy
+           variable marked as a side effect, which references the call. */
+        uint32_t special_id = special;
+        uint32_t dummy =
+            jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, &special_id);
+        jitc_var_mark_side_effect(dummy, 0);
+    }
 
     std::vector<bool> coherent(n_out, true);
     for (uint32_t i = 0; i < n_inst; ++i) {
@@ -202,7 +238,9 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
             jitc_var_inc_ref_ext(index);
             vcall->out_nested.push_back(index);
         }
+        vcall->se_offset.push_back(se_offset[i] - se_offset[0]);
     }
+    vcall->se_offset.push_back(se_offset[n_inst] - se_offset[0]);
 
 
     uint32_t n_devirt = 0;
@@ -224,10 +262,11 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     }
 
     jitc_log(Info,
-             "jit_var_vcall(r%u): %u instances, %u inputs, %u outputs (%u "
-             "devirtualized), %u side effects, %u bytes of call data", self,
-             n_inst, n_in, n_out, n_devirt, n_se[n_inst - 1] - n_se[0],
-             data_size);
+             "jit_var_vcall(r%u): %u instance%s, %u input%s, %u output%s (%u "
+             "devirtualized), %u side effect%s, %u byte%s of call data",
+             self, n_inst, n_inst == 1 ? "" : "s", n_in, n_in == 1 ? "" : "s",
+             n_out, n_out == 1 ? "" : "s", n_devirt, se_count,
+             se_count == 1 ? "" : "s", data_size, data_size == 1 ? "" : "s");
 
     // =====================================================
     // 5. Create output variables
@@ -466,7 +505,11 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
             ts, in_size, in_align, out_size, out_align, data_reg != 0, n_in,
             vcall->in.data(), n_out, vcall->out.data(),
             vcall->out_nested.data() + n_out * i,
+            vcall->se_offset[i + 1] - vcall->se_offset[i],
+            vcall->se.data() + vcall->se_offset[i],
             vcall->branch ? ret_label : nullptr);
+
+    vcall->clear_side_effects();
 
     // =====================================================
     // 4. Restore previously backed-up JIT state
@@ -703,10 +746,10 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
         return;
 
     const Variable *v = jitc_var(index);
-    if (v->placeholder_iface || v->literal)
-        return;
 
-    if (v->data || (VarType) v->type == VarType::Pointer) {
+    if (v->placeholder_iface) {
+        return;
+    } else if (v->data || (VarType) v->type == VarType::Pointer) {
         uint32_t tsize = type_size[v->type];
         data_offset = (data_offset + tsize - 1) / tsize * tsize;
         data_map.emplace(key, data_offset);

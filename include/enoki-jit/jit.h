@@ -1186,33 +1186,46 @@ extern JIT_EXPORT void jit_prefix_pop(JitBackend backend);
  *
  * Certain Enoki operations can operate in two different ways: they can be
  * executed at once, or they can be recorded to postpone evaluation to a later
- * point. The latter is generally more efficient because it enables
- * optimizations (fusion of multiple operations, exchange of information via
- * registers instead of global memory, etc.). The downside is that recording
- * computation is generally more complex/fragile and less suitable to
- * interactive software development (one e.g. cannot simply print array
- * contents while something is being recorded).
- *
- * The following list of flags can be used to control the behavior of the JIT
- * compiler. The enoki-jit library actually doesn't do very much with this
- * flag: the main effect is that \ref jit_eval() will throw an exception when
- * it is called while the <tt>RecordingLoop</tt> and <tt>RecordingVCall<tt>
- * flags are set. The main behavioral differences will typically be in found in
- * code using enoki-jit that queries this flag.
+ * point. The latter is generally more efficient because it enables fusion of
+ * multiple operations that will then exchange information via registers
+ * instead of global memory. The downside is that recording computation is
+ * generally more complex/fragile and less suitable to interactive software
+ * development (one e.g. cannot simply print array contents while something is
+ * being recorded). The following list of flags can be used to control the
+ * behavior of these features.
  */
 #if defined(__cplusplus)
 enum class JitFlag : uint32_t {
-    // Default (eager) execute loops and virtual function calls at once
-    Default        = 0,
+    /// Record loops instead of evaluating them using a wavefront per iteration
+    LoopRecord     = 1,
 
-    VCallOptimize  = 1,
-    VCallBranch = 2
+    /// Enable constant propagation and elide unnecessary loop variables
+    LoopOptimize   = 2,
+
+    /// Record virtual function calls instead of gather/scatter-based approach
+    VCallRecord    = 4,
+
+    /// Enable constant propagation and elide unnecessary function arguments
+    VCallOptimize  = 8,
+
+    /// Implement virtual function calls via indirect branches instead of calls
+    VCallBranch    = 16,
+
+    /// Force execution through OptiX even if a kernel doesn't use ray tracing
+    ForceOptiX     = 32,
+
+    /// Temporarily disable evaluation of statements with side effects
+    DisableSideEffects = 64
 };
 #else
 enum JitFlag {
-    JitFlagDefault = 0,
-    JitFlagRecordLoops = 1,
-    JitFlagRecordVCall = 4
+    JitFlagLoopRecord        = 1,
+    JitFlagLoopOptimize      = 2,
+    JitFlagVCallRecord       = 4,
+    JitFlagVCallOptimize     = 8,
+    JitFlagVCallBranch       = 16,
+    JitFlagForceOptiX        = 32
+    JitFlagDisableSideEffets = 64
 };
 #endif
 
@@ -1250,6 +1263,16 @@ jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
 extern JIT_EXPORT uint32_t jit_side_effects_scheduled(JitBackend backend);
 
 /**
+ * \brief Discard scheduled side effects
+ *
+ * This function rewinds the queue of scheduled side effects to an earlier
+ * position obtained from \ref jit_side_effects_scheduled(). This is useful to
+ * recover when something goes wrong while recording a computation symbolically.
+ */
+extern JIT_EXPORT void jit_side_effects_rollback(JitBackend backend,
+                                                 uint32_t value);
+
+/**
  * \brief Pushes a new mask variable onto the mask stack
  *
  * In advanced usage of Enoki-JIT (e.g. recorded loops, virtual function calls,
@@ -1274,7 +1297,8 @@ extern JIT_EXPORT void jit_var_vcall(const char *domain, uint32_t self,
                                      uint32_t n_inst, uint32_t n_in,
                                      const uint32_t *in, uint32_t n_out_nested,
                                      const uint32_t *out_nested,
-                                     const uint32_t *n_se, uint32_t *out);
+                                     const uint32_t *se_offset,
+                                     uint32_t *out);
 
 // ====================================================================
 //                          Horizontal reductions

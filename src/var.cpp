@@ -351,8 +351,6 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
         vo = jitc_var(index);
     }
 
-    jitc_var_inc_ref_ext(index, vo);
-
     if (unlikely(std::max(state.log_level_stderr, state.log_level_callback) >=
                  LogLevel::Debug)) {
         var_buffer.clear();
@@ -387,6 +385,8 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
 
         jitc_log(Debug, "%s", var_buffer.get());
     }
+
+    jitc_var_inc_ref_ext(index, vo);
 
     return index;
 }

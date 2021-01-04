@@ -44,43 +44,38 @@ namespace enoki {
 
 template <typename Result, typename Func, JitBackend Backend, typename Base,
           typename... Args>
-Result vcall_impl(const Func &func, const JitArray<Backend, Base *> &self,
-                  const Args &... args) {
-    const char *domain = "Base";
-    uint32_t n_inst = jit_registry_get_max(domain);
-
+Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
+                  const JitArray<Backend, Base *> &self, const Args &... args) {
     Result result;
 
-    // if (n_inst == 0) { /// XXX
-    //     return zero<Result>(ek::width(args));
-    // } else { ... }
-
     ek_index_vector indices_in, indices_out_all;
-    ek_vector<uint32_t> se_count(n_inst, 0);
+    ek_vector<uint32_t> se_count(n_inst + 1, 0);
 
     (collect_indices(indices_in, args), ...);
+    se_count[0] = jit_side_effects_scheduled(Backend);
 
     for (uint32_t i = 1; i <= n_inst; ++i) {
         char label[128];
         snprintf(label, sizeof(label), "VCall: %s [instance %u]", domain, i);
         Base *base = (Base *) jit_registry_get_ptr(domain, i);
-        se_count[i - 1] = jit_side_effects_scheduled(Backend);
 
         jit_prefix_push(Backend, label);
         try {
+            jit_set_flag(JitFlag::DisableSideEffects, 1);
             if constexpr (std::is_same_v<Result, std::nullptr_t>) {
                 func(base, args...);
             } else {
                 collect_indices(indices_out_all, func(base, args...));
-
             }
+            jit_set_flag(JitFlag::DisableSideEffects, 0);
         } catch (...) {
-            /// XXX reset side effects to beginning?
             jit_prefix_pop(Backend);
+            jit_side_effects_rollback(Backend, se_count[0]);
+            jit_set_flag(JitFlag::DisableSideEffects, 0);
             throw;
         }
+        se_count[i] = jit_side_effects_scheduled(Backend);
         jit_prefix_pop(Backend);
-
     }
 
     ek_index_vector indices_out(indices_out_all.size() / n_inst);
@@ -100,8 +95,35 @@ template <typename Func, JitBackend Backend, typename Base, typename... Args>
 auto vcall(const Func &func, const JitArray<Backend, Base *> &self,
            const Args &... args) {
     using Result = decltype(func(std::declval<Base *>(), args...));
-    using Result_2 = std::conditional_t<std::is_void_v<Result>, std::nullptr_t, Result>;
-    return vcall_impl<Result_2>(func, self, ek::placeholder(args)...);
+    constexpr bool IsVoid = std::is_void_v<Result>;
+    using Result_2 = std::conditional_t<IsVoid, std::nullptr_t, Result>;
+
+    const char *domain = "Base";
+    uint32_t n_inst = jit_registry_get_max(domain);
+
+#if 0
+    if (n_inst == 0) {
+        if constexpr (IsVoid)
+            return std::nullptr_t;
+        else
+            return zero<Result>(ek::width(args...));
+    } else if (n_inst == 1) {
+        uint32_t i = 1;
+        Base *inst = nullptr;
+        do {
+            inst = (Base *) jit_registry_get_ptr(domain, i++);
+        } while (!inst);
+
+        if constexpr (IsVoid) {
+            func(inst, args...);
+            return std::nullptr_t;
+        } else {
+            return func(inst, args...);
+        }
+    }
+#endif
+
+    return vcall_impl<Result_2>(domain, n_inst, func, self, ek::placeholder(args)...);
 }
 
 TEST_CUDA(01_symbolic_vcall) {
@@ -400,10 +422,153 @@ TEST_CUDA(05_extra_data) {
 }
 
 
-#if 0
-/// 1 instance!
-/// function that don't receive/return *any* arrays
-/// function with only side effects
-/// evaluating multiple times, and ensuring that side effects only happen once
-/// sequence of multiple vcalls..
-#endif
+TEST_CUDA(06_side_effects) {
+    /*  This tests three things:
+       - side effects in virtual functions
+       - functions without inputs/outputs
+       - functions with *only* side effects
+    */
+
+    struct Base {
+        virtual void go() = 0;
+    };
+
+    struct F1 : Base {
+        Float buffer = zero<Float>(5);
+        void go() override {
+            scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(1));
+            scatter_reduce(ReduceOp::Add, buffer, Float(2), UInt32(3));
+        }
+    };
+
+    struct F2 : Base {
+        Float buffer = arange<Float>(4);
+        void go() override {
+            scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(2));
+        }
+    };
+
+    using BasePtr = Array<Base *>;
+    BasePtr self = arange<UInt32>(11) % 3;
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        for (uint32_t j = 0; j < 2; ++j) {
+            jit_set_flag(JitFlag::VCallOptimize, i);
+            jit_set_flag(JitFlag::VCallBranch, j);
+
+            F1 f1; F2 f2;
+            uint32_t i1 = jit_registry_put("Base", &f1);
+            uint32_t i2 = jit_registry_put("Base", &f2);
+            jit_assert(i1 == 1 && i2 == 2);
+
+            vcall([](Base *self2) { self2->go(); }, self);
+            jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
+            jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
+
+            jit_registry_remove(&f1);
+            jit_registry_remove(&f2);
+            jit_registry_trim();
+        }
+    }
+}
+
+TEST_CUDA(07_side_effects_only_once) {
+    // This tests ensures that side effects baked into a function only happen
+    // once, even when that function is evaluated multiple times.
+
+    struct Base {
+        virtual ek_tuple<Float, Float> f() = 0;
+    };
+
+    struct G1 : Base {
+        Float buffer = zero<Float>(5);
+        ek_tuple<Float, Float> f() override {
+            scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(1));
+            return { 1, 2 };
+        }
+    };
+
+    struct G2 : Base {
+        Float buffer = zero<Float>(5);
+        ek_tuple<Float, Float> f() override {
+            scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(2));
+            return { 2, 1 };
+        }
+    };
+
+    using BasePtr = Array<Base *>;
+    BasePtr self = arange<UInt32>(11) % 3;
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        for (uint32_t j = 0; j < 2; ++j) {
+            jit_set_flag(JitFlag::VCallOptimize, i);
+            jit_set_flag(JitFlag::VCallBranch, j);
+
+            G1 g1; G2 g2;
+            uint32_t i1 = jit_registry_put("Base", &g1);
+            uint32_t i2 = jit_registry_put("Base", &g2);
+            jit_assert(i1 == 1 && i2 == 2);
+
+            auto result = vcall([](Base *self2) { return self2->f(); }, self);
+            Float f1 = result.template get<0>();
+            Float f2 = result.template get<1>();
+            jit_assert(strcmp(f1.str(), "[0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1]") == 0);
+            jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
+            jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
+            jit_assert(f2.data() == nullptr);
+            jit_assert(strcmp(f2.str(), "[0, 2, 1, 0, 2, 1, 0, 2, 1, 0, 2]") == 0);
+            jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
+            jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
+
+            jit_registry_remove(&g1);
+            jit_registry_remove(&g2);
+            jit_registry_trim();
+        }
+    }
+}
+
+TEST_CUDA(08_multiple_calls) {
+    // This tests ensures that a function can be called several times,
+    // reusing the generated code (at least in the function-based variant)
+
+    struct Base {
+        virtual Float f(Float) = 0;
+    };
+
+    struct H1 : Base {
+        Float f(Float x) override {
+            return x + Float(1);
+        }
+    };
+
+    struct H2 : Base {
+        Float f(Float x) override {
+            return x + Float(2);
+        }
+    };
+
+    using BasePtr = Array<Base *>;
+    BasePtr self = arange<UInt32>(10) % 3;
+    Float x = opaque<Float>(10, 1);
+
+    H1 h1; H2 h2;
+    uint32_t i1 = jit_registry_put("Base", &h1);
+    uint32_t i2 = jit_registry_put("Base", &h2);
+    jit_assert(i1 == 1 && i2 == 2);
+
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        for (uint32_t j = 0; j < 2; ++j) {
+            jit_set_flag(JitFlag::VCallOptimize, i);
+            jit_set_flag(JitFlag::VCallBranch, j);
+
+            Float y = vcall([](Base *self2, Float x2) { return self2->f(x2); }, self, x);
+            Float z = vcall([](Base *self2, Float x2) { return self2->f(x2); }, self, y);
+
+            jit_assert(strcmp(z.str(), "[0, 12, 14, 0, 12, 14, 0, 12, 14, 0]") == 0);
+        }
+    }
+
+    jit_registry_remove(&h1);
+    jit_registry_remove(&h2);
+}
