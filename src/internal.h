@@ -243,10 +243,34 @@ struct ReleaseChain {
     ReleaseChain *next = nullptr;
 };
 
-/// A few forward declarations
-struct OptixPipelineCompileOptions;
-struct OptixShaderBindingTable;
+/// A few forward declarations for OptiX
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
 using OptixProgramGroup = void *;
+
+struct OptixShaderBindingTable {
+    void* raygenRecord;
+    void* exceptionRecord;
+    void* missRecordBase;
+    unsigned int missRecordStrideInBytes;
+    unsigned int missRecordCount;
+    void* hitgroupRecordBase;
+    unsigned int hitgroupRecordStrideInBytes;
+    unsigned int hitgroupRecordCount;
+    void* callablesRecordBase;
+    unsigned int callablesRecordStrideInBytes;
+    unsigned int callablesRecordCount;
+};
+
+struct OptixPipelineCompileOptions {
+    int usesMotionBlur;
+    unsigned int traversableGraphFlags;
+    int numPayloadValues;
+    int numAttributeValues;
+    unsigned int exceptionFlags;
+    const char* pipelineLaunchParamsVariableName;
+    unsigned int usesPrimitiveTypeFlags;
+};
+#endif
 
 /// Represents a single stream of a parallel communication
 struct ThreadState {
@@ -326,11 +350,11 @@ struct ThreadState {
     /// OptiX device context
     void *optix_context = nullptr;
 
-    /// Pointer to a user-provided OptiX compile options data structure
-    const OptixPipelineCompileOptions *optix_pipeline_compile_options = nullptr;
+    /// User-provided OptiX compile options data structure
+    OptixPipelineCompileOptions optix_pipeline_compile_options { };
 
-    /// Pointer to a user-provided OptiX shader binding table
-    const OptixShaderBindingTable *optix_shader_binding_table = nullptr;
+    /// User-provided OptiX shader binding table
+    OptixShaderBindingTable optix_shader_binding_table {};
 
     /// User-provided list of program groups
     std::vector<OptixProgramGroup> optix_program_groups;
@@ -339,6 +363,11 @@ struct ThreadState {
     uint32_t optix_launch_width = 0;
     uint32_t optix_launch_height = 0;
     uint32_t optix_launch_samples = 0;
+
+    /// Components for a tiny self-contained OptiX pipeline for testcases etc.
+    OptixProgramGroup optix_program_group_base = nullptr;
+    OptixModule optix_module_base = nullptr;
+    void *optix_miss_record_base = nullptr;
 #endif
 };
 

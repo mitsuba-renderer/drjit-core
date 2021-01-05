@@ -31,19 +31,18 @@ struct ScheduledGroup {
         : size(size), start(start), end(end) { }
 };
 
-/// Hashing helper for GlobalSet
-struct GlobalsHash {
-    size_t operator()(const std::string &s) const {
-        return hash_str(s.c_str(), s.length());
+/// Hashing helper for GlobalMap
+struct XXH128Hash {
+    size_t operator()(const XXH128_hash_t &h) const { return h.low64; }
+};
+struct XXH128Eq {
+    size_t operator()(const XXH128_hash_t &h1, const XXH128_hash_t &h2) const {
+        return h1.low64 == h2.low64 && h1.high64 == h2.high64;
     }
 };
 
 /// Cache data structure for global declarations
-using GlobalsSet =
-    tsl::robin_set<std::string, GlobalsHash,
-                   std::equal_to<std::string>,
-                   std::allocator<std::string>,
-                   /* StoreHash = */ true>;
+using GlobalsMap = tsl::robin_map<XXH128_hash_t, uint32_t, XXH128Hash, XXH128Eq>;
 
 /// Name of the last generated kernel
 extern char kernel_name[52];
@@ -52,10 +51,15 @@ extern char kernel_name[52];
 extern std::vector<std::string> globals;
 
 /// Ensure uniqueness of global declarations (intrinsics, virtual functions)
-extern GlobalsSet globals_set;
+extern GlobalsMap globals_map;
 
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
 /// Are we recording an OptiX kernel?
 extern bool uses_optix;
+
+/// List of optix callable references in call sites, used to create the SBT
+extern std::vector<uint32_t> optix_callables;
+#endif
 
 /// Does the program contain a %data register so far? (for branch-based vcalls)
 extern bool data_reg_global;

@@ -10,6 +10,10 @@ foreach (TEST_FILE ${TEST_FILES})
   target_link_libraries(test_${TEST_NAME} PRIVATE enoki-jit)
   target_compile_definitions(test_${TEST_NAME} PRIVATE -DTEST_NAME="${TEST_NAME}")
   target_compile_features(test_${TEST_NAME} PRIVATE cxx_std_11)
+
+  if (ENOKI_JIT_ENABLE_OPTIX)
+    target_compile_definitions(test_${TEST_NAME} PRIVATE -DENOKI_JIT_ENABLE_OPTIX=1)
+  endif()
   add_test(
     NAME ${TEST_NAME}
     COMMAND test_${TEST_NAME}

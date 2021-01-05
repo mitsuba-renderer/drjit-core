@@ -12,7 +12,7 @@ static constexpr LogLevel Info  = LogLevel::Info;
 static constexpr LogLevel Debug = LogLevel::Debug;
 static constexpr LogLevel Trace = LogLevel::Trace;
 
-extern int test_register(const char *name, void (*func)(), bool cuda, const char *flags = nullptr);
+extern int test_register(const char *name, void (*func)(), const char *flags = nullptr);
 extern "C" void log_level_callback(LogLevel cb, const char *msg);
 
 using FloatC  = CUDAArray<float>;
@@ -32,7 +32,12 @@ using MaskL   = LLVMArray<bool>;
         test_register("test" #name "_cuda",                                    \
                       test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
                                  MaskC, CUDAArray>,                            \
-                      true, ##__VA_ARGS__);                                    \
+                      ##__VA_ARGS__);                                          \
+    int test##name##_o =                                                       \
+        test_register("test" #name "_optix",                                   \
+                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
+                                 MaskC, CUDAArray>,                            \
+                      ##__VA_ARGS__);                                          \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
@@ -45,7 +50,7 @@ using MaskL   = LLVMArray<bool>;
         test_register("test" #name "_llvm",                                    \
                       test##name<JitBackend::LLVM, FloatL, Int32L, UInt32L,    \
                                  MaskL, LLVMArray>,                            \
-                      false, ##__VA_ARGS__);                                   \
+                      ##__VA_ARGS__);                                          \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
@@ -58,12 +63,17 @@ using MaskL   = LLVMArray<bool>;
         test_register("test" #name "_cuda",                                    \
                       test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
                                  MaskC, CUDAArray>,                            \
-                      true, ##__VA_ARGS__);                                    \
+                      ##__VA_ARGS__);                                          \
+    int test##name##_o =                                                       \
+        test_register("test" #name "_optix",                                   \
+                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
+                                 MaskC, CUDAArray>,                            \
+                      ##__VA_ARGS__);                                          \
     int test##name##_l =                                                       \
         test_register("test" #name "_llvm",                                    \
                       test##name<JitBackend::LLVM, FloatL, Int32L, UInt32L,    \
                                  MaskL, LLVMArray>,                            \
-                      false, ##__VA_ARGS__);                                   \
+                      ##__VA_ARGS__);                                          \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()

@@ -21,9 +21,6 @@
 //  reuse across jitc_eval() calls.
 // ====================================================================
 
-/// Are we recording an OptiX kernel?
-bool uses_optix = false;
-
 /// Ordered list of variables that should be computed
 std::vector<ScheduledVariable> schedule;
 
@@ -45,7 +42,7 @@ bool data_reg_global = false;
 std::vector<std::string> globals;
 
 /// Ensure uniqueness of global declarations (intrinsics, virtual functions)
-GlobalsSet globals_set;
+GlobalsMap globals_map;
 
 /// Temporary scratch space for scheduled tasks (LLVM only)
 static std::vector<Task *> scheduled_tasks;
@@ -58,6 +55,14 @@ char kernel_name[52 /* strlen("__direct_callable__") + 32 + 1 */] { };
 
 // Keeps track of the number of registers used so far (for vcalls)
 static uint32_t n_regs_used = 0;
+
+/// Are we recording an OptiX kernel?
+bool uses_optix = false;
+
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+/// List of direct callables for OptiX virtual function calls
+std::vector<uint32_t> optix_callables;
+#endif
 
 // ====================================================================
 
@@ -97,11 +102,18 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
 void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     JitBackend backend = ts->backend;
 
+    kernel_params.clear();
+    globals.clear();
+    globals_map.clear();
+
+    data_reg_global = false;
+
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
     uses_optix = ts->backend == JitBackend::CUDA &&
                  (jitc_flags() & (uint32_t) JitFlag::ForceOptiX);
 
-    kernel_params.clear();
-    data_reg_global = false;
+    optix_callables.clear();
+#endif
 
     uint32_t n_params_in      = 0,
              n_params_out     = 0,
@@ -175,7 +187,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             v->param_type = ParamType::Register;
             v->param_offset = 0xFFFF;
             n_side_effects += v->side_effect;
-            uses_optix |= v->optix;
+            #if defined(ENOKI_JIT_ENABLE_OPTIX)
+                uses_optix |= v->optix;
+            #endif
         }
 
         v->reg_index = n_regs++;
@@ -243,8 +257,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                   group.size, buffer.get());
     }
 
-    globals.clear();
-    globals_set.clear();
     buffer.clear();
     if (backend == JitBackend::CUDA)
         jitc_assemble_cuda(ts, group, n_regs, kernel_param_count);
@@ -262,6 +274,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         jitc_fail("jit_eval(): could not find kernel name!");
     memcpy((char *) name_start - (uses_optix ? 10 : 6), kernel_name,
            strlen(kernel_name));
+
 
     if (unlikely(trace))
         jitc_trace("%s", buffer.get());
@@ -707,9 +720,8 @@ XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
              (unsigned long long) kernel_hash.low64);
     memcpy(id, tmp, 32);
 
-    std::string key(kernel_str, kernel_length);
-    if (globals_set.insert(key).second)
-        globals.push_back(key);
+    if (globals_map.emplace(kernel_hash, globals_map.size()).second)
+        globals.push_back(std::string(kernel_str, kernel_length));
     buffer.rewind(kernel_length);
 
     return kernel_hash;

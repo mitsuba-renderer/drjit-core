@@ -16,10 +16,13 @@
 #  include <mach-o/dyld.h>
 #endif
 
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#  include <enoki-jit/optix.h>
+#endif
+
 struct Test {
     const char *name;
     void (*func)();
-    bool cuda;
     const char *flags;
 };
 
@@ -156,13 +159,13 @@ bool test_check_log(const char *test_name, char *log, bool write_ref) {
 
     FILE *f = fopen(test_fname, "w");
     if (!f) {
-        fprintf(stderr, "\ntest_check_log(): Could not create file \"%s\"!\n", test_fname);
+        fprintf(stderr, "\ntest_check_log(): Could not create file \"tests/%s\"!\n", test_fname);
         exit(EXIT_FAILURE);
     }
 
     size_t log_len = strlen(log);
     if (log_len > 0 && fwrite(log, log_len, 1, f) != 1) {
-        fprintf(stderr, "\ntest_check_log(): Error writing to \"%s\"!\n", test_fname);
+        fprintf(stderr, "\ntest_check_log(): Error writing to \"tests/%s\"!\n", test_fname);
         exit(EXIT_FAILURE);
     }
     fclose(f);
@@ -174,13 +177,13 @@ bool test_check_log(const char *test_name, char *log, bool write_ref) {
 
     f = fopen(test_fname, "w");
     if (!f) {
-        fprintf(stderr, "\ntest_check_log(): Could not create file \"%s\"!\n", test_fname);
+        fprintf(stderr, "\ntest_check_log(): Could not create file \"tests/%s\"!\n", test_fname);
         exit(EXIT_FAILURE);
     }
 
     log_len = strlen(log);
     if (log_len > 0 && fwrite(log, log_len, 1, f) != 1) {
-        fprintf(stderr, "\ntest_check_log(): Error writing to \"%s\"!\n", test_fname);
+        fprintf(stderr, "\ntest_check_log(): Error writing to \"tests/%s\"!\n", test_fname);
         exit(EXIT_FAILURE);
     }
     fclose(f);
@@ -191,7 +194,7 @@ bool test_check_log(const char *test_name, char *log, bool write_ref) {
     snprintf(test_fname, 128, "out_%s/%s.ref", TEST_NAME, test_name);
     f = fopen(test_fname, "r");
     if (!f) {
-        fprintf(stderr, "\ntest_check_log(): Could not open file \"%s\"!\n", test_fname);
+        fprintf(stderr, "\ntest_check_log(): Could not open file \"tests/%s\"!\n", test_fname);
         return false;
     }
 
@@ -219,10 +222,10 @@ bool test_check_log(const char *test_name, char *log, bool write_ref) {
     return result;
 }
 
-int test_register(const char *name, void (*func)(), bool cuda, const char *flags) {
+int test_register(const char *name, void (*func)(), const char *flags) {
     if (!tests)
         tests = new std::vector<Test>();
-    tests->push_back(Test{ name, func, cuda, flags });
+    tests->push_back(Test{ name, func, flags });
     return 0;
 }
 
@@ -274,7 +277,7 @@ int main(int argc, char **argv) {
     }
 
     int log_level_stderr = (int) LogLevel::Warn;
-    bool fail_fast = false, test_cuda = true, test_llvm = true,
+    bool fail_fast = false, test_cuda = true, test_optix = true, test_llvm = true,
          write_ref = false, help = false;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-w") == 0) {
@@ -285,8 +288,13 @@ int main(int argc, char **argv) {
             fail_fast = true;
         } else if (strcmp(argv[i], "-c") == 0) {
             test_llvm = false;
+            test_optix = false;
         } else if (strcmp(argv[i], "-l") == 0) {
             test_cuda = false;
+            test_optix = false;
+        } else if (strcmp(argv[i], "-o") == 0) {
+            test_cuda = false;
+            test_llvm = false;
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             help = true;
         } else {
@@ -303,6 +311,7 @@ int main(int argc, char **argv) {
         printf(" -e   Stop after the first failing test\n\n");
         printf(" -c   Only run CUDA tests\n\n");
         printf(" -l   Only run LLVM tests\n\n");
+        printf(" -o   Only run OptiX tests\n\n");
         printf(" -v   Be more verbose (can be repeated)\n\n");
         return 0;
     }
@@ -310,12 +319,18 @@ int main(int argc, char **argv) {
     try {
         jit_set_log_level_stderr((LogLevel) log_level_stderr);
         jit_init((test_llvm ? (uint32_t) JitBackend::LLVM : 0) |
-                 (test_cuda ? (uint32_t) JitBackend::CUDA : 0));
+                 ((test_cuda || test_optix) ? (uint32_t) JitBackend::CUDA : 0));
         jit_set_log_level_callback(LogLevel::Trace, log_level_callback);
         fprintf(stdout, "\n");
 
-        bool has_cuda = jit_has_backend(JitBackend::CUDA),
-             has_llvm = jit_has_backend(JitBackend::LLVM);
+        test_cuda &= jit_has_backend(JitBackend::CUDA);
+        test_llvm &= jit_has_backend(JitBackend::LLVM);
+
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+        test_optix &= jit_has_backend(JitBackend::CUDA);
+#else
+        test_optix = false;
+#endif
 
         if (!tests) {
             fprintf(stderr, "No tests registered!\n");
@@ -330,21 +345,33 @@ int main(int argc, char **argv) {
             tests_failed = 0;
 
         bool has_avx512 =
-            has_llvm && strstr(jit_llvm_target_features(), "+avx512f");
+            test_llvm && strstr(jit_llvm_target_features(), "+avx512f");
 
         for (auto &test : *tests) {
             fprintf(stdout, " - %s .. ", test.name);
 
-            if (( test.cuda && !has_cuda) ||
-                (!test.cuda && !has_llvm) ||
-                (!test.cuda && test.flags && strstr(test.flags, "avx512") && !has_avx512)) {
+            bool is_cuda = strstr(test.name, "_cuda"),
+                 is_llvm = strstr(test.name, "_llvm"),
+                 is_optix = strstr(test.name, "_optix");
+
+            if (is_cuda && !test_cuda ||
+                is_optix && !test_optix ||
+                is_llvm && !test_llvm) {
                 fprintf(stdout, "skipped.\n");
                 continue;
             }
+
             fflush(stdout);
             log_value.clear();
-            jit_init((uint32_t) (test.cuda ? JitBackend::CUDA : JitBackend::LLVM));
-            if (!test.cuda)
+            jit_init((uint32_t)((is_cuda || is_optix) ? JitBackend::CUDA
+                                                      : JitBackend::LLVM));
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+            jit_set_flag(JitFlag::ForceOptiX, is_optix);
+            if (is_optix)
+                jit_optix_context();
+#endif
+
+            if (test_llvm)
                 jit_llvm_set_target("skylake", nullptr, 8);
             auto before = std::chrono::high_resolution_clock::now();
             test.func();

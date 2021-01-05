@@ -163,7 +163,7 @@ void demo() {
 
     log_size = sizeof(log);
     jit_optix_check(optixProgramGroupCreate(context, pgd, 2 /* two at once */,
-                                             &pgo, log, &log_size, pg));
+                                            &pgo, log, &log_size, pg));
 
     // =====================================================
     // Shader binding table setup
@@ -203,7 +203,7 @@ void demo() {
         16, 16, 1
     );
 
-    // Do twice to verify caching
+    // Do four times to verify caching, with mask in it. 3 + 4
     for (int i = 0; i < 2; ++i) {
         // =====================================================
         // Generate a camera ray
@@ -227,7 +227,7 @@ void demo() {
             miss_sbt_index(0);
 
         UInt32 payload_0(0);
-        Mask mask(true);
+        Mask mask = true;
 
         // =====================================================
         // Launch a ray tracing call

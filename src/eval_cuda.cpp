@@ -36,7 +36,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                    params_global ? 8u : (n_params * (uint32_t) sizeof(void *)));
     } else {
        buffer.fmt(".const .align 8 .b8 params[%u];\n\n"
-                  ".entry __raygen__enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^() {\n",
+                  ".entry __raygen__^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^() {\n",
                   n_params * (uint32_t) sizeof(void *));
     }
 
@@ -214,8 +214,8 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
         if (out_size)
             buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
 
-        buffer.fmt(" %s_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
-                   uses_optix ? "__direct_callable__" : "func");
+        buffer.fmt(" %s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
+                   uses_optix ? "__direct_callable__" : "func_");
 
         if (has_data_arg) {
             buffer.put(".reg .u64 data");

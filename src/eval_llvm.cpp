@@ -179,9 +179,10 @@ static void jitc_llvm_process_intrinsic() {
     }
     buffer.put("\n\n");
     size_t after = buffer.size();
-    std::string key(buffer.get() + before, buffer.get() + after);
-    if (globals_set.insert(key).second)
-        globals.push_back(key);
+    if (globals_map
+            .emplace(XXH128(buffer.get() + before, after - before, 0),
+                     globals_map.size()).second)
+        globals.push_back(std::string(buffer.get() + before, after - before));
     buffer.rewind(after - before);
 
 }

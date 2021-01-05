@@ -35,9 +35,9 @@ extern JIT_EXPORT void jit_optix_check_impl(int errval, const char *file,
 /// Inform Enoki about a partially created OptiX pipeline
 extern JIT_EXPORT void
 jit_optix_configure(const OptixPipelineCompileOptions *pco,
-                     const OptixShaderBindingTable *sbt,
-                     const OptixProgramGroup *pg,
-                     uint32_t pg_count);
+                    const OptixShaderBindingTable *sbt,
+                    const OptixProgramGroup *pg,
+                    uint32_t pg_count);
 
 /**
  * \brief Insert a function call to optixTrace into the program

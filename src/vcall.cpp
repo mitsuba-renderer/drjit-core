@@ -497,10 +497,14 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
              jitc_var(vcall->id)->reg_index);
     size_t globals_offset = globals.size();
 
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+    size_t callable_offset = optix_callables.size();
+#endif
+
     std::vector<XXH128_hash_t> func_id(vcall->n_inst);
 
     ThreadState *ts = thread_state(vcall->backend);
-    for (uint32_t i = 0; i < vcall->n_inst; ++i)
+    for (uint32_t i = 0; i < vcall->n_inst; ++i) {
         func_id[i] = jitc_assemble_func(
             ts, in_size, in_align, out_size, out_align, data_reg != 0, n_in,
             vcall->in.data(), n_out, vcall->out.data(),
@@ -508,6 +512,16 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
             vcall->se_offset[i + 1] - vcall->se_offset[i],
             vcall->se.data() + vcall->se_offset[i],
             vcall->branch ? ret_label : nullptr);
+
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+        if (uses_optix && !vcall->branch) {
+            auto it = globals_map.find(func_id[i]);
+            if (it == globals_map.end())
+                jit_fail("jit_vcall_assemble(): could not find callable!");
+            optix_callables.push_back(it->second);
+        }
+#endif
+    }
 
     vcall->clear_side_effects();
 
@@ -540,45 +554,13 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
     }
 
     buffer.put("    {\n");
-    if (!vcall->branch) {
-        buffer.put("        proto: .callprototype");
-        if (out_size)
-            buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
-        buffer.put(" _(");
-        if (data_reg) {
-            buffer.put(".reg .u64 data");
-            if (in_size)
-                buffer.put(", ");
-        }
-        if (in_size)
-            buffer.fmt(".param .align %u .b8 params[%u]", in_align, in_size);
-        buffer.put(");\n");
-    }
 
     // =====================================================
     // 6. Insert call table and lookup sequence
     // =====================================================
 
-    if (vcall->branch)
-        buffer.put("        bt: .branchtargets\n");
-    else
-        buffer.put("        .global .u64 tbl[] = {\n");
-
-    for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-        buffer.fmt("            %s_%016llx%016llx%s",
-                   vcall->branch ? "l" : "func",
-                   (unsigned long long) func_id[i].high64,
-                   (unsigned long long) func_id[i].low64,
-                   i + 1 < vcall->n_inst ? ",\n" : "");
-    }
-
-    if (vcall->branch)
-        buffer.put(";\n\n");
-    else
-        buffer.put(" };\n\n");
-
     buffer.fmt("        setp.ne.u32 %%p3, %%r%u, 0;\n"
-               "        sub.u32 %%r3, %%r%u, 1;\n", self_reg, self_reg);
+               "        sub.sat.s32 %%r3, %%r%u, 1;\n", self_reg, self_reg);
 
     if (data_reg) {
         buffer.fmt("        mad.wide.u32 %%rd2, %%r3, 4, %%rd%u;\n"
@@ -586,11 +568,43 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
                    "        add.u64 %s, %%rd2, %%rd%u;\n",
                    offset_reg, vcall->branch ? "%data" : "%rd2", data_reg);
     }
+    buffer.putc('\n');
 
-    if (vcall->branch) {
-        buffer.put("        @%p3 brx.idx %r3, bt;\n");
+    if (!uses_optix) {
+        if (vcall->branch)
+            buffer.put("        bt: .branchtargets\n");
+        else
+            buffer.put("        .global .u64 tbl[] = {\n");
+
+        for (uint32_t i = 0; i < vcall->n_inst; ++i) {
+            buffer.fmt("            %s%016llx%016llx%s",
+                       vcall->branch ? "l_" : "func_",
+                       (unsigned long long) func_id[i].high64,
+                       (unsigned long long) func_id[i].low64,
+                       i + 1 < vcall->n_inst ? ",\n" : "");
+        }
+
+        if (vcall->branch)
+            buffer.put(";\n\n");
+        else
+            buffer.put(" };\n\n");
+
+        if (vcall->branch)
+            buffer.put("        @%p3 brx.idx %r3, bt;\n");
+        else
+            buffer.put("        @%p3 ld.global.u64 %rd3, tbl[%r3];\n");
     } else {
-        buffer.put("        @%p3 ld.global.u64 %rd3, tbl[%r3];\n");
+        if (vcall->branch) {
+            for (uint32_t i = 0; i < vcall->n_inst; ++i)
+                buffer.fmt("        setp.eq.u32 %%p3, %%r3, %u;\n"
+                           "        @%%p3 bra.uni l_%016llx%016llx;\n", i,
+                           (unsigned long long) func_id[i].high64,
+                           (unsigned long long) func_id[i].low64);
+        } else {
+            buffer.fmt("        add.u32 %%r3, %%r3, %zu;\n"
+                       "        call (%%rd3), _optix_call_direct_callable, (%%r3);\n",
+                       callable_offset);
+        }
     }
 
     // =====================================================
@@ -613,6 +627,22 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
         }
 
         buffer.put("\n        {\n");
+
+        // Call prototype
+        buffer.put("            proto: .callprototype");
+        if (out_size)
+            buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
+        buffer.put(" _(");
+        if (data_reg) {
+            buffer.put(".reg .u64 data");
+            if (in_size)
+                buffer.put(", ");
+        }
+        if (in_size)
+            buffer.fmt(".param .align %u .b8 params[%u]", in_align, in_size);
+        buffer.put(");\n");
+
+        // Input/output parameter arrays
         if (out_size)
             buffer.fmt("            .param .align %u .b8 out[%u];\n", out_align, out_size);
         if (in_size)
@@ -697,7 +727,8 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
         if (it == state.variables.end())
             continue;
         const Variable *v2 = &it->second;
-        buffer.fmt("        @!%%p3 mov.%s %s%u, 0;\n",
+        buffer.fmt("        %smov.%s %s%u, 0;\n",
+                   vcall->branch? "" : "@!%p3 ",
                    type_name_ptx_bin[v2->type],
                    type_prefix[v2->type], v2->reg_index);
     }
