@@ -560,15 +560,16 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
     // 6. Insert call table and lookup sequence
     // =====================================================
 
-    buffer.fmt("        setp.ne.u32 %%p3, %%r%u, 0;\n"
-               "        sub.sat.s32 %%r3, %%r%u, 1;\n", self_reg, self_reg);
+    buffer.fmt("        setp.ne.u32 %%p3, %%r%u, 0;\n", self_reg);
+    if (!uses_optix || data_reg)
+        buffer.fmt("        sub.u32 %%r3, %%r%u, 1;\n", self_reg);
 
-    if (data_reg) {
+    if (data_reg)
         buffer.fmt("        mad.wide.u32 %%rd2, %%r3, 4, %%rd%u;\n"
                    "        @%%p3 ld.global.u32 %%rd2, [%%rd2];\n"
                    "        add.u64 %s, %%rd2, %%rd%u;\n",
                    offset_reg, vcall->branch ? "%data" : "%rd2", data_reg);
-    }
+
     buffer.putc('\n');
 
     if (!uses_optix) {
@@ -596,52 +597,60 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
             buffer.put("        @%p3 ld.global.u64 %rd3, tbl[%r3];\n");
     } else {
         if (vcall->branch) {
-            uint32_t n = vcall->n_inst;
-            auto branch_i = [&func_id](uint32_t i) {
-                buffer.fmt("bra l_%016llx%016llx;\n",
-                           (unsigned long long) func_id[i].high64,
-                           (unsigned long long) func_id[i].low64);
+            auto branch_i = [&func_id, vcall_reg](uint32_t i) {
+                if (i == 0)
+                    buffer.fmt("bra l_%u_masked;\n", vcall_reg);
+                else
+                    buffer.fmt("bra l_%016llx%016llx;\n",
+                               (unsigned long long) func_id[i - 1].high64,
+                               (unsigned long long) func_id[i - 1].low64);
             };
 
-#if 0
-            // Binary search
-            uint32_t levels = log2i_ceil(n);
-            for (uint32_t l = 0; l < levels; ++l) {
-                for (uint32_t i = 0; i < (1 << l); ++i) {
-                    uint32_t start = (i + 0) << (levels - l),
-                             end = (i + 0) << (levels - l),
-                             mid = (start + end) / 2;
+            uint32_t n = vcall->n_inst + 1;
 
-                    if (start >= n)
-                        break;
-                    buffer.fmt("l_%u_%u_%u:\n", vcall_reg, l, i);
+            if (n < 8) {
+                // Linear sweep
+                for (uint32_t i = 0; i < n; ++i) {
+                    buffer.fmt("        setp.eq.u32 %%p3, %%r%u, %u;\n"
+                               "        @%%p3 ", self_reg, i);
+                    branch_i(i);
+                }
+            } else {
+                // Binary search
+                uint32_t levels = log2i_ceil(n);
+                for (uint32_t l = 0; l < levels; ++l) {
+                    for (uint32_t i = 0; i < (1 << l); ++i) {
+                        uint32_t start = (i + 0) << (levels - l),
+                                 end = (i + 1) << (levels - l),
+                                 mid = (start + end) / 2;
 
-                    if (mid < n) {
-                        buffer.fmt("        setp.ge.u32 %%p3, %%r3, %u;\n"
-                                   "        @%%p3 ", mid);
-                        if (l + 1 < levels)
-                            buffer.fmt("bra l_%u_%u_%u;\n", vcall_reg, l + 1, 2 * i + 1);
-                        else
-                            branch_i(2 * i + 1);
+                        if (start >= n)
+                            break;
+                        buffer.fmt("l_%u_%u_%u:\n", vcall_reg, l, i);
+
+                        if (mid < n) {
+                            buffer.fmt("        setp.ge.u32 %%p3, %%r%u, %u;\n"
+                                       "        @%%p3 ", self_reg, mid);
+                            if (l + 1 < levels)
+                                buffer.fmt("bra l_%u_%u_%u;\n", vcall_reg, l + 1, 2 * i + 1);
+                            else
+                                branch_i(2 * i + 1);
+                        }
+                        if (l + 1 < levels) {
+                            buffer.fmt("        bra l_%u_%u_%u;\n", vcall_reg, l + 1, 2 * i);
+                        } else {
+                            buffer.put("        ");
+                            branch_i(2 * i);
+                        }
                     }
-                    if (l + 1 < levels)
-                        buffer.fmt("        bra l_%u_%u_%u\n;", vcall_reg, l + 1, 2 * i);
-                    else
-                        branch_i(2 * i);
                 }
             }
-#else
-            // Linear sweep
-            for (uint32_t i = 0; i < n; ++i) {
-                buffer.fmt("        setp.eq.u32 %%p3, %%r3, %u;\n"
-                           "        @%%p3 ", i);
-                branch_i(i);
-            }
-#endif
+
+            buffer.fmt("l_%u_masked:\n", vcall_reg);
         } else {
-            buffer.fmt("        add.u32 %%r3, %%r3, %zu;\n"
+            buffer.fmt("        add.s32 %%r3, %%r%u, %i;\n"
                        "        call (%%rd3), _optix_call_direct_callable, (%%r3);\n",
-                       callable_offset);
+                       self_reg, (int) callable_offset - 1);
         }
     }
 

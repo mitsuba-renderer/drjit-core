@@ -92,13 +92,12 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
 }
 
 template <typename Func, JitBackend Backend, typename Base, typename... Args>
-auto vcall(const Func &func, const JitArray<Backend, Base *> &self,
+auto vcall(const char *domain, const Func &func, const JitArray<Backend, Base *> &self,
            const Args &... args) {
     using Result = decltype(func(std::declval<Base *>(), args...));
     constexpr bool IsVoid = std::is_void_v<Result>;
     using Result_2 = std::conditional_t<IsVoid, std::nullptr_t, Result>;
 
-    const char *domain = "Base";
     uint32_t n_inst = jit_registry_get_max(domain);
 
 #if 0
@@ -156,7 +155,7 @@ TEST_CUDA(01_symbolic_vcall) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
             Float y =
-                vcall([](Base *self2, Float x2) { return self2->f(x2); }, self, x);
+                vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
             jit_assert(strcmp(y.str(), "[0, 22, 204, 0, 28, 210, 0, 34, 216, 0]") == 0);
         }
     }
@@ -209,7 +208,7 @@ TEST_CUDA(02_calling_conventions) {
             Float p3(56);
             Mask p4(true);
 
-            auto result = vcall([](Base *self2, Mask p0, Float p1, Double p2, Float p3,
+            auto result = vcall("Base", [](Base *self2, Mask p0, Float p1, Double p2, Float p3,
                                    Mask p4) { return self2->f(p0, p1, p2, p3, p4); },
                                 self, p0, p1, p2, p3, p4);
 
@@ -275,7 +274,7 @@ TEST_CUDA(03_optimize_away_outputs) {
                        jit_var_ref_int(p3.index()) == 0);
 
             auto result =
-                vcall([](Base *self2, Float p1, Float p2, Float p3) { return self2->f(p1, p2, p3); },
+                vcall("Base", [](Base *self2, Float p1, Float p2, Float p3) { return self2->f(p1, p2, p3); },
                       self, p1, p2, p3);
 
             jit_assert(jit_var_ref_ext(p1.index()) == 1 &&
@@ -348,7 +347,7 @@ TEST_CUDA(04_devirtualize) {
                 jit_set_flag(JitFlag::VCallBranch, j);
 
                 auto result =
-                    vcall([](Base *self2, Float p1, Float p2) { return self2->f(p1, p2); },
+                    vcall("Base", [](Base *self2, Float p1, Float p2) { return self2->f(p1, p2); },
                           self, p1, p2);
 
                 jit_assert(jit_var_is_literal(result.template get<0>().index()) == ((i == 1 && k == 0) ? 1 : 0) &&
@@ -412,7 +411,7 @@ TEST_CUDA(05_extra_data) {
             for (uint32_t j = 0; j < 2; ++j) {
                 jit_set_flag(JitFlag::VCallOptimize, i);
                 jit_set_flag(JitFlag::VCallBranch, j);
-                Float result = vcall([](Base *self2, Float x) { return self2->f(x); }, self, x);
+                Float result = vcall("Base", [](Base *self2, Float x) { return self2->f(x); }, self, x);
                 jit_assert(strcmp(result.str(), "[0, 9, 13, 0, 21, 28, 0, 33, 43, 0]") == 0);
             }
         }
@@ -461,7 +460,7 @@ TEST_CUDA(06_side_effects) {
             uint32_t i2 = jit_registry_put("Base", &f2);
             jit_assert(i1 == 1 && i2 == 2);
 
-            vcall([](Base *self2) { self2->go(); }, self);
+            vcall("Base", [](Base *self2) { self2->go(); }, self);
             jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
             jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
 
@@ -509,7 +508,7 @@ TEST_CUDA(07_side_effects_only_once) {
             uint32_t i2 = jit_registry_put("Base", &g2);
             jit_assert(i1 == 1 && i2 == 2);
 
-            auto result = vcall([](Base *self2) { return self2->f(); }, self);
+            auto result = vcall("Base", [](Base *self2) { return self2->f(); }, self);
             Float f1 = result.template get<0>();
             Float f2 = result.template get<1>();
             jit_assert(strcmp(f1.str(), "[0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1]") == 0);
@@ -528,8 +527,8 @@ TEST_CUDA(07_side_effects_only_once) {
 }
 
 TEST_CUDA(08_multiple_calls) {
-    // This tests ensures that a function can be called several times,
-    // reusing the generated code (at least in the function-based variant)
+    /* This tests ensures that a function can be called several times,
+       reusing the generated code (at least in the function-based variant) */
 
     struct Base {
         virtual Float f(Float) = 0;
@@ -562,8 +561,8 @@ TEST_CUDA(08_multiple_calls) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
 
-            Float y = vcall([](Base *self2, Float x2) { return self2->f(x2); }, self, x);
-            Float z = vcall([](Base *self2, Float x2) { return self2->f(x2); }, self, y);
+            Float y = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
+            Float z = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, y);
 
             jit_assert(strcmp(z.str(), "[0, 12, 14, 0, 12, 14, 0, 12, 14, 0]") == 0);
         }
@@ -571,4 +570,71 @@ TEST_CUDA(08_multiple_calls) {
 
     jit_registry_remove(&h1);
     jit_registry_remove(&h2);
+}
+
+TEST_CUDA(09_big) {
+    /* This performs two vcalls with different numbers of instances, and
+       relatively many of them. This tests the various tables, offset
+       calculations, binary search trees, etc. */
+
+    struct Base1 { virtual Float f() = 0; };
+    struct Base2 { virtual Float f() = 0; };
+
+    struct I1 : Base1 {
+        Float v;
+        Float f() override { return v; }
+    };
+
+    struct I2 : Base2 {
+        Float v;
+        Float f() override { return v; }
+    };
+
+    const int n1 = 71, n2 = 123;
+    I1 v1[n1];
+    I2 v2[n2];
+    uint32_t i1[n1];
+    uint32_t i2[n2];
+
+    for (int i = 0; i < n1; ++i) {
+        v1[i].v = i;
+        i1[i] = jit_registry_put("Base1", &v1[i]);
+    }
+
+    for (int i = 0; i < n2; ++i) {
+        v2[i].v = 100 + i;
+        i2[i] = jit_registry_put("Base2", &v2[i]);
+    }
+
+    using Base1Ptr = Array<Base1 *>;
+    using Base2Ptr = Array<Base2 *>;
+    Base1Ptr self1 = arange<UInt32>(n1 + 1);
+    Base2Ptr self2 = arange<UInt32>(n2 + 1);
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        for (uint32_t j = 0; j < 2; ++j) {
+            jit_set_flag(JitFlag::VCallOptimize, i);
+            jit_set_flag(JitFlag::VCallBranch, j);
+
+            Float x = vcall("Base1", [](Base1 *self_) { return self_->f(); }, self1);
+            Float y = vcall("Base2", [](Base2 *self_) { return self_->f(); }, self2);
+
+            jit_var_schedule(x.index());
+            jit_var_schedule(y.index());
+
+            jit_assert(x.read(0) == 0);
+            jit_assert(y.read(0) == 0);
+
+            for (uint32_t i = 0; i < n1; ++i)
+                jit_assert(x.read(i + 1) == i);
+
+            for (uint32_t i = 0; i < n2; ++i)
+                jit_assert(y.read(i + 1) == 100 + i);
+        }
+    }
+
+    for (int i = 0; i < n1; ++i)
+        jit_registry_remove(&v1[i]);
+    for (int i = 0; i < n2; ++i)
+        jit_registry_remove(&v2[i]);
 }
