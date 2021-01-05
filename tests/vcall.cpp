@@ -420,7 +420,6 @@ TEST_CUDA(05_extra_data) {
     jit_registry_remove(&e2);
 }
 
-
 TEST_CUDA(06_side_effects) {
     /*  This tests three things:
        - side effects in virtual functions
@@ -590,7 +589,7 @@ TEST_CUDA(09_big) {
         Float f() override { return v; }
     };
 
-    const int n1 = 71, n2 = 123;
+    const int n1 = 71, n2 = 123, n = 125;
     I1 v1[n1];
     I2 v2[n2];
     uint32_t i1[n1];
@@ -608,16 +607,19 @@ TEST_CUDA(09_big) {
 
     using Base1Ptr = Array<Base1 *>;
     using Base2Ptr = Array<Base2 *>;
-    Base1Ptr self1 = arange<UInt32>(n1 + 1);
-    Base2Ptr self2 = arange<UInt32>(n2 + 1);
+    UInt32 self1 = arange<UInt32>(n + 1);
+    UInt32 self2 = arange<UInt32>(n + 1);
+
+    self1 = select(self1 <= n1, self1, 0);
+    self2 = select(self2 <= n2, self2, 0);
 
     for (uint32_t i = 0; i < 2; ++i) {
         for (uint32_t j = 0; j < 2; ++j) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
 
-            Float x = vcall("Base1", [](Base1 *self_) { return self_->f(); }, self1);
-            Float y = vcall("Base2", [](Base2 *self_) { return self_->f(); }, self2);
+            Float x = vcall("Base1", [](Base1 *self_) { return self_->f(); }, Base1Ptr(self1));
+            Float y = vcall("Base2", [](Base2 *self_) { return self_->f(); }, Base2Ptr(self2));
 
             jit_var_schedule(x.index());
             jit_var_schedule(y.index());
@@ -625,11 +627,15 @@ TEST_CUDA(09_big) {
             jit_assert(x.read(0) == 0);
             jit_assert(y.read(0) == 0);
 
-            for (uint32_t i = 0; i < n1; ++i)
-                jit_assert(x.read(i + 1) == i);
+            for (uint32_t i = 1; i <= n1; ++i)
+                jit_assert(x.read(i) == i - 1);
+            for (uint32_t i = 1; i <= n2; ++i)
+                jit_assert(y.read(i) == 100 + i - 1);
 
-            for (uint32_t i = 0; i < n2; ++i)
-                jit_assert(y.read(i + 1) == 100 + i);
+            for (uint32_t i = n1 + 1; i < n; ++i)
+                jit_assert(x.read(i + 1) == 0);
+            for (uint32_t i = n2 + 1; i < n; ++i)
+                jit_assert(y.read(i + 1) == 0);
         }
     }
 
