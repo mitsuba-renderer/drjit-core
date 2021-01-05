@@ -846,7 +846,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return eval_and(v0, v1); },
                                        v[0], v[1]);
-            } else if (((VarType) v[0]->type == VarType::Bool && literal_one[0]) || literal_zero[1]) {
+            } else if (((VarType) v[0]->type == VarType::Bool && literal_one[0]) ||
+                        (literal_zero[1] && v[0]->type == v[1]->type)) {
                 li = dep[1];
             } else if (((VarType) v[1]->type == VarType::Bool && literal_one[1]) || literal_zero[0]) {
                 li = dep[0];
@@ -879,7 +880,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                                       v[0], v[1]);
             } else if ((vt == VarType::Bool && literal_one[0]) || literal_zero[1]) {
                 li = dep[0];
-            } else if ((vt == VarType::Bool && literal_one[1]) || literal_zero[0]) {
+            } else if ((vt == VarType::Bool && literal_one[1]) ||
+                       (literal_zero[0] && v[0]->type == v[1]->type)) {
                 li = dep[1];
             } else if (backend == JitBackend::CUDA) {
                 stmt = ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool)
