@@ -99,12 +99,6 @@ extern uint32_t jitc_var_migrate(uint32_t index, AllocType type);
 /// Mark a variable as a scatter operation that writes to 'target'
 extern void jitc_var_mark_side_effect(uint32_t index, uint32_t target);
 
-/// Is the given variable a literal that equals zero?
-extern int jitc_var_is_literal_zero(uint32_t index);
-
-/// Is the given variable a literal that equals one?
-extern int jitc_var_is_literal_one(uint32_t index);
-
 /// Return a human-readable summary of the contents of a variable
 const char *jitc_var_str(uint32_t index);
 
