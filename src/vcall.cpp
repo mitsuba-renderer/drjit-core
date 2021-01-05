@@ -426,6 +426,8 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
                                     uint32_t offset_reg,
                                     uint32_t data_reg,
                                     VCall *vcall) {
+    uint32_t vcall_reg = jitc_var(vcall->id)->reg_index;
+
     // =====================================================
     // 1. Need to backup state before we can JIT recursively
     // =====================================================
@@ -493,12 +495,11 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
     // =====================================================
 
     char ret_label[32];
-    snprintf(ret_label, sizeof(ret_label), "l_%u_done",
-             jitc_var(vcall->id)->reg_index);
+    snprintf(ret_label, sizeof(ret_label), "l_%u_done", vcall_reg);
     size_t globals_offset = globals.size();
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-    size_t callable_offset = optix_callables.size();
+    size_t callable_offset = optix_callable_refs.size();
 #endif
 
     std::vector<XXH128_hash_t> func_id(vcall->n_inst);
@@ -518,7 +519,7 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
             auto it = globals_map.find(func_id[i]);
             if (it == globals_map.end())
                 jit_fail("jit_vcall_assemble(): could not find callable!");
-            optix_callables.push_back(it->second);
+            optix_callable_refs.push_back(it->second);
         }
 #endif
     }
@@ -595,11 +596,48 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
             buffer.put("        @%p3 ld.global.u64 %rd3, tbl[%r3];\n");
     } else {
         if (vcall->branch) {
-            for (uint32_t i = 0; i < vcall->n_inst; ++i)
-                buffer.fmt("        setp.eq.u32 %%p3, %%r3, %u;\n"
-                           "        @%%p3 bra.uni l_%016llx%016llx;\n", i,
+            uint32_t n = vcall->n_inst;
+            auto branch_i = [&func_id](uint32_t i) {
+                buffer.fmt("bra l_%016llx%016llx;\n",
                            (unsigned long long) func_id[i].high64,
                            (unsigned long long) func_id[i].low64);
+            };
+
+#if 0
+            // Binary search
+            uint32_t levels = log2i_ceil(n);
+            for (uint32_t l = 0; l < levels; ++l) {
+                for (uint32_t i = 0; i < (1 << l); ++i) {
+                    uint32_t start = (i + 0) << (levels - l),
+                             end = (i + 0) << (levels - l),
+                             mid = (start + end) / 2;
+
+                    if (start >= n)
+                        break;
+                    buffer.fmt("l_%u_%u_%u:\n", vcall_reg, l, i);
+
+                    if (mid < n) {
+                        buffer.fmt("        setp.ge.u32 %%p3, %%r3, %u;\n"
+                                   "        @%%p3 ", mid);
+                        if (l + 1 < levels)
+                            buffer.fmt("bra l_%u_%u_%u;\n", vcall_reg, l + 1, 2 * i + 1);
+                        else
+                            branch_i(2 * i + 1);
+                    }
+                    if (l + 1 < levels)
+                        buffer.fmt("        bra l_%u_%u_%u\n;", vcall_reg, l + 1, 2 * i);
+                    else
+                        branch_i(2 * i);
+                }
+            }
+#else
+            // Linear sweep
+            for (uint32_t i = 0; i < n; ++i) {
+                buffer.fmt("        setp.eq.u32 %%p3, %%r3, %u;\n"
+                           "        @%%p3 ", i);
+                branch_i(i);
+            }
+#endif
         } else {
             buffer.fmt("        add.u32 %%r3, %%r3, %zu;\n"
                        "        call (%%rd3), _optix_call_direct_callable, (%%r3);\n",

@@ -61,7 +61,7 @@ bool uses_optix = false;
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
 /// List of direct callables for OptiX virtual function calls
-std::vector<uint32_t> optix_callables;
+std::vector<uint32_t> optix_callable_refs;
 #endif
 
 // ====================================================================
@@ -112,7 +112,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     uses_optix = ts->backend == JitBackend::CUDA &&
                  (jitc_flags() & (uint32_t) JitFlag::ForceOptiX);
 
-    optix_callables.clear();
+    optix_callable_refs.clear();
 #endif
 
     uint32_t n_params_in      = 0,

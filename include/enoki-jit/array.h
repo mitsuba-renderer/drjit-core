@@ -289,6 +289,16 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
             jit_var_new_op_3(JitOp::Select, a.m_index, b.m_index, c.m_index));
     }
 
+    friend JitArray min(const JitArray &a, const JitArray &b) {
+        return steal(
+            jit_var_new_op_2(JitOp::Min, a.m_index, b.m_index));
+    }
+
+    friend JitArray max(const JitArray &a, const JitArray &b) {
+        return steal(
+            jit_var_new_op_2(JitOp::Max, a.m_index, b.m_index));
+    }
+
     friend bool all(const JitArray &a) { return jit_var_all(a.m_index); }
     friend bool any(const JitArray &a) { return jit_var_any(a.m_index); }
     friend bool none(const JitArray &a) { return !jit_var_any(a.m_index); }
@@ -387,7 +397,6 @@ Array linspace(typename Array::Value min, typename Array::Value max, size_t size
     Value step = (max - min) / Value(size - 1);
     return fmadd(Array(UInt32::counter(size)), Array(step), Array(min));
 }
-
 
 #if 0
 template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>

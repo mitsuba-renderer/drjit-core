@@ -58,7 +58,7 @@ extern GlobalsMap globals_map;
 extern bool uses_optix;
 
 /// List of optix callable references in call sites, used to create the SBT
-extern std::vector<uint32_t> optix_callables;
+extern std::vector<uint32_t> optix_callable_refs;
 #endif
 
 /// Does the program contain a %data register so far? (for branch-based vcalls)

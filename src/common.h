@@ -108,3 +108,15 @@ inline Ref borrow(uint32_t index) {
     jitc_var_inc_ref_ext(index);
     return r;
 }
+
+inline uint32_t log2i_ceil(uint32_t x) {
+    if (x <= 1)
+        return 0;
+    x -= 1;
+#if defined(_MSC_VER)
+    uint32_t lz = __lzcnt(x);
+#else
+    uint32_t lz = __builtin_clz(x);
+#endif
+  return 32 - lz;
+}

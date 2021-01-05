@@ -132,7 +132,6 @@ const char *op_name[(int) JitOp::Count] {
     "fmadd", "select"
 };
 
-
 template <typename T> void test_const_prop() {
     using Value = typename T::Value;
     constexpr JitBackend Backend = T::Backend;

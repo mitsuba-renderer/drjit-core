@@ -64,13 +64,16 @@ using OptixCompileDebugLevel = int;
 using OptixDeviceContext = void*;
 using OptixLogCallback = void (*)(unsigned int, const char *, const char *, void *);
 
+#define OPTIX_EXCEPTION_FLAG_NONE                0
+#define OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW      1
+#define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH         2
+#define OPTIX_EXCEPTION_FLAG_DEBUG               8
 #define OPTIX_COMPILE_DEBUG_LEVEL_NONE           0x2350
 #define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF 0
 #define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL ((int) 0xFFFFFFFF)
 #define OPTIX_PROGRAM_GROUP_KIND_RAYGEN          0x2421
 #define OPTIX_PROGRAM_GROUP_KIND_CALLABLES       0x2425
 #define OPTIX_PROGRAM_GROUP_KIND_MISS            0x2422
-
 #define OPTIX_SBT_RECORD_HEADER_SIZE             32
 
 struct OptixDeviceContextOptions {
@@ -307,9 +310,17 @@ OptixDeviceContext jitc_optix_context() {
     // Create a truly minimal OptiX pipeline for testcases
     // =====================================================
 
-    OptixPipelineCompileOptions &pco = ts->optix_pipeline_compile_options;
+    OptixPipelineCompileOptions pco { };
     pco.numAttributeValues = 2;
     pco.pipelineLaunchParamsVariableName = "params";
+
+#if defined(NDEBUG)
+    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
+#else
+    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_DEBUG |
+                         OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                         OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
+#endif
 
     OptixModuleCompileOptions mco { };
     mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
@@ -340,10 +351,12 @@ OptixDeviceContext jitc_optix_context() {
     miss_record = jitc_malloc_migrate(miss_record, AllocType::Device, 1);
 
     ts->optix_miss_record_base = miss_record;
-    OptixShaderBindingTable &sbt = ts->optix_shader_binding_table;
+    OptixShaderBindingTable sbt { };
     sbt.missRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
     sbt.missRecordCount = 1;
     sbt.missRecordBase = miss_record;
+
+    jitc_optix_configure(&pco, &sbt, &pg, 1);
 
     return ctx;
 }
@@ -423,7 +436,7 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
 
     if (!(jitc_flags() & (uint32_t) JitFlag::VCallBranch)) {
         n_programs += globals.size();
-        n_program_refs += optix_callables.size();
+        n_program_refs += optix_callable_refs.size();
     }
 
     OptixProgramGroupOptions pgo { };
@@ -437,22 +450,22 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
 
     if (!(jitc_flags() & (uint32_t) JitFlag::VCallBranch)) {
         for (auto &kv : globals_map) {
-            char kernel_name[52];
-            uint32_t i = kv.second;
-            snprintf(kernel_name, sizeof(kernel_name),
+            char kernel_name_dc[52];
+            snprintf(kernel_name_dc, sizeof(kernel_name_dc),
                      "__direct_callable__%016llx%016llx",
                      (unsigned long long) kv.first.high64,
                      (unsigned long long) kv.first.low64);
 
+            uint32_t i = kv.second;
             pgd[i + 1].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
             pgd[i + 1].callables.moduleDC = kernel.optix.mod;
-            pgd[i + 1].callables.entryFunctionNameDC = strdup(kernel_name);
+            pgd[i + 1].callables.entryFunctionNameDC = strdup(kernel_name_dc);
         }
     }
 
     kernel.optix.pg = new OptixProgramGroup[n_programs];
     kernel.optix.pg_count = n_programs;
-    kernel.optix.sbt_count = 1 + optix_callables.size();
+    kernel.optix.sbt_count = n_program_refs;
 
     log_size = sizeof(error_log);
     rv = optixProgramGroupCreate(ts->optix_context, pgd.get(),
@@ -470,9 +483,14 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
 
     jitc_optix_check(optixSbtRecordPackHeader(
         kernel.optix.pg[0], sbt_record));
-    for (uint32_t i = 0; i < optix_callables.size(); ++i)
+
+    for (uint32_t i = 0; i < optix_callable_refs.size(); ++i) {
+        if (optix_callable_refs[i] + 1 >= n_programs)
+            jitc_fail("jit_optix_compile(): out of bounds!");
         jitc_optix_check(optixSbtRecordPackHeader(
-            kernel.optix.pg[1 + optix_callables[i]], sbt_record + stride * i));
+            kernel.optix.pg[1 + optix_callable_refs[i]],
+            sbt_record + stride * (i + 1)));
+    }
 
     kernel.optix.sbt_record = (uint8_t *)
         jitc_malloc_migrate(sbt_record, AllocType::Device, 1);
@@ -553,7 +571,8 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
 
     jitc_optix_check(
         optixLaunch(kernel.optix.pipeline, ts->stream, (CUdeviceptr) args,
-                    n_args * sizeof(void *), &sbt, launch_width,
+                    n_args * sizeof(void *), &sbt,
+                    launch_width,
                     launch_height, launch_samples));
 }
 
