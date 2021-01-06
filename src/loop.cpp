@@ -99,7 +99,6 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         loop->storage_size += type_size[v1->type];
 
         // ============= Output side =============
-
         uint32_t index_o = out_body[i];
         const Variable *vo = jitc_var(index_o);
         size = std::max(vo->size, size);
@@ -107,16 +106,13 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
 
         // ============= Optimizations =============
 
-        if (optimize) {
-            // bool eq_literal =
-            //     v3->literal && vo->literal && v3->value == vo->value;
-            // bool unchanged = out_body[i] == in[i];
-            // if (eq_literal)
-            //     printf("***********eq_literal!!\n"):
-            // if (unchanged)
-            //     printf("***********unchanged!!\n"):
-            // out[i] = jitc_var_new_literal(Backend, (VarType) v1->type, &vo->literal);
-        }
+        // if (invariant) {
+        //     bool eq_literal =
+        //         v3->literal && vo->literal && v3->value == vo->value;
+        //     bool unchanged = out_body[i] == in[i];
+        //
+        //     invariant[i] = optimize && (eq_literal || unchanged);
+        // }
     }
 
     for (uint32_t i = 0; i < n; ++i) {
