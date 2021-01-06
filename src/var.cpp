@@ -991,7 +991,40 @@ void jitc_var_mask_pop(JitBackend backend) {
     jitc_var_dec_ref_int(index);
 }
 
+bool jitc_var_any(uint32_t index) {
+    const Variable *v = jitc_var(index);
+
+    if (unlikely((VarType) v->type != VarType::Bool))
+        jitc_raise("jit_var_any(r%u): requires a boolean array as input!", index);
+
+    if (v->literal)
+        return (bool) v->value;
+
+    if (jitc_var_eval(index))
+        v = jitc_var(index);
+
+    return jitc_any((JitBackend) v->backend, (uint8_t *) v->data, v->size);
+}
+
+bool jitc_var_all(uint32_t index) {
+    const Variable *v = jitc_var(index);
+
+    if (unlikely((VarType) v->type != VarType::Bool))
+        jitc_raise("jit_var_all(r%u): requires a boolean array as input!", index);
+
+    if (v->literal)
+        return (bool) v->value;
+
+    if (jitc_var_eval(index))
+        v = jitc_var(index);
+
+    return jitc_all((JitBackend) v->backend, (uint8_t *) v->data, v->size);
+}
+
 uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op) {
+    if (unlikely(reduce_op == ReduceOp::And || reduce_op == ReduceOp::Or))
+        jitc_raise("jitc_var_reduce: doesn't support And/Or operation!");
+
     const Variable *v = jitc_var(index);
 
     JitBackend backend = (JitBackend) v->backend;
@@ -1008,50 +1041,12 @@ uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op) {
     uint8_t *values = (uint8_t *) v->data;
     uint32_t size = v->size;
 
-    if (reduce_op == ReduceOp::And || reduce_op == ReduceOp::Or) {
-        if (unlikely(type != VarType::Bool))
-            jitc_raise("jitc_var_reduce(r%u, And/Or): requires a boolean array as input!",
-                       index);
-
-        /* When \c size is not a multiple of 4, the implementation will initialize
-           up to 3 bytes beyond the end of the supplied range so that an efficient
-           32 bit reduction algorithm can be used. This is fine for allocations
-           made using \ref jit_malloc(), which allow for this. */
-
-        uint32_t reduced_size = (size + 3) / 4,
-                 trailing     = reduced_size * 4 - size;
-
-        if (trailing) {
-            bool filler = (reduce_op == ReduceOp::And);
-            jitc_memset_async(backend, values + size, trailing, sizeof(bool), &filler);
-        }
-
-        bool result;
-        uint8_t data_llvm[4];
-        uint8_t *data = data_llvm;
-        if (backend == JitBackend::CUDA)
-           data = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
-
-        jitc_reduce(backend, VarType::UInt32, reduce_op, values, reduced_size, data);
-        jitc_sync_thread();
-
-        if (reduce_op == ReduceOp::And)
-            result = (data[0] & data[1] & data[2] & data[3]) != 0;
-        else if (reduce_op == ReduceOp::Or)
-            result = (data[0] | data[1] | data[2] | data[3]) != 0;
-
-        if (backend == JitBackend::CUDA)
-            jitc_free(data);
-
-        return jitc_var_new_literal(backend, type, (const void *) &result, 1, 0);
-    } else {
-        void *data =
-            jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                    : AllocType::HostAsync,
-                        (size_t) type_size[(int) type]);
-        jitc_reduce(backend, type, reduce_op, values, size, data);
-        return jitc_var_mem_map(backend, type, data, 1, 1);
-    }
+    void *data =
+        jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
+                                                : AllocType::HostAsync,
+                    (size_t) type_size[(int) type]);
+    jitc_reduce(backend, type, reduce_op, values, size, data);
+    return jitc_var_mem_map(backend, type, data, 1, 1);
 }
 
 /// Return a human-readable summary of registered variables

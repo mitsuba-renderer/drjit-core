@@ -148,6 +148,12 @@ extern void jitc_var_mask_push(JitBackend backend, uint32_t index);
 /// Pop an active mask
 extern void jitc_var_mask_pop(JitBackend backend);
 
+/// Reduce (And) a boolean array to a single value, synchronizes.
+extern bool jitc_var_all(uint32_t index);
+
+/// Reduce (Or) a boolean array to a single value, synchronizes.
+extern bool jitc_var_any(uint32_t index);
+
 /// Reduce a variable to a single value
 extern uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op);
 
