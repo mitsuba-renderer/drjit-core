@@ -125,12 +125,22 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return any(neq(*this, v));
     }
 
+    template <typename T = Value_, enable_if_t<!std::is_same<T, bool>::value> = 0>
     JitArray operator|(const JitArray &v) const {
         return steal(jit_var_new_op_2(JitOp::Or, m_index, v.m_index));
     }
 
+    JitArray operator|(const JitArray<Backend, bool> &v) const {
+        return steal(jit_var_new_op_2(JitOp::Or, m_index, v.index()));
+    }
+
+    template <typename T = Value_, enable_if_t<!std::is_same<T, bool>::value> = 0>
     JitArray operator&(const JitArray &v) const {
         return steal(jit_var_new_op_2(JitOp::And, m_index, v.m_index));
+    }
+
+    JitArray operator&(const JitArray<Backend, bool> &v) const {
+        return steal(jit_var_new_op_2(JitOp::And, m_index, v.index()));
     }
 
     JitArray operator^(const JitArray &v) const {
@@ -149,8 +159,12 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     JitArray &operator-=(const JitArray &v) { return operator=(*this - v); }
     JitArray &operator*=(const JitArray &v) { return operator=(*this * v); }
     JitArray &operator/=(const JitArray &v) { return operator=(*this / v); }
+    template <typename T = Value_, enable_if_t<!std::is_same<T, bool>::value> = 0>
     JitArray &operator|=(const JitArray &v) { return operator=(*this | v); }
+    template <typename T = Value_, enable_if_t<!std::is_same<T, bool>::value> = 0>
     JitArray &operator&=(const JitArray &v) { return operator=(*this & v); }
+    JitArray &operator|=(const JitArray<Backend, bool> &v) { return operator=(*this | v); }
+    JitArray &operator&=(const JitArray<Backend, bool> &v) { return operator=(*this & v); }
     JitArray &operator^=(const JitArray &v) { return operator=(*this ^ v); }
     JitArray& operator<<=(const JitArray &v) { return operator=(*this << v); }
     JitArray& operator>>=(const JitArray &v) { return operator=(*this >> v); }

@@ -518,7 +518,7 @@ void jitc_eval(ThreadState *ts) {
 
     jitc_eval_prepare(ts->scheduled);
 
-    if ((jitc_flags() & (uint32_t) JitFlag::DisableSideEffects) == 0)
+    if ((jitc_flags() & (uint32_t) JitFlag::PostponeSideEffects) == 0)
         jitc_eval_prepare(ts->side_effects);
 
     if (schedule.empty())

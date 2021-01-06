@@ -124,8 +124,8 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 0, nullptr));
     loop->start = loop_start;
 
-    size_t dep_size = n * sizeof(uint32_t);
     {
+        size_t dep_size = n * sizeof(uint32_t);
         snprintf(temp, sizeof(temp), "Loop: %s [start]", name);
         Variable *v = jitc_var(loop_start);
         v->extra = 1;
@@ -180,61 +180,14 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         jitc_var_set_label(loop->in_body[i], temp, false);
     }
 
-
-    // =====================================================
-    // 6. Create variable representing side effects
-    // =====================================================
-
-    Ref loop_se;
-    if (se_count) {
-        uint32_t loop_se_dep[2] = { loop_start, loop_cond };
-        loop_se = steal(
-            jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, loop_se_dep));
-        {
-            snprintf(temp, sizeof(temp), "Loop: %s [side effects]", name);
-            Variable *v = jitc_var(loop_se);
-            v->extra = 1;
-            v->side_effect = 1;
-            v->size = size;
-            Extra &e = state.extra[loop_se];
-            e.label = strdup(temp);
-            e.dep = (uint32_t *) malloc(se_count * sizeof(uint32_t));
-            e.n_dep = se_count;
-            auto &se = ts->side_effects;
-            for (uint32_t i = 0; i < se_count; ++i) {
-                uint32_t index = se[se.size() - se_count + i];
-                // The 'loop_se' node should depend on this side effect
-                jitc_var_inc_ref_int(index);
-                state.extra[loop_se].dep[i] = index;
-
-                // This side effect should depend on 'loop_branch'
-                jitc_var(index)->extra = 1;
-                Extra &e2 = state.extra[index];
-                uint32_t dep_size_2 = (e2.n_dep + 1) * sizeof(uint32_t);
-                uint32_t *tmp = (uint32_t *) malloc(dep_size_2);
-                if (e2.n_dep)
-                    memcpy(tmp, e2.dep, dep_size_2);
-                tmp[e2.n_dep] = loop_cond;
-                jitc_var_inc_ref_int(loop_cond);
-                e2.n_dep++;
-                free(e2.dep);
-                e2.dep = tmp;
-            }
-            se.resize(se_offset);
-        }
-    }
-
     // =====================================================
     // 5. Create variable representing the end of the loop
     // =====================================================
 
-    uint32_t loop_end_dep[3] = { loop_start, loop_cond, loop_se };
-    uint32_t loop_end_dep_count = loop_se ? 3 : 2;
-    if (loop_se)
-        ts->side_effects.push_back(loop_se.release());
+    uint32_t loop_end_dep[2] = { loop_start, loop_cond };
 
-    Ref loop_end = steal(jitc_var_new_stmt(backend, VarType::Void, "", 1,
-                                           loop_end_dep_count, loop_end_dep));
+    Ref loop_end = steal(
+        jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, loop_end_dep));
     loop->end = loop_end;
     {
         snprintf(temp, sizeof(temp), "Loop: %s [end]", name);
@@ -243,14 +196,56 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         v->size = size;
         Extra &e = state.extra[loop_end];
         e.label = strdup(temp);
-        e.n_dep = n;
-        e.dep = (uint32_t *) malloc(dep_size);
-        memcpy(e.dep, loop->out_body.data(), dep_size);
+        e.n_dep = n + se_count;
+        e.dep = (uint32_t *) malloc((n + se_count) * sizeof(uint32_t));
+        memcpy(e.dep, loop->out_body.data(), n * sizeof(uint32_t));
         for (uint32_t i = 0; i < n; ++i)
             jitc_var_inc_ref_int(loop->out_body[i]);
         e.assemble = jitc_var_loop_assemble_end;
         e.callback_data = loop.get();
+
+        auto &se = ts->side_effects;
+        for (uint32_t i = 0; i < se_count; ++i) {
+            uint32_t index = se[se.size() - se_count + i];
+            // The 'loop_end' node should depend on this side effect
+            jitc_var_inc_ref_int(index);
+            state.extra[loop_end].dep[n + i] = index;
+
+            // This side effect should depend on 'loop_branch'
+            jitc_var(index)->extra = 1;
+            Extra &e2 = state.extra[index];
+            uint32_t dep_size_2 = (e2.n_dep + 1) * sizeof(uint32_t);
+            uint32_t *tmp = (uint32_t *) malloc(dep_size_2);
+            if (e2.n_dep)
+                memcpy(tmp, e2.dep, dep_size_2);
+            tmp[e2.n_dep] = loop_cond;
+            jitc_var_inc_ref_int(loop_cond);
+            e2.n_dep++;
+            free(e2.dep);
+            e2.dep = tmp;
+        }
+
+        se.resize(se_offset);
     }
+
+    // =====================================================
+    // 6. Create variable representing side effects
+    // =====================================================
+
+    Ref loop_se;
+    if (se_count) {
+        uint32_t loop_se_dep[1] = { loop_end };
+        loop_se = steal(
+            jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, loop_se_dep));
+        {
+            snprintf(temp, sizeof(temp), "Loop: %s [side effects]", name);
+            Variable *v = jitc_var(loop_se);
+            v->side_effect = 1;
+            v->size = size;
+        }
+        ts->side_effects.push_back(loop_se.release());
+    }
+
     // =====================================================
     // 7. Create output variables
     // =====================================================
@@ -405,11 +400,15 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
     buffer.fmt("\nl_%u_done:\n", loop_reg);
 
     if (loop->se_count) {
-        Variable *end_v = jitc_var(loop->end);
-        if (!jitc_var(end_v->dep[2])->side_effect)
-            jit_fail("jitc_var_loop_assemble(): internal error (3)");
-        jitc_var_dec_ref_int(end_v->dep[2]);
-        end_v->dep[2] = 0;
+        uint32_t *dep = state.extra[loop->end].dep;
+        uint32_t n = (uint32_t) loop->in.size();
+        for (uint32_t i = 0; i < loop->se_count; ++i) {
+            uint32_t &index = dep[n + i];
+            if (!jitc_var(index)->side_effect)
+                jit_fail("jitc_var_loop_assemble(): internal error (3)");
+            jitc_var_dec_ref_int(index);
+            index = 0;
+        }
         loop->se_count = 0;
     }
 }

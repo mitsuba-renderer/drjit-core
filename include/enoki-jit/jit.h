@@ -1214,18 +1214,18 @@ enum class JitFlag : uint32_t {
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
     ForceOptiX     = 32,
 
-    /// Temporarily disable evaluation of statements with side effects
-    DisableSideEffects = 64
+    /// Temporarily postpone evaluation of statements with side effects
+    PostponeSideEffects = 64
 };
 #else
 enum JitFlag {
-    JitFlagLoopRecord        = 1,
-    JitFlagLoopOptimize      = 2,
-    JitFlagVCallRecord       = 4,
-    JitFlagVCallOptimize     = 8,
-    JitFlagVCallBranch       = 16,
-    JitFlagForceOptiX        = 32
-    JitFlagDisableSideEffets = 64
+    JitFlagLoopRecord          = 1,
+    JitFlagLoopOptimize        = 2,
+    JitFlagVCallRecord         = 4,
+    JitFlagVCallOptimize       = 8,
+    JitFlagVCallBranch         = 16,
+    JitFlagForceOptiX          = 32
+    JitFlagPostponeSideEffects = 64
 };
 #endif
 
@@ -1292,7 +1292,7 @@ extern JIT_EXPORT void jit_var_mask_push(JitBackend backend, uint32_t index);
 extern JIT_EXPORT void jit_var_mask_pop(JitBackend backend);
 
 /// Return the top entry of the mask stack and increase its ext. ref. count
-extern JIT_EXPORT uint32_t jit_var_mask_peek();
+extern JIT_EXPORT uint32_t jit_var_mask_peek(JitBackend backend);
 
 
 /**

@@ -42,10 +42,36 @@ namespace enoki {
     }
 };
 
+namespace detail {
+    inline bool extract_mask() { return true; }
+    template <typename T> decltype(auto) extract_mask(const T &v) {
+        /// XXX
+        // if constexpr (is_mask_v<T>) {
+        //     return v;
+        // } else {
+        //     return true;
+        // }
+        return true;
+    }
+
+    template <typename T, typename... Ts, enable_if_t<sizeof...(Ts) != 0> = 0>
+    decltype(auto) extract_mask(const T &v, const Ts &... vs) {
+        return extract_mask(vs...);
+    }
+
+    template <size_t I, size_t N, typename T>
+    decltype(auto) set_mask_true(const T &v) {
+        return v;
+    }
+};
+
 template <typename Result, typename Func, JitBackend Backend, typename Base,
-          typename... Args>
+          typename... Args, size_t... Is>
 Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
-                  const JitArray<Backend, Base *> &self, const Args &... args) {
+                  const JitArray<Backend, Base *> &self,
+                  const JitArray<Backend, bool> &mask,
+                  std::index_sequence<Is...>, const Args &... args) {
+    constexpr size_t N = sizeof...(Args);
     Result result;
 
     ek_index_vector indices_in, indices_out_all;
@@ -61,17 +87,17 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
 
         jit_prefix_push(Backend, label);
         try {
-            jit_set_flag(JitFlag::DisableSideEffects, 1);
+            jit_set_flag(JitFlag::PostponeSideEffects, 1);
             if constexpr (std::is_same_v<Result, std::nullptr_t>) {
-                func(base, args...);
+                func(base, (detail::set_mask_true<Is, N>(args))...);
             } else {
                 collect_indices(indices_out_all, func(base, args...));
             }
-            jit_set_flag(JitFlag::DisableSideEffects, 0);
+            jit_set_flag(JitFlag::PostponeSideEffects, 0);
         } catch (...) {
             jit_prefix_pop(Backend);
             jit_side_effects_rollback(Backend, se_count[0]);
-            jit_set_flag(JitFlag::DisableSideEffects, 0);
+            jit_set_flag(JitFlag::PostponeSideEffects, 0);
             throw;
         }
         se_count[i] = jit_side_effects_scheduled(Backend);
@@ -79,7 +105,12 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
     }
 
     ek_index_vector indices_out(indices_out_all.size() / n_inst);
-    jit_var_vcall(domain, self.index(), n_inst, indices_in.size(),
+
+    JitArray<Backend, Base *> self_masked =
+        self &
+        (JitArray<Backend, bool>::steal(jit_var_mask_peek(Backend)) & mask);
+
+    jit_var_vcall(domain, self_masked.index(), n_inst, indices_in.size(),
                   indices_in.data(), indices_out_all.size(),
                   indices_out_all.data(), se_count.data(), indices_out.data());
 
@@ -91,12 +122,14 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
     return result;
 }
 
-template <typename Func, JitBackend Backend, typename Base, typename... Args>
-auto vcall(const char *domain, const Func &func, const JitArray<Backend, Base *> &self,
-           const Args &... args) {
+template <typename Func, JitBackend Backend, typename Base,
+          typename... Args>
+auto vcall(const char *domain, const Func &func,
+           const JitArray<Backend, Base *> &self, const Args &... args) {
     using Result = decltype(func(std::declval<Base *>(), args...));
     constexpr bool IsVoid = std::is_void_v<Result>;
     using Result_2 = std::conditional_t<IsVoid, std::nullptr_t, Result>;
+    using Bool = JitArray<Backend, bool>;
 
     uint32_t n_inst = jit_registry_get_max(domain);
 
@@ -122,7 +155,12 @@ auto vcall(const char *domain, const Func &func, const JitArray<Backend, Base *>
     }
 #endif
 
-    return vcall_impl<Result_2>(domain, n_inst, func, self, ek::placeholder(args)...);
+    constexpr size_t N = sizeof...(Args);
+    return vcall_impl<Result_2>(
+        domain, n_inst, func, self,
+        Bool(detail::extract_mask(args...)),
+        std::make_index_sequence<sizeof...(Args)>(),
+        ek::placeholder(args)...);
 }
 
 TEST_CUDA(01_symbolic_vcall) {
