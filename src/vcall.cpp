@@ -44,6 +44,11 @@ struct VCall {
     /// Compressed side effect index list
     std::vector<uint32_t> se;
 
+    /// Storage in bytes for inputs/outputs before simplifications
+    uint32_t in_count_initial = 0;
+    uint32_t in_size_initial = 0;
+    uint32_t out_size_initial = 0;
+
     ~VCall() {
         for (uint32_t index : out_nested)
             jitc_var_dec_ref_ext(index);
@@ -85,7 +90,8 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         jitc_raise("jit_var_vcall(): list of all output indices must be a "
                    "multiple of the instance count!");
 
-    uint32_t n_out = n_out_nested / n_inst, size = 0;
+    uint32_t n_out = n_out_nested / n_inst, size = 0,
+             in_size_initial = 0, out_size_initial = 0;
 
     JitBackend backend;
     /* Check 'self' */ {
@@ -108,6 +114,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
                        "placeholder variables!");
         }
         size = std::max(size, v->size);
+        in_size_initial += type_size[v->type];
     }
 
     for (uint32_t i = 0; i < n_out_nested; ++i) {
@@ -117,6 +124,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         if (v->type != v0->type)
             jitc_raise(
                 "jit_var_vcall(): output types don't match between instances!");
+
+        if (i < n_out)
+            out_size_initial += type_size[v->type];
     }
 
     for (uint32_t i = 0; i < n_in; ++i) {
@@ -214,6 +224,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     vcall->in_nested.reserve(n_in);
     vcall->out.reserve(n_out);
     vcall->out_nested.reserve(n_out_nested);
+    vcall->in_size_initial = in_size_initial;
+    vcall->out_size_initial = out_size_initial;
+    vcall->in_count_initial = n_in;
     vcall->se_offset.reserve(n_inst + 1);
     vcall->se = std::vector<uint32_t>(
         ts->side_effects.begin() + se_offset[0],
@@ -818,10 +831,11 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
     jitc_log(
         Info,
         "jit_var_vcall_assemble(): indirect %s (\"%s\") to %zu/%zu instances, "
-        "passing %u/%u inputs (%u bytes), %u/%u outputs (%u bytes)",
+        "passing %u/%u inputs (%u/%u bytes), %u/%u outputs (%u/%u bytes)",
         vcall->branch ? "branch" : "call", vcall->name, n_unique,
-        func_id.size(), n_in_active, n_in, in_size, n_out_active, n_out,
-        out_size);
+        func_id.size(), n_in_active, vcall->in_count_initial, in_size,
+        vcall->in_size_initial, n_out_active, n_out, out_size,
+        vcall->out_size_initial);
 }
 
 /// Collect scalar / pointer variables referenced by a computation

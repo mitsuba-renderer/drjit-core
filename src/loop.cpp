@@ -13,6 +13,8 @@ struct Loop {
     uint32_t cond = 0;
     /// Number of side effects
     uint32_t se_count = 0;
+    /// Storage size in bytes for all variables before simplification
+    uint32_t storage_size = 0;
     /// Input variables before loop
     std::vector<uint32_t> in;
     /// Input variables before branch condition
@@ -62,6 +64,7 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
     // 1. Various sanity checks
     // =====================================================
 
+    bool optimize = jitc_flags() & (uint32_t) JitFlag::LoopOptimize;
     uint32_t size = 1;
     bool placeholder = false;
     char temp[128];
@@ -76,6 +79,7 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
     }
 
     for (uint32_t i = 0; i < n; ++i) {
+        // ============= Input side =============
         uint32_t index_1 = in[i];
         Variable *v1 = jitc_var(index_1);
         if (!v1->placeholder || !v1->placeholder_iface || !v1->dep[0])
@@ -92,13 +96,27 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         loop->in.push_back(index_3);
         size = std::max(v1->size, size);
         placeholder |= v3->placeholder;
-    }
+        loop->storage_size += type_size[v1->type];
 
-    for (uint32_t i = 0; i < n; ++i) {
-        uint32_t index = out_body[i];
-        const Variable *v = jitc_var(index);
-        size = std::max(v->size, size);
-        loop->out_body.push_back(index);
+        // ============= Output side =============
+
+        uint32_t index_o = out_body[i];
+        const Variable *vo = jitc_var(index_o);
+        size = std::max(vo->size, size);
+        loop->out_body.push_back(index_o);
+
+        // ============= Optimizations =============
+
+        if (optimize) {
+            // bool eq_literal =
+            //     v3->literal && vo->literal && v3->value == vo->value;
+            // bool unchanged = out_body[i] == in[i];
+            // if (eq_literal)
+            //     printf("***********eq_literal!!\n"):
+            // if (unchanged)
+            //     printf("***********unchanged!!\n"):
+            // out[i] = jitc_var_new_literal(Backend, (VarType) v1->type, &vo->literal);
+        }
     }
 
     for (uint32_t i = 0; i < n; ++i) {
@@ -117,8 +135,6 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
     // =====================================================
     // 2. Create variable representing the start of the loop
     // =====================================================
-
-    bool optimize = jitc_flags() & (uint32_t) JitFlag::LoopOptimize;
 
     Ref loop_start =
         steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 0, nullptr));
@@ -374,9 +390,9 @@ static void jitc_var_loop_assemble_start(const Variable *, const Extra &extra) {
 
     jitc_log(Info,
              "jit_var_loop_assemble(): loop (\"%s\") with %u/%u loop "
-             "variable%s (%u bytes), %u side effect%s",
+             "variable%s (%u/%u bytes), %u side effect%s",
              loop->name, result.first, (uint32_t) loop->in.size(),
-             result.first == 1 ? "" : "s", result.second,
+             result.first == 1 ? "" : "s", result.second, loop->storage_size,
              (uint32_t) loop->se_count, loop->se_count == 1 ? "" : "s");
 }
 
