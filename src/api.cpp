@@ -16,6 +16,7 @@
 #include "llvm_api.h"
 #include "op.h"
 #include "vcall.h"
+#include "loop.h"
 #include <thread>
 #include <condition_variable>
 
@@ -142,6 +143,10 @@ void jit_set_flag(JitFlag flag, int enable) {
         flags &= ~(uint32_t) flag;
 
     jitc_set_flags(flags);
+}
+
+int jit_flag(JitFlag flag) {
+    return (jitc_flags() & (uint32_t) flag) ? 1 : 0;
 }
 
 uint32_t jit_side_effects_scheduled(JitBackend backend) {
@@ -623,13 +628,20 @@ const void *jit_registry_attr_data(const char *domain, const char *name) {
     return jitc_registry_attr_data(domain, name);
 }
 
-void jit_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
+void jit_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out_nested,
                    const uint32_t *out_nested, const uint32_t *se_offset,
                    uint32_t *out) {
     lock_guard guard(state.mutex);
-    jitc_var_vcall(domain, self, n_inst, n_in, in, n_out_nested, out_nested,
+    jitc_var_vcall(name, self, n_inst, n_in, in, n_out_nested, out_nested,
                    se_offset, out);
+}
+
+void jit_var_loop(const char *name, uint32_t cond, uint32_t n,
+                  const uint32_t *in, const uint32_t *out_body,
+                  uint32_t se_offset, uint32_t *out) {
+    lock_guard guard(state.mutex);
+    jitc_var_loop(name, cond, n, in, out_body, se_offset, out);
 }
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)

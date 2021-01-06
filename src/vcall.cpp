@@ -13,10 +13,12 @@
 #include "eval.h"
 #include "util.h"
 
-
 /// Encodes information about a virtual function call
 struct VCall {
     JitBackend backend;
+
+    /// A descriptive name
+    const char *name;
 
     /// Implement call via indirect branch?
     bool branch;
@@ -67,7 +69,7 @@ jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
                             uint32_t index);
 
 // Weave a virtual function call into the computation graph
-void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
+void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
                     uint32_t n_in, const uint32_t *in, uint32_t n_out_nested,
                     const uint32_t *out_nested, const uint32_t *se_offset,
                     uint32_t *out) {
@@ -204,6 +206,7 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
 
     std::unique_ptr<VCall> vcall(new VCall());
     vcall->backend = backend;
+    vcall->name = name;
     vcall->branch = jitc_flags() & (uint32_t) JitFlag::VCallBranch;
     vcall->id = special;
     vcall->n_inst = n_inst;
@@ -262,11 +265,13 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     }
 
     jitc_log(Info,
-             "jit_var_vcall(r%u): %u instance%s, %u input%s, %u output%s (%u "
-             "devirtualized), %u side effect%s, %u byte%s of call data",
-             self, n_inst, n_inst == 1 ? "" : "s", n_in, n_in == 1 ? "" : "s",
-             n_out, n_out == 1 ? "" : "s", n_devirt, se_count,
-             se_count == 1 ? "" : "s", data_size, data_size == 1 ? "" : "s");
+             "jit_var_vcall(self=r%u): call (\"%s\") with %u instance%s, %u "
+             "input%s, %u output%s (%u devirtualized), %u side effect%s, %u "
+             "byte%s of call data",
+             self, name, n_inst, n_inst == 1 ? "" : "s", n_in,
+             n_in == 1 ? "" : "s", n_out, n_out == 1 ? "" : "s", n_devirt,
+             se_count, se_count == 1 ? "" : "s", data_size,
+             data_size == 1 ? "" : "s");
 
     // =====================================================
     // 5. Create output variables
@@ -307,10 +312,13 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
             uint32_t index_2 = vcall_2->in_nested[i];
             if (index_2 &&
                 state.variables.find(index_2) == state.variables.end()) {
+                Extra &e = state.extra[vcall_2->id];
+                if (unlikely(e.dep[i] != vcall_2->in[i]))
+                    jit_fail("jit_var_vcall(): internal error!");
                 jitc_var_dec_ref_int(vcall_2->in[i]);
+                e.dep[i] = 0;
                 vcall_2->in[i] = 0;
                 vcall_2->in_nested[i] = 0;
-                state.extra[vcall_2->id].dep[i] = 0;
             }
         }
     };
@@ -323,7 +331,7 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
             continue;
         }
 
-        snprintf(temp, sizeof(temp), "VCall: %s [out %u]", domain, i);
+        snprintf(temp, sizeof(temp), "VCall: %s [out %u]", name, i);
 
         const Variable *v = jitc_var(index);
         Variable v2;
@@ -386,7 +394,7 @@ void jitc_var_vcall(const char *domain, uint32_t self, uint32_t n_inst,
     // 7. Install callbacks for call variable
     // =====================================================
 
-    snprintf(temp, sizeof(temp), "VCall: %s", domain);
+    snprintf(temp, sizeof(temp), "VCall: %s", name);
     size_t dep_size = vcall->in.size() * sizeof(uint32_t);
 
     Variable *v_special = jitc_var(vcall->id);
@@ -807,12 +815,13 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
             return std::tie(a.high64, a.low64) == std::tie(b.high64, b.low64);
         }) - func_id.begin();
 
-    jitc_log(Info,
-             "jit_var_vcall_assemble(): indirect %s to %zu/%zu instances, "
-             "passing %u/%u inputs (%u bytes), %u/%u outputs (%u bytes)",
-             vcall->branch ? "branch" : "call", n_unique, func_id.size(),
-             n_in_active, n_in, in_size, n_out_active, n_out, out_size);
-
+    jitc_log(
+        Info,
+        "jit_var_vcall_assemble(): indirect %s (\"%s\") to %zu/%zu instances, "
+        "passing %u/%u inputs (%u bytes), %u/%u outputs (%u bytes)",
+        vcall->branch ? "branch" : "call", vcall->name, n_unique,
+        func_id.size(), n_in_active, n_in, in_size, n_out_active, n_out,
+        out_size);
 }
 
 /// Collect scalar / pointer variables referenced by a computation
@@ -851,5 +860,19 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
             jitc_var_vcall_collect_data(data_map, data_offset,
                                         inst_id, index_2);
         }
+        if (unlikely(v->extra)) {
+            auto it = state.extra.find(index);
+            if (it == state.extra.end())
+                jitc_fail("jit_var_vcall_collect_data(): could not find "
+                          "matching 'extra' record!");
+
+            const Extra &extra = it->second;
+            for (uint32_t i = 0; i < extra.n_dep; ++i) {
+                uint32_t index_2 = extra.dep[i];
+                jitc_var_vcall_collect_data(data_map, data_offset,
+                                            inst_id, index_2);
+            }
+        }
+
     }
 };

@@ -115,7 +115,8 @@ void jitc_var_free(uint32_t index, Variable *v) {
         Extra extra = it.value();
         state.extra.erase(it);
 
-        // Notify callback that the variable was freed
+        /* Notify callback that the variable was freed.
+           Do this first, before freeing any dependencies */
         if (extra.callback) {
             if (extra.callback_internal) {
                 extra.callback(index, 1, extra.callback_data);
@@ -240,7 +241,7 @@ const char *jitc_var_label(uint32_t index) {
 }
 
 /// Assign a descriptive label to a given variable
-void jitc_var_set_label(uint32_t index, const char *label) {
+void jitc_var_set_label(uint32_t index, const char *label, bool overwrite) {
     if (strchr(label, '\n') || strchr(label, '/'))
         jitc_raise("jit_var_set_label(): invalid string (may not contain "
                    "newline or '/' characters)");
@@ -253,8 +254,10 @@ void jitc_var_set_label(uint32_t index, const char *label) {
 
     v->extra = true;
     Extra &extra = state.extra[index];
-    free(extra.label);
+    if (extra.label && !overwrite)
+        return;
 
+    free(extra.label);
     if (!ts->prefix) {
         extra.label = label ? strdup(label) : nullptr;
     } else {

@@ -1178,7 +1178,7 @@ extern JIT_EXPORT void jit_prefix_push(JitBackend backend, const char *value);
 extern JIT_EXPORT void jit_prefix_pop(JitBackend backend);
 
 // ====================================================================
-//       Advanced JIT usage: recording programs, loops, etc.
+//  Advanced JIT usage: recording loops, virtual function calls, etc.
 // ====================================================================
 
 /**
@@ -1238,6 +1238,9 @@ extern JIT_EXPORT uint32_t jit_flags();
 /// Selectively enables/disables flags
 extern JIT_EXPORT void jit_set_flag(JIT_ENUM JitFlag flag, int enable);
 
+/// Checks whether a given flag is active. Returns zero or one.
+extern JIT_EXPORT int jit_flag(JIT_ENUM JitFlag flag);
+
 /**
  * \brief Assign a callback function that is invoked when the variable is
  * evaluated or freed.
@@ -1292,13 +1295,59 @@ extern JIT_EXPORT void jit_var_mask_pop(JitBackend backend);
 extern JIT_EXPORT uint32_t jit_var_mask_peek();
 
 
-/// Record a virtual function call
-extern JIT_EXPORT void jit_var_vcall(const char *domain, uint32_t self,
+/**
+ * \brief Record a virtual function call
+ *
+ * This function inserts a virtual function call into into the computation
+ * graph. This works like a giant demultiplexer-multiplexer pair: depending on
+ * the value of the \c self argument, information will flow through one of \c
+ * n_inst computation graphs that are provided via the `out_nested` argument.
+ *
+ * \param name
+ *     A descriptive name that will be used to label various created nodes in
+ *     the computation graph.
+ *
+ * \param self
+ *     Instance index (a variable of type <tt>VarType::UInt32</tt>), where
+ *     0 indicates that the function call should be masked. All outputs
+ *     will be zero-valued in that case.
+ *
+ * \param n_inst
+ *     The number of instances (must be >= 1)
+ *
+ * \param n_in
+ *     The number of input variables
+ *
+ * \param in
+ *     Pointer to an array of input variable indices of size \c n_in
+ *
+ * \param n_out_nested
+ *     Total number of output variables, where <tt>n_out_nested = (# of
+ *     outputs) * n_inst</tt>
+ *
+ * \param out_nested
+ *     Pointer to an array of output variable outdices of size \c n_out_nested
+ *
+ * \param se_offset
+ *     Indicates the size of the side effects queue (obtained from \ref
+ *     jit_side_effects_scheduled()) before each instance call, and
+ *     after the last one. <tt>n_inst + 1</tt> entries.
+ *
+ * \param out
+ *     The final output variables representing the result of the operation
+ *     are written into this argument (size <tt>n_out_nested / n_inst</tt>)
+ */
+extern JIT_EXPORT void jit_var_vcall(const char *name, uint32_t self,
                                      uint32_t n_inst, uint32_t n_in,
                                      const uint32_t *in, uint32_t n_out_nested,
                                      const uint32_t *out_nested,
                                      const uint32_t *se_offset,
                                      uint32_t *out);
+
+extern JIT_EXPORT void jit_var_loop(const char *name, uint32_t cond, uint32_t n,
+                                    const uint32_t *in,
+                                    const uint32_t *out_body,
+                                    uint32_t se_offset, uint32_t *out);
 
 // ====================================================================
 //                          Horizontal reductions

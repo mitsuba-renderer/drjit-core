@@ -68,6 +68,7 @@ add_library(
   src/io.h            src/io.cpp
   src/eval.h          src/eval.cpp
   src/vcall.h         src/vcall.cpp
+  src/loop.h          src/loop.cpp
   src/eval_cuda.cpp
   src/eval_llvm.cpp
   src/init.cpp

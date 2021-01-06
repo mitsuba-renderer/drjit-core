@@ -206,6 +206,8 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return m_index;
     }
 
+    uint32_t* index_ptr() { return &m_index; }
+
     const char *str() {
         return jit_var_str(m_index);
     }
@@ -286,7 +288,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     friend JitArray select(const Mask &a, const JitArray &b,
                            const JitArray &c) {
         return steal(
-            jit_var_new_op_3(JitOp::Select, a.m_index, b.m_index, c.m_index));
+            jit_var_new_op_3(JitOp::Select, a.index(), b.m_index, c.m_index));
     }
 
     friend JitArray min(const JitArray &a, const JitArray &b) {
