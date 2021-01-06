@@ -483,10 +483,6 @@ static void jitc_eval_prepare(std::vector<uint32_t> &source, bool eval = true) {
             if (v->ref_count_ext == 0 || v->data || v->literal)
                 continue;
 
-            if (unlikely(v->placeholder))
-                jitc_raise("jit_eval_prepare(): the schedule contains a "
-                           "placeholder variable, which is not allowed");
-
             jitc_var_traverse(v->size, index);
         } else {
             jitc_var_traverse(1, index);

@@ -1412,6 +1412,9 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
 
     uint32_t size = std::max(v_index->size, v_mask->size);
 
+    if (v_source->placeholder)
+        jitc_raise("jit_var_new_gather(): cannot gather from a placeholder variable!");
+
     // Completely avoid the gather operation for trivial arguments
     if (v_source->literal || v_source->size == 1) {
         uint32_t deps[2] = { source, mask_ };
@@ -1509,12 +1512,20 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
 uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                               uint32_t mask_, ReduceOp reduce_op) {
     Ref ptr, target = borrow(target_);
-    JitBackend backend = (JitBackend) jitc_var(target)->backend;
-    VarType vt = (VarType) jitc_var(target)->type;
-    void *data = jitc_var(target)->data;
+    JitBackend backend;
+    VarType vt;
+    void *data;
+    {
+        const Variable *v_target = jitc_var(target);
+        if (v_target->placeholder)
+            jitc_raise("jit_var_new_scatter(): cannot scatter to a placeholder variable!");
+        backend = (JitBackend) v_target->backend;
+        vt = (VarType) v_target->type;
+        data = v_target->data;
+    }
 
     if (vt != (VarType) jitc_var(value)->type)
-        jit_raise("jit_var_new_scatter(): target/value type mismatch!");
+        jitc_raise("jit_var_new_scatter(): target/value type mismatch!");
 
     if (data)
         ptr = steal(jitc_var_new_pointer(backend, data, target, 1));

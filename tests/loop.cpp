@@ -7,7 +7,7 @@ template <typename Mask> struct Loop {
 
     template <typename... Args>
     Loop(const char *name, Args &... args)
-        : m_name(name), m_state(0), m_cond(0), m_se_offset((uint32_t) -1) {
+        : m_name(name), m_state(0), m_cond(0), m_se_offset((uint32_t) -1), m_size(0) {
         if constexpr (sizeof...(Args) > 0) {
             (put(args), ...);
             init();
@@ -30,6 +30,11 @@ template <typename Mask> struct Loop {
 
     template <typename Value> void put(Value &value) {
         m_index_p.push_back(value.index_ptr());
+        size_t size = value.size();
+        if (m_size != 0 && size != 1 && size != m_size)
+            jit_raise("Loop.put(): loop variables have inconsistent sizes!");
+        if (size > m_size)
+            m_size = size;
     }
 
     void init() {
@@ -98,11 +103,15 @@ private:
     uint32_t m_cond;
     uint32_t m_se_offset;
     uint32_t m_flags;
+    size_t m_size;
 };
 
+#if 0
 TEST_CUDA(01_symbolic_loop) {
-    for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::LoopOptimize, i);
+    // Tests a simple loop evaluated at once, or in parts
+    for (uint32_t i = 0; i < 3; ++i) {
+        jit_set_flag(JitFlag::LoopRecord, i != 0);
+        jit_set_flag(JitFlag::LoopOptimize, i == 2);
 
         for (uint32_t j = 0; j < 2; ++j) {
             UInt32 x = arange<UInt32>(10);
@@ -125,6 +134,59 @@ TEST_CUDA(01_symbolic_loop) {
             jit_assert(strcmp(z.str(), "[6, 5, 4, 3, 2, 1, 1, 1, 1, 1]") == 0);
             jit_assert(strcmp(y.str(), "[10, 10, 9, 7, 4, 0, 0, 0, 0, 0]") == 0);
             jit_assert(strcmp(x.str(), "[5, 5, 5, 5, 5, 5, 6, 7, 8, 9]") == 0);
+        }
+    }
+}
+#endif
+
+TEST_CUDA(02_side_effect) {
+    // Tests that side effects only happen once
+    for (uint32_t i = 0; i < 2; ++i) {
+        jit_set_flag(JitFlag::LoopRecord, i != 0);
+        jit_set_flag(JitFlag::LoopOptimize, i == 2);
+
+        for (uint32_t j = 0; j < 3; ++j) {
+            UInt32 x = arange<UInt32>(10);
+            Float y = zero<Float>(1);
+            UInt32 target = zero<UInt32>(11);
+
+            Loop<Mask> loop("MyLoop", x, y);
+            while (loop.cond(x < 5)) {
+                scatter_reduce(ReduceOp::Add, target, UInt32(1), x);
+                y += Float(x);
+                x += 1;
+            }
+
+            if (j == 0) {
+                jit_var_schedule(x.index());
+                jit_var_schedule(y.index());
+            }
+
+            jit_assert(strcmp(y.str(), "[10, 10, 9, 7, 4, 0, 0, 0, 0, 0]") == 0);
+            jit_assert(strcmp(x.str(), "[5, 5, 5, 5, 5, 5, 6, 7, 8, 9]") == 0);
+            jit_assert(strcmp(target.str(), "[1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0]") == 0);
+        }
+    }
+}
+
+TEST_CUDA(03_side_effect_2) {
+    // Tests that side effects work that don't reference loop variables
+    for (uint32_t i = 0; i < 2; ++i) {
+        jit_set_flag(JitFlag::LoopRecord, i != 0);
+        jit_set_flag(JitFlag::LoopOptimize, i == 2);
+
+        for (uint32_t j = 0; j < 3; ++j) {
+            UInt32 x = arange<UInt32>(10);
+            UInt32 target = zero<UInt32>(11);
+
+            Loop<Mask> loop("MyLoop", x);
+            while (loop.cond(x < 5)) {
+                scatter_reduce(ReduceOp::Add, target, UInt32(2), UInt32(2));
+                x += 1;
+            }
+
+            jit_assert(strcmp(x.str(), "[5, 5, 5, 5, 5, 5, 6, 7, 8, 9]") == 0);
+            jit_assert(strcmp(target.str(), "[0, 0, 30, 0, 0, 0, 0, 0, 0, 0, 0]") == 0);
         }
     }
 }

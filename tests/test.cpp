@@ -388,10 +388,10 @@ int main(int argc, char **argv) {
             } else {
                 tests_failed++;
                 if (fail_fast) {
-                    fprintf(stdout, "FAILED! (skipping remaining tests).\n");
+                    fprintf(stdout, "MISMATCH! (skipping remaining tests).\n");
                     break;
                 } else {
-                    fprintf(stdout, "FAILED!\n");
+                    fprintf(stdout, "MISMATCH!\n");
                 }
             }
         }

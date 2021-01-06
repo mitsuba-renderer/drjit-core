@@ -314,7 +314,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
                 state.variables.find(index_2) == state.variables.end()) {
                 Extra &e = state.extra[vcall_2->id];
                 if (unlikely(e.dep[i] != vcall_2->in[i]))
-                    jit_fail("jit_var_vcall(): internal error!");
+                    jitc_fail("jit_var_vcall(): internal error!");
                 jitc_var_dec_ref_int(vcall_2->in[i]);
                 e.dep[i] = 0;
                 vcall_2->in[i] = 0;
@@ -526,7 +526,7 @@ static void jitc_var_vcall_assemble(uint32_t self_reg,
         if (uses_optix && !vcall->branch) {
             auto it = globals_map.find(func_id[i]);
             if (it == globals_map.end())
-                jit_fail("jit_vcall_assemble(): could not find callable!");
+                jitc_fail("jit_vcall_assemble(): could not find callable!");
             optix_callable_refs.push_back(it->second);
         }
 #endif
