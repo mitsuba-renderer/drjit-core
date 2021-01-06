@@ -299,9 +299,17 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
             jit_var_new_op_2(JitOp::Max, a.m_index, b.m_index));
     }
 
-    friend bool all(const JitArray &a) { return jit_var_all(a.m_index); }
-    friend bool any(const JitArray &a) { return jit_var_any(a.m_index); }
-    friend bool none(const JitArray &a) { return !jit_var_any(a.m_index); }
+    friend bool all(const JitArray &a) {
+        JitArray<Backend, bool> r = steal(jit_var_reduce(a.m_index, ReduceOp::And));
+        return r.read(0);
+    }
+
+    friend bool any(const JitArray &a) {
+        JitArray<Backend, bool> r = steal(jit_var_reduce(a.m_index, ReduceOp::Or));
+        return r.read(0);
+    }
+
+    friend bool none(const JitArray &a) { return !any(a); }
 
 	friend const char *label(const JitArray &v) {
 		return jit_var_label(v.m_index);

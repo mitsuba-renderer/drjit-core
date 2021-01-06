@@ -457,14 +457,9 @@ void jit_var_mask_pop(JitBackend backend) {
     jitc_var_mask_pop(backend);
 }
 
-int jit_var_any(uint32_t index) {
+uint32_t jit_var_reduce(uint32_t index, ReduceOp reduce_op) {
     lock_guard guard(state.mutex);
-    return jitc_var_any(index);
-}
-
-int jit_var_all(uint32_t index) {
-    lock_guard guard(state.mutex);
-    return jitc_var_all(index);
+    return jitc_var_reduce(index, reduce_op);
 }
 
 const char *jit_var_whos() {

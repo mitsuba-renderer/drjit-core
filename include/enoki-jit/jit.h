@@ -1304,11 +1304,8 @@ extern JIT_EXPORT void jit_var_vcall(const char *domain, uint32_t self,
 //                          Horizontal reductions
 // ====================================================================
 
-/// Reduce (AND) a boolean array to a single value, synchronizes.
-extern JIT_EXPORT int jit_var_all(uint32_t index);
-
-/// Reduce (OR) a boolean array to a single value, synchronizes.
-extern JIT_EXPORT int jit_var_any(uint32_t index);
+/// Reduce a variable to a single value
+extern JIT_EXPORT uint32_t jit_var_reduce(uint32_t index, JIT_ENUM ReduceOp reduce_op);
 
 // ====================================================================
 //  Assortment of tuned kernels for initialization, reductions, etc.

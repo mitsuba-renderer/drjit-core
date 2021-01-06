@@ -354,9 +354,9 @@ int main(int argc, char **argv) {
                  is_llvm = strstr(test.name, "_llvm"),
                  is_optix = strstr(test.name, "_optix");
 
-            if (is_cuda && !test_cuda ||
-                is_optix && !test_optix ||
-                is_llvm && !test_llvm) {
+            if ((is_cuda && !test_cuda) ||
+                (is_optix && !test_optix) ||
+                (is_llvm && !test_llvm)) {
                 fprintf(stdout, "skipped.\n");
                 continue;
             }
