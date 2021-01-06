@@ -698,7 +698,7 @@ void jitc_llvm_shutdown() {
             free(jitc_llvm_ones_str[i]);
         free(jitc_llvm_ones_str);
     }
-
+    jitc_llvm_ones_str = nullptr;
 
 #if !defined(_WIN32)
     free(jitc_llvm_mem);
