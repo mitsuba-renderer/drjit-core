@@ -185,6 +185,38 @@ T eval_trunc(T) {
     jitc_raise("eval_trunc(): unsupported operands!");
 }
 
+template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
+T eval_exp2(T value) { return std::exp2(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+T eval_exp2(T) {
+    jitc_raise("eval_exp2(): unsupported operands!");
+}
+
+template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
+T eval_log2(T value) { return std::log2(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+T eval_log2(T) {
+    jitc_raise("eval_log2(): unsupported operands!");
+}
+
+template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
+T eval_sin(T value) { return std::sin(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+T eval_sin(T) {
+    jitc_raise("eval_sin(): unsupported operands!");
+}
+
+template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
+T eval_cos(T value) { return std::cos(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+T eval_cos(T) {
+    jitc_raise("eval_cos(): unsupported operands!");
+}
+
 template <typename T, enable_if_t<!std::is_integral<T>::value ||
                                   std::is_same<T, bool>::value> = 0>
 T eval_popc(T) {
@@ -607,6 +639,42 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 stmt = "cvt.rzi.$t0.$t0 $r0, $r1";
             } else {
                 stmt = "$r0 = $call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)";
+            }
+            break;
+
+        case JitOp::Exp2:
+            is_valid = jitc_is_float(vt) && backend == JitBackend::CUDA;
+            if (literal) {
+                lv = jitc_eval_literal([](auto value) { return eval_exp2(value); }, v[0]);
+            } else if (backend == JitBackend::CUDA) {
+                stmt = "ex2.approx.ftz.$t0 $r0, $r1";
+            }
+            break;
+
+        case JitOp::Log2:
+            is_valid = jitc_is_float(vt) && backend == JitBackend::CUDA;
+            if (literal) {
+                lv = jitc_eval_literal([](auto value) { return eval_log2(value); }, v[0]);
+            } else if (backend == JitBackend::CUDA) {
+                stmt = "lg2.approx.ftz.$t1 $r0, $r1";
+            }
+            break;
+
+        case JitOp::Sin:
+            is_valid = jitc_is_float(vt) && backend == JitBackend::CUDA;
+            if (literal) {
+                lv = jitc_eval_literal([](auto value) { return eval_sin(value); }, v[0]);
+            } else if (backend == JitBackend::CUDA) {
+                stmt = "sin.approx.ftz.$t1 $r0, $r1";
+            }
+            break;
+
+        case JitOp::Cos:
+            is_valid = jitc_is_float(vt) && backend == JitBackend::CUDA;
+            if (literal) {
+                lv = jitc_eval_literal([](auto value) { return eval_cos(value); }, v[0]);
+            } else if (backend == JitBackend::CUDA) {
+                stmt = "cos.approx.ftz.$t1 $r0, $r1";
             }
             break;
 

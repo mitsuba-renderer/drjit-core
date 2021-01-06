@@ -188,12 +188,12 @@ TEST_BOTH(05_block_ops) {
     jit_log(Info, "block_sum:  %s\n", block_sum(a, 3).str());
 }
 
-TEST_LLVM(06_parallel_scatter_add) {
+TEST_LLVM(06_parallel_scatter_reduce) {
     scoped_set_log_level ssll(LogLevel::Info);
     UInt32 a = zero<UInt32>(10);
 
     UInt32 index = block_copy(arange<UInt32>(10), 1024 * 1024 + 10);
-    scatter_add(a, UInt32(1), index);
+    scatter_reduce(a, UInt32(1), index, ReduceOp::Add);
     UInt32 ref = full<UInt32>(1024 * 1024 + 10, 10);
     jit_assert(ref == a);
 }
