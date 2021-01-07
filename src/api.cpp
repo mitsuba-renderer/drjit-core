@@ -639,9 +639,11 @@ void jit_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
 
 void jit_var_loop(const char *name, uint32_t cond, uint32_t n,
                   const uint32_t *in, const uint32_t *out_body,
-                  uint32_t se_offset, uint32_t *out) {
+                  uint32_t se_offset, uint32_t *out, int check_invariant,
+                  uint8_t *invariant) {
     lock_guard guard(state.mutex);
-    jitc_var_loop(name, cond, n, in, out_body, se_offset, out);
+    jitc_var_loop(name, cond, n, in, out_body, se_offset, out, check_invariant,
+                  invariant);
 }
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)

@@ -1,6 +1,7 @@
 #include "internal.h"
 #include "var.h"
 #include "log.h"
+#include <tsl/robin_set.h>
 
 struct Loop {
     // A descriptive name
@@ -14,7 +15,7 @@ struct Loop {
     /// Number of side effects
     uint32_t se_count = 0;
     /// Storage size in bytes for all variables before simplification
-    uint32_t storage_size = 0;
+    uint32_t storage_size_initial = 0;
     /// Input variables before loop
     std::vector<uint32_t> in;
     /// Input variables before branch condition
@@ -31,17 +32,12 @@ struct Loop {
 static void jitc_var_loop_assemble_start(const Variable *v, const Extra &extra);
 static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra);
 static void jitc_var_loop_assemble_end(const Variable *v, const Extra &extra);
-
-static uint32_t jitc_refcount(uint32_t index) {
-    auto it = state.variables.find(index);
-    if (it == state.variables.end())
-        return 0;
-    return it->second.ref_count_int + it->second.ref_count_ext;
-}
+static void jitc_var_loop_simplify(Loop *loop, uint32_t cause);
 
 void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
                    const uint32_t *in, const uint32_t *out_body,
-                   uint32_t se_offset, uint32_t *out) {
+                   uint32_t se_offset, uint32_t *out,
+                   int check_invariant, uint8_t *invariant) {
     const Variable *cond_v = jitc_var(cond);
     JitBackend backend = (JitBackend) cond_v->backend;
     ThreadState *ts = thread_state(backend);
@@ -65,8 +61,8 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
     // =====================================================
 
     bool optimize = jitc_flags() & (uint32_t) JitFlag::LoopOptimize;
-    uint32_t size = 1;
     bool placeholder = false;
+    uint32_t size = 1, n_invariant_provided = 0, n_invariant_detected = 0;
     char temp[128];
 
     {
@@ -82,6 +78,18 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         // ============= Input side =============
         uint32_t index_1 = in[i];
         Variable *v1 = jitc_var(index_1);
+        loop->storage_size_initial += type_size[v1->type];
+
+        if (invariant[i]) {
+            loop->in_body.push_back(0);
+            loop->in_cond.push_back(0);
+            loop->in.push_back(0);
+            loop->out_body.push_back(0);
+            loop->out.push_back(0);
+            n_invariant_provided++;
+            continue;
+        }
+
         if (!v1->placeholder || !v1->placeholder_iface || !v1->dep[0])
             jitc_raise("jit_var_loop(): inputs must be placeholder variables (1)");
         uint32_t index_2 = v1->dep[0];
@@ -96,37 +104,67 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         loop->in.push_back(index_3);
         size = std::max(v1->size, size);
         placeholder |= v3->placeholder;
-        loop->storage_size += type_size[v1->type];
 
         // ============= Output side =============
         uint32_t index_o = out_body[i];
         const Variable *vo = jitc_var(index_o);
+        if (!vo->literal && !vo->placeholder)
+            jitc_raise("jit_var_loop(): outputs must be placeholder or literal variables");
         size = std::max(vo->size, size);
         loop->out_body.push_back(index_o);
 
         // ============= Optimizations =============
 
-        // if (invariant) {
-        //     bool eq_literal =
-        //         v3->literal && vo->literal && v3->value == vo->value;
-        //     bool unchanged = out_body[i] == in[i];
-        //
-        //     invariant[i] = optimize && (eq_literal || unchanged);
-        // }
+        if (check_invariant && optimize) {
+            bool eq_literal =
+                     v3->literal && vo->literal && v3->value == vo->value,
+                 unchanged = index_o == index_1,
+                 is_invariant = eq_literal || unchanged;
+
+            invariant[i] = is_invariant;
+            n_invariant_detected += is_invariant;
+        }
     }
 
     for (uint32_t i = 0; i < n; ++i) {
-        const Variable *vi = jitc_var(loop->in_body[i]),
-                       *vo = jitc_var(loop->out_body[i]);
-        if ((vi->size != 1 && vi->size != size) ||
-            (vo->size != 1 && vo->size != size))
-            jitc_raise(
-                "jit_var_loop(): input/output arrays have incompatible size!");
+        auto it_in  = state.variables.find(loop->in_body[i]),
+             it_out = state.variables.find(loop->out_body[i]);
+
+        if (it_in != state.variables.end()) {
+            const Variable &v = it_in->second;
+            if (unlikely(v.size != 1 && v.size != size))
+                jitc_raise("jit_var_loop(): loop input variable %u has an "
+                           "incompatible size!", i);
+        }
+
+
+        if (it_out != state.variables.end()) {
+            const Variable &v = it_out->second;
+            if (unlikely(v.size != 1 && v.size != size))
+                jitc_raise("jit_var_loop(): loop output variable %u has an "
+                           "incompatible size!", i);
+        }
     }
 
+    temp[0] = '\0';
+
+    if (n_invariant_detected && n_invariant_provided)
+        jitc_fail("jit_var_loop(): internal error while detecting loop-invariant variables!");
+
+    if (n_invariant_detected)
+        snprintf(temp, sizeof(temp),
+                 ", %u loop-invariant variables detected, recording loop once "
+                 "more to optimize further..", n_invariant_detected);
+    else if (n_invariant_provided)
+        snprintf(temp, sizeof(temp), ", %u loop-invariant variables eliminated",
+                 n_invariant_provided);
+
     jitc_log(Info,
-             "jit_var_loop(cond=r%u): loop (\"%s\") with %u loop variable%s, %u side effect%s",
-             cond, name, n, n == 1 ? "" : "s", se_count, se_count == 1 ? "" : "s");
+             "jit_var_loop(cond=r%u): loop (\"%s\") with %u loop variable%s, %u side effect%s%s",
+             cond, name, n, n == 1 ? "" : "s", se_count, se_count == 1 ? "" : "s", temp);
+
+    if (n_invariant_detected)
+        return;
 
     // =====================================================
     // 2. Create variable representing the start of the loop
@@ -175,7 +213,9 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
     // =====================================================
 
     for (uint32_t i = 0; i < n; ++i) {
-        Variable *v_body   = jitc_var(loop->in_body[i]),
+        if (!loop->in_body[i])
+            continue;
+        Variable *v_body = jitc_var(loop->in_body[i]),
                  *v_cond = jitc_var(loop->in_cond[i]);
         v_body->dep[1] = loop_cond;
         v_cond->dep[1] = loop_start;
@@ -208,11 +248,14 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         v->size = size;
         Extra &e = state.extra[loop_end];
         e.label = strdup(temp);
-        e.n_dep = n + se_count;
-        e.dep = (uint32_t *) malloc((n + se_count) * sizeof(uint32_t));
+        e.n_dep = 2*n + se_count;
+        e.dep = (uint32_t *) malloc((2 * n + se_count) * sizeof(uint32_t));
         memcpy(e.dep, loop->out_body.data(), n * sizeof(uint32_t));
-        for (uint32_t i = 0; i < n; ++i)
+        memcpy(e.dep + n, loop->in_cond.data(), n * sizeof(uint32_t));
+        for (uint32_t i = 0; i < n; ++i) {
             jitc_var_inc_ref_int(loop->out_body[i]);
+            jitc_var_inc_ref_int(loop->in_cond[i]);
+        }
         e.assemble = jitc_var_loop_assemble_end;
         e.callback_data = loop.get();
 
@@ -221,7 +264,7 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
             uint32_t index = se[se.size() - se_count + i];
             // The 'loop_end' node should depend on this side effect
             jitc_var_inc_ref_int(index);
-            state.extra[loop_end].dep[n + i] = index;
+            state.extra[loop_end].dep[2 * n + i] = index;
 
             // This side effect should depend on 'loop_branch'
             jitc_var(index)->extra = 1;
@@ -285,37 +328,20 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
                       "be located!", index);
         loop_2->out[offset] = 0;
 
-        if (jitc_refcount(loop_2->in_cond[offset]) > 2 ||
-            jitc_refcount(loop_2->in_body[offset]) > 1)
-            return; // still needed
-
-        // Inform recursive computation graphs via reference counting
-        Extra &e1 = state.extra[loop_2->end];
-        if (unlikely(e1.dep[offset] != loop_2->out_body[offset]))
-            jitc_fail("jit_var_loop(): internal error (1)");
-        jitc_var_dec_ref_int(loop_2->out_body[offset]);
-        e1.dep[offset] = 0;
-        loop_2->out_body[offset] = 0;
-
-        // Check if any input parameters became irrelevant
-        for (uint32_t i = 0; i < n2; ++i) {
-            if (!loop_2->in[i] || jitc_refcount(loop_2->in_cond[i]) > 0)
-                continue;
-
-            Extra &e2 = state.extra[loop_2->start];
-            if (unlikely(e2.dep[i] != loop_2->in[i]))
-                jitc_fail("jit_var_loop(): internal error (2)");
-
-            jitc_var_dec_ref_int(loop_2->in[i]);
-            e2.dep[i] = 0;
-            loop_2->in[i] = 0;
-            loop_2->in_cond[i] = 0;
-            loop_2->in_body[i] = 0;
-        }
+        /* When this output variable is removed, it may also enable some
+           simplification within the loop. */
+        jitc_var_loop_simplify(loop_2, offset);
     };
 
     for (uint32_t i = 0; i < n; ++i) {
         uint32_t index = loop->out_body[i];
+        if (!index) {
+            // Loop-invariant variable
+            out[i] = in[i];
+            jitc_var_inc_ref_ext(out[i]);
+            continue;
+        }
+
         snprintf(temp, sizeof(temp), "Loop: %s [out %u]", name, i);
 
         const Variable *v = jitc_var(index);
@@ -353,6 +379,84 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
     }
 }
 
+static void jitc_var_loop_dfs(tsl::robin_set<uint32_t> &set, uint32_t index) {
+    if (!set.insert(index).second)
+        return;
+
+    const Variable *v = jitc_var(index);
+    for (uint32_t i = 0; i < 4; ++i) {
+        uint32_t index_2 = v->dep[i];
+        if (!index_2)
+            break;
+        jitc_var_loop_dfs(set, index_2);
+    }
+
+    if (unlikely(v->extra)) {
+        auto it = state.extra.find(index);
+        if (it == state.extra.end())
+            jitc_fail("jit_var_loop_dfs(): could not find matching 'extra' record!");
+
+        const Extra &extra = it->second;
+        for (uint32_t i = 0; i < extra.n_dep; ++i) {
+            uint32_t index2 = extra.dep[i];
+            if (index2)
+                jitc_var_loop_dfs(set, index2);
+        }
+    }
+}
+
+static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
+    uint32_t n = loop->in.size();
+    tsl::robin_set<uint32_t> visited;
+
+    jitc_trace("jit_var_loop_simplify(): output %u freed, simplifying..", cause);
+
+    // Find all inputs that are reachable from the outputs that are still alive
+    for (uint32_t i = 0; i < n; ++i) {
+        if (!loop->out[i] || !loop->out_body[i])
+            continue;
+        jitc_var_loop_dfs(visited, loop->out_body[i]);
+    }
+
+    // Find all inputs that are reachable from the side effects
+    Extra &e = state.extra[loop->end];
+    for (uint32_t i = 2*n; i < e.n_dep; ++i) {
+        if (e.dep[i])
+            jitc_var_loop_dfs(visited, e.dep[i]);
+    }
+
+    /// Remove loop variables that are never referenced
+    uint32_t n_freed = 0;
+    for (uint32_t i = 0; i < n; ++i) {
+        uint32_t index = loop->in_body[i];
+        if (index == 0 || visited.find(index) != visited.end())
+            continue;
+        n_freed++;
+
+        jitc_trace(
+            "jit_var_loop_simplify(): freeing unreferenced loop variable %u", i);
+
+        Extra &e_start = state.extra[loop->start];
+        Extra &e_end = state.extra[loop->end];
+        if (unlikely(e_start.dep[i] != loop->in[i]))
+            jitc_fail("jit_var_loop_simplify: internal error (1)");
+        if (unlikely(e_end.dep[n + i] != loop->in_cond[i]))
+            jitc_fail("jit_var_loop_simplify: internal error (3)");
+        if (unlikely(e_end.dep[i] != loop->out_body[i]))
+            jitc_fail("jit_var_loop_simplify: internal error (2)");
+        e_end.dep[i] = e_end.dep[n + i] = e_start.dep[i] = 0;
+
+        jitc_var_dec_ref_int(loop->in[i]);
+        jitc_var_dec_ref_int(loop->in_cond[i]);
+        jitc_var_dec_ref_int(loop->out_body[i]);
+
+        loop->in[i] = loop->in_cond[i] = loop->out_body[i] = 0;
+    }
+
+    jitc_trace("jit_var_loop_simplify(): done, freed %u loop variables.",
+               n_freed);
+}
+
 static std::pair<uint32_t, uint32_t>
 jitc_var_loop_move(const std::vector<uint32_t> &dst,
                    const std::vector<uint32_t> &src) {
@@ -363,6 +467,11 @@ jitc_var_loop_move(const std::vector<uint32_t> &dst,
 
         if (it_src == state.variables.end() || it_dst == state.variables.end())
             continue;
+        if (unlikely(it_src->second.reg_index == 0 ||
+                     it_dst->second.reg_index == 0))
+            jitc_fail("jit_var_loop_move(): internal error (can't move r%u <- "
+                      "r%u as one of them hasn't been assigned a register)!",
+                      dst[i], src[i]);
 
         uint32_t vti = it_src->second.type;
 
@@ -382,13 +491,14 @@ static void jitc_var_loop_assemble_start(const Variable *, const Extra &extra) {
 
     buffer.fmt("\nl_%u_start:\n", loop_reg);
     auto result = jitc_var_loop_move(loop->in_cond, loop->in);
-    buffer.fmt("\nl_%u_cond:\n", loop_reg);
+    buffer.fmt("\nl_%u_cond: // Loop \"%s\" (%u loop variables)\n", loop_reg,
+               loop->name, result.first);
 
     jitc_log(Info,
              "jit_var_loop_assemble(): loop (\"%s\") with %u/%u loop "
              "variable%s (%u/%u bytes), %u side effect%s",
              loop->name, result.first, (uint32_t) loop->in.size(),
-             result.first == 1 ? "" : "s", result.second, loop->storage_size,
+             result.first == 1 ? "" : "s", result.second, loop->storage_size_initial,
              (uint32_t) loop->se_count, loop->se_count == 1 ? "" : "s");
 }
 
@@ -415,9 +525,9 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
         uint32_t *dep = state.extra[loop->end].dep;
         uint32_t n = (uint32_t) loop->in.size();
         for (uint32_t i = 0; i < loop->se_count; ++i) {
-            uint32_t &index = dep[n + i];
+            uint32_t &index = dep[2*n + i];
             if (!jitc_var(index)->side_effect)
-                jit_fail("jitc_var_loop_assemble(): internal error (3)");
+                jitc_fail("jitc_var_loop_assemble(): internal error (3)");
             jitc_var_dec_ref_int(index);
             index = 0;
         }

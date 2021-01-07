@@ -476,7 +476,8 @@ uint32_t jitc_var_new_placeholder(uint32_t index, int propagate_literals) {
     jitc_var_inc_ref_int(index);
 
     uint32_t result = jitc_var_new(v2, true);
-    jitc_log(Debug, "jit_var_new_placeholder(r%u <- r%u)%s", result, index,
+    jitc_log(Debug, "jit_var_new_placeholder(%s r%u <- r%u)%s",
+             type_name[v->type], result, index,
              v2.literal ? ": propagated literal" : "");
     return result;
 }
@@ -1278,7 +1279,7 @@ const char *jitc_var_graphviz() {
         if (labeled && !color)
             color = "wheat";
 
-        var_buffer.fmt("|{Type: %s %s|Size: %u}|{ID #%u|E:%u|I:%u}}",
+        var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%u|E:%u|I:%u}}",
             (JitBackend) v->backend == JitBackend::CUDA ? "cuda" : "llvm",
             type_name_short[v->type], v->size, index, v->ref_count_ext,
             v->ref_count_int);

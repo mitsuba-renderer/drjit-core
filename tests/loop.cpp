@@ -16,22 +16,24 @@ template <typename Mask> struct Loop {
     }
 
     ~Loop() {
+        // Recover if an error occurred while recording a loop symbolically
         if (m_record && m_se_offset != (uint32_t) -1) {
-            // An error occurred while recording a loop
             jit_side_effects_rollback(Backend, m_se_offset);
             jit_set_flag(JitFlag::PostponeSideEffects, m_se_flag);
+
+            for (size_t i = 0; i < m_index_body.size(); ++i)
+                jit_var_dec_ref_ext(m_index_body[i]);
         }
 
+        // Recover if an error occurred while running a wavefront-style loop
         if (!m_record && m_index_out.size() > 0) {
-            // An error occurred while evaluating a loop wavefront-style
-            for (uint32_t i = 0; i < m_index_out.size(); ++i)
+            for (size_t i = 0; i < m_index_out.size(); ++i)
                 jit_var_dec_ref_ext(m_index_out[i]);
             jit_var_mask_pop(Backend);
         }
 
-        if (m_state != 0 && m_state != 3)
-            jit_log(Warn, "Loop(): de-allocated in an inconsistent state. "
-                          "(Loop.cond() must run exactly twice!)");
+        if (m_state != 0 && m_state != 3 && m_state != 4)
+            jit_log(Warn, "enoki::Loop(): destructed in an inconsistent state.");
     }
 
     /// Register a loop variable // TODO: nested arrays, structs, etc.
@@ -39,9 +41,10 @@ template <typename Mask> struct Loop {
         /// XXX complain when variables are attached
         m_index_p.push_back(value.index_ptr());
         m_index_in.push_back(value.index());
+        m_invariant.push_back(0);
         size_t size = value.size();
         if (m_size != 0 && size != 1 && size != m_size)
-            jit_raise("Loop.put(): loop variables have inconsistent sizes!");
+            jit_raise("enoki::Loop.put(): loop variables have inconsistent sizes!");
         if (size > m_size)
             m_size = size;
     }
@@ -52,10 +55,12 @@ template <typename Mask> struct Loop {
             jit_raise("Loop(): was already initialized!");
 
         if (m_record) {
-            step();
-            m_se_offset = jit_side_effects_scheduled(Backend);
+            /* Wrap loop variables using placeholders that represent
+               their state just before the loop condition is evaluated */
             m_se_flag = jit_flag(JitFlag::PostponeSideEffects);
             jit_set_flag(JitFlag::PostponeSideEffects, 1);
+            m_se_offset = jit_side_effects_scheduled(Backend);
+            step();
             m_state = 1;
         }
     }
@@ -68,6 +73,106 @@ template <typename Mask> struct Loop {
     }
 
 protected:
+
+    bool cond_record(const Mask &cond) {
+        uint32_t n = (uint32_t) m_index_p.size();
+        bool has_invariant;
+
+        switch (m_state) {
+            case 0:
+                jit_raise("Loop(): must be initialized first!");
+
+            case 1:
+                /* The loop condition has been evaluated now.  Wrap loop
+                   variables using placeholders once more. They will represent
+                   their state at the start of the loop body. */
+                m_cond = cond; // detach
+                step();
+                for (uint32_t i = 0; i < n; ++i) {
+                    uint32_t index = *m_index_p[i];
+                    m_index_body.push_back(index);
+                    jit_var_inc_ref_ext(index);
+                }
+                m_state++;
+                return true;
+
+            case 2:
+            case 3:
+                for (uint32_t i = 0; i < n; ++i)
+                    m_index_out.push_back(*m_index_p[i]);
+
+                jit_var_loop(m_name, m_cond.index(),
+                             (uint32_t) n, m_index_body.data(),
+                             m_index_out.data(), m_se_offset,
+                             m_index_out.data(), m_state == 2,
+                             m_invariant.data());
+
+                has_invariant = false;
+                for (uint32_t i = 0; i < n; ++i)
+                    has_invariant |= m_invariant[i];
+
+                if (has_invariant && m_state == 2) {
+                    /* Some loop variables don't change while running the loop.
+                       This can be exploited by recording the loop a second time
+                       while taking this information into account. */
+                    jit_side_effects_rollback(Backend, m_se_offset);
+                    m_index_out.clear();
+
+                    for (uint32_t i = 0; i < n; ++i) {
+                        // Free outputs produced by current iteration
+                        uint32_t &index = *m_index_p[i];
+                        jit_var_dec_ref_ext(index);
+
+                        if (m_invariant[i]) {
+                            uint32_t input = m_index_in[i],
+                                    &cur = m_index_body[i];
+                            jit_var_inc_ref_ext(input);
+                            jit_var_dec_ref_ext(cur);
+                            m_index_body[i] = input;
+                        }
+
+                        index = m_index_body[i];
+                        jit_var_inc_ref_ext(index);
+                    }
+
+                    m_state++;
+                    return true;
+                } else {
+                    // No optimization opportunities, stop now.
+                    for (uint32_t i = 0; i < n; ++i)
+                        jit_var_dec_ref_ext(m_index_body[i]);
+                    m_index_body.clear();
+
+                    for (uint32_t i = 0; i < n; ++i) {
+                        uint32_t &index = *m_index_p[i];
+                        jit_var_dec_ref_ext(index);
+                        index = m_index_out[i]; // steal ref
+                    }
+
+                    m_index_out.clear();
+                    jit_set_flag(JitFlag::PostponeSideEffects, m_se_flag);
+                    m_se_offset = (uint32_t) -1;
+                    m_state++;
+                    return false;
+                }
+
+            default:
+                jit_raise("Loop(): invalid state!");
+        }
+
+        return false;
+    }
+
+    // Insert an indirection via placeholder variables
+    void step() {
+        for (size_t i = 0; i < m_index_p.size(); ++i) {
+            uint32_t &index = *m_index_p[i],
+                     next = jit_var_new_placeholder(index, 0);
+            jit_var_dec_ref_ext(index);
+            index = next;
+        }
+    }
+
     bool cond_wavefront(const Mask &cond) {
         // Need to mask loop variables for disabled lanes
         if (m_cond.index()) {
@@ -106,61 +211,41 @@ protected:
         }
     }
 
-    bool cond_record(const Mask &cond) {
-        switch (m_state++) {
-            case 0:
-                jit_raise("Loop(): must be initialized first!");
-
-            case 1:
-                m_cond = cond; // detach
-                step();
-                for (uint32_t i = 0; i < m_index_p.size(); ++i)
-                    m_index_body.push_back(*m_index_p[i]);
-                return true;
-
-            case 2:
-                for (uint32_t i = 0; i < m_index_p.size(); ++i)
-                    m_index_out.push_back(*m_index_p[i]);
-                jit_var_loop(m_name, m_cond.index(),
-                             (uint32_t) m_index_p.size(), m_index_body.data(),
-                             m_index_out.data(), m_se_offset,
-                             m_index_out.data());
-                for (uint32_t i = 0; i < m_index_p.size(); ++i) {
-                    uint32_t &index = *m_index_p[i];
-                    jit_var_dec_ref_ext(index);
-                    index = m_index_out[i];
-                }
-                jit_set_flag(JitFlag::PostponeSideEffects, m_se_flag);
-                return false;
-
-            default:
-                jit_raise("Loop(): invalid state!");
-        }
-
-        return false;
-    }
-
-    // Insert an indirection via placeholder variables
-    void step() {
-        for (size_t i = 0; i < m_index_p.size(); ++i) {
-            uint32_t &index = *m_index_p[i],
-                     next = jit_var_new_placeholder(index, 0);
-            jit_var_dec_ref_ext(index);
-            index = next;
-        }
-    }
-
 private:
+    /// A descriptive name
     const char *m_name;
-    ek_vector<uint32_t> m_index_in;
-    ek_vector<uint32_t> m_index_body;
-    ek_vector<uint32_t> m_index_out;
+
+    /// Pointers to loop variable indices
     ek_vector<uint32_t *> m_index_p;
+
+    /// Loop variable indices before entering the loop
+    ek_vector<uint32_t> m_index_in;
+
+    /// Loop variable indices at the top of the loop body
+    ek_vector<uint32_t> m_index_body;
+
+    /// Loop variable indices after the end of the loop
+    ek_vector<uint32_t> m_index_out;
+
+    /// Detects loop-invariant variables to trigger optimizations
+    ek_vector<uint8_t> m_invariant;
+
+    /// Stashed mask variable from the previous iteration
     Mask m_cond; // XXX detached_t<Mask>
-    uint32_t m_state;
-    uint32_t m_se_offset;
-    int m_se_flag;
+
+    /// Keeps track of the size of loop variables to catch issues
     size_t m_size;
+
+    /// Offset in the side effects queue before the beginning of the loop
+    uint32_t m_se_offset;
+
+    /// State of the PostPoneSideEffects flag
+    int m_se_flag;
+
+    /// Index of the symbolic loop state machine
+    uint32_t m_state;
+
+    /// Is the loop being recorded symbolically
     bool m_record;
 };
 
@@ -183,9 +268,9 @@ TEST_CUDA(01_record_loop) {
             }
 
             if (j == 0) {
-                jit_var_schedule(x.index());
-                jit_var_schedule(y.index());
                 jit_var_schedule(z.index());
+                jit_var_schedule(y.index());
+                jit_var_schedule(x.index());
             }
 
             jit_assert(strcmp(z.str(), "[6, 5, 4, 3, 2, 1, 1, 1, 1, 1]") == 0);
@@ -197,11 +282,11 @@ TEST_CUDA(01_record_loop) {
 
 TEST_CUDA(02_side_effect) {
     // Tests that side effects only happen once
-    for (uint32_t i = 0; i < 2; ++i) {
+    for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
         jit_set_flag(JitFlag::LoopOptimize, i == 2);
 
-        for (uint32_t j = 0; j < 3; ++j) {
+        for (uint32_t j = 0; j < 2; ++j) {
             UInt32 x = arange<UInt32>(10);
             Float y = zero<Float>(1);
             UInt32 target = zero<UInt32>(11);
@@ -274,6 +359,66 @@ TEST_CUDA(04_side_effect_masking) {
 
             jit_assert(strcmp(target.str(), "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]") == 0);
         }
+    }
+}
+
+TEST_CUDA(05_optimize_invariant) {
+    /* Test to check that variables which stay unchanged or constant and
+       equal-valued are optimized out of the loop */
+    for (uint32_t i = 0; i < 3; ++i) {
+        jit_set_flag(JitFlag::LoopRecord, i != 0);
+        jit_set_flag(JitFlag::LoopOptimize, i == 2);
+
+        UInt32 j = 0,
+               v1 = 123,
+               v1_orig = v1,
+               v2 = opaque<UInt32>(123),
+               v2_orig = v2,
+               v3 = 124,
+               v3_orig = v3,
+               v4 = 125,
+               v4_orig = v4,
+               v5 = 1,
+               v6 = 0;
+
+        Loop<Mask> loop("MyLoop", j, v1, v2, v3, v4, v5, v6);
+        int count = 0;
+        while (loop.cond(j < 10)) {
+            j += 1;
+
+            (void) v1; // v1 stays unchanged
+            (void) v2; // v2 stays unchanged
+            v3 = 124;  // v3 is overwritten with same value
+            v4 = 100;  // v4 is overwritten with different value
+            (void) v2; // v5 stays unchanged
+            v6 += v5;  // v6 is modified by a loop-invariant variable
+            ++count;
+        }
+
+        if (i == 0)
+            jit_assert(count == 10);
+        else if (i == 1)
+            jit_assert(count == 1);
+        else if (i == 2)
+            jit_assert(count == 2);
+
+        if (i == 2) {
+            jit_assert( jit_var_is_literal(v1.index()) && v1.index() == v1_orig.index());
+            jit_assert(!jit_var_is_literal(v2.index()) && v2.index() == v2_orig.index());
+            jit_assert( jit_var_is_literal(v3.index()) && v3.index() == v3_orig.index());
+            jit_assert(!jit_var_is_literal(v4.index()) && v4.index() != v4_orig.index());
+            jit_assert( jit_var_is_literal(v5.index()));
+            jit_assert(!jit_var_is_literal(v6.index()));
+        }
+
+        jit_var_schedule(v1.index());
+        jit_var_schedule(v2.index());
+        jit_var_schedule(v3.index());
+        jit_var_schedule(v4.index());
+        jit_var_schedule(v5.index());
+        jit_var_schedule(v6.index());
+
+        jit_assert(v1 == 123 && v2 == 123 && v3 == 124 && v4 == 100 && v5 == 1 && v6 == 10);
     }
 }
 

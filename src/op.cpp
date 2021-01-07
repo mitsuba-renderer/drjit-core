@@ -1202,7 +1202,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     if (unlikely(std::max(state.log_level_stderr, state.log_level_callback) >=
                  LogLevel::Debug)) {
         var_buffer.clear();
-        var_buffer.fmt("jit_var_new_op(r%u <- %s ", result, op_name[(int) op]);
+        var_buffer.fmt("jit_var_new_op(%s r%u <- %s ",
+                       type_name[(uint32_t) vtr], result, op_name[(int) op]);
         for (uint32_t i = 0; i < n_dep; ++i)
             var_buffer.fmt("r%u%s", dep[i], i + 1 < n_dep ? ", " : ")");
         if (literal)
@@ -1410,6 +1411,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
                    *v_index = jitc_var(index_),
                    *v_mask = jitc_var(mask_);
 
+    uint32_t vti = v_source->type;
     uint32_t size = std::max(v_index->size, v_mask->size);
 
     if (v_source->placeholder)
@@ -1421,8 +1423,8 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         Ref tmp = steal(jitc_var_new_op(JitOp::And, 2, deps));
 
         uint32_t result = jitc_var_resize(tmp, size);
-        jitc_log(Debug, "jit_var_new_gather(r%u <- r%u[r%u] if r%u): elided",
-                 result, source, index_, mask_);
+        jitc_log(Debug, "jit_var_new_gather(%s r%u <- r%u[r%u] if r%u): elided",
+                 type_name[vti], result, source, index_, mask_);
 
         return result;
     }
