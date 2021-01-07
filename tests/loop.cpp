@@ -23,6 +23,9 @@ template <typename Mask> struct Loop {
 
             for (size_t i = 0; i < m_index_body.size(); ++i)
                 jit_var_dec_ref_ext(m_index_body[i]);
+
+            if (Backend == JitBackend::LLVM && m_cond.index())
+                jit_var_mask_pop(Backend);
         }
 
         // Recover if an error occurred while running a wavefront-style loop
@@ -87,6 +90,8 @@ protected:
                    variables using placeholders once more. They will represent
                    their state at the start of the loop body. */
                 m_cond = cond; // detach
+                if constexpr (Backend == JitBackend::LLVM)
+                    jit_var_mask_push(Backend, cond.index());
                 step();
                 for (uint32_t i = 0; i < n; ++i) {
                     uint32_t index = *m_index_p[i];
@@ -152,6 +157,9 @@ protected:
                     m_index_out.clear();
                     jit_set_flag(JitFlag::PostponeSideEffects, m_se_flag);
                     m_se_offset = (uint32_t) -1;
+                    m_cond = Mask();
+                    if constexpr (Backend == JitBackend::LLVM)
+                        jit_var_mask_pop(Backend);
                     m_state++;
                     return false;
                 }
@@ -249,7 +257,7 @@ private:
     bool m_record;
 };
 
-TEST_CUDA(01_record_loop) {
+TEST_BOTH(01_record_loop) {
     // Tests a simple loop evaluated at once, or in parts
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -280,7 +288,7 @@ TEST_CUDA(01_record_loop) {
     }
 }
 
-TEST_CUDA(02_side_effect) {
+TEST_BOTH(02_side_effect) {
     // Tests that side effects only happen once
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -310,7 +318,7 @@ TEST_CUDA(02_side_effect) {
     }
 }
 
-TEST_CUDA(03_side_effect_2) {
+TEST_BOTH(03_side_effect_2) {
     // Tests that side effects work that don't reference loop variables
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -340,7 +348,7 @@ TEST_CUDA(03_side_effect_2) {
     }
 }
 
-TEST_CUDA(04_side_effect_masking) {
+TEST_BOTH(04_side_effect_masking) {
     // Tests that side effects work that don't reference loop variables
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -362,7 +370,7 @@ TEST_CUDA(04_side_effect_masking) {
     }
 }
 
-TEST_CUDA(05_optimize_invariant) {
+TEST_BOTH(05_optimize_invariant) {
     /* Test to check that variables which stay unchanged or constant and
        equal-valued are optimized out of the loop */
     for (uint32_t i = 0; i < 3; ++i) {
