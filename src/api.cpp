@@ -354,6 +354,13 @@ void jit_var_dec_ref_ext_impl(uint32_t index) noexcept(true) {
     jitc_var_dec_ref_ext(index);
 }
 
+int jit_var_exists(uint32_t index) {
+    if (index == 0)
+        return 0;
+    lock_guard guard(state.mutex);
+    return state.variables.find(index) != state.variables.end();
+}
+
 uint32_t jit_var_ref_int(uint32_t index) {
     if (index == 0)
         return 0;

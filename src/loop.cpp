@@ -29,6 +29,8 @@ struct Loop {
     std::vector<uint32_t> out_body;
     /// Output variables after loop
     std::vector<uint32_t> out;
+    /// Is the loop currently being simplified?
+    bool simplify_flag = false;
 };
 
 // Forward declarations
@@ -67,14 +69,14 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
     bool optimize = jitc_flags() & (uint32_t) JitFlag::LoopOptimize;
     bool placeholder = false;
     uint32_t size = 1, n_invariant_provided = 0, n_invariant_detected = 0;
-    char temp[128];
+    char temp[256];
 
     {
         const Variable *v = jitc_var(cond);
         if ((VarType) v->type != VarType::Bool)
-            jitc_raise("jit_var_loop(): 'cond' must be a boolean variable");
+            jitc_raise("jit_var_loop(): loop condition must be a boolean variable");
         if (!v->placeholder)
-            jitc_raise("jit_var_loop(): 'cond' must be a placeholder variable");
+            jitc_raise("jit_var_loop(): loop condition does not depend on any of the loop variables");
         size = v->size;
     }
 
@@ -118,7 +120,6 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         loop->out_body.push_back(index_o);
 
         // ============= Optimizations =============
-
         if (check_invariant && optimize) {
             bool eq_literal =
                      v3->literal && vo->literal && v3->value == vo->value,
@@ -180,7 +181,7 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
 
     {
         size_t dep_size = n * sizeof(uint32_t);
-        snprintf(temp, sizeof(temp), "Loop: %s [start]", name);
+        snprintf(temp, sizeof(temp), "Loop (%s) [start]", name);
         Variable *v = jitc_var(loop_start);
         v->extra = 1;
         v->size = size;
@@ -202,7 +203,7 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
     Ref loop_cond = steal(
         jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, loop_cond_dep));
     {
-        snprintf(temp, sizeof(temp), "Loop: %s [branch]", name);
+        snprintf(temp, sizeof(temp), "Loop (%s) [cond]", name);
         Variable *v = jitc_var(loop_cond);
         v->extra = 1;
         v->size = size;
@@ -221,6 +222,7 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
             continue;
         Variable *v_body = jitc_var(loop->in_body[i]),
                  *v_cond = jitc_var(loop->in_cond[i]);
+
         v_body->dep[1] = loop_cond;
         v_cond->dep[1] = loop_start;
         v_body->stmt = (char *) "";
@@ -228,12 +230,17 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         jitc_var_inc_ref_int(loop_start);
         jitc_var_inc_ref_int(loop_cond);
 
-        snprintf(temp, sizeof(temp), "Loop: %s [in %u]", name, i);
-        jitc_var_set_label(loop->in[i], temp, false);
-        snprintf(temp, sizeof(temp), "Loop: %s [in %u, cond.]", name, i);
-        jitc_var_set_label(loop->in_cond[i], temp, false);
-        snprintf(temp, sizeof(temp), "Loop: %s [in %u, body]", name, i);
-        jitc_var_set_label(loop->in_body[i], temp, false);
+        const char *label = jitc_var_label(loop->in[i]);
+
+        snprintf(temp, sizeof(temp), "%s%sLoop (%s) [in %u, body]",
+                 label ? label : "", label ? ", " : "", name, i);
+        jitc_var_set_label(loop->in_body[i], temp);
+        snprintf(temp, sizeof(temp), "%s%sLoop (%s) [in %u, cond]",
+                 label ? label : "", label ? ", " : "", name, i);
+        jitc_var_set_label(loop->in_cond[i], temp);
+        snprintf(temp, sizeof(temp), "%s%sLoop (%s) [in %u]",
+                 label ? label : "", label ? ", " : "", name, i);
+        jitc_var_set_label(loop->in[i], temp);
     }
 
     // =====================================================
@@ -246,7 +253,7 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, loop_end_dep));
     loop->end = loop_end;
     {
-        snprintf(temp, sizeof(temp), "Loop: %s [end]", name);
+        snprintf(temp, sizeof(temp), "Loop (%s) [end]", name);
         Variable *v = jitc_var(loop_end);
         v->extra = 1;
         v->size = size;
@@ -297,7 +304,7 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
         loop_se = steal(
             jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, loop_se_dep));
         {
-            snprintf(temp, sizeof(temp), "Loop: %s [side effects]", name);
+            snprintf(temp, sizeof(temp), "Loop \"%s\" [side effects]", name);
             Variable *v = jitc_var(loop_se);
             v->side_effect = 1;
             v->size = size;
@@ -345,8 +352,12 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
             jitc_var_inc_ref_ext(out[i]);
             continue;
         }
+        const char *label = jitc_var_label(loop->in_body[i]);
+        const char *delim = strrchr(label, '[');
+        if (unlikely(!label))
+            jitc_fail("jit_var_loop(): internal error while creating output label");
 
-        snprintf(temp, sizeof(temp), "Loop: %s [out %u]", name, i);
+        snprintf(temp, sizeof(temp), "%.*s[out %u]", (int) (delim - label), label, i);
 
         const Variable *v = jitc_var(index);
         Variable v2;
@@ -389,6 +400,7 @@ void jitc_var_loop(const char *name, uint32_t cond, uint32_t n,
 static void jitc_var_loop_dfs(tsl::robin_set<uint32_t> &set, uint32_t index) {
     if (!set.insert(index).second)
         return;
+    jitc_trace("jitc_var_dfs(r%u)", index);
 
     const Variable *v = jitc_var(index);
     for (uint32_t i = 0; i < 4; ++i) {
@@ -405,23 +417,29 @@ static void jitc_var_loop_dfs(tsl::robin_set<uint32_t> &set, uint32_t index) {
 
         const Extra &extra = it->second;
         for (uint32_t i = 0; i < extra.n_dep; ++i) {
-            uint32_t index2 = extra.dep[i];
-            if (index2)
-                jitc_var_loop_dfs(set, index2);
+            uint32_t index_2 = extra.dep[i];
+            if (index_2)
+                jitc_var_loop_dfs(set, index_2);
         }
     }
 }
 
 static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
+    if (loop->simplify_flag)
+        return;
+    loop->simplify_flag = true;
+
     uint32_t n = loop->in.size();
     tsl::robin_set<uint32_t> visited;
 
-    jitc_trace("jit_var_loop_simplify(): output %u freed, simplifying..", cause);
+    jitc_trace("jit_var_loop_simplify(): loop output %u freed, simplifying..",
+               cause);
 
     // Find all inputs that are reachable from the outputs that are still alive
     for (uint32_t i = 0; i < n; ++i) {
         if (!loop->out[i] || !loop->out_body[i])
             continue;
+        jitc_trace("jit_var_loop_simplify(): DFS from %u (r%u)", i, loop->out_body[i]);
         jitc_var_loop_dfs(visited, loop->out_body[i]);
     }
 
@@ -432,6 +450,20 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
             jitc_var_loop_dfs(visited, e.dep[i]);
     }
 
+    /// Propagate until no further changes
+    bool again;
+    do {
+        again = false;
+        for (uint32_t i = 0; i < n; ++i) {
+            if (loop->in_body[i] &&
+                visited.find(loop->in_body[i]) != visited.end() &&
+                visited.find(loop->out_body[i]) == visited.end()) {
+                jitc_var_loop_dfs(visited, loop->out_body[i]);
+                again = true;
+            }
+        }
+    } while (again);
+
     /// Remove loop variables that are never referenced
     uint32_t n_freed = 0;
     for (uint32_t i = 0; i < n; ++i) {
@@ -440,8 +472,8 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
             continue;
         n_freed++;
 
-        jitc_trace(
-            "jit_var_loop_simplify(): freeing unreferenced loop variable %u", i);
+        jitc_trace("jit_var_loop_simplify(): freeing unreferenced loop "
+                   "variable %u (r%u)", i, loop->in[i]);
 
         Extra &e_start = state.extra[loop->start];
         Extra &e_end = state.extra[loop->end];
@@ -457,11 +489,12 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
         jitc_var_dec_ref_int(loop->in_cond[i]);
         jitc_var_dec_ref_int(loop->out_body[i]);
 
-        loop->in[i] = loop->in_cond[i] = loop->out_body[i] = 0;
+        loop->in[i] = loop->in_cond[i] = loop->in_body[i] = loop->out_body[i] = 0;
     }
 
     jitc_trace("jit_var_loop_simplify(): done, freed %u loop variables.",
                n_freed);
+    loop->simplify_flag = false;
 }
 
 static std::pair<uint32_t, uint32_t>

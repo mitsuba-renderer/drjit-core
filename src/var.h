@@ -83,7 +83,7 @@ extern void jitc_var_dec_ref_ext(uint32_t index) noexcept(true);
 extern VarType jitc_var_type(uint32_t index);
 
 /// Assign a descriptive label to a given variable
-extern void jitc_var_set_label(uint32_t index, const char *label, bool overwrite = true);
+extern void jitc_var_set_label(uint32_t index, const char *label);
 
 /// Query the descriptive label associated with a given variable
 extern const char *jitc_var_label(uint32_t index);

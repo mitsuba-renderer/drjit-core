@@ -241,7 +241,7 @@ const char *jitc_var_label(uint32_t index) {
 }
 
 /// Assign a descriptive label to a given variable
-void jitc_var_set_label(uint32_t index, const char *label, bool overwrite) {
+void jitc_var_set_label(uint32_t index, const char *label) {
     if (strchr(label, '\n') || strchr(label, '/'))
         jitc_raise("jit_var_set_label(): invalid string (may not contain "
                    "newline or '/' characters)");
@@ -254,8 +254,6 @@ void jitc_var_set_label(uint32_t index, const char *label, bool overwrite) {
 
     v->extra = true;
     Extra &extra = state.extra[index];
-    if (extra.label && !overwrite)
-        return;
 
     free(extra.label);
     if (!ts->prefix) {
@@ -1223,6 +1221,7 @@ const char *jitc_var_graphviz() {
                         var_buffer.put("\\l");
                         continue;
 
+                    case '"':
                     case '|':
                     case '{':
                     case '}':

@@ -257,6 +257,7 @@ private:
     bool m_record;
 };
 
+#if 0
 TEST_BOTH(01_record_loop) {
     // Tests a simple loop evaluated at once, or in parts
     for (uint32_t i = 0; i < 3; ++i) {
@@ -427,6 +428,53 @@ TEST_BOTH(05_optimize_invariant) {
         jit_var_schedule(v6.index());
 
         jit_assert(v1 == 123 && v2 == 123 && v3 == 124 && v4 == 100 && v5 == 1 && v6 == 10);
+    }
+}
+#endif
+
+TEST_BOTH(06_garbage_collection) {
+    // Checks that unused loop variables are optimized away
+
+    jit_set_flag(JitFlag::LoopRecord, 1);
+    for (uint32_t i = 0; i < 2; ++i) {
+        jit_set_flag(JitFlag::LoopOptimize, i == 1);
+
+        UInt32 j = 0;
+        UInt32 v1 = opaque<UInt32>(1);
+        UInt32 v2 = opaque<UInt32>(2);
+        UInt32 v3 = opaque<UInt32>(3);
+        UInt32 v4 = opaque<UInt32>(4);
+        uint32_t v1i = v1.index(), v2i = v2.index(),
+                 v3i = v3.index(), v4i = v4.index();
+        jit_var_set_label(v1i, "v1");
+        jit_var_set_label(v2i, "v2");
+        jit_var_set_label(v3i, "v3");
+        jit_var_set_label(v4i, "v4");
+
+        Loop<Mask> loop("MyLoop", j, v1, v2, v3, v4);
+        while (loop.cond(j < 4)) {
+            UInt32 tmp = v4;
+            v4 = v1;
+            v1 = v2;
+            v2 = v3;
+            v3 = tmp;
+            j += 1;
+        }
+        fprintf(stderr, "%s\n", jit_var_graphviz());
+
+        v1 = UInt32();
+        v2 = UInt32();
+        v3 = UInt32();
+        jit_assert(jit_var_exists(v1i) && jit_var_exists(v2i) && jit_var_exists(v3i) && jit_var_exists(v4i));
+
+        v4 = UInt32();
+        if (i == 0)
+            jit_assert(jit_var_exists(v1i) && jit_var_exists(v2i) && jit_var_exists(v3i) && jit_var_exists(v4i));
+        else
+            jit_assert(!jit_var_exists(v1i) && !jit_var_exists(v2i) && !jit_var_exists(v3i) && !jit_var_exists(v4i));
+
+        j = UInt32();
+        jit_assert(!jit_var_exists(v1i) && !jit_var_exists(v2i) && !jit_var_exists(v3i) && !jit_var_exists(v4i));
     }
 }
 
