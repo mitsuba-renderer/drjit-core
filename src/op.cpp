@@ -46,7 +46,7 @@ static bool jitc_is_uint(VarType type) {
 }
 
 static bool jitc_is_int(VarType type) {
-	return jitc_is_sint(type) || jitc_is_uint(type);
+    return jitc_is_sint(type) || jitc_is_uint(type);
 }
 
 static bool jitc_is_not_void(VarType type) {
@@ -312,7 +312,7 @@ T eval_mulhi(T a, T b) {
         using Wide = std::conditional_t<std::is_signed<T>::value, __int128_t, __uint128_t>;
         return T(((Wide) a * (Wide) b) >> 64);
 #endif
-	}
+    }
 }
 
 
@@ -794,22 +794,22 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             } else if (backend == JitBackend::CUDA) {
                 stmt = "mul.hi.$t0 $r0, $r1, $r2";
             } else {
-				if (jitc_is_sint(vt))
-					stmt = "$r0_0 = sext <$w x $t1> $r1 to <$w x $T1>$n"
-						   "$r0_1 = sext <$w x $t2> $r2 to <$w x $T2>$n"
-						   "$r0_2 = sext <$w x $t3> $r3 to <$w x $T3>$n"
-						   "$r0_3 = mul <$w x $T1> $r0_0, $r0_1$n"
-						   "$r0_4 = lshr <$w x $T1> $r0_3, $r0_2$n"
-						   "$r0 = trunc <$w x $T1> $r0_4 to <$w x $t1>";
-				else
-					stmt = "$r0_0 = zext <$w x $t1> $r1 to <$w x $T1>$n"
-						   "$r0_1 = zext <$w x $t2> $r2 to <$w x $T2>$n"
-						   "$r0_2 = zext <$w x $t3> $r3 to <$w x $T3>$n"
-						   "$r0_3 = mul <$w x $T1> $r0_0, $r0_1$n"
-						   "$r0_4 = lshr <$w x $T1> $r0_3, $r0_2$n"
-						   "$r0 = trunc <$w x $T1> $r0_4 to <$w x $t1>";
+                if (jitc_is_sint(vt))
+                    stmt = "$r0_0 = sext <$w x $t1> $r1 to <$w x $T1>$n"
+                           "$r0_1 = sext <$w x $t2> $r2 to <$w x $T2>$n"
+                           "$r0_2 = sext <$w x $t3> $r3 to <$w x $T3>$n"
+                           "$r0_3 = mul <$w x $T1> $r0_0, $r0_1$n"
+                           "$r0_4 = lshr <$w x $T1> $r0_3, $r0_2$n"
+                           "$r0 = trunc <$w x $T1> $r0_4 to <$w x $t1>";
+                else
+                    stmt = "$r0_0 = zext <$w x $t1> $r1 to <$w x $T1>$n"
+                           "$r0_1 = zext <$w x $t2> $r2 to <$w x $T2>$n"
+                           "$r0_2 = zext <$w x $t3> $r3 to <$w x $T3>$n"
+                           "$r0_3 = mul <$w x $T1> $r0_0, $r0_1$n"
+                           "$r0_4 = lshr <$w x $T1> $r0_3, $r0_2$n"
+                           "$r0 = trunc <$w x $T1> $r0_4 to <$w x $t1>";
 
-				uint64_t shift_amount = type_size[vti] * 8;
+                uint64_t shift_amount = type_size[vti] * 8;
 
                 uint32_t shift =
                     jitc_var_new_literal(backend, vt, &shift_amount, 1, 0);
