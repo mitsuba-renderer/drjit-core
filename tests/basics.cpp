@@ -122,7 +122,7 @@ const char *op_name[(int) JitOp::Count] {
     "popc", "clz", "ctz",
 
     // ---- Binary ----
-    "add", "sub", "mul", "div", "mod", "min", "max", "and", "or",
+    "add", "sub", "mul", "mulhi", "div", "mod", "min", "max", "and", "or",
     "xor", "shl", "shr",
 
     // ---- Comparisons ----

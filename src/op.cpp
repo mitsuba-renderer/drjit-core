@@ -45,6 +45,10 @@ static bool jitc_is_uint(VarType type) {
            type == VarType::UInt64;
 }
 
+static bool jitc_is_int(VarType type) {
+	return jitc_is_sint(type) || jitc_is_uint(type);
+}
+
 static bool jitc_is_not_void(VarType type) {
     return type != VarType::Void;
 }
@@ -280,13 +284,37 @@ T eval_fma(T a, T b, T c) { return std::fma(a, b, c); }
 template <typename T, enable_if_t<!std::is_floating_point<T>::value &&
                                   !std::is_same<T, bool>::value> = 0>
 T eval_fma(T a, T b, T c) {
-    return (T)(a * b + c);
+    return (T) (a * b + c);
 }
 
 template <typename T, enable_if_t<std::is_same<T, bool>::value> = 0>
 T eval_fma(T, T, T) {
     jitc_raise("eval_fma(): unsupported operands!");
 }
+
+template <typename T, enable_if_t<!(std::is_integral<T>::value && (sizeof(T) == 4 || sizeof(T) == 8))> = 0>
+T eval_mulhi(T, T) {
+    jitc_raise("eval_mulhi(): unsupported operands!");
+}
+
+template <typename T, enable_if_t<std::is_integral<T>::value && (sizeof(T) == 4 || sizeof(T) == 8)> = 0>
+T eval_mulhi(T a, T b) {
+    if (sizeof(T) == 4) {
+        using Wide = std::conditional_t<std::is_signed<T>::value, int64_t, uint64_t>;
+        return T(((Wide) a * (Wide) b) >> 32);
+    } else {
+#if defined(_MSC_VER)
+        if (std::is_signed<T>::value)
+            return (T) __mulh((__int64) a, (__int64) b);
+        else
+            return (T) __umulh((__uint64) a, (__uint64) b);
+#else
+        using Wide = std::conditional_t<std::is_signed<T>::value, __int128_t, __uint128_t>;
+        return T(((Wide) a * (Wide) b) >> 64);
+#endif
+	}
+}
+
 
 // ===========================================================================
 // Helpe to apply a given expression (lambda) to literal constant variables
@@ -367,7 +395,7 @@ const char *op_name[(int) JitOp::Count] {
     "popc", "clz", "ctz",
 
     // ---- Binary ----
-    "add", "sub", "mul", "div", "mod", "min", "max", "and", "or",
+    "add", "sub", "mul", "mulhi", "div", "mod", "min", "max", "and", "or",
     "xor", "shl", "shr",
 
     // ---- Comparisons ----
@@ -754,13 +782,51 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             }
             break;
 
+        case JitOp::Mulhi:
+            is_valid = jitc_is_arithmetic(vt) && !jitc_is_float(vt);
+            if (literal) {
+                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_mulhi(v0, v1); },
+                                       v[0], v[1]);
+            } else if (literal_zero[0]) {
+                li = dep[0];
+            } else if (literal_zero[1]) {
+                li = dep[1];
+            } else if (backend == JitBackend::CUDA) {
+                stmt = "mul.hi.$t0 $r0, $r1, $r2";
+            } else {
+				if (jitc_is_sint(vt))
+					stmt = "$r0_0 = sext <$w x $t1> $r1 to <$w x $T1>$n"
+						   "$r0_1 = sext <$w x $t2> $r2 to <$w x $T2>$n"
+						   "$r0_2 = sext <$w x $t3> $r3 to <$w x $T3>$n"
+						   "$r0_3 = mul <$w x $T1> $r0_0, $r0_1$n"
+						   "$r0_4 = lshr <$w x $T1> $r0_3, $r0_2$n"
+						   "$r0 = trunc <$w x $T1> $r0_4 to <$w x $t1>";
+				else
+					stmt = "$r0_0 = zext <$w x $t1> $r1 to <$w x $T1>$n"
+						   "$r0_1 = zext <$w x $t2> $r2 to <$w x $T2>$n"
+						   "$r0_2 = zext <$w x $t3> $r3 to <$w x $T3>$n"
+						   "$r0_3 = mul <$w x $T1> $r0_0, $r0_1$n"
+						   "$r0_4 = lshr <$w x $T1> $r0_3, $r0_2$n"
+						   "$r0 = trunc <$w x $T1> $r0_4 to <$w x $t1>";
+
+				uint64_t shift_amount = type_size[vti] * 8;
+
+                uint32_t shift =
+                    jitc_var_new_literal(backend, vt, &shift_amount, 1, 0);
+                uint32_t deps[3] = { dep[0], dep[1], shift };
+                li = jitc_var_new_stmt(backend, vt, stmt, 1, 3, deps);
+                jitc_var_dec_ref_ext(shift);
+                li_created = true;
+            }
+            break;
+
         case JitOp::Mul:
             if (literal) {
                 lv = jitc_eval_literal([](auto v0, auto v1) { return v0 * v1; },
                                        v[0], v[1]);
-            } else if (literal_one[0]) {
+            } else if (literal_one[0] || (literal_zero[1] && jitc_is_int(vt))) {
                 li = dep[1];
-            } else if (literal_one[1]) {
+            } else if (literal_one[1] || (literal_zero[0] && jitc_is_int(vt))) {
                 li = dep[0];
             } else if (is_uint && v[0]->literal && jitc_is_pow2(v[0]->value)) {
                 li = jitc_var_shift(backend, vt, JitOp::Shl, dep[1], v[0]->value);

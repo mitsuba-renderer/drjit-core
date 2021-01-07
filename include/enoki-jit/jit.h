@@ -742,7 +742,7 @@ enum class JitOp : uint32_t {
     Not, Neg, Abs, Sqrt, Rcp, Rsqrt, Ceil, Floor, Round, Trunc, Exp2, Log2, Sin, Cos,
     Popc, Clz, Ctz,
     // ---- Binary ----
-    Add, Sub, Mul, Div, Mod, Min, Max, And, Or, Xor, Shl, Shr,
+    Add, Sub, Mul, Mulhi, Div, Mod, Min, Max, And, Or, Xor, Shl, Shr,
     // ---- Comparisons ----
     Eq, Neq, Lt, Le, Gt, Ge,
     // ---- Ternary ----

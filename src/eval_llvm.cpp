@@ -277,6 +277,7 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v) {
                     case 'w': buffer.put(jitc_llvm_vector_width_str,
                                          strlen(jitc_llvm_vector_width_str)); continue;
                     case 't': prefix_table = type_name_llvm; break;
+                    case 'T': prefix_table = type_name_llvm_big; break;
                     case 'b': prefix_table = type_name_llvm_bin; break;
                     case 'a': prefix_table = type_name_llvm_abbrev; break;
                     case 's': prefix_table = type_size_str; break;
