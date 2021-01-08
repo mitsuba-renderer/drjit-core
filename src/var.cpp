@@ -12,6 +12,7 @@
 #include "log.h"
 #include "eval.h"
 #include "util.h"
+#include "op.h"
 
 
 /// Descriptive names for the various variable types
@@ -979,8 +980,17 @@ uint32_t jitc_var_mask_peek(JitBackend backend) {
 }
 
 void jitc_var_mask_push(JitBackend backend, uint32_t index) {
-    jitc_var_inc_ref_int(index);
-    thread_state(backend)->mask_stack.push_back(index);
+    ThreadState *ts = thread_state(backend);
+    if (backend == JitBackend::CUDA && ts->mask_stack.empty()) {
+        jitc_var_inc_ref_int(index);
+        ts->mask_stack.push_back(index);
+    } else {
+        Ref top = steal(jitc_var_mask_peek(backend));
+        uint32_t dep[2] = { top, index };
+        Ref combined = steal(jitc_var_new_op(JitOp::And, 2, dep));
+        ts->mask_stack.push_back(combined);
+        jitc_var_inc_ref_int(combined);
+    }
 }
 
 void jitc_var_mask_pop(JitBackend backend) {
