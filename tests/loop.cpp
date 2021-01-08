@@ -23,16 +23,12 @@ template <typename Mask> struct Loop {
 
             for (size_t i = 0; i < m_index_body.size(); ++i)
                 jit_var_dec_ref_ext(m_index_body[i]);
-
-            if (Backend == JitBackend::LLVM && m_cond.index())
-                jit_var_mask_pop(Backend);
         }
 
         // Recover if an error occurred while running a wavefront-style loop
         if (!m_record && m_index_out.size() > 0) {
             for (size_t i = 0; i < m_index_out.size(); ++i)
                 jit_var_dec_ref_ext(m_index_out[i]);
-            jit_var_mask_pop(Backend);
         }
 
         if (m_state != 0 && m_state != 3 && m_state != 4)
@@ -76,6 +72,27 @@ template <typename Mask> struct Loop {
     }
 
 protected:
+    struct MaskStackHelper {
+    public:
+        void push(uint32_t index) {
+            if (m_armed)
+                jit_fail("MaskStackHelper::internal error! (1)");
+            jit_var_mask_push(Mask::Backend, index);
+            m_armed = true;
+        }
+        void pop() {
+            if (!m_armed)
+                jit_fail("MaskStackHelper::internal error! (2)");
+            jit_var_mask_pop(Mask::Backend);
+            m_armed = false;
+        }
+        ~MaskStackHelper() {
+            if (m_armed)
+                pop();
+        }
+    private:
+        bool m_armed = false;
+    };
 
     bool cond_record(const Mask &cond) {
         uint32_t n = (uint32_t) m_index_p.size();
@@ -90,8 +107,6 @@ protected:
                    variables using placeholders once more. They will represent
                    their state at the start of the loop body. */
                 m_cond = cond; // detach
-                if constexpr (Backend == JitBackend::LLVM)
-                    jit_var_mask_push(Backend, cond.index());
                 step();
                 for (uint32_t i = 0; i < n; ++i) {
                     uint32_t index = *m_index_p[i];
@@ -99,10 +114,14 @@ protected:
                     jit_var_inc_ref_ext(index);
                 }
                 m_state++;
+                if constexpr (Backend == JitBackend::LLVM)
+                    m_mask_stack.push(cond.index());
                 return true;
 
             case 2:
             case 3:
+                if constexpr (Backend == JitBackend::LLVM)
+                    m_mask_stack.pop();
                 for (uint32_t i = 0; i < n; ++i)
                     m_index_out.push_back(*m_index_p[i]);
 
@@ -141,6 +160,8 @@ protected:
                     }
 
                     m_state++;
+                    if constexpr (Backend == JitBackend::LLVM)
+                        m_mask_stack.push(cond.index());
                     return true;
                 } else {
                     // No optimization opportunities, stop now.
@@ -158,8 +179,6 @@ protected:
                     jit_set_flag(JitFlag::PostponeSideEffects, m_se_flag);
                     m_se_offset = (uint32_t) -1;
                     m_cond = Mask();
-                    if constexpr (Backend == JitBackend::LLVM)
-                        jit_var_mask_pop(Backend);
                     m_state++;
                     return false;
                 }
@@ -184,13 +203,13 @@ protected:
     bool cond_wavefront(const Mask &cond) {
         // Need to mask loop variables for disabled lanes
         if (m_cond.index()) {
+            m_mask_stack.pop();
             for (uint32_t i = 0; i < m_index_p.size(); ++i) {
                 uint32_t i1 = *m_index_p[i], i2 = m_index_out[i];
                 *m_index_p[i] = jit_var_new_op_3(JitOp::Select, m_cond.index(), i1, i2);
                 jit_var_dec_ref_ext(i1);
                 jit_var_dec_ref_ext(i2);
             }
-            jit_var_mask_pop(Backend);
             m_index_out.clear();
             m_cond = Mask();
         }
@@ -205,7 +224,6 @@ protected:
         if (jit_var_any(cond.index())) {
             // Mask scatters/gathers/vcalls in the next iteration
             m_cond = cond;
-            jit_var_mask_push(Backend, cond.index());
 
             for (uint32_t i = 0; i < m_index_p.size(); ++i) {
                 uint32_t index = *m_index_p[i];
@@ -213,6 +231,7 @@ protected:
                 m_index_out.push_back(index);
             }
 
+            m_mask_stack.push(cond.index());
             return true;
         } else {
             return false;
@@ -241,6 +260,9 @@ private:
     /// Stashed mask variable from the previous iteration
     Mask m_cond; // XXX detached_t<Mask>
 
+    /// RAII wrapper for the mask stack
+    MaskStackHelper m_mask_stack;
+
     /// Keeps track of the size of loop variables to catch issues
     size_t m_size;
 
@@ -257,7 +279,6 @@ private:
     bool m_record;
 };
 
-#if 0
 TEST_BOTH(01_record_loop) {
     // Tests a simple loop evaluated at once, or in parts
     for (uint32_t i = 0; i < 3; ++i) {
@@ -430,7 +451,6 @@ TEST_BOTH(05_optimize_invariant) {
         jit_assert(v1 == 123 && v2 == 123 && v3 == 124 && v4 == 100 && v5 == 1 && v6 == 10);
     }
 }
-#endif
 
 TEST_BOTH(06_garbage_collection) {
     // Checks that unused loop variables are optimized away
@@ -460,7 +480,6 @@ TEST_BOTH(06_garbage_collection) {
             v3 = tmp;
             j += 1;
         }
-        fprintf(stderr, "%s\n", jit_var_graphviz());
 
         v1 = UInt32();
         v2 = UInt32();
@@ -478,33 +497,40 @@ TEST_BOTH(06_garbage_collection) {
     }
 }
 
-#if 0
-TEST_CUDA(05_nested) {
+TEST_BOTH(07_collatz) {
+    auto collatz = [](UInt32 value) -> UInt32 {
+        UInt32 counter = 0;
+        jit_var_set_label(value.index(), "value");
+        jit_var_set_label(counter.index(), "counter");
 
-    def collatz(value: p.Int):
-        counter = p.Int(0)
-        loop = p.Loop(value, counter)
-        while (loop.cond(ek.neq(value, 1))):
-            is_even = ek.eq(value & 1, 0)
-            value.assign(ek.select(is_even, value // 2, 3*value + 1))
-            counter += 1
-        return counter
+        Loop<Mask> loop("Inner", value, counter);
+        while (loop.cond(neq(value, 1))) {
+            Mask is_even = eq(value & UInt32(1), 0);
+            value = select(is_even, value / 2, value*3 + 1);
+            counter += 1;
+        }
 
-    i = p.Int(1)
-    buf = ek.full(p.Int, 1000, 16)
-    ek.eval(buf)
+        return counter;
+    };
 
-    if variant == 0:
-        loop_1 = p.Loop(i)
-        while loop_1.cond(i <= 10):
-            ek.scatter(buf, collatz(p.Int(i)), i - 1)
-            i += 1
-    else:
-        for i in range(1, 11):
-            ek.scatter(buf, collatz(p.Int(i)), i - 1)
-            i += 1
-
-    assert buf == p.Int(0, 1, 7, 2, 5, 8, 16, 3, 19, 6, 1000, 1000, 1000, 1000, 1000, 1000)
-
+    // Tests that side effects work that don't reference loop variables
+    for (uint32_t i = 0; i < 3; ++i) {
+        jit_set_flag(JitFlag::LoopRecord, i != 0);
+        jit_set_flag(JitFlag::LoopOptimize, i == 2);
+        for (uint32_t j = 0; j < 2; ++j) {
+            UInt32 buf = full<UInt32>(1000, 11);
+            if (j == 1) {
+                UInt32 k = 1;
+                Loop<Mask> loop_1("Outer", k);
+                while (loop_1.cond(k <= 10)) {
+                    scatter(buf, collatz(k), k - 1);
+                    k += 1;
+                }
+            } else {
+                for (uint32_t k = 1; k <= 10; ++k)
+                    scatter(buf, collatz(k), UInt32(k - 1));
+            }
+            jit_assert(strcmp(buf.str(), "[0, 1, 7, 2, 5, 8, 16, 3, 19, 6, 1000]") == 0);
+        }
+    }
 }
-#endif
