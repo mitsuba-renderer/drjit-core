@@ -48,10 +48,6 @@ extern void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t s
 /// Perform an assynchronous copy operation
 extern void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t size);
 
-// Compute a permutation to reorder an array of registered pointers
-extern VCallBucket *jitc_vcall(JitBackend backend, const char *domain, uint32_t index,
-                               uint32_t *bucket_count_out);
-
 /// Replicate individual input elements to larger blocks
 extern void jitc_block_copy(JitBackend backend, enum VarType type, const void *in,
                             void *out, uint32_t size, uint32_t block_size);

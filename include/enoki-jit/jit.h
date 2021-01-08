@@ -1508,10 +1508,9 @@ struct VCallBucket {
  * computed result. This is an important optimization in situations where
  * multiple vector function calls are executed on the same set of instances.
  */
-// extern JIT_EXPORT struct VCallBucket *jit_var_vcall(JitBackend backend,
-//                                                 const char *domain,
-//                                                 uint32_t index,
-//                                                 uint32_t *bucket_count_out);
+extern JIT_EXPORT struct VCallBucket *
+jit_var_vcall_reduce(JitBackend backend, const char *domain, uint32_t index,
+                     uint32_t *bucket_count_out);
 
 /**
  * \brief Replicate individual input elements across larger blocks

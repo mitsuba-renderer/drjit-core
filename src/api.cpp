@@ -653,6 +653,13 @@ void jit_var_loop(const char *name, uint32_t cond, uint32_t n,
                   invariant);
 }
 
+struct VCallBucket *
+jit_var_vcall_reduce(JitBackend backend, const char *domain, uint32_t index,
+                     uint32_t *bucket_count_out) {
+    lock_guard guard(state.mutex);
+    return jitc_var_vcall_reduce(backend, domain, index, bucket_count_out);
+}
+
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
 OptixDeviceContext jit_optix_context() {
     lock_guard guard(state.mutex);

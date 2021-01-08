@@ -11,6 +11,7 @@
 #include "log.h"
 #include "var.h"
 #include "eval.h"
+#include "registry.h"
 #include "util.h"
 
 /// Encodes information about a virtual function call
@@ -889,4 +890,90 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
         }
 
     }
-};
+}
+
+
+// Compute a permutation to reorder an array of registered pointers
+VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
+                                   uint32_t index, uint32_t *bucket_count_out) {
+    auto it = state.extra.find(index);
+    if (it != state.extra.end()) {
+        auto &v = it.value();
+        if (v.vcall_bucket_count) {
+            *bucket_count_out = v.vcall_bucket_count;
+            return v.vcall_buckets;
+        }
+    }
+
+    uint32_t bucket_count = jitc_registry_get_max(domain) + 1;
+    if (unlikely(bucket_count == 1)) {
+        *bucket_count_out = 0;
+        return nullptr;
+    }
+
+    jitc_var_eval(index);
+    Variable *v = jitc_var(index);
+    const void *ptr = v->data;
+    uint32_t size = v->size;
+
+    jitc_log(Debug, "jit_vcall(%u, domain=\"%s\")", index, domain);
+
+    size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
+           offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
+
+    uint32_t *offsets = (uint32_t *) jitc_malloc(
+        backend == JitBackend::CUDA ? AllocType::HostPinned : AllocType::Host, offsets_size);
+    uint32_t *perm = (uint32_t *) jitc_malloc(
+        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, perm_size);
+
+    // Compute permutation
+    uint32_t unique_count = jitc_mkperm(backend, (const uint32_t *) ptr, size,
+                                        bucket_count, perm, offsets),
+             unique_count_out = unique_count;
+
+    // Register permutation variable with JIT backend and transfer ownership
+    uint32_t perm_var = jitc_var_mem_map(backend, VarType::UInt32, perm, size, 1);
+
+    Variable v2;
+    v2.type = (uint32_t) VarType::UInt32;
+    v2.backend = (uint32_t) backend;
+    v2.dep[3] = perm_var;
+    v2.retain_data = true;
+    v2.unaligned = 1;
+
+    uint32_t *offsets_out = offsets;
+
+    for (uint32_t i = 0; i < unique_count; ++i) {
+        uint32_t bucket_id     = offsets[i * 4 + 0],
+                 bucket_offset = offsets[i * 4 + 1],
+                 bucket_size   = offsets[i * 4 + 2];
+
+        /// Crete variable for permutation subrange
+        v2.data = perm + bucket_offset;
+        v2.size = bucket_size;
+
+        uint32_t index = jitc_var_new(v2);
+
+        jitc_var_inc_ref_ext(perm_var);
+
+        void *ptr = jitc_registry_get_ptr(domain, bucket_id);
+        memcpy(offsets_out, &ptr, sizeof(void *));
+        memcpy(offsets_out + 2, &index, sizeof(uint32_t));
+        offsets_out += 4;
+
+        jitc_trace("jit_vcall(): registered variable %u: bucket %u (" ENOKI_PTR
+                  ") of size %u.", index, bucket_id,
+                  (uintptr_t) ptr, bucket_size);
+    }
+
+    jitc_var_dec_ref_ext(perm_var);
+
+    *bucket_count_out = unique_count_out;
+
+    v = jitc_var(index);
+    v->extra = true;
+    Extra &extra = state.extra[index];
+    extra.vcall_bucket_count = unique_count_out;
+    extra.vcall_buckets = (VCallBucket *) offsets;
+    return extra.vcall_buckets;
+}
