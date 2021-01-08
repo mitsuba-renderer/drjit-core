@@ -1061,6 +1061,16 @@ uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op) {
     return jitc_var_mem_map(backend, type, data, 1, 1);
 }
 
+uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
+                                const char *domain, const char *name) {
+    auto it = state.attributes.find(AttributeKey(domain, name));
+    if (unlikely(it == state.attributes.end()))
+        jitc_raise("jitc_var_registry_attr(): entry with domain=\"%s\", "
+                  "name=\"%s\" not found!", domain, name);
+    AttributeValue &val = it.value();
+    return jitc_var_mem_map(backend, type, val.ptr, val.count, false);
+}
+
 /// Return a human-readable summary of registered variables
 const char *jitc_var_whos() {
     var_buffer.clear();

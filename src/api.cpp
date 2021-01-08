@@ -635,6 +635,12 @@ const void *jit_registry_attr_data(const char *domain, const char *name) {
     return jitc_registry_attr_data(domain, name);
 }
 
+uint32_t jit_var_registry_attr(JitBackend backend, VarType type,
+                               const char *domain, const char *name) {
+    lock_guard guard(state.mutex);
+    return jitc_var_registry_attr(backend, type, domain, name);
+}
+
 void jit_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out_nested,
                    const uint32_t *out_nested, const uint32_t *se_offset,

@@ -1100,6 +1100,19 @@ extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, size_t offset,
 extern JIT_EXPORT void jit_var_printf(JitBackend backend, const char *fmt,
                                       uint32_t narg, const uint32_t *arg);
 
+/**
+ * \brief Create a new variable representing an array containing a specific
+ * attribute associated with a specific domain in the registry.
+ *
+ * This function is very similar to jit_registry_attr_data but returns
+ * a variable instead of a data pointer.
+ *
+ * \sa jit_registry_attr_data
+ */
+extern JIT_EXPORT uint32_t jit_var_registry_attr(JIT_ENUM JitBackend backend,
+                                                 JIT_ENUM VarType type,
+                                                 const char *domain,
+                                                 const char *name);
 
 // ====================================================================
 //                 Kernel compilation and evaluation

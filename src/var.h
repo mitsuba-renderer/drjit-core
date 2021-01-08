@@ -157,6 +157,10 @@ extern bool jitc_var_any(uint32_t index);
 /// Reduce a variable to a single value
 extern uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op);
 
+/// Create a variable containing the buffer storing a specific attribute
+extern uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
+                                       const char *domain, const char *name);
+
 /// Descriptive names and byte sizes for the various variable types
 extern const char *type_name      [(int) VarType::Count];
 extern const char *type_name_short[(int) VarType::Count];
