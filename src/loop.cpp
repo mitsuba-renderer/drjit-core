@@ -7,7 +7,7 @@
 
 struct Loop {
     // A descriptive name
-    const char *name = nullptr;
+    char *name = nullptr;
     // Backend targeted by this loop
     JitBackend backend;
     // Variable index of loop start node
@@ -58,7 +58,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
     loop->in_cond.reserve(n);
     loop->out_body.reserve(n);
     loop->out.reserve(n);
-    loop->name = name;
+    loop->name = strdup(name);
     loop->se_count = se_count;
 
     // =====================================================
@@ -396,9 +396,12 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
 
     {
         Extra &e1 = state.extra[loop_start];
-        e1.callback = [](uint32_t, int free, void *ptr) {
-            if (free)
-                delete (Loop *) ptr;
+        e1.callback = [](uint32_t, int free_var, void *ptr) {
+            if (free_var && ptr) {
+                Loop *loop_2 = (Loop *) ptr;
+                free(loop_2->name);
+                delete loop_2;
+            }
         };
         e1.callback_internal = true;
         e1.callback_data = loop.release();
