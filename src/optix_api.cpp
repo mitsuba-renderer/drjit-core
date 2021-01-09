@@ -638,8 +638,9 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
 
     extra.assemble = [](const Variable *v2, const Extra &extra) {
         uint32_t payload_count = extra.n_dep - 15;
-        for (uint32_t i = 0; i < payload_count; ++i)
-            buffer.fmt("    .reg.u32 %%u%u_result_%u;\n", v2->reg_index, i);
+        if (payload_count)
+            buffer.fmt("    .reg.u32 %%u%u_result_<%u>;\n", v2->reg_index,
+                       payload_count);
 
         buffer.putc(' ', 4);
         const Variable *mask_v = jitc_var(v2->dep[0]);

@@ -369,7 +369,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
 
     if (type == AllocType::HostAsync || (AllocType) ai.type == AllocType::HostAsync)
         jitc_raise("jit_malloc_migrate(): migrations between CUDA and "
-                  "host-asynchronous memory are not supported.");
+                   "host-asynchronous memory are not supported.");
 
     /// At this point, source or destination is a GPU array, get assoc. state
     ThreadState *ts = thread_state(JitBackend::CUDA);

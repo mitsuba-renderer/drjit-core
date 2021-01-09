@@ -1218,9 +1218,9 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         v2.data = perm + bucket_offset;
         v2.size = bucket_size;
 
-        uint32_t index = jitc_var_new(v2);
+        jitc_var_inc_ref_int(perm_var);
 
-        jitc_var_inc_ref_ext(perm_var);
+        uint32_t index = jitc_var_new(v2);
 
         void *ptr = jitc_registry_get_ptr(domain, bucket_id);
         memcpy(offsets_out, &ptr, sizeof(void *));
@@ -1228,8 +1228,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         offsets_out += 4;
 
         jitc_trace("jit_vcall(): registered variable %u: bucket %u (" ENOKI_PTR
-                  ") of size %u.", index, bucket_id,
-                  (uintptr_t) ptr, bucket_size);
+                  ") of size %u.", index, bucket_id, (uintptr_t) ptr, bucket_size);
     }
 
     jitc_var_dec_ref_ext(perm_var);
