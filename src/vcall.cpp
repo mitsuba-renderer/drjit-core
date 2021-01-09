@@ -19,7 +19,7 @@ struct VCall {
     JitBackend backend;
 
     /// A descriptive name
-    const char *name;
+    char *name = nullptr;
 
     /// Implement call via indirect branch?
     bool branch;
@@ -54,6 +54,7 @@ struct VCall {
         for (uint32_t index : out_nested)
             jitc_var_dec_ref_ext(index);
         clear_side_effects();
+        free(name);
     }
 
     void clear_side_effects() {
@@ -217,7 +218,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
 
     std::unique_ptr<VCall> vcall(new VCall());
     vcall->backend = backend;
-    vcall->name = name;
+    vcall->name = strdup(name);
     vcall->branch = jitc_flags() & (uint32_t) JitFlag::VCallBranch;
     vcall->id = special;
     vcall->n_inst = n_inst;
@@ -368,8 +369,6 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         out[i] = index_2;
     }
 
-    special.reset();
-
     // =====================================================
     // 6. Optimize calling conventions by reordering args
     // =====================================================
@@ -441,6 +440,8 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         jitc_var_vcall_assemble(self_reg, offset_reg, data_reg,
                                 (VCall *) extra.callback_data);
     };
+
+    special.reset();
 }
 
 /// Called by the JIT compiler when compiling
