@@ -90,17 +90,18 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
             loop->in_cond.push_back(0);
             loop->in.push_back(0);
             loop->out_body.push_back(0);
-            loop->out.push_back(0);
             n_invariant_provided++;
             continue;
         }
 
         if (!v1->placeholder || !v1->placeholder_iface || !v1->dep[0])
-            jitc_raise("jit_var_loop(): inputs must be placeholder variables (1)");
+            jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
+                       "variable (1)", i, index_1);
         uint32_t index_2 = v1->dep[0];
         Variable *v2 = jitc_var(index_2);
         if (!v2->placeholder || !v2->placeholder_iface || !v2->dep[0])
-            jitc_raise("jit_var_loop(): inputs must be placeholder variables (2)");
+            jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
+                       "variable (2)", i, index_2);
         uint32_t index_3 = v2->dep[0];
         Variable *v3 = jitc_var(index_3);
 
@@ -113,8 +114,6 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
         // ============= Output side =============
         uint32_t index_o = out_body[i];
         const Variable *vo = jitc_var(index_o);
-        if (!vo->literal && !vo->placeholder)
-            jitc_raise("jit_var_loop(): outputs must be placeholder or literal variables");
         size = std::max(vo->size, size);
         loop->out_body.push_back(index_o);
 
@@ -140,7 +139,6 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
                 jitc_raise("jit_var_loop(): loop input variable %u has an "
                            "incompatible size!", i);
         }
-
 
         if (it_out != state.variables.end()) {
             const Variable &v = it_out->second;
@@ -246,9 +244,6 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
         snprintf(temp, sizeof(temp), "%s%sLoop (%s) [in %u, cond]",
                  label ? label : "", label ? ", " : "", name, i);
         jitc_var_set_label(loop->in_cond[i], temp);
-        snprintf(temp, sizeof(temp), "%s%sLoop (%s) [in %u]",
-                 label ? label : "", label ? ", " : "", name, i);
-        jitc_var_set_label(loop->in[i], temp);
     }
 
     // =====================================================
@@ -357,6 +352,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
         if (!index) {
             // Loop-invariant variable
             out[i] = in[i];
+            loop->out.push_back(0);
             jitc_var_inc_ref_ext(out[i]);
             continue;
         }

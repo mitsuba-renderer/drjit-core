@@ -901,6 +901,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         Variable v2;
         v2.type = v->type;
         v2.backend = v->backend;
+        v2.placeholder = v->placeholder;
         v2.size = size;
         v2.dep[0] = index;
         v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)

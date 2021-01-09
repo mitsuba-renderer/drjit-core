@@ -107,10 +107,13 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     uint32_t n_out = n_out_nested / n_inst, size = 0,
              in_size_initial = 0, out_size_initial = 0;
 
+    bool placeholder = false;
+
     JitBackend backend;
     /* Check 'self' */ {
         const Variable *self_v = jitc_var(self);
         size = self_v->size;
+        placeholder |= self_v->placeholder;
         backend = (JitBackend) self_v->backend;
         if ((VarType) self_v->type != VarType::UInt32)
             jitc_raise("jit_var_vcall(): 'self' argument must be of type "
@@ -128,6 +131,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
                        "placeholder variables!");
         }
         size = std::max(size, v->size);
+        placeholder |= v->placeholder;
         in_size_initial += type_size[v->type];
     }
 
@@ -373,6 +377,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         Variable v2;
         v2.stmt = (char *) "";
         v2.size = size;
+        v2.placeholder = placeholder;
         v2.type = v->type;
         v2.backend = v->backend;
         v2.dep[0] = special;

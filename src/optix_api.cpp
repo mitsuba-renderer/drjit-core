@@ -595,6 +595,7 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
 
     jitc_log(Info, "jit_optix_trace(): %u payload value%s.", np, np == 1 ? "" : "s");
 
+    bool placeholder = false;
     for (uint32_t i = 0; i <= n_args; ++i) {
         uint32_t index = (i < n_args) ? args[i] : mask;
         VarType ref = i < n_args ? types[i] : VarType::Bool;
@@ -604,6 +605,7 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
                        "expected %s)",
                        i, type_name[v->type], type_name[(int) ref]);
         size = std::max(size, v->size);
+        placeholder |= v->placeholder;
     }
 
     for (uint32_t i = 0; i <= n_args; ++i) {
@@ -663,6 +665,7 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
         snprintf(tmp, sizeof(tmp), "mov.u32 $r0, $r1_result_%u", i);
         args[15 + i] = jitc_var_new_stmt(JitBackend::CUDA, VarType::UInt32, tmp,
                                          0, 1, &special);
+        jitc_var(args[15+i])->placeholder = placeholder;
     }
 
     jitc_var_dec_ref_ext(special);
