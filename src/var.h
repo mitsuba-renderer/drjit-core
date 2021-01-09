@@ -143,7 +143,7 @@ extern int jitc_var_device(uint32_t index);
 extern uint32_t jitc_var_mask_peek(JitBackend backend);
 
 /// Push an active mask
-extern void jitc_var_mask_push(JitBackend backend, uint32_t index);
+extern void jitc_var_mask_push(JitBackend backend, uint32_t index, int combine);
 
 /// Pop an active mask
 extern void jitc_var_mask_pop(JitBackend backend);

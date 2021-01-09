@@ -991,10 +991,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                            : "and.$b0 $r0, $r1, $r2";
             } else {
                 if ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool) {
-                    stmt = "$r0_0 = sext <$w x $t2> $r2 to <$w x $b0>$n"
-                           "$r0_1 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
-                           "$r0_2 = and <$w x $b0> $r0_0, $r0_1$n"
-                           "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
+                    stmt = "$r0 = select <$w x $t2> $r2, <$w x $t1> $r1, <$w x $t1> zeroinitializer";
                 } else {
                     stmt = !is_float
                                ? "$r0 = and <$w x $t1> $r1, $r2"

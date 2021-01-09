@@ -466,7 +466,9 @@ uint32_t jitc_var_new_placeholder(uint32_t index, int propagate_literals) {
     }
 
     Variable v2;
-    v2.stmt = (char *) "mov.$t0 $r0, $r1";
+    v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
+                            ? "mov.$t0 $r0, $r1"
+                            : "$r0 = bitcast <$w x $t0> $r1 to <$w x $t0>");
     v2.backend = v->backend;
     v2.type = v->type;
     v2.size = v->size;
@@ -979,16 +981,20 @@ uint32_t jitc_var_mask_peek(JitBackend backend) {
     }
 }
 
-void jitc_var_mask_push(JitBackend backend, uint32_t index) {
-    ThreadState *ts = thread_state(backend);
-    if (backend == JitBackend::CUDA && ts->mask_stack.empty()) {
+void jitc_var_mask_push(JitBackend backend, uint32_t index, int combine) {
+    auto &stack = thread_state(backend)->mask_stack;
+
+    if (stack.empty() && backend == JitBackend::LLVM)
+        combine = 1;
+
+    if (!combine) {
         jitc_var_inc_ref_int(index);
-        ts->mask_stack.push_back(index);
+        stack.push_back(index);
     } else {
         Ref top = steal(jitc_var_mask_peek(backend));
         uint32_t dep[2] = { top, index };
         Ref combined = steal(jitc_var_new_op(JitOp::And, 2, dep));
-        ts->mask_stack.push_back(combined);
+        stack.push_back(combined);
         jitc_var_inc_ref_int(combined);
     }
 }

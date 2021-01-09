@@ -35,7 +35,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
             if (it == state.extra.end())
-                jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
+                jitc_fail("jit_assemble_llvm(): internal error: 'extra' entry not found!");
 
             const Extra &extra = it->second;
             if (log_trace && extra.label) {
@@ -144,6 +144,112 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
 
 }
 
+void jitc_assemble_llvm_func(bool has_data_arg, uint32_t n_out,
+                             const uint32_t *out_nested) {
+    bool log_trace = std::max(state.log_level_stderr,
+                              state.log_level_callback) >= LogLevel::Trace;
+    uint32_t width = jitc_llvm_vector_width;
+    buffer.fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<%u x i1> "
+               "%%mask, i8* noalias %%in, i8* noalias %%out", width);
+    if (has_data_arg || true)
+        buffer.put(", i8* noalias %data");
+    buffer.put(") #0 {\n"
+               "entry:\n");
+
+    for (ScheduledVariable &sv : schedule) {
+        const Variable *v = jitc_var(sv.index);
+        const uint32_t vti = v->type;
+        const VarType vt = (VarType) vti;
+
+        const char *prefix = type_prefix[vti],
+                   *tname = vt == VarType::Bool
+                            ? "i8" : type_name_llvm[vti];
+
+        if (unlikely(v->extra)) {
+            auto it = state.extra.find(sv.index);
+            if (it == state.extra.end())
+                jitc_fail("jit_assemble_llvm(): internal error: 'extra' entry "
+                          "not found!");
+
+            const Extra &extra = it->second;
+            if (log_trace && extra.label) {
+                const char *label = strrchr(extra.label, '/');
+                if (label && label[1])
+                    buffer.fmt("    ; %s\n", label + 1);
+            }
+
+            if (extra.assemble) {
+                extra.assemble(v, extra);
+                continue;
+            }
+        }
+
+        if (v->placeholder_iface) {
+            buffer.fmt("    %s%u_i0 = getelementptr inbounds i8, i8* %%in, i64 %u\n"
+                       "    %s%u_i1 = bitcast i8* %s%u_i0 to <%u x %s> *\n"
+                       "    %s%u%s = load <%u x %s>, <%u x %s>* %s%u_i1, align %u\n",
+                       prefix, v->reg_index, v->param_offset * width,
+                       prefix, v->reg_index, prefix, v->reg_index,
+                       width, tname,
+                       prefix, v->reg_index, vt == VarType::Bool ? "_i2" : "", width,
+                       tname, width, tname, prefix, v->reg_index, width * type_size[vti]);
+            if (vt == VarType::Bool)
+                buffer.fmt("    %s%u = trunc <%u x i8> %s%u_i2 to <%u x i1>\n",
+                           prefix, v->reg_index, width, prefix, v->reg_index, width);
+        } else if (v->data || vt == VarType::Pointer) {
+            // uint32_t tsize = type_size[vti];
+            // data_offset = (data_offset + tsize - 1) / tsize * tsize;
+            // buffer.fmt("    ld.global.%s %s%u, [%s+%u];\n",
+            //            type_name_llvm[vti], type_prefix[vti], v->reg_index,
+            //            function_interface ? "data": "%data",
+            //            data_offset);
+            // data_offset += tsize;
+        } else {
+            jitc_render_stmt_llvm(sv.index, v);
+            if (v->side_effect) {
+                if (v->dep[0]) {
+                    Variable *ptr = jitc_var(v->dep[0]);
+                    if ((VarType) ptr->type == VarType::Pointer)
+                        jitc_var(ptr->dep[3])->dirty = false;
+                }
+            }
+        }
+    }
+
+    uint32_t offset = 0;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        uint32_t index = out_nested[i];
+        if (!index)
+            continue;
+        const Variable *v = jitc_var(index);
+        uint32_t vti = v->type;
+        const VarType vt = (VarType) vti;
+        const char *tname = vt == VarType::Bool ? "i8" : type_name_llvm[vti],
+                   *prefix = type_prefix[vti];
+        uint32_t align = type_size[vti] * width, reg_index = v->reg_index;
+
+        if (vt == VarType::Bool)
+            buffer.fmt("    %s%u_zext = zext <%u x i1> %s%u to <%u x i8>\n",
+                       prefix, reg_index, width, prefix, v->reg_index, width);
+
+        buffer.fmt(
+            "    %s%u_o0 = getelementptr inbounds i8, i8* %%out, i64 %u\n"
+            "    %s%u_o1 = bitcast i8* %s%u_o0 to <%u x %s> *\n"
+            "    %s%u_o2 = load <%u x %s>, <%u x %s>* %s%u_o1, align %u\n"
+            "    %s%u_o3 = select <%u x i1> %%mask, <%u x %s> %s%u%s, <%u x %s> %s%u_o2\n"
+            "    store <%u x %s> %s%u_o3, <%u x %s>* %s%u_o1, align %u\n",
+            prefix, reg_index, offset,
+            prefix, reg_index, prefix, reg_index, width, tname,
+            prefix, reg_index, width, tname, width, tname, prefix, reg_index, align,
+            prefix, reg_index, width, width, tname, prefix, reg_index, vt == VarType::Bool ? "_zext" : "", width, tname, prefix, reg_index,
+            width, tname, prefix, reg_index, width, tname, prefix, reg_index, align);
+        offset += type_size[vti] * width;
+    }
+
+    buffer.put("    ret void;\n"
+               "}\n");
+}
+
 /// Insert an intrinsic declaration into 'globals'
 static void jitc_llvm_process_intrinsic() {
     const char *s = buffer.cur();
@@ -184,7 +290,6 @@ static void jitc_llvm_process_intrinsic() {
                      globals_map.size()).second)
         globals.push_back(std::string(buffer.get() + before, after - before));
     buffer.rewind(after - before);
-
 }
 
 /// Convert an IR template with '$' expressions into valid IR

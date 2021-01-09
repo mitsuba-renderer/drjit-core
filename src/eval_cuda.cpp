@@ -211,9 +211,7 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
 
     if (function_interface) {
         buffer.put(".visible .func");
-        if (out_size)
-            buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
-
+        if (out_size) buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
         buffer.fmt(" %s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
                    uses_optix ? "__direct_callable__" : "func_");
 

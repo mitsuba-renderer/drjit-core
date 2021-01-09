@@ -59,10 +59,8 @@ static uint32_t n_regs_used = 0;
 /// Are we recording an OptiX kernel?
 bool uses_optix = false;
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
 /// List of direct callables for OptiX virtual function calls
-std::vector<uint32_t> optix_callable_refs;
-#endif
+std::vector<uint32_t> vcall_table;
 
 // ====================================================================
 
@@ -105,6 +103,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     kernel_params.clear();
     globals.clear();
     globals_map.clear();
+    vcall_table.clear();
 
     data_reg_global = false;
 
@@ -112,7 +111,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     uses_optix = ts->backend == JitBackend::CUDA &&
                  (jitc_flags() & (uint32_t) JitFlag::ForceOptiX);
 
-    optix_callable_refs.clear();
 #endif
 
     uint32_t n_params_in      = 0,
@@ -444,8 +442,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         uint32_t block_size = ENOKI_POOL_BLOCK_SIZE,
                  blocks = (group.size + block_size - 1) / block_size;
 
-        kernel_params[0] = (void *) kernel.llvm.func;
-        kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) + (uintptr_t) group.size);
+        kernel_params[0] = (void *) kernel.llvm.reloc[0];
+        kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) +
+                                     (uintptr_t) group.size);
 
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
         kernel_params[2] = kernel.llvm.itt;
@@ -700,6 +699,9 @@ XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
         jitc_assemble_cuda_func(n_regs, in_size, in_align, out_size, out_align,
                                 has_data_arg, n_out, out, out_nested,
                                 ret_label);
+    else
+        jitc_assemble_llvm_func(has_data_arg, n_out, out_nested);
+
     buffer.putc('\n');
 
     n_regs_used = n_regs_backup;

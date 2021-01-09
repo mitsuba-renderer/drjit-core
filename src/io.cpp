@@ -28,7 +28,7 @@
 #endif
 
 /// Version number for cache files
-#define ENOKI_CACHE_VERSION 2
+#define ENOKI_CACHE_VERSION 3
 
 // Uncomment to write out training data for creating a compression dictionary
 // #define ENOKI_CACHE_TRAIN 1
@@ -40,7 +40,7 @@ struct CacheFileHeader {
     uint32_t compressed_size;
     uint32_t source_size;
     uint32_t kernel_size;
-    uint32_t func_offset;
+    uint32_t reloc_size;
 };
 #pragma pack(pop)
 
@@ -121,8 +121,8 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
             DWORD n_read = 0;
             if (!ReadFile(fd, data, (DWORD) data_size, &n_read, nullptr) || n_read == 0)
                 jitc_raise("jit_kernel_load(): I/O error while while "
-                          "reading compiled kernel from cache "
-                          "file \"%s\": %u", filename, GetLastError());
+                           "reading compiled kernel from cache "
+                           "file \"%s\": %u", filename, GetLastError());
 
             data += n_read;
             data_size -= n_read;
@@ -134,21 +134,23 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 
     CacheFileHeader header;
     bool success = true;
+    std::vector<void *> func;
 
     try {
         read_retry((uint8_t *) &header, sizeof(CacheFileHeader));
 
         if (header.version != ENOKI_CACHE_VERSION)
             jitc_raise("jit_kernel_load(): cache file \"%s\" is from an "
-                      "incompatible version of Enoki. You may want to wipe "
-                      "your ~/.enoki directory.", filename);
+                       "incompatible version of Enoki. You may want to wipe "
+                       "your ~/.enoki directory.", filename);
 
         if (header.source_size != source_size)
             jitc_raise("jit_kernel_load(): cache collision in file \"%s\": size "
-                      "mismatch (%u vs %u bytes).",
-                      filename, header.source_size, source_size);
+                       "mismatch (%u vs %u bytes).",
+                       filename, header.source_size, source_size);
 
-        uint32_t uncompressed_size = source_size + header.kernel_size;
+        uint32_t uncompressed_size =
+            header.source_size + header.kernel_size + header.reloc_size;
 
         compressed = (char *) malloc_check(header.compressed_size);
         uncompressed = (char *) malloc_check(size_t(uncompressed_size) + jitc_lz4_dict_size);
@@ -163,7 +165,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 
         if (rv != uncompressed_size)
             jitc_raise("jit_kernel_load(): cache file \"%s\" is malformed.",
-                      filename);
+                       filename);
     } catch (const std::exception &e) {
         jitc_log(Warn, "%s", e.what());
         success = false;
@@ -191,22 +193,32 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
                          strerror(errno));
 
             memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
-
-            if (mprotect(kernel.data, header.kernel_size, PROT_READ | PROT_EXEC) == -1)
-                jitc_fail("jit_llvm_load(): mprotect() failed: %s", strerror(errno));
 #else
             kernel.data = VirtualAlloc(nullptr, header.kernel_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
             if (!kernel.data)
                 jitc_fail("jit_llvm_load(): could not VirtualAlloc() memory: %u", GetLastError());
             memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
 
+#endif
+            uintptr_t *reloc = (uintptr_t *) (uncompressed_data + header.source_size + header.kernel_size);
+            kernel.llvm.n_reloc = header.reloc_size / sizeof(void *);
+            kernel.llvm.reloc = (void **) malloc(header.reloc_size);
+            for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
+                kernel.llvm.reloc[i] = (uint8_t *) kernel.data + reloc[i];
+
+            // Write address of @vcall_table
+            if (kernel.llvm.n_reloc > 1)
+                *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 2;
+
+#if !defined(_WIN32)
+            if (mprotect(kernel.data, header.kernel_size, PROT_READ | PROT_EXEC) == -1)
+                jitc_fail("jit_llvm_load(): mprotect() failed: %s", strerror(errno));
+#else
             DWORD unused;
             if (VirtualProtect(kernel.data, header.kernel_size, PAGE_EXECUTE_READ, &unused) == 0)
                 jitc_fail("jit_llvm_load(): VirtualProtect() failed: %u", GetLastError());
 #endif
 
-            kernel.llvm.func = (LLVMKernelFunction)(
-                (uint8_t *) kernel.data + header.func_offset);
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
             char name[39];
             snprintf(name, sizeof(name), "enoki_%016llx%016llx",
@@ -318,33 +330,39 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     };
 #endif
 
-    uint32_t in_size  = source_size + kernel.size,
+    CacheFileHeader header;
+    header.version = ENOKI_CACHE_VERSION;
+    header.source_size = source_size;
+    header.kernel_size = kernel.size;
+    header.reloc_size = 0;
+
+    if (backend == JitBackend::LLVM)
+        header.reloc_size = kernel.llvm.n_reloc * sizeof(void *);
+
+    uint32_t in_size =
+                 header.source_size + header.kernel_size + header.reloc_size,
              out_size = LZ4_compressBound(in_size);
 
     uint8_t *temp_in  = (uint8_t *) malloc_check(in_size),
             *temp_out = (uint8_t *) malloc_check(out_size);
 
-    memcpy(temp_in, source, source_size);
-    memcpy(temp_in + source_size, kernel.data, kernel.size);
+    memcpy(temp_in, source, header.source_size);
+    memcpy(temp_in + source_size, kernel.data, header.kernel_size);
+
+    if (backend == JitBackend::LLVM) {
+        uintptr_t *reloc_out = (uintptr_t *) (temp_in + header.source_size + header.kernel_size);
+        for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
+            reloc_out[i] = (uintptr_t) kernel.llvm.reloc[i] - (uintptr_t) kernel.data;
+    }
 
     LZ4_stream_t stream;
     memset(&stream, 0, sizeof(LZ4_stream_t));
     LZ4_resetStream_fast(&stream);
     LZ4_loadDict(&stream, jitc_lz4_dict, jitc_lz4_dict_size);
 
-    CacheFileHeader header;
-    header.version = ENOKI_CACHE_VERSION;
-    header.source_size = source_size;
-    header.kernel_size = kernel.size;
     header.compressed_size = (uint32_t) LZ4_compress_fast_continue(
         &stream, (const char *) temp_in, (char *) temp_out, (int) in_size,
         (int) out_size, 1);
-
-    header.func_offset = 0;
-    if (backend == JitBackend::LLVM) {
-        header.func_offset = (uint32_t)
-            ((uint8_t *) kernel.llvm.func - (uint8_t *) kernel.data);
-    }
 
     bool success = true;
     try {

@@ -164,7 +164,7 @@ auto vcall(const char *domain, const Func &func,
         ek::placeholder(args)...);
 }
 
-TEST_CUDA(01_symbolic_vcall) {
+TEST_BOTH(01_symbolic_vcall) {
     /// Test a simple virtual function call
     struct Base {
         virtual Float f(Float x) = 0;
@@ -193,8 +193,11 @@ TEST_CUDA(01_symbolic_vcall) {
         for (uint32_t j = 0; j < 2; ++j) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
+            if (j == 1 && Backend == JitBackend::LLVM) continue;
+
             Float y =
                 vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
+            fprintf(stderr, "%s\n", y.str());
             jit_assert(strcmp(y.str(), "[0, 22, 204, 0, 28, 210, 0, 34, 216, 0]") == 0);
         }
     }
@@ -203,7 +206,7 @@ TEST_CUDA(01_symbolic_vcall) {
     jit_registry_remove(&a2);
 }
 
-TEST_CUDA(02_calling_conventions) {
+TEST_BOTH(02_calling_conventions) {
     /* This tests 4 things at once: passing masks, reordering inputs/outputs to
        avoid alignment issues, immediate copying of an input to an output.
        Finally, it runs twice: the second time with optimizations, which
@@ -237,6 +240,7 @@ TEST_CUDA(02_calling_conventions) {
         for (uint32_t j = 0; j < 2; ++j) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
+            if (j == 1 && Backend == JitBackend::LLVM) continue;
 
             using BasePtr = Array<Base *>;
             BasePtr self = arange<UInt32>(10) % 3;
@@ -269,7 +273,7 @@ TEST_CUDA(02_calling_conventions) {
     jit_registry_remove(&b2);
 }
 
-TEST_CUDA(03_optimize_away_outputs) {
+TEST_BOTH(03_optimize_away_outputs) {
     /* This test checks that unreferenced outputs are detected by the virtual
        function call interface, and that garbage collection propagates from
        outputs to inputs. It also checks that functions with identical code are
@@ -308,6 +312,7 @@ TEST_CUDA(03_optimize_away_outputs) {
         for (uint32_t j = 0; j < 2; ++j) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
+            if (j == 1 && Backend == JitBackend::LLVM) continue;
 
             jit_assert(jit_var_ref_ext(p3.index()) == 1 &&
                        jit_var_ref_int(p3.index()) == 0);
@@ -343,7 +348,7 @@ TEST_CUDA(03_optimize_away_outputs) {
     jit_registry_remove(&c3);
 }
 
-TEST_CUDA(04_devirtualize) {
+TEST_BOTH(04_devirtualize) {
     /* This test checks that outputs which produce identical values across
        all instances are moved out of the virtual call interface. */
     struct Base {
@@ -384,6 +389,7 @@ TEST_CUDA(04_devirtualize) {
             for (uint32_t j = 0; j < 2; ++j) {
                 jit_set_flag(JitFlag::VCallOptimize, i);
                 jit_set_flag(JitFlag::VCallBranch, j);
+                if (j == 1 && Backend == JitBackend::LLVM) continue;
 
                 auto result =
                     vcall("Base", [](Base *self2, Float p1, Float p2) { return self2->f(p1, p2); },
@@ -409,7 +415,8 @@ TEST_CUDA(04_devirtualize) {
     jit_registry_remove(&d2);
 }
 
-TEST_CUDA(05_extra_data) {
+
+TEST_BOTH(05_extra_data) {
     using Double = Array<double>;
 
     /// Ensure that evaluated scalar fields in instances can be accessed
@@ -450,6 +457,7 @@ TEST_CUDA(05_extra_data) {
             for (uint32_t j = 0; j < 2; ++j) {
                 jit_set_flag(JitFlag::VCallOptimize, i);
                 jit_set_flag(JitFlag::VCallBranch, j);
+                if (j == 1 && Backend == JitBackend::LLVM) continue;
                 Float result = vcall("Base", [](Base *self2, Float x) { return self2->f(x); }, self, x);
                 jit_assert(strcmp(result.str(), "[0, 9, 13, 0, 21, 28, 0, 33, 43, 0]") == 0);
             }
@@ -459,6 +467,7 @@ TEST_CUDA(05_extra_data) {
     jit_registry_remove(&e2);
 }
 
+#if 0
 TEST_CUDA(06_side_effects) {
     /*  This tests three things:
        - side effects in virtual functions
@@ -683,3 +692,4 @@ TEST_CUDA(09_big) {
     for (int i = 0; i < n2; ++i)
         jit_registry_remove(&v2[i]);
 }
+#endif

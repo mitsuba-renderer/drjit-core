@@ -459,9 +459,9 @@ uint32_t jit_var_mask_peek(JitBackend backend) {
     return jitc_var_mask_peek(backend);
 }
 
-void jit_var_mask_push(JitBackend backend, uint32_t index) {
+void jit_var_mask_push(JitBackend backend, uint32_t index, int combine) {
     lock_guard guard(state.mutex);
-    jitc_var_mask_push(backend, index);
+    jitc_var_mask_push(backend, index, combine);
 }
 
 void jit_var_mask_pop(JitBackend backend) {

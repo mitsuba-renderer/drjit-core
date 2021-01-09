@@ -12,6 +12,7 @@
 #include "log.h"
 #include "var.h"
 #include "profiler.h"
+#include "eval.h"
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -97,6 +98,7 @@ static LLVMBool (*LLVMParseIRInContext)(LLVMContextRef, LLVMMemoryBufferRef,
                                         LLVMModuleRef *, char **) = nullptr;
 static char *(*LLVMPrintModuleToString)(LLVMModuleRef) = nullptr;
 static uint64_t (*LLVMGetFunctionAddress)(LLVMExecutionEngineRef, const char *);
+static uint64_t (*LLVMGetGlobalValueAddress)(LLVMExecutionEngineRef, const char *);
 static LLVMBool (*LLVMRemoveModule)(LLVMExecutionEngineRef, LLVMModuleRef,
                                     LLVMModuleRef *, char **) = nullptr;
 static size_t (*LLVMDisasmInstruction)(LLVMDisasmContextRef, uint8_t *,
@@ -126,7 +128,6 @@ char    *jitc_llvm_triple          = nullptr;
 char    *jitc_llvm_target_cpu      = nullptr;
 char    *jitc_llvm_target_features = nullptr;
 uint32_t jitc_llvm_vector_width    = 0;
-size_t   jitc_llvm_kernel_id       = 0;
 uint32_t jitc_llvm_version_major   = 0;
 uint32_t jitc_llvm_version_minor   = 0;
 uint32_t jitc_llvm_version_patch   = 0;
@@ -197,37 +198,41 @@ void jitc_llvm_disasm(const Kernel &kernel) {
         LogLevel::Trace)
         return;
 
-    uint8_t *func_base = (uint8_t *) kernel.llvm.func,
-            *ptr = func_base;
-    char ins_buf[256];
-    bool last_nop = false;
-    jitc_trace("jit_llvm_disasm(): =====================");
-    do {
-        size_t offset      = ptr - (uint8_t *) kernel.data,
-               func_offset = ptr - func_base;
-        if (offset >= kernel.size)
-            break;
-        size_t size =
-            LLVMDisasmInstruction(jitc_llvm_disasm_ctx, ptr, kernel.size - offset,
-                                  (uintptr_t) ptr, ins_buf, sizeof(ins_buf));
-        if (size == 0)
-            break;
-        char *start = ins_buf;
-        while (*start == ' ' || *start == '\t')
-            ++start;
-        if (strcmp(start, "nop") == 0) {
-            if (!last_nop)
-                jitc_trace("jit_llvm_disasm(): ...");
-            last_nop = true;
-            ptr += size;
+    for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i) {
+        uint8_t *func_base = (uint8_t *) kernel.llvm.reloc[i],
+                *ptr = func_base;
+        if (i == 1)
             continue;
-        }
-        last_nop = false;
-        jitc_trace("jit_llvm_disasm(): 0x%08x   %s", (uint32_t) func_offset, start);
-        if (strncmp(start, "ret", 3) == 0)
-            break;
-        ptr += size;
-    } while (true);
+        char ins_buf[256];
+        bool last_nop = false;
+        jitc_trace("jit_llvm_disasm(): ========== %u ==========", i);
+        do {
+            size_t offset      = ptr - (uint8_t *) kernel.data,
+                   func_offset = ptr - func_base;
+            if (offset >= kernel.size)
+                break;
+            size_t size =
+                LLVMDisasmInstruction(jitc_llvm_disasm_ctx, ptr, kernel.size - offset,
+                                      (uintptr_t) ptr, ins_buf, sizeof(ins_buf));
+            if (size == 0)
+                break;
+            char *start = ins_buf;
+            while (*start == ' ' || *start == '\t')
+                ++start;
+            if (strcmp(start, "nop") == 0) {
+                if (!last_nop)
+                    jitc_trace("jit_llvm_disasm(): ...");
+                last_nop = true;
+                ptr += size;
+                continue;
+            }
+            last_nop = false;
+            jitc_trace("jit_llvm_disasm(): 0x%08x   %s", (uint32_t) func_offset, start);
+            if (strncmp(start, "ret", 3) == 0)
+                break;
+            ptr += size;
+        } while (true);
+    }
 }
 
 static ProfilerRegion profiler_region_llvm_compile("jit_llvm_compile");
@@ -272,17 +277,17 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
     }
 
     LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
-
     LLVMAddModule(jitc_llvm_engine, llvm_module);
 
+    /// Resolve the kernel entry point
     uint8_t *func =
         (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, kernel_name);
     if (unlikely(!func))
         jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
-                 "address of kernel \"%s\"!\n", kernel_name);
+                  "address of kernel \"%s\"!\n", kernel_name);
     else if (unlikely(func < jitc_llvm_mem))
-        jitc_fail("jit_llvm_compile(): internal error: invalid address: "
-                 "%p < %p!\n", func, jitc_llvm_mem);
+        jitc_fail("jit_llvm_compile(): internal error: invalid address (1): "
+                  "%p < %p!\n", func, jitc_llvm_mem);
 
     if (jitc_llvm_got)
         jitc_fail(
@@ -293,7 +298,54 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
             "following kernel code was responsible for this problem:\n\n%s",
             buffer);
 
-    uint32_t func_offset = (uint32_t)(func - jitc_llvm_mem);
+    std::vector<uint8_t *> reloc;
+    reloc.push_back(func);
+
+    /// Does the kernel perform virtual function calls via @vcall_table?
+    uint8_t *vcall_table_global =
+        (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, "vcall_table");
+
+    if (vcall_table_global) {
+        reloc.push_back(vcall_table_global);
+
+        if (unlikely(vcall_table_global < jitc_llvm_mem))
+            jitc_fail("jit_llvm_compile(): internal error: invalid address (2): "
+                      "%p < %p!\n", vcall_table_global, jitc_llvm_mem);
+
+        std::vector<void *> global_ptrs(globals.size(), nullptr);
+
+        for (auto &kv: globals_map) {
+            if (strncmp(globals[kv.second].c_str(), "define void", 11) != 0)
+                continue;
+
+            char buf[38];
+            snprintf(buf, sizeof(buf), "func_%016llx%016llx",
+                     (unsigned long long) kv.first.high64,
+                     (unsigned long long) kv.first.low64);
+
+            uint8_t *func_2 =
+                (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, buf);
+
+            if (unlikely(!func_2))
+                jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
+                          "address of kernel \"%s\"!\n", buf);
+            else if (unlikely(func_2 < jitc_llvm_mem))
+                jitc_fail("jit_llvm_compile(): internal error: invalid address (3): "
+                          "%p < %p!\n", func_2, jitc_llvm_mem);
+            global_ptrs[kv.second] = func_2;
+        }
+
+        if (unlikely(global_ptrs.empty()))
+            jitc_fail(
+                "jit_llvm_compile(): internal error: compilation unit has a "
+                "'vcall_table' global, but no extra functions could be found");
+
+        for (uint32_t index : vcall_table) {
+            if (unlikely(index >= global_ptrs.size()))
+                jitc_fail("jit_llvm_compile(): out of bounds!");
+            reloc.push_back((uint8_t *) global_ptrs[index]);
+        }
+    }
 
 #if !defined(_WIN32)
     void *ptr_result =
@@ -303,17 +355,11 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
         jitc_fail("jit_llvm_compile(): could not mmap() memory: %s",
                  strerror(errno));
     memcpy(ptr_result, jitc_llvm_mem, jitc_llvm_mem_offset);
-
-    if (mprotect(ptr_result, jitc_llvm_mem_offset, PROT_READ | PROT_EXEC) == -1)
-        jitc_fail("jit_llvm_compile(): mprotect() failed: %s", strerror(errno));
 #else
     void* ptr_result = VirtualAlloc(nullptr, jitc_llvm_mem_offset, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!ptr_result)
         jitc_fail("jit_llvm_compile(): could not VirtualAlloc() memory: %u", GetLastError());
     memcpy(ptr_result, jitc_llvm_mem, jitc_llvm_mem_offset);
-    DWORD unused;
-    if (VirtualProtect(ptr_result, jitc_llvm_mem_offset, PAGE_EXECUTE_READ, &unused) == 0)
-        jitc_fail("jit_llvm_compile(): VirtualProtect() failed: %u", GetLastError());
 #endif
 
     LLVMRemoveModule(jitc_llvm_engine, llvm_module, &llvm_module, &error);
@@ -323,11 +369,29 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
 
     kernel.data = ptr_result;
     kernel.size = (uint32_t) jitc_llvm_mem_offset;
-    kernel.llvm.func = (LLVMKernelFunction) ((uint8_t *) ptr_result + func_offset);
+    kernel.llvm.n_reloc = (uint32_t) reloc.size();
+    kernel.llvm.reloc = (void **) malloc_check(sizeof(void *) * reloc.size());
+
+    // Relocate function pointers
+    for (uint32_t i = 0; i < reloc.size(); ++i)
+        kernel.llvm.reloc[i] = (uint8_t *) ptr_result + (reloc[i] - jitc_llvm_mem);
+
+    // Write address of @vcall_table
+    if (kernel.llvm.n_reloc > 1)
+        *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 2;
+
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
     kernel.llvm.itt = __itt_string_handle_create(kernel_name);
 #endif
-    jitc_llvm_kernel_id++;
+
+#if !defined(_WIN32)
+    if (mprotect(ptr_result, jitc_llvm_mem_offset, PROT_READ | PROT_EXEC) == -1)
+        jitc_fail("jit_llvm_compile(): mprotect() failed: %s", strerror(errno));
+#else
+    DWORD unused;
+    if (VirtualProtect(ptr_result, jitc_llvm_mem_offset, PAGE_EXECUTE_READ, &unused) == 0)
+        jitc_fail("jit_llvm_compile(): VirtualProtect() failed: %u", GetLastError());
+#endif
 }
 
 void jitc_llvm_update_strings() {
@@ -473,6 +537,7 @@ bool jitc_llvm_init() {
         LOAD(LLVMParseIRInContext);
         LOAD(LLVMPrintModuleToString);
         LOAD(LLVMGetFunctionAddress);
+        LOAD(LLVMGetGlobalValueAddress);
         LOAD(LLVMRemoveModule);
         LOAD(LLVMDisasmInstruction);
         LOAD(LLVMCreatePassManager);
@@ -709,7 +774,6 @@ void jitc_llvm_shutdown() {
     jitc_llvm_mem        = nullptr;
     jitc_llvm_mem_size   = 0;
     jitc_llvm_mem_offset = 0;
-    jitc_llvm_kernel_id  = 0;
     jitc_llvm_got        = false;
 
 #if defined(ENOKI_JIT_DYNAMIC_LLVM)
@@ -725,7 +789,8 @@ void jitc_llvm_shutdown() {
     Z(LLVMCreateMCJITCompilerForModule); Z(LLVMCreateSimpleMCJITMemoryManager);
     Z(LLVMDisposeExecutionEngine); Z(LLVMAddModule); Z(LLVMDisposeModule);
     Z(LLVMCreateMemoryBufferWithMemoryRange); Z(LLVMParseIRInContext);
-    Z(LLVMPrintModuleToString); Z(LLVMGetFunctionAddress); Z(LLVMRemoveModule);
+    Z(LLVMPrintModuleToString); Z(LLVMGetFunctionAddress);
+    Z(LLVMGetGlobalValueAddress); Z(LLVMRemoveModule);
     Z(LLVMDisasmInstruction); Z(LLVMCreatePassManager); Z(LLVMRunPassManager);
     Z(LLVMDisposePassManager); Z(LLVMAddLICMPass);
     Z(LLVMGetExecutionEngineTargetMachine);

@@ -19,19 +19,31 @@ using OptixProgramGroup = void*;
 using OptixPipeline = void*;
 enum class JitBackend: uint32_t;
 
-/// A kernel and its preferred lauch configuration
+/// Represents a compiled kernel for the three different backends
 struct Kernel {
     void *data;
     uint32_t size;
     union {
+        /// 1. CUDA
         struct {
+            /// Compiled CUmodule
             CUmodule mod;
+
+            /// Main kernel entry point
             CUfunction func;
+
+            // Preferred block size to maximize occupancy
             uint32_t block_size;
         } cuda;
 
+        /// 2. LLVM
         struct {
-            LLVMKernelFunction func;
+            /// Relocation table, the first element is the kernel entry point
+            void **reloc;
+
+            /// Length of the 'reloc' table
+            uint32_t n_reloc;
+
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
             void *itt;
 #endif

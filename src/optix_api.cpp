@@ -436,7 +436,7 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
 
     if (!(jitc_flags() & (uint32_t) JitFlag::VCallBranch)) {
         n_programs += globals.size();
-        n_program_refs += optix_callable_refs.size();
+        n_program_refs += vcall_table.size();
     }
 
     OptixProgramGroupOptions pgo { };
@@ -484,11 +484,11 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     jitc_optix_check(optixSbtRecordPackHeader(
         kernel.optix.pg[0], sbt_record));
 
-    for (uint32_t i = 0; i < optix_callable_refs.size(); ++i) {
-        if (optix_callable_refs[i] + 1 >= n_programs)
+    for (uint32_t i = 0; i < vcall_table.size(); ++i) {
+        if (vcall_table[i] + 1 >= n_programs)
             jitc_fail("jit_optix_compile(): out of bounds!");
         jitc_optix_check(optixSbtRecordPackHeader(
-            kernel.optix.pg[1 + optix_callable_refs[i]],
+            kernel.optix.pg[1 + vcall_table[i]],
             sbt_record + stride * (i + 1)));
     }
 

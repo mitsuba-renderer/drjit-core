@@ -1299,10 +1299,13 @@ extern JIT_EXPORT void jit_side_effects_rollback(JitBackend backend,
  * undefined behavior and crashes. This function can be used to push a mask
  * onto a mask stack. The top of the stack will be combined with the mask
  * argument supplied to subsequent \ref jit_var_new_gather() and \ref
- * jit_var_new_scatter() operations. While on the stack, Enoki-JIT will hold
- * an internal reference to \c index to keep it from being freed.
+ * jit_var_new_scatter() operations. While on the stack, Enoki-JIT will hold an
+ * internal reference to \c index to keep it from being freed. When \combine is
+ * nonzero, the mask will be combined with the current top element of the
+ * stack.
  */
-extern JIT_EXPORT void jit_var_mask_push(JitBackend backend, uint32_t index);
+extern JIT_EXPORT void jit_var_mask_push(JitBackend backend, uint32_t index,
+                                         int combine JIT_DEF(1));
 
 /// Pop the mask stack
 extern JIT_EXPORT void jit_var_mask_pop(JitBackend backend);
