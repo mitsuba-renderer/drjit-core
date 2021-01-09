@@ -479,7 +479,7 @@ static void jitc_eval_prepare(std::vector<uint32_t> &source, bool eval = true) {
 
         if (eval) {
             // Skip variables that aren't externally referenced or already evaluated
-            if (v->ref_count_ext == 0 || v->data || v->literal)
+            if (v->ref_count_ext == 0 || v->data)
                 continue;
 
             jitc_var_traverse(v->size, index);
@@ -614,11 +614,6 @@ void jitc_eval(ThreadState *ts) {
                 }
                 v = jitc_var(index);
             }
-        }
-
-        if (v->literal) {
-            jitc_var_eval_literal(index, v);
-            continue;
         }
 
         jitc_cse_drop(index, v);

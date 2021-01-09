@@ -656,6 +656,13 @@ int jitc_var_schedule(uint32_t index) {
         jitc_raise("jit_var_eval(): placeholder variables are used to record "
                    "computation symbolically and cannot be evaluated!");
 
+    if (v->literal) {
+        /* If 'v' is a constant, initialize it directly instead of
+           generating code to do so.. */
+        jitc_var_eval_literal(index, v);
+        return 0;
+    }
+
     if (!v->data) {
         thread_state(v->backend)->scheduled.push_back(index);
         jitc_log(Debug, "jit_var_schedule(r%u)", index);
