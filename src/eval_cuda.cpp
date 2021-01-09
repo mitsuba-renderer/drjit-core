@@ -197,9 +197,11 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
     }
 }
 
-void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
-                             uint32_t in_align, uint32_t out_size,
-                             uint32_t out_align, bool has_data_arg,
+void jitc_assemble_cuda_func(uint32_t inst_id, uint32_t n_regs,
+                             uint32_t in_size, uint32_t in_align,
+                             uint32_t out_size, uint32_t out_align,
+                             uint32_t data_offset,
+                             const tsl::robin_map<uint64_t, uint32_t> &data_map,
                              uint32_t n_out, const uint32_t *out,
                              const uint32_t *out_nested,
                              const char *ret_label) {
@@ -207,15 +209,13 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
                               state.log_level_callback) >= LogLevel::Trace,
          function_interface = ret_label == nullptr;
 
-    uint32_t data_offset = 0;
-
     if (function_interface) {
         buffer.put(".visible .func");
         if (out_size) buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
         buffer.fmt(" %s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
                    uses_optix ? "__direct_callable__" : "func_");
 
-        if (has_data_arg) {
+        if (!data_map.empty()) {
             buffer.put(".reg .u64 data");
             if (in_size)
                 buffer.put(", ");
@@ -280,13 +280,15 @@ void jitc_assemble_cuda_func(uint32_t n_regs, uint32_t in_size,
                            v->param_offset, v->reg_index);
             }
         } else if (v->data || vt == VarType::Pointer) {
-            uint32_t tsize = type_size[vti];
-            data_offset = (data_offset + tsize - 1) / tsize * tsize;
+            uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
+            auto it = data_map.find(key);
+            if (unlikely(it == data_map.end()))
+                jitc_fail("jitc_assemble_cuda_func(): could not find entry in 'data_map'");
+
             buffer.fmt("    ld.global.%s %s%u, [%s+%u];\n",
                        type_name_ptx[vti], type_prefix[vti], v->reg_index,
                        function_interface ? "data": "%data",
-                       data_offset);
-            data_offset += tsize;
+                       it->second - data_offset);
         } else {
             jitc_render_stmt_cuda(sv.index, v);
             if (v->side_effect) {

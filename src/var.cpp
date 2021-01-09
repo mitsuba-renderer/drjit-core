@@ -389,6 +389,8 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
     }
 
     jitc_var_inc_ref_ext(index, vo);
+    if (index == 11288)
+        abort();
 
     return index;
 }

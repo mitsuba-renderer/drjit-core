@@ -45,6 +45,10 @@ struct VCall {
     /// Compressed side effect index list
     std::vector<uint32_t> se;
 
+    /// Mapping from variable index to offset into call data
+    tsl::robin_map<uint64_t, uint32_t> data_map;
+    std::vector<uint32_t> data_offsets;
+
     /// Storage in bytes for inputs/outputs before simplifications
     uint32_t in_count_initial = 0;
     uint32_t in_size_initial = 0;
@@ -171,12 +175,12 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     // =====================================================
 
     tsl::robin_map<uint64_t, uint32_t> data_map;
-    std::vector<uint32_t> offsets;
+    std::vector<uint32_t> data_offsets;
     uint32_t data_size = 0;
 
     // Collect accesses to evaluated variables/pointers
     for (uint32_t i = 0; i < n_inst; ++i) {
-        offsets.push_back(data_size);
+        data_offsets.push_back(data_size);
 
         for (uint32_t j = 0; j < n_out; ++j)
             jitc_var_vcall_collect_data(data_map, data_size, i,
@@ -190,17 +194,17 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         data_size = (data_size + 7) / 8 * 8;
     }
 
-    Ref data_v, offsets_v;
+    Ref data_v, data_offsets_v;
 
     if (data_size) {
-        void *offsets_d =
+        void *data_offsets_d =
             jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned
                                                     : AllocType::Host,
                         n_inst * sizeof(uint32_t));
-        memcpy(offsets_d, offsets.data(), n_inst * sizeof(uint32_t));
+        memcpy(data_offsets_d, data_offsets.data(), n_inst * sizeof(uint32_t));
 
         if (backend == JitBackend::CUDA)
-            offsets_d = jitc_malloc_migrate(offsets_d, AllocType::Device, 1);
+            data_offsets_d = jitc_malloc_migrate(data_offsets_d, AllocType::Device, 1);
 
         uint8_t *data_d = (uint8_t *) jitc_malloc(backend == JitBackend::CUDA
                                                       ? AllocType::Device
@@ -220,12 +224,13 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
                                   type_size[v->type]);
         }
 
-        Ref offsets_holder = steal(jitc_var_mem_map(backend, VarType::UInt32,
-                                                    offsets_d, n_inst, 1)),
-            data_holder = steal(jitc_var_mem_map(backend, VarType::UInt8,
-                                                 data_d, data_size, 1));
+        Ref data_offsets_holder = steal(jitc_var_mem_map(
+                backend, VarType::UInt32, data_offsets_d, n_inst, 1)),
+            data_holder = steal(jitc_var_mem_map(
+                backend, VarType::UInt8, data_d, data_size, 1));
 
-        offsets_v = steal(jitc_var_new_pointer(backend, offsets_d, offsets_holder, 0));
+        data_offsets_v = steal(jitc_var_new_pointer(backend, data_offsets_d,
+                                                    data_offsets_holder, 0));
         data_v = steal(jitc_var_new_pointer(backend, data_d, data_holder, 0));
     }
 
@@ -233,7 +238,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     // 3. Create special variable encoding the function call
     // =====================================================
 
-    uint32_t deps[3] = { self, offsets_v, data_v };
+    uint32_t deps[3] = { self, data_offsets_v, data_v };
     Ref special = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
                                           data_size ? 3 : 1, deps));
 
@@ -258,6 +263,8 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     vcall->se = std::vector<uint32_t>(
         ts->side_effects.begin() + se_offset[0],
         ts->side_effects.begin() + se_offset[n_inst]);
+    vcall->data_map = std::move(data_map);
+    vcall->data_offsets = std::move(data_offsets);
     ts->side_effects.resize(se_offset[0]);
 
     uint32_t se_count = se_offset[n_inst] - se_offset[0];
@@ -557,13 +564,12 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     ThreadState *ts = thread_state(vcall->backend);
     for (uint32_t i = 0; i < vcall->n_inst; ++i) {
         func_id[i] = jitc_assemble_func(
-            ts, in_size, in_align, out_size, out_align, data_reg != 0, n_in,
-            vcall->in.data(), n_out, vcall->out.data(),
-            vcall->out_nested.data() + n_out * i,
+            ts, i, in_size, in_align, out_size, out_align,
+            vcall->data_offsets[i], vcall->data_map, n_in, vcall->in.data(),
+            n_out, vcall->out.data(), vcall->out_nested.data() + n_out * i,
             vcall->se_offset[i + 1] - vcall->se_offset[i],
             vcall->se.data() + vcall->se_offset[i],
             vcall->branch ? ret_label : nullptr);
-
         if ((uses_optix && !vcall->branch) || vcall->backend == JitBackend::LLVM) {
             auto it = globals_map.find(func_id[i]);
             if (unlikely(it == globals_map.end()))
@@ -638,6 +644,11 @@ static void jitc_var_vcall_assemble_cuda(
     uint32_t self_reg, uint32_t offset_reg, uint32_t data_reg, uint32_t n_out,
     uint32_t in_size, uint32_t in_align, uint32_t out_size, uint32_t out_align,
     const char *ret_label, uint32_t vcall_table_offset) {
+
+
+    buffer.fmt("    %s VCall (%s)\n",
+               vcall->backend == JitBackend::CUDA ? "//" : ";",
+               vcall->name);
 
     // Extra field for call data (only if needed)
     if (vcall->branch && data_reg) {

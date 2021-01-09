@@ -652,14 +652,14 @@ void jitc_eval(ThreadState *ts) {
     jitc_log(Info, "jit_eval(): done.");
 }
 
-XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
-                                 uint32_t in_align, uint32_t out_size,
-                                 uint32_t out_align, bool has_data_arg,
-                                 uint32_t n_in, const uint32_t *in,
-                                 uint32_t n_out, const uint32_t *out,
-                                 const uint32_t *out_nested,
-                                 uint32_t n_se, const uint32_t *se,
-                                 const char *ret_label) {
+XXH128_hash_t
+jitc_assemble_func(ThreadState *ts, uint32_t inst_id, uint32_t in_size,
+                   uint32_t in_align, uint32_t out_size, uint32_t out_align,
+                   uint32_t data_offset,
+                   const tsl::robin_map<uint64_t, uint32_t> &data_map,
+                   uint32_t n_in, const uint32_t *in, uint32_t n_out,
+                   const uint32_t *out, const uint32_t *out_nested,
+                   uint32_t n_se, const uint32_t *se, const char *ret_label) {
     visited.clear();
     schedule.clear();
 
@@ -696,11 +696,11 @@ XXH128_hash_t jitc_assemble_func(ThreadState *ts, uint32_t in_size,
     size_t offset = buffer.size();
 
     if (ts->backend == JitBackend::CUDA)
-        jitc_assemble_cuda_func(n_regs, in_size, in_align, out_size, out_align,
-                                has_data_arg, n_out, out, out_nested,
-                                ret_label);
+        jitc_assemble_cuda_func(inst_id, n_regs, in_size, in_align, out_size,
+                                out_align, data_offset, data_map, n_out, out,
+                                out_nested, ret_label);
     else
-        jitc_assemble_llvm_func(has_data_arg, n_out, out_nested);
+        jitc_assemble_llvm_func(inst_id, data_offset, data_map, n_out, out_nested);
 
     buffer.putc('\n');
 

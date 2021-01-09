@@ -144,14 +144,16 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
 
 }
 
-void jitc_assemble_llvm_func(bool has_data_arg, uint32_t n_out,
-                             const uint32_t *out_nested) {
+void jitc_assemble_llvm_func(uint32_t inst_id,
+                             uint32_t data_offset,
+                             const tsl::robin_map<uint64_t, uint32_t> &data_map,
+                             uint32_t n_out, const uint32_t *out_nested) {
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
     uint32_t width = jitc_llvm_vector_width;
     buffer.fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<%u x i1> "
                "%%mask, i8* noalias %%in, i8* noalias %%out", width);
-    if (has_data_arg || true)
+    if (!data_map.empty())
         buffer.put(", i8* noalias %data");
     buffer.put(") #0 {\n"
                "entry:\n");
