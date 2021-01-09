@@ -150,6 +150,8 @@ protected:
                         if (m_invariant[i]) {
                             uint32_t input = m_index_in[i],
                                     &cur = m_index_body[i];
+                            if (jit_var_is_placeholder(input))
+                                abort();
                             jit_var_inc_ref_ext(input);
                             jit_var_dec_ref_ext(cur);
                             m_index_body[i] = input;

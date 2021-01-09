@@ -389,8 +389,6 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
     }
 
     jitc_var_inc_ref_ext(index, vo);
-    if (index == 11288)
-        abort();
 
     return index;
 }
@@ -852,14 +850,13 @@ uint32_t jitc_var_copy(uint32_t index) {
         v = jitc_var(index);
     }
 
-    uint32_t index_old = index;
+    uint32_t result;
     if (v->data) {
         JitBackend backend = (JitBackend) v->backend;
-        index = jitc_var_mem_copy(backend,
-                                  backend == JitBackend::CUDA
-                                      ? AllocType::Device
-                                      : AllocType::HostAsync,
-                                  (VarType) v->type, v->data, v->size);
+        AllocType atype = backend == JitBackend::CUDA ? AllocType::Device
+                                                      : AllocType::HostAsync;
+        result = jitc_var_mem_copy(backend, atype, (VarType) v->type, v->data,
+                                   v->size);
     } else {
         Variable v2 = *v;
         v2.ref_count_int = 0;
@@ -868,12 +865,14 @@ uint32_t jitc_var_copy(uint32_t index) {
 
         if (v2.free_stmt)
             v2.stmt = strdup(v2.stmt);
+        for (uint32_t i = 0; i < 4; ++i)
+            jitc_var_inc_ref_int(v2.dep[i]);
 
-        index = jitc_var_new(v2, true);
+        result = jitc_var_new(v2, true);
     }
 
-    jitc_log(Debug, "jit_var_copy(r%u <- r%u)", index, index_old);
-    return index;
+    jitc_log(Debug, "jit_var_copy(r%u <- r%u)", result, index);
+    return result;;
 }
 
 uint32_t jitc_var_resize(uint32_t index, size_t size) {

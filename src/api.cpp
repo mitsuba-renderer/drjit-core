@@ -399,6 +399,14 @@ int jit_var_is_literal(uint32_t index) {
     return (int) jitc_var(index)->literal;
 }
 
+int jit_var_is_placeholder(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    lock_guard guard(state.mutex);
+    return (int) jitc_var(index)->placeholder;
+}
+
 uint32_t jit_var_resize(uint32_t index, size_t size) {
     lock_guard guard(state.mutex);
     return jitc_var_resize(index, size);

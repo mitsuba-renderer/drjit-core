@@ -130,12 +130,12 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
             if (!v->dep[0])
                 jitc_raise("jit_var_vcall(): placeholder variable does not "
                            "reference another input!");
+            placeholder |= jitc_var(v->dep[0])->placeholder;
         } else if (!v->literal) {
             jitc_raise("jit_var_vcall(): inputs must either be literal or "
                        "placeholder variables!");
         }
         size = std::max(size, v->size);
-        placeholder |= v->placeholder;
         in_size_initial += type_size[v->type];
     }
 
@@ -232,6 +232,8 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         data_offsets_v = steal(jitc_var_new_pointer(backend, data_offsets_d,
                                                     data_offsets_holder, 0));
         data_v = steal(jitc_var_new_pointer(backend, data_d, data_holder, 0));
+    } else {
+        data_map.clear();
     }
 
     // =====================================================
@@ -300,14 +302,18 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         for (uint32_t j = 0; j < n_out; ++j) {
             if (!coherent[j])
                 continue;
+
+            out[j] = jitc_var_copy(out_nested[j]);
+            Variable *v2 = jitc_var(out[j]);
+            v2->placeholder = placeholder;
+            v2->size = size;
+            n_devirt++;
+
             for (uint32_t i = 0; i < n_inst; ++i) {
                 uint32_t &index = vcall->out_nested[i * n_out + j];
                 jitc_var_dec_ref_ext(index);
                 index = 0;
             }
-            uint32_t index = out_nested[j];
-            out[j] = jitc_var_resize(index, size);
-            n_devirt++;
         }
     }
 

@@ -389,7 +389,8 @@ TEST_BOTH(04_devirtualize) {
             for (uint32_t j = 0; j < 2; ++j) {
                 jit_set_flag(JitFlag::VCallOptimize, i);
                 jit_set_flag(JitFlag::VCallBranch, j);
-                if (j == 1 && Backend == JitBackend::LLVM) continue;
+                if (j == 1 && Backend == JitBackend::LLVM)
+                    continue;
 
                 auto result =
                     vcall("Base", [](Base *self2, Float p1, Float p2) { return self2->f(p1, p2); },
