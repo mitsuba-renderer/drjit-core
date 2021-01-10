@@ -126,14 +126,14 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
 
     for (uint32_t i = 0; i < n_in; ++i) {
         const Variable *v = jitc_var(in[i]);
-        if (v->placeholder) {
+        if (v->placeholder_iface) {
             if (!v->dep[0])
-                jitc_raise("jit_var_vcall(): placeholder variable does not "
-                           "reference another input!");
+                jitc_raise("jit_var_vcall(): placeholder variable r%u does not "
+                           "reference another input!", in[i]);
             placeholder |= jitc_var(v->dep[0])->placeholder;
         } else if (!v->literal) {
-            jitc_raise("jit_var_vcall(): inputs must either be literal or "
-                       "placeholder variables!");
+            jitc_raise("jit_var_vcall(): input variable r%u must either be a "
+                       "literal or placeholder wrapping another variable!", in[i]);
         }
         size = std::max(size, v->size);
         in_size_initial += type_size[v->type];
@@ -418,7 +418,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     for (uint32_t i = 0; i < n_in; ++i) {
         uint32_t index = in[i];
         Variable *v = jitc_var(index);
-        if (!v->placeholder)
+        if (!v->placeholder_iface)
             continue;
 
         // Ignore unreferenced inputs
