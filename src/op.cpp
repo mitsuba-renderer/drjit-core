@@ -1447,12 +1447,19 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
 }
 
 /// Combine 'mask' with top element of the mask stack
-static uint32_t jitc_scatter_gather_mask(uint32_t mask) {
+static uint32_t jitc_scatter_gather_mask(uint32_t mask, uint32_t size) {
     const Variable *v_mask = jitc_var(mask);
+    JitBackend backend = (JitBackend) v_mask->backend;
     if ((VarType) v_mask->type != VarType::Bool)
         jitc_raise("jit_scatter_gather_mask(): expected a boolean array as scatter/gather mask");
 
     Ref mask_top = steal(jitc_var_mask_peek((JitBackend) v_mask->backend));
+    size_t size_top = jitc_var(mask_top)->size;
+
+    // Mask on mask stack is incompatible -- get the default mask
+    if (size_top != size && size_top != 1 && size != 1)
+        mask_top = steal(jitc_var_mask_default(backend));
+
     uint32_t deps[2] = { mask, mask_top };
     return jitc_var_new_op(JitOp::And, 2, deps);
 }
@@ -1499,7 +1506,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         return result;
     }
 
-    Ref mask  = steal(jitc_scatter_gather_mask(mask_)),
+    Ref mask  = steal(jitc_scatter_gather_mask(mask_, size)),
         index = steal(jitc_scatter_gather_index(source, index_));
 
     // Location of variables may have changed
@@ -1586,6 +1593,9 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     Ref ptr, target = borrow(target_);
     JitBackend backend;
     VarType vt;
+    uint32_t size =
+        std::max(std::max(jitc_var(index_)->size, jitc_var(value)->size),
+                 jitc_var(mask_)->size);
     void *data;
     {
         const Variable *v_target = jitc_var(target);
@@ -1617,7 +1627,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
     ptr = steal(jitc_var_new_pointer(backend, jitc_var(target)->data, target, 1));
 
-    Ref mask  = steal(jitc_scatter_gather_mask(mask_)),
+    Ref mask  = steal(jitc_scatter_gather_mask(mask_, size)),
         index = steal(jitc_scatter_gather_index(target, index_));
 
     if (jitc_var(index)->dirty || jitc_var(mask)->dirty)

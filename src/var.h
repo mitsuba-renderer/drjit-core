@@ -151,6 +151,9 @@ extern void jitc_var_mask_pop(JitBackend backend);
 /// Return the size of the mask stack
 extern size_t jitc_var_mask_size(JitBackend backend);
 
+/// Return the default mask
+extern uint32_t jitc_var_mask_default(JitBackend backend);
+
 /// Reduce (And) a boolean array to a single value, synchronizes.
 extern bool jitc_var_all(uint32_t index);
 

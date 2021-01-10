@@ -64,7 +64,7 @@ template <typename Mask> struct Loop {
         }
     }
 
-    bool cond(const Mask &cond) {
+    bool operator()(const Mask &cond) {
         if (m_record)
             return cond_record(cond);
         else
@@ -213,29 +213,29 @@ protected:
                 jit_var_dec_ref_ext(i2);
             }
             m_index_out.clear();
-            m_cond = Mask();
+            m_cond = m_cond && cond;
+        } else {
+            m_cond = cond;
         }
 
         // Ensure all loop state is evaluated
-        jit_var_schedule(cond.index());
+        jit_var_schedule(m_cond.index());
         for (uint32_t i = 0; i < m_index_p.size(); ++i)
             jit_var_schedule(*m_index_p[i]);
         jit_eval();
 
         // Do we run another iteration?
-        if (jit_var_any(cond.index())) {
-            // Mask scatters/gathers/vcalls in the next iteration
-            m_cond = cond;
-
+        if (jit_var_any(m_cond.index())) {
             for (uint32_t i = 0; i < m_index_p.size(); ++i) {
                 uint32_t index = *m_index_p[i];
                 jit_var_inc_ref_ext(index);
                 m_index_out.push_back(index);
             }
 
-            m_mask_stack.push(cond.index());
+            m_mask_stack.push(m_cond.index());
             return true;
         } else {
+            m_cond = Mask();
             return false;
         }
     }
@@ -293,7 +293,7 @@ TEST_BOTH(01_record_loop) {
             Float z = 1;
 
             Loop<Mask> loop("MyLoop", x, y, z);
-            while (loop.cond(x < 5)) {
+            while (loop(x < 5)) {
                 y += Float(x);
                 x += 1;
                 z += 1;
@@ -324,7 +324,7 @@ TEST_BOTH(02_side_effect) {
             UInt32 target = zero<UInt32>(11);
 
             Loop<Mask> loop("MyLoop", x, y);
-            while (loop.cond(x < 5)) {
+            while (loop(x < 5)) {
                 scatter_reduce(ReduceOp::Add, target, UInt32(1), x);
                 y += Float(x);
                 x += 1;
@@ -354,7 +354,7 @@ TEST_BOTH(03_side_effect_2) {
             UInt32 target = zero<UInt32>(11);
 
             Loop<Mask> loop("MyLoop", x, y);
-            while (loop.cond(x < 5)) {
+            while (loop(x < 5)) {
                 scatter_reduce(ReduceOp::Add, target, UInt32(2), UInt32(2));
                 y += Float(x);
                 x += 1;
@@ -383,7 +383,7 @@ TEST_BOTH(04_side_effect_masking) {
             UInt32 target = zero<UInt32>(10);
 
             Loop<Mask> loop("MyLoop", x);
-            while (loop.cond(x < 10)) {
+            while (loop(x < 10)) {
                 // This is sure to segfault if not masked correctly
                 scatter_reduce(ReduceOp::Add, target, UInt32(1), x);
                 x += 1;
@@ -415,7 +415,7 @@ TEST_BOTH(05_optimize_invariant) {
 
         Loop<Mask> loop("MyLoop", j, v1, v2, v3, v4, v5, v6);
         int count = 0;
-        while (loop.cond(j < 10)) {
+        while (loop(j < 10)) {
             j += 1;
 
             (void) v1; // v1 stays unchanged
@@ -474,7 +474,7 @@ TEST_BOTH(06_garbage_collection) {
         jit_var_set_label(v4i, "v4");
 
         Loop<Mask> loop("MyLoop", j, v1, v2, v3, v4);
-        while (loop.cond(j < 4)) {
+        while (loop(j < 4)) {
             UInt32 tmp = v4;
             v4 = v1;
             v1 = v2;
@@ -500,13 +500,14 @@ TEST_BOTH(06_garbage_collection) {
 }
 
 TEST_BOTH(07_collatz) {
+    // A more interesting nested loop
     auto collatz = [](UInt32 value) -> UInt32 {
         UInt32 counter = 0;
         jit_var_set_label(value.index(), "value");
         jit_var_set_label(counter.index(), "counter");
 
         Loop<Mask> loop("Inner", value, counter);
-        while (loop.cond(neq(value, 1))) {
+        while (loop(neq(value, 1))) {
             Mask is_even = eq(value & UInt32(1), 0);
             value = select(is_even, value / 2, value*3 + 1);
             counter += 1;
@@ -515,7 +516,6 @@ TEST_BOTH(07_collatz) {
         return counter;
     };
 
-    // Tests that side effects work that don't reference loop variables
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
         jit_set_flag(JitFlag::LoopOptimize, i == 2);
@@ -524,7 +524,7 @@ TEST_BOTH(07_collatz) {
             if (j == 1) {
                 UInt32 k = 1;
                 Loop<Mask> loop_1("Outer", k);
-                while (loop_1.cond(k <= 10)) {
+                while (loop_1(k <= 10)) {
                     scatter(buf, collatz(k), k - 1);
                     k += 1;
                 }
@@ -534,5 +534,25 @@ TEST_BOTH(07_collatz) {
             }
             jit_assert(strcmp(buf.str(), "[0, 1, 7, 2, 5, 8, 16, 3, 19, 6, 1000]") == 0);
         }
+    }
+}
+
+TEST_BOTH(08_nested_write) {
+    // Nested loop where both loops write to the same loop variable
+    for (uint32_t i = 0; i < 3; ++i) {
+        jit_set_flag(JitFlag::LoopRecord, i != 0);
+        jit_set_flag(JitFlag::LoopOptimize, i == 2);
+
+        UInt32 k = arange<UInt32>(10)*12;
+        Loop<Mask> loop_1("Outer", k);
+
+        while (loop_1(neq(k % 7, 0))) {
+            Loop<Mask> loop_2("Inner", k);
+            while (loop_2(neq(k % 3, 0))) {
+                k += 1;
+            }
+            k += 1;
+        }
+        jit_assert(strcmp(k.str(), "[0, 28, 28, 49, 49, 70, 91, 84, 112, 112]") == 0);
     }
 }

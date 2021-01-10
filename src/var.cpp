@@ -957,38 +957,39 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     return dst_index;
 }
 
-uint32_t jitc_var_mask_peek(JitBackend backend) {
-    ThreadState *ts = thread_state(backend);
-
-    uint32_t index;
-    if (ts->mask_stack.empty()) {
-        // The default mask doesn't mask anything
-        bool value = true;
-        index = jitc_var_new_literal(backend, VarType::Bool, &value, 1, 0);
-    } else {
-        index = ts->mask_stack.back();
-        jitc_var_inc_ref_ext(index);
-    }
-
+uint32_t jitc_var_mask_default(JitBackend backend) {
     if (backend == JitBackend::CUDA) {
-        return index;
+        bool value = true;
+        return jitc_var_new_literal(backend, VarType::Bool, &value, 1, 0);
     } else {
         // Ignore SIMD lanes that lie beyond the end of the range
         Ref counter = steal(jitc_var_new_counter(backend, 1));
         uint32_t dep_1[1] = { counter };
-        uint32_t lane_mask = jitc_var_new_stmt(
+        return jitc_var_new_stmt(
             backend, VarType::Bool,
             "$r0_0 = trunc i64 %end to i32$n"
             "$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n"
             "$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n"
             "$r0 = icmp ult <$w x i32> $r1, $r0_2",
             1, 1, dep_1);
-        uint32_t dep_2[2] = { lane_mask, index };
-        uint32_t combined = jitc_var_new_op(JitOp::And, 2, dep_2);
-        jitc_var_dec_ref_ext(index);
-        jitc_var_dec_ref_ext(lane_mask);
-        return combined;
     }
+}
+
+uint32_t jitc_var_mask_peek(JitBackend backend) {
+    auto &stack = thread_state(backend)->mask_stack;
+
+    if (stack.empty())
+        return jitc_var_mask_default(backend);
+
+    Ref index = borrow(stack.back());
+
+    if (backend == JitBackend::LLVM) {
+        Ref lane_mask = steal(jitc_var_mask_default(backend));
+        uint32_t dep_2[2] = { lane_mask, index };
+        index = steal(jitc_var_new_op(JitOp::And, 2, dep_2));
+    }
+
+    return index.release();
 }
 
 void jitc_var_mask_push(JitBackend backend, uint32_t index, int combine) {
@@ -1000,8 +1001,8 @@ void jitc_var_mask_push(JitBackend backend, uint32_t index, int combine) {
     } else {
         uint32_t dep[2] = { stack.back(), index };
         Ref combined = steal(jitc_var_new_op(JitOp::And, 2, dep));
-        stack.push_back(combined);
         jitc_var_inc_ref_int(combined);
+        stack.push_back(combined);
     }
 }
 

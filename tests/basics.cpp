@@ -185,7 +185,11 @@ template <typename T> void test_const_prop() {
                 index = jit_var_new_op(op, 1, in + i);
             }
 
-            jit_var_schedule(index);
+            if (i < Size)
+                jit_assert(jit_var_is_literal(index));
+            else
+                jit_var_schedule(index);
+
             out[i] = index;
         }
 
@@ -260,7 +264,11 @@ template <typename T> void test_const_prop() {
                     index = jit_var_new_op(op, 2, deps);
                 }
 
-                jit_var_schedule(index);
+                if (i < Size && j < Size)
+                    jit_assert(jit_var_is_literal(index));
+                else
+                    jit_var_schedule(index);
+
                 out[i * Size2 + j] = index;
             }
         }

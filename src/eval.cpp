@@ -492,7 +492,7 @@ void jitc_eval(ThreadState *ts) {
     // Collect variables that must be computed along with their dependencies
     for (int j = 0; j < 2; ++j) {
         auto &source = j == 0 ? ts->scheduled : ts->side_effects;
-        if (j == 2 && (jitc_flags() & (uint32_t) JitFlag::PostponeSideEffects))
+        if (j == 1 && (jitc_flags() & (uint32_t) JitFlag::PostponeSideEffects))
             break;
 
         uint32_t num_literals = 0;
@@ -523,13 +523,17 @@ void jitc_eval(ThreadState *ts) {
 
     if (schedule.empty()) {
         // Evaluate literal variables, if any
-        for (uint32_t index : ts->scheduled)
-            jitc_var_eval_literal(index, jitc_var(index));
+        for (uint32_t index : ts->scheduled) {
+            Variable *v = jitc_var(index);
+            if (!v->literal)
+                continue;
+            jitc_var_eval_literal(index, v);
+        }
         ts->scheduled.clear();
         return;
     }
 
-    // Order variables from large to small while preserving dependencies
+    // Order variables into groups of matching size
     std::stable_sort(
         schedule.begin(), schedule.end(),
         [](const ScheduledVariable &a, const ScheduledVariable &b) {
@@ -650,8 +654,12 @@ void jitc_eval(ThreadState *ts) {
     }
 
     // Evaluate literal variables, if any
-    for (uint32_t index : ts->scheduled)
-        jitc_var_eval_literal(index, jitc_var(index));
+    for (uint32_t index : ts->scheduled) {
+        Variable *v = jitc_var(index);
+        if (!v->literal)
+            continue;
+        jitc_var_eval_literal(index, v);
+    }
     ts->scheduled.clear();
 
     jitc_free_flush(ts);
@@ -678,6 +686,8 @@ jitc_assemble_func(ThreadState *ts, uint32_t inst_id, uint32_t in_size,
     }
 
     auto traverse = [](uint32_t index) {
+        if (!index)
+            return;
         jitc_var_traverse(1, index);
         Variable *v = jitc_var(index);
         v->output_flag = (VarType) v->type != VarType::Void;

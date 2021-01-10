@@ -216,7 +216,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     uint32_t* index_ptr() { return &m_index; }
 
-    const char *str() {
+    const char *str() const {
         return jit_var_str(m_index);
     }
 

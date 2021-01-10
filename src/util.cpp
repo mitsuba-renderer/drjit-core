@@ -706,7 +706,7 @@ static ProfilerRegion profiler_region_mkperm_phase_2("jit_mkperm_phase_2");
 
 /// Compute a permutation to reorder an integer array into a sorted configuration
 uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
-                    uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
+                     uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
     if (size == 0)
         return 0;
     else if (unlikely(bucket_count == 0))
