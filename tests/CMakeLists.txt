@@ -1,6 +1,6 @@
 enable_testing()
 
-set(TEST_FILES basics.cpp mem.cpp graphviz.cpp vcall.cpp loop.cpp)
+set(TEST_FILES basics.cpp mem.cpp graphviz.cpp vcall.cpp loop.cpp reductions.cpp)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY $<1:${CMAKE_CURRENT_SOURCE_DIR}>)
 
