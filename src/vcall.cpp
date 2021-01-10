@@ -365,11 +365,14 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
             uint32_t index_2 = vcall_2->in_nested[i];
             if (index_2 &&
                 state.variables.find(index_2) == state.variables.end()) {
-                Extra &e = state.extra[vcall_2->id];
-                if (unlikely(e.dep[i] != vcall_2->in[i]))
-                    jitc_fail("jit_var_vcall(): internal error!");
+                Extra *e = &state.extra[vcall_2->id];
+                if (unlikely(e->dep[i] != vcall_2->in[i]))
+                    jitc_fail("jit_var_vcall(): internal error! (1)");
                 jitc_var_dec_ref_int(vcall_2->in[i]);
-                e.dep[i] = 0;
+                if (state.extra.find(vcall_2->id) == state.extra.end())
+                    jit_fail("jit_var_vcall(): internal error! (2)");
+                e = &state.extra[vcall_2->id]; // may have changed
+                e->dep[i] = 0;
                 vcall_2->in[i] = 0;
                 vcall_2->in_nested[i] = 0;
             }
