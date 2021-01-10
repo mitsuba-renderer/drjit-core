@@ -1099,7 +1099,7 @@ const char *jitc_var_whos() {
     std::sort(indices.begin(), indices.end());
 
     size_t mem_size_evaluated = 0,
-           mem_size_saved = 0,
+           mem_size_registers = 0,
            mem_size_unevaluated = 0;
 
     for (uint32_t index: indices) {
@@ -1143,7 +1143,7 @@ const char *jitc_var_whos() {
         if (v->data)
             mem_size_evaluated += mem_size;
         else if (v->ref_count_ext == 0)
-            mem_size_saved += mem_size;
+            mem_size_registers += mem_size;
         else
             mem_size_unevaluated += mem_size;
     }
@@ -1153,13 +1153,13 @@ const char *jitc_var_whos() {
     var_buffer.put("  ========================================================================\n\n");
     var_buffer.put("  JIT compiler\n");
     var_buffer.put("  ============\n");
-    var_buffer.fmt("   - Memory usage (evaluated)   : %s.\n",
+    var_buffer.fmt("   - Evaluated variables     : %s used.\n",
                jitc_mem_string(mem_size_evaluated));
-    var_buffer.fmt("   - Memory usage (unevaluated) : %s.\n",
+    var_buffer.fmt("   - Unevaluated variables   : %s saved.\n",
                jitc_mem_string(mem_size_unevaluated));
-    var_buffer.fmt("   - Memory usage (saved)       : %s.\n",
-               jitc_mem_string(mem_size_saved));
-    var_buffer.fmt("   - Kernel launches            : %zu (%zu cache hits, "
+    var_buffer.fmt("   - Promoted to registers   : %s saved.\n",
+               jitc_mem_string(mem_size_registers));
+    var_buffer.fmt("   - Kernel launches         : %zu (%zu cache hits, "
                "%zu soft, %zu hard misses).\n\n",
                state.kernel_launches, state.kernel_hits,
                state.kernel_soft_misses, state.kernel_hard_misses);
