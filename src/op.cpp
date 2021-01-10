@@ -1470,6 +1470,9 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
 }
 
 uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
+    if (index_ == 0)
+        return 0;
+
     const Variable *v_source = jitc_var(source),
                    *v_index = jitc_var(index_),
                    *v_mask = jitc_var(mask_);
