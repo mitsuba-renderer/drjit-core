@@ -284,6 +284,12 @@ void jitc_assemble_cuda_func(uint32_t inst_id, uint32_t n_regs,
             auto it = data_map.find(key);
             if (unlikely(it == data_map.end()))
                 jitc_fail("jitc_assemble_cuda_func(): could not find entry in 'data_map'");
+            if (it->second == (uint32_t) -1)
+                jitc_fail(
+                    "jitc_assemble_cuda_func(): variable r%u is referenced by "
+                    "a recorded function call. However, it was evaluated "
+                    "between the recording step and code generation (which "
+                    "is happening now). This is not allowed.", sv.index);
 
             buffer.fmt("    ld.global.%s %s%u, [%s+%u];\n",
                        type_name_ptx[vti], type_prefix[vti], v->reg_index,

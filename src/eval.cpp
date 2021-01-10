@@ -467,32 +467,6 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
 static ProfilerRegion profiler_region_eval("jit_eval");
 
-/// Convert state->scheduled and state->side_effects to a JIT schedule
-static void jitc_eval_prepare(std::vector<uint32_t> &source, bool eval = true) {
-    // Collect variables that must be computed and their subtrees
-    for (uint32_t index : source) {
-        auto it = state.variables.find(index);
-        if (it == state.variables.end())
-            continue;
-
-        Variable *v = &it.value();
-
-        if (eval) {
-            // Skip variables that aren't externally referenced or already evaluated
-            if (v->ref_count_ext == 0 || v->data)
-                continue;
-
-            jitc_var_traverse(v->size, index);
-        } else {
-            jitc_var_traverse(1, index);
-        }
-
-        v->output_flag = (VarType) v->type != VarType::Void;
-    }
-
-    source.clear();
-}
-
 /// Evaluate all computation that is queued on the given ThreadState
 void jitc_eval(ThreadState *ts) {
     if (!ts || (ts->scheduled.empty() && ts->side_effects.empty()))
@@ -515,13 +489,45 @@ void jitc_eval(ThreadState *ts) {
     visited.clear();
     schedule.clear();
 
-    jitc_eval_prepare(ts->scheduled);
+    // Collect variables that must be computed along with their dependencies
+    for (int j = 0; j < 2; ++j) {
+        auto &source = j == 0 ? ts->scheduled : ts->side_effects;
+        if (j == 2 && (jitc_flags() & (uint32_t) JitFlag::PostponeSideEffects))
+            break;
 
-    if ((jitc_flags() & (uint32_t) JitFlag::PostponeSideEffects) == 0)
-        jitc_eval_prepare(ts->side_effects);
+        uint32_t num_literals = 0;
+        for (size_t i = 0; i < source.size(); ++i) {
+            uint32_t index = source[i];
+            auto it = state.variables.find(index);
+            if (it == state.variables.end())
+                continue;
 
-    if (schedule.empty())
+            Variable *v = &it.value();
+
+            // Skip variables that aren't externally referenced or already evaluated
+            if (v->ref_count_ext == 0 || v->data)
+                continue;
+
+            // Move literals to beginning of the list so that they can be handled separately
+            if (v->literal) {
+                source[num_literals++] = index;
+                continue;
+            }
+
+            jitc_var_traverse(v->size, index);
+            v->output_flag = (VarType) v->type != VarType::Void;
+        }
+
+        source.resize(num_literals);
+    }
+
+    if (schedule.empty()) {
+        // Evaluate literal variables, if any
+        for (uint32_t index : ts->scheduled)
+            jitc_var_eval_literal(index, jitc_var(index));
+        ts->scheduled.clear();
         return;
+    }
 
     // Order variables from large to small while preserving dependencies
     std::stable_sort(
@@ -618,9 +624,9 @@ void jitc_eval(ThreadState *ts) {
 
         jitc_cse_drop(index, v);
 
-        if (v->literal)
-            v->literal = 0;
-        else if (v->free_stmt)
+        if (unlikely(v->literal))
+            jitc_fail("jit_eval(): internal error: did not expect a literal variable here!");
+        if (v->free_stmt)
             free(v->stmt);
 
         v->stmt = nullptr;
@@ -642,6 +648,11 @@ void jitc_eval(ThreadState *ts) {
         for (int j = 0; j < 4; ++j)
             jitc_var_dec_ref_int(dep[j]);
     }
+
+    // Evaluate literal variables, if any
+    for (uint32_t index : ts->scheduled)
+        jitc_var_eval_literal(index, jitc_var(index));
+    ts->scheduled.clear();
 
     jitc_free_flush(ts);
     jitc_log(Info, "jit_eval(): done.");
@@ -665,12 +676,17 @@ jitc_assemble_func(ThreadState *ts, uint32_t inst_id, uint32_t in_size,
         if (!v->literal)
             visited.emplace(1, in[i]);
     }
-    for (uint32_t i = 0; i < n_out; ++i)
-        ts->scheduled.push_back(out_nested[i]);
-    for (uint32_t i = 0; i < n_se; ++i)
-        ts->scheduled.push_back(se[i]);
 
-    jitc_eval_prepare(ts->scheduled, false);
+    auto traverse = [](uint32_t index) {
+        jitc_var_traverse(1, index);
+        Variable *v = jitc_var(index);
+        v->output_flag = (VarType) v->type != VarType::Void;
+    };
+
+    for (uint32_t i = 0; i < n_out; ++i)
+        traverse(out_nested[i]);
+    for (uint32_t i = 0; i < n_se; ++i)
+        traverse(se[i]);
 
     bool function_interface = ret_label == nullptr;
     uint32_t n_regs = n_regs_used,

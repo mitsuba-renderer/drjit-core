@@ -199,13 +199,21 @@ void jitc_assemble_llvm_func(uint32_t inst_id,
                 buffer.fmt("    %s%u = trunc <%u x i8> %s%u_i2 to <%u x i1>\n",
                            prefix, v->reg_index, width, prefix, v->reg_index, width);
         } else if (v->data || vt == VarType::Pointer) {
-            // uint32_t tsize = type_size[vti];
-            // data_offset = (data_offset + tsize - 1) / tsize * tsize;
+            uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
+            auto it = data_map.find(key);
+            if (unlikely(it == data_map.end()))
+                jitc_fail("jitc_assemble_llvm_func(): could not find entry in 'data_map'");
+            if (it->second == (uint32_t) -1)
+                jitc_fail(
+                    "jitc_assemble_llvm_func(): variable r%u is referenced by "
+                    "a recorded function call. However, it was evaluated "
+                    "between the recording step and code generation (which "
+                    "is happening now). This is not allowed.", sv.index);
+
             // buffer.fmt("    ld.global.%s %s%u, [%s+%u];\n",
-            //            type_name_llvm[vti], type_prefix[vti], v->reg_index,
+            //            type_name_ptx[vti], type_prefix[vti], v->reg_index,
             //            function_interface ? "data": "%data",
-            //            data_offset);
-            // data_offset += tsize;
+            //            it->second - data_offset);
         } else {
             jitc_render_stmt_llvm(sv.index, v);
             if (v->side_effect) {
