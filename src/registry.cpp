@@ -146,7 +146,11 @@ void *jitc_registry_get_ptr(const char *domain, uint32_t id) {
     if (unlikely(it == state.registry_fwd.end()))
         return nullptr;
 
-    return it.value();
+    uintptr_t value = (uintptr_t) it.value();
+    if ((value & 0xFFFFFFFFu) == 0)
+        return nullptr;
+
+    return (void *) value;
 }
 
 /// Compact the registry and release unused IDs and attributes
@@ -277,8 +281,14 @@ void jitc_registry_set_attr(void *ptr, const char *name,
 
 const void *jitc_registry_attr_data(const char *domain, const char *name) {
     auto it = state.attributes.find(AttributeKey(domain, name));
-    if (unlikely(it == state.attributes.end()))
-        jitc_raise("jit_registry_attr_data(): entry with domain=\"%s\", "
-                  "name=\"%s\" not found!", domain, name);
+    if (unlikely(it == state.attributes.end())) {
+        if (jitc_registry_get_max(domain) > 0) {
+            jitc_log(Warn,
+                     "jit_registry_attr_data(): entry with domain=\"%s\", "
+                     "name=\"%s\" not found!",
+                     domain, name);
+        }
+        return nullptr;
+    }
     return it.value().ptr;
 }
