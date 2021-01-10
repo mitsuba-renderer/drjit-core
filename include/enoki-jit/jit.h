@@ -1316,6 +1316,8 @@ extern JIT_EXPORT void jit_var_mask_pop(JitBackend backend);
 /// Return the top entry of the mask stack and increase its ext. ref. count
 extern JIT_EXPORT uint32_t jit_var_mask_peek(JitBackend backend);
 
+/// Return the size of the mask stack
+extern JIT_EXPORT size_t jit_var_mask_size(JitBackend backend);
 
 /**
  * \brief Record a virtual function call

@@ -985,6 +985,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 li = dep[1];
             } else if (((VarType) v[1]->type == VarType::Bool && literal_one[1]) || literal_zero[0]) {
                 li = dep[0];
+            } else if (dep[0] == dep[1]) {
+                li = dep[0];
             } else if (backend == JitBackend::CUDA) {
                 stmt = ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool)
                            ? "selp.$b0 $r0, $r1, 0, $r2"
@@ -1014,6 +1016,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             } else if ((vt == VarType::Bool && literal_one[1]) ||
                        (literal_zero[0] && v[0]->type == v[1]->type)) {
                 li = dep[1];
+            } else if (dep[0] == dep[1]) {
+                li = dep[0];
             } else if (backend == JitBackend::CUDA) {
                 stmt = ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool)
                            ? "selp.$b0 $r0, -1, $r1, $r2"
