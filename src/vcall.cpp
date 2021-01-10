@@ -717,6 +717,12 @@ static void jitc_var_vcall_assemble_cuda(
         /* Indirect branches or calls are not allowed in the OptiX
            environment. Use a 'direct callable' or a sequence of direct
            branches. */
+        for (uint32_t i = 0; i < vcall->n_inst; ++i)
+            buffer.fmt("        // Target %u: %s%016llx%016llx\n", i,
+                       vcall->branch ? "l_" : "__direct_callable__",
+                       (unsigned long long) func_id[i].high64,
+                       (unsigned long long) func_id[i].low64);
+
         if (vcall->branch) {
             auto branch_i = [&func_id, vcall_reg](uint32_t i) {
                 if (i == 0)
