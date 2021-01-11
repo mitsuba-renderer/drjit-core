@@ -189,7 +189,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
         buffer.putc(' ', globals_strlen);
         char *p = (char *) strstr(buffer.get(), "\n\n") + 2;
         memmove(p + globals_strlen, p, body_length - (p - buffer.get()));
-        for (auto it = globals.rbegin(); it != globals.rend(); ++it) {
+        for (auto it = globals.begin(); it != globals.end(); ++it) {
             const std::string &s = *it;
             memcpy(p, s.c_str(), s.length());
             p += s.length();

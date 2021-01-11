@@ -49,8 +49,8 @@ void jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
 }
 
 static void jitc_var_printf_assemble(const Variable *v, const Extra &extra) {
-    buffer.put("    {\n"
-               "        .global .align 1 .b8 fmt[] = { ");
+    size_t buffer_offset = buffer.size();
+    buffer.fmt(".global .align 1 .b8 printf_fmt_%u[] = { ", v->reg_index);
     const char *fmt = (const char *) extra.callback_data;
     for (uint32_t i = 0; ; ++i) {
         buffer.put_uint32((uint32_t) fmt[i]);
@@ -58,7 +58,11 @@ static void jitc_var_printf_assemble(const Variable *v, const Extra &extra) {
             break;
         buffer.put(", ");
     }
-    buffer.put(" };\n");
+    buffer.put(" };\n\n");
+    jitc_register_global(buffer.get() + buffer_offset);
+    jitc_register_global(".extern .func (.param .b32 rv) vprintf (.param .b64 fmt, .param .b64 buf);\n\n");
+    buffer.rewind(buffer.size() - buffer_offset);
+    buffer.put("    {\n");
 
     uint32_t offset = 0, align = 0;
     for (uint32_t i = 0; i < extra.n_dep; ++i) {
@@ -101,17 +105,17 @@ static void jitc_var_printf_assemble(const Variable *v, const Extra &extra) {
 
         offset += tsize;
     }
-    buffer.put("\n"
-               "        .reg.b64 %fmt_generic, %buf_generic;\n"
-               "        cvta.global.u64 %fmt_generic, fmt;\n"
-               "        cvta.local.u64 %buf_generic, buf;\n"
+    buffer.fmt("\n"
+               "        .reg.b64 %%fmt_generic, %%buf_generic;\n"
+               "        cvta.global.u64 %%fmt_generic, printf_fmt_%u;\n"
+               "        cvta.local.u64 %%buf_generic, buf;\n"
                "        {\n"
                "            .param .b64 fmt_p;\n"
                "            .param .b64 buf_p;\n"
                "            .param .b32 rv_p;\n"
-               "            st.param.b64 [fmt_p], %fmt_generic;\n"
-               "            st.param.b64 [buf_p], %buf_generic;\n"
-               "            ");
+               "            st.param.b64 [fmt_p], %%fmt_generic;\n"
+               "            st.param.b64 [buf_p], %%buf_generic;\n"
+               "            ", v->reg_index);
     if (v->dep[0]) {
         Variable *v2 = jitc_var(v->dep[0]);
         if (!v2->literal || v2->value != 1)
@@ -121,6 +125,4 @@ static void jitc_var_printf_assemble(const Variable *v, const Extra &extra) {
                "        }\n"
                "    }\n");
 
-    jitc_register_global(".extern .func (.param .b32 rv) vprintf "
-                         "(.param .b64 fmt, .param .b64 buf);\n");
 }
