@@ -168,4 +168,6 @@ private:
     T value;
 };
 
+template <typename... Ts> ek_tuple(Ts &&...) -> ek_tuple<std::decay_t<Ts>...>;
+
 NAMESPACE_END(enoki)
