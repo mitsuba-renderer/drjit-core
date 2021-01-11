@@ -666,7 +666,10 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
         snprintf(tmp, sizeof(tmp), "mov.u32 $r0, $r1_result_%u", i);
         args[15 + i] = jitc_var_new_stmt(JitBackend::CUDA, VarType::UInt32, tmp,
                                          0, 1, &special);
-        jitc_var(args[15+i])->placeholder = placeholder;
+        uint32_t index = args[15] + i;
+        Variable *v = jitc_var(index);
+        jitc_cse_drop(index, v);
+        v->placeholder = placeholder;
     }
 
     jitc_var_dec_ref_ext(special);

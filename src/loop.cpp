@@ -82,7 +82,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
     for (uint32_t i = 0; i < n; ++i) {
         // ============= Input side =============
         uint32_t index_1 = in[i];
-        Variable *v1 = jitc_var(index_1);
+        const Variable *v1 = jitc_var(index_1);
         loop->storage_size_initial += type_size[v1->type];
 
         if (invariant[i]) {
@@ -98,12 +98,12 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
             jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
                        "variable (1)", i, index_1);
         uint32_t index_2 = v1->dep[0];
-        Variable *v2 = jitc_var(index_2);
+        const Variable *v2 = jitc_var(index_2);
         if (!v2->placeholder || !v2->placeholder_iface || !v2->dep[0])
             jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
                        "variable (2)", i, index_2);
         uint32_t index_3 = v2->dep[0];
-        Variable *v3 = jitc_var(index_3);
+        const Variable *v3 = jitc_var(index_3);
 
         loop->in_body.push_back(index_1);
         loop->in_cond.push_back(index_2);
@@ -228,6 +228,9 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
             continue;
         Variable *v_body = jitc_var(loop->in_body[i]),
                  *v_cond = jitc_var(loop->in_cond[i]);
+
+        jitc_cse_drop(loop->in_body[i], v_body);
+        jitc_cse_drop(loop->in_cond[i], v_cond);
 
         v_body->dep[1] = loop_cond;
         v_cond->dep[1] = loop_start;

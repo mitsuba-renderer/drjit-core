@@ -1244,8 +1244,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
 
     *bucket_count_out = unique_count_out;
 
-    v = jitc_var(index);
-    v->extra = true;
+    jitc_var(index)->extra = true;
     Extra &extra = state.extra[index];
     extra.vcall_bucket_count = unique_count_out;
     extra.vcall_buckets = (VCallBucket *) offsets;
