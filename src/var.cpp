@@ -243,11 +243,12 @@ const char *jitc_var_label(uint32_t index) {
         return nullptr;
     } else {
         const char *label = it.value().label;
-        const char *offset = strrchr(label, '/');
-        if (offset)
-            return offset + 1;
-        else
-            return label;
+        if (label) {
+            const char *offset = strrchr(label, '/');
+            if (offset)
+                return offset + 1;
+        }
+        return label;
     }
 }
 

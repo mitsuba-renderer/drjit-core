@@ -509,7 +509,7 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
 }
 
 static std::pair<uint32_t, uint32_t>
-jitc_var_loop_copy(JitBackend backend, const std::vector<uint32_t> &dst,
+jitc_var_loop_copy(const Loop *loop, const std::vector<uint32_t> &dst,
                    const std::vector<uint32_t> &src) {
     uint32_t count = 0, size = 0;
     for (size_t i = 0; i < src.size(); ++i) {
@@ -523,13 +523,17 @@ jitc_var_loop_copy(JitBackend backend, const std::vector<uint32_t> &dst,
         const Variable *v_src = &it_src->second, *v_dst = &it_dst->second;
         uint32_t vti = it_src->second.type;
 
-        if (unlikely(backend == JitBackend::CUDA &&
-                     (v_src->reg_index == 0 || v_dst->reg_index == 0)))
-            jitc_fail("jit_var_loop_copy(): internal error (can't move r%u <- "
-                      "r%u as one of them hasn't been assigned a register)!",
-                      dst[i], src[i]);
+        if (v_dst->reg_index == 0)
+            continue;
 
-        if (backend == JitBackend::CUDA)
+        if (unlikely(v_src->reg_index == 0))
+            jitc_fail("jit_var_loop_copy(\"%s\"): internal error involving "
+                      "loop variable %zu (can't move r%u[%u] <- r%u[%u] as one "
+                      "of them hasn't been assigned a register)!",
+                      loop->name, i, dst[i], v_dst->reg_index, src[i],
+                      v_src->reg_index);
+
+        if (loop->backend == JitBackend::CUDA)
             buffer.fmt("    mov.%s %s%u, %s%u;\n", type_name_ptx[vti],
                        type_prefix[vti], v_dst->reg_index, type_prefix[vti],
                        v_src->reg_index);
@@ -626,7 +630,7 @@ static void jitc_var_loop_assemble_start(const Variable *, const Extra &extra) {
     std::pair<uint32_t, uint32_t> result{ 0, 0 };
 
     if (loop->backend == JitBackend::CUDA)
-        result = jitc_var_loop_copy(loop->backend, loop->in_cond, loop->in);
+        result = jitc_var_loop_copy(loop, loop->in_cond, loop->in);
     else
         buffer.fmt("    br label %%l_%u_cond\n", loop_reg);
 
@@ -671,7 +675,7 @@ static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra) {
     }
 
     buffer.fmt("\nl_%u_body:\n", loop_reg);
-    (void) jitc_var_loop_copy(loop->backend, loop->in_body, loop->in_cond);
+    (void) jitc_var_loop_copy(loop, loop->in_body, loop->in_cond);
 
     buffer.putc('\n');
 }
@@ -686,7 +690,7 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
                    "\nl_%u_tail:\n", loop_reg, loop_reg);
 
     if (loop->backend == JitBackend::CUDA)
-        (void) jitc_var_loop_copy(loop->backend, loop->in_cond, loop->out_body);
+        (void) jitc_var_loop_copy(loop, loop->in_cond, loop->out_body);
     else
         (void) jitc_var_loop_select_llvm(jitc_var(loop->cond)->reg_index,
                                          loop->out_body, loop->in_body, loop->in);

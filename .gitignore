@@ -26,7 +26,11 @@ enoki-jit.dll
 libenoki-thread.so
 libenoki-thread.dylib
 enoki-thread.dll
-tests/test_basics*
-tests/test_reductions*
-tests/test_vcall*
+tests/out_*
+tests/test_basics
+tests/test_reductions
+tests/test_vcall
+tests/test_graphviz
+tests/test_loop
+tests/test_mem
 tests/triangle
