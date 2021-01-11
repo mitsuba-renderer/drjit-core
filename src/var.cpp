@@ -239,7 +239,16 @@ VarType jitc_var_type(uint32_t index) {
 /// Query the descriptive label associated with a given variable
 const char *jitc_var_label(uint32_t index) {
     ExtraMap::iterator it = state.extra.find(index);
-    return it != state.extra.end() ? it.value().label : nullptr;
+    if (it == state.extra.end()) {
+        return nullptr;
+    } else {
+        const char *label = it.value().label;
+        const char *offset = strrchr(label, '/');
+        if (offset)
+            return offset + 1;
+        else
+            return label;
+    }
 }
 
 /// Assign a descriptive label to a given variable
