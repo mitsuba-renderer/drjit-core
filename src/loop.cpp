@@ -664,10 +664,7 @@ static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra) {
             global, sizeof(global),
             "declare i1 @llvm.experimental.vector.reduce.or.v%ui1(<%u x i1>)\n",
             width, width);
-
-        auto global_hash = XXH128(global, strlen(global), 0);
-        if (globals_map.emplace(global_hash, globals_map.size()).second)
-            globals.push_back(global);
+        jitc_register_global(global);
 
         buffer.fmt("    %%p%u = call i1 @llvm.experimental.vector.reduce.or.v%ui1(<%u x i1> %%p%u)\n"
                    "    br i1 %%p%u, label %%l_%u_body, label %%l_%u_done\n",

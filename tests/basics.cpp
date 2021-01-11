@@ -573,3 +573,26 @@ TEST_BOTH(07_and_or_mixed) {
         }
     }
 }
+
+#if 0
+template <typename... Ts> void printf_async(const char *fmt, const Ts&... ts) {
+    uint32_t indices[] = { ts.index()... };
+    jit_var_printf(JitBackend::CUDA, 0, fmt, (uint32_t) sizeof...(Ts), indices);
+}
+
+template <typename... Ts> void printf_async_if(const CUDAArray<bool> &mask, const char *fmt, const Ts&... ts) {
+    uint32_t indices[] = { ts.index()... };
+    jit_var_printf(JitBackend::CUDA, mask.index(), fmt, (uint32_t) sizeof...(Ts), indices);
+}
+
+TEST_CUDA(08_printf) {
+    UInt32 x = arange<UInt32>(10);
+    Float y = arange<Float>(10) + 1;
+    UInt32 z = arange<UInt32>(10) + 2;
+    Mask q = eq(x & UInt32(1), 0);
+
+    printf_async("Hello world 1: %u %f %u\n", x, y, z);
+    printf_async_if(q, "Hello world 2: %u %f %u\n", x, y, z);
+    jit_eval();
+}
+#endif

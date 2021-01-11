@@ -17,6 +17,7 @@
 #include "op.h"
 #include "vcall.h"
 #include "loop.h"
+#include "printf.h"
 #include <thread>
 #include <condition_variable>
 
@@ -519,6 +520,12 @@ void jit_var_read(uint32_t index, size_t offset, void *dst) {
 uint32_t jit_var_write(uint32_t index, size_t offset, const void *src) {
     lock_guard guard(state.mutex);
     return jitc_var_write(index, offset, src);
+}
+
+void jit_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
+                    uint32_t narg, const uint32_t *arg) {
+    lock_guard guard(state.mutex);
+    jitc_var_printf(backend, mask, fmt, narg, arg);
 }
 
 void jit_eval() {

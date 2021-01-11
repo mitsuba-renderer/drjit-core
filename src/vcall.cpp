@@ -956,12 +956,6 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
     memmove(function_start + alloca_size, function_start, strlen(function_start) - alloca_size);
     memcpy(function_start, tmp, alloca_size);
 
-    auto register_global = [](const char *s) {
-        XXH128_hash_t hash = XXH128(s, strlen(s), 0);
-        if (globals_map.emplace(hash, globals_map.size()).second)
-            globals.push_back(s);
-    };
-
     // =====================================================
     // 2. Declare a few intrinsics that we will use
     // =====================================================
@@ -969,11 +963,11 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
     snprintf(tmp, sizeof(tmp),
              "declare i32 @llvm.experimental.vector.reduce.umax.v%ui32(<%u x i32>)\n\n",
              width, width);
-    register_global(tmp);
-    register_global("@vcall_table = internal constant i8** null\n\n");
+    jitc_register_global(tmp);
+    jitc_register_global("@vcall_table = internal constant i8** null\n\n");
     if (out_size) {
         snprintf(tmp, sizeof(tmp), "declare void @llvm.memset.p0i8.i32(i8*, i8, i32, i1)\n\n");
-        register_global(tmp);
+        jitc_register_global(tmp);
     }
 
     buffer.fmt("    br label %%l%u_start\n"

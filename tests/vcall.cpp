@@ -416,7 +416,6 @@ TEST_BOTH(04_devirtualize) {
     jit_registry_remove(&d2);
 }
 
-
 TEST_BOTH(05_extra_data) {
     using Double = Array<double>;
 

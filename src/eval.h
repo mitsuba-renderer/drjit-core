@@ -102,3 +102,6 @@ extern void
 jitc_assemble_llvm_func(uint32_t inst_id, uint32_t data_offset,
                         const tsl::robin_map<uint64_t, uint32_t> &data_map,
                         uint32_t n_out, const uint32_t *out_nested);
+
+/// Register a global declaration that will be included in the final program
+extern void jitc_register_global(const char *str);

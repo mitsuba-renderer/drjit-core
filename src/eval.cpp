@@ -745,3 +745,9 @@ jitc_assemble_func(ThreadState *ts, uint32_t inst_id, uint32_t in_size,
 
     return kernel_hash;
 }
+
+void jitc_register_global(const char *str) {
+    auto global_hash = XXH128(str, strlen(str), 0);
+    if (globals_map.emplace(global_hash, globals_map.size()).second)
+        globals.push_back(str);
+}

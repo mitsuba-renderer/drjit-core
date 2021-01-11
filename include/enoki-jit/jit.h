@@ -1095,13 +1095,16 @@ extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, size_t offset,
  * \brief Print the specified variable contents from the kernel
  *
  * This function inserts a print statement directly into the kernel being
- * generated. Note that this may produce a very large volume of output.
- * Up to 3 variables can be referenced at once.
+ * generated. Note that this may produce a very large volume of output,
+ * and a nonzero \c mask parameter can be supplied to suppress it based
+ * on condition.
  *
- * Example: <tt>jit_var_printf(1, "Hello world: %f\n", 1, &my_variable_id);</tt>
+ * Example: <tt>jit_var_printf(JitBackend::CUDA, 0, "Hello world: %f\n", 1,
+ * &my_variable_id);</tt>
  */
-extern JIT_EXPORT void jit_var_printf(JitBackend backend, const char *fmt,
-                                      uint32_t narg, const uint32_t *arg);
+extern JIT_EXPORT void jit_var_printf(JitBackend backend, uint32_t mask,
+                                      const char *fmt, uint32_t narg,
+                                      const uint32_t *arg);
 
 /**
  * \brief Create a new variable representing an array containing a specific
