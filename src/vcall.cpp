@@ -647,15 +647,10 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
 /// Virtual function call code generation -- CUDA/PTX-specific bits
 static void jitc_var_vcall_assemble_cuda(
-    VCall *vcall,
-    const std::vector<XXH128_hash_t> &callable_hash,
-    uint32_t self_reg, uint32_t offset_reg,
-    uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align, const char *ret_label) {
-
-    buffer.fmt("    %s VCall (%s)\n",
-               vcall->backend == JitBackend::CUDA ? "//" : ";",
-               vcall->name);
+    VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
+    uint32_t self_reg, uint32_t offset_reg, uint32_t data_reg, uint32_t n_out,
+    uint32_t in_size, uint32_t in_align, uint32_t out_size, uint32_t out_align,
+    const char *ret_label) {
 
     // Extra field for call data (only if needed)
     if (vcall->branch && data_reg) {
@@ -672,14 +667,14 @@ static void jitc_var_vcall_assemble_cuda(
     // 1. Determine unique callable ID
     // =====================================================
 
-    buffer.fmt("    {\n"
+    buffer.fmt("    { // VCall (%s)\n"
                "        setp.ne.u32 %%p3, %%r%u, 0;\n"
                "        sub.u32 %%r3, %%r%u, 1;\n"
                "        mad.wide.u32 %%rd3, %%r3, 8, %%rd%u;\n"
                "        @%%p3 ld.global.u64 %%rd3, [%%rd3];\n"
-               "        cvt.u32.u64 %%r2, %%rd3;\n",
-               self_reg, self_reg, offset_reg);
-    // %r2: callable ID
+               "        cvt.u32.u64 %%r3, %%rd3;\n",
+               vcall->name, self_reg, self_reg, offset_reg);
+    // %r3: callable ID
     // %rd3: (high 32 bit): data offset
 
     // =====================================================
@@ -688,9 +683,9 @@ static void jitc_var_vcall_assemble_cuda(
 
     if (!vcall->branch) {
         if (!uses_optix)
-            buffer.put("        @%p3 ld.global.u64 %rd2, callables[%r2];\n");
+            buffer.put("        @%p3 ld.global.u64 %rd2, callables[%r3];\n");
         else
-            buffer.put("        call (%rd2), _optix_call_direct_callable, (%r2);\n");
+            buffer.put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
     }
 
     // =====================================================
@@ -716,8 +711,9 @@ static void jitc_var_vcall_assemble_cuda(
         if (!seen.insert(callable_id).second)
             continue;
         if (vcall->branch) {
-            buffer.fmt("        setp.eq.u32 %%p3, %%r2, %u;\n"
-                       "        @%%p3 bra l_%016llx%016llx;\n", callable_id,
+            buffer.fmt("        setp.eq.u32 %%p3, %%r3, %u;\n"
+                       "        @%%p3 bra l_%016llx%016llx;\n",
+                       callable_id,
                        (unsigned long long) callable_hash[i].high64,
                        (unsigned long long) callable_hash[i].low64);
         } else {
@@ -915,8 +911,8 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
              width, width, width, width, width);
     jitc_register_global(tmp);
 
-    jitc_register_global("declare void @llvm.debugtrap()\n\n");
-    buffer.put("    call void @llvm.debugtrap()\n");
+    // jitc_register_global("declare void @llvm.debugtrap()\n\n");
+    // buffer.put("    call void @llvm.debugtrap()\n");
 
     buffer.fmt("    br label %%l%u_start\n"
                "\nl%u_start:\n"
