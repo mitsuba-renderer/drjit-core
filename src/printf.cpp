@@ -11,10 +11,11 @@ void jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
     if (backend != JitBackend::CUDA)
         jitc_raise("jit_var_printf(): only supported for the CUDA backend at the moment.");
 
-    if (unlikely(mask && (VarType) jitc_var(mask)->type != VarType::Bool))
+    Variable *mask_v = jitc_var(mask);
+    uint32_t size = mask_v->size;
+    if (unlikely(mask && (VarType) mask_v->type != VarType::Bool))
         jitc_raise("jit_var_printf(): mask argument must be a boolean variable!");
 
-    uint32_t size = 1;
     for (uint32_t i = 0; i < narg; ++i) {
         const Variable *v = jitc_var(arg[i]);
         if (unlikely(size != v->size && v->size != 1 && size != 1))

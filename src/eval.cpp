@@ -139,18 +139,18 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
         // Some sanity checks
         if (unlikely((JitBackend) v->backend != backend))
-            jitc_raise("jit_assemble(): variable scheduled in wrong ThreadState");
+            jitc_raise("jit_assemble(): variable r%u scheduled in wrong ThreadState", index);
         if (unlikely(v->ref_count_int == 0 && v->ref_count_ext == 0))
-            jitc_fail("jit_assemble(): schedule contains unreferenced variable %u!", index);
+            jitc_fail("jit_assemble(): schedule contains unreferenced variable r%u!", index);
         if (unlikely(v->size != 1 && v->size != group.size))
-            jitc_fail("jit_assemble(): schedule contains variable %u with incompatible size "
+            jitc_fail("jit_assemble(): schedule contains variable r%u with incompatible size "
                      "(%u and %u)!", index, v->size, group.size);
         if (unlikely(!v->data && !v->literal && !v->stmt))
-            jitc_fail("jit_assemble(): variable %u has no statement!", index);
+            jitc_fail("jit_assemble(): variable r%u has no statement!", index);
         if (unlikely(v->literal && v->data))
-            jitc_fail("jit_assemble(): variable is simultaneously literal and evaluated");
+            jitc_fail("jit_assemble(): variable r%u is simultaneously literal and evaluated!", index);
         if (unlikely(v->dirty))
-            jitc_fail("jit_assemble(): dirty variable encountered!");
+            jitc_fail("jit_assemble(): dirty variable r%u encountered!", index);
 
         v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
         if (v->data) {
