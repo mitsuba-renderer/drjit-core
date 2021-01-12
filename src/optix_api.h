@@ -36,7 +36,7 @@ extern void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
 extern void jitc_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask);
 
 /// Compile an OptiX kernel
-extern void jitc_optix_compile(ThreadState *ts, const char *buffer,
+extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
                                size_t buffer_size, const char *kernel_name,
                                Kernel &kernel);
 

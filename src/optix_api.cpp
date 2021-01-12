@@ -178,6 +178,7 @@ void *jitc_optix_win32_load_alternative();
 static bool jitc_optix_init_attempted = false;
 static bool jitc_optix_init_success = false;
 static void *jitc_optix_handle = nullptr;
+static bool jitc_optix_cache_hit = false;
 
 bool jitc_optix_init() {
     if (jitc_optix_init_attempted)
@@ -264,10 +265,15 @@ bool jitc_optix_init() {
     return true;
 }
 
-void jitc_optix_log(unsigned int /* level */, const char *tag, const char *message, void *) {
+void jitc_optix_log(unsigned int level, const char *tag, const char *message, void *) {
     size_t len = strlen(message);
-    fprintf(stderr, "jit_optix_log(): [%s] %s%s", tag, message,
-            (len > 0 && message[len - 1] == '\n') ? "" : "\n");
+    if (level <= (uint32_t) state.log_level_stderr)
+        fprintf(stderr, "jit_optix_log(): [%s] %s%s", tag, message,
+                (len > 0 && message[len - 1] == '\n') ? "" : "\n");
+
+    if (strcmp(tag, "DISKCACHE") == 0 &&
+        strncmp(message, "Cache miss for key", 18) == 0)
+        jitc_optix_cache_hit = false;
 }
 
 OptixDeviceContext jitc_optix_context() {
@@ -279,11 +285,8 @@ OptixDeviceContext jitc_optix_context() {
     if (!jitc_optix_init())
         jitc_raise("Could not create OptiX context!");
 
-    int log_level = (int) state.log_level_stderr + 1;
-
     OptixDeviceContextOptions ctx_opts {
-        jitc_optix_log, nullptr,
-        std::max(0, std::min(4, log_level)),
+        jitc_optix_log, nullptr, 4,
 #if defined(NDEBUG)
         OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF
 #else
@@ -406,7 +409,7 @@ void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t sample
     ts->optix_launch_samples = samples;
 }
 
-void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
+bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
                         const char *kernel_name, Kernel &kernel) {
     char error_log[16384];
 
@@ -417,6 +420,7 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     OptixModuleCompileOptions mco { };
     mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 
+    jitc_optix_cache_hit = true;
     size_t log_size = sizeof(error_log);
     int rv = optixModuleCreateFromPTX(
         ts->optix_context, &mco, &ts->optix_pipeline_compile_options, buffer,
@@ -507,6 +511,7 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     kernel.size = 0;
     kernel.data = nullptr;
     ts->optix_program_groups.resize(size_before);
+    return jitc_optix_cache_hit;
 }
 
 void jitc_optix_free(const Kernel &kernel) {

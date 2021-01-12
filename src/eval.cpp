@@ -304,8 +304,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                     jitc_cuda_compile(buffer.get(), buffer.size(), kernel);
                 } else {
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-                    jitc_optix_compile(ts, buffer.get(), buffer.size(),
-                                       kernel_name, kernel);
+                    cache_hit = jitc_optix_compile(
+                        ts, buffer.get(), buffer.size(), kernel_name, kernel);
 #else
                     jitc_fail("jit_run(): OptiX support was not enabled in Enoki-JIT.");
 #endif
