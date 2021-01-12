@@ -97,7 +97,6 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
                     uint32_t n_in, const uint32_t *in, uint32_t n_out_nested,
                     const uint32_t *out_nested, const uint32_t *se_offset,
                     uint32_t *out) {
-
     // =====================================================
     // 1. Various sanity checks
     // =====================================================
@@ -314,9 +313,10 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     }
 
     jitc_log(Info,
-             "jit_var_vcall(self=r%u): call (\"%s\") with %u instance%s, %u "
+             "jit_var_vcall(r%u, self=r%u): call (\"%s\") with %u instance%s, %u "
              "input%s, %u output%s (%u devirtualized), %u side effect%s, %u "
              "byte%s of call data",
+             (uint32_t) special,
              self, name, n_inst, n_inst == 1 ? "" : "s", n_in,
              n_in == 1 ? "" : "s", n_out, n_out == 1 ? "" : "s", n_devirt,
              se_count, se_count == 1 ? "" : "s", data_size,
@@ -579,6 +579,8 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
         // high part: callable index, low part: instance data offset
         offset = (offset & 0xFFFFFFFF00000000ull) | result.second;
+        // fprintf(stderr, "Data offset: %u, callable offset: %u..\n",
+        //         uint32_t(offset >> 32), uint32_t(offset & 0xFFFFFFFF));
         callable_hash[i] = result.first;
     }
 

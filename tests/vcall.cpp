@@ -467,7 +467,6 @@ TEST_BOTH(05_extra_data) {
     jit_registry_remove(&e2);
 }
 
-#if 0
 TEST_CUDA(06_side_effects) {
     /*  This tests three things:
        - side effects in virtual functions
@@ -508,6 +507,8 @@ TEST_CUDA(06_side_effects) {
             jit_assert(i1 == 1 && i2 == 2);
 
             vcall("Base", [](Base *self2) { self2->go(); }, self);
+            fprintf(stderr, "%s\n", f1.buffer.str());
+            fprintf(stderr, "%s\n", f2.buffer.str());
             jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
             jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
 
@@ -692,4 +693,3 @@ TEST_CUDA(09_big) {
     for (int i = 0; i < n2; ++i)
         jit_registry_remove(&v2[i]);
 }
-#endif

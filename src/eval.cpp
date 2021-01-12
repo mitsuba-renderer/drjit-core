@@ -731,17 +731,17 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     char *kernel_str = (char *) buffer.get() + offset;
     kernel_hash = XXH128(kernel_str, kernel_length, 0);
 
-    // Replace '^'s in 'enoki_^^^^^^^^' by a hash code
-    char *id = strchr(kernel_str, '^');
-    char tmp[33];
-    snprintf(tmp, sizeof(tmp), "%016llx%016llx",
-             (unsigned long long) kernel_hash.high64,
-             (unsigned long long) kernel_hash.low64);
-    memcpy(id, tmp, 32);
-
-    auto result = globals_map.emplace(kernel_hash, globals_map.size());
-    if (result.second)
+    auto result = globals_map.emplace(kernel_hash, callables.size());
+    if (result.second) {
+        // Replace '^'s in 'func_^^^..' or '__direct_callable__^^^..' with hash
+        char *id = strchr(kernel_str, '^');
+        char tmp[33];
+        snprintf(tmp, sizeof(tmp), "%016llx%016llx",
+                 (unsigned long long) kernel_hash.high64,
+                 (unsigned long long) kernel_hash.low64);
+        memcpy(id, tmp, 32);
         callables.push_back(std::string(kernel_str, kernel_length));
+    }
     buffer.rewind(kernel_length);
 
     return { kernel_hash, result.first->second };
