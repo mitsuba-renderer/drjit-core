@@ -56,7 +56,6 @@ struct Kernel {
             OptixPipeline pipeline;
             uint8_t *sbt_record;
             uint32_t pg_count;
-            uint32_t sbt_count;
         } optix;
 #endif
     };

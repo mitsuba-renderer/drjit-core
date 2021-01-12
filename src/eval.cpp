@@ -38,10 +38,13 @@ static uint32_t kernel_param_count = 0;
 /// Does the program contain a %data register so far? (for branch-based vcalls)
 bool data_reg_global = false;
 
-/// List of global declarations
+/// List of global declarations (intrinsics, constant arrays)
 std::vector<std::string> globals;
 
-/// Ensure uniqueness of global declarations (intrinsics, virtual functions)
+/// List of device functions or direct callables (OptiX)
+std::vector<std::string> callables;
+
+/// Ensure uniqueness of globals/callables arrays
 GlobalsMap globals_map;
 
 /// Temporary scratch space for scheduled tasks (LLVM only)
@@ -58,9 +61,6 @@ static uint32_t n_regs_used = 0;
 
 /// Are we recording an OptiX kernel?
 bool uses_optix = false;
-
-/// List of direct callables for OptiX virtual function calls
-std::vector<uint32_t> vcall_table;
 
 // ====================================================================
 
@@ -102,8 +102,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     kernel_params.clear();
     globals.clear();
+    callables.clear();
     globals_map.clear();
-    vcall_table.clear();
 
     data_reg_global = false;
 
@@ -666,10 +666,10 @@ void jitc_eval(ThreadState *ts) {
     jitc_log(Info, "jit_eval(): done.");
 }
 
-XXH128_hash_t
-jitc_assemble_func(ThreadState *ts, uint32_t inst_id, uint32_t in_size,
-                   uint32_t in_align, uint32_t out_size, uint32_t out_align,
-                   uint32_t data_offset,
+std::pair<XXH128_hash_t, uint32_t>
+jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
+                   uint32_t in_size, uint32_t in_align, uint32_t out_size,
+                   uint32_t out_align, uint32_t data_offset,
                    const tsl::robin_map<uint64_t, uint32_t> &data_map,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out,
                    const uint32_t *out, const uint32_t *out_nested,
@@ -717,11 +717,11 @@ jitc_assemble_func(ThreadState *ts, uint32_t inst_id, uint32_t in_size,
     size_t offset = buffer.size();
 
     if (ts->backend == JitBackend::CUDA)
-        jitc_assemble_cuda_func(inst_id, n_regs, in_size, in_align, out_size,
+        jitc_assemble_cuda_func(name, inst_id, n_regs, in_size, in_align, out_size,
                                 out_align, data_offset, data_map, n_out, out,
                                 out_nested, ret_label);
     else
-        jitc_assemble_llvm_func(inst_id, data_offset, data_map, n_out, out_nested);
+        jitc_assemble_llvm_func(name, inst_id, data_offset, data_map, n_out, out_nested);
 
     buffer.putc('\n');
 
@@ -739,11 +739,12 @@ jitc_assemble_func(ThreadState *ts, uint32_t inst_id, uint32_t in_size,
              (unsigned long long) kernel_hash.low64);
     memcpy(id, tmp, 32);
 
-    if (globals_map.emplace(kernel_hash, globals_map.size()).second)
-        globals.push_back(std::string(kernel_str, kernel_length));
+    auto result = globals_map.emplace(kernel_hash, globals_map.size());
+    if (result.second)
+        callables.push_back(std::string(kernel_str, kernel_length));
     buffer.rewind(kernel_length);
 
-    return kernel_hash;
+    return { kernel_hash, result.first->second };
 }
 
 void jitc_register_global(const char *str) {

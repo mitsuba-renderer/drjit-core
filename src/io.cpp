@@ -208,7 +208,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 
             // Write address of @vcall_table
             if (kernel.llvm.n_reloc > 1)
-                *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 2;
+                *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 1;
 
 #if !defined(_WIN32)
             if (mprotect(kernel.data, header.kernel_size, PROT_READ | PROT_EXEC) == -1)

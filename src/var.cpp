@@ -784,7 +784,7 @@ uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src) {
 /// Register an existing variable with the JIT compiler
 uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
                           size_t size, int free) {
-    if (unlikely(size == 0 || ptr == nullptr))
+    if (unlikely(size == 0))
         return 0;
 
     jitc_check_size("jit_var_mep_map", size);
@@ -802,7 +802,7 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
         v.unaligned = uintptr_t(ptr) % align != 0;
     }
 
-    return jitc_var_new(v);
+    return jitc_var_new(v, true);
 }
 
 /// Copy a memory region onto the device and return its variable index

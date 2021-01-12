@@ -126,8 +126,13 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                "    ret void\n"
                "}\n"
                "\n");
+
+    for (const std::string &s : callables)
+        buffer.put(s.c_str(), s.length());
+
     for (const std::string &s : globals)
         buffer.put(s.c_str(), s.length());
+
     buffer.put("!0 = !{!0}\n"
                "!1 = !{!1, !0}\n"
                "!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
@@ -144,7 +149,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
 
 }
 
-void jitc_assemble_llvm_func(uint32_t inst_id,
+void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                              uint32_t data_offset,
                              const tsl::robin_map<uint64_t, uint32_t> &data_map,
                              uint32_t n_out, const uint32_t *out_nested) {
@@ -155,8 +160,9 @@ void jitc_assemble_llvm_func(uint32_t inst_id,
                "%%mask, i8* noalias %%in, i8* noalias %%out", width);
     if (!data_map.empty())
         buffer.put(", i8* noalias %data");
-    buffer.put(") #0 {\n"
-               "entry:\n");
+    buffer.fmt(") #0 {\n"
+               "entry:\n"
+               "    ; VCall: %s\n", name);
 
     for (ScheduledVariable &sv : schedule) {
         const Variable *v = jitc_var(sv.index);

@@ -431,13 +431,7 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     // 3. Create an OptiX program group
     // =====================================================
 
-    size_t n_programs = 1;
-    size_t n_program_refs = 1;
-
-    if (!(jitc_flags() & (uint32_t) JitFlag::VCallBranch)) {
-        n_programs += globals.size();
-        n_program_refs += vcall_table.size();
-    }
+    size_t n_programs = 1 + callables.size();
 
     OptixProgramGroupOptions pgo { };
     std::unique_ptr<OptixProgramGroupDesc[]> pgd(
@@ -448,24 +442,18 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     pgd[0].raygen.module = kernel.optix.mod;
     pgd[0].raygen.entryFunctionName = strdup(kernel_name);
 
-    if (!(jitc_flags() & (uint32_t) JitFlag::VCallBranch)) {
-        for (auto &kv : globals_map) {
-            char kernel_name_dc[52];
-            snprintf(kernel_name_dc, sizeof(kernel_name_dc),
-                     "__direct_callable__%016llx%016llx",
-                     (unsigned long long) kv.first.high64,
-                     (unsigned long long) kv.first.low64);
-
-            uint32_t i = kv.second;
-            pgd[i + 1].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
-            pgd[i + 1].callables.moduleDC = kernel.optix.mod;
-            pgd[i + 1].callables.entryFunctionNameDC = strdup(kernel_name_dc);
-        }
+    for (size_t i = 0; i < callables.size(); ++i) {
+        const char *s = strstr(callables[i].c_str(), "__direct_callable__");
+        char tmp[52];
+        memcpy(tmp, s, 51);
+        tmp[51] = '\0';
+        pgd[i + 1].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+        pgd[i + 1].callables.moduleDC = kernel.optix.mod;
+        pgd[i + 1].callables.entryFunctionNameDC = strdup(tmp);
     }
 
     kernel.optix.pg = new OptixProgramGroup[n_programs];
     kernel.optix.pg_count = n_programs;
-    kernel.optix.sbt_count = n_program_refs;
 
     log_size = sizeof(error_log);
     rv = optixProgramGroupCreate(ts->optix_context, pgd.get(),
@@ -479,18 +467,11 @@ void jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
 
     const size_t stride = OPTIX_SBT_RECORD_HEADER_SIZE;
     uint8_t *sbt_record = (uint8_t *)
-        jitc_malloc(AllocType::HostPinned, n_program_refs * stride);
+        jitc_malloc(AllocType::HostPinned, n_programs * stride);
 
-    jitc_optix_check(optixSbtRecordPackHeader(
-        kernel.optix.pg[0], sbt_record));
-
-    for (uint32_t i = 0; i < vcall_table.size(); ++i) {
-        if (vcall_table[i] + 1 >= n_programs)
-            jitc_fail("jit_optix_compile(): out of bounds!");
+    for (size_t i = 0; i <= callables.size(); ++i)
         jitc_optix_check(optixSbtRecordPackHeader(
-            kernel.optix.pg[1 + vcall_table[i]],
-            sbt_record + stride * (i + 1)));
-    }
+            kernel.optix.pg[i], sbt_record + stride * i));
 
     kernel.optix.sbt_record = (uint8_t *)
         jitc_malloc_migrate(sbt_record, AllocType::Device, 1);
@@ -543,10 +524,10 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
     auto &sbt = ts->optix_shader_binding_table;
     sbt.raygenRecord = kernel.optix.sbt_record;
 
-    if (kernel.optix.sbt_count > 1) {
+    if (kernel.optix.pg_count > 1) {
         sbt.callablesRecordBase = kernel.optix.sbt_record + OPTIX_SBT_RECORD_HEADER_SIZE;
         sbt.callablesRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
-        sbt.callablesRecordCount = kernel.optix.sbt_count - 1;
+        sbt.callablesRecordCount = kernel.optix.pg_count - 1;
     }
 
     uint32_t launch_width = launch_size,

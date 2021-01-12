@@ -301,27 +301,25 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
     std::vector<uint8_t *> reloc;
     reloc.push_back(func);
 
-    /// Does the kernel perform virtual function calls via @vcall_table?
-    uint8_t *vcall_table_global =
-        (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, "vcall_table");
+    /// Does the kernel perform virtual function calls via @callables?
+    uint8_t *callables_global =
+        (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, "callables");
 
-    if (vcall_table_global) {
-        reloc.push_back(vcall_table_global);
+    if (callables_global) {
+        reloc.push_back(callables_global);
 
-        if (unlikely(vcall_table_global < jitc_llvm_mem))
+        if (unlikely(callables_global < jitc_llvm_mem))
             jitc_fail("jit_llvm_compile(): internal error: invalid address (2): "
-                      "%p < %p!\n", vcall_table_global, jitc_llvm_mem);
+                      "%p < %p!\n", callables_global, jitc_llvm_mem);
 
-        std::vector<void *> global_ptrs(globals.size(), nullptr);
+        std::vector<void *> global_ptrs(callables.size(), nullptr);
 
-        for (auto &kv: globals_map) {
-            if (strncmp(globals[kv.second].c_str(), "define void", 11) != 0)
-                continue;
-
+        for (size_t i = 0; i < callables.size(); ++i) {
+            const char *s = callables[i].c_str();
+            const char *offset = strstr(s, "func_");
             char buf[38];
-            snprintf(buf, sizeof(buf), "func_%016llx%016llx",
-                     (unsigned long long) kv.first.high64,
-                     (unsigned long long) kv.first.low64);
+            memcpy(buf, offset, 37);
+            buf[37] = '\0';
 
             uint8_t *func_2 =
                 (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, buf);
@@ -332,18 +330,7 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
             else if (unlikely(func_2 < jitc_llvm_mem))
                 jitc_fail("jit_llvm_compile(): internal error: invalid address (3): "
                           "%p < %p!\n", func_2, jitc_llvm_mem);
-            global_ptrs[kv.second] = func_2;
-        }
-
-        if (unlikely(global_ptrs.empty()))
-            jitc_fail(
-                "jit_llvm_compile(): internal error: compilation unit has a "
-                "'vcall_table' global, but no extra functions could be found");
-
-        for (uint32_t index : vcall_table) {
-            if (unlikely(index >= global_ptrs.size()))
-                jitc_fail("jit_llvm_compile(): out of bounds!");
-            reloc.push_back((uint8_t *) global_ptrs[index]);
+            reloc.push_back(func_2);
         }
     }
 
@@ -376,9 +363,9 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
     for (uint32_t i = 0; i < reloc.size(); ++i)
         kernel.llvm.reloc[i] = (uint8_t *) ptr_result + (reloc[i] - jitc_llvm_mem);
 
-    // Write address of @vcall_table
+    // Write address of @callables
     if (kernel.llvm.n_reloc > 1)
-        *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 2;
+        *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 1;
 
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
     kernel.llvm.itt = __itt_string_handle_create(kernel_name);

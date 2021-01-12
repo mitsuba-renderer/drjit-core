@@ -180,8 +180,35 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
     buffer.put("    ret;\n"
                "}\n");
 
+    if (!uses_optix && !callables.empty()) {
+        size_t callables_offset = buffer.size();
+
+        for (size_t i = 0; i < callables.size(); ++i) {
+            const char *s = callables[i].c_str();
+            buffer.put(s, strchr(s, '{') - s - 1);
+            buffer.put(";\n");
+        }
+        buffer.put("\n.global .u64 callables[] = {\n");
+        for (size_t i = 0; i < callables.size(); ++i) {
+            const char *s       = callables[i].c_str(),
+                       *pattern = uses_optix ? "__direct_callable__" : "func_";
+            buffer.put("    ");
+            buffer.put(strstr(s, pattern), strlen(pattern) + 32);
+            if (i + 1 < callables.size())
+                buffer.put(",\n");
+            else
+                buffer.put("\n");
+        }
+        buffer.put("};\n\n");
+        size_t callables_length = buffer.size() - callables_offset;
+        globals.push_back(std::string(buffer.get() + callables_offset, callables_length));
+        buffer.rewind(callables_length);
+    }
+
     size_t globals_strlen = 0;
     for (const std::string &s : globals)
+        globals_strlen += s.length();
+    for (const std::string &s : callables)
         globals_strlen += s.length();
 
     if (globals_strlen) {
@@ -194,13 +221,19 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             memcpy(p, s.c_str(), s.length());
             p += s.length();
         }
+        for (auto it = callables.begin(); it != callables.end(); ++it) {
+            const std::string &s = *it;
+            memcpy(p, s.c_str(), s.length());
+            p += s.length();
+        }
     }
+
 }
 
-void jitc_assemble_cuda_func(uint32_t inst_id, uint32_t n_regs,
-                             uint32_t in_size, uint32_t in_align,
-                             uint32_t out_size, uint32_t out_align,
-                             uint32_t data_offset,
+void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
+                             uint32_t n_regs, uint32_t in_size,
+                             uint32_t in_align, uint32_t out_size,
+                             uint32_t out_align, uint32_t data_offset,
                              const tsl::robin_map<uint64_t, uint32_t> &data_map,
                              uint32_t n_out, const uint32_t *out,
                              const uint32_t *out_nested,
@@ -225,10 +258,11 @@ void jitc_assemble_cuda_func(uint32_t inst_id, uint32_t n_regs,
 
         buffer.fmt(
             ") {\n"
+            "    // VCall: %s\n"
             "    .reg.b8   %%b <%u>; .reg.b16 %%w<%u>; .reg.b32 %%r<%u>;\n"
             "    .reg.b64  %%rd<%u>; .reg.f32 %%f<%u>; .reg.f64 %%d<%u>;\n"
             "    .reg.pred %%p <%u>;\n\n",
-            n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
+            name, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
     } else {
         // Branch-based interface
         buffer.put("l_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^: {");

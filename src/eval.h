@@ -47,18 +47,18 @@ using GlobalsMap = tsl::robin_map<XXH128_hash_t, uint32_t, XXH128Hash, XXH128Eq>
 /// Name of the last generated kernel
 extern char kernel_name[52];
 
-/// Buffer containing global declarations
+/// List of global declarations (intrinsics, constant arrays)
 extern std::vector<std::string> globals;
 
-/// Ensure uniqueness of global declarations (intrinsics, virtual functions)
+/// List of device functions or direct callables (OptiX)
+extern std::vector<std::string> callables;
+
+/// Ensure uniqueness of globals/callables arrays
 extern GlobalsMap globals_map;
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
 /// Are we recording an OptiX kernel?
 extern bool uses_optix;
-
-/// List of optix callable references in call sites, used to create the SBT
-extern std::vector<uint32_t> vcall_table;
 #endif
 
 /// Does the program contain a %data register so far? (for branch-based vcalls)
@@ -81,25 +81,28 @@ extern void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
 extern void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group);
 
 /// Used by jitc_vcall() to generate source code for vcalls
-extern XXH128_hash_t
-jitc_assemble_func(ThreadState *ts, uint32_t inst_id, uint32_t in_size,
-                   uint32_t in_align, uint32_t out_size, uint32_t out_align,
-                   uint32_t data_offset,
+extern std::pair<XXH128_hash_t, uint32_t>
+jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
+                   uint32_t in_size, uint32_t in_align, uint32_t out_size,
+                   uint32_t out_align, uint32_t data_offset,
                    const tsl::robin_map<uint64_t, uint32_t> &data_map,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out,
                    const uint32_t *out, const uint32_t *out_nested,
                    uint32_t n_se, const uint32_t *se, const char *ret_label);
 
 /// Used by jitc_vcall() to generate PTX source code for vcalls
-extern void jitc_assemble_cuda_func(
-    uint32_t n_regs, uint32_t inst_id, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align, uint32_t data_offset,
-    const tsl::robin_map<uint64_t, uint32_t> &data_map, uint32_t n_out,
-    const uint32_t *out, const uint32_t *out_nested, const char *ret_label);
+extern void
+jitc_assemble_cuda_func(const char *name, uint32_t inst_id, uint32_t n_regs,
+                        uint32_t in_size, uint32_t in_align, uint32_t out_size,
+                        uint32_t out_align, uint32_t data_offset,
+                        const tsl::robin_map<uint64_t, uint32_t> &data_map,
+                        uint32_t n_out, const uint32_t *out,
+                        const uint32_t *out_nested, const char *ret_label);
 
 /// Used by jitc_vcall() to generate LLVM IR source code for vcalls
 extern void
-jitc_assemble_llvm_func(uint32_t inst_id, uint32_t data_offset,
+jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
+                        uint32_t data_offset,
                         const tsl::robin_map<uint64_t, uint32_t> &data_map,
                         uint32_t n_out, const uint32_t *out_nested);
 

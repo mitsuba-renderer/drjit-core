@@ -22,13 +22,13 @@ struct VCall {
     char *name = nullptr;
 
     /// Implement call via indirect branch?
-    bool branch;
+    bool branch = false;
 
     /// ID of call variable
-    uint32_t id;
+    uint32_t id = 0;
 
     /// Number of instances
-    uint32_t n_inst;
+    uint32_t n_inst = 0;
 
     /// Input variables at call site
     std::vector<uint32_t> in;
@@ -47,7 +47,7 @@ struct VCall {
 
     /// Mapping from variable index to offset into call data
     tsl::robin_map<uint64_t, uint32_t> data_map;
-    std::vector<uint32_t> data_offsets;
+    uint64_t* offset_h = nullptr, *offset_d = nullptr;
 
     /// Storage in bytes for inputs/outputs before simplifications
     uint32_t in_count_initial = 0;
@@ -59,6 +59,7 @@ struct VCall {
             jitc_var_dec_ref_ext(index);
         clear_side_effects();
         free(name);
+        jitc_free(offset_h);
     }
 
     void clear_side_effects() {
@@ -75,16 +76,16 @@ struct VCall {
 static void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg,
                                     uint32_t offset_reg, uint32_t data_reg);
 static void jitc_var_vcall_assemble_cuda(
-    VCall *vcall, const std::vector<XXH128_hash_t> &func_id, uint32_t vcall_reg,
-    uint32_t self_reg, uint32_t offset_reg, uint32_t data_reg,
-    uint32_t n_out, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align, const char *ret_label,
-    uint32_t vcall_table_offset);
+    VCall *vcall,
+    const std::vector<XXH128_hash_t> &callable_hash,
+    uint32_t self_reg, uint32_t offset_reg,
+    uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
+    uint32_t out_size, uint32_t out_align, const char *ret_label);
 
 static void jitc_var_vcall_assemble_llvm(
     VCall *vcall, uint32_t vcall_reg, uint32_t self_reg, uint32_t offset_reg,
     uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align, uint32_t vcall_table_offset);
+    uint32_t out_size, uint32_t out_align);
 
 static void
 jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
@@ -111,7 +112,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     uint32_t n_out = n_out_nested / n_inst, size = 0,
              in_size_initial = 0, out_size_initial = 0;
 
-    bool placeholder = false;
+    bool placeholder = false, optix = false;
 
     JitBackend backend;
     /* Check 'self' */ {
@@ -130,7 +131,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
             if (!v->dep[0])
                 jitc_raise("jit_var_vcall(): placeholder variable r%u does not "
                            "reference another input!", in[i]);
-            placeholder |= jitc_var(v->dep[0])->placeholder;
+            Variable *v2 = jitc_var(v->dep[0]);
+            placeholder |= v2->placeholder;
+            optix |= v2->optix;
         } else if (!v->literal) {
             jitc_raise("jit_var_vcall(): input variable r%u must either be a "
                        "literal or placeholder wrapping another variable!", in[i]);
@@ -171,88 +174,13 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
                    "expected size!");
 
     // =====================================================
-    // 2. Allocate call data
-    // =====================================================
-
-    tsl::robin_map<uint64_t, uint32_t> data_map;
-    std::vector<uint32_t> data_offsets;
-    uint32_t data_size = 0;
-
-    // Collect accesses to evaluated variables/pointers
-    for (uint32_t i = 0; i < n_inst; ++i) {
-        data_offsets.push_back(data_size);
-
-        for (uint32_t j = 0; j < n_out; ++j)
-            jitc_var_vcall_collect_data(data_map, data_size, i,
-                                        out_nested[j + i * n_out]);
-
-        for (uint32_t j = se_offset[i]; j != se_offset[i + 1]; ++j)
-            jitc_var_vcall_collect_data(data_map, data_size, i,
-                                        ts->side_effects[j]);
-
-        // Restore to full alignment
-        data_size = (data_size + 7) / 8 * 8;
-    }
-
-    Ref data_v, data_offsets_v;
-
-    if (data_size) {
-        void *data_offsets_d =
-            jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned
-                                                    : AllocType::Host,
-                        n_inst * sizeof(uint32_t));
-        memcpy(data_offsets_d, data_offsets.data(), n_inst * sizeof(uint32_t));
-
-        if (backend == JitBackend::CUDA)
-            data_offsets_d = jitc_malloc_migrate(data_offsets_d, AllocType::Device, 1);
-
-        uint8_t *data_d = (uint8_t *) jitc_malloc(backend == JitBackend::CUDA
-                                                      ? AllocType::Device
-                                                      : AllocType::HostAsync,
-                                                  data_size);
-
-        for (auto kv : data_map) {
-            uint32_t index = (uint32_t) kv.first, offset = kv.second;
-            if (offset == (uint32_t) -1)
-                continue;
-
-            const Variable *v = jitc_var(index);
-            if ((VarType) v->type == VarType::Pointer)
-                jitc_poke(backend, data_d + offset, &v->value, sizeof(void *));
-            else
-                jitc_memcpy_async(backend, data_d + offset, v->data,
-                                  type_size[v->type]);
-        }
-
-        Ref data_offsets_holder = steal(jitc_var_mem_map(
-                backend, VarType::UInt32, data_offsets_d, n_inst, 1)),
-            data_holder = steal(jitc_var_mem_map(
-                backend, VarType::UInt8, data_d, data_size, 1));
-
-        data_offsets_v = steal(jitc_var_new_pointer(backend, data_offsets_d,
-                                                    data_offsets_holder, 0));
-        data_v = steal(jitc_var_new_pointer(backend, data_d, data_holder, 0));
-    } else {
-        data_map.clear();
-    }
-
-    // =====================================================
-    // 3. Create special variable encoding the function call
-    // =====================================================
-
-    uint32_t deps[3] = { self, data_offsets_v, data_v };
-    Ref special = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
-                                          data_size ? 3 : 1, deps));
-
-    // =====================================================
-    // 4. Stash information about inputs and outputs
+    // 2. Stash information about inputs and outputs
     // =====================================================
 
     std::unique_ptr<VCall> vcall(new VCall());
     vcall->backend = backend;
     vcall->name = strdup(name);
     vcall->branch = jitc_flags() & (uint32_t) JitFlag::VCallBranch;
-    vcall->id = special;
     vcall->n_inst = n_inst;
     vcall->in.reserve(n_in);
     vcall->in_nested.reserve(n_in);
@@ -265,9 +193,76 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     vcall->se = std::vector<uint32_t>(
         ts->side_effects.begin() + se_offset[0],
         ts->side_effects.begin() + se_offset[n_inst]);
-    vcall->data_map = std::move(data_map);
-    vcall->data_offsets = std::move(data_offsets);
     ts->side_effects.resize(se_offset[0]);
+
+    // =====================================================
+    // 3. Collect evaluated data accessed by the instances
+    // =====================================================
+
+    AllocType at_d = backend == JitBackend::CUDA ? AllocType::Device
+                                                 : AllocType::HostAsync,
+              at_h = backend == JitBackend::CUDA ? AllocType::HostPinned
+                                                 : AllocType::Host;
+    vcall->offset_h = (uint64_t *) jitc_malloc(at_h, n_inst * sizeof(uint64_t));
+
+    // Collect accesses to evaluated variables/pointers
+    uint32_t data_size = 0;
+    for (uint32_t i = 0; i < n_inst; ++i) {
+        vcall->offset_h[i] = ((uint64_t) data_size) << 32;
+
+        for (uint32_t j = 0; j < n_out; ++j)
+            jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
+                                        out_nested[j + i * n_out]);
+
+        for (uint32_t j = se_offset[i]; j != se_offset[i + 1]; ++j)
+            jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
+                                        ts->side_effects[j]);
+
+        // Restore to full alignment
+        data_size = (data_size + 7) / 8 * 8;
+    }
+
+    // Allocate memory + wrapper variables for call offset and data arrays
+    uint64_t *offset_d = (uint64_t *) jitc_malloc(at_d, n_inst * sizeof(uint64_t));
+    uint8_t  *data_d   = (uint8_t *) jitc_malloc(at_d, data_size);
+
+    vcall->offset_d = offset_d;
+
+    Ref data_buf, data_v,
+        offset_buf = steal(
+            jitc_var_mem_map(backend, VarType::UInt64, offset_d, n_inst, 1)),
+        offset_v =
+            steal(jitc_var_new_pointer(backend, offset_d, offset_buf, 0));
+
+    if (data_size) {
+        data_buf = steal(
+            jitc_var_mem_map(backend, VarType::UInt8, data_d, data_size, 1));
+        data_v = steal(jitc_var_new_pointer(backend, data_d, data_buf, 0));
+        for (auto kv : vcall->data_map) {
+            uint32_t index = (uint32_t) kv.first, offset = kv.second;
+            if (offset == (uint32_t) -1)
+                continue;
+
+            const Variable *v = jitc_var(index);
+            if ((VarType) v->type == VarType::Pointer)
+                jitc_poke(backend, data_d + offset, &v->value, sizeof(void *));
+            else
+                jitc_memcpy_async(backend, data_d + offset, v->data,
+                                  type_size[v->type]);
+        }
+    } else {
+        vcall->data_map.clear();
+    }
+
+    // =====================================================
+    // 3. Create special variable encoding the function call
+    // =====================================================
+
+    uint32_t deps[3] = { self, offset_v, data_v };
+    Ref special = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
+                                          data_size ? 3 : 2, deps));
+
+    vcall->id = special;
 
     uint32_t se_count = se_offset[n_inst] - se_offset[0];
     if (se_count) {
@@ -306,6 +301,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
             out[j] = jitc_var_copy(out_nested[j]);
             Variable *v2 = jitc_var(out[j]);
             v2->placeholder = placeholder;
+            v2->optix = optix;
             v2->size = size;
             n_devirt++;
 
@@ -394,6 +390,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         v2.stmt = (char *) "";
         v2.size = size;
         v2.placeholder = placeholder;
+        v2.optix = optix;
         v2.type = v->type;
         v2.backend = v->backend;
         v2.dep[0] = special;
@@ -475,10 +472,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         uint32_t self_reg = self_2->reg_index,
                  offset_reg = 0, data_reg = 0;
 
-        if (v->dep[1]) {
-            offset_reg = jitc_var(v->dep[1])->reg_index;
+        offset_reg = jitc_var(v->dep[1])->reg_index;
+        if (v->dep[2])
             data_reg = jitc_var(v->dep[2])->reg_index;
-        }
 
         jitc_var_vcall_assemble((VCall *) extra.callback_data, self_reg,
                                 offset_reg, data_reg);
@@ -564,28 +560,30 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
     char ret_label[32];
     snprintf(ret_label, sizeof(ret_label), "l%u_done", vcall_reg);
-    size_t globals_offset = globals.size();
+    size_t callables_offset = callables.size();
 
-    uint32_t vcall_table_offset = (uint32_t) vcall_table.size();
-
-    std::vector<XXH128_hash_t> func_id(vcall->n_inst);
+    std::vector<XXH128_hash_t> callable_hash(vcall->n_inst);
 
     ThreadState *ts = thread_state(vcall->backend);
     for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-        func_id[i] = jitc_assemble_func(
-            ts, i, in_size, in_align, out_size, out_align,
-            vcall->data_offsets[i], vcall->data_map, n_in, vcall->in.data(),
-            n_out, vcall->out.data(), vcall->out_nested.data() + n_out * i,
+        uint64_t &offset = vcall->offset_h[i],
+                  data_offset = (uint32_t) (offset >> 32);
+
+        auto result = jitc_assemble_func(
+            ts, vcall->name, i, in_size, in_align, out_size, out_align,
+            data_offset, vcall->data_map, n_in, vcall->in.data(), n_out,
+            vcall->out.data(), vcall->out_nested.data() + n_out * i,
             vcall->se_offset[i + 1] - vcall->se_offset[i],
             vcall->se.data() + vcall->se_offset[i],
             vcall->branch ? ret_label : nullptr);
-        if ((uses_optix && !vcall->branch) || vcall->backend == JitBackend::LLVM) {
-            auto it = globals_map.find(func_id[i]);
-            if (unlikely(it == globals_map.end()))
-                jitc_fail("jit_vcall_assemble(): could not find generated function in globals map!");
-            vcall_table.push_back(it->second);
-        }
+
+        // high part: callable index, low part: instance data offset
+        offset = (offset & 0xFFFFFFFF00000000ull) | result.second;
+        callable_hash[i] = result.first;
     }
+
+    jitc_memcpy_async(vcall->backend, vcall->offset_d, vcall->offset_h,
+                      vcall->n_inst * sizeof(uint64_t));
 
     vcall->clear_side_effects();
 
@@ -604,21 +602,19 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     }
 
     if (vcall->backend == JitBackend::CUDA)
-        jitc_var_vcall_assemble_cuda(vcall, func_id, vcall_reg, self_reg,
+        jitc_var_vcall_assemble_cuda(vcall, callable_hash, self_reg,
                                      offset_reg, data_reg, n_out, in_size,
-                                     in_align, out_size, out_align, ret_label,
-                                     vcall_table_offset);
+                                     in_align, out_size, out_align, ret_label);
     else
         jitc_var_vcall_assemble_llvm(vcall, vcall_reg, self_reg,
                                      offset_reg, data_reg, n_out, in_size,
-                                     in_align, out_size, out_align,
-                                     vcall_table_offset);
+                                     in_align, out_size, out_align);
 
     if (vcall->branch) {
         buffer.putc('\n');
-        for (uint32_t i = globals_offset; i < globals.size(); ++i)
-            buffer.put(globals[i].c_str(), globals[i].length());
-        globals.resize(globals_offset);
+        for (uint32_t i = callables_offset; i < callables.size(); ++i)
+            buffer.put(callables[i].c_str(), callables[i].length());
+        callables.resize(callables_offset);
 
         buffer.fmt("\n%s:\n", ret_label);
         if (data_reg && data_reg_global)
@@ -628,32 +624,32 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     }
 
     std::sort(
-        func_id.begin(), func_id.end(), [](XXH128_hash_t a, XXH128_hash_t b) {
+        callable_hash.begin(), callable_hash.end(), [](const auto &a, const auto &b) {
             return std::tie(a.high64, a.low64) < std::tie(b.high64, b.low64);
         });
 
     size_t n_unique = std::unique(
-        func_id.begin(), func_id.end(), [](XXH128_hash_t a, XXH128_hash_t b) {
+        callable_hash.begin(), callable_hash.end(), [](const auto &a, const auto &b) {
             return std::tie(a.high64, a.low64) == std::tie(b.high64, b.low64);
-        }) - func_id.begin();
+        }) - callable_hash.begin();
 
     jitc_log(
         Info,
         "jit_var_vcall_assemble(): indirect %s (\"%s\") to %zu/%zu instances, "
         "passing %u/%u inputs (%u/%u bytes), %u/%u outputs (%u/%u bytes)",
         vcall->branch ? "branch" : "call", vcall->name, n_unique,
-        func_id.size(), n_in_active, vcall->in_count_initial, in_size,
+        callable_hash.size(), n_in_active, vcall->in_count_initial, in_size,
         vcall->in_size_initial, n_out_active, n_out, out_size,
         vcall->out_size_initial);
 }
 
 /// Virtual function call code generation -- CUDA/PTX-specific bits
 static void jitc_var_vcall_assemble_cuda(
-    VCall *vcall, const std::vector<XXH128_hash_t> &func_id, uint32_t vcall_reg,
-    uint32_t self_reg, uint32_t offset_reg, uint32_t data_reg, uint32_t n_out,
-    uint32_t in_size, uint32_t in_align, uint32_t out_size, uint32_t out_align,
-    const char *ret_label, uint32_t vcall_table_offset) {
-
+    VCall *vcall,
+    const std::vector<XXH128_hash_t> &callable_hash,
+    uint32_t self_reg, uint32_t offset_reg,
+    uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
+    uint32_t out_size, uint32_t out_align, const char *ret_label) {
 
     buffer.fmt("    %s VCall (%s)\n",
                vcall->backend == JitBackend::CUDA ? "//" : ";",
@@ -671,123 +667,65 @@ static void jitc_var_vcall_assemble_cuda(
     }
 
     // =====================================================
-    // 1. Determine offset into instance-specific call data
+    // 1. Determine unique callable ID
     // =====================================================
 
     buffer.fmt("    {\n"
-            "        setp.ne.u32 %%p3, %%r%u, 0;\n", self_reg);
-    if (!uses_optix || data_reg)
-        buffer.fmt("        sub.u32 %%r3, %%r%u, 1;\n", self_reg);
-
-    if (data_reg)
-        buffer.fmt("        mad.wide.u32 %%rd2, %%r3, 4, %%rd%u;\n"
-                   "        @%%p3 ld.global.u32 %%rd2, [%%rd2];\n"
-                   "        add.u64 %s, %%rd2, %%rd%u;\n",
-                   offset_reg, vcall->branch ? "%data" : "%rd2", data_reg);
-
-    buffer.putc('\n');
+               "        setp.ne.u32 %%p3, %%r%u, 0;\n"
+               "        sub.u32 %%r3, %%r%u, 1;\n"
+               "        mad.wide.u32 %%rd3, %%r3, 8, %%rd%u;\n"
+               "        @%%p3 ld.global.u64 %%rd3, [%%rd3];\n"
+               "        cvt.u32.u64 %%r2, %%rd3;\n",
+               self_reg, self_reg, offset_reg);
+    // %r2: callable ID
+    // %rd3: (high 32 bit): data offset
 
     // =====================================================
-    // 2. Generate function table and look up the target
+    // 2. Turn callable ID into a function pointer
     // =====================================================
 
-    if (!uses_optix) {
-        /* On CUDA, we use 'brx.idx' (indirect branch) or 'call' (indirect call).
-           These require different ways of specifying the possible targets. */
-        if (vcall->branch)
-            buffer.put("        bt: .branchtargets\n");
+    if (!vcall->branch) {
+        if (!uses_optix)
+            buffer.put("        @%p3 ld.global.u64 %rd2, callables[%r2];\n");
         else
-            buffer.put("        .global .u64 tbl[] = {\n");
-
-        for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-            buffer.fmt("            %s%016llx%016llx%s",
-                       vcall->branch ? "l_" : "func_",
-                       (unsigned long long) func_id[i].high64,
-                       (unsigned long long) func_id[i].low64,
-                       i + 1 < vcall->n_inst ? ",\n" : "");
-        }
-
-        if (vcall->branch)
-            buffer.put(";\n\n");
-        else
-            buffer.put(" };\n\n");
-
-        if (vcall->branch)
-            buffer.put("        @%p3 brx.idx %r3, bt;\n");
-        else
-            buffer.put("        @%p3 ld.global.u64 %rd3, tbl[%r3];\n");
-    } else {
-        /* Indirect branches or calls are not allowed in the OptiX
-           environment. Use a 'direct callable' or a sequence of direct
-           branches. */
-        for (uint32_t i = 0; i < vcall->n_inst; ++i)
-            buffer.fmt("        // Target %u: %s%016llx%016llx\n", i,
-                       vcall->branch ? "l_" : "__direct_callable__",
-                       (unsigned long long) func_id[i].high64,
-                       (unsigned long long) func_id[i].low64);
-
-        if (vcall->branch) {
-            auto branch_i = [&func_id, vcall_reg](uint32_t i) {
-                if (i == 0)
-                    buffer.fmt("bra l%u_masked;\n", vcall_reg);
-                else
-                    buffer.fmt("bra l_%016llx%016llx;\n",
-                               (unsigned long long) func_id[i - 1].high64,
-                               (unsigned long long) func_id[i - 1].low64);
-            };
-
-            uint32_t n = vcall->n_inst + 1;
-
-            if (n < 8) {
-                // If there are just a few instances, do a few comparisons + jumps
-                for (uint32_t i = 0; i < n; ++i) {
-                    buffer.fmt("        setp.eq.u32 %%p3, %%r%u, %u;\n"
-                               "        @%%p3 ", self_reg, i);
-                    branch_i(i);
-                }
-            } else {
-                /* Otherwise, generate code for an explicit binary search that
-                   will use O(log n) conditional jumps to reach the target. */
-                uint32_t levels = log2i_ceil(n);
-                for (uint32_t l = 0; l < levels; ++l) {
-                    for (uint32_t i = 0; i < (1 << l); ++i) {
-                        uint32_t start = (i + 0) << (levels - l),
-                                 end = (i + 1) << (levels - l),
-                                 mid = (start + end) / 2;
-
-                        if (start >= n)
-                            break;
-                        buffer.fmt("l%u_%u_%u:\n", vcall_reg, l, i);
-
-                        if (mid < n) {
-                            buffer.fmt("        setp.ge.u32 %%p3, %%r%u, %u;\n"
-                                       "        @%%p3 ", self_reg, mid);
-                            if (l + 1 < levels)
-                                buffer.fmt("bra l%u_%u_%u;\n", vcall_reg, l + 1, 2 * i + 1);
-                            else
-                                branch_i(2 * i + 1);
-                        }
-                        if (l + 1 < levels) {
-                            buffer.fmt("        bra l%u_%u_%u;\n", vcall_reg, l + 1, 2 * i);
-                        } else {
-                            buffer.put("        ");
-                            branch_i(2 * i);
-                        }
-                    }
-                }
-            }
-
-            buffer.fmt("\nl%u_masked:\n", vcall_reg);
-        } else {
-            buffer.fmt("        add.s32 %%r3, %%r%u, %i;\n"
-                       "        call (%%rd3), _optix_call_direct_callable, (%%r3);\n",
-                       self_reg, (int) vcall_table_offset - 1);
-        }
+            buffer.put("        call (%rd2), _optix_call_direct_callable, (%r2);\n");
     }
 
     // =====================================================
-    // 3. If doing an indirect call, insert it here
+    // 3. Obtain pointer to supplemental call data
     // =====================================================
+
+    if (data_reg)
+        buffer.fmt("        shr.u64 %%rd3, %%rd3, 32;\n"
+                   "        add.u64 %s, %%rd3, %%rd%u;\n",
+                   vcall->branch ? "%data" : "%rd3", data_reg);
+
+    // %rd2: function pointer (if applicable)
+    // %rd3: call data pointer with offset
+
+    // =====================================================
+    // 4. Generate the actual function call
+    // =====================================================
+
+    buffer.put("\n");
+    tsl::robin_set<uint32_t> seen;
+    for (uint32_t i = 0; i < vcall->n_inst; ++i) {
+        uint32_t callable_id = (uint32_t) vcall->offset_h[i];
+        if (!seen.insert(callable_id).second)
+            continue;
+        if (vcall->branch) {
+            buffer.fmt("        setp.eq.u32 %%p3, %%r2, %u;\n"
+                       "        @%%p3 bra l_%016llx%016llx;\n", callable_id,
+                       (unsigned long long) callable_hash[i].high64,
+                       (unsigned long long) callable_hash[i].low64);
+        } else {
+            buffer.fmt("        // target %zu = %s%016llx%016llx;\n",
+                       seen.size(),
+                       uses_optix ? "__direct_callable__" : "func_",
+                       (unsigned long long) callable_hash[i].high64,
+                       (unsigned long long) callable_hash[i].low64);
+        }
+    }
 
     if (!vcall->branch) {
         // Special handling for predicates
@@ -804,7 +742,7 @@ static void jitc_var_vcall_assemble_cuda(
                        v2->reg_index, v2->reg_index);
         }
 
-        buffer.put("\n        {\n");
+        buffer.put("        {\n");
 
         // Call prototype
         buffer.put("            proto: .callprototype");
@@ -827,7 +765,7 @@ static void jitc_var_vcall_assemble_cuda(
             buffer.fmt("            .param .align %u .b8 in[%u];\n", in_align, in_size);
 
         // =====================================================
-        // 4. Pass the input arguments
+        // 4.1. Pass the input arguments
         // =====================================================
 
         uint32_t offset = 0;
@@ -853,12 +791,12 @@ static void jitc_var_vcall_assemble_cuda(
             offset += size;
         }
 
-        buffer.fmt("            @%%p3 call %s%%rd3, (%s%s%s), proto;\n",
-                   out_size ? "(out), " : "", data_reg ? "%rd2" : "",
+        buffer.fmt("            @%%p3 call %s%%rd2, (%s%s%s), proto;\n",
+                   out_size ? "(out), " : "", data_reg ? "%rd3" : "",
                    data_reg && in_size ? ", " : "", in_size ? "in" : "");
 
         // =====================================================
-        // 5. Read back the output arguments
+        // 4.2. Read back the output arguments
         // =====================================================
 
         offset = 0;
@@ -909,7 +847,7 @@ static void jitc_var_vcall_assemble_cuda(
     }
 
     // =====================================================
-    // 6. Set return value(s) to zero if the call was masked
+    // 5. Set return value(s) to zero if the call was masked
     // =====================================================
 
     for (uint32_t out : vcall->out) {
@@ -934,19 +872,18 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
                                          uint32_t self_reg, uint32_t offset_reg,
                                          uint32_t data_reg, uint32_t n_out,
                                          uint32_t in_size, uint32_t in_align,
-                                         uint32_t out_size, uint32_t out_align,
-                                         uint32_t vcall_table_offset) {
+                                         uint32_t out_size, uint32_t out_align) {
 
     // =====================================================
     // 1. Insert parameter passing allocations into prelude
     // =====================================================
 
-    int width = jitc_llvm_vector_width;
+    uint32_t width = jitc_llvm_vector_width;
     char tmp[256];
     snprintf(tmp, sizeof(tmp),
-             "\n    %%r%u_in = alloca i8, i32 %u, align %u\n"
-             "    %%r%u_out = alloca i8, i32 %u, align %u\n"
-             "    %%r%u_table = load i8**, i8*** @vcall_table\n",
+             "\n    %%u%u_in = alloca i8, i32 %u, align %u\n"
+             "    %%u%u_out = alloca i8, i32 %u, align %u\n"
+             "    %%u%u_callables = load i8**, i8*** @callables\n",
              vcall_reg, in_size * width, in_align * width, vcall_reg,
              out_size * width, out_align * width, vcall_reg);
 
@@ -964,21 +901,47 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
              "declare i32 @llvm.experimental.vector.reduce.umax.v%ui32(<%u x i32>)\n\n",
              width, width);
     jitc_register_global(tmp);
-    jitc_register_global("@vcall_table = internal constant i8** null\n\n");
+    jitc_register_global("@callables = internal constant i8** null\n\n");
     if (out_size) {
         snprintf(tmp, sizeof(tmp), "declare void @llvm.memset.p0i8.i32(i8*, i8, i32, i1)\n\n");
         jitc_register_global(tmp);
     }
 
+    snprintf(tmp, sizeof(tmp),
+             "declare <%u x i64> @llvm.masked.gather.v%ui64(<%u x i64*>, i32, "
+             "<%u x i1>, <%u x i64>)\n",
+             width, width, width, width, width);
+    jitc_register_global(tmp);
+
+    jitc_register_global("declare void @llvm.debugtrap()\n\n");
+    buffer.put("    call void @llvm.debugtrap()\n");
+
     buffer.fmt("    br label %%l%u_start\n"
-               "\nl%u_start:\n", vcall_reg, vcall_reg);
+               "\nl%u_start:\n"
+               "    %%u%u_active_initial = icmp ne <%u x i32> %%r%u, zeroinitializer\n"
+               "    %%u%u_self_ptr = getelementptr i64, i64* %%rd%u_p3, <%u x i32> %%r%u\n"
+               "    %%u%u_self_combined = call <%u x i64> @llvm.masked.gather.v%ui64(<%u x i64*> %%u%u_self_ptr, i32 8, <%u x i1> %%u%u_active_initial, <%u x i64> zeroinitializer)\n"
+               "    %%u%u_self_initial = trunc <%u x i64> %%u%u_self_combined to <%u x i32>\n",
+               vcall_reg,
+               vcall_reg,
+               vcall_reg, width, self_reg,
+               vcall_reg, offset_reg, width, self_reg,
+               vcall_reg, width, width, width, vcall_reg, width, vcall_reg, width,
+               vcall_reg, width, vcall_reg, width);
+
+    if (data_reg) {
+        buffer.fmt("    %%u%u_offset_1 = lshr <%u x i64> %%u%u_self_combined, <", vcall_reg, width, vcall_reg);
+        for (uint32_t i = 0; i < width; ++i)
+            buffer.fmt("i64 32%s", i + 1 < width ? ", " : "");
+        buffer.put(">\n");
+        buffer.fmt("    %%u%u_offset = trunc <%u x i64> %%u%u_offset_1 to <%u x i32>\n",
+                   vcall_reg, width, vcall_reg, width);
+    }
 
     // =====================================================
     // 3. Pass the input arguments
     // =====================================================
 
-    // register_global("declare void @llvm.debugtrap()\n\n");
-    // buffer.put("    call void @llvm.debugtrap()\n");
 
     uint32_t offset = 0;
     for (uint32_t i = 0; i < (uint32_t) vcall->in.size(); ++i) {
@@ -1000,9 +963,9 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
                        prefix, v2->reg_index, width, prefix, v2->reg_index, width);
 
         buffer.fmt(
-            "    %%r%u_in_%u_0 = getelementptr inbounds i8, i8* %%r%u_in, i64 %u\n"
-            "    %%r%u_in_%u_1 = bitcast i8* %%r%u_in_%u_0 to <%u x %s> *\n"
-            "    store <%u x %s> %s%u%s, <%u x %s>* %%r%u_in_%u_1, align %u\n",
+            "    %%u%u_in_%u_0 = getelementptr inbounds i8, i8* %%u%u_in, i64 %u\n"
+            "    %%u%u_in_%u_1 = bitcast i8* %%u%u_in_%u_0 to <%u x %s> *\n"
+            "    store <%u x %s> %s%u%s, <%u x %s>* %%u%u_in_%u_1, align %u\n",
             vcall_reg, i, vcall_reg, offset,
             vcall_reg, i, vcall_reg, i, width, tname,
             width, tname, prefix, v2->reg_index, vt == VarType::Bool ? "_zext" : "", width, tname, vcall_reg, i, size * width
@@ -1012,16 +975,8 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
     }
 
     if (out_size) /// Zero-initialize memory region containing outputs
-        buffer.fmt("    call void @llvm.memset.p0i8.i32(i8* %%r%u_out, i8 0, "
+        buffer.fmt("    call void @llvm.memset.p0i8.i32(i8* %%u%u_out, i8 0, "
                    "i32 %u, i1 0)\n", vcall_reg, out_size * width);
-
-    if (data_reg) {
-        buffer.fmt("        do something with %%rd%u\n", offset_reg);
-        // buffer.fmt("        mad.wide.u32 %%rd2, %%r3, 4, %%rd%u;\n"
-        //            "        @%%p3 ld.global.u32 %%rd2, [%%rd2];\n"
-        //            "        add.u64 %s, %%rd2, %%rd%u;\n",
-        //            offset_reg, vcall->branch ? "%data" : "%rd2", data_reg);
-    }
 
     // =====================================================
     // 4. Perform one call to each unique instance
@@ -1030,36 +985,44 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
     buffer.fmt("    br label %%l%u_check\n", vcall_reg);
 
     buffer.fmt("\nl%u_check:\n"
-               "    %%r%u_self = phi <%u x i32> [ %%r%u, %%l%u_start ], [ %%r%u_self_next, %%l%u_call ]\n",
-               vcall_reg, vcall_reg, width, self_reg, vcall_reg, vcall_reg, vcall_reg);
-    buffer.fmt("    %%r%u_next = call i32 @llvm.experimental.vector.reduce.umax.v%ui32(<%u x i32> %%r%u_self)\n", vcall_reg, width, width, vcall_reg);
-    buffer.fmt("    %%r%u_valid = icmp ne i32 %%r%u_next, 0\n"
-               "    br i1 %%r%u_valid, label %%l%u_call, label %%l%u_end\n",
+               "    %%u%u_self = phi <%u x i32> [ %%u%u_self_initial, %%l%u_start ], [ %%u%u_self_next, %%l%u_call ]\n",
+               vcall_reg, vcall_reg, width, vcall_reg, vcall_reg, vcall_reg, vcall_reg);
+    buffer.fmt("    %%u%u_next = call i32 @llvm.experimental.vector.reduce.umax.v%ui32(<%u x i32> %%u%u_self)\n", vcall_reg, width, width, vcall_reg);
+    buffer.fmt("    %%u%u_valid = icmp ne i32 %%u%u_next, 0\n"
+               "    br i1 %%u%u_valid, label %%l%u_call, label %%l%u_end\n",
                vcall_reg, vcall_reg, vcall_reg, vcall_reg, vcall_reg);
 
     buffer.fmt("\nl%u_call:\n"
-               "    %%r%u_bcast_0 = insertelement <%u x i32> undef, i32 %%r%u_next, i32 0\n"
-               "    %%r%u_bcast = shufflevector <%u x i32> %%r%u_bcast_0, <%u x i32> undef, <%u x i32> zeroinitializer\n"
-               "    %%r%u_active = icmp eq <%u x i32> %%r%u_self, %%r%u_bcast\n"
-               "    %%r%u_self_next = select <%u x i1> %%r%u_active, <%u x i32> zeroinitializer, <%u x i32> %%r%u_self\n"
-               "    %%r%u_table_index = add i32 %%r%u_next, %i\n"
-               "    %%r%u_func_0 = getelementptr inbounds i8*, i8** %%r%u_table, i32 %%r%u_table_index\n"
-               "    %%r%u_func_1 = load i8*, i8** %%r%u_func_0\n"
-               "    %%r%u_func = bitcast i8* %%r%u_func_1 to void (<%u x i1>, i8*, i8*, i8*)*\n"
-               "    call void %%r%u_func(<%i x i1> %%r%u_active, i8* %%r%u_in, i8* %%r%u_out, i8* null)\n"
-               "    br label %%l%u_check\n"
-               "\nl%u_end:\n",
+               "    %%u%u_bcast_0 = insertelement <%u x i32> undef, i32 %%u%u_next, i32 0\n"
+               "    %%u%u_bcast = shufflevector <%u x i32> %%u%u_bcast_0, <%u x i32> undef, <%u x i32> zeroinitializer\n"
+               "    %%u%u_active = icmp eq <%u x i32> %%u%u_self, %%u%u_bcast\n"
+               "    %%u%u_func_0 = getelementptr inbounds i8*, i8** %%u%u_callables, i32 %%u%u_next\n"
+               "    %%u%u_func_1 = load i8*, i8** %%u%u_func_0\n",
                vcall_reg,
                vcall_reg, width, vcall_reg, // bcast_0
                vcall_reg, width, vcall_reg, width, width, // bcast
                vcall_reg, width, vcall_reg, vcall_reg, // active
-               vcall_reg, width, vcall_reg, width, width, vcall_reg, // self_next
-               vcall_reg, vcall_reg, (int) vcall_table_offset - 1, // table_index
                vcall_reg, vcall_reg, vcall_reg, // func_0
-               vcall_reg, vcall_reg, // func_1
-               vcall_reg, vcall_reg, width, // _func
-               vcall_reg, width, vcall_reg, vcall_reg, vcall_reg, // call
-               vcall_reg, // br
+               vcall_reg, vcall_reg // func_1
+       );
+
+    if (!data_reg) {
+        buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*, i8*)*\n"
+                   "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%u%u_in, i8* %%u%u_out)\n",
+                   vcall_reg, vcall_reg, width,
+                   vcall_reg, width,  vcall_reg, vcall_reg, vcall_reg);
+    } else {
+        buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*, i8*, <%u x i32>, i8*)*\n"
+                   "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%u%u_in, i8* %%u%u_out, <%u x i32> %%u%u_offset, %%rd%u_p3)\n",
+                   vcall_reg, vcall_reg, width, width,
+                   vcall_reg, width,  vcall_reg, vcall_reg, vcall_reg, width, vcall_reg, data_reg);
+
+    }
+
+    buffer.fmt("    %%u%u_self_next = select <%u x i1> %%u%u_active, <%u x i32> zeroinitializer, <%u x i32> %%u%u_self\n"
+               "    br label %%l%u_check\n"
+               "\nl%u_end:\n",
+               vcall_reg, width, vcall_reg, width, width, vcall_reg, vcall_reg,
                vcall_reg);
 
     // =====================================================
@@ -1092,9 +1055,9 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
                             ? "i8" : type_name_llvm[vti];
 
         buffer.fmt(
-            "    %%r%u_out_%u_0 = getelementptr inbounds i8, i8* %%r%u_out, i64 %u\n"
-            "    %%r%u_out_%u_1 = bitcast i8* %%r%u_out_%u_0 to <%u x %s> *\n"
-            "    %s%u%s = load <%u x %s>, <%u x %s>* %%r%u_out_%u_1, align %u\n",
+            "    %%u%u_out_%u_0 = getelementptr inbounds i8, i8* %%u%u_out, i64 %u\n"
+            "    %%u%u_out_%u_1 = bitcast i8* %%u%u_out_%u_0 to <%u x %s> *\n"
+            "    %s%u%s = load <%u x %s>, <%u x %s>* %%u%u_out_%u_1, align %u\n",
             vcall_reg, i, vcall_reg, load_offset, vcall_reg, i, vcall_reg, i,
             width, tname,
             prefix, v2->reg_index, vt == VarType::Bool ? "_0" : "", width, tname, width, tname,
