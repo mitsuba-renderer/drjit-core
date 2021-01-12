@@ -896,8 +896,8 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     if (v->size == size) {
         jitc_var_inc_ref_ext(index, v);
         return index; // Nothing to do
-    } else if (v->size != 1) {
-        jitc_raise("jit_var_resize(): variable %u must be scalar!", index);
+    } else if (v->size != 1 && !v->literal) {
+        jitc_raise("jit_var_resize(): variable %u must be scalar or literal!", index);
     }
 
     uint32_t result;
