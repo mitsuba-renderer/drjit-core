@@ -1500,8 +1500,9 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         Ref tmp = steal(jitc_var_new_op(JitOp::And, 2, deps));
 
         uint32_t result = jitc_var_resize(tmp, size);
-        jitc_log(Debug, "jit_var_new_gather(%s r%u <- r%u[r%u] if r%u): elided",
-                 type_name[vti], result, source, index_, mask_);
+        jitc_log(Debug, "jit_var_new_gather(%s r%u <- r%u[r%u] if r%u): elided, %s source",
+                 type_name[vti], result, source, index_, mask_,
+                 v_source->literal ? "literal" : "scalar");
 
         return result;
     }

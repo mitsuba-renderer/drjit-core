@@ -462,7 +462,6 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
             // jitc_trace("jit_var_loop_simplify(): DFS from %u (r%u)", i, loop->out_body[i]);
             jitc_var_loop_dfs(visited, loop->out_body[i]);
         }
-        printf("Graph size=%zu\n", visited.size());
 
         // Find all inputs that are reachable from the side effects
         Extra &e = state.extra[loop->end];
