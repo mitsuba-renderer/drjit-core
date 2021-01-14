@@ -393,8 +393,17 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
             var_buffer.put(v.stmt, strlen(v.stmt));
         }
 
-        if (cse && !cse_key_inserted)
-            var_buffer.put(" (reused)");
+        bool cse_hit = cse && !cse_key_inserted;
+        if (v.placeholder || cse_hit) {
+            var_buffer.put(" (");
+            if (v.placeholder)
+                var_buffer.put("placeholder");
+            if (v.placeholder && cse_hit)
+                var_buffer.put(", ");
+            if (cse_hit)
+                var_buffer.put("cse hit");
+            var_buffer.put(")");
+        }
 
         jitc_log(Debug, "%s", var_buffer.get());
     }
@@ -664,8 +673,8 @@ int jitc_var_schedule(uint32_t index) {
     Variable *v = &it.value();
 
     if (unlikely(v->placeholder))
-        jitc_raise("jit_var_eval(): placeholder variables are used to record "
-                   "computation symbolically and cannot be evaluated!");
+        jitc_raise("jit_var_schedule(r%u): placeholder variables are used to record "
+                   "computation symbolically and cannot be scheduled for evaluation!", index);
 
     if (!v->data) {
         thread_state(v->backend)->scheduled.push_back(index);
@@ -703,8 +712,8 @@ int jitc_var_eval(uint32_t index) {
     Variable *v = jitc_var(index);
 
     if (unlikely(v->placeholder))
-        jitc_raise("jit_var_eval(): placeholder variables are used to record "
-                   "computation symbolically and cannot be evaluated!");
+        jitc_raise("jit_var_eval(r%u): placeholder variables are used to record "
+                   "computation symbolically and cannot be evaluated!", index);
 
     if (!v->data || v->dirty) {
         ThreadState *ts = thread_state(v->backend);
