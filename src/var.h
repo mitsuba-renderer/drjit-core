@@ -108,10 +108,6 @@ extern void jitc_var_read(uint32_t index, size_t offset, void *dst);
 /// Reverse of jitc_var_read(). Copy 'src' to a single element of a variable
 extern uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src);
 
-/// Insert a print statement into the kernel
-extern void jitc_var_printf(JitBackend backend, const char *fmt, uint32_t narg,
-                            const uint32_t *arg);
-
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 extern int jitc_var_schedule(uint32_t index);
 

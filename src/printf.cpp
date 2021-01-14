@@ -6,8 +6,8 @@
 /// Forward declaration
 static void jitc_var_printf_assemble(const Variable *v, const Extra &extra);
 
-void jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
-                     uint32_t narg, const uint32_t *arg) {
+uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
+                         uint32_t narg, const uint32_t *arg) {
     if (backend != JitBackend::CUDA)
         jitc_raise("jit_var_printf(): only supported for the CUDA backend at the moment.");
 
@@ -46,13 +46,18 @@ void jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
             free(ptr);
     };
     e.callback_internal = true;
-    thread_state(backend)->side_effects.push_back(printf_var.release());
+    uint32_t result = printf_var.release();
+    thread_state(backend)->side_effects.push_back(result);
+    return result;
 }
 
 static void jitc_var_printf_assemble(const Variable *v, const Extra &extra) {
     size_t buffer_offset = buffer.size();
-    buffer.fmt(".global .align 1 .b8 printf_fmt_%u[] = { ", v->reg_index);
     const char *fmt = (const char *) extra.callback_data;
+    auto hash = XXH128(fmt, strlen(fmt), 0);
+    buffer.fmt(".global .align 1 .b8 data_%016llu%016llu[] = { ",
+               (unsigned long long) hash.high64,
+               (unsigned long long) hash.low64);
     for (uint32_t i = 0; ; ++i) {
         buffer.put_uint32((uint32_t) fmt[i]);
         if (fmt[i] == '\0')
@@ -112,7 +117,7 @@ static void jitc_var_printf_assemble(const Variable *v, const Extra &extra) {
     }
     buffer.fmt("\n"
                "        .reg.b64 %%fmt_generic, %%buf_generic;\n"
-               "        cvta.global.u64 %%fmt_generic, printf_fmt_%u;\n"
+               "        cvta.global.u64 %%fmt_generic, data_%016llu%016llu;\n"
                "        cvta.local.u64 %%buf_generic, buf;\n"
                "        {\n"
                "            .param .b64 fmt_p;\n"
@@ -120,7 +125,9 @@ static void jitc_var_printf_assemble(const Variable *v, const Extra &extra) {
                "            .param .b32 rv_p;\n"
                "            st.param.b64 [fmt_p], %%fmt_generic;\n"
                "            st.param.b64 [buf_p], %%buf_generic;\n"
-               "            ", v->reg_index);
+               "            ",
+               (unsigned long long) hash.high64,
+               (unsigned long long) hash.low64);
     if (v->dep[0]) {
         Variable *v2 = jitc_var(v->dep[0]);
         if (!v2->literal || v2->value != 1)

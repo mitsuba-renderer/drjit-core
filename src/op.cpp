@@ -13,6 +13,7 @@
 #include "eval.h"
 #include "log.h"
 #include "op.h"
+#include "printf.h"
 
 /// Temporary string buffer for miscellaneous variable-related tasks
 extern Buffer var_buffer;
@@ -1488,11 +1489,22 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
 
     uint32_t vti = v_source->type;
     uint32_t size = std::max(v_index->size, v_mask->size);
+    JitBackend backend = (JitBackend) v_source->backend;
 
     if (v_source->placeholder)
         jitc_raise("jit_var_new_gather(): cannot gather from a placeholder variable!");
 
-    // Completely avoid the gather operation for trivial arguments
+    // Don't perform the gather operation if it is always masked
+    if (v_mask->literal && v_mask->value == 0) {
+        uint64_t value = 0;
+        uint32_t result = jitc_var_new_literal(backend, (VarType) vti, &value, size, 0);
+        jitc_log(Info,
+                 "jit_var_new_gather(r%u <- r%u[r%u] if r%u): elided, always masked",
+                 result, source, index_, mask_);
+        return result;
+    }
+
+    // Don't perform the gather operation if the inputs are trivial
     if (v_source->literal || v_source->size == 1) {
         uint32_t deps[2] = { source, mask_ };
         Ref tmp = steal(jitc_var_new_op(JitOp::And, 2, deps));
@@ -1513,8 +1525,6 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     v_index = jitc_var(index);
     v_mask = jitc_var(mask);
 
-    JitBackend backend = (JitBackend) v_source->backend;
-
     // Ensure that the source array is fully evaluated
     if (!v_source->data || v_source->dirty || v_index->dirty || v_mask->dirty) {
         jitc_var_schedule(source);
@@ -1524,6 +1534,10 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         v_source = jitc_var(source);
         // v_index = jitc_var(index); (not used below)
         v_mask = jitc_var(mask);
+
+        if (!v_source->data)
+            jitc_raise("jit_var_new_gather(): internal error: source pointer "
+                       "is NULL after evaluation!");
     }
 
     bool unmasked = v_mask->literal && v_mask->value == 1;
@@ -1532,8 +1546,28 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     // Create a pointer + reference, invalidates the v_* variables
     Ref ptr = steal(jitc_var_new_pointer(backend, v_source->data, source, 0));
 
-    uint32_t dep[3] = { ptr, index, mask };
+    uint32_t dep[4] = { ptr, index, mask, 0 };
     uint32_t n_dep = 3;
+
+    uint32_t debug_print = 0;
+#if 0
+    {
+        char tmp[128];
+        snprintf(tmp, sizeof(tmp),
+                 "setp.eq.u64 $r0, $r1, 0$n" // base pointer issue
+                 "setp.ge.or.$t2 $r0, $r2, %u, $r0$n" // overflow
+                 "and.pred $r0, $r0, $r3",
+                 v_source->size);
+        uint32_t is_null =
+            jitc_var_new_stmt(backend, VarType::Bool, tmp, 0, 3, dep);
+        snprintf(
+            tmp, sizeof(tmp),
+            "Issue with gather: r%u <- r%u[r%u] if r%u: ptr=%%p, index=%%u, max_size=%u\n",
+            state.variable_index, source, index_, mask_, v_source->size);
+        debug_print = jitc_var_printf(backend, is_null, tmp, 2, dep);
+        jitc_var_dec_ref_ext(is_null);
+    }
+#endif
 
     const char *stmt;
     if (backend == JitBackend::CUDA) {
@@ -1561,6 +1595,9 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
             dep[2] = 0;
             n_dep = 2;
         }
+
+        if (debug_print)
+            dep[n_dep++] = debug_print;
     } else {
         if (vt != VarType::Bool && vt != VarType::UInt8 && vt != VarType::Int8) {
             stmt = "$r0_0 = bitcast i64* $r1_p3 to $t0*$n"
