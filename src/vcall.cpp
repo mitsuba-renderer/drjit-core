@@ -315,12 +315,10 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     jitc_log(Info,
              "jit_var_vcall(r%u, self=r%u): call (\"%s\") with %u instance%s, %u "
              "input%s, %u output%s (%u devirtualized), %u side effect%s, %u "
-             "byte%s of call data%s",
-             (uint32_t) special,
-             self, name, n_inst, n_inst == 1 ? "" : "s", n_in,
-             n_in == 1 ? "" : "s", n_out, n_out == 1 ? "" : "s", n_devirt,
-             se_count, se_count == 1 ? "" : "s", data_size,
-             data_size == 1 ? "" : "s",
+             "byte%s of call data%s", (uint32_t) special, self, name, n_inst,
+             n_inst == 1 ? "" : "s", n_in, n_in == 1 ? "" : "s", n_out,
+             n_out == 1 ? "" : "s", n_devirt, se_count, se_count == 1 ? "" : "s",
+             data_size, data_size == 1 ? "" : "s",
              (n_devirt == n_out && se_count == 0) ? " (optimized away)" : "");
 
     // =====================================================
@@ -588,6 +586,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     jitc_memcpy_async(vcall->backend, vcall->offset_d, vcall->offset_h,
                       vcall->n_inst * sizeof(uint64_t));
 
+    size_t se_count = vcall->se.size();
     vcall->clear_side_effects();
 
     // =====================================================
@@ -639,11 +638,11 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     jitc_log(
         Info,
         "jit_var_vcall_assemble(): indirect %s (\"%s\") to %zu/%zu instances, "
-        "passing %u/%u inputs (%u/%u bytes), %u/%u outputs (%u/%u bytes)",
+        "passing %u/%u inputs (%u/%u bytes), %u/%u outputs (%u/%u bytes), %zu side effects",
         vcall->branch ? "branch" : "call", vcall->name, n_unique,
         callable_hash.size(), n_in_active, vcall->in_count_initial, in_size,
         vcall->in_size_initial, n_out_active, n_out, out_size,
-        vcall->out_size_initial);
+        vcall->out_size_initial, se_count);
 }
 
 /// Virtual function call code generation -- CUDA/PTX-specific bits
@@ -940,7 +939,6 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
     // =====================================================
     // 3. Pass the input arguments
     // =====================================================
-
 
     uint32_t offset = 0;
     for (uint32_t i = 0; i < (uint32_t) vcall->in.size(); ++i) {
