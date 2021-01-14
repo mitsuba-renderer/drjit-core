@@ -1564,4 +1564,7 @@ extern JIT_EXPORT void jit_block_sum(JitBackend backend, JIT_ENUM VarType type,
 
 #if defined(__cplusplus)
 }
+
+inline void jit_init(JitBackend backend)       { jit_init((uint32_t) backend); }
+inline void jit_init_async(JitBackend backend) { jit_init((uint32_t) backend); }
 #endif

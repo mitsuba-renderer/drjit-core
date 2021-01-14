@@ -1220,10 +1220,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             } else if (backend == JitBackend::CUDA) {
                 stmt = (VarType) v[1]->type != VarType::Bool
                            ? "selp.$t0 $r0, $r2, $r3, $r1"
-                           : "not.pred %p3, $r1$n"
-                             "and.pred %p3, %p3, $r3$n"
-                             "and.pred $r0, $r1, $r2$n"
-                             "or.pred $r0, $r0, %p3";
+                           : "@$r1 mov.pred $r0, $r2$n"
+                             "@!$r1 mov.pred $r0, $r3";
             } else {
                 stmt = "$r0 = select <$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3";
             }
