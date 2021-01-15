@@ -1666,13 +1666,27 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     Ref mask  = steal(jitc_scatter_gather_mask(mask_, size)),
         index = steal(jitc_scatter_gather_index(target, index_));
 
-    if (jitc_var(index)->dirty || jitc_var(mask)->dirty)
-        jitc_eval(thread_state(backend));
+    bool unmasked, index_zero;
+    {
+        Variable *v_index = jitc_var(index),
+                 *v_mask  = jitc_var(mask);
+
+        if (v_mask->literal && v_mask->value == 0) {
+            /// Always masked, nothing to do here..
+            return target.release();
+        }
+
+        if (v_index->dirty || v_mask->dirty) {
+            jitc_eval(thread_state(backend));
+            v_index = jitc_var(index);
+            v_mask = jitc_var(mask);
+        }
+
+        unmasked = v_mask->literal && v_mask->value == 1;
+        index_zero = v_index->literal && v_index->value == 0;
+    }
 
     jitc_var(target)->dirty = true;
-
-    const Variable *v_mask = jitc_var(mask);
-    bool unmasked = v_mask->literal && v_mask->value == 1;
 
     uint32_t dep[4] = { ptr, value, index, mask };
     uint32_t n_dep = 4;
@@ -1697,7 +1711,12 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     }
 
     if (backend == JitBackend::CUDA) {
-        buf.put("mad.wide.$t3 %rd3, $r3, $s2, $r1$n");
+        const char *dst_addr = "$r1";
+
+        if (!index_zero) {
+            buf.put("mad.wide.$t3 %rd3, $r3, $s2, $r1$n");
+            dst_addr = "%rd3";
+        }
 
         const char *src_reg = "$r2",
                    *src_type = "$t2";
@@ -1718,10 +1737,10 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         }
 
         if (reduce_op == ReduceOp::None)
-            buf.fmt("st.global.%s [%%rd3], %s", src_type, src_reg);
+            buf.fmt("st.global.%s [%s], %s", src_type, dst_addr, src_reg);
         else // Technically, we could also use 'red.global' here, but it crashes OptiX ..
-            buf.fmt("atom.global.%s.%s $r0, [%%rd3], %s", op_name,
-                    src_type, src_reg);
+            buf.fmt("atom.global.%s.%s $r0, [%s], %s", op_name,
+                    src_type, dst_addr, src_reg);
     } else {
         if (is_float && reduce_op != ReduceOp::None &&
             reduce_op != ReduceOp::Add)
