@@ -325,10 +325,17 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
                     "between the recording step and code generation (which "
                     "is happening now). This is not allowed.", sv.index);
 
-            buffer.fmt("    ld.global.%s %s%u, [%s+%u];\n",
-                       type_name_ptx[vti], type_prefix[vti], v->reg_index,
-                       function_interface ? "data": "%data",
-                       it->second - data_offset);
+            if (vt != VarType::Bool)
+                buffer.fmt("    ld.global.%s %s%u, [%s+%u];\n",
+                           type_name_ptx[vti], type_prefix[vti], v->reg_index,
+                           function_interface ? "data": "%data",
+                           it->second - data_offset);
+            else
+                buffer.fmt("    ld.global.u8 %%w0, [%s+%u];\n"
+                           "    setp.ne.u16 %%p%u, %%w0, 0;\n",
+                           function_interface ? "data": "%data",
+                           it->second - data_offset,
+                           v->reg_index);
         } else {
             jitc_render_stmt_cuda(sv.index, v);
             if (v->side_effect) {
