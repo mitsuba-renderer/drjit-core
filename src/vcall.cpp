@@ -133,11 +133,13 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
             Variable *v2 = jitc_var(v->dep[0]);
             placeholder |= v2->placeholder;
             optix |= v2->optix;
+            size = std::max(size, v2->size);
         } else if (!v->literal) {
             jitc_raise("jit_var_vcall(): input variable r%u must either be a "
                        "literal or placeholder wrapping another variable!", in[i]);
         }
-        size = std::max(size, v->size);
+        if (v->size != 1)
+            jitc_raise("jit_var_vcall(): size of input variable r%u must be 1!", in[i]);
         in_size_initial += type_size[v->type];
     }
 

@@ -321,8 +321,8 @@ bool jitc_cuda_init() {
 
         uncompressed_ptx[kernels_size_uncompressed] = '\0';
 
-        hash_combine(kernels_hash.low64, (size_t) cc);
-        hash_combine(kernels_hash.high64, (size_t) cc);
+        hash_combine((size_t &) kernels_hash.low64, (size_t) cc);
+        hash_combine((size_t &) kernels_hash.high64, (size_t) cc);
 
         Kernel kernel;
         if (!jitc_kernel_load(uncompressed_ptx, kernels_size_uncompressed,

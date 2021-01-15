@@ -838,7 +838,7 @@ extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
 /**
  * \brief Create a placeholder variable imitating another variable
  *
- * This function creates a special placeholder variable, whose size and type
+ * This function creates a special placeholder variable of size 1, whose type
  * matches a provided variable \c index. Placeholder variables are typically
  * used to record computation such as the body of a loop or a function call.
  * They should never be evaluated via \ref jit_var_schedule() or \ref
@@ -852,7 +852,8 @@ extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
  * constant literal status propagates unchanged from \c index to the returned
  * result.
  */
-extern JIT_EXPORT uint32_t jit_var_new_placeholder(uint32_t index, int propagate_literals);
+extern JIT_EXPORT uint32_t jit_var_new_placeholder(uint32_t index,
+                                                   int propagate_literals);
 
 /**
  * \brief Create a variable that reads from another variable

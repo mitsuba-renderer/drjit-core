@@ -102,13 +102,16 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
         if (!v2->placeholder || !v2->placeholder_iface || !v2->dep[0])
             jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
                        "variable (2)", i, index_2);
+        if (v1->size != 1 || v2->size != 1)
+            jitc_raise("jit_var_loop(): input %u (r%u, r%u) must have size 1!",
+                       i, index_1, index_2);
         uint32_t index_3 = v2->dep[0];
         const Variable *v3 = jitc_var(index_3);
 
         loop->in_body.push_back(index_1);
         loop->in_cond.push_back(index_2);
         loop->in.push_back(index_3);
-        size = std::max(v1->size, size);
+        size = std::max(v3->size, size);
         placeholder |= v3->placeholder;
 
         // ============= Output side =============
