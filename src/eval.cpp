@@ -633,14 +633,14 @@ void jitc_eval(ThreadState *ts) {
         if (v->free_stmt)
             free(v->stmt);
 
-        v->stmt = nullptr;
-
-        uint32_t dep[4];
+        uint32_t dep[4], side_effect = v->side_effect;
         memcpy(dep, v->dep, sizeof(uint32_t) * 4);
         memset(v->dep, 0, sizeof(uint32_t) * 4);
         v->stmt = nullptr;
+        v->output_flag = false;
+        v->side_effect = false;
 
-        if (v->side_effect) {
+        if (side_effect) {
             if (dep[0]) {
                 Variable *ptr = jitc_var(dep[0]);
                 if ((VarType) ptr->type == VarType::Pointer)
