@@ -1366,11 +1366,11 @@ extern JIT_EXPORT size_t jit_var_mask_size(JitBackend backend);
  *     are written into this argument (size <tt>n_out_nested / n_inst</tt>)
  */
 extern JIT_EXPORT void jit_var_vcall(const char *name, uint32_t self,
-                                     uint32_t n_inst, uint32_t n_in,
-                                     const uint32_t *in, uint32_t n_out_nested,
+                                     uint32_t mask, uint32_t n_inst,
+                                     uint32_t n_in, const uint32_t *in,
+                                     uint32_t n_out_nested,
                                      const uint32_t *out_nested,
-                                     const uint32_t *se_offset,
-                                     uint32_t *out);
+                                     const uint32_t *se_offset, uint32_t *out);
 
 extern JIT_EXPORT void jit_var_loop(const char *name, uint32_t cond, uint32_t n,
                                     const uint32_t *in,

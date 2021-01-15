@@ -668,12 +668,12 @@ uint32_t jit_var_registry_attr(JitBackend backend, VarType type,
     return jitc_var_registry_attr(backend, type, domain, name);
 }
 
-void jit_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
-                   uint32_t n_in, const uint32_t *in, uint32_t n_out_nested,
-                   const uint32_t *out_nested, const uint32_t *se_offset,
-                   uint32_t *out) {
+void jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
+                   uint32_t n_inst, uint32_t n_in, const uint32_t *in,
+                   uint32_t n_out_nested, const uint32_t *out_nested,
+                   const uint32_t *se_offset, uint32_t *out) {
     lock_guard guard(state.mutex);
-    jitc_var_vcall(name, self, n_inst, n_in, in, n_out_nested, out_nested,
+    jitc_var_vcall(name, self, mask, n_inst, n_in, in, n_out_nested, out_nested,
                    se_offset, out);
 }
 

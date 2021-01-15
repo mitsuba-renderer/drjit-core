@@ -13,6 +13,7 @@
 #include "eval.h"
 #include "registry.h"
 #include "util.h"
+#include "op.h"
 
 /// Encodes information about a virtual function call
 struct VCall {
@@ -74,18 +75,21 @@ struct VCall {
 
 // Forward declarations
 static void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg,
-                                    uint32_t offset_reg, uint32_t data_reg);
+                                    uint32_t valid_reg, uint32_t offset_reg,
+                                    uint32_t data_reg);
+
 static void jitc_var_vcall_assemble_cuda(
-    VCall *vcall,
-    const std::vector<XXH128_hash_t> &callable_hash,
-    uint32_t self_reg, uint32_t offset_reg,
+    VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
+    uint32_t self_reg, uint32_t valid_reg, uint32_t offset_reg,
     uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
     uint32_t out_size, uint32_t out_align, const char *ret_label);
 
-static void jitc_var_vcall_assemble_llvm(
-    VCall *vcall, uint32_t vcall_reg, uint32_t self_reg, uint32_t offset_reg,
-    uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align);
+static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
+                                         uint32_t self_reg, uint32_t valid_reg,
+                                         uint32_t offset_reg, uint32_t data_reg,
+                                         uint32_t n_out, uint32_t in_size,
+                                         uint32_t in_align, uint32_t out_size,
+                                         uint32_t out_align);
 
 static void
 jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
@@ -93,10 +97,10 @@ jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
                             uint32_t index);
 
 // Weave a virtual function call into the computation graph
-void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
-                    uint32_t n_in, const uint32_t *in, uint32_t n_out_nested,
-                    const uint32_t *out_nested, const uint32_t *se_offset,
-                    uint32_t *out) {
+void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
+                    uint32_t n_inst, uint32_t n_in, const uint32_t *in,
+                    uint32_t n_out_nested, const uint32_t *out_nested,
+                    const uint32_t *se_offset, uint32_t *out) {
     // =====================================================
     // 1. Various sanity checks
     // =====================================================
@@ -256,20 +260,20 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     }
 
     // =====================================================
-    // 3. Create special variable encoding the function call
+    // 4. Create special variable encoding the function call
     // =====================================================
 
-    uint32_t deps[3] = { self, offset_v, data_v };
-    Ref special = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
-                                          data_size ? 3 : 2, deps));
+    uint32_t deps_special[4] = { self, mask, offset_v, data_v };
+    Ref special_v = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
+                                            data_size ? 4 : 3, deps_special));
 
-    vcall->id = special;
+    vcall->id = special_v;
 
     uint32_t se_count = se_offset[n_inst] - se_offset[0];
     if (se_count) {
         /* The call has side effects. Preserve this information via a dummy
            variable marked as a side effect, which references the call. */
-        uint32_t special_id = special;
+        uint32_t special_id = special_v;
         uint32_t dummy =
             jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, &special_id);
         jitc_var_mark_side_effect(dummy, 0);
@@ -299,17 +303,28 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
             if (!coherent[j])
                 continue;
 
-            out[j] = jitc_var_copy(out_nested[j]);
-            Variable *v2 = jitc_var(out[j]);
-            v2->placeholder = placeholder;
-            v2->optix = optix;
-            v2->size = size;
+            uint32_t dep[2] = { out_nested[j], mask };
+            Ref result_v = steal(jitc_var_new_op(JitOp::And, 2, dep));
+            Variable *v = jitc_var(result_v);
+
+            if (v->placeholder != placeholder || v->size != size || v->optix != optix) {
+                if (v->ref_count_ext != 1 || v->ref_count_int != 0) {
+                    result_v = steal(jitc_var_copy(result_v));
+                    v = jitc_var(result_v);
+                }
+                jitc_cse_drop(result_v, v);
+                v->placeholder = placeholder;
+                v->optix = optix;
+                v->size = size;
+            }
+
+            out[j] = result_v.release();
             n_devirt++;
 
             for (uint32_t i = 0; i < n_inst; ++i) {
-                uint32_t &index = vcall->out_nested[i * n_out + j];
-                jitc_var_dec_ref_ext(index);
-                index = 0;
+                uint32_t &index_2 = vcall->out_nested[i * n_out + j];
+                jitc_var_dec_ref_ext(index_2);
+                index_2 = 0;
             }
         }
     }
@@ -317,7 +332,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     jitc_log(Info,
              "jit_var_vcall(r%u, self=r%u): call (\"%s\") with %u instance%s, %u "
              "input%s, %u output%s (%u devirtualized), %u side effect%s, %u "
-             "byte%s of call data%s", (uint32_t) special, self, name, n_inst,
+             "byte%s of call data%s", (uint32_t) special_v, self, name, n_inst,
              n_inst == 1 ? "" : "s", n_in, n_in == 1 ? "" : "s", n_out,
              n_out == 1 ? "" : "s", n_devirt, se_count, se_count == 1 ? "" : "s",
              data_size, data_size == 1 ? "" : "s",
@@ -394,9 +409,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
         v2.optix = optix;
         v2.type = v->type;
         v2.backend = v->backend;
-        v2.dep[0] = special;
+        v2.dep[0] = special_v;
         v2.extra = 1;
-        jitc_var_inc_ref_int(special);
+        jitc_var_inc_ref_int(special_v);
         uint32_t index_2 = jitc_var_new(v2, true);
         Extra &extra = state.extra[index_2];
         if (optimize) {
@@ -450,8 +465,8 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     snprintf(temp, sizeof(temp), "VCall: %s", name);
     size_t dep_size = vcall->in.size() * sizeof(uint32_t);
 
-    Variable *v_special = jitc_var(vcall->id);
-    Extra *e_special = &state.extra[vcall->id];
+    Variable *v_special = jitc_var(special_v);
+    Extra *e_special = &state.extra[special_v];
     v_special->extra = 1;
     v_special->size = size;
     e_special->label = strdup(temp);
@@ -469,24 +484,27 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t n_inst,
     e_special->callback_data = vcall.release();
 
     e_special->assemble = [](const Variable *v, const Extra &extra) {
-        const Variable *self_2 = jitc_var(v->dep[0]);
+        const Variable *self_2 = jitc_var(v->dep[0]),
+                       *valid_2 = jitc_var(v->dep[1]);
         uint32_t self_reg = self_2->reg_index,
+                 valid_reg = valid_2->reg_index,
                  offset_reg = 0, data_reg = 0;
 
-        offset_reg = jitc_var(v->dep[1])->reg_index;
-        if (v->dep[2])
-            data_reg = jitc_var(v->dep[2])->reg_index;
+        offset_reg = jitc_var(v->dep[2])->reg_index;
+        if (v->dep[3])
+            data_reg = jitc_var(v->dep[3])->reg_index;
 
         jitc_var_vcall_assemble((VCall *) extra.callback_data, self_reg,
-                                offset_reg, data_reg);
+                                valid_reg, offset_reg, data_reg);
     };
 
-    special.reset();
+    special_v.reset();
 }
 
 /// Called by the JIT compiler when compiling a virtual function call
 static void jitc_var_vcall_assemble(VCall *vcall,
                                     uint32_t self_reg,
+                                    uint32_t valid_reg,
                                     uint32_t offset_reg,
                                     uint32_t data_reg) {
     uint32_t vcall_reg = jitc_var(vcall->id)->reg_index;
@@ -606,11 +624,11 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     }
 
     if (vcall->backend == JitBackend::CUDA)
-        jitc_var_vcall_assemble_cuda(vcall, callable_hash, self_reg,
+        jitc_var_vcall_assemble_cuda(vcall, callable_hash, self_reg, valid_reg,
                                      offset_reg, data_reg, n_out, in_size,
                                      in_align, out_size, out_align, ret_label);
     else
-        jitc_var_vcall_assemble_llvm(vcall, vcall_reg, self_reg,
+        jitc_var_vcall_assemble_llvm(vcall, vcall_reg, self_reg, valid_reg,
                                      offset_reg, data_reg, n_out, in_size,
                                      in_align, out_size, out_align);
 
@@ -650,9 +668,9 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 /// Virtual function call code generation -- CUDA/PTX-specific bits
 static void jitc_var_vcall_assemble_cuda(
     VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
-    uint32_t self_reg, uint32_t offset_reg, uint32_t data_reg, uint32_t n_out,
-    uint32_t in_size, uint32_t in_align, uint32_t out_size, uint32_t out_align,
-    const char *ret_label) {
+    uint32_t self_reg, uint32_t valid_reg, uint32_t offset_reg,
+    uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
+    uint32_t out_size, uint32_t out_align, const char *ret_label) {
 
     // Extra field for call data (only if needed)
     if (vcall->branch && data_reg) {
@@ -670,12 +688,11 @@ static void jitc_var_vcall_assemble_cuda(
     // =====================================================
 
     buffer.fmt("    { // VCall (%s)\n"
-               "        setp.ne.u32 %%p3, %%r%u, 0;\n"
                "        sub.u32 %%r3, %%r%u, 1;\n"
                "        mad.wide.u32 %%rd3, %%r3, 8, %%rd%u;\n"
-               "        @%%p3 ld.global.u64 %%rd3, [%%rd3];\n"
+               "        @%%p%u ld.global.u64 %%rd3, [%%rd3];\n"
                "        cvt.u32.u64 %%r3, %%rd3;\n",
-               vcall->name, self_reg, self_reg, offset_reg);
+               vcall->name, self_reg, offset_reg, valid_reg);
     // %r3: callable ID
     // %rd3: (high 32 bit): data offset
 
@@ -685,7 +702,7 @@ static void jitc_var_vcall_assemble_cuda(
 
     if (!vcall->branch) {
         if (!uses_optix)
-            buffer.put("        @%p3 ld.global.u64 %rd2, callables[%r3];\n");
+            buffer.fmt("        @%%p%u ld.global.u64 %%rd2, callables[%%r3];\n", valid_reg);
         else
             buffer.put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
     }
@@ -791,8 +808,8 @@ static void jitc_var_vcall_assemble_cuda(
             offset += size;
         }
 
-        buffer.fmt("            @%%p3 call %s%%rd2, (%s%s%s), proto;\n",
-                   out_size ? "(out), " : "", data_reg ? "%rd3" : "",
+        buffer.fmt("            @%%p%u call %s%%rd2, (%s%s%s), proto;\n",
+                   valid_reg, out_size ? "(out), " : "", data_reg ? "%rd3" : "",
                    data_reg && in_size ? ", " : "", in_size ? "in" : "");
 
         // =====================================================
@@ -855,8 +872,11 @@ static void jitc_var_vcall_assemble_cuda(
         if (it == state.variables.end())
             continue;
         const Variable *v2 = &it->second;
-        buffer.fmt("        %smov.%s %s%u, 0;\n",
-                   vcall->branch? "" : "@!%p3 ",
+
+        buffer.put("        ");
+        if (!vcall->branch)
+            buffer.fmt("@!%%p%u ", valid_reg);
+        buffer.fmt("mov.%s %s%u, 0;\n",
                    type_name_ptx_bin[v2->type],
                    type_prefix[v2->type], v2->reg_index);
     }
@@ -869,10 +889,11 @@ static void jitc_var_vcall_assemble_cuda(
 
 /// Virtual function call code generation -- LLVM IR-specific bits
 static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
-                                         uint32_t self_reg, uint32_t offset_reg,
-                                         uint32_t data_reg, uint32_t n_out,
-                                         uint32_t in_size, uint32_t in_align,
-                                         uint32_t out_size, uint32_t out_align) {
+                                         uint32_t self_reg, uint32_t valid_reg,
+                                         uint32_t offset_reg, uint32_t data_reg,
+                                         uint32_t n_out, uint32_t in_size,
+                                         uint32_t in_align, uint32_t out_size,
+                                         uint32_t out_align) {
 
     // =====================================================
     // 1. Insert parameter passing allocations into prelude
