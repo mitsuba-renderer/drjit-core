@@ -424,6 +424,9 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
                         const char *kernel_name, Kernel &kernel) {
     char error_log[16384];
 
+    /// Ensure OptiX is initialized
+    (void) jitc_optix_context();
+
     // =====================================================
     // 2. Compile an OptiX module
     // =====================================================
