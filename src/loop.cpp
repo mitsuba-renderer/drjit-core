@@ -165,8 +165,9 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
                  n_invariant_provided);
 
     jitc_log(Info,
-             "jit_var_loop(cond=r%u): loop (\"%s\") with %u loop variable%s, %u side effect%s%s",
-             cond_, name, n, n == 1 ? "" : "s", se_count, se_count == 1 ? "" : "s", temp);
+             "jit_var_loop(cond=r%u): loop (\"%s\") with %u loop variable%s, %u side effect%s%s%s",
+             cond_, name, n, n == 1 ? "" : "s", se_count, se_count == 1 ? "" : "s", temp,
+             placeholder ? " (part of a recorded computation)" : "");
 
     if (n_invariant_detected)
         return;

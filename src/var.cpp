@@ -1145,7 +1145,7 @@ uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
         AttributeValue &val = it.value();
         index = jitc_var_mem_map(backend, type, val.ptr, val.count, false);
     }
-    jitc_log(Info, "jit_var_registry_attr(\"%s\", \"%s\"): r%u", domain, name, index);
+    jitc_log(Debug, "jit_var_registry_attr(\"%s\", \"%s\"): r%u", domain, name, index);
     return index;
 }
 
