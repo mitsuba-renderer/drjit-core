@@ -71,6 +71,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
                   const JitArray<Backend, Base *> &self,
                   const JitArray<Backend, bool> &mask,
                   std::index_sequence<Is...>, const Args &... args) {
+    using Mask = JitArray<Backend, bool>;
     constexpr size_t N = sizeof...(Args);
     Result result;
 
@@ -107,12 +108,11 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
 
     ek_index_vector indices_out(indices_out_all.size() / n_inst);
 
-    JitArray<Backend, Base *> self_masked =
-        self &
-        (JitArray<Backend, bool>::steal(jit_var_mask_peek(Backend)) & mask);
+    Mask mask_combined =
+        neq(self, nullptr) && mask && Mask::steal(jit_var_mask_peek(Backend));
 
-    jit_var_vcall(domain, self_masked.index(), n_inst, indices_in.size(),
-                  indices_in.data(), indices_out_all.size(),
+    jit_var_vcall(domain, self.index(), mask_combined.index(), n_inst,
+                  indices_in.size(), indices_in.data(), indices_out_all.size(),
                   indices_out_all.data(), se_count.data(), indices_out.data());
 
     if constexpr (!std::is_same_v<Result, std::nullptr_t>) {
@@ -352,18 +352,18 @@ TEST_BOTH(04_devirtualize) {
     /* This test checks that outputs which produce identical values across
        all instances are moved out of the virtual call interface. */
     struct Base {
-        virtual ek_tuple<Float, Float> f(Float p1, Float p2) = 0;
+        virtual ek_tuple<Float, Float, Float> f(Float p1, Float p2) = 0;
     };
 
     struct D1 : Base {
-        ek_tuple<Float, Float> f(Float p1, Float p2) override {
-            return { p2 + 2, p1 + 1 };
+        ek_tuple<Float, Float, Float> f(Float p1, Float p2) override {
+            return { p2 + 2, p1 + 1, 0 };
         }
     };
 
     struct D2 : Base {
-        ek_tuple<Float, Float> f(Float p1, Float p2) override {
-            return { p2 + 2, p1 + 2 };
+        ek_tuple<Float, Float, Float> f(Float p1, Float p2) override {
+            return { p2 + 2, p1 + 2, 0 };
         }
     };
 
@@ -396,17 +396,17 @@ TEST_BOTH(04_devirtualize) {
                     vcall("Base", [](Base *self2, Float p1, Float p2) { return self2->f(p1, p2); },
                           self, p1, p2);
 
-                jit_assert(jit_var_is_literal(result.template get<0>().index()) == ((i == 1 && k == 0) ? 1 : 0) &&
-                           jit_var_is_literal(result.template get<1>().index()) == 0);
+                Float alt = (p2 + 2) & neq(self, nullptr);
+                if (i == 1 && k == 0)
+                    jit_assert(result.template get<0>().index() == alt.index());
+                jit_assert(jit_var_is_literal(result.template get<2>().index()) == (i == 1));
 
                 jit_var_schedule(result.template get<0>().index());
                 jit_var_schedule(result.template get<1>().index());
 
                 jit_assert(
                     strcmp(jit_var_str(result.template get<0>().index()),
-                           i == 0
-                               ? "[0, 36, 36, 0, 36, 36, 0, 36, 36, 0]"
-                               : "[36, 36, 36, 36, 36, 36, 36, 36, 36, 36]") == 0);
+                               "[0, 36, 36, 0, 36, 36, 0, 36, 36, 0]") == 0);
                 jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
                               "[0, 13, 14, 0, 13, 14, 0, 13, 14, 0]") == 0);
             }
