@@ -69,6 +69,11 @@ using OptixLogCallback = void (*)(unsigned int, const char *, const char *, void
 #define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH         2
 #define OPTIX_EXCEPTION_FLAG_DEBUG               8
 #define OPTIX_COMPILE_DEBUG_LEVEL_NONE           0x2350
+#define OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO       0x2351
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_0       0x2340
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_1       0x2341
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_2       0x2342
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_3       0x2343
 #define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF 0
 #define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL ((int) 0xFFFFFFFF)
 #define OPTIX_PROGRAM_GROUP_KIND_RAYGEN          0x2421
@@ -326,7 +331,13 @@ OptixDeviceContext jitc_optix_context() {
 #endif
 
     OptixModuleCompileOptions mco { };
+#if 1
     mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+    mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
+#else
+    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
+    mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+#endif
 
     const char *minimal = ".version 6.0 .target sm_50 .address_size 64 "
                           ".entry __miss__ek() { ret; }";
@@ -418,7 +429,13 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     // =====================================================
 
     OptixModuleCompileOptions mco { };
+#if 1
     mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+    mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
+#else
+    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
+    mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+#endif
 
     jitc_optix_cache_hit = true;
     size_t log_size = sizeof(error_log);
