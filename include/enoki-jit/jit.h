@@ -853,6 +853,7 @@ extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
  * result.
  */
 extern JIT_EXPORT uint32_t jit_var_new_placeholder(uint32_t index,
+                                                   int preserve_size,
                                                    int propagate_literals);
 
 /**

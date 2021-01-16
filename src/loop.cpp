@@ -102,11 +102,12 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
         if (!v2->placeholder || !v2->placeholder_iface || !v2->dep[0])
             jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
                        "variable (2)", i, index_2);
-        if (v1->size != 1 || v2->size != 1)
-            jitc_raise("jit_var_loop(): input %u (r%u, r%u) must have size 1!",
-                       i, index_1, index_2);
         uint32_t index_3 = v2->dep[0];
         const Variable *v3 = jitc_var(index_3);
+
+        if (v1->size != v2->size || v2->size != v3->size)
+            jitc_raise("jit_var_loop(): size inconsistency for input %u (r%u, r%u, r%u)!",
+                       i, index_1, index_2, index_2);
 
         loop->in_body.push_back(index_1);
         loop->in_cond.push_back(index_2);
@@ -165,8 +166,8 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
                  n_invariant_provided);
 
     jitc_log(Info,
-             "jit_var_loop(cond=r%u): loop (\"%s\") with %u loop variable%s, %u side effect%s%s%s",
-             cond_, name, n, n == 1 ? "" : "s", se_count, se_count == 1 ? "" : "s", temp,
+             "jit_var_loop(cond=r%u): loop (\"%s\") with %u loop variable%s, %u side effect%s, %u elements%s%s",
+             cond_, name, n, n == 1 ? "" : "s", se_count, se_count == 1 ? "" : "s", size, temp,
              placeholder ? " (part of a recorded computation)" : "");
 
     if (n_invariant_detected)
@@ -377,6 +378,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
         else
             v2.stmt = (char *) "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>";
         v2.size = size;
+        v2.placeholder = placeholder;
         v2.type = v->type;
         v2.backend = v->backend;
         v2.dep[0] = loop->in_cond[i];

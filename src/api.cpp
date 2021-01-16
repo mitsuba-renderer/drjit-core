@@ -344,9 +344,10 @@ uint32_t jit_var_new_pointer(JitBackend backend, const void *value,
     return jitc_var_new_pointer(backend, value, dep, write);
 }
 
-uint32_t jit_var_new_placeholder(uint32_t index, int propagate_literals) {
+uint32_t jit_var_new_placeholder(uint32_t index, int preserve_size,
+                                 int propagate_literals) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_placeholder(index, propagate_literals);
+    return jitc_var_new_placeholder(index, preserve_size, propagate_literals);
 }
 
 void jit_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {

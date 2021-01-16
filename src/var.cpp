@@ -477,7 +477,7 @@ uint32_t jitc_var_new_counter(JitBackend backend, size_t size) {
     return jitc_var_new(v);
 }
 
-uint32_t jitc_var_new_placeholder(uint32_t index, int propagate_literals) {
+uint32_t jitc_var_new_placeholder(uint32_t index, int preserve_size, int propagate_literals) {
     const Variable *v = jitc_var(index);
     if (v->literal && propagate_literals &&
         (jitc_flags() & (uint32_t) JitFlag::VCallOptimize)) {
@@ -490,7 +490,7 @@ uint32_t jitc_var_new_placeholder(uint32_t index, int propagate_literals) {
                             : "$r0 = bitcast <$w x $t0> $r1 to <$w x $t0>");
     v2.backend = v->backend;
     v2.type = v->type;
-    v2.size = 1;
+    v2.size = preserve_size ? v->size : 1;
     v2.placeholder = v2.placeholder_iface = 1;
     v2.dep[0] = index;
     jitc_var_inc_ref_int(index);
