@@ -996,28 +996,24 @@ uint32_t jitc_var_mask_default(JitBackend backend) {
 uint32_t jitc_var_mask_peek(JitBackend backend) {
     auto &stack = thread_state(backend)->mask_stack;
 
-    if (stack.empty())
+    if (stack.empty()) {
         return jitc_var_mask_default(backend);
-
-    Ref index = borrow(stack.back());
-
-    if (backend == JitBackend::LLVM) {
-        Ref lane_mask = steal(jitc_var_mask_default(backend));
-        uint32_t dep_2[2] = { lane_mask, index };
-        index = steal(jitc_var_new_op(JitOp::And, 2, dep_2));
+    } else {
+        uint32_t index = stack.back();
+        jitc_var_inc_ref_ext(index);
+        return index;
     }
-
-    return index.release();
 }
 
 void jitc_var_mask_push(JitBackend backend, uint32_t index, int combine) {
     auto &stack = thread_state(backend)->mask_stack;
 
-    if (stack.empty() || !combine) {
+    if (!combine || (stack.empty() && backend == JitBackend::CUDA)) {
         jitc_var_inc_ref_int(index);
         stack.push_back(index);
     } else {
-        uint32_t dep[2] = { stack.back(), index };
+        Ref back = steal(jitc_var_mask_peek(backend));
+        uint32_t dep[2] = { back, index };
         Ref combined = steal(jitc_var_new_op(JitOp::And, 2, dep));
         jitc_var_inc_ref_int(combined);
         stack.push_back(combined);
