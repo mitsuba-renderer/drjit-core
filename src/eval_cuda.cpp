@@ -369,9 +369,12 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
             }
         } else {
             auto it = state.variables.find(out[i]);
-            if (it != state.variables.end())
+            if (it != state.variables.end()) {
+                if (!it.value().reg_index)
+                    continue;
                 buffer.fmt("    mov.%s %s%u, %s%u;\n", tname, prefix,
                            it.value().reg_index, prefix, v->reg_index);
+            }
         }
         offset += type_size[vti];
     }
@@ -441,8 +444,11 @@ static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
                 const char *prefix = prefix_table[(int) dep->type];
                 buffer.put(prefix, strlen(prefix));
 
-                if (type == 'r')
+                if (type == 'r') {
                     buffer.put_uint32(dep->reg_index);
+                    if (unlikely(dep->reg_index == 0))
+                        jitc_fail("jitc_render_stmt_cuda(): variable has no register index!");
+                }
             }
         } while (c != '\0');
 

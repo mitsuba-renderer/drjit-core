@@ -750,9 +750,6 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     }
     buffer.rewind(kernel_length);
 
-    for (ScheduledVariable &sv : schedule)
-        jitc_var(sv.index)->reg_index = 0;
-
     return { kernel_hash, result.first->second };
 }
 
