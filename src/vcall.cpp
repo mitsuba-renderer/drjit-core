@@ -332,11 +332,12 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     jitc_log(Info,
              "jit_var_vcall(r%u, self=r%u): call (\"%s\") with %u instance%s, %u "
              "input%s, %u output%s (%u devirtualized), %u side effect%s, %u "
-             "byte%s of call data%s", (uint32_t) special_v, self, name, n_inst,
+             "byte%s of call data, %u elements%s%s", (uint32_t) special_v, self, name, n_inst,
              n_inst == 1 ? "" : "s", n_in, n_in == 1 ? "" : "s", n_out,
              n_out == 1 ? "" : "s", n_devirt, se_count, se_count == 1 ? "" : "s",
-             data_size, data_size == 1 ? "" : "s",
-             (n_devirt == n_out && se_count == 0) ? " (optimized away)" : "");
+             data_size, data_size == 1 ? "" : "s", size,
+             (n_devirt == n_out && se_count == 0) ? " (optimized away)" : "",
+             placeholder ? " (part of a recorded computation)" : "");
 
     // =====================================================
     // 5. Create output variables
