@@ -3,7 +3,7 @@
 #include "var.h"
 
 // Forward declaration
-static void jitc_render_stmt_llvm(uint32_t index, const Variable *v);
+static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function);
 
 void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
     uint32_t width = jitc_llvm_vector_width;
@@ -50,19 +50,27 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
             }
         }
 
-        if (v->param_type != ParamType::Register) {
+        if (v->param_type == ParamType::Input && size == 1 && vt == VarType::Pointer) {
+            buffer.fmt(
+                "    %s%u_p1 = getelementptr inbounds i8*, i8** %%params, i32 %u\n"
+                "    %s%u = load i8*, i8** %s%u_p1, align 8, !alias.scope !1\n",
+                prefix, id, v->param_offset / (uint32_t) sizeof(void *), prefix,
+                id, prefix, id);
+        } else if (v->param_type != ParamType::Register) {
             buffer.fmt(
                 "    %s%u_p1 = getelementptr inbounds i8*, i8** %%params, i32 %u\n"
                 "    %s%u_p2 = load i8*, i8** %s%u_p1, align 8, !alias.scope !1\n"
                 "    %s%u_p3 = bitcast i8* %s%u_p2 to %s*\n",
-                prefix, id, v->param_offset / (uint32_t) sizeof(void *), prefix, id,
-                prefix, id, prefix, id, prefix, id, tname);
+                prefix, id, v->param_offset / (uint32_t) sizeof(void *), prefix,
+                id, prefix, id, prefix, id, prefix, id, tname);
 
-            if (v->param_type != ParamType::Input || size != 1)
+            // For output parameters, and non-scalar inputs
+            if (v->param_type != ParamType::Input || size != 1) {
                 buffer.fmt("    %s%u_p4 = getelementptr inbounds %s, %s* %s%u_p3, i64 %%index\n"
                            "    %s%u_p5 = bitcast %s* %s%u_p4 to <%u x %s>*\n",
                            prefix, id, tname, tname, prefix, id, prefix, id, tname,
                            prefix, id, width, tname);
+            }
         }
 
         if (likely(v->param_type == ParamType::Input)) {
@@ -99,7 +107,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                 }
             }
         } else {
-            jitc_render_stmt_llvm(index, v);
+            jitc_render_stmt_llvm(index, v, false);
         }
 
         if (v->param_type == ParamType::Output) {
@@ -159,7 +167,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
     buffer.fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<%u x i1> "
                "%%mask, i8* noalias %%in, i8* noalias %%out", width);
     if (!data_map.empty())
-        buffer.put(", i8* noalias %data");
+        buffer.fmt(", i8* noalias %%data, <%u x i32> %%offsets", width);
     buffer.fmt(") #0 {\n"
                "entry:\n"
                "    ; VCall: %s\n", name);
@@ -168,7 +176,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
         const Variable *v = jitc_var(sv.index);
         const uint32_t vti = v->type;
         const VarType vt = (VarType) vti;
-
+        uint32_t id = v->reg_index;
         const char *prefix = type_prefix[vti],
                    *tname = vt == VarType::Bool
                             ? "i8" : type_name_llvm[vti];
@@ -194,16 +202,16 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 
         if (v->placeholder_iface) {
             buffer.fmt("    %s%u_i0 = getelementptr inbounds i8, i8* %%in, i64 %u\n"
-                       "    %s%u_i1 = bitcast i8* %s%u_i0 to <%u x %s> *\n"
+                       "    %s%u_i1 = bitcast i8* %s%u_i0 to <%u x %s>*\n"
                        "    %s%u%s = load <%u x %s>, <%u x %s>* %s%u_i1, align %u\n",
-                       prefix, v->reg_index, v->param_offset * width,
-                       prefix, v->reg_index, prefix, v->reg_index,
+                       prefix, id, v->param_offset * width,
+                       prefix, id, prefix, id,
                        width, tname,
-                       prefix, v->reg_index, vt == VarType::Bool ? "_i2" : "", width,
-                       tname, width, tname, prefix, v->reg_index, width * type_size[vti]);
+                       prefix, id, vt == VarType::Bool ? "_i2" : "", width,
+                       tname, width, tname, prefix, id, width * type_size[vti]);
             if (vt == VarType::Bool)
                 buffer.fmt("    %s%u = trunc <%u x i8> %s%u_i2 to <%u x i1>\n",
-                           prefix, v->reg_index, width, prefix, v->reg_index, width);
+                           prefix, id, width, prefix, id, width);
         } else if (v->data || vt == VarType::Pointer) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
             auto it = data_map.find(key);
@@ -216,12 +224,38 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                     "between the recording step and code generation (which "
                     "is happening now). This is not allowed.", sv.index);
 
-            // buffer.fmt("    ld.global.%s %s%u, [%s+%u];\n",
-            //            type_name_ptx[vti], type_prefix[vti], v->reg_index,
-            //            function_interface ? "data": "%data",
-            //            it->second - data_offset);
+            uint32_t offset = it->second - data_offset;
+
+            size_t intrinsic_offset = buffer.size();
+            buffer.fmt("declare <%u x %s> @llvm.masked.gather.v%u%s(<%u x "
+                       "%s*>, i32, <%u x i1>, <%u x %s>)\n\n",
+                       width, tname, width, type_name_llvm_abbrev[vti], width,
+                       tname, width, width, tname);
+            jitc_register_global(buffer.get() + intrinsic_offset);
+            size_t intrinsic_length = buffer.size() - intrinsic_offset;
+            buffer.rewind(intrinsic_length);
+
+            buffer.fmt(
+                "    %s%u_p1 = getelementptr inbounds i8, i8* %%data, i32 %u\n"
+                "    %s%u_p2 = getelementptr inbounds i8, i8* %s%u_p1, <%u x i32> %%offsets\n"
+                "    %s%u_p3 = bitcast <%u x i8*> %s%u_p2 to <%u x %s*>\n"
+                "    %s%u%s = call <%u x %s> @llvm.masked.gather.v%u%s(<%u x %s*> %s%u_p3, i32 %u, <%u x i1> %%mask, <%u x %s> zeroinitializer)\n",
+                prefix, id, offset,
+                prefix, id, prefix, id, width,
+                prefix, id, width, prefix, id, width, tname,
+                prefix, id,
+                vt == VarType::Pointer ? "_p4" : "",
+                width, tname, width, type_name_llvm_abbrev[vti], width, tname, prefix, id, type_size[vti], width, width, tname
+            );
+            if (vt == VarType::Pointer)
+            buffer.fmt(
+                "    %s%u = inttoptr <%u x i64> %s%u_p4 to <%u x i8*>\n",
+                prefix, id, width,
+                prefix, id,
+                width
+            );
         } else {
-            jitc_render_stmt_llvm(sv.index, v);
+            jitc_render_stmt_llvm(sv.index, v, true);
             if (v->side_effect) {
                 if (v->dep[0]) {
                     Variable *ptr = jitc_var(v->dep[0]);
@@ -250,7 +284,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 
         buffer.fmt(
             "    %s%u_o0 = getelementptr inbounds i8, i8* %%out, i64 %u\n"
-            "    %s%u_o1 = bitcast i8* %s%u_o0 to <%u x %s> *\n"
+            "    %s%u_o1 = bitcast i8* %s%u_o0 to <%u x %s>*\n"
             "    %s%u_o2 = load <%u x %s>, <%u x %s>* %s%u_o1, align %u\n"
             "    %s%u_o3 = select <%u x i1> %%mask, <%u x %s> %s%u%s, <%u x %s> %s%u_o2\n"
             "    store <%u x %s> %s%u_o3, <%u x %s>* %s%u_o1, align %u\n",
@@ -273,7 +307,7 @@ static void jitc_llvm_process_intrinsic() {
         --s;
     s += 4;
 
-    size_t before = buffer.size();
+    size_t intrinsic_offset = buffer.size();
     buffer.put("declare");
 
     char c;
@@ -300,16 +334,13 @@ static void jitc_llvm_process_intrinsic() {
         }
     }
     buffer.put("\n\n");
-    size_t after = buffer.size();
-    if (globals_map
-            .emplace(XXH128(buffer.get() + before, after - before, 0),
-                     globals_map.size()).second)
-        globals.push_back(std::string(buffer.get() + before, after - before));
-    buffer.rewind(after - before);
+    jitc_register_global(buffer.get() + intrinsic_offset);
+    size_t intrinsic_length = buffer.size() - intrinsic_offset;
+    buffer.rewind(intrinsic_length);
 }
 
 /// Convert an IR template with '$' expressions into valid IR
-static void jitc_render_stmt_llvm(uint32_t index, const Variable *v) {
+static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function) {
     if (v->literal) {
         uint32_t reg = v->reg_index, width = jitc_llvm_vector_width;
         uint32_t vt = v->type;
@@ -404,10 +435,20 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v) {
                     case 's': prefix_table = type_size_str; break;
                     case 'r': prefix_table = type_prefix; break;
                     case 'i': prefix_table = nullptr; break;
+                    case '<': if (in_function) {
+                                  buffer.putc('<');
+                                  buffer.put(jitc_llvm_vector_width_str,
+                                             strlen(jitc_llvm_vector_width_str));
+                                  buffer.put(" x ");
+                               }
+                               continue;
+                    case '>': if (in_function)
+                                  buffer.putc('>');
+                               continue;
                     case 'o': prefix_table = (const char **) jitc_llvm_ones_str; break;
                     default:
                         jitc_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
-                                  "expression (unknown tname \"%c\") in \"%s\"!", tname, v->stmt);
+                                  "expression (unknown character \"%c\") in \"%s\"!", tname, v->stmt);
                 }
 
                 uint32_t arg_id = *s++ - '0';

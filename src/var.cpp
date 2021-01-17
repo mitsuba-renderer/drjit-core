@@ -1030,11 +1030,9 @@ void jitc_var_mask_pop(JitBackend backend) {
     jitc_var_dec_ref_int(index);
 }
 
-
 size_t jitc_var_mask_size(JitBackend backend) {
     return thread_state(backend)->mask_stack.size();
 }
-
 
 bool jitc_var_any(uint32_t index) {
     const Variable *v = jitc_var(index);
@@ -1288,6 +1286,10 @@ const char *jitc_var_graphviz() {
                 var_buffer.put("label=\"");
                 var_buffer.put(p, pn - p);
                 var_buffer.put("\";\n");
+                var_buffer.putc(' ', 4 * current_depth);
+                var_buffer.put("color=gray95;\n");
+                var_buffer.putc(' ', 4 * current_depth);
+                var_buffer.put("style=filled;\n");
 
                 p = pn + 1;
             }

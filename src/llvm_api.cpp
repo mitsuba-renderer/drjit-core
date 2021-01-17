@@ -120,7 +120,6 @@ static void *jitc_llvm_handle                    = nullptr;
 
 /// Enoki API
 static LLVMDisasmContextRef jitc_llvm_disasm_ctx = nullptr;
-static LLVMExecutionEngineRef jitc_llvm_engine   = nullptr;
 static LLVMContextRef jitc_llvm_context          = nullptr;
 static LLVMPassManagerRef jitc_llvm_pass_manager = nullptr;
 
@@ -131,7 +130,7 @@ uint32_t jitc_llvm_vector_width    = 0;
 uint32_t jitc_llvm_version_major   = 0;
 uint32_t jitc_llvm_version_minor   = 0;
 uint32_t jitc_llvm_version_patch   = 0;
-uint32_t jitc_llvm_thread_count    = 0;
+uint32_t jitc_llvm_patch_loc       = 0;
 
 static bool     jitc_llvm_init_attempted = false;
 static bool     jitc_llvm_init_success   = false;
@@ -235,6 +234,41 @@ void jitc_llvm_disasm(const Kernel &kernel) {
     }
 }
 
+LLVMExecutionEngineRef jitc_llvm_engine_create(LLVMModuleRef mod_) {
+    LLVMMCJITCompilerOptions options;
+    options.OptLevel = 3;
+    options.CodeModel =
+        (LLVMCodeModel)(jitc_llvm_version_major == 7 ? 2 : 3); /* Small */
+    options.NoFramePointerElim = false;
+    options.EnableFastISel = false;
+    options.MCJMM = LLVMCreateSimpleMCJITMemoryManager(
+        nullptr,
+        jitc_llvm_mem_allocate,
+        jitc_llvm_mem_allocate_data,
+        jitc_llvm_mem_finalize,
+        jitc_llvm_mem_destroy);
+
+    LLVMModuleRef mod = mod_;
+    if (mod == nullptr)
+        mod = LLVMModuleCreateWithName("enoki");
+
+    LLVMExecutionEngineRef engine = nullptr;
+    char *error = nullptr;
+    if (LLVMCreateMCJITCompilerForModule(&engine, mod, &options,
+                                         sizeof(options), &error)) {
+        jitc_log(Warn, "jit_llvm_engine_create(): could not create MCJIT: %s", error);
+        return nullptr;
+    }
+
+    if (jitc_llvm_patch_loc) {
+        uint32_t *base = (uint32_t *) LLVMGetExecutionEngineTargetMachine(engine);
+        base[jitc_llvm_patch_loc] = 1;
+    }
+
+    return engine;
+}
+
+
 static ProfilerRegion profiler_region_llvm_compile("jit_llvm_compile");
 
 void jitc_llvm_compile(const char *buffer, size_t buffer_size,
@@ -277,11 +311,11 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
     }
 
     LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
-    LLVMAddModule(jitc_llvm_engine, llvm_module);
+    LLVMExecutionEngineRef engine = jitc_llvm_engine_create(llvm_module);
 
     /// Resolve the kernel entry point
     uint8_t *func =
-        (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, kernel_name);
+        (uint8_t *) LLVMGetFunctionAddress(engine, kernel_name);
     if (unlikely(!func))
         jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
                   "address of kernel \"%s\"!\n", kernel_name);
@@ -303,7 +337,7 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
 
     /// Does the kernel perform virtual function calls via @callables?
     uint8_t *callables_global =
-        (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, "callables");
+        (uint8_t *) LLVMGetFunctionAddress(engine, "callables");
 
     if (callables_global) {
         reloc.push_back(callables_global);
@@ -322,7 +356,7 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
             buf[37] = '\0';
 
             uint8_t *func_2 =
-                (uint8_t *) LLVMGetFunctionAddress(jitc_llvm_engine, buf);
+                (uint8_t *) LLVMGetFunctionAddress(engine, buf);
 
             if (unlikely(!func_2))
                 jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
@@ -349,18 +383,13 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
     memcpy(ptr_result, jitc_llvm_mem, jitc_llvm_mem_offset);
 #endif
 
-    LLVMRemoveModule(jitc_llvm_engine, llvm_module, &llvm_module, &error);
-    if (unlikely(error))
-        jitc_fail("jit_llvm_compile(): could remove module: %s.\n", error);
-    LLVMDisposeModule(llvm_module);
-
     kernel.data = ptr_result;
     kernel.size = (uint32_t) jitc_llvm_mem_offset;
     kernel.llvm.n_reloc = (uint32_t) reloc.size();
     kernel.llvm.reloc = (void **) malloc_check(sizeof(void *) * reloc.size());
 
     // Relocate function pointers
-    for (uint32_t i = 0; i < reloc.size(); ++i)
+    for (size_t i = 0; i < reloc.size(); ++i)
         kernel.llvm.reloc[i] = (uint8_t *) ptr_result + (reloc[i] - jitc_llvm_mem);
 
     // Write address of @callables
@@ -379,6 +408,7 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
     if (VirtualProtect(ptr_result, jitc_llvm_mem_offset, PAGE_EXECUTE_READ, &unused) == 0)
         jitc_fail("jit_llvm_compile(): VirtualProtect() failed: %u", GetLastError());
 #endif
+    LLVMDisposeExecutionEngine(engine);
 }
 
 void jitc_llvm_update_strings() {
@@ -614,25 +644,8 @@ bool jitc_llvm_init() {
         return false;
     }
 
-    LLVMMCJITCompilerOptions options;
-    options.OptLevel = 3;
-    options.CodeModel =
-        (LLVMCodeModel)(jitc_llvm_version_major == 7 ? 2 : 3); /* Small */
-    options.NoFramePointerElim = false;
-    options.EnableFastISel = false;
-    options.MCJMM = LLVMCreateSimpleMCJITMemoryManager(
-        nullptr,
-        jitc_llvm_mem_allocate,
-        jitc_llvm_mem_allocate_data,
-        jitc_llvm_mem_finalize,
-        jitc_llvm_mem_destroy);
-
-    LLVMModuleRef enoki_module = LLVMModuleCreateWithName("enoki");
-    char *error = nullptr;
-    if (LLVMCreateMCJITCompilerForModule(&jitc_llvm_engine, enoki_module,
-                                         &options, sizeof(options), &error)) {
-        jitc_log(Warn, "jit_llvm_init(): could not create MCJIT: %s", error);
-        LLVMDisposeModule(enoki_module);
+    LLVMExecutionEngineRef engine = jitc_llvm_engine_create(nullptr);
+    if (!engine) {
         LLVMDisasmDispose(jitc_llvm_disasm_ctx);
         LLVMDisposeMessage(jitc_llvm_triple);
         LLVMDisposeMessage(jitc_llvm_target_cpu);
@@ -666,29 +679,29 @@ bool jitc_llvm_init() {
        precise byte offset and them overwrite the 'RM' field.
     */
 
-    uint32_t *patch_loc =
-        (uint32_t *) LLVMGetExecutionEngineTargetMachine(jitc_llvm_engine) + 142 - 16;
+    uint32_t *base = (uint32_t *) LLVMGetExecutionEngineTargetMachine(engine);
+    jitc_llvm_patch_loc = 142 - 16;
 
     int key[3] = { 0, jitc_llvm_version_major == 7 ? 0 : 1, 3 };
     bool found = false;
     for (int i = 0; i < 30; ++i) {
-        if (memcmp(patch_loc, key, sizeof(uint32_t) * 3) == 0) {
+        if (memcmp(base + jitc_llvm_patch_loc, key, sizeof(uint32_t) * 3) == 0) {
             found = true;
             break;
         }
-        patch_loc += 1;
+        jitc_llvm_patch_loc += 1;
     }
+
+    LLVMDisposeExecutionEngine(engine);
 
     if (!found) {
         jitc_log(Warn, "jit_llvm_init(): could not hot-patch TargetMachine relocation model!");
-        LLVMDisposeModule(enoki_module);
         LLVMDisasmDispose(jitc_llvm_disasm_ctx);
         LLVMDisposeMessage(jitc_llvm_triple);
         LLVMDisposeMessage(jitc_llvm_target_cpu);
         LLVMDisposeMessage(jitc_llvm_target_features);
         return false;
     }
-    patch_loc[0] = 1;
 
     jitc_llvm_pass_manager = LLVMCreatePassManager();
     LLVMAddLICMPass(jitc_llvm_pass_manager);
@@ -710,8 +723,9 @@ bool jitc_llvm_init() {
     jitc_llvm_init_success = jitc_llvm_vector_width > 1;
 
     if (!jitc_llvm_init_success) {
-        jitc_log(Warn, "jit_llvm_init(): no suitable vector ISA found, shutting "
-                      "down LLVM backend..");
+        jitc_log(Warn,
+                 "jit_llvm_init(): no suitable vector ISA found, shutting "
+                 "down LLVM backend..");
         jitc_llvm_shutdown();
     }
 
@@ -727,13 +741,11 @@ void jitc_llvm_shutdown() {
     jitc_log(Info, "jit_llvm_shutdown()");
 
     LLVMDisasmDispose(jitc_llvm_disasm_ctx);
-    LLVMDisposeExecutionEngine(jitc_llvm_engine);
     LLVMDisposeMessage(jitc_llvm_triple);
     LLVMDisposeMessage(jitc_llvm_target_cpu);
     LLVMDisposeMessage(jitc_llvm_target_features);
     LLVMDisposePassManager(jitc_llvm_pass_manager);
 
-    jitc_llvm_engine = nullptr;
     jitc_llvm_disasm_ctx = nullptr;
     jitc_llvm_context = nullptr;
     jitc_llvm_pass_manager = nullptr;

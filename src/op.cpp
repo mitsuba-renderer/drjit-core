@@ -1600,14 +1600,13 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
             dep[n_dep++] = debug_print;
     } else {
         if (vt != VarType::Bool && vt != VarType::UInt8 && vt != VarType::Int8) {
-            stmt = "$r0_0 = bitcast i64* $r1_p3 to $t0*$n"
-                   "$r0_1 = getelementptr $t0, $t0* $r0_0, <$w x $t2> $r2$n"
+            stmt = "$r0_0 = bitcast $<i8*$> $r1 to $<$t0*$>$n"
+                   "$r0_1 = getelementptr $t0, $<$t0*$> $r0_0, <$w x $t2> $r2$n"
                    "$r0 = $call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r0_1, i32 $s0, <$w x $t3> $r3, <$w x $t0> zeroinitializer)";
         } else {
-            stmt = "$r0_0 = bitcast i64* $r1_p3 to i8*$n"
-                   "$r0_1 = getelementptr i8, i8* $r0_0, <$w x $t2> $r2$n"
-                   "$r0_2 = bitcast <$w x i8*> $r0_1 to <$w x i32*>$n"
-                   "$r0_3 = $call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0_2, i32 $s0, <$w x $t3> $r3, <$w x i32> zeroinitializer)$n"
+            stmt = "$r0_0 = getelementptr i8, $<i8*$> $r1, <$w x $t2> $r2$n"
+                   "$r0_1 = bitcast <$w x i8*> $r0_0 to <$w x i32*>$n"
+                   "$r0_2 = $call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0_1, i32 $s0, <$w x $t3> $r3, <$w x i32> zeroinitializer)$n"
                    "$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>";
         }
     }
@@ -1748,16 +1747,16 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                        "supports integer values!", op_name);
 
         if (op_name == nullptr) {
-            buf.put("$r0_0 = bitcast i64* $r1_p3 to $t2*$n"
-                    "$r0_1 = getelementptr $t2, $t2* $r0_0, <$w x $t3> $r3$n"
+            buf.put("$r0_0 = bitcast $<i8*$> $r1 to $<$t2*$>$n"
+                    "$r0_1 = getelementptr $t2, $<$t2*$> $r0_0, <$w x $t3> $r3$n"
                     "$call void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0_1, i32 $s2, <$w x $t4> $r4)");
         } else {
             /* LLVM fallback: loop over entries and invoke 'atomicrmw' to
                perform atomic update */
             buf.fmt("br label %%L$i0_start\n"
                     "\nL$i0_start:$n"
-                    "$r0_base = bitcast i64* $r1_p3 to $t2*$n"
-                    "$r0_ptrs = getelementptr $t2, $t2* $r0_base, <$w x $t3> $r3$n"
+                    "$r0_base = bitcast $<i8*$> $r1 to $<$t2*$>$n"
+                    "$r0_ptrs = getelementptr $t2, $<$t2*$> $r0_base, <$w x $t3> $r3$n"
                     "br label %%L$i0_body$n"
                     "\nL$i0_body:$n"
                     "$r0_index = phi i32 [ 0, %%L$i0_start ], [ $r0_next, %%L$i0_next ]$n"

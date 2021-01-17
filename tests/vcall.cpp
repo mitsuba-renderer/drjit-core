@@ -88,6 +88,15 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
 
         jit_prefix_push(Backend, label);
         int flag_before = jit_flag(JitFlag::PostponeSideEffects);
+
+        if (Backend == JitBackend::LLVM) {
+            Mask vcall_mask = Mask::steal(jit_var_new_stmt(
+                Backend, VarType::Bool,
+                "$r0 = or <$w x i1> %mask, zeroinitializer", 1, 0,
+                nullptr));
+            jit_var_mask_push(Backend, vcall_mask.index(), 0);
+        }
+
         try {
             jit_set_flag(JitFlag::PostponeSideEffects, 1);
             if constexpr (std::is_same_v<Result, std::nullptr_t>) {
@@ -99,8 +108,12 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
             jit_prefix_pop(Backend);
             jit_side_effects_rollback(Backend, se_count[0]);
             jit_set_flag(JitFlag::PostponeSideEffects, flag_before);
+            if (Backend == JitBackend::LLVM)
+                jit_var_mask_pop(Backend);
             throw;
         }
+        if (Backend == JitBackend::LLVM)
+            jit_var_mask_pop(Backend);
         jit_set_flag(JitFlag::PostponeSideEffects, flag_before);
         jit_prefix_pop(Backend);
         se_count[i] = jit_side_effects_scheduled(Backend);
@@ -109,7 +122,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
     ek_index_vector indices_out(indices_out_all.size() / n_inst);
 
     Mask mask_combined =
-        neq(self, nullptr) && mask && Mask::steal(jit_var_mask_peek(Backend));
+        mask & neq(self, nullptr) & Mask::steal(jit_var_mask_peek(Backend));
 
     jit_var_vcall(domain, self.index(), mask_combined.index(), n_inst,
                   indices_in.size(), indices_in.data(), indices_out_all.size(),
@@ -161,7 +174,7 @@ auto vcall(const char *domain, const Func &func,
         domain, n_inst, func, self,
         Bool(detail::extract_mask(args...)),
         std::make_index_sequence<sizeof...(Args)>(),
-        ek::placeholder(args)...);
+        ek::placeholder(args, false, true)...);
 }
 
 TEST_BOTH(01_symbolic_vcall) {
@@ -181,6 +194,7 @@ TEST_BOTH(01_symbolic_vcall) {
     A1 a1;
     A2 a2;
 
+    // jit_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
     uint32_t i1 = jit_registry_put("Base", &a1);
     uint32_t i2 = jit_registry_put("Base", &a2);
     jit_assert(i1 == 1 && i2 == 2);
@@ -197,7 +211,6 @@ TEST_BOTH(01_symbolic_vcall) {
 
             Float y =
                 vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
-            fprintf(stderr, "%s\n", y.str());
             jit_assert(strcmp(y.str(), "[0, 22, 204, 0, 28, 210, 0, 34, 216, 0]") == 0);
         }
     }
@@ -396,7 +409,11 @@ TEST_BOTH(04_devirtualize) {
                     vcall("Base", [](Base *self2, Float p1, Float p2) { return self2->f(p1, p2); },
                           self, p1, p2);
 
-                Float alt = (p2 + 2) & neq(self, nullptr);
+                Mask mask_combined =
+                    Mask(true) & neq(self, nullptr) & Mask::steal(jit_var_mask_peek(Backend));
+
+                Float alt = (p2 + 2) & mask_combined;
+
                 if (i == 1 && k == 0)
                     jit_assert(result.template get<0>().index() == alt.index());
                 jit_assert(jit_var_is_literal(result.template get<2>().index()) == (i == 1));
@@ -467,7 +484,7 @@ TEST_BOTH(05_extra_data) {
     jit_registry_remove(&e2);
 }
 
-TEST_CUDA(06_side_effects) {
+TEST_BOTH(06_side_effects) {
     /*  This tests three things:
        - side effects in virtual functions
        - functions without inputs/outputs
@@ -500,6 +517,7 @@ TEST_CUDA(06_side_effects) {
         for (uint32_t j = 0; j < 2; ++j) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
+            if (j == 1 && Backend == JitBackend::LLVM) continue;
 
             F1 f1; F2 f2;
             uint32_t i1 = jit_registry_put("Base", &f1);
@@ -507,8 +525,6 @@ TEST_CUDA(06_side_effects) {
             jit_assert(i1 == 1 && i2 == 2);
 
             vcall("Base", [](Base *self2) { self2->go(); }, self);
-            fprintf(stderr, "%s\n", f1.buffer.str());
-            fprintf(stderr, "%s\n", f2.buffer.str());
             jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
             jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
 
@@ -519,7 +535,7 @@ TEST_CUDA(06_side_effects) {
     }
 }
 
-TEST_CUDA(07_side_effects_only_once) {
+TEST_BOTH(07_side_effects_only_once) {
     // This tests ensures that side effects baked into a function only happen
     // once, even when that function is evaluated multiple times.
 
@@ -550,6 +566,7 @@ TEST_CUDA(07_side_effects_only_once) {
         for (uint32_t j = 0; j < 2; ++j) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
+            if (j == 1 && Backend == JitBackend::LLVM) continue;
 
             G1 g1; G2 g2;
             uint32_t i1 = jit_registry_put("Base", &g1);
@@ -574,7 +591,7 @@ TEST_CUDA(07_side_effects_only_once) {
     }
 }
 
-TEST_CUDA(08_multiple_calls) {
+TEST_BOTH(08_multiple_calls) {
     /* This tests ensures that a function can be called several times,
        reusing the generated code (at least in the function-based variant) */
 
@@ -608,6 +625,7 @@ TEST_CUDA(08_multiple_calls) {
         for (uint32_t j = 0; j < 2; ++j) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
+            if (j == 1 && Backend == JitBackend::LLVM) continue;
 
             Float y = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
             Float z = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, y);
@@ -620,7 +638,7 @@ TEST_CUDA(08_multiple_calls) {
     jit_registry_remove(&h2);
 }
 
-TEST_CUDA(09_big) {
+TEST_BOTH(09_big) {
     /* This performs two vcalls with different numbers of instances, and
        relatively many of them. This tests the various tables, offset
        calculations, binary search trees, etc. */
@@ -666,6 +684,7 @@ TEST_CUDA(09_big) {
         for (uint32_t j = 0; j < 2; ++j) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             jit_set_flag(JitFlag::VCallBranch, j);
+            if (j == 1 && Backend == JitBackend::LLVM) continue;
 
             Float x = vcall("Base1", [](Base1 *self_) { return self_->f(); }, Base1Ptr(self1));
             Float y = vcall("Base2", [](Base2 *self_) { return self_->f(); }, Base2Ptr(self2));

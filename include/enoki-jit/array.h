@@ -372,9 +372,10 @@ Array opaque(const typename Array::Value &value, size_t size = 1) {
 
 template <JitBackend Backend, typename Type>
 JitArray<Backend, Type> placeholder(const JitArray<Backend, Type> &array,
-                                    bool propagate_literals = true) {
+                                    bool preserve_size,
+                                    bool propagate_literals) {
     return JitArray<Backend, Type>::steal(
-        jit_var_new_placeholder(array.index(), propagate_literals));
+        jit_var_new_placeholder(array.index(), preserve_size, propagate_literals));
 }
 
 template <typename Array, typename Index>

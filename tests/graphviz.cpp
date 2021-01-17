@@ -26,7 +26,7 @@ TEST_CUDA(01_graphviz) {
     Float f = a + 6;
     jit_prefix_pop(Backend);
     jit_prefix_pop(Backend);
-    Float g = placeholder(f, false);
+    Float g = placeholder(f, true, false);
 
     scatter_reduce(ReduceOp::Add, f, Float(4), UInt32(0));
 

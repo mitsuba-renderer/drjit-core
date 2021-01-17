@@ -129,6 +129,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
         for (int i = 0; i < 3; ++i)
             kernel_params.push_back(nullptr);
+        n_regs = 1;
     }
 
     (void) timer();
@@ -606,6 +607,7 @@ void jitc_eval(ThreadState *ts) {
             continue;
 
         Variable *v = &it.value();
+        v->reg_index = 0;
         if (!(v->output_flag || v->side_effect))
             continue;
 
@@ -629,7 +631,8 @@ void jitc_eval(ThreadState *ts) {
         jitc_cse_drop(index, v);
 
         if (unlikely(v->literal))
-            jitc_fail("jit_eval(): internal error: did not expect a literal variable here!");
+            jitc_fail("jit_eval(): internal error: did not expect a literal "
+                      "variable here!");
         if (v->free_stmt)
             free(v->stmt);
 
@@ -641,6 +644,9 @@ void jitc_eval(ThreadState *ts) {
         v->side_effect = false;
 
         if (side_effect) {
+            if (unlikely((VarType) v->type != VarType::Void))
+                jitc_fail("jit_eval(): variables with side effects should be "
+                          "of type Void!");
             if (dep[0]) {
                 Variable *ptr = jitc_var(dep[0]);
                 if ((VarType) ptr->type == VarType::Pointer)
@@ -703,7 +709,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
              n_regs_backup = n_regs_used;
 
     if (function_interface)
-        n_regs = ts->backend == JitBackend::CUDA ? 4 : 0;
+        n_regs = ts->backend == JitBackend::CUDA ? 4 : 1;
 
     for (auto &sv : schedule) {
         Variable *v = jitc_var(sv.index);
@@ -743,6 +749,9 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
         callables.push_back(std::string(kernel_str, kernel_length));
     }
     buffer.rewind(kernel_length);
+
+    for (ScheduledVariable &sv : schedule)
+        jitc_var(sv.index)->reg_index = 0;
 
     return { kernel_hash, result.first->second };
 }
