@@ -118,6 +118,9 @@ extern void jitc_var_eval_literal(uint32_t index, Variable *v);
 /// Evaluate the variable \c index right away, if it is unevaluated/dirty.
 extern int jitc_var_eval(uint32_t index);
 
+/// Return the pointer location of the variable, evaluate if needed
+extern void *jitc_var_ptr(uint32_t index);
+
 /// Return a human-readable summary of registered variables
 extern const char *jitc_var_whos();
 

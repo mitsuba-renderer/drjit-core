@@ -1638,7 +1638,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             jitc_raise("jit_var_new_scatter(): cannot scatter to a placeholder variable!");
         backend = (JitBackend) v_target->backend;
         vt = (VarType) v_target->type;
-        data = v_target->data;
+        data = jitc_var_ptr(target);
     }
 
     if (vt != (VarType) jitc_var(value)->type)

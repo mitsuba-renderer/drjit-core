@@ -579,7 +579,6 @@ TEST_BOTH(07_side_effects_only_once) {
             jit_assert(strcmp(f1.str(), "[0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1]") == 0);
             jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
             jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
-            jit_assert(f2.data() == nullptr);
             jit_assert(strcmp(f2.str(), "[0, 2, 1, 0, 2, 1, 0, 2, 1, 0, 2]") == 0);
             jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
             jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);

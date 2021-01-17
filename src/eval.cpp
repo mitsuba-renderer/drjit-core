@@ -496,7 +496,6 @@ void jitc_eval(ThreadState *ts) {
         if (j == 1 && (jitc_flags() & (uint32_t) JitFlag::PostponeSideEffects))
             break;
 
-        uint32_t num_literals = 0;
         for (size_t i = 0; i < source.size(); ++i) {
             uint32_t index = source[i];
             auto it = state.variables.find(index);
@@ -509,30 +508,15 @@ void jitc_eval(ThreadState *ts) {
             if (v->ref_count_ext == 0 || v->data)
                 continue;
 
-            // Move literals to beginning of the list so that they can be handled separately
-            if (v->literal) {
-                source[num_literals++] = index;
-                continue;
-            }
-
             jitc_var_traverse(v->size, index);
             v->output_flag = (VarType) v->type != VarType::Void;
         }
 
-        source.resize(num_literals);
+        source.clear();
     }
 
-    if (schedule.empty()) {
-        // Evaluate literal variables, if any
-        for (uint32_t index : ts->scheduled) {
-            Variable *v = jitc_var(index);
-            if (!v->literal)
-                continue;
-            jitc_var_eval_literal(index, v);
-        }
-        ts->scheduled.clear();
+    if (schedule.empty())
         return;
-    }
 
     // Order variables into groups of matching size
     std::stable_sort(
@@ -658,15 +642,6 @@ void jitc_eval(ThreadState *ts) {
         for (int j = 0; j < 4; ++j)
             jitc_var_dec_ref_int(dep[j]);
     }
-
-    // Evaluate literal variables, if any
-    for (uint32_t index : ts->scheduled) {
-        Variable *v = jitc_var(index);
-        if (!v->literal)
-            continue;
-        jitc_var_eval_literal(index, v);
-    }
-    ts->scheduled.clear();
 
     jitc_free_flush(ts);
     jitc_log(Info, "jit_eval(): done.");

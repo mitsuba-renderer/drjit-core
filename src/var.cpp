@@ -675,7 +675,7 @@ int jitc_var_schedule(uint32_t index) {
         jitc_raise("jit_var_schedule(r%u): placeholder variables are used to record "
                    "computation symbolically and cannot be scheduled for evaluation!", index);
 
-    if (!v->data) {
+    if (!v->data && !v->literal) {
         thread_state(v->backend)->scheduled.push_back(index);
         jitc_log(Debug, "jit_var_schedule(r%u)", index);
         return 1;
@@ -684,6 +684,23 @@ int jitc_var_schedule(uint32_t index) {
     }
 
     return 0;
+}
+
+void *jitc_var_ptr(uint32_t index) {
+    if (index == 0)
+        return nullptr;
+    Variable *v = jitc_var(index);
+
+    if (v->literal) {
+        /* If 'v' is a constant, initialize it directly instead of
+           generating code to do so.. */
+        jitc_var_eval_literal(index, v);
+    } else if (!v->data) {
+        jitc_var_eval(index);
+        v = jitc_var(index);
+    }
+
+    return v->data;
 }
 
 /// Evaluate a literal constant variable
@@ -714,19 +731,11 @@ int jitc_var_eval(uint32_t index) {
         jitc_raise("jit_var_eval(r%u): placeholder variables are used to record "
                    "computation symbolically and cannot be evaluated!", index);
 
-    if (!v->data || v->dirty) {
+    if (!v->literal && (!v->data || v->dirty)) {
         ThreadState *ts = thread_state(v->backend);
 
-        if (!v->data) {
-            if (v->literal) {
-                /* If 'v' is a constant, initialize it directly instead of
-                   generating code to do so.. */
-                jitc_var_eval_literal(index, v);
-                return 1;
-            } else {
-                ts->scheduled.push_back(index);
-            }
-        }
+        if (!v->data)
+            ts->scheduled.push_back(index);
 
         jitc_eval(ts);
         v = jitc_var(index);

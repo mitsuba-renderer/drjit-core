@@ -386,11 +386,8 @@ uint32_t jit_var_ref_ext(uint32_t index) {
 }
 
 void *jit_var_ptr(uint32_t index) {
-    if (index == 0)
-        return nullptr;
-
     lock_guard guard(state.mutex);
-    return jitc_var(index)->data;
+    return jitc_var_ptr(index);
 }
 
 size_t jit_var_size(uint32_t index) {
