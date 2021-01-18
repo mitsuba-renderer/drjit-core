@@ -77,6 +77,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
 
     ek_index_vector indices_in, indices_out_all;
     ek_vector<uint32_t> se_count(n_inst + 1, 0);
+    ek_vector<uint32_t> inst_id(n_inst, 0);
 
     (collect_indices(indices_in, args), ...);
     se_count[0] = jit_side_effects_scheduled(Backend);
@@ -117,6 +118,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
         jit_set_flag(JitFlag::PostponeSideEffects, flag_before);
         jit_prefix_pop(Backend);
         se_count[i] = jit_side_effects_scheduled(Backend);
+        inst_id[i - 1] = i;
     }
 
     ek_index_vector indices_out(indices_out_all.size() / n_inst);
@@ -125,8 +127,9 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
         mask & neq(self, nullptr) & Mask::steal(jit_var_mask_peek(Backend));
 
     jit_var_vcall(domain, self.index(), mask_combined.index(), n_inst,
-                  indices_in.size(), indices_in.data(), indices_out_all.size(),
-                  indices_out_all.data(), se_count.data(), indices_out.data());
+                  inst_id.data(), indices_in.size(), indices_in.data(),
+                  indices_out_all.size(), indices_out_all.data(),
+                  se_count.data(), indices_out.data());
 
     if constexpr (!std::is_same_v<Result, std::nullptr_t>) {
         uint32_t offset = 0;
