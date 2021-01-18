@@ -765,7 +765,7 @@ static void jitc_var_vcall_assemble_cuda(
     buffer.put("\n");
     tsl::robin_set<uint32_t> seen;
     for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-        uint32_t callable_id = (uint32_t) vcall->offset_h[i + 1];
+        uint32_t callable_id = (uint32_t) vcall->offset_h[vcall->inst_id[i]];
         if (!seen.insert(callable_id).second)
             continue;
         if (vcall->branch) {
