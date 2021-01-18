@@ -240,6 +240,7 @@ void jitc_shutdown(int light) {
                 jitc_optix_context_destroy(ts);
 #endif
                 cuda_check(cuEventDestroy(ts->event));
+                cuda_check(cuStreamSynchronize(ts->stream));
                 cuda_check(cuStreamDestroy(ts->stream));
             }
 

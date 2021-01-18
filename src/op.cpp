@@ -1490,6 +1490,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     uint32_t vti = v_source->type;
     uint32_t size = std::max(v_index->size, v_mask->size);
     JitBackend backend = (JitBackend) v_source->backend;
+    bool v_source_literal = v_source->literal;
 
     if (v_source->placeholder)
         jitc_raise("jit_var_new_gather(): cannot gather from a placeholder variable!");
@@ -1512,7 +1513,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         uint32_t result = jitc_var_resize(tmp, size);
         jitc_log(Debug, "jit_var_new_gather(%s r%u <- r%u[r%u] if r%u): elided, %s source",
                  type_name[vti], result, source, index_, mask_,
-                 v_source->literal ? "literal" : "scalar");
+                 v_source_literal ? "literal" : "scalar");
 
         return result;
     }

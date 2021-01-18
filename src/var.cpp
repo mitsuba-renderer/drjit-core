@@ -15,6 +15,7 @@
 #include "op.h"
 #include "registry.h"
 
+// #define ENOKI_VALGRIND 1
 
 /// Descriptive names for the various variable types
 const char *type_name[(int) VarType::Count] {
@@ -148,6 +149,12 @@ void jitc_var_free(uint32_t index, Variable *v) {
 
     // Remove from hash table
     state.variables.erase(index);
+
+#if defined(ENOKI_VALGRIND)
+    // When debugging via valgrind, this will make iterator invalidation more obvious
+    VariableMap var_new(state.variables);
+    state.variables.swap(var_new);
+#endif
 
     // Decrease reference count of dependencies
     for (int i = 0; i < 4; ++i)
@@ -330,6 +337,12 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
     Variable *vo;
 
     if (likely(!cse || cse_key_inserted)) {
+        #if defined(ENOKI_VALGRIND)
+            // When debugging via valgrind, this will make iterator invalidation more obvious
+            VariableMap var_new(state.variables);
+            state.variables.swap(var_new);
+        #endif
+
         // .. nope, it is new.
         VariableMap::iterator var_it;
         bool var_inserted;
