@@ -23,8 +23,8 @@
 /// Number of entries to process per work unit in the parallel LLVM backend
 #define ENOKI_POOL_BLOCK_SIZE 16384
 
-/// Can't pass more than 4352 bytes of parameter data to a CUDA kernel
-#define ENOKI_CUDA_ARG_LIMIT 544
+/// Can't pass more than 4096 bytes of parameter data to a CUDA kernel
+#define ENOKI_CUDA_ARG_LIMIT 512
 
 #define ENOKI_PTR "<0x%" PRIxPTR ">"
 
