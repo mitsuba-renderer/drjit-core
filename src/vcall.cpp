@@ -14,6 +14,7 @@
 #include "registry.h"
 #include "util.h"
 #include "op.h"
+#include "printf.h"
 
 /// Encodes information about a virtual function call
 struct VCall {
@@ -30,6 +31,9 @@ struct VCall {
 
     /// Number of instances
     uint32_t n_inst = 0;
+
+    /// Mapping from instance ID -> vcall branch
+    std::vector<uint32_t> inst_id;
 
     /// Input variables at call site
     std::vector<uint32_t> in;
@@ -49,6 +53,7 @@ struct VCall {
     /// Mapping from variable index to offset into call data
     tsl::robin_map<uint64_t, uint32_t> data_map;
     uint64_t* offset_h = nullptr, *offset_d = nullptr;
+    size_t offset_h_size = 0;
 
     /// Storage in bytes for inputs/outputs before simplifications
     uint32_t in_count_initial = 0;
@@ -97,9 +102,10 @@ jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t> &data_map,
 
 // Weave a virtual function call into the computation graph
 void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
-                    uint32_t n_inst, uint32_t n_in, const uint32_t *in,
-                    uint32_t n_out_nested, const uint32_t *out_nested,
-                    const uint32_t *se_offset, uint32_t *out) {
+                    uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
+                    const uint32_t *in, uint32_t n_out_nested,
+                    const uint32_t *out_nested, const uint32_t *se_offset,
+                    uint32_t *out) {
     // =====================================================
     // 1. Various sanity checks
     // =====================================================
@@ -186,6 +192,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     vcall->name = strdup(name);
     vcall->branch = jitc_flags() & (uint32_t) JitFlag::VCallBranch;
     vcall->n_inst = n_inst;
+    vcall->inst_id = std::vector<uint32_t>(inst_id, inst_id + n_inst);
     vcall->in.reserve(n_in);
     vcall->in_nested.reserve(n_in);
     vcall->out.reserve(n_out);
@@ -203,16 +210,24 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     // 3. Collect evaluated data accessed by the instances
     // =====================================================
 
+    uint32_t inst_id_max = 0;
+    for (uint32_t i = 0; i < n_inst; ++i)
+        inst_id_max = std::max(inst_id[i], inst_id_max);
+    size_t offset_h_size = (inst_id_max + 1) * sizeof(uint64_t);
+
     AllocType at_d = backend == JitBackend::CUDA ? AllocType::Device
                                                  : AllocType::HostAsync,
               at_h = backend == JitBackend::CUDA ? AllocType::HostPinned
                                                  : AllocType::Host;
-    vcall->offset_h = (uint64_t *) jitc_malloc(at_h, (n_inst + 1) * sizeof(uint64_t));
+    vcall->offset_h = (uint64_t *) jitc_malloc(at_h, offset_h_size);
+    memset(vcall->offset_h, 0, offset_h_size);
+    vcall->offset_h_size = offset_h_size;
 
     // Collect accesses to evaluated variables/pointers
     uint32_t data_size = 0;
     for (uint32_t i = 0; i < n_inst; ++i) {
-        vcall->offset_h[i + 1] = ((uint64_t) data_size) << 32;
+        uint32_t id = inst_id[i];
+        vcall->offset_h[id] = ((uint64_t) data_size) << 32;
 
         for (uint32_t j = 0; j < n_out; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
@@ -227,14 +242,14 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     }
 
     // Allocate memory + wrapper variables for call offset and data arrays
-    uint64_t *offset_d = (uint64_t *) jitc_malloc(at_d, (n_inst + 1) * sizeof(uint64_t));
+    uint64_t *offset_d = (uint64_t *) jitc_malloc(at_d, offset_h_size);
     uint8_t  *data_d   = (uint8_t *) jitc_malloc(at_d, data_size);
 
     vcall->offset_d = offset_d;
 
     Ref data_buf, data_v,
         offset_buf = steal(
-            jitc_var_mem_map(backend, VarType::UInt64, offset_d, n_inst + 1, 1)),
+            jitc_var_mem_map(backend, VarType::UInt64, offset_d, inst_id_max + 1, 1)),
         offset_v =
             steal(jitc_var_new_pointer(backend, offset_d, offset_buf, 0));
 
@@ -257,6 +272,23 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     } else {
         vcall->data_map.clear();
     }
+
+#if 0
+    uint32_t range_check = 0;
+    {
+        uint32_t one = 1;
+        Ref range_min = steal(jitc_var_new_literal(backend, VarType::UInt32, &one, 1, 0));
+        Ref range_max = steal(jitc_var_new_literal(backend, VarType::UInt32, &n_inst, 1, 0));
+        Ref mask1 = steal(jitc_var_new_op_n(JitOp::Lt, self, range_min));
+        Ref mask2 = steal(jitc_var_new_op_n(JitOp::Gt, self, range_max));
+        Ref mask3 = steal(jitc_var_new_op_n(JitOp::Or, mask1, mask2));
+        Ref mask4 = steal(jitc_var_new_op_n(JitOp::And, mask3, mask));
+        char fmt[256];
+        snprintf(fmt, sizeof(fmt), "Device assertion failure: VCall (\"%s\") instance ID out of range [1..%u], got %%u\n",
+                 name, n_inst);
+        range_check = jitc_var_printf(backend, mask4, fmt, 1, &self);
+    }
+#endif
 
     // =====================================================
     // 4. Create special variable encoding the function call
@@ -582,11 +614,10 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     size_t callables_offset = callables.size();
 
     std::vector<XXH128_hash_t> callable_hash(vcall->n_inst);
-    vcall->offset_h[0] = 0;
 
     ThreadState *ts = thread_state(vcall->backend);
     for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-        uint64_t &offset = vcall->offset_h[i + 1],
+        uint64_t &offset = vcall->offset_h[vcall->inst_id[i]],
                   data_offset = (uint32_t) (offset >> 32);
 
         auto result = jitc_assemble_func(
@@ -608,7 +639,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     }
 
     jitc_memcpy_async(vcall->backend, vcall->offset_d, vcall->offset_h,
-                      (vcall->n_inst + 1) * sizeof(uint64_t));
+                      vcall->offset_h_size);
 
     size_t se_count = vcall->se.size();
     vcall->clear_side_effects();

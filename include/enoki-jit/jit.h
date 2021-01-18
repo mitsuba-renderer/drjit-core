@@ -1368,6 +1368,7 @@ extern JIT_EXPORT size_t jit_var_mask_size(JitBackend backend);
  */
 extern JIT_EXPORT void jit_var_vcall(const char *name, uint32_t self,
                                      uint32_t mask, uint32_t n_inst,
+                                     const uint32_t *inst_id,
                                      uint32_t n_in, const uint32_t *in,
                                      uint32_t n_out_nested,
                                      const uint32_t *out_nested,

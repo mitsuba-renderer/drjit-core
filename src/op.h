@@ -26,3 +26,10 @@ extern uint32_t jitc_var_new_gather(uint32_t source, uint32_t index,
 extern uint32_t jitc_var_new_scatter(uint32_t target, uint32_t value,
                                      uint32_t index, uint32_t mask,
                                      ReduceOp reduce_op);
+
+template <typename... Ts>
+uint32_t jitc_var_new_op_n(JitOp op, const Ts &... indices_) {
+    uint32_t indices[] = { indices_... };
+    return jitc_var_new_op(op, (uint32_t) sizeof...(Ts), indices);
+}
+
