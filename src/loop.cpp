@@ -66,7 +66,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
     // =====================================================
 
     bool optimize = jitc_flags() & (uint32_t) JitFlag::LoopOptimize;
-    bool placeholder = false;
+    bool placeholder = false, dirty = false;
     uint32_t size = 1, n_invariant_provided = 0, n_invariant_detected = 0;
     char temp[256];
 
@@ -77,6 +77,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
         if (!v->placeholder)
             jitc_raise("jit_var_loop(): loop condition does not depend on any of the loop variables");
         size = v->size;
+        dirty = v->dirty;
     }
 
     for (uint32_t i = 0; i < n; ++i) {
@@ -114,6 +115,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
         loop->in.push_back(index_3);
         size = std::max(v3->size, size);
         placeholder |= v3->placeholder;
+        dirty |= v3->dirty;
 
         // ============= Output side =============
         uint32_t index_o = out_body[i];
@@ -172,6 +174,9 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
 
     if (n_invariant_detected)
         return;
+
+    if (dirty)
+        jitc_eval(ts);
 
     // =====================================================
     // 2. Combine mask with top of mask stack
