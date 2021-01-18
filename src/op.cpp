@@ -1525,26 +1525,20 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     v_index = jitc_var(index);
     v_mask = jitc_var(mask);
 
-    // Ensure that the source array is fully evaluated
-    if (!v_source->data || v_source->dirty || v_index->dirty || v_mask->dirty) {
-        jitc_var_schedule(source);
+    if (v_source->dirty || v_index->dirty || v_mask->dirty) {
         jitc_eval(thread_state(backend));
 
         // Location of variables may have changed
         v_source = jitc_var(source);
-        // v_index = jitc_var(index); (not used below)
+        v_index = jitc_var(index);
         v_mask = jitc_var(mask);
-
-        if (!v_source->data)
-            jitc_raise("jit_var_new_gather(): internal error: source pointer "
-                       "is NULL after evaluation!");
     }
 
     bool unmasked = v_mask->literal && v_mask->value == 1;
     VarType vt = (VarType) v_source->type;
 
     // Create a pointer + reference, invalidates the v_* variables
-    Ref ptr = steal(jitc_var_new_pointer(backend, v_source->data, source, 0));
+    Ref ptr = steal(jitc_var_new_pointer(backend, jitc_var_ptr(source), source, 0));
 
     uint32_t dep[4] = { ptr, index, mask, 0 };
     uint32_t n_dep = 3;
@@ -1607,7 +1601,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
             stmt = "$r0_0 = getelementptr i8, $<i8*$> $r1, <$w x $t2> $r2$n"
                    "$r0_1 = bitcast <$w x i8*> $r0_0 to <$w x i32*>$n"
                    "$r0_2 = $call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0_1, i32 $s0, <$w x $t3> $r3, <$w x i32> zeroinitializer)$n"
-                   "$r0 = trunc <$w x i32> $r0_3 to <$w x $t0>";
+                   "$r0 = trunc <$w x i32> $r0_2 to <$w x $t0>";
         }
     }
 
@@ -1626,63 +1620,113 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
 uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                               uint32_t mask_, ReduceOp reduce_op) {
     Ref ptr, target = borrow(target_);
+
+    auto print_log = [&](const char *reason, uint32_t index = 0) {
+        if (index)
+            jitc_log(Debug,
+                     "jit_var_new_scatter(r%u[r%u] <- r%u if r%u, via "
+                     "ptr r%u, reduce_op=%s): r%u (%s)",
+                     (uint32_t) target, (uint32_t) index, value,
+                     (uint32_t) mask_, (uint32_t) ptr,
+                     reduce_op_name[(int) reduce_op], index_, reason);
+        else
+            jitc_log(Debug,
+                     "jit_var_new_scatter(r%u[r%u] <- r%u if r%u, via "
+                     "ptr r%u, reduce_op=%s): %s",
+                     (uint32_t) target, (uint32_t) index, value,
+                     (uint32_t) mask_, (uint32_t) ptr,
+                     reduce_op_name[(int) reduce_op], reason);
+    };
+
+    uint32_t size = 0;
+    bool dirty = false;
     JitBackend backend;
     VarType vt;
-    uint32_t size =
-        std::max(std::max(jitc_var(index_)->size, jitc_var(value)->size),
-                 jitc_var(mask_)->size);
-    void *data;
-    {
-        const Variable *v_target = jitc_var(target);
-        if (v_target->placeholder)
-            jitc_raise("jit_var_new_scatter(): cannot scatter to a placeholder variable!");
-        backend = (JitBackend) v_target->backend;
-        vt = (VarType) v_target->type;
-        data = jitc_var_ptr(target);
-    }
 
-    if (vt != (VarType) jitc_var(value)->type)
+    // Get size, ensure no arrays are dirty
+    for (uint32_t index : { index_, mask_, value }) {
+        const Variable *v = jitc_var(index);
+        size = std::max(v->size, size);
+        dirty |= v->dirty;
+        // Fetch type + backend from 'value'
+        backend = (JitBackend) v->backend;
+        vt = (VarType) v->type;
+    }
+    if (dirty)
+        jitc_eval(thread_state(backend));
+    if (size == 0)
+        return target.release();
+
+    for (uint32_t index : { index_, mask_, value }) {
+        const Variable *v = jitc_var(index);
+        if (size != v->size && v->size != 1)
+            jitc_raise("jitc_var_new_scatter(): arrays of incompatible size!");
+    }
+    if ((VarType) jitc_var(target)->type != vt)
         jitc_raise("jit_var_new_scatter(): target/value type mismatch!");
 
-    if (data)
-        ptr = steal(jitc_var_new_pointer(backend, data, target, 1));
-
-    // Check if it is safe to write directly
-    bool copy = false;
-    if (jitc_var(target)->ref_count_ext > 2 ||
-        jitc_var(target)->ref_count_int > (data ? 1 : 0)) {
-
-        target = steal(jitc_var_copy(target));
-        copy = true;
+    // Don't do anything if the mask is always false
+    {
+        const Variable *v_mask = jitc_var(mask_);
+        if (v_mask->literal && v_mask->value == 0) {
+            print_log("skipped, always masked");
+            return target.release();
+        }
     }
 
-    // Ensure that 'target' exists in memory
-    if (!data)
-        jitc_var_eval(target);
+    // Special case for target[0] <- ...
+    bool index_zero = false;
+    {
+        const Variable *v_index = jitc_var(index_);
+        if (v_index->literal && v_index->value == 0)
+            index_zero = true;
+    }
 
-    ptr = steal(jitc_var_new_pointer(backend, jitc_var(target)->data, target, 1));
+    {
+        const Variable *v_target = jitc_var(target),
+                       *v_value  = jitc_var(value);
+
+        if (v_target->placeholder)
+            jitc_raise("jit_var_new_scatter(): cannot scatter to a placeholder variable!");
+
+        if (v_target->literal && v_value->literal &&
+            v_target->value == v_value->value && reduce_op == ReduceOp::None) {
+            print_log("skipped, target/source are literal variables with the same value");
+            return target.release();
+        }
+
+        if (v_value->literal && v_value->value == 0 && reduce_op == ReduceOp::Add) {
+            print_log("skipped, scatter_reduce(ScatterOp.Add) with zero-valued source variable");
+            return target.release();
+        }
+
+        if (v_target->data) {
+            ptr = steal(jitc_var_new_pointer(backend, v_target->data, target, 1));
+            v_target = jitc_var(target);
+        }
+
+        // Check if it is safe to write directly
+        if (v_target->ref_count_ext > 2 || v_target->ref_count_int > (((uint32_t) ptr) ? 1 : 0)) {
+            target = steal(jitc_var_copy(target));
+            v_target = jitc_var(target);
+            if (v_target->data)
+                ptr = steal(jitc_var_new_pointer(backend, v_target->data, target, 1));
+        }
+    }
+
+
+    // Ensure that 'target' exists in memory
+    if (!((uint32_t) ptr))
+        ptr = steal(jitc_var_new_pointer(backend, jitc_var_ptr(target), target, 1));
 
     Ref mask  = steal(jitc_scatter_gather_mask(mask_, size)),
         index = steal(jitc_scatter_gather_index(target, index_));
 
-    bool unmasked, index_zero;
+    bool unmasked = false;
     {
-        Variable *v_index = jitc_var(index),
-                 *v_mask  = jitc_var(mask);
-
-        if (v_mask->literal && v_mask->value == 0) {
-            /// Always masked, nothing to do here..
-            return target.release();
-        }
-
-        if (v_index->dirty || v_mask->dirty) {
-            jitc_eval(thread_state(backend));
-            v_index = jitc_var(index);
-            v_mask = jitc_var(mask);
-        }
-
-        unmasked = v_mask->literal && v_mask->value == 1;
-        index_zero = v_index->literal && v_index->value == 0;
+        const Variable *v_mask = jitc_var(mask);
+        if (v_mask->literal && v_mask->value == 1)
+            unmasked = true;
     }
 
     jitc_var(target)->dirty = true;
@@ -1778,12 +1822,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     uint32_t result =
         jitc_var_new_stmt(backend, VarType::Void, buf.get(), 0, n_dep, dep);
 
-    jitc_log(Debug,
-             "jit_var_new_scatter(r%u[r%u] <- r%u if r%u, via "
-             "ptr r%u, reduce_op=%s): r%u (%s)",
-             (uint32_t) target, (uint32_t) index, value, (uint32_t) mask,
-             (uint32_t) ptr, reduce_op_name[(int) reduce_op], result,
-             copy ? "copy" : "direct");
+    print_log(((uint32_t) target == target_) ? "direct" : "copy", result);
 
     jitc_var(result)->side_effect = true;
     thread_state(backend)->side_effects.push_back(result);

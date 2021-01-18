@@ -496,9 +496,8 @@ uint32_t jitc_var_new_placeholder(uint32_t index, int preserve_size, int propaga
     jitc_var_inc_ref_int(index);
 
     uint32_t result = jitc_var_new(v2, true);
-    jitc_log(Debug, "jit_var_new_placeholder(%s r%u <- r%u)%s",
-             type_name[v->type], result, index,
-             v2.literal ? ": propagated literal" : "");
+    jitc_log(Debug, "jit_var_new_placeholder(%s r%u <- r%u)",
+             type_name[v2.type], result, index);
     return result;
 }
 
