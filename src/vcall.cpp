@@ -120,13 +120,14 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     uint32_t n_out = n_out_nested / n_inst, size = 0,
              in_size_initial = 0, out_size_initial = 0;
 
-    bool placeholder = false, optix = false;
+    bool placeholder = false, optix = false, dirty = false;
 
     JitBackend backend;
     /* Check 'self' */ {
         const Variable *self_v = jitc_var(self);
         size = self_v->size;
         placeholder |= self_v->placeholder;
+        dirty |= self_v->dirty;
         backend = (JitBackend) self_v->backend;
         if ((VarType) self_v->type != VarType::UInt32)
             jitc_raise("jit_var_vcall(): 'self' argument must be of type "
@@ -142,6 +143,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             Variable *v2 = jitc_var(v->dep[0]);
             placeholder |= v2->placeholder;
             optix |= v2->optix;
+            dirty |= v2->dirty;
             size = std::max(size, v2->size);
         } else if (!v->literal) {
             jitc_raise("jit_var_vcall(): input variable r%u must either be a "
@@ -182,6 +184,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     if (ts->side_effects.size() != se_offset[n_inst])
         jitc_raise("jitc_var_vcall(): side effect queue doesn't have the "
                    "expected size!");
+
+    if (dirty)
+        jitc_eval(ts);
 
     // =====================================================
     // 2. Stash information about inputs and outputs
@@ -1215,12 +1220,15 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         return nullptr;
     }
 
-    jitc_var_eval(index);
-    const Variable *v = jitc_var(index);
-    const void *ptr = v->data;
-    uint32_t size = v->size;
+    uint32_t size;
+    {
+        const Variable *v = jitc_var(index);
+        size = v->size;
+        if (v->dirty)
+            jitc_eval(thread_state(v->backend));
+    }
 
-    jitc_log(Debug, "jit_vcall(%u, domain=\"%s\")", index, domain);
+    jitc_log(Debug, "jit_vcall(r%u, domain=\"%s\")", index, domain);
 
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
            offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
@@ -1231,8 +1239,9 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, perm_size);
 
     // Compute permutation
-    uint32_t unique_count = jitc_mkperm(backend, (const uint32_t *) ptr, size,
-                                        bucket_count, perm, offsets),
+    uint32_t unique_count =
+                 jitc_mkperm(backend, (const uint32_t *) jitc_var_ptr(index),
+                             size, bucket_count, perm, offsets),
              unique_count_out = unique_count;
 
     // Register permutation variable with JIT backend and transfer ownership
