@@ -195,7 +195,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     std::unique_ptr<VCall> vcall(new VCall());
     vcall->backend = backend;
     vcall->name = strdup(name);
-    vcall->branch = jitc_flags() & (uint32_t) JitFlag::VCallBranch;
+    vcall->branch = backend == JitBackend::CUDA
+                       ? (jitc_flags() & (uint32_t) JitFlag::VCallBranch)
+                       : false;
     vcall->n_inst = n_inst;
     vcall->inst_id = std::vector<uint32_t>(inst_id, inst_id + n_inst);
     vcall->in.reserve(n_in);
@@ -1032,7 +1034,7 @@ static void jitc_var_vcall_assemble_llvm(
                        prefix, v2->reg_index, width, prefix, v2->reg_index, width);
 
         buffer.fmt(
-            "    %%u%u_in_%u_0 = getelementptr inbounds i8, i8* %%buffer, i64 %u\n"
+            "    %%u%u_in_%u_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
             "    %%u%u_in_%u_1 = bitcast i8* %%u%u_in_%u_0 to <%u x %s> *\n"
             "    store <%u x %s> %s%u%s, <%u x %s>* %%u%u_in_%u_1, align %u\n",
             vcall_reg, i, offset,
@@ -1046,7 +1048,7 @@ static void jitc_var_vcall_assemble_llvm(
 
     if (out_size) {
         /// Zero-initialize memory region containing outputs
-        buffer.fmt("    %%u%u_out = getelementptr inbounds i8, i8* %%buffer, i64 %u\n"
+        buffer.fmt("    %%u%u_out = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
                    "    call void @llvm.memset.p0i8.i32(i8* %%u%u_out, i8 0, "
                    "i32 %u, i1 0)\n", vcall_reg, in_size * width, vcall_reg, out_size * width);
     }

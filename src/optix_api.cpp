@@ -599,9 +599,7 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
     if (np > 8)
         jitc_raise("jit_optix_trace(): too many payloads (got %u > 8)", np);
 
-    jitc_log(Info, "jit_optix_trace(): %u payload value%s.", np, np == 1 ? "" : "s");
-
-    bool placeholder = false;
+    bool placeholder = false, dirty = false;
     for (uint32_t i = 0; i <= n_args; ++i) {
         uint32_t index = (i < n_args) ? args[i] : mask;
         VarType ref = i < n_args ? types[i] : VarType::Bool;
@@ -612,6 +610,7 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
                        i, type_name[v->type], type_name[(int) ref]);
         size = std::max(size, v->size);
         placeholder |= v->placeholder;
+        dirty |= v->dirty;
     }
 
     for (uint32_t i = 0; i <= n_args; ++i) {
@@ -624,6 +623,13 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
 
     if (jitc_var_type(mask) != VarType::Bool)
         jitc_raise("jit_optix_trace(): type mismatch for mask argument!");
+
+    if (dirty)
+        jitc_eval(thread_state(JitBackend::CUDA));
+
+    jitc_log(Info, "jit_optix_trace(): tracing %u ray%s, %u payload value%s%s.",
+             size, size != 1 ? "s" : "", np, np == 1 ? "" : "s",
+             placeholder ? " (part of a recorded computation)" : "");
 
     uint32_t special =
         jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 1, &mask);

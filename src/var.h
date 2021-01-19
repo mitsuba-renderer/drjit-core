@@ -33,6 +33,14 @@ extern uint32_t jitc_var_new_stmt(JitBackend backend,
                                   uint32_t n_dep,
                                   const uint32_t *dep);
 
+template <typename... Ts>
+uint32_t jitc_var_new_stmt_n(JitBackend backend, VarType type, const char *stmt,
+                             int stmt_static, const Ts &... indices_) {
+    uint32_t indices[] = { indices_... };
+    return jitc_var_new_stmt(backend, type, stmt, stmt_static,
+                             (uint32_t) sizeof...(Ts), indices);
+}
+
 /// Create a variable that refers to a memory region
 extern uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
                                      uint32_t dep, int write);

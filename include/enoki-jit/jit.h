@@ -1232,7 +1232,7 @@ enum class JitFlag : uint32_t {
     /// Enable constant propagation and elide unnecessary function arguments
     VCallOptimize  = 8,
 
-    /// Implement virtual function calls via indirect branches instead of calls
+    /// Implement virtual function calls via indirect branches instead of calls (CUDA only)
     VCallBranch    = 16,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
@@ -1564,6 +1564,23 @@ extern JIT_EXPORT void jit_block_copy(JitBackend backend, JIT_ENUM VarType type,
 extern JIT_EXPORT void jit_block_sum(JitBackend backend, JIT_ENUM VarType type,
                                      const void *in, void *out, uint32_t size,
                                      uint32_t block_size);
+/**
+ * \brief Insert a function call to rtcIntersect into the program
+ *
+ * The \c args list should contain a list of variable indices corresponding to
+ * the 13 required function arguments
+ * - active_mask (32 bit integer with '-1' for active, and '0' for inactive)
+ * - ox, oy, oz
+ * - tmin
+ * - dx, dy, dz
+ * - time
+ * - tfar
+ * - mask, id, flags
+ * </tt>.
+ */
+extern JIT_EXPORT void jit_embree_trace(uint32_t func, uint32_t context,
+                                        uint32_t scene, uint32_t *in,
+                                        uint32_t *out);
 
 #if defined(__cplusplus)
 }

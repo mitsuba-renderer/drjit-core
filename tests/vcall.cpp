@@ -248,9 +248,18 @@ TEST_BOTH(02_calling_conventions) {
         }
     };
 
-    B1 b1; B2 b2;
+    struct B3 : Base {
+        ek_tuple<Mask, Float, Double, Float, Mask>
+        f(Mask p0, Float p1, Double p2, Float p3, Mask p4) override {
+            return { 0, 0, 0, 0, 0 };
+        }
+    };
+
+    B1 b1; B2 b2; B3 b3;
+
     uint32_t i1 = jit_registry_put("Base", &b1);
     uint32_t i2 = jit_registry_put("Base", &b2);
+    uint32_t i3 = jit_registry_put("Base", &b3);
 
     for (uint32_t i = 0; i < 2; ++i) {
         for (uint32_t j = 0; j < 2; ++j) {
@@ -287,6 +296,7 @@ TEST_BOTH(02_calling_conventions) {
 
     jit_registry_remove(&b1);
     jit_registry_remove(&b2);
+    jit_registry_remove(&b3);
 }
 
 TEST_BOTH(03_optimize_away_outputs) {
@@ -539,8 +549,8 @@ TEST_BOTH(06_side_effects) {
 }
 
 TEST_BOTH(07_side_effects_only_once) {
-    // This tests ensures that side effects baked into a function only happen
-    // once, even when that function is evaluated multiple times.
+    /* This tests ensures that side effects baked into a function only happen
+       once, even when that function is evaluated multiple times. */
 
     struct Base {
         virtual ek_tuple<Float, Float> f() = 0;
@@ -595,7 +605,10 @@ TEST_BOTH(07_side_effects_only_once) {
 
 TEST_BOTH(08_multiple_calls) {
     /* This tests ensures that a function can be called several times,
-       reusing the generated code (at least in the function-based variant) */
+       reusing the generated code (at least in the function-based variant).
+       This reuse cannot be verified automatically via assertions, you must
+       look at the generated code or ensure consistency via generated .ref
+       files!*/
 
     struct Base {
         virtual Float f(Float) = 0;

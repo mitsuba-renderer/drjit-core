@@ -26,6 +26,8 @@
 #include "optix_api.h"
 #endif
 
+#include "embree.h"
+
 void jit_init(uint32_t backends) {
     lock_guard guard(state.mutex);
     jitc_init(backends);
@@ -727,3 +729,10 @@ void jit_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples
 }
 
 #endif
+
+void jit_embree_trace(uint32_t func, uint32_t context, uint32_t scene,
+                      uint32_t *in, uint32_t *out) {
+    lock_guard guard(state.mutex);
+    jitc_embree_trace(func, context, scene, in, out);
+}
+

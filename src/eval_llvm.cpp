@@ -308,21 +308,26 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                    *prefix = type_prefix[vti];
         uint32_t align = type_size[vti] * width, reg_index = v->reg_index;
 
+        buffer.fmt(
+            "    %%out_%u_0 = getelementptr inbounds i8, i8* %%params, i64 %u\n"
+            "    %%out_%u_1 = bitcast i8* %%out_%u_0 to <%u x %s>*\n"
+            "    %%out_%u_2 = load <%u x %s>, <%u x %s>* %%out_%u_1, align %u\n",
+            i, output_offset,
+            i, i, width, tname,
+            i, width, tname, width, tname, i, align);
+
         if (vt == VarType::Bool)
-            buffer.fmt("    %s%u_zext = zext <%u x i1> %s%u to <%u x i8>\n",
-                       prefix, reg_index, width, prefix, v->reg_index, width);
+            buffer.fmt("    %%out_%u_zext = zext <%u x i1> %s%u to <%u x i8>\n"
+                       "    %%out_%u_3 = select <%u x i1> %%mask, <%u x i8> %%out_%u_zext, <%u x i8> %%out_%u_2\n",
+                       i, width, prefix, reg_index, width,
+                       i, width, width, i, width, i);
+        else
+            buffer.fmt("    %%out_%u_3 = select <%u x i1> %%mask, <%u x %s> %s%u, <%u x %s> %%out_%u_2\n",
+                       i, width, width, tname, prefix, reg_index, width, tname, i);
 
         buffer.fmt(
-            "    %s%u_o0 = getelementptr inbounds i8, i8* %%params, i64 %u\n"
-            "    %s%u_o1 = bitcast i8* %s%u_o0 to <%u x %s>*\n"
-            "    %s%u_o2 = load <%u x %s>, <%u x %s>* %s%u_o1, align %u\n"
-            "    %s%u_o3 = select <%u x i1> %%mask, <%u x %s> %s%u%s, <%u x %s> %s%u_o2\n"
-            "    store <%u x %s> %s%u_o3, <%u x %s>* %s%u_o1, align %u\n",
-            prefix, reg_index, output_offset,
-            prefix, reg_index, prefix, reg_index, width, tname,
-            prefix, reg_index, width, tname, width, tname, prefix, reg_index, align,
-            prefix, reg_index, width, width, tname, prefix, reg_index, vt == VarType::Bool ? "_zext" : "", width, tname, prefix, reg_index,
-            width, tname, prefix, reg_index, width, tname, prefix, reg_index, align);
+            "    store <%u x %s> %%out_%u_3, <%u x %s>* %%out_%u_1, align %u\n",
+            width, tname, i, width, tname, i, align);
         output_offset += type_size[vti] * width;
     }
 
