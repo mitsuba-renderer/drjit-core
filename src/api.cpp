@@ -26,6 +26,8 @@
 #include "optix_api.h"
 #endif
 
+#include <enoki-thread/thread.h>
+
 #include "embree.h"
 
 void jit_init(uint32_t backends) {
@@ -210,6 +212,10 @@ void jit_cuda_set_target(uint32_t ptx_version,
     ts->compute_capability = compute_capability;
 }
 
+void jit_llvm_set_thread_count(uint32_t size) {
+    pool_set_size(nullptr, size);
+}
+
 void jit_llvm_set_target(const char *target_cpu,
                          const char *target_features,
                          uint32_t vector_width) {
@@ -235,6 +241,10 @@ int jit_llvm_version_major() {
 int jit_llvm_if_at_least(uint32_t vector_width, const char *feature) {
     lock_guard guard(state.mutex);
     return jitc_llvm_if_at_least(vector_width, feature);
+}
+
+uint32_t jit_llvm_vector_width() {
+    return jitc_llvm_vector_width;
 }
 
 void jit_sync_thread() {
@@ -731,8 +741,8 @@ void jit_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples
 #endif
 
 void jit_embree_trace(uint32_t func, uint32_t context, uint32_t scene,
-                      uint32_t *in, uint32_t *out) {
+                      int occluded, const uint32_t *in, uint32_t *out) {
     lock_guard guard(state.mutex);
-    jitc_embree_trace(func, context, scene, in, out);
+    jitc_embree_trace(func, context, scene, occluded, in, out);
 }
 

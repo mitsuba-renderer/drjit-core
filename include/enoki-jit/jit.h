@@ -237,6 +237,12 @@ extern JIT_EXPORT const char *jit_llvm_target_features();
 /// Return the major version of the LLVM library
 extern JIT_EXPORT int jit_llvm_version_major();
 
+/// Return the major version of the LLVM library
+extern JIT_EXPORT uint32_t jit_llvm_vector_width();
+
+/// Specify the number of threads that are used to parallelize the computation
+extern JIT_EXPORT void jit_llvm_set_thread_count(uint32_t size);
+
 /**
  * \brief Convenience function for intrinsic function selection
  *
@@ -1565,7 +1571,7 @@ extern JIT_EXPORT void jit_block_sum(JitBackend backend, JIT_ENUM VarType type,
                                      const void *in, void *out, uint32_t size,
                                      uint32_t block_size);
 /**
- * \brief Insert a function call to rtcIntersect into the program
+ * \brief Insert a function call to rtcOccluded or rtcIntersect into the program
  *
  * The \c args list should contain a list of variable indices corresponding to
  * the 13 required function arguments
@@ -1579,8 +1585,8 @@ extern JIT_EXPORT void jit_block_sum(JitBackend backend, JIT_ENUM VarType type,
  * </tt>.
  */
 extern JIT_EXPORT void jit_embree_trace(uint32_t func, uint32_t context,
-                                        uint32_t scene, uint32_t *in,
-                                        uint32_t *out);
+                                        uint32_t scene, int occluded,
+                                        const uint32_t *in, uint32_t *out);
 
 #if defined(__cplusplus)
 }

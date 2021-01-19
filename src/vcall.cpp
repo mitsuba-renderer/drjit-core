@@ -963,10 +963,6 @@ static void jitc_var_vcall_assemble_llvm(
              width, width);
     jitc_register_global(tmp);
     jitc_register_global("@callables = internal constant i8** null\n\n");
-    if (out_size) {
-        snprintf(tmp, sizeof(tmp), "declare void @llvm.memset.p0i8.i32(i8*, i8, i32, i1)\n\n");
-        jitc_register_global(tmp);
-    }
 
     snprintf(tmp, sizeof(tmp),
              "declare <%u x i64> @llvm.masked.gather.v%ui64(<%u x i64*>, i32, "
@@ -1046,11 +1042,30 @@ static void jitc_var_vcall_assemble_llvm(
         offset += size * width;
     }
 
-    if (out_size) {
-        /// Zero-initialize memory region containing outputs
-        buffer.fmt("    %%u%u_out = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
-                   "    call void @llvm.memset.p0i8.i32(i8* %%u%u_out, i8 0, "
-                   "i32 %u, i1 0)\n", vcall_reg, in_size * width, vcall_reg, out_size * width);
+    if (out_size)
+        buffer.fmt("    %%u%u_out = getelementptr i8, i8* %%buffer, i32 %u\n",
+                   vcall_reg, in_size * width);
+
+    offset = 0;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        uint32_t index = vcall->out_nested[i];
+        auto it = state.variables.find(index);
+        if (it == state.variables.end())
+            continue;
+        uint32_t vti = it->second.type;
+        uint32_t size = type_size[vti];
+        const char *tname = (VarType) vti == VarType::Bool
+                            ? "i8" : type_name_llvm[vti];
+
+        buffer.fmt(
+            "    %%u%u_tmp_%u_0 = getelementptr inbounds i8, i8* %%u%u_out, i64 %u\n"
+            "    %%u%u_tmp_%u_1 = bitcast i8* %%u%u_tmp_%u_0 to <%u x %s> *\n"
+            "    store <%u x %s> zeroinitializer, <%u x %s>* %%u%u_tmp_%u_1, align %u\n",
+            vcall_reg, i, vcall_reg, offset,
+            vcall_reg, i, vcall_reg, i, width, tname,
+            width, tname, width, tname, vcall_reg, i, size * width);
+
+        offset += size * width;
     }
 
     // =====================================================

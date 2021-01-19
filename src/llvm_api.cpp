@@ -21,7 +21,6 @@
 #  include <sys/mman.h>
 #endif
 
-#include <thread>
 #include <lz4.h>
 
 #if !defined(ENOKI_JIT_DYNAMIC_LLVM)
