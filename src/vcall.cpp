@@ -565,6 +565,9 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         backup.push_back(JitBackupRecord{ sv, v->param_type, v->output_flag,
                                           v->reg_index, v->param_offset });
     }
+    int32_t alloca_size_backup = alloca_size;
+    int32_t alloca_align_backup = alloca_align;
+    alloca_size = alloca_align = -1;
 
     // =====================================================
     // 2. Determine calling conventions (input/output size,
@@ -610,6 +613,10 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         n_out_active++;
     }
 
+    // Input and output are packed into the same array in LLVM mode
+    if (vcall->backend == JitBackend::LLVM)
+        in_size = (in_size + out_align - 1) / out_align * out_align;
+
     // =====================================================
     // 3. Compile code for all instances and collapse
     // =====================================================
@@ -638,8 +645,6 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
         // high part: callable index, low part: instance data offset
         offset = (offset & 0xFFFFFFFF00000000ull) | result.second;
-        // fprintf(stderr, "Data offset: %u, callable offset: %u..\n",
-        //         uint32_t(offset >> 32), uint32_t(offset & 0xFFFFFFFF));
         callable_hash[i] = result.first;
     }
 
@@ -662,6 +667,9 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         v->param_offset = b.param_offset;
         schedule.push_back(b.sv);
     }
+
+    alloca_size = alloca_size_backup;
+    alloca_align = alloca_align_backup;
 
     if (vcall->backend == JitBackend::CUDA)
         jitc_var_vcall_assemble_cuda(vcall, callable_hash, self_reg, mask_reg,
@@ -939,29 +947,15 @@ static void jitc_var_vcall_assemble_llvm(
     uint32_t offset_reg, uint32_t data_reg, uint32_t n_out, uint32_t in_size,
     uint32_t in_align, uint32_t out_size, uint32_t out_align) {
 
-    // =====================================================
-    // 1. Insert parameter passing allocations into prelude
-    // =====================================================
-
     uint32_t width = jitc_llvm_vector_width;
-    char tmp[256];
-    snprintf(tmp, sizeof(tmp),
-             "\n    %%u%u_in = alloca i8, i32 %u, align %u\n"
-             "    %%u%u_out = alloca i8, i32 %u, align %u\n"
-             "    %%u%u_callables = load i8**, i8*** @callables\n",
-             vcall_reg, in_size * width, in_align * width, vcall_reg,
-             out_size * width, out_align * width, vcall_reg);
-
-    size_t alloca_size = strlen(tmp);
-    buffer.putc(' ', alloca_size); // ensure there is enough space
-    char *function_start = (char *) strchr(strrchr(buffer.get(), '{'), ':') + 1;
-    memmove(function_start + alloca_size, function_start, strlen(function_start) - alloca_size);
-    memcpy(function_start, tmp, alloca_size);
+    alloca_size  = std::max(alloca_size, (int32_t) ((in_size + out_size) * width));
+    alloca_align = std::max(alloca_align, (int32_t) (std::max(in_align, out_align) * width));
 
     // =====================================================
-    // 2. Declare a few intrinsics that we will use
+    // 1. Declare a few intrinsics that we will use
     // =====================================================
 
+    char tmp[128];
     snprintf(tmp, sizeof(tmp),
              "declare i32 @llvm.experimental.vector.reduce.umax.v%ui32(<%u x i32>)\n\n",
              width, width);
@@ -1015,7 +1009,7 @@ static void jitc_var_vcall_assemble_llvm(
     }
 
     // =====================================================
-    // 3. Pass the input arguments
+    // 2. Pass the input arguments
     // =====================================================
 
     uint32_t offset = 0;
@@ -1038,10 +1032,10 @@ static void jitc_var_vcall_assemble_llvm(
                        prefix, v2->reg_index, width, prefix, v2->reg_index, width);
 
         buffer.fmt(
-            "    %%u%u_in_%u_0 = getelementptr inbounds i8, i8* %%u%u_in, i64 %u\n"
+            "    %%u%u_in_%u_0 = getelementptr inbounds i8, i8* %%buffer, i64 %u\n"
             "    %%u%u_in_%u_1 = bitcast i8* %%u%u_in_%u_0 to <%u x %s> *\n"
             "    store <%u x %s> %s%u%s, <%u x %s>* %%u%u_in_%u_1, align %u\n",
-            vcall_reg, i, vcall_reg, offset,
+            vcall_reg, i, offset,
             vcall_reg, i, vcall_reg, i, width, tname,
             width, tname, prefix, v2->reg_index, vt == VarType::Bool ? "_zext" : "",
             width, tname, vcall_reg, i, size * width
@@ -1050,12 +1044,15 @@ static void jitc_var_vcall_assemble_llvm(
         offset += size * width;
     }
 
-    if (out_size) /// Zero-initialize memory region containing outputs
-        buffer.fmt("    call void @llvm.memset.p0i8.i32(i8* %%u%u_out, i8 0, "
-                   "i32 %u, i1 0)\n", vcall_reg, out_size * width);
+    if (out_size) {
+        /// Zero-initialize memory region containing outputs
+        buffer.fmt("    %%u%u_out = getelementptr inbounds i8, i8* %%buffer, i64 %u\n"
+                   "    call void @llvm.memset.p0i8.i32(i8* %%u%u_out, i8 0, "
+                   "i32 %u, i1 0)\n", vcall_reg, in_size * width, vcall_reg, out_size * width);
+    }
 
     // =====================================================
-    // 4. Perform one call to each unique instance
+    // 3. Perform one call to each unique instance
     // =====================================================
 
     buffer.fmt("    br label %%l%u_check\n", vcall_reg);
@@ -1072,26 +1069,25 @@ static void jitc_var_vcall_assemble_llvm(
                "    %%u%u_bcast_0 = insertelement <%u x i32> undef, i32 %%u%u_next, i32 0\n"
                "    %%u%u_bcast = shufflevector <%u x i32> %%u%u_bcast_0, <%u x i32> undef, <%u x i32> zeroinitializer\n"
                "    %%u%u_active = icmp eq <%u x i32> %%u%u_self, %%u%u_bcast\n"
-               "    %%u%u_func_0 = getelementptr inbounds i8*, i8** %%u%u_callables, i32 %%u%u_next\n"
+               "    %%u%u_func_0 = getelementptr inbounds i8*, i8** %%callables, i32 %%u%u_next\n"
                "    %%u%u_func_1 = load i8*, i8** %%u%u_func_0\n",
                vcall_reg,
                vcall_reg, width, vcall_reg, // bcast_0
                vcall_reg, width, vcall_reg, width, width, // bcast
                vcall_reg, width, vcall_reg, vcall_reg, // active
-               vcall_reg, vcall_reg, vcall_reg, // func_0
+               vcall_reg, vcall_reg, // func_0
                vcall_reg, vcall_reg // func_1
        );
 
     if (!data_reg) {
-        buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*, i8*)*\n"
-                   "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%u%u_in, i8* %%u%u_out)\n",
-                   vcall_reg, vcall_reg, width,
-                   vcall_reg, width,  vcall_reg, vcall_reg, vcall_reg);
+        buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*)*\n"
+                   "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%buffer)\n",
+                   vcall_reg, vcall_reg, width, vcall_reg, width, vcall_reg);
     } else {
-        buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*, i8*, i8*, <%u x i32>)*\n"
-                   "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%u%u_in, i8* %%u%u_out, i8* %%rd%u, <%u x i32> %%u%u_offset)\n",
+        buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*, i8*, <%u x i32>)*\n"
+                   "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%buffer, i8* %%rd%u, <%u x i32> %%u%u_offset)\n",
                    vcall_reg, vcall_reg, width, width,
-                   vcall_reg, width,  vcall_reg, vcall_reg, vcall_reg, data_reg, width, vcall_reg);
+                   vcall_reg, width, vcall_reg, data_reg, width, vcall_reg);
     }
 
     buffer.fmt("    %%u%u_self_next = select <%u x i1> %%u%u_active, <%u x i32> zeroinitializer, <%u x i32> %%u%u_self\n"

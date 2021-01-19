@@ -61,6 +61,10 @@ extern GlobalsMap globals_map;
 extern bool uses_optix;
 #endif
 
+/// Size and alignment of auxiliary buffer needed by virtual function calls
+extern int32_t alloca_size;
+extern int32_t alloca_align;
+
 /// Does the program contain a %data register so far? (for branch-based vcalls)
 extern bool data_reg_global;
 
@@ -102,7 +106,7 @@ jitc_assemble_cuda_func(const char *name, uint32_t inst_id, uint32_t n_regs,
 /// Used by jitc_vcall() to generate LLVM IR source code for vcalls
 extern void
 jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
-                        uint32_t data_offset,
+                        uint32_t in_size, uint32_t data_offset,
                         const tsl::robin_map<uint64_t, uint32_t> &data_map,
                         uint32_t n_out, const uint32_t *out_nested);
 

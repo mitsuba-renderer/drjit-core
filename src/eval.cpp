@@ -62,6 +62,10 @@ static uint32_t n_regs_used = 0;
 /// Are we recording an OptiX kernel?
 bool uses_optix = false;
 
+/// Size and alignment of auxiliary buffer needed by virtual function calls
+int32_t alloca_size = -1;
+int32_t alloca_align = -1;
+
 // ====================================================================
 
 /// Recursively traverse the computation graph to find variables needed by a computation
@@ -104,6 +108,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     globals.clear();
     callables.clear();
     globals_map.clear();
+    alloca_size = alloca_align = -1;
 
     data_reg_global = false;
 
@@ -702,7 +707,8 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                                 out_align, data_offset, data_map, n_out, out,
                                 out_nested, ret_label);
     else
-        jitc_assemble_llvm_func(name, inst_id, data_offset, data_map, n_out, out_nested);
+        jitc_assemble_llvm_func(name, inst_id, in_size, data_offset, data_map,
+                                n_out, out_nested);
 
     buffer.putc('\n');
 

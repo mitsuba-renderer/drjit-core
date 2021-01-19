@@ -135,6 +135,37 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                "}\n"
                "\n");
 
+    /* The program requires extra memory or uses callables. Insert
+       setup code the top of the function to accomplish this */
+    if (!callables.empty() || alloca_size >= 0) {
+        // Ultimately we want to insert at this location
+        size_t header_offset = (char *) strchr(buffer.get(), ':') - buffer.get() + 2;
+
+        // Append at the end for now
+        size_t cur_offset = buffer.size();
+        if (!callables.empty())
+            buffer.put("    %callables = load i8**, i8*** @callables\n");
+
+        if (alloca_size >= 0)
+            buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n", alloca_size, alloca_align);
+
+        size_t buffer_size = buffer.size(),
+               insertion_size = buffer_size - cur_offset;
+
+        // Extra space for moving things around
+        buffer.putc('\0', insertion_size);
+
+        // Move the generated source code to make space for the header addition
+        memmove((char *) buffer.get() + header_offset + insertion_size,
+                buffer.get() + header_offset, buffer_size - header_offset);
+
+        // Finally copy the code to the insertion point
+        memcpy((char *) buffer.get() + header_offset,
+               buffer.get() + buffer_size, insertion_size);
+
+        buffer.rewind(insertion_size);
+    }
+
     for (const std::string &s : callables)
         buffer.put(s.c_str(), s.length());
 
@@ -154,18 +185,17 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
         buffer.put(jitc_llvm_target_features, strlen(jitc_llvm_target_features));
     }
     buffer.put("\" }");
-
 }
 
 void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
-                             uint32_t data_offset,
+                             uint32_t in_size, uint32_t data_offset,
                              const tsl::robin_map<uint64_t, uint32_t> &data_map,
                              uint32_t n_out, const uint32_t *out_nested) {
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace;
     uint32_t width = jitc_llvm_vector_width;
     buffer.fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<%u x i1> "
-               "%%mask, i8* noalias %%in, i8* noalias %%out", width);
+               "%%mask, i8* noalias %%params", width);
     if (!data_map.empty())
         buffer.fmt(", i8* noalias %%data, <%u x i32> %%offsets", width);
     buffer.fmt(") #0 {\n"
@@ -201,7 +231,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
         }
 
         if (v->placeholder_iface) {
-            buffer.fmt("    %s%u_i0 = getelementptr inbounds i8, i8* %%in, i64 %u\n"
+            buffer.fmt("    %s%u_i0 = getelementptr inbounds i8, i8* %%params, i64 %u\n"
                        "    %s%u_i1 = bitcast i8* %s%u_i0 to <%u x %s>*\n"
                        "    %s%u%s = load <%u x %s>, <%u x %s>* %s%u_i1, align %u\n",
                        prefix, id, v->param_offset * width,
@@ -266,7 +296,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
         }
     }
 
-    uint32_t offset = 0;
+    uint32_t output_offset = in_size * width;
     for (uint32_t i = 0; i < n_out; ++i) {
         uint32_t index = out_nested[i];
         if (!index)
@@ -283,17 +313,17 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                        prefix, reg_index, width, prefix, v->reg_index, width);
 
         buffer.fmt(
-            "    %s%u_o0 = getelementptr inbounds i8, i8* %%out, i64 %u\n"
+            "    %s%u_o0 = getelementptr inbounds i8, i8* %%params, i64 %u\n"
             "    %s%u_o1 = bitcast i8* %s%u_o0 to <%u x %s>*\n"
             "    %s%u_o2 = load <%u x %s>, <%u x %s>* %s%u_o1, align %u\n"
             "    %s%u_o3 = select <%u x i1> %%mask, <%u x %s> %s%u%s, <%u x %s> %s%u_o2\n"
             "    store <%u x %s> %s%u_o3, <%u x %s>* %s%u_o1, align %u\n",
-            prefix, reg_index, offset,
+            prefix, reg_index, output_offset,
             prefix, reg_index, prefix, reg_index, width, tname,
             prefix, reg_index, width, tname, width, tname, prefix, reg_index, align,
             prefix, reg_index, width, width, tname, prefix, reg_index, vt == VarType::Bool ? "_zext" : "", width, tname, prefix, reg_index,
             width, tname, prefix, reg_index, width, tname, prefix, reg_index, align);
-        offset += type_size[vti] * width;
+        output_offset += type_size[vti] * width;
     }
 
     buffer.put("    ret void;\n"
