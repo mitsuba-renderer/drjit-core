@@ -41,7 +41,11 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 struct Variable {
     #if defined(__GNUC__)
     #  pragma GCC diagnostic push
-    #  if __has_warning("-Wclass-memaccess")
+    #  if defined(__has_warning)
+    #    if __has_warning("-Wclass-memaccess")
+    #      pragma GCC diagnostic ignored "-Wclass-memaccess"
+    #    endif
+    #  else
     #    pragma GCC diagnostic ignored "-Wclass-memaccess"
     #  endif
     #endif
