@@ -594,15 +594,14 @@ jitc_var_loop_phi_llvm(uint32_t loop_reg, const std::vector<uint32_t> &in,
             jitc_fail("jitc_var_loop_phi_llvm(): internal error!");
 
         const Variable *v_in = &it_in->second,
-                       *v_in_cond = &it_in_cond->second,
-                       *v_out_body = &it_out_body->second;
+                       *v_in_cond = &it_in_cond->second;
 
         uint32_t vti = it_in->second.type;
-        buffer.fmt("    %s%u = phi <%u x %s> [ %s%u, %%l_%u_start ], [ %s%u_final, "
+        buffer.fmt("    %s%u = phi <%u x %s> [ %s%u, %%l_%u_start ], [ %%u%u_%u, "
                    "%%l_%u_tail ]\n",
                    type_prefix[vti], v_in_cond->reg_index, jitc_llvm_vector_width,
                    type_name_llvm[vti], type_prefix[vti], v_in->reg_index,
-                   loop_reg, type_prefix[vti], v_out_body->reg_index, loop_reg);
+                   loop_reg, loop_reg, (uint32_t) i, loop_reg);
 
         count++;
         size += type_size[vti];
@@ -611,7 +610,8 @@ jitc_var_loop_phi_llvm(uint32_t loop_reg, const std::vector<uint32_t> &in,
     return { count, size };
 }
 
-static void jitc_var_loop_select_llvm(uint32_t mask_reg,
+static void jitc_var_loop_select_llvm(uint32_t loop_reg,
+                                      uint32_t mask_reg,
                                       const std::vector<uint32_t> &out_body,
                                       const std::vector<uint32_t> &in_body,
                                       const std::vector<uint32_t> &in) {
@@ -634,9 +634,9 @@ static void jitc_var_loop_select_llvm(uint32_t mask_reg,
                        *v_out = &it_out->second;
         uint32_t vti = it_in->second.type;
 
-        buffer.fmt("    %s%u_final = select <%u x i1> %%p%u, <%u x %s> %s%u, "
+        buffer.fmt("    %%u%u_%u = select <%u x i1> %%p%u, <%u x %s> %s%u, "
                    "<%u x %s> %s%u\n",
-                   type_prefix[vti], v_out->reg_index, width, mask_reg, width,
+                   loop_reg, (uint32_t) i, width, mask_reg, width,
                    type_name_llvm[vti], type_prefix[vti], v_out->reg_index,
                    width, type_name_llvm[vti], type_prefix[vti],
                    v_in->reg_index);
@@ -704,6 +704,7 @@ static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra) {
 static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
     Loop *loop = (Loop *) extra.callback_data;
     uint32_t loop_reg = jitc_var(loop->start)->reg_index;
+    uint32_t mask_reg = jitc_var(loop->cond)->reg_index;
     buffer.putc('\n');
 
     if (loop->backend == JitBackend::LLVM)
@@ -713,8 +714,8 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
     if (loop->backend == JitBackend::CUDA)
         (void) jitc_var_loop_copy(loop, loop->in_cond, loop->out_body);
     else
-        (void) jitc_var_loop_select_llvm(jitc_var(loop->cond)->reg_index,
-                                         loop->out_body, loop->in_body, loop->in);
+        (void) jitc_var_loop_select_llvm(loop_reg, mask_reg, loop->out_body,
+                                         loop->in_body, loop->in);
 
     if (loop->backend == JitBackend::CUDA)
         buffer.fmt("    bra l_%u_cond;\n", loop_reg);
