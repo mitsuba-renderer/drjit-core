@@ -190,14 +190,14 @@ void* jitc_malloc(AllocType type, size_t size) {
                 if (ret != CUDA_SUCCESS)
                     ptr = nullptr;
             }
-
-            size_t &allocated = state.alloc_allocated[ai.type],
-                   &watermark = state.alloc_watermark[ai.type];
-
-            allocated += ai.size;
-            watermark = std::max(allocated, watermark);
         }
         descr = "new allocation";
+
+        size_t &allocated = state.alloc_allocated[ai.type],
+               &watermark = state.alloc_watermark[ai.type];
+
+        allocated += ai.size;
+        watermark = std::max(allocated, watermark);
     }
 
     if (unlikely(ptr == nullptr))
@@ -356,6 +356,8 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
     if (((AllocType) ai.type == AllocType::Host && type == AllocType::HostAsync) ||
         ((AllocType) ai.type == AllocType::HostAsync && type == AllocType::Host)) {
         if (move) {
+            state.alloc_usage[ai.type] -= ai.size;
+            state.alloc_usage[(int) type] += ai.size;
             it.value().type = (uint32_t) type;
             return ptr;
         } else {
