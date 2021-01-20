@@ -86,6 +86,22 @@ void jit_shutdown(int light) {
     jitc_shutdown(light);
 }
 
+uint32_t jit_cse_domain(JitBackend backend) {
+    lock_guard guard(state.mutex);
+    return thread_state(backend)->cse_domain;
+}
+
+void jit_set_cse_domain(JitBackend backend, uint32_t domain) {
+    lock_guard guard(state.mutex);
+    thread_state(backend)->cse_domain = domain;
+}
+
+void jit_new_cse_domain(JitBackend backend) {
+    lock_guard guard(state.mutex);
+    ThreadState *ts = thread_state(backend);
+    ts->cse_domain = ++ts->cse_domain_ctr;
+}
+
 void jit_set_log_level_stderr(LogLevel level) {
     /// Allow changing this variable without acquiring a lock
     state.log_level_stderr = level;

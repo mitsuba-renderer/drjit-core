@@ -1592,6 +1592,12 @@ extern JIT_EXPORT void jit_embree_trace(uint32_t func, uint32_t context,
                                         uint32_t scene, int occluded,
                                         const uint32_t *in, uint32_t *out);
 
+
+// To be documented
+extern JIT_EXPORT uint32_t jit_cse_domain(JitBackend backend);
+extern JIT_EXPORT void jit_set_cse_domain(JitBackend backend, uint32_t domain);
+extern JIT_EXPORT void jit_new_cse_domain(JitBackend backend);
+
 #if defined(__cplusplus)
 }
 

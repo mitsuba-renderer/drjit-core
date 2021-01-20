@@ -129,6 +129,9 @@ struct Variable {
     /// Is this variable marked as an output?
     uint32_t output_flag : 1;
 
+    /// Used to isolate this variable from others when performing common subexpression elimination
+    uint32_t cse_domain : 12;
+
     /// Register index
     uint32_t reg_index;
 
@@ -140,10 +143,10 @@ struct Variable {
 struct VariableKey {
     uint32_t dep[4];
     uint32_t size;
-    uint32_t type        : 29;
+    uint32_t type        : 4;
     uint32_t write_ptr   : 1;
     uint32_t literal     : 1;
-    uint32_t placeholder : 1;
+    uint32_t cse_domain  : 26;
     union {
         char *stmt;
         uint64_t value;
@@ -154,7 +157,7 @@ struct VariableKey {
         size = v.size;
         type = v.type;
         write_ptr = v.write_ptr;
-        placeholder = v.placeholder;
+        cse_domain = v.cse_domain;
 
         if (v.literal) {
             literal = 1;
@@ -315,6 +318,12 @@ struct ThreadState {
 
     /// Combined version of the elements of 'prefix_stack'
     char *prefix = nullptr;
+
+    /// Index used to isolate CSE from other parts of the program
+    uint32_t cse_domain = 0;
+
+    /// Unique counter to create new CSE domains
+    uint32_t cse_domain_ctr = 0;
 
     /// ---------------------------- LLVM-specific ----------------------------
 

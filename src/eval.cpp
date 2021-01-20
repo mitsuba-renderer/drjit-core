@@ -279,9 +279,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     memcpy((char *) name_start - (uses_optix ? 10 : 6), kernel_name,
            strlen(kernel_name));
 
-
-    if (unlikely(trace || (jitc_flags() & (uint32_t) JitFlag::PrintIR)))
+    if (unlikely(trace))
         jitc_trace("%s", buffer.get());
+    else if (jitc_flags() & (uint32_t) JitFlag::PrintIR)
+        fprintf(stderr, "%s\n", buffer.get());
 
     float codegen_time = timer();
     jitc_log(
