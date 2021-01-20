@@ -285,16 +285,17 @@ void jitc_shutdown(int light) {
                 jitc_log(Warn, "jit_shutdown(): detected variable leaks:");
             if (n_leaked < 10)
                 jitc_log(Warn,
-                        " - variable %u is still being referenced! (int_ref=%u, ext_ref=%u, type=%s, size=%u, stmt=\"%s\", dep=[%u, %u, %u, %u])",
-                        var.first,
-                        var.second.ref_count_int,
-                        var.second.ref_count_ext,
-                        type_name[var.second.type],
-                        var.second.size,
-                        var.second.literal ? "<literal>" : (var.second.stmt ? var.second.stmt : ""),
-                        var.second.dep[0], var.second.dep[1],
-                        var.second.dep[2], var.second.dep[3]
-                );
+                         " - variable %u is still being referenced! "
+                         "(int_ref=%u, ext_ref=%u, type=%s, size=%u, "
+                         "stmt=\"%s\", dep=[%u, %u, %u, %u])",
+                         var.first, var.second.ref_count_int,
+                         var.second.ref_count_ext, type_name[var.second.type],
+                         var.second.size,
+                         var.second.literal
+                             ? "<literal>"
+                             : (var.second.stmt ? var.second.stmt : ""),
+                         var.second.dep[0], var.second.dep[1],
+                         var.second.dep[2], var.second.dep[3]);
             else if (n_leaked == 10)
                 jitc_log(Warn, " - (skipping remainder)");
             ++n_leaked;
@@ -356,12 +357,24 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
             #endif
 
             delete ts;
-            jitc_raise(
-                "jit_init_thread_state(): the CUDA backend is inactive because "
-                "it has not been initialized via jit_init(), or because the "
-                "CUDA driver library (\"%s\") could not be found! Set the "
-                "ENOKI_LIBCUDA_PATH environment variable to specify its path.",
-                cuda_fname);
+            if (jitc_cuda_cuinit_failed)
+                jitc_raise("jit_cuda_init(): the CUDA backend is not available "
+                           "because cuInit() failed.\nThere are two common "
+                           "explanations for this type of failure:\n\n 1. your "
+                           "computer simply does not contain a graphics card "
+                           "that supports CUDA.\n\n 2. your CUDA kernel module "
+                           "and CUDA library are out of sync. Try to see if "
+                           "you\n    can run a utility like 'nvida-smi'. If "
+                           "not, a reboot will likely fix this\n    issue. "
+                           "Otherwise reinstall your graphics driver.");
+            else
+                jitc_raise(
+                    "jit_init_thread_state(): the CUDA backend is inactive "
+                    "because it has not been initialized via jit_init(), or "
+                    "because the CUDA driver library (\"%s\") could not be "
+                    "found! Set the ENOKI_LIBCUDA_PATH environment variable to "
+                    "specify its path.",
+                    cuda_fname);
         }
 
         if (state.devices.empty()) {

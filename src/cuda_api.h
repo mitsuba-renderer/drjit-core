@@ -152,6 +152,7 @@ extern int jitc_cuda_devices;
 
 extern int jitc_cuda_version_major;
 extern int jitc_cuda_version_minor;
+extern bool jitc_cuda_cuinit_failed;
 
 /// Try to load the CUDA backend
 extern bool jitc_cuda_init();
