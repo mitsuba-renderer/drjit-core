@@ -81,31 +81,31 @@ static void jitc_embree_trace_assemble(const Variable *v, const Extra &extra) {
                                             (int32_t) jitc_llvm_vector_width);
     alloca_align = std::max(alloca_align, 4 * (int32_t) jitc_llvm_vector_width);
 
-#if 0
-0  float valid[4];
-1  float org_x[4];
-2  float org_y[4];
-3  float org_z[4];
-4  float tnear[4];
-5  float dir_x[4];
-6  float dir_y[4];
-7  float dir_z[4];
-8  float time[4];
-9  float tfar[4];
-10 unsigned int mask[4];
-11 unsigned int id[4];
-12 unsigned int flags[4];
-13 float Ng_x[4];
-14 float Ng_y[4];
-15 float Ng_z[4];
-16 float u[4];
-17 float v[4];
-18 unsigned int primID[4];
-19 unsigned int geomID[4];
-20 unsigned int instID[RTC_MAX_INSTANCE_LEVEL_COUNT][4];
-#endif
+    /* Offsets:
+        0  float valid
+        1  float org_x
+        2  float org_y
+        3  float org_z
+        4  float tnear
+        5  float dir_x
+        6  float dir_y
+        7  float dir_z
+        8  float time
+        9  float tfar
+        10 uint32_t mask
+        11 uint32_t id
+        12 uint32_t flags
+        13 float Ng_x
+        14 float Ng_y
+        15 float Ng_z
+        16 float u
+        17 float v
+        18 uint32_t primID
+        19 uint32_t geomID
+        20 uint32_t instID[] */
 
-    buffer.fmt("    ; -------------------\n\n");
+    buffer.fmt("\n    ; -------- %s -------\n",
+               occluded ? "rtcOccluded" : "rtcIntersect");
     for (int i = 0; i < 13; ++i) {
         Variable *v2      = jitc_var(extra.dep[i]);
         const char *tname = type_name_llvm[v2->type];
@@ -119,12 +119,14 @@ static void jitc_embree_trace_assemble(const Variable *v, const Extra &extra) {
             4 * width);
     }
 
-    buffer.fmt(
-        "    %%u%u_in_geomid_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
-        "    %%u%u_in_geomid_1 = bitcast i8* %%u%u_in_geomid_0 to <%u x i32> *\n"
-        "    store <%u x i32> %s, <%u x i32>* %%u%u_in_geomid_1, align %u\n",
-        id, 19 * 4 * width, id, id, width, width,
-        jitc_llvm_ones_str[(int) VarType::Int32], width, id, 4 * width);
+    if (!occluded) {
+        buffer.fmt(
+            "    %%u%u_in_geomid_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
+            "    %%u%u_in_geomid_1 = bitcast i8* %%u%u_in_geomid_0 to <%u x i32> *\n"
+            "    store <%u x i32> %s, <%u x i32>* %%u%u_in_geomid_1, align %u\n",
+            id, 19 * 4 * width, id, id, width, width,
+            jitc_llvm_ones_str[(int) VarType::Int32], width, id, 4 * width);
+    }
 
     const Variable *func = jitc_var(v->dep[0]),
                    *context = jitc_var(v->dep[1]),
@@ -140,7 +142,7 @@ static void jitc_embree_trace_assemble(const Variable *v, const Extra &extra) {
         id, id, scene->reg_index, context->reg_index, id
     );
 
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < (occluded ? 1 : 6); ++i) {
         VarType vt = (i < 3) ? VarType::Float32 : VarType::UInt32;
         const char *tname = type_name_llvm[(int) vt];
         buffer.fmt(
