@@ -1245,7 +1245,10 @@ enum class JitFlag : uint32_t {
     ForceOptiX     = 32,
 
     /// Temporarily postpone evaluation of statements with side effects
-    PostponeSideEffects = 64
+    PostponeSideEffects = 64,
+
+    /// Print the intermediate representation of generated programs
+    PrintIR = 128
 };
 #else
 enum JitFlag {
@@ -1255,7 +1258,8 @@ enum JitFlag {
     JitFlagVCallOptimize       = 8,
     JitFlagVCallBranch         = 16,
     JitFlagForceOptiX          = 32
-    JitFlagPostponeSideEffects = 64
+    JitFlagPostponeSideEffects = 64,
+    JitFlagPrintIR             = 128
 };
 #endif
 

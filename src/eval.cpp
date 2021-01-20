@@ -280,7 +280,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
            strlen(kernel_name));
 
 
-    if (unlikely(trace))
+    if (unlikely(trace || (jitc_flags() & (uint32_t) JitFlag::PrintIR)))
         jitc_trace("%s", buffer.get());
 
     float codegen_time = timer();
