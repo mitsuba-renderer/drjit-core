@@ -1025,19 +1025,24 @@ static void jitc_var_vcall_assemble_llvm(
                    *tname = vt == VarType::Bool
                             ? "i8" : type_name_llvm[vti];
 
-        if (vt == VarType::Bool)
-            buffer.fmt("    %s%u_zext = zext <%u x i1> %s%u to <%u x i8>\n",
-                       prefix, v2->reg_index, width, prefix, v2->reg_index, width);
-
         buffer.fmt(
             "    %%u%u_in_%u_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
-            "    %%u%u_in_%u_1 = bitcast i8* %%u%u_in_%u_0 to <%u x %s> *\n"
-            "    store <%u x %s> %s%u%s, <%u x %s>* %%u%u_in_%u_1, align %u\n",
+            "    %%u%u_in_%u_1 = bitcast i8* %%u%u_in_%u_0 to <%u x %s> *\n",
             vcall_reg, i, offset,
-            vcall_reg, i, vcall_reg, i, width, tname,
-            width, tname, prefix, v2->reg_index, vt == VarType::Bool ? "_zext" : "",
-            width, tname, vcall_reg, i, size * width
+            vcall_reg, i, vcall_reg, i, width, tname
         );
+
+        if (vt != VarType::Bool) {
+            buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %%u%u_in_%u_1, align %u\n",
+                       width, tname, prefix, v2->reg_index,
+                       width, tname, vcall_reg, i, size * width);
+        } else {
+            buffer.fmt("    %%u%u_%u_zext = zext <%u x i1> %s%u to <%u x i8>\n"
+                       "    store <%u x %s> %%u%u_%u_zext, <%u x %s>* %%u%u_in_%u_1, align %u\n",
+                       vcall_reg, i, width, prefix, v2->reg_index, width,
+                       width, tname, vcall_reg, i, width,
+                       tname, vcall_reg, i, size * width);
+        }
 
         offset += size * width;
     }
