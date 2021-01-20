@@ -110,6 +110,7 @@ static void (*LLVMAddLICMPass)(LLVMPassManagerRef) = nullptr;
 
 static LLVMTargetMachineRef (*LLVMGetExecutionEngineTargetMachine)(
     LLVMExecutionEngineRef) = nullptr;
+static bool (*LLVMVerifyModule)(LLVMModuleRef, int action, char **msg);
 
 #define LLVMDisassembler_Option_PrintImmHex       2
 #define LLVMDisassembler_Option_AsmPrinterVariant 4
@@ -308,6 +309,14 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
         jitc_trace("jit_llvm_compile(): Parsed LLVM IR:\n%s", llvm_ir);
         LLVMDisposeMessage(llvm_ir);
     }
+
+#if !defined(NDEBUG)
+    bool status = LLVMVerifyModule(llvm_module, 2, &error);
+    if (unlikely(status))
+        jitc_fail("jit_llvm_compile(): module could not be verified! Please "
+                  "see the LLVM IR and error message below:\n\n%s\n\n%s",
+                  buffer, error);
+#endif
 
     LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
     LLVMExecutionEngineRef engine = jitc_llvm_engine_create(llvm_module);
@@ -561,6 +570,7 @@ bool jitc_llvm_init() {
         LOAD(LLVMDisposePassManager);
         LOAD(LLVMAddLICMPass);
         LOAD(LLVMGetExecutionEngineTargetMachine);
+        LOAD(LLVMVerifyModule);
     } while (false);
 
     if (symbol) {
@@ -791,7 +801,7 @@ void jitc_llvm_shutdown() {
     Z(LLVMGetGlobalValueAddress); Z(LLVMRemoveModule);
     Z(LLVMDisasmInstruction); Z(LLVMCreatePassManager); Z(LLVMRunPassManager);
     Z(LLVMDisposePassManager); Z(LLVMAddLICMPass);
-    Z(LLVMGetExecutionEngineTargetMachine);
+    Z(LLVMGetExecutionEngineTargetMachine); Z(LLVMVerifyModule);
 
 #  if !defined(_WIN32)
     if (jitc_llvm_handle != RTLD_NEXT)
