@@ -237,7 +237,7 @@ void jitc_shutdown(int light) {
             if (ts->backend == JitBackend::CUDA) {
                 scoped_set_context guard(ts->context);
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-                jitc_optix_context_destroy(ts);
+                jitc_optix_context_destroy_ts(ts);
 #endif
                 cuda_check(cuEventDestroy(ts->event));
                 cuda_check(cuStreamSynchronize(ts->stream));
@@ -321,8 +321,12 @@ void jitc_shutdown(int light) {
     jitc_malloc_shutdown();
 
     if (state.backends & (uint32_t) JitBackend::CUDA) {
-        for (auto &v : state.devices)
+        for (auto &v : state.devices) {
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+            jitc_optix_context_destroy(v);
+#endif
             cuda_check(cuDevicePrimaryCtxRelease(v.id));
+        }
         state.devices.clear();
     }
 

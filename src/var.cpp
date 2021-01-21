@@ -331,9 +331,13 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
     // Check if this exact statement already exists ..
     CSECache::iterator key_it;
     bool cse_key_inserted = false;
-    if (cse)
+    if (cse) {
         std::tie(key_it, cse_key_inserted) =
             ts->cse_cache.try_emplace(VariableKey(v), 0);
+        if (!cse_key_inserted && // XXX temp fix for CSE issue with multiple threads
+            state.variables.find(key_it.value()) == state.variables.end())
+            cse = false;
+    }
 
     uint32_t index;
     Variable *vo;

@@ -282,111 +282,114 @@ void jitc_optix_log(unsigned int level, const char *tag, const char *message, vo
 
 OptixDeviceContext jitc_optix_context() {
     ThreadState *ts = thread_state(JitBackend::CUDA);
+    OptixDeviceContext &ctx = state.devices[ts->device].optix_context;
 
-    if (ts->optix_context)
-        return ts->optix_context;
+    if (!ctx) {
+        if (!jitc_optix_init())
+            jitc_raise("Could not initialize OptiX!");
 
-    if (!jitc_optix_init())
-        jitc_raise("Could not create OptiX context!");
-
-    OptixDeviceContextOptions ctx_opts {
-        jitc_optix_log, nullptr, 4,
+        OptixDeviceContextOptions ctx_opts {
+            jitc_optix_log, nullptr, 4,
 #if defined(NDEBUG)
-        OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF
+            OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF
 #else
-        OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL
+            OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL
 #endif
-    };
+        };
 
-    OptixDeviceContext ctx;
-    jitc_optix_check(optixDeviceContextCreate(ts->context, &ctx_opts, &ctx));
+        jitc_optix_check(optixDeviceContextCreate(ts->context, &ctx_opts, &ctx));
 
 #if !defined(_WIN32)
-    jitc_optix_check(optixDeviceContextSetCacheLocation(ctx, jitc_temp_path));
+        jitc_optix_check(optixDeviceContextSetCacheLocation(ctx, jitc_temp_path));
 #else
-    size_t len = wcstombs(nullptr, jitc_temp_path, 0) + 1;
-    std::unique_ptr<char[]> temp(new char[len]);
-    wcstombs(temp.get(), jitc_temp_path, len);
-    jitc_optix_check(optixDeviceContextSetCacheLocation(ctx, temp.get()));
+        size_t len = wcstombs(nullptr, jitc_temp_path, 0) + 1;
+        std::unique_ptr<char[]> temp(new char[len]);
+        wcstombs(temp.get(), jitc_temp_path, len);
+        jitc_optix_check(optixDeviceContextSetCacheLocation(ctx, temp.get()));
 #endif
-    jitc_optix_check(optixDeviceContextSetCacheEnabled(ctx, 1));
-
-    ts->optix_context = ctx;
+        jitc_optix_check(optixDeviceContextSetCacheEnabled(ctx, 1));
+    }
 
     // =====================================================
     // Create a truly minimal OptiX pipeline for testcases
     // =====================================================
 
-    OptixPipelineCompileOptions pco { };
-    pco.numAttributeValues = 2;
-    pco.pipelineLaunchParamsVariableName = "params";
+    if (!ts->optix_miss_record_base) {
+        OptixPipelineCompileOptions pco { };
+        pco.numAttributeValues = 2;
+        pco.pipelineLaunchParamsVariableName = "params";
 
 #if defined(NDEBUG)
-    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
+        pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
 #else
-    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_DEBUG |
-                         OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
-                         OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
+        pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_DEBUG |
+                             OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                             OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
 #endif
 
-    OptixModuleCompileOptions mco { };
+        OptixModuleCompileOptions mco { };
 #if 1
-    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
-    mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
+        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+        mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
 #else
-    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
-    mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
+        mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
 #endif
 
-    const char *minimal = ".version 6.0 .target sm_50 .address_size 64 "
-                          ".entry __miss__ek() { ret; }";
+        const char *minimal = ".version 6.0 .target sm_50 .address_size 64 "
+                              ".entry __miss__ek() { ret; }";
 
-    char log[128];
-    size_t log_size = sizeof(log);
+        char log[128];
+        size_t log_size = sizeof(log);
 
-    OptixModule &mod = ts->optix_module_base;
-    jitc_optix_check(optixModuleCreateFromPTX(
-        ctx, &mco, &pco, minimal, strlen(minimal), log, &log_size, &mod));
+        OptixModule &mod = ts->optix_module_base;
+        jitc_optix_check(optixModuleCreateFromPTX(
+            ctx, &mco, &pco, minimal, strlen(minimal), log, &log_size, &mod));
 
-    OptixProgramGroupDesc pgd { };
-    pgd.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
-    pgd.miss.module = mod;
-    pgd.miss.entryFunctionName = "__miss__ek";
+        OptixProgramGroupDesc pgd { };
+        pgd.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
+        pgd.miss.module = mod;
+        pgd.miss.entryFunctionName = "__miss__ek";
 
-    OptixProgramGroupOptions pgo { };
-    OptixProgramGroup &pg = ts->optix_program_group_base;
-    log_size = sizeof(log);
-    jitc_optix_check(optixProgramGroupCreate(ctx, &pgd, 1, &pgo, log, &log_size, &pg));
+        OptixProgramGroupOptions pgo { };
+        OptixProgramGroup &pg = ts->optix_program_group_base;
+        log_size = sizeof(log);
+        jitc_optix_check(optixProgramGroupCreate(ctx, &pgd, 1, &pgo, log, &log_size, &pg));
 
-    void *miss_record =
-        jitc_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
-    jitc_optix_check(optixSbtRecordPackHeader(pg, miss_record));
-    miss_record = jitc_malloc_migrate(miss_record, AllocType::Device, 1);
+        void *miss_record =
+            jitc_malloc(AllocType::HostPinned, OPTIX_SBT_RECORD_HEADER_SIZE);
+        jitc_optix_check(optixSbtRecordPackHeader(pg, miss_record));
+        miss_record = jitc_malloc_migrate(miss_record, AllocType::Device, 1);
 
-    ts->optix_miss_record_base = miss_record;
-    OptixShaderBindingTable sbt { };
-    sbt.missRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
-    sbt.missRecordCount = 1;
-    sbt.missRecordBase = miss_record;
+        ts->optix_miss_record_base = miss_record;
+        OptixShaderBindingTable sbt { };
+        sbt.missRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
+        sbt.missRecordCount = 1;
+        sbt.missRecordBase = miss_record;
 
-    jitc_optix_configure(&pco, &sbt, &pg, 1);
+        jitc_optix_configure(&pco, &sbt, &pg, 1);
+    }
 
     return ctx;
 }
 
-void jitc_optix_context_destroy(ThreadState *ts) {
-    if (ts->optix_context) {
-        jitc_free(ts->optix_miss_record_base);
-        ts->optix_miss_record_base = nullptr;
-
+void jitc_optix_context_destroy_ts(ThreadState *ts) {
+    if (ts->optix_program_group_base) {
         jitc_optix_check(optixProgramGroupDestroy(ts->optix_program_group_base));
         ts->optix_program_group_base = nullptr;
+    }
 
+    if (ts->optix_module_base) {
         jitc_optix_check(optixModuleDestroy(ts->optix_module_base));
         ts->optix_module_base = nullptr;
+    }
+}
 
-        jitc_optix_check(optixDeviceContextDestroy(ts->optix_context));
-        ts->optix_context = nullptr;
+
+void jitc_optix_context_destroy(Device &d) {
+    if (d.optix_context) {
+        jitc_optix_check(optixDeviceContextDestroy(d.optix_context));
+        d.optix_context = nullptr;
     }
 }
 
@@ -441,8 +444,9 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
 
     jitc_optix_cache_hit = true;
     size_t log_size = sizeof(error_log);
+    OptixDeviceContext &optix_context = state.devices[ts->device].optix_context;
     int rv = optixModuleCreateFromPTX(
-        ts->optix_context, &mco, &ts->optix_pipeline_compile_options, buffer,
+        optix_context, &mco, &ts->optix_pipeline_compile_options, buffer,
         buffer_size, error_log, &log_size, &kernel.optix.mod);
     if (rv) {
         jitc_fail("jit_optix_compile(): optixModuleCreateFromPTX() failed. Please see the PTX "
@@ -479,7 +483,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     kernel.optix.pg_count = n_programs;
 
     log_size = sizeof(error_log);
-    rv = optixProgramGroupCreate(ts->optix_context, pgd.get(),
+    rv = optixProgramGroupCreate(optix_context, pgd.get(),
                                  n_programs, &pgo, error_log,
                                  &log_size, kernel.optix.pg);
     if (rv) {
@@ -518,7 +522,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
 
     log_size = sizeof(error_log);
     rv = optixPipelineCreate(
-        ts->optix_context, &ts->optix_pipeline_compile_options, &link_options,
+        optix_context, &ts->optix_pipeline_compile_options, &link_options,
         ts->optix_program_groups.data(), ts->optix_program_groups.size(),
         error_log, &log_size, &kernel.optix.pipeline);
     if (rv) {

@@ -18,7 +18,9 @@ struct ThreadState;
 extern OptixDeviceContext jitc_optix_context();
 
 /// Destroy an OptiX device context
-extern void jitc_optix_context_destroy(ThreadState *ts);
+struct Device;
+extern void jitc_optix_context_destroy_ts(ThreadState *ts);
+extern void jitc_optix_context_destroy(Device &d);
 
 /// Look up an OptiX function by name
 extern void *jitc_optix_lookup(const char *name);

@@ -213,6 +213,11 @@ struct Device {
     /// Max. bytes of shared memory per SM
     uint32_t shared_memory_bytes;
 
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+    /// OptiX device context
+    void *optix_context = nullptr;
+#endif
+
     /// Compute a good configuration for a grid-stride loop
     void get_launch_config(uint32_t *blocks_out, uint32_t *threads_out,
                            uint32_t size, uint32_t max_threads = 1024,
@@ -360,9 +365,6 @@ struct ThreadState {
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
     /// ---------------------------- OptiX-specific ----------------------------
-
-    /// OptiX device context
-    void *optix_context = nullptr;
 
     /// User-provided OptiX compile options data structure
     OptixPipelineCompileOptions optix_pipeline_compile_options { };
