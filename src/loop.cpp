@@ -167,7 +167,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
         snprintf(temp, sizeof(temp), ", %u loop-invariant variables eliminated",
                  n_invariant_provided);
 
-    jitc_log(Info,
+    jitc_log(InfoSym,
              "jit_var_loop(cond=r%u): loop (\"%s\") with %u loop variable%s, %u side effect%s, %u elements%s%s",
              cond_, name, n, n == 1 ? "" : "s", se_count, se_count == 1 ? "" : "s", size, temp,
              placeholder ? " (part of a recorded computation)" : "");
@@ -666,7 +666,7 @@ static void jitc_var_loop_assemble_start(const Variable *, const Extra &extra) {
         result = jitc_var_loop_phi_llvm(loop_reg, loop->in, loop->in_cond,
                                         loop->out_body);
 
-    jitc_log(Info,
+    jitc_log(InfoSym,
              "jit_var_loop_assemble(): loop (\"%s\") with %u/%u loop "
              "variable%s (%u/%u bytes), %u side effect%s",
              loop->name, result.first, (uint32_t) loop->in.size(),

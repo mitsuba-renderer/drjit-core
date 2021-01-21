@@ -259,12 +259,12 @@ extern JIT_EXPORT int jit_llvm_if_at_least(uint32_t vector_width,
 
 #if defined(__cplusplus)
 enum class LogLevel : uint32_t {
-    Disable, Error, Warn, Info, Debug, Trace
+    Disable, Error, Warn, Info, InfoSym, Debug, Trace
 };
 #else
 enum LogLevel {
-    LogLevelDisable, LogLevelError, LogLevelWarn,
-    LogLevelInfo, LogLevelDebug, LogLevelTrace
+    LogLevelDisable, LogLevelError, LogLevelWarn, LogLevelInfo,
+    LogLevelInfoSym, LogLevelDebug, LogLevelTrace
 };
 #endif
 

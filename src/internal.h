@@ -32,6 +32,7 @@ static constexpr LogLevel Disable = LogLevel::Disable;
 static constexpr LogLevel Error   = LogLevel::Error;
 static constexpr LogLevel Warn    = LogLevel::Warn;
 static constexpr LogLevel Info    = LogLevel::Info;
+static constexpr LogLevel InfoSym = LogLevel::InfoSym;
 static constexpr LogLevel Debug   = LogLevel::Debug;
 static constexpr LogLevel Trace   = LogLevel::Trace;
 

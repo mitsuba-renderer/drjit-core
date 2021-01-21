@@ -367,7 +367,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         }
     }
 
-    jitc_log(Info,
+    jitc_log(InfoSym,
              "jit_var_vcall(r%u, self=r%u): call (\"%s\") with %u instance%s, %u "
              "input%s, %u output%s (%u devirtualized), %u side effect%s, %u "
              "byte%s of call data, %u elements%s%s", (uint32_t) special_v, self, name, n_inst,
@@ -706,7 +706,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         }) - callable_hash.begin();
 
     jitc_log(
-        Info,
+        InfoSym,
         "jit_var_vcall_assemble(): indirect %s (\"%s\") to %zu/%zu instances, "
         "passing %u/%u inputs (%u/%u bytes), %u/%u outputs (%u/%u bytes), %zu side effects",
         vcall->branch ? "branch" : "call", vcall->name, n_unique,

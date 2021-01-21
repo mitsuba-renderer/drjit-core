@@ -263,8 +263,7 @@ bool jitc_optix_init() {
 
     #undef LOOKUP
 
-    jitc_log(LogLevel::Info,
-            "jit_optix_init(): loaded OptiX (via 7.2 ABI).");
+    jitc_log(Info, "jit_optix_init(): loaded OptiX (via 7.2 ABI).");
 
     jitc_optix_init_success = true;
     return true;
@@ -404,7 +403,7 @@ void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
                          const OptixProgramGroup *pg,
                          uint32_t pg_count) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
-    jitc_log(Info, "jit_optix_configure(pg_count=%u)", pg_count);
+    jitc_log(InfoSym, "jit_optix_configure(pg_count=%u)", pg_count);
     memcpy(&ts->optix_pipeline_compile_options, pco, sizeof(OptixPipelineCompileOptions));
     memcpy(&ts->optix_shader_binding_table, sbt, sizeof(OptixShaderBindingTable));
 
@@ -627,7 +626,7 @@ void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
     if (dirty)
         jitc_eval(thread_state(JitBackend::CUDA));
 
-    jitc_log(Info, "jit_optix_trace(): tracing %u ray%s, %u payload value%s%s.",
+    jitc_log(InfoSym, "jit_optix_trace(): tracing %u ray%s, %u payload value%s%s.",
              size, size != 1 ? "s" : "", np, np == 1 ? "" : "s",
              placeholder ? " (part of a recorded computation)" : "");
 

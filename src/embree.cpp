@@ -42,7 +42,7 @@ void jitc_embree_trace(uint32_t func, uint32_t context, uint32_t scene,
     if (dirty)
         jitc_eval(thread_state(JitBackend::LLVM));
 
-    jitc_log(Info, "jit_embree_trace(): tracing %u %sray%s%s", size,
+    jitc_log(InfoSym, "jit_embree_trace(): tracing %u %sray%s%s", size,
              occluded ? "shadow " : "", size != 1 ? "s" : "",
              placeholder ? " (part of a recorded computation)" : "");
 
