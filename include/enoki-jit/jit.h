@@ -1272,9 +1272,10 @@ enum JitFlag {
     JitFlagVCallRecord         = 4,
     JitFlagVCallOptimize       = 8,
     JitFlagVCallBranch         = 16,
-    JitFlagForceOptiX          = 32
-    JitFlagPostponeSideEffects = 64,
-    JitFlagPrintIR             = 128
+    JitFlagADOptimize          = 32,
+    JitFlagForceOptiX          = 64,
+    JitFlagPostponeSideEffects = 128,
+    JitFlagPrintIR             = 256
 };
 #endif
 
