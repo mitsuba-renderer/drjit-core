@@ -433,6 +433,9 @@ extern JIT_EXPORT void jit_free(void *ptr);
 /// Release all currently unused memory to the GPU / OS
 extern JIT_EXPORT void jit_malloc_trim();
 
+/// Clear the peak memory usage statistics
+extern JIT_EXPORT void jit_malloc_clear_statistics();
+
 /**
  * \brief Asynchronously prefetch a managed memory region allocated using \ref
  * jit_malloc() so that it is available on a specified device

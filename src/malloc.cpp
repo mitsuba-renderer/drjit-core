@@ -271,6 +271,11 @@ void jitc_free(void *ptr) {
     state.alloc_used.erase(it);
 }
 
+void jitc_malloc_clear_statistics() {
+    for (int i = 0; i < (int) AllocType::Count; ++i)
+        state.alloc_watermark[i] = state.alloc_usage[i];
+}
+
 static void jitc_free_chain(void *ptr) {
     /* Acquire lock protecting ts->release_chain contents and
        state.alloc_free */

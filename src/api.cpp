@@ -293,6 +293,11 @@ void jit_malloc_trim() {
     jitc_malloc_trim(false);
 }
 
+void jit_malloc_clear_statistics() {
+    lock_guard guard(state.mutex);
+    jitc_malloc_clear_statistics();
+}
+
 void jit_malloc_prefetch(void *ptr, int device) {
     lock_guard guard(state.mutex);
     jitc_malloc_prefetch(ptr, device);

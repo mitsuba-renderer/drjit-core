@@ -83,3 +83,6 @@ extern AllocType jitc_malloc_type(void *ptr);
 
 /// Query the device associated with a memory allocation made using \ref jitc_malloc()
 extern int jitc_malloc_device(void *ptr);
+
+/// Clear the peak memory usage statistics
+extern void jitc_malloc_clear_statistics();
