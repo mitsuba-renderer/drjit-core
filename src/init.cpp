@@ -40,11 +40,11 @@ Buffer buffer{1024};
 #if defined(_MSC_VER)
   __declspec(thread) ThreadState* thread_state_cuda = nullptr;
   __declspec(thread) ThreadState* thread_state_llvm = nullptr;
-  __declspec(thread) uint32_t jitc_flags_v = 0;
+  __declspec(thread) uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
 #else
   __thread ThreadState* thread_state_cuda = nullptr;
   __thread ThreadState* thread_state_llvm = nullptr;
-  __thread uint32_t jitc_flags_v = 0;
+  __thread uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
 #endif
 
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)

@@ -1226,32 +1226,44 @@ extern JIT_EXPORT void jit_prefix_pop(JitBackend backend);
  * development (one e.g. cannot simply print array contents while something is
  * being recorded). The following list of flags can be used to control the
  * behavior of these features.
+ *
+ * The default set of flags is:
+ *
+ * LoopRecord | LoopOptimize | VCallRecord | VCallOptimize | ADOptimize
  */
 #if defined(__cplusplus)
 enum class JitFlag : uint32_t {
     /// Record loops instead of evaluating them using a wavefront per iteration
-    LoopRecord     = 1,
+    LoopRecord = 1,
 
     /// Enable constant propagation and elide unnecessary loop variables
-    LoopOptimize   = 2,
+    LoopOptimize = 2,
 
     /// Record virtual function calls instead of gather/scatter-based approach
-    VCallRecord    = 4,
+    VCallRecord = 4,
 
     /// Enable constant propagation and elide unnecessary function arguments
-    VCallOptimize  = 8,
+    VCallOptimize = 8,
 
     /// Implement virtual function calls via indirect branches instead of calls (CUDA only)
-    VCallBranch    = 16,
+    VCallBranch = 16,
+
+    /// Exploit literal constants during AD (used in the Enoki parent project)
+    ADOptimize = 32,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX     = 32,
+    ForceOptiX = 64,
 
     /// Temporarily postpone evaluation of statements with side effects
-    PostponeSideEffects = 64,
+    PostponeSideEffects = 128,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 128
+    PrintIR = 256,
+
+    /// Default flags
+    Default = (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
+              (uint32_t) VCallRecord | (uint32_t) VCallOptimize |
+              (uint32_t) ADOptimize
 };
 #else
 enum JitFlag {
