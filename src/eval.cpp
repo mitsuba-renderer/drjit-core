@@ -499,7 +499,7 @@ void jitc_eval(ThreadState *ts) {
     // Collect variables that must be computed along with their dependencies
     for (int j = 0; j < 2; ++j) {
         auto &source = j == 0 ? ts->scheduled : ts->side_effects;
-        if (j == 1 && (jitc_flags() & (uint32_t) JitFlag::PostponeSideEffects))
+        if (j == 1 && (jitc_flags() & (uint32_t) JitFlag::Recording))
             break;
 
         for (size_t i = 0; i < source.size(); ++i) {
