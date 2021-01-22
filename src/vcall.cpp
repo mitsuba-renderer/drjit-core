@@ -233,6 +233,10 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     // Collect accesses to evaluated variables/pointers
     uint32_t data_size = 0;
     for (uint32_t i = 0; i < n_inst; ++i) {
+        if (unlikely(se_offset[i] > se_offset[i + 1]))
+            jitc_raise("jitc_var_vcall(): se_offset parameter is not "
+                       "monotonically increasing!");
+
         uint32_t id = inst_id[i];
         vcall->offset_h[id] = ((uint64_t) data_size) << 32;
 

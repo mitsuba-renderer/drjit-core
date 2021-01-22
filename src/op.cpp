@@ -486,9 +486,15 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
         jitc_var_new_op_fail(error, op, n_dep, dep);
 
     if (dirty) {
+        if (jit_flag(JitFlag::PostponeSideEffects))
+            jitc_raise("jit_var_op_new(): referenced a dirty variable while "
+                       "JitFlag::PostponeSideEffects is active!");
         jitc_eval(thread_state(backend));
-        for (uint32_t i = 0; i < n_dep; ++i)
+        for (uint32_t i = 0; i < n_dep; ++i) {
             v[i] = jitc_var(dep[i]);
+            if (v[i]->dirty)
+                error = "variable remains dirty following evaluation!";
+        }
     }
 
     bool is_float  = jitc_is_float(vt),
@@ -1330,8 +1336,13 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
     }
 
     if (v->dirty) {
+        if (jit_flag(JitFlag::PostponeSideEffects))
+            jitc_raise("jit_var_new_cast(): referenced a dirty variable while "
+                       "JitFlag::PostponeSideEffects is active!");
         jitc_eval(thread_state(backend));
         v = jitc_var(index);
+        if (unlikely(v->dirty))
+            jitc_fail("jit_var_new_cast(): variable remains dirty after evaluation!");
     }
 
     if (v->literal) {
@@ -1527,12 +1538,18 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     v_mask = jitc_var(mask);
 
     if (v_source->dirty || v_index->dirty || v_mask->dirty) {
+        if (jit_flag(JitFlag::PostponeSideEffects))
+            jitc_raise("jit_var_new_gather(): referenced a dirty variable while "
+                       "JitFlag::PostponeSideEffects is active!");
         jitc_eval(thread_state(backend));
 
         // Location of variables may have changed
         v_source = jitc_var(source);
         v_index = jitc_var(index);
         v_mask = jitc_var(mask);
+
+        if (unlikely(v_source->dirty || v_index->dirty || v_mask->dirty))
+            jitc_fail("jit_var_new_gather(): variable remains dirty after evaluation!");
     }
 
     bool unmasked = v_mask->literal && v_mask->value == 1;
@@ -1626,15 +1643,16 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         if (index)
             jitc_log(Debug,
                      "jit_var_new_scatter(r%u[r%u] <- r%u if r%u, via "
-                     "ptr r%u, reduce_op=%s): r%u (%s)",
-                     (uint32_t) target, (uint32_t) index, value,
+                     "ptr r%u, reduce_op=%s): r%u (result=r%u, %s)",
+                     (uint32_t) target_, (uint32_t) index_, value,
                      (uint32_t) mask_, (uint32_t) ptr,
-                     reduce_op_name[(int) reduce_op], index_, reason);
+                     reduce_op_name[(int) reduce_op], index_, (uint32_t) target,
+                     reason);
         else
             jitc_log(Debug,
                      "jit_var_new_scatter(r%u[r%u] <- r%u if r%u, via "
                      "ptr r%u, reduce_op=%s): %s",
-                     (uint32_t) target, (uint32_t) index, value,
+                     (uint32_t) target_, (uint32_t) index_, value,
                      (uint32_t) mask_, (uint32_t) ptr,
                      reduce_op_name[(int) reduce_op], reason);
     };
@@ -1653,8 +1671,19 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         backend = (JitBackend) v->backend;
         vt = (VarType) v->type;
     }
-    if (dirty)
-        jitc_eval(thread_state(backend));
+    ThreadState *ts = thread_state(backend);
+    if (dirty) {
+        if (jit_flag(JitFlag::PostponeSideEffects))
+            jitc_raise("jit_var_new_scatter(): referenced a dirty variable while "
+                       "JitFlag::PostponeSideEffects is active!");
+        jitc_eval(ts);
+
+        for (uint32_t index : { index_, mask_, value }) {
+            if (jitc_var(index)->dirty)
+                jitc_fail("jit_var_new_scatter(): variable remains dirty after "
+                          "evaluation!");
+        }
+    }
     if (size == 0)
         return target.release();
 
@@ -1729,8 +1758,6 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         if (v_mask->literal && v_mask->value == 1)
             unmasked = true;
     }
-
-    jitc_var(target)->dirty = true;
 
     uint32_t dep[4] = { ptr, value, index, mask };
     uint32_t n_dep = 4;
@@ -1826,7 +1853,8 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     print_log(((uint32_t) target == target_) ? "direct" : "copy", result);
 
     jitc_var(result)->side_effect = true;
-    thread_state(backend)->side_effects.push_back(result);
+    jitc_var(target)->dirty = true;
+    ts->side_effects.push_back(result);
 
     return target.release();
 }
