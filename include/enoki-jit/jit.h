@@ -1248,17 +1248,20 @@ enum class JitFlag : uint32_t {
     /// Implement virtual function calls via indirect branches instead of calls (CUDA only)
     VCallBranch = 16,
 
-    /// Exploit literal constants during AD (used in the Enoki parent project)
-    ADOptimize = 32,
-
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 64,
+    ForceOptiX = 32,
 
     /// Temporarily postpone evaluation of statements with side effects
-    Recording = 128,
+    Recording = 64,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 256,
+    PrintIR = 128,
+
+    /// Exploit literal constants during AD (used in the Enoki parent project)
+    ADOptimize = 256,
+
+    /// Run forward-mode differentiation at once
+    ADEagerForward = 512,
 
     /// Default flags
     Default = (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
@@ -1272,10 +1275,11 @@ enum JitFlag {
     JitFlagVCallRecord         = 4,
     JitFlagVCallOptimize       = 8,
     JitFlagVCallBranch         = 16,
-    JitFlagADOptimize          = 32,
-    JitFlagForceOptiX          = 64,
-    JitFlagRecording = 128,
-    JitFlagPrintIR             = 256
+    JitFlagForceOptiX          = 32,
+    JitFlagRecording           = 64,
+    JitFlagPrintIR             = 128,
+    JitFlagADOptimize          = 256,
+    JitFlagADEagerForward      = 512
 };
 #endif
 
