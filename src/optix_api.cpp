@@ -135,6 +135,16 @@ struct OptixProgramGroupDesc {
     };
 };
 
+struct OptixStackSizes {
+    unsigned int cssRG;
+    unsigned int cssMS;
+    unsigned int cssCH;
+    unsigned int cssAH;
+    unsigned int cssIS;
+    unsigned int cssCC;
+    unsigned int dssDC;
+};
+
 struct OptixProgramGroupOptions {
     int opaque;
 };
@@ -172,6 +182,11 @@ OptixResult (*optixLaunch)(OptixPipeline, CUstream, CUdeviceptr, size_t,
                            const OptixShaderBindingTable *, unsigned int,
                            unsigned int, unsigned int) = nullptr;
 OptixResult (*optixSbtRecordPackHeader)(OptixProgramGroup, void*) = nullptr;
+OptixResult (*optixPipelineSetStackSize)(OptixPipeline, unsigned int,
+                                         unsigned int, unsigned int,
+                                         unsigned int);
+OptixResult (*optixProgramGroupGetStackSize)(OptixProgramGroup,
+                                             OptixStackSizes *);
 
 #define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
 extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
@@ -260,6 +275,8 @@ bool jitc_optix_init() {
     LOOKUP(optixPipelineDestroy);
     LOOKUP(optixLaunch);
     LOOKUP(optixSbtRecordPackHeader);
+    LOOKUP(optixPipelineSetStackSize);
+    LOOKUP(optixProgramGroupGetStackSize);
 
     #undef LOOKUP
 
@@ -512,12 +529,20 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 
     size_t size_before = ts->optix_program_groups.size();
+    OptixStackSizes stack_sizes;
+    unsigned int cssRG = 0, dssDC = 0;
     for (uint32_t i = 0; i < n_programs; ++i) {
         if (i == 0)
             free((char *) pgd[0].raygen.entryFunctionName);
         else
             free((char *) pgd[i].callables.entryFunctionNameDC);
         ts->optix_program_groups.push_back(kernel.optix.pg[i]);
+        jitc_optix_check(optixProgramGroupGetStackSize(
+            ts->optix_program_groups[i], &stack_sizes));
+        if (i == 0)
+            cssRG = stack_sizes.cssRG;
+        else
+            dssDC = std::max(dssDC, stack_sizes.dssDC);
     }
 
     log_size = sizeof(error_log);
@@ -726,6 +751,8 @@ void jitc_optix_shutdown() {
     Z(optixPipelineDestroy);
     Z(optixLaunch);
     Z(optixSbtRecordPackHeader);
+    Z(optixPipelineSetStackSize);
+    Z(optixProgramGroupGetStackSize);
 
     jitc_optix_handle = nullptr;
 
