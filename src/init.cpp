@@ -311,8 +311,10 @@ void jitc_shutdown(int light) {
             n_leaked = 0;
             for (const auto &kv : state.extra) {
                 jitc_log(Warn, "- variable r%u", kv.first);
-                if (++n_leaked == 10)
+                if (++n_leaked == 10) {
                     jitc_log(Warn, " - (skipping remainder)");
+                    break;
+                }
             }
         }
     }

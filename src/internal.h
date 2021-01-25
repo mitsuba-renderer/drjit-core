@@ -500,7 +500,13 @@ struct Extra {
     void (*assemble)(const Variable *v, const Extra &extra) = nullptr;
 };
 
-using ExtraMap = tsl::robin_map<uint32_t, Extra>;
+struct UInt32Hasher {
+    size_t operator()(uint32_t v) const {
+        return hash(&v, sizeof(uint32_t));
+    }
+};
+
+using ExtraMap = tsl::robin_map<uint32_t, Extra, UInt32Hasher>;
 
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
