@@ -38,6 +38,12 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 
 #pragma pack(push, 1)
 
+struct UInt32Hasher {
+    size_t operator()(uint32_t v) const {
+        return hash(&v, sizeof(uint32_t));
+    }
+};
+
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     #if defined(__GNUC__)
@@ -389,7 +395,7 @@ struct ThreadState {
 
 /// Maps from variable ID to a Variable instance
 using VariableMap =
-    tsl::robin_map<uint32_t, Variable, std::hash<uint32_t>,
+    tsl::robin_map<uint32_t, Variable, UInt32Hasher,
                    std::equal_to<uint32_t>,
                    aligned_allocator<std::pair<uint32_t, Variable>, 64>,
                    /* StoreHash = */ false>;
@@ -498,12 +504,6 @@ struct Extra {
 
     /// Code generation callback
     void (*assemble)(const Variable *v, const Extra &extra) = nullptr;
-};
-
-struct UInt32Hasher {
-    size_t operator()(uint32_t v) const {
-        return hash(&v, sizeof(uint32_t));
-    }
 };
 
 using ExtraMap = tsl::robin_map<uint32_t, Extra, UInt32Hasher>;
