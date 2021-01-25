@@ -51,7 +51,7 @@ struct VCall {
     std::vector<uint32_t> se;
 
     /// Mapping from variable index to offset into call data
-    tsl::robin_pg_map<uint64_t, uint32_t> data_map;
+    tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> data_map;
     uint64_t* offset_h = nullptr, *offset_d = nullptr;
     size_t offset_h_size = 0;
 
@@ -96,7 +96,7 @@ static void jitc_var_vcall_assemble_llvm(
     uint32_t in_align, uint32_t out_size, uint32_t out_align);
 
 static void
-jitc_var_vcall_collect_data(tsl::robin_pg_map<uint64_t, uint32_t> &data_map,
+jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                             uint32_t &data_offset, uint32_t inst_id,
                             uint32_t index);
 
@@ -1172,7 +1172,7 @@ static void jitc_var_vcall_assemble_llvm(
 }
 
 /// Collect scalar / pointer variables referenced by a computation
-void jitc_var_vcall_collect_data(tsl::robin_pg_map<uint64_t, uint32_t> &data_map,
+void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                                  uint32_t &data_offset, uint32_t inst_id,
                                  uint32_t index) {
     uint64_t key = (uint64_t) index + (((uint64_t) inst_id) << 32);

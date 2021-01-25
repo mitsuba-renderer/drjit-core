@@ -44,6 +44,12 @@ struct UInt32Hasher {
     }
 };
 
+struct UInt64Hasher {
+    size_t operator()(uint64_t v) const {
+        return hash(&v, sizeof(uint64_t));
+    }
+};
+
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     #if defined(__GNUC__)

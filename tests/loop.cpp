@@ -19,7 +19,7 @@ template <typename Mask> struct Loop {
         // Recover if an error occurred while recording a loop symbolically
         if (m_record && m_se_offset != (uint32_t) -1) {
             jit_side_effects_rollback(Backend, m_se_offset);
-            jit_set_flag(JitFlag::PostponeSideEffects, m_se_flag);
+            jit_set_flag(JitFlag::Recording, m_se_flag);
 
             for (size_t i = 0; i < m_index_body.size(); ++i)
                 jit_var_dec_ref_ext(m_index_body[i]);
@@ -56,8 +56,8 @@ template <typename Mask> struct Loop {
         if (m_record) {
             /* Wrap loop variables using placeholders that represent
                their state just before the loop condition is evaluated */
-            m_se_flag = jit_flag(JitFlag::PostponeSideEffects);
-            jit_set_flag(JitFlag::PostponeSideEffects, 1);
+            m_se_flag = jit_flag(JitFlag::Recording);
+            jit_set_flag(JitFlag::Recording, 1);
             m_se_offset = jit_side_effects_scheduled(Backend);
             step();
             m_state = 1;
@@ -178,7 +178,7 @@ protected:
                     }
 
                     m_index_out.clear();
-                    jit_set_flag(JitFlag::PostponeSideEffects, m_se_flag);
+                    jit_set_flag(JitFlag::Recording, m_se_flag);
                     m_se_offset = (uint32_t) -1;
                     m_cond = Mask();
                     m_state++;

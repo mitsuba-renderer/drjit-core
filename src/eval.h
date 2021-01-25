@@ -89,7 +89,7 @@ extern std::pair<XXH128_hash_t, uint32_t>
 jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                    uint32_t in_size, uint32_t in_align, uint32_t out_size,
                    uint32_t out_align, uint32_t data_offset,
-                   const tsl::robin_pg_map<uint64_t, uint32_t> &data_map,
+                   const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out,
                    const uint32_t *out, const uint32_t *out_nested,
                    uint32_t n_se, const uint32_t *se, const char *ret_label);
@@ -99,7 +99,7 @@ extern void
 jitc_assemble_cuda_func(const char *name, uint32_t inst_id, uint32_t n_regs,
                         uint32_t in_size, uint32_t in_align, uint32_t out_size,
                         uint32_t out_align, uint32_t data_offset,
-                        const tsl::robin_pg_map<uint64_t, uint32_t> &data_map,
+                        const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                         uint32_t n_out, const uint32_t *out,
                         const uint32_t *out_nested, const char *ret_label);
 
@@ -107,7 +107,7 @@ jitc_assemble_cuda_func(const char *name, uint32_t inst_id, uint32_t n_regs,
 extern void
 jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                         uint32_t in_size, uint32_t data_offset,
-                        const tsl::robin_pg_map<uint64_t, uint32_t> &data_map,
+                        const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                         uint32_t n_out, const uint32_t *out_nested);
 
 /// Register a global declaration that will be included in the final program

@@ -88,7 +88,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
         Base *base = (Base *) jit_registry_get_ptr(domain, i);
 
         jit_prefix_push(Backend, label);
-        int flag_before = jit_flag(JitFlag::PostponeSideEffects);
+        int flag_before = jit_flag(JitFlag::Recording);
 
         if (Backend == JitBackend::LLVM) {
             Mask vcall_mask = Mask::steal(jit_var_new_stmt(
@@ -99,7 +99,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
         }
 
         try {
-            jit_set_flag(JitFlag::PostponeSideEffects, 1);
+            jit_set_flag(JitFlag::Recording, 1);
             if constexpr (std::is_same_v<Result, std::nullptr_t>) {
                 func(base, (detail::set_mask_true<Is, N>(args))...);
             } else {
@@ -108,14 +108,14 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
         } catch (...) {
             jit_prefix_pop(Backend);
             jit_side_effects_rollback(Backend, se_count[0]);
-            jit_set_flag(JitFlag::PostponeSideEffects, flag_before);
+            jit_set_flag(JitFlag::Recording, flag_before);
             if (Backend == JitBackend::LLVM)
                 jit_var_mask_pop(Backend);
             throw;
         }
         if (Backend == JitBackend::LLVM)
             jit_var_mask_pop(Backend);
-        jit_set_flag(JitFlag::PostponeSideEffects, flag_before);
+        jit_set_flag(JitFlag::Recording, flag_before);
         jit_prefix_pop(Backend);
         se_count[i] = jit_side_effects_scheduled(Backend);
         inst_id[i - 1] = i;
