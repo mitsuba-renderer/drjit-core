@@ -336,7 +336,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                 ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
             }
             if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
-                jitc_malloc_trim();
+                jitc_malloc_trim(true, true);
                 /* Unlock while synchronizing */ {
                     unlock_guard guard(state.mutex);
                     ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);

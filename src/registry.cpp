@@ -255,7 +255,7 @@ void jitc_registry_set_attr(void *ptr, const char *name,
             scoped_set_context guard(state.devices[0].context);
             CUresult ret = cuMemAllocManaged((CUdeviceptr *) &ptr, new_size, CU_MEM_ATTACH_GLOBAL);
             if (ret != CUDA_SUCCESS) {
-                jitc_malloc_trim();
+                jitc_malloc_trim(true, true);
                 cuda_check(cuMemAllocManaged((CUdeviceptr *) &ptr, new_size, CU_MEM_ATTACH_GLOBAL));
             }
             cuda_check(cuMemAdvise((CUdeviceptr) ptr, new_size, CU_MEM_ADVISE_SET_READ_MOSTLY, 0));

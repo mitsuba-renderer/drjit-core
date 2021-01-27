@@ -290,7 +290,7 @@ void jit_free(void *ptr) {
 
 void jit_malloc_trim() {
     lock_guard guard(state.mutex);
-    jitc_malloc_trim(false);
+    jitc_malloc_trim(true, false);
 }
 
 void jit_malloc_clear_statistics() {

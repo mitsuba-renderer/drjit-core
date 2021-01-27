@@ -135,7 +135,7 @@ void* jitc_malloc(AllocType type, size_t size) {
 #endif
             }
             if (rv == ENOMEM) {
-                jitc_malloc_trim();
+                jitc_malloc_trim(true, true);
                 /* Temporarily release the main lock */ {
                     unlock_guard guard(state.mutex);
 #if !defined(_WIN32)
@@ -180,7 +180,7 @@ void* jitc_malloc(AllocType type, size_t size) {
             }
 
             if (ret != CUDA_SUCCESS) {
-                jitc_malloc_trim();
+                jitc_malloc_trim(true, true);
 
                 /* Temporarily release the main lock */ {
                     unlock_guard guard(state.mutex);
@@ -448,7 +448,7 @@ void jitc_malloc_prefetch(void *ptr, int device) {
 static bool jitc_malloc_trim_warned = false;
 
 /// Release all unused memory to the GPU / OS
-void jitc_malloc_trim(bool warn) {
+void jitc_malloc_trim(bool flush_local, bool warn) {
     if (warn && !jitc_malloc_trim_warned) {
         jitc_log(
             Warn,
@@ -461,6 +461,15 @@ void jitc_malloc_trim(bool warn) {
         jitc_malloc_trim_warned = true;
     }
 
+    if (flush_local) {
+        if (thread_state_cuda)
+            jitc_free_flush(thread_state_cuda);
+        if (thread_state_llvm)
+            jitc_free_flush(thread_state_llvm);
+        // Ensure that all computation has completed
+        jitc_sync_all_devices();
+    }
+
     AllocInfoMap alloc_free;
 
     /* Critical section */ {
@@ -468,7 +477,7 @@ void jitc_malloc_trim(bool warn) {
         alloc_free = std::move(state.alloc_free);
     }
 
-    // Ensure that all computation using this memory has indeed completed.
+    // Another synchronization to be sure that 'alloc_free' can be released
     jitc_sync_all_devices();
 
     size_t trim_count[(int) AllocType::Count] = { 0 },
@@ -557,7 +566,7 @@ int jitc_malloc_device(void *ptr) {
 }
 
 void jitc_malloc_shutdown() {
-    jitc_malloc_trim(false);
+    jitc_malloc_trim(false, false);
 
     size_t leak_count[(int) AllocType::Count] = { 0 },
            leak_size [(int) AllocType::Count] = { 0 };
