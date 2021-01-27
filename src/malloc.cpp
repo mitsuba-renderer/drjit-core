@@ -273,7 +273,7 @@ void jitc_free(void *ptr) {
 
 void jitc_malloc_clear_statistics() {
     for (int i = 0; i < (int) AllocType::Count; ++i)
-        state.alloc_watermark[i] = state.alloc_usage[i];
+        state.alloc_watermark[i] = state.alloc_allocated[i];
 }
 
 static void jitc_free_chain(void *ptr) {
