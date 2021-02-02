@@ -1354,6 +1354,9 @@ extern JIT_EXPORT uint32_t jit_var_mask_peek(JitBackend backend);
 /// Return the size of the mask stack
 extern JIT_EXPORT size_t jit_var_mask_size(JitBackend backend);
 
+/// Return the default mask
+extern JIT_EXPORT uint32_t jit_var_mask_default(JitBackend backend);
+
 /**
  * \brief Record a virtual function call
  *

@@ -518,7 +518,13 @@ void jit_var_mask_pop(JitBackend backend) {
 }
 
 size_t jit_var_mask_size(JitBackend backend) {
+    lock_guard guard(state.mutex);
     return jitc_var_mask_size(backend);
+}
+
+uint32_t jit_var_mask_default(JitBackend backend) {
+    lock_guard guard(state.mutex);
+    return jitc_var_mask_default(backend);
 }
 
 int jit_var_any(uint32_t index) {
