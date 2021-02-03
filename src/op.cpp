@@ -1463,7 +1463,7 @@ static uint32_t jitc_scatter_gather_mask(uint32_t mask, uint32_t size) {
     if ((VarType) v_mask->type != VarType::Bool)
         jitc_raise("jit_scatter_gather_mask(): expected a boolean array as scatter/gather mask");
 
-    Ref mask_top = steal(jitc_var_mask_peek((JitBackend) v_mask->backend));
+    Ref mask_top = steal(jitc_var_mask_peek(backend));
     size_t size_top = jitc_var(mask_top)->size;
 
     // Mask on mask stack is incompatible -- get the default mask
