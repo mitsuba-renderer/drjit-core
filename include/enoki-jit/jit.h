@@ -1302,12 +1302,12 @@ extern JIT_EXPORT int jit_flag(JIT_ENUM JitFlag flag);
  * The provided function should have the signature <tt>void callback(uint32_t
  * index, int free, void *callback_data)</tt>, where \c index is the variable
  * index, \c free == 0 indicates that the variable is evaluated, \c free == 1
- * indicates that it is freed, and \c callback_data is a user-specified value
- * that will additionally be supplied to the callback.
+ * indicates that it is freed, and \c callback_data is a user-specified value that
+ * will additionally be supplied to the callback.
  */
 extern JIT_EXPORT void
 jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
-                     void *payload);
+                     void *callback_data);
 
 /**
  * \brief Returns the number of operations with side effects (specifically,
