@@ -750,9 +750,9 @@ void jit_optix_configure(const OptixPipelineCompileOptions *pco,
     jitc_optix_configure(pco, sbt, pg, pg_count);
 }
 
-void jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
+uint32_t jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
     lock_guard guard(state.mutex);
-    jitc_optix_trace(nargs, args, mask);
+    return jitc_optix_trace(nargs, args, mask);
 }
 
 void jit_optix_mark(uint32_t index) {
@@ -767,9 +767,8 @@ void jit_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples
 
 #endif
 
-void jit_embree_trace(uint32_t func, uint32_t context, uint32_t scene,
-                      int occluded, const uint32_t *in, uint32_t *out) {
+uint32_t jit_embree_trace(uint32_t func, uint32_t context, uint32_t scene,
+                          int occluded, const uint32_t *in, uint32_t *out) {
     lock_guard guard(state.mutex);
-    jitc_embree_trace(func, context, scene, occluded, in, out);
+    return jitc_embree_trace(func, context, scene, occluded, in, out);
 }
-

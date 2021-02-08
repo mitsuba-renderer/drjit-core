@@ -50,8 +50,11 @@ jit_optix_configure(const OptixPipelineCompileOptions *pco,
  * value greater than 15. In this case, the corresponding elements will be
  * overwritten with the new variable indices with external reference count 1
  * containing the final payload value.
+ *
+ * Returns the variable index that wraps the ray tracing call operation.
  */
-extern JIT_EXPORT void jit_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask);
+extern JIT_EXPORT uint32_t
+jit_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask);
 
 /// Mark a variable as an expression requiring compilation via OptiX
 extern JIT_EXPORT void jit_optix_mark(uint32_t index);

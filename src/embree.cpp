@@ -6,8 +6,8 @@
 
 static void jitc_embree_trace_assemble(const Variable *v, const Extra &extra);
 
-void jitc_embree_trace(uint32_t func, uint32_t context, uint32_t scene,
-                       int occluded, const uint32_t *in, uint32_t *out) {
+uint32_t jitc_embree_trace(uint32_t func, uint32_t context, uint32_t scene,
+                           int occluded, const uint32_t *in, uint32_t *out) {
     VarType types[]{ VarType::Int32,   VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
@@ -70,6 +70,8 @@ void jitc_embree_trace(uint32_t func, uint32_t context, uint32_t scene,
         VarType vt = (i < 3) ? VarType::Float32 : VarType::UInt32;
         out[i] = jitc_var_new_stmt_n(JitBackend::LLVM, vt, tmp, 0, op);
     }
+
+    return op;
 }
 
 static void jitc_embree_trace_assemble(const Variable *v, const Extra &extra) {
