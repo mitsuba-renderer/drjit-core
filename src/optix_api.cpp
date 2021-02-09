@@ -446,6 +446,10 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     /// Ensure OptiX is initialized
     (void) jitc_optix_context();
 
+    if (!jitc_optix_init_success)
+        jitc_fail("jit_optix_compile(): OptiX not initialized, make sure "
+                  "evaluation happens before Optix shutdown!");
+
     // =====================================================
     // 2. Compile an OptiX module
     // =====================================================

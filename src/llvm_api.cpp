@@ -322,8 +322,7 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
     LLVMExecutionEngineRef engine = jitc_llvm_engine_create(llvm_module);
 
     /// Resolve the kernel entry point
-    uint8_t *func =
-        (uint8_t *) LLVMGetFunctionAddress(engine, kernel_name);
+    uint8_t *func = (uint8_t *) LLVMGetFunctionAddress(engine, kernel_name);
     if (unlikely(!func))
         jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
                   "address of kernel \"%s\"!\n", kernel_name);
