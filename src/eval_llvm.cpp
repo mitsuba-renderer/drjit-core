@@ -83,7 +83,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                                prefix, id, width, tname, width, tname, prefix, id, align);
                 } else {
                     buffer.fmt("    %s%u_0 = load <%u x i8>, <%u x i8>* %s%u_p5, align %u, !alias.scope !1\n"
-                              "     %s%u = trunc <%u x i8> %s%u_0 to <%u x i1>\n",
+                               "    %s%u = trunc <%u x i8> %s%u_0 to <%u x i1>\n",
                                prefix, id, width, width, prefix, id, align,
                                prefix, id, width, prefix, id, width);
                 }
