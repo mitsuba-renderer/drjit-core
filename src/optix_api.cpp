@@ -610,7 +610,7 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
                     launch_height, launch_samples));
 }
 
-uint32_t jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
+void jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
     VarType types[]{ VarType::UInt64,  VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
@@ -713,8 +713,6 @@ uint32_t jitc_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
     }
 
     jitc_var_dec_ref_ext(special);
-
-    return special;
 }
 
 void jitc_optix_mark(uint32_t index) {

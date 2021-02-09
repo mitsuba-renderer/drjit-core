@@ -1610,12 +1610,10 @@ extern JIT_EXPORT void jit_block_sum(JitBackend backend, JIT_ENUM VarType type,
  * - tfar
  * - mask, id, flags
  * </tt>.
- *
- * Returns the variable index that wraps the ray tracing call operation.
  */
-extern JIT_EXPORT uint32_t jit_embree_trace(uint32_t func, uint32_t context,
-                                            uint32_t scene, int occluded,
-                                            const uint32_t *in, uint32_t *out);
+extern JIT_EXPORT void jit_embree_trace(uint32_t func, uint32_t context,
+                                        uint32_t scene, int occluded,
+                                        const uint32_t *in, uint32_t *out);
 
 // To be documented
 extern JIT_EXPORT uint32_t jit_cse_domain(JitBackend backend);
