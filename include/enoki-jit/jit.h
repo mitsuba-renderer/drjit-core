@@ -218,7 +218,7 @@ extern JIT_EXPORT void jit_cuda_set_target(uint32_t ptx_version,
  * \param target_features
  *     Comma-separated list of LLVM feature flags (e.g. <tt>+avx512f</tt>).
  *     This should be set to <tt>nullptr</tt> if you do not wish to specify
- *     individual featureas.
+ *     individual features.
  *
  * \param vector_width
  *     Width of vector registers (e.g. 8 for AVX). Must be a power of two, and
