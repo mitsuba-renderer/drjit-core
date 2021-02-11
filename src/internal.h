@@ -410,23 +410,24 @@ using VariableMap =
 struct KernelKey {
     char *str = nullptr;
     int device = 0;
+    uint64_t flags = 0;
 
-    KernelKey(char *str, int device) : str(str), device(device) { }
+    KernelKey(char *str, int device, uint64_t flags) : str(str), device(device), flags(flags) { }
 
     bool operator==(const KernelKey &k) const {
-        return strcmp(k.str, str) == 0 && device == k.device;
+        return strcmp(k.str, str) == 0 && device == k.device && flags == k.flags;
     }
 };
 
 /// Helper class to hash KernelKey instances
 struct KernelHash {
     size_t operator()(const KernelKey &k) const {
-        return compute_hash(hash_kernel(k.str).high64, k.device);
+        return compute_hash(hash_kernel(k.str).high64, k.device, k.flags);
     }
 
-    static size_t compute_hash(size_t kernel_hash, int device) {
+    static size_t compute_hash(size_t kernel_hash, int device, uint64_t flags) {
         size_t hash = kernel_hash;
-        hash_combine(hash, size_t(device + 1));
+        hash_combine(hash, (size_t) flags + size_t(device + 1));
         return hash;
     }
 };

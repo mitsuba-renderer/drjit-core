@@ -402,7 +402,6 @@ void jitc_optix_context_destroy_ts(ThreadState *ts) {
     }
 }
 
-
 void jitc_optix_context_destroy(Device &d) {
     if (d.optix_context) {
         jitc_optix_check(optixDeviceContextDestroy(d.optix_context));
@@ -419,9 +418,9 @@ void *jitc_optix_lookup(const char *name) {
 }
 
 void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
-                         const OptixShaderBindingTable *sbt,
-                         const OptixProgramGroup *pg,
-                         uint32_t pg_count) {
+                          const OptixShaderBindingTable *sbt,
+                          const OptixProgramGroup *pg,
+                          uint32_t pg_count) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     jitc_log(InfoSym, "jit_optix_configure(pg_count=%u)", pg_count);
     memcpy(&ts->optix_pipeline_compile_options, pco, sizeof(OptixPipelineCompileOptions));

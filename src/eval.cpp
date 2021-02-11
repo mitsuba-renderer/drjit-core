@@ -293,9 +293,25 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 }
 
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
-    KernelKey kernel_key((char *) buffer.get(), ts->device);
+    uint64_t flags = 0;
+
+#if defined(ENOKI_JIT_ENABLE_OPTIX)
+    if (uses_optix) {
+        const OptixPipelineCompileOptions &pco =
+            ts->optix_pipeline_compile_options;
+        flags =
+            ((uint64_t) pco.numAttributeValues << 0)      + // 4 bit
+            ((uint64_t) pco.numPayloadValues   << 4)      + // 4 bit
+            ((uint64_t) pco.usesMotionBlur     << 8)      + // 1 bit
+            ((uint64_t) pco.traversableGraphFlags  << 9)  + // 16 bit
+            ((uint64_t) pco.usesPrimitiveTypeFlags << 25);  // 32 bit
+    }
+#endif
+
+    KernelKey kernel_key((char *) buffer.get(), ts->device, flags);
     auto it = state.kernel_cache.find(
-        kernel_key, KernelHash::compute_hash(kernel_hash.high64, ts->device));
+        kernel_key,
+        KernelHash::compute_hash(kernel_hash.high64, ts->device, flags));
     Kernel kernel;
 
     if (it == state.kernel_cache.end()) {
