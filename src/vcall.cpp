@@ -693,10 +693,11 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         callables.resize(callables_offset);
 
         buffer.fmt("\n%s:\n", ret_label);
-        if (data_reg && data_reg_global)
-            buffer.fmt("    mov.u64 %%data, %%u%u;\n",
-                       vcall->id);
-        data_reg_global = 1;
+        if (data_reg) {
+            if (data_reg_global)
+                buffer.fmt("    mov.u64 %%data, %%u%u;\n", vcall->id);
+            data_reg_global = true;
+        }
     }
 
     std::sort(
