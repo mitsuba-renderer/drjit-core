@@ -391,6 +391,9 @@ OptixDeviceContext jitc_optix_context() {
 }
 
 void jitc_optix_context_destroy_ts(ThreadState *ts) {
+    if (ts->optix_miss_record_base)
+        jitc_free(ts->optix_miss_record_base);
+
     if (ts->optix_program_group_base) {
         jitc_optix_check(optixProgramGroupDestroy(ts->optix_program_group_base));
         ts->optix_program_group_base = nullptr;
