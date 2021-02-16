@@ -452,11 +452,24 @@ void jitc_llvm_update_strings() {
         (char **) malloc(sizeof(char *) * (uint32_t) VarType::Count);
 
     for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i) {
+        VarType vt = (VarType) i;
+        Buffer value {18};
+        if (vt == VarType::Bool)
+            value.putc('1');
+        else if (vt == VarType::Float16 || vt == VarType::Float32 ||
+                 vt == VarType::Float64){
+            value.put("0x");
+            for (uint32_t j = 0; j < 16; ++j)
+                value.putc(j < 2 * type_size[i] ? 'F' : '0');
+        } else {
+            value.put("-1");
+        }
+
         buf.clear();
         buf.putc('<');
         for (uint32_t j = 0; j < width; ++j)
-            buf.fmt("%s %i%s", type_name_llvm[i],
-                    (VarType) i == VarType::Bool ? 1 : -1,
+            buf.fmt("%s %s%s", type_name_llvm[i],
+                    value.get(),
                     j + 1 < width ? ", " : ">");
         jitc_llvm_ones_str[i] = strdup(buf.get());
     }
