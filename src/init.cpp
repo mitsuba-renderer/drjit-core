@@ -244,21 +244,6 @@ void jitc_shutdown(int light) {
                 cuda_check(cuStreamDestroy(ts->stream));
             }
 
-            if (state.variables.empty() && !ts->cse_cache.empty()) {
-                for (auto &kv: ts->cse_cache)
-                    jitc_log(Warn,
-                            " - id=%u: size=%u, type=%s, literal=%u, dep=[%u, "
-                            "%u, %u, %u], stmt=\"%s\", value=%lli",
-                            kv.second, kv.first.size,
-                            type_name[kv.first.type], kv.first.literal,
-                            kv.first.dep[0], kv.first.dep[1], kv.first.dep[2],
-                            kv.first.dep[3], kv.first.literal ? "" : kv.first.stmt,
-                            kv.first.literal ? (long long) kv.first.value : 0);
-
-                jitc_log(Warn, "jit_shutdown(): detected a common subexpression "
-                              "elimination cache leak (see above).");
-            }
-
             if (!ts->prefix_stack.empty()) {
                 for (char *s : ts->prefix_stack)
                     free(s);
@@ -271,6 +256,22 @@ void jitc_shutdown(int light) {
             delete ts->release_chain;
             delete ts;
         }
+
+        if (state.variables.empty() && !state.cse_cache.empty()) {
+            for (auto &kv: state.cse_cache)
+                jitc_log(Warn,
+                        " - id=%u: size=%u, type=%s, literal=%u, dep=[%u, "
+                        "%u, %u, %u], stmt=\"%s\", value=%lli",
+                        kv.second, kv.first.size,
+                        type_name[kv.first.type], kv.first.literal,
+                        kv.first.dep[0], kv.first.dep[1], kv.first.dep[2],
+                        kv.first.dep[3], kv.first.literal ? "" : kv.first.stmt,
+                        kv.first.literal ? (long long) kv.first.value : 0);
+
+            jitc_log(Warn, "jit_shutdown(): detected a common subexpression "
+                          "elimination cache leak (see above).");
+        }
+
         pool_destroy();
         state.tss.clear();
     }

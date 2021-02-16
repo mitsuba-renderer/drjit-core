@@ -232,7 +232,7 @@ void jitc_var_dec_ref_int(uint32_t index) noexcept(true) {
 /// Remove a variable from the cache used for common subexpression elimination
 void jitc_cse_drop(uint32_t index, const Variable *v) {
     VariableKey key(*v);
-    CSECache &cache = thread_state(v->backend)->cse_cache;
+    CSECache &cache = state.cse_cache;
     auto it = cache.find(key);
     if (it != cache.end() && it.value() == index)
         cache.erase(it);
@@ -333,7 +333,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
     bool cse_key_inserted = false;
     if (cse)
         std::tie(key_it, cse_key_inserted) =
-            ts->cse_cache.try_emplace(VariableKey(v), 0);
+            state.cse_cache.try_emplace(VariableKey(v), 0);
 
     uint32_t index;
     Variable *vo;

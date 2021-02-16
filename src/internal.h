@@ -302,9 +302,6 @@ struct ThreadState {
     /// Backend type
     JitBackend backend;
 
-    /// Maps from a key characterizing a variable to its index
-    CSECache cse_cache;
-
     /**
      * Memory regions that were freed via jitc_free(), but which might still be
      * used by a currently running kernel. They will be safe to re-use once the
@@ -525,6 +522,9 @@ struct State {
 
     /// Stores the mapping from variable indices to variables
     VariableMap variables;
+
+    /// Maps from a key characterizing a variable to its index
+    CSECache cse_cache;
 
     /// Must be held to execute jitc_eval()
     std::mutex eval_mutex;
