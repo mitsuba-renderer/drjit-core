@@ -156,10 +156,11 @@ struct Variable {
 struct VariableKey {
     uint32_t dep[4];
     uint32_t size;
+    uint32_t backend     : 2;
     uint32_t type        : 4;
     uint32_t write_ptr   : 1;
     uint32_t literal     : 1;
-    uint32_t cse_domain  : 26;
+    uint32_t cse_domain  : 24;
     union {
         char *stmt;
         uint64_t value;
@@ -167,6 +168,7 @@ struct VariableKey {
 
     VariableKey(const Variable &v) {
         memcpy(dep, v.dep, sizeof(uint32_t) * 4);
+        backend = v.backend;
         size = v.size;
         type = v.type;
         write_ptr = v.write_ptr;
