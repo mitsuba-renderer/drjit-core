@@ -118,18 +118,30 @@ inline bool eval_or(bool v0, bool v1) { return v0 || v1; }
 inline bool eval_xor(bool v0, bool v1) { return v0 != v1; }
 inline bool eval_not(bool v) { return !v; }
 
+template <typename T> T eval_neg(T v) { return -v; }
+inline bool eval_neg(bool v) {
+    jitc_raise("eval_neg(): unsupported operands!");
+}
+
+template <typename T> T eval_div(T v0, T v1) { return v0 / v1; }
+inline bool eval_div(bool, bool) {
+    jitc_raise("eval_div(): unsupported operands!");
+}
+
 template <typename T, enable_if_t<std::is_signed<T>::value> = 0>
 T eval_abs(T value) { return std::abs(value); }
 
 template <typename T, enable_if_t<!std::is_signed<T>::value> = 0>
 T eval_abs(T value) { return value; }
 
-template <typename T, enable_if_t<!std::is_integral<T>::value> = 0>
+template <typename T, enable_if_t<!std::is_integral<T>::value ||
+                                  std::is_same<T, bool>::value> = 0>
 T eval_mod(T, T) {
     jitc_raise("eval_mod(): unsupported operands!");
 }
 
-template <typename T, enable_if_t<std::is_integral<T>::value> = 0>
+template <typename T, enable_if_t<std::is_integral<T>::value &&
+                                  !std::is_same<T, bool>::value> = 0>
 T eval_mod(T v0, T v1) {
     return v0 % v1;
 }
@@ -308,7 +320,7 @@ T eval_mulhi(T a, T b) {
         if (std::is_signed<T>::value)
             return (T) __mulh((__int64) a, (__int64) b);
         else
-            return (T) __umulh((__uint64) a, (__uint64) b);
+            return (T) __umulh((unsigned __int64) a, (unsigned __int64) b);
 #else
         using Wide = std::conditional_t<std::is_signed<T>::value, __int128_t, __uint128_t>;
         return T(((Wide) a * (Wide) b) >> 64);
@@ -532,7 +544,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
         case JitOp::Neg:
             is_valid = jitc_is_arithmetic(vt);
             if (literal) {
-                lv = jitc_eval_literal([](auto value) { return -value; }, v[0]);
+                lv = jitc_eval_literal([](auto value) { return eval_neg(value); }, v[0]);
             } else if (backend == JitBackend::CUDA) {
                 if (is_uint) {
                     stmt = "not.$b0 $r0, $r1$n"
@@ -856,7 +868,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
 
         case JitOp::Div:
             if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 / v1; },
+                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_div(v0, v1); },
                                       v[0], v[1]);
             } else if (literal_one[1]) {
                 li = dep[0];

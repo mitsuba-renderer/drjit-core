@@ -134,9 +134,10 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
     if constexpr (!std::is_same_v<Result, std::nullptr_t>) {
         uint32_t offset = 0;
         write_indices(indices_out, result, offset);
+        return result;
+    } else {
+        return nullptr;
     }
-
-    return result;
 }
 
 template <typename Func, JitBackend Backend, typename Base,

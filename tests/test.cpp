@@ -323,11 +323,11 @@ int main(int argc, char **argv) {
         jit_set_log_level_callback(LogLevel::Trace, log_level_callback);
         fprintf(stdout, "\n");
 
-        test_cuda &= jit_has_backend(JitBackend::CUDA);
-        test_llvm &= jit_has_backend(JitBackend::LLVM);
+        test_cuda &= (bool) jit_has_backend(JitBackend::CUDA);
+        test_llvm &= (bool) jit_has_backend(JitBackend::LLVM);
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-        test_optix &= jit_has_backend(JitBackend::CUDA);
+        test_optix &= (bool) jit_has_backend(JitBackend::CUDA);
 #else
         test_optix = false;
 #endif

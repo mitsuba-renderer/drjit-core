@@ -146,7 +146,7 @@ template <typename T> void test_const_prop() {
     for (int i = 0; i < Size2; ++i) {
         int j = i % Size;
         values[i] = (Value) (IsMask || !IsSigned) ? j : (j - 4);
-        if (IsFloat && (values[i] < -1 || values[i] > 1))
+        if (IsFloat && (values[i] < Value(-1) || values[i] > Value(1)))
             values[i] = (Value) (1.1f * values[i]);
     }
 
@@ -257,7 +257,7 @@ template <typename T> void test_const_prop() {
                 uint32_t index = 0;
 
                 if (((op == JitOp::Div || op == JitOp::Mod) && values[j] == 0) ||
-                    ((op == JitOp::Shr || op == JitOp::Shl) && values[j] < 0)) {
+                    ((op == JitOp::Shr || op == JitOp::Shl) && values[j] < Value(0))) {
                     index = in[j];
                     jit_var_inc_ref_ext(index);
                 } else {
@@ -323,7 +323,7 @@ template <typename T> void test_const_prop() {
     for (int i = 0; i < Small2; ++i) {
         int j = i % Small;
         values[i] = (Value) (IsMask || !IsSigned) ? j : (j - 2);
-        if (IsFloat && (values[i] < -1 || values[i] > 1))
+        if (IsFloat && (values[i] < Value(-1) || values[i] > Value(1)))
             values[i] = (Value) (1.1f * values[i]);
     }
 

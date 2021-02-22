@@ -402,7 +402,7 @@ void scatter_reduce(ReduceOp op, Array &target, const Array &value,
 }
 
 template <typename Array>
-Array arange(ssize_t start, ssize_t stop, ssize_t step) {
+Array arange(size_t start, size_t stop, size_t step) {
     using UInt32 = typename Array::template ReplaceValue<uint32_t>;
     using Value = typename Array::Value;
 

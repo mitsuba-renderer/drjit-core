@@ -101,8 +101,9 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
     char filename[512];
 
     int rv = _snwprintf(filename_w, sizeof(filename_w) / sizeof(wchar_t),
-                        L"%s\\%016llx.%s.bin",
-                        jitc_temp_path, (unsigned long long) hash,
+                        L"%s\\%016llx%016llx.%s.bin",
+                        jitc_temp_path, (unsigned long long) hash.high64,
+                        (unsigned long long) hash.low64,
                         backend == JitBackend::CUDA ? L"cuda" : L"llvm");
 
     if (rv < 0 || rv == sizeof(filename) ||
@@ -289,9 +290,10 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     char filename[512], filename_tmp[512];
 
     int rv = _snwprintf(filename_w, sizeof(filename_w) / sizeof(wchar_t),
-                        L"%s\\%016llx.%s.bin",
-                        jitc_temp_path, (unsigned long long) hash,
-                        cuda ? L"cuda" : L"llvm");
+                        L"%s\\%016llx%016llx.%s.bin",
+                        jitc_temp_path, (unsigned long long) hash.high64,
+                        (unsigned long long) hash.low64,
+                        backend == JitBackend::CUDA ? L"cuda" : L"llvm");
 
     if (rv < 0 || rv == sizeof(filename) ||
         wcstombs(filename, filename_w, sizeof(filename)) == sizeof(filename))

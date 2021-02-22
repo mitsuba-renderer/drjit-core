@@ -735,7 +735,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     char *kernel_str = (char *) buffer.get() + offset;
     kernel_hash = XXH128(kernel_str, kernel_length, 0);
 
-    auto result = globals_map.emplace(kernel_hash, callables.size());
+    auto result = globals_map.emplace(kernel_hash, (uint32_t) callables.size());
     if (result.second) {
         // Replace '^'s in 'func_^^^..' or '__direct_callable__^^^..' with hash
         char *id = strchr(kernel_str, '^');
@@ -753,6 +753,6 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
 
 void jitc_register_global(const char *str) {
     auto global_hash = XXH128(str, strlen(str), 0);
-    if (globals_map.emplace(global_hash, globals_map.size()).second)
+    if (globals_map.emplace(global_hash, (uint32_t) globals_map.size()).second)
         globals.push_back(str);
 }
