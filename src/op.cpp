@@ -119,7 +119,7 @@ inline bool eval_xor(bool v0, bool v1) { return v0 != v1; }
 inline bool eval_not(bool v) { return !v; }
 
 template <typename T> T eval_neg(T v) { return -v; }
-inline bool eval_neg(bool v) {
+inline bool eval_neg(bool) {
     jitc_raise("eval_neg(): unsupported operands!");
 }
 
