@@ -731,7 +731,6 @@ void jitc_optix_shutdown() {
 
     jitc_log(Info, "jit_optix_shutdown()");
 
-#if defined(ENOKI_JIT_DYNAMIC_OPTIX)
     #define Z(x) x = nullptr
 
     #if !defined(_WIN32)
@@ -763,7 +762,6 @@ void jitc_optix_shutdown() {
     jitc_optix_handle = nullptr;
 
     #undef Z
-#endif
 
     jitc_optix_init_success = false;
     jitc_optix_init_attempted = false;
