@@ -259,6 +259,7 @@ void jitc_registry_set_attr(void *ptr, const char *name,
                 cuda_check(cuMemAllocManaged((CUdeviceptr *) &ptr, new_size, CU_MEM_ATTACH_GLOBAL));
             }
             cuda_check(cuMemAdvise((CUdeviceptr) ptr, new_size, CU_MEM_ADVISE_SET_READ_MOSTLY, 0));
+            cuda_check(cuCtxSynchronize());
         } else {
             ptr = malloc_check(new_size);
         }
