@@ -535,20 +535,25 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 
     size_t size_before = ts->optix_program_groups.size();
+#if 0
     OptixStackSizes stack_sizes;
     unsigned int cssRG = 0, dssDC = 0;
+#endif
+
     for (uint32_t i = 0; i < n_programs; ++i) {
         if (i == 0)
             free((char *) pgd[0].raygen.entryFunctionName);
         else
             free((char *) pgd[i].callables.entryFunctionNameDC);
         ts->optix_program_groups.push_back(kernel.optix.pg[i]);
+#if 0
         jitc_optix_check(optixProgramGroupGetStackSize(
             ts->optix_program_groups[i], &stack_sizes));
         if (i == 0)
             cssRG = stack_sizes.cssRG;
         else
             dssDC = std::max(dssDC, stack_sizes.dssDC);
+#endif
     }
 
     log_size = sizeof(error_log);
