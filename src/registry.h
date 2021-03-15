@@ -12,22 +12,25 @@
 #include <stdint.h>
 
 /// Register a pointer with Enoki's pointer registry
-extern uint32_t jitc_registry_put(const char *domain, void *ptr);
+extern uint32_t jitc_registry_put(JitBackend backend, const char *domain,
+                                  void *ptr);
 
 /// Remove a pointer from the registry
-extern void jitc_registry_remove(void *ptr);
+extern void jitc_registry_remove(JitBackend backend, void *ptr);
 
 /// Provide a bound (<=) on the largest ID associated with a domain
-extern uint32_t jitc_registry_get_max(const char *domain);
+extern uint32_t jitc_registry_get_max(JitBackend backend, const char *domain);
 
 /// Query the ID associated a registered pointer
-extern uint32_t jitc_registry_get_id(const void *ptr);
+extern uint32_t jitc_registry_get_id(JitBackend backend, const void *ptr);
 
 /// Query the domain associated a registered pointer
-extern const char *jitc_registry_get_domain(const void *ptr);
+extern const char *jitc_registry_get_domain(JitBackend backend,
+                                            const void *ptr);
 
 /// Query the pointer associated a given domain and ID
-extern void *jitc_registry_get_ptr(const char *domain, uint32_t id);
+extern void *jitc_registry_get_ptr(JitBackend backend, const char *domain,
+                                   uint32_t id);
 
 /// Compact the registry and release unused IDs
 extern void jitc_registry_trim();
@@ -36,8 +39,11 @@ extern void jitc_registry_trim();
 extern void jitc_registry_shutdown();
 
 /// Set a custom per-pointer attribute
-extern void jitc_registry_set_attr(void *ptr, const char *name,
-                                   const void *value, size_t size);
+extern void jitc_registry_set_attr(JitBackend backend, void *ptr,
+                                   const char *name, const void *value,
+                                   size_t size);
 
 /// Retrieve a pointer to a buffer storing a specific attribute
-extern const void *jitc_registry_attr_data(const char *domain, const char *name);
+extern const void *jitc_registry_attr_data(JitBackend backend,
+                                           const char *domain,
+                                           const char *name);

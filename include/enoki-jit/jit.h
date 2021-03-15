@@ -518,7 +518,7 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  * Returns zero if <tt>ptr == nullptr</tt> and throws if the pointer is already
  * registered (with *any* domain).
  */
-extern JIT_EXPORT uint32_t jit_registry_put(const char *domain, void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_put(JitBackend backend, const char *domain, void *ptr);
 
 /**
  * \brief Remove a pointer from the registry
@@ -526,14 +526,14 @@ extern JIT_EXPORT uint32_t jit_registry_put(const char *domain, void *ptr);
  * No-op if <tt>ptr == nullptr</tt>. Throws an exception if the pointer is not
  * currently registered.
  */
-extern JIT_EXPORT void jit_registry_remove(void *ptr);
+extern JIT_EXPORT void jit_registry_remove(JitBackend backend, void *ptr);
 
 /**
  * \brief Query the ID associated a registered pointer
  *
  * Returns 0 if <tt>ptr==nullptr</tt> and throws if the pointer is not known.
  */
-extern JIT_EXPORT uint32_t jit_registry_get_id(const void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_get_id(JitBackend backend, const void *ptr);
 
 /**
  * \brief Query the domain associated a registered pointer
@@ -541,7 +541,7 @@ extern JIT_EXPORT uint32_t jit_registry_get_id(const void *ptr);
  * Returns \c nullptr if <tt>ptr==nullptr</tt> and throws if the pointer is not
  * known.
  */
-extern JIT_EXPORT const char *jit_registry_get_domain(const void *ptr);
+extern JIT_EXPORT const char *jit_registry_get_domain(JitBackend backend, const void *ptr);
 
 /**
  * \brief Query the pointer associated a given domain and ID
@@ -549,10 +549,10 @@ extern JIT_EXPORT const char *jit_registry_get_domain(const void *ptr);
  * Returns \c nullptr if <tt>id==0</tt>, or when the (domain, ID) combination
  * is not known.
  */
-extern JIT_EXPORT void *jit_registry_get_ptr(const char *domain, uint32_t id);
+extern JIT_EXPORT void *jit_registry_get_ptr(JitBackend backend, const char *domain, uint32_t id);
 
 /// Provide a bound (<=) on the largest ID associated with a domain
-extern JIT_EXPORT uint32_t jit_registry_get_max(const char *domain);
+extern JIT_EXPORT uint32_t jit_registry_get_max(JitBackend backend, const char *domain);
 
 /**
  * \brief Compact the registry and release unused IDs and attributes
@@ -588,7 +588,8 @@ extern JIT_EXPORT void jit_registry_trim();
  * \param size
  *     Size of the pointed-to region.
  */
-extern JIT_EXPORT void jit_registry_set_attr(void *ptr,
+extern JIT_EXPORT void jit_registry_set_attr(JitBackend backend,
+                                             void *ptr,
                                              const char *name,
                                              const void *value,
                                              size_t size);
@@ -599,7 +600,8 @@ extern JIT_EXPORT void jit_registry_set_attr(void *ptr,
  *
  * \sa jit_registry_set_attr
  */
-extern JIT_EXPORT const void *jit_registry_attr_data(const char *domain,
+extern JIT_EXPORT const void *jit_registry_attr_data(JitBackend backend,
+                                                     const char *domain,
                                                      const char *name);
 
 // ====================================================================
@@ -680,9 +682,8 @@ extern JIT_EXPORT uint32_t jit_var_new_counter(JitBackend backend, size_t size);
  *                                       op1, op2);
  * \endcode
  *
- * \param cuda
- *    Specifies whether 'stmt' contains a CUDA PTX (<tt>cuda == 1</tt>) or LLVM
- *    IR (<tt>cuda == 0</tt>) instruction.
+ * \param backend
+ *    Specifies whether 'stmt' contains a CUDA PTX or LLVM IR instruction.
  *
  * \param vt
  *    Type of the variable to be created, see \ref VarType for details.

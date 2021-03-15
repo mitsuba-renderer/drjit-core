@@ -437,7 +437,7 @@ using KernelCache =
                    std::allocator<std::pair<KernelKey, Kernel>>,
                    /* StoreHash = */ true>;
 
-// Key associated with a pointer registerered in Enoki's pointer registry
+// Key associated with a pointer registered in Enoki's pointer registry
 struct RegistryKey {
     const char *domain;
     uint32_t id;
@@ -446,21 +446,14 @@ struct RegistryKey {
     bool operator==(const RegistryKey &k) const {
         return id == k.id && strcmp(domain, k.domain) == 0;
     }
+
+    /// Helper class to hash RegistryKey instances
+    struct Hasher {
+        size_t operator()(const RegistryKey &k) const {
+            return hash_str(k.domain, k.id);
+        }
+    };
 };
-
-/// Helper class to hash RegistryKey instances
-struct RegistryKeyHasher {
-    size_t operator()(const RegistryKey &k) const {
-        return hash_str(k.domain, k.id);
-    }
-};
-
-using RegistryFwdMap = tsl::robin_map<RegistryKey, void *, RegistryKeyHasher,
-                                      std::equal_to<RegistryKey>,
-                                      std::allocator<std::pair<RegistryKey, void *>>,
-                                      /* StoreHash = */ true>;
-
-using RegistryRevMap = tsl::robin_pg_map<const void *, RegistryKey>;
 
 struct AttributeKey {
     const char *domain;
@@ -471,6 +464,13 @@ struct AttributeKey {
     bool operator==(const AttributeKey &k) const {
         return strcmp(domain, k.domain) == 0 && strcmp(name, k.name) == 0;
     }
+
+    /// Helper class to hash AttributeKey instances
+    struct Hasher {
+        size_t operator()(const AttributeKey &k) const {
+            return hash_str(k.domain, hash_str(k.name));
+        }
+    };
 };
 
 struct AttributeValue {
@@ -479,17 +479,28 @@ struct AttributeValue {
     void *ptr = nullptr;
 };
 
-/// Helper class to hash AttributeKey instances
-struct AttributeKeyHasher {
-    size_t operator()(const AttributeKey &k) const {
-        return hash_str(k.domain, hash_str(k.name));
-    }
-};
+struct Registry {
+    using RegistryFwdMap =
+        tsl::robin_map<RegistryKey, void *, RegistryKey::Hasher,
+                       std::equal_to<RegistryKey>,
+                       std::allocator<std::pair<RegistryKey, void *>>,
+                       /* StoreHash = */ true>;
 
-using AttributeMap = tsl::robin_map<AttributeKey, AttributeValue, AttributeKeyHasher,
-                                    std::equal_to<AttributeKey>,
-                                    std::allocator<std::pair<AttributeKey, AttributeValue>>,
-                                    /* StoreHash = */ true>;
+    using RegistryRevMap = tsl::robin_pg_map<const void *, RegistryKey>;
+
+    using AttributeMap =
+        tsl::robin_map<AttributeKey, AttributeValue, AttributeKey::Hasher,
+                       std::equal_to<AttributeKey>,
+                       std::allocator<std::pair<AttributeKey, AttributeValue>>,
+                       /* StoreHash = */ true>;
+
+    /// Two-way mapping that can be used to associate pointers with unique 32 bit IDs
+    RegistryFwdMap fwd;
+    RegistryRevMap rev;
+
+    /// Per-pointer attributes provided by the pointer registry
+    AttributeMap attributes;
+};
 
 struct Extra {
     /// Optional descriptive label
@@ -549,12 +560,8 @@ struct State {
     /// State associated with each Enoki-JIT thread
     std::vector<ThreadState *> tss;
 
-    /// Two-way mapping that can be used to associate pointers with unique 32 bit IDs
-    RegistryFwdMap registry_fwd;
-    RegistryRevMap registry_rev;
-
-    /// Per-pointer attributes provided by the pointer registry
-    AttributeMap attributes;
+    /// Pointer registries for LLVM and CUDA backends
+    Registry registry_cpu, registry_gpu;
 
     /// Map of currently allocated memory regions
     AllocUsedMap alloc_used;
@@ -584,6 +591,11 @@ struct State {
 
     /// Cache of previously compiled kernels
     KernelCache kernel_cache;
+
+    /// Return a pointer to the registry corresponding to the specified backend
+    Registry *registry(JitBackend backend) {
+        return backend == JitBackend::CUDA ? &registry_gpu : &registry_cpu;
+    }
 };
 
 struct Buffer {

@@ -653,34 +653,34 @@ void jit_block_sum(JitBackend backend, enum VarType type, const void *in, void *
     jitc_block_sum(backend, type, in, out, size, block_size);
 }
 
-uint32_t jit_registry_put(const char *domain, void *ptr) {
+uint32_t jit_registry_put(JitBackend backend, const char *domain, void *ptr) {
     lock_guard guard(state.mutex);
-    return jitc_registry_put(domain, ptr);
+    return jitc_registry_put(backend, domain, ptr);
 }
 
-void jit_registry_remove(void *ptr) {
+void jit_registry_remove(JitBackend backend, void *ptr) {
     lock_guard guard(state.mutex);
-    jitc_registry_remove(ptr);
+    jitc_registry_remove(backend, ptr);
 }
 
-uint32_t jit_registry_get_id(const void *ptr) {
+uint32_t jit_registry_get_id(JitBackend backend, const void *ptr) {
     lock_guard guard(state.mutex);
-    return jitc_registry_get_id(ptr);
+    return jitc_registry_get_id(backend, ptr);
 }
 
-const char *jit_registry_get_domain(const void *ptr) {
+const char *jit_registry_get_domain(JitBackend backend, const void *ptr) {
     lock_guard guard(state.mutex);
-    return jitc_registry_get_domain(ptr);
+    return jitc_registry_get_domain(backend, ptr);
 }
 
-void *jit_registry_get_ptr(const char *domain, uint32_t id) {
+void *jit_registry_get_ptr(JitBackend backend, const char *domain, uint32_t id) {
     lock_guard guard(state.mutex);
-    return jitc_registry_get_ptr(domain, id);
+    return jitc_registry_get_ptr(backend, domain, id);
 }
 
-uint32_t jit_registry_get_max(const char *domain) {
+uint32_t jit_registry_get_max(JitBackend backend, const char *domain) {
     lock_guard guard(state.mutex);
-    return jitc_registry_get_max(domain);
+    return jitc_registry_get_max(backend, domain);
 }
 
 void jit_registry_trim() {
@@ -688,15 +688,16 @@ void jit_registry_trim() {
     jitc_registry_trim();
 }
 
-void jit_registry_set_attr(void *self, const char *name, const void *value,
-                           size_t size) {
+void jit_registry_set_attr(JitBackend backend, void *self, const char *name,
+                           const void *value, size_t size) {
     lock_guard guard(state.mutex);
-    jitc_registry_set_attr(self, name, value, size);
+    jitc_registry_set_attr(backend, self, name, value, size);
 }
 
-const void *jit_registry_attr_data(const char *domain, const char *name) {
+const void *jit_registry_attr_data(JitBackend backend, const char *domain,
+                                   const char *name) {
     lock_guard guard(state.mutex);
-    return jitc_registry_attr_data(domain, name);
+    return jitc_registry_attr_data(backend, domain, name);
 }
 
 uint32_t jit_var_registry_attr(JitBackend backend, VarType type,

@@ -1237,7 +1237,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         }
     }
 
-    uint32_t bucket_count = jitc_registry_get_max(domain) + 1;
+    uint32_t bucket_count = jitc_registry_get_max(backend, domain) + 1;
     if (unlikely(bucket_count == 1)) {
         *bucket_count_out = 0;
         return nullptr;
@@ -1292,7 +1292,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
 
         uint32_t index = jitc_var_new(v2);
 
-        void *ptr = jitc_registry_get_ptr(domain, bucket_id);
+        void *ptr = jitc_registry_get_ptr(backend, domain, bucket_id);
         memcpy(offsets_out, &ptr, sizeof(void *));
         memcpy(offsets_out + 2, &index, sizeof(uint32_t));
         offsets_out += 4;

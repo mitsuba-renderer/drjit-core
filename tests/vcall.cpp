@@ -85,7 +85,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
     for (uint32_t i = 1; i <= n_inst; ++i) {
         char label[128];
         snprintf(label, sizeof(label), "VCall: %s [instance %u]", domain, i);
-        Base *base = (Base *) jit_registry_get_ptr(domain, i);
+        Base *base = (Base *) jit_registry_get_ptr(Backend, domain, i);
 
         jit_prefix_push(Backend, label);
         int flag_before = jit_flag(JitFlag::Recording);
@@ -149,7 +149,7 @@ auto vcall(const char *domain, const Func &func,
     using Result_2 = std::conditional_t<IsVoid, std::nullptr_t, Result>;
     using Bool = JitArray<Backend, bool>;
 
-    uint32_t n_inst = jit_registry_get_max(domain);
+    uint32_t n_inst = jit_registry_get_max(Backend, domain);
 
 #if 0
     if (n_inst == 0) {
@@ -161,7 +161,7 @@ auto vcall(const char *domain, const Func &func,
         uint32_t i = 1;
         Base *inst = nullptr;
         do {
-            inst = (Base *) jit_registry_get_ptr(domain, i++);
+            inst = (Base *) jit_registry_get_ptr(Backend, domain, i++);
         } while (!inst);
 
         if constexpr (IsVoid) {
@@ -199,8 +199,8 @@ TEST_BOTH(01_symbolic_vcall) {
     A2 a2;
 
     // jit_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
-    uint32_t i1 = jit_registry_put("Base", &a1);
-    uint32_t i2 = jit_registry_put("Base", &a2);
+    uint32_t i1 = jit_registry_put(Backend, "Base", &a1);
+    uint32_t i2 = jit_registry_put(Backend, "Base", &a2);
     jit_assert(i1 == 1 && i2 == 2);
 
     using BasePtr = Array<Base *>;
@@ -219,8 +219,8 @@ TEST_BOTH(01_symbolic_vcall) {
         }
     }
 
-    jit_registry_remove(&a1);
-    jit_registry_remove(&a2);
+    jit_registry_remove(Backend, &a1);
+    jit_registry_remove(Backend, &a2);
 }
 
 TEST_BOTH(02_calling_conventions) {
@@ -258,9 +258,9 @@ TEST_BOTH(02_calling_conventions) {
 
     B1 b1; B2 b2; B3 b3;
 
-    uint32_t i1 = jit_registry_put("Base", &b1);
-    uint32_t i2 = jit_registry_put("Base", &b2);
-    uint32_t i3 = jit_registry_put("Base", &b3);
+    uint32_t i1 = jit_registry_put(Backend, "Base", &b1);
+    uint32_t i2 = jit_registry_put(Backend, "Base", &b2);
+    uint32_t i3 = jit_registry_put(Backend, "Base", &b3);
 
     for (uint32_t i = 0; i < 2; ++i) {
         for (uint32_t j = 0; j < 2; ++j) {
@@ -295,9 +295,9 @@ TEST_BOTH(02_calling_conventions) {
         }
     }
 
-    jit_registry_remove(&b1);
-    jit_registry_remove(&b2);
-    jit_registry_remove(&b3);
+    jit_registry_remove(Backend, &b1);
+    jit_registry_remove(Backend, &b2);
+    jit_registry_remove(Backend, &b3);
 }
 
 TEST_BOTH(03_optimize_away_outputs) {
@@ -323,9 +323,9 @@ TEST_BOTH(03_optimize_away_outputs) {
     };
 
     C12 c1; C12 c2; C3 c3;
-    uint32_t i1 = jit_registry_put("Base", &c1);
-    uint32_t i2 = jit_registry_put("Base", &c2);
-    uint32_t i3 = jit_registry_put("Base", &c3);
+    uint32_t i1 = jit_registry_put(Backend, "Base", &c1);
+    uint32_t i2 = jit_registry_put(Backend, "Base", &c2);
+    uint32_t i3 = jit_registry_put(Backend, "Base", &c3);
     jit_assert(i1 == 1 && i2 == 2 && i3 == 3);
 
     Float p1 = ek::opaque<Float>(12);
@@ -370,9 +370,9 @@ TEST_BOTH(03_optimize_away_outputs) {
                               "[0, 13, 13, 14, 0, 13, 13, 14, 0, 13]") == 0);
         }
     }
-    jit_registry_remove(&c1);
-    jit_registry_remove(&c2);
-    jit_registry_remove(&c3);
+    jit_registry_remove(Backend, &c1);
+    jit_registry_remove(Backend, &c2);
+    jit_registry_remove(Backend, &c3);
 }
 
 TEST_BOTH(04_devirtualize) {
@@ -395,8 +395,8 @@ TEST_BOTH(04_devirtualize) {
     };
 
     D1 d1; D2 d2;
-    uint32_t i1 = jit_registry_put("Base", &d1);
-    uint32_t i2 = jit_registry_put("Base", &d2);
+    uint32_t i1 = jit_registry_put(Backend, "Base", &d1);
+    uint32_t i2 = jit_registry_put(Backend, "Base", &d2);
     jit_assert(i1 == 1 && i2 == 2);
 
     using BasePtr = Array<Base *>;
@@ -443,8 +443,8 @@ TEST_BOTH(04_devirtualize) {
             }
         }
     }
-    jit_registry_remove(&d1);
-    jit_registry_remove(&d2);
+    jit_registry_remove(Backend, &d1);
+    jit_registry_remove(Backend, &d2);
 }
 
 TEST_BOTH(05_extra_data) {
@@ -468,8 +468,8 @@ TEST_BOTH(05_extra_data) {
     };
 
     E1 e1; E2 e2;
-    uint32_t i1 = jit_registry_put("Base", &e1);
-    uint32_t i2 = jit_registry_put("Base", &e2);
+    uint32_t i1 = jit_registry_put(Backend, "Base", &e1);
+    uint32_t i2 = jit_registry_put(Backend, "Base", &e2);
     jit_assert(i1 == 1 && i2 == 2);
 
     using BasePtr = Array<Base *>;
@@ -494,8 +494,8 @@ TEST_BOTH(05_extra_data) {
             }
         }
     }
-    jit_registry_remove(&e1);
-    jit_registry_remove(&e2);
+    jit_registry_remove(Backend, &e1);
+    jit_registry_remove(Backend, &e2);
 }
 
 TEST_BOTH(06_side_effects) {
@@ -534,16 +534,16 @@ TEST_BOTH(06_side_effects) {
             if (j == 1 && Backend == JitBackend::LLVM) continue;
 
             F1 f1; F2 f2;
-            uint32_t i1 = jit_registry_put("Base", &f1);
-            uint32_t i2 = jit_registry_put("Base", &f2);
+            uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
+            uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
             jit_assert(i1 == 1 && i2 == 2);
 
             vcall("Base", [](Base *self2) { self2->go(); }, self);
             jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
             jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
 
-            jit_registry_remove(&f1);
-            jit_registry_remove(&f2);
+            jit_registry_remove(Backend, &f1);
+            jit_registry_remove(Backend, &f2);
             jit_registry_trim();
         }
     }
@@ -583,8 +583,8 @@ TEST_BOTH(07_side_effects_only_once) {
             if (j == 1 && Backend == JitBackend::LLVM) continue;
 
             G1 g1; G2 g2;
-            uint32_t i1 = jit_registry_put("Base", &g1);
-            uint32_t i2 = jit_registry_put("Base", &g2);
+            uint32_t i1 = jit_registry_put(Backend, "Base", &g1);
+            uint32_t i2 = jit_registry_put(Backend, "Base", &g2);
             jit_assert(i1 == 1 && i2 == 2);
 
             auto result = vcall("Base", [](Base *self2) { return self2->f(); }, self);
@@ -597,8 +597,8 @@ TEST_BOTH(07_side_effects_only_once) {
             jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
             jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
 
-            jit_registry_remove(&g1);
-            jit_registry_remove(&g2);
+            jit_registry_remove(Backend, &g1);
+            jit_registry_remove(Backend, &g2);
             jit_registry_trim();
         }
     }
@@ -632,8 +632,8 @@ TEST_BOTH(08_multiple_calls) {
     Float x = opaque<Float>(10, 1);
 
     H1 h1; H2 h2;
-    uint32_t i1 = jit_registry_put("Base", &h1);
-    uint32_t i2 = jit_registry_put("Base", &h2);
+    uint32_t i1 = jit_registry_put(Backend, "Base", &h1);
+    uint32_t i2 = jit_registry_put(Backend, "Base", &h2);
     jit_assert(i1 == 1 && i2 == 2);
 
 
@@ -650,8 +650,8 @@ TEST_BOTH(08_multiple_calls) {
         }
     }
 
-    jit_registry_remove(&h1);
-    jit_registry_remove(&h2);
+    jit_registry_remove(Backend, &h1);
+    jit_registry_remove(Backend, &h2);
 }
 
 TEST_BOTH(09_big) {
@@ -680,12 +680,12 @@ TEST_BOTH(09_big) {
 
     for (int i = 0; i < n1; ++i) {
         v1[i].v = i;
-        i1[i] = jit_registry_put("Base1", &v1[i]);
+        i1[i] = jit_registry_put(Backend, "Base1", &v1[i]);
     }
 
     for (int i = 0; i < n2; ++i) {
         v2[i].v = 100 + i;
-        i2[i] = jit_registry_put("Base2", &v2[i]);
+        i2[i] = jit_registry_put(Backend, "Base2", &v2[i]);
     }
 
     using Base1Ptr = Array<Base1 *>;
@@ -724,7 +724,7 @@ TEST_BOTH(09_big) {
     }
 
     for (int i = 0; i < n1; ++i)
-        jit_registry_remove(&v1[i]);
+        jit_registry_remove(Backend, &v1[i]);
     for (int i = 0; i < n2; ++i)
-        jit_registry_remove(&v2[i]);
+        jit_registry_remove(Backend, &v2[i]);
 }
