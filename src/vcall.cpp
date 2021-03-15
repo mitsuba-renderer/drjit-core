@@ -246,7 +246,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
         for (uint32_t j = se_offset[i]; j != se_offset[i + 1]; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
-                                        ts->side_effects[j]);
+                                        vcall->se[j - se_offset[0]]);
 
         // Restore to full alignment
         data_size = (data_size + 7) / 8 * 8;
