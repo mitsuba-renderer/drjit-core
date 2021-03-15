@@ -13,17 +13,19 @@
 static_assert(sizeof(void*) == 8, "32 bit architectures are not supported!");
 
 /// Register a pointer with Enoki's pointer registry
-uint32_t jitc_registry_put(const char *domain, void *ptr) {
+uint32_t jitc_registry_put(JitBackend backend, const char *domain, void *ptr) {
     if (unlikely(ptr == nullptr))
         jitc_raise("jit_registry_put(): cannot register the null pointer!");
 
+    Registry* registry = state.registry(backend);
+
     // Create the rev. map. first and throw if the pointer is already registered
-    auto it_rev = state.registry_rev.try_emplace(ptr, RegistryKey(domain, 0));
+    auto it_rev = registry->rev.try_emplace(ptr, RegistryKey(domain, 0));
     if (unlikely(!it_rev.second))
         jitc_raise("jit_registry_put(): pointer %p was already registered!", ptr);
 
     // Get or create the bookkeeping record associated with the domain
-    auto it_head = state.registry_fwd.try_emplace(RegistryKey(domain, 0), nullptr);
+    auto it_head = registry->fwd.try_emplace(RegistryKey(domain, 0), nullptr);
     uintptr_t &value_head = (uintptr_t &) it_head.first.value();
 
     uint32_t next_avail = (uint32_t) (value_head >> 32),
@@ -31,8 +33,8 @@ uint32_t jitc_registry_put(const char *domain, void *ptr) {
 
     if (next_avail) {
         // Case 1: some previously released IDs are available, reuse them
-        auto it_next = state.registry_fwd.find(RegistryKey(domain, next_avail));
-        if (unlikely(it_next == state.registry_fwd.end()))
+        auto it_next = registry->fwd.find(RegistryKey(domain, next_avail));
+        if (unlikely(it_next == registry->fwd.end()))
             jitc_fail("jit_registry_put(): data structure corrupted (1)!");
 
         uintptr_t &value_next = (uintptr_t &) it_next.value();
@@ -64,7 +66,7 @@ uint32_t jitc_registry_put(const char *domain, void *ptr) {
 
         // Create new record
         auto it_new =
-            state.registry_fwd.try_emplace(RegistryKey(domain, counter), ptr);
+            registry->fwd.try_emplace(RegistryKey(domain, counter), ptr);
         if (unlikely(!it_new.second))
             jitc_fail("jit_registry_put(): data structure corrupted (3)!");
 
@@ -79,26 +81,27 @@ uint32_t jitc_registry_put(const char *domain, void *ptr) {
 }
 
 /// Remove a pointer from the registry
-void jitc_registry_remove(void *ptr) {
+void jitc_registry_remove(JitBackend backend, void *ptr) {
     if (ptr == nullptr)
         return;
 
     jitc_trace("jit_registry_remove(" ENOKI_PTR ")", (uintptr_t) ptr);
 
-    auto it_rev = state.registry_rev.find(ptr);
-    if (unlikely(it_rev == state.registry_rev.end()))
+    Registry* registry = state.registry(backend);
+    auto it_rev = registry->rev.find(ptr);
+    if (unlikely(it_rev == registry->rev.end()))
         jitc_raise("jit_registry_remove(): pointer %p could not be found!", ptr);
 
     RegistryKey key = it_rev.value();
 
     // Get the forward record associated with the pointer
-    auto it_fwd = state.registry_fwd.find(RegistryKey(key.domain, key.id));
-    if (unlikely(it_fwd == state.registry_fwd.end()))
+    auto it_fwd = registry->fwd.find(RegistryKey(key.domain, key.id));
+    if (unlikely(it_fwd == registry->fwd.end()))
         jitc_raise("jit_registry_remove(): data structure corrupted (1)!");
 
     // Get the bookkeeping record associated with the domain
-    auto it_head = state.registry_fwd.find(RegistryKey(key.domain, 0));
-    if (unlikely(it_head == state.registry_fwd.end()))
+    auto it_head = registry->fwd.find(RegistryKey(key.domain, 0));
+    if (unlikely(it_head == registry->fwd.end()))
         jitc_raise("jit_registry_remove(): data structure corrupted (2)!");
 
     // Update the head node
@@ -112,38 +115,41 @@ void jitc_registry_remove(void *ptr) {
     value_fwd = (uintptr_t) next_avail << 32;
 
     // Remove reverse mapping
-    state.registry_rev.erase(it_rev);
+    registry->rev.erase(it_rev);
 }
 
 /// Query the ID associated a registered pointer
-uint32_t jitc_registry_get_id(const void *ptr) {
+uint32_t jitc_registry_get_id(JitBackend backend, const void *ptr) {
     if (ptr == nullptr)
         return 0;
 
-    auto it = state.registry_rev.find(ptr);
-    if (unlikely(it == state.registry_rev.end()))
+    Registry* registry = state.registry(backend);
+    auto it = registry->rev.find(ptr);
+    if (unlikely(it == registry->rev.end()))
         jitc_raise("jit_registry_get_id(): pointer %p could not be found!", ptr);
     return it.value().id;
 }
 
 /// Query the domain associated a registered pointer
-const char *jitc_registry_get_domain(const void *ptr) {
+const char *jitc_registry_get_domain(JitBackend backend, const void *ptr) {
     if (ptr == nullptr)
         return nullptr;
 
-    auto it = state.registry_rev.find(ptr);
-    if (unlikely(it == state.registry_rev.end()))
+    Registry* registry = state.registry(backend);
+    auto it = registry->rev.find(ptr);
+    if (unlikely(it == registry->rev.end()))
         jitc_raise("jit_registry_get_domain(): pointer %p could not be found!", ptr);
     return it.value().domain;
 }
 
 /// Query the pointer associated a given domain and ID
-void *jitc_registry_get_ptr(const char *domain, uint32_t id) {
+void *jitc_registry_get_ptr(JitBackend backend, const char *domain, uint32_t id) {
     if (id == 0)
         return nullptr;
 
-    auto it = state.registry_fwd.find(RegistryKey(domain, id));
-    if (unlikely(it == state.registry_fwd.end()))
+    Registry* registry = state.registry(backend);
+    auto it = registry->fwd.find(RegistryKey(domain, id));
+    if (unlikely(it == registry->fwd.end()))
         return nullptr;
 
     uintptr_t value = (uintptr_t) it.value();
@@ -155,59 +161,67 @@ void *jitc_registry_get_ptr(const char *domain, uint32_t id) {
 
 /// Compact the registry and release unused IDs and attributes
 void jitc_registry_trim() {
-    RegistryFwdMap registry_fwd;
+    auto trim_registry = [](JitBackend backend) {
+        Registry* registry = state.registry(backend);
+        Registry tmp_registry;
 
-    for (auto &kv : state.registry_fwd) {
-        const char *domain = kv.first.domain;
-        uint32_t id = kv.first.id;
-        void *ptr = kv.second;
+        for (auto &kv : registry->fwd) {
+            const char *domain = kv.first.domain;
+            uint32_t id = kv.first.id;
+            void *ptr = kv.second;
 
-        if (id != 0 &&
-            ((uint32_t) (uintptr_t) ptr != 0u ||
-             state.registry_rev.find(ptr) != state.registry_rev.end())) {
-            registry_fwd.insert(kv);
+            if (id != 0 &&
+                ((uint32_t) (uintptr_t) ptr != 0u ||
+                registry->rev.find(ptr) != registry->rev.end())) {
+                tmp_registry.fwd.insert(kv);
 
-            auto it_head =
-                registry_fwd.try_emplace(RegistryKey(domain, 0), nullptr);
+                auto it_head =
+                    tmp_registry.fwd.try_emplace(RegistryKey(domain, 0), nullptr);
 
-            uintptr_t &value_head = (uintptr_t &) it_head.first.value();
-            value_head = std::max(value_head, (uintptr_t) id);
+                uintptr_t &value_head = (uintptr_t &) it_head.first.value();
+                value_head = std::max(value_head, (uintptr_t) id);
+            }
         }
-    }
 
-    if (state.registry_fwd.size() != registry_fwd.size()) {
-        jitc_trace("jit_registry_trim(): removed %zu / %zu entries.",
-                  state.registry_fwd.size() - registry_fwd.size(),
-                  state.registry_fwd.size());
+        if (registry->fwd.size() != tmp_registry.fwd.size()) {
+            jitc_trace("jit_registry_trim(): removed %zu / %zu entries.",
+                    registry->fwd.size() - tmp_registry.fwd.size(),
+                    registry->fwd.size());
 
-        state.registry_fwd = std::move(registry_fwd);
-    }
-
-    AttributeMap attributes;
-    for (auto &kv : state.attributes) {
-        if (state.registry_fwd.find(RegistryKey(kv.first.domain, 0)) != state.registry_fwd.end()) {
-            attributes.insert(kv);
-        } else {
-            if (state.backends & (uint32_t) JitBackend::CUDA)
-                cuda_check(cuMemFree((CUdeviceptr) kv.second.ptr));
-            else
-                free(kv.second.ptr);
+            registry->fwd = std::move(tmp_registry.fwd);
         }
-    }
 
-    if (state.attributes.size() != attributes.size()) {
-        jitc_trace("jit_registry_trim(): removed %zu / %zu attributes.",
-                  state.attributes.size() - attributes.size(),
-                  state.attributes.size());
-        state.attributes = std::move(attributes);
-    }
+        for (auto &kv : registry->attributes) {
+            if (registry->fwd.find(RegistryKey(kv.first.domain, 0)) != registry->fwd.end()) {
+                tmp_registry.attributes.insert(kv);
+            } else {
+                if (backend == JitBackend::CUDA)
+                    cuda_check(cuMemFree((CUdeviceptr) kv.second.ptr));
+                else
+                    free(kv.second.ptr);
+            }
+        }
+
+        if (registry->attributes.size() != tmp_registry.attributes.size()) {
+            jitc_trace("jit_registry_trim(): removed %zu / %zu attributes.",
+                    registry->attributes.size() - tmp_registry.attributes.size(),
+                    registry->attributes.size());
+            registry->attributes = std::move(tmp_registry.attributes);
+        }
+    };
+
+    if (state.backends & (uint32_t) JitBackend::CUDA)
+        trim_registry(JitBackend::CUDA);
+    if (state.backends & (uint32_t) JitBackend::LLVM)
+        trim_registry(JitBackend::LLVM);
 }
 
 /// Provide a bound (<=) on the largest ID associated with a domain
-uint32_t jitc_registry_get_max(const char *domain) {
+uint32_t jitc_registry_get_max(JitBackend backend, const char *domain) {
+    Registry* registry = state.registry(backend);
     // Get the bookkeeping record associated with the domain
-    auto it_head = state.registry_fwd.find(RegistryKey(domain, 0));
-    if (unlikely(it_head == state.registry_fwd.end()))
+    auto it_head = registry->fwd.find(RegistryKey(domain, 0));
+    if (unlikely(it_head == registry->fwd.end()))
         return 0;
 
     uintptr_t value_head = (uintptr_t) it_head.value();
@@ -217,20 +231,39 @@ uint32_t jitc_registry_get_max(const char *domain) {
 void jitc_registry_shutdown() {
     jitc_registry_trim();
 
-    if (!state.registry_fwd.empty() || !state.registry_rev.empty())
-        jitc_log(Warn, "jit_registry_shutdown(): leaked %zu forward "
-                "and %zu reverse mappings!", state.registry_fwd.size(),
-                state.registry_rev.size());
+    if (state.backends & (uint32_t) JitBackend::CUDA) {
+        Registry* registry = state.registry(JitBackend::CUDA);
+        if (!registry->fwd.empty() || !registry->rev.empty())
+            jitc_log(Warn, "jit_registry_shutdown(): CUDA registry leaked %zu "
+                    "forward and %zu reverse mappings!",
+                    registry->fwd.size(), registry->rev.size());
 
-    if (!state.attributes.empty())
-        jitc_log(Warn, "jit_registry_shutdown(): leaked %zu attributes!",
-                state.attributes.size());
+        if (!registry->attributes.empty())
+            jitc_log(Warn, "jit_registry_shutdown(): CUDA registry leaked "
+                    "%zu attributes!",
+                    registry->attributes.size());
+    }
+
+    if (state.backends & (uint32_t) JitBackend::LLVM) {
+        Registry* registry = state.registry(JitBackend::LLVM);
+        if (!registry->fwd.empty() || !registry->rev.empty())
+            jitc_log(Warn, "jit_registry_shutdown(): LLVM registry leaked %zu "
+                    "forward and %zu reverse mappings!",
+                    registry->fwd.size(), registry->rev.size());
+
+        if (!registry->attributes.empty())
+            jitc_log(Warn, "jit_registry_shutdown(): LLVM registry leaked "
+                    "%zu attributes!",
+                    registry->attributes.size());
+    }
 }
 
-void jitc_registry_set_attr(void *ptr, const char *name,
-                           const void *value, size_t isize) {
-    auto it = state.registry_rev.find(ptr);
-    if (unlikely(it == state.registry_rev.end()))
+void jitc_registry_set_attr(JitBackend backend, void *ptr, const char *name,
+                            const void *value, size_t isize) {
+    ThreadState *ts = thread_state(backend);
+    Registry* registry = state.registry(backend);
+    auto it = registry->rev.find(ptr);
+    if (unlikely(it == registry->rev.end()))
         jitc_raise("jit_registry_set_attr(): pointer %p could not be found!", ptr);
 
     const char *domain = it.value().domain;
@@ -239,7 +272,7 @@ void jitc_registry_set_attr(void *ptr, const char *name,
     jitc_trace("jit_registry_set_attr(" ENOKI_PTR ", id=%u, name=\"%s\", size=%zu)",
               (uintptr_t) ptr, id, name, isize);
 
-    AttributeValue &attr = state.attributes[AttributeKey(domain, name)];
+    AttributeValue &attr = registry->attributes[AttributeKey(domain, name)];
     if (attr.isize == 0)
         attr.isize = (uint32_t) isize;
     else if (attr.isize != isize)
@@ -251,38 +284,52 @@ void jitc_registry_set_attr(void *ptr, const char *name,
         size_t new_size = (size_t) new_count * (size_t) isize;
         void *ptr;
 
-        if (!state.devices.empty()) {
+        if (backend == JitBackend::CUDA) {
             scoped_set_context guard(state.devices[0].context);
-            CUresult ret = cuMemAllocManaged((CUdeviceptr *) &ptr, new_size, CU_MEM_ATTACH_GLOBAL);
+            CUresult ret = cuMemAlloc((CUdeviceptr *) &ptr, new_size);
             if (ret != CUDA_SUCCESS) {
                 jitc_malloc_trim(true, true);
-                cuda_check(cuMemAllocManaged((CUdeviceptr *) &ptr, new_size, CU_MEM_ATTACH_GLOBAL));
+                cuda_check(cuMemAlloc((CUdeviceptr *) &ptr, new_size));
             }
-            cuda_check(cuMemAdvise((CUdeviceptr) ptr, new_size, CU_MEM_ADVISE_SET_READ_MOSTLY, 0));
+
+            // cuda_check(cuCtxSynchronize());
+
+            if (old_size != 0)
+                cuda_check(cuMemcpyAsync((CUdeviceptr) ptr,
+                                         (CUdeviceptr) attr.ptr, old_size,
+                                         ts->stream));
+            cuda_check(cuMemsetD8Async((uint8_t *) ptr + old_size, 0,
+                                       new_size - old_size, ts->stream));
+
+            cuda_check(cuMemFree((CUdeviceptr) attr.ptr));
         } else {
             ptr = malloc_check(new_size);
-        }
 
-        if (old_size != 0)
-            memcpy(ptr, attr.ptr, old_size);
-        memset((uint8_t *) ptr + old_size, 0, new_size - old_size);
+            if (old_size != 0)
+                memcpy(ptr, attr.ptr, old_size);
+            memset((uint8_t *) ptr + old_size, 0, new_size - old_size);
 
-        if (!state.devices.empty())
-            cuda_check(cuMemFree((CUdeviceptr) attr.ptr));
-        else
             free(attr.ptr);
+        }
 
         attr.ptr = ptr;
         attr.count = new_count;
     }
 
-    memcpy((uint8_t *) attr.ptr + id * isize, value, isize);
+    if (backend == JitBackend::CUDA) {
+        cuda_check(cuMemcpyAsync((uint8_t *) attr.ptr + id * isize, value,
+                                 isize, ts->stream));
+    } else {
+        memcpy((uint8_t *) attr.ptr + id * isize, value, isize);
+    }
 }
 
-const void *jitc_registry_attr_data(const char *domain, const char *name) {
-    auto it = state.attributes.find(AttributeKey(domain, name));
-    if (unlikely(it == state.attributes.end())) {
-        if (jitc_registry_get_max(domain) > 0) {
+const void *jitc_registry_attr_data(JitBackend backend, const char *domain,
+                                    const char *name) {
+    Registry* registry = state.registry(backend);
+    auto it = registry->attributes.find(AttributeKey(domain, name));
+    if (unlikely(it == registry->attributes.end())) {
+        if (jitc_registry_get_max(backend, domain) > 0) {
             jitc_log(Warn,
                      "jit_registry_attr_data(): entry with domain=\"%s\", "
                      "name=\"%s\" not found!",

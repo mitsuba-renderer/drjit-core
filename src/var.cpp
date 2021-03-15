@@ -1196,9 +1196,10 @@ uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op) {
 uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
                                 const char *domain, const char *name) {
     uint32_t index = 0;
-    auto it = state.attributes.find(AttributeKey(domain, name));
-    if (unlikely(it == state.attributes.end())) {
-        if (jitc_registry_get_max(domain) > 0) {
+    Registry* registry = state.registry(backend);
+    auto it = registry->attributes.find(AttributeKey(domain, name));
+    if (unlikely(it == registry->attributes.end())) {
+        if (jitc_registry_get_max(backend, domain) > 0) {
             jitc_log(Warn,
                      "jit_var_registry_attr(): entry with domain=\"%s\", "
                      "name=\"%s\" not found!",
