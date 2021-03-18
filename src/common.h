@@ -114,9 +114,10 @@ inline uint32_t log2i_ceil(uint32_t x) {
         return 0;
     x -= 1;
 #if defined(_MSC_VER)
-    uint32_t lz = __lzcnt(x);
+    unsigned long y;
+    _BitScanReverse(&y, (unsigned long)x);
+    return 1u + (uint32_t) y;
 #else
-    uint32_t lz = __builtin_clz(x);
+    return 32u - __builtin_clz(x);
 #endif
-  return 32 - lz;
 }
