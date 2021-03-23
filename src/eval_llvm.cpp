@@ -176,10 +176,10 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                "!1 = !{!1, !0}\n"
                "!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
 
-    buffer.fmt("attributes #0 = { norecurse nounwind alignstack=%u "
-               "\"target-cpu\"=\"%s\" \"stack-probe-size\"=\"%u\" \"target-features\"=\"-vzeroupper",
+    buffer.fmt("attributes #0 = { norecurse nounwind alignstack=%u \"no-stack-arg-probe\" "
+               "\"target-cpu\"=\"%s\" \"target-features\"=\"-vzeroupper",
                std::max(16u, width * (uint32_t) sizeof(float)),
-               jitc_llvm_target_cpu, 1024 * 1024 * 1024);
+               jitc_llvm_target_cpu);
     if (jitc_llvm_target_features) {
         buffer.putc(',');
         buffer.put(jitc_llvm_target_features, strlen(jitc_llvm_target_features));
