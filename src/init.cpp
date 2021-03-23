@@ -391,8 +391,10 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
                        "system.");
         }
 
+        const Device &device = state.devices[0];
         ts->device = 0;
-        ts->context = state.devices[ts->device].context;
+        ts->context = device.context;
+        ts->compute_capability = device.compute_capability >= 60 ? 60 : 50;
         scoped_set_context guard(ts->context);
         cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_NON_BLOCKING));
         cuda_check(cuEventCreate(&ts->event, CU_EVENT_DISABLE_TIMING));
@@ -423,18 +425,19 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
     return ts;
 }
 
-void jitc_cuda_set_device(int device) {
+void jitc_cuda_set_device(int device_id) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
-    if (ts->device == device)
+    if (ts->device == device_id)
         return;
 
-    if ((size_t) device >= state.devices.size())
+    if ((size_t) device_id >= state.devices.size())
         jitc_raise("jit_cuda_set_device(%i): must be in the range 0..%i!",
-                  device, (int) state.devices.size() - 1);
+                  device_id, (int) state.devices.size() - 1);
 
-    jitc_log(Info, "jit_cuda_set_device(%i)", device);
+    jitc_log(Info, "jit_cuda_set_device(%i)", device_id);
 
-    CUcontext new_context = state.devices[device].context;
+    Device &device = state.devices[device_id];
+    CUcontext new_context = device.context;
 
     /* Disassociate from old context */ {
         scoped_set_context guard(ts->context);
@@ -445,7 +448,8 @@ void jitc_cuda_set_device(int device) {
 
     /* Associate with new context */ {
         ts->context = new_context;
-        ts->device = device;
+        ts->device = device_id;
+        ts->compute_capability = device.compute_capability >= 60 ? 60 : 50;
         scoped_set_context guard(ts->context);
 
         cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_NON_BLOCKING));
