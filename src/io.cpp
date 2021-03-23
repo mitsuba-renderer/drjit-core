@@ -410,9 +410,10 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
 #endif
 
 #if ENOKI_CACHE_TRAIN == 1
-    snprintf(filename, sizeof(filename), "%s/.enoki/%016llx.%s.trn",
-             getenv("HOME"), (unsigned long long) hash,
-             cuda ? "cuda" : "llvm");
+    snprintf(filename, sizeof(filename), "%s/.enoki/%016llx%016llx.%s.trn",
+             getenv("HOME"), (unsigned long long) hash.high64,
+             (unsigned long long) hash.low64,
+             backend == JitBackend::CUDA ? "cuda" : "llvm");
     fd = open(filename, O_CREAT | O_WRONLY, mode);
     if (fd) {
         write_retry(temp_in, in_size);
