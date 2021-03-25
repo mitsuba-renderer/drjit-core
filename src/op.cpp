@@ -1683,6 +1683,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         backend = (JitBackend) v->backend;
         vt = (VarType) v->type;
     }
+
     ThreadState *ts = thread_state(backend);
     if (dirty) {
         if (jit_flag(JitFlag::Recording))
@@ -1755,7 +1756,6 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                 ptr = steal(jitc_var_new_pointer(backend, v_target->data, target, 1));
         }
     }
-
 
     // Ensure that 'target' exists in memory
     if (!((uint32_t) ptr))

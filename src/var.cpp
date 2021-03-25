@@ -711,10 +711,9 @@ void *jitc_var_ptr(uint32_t index) {
         jitc_var_eval_literal(index, v);
     } else if (!v->data) {
         jitc_var_eval(index);
-        v = jitc_var(index);
     }
 
-    return v->data;
+    return jitc_var(index)->data;
 }
 
 /// Evaluate a literal constant variable
@@ -727,10 +726,11 @@ void jitc_var_eval_literal(uint32_t index, Variable *v) {
 
     JitBackend backend = (JitBackend) v->backend;
     uint32_t isize = type_size[v->type];
-    v->data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                      : AllocType::HostAsync,
-                          (size_t) v->size * (size_t) isize);
-
+    void* data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
+                                                         : AllocType::HostAsync,
+                             (size_t) v->size * (size_t) isize);
+    v = jitc_var(index);
+    v->data = data;
     jitc_memset_async(backend, v->data, v->size, isize, &v->value);
 
     v->literal = 0;
@@ -914,7 +914,7 @@ uint32_t jitc_var_copy(uint32_t index) {
     }
 
     jitc_log(Debug, "jit_var_copy(r%u <- r%u)", result, index);
-    return result;;
+    return result;
 }
 
 uint32_t jitc_var_resize(uint32_t index, size_t size) {
