@@ -887,11 +887,6 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         uint32_t **buckets =
             (uint32_t **) jitc_malloc(AllocType::HostAsync, sizeof(uint32_t *) * blocks);
 
-        for (uint32_t i = 0; i < blocks; ++i)
-            buckets[i] = (uint32_t *) jitc_malloc(
-                AllocType::Host,
-                sizeof(uint32_t) * (size_t) bucket_count);
-
         uint32_t unique_count = 0;
 
         // Phase 1
@@ -957,10 +952,9 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                 uint32_t *buckets_local = buckets[index];
 
                 for (uint32_t i = start; i != end; ++i) {
-                    uint32_t index = buckets_local[ptr[i]]++;
-                    perm[index] = i;
+                    uint32_t idx = buckets_local[ptr[i]]++;
+                    perm[idx] = i;
                 }
-
                 free(buckets_local);
             },
 
