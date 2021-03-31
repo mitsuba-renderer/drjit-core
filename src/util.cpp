@@ -885,7 +885,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                 (uintptr_t) ptr, size, bucket_count, block_size, blocks);
 
         uint32_t **buckets =
-            (uint32_t **) jitc_malloc(AllocType::Host, sizeof(uint32_t *) * blocks);
+            (uint32_t **) jitc_malloc(AllocType::HostAsync, sizeof(uint32_t *) * blocks);
 
         for (uint32_t i = 0; i < blocks; ++i)
             buckets[i] = (uint32_t *) jitc_malloc(
@@ -903,12 +903,14 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                 uint32_t start = index * block_size,
                          end = std::min(start + block_size, size);
 
-                uint32_t *buckets_local = buckets[index];
-                memset(buckets_local, 0,
-                       sizeof(uint32_t) * (size_t) bucket_count);
+                size_t size = sizeof(uint32_t) * (size_t) bucket_count;
+                uint32_t *buckets_local = (uint32_t *) malloc_check(size);
+                memset(buckets_local, 0, size);
 
-                for (uint32_t i = start; i != end; ++i)
-                    buckets_local[ptr[i]]++;
+                 for (uint32_t i = start; i != end; ++i)
+                     buckets_local[ptr[i]]++;
+
+                 buckets[index] = buckets_local;
             },
             blocks
         );
@@ -958,14 +960,14 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                     uint32_t index = buckets_local[ptr[i]]++;
                     perm[index] = i;
                 }
+
+                free(buckets_local);
             },
 
             blocks, false
         );
 
         // Free memory (happens asynchronously after the above stmt.)
-        for (uint32_t i = 0; i < blocks; ++i)
-            jitc_free(buckets[i]);
         jitc_free(buckets);
 
         task_wait_and_release(local_task);
