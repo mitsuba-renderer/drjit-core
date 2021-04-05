@@ -214,7 +214,7 @@ static Reduction jitc_reduce_create(ReduceOp rtype) {
                                    ?  std::numeric_limits<Value>::max()
                                    :  std::numeric_limits<Value>::infinity();
                 for (uint32_t i = start; i != end; ++i)
-                    result = std::max(result, ptr[i]);
+                    result = std::min(result, ptr[i]);
                 *((Value *) out) = result;
             };
 
