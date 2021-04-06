@@ -541,10 +541,19 @@ void jitc_eval(ThreadState *ts) {
         return;
 
     // Order variables into groups of matching size
-    std::stable_sort(
+    std::sort(
         schedule.begin(), schedule.end(),
         [](const ScheduledVariable &a, const ScheduledVariable &b) {
-            return a.size > b.size;
+            if (a.size > b.size)
+                return true;
+            else if (a.size < b.size)
+                return false;
+            else if (a.index > b.index)
+                return false;
+            else if (a.index < b.index)
+                return true;
+            else
+                return false;
         });
 
     // Partition into groups of matching size
