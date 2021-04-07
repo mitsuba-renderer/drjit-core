@@ -40,11 +40,11 @@ static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra);
 static void jitc_var_loop_assemble_end(const Variable *v, const Extra &extra);
 static void jitc_var_loop_simplify(Loop *loop, uint32_t cause);
 
-void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
-                   const uint32_t *in, const uint32_t *out_body,
-                   uint32_t se_offset, uint32_t *out,
-                   int check_invariant, uint8_t *invariant) {
-    JitBackend backend = (JitBackend) jitc_var(cond_)->backend;
+void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
+                   uint32_t n, const uint32_t *in, const uint32_t *out_body,
+                   uint32_t se_offset, uint32_t *out, int check_invariant,
+                   uint8_t *invariant) {
+    JitBackend backend = (JitBackend) jitc_var(loop_start)->backend;
     ThreadState *ts = thread_state(backend);
 
     if (n == 0)
@@ -60,6 +60,8 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
     loop->out.reserve(n);
     loop->name = strdup(name);
     loop->se_count = se_count;
+    loop->cond = jitc_var(loop_cond)->dep[0];
+    loop->start = loop_start;
 
     // =====================================================
     // 1. Various sanity checks
@@ -71,7 +73,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
     char temp[256];
 
     {
-        const Variable *v = jitc_var(cond_);
+        const Variable *v = jitc_var(loop->cond);
         if ((VarType) v->type != VarType::Bool)
             jitc_raise("jit_var_loop(): loop condition must be a boolean variable");
         if (!v->placeholder)
@@ -83,7 +85,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
     for (uint32_t i = 0; i < n; ++i) {
         // ============= Input side =============
         uint32_t index_1 = in[i];
-        const Variable *v1 = jitc_var(index_1);
+        Variable *v1 = jitc_var(index_1);
         loop->storage_size_initial += type_size[v1->type];
 
         if (invariant[i]) {
@@ -99,12 +101,12 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
             jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
                        "variable (1)", i, index_1);
         uint32_t index_2 = v1->dep[0];
-        const Variable *v2 = jitc_var(index_2);
+        Variable *v2 = jitc_var(index_2);
         if (!v2->placeholder || !v2->placeholder_iface || !v2->dep[0])
             jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
                        "variable (2)", i, index_2);
         uint32_t index_3 = v2->dep[0];
-        const Variable *v3 = jitc_var(index_3);
+        Variable *v3 = jitc_var(index_3);
 
         if (v1->size != v2->size || v2->size != v3->size)
             jitc_raise("jit_var_loop(): size inconsistency for input %u (r%u, r%u, r%u)!",
@@ -168,71 +170,20 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
                  n_invariant_provided);
 
     jitc_log(InfoSym,
-             "jit_var_loop(cond=r%u): loop (\"%s\") with %u loop variable%s, %u side effect%s, %u elements%s%s",
-             cond_, name, n, n == 1 ? "" : "s", se_count, se_count == 1 ? "" : "s", size, temp,
+             "jit_var_loop(cond=r%u): loop (\"%s\") with %u loop variable%s, "
+             "%u side effect%s, %u elements%s%s",
+             loop->cond, name, n, n == 1 ? "" : "s", se_count,
+             se_count == 1 ? "" : "s", size, temp,
              placeholder ? " (part of a recorded computation)" : "");
 
     if (n_invariant_detected)
         return;
 
+
     if (dirty)
         jitc_eval(ts);
 
-    // =====================================================
-    // 2. Combine mask with top of mask stack
-    // =====================================================
-
-    Ref top = steal(jitc_var_mask_peek(backend));
-    uint32_t cond_dep[2] = { cond_, top };
-    Ref cond = steal(jitc_var_new_op(JitOp::And, 2, cond_dep));
-    loop->cond = cond;
-
-    // =====================================================
-    // 2. Create variable representing the start of the loop
-    // =====================================================
-
-    Ref loop_start =
-        steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 0, nullptr));
-    loop->start = loop_start;
-
-    {
-        size_t dep_size = n * sizeof(uint32_t);
-        snprintf(temp, sizeof(temp), "Loop (%s) [start]", name);
-        Variable *v = jitc_var(loop_start);
-        v->extra = 1;
-        v->size = size;
-        Extra &e = state.extra[loop_start];
-        e.label = strdup(temp);
-        e.n_dep = n;
-        e.dep = (uint32_t *) malloc(dep_size);
-        memcpy(e.dep, loop->in.data(), dep_size);
-        for (uint32_t i = 0; i < n; ++i)
-            jitc_var_inc_ref_int(loop->in[i]);
-        e.assemble = jitc_var_loop_assemble_start;
-    }
-
-    // =====================================================
-    // 3. Create variable representing the branch condition
-    // =====================================================
-
-    uint32_t loop_cond_dep[2] = { cond, loop_start };
-    Ref loop_cond = steal(
-        jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, loop_cond_dep));
-    {
-        snprintf(temp, sizeof(temp), "Loop (%s) [cond]", name);
-        Variable *v = jitc_var(loop_cond);
-        v->extra = 1;
-        v->size = size;
-        Extra &e = state.extra[loop_cond];
-        e.label = strdup(temp);
-        e.assemble = jitc_var_loop_assemble_cond;
-        e.callback_data = loop.get();
-    }
-
-    // =====================================================
-    // 4. Add depencencies to placeholders to ensure order
-    // =====================================================
-
+    // ============= Label variables =============
     for (uint32_t i = 0; i < n; ++i) {
         if (!loop->in_body[i])
             continue;
@@ -260,7 +211,40 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
     }
 
     // =====================================================
-    // 5. Create variable representing the end of the loop
+    // 2. Configure loop start insertion point
+    // =====================================================
+
+    {
+        snprintf(temp, sizeof(temp), "Loop (%s) [start]", name);
+        Variable *v = jitc_var(loop_start);
+        v->extra = 1;
+        v->size = size;
+        Extra &e = state.extra[loop_start];
+        if (e.label)
+            free(e.label);
+        e.label = strdup(temp);
+        e.assemble = jitc_var_loop_assemble_start;
+    }
+
+    // =====================================================
+    // 3. Configure loop branch insertion point
+    // =====================================================
+
+    {
+        snprintf(temp, sizeof(temp), "Loop (%s) [cond]", name);
+        Variable *v = jitc_var(loop_cond);
+        v->extra = 1;
+        v->size = size;
+        Extra &e = state.extra[loop_cond];
+        if (e.label)
+            free(e.label);
+        e.label = strdup(temp);
+        e.assemble = jitc_var_loop_assemble_cond;
+        e.callback_data = loop.get();
+    }
+
+    // =====================================================
+    // 4. Create variable representing the end of the loop
     // =====================================================
 
     uint32_t loop_end_dep[2] = { loop_start, loop_cond };
@@ -311,7 +295,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
     }
 
     // =====================================================
-    // 6. Create variable representing side effects
+    // 5. Create variable representing side effects
     // =====================================================
 
     Ref loop_se;
@@ -329,7 +313,7 @@ void jitc_var_loop(const char *name, uint32_t cond_, uint32_t n,
     }
 
     // =====================================================
-    // 7. Create output variables
+    // 6. Create output variables
     // =====================================================
 
     auto var_callback = [](uint32_t index, int free, void *ptr) {
@@ -507,17 +491,13 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
                        loop->in_cond[i], loop->in_body[i]);
             progress = true;
 
-            Extra &e_start = state.extra[loop->start];
             Extra &e_end = state.extra[loop->end];
-            if (unlikely(e_start.dep[i] != loop->in[i]))
-                jitc_fail("jit_var_loop_simplify: internal error (1)");
             if (unlikely(e_end.dep[n + i] != loop->in_cond[i]))
                 jitc_fail("jit_var_loop_simplify: internal error (3)");
             if (unlikely(e_end.dep[i] != loop->out_body[i]))
                 jitc_fail("jit_var_loop_simplify: internal error (2)");
-            e_end.dep[i] = e_end.dep[n + i] = e_start.dep[i] = 0;
+            e_end.dep[i] = e_end.dep[n + i] = 0;
 
-            jitc_var_dec_ref_int(loop->in[i]);
             jitc_var_dec_ref_int(loop->in_cond[i]);
             jitc_var_dec_ref_int(loop->out_body[i]);
 
@@ -674,10 +654,10 @@ static void jitc_var_loop_assemble_start(const Variable *, const Extra &extra) {
              (uint32_t) loop->se_count, loop->se_count == 1 ? "" : "s");
 }
 
-static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra) {
+static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
     Loop *loop = (Loop *) extra.callback_data;
     uint32_t loop_reg = jitc_var(loop->start)->reg_index,
-             mask_reg = jitc_var(v->dep[0])->reg_index;
+             mask_reg = jitc_var(loop->cond)->reg_index;
 
     if (loop->backend == JitBackend::CUDA) {
         buffer.fmt("    @!%%p%u bra l_%u_done;\n", mask_reg, loop_reg);
@@ -703,8 +683,8 @@ static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra) {
 
 static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
     Loop *loop = (Loop *) extra.callback_data;
-    uint32_t loop_reg = jitc_var(loop->start)->reg_index;
-    uint32_t mask_reg = jitc_var(loop->cond)->reg_index;
+    uint32_t loop_reg = jitc_var(loop->start)->reg_index,
+             mask_reg = jitc_var(loop->cond)->reg_index;
     buffer.putc('\n');
 
     if (loop->backend == JitBackend::LLVM)

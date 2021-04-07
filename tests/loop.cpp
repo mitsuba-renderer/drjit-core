@@ -8,7 +8,8 @@ template <typename Mask> struct Loop {
     template <typename... Args>
     Loop(const char *name, Args &... args)
         : m_name(name), m_state(0), m_se_offset((uint32_t) -1),
-          m_size(0), m_record(jit_flag(JitFlag::LoopRecord)) {
+          m_size(0), m_record(jit_flag(JitFlag::LoopRecord)),
+          m_cse_domain(jit_cse_domain(Backend)) {
         if constexpr (sizeof...(Args) > 0) {
             (put(args), ...);
             init();
@@ -33,6 +34,10 @@ template <typename Mask> struct Loop {
 
         if (m_state != 0 && m_state != 3 && m_state != 4)
             jit_log(Warn, "enoki::Loop(): destructed in an inconsistent state.");
+
+        jit_var_dec_ref_ext(m_loop_start);
+        jit_var_dec_ref_ext(m_loop_cond);
+        jit_set_cse_domain(Backend, m_cse_domain);
     }
 
     /// Register a loop variable // TODO: nested arrays, structs, etc.
@@ -59,6 +64,9 @@ template <typename Mask> struct Loop {
             m_se_flag = jit_flag(JitFlag::Recording);
             jit_set_flag(JitFlag::Recording, 1);
             m_se_offset = jit_side_effects_scheduled(Backend);
+
+            jit_new_cse_domain(Backend);
+            m_loop_start = jit_var_new_stmt(Backend, VarType::Void, "", 1, 0, nullptr);
             step();
             m_state = 1;
         }
@@ -107,6 +115,9 @@ protected:
                    variables using placeholders once more. They will represent
                    their state at the start of the loop body. */
                 m_cond = cond; // detach
+                m_loop_cond = jit_var_new_stmt(Backend, VarType::Void, "", 1, 1,
+                                               m_cond.index_ptr());
+                jit_new_cse_domain(Backend);
                 step();
                 for (uint32_t i = 0; i < n; ++i) {
                     uint32_t index = *m_index_p[i];
@@ -125,7 +136,7 @@ protected:
                 for (uint32_t i = 0; i < n; ++i)
                     m_index_out.push_back(*m_index_p[i]);
 
-                jit_var_loop(m_name, m_cond.index(),
+                jit_var_loop(m_name, m_loop_start, m_loop_cond,
                              (uint32_t) n, m_index_body.data(),
                              m_index_out.data(), m_se_offset,
                              m_index_out.data(), m_state == 2,
@@ -279,6 +290,11 @@ private:
 
     /// Is the loop being recorded symbolically
     bool m_record;
+
+    /// Loop code generation hooks
+    uint32_t m_loop_start = 0;
+    uint32_t m_loop_cond = 0;
+    uint32_t m_cse_domain;
 };
 
 TEST_BOTH(01_record_loop) {
@@ -501,12 +517,12 @@ TEST_BOTH(06_garbage_collection) {
 
 TEST_BOTH(07_collatz) {
     // A more interesting nested loop
-    auto collatz = [](UInt32 value) -> UInt32 {
+    auto collatz = [](const char *name, UInt32 value) -> UInt32 {
         UInt32 counter = 0;
         jit_var_set_label(value.index(), "value");
         jit_var_set_label(counter.index(), "counter");
 
-        Loop<Mask> loop("Inner", value, counter);
+        Loop<Mask> loop(name, value, counter);
         while (loop(neq(value, 1))) {
             Mask is_even = eq(value & UInt32(1), 0);
             value = select(is_even, value / 2, value*3 + 1);
@@ -525,12 +541,15 @@ TEST_BOTH(07_collatz) {
                 UInt32 k = 1;
                 Loop<Mask> loop_1("Outer", k);
                 while (loop_1(k <= 10)) {
-                    scatter(buf, collatz(k), k - 1);
+                    scatter(buf, collatz("Inner", k), k - 1);
                     k += 1;
                 }
             } else {
-                for (uint32_t k = 1; k <= 10; ++k)
-                    scatter(buf, collatz(k), UInt32(k - 1));
+                for (uint32_t k = 1; k <= 10; ++k) {
+                    char tmpname[20];
+                    snprintf(tmpname, sizeof(tmpname), "Inner [%u]", k);
+                    scatter(buf, collatz(tmpname, k), UInt32(k - 1));
+                }
             }
             jit_assert(strcmp(buf.str(), "[0, 1, 7, 2, 5, 8, 16, 3, 19, 6, 1000]") == 0);
         }
