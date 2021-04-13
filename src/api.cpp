@@ -97,7 +97,7 @@ void jit_set_cse_domain(JitBackend backend, uint32_t domain) {
 void jit_new_cse_domain(JitBackend backend) {
     lock_guard guard(state.mutex);
     ThreadState *ts = thread_state(backend);
-    ts->cse_domain = ++ts->cse_domain_ctr;
+    ts->cse_domain = ++state.cse_domain_ctr;
 }
 
 void jit_set_log_level_stderr(LogLevel level) {

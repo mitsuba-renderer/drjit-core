@@ -156,11 +156,12 @@ struct Variable {
 struct VariableKey {
     uint32_t dep[4];
     uint32_t size;
+    uint32_t unused      : 12;
     uint32_t backend     : 2;
     uint32_t type        : 4;
     uint32_t write_ptr   : 1;
     uint32_t literal     : 1;
-    uint32_t cse_domain  : 24;
+    uint32_t cse_domain  : 12;
     union {
         char *stmt;
         uint64_t value;
@@ -168,11 +169,11 @@ struct VariableKey {
 
     VariableKey(const Variable &v) {
         memcpy(dep, v.dep, sizeof(uint32_t) * 4);
-        backend = v.backend;
         size = v.size;
+        unused = 0;
+        backend = v.backend;
         type = v.type;
         write_ptr = v.write_ptr;
-        cse_domain = v.cse_domain;
 
         if (v.literal) {
             literal = 1;
@@ -181,6 +182,8 @@ struct VariableKey {
             literal = 0;
             stmt = v.stmt;
         }
+
+        cse_domain = v.cse_domain;
     }
 
     bool operator==(const VariableKey &v) const {
@@ -338,9 +341,6 @@ struct ThreadState {
 
     /// Index used to isolate CSE from other parts of the program
     uint32_t cse_domain = 0;
-
-    /// Unique counter to create new CSE domains
-    uint32_t cse_domain_ctr = 0;
 
     /// ---------------------------- LLVM-specific ----------------------------
 
@@ -535,6 +535,9 @@ struct State {
 
     /// Stores the mapping from variable indices to variables
     VariableMap variables;
+
+    /// Unique counter to create new CSE domains
+    uint32_t cse_domain_ctr = 0;
 
     /// Maps from a key characterizing a variable to its index
     CSECache cse_cache;
