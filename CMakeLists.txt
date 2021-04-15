@@ -70,7 +70,6 @@ add_library(
   src/vcall.h         src/vcall.cpp
   src/loop.h          src/loop.cpp
   src/printf.h        src/printf.cpp
-  src/embree.h        src/embree.cpp
   src/eval_cuda.cpp
   src/eval_llvm.cpp
   src/init.cpp

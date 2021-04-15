@@ -54,3 +54,7 @@ extern void jitc_llvm_set_target(const char *target_cpu,
 /// Convenience function for intrinsic function selection
 extern int jitc_llvm_if_at_least(uint32_t vector_width,
                                  const char *feature);
+
+/// Insert a ray tracing function call into the LLVM program
+extern void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occlude,
+                                const uint32_t *in, uint32_t *out);

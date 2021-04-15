@@ -1599,7 +1599,7 @@ extern JIT_EXPORT void jit_block_sum(JitBackend backend, JIT_ENUM VarType type,
                                      const void *in, void *out, uint32_t size,
                                      uint32_t block_size);
 /**
- * \brief Insert a function call to rtcOccluded or rtcIntersect into the program
+ * \brief Insert a function call to a ray tracing functor into the LLVM program
  *
  * The \c args list should contain a list of variable indices corresponding to
  * the 13 required function arguments
@@ -1612,9 +1612,9 @@ extern JIT_EXPORT void jit_block_sum(JitBackend backend, JIT_ENUM VarType type,
  * - mask, id, flags
  * </tt>.
  */
-extern JIT_EXPORT void jit_embree_trace(uint32_t func, uint32_t context,
-                                        uint32_t scene, int occluded,
-                                        const uint32_t *in, uint32_t *out);
+extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
+                                          int occluded, const uint32_t *in,
+                                          uint32_t *out);
 
 // To be documented
 extern JIT_EXPORT uint32_t jit_cse_domain(JitBackend backend);
