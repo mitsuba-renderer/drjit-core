@@ -143,7 +143,7 @@ struct Variable {
     uint32_t output_flag : 1;
 
     /// Used to isolate this variable from others when performing common subexpression elimination
-    uint32_t cse_domain : 12;
+    uint32_t cse_scope : 12;
 
     /// Register index
     uint32_t reg_index;
@@ -161,7 +161,7 @@ struct VariableKey {
     uint32_t type        : 4;
     uint32_t write_ptr   : 1;
     uint32_t literal     : 1;
-    uint32_t cse_domain  : 12;
+    uint32_t cse_scope  : 12;
     union {
         char *stmt;
         uint64_t value;
@@ -183,7 +183,7 @@ struct VariableKey {
             stmt = v.stmt;
         }
 
-        cse_domain = v.cse_domain;
+        cse_scope = v.cse_scope;
     }
 
     bool operator==(const VariableKey &v) const {
@@ -340,7 +340,7 @@ struct ThreadState {
     char *prefix = nullptr;
 
     /// Index used to isolate CSE from other parts of the program
-    uint32_t cse_domain = 0;
+    uint32_t cse_scope = 0;
 
     /// ---------------------------- LLVM-specific ----------------------------
 
@@ -537,7 +537,7 @@ struct State {
     VariableMap variables;
 
     /// Unique counter to create new CSE domains
-    uint32_t cse_domain_ctr = 0;
+    uint32_t cse_scope_ctr = 0;
 
     /// Maps from a key characterizing a variable to its index
     CSECache cse_cache;

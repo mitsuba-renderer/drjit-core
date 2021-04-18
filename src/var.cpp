@@ -326,7 +326,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
     bool cse = !disable_cse && (VarType) v.type != VarType::Void &&
                (v.literal || v.stmt);
 
-    v.cse_domain = ts->cse_domain;
+    v.cse_scope = ts->cse_scope;
 
     // Check if this exact statement already exists ..
     CSECache::iterator key_it;

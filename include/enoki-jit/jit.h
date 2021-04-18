@@ -1616,10 +1616,28 @@ extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
                                           int occluded, const uint32_t *in,
                                           uint32_t *out);
 
-// To be documented
-extern JIT_EXPORT uint32_t jit_cse_domain(JitBackend backend);
-extern JIT_EXPORT void jit_set_cse_domain(JitBackend backend, uint32_t domain);
-extern JIT_EXPORT void jit_new_cse_domain(JitBackend backend);
+/**
+ * \brief Set a new scope identifier to limit the effect of common
+ * subexpression elimination
+ *
+ * Enoki-JIT implements a very basic approximation of common subexpression
+ * elimination based on global value numbering (GVN): an attempt to create a
+ * variable, whose statement and dependencies match a previously created
+ * variable will sidestep creation and instead reuse the old variable via
+ * reference counting. However, this approach of collapsing variables does not
+ * play well with more advanced constructs like recorded loops, where variables
+ * in separate scopes should be kept apart.
+ *
+ * This function sets a unique scope identifier (a simple 32 bit integer)
+ * isolate the effects of this optimization.
+ */
+extern JIT_EXPORT void jit_new_cse_scope(JitBackend backend);
+
+/// Queries the CSE scope identifier (see \ref jit_new_cse_scope())
+extern JIT_EXPORT uint32_t jit_cse_scope(JitBackend backend);
+
+/// Manually sets a CSE scope identifier (see \ref jit_new_cse_scope())
+extern JIT_EXPORT void jit_set_cse_scope(JitBackend backend, uint32_t domain);
 
 #if defined(__cplusplus)
 }

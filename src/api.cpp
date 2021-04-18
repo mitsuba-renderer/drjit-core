@@ -84,20 +84,20 @@ void jit_shutdown(int light) {
     jitc_shutdown(light);
 }
 
-uint32_t jit_cse_domain(JitBackend backend) {
+uint32_t jit_cse_scope(JitBackend backend) {
     lock_guard guard(state.mutex);
-    return thread_state(backend)->cse_domain;
+    return thread_state(backend)->cse_scope;
 }
 
-void jit_set_cse_domain(JitBackend backend, uint32_t domain) {
+void jit_set_cse_scope(JitBackend backend, uint32_t domain) {
     lock_guard guard(state.mutex);
-    thread_state(backend)->cse_domain = domain;
+    thread_state(backend)->cse_scope = domain;
 }
 
-void jit_new_cse_domain(JitBackend backend) {
+void jit_new_cse_scope(JitBackend backend) {
     lock_guard guard(state.mutex);
     ThreadState *ts = thread_state(backend);
-    ts->cse_domain = ++state.cse_domain_ctr;
+    ts->cse_scope = ++state.cse_scope_ctr;
 }
 
 void jit_set_log_level_stderr(LogLevel level) {

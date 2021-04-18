@@ -421,7 +421,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
     }
 
     ts->backend = backend;
-    ts->cse_domain = ++state.cse_domain_ctr;
+    ts->cse_scope = ++state.cse_scope_ctr;
     state.tss.push_back(ts);
     return ts;
 }

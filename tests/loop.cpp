@@ -9,7 +9,7 @@ template <typename Mask> struct Loop {
     Loop(const char *name, Args &... args)
         : m_name(name), m_state(0), m_se_offset((uint32_t) -1),
           m_size(0), m_record(jit_flag(JitFlag::LoopRecord)),
-          m_cse_domain(jit_cse_domain(Backend)) {
+          m_cse_scope(jit_cse_scope(Backend)) {
         if constexpr (sizeof...(Args) > 0) {
             (put(args), ...);
             init();
@@ -37,7 +37,7 @@ template <typename Mask> struct Loop {
 
         jit_var_dec_ref_ext(m_loop_start);
         jit_var_dec_ref_ext(m_loop_cond);
-        jit_set_cse_domain(Backend, m_cse_domain);
+        jit_set_cse_scope(Backend, m_cse_scope);
     }
 
     /// Register a loop variable // TODO: nested arrays, structs, etc.
@@ -65,7 +65,7 @@ template <typename Mask> struct Loop {
             jit_set_flag(JitFlag::Recording, 1);
             m_se_offset = jit_side_effects_scheduled(Backend);
 
-            jit_new_cse_domain(Backend);
+            jit_new_cse_scope(Backend);
             m_loop_start = jit_var_new_stmt(Backend, VarType::Void, "", 1, 0, nullptr);
             step();
             m_state = 1;
@@ -117,7 +117,7 @@ protected:
                 m_cond = cond; // detach
                 m_loop_cond = jit_var_new_stmt(Backend, VarType::Void, "", 1, 1,
                                                m_cond.index_ptr());
-                jit_new_cse_domain(Backend);
+                jit_new_cse_scope(Backend);
                 step();
                 for (uint32_t i = 0; i < n; ++i) {
                     uint32_t index = *m_index_p[i];
@@ -294,7 +294,7 @@ private:
     /// Loop code generation hooks
     uint32_t m_loop_start = 0;
     uint32_t m_loop_cond = 0;
-    uint32_t m_cse_domain;
+    uint32_t m_cse_scope;
 };
 
 TEST_BOTH(01_record_loop) {
