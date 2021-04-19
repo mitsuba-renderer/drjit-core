@@ -381,6 +381,12 @@ uint32_t jit_var_new_placeholder(uint32_t index, int preserve_size,
     return jitc_var_new_placeholder(index, preserve_size, propagate_literals);
 }
 
+uint32_t jit_var_new_placeholder_loop(const char *stmt, uint32_t n_dep,
+                                      uint32_t *dep) {
+    lock_guard guard(state.mutex);
+    return jitc_var_new_placeholder_loop(stmt, n_dep, dep);
+}
+
 void jit_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {
     if (index == 0)
         return;

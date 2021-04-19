@@ -866,6 +866,10 @@ extern JIT_EXPORT uint32_t jit_var_new_placeholder(uint32_t index,
                                                    int preserve_size,
                                                    int propagate_literals);
 
+extern JIT_EXPORT uint32_t jit_var_new_placeholder_loop(const char *stmt,
+                                                        uint32_t n_dep,
+                                                        uint32_t *dep);
+
 /**
  * \brief Create a variable that reads from another variable
  *

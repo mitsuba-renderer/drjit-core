@@ -187,18 +187,6 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
     for (uint32_t i = 0; i < n; ++i) {
         if (!loop->in_body[i])
             continue;
-        Variable *v_body = jitc_var(loop->in_body[i]),
-                 *v_cond = jitc_var(loop->in_cond[i]);
-
-        jitc_cse_drop(loop->in_body[i], v_body);
-        jitc_cse_drop(loop->in_cond[i], v_cond);
-
-        v_body->dep[1] = loop_cond;
-        v_cond->dep[1] = loop_start;
-        v_body->stmt = (char *) "";
-        v_cond->stmt = (char *) "";
-        jitc_var_inc_ref_int(loop_start);
-        jitc_var_inc_ref_int(loop_cond);
 
         const char *label = jitc_var_label(loop->in[i]);
 
@@ -512,117 +500,6 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
                n_freed, n_rounds);
 }
 
-static std::pair<uint32_t, uint32_t>
-jitc_var_loop_copy(const Loop *loop, const std::vector<uint32_t> &dst,
-                   const std::vector<uint32_t> &src) {
-    uint32_t count = 0, size = 0;
-    for (size_t i = 0; i < src.size(); ++i) {
-        auto it_src = state.variables.find(src[i]),
-             it_dst = state.variables.find(dst[i]);
-        if (it_dst == state.variables.end())
-            continue;
-        if (unlikely(it_src == state.variables.end()))
-            jitc_fail("jit_var_loop_copy(%u, %u): source not found!", src[i], dst[i]);
-
-        const Variable *v_src = &it_src->second, *v_dst = &it_dst->second;
-        uint32_t vti = it_src->second.type;
-
-        if (v_dst->reg_index == 0)
-            continue;
-
-        if (unlikely(v_src->reg_index == 0))
-            jitc_fail("jit_var_loop_copy(\"%s\"): internal error involving "
-                      "loop variable %zu (can't move r%u[%u] <- r%u[%u] as one "
-                      "of them hasn't been assigned a register)!",
-                      loop->name, i, dst[i], v_dst->reg_index, src[i],
-                      v_src->reg_index);
-
-        if (loop->backend == JitBackend::CUDA)
-            buffer.fmt("    mov.%s %s%u, %s%u;\n", type_name_ptx[vti],
-                       type_prefix[vti], v_dst->reg_index, type_prefix[vti],
-                       v_src->reg_index);
-        else
-            buffer.fmt("    %s%u = bitcast <%u x %s> %s%u to <%u x %s>\n",
-                       type_prefix[vti], v_dst->reg_index, jitc_llvm_vector_width,
-                       type_name_llvm[vti], type_prefix[vti], v_src->reg_index,
-                       jitc_llvm_vector_width, type_name_llvm[vti]);
-        count++;
-        size += type_size[vti];
-    }
-
-    return { count, size };
-}
-
-static std::pair<uint32_t, uint32_t>
-jitc_var_loop_phi_llvm(uint32_t loop_reg, const std::vector<uint32_t> &in,
-                       const std::vector<uint32_t> &in_cond,
-                       const std::vector<uint32_t> &out_body) {
-    uint32_t count = 0, size = 0;
-    for (size_t i = 0; i < in.size(); ++i) {
-        auto it_in = state.variables.find(in[i]),
-             it_in_cond = state.variables.find(in_cond[i]),
-             it_out_body = state.variables.find(out_body[i]);
-
-        if (it_in_cond == state.variables.end() &&
-            it_out_body == state.variables.end() &&
-            it_in == state.variables.end())
-            continue;
-
-        if (it_in_cond == state.variables.end() ||
-            it_out_body == state.variables.end() ||
-            it_in == state.variables.end())
-            jitc_fail("jitc_var_loop_phi_llvm(): internal error!");
-
-        const Variable *v_in = &it_in->second,
-                       *v_in_cond = &it_in_cond->second;
-
-        uint32_t vti = it_in->second.type;
-        buffer.fmt("    %s%u = phi <%u x %s> [ %s%u, %%l_%u_start ], [ %%u%u_%u, "
-                   "%%l_%u_tail ]\n",
-                   type_prefix[vti], v_in_cond->reg_index, jitc_llvm_vector_width,
-                   type_name_llvm[vti], type_prefix[vti], v_in->reg_index,
-                   loop_reg, loop_reg, (uint32_t) i, loop_reg);
-
-        count++;
-        size += type_size[vti];
-    }
-
-    return { count, size };
-}
-
-static void jitc_var_loop_select_llvm(uint32_t loop_reg,
-                                      uint32_t mask_reg,
-                                      const std::vector<uint32_t> &out_body,
-                                      const std::vector<uint32_t> &in_body,
-                                      const std::vector<uint32_t> &in) {
-    uint32_t width = jitc_llvm_vector_width;
-    for (size_t i = 0; i < in_body.size(); ++i) {
-        auto it_in = state.variables.find(in_body[i]),
-             it_out = state.variables.find(out_body[i]);
-
-        if (it_in == state.variables.end() &&
-            it_out == state.variables.end())
-            continue;
-
-        if (it_in == state.variables.end()) {
-            it_in = state.variables.find(in[i]);
-            if (it_in == state.variables.end())
-                jitc_fail("jit_var_loop_select_llvm(): internal error!");
-        }
-
-        const Variable *v_in = &it_in->second,
-                       *v_out = &it_out->second;
-        uint32_t vti = it_in->second.type;
-
-        buffer.fmt("    %%u%u_%u = select <%u x i1> %%p%u, <%u x %s> %s%u, "
-                   "<%u x %s> %s%u\n",
-                   loop_reg, (uint32_t) i, width, mask_reg, width,
-                   type_name_llvm[vti], type_prefix[vti], v_out->reg_index,
-                   width, type_name_llvm[vti], type_prefix[vti],
-                   v_in->reg_index);
-    }
-}
-
 static void jitc_var_loop_assemble_start(const Variable *, const Extra &extra) {
     Loop *loop = (Loop *) extra.callback_data;
     uint32_t loop_reg = jitc_var(loop->start)->reg_index;
@@ -633,18 +510,11 @@ static void jitc_var_loop_assemble_start(const Variable *, const Extra &extra) {
 
     std::pair<uint32_t, uint32_t> result{ 0, 0 };
 
-    if (loop->backend == JitBackend::CUDA)
-        result = jitc_var_loop_copy(loop, loop->in_cond, loop->in);
-    else
-        buffer.fmt("    br label %%l_%u_cond\n", loop_reg);
+    buffer.fmt("    br label %%l_%u_cond\n", loop_reg);
 
     buffer.fmt("\nl_%u_cond: %s Loop (%s)\n", loop_reg,
                loop->backend == JitBackend::CUDA ? "//" : ";",
                loop->name);
-
-    if (loop->backend == JitBackend::LLVM)
-        result = jitc_var_loop_phi_llvm(loop_reg, loop->in, loop->in_cond,
-                                        loop->out_body);
 
     jitc_log(InfoSym,
              "jit_var_loop_assemble(): loop (\"%s\") with %u/%u loop "
@@ -676,26 +546,38 @@ static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
     }
 
     buffer.fmt("\nl_%u_body:\n", loop_reg);
-    (void) jitc_var_loop_copy(loop, loop->in_body, loop->in_cond);
-
-    buffer.putc('\n');
 }
 
 static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
     Loop *loop = (Loop *) extra.callback_data;
     uint32_t loop_reg = jitc_var(loop->start)->reg_index,
              mask_reg = jitc_var(loop->cond)->reg_index;
-    buffer.putc('\n');
 
     if (loop->backend == JitBackend::LLVM)
         buffer.fmt("    br label %%l_%u_tail\n"
                    "\nl_%u_tail:\n", loop_reg, loop_reg);
 
-    if (loop->backend == JitBackend::CUDA)
-        (void) jitc_var_loop_copy(loop, loop->in_cond, loop->out_body);
-    else
-        (void) jitc_var_loop_select_llvm(loop_reg, mask_reg, loop->out_body,
-                                         loop->in_body, loop->in);
+    uint32_t width = jitc_llvm_vector_width;
+    for (size_t i = 0; i < loop->in_body.size(); ++i) {
+        auto it_in = state.variables.find(loop->in_cond[i]),
+             it_out = state.variables.find(loop->out_body[i]);
+
+        if (it_in == state.variables.end())
+            continue;
+        else if (it_out == state.variables.end())
+            jitc_fail("jit_var_loop_assemble_end(): internal error!");
+
+        const Variable *v_in = &it_in->second,
+                       *v_out = &it_out->second;
+        uint32_t vti = it_in->second.type;
+
+        buffer.fmt("    %s%u_final = select <%u x i1> %%p%u, <%u x %s> %s%u, "
+                   "<%u x %s> %s%u\n",
+                   type_prefix[vti], v_in->reg_index, width, mask_reg, width,
+                   type_name_llvm[vti], type_prefix[vti], v_out->reg_index,
+                   width, type_name_llvm[vti], type_prefix[vti],
+                   v_in->reg_index);
+    }
 
     if (loop->backend == JitBackend::CUDA)
         buffer.fmt("    bra l_%u_cond;\n", loop_reg);

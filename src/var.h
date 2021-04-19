@@ -49,6 +49,9 @@ extern uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
 extern uint32_t jitc_var_new_placeholder(uint32_t index, int preserve_size,
                                          int propagate_literals);
 
+extern uint32_t jitc_var_new_placeholder_loop(const char *stmt,
+                                              uint32_t n_dep, uint32_t *dep);
+
 /// Register an existing variable with the JIT compiler
 extern uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
                                  size_t size, int free);

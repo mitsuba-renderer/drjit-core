@@ -492,6 +492,31 @@ uint32_t jitc_var_new_counter(JitBackend backend, size_t size) {
     return jitc_var_new(v);
 }
 
+uint32_t jitc_var_new_placeholder_loop(const char *stmt, uint32_t n_dep, uint32_t *dep) {
+    if (unlikely(n_dep < 1))
+        jitc_fail("jit_var_new_placeholder_loop(): must have at least one dependency!");
+
+    Variable *v_dep = jitc_var(dep[0]);
+
+    Variable v2;
+    v2.stmt = (char *) stmt;
+    v2.backend = v_dep->backend;
+    v2.type = v_dep->type;
+    v2.size = v_dep->size;
+    v2.placeholder = v2.placeholder_iface = 1;
+
+    for (uint32_t i = 0; i < n_dep; ++i) {
+        v2.dep[i] = dep[i];
+        jitc_var_inc_ref_int(dep[i]);
+    }
+
+    uint32_t result = jitc_var_new(v2, true);
+    jitc_log(Debug, "jit_var_new_placeholder(%s r%u)",
+             type_name[v2.type], result);
+
+    return result;
+}
+
 uint32_t jitc_var_new_placeholder(uint32_t index, int preserve_size, int propagate_literals) {
     const Variable *v = jitc_var(index);
     if (v->literal && propagate_literals &&

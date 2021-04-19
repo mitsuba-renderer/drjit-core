@@ -35,8 +35,8 @@ template <typename Mask> struct Loop {
         if (m_state != 0 && m_state != 3 && m_state != 4)
             jit_log(Warn, "enoki::Loop(): destructed in an inconsistent state.");
 
-        jit_var_dec_ref_ext(m_loop_start);
         jit_var_dec_ref_ext(m_loop_cond);
+        jit_var_dec_ref_ext(m_loop_body);
         jit_set_cse_scope(Backend, m_cse_scope);
     }
 
@@ -66,8 +66,23 @@ template <typename Mask> struct Loop {
             m_se_offset = jit_side_effects_scheduled(Backend);
 
             jit_new_cse_scope(Backend);
-            m_loop_start = jit_var_new_stmt(Backend, VarType::Void, "", 1, 0, nullptr);
-            step();
+
+            // Create a special node indicating the loop start
+            m_loop_cond = jit_var_new_stmt(Backend, VarType::Void, "", 1, 0, nullptr);
+            m_loop_cond = jit_var_resize(m_loop_cond, m_size);
+            jit_var_dec_ref_ext(m_loop_cond);
+
+            // Create phi nodes
+            for (size_t i = 0; i < m_index_p.size(); ++i) {
+                uint32_t &index = *m_index_p[i];
+                uint32_t dep[2] = { index, m_loop_cond };
+                uint32_t next = jit_var_new_placeholder_loop(
+                             "$r0 = phi <$w x $t0> [ $r0_final, %l_$i2_tail ], [ $r1, %l_$i2_start ]",
+                             2, dep);
+                jit_var_dec_ref_ext(index);
+                index = next;
+            }
+
             m_state = 1;
         }
     }
@@ -115,15 +130,24 @@ protected:
                    variables using placeholders once more. They will represent
                    their state at the start of the loop body. */
                 m_cond = cond; // detach
-                m_loop_cond = jit_var_new_stmt(Backend, VarType::Void, "", 1, 1,
+                m_loop_body = jit_var_new_stmt(Backend, VarType::Void, "", 1, 1,
                                                m_cond.index_ptr());
                 jit_new_cse_scope(Backend);
-                step();
-                for (uint32_t i = 0; i < n; ++i) {
-                    uint32_t index = *m_index_p[i];
-                    m_index_body.push_back(index);
-                    jit_var_inc_ref_ext(index);
+
+                // Create phi nodes
+                for (size_t i = 0; i < m_index_p.size(); ++i) {
+                    uint32_t &index = *m_index_p[i];
+                    uint32_t dep[2] = { index, m_loop_cond };
+                    uint32_t next = jit_var_new_placeholder_loop(
+                                 "$r0 = phi <$w x $t0> [ $r1, %l_$i2_cond ]",
+                                 2, dep);
+
+                    jit_var_dec_ref_ext(index);
+                    jit_var_inc_ref_ext(next);
+                    m_index_body.push_back(next);
+                    index = next;
                 }
+
                 m_state++;
                 if constexpr (Backend == JitBackend::LLVM)
                     m_mask_stack.push(cond.index());
@@ -136,7 +160,7 @@ protected:
                 for (uint32_t i = 0; i < n; ++i)
                     m_index_out.push_back(*m_index_p[i]);
 
-                jit_var_loop(m_name, m_loop_start, m_loop_cond,
+                jit_var_loop(m_name, m_loop_cond, m_loop_body,
                              (uint32_t) n, m_index_body.data(),
                              m_index_out.data(), m_se_offset,
                              m_index_out.data(), m_state == 2,
@@ -201,16 +225,6 @@ protected:
         }
 
         return false;
-    }
-
-    // Insert an indirection via placeholder variables
-    void step() {
-        for (size_t i = 0; i < m_index_p.size(); ++i) {
-            uint32_t &index = *m_index_p[i],
-                     next = jit_var_new_placeholder(index, 1, 0);
-            jit_var_dec_ref_ext(index);
-            index = next;
-        }
     }
 
     bool cond_wavefront(const Mask &cond) {
@@ -292,8 +306,8 @@ private:
     bool m_record;
 
     /// Loop code generation hooks
-    uint32_t m_loop_start = 0;
     uint32_t m_loop_cond = 0;
+    uint32_t m_loop_body = 0;
     uint32_t m_cse_scope;
 };
 
