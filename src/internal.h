@@ -726,7 +726,6 @@ public:
         std::swap(m_cur, b.m_cur);
         std::swap(m_end, b.m_end);
     }
-private:
     void expand(size_t minval = 2);
 
 private:

@@ -336,11 +336,17 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                "}\n");
 }
 
-/// Insert an intrinsic declaration into 'globals'
-static void jitc_llvm_process_intrinsic() {
-    const char *s = buffer.cur();
-    while (strncmp(s, "call", 4) != 0)
-        --s;
+/* Invoked when an instruction contains the pattern
+ * '$call ret_type name(arg_type arg_value...)'.
+ * This function ensures that a suitable intrinsic declaration
+ * 'declare ret_type name(arg_type...)' is created */
+static void jitc_llvm_process_intrinsic(size_t offset) {
+    // ensure that there is enough space
+    size_t extra_needed = buffer.size() - offset + 5;
+    if (buffer.remain() < extra_needed)
+        buffer.expand(extra_needed);
+
+    const char *s = strstr(buffer.get() + offset, "call");
     s += 4;
 
     size_t intrinsic_offset = buffer.size();
@@ -348,6 +354,7 @@ static void jitc_llvm_process_intrinsic() {
 
     char c;
     while (c = *s, c != '\0') {
+        // skip over argument values, only keep types
         if (c == ' ' && s[1]== '%') {
             while (c = *s, c != '\0' && c != ')' && c != ',')
                 s++;
@@ -377,6 +384,8 @@ static void jitc_llvm_process_intrinsic() {
 
 /// Convert an IR template with '$' expressions into valid IR
 static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function) {
+    size_t offset = buffer.size();
+
     if (v->literal) {
         uint32_t reg = v->reg_index, width = jitc_llvm_vector_width;
         uint32_t vt = v->type;
@@ -509,7 +518,7 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
         } while (c != '\0');
 
         if (unlikely(has_intrinsic))
-            jitc_llvm_process_intrinsic();
+            jitc_llvm_process_intrinsic(offset);
 
         buffer.putc('\n');
     }
