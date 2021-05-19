@@ -68,6 +68,9 @@ extern int32_t alloca_align;
 /// Does the program contain a %data register so far? (for branch-based vcalls)
 extern bool data_reg_global;
 
+/// Does the program contain a %self register so far? (for branch-based vcalls)
+extern bool self_reg_global;
+
 /// Ordered list of variables that should be computed
 extern std::vector<ScheduledVariable> schedule;
 
@@ -92,7 +95,8 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                    const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out,
                    const uint32_t *out, const uint32_t *out_nested,
-                   uint32_t n_se, const uint32_t *se, const char *ret_label);
+                   uint32_t n_se, const uint32_t *se, const char *ret_label,
+                   bool use_self);
 
 /// Used by jitc_vcall() to generate PTX source code for vcalls
 extern void
@@ -101,14 +105,16 @@ jitc_assemble_cuda_func(const char *name, uint32_t inst_id, uint32_t n_regs,
                         uint32_t out_align, uint32_t data_offset,
                         const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                         uint32_t n_out, const uint32_t *out,
-                        const uint32_t *out_nested, const char *ret_label);
+                        const uint32_t *out_nested, const char *ret_label,
+                        bool use_self);
 
 /// Used by jitc_vcall() to generate LLVM IR source code for vcalls
 extern void
 jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                         uint32_t in_size, uint32_t data_offset,
                         const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-                        uint32_t n_out, const uint32_t *out_nested);
+                        uint32_t n_out, const uint32_t *out_nested,
+                        bool use_self);
 
 /// Register a global declaration that will be included in the final program
 extern void jitc_register_global(const char *str);

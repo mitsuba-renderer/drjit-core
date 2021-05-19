@@ -346,6 +346,9 @@ struct ThreadState {
     /// Index used to isolate CSE from other parts of the program
     uint32_t cse_scope = 0;
 
+    /// Registry index of the self pointer of the currently recording vcall
+    uint32_t vcall_self = 0;
+
     /// ---------------------------- LLVM-specific ----------------------------
 
     // Currently active task within the thread pool

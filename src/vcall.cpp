@@ -60,6 +60,9 @@ struct VCall {
     uint32_t in_size_initial = 0;
     uint32_t out_size_initial = 0;
 
+    /// Does this vcall need self as argument
+    bool use_self = false;
+
     ~VCall() {
         for (uint32_t index : out_nested)
             jitc_var_dec_ref_ext(index);
@@ -98,7 +101,17 @@ static void jitc_var_vcall_assemble_llvm(
 static void
 jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                             uint32_t &data_offset, uint32_t inst_id,
-                            uint32_t index);
+                            uint32_t index, bool &use_self);
+
+
+void jitc_vcall_set_self(JitBackend backend, uint32_t value) {
+    ThreadState *ts = thread_state(backend);
+    ts->vcall_self = value;
+}
+
+uint32_t jitc_vcall_self(JitBackend backend) {
+    return thread_state(backend)->vcall_self;
+}
 
 // Weave a virtual function call into the computation graph
 void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
@@ -257,11 +270,13 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
         for (uint32_t j = 0; j < n_out; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
-                                        out_nested[j + i * n_out]);
+                                        out_nested[j + i * n_out],
+                                        vcall->use_self);
 
         for (uint32_t j = se_offset[i]; j != se_offset[i + 1]; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
-                                        vcall->se[j - se_offset[0]]);
+                                        vcall->se[j - se_offset[0]],
+                                        vcall->use_self);
 
         // Restore to full alignment
         data_size = (data_size + 7) / 8 * 8;
@@ -659,7 +674,8 @@ static void jitc_var_vcall_assemble(VCall *vcall,
             vcall->out.data(), vcall->out_nested.data() + n_out * i,
             vcall->se_offset[i + 1] - vcall->se_offset[i],
             vcall->se.data() + vcall->se_offset[i],
-            vcall->branch ? ret_label : nullptr);
+            vcall->branch ? ret_label : nullptr,
+            vcall->use_self);
 
         if (vcall->backend == JitBackend::LLVM)
             result.second += 1;
@@ -742,14 +758,22 @@ static void jitc_var_vcall_assemble_cuda(
     uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
     uint32_t out_size, uint32_t out_align, const char *ret_label) {
 
-    // Extra field for call data (only if needed)
-    if (vcall->branch && data_reg) {
-        if (!data_reg_global) {
-            buffer.put("    .reg.u64 %data;\n");
-        } else {
-            buffer.fmt("    .reg.u64 %%u%u;\n"
-                       "    mov.u64 %%u%u, %%data;\n",
-                       vcall->id, vcall->id);
+    // Extra field for call data or self (only if needed)
+    if (vcall->branch) {
+        if (vcall->use_self) {
+            if (!self_reg_global) {
+                buffer.put("    .reg.u32 %self;\n");
+                self_reg_global = true;
+            }
+        }
+        if (data_reg) {
+            if (!data_reg_global) {
+                buffer.put("    .reg.u64 %data;\n");
+            } else {
+                buffer.fmt("    .reg.u64 %%u%u;\n"
+                        "    mov.u64 %%u%u, %%data;\n",
+                        vcall->id, vcall->id);
+            }
         }
     }
 
@@ -774,6 +798,9 @@ static void jitc_var_vcall_assemble_cuda(
             buffer.fmt("        @%%p%u ld.global.u64 %%rd2, callables[%%r3];\n", mask_reg);
         else
             buffer.put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
+    } else {
+        if (vcall->use_self)
+            buffer.fmt("        mov.u32 %%self, %%r%u;\n", self_reg);
     }
 
     // =====================================================
@@ -835,6 +862,11 @@ static void jitc_var_vcall_assemble_cuda(
         if (out_size)
             buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
         buffer.put(" _(");
+        if (vcall->use_self) {
+            buffer.put(".reg .u32 self");
+            if (data_reg || in_size)
+                buffer.put(", ");
+        }
         if (data_reg) {
             buffer.put(".reg .u64 data");
             if (in_size)
@@ -877,9 +909,16 @@ static void jitc_var_vcall_assemble_cuda(
             offset += size;
         }
 
-        buffer.fmt("            @%%p%u call %s%%rd2, (%s%s%s), proto;\n",
-                   mask_reg, out_size ? "(out), " : "", data_reg ? "%rd3" : "",
-                   data_reg && in_size ? ", " : "", in_size ? "in" : "");
+        if (vcall->use_self) {
+            buffer.fmt("            @%%p%u call %s%%rd2, (%%r%u%s%s), proto;\n",
+                    mask_reg, out_size ? "(out), " : "", self_reg,
+                    data_reg ? ", %rd3" : "",
+                    in_size ? ", in" : "");
+        } else {
+            buffer.fmt("            @%%p%u call %s%%rd2, (%s%s%s), proto;\n",
+                       mask_reg, out_size ? "(out), " : "", data_reg ? "%rd3" : "",
+                       data_reg && in_size ? ", " : "", in_size ? "in" : "");
+        }
 
         // =====================================================
         // 4.2. Read back the output arguments
@@ -1121,15 +1160,30 @@ static void jitc_var_vcall_assemble_llvm(
                vcall_reg, vcall_reg // func_1
        );
 
-    if (!data_reg) {
-        buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*)*\n"
-                   "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%buffer)\n",
-                   vcall_reg, vcall_reg, width, vcall_reg, width, vcall_reg);
+    if (vcall->use_self) {
+        if (!data_reg) {
+            buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, <%u x i32>, i8*)*\n"
+                       "    call void %%u%u_func(<%u x i1> %%u%u_active, <%u x i32> %%r%u, i8* %%buffer)\n",
+                       vcall_reg, vcall_reg, width, width,
+                       vcall_reg, width, vcall_reg, width, self_reg);
+        } else {
+            buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, <%u x i32>, i8*, i8*, <%u x i32>)*\n"
+                       "    call void %%u%u_func(<%u x i1> %%u%u_active, <%u x i32> %%r%u, i8* %%buffer, i8* %%rd%u, <%u x i32> %%u%u_offset)\n",
+                       vcall_reg, vcall_reg, width, width, width,
+                       vcall_reg, width, vcall_reg, width, self_reg, data_reg, width, vcall_reg);
+        }
     } else {
-        buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*, i8*, <%u x i32>)*\n"
-                   "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%buffer, i8* %%rd%u, <%u x i32> %%u%u_offset)\n",
-                   vcall_reg, vcall_reg, width, width,
-                   vcall_reg, width, vcall_reg, data_reg, width, vcall_reg);
+        if (!data_reg) {
+            buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*)*\n"
+                       "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%buffer)\n",
+                       vcall_reg, vcall_reg, width,
+                       vcall_reg, width, vcall_reg);
+        } else {
+            buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*, i8*, <%u x i32>)*\n"
+                       "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%buffer, i8* %%rd%u, <%u x i32> %%u%u_offset)\n",
+                       vcall_reg, vcall_reg, width, width,
+                       vcall_reg, width, vcall_reg, data_reg, width, vcall_reg);
+        }
     }
 
     buffer.fmt("    %%u%u_self_next = select <%u x i1> %%u%u_active, <%u x i32> zeroinitializer, <%u x i32> %%u%u_self\n"
@@ -1190,12 +1244,15 @@ static void jitc_var_vcall_assemble_llvm(
 /// Collect scalar / pointer variables referenced by a computation
 void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                                  uint32_t &data_offset, uint32_t inst_id,
-                                 uint32_t index) {
+                                 uint32_t index, bool &use_self) {
     uint64_t key = (uint64_t) index + (((uint64_t) inst_id) << 32);
     if (data_map.find(key) != data_map.end())
         return;
 
     const Variable *v = jitc_var(index);
+
+    if (!v->literal && v->stmt && strstr(v->stmt, "self"))
+        use_self = true;
 
     if (v->placeholder_iface) {
         return;
@@ -1221,7 +1278,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
                 break;
 
             jitc_var_vcall_collect_data(data_map, data_offset,
-                                        inst_id, index_2);
+                                        inst_id, index_2, use_self);
         }
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
@@ -1233,7 +1290,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
             for (uint32_t i = 0; i < extra.n_dep; ++i) {
                 uint32_t index_2 = extra.dep[i];
                 jitc_var_vcall_collect_data(data_map, data_offset,
-                                            inst_id, index_2);
+                                            inst_id, index_2, use_self);
             }
         }
 

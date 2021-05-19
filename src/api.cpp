@@ -335,9 +335,9 @@ uint32_t jit_var_new_stmt(JitBackend backend, JIT_ENUM VarType vt,
 }
 
 uint32_t jit_var_new_literal(JitBackend backend, VarType type, const void *value,
-                             size_t size, int eval) {
+                             size_t size, int eval, int pointer) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_literal(backend, type, value, size, eval);
+    return jitc_var_new_literal(backend, type, value, size, eval, pointer);
 }
 
 uint32_t jit_var_new_counter(JitBackend backend, size_t size) {
@@ -708,6 +708,16 @@ uint32_t jit_var_registry_attr(JitBackend backend, VarType type,
                                const char *domain, const char *name) {
     lock_guard guard(state.mutex);
     return jitc_var_registry_attr(backend, type, domain, name);
+}
+
+void jit_vcall_set_self(JitBackend backend, uint32_t value) {
+    lock_guard guard(state.mutex);
+    jitc_vcall_set_self(backend, value);
+}
+
+uint32_t jit_vcall_self(JitBackend backend) {
+    lock_guard guard(state.mutex);
+    return jitc_vcall_self(backend);
 }
 
 void jit_var_vcall(const char *name, uint32_t self, uint32_t mask,

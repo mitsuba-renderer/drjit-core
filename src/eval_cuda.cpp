@@ -237,7 +237,8 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
                              const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                              uint32_t n_out, const uint32_t *out,
                              const uint32_t *out_nested,
-                             const char *ret_label) {
+                             const char *ret_label,
+                             bool use_self) {
     bool log_trace = std::max(state.log_level_stderr,
                               state.log_level_callback) >= LogLevel::Trace,
          function_interface = ret_label == nullptr;
@@ -247,6 +248,12 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
         if (out_size) buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
         buffer.fmt(" %s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
                    uses_optix ? "__direct_callable__" : "func_");
+
+        if (use_self) {
+            buffer.put(".reg .u32 self");
+            if (!data_map.empty() || in_size)
+                buffer.put(", ");
+        }
 
         if (!data_map.empty()) {
             buffer.put(".reg .u64 data");

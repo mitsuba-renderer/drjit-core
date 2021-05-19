@@ -20,7 +20,7 @@ extern Variable *jitc_var(uint32_t index);
 /// Create a literal constant variable of the given size
 extern uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
                                      const void *value, size_t size,
-                                     int opaque);
+                                     int eval, int pointer = 0);
 
 /// Create a variable counting from 0 ... size - 1
 extern uint32_t jitc_var_new_counter(JitBackend backend, size_t size);

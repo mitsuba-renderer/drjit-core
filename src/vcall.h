@@ -1,5 +1,8 @@
 #include <stdint.h>
 
+extern void jitc_vcall_set_self(JitBackend backend, uint32_t value);
+extern uint32_t jitc_vcall_self(JitBackend backend);
+
 extern void jitc_var_vcall(const char *domain, uint32_t self, uint32_t mask,
                            uint32_t n_inst, const uint32_t *inst_id,
                            uint32_t n_in, const uint32_t *in,
