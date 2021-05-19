@@ -468,11 +468,33 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
 
 uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
                               const void *value, size_t size,
-                              int eval) {
+                              int eval, int pointer) {
     if (unlikely(size == 0))
         return 0;
 
     jitc_check_size("jit_var_new_literal", size);
+
+    /* When initializing a literal pointer array while recording a virtual
+       function, we can leverage the already available `self` variable instead
+       of creating a new one. */
+    if (jit_flag(JitFlag::Recording) && pointer) {
+        ThreadState *ts = thread_state(backend);
+        if (ts->vcall_self && ts->vcall_self == *((uint32_t*) value)) {
+            Variable v;
+            if (backend == JitBackend::CUDA)
+                v.stmt = (char *) (jit_flag(JitFlag::VCallBranch) ?
+                                   "mov.u32 $r0, %self" :
+                                   "mov.u32 $r0, self");
+            else
+                v.stmt = (char *) "$r0 = bitcast <$w x i32> %self to <$w x i32>";
+            v.size = (uint32_t) size;
+            v.type = (uint32_t) type;
+            v.backend = (uint32_t) backend;
+            v.free_stmt = false;
+            v.placeholder = true;
+            return jitc_var_new(v, true);
+        }
+    }
 
     if (likely(eval == 0)) {
         Variable v;

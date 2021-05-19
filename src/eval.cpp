@@ -38,6 +38,9 @@ static uint32_t kernel_param_count = 0;
 /// Does the program contain a %data register so far? (for branch-based vcalls)
 bool data_reg_global = false;
 
+/// Does the program contain a %data register so far? (for branch-based vcalls)
+bool self_reg_global = false;
+
 /// List of global declarations (intrinsics, constant arrays)
 std::vector<std::string> globals;
 
@@ -111,6 +114,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     alloca_size = alloca_align = -1;
 
     data_reg_global = false;
+    self_reg_global = false;
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
     uses_optix = ts->backend == JitBackend::CUDA &&
@@ -675,7 +679,8 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                    const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out,
                    const uint32_t *out, const uint32_t *out_nested,
-                   uint32_t n_se, const uint32_t *se, const char *ret_label) {
+                   uint32_t n_se, const uint32_t *se, const char *ret_label,
+                   bool use_self) {
     visited.clear();
     schedule.clear();
 
@@ -721,10 +726,10 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     if (ts->backend == JitBackend::CUDA)
         jitc_assemble_cuda_func(name, inst_id, n_regs, in_size, in_align, out_size,
                                 out_align, data_offset, data_map, n_out, out,
-                                out_nested, ret_label);
+                                out_nested, ret_label, use_self);
     else
         jitc_assemble_llvm_func(name, inst_id, in_size, data_offset, data_map,
-                                n_out, out_nested);
+                                n_out, out_nested, use_self);
 
     buffer.putc('\n');
 

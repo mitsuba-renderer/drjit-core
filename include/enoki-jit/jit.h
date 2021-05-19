@@ -639,12 +639,15 @@ enum VarType {
  * counter). This change causes each iteration to generate different code,
  * requiring repeated compilation steps. By preemptively evaluating this
  * constant, Enoki-JIT can reuse a single kernel for all steps.
+ *
+ * \c pointer specifies whether the variable represents a registry index.
  */
 extern JIT_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
                                                JIT_ENUM VarType type,
                                                const void *value,
                                                size_t size JIT_DEF(1),
-                                               int eval JIT_DEF(0));
+                                               int eval JIT_DEF(0),
+                                               int pointer JIT_DEF(0));
 
 /**
  * \brief Create a counter variable
@@ -1363,6 +1366,12 @@ extern JIT_EXPORT size_t jit_var_mask_size(JitBackend backend);
 
 /// Return the default mask
 extern JIT_EXPORT uint32_t jit_var_mask_default(JitBackend backend);
+
+/// Set the registry index of the self pointer of the currently recording vcall
+extern JIT_EXPORT void jit_vcall_set_self(JitBackend backend, uint32_t value);
+
+/// Get the registry index of the self pointer of the currently recording vcall
+extern JIT_EXPORT uint32_t jit_vcall_self(JitBackend backend);
 
 /**
  * \brief Record a virtual function call
