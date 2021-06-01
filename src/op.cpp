@@ -1530,10 +1530,10 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
 
     // Don't perform the gather operation if the inputs are trivial
     if (v_source->literal || v_source->size == 1) {
-        uint32_t deps[2] = { source, mask_ };
-        Ref tmp = steal(jitc_var_new_op(JitOp::And, 2, deps));
+        Ref tmp = steal(jitc_var_resize(source, size));
+        uint32_t deps[2] = { (uint32_t) tmp, mask_ };
+        uint32_t result = jitc_var_new_op(JitOp::And, 2, deps);
 
-        uint32_t result = jitc_var_resize(tmp, size);
         jitc_log(Debug, "jit_var_new_gather(%s r%u <- r%u[r%u] if r%u): elided, %s source",
                  type_name[vti], result, source, index_, mask_,
                  v_source_literal ? "literal" : "scalar");
