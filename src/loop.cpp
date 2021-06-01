@@ -463,8 +463,8 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
         do {
             again = false;
             for (uint32_t i = 0; i < n; ++i) {
-                if (loop->in_body[i] &&
-                    visited.find(loop->in_body[i]) != visited.end() &&
+                if (loop->in_cond[i] &&
+                    visited.find(loop->in_cond[i]) != visited.end() &&
                     visited.find(loop->out_body[i]) == visited.end()) {
                     jitc_var_loop_dfs(visited, loop->out_body[i]);
                     again = true;
