@@ -390,7 +390,7 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
     }
 }
 
-static void jitc_var_loop_dfs(tsl::robin_set<uint32_t> &set, uint32_t index) {
+static void jitc_var_loop_dfs(tsl::robin_set<uint32_t, UInt32Hasher> &set, uint32_t index) {
     if (!set.insert(index).second)
         return;
     // jitc_trace("jitc_var_dfs(r%u)", index);
@@ -420,15 +420,15 @@ static void jitc_var_loop_dfs(tsl::robin_set<uint32_t> &set, uint32_t index) {
 static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
     if (loop->simplify_flag)
         return;
+    loop->simplify_flag = true;
 
     const uint32_t n = loop->in.size();
     uint32_t n_freed = 0, n_rounds = 0;
-    tsl::robin_set<uint32_t> visited;
+    tsl::robin_set<uint32_t, UInt32Hasher> visited;
 
     jitc_trace("jit_var_loop_simplify(): loop output %u freed, simplifying..",
                cause);
 
-    loop->simplify_flag = true;
     bool progress;
     while (true) {
         n_rounds++;
@@ -446,11 +446,16 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
             jitc_var_loop_dfs(visited, loop->out_body[i]);
         }
 
+        // jitc_trace("jit_var_loop_simplify(): DFS from loop condition (r%u)", loop->cond);
+        jitc_var_loop_dfs(visited, loop->cond);
+
         // Find all inputs that are reachable from the side effects
         Extra &e = state.extra[loop->end];
         for (uint32_t i = 2*n; i < e.n_dep; ++i) {
-            if (e.dep[i])
-                jitc_var_loop_dfs(visited, e.dep[i]);
+            if (!e.dep[i])
+                continue;
+            // jitc_trace("jit_var_loop_simplify(): DFS from side effect %u (r%u)", i-2*n, e.dep[i]);
+            jitc_var_loop_dfs(visited, e.dep[i]);
         }
 
         /// Propagate until no further changes

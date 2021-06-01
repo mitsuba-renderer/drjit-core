@@ -1024,12 +1024,14 @@ extern JIT_EXPORT size_t jit_var_size(uint32_t index);
 /**
  * \brief Resize a scalar variable to a new size
  *
- * This function takes a scalar variable as input and changes its size
- * to \c size, potentially creating a new copy in case something already
- * depends on \c index. The function increases the external reference count of
- * the returned value. When \c index is not a scalar variable and its size
- * exactly matches \c size, the function does nothing and just increases
- * the external reference count of \c index. Otherwise, it fails.
+ * This function takes a scalar variable as input and changes its size to \c
+ * size, potentially creating a new copy in case something already depends on
+ * \c index. The returned copy is symbolic form.
+ *
+ * The function increases the external reference count of the returned value.
+ * When \c index is not a scalar variable and its size exactly matches \c size,
+ * the function does nothing and just increases the external reference count of
+ * \c index. Otherwise, it fails.
  */
 extern JIT_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
 
