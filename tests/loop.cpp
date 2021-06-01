@@ -241,7 +241,6 @@ TEST_BOTH(07_collatz) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
         jit_set_flag(JitFlag::LoopOptimize, i == 2);
         for (uint32_t j = 0; j < 2; ++j) {
-            fprintf(stderr, "Collatz iteration %i %i\n", i, j);
             UInt32 buf = full<UInt32>(1000, 11);
             if (j == 1) {
                 UInt32 k = 1;
@@ -267,16 +266,14 @@ TEST_BOTH(08_nested_write) {
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
         jit_set_flag(JitFlag::LoopOptimize, i == 2);
-        fprintf(stderr, "%i\n", i);
 
         UInt32 k = arange<UInt32>(10)*12;
         Loop<Mask> loop_1("Outer", k);
 
         while (loop_1(neq(k % 7, 0))) {
-            fprintf(stderr, "inner..\n");
             Loop<Mask> loop_2("Inner", k);
+
             while (loop_2(neq(k % 3, 0))) {
-                fprintf(stderr, "inner2. %s.\n", k.str());
                 k += 1;
             }
             k += 1;
