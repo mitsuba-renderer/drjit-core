@@ -963,8 +963,8 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         v->size = size;
         result = index;
     } else if (v->literal) {
-        result = jitc_var_new_literal((JitBackend) v->backend, (VarType) v->type,
-                                    &v->value, size, 0);
+        result = jitc_var_new_literal((JitBackend) v->backend,
+                                      (VarType) v->type, &v->value, size, 0);
     } else {
         Variable v2;
         v2.type = v->type;
