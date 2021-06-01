@@ -145,22 +145,35 @@ struct Loop<Mask, enable_if_jit_array_t<Mask>> {
             /// New CSE scope for the loop condition
             jit_new_cse_scope(Backend);
 
+            /// Copy loop state before entering loop (CUDA)
+            if (Backend == JitBackend::CUDA) {
+                for (size_t i = 0; i < m_index_p.size(); ++i) {
+                    uint32_t &index = *m_index_p[i];
+                    uint32_t dep[2] = { index };
+                    uint32_t next =
+                        jit_var_new_placeholder_loop("mov.$t0 $r0, $r1", 1, dep);
+                    jit_var_dec_ref_ext(index);
+                    index = next;
+                }
+            }
+
             // Create a special node indicating the loop start
             m_loop_cond = jit_var_new_stmt(Backend, VarType::Void, "", 1, 0, nullptr);
             m_loop_cond = jit_var_resize(m_loop_cond, m_size);
             jit_var_dec_ref_ext(m_loop_cond);
 
-            // Create phi nodes
-            for (size_t i = 0; i < m_index_p.size(); ++i) {
-                uint32_t &index = *m_index_p[i];
-                uint32_t dep[2] = { index, m_loop_cond };
-                uint32_t next = jit_var_new_placeholder_loop(
-                    Backend == JitBackend::LLVM
-                        ? "$r0 = phi <$w x $t0> [ $r0_final, %l_$i2_tail ], [ $r1, %l_$i2_start ]"
-                        : "mov.$t0 $r0, $r1",
-                    2, dep);
-                jit_var_dec_ref_ext(index);
-                index = next;
+            // Create phi nodes (LLVM)
+            if (Backend == JitBackend::LLVM) {
+                for (size_t i = 0; i < m_index_p.size(); ++i) {
+                    uint32_t &index = *m_index_p[i];
+                    uint32_t dep[2] = { index, m_loop_cond };
+                    uint32_t next = jit_var_new_placeholder_loop(
+                        "$r0 = phi <$w x $t0> [ $r0_final, %l_$i2_tail ], [ "
+                        "$r1, %l_$i2_start ]",
+                        2, dep);
+                    jit_var_dec_ref_ext(index);
+                    index = next;
+                }
             }
 
             m_state = 1;

@@ -508,14 +508,14 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
 static void jitc_var_loop_assemble_start(const Variable *, const Extra &extra) {
     Loop *loop = (Loop *) extra.callback_data;
     uint32_t loop_reg = jitc_var(loop->start)->reg_index;
-    if (loop->backend == JitBackend::LLVM)
-        buffer.fmt("    br label %%l_%u_start\n", loop_reg);
 
-    buffer.fmt("\nl_%u_start:\n", loop_reg);
+    if (loop->backend == JitBackend::LLVM) {
+        buffer.fmt("    br label %%l_%u_start\n", loop_reg);
+        buffer.fmt("\nl_%u_start:\n", loop_reg);
+        buffer.fmt("    br label %%l_%u_cond\n", loop_reg);
+    }
 
     std::pair<uint32_t, uint32_t> result{ 0, 0 };
-
-    buffer.fmt("    br label %%l_%u_cond\n", loop_reg);
 
     buffer.fmt("\nl_%u_cond: %s Loop (%s)\n", loop_reg,
                loop->backend == JitBackend::CUDA ? "//" : ";",
@@ -576,12 +576,17 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
                        *v_out = &it_out->second;
         uint32_t vti = it_in->second.type;
 
-        buffer.fmt("    %s%u_final = select <%u x i1> %%p%u, <%u x %s> %s%u, "
-                   "<%u x %s> %s%u\n",
-                   type_prefix[vti], v_in->reg_index, width, mask_reg, width,
-                   type_name_llvm[vti], type_prefix[vti], v_out->reg_index,
-                   width, type_name_llvm[vti], type_prefix[vti],
-                   v_in->reg_index);
+        if (loop->backend == JitBackend::LLVM)
+            buffer.fmt("    %s%u_final = select <%u x i1> %%p%u, <%u x %s> %s%u, "
+                       "<%u x %s> %s%u\n",
+                       type_prefix[vti], v_in->reg_index, width, mask_reg, width,
+                       type_name_llvm[vti], type_prefix[vti], v_out->reg_index,
+                       width, type_name_llvm[vti], type_prefix[vti],
+                       v_in->reg_index);
+        else
+            buffer.fmt("    mov.%s %s%u, %s%u;\n", type_name_ptx[vti],
+                       type_prefix[vti], v_in->reg_index, type_prefix[vti],
+                       v_out->reg_index);
     }
 
     if (loop->backend == JitBackend::CUDA)
