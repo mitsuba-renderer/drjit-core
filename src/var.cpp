@@ -15,6 +15,7 @@
 #include "op.h"
 #include "registry.h"
 
+// When debugging via valgrind, this will make iterator invalidation more obvious
 // #define ENOKI_VALGRIND 1
 
 /// Descriptive names for the various variable types
@@ -109,6 +110,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
         free(v->stmt);
 
     uint32_t dep[4];
+    bool write_ptr = v->write_ptr;
     memcpy(dep, v->dep, sizeof(uint32_t) * 4);
 
     if (unlikely(v->extra)) {
@@ -151,14 +153,17 @@ void jitc_var_free(uint32_t index, Variable *v) {
     state.variables.erase(index);
 
 #if defined(ENOKI_VALGRIND)
-    // When debugging via valgrind, this will make iterator invalidation more obvious
     VariableMap var_new(state.variables);
     state.variables.swap(var_new);
 #endif
 
-    // Decrease reference count of dependencies
-    for (int i = 0; i < 4; ++i)
-        jitc_var_dec_ref_int(dep[i]);
+    if (likely(!write_ptr)) {
+        // Decrease reference count of dependencies
+        for (int i = 0; i < 4; ++i)
+            jitc_var_dec_ref_int(dep[i]);
+    } else {
+        jitc_var_dec_ref_se(dep[3]);
+    }
 }
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
@@ -172,7 +177,7 @@ Variable *jitc_var(uint32_t index) {
 /// Increase the external reference count of a given variable
 void jitc_var_inc_ref_ext(uint32_t index, Variable *v) noexcept(true) {
     v->ref_count_ext++;
-    jitc_trace("jit_var_inc_ref_ext(r%u): %u", index, v->ref_count_ext);
+    jitc_trace("jit_var_inc_ref_ext(r%u): %u", index, (uint32_t) v->ref_count_ext);
 }
 
 /// Increase the external reference count of a given variable
@@ -184,7 +189,7 @@ void jitc_var_inc_ref_ext(uint32_t index) noexcept(true) {
 /// Increase the internal reference count of a given variable
 void jitc_var_inc_ref_int(uint32_t index, Variable *v) noexcept(true) {
     v->ref_count_int++;
-    jitc_trace("jit_var_inc_ref_int(r%u): %u", index, v->ref_count_int);
+    jitc_trace("jit_var_inc_ref_int(r%u): %u", index, (uint32_t) v->ref_count_int);
 }
 
 /// Increase the internal reference count of a given variable
@@ -193,15 +198,27 @@ void jitc_var_inc_ref_int(uint32_t index) noexcept(true) {
         jitc_var_inc_ref_int(index, jitc_var(index));
 }
 
+/// Increase the side effect reference count of a given variable
+void jitc_var_inc_ref_se(uint32_t index, Variable *v) noexcept(true) {
+    v->ref_count_se++;
+    jitc_trace("jit_var_inc_ref_se(r%u): %u", index, (uint32_t) v->ref_count_se);
+}
+
+/// Increase the side effect reference count of a given variable
+void jitc_var_inc_ref_se(uint32_t index) noexcept(true) {
+    if (index)
+        jitc_var_inc_ref_se(index, jitc_var(index));
+}
+
 /// Decrease the external reference count of a given variable
 void jitc_var_dec_ref_ext(uint32_t index, Variable *v) noexcept(true) {
     if (unlikely(v->ref_count_ext == 0))
         jitc_fail("jit_var_dec_ref_ext(): variable r%u has no external references!", index);
 
-    jitc_trace("jit_var_dec_ref_ext(r%u): %u", index, v->ref_count_ext - 1);
+    jitc_trace("jit_var_dec_ref_ext(r%u): %u", index, (uint32_t) v->ref_count_ext - 1);
     v->ref_count_ext--;
 
-    if (v->ref_count_ext == 0 && v->ref_count_int == 0)
+    if (v->ref_count_ext == 0 && v->ref_count_int == 0 && v->ref_count_se == 0)
         jitc_var_free(index, v);
 }
 
@@ -216,10 +233,10 @@ void jitc_var_dec_ref_int(uint32_t index, Variable *v) noexcept(true) {
     if (unlikely(v->ref_count_int == 0))
         jitc_fail("jit_var_dec_ref_int(): variable r%u has no internal references!", index);
 
-    jitc_trace("jit_var_dec_ref_int(r%u): %u", index, v->ref_count_int - 1);
+    jitc_trace("jit_var_dec_ref_int(r%u): %u", index, (uint32_t) v->ref_count_int - 1);
     v->ref_count_int--;
 
-    if (v->ref_count_ext == 0 && v->ref_count_int == 0)
+    if (v->ref_count_ext == 0 && v->ref_count_int == 0 && v->ref_count_se == 0)
         jitc_var_free(index, v);
 }
 
@@ -227,6 +244,24 @@ void jitc_var_dec_ref_int(uint32_t index, Variable *v) noexcept(true) {
 void jitc_var_dec_ref_int(uint32_t index) noexcept(true) {
     if (index != 0)
         jitc_var_dec_ref_int(index, jitc_var(index));
+}
+
+/// Decrease the side effect reference count of a given variable
+void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept(true) {
+    if (unlikely(v->ref_count_se == 0))
+        jitc_fail("jit_var_dec_ref_se(): variable r%u has no side effect references!", index);
+
+    jitc_trace("jit_var_dec_ref_se(r%u): %u", index, (uint32_t) v->ref_count_se - 1);
+    v->ref_count_se--;
+
+    if (v->ref_count_ext == 0 && v->ref_count_int == 0 && v->ref_count_se == 0)
+        jitc_var_free(index, v);
+}
+
+/// Decrease the side effect reference count of a given variable
+void jitc_var_dec_ref_se(uint32_t index) noexcept(true) {
+    if (index != 0)
+        jitc_var_dec_ref_se(index, jitc_var(index));
 }
 
 /// Remove a variable from the cache used for common subexpression elimination
@@ -340,7 +375,6 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
 
     if (likely(!cse || cse_key_inserted)) {
         #if defined(ENOKI_VALGRIND)
-            // When debugging via valgrind, this will make iterator invalidation more obvious
             VariableMap var_new(state.variables);
             state.variables.swap(var_new);
         #endif
@@ -372,8 +406,12 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
         if (v.free_stmt)
             free(v.stmt);
 
-        for (int i = 0; i < 4; ++i)
-            jitc_var_dec_ref_int(v.dep[i]);
+        if (likely(!v.write_ptr)) {
+            for (int i = 0; i < 4; ++i)
+                jitc_var_dec_ref_int(v.dep[i]);
+        } else {
+            jitc_var_dec_ref_se(v.dep[3]);
+        }
 
         index = key_it.value();
         vo = jitc_var(index);
@@ -465,10 +503,6 @@ uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
     v.value = (uint64_t) (uintptr_t) value;
     v.backend = (uint32_t) backend;
 
-    /* This flag ensures that read and write pointers create separate entries in
-       the CSE table, which jit_var_new_scatter() uses to reason about safety */
-    v.write_ptr = write != 0;
-
     /* A literal variable (especially a pointer to some memory region) can
        specify an optional dependency to keep that memory region alive. The
        last entry (v.dep[3]) is strategically chosen as jitc_var_traverse()
@@ -476,7 +510,13 @@ uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
        zero, keeping the referenced variable from being merged into
        programs that make use of this literal. */
     v.dep[3] = dep;
-    jitc_var_inc_ref_int(dep);
+
+    // Write pointers create a special type of reference to indicate pending writes
+    v.write_ptr = write != 0;
+    if (write)
+        jitc_var_inc_ref_se(dep);
+    else
+        jitc_var_inc_ref_int(dep);
 
     return jitc_var_new(v);
 }
@@ -555,7 +595,7 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
         if (likely(dep[i])) {
             Variable *vi = jitc_var(dep[i]);
             size = std::max(size, vi->size);
-            dirty |= vi->dirty;
+            dirty |= vi->ref_count_se;
             placeholder |= vi->placeholder;
             v[i] = vi;
         } else {
@@ -647,15 +687,15 @@ void jitc_var_mark_side_effect(uint32_t index, uint32_t target) {
     ThreadState *ts = thread_state(v->backend);
     ts->side_effects.push_back(index);
 
-    if (target) // Mark variable as dirty
-        jitc_var(target)->dirty = true;
+    // Mark variable as dirty
+    jitc_var_inc_ref_se(target);
 }
 
 /// Return a human-readable summary of the contents of a variable
 const char *jitc_var_str(uint32_t index) {
     const Variable *v = jitc_var(index);
 
-    if (!v->literal && (!v->data || v->dirty)) {
+    if (!v->literal && (!v->data || v->ref_count_se)) {
         jitc_var_eval(index);
         v = jitc_var(index);
     }
@@ -718,7 +758,7 @@ int jitc_var_schedule(uint32_t index) {
         thread_state(v->backend)->scheduled.push_back(index);
         jitc_log(Debug, "jit_var_schedule(r%u)", index);
         return 1;
-    } else if (v->dirty) {
+    } else if (v->ref_count_se) {
         return 1;
     }
 
@@ -770,7 +810,7 @@ int jitc_var_eval(uint32_t index) {
         jitc_raise("jit_var_eval(r%u): placeholder variables are used to record "
                    "computation symbolically and cannot be evaluated!", index);
 
-    if (!v->literal && (!v->data || v->dirty)) {
+    if (!v->literal && (!v->data || v->ref_count_se)) {
         ThreadState *ts = thread_state(v->backend);
 
         if (!v->data)
@@ -779,7 +819,7 @@ int jitc_var_eval(uint32_t index) {
         jitc_eval(ts);
         v = jitc_var(index);
 
-        if (unlikely(v->dirty))
+        if (unlikely(v->ref_count_se))
             jitc_raise("jit_var_eval(): element remains dirty after evaluation!");
         else if (unlikely(!v->data))
             jitc_raise("jit_var_eval(): invalid/uninitialized variable!");
@@ -794,7 +834,7 @@ int jitc_var_eval(uint32_t index) {
 void jitc_var_read(uint32_t index, size_t offset, void *dst) {
     const Variable *v = jitc_var(index);
 
-    if (!v->literal && (!v->data || v->dirty)) {
+    if (!v->literal && (!v->data || v->ref_count_se)) {
         jitc_var_eval(index);
         v = jitc_var(index);
     }
@@ -816,7 +856,8 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
 /// Reverse of jitc_var_read(). Copy 'dst' to a single element of a variable
 uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src) {
     Variable *v = jitc_var(index);
-    if (v->ref_count_int + v->ref_count_ext > 1) {
+    if (v->ref_count_int != 0 || v->ref_count_se != 0 ||
+        v->ref_count_ext  > 1) {
         // Not safe to directly write to 'v'
         index = jitc_var_copy(index);
     } else {
@@ -912,7 +953,7 @@ uint32_t jitc_var_copy(uint32_t index) {
         return 0;
 
     Variable *v = jitc_var(index);
-    if (v->dirty) {
+    if (v->ref_count_se) {
         jitc_var_eval(index);
         v = jitc_var(index);
     }
@@ -928,6 +969,7 @@ uint32_t jitc_var_copy(uint32_t index) {
         Variable v2 = *v;
         v2.ref_count_int = 0;
         v2.ref_count_ext = 0;
+        v2.ref_count_se = 0;
         v2.extra = 0;
 
         if (v2.free_stmt)
@@ -957,7 +999,8 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     }
 
     uint32_t result;
-    if (!v->data && v->ref_count_int == 0 && v->ref_count_ext == 1) {
+    if (!v->data && v->ref_count_int == 0 && v->ref_count_ext == 1 &&
+        v->ref_count_se == 0) {
         jitc_var_inc_ref_ext(index, v);
         jitc_cse_drop(index, v);
         v->size = size;
@@ -1033,7 +1076,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
         return jitc_var_mem_map((JitBackend) v->backend, (VarType) v->type, ptr, v->size, 1);
     }
 
-    if (!v->data || v->dirty) {
+    if (!v->data || v->ref_count_se) {
         jitc_var_eval(src_index);
         v = jitc_var(src_index);
     }
@@ -1054,6 +1097,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
         v2.retain_data = false;
         v2.ref_count_int = 0;
         v2.ref_count_ext = 0;
+        v2.ref_count_se = 0;
         v2.extra = 0;
         dst_index = jitc_var_new(v2);
     } else {
@@ -1443,7 +1487,7 @@ const char *jitc_var_graphviz() {
             jitc_literal_print(v, true);
             color = "gray90";
         } else if (v->data) {
-            if (v->dirty) {
+            if (v->ref_count_se) {
                 var_buffer.put("Evaluated (dirty)");
                 color = "salmon";
             } else {

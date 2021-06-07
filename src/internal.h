@@ -70,14 +70,21 @@ struct Variable {
     #  pragma GCC diagnostic pop
     #endif
 
+    // ================   References and reference counts   ================
+
     /// External reference count (by application using Enoki)
-    uint32_t ref_count_ext;
+    uint64_t ref_count_ext : 24;
 
     /// Internal reference count (dependencies within computation graph)
-    uint32_t ref_count_int;
+    uint64_t ref_count_int : 24;
+
+    /// Number of queued side effects
+    uint64_t ref_count_se : 16;
 
     /// Up to 4 dependencies of this instruction (further possible via 'extra')
     uint32_t dep[4];
+
+    // ================   Various flags (17 bits altogether)   ================
 
     union {
         // If literal == 0: Intermediate language (PTX, LLVM IR) statement
@@ -93,7 +100,7 @@ struct Variable {
     /// Number of entries
     uint32_t size;
 
-    // ================   Various flags (17 bits altogether)   ================
+    // ================   Various flags (16 bits altogether)   ================
 
     /// Data type of this variable
     uint32_t type : 4;
@@ -112,9 +119,6 @@ struct Variable {
 
     /// Does evaluation of this variable have side effects on other variables?
     uint32_t side_effect : 1;
-
-    /// Are there pending scatter operations to this variable?
-    uint32_t dirty : 1;
 
     /// Is this a pointer variable that is used to write to some array?
     uint32_t write_ptr : 1;
@@ -143,7 +147,7 @@ struct Variable {
     uint32_t output_flag : 1;
 
     /// Used to isolate this variable from others when performing common subexpression elimination
-    uint32_t cse_scope : 12;
+    uint32_t cse_scope : 13;
 
     /// Register index
     uint32_t reg_index;
@@ -156,12 +160,12 @@ struct Variable {
 struct VariableKey {
     uint32_t dep[4];
     uint32_t size;
-    uint32_t unused      : 12;
+    uint32_t unused      : 11;
     uint32_t backend     : 2;
     uint32_t type        : 4;
     uint32_t write_ptr   : 1;
     uint32_t literal     : 1;
-    uint32_t cse_scope  : 12;
+    uint32_t cse_scope  : 13;
     union {
         char *stmt;
         uint64_t value;

@@ -127,7 +127,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         const Variable *self_v = jitc_var(self);
         size = self_v->size;
         placeholder |= self_v->placeholder;
-        dirty |= self_v->dirty;
+        dirty |= self_v->ref_count_se;
         backend = (JitBackend) self_v->backend;
         if ((VarType) self_v->type != VarType::UInt32)
             jitc_raise("jit_var_vcall(): 'self' argument must be of type "
@@ -143,7 +143,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             Variable *v2 = jitc_var(v->dep[0]);
             placeholder |= v2->placeholder;
             optix |= v2->optix;
-            dirty |= v2->dirty;
+            dirty |= v2->ref_count_se;
             size = std::max(size, v2->size);
         } else if (!v->literal) {
             jitc_raise("jit_var_vcall(): input variable r%u must either be a "
@@ -185,8 +185,23 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         jitc_raise("jitc_var_vcall(): side effect queue doesn't have the "
                    "expected size!");
 
-    if (dirty)
+    if (dirty) {
+        if (jit_flag(JitFlag::Recording))
+            jitc_raise("jit_var_vcall(): referenced a dirty variable while "
+                       "JitFlag::Recording is active!");
+
         jitc_eval(ts);
+
+        dirty = jitc_var(self)->ref_count_se;
+        for (uint32_t i = 0; i < n_in; ++i) {
+            const Variable *v = jitc_var(in[i]);
+            if (v->placeholder_iface)
+                dirty |= jitc_var(v->dep[0])->ref_count_se;
+        }
+
+        if (unlikely(dirty))
+            jitc_raise("jit_var_vcall(): inputs remain dirty after evaluation!");
+    }
 
     // =====================================================
     // 2. Stash information about inputs and outputs
@@ -1243,13 +1258,10 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         return nullptr;
     }
 
-    uint32_t size;
-    {
-        const Variable *v = jitc_var(index);
-        size = v->size;
-        if (v->dirty)
-            jitc_eval(thread_state(v->backend));
-    }
+    /// Ensure input index array is fully evaluated
+    jitc_var_eval(index);
+
+    uint32_t size = jitc_var(index)->size;
 
     jitc_log(Debug, "jit_vcall(r%u, domain=\"%s\")", index, domain);
 
@@ -1290,15 +1302,15 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
 
         jitc_var_inc_ref_int(perm_var);
 
-        uint32_t index = jitc_var_new(v2);
+        uint32_t index2 = jitc_var_new(v2);
 
         void *ptr = jitc_registry_get_ptr(backend, domain, bucket_id);
         memcpy(offsets_out, &ptr, sizeof(void *));
-        memcpy(offsets_out + 2, &index, sizeof(uint32_t));
+        memcpy(offsets_out + 2, &index2, sizeof(uint32_t));
         offsets_out += 4;
 
         jitc_trace("jit_vcall(): registered variable %u: bucket %u (" ENOKI_PTR
-                  ") of size %u.", index, bucket_id, (uintptr_t) ptr, bucket_size);
+                  ") of size %u.", index2, bucket_id, (uintptr_t) ptr, bucket_size);
     }
 
     jitc_var_dec_ref_ext(perm_var);

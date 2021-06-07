@@ -243,7 +243,7 @@ void demo() {
             miss_sbt_index.index(), payload_0.index()
         };
 
-        jit_optix_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args, mask.index());
+        jit_optix_ray_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args, mask.index());
 
         payload_0 = UInt32::steal(trace_args[15]);
 

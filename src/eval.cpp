@@ -155,7 +155,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             jitc_fail("jit_assemble(): variable r%u has no statement!", index);
         if (unlikely(v->literal && v->data))
             jitc_fail("jit_assemble(): variable r%u is simultaneously literal and evaluated!", index);
-        if (unlikely(v->dirty))
+        if (unlikely(v->ref_count_se))
             jitc_fail("jit_assemble(): dirty variable r%u encountered!", index);
 
         v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
@@ -658,18 +658,8 @@ void jitc_eval(ThreadState *ts) {
         v->output_flag = false;
         v->side_effect = false;
 
-        if (side_effect) {
-            if (unlikely((VarType) v->type != VarType::Void))
-                jitc_fail("jit_eval(): variables with side effects should be "
-                          "of type Void!");
-            if (dep[0]) {
-                Variable *ptr = jitc_var(dep[0]);
-                if ((VarType) ptr->type == VarType::Pointer)
-                    jitc_var(ptr->dep[3])->dirty = false;
-            }
+        if (side_effect)
             jitc_var_dec_ref_ext(index);
-        }
-
         for (int j = 0; j < 4; ++j)
             jitc_var_dec_ref_int(dep[j]);
     }

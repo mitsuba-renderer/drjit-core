@@ -4,8 +4,8 @@
 TEST_BOTH(01_gather) {
     Int32 r = arange<Int32>(100) + 100;
     UInt32 index = UInt32(34, 62, 75, 2);
-    UInt32 ref = UInt32(134, 162, 175, 102);
-    UInt32 value = gather<UInt32>(r, index);
+    Int32 ref = Int32(134, 162, 175, 102);
+    Int32 value = gather<Int32>(r, index);
     jit_assert(all(eq(ref, value)));
 }
 

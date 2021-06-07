@@ -91,6 +91,18 @@ extern void jitc_var_dec_ref_ext(uint32_t index, Variable *v) noexcept(true);
 /// Decrease the external reference count of a given variable
 extern void jitc_var_dec_ref_ext(uint32_t index) noexcept(true);
 
+/// Increase the side effect reference count of a given variable
+extern void jitc_var_inc_ref_se(uint32_t index, Variable *v) noexcept(true);
+
+/// Increase the side effect reference count of a given variable
+extern void jitc_var_inc_ref_se(uint32_t index) noexcept(true);
+
+/// Decrease the side effect reference count of a given variable
+extern void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept(true);
+
+/// Decrease the side effect reference count of a given variable
+extern void jitc_var_dec_ref_se(uint32_t index) noexcept(true);
+
 // Query the type of a given variable
 extern VarType jitc_var_type(uint32_t index);
 

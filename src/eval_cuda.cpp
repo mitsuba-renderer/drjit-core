@@ -338,13 +338,6 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
                            v->reg_index);
         } else {
             jitc_render_stmt_cuda(sv.index, v);
-            if (v->side_effect) {
-                if (v->dep[0]) {
-                    Variable *ptr = jitc_var(v->dep[0]);
-                    if ((VarType) ptr->type == VarType::Pointer)
-                        jitc_var(ptr->dep[3])->dirty = false;
-                }
-            }
         }
     }
 

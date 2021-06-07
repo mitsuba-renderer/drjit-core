@@ -287,13 +287,6 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             );
         } else {
             jitc_render_stmt_llvm(sv.index, v, true);
-            if (v->side_effect) {
-                if (v->dep[0]) {
-                    Variable *ptr = jitc_var(v->dep[0]);
-                    if ((VarType) ptr->type == VarType::Pointer)
-                        jitc_var(ptr->dep[3])->dirty = false;
-                }
-            }
         }
     }
 
@@ -528,6 +521,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra);
 
 void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
                          const uint32_t *in, uint32_t *out) {
+    const uint32_t n_args = 13;
     bool double_precision = ((VarType) jitc_var(in[1])->type) == VarType::Float64;
     VarType float_type = double_precision ? VarType::Float64 : VarType::Float32;
     VarType types[]{ VarType::Int32, float_type,      float_type,
@@ -538,7 +532,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
 
     bool placeholder = false, dirty = false;
     uint32_t size = 0;
-    for (uint32_t i = 0; i < 13; ++i) {
+    for (uint32_t i = 0; i < n_args; ++i) {
         const Variable *v = jitc_var(in[i]);
         if ((VarType) v->type != types[i])
             jitc_raise("jitc_llvm_ray_trace(): type mismatch for arg. %u (got %s, "
@@ -546,10 +540,10 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
                        i, type_name[v->type], type_name[(int) types[i]]);
         size = std::max(size, v->size);
         placeholder |= v->placeholder;
-        dirty |= v->dirty;
+        dirty |= v->ref_count_se;
     }
 
-    for (uint32_t i = 0; i < 13; ++i) {
+    for (uint32_t i = 0; i < n_args; ++i) {
         const Variable *v = jitc_var(in[i]);
         if (v->size != 1 && v->size != size)
             jitc_raise("jitc_llvm_ray_trace(): arithmetic involving arrays of "
@@ -560,8 +554,21 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
         (VarType) jitc_var(scene)->type != VarType::Pointer)
         jitc_raise("jitc_llvm_ray_trace(): 'func', and 'scene' must be pointer variables!");
 
-    if (dirty)
+    if (dirty) {
+        if (jit_flag(JitFlag::Recording))
+            jitc_raise("jit_llvm_ray_trace(): referenced a dirty variable while "
+                       "JitFlag::Recording is active!");
+
         jitc_eval(thread_state(JitBackend::LLVM));
+        dirty = false;
+
+        for (uint32_t i = 0; i < n_args; ++i)
+            dirty |= jitc_var(in[i])->ref_count_se;
+
+        if (dirty)
+            jitc_raise(
+                "jit_llvm_ray_trace(): inputs remain dirty after evaluation!");
+    }
 
     jitc_log(InfoSym, "jitc_llvm_ray_trace(): tracing %u %sray%s%s%s", size,
              occluded ? "shadow " : "", size != 1 ? "s" : "",
@@ -577,12 +584,12 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
     v_op->extra = 1;
 
     Extra &e = state.extra[op];
-    e.dep = (uint32_t *) malloc_check(sizeof(uint32_t) * 13);
-    for (int i = 0; i < 13; ++i) {
+    e.dep = (uint32_t *) malloc_check(sizeof(uint32_t) * n_args);
+    for (uint32_t i = 0; i < n_args; ++i) {
         jitc_var_inc_ref_int(in[i]);
         e.dep[i] = in[i];
     }
-    e.n_dep = 13;
+    e.n_dep = n_args;
     e.assemble = jitc_llvm_ray_trace_assemble;
 
     char tmp[128];

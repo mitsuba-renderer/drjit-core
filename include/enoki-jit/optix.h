@@ -52,7 +52,7 @@ jit_optix_configure(const OptixPipelineCompileOptions *pco,
  * containing the final payload value.
  */
 extern JIT_EXPORT void
-jit_optix_trace(uint32_t n_args, uint32_t *args, uint32_t mask);
+jit_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask);
 
 /// Mark a variable as an expression requiring compilation via OptiX
 extern JIT_EXPORT void jit_optix_mark(uint32_t index);

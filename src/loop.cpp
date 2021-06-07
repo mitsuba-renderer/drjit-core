@@ -79,7 +79,7 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
         if (!v->placeholder)
             jitc_raise("jit_var_loop(): loop condition does not depend on any of the loop variables");
         size = v->size;
-        dirty = v->dirty;
+        dirty = v->ref_count_se;
     }
 
     for (uint32_t i = 0; i < n; ++i) {
@@ -117,7 +117,7 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
         loop->in.push_back(index_3);
         size = std::max(v3->size, size);
         placeholder |= v3->placeholder;
-        dirty |= v3->dirty;
+        dirty |= v3->ref_count_se;
 
         // ============= Output side =============
         uint32_t index_o = out_body[i];
@@ -176,12 +176,30 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
              se_count == 1 ? "" : "s", size, temp,
              placeholder ? " (part of a recorded computation)" : "");
 
+    if (dirty) {
+        if (jit_flag(JitFlag::Recording))
+            jitc_raise("jit_var_loop(): referenced a dirty variable while "
+                       "JitFlag::Recording is active!");
+
+        jitc_eval(ts);
+        dirty = jitc_var(loop->cond)->ref_count_se;
+
+        for (uint32_t i = 0; i < n; ++i) {
+            if (invariant[i])
+                continue;
+            Variable *v1 = jitc_var(in[i]),
+                     *v2 = jitc_var(v1->dep[0]),
+                     *v3 = jitc_var(v2->dep[0]);
+            dirty |= v3->ref_count_se;
+        }
+
+        if (unlikely(dirty))
+            jitc_raise(
+                "jit_var_loop(): inputs remain dirty after evaluation!");
+    }
+
     if (n_invariant_detected)
         return;
-
-
-    if (dirty)
-        jitc_eval(ts);
 
     // ============= Label variables =============
     for (uint32_t i = 0; i < n; ++i) {

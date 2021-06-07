@@ -441,7 +441,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             Variable *vi = jitc_var(dep[i]);
             vti = std::max(vti, vi->type);
             size = std::max(size, vi->size);
-            dirty |= vi->dirty;
+            dirty |= vi->ref_count_se;
             placeholder |= vi->placeholder;
             backend_i |= (uint32_t) vi->backend;
             v[i] = vi;
@@ -504,7 +504,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
         jitc_eval(thread_state(backend));
         for (uint32_t i = 0; i < n_dep; ++i) {
             v[i] = jitc_var(dep[i]);
-            if (v[i]->dirty)
+            if (v[i]->ref_count_se)
                 error = "variable remains dirty following evaluation!";
         }
     }
@@ -1319,8 +1319,7 @@ JIT_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op, uint32_t
     }
 }
 
-uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
-                           int reinterpret) {
+uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret) {
     Variable *v = jitc_var(index);
     const JitBackend backend = (JitBackend) v->backend;
     const VarType source_type = (VarType) v->type;
@@ -1347,13 +1346,13 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type,
         reinterpret = 1;
     }
 
-    if (v->dirty) {
+    if (v->ref_count_se) {
         if (jit_flag(JitFlag::Recording))
             jitc_raise("jit_var_new_cast(): referenced a dirty variable while "
                        "JitFlag::Recording is active!");
         jitc_eval(thread_state(backend));
         v = jitc_var(index);
-        if (unlikely(v->dirty))
+        if (unlikely(v->ref_count_se))
             jitc_fail("jit_var_new_cast(): variable remains dirty after evaluation!");
     }
 
@@ -1549,7 +1548,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     v_index = jitc_var(index);
     v_mask = jitc_var(mask);
 
-    if (v_source->dirty || v_index->dirty || v_mask->dirty) {
+    if (v_source->ref_count_se || v_index->ref_count_se || v_mask->ref_count_se) {
         if (jit_flag(JitFlag::Recording))
             jitc_raise("jit_var_new_gather(): referenced a dirty variable while "
                        "JitFlag::Recording is active!");
@@ -1560,11 +1559,13 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         v_index = jitc_var(index);
         v_mask = jitc_var(mask);
 
-        if (unlikely(v_source->dirty || v_index->dirty || v_mask->dirty))
+        if (unlikely(v_source->ref_count_se || v_index->ref_count_se || v_mask->ref_count_se))
             jitc_fail("jit_var_new_gather(): variable remains dirty after evaluation!");
     }
 
     bool unmasked = v_mask->literal && v_mask->value == 1;
+    bool index_zero = v_index->literal && v_index->value == 0;
+
     VarType vt = (VarType) v_source->type;
 
     // Create a pointer + reference, invalidates the v_* variables
@@ -1574,7 +1575,9 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     uint32_t n_dep = 3;
 
     uint32_t debug_print = 0;
+
 #if 0
+    // Debug out-of-bounds issues
     {
         char tmp[128];
         snprintf(tmp, sizeof(tmp),
@@ -1595,24 +1598,42 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
 
     const char *stmt;
     if (backend == JitBackend::CUDA) {
-        if (vt != VarType::Bool) {
-            if (unmasked)
-                stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
-                       "ld.global.nc.$t0 $r0, [%rd3]";
-            else
-                stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
-                       "@$r3 ld.global.nc.$t0 $r0, [%rd3]$n"
-                       "@!$r3 mov.$b0 $r0, 0";
+        if (!index_zero) {
+            if (vt != VarType::Bool) {
+                if (unmasked)
+                    stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
+                           "ld.global.nc.$t0 $r0, [%rd3]";
+                else
+                    stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
+                           "@$r3 ld.global.nc.$t0 $r0, [%rd3]$n"
+                           "@!$r3 mov.$b0 $r0, 0";
+            } else {
+                if (unmasked)
+                    stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
+                           "ld.global.nc.u8 %w0, [%rd3]$n"
+                           "setp.ne.u16 $r0, %w0, 0";
+                else
+                    stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
+                           "@$r3 ld.global.nc.u8 %w0, [%rd3]$n"
+                           "@!$r3 mov.u16 %w0, 0$n"
+                           "setp.ne.u16 $r0, %w0, 0";
+            }
         } else {
-            if (unmasked)
-                stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
-                       "ld.global.nc.u8 %w0, [%rd3]$n"
-                       "setp.ne.u16 $r0, %w0, 0";
-            else
-                stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
-                       "@$r3 ld.global.nc.u8 %w0, [%rd3]$n"
-                       "@!$r3 mov.u16 %w0, 0$n"
-                       "setp.ne.u16 $r0, %w0, 0";
+            if (vt != VarType::Bool) {
+                if (unmasked)
+                    stmt = "ld.global.nc.$t0 $r0, [$r1]";
+                else
+                    stmt = "@$r3 ld.global.nc.$t0 $r0, [$r1]$n"
+                           "@!$r3 mov.$b0 $r0, 0";
+            } else {
+                if (unmasked)
+                    stmt = "ld.global.nc.u8 %w0, [$r1]$n"
+                           "setp.ne.u16 $r0, %w0, 0";
+                else
+                    stmt = "@$r3 ld.global.nc.u8 %w0, [$r1]$n"
+                           "@!$r3 mov.u16 %w0, 0$n"
+                           "setp.ne.u16 $r0, %w0, 0";
+            }
         }
 
         if (unmasked) {
@@ -1649,7 +1670,7 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
 
 uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                               uint32_t mask_, ReduceOp reduce_op) {
-    Ref ptr, target = borrow(target_);
+    Ref target = borrow(target_), ptr;
 
     auto print_log = [&](const char *reason, uint32_t index = 0) {
         if (index)
@@ -1678,7 +1699,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     for (uint32_t index : { index_, mask_, value }) {
         const Variable *v = jitc_var(index);
         size = std::max(v->size, size);
-        dirty |= v->dirty;
+        dirty |= v->ref_count_se;
         // Fetch type + backend from 'value'
         backend = (JitBackend) v->backend;
         vt = (VarType) v->type;
@@ -1692,11 +1713,12 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         jitc_eval(ts);
 
         for (uint32_t index : { index_, mask_, value }) {
-            if (jitc_var(index)->dirty)
+            if (jitc_var(index)->ref_count_se)
                 jitc_fail("jit_var_new_scatter(): variable remains dirty after "
                           "evaluation!");
         }
     }
+
     if (size == 0)
         return target.release();
 
@@ -1705,6 +1727,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         if (size != v->size && v->size != 1)
             jitc_raise("jitc_var_new_scatter(): arrays of incompatible size!");
     }
+
     if ((VarType) jitc_var(target)->type != vt)
         jitc_raise("jit_var_new_scatter(): target/value type mismatch!");
 
@@ -1715,14 +1738,6 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             print_log("skipped, always masked");
             return target.release();
         }
-    }
-
-    // Special case for target[0] <- ...
-    bool index_zero = false;
-    {
-        const Variable *v_index = jitc_var(index_);
-        if (v_index->literal && v_index->value == 0)
-            index_zero = true;
     }
 
     {
@@ -1743,32 +1758,24 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             return target.release();
         }
 
-        if (v_target->data) {
-            ptr = steal(jitc_var_new_pointer(backend, v_target->data, target, 1));
-            v_target = jitc_var(target);
-        }
-
         // Check if it is safe to write directly
-        if (v_target->ref_count_ext > 2 || v_target->ref_count_int > (((uint32_t) ptr) ? 1 : 0)) {
+        if (v_target->ref_count_ext > 2 || v_target->ref_count_int != 0)
             target = steal(jitc_var_copy(target));
-            v_target = jitc_var(target);
-            if (v_target->data)
-                ptr = steal(jitc_var_new_pointer(backend, v_target->data, target, 1));
-        }
     }
 
-    // Ensure that 'target' exists in memory
-    if (!((uint32_t) ptr))
-        ptr = steal(jitc_var_new_pointer(backend, jitc_var_ptr(target), target, 1));
+    ptr = steal(jitc_var_new_pointer(backend, jitc_var_ptr(target), target, 1));
 
     Ref mask  = steal(jitc_scatter_gather_mask(mask_, size)),
         index = steal(jitc_scatter_gather_index(target, index_));
 
-    bool unmasked = false;
+    // Special case for unmasked scatters, and for assigning to target[0]
+    bool unmasked = false, index_zero = false;
     {
-        const Variable *v_mask = jitc_var(mask);
-        if (v_mask->literal && v_mask->value == 1)
-            unmasked = true;
+        const Variable *v_mask  = jitc_var(mask),
+                       *v_index = jitc_var(index);
+
+        unmasked   = v_mask->literal  && v_mask->value  == 1;
+        index_zero = v_index->literal && v_index->value == 0;
     }
 
     uint32_t dep[4] = { ptr, value, index, mask };
@@ -1865,7 +1872,6 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     print_log(((uint32_t) target == target_) ? "direct" : "copy", result);
 
     jitc_var(result)->side_effect = true;
-    jitc_var(target)->dirty = true;
     ts->side_effects.push_back(result);
 
     return target.release();

@@ -179,7 +179,7 @@ void jit_side_effects_rollback(JitBackend backend, uint32_t value) {
     if (value > se.size())
         jitc_raise("jit_side_effects_rollback(): position lies beyond the end of the queue!");
     for (uint32_t i = value; i < se.size(); ++i)
-        jitc_var_dec_ref_ext(se[i]);
+        jitc_var_dec_ref_se(se[i]);
     se.resize(value);
 }
 
@@ -412,14 +412,14 @@ uint32_t jit_var_ref_int(uint32_t index) {
     if (index == 0)
         return 0;
     lock_guard guard(state.mutex);
-    return jitc_var(index)->ref_count_int;
+    return (uint32_t) jitc_var(index)->ref_count_int;
 }
 
 uint32_t jit_var_ref_ext(uint32_t index) {
     if (index == 0)
         return 0;
     lock_guard guard(state.mutex);
-    return jitc_var(index)->ref_count_ext;
+    return (uint32_t) jitc_var(index)->ref_count_ext;
 }
 
 void *jit_var_ptr(uint32_t index) {
@@ -755,9 +755,9 @@ void jit_optix_configure(const OptixPipelineCompileOptions *pco,
     jitc_optix_configure(pco, sbt, pg, pg_count);
 }
 
-void jit_optix_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
+void jit_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
     lock_guard guard(state.mutex);
-    jitc_optix_trace(nargs, args, mask);
+    jitc_optix_ray_trace(nargs, args, mask);
 }
 
 void jit_optix_mark(uint32_t index) {

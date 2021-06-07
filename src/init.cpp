@@ -287,14 +287,16 @@ void jitc_shutdown(int light) {
             if (n_leaked < 10)
                 jitc_log(Warn,
                          " - variable %u is still being referenced! "
-                         "(int_ref=%u, ext_ref=%u, type=%s, size=%u, "
+                         "(int_ref=%u, ext_ref=%u, se_ref=%u, type=%s, size=%u, "
                          "stmt=\"%s\", dep=[%u, %u, %u, %u])",
                          var.first, var.second.ref_count_int,
-                         var.second.ref_count_ext, type_name[var.second.type],
+                         var.second.ref_count_ext,
+                         var.second.ref_count_se,
+                         type_name[var.second.type],
                          var.second.size,
                          var.second.literal
                              ? "<literal>"
-                             : (var.second.stmt ? var.second.stmt : ""),
+                             : (var.second.stmt ? var.second.stmt : "<null>"),
                          var.second.dep[0], var.second.dep[1],
                          var.second.dep[2], var.second.dep[3]);
             else if (n_leaked == 10)
