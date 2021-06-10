@@ -1027,8 +1027,8 @@ static VarType make_int_type_unsigned(VarType type) {
     switch (type) {
         case VarType::Int8:  return VarType::UInt8;
         case VarType::Int16: return VarType::UInt16;
-        case VarType::Int32: return VarType::UInt16;
-        case VarType::Int64: return VarType::UInt16;
+        case VarType::Int32: return VarType::UInt32;
+        case VarType::Int64: return VarType::UInt64;
         default: return type;
     }
 }
