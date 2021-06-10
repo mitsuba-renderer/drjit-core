@@ -1352,7 +1352,8 @@ const char *jitc_var_whos() {
             var_buffer.put("           ");
         }
 
-        size_t sz = var_buffer.fmt("  %u / %u", v->ref_count_ext, v->ref_count_int);
+        size_t sz = var_buffer.fmt("  %u / %u", (uint32_t) v->ref_count_ext,
+                                   (uint32_t) v->ref_count_int);
         const char *label = jitc_var_label(index);
 
         var_buffer.fmt("%*s%-12u%-8s   %s\n", 12 - (int) sz, "", v->size,
@@ -1537,8 +1538,9 @@ const char *jitc_var_graphviz() {
 
         var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%u|E:%u|I:%u}}",
             (JitBackend) v->backend == JitBackend::CUDA ? "cuda" : "llvm",
-            type_name_short[v->type], v->size, index, v->ref_count_ext,
-            v->ref_count_int);
+            type_name_short[v->type], v->size, index,
+            (uint32_t) v->ref_count_ext,
+            (uint32_t) v->ref_count_int);
 
         var_buffer.put("}\"");
         if (color)

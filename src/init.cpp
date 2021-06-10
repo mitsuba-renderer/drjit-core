@@ -289,9 +289,10 @@ void jitc_shutdown(int light) {
                          " - variable %u is still being referenced! "
                          "(int_ref=%u, ext_ref=%u, se_ref=%u, type=%s, size=%u, "
                          "stmt=\"%s\", dep=[%u, %u, %u, %u])",
-                         var.first, var.second.ref_count_int,
-                         var.second.ref_count_ext,
-                         var.second.ref_count_se,
+                         var.first,
+                         (uint32_t) var.second.ref_count_int,
+                         (uint32_t) var.second.ref_count_ext,
+                         (uint32_t) var.second.ref_count_se,
                          type_name[var.second.type],
                          var.second.size,
                          var.second.literal
