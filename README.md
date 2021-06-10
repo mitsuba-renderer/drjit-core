@@ -122,11 +122,12 @@ then processed in parallel by all cores of the system.
 
 To understand a bit better how all of this works, we can pop one level down to
 the C-level interface. The first operation ``jitc_init`` initializes Enoki-JIT
-and searches for LLVM and CUDA as instructed. Note that users don't need to
-install the CUDA SDK—just having an NVIDIA graphics driver is enough.
+and searches for LLVM and/or CUDA as instructed by the user. Note that users
+don't need to install the CUDA SDK—just having an NVIDIA graphics driver is
+enough.
 
 ```cpp
-jitc_init(/* llvm = */ 0, /* cuda = */ 1);
+jitc_init(JitBackendCUDA);
 ```
 
 Let's calculate something: we will start by creating a single-precision
@@ -135,11 +136,11 @@ This involves the function ``jitc_var_new_0``, which creates a new variable
 that depends on no other variables.
 
 ```cpp
-uint32_t v0 = jitc_var_new_0(/* cuda   = */ 1,
-                             /* type   = */ VarTypeFloat32,
-                             /* stmt   = */ "mov.$t0 $r0, 0.5",
-                             /* static = */ 1,
-                             /* size   = */ 1);
+uint32_t v0 = jitc_var_new_0(/* backend = */ JitBackendCUDA,
+                             /* type    = */ VarTypeFloat32,
+                             /* stmt    = */ "mov.$t0 $r0, 0.5",
+                             /* static  = */ 1,
+                             /* size    = */ 1);
 ```
 
 Note weird-looking code fragment ``mov.$t0 $r0, 0.5``. This is a *template* for
@@ -170,23 +171,23 @@ floating point variable as follows and indicate that the output array should
 have ``size=10``.
 
 ```cpp
-uint32_t v1 = jitc_var_new_0(/* cuda   = */ 1,
-                             /* type   = */ VarTypeFloat32,
-                             /* stmt   = */ "cvt.rn.$t0.u32 $r0, %r0",
-                             /* static = */ 1,
-                             /* size   = */ 10);
+uint32_t v1 = jitc_var_new_0(/* backend = */ JitBackendCUDA,
+                             /* type    = */ VarTypeFloat32,
+                             /* stmt    = */ "cvt.rn.$t0.u32 $r0, %r0",
+                             /* static  = */ 1,
+                             /* size    = */ 10);
 ```
 
 This creates another hash table entry. Finally, let's create a more interesting
 variable that references some of the previous results via ``op0`` and ``op1``.
 
 ```cpp
-uint32_t v2 = jitc_var_new_2(/* cuda   = */ 1,
-                             /* type   = */ VarTypeFloat32,
-                             /* stmt   = */ "add.$t0 $r0, $r1, $r2",
-                             /* static = */ 1,
-                             /* op0    = */ v0,
-                             /* op1    = */ v1);
+uint32_t v2 = jitc_var_new_2(/* backend = */ JitBackendCUDA,
+                             /* type    = */ VarTypeFloat32,
+                             /* stmt    = */ "add.$t0 $r0, $r1, $r2",
+                             /* static  = */ 1,
+                             /* op0     = */ v0,
+                             /* op1     = */ v1);
 ```
 
 The operation ``jitc_var_new_N`` (with ``N > 0``) has no ``size`` argument, as
@@ -374,12 +375,12 @@ intermediate representation. For example, the previous addition operation would
 be written as
 
 ```cpp
-uint32_t v2 = jitc_var_new_2(/* cuda   = */ 0,
-                             /* type   = */ VarTypeFloat32,
-                             /* stmt   = */ "$r0 = fadd <$w x $t0> $r1, $r2",
-                             /* static = */ 1,
-                             /* op0    = */ v0,
-                             /* op1    = */ v1);
+uint32_t v2 = jitc_var_new_2(/* backend = */ JitBackendLLVM,
+                             /* type    = */ VarTypeFloat32,
+                             /* stmt    = */ "$r0 = fadd <$w x $t0> $r1, $r2",
+                             /* static  = */ 1,
+                             /* op0     = */ v0,
+                             /* op1     = */ v1);
 ```
 
 The LLVM backend operates on vectors matching the SIMD instruction set of the
