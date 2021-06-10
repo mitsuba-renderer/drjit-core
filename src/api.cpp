@@ -335,9 +335,9 @@ uint32_t jit_var_new_stmt(JitBackend backend, JIT_ENUM VarType vt,
 }
 
 uint32_t jit_var_new_literal(JitBackend backend, VarType type, const void *value,
-                             size_t size, int eval, int pointer) {
+                             size_t size, int eval, int is_class) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_literal(backend, type, value, size, eval, pointer);
+    return jitc_var_new_literal(backend, type, value, size, eval, is_class);
 }
 
 uint32_t jit_var_new_counter(JitBackend backend, size_t size) {
