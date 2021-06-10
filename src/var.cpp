@@ -468,7 +468,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
 
 uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
                               const void *value, size_t size,
-                              int eval, int pointer) {
+                              int eval, int is_class) {
     if (unlikely(size == 0))
         return 0;
 
@@ -477,7 +477,7 @@ uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
     /* When initializing a literal pointer array while recording a virtual
        function, we can leverage the already available `self` variable instead
        of creating a new one. */
-    if (jit_flag(JitFlag::Recording) && pointer) {
+    if (jit_flag(JitFlag::Recording) && is_class) {
         ThreadState *ts = thread_state(backend);
         if (ts->vcall_self && ts->vcall_self == *((uint32_t*) value)) {
             Variable v;
