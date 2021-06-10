@@ -38,7 +38,7 @@ static uint32_t kernel_param_count = 0;
 /// Does the program contain a %data register so far? (for branch-based vcalls)
 bool data_reg_global = false;
 
-/// Does the program contain a %data register so far? (for branch-based vcalls)
+/// Does the program contain a %self register so far? (for branch-based vcalls)
 bool self_reg_global = false;
 
 /// List of global declarations (intrinsics, constant arrays)
