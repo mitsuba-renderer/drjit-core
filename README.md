@@ -40,11 +40,11 @@ functionality through a C99-compatible interface.
   and the LLVM backend automatically targets the vector instruction sets
   supported by the host machine (e.g. AVX/AVX2, or AVX512 if available).
 
+- Enoki-JIT can capture and compile pure arithmetic, side effects, and control
+  flow (loops, dynamic dispatch).
+
 - Supports parallel kernel execution on multiple devices (JITing from several
   CPU threads, or running kernels on multiple GPUs).
-
-- Instead of running the generated code, Enoki-JIT can also simply capture it
-  return a string representation for advanced use cases (metaprogramming, etc.)
 
 - The library provides an *asynchronous* memory allocator, which allocates and
   releases memory in the execution stream of a device that runs asynchronously
@@ -60,14 +60,12 @@ functionality through a C99-compatible interface.
 
 ## An example (C++)
 
-Two header files
-[enoki-jit/cuda.h](https://github.com/mitsuba-renderer/enoki-jit/blob/master/include/enoki-jit/cuda.h)
-and
-[enoki-jit/llvm.h](https://github.com/mitsuba-renderer/enoki-jit/blob/master/include/enoki-jit/llvm.h)
-provide convenient C++ wrappers with operator operator overloading building on
-the C-level API
+The header file
+[enoki-jit/array.h](https://github.com/mitsuba-renderer/enoki-jit/blob/master/include/enoki-jit/array.h)
+provides a convenient C++ wrapper with operator operator overloading building
+on the C-level API
 ([enoki-jit/jit.h](https://github.com/mitsuba-renderer/enoki-jit/blob/master/include/enoki-jit/jit.h)).
-Here is an brief example on how these can be used:
+Here is an brief example on how it can be used:
 
 ```cpp
 #include <enoki/cuda.h>
