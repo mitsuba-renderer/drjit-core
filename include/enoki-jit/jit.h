@@ -518,7 +518,7 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  * Returns zero if <tt>ptr == nullptr</tt> and throws if the pointer is already
  * registered (with *any* domain).
  */
-extern JIT_EXPORT uint32_t jit_registry_put(JitBackend backend, const char *domain, void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_put(JIT_ENUM JitBackend backend, const char *domain, void *ptr);
 
 /**
  * \brief Remove a pointer from the registry
@@ -526,14 +526,14 @@ extern JIT_EXPORT uint32_t jit_registry_put(JitBackend backend, const char *doma
  * No-op if <tt>ptr == nullptr</tt>. Throws an exception if the pointer is not
  * currently registered.
  */
-extern JIT_EXPORT void jit_registry_remove(JitBackend backend, void *ptr);
+extern JIT_EXPORT void jit_registry_remove(JIT_ENUM JitBackend backend, void *ptr);
 
 /**
  * \brief Query the ID associated a registered pointer
  *
  * Returns 0 if <tt>ptr==nullptr</tt> and throws if the pointer is not known.
  */
-extern JIT_EXPORT uint32_t jit_registry_get_id(JitBackend backend, const void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_get_id(JIT_ENUM JitBackend backend, const void *ptr);
 
 /**
  * \brief Query the domain associated a registered pointer
@@ -541,7 +541,7 @@ extern JIT_EXPORT uint32_t jit_registry_get_id(JitBackend backend, const void *p
  * Returns \c nullptr if <tt>ptr==nullptr</tt> and throws if the pointer is not
  * known.
  */
-extern JIT_EXPORT const char *jit_registry_get_domain(JitBackend backend, const void *ptr);
+extern JIT_EXPORT const char *jit_registry_get_domain(JIT_ENUM JitBackend backend, const void *ptr);
 
 /**
  * \brief Query the pointer associated a given domain and ID
@@ -549,10 +549,10 @@ extern JIT_EXPORT const char *jit_registry_get_domain(JitBackend backend, const 
  * Returns \c nullptr if <tt>id==0</tt>, or when the (domain, ID) combination
  * is not known.
  */
-extern JIT_EXPORT void *jit_registry_get_ptr(JitBackend backend, const char *domain, uint32_t id);
+extern JIT_EXPORT void *jit_registry_get_ptr(JIT_ENUM JitBackend backend, const char *domain, uint32_t id);
 
 /// Provide a bound (<=) on the largest ID associated with a domain
-extern JIT_EXPORT uint32_t jit_registry_get_max(JitBackend backend, const char *domain);
+extern JIT_EXPORT uint32_t jit_registry_get_max(JIT_ENUM JitBackend backend, const char *domain);
 
 /**
  * \brief Compact the registry and release unused IDs and attributes
@@ -588,7 +588,7 @@ extern JIT_EXPORT void jit_registry_trim();
  * \param size
  *     Size of the pointed-to region.
  */
-extern JIT_EXPORT void jit_registry_set_attr(JitBackend backend,
+extern JIT_EXPORT void jit_registry_set_attr(JIT_ENUM JitBackend backend,
                                              void *ptr,
                                              const char *name,
                                              const void *value,
@@ -600,7 +600,7 @@ extern JIT_EXPORT void jit_registry_set_attr(JitBackend backend,
  *
  * \sa jit_registry_set_attr
  */
-extern JIT_EXPORT const void *jit_registry_attr_data(JitBackend backend,
+extern JIT_EXPORT const void *jit_registry_attr_data(JIT_ENUM JitBackend backend,
                                                      const char *domain,
                                                      const char *name);
 
@@ -644,7 +644,7 @@ enum VarType {
  * instance index of a class, which may trigger further optimizations within
  * virtual function calls.
  */
-extern JIT_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
+extern JIT_EXPORT uint32_t jit_var_new_literal(JIT_ENUM JitBackend backend,
                                                JIT_ENUM VarType type,
                                                const void *value,
                                                size_t size JIT_DEF(1),
@@ -657,7 +657,7 @@ extern JIT_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
  * This operation creates a variable of type \ref VarType::UInt32 that will
  * evaluate to <tt>0, ..., size - 1</tt>.
  */
-extern JIT_EXPORT uint32_t jit_var_new_counter(JitBackend backend, size_t size);
+extern JIT_EXPORT uint32_t jit_var_new_counter(JIT_ENUM JitBackend backend, size_t size);
 
 /**
  * \brief Create a new variable representing the result of a LLVM/PTX statement
@@ -707,7 +707,7 @@ extern JIT_EXPORT uint32_t jit_var_new_counter(JitBackend backend, size_t size);
  * \param dep
  *    Pointer to a list of \c n_dep valid variable indices
  */
-extern JIT_EXPORT uint32_t jit_var_new_stmt(JitBackend backend,
+extern JIT_EXPORT uint32_t jit_var_new_stmt(JIT_ENUM JitBackend backend,
                                             JIT_ENUM VarType vt,
                                             const char *stmt,
                                             int stmt_static,
@@ -715,42 +715,46 @@ extern JIT_EXPORT uint32_t jit_var_new_stmt(JitBackend backend,
                                             const uint32_t *dep);
 
 // Create a new variable with 0 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_0(JitBackend backend, JIT_ENUM VarType vt,
-                                   const char *stmt) {
-    return jit_var_new_stmt(backend, vt, stmt, 1, 0, nullptr);
+static inline uint32_t jit_var_new_stmt_0(JIT_ENUM JitBackend backend,
+                                          JIT_ENUM VarType vt,
+                                          const char *stmt) {
+    return jit_var_new_stmt(backend, vt, stmt, 1, 0, NULL);
 }
 
 // Create a new variable with 1 dependency (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_1(JitBackend backend, JIT_ENUM VarType vt,
-                                   const char *stmt, uint32_t dep0) {
+static inline uint32_t jit_var_new_stmt_1(JIT_ENUM JitBackend backend,
+                                          JIT_ENUM VarType vt, const char *stmt,
+                                          uint32_t dep0) {
     return jit_var_new_stmt(backend, vt, stmt, 1, 1, &dep0);
 }
 
 // Create a new variable with 2 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_2(JitBackend backend, JIT_ENUM VarType vt,
-                                   const char *stmt, uint32_t dep0,
-                                   uint32_t dep1) {
+static inline uint32_t jit_var_new_stmt_2(JIT_ENUM JitBackend backend,
+                                          JIT_ENUM VarType vt, const char *stmt,
+                                          uint32_t dep0, uint32_t dep1) {
     const uint32_t dep[] = { dep0, dep1 };
     return jit_var_new_stmt(backend, vt, stmt, 1, 2, dep);
 }
 
 // Create a new variable with 3 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_3(JitBackend backend, JIT_ENUM VarType vt,
-                                   const char *stmt, uint32_t dep0,
-                                   uint32_t dep1, uint32_t dep2) {
+static inline uint32_t jit_var_new_stmt_3(JIT_ENUM JitBackend backend,
+                                          JIT_ENUM VarType vt, const char *stmt,
+                                          uint32_t dep0, uint32_t dep1,
+                                          uint32_t dep2) {
     const uint32_t dep[] = { dep0, dep1, dep2 };
     return jit_var_new_stmt(backend, vt, stmt, 1, 3, dep);
 }
 
 // Create a new variable with 4 dependencies (wraps \c jit_var_new_stmt())
-inline uint32_t jit_var_new_stmt_4(JitBackend backend, JIT_ENUM VarType vt,
-                                   const char *stmt, uint32_t dep0,
-                                   uint32_t dep1, uint32_t dep2,
-                                   uint32_t dep3) {
+static inline uint32_t jit_var_new_stmt_4(JIT_ENUM JitBackend backend,
+                                          JIT_ENUM VarType vt, const char *stmt,
+                                          uint32_t dep0, uint32_t dep1,
+                                          uint32_t dep2, uint32_t dep3) {
     const uint32_t dep[] = { dep0, dep1, dep2, dep3 };
     return jit_var_new_stmt(backend, vt, stmt, 1, 4, dep);
 }
 
+#if defined(__cplusplus)
 /// List of operations supported by \ref jit_var_new_op()
 enum class JitOp : uint32_t {
     // ---- Unary ----
@@ -765,6 +769,16 @@ enum class JitOp : uint32_t {
 
     Count
 };
+#else
+enum JitOp {
+    JitOpNot, JitOpNeg, JitOpAbs, JitOpSqrt, JitOpRcp, JitOpRsqrt, JitOpCeil,
+    JitOpFloor, JitOpRound, JitOpTrunc, JitOpExp2, JitOpLog2, JitOpSin,
+    JitOpCos, JitOpPopc, JitOpClz, JitOpCtz, JitOpAdd, JitOpSub, JitOpMul,
+    JitOpMulhi, JitOpDiv, JitOpMod, JitOpMin, JitOpMax, JitOpAnd, JitOpOr,
+    JitOpXor, JitOpShl, JitOpShr, JitOpEq, JitOpNeq, JitOpLt, JitOpLe, JitOpGt,
+    JitOpGe, JitOpFmadd, JitOpSelect, JitOpCount
+};
+#endif
 
 
 /**
@@ -792,28 +806,28 @@ extern JIT_EXPORT uint32_t jit_var_new_op(JIT_ENUM JitOp op,
                                           uint32_t n_dep, const uint32_t *dep);
 
 // Perform an operation with 1 input (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_1(JIT_ENUM JitOp op,
-                                 uint32_t dep0) {
+static inline uint32_t jit_var_new_op_1(JIT_ENUM JitOp op, uint32_t dep0) {
     return jit_var_new_op(op, 1, &dep0);
 }
 
 // Perform an operation with 2 inputs (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_2(JIT_ENUM JitOp op, uint32_t dep0,
-                                 uint32_t dep1) {
+static inline uint32_t jit_var_new_op_2(JIT_ENUM JitOp op, uint32_t dep0,
+                                        uint32_t dep1) {
     const uint32_t dep[] = { dep0, dep1 };
     return jit_var_new_op(op, 2, dep);
 }
 
 // Perform an operation with 3 inputs (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_3(JIT_ENUM JitOp op, uint32_t dep0,
-                                 uint32_t dep1, uint32_t dep2) {
+static inline uint32_t jit_var_new_op_3(JIT_ENUM JitOp op, uint32_t dep0,
+                                        uint32_t dep1, uint32_t dep2) {
     const uint32_t dep[] = { dep0, dep1, dep2 };
     return jit_var_new_op(op, 3, dep);
 }
 
 // Perform an operation with 4 inputs (wraps \c jit_var_new_op())
-inline uint32_t jit_var_new_op_4(JIT_ENUM JitOp op, uint32_t dep0,
-                                 uint32_t dep1, uint32_t dep2, uint32_t dep3) {
+static inline uint32_t jit_var_new_op_4(JIT_ENUM JitOp op, uint32_t dep0,
+                                        uint32_t dep1, uint32_t dep2,
+                                        uint32_t dep3) {
     const uint32_t dep[] = { dep0, dep1, dep2, dep3 };
     return jit_var_new_op(op, 4, dep);
 }
@@ -829,7 +843,7 @@ inline uint32_t jit_var_new_op_4(JIT_ENUM JitOp op, uint32_t dep0,
  * source and target type are of the same size.
  */
 extern JIT_EXPORT uint32_t jit_var_new_cast(uint32_t index,
-                                            VarType target_type,
+                                            JIT_ENUM VarType target_type,
                                             int reinterpret);
 
 /**
@@ -845,7 +859,7 @@ extern JIT_EXPORT uint32_t jit_var_new_cast(uint32_t index,
  * this to infer whether a future scatter operation to \c dep requires making a backup
  * copy first.
  */
-extern JIT_EXPORT uint32_t jit_var_new_pointer(JitBackend backend,
+extern JIT_EXPORT uint32_t jit_var_new_pointer(JIT_ENUM JitBackend backend,
                                                const void *value,
                                                uint32_t dep,
                                                int write);
@@ -919,7 +933,7 @@ enum ReduceOp {
  */
 extern JIT_EXPORT uint32_t jit_var_new_scatter(uint32_t target, uint32_t value,
                                                uint32_t index, uint32_t mask,
-                                               ReduceOp reduce_op);
+                                               JIT_ENUM ReduceOp reduce_op);
 
 /**
  * \brief Create an identical copy of the given variable
@@ -952,7 +966,7 @@ extern JIT_EXPORT uint32_t jit_var_copy(uint32_t index);
  *
  * \sa jit_var_mem_copy()
  */
-extern JIT_EXPORT uint32_t jit_var_mem_map(JitBackend backend, JIT_ENUM VarType type,
+extern JIT_EXPORT uint32_t jit_var_mem_map(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
                                            void *ptr, size_t size, int free);
 
 
@@ -977,7 +991,7 @@ extern JIT_EXPORT uint32_t jit_var_mem_map(JitBackend backend, JIT_ENUM VarType 
  *
  * \sa jit_var_mem_map()
  */
-extern JIT_EXPORT uint32_t jit_var_mem_copy(JitBackend backend,
+extern JIT_EXPORT uint32_t jit_var_mem_copy(JIT_ENUM JitBackend backend,
                                             JIT_ENUM AllocType atype,
                                             JIT_ENUM VarType vtype,
                                             const void *ptr,
@@ -1125,10 +1139,10 @@ extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, size_t offset,
  * and a nonzero \c mask parameter can be supplied to suppress it based
  * on condition.
  *
- * Example: <tt>jit_var_printf(JitBackend::CUDA, 0, "Hello world: %f\n", 1,
+ * Example: <tt>jit_var_printf(JIT_ENUM JitBackend::CUDA, 0, "Hello world: %f\n", 1,
  * &my_variable_id);</tt>
  */
-extern JIT_EXPORT void jit_var_printf(JitBackend backend, uint32_t mask,
+extern JIT_EXPORT void jit_var_printf(JIT_ENUM JitBackend backend, uint32_t mask,
                                       const char *fmt, uint32_t narg,
                                       const uint32_t *arg);
 
@@ -1220,10 +1234,10 @@ extern JIT_EXPORT const char *jit_var_graphviz();
  * de-clutter large graph vizualizations by drawing boxes around variables with
  * a common prefix.
  */
-extern JIT_EXPORT void jit_prefix_push(JitBackend backend, const char *value);
+extern JIT_EXPORT void jit_prefix_push(JIT_ENUM JitBackend backend, const char *value);
 
 /// Pop a string from the label stack
-extern JIT_EXPORT void jit_prefix_pop(JitBackend backend);
+extern JIT_EXPORT void jit_prefix_pop(JIT_ENUM JitBackend backend);
 
 // ====================================================================
 //  Advanced JIT usage: recording loops, virtual function calls, etc.
@@ -1332,7 +1346,7 @@ jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
  * code involves side effects. It is used to as part of the mechanism
  * that records loops, virtual function calls, etc.
  */
-extern JIT_EXPORT uint32_t jit_side_effects_scheduled(JitBackend backend);
+extern JIT_EXPORT uint32_t jit_side_effects_scheduled(JIT_ENUM JitBackend backend);
 
 /**
  * \brief Discard scheduled side effects
@@ -1341,7 +1355,7 @@ extern JIT_EXPORT uint32_t jit_side_effects_scheduled(JitBackend backend);
  * position obtained from \ref jit_side_effects_scheduled(). This is useful to
  * recover when something goes wrong while recording a computation symbolically.
  */
-extern JIT_EXPORT void jit_side_effects_rollback(JitBackend backend,
+extern JIT_EXPORT void jit_side_effects_rollback(JIT_ENUM JitBackend backend,
                                                  uint32_t value);
 
 /**
@@ -1357,26 +1371,26 @@ extern JIT_EXPORT void jit_side_effects_rollback(JitBackend backend,
  * nonzero, the mask will be combined with the current top element of the
  * stack.
  */
-extern JIT_EXPORT void jit_var_mask_push(JitBackend backend, uint32_t index,
+extern JIT_EXPORT void jit_var_mask_push(JIT_ENUM JitBackend backend, uint32_t index,
                                          int combine JIT_DEF(1));
 
 /// Pop the mask stack
-extern JIT_EXPORT void jit_var_mask_pop(JitBackend backend);
+extern JIT_EXPORT void jit_var_mask_pop(JIT_ENUM JitBackend backend);
 
 /// Return the top entry of the mask stack and increase its ext. ref. count
-extern JIT_EXPORT uint32_t jit_var_mask_peek(JitBackend backend);
+extern JIT_EXPORT uint32_t jit_var_mask_peek(JIT_ENUM JitBackend backend);
 
 /// Return the size of the mask stack
-extern JIT_EXPORT size_t jit_var_mask_size(JitBackend backend);
+extern JIT_EXPORT size_t jit_var_mask_size(JIT_ENUM JitBackend backend);
 
 /// Return the default mask
-extern JIT_EXPORT uint32_t jit_var_mask_default(JitBackend backend);
+extern JIT_EXPORT uint32_t jit_var_mask_default(JIT_ENUM JitBackend backend);
 
 /// Set the registry index of the self pointer of the currently recording vcall
-extern JIT_EXPORT void jit_vcall_set_self(JitBackend backend, uint32_t value);
+extern JIT_EXPORT void jit_vcall_set_self(JIT_ENUM JitBackend backend, uint32_t value);
 
 /// Get the registry index of the self pointer of the currently recording vcall
-extern JIT_EXPORT uint32_t jit_vcall_self(JitBackend backend);
+extern JIT_EXPORT uint32_t jit_vcall_self(JIT_ENUM JitBackend backend);
 
 /**
  * \brief Record a virtual function call
@@ -1460,14 +1474,14 @@ extern JIT_EXPORT uint32_t jit_var_reduce(uint32_t index, JIT_ENUM ReduceOp redu
  * a single int, float, double, etc. (\c isize can be 1, 2, 4, or 8).
  * Runs asynchronously.
  */
-extern JIT_EXPORT void jit_memset_async(JitBackend backend, void *ptr, uint32_t size,
+extern JIT_EXPORT void jit_memset_async(JIT_ENUM JitBackend backend, void *ptr, uint32_t size,
                                         uint32_t isize, const void *src);
 
 /// Perform a synchronous copy operation
-extern JIT_EXPORT void jit_memcpy(JitBackend backend, void *dst, const void *src, size_t size);
+extern JIT_EXPORT void jit_memcpy(JIT_ENUM JitBackend backend, void *dst, const void *src, size_t size);
 
 /// Perform an asynchronous copy operation
-extern JIT_EXPORT void jit_memcpy_async(JitBackend backend, void *dst, const void *src,
+extern JIT_EXPORT void jit_memcpy_async(JIT_ENUM JitBackend backend, void *dst, const void *src,
                                         size_t size);
 
 /**
@@ -1480,7 +1494,7 @@ extern JIT_EXPORT void jit_memcpy_async(JitBackend backend, void *dst, const voi
  *
  * Runs asynchronously.
  */
-extern JIT_EXPORT void jit_reduce(JitBackend backend, JIT_ENUM VarType type,
+extern JIT_EXPORT void jit_reduce(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
                                   JIT_ENUM ReduceOp rtype,
                                   const void *ptr, uint32_t size, void *out);
 
@@ -1504,7 +1518,7 @@ extern JIT_EXPORT void jit_reduce(JitBackend backend, JIT_ENUM VarType type,
  *
  * Runs asynchronously.
  */
-extern JIT_EXPORT void jit_scan_u32(JitBackend backend, const uint32_t *in,
+extern JIT_EXPORT void jit_scan_u32(JIT_ENUM JitBackend backend, const uint32_t *in,
                                     uint32_t size, uint32_t *out);
 
 /**
@@ -1520,7 +1534,7 @@ extern JIT_EXPORT void jit_scan_u32(JitBackend backend, const uint32_t *in,
  *
  * This function internally performs a synchronization step.
  */
-extern JIT_EXPORT uint32_t jit_compress(JitBackend backend, const uint8_t *in,
+extern JIT_EXPORT uint32_t jit_compress(JIT_ENUM JitBackend backend, const uint8_t *in,
                                         uint32_t size, uint32_t *out);
 
 
@@ -1552,7 +1566,7 @@ extern JIT_EXPORT uint32_t jit_compress(JitBackend backend, const uint8_t *in,
  *     When \c offsets != NULL, the function returns the number of unique
  *     values found in \c values. Otherwise, it returns zero.
  */
-extern JIT_EXPORT uint32_t jit_mkperm(JitBackend backend, const uint32_t *values,
+extern JIT_EXPORT uint32_t jit_mkperm(JIT_ENUM JitBackend backend, const uint32_t *values,
                                       uint32_t size, uint32_t bucket_count,
                                       uint32_t *perm, uint32_t *offsets);
 
@@ -1590,7 +1604,7 @@ struct VCallBucket {
  * multiple vector function calls are executed on the same set of instances.
  */
 extern JIT_EXPORT struct VCallBucket *
-jit_var_vcall_reduce(JitBackend backend, const char *domain, uint32_t index,
+jit_var_vcall_reduce(JIT_ENUM JitBackend backend, const char *domain, uint32_t index,
                      uint32_t *bucket_count_out);
 
 /**
@@ -1602,7 +1616,7 @@ jit_var_vcall_reduce(JitBackend backend, const char *domain, uint32_t index,
  * to \c 2. The input array must contain <tt>size</tt> elements, and the output
  * array must have space for <tt>size * block_size</tt> elements.
  */
-extern JIT_EXPORT void jit_block_copy(JitBackend backend, JIT_ENUM VarType type,
+extern JIT_EXPORT void jit_block_copy(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
                                       const void *in, void *out,
                                       uint32_t size, uint32_t block_size);
 
@@ -1615,7 +1629,7 @@ extern JIT_EXPORT void jit_block_copy(JitBackend backend, JIT_ENUM VarType type,
  * set to \c 2. The input array must contain <tt>size * block_size</tt> elements,
  * and the output array must have space for <tt>size</tt> elements.
  */
-extern JIT_EXPORT void jit_block_sum(JitBackend backend, JIT_ENUM VarType type,
+extern JIT_EXPORT void jit_block_sum(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
                                      const void *in, void *out, uint32_t size,
                                      uint32_t block_size);
 /**
@@ -1651,17 +1665,17 @@ extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
  * This function sets a unique scope identifier (a simple 32 bit integer)
  * isolate the effects of this optimization.
  */
-extern JIT_EXPORT void jit_new_cse_scope(JitBackend backend);
+extern JIT_EXPORT void jit_new_cse_scope(JIT_ENUM JitBackend backend);
 
 /// Queries the CSE scope identifier (see \ref jit_new_cse_scope())
-extern JIT_EXPORT uint32_t jit_cse_scope(JitBackend backend);
+extern JIT_EXPORT uint32_t jit_cse_scope(JIT_ENUM JitBackend backend);
 
 /// Manually sets a CSE scope identifier (see \ref jit_new_cse_scope())
-extern JIT_EXPORT void jit_set_cse_scope(JitBackend backend, uint32_t domain);
+extern JIT_EXPORT void jit_set_cse_scope(JIT_ENUM JitBackend backend, uint32_t domain);
 
 #if defined(__cplusplus)
 }
 
-inline void jit_init(JitBackend backend)       { jit_init((uint32_t) backend); }
-inline void jit_init_async(JitBackend backend) { jit_init((uint32_t) backend); }
+static inline void jit_init(JIT_ENUM JitBackend backend)       { jit_init((uint32_t) backend); }
+static inline void jit_init_async(JIT_ENUM JitBackend backend) { jit_init((uint32_t) backend); }
 #endif
