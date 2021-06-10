@@ -1094,7 +1094,7 @@ void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void
 
 /// Sum over elements within blocks
 void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void *out,
-                   uint32_t size, uint32_t block_size) {
+                    uint32_t size, uint32_t block_size) {
     if (block_size == 0)
         jitc_raise("jit_block_sum(): block_size cannot be zero!");
 

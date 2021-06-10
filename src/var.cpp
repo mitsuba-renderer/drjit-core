@@ -864,7 +864,7 @@ uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src) {
         jitc_var_inc_ref_ext(index);
     }
 
-    jitc_var_eval(index);
+    jitc_var_ptr(index); // ensure variable is evaluated, even if it is a literal
 
     v = jitc_var(index);
     if (unlikely(offset >= (size_t) v->size))

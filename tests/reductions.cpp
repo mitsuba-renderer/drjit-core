@@ -33,7 +33,6 @@ TEST_BOTH(01_all_any) {
     }
 }
 
-#if 0
 TEST_BOTH(02_scan) {
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
@@ -48,8 +47,10 @@ TEST_BOTH(02_scan) {
             result = full<UInt32>(1, size);
             ref    = arange<UInt32>(size);
         }
-        jit_eval(result, ref);
-        jit_scan_u32(Float::Backend == JitBackend::CUDA, result.data(), size, result.data());
+        jit_var_schedule(result.index());
+        jit_var_schedule(ref.index());
+        jit_eval();
+        jit_scan_u32(Float::Backend, result.data(), size, result.data());
         jit_assert(result == ref);
     }
 }
@@ -83,7 +84,7 @@ TEST_BOTH(03_compress) {
             data = (uint8_t *) jit_malloc_migrate(
                 data, Float::Backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host);
 
-            uint32_t count = jit_compress(Float::Backend == JitBackend::CUDA, data, size, perm);
+            uint32_t count = jit_compress(Float::Backend, data, size, perm);
             perm = (uint32_t *) jit_malloc_migrate(perm, AllocType::Host);
             jit_sync_thread();
 
@@ -96,7 +97,6 @@ TEST_BOTH(03_compress) {
         }
     }
 }
-#endif
 
 TEST_BOTH(04_mkperm) {
     scoped_set_log_level ssll(LogLevel::Info);
@@ -185,7 +185,6 @@ TEST_BOTH(04_mkperm) {
     }
 }
 
-#if 0
 TEST_BOTH(05_block_ops) {
     Float a(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f);
 
@@ -193,6 +192,7 @@ TEST_BOTH(05_block_ops) {
     jit_log(Info, "block_sum:  %s\n", block_sum(a, 3).str());
 }
 
+#if 0
 TEST_LLVM(06_parallel_scatter_reduce) {
     scoped_set_log_level ssll(LogLevel::Info);
     UInt32 a = zero<UInt32>(10);
