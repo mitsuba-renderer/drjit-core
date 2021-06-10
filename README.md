@@ -142,14 +142,15 @@ uint32_t v0 = jitc_var_new_0(/* backend = */ JitBackendCUDA,
 ```
 
 Note weird-looking code fragment ``mov.$t0 $r0, 0.5``. This is a *template* for
-an operation expressed in PTX. The ``$`` expressions are placeholders that
-Enoki-JIT will replace with something meaningful when the final program is
-generated. For example ``$t0`` is the type of the output argument (we could
-also have written ``f32`` as the type is known here), and ``$r0`` is the
-register name associated to the output argument. This is a *scalar* variable
-(``size=1``), which means that it will produce a single element if evaluated
-alone, but it can also occur in any computation involving larger arrays and
-will expand to the needed size.
+an operation expressed in
+[PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html). The
+``$`` expressions are placeholders that Enoki-JIT will replace with something
+meaningful when the final program is generated. For example ``$t0`` is the type
+of the output argument (we could also have written ``f32`` as the type is known
+here), and ``$r0`` is the register name associated to the output argument. This
+is a *scalar* variable (``size=1``), which means that it will produce a single
+element if evaluated alone, but it can also occur in any computation involving
+larger arrays and will expand to the needed size.
 
 Programs using Enoki-JIT will normally create and destroy *vast* numbers of
 variables, and this operation is therefore highly optimized. For example, the
@@ -157,27 +158,22 @@ argument ``static=1`` indicates that the statement is a static string in the
 data segment that doesn't need to be copied to the heap. The operation then
 creates an entry in a [very efficient hash
 table](https://github.com/Tessil/robin-map) mapping the resulting variable
-index ``v0`` to a record ``(cuda, type, stmt, <operands>)``. Over time, this
+index ``v0`` to a record ``(backend, type, stmt, <operands>)``. Over time, this
 hash table will expand to the size that is needed to support the active
 computation, and from this point onward ``jitc_var_new_..`` will not involve
 any further dynamic memory allocation.
 
-Let's add something to this variable: we can create a counter by referencing a
-special register ``%r0`` (now without the ``$`` template) that contains the
-index of the element being processed. We can convert this register to a
-floating point variable as follows and indicate that the output array should
-have ``size=10``.
+Let's do some computation with this variable: we can create a "counter", which
+is an Enoki array containing an increasing sequence of integer elements ``[0,
+1, 2, .., 9]`` in this case.
 
 ```cpp
-uint32_t v1 = jitc_var_new_0(/* backend = */ JitBackendCUDA,
-                             /* type    = */ VarTypeFloat32,
-                             /* stmt    = */ "cvt.rn.$t0.u32 $r0, %r0",
-                             /* static  = */ 1,
-                             /* size    = */ 10);
+uint32_t v1 = jit_var_new_counter(/* backend = */ JitBackendCUDA,
+                                  /* size    = */ 10);
 ```
 
-This creates another hash table entry. Finally, let's create a more interesting
-variable that references some of the previous results via ``op0`` and ``op1``.
+Finally, let's create a more interesting variable that references some of the
+previous results via ``op0`` and ``op1``.
 
 ```cpp
 uint32_t v2 = jitc_var_new_2(/* backend = */ JitBackendCUDA,

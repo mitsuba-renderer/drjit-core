@@ -640,14 +640,16 @@ enum VarType {
  * requiring repeated compilation steps. By preemptively evaluating this
  * constant, Enoki-JIT can reuse a single kernel for all steps.
  *
- * \c pointer specifies whether the variable represents a registry index.
+ * The parameter \c is_class specifies whether the variable represents an
+ * instance index of a class, which may trigger further optimizations within
+ * virtual function calls.
  */
 extern JIT_EXPORT uint32_t jit_var_new_literal(JitBackend backend,
                                                JIT_ENUM VarType type,
                                                const void *value,
                                                size_t size JIT_DEF(1),
                                                int eval JIT_DEF(0),
-                                               int pointer JIT_DEF(0));
+                                               int is_class JIT_DEF(0));
 
 /**
  * \brief Create a counter variable
