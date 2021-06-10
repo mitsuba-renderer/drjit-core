@@ -1104,9 +1104,11 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
             (uintptr_t) in, (uintptr_t) out,
             type_name[(int) type], block_size, size);
 
+    uint32_t tsize = type_size[(int) type];
+    size_t out_size = size * tsize;
+
     if (block_size == 1) {
-        uint32_t tsize = type_size[(int) type];
-        jitc_memcpy_async(backend, out, in, size * tsize);
+        jitc_memcpy_async(backend, out, in, out_size);
         return;
     }
 
@@ -1116,6 +1118,7 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
     if (backend == JitBackend::CUDA) {
         scoped_set_context guard(ts->context);
         const Device &device = state.devices[ts->device];
+
         size *= block_size;
 
         CUfunction func = jitc_cuda_block_sum[(int) type][device.id];
@@ -1127,6 +1130,7 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
                  block_count  = (size + thread_count - 1) / thread_count;
 
         void *args[] = { &in, &out, &size, &block_size };
+        cuda_check(cuMemsetD8Async(out, 0, out_size, ts->stream));
         cuda_check(cuLaunchKernel(func, block_count, 1, 1, thread_count, 1, 1,
                                   0, ts->stream, args, nullptr));
     } else {
