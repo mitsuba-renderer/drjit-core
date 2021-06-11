@@ -23,9 +23,6 @@ struct VCall {
     /// A descriptive name
     char *name = nullptr;
 
-    /// Implement call via indirect branch?
-    bool branch = false;
-
     /// ID of call variable
     uint32_t id = 0;
 
@@ -90,7 +87,7 @@ static void jitc_var_vcall_assemble_cuda(
     VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
     uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
     uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align, const char *ret_label);
+    uint32_t out_size, uint32_t out_align);
 
 static void jitc_var_vcall_assemble_llvm(
     VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
@@ -223,9 +220,6 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     std::unique_ptr<VCall> vcall(new VCall());
     vcall->backend = backend;
     vcall->name = strdup(name);
-    vcall->branch = backend == JitBackend::CUDA
-                       ? (jitc_flags() & (uint32_t) JitFlag::VCallBranch)
-                       : false;
     vcall->n_inst = n_inst;
     vcall->inst_id = std::vector<uint32_t>(inst_id, inst_id + n_inst);
     vcall->in.reserve(n_in);
@@ -657,10 +651,6 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     // 3. Compile code for all instances and collapse
     // =====================================================
 
-    char ret_label[32];
-    snprintf(ret_label, sizeof(ret_label), "l%u_done", vcall_reg);
-    size_t callables_offset = callables.size();
-
     std::vector<XXH128_hash_t> callable_hash(vcall->n_inst);
 
     ThreadState *ts = thread_state(vcall->backend);
@@ -671,10 +661,9 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         auto result = jitc_assemble_func(
             ts, vcall->name, i, in_size, in_align, out_size, out_align,
             data_offset, vcall->data_map, n_in, vcall->in.data(), n_out,
-            vcall->out.data(), vcall->out_nested.data() + n_out * i,
+            vcall->out_nested.data() + n_out * i,
             vcall->se_offset[i + 1] - vcall->se_offset[i],
             vcall->se.data() + vcall->se_offset[i],
-            vcall->branch ? ret_label : nullptr,
             vcall->use_self);
 
         if (vcall->backend == JitBackend::LLVM)
@@ -711,25 +700,11 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     if (vcall->backend == JitBackend::CUDA)
         jitc_var_vcall_assemble_cuda(vcall, callable_hash, self_reg, mask_reg,
                                      offset_reg, data_reg, n_out, in_size,
-                                     in_align, out_size, out_align, ret_label);
+                                     in_align, out_size, out_align);
     else
         jitc_var_vcall_assemble_llvm(vcall, callable_hash, vcall_reg, self_reg,
                                      mask_reg, offset_reg, data_reg, n_out,
                                      in_size, in_align, out_size, out_align);
-
-    if (vcall->branch) {
-        buffer.putc('\n');
-        for (uint32_t i = callables_offset; i < callables.size(); ++i)
-            buffer.put(callables[i].c_str(), callables[i].length());
-        callables.resize(callables_offset);
-
-        buffer.fmt("\n%s:\n", ret_label);
-        if (data_reg) {
-            if (data_reg_global)
-                buffer.fmt("    mov.u64 %%data, %%u%u;\n", vcall->id);
-            data_reg_global = true;
-        }
-    }
 
     std::sort(
         callable_hash.begin(), callable_hash.end(), [](const auto &a, const auto &b) {
@@ -743,12 +718,11 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
     jitc_log(
         InfoSym,
-        "jit_var_vcall_assemble(): indirect %s (\"%s\") to %zu/%zu instances, "
+        "jit_var_vcall_assemble(): indirect call (\"%s\") to %zu/%zu instances, "
         "passing %u/%u inputs (%u/%u bytes), %u/%u outputs (%u/%u bytes), %zu side effects",
-        vcall->branch ? "branch" : "call", vcall->name, n_unique,
-        callable_hash.size(), n_in_active, vcall->in_count_initial, in_size,
-        vcall->in_size_initial, n_out_active, n_out, out_size,
-        vcall->out_size_initial, se_count);
+        vcall->name, n_unique, callable_hash.size(), n_in_active,
+        vcall->in_count_initial, in_size, vcall->in_size_initial, n_out_active,
+        n_out, out_size, vcall->out_size_initial, se_count);
 }
 
 /// Virtual function call code generation -- CUDA/PTX-specific bits
@@ -756,26 +730,7 @@ static void jitc_var_vcall_assemble_cuda(
     VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
     uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
     uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align, const char *ret_label) {
-
-    // Extra field for call data or self (only if needed)
-    if (vcall->branch) {
-        if (vcall->use_self) {
-            if (!self_reg_global) {
-                buffer.put("    .reg.u32 %self;\n");
-                self_reg_global = true;
-            }
-        }
-        if (data_reg) {
-            if (!data_reg_global) {
-                buffer.put("    .reg.u64 %data;\n");
-            } else {
-                buffer.fmt("    .reg.u64 %%u%u;\n"
-                        "    mov.u64 %%u%u, %%data;\n",
-                        vcall->id, vcall->id);
-            }
-        }
-    }
+    uint32_t out_size, uint32_t out_align) {
 
     // =====================================================
     // 1. Determine unique callable ID
@@ -793,24 +748,20 @@ static void jitc_var_vcall_assemble_cuda(
     // 2. Turn callable ID into a function pointer
     // =====================================================
 
-    if (!vcall->branch) {
-        if (!uses_optix)
-            buffer.fmt("        @%%p%u ld.global.u64 %%rd2, callables[%%r3];\n", mask_reg);
-        else
-            buffer.put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
-    } else {
-        if (vcall->use_self)
-            buffer.fmt("        mov.u32 %%self, %%r%u;\n", self_reg);
-    }
+    if (!uses_optix)
+        buffer.fmt("        @%%p%u ld.global.u64 %%rd2, callables[%%r3];\n", mask_reg);
+    else
+        buffer.put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
 
     // =====================================================
     // 3. Obtain pointer to supplemental call data
     // =====================================================
 
-    if (data_reg)
+    if (data_reg) {
         buffer.fmt("        shr.u64 %%rd3, %%rd3, 32;\n"
-                   "        add.u64 %s, %%rd3, %%rd%u;\n",
-                   vcall->branch ? "%data" : "%rd3", data_reg);
+                   "        add.u64 %%rd3, %%rd3, %%rd%u;\n",
+                   data_reg);
+    }
 
     // %rd2: function pointer (if applicable)
     // %rd3: call data pointer with offset
@@ -825,154 +776,144 @@ static void jitc_var_vcall_assemble_cuda(
         uint32_t callable_id = (uint32_t) vcall->offset_h[vcall->inst_id[i]];
         if (!seen.insert(callable_id).second)
             continue;
-        if (vcall->branch) {
-            buffer.fmt("        setp.eq.u32 %%p3, %%r3, %u;\n"
-                       "        @%%p3 bra l_%016llx%016llx;\n",
-                       callable_id,
-                       (unsigned long long) callable_hash[i].high64,
-                       (unsigned long long) callable_hash[i].low64);
-        } else {
-            buffer.fmt("        // target %zu = %s%016llx%016llx;\n",
-                       seen.size(),
-                       uses_optix ? "__direct_callable__" : "func_",
-                       (unsigned long long) callable_hash[i].high64,
-                       (unsigned long long) callable_hash[i].low64);
-        }
+        buffer.fmt("        // target %zu = %s%016llx%016llx;\n",
+                   seen.size(),
+                   uses_optix ? "__direct_callable__" : "func_",
+                   (unsigned long long) callable_hash[i].high64,
+                   (unsigned long long) callable_hash[i].low64);
     }
 
-    if (!vcall->branch) {
+    // Special handling for predicates
+    for (uint32_t in : vcall->in) {
+        auto it = state.variables.find(in);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+
+        if ((VarType) v2->type != VarType::Bool)
+            continue;
+
+        buffer.fmt("        selp.u16 %%w%u, 1, 0, %%p%u;\n",
+                    v2->reg_index, v2->reg_index);
+    }
+
+    buffer.put("        {\n");
+
+    // Call prototype
+    buffer.put("            proto: .callprototype");
+    if (out_size)
+        buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
+    buffer.put(" _(");
+    if (vcall->use_self) {
+        buffer.put(".reg .u32 self");
+        if (data_reg || in_size)
+            buffer.put(", ");
+    }
+    if (data_reg) {
+        buffer.put(".reg .u64 data");
+        if (in_size)
+            buffer.put(", ");
+    }
+    if (in_size)
+        buffer.fmt(".param .align %u .b8 params[%u]", in_align, in_size);
+    buffer.put(");\n");
+
+    // Input/output parameter arrays
+    if (out_size)
+        buffer.fmt("            .param .align %u .b8 out[%u];\n", out_align, out_size);
+    if (in_size)
+        buffer.fmt("            .param .align %u .b8 in[%u];\n", in_align, in_size);
+
+    // =====================================================
+    // 4.1. Pass the input arguments
+    // =====================================================
+
+    uint32_t offset = 0;
+    for (uint32_t in : vcall->in) {
+        auto it = state.variables.find(in);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+        uint32_t size = type_size[v2->type];
+
+        const char *tname = type_name_ptx[v2->type],
+                   *prefix = type_prefix[v2->type];
+
+        // Special handling for predicates (pass via u8)
+        if ((VarType) v2->type == VarType::Bool) {
+            tname = "u8";
+            prefix = "%w";
+        }
+
+        buffer.fmt("            st.param.%s [in+%u], %s%u;\n", tname, offset,
+                   prefix, v2->reg_index);
+
+        offset += size;
+    }
+
+    if (vcall->use_self) {
+        buffer.fmt("            @%%p%u call %s%%rd2, (%%r%u%s%s), proto;\n",
+                   mask_reg, out_size ? "(out), " : "", self_reg,
+                   data_reg ? ", %rd3" : "",
+                   in_size ? ", in" : "");
+    } else {
+        buffer.fmt("            @%%p%u call %s%%rd2, (%s%s%s), proto;\n",
+                    mask_reg, out_size ? "(out), " : "", data_reg ? "%rd3" : "",
+                    data_reg && in_size ? ", " : "", in_size ? "in" : "");
+    }
+
+    // =====================================================
+    // 4.2. Read back the output arguments
+    // =====================================================
+
+    offset = 0;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        uint32_t index = vcall->out_nested[i],
+                 index_2 = vcall->out[i];
+        auto it = state.variables.find(index);
+        if (it == state.variables.end())
+            continue;
+        uint32_t size = type_size[it->second.type],
+                 load_offset = offset;
+        offset += size;
+
+        // Skip if outer access expired
+        auto it2 = state.variables.find(index_2);
+        if (it2 == state.variables.end())
+            continue;
+
+        const Variable *v2 = &it2.value();
+        if (v2->reg_index == 0)
+            continue;
+
+        const char *tname = type_name_ptx[v2->type],
+                   *prefix = type_prefix[v2->type];
+
+        // Special handling for predicates (pass via u8)
+        if ((VarType) v2->type == VarType::Bool) {
+            tname = "u8";
+            prefix = "%w";
+        }
+
+        buffer.fmt("            ld.param.%s %s%u, [out+%u];\n",
+                   tname, prefix, v2->reg_index, load_offset);
+    }
+
+    buffer.put("        }\n\n");
+
+    for (uint32_t out : vcall->out) {
+        auto it = state.variables.find(out);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+        if ((VarType) v2->type != VarType::Bool)
+            continue;
+        if (v2->reg_index == 0)
+            continue;
+
         // Special handling for predicates
-        for (uint32_t in : vcall->in) {
-            auto it = state.variables.find(in);
-            if (it == state.variables.end())
-                continue;
-            const Variable *v2 = &it->second;
-
-            if ((VarType) v2->type != VarType::Bool)
-                continue;
-
-            buffer.fmt("        selp.u16 %%w%u, 1, 0, %%p%u;\n",
-                       v2->reg_index, v2->reg_index);
-        }
-
-        buffer.put("        {\n");
-
-        // Call prototype
-        buffer.put("            proto: .callprototype");
-        if (out_size)
-            buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
-        buffer.put(" _(");
-        if (vcall->use_self) {
-            buffer.put(".reg .u32 self");
-            if (data_reg || in_size)
-                buffer.put(", ");
-        }
-        if (data_reg) {
-            buffer.put(".reg .u64 data");
-            if (in_size)
-                buffer.put(", ");
-        }
-        if (in_size)
-            buffer.fmt(".param .align %u .b8 params[%u]", in_align, in_size);
-        buffer.put(");\n");
-
-        // Input/output parameter arrays
-        if (out_size)
-            buffer.fmt("            .param .align %u .b8 out[%u];\n", out_align, out_size);
-        if (in_size)
-            buffer.fmt("            .param .align %u .b8 in[%u];\n", in_align, in_size);
-
-        // =====================================================
-        // 4.1. Pass the input arguments
-        // =====================================================
-
-        uint32_t offset = 0;
-        for (uint32_t in : vcall->in) {
-            auto it = state.variables.find(in);
-            if (it == state.variables.end())
-                continue;
-            const Variable *v2 = &it->second;
-            uint32_t size = type_size[v2->type];
-
-            const char *tname = type_name_ptx[v2->type],
-                       *prefix = type_prefix[v2->type];
-
-            // Special handling for predicates (pass via u8)
-            if ((VarType) v2->type == VarType::Bool) {
-                tname = "u8";
-                prefix = "%w";
-            }
-
-            buffer.fmt("            st.param.%s [in+%u], %s%u;\n", tname, offset,
-                       prefix, v2->reg_index);
-
-            offset += size;
-        }
-
-        if (vcall->use_self) {
-            buffer.fmt("            @%%p%u call %s%%rd2, (%%r%u%s%s), proto;\n",
-                    mask_reg, out_size ? "(out), " : "", self_reg,
-                    data_reg ? ", %rd3" : "",
-                    in_size ? ", in" : "");
-        } else {
-            buffer.fmt("            @%%p%u call %s%%rd2, (%s%s%s), proto;\n",
-                       mask_reg, out_size ? "(out), " : "", data_reg ? "%rd3" : "",
-                       data_reg && in_size ? ", " : "", in_size ? "in" : "");
-        }
-
-        // =====================================================
-        // 4.2. Read back the output arguments
-        // =====================================================
-
-        offset = 0;
-        for (uint32_t i = 0; i < n_out; ++i) {
-            uint32_t index = vcall->out_nested[i],
-                     index_2 = vcall->out[i];
-            auto it = state.variables.find(index);
-            if (it == state.variables.end())
-                continue;
-            uint32_t size = type_size[it->second.type],
-                     load_offset = offset;
-            offset += size;
-
-            // Skip if outer access expired
-            auto it2 = state.variables.find(index_2);
-            if (it2 == state.variables.end())
-                continue;
-
-            const Variable *v2 = &it2.value();
-            if (v2->reg_index == 0)
-                continue;
-
-            const char *tname = type_name_ptx[v2->type],
-                       *prefix = type_prefix[v2->type];
-
-            // Special handling for predicates (pass via u8)
-            if ((VarType) v2->type == VarType::Bool) {
-                tname = "u8";
-                prefix = "%w";
-            }
-
-            buffer.fmt("            ld.param.%s %s%u, [out+%u];\n",
-                       tname, prefix, v2->reg_index, load_offset);
-        }
-
-        buffer.put("        }\n\n");
-
-        for (uint32_t out : vcall->out) {
-            auto it = state.variables.find(out);
-            if (it == state.variables.end())
-                continue;
-            const Variable *v2 = &it->second;
-            if ((VarType) v2->type != VarType::Bool)
-                continue;
-            if (v2->reg_index == 0)
-                continue;
-
-            // Special handling for predicates
-            buffer.fmt("        setp.ne.u16 %%p%u, %%w%u, 0;\n",
-                       v2->reg_index, v2->reg_index);
-        }
+        buffer.fmt("        setp.ne.u16 %%p%u, %%w%u, 0;\n",
+                   v2->reg_index, v2->reg_index);
     }
 
     // =====================================================
@@ -988,15 +929,11 @@ static void jitc_var_vcall_assemble_cuda(
             continue;
 
         buffer.put("        ");
-        if (!vcall->branch)
-            buffer.fmt("@!%%p%u ", mask_reg);
+        buffer.fmt("@!%%p%u ", mask_reg);
         buffer.fmt("mov.%s %s%u, 0;\n",
                    type_name_ptx_bin[v2->type],
                    type_prefix[v2->type], v2->reg_index);
     }
-
-    if (vcall->branch)
-        buffer.fmt("        bra %s;\n", ret_label);
 
     buffer.put("    }\n");
 }

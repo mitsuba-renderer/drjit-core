@@ -482,9 +482,7 @@ uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
         if (ts->vcall_self && ts->vcall_self == *((uint32_t*) value)) {
             Variable v;
             if (backend == JitBackend::CUDA)
-                v.stmt = (char *) (jit_flag(JitFlag::VCallBranch) ?
-                                   "mov.u32 $r0, %self" :
-                                   "mov.u32 $r0, self");
+                v.stmt = (char *) "mov.u32 $r0, self";
             else
                 v.stmt = (char *) "$r0 = bitcast <$w x i32> %self to <$w x i32>";
             v.size = (uint32_t) size;

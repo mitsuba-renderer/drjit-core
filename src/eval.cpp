@@ -35,12 +35,6 @@ static std::vector<void *> kernel_params;
 static uint8_t *kernel_params_global = nullptr;
 static uint32_t kernel_param_count = 0;
 
-/// Does the program contain a %data register so far? (for branch-based vcalls)
-bool data_reg_global = false;
-
-/// Does the program contain a %self register so far? (for branch-based vcalls)
-bool self_reg_global = false;
-
 /// List of global declarations (intrinsics, constant arrays)
 std::vector<std::string> globals;
 
@@ -113,19 +107,15 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     globals_map.clear();
     alloca_size = alloca_align = -1;
 
-    data_reg_global = false;
-    self_reg_global = false;
-
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
     uses_optix = ts->backend == JitBackend::CUDA &&
                  (jitc_flags() & (uint32_t) JitFlag::ForceOptiX);
-
 #endif
 
-    uint32_t n_params_in      = 0,
-             n_params_out     = 0,
-             n_side_effects   = 0,
-             n_regs           = 0;
+    uint32_t n_params_in    = 0,
+             n_params_out   = 0,
+             n_side_effects = 0,
+             n_regs         = 0;
 
     if (backend == JitBackend::CUDA) {
         uintptr_t size = 0;
@@ -678,9 +668,8 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                    uint32_t out_align, uint32_t data_offset,
                    const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out,
-                   const uint32_t *out, const uint32_t *out_nested,
-                   uint32_t n_se, const uint32_t *se, const char *ret_label,
-                   bool use_self) {
+                   const uint32_t *out_nested, uint32_t n_se,
+                   const uint32_t *se, bool use_self) {
     visited.clear();
     schedule.clear();
 
@@ -705,17 +694,11 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     for (uint32_t i = 0; i < n_se; ++i)
         traverse(se[i]);
 
-    bool function_interface = ret_label == nullptr;
-    uint32_t n_regs = n_regs_used,
+    uint32_t n_regs = ts->backend == JitBackend::CUDA ? 4 : 1,
              n_regs_backup = n_regs_used;
-
-    if (function_interface)
-        n_regs = ts->backend == JitBackend::CUDA ? 4 : 1;
 
     for (auto &sv : schedule) {
         Variable *v = jitc_var(sv.index);
-        if (ret_label && v->placeholder_iface)
-            continue;
         v->reg_index = n_regs++;
     }
 
@@ -724,9 +707,9 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     size_t offset = buffer.size();
 
     if (ts->backend == JitBackend::CUDA)
-        jitc_assemble_cuda_func(name, inst_id, n_regs, in_size, in_align, out_size,
-                                out_align, data_offset, data_map, n_out, out,
-                                out_nested, ret_label, use_self);
+        jitc_assemble_cuda_func(name, inst_id, n_regs, in_size, in_align,
+                                out_size, out_align, data_offset, data_map,
+                                n_out, out_nested, use_self);
     else
         jitc_assemble_llvm_func(name, inst_id, in_size, data_offset, data_map,
                                 n_out, out_nested, use_self);
