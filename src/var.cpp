@@ -285,12 +285,10 @@ const char *jitc_var_label(uint32_t index) {
         return nullptr;
     } else {
         const char *label = it.value().label;
-        if (label) {
-            const char *offset = strrchr(label, '/');
-            if (offset)
-                return offset + 1;
-        }
-        return label;
+        if (label)
+            return strrchr(label, '/') + 1;
+        else
+            return nullptr;
     }
 }
 
@@ -311,7 +309,14 @@ void jitc_var_set_label(uint32_t index, const char *label) {
 
     free(extra.label);
     if (!ts->prefix) {
-        extra.label = label ? strdup(label) : nullptr;
+        if (!label) {
+            extra.label = nullptr;
+        } else {
+            size_t len = strlen(label);
+            extra.label = (char *) malloc_check(len + 2);
+            extra.label[0] = '/';
+            memcpy(extra.label + 1, label, len + 1);
+        }
     } else {
         size_t prefix_len = strlen(ts->prefix),
                label_len = label ? strlen(label) : 0;

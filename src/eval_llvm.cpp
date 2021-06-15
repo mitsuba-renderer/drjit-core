@@ -8,8 +8,9 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
 
 void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
     uint32_t width = jitc_llvm_vector_width;
-    bool log_trace = std::max(state.log_level_stderr,
-                              state.log_level_callback) >= LogLevel::Trace;
+    bool print_labels = std::max(state.log_level_stderr,
+                                 state.log_level_callback) >= LogLevel::Trace ||
+                        (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
     buffer.put("define void @enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 %end, "
                "i8** noalias %params) #0 {\n"
@@ -39,7 +40,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                 jitc_fail("jit_assemble_llvm(): internal error: 'extra' entry not found!");
 
             const Extra &extra = it->second;
-            if (log_trace && extra.label) {
+            if (print_labels && extra.label) {
                 const char *label = strrchr(extra.label, '/');
                 if (label && label[1])
                     buffer.fmt("    ; %s\n", label + 1);
@@ -193,8 +194,9 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                              const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                              uint32_t n_out, const uint32_t *out_nested,
                              bool use_self) {
-    bool log_trace = std::max(state.log_level_stderr,
-                              state.log_level_callback) >= LogLevel::Trace;
+    bool print_labels = std::max(state.log_level_stderr,
+                                 state.log_level_callback) >= LogLevel::Trace ||
+                        (jitc_flags() & (uint32_t) JitFlag::PrintIR);
     uint32_t width = jitc_llvm_vector_width;
     if (use_self) {
         buffer.fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
@@ -227,7 +229,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                           "not found!");
 
             const Extra &extra = it->second;
-            if (log_trace && extra.label) {
+            if (print_labels && extra.label) {
                 const char *label = strrchr(extra.label, '/');
                 if (label && label[1])
                     buffer.fmt("    ; %s\n", label + 1);
