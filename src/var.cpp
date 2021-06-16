@@ -768,6 +768,21 @@ const char *jitc_var_str(uint32_t index) {
     return var_buffer.get();
 }
 
+static void jitc_raise_placeholder_error(const char *func, uint32_t index) {
+    jitc_raise(
+        "%s(r%u): placeholder variables are used to record "
+        "computation symbolically and cannot be scheduled for evaluation! "
+        "This error message could appear for the following reasons:\n\n1. "
+        "You are using Enoki's loop or virtual function call recording "
+        "feature and tried to perform an operation that is not permitted "
+        "in this restricted execution mode. Please see the documentation "
+        "of recorded loops/virtual function calls to learn about these "
+        "restrictions.\n\n2. You are accessing a variable that was "
+        "modified as part of a recorded loop and forgot to specify it as a "
+        "loop variable. Please see the enoki::Loop documentation for "
+        "details.", func, index);
+}
+
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 int jitc_var_schedule(uint32_t index) {
     auto it = state.variables.find(index);
@@ -776,8 +791,7 @@ int jitc_var_schedule(uint32_t index) {
     Variable *v = &it.value();
 
     if (unlikely(v->placeholder))
-        jitc_raise("jit_var_schedule(r%u): placeholder variables are used to record "
-                   "computation symbolically and cannot be scheduled for evaluation!", index);
+        jitc_raise_placeholder_error("jitc_var_schedule", index);
 
     if (!v->data && !v->literal) {
         thread_state(v->backend)->scheduled.push_back(index);
@@ -832,8 +846,7 @@ int jitc_var_eval(uint32_t index) {
     Variable *v = jitc_var(index);
 
     if (unlikely(v->placeholder))
-        jitc_raise("jit_var_eval(r%u): placeholder variables are used to record "
-                   "computation symbolically and cannot be evaluated!", index);
+        jitc_raise_placeholder_error("jitc_var_eval", index);
 
     if (!v->literal && (!v->data || v->ref_count_se)) {
         ThreadState *ts = thread_state(v->backend);
