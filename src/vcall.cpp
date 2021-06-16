@@ -466,8 +466,6 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             continue;
         }
 
-        snprintf(temp, sizeof(temp), "VCall: %s [out %u]", name, i);
-
         const Variable *v = jitc_var(index);
         Variable v2;
         v2.stmt = (char *) "";
@@ -486,8 +484,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             extra.callback_data = vcall.get();
             extra.callback_internal = true;
         }
-        extra.label = strdup(temp);
         vcall->out.push_back(index_2);
+        snprintf(temp, sizeof(temp), "VCall: %s [out %u]", name, i);
+        jitc_var_set_label(index_2, temp);
         out[i] = index_2;
     }
 
@@ -529,14 +528,12 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     // 7. Install code generation and deallocation callbacks
     // =====================================================
 
-    snprintf(temp, sizeof(temp), "VCall: %s", name);
     size_t dep_size = vcall->in.size() * sizeof(uint32_t);
 
     Variable *v_special = jitc_var(special_v);
     Extra *e_special = &state.extra[special_v];
     v_special->extra = 1;
     v_special->size = size;
-    e_special->label = strdup(temp);
     e_special->n_dep = (uint32_t) vcall->in.size();
     e_special->dep = (uint32_t *) malloc(dep_size);
 
@@ -564,6 +561,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         jitc_var_vcall_assemble((VCall *) extra.callback_data, self_reg,
                                 mask_reg, offset_reg, data_reg);
     };
+
+    snprintf(temp, sizeof(temp), "VCall: %s", name);
+    jitc_var_set_label(special_v, temp);
 
     special_v.reset();
 }

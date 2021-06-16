@@ -221,15 +221,13 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
     // =====================================================
 
     {
-        snprintf(temp, sizeof(temp), "Loop (%s) [start]", name);
         Variable *v = jitc_var(loop_start);
         v->extra = 1;
         v->size = size;
-        Extra &e = state.extra[loop_start];
-        if (e.label)
-            free(e.label);
-        e.label = strdup(temp);
-        e.assemble = jitc_var_loop_assemble_start;
+        state.extra[loop_start].assemble = jitc_var_loop_assemble_start;
+
+        snprintf(temp, sizeof(temp), "Loop (%s) [start]", name);
+        jitc_var_set_label(loop_start, temp);
     }
 
     // =====================================================
@@ -237,16 +235,15 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
     // =====================================================
 
     {
-        snprintf(temp, sizeof(temp), "Loop (%s) [cond]", name);
         Variable *v = jitc_var(loop_cond);
         v->extra = 1;
         v->size = size;
         Extra &e = state.extra[loop_cond];
-        if (e.label)
-            free(e.label);
-        e.label = strdup(temp);
         e.assemble = jitc_var_loop_assemble_cond;
         e.callback_data = loop.get();
+
+        snprintf(temp, sizeof(temp), "Loop (%s) [cond]", name);
+        jitc_var_set_label(loop_cond, temp);
     }
 
     // =====================================================
@@ -259,12 +256,10 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
         jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, loop_end_dep));
     loop->end = loop_end;
     {
-        snprintf(temp, sizeof(temp), "Loop (%s) [end]", name);
         Variable *v = jitc_var(loop_end);
         v->extra = 1;
         v->size = size;
         Extra &e = state.extra[loop_end];
-        e.label = strdup(temp);
         e.n_dep = 2*n + se_count;
         e.dep = (uint32_t *) malloc((2 * n + se_count) * sizeof(uint32_t));
         memcpy(e.dep, loop->out_body.data(), n * sizeof(uint32_t));
@@ -298,6 +293,9 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
         }
 
         se.resize(se_offset);
+
+        snprintf(temp, sizeof(temp), "Loop (%s) [end]", name);
+        jitc_var_set_label(loop_end, temp);
     }
 
     // =====================================================
@@ -309,12 +307,11 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
         uint32_t loop_se_dep[1] = { loop_end };
         loop_se = steal(
             jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, loop_se_dep));
-        {
-            snprintf(temp, sizeof(temp), "Loop (%s) [side effects]", name);
-            Variable *v = jitc_var(loop_se);
-            v->side_effect = 1;
-            v->size = size;
-        }
+        Variable *v = jitc_var(loop_se);
+        v->size = size;
+        v->side_effect = 1;
+        snprintf(temp, sizeof(temp), "Loop (%s) [side effects]", name);
+        jitc_var_set_label(loop_se, temp);
         ts->side_effects.push_back(loop_se.release());
     }
 
@@ -364,8 +361,6 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
         if (unlikely(!label))
             jitc_fail("jit_var_loop(): internal error while creating output label");
 
-        snprintf(temp, sizeof(temp), "%.*s[out %u]", (int) (delim - label), label, i);
-
         const Variable *v = jitc_var(index);
         Variable v2;
         if (backend == JitBackend::CUDA)
@@ -382,12 +377,14 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
         jitc_var_inc_ref_int(loop->in_cond[i]);
         jitc_var_inc_ref_int(loop_end);
         uint32_t index_2 = jitc_var_new(v2, true);
-        Extra &e = state.extra[index_2];
-        e.label = strdup(temp);
         loop->out.push_back(index_2);
         out[i] = index_2;
 
+        snprintf(temp, sizeof(temp), "%.*s[out %u]", (int) (delim - label), label, i);
+        jitc_var_set_label(index_2, temp);
+
         if (optimize) {
+            Extra &e = state.extra[index_2];
             e.callback = var_callback;
             e.callback_data = loop.get();
             e.callback_internal = true;
