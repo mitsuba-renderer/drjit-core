@@ -1130,7 +1130,7 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
                  block_count  = (size + thread_count - 1) / thread_count;
 
         void *args[] = { &in, &out, &size, &block_size };
-        cuda_check(cuMemsetD8Async(out, 0, out_size, ts->stream));
+        cuda_check(cuMemsetD8Async((CUdeviceptr) out, 0, out_size, ts->stream));
         cuda_check(cuLaunchKernel(func, block_count, 1, 1, thread_count, 1, 1,
                                   0, ts->stream, args, nullptr));
     } else {

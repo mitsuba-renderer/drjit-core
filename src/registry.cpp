@@ -296,8 +296,9 @@ void jitc_registry_set_attr(JitBackend backend, void *ptr, const char *name,
                 cuda_check(cuMemcpyAsync((CUdeviceptr) ptr,
                                          (CUdeviceptr) attr.ptr, old_size,
                                          ts->stream));
-            cuda_check(cuMemsetD8Async((uint8_t *) ptr + old_size, 0,
-                                       new_size - old_size, ts->stream));
+            cuda_check(
+                cuMemsetD8Async((CUdeviceptr)((uint8_t *) ptr + old_size), 0,
+                                new_size - old_size, ts->stream));
 
             cuda_check(cuMemFree((CUdeviceptr) attr.ptr));
         } else {
@@ -315,8 +316,9 @@ void jitc_registry_set_attr(JitBackend backend, void *ptr, const char *name,
     }
 
     if (backend == JitBackend::CUDA) {
-        cuda_check(cuMemcpyAsync((uint8_t *) attr.ptr + id * isize, value,
-                                 isize, ts->stream));
+        cuda_check(
+            cuMemcpyAsync((CUdeviceptr)((uint8_t *) attr.ptr + id * isize),
+                          (CUdeviceptr) value, isize, ts->stream));
     } else {
         memcpy((uint8_t *) attr.ptr + id * isize, value, isize);
     }
