@@ -275,19 +275,21 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
                        const char *kernel_name, Kernel &kernel) {
     ProfilerPhase phase(profiler_region_llvm_compile);
 
-    if (jitc_llvm_mem_size <= buffer_size) {
+    size_t target_size = buffer_size * 10;
+
+    if (jitc_llvm_mem_size <= target_size) {
         // Central assumption: LLVM text IR is much larger than the resulting generated code.
 #if !defined(_WIN32)
         free(jitc_llvm_mem);
-        if (posix_memalign((void **) &jitc_llvm_mem, 64, buffer_size))
-            jitc_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", buffer_size);
+        if (posix_memalign((void **) &jitc_llvm_mem, 64, target_size))
+            jitc_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", target_size);
 #else
         _aligned_free(jitc_llvm_mem);
-        jitc_llvm_mem = (uint8_t *) _aligned_malloc(buffer_size, 64);
+        jitc_llvm_mem = (uint8_t *) _aligned_malloc(target_size, 64);
         if (!jitc_llvm_mem)
-            jitc_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", buffer_size);
+            jitc_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", target_size);
 #endif
-        jitc_llvm_mem_size = buffer_size;
+        jitc_llvm_mem_size = target_size;
     }
     jitc_llvm_mem_offset = 0;
 
