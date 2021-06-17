@@ -349,7 +349,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         uint32_t special_id = special_v;
         uint32_t dummy =
             jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, &special_id);
-        jitc_var(dummy)->size = size;
+        Variable *v = jitc_var(dummy);
+        v->size = size;
+        v->placeholder = placeholder;
         jitc_var_mark_side_effect(dummy, 0);
         snprintf(temp, sizeof(temp), "VCall: %s [side effects]", name);
         jitc_var_set_label(dummy, temp);
