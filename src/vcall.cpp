@@ -288,9 +288,16 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         offset_v =
             steal(jitc_var_new_pointer(backend, offset_d, offset_buf, 0));
 
+    char temp[128];
+    snprintf(temp, sizeof(temp), "VCall: %s [call offsets]", name);
+    jitc_var_set_label(offset_buf, temp);
+
     if (data_size) {
         data_buf = steal(
             jitc_var_mem_map(backend, VarType::UInt8, data_d, data_size, 1));
+        snprintf(temp, sizeof(temp), "VCall: %s [call data]", name);
+        jitc_var_set_label(data_buf, temp);
+
         data_v = steal(jitc_var_new_pointer(backend, data_d, data_buf, 0));
         for (auto kv : vcall->data_map) {
             uint32_t index = (uint32_t) kv.first, offset = kv.second;
@@ -342,7 +349,10 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         uint32_t special_id = special_v;
         uint32_t dummy =
             jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, &special_id);
+        jitc_var(dummy)->size = size;
         jitc_var_mark_side_effect(dummy, 0);
+        snprintf(temp, sizeof(temp), "VCall: %s [side effects]", name);
+        jitc_var_set_label(dummy, temp);
     }
 
     std::vector<bool> coherent(n_out, true);
@@ -458,7 +468,6 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         }
     };
 
-    char temp[128];
     for (uint32_t i = 0; i < n_out; ++i) {
         uint32_t index = vcall->out_nested[i];
         if (!index) {
@@ -776,7 +785,7 @@ static void jitc_var_vcall_assemble_cuda(
         uint32_t callable_id = (uint32_t) vcall->offset_h[vcall->inst_id[i]];
         if (!seen.insert(callable_id).second)
             continue;
-        buffer.fmt("        // target %zu = %s%016llx%016llx;\n",
+        buffer.fmt("        // target %zu = %s%016llx%016llx\n",
                    seen.size(),
                    uses_optix ? "__direct_callable__" : "func_",
                    (unsigned long long) callable_hash[i].high64,
