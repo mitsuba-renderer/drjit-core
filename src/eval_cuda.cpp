@@ -102,7 +102,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                 jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
 
             const Extra &extra = it->second;
-            if (print_labels && extra.label) {
+            if (print_labels && extra.label && vt != VarType::Void) {
                 const char *label = strrchr(extra.label, '/');
                 if (label && label[1])
                     buffer.fmt("    // %s\n", label + 1);
@@ -281,7 +281,7 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
                           "not found!");
 
             const Extra &extra = it->second;
-            if (print_labels && extra.label) {
+            if (print_labels && extra.label && vt != VarType::Void) {
                 const char *label = strrchr(extra.label, '/');
                 if (label && label[1])
                     buffer.fmt("    // %s\n", label + 1);
