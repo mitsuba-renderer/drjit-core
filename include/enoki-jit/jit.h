@@ -7,15 +7,18 @@
     multi-device computation, kernel caching and reuse, common subexpression
     elimination, etc.
 
-    While the library is internally implemented using C++11, this header file
+    While the library is internally implemented using C++14, this header file
     provides a compact C99-compatible API that can be used to access all
     functionality. The library is thread-safe: multiple threads can
     simultaneously dispatch computation to one or more CPUs/GPUs.
 
     As an alternative to the fairly low-level API defined here, you may prefer
-    to use the functionality in 'enoki/cuda.h' or 'enoki/llvm.h', which
-    provides a header-only C++ array class with operator overloading, which
-    dispatches to the C API.
+    the functionality in 'include/enoki/array.h', which provides a header-only
+    C++ array abstraction with operator overloading that dispatches to the C
+    API. The Enoki parent project (https://github.com/mitsuba-renderer/enoki)
+    can also be interpreted as continuation of this kind of abstraction, which
+    adds further components like a library of transcendental mathematical
+    operations, automatic differentiation support, Python bindings, etc.
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 

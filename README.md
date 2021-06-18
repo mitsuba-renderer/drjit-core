@@ -78,7 +78,7 @@ on the C-level API
 Here is an brief example on how it can be used:
 
 ```cpp
-#include <enoki/cuda.h>
+#include <enoki/array.h>
 
 using Bool   = CUDAArray<bool>;
 using Float  = CUDAArray<float>;
@@ -403,7 +403,7 @@ that we had previously defined. The surrounding code establishes a [grid-stride
 loop](https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/)
 that processes all array elements. This time around, the kernel compilation was
 skipped, and Enoki loaded the kernel from the on-disk cache file
-``~/.enoki/1206b6f59d7acd71.cuda.bin`` containing a
+``~/.enoki/e93e70f12fcaea9cecd06e2b4b9ab180.cuda.bin`` containing a
 [LZ4](https://github.com/lz4/lz4)-compressed version of code and compilation
 output. The odd hexadecimal value is simply the
 [XXH3](https://cyan4973.github.io/xxHash/) hash of the kernel source code.
