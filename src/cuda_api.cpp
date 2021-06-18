@@ -572,6 +572,13 @@ void jitc_cuda_shutdown() {
     jitc_cuda_init_attempted = false;
 }
 
+void *jitc_cuda_lookup(const char *name) {
+    void *ptr = dlsym(jitc_cuda_handle, name);
+    if (!ptr)
+        jitc_raise("jit_cuda_lookup(): function \"%s\" not found!", name);
+    return ptr;
+}
+
 void cuda_check_impl(CUresult errval, const char *file, const int line) {
     if (unlikely(errval != CUDA_SUCCESS && errval != CUDA_ERROR_DEINITIALIZED)) {
         const char *name = nullptr, *msg = nullptr;

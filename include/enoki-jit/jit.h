@@ -165,7 +165,8 @@ extern JIT_EXPORT int jit_cuda_device_count();
  *
  * The argument must be between 0 and <tt>jit_cuda_device_count() - 1</tt>,
  * which only accounts for Enoki-compatible devices. This is a per-thread
- * property: independent threads can issue computation to different GPUs.
+ * property: independent threads can optionally issue computation to different
+ * GPUs.
  */
 extern JIT_EXPORT void jit_cuda_set_device(int device);
 
@@ -204,6 +205,9 @@ extern JIT_EXPORT int jit_cuda_compute_capability();
  */
 extern JIT_EXPORT void jit_cuda_set_target(uint32_t ptx_version,
                                            uint32_t compute_capability);
+
+/// Look up an CUDA driver function by name
+extern JIT_EXPORT void *jit_cuda_lookup(const char *name);
 
 /**
  * \brief Override the target CPU, features, and vector width of the LLVM backend

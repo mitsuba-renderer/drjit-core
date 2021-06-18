@@ -165,6 +165,9 @@ extern void jitc_cuda_compile(const char *str, size_t size, Kernel &kernel);
 /// Fully unload CUDA
 extern void jitc_cuda_shutdown();
 
+/// Look up a device driver function
+extern void *jitc_cuda_lookup(const char *name);
+
 /// Assert that a CUDA operation is correctly issued
 #define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
 extern void cuda_check_impl(CUresult errval, const char *file, const int line);

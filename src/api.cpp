@@ -226,6 +226,11 @@ void jit_cuda_set_target(uint32_t ptx_version,
     ts->compute_capability = compute_capability;
 }
 
+void *jit_cuda_lookup(const char *name) {
+    lock_guard guard(state.mutex);
+    return jitc_cuda_lookup(name);
+}
+
 void jit_llvm_set_thread_count(uint32_t size) {
     pool_set_size(nullptr, size);
 }
