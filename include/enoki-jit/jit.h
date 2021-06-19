@@ -1296,6 +1296,9 @@ enum class JitFlag : uint32_t {
     /// Run forward-mode differentiation at once
     ADEagerForward = 256,
 
+    /// Check weights for NaNs / infinities
+    ADCheckWeights = 512,
+
     /// Default flags
     Default = (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallOptimize |
@@ -1312,6 +1315,7 @@ enum JitFlag {
     JitFlagPrintIR             = 64,
     JitFlagADOptimize          = 128,
     JitFlagADEagerForward      = 256
+    JitFlagADCheckWeights      = 512
 };
 #endif
 
