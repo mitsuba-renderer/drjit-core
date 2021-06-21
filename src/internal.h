@@ -38,18 +38,6 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 
 #pragma pack(push, 1)
 
-struct UInt32Hasher {
-    size_t operator()(uint32_t v) const {
-        return hash(&v, sizeof(uint32_t));
-    }
-};
-
-struct UInt64Hasher {
-    size_t operator()(uint64_t v) const {
-        return hash(&v, sizeof(uint64_t));
-    }
-};
-
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     #if defined(__GNUC__)

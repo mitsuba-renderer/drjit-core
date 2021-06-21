@@ -40,6 +40,30 @@
 #endif
 extern void jitc_fail(const char* fmt, ...);
 
+struct UInt32Hasher {
+    size_t operator()(uint32_t v) const {
+        // fmix32 from MurmurHash by Austin Appleby (public domain)
+        v ^= v >> 16;
+        v *= 0x85ebca6b;
+        v ^= v >> 13;
+        v *= 0xc2b2ae35;
+        v ^= v >> 16;
+        return (size_t) v;
+    }
+};
+
+struct UInt64Hasher {
+    size_t operator()(uint64_t v) const {
+        // fmix32 from MurmurHash by Austin Appleby (public domain)
+        v ^= v >> 33;
+        v *= (uint64_t) 0xff51afd7ed558ccdull;
+        v ^= v >> 33;
+        v *= (uint64_t) 0xc4ceb9fe1a85ec53ull;
+        v ^= v >> 33;
+        return (size_t) v;
+    }
+};
+
 inline void hash_combine(size_t& seed, size_t value) {
     /// From CityHash (https://github.com/google/cityhash)
     const size_t mult = 0x9ddfea08eb382d69ull;
