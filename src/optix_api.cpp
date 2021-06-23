@@ -731,6 +731,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
         Variable *v = jitc_var(index);
         jitc_cse_drop(index, v);
         v->placeholder = placeholder;
+        jitc_cse_put(index, v);
     }
 
     jitc_var_dec_ref_ext(special);

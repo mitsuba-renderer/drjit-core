@@ -61,6 +61,9 @@ extern GlobalsMap globals_map;
 extern bool uses_optix;
 #endif
 
+/// Are we currently compiling a virtual function call
+extern bool assemble_func;
+
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 extern int32_t alloca_size;
 extern int32_t alloca_align;

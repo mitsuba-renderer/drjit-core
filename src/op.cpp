@@ -1700,6 +1700,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     bool dirty = false;
     JitBackend backend;
     VarType vt;
+    bool placeholder = jitc_flags() & (uint32_t) JitFlag::Recording;
 
     // Get size, ensure no arrays are dirty
     for (uint32_t index : { index_, mask_, value }) {
@@ -1834,7 +1835,9 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
         if (reduce_op == ReduceOp::None)
             buf.fmt("st.global.%s [%s], %s", src_type, dst_addr, src_reg);
-        else // Technically, we could also use 'red.global' here, but it crashes OptiX ..
+        else
+            // buf.fmt("red.global.%s.%s [%s], %s", op_name,
+            //         src_type, dst_addr, src_reg);
             buf.fmt("atom.global.%s.%s $r0, [%s], %s", op_name,
                     src_type, dst_addr, src_reg);
     } else {
@@ -1848,8 +1851,8 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                     "$r0_1 = getelementptr $t2, $<$t2*$> $r0_0, <$w x $t3> $r3$n"
                     "$call void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0_1, i32 $s2, <$w x $t4> $r4)");
         } else {
-            /* LLVM fallback: loop over entries and invoke 'atomicrmw' to
-               perform atomic update */
+            /* LLVM fallback: loop over entries and invoke
+               'atomicrmw' to perform atomic update */
             buf.fmt("br label %%L$i0_start\n"
                     "\nL$i0_start:$n"
                     "$r0_base = bitcast $<i8*$> $r1 to $<$t2*$>$n"
@@ -1876,9 +1879,9 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         jitc_var_new_stmt(backend, VarType::Void, buf.get(), 0, n_dep, dep);
 
     print_log(((uint32_t) target == target_) ? "direct" : "copy", result);
+    jitc_var(result)->placeholder = placeholder;
 
-    jitc_var(result)->side_effect = true;
-    ts->side_effects.push_back(result);
+    jitc_var_mark_side_effect(result);
 
     return target.release();
 }

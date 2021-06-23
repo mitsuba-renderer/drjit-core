@@ -34,17 +34,20 @@ functionality through a C99-compatible interface.
 
 ## Features
 
-- Cross-platform: runs on Linux, macOS, and Windows.
+Enoki-JIT has the following features:
 
-- Targets 
+- Runs on Linux, macOS, and Windows.
 
-    1. NVIDIA GPUs via CUDA (compute capability 5.0 or newer)
+- Targets
 
-    2. CPUs via LLVM, leveraging available vector instruction set extensions
+    1. NVIDIA GPUs via CUDA (compute capability 5.0 or newer), and
+
+    2. CPUs via LLVM leveraging available vector instruction set extensions
        (e.g. Neon or AVX/AVX2/AVX512).
 
-- Captures and compiles pure arithmetic, side effects, and control flow (loops,
-  dynamic dispatch).
+- Captures and compiles pure arithmetic, side effects, and higher-level
+  operations (loops and dynamic method dispatch) that are preserved 1:1 in
+  generated kernels.
 
 - Performs several basic optimizations to reduce the amount of LLVM/PTX IR
   passed to the next compiler stage.
@@ -56,13 +59,10 @@ functionality through a C99-compatible interface.
 - Supports parallel kernel execution on multiple devices (JITing from several
   CPU threads, or running kernels on multiple GPUs).
 
-- The library provides an *asynchronous* memory allocator, which allocates and
-  releases memory in the execution stream of a device that runs asynchronously
-  with respect to the host CPU. Kernels frequently request and release large
-  memory buffers, which both tend to be very costly operations. For this
-  reason, memory allocations are also cached and reused.
+- Provides a fast caching memory allocator that operates in the execution stream of
+  an asynchronous computation device. This addresses a common performance bottleneck.
 
-- Kernels are cached and reused when the same computation is encountered again.
+- Caches and reuses kernels when the same computation is encountered again.
   Caching is done both in memory and on disk (``~/.enoki`` on Linux and macOS,
   ``~/AppData/Local/Temp/enoki`` on Windows).
 

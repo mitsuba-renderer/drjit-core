@@ -168,19 +168,37 @@ int jit_flag(JitFlag flag) {
     return (jitc_flags() & (uint32_t) flag) ? 1 : 0;
 }
 
-uint32_t jit_side_effects_scheduled(JitBackend backend) {
+uint32_t jit_record_checkpoint(JitBackend backend) {
     lock_guard guard(state.mutex);
-    return (size_t) thread_state(backend)->side_effects.size();
+    uint32_t result =
+        (uint32_t) thread_state(backend)->side_effects_recorded.size();
+    if (jit_flag(JitFlag::Recording))
+        result |= 0x80000000u;
+    return result;
+
 }
 
-void jit_side_effects_rollback(JitBackend backend, uint32_t value) {
+uint32_t jit_record_begin(JitBackend backend) {
+    uint32_t result = jit_record_checkpoint(backend);
+    jit_set_flag(JitFlag::Recording, true);
+    return result;
+}
+
+void jit_record_end(JitBackend backend, uint32_t value) {
     lock_guard guard(state.mutex);
-    auto &se = thread_state(backend)->side_effects;
+
+    // Set recording flag to prevoius value
+    jit_set_flag(JitFlag::Recording, value & 0x80000000u);
+    value &= 0x7fffffff;
+
+    auto &se = thread_state(backend)->side_effects_recorded;
     if (value > se.size())
-        jitc_raise("jit_side_effects_rollback(): position lies beyond the end of the queue!");
-    for (uint32_t i = value; i < se.size(); ++i)
-        jitc_var_dec_ref_se(se[i]);
-    se.resize(value);
+        jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
+
+    while (value != se.size()) {
+        jitc_var_dec_ref_ext(se.back());
+        se.pop_back();
+    }
 }
 
 void* jit_cuda_stream() {
@@ -380,16 +398,14 @@ uint32_t jit_var_new_pointer(JitBackend backend, const void *value,
     return jitc_var_new_pointer(backend, value, dep, write);
 }
 
-uint32_t jit_var_new_placeholder(uint32_t index, int preserve_size,
-                                 int propagate_literals) {
+uint32_t jit_var_wrap_vcall(uint32_t index) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_placeholder(index, preserve_size, propagate_literals);
+    return jitc_var_wrap_vcall(index);
 }
 
-uint32_t jit_var_new_placeholder_loop(const char *stmt, uint32_t n_dep,
-                                      uint32_t *dep) {
+uint32_t jit_var_wrap_loop(uint32_t index, uint32_t cond, uint32_t size) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_placeholder_loop(stmt, n_dep, dep);
+    return jitc_var_wrap_loop(index, cond, size);
 }
 
 void jit_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {
@@ -514,9 +530,9 @@ uint32_t jit_var_migrate(uint32_t index, AllocType type) {
     return jitc_var_migrate(index, type);
 }
 
-void jit_var_mark_side_effect(uint32_t index, uint32_t target) {
+void jit_var_mark_side_effect(uint32_t index) {
     lock_guard guard(state.mutex);
-    jitc_var_mark_side_effect(index, target);
+    jitc_var_mark_side_effect(index);
 }
 
 uint32_t jit_var_mask_peek(JitBackend backend) {
@@ -733,23 +749,23 @@ uint32_t jit_vcall_self(JitBackend backend) {
     return jitc_vcall_self(backend);
 }
 
-void jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
-                   uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
-                   const uint32_t *in, uint32_t n_out_nested,
-                   const uint32_t *out_nested, const uint32_t *se_offset,
-                   uint32_t *out) {
+uint32_t jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
+                       uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
+                       const uint32_t *in, uint32_t n_out_nested,
+                       const uint32_t *out_nested, const uint32_t *se_offset,
+                       uint32_t *out) {
     lock_guard guard(state.mutex);
-    jitc_var_vcall(name, self, mask, n_inst, inst_id, n_in, in, n_out_nested,
-                   out_nested, se_offset, out);
+    return jitc_var_vcall(name, self, mask, n_inst, inst_id, n_in, in,
+                          n_out_nested, out_nested, se_offset, out);
 }
 
-void jit_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
-                  uint32_t n, const uint32_t *in,
-                  const uint32_t *out_body, uint32_t se_offset, uint32_t *out,
-                  int check_invariant, uint8_t *invariant) {
+uint32_t jit_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
+                      uint32_t n, const uint32_t *in, const uint32_t *out_body,
+                      uint32_t se_offset, uint32_t *out, int check_invariant,
+                      uint8_t *invariant) {
     lock_guard guard(state.mutex);
-    jitc_var_loop(name, loop_start, loop_cond, n, in, out_body, se_offset,
-                  out, check_invariant, invariant);
+    return jitc_var_loop(name, loop_start, loop_cond, n, in, out_body,
+                         se_offset, out, check_invariant, invariant);
 }
 
 struct VCallBucket *

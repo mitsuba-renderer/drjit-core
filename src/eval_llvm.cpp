@@ -40,10 +40,10 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                 jitc_fail("jit_assemble_llvm(): internal error: 'extra' entry not found!");
 
             const Extra &extra = it->second;
-            if (print_labels && extra.label && vt != VarType::Void) {
-                const char *label = strrchr(extra.label, '/');
-                if (label && label[1])
-                    buffer.fmt("    ; %s\n", label + 1);
+            if (print_labels && vt != VarType::Void) {
+                const char *label =  jitc_var_label(index);
+                if (label && label[0])
+                    buffer.fmt("    ; %s\n", label);
             }
 
             if (extra.assemble) {
@@ -150,6 +150,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
 
         if (alloca_size >= 0)
             buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n", alloca_size, alloca_align);
+        buffer.put("\n");
 
         size_t buffer_size = buffer.size(),
                insertion_size = buffer_size - cur_offset;
@@ -213,6 +214,8 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                "entry:\n"
                "    ; VCall: %s\n", name);
 
+    alloca_size = alloca_align = -1;
+
     for (ScheduledVariable &sv : schedule) {
         const Variable *v = jitc_var(sv.index);
         const uint32_t vti = v->type;
@@ -229,10 +232,10 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                           "not found!");
 
             const Extra &extra = it->second;
-            if (print_labels && extra.label && vt != VarType::Void) {
-                const char *label = strrchr(extra.label, '/');
-                if (label && label[1])
-                    buffer.fmt("    ; %s\n", label + 1);
+            if (print_labels && vt != VarType::Void) {
+                const char *label =  jitc_var_label(sv.index);
+                if (label && label[0])
+                    buffer.fmt("    ; %s\n", label);
             }
 
             if (extra.assemble) {
@@ -241,7 +244,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             }
         }
 
-        if (v->placeholder_iface) {
+        if (v->vcall_iface) {
             buffer.fmt("    %s%u_i0 = getelementptr inbounds i8, i8* %%params, i64 %u\n"
                        "    %s%u_i1 = bitcast i8* %s%u_i0 to <%u x %s>*\n"
                        "    %s%u%s = load <%u x %s>, <%u x %s>* %s%u_i1, align %u\n",
@@ -257,7 +260,8 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
             auto it = data_map.find(key);
             if (unlikely(it == data_map.end()))
-                jitc_fail("jitc_assemble_llvm_func(): could not find entry in 'data_map'");
+                jitc_fail("jitc_assemble_llvm_func(): could not find entry for "
+                          "variable r%u in 'data_map'", sv.index);
             if (it->second == (uint32_t) -1)
                 jitc_fail(
                     "jitc_assemble_llvm_func(): variable r%u is referenced by "
@@ -333,6 +337,37 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             "    store <%u x %s> %%out_%u_3, <%u x %s>* %%out_%u_1, align %u\n",
             width, tname, i, width, tname, i, align);
         output_offset += type_size[vti] * width;
+    }
+
+    /* The function requires extra memory or uses callables. Insert
+       setup code the top of the function to accomplish this */
+    if (alloca_size >= 0) {
+        // Ultimately we want to insert at this location
+        size_t header_offset = (char *) strrchr(buffer.get(), '{') - buffer.get() + 9;
+
+        // Append at the end for now
+        size_t cur_offset = buffer.size();
+        if (!callables.empty())
+            buffer.put("    %callables = load i8**, i8*** @callables\n");
+
+        if (alloca_size >= 0)
+            buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n", alloca_size, alloca_align);
+
+        size_t buffer_size = buffer.size(),
+               insertion_size = buffer_size - cur_offset;
+
+        // Extra space for moving things around
+        buffer.putc('\0', insertion_size);
+        //
+        // Move the generated source code to make space for the header addition
+        memmove((char *) buffer.get() + header_offset + insertion_size,
+                buffer.get() + header_offset, buffer_size - header_offset);
+
+        // Finally copy the code to the insertion point
+        memcpy((char *) buffer.get() + header_offset,
+               buffer.get() + buffer_size, insertion_size);
+
+        buffer.rewind(insertion_size);
     }
 
     buffer.put("    ret void;\n"

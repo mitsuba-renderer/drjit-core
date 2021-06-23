@@ -43,9 +43,9 @@ struct VCall {
     std::vector<uint32_t> out_nested;
 
     /// Per-instance offsets into side effects list
-    std::vector<uint32_t> se_offset;
+    std::vector<uint32_t> checkpoints;
     /// Compressed side effect index list
-    std::vector<uint32_t> se;
+    std::vector<uint32_t> side_effects;
 
     /// Mapping from variable index to offset into call data
     tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> data_map;
@@ -69,12 +69,12 @@ struct VCall {
     }
 
     void clear_side_effects() {
-        if (se_offset.empty() || se_offset.back() == se_offset.front())
+        if (checkpoints.empty() || checkpoints.back() == checkpoints.front())
             return;
-        for (uint32_t index : se)
+        for (uint32_t index : side_effects)
             jitc_var_dec_ref_ext(index);
-        se.clear();
-        std::fill(se_offset.begin(), se_offset.end(), 0);
+        side_effects.clear();
+        std::fill(checkpoints.begin(), checkpoints.end(), 0);
     }
 };
 
@@ -111,11 +111,14 @@ uint32_t jitc_vcall_self(JitBackend backend) {
 }
 
 // Weave a virtual function call into the computation graph
-void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
-                    uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
-                    const uint32_t *in, uint32_t n_out_nested,
-                    const uint32_t *out_nested, const uint32_t *se_offset,
-                    uint32_t *out) {
+uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
+                        uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
+                        const uint32_t *in, uint32_t n_out_nested,
+                        const uint32_t *out_nested, const uint32_t *checkpoints,
+                        uint32_t *out) {
+
+    const uint32_t checkpoint_mask = 0x7fffffff;
+
     // =====================================================
     // 1. Various sanity checks
     // =====================================================
@@ -146,7 +149,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
     for (uint32_t i = 0; i < n_in; ++i) {
         const Variable *v = jitc_var(in[i]);
-        if (v->placeholder_iface) {
+        if (v->vcall_iface) {
             if (!v->dep[0])
                 jitc_raise("jit_var_vcall(): placeholder variable r%u does not "
                            "reference another input!", in[i]);
@@ -191,21 +194,18 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     }
 
     ThreadState *ts = thread_state(backend);
-    if (ts->side_effects.size() != se_offset[n_inst])
+    if (ts->side_effects_recorded.size() !=
+        (checkpoints[n_inst] & checkpoint_mask))
         jitc_raise("jitc_var_vcall(): side effect queue doesn't have the "
                    "expected size!");
 
     if (dirty) {
-        if (jit_flag(JitFlag::Recording))
-            jitc_raise("jit_var_vcall(): referenced a dirty variable while "
-                       "JitFlag::Recording is active!");
-
         jitc_eval(ts);
 
         dirty = jitc_var(self)->ref_count_se;
         for (uint32_t i = 0; i < n_in; ++i) {
             const Variable *v = jitc_var(in[i]);
-            if (v->placeholder_iface)
+            if (v->vcall_iface)
                 dirty |= jitc_var(v->dep[0])->ref_count_se;
         }
 
@@ -229,11 +229,11 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     vcall->in_size_initial = in_size_initial;
     vcall->out_size_initial = out_size_initial;
     vcall->in_count_initial = n_in;
-    vcall->se_offset.reserve(n_inst + 1);
-    vcall->se = std::vector<uint32_t>(
-        ts->side_effects.begin() + se_offset[0],
-        ts->side_effects.begin() + se_offset[n_inst]);
-    ts->side_effects.resize(se_offset[0]);
+    vcall->checkpoints.reserve(n_inst + 1);
+    vcall->side_effects = std::vector<uint32_t>(
+        ts->side_effects_recorded.begin() + (checkpoints[0] & checkpoint_mask),
+        ts->side_effects_recorded.begin() + (checkpoints[n_inst] & checkpoint_mask));
+    ts->side_effects_recorded.resize(checkpoints[0] & checkpoint_mask);
 
     // =====================================================
     // 3. Collect evaluated data accessed by the instances
@@ -255,8 +255,8 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     // Collect accesses to evaluated variables/pointers
     uint32_t data_size = 0;
     for (uint32_t i = 0; i < n_inst; ++i) {
-        if (unlikely(se_offset[i] > se_offset[i + 1]))
-            jitc_raise("jitc_var_vcall(): se_offset parameter is not "
+        if (unlikely(checkpoints[i] > checkpoints[i + 1]))
+            jitc_raise("jitc_var_vcall(): checkpoints parameter is not "
                        "monotonically increasing!");
 
         uint32_t id = inst_id[i];
@@ -267,9 +267,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                                         out_nested[j + i * n_out],
                                         vcall->use_self);
 
-        for (uint32_t j = se_offset[i]; j != se_offset[i + 1]; ++j)
+        for (uint32_t j = checkpoints[i]; j != checkpoints[i + 1]; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
-                                        vcall->se[j - se_offset[0]],
+                                        vcall->side_effects[j - checkpoints[0]],
                                         vcall->use_self);
 
         // Restore to full alignment
@@ -337,24 +337,15 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     // =====================================================
 
     uint32_t deps_special[4] = { self, mask, offset_v, data_v };
-    Ref special_v = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
+    Ref vcall_v = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
                                             data_size ? 4 : 3, deps_special));
 
-    vcall->id = special_v;
+    vcall->id = vcall_v;
 
-    uint32_t se_count = se_offset[n_inst] - se_offset[0];
-    if (se_count) {
-        /* The call has side effects. Preserve this information via a dummy
-           variable marked as a side effect, which references the call. */
-        uint32_t special_id = special_v;
-        uint32_t dummy =
-            jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, &special_id);
-        Variable *v = jitc_var(dummy);
-        v->size = size;
+    {
+        Variable *v = jitc_var(vcall_v);
         v->placeholder = placeholder;
-        jitc_var_mark_side_effect(dummy, 0);
-        snprintf(temp, sizeof(temp), "VCall: %s [side effects]", name);
-        jitc_var_set_label(dummy, temp);
+        v->size = size;
     }
 
     std::vector<bool> coherent(n_out, true);
@@ -368,9 +359,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             jitc_var_inc_ref_ext(index);
             vcall->out_nested.push_back(index);
         }
-        vcall->se_offset.push_back(se_offset[i] - se_offset[0]);
+        vcall->checkpoints.push_back(checkpoints[i] - checkpoints[0]);
     }
-    vcall->se_offset.push_back(se_offset[n_inst] - se_offset[0]);
+    vcall->checkpoints.push_back(checkpoints[n_inst] - checkpoints[0]);
 
 
     uint32_t n_devirt = 0;
@@ -394,6 +385,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                 v->placeholder = placeholder;
                 v->optix = optix;
                 v->size = size;
+                jitc_cse_put(result_v, v);
             }
 
             out[j] = result_v.release();
@@ -407,10 +399,12 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         }
     }
 
+    uint32_t se_count = checkpoints[n_inst] - checkpoints[0];
+
     jitc_log(InfoSym,
              "jit_var_vcall(r%u, self=r%u): call (\"%s\") with %u instance%s, %u "
              "input%s, %u output%s (%u devirtualized), %u side effect%s, %u "
-             "byte%s of call data, %u elements%s%s", (uint32_t) special_v, self, name, n_inst,
+             "byte%s of call data, %u elements%s%s", (uint32_t) vcall_v, self, name, n_inst,
              n_inst == 1 ? "" : "s", n_in, n_in == 1 ? "" : "s", n_out,
              n_out == 1 ? "" : "s", n_devirt, se_count, se_count == 1 ? "" : "s",
              data_size, data_size == 1 ? "" : "s", size,
@@ -485,9 +479,9 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         v2.optix = optix;
         v2.type = v->type;
         v2.backend = v->backend;
-        v2.dep[0] = special_v;
+        v2.dep[0] = vcall_v;
         v2.extra = 1;
-        jitc_var_inc_ref_int(special_v);
+        jitc_var_inc_ref_int(vcall_v);
         uint32_t index_2 = jitc_var_new(v2, true);
         Extra &extra = state.extra[index_2];
         if (optimize) {
@@ -508,7 +502,7 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     for (uint32_t i = 0; i < n_in; ++i) {
         uint32_t index = in[i];
         Variable *v = jitc_var(index);
-        if (!v->placeholder_iface)
+        if (!v->vcall_iface)
             continue;
 
         // Ignore unreferenced inputs
@@ -541,8 +535,8 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
     size_t dep_size = vcall->in.size() * sizeof(uint32_t);
 
-    Variable *v_special = jitc_var(special_v);
-    Extra *e_special = &state.extra[special_v];
+    Variable *v_special = jitc_var(vcall_v);
+    Extra *e_special = &state.extra[vcall_v];
     v_special->extra = 1;
     v_special->size = size;
     e_special->n_dep = (uint32_t) vcall->in.size();
@@ -574,9 +568,22 @@ void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     };
 
     snprintf(temp, sizeof(temp), "VCall: %s", name);
-    jitc_var_set_label(special_v, temp);
+    jitc_var_set_label(vcall_v, temp);
 
-    special_v.reset();
+    Ref se_v;
+    if (se_count) {
+        /* The call has side effects. Create a dummy variable to ensure that
+         * they are evaluated */
+        uint32_t vcall_id = vcall_v;
+        se_v = steal(
+            jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, &vcall_id));
+        snprintf(temp, sizeof(temp), "VCall: %s [side effects]", name);
+        jitc_var_set_label(se_v, temp);
+    }
+
+    vcall_v.reset();
+
+    return se_v.release();
 }
 
 /// Called by the JIT compiler when compiling a virtual function call
@@ -606,6 +613,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         backup.push_back(JitBackupRecord{ sv, v->param_type, v->output_flag,
                                           v->reg_index, v->param_offset });
     }
+
     int32_t alloca_size_backup = alloca_size;
     int32_t alloca_align_backup = alloca_align;
     alloca_size = alloca_align = -1;
@@ -673,9 +681,8 @@ static void jitc_var_vcall_assemble(VCall *vcall,
             ts, vcall->name, i, in_size, in_align, out_size, out_align,
             data_offset, vcall->data_map, n_in, vcall->in.data(), n_out,
             vcall->out_nested.data() + n_out * i,
-            vcall->se_offset[i + 1] - vcall->se_offset[i],
-            vcall->se.data() + vcall->se_offset[i],
-            vcall->use_self);
+            vcall->checkpoints[i + 1] - vcall->checkpoints[i],
+            vcall->side_effects.data() + vcall->checkpoints[i], vcall->use_self);
 
         if (vcall->backend == JitBackend::LLVM)
             result.second += 1;
@@ -688,7 +695,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     jitc_memcpy_async(vcall->backend, vcall->offset_d, vcall->offset_h,
                       vcall->offset_h_size);
 
-    size_t se_count = vcall->se.size();
+    size_t se_count = vcall->side_effects.size();
     vcall->clear_side_effects();
 
     // =====================================================
@@ -993,14 +1000,23 @@ static void jitc_var_vcall_assemble_llvm(
                    (unsigned long long) callable_hash[i].low64);
     }
 
+    if (!assemble_func) {
+        buffer.fmt("\n"
+                   "    %%u%u_self_ptr_0 = bitcast i8* %%rd%u to i64*\n"
+                   "    %%u%u_self_ptr = getelementptr i64, i64* %%u%u_self_ptr_0, <%u x i32> %%r%u\n",
+                   vcall_reg, offset_reg,
+                   vcall_reg, vcall_reg, width, self_reg);
+    } else {
+        buffer.fmt("\n"
+                   "    %%u%u_self_ptr_0 = bitcast <%u x i8*> %%rd%u to <%u x i64*>\n"
+                   "    %%u%u_self_ptr = getelementptr i64, <%u x i64*> %%u%u_self_ptr_0, <%u x i32> %%r%u\n",
+                   vcall_reg, width, offset_reg, width,
+                   vcall_reg, width, vcall_reg, width, self_reg);
 
-    buffer.fmt("\n"
-               "    %%u%u_self_ptr_0 = bitcast i8* %%rd%u to i64*\n"
-               "    %%u%u_self_ptr = getelementptr i64, i64* %%u%u_self_ptr_0, <%u x i32> %%r%u\n"
-               "    %%u%u_self_combined = call <%u x i64> @llvm.masked.gather.v%ui64(<%u x i64*> %%u%u_self_ptr, i32 8, <%u x i1> %%p%u, <%u x i64> zeroinitializer)\n"
+    }
+
+    buffer.fmt("    %%u%u_self_combined = call <%u x i64> @llvm.masked.gather.v%ui64(<%u x i64*> %%u%u_self_ptr, i32 8, <%u x i1> %%p%u, <%u x i64> zeroinitializer)\n"
                "    %%u%u_self_initial = trunc <%u x i64> %%u%u_self_combined to <%u x i32>\n",
-               vcall_reg, offset_reg,
-               vcall_reg, vcall_reg, width, self_reg,
                vcall_reg, width, width, width, vcall_reg, width, mask_reg, width,
                vcall_reg, width, vcall_reg, width);
 
@@ -1202,7 +1218,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
     if (!v->literal && v->stmt && strstr(v->stmt, "self"))
         use_self = true;
 
-    if (v->placeholder_iface) {
+    if (v->vcall_iface) {
         return;
     } else if (v->data || (VarType) v->type == VarType::Pointer) {
         uint32_t tsize = type_size[v->type];

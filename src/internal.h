@@ -115,7 +115,7 @@ struct Variable {
     uint32_t placeholder : 1;
 
     /// Is this a placeholder variable used to record arithmetic symbolically?
-    uint32_t placeholder_iface : 1;
+    uint32_t vcall_iface : 1;
 
     /// Is this variable associated with extra information?
     uint32_t extra : 1;
@@ -318,6 +318,9 @@ struct ThreadState {
      * at the next call to jitc_eval().
      */
     std::vector<uint32_t> side_effects;
+
+    /// When recording loops or virtual function calls, side effects go here.
+    std::vector<uint32_t> side_effects_recorded;
 
     /**
      * Stack of variable indices indicating the list of active SIMD lanes.

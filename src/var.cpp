@@ -273,6 +273,12 @@ void jitc_cse_drop(uint32_t index, const Variable *v) {
         cache.erase(it);
 }
 
+/// Register a variable with cache used for common subexpression elimination
+void jitc_cse_put(uint32_t index, const Variable *v) {
+    if (unlikely(!state.cse_cache.try_emplace(VariableKey(*v), index).second))
+        jit_fail("jitc_cse_put(): failed!");
+}
+
 /// Query the type of a given variable
 VarType jitc_var_type(uint32_t index) {
     return (VarType) jitc_var(index)->type;
@@ -285,10 +291,12 @@ const char *jitc_var_label(uint32_t index) {
         return nullptr;
     } else {
         const char *label = it.value().label;
-        if (label)
-            return strrchr(label, '/') + 1;
-        else
+        if (label) {
+            const char *delim = strrchr(label, '/');
+            return delim ? (delim + 1) : label;
+        } else {
             return nullptr;
+        }
     }
 }
 
@@ -313,9 +321,8 @@ void jitc_var_set_label(uint32_t index, const char *label) {
             extra.label = nullptr;
         } else {
             size_t len = strlen(label);
-            extra.label = (char *) malloc_check(len + 2);
-            extra.label[0] = '/';
-            memcpy(extra.label + 1, label, len + 1);
+            extra.label = (char *) malloc_check(len + 1);
+            memcpy(extra.label, label, len + 1);
         }
     } else {
         size_t prefix_len = strlen(ts->prefix),
@@ -484,7 +491,7 @@ uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
        of creating a new one. */
     if (jit_flag(JitFlag::Recording) && is_class) {
         ThreadState *ts = thread_state(backend);
-        if (ts->vcall_self && ts->vcall_self == *((uint32_t*) value)) {
+        if (ts->vcall_self && memcmp(&ts->vcall_self, value, sizeof(uint32_t)) == 0) {
             Variable v;
             if (backend == JitBackend::CUDA)
                 v.stmt = (char *) "mov.u32 $r0, self";
@@ -557,37 +564,34 @@ uint32_t jitc_var_new_counter(JitBackend backend, size_t size) {
     return jitc_var_new(v);
 }
 
-uint32_t jitc_var_new_placeholder_loop(const char *stmt, uint32_t n_dep, uint32_t *dep) {
-    if (unlikely(n_dep < 1))
-        jitc_fail("jit_var_new_placeholder_loop(): must have at least one dependency!");
-
-    Variable *v_dep = jitc_var(dep[0]);
+uint32_t jitc_var_wrap_loop(uint32_t index, uint32_t cond, uint32_t size) {
+    Variable *v_index = jitc_var(index),
+             *v_cond  = cond ? jitc_var(cond) : nullptr;
 
     Variable v2;
-    v2.stmt = (char *) stmt;
-    v2.backend = v_dep->backend;
-    v2.type = v_dep->type;
-    v2.size = v_dep->size;
-    v2.placeholder = v2.placeholder_iface = 1;
-
-    for (uint32_t i = 0; i < n_dep; ++i) {
-        v2.dep[i] = dep[i];
-        jitc_var_inc_ref_int(dep[i]);
-    }
+    v2.stmt = (char *) (((JitBackend) v_index->backend == JitBackend::CUDA)
+                            ? "mov.$t0 $r0, $r1"
+                            : "$r0 = phi <$w x $t0> [ $r0_final, %l_$i2_tail ], [ $r1, %l_$i2_start ]");
+    v2.dep[0] = index;
+    v2.dep[1] = cond;
+    jitc_var_inc_ref_int(index, v_index);
+    if (v_cond)
+        jitc_var_inc_ref_int(cond,  v_cond);
+    v2.backend = v_index->backend;
+    v2.type = v_index->type;
+    v2.size = size;
+    v2.placeholder = 1;
 
     uint32_t result = jitc_var_new(v2, true);
-    jitc_log(Debug, "jit_var_new_placeholder(%s r%u)",
-             type_name[v2.type], result);
+    jitc_log(Debug, "jit_var_wrap_loop(%s r%u)", type_name[v2.type], result);
 
     return result;
 }
 
-uint32_t jitc_var_new_placeholder(uint32_t index, int preserve_size, int propagate_literals) {
+uint32_t jitc_var_wrap_vcall(uint32_t index) {
     const Variable *v = jitc_var(index);
-    if (v->literal && propagate_literals &&
-        (jitc_flags() & (uint32_t) JitFlag::VCallOptimize)) {
+    if (v->literal && (jitc_flags() & (uint32_t) JitFlag::VCallOptimize))
         return jitc_var_resize(index, 1);
-    }
 
     Variable v2;
     v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
@@ -595,14 +599,14 @@ uint32_t jitc_var_new_placeholder(uint32_t index, int preserve_size, int propaga
                             : "$r0 = bitcast <$w x $t0> $r1 to <$w x $t0>");
     v2.backend = v->backend;
     v2.type = v->type;
-    v2.size = preserve_size ? v->size : 1;
-    v2.placeholder = v2.placeholder_iface = 1;
+    v2.size = 1;
+    v2.placeholder = v2.vcall_iface = 1;
     v2.dep[0] = index;
     jitc_var_inc_ref_int(index);
 
-    uint32_t result = jitc_var_new(v2, true);
-    jitc_log(Debug, "jit_var_new_placeholder(%s r%u <- r%u)",
-             type_name[v2.type], result, index);
+    uint32_t result = jitc_var_new(v2);
+    jitc_log(Debug, "jit_var_wrap_vcall(%s r%u <- r%u)", type_name[v2.type],
+             result, index);
     return result;
 }
 
@@ -703,17 +707,18 @@ int jitc_var_device(uint32_t index) {
 }
 
 /// Mark a variable as a scatter operation that writes to 'target'
-void jitc_var_mark_side_effect(uint32_t index, uint32_t target) {
-    Variable *v = jitc_var(index);
-    jitc_log(Debug, "jit_var_mark_side_effect(r%u, r%u)", index, target);
+void jitc_var_mark_side_effect(uint32_t index) {
+    if (index == 0)
+        return;
 
+    Variable *v = jitc_var(index);
     v->side_effect = true;
+    jitc_log(Debug, "jit_var_mark_side_effect(r%u)", index);
 
     ThreadState *ts = thread_state(v->backend);
-    ts->side_effects.push_back(index);
-
-    // Mark variable as dirty
-    jitc_var_inc_ref_se(target);
+    std::vector<uint32_t> &output =
+        v->placeholder ? ts->side_effects_recorded : ts->side_effects;
+    output.push_back(index);
 }
 
 /// Return a human-readable summary of the contents of a variable
@@ -1004,17 +1009,16 @@ uint32_t jitc_var_copy(uint32_t index) {
         result = jitc_var_mem_copy(backend, atype, (VarType) v->type, v->data,
                                    v->size);
     } else {
-        Variable v2 = *v;
-        v2.ref_count_int = 0;
-        v2.ref_count_ext = 0;
-        v2.ref_count_se = 0;
-        v2.extra = 0;
-
-        if (v2.free_stmt)
-            v2.stmt = strdup(v2.stmt);
-        for (uint32_t i = 0; i < 4; ++i)
-            jitc_var_inc_ref_int(v2.dep[i]);
-
+        Variable v2;
+        v2.type = v->type;
+        v2.backend = v->backend;
+        v2.placeholder = v->placeholder;
+        v2.size = v->size;
+        v2.dep[0] = index;
+        v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
+                            ? "mov.$t0 $r0, $r1"
+                            : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
+        jitc_var_inc_ref_int(index, v);
         result = jitc_var_new(v2, true);
     }
 
@@ -1037,11 +1041,12 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     }
 
     uint32_t result;
-    if (!v->data && v->ref_count_int == 0 && v->ref_count_ext == 1 &&
-        v->ref_count_se == 0) {
+    if (!v->data && v->ref_count_int == 0 && v->ref_count_ext == 1 && v->ref_count_se == 0) {
+        // Nobody else holds a reference -- we can directly resize this variable
         jitc_var_inc_ref_ext(index, v);
         jitc_cse_drop(index, v);
         v->size = size;
+        jitc_cse_put(index, v);
         result = index;
     } else if (v->literal) {
         result = jitc_var_new_literal((JitBackend) v->backend,
@@ -1057,7 +1062,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
                             ? "mov.$t0 $r0, $r1"
                             : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
         jitc_var_inc_ref_int(index, v);
-        result = jitc_var_new(v2);
+        result = jitc_var_new(v2, true);
     }
 
     jitc_log(Debug, "jit_var_resize(r%u <- r%u, size=%zu)", result, index, size);
@@ -1429,8 +1434,13 @@ const char *jitc_var_graphviz() {
     size_t current_hash = 0, current_depth = 1;
 
     for (int32_t index : indices) {
-        const char *label = jitc_var_label(index),
-                   *label_without_prefix = label;
+        ExtraMap::iterator it = state.extra.find(index);
+
+        const char *label = nullptr;
+        if (it != state.extra.end())
+            label = it.value().label;
+
+        const char *label_without_prefix = label;
 
         size_t prefix_hash = 0;
         if (label) {

@@ -59,6 +59,9 @@ static uint32_t n_regs_used = 0;
 /// Are we recording an OptiX kernel?
 bool uses_optix = false;
 
+/// Are we currently compiling a virtual function call
+bool assemble_func = false;
+
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 int32_t alloca_size = -1;
 int32_t alloca_align = -1;
@@ -706,6 +709,9 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
 
     size_t offset = buffer.size();
 
+    bool assemble_func_prev = assemble_func;
+    assemble_func = true;
+
     if (ts->backend == JitBackend::CUDA)
         jitc_assemble_cuda_func(name, inst_id, n_regs, in_size, in_align,
                                 out_size, out_align, data_offset, data_map,
@@ -713,6 +719,8 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     else
         jitc_assemble_llvm_func(name, inst_id, in_size, data_offset, data_map,
                                 n_out, out_nested, use_self);
+
+    assemble_func = assemble_func_prev;
 
     buffer.putc('\n');
 
@@ -734,6 +742,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
         callables.push_back(std::string(kernel_str, kernel_length));
     }
     buffer.rewind(kernel_length);
+
 
     return { kernel_hash, result.first->second };
 }

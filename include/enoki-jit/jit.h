@@ -3,9 +3,10 @@
 
     This library implements a self-contained tracing JIT compiler that supports
     both CUDA PTX and LLVM IR as intermediate representations. It takes care of
-    many tricky aspects, such as asynchronous memory allocation and release,
-    multi-device computation, kernel caching and reuse, common subexpression
-    elimination, etc.
+    many tricky aspects, such as recording of arithmetic and higher-level
+    operations (loops, virtual function calls), asynchronous memory allocation
+    and release, multi-device computation, kernel caching and reuse, common
+    subexpression elimination, etc.
 
     While the library is internally implemented using C++14, this header file
     provides a compact C99-compatible API that can be used to access all
@@ -525,7 +526,8 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  * Returns zero if <tt>ptr == nullptr</tt> and throws if the pointer is already
  * registered (with *any* domain).
  */
-extern JIT_EXPORT uint32_t jit_registry_put(JIT_ENUM JitBackend backend, const char *domain, void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_put(JIT_ENUM JitBackend backend,
+                                            const char *domain, void *ptr);
 
 /**
  * \brief Remove a pointer from the registry
@@ -533,14 +535,16 @@ extern JIT_EXPORT uint32_t jit_registry_put(JIT_ENUM JitBackend backend, const c
  * No-op if <tt>ptr == nullptr</tt>. Throws an exception if the pointer is not
  * currently registered.
  */
-extern JIT_EXPORT void jit_registry_remove(JIT_ENUM JitBackend backend, void *ptr);
+extern JIT_EXPORT void jit_registry_remove(JIT_ENUM JitBackend backend,
+                                           void *ptr);
 
 /**
  * \brief Query the ID associated a registered pointer
  *
  * Returns 0 if <tt>ptr==nullptr</tt> and throws if the pointer is not known.
  */
-extern JIT_EXPORT uint32_t jit_registry_get_id(JIT_ENUM JitBackend backend, const void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_get_id(JIT_ENUM JitBackend backend,
+                                               const void *ptr);
 
 /**
  * \brief Query the domain associated a registered pointer
@@ -548,7 +552,8 @@ extern JIT_EXPORT uint32_t jit_registry_get_id(JIT_ENUM JitBackend backend, cons
  * Returns \c nullptr if <tt>ptr==nullptr</tt> and throws if the pointer is not
  * known.
  */
-extern JIT_EXPORT const char *jit_registry_get_domain(JIT_ENUM JitBackend backend, const void *ptr);
+extern JIT_EXPORT const char *jit_registry_get_domain(JIT_ENUM JitBackend backend,
+                                                      const void *ptr);
 
 /**
  * \brief Query the pointer associated a given domain and ID
@@ -556,7 +561,8 @@ extern JIT_EXPORT const char *jit_registry_get_domain(JIT_ENUM JitBackend backen
  * Returns \c nullptr if <tt>id==0</tt>, or when the (domain, ID) combination
  * is not known.
  */
-extern JIT_EXPORT void *jit_registry_get_ptr(JIT_ENUM JitBackend backend, const char *domain, uint32_t id);
+extern JIT_EXPORT void *jit_registry_get_ptr(JIT_ENUM JitBackend backend,
+                                             const char *domain, uint32_t id);
 
 /// Provide a bound (<=) on the largest ID associated with a domain
 extern JIT_EXPORT uint32_t jit_registry_get_max(JIT_ENUM JitBackend backend, const char *domain);
@@ -575,7 +581,7 @@ extern JIT_EXPORT void jit_registry_trim();
  * The pointer registry can optionally associate one or more read-only
  * attribute with each pointer that can be set using this function. Such
  * pointer attributes provide an efficient way to avoid expensive vectorized
- * method calls (via \ref jitc_var_vcall()) for simple getter-like functions. In
+ * method calls (via \ref jit_var_vcall()) for simple getter-like functions. In
  * particular, this feature would be used in conjunction with \ref
  * jit_registry_attr_data(), which returns a pointer to a linear array
  * containing all attributes. A vector of 32-bit IDs (returned by \ref
@@ -664,7 +670,8 @@ extern JIT_EXPORT uint32_t jit_var_new_literal(JIT_ENUM JitBackend backend,
  * This operation creates a variable of type \ref VarType::UInt32 that will
  * evaluate to <tt>0, ..., size - 1</tt>.
  */
-extern JIT_EXPORT uint32_t jit_var_new_counter(JIT_ENUM JitBackend backend, size_t size);
+extern JIT_EXPORT uint32_t jit_var_new_counter(JIT_ENUM JitBackend backend,
+                                               size_t size);
 
 /**
  * \brief Create a new variable representing the result of a LLVM/PTX statement
@@ -858,50 +865,24 @@ extern JIT_EXPORT uint32_t jit_var_new_cast(uint32_t index,
  *
  * This function creates a 64 bit unsigned integer literal that refers to a
  * memory region. Optionally, if \c dep is nonzero, the created variable will
- * hold a reference to the variable \c dep until the pointer is destroyed, which
- * is useful when implementing operations that access global memory.
+ * hold a reference to the variable \c dep until the pointer is destroyed,
+ * which is useful when implementing operations that access global memory.
  *
  * A nonzero value should be passed to the \c write parameter if the pointer is
  * going to be used to perform write operations. Enoki-JIT needs to know about
- * this to infer whether a future scatter operation to \c dep requires making a backup
- * copy first.
+ * this to infer whether a future scatter operation to \c dep requires making a
+ * backup copy first.
  */
 extern JIT_EXPORT uint32_t jit_var_new_pointer(JIT_ENUM JitBackend backend,
                                                const void *value,
                                                uint32_t dep,
                                                int write);
-
-/**
- * \brief Create a placeholder variable imitating another variable
- *
- * This function creates a special placeholder variable of size 1, whose type
- * matches a provided variable \c index. Placeholder variables are typically
- * used to record computation such as the body of a loop or a function call.
- * They should never be evaluated via \ref jit_var_schedule() or \ref
- * jit_var_eval(), and these functions will raise an exception when this is
- * attempted. The placeholder status bit propagates recursively, meaning that
- * any operation that references a placeholder variable is similarly marked as
- * a placeholder.
- *
- * It can be useful to know whether a placeholder variable is always a constant
- * literal to enable further optimization. If \c propagate_literals is nonzero,
- * constant literal status propagates unchanged from \c index to the returned
- * result.
- */
-extern JIT_EXPORT uint32_t jit_var_new_placeholder(uint32_t index,
-                                                   int preserve_size,
-                                                   int propagate_literals);
-
-extern JIT_EXPORT uint32_t jit_var_new_placeholder_loop(const char *stmt,
-                                                        uint32_t n_dep,
-                                                        uint32_t *dep);
-
 /**
  * \brief Create a variable that reads from another variable
  *
  * This operation creates a variable that performs a <em>masked gather</em>
- * operation equivalent to <tt>mask ? source[index] : 0</tt>. The variable \c
- * index must be an integer array, and \c mask must be a boolean array.
+ * operation equivalent to <tt>mask ? source[index] : 0</tt>. The variable
+ * \c index must be an integer array, and \c mask must be a boolean array.
  */
 extern JIT_EXPORT uint32_t jit_var_new_gather(uint32_t source, uint32_t index,
                                               uint32_t mask);
@@ -915,7 +896,6 @@ enum ReduceOp {
     ReduceOpAnd, ReduceOpOr, ReduceOpCount
 };
 #endif
-
 
 /**
  * \brief Schedule a scatter or atomic read-modify-write operation
@@ -973,9 +953,9 @@ extern JIT_EXPORT uint32_t jit_var_copy(uint32_t index);
  *
  * \sa jit_var_mem_copy()
  */
-extern JIT_EXPORT uint32_t jit_var_mem_map(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
-                                           void *ptr, size_t size, int free);
-
+extern JIT_EXPORT uint32_t jit_var_mem_map(JIT_ENUM JitBackend backend,
+                                           JIT_ENUM VarType type, void *ptr,
+                                           size_t size, int free);
 
 /**
  * Copy a memory region onto the device and return its variable index. Its
@@ -1035,6 +1015,15 @@ extern JIT_EXPORT uint32_t jit_var_ref_int(uint32_t index);
 /// Query the a variable's external reference count (used by the test suite)
 extern JIT_EXPORT uint32_t jit_var_ref_ext(uint32_t index);
 
+/// Query the pointer variable associated with a given variable
+extern JIT_EXPORT void *jit_var_ptr(uint32_t index);
+
+/// Query the size of a given variable
+extern JIT_EXPORT size_t jit_var_size(uint32_t index);
+
+/// Query the type of a given variable
+extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
+
 /// Check if a variable is a constant literal
 extern JIT_EXPORT int jit_var_is_literal(uint32_t index);
 
@@ -1043,12 +1032,6 @@ extern JIT_EXPORT int jit_var_is_evaluated(uint32_t index);
 
 /// Check if a variable is a special placeholder value used to record computation
 extern JIT_EXPORT int jit_var_is_placeholder(uint32_t index);
-
-/// Query the pointer variable associated with a given variable
-extern JIT_EXPORT void *jit_var_ptr(uint32_t index);
-
-/// Query the size of a given variable
-extern JIT_EXPORT size_t jit_var_size(uint32_t index);
 
 /**
  * \brief Resize a scalar variable to a new size
@@ -1078,9 +1061,10 @@ extern JIT_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
  * current device (\ref jit_set_device()) does not match the device associated
  * with the allocation, a peer-to-peer migration is performed.
  */
-extern JIT_EXPORT uint32_t jit_var_migrate(uint32_t index, JIT_ENUM AllocType type);
+extern JIT_EXPORT uint32_t jit_var_migrate(uint32_t index,
+                                           JIT_ENUM AllocType type);
 
-/// Query the current (or future, if not yet evaluated) allocation flavor of a variable
+/// Query the current (or future, if unevaluated) allocation flavor of a variable
 extern JIT_EXPORT JIT_ENUM AllocType jit_var_alloc_type(uint32_t index);
 
 /// Query the device (or future, if not yet evaluated) associated with a variable
@@ -1089,14 +1073,11 @@ extern JIT_EXPORT int jit_var_device(uint32_t index);
 /**
  * \brief Mark a variable as a scatter operation
  *
- * This function should be used to inform the JIT compiler when the memory region
- * underlying a variable \c target is modified by a scatter operation with
- * index \c index. It will mark the target variable as dirty to ensure that
- * future reads from this variable (while still in dirty state) will trigger
- * an evaluation via \ref jit_eval().
+ * This function informs the JIT compiler that the variable 'index' has side
+ * effects. It then steals an external reference, includes the variable in the
+ * next kernel launch, and de-references it following execution.
  */
-extern JIT_EXPORT void jit_var_mark_side_effect(uint32_t index,
-                                                uint32_t target);
+extern JIT_EXPORT void jit_var_mark_side_effect(uint32_t index);
 
 /**
  * \brief Return a human-readable summary of the contents of a variable
@@ -1149,9 +1130,9 @@ extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, size_t offset,
  * Example: <tt>jit_var_printf(JIT_ENUM JitBackend::CUDA, 0, "Hello world: %f\n", 1,
  * &my_variable_id);</tt>
  */
-extern JIT_EXPORT void jit_var_printf(JIT_ENUM JitBackend backend, uint32_t mask,
-                                      const char *fmt, uint32_t narg,
-                                      const uint32_t *arg);
+extern JIT_EXPORT void jit_var_printf(JIT_ENUM JitBackend backend,
+                                      uint32_t mask, const char *fmt,
+                                      uint32_t narg, const uint32_t *arg);
 
 /**
  * \brief Create a new variable representing an array containing a specific
@@ -1188,8 +1169,19 @@ extern JIT_EXPORT int jit_var_eval(uint32_t index);
 /// Evaluate all scheduled computation
 extern JIT_EXPORT void jit_eval();
 
-/// Query the type of a given variable
-extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
+/**
+ * \brief Assign a callback function that is invoked when the variable is
+ * evaluated or freed.
+ *
+ * The provided function should have the signature <tt>void callback(uint32_t
+ * index, int free, void *callback_data)</tt>, where \c index is the variable
+ * index, \c free == 0 indicates that the variable is evaluated, \c free == 1
+ * indicates that it is freed, and \c callback_data is a user-specified value that
+ * will additionally be supplied to the callback.
+ */
+extern JIT_EXPORT void
+jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
+                     void *callback_data);
 
 // ====================================================================
 //      Functionality for debug output and GraphViz visualizatoins
@@ -1241,13 +1233,14 @@ extern JIT_EXPORT const char *jit_var_graphviz();
  * de-clutter large graph vizualizations by drawing boxes around variables with
  * a common prefix.
  */
-extern JIT_EXPORT void jit_prefix_push(JIT_ENUM JitBackend backend, const char *value);
+extern JIT_EXPORT void jit_prefix_push(JIT_ENUM JitBackend backend,
+                                       const char *value);
 
 /// Pop a string from the label stack
 extern JIT_EXPORT void jit_prefix_pop(JIT_ENUM JitBackend backend);
 
 // ====================================================================
-//  Advanced JIT usage: recording loops, virtual function calls, etc.
+//  JIT compiler status flags
 // ====================================================================
 
 /**
@@ -1331,67 +1324,56 @@ extern JIT_EXPORT void jit_set_flag(JIT_ENUM JitFlag flag, int enable);
 /// Checks whether a given flag is active. Returns zero or one.
 extern JIT_EXPORT int jit_flag(JIT_ENUM JitFlag flag);
 
-/**
- * \brief Assign a callback function that is invoked when the variable is
- * evaluated or freed.
- *
- * The provided function should have the signature <tt>void callback(uint32_t
- * index, int free, void *callback_data)</tt>, where \c index is the variable
- * index, \c free == 0 indicates that the variable is evaluated, \c free == 1
- * indicates that it is freed, and \c callback_data is a user-specified value that
- * will additionally be supplied to the callback.
- */
-extern JIT_EXPORT void
-jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
-                     void *callback_data);
+// ====================================================================
+//  Advanced JIT usage: recording loops, virtual function calls, etc.
+// ====================================================================
 
 /**
- * \brief Returns the number of operations with side effects (specifically,
- * scatters) scheduled for evaluation on the current thread.
+ * \brief Begin a recording session
  *
- * This function can be used to easily detect whether or not some piece of
- * code involves side effects. It is used to as part of the mechanism
- * that records loops, virtual function calls, etc.
+ * Enoki can record virtual function calls and loops to preserve them 1:1 in
+ * the generated code. This function indicates to Enoki-JIT that the program is
+ * starting to record computation. The function sets \ref JitFlag.Recording and
+ * returns information that will later enable stopping or canceling a recording
+ * session via \ref jit_record_end().
+ *
+ * Recording sessions can be nested.
  */
-extern JIT_EXPORT uint32_t jit_side_effects_scheduled(JIT_ENUM JitBackend backend);
+extern JIT_EXPORT uint32_t jit_record_begin(JIT_ENUM JitBackend backend);
+
+/// Return a checkpoint within a recorded compoutation for resumption via jit_record_end
+extern JIT_EXPORT uint32_t jit_record_checkpoint(JIT_ENUM JitBackend backend);
 
 /**
- * \brief Discard scheduled side effects
+ * \brief End a recording session
  *
- * This function rewinds the queue of scheduled side effects to an earlier
- * position obtained from \ref jit_side_effects_scheduled(). This is useful to
- * recover when something goes wrong while recording a computation symbolically.
+ * The parameter \c state should be the return value from a prior call to \ref
+ * jit_record_begin(). This function cleans internal data structures and
+ * recovers the previous setting of the flag \ref JitFlag.Recording.
  */
-extern JIT_EXPORT void jit_side_effects_rollback(JIT_ENUM JitBackend backend,
-                                                 uint32_t value);
+extern JIT_EXPORT void jit_record_end(JIT_ENUM JitBackend backend,
+                                      uint32_t state);
 
 /**
- * \brief Pushes a new mask variable onto the mask stack
+ * \brief Wrap an input variable of a virtual function call before recording
+ * computation
  *
- * In advanced usage of Enoki-JIT (e.g. recorded loops, virtual function calls,
- * etc.), it may be necessary to mask scatter and gather operations to prevent
- * undefined behavior and crashes. This function can be used to push a mask
- * onto a mask stack. The top of the stack will be combined with the mask
- * argument supplied to subsequent \ref jit_var_new_gather() and \ref
- * jit_var_new_scatter() operations. While on the stack, Enoki-JIT will hold an
- * internal reference to \c index to keep it from being freed. When \combine is
- * nonzero, the mask will be combined with the current top element of the
- * stack.
+ * Creates a copy of a virtual function call input argument. The copy has a
+ * 'placeholder' bit set that propagates into any computation referencing it.
+ * Placeholder variables trigger an error when the user tries to evaluate or
+ * print them (these operations are not allowed in a recording session).
  */
-extern JIT_EXPORT void jit_var_mask_push(JIT_ENUM JitBackend backend, uint32_t index,
-                                         int combine JIT_DEF(1));
+extern JIT_EXPORT uint32_t jit_var_wrap_vcall(uint32_t index);
 
-/// Pop the mask stack
-extern JIT_EXPORT void jit_var_mask_pop(JIT_ENUM JitBackend backend);
-
-/// Return the top entry of the mask stack and increase its ext. ref. count
-extern JIT_EXPORT uint32_t jit_var_mask_peek(JIT_ENUM JitBackend backend);
-
-/// Return the size of the mask stack
-extern JIT_EXPORT size_t jit_var_mask_size(JIT_ENUM JitBackend backend);
-
-/// Return the default mask
-extern JIT_EXPORT uint32_t jit_var_mask_default(JIT_ENUM JitBackend backend);
+/**
+ * \brief Wrap a loop state variable before recording computation
+ *
+ * Creates a copy of a loop state variable. The copy has a 'placeholder' bit
+ * set that propagates into any computation referencing it. Placeholder
+ * variables trigger an error when the user tries to evaluate or print them
+ * (these operations are not allowed in a recording session).
+ */
+extern JIT_EXPORT uint32_t jit_var_wrap_loop(uint32_t index, uint32_t cond, uint32_t size);
 
 /// Set the registry index of the self pointer of the currently recording vcall
 extern JIT_EXPORT void jit_vcall_set_self(JIT_ENUM JitBackend backend, uint32_t value);
@@ -1441,20 +1423,48 @@ extern JIT_EXPORT uint32_t jit_vcall_self(JIT_ENUM JitBackend backend);
  *     The final output variables representing the result of the operation
  *     are written into this argument (size <tt>n_out_nested / n_inst</tt>)
  */
-extern JIT_EXPORT void jit_var_vcall(const char *name, uint32_t self,
-                                     uint32_t mask, uint32_t n_inst,
-                                     const uint32_t *inst_id,
-                                     uint32_t n_in, const uint32_t *in,
-                                     uint32_t n_out_nested,
-                                     const uint32_t *out_nested,
-                                     const uint32_t *se_offset, uint32_t *out);
+extern JIT_EXPORT uint32_t jit_var_vcall(const char *name, uint32_t self,
+                                         uint32_t mask, uint32_t n_inst,
+                                         const uint32_t *inst_id,
+                                         uint32_t n_in, const uint32_t *in,
+                                         uint32_t n_out_nested,
+                                         const uint32_t *out_nested,
+                                         const uint32_t *se_offset, uint32_t *out);
 
-extern JIT_EXPORT void jit_var_loop(const char *name, uint32_t loop_start,
-                                    uint32_t loop_cond,
-                                    uint32_t n, const uint32_t *in,
-                                    const uint32_t *out_body,
-                                    uint32_t se_offset, uint32_t *out,
-                                    int check_invariant, uint8_t *invariant);
+extern JIT_EXPORT uint32_t jit_var_loop(const char *name, uint32_t loop_start,
+                                         uint32_t loop_cond,
+                                         uint32_t n, const uint32_t *in,
+                                         const uint32_t *out_body,
+                                         uint32_t se_offset, uint32_t *out,
+                                         int check_invariant, uint8_t *invariant);
+
+/**
+ * \brief Pushes a new mask variable onto the mask stack
+ *
+ * In advanced usage of Enoki-JIT (e.g. recorded loops, virtual function calls,
+ * etc.), it may be necessary to mask scatter and gather operations to prevent
+ * undefined behavior and crashes. This function can be used to push a mask
+ * onto a mask stack. The top of the stack will be combined with the mask
+ * argument supplied to subsequent \ref jit_var_new_gather() and \ref
+ * jit_var_new_scatter() operations. While on the stack, Enoki-JIT will hold an
+ * internal reference to \c index to keep it from being freed. When \combine is
+ * nonzero, the mask will be combined with the current top element of the
+ * stack.
+ */
+extern JIT_EXPORT void jit_var_mask_push(JIT_ENUM JitBackend backend, uint32_t index,
+                                         int combine JIT_DEF(1));
+
+/// Pop the mask stack
+extern JIT_EXPORT void jit_var_mask_pop(JIT_ENUM JitBackend backend);
+
+/// Return the top entry of the mask stack and increase its ext. ref. count
+extern JIT_EXPORT uint32_t jit_var_mask_peek(JIT_ENUM JitBackend backend);
+
+/// Return the size of the mask stack
+extern JIT_EXPORT size_t jit_var_mask_size(JIT_ENUM JitBackend backend);
+
+/// Return the default mask
+extern JIT_EXPORT uint32_t jit_var_mask_default(JIT_ENUM JitBackend backend);
 
 // ====================================================================
 //                          Horizontal reductions

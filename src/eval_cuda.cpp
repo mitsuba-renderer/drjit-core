@@ -102,10 +102,10 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                 jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
 
             const Extra &extra = it->second;
-            if (print_labels && extra.label && vt != VarType::Void) {
-                const char *label = strrchr(extra.label, '/');
-                if (label && label[1])
-                    buffer.fmt("    // %s\n", label + 1);
+            if (print_labels && vt != VarType::Void) {
+                const char *label =  jitc_var_label(index);
+                if (label && label[0])
+                    buffer.fmt("    // %s\n", label);
             }
 
             if (extra.assemble) {
@@ -281,10 +281,10 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
                           "not found!");
 
             const Extra &extra = it->second;
-            if (print_labels && extra.label && vt != VarType::Void) {
-                const char *label = strrchr(extra.label, '/');
-                if (label && label[1])
-                    buffer.fmt("    // %s\n", label + 1);
+            if (print_labels && vt != VarType::Void) {
+                const char *label =  jitc_var_label(sv.index);
+                if (label && label[0])
+                    buffer.fmt("    // %s\n", label);
             }
 
             if (extra.assemble) {
@@ -293,7 +293,7 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
             }
         }
 
-        if (v->placeholder_iface) {
+        if (v->vcall_iface) {
             if (vt != VarType::Bool) {
                 buffer.fmt("    ld.param.%s %s%u, [params+%u];\n",
                            type_name_ptx[vti], type_prefix[vti],
@@ -306,8 +306,13 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
         } else if (v->data || vt == VarType::Pointer) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
             auto it = data_map.find(key);
-            if (unlikely(it == data_map.end()))
-                jitc_fail("jitc_assemble_cuda_func(): could not find entry in 'data_map'");
+
+            if (unlikely(it == data_map.end())) {
+                jitc_fail("jitc_assemble_cuda_func(): could not find entry for "
+                          "variable r%u in 'data_map'", sv.index);
+                continue;
+            }
+
             if (it->second == (uint32_t) -1)
                 jitc_fail(
                     "jitc_assemble_cuda_func(): variable r%u is referenced by "
@@ -322,8 +327,7 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
             else
                 buffer.fmt("    ld.global.u8 %%w0, [data+%u];\n"
                            "    setp.ne.u16 %%p%u, %%w0, 0;\n",
-                           it->second - data_offset,
-                           v->reg_index);
+                           it->second - data_offset, v->reg_index);
         } else {
             jitc_render_stmt_cuda(sv.index, v);
         }

@@ -45,12 +45,11 @@ uint32_t jitc_var_new_stmt_n(JitBackend backend, VarType type, const char *stmt,
 extern uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
                                      uint32_t dep, int write);
 
-/// Create a placeholder variable imitating another variable 'index'
-extern uint32_t jitc_var_new_placeholder(uint32_t index, int preserve_size,
-                                         int propagate_literals);
+/// Wrap an input variable of a virtual function call before recording computation
+extern uint32_t jitc_var_wrap_vcall(uint32_t index);
 
-extern uint32_t jitc_var_new_placeholder_loop(const char *stmt,
-                                              uint32_t n_dep, uint32_t *dep);
+/// Wrap a loop state variable before recording computation
+extern uint32_t jitc_var_wrap_loop(uint32_t index, uint32_t cond, uint32_t size);
 
 /// Register an existing variable with the JIT compiler
 extern uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
@@ -120,8 +119,8 @@ extern void jitc_var_set_callback(uint32_t index,
 /// Migrate a variable to a different flavor of memory
 extern uint32_t jitc_var_migrate(uint32_t index, AllocType type);
 
-/// Mark a variable as a scatter operation that writes to 'target'
-extern void jitc_var_mark_side_effect(uint32_t index, uint32_t target);
+/// Indicate to the JIT compiler that a variable has side effects
+extern void jitc_var_mark_side_effect(uint32_t index);
 
 /// Return a human-readable summary of the contents of a variable
 const char *jitc_var_str(uint32_t index);
@@ -152,6 +151,9 @@ extern const char *jitc_var_graphviz();
 
 /// Remove a variable from the cache used for common subexpression elimination
 extern void jitc_cse_drop(uint32_t index, const Variable *v);
+
+/// Register a variable with cache used for common subexpression elimination
+extern void jitc_cse_put(uint32_t index, const Variable *v);
 
 /// Append the given variable to the instruction trace and return its ID
 extern uint32_t jitc_var_new(Variable &v, bool disable_cse = false);

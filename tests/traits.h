@@ -25,8 +25,12 @@ namespace enoki {
     template <typename T> constexpr bool is_jit_array_v = is_array_v<T>;
     template <typename T> constexpr bool is_diff_array_v = false;
     template <typename T> constexpr bool is_enoki_struct_v = false;
+    template <typename T> using mask_t = typename T::Mask;
+    template <typename T> using scalar_t = typename T::Value;
 
     template <typename T> struct struct_support_t { };
 
     template <typename T> T detach(const T &value) { return value; }
+
+    template <typename T> constexpr JitBackend backend_v = T::Backend;
 }

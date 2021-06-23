@@ -40,10 +40,10 @@ static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra);
 static void jitc_var_loop_assemble_end(const Variable *v, const Extra &extra);
 static void jitc_var_loop_simplify(Loop *loop, uint32_t cause);
 
-void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
-                   uint32_t n, const uint32_t *in, const uint32_t *out_body,
-                   uint32_t se_offset, uint32_t *out, int check_invariant,
-                   uint8_t *invariant) {
+uint32_t jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
+                       uint32_t n, const uint32_t *in, const uint32_t *out_body,
+                       uint32_t se_offset, uint32_t *out, int check_invariant,
+                       uint8_t *invariant) {
     JitBackend backend = (JitBackend) jitc_var(loop_start)->backend;
     ThreadState *ts = thread_state(backend);
 
@@ -97,12 +97,12 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
             continue;
         }
 
-        if (!v1->placeholder || !v1->placeholder_iface || !v1->dep[0])
+        if (!v1->placeholder || !v1->dep[0])
             jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
                        "variable (1)", i, index_1);
         uint32_t index_2 = v1->dep[0];
         Variable *v2 = jitc_var(index_2);
-        if (!v2->placeholder || !v2->placeholder_iface || !v2->dep[0])
+        if (!v2->placeholder || !v2->dep[0])
             jitc_raise("jit_var_loop(): input %u (r%u) must be a placeholder "
                        "variable (2)", i, index_2);
         uint32_t index_3 = v2->dep[0];
@@ -199,7 +199,7 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
     }
 
     if (n_invariant_detected)
-        return;
+        return 0;
 
     // ============= Label variables =============
     for (uint32_t i = 0; i < n; ++i) {
@@ -309,10 +309,8 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
             jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, loop_se_dep));
         Variable *v = jitc_var(loop_se);
         v->size = size;
-        v->side_effect = 1;
         snprintf(temp, sizeof(temp), "Loop (%s) [side effects]", name);
         jitc_var_set_label(loop_se, temp);
-        ts->side_effects.push_back(loop_se.release());
     }
 
     // =====================================================
@@ -403,6 +401,8 @@ void jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
         e1.callback_internal = true;
         e1.callback_data = loop.release();
     }
+
+    return loop_se.release();
 }
 
 static void jitc_var_loop_dfs(tsl::robin_set<uint32_t, UInt32Hasher> &set, uint32_t index) {
