@@ -2,10 +2,9 @@
 #include "traits.h"
 #include "ekloop.h"
 
-#if 0
 TEST_BOTH(01_record_loop) {
     // Tests a simple loop evaluated at once, or in parts
-    for (uint32_t i = 1; i < 3; ++i) {
+    for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
         jit_set_flag(JitFlag::LoopOptimize, i == 2);
 
@@ -33,11 +32,10 @@ TEST_BOTH(01_record_loop) {
         }
     }
 }
-#endif
 
 TEST_BOTH(02_side_effect) {
-    // Tests that side effects only happen once
-    for (uint32_t i = 1; i < 3; ++i) {
+    // Tests that side effects happen (and only once, even if the loop is re-evaluated)
+    for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
         jit_set_flag(JitFlag::LoopOptimize, i == 2);
 
@@ -64,10 +62,9 @@ TEST_BOTH(02_side_effect) {
         }
     }
 }
-#if 0
 
 TEST_BOTH(03_side_effect_2) {
-    // Tests that side effects work that don't reference loop variables
+    // Tests that side effects work even if they don't reference any loop variables
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
         jit_set_flag(JitFlag::LoopOptimize, i == 2);
@@ -97,7 +94,7 @@ TEST_BOTH(03_side_effect_2) {
 }
 
 TEST_BOTH(04_side_effect_masking) {
-    // Tests that side effects work that don't reference loop variables
+    // Tests that side effects are correctly masked by the loop condition
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
         jit_set_flag(JitFlag::LoopOptimize, i == 2);
@@ -107,16 +104,17 @@ TEST_BOTH(04_side_effect_masking) {
             UInt32 target = zero<UInt32>(10);
 
             Loop<Mask> loop("MyLoop", x);
-            while (loop(x < 10)) {
+            while (loop(x < 9)) {
                 // This is sure to segfault if not masked correctly
                 scatter_reduce(ReduceOp::Add, target, UInt32(1), x);
                 x += 1;
             }
 
-            jit_assert(strcmp(target.str(), "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]") == 0);
+            jit_assert(strcmp(target.str(), "[1, 2, 3, 4, 5, 6, 7, 8, 9, 0]") == 0);
         }
     }
 }
+#if 0
 
 TEST_BOTH(05_optimize_invariant) {
     /* Test to check that variables which stay unchanged or constant and
