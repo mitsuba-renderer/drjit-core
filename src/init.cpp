@@ -286,7 +286,7 @@ void jitc_shutdown(int light) {
                 jitc_log(Warn, "jit_shutdown(): detected variable leaks:");
             if (n_leaked < 10)
                 jitc_log(Warn,
-                         " - variable %u is still being referenced! "
+                         " - variable r%u is still being referenced! "
                          "(int_ref=%u, ext_ref=%u, se_ref=%u, type=%s, size=%u, "
                          "stmt=\"%s\", dep=[%u, %u, %u, %u])",
                          var.first,

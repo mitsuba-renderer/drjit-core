@@ -187,7 +187,7 @@ uint32_t jit_record_begin(JitBackend backend) {
 void jit_record_end(JitBackend backend, uint32_t value) {
     lock_guard guard(state.mutex);
 
-    // Set recording flag to prevoius value
+    // Set recording flag to previous value
     jit_set_flag(JitFlag::Recording, value & 0x80000000u);
     value &= 0x7fffffff;
 
@@ -766,7 +766,7 @@ uint32_t jit_var_loop_cond(uint32_t loop_init, uint32_t cond, size_t n_indices,
 }
 
 uint32_t jit_var_loop(const char *name, uint32_t loop_init, uint32_t loop_cond,
-                      size_t n_indices, const uint32_t *indices_in,
+                      size_t n_indices, uint32_t *indices_in,
                       uint32_t **indices, uint32_t checkpoint, int first_round) {
     lock_guard guard(state.mutex);
     return jitc_var_loop(name, loop_init, loop_cond, n_indices, indices_in,

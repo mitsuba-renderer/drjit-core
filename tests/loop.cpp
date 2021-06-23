@@ -114,7 +114,6 @@ TEST_BOTH(04_side_effect_masking) {
         }
     }
 }
-#if 0
 
 TEST_BOTH(05_optimize_invariant) {
     /* Test to check that variables which stay unchanged or constant and
@@ -128,23 +127,20 @@ TEST_BOTH(05_optimize_invariant) {
                v1_orig = v1,
                v2 = opaque<UInt32>(123),
                v2_orig = v2,
-               v3 = 124,
-               v3_orig = v3,
-               v4 = 125,
-               v4_orig = v4,
-               v5 = 1,
-               v6 = 0;
+               v3 = 124, v3_orig = v3,
+               v4 = 125, v4_orig = v4,
+               v5 = 1,   v5_orig = v5,
+               v6 = 0,   v6_orig = v6;
 
         Loop<Mask> loop("MyLoop", j, v1, v2, v3, v4, v5, v6);
         int count = 0;
         while (loop(j < 10)) {
             j += 1;
-
             (void) v1; // v1 stays unchanged
             (void) v2; // v2 stays unchanged
             v3 = 124;  // v3 is overwritten with same value
             v4 = 100;  // v4 is overwritten with different value
-            (void) v2; // v5 stays unchanged
+            (void) v5; // v5 stays unchanged
             v6 += v5;  // v6 is modified by a loop-invariant variable
             ++count;
         }
@@ -161,8 +157,8 @@ TEST_BOTH(05_optimize_invariant) {
             jit_assert(!jit_var_is_literal(v2.index()) && v2.index() == v2_orig.index());
             jit_assert( jit_var_is_literal(v3.index()) && v3.index() == v3_orig.index());
             jit_assert(!jit_var_is_literal(v4.index()) && v4.index() != v4_orig.index());
-            jit_assert( jit_var_is_literal(v5.index()));
-            jit_assert(!jit_var_is_literal(v6.index()));
+            jit_assert( jit_var_is_literal(v5.index()) && v5.index() == v5_orig.index());
+            jit_assert(!jit_var_is_literal(v6.index()) && v6.index() != v6_orig.index());
         }
 
         jit_var_schedule(v1.index());
@@ -282,4 +278,3 @@ TEST_BOTH(08_nested_write) {
         jit_assert(strcmp(k.str(), "[0, 28, 28, 49, 49, 70, 91, 84, 112, 112]") == 0);
     }
 }
-#endif

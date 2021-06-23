@@ -152,7 +152,7 @@ uint32_t jitc_var_loop_cond(uint32_t loop_init, uint32_t cond,
 
 uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
                        uint32_t loop_cond, size_t n_indices,
-                       const uint32_t *indices_in, uint32_t **indices,
+                       uint32_t *indices_in, uint32_t **indices,
                        uint32_t checkpoint, int first_round) {
     if (n_indices == 0)
         jitc_raise("jit_var_loop(): no loop state variables specified!");
@@ -165,6 +165,8 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
     auto &se = ts->side_effects_recorded;
 
     checkpoint &= checkpoint_mask;
+    if (unlikely(checkpoint > se.size()))
+        jitc_raise("jit_var_loop(): 'checkpoint' parameter is out of bounds");
 
     // Allocate a data structure that will capture all loop-related information
     std::unique_ptr<Loop> loop(new Loop());
@@ -248,13 +250,13 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         if (optimize && first_round) {
             bool eq_literal =
                      v3->literal && vo->literal && v3->value == vo->value,
-                 unchanged = index_o == index_1,
-                 is_invariant = eq_literal || unchanged;
+                 unchanged = index_o == index_1;
 
-            if (is_invariant) {
-                *indices[i] = index_3;
-                jitc_var_dec_ref_ext(index_o);
-                n_invariant ++;
+            if (eq_literal || unchanged) {
+                jitc_var_inc_ref_ext(index_3);
+                jitc_var_dec_ref_ext(index_1);
+                indices_in[i] = index_3;
+                n_invariant++;
             }
         }
     }
@@ -263,9 +265,10 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
     temp[0] = '\0';
     if (n_invariant)
         snprintf(temp, sizeof(temp),
-                 optimize ? ", %u loop-invariant variables detected, recording "
-                            "loop once more to optimize further.."
-                          : ", %u loop-invariant variables eliminated",
+                 first_round
+                     ? ", %u loop-invariant variables detected, recording "
+                       "loop once more to optimize further.."
+                     : ", %u loop-invariant variables eliminated",
                  n_invariant);
 
     jitc_log(InfoSym,
@@ -276,8 +279,22 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
              size == 1 ? "" : "s", temp,
              placeholder ? " (part of a recorded computation)" : "");
 
-    if (optimize && n_invariant)
+    if (n_invariant && first_round) {
+        // Release recorded computation
+        for (size_t i = 0; i < n_indices; ++i) {
+            jitc_var_inc_ref_ext(indices_in[i]);
+            jitc_var_dec_ref_ext(*indices[i]);
+            *indices[i] = indices_in[i];
+        }
+
+        // Relase side effects
+        while (checkpoint != se.size()) {
+            jitc_var_dec_ref_ext(se.back());
+            se.pop_back();
+        }
+
         return (uint32_t) -1; // record loop once more
+    }
 
     // =====================================================
     // 2. Configure & label (GraphViz) variables
@@ -414,8 +431,13 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
         for (size_t i = 0; i < n_indices; ++i) {
             uint32_t index = loop->out_body[i];
+
             if (!index) { // Optimized away
                 loop->out.push_back(0);
+                uint32_t index = indices_in[i];
+                jitc_var_inc_ref_ext(index);
+                jitc_var_dec_ref_ext(*indices[i]);
+                *indices[i] = index;
                 continue;
             }
 
@@ -626,11 +648,11 @@ static void jitc_var_loop_assemble_init(const Variable *, const Extra &extra) {
                loop->name);
 
     jitc_log(InfoSym,
-             "jit_var_loop_assemble(): loop (\"%s\") with %u/%u loop "
+             "jit_var_loop_assemble(): loop (\"%s\") with %u/%zu loop "
              "variable%s (%u/%u bytes), %u side effect%s",
-             loop->name, result.first, (uint32_t) loop->in.size(),
+             loop->name, result.first, loop->in.size(),
              result.first == 1 ? "" : "s", result.second, loop->storage_size_initial,
-             (uint32_t) loop->se_count, loop->se_count == 1 ? "" : "s");
+             loop->se_count, loop->se_count == 1 ? "" : "s");
 }
 
 static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
