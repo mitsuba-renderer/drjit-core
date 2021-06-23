@@ -455,7 +455,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                     jitc_fail("jit_var_vcall(): internal error! (1)");
                 jitc_var_dec_ref_int(vcall_2->in[i]);
                 if (state.extra.find(vcall_2->id) == state.extra.end())
-                    jit_fail("jit_var_vcall(): internal error! (2)");
+                    jitc_fail("jit_var_vcall(): internal error! (2)");
                 e = &state.extra[vcall_2->id]; // may have changed
                 e->dep[i] = 0;
                 vcall_2->in[i] = 0;

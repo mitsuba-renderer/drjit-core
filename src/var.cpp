@@ -275,8 +275,7 @@ void jitc_cse_drop(uint32_t index, const Variable *v) {
 
 /// Register a variable with cache used for common subexpression elimination
 void jitc_cse_put(uint32_t index, const Variable *v) {
-    if (unlikely(!state.cse_cache.try_emplace(VariableKey(*v), index).second))
-        jit_fail("jitc_cse_put(): failed!");
+    state.cse_cache.try_emplace(VariableKey(*v), index);
 }
 
 /// Query the type of a given variable

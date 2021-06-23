@@ -72,13 +72,15 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
     }
 
     ~Loop() {
-        if (m_state != 0 && m_state != 3 && m_state != 4)
-            jit_log(
-                LogLevel::Warn,
-                "Loop(\"%s\"): destructed in an inconsistent state. An "
-                "exception or disallowed scalar control flow (break, continue) "
-                "likely caused the loop to exit prematurely. Cleaning up..",
-                m_name.get());
+        #if !defined(NDEBUG)
+            if (m_state != 0 && m_state != 3 && m_state != 4)
+                jit_log(
+                    LogLevel::Warn,
+                    "Loop(\"%s\"): destructed in an inconsistent state. An "
+                    "exception or disallowed scalar control flow (break, continue) "
+                    "likely caused the loop to exit prematurely. Cleaning up..",
+                    m_name.get());
+        #endif
 
         jit_var_dec_ref_ext(m_loop_init);
         jit_var_dec_ref_ext(m_loop_cond);
@@ -237,7 +239,7 @@ protected:
 
                     if constexpr (IsDiff) {
                         using Type = typename Value::Type;
-                        if (m_jit_state.m_record_state == 0)
+                        if (!jit_flag(JitFlag::Recording))
                             detail::ad_traverse_postponed<Type>();
                     }
 
@@ -282,7 +284,7 @@ protected:
                     if (i1 > 0 || i2 > 0)
                         index_new = detail::ad_new_select<Type>(
                             "select", jit_var_size(*m_indices[i]),
-                            m_cond, i1, i2);
+                            detach(m_cond), i1, i2);
                     *m_indices_ad[i] = index_new;
                     detail::ad_dec_ref<Type>(i1);
                     detail::ad_dec_ref<Type>(i2);

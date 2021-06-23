@@ -66,7 +66,7 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
     for (size_t i = 0; i < n_indices; ++i) {
         const Variable *v = jitc_var(*indices[i]);
         uint32_t vsize = v->size;
-        if (size != 0 && vsize != 1 && vsize != size)
+        if (size != 0 && vsize != 1 && size != 1 && vsize != size)
             jitc_raise("jit_var_loop_init(): loop state variables have an "
                        "inconsistent size (%u vs %u)!", vsize, size);
         if (vsize > size)
