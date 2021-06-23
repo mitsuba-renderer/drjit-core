@@ -228,7 +228,6 @@ protected:
                             "Loop(\"%s\"): ----- recording loop body *again* ------", m_name.get());
                     return true;
                 } else {
-                    jit_var_mark_side_effect(rv);
                     jit_log(::LogLevel::InfoSym,
                             "Loop(\"%s\"): --------- done recording loop ----------", m_name.get());
 
@@ -238,6 +237,7 @@ protected:
 
                     m_jit_state.end_recording();
                     m_jit_state.clear_scope();
+                    jit_var_mark_side_effect(rv);
 
                     if constexpr (Backend == JitBackend::LLVM)
                         m_jit_state.clear_mask();

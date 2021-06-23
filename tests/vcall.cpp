@@ -109,7 +109,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
     detail::JitState<Backend> jit_state;
     jit_state.begin_recording();
 
-    state[0] = jit_state.checkpoint();
+    state[0] = jit_record_checkpoint(Backend);
 
     for (uint32_t i = 1; i <= n_inst; ++i) {
         char label[128];
@@ -133,7 +133,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
         else
             detail::collect_indices(indices_out_all, func(base, args...));
 
-        state[i] = jit_state.checkpoint();
+        state[i] = jit_record_checkpoint(Backend);
 
         if constexpr (Backend == JitBackend::LLVM)
             jit_state.clear_mask();

@@ -41,6 +41,7 @@ static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra);
 static void jitc_var_loop_assemble_end(const Variable *v, const Extra &extra);
 static void jitc_var_loop_simplify(Loop *loop, uint32_t cause);
 
+/// Create a variable that wraps another, optionally with an extra dependency
 static void wrap(Variable &v, uint32_t &index, uint32_t dep = 0) {
     Variable *v2 = jitc_var(index);
     v.type = v2->type;
@@ -341,16 +342,14 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         /* A loop can create complex variable dependencies across iterations
            that are not directly visible in the dependency structure maintained
            by Enoki. To prevent variables from premature garbage collection, the
-           loop end variable references the state variables at 2 points:
+           loop end variable references the state variables at two points:
 
-           1. after the loop body
-           2. before the loop condition
+           1. before the loop condition
+           2. after the loop body
 
-           The jit_var_loop_simplify() routine analyzes those dependencies in
-           more detail and removes dead variables/code as needed. It is
-           triggered when the newly generated loop state variables go out of
-           scope.
-        */
+           The jit_var_loop_simplify() routine analyzes cross-iteration
+           dependencies to remove any dead variables/code. It is automatically
+           triggered whenever loop state output variables are freed. */
 
         e.n_dep = 2 * n_indices;
         e.dep = (uint32_t *) malloc_check(e.n_dep * sizeof(uint32_t));
@@ -381,6 +380,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         // Set a label and custom code generation hook
         Variable *v = jitc_var(loop_se);
         v->extra = 1;
+        v->placeholder = placeholder;
         Extra &e = state.extra[loop_se];
         e.n_dep = loop->se_count;
         e.dep = (uint32_t *) malloc_check(loop->se_count * sizeof(uint32_t));
@@ -388,7 +388,6 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         for (uint32_t i = 0; i < loop->se_count; ++i) {
             uint32_t index = se[se.size() - loop->se_count + i];
             jitc_var_inc_ref_int(index);
-            jitc_var_dec_ref_ext(index);
             e.dep[i] = index;
         }
 
@@ -700,17 +699,5 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
         buffer.fmt("    br label %%l_%u_cond;\n", loop_reg);
 
     buffer.fmt("\nl_%u_done:\n", loop_reg);
-
-    if (loop->se_count) {
-        uint32_t *dep = state.extra[loop->end].dep;
-        uint32_t n = (uint32_t) loop->in.size();
-        for (uint32_t i = 0; i < loop->se_count; ++i) {
-            uint32_t &index = dep[2*n + i];
-            if (!jitc_var(index)->side_effect)
-                jitc_fail("jitc_var_loop_assemble(): internal error (3)");
-            jitc_var_dec_ref_int(index);
-            index = 0;
-        }
-        loop->se_count = 0;
-    }
+    loop->se_count = 0;
 }

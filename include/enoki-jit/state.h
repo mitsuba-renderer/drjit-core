@@ -48,17 +48,15 @@ template <JitBackend Backend> struct JitState {
 
     void begin_recording() {
         assert(!m_recording);
-        m_state = jit_record_begin(Backend);
+        m_checkpoint = jit_record_begin(Backend);
         m_recording = true;
     }
 
-    uint32_t checkpoint() {
-        return jit_record_checkpoint(Backend);
-    }
+    uint32_t checkpoint() const { return m_checkpoint; }
 
     void end_recording() {
         assert(m_recording);
-        jit_record_end(Backend, m_state);
+        jit_record_end(Backend, m_checkpoint);
         m_recording = false;
     }
 
@@ -106,7 +104,7 @@ private:
     bool m_cse_scope_set;
     bool m_recording;
     uint32_t m_cse_scope;
-    uint32_t m_state;
+    uint32_t m_checkpoint;
 };
 
 
