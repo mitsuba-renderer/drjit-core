@@ -1439,15 +1439,19 @@ extern JIT_EXPORT uint32_t jit_var_vcall(const char *name, uint32_t self,
  * \return A variable index representing the start of the loop. It must be
  * passed to the \c loop_start argument of \ref jit_var_loop()
  */
-extern JIT_EXPORT uint32_t jit_var_loop_init(uint32_t **indices,
-                                             uint32_t n_indices);
+extern JIT_EXPORT uint32_t jit_var_loop_init(size_t n_indices,
+                                             uint32_t **indices);
 
-extern JIT_EXPORT uint32_t jit_var_loop(const char *name, uint32_t loop_start,
-                                        uint32_t loop_cond,
-                                        uint32_t n, const uint32_t *in,
-                                        const uint32_t *out_body,
-                                        uint32_t se_offset, uint32_t *out,
-                                        int check_invariant, uint8_t *invariant);
+extern JIT_EXPORT uint32_t jit_var_loop_cond(uint32_t loop_init,
+                                             uint32_t cond,
+                                             size_t n_indices,
+                                             uint32_t **indices);
+
+extern JIT_EXPORT uint32_t jit_var_loop(const char *name, uint32_t loop_init,
+                                        uint32_t loop_cond, size_t n_indices,
+                                        const uint32_t *indices_in,
+                                        uint32_t **indices, uint32_t checkpoint,
+                                        int first_round);
 
 /**
  * \brief Pushes a new mask variable onto the mask stack

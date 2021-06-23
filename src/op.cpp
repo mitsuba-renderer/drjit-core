@@ -498,9 +498,6 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
         jitc_var_new_op_fail(error, op, n_dep, dep);
 
     if (dirty) {
-        if (jit_flag(JitFlag::Recording))
-            jitc_raise("jit_var_op_new(): referenced a dirty variable while "
-                       "JitFlag::Recording is active!");
         jitc_eval(thread_state(backend));
         for (uint32_t i = 0; i < n_dep; ++i) {
             v[i] = jitc_var(dep[i]);
@@ -1353,9 +1350,6 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret)
     }
 
     if (v->ref_count_se) {
-        if (jit_flag(JitFlag::Recording))
-            jitc_raise("jit_var_new_cast(): referenced a dirty variable while "
-                       "JitFlag::Recording is active!");
         jitc_eval(thread_state(backend));
         v = jitc_var(index);
         if (unlikely(v->ref_count_se))
@@ -1555,9 +1549,6 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     v_mask = jitc_var(mask);
 
     if (v_source->ref_count_se || v_index->ref_count_se || v_mask->ref_count_se) {
-        if (jit_flag(JitFlag::Recording))
-            jitc_raise("jit_var_new_gather(): referenced a dirty variable while "
-                       "JitFlag::Recording is active!");
         jitc_eval(thread_state(backend));
 
         // Location of variables may have changed
@@ -1714,9 +1705,6 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
     ThreadState *ts = thread_state(backend);
     if (dirty) {
-        if (jit_flag(JitFlag::Recording))
-            jitc_raise("jit_var_new_scatter(): referenced a dirty variable while "
-                       "JitFlag::Recording is active!");
         jitc_eval(ts);
 
         for (uint32_t index : { index_, mask_, value }) {

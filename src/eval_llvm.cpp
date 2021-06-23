@@ -600,10 +600,6 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
         jitc_raise("jitc_llvm_ray_trace(): 'func', and 'scene' must be pointer variables!");
 
     if (dirty) {
-        if (jit_flag(JitFlag::Recording))
-            jitc_raise("jit_llvm_ray_trace(): referenced a dirty variable while "
-                       "JitFlag::Recording is active!");
-
         jitc_eval(thread_state(JitBackend::LLVM));
         dirty = false;
 

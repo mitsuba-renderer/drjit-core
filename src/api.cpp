@@ -754,18 +754,23 @@ uint32_t jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
                           n_out_nested, out_nested, se_offset, out);
 }
 
-uint32_t jit_var_loop_init(uint32_t **indices, uint32_t n_indices) {
+uint32_t jit_var_loop_init(size_t n_indices, uint32_t **indices) {
     lock_guard guard(state.mutex);
-    return jitc_var_loop_init(indices, n_indices);
+    return jitc_var_loop_init(n_indices, indices);
 }
 
-uint32_t jit_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
-                      uint32_t n, const uint32_t *in, const uint32_t *out_body,
-                      uint32_t se_offset, uint32_t *out, int check_invariant,
-                      uint8_t *invariant) {
+uint32_t jit_var_loop_cond(uint32_t loop_init, uint32_t cond, size_t n_indices,
+                           uint32_t **indices) {
     lock_guard guard(state.mutex);
-    return jitc_var_loop(name, loop_start, loop_cond, n, in, out_body,
-                         se_offset, out, check_invariant, invariant);
+    return jitc_var_loop_cond(loop_init, cond, n_indices, indices);
+}
+
+uint32_t jit_var_loop(const char *name, uint32_t loop_init, uint32_t loop_cond,
+                      size_t n_indices, const uint32_t *indices_in,
+                      uint32_t **indices, uint32_t checkpoint, int first_round) {
+    lock_guard guard(state.mutex);
+    return jitc_var_loop(name, loop_init, loop_cond, n_indices, indices_in,
+                         indices, checkpoint, first_round);
 }
 
 struct VCallBucket *

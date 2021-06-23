@@ -4,7 +4,7 @@
 
 TEST_BOTH(01_record_loop) {
     // Tests a simple loop evaluated at once, or in parts
-    for (uint32_t i = 0; i < 3; ++i) {
+    for (uint32_t i = 1; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
         jit_set_flag(JitFlag::LoopOptimize, i == 2);
 
@@ -62,6 +62,7 @@ TEST_BOTH(02_side_effect) {
         }
     }
 }
+#if 0
 
 TEST_BOTH(03_side_effect_2) {
     // Tests that side effects work that don't reference loop variables
@@ -281,3 +282,4 @@ TEST_BOTH(08_nested_write) {
         jit_assert(strcmp(k.str(), "[0, 28, 28, 49, 49, 70, 91, 84, 112, 112]") == 0);
     }
 }
+#endif

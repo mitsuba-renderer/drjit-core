@@ -1,9 +1,11 @@
 #include <stdint.h>
 
-extern uint32_t jitc_var_loop_init(uint32_t **indices, uint32_t n_indices);
+extern uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices);
 
-extern uint32_t jitc_var_loop(const char *name, uint32_t loop_var_start,
-                              uint32_t loop_var_cond, uint32_t n,
-                              const uint32_t *in, const uint32_t *out_body,
-                              uint32_t se_offset, uint32_t *out,
-                              int check_invariant, uint8_t *invariant);
+extern uint32_t jitc_var_loop_cond(uint32_t loop_var_init, uint32_t cond,
+                                   size_t n_indices, uint32_t **indices);
+
+extern uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
+                              uint32_t loop_cond, size_t n_indices,
+                              const uint32_t *indices_in, uint32_t **indices,
+                              uint32_t checkpoint, int first_round);
