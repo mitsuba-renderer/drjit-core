@@ -403,11 +403,6 @@ uint32_t jit_var_wrap_vcall(uint32_t index) {
     return jitc_var_wrap_vcall(index);
 }
 
-uint32_t jit_var_wrap_loop(uint32_t index, uint32_t cond, uint32_t size) {
-    lock_guard guard(state.mutex);
-    return jitc_var_wrap_loop(index, cond, size);
-}
-
 void jit_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {
     if (index == 0)
         return;
@@ -757,6 +752,11 @@ uint32_t jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
     lock_guard guard(state.mutex);
     return jitc_var_vcall(name, self, mask, n_inst, inst_id, n_in, in,
                           n_out_nested, out_nested, se_offset, out);
+}
+
+uint32_t jit_var_loop_init(uint32_t **indices, uint32_t n_indices) {
+    lock_guard guard(state.mutex);
+    return jitc_var_loop_init(indices, n_indices);
 }
 
 uint32_t jit_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,

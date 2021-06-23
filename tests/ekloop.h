@@ -132,12 +132,6 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
                     m_index_p_ad.push_back(nullptr);
                     m_index_in.push_back(value.index());
                     m_invariant.push_back(0);
-                    size_t size = value.size();
-                    if (m_size > 1 && size != 1 && size != m_size)
-                        jit_raise("Loop::put(): loop variables have "
-                                  "inconsistent sizes!");
-                    if (size > m_size)
-                        m_size = size;
                 }
             } else {
                 for (size_t i = 0; i < value.size(); ++i)
@@ -163,30 +157,7 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
         m_jit_state.begin_recording();
         m_jit_state.new_scope();
 
-        // Copy loop state before entering loop (CUDA)
-        if constexpr (Backend == JitBackend::CUDA) {
-            for (size_t i = 0; i < m_index_p.size(); ++i) {
-                uint32_t &index = *m_index_p[i];
-                uint32_t next = jit_var_wrap_loop(index, 0, m_size);
-                jit_var_dec_ref_ext(index);
-                index = next;
-            }
-        }
-
-        // Create a special node indicating the loop start
-        uint32_t tmp = jit_var_new_stmt(Backend, VarType::Void, "", 1, 0, nullptr);
-        m_loop_cond = jit_var_resize(tmp, m_size);
-        jit_var_dec_ref_ext(tmp);
-
-        // Create phi nodes (LLVM)
-        if constexpr (Backend == JitBackend::LLVM) {
-            for (size_t i = 0; i < m_index_p.size(); ++i) {
-                uint32_t &index = *m_index_p[i];
-                uint32_t next = jit_var_wrap_loop(index, m_loop_cond, m_size);
-                jit_var_dec_ref_ext(index);
-                index = next;
-            }
-        }
+        m_loop_cond = jit_var_loop_init(m_index_p.data(), m_index_p.size());
 
         m_state = 1;
         jit_log(::LogLevel::InfoSym,

@@ -564,30 +564,6 @@ uint32_t jitc_var_new_counter(JitBackend backend, size_t size) {
     return jitc_var_new(v);
 }
 
-uint32_t jitc_var_wrap_loop(uint32_t index, uint32_t cond, uint32_t size) {
-    Variable *v_index = jitc_var(index),
-             *v_cond  = cond ? jitc_var(cond) : nullptr;
-
-    Variable v2;
-    v2.stmt = (char *) (((JitBackend) v_index->backend == JitBackend::CUDA)
-                            ? "mov.$t0 $r0, $r1"
-                            : "$r0 = phi <$w x $t0> [ $r0_final, %l_$i2_tail ], [ $r1, %l_$i2_start ]");
-    v2.dep[0] = index;
-    v2.dep[1] = cond;
-    jitc_var_inc_ref_int(index, v_index);
-    if (v_cond)
-        jitc_var_inc_ref_int(cond,  v_cond);
-    v2.backend = v_index->backend;
-    v2.type = v_index->type;
-    v2.size = size;
-    v2.placeholder = 1;
-
-    uint32_t result = jitc_var_new(v2, true);
-    jitc_log(Debug, "jit_var_wrap_loop(%s r%u)", type_name[v2.type], result);
-
-    return result;
-}
-
 uint32_t jitc_var_wrap_vcall(uint32_t index) {
     const Variable *v = jitc_var(index);
     if (v->literal && (jitc_flags() & (uint32_t) JitFlag::VCallOptimize))

@@ -48,9 +48,6 @@ extern uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
 /// Wrap an input variable of a virtual function call before recording computation
 extern uint32_t jitc_var_wrap_vcall(uint32_t index);
 
-/// Wrap a loop state variable before recording computation
-extern uint32_t jitc_var_wrap_loop(uint32_t index, uint32_t cond, uint32_t size);
-
 /// Register an existing variable with the JIT compiler
 extern uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
                                  size_t size, int free);

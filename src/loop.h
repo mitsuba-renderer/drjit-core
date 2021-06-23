@@ -1,5 +1,7 @@
 #include <stdint.h>
 
+extern uint32_t jitc_var_loop_init(uint32_t **indices, uint32_t n_indices);
+
 extern uint32_t jitc_var_loop(const char *name, uint32_t loop_var_start,
                               uint32_t loop_var_cond, uint32_t n,
                               const uint32_t *in, const uint32_t *out_body,

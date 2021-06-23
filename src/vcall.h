@@ -3,6 +3,8 @@
 extern void jitc_vcall_set_self(JitBackend backend, uint32_t value);
 extern uint32_t jitc_vcall_self(JitBackend backend);
 
+extern uint32_t jitc_var_loop_init(uint32_t *indices, uint32_t n_indices);
+
 extern uint32_t jitc_var_vcall(const char *domain, uint32_t self, uint32_t mask,
                                uint32_t n_inst, const uint32_t *inst_id,
                                uint32_t n_in, const uint32_t *in,

@@ -40,6 +40,64 @@ static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra);
 static void jitc_var_loop_assemble_end(const Variable *v, const Extra &extra);
 static void jitc_var_loop_simplify(Loop *loop, uint32_t cause);
 
+uint32_t jitc_var_loop_init(uint32_t **indices, uint32_t n_indices) {
+    if (n_indices == 0)
+        jitc_raise("jit_var_loop_init(): no loop state variables specified!");
+
+    // Determine the variable size
+    JitBackend backend = (JitBackend) jitc_var(*indices[0])->backend;
+    uint32_t size = 0;
+
+    for (size_t i = 0; i < n_indices; ++i) {
+        uint32_t vsize = jitc_var(*indices[i])->size;
+        if (size != 0 && vsize != 1 && vsize != size)
+            jitc_raise("jit_var_loop_init(): loop state variables have an "
+                       "inconsistent size (%u vs %u)!", vsize, size);
+        if (vsize > size)
+            size = vsize;
+    }
+
+    Variable v;
+    v.size = size;
+    v.placeholder = 1;
+    v.backend = (uint32_t) backend;
+
+    // Copy loop state before entering loop (CUDA)
+    if (backend == JitBackend::CUDA) {
+        v.stmt = (char *) "mov.$t0 $r0, $r1";
+
+        for (size_t i = 0; i < n_indices; ++i) {
+            uint32_t &index = *indices[i];
+            v.dep[0] = index;
+            v.type = jitc_var(index)->type;
+            index = jitc_var_new(v, true);
+        }
+    }
+
+    // Create a special node indicating the loop start
+    Ref result = steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 0, nullptr));
+    jitc_var(result)->size = size;
+
+    // Create Phi nodes (LLVM)
+    if (backend == JitBackend::LLVM) {
+        v.stmt = (char *) "$r0 = phi <$w x $t0> [ $r0_final, %l_$i2_tail ], "
+                          "[ $r1, %l_$i2_start ]";
+        v.dep[1] = result;
+
+        for (size_t i = 0; i < n_indices; ++i) {
+            uint32_t &index = *indices[i];
+            v.dep[0] = index;
+            v.type = jitc_var(index)->type;
+            index = jitc_var_new(v, true);
+        }
+    }
+
+    jitc_log(InfoSym, "jit_var_loop_init(n_indices=%u, size=%u): r%u",
+             n_indices, size, (uint32_t) result);
+
+    return result.release();
+}
+
 uint32_t jitc_var_loop(const char *name, uint32_t loop_start, uint32_t loop_cond,
                        uint32_t n, const uint32_t *in, const uint32_t *out_body,
                        uint32_t se_offset, uint32_t *out, int check_invariant,
