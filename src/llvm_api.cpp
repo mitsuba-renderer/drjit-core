@@ -31,6 +31,20 @@
 #  include <llvm-c/Transforms/IPO.h>
 #else
 
+#if defined(__aarch64__)
+    #define LLVMInitializeEnokiTarget       LLVMInitializeAArch64Target
+    #define LLVMInitializeEnokiTargetInfo   LLVMInitializeAArch64TargetInfo
+    #define LLVMInitializeEnokiTargetMC     LLVMInitializeAArch64TargetMC
+    #define LLVMInitializeEnokiAsmPrinter   LLVMInitializeAArch64AsmPrinter
+    #define LLVMInitializeEnokiDisassembler LLVMInitializeAArch64Disassembler
+#else
+    #define LLVMInitializeEnokiTarget       LLVMInitializeX86Target
+    #define LLVMInitializeEnokiTargetInfo   LLVMInitializeX86TargetInfo
+    #define LLVMInitializeEnokiTargetMC     LLVMInitializeX86TargetMC
+    #define LLVMInitializeEnokiAsmPrinter   LLVMInitializeX86AsmPrinter
+    #define LLVMInitializeEnokiDisassembler LLVMInitializeX86Disassembler
+#endif
+
 /// LLVM API
 using LLVMBool = int;
 using LLVMDisasmContextRef = void *;
@@ -63,12 +77,12 @@ struct LLVMMCJITCompilerOptions {
 };
 
 static void (*LLVMLinkInMCJIT)() = nullptr;
-static void (*LLVMInitializeX86AsmPrinter)() = nullptr;
-static void (*LLVMInitializeX86Disassembler)() = nullptr;
-static void (*LLVMInitializeX86Target)() = nullptr;
-static void (*LLVMInitializeX86TargetInfo)() = nullptr;
-static void (*LLVMInitializeX86TargetMC)() = nullptr;
-static char *(*LLVMCreateMessage)(char *) = nullptr;
+static void (*LLVMInitializeEnokiAsmPrinter)() = nullptr;
+static void (*LLVMInitializeEnokiDisassembler)() = nullptr;
+static void (*LLVMInitializeEnokiTarget)() = nullptr;
+static void (*LLVMInitializeEnokiTargetInfo)() = nullptr;
+static void (*LLVMInitializeEnokiTargetMC)() = nullptr;
+static char *(*LLVMCreateMessage)(const char *) = nullptr;
 static void (*LLVMDisposeMessage)(char *) = nullptr;
 static char *(*LLVMGetDefaultTargetTriple)() = nullptr;
 static char *(*LLVMGetHostCPUName)() = nullptr;
@@ -281,11 +295,11 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
         // Central assumption: LLVM text IR is much larger than the resulting generated code.
 #if !defined(_WIN32)
         free(jitc_llvm_mem);
-        if (posix_memalign((void **) &jitc_llvm_mem, 64, target_size))
+        if (posix_memalign((void **) &jitc_llvm_mem, 4096, target_size))
             jitc_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", target_size);
 #else
         _aligned_free(jitc_llvm_mem);
-        jitc_llvm_mem = (uint8_t *) _aligned_malloc(target_size, 64);
+        jitc_llvm_mem = (uint8_t *) _aligned_malloc(target_size, 4096);
         if (!jitc_llvm_mem)
             jitc_raise("jit_llvm_compile(): could not allocate %zu bytes of memory!", target_size);
 #endif
@@ -520,9 +534,12 @@ bool jitc_llvm_init() {
 #  elif defined(__linux__)
     const char *llvm_fname  = "libLLVM.so",
                *llvm_glob   = "/usr/lib/x86_64-linux-gnu/libLLVM*.so.*";
-#  else
+#  elif defined(__APPLE__) && defined(__x86_64__)
     const char *llvm_fname  = "libLLVM.dylib",
                *llvm_glob   = "/usr/local/Cellar/llvm/*/lib/libLLVM.dylib";
+#  elif defined(__APPLE__) && defined(__aarch64__)
+    const char *llvm_fname  = "libLLVM.dylib",
+               *llvm_glob   = "/opt/homebrew/Cellar/llvm/*/lib/libLLVM.dylib";
 #  endif
 
 #  if !defined(_WIN32)
@@ -542,21 +559,24 @@ bool jitc_llvm_init() {
         }
     }
 
-    #define LOAD(name)                                                         \
+    #define LOAD2(name)                                                        \
         symbol = #name;                                                        \
-        name = decltype(name)(dlsym(jitc_llvm_handle, symbol));                 \
+        name = decltype(name)(dlsym(jitc_llvm_handle, symbol));                \
         if (!name)                                                             \
             break;                                                             \
         symbol = nullptr
 
+    #define EVAL(x) x
+    #define LOAD(name) EVAL(LOAD2(name))
+
     const char *symbol = nullptr;
     do {
         LOAD(LLVMLinkInMCJIT);
-        LOAD(LLVMInitializeX86Target);
-        LOAD(LLVMInitializeX86TargetInfo);
-        LOAD(LLVMInitializeX86TargetMC);
-        LOAD(LLVMInitializeX86AsmPrinter);
-        LOAD(LLVMInitializeX86Disassembler);
+        LOAD(LLVMInitializeEnokiTarget);
+        LOAD(LLVMInitializeEnokiTargetInfo);
+        LOAD(LLVMInitializeEnokiTargetMC);
+        LOAD(LLVMInitializeEnokiAsmPrinter);
+        LOAD(LLVMInitializeEnokiDisassembler);
         LOAD(LLVMGetGlobalContext);
         LOAD(LLVMGetDefaultTargetTriple);
         LOAD(LLVMGetHostCPUName);
@@ -629,11 +649,11 @@ bool jitc_llvm_init() {
     }
 
     LLVMLinkInMCJIT();
-    LLVMInitializeX86TargetInfo();
-    LLVMInitializeX86Target();
-    LLVMInitializeX86TargetMC();
-    LLVMInitializeX86AsmPrinter();
-    LLVMInitializeX86Disassembler();
+    LLVMInitializeEnokiTargetInfo();
+    LLVMInitializeEnokiTarget();
+    LLVMInitializeEnokiTargetMC();
+    LLVMInitializeEnokiAsmPrinter();
+    LLVMInitializeEnokiDisassembler();
 
     jitc_llvm_context = LLVMGetGlobalContext();
     if (!jitc_llvm_context) {
@@ -667,6 +687,7 @@ bool jitc_llvm_init() {
         return false;
     }
 
+#if !defined(__aarch64__)
     LLVMExecutionEngineRef engine = jitc_llvm_engine_create(nullptr);
     if (!engine) {
         LLVMDisasmDispose(jitc_llvm_disasm_ctx);
@@ -725,6 +746,7 @@ bool jitc_llvm_init() {
         LLVMDisposeMessage(jitc_llvm_target_features);
         return false;
     }
+#endif
 
     jitc_llvm_pass_manager = LLVMCreatePassManager();
     LLVMAddLICMPass(jitc_llvm_pass_manager);
@@ -737,6 +759,12 @@ bool jitc_llvm_init() {
         jitc_llvm_vector_width = 8;
     if (strstr(jitc_llvm_target_features, "+avx512f"))
         jitc_llvm_vector_width = 16;
+
+#if defined(__APPLE__) && defined(__aarch64__)
+    jitc_llvm_vector_width = 4;
+    LLVMDisposeMessage(jitc_llvm_target_cpu);
+    jitc_llvm_target_cpu = LLVMCreateMessage("apple-a14");
+#endif
 
     jitc_log(Info,
             "jit_llvm_init(): found LLVM %u.%u.%u, target=%s, cpu=%s, vector width=%u.",
@@ -801,9 +829,9 @@ void jitc_llvm_shutdown() {
 #if defined(ENOKI_JIT_DYNAMIC_LLVM)
     #define Z(x) x = nullptr
 
-    Z(LLVMLinkInMCJIT); Z(LLVMInitializeX86Target);
-    Z(LLVMInitializeX86TargetInfo); Z(LLVMInitializeX86TargetMC);
-    Z(LLVMInitializeX86AsmPrinter); Z(LLVMInitializeX86Disassembler);
+    Z(LLVMLinkInMCJIT); Z(LLVMInitializeEnokiTarget);
+    Z(LLVMInitializeEnokiTargetInfo); Z(LLVMInitializeEnokiTargetMC);
+    Z(LLVMInitializeEnokiAsmPrinter); Z(LLVMInitializeEnokiDisassembler);
     Z(LLVMGetGlobalContext); Z(LLVMGetDefaultTargetTriple);
     Z(LLVMGetHostCPUName); Z(LLVMGetHostCPUFeatures); Z(LLVMCreateMessage);
     Z(LLVMDisposeMessage); Z(LLVMCreateDisasm); Z(LLVMDisasmDispose);

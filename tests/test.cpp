@@ -371,8 +371,11 @@ int main(int argc, char **argv) {
                 jit_optix_context();
 #endif
 
+#if !defined(__aarch64__)
             if (test_llvm)
                 jit_llvm_set_target("skylake", nullptr, 8);
+#endif
+
             auto before = std::chrono::high_resolution_clock::now();
             test.func();
             auto after = std::chrono::high_resolution_clock::now();

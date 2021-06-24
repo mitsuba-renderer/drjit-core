@@ -36,7 +36,8 @@ functionality through a C99-compatible interface.
 
 Enoki-JIT has the following features:
 
-- Runs on Linux, macOS, and Windows.
+- Tested on Linux (`X86_64`), macOS (`x86_64` & `aarch64`), and Windows
+  (`x86_64`).
 
 - Targets
 

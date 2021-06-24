@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 
+
 TEST_BOTH(01_creation_destruction_cse) {
     // Test CSE involving normal and evaluated constant literals
     for (int i = 0; i < 2; ++i) {

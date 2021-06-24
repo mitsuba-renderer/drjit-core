@@ -24,9 +24,9 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     static constexpr bool IsArray = true;
     static constexpr bool IsClass =
         std::is_pointer<Value_>::value &&
-        std::is_class<std::remove_pointer_t<Value_>>::value;
+        std::is_class<typename std::remove_pointer<Value_>::type>::value;
 	template <typename T> using ReplaceValue = JitArray<Backend_, T>;
-    using ActualValue = std::conditional_t<IsClass, uint32_t, Value>;
+    using ActualValue = typename std::conditional<IsClass, uint32_t, Value>::type;
 
     JitArray() = default;
 

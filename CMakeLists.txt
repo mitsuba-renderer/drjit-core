@@ -22,7 +22,15 @@ option(ENOKI_JIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
 option(ENOKI_JIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 option(ENOKI_JIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
 option(ENOKI_JIT_ENABLE_TESTS "Build Enoki test suite?" OFF)
-set(ENOKI_NATIVE_FLAGS "-march=native" CACHE STRING "Compilation flags used to target the host processor architecture.")
+
+set(ENOKI_NATIVE_FLAGS_DEFAULT "-march=native")
+
+if (APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+  # Apple M1 compatibility
+  set(ENOKI_NATIVE_FLAGS_DEFAULT "-mcpu=apple-a14")
+endif()
+
+set(ENOKI_NATIVE_FLAGS ${ENOKI_NATIVE_FLAGS_DEFAULT} CACHE STRING "Compilation flags used to target the host processor architecture.")
 
 if (ENOKI_JIT_DYNAMIC_CUDA)
   message(STATUS "Enoki-JIT: CUDA will be loaded dynamically at runtime.")
