@@ -1021,6 +1021,9 @@ extern JIT_EXPORT void *jit_var_ptr(uint32_t index);
 /// Query the size of a given variable
 extern JIT_EXPORT size_t jit_var_size(uint32_t index);
 
+/// Query the IR string of a given variable
+extern JIT_EXPORT const char *jit_var_stmt(uint32_t index);
+
 /// Query the type of a given variable
 extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
 

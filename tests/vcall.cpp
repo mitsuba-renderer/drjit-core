@@ -119,6 +119,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
 #if defined(JIT_DEBUG_VCALL)
         jit_state.set_prefix(label);
 #endif
+        jit_state.set_self(i);
 
         if constexpr (Backend == JitBackend::LLVM) {
             Mask vcall_mask = Mask::steal(jit_var_new_stmt(
@@ -776,4 +777,31 @@ TEST_BOTH(09_recursion) {
     jit_registry_remove(Backend, &i12);
     jit_registry_remove(Backend, &i21);
     jit_registry_remove(Backend, &i22);
+}
+
+TEST_BOTH(10_self) {
+    struct Base;
+    using BasePtr = Array<Base *>;
+
+    struct Base { virtual Array<Base *> f() = 0; };
+    struct I : Base { BasePtr f() {
+        BasePtr result = this;
+        jit_assert(strstr(jit_var_stmt(result.index()), "self"));
+        return result;
+    } };
+
+    I i1, i2;
+    uint32_t i1_id = jit_registry_put(Backend, "Base", &i1);
+    uint32_t i2_id = jit_registry_put(Backend, "Base", &i2);
+
+    UInt32 self(i1_id, i2_id);
+    UInt32 y = vcall(
+        "Base",
+        [](Base *self_) { return self_->f(); },
+        BasePtr(self));
+
+    jit_assert(strcmp(y.str(), "[1, 2]") == 0);
+
+    jit_registry_remove(Backend, &i1);
+    jit_registry_remove(Backend, &i2);
 }

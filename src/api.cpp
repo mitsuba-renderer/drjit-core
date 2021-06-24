@@ -451,6 +451,15 @@ size_t jit_var_size(uint32_t index) {
     return (size_t) jitc_var(index)->size;
 }
 
+const char *jit_var_stmt(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    lock_guard guard(state.mutex);
+    Variable *v = jitc_var(index);
+    return v->literal ? nullptr : v->stmt;
+}
+
 int jit_var_is_literal(uint32_t index) {
     if (index == 0)
         return 0;

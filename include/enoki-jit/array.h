@@ -22,7 +22,11 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     static constexpr VarType Type = var_type<Value>::value;
     static constexpr JitBackend Backend = Backend_;
     static constexpr bool IsArray = true;
+    static constexpr bool IsClass =
+        std::is_pointer<Value_>::value &&
+        std::is_class<std::remove_pointer_t<Value_>>::value;
 	template <typename T> using ReplaceValue = JitArray<Backend_, T>;
+    using ActualValue = std::conditional_t<IsClass, uint32_t, Value>;
 
     JitArray() = default;
 
@@ -40,15 +44,29 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         a.m_index = 0;
     }
 
+    template <bool B = IsClass, enable_if_t<B> = 0>
     JitArray(Value value) {
-        m_index = jit_var_new_literal(Backend, Type, &value);
+        uint32_t av = jit_registry_get_id(Backend, (void *) (uintptr_t) value);
+        m_index = jit_var_new_literal(Backend, Type, &av, 1, 0, IsClass);
     }
 
-    template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
-    JitArray(Args&&... args) {
-        Value data[] = { (Value) args... };
+    template <bool B = IsClass, enable_if_t<!B> = 0>
+    JitArray(Value value) {
+        m_index = jit_var_new_literal(Backend, Type, &value, 1, 0, IsClass);
+    }
+
+    template <typename... Ts, enable_if_t<(sizeof...(Ts) > 1 && IsClass)> = 0>
+    JitArray(Ts&&... ts) {
+        uint32_t data[] = { jit_registry_get_id(Backend,  ts)... };
         m_index = jit_var_mem_copy(Backend, AllocType::Host, Type, data,
-                                   sizeof...(Args));
+                                   sizeof...(Ts));
+    }
+
+    template <typename... Ts, enable_if_t<(sizeof...(Ts) > 1 && !IsClass)> = 0>
+    JitArray(Ts&&... ts) {
+        Value data[] = { (Value) ts... };
+        m_index = jit_var_mem_copy(Backend, AllocType::Host, Type, data,
+                                   sizeof...(Ts));
     }
 
     JitArray &operator=(const JitArray &a) {
