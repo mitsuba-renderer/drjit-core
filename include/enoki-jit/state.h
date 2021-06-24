@@ -100,7 +100,7 @@ template <JitBackend Backend> struct JitState {
         m_cse_scope_set = false;
     }
 
-    void set_self(uint32_t index, bool combine = true) {
+    void set_self(uint32_t index) {
         if (!m_self_set) {
             m_self = jit_vcall_self(Backend);
             m_self_set = true;
