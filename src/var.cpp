@@ -989,11 +989,17 @@ uint32_t jitc_var_copy(uint32_t index) {
         v2.backend = v->backend;
         v2.placeholder = v->placeholder;
         v2.size = v->size;
-        v2.dep[0] = index;
-        v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
-                            ? "mov.$t0 $r0, $r1"
-                            : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
-        jitc_var_inc_ref_int(index, v);
+
+        if (v->literal) {
+            v2.literal = 1;
+            v2.value = v->value;
+        } else {
+            v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
+                                ? "mov.$t0 $r0, $r1"
+                                : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
+            v2.dep[0] = index;
+            jitc_var_inc_ref_int(index, v);
+        }
         result = jitc_var_new(v2, true);
     }
 
