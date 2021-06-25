@@ -1164,6 +1164,8 @@ uint32_t jitc_var_mask_peek(JitBackend backend) {
 void jitc_var_mask_push(JitBackend backend, uint32_t index, int combine) {
     auto &stack = thread_state(backend)->mask_stack;
 
+    jitc_log(Debug, "jit_var_mask_push(index=r%u, combine=%i)", index, combine);
+
     if (!combine || (stack.empty() && backend == JitBackend::CUDA)) {
         jitc_var_inc_ref_int(index);
         stack.push_back(index);
@@ -1180,6 +1182,8 @@ void jitc_var_mask_pop(JitBackend backend) {
     auto &stack = thread_state(backend)->mask_stack;
     if (unlikely(stack.empty()))
         jitc_raise("jit_var_mask_pop(): stack underflow!");
+
+    jitc_log(Debug, "jit_var_mask_pop()");
 
     uint32_t index = stack.back();
     stack.pop_back();
