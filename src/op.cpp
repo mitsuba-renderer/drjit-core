@@ -441,8 +441,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             Variable *vi = jitc_var(dep[i]);
             vti = std::max(vti, vi->type);
             size = std::max(size, vi->size);
-            dirty |= vi->ref_count_se;
-            placeholder |= vi->placeholder;
+            dirty |= (bool) vi->ref_count_se;
+            placeholder |= (bool) vi->placeholder;
             backend_i |= (uint32_t) vi->backend;
             v[i] = vi;
 
@@ -1697,7 +1697,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     for (uint32_t index : { index_, mask_, value }) {
         const Variable *v = jitc_var(index);
         size = std::max(v->size, size);
-        dirty |= v->ref_count_se;
+        dirty |= (bool) v->ref_count_se;
         // Fetch type + backend from 'value'
         backend = (JitBackend) v->backend;
         vt = (VarType) v->type;

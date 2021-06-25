@@ -599,8 +599,8 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
         if (likely(dep[i])) {
             Variable *vi = jitc_var(dep[i]);
             size = std::max(size, vi->size);
-            dirty |= vi->ref_count_se;
-            placeholder |= vi->placeholder;
+            dirty |= (bool) vi->ref_count_se;
+            placeholder |= (bool) vi->placeholder;
             v[i] = vi;
         } else {
             uninitialized = true;

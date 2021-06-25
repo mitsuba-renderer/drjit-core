@@ -72,7 +72,7 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
         if (vsize > size)
             size = vsize;
 
-        dirty |= v->ref_count_se;
+        dirty |= (bool) v->ref_count_se;
     }
 
     // Ensure side effects are fully processed
@@ -80,7 +80,7 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
         jitc_eval(thread_state(backend));
         dirty = false;
         for (size_t i = 0; i < n_indices; ++i)
-            dirty |= jitc_var(*indices[i])->ref_count_se;
+            dirty |= (bool) jitc_var(*indices[i])->ref_count_se;
         if (unlikely(dirty))
             jitc_raise(
                 "jit_var_loop_init(): inputs remain dirty after evaluation!");
@@ -231,8 +231,8 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         loop->in_body.push_back(index_1);
         loop->in_cond.push_back(index_2);
         loop->in.push_back(index_3);
-        placeholder |= v3->placeholder;
-        dirty |= v3->ref_count_se;
+        placeholder |= (bool) v3->placeholder;
+        dirty |= (bool) v3->ref_count_se;
 
         // ============ 1.2. Output side =============
 

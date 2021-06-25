@@ -139,8 +139,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     /* Check 'self' */ {
         const Variable *self_v = jitc_var(self);
         size = self_v->size;
-        placeholder |= self_v->placeholder;
-        dirty |= self_v->ref_count_se;
+        placeholder |= (bool) self_v->placeholder;
+        dirty |= (bool) self_v->ref_count_se;
         backend = (JitBackend) self_v->backend;
         if ((VarType) self_v->type != VarType::UInt32)
             jitc_raise("jit_var_vcall(): 'self' argument must be of type "
@@ -154,9 +154,9 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                 jitc_raise("jit_var_vcall(): placeholder variable r%u does not "
                            "reference another input!", in[i]);
             Variable *v2 = jitc_var(v->dep[0]);
-            placeholder |= v2->placeholder;
-            optix |= v2->optix;
-            dirty |= v2->ref_count_se;
+            placeholder |= (bool) v2->placeholder;
+            optix |= (bool) v2->optix;
+            dirty |= (bool) v2->ref_count_se;
             size = std::max(size, v2->size);
         } else if (!v->literal) {
             jitc_raise("jit_var_vcall(): input variable r%u must either be a "
@@ -206,7 +206,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         for (uint32_t i = 0; i < n_in; ++i) {
             const Variable *v = jitc_var(in[i]);
             if (v->vcall_iface)
-                dirty |= jitc_var(v->dep[0])->ref_count_se;
+                dirty |= (bool) jitc_var(v->dep[0])->ref_count_se;
         }
 
         if (unlikely(dirty))

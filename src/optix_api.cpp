@@ -648,8 +648,8 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
                        "expected %s)",
                        i, type_name[v->type], type_name[(int) ref]);
         size = std::max(size, v->size);
-        placeholder |= v->placeholder;
-        dirty |= v->ref_count_se;
+        placeholder |= (bool) v->placeholder;
+        dirty |= (bool) v->ref_count_se;
     }
 
     for (uint32_t i = 0; i <= n_args; ++i) {
@@ -669,7 +669,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
 
         for (uint32_t i = 0; i <= n_args; ++i) {
             uint32_t index = (i < n_args) ? args[i] : mask;
-            dirty |= jitc_var(index)->ref_count_se;
+            dirty |= (bool) jitc_var(index)->ref_count_se;
         }
 
         jitc_raise(

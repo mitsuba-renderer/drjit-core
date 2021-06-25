@@ -589,8 +589,8 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
                        "expected %s)",
                        i, type_name[v->type], type_name[(int) types[i]]);
         size = std::max(size, v->size);
-        placeholder |= v->placeholder;
-        dirty |= v->ref_count_se;
+        placeholder |= (bool) v->placeholder;
+        dirty |= (bool) v->ref_count_se;
     }
 
     for (uint32_t i = 0; i < n_args; ++i) {
@@ -609,7 +609,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
         dirty = false;
 
         for (uint32_t i = 0; i < n_args; ++i)
-            dirty |= jitc_var(in[i])->ref_count_se;
+            dirty |= (bool) jitc_var(in[i])->ref_count_se;
 
         if (dirty)
             jitc_raise(
