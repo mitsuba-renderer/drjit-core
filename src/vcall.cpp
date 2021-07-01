@@ -250,6 +250,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                                                  : AllocType::Host;
     vcall->offset_h = (uint64_t *) jitc_malloc(at_h, offset_h_size);
     memset(vcall->offset_h, 0, offset_h_size);
+
+    if (backend == JitBackend::LLVM)
+        // ensure asynchronous release of 'offset_h'!
+        vcall->offset_h = (uint64_t *)
+            jitc_malloc_migrate(vcall->offset_h, AllocType::HostAsync, 1);
+
     vcall->offset_h_size = offset_h_size;
 
     // Collect accesses to evaluated variables/pointers
