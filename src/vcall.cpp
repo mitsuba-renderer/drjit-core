@@ -584,6 +584,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         se_v = steal(
             jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, &vcall_id));
         snprintf(temp, sizeof(temp), "VCall: %s [side effects]", name);
+        jitc_var(se_v)->placeholder = placeholder;
         jitc_var_set_label(se_v, temp);
     }
 
