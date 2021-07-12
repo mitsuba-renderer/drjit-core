@@ -241,8 +241,10 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
         const Variable *vo = jitc_var(index_o);
         if (vo->size != size && vo->size != 1)
-            jitc_raise("jit_var_loop(): loop state output variable %zu (r%u) has "
-                       "an invalid output size (loop=%u vs var=%u)!",
+            jitc_raise("jit_var_loop(): loop state variable %zu (r%u) has an "
+                       "invalid size following evaluation of the loop body "
+                       "(the loop operates on arrays of size %u, while the "
+                       "variable ends up with a size of %u)!",
                        i, index_o, size, vo->size);
 
         // =========== 1.3. Optimizations ============
