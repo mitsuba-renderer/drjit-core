@@ -275,10 +275,9 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
     jitc_log(InfoSym,
              "jit_var_loop(loop_init=r%u, loop_cond=r%u): loop (\"%s\") with "
-             "%zu loop variable%s, %u side effect%s, %u lane%s%s%s",
+             "%zu loop variable%s, %u side effect%s, arrays of size %u %s%s",
              loop_init, loop_cond, name, n_indices, n_indices == 1 ? "" : "s",
-             loop->se_count, loop->se_count == 1 ? "" : "s", size,
-             size == 1 ? "" : "s", temp,
+             loop->se_count, loop->se_count == 1 ? "" : "s", size, temp,
              placeholder ? " (part of a recorded computation)" : "");
 
     if (n_invariant && first_round) {
