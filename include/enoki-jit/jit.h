@@ -53,6 +53,12 @@
 #  define JIT_DEF(x) = x
 #  define JIT_NOEXCEPT noexcept(true)
 #  define JIT_ENUM ::
+#  if !defined(NAMESPACE_BEGIN)
+#    define NAMESPACE_BEGIN(name) namespace name {
+#  endif
+#  if !defined(NAMESPACE_END)
+#    define NAMESPACE_END(name) }
+#  endif
 #else
 #  define JIT_CONSTEXPR inline
 #  define JIT_DEF(x)
