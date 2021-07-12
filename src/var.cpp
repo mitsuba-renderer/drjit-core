@@ -688,7 +688,13 @@ void jitc_var_mark_side_effect(uint32_t index) {
 
     Variable *v = jitc_var(index);
     v->side_effect = true;
-    jitc_log(Debug, "jit_var_mark_side_effect(r%u)", index);
+
+    /* Include all side effects in recorded program, even if
+       they don't depend on other placeholder variables */
+    v->placeholder |= jit_flag(JitFlag::Recording);
+
+    jitc_log(Debug, "jit_var_mark_side_effect(r%u)%s", index,
+             v->placeholder ? " (part of a recorded computation)" : "");
 
     ThreadState *ts = thread_state(v->backend);
     std::vector<uint32_t> &output =
