@@ -16,6 +16,8 @@ struct Loop {
     uint32_t end = 0;
     /// Variable index of loop condition
     uint32_t cond = 0;
+    /// Variable index of side effect placeholder
+    uint32_t se = 0;
     /// Number of side effects
     uint32_t se_count = 0;
     /// Storage size in bytes for all variables before simplification
@@ -275,7 +277,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
     jitc_log(InfoSym,
              "jit_var_loop(loop_init=r%u, loop_cond=r%u): loop (\"%s\") with "
-             "%zu loop variable%s, %u side effect%s, arrays of size %u %s%s",
+             "%zu loop variable%s, %u side effect%s, %u elements%s%s",
              loop_init, loop_cond, name, n_indices, n_indices == 1 ? "" : "s",
              loop->se_count, loop->se_count == 1 ? "" : "s", size, temp,
              placeholder ? " (part of a recorded computation)" : "");
@@ -411,6 +413,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
         snprintf(temp, sizeof(temp), "Loop (%s) [side effects]", name);
         jitc_var_set_label(loop_se, temp);
+        loop->se = loop_se;
 
         se.resize(checkpoint);
     }
@@ -577,12 +580,15 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
         jitc_var_loop_dfs(visited, loop->cond);
 
         // Find all inputs that are reachable from the side effects
-        Extra &e = state.extra[loop->end];
-        for (uint32_t i = 2*n; i < e.n_dep; ++i) {
-            if (!e.dep[i])
-                continue;
-            // jitc_trace("jit_var_loop_simplify(): DFS from side effect %u (r%u)", i-2*n, e.dep[i]);
-            jitc_var_loop_dfs(visited, e.dep[i]);
+        if (loop->se) {
+            auto it = state.extra.find(loop->se);
+            if (unlikely(it == state.extra.end()))
+                jitc_fail("jit_var_loop_simplify: could not find side effect node.");
+            const Extra &e = it->second;
+            for (uint32_t i = 0; i < e.n_dep; ++i) {
+                // jitc_trace("jit_var_loop_simplify(): DFS from side effect %u (r%u)", i, e.dep[i]);
+                jitc_var_loop_dfs(visited, e.dep[i]);
+            }
         }
 
         /// Propagate until no further changes
@@ -723,4 +729,5 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
 
     buffer.fmt("\nl_%u_done:\n", loop_reg);
     loop->se_count = 0;
+    loop->se = 0;
 }
