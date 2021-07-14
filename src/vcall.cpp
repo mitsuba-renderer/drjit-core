@@ -361,7 +361,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             coherent[j] = coherent[j] && (index == out_nested[j]);
 
             /* Hold a reference to the nested computation until the cleanup
-               callback callback later below is invoked. */
+               callback later below is invoked. */
             jitc_var_inc_ref_ext(index);
             vcall->out_nested.push_back(index);
         }
