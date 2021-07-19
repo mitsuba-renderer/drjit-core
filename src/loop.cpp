@@ -415,6 +415,16 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         jitc_var_set_label(loop_se, temp);
         loop->se = loop_se;
 
+        e.callback = [](uint32_t, int free_var, void *ptr) {
+            if (free_var && ptr) {
+                Loop *loop_2 = (Loop *) ptr;
+                jitc_trace("jit_var_loop(\"%s\"): freeing side effects.", loop_2->name);
+                loop_2->se = 0;
+            }
+        };
+        e.callback_internal = true;
+        e.callback_data = loop.get();
+
         se.resize(checkpoint);
     }
 
