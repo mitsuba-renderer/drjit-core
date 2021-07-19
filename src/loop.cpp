@@ -290,7 +290,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
             *indices[i] = indices_in[i];
         }
 
-        // Relase side effects
+        // Release side effects
         while (checkpoint != se.size()) {
             jitc_var_dec_ref_ext(se.back());
             se.pop_back();
@@ -393,6 +393,18 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
     Ref loop_se;
     if (loop->se_count) {
+        uint32_t *dep = (uint32_t *) malloc_check(loop->se_count * sizeof(uint32_t));
+        for (uint32_t i = 0; i < loop->se_count; ++i) {
+            uint32_t index = se[se.size() - loop->se_count + i];
+            Variable *v = jitc_var(index);
+            v->side_effect = false;
+            jitc_var_inc_ref_int(index, v);
+            jitc_var_dec_ref_ext(index, v);
+            snprintf(temp, sizeof(temp), "Loop (%s) [side effects]", name);
+            dep[i] = index;
+        }
+        se.resize(checkpoint);
+
         uint32_t loop_se_dep[1] = { loop_end };
         loop_se = steal(
             jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, loop_se_dep));
@@ -403,29 +415,11 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         v->placeholder = placeholder;
         Extra &e = state.extra[loop_se];
         e.n_dep = loop->se_count;
-        e.dep = (uint32_t *) malloc_check(loop->se_count * sizeof(uint32_t));
-
-        for (uint32_t i = 0; i < loop->se_count; ++i) {
-            uint32_t index = se[se.size() - loop->se_count + i];
-            jitc_var_inc_ref_int(index);
-            e.dep[i] = index;
-        }
+        e.dep = dep;
 
         snprintf(temp, sizeof(temp), "Loop (%s) [side effects]", name);
         jitc_var_set_label(loop_se, temp);
         loop->se = loop_se;
-
-        e.callback = [](uint32_t, int free_var, void *ptr) {
-            if (free_var && ptr) {
-                Loop *loop_2 = (Loop *) ptr;
-                jitc_trace("jit_var_loop(\"%s\"): freeing side effects.", loop_2->name);
-                loop_2->se = 0;
-            }
-        };
-        e.callback_internal = true;
-        e.callback_data = loop.get();
-
-        se.resize(checkpoint);
     }
 
     // =====================================================
@@ -593,12 +587,12 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
         // Find all inputs that are reachable from the side effects
         if (loop->se) {
             auto it = state.extra.find(loop->se);
-            if (unlikely(it == state.extra.end()))
-                jitc_fail("jit_var_loop_simplify(): could not find side effect node r%u.", loop->se);
-            const Extra &e = it->second;
-            for (uint32_t i = 0; i < e.n_dep; ++i) {
-                // jitc_trace("jit_var_loop_simplify(): DFS from side effect %u (r%u)", i, e.dep[i]);
-                jitc_var_loop_dfs(visited, e.dep[i]);
+            if (it != state.extra.end()) {
+                const Extra &e = it->second;
+                for (uint32_t i = 0; i < e.n_dep; ++i) {
+                    // jitc_trace("jit_var_loop_simplify(): DFS from side effect %u (r%u)", i, e.dep[i]);
+                    jitc_var_loop_dfs(visited, e.dep[i]);
+                }
             }
         }
 
