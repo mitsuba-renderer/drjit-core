@@ -488,6 +488,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         e.callback = [](uint32_t, int free_var, void *ptr) {
             if (free_var && ptr) {
                 Loop *loop_2 = (Loop *) ptr;
+                jitc_trace("jit_var_loop(\"%s\"): freeing loop.", loop_2->name);
                 free(loop_2->name);
                 delete loop_2;
             }
@@ -566,8 +567,8 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
     uint32_t n_freed = 0, n_rounds = 0;
     tsl::robin_set<uint32_t, UInt32Hasher> visited;
 
-    jitc_trace("jit_var_loop_simplify(): loop output %u freed, simplifying..",
-               cause);
+    jitc_trace("jit_var_loop_simplify(\"%s\"): loop output %u freed, simplifying..",
+               loop->name, cause);
 
     bool progress;
     while (true) {
@@ -593,7 +594,7 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
         if (loop->se) {
             auto it = state.extra.find(loop->se);
             if (unlikely(it == state.extra.end()))
-                jitc_fail("jit_var_loop_simplify: could not find side effect node.");
+                jitc_fail("jit_var_loop_simplify(): could not find side effect node r%u.", loop->se);
             const Extra &e = it->second;
             for (uint32_t i = 0; i < e.n_dep; ++i) {
                 // jitc_trace("jit_var_loop_simplify(): DFS from side effect %u (r%u)", i, e.dep[i]);

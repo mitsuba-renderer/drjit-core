@@ -844,9 +844,9 @@ int jitc_var_eval(uint32_t index) {
         v = jitc_var(index);
 
         if (unlikely(v->ref_count_se))
-            jitc_raise("jit_var_eval(): element remains dirty after evaluation!");
+            jitc_raise("jit_var_eval(): variable r%u remains dirty after evaluation!", index);
         else if (unlikely(!v->data))
-            jitc_raise("jit_var_eval(): invalid/uninitialized variable!");
+            jitc_raise("jit_var_eval(): invalid/uninitialized variable r%u!", index);
 
         return 1;
     }
