@@ -553,6 +553,11 @@ uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
 }
 
 uint32_t jitc_var_new_counter(JitBackend backend, size_t size) {
+    if (size == 1) {
+        uint32_t zero = 0;
+        return jitc_var_new_literal(backend, VarType::UInt32, &zero, 1, 0);
+    }
+
     jitc_check_size("jit_var_new_counter", size);
     Variable v;
     v.stmt = backend == JitBackend::CUDA ? (char *) "mov.u32 $r0, %r0"
