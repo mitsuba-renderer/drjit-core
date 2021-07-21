@@ -789,6 +789,18 @@ jit_var_vcall_reduce(JitBackend backend, const char *domain, uint32_t index,
     return jitc_var_vcall_reduce(backend, domain, index, bucket_count_out);
 }
 
+void jit_kernel_history_clear() {
+    lock_guard guard(state.mutex);
+    state.kernel_history.clear();
+}
+
+struct KernelHistoryEntry *jit_kernel_history() {
+    lock_guard guard(state.mutex);
+    KernelHistoryEntry *data = state.kernel_history.data;
+    state.kernel_history.clear();
+    return data;
+}
+
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
 OptixDeviceContext jit_optix_context() {
     lock_guard guard(state.mutex);
