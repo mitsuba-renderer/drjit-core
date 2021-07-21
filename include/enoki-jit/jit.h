@@ -1301,6 +1301,12 @@ enum class JitFlag : uint32_t {
     /// Check weights for NaNs / infinities
     ADCheckWeights = 512,
 
+    /// Enable writing of the kernel history
+    KernelHistory = 1024,
+
+    /// Force synchronization after every kernel launch
+    LaunchBlocking = 2048,
+
     /// Default flags
     Default = (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallOptimize |
@@ -1713,6 +1719,45 @@ extern JIT_EXPORT uint32_t jit_cse_scope(JIT_ENUM JitBackend backend);
 
 /// Manually sets a CSE scope identifier (see \ref jit_new_cse_scope())
 extern JIT_EXPORT void jit_set_cse_scope(JIT_ENUM JitBackend backend, uint32_t domain);
+
+// ====================================================================
+//                            Kernel History
+// ====================================================================
+
+/// Data structure for storing kernel launch information in the history
+struct KernelHistoryEntry {
+   JitBackend backend;
+   uint64_t hash[2];
+   const char *ir;
+   int uses_optix;
+   int cache_hit;
+   uint32_t size;
+   uint32_t input_count;
+   uint32_t output_count;
+   uint32_t operation_count;
+   float codegen_time;
+   float execution_time;
+};
+
+/// Clear the kernel history
+void jit_kernel_history_clear();
+
+/**
+ * \brief Return a pointer to the first entry of the kernel history
+ *
+ * When \c JitFlag.KernelHistory is set to \c true, every kernel launch will add
+ * and entry in the history which can be accessed via this function.
+ *
+ * The ownership of the memory region accessible via the returned pointer is
+ * transfered to the caller of this function. E.g. it is his responsability to
+ * free that memory region.
+ *
+ * When the kernel history is empty, the function will return a null pointer.
+ * Otherwise, the size of the kernel history can be infered by iterating over
+ * the entries until one reaches a entry with an invalid \c backend (e.g.
+ * initialized to \c 0).
+ */
+struct KernelHistoryEntry *jit_kernel_history();
 
 #if defined(__cplusplus)
 }

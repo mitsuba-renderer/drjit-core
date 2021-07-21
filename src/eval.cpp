@@ -66,6 +66,9 @@ bool assemble_func = false;
 int32_t alloca_size = -1;
 int32_t alloca_align = -1;
 
+/// Information about the kernel launch to go in the kernel launch history
+KernelHistoryEntry kernel_history_entry;
+
 // ====================================================================
 
 /// Recursively traverse the computation graph to find variables needed by a computation
@@ -109,10 +112,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     callables.clear();
     globals_map.clear();
     alloca_size = alloca_align = -1;
+    kernel_history_entry = {};
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
-    uses_optix = ts->backend == JitBackend::CUDA &&
-                 (jitc_flags() & (uint32_t) JitFlag::ForceOptiX);
+    uses_optix = ts->backend == JitBackend::CUDA && jit_flag(JitFlag::ForceOptiX);
 #endif
 
     uint32_t n_params_in    = 0,
@@ -287,6 +290,19 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         (unsigned long long) kernel_hash.high64,
         uses_optix ? "via OptiX, " : "", group.size, n_params_in,
         n_params_out + n_side_effects, n_regs, jitc_time_string(codegen_time));
+
+    if (jit_flag(JitFlag::KernelHistory)) {
+        kernel_history_entry.backend = backend;
+        kernel_history_entry.hash[0] = kernel_hash.high64;
+        kernel_history_entry.hash[1] = kernel_hash.low64;
+        kernel_history_entry.ir = buffer.get();
+        kernel_history_entry.uses_optix = uses_optix;
+        kernel_history_entry.size = group.size;
+        kernel_history_entry.input_count = n_params_in;
+        kernel_history_entry.output_count = n_params_out + n_side_effects;
+        kernel_history_entry.operation_count = n_regs;
+        kernel_history_entry.codegen_time = codegen_time;
+    }
 }
 
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
@@ -398,18 +414,24 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             state.kernel_soft_misses++;
         else
             state.kernel_hard_misses++;
+
+        kernel_history_entry.cache_hit = cache_hit;
     } else {
+        kernel_history_entry.cache_hit = true;
         kernel = it.value();
         state.kernel_hits++;
     }
     state.kernel_launches++;
 
+    if (jit_flag(JitFlag::LaunchBlocking))
+        (void) timer();
+
+    Task* ret_task = nullptr;
     if (ts->backend == JitBackend::CUDA) {
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
         if (unlikely(uses_optix)) {
             jitc_optix_launch(ts, kernel, group.size, kernel_params_global,
                               kernel_param_count);
-            return nullptr;
         }
 #endif
 
@@ -473,7 +495,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         jitc_log(Trace, "jit_run(): scheduling %u packet%s in %u block%s ..", packets,
                 packets == 1 ? "" : "s", blocks, blocks == 1 ? "" : "s");
 
-        return task_submit_dep(
+        ret_task = task_submit_dep(
             nullptr, &ts->task, 1, blocks,
             callback,
             kernel_params.data(),
@@ -482,7 +504,17 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         );
     }
 
-    return nullptr;
+    if (jit_flag(JitFlag::LaunchBlocking)) {
+        jitc_sync_thread();
+        kernel_history_entry.execution_time = timer();
+        jitc_log(Info, "     execution time: %s.",
+                    jitc_time_string(kernel_history_entry.execution_time));
+    }
+
+    if (jit_flag(JitFlag::KernelHistory))
+        state.kernel_history.push(kernel_history_entry);
+
+    return ret_task;
 }
 
 static ProfilerRegion profiler_region_eval("jit_eval");
