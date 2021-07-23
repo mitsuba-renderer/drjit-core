@@ -796,9 +796,7 @@ void jit_kernel_history_clear() {
 
 struct KernelHistoryEntry *jit_kernel_history() {
     lock_guard guard(state.mutex);
-    KernelHistoryEntry *data = state.kernel_history.data;
-    state.kernel_history.clear();
-    return data;
+    return state.kernel_history.get();
 }
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)

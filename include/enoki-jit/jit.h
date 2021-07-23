@@ -1292,20 +1292,22 @@ enum class JitFlag : uint32_t {
     /// Print the intermediate representation of generated programs
     PrintIR = 64,
 
+    /// Enable writing of the kernel history
+    KernelHistory = 128,
+
+    /* Force synchronization after every kernel launch. This is useful to
+       isolate crashes to a specific kernel, and to benchmark kernel runtime
+       along with the KernelHistory feature. */
+    LaunchBlocking = 256,
+
     /// Exploit literal constants during AD (used in the Enoki parent project)
-    ADOptimize = 128,
+    ADOptimize = 512,
 
     /// Run forward-mode differentiation at once
-    ADEagerForward = 256,
+    ADEagerForward = 1024,
 
     /// Check weights for NaNs / infinities
-    ADCheckWeights = 512,
-
-    /// Enable writing of the kernel history
-    KernelHistory = 1024,
-
-    /// Force synchronization after every kernel launch
-    LaunchBlocking = 2048,
+    ADCheckWeights = 2048,
 
     /// Default flags
     Default = (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
@@ -1321,9 +1323,11 @@ enum JitFlag {
     JitFlagForceOptiX          = 16,
     JitFlagRecording           = 32,
     JitFlagPrintIR             = 64,
-    JitFlagADOptimize          = 128,
-    JitFlagADEagerForward      = 256
-    JitFlagADCheckWeights      = 512
+    JitFlagKernelHistory       = 128,
+    JitFlagLaunchBlocking      = 256
+    JitFlagADOptimize          = 512,
+    JitFlagADEagerForward      = 1024
+    JitFlagADCheckWeights      = 2048
 };
 #endif
 
@@ -1726,17 +1730,32 @@ extern JIT_EXPORT void jit_set_cse_scope(JIT_ENUM JitBackend backend, uint32_t d
 
 /// Data structure for storing kernel launch information in the history
 struct KernelHistoryEntry {
-   JitBackend backend;
-   uint64_t hash[2];
-   const char *ir;
-   int uses_optix;
-   int cache_hit;
-   uint32_t size;
-   uint32_t input_count;
-   uint32_t output_count;
-   uint32_t operation_count;
-   float codegen_time;
-   float execution_time;
+    /// Jit backend for which the kernel was compiled for
+    JitBackend backend;
+    /// Store the low/high 64 bits of the 128-bit hash kernel identifier
+    uint64_t hash[2];
+    /// Copy of the kernel IR string buffer
+    char *ir;
+    /// Whether the kernel is an OptiX kernel
+    int uses_optix;
+    /// Whether the kernel was reused from the kernel cache
+    int cache_hit;
+    /// Whether the kernel was loaded from the cache on disk
+    int cache_disk;
+    /// Number of entries
+    uint32_t size;
+    /// Number of inputs
+    uint32_t input_count;
+    /// Number of outputs + side effects
+    uint32_t output_count;
+    /// Number of operations
+    uint32_t operation_count;
+    /// Time spent generating the kernel intermediate representation
+    float codegen_time;
+    /// Time spent compiling the kernel (\c 0 if \c cache_hit is \c true)
+    float backend_time;
+    /// Time spent executing the kernel (\c 0 if \c LaunchBlocking is \c false)
+    float execution_time;
 };
 
 /// Clear the kernel history
@@ -1748,9 +1767,16 @@ extern JIT_EXPORT void jit_kernel_history_clear();
  * When \c JitFlag.KernelHistory is set to \c true, every kernel launch will add
  * and entry in the history which can be accessed via this function.
  *
- * The ownership of the memory region accessible via the returned pointer is
- * transfered to the caller of this function. E.g. it is his responsability to
- * free that memory region.
+ * The caller is responsible for freeing the returned data structure via the
+ * following construction:
+ *
+ *     KernelHistoryEntry *data = jit_kernel_history();
+ *     KernelHistoryEntry *e = data;
+ *     while (e->ir) {
+ *         free(e->ir);
+ *         e++;
+ *     }
+ *     free(data);
  *
  * When the kernel history is empty, the function will return a null pointer.
  * Otherwise, the size of the kernel history can be infered by iterating over

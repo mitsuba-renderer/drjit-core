@@ -437,16 +437,17 @@ using KernelCache =
 
 /// Data structure to store a history of the launched kernels
 struct KernelHistory {
-    KernelHistoryEntry *data = nullptr;
-    size_t size = 0;
-    size_t allocated = 0;
+
+    KernelHistory() {
+        init();
+    }
 
     void push(const KernelHistoryEntry &entry) {
         /* Expand kernel history allocation if necessary. There should always be
            enough memory for one extra entry in order to add a special invalid
            entry to indicate the end of the list. */
         if (allocated - size <= 1) {
-            allocated = std::max(allocated * 2, 4lu);
+            allocated *= 2;
             void *tmp = (void *) malloc(allocated * sizeof(KernelHistoryEntry));
             memcpy(tmp, data, size * sizeof(KernelHistoryEntry));
             free(data);
@@ -458,9 +459,26 @@ struct KernelHistory {
     }
 
     void clear() {
-        data = nullptr;
         size = 0;
+        data[size] = {};
     }
+
+    KernelHistoryEntry *get() {
+        KernelHistoryEntry *ret = data;
+        init();
+        return ret;
+    }
+
+private:
+    void init() {
+        allocated = 4;
+        data = (KernelHistoryEntry *) malloc(allocated * sizeof(KernelHistoryEntry));
+        clear();
+    }
+
+    KernelHistoryEntry *data;
+    size_t size;
+    size_t allocated;
 };
 
 // Key associated with a pointer registered in Enoki's pointer registry
@@ -622,7 +640,7 @@ struct State {
     KernelCache kernel_cache;
 
     /// Kernel launch history
-    KernelHistory kernel_history;
+    KernelHistory kernel_history = KernelHistory();
 
     /// Return a pointer to the registry corresponding to the specified backend
     Registry *registry(JitBackend backend) {

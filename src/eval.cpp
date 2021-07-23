@@ -293,9 +293,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     if (jit_flag(JitFlag::KernelHistory)) {
         kernel_history_entry.backend = backend;
-        kernel_history_entry.hash[0] = kernel_hash.high64;
-        kernel_history_entry.hash[1] = kernel_hash.low64;
-        kernel_history_entry.ir = buffer.get();
+        kernel_history_entry.hash[0] = kernel_hash.low64;
+        kernel_history_entry.hash[1] = kernel_hash.high64;
+        kernel_history_entry.ir = (char *) malloc(buffer.size() + 1);
+        memcpy(kernel_history_entry.ir, buffer.get(), buffer.size() + 1);
         kernel_history_entry.uses_optix = uses_optix;
         kernel_history_entry.size = group.size;
         kernel_history_entry.input_count = n_params_in;
@@ -415,7 +416,12 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         else
             state.kernel_hard_misses++;
 
-        kernel_history_entry.cache_hit = cache_hit;
+        if (jit_flag(JitFlag::KernelHistory)) {
+            kernel_history_entry.cache_disk = cache_hit;
+            kernel_history_entry.cache_hit = cache_hit;
+            if (!cache_hit)
+                kernel_history_entry.backend_time = link_time;
+        }
     } else {
         kernel_history_entry.cache_hit = true;
         kernel = it.value();
