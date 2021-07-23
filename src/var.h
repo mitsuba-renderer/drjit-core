@@ -23,7 +23,8 @@ extern uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
                                      int eval, int is_class = 0);
 
 /// Create a variable counting from 0 ... size - 1
-extern uint32_t jitc_var_new_counter(JitBackend backend, size_t size);
+extern uint32_t jitc_var_new_counter(JitBackend backend, size_t size,
+                                     bool simplify_scalar);
 
 /// Create a variable representing the result of a custom IR statement
 extern uint32_t jitc_var_new_stmt(JitBackend backend,

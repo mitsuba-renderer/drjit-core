@@ -365,7 +365,7 @@ uint32_t jit_var_new_literal(JitBackend backend, VarType type, const void *value
 
 uint32_t jit_var_new_counter(JitBackend backend, size_t size) {
     lock_guard guard(state.mutex);
-    return jitc_var_new_counter(backend, size);
+    return jitc_var_new_counter(backend, size, true);
 }
 
 uint32_t jit_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {

@@ -552,8 +552,9 @@ uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
     return jitc_var_new(v);
 }
 
-uint32_t jitc_var_new_counter(JitBackend backend, size_t size) {
-    if (size == 1) {
+uint32_t jitc_var_new_counter(JitBackend backend, size_t size,
+                              bool simplify_scalar) {
+    if (size == 1 && simplify_scalar) {
         uint32_t zero = 0;
         return jitc_var_new_literal(backend, VarType::UInt32, &zero, 1, 0);
     }
@@ -1154,7 +1155,7 @@ uint32_t jitc_var_mask_default(JitBackend backend) {
         return jitc_var_new_literal(backend, VarType::Bool, &value, 1, 0);
     } else {
         // Ignore SIMD lanes that lie beyond the end of the range
-        Ref counter = steal(jitc_var_new_counter(backend, 1));
+        Ref counter = steal(jitc_var_new_counter(backend, 1, false));
         uint32_t dep_1[1] = { counter };
         return jitc_var_new_stmt(
             backend, VarType::Bool,
