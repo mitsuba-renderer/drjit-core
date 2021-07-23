@@ -1740,7 +1740,7 @@ struct KernelHistoryEntry {
 };
 
 /// Clear the kernel history
-void jit_kernel_history_clear();
+extern JIT_EXPORT void jit_kernel_history_clear();
 
 /**
  * \brief Return a pointer to the first entry of the kernel history
@@ -1757,7 +1757,7 @@ void jit_kernel_history_clear();
  * the entries until one reaches a entry with an invalid \c backend (e.g.
  * initialized to \c 0).
  */
-struct KernelHistoryEntry *jit_kernel_history();
+extern JIT_EXPORT struct KernelHistoryEntry *jit_kernel_history();
 
 #if defined(__cplusplus)
 }
