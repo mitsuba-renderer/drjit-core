@@ -1728,27 +1728,27 @@ extern JIT_EXPORT void jit_set_cse_scope(JIT_ENUM JitBackend backend, uint32_t d
 //                            Kernel History
 // ====================================================================
 
-/// Data structure for storing kernel launch information in the history
+/// Data structure for preserving kernel launch information (debugging, testing)
 struct KernelHistoryEntry {
-    /// Jit backend for which the kernel was compiled for
+    /// Jit backend, for which the kernel was compiled
     JitBackend backend;
-    /// Store the low/high 64 bits of the 128-bit hash kernel identifier
+    /// Stores the low/high 64 bits of the 128-bit hash kernel identifier
     uint64_t hash[2];
     /// Copy of the kernel IR string buffer
     char *ir;
-    /// Whether the kernel is an OptiX kernel
+    /// Does the kernel contain any OptiX (ray tracing) operations?
     int uses_optix;
     /// Whether the kernel was reused from the kernel cache
     int cache_hit;
     /// Whether the kernel was loaded from the cache on disk
     int cache_disk;
-    /// Number of entries
+    /// Launch width / number of array entries that were processed
     uint32_t size;
-    /// Number of inputs
+    /// Number of input arrays
     uint32_t input_count;
-    /// Number of outputs + side effects
+    /// Number of output arrays + side effects
     uint32_t output_count;
-    /// Number of operations
+    /// Number of IR operations
     uint32_t operation_count;
     /// Time spent generating the kernel intermediate representation
     float codegen_time;
