@@ -345,6 +345,8 @@ enum AllocType jit_var_alloc_type(uint32_t index) {
 }
 
 int jit_var_device(uint32_t index) {
+    if (index == 0)
+        return -1;
     lock_guard guard(state.mutex);
     return jitc_var_device(index);
 }
