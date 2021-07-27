@@ -1323,6 +1323,9 @@ JIT_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op, uint32_t
 }
 
 uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret) {
+    if (index == 0)
+        return 0;
+
     Variable *v = jitc_var(index);
     const JitBackend backend = (JitBackend) v->backend;
     const VarType source_type = (VarType) v->type;
