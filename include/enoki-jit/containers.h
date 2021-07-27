@@ -66,7 +66,11 @@ protected:
 
 template <typename T> struct ek_vector {
     ek_vector() = default;
-    ek_vector(const ek_vector &) = delete;
+    ek_vector(const ek_vector &v)
+        : m_data(new T[v.m_size]), m_size(v.m_size), m_capacity(v.m_size) {
+        for (size_t i = 0; i < m_size; ++i)
+            m_data[i] = v.m_data[i];
+    }
     ek_vector &operator=(const ek_vector &) = delete;
     ek_vector(ek_vector &&) = default;
     ek_vector &operator=(ek_vector &&) = default;
@@ -74,6 +78,12 @@ template <typename T> struct ek_vector {
         : m_data(new T[size]), m_size(size), m_capacity(size) {
         for (size_t i = 0; i < size; ++i)
             m_data[i] = value;
+    }
+    ek_vector(const T *start, const T *end) {
+        m_size = m_capacity = end-start;
+        m_data = new T[end - start];
+        for (size_t i = 0; i < m_size; ++i)
+            m_data[i] = start[i];
     }
 
     void push_back(const T &value) {
