@@ -23,11 +23,27 @@ option(ENOKI_JIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 option(ENOKI_JIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
 option(ENOKI_JIT_ENABLE_TESTS "Build Enoki test suite?" OFF)
 
-set(ENOKI_NATIVE_FLAGS_DEFAULT "-march=native")
+# Compile for the native system architecture (assumes AVX2 on windows). When
+# enoki-jit is compiled as part of a PyPI package via scikit-build, adopt a
+# lower target architecture (Ivy Bridge, which has the AVX and F16C
+# extensions). An M1-like architecture is assumed for arm64 builds on macOS.
 
-if (APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-  # Apple M1 compatibility
-  set(ENOKI_NATIVE_FLAGS_DEFAULT "-mcpu=apple-a14")
+if (MSVC)
+  if (SKBUILD)
+    # Reasonably portable binaries for PyPI
+    set(ENOKI_NATIVE_FLAGS_DEFAULT "/arch:AVX")
+  else()
+    set(ENOKI_NATIVE_FLAGS_DEFAULT "/arch:AVX2")
+  endif()
+elseif (APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+  set(ENOKI_NATIVE_FLAGS_DEFAULT "-mcpu=apple-a12")
+else()
+  if (SKBUILD)
+    # Reasonably portable binaries for PyPI
+    set(ENOKI_NATIVE_FLAGS_DEFAULT "-march=ivybridge")
+  else()
+    set(ENOKI_NATIVE_FLAGS_DEFAULT "-march=native")
+  endif()
 endif()
 
 set(ENOKI_NATIVE_FLAGS ${ENOKI_NATIVE_FLAGS_DEFAULT} CACHE STRING "Compilation flags used to target the host processor architecture.")
@@ -108,8 +124,10 @@ target_include_directories(enoki-jit
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
+target_compile_options(enoki-jit PRIVATE ${ENOKI_NATIVE_FLAGS})
+
 if (NOT MSVC)
-  target_compile_options(enoki-jit PRIVATE -Wall -Wextra ${ENOKI_NATIVE_FLAGS})
+  target_compile_options(enoki-jit PRIVATE -Wall -Wextra)
   if (U_CMAKE_BUILD_TYPE MATCHES RELEASE OR U_CMAKE_BUILD_TYPE MATCHES MINSIZEREL)
     target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
   endif()
