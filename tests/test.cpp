@@ -10,9 +10,6 @@
 #  include <direct.h>
 #else
 #  include <unistd.h>
-#endif
-
-#if defined(__linux__)
 #  include <sys/stat.h>
 #endif
 
@@ -156,7 +153,7 @@ void test_sanitize_log(char *buf) {
     *dst = '\0';
 }
 
-bool test_check_log(const char *test_name, char *log, bool write_ref) {
+int test_check_log(const char *test_name, char *log, bool write_ref) {
     char test_fname[128];
 
     snprintf(test_fname, 128, "out_%s/%s.raw", TEST_NAME, test_name);
@@ -193,19 +190,19 @@ bool test_check_log(const char *test_name, char *log, bool write_ref) {
     fclose(f);
 
     if (write_ref)
-        return true;
+        return 1;
 
     snprintf(test_fname, 128, "out_%s/%s.ref", TEST_NAME, test_name);
     f = fopen(test_fname, "r");
     if (!f) {
-        fprintf(stderr, "\ntest_check_log(): Could not open file \"tests/%s\"!\n", test_fname);
-        return false;
+        // fprintf(stderr, "\ntest_check_log(): Could not open file \"tests/%s\"!\n", test_fname);
+        return 2;
     }
 
-    bool result = true;
+    int result = 1;
 
     fseek(f, 0, SEEK_END);
-    result = (size_t) ftell(f) == log_len;
+    result = (size_t) ftell(f) == log_len ? 1 : 0;
     fseek(f, 0, SEEK_SET);
 
     if (result) {
@@ -213,12 +210,12 @@ bool test_check_log(const char *test_name, char *log, bool write_ref) {
         if (fread(tmp, log_len, 1, f) != 1) {
             fprintf(stderr, "\ntest_check_log(): Could not read file \"%s\"!\n", test_fname);
             fclose(f);
-            return false;
+            return 0;
         }
         tmp[log_len] = '\0';
 
         test_sanitize_log(tmp);
-        result = memcmp(tmp, log, log_len) == 0;
+        result = memcmp(tmp, log, log_len) == 0 ? 1 : 0;
         free(tmp);
     }
 
@@ -289,15 +286,13 @@ int main(int argc, char **argv) {
 #endif
 
     int log_level_stderr = (int) LogLevel::Warn;
-    bool fail_fast = false, test_cuda = true, test_optix = true, test_llvm = true,
+    bool test_cuda = true, test_optix = true, test_llvm = true,
          write_ref = false, help = false;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-w") == 0) {
             write_ref = true;
         } else if (strcmp(argv[i], "-v") == 0) {
             log_level_stderr = std::max((int) LogLevel::Info, log_level_stderr + 1);
-        } else if (strcmp(argv[i], "-e") == 0) {
-            fail_fast = true;
         } else if (strcmp(argv[i], "-c") == 0) {
             test_llvm = false;
             test_optix = false;
@@ -397,17 +392,12 @@ int main(int argc, char **argv) {
                     .count();
             jit_shutdown(1);
 
-            if (test_check_log(test.name, (char *) log_value.c_str(), write_ref)) {
+            if (test_check_log(test.name, (char *) log_value.c_str(), write_ref) != 0) {
                 tests_passed++;
                 fprintf(stdout, "passed (%.2f ms).\n", duration);
             } else {
                 tests_failed++;
-                if (fail_fast) {
-                    fprintf(stdout, "MISMATCH! (skipping remaining tests).\n");
-                    break;
-                } else {
-                    fprintf(stdout, "MISMATCH!\n");
-                }
+                fprintf(stdout, "FAILED!\n");
             }
         }
 
