@@ -1,6 +1,0 @@
-jit_var_new_literal(1): mov.$b0 $r0, 0x449a4000
-jit_var_inc_ref_ext(1): 1
-jit_var_dec_ref_ext(1): 0
-jit_var_free(1)
-jit_shutdown(): releasing 1 thread state ..
-jit_shutdown(): done
