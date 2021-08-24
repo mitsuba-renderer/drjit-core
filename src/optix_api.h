@@ -12,6 +12,9 @@
 #include "cuda_api.h"
 
 using OptixDeviceContext = void *;
+using OptixProgramGroup = void*;
+struct OptixPipelineCompileOptions;
+struct OptixShaderBindingTable;
 struct ThreadState;
 
 /// Create an OptiX device context on the current ThreadState

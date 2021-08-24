@@ -56,10 +56,8 @@ extern std::vector<std::string> callables;
 /// Ensure uniqueness of globals/callables arrays
 extern GlobalsMap globals_map;
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
 /// Are we recording an OptiX kernel?
 extern bool uses_optix;
-#endif
 
 /// Are we currently compiling a virtual function call
 extern bool assemble_func;
