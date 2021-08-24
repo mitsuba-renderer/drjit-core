@@ -91,7 +91,6 @@ add_library(
 
 target_compile_features(enoki-jit PRIVATE cxx_std_14)
 target_include_directories(enoki-jit PRIVATE
-  include
   ext/enoki-thread/include
   ext/robin_map/include
   ext/lz4
@@ -103,12 +102,6 @@ target_include_directories(enoki-jit
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-
-target_compile_options(enoki-jit PRIVATE ${ENOKI_NATIVE_FLAGS})
-
-if (NOT MSVC)
-  target_compile_options(enoki-jit PRIVATE -Wall -Wextra)
-endif()
 
 target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_BUILD=1)
 target_link_libraries(enoki-jit PRIVATE enoki-thread)
