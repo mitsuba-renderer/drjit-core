@@ -12,6 +12,10 @@
 #  include <unistd.h>
 #endif
 
+#if defined(__linux__)
+#  include <sys/stat.h>
+#endif
+
 #if defined(__APPLE__)
 #  include <mach-o/dyld.h>
 #endif
@@ -275,6 +279,14 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Could not change working directory!");
         exit(EXIT_FAILURE);
     }
+
+#if defined(_WIN32)
+    _snwprintf(binary_path, 1024, L"out_%s", L##TEST_NAME);
+    _wmkdir(binary_path);
+#else
+    snprintf(binary_path, 1024, "out_%s", TEST_NAME);
+    mkdir(binary_path, 0777);
+#endif
 
     int log_level_stderr = (int) LogLevel::Warn;
     bool fail_fast = false, test_cuda = true, test_optix = true, test_llvm = true,
