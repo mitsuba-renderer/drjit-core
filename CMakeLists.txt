@@ -2,51 +2,27 @@ cmake_minimum_required(VERSION 3.13...3.18)
 
 project(enoki-jit
   DESCRIPTION
-    "Enoki JIT compiler"
+    "Enoki-JIT"
   LANGUAGES
     CXX C
 )
 
-if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/enoki-thread/cmake")
+if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/enoki-thread/ext/cmake-defaults")
   message(FATAL_ERROR "The enoki-jit dependencies are missing! "
     "You probably did not clone the project with --recursive. It is possible to recover "
     "by invoking\n$ git submodule update --init --recursive")
 endif()
 
-include(ext/enoki-thread/cmake/EnokiDefaults.cmake)
+include(ext/enoki-thread/ext/cmake-defaults/CMakeLists.txt)
 
 add_subdirectory(ext/enoki-thread)
+
 mark_as_advanced(ENOKI_THREAD_ENABLE_TESTS)
 
 option(ENOKI_JIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
 option(ENOKI_JIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 option(ENOKI_JIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
 option(ENOKI_JIT_ENABLE_TESTS "Build Enoki test suite?" OFF)
-
-# Compile for the native system architecture (assumes AVX2 on windows). When
-# enoki-jit is compiled as part of a PyPI package via scikit-build, adopt a
-# lower target architecture (Ivy Bridge, which has the AVX and F16C
-# extensions). An M1-like architecture is assumed for arm64 builds on macOS.
-
-if (MSVC)
-  if (SKBUILD)
-    # Reasonably portable binaries for PyPI
-    set(ENOKI_NATIVE_FLAGS_DEFAULT "/arch:AVX")
-  else()
-    set(ENOKI_NATIVE_FLAGS_DEFAULT "/arch:AVX2")
-  endif()
-elseif (APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-  set(ENOKI_NATIVE_FLAGS_DEFAULT "-mcpu=apple-a12")
-else()
-  if (SKBUILD)
-    # Reasonably portable binaries for PyPI
-    set(ENOKI_NATIVE_FLAGS_DEFAULT "-march=ivybridge")
-  else()
-    set(ENOKI_NATIVE_FLAGS_DEFAULT "-march=native")
-  endif()
-endif()
-
-set(ENOKI_NATIVE_FLAGS ${ENOKI_NATIVE_FLAGS_DEFAULT} CACHE STRING "Compilation flags used to target the host processor architecture.")
 
 if (ENOKI_JIT_DYNAMIC_CUDA)
   message(STATUS "Enoki-JIT: CUDA will be loaded dynamically at runtime.")
@@ -128,9 +104,6 @@ target_compile_options(enoki-jit PRIVATE ${ENOKI_NATIVE_FLAGS})
 
 if (NOT MSVC)
   target_compile_options(enoki-jit PRIVATE -Wall -Wextra)
-  if (U_CMAKE_BUILD_TYPE MATCHES RELEASE OR U_CMAKE_BUILD_TYPE MATCHES MINSIZEREL)
-    target_compile_options(enoki-jit PRIVATE -fvisibility=hidden)
-  endif()
 endif()
 
 target_compile_definitions(enoki-jit PRIVATE -DENOKI_JIT_BUILD=1)

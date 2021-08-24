@@ -92,7 +92,6 @@ TEST_BOTH(04_load_store_float) {
         for (int j = 0; j < 2; ++j) {
             for (int k = 0; k < 2; ++k) {
                 uint32_t v0, v1;
-                VarType vt;
 
                 if (i == 0) {
                     float f1 = 1, f1234 = 1234;
@@ -144,7 +143,7 @@ template <typename T> void test_const_prop() {
 
     bool fail = false;
     Value values[Size2];
-    for (int i = 0; i < Size2; ++i) {
+    for (uint32_t i = 0; i < Size2; ++i) {
         int j = i % Size;
         values[i] = (Value) (IsMask || !IsSigned) ? j : (j - 4);
         if (IsFloat && (values[i] < Value(-1) || values[i] > Value(1)))
@@ -174,7 +173,7 @@ template <typename T> void test_const_prop() {
         else if ((op == JitOp::Neg || op == JitOp::Abs) && IsMask)
             continue;
 
-        for (int i = 0; i < Size2; ++i)
+        for (uint32_t i = 0; i < Size2; ++i)
             in[i] = jit_var_new_literal(Backend, T::Type, values + i, 1, i >= Size);
 
         for (uint32_t i = 0; i < Size2; ++i) {
@@ -226,10 +225,10 @@ template <typename T> void test_const_prop() {
             }
         }
 
-        for (int i = 0; i < Size2 * Size2; ++i)
+        for (uint32_t i = 0; i < Size2 * Size2; ++i)
             jit_var_dec_ref_ext(out[i]);
 
-        for (int i = 0; i < Size2; ++i)
+        for (uint32_t i = 0; i < Size2; ++i)
             jit_var_dec_ref_ext(in[i]);
     }
 
@@ -249,7 +248,7 @@ template <typename T> void test_const_prop() {
         if (IsMask && !(op == JitOp::Or || op == JitOp::And || op == JitOp::Xor))
             continue;
 
-        for (int i = 0; i < Size2; ++i)
+        for (uint32_t i = 0; i < Size2; ++i)
             in[i] = jit_var_new_literal(Backend, T::Type, values + i, 1, i >= Size);
 
         for (uint32_t i = 0; i < Size2; ++i) {
@@ -307,10 +306,10 @@ template <typename T> void test_const_prop() {
             }
         }
 
-        for (int i = 0; i < Size2 * Size2; ++i)
+        for (uint32_t i = 0; i < Size2 * Size2; ++i)
             jit_var_dec_ref_ext(out[i]);
 
-        for (int i = 0; i < Size2; ++i)
+        for (uint32_t i = 0; i < Size2; ++i)
             jit_var_dec_ref_ext(in[i]);
     }
 
@@ -323,7 +322,7 @@ template <typename T> void test_const_prop() {
 
     uint32_t in_b[4] { };
 
-    for (int i = 0; i < Small2; ++i) {
+    for (uint32_t i = 0; i < Small2; ++i) {
         int j = i % Small;
         values[i] = (Value) (IsMask || !IsSigned) ? j : (j - 2);
         if (IsFloat && (values[i] < Value(-1) || values[i] > Value(1)))
@@ -334,12 +333,12 @@ template <typename T> void test_const_prop() {
         if (op == JitOp::Fmadd && IsMask)
             continue;
 
-        for (int i = 0; i < 4; ++i) {
+        for (uint32_t i = 0; i < 4; ++i) {
             bool b = i & 1;
             in_b[i] = jit_var_new_literal(Backend, VarType::Bool, &b, 1, i >= Small);
         }
 
-        for (int i = 0; i < Small2; ++i)
+        for (uint32_t i = 0; i < Small2; ++i)
             in[i] = jit_var_new_literal(Backend, T::Type, values + i, 1, i >= Small);
 
         memset(out, 0, Small2 * Small2 * Small2 * sizeof(uint32_t));
@@ -395,10 +394,10 @@ template <typename T> void test_const_prop() {
             }
         }
 
-        for (int i = 0; i < Small2 * Small2 * Small2; ++i)
+        for (uint32_t i = 0; i < Small2 * Small2 * Small2; ++i)
             jit_var_dec_ref_ext(out[i]);
 
-        for (int i = 0; i < Small2; ++i)
+        for (uint32_t i = 0; i < Small2; ++i)
             jit_var_dec_ref_ext(in[i]);
 
         for (int i = 0; i < 4; ++i)

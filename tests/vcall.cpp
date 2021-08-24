@@ -45,7 +45,7 @@ namespace detail {
     }
 
     inline bool extract_mask() { return true; }
-    template <typename T> decltype(auto) extract_mask(const T &v) {
+    template <typename T> decltype(auto) extract_mask(const T &) {
         /// XXX
         // if constexpr (is_mask_v<T>) {
         //     return v;
@@ -56,7 +56,7 @@ namespace detail {
     }
 
     template <typename T, typename... Ts, enable_if_t<sizeof...(Ts) != 0> = 0>
-    decltype(auto) extract_mask(const T &v, const Ts &... vs) {
+    decltype(auto) extract_mask(const T &, const Ts &... vs) {
         return extract_mask(vs...);
     }
 
@@ -202,7 +202,6 @@ auto vcall(const char *domain, const Func &func,
     }
 #endif
 
-    constexpr size_t N = sizeof...(Args);
     return vcall_impl<Result_2>(
         domain, n_inst, func, self,
         Bool(detail::extract_mask(args...)),
@@ -268,14 +267,14 @@ TEST_BOTH(02_calling_conventions) {
 
     struct B2 : Base {
         ek_tuple<Mask, Float, Double, Float, Mask>
-        f(Mask p0, Float p1, Double p2, Float p3, Mask p4) override {
+        f(Mask p0, Float p1, Double p2, Float p3, Mask) override {
             return { !p0, p1 + 1, p2 + 2, p3 + 3, false };
         }
     };
 
     struct B3 : Base {
         ek_tuple<Mask, Float, Double, Float, Mask>
-        f(Mask p0, Float p1, Double p2, Float p3, Mask p4) override {
+        f(Mask, Float, Double, Float, Mask) override {
             return { 0, 0, 0, 0, 0 };
         }
     };
@@ -285,6 +284,7 @@ TEST_BOTH(02_calling_conventions) {
     uint32_t i1 = jit_registry_put(Backend, "Base", &b1);
     uint32_t i2 = jit_registry_put(Backend, "Base", &b2);
     uint32_t i3 = jit_registry_put(Backend, "Base", &b3);
+    (void) i1; (void) i2; (void) i3;
 
     for (uint32_t i = 0; i < 2; ++i) {
         jit_set_flag(JitFlag::VCallOptimize, i);
