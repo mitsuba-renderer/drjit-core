@@ -762,17 +762,19 @@ const char *jitc_var_str(uint32_t index) {
 
 static void jitc_raise_placeholder_error(const char *func, uint32_t index) {
     jitc_raise(
-        "%s(r%u): placeholder variables are used to record "
-        "computation symbolically and cannot be scheduled for evaluation! "
-        "This error message could appear for the following reasons:\n\n1. "
-        "You are using Enoki's loop or virtual function call recording "
-        "feature and tried to perform an operation that is not permitted "
-        "in this restricted execution mode. Please see the documentation "
-        "of recorded loops/virtual function calls to learn about these "
-        "restrictions.\n\n2. You are accessing a variable that was "
-        "modified as part of a recorded loop and forgot to specify it as a "
-        "loop variable. Please see the enoki::Loop documentation for "
-        "details.", func, index);
+        "%s(r%u): placeholder variables are used to record computation symbolically\n"
+        "and cannot be scheduled for evaluation! This error message could appear for\n"
+        "the following reasons:\n"
+        "\n"
+        "1. You are using Enoki's loop or virtual function call recording feature\n"
+        "   and tried to perform an operation that is not permitted in this restricted\n"
+        "   execution mode. Please see the documentation of recorded loops/virtual\n"
+        "   function calls to learn about these restrictions.\n"
+        "\n"
+        "2. You are accessing a variable that was modified as part of a recorded\n"
+        "   loop and forgot to specify it as a loop variable. Please see the\n"
+        "   enoki::Loop documentation for details.", func, index
+    );
 }
 
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
