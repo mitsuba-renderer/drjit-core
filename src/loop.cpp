@@ -653,18 +653,9 @@ static void jitc_var_loop_assemble_init(const Variable *, const Extra &extra) {
         buffer.fmt("    br label %%l_%u_cond\n", loop_reg);
     }
 
-    std::pair<uint32_t, uint32_t> result{ 0, 0 };
-
     buffer.fmt("\nl_%u_cond: %s Loop (%s)\n", loop_reg,
                loop->backend == JitBackend::CUDA ? "//" : ";",
                loop->name);
-
-    jitc_log(InfoSym,
-             "jit_var_loop_assemble(): loop (\"%s\") with %u/%zu loop "
-             "variable%s (%u/%u bytes), %u side effect%s",
-             loop->name, result.first, loop->in.size(),
-             result.first == 1 ? "" : "s", result.second, loop->storage_size_initial,
-             loop->se_count, loop->se_count == 1 ? "" : "s");
 }
 
 static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
@@ -700,6 +691,9 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
         buffer.fmt("    br label %%l_%u_tail\n"
                    "\nl_%u_tail:\n", loop_reg, loop_reg);
 
+    uint32_t n_variables = 0,
+             storage_size = 0;
+
     uint32_t width = jitc_llvm_vector_width;
     for (size_t i = 0; i < loop->in_body.size(); ++i) {
         auto it_in = state.variables.find(loop->in_cond[i]),
@@ -725,6 +719,9 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
             buffer.fmt("    mov.%s %s%u, %s%u;\n", type_name_ptx[vti],
                        type_prefix[vti], v_in->reg_index, type_prefix[vti],
                        v_out->reg_index);
+
+        n_variables++;
+        storage_size += type_size[vti];
     }
 
     if (loop->backend == JitBackend::CUDA)
@@ -735,4 +732,11 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
     buffer.fmt("\nl_%u_done:\n", loop_reg);
     loop->se_count = 0;
     loop->se = 0;
+
+    jitc_log(InfoSym,
+             "jit_var_loop_assemble(): loop (\"%s\") with %u/%u loop "
+             "variable%s (%u/%u bytes), %u side effect%s",
+             loop->name, n_variables, (uint32_t) loop->in.size(),
+             n_variables == 1 ? "" : "s", storage_size, loop->storage_size_initial,
+             loop->se_count, loop->se_count == 1 ? "" : "s");
 }
