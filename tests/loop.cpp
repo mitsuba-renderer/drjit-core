@@ -278,3 +278,23 @@ TEST_BOTH(08_nested_write) {
         jit_assert(strcmp(k.str(), "[0, 28, 28, 49, 49, 70, 91, 84, 112, 112]") == 0);
     }
 }
+
+TEST_BOTH(09_optim_cond) {
+    // Loop condition depends on variables that are optimized away (loop-invariants)
+
+    for (uint32_t i = 0; i < 3; ++i) {
+        jit_set_flag(JitFlag::LoopRecord, i != 0);
+        jit_set_flag(JitFlag::LoopOptimize, i == 2);
+
+        UInt32 k = arange<UInt32>(3), l = 10;
+        Loop<Mask> loop("Outer", k, l);
+
+        while (loop(k + l < 30)) {
+            k += 1;
+        }
+
+        jit_assert(strcmp(k.str(), "[20, 20, 20]") == 0);
+        if (i == 2)
+            jit_assert(jit_var_is_literal(l.index()));
+    }
+}

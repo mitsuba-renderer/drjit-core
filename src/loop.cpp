@@ -257,6 +257,13 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
                  unchanged = index_o == index_1;
 
             if (eq_literal || unchanged) {
+                if (backend == JitBackend::LLVM) {
+                    // Rewrite the previously generated phi expression. Needed
+                    // in case the loop condition depends on a loop-invariant
+                    // variable (see loop test 09_optim_cond)
+                    v2->stmt = (char *) "$r0 = phi <$w x $t0> [ $r0, "
+                                        "%l_$i2_tail ], [ $r1, %l_$i2_start ]";
+                }
                 jitc_var_inc_ref_ext(index_3);
                 jitc_var_dec_ref_ext(index_1);
                 indices_in[i] = index_3;
