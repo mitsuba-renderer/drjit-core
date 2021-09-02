@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.13...3.18)
+# ----------------------------------------------------------
+# Top-level Enoki-JIT CMake file, requires a recent version
+# ----------------------------------------------------------
+cmake_minimum_required (VERSION 3.13...3.18)
 
 project(enoki-jit
   DESCRIPTION
@@ -7,17 +10,9 @@ project(enoki-jit
     CXX C
 )
 
-if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/enoki-thread/ext/cmake-defaults")
-  message(FATAL_ERROR "The enoki-jit dependencies are missing! "
-    "You probably did not clone the project with --recursive. It is possible to recover "
-    "by invoking\n$ git submodule update --init --recursive")
-endif()
-
-include(ext/enoki-thread/ext/cmake-defaults/CMakeLists.txt)
-
-add_subdirectory(ext/enoki-thread)
-
-mark_as_advanced(ENOKI_THREAD_ENABLE_TESTS)
+# ----------------------------------------------------------
+#  Optional features available to users
+# ----------------------------------------------------------
 
 option(ENOKI_JIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 option(ENOKI_JIT_ENABLE_TESTS "Build Enoki test suite?" OFF)
@@ -26,6 +21,26 @@ if (NOT APPLE)
   option(ENOKI_JIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
   option(ENOKI_JIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
 endif()
+
+# ----------------------------------------------------------
+#  Check if submodules have been checked out, or fail early
+# ----------------------------------------------------------
+
+if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/enoki-thread/ext/cmake-defaults")
+  message(FATAL_ERROR "The Enoki-JIT dependencies are missing! "
+    "You probably did not clone the project with --recursive. It is possible to recover "
+    "by invoking\n$ git submodule update --init --recursive")
+endif()
+
+# ----------------------------------------------------------
+#  Build defaults for projects by the Realistic Graphics Lab
+# ----------------------------------------------------------
+
+include(ext/enoki-thread/ext/cmake-defaults/CMakeLists.txt)
+
+# ----------------------------------------------------------
+#  Print a few messages explaining what will be compiled
+# ----------------------------------------------------------
 
 if (ENOKI_JIT_DYNAMIC_LLVM)
   message(STATUS "Enoki-JIT: LLVM will be loaded dynamically at runtime.")
@@ -45,6 +60,16 @@ if (NOT APPLE)
     message(STATUS "Enoki-JIT: OptiX support disabled.")
   endif()
 endif()
+
+# ----------------------------------------------------------
+#  Build the Enoki-Thread library
+# ----------------------------------------------------------
+
+add_subdirectory(ext/enoki-thread)
+
+# ----------------------------------------------------------
+#  Build Enoki-JIT
+# ----------------------------------------------------------
 
 if (ENOKI_JIT_ENABLE_OPTIX)
   set(ENOKI_JIT_OPTIX_FILES src/optix_api.h src/optix_api.cpp)
