@@ -497,15 +497,6 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     if (unlikely(error))
         jitc_var_new_op_fail(error, op, n_dep, dep);
 
-    if (dirty) {
-        jitc_eval(thread_state(backend));
-        for (uint32_t i = 0; i < n_dep; ++i) {
-            v[i] = jitc_var(dep[i]);
-            if (v[i]->ref_count_se)
-                error = "variable remains dirty following evaluation!";
-        }
-    }
-
     bool is_float  = jitc_is_float(vt),
          is_uint = jitc_is_uint(vt),
          is_single = vt == VarType::Float32,
@@ -1265,6 +1256,15 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
         if (li_created)
             jitc_var_dec_ref_ext(li);
     } else {
+        if (dirty) {
+            jitc_eval(thread_state(backend));
+            for (uint32_t i = 0; i < n_dep; ++i) {
+                v[i] = jitc_var(dep[i]);
+                if (v[i]->ref_count_se)
+                    error = "variable remains dirty following evaluation!";
+            }
+        }
+
         Variable v2;
         v2.size = size;
         v2.type = (uint32_t) vtr;
@@ -1284,7 +1284,6 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
 
         result = jitc_var_new(v2);
     }
-
 
     if (unlikely(std::max(state.log_level_stderr, state.log_level_callback) >=
                  LogLevel::Debug)) {
