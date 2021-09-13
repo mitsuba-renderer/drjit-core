@@ -286,7 +286,7 @@ LLVMExecutionEngineRef jitc_llvm_engine_create(LLVMModuleRef mod_) {
 static ProfilerRegion profiler_region_llvm_compile("jit_llvm_compile");
 
 void jitc_llvm_compile(const char *buf, size_t buf_size,
-                       const char *kernel_name, Kernel &kernel) {
+                       const char *kern_name, Kernel &kernel) {
     ProfilerPhase phase(profiler_region_llvm_compile);
 
     size_t target_size = buf_size * 10;
@@ -308,7 +308,7 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
     jitc_llvm_mem_offset = 0;
 
     LLVMMemoryBufferRef llvm_buf = LLVMCreateMemoryBufferWithMemoryRange(
-        buf, buf_size, kernel_name, 0);
+        buf, buf_size, kern_name, 0);
     if (unlikely(!llvm_buf))
         jitc_fail("jit_run_compile(): could not create memory buf!");
 
@@ -338,10 +338,10 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
     LLVMExecutionEngineRef engine = jitc_llvm_engine_create(llvm_module);
 
     /// Resolve the kernel entry point
-    uint8_t *func = (uint8_t *) LLVMGetFunctionAddress(engine, kernel_name);
+    uint8_t *func = (uint8_t *) LLVMGetFunctionAddress(engine, kern_name);
     if (unlikely(!func))
         jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
-                  "address of kernel \"%s\"!\n", kernel_name);
+                  "address of kernel \"%s\"!\n", kern_name);
     else if (unlikely(func < jitc_llvm_mem))
         jitc_fail("jit_llvm_compile(): internal error: invalid address (1): "
                   "%p < %p!\n", func, jitc_llvm_mem);
@@ -420,7 +420,7 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
         *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 1;
 
 #if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
-    kernel.llvm.itt = __itt_string_handle_create(kernel_name);
+    kernel.llvm.itt = __itt_string_handle_create(kern_name);
 #endif
 
 #if !defined(_WIN32)

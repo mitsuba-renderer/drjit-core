@@ -1017,7 +1017,6 @@ static BlockOp jitc_block_sum_create(VarType type) {
         case VarType::Float32: return jitc_block_sum_create<float   >();
         case VarType::Float64: return jitc_block_sum_create<double  >();
         default: jitc_raise("jit_block_sum_create(): unsupported data type!");
-            return nullptr;
     }
 }
 

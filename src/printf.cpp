@@ -72,8 +72,8 @@ static void jitc_var_printf_assemble(const Variable *v, const Extra &extra) {
 
     uint32_t offset = 0, align = 0;
     for (uint32_t i = 0; i < extra.n_dep; ++i) {
-        Variable *v = jitc_var(extra.dep[i]);
-        uint32_t vti = v->type;
+        Variable *v2 = jitc_var(extra.dep[i]);
+        uint32_t vti = v2->type;
         if ((VarType) vti == VarType::Void)
             continue;
         uint32_t tsize = type_size[vti];

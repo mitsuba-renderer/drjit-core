@@ -382,7 +382,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             Ref result_v = steal(jitc_var_new_op(JitOp::And, 2, dep));
             Variable *v = jitc_var(result_v);
 
-            if (v->placeholder != placeholder || v->size != size || v->optix != optix) {
+            if (v->placeholder != placeholder || v->size != size ||
+                v->optix != optix) {
                 if (v->ref_count_ext != 1 || v->ref_count_int != 0) {
                     result_v = steal(jitc_var_copy(result_v));
                     v = jitc_var(result_v);
@@ -432,7 +433,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         }
 
         // An output variable is no longer referenced. Find out which one.
-        uint32_t n_out_2 = vcall_2->out.size();
+        uint32_t n_out_2 = (uint32_t) vcall_2->out.size();
         uint32_t offset = (uint32_t) -1;
         for (uint32_t i = 0; i < n_out_2; ++i) {
             if (vcall_2->out[i] == index)
@@ -633,8 +634,8 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
     uint32_t in_size = 0, in_align = 1,
              out_size = 0, out_align = 1,
-             n_in = vcall->in.size(),
-             n_out = vcall->out.size(),
+             n_in = (uint32_t) vcall->in.size(),
+             n_out = (uint32_t) vcall->out.size(),
              n_in_active = 0,
              n_out_active = 0;
 
@@ -686,10 +687,11 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
         auto result = jitc_assemble_func(
             ts, vcall->name, i, in_size, in_align, out_size, out_align,
-            data_offset, vcall->data_map, n_in, vcall->in.data(), n_out,
-            vcall->out_nested.data() + n_out * i,
+            (uint32_t) data_offset, vcall->data_map, n_in, vcall->in.data(),
+            n_out, vcall->out_nested.data() + n_out * i,
             vcall->checkpoints[i + 1] - vcall->checkpoints[i],
-            vcall->side_effects.data() + vcall->checkpoints[i], vcall->use_self);
+            vcall->side_effects.data() + vcall->checkpoints[i],
+            vcall->use_self);
 
         if (vcall->backend == JitBackend::LLVM)
             result.second += 1;

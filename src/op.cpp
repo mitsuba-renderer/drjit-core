@@ -118,7 +118,17 @@ inline bool eval_or(bool v0, bool v1) { return v0 || v1; }
 inline bool eval_xor(bool v0, bool v1) { return v0 != v1; }
 inline bool eval_not(bool v) { return !v; }
 
-template <typename T> T eval_neg(T v) { return -v; }
+template <typename T, enable_if_t<std::is_unsigned<T>::value> = 0>
+T eval_neg(T v) {
+    using TS = typename std::make_signed<T>::type;
+    return T(-(TS) v);
+}
+
+template <typename T, enable_if_t<std::is_signed<T>::value> = 0>
+T eval_neg(T v) {
+    return -v;
+}
+
 inline bool eval_neg(bool) {
     jitc_raise("eval_neg(): unsupported operands!");
 }
@@ -129,7 +139,7 @@ inline bool eval_div(bool, bool) {
 }
 
 template <typename T, enable_if_t<std::is_signed<T>::value> = 0>
-T eval_abs(T value) { return std::abs(value); }
+T eval_abs(T value) { return (T) std::abs(value); }
 
 template <typename T, enable_if_t<!std::is_signed<T>::value> = 0>
 T eval_abs(T value) { return value; }
@@ -1782,17 +1792,17 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
     bool is_float = jitc_is_float(vt);
 
-    const char *op_name = nullptr;
+    const char *red_op_name = nullptr;
     switch (reduce_op) {
         case ReduceOp::None:
             break;
         case ReduceOp::Add:
-            op_name = (is_float && backend == JitBackend::LLVM) ? "fadd" : "add";
+            red_op_name = (is_float && backend == JitBackend::LLVM) ? "fadd" : "add";
             break;
-        case ReduceOp::Min: op_name = "min"; break;
-        case ReduceOp::Max: op_name = "max"; break;
-        case ReduceOp::And: op_name = "and"; break;
-        case ReduceOp::Or: op_name = "or"; break;
+        case ReduceOp::Min: red_op_name = "min"; break;
+        case ReduceOp::Max: red_op_name = "max"; break;
+        case ReduceOp::And: red_op_name = "and"; break;
+        case ReduceOp::Or: red_op_name = "or"; break;
         default:
             jitc_raise("jitc_var_new_scatter(): unsupported reduction!");
     }
@@ -1826,17 +1836,17 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         if (reduce_op == ReduceOp::None)
             buf.fmt("st.global.%s [%s], %s", src_type, dst_addr, src_reg);
         else
-            // buf.fmt("red.global.%s.%s [%s], %s", op_name,
+            // buf.fmt("red.global.%s.%s [%s], %s", red_op_name,
             //         src_type, dst_addr, src_reg);
-            buf.fmt("atom.global.%s.%s $r0, [%s], %s", op_name,
+            buf.fmt("atom.global.%s.%s $r0, [%s], %s", red_op_name,
                     src_type, dst_addr, src_reg);
     } else {
         if (is_float && reduce_op != ReduceOp::None &&
             reduce_op != ReduceOp::Add)
             jitc_raise("jitc_var_new_scatter(): LLVM %s reduction only "
-                       "supports integer values!", op_name);
+                       "supports integer values!", red_op_name);
 
-        if (op_name == nullptr) {
+        if (red_op_name == nullptr) {
             buf.put("$r0_0 = bitcast $<i8*$> $r1 to $<$t2*$>$n"
                     "$r0_1 = getelementptr $t2, $<$t2*$> $r0_0, <$w x $t3> $r3$n"
                     "$call void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0_1, i32 $s2, <$w x $t4> $r4)");
@@ -1861,7 +1871,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                     "$r0_next = add nuw nsw i32 $r0_index, 1$n"
                     "$r0_cond = icmp eq i32 $r0_next, $w$n"
                     "br i1 $r0_cond, label %%L$i0_done, label %%L$i0_body$n"
-                    "\nL$i0_done:", op_name);
+                    "\nL$i0_done:", red_op_name);
         }
     }
 

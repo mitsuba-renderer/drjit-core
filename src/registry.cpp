@@ -282,36 +282,36 @@ void jitc_registry_set_attr(JitBackend backend, void *ptr, const char *name,
         uint32_t new_count = std::max(id + 1, std::max(8u, attr.count * 2u));
         size_t old_size = (size_t) attr.count * (size_t) isize;
         size_t new_size = (size_t) new_count * (size_t) isize;
-        void *ptr;
+        void *new_ptr;
 
         if (backend == JitBackend::CUDA) {
             scoped_set_context guard(state.devices[0].context);
-            CUresult ret = cuMemAlloc((CUdeviceptr *) &ptr, new_size);
+            CUresult ret = cuMemAlloc((CUdeviceptr *) &new_ptr, new_size);
             if (ret != CUDA_SUCCESS) {
                 jitc_malloc_trim(true, true);
-                cuda_check(cuMemAlloc((CUdeviceptr *) &ptr, new_size));
+                cuda_check(cuMemAlloc((CUdeviceptr *) &new_ptr, new_size));
             }
 
             if (old_size != 0)
-                cuda_check(cuMemcpyAsync((CUdeviceptr) ptr,
+                cuda_check(cuMemcpyAsync((CUdeviceptr) new_ptr,
                                          (CUdeviceptr) attr.ptr, old_size,
                                          ts->stream));
             cuda_check(
-                cuMemsetD8Async((CUdeviceptr)((uint8_t *) ptr + old_size), 0,
+                cuMemsetD8Async((CUdeviceptr)((uint8_t *) new_ptr + old_size), 0,
                                 new_size - old_size, ts->stream));
 
             cuda_check(cuMemFree((CUdeviceptr) attr.ptr));
         } else {
-            ptr = malloc_check(new_size);
+            new_ptr = malloc_check(new_size);
 
             if (old_size != 0)
-                memcpy(ptr, attr.ptr, old_size);
-            memset((uint8_t *) ptr + old_size, 0, new_size - old_size);
+                memcpy(new_ptr, attr.ptr, old_size);
+            memset((uint8_t *) new_ptr + old_size, 0, new_size - old_size);
 
             free(attr.ptr);
         }
 
-        attr.ptr = ptr;
+        attr.ptr = new_ptr;
         attr.count = new_count;
     }
 

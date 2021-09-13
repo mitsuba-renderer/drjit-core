@@ -449,10 +449,10 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
             if (!index) { // Optimized away
                 loop->out.push_back(0);
-                uint32_t index = indices_in[i];
-                jitc_var_inc_ref_ext(index);
+                uint32_t index_2 = indices_in[i];
+                jitc_var_inc_ref_ext(index_2);
                 jitc_var_dec_ref_ext(*indices[i]);
-                *indices[i] = index;
+                *indices[i] = index_2;
                 continue;
             }
 
