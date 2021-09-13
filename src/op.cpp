@@ -340,8 +340,13 @@ T eval_mulhi(T a, T b) {
 
 
 // ===========================================================================
-// Helpe to apply a given expression (lambda) to literal constant variables
+// Infrastructure to apply a given expression (lambda) to literal varaibles
 // ===========================================================================
+
+#if defined(_MSC_VER)
+#  pragma warning(push)
+#  pragma warning(disable: 4702) // unreachable code
+#endif
 
 template <typename Type> Type i2v(uint64_t value) {
     Type result;
@@ -380,6 +385,10 @@ uint64_t jitc_eval_literal(Func func, const Args *... args) {
         default: jitc_fail("jit_eval_literal(): unsupported variable type!");
     }
 }
+
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#endif
 
 // ===========================================================================
 // Helper routines for turning multiplies and divisions into shifts
