@@ -438,7 +438,7 @@ bool jitc_cuda_init() {
     return true;
 }
 
-void jitc_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
+void jitc_cuda_compile(const char *buf, size_t buf_size, Kernel &kernel) {
     const uintptr_t log_size = 16384;
     char error_log[log_size], info_log[log_size];
 
@@ -467,12 +467,12 @@ void jitc_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     CUlinkState link_state;
     cuda_check(cuLinkCreate(sizeof(argv) / sizeof(void *), arg, argv, &link_state));
 
-    int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buffer,
-                           buffer_size, nullptr, 0, nullptr, nullptr);
+    int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buf,
+                           buf_size, nullptr, 0, nullptr, nullptr);
     if (rt != CUDA_SUCCESS)
         jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
                  "assembly listing and error message below:\n\n%s\n\n%s",
-                 buffer, error_log);
+                 buf, error_log);
 
     void *link_output = nullptr;
     size_t link_output_size = 0;
@@ -480,7 +480,7 @@ void jitc_cuda_compile(const char *buffer, size_t buffer_size, Kernel &kernel) {
     if (rt != CUDA_SUCCESS)
         jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
                  "assembly listing and error message below:\n\n%s\n\n%s",
-                 buffer, error_log);
+                 buf, error_log);
 
     jitc_trace("Detailed linker output:\n%s", info_log);
 

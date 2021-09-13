@@ -285,11 +285,11 @@ LLVMExecutionEngineRef jitc_llvm_engine_create(LLVMModuleRef mod_) {
 
 static ProfilerRegion profiler_region_llvm_compile("jit_llvm_compile");
 
-void jitc_llvm_compile(const char *buffer, size_t buffer_size,
+void jitc_llvm_compile(const char *buf, size_t buf_size,
                        const char *kernel_name, Kernel &kernel) {
     ProfilerPhase phase(profiler_region_llvm_compile);
 
-    size_t target_size = buffer_size * 10;
+    size_t target_size = buf_size * 10;
 
     if (jitc_llvm_mem_size <= target_size) {
         // Central assumption: LLVM text IR is much larger than the resulting generated code.
@@ -307,18 +307,18 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
     }
     jitc_llvm_mem_offset = 0;
 
-    LLVMMemoryBufferRef buf = LLVMCreateMemoryBufferWithMemoryRange(
-        buffer, buffer_size, kernel_name, 0);
-    if (unlikely(!buf))
-        jitc_fail("jit_run_compile(): could not create memory buffer!");
+    LLVMMemoryBufferRef llvm_buf = LLVMCreateMemoryBufferWithMemoryRange(
+        buf, buf_size, kernel_name, 0);
+    if (unlikely(!llvm_buf))
+        jitc_fail("jit_run_compile(): could not create memory buf!");
 
     // 'buf' is consumed by this function.
     LLVMModuleRef llvm_module = nullptr;
     char *error = nullptr;
-    LLVMParseIRInContext(jitc_llvm_context, buf, &llvm_module, &error);
+    LLVMParseIRInContext(jitc_llvm_context, llvm_buf, &llvm_module, &error);
     if (unlikely(error))
         jitc_fail("jit_llvm_compile(): parsing failed. Please see the LLVM "
-                 "IR and error message below:\n\n%s\n\n%s", buffer, error);
+                 "IR and error message below:\n\n%s\n\n%s", buf, error);
 
     if (false) {
         char *llvm_ir = LLVMPrintModuleToString(llvm_module);
@@ -331,7 +331,7 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
     if (unlikely(status))
         jitc_fail("jit_llvm_compile(): module could not be verified! Please "
                   "see the LLVM IR and error message below:\n\n%s\n\n%s",
-                  buffer, error);
+                  buf, error);
 #endif
 
     LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
@@ -353,7 +353,7 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
             "by the target architecture. Enoki cannot handle this case "
             "and will terminate the application now. For reference, the "
             "following kernel code was responsible for this problem:\n\n%s",
-            buffer);
+            buf);
 
     std::vector<uint8_t *> reloc;
     reloc.push_back(func);
@@ -374,16 +374,16 @@ void jitc_llvm_compile(const char *buffer, size_t buffer_size,
         for (size_t i = 0; i < callables.size(); ++i) {
             const char *s = callables[i].c_str();
             const char *offset = strstr(s, "func_");
-            char buf[38];
-            memcpy(buf, offset, 37);
-            buf[37] = '\0';
+            char name_buf[38];
+            memcpy(name_buf, offset, 37);
+            name_buf[37] = '\0';
 
             uint8_t *func_2 =
-                (uint8_t *) LLVMGetFunctionAddress(engine, buf);
+                (uint8_t *) LLVMGetFunctionAddress(engine, name_buf);
 
             if (unlikely(!func_2))
                 jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
-                          "address of kernel \"%s\"!\n", buf);
+                          "address of kernel \"%s\"!\n", name_buf);
             else if (unlikely(func_2 < jitc_llvm_mem))
                 jitc_fail("jit_llvm_compile(): internal error: invalid address (3): "
                           "%p < %p!\n", func_2, jitc_llvm_mem);

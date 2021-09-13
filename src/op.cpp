@@ -1691,8 +1691,8 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
     uint32_t size = 0;
     bool dirty = false;
-    JitBackend backend;
-    VarType vt;
+    JitBackend backend = (JitBackend) 0;
+    VarType vt = (VarType) 0;
     bool placeholder = jitc_flags() & (uint32_t) JitFlag::Recording;
 
     // Get size, ensure no arrays are dirty

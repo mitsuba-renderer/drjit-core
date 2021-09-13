@@ -563,7 +563,7 @@ uint32_t jitc_var_new_counter(JitBackend backend, size_t size,
     Variable v;
     v.stmt = backend == JitBackend::CUDA ? (char *) "mov.u32 $r0, %r0"
                                          : jitc_llvm_counter_str;
-    v.size = size;
+    v.size = (uint32_t) size;
     v.type = (uint32_t) VarType::UInt32;
     v.backend = (uint32_t) backend;
     return jitc_var_new(v);
@@ -922,7 +922,7 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
     v.type = (uint32_t) type;
     v.backend = (uint32_t) backend;
     v.data = ptr;
-    v.size = size;
+    v.size = (uint32_t) size;
     v.retain_data = free == 0;
 
     if (backend == JitBackend::LLVM) {
@@ -1040,7 +1040,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         // Nobody else holds a reference -- we can directly resize this variable
         jitc_var_inc_ref_ext(index, v);
         jitc_cse_drop(index, v);
-        v->size = size;
+        v->size = (uint32_t) size;
         jitc_cse_put(index, v);
         result = index;
     } else if (v->literal) {
@@ -1108,7 +1108,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
             jitc_memset_async(dst_type == AllocType::HostAsync
                                   ? JitBackend::LLVM
                                   : JitBackend::CUDA,
-                              ptr, size, type_size[v->type], &v->value);
+                              ptr, (uint32_t) size, type_size[v->type], &v->value);
         }
 
         return jitc_var_mem_map((JitBackend) v->backend, (VarType) v->type, ptr, v->size, 1);

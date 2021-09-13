@@ -175,7 +175,7 @@ void* jitc_malloc(AllocType type, size_t size) {
             CUresult ret;
 
             /* Temporarily release the main lock */ {
-                unlock_guard guard(state.mutex);
+                unlock_guard guard_2(state.mutex);
                 ret = alloc((CUdeviceptr *) &ptr, ai.size);
             }
 
@@ -183,7 +183,7 @@ void* jitc_malloc(AllocType type, size_t size) {
                 jitc_malloc_trim(true, true);
 
                 /* Temporarily release the main lock */ {
-                    unlock_guard guard(state.mutex);
+                    unlock_guard guard_2(state.mutex);
                     ret = alloc((CUdeviceptr *) &ptr, ai.size);
                 }
 

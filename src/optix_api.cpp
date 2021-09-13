@@ -441,7 +441,7 @@ void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t sample
     ts->optix_launch_samples = samples;
 }
 
-bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
+bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                         const char *kernel_name, Kernel &kernel) {
     char error_log[16384];
 
@@ -469,11 +469,11 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     size_t log_size = sizeof(error_log);
     OptixDeviceContext &optix_context = state.devices[ts->device].optix_context;
     int rv = optixModuleCreateFromPTX(
-        optix_context, &mco, &ts->optix_pipeline_compile_options, buffer,
-        buffer_size, error_log, &log_size, &kernel.optix.mod);
+        optix_context, &mco, &ts->optix_pipeline_compile_options, buf,
+        buf_size, error_log, &log_size, &kernel.optix.mod);
     if (rv) {
         jitc_fail("jit_optix_compile(): optixModuleCreateFromPTX() failed. Please see the PTX "
-                 "assembly listing and error message below:\n\n%s\n\n%s", buffer, error_log);
+                 "assembly listing and error message below:\n\n%s\n\n%s", buf, error_log);
         jitc_optix_check(rv);
     }
 
@@ -503,7 +503,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
     }
 
     kernel.optix.pg = new OptixProgramGroup[n_programs];
-    kernel.optix.pg_count = n_programs;
+    kernel.optix.pg_count = (uint32_t) n_programs;
 
     log_size = sizeof(error_log);
     rv = optixProgramGroupCreate(optix_context, pgd.get(),
@@ -511,7 +511,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
                                  &log_size, kernel.optix.pg);
     if (rv) {
         jitc_fail("jit_optix_compile(): optixProgramGroupCreate() failed. Please see the PTX "
-                 "assembly listing and error message below:\n\n%s\n\n%s", buffer, error_log);
+                 "assembly listing and error message below:\n\n%s\n\n%s", buf, error_log);
         jitc_optix_check(rv);
     }
 
@@ -563,7 +563,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buffer, size_t buffer_size,
         error_log, &log_size, &kernel.optix.pipeline);
     if (rv) {
         jitc_fail("jit_optix_compile(): optixPipelineCreate() failed. Please see the PTX "
-                 "assembly listing and error message below:\n\n%s\n\n%s", buffer, error_log);
+                 "assembly listing and error message below:\n\n%s\n\n%s", buf, error_log);
         jitc_optix_check(rv);
     }
 
@@ -728,10 +728,10 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
         args[15 + i] = jitc_var_new_stmt(JitBackend::CUDA, VarType::UInt32, tmp,
                                          0, 1, &special);
         uint32_t index = args[15] + i;
-        Variable *v = jitc_var(index);
-        jitc_cse_drop(index, v);
-        v->placeholder = placeholder;
-        jitc_cse_put(index, v);
+        Variable *v2 = jitc_var(index);
+        jitc_cse_drop(index, v2);
+        v2->placeholder = placeholder;
+        jitc_cse_put(index, v2);
     }
 
     jitc_var_dec_ref_ext(special);
@@ -813,7 +813,7 @@ void *jitc_optix_win32_load_alternative() {
 
     unsigned long size  = 0,
                   flags = CM_GETIDLIST_FILTER_CLASS | CM_GETIDLIST_FILTER_PRESENT,
-                  suffix_len = strlen(suffix);
+                  suffix_len = (unsigned long) strlen(suffix);
 
     if (CM_Get_Device_ID_List_SizeA(&size, guid, flags))
         return nullptr;

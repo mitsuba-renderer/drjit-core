@@ -360,7 +360,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         if (ts->backend == JitBackend::LLVM) {
             jitc_llvm_disasm(kernel);
         } else if (!uses_optix) {
-            CUresult ret;
+            CUresult ret = 0;
             /* Unlock while synchronizing */ {
                 unlock_guard guard(state.mutex);
                 ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
@@ -375,12 +375,12 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             cuda_check(ret);
 
             // Locate the kernel entry point
-            char kernel_name[39];
-            snprintf(kernel_name, sizeof(kernel_name), "enoki_%016llx%016llx",
+            char kernel_name_tmp[39];
+            snprintf(kernel_name_tmp, sizeof(kernel_name_tmp), "enoki_%016llx%016llx",
                      (unsigned long long) kernel_hash.high64,
                      (unsigned long long) kernel_hash.low64);
             cuda_check(cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod,
-                                           kernel_name));
+                                           kernel_name_tmp));
 
             // Determine a suitable thread count to maximize occupancy
             int unused, block_size;
@@ -505,7 +505,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             nullptr, &ts->task, 1, blocks,
             callback,
             kernel_params.data(),
-            kernel_params.size() * sizeof(void *),
+            (uint32_t) (kernel_params.size() * sizeof(void *)),
             nullptr
         );
     }
@@ -636,7 +636,7 @@ void jitc_eval(ThreadState *ts) {
 
             // Insert a barrier task
             Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
-                                             scheduled_tasks.size());
+                                             (uint32_t) scheduled_tasks.size());
             task_release(ts->task);
             for (Task *t : scheduled_tasks)
                 task_release(t);
@@ -671,7 +671,7 @@ void jitc_eval(ThreadState *ts) {
                 if (extra.callback_internal) {
                     extra.callback(index, 0, extra.callback_data);
                 } else {
-                    unlock_guard guard(state.mutex);
+                    unlock_guard guard_2(state.mutex);
                     extra.callback(index, 0, extra.callback_data);
                 }
                 v = jitc_var(index);

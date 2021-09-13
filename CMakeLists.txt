@@ -121,6 +121,11 @@ target_include_directories(enoki-jit PRIVATE
   ext/lz4
 )
 
+if (MSVC)
+  # Conditional expression is constant (a few in robin_hash.h)
+  target_compile_options(enoki-jit PRIVATE /wd4127)
+endif()
+
 target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)
 
 target_include_directories(enoki-jit

@@ -173,10 +173,10 @@ void jitc_init(uint32_t backends) {
             if (peer_ok) {
                 jitc_log(Debug, " - Enabling peer access from device %i -> %i",
                         a.id, b.id);
-                CUresult rv = cuCtxEnablePeerAccess(b.context, 0);
-                if (rv == CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED)
+                CUresult rv_2 = cuCtxEnablePeerAccess(b.context, 0);
+                if (rv_2 == CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED)
                     continue;
-                cuda_check(rv);
+                cuda_check(rv_2);
             }
         }
     }
@@ -495,9 +495,9 @@ void jitc_sync_device() {
         std::vector<ThreadState *> tss = state.tss;
         // Release mutex while synchronizing */
         unlock_guard guard(state.mutex);
-        for (ThreadState *ts : tss) {
-            if (ts->backend == JitBackend::LLVM)
-                jitc_sync_thread(ts);
+        for (ThreadState *ts_2 : tss) {
+            if (ts_2->backend == JitBackend::LLVM)
+                jitc_sync_thread(ts_2);
         }
     }
 }
@@ -621,15 +621,17 @@ void *jitc_find_library(const char *fname, const char *glob_pat,
         }
     }
 #else
-    wchar_t buffer[1024];
-    mbstowcs(buffer, env_var, sizeof(buffer) / sizeof(wchar_t));
+    (void) glob_pat;
 
-    const wchar_t* env_var_val = env_var ? _wgetenv(buffer) : nullptr;
+    wchar_t buf[1024];
+    mbstowcs(buf, env_var, sizeof(buf) / sizeof(wchar_t));
+
+    const wchar_t* env_var_val = env_var ? _wgetenv(buf) : nullptr;
     if (env_var_val != nullptr && wcslen(env_var_val) == 0)
         env_var_val = nullptr;
 
-    mbstowcs(buffer, fname, sizeof(buffer) / sizeof(wchar_t));
-    void* handle = (void *) LoadLibraryW(env_var_val ? env_var_val : buffer);
+    mbstowcs(buf, fname, sizeof(buf) / sizeof(wchar_t));
+    void* handle = (void *) LoadLibraryW(env_var_val ? env_var_val : buf);
 #endif
 
     return handle;

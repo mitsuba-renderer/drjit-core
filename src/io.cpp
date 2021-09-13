@@ -159,12 +159,12 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 
         read_retry((uint8_t *) compressed, header.compressed_size);
 
-        uint32_t rv = (uint32_t) LZ4_decompress_safe_usingDict(
+        uint32_t rv_2 = (uint32_t) LZ4_decompress_safe_usingDict(
             compressed, uncompressed + jitc_lz4_dict_size,
             (int) header.compressed_size, (int) uncompressed_size,
             (char *) uncompressed, jitc_lz4_dict_size);
 
-        if (rv != uncompressed_size)
+        if (rv_2 != uncompressed_size)
             jitc_raise("jit_kernel_load(): cache file \"%s\" is malformed.",
                        filename);
     } catch (const std::exception &e) {

@@ -145,7 +145,7 @@ void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size) {
     // Temporarily release the lock while copying
     unlock_guard guard(state.mutex);
     if (backend == JitBackend::CUDA) {
-        scoped_set_context guard(ts->context);
+        scoped_set_context guard_2(ts->context);
         cuda_check(cuStreamSynchronize(ts->stream));
         cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
     } else {
@@ -237,7 +237,6 @@ static Reduction jitc_reduce_create(ReduceOp rtype) {
             };
 
         default: jitc_raise("jit_reduce_create(): unsupported reduction type!");
-            return nullptr;
     }
 }
 
@@ -313,7 +312,6 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
         }
 
         void *target = out;
-        uint32_t tsize = type_size[(int) type];
         if (blocks > 1)
             target = jitc_malloc(AllocType::HostAsync, blocks * tsize);
 
@@ -685,8 +683,8 @@ static void cuda_transpose(ThreadState *ts, const uint32_t *in, uint32_t *out,
                            uint32_t rows, uint32_t cols) {
     const Device &device = state.devices[ts->device];
 
-    uint16_t blocks_x = (cols + 15u) / 16u,
-             blocks_y = (rows + 15u) / 16u;
+    uint16_t blocks_x = (uint16_t) ((cols + 15u) / 16u),
+             blocks_y = (uint16_t) ((rows + 15u) / 16u);
 
     scoped_set_context guard(ts->context);
     jitc_log(Debug,
@@ -854,7 +852,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                                   shared_size, ts->stream, args_4, nullptr));
 
         if (likely(offsets)) {
-            unlock_guard guard(state.mutex);
+            unlock_guard guard_2(state.mutex);
             cuda_check(cuEventSynchronize(ts->event));
         }
 
@@ -898,9 +896,9 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                 uint32_t start = index * block_size,
                          end = std::min(start + block_size, size);
 
-                size_t size = sizeof(uint32_t) * (size_t) bucket_count;
-                uint32_t *buckets_local = (uint32_t *) malloc_check(size);
-                memset(buckets_local, 0, size);
+                size_t bsize = sizeof(uint32_t) * (size_t) bucket_count;
+                uint32_t *buckets_local = (uint32_t *) malloc_check(bsize);
+                memset(buckets_local, 0, bsize);
 
                  for (uint32_t i = start; i != end; ++i)
                      buckets_local[ptr[i]]++;

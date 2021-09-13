@@ -378,7 +378,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
            dependencies to remove any dead variables/code. It is automatically
            triggered whenever loop state output variables are freed. */
 
-        e.n_dep = 2 * n_indices;
+        e.n_dep = (uint32_t) (2 * n_indices);
         e.dep = (uint32_t *) malloc_check(e.n_dep * sizeof(uint32_t));
 
         memcpy(e.dep, loop->out_body.data(), n_indices * sizeof(uint32_t));
@@ -512,7 +512,7 @@ static void jitc_var_loop_callback(uint32_t index, int free, void *ptr) {
         state.extra[index].callback_data = nullptr;
 
     // An output variable is no longer referenced. Find out which one.
-    uint32_t n2 = loop->out.size();
+    uint32_t n2 = (uint32_t) loop->out.size();
     uint32_t offset = (uint32_t) -1;
     for (uint32_t i = 0; i < n2; ++i) {
         if (loop->out[i] == index) {
@@ -564,7 +564,7 @@ static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
         return;
     loop->simplify_flag = true;
 
-    const uint32_t n = loop->in.size();
+    const uint32_t n = (uint32_t) loop->in.size();
     uint32_t n_freed = 0, n_rounds = 0;
     tsl::robin_set<uint32_t, UInt32Hasher> visited;
 
