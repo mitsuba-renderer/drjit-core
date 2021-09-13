@@ -349,12 +349,16 @@ template <typename Type> Type i2v(uint64_t value) {
     return result;
 }
 
-template <typename Type> uint64_t v2i(Type value) {
+template <typename Type, enable_if_t<!std::is_same<Type, bool>::value> = 0>
+uint64_t v2i(Type value) {
     uint64_t result = 0;
     memcpy(&result, &value, sizeof(Type));
-    if (std::is_same<Type, bool>::value)
-        result &= 1;
     return result;
+}
+
+template <typename Type, enable_if_t<std::is_same<Type, bool>::value> = 0>
+uint64_t v2i(Type value) {
+    return value ? 1 : 0;
 }
 
 template <typename Arg, typename... Args> Arg first(Arg arg, Args...) { return arg; }

@@ -327,6 +327,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         kernel_key,
         KernelHash::compute_hash(kernel_hash.high64, ts->device, flags));
     Kernel kernel;
+    memset(&kernel, 0, sizeof(Kernel)); // quench uninitialized variable warning on MSVC
 
     if (it == state.kernel_cache.end()) {
         bool cache_hit = false;

@@ -253,7 +253,6 @@ static Reduction jitc_reduce_create(VarType type, ReduceOp rtype) {
         case VarType::Float32: return jitc_reduce_create<float   >(rtype);
         case VarType::Float64: return jitc_reduce_create<double  >(rtype);
         default: jitc_raise("jit_reduce_create(): unsupported data type!");
-            return nullptr;
     }
 }
 
@@ -1004,7 +1003,6 @@ static BlockOp jitc_block_copy_create(VarType type) {
         case VarType::Float32: return jitc_block_copy_create<float   >();
         case VarType::Float64: return jitc_block_copy_create<double  >();
         default: jitc_raise("jit_block_copy_create(): unsupported data type!");
-            return nullptr;
     }
 }
 

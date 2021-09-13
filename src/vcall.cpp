@@ -382,8 +382,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             Ref result_v = steal(jitc_var_new_op(JitOp::And, 2, dep));
             Variable *v = jitc_var(result_v);
 
-            if (v->placeholder != placeholder || v->size != size ||
-                v->optix != optix) {
+            if ((bool) v->placeholder != placeholder || v->size != size ||
+                (bool) v->optix != optix) {
                 if (v->ref_count_ext != 1 || v->ref_count_int != 0) {
                     result_v = steal(jitc_var_copy(result_v));
                     v = jitc_var(result_v);
