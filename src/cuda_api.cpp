@@ -155,8 +155,8 @@ bool jitc_cuda_init() {
 
         if (!jitc_cuda_handle) {
             jitc_log(Warn, "jit_cuda_init(): %s could not be loaded -- "
-                          "disabling CUDA backend! Set the ENOKI_LIBCUDA_PATH "
-                          "environment variable to specify its path.", cuda_fname);
+                           "disabling CUDA backend! Set the ENOKI_LIBCUDA_PATH "
+                           "environment variable to specify its path.", cuda_fname);
             return false;
         }
     }
@@ -435,6 +435,7 @@ bool jitc_cuda_init() {
     }
 
     jitc_cuda_init_success = true;
+
     return true;
 }
 
@@ -573,10 +574,20 @@ void jitc_cuda_shutdown() {
 }
 
 void *jitc_cuda_lookup(const char *name) {
-    void *ptr = dlsym(jitc_cuda_handle, name);
+#if defined(_WIN32) && !defined(ENOKI_JIT_DYNAMIC_CUDA)
+    jitc_raise("jit_cuda_lookup(): currently unsupported on Windows when the "
+               "ENOKI_JIT_DYNAMIC_CUDA flag is disabled.");
+#else
+#  if defined(ENOKI_JIT_DYNAMIC_CUDA)
+    void *handle = jitc_cuda_handle;
+#  else
+    void *handle = RTLD_DEFAULT;
+#  endif
+    void *ptr = dlsym(handle, name);
     if (!ptr)
         jitc_raise("jit_cuda_lookup(): function \"%s\" not found!", name);
     return ptr;
+#endif
 }
 
 void cuda_check_impl(CUresult errval, const char *file, const int line) {

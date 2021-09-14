@@ -361,7 +361,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         if (ts->backend == JitBackend::LLVM) {
             jitc_llvm_disasm(kernel);
         } else if (!uses_optix) {
-            CUresult ret = 0;
+            CUresult ret = (CUresult) 0;
             /* Unlock while synchronizing */ {
                 unlock_guard guard(state.mutex);
                 ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
