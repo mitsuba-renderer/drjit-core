@@ -1303,12 +1303,6 @@ enum class JitFlag : uint32_t {
     /// Exploit literal constants during AD (used in the Enoki parent project)
     ADOptimize = 512,
 
-    /// Run forward-mode differentiation at once
-    ADEagerForward = 1024,
-
-    /// Check weights for NaNs / infinities
-    ADCheckWeights = 2048,
-
     /// Default flags
     Default = (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallOptimize |
@@ -1324,10 +1318,8 @@ enum JitFlag {
     JitFlagRecording           = 32,
     JitFlagPrintIR             = 64,
     JitFlagKernelHistory       = 128,
-    JitFlagLaunchBlocking      = 256
-    JitFlagADOptimize          = 512,
-    JitFlagADEagerForward      = 1024
-    JitFlagADCheckWeights      = 2048
+    JitFlagLaunchBlocking      = 256,
+    JitFlagADOptimize          = 512
 };
 #endif
 
