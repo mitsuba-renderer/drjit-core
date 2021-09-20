@@ -1554,6 +1554,8 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
 
     // Don't perform the gather operation if the inputs are trivial
     if (v_source->literal || v_source->size == 1) {
+        // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'source'
+        Ref unused = borrow(source);
         Ref tmp = steal(jitc_var_resize(source, size));
         uint32_t deps[2] = { (uint32_t) tmp, mask_ };
         uint32_t result = jitc_var_new_op(JitOp::And, 2, deps);
