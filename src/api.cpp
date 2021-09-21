@@ -134,7 +134,7 @@ void jit_raise(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     jitc_vraise(fmt, args);
-    va_end(args);
+    // va_end(args); (dead code)
 }
 
 void jit_fail(const char* fmt, ...) {
@@ -142,7 +142,7 @@ void jit_fail(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     jitc_vfail(fmt, args);
-    va_end(args);
+    // va_end(args); (dead code)
 }
 
 void jit_set_flags(uint32_t flags) {

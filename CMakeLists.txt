@@ -124,6 +124,9 @@ target_include_directories(enoki-jit PRIVATE
 if (MSVC)
   # Conditional expression is constant (a few in robin_hash.h)
   target_compile_options(enoki-jit PRIVATE /wd4127)
+
+  # Allow throwing exceptions even from "extern C" code
+  target_compile_options(enoki-jit PUBLIC /EHs)
 endif()
 
 target_compile_definitions(enoki-jit PRIVATE -DLZ4LIB_VISIBILITY=)

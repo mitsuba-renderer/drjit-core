@@ -472,8 +472,9 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
         optix_context, &mco, &ts->optix_pipeline_compile_options, buf,
         buf_size, error_log, &log_size, &kernel.optix.mod);
     if (rv) {
-        jitc_fail("jit_optix_compile(): optixModuleCreateFromPTX() failed. Please see the PTX "
-                 "assembly listing and error message below:\n\n%s\n\n%s", buf, error_log);
+        jitc_log(Error, "jit_optix_compile(): optixModuleCreateFromPTX() "
+                 "failed. Please see the PTX assembly listing and error "
+                 "message below:\n\n%s\n\n%s", buf, error_log);
         jitc_optix_check(rv);
     }
 
@@ -510,8 +511,9 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                                  (unsigned int) n_programs, &pgo, error_log,
                                  &log_size, kernel.optix.pg);
     if (rv) {
-        jitc_fail("jit_optix_compile(): optixProgramGroupCreate() failed. Please see the PTX "
-                 "assembly listing and error message below:\n\n%s\n\n%s", buf, error_log);
+        jitc_log(Error, "jit_optix_compile(): optixProgramGroupCreate() "
+                 "failed. Please see the PTX assembly listing and error "
+                 "message below:\n\n%s\n\n%s", buf, error_log);
         jitc_optix_check(rv);
     }
 
@@ -562,8 +564,9 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                              (unsigned int) ts->optix_program_groups.size(),
                              error_log, &log_size, &kernel.optix.pipeline);
     if (rv) {
-        jitc_fail("jit_optix_compile(): optixPipelineCreate() failed. Please see the PTX "
-                 "assembly listing and error message below:\n\n%s\n\n%s", buf, error_log);
+        jitc_log(Error, "jit_optix_compile(): optixPipelineCreate() failed. "
+                 "Please see the PTX assembly listing and error message "
+                 "below:\n\n%s\n\n%s", buf, error_log);
         jitc_optix_check(rv);
     }
 
