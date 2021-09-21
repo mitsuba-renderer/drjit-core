@@ -570,6 +570,10 @@ uint32_t jitc_var_new_counter(JitBackend backend, size_t size,
 }
 
 uint32_t jitc_var_wrap_vcall(uint32_t index) {
+    if (index == 0)
+        jitc_raise("jit_var_wrap_vcall(): invoked with an "
+                   "uninitialized variable!");
+
     const Variable *v = jitc_var(index);
     if (v->literal && (jitc_flags() & (uint32_t) JitFlag::VCallOptimize))
         return jitc_var_resize(index, 1);
