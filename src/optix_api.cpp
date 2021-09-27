@@ -297,6 +297,22 @@ void jitc_optix_log(unsigned int level, const char *tag, const char *message, vo
         jitc_optix_cache_hit = false;
 }
 
+static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
+    OptixPipelineCompileOptions pco { };
+    pco.numAttributeValues = 2;
+    pco.pipelineLaunchParamsVariableName = "params";
+
+#if defined(NDEBUG)
+    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
+#else
+    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_DEBUG |
+                         OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                         OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
+#endif
+    return pco;
+}
+
+
 OptixDeviceContext jitc_optix_context() {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     OptixDeviceContext &ctx = state.devices[ts->device].optix_context;
@@ -332,18 +348,7 @@ OptixDeviceContext jitc_optix_context() {
     // =====================================================
 
     if (!ts->optix_miss_record_base) {
-        OptixPipelineCompileOptions pco { };
-        pco.numAttributeValues = 2;
-        pco.pipelineLaunchParamsVariableName = "params";
-
-#if defined(NDEBUG)
-        pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
-#else
-        pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_DEBUG |
-                             OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
-                             OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
-#endif
-
+        OptixPipelineCompileOptions pco = jitc_optix_default_compile_options();
         OptixModuleCompileOptions mco { };
 #if 1
         mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
@@ -379,12 +384,8 @@ OptixDeviceContext jitc_optix_context() {
         miss_record = jitc_malloc_migrate(miss_record, AllocType::Device, 1);
 
         ts->optix_miss_record_base = miss_record;
-        OptixShaderBindingTable sbt { };
-        sbt.missRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
-        sbt.missRecordCount = 1;
-        sbt.missRecordBase = miss_record;
 
-        jitc_optix_configure(&pco, &sbt, &pg, 1);
+        jitc_optix_configure(nullptr, nullptr, nullptr, 0);
     }
 
     return ctx;
@@ -426,12 +427,26 @@ void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
                           uint32_t pg_count) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     jitc_log(InfoSym, "jit_optix_configure(pg_count=%u)", pg_count);
-    memcpy(&ts->optix_pipeline_compile_options, pco, sizeof(OptixPipelineCompileOptions));
-    memcpy(&ts->optix_shader_binding_table, sbt, sizeof(OptixShaderBindingTable));
-
     ts->optix_program_groups.clear();
-    for (uint32_t i = 0; i < pg_count; ++i)
-        ts->optix_program_groups.push_back(pg[i]);
+
+    if (!pco && !sbt && !pg && pg_count == 0) {
+        OptixPipelineCompileOptions pco2 = jitc_optix_default_compile_options();
+
+        OptixShaderBindingTable sbt2 { };
+        sbt2.missRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
+        sbt2.missRecordCount = 1;
+        sbt2.missRecordBase = ts->optix_miss_record_base;
+
+        memcpy(&ts->optix_shader_binding_table, &sbt2, sizeof(OptixShaderBindingTable));
+        memcpy(&ts->optix_pipeline_compile_options, &pco2, sizeof(OptixPipelineCompileOptions));
+        OptixProgramGroup *pg2 = &ts->optix_program_group_base;
+        ts->optix_program_groups.push_back(pg2[0]);
+    } else {
+        memcpy(&ts->optix_shader_binding_table, sbt, sizeof(OptixShaderBindingTable));
+        memcpy(&ts->optix_pipeline_compile_options, pco, sizeof(OptixPipelineCompileOptions));
+        for (uint32_t i = 0; i < pg_count; ++i)
+            ts->optix_program_groups.push_back(pg[i]);
+    }
 }
 
 void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples) {
