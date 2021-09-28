@@ -662,12 +662,13 @@ void jitc_var_set_callback(uint32_t index,
             index, (uintptr_t) callback, (uintptr_t) callback_data);
 
     Extra &extra = state.extra[index];
-    if (unlikely(extra.callback))
+    if (callback && unlikely(extra.callback))
         jitc_fail("jit_var_set_callback(): a callback was already set!");
     extra.callback = callback;
     extra.callback_data = callback_data;
     extra.callback_internal = false;
-    v->extra = true;
+    if (callback)
+        v->extra = true;
 }
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable

@@ -1185,8 +1185,10 @@ extern JIT_EXPORT void jit_eval();
  * The provided function should have the signature <tt>void callback(uint32_t
  * index, int free, void *callback_data)</tt>, where \c index is the variable
  * index, \c free == 0 indicates that the variable is evaluated, \c free == 1
- * indicates that it is freed, and \c callback_data is a user-specified value that
- * will additionally be supplied to the callback.
+ * indicates that it is freed, and \c callback_data is a user-specified value
+ * that will additionally be supplied to the callback.
+ *
+ * Passing \c callback == nullptr will remove a previously set callback if any.
  */
 extern JIT_EXPORT void
 jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
