@@ -1798,6 +1798,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
         unmasked   = v_mask->literal  && v_mask->value  == 1;
         index_zero = v_index->literal && v_index->value == 0;
+        size = std::max(size, v_mask->size);
     }
 
     uint32_t dep[4] = { ptr, value, index, mask };
@@ -1894,7 +1895,12 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         jitc_var_new_stmt(backend, VarType::Void, buf.get(), 0, n_dep, dep);
 
     print_log(((uint32_t) target == target_) ? "direct" : "copy", result);
-    jitc_var(result)->placeholder = placeholder;
+
+    Variable *v = jitc_var(result);
+    {
+        v->placeholder = placeholder;
+        v->size = size;
+    }
 
     jitc_var_mark_side_effect(result);
 
