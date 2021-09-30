@@ -734,7 +734,34 @@ TEST_BOTH(09_big) {
         jit_registry_remove(Backend, &v2[i]);
 }
 
-TEST_BOTH(09_recursion) {
+TEST_BOTH(09_self) {
+    struct Base;
+    using BasePtr = Array<Base *>;
+
+    struct Base { virtual Array<Base *> f() = 0; };
+    struct I : Base { BasePtr f() {
+        BasePtr result = this;
+        jit_assert(strstr(jit_var_stmt(result.index()), "self"));
+        return result;
+    } };
+
+    I i1, i2;
+    uint32_t i1_id = jit_registry_put(Backend, "Base", &i1);
+    uint32_t i2_id = jit_registry_put(Backend, "Base", &i2);
+
+    UInt32 self(i1_id, i2_id);
+    UInt32 y = vcall(
+        "Base",
+        [](Base *self_) { return self_->f(); },
+        BasePtr(self));
+
+    jit_assert(strcmp(y.str(), "[1, 2]") == 0);
+
+    jit_registry_remove(Backend, &i1);
+    jit_registry_remove(Backend, &i2);
+}
+
+TEST_BOTH(10_recursion) {
     struct Base1 { virtual Float f(const Float &x) = 0; };
     using Base1Ptr = Array<Base1 *>;
 
@@ -780,29 +807,48 @@ TEST_BOTH(09_recursion) {
     jit_registry_remove(Backend, &i22);
 }
 
-TEST_BOTH(10_self) {
-    struct Base;
-    using BasePtr = Array<Base *>;
+TEST_BOTH(11_recursion_with_local) {
+    struct Base1 { virtual Float f(const Float &x) = 0; };
+    using Base1Ptr = Array<Base1 *>;
 
-    struct Base { virtual Array<Base *> f() = 0; };
-    struct I : Base { BasePtr f() {
-        BasePtr result = this;
-        jit_assert(strstr(jit_var_stmt(result.index()), "self"));
-        return result;
-    } };
+    struct Base2 { virtual Float g(const Base1Ptr &ptr, const Float &x) = 0; };
+    using Base2Ptr = Array<Base2 *>;
 
-    I i1, i2;
-    uint32_t i1_id = jit_registry_put(Backend, "Base", &i1);
-    uint32_t i2_id = jit_registry_put(Backend, "Base", &i2);
+    struct I1 : Base1 {
+        Float c;
+        Float f(const Float &x) override { return x * c; }
+    };
 
-    UInt32 self(i1_id, i2_id);
-    UInt32 y = vcall(
-        "Base",
-        [](Base *self_) { return self_->f(); },
-        BasePtr(self));
+    struct I2 : Base2 {
+        Float g(const Base1Ptr &ptr, const Float &x) override {
+            return vcall("Base1", [&](Base1 *self_, Float x_) { return self_->f(x_); }, ptr, x) + 1;
+        }
+    };
 
-    jit_assert(strcmp(y.str(), "[1, 2]") == 0);
+    I1 i11, i12;
+    i11.c = ek::opaque<Float>(2);
+    i12.c = ek::opaque<Float>(3);
+    I2 i21, i22;
+    uint32_t i11_id = jit_registry_put(Backend, "Base1", &i11);
+    uint32_t i12_id = jit_registry_put(Backend, "Base1", &i12);
+    uint32_t i21_id = jit_registry_put(Backend, "Base2", &i21);
+    uint32_t i22_id = jit_registry_put(Backend, "Base2", &i22);
 
-    jit_registry_remove(Backend, &i1);
-    jit_registry_remove(Backend, &i2);
+    UInt32 self1(i11_id, i12_id);
+    UInt32 self2(i21_id, i22_id);
+    Float x(3.f, 5.f);
+
+    Float y = vcall(
+        "Base2",
+        [](Base2 *self_, const Base1Ptr &ptr_, const Float &x_) {
+            return self_->g(ptr_, x_);
+        },
+        Base2Ptr(self2), Base1Ptr(self1), x);
+
+    jit_assert(strcmp(y.str(), "[7, 16]") == 0);
+
+    jit_registry_remove(Backend, &i11);
+    jit_registry_remove(Backend, &i12);
+    jit_registry_remove(Backend, &i21);
+    jit_registry_remove(Backend, &i22);
 }

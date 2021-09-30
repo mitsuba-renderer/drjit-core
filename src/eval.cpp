@@ -66,6 +66,9 @@ bool assemble_func = false;
 int32_t alloca_size = -1;
 int32_t alloca_align = -1;
 
+/// Specifies the nesting level of virtual calls being compiled
+uint32_t vcall_depth = 0;
+
 /// Information about the kernel launch to go in the kernel launch history
 KernelHistoryEntry kernel_history_entry;
 
@@ -751,6 +754,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     bool assemble_func_prev = assemble_func;
     assemble_func = true;
 
+    vcall_depth++;
     if (ts->backend == JitBackend::CUDA)
         jitc_assemble_cuda_func(name, inst_id, n_regs, in_size, in_align,
                                 out_size, out_align, data_offset, data_map,
@@ -758,6 +762,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     else
         jitc_assemble_llvm_func(name, inst_id, in_size, data_offset, data_map,
                                 n_out, out_nested, use_self);
+    vcall_depth--;
 
     assemble_func = assemble_func_prev;
 

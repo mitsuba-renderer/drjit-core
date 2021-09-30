@@ -213,8 +213,13 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                    "<%u x i1> %%mask, i8* noalias %%params",
                    width);
     }
-    if (!data_map.empty())
-        buffer.fmt(", i8* noalias %%data, <%u x i32> %%offsets", width);
+    if (!data_map.empty()) {
+        if (vcall_depth == 1)
+            buffer.fmt(", i8* noalias %%data, <%u x i32> %%offsets", width);
+        else
+            buffer.fmt(", <%u x i8*> %%data, <%u x i32> %%offsets", width, width);
+    }
+
     buffer.fmt(") #0 {\n"
                "entry:\n"
                "    ; VCall: %s\n", name);
@@ -285,25 +290,31 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             size_t intrinsic_length = buffer.size() - intrinsic_offset;
             buffer.rewind(intrinsic_length);
 
+            if (vcall_depth == 1) {
+                buffer.fmt("    %s%u_p1 = getelementptr inbounds i8, i8* %%data, i32 %u\n"
+                           "    %s%u_p2 = getelementptr inbounds i8, i8* %s%u_p1, <%u x i32> %%offsets\n",
+                           prefix, id, offset,
+                           prefix, id, prefix, id, width);
+            } else {
+                buffer.fmt("    %s%u_p1 = getelementptr inbounds i8, <%u x i8*> %%data, i32 %u\n"
+                           "    %s%u_p2 = getelementptr inbounds i8, <%u x i8*> %s%u_p1, <%u x i32> %%offsets\n",
+                           prefix, id, width, offset,
+                           prefix, id, width, prefix, id, width);
+            }
+
             buffer.fmt(
-                "    %s%u_p1 = getelementptr inbounds i8, i8* %%data, i32 %u\n"
-                "    %s%u_p2 = getelementptr inbounds i8, i8* %s%u_p1, <%u x i32> %%offsets\n"
                 "    %s%u_p3 = bitcast <%u x i8*> %s%u_p2 to <%u x %s*>\n"
                 "    %s%u%s = call <%u x %s> @llvm.masked.gather.v%u%s(<%u x %s*> %s%u_p3, i32 %u, <%u x i1> %%mask, <%u x %s> zeroinitializer)\n",
-                prefix, id, offset,
-                prefix, id, prefix, id, width,
                 prefix, id, width, prefix, id, width, tname,
                 prefix, id,
                 vt == VarType::Pointer ? "_p4" : "",
                 width, tname, width, type_name_llvm_abbrev[vti], width, tname, prefix, id, type_size[vti], width, width, tname
             );
+
             if (vt == VarType::Pointer)
-            buffer.fmt(
-                "    %s%u = inttoptr <%u x i64> %s%u_p4 to <%u x i8*>\n",
-                prefix, id, width,
-                prefix, id,
-                width
-            );
+                buffer.fmt(
+                    "    %s%u = inttoptr <%u x i64> %s%u_p4 to <%u x i8*>\n",
+                    prefix, id, width, prefix, id, width);
         } else {
             jitc_render_stmt_llvm(sv.index, v, true);
         }

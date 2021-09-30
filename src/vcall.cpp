@@ -1133,31 +1133,43 @@ static void jitc_var_vcall_assemble_llvm(
                vcall_reg, vcall_reg // func_1
        );
 
-    if (vcall->use_self) {
-        if (!data_reg) {
-            buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, <%u x i32>, i8*)*\n"
-                       "    call void %%u%u_func(<%u x i1> %%u%u_active, <%u x i32> %%r%u, i8* %%buffer)\n",
-                       vcall_reg, vcall_reg, width, width,
-                       vcall_reg, width, vcall_reg, width, self_reg);
-        } else {
-            buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, <%u x i32>, i8*, i8*, <%u x i32>)*\n"
-                       "    call void %%u%u_func(<%u x i1> %%u%u_active, <%u x i32> %%r%u, i8* %%buffer, i8* %%rd%u, <%u x i32> %%u%u_offset)\n",
-                       vcall_reg, vcall_reg, width, width, width,
-                       vcall_reg, width, vcall_reg, width, self_reg, data_reg, width, vcall_reg);
-        }
-    } else {
-        if (!data_reg) {
-            buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*)*\n"
-                       "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%buffer)\n",
-                       vcall_reg, vcall_reg, width,
-                       vcall_reg, width, vcall_reg);
-        } else {
-            buffer.fmt("    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>, i8*, i8*, <%u x i32>)*\n"
-                       "    call void %%u%u_func(<%u x i1> %%u%u_active, i8* %%buffer, i8* %%rd%u, <%u x i32> %%u%u_offset)\n",
-                       vcall_reg, vcall_reg, width, width,
-                       vcall_reg, width, vcall_reg, data_reg, width, vcall_reg);
-        }
+    // Cast into correctly typed function pointer
+    buffer.fmt(
+        "    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>",
+        vcall_reg, vcall_reg, width
+    );
+
+    if (vcall->use_self)
+        buffer.fmt(", <%u x i32>", width);
+
+    buffer.put(", i8*");
+    if (data_reg) {
+        if (vcall_depth == 0)
+            buffer.fmt(", i8*, <%u x i32>", width);
+        else
+            buffer.fmt(", <%u x i8*>, <%u x i32>", width, width);
     }
+    buffer.put(")*\n");
+
+    // Perform the actual function call
+    buffer.fmt("    call void %%u%u_func(<%u x i1> %%u%u_active",
+            vcall_reg, width, vcall_reg);
+
+    if (vcall->use_self)
+        buffer.fmt(", <%u x i32> %%r%u", width, self_reg);
+
+    buffer.put(", i8* %buffer");
+
+    if (data_reg) {
+        if (vcall_depth == 0)
+            buffer.fmt(", i8* %%rd%u, <%u x i32> %%u%u_offset", data_reg,
+                       width, vcall_reg);
+        else
+            buffer.fmt(", <%u x i8*> %%rd%u, <%u x i32> %%u%u_offset", width,
+                       data_reg, width, vcall_reg);
+    }
+    buffer.put(")\n");
+
 
     buffer.fmt("    %%u%u_self_next = select <%u x i1> %%u%u_active, <%u x i32> zeroinitializer, <%u x i32> %%u%u_self\n"
                "    br label %%l%u_check\n"

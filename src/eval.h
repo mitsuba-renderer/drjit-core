@@ -66,6 +66,9 @@ extern bool assemble_func;
 extern int32_t alloca_size;
 extern int32_t alloca_align;
 
+/// Specifies the nesting level of virtual calls being compiled
+extern uint32_t vcall_depth;
+
 /// Ordered list of variables that should be computed
 extern std::vector<ScheduledVariable> schedule;
 
