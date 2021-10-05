@@ -153,12 +153,8 @@ bool jitc_cuda_init() {
     if (!jitc_cuda_handle) {
         jitc_cuda_handle = jitc_find_library(cuda_fname, cuda_glob, "ENOKI_LIBCUDA_PATH");
 
-        if (!jitc_cuda_handle) {
-            jitc_log(Warn, "jit_cuda_init(): %s could not be loaded -- "
-                           "disabling CUDA backend! Set the ENOKI_LIBCUDA_PATH "
-                           "environment variable to specify its path.", cuda_fname);
+        if (!jitc_cuda_handle) // CUDA library cannot be loaded, give up
             return false;
-        }
     }
 
     const char *symbol = nullptr;

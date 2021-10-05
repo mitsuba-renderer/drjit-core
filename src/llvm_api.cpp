@@ -551,12 +551,8 @@ bool jitc_llvm_init() {
     if (!jitc_llvm_handle) {
         jitc_llvm_handle = jitc_find_library(llvm_fname, llvm_glob, "ENOKI_LIBLLVM_PATH");
 
-        if (!jitc_llvm_handle) {
-            jitc_log(Warn, "jit_llvm_init(): %s could not be loaded -- "
-                          "disabling LLVM backend! Set the ENOKI_LIBLLVM_PATH "
-                          "environment variable to specify its path.", llvm_fname);
+        if (!jitc_llvm_handle) // LLVM library cannot be loaded, give up
             return false;
-        }
     }
 
     #define LOAD2(name)                                                        \
