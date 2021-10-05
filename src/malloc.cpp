@@ -363,6 +363,8 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
         if (move) {
             state.alloc_usage[ai.type] -= ai.size;
             state.alloc_usage[(int) type] += ai.size;
+            state.alloc_allocated[ai.type] -= ai.size;
+            state.alloc_allocated[(int) type] += ai.size;
             it.value().type = (uint32_t) type;
             return ptr;
         } else {
@@ -526,8 +528,8 @@ void jitc_malloc_trim(bool flush_local, bool warn) {
         }
     }
 
-    for (auto& kv : alloc_free)
-        state.alloc_allocated[kv.first.type] -= kv.first.size;
+    for (int i = 0; i < (int) AllocType::Count; ++i)
+        state.alloc_allocated[i] -= trim_size[i];
 
     size_t total = 0;
     for (int i = 0; i < (int) AllocType::Count; ++i)
