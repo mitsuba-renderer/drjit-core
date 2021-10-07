@@ -753,7 +753,7 @@ bool jitc_llvm_init() {
         jitc_llvm_vector_width = 4;
     if (strstr(jitc_llvm_target_features, "+avx"))
         jitc_llvm_vector_width = 8;
-    if (strstr(jitc_llvm_target_features, "+avx512f"))
+    if (strstr(jitc_llvm_target_features, "+avx512vl"))
         jitc_llvm_vector_width = 16;
 
 #if defined(__APPLE__) && defined(__aarch64__)
