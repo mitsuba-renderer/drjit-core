@@ -398,13 +398,12 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
     if (ptr_result == MAP_FAILED)
         jitc_fail("jit_llvm_compile(): could not mmap() memory: %s",
                  strerror(errno));
-    memcpy(ptr_result, jitc_llvm_mem, jitc_llvm_mem_offset);
 #else
     void* ptr_result = VirtualAlloc(nullptr, jitc_llvm_mem_offset, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!ptr_result)
         jitc_fail("jit_llvm_compile(): could not VirtualAlloc() memory: %u", GetLastError());
-    memcpy(ptr_result, jitc_llvm_mem, jitc_llvm_mem_offset);
 #endif
+    memcpy(ptr_result, jitc_llvm_mem, jitc_llvm_mem_offset);
 
     kernel.data = ptr_result;
     kernel.size = (uint32_t) jitc_llvm_mem_offset;
