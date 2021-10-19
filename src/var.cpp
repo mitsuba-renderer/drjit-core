@@ -941,7 +941,10 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
 
 /// Copy a memory region onto the device and return its variable index
 uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
-                          const void *ptr, size_t size) {
+                           const void *ptr, size_t size) {
+    if (unlikely(size == 0))
+        return 0;
+
     jitc_check_size("jit_var_mem_copy", size);
 
     size_t total_size = (size_t) size * (size_t) type_size[(int) vtype];
