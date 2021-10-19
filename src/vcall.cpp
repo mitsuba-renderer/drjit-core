@@ -49,8 +49,10 @@ struct VCall {
 
     /// Mapping from variable index to offset into call data
     tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> data_map;
-    uint64_t* offset_h = nullptr, *offset_d = nullptr;
-    size_t offset_h_size = 0;
+    std::vector<uint32_t> data_offset;
+
+    uint64_t *offset_d = nullptr, *offset_h = nullptr;
+    size_t offset_d_size = 0;
 
     /// Storage in bytes for inputs/outputs before simplifications
     uint32_t in_count_initial = 0;
@@ -65,7 +67,6 @@ struct VCall {
             jitc_var_dec_ref_ext(index);
         clear_side_effects();
         free(name);
-        jitc_free(offset_h);
     }
 
     void clear_side_effects() {
@@ -239,34 +240,17 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     // 3. Collect evaluated data accessed by the instances
     // =====================================================
 
-    uint32_t inst_id_max = 0;
-    for (uint32_t i = 0; i < n_inst; ++i)
-        inst_id_max = std::max(inst_id[i], inst_id_max);
-    size_t offset_h_size = (inst_id_max + 1) * sizeof(uint64_t);
-
-    AllocType at_d = backend == JitBackend::CUDA ? AllocType::Device
-                                                 : AllocType::HostAsync,
-              at_h = backend == JitBackend::CUDA ? AllocType::HostPinned
-                                                 : AllocType::Host;
-    vcall->offset_h = (uint64_t *) jitc_malloc(at_h, offset_h_size);
-    memset(vcall->offset_h, 0, offset_h_size);
-
-    if (backend == JitBackend::LLVM)
-        // ensure asynchronous release of 'offset_h'!
-        vcall->offset_h = (uint64_t *)
-            jitc_malloc_migrate(vcall->offset_h, AllocType::HostAsync, 1);
-
-    vcall->offset_h_size = offset_h_size;
+    vcall->data_offset.reserve(n_inst);
 
     // Collect accesses to evaluated variables/pointers
-    uint32_t data_size = 0;
+    uint32_t data_size = 0, inst_id_max = 0;
     for (uint32_t i = 0; i < n_inst; ++i) {
         if (unlikely(checkpoints[i] > checkpoints[i + 1]))
             jitc_raise("jitc_var_vcall(): checkpoints parameter is not "
                        "monotonically increasing!");
 
         uint32_t id = inst_id[i];
-        vcall->offset_h[id] = ((uint64_t) data_size) << 32;
+        vcall->data_offset.push_back(data_size);
 
         for (uint32_t j = 0; j < n_out; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
@@ -280,19 +264,22 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
         // Restore to full alignment
         data_size = (data_size + 7) / 8 * 8;
+        inst_id_max = std::max(id, inst_id_max);
     }
 
     // Allocate memory + wrapper variables for call offset and data arrays
-    uint64_t *offset_d = (uint64_t *) jitc_malloc(at_d, offset_h_size);
-    uint8_t  *data_d   = (uint8_t *) jitc_malloc(at_d, data_size);
+    vcall->offset_d_size = (inst_id_max + 1) * sizeof(uint64_t);
 
-    vcall->offset_d = offset_d;
+    AllocType at =
+        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync;
+    vcall->offset_d = (uint64_t *) jitc_malloc(at, vcall->offset_d_size);
+    uint8_t *data_d = (uint8_t *) jitc_malloc(at, data_size);
 
     Ref data_buf, data_v,
-        offset_buf = steal(
-            jitc_var_mem_map(backend, VarType::UInt64, offset_d, inst_id_max + 1, 1)),
+        offset_buf = steal(jitc_var_mem_map(
+            backend, VarType::UInt64, vcall->offset_d, inst_id_max + 1, 1)),
         offset_v =
-            steal(jitc_var_new_pointer(backend, offset_d, offset_buf, 0));
+            steal(jitc_var_new_pointer(backend, vcall->offset_d, offset_buf, 0));
 
     char temp[128];
     snprintf(temp, sizeof(temp), "VCall: %s [call offsets]", name);
@@ -344,7 +331,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
     uint32_t deps_special[4] = { self, mask, offset_v, data_v };
     Ref vcall_v = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
-                                            data_size ? 4 : 3, deps_special));
+                                          data_size ? 4 : 3, deps_special));
 
     vcall->id = vcall_v;
 
@@ -680,14 +667,18 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
     std::vector<XXH128_hash_t> callable_hash(vcall->n_inst);
 
+    AllocType at = vcall->backend == JitBackend::CUDA ? AllocType::HostPinned
+                                                      : AllocType::Host;
+    vcall->offset_h = (uint64_t *) jitc_malloc(at, vcall->offset_d_size);
+    memset(vcall->offset_h, 0, vcall->offset_d_size);
+
     ThreadState *ts = thread_state(vcall->backend);
     for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-        uint64_t &offset = vcall->offset_h[vcall->inst_id[i]],
-                  data_offset = (uint32_t) (offset >> 32);
+        uint32_t data_offset = vcall->data_offset[i];
 
         auto result = jitc_assemble_func(
             ts, vcall->name, i, in_size, in_align, out_size, out_align,
-            (uint32_t) data_offset, vcall->data_map, n_in, vcall->in.data(),
+            data_offset, vcall->data_map, n_in, vcall->in.data(),
             n_out, vcall->out_nested.data() + n_out * i,
             vcall->checkpoints[i + 1] - vcall->checkpoints[i],
             vcall->side_effects.data() + vcall->checkpoints[i],
@@ -696,13 +687,14 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         if (vcall->backend == JitBackend::LLVM)
             result.second += 1;
 
-        // high part: callable index, low part: instance data offset
-        offset = (offset & 0xFFFFFFFF00000000ull) | result.second;
+        // high part: instance data offset, low part: callable index
+        vcall->offset_h[vcall->inst_id[i]] =
+            (((uint64_t) data_offset) << 32) | result.second;
         callable_hash[i] = result.first;
     }
 
     jitc_memcpy_async(vcall->backend, vcall->offset_d, vcall->offset_h,
-                      vcall->offset_h_size);
+                      vcall->offset_d_size);
 
     size_t se_count = vcall->side_effects.size();
     vcall->clear_side_effects();
@@ -742,6 +734,19 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         callable_hash.begin(), callable_hash.end(), [](const auto &a, const auto &b) {
             return std::tie(a.high64, a.low64) == std::tie(b.high64, b.low64);
         }) - callable_hash.begin();
+
+    // Free call offset table asynchronously
+    if (vcall->backend == JitBackend::CUDA) {
+        jitc_free(vcall->offset_h);
+    } else {
+        Task *new_task = task_submit_dep(
+            nullptr, &ts->task, 1, 1,
+            [](uint32_t, void *payload) { jitc_free(*((void **) payload)); },
+            &vcall->offset_h, sizeof(void *));
+        task_release(ts->task);
+        ts->task = new_task;
+    }
+    vcall->offset_h = nullptr;
 
     jitc_log(
         InfoSym,
