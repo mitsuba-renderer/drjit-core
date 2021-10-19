@@ -491,8 +491,8 @@ void jitc_llvm_update_strings() {
 }
 
 void jitc_llvm_set_target(const char *target_cpu,
-                         const char *target_features,
-                         uint32_t vector_width) {
+                          const char *target_features,
+                          uint32_t vector_width) {
     if (!jitc_llvm_init_success)
         return;
 
@@ -752,8 +752,12 @@ bool jitc_llvm_init() {
         jitc_llvm_vector_width = 4;
     if (strstr(jitc_llvm_target_features, "+avx"))
         jitc_llvm_vector_width = 8;
+
+#if !defined(_WIN32)
+    // Don't use AVX512 on windows by default until things are more mature
     if (strstr(jitc_llvm_target_features, "+avx512vl"))
         jitc_llvm_vector_width = 16;
+#endif
 
 #if defined(__APPLE__) && defined(__aarch64__)
     jitc_llvm_vector_width = 4;
