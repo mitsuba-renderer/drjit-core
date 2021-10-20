@@ -318,7 +318,7 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
     LLVMParseIRInContext(jitc_llvm_context, llvm_buf, &llvm_module, &error);
     if (unlikely(error))
         jitc_fail("jit_llvm_compile(): parsing failed. Please see the LLVM "
-                 "IR and error message below:\n\n%s\n\n%s", buf, error);
+                  "IR and error message below:\n\n%s\n\n%s", buf, error);
 
     if (false) {
         char *llvm_ir = LLVMPrintModuleToString(llvm_module);
@@ -397,7 +397,7 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (ptr_result == MAP_FAILED)
         jitc_fail("jit_llvm_compile(): could not mmap() memory: %s",
-                 strerror(errno));
+                  strerror(errno));
 #else
     void* ptr_result = VirtualAlloc(nullptr, jitc_llvm_mem_offset, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!ptr_result)

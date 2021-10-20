@@ -53,8 +53,8 @@ XXH128_hash_t kernel_hash { 0, 0 };
 /// Name of the last generated kernel
 char kernel_name[52 /* strlen("__direct_callable__") + 32 + 1 */] { };
 
-// Keeps track of the number of registers used so far (for vcalls)
-static uint32_t n_regs_used = 0;
+// Total number of operations used across the entire kernel (including functions)
+static uint32_t n_ops_total = 0;
 
 /// Are we recording an OptiX kernel?
 bool uses_optix = false;
@@ -217,7 +217,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                  "into smaller chunks.", kernel_params.size());
 
     kernel_param_count = (uint32_t) kernel_params.size();
-    n_regs_used = n_regs;
+    n_ops_total = n_regs;
 
     // Pass parameters through global memory if too large or using OptiX
     if (backend == JitBackend::CUDA &&
@@ -292,7 +292,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, ops=%u, jit=%s):",
         (unsigned long long) kernel_hash.high64,
         uses_optix ? "via OptiX, " : "", group.size, n_params_in,
-        n_params_out + n_side_effects, n_regs, jitc_time_string(codegen_time));
+        n_params_out + n_side_effects, n_ops_total, jitc_time_string(codegen_time));
 
     if (jit_flag(JitFlag::KernelHistory)) {
         kernel_history_entry.backend = backend;
@@ -304,7 +304,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_history_entry.size = group.size;
         kernel_history_entry.input_count = n_params_in;
         kernel_history_entry.output_count = n_params_out + n_side_effects;
-        kernel_history_entry.operation_count = n_regs;
+        kernel_history_entry.operation_count = n_ops_total;
         kernel_history_entry.codegen_time = codegen_time;
     }
 }
@@ -739,15 +739,12 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     for (uint32_t i = 0; i < n_se; ++i)
         traverse(se[i]);
 
-    uint32_t n_regs = ts->backend == JitBackend::CUDA ? 4 : 1,
-             n_regs_backup = n_regs_used;
+    uint32_t n_regs = ts->backend == JitBackend::CUDA ? 4 : 1;
 
     for (auto &sv : schedule) {
         Variable *v = jitc_var(sv.index);
         v->reg_index = n_regs++;
     }
-
-    n_regs_used = n_regs;
 
     size_t offset = buffer.size();
 
@@ -768,8 +765,6 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
 
     buffer.putc('\n');
 
-    n_regs_used = n_regs_backup;
-
     size_t kernel_length = buffer.size() - offset;
     char *kernel_str = (char *) buffer.get() + offset;
     kernel_hash = XXH128(kernel_str, kernel_length, 0);
@@ -784,9 +779,9 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                  (unsigned long long) kernel_hash.low64);
         memcpy(id, tmp, 32);
         callables.push_back(std::string(kernel_str, kernel_length));
+        n_ops_total += n_regs;
     }
     buffer.rewind(kernel_length);
-
 
     return { kernel_hash, result.first->second };
 }
