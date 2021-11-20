@@ -1079,6 +1079,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
         return 0;
 
     Variable *v = jitc_var(src_index);
+    JitBackend backend = (JitBackend) v->backend;
 
     if (v->literal) {
         size_t size = v->size;
@@ -1119,7 +1120,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
                               ptr, (uint32_t) size, type_size[v->type], &v->value);
         }
 
-        return jitc_var_mem_map((JitBackend) v->backend, (VarType) v->type, ptr, v->size, 1);
+        return jitc_var_mem_map(backend, (VarType) v->type, ptr, v->size, 1);
     }
 
     if (!v->data || v->ref_count_se) {
@@ -1127,16 +1128,39 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
         v = jitc_var(src_index);
     }
 
+    AllocType src_type;
+    void *src_ptr = v->data,
+         *dst_ptr;
+
     auto it = state.alloc_used.find(v->data);
-    if (unlikely(it == state.alloc_used.end()))
-        jitc_raise("jit_var_migrate(): Cannot resolve pointer to actual allocation!");
-    AllocInfo ai = it.value();
+    if (unlikely(it == state.alloc_used.end())) {
+        /* Cannot resolve pointer to allocation, likely created by
+           another framework */
+        if ((JitBackend) v->backend == JitBackend::CUDA) {
+            int type;
+            ThreadState *ts = thread_state(v->backend);
+            scoped_set_context guard(ts->context);
+            cuda_check(cuPointerGetAttribute(
+                &type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr) v->data));
+            if (type == CU_MEMORYTYPE_HOST)
+                src_type = AllocType::Host;
+            else
+                src_type = AllocType::Device;
+        } else {
+            src_type = AllocType::Host;
+        }
+
+        size_t size = type_size[v->type] * v->size;
+        dst_ptr = jitc_malloc(dst_type, size);
+        jitc_memcpy_async(backend, dst_ptr, src_ptr, size);
+    } else {
+        src_type = (AllocType) it.value().type;
+        dst_ptr = jitc_malloc_migrate(src_ptr, dst_type, 0);
+    }
 
     uint32_t dst_index = src_index;
 
-    void *src_ptr = v->data,
-         *dst_ptr = jitc_malloc_migrate(src_ptr, dst_type, 0);
-
+    v = jitc_var(src_index);
     if (src_ptr != dst_ptr) {
         Variable v2 = *v;
         v2.data = dst_ptr;
@@ -1154,7 +1178,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
              "jit_var_migrate(r%u <- r%u, " ENOKI_PTR " <- " ENOKI_PTR
              ", %s <- %s)",
              dst_index, src_index, (uintptr_t) dst_ptr, (uintptr_t) src_ptr,
-             alloc_type_name[(int) dst_type], alloc_type_name[ai.type]);
+             alloc_type_name[(int) dst_type], alloc_type_name[(int) src_type]);
 
     return dst_index;
 }
