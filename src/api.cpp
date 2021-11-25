@@ -14,12 +14,14 @@
 #include "util.h"
 #include "registry.h"
 #include "llvm_api.h"
+#include "cuda_tex.h"
 #include "op.h"
 #include "vcall.h"
 #include "loop.h"
 #include "printf.h"
 #include <thread>
 #include <condition_variable>
+#include <enoki-jit/texture.h>
 
 #if defined(ENOKI_JIT_ENABLE_OPTIX)
 #include <enoki-jit/optix.h>
@@ -841,4 +843,26 @@ void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
                         const uint32_t *in, uint32_t *out) {
     lock_guard guard(state.mutex);
     jitc_llvm_ray_trace(func, scene, occluded, in, out);
+}
+
+void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels) {
+    lock_guard guard(state.mutex);
+    return jitc_cuda_tex_create(ndim, shape, n_channels);
+}
+
+void jit_cuda_tex_memcpy(size_t ndim, const size_t *shape, size_t n_channels,
+                         const void *src_ptr, void *dst_texture) {
+    lock_guard guard(state.mutex);
+    jitc_cuda_tex_memcpy(ndim, shape, n_channels, src_ptr, dst_texture);
+}
+
+void jit_cuda_tex_lookup(size_t ndim, uint32_t texture_id, const uint32_t *pos,
+                         uint32_t mask, uint32_t *out) {
+    lock_guard guard(state.mutex);
+    jitc_cuda_tex_lookup(ndim, texture_id, pos,mask,  out);
+}
+
+void jit_cuda_tex_destroy(void *texture) {
+    lock_guard guard(state.mutex);
+    jitc_cuda_tex_destroy(texture);
 }

@@ -1,5 +1,5 @@
 /*
-    enoki-jit/jit.h -- JIT-compilation of kernels that use OptiX ray tracing
+    enoki-jit/optix.h -- JIT-compilation of kernels that use OptiX ray tracing
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 

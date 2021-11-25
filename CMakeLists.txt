@@ -93,6 +93,7 @@ add_library(
   src/registry.h      src/registry.cpp
   src/util.h          src/util.cpp
   src/cuda_api.h      src/cuda_api.cpp
+  src/cuda_tex.h      src/cuda_tex.cpp
   src/llvm_api.h      src/llvm_api.cpp
   src/io.h            src/io.cpp
   src/eval.h          src/eval.cpp
