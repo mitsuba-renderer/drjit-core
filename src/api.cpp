@@ -850,10 +850,16 @@ void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels) {
     return jitc_cuda_tex_create(ndim, shape, n_channels);
 }
 
-void jit_cuda_tex_memcpy(size_t ndim, const size_t *shape, size_t n_channels,
-                         const void *src_ptr, void *dst_texture) {
+void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape, size_t n_channels,
+                             const void *src_ptr, void *dst_texture) {
     lock_guard guard(state.mutex);
-    jitc_cuda_tex_memcpy(ndim, shape, n_channels, src_ptr, dst_texture);
+    jitc_cuda_tex_memcpy_d2t(ndim, shape, n_channels, src_ptr, dst_texture);
+}
+
+void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape, size_t n_channels,
+                         const void *src_texture, void *dst_ptr) {
+    lock_guard guard(state.mutex);
+    jitc_cuda_tex_memcpy_t2d(ndim, shape, n_channels, src_texture, dst_ptr);
 }
 
 void jit_cuda_tex_lookup(size_t ndim, uint32_t texture_id, const uint32_t *pos,

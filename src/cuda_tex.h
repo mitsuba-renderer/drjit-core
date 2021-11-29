@@ -129,9 +129,12 @@ extern CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream);
 
 extern void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
                                   size_t n_channels);
-extern void jitc_cuda_tex_memcpy(size_t ndim, const size_t *shape,
-                                 size_t n_channels, const void *src_ptr,
-                                 void *dst_texture);
+extern void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
+                                     size_t n_channels, const void *src_ptr,
+                                     void *dst_texture);
+extern void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
+                                     size_t n_channels, const void *src_texture,
+                                     void *dst_ptr);
 extern void jitc_cuda_tex_lookup(size_t ndim, uint32_t texture_id,
                                  const uint32_t *pos, uint32_t mask,
                                  uint32_t *out);

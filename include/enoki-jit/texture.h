@@ -26,16 +26,26 @@ extern JIT_EXPORT void *jit_cuda_tex_create(size_t ndim, const size_t *shape,
                                             size_t n_channels);
 
 /**
- * \brief Initialize the texture with contents
+ * \brief Copy from device to texture memory
  *
  * Fills the texture with data from device memory at \c src_ptr. The other
  * arguments are analogous to \ref jit_cuda_tex_create(). The operation runs
  * asynchronously.
  */
-extern JIT_EXPORT void jit_cuda_tex_memcpy(size_t ndim, const size_t *shape,
-                                           size_t n_channels,
-                                           const void *src_ptr,
-                                           void *dst_texture);
+extern JIT_EXPORT void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
+                                               size_t n_channels,
+                                               const void *src_ptr,
+                                               void *dst_texture);
+
+/**
+ * \brief Copy from texture to device memory
+ *
+ * Implements the reverse of \ref jit_cuda_tex_memcpy_d2t
+ */
+extern JIT_EXPORT void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
+                                               size_t n_channels,
+                                               const void *src_texture,
+                                               void *dst_ptr);
 
 /**
  * \brief Performs a CUDA texture lookup

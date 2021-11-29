@@ -66,8 +66,8 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
     return (void *) result;
 }
 
-void jitc_cuda_tex_memcpy(size_t ndim, const size_t *shape, size_t n_channels,
-                          const void *src_ptr, void *dst_texture) {
+void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape, size_t n_channels,
+                              const void *src_ptr, void *dst_texture) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_memcpy(): invalid texture dimension!");
 
@@ -99,6 +99,46 @@ void jitc_cuda_tex_memcpy(size_t ndim, const size_t *shape, size_t n_channels,
         op.srcHeight = shape[1];
         op.dstMemoryType = CU_MEMORYTYPE_ARRAY;
         op.dstArray = res_desc.res.array.hArray;
+        op.WidthInBytes = pitch;
+        op.Height = shape[1];
+        op.Depth = shape[2];
+        cuda_check(cuMemcpy3DAsync(&op, ts->stream));
+    }
+}
+
+void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape, size_t n_channels,
+                              const void *src_texture, void *dst_ptr) {
+    if (ndim < 1 || ndim > 3)
+        jitc_raise("jit_cuda_tex_memcpy(): invalid texture dimension!");
+
+    ThreadState *ts = thread_state(JitBackend::CUDA);
+    scoped_set_context guard(ts->context);
+
+    CUDA_RESOURCE_DESC res_desc;
+    cuda_check(cuTexObjectGetResourceDesc(&res_desc, (CUtexObject) src_texture));
+
+    size_t pitch = shape[0] * n_channels * sizeof(float);
+
+    if (ndim == 1 || ndim == 2) {
+        CUDA_MEMCPY2D op;
+        memset(&op, 0, sizeof(CUDA_MEMCPY2D));
+        op.srcMemoryType = CU_MEMORYTYPE_ARRAY;
+        op.srcArray = res_desc.res.array.hArray;
+        op.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+        op.dstDevice = (CUdeviceptr) dst_ptr;
+        op.dstPitch = pitch;
+        op.WidthInBytes = pitch;
+        op.Height = (ndim == 2) ? shape[1] : 1;
+        cuda_check(cuMemcpy2DAsync(&op, ts->stream));
+    } else {
+        CUDA_MEMCPY3D op;
+        memset(&op, 0, sizeof(CUDA_MEMCPY3D));
+        op.srcMemoryType = CU_MEMORYTYPE_ARRAY;
+        op.srcArray = res_desc.res.array.hArray;
+        op.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+        op.dstDevice = (CUdeviceptr) dst_ptr;
+        op.dstPitch = pitch;
+        op.dstHeight = shape[1];
         op.WidthInBytes = pitch;
         op.Height = shape[1];
         op.Depth = shape[2];
