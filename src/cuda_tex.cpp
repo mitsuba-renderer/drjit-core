@@ -201,6 +201,8 @@ void jitc_cuda_tex_lookup(size_t ndim, uint32_t texture_id, const uint32_t *pos,
 }
 
 void jitc_cuda_tex_destroy(void *texture) {
+    if (!texture)
+        return;
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
     CUDA_RESOURCE_DESC res_desc;
