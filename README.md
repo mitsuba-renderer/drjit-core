@@ -96,7 +96,7 @@ c = (a + b) * 5;
 ```
 
 will conceptually expand to a parallel loop that processes the individual array
-elements, e.g., 
+elements, e.g.,
 
 ```cpp
 for (int i = 0; i < array_size; ++i) /* in parallel */ {
@@ -175,7 +175,7 @@ uint32_t v0 = jit_var_new_stmt_0(/* backend = */ JitBackendCUDA,
 ```
 Note weird-looking code fragment ``mov.$t0 $r0, 0.5``. This is a *template* for
 an operation expressed in
-[PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html). 
+[PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html).
 Familiarity with PTX is not needed to use Enoki-JIT, and there are higher-level
 wrappers for any conceivable standard operation. We simply show the lowest-level
 interface here to illustrate how things fit together.
@@ -345,7 +345,7 @@ jit_eval(): launching 1 kernel.
 .target sm_60
 .address_size 64
 
-.entry enoki_e93e70f12fcaea9cecd06e2b4b9ab180(.param .align 8 .b8 params[16]) { 
+.entry enoki_e93e70f12fcaea9cecd06e2b4b9ab180(.param .align 8 .b8 params[16]) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -382,7 +382,7 @@ jit_eval(): cleaning up..
 jit_eval(): done.
 jit_shutdown(): releasing 1 kernel ..
 jit_shutdown(): releasing 1 thread state ..
-jit_malloc_trim(): freed
+jit_flush_malloc_cache(): freed
  - device memory: 64 B in 1 allocation
 jit_shutdown(): done
 jit_cuda_shutdown()

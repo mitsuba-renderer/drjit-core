@@ -301,6 +301,11 @@ void jit_sync_all_devices() {
     jitc_sync_all_devices();
 }
 
+void jit_flush_kernel_cache() {
+    lock_guard guard(state.mutex);
+    jitc_flush_kernel_cache();
+}
+
 void *jit_malloc(AllocType type, size_t size) {
     lock_guard guard(state.mutex);
     return jitc_malloc(type, size);
@@ -311,9 +316,9 @@ void jit_free(void *ptr) {
     jitc_free(ptr);
 }
 
-void jit_malloc_trim() {
+void jit_flush_malloc_cache() {
     lock_guard guard(state.mutex);
-    jitc_malloc_trim(true, false);
+    jitc_flush_malloc_cache(true, false);
 }
 
 void jit_malloc_clear_statistics() {

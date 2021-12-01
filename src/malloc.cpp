@@ -135,7 +135,7 @@ void* jitc_malloc(AllocType type, size_t size) {
 #endif
             }
             if (rv == ENOMEM) {
-                jitc_malloc_trim(true, true);
+                jitc_flush_malloc_cache(true, true);
                 /* Temporarily release the main lock */ {
                     unlock_guard guard(state.mutex);
 #if !defined(_WIN32)
@@ -180,7 +180,7 @@ void* jitc_malloc(AllocType type, size_t size) {
             }
 
             if (ret != CUDA_SUCCESS) {
-                jitc_malloc_trim(true, true);
+                jitc_flush_malloc_cache(true, true);
 
                 /* Temporarily release the main lock */ {
                     unlock_guard guard_2(state.mutex);
@@ -447,20 +447,20 @@ void jitc_malloc_prefetch(void *ptr, int device) {
     }
 }
 
-static bool jitc_malloc_trim_warned = false;
+static bool jitc_flush_malloc_cache_warned = false;
 
 /// Release all unused memory to the GPU / OS
-void jitc_malloc_trim(bool flush_local, bool warn) {
-    if (warn && !jitc_malloc_trim_warned) {
+void jitc_flush_malloc_cache(bool flush_local, bool warn) {
+    if (warn && !jitc_flush_malloc_cache_warned) {
         jitc_log(
             Warn,
-            "jit_malloc_trim(): Enoki exhausted the available memory and had "
+            "jit_flush_malloc_cache(): Enoki exhausted the available memory and had "
             "to flush its allocation cache to free up additional memory. This "
             "is an expensive operation and will have a negative effect on "
             "performance. You may want to change your computation so that it "
             "uses less memory. This warning will only be displayed once.");
 
-        jitc_malloc_trim_warned = true;
+        jitc_flush_malloc_cache_warned = true;
     }
 
     if (flush_local) {
@@ -523,7 +523,7 @@ void jitc_malloc_trim(bool flush_local, bool warn) {
                     break;
 
                 default:
-                    jitc_fail("jit_malloc_trim(): unsupported allocation type!");
+                    jitc_fail("jit_flush_malloc_cache(): unsupported allocation type!");
             }
         }
     }
@@ -536,7 +536,7 @@ void jitc_malloc_trim(bool flush_local, bool warn) {
         total += trim_count[i];
 
     if (total > 0) {
-        jitc_log(Debug, "jit_malloc_trim(): freed");
+        jitc_log(Debug, "jit_flush_malloc_cache(): freed");
         for (int i = 0; i < (int) AllocType::Count; ++i) {
             if (trim_count[i] == 0)
                 continue;
@@ -568,7 +568,7 @@ int jitc_malloc_device(void *ptr) {
 }
 
 void jitc_malloc_shutdown() {
-    jitc_malloc_trim(false, false);
+    jitc_flush_malloc_cache(false, false);
 
     size_t leak_count[(int) AllocType::Count] = { 0 },
            leak_size [(int) AllocType::Count] = { 0 };

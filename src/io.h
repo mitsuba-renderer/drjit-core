@@ -78,3 +78,4 @@ extern bool jitc_kernel_write(const char *source, uint32_t source_size,
 
 extern void jitc_kernel_free(int device_id, const Kernel &kernel);
 
+extern void jitc_flush_kernel_cache();

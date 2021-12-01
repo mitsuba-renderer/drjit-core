@@ -333,7 +333,7 @@ enum class AllocType : uint32_t {
      *
      * Note, however, that released memory is kept within a cache and not
      * immediately given back to the operating system. Call \ref
-     * jit_malloc_trim() to also flush this cache.
+     * jit_flush_malloc_cache() to also flush this cache.
      */
     Host,
 
@@ -423,8 +423,8 @@ extern JIT_EXPORT void *jit_malloc(JIT_ENUM AllocType type, size_t size)
  * For CPU-only arrays (\ref AllocType::Host), <tt>jit_free()</tt> is
  * synchronous and very similar to <tt>free()</tt>, except that the released
  * memory is placed in Enoki's internal allocation cache instead of being
- * returned to the OS. The function \ref jit_malloc_trim() can optionally be
- * called to also clear this cache.
+ * returned to the OS. The function \ref jit_flush_malloc_cache() can optionally
+ * be called to also clear this cache.
  *
  * When \c ptr is an asynchronous host pointer (\ref AllocType::HostAsync) or
  * GPU-accessible pointer (\ref AllocType::Device, \ref AllocType::HostPinned,
@@ -445,10 +445,13 @@ extern JIT_EXPORT void *jit_malloc(JIT_ENUM AllocType type, size_t size)
 extern JIT_EXPORT void jit_free(void *ptr);
 
 /// Release all currently unused memory to the GPU / OS
-extern JIT_EXPORT void jit_malloc_trim();
+extern JIT_EXPORT void jit_flush_malloc_cache();
 
 /// Clear the peak memory usage statistics
 extern JIT_EXPORT void jit_malloc_clear_statistics();
+
+/// Flush internal kernel cache
+extern JIT_EXPORT void jit_flush_kernel_cache();
 
 /**
  * \brief Asynchronously prefetch a managed memory region allocated using \ref

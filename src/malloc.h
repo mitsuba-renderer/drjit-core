@@ -73,9 +73,9 @@ extern void* jitc_malloc_migrate(void *ptr, AllocType type, int move);
 extern void jitc_malloc_prefetch(void *ptr, int device);
 
 /// Release all unused memory to the GPU / OS
-extern void jitc_malloc_trim(bool flush_local, bool warn);
+extern void jitc_flush_malloc_cache(bool flush_local, bool warn);
 
-/// Shut down the memory allocator (calls \ref jitc_malloc_trim() and reports leaks)
+/// Shut down the memory allocator (calls \ref jitc_flush_malloc_cache() and reports leaks)
 extern void jitc_malloc_shutdown();
 
 /// Query the flavor of a memory allocation made using \ref jitc_malloc()
