@@ -5,7 +5,7 @@
 #include <string.h>
 
 void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
-                           size_t n_channels) {
+                           size_t n_channels, int filter_mode) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_create(): invalid texture dimension!");
     else if (n_channels != 1 && n_channels != 2 && n_channels != 4)
@@ -42,7 +42,8 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
 
     CUDA_TEXTURE_DESC tex_desc;
     memset(&tex_desc, 0, sizeof(CUDA_TEXTURE_DESC));
-    tex_desc.filterMode = tex_desc.mipmapFilterMode = CU_TR_FILTER_MODE_LINEAR;
+    tex_desc.filterMode = tex_desc.mipmapFilterMode =
+        (filter_mode == 1 ? CU_TR_FILTER_MODE_LINEAR : CU_TR_FILTER_MODE_POINT);
     tex_desc.flags = CU_TRSF_NORMALIZED_COORDINATES;
     for (int i = 0; i < 3; ++i)
         tex_desc.addressMode[i] = CU_TR_ADDRESS_MODE_CLAMP;

@@ -5,6 +5,7 @@ using CUarray = struct CUarray_st *;
 using CUtexObject = struct CUtexObject_st *;
 
 #define CU_RESOURCE_TYPE_ARRAY 0
+#define CU_TR_FILTER_MODE_POINT 0
 #define CU_TR_FILTER_MODE_LINEAR 1
 #define CU_TRSF_NORMALIZED_COORDINATES 2
 #define CU_TR_ADDRESS_MODE_CLAMP 1
@@ -128,7 +129,7 @@ extern CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream);
 #endif
 
 extern void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
-                                  size_t n_channels);
+                                  size_t n_channels, int filter_mode);
 extern void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
                                      size_t n_channels, const void *src_ptr,
                                      void *dst_texture);

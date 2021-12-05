@@ -850,9 +850,10 @@ void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
     jitc_llvm_ray_trace(func, scene, occluded, in, out);
 }
 
-void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels) {
+void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
+                          int filter_mode) {
     lock_guard guard(state.mutex);
-    return jitc_cuda_tex_create(ndim, shape, n_channels);
+    return jitc_cuda_tex_create(ndim, shape, n_channels, filter_mode);
 }
 
 void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape, size_t n_channels,

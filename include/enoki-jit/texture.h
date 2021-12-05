@@ -21,9 +21,19 @@ extern "C" {
  * voxel is furthermore composed of \c n_channels color components.
  * The value of the \c n_channels argument must equal 1, 2, or 4.
  * The function returns an opaque texture handle.
+ *
+ * The \c filter_mode parameter supports the following options:
+ *
+ * <ul>
+ * <li><tt>filter_mode == 0</tt>: Nearest-neighbor sampling</li>
+ * <li><tt>filter_mode == 1</tt>: Linear/bilinear/trilinear interpolation</li>
+ * <ul>
+ *
+ * Further modes (e.g. MIP-mapping) may be added in the future.
  */
 extern JIT_EXPORT void *jit_cuda_tex_create(size_t ndim, const size_t *shape,
-                                            size_t n_channels);
+                                            size_t n_channels,
+                                            int filter_mode JIT_DEF(1));
 
 /**
  * \brief Copy from device to texture memory
