@@ -204,9 +204,21 @@ TEST_BOTH(06_garbage_collection) {
         v1 = UInt32();
         v2 = UInt32();
         v3 = UInt32();
+
+        /// evaluate some unrelated calculation to trigger loop simplification
+        {
+            UInt32 tmp = UInt32(1, 2) + 1;
+            tmp.str();
+        }
+
+
         jit_assert(jit_var_exists(v1i) && jit_var_exists(v2i) && jit_var_exists(v3i) && jit_var_exists(v4i));
 
         v4 = UInt32();
+        {
+            UInt32 tmp = UInt32(1, 2) + 1;
+            tmp.str();
+        }
         if (i == 0)
             jit_assert(jit_var_exists(v1i) && jit_var_exists(v2i) && jit_var_exists(v3i) && jit_var_exists(v4i));
         else

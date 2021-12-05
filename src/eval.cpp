@@ -14,6 +14,7 @@
 #include "profiler.h"
 #include "util.h"
 #include "optix_api.h"
+#include "loop.h"
 
 // ====================================================================
 //  The following data structures are temporarily used during program
@@ -547,6 +548,8 @@ void jitc_eval(ThreadState *ts) {
     state.mutex.unlock();
     lock_guard guard(state.eval_mutex);
     state.mutex.lock();
+
+    jitc_var_loop_simplify();
 
     visited.clear();
     schedule.clear();

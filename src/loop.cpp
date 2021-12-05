@@ -32,16 +32,17 @@ struct Loop {
     std::vector<uint32_t> out_body;
     /// Output variables after loop
     std::vector<uint32_t> out;
-    /// Is the loop currently being simplified?
-    bool simplify_flag = false;
+    /// Are there unused loop variables that could be stripped away?
+    bool simplify = false;
 };
+
+static std::vector<Loop *> loops;
 
 // Forward declarations
 static void jitc_var_loop_callback(uint32_t index, int free, void *ptr);
 static void jitc_var_loop_assemble_init(const Variable *v, const Extra &extra);
 static void jitc_var_loop_assemble_cond(const Variable *v, const Extra &extra);
 static void jitc_var_loop_assemble_end(const Variable *v, const Extra &extra);
-static void jitc_var_loop_simplify(Loop *loop, uint32_t cause);
 
 /// Create a variable that wraps another, optionally with an extra dependency
 static void wrap(Variable &v, uint32_t &index, uint32_t dep = 0) {
@@ -374,9 +375,8 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
            1. before the loop condition
            2. after the loop body
 
-           The jit_var_loop_simplify() routine analyzes cross-iteration
-           dependencies to remove any dead variables/code. It is automatically
-           triggered whenever loop state output variables are freed. */
+           The jitc_var_loop_simplify() routine analyzes cross-iteration
+           dependencies to remove any dead variables/code. */
 
         e.n_dep = (uint32_t) (2 * n_indices);
         e.dep = (uint32_t *) malloc_check(e.n_dep * sizeof(uint32_t));
@@ -491,10 +491,12 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
                 Loop *loop_2 = (Loop *) ptr;
                 jitc_trace("jit_var_loop(\"%s\"): freeing loop.", loop_2->name);
                 free(loop_2->name);
+                loops.erase(std::remove(loops.begin(), loops.end(), loop_2), loops.end());
                 delete loop_2;
             }
         };
         e.callback_internal = true;
+        loops.push_back(loop.get());
         e.callback_data = loop.release();
     }
 
@@ -527,12 +529,13 @@ static void jitc_var_loop_callback(uint32_t index, int free, void *ptr) {
 
     loop->out[offset] = 0;
 
-    /* When this output variable is removed, it may also
-       enable some simplification within the loop. */
-    jitc_var_loop_simplify(loop, offset);
+    // Mark the loop for eventual simplification
+    jitc_trace("jit_var_loop_callback(%s): variable %u collected, marking loop "
+               "for simplification.", loop->name, offset);
+    loop->simplify = true;
 }
 
-static void jitc_var_loop_dfs(tsl::robin_set<uint32_t, UInt32Hasher> &set, uint32_t index) {
+static void jitc_var_loop_dfs(tsl::robin_set<uint32_t, UInt32Hasher> &set, uint32_t lowest_index, uint32_t index) {
     if (!set.insert(index).second)
         return;
     // jitc_trace("jitc_var_dfs(r%u)", index);
@@ -540,114 +543,132 @@ static void jitc_var_loop_dfs(tsl::robin_set<uint32_t, UInt32Hasher> &set, uint3
     const Variable *v = jitc_var(index);
     for (uint32_t i = 0; i < 4; ++i) {
         uint32_t index_2 = v->dep[i];
-        if (!index_2)
-            break;
-        jitc_var_loop_dfs(set, index_2);
+        if (index_2 >= lowest_index)
+            jitc_var_loop_dfs(set, lowest_index, index_2);
     }
 
     if (unlikely(v->extra)) {
         auto it = state.extra.find(index);
-        if (it == state.extra.end())
+        if (unlikely(it == state.extra.end()))
             jitc_fail("jit_var_loop_dfs(): could not find matching 'extra' record!");
 
         const Extra &extra = it->second;
         for (uint32_t i = 0; i < extra.n_dep; ++i) {
             uint32_t index_2 = extra.dep[i];
-            if (index_2)
-                jitc_var_loop_dfs(set, index_2);
+            if (index_2 >= lowest_index)
+                jitc_var_loop_dfs(set, lowest_index, index_2);
         }
     }
 }
 
-static void jitc_var_loop_simplify(Loop *loop, uint32_t cause) {
-    if (loop->simplify_flag)
-        return;
-    loop->simplify_flag = true;
+static size_t jitc_var_loop_simplify(Loop *loop, tsl::robin_set<uint32_t, UInt32Hasher> &visited) {
+    loop->simplify = false;
+
+    if (state.variables.find(loop->end) == state.variables.end())
+        return 0;
 
     const uint32_t n = (uint32_t) loop->in.size();
-    uint32_t n_freed = 0, n_rounds = 0;
+
+    /// Determine variable range to be traversed
+    uint32_t lowest_index = 0xFFFFFFFF,
+             highest_index = 0,
+             n_freed = 0;
+
+    for (uint32_t i = 0; i < n; ++i) {
+        uint32_t index = loop->in_cond[i];
+        if (index)
+            lowest_index = std::min(lowest_index, index);
+        index = loop->out_body[i];
+        if (index)
+            highest_index = std::max(highest_index, index);
+    }
+
+    visited.clear();
+    if (highest_index > lowest_index)
+        visited.reserve(highest_index - lowest_index);
+
+    // Find all inputs that are reachable from the outputs that are still alive
+    for (uint32_t i = 0; i < n; ++i) {
+        if (!loop->out[i] || !loop->out_body[i])
+            continue;
+        // jitc_trace("jit_var_loop_simplify(): DFS from %u (r%u)", i, loop->out_body[i]);
+        jitc_var_loop_dfs(visited, lowest_index, loop->out_body[i]);
+    }
+
+    // Also search from loop condition
+    // jitc_trace("jit_var_loop_simplify(): DFS from loop condition (r%u)", loop->cond);
+    jitc_var_loop_dfs(visited, lowest_index, loop->cond);
+
+    // Find all inputs that are reachable from the side effects
+    if (loop->se) {
+        auto it = state.extra.find(loop->se);
+        if (it != state.extra.end()) {
+            const Extra &e = it->second;
+            for (uint32_t i = 0; i < e.n_dep; ++i) {
+                // jitc_trace("jit_var_loop_simplify(): DFS from side effect %u (r%u)", i, e.dep[i]);
+                jitc_var_loop_dfs(visited, lowest_index, e.dep[i]);
+            }
+        }
+    }
+
+    /// Propagate until no further changes
+    bool again;
+    do {
+        again = false;
+        for (uint32_t i = 0; i < n; ++i) {
+            if (loop->in_cond[i] &&
+                visited.find(loop->in_cond[i]) != visited.end() &&
+                visited.find(loop->out_body[i]) == visited.end()) {
+                jitc_var_loop_dfs(visited, lowest_index, loop->out_body[i]);
+                again = true;
+            }
+        }
+    } while (again);
+
+    /// Remove loop variables that are never referenced
+    for (uint32_t i = 0; i < n; ++i) {
+        uint32_t index = loop->in_cond[i];
+        if (index == 0 || visited.find(index) != visited.end())
+            continue;
+        n_freed++;
+
+        jitc_trace("jit_var_loop_simplify(): freeing unreferenced loop "
+                   "variable %u (r%u -> r%u -> r%u)", i, loop->in[i],
+                   loop->in_cond[i], loop->in_body[i]);
+
+        Extra &e_end = state.extra[loop->end];
+        if (unlikely(e_end.dep[n + i] != loop->in_cond[i]))
+            jitc_fail("jit_var_loop_simplify: internal error (3)");
+        if (unlikely(e_end.dep[i] != loop->out_body[i]))
+            jitc_fail("jit_var_loop_simplify: internal error (2)");
+        e_end.dep[i] = e_end.dep[n + i] = 0;
+
+        jitc_var_dec_ref_int(loop->in_cond[i]);
+        jitc_var_dec_ref_int(loop->out_body[i]);
+
+        loop->in[i] = loop->in_cond[i] = loop->in_body[i] = loop->out_body[i] = 0;
+    }
+
+    jitc_log(InfoSym,
+             "jit_var_loop_simplify(\"%s\"): freed %u loop variables, visited "
+             "%zu variables.",
+             loop->name, n_freed, visited.size());
+
+    return n_freed;
+}
+
+void jitc_var_loop_simplify() {
     tsl::robin_set<uint32_t, UInt32Hasher> visited;
 
-    jitc_trace("jit_var_loop_simplify(\"%s\"): loop output %u freed, simplifying..",
-               loop->name, cause);
-
     bool progress;
-    while (true) {
-        n_rounds++;
+    do {
         progress = false;
-        visited.clear();
-
-        for (uint32_t i = 0; i < n; ++i)
-            visited.insert(loop->in[i]);
-
-        // Find all inputs that are reachable from the outputs that are still alive
-        for (uint32_t i = 0; i < n; ++i) {
-            if (!loop->out[i] || !loop->out_body[i])
-                continue;
-            // jitc_trace("jit_var_loop_simplify(): DFS from %u (r%u)", i, loop->out_body[i]);
-            jitc_var_loop_dfs(visited, loop->out_body[i]);
+        for (size_t i = 0; i < loops.size(); ++i) {
+            Loop *loop = loops[i];
+            if (loop->simplify)
+                progress |= jitc_var_loop_simplify(loop, visited) > 0;
         }
-
-        // jitc_trace("jit_var_loop_simplify(): DFS from loop condition (r%u)", loop->cond);
-        jitc_var_loop_dfs(visited, loop->cond);
-
-        // Find all inputs that are reachable from the side effects
-        if (loop->se) {
-            auto it = state.extra.find(loop->se);
-            if (it != state.extra.end()) {
-                const Extra &e = it->second;
-                for (uint32_t i = 0; i < e.n_dep; ++i) {
-                    // jitc_trace("jit_var_loop_simplify(): DFS from side effect %u (r%u)", i, e.dep[i]);
-                    jitc_var_loop_dfs(visited, e.dep[i]);
-                }
-            }
-        }
-
-        /// Propagate until no further changes
-        bool again;
-        do {
-            again = false;
-            for (uint32_t i = 0; i < n; ++i) {
-                if (loop->in_cond[i] &&
-                    visited.find(loop->in_cond[i]) != visited.end() &&
-                    visited.find(loop->out_body[i]) == visited.end()) {
-                    jitc_var_loop_dfs(visited, loop->out_body[i]);
-                    again = true;
-                }
-            }
-        } while (again);
-
-        /// Remove loop variables that are never referenced
-        for (uint32_t i = 0; i < n; ++i) {
-            uint32_t index = loop->in_cond[i];
-            if (index == 0 || visited.find(index) != visited.end())
-                continue;
-            n_freed++;
-
-            jitc_trace("jit_var_loop_simplify(): freeing unreferenced loop "
-                       "variable %u (r%u -> r%u -> r%u)", i, loop->in[i],
-                       loop->in_cond[i], loop->in_body[i]);
-            progress = true;
-
-            Extra &e_end = state.extra[loop->end];
-            if (unlikely(e_end.dep[n + i] != loop->in_cond[i]))
-                jitc_fail("jit_var_loop_simplify: internal error (3)");
-            if (unlikely(e_end.dep[i] != loop->out_body[i]))
-                jitc_fail("jit_var_loop_simplify: internal error (2)");
-            e_end.dep[i] = e_end.dep[n + i] = 0;
-
-            jitc_var_dec_ref_int(loop->in_cond[i]);
-            jitc_var_dec_ref_int(loop->out_body[i]);
-
-            loop->in[i] = loop->in_cond[i] = loop->in_body[i] = loop->out_body[i] = 0;
-        }
-
-        if (!progress)
-            break;
-    }
-    loop->simplify_flag = false;
-    jitc_trace("jit_var_loop_simplify(): done, freed %u loop variables in %u rounds.",
-               n_freed, n_rounds);
+    } while (progress);
 }
 
 static void jitc_var_loop_assemble_init(const Variable *, const Extra &extra) {
@@ -737,8 +758,6 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
         buffer.fmt("    br label %%l_%u_cond;\n", loop_reg);
 
     buffer.fmt("\nl_%u_done:\n", loop_reg);
-    loop->se_count = 0;
-    loop->se = 0;
 
     jitc_log(InfoSym,
              "jit_var_loop_assemble(): loop (\"%s\") with %u/%u loop "
@@ -746,4 +765,10 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
              loop->name, n_variables, (uint32_t) loop->in.size(),
              n_variables == 1 ? "" : "s", storage_size, loop->storage_size_initial,
              loop->se_count, loop->se_count == 1 ? "" : "s");
+
+    if (loop->se) {
+        loop->se_count = 0;
+        loop->se = 0;
+        loop->simplify = true;
+    }
 }
