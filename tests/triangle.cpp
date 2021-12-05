@@ -204,7 +204,7 @@ void demo() {
     );
 
     // Do four times to verify caching, with mask in it. 3 + 4
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 2; ++i) {
         // =====================================================
         // Generate a camera ray
         // =====================================================
@@ -227,7 +227,7 @@ void demo() {
             miss_sbt_index(0);
 
         UInt32 payload_0(0);
-        Mask mask = (i <=1) ? true : (x < 1000);
+        Mask mask = true;
 
         // =====================================================
         // Launch a ray tracing call

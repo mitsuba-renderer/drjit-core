@@ -231,8 +231,8 @@ bool jitc_optix_init() {
 
         if (!jitc_optix_handle) {
             jitc_log(Warn, "jit_optix_init(): %s could not be loaded -- "
-                           "disabling OptiX backend! Set the ENOKI_LIBOPTIX_PATH "
-                           "environment variable to specify its path.", optix_fname);
+                          "disabling OptiX backend! Set the ENOKI_LIBOPTIX_PATH "
+                          "environment variable to specify its path.", optix_fname);
             return false;
         }
     }
@@ -717,18 +717,14 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
 
     extra.assemble = [](const Variable *v2, const Extra &extra) {
         uint32_t payload_count = extra.n_dep - 15;
-        const Variable *mask_v = jitc_var(v2->dep[0]);
-        bool masked = !mask_v->literal || mask_v->value != 1;
-
         if (payload_count)
             buffer.fmt("    .reg.u32 %%u%u_result_<%u>;\n", v2->reg_index,
                        payload_count);
 
         buffer.putc(' ', 4);
-        if (masked)
-            buffer.fmt("@!%s%u bra L%u_skip;\n", type_prefix[mask_v->type],
-                       mask_v->reg_index, v2->reg_index);
-
+        const Variable *mask_v = jitc_var(v2->dep[0]);
+        if (!mask_v->literal || mask_v->value != 1)
+            buffer.fmt("@%s%u ", type_prefix[mask_v->type], mask_v->reg_index);
         buffer.put("call (");
 
         for (uint32_t i = 0; i < payload_count; ++i)
@@ -742,9 +738,6 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
                        (i + 1 < extra.n_dep) ? ", " : "");
         }
         buffer.put(");\n");
-
-        if (masked)
-            buffer.fmt("L%u_skip:\n", v2->reg_index);
     };
 
     for (uint32_t i = 0; i < np; ++i) {
