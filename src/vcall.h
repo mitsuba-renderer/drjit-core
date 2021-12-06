@@ -1,7 +1,7 @@
 #include <stdint.h>
 
-extern void jitc_vcall_set_self(JitBackend backend, uint32_t value);
-extern uint32_t jitc_vcall_self(JitBackend backend);
+extern void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index);
+extern void jitc_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index);
 
 extern uint32_t jitc_var_loop_init(uint32_t *indices, uint32_t n_indices);
 

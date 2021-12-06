@@ -96,19 +96,43 @@ static void jitc_var_vcall_assemble_llvm(
     uint32_t offset_reg, uint32_t data_reg, uint32_t n_out, uint32_t in_size,
     uint32_t in_align, uint32_t out_size, uint32_t out_align);
 
-static void
-jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-                            uint32_t &data_offset, uint32_t inst_id,
-                            uint32_t index, bool &use_self);
+static void jitc_var_vcall_collect_data(
+    tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
+    uint32_t &data_offset, uint32_t inst_id, uint32_t index, bool &use_self);
 
-
-void jitc_vcall_set_self(JitBackend backend, uint32_t value) {
+void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
     ThreadState *ts = thread_state(backend);
-    ts->vcall_self = value;
+
+    if (ts->vcall_self_index) {
+        jitc_var_dec_ref_ext(ts->vcall_self_index);
+        ts->vcall_self_index = 0;
+    }
+
+    ts->vcall_self_value = value;
+
+    if (value) {
+        if (index) {
+            jitc_var_inc_ref_ext(index);
+            ts->vcall_self_index = index;
+        } else {
+            Variable v;
+            if (backend == JitBackend::CUDA)
+                v.stmt = (char *) "mov.u32 $r0, self";
+            else
+                v.stmt = (char *) "$r0 = bitcast <$w x i32> %self to <$w x i32>";
+            v.size = 1u;
+            v.type = (uint32_t) VarType::UInt32;
+            v.backend = (uint32_t) backend;
+            v.placeholder = true;
+            ts->vcall_self_index = jitc_var_new(v, true);
+        }
+    }
 }
 
-uint32_t jitc_vcall_self(JitBackend backend) {
-    return thread_state(backend)->vcall_self;
+void jitc_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index) {
+    ThreadState *ts = thread_state(backend);
+    *value = ts->vcall_self_value;
+    *index = ts->vcall_self_index;
 }
 
 // Weave a virtual function call into the computation graph
@@ -1354,6 +1378,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         void *ptr = jitc_registry_get_ptr(backend, domain, bucket_id);
         memcpy(offsets_out, &ptr, sizeof(void *));
         memcpy(offsets_out + 2, &index2, sizeof(uint32_t));
+        memcpy(offsets_out + 3, &bucket_id, sizeof(uint32_t));
         offsets_out += 4;
 
         jitc_trace("jit_vcall(): registered variable %u: bucket %u (" ENOKI_PTR

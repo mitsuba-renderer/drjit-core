@@ -1385,11 +1385,22 @@ extern JIT_EXPORT uint32_t jit_var_wrap_vcall(uint32_t index);
  */
 extern JIT_EXPORT uint32_t jit_var_wrap_loop(uint32_t index, uint32_t cond, uint32_t size);
 
-/// Set the registry index of the self pointer of the currently recording vcall
-extern JIT_EXPORT void jit_vcall_set_self(JIT_ENUM JitBackend backend, uint32_t value);
+/**
+ * \brief Inform the JIT compiler about the current instance while
+ * recurding virtual function calls
+ *
+ * Following a call to \ref jit_vcall_set_self(), the JIT compiler will
+ * intercept constant literals referring to the instance ID 'value'. In this
+ * case, it will return the variable ID 'index'.
+ *
+ * This feature is crucial to avoid merging instance IDs into generated code.
+ */
+extern JIT_EXPORT void jit_vcall_set_self(JIT_ENUM JitBackend backend,
+                                          uint32_t value, uint32_t index);
 
-/// Get the registry index of the self pointer of the currently recording vcall
-extern JIT_EXPORT uint32_t jit_vcall_self(JIT_ENUM JitBackend backend);
+/// Query the information set via \ref jit_vcall_set_self
+extern JIT_EXPORT void jit_vcall_self(JIT_ENUM JitBackend backend,
+                                      uint32_t *value, uint32_t *index);
 
 /**
  * \brief Record a virtual function call
@@ -1620,8 +1631,8 @@ struct VCallBucket {
     /// Variable index of a uint32 array storing a partial permutation
     uint32_t index;
 
-    /// Padding
-    uint32_t unused;
+    /// Original instance ID
+    uint32_t id;
 };
 
 /**
@@ -1646,8 +1657,8 @@ struct VCallBucket {
  * multiple vector function calls are executed on the same set of instances.
  */
 extern JIT_EXPORT struct VCallBucket *
-jit_var_vcall_reduce(JIT_ENUM JitBackend backend, const char *domain, uint32_t index,
-                     uint32_t *bucket_count_out);
+jit_var_vcall_reduce(JIT_ENUM JitBackend backend, const char *domain,
+                     uint32_t index, uint32_t *bucket_count_out);
 
 /**
  * \brief Replicate individual input elements across larger blocks

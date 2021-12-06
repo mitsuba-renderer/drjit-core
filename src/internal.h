@@ -337,8 +337,11 @@ struct ThreadState {
     /// Index used to isolate CSE from other parts of the program
     uint32_t cse_scope = 0;
 
-    /// Registry index of the self pointer of the currently recording vcall
-    uint32_t vcall_self = 0;
+    /// Registry index of the 'self' pointer of the vcall being recorded
+    uint32_t vcall_self_value = 0;
+
+    /// .. and the JIT variable that it will be mapped to
+    uint32_t vcall_self_index = 0;
 
     /// ---------------------------- LLVM-specific ----------------------------
 
@@ -470,8 +473,8 @@ struct KernelHistory {
                 cuEventElapsedTime(&k.execution_time,
                                    (CUevent) k.event_before,
                                    (CUevent) k.event_after);
-                cuEventDestroy((CUevent)k.event_before);
-                cuEventDestroy((CUevent)k.event_after);
+                cuEventDestroy((CUevent) k.event_before);
+                cuEventDestroy((CUevent) k.event_after);
             } else {
                 k.execution_time = 0.f; // TODO
             }

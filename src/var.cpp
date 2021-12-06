@@ -488,20 +488,12 @@ uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
     /* When initializing a literal pointer array while recording a virtual
        function, we can leverage the already available `self` variable instead
        of creating a new one. */
-    if (jit_flag(JitFlag::Recording) && is_class) {
+    if (is_class) {
         ThreadState *ts = thread_state(backend);
-        if (ts->vcall_self && memcmp(&ts->vcall_self, value, sizeof(uint32_t)) == 0) {
-            Variable v;
-            if (backend == JitBackend::CUDA)
-                v.stmt = (char *) "mov.u32 $r0, self";
-            else
-                v.stmt = (char *) "$r0 = bitcast <$w x i32> %self to <$w x i32>";
-            v.size = (uint32_t) size;
-            v.type = (uint32_t) type;
-            v.backend = (uint32_t) backend;
-            v.free_stmt = false;
-            v.placeholder = true;
-            return jitc_var_new(v, true);
+        if (ts->vcall_self_value &&
+            *((uint32_t *) value) == ts->vcall_self_value) {
+            jitc_var_inc_ref_ext(ts->vcall_self_index);
+            return ts->vcall_self_index;
         }
     }
 

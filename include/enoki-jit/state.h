@@ -100,17 +100,19 @@ template <JitBackend Backend> struct JitState {
         m_cse_scope_set = false;
     }
 
-    void set_self(uint32_t index) {
+    void set_self(uint32_t value, uint32_t index = 0) {
         if (!m_self_set) {
-            m_self = jit_vcall_self(Backend);
+            jit_vcall_self(Backend, &m_self_value, &m_self_index);
+            jit_var_inc_ref_ext(m_self_index);
             m_self_set = true;
         }
-        jit_vcall_set_self(Backend, index);
+        jit_vcall_set_self(Backend, value, index);
     }
 
     void clear_self() {
         assert(m_self_set);
-        jit_vcall_set_self(Backend, m_self);
+        jit_vcall_set_self(Backend, m_self_value, m_self_index);
+        jit_var_dec_ref_ext(m_self_index);
         m_self_set = false;
     }
 
@@ -122,7 +124,8 @@ private:
     bool m_recording;
     uint32_t m_cse_scope;
     uint32_t m_checkpoint;
-    uint32_t m_self;
+    uint32_t m_self_value;
+    uint32_t m_self_index;
 };
 
 

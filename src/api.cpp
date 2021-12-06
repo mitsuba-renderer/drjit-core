@@ -752,14 +752,14 @@ uint32_t jit_var_registry_attr(JitBackend backend, VarType type,
     return jitc_var_registry_attr(backend, type, domain, name);
 }
 
-void jit_vcall_set_self(JitBackend backend, uint32_t value) {
+void jit_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
     lock_guard guard(state.mutex);
-    jitc_vcall_set_self(backend, value);
+    jitc_vcall_set_self(backend, value, index);
 }
 
-uint32_t jit_vcall_self(JitBackend backend) {
+void jit_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index) {
     lock_guard guard(state.mutex);
-    return jitc_vcall_self(backend);
+    jitc_vcall_self(backend, value, index);
 }
 
 uint32_t jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
