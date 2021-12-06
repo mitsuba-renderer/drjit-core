@@ -1329,7 +1329,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         return nullptr;
     }
 
-    /// Ensure input index array is fully evaluated
+    // Ensure input index array is fully evaluated
     jitc_var_eval(index);
 
     uint32_t size = jitc_var(index)->size;
@@ -1339,15 +1339,15 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
            offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
 
-    uint32_t *offsets = (uint32_t *) jitc_malloc(
+    uint8_t *offsets = (uint8_t *) jitc_malloc(
         backend == JitBackend::CUDA ? AllocType::HostPinned : AllocType::Host, offsets_size);
     uint32_t *perm = (uint32_t *) jitc_malloc(
         backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, perm_size);
 
     // Compute permutation
-    uint32_t unique_count =
-                 jitc_mkperm(backend, (const uint32_t *) jitc_var_ptr(index),
-                             size, bucket_count, perm, offsets),
+    const uint32_t *self = (const uint32_t *) jitc_var_ptr(index);
+    uint32_t unique_count = jitc_mkperm(backend, self, size,
+                                        bucket_count, perm, (uint32_t *) offsets),
              unique_count_out = unique_count;
 
     // Register permutation variable with JIT backend and transfer ownership
@@ -1360,29 +1360,41 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
     v2.retain_data = true;
     v2.unaligned = 1;
 
-    uint32_t *offsets_out = offsets;
+    struct InputBucket {
+        uint32_t id, offset, size, unused;
+    };
+
+    InputBucket *input_buckets = (InputBucket *) offsets;
+
+    std::sort(
+        input_buckets,
+        input_buckets + unique_count,
+        [](const InputBucket &b1, const InputBucket &b2) {
+            return b1.size > b2.size;
+        }
+    );
 
     for (uint32_t i = 0; i < unique_count; ++i) {
-        uint32_t bucket_id     = offsets[i * 4 + 0],
-                 bucket_offset = offsets[i * 4 + 1],
-                 bucket_size   = offsets[i * 4 + 2];
+        InputBucket bucket = input_buckets[i];
 
-        /// Crete variable for permutation subrange
-        v2.data = perm + bucket_offset;
-        v2.size = bucket_size;
+        // Create variable for permutation subrange
+        v2.data = perm + bucket.offset;
+        v2.size = bucket.size;
 
         jitc_var_inc_ref_int(perm_var);
 
         uint32_t index2 = jitc_var_new(v2);
 
-        void *ptr = jitc_registry_get_ptr(backend, domain, bucket_id);
-        memcpy(offsets_out, &ptr, sizeof(void *));
-        memcpy(offsets_out + 2, &index2, sizeof(uint32_t));
-        memcpy(offsets_out + 3, &bucket_id, sizeof(uint32_t));
-        offsets_out += 4;
+        VCallBucket bucket_out;
+        bucket_out.ptr = jitc_registry_get_ptr(backend, domain, bucket.id);
+        bucket_out.index = index2;
+        bucket_out.id = bucket.id;
+
+        memcpy(input_buckets + i, &bucket_out, sizeof(VCallBucket));
 
         jitc_trace("jit_vcall(): registered variable %u: bucket %u (" ENOKI_PTR
-                  ") of size %u.", index2, bucket_id, (uintptr_t) ptr, bucket_size);
+                   ") of size %u.", index2, bucket_out.id,
+                   (uintptr_t) bucket_out.ptr, bucket.size);
     }
 
     jitc_var_dec_ref_ext(perm_var);
