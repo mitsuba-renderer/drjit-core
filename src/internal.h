@@ -482,6 +482,20 @@ struct KernelHistory {
         return result;
     }
 
+    void destroy() {
+        for (size_t i = 0; i < size; i++) {
+            KernelHistoryEntry &k = data[i];
+            if (k.backend == JitBackend::CUDA) {
+                cuEventDestroy((CUevent)k.event_before);
+                cuEventDestroy((CUevent)k.event_after);
+            }
+        }
+        free(data);
+        data = nullptr;
+        allocated = 0;
+        size = 0;
+    }
+
 private:
     void init() {
         allocated = 4;

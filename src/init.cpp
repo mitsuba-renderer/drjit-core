@@ -224,6 +224,9 @@ void jitc_shutdown(int light) {
         state.kernel_cache.clear();
     }
 
+    if (unlikely(jit_flag(JitFlag::KernelHistory)))
+        state.kernel_history.destroy();
+
     if (!state.tss.empty()) {
         jitc_log(Info, "jit_shutdown(): releasing %zu thread state%s ..",
                 state.tss.size(), state.tss.size() > 1 ? "s" : "");
