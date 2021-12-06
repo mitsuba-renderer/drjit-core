@@ -88,6 +88,7 @@ extern CUresult (*cuEventCreate)(CUevent *, unsigned int);
 extern CUresult (*cuEventDestroy)(CUevent);
 extern CUresult (*cuEventRecord)(CUevent, CUstream);
 extern CUresult (*cuEventSynchronize)(CUevent);
+extern CUresult (*cuEventElapsedTime)(float *, CUevent, CUevent);
 extern CUresult (*cuFuncSetAttribute)(CUfunction, int, int);
 extern CUresult (*cuGetErrorName)(CUresult, const char **);
 extern CUresult (*cuGetErrorString)(CUresult, const char **);

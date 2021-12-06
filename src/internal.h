@@ -464,9 +464,22 @@ struct KernelHistory {
     }
 
     KernelHistoryEntry *get() {
-        KernelHistoryEntry *ret = data;
+        for (size_t i = 0; i < size; i++) {
+            KernelHistoryEntry &k = data[i];
+            if (k.backend == JitBackend::CUDA) {
+                cuEventElapsedTime(&k.execution_time,
+                                   (CUevent) k.event_before,
+                                   (CUevent) k.event_after);
+                cuEventDestroy((CUevent)k.event_before);
+                cuEventDestroy((CUevent)k.event_after);
+            } else {
+                k.execution_time = 0.f; // TODO
+            }
+        }
+
+        KernelHistoryEntry *result = data;
         init();
-        return ret;
+        return result;
     }
 
 private:

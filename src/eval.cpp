@@ -295,7 +295,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         uses_optix ? "via OptiX, " : "", group.size, n_params_in,
         n_params_out + n_side_effects, n_ops_total, jitc_time_string(codegen_time));
 
-    if (jit_flag(JitFlag::KernelHistory)) {
+    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         kernel_history_entry.backend = backend;
         kernel_history_entry.hash[0] = kernel_hash.low64;
         kernel_history_entry.hash[1] = kernel_hash.high64;
@@ -306,7 +306,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_history_entry.input_count = n_params_in;
         kernel_history_entry.output_count = n_params_out + n_side_effects;
         kernel_history_entry.operation_count = n_ops_total;
-        kernel_history_entry.codegen_time = codegen_time;
+        kernel_history_entry.codegen_time = codegen_time / 1e3f;
     }
 }
 
@@ -421,11 +421,11 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         else
             state.kernel_hard_misses++;
 
-        if (jit_flag(JitFlag::KernelHistory)) {
+        if (unlikely(jit_flag(JitFlag::KernelHistory))) {
             kernel_history_entry.cache_disk = cache_hit;
             kernel_history_entry.cache_hit = cache_hit;
             if (!cache_hit)
-                kernel_history_entry.backend_time = link_time;
+                kernel_history_entry.backend_time = link_time / 1e3f;
         }
     } else {
         kernel_history_entry.cache_hit = true;
@@ -434,8 +434,10 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
     state.kernel_launches++;
 
-    if (jit_flag(JitFlag::LaunchBlocking))
-        (void) timer();
+    if (unlikely(ts->backend == JitBackend::CUDA && jit_flag(JitFlag::KernelHistory))) {
+        cuda_check(cuEventCreate((CUevent*)&kernel_history_entry.event_before, 0));
+        cuda_check(cuEventRecord((CUevent)kernel_history_entry.event_before, ts->stream));
+    }
 
     Task* ret_task = nullptr;
     if (ts->backend == JitBackend::CUDA) {
@@ -515,15 +517,14 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         );
     }
 
-    if (jit_flag(JitFlag::LaunchBlocking)) {
-        jitc_sync_thread();
-        kernel_history_entry.execution_time = timer();
-        jitc_log(Info, "     execution time: %s.",
-                    jitc_time_string(kernel_history_entry.execution_time));
-    }
+    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+        if (ts->backend == JitBackend::CUDA) {
+            cuda_check(cuEventCreate((CUevent*)&kernel_history_entry.event_after, 0));
+            cuda_check(cuEventRecord((CUevent)kernel_history_entry.event_after, ts->stream));
+        }
 
-    if (jit_flag(JitFlag::KernelHistory))
         state.kernel_history.push(kernel_history_entry);
+    }
 
     return ret_task;
 }

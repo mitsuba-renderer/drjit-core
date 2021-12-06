@@ -805,6 +805,7 @@ void jit_kernel_history_clear() {
 
 struct KernelHistoryEntry *jit_kernel_history() {
     lock_guard guard(state.mutex);
+    jitc_sync_thread();
     return state.kernel_history.get();
 }
 
