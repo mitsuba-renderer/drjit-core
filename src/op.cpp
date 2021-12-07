@@ -1839,7 +1839,11 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             src_type = "u8";
         }
 
-        if (reduce_op != ReduceOp::None)
+        bool use_atom_op = reduce_op != ReduceOp::None &&
+                           std::tie(jitc_cuda_version_major,
+                                    jitc_cuda_version_minor) < std::make_tuple(11, 5);
+
+        if (use_atom_op)
             buf.put(".reg.$t2 $r0$n");
 
         if (unmasked) {
@@ -1851,10 +1855,11 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
         if (reduce_op == ReduceOp::None)
             buf.fmt("st.global.%s [%s], %s", src_type, dst_addr, src_reg);
-        else
-            // buf.fmt("red.global.%s.%s [%s], %s", red_op_name,
-            //         src_type, dst_addr, src_reg);
+        else if (use_atom_op)
             buf.fmt("atom.global.%s.%s $r0, [%s], %s", red_op_name,
+                    src_type, dst_addr, src_reg);
+        else
+            buf.fmt("red.global.%s.%s [%s], %s", red_op_name,
                     src_type, dst_addr, src_reg);
     } else {
         if (is_float && reduce_op != ReduceOp::None &&
