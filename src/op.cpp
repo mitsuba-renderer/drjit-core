@@ -1871,11 +1871,6 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             buf.put("$r0_0 = bitcast $<i8*$> $r1 to $<$t2*$>$n"
                     "$r0_1 = getelementptr $t2, $<$t2*$> $r0_0, <$w x $t3> $r3$n"
                     "$call void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0_1, i32 $s2, <$w x $t4> $r4)");
-        } else if (reduce_op == ReduceOp::Add && index_zero && is_float) {
-            buf.put("$r0_0 = bitcast i8* $r1 to $t2*$n"
-                    "$r0_1 = select <$w x $t4> $r4, <$w x $t2> $r2, <$w x $t2> zeroinitializer$n"
-                    "$r0_2 = $call reassoc $t2 @llvm.vector.reduce.fadd.v$w$a2(float zeroinitializer, <$w x $t2> $r0_1)$n"
-                    "atomicrmw fadd $t2* $r0_0, $t2 $r0_2 monotonic");
         } else {
             /* LLVM fallback: loop over entries and invoke
                'atomicrmw' to perform atomic update */

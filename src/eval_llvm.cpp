@@ -423,8 +423,6 @@ static void jitc_llvm_process_intrinsic(size_t offset) {
         } else if (c == ' ' && s[1]== 'z' && s[2] == 'e' && s[3] == 'r') {
             while (c = *s, c != '\0' && c != ')' && c != ',')
                 s++;
-        } else if (strncmp(s, " reassoc", 8) == 0) {
-            s += 8;
         } else {
             buffer.putc(c);
             if (c == ')')
