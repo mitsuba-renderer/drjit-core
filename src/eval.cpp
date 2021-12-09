@@ -523,9 +523,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
     if (unlikely(jit_flag(JitFlag::LaunchBlocking))) {
         jitc_sync_thread();
-        kernel_history_entry.execution_time = timer();
-        jitc_log(Info, "     execution time: %s.",
-                    jitc_time_string(kernel_history_entry.execution_time));
+        float execution_time = timer();
+        kernel_history_entry.execution_time = execution_time / 1e3f;
+        jitc_log(Info, "     execution time: %s.", jitc_time_string(execution_time));
     } else {
         if (unlikely(jit_flag(JitFlag::KernelHistory))) {
             if (ts->backend == JitBackend::CUDA) {
