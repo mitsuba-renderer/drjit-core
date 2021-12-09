@@ -199,6 +199,7 @@ static bool jitc_optix_init_attempted = false;
 static bool jitc_optix_init_success = false;
 static void *jitc_optix_handle = nullptr;
 static bool jitc_optix_cache_hit = false;
+static bool jitc_optix_cache_global_disable = false;
 
 bool jitc_optix_init() {
     if (jitc_optix_init_attempted)
@@ -295,6 +296,10 @@ void jitc_optix_log(unsigned int level, const char *tag, const char *message, vo
     if (strcmp(tag, "DISKCACHE") == 0 &&
         strncmp(message, "Cache miss for key", 18) == 0)
         jitc_optix_cache_hit = false;
+
+    if (strcmp(tag, "DISK CACHE") == 0 &&
+        strncmp(message, "OPTIX_CACHE_MAXSIZE is set to 0", 31) == 0)
+        jitc_optix_cache_global_disable = true;
 }
 
 static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
@@ -480,7 +485,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
 #endif
 
-    jitc_optix_cache_hit = true;
+    jitc_optix_cache_hit = !jitc_optix_cache_global_disable;
     size_t log_size = sizeof(error_log);
     OptixDeviceContext &optix_context = state.devices[ts->device].optix_context;
     int rv = optixModuleCreateFromPTX(
