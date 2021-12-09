@@ -467,16 +467,18 @@ struct KernelHistory {
     }
 
     KernelHistoryEntry *get() {
-        for (size_t i = 0; i < size; i++) {
-            KernelHistoryEntry &k = data[i];
-            if (k.backend == JitBackend::CUDA) {
-                cuEventElapsedTime(&k.execution_time,
-                                   (CUevent) k.event_before,
-                                   (CUevent) k.event_after);
-                cuEventDestroy((CUevent) k.event_before);
-                cuEventDestroy((CUevent) k.event_after);
-            } else {
-                k.execution_time = 0.f; // TODO
+        if (!jit_flag(JitFlag::LaunchBlocking)) {
+            for (size_t i = 0; i < size; i++) {
+                KernelHistoryEntry &k = data[i];
+                if (k.backend == JitBackend::CUDA) {
+                    cuEventElapsedTime(&k.execution_time,
+                                    (CUevent) k.event_before,
+                                    (CUevent) k.event_after);
+                    cuEventDestroy((CUevent) k.event_before);
+                    cuEventDestroy((CUevent) k.event_after);
+                } else {
+                    k.execution_time = 0.f; // TODO
+                }
             }
         }
 
@@ -486,11 +488,13 @@ struct KernelHistory {
     }
 
     void destroy() {
-        for (size_t i = 0; i < size; i++) {
-            KernelHistoryEntry &k = data[i];
-            if (k.backend == JitBackend::CUDA) {
-                cuEventDestroy((CUevent)k.event_before);
-                cuEventDestroy((CUevent)k.event_after);
+        if (!jit_flag(JitFlag::LaunchBlocking)) {
+            for (size_t i = 0; i < size; i++) {
+                KernelHistoryEntry &k = data[i];
+                if (k.backend == JitBackend::CUDA) {
+                    cuEventDestroy((CUevent)k.event_before);
+                    cuEventDestroy((CUevent)k.event_after);
+                }
             }
         }
         free(data);

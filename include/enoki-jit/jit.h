@@ -1300,8 +1300,13 @@ enum class JitFlag : uint32_t {
     /// Enable writing of the kernel history
     KernelHistory = 128,
 
+    /* Force synchronization after every kernel launch. This is useful to
+       isolate crashes to a specific kernel, and to benchmark kernel runtime
+       along with the KernelHistory feature. */
+    LaunchBlocking = 256,
+
     /// Exploit literal constants during AD (used in the Enoki parent project)
-    ADOptimize = 256,
+    ADOptimize = 512,
 
     /// Default flags
     Default = (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
@@ -1318,7 +1323,8 @@ enum JitFlag {
     JitFlagRecording           = 32,
     JitFlagPrintIR             = 64,
     JitFlagKernelHistory       = 128,
-    JitFlagADOptimize          = 256
+    JitFlagLaunchBlocking      = 256,
+    JitFlagADOptimize          = 512
 };
 #endif
 

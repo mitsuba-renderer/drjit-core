@@ -434,9 +434,13 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
     state.kernel_launches++;
 
-    if (unlikely(ts->backend == JitBackend::CUDA && jit_flag(JitFlag::KernelHistory))) {
-        cuda_check(cuEventCreate((CUevent*)&kernel_history_entry.event_before, 0));
-        cuda_check(cuEventRecord((CUevent)kernel_history_entry.event_before, ts->stream));
+    if (unlikely(jit_flag(JitFlag::LaunchBlocking))) {
+        (void) timer();
+    } else {
+        if (unlikely(ts->backend == JitBackend::CUDA && jit_flag(JitFlag::KernelHistory))) {
+            cuda_check(cuEventCreate((CUevent*)&kernel_history_entry.event_before, 0));
+            cuda_check(cuEventRecord((CUevent)kernel_history_entry.event_before, ts->stream));
+        }
     }
 
     Task* ret_task = nullptr;
@@ -517,14 +521,22 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         );
     }
 
-    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
-        if (ts->backend == JitBackend::CUDA) {
-            cuda_check(cuEventCreate((CUevent*)&kernel_history_entry.event_after, 0));
-            cuda_check(cuEventRecord((CUevent)kernel_history_entry.event_after, ts->stream));
+    if (unlikely(jit_flag(JitFlag::LaunchBlocking))) {
+        jitc_sync_thread();
+        kernel_history_entry.execution_time = timer();
+        jitc_log(Info, "     execution time: %s.",
+                    jitc_time_string(kernel_history_entry.execution_time));
+    } else {
+        if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+            if (ts->backend == JitBackend::CUDA) {
+                cuda_check(cuEventCreate((CUevent*)&kernel_history_entry.event_after, 0));
+                cuda_check(cuEventRecord((CUevent)kernel_history_entry.event_after, ts->stream));
+            }
         }
-
-        state.kernel_history.push(kernel_history_entry);
     }
+
+    if (unlikely(jit_flag(JitFlag::KernelHistory)))
+        state.kernel_history.push(kernel_history_entry);
 
     return ret_task;
 }
