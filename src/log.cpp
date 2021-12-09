@@ -189,26 +189,22 @@ static timespec timer_value { 0, 0 };
 
 float timer() {
     timespec timer_value_2;
-    clock_gettime(CLOCK_REALTIME, &timer_value_2);
+    clock_gettime(CLOCK_MONOTONIC, &timer_value_2);
     float result = (timer_value_2.tv_sec - timer_value.tv_sec) * 1e6f +
                    (timer_value_2.tv_nsec - timer_value.tv_nsec) * 1e-3f;
     timer_value = timer_value_2;
     return result;
 }
 #else
-static LARGE_INTEGER timer_value{};
-static LARGE_INTEGER timer_frequency{};
+static LARGE_INTEGER timer_value {};
+static float timer_frequency_scale;
 
 float timer() {
-    LARGE_INTEGER value;
-    QueryPerformanceCounter(&value);
-
-    if (timer_frequency.QuadPart == 0)
-        QueryPerformanceFrequency(&timer_frequency);
-
-    float result = (float)(value.QuadPart - timer_value.QuadPart) / timer_frequency.QuadPart * 1e6f;
-    timer_value = value;
-
+    LARGE_INTEGER timer_value_2;
+    QueryPerformanceCounter(&timer_value_2);
+    float result = timer_frequency_scale *
+                   (timer_value_2.QuadPart - timer_value.QuadPart);
+    timer_value = timer_value_2;
     return result;
 }
 #endif

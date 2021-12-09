@@ -306,7 +306,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_history_entry.input_count = n_params_in;
         kernel_history_entry.output_count = n_params_out + n_side_effects;
         kernel_history_entry.operation_count = n_ops_total;
-        kernel_history_entry.codegen_time = codegen_time / 1e3f;
+        kernel_history_entry.codegen_time = codegen_time * 1e-3f;
     }
 }
 
@@ -381,9 +381,11 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
             // Locate the kernel entry point
             char kernel_name_tmp[39];
-            snprintf(kernel_name_tmp, sizeof(kernel_name_tmp), "enoki_%016llx%016llx",
+            snprintf(kernel_name_tmp, sizeof(kernel_name_tmp),
+                     "enoki_%016llx%016llx",
                      (unsigned long long) kernel_hash.high64,
                      (unsigned long long) kernel_hash.low64);
+
             cuda_check(cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod,
                                            kernel_name_tmp));
 
@@ -425,7 +427,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             kernel_history_entry.cache_disk = cache_hit;
             kernel_history_entry.cache_hit = cache_hit;
             if (!cache_hit)
-                kernel_history_entry.backend_time = link_time / 1e3f;
+                kernel_history_entry.backend_time = link_time * 1e-3f;
         }
     } else {
         kernel_history_entry.cache_hit = true;
@@ -434,13 +436,12 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
     state.kernel_launches++;
 
-    if (unlikely(jit_flag(JitFlag::LaunchBlocking))) {
-        (void) timer();
-    } else {
-        if (unlikely(ts->backend == JitBackend::CUDA && jit_flag(JitFlag::KernelHistory))) {
-            cuda_check(cuEventCreate((CUevent*)&kernel_history_entry.event_before, 0));
-            cuda_check(cuEventRecord((CUevent)kernel_history_entry.event_before, ts->stream));
-        }
+    if (unlikely(jit_flag(JitFlag::KernelHistory) &&
+                 ts->backend == JitBackend::CUDA)) {
+        auto &e = kernel_history_entry;
+        cuda_check(cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));
+        cuda_check(cuEventCreate((CUevent *) &e.event_end, CU_EVENT_DEFAULT));
+        cuda_check(cuEventRecord((CUevent) e.event_start, ts->stream));
     }
 
     Task* ret_task = nullptr;
@@ -509,8 +510,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         kernel_params[2] = kernel.llvm.itt;
 #endif
 
-        jitc_log(Trace, "jit_run(): scheduling %u packet%s in %u block%s ..", packets,
-                packets == 1 ? "" : "s", blocks, blocks == 1 ? "" : "s");
+        jitc_trace("jit_run(): scheduling %u packet%s in %u block%s ..",
+                   packets, packets == 1 ? "" : "s", blocks,
+                   blocks == 1 ? "" : "s");
 
         ret_task = task_submit_dep(
             nullptr, &ts->task, 1, blocks,
@@ -521,22 +523,20 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         );
     }
 
-    if (unlikely(jit_flag(JitFlag::LaunchBlocking))) {
+    if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
         jitc_sync_thread();
-        float execution_time = timer();
-        kernel_history_entry.execution_time = execution_time / 1e3f;
-        jitc_log(Info, "     execution time: %s.", jitc_time_string(execution_time));
-    } else {
-        if (unlikely(jit_flag(JitFlag::KernelHistory))) {
-            if (ts->backend == JitBackend::CUDA) {
-                cuda_check(cuEventCreate((CUevent*)&kernel_history_entry.event_after, 0));
-                cuda_check(cuEventRecord((CUevent)kernel_history_entry.event_after, ts->stream));
-            }
-        }
-    }
 
-    if (unlikely(jit_flag(JitFlag::KernelHistory)))
-        state.kernel_history.push(kernel_history_entry);
+    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+        if (ts->backend == JitBackend::CUDA) {
+            cuda_check(cuEventRecord((CUevent) kernel_history_entry.event_end,
+                                     ts->stream));
+        } else {
+            task_retain(ret_task);
+            kernel_history_entry.task = ret_task;
+        }
+
+        state.kernel_history.append(kernel_history_entry);
+    }
 
     return ret_task;
 }

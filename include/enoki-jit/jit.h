@@ -1740,34 +1740,51 @@ extern JIT_EXPORT void jit_set_cse_scope(JIT_ENUM JitBackend backend, uint32_t d
 struct KernelHistoryEntry {
     /// Jit backend, for which the kernel was compiled
     JitBackend backend;
+
     /// Stores the low/high 64 bits of the 128-bit hash kernel identifier
     uint64_t hash[2];
+
     /// Copy of the kernel IR string buffer
     char *ir;
+
     /// Does the kernel contain any OptiX (ray tracing) operations?
     int uses_optix;
+
     /// Whether the kernel was reused from the kernel cache
     int cache_hit;
+
     /// Whether the kernel was loaded from the cache on disk
     int cache_disk;
+
     /// Launch width / number of array entries that were processed
     uint32_t size;
+
     /// Number of input arrays
     uint32_t input_count;
+
     /// Number of output arrays + side effects
     uint32_t output_count;
+
     /// Number of IR operations
     uint32_t operation_count;
+
     /// Time (ms) spent generating the kernel intermediate representation
     float codegen_time;
+
     /// Time (ms) spent compiling the kernel (\c 0 if \c cache_hit is \c true)
     float backend_time;
+
     /// Time (ms) spent executing the kernel
     float execution_time;
-    /// Handle to an event recorded right before launching this kernel
-    uint64_t event_before;
-    /// Handle to an event recorded right after launching this kernel
-    uint64_t event_after;
+
+    // Enoki-JIT internal portion, will be cleared by jit_kernel_history()
+    // ===================================================================
+
+    /// CUDA events for measuring the runtime of the kernel
+    void *event_start, *event_end;
+
+    /// Enoki-thread task handle
+    void *task;
 };
 
 /// Clear the kernel history

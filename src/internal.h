@@ -440,79 +440,17 @@ using KernelCache =
 
 /// Data structure to store a history of the launched kernels
 struct KernelHistory {
+    KernelHistory();
+    ~KernelHistory();
 
-    KernelHistory() {
-        init();
-    }
-
-    void push(const KernelHistoryEntry &entry) {
-        /* Expand kernel history allocation if necessary. There should always be
-           enough memory for one extra entry in order to add a special invalid
-           entry to indicate the end of the list. */
-        if (allocated - size <= 1) {
-            allocated *= 2;
-            void *tmp = (void *) malloc(allocated * sizeof(KernelHistoryEntry));
-            memcpy(tmp, data, size * sizeof(KernelHistoryEntry));
-            free(data);
-            data = (KernelHistoryEntry *) tmp;
-        }
-
-        data[size++] = entry;
-        data[size] = {};
-    }
-
-    void clear() {
-        size = 0;
-        data[size] = {};
-    }
-
-    KernelHistoryEntry *get() {
-        if (!jit_flag(JitFlag::LaunchBlocking)) {
-            for (size_t i = 0; i < size; i++) {
-                KernelHistoryEntry &k = data[i];
-                if (k.backend == JitBackend::CUDA) {
-                    cuEventElapsedTime(&k.execution_time,
-                                    (CUevent) k.event_before,
-                                    (CUevent) k.event_after);
-                    cuEventDestroy((CUevent) k.event_before);
-                    cuEventDestroy((CUevent) k.event_after);
-                } else {
-                    k.execution_time = 0.f; // TODO
-                }
-            }
-        }
-
-        KernelHistoryEntry *result = data;
-        init();
-        return result;
-    }
-
-    void destroy() {
-        if (!jit_flag(JitFlag::LaunchBlocking)) {
-            for (size_t i = 0; i < size; i++) {
-                KernelHistoryEntry &k = data[i];
-                if (k.backend == JitBackend::CUDA) {
-                    cuEventDestroy((CUevent)k.event_before);
-                    cuEventDestroy((CUevent)k.event_after);
-                }
-            }
-        }
-        free(data);
-        data = nullptr;
-        allocated = 0;
-        size = 0;
-    }
+    void append(const KernelHistoryEntry &entry);
+    KernelHistoryEntry *get();
+    void clear();
 
 private:
-    void init() {
-        allocated = 4;
-        data = (KernelHistoryEntry *) malloc(allocated * sizeof(KernelHistoryEntry));
-        clear();
-    }
-
-    KernelHistoryEntry *data;
-    size_t size;
-    size_t allocated;
+    KernelHistoryEntry *m_data;
+    size_t m_size;
+    size_t m_capacity;
 };
 
 // Key associated with a pointer registered in Enoki's pointer registry
