@@ -605,7 +605,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 stmt = is_single ? "sqrt.approx.ftz.$t0 $r0, $r1"
                                  : "sqrt.rn.$t0 $r0, $r1";
             } else {
-                stmt = "$r0 = $call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)";
+                stmt = "$r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)"
+                       "$[declare <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1>)$]";
             }
             break;
 
@@ -663,7 +664,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             } else if (backend == JitBackend::CUDA) {
                 stmt = "cvt.rpi.$t0.$t0 $r0, $r1";
             } else {
-                stmt = "$r0 = $call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)";
+                stmt = "$r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)"
+                       "$[declare <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1>)$]";
             }
             break;
 
@@ -674,7 +676,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             } else if (backend == JitBackend::CUDA) {
                 stmt = "cvt.rmi.$t0.$t0 $r0, $r1";
             } else {
-                stmt = "$r0 = $call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)";
+                stmt = "$r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)"
+                       "$[declare <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1>)$]";
             }
             break;
 
@@ -685,7 +688,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             } else if (backend == JitBackend::CUDA) {
                 stmt = "cvt.rni.$t0.$t0 $r0, $r1";
             } else {
-                stmt = "$r0 = $call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)";
+                stmt = "$r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)"
+                       "$[declare <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1>)$]";
             }
             break;
 
@@ -696,7 +700,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             } else if (backend == JitBackend::CUDA) {
                 stmt = "cvt.rzi.$t0.$t0 $r0, $r1";
             } else {
-                stmt = "$r0 = $call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)";
+                stmt = "$r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)"
+                       "$[declare <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1>)$]";
             }
             break;
 
@@ -746,7 +751,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                            : "popc.$b0 %r3, $r1$n"
                              "cvt.$t0.u32 $r0, %r3";
             } else {
-                stmt = "$r0 = $call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)";
+                stmt = "$r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)"
+                       "$[declare <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1>)$]";
             }
             break;
 
@@ -760,7 +766,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                            : "clz.$b0 %r3, $r1$n"
                              "cvt.$t0.u32 $r0, %r3";
             } else {
-                stmt = "$r0 = $call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1 0)";
+                stmt = "$r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1 0)"
+                       "$[declare <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1>, i1)$]";
             }
             break;
 
@@ -776,7 +783,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                              "clz.$b0 %r3, %rd3$n"
                              "cvt.$t0.u32 $r0, %r3";
             } else {
-                stmt = "$r0 = $call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1 0)";
+                stmt = "$r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1 0)"
+                       "$[declare <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1>, i1)$]";
             }
             break;
 
@@ -933,7 +941,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                                  : "min.$t0 $r0, $r1, $r2";
             } else {
                 if (is_float)
-                    stmt = "$r0 = $call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)";
+                    stmt = "$r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)"
+                           "$[declare <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1>, <$w x $t2>)$]";
                 else if (is_uint)
                     stmt = "$r0_0 = icmp ult <$w x $t0> $r1, $r2$n"
                            "$r0 = select <$w x i1> $r0_0, <$w x $t1> $r1, <$w x $t1> $r2";
@@ -952,8 +961,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                                  : "max.$t0 $r0, $r1, $r2";
             } else {
                 if (is_float)
-                    stmt = "$r0 = $call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> "
-                           "$r1, <$w x $t2> $r2)";
+                    stmt = "$r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)"
+                           "$[declare <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1>, <$w x $t2>)$]";
                 else if (is_uint)
                     stmt = "$r0_0 = icmp ugt <$w x $t0> $r1, $r2$n"
                            "$r0 = select <$w x i1> $r0_0, <$w x $t1> $r1, <$w x $t1> $r2";
@@ -1227,8 +1236,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 }
             } else {
                 if (is_float) {
-                    stmt = "$r0 = $call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> "
-                           "$r1, <$w x $t2> $r2, <$w x $t3> $r3)";
+                    stmt = "$r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)"
+                           "$[declare <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1>, <$w x $t2>, <$w x $t3>)$]";
                 } else {
                     stmt = "$r0_0 = mul <$w x $t0> $r1, $r2$n"
                            "$r0 = add <$w x $t0> $r0_0, $r3";
@@ -1671,12 +1680,14 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         if (vt != VarType::Bool && vt != VarType::UInt8 && vt != VarType::Int8) {
             stmt = "$r0_0 = bitcast $<i8*$> $r1 to $<$t0*$>$n"
                    "$r0_1 = getelementptr $t0, $<$t0*$> $r0_0, <$w x $t2> $r2$n"
-                   "$r0 = $call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r0_1, i32 $s0, <$w x $t3> $r3, <$w x $t0> zeroinitializer)";
+                   "$r0 = call <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*> $r0_1, i32 $s0, <$w x $t3> $r3, <$w x $t0> zeroinitializer)"
+                   "$[declare <$w x $t0> @llvm.masked.gather.v$w$a0(<$w x $t0*>, i32, <$w x $t3>, <$w x $t0>)$]";
         } else {
             stmt = "$r0_0 = getelementptr i8, $<i8*$> $r1, <$w x $t2> $r2$n"
                    "$r0_1 = bitcast <$w x i8*> $r0_0 to <$w x i32*>$n"
-                   "$r0_2 = $call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0_1, i32 $s0, <$w x $t3> $r3, <$w x i32> zeroinitializer)$n"
-                   "$r0 = trunc <$w x i32> $r0_2 to <$w x $t0>";
+                   "$r0_2 = call <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*> $r0_1, i32 $s0, <$w x $t3> $r3, <$w x i32> zeroinitializer)$n"
+                   "$r0 = trunc <$w x i32> $r0_2 to <$w x $t0>"
+                   "$[declare <$w x i32> @llvm.masked.gather.v$wi32(<$w x i32*>, i32, <$w x $t3>, <$w x i32>)$]";
         }
     }
 
@@ -1870,29 +1881,82 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         if (red_op_name == nullptr) {
             buf.put("$r0_0 = bitcast $<i8*$> $r1 to $<$t2*$>$n"
                     "$r0_1 = getelementptr $t2, $<$t2*$> $r0_0, <$w x $t3> $r3$n"
-                    "$call void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0_1, i32 $s2, <$w x $t4> $r4)");
+                    "call void @llvm.masked.scatter.v$w$a2(<$w x $t2> $r2, <$w x $t2*> $r0_1, i32 $s2, <$w x $t4> $r4)"
+                    "$[declare void @llvm.masked.scatter.v$w$a2(<$w x $t2>, <$w x $t2*>, i32, <$w x $t4>)$]");
+        } else if (reduce_op == ReduceOp::Add && is_float) {
+            /* Floating point scatter-add is such a crucial operation that we
+               provide a special vectorized implementation that first tries to
+               perform local reductions to decrease the number of atomic
+               operations that must be performed */
+
+            buf.put(
+                // Code for this operation
+                "$r0_0 = bitcast $<i8*$> $r1 to $<$t2*$>$n"
+                "$r0_1 = getelementptr $t2, $<$t2*$> $r0_0, <$w x $t3> $r3$n"
+                "call void @ek.scatter_add.v$w$a2(<$w x $t2*> $r0_1, <$w x $t2> $r2, <$w x $t4> $r4)"
+
+                // Intrinsic/helper function
+                "$[define internal void @ek.scatter_add.v$w$a2(<$w x $t2*> %ptrs, <$w x $t2> %value, <$w x i1> %active_in) #0 {\n"
+                "L0:\n"
+                "   br label %L1\n\n"
+                "L1:\n"
+                "   %index = phi i32 [ 0, %L0 ], [ %index_next, %L3 ]\n"
+                "   %active = phi <$w x i1> [ %active_in, %L0 ], [ %active_next_2, %L3 ]\n"
+                "   %active_i = extractelement <$w x i1> %active, i32 %index\n"
+                "   br i1 %active_i, label %L2, label %L3\n\n"
+                "L2:\n"
+                "   %ptr_0 = extractelement <$w x $t2 *> %ptrs, i32 %index\n"
+                "   %ptr_1 = insertelement <$w x $t2 *> undef, $t2* %ptr_0, i32 0\n"
+                "   %ptr_2 = shufflevector <$w x $t2 *> %ptr_1, <$w x $t2 *> undef, <$w x i32> zeroinitializer\n"
+                "   %ptr_eq = icmp eq <$w x $t2 *> %ptrs, %ptr_2\n"
+                "   %active_cur = and <$w x i1> %ptr_eq, %active\n"
+                "   %value_cur = select <$w x i1> %active_cur, <$w x $t2> %value, <$w x $t2> zeroinitializer\n"
+                "   %sum = call reassoc $t2 @llvm.experimental.vector.reduce.v2.fadd.$a2.v$w$a2($t2 0.0, <$w x $t2> %value_cur)\n"
+                "   atomicrmw fadd $t2* %ptr_0, $t2 %sum monotonic\n"
+                "   %active_next = xor <$w x i1> %active, %active_cur\n"
+                "   br label %L3\n\n"
+                "L3:\n"
+                "   %active_next_2 = phi <$w x i1> [ %active, %L1 ], [ %active_next, %L2 ]\n"
+                "   %index_next = add nuw nsw i32 %index, 1\n"
+                "   %cond_2 = icmp eq i32 %index_next, $w\n"
+                "   br i1 %cond_2, label %L4, label %L1\n\n"
+                "L4:\n"
+                "   ret void\n"
+                "}$]"
+                "$[declare $t2 @llvm.experimental.vector.reduce.v2.fadd.$a2.v$w$a2($t2, <$w x $t2>)$]"
+            );
         } else {
-            /* LLVM fallback: loop over entries and invoke
-               'atomicrmw' to perform atomic update */
-            buf.fmt("br label %%L$i0_start\n"
-                    "\nL$i0_start:$n"
-                    "$r0_base = bitcast $<i8*$> $r1 to $<$t2*$>$n"
-                    "$r0_ptrs = getelementptr $t2, $<$t2*$> $r0_base, <$w x $t3> $r3$n"
-                    "br label %%L$i0_body$n"
-                    "\nL$i0_body:$n"
-                    "$r0_index = phi i32 [ 0, %%L$i0_start ], [ $r0_next, %%L$i0_next ]$n"
-                    "$r0_mask = extractelement <$w x $t4> $r4, i32 $r0_index$n"
-                    "br i1 $r0_mask, label %%L$i0_scatter, label %%L$i0_next\n"
-                    "\nL$i0_scatter:$n"
-                    "$r0_ptr = extractelement <$w x $t2*> $r0_ptrs, i32 $r0_index$n"
-                    "$r0_value = extractelement <$w x $t2> $r2, i32 $r0_index$n"
-                    "atomicrmw %s $t2* $r0_ptr, $t2 $r0_value monotonic$n"
-                    "br label %%L$i0_next\n"
-                    "\nL$i0_next:$n"
-                    "$r0_next = add nuw nsw i32 $r0_index, 1$n"
-                    "$r0_cond = icmp eq i32 $r0_next, $w$n"
-                    "br i1 $r0_cond, label %%L$i0_done, label %%L$i0_body$n"
-                    "\nL$i0_done:", red_op_name);
+            buf.fmt(
+                // Code for this operation
+                "$r0_0 = bitcast $<i8*$> $r1 to $<$t2*$>$n"
+                "$r0_1 = getelementptr $t2, $<$t2*$> $r0_0, <$w x $t3> $r3$n"
+                "call void @ek.scatter_%s.v$w$a2(<$w x $t2*> $r0_1, <$w x $t2> $r2, <$w x $t4> $r4)"
+
+                // Intrinsic/helper function
+                "$[define internal void @ek.scatter_%s.v$w$a2(<$w x $t2*> %%ptrs, <$w x $t2> %%value, <$w x i1> %%active) #0 {\n"
+                "L0:\n"
+                "   br label %%L1\n\n"
+                "L1:\n"
+                "   %%index = phi i32 [ 0, %%L0 ], [ %%index_next, %%L3 ]\n"
+                "   %%active_cur = extractelement <$w x i1> %%active, i32 %%index\n"
+                "   br i1 %%active_cur, label %%L2, label %%L3\n\n"
+                "L2:\n"
+                "   %%ptr = extractelement <$w x $t2 *> %%ptrs, i32 %%index\n"
+                "   %%value_cur = extractelement <$w x $t2> %%value, i32 %%index\n"
+                "   atomicrmw %s $t2* %%ptr, $t2 %%value_cur monotonic\n"
+                "   br label %%L3\n\n"
+                "L3:\n"
+                "   %%index_next = add nuw nsw i32 %%index, 1\n"
+                "   %%cond_2 = icmp eq i32 %%index_next, $w\n"
+                "   br i1 %%cond_2, label %%L4, label %%L1\n\n"
+                "L4:\n"
+                "   ret void\n"
+                "}$]",
+
+                red_op_name,
+                red_op_name,
+                red_op_name
+            );
         }
     }
 

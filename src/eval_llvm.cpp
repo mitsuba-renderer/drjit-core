@@ -390,56 +390,8 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                "}\n");
 }
 
-/* Invoked when an instruction contains the pattern
- * '$call ret_type name(arg_type arg_value...)'.
- * This function ensures that a suitable intrinsic declaration
- * 'declare ret_type name(arg_type...)' is created */
-static void jitc_llvm_process_intrinsic(size_t offset) {
-    // ensure that there is enough space
-    size_t extra_needed = buffer.size() - offset + 5;
-    if (buffer.remain() < extra_needed)
-        buffer.expand(extra_needed);
-
-    const char *s = strstr(buffer.get() + offset, "call");
-    s += 4;
-
-    size_t intrinsic_offset = buffer.size();
-    buffer.put("declare");
-
-    char c;
-    while (c = *s, c != '\0') {
-        // skip over argument values, only keep types
-        if (c == ' ' && s[1]== '%') {
-            while (c = *s, c != '\0' && c != ')' && c != ',')
-                s++;
-        } else if (c == 'i' && s[1]== '1' && s[2] == ' ') {
-            buffer.put("i1");
-            while (c = *s, c != '\0' && c != ')' && c != ',')
-                s++;
-        } else if (c == 'i' && s[1]== '3' && s[2] == '2' && s[3] == ' ') {
-            buffer.put("i32");
-            while (c = *s, c != '\0' && c != ')' && c != ',')
-                s++;
-        } else if (c == ' ' && s[1]== 'z' && s[2] == 'e' && s[3] == 'r') {
-            while (c = *s, c != '\0' && c != ')' && c != ',')
-                s++;
-        } else {
-            buffer.putc(c);
-            if (c == ')')
-                break;
-            s++;
-        }
-    }
-    buffer.put("\n\n");
-    jitc_register_global(buffer.get() + intrinsic_offset);
-    size_t intrinsic_length = buffer.size() - intrinsic_offset;
-    buffer.rewind(intrinsic_length);
-}
-
 /// Convert an IR template with '$' expressions into valid IR
 static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function) {
-    size_t offset = buffer.size();
-
     if (v->literal) {
         uint32_t reg = v->reg_index, width = jitc_llvm_vector_width;
         uint32_t vt = v->type;
@@ -512,7 +464,7 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
             return;
         buffer.put("    ");
         char c;
-        bool has_intrinsic = false;
+        size_t intrinsic_start = 0;
         do {
             const char *start = s;
             while (c = *s, c != '\0' && c != '$')
@@ -523,7 +475,16 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
                 s++;
                 const char **prefix_table = nullptr, tname = *s++;
                 switch (tname) {
-                    case 'c': buffer.putc('c'); has_intrinsic = true; continue;
+                    case '[':
+                        intrinsic_start = buffer.size();
+                        continue;
+
+                    case ']':
+                        buffer.put("\n\n");
+                        jitc_register_global(buffer.get() + intrinsic_start);
+                        buffer.rewind(buffer.size() - intrinsic_start);
+                        continue;
+
                     case 'n': buffer.put("\n    "); continue;
                     case 'w': buffer.put(jitc_llvm_vector_width_str,
                                          strlen(jitc_llvm_vector_width_str)); continue;
@@ -570,9 +531,6 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
                     buffer.put_uint32(dep->reg_index);
             }
         } while (c != '\0');
-
-        if (unlikely(has_intrinsic))
-            jitc_llvm_process_intrinsic(offset);
 
         buffer.putc('\n');
     }
