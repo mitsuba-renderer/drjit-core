@@ -1490,6 +1490,7 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret)
         v2.backend = (uint32_t) backend;
         v2.stmt = (char *) stmt;
         v2.dep[0] = index;
+        v2.placeholder = v->placeholder;
         jitc_var_inc_ref_int(index, v);
         uint32_t result = jitc_var_new(v2);
 
