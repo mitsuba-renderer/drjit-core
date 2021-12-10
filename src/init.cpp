@@ -61,6 +61,10 @@ static_assert(
 
 static ProfilerRegion profiler_region_init("jit_init");
 
+#if defined(_WIN32)
+extern float timer_frequency_scale;
+#endif
+
 /// Initialize core data structures of the JIT compiler
 void jitc_init(uint32_t backends) {
     ProfilerPhase profiler(profiler_region_init);

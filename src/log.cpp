@@ -197,7 +197,7 @@ float timer() {
 }
 #else
 static LARGE_INTEGER timer_value {};
-static float timer_frequency_scale;
+float timer_frequency_scale;
 
 float timer() {
     LARGE_INTEGER timer_value_2;

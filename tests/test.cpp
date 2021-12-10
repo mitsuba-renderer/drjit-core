@@ -278,7 +278,7 @@ int main(int argc, char **argv) {
     }
 
 #if defined(_WIN32)
-    _snwprintf(binary_path, 1024, L"out_%s", L##TEST_NAME);
+    _snwprintf(binary_path, 1024, L"out_%s", L"" TEST_NAME);
     _wmkdir(binary_path);
 #else
     snprintf(binary_path, 1024, "out_%s", TEST_NAME);

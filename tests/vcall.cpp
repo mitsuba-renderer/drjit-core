@@ -717,15 +717,15 @@ TEST_BOTH(09_big) {
         jit_assert(x.read(0) == 0);
         jit_assert(y.read(0) == 0);
 
-        for (uint32_t i = 1; i <= n1; ++i)
-            jit_assert(x.read(i) == i - 1);
-        for (uint32_t i = 1; i <= n2; ++i)
-            jit_assert(y.read(i) == 100 + i - 1);
+        for (uint32_t j = 1; j <= n1; ++j)
+            jit_assert(x.read(j) == j - 1);
+        for (uint32_t j = 1; j <= n2; ++j)
+            jit_assert(y.read(j) == 100 + j - 1);
 
-        for (uint32_t i = n1 + 1; i < n; ++i)
-            jit_assert(x.read(i + 1) == 0);
-        for (uint32_t i = n2 + 1; i < n; ++i)
-            jit_assert(y.read(i + 1) == 0);
+        for (uint32_t j = n1 + 1; j < n; ++j)
+            jit_assert(x.read(j + 1) == 0);
+        for (uint32_t j = n2 + 1; j < n; ++j)
+            jit_assert(y.read(j + 1) == 0);
     }
 
     for (int i = 0; i < n1; ++i)

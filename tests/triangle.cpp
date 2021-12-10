@@ -127,7 +127,7 @@ void demo() {
 #endif
     pipeline_compile_options.pipelineLaunchParamsVariableName = "params";
     pipeline_compile_options.usesPrimitiveTypeFlags =
-        OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE; // <-- Use this when possible
+        (unsigned) OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE; // <-- Use this when possible
 
     // =====================================================
     // Create Optix module from supplemental PTX code
@@ -252,9 +252,9 @@ void demo() {
         UInt32 payload_0_host = UInt32::steal(jit_var_migrate(payload_0.index(), AllocType::Host));
         jit_sync_thread();
 
-        for (int i = 0; i < res; ++i) {
+        for (int k = 0; k < res; ++k) {
             for (int j = 0; j < res; ++j)
-                printf("%i ", payload_0_host.data()[i*res + j]);
+                printf("%i ", payload_0_host.data()[k*res + j]);
             printf("\n");
         }
         printf("\n");

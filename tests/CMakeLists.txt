@@ -2,8 +2,6 @@ enable_testing()
 
 set(TEST_FILES basics.cpp mem.cpp graphviz.cpp vcall.cpp loop.cpp reductions.cpp)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY $<1:${CMAKE_CURRENT_SOURCE_DIR}>)
-
 foreach (TEST_FILE ${TEST_FILES})
   get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
   add_executable(test_${TEST_NAME} ${TEST_NAME}.cpp test.h test.cpp ${TEST_NAME}.cpp)

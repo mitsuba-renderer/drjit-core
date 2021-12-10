@@ -70,15 +70,15 @@ TEST_BOTH(03_compress) {
                      *perm_ref = (uint32_t *) jit_malloc(AllocType::Host, size * sizeof(uint32_t));
             memset(data, 0, size);
 
-            for (size_t i = 0; i < n_ones; ++i) {
+            for (size_t k = 0; k < n_ones; ++k) {
                 uint32_t index = rand() % size;
                 data[index] = 1;
             }
 
             uint32_t ref_count = 0;
-            for (size_t i = 0; i < size; ++i) {
-                if (data[i])
-                    perm_ref[ref_count++] = (uint32_t) i;
+            for (size_t k = 0; k < size; ++k) {
+                if (data[k])
+                    perm_ref[ref_count++] = (uint32_t) k;
             }
 
             data = (uint8_t *) jit_malloc_migrate(
@@ -116,10 +116,10 @@ TEST_BOTH(04_mkperm) {
                                                          (n_buckets * 4 + 1) * sizeof(uint32_t));
             uint64_t *ref = new uint64_t[size];
 
-            for (size_t i = 0; i < size; ++i) {
+            for (size_t k = 0; k < size; ++k) {
                 uint32_t value = rand() % n_buckets;
-                data[i] = value;
-                ref[i] = (((uint64_t) value) << 32) | i;
+                data[k] = value;
+                ref[k] = (((uint64_t) value) << 32) | k;
             }
 
             data = (uint32_t *) jit_malloc_migrate(data, Float::Backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host);
@@ -145,8 +145,8 @@ TEST_BOTH(04_mkperm) {
             );
 
             uint32_t total_size = 0;
-            for (uint32_t i = 0; i < num_unique; ++i)
-                total_size += buckets[i].size;
+            for (uint32_t k = 0; k < num_unique; ++k)
+                total_size += buckets[k].size;
             if (total_size != size)
                 jit_fail("Size mismatch: %u vs %u\n", total_size, size);
 

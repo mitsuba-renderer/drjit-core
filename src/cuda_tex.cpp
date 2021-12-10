@@ -22,7 +22,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
         array_desc.Width = shape[0];
         array_desc.Height = (ndim == 2) ? shape[1] : 1;
         array_desc.Format = CU_AD_FORMAT_FLOAT;
-        array_desc.NumChannels = n_channels;
+        array_desc.NumChannels = (unsigned int) n_channels;
         cuda_check(cuArrayCreate(&array, &array_desc));
     } else {
         CUDA_ARRAY3D_DESCRIPTOR array_desc;
@@ -31,7 +31,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
         array_desc.Height = shape[1];
         array_desc.Depth = shape[2];
         array_desc.Format = CU_AD_FORMAT_FLOAT;
-        array_desc.NumChannels = n_channels;
+        array_desc.NumChannels = (unsigned int) n_channels;
         cuda_check(cuArray3DCreate(&array, &array_desc));
     }
 
@@ -166,7 +166,7 @@ void jitc_cuda_tex_lookup(size_t ndim, uint32_t texture_id, const uint32_t *pos,
            "mov.v4.f32 $r0, { $r1, $r2, $r3, $r3 }"
         };
         dep[2] = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void,
-                                   stmt_1[ndim - 2], 1, ndim, pos);
+                                   stmt_1[ndim - 2], 1, (unsigned int) ndim, pos);
     } else {
         jitc_var_inc_ref_ext(dep[2]);
     }

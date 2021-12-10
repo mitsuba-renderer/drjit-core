@@ -37,9 +37,9 @@ TEST_BOTH(02_load_store) {
                 jit_var_eval(o);
 
             for (int i = 0; i < 2; ++i) {
-                uint32_t value = 1234;
-                uint32_t v0 = jit_var_new_literal(Backend, VarType::UInt32, &value, 1 + i);
-                uint32_t v1 = jit_var_new_literal(Backend, VarType::UInt32, &value, 1 + i);
+                uint32_t value2 = 1234;
+                uint32_t v0 = jit_var_new_literal(Backend, VarType::UInt32, &value2, 1 + i);
+                uint32_t v1 = jit_var_new_literal(Backend, VarType::UInt32, &value2, 1 + i);
 
                 uint32_t v0p = jit_var_new_op_2(JitOp::Add, o, v0);
                 jit_var_dec_ref_ext(v0);
