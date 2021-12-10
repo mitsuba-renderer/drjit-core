@@ -1512,7 +1512,7 @@ static uint32_t jitc_scatter_gather_mask(uint32_t mask, uint32_t size) {
     size_t size_top = jitc_var(mask_top)->size;
 
     // Mask on mask stack is incompatible -- get the default mask
-    if (size_top != size && size_top != 1)
+    if (size_top != size && size_top != 1 && size != 1)
         mask_top = steal(jitc_var_mask_default(backend));
 
     uint32_t deps[2] = { mask, mask_top };
