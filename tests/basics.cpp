@@ -218,8 +218,8 @@ template <typename T> void test_const_prop() {
                 char *v0 = strdup(jit_var_str(in[ir]));
                 char *v1 = strdup(jit_var_str(value_id));
                 char *v2 = strdup(jit_var_str(ref_id));
-                fprintf(stderr, "Mismatch: op(%s, %s) == %s vs const %s\n",
-                        op_name[(int) op], v0, v1, v2);
+                fprintf(stderr, "Mismatch: op(%s, %s) == %s vs const %s, type %s\n",
+                        op_name[(int) op], v0, v1, v2, typeid(T).name());
                 free(v0); free(v1); free(v2);
                 fail = true;
             }
