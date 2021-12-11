@@ -1,9 +1,8 @@
-#define EK_OPNAME 1
 #include "test.h"
 #include <initializer_list>
 #include <cmath>
 #include <cstring>
-
+#include <typeinfo>
 
 TEST_BOTH(01_creation_destruction_cse) {
     // Test CSE involving normal and evaluated constant literals
