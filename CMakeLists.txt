@@ -66,6 +66,7 @@ endif()
 # ----------------------------------------------------------
 
 add_subdirectory(ext/enoki-thread)
+mark_as_advanced(ENOKI_THREAD_ENABLE_TESTS)
 
 # ----------------------------------------------------------
 #  Build Enoki-JIT
