@@ -54,6 +54,7 @@ if (NOT APPLE)
   else()
     message(STATUS "Enoki-JIT: linking against CUDA shared libraries.")
   endif()
+
   if (ENOKI_JIT_ENABLE_OPTIX)
     message(STATUS "Enoki-JIT: OptiX support enabled.")
   else()
@@ -117,6 +118,7 @@ add_library(
 )
 
 target_compile_features(enoki-jit PRIVATE cxx_std_14)
+
 target_include_directories(enoki-jit PRIVATE
   ext/enoki-thread/include
   ext/robin_map/include

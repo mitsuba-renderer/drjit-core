@@ -69,6 +69,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
         buffer.fmt("body: // sm_%u\n",
                    state.devices[ts->device].compute_capability);
     } else {
+#if 0
         buffer.put("    call (%r0), _optix_get_launch_dimension_y, ();\n"
                    "    call (%r1), _optix_get_launch_index_y, ();\n"
                    "    call (%r2), _optix_get_launch_index_x, ();\n"
@@ -77,6 +78,10 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                    "    call (%r2), _optix_get_launch_index_z, ();\n"
                    "    mad.lo.u32 %r0, %r0, %r1, %r2;\n\n"
                    "body:\n");
+#else
+        buffer.put("    call (%r0), _optix_get_launch_index_x, ();\n\n"
+                   "body:\n");
+#endif
     }
 
     const char *params_base = "params",
