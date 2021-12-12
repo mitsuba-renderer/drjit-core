@@ -221,7 +221,7 @@ template <typename T> void test_const_prop() {
                         op_name[(int) op], v0, v1, v2, typeid(T).name());
                 free(v0); free(v1); free(v2);
                 fail = true;
-                if (jit_flag(JitFlag::ForceOptiX) && op == JitOp::Neg) {
+                if (jit_flag(JitFlag::ForceOptiX) && (op == JitOp::Neg || op == JitOp::Rsqrt)) {
                     fail = false;
                     fprintf(stderr, ".. ignoring this failure (it's due to OptiX).\n");
                 }
