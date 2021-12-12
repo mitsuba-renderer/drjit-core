@@ -98,6 +98,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
                   std::index_sequence<Is...>, const Args &... args) {
     using Mask = JitArray<Backend, bool>;
     constexpr size_t N = sizeof...(Args);
+    (void) N;
     Result result;
 
     ek_index_vector indices_in, indices_out_all;

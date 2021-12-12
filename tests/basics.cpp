@@ -131,7 +131,7 @@ const char *op_name[(int) JitOp::Count] {
     "fmadd", "select"
 };
 
-template <typename T> void test_const_prop() {
+template <typename T> bool test_const_prop() {
     using Value = typename T::Value;
     constexpr JitBackend Backend = T::Backend;
     constexpr bool IsFloat = std::is_floating_point<Value>::value;
@@ -144,7 +144,7 @@ template <typename T> void test_const_prop() {
     Value values[Size2];
     for (uint32_t i = 0; i < Size2; ++i) {
         int j = i % Size;
-        values[i] = (Value) (IsMask || !IsSigned) ? j : (j - 4);
+        values[i] = (Value) ((IsMask || !IsSigned) ? j : (j - 4));
         if (IsFloat && (values[i] < Value(-1) || values[i] > Value(1)))
             values[i] = (Value) (1.1f * values[i]);
     }
@@ -221,10 +221,6 @@ template <typename T> void test_const_prop() {
                         op_name[(int) op], v0, v1, v2, typeid(T).name());
                 free(v0); free(v1); free(v2);
                 fail = true;
-                if (jit_flag(JitFlag::ForceOptiX) && (op == JitOp::Neg || op == JitOp::Rsqrt)) {
-                    fail = false;
-                    fprintf(stderr, ".. ignoring this failure (it's due to OptiX).\n");
-                }
             }
         }
 
@@ -327,7 +323,7 @@ template <typename T> void test_const_prop() {
 
     for (uint32_t i = 0; i < Small2; ++i) {
         int j = i % Small;
-        values[i] = (Value) (IsMask || !IsSigned) ? j : (j - 2);
+        values[i] = (Value) ((IsMask || !IsSigned) ? j : (j - 2));
         if (IsFloat && (values[i] < Value(-1) || values[i] > Value(1)))
             values[i] = (Value) (1.1f * values[i]);
     }
@@ -407,7 +403,7 @@ template <typename T> void test_const_prop() {
             jit_var_dec_ref_ext(in_b[i]);
     }
 
-    jit_assert(!fail);
+    return fail;
 }
 
 TEST_BOTH(05_const_prop) {
@@ -415,13 +411,15 @@ TEST_BOTH(05_const_prop) {
        scalar and memory inputs and compares their output. This is to ensure
        that Enoki-JIT's builtin constant propagation pass produces results
        that are equivalent to the native implementation. */
-    test_const_prop<Float>();
-    test_const_prop<Array<double>>();
-    test_const_prop<UInt32>();
-    test_const_prop<Int32>();
-    test_const_prop<Array<int64_t>>();
-    test_const_prop<Array<uint64_t>>();
-    test_const_prop<Mask>();
+    bool fail = false;
+    fail |= test_const_prop<Float>();
+    fail |= test_const_prop<Array<double>>();
+    fail |= test_const_prop<UInt32>();
+    fail |= test_const_prop<Int32>();
+    fail |= test_const_prop<Array<int64_t>>();
+    fail |= test_const_prop<Array<uint64_t>>();
+    fail |= test_const_prop<Mask>();
+    jit_assert(!fail);
 }
 
 TEST_BOTH(06_cast) {
@@ -564,8 +562,8 @@ TEST_BOTH(07_and_or_mixed) {
             jit_var_dec_ref_ext(v3);
             jit_var_dec_ref_ext(v4);
 
-            jit_assert(out_u == (b ? 1234 : 0));
-            jit_assert(out_f == (b ? 1234 : 0));
+            jit_assert(out_u == (b ? 1234u : 0u));
+            jit_assert(out_f == (b ? 1234u : 0u));
 
             jit_var_read(v5, 0, &out_u);
             jit_var_read(v6, 0, &out_f);
