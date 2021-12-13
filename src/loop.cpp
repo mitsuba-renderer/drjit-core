@@ -698,7 +698,7 @@ static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
         char global[128];
         snprintf(
             global, sizeof(global),
-            "declare i1 @llvm.experimental.vector.reduce.or.v%ui1(<%u x i1>)\n",
+            "declare i1 @llvm.experimental.vector.reduce.or.v%ui1(<%u x i1>)\n\n",
             width, width);
         jitc_register_global(global);
 

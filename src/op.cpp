@@ -1914,7 +1914,8 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                 "   %sum = call reassoc $t2 @llvm.experimental.vector.reduce.v2.fadd.$a2.v$w$a2($t2 0.0, <$w x $t2> %value_cur)\n"
                 "   atomicrmw fadd $t2* %ptr_0, $t2 %sum monotonic\n"
                 "   %active_next = xor <$w x i1> %active, %active_cur\n"
-                "   br label %L3\n\n"
+                "   %active_red = call i1 @llvm.experimental.vector.reduce.or.v$wi1(<$w x i1> %active_next)\n"
+                "   br i1 %active_red, label %L3, label %L4\n\n"
                 "L3:\n"
                 "   %active_next_2 = phi <$w x i1> [ %active, %L1 ], [ %active_next, %L2 ]\n"
                 "   %index_next = add nuw nsw i32 %index, 1\n"
@@ -1924,6 +1925,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                 "   ret void\n"
                 "}$]"
                 "$[declare $t2 @llvm.experimental.vector.reduce.v2.fadd.$a2.v$w$a2($t2, <$w x $t2>)$]"
+                "$[declare i1 @llvm.experimental.vector.reduce.or.v$wi1(<$w x i1>)$]"
             );
         } else {
             buf.fmt(
