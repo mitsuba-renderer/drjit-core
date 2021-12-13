@@ -632,10 +632,16 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
         jitc_raise(
             "jit_optix_launch(): attempted to launch an OptiX kernel with size "
             "%u, which is incompatible with the launch configuration (%u * %u "
-            "* %u ==l %u) previously specified via jit_optix_set_launch_size!",
+            "* %u == %u) previously specified via jit_optix_set_launch_size!",
             launch_size, ts->optix_launch_width, ts->optix_launch_height,
             ts->optix_launch_samples, provided);
     }
+
+    if (launch_size > 0x70000000u)
+        jitc_raise("jit_optix_launch(): attempted to launch a very large "
+                   "wavefront (%u, which is >= 2**31), which OptiX does not "
+                   "allow. Please render using multiple passes, use fewer "
+                   "samples, or a lower resolution.", launch_size);
 
     jitc_optix_check(
         optixLaunch(kernel.optix.pipeline, ts->stream, (CUdeviceptr) args,
