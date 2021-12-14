@@ -53,6 +53,7 @@ using LLVMModuleRef = void *;
 using LLVMMemoryBufferRef = void *;
 using LLVMContextRef = void *;
 using LLVMPassManagerRef = void *;
+using LLVMPassManagerBuilderRef = void *;
 using LLVMMCJITMemoryManagerRef = void *;
 using LLVMTargetMachineRef = void *;
 using LLVMCodeModel = int;
@@ -121,6 +122,13 @@ static LLVMPassManagerRef (*LLVMCreatePassManager)() = nullptr;
 static void (*LLVMRunPassManager)(LLVMPassManagerRef, LLVMModuleRef) = nullptr;
 static void (*LLVMDisposePassManager)(LLVMPassManagerRef) = nullptr;
 static void (*LLVMAddLICMPass)(LLVMPassManagerRef) = nullptr;
+
+static LLVMPassManagerBuilderRef (*LLVMPassManagerBuilderCreate)() = nullptr;
+static void (*LLVMPassManagerBuilderSetOptLevel)(LLVMPassManagerBuilderRef,
+                                                 unsigned) = nullptr;
+static void (*LLVMPassManagerBuilderPopulateModulePassManager)(
+    LLVMPassManagerBuilderRef, LLVMPassManagerRef) = nullptr;
+static void (*LLVMPassManagerBuilderDispose)(LLVMPassManagerBuilderRef) = nullptr;
 
 static LLVMTargetMachineRef (*LLVMGetExecutionEngineTargetMachine)(
     LLVMExecutionEngineRef) = nullptr;
@@ -600,6 +608,11 @@ bool jitc_llvm_init() {
         LOAD(LLVMAddLICMPass);
         LOAD(LLVMGetExecutionEngineTargetMachine);
         LOAD(LLVMVerifyModule);
+
+        LOAD(LLVMPassManagerBuilderCreate);
+        LOAD(LLVMPassManagerBuilderSetOptLevel);
+        LOAD(LLVMPassManagerBuilderPopulateModulePassManager);
+        LOAD(LLVMPassManagerBuilderDispose);
     } while (false);
 
     if (symbol) {
@@ -744,7 +757,15 @@ bool jitc_llvm_init() {
 #endif
 
     jitc_llvm_pass_manager = LLVMCreatePassManager();
+
+#if 0
+    LLVMPassManagerBuilderRef pm_builder = LLVMPassManagerBuilderCreate();
+    LLVMPassManagerBuilderSetOptLevel(pm_builder, 3);
+    LLVMPassManagerBuilderPopulateModulePassManager(pm_builder, jitc_llvm_pass_manager);
+    LLVMPassManagerBuilderDispose(pm_builder);
+#else
     LLVMAddLICMPass(jitc_llvm_pass_manager);
+#endif
 
     jitc_llvm_vector_width = 1;
 
