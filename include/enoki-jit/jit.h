@@ -1755,10 +1755,34 @@ extern JIT_EXPORT void jit_set_cse_scope(JIT_ENUM JitBackend backend, uint32_t d
 //                            Kernel History
 // ====================================================================
 
+/**
+ * \brief List of kernel types that can be launched by Enoki-JIT
+ *
+ * Enoki-JIT sometimes launches kernels that are not the result of JIT compiling
+ * computation (e.g. precomputed PTX kernels, ...). In the kernel history, such
+ * kernels can be identified by their kernel type.
+ */
+enum KernelType : uint32_t {
+    /// JIT compiled kernel
+    JIT,
+
+    /// Kernel responsible for a horizontal reduction operation (e.g. hsum)
+    Reduce,
+
+    /// Permutation kernel produced by \ref jit_mkperm()
+    VCallReduce,
+
+    /// Every other kernels
+    Other
+};
+
 /// Data structure for preserving kernel launch information (debugging, testing)
 struct KernelHistoryEntry {
     /// Jit backend, for which the kernel was compiled
     JitBackend backend;
+
+    /// Kernel type
+    KernelType type;
 
     /// Stores the low/high 64 bits of the 128-bit hash kernel identifier
     uint64_t hash[2];

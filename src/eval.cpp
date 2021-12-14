@@ -299,6 +299,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         kernel_history_entry.backend = backend;
+        kernel_history_entry.type = KernelType::JIT;
         kernel_history_entry.hash[0] = kernel_hash.low64;
         kernel_history_entry.hash[1] = kernel_hash.high64;
         kernel_history_entry.ir = (char *) malloc(buffer.size() + 1);

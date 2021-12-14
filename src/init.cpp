@@ -701,7 +701,6 @@ KernelHistoryEntry *KernelHistory::get() {
         }
     }
 
-
     m_data = nullptr;
     m_size = m_capacity = 0;
 
