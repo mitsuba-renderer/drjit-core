@@ -34,8 +34,8 @@ struct Loop {
     std::vector<uint32_t> out;
     /// Are there unused loop variables that could be stripped away?
     bool simplify = false;
-    /// Is this loop 100% coherent (all threads finish together?)
-    bool coherent = false;
+    /// Is this loop 100% uniform (all threads finish together?)
+    bool uniform = false;
 };
 
 static std::vector<Loop *> loops;
@@ -159,7 +159,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
                        uint32_t loop_cond, size_t n_indices,
                        uint32_t *indices_in, uint32_t **indices,
                        uint32_t checkpoint, int first_round,
-                       int coherent) {
+                       int uniform) {
     if (n_indices == 0)
         jitc_raise("jit_var_loop(): no loop state variables specified!");
 
@@ -186,7 +186,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
     loop->se_count = (uint32_t) se.size() - checkpoint;
     loop->init = loop_init;
     loop->cond = jitc_var(loop_cond)->dep[0];
-    loop->coherent = (bool) coherent;
+    loop->uniform = (bool) uniform;
 
     // =====================================================
     // 1. Various sanity checks
@@ -698,8 +698,8 @@ static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
 
     if (loop->backend == JitBackend::CUDA) {
         buffer.fmt("    @!%%p%u bra%s l_%u_done;\n", mask_reg,
-                   loop->coherent ? ".uni" : "", loop_reg);
-    } else if (!loop->coherent) {
+                   loop->uniform ? ".uni" : "", loop_reg);
+    } else if (!loop->uniform) {
         char global[128];
         snprintf(
             global, sizeof(global),
@@ -746,7 +746,7 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
         uint32_t vti = it_in->second.type;
 
         if (loop->backend == JitBackend::LLVM) {
-            if (loop->coherent) {
+            if (loop->uniform) {
                 buffer.fmt("    %s%u_final = bitcast <%u x %s> %s%u to <%u x %s>\n",
                            type_prefix[vti], v_in->reg_index, width,
                            type_name_llvm[vti], type_prefix[vti], v_out->reg_index,
