@@ -26,9 +26,16 @@ TEST_BOTH(01_record_loop) {
                 jit_var_schedule(x.index());
             }
 
-            jit_assert(strcmp(z.str(), "[6, 5, 4, 3, 2, 1, 1, 1, 1, 1]") == 0);
-            jit_assert(strcmp(y.str(), "[10, 10, 9, 7, 4, 0, 0, 0, 0, 0]") == 0);
-            jit_assert(strcmp(x.str(), "[5, 5, 5, 5, 5, 5, 6, 7, 8, 9]") == 0);
+            bool match_1 = strcmp(z.str(), "[6, 5, 4, 3, 2, 1, 1, 1, 1, 1]") == 0;
+            bool match_2 = strcmp(y.str(), "[10, 10, 9, 7, 4, 0, 0, 0, 0, 0]") == 0;
+            bool match_3 = strcmp(x.str(), "[5, 5, 5, 5, 5, 5, 6, 7, 8, 9]") == 0;
+
+            if (!(match_1 && match_2 && match_3))
+                fprintf(stderr, "Mismatch: %s\n%s\n%s\n", x.str(), y.str(), z.str());
+
+            jit_assert(match_1);
+            jit_assert(match_2);
+            jit_assert(match_3);
         }
     }
 }
