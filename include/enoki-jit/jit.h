@@ -1478,7 +1478,7 @@ extern JIT_EXPORT uint32_t jit_var_loop(const char *name, uint32_t loop_init,
                                         uint32_t loop_cond, size_t n_indices,
                                         uint32_t *indices_in,
                                         uint32_t **indices, uint32_t checkpoint,
-                                        int first_round);
+                                        int first_round, int coherent);
 
 /**
  * \brief Pushes a new mask variable onto the mask stack
@@ -1565,7 +1565,7 @@ extern JIT_EXPORT void jit_reduce(JIT_ENUM JitBackend backend, JIT_ENUM VarType 
  * Note that the CUDA implementation will round up \c size to the maximum of
  * the following three values for performance reasons:
  *
- * - 4
+ * - the value 4,
  * - the next highest power of two (when size <= 4096),
  * - the next highest multiple of 2K (when size > 4096),
  *

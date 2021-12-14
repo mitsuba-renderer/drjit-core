@@ -785,10 +785,11 @@ uint32_t jit_var_loop_cond(uint32_t loop_init, uint32_t cond, size_t n_indices,
 
 uint32_t jit_var_loop(const char *name, uint32_t loop_init, uint32_t loop_cond,
                       size_t n_indices, uint32_t *indices_in,
-                      uint32_t **indices, uint32_t checkpoint, int first_round) {
+                      uint32_t **indices, uint32_t checkpoint, int first_round,
+                      int coherent) {
     lock_guard guard(state.mutex);
     return jitc_var_loop(name, loop_init, loop_cond, n_indices, indices_in,
-                         indices, checkpoint, first_round);
+                         indices, checkpoint, first_round, coherent);
 }
 
 struct VCallBucket *
