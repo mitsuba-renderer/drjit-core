@@ -475,6 +475,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                                       thread_count, 1, 1, 0, ts->stream,
                                       nullptr, config));
         }
+
+        if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
+            cuda_check(cuStreamSynchronize(ts->stream));
     } else {
         uint32_t packets =
             (group.size + jitc_llvm_vector_width - 1) / jitc_llvm_vector_width;
@@ -523,10 +526,10 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             (uint32_t) (kernel_params.size() * sizeof(void *)),
             nullptr
         );
-    }
 
-    if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
-        jitc_sync_thread();
+        if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
+            task_wait(ret_task);
+    }
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         if (ts->backend == JitBackend::CUDA) {
