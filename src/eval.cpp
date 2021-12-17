@@ -96,8 +96,9 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
         const Extra &extra = it->second;
         for (uint32_t i = 0; i < extra.n_dep; ++i) {
             uint32_t index2 = extra.dep[i];
-            if (index2)
-                jitc_var_traverse(size, index2);
+            if (index2 == 0)
+                continue;
+            jitc_var_traverse(size, index2);
         }
     }
 
@@ -737,6 +738,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     for (uint32_t i = 0; i < n_in; ++i) {
         if (in[i] == 0)
             continue;
+
         const Variable *v = jitc_var(in[i]);
         if (!v->literal)
             visited.emplace(1, in[i]);
@@ -752,6 +754,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
 
     for (uint32_t i = 0; i < n_out; ++i)
         traverse(out_nested[i]);
+
     for (uint32_t i = 0; i < n_se; ++i)
         traverse(se[i]);
 

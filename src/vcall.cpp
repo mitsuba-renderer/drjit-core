@@ -444,8 +444,9 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         }
 
         // An output variable is no longer referenced. Find out which one.
-        uint32_t n_out_2 = (uint32_t) vcall_2->out.size();
-        uint32_t offset = (uint32_t) -1;
+        uint32_t n_out_2 = (uint32_t) vcall_2->out.size(),
+                 offset  = (uint32_t) -1;
+
         for (uint32_t i = 0; i < n_out_2; ++i) {
             if (vcall_2->out[i] == index)
                 offset = i;
@@ -541,8 +542,9 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     };
 
     std::sort(vcall->in.begin(), vcall->in.end(), comp);
-    std::sort(vcall->out.begin(), vcall->out.end(), comp);
     std::sort(vcall->in_nested.begin(), vcall->in_nested.end(), comp);
+
+    std::sort(vcall->out.begin(), vcall->out.end(), comp);
     for (uint32_t i = 0; i < n_inst; ++i)
         std::sort(vcall->out_nested.begin() + (i + 0) * n_out,
                   vcall->out_nested.begin() + (i + 1) * n_out, comp);
@@ -553,12 +555,15 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
     size_t dep_size = vcall->in.size() * sizeof(uint32_t);
 
-    Variable *v_special = jitc_var(vcall_v);
+    {
+        Variable *v_special = jitc_var(vcall_v);
+        v_special->extra = 1;
+        v_special->size = size;
+    }
+
     Extra *e_special = &state.extra[vcall_v];
-    v_special->extra = 1;
-    v_special->size = size;
     e_special->n_dep = (uint32_t) vcall->in.size();
-    e_special->dep = (uint32_t *) malloc(dep_size);
+    e_special->dep = (uint32_t *) malloc_check(dep_size);
 
     // Steal input dependencies from placeholder arguments
     memcpy(e_special->dep, vcall->in.data(), dep_size);
@@ -627,6 +632,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
     std::vector<JitBackupRecord> backup;
     backup.reserve(schedule.size());
+
     for (const ScheduledVariable &sv : schedule) {
         const Variable *v = jitc_var(sv.index);
         backup.push_back(JitBackupRecord{ sv, v->param_type, v->output_flag,
@@ -654,6 +660,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         auto it = state.variables.find(vcall->in[i]);
         if (it == state.variables.end())
             continue;
+
         uint32_t size = type_size[it.value().type],
                  offset = in_size;
         Variable *v = &it.value();
@@ -665,6 +672,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         auto it2 = state.variables.find(vcall->in_nested[i]);
         if (it2 == state.variables.end())
             continue;
+
         Variable *v2 = &it2.value();
         v2->param_offset = offset;
         v2->reg_index = v->reg_index;
@@ -674,6 +682,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         auto it = state.variables.find(vcall->out_nested[i]);
         if (it == state.variables.end())
             continue;
+
         Variable *v = &it.value();
         uint32_t size = type_size[v->type];
         out_size += size;
@@ -1027,7 +1036,7 @@ static void jitc_var_vcall_assemble_llvm(
                "    ; VCall: %s\n",
                vcall_reg, vcall_reg, vcall->name);
 
-    tsl::robin_set<uint32_t> seen;
+    tsl::robin_set<uint32_t, UInt32Hasher> seen;
     for (uint32_t i = 0; i < vcall->n_inst; ++i) {
         uint32_t callable_id = (uint32_t) vcall->offset_h[i + 1];
         if (!seen.insert(callable_id).second)
@@ -1165,8 +1174,7 @@ static void jitc_var_vcall_assemble_llvm(
     // Cast into correctly typed function pointer
     buffer.fmt(
         "    %%u%u_func = bitcast i8* %%u%u_func_1 to void (<%u x i1>",
-        vcall_reg, vcall_reg, width
-    );
+        vcall_reg, vcall_reg, width);
 
     if (vcall->use_self)
         buffer.fmt(", <%u x i32>", width);
