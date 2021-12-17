@@ -525,8 +525,13 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             continue;
 
         // Ignore unreferenced inputs
-        if (optimize && v->ref_count_int == 0)
-            continue;
+        if (optimize && v->ref_count_int == 0) {
+            auto& on = vcall->out_nested;
+            auto it  = std::find(on.begin(), on.end(), index);
+            // Only skip if this variable isn't also an output
+            if (it == on.end())
+                continue;
+        }
 
         vcall->in_nested.push_back(index);
 
