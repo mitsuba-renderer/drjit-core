@@ -1537,8 +1537,10 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
 }
 
 uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
-    if (index_ == 0)
+    if (index_ == 0 && mask_ == 0)
         return 0;
+    else if (unlikely(source == 0 || index_ == 0 || mask_ == 0))
+        jitc_raise("jit_var_new_gather(): uninitialized arguments!");
 
     const Variable *v_source = jitc_var(source),
                    *v_index = jitc_var(index_),
@@ -1707,6 +1709,11 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
 uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                               uint32_t mask_, ReduceOp reduce_op) {
     Ref target = borrow(target_), ptr;
+
+    if (value == 0 && index_ == 0 && mask_ == 0)
+        return 0;
+    else if (unlikely(target_ == 0 || value == 0 || index_ == 0 || mask_ == 0))
+        jitc_raise("jit_var_new_scatter(): uninitialized arguments!");
 
     auto print_log = [&](const char *reason, uint32_t index = 0) {
         if (index)
