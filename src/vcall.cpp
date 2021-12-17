@@ -365,28 +365,36 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         v->size = size;
     }
 
-    std::vector<bool> coherent(n_out, true);
+    uint32_t n_devirt = 0, flags = jitc_flags();
+
+    bool vcall_optimize = flags & (uint32_t) JitFlag::VCallOptimize,
+         vcall_inline   = flags & (uint32_t) JitFlag::VCallInline;
+
+    std::vector<bool> uniform(n_out, true);
     for (uint32_t i = 0; i < n_inst; ++i) {
         for (uint32_t j = 0; j < n_out; ++j) {
             uint32_t index = out_nested[i * n_out + j];
-            coherent[j] = coherent[j] && (index == out_nested[j]);
+            uniform[j] = uniform[j] && index == out_nested[j];
 
             /* Hold a reference to the nested computation until the cleanup
                callback later below is invoked. */
             jitc_var_inc_ref_ext(index);
             vcall->out_nested.push_back(index);
         }
+
         vcall->checkpoints.push_back(checkpoints[i] - checkpoints[0]);
     }
     vcall->checkpoints.push_back(checkpoints[n_inst] - checkpoints[0]);
 
 
-    uint32_t n_devirt = 0;
-
-    bool optimize = jitc_flags() & (uint32_t) JitFlag::VCallOptimize;
-    if (optimize) {
+    if (vcall_optimize) {
         for (uint32_t j = 0; j < n_out; ++j) {
-            if (!coherent[j])
+            if (!uniform[j])
+                continue;
+
+            /* Should this output value be devirtualized? We want to avoid
+               completely removing the virtual function call.. */
+            if (!(n_inst > 1 || vcall_inline || jitc_var(out_nested[j])->literal))
                 continue;
 
             uint32_t dep[2] = { out_nested[j], mask };
@@ -503,11 +511,13 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         jitc_var_inc_ref_int(vcall_v);
         uint32_t index_2 = jitc_var_new(v2, true);
         Extra &extra = state.extra[index_2];
-        if (optimize) {
+
+        if (vcall_optimize) {
             extra.callback = var_callback;
             extra.callback_data = vcall.get();
             extra.callback_internal = true;
         }
+
         vcall->out.push_back(index_2);
         snprintf(temp, sizeof(temp), "VCall: %s [out %u]", name, i);
         jitc_var_set_label(index_2, temp);
@@ -525,7 +535,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             continue;
 
         // Ignore unreferenced inputs
-        if (optimize && v->ref_count_int == 0) {
+        if (vcall_optimize && v->ref_count_int == 0) {
             auto& on = vcall->out_nested;
             auto it  = std::find(on.begin(), on.end(), index);
             // Only skip if this variable isn't also an output

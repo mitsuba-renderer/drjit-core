@@ -1288,30 +1288,33 @@ enum class JitFlag : uint32_t {
     /// Enable constant propagation and elide unnecessary function arguments
     VCallOptimize = 8,
 
+    /// Inline calls if there is only a single instance?
+    VCallInline = 16,
+
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 16,
+    ForceOptiX = 32,
 
     /// Temporarily postpone evaluation of statements with side effects
-    Recording = 32,
+    Recording = 64,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 64,
+    PrintIR = 128,
 
     /// Enable writing of the kernel history
-    KernelHistory = 128,
+    KernelHistory = 256,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 256,
+    LaunchBlocking = 512,
 
     /// Exploit literal constants during AD (used in the Enoki parent project)
-    ADOptimize = 512,
+    ADOptimize = 1024,
 
     /// Default flags
     Default = (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallOptimize |
-              (uint32_t) ADOptimize
+              (uint32_t) VCallInline | (uint32_t) ADOptimize
 };
 #else
 enum JitFlag {
@@ -1319,12 +1322,13 @@ enum JitFlag {
     JitFlagLoopOptimize        = 2,
     JitFlagVCallRecord         = 4,
     JitFlagVCallOptimize       = 8,
-    JitFlagForceOptiX          = 16,
-    JitFlagRecording           = 32,
-    JitFlagPrintIR             = 64,
-    JitFlagKernelHistory       = 128,
-    JitFlagLaunchBlocking      = 256,
-    JitFlagADOptimize          = 512
+    JitFlagVCallInline         = 16,
+    JitFlagForceOptiX          = 32,
+    JitFlagRecording           = 64,
+    JitFlagPrintIR             = 128,
+    JitFlagKernelHistory       = 256,
+    JitFlagLaunchBlocking      = 512,
+    JitFlagADOptimize          = 1024
 };
 #endif
 

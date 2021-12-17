@@ -1,6 +1,7 @@
 #include "eval.h"
 #include "internal.h"
 #include "var.h"
+#include "log.h"
 
 // Forward declaration
 static void jitc_render_stmt_cuda(uint32_t index, const Variable *v);
@@ -315,6 +316,14 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
             if (unlikely(it == data_map.end())) {
                 jitc_fail("jitc_assemble_cuda_func(): could not find entry for "
                           "variable r%u in 'data_map'", sv.index);
+                #if 0
+                    jitc_log(Warn,
+                             "jitc_assemble_cuda_func(): could not find entry for "
+                             "variable r%u in 'data_map'",
+                             sv.index);
+                    buffer.fmt("    ld.global.%s %s%u, ???;\n",
+                               type_name_ptx[vti], type_prefix[vti], v->reg_index);
+                #endif
                 continue;
             }
 
