@@ -557,8 +557,9 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 lv = jitc_eval_literal([](auto value) { return eval_neg(value); }, v[0]);
             } else if (backend == JitBackend::CUDA) {
                 if (is_uint) {
-                    stmt = "not.$b0 $r0, $r1$n"
-                           "add.$t0 $r0, $r0, 1";
+                    stmt = type_size[vti] == 4 ?
+                           "neg.s32 $r0, $r1" :
+                           "neg.s64 $r0, $r1";
                 } else {
                     stmt = is_single ? "neg.ftz.$t0 $r0, $r1"
                                      : "neg.$t0 $r0, $r1";
