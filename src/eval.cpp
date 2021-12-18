@@ -69,6 +69,7 @@ int32_t alloca_align = -1;
 
 /// Specifies the nesting level of virtual calls being compiled
 uint32_t vcall_depth = 0;
+uint32_t vcall_counter = 0;
 
 /// Information about the kernel launch to go in the kernel launch history
 KernelHistoryEntry kernel_history_entry;
@@ -567,6 +568,7 @@ void jitc_eval(ThreadState *ts) {
 
     visited.clear();
     schedule.clear();
+    vcall_counter = 0;
 
     // Collect variables that must be computed along with their dependencies
     for (int j = 0; j < 2; ++j) {
@@ -786,7 +788,13 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
 
     size_t kernel_length = buffer.size() - offset;
     char *kernel_str = (char *) buffer.get() + offset;
-    kernel_hash = XXH128(kernel_str, kernel_length, 0);
+
+    if (jit_flag(JitFlag::VCallDeduplicate)) {
+        kernel_hash = XXH128(kernel_str, kernel_length, 0);
+    } else {
+        kernel_hash.low64 = (uint64_t) vcall_counter++;
+        kernel_hash.high64 = 0;
+    }
 
     auto result = globals_map.emplace(kernel_hash, (uint32_t) callables.size());
     if (result.second) {
