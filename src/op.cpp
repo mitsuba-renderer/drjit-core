@@ -1232,8 +1232,11 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 if (is_float) {
                     stmt = is_single ? "fma.rn.ftz.$t0 $r0, $r1, $r2, $r3"
                                      : "fma.rn.$t0 $r0, $r1, $r2, $r3";
-                } else {
+                } else if (type_size[v[0]->type] == 4) {
                     stmt = "mad.lo.$t0 $r0, $r1, $r2, $r3";
+                } else {
+                    stmt = "mul.lo.$t0 $r0, $r1, $r2$n"
+                           "add.$t0 $r0, $r0, $r3";
                 }
             } else {
                 if (is_float) {
