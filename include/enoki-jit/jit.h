@@ -1272,63 +1272,73 @@ extern JIT_EXPORT void jit_prefix_pop(JIT_ENUM JitBackend backend);
  *
  * The default set of flags is:
  *
- * LoopRecord | LoopOptimize | VCallRecord | VCallOptimize | ADOptimize
+ * <tt>ConstProp | ValueNumbering | LoopRecord | LoopOptimize |
+ * VCallRecord | VCallOptimize | ADOptimize</tt>
  */
 #if defined(__cplusplus)
 enum class JitFlag : uint32_t {
+    /// Constant propagation
+    ConstProp = 1,
+
+    /// Local value numbering (cheap form of common subexpression elimination)
+    ValueNumbering = 2,
+
     /// Record loops instead of evaluating them using a wavefront per iteration
-    LoopRecord = 1,
+    LoopRecord = 4,
 
     /// Enable constant propagation and elide unnecessary loop variables
-    LoopOptimize = 2,
+    LoopOptimize = 8,
 
     /// Record virtual function calls instead of gather/scatter-based approach
-    VCallRecord = 4,
+    VCallRecord = 16,
 
     /// Enable constant propagation and elide unnecessary function arguments
-    VCallOptimize = 8,
+    VCallOptimize = 32,
 
     /// Inline calls if there is only a single instance?
-    VCallInline = 16,
+    VCallInline = 64,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 32,
+    ForceOptiX = 128,
 
     /// Temporarily postpone evaluation of statements with side effects
-    Recording = 64,
+    Recording = 256,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 128,
+    PrintIR = 512,
 
     /// Enable writing of the kernel history
-    KernelHistory = 256,
+    KernelHistory = 1024,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 512,
+    LaunchBlocking = 2048,
 
     /// Exploit literal constants during AD (used in the Enoki parent project)
-    ADOptimize = 1024,
+    ADOptimize = 4096,
 
     /// Default flags
-    Default = (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
+    Default = (uint32_t) ConstProp | (uint32_t) ValueNumbering |
+              (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallOptimize |
               (uint32_t) VCallInline | (uint32_t) ADOptimize
 };
 #else
 enum JitFlag {
-    JitFlagLoopRecord          = 1,
-    JitFlagLoopOptimize        = 2,
-    JitFlagVCallRecord         = 4,
-    JitFlagVCallOptimize       = 8,
-    JitFlagVCallInline         = 16,
-    JitFlagForceOptiX          = 32,
-    JitFlagRecording           = 64,
-    JitFlagPrintIR             = 128,
-    JitFlagKernelHistory       = 256,
-    JitFlagLaunchBlocking      = 512,
-    JitFlagADOptimize          = 1024
+    JitFlagConstProp           = 1,
+    JitFlagValueNumbering      = 2,
+    JitFlagLoopRecord          = 4,
+    JitFlagLoopOptimize        = 8,
+    JitFlagVCallRecord         = 16,
+    JitFlagVCallOptimize       = 32,
+    JitFlagVCallInline         = 64,
+    JitFlagForceOptiX          = 128,
+    JitFlagRecording           = 256,
+    JitFlagPrintIR             = 512,
+    JitFlagKernelHistory       = 1024,
+    JitFlagLaunchBlocking      = 2048,
+    JitFlagADOptimize          = 4096
 };
 #endif
 

@@ -454,6 +454,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     bool literal_zero[4] { }, literal_one[4] { };
     uint32_t backend_i = 0;
     Variable *v[4] { };
+    bool const_prop = jitc_flags() & (uint32_t) JitFlag::ConstProp;
 
     if (unlikely(n_dep == 0 || n_dep > 4))
         jitc_fail("jit_var_new_op(): 1-4 dependent variables supported!");
@@ -468,7 +469,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             backend_i |= (uint32_t) vi->backend;
             v[i] = vi;
 
-            if (vi->literal) {
+            if (vi->literal && const_prop) {
                 uint64_t one;
                 switch ((VarType) vi->type) {
                     case VarType::Float16: one = 0x3c00ull; break;
@@ -866,10 +867,10 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 li = dep[1];
             } else if (literal_one[1] || (literal_zero[0] && jitc_is_int(vt))) {
                 li = dep[0];
-            } else if (is_uint && v[0]->literal && jitc_is_pow2(v[0]->value)) {
+            } else if (is_uint && v[0]->literal && jitc_is_pow2(v[0]->value) && const_prop) {
                 li = jitc_var_shift(backend, vt, JitOp::Shl, dep[1], v[0]->value);
                 li_created = true;
-            } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value)) {
+            } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value) && const_prop) {
                 li = jitc_var_shift(backend, vt, JitOp::Shl, dep[0], v[1]->value);
                 li_created = true;
             } else if (backend == JitBackend::CUDA) {
@@ -891,10 +892,10 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                                       v[0], v[1]);
             } else if (literal_one[1]) {
                 li = dep[0];
-            } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value)) {
+            } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value) && const_prop) {
                 li = jitc_var_shift(backend, vt, JitOp::Shr, dep[0], v[1]->value);
                 li_created = true;
-            } else if (jitc_is_float(vt) && v[1]->literal) {
+            } else if (jitc_is_float(vt) && v[1]->literal && const_prop) {
                 uint32_t recip = jitc_var_new_op(JitOp::Rcp, 1, &dep[1]);
                 uint32_t deps[2] = { dep[0], recip };
                 li = jitc_var_new_op(JitOp::Mul, 2, deps);
@@ -1390,7 +1391,7 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret)
             jitc_fail("jit_var_new_cast(): variable remains dirty after evaluation!");
     }
 
-    if (v->literal) {
+    if (v->literal && (jitc_flags() & (uint32_t) JitFlag::ConstProp)) {
         uint64_t value;
         if (reinterpret) {
             value = v->value;

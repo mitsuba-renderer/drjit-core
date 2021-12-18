@@ -370,7 +370,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
     ThreadState *ts = thread_state(v.backend);
 
     bool cse = !disable_cse && (VarType) v.type != VarType::Void &&
-               (v.literal || v.stmt);
+               (v.literal || v.stmt) && jit_flag(JitFlag::ValueNumbering);
 
     v.cse_scope = ts->cse_scope;
 
