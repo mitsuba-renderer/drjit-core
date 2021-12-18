@@ -193,6 +193,7 @@ void jitc_init(uint32_t backends) {
     }
 
     state.variable_index = 1;
+    state.variable_watermark = 0;
 
     state.kernel_hard_misses = state.kernel_soft_misses = 0;
     state.kernel_hits = state.kernel_launches = 0;

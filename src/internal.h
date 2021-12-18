@@ -593,6 +593,9 @@ struct State {
            alloc_allocated[(int) AllocType::Count] { 0 },
            alloc_watermark[(int) AllocType::Count] { 0 };
 
+    /// Keep track of the number of created JIT variables
+    uint32_t variable_watermark = 0;
+
     /// Maps from variable ID to extra information for a fraction of variables
     ExtraMap extra;
 

@@ -403,6 +403,9 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
                 state.variables.try_emplace(index, v);
         } while (!var_inserted);
 
+        state.variable_watermark = std::max(state.variable_watermark,
+                                            (uint32_t) state.variables.size());
+
         if (cse_key_inserted)
             key_it.value() = index;
 
@@ -1422,10 +1425,15 @@ const char *jitc_var_whos() {
                jitc_mem_string(mem_size_unevaluated));
     var_buffer.fmt("   - Promoted to registers   : %s saved.\n",
                jitc_mem_string(mem_size_registers));
+    var_buffer.fmt("   - Variables created       : %u (peak: %u).\n",
+               state.variable_index, state.variable_watermark);
     var_buffer.fmt("   - Kernel launches         : %zu (%zu cache hits, "
                "%zu soft, %zu hard misses).\n\n",
                state.kernel_launches, state.kernel_hits,
                state.kernel_soft_misses, state.kernel_hard_misses);
+
+    state.variable_index = 1;
+    state.variable_watermark = 0;
 
     var_buffer.put("  Memory allocator\n");
     var_buffer.put("  ================\n");
