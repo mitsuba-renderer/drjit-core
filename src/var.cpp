@@ -1416,6 +1416,8 @@ const char *jitc_var_whos() {
     if (indices.empty())
         var_buffer.put("                       -- No variables registered --\n");
 
+    constexpr size_t BucketSize = sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>);
+
     var_buffer.put("  ========================================================================\n\n");
     var_buffer.put("  JIT compiler\n");
     var_buffer.put("  ============\n");
@@ -1425,8 +1427,9 @@ const char *jitc_var_whos() {
                jitc_mem_string(mem_size_unevaluated));
     var_buffer.fmt("   - Promoted to registers   : %s saved.\n",
                jitc_mem_string(mem_size_registers));
-    var_buffer.fmt("   - Variables created       : %u (peak: %u).\n",
-               state.variable_index, state.variable_watermark);
+    var_buffer.fmt("   - Variables created       : %u (peak: %u, table size: %s).\n",
+               state.variable_index, state.variable_watermark,
+               jitc_mem_string(state.variables.bucket_count() * BucketSize));
     var_buffer.fmt("   - Kernel launches         : %zu (%zu cache hits, "
                "%zu soft, %zu hard misses).\n\n",
                state.kernel_launches, state.kernel_hits,
