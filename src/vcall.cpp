@@ -1362,6 +1362,9 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
            offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
 
+    if (backend == JitBackend::LLVM)
+        perm_size += jitc_llvm_vector_width * sizeof(uint32_t);
+
     uint8_t *offsets = (uint8_t *) jitc_malloc(
         backend == JitBackend::CUDA ? AllocType::HostPinned : AllocType::Host, offsets_size);
     uint32_t *perm = (uint32_t *) jitc_malloc(
@@ -1415,8 +1418,8 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
 
         memcpy(input_buckets + i, &bucket_out, sizeof(VCallBucket));
 
-        jitc_trace("jit_vcall(): registered variable %u: bucket %u (" ENOKI_PTR
-                   ") of size %u.", index2, bucket_out.id,
+        jitc_trace("jit_var_vcall_reduce(): registered variable %u: bucket %u "
+                   "(" ENOKI_PTR ") of size %u.", index2, bucket_out.id,
                    (uintptr_t) bucket_out.ptr, bucket.size);
     }
 
