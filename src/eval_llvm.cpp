@@ -685,7 +685,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
 
     // jitc_register_global("declare void @llvm.debugtrap()\n\n");
     // buffer.put("    call void @llvm.debugtrap()\n");
-    //
+
     buffer.fmt(
         "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*)*\n"
         "    call void %%u%u_func(i8* %%u%u_in_0_0, i8* %%rd%u, i8* %%u%u_in_1_0)\n",
@@ -710,6 +710,6 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         else
             offset += tsize * width;
     }
-    buffer.fmt("    ; -------------------\n\n");
+    buffer.put("    ; -------------------\n\n");
 }
 
