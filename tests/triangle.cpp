@@ -198,11 +198,6 @@ void demo() {
         pg, 2
     );
 
-    // Optional, may improve coherence
-    jit_optix_set_launch_size(
-        16, 16, 1
-    );
-
     // Do four times to verify caching, with mask in it. 3 + 4
     for (int i = 0; i < 2; ++i) {
         // =====================================================
@@ -249,7 +244,8 @@ void demo() {
 
         jit_var_eval(payload_0.index());
 
-        UInt32 payload_0_host = UInt32::steal(jit_var_migrate(payload_0.index(), AllocType::Host));
+        UInt32 payload_0_host =
+            UInt32::steal(jit_var_migrate(payload_0.index(), AllocType::Host));
         jit_sync_thread();
 
         for (int k = 0; k < res; ++k) {
@@ -273,8 +269,8 @@ void demo() {
 }
 
 int main(int, char **) {
-    // jit_set_log_level_stderr(LogLevel::Trace);
     jit_init((int) JitBackend::CUDA);
+    // jit_set_log_level_stderr(LogLevel::Trace);
     init_optix_api();
     demo();
 

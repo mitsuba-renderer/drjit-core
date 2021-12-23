@@ -387,11 +387,6 @@ struct ThreadState {
     /// User-provided list of program groups
     std::vector<OptixProgramGroup> optix_program_groups;
 
-    /// Optional: desired launch configuration
-    uint32_t optix_launch_width = 0;
-    uint32_t optix_launch_height = 0;
-    uint32_t optix_launch_samples = 0;
-
     /// Components for a tiny self-contained OptiX pipeline for testcases etc.
     OptixProgramGroup optix_program_group_base = nullptr;
     OptixModule optix_module_base = nullptr;

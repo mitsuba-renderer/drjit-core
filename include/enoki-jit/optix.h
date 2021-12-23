@@ -57,14 +57,6 @@ jit_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask);
 /// Mark a variable as an expression requiring compilation via OptiX
 extern JIT_EXPORT void jit_optix_mark(uint32_t index);
 
-/**
- * \brief Provide information about the size of the image to be rendered
- *
- * This is optional and may slightly improve coherence
- */
-extern JIT_EXPORT void
-jit_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples);
-
 #if defined(__cplusplus)
 }
 #endif

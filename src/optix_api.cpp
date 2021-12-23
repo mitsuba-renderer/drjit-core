@@ -454,13 +454,6 @@ void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
     }
 }
 
-void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples) {
-    ThreadState *ts = thread_state(JitBackend::CUDA);
-    ts->optix_launch_width = width;
-    ts->optix_launch_height = height;
-    ts->optix_launch_samples = samples;
-}
-
 bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                         const char *kern_name, Kernel &kernel) {
     char error_log[16384];
@@ -617,26 +610,6 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
         sbt.callablesRecordCount = kernel.optix.pg_count - 1;
     }
 
-    uint32_t launch_width = launch_size,
-             launch_height = 1,
-             launch_samples = 1;
-
-    uint32_t provided = ts->optix_launch_width * ts->optix_launch_height *
-                        ts->optix_launch_samples;
-
-    if (provided == launch_size) {
-        launch_width = ts->optix_launch_width;
-        launch_height = ts->optix_launch_height,
-        launch_samples = ts->optix_launch_samples;
-    } else if (provided != 0) {
-        jitc_raise(
-            "jit_optix_launch(): attempted to launch an OptiX kernel with size "
-            "%u, which is incompatible with the launch configuration (%u * %u "
-            "* %u == %u) previously specified via jit_optix_set_launch_size!",
-            launch_size, ts->optix_launch_width, ts->optix_launch_height,
-            ts->optix_launch_samples, provided);
-    }
-
     if (launch_size > 0x70000000u)
         jitc_raise("jit_optix_launch(): attempted to launch a very large "
                    "wavefront (%u, which is >= 2**31), which OptiX does not "
@@ -646,8 +619,7 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
     jitc_optix_check(
         optixLaunch(kernel.optix.pipeline, ts->stream, (CUdeviceptr) args,
                     n_args * sizeof(void *), &sbt,
-                    launch_width,
-                    launch_height, launch_samples));
+                    launch_size, 1, 1));
 }
 
 void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {

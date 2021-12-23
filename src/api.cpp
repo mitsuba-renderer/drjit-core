@@ -839,11 +839,6 @@ void jit_optix_mark(uint32_t index) {
     jitc_optix_mark(index);
 }
 
-void jit_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples) {
-    lock_guard guard(state.mutex);
-    jitc_optix_set_launch_size(width, height, samples);
-}
-
 #endif
 
 void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,

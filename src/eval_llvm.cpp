@@ -2,6 +2,7 @@
 #include "internal.h"
 #include "log.h"
 #include "var.h"
+#include "op.h"
 
 // Forward declaration
 static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function);
@@ -367,7 +368,8 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             buffer.put("    %callables = load i8**, i8*** @callables\n");
 
         if (alloca_size >= 0)
-            buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n", alloca_size, alloca_align);
+            buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n",
+                       alloca_size, alloca_align);
 
         size_t buffer_size = buffer.size(),
                insertion_size = buffer_size - cur_offset;
@@ -540,14 +542,15 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra);
 
 void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
                          const uint32_t *in, uint32_t *out) {
-    const uint32_t n_args = 13;
-    bool double_precision = ((VarType) jitc_var(in[1])->type) == VarType::Float64;
+    const uint32_t n_args = 14;
+    bool double_precision = ((VarType) jitc_var(in[2])->type) == VarType::Float64;
     VarType float_type = double_precision ? VarType::Float64 : VarType::Float32;
-    VarType types[]{ VarType::Int32, float_type,      float_type,
-                     float_type,     float_type,      float_type,
-                     float_type,     float_type,      float_type,
-                     float_type,     VarType::UInt32, VarType::UInt32,
-                     VarType::UInt32 };
+
+    VarType types[]{ VarType::Bool,   VarType::Bool,  float_type,
+                     float_type,      float_type,     float_type,
+                     float_type,      float_type,     float_type,
+                     float_type,      float_type,     VarType::UInt32,
+                     VarType::UInt32, VarType::UInt32 };
 
     bool placeholder = false, dirty = false;
     uint32_t size = 0;
@@ -585,6 +588,29 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
                 "jit_llvm_ray_trace(): inputs remain dirty after evaluation!");
     }
 
+    // ----------------------------------------------------------
+    Ref valid;
+    {
+        Ref mask_top = steal(jitc_var_mask_peek(JitBackend::LLVM));
+        uint32_t size_top = jitc_var(mask_top)->size;
+
+        // Mask on mask stack is incompatible -- get the default mask
+        if (size_top != size && size_top != 1 && size != 1)
+            mask_top = steal(jitc_var_mask_default(JitBackend::LLVM));
+
+        uint32_t deps_1[2] = { in[1], mask_top };
+        Ref mask_combined = steal(jitc_var_new_op(JitOp::And, 2, deps_1));
+
+        int32_t minus_one_c = -1, zero_c = 0;
+        Ref minus_one = steal(jitc_var_new_literal(
+                JitBackend::LLVM, VarType::Int32, &minus_one_c, 1, 0)),
+            zero = steal(jitc_var_new_literal(
+                JitBackend::LLVM, VarType::Int32, &zero_c, 1, 0));
+
+        uint32_t deps_2[3] = { mask_combined, minus_one, zero };
+        valid = steal(jitc_var_new_op(JitOp::Select, 3, deps_2));
+    }
+
     jitc_log(InfoSym, "jitc_llvm_ray_trace(): tracing %u %sray%s%s%s", size,
              occluded ? "shadow " : "", size != 1 ? "s" : "",
              placeholder ? " (part of a recorded computation)" : "",
@@ -601,8 +627,9 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
     Extra &e = state.extra[op];
     e.dep = (uint32_t *) malloc_check(sizeof(uint32_t) * n_args);
     for (uint32_t i = 0; i < n_args; ++i) {
-        jitc_var_inc_ref_int(in[i]);
-        e.dep[i] = in[i];
+        uint32_t index = i != 1 ? in[i] : valid;
+        jitc_var_inc_ref_int(index);
+        e.dep[i] = index;
     }
     e.n_dep = n_args;
     e.assemble = jitc_llvm_ray_trace_assemble;
@@ -620,19 +647,23 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
     const uint32_t width = jitc_llvm_vector_width;
     const uint32_t id = v->reg_index;
     bool occluded = strstr(v->stmt, "occluded") != nullptr;
-    bool double_precision = ((VarType) jitc_var(extra.dep[1])->type) == VarType::Float64;
+    bool double_precision = ((VarType) jitc_var(extra.dep[2])->type) == VarType::Float64;
     VarType float_type = double_precision ? VarType::Float64 : VarType::Float32;
     uint32_t float_size = double_precision ? 8 : 4;
 
+    uint32_t ctx_size = 6 * 4, alloca_size_rt;
+
     if (occluded)
-        alloca_size =
-            std::max(alloca_size, (int32_t)((9 * float_size + 4 * 4) * width));
+        alloca_size_rt = (9 * float_size + 4 * 4) * width;
     else
-        alloca_size = std::max(alloca_size, (int32_t)((14 * float_size + 7 * 4) * width));
+        alloca_size_rt = (14 * float_size + 7 * 4) * width;
+
+    alloca_size  = std::max(alloca_size, (int32_t) (alloca_size_rt + ctx_size));
     alloca_align = std::max(alloca_align, (int32_t) (float_size * width));
 
     /* Offsets:
-        0  uint32_t valid
+        0  bool coherent
+        1  uint32_t valid
         1  float org_x
         2  float org_y
         3  float org_z
@@ -657,7 +688,10 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
 
     uint32_t offset = 0;
     for (int i = 0; i < 13; ++i) {
-        Variable *v2 = jitc_var(extra.dep[i]);
+        if (jitc_llvm_vector_width == 1 && i == 0)
+            continue; // valid flag not needed for 1-lane versions
+
+        const Variable *v2 = jitc_var(extra.dep[i + 1]);
         const char *tname = type_name_llvm[v2->type];
         uint32_t tsize = type_size[v2->type];
         buffer.fmt(
@@ -680,20 +714,55 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
             jitc_llvm_ones_str[(int) VarType::Int32], width, id, float_size * width);
     }
 
+
+    const Variable *coherent = jitc_var(extra.dep[0]);
+
+    buffer.fmt(
+        "    %%u%u_in_ctx_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
+        "    %%u%u_in_ctx_1 = bitcast i8* %%u%u_in_ctx_0 to <6 x i32> *\n",
+        id, alloca_size_rt, id, id);
+
+    if (coherent->literal && coherent->value == 0) {
+        buffer.fmt("    store <6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>, <6 x i32>* %%u%u_in_ctx_1, align 4\n", id);
+    } else if (coherent->literal && coherent->value == 1) {
+        buffer.fmt("    store <6 x i32> <i32 1, i32 0, i32 0, i32 0, i32 -1, i32 0>, <6 x i32>* %%u%u_in_ctx_1, align 4\n", id);
+    } else {
+        char global[128];
+        snprintf(
+            global, sizeof(global),
+            "declare i1 @llvm.experimental.vector.reduce.and.v%ui1(<%u x i1>)\n\n",
+            width, width);
+        jitc_register_global(global);
+
+        buffer.fmt("    %%u%u_coherent = call i1 @llvm.experimental.vector.reduce.and.v%ui1(<%u x i1> %%p%u)\n"
+                   "    %%u%u_ctx = select i1 %%u%u_coherent, <6 x i32> <i32 1, i32 0, i32 0, i32 0, i32 -1, i32 0>, <6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>\n"
+                   "    store <6 x i32> %%u%u_ctx, <6 x i32>* %%u%u_in_ctx_1, align 4\n",
+                   id, width, width, coherent->reg_index,
+                   id, id,
+                   id, id);
+    }
+
     const Variable *func    = jitc_var(v->dep[0]),
                    *scene   = jitc_var(v->dep[1]);
 
-    // jitc_register_global("declare void @llvm.debugtrap()\n\n");
-    // buffer.put("    call void @llvm.debugtrap()\n");
-
-    buffer.fmt(
-        "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*)*\n"
-        "    call void %%u%u_func(i8* %%u%u_in_0_0, i8* %%rd%u, i8* %%u%u_in_1_0)\n",
-        id, func->reg_index,
-        id, id, scene->reg_index, id
-    );
+    if (jitc_llvm_vector_width > 1) {
+        buffer.fmt(
+            "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*, i8*)*\n"
+            "    call void %%u%u_func(i8* %%u%u_in_0_0, i8* %%rd%u, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
+            id, func->reg_index,
+            id, id, scene->reg_index, id, id
+        );
+    } else {
+        buffer.fmt(
+            "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*)*\n"
+            "    call void %%u%u_func(i8* %%rd%u, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
+            id, func->reg_index,
+            id, scene->reg_index, id, id
+        );
+    }
 
     offset = (8 * float_size + 4) * width;
+
     for (int i = 0; i < (occluded ? 1 : 6); ++i) {
         VarType vt = (i < 3) ? float_type : VarType::UInt32;
         const char *tname = type_name_llvm[(int) vt];
@@ -705,6 +774,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
             id, i, offset,
             id, i, id, i, width, tname,
             id, i, width, tname, width, tname, id, i, float_size * width);
+
         if (i == 0)
             offset += (4 * float_size + 3 * 4) * width;
         else
