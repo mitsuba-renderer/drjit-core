@@ -150,7 +150,8 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
             buffer.put("    %callables = load i8**, i8*** @callables\n");
 
         if (alloca_size >= 0)
-            buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n", alloca_size, alloca_align);
+            buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n",
+                       alloca_size, alloca_align);
         buffer.put("\n");
 
         size_t buffer_size = buffer.size(),
@@ -180,7 +181,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                "!1 = !{!1, !0}\n"
                "!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
 
-    buffer.fmt("attributes #0 = { norecurse nounwind \"frame-pointer\"=\"none\" \"no-stack-arg-probe\" "
+    buffer.fmt("attributes #0 = { norecurse nounwind \"frame-pointer\"=\"none\" \"no-builtins\" \"no-stack-arg-probe\" "
                "\"target-cpu\"=\"%s\" \"target-features\"=\"",
                jitc_llvm_target_cpu);
 

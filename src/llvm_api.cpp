@@ -330,7 +330,7 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
 
     if (false) {
         char *llvm_ir = LLVMPrintModuleToString(llvm_module);
-        jitc_trace("jit_llvm_compile(): Parsed LLVM IR:\n%s", llvm_ir);
+        printf(stderr, "jit_llvm_compile(): Parsed LLVM IR:\n%s", llvm_ir);
         LLVMDisposeMessage(llvm_ir);
     }
 
@@ -343,6 +343,13 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
 #endif
 
     LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
+
+    if (false) {
+        char *llvm_ir = LLVMPrintModuleToString(llvm_module);
+        fprintf(stderr, "jit_llvm_compile(): Optimized LLVM IR:\n%s", llvm_ir);
+        LLVMDisposeMessage(llvm_ir);
+    }
+
     LLVMExecutionEngineRef engine = jitc_llvm_engine_create(llvm_module);
 
     /// Resolve the kernel entry point
@@ -407,7 +414,8 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
         jitc_fail("jit_llvm_compile(): could not mmap() memory: %s",
                   strerror(errno));
 #else
-    void* ptr_result = VirtualAlloc(nullptr, jitc_llvm_mem_offset, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    void *ptr_result = VirtualAlloc(nullptr, jitc_llvm_mem_offset,
+                                    MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!ptr_result)
         jitc_fail("jit_llvm_compile(): could not VirtualAlloc() memory: %u", GetLastError());
 #endif
@@ -608,7 +616,6 @@ bool jitc_llvm_init() {
         LOAD(LLVMAddLICMPass);
         LOAD(LLVMGetExecutionEngineTargetMachine);
         LOAD(LLVMVerifyModule);
-
         LOAD(LLVMPassManagerBuilderCreate);
         LOAD(LLVMPassManagerBuilderSetOptLevel);
         LOAD(LLVMPassManagerBuilderPopulateModulePassManager);
@@ -864,6 +871,9 @@ void jitc_llvm_shutdown() {
     Z(LLVMDisasmInstruction); Z(LLVMCreatePassManager); Z(LLVMRunPassManager);
     Z(LLVMDisposePassManager); Z(LLVMAddLICMPass);
     Z(LLVMGetExecutionEngineTargetMachine); Z(LLVMVerifyModule);
+    Z(LLVMPassManagerBuilderCreate); Z(LLVMPassManagerBuilderSetOptLevel);
+    Z(LLVMPassManagerBuilderPopulateModulePassManager);
+    Z(LLVMPassManagerBuilderDispose);
 
 #  if !defined(_WIN32)
     if (jitc_llvm_handle != RTLD_NEXT)

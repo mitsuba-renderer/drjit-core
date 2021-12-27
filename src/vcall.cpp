@@ -1038,7 +1038,7 @@ static void jitc_var_vcall_assemble_llvm(
              "declare i32 @llvm.experimental.vector.reduce.umax.v%ui32(<%u x i32>)\n\n",
              width, width);
     jitc_register_global(tmp);
-    jitc_register_global("@callables = internal constant i8** null\n\n");
+    jitc_register_global("@callables = local_unnamed_addr global i8** null, align 8\n\n");
 
     snprintf(tmp, sizeof(tmp),
              "declare <%u x i64> @llvm.masked.gather.v%ui64(<%u x i64*>, i32, "
