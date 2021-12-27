@@ -95,36 +95,67 @@ void jitc_vfail(const char* fmt, va_list args) {
     abort();
 }
 
+/// Generate a string representing a floating point followed by a unit
+static void print_float_with_unit(char *buf, size_t bufsize, double value,
+                                  bool accurate, const char *unit) {
+    int digits_after_comma = accurate ? 5 : 3;
+
+    digits_after_comma =
+        std::max(digits_after_comma - int(std::log10(value)), 0);
+
+    int pos = snprintf(buf, bufsize, "%.*f", digits_after_comma, value);
+
+    // Remove trailing zeros
+    char c;
+    pos--;
+    while (c = jitc_string_buf[pos], pos > 0 && (c == '0' || c == '.'))
+        pos--;
+    pos++;
+
+    // Append unit if there is space
+    if (pos + 1 < (int) bufsize)
+        buf[pos++] = ' ';
+
+    uint32_t i = 0;
+    while (unit[i] != '\0' && pos + 1 < (int) bufsize)
+        buf[pos++] = unit[i++];
+
+    buf[pos] = '\0';
+}
+
 const char *jitc_mem_string(size_t size) {
     const char *orders[] = {
         "B", "KiB", "MiB", "GiB",
         "TiB", "PiB", "EiB"
     };
-    float value = (float) size;
+
+    double value = (double) size;
 
     int i = 0;
-    for (i = 0; i < 6 && value > 1024.f; ++i)
-        value /= 1024.f;
+    for (i = 0; i < 6 && value > 1024.0; ++i)
+        value /= 1024.0;
 
-    snprintf(jitc_string_buf, 64,
-             i > 0 ? "%.3g %s" : "%.0f %s", value,
-             orders[i]);
+    print_float_with_unit(jitc_string_buf, sizeof(jitc_string_buf),
+                          value, false, orders[i]);
 
     return jitc_string_buf;
 }
 
-const char *jitc_time_string(float value) {
-    struct Order { float factor; const char* suffix; };
+const char *jitc_time_string(float value_) {
+    double value = (double) value_;
+
+    struct Order { double factor; const char* suffix; };
     const Order orders[] = { { 0, "us" },   { 1000, "ms" },
                              { 1000, "s" }, { 60, "m" },
                              { 60, "h" },   { 24, "d" },
-                             { 7, "w" },    { (float) 52.1429, "y" } };
+                             { 7, "w" },    { 52.1429, "y" } };
 
     int i = 0;
     for (i = 0; i < 7 && value > orders[i+1].factor; ++i)
         value /= orders[i+1].factor;
 
-    snprintf(jitc_string_buf, 64, "%.5g %s", value, orders[i].suffix);
+    print_float_with_unit(jitc_string_buf, sizeof(jitc_string_buf),
+                          value, true, orders[i].suffix);
 
     return jitc_string_buf;
 }
