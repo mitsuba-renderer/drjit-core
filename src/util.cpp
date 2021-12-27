@@ -68,7 +68,9 @@ void jitc_submit_gpu(KernelType type, CUfunction kernel,
 
     KernelHistoryEntry entry = {};
 
-    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+    uint32_t flags = jit_flags();
+
+    if (unlikely(flags & (uint32_t) JitFlag::KernelHistory)) {
         cuda_check(cuEventCreate((CUevent *) &entry.event_start, CU_EVENT_DEFAULT));
         cuda_check(cuEventCreate((CUevent *) &entry.event_end, CU_EVENT_DEFAULT));
         cuda_check(cuEventRecord((CUevent) entry.event_start, stream));
@@ -78,10 +80,10 @@ void jitc_submit_gpu(KernelType type, CUfunction kernel,
                               block_dim_x, block_dim_y, block_dim_z,
                               shared_mem_bytes, stream, args, extra));
 
-    if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
+    if (unlikely(flags & (uint32_t) JitFlag::LaunchBlocking))
         cuda_check(cuStreamSynchronize(stream));
 
-    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+    if (unlikely(flags & (uint32_t) JitFlag::KernelHistory)) {
         entry.backend = JitBackend::CUDA;
         entry.type = type;
         entry.size = width;
