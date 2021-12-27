@@ -629,8 +629,13 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
 
     if (dirty) {
         jitc_eval(thread_state(backend));
-        for (uint32_t i = 0; i < n_dep; ++i)
+        dirty = false;
+        for (uint32_t i = 0; i < n_dep; ++i) {
             v[i] = jitc_var(dep[i]);
+            dirty |= (bool) v[i]->ref_count_se;
+        }
+        if (dirty)
+            jitc_raise("jit_var_new_stmt(): variable remains dirty following evaluation!");
     }
 
     Variable v2;
@@ -638,6 +643,7 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
         v2.dep[i] = dep[i];
         jitc_var_inc_ref_int(dep[i], v[i]);
     }
+
     v2.stmt = stmt_static ? (char *) stmt : strdup(stmt);
     v2.size = size;
     v2.type = (uint32_t) vt;

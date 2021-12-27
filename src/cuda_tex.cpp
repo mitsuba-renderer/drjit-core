@@ -2,6 +2,7 @@
 #include "internal.h"
 #include "log.h"
 #include "var.h"
+#include "op.h"
 #include <string.h>
 
 void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
@@ -152,8 +153,34 @@ void jitc_cuda_tex_lookup(size_t ndim, uint32_t texture_id, const uint32_t *pos,
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_lookup(): invalid texture dimension!");
 
+    // Validate input types, determine size of the operation
+    uint32_t size = 0;
+    for (size_t i = 0; i <= ndim; ++i) {
+        uint32_t index = i < ndim ? pos[i] : mask;
+        VarType ref = i < ndim ? VarType::Float32 : VarType::Bool;
+        const Variable *v = jitc_var(index);
+        if ((VarType) v->type != ref)
+            jitc_raise("jit_cuda_tex_lookup(): type mismatch for arg. %zu (got "
+                       "%s, expected %s)", i, type_name[v->type],
+                       type_name[(int) ref]);
+        size = std::max(size, v->size);
+    }
+
+    // Potentially apply any masks on the mask stack
+    Ref valid = borrow(mask);
+    {
+        Ref mask_top = steal(jitc_var_mask_peek(JitBackend::CUDA));
+        uint32_t size_top = jitc_var(mask_top)->size;
+
+        // If the mask on the mask stack is compatible, merge it
+        if (size_top == size || size_top == 1 || size == 1) {
+            uint32_t dep[2] = { mask, mask_top };
+            valid = steal(jitc_var_new_op(JitOp::And, 2, dep));
+        }
+    }
+
     uint32_t dep[3] = {
-        mask,
+        valid,
         texture_id,
         pos[0]
     };

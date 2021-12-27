@@ -5,6 +5,7 @@
 #include "log.h"
 #include "eval.h"
 #include "var.h"
+#include "op.h"
 #include "internal.h"
 
 #define OPTIX_ABI_VERSION 41
@@ -610,11 +611,12 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
         sbt.callablesRecordCount = kernel.optix.pg_count - 1;
     }
 
-    if (launch_size > 0x70000000u)
+    if (launch_size >= 0x40000000u)
         jitc_raise("jit_optix_launch(): attempted to launch a very large "
-                   "wavefront (%u, which is >= 2**31), which OptiX does not "
-                   "allow. Please render using multiple passes, use fewer "
-                   "samples, or a lower resolution.", launch_size);
+                   "wavefront of size %u. The maximum wavefront size permitted "
+                   "by OptiX is 2**30 == 1073741824. Please render using "
+                   "multiple passes, use fewer samples, or a lower resolution.",
+                   launch_size);
 
     jitc_optix_check(
         optixLaunch(kernel.optix.pipeline, ts->stream, (CUdeviceptr) args,
@@ -639,9 +641,10 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
     if (np > 8)
         jitc_raise("jit_optix_ray_trace(): too many payloads (got %u > 8)", np);
 
+    // Validate input types, determine size of the operation
     bool placeholder = false, dirty = false;
     for (uint32_t i = 0; i <= n_args; ++i) {
-        uint32_t index = (i < n_args) ? args[i] : mask;
+        uint32_t index = i < n_args ? args[i] : mask;
         VarType ref = i < n_args ? types[i] : VarType::Bool;
         const Variable *v = jitc_var(index);
         if ((VarType) v->type != ref)
@@ -673,16 +676,30 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
             dirty |= (bool) jitc_var(index)->ref_count_se;
         }
 
-        jitc_raise(
-            "jit_optix_ray_trace(): inputs remain dirty after evaluation!");
+        if (dirty)
+            jitc_raise("jit_optix_ray_trace(): inputs remain dirty after evaluation!");
+    }
+
+    // Potentially apply any masks on the mask stack
+    Ref valid = borrow(mask);
+    {
+        Ref mask_top = steal(jitc_var_mask_peek(JitBackend::CUDA));
+        uint32_t size_top = jitc_var(mask_top)->size;
+
+        // If the mask on the mask stack is compatible, merge it
+        if (size_top == size || size_top == 1 || size == 1) {
+            uint32_t dep[2] = { mask, mask_top };
+            valid = steal(jitc_var_new_op(JitOp::And, 2, dep));
+        }
     }
 
     jitc_log(InfoSym, "jit_optix_ray_trace(): tracing %u ray%s, %u payload value%s%s.",
              size, size != 1 ? "s" : "", np, np == 1 ? "" : "s",
              placeholder ? " (part of a recorded computation)" : "");
 
+    uint32_t dep[1] = { valid };
     uint32_t special =
-        jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 1, &mask);
+        jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 1, dep);
 
     // Associate extra record with this variable
     Extra &extra = state.extra[special];
