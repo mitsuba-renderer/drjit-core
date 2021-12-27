@@ -330,7 +330,7 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
 
     if (false) {
         char *llvm_ir = LLVMPrintModuleToString(llvm_module);
-        printf(stderr, "jit_llvm_compile(): Parsed LLVM IR:\n%s", llvm_ir);
+        fprintf(stderr, "jit_llvm_compile(): Parsed LLVM IR:\n%s", llvm_ir);
         LLVMDisposeMessage(llvm_ir);
     }
 
@@ -780,12 +780,8 @@ bool jitc_llvm_init() {
         jitc_llvm_vector_width = 4;
     if (strstr(jitc_llvm_target_features, "+avx"))
         jitc_llvm_vector_width = 8;
-
-#if !defined(_WIN32)
-    // Don't use AVX512 on windows by default until things are more mature
     if (strstr(jitc_llvm_target_features, "+avx512vl"))
         jitc_llvm_vector_width = 16;
-#endif
 
 #if defined(__APPLE__) && defined(__aarch64__)
     jitc_llvm_vector_width = 4;
