@@ -8,7 +8,9 @@ using CUtexObject = struct CUtexObject_st *;
 #define CU_TR_FILTER_MODE_POINT 0
 #define CU_TR_FILTER_MODE_LINEAR 1
 #define CU_TRSF_NORMALIZED_COORDINATES 2
+#define CU_TR_ADDRESS_MODE_WRAP 0
 #define CU_TR_ADDRESS_MODE_CLAMP 1
+#define CU_TR_ADDRESS_MODE_MIRROR 2
 #define CU_MEMORYTYPE_DEVICE 2
 #define CU_MEMORYTYPE_ARRAY 3
 
@@ -129,7 +131,8 @@ extern CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream);
 #endif
 
 extern void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
-                                  size_t n_channels, int filter_mode);
+                                  size_t n_channels, int filter_mode,
+                                  int wrap_mode);
 extern void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
                                      size_t n_channels, const void *src_ptr,
                                      void *dst_texture);

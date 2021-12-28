@@ -29,11 +29,20 @@ extern "C" {
  * <li><tt>filter_mode == 1</tt>: Linear/bilinear/trilinear interpolation</li>
  * <ul>
  *
+ * The \c wrap_mode parameter supports the following options:
+ *
+ * <ul>
+ * <li><tt>wrap_mode == 0</tt>: Repeat</li>
+ * <li><tt>wrap_mode == 1</tt>: Clamp</li>
+ * <li><tt>wrap_mode == 2</tt>: Mirror</li>
+ * <ul>
+ *
  * Further modes (e.g. MIP-mapping) may be added in the future.
  */
 extern JIT_EXPORT void *jit_cuda_tex_create(size_t ndim, const size_t *shape,
                                             size_t n_channels,
-                                            int filter_mode JIT_DEF(1));
+                                            int filter_mode JIT_DEF(1),
+                                            int wrap_mode JIT_DEF(0));
 
 /**
  * \brief Copy from device to texture memory
