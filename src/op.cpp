@@ -1562,7 +1562,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     if (v_mask->literal && v_mask->value == 0) {
         uint64_t value = 0;
         uint32_t result = jitc_var_new_literal(backend, (VarType) vti, &value, size, 0);
-        jitc_log(Info,
+        jitc_log(Debug,
                  "jit_var_new_gather(r%u <- r%u[r%u] if r%u): elided, always masked",
                  result, source, index_, mask_);
         return result;

@@ -234,8 +234,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
         const VarType vt = (VarType) vti;
         uint32_t id = v->reg_index;
         const char *prefix = type_prefix[vti],
-                   *tname = vt == VarType::Bool
-                            ? "i8" : type_name_llvm[vti];
+                   *tname  = vt == VarType::Bool ? "i8" : type_name_llvm[vti];
 
         if (unlikely(v->extra)) {
             auto it = state.extra.find(sv.index);
