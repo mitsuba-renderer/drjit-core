@@ -764,6 +764,12 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     for (uint32_t i = 0; i < n_se; ++i)
         traverse(se[i]);
 
+    std::sort(
+        schedule.begin(), schedule.end(),
+        [](const ScheduledVariable &a, const ScheduledVariable &b) {
+            return a.index < b.index;
+        });
+
     uint32_t n_regs = ts->backend == JitBackend::CUDA ? 4 : 1;
 
     for (auto &sv : schedule) {
