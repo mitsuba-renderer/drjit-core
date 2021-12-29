@@ -14,7 +14,7 @@
 #include "registry.h"
 #include "util.h"
 #include "op.h"
-#include "printf.h"
+#include "profiler.h"
 
 /// Encodes information about a virtual function call
 struct VCall {
@@ -135,7 +135,7 @@ void jitc_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index) {
     *index = ts->vcall_self_index;
 }
 
-// Weave a virtual function call into the computation graph
+/// Weave a virtual function call into the computation graph
 uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                         uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
                         const uint32_t *in, uint32_t n_out_nested,
@@ -143,6 +143,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                         uint32_t *out) {
 
     const uint32_t checkpoint_mask = 0x7fffffff;
+
+#if defined(ENOKI_JIT_ENABLE_NVTX) || defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
+    std::string profile_name = std::string("jit_var_vcall: ") + name;
+    ProfilerRegion profiler_region(profile_name.c_str());
+    ProfilerPhase profiler(profiler_region);
+#endif
 
     // =====================================================
     // 1. Various sanity checks
@@ -625,6 +631,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     return se_v.release();
 }
 
+static ProfilerRegion profiler_region_vcall_assemble("jit_var_vcall_assemble");
+
 /// Called by the JIT compiler when compiling a virtual function call
 static void jitc_var_vcall_assemble(VCall *vcall,
                                     uint32_t self_reg,
@@ -632,6 +640,8 @@ static void jitc_var_vcall_assemble(VCall *vcall,
                                     uint32_t offset_reg,
                                     uint32_t data_reg) {
     uint32_t vcall_reg = jitc_var(vcall->id)->reg_index;
+
+    ProfilerPhase profiler(profiler_region_vcall_assemble);
 
     // =====================================================
     // 1. Need to backup state before we can JIT recursively

@@ -215,6 +215,9 @@ static void jitc_llvm_mem_destroy(void * /* opaque */) { }
 
 /// Dump assembly representation
 void jitc_llvm_disasm(const Kernel &kernel) {
+#if defined(ENOKI_DISABLE_TRACE)
+    (void) kernel;
+#else
     if (std::max(state.log_level_stderr, state.log_level_callback) <
         LogLevel::Trace)
         return;
@@ -254,6 +257,7 @@ void jitc_llvm_disasm(const Kernel &kernel) {
             ptr += size;
         } while (true);
     }
+#endif
 }
 
 LLVMExecutionEngineRef jitc_llvm_engine_create(LLVMModuleRef mod_) {

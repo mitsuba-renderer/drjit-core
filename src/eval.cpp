@@ -519,6 +519,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         jitc_trace("jit_run(): scheduling %u packet%s in %u block%s ..",
                    packets, packets == 1 ? "" : "s", blocks,
                    blocks == 1 ? "" : "s");
+        (void) packets; // jitc_trace may be disabled
 
         ret_task = task_submit_dep(
             nullptr, &ts->task, 1, blocks,
@@ -730,6 +731,8 @@ void jitc_eval(ThreadState *ts) {
     jitc_log(Info, "jit_eval(): done.");
 }
 
+static ProfilerRegion profiler_region_assemble_func("jit_assemble_func");
+
 std::pair<XXH128_hash_t, uint32_t>
 jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                    uint32_t in_size, uint32_t in_align, uint32_t out_size,
@@ -738,6 +741,8 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                    uint32_t n_in, const uint32_t *in, uint32_t n_out,
                    const uint32_t *out_nested, uint32_t n_se,
                    const uint32_t *se, bool use_self) {
+    ProfilerPhase profiler(profiler_region_assemble_func);
+
     visited.clear();
     schedule.clear();
 

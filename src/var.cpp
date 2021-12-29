@@ -176,6 +176,7 @@ Variable *jitc_var(uint32_t index) {
 
 /// Increase the external reference count of a given variable
 void jitc_var_inc_ref_ext(uint32_t index, Variable *v) noexcept(true) {
+    (void) index; // jitc_trace may be disabled
     v->ref_count_ext++;
     jitc_trace("jit_var_inc_ref_ext(r%u): %u", index, (uint32_t) v->ref_count_ext);
 }
@@ -188,6 +189,7 @@ void jitc_var_inc_ref_ext(uint32_t index) noexcept(true) {
 
 /// Increase the internal reference count of a given variable
 void jitc_var_inc_ref_int(uint32_t index, Variable *v) noexcept(true) {
+    (void) index; // jitc_trace may be disabled
     v->ref_count_int++;
     jitc_trace("jit_var_inc_ref_int(r%u): %u", index, (uint32_t) v->ref_count_int);
 }
@@ -200,6 +202,7 @@ void jitc_var_inc_ref_int(uint32_t index) noexcept(true) {
 
 /// Increase the side effect reference count of a given variable
 void jitc_var_inc_ref_se(uint32_t index, Variable *v) noexcept(true) {
+    (void) index; // jitc_trace may be disabled
     v->ref_count_se++;
     jitc_trace("jit_var_inc_ref_se(r%u): %u", index, (uint32_t) v->ref_count_se);
 }

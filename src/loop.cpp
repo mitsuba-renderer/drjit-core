@@ -3,6 +3,7 @@
 #include "log.h"
 #include "eval.h"
 #include "op.h"
+#include "profiler.h"
 #include <tsl/robin_set.h>
 
 struct Loop {
@@ -661,9 +662,12 @@ static size_t jitc_var_loop_simplify(Loop *loop, tsl::robin_set<uint32_t, UInt32
     return n_freed;
 }
 
+static ProfilerRegion profiler_region_var_loop_simplify("jit_var_loop_simplify");
+
 void jitc_var_loop_simplify() {
     tsl::robin_set<uint32_t, UInt32Hasher> visited;
 
+    ProfilerPhase profiler(profiler_region_var_loop_simplify);
     bool progress;
     do {
         progress = false;

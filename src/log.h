@@ -13,6 +13,8 @@
 #include <stdarg.h>
 #include "common.h"
 
+#define ENOKI_DISABLE_TRACE 1
+
 #if defined(ENOKI_DISABLE_TRACE)
 #  define jitc_trace(...)
 #else

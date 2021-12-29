@@ -10,6 +10,7 @@
 #include "internal.h"
 #include "log.h"
 #include "util.h"
+#include "profiler.h"
 
 static_assert(
     sizeof(tsl::detail_robin_hash::bucket_entry<AllocUsedMap::value_type, false>) == 24,
@@ -449,6 +450,8 @@ void jitc_malloc_prefetch(void *ptr, int device) {
 
 static bool jitc_flush_malloc_cache_warned = false;
 
+static ProfilerRegion profiler_region_flush_malloc_cache("jit_flush_malloc_cache");
+
 /// Release all unused memory to the GPU / OS
 void jitc_flush_malloc_cache(bool flush_local, bool warn) {
     if (warn && !jitc_flush_malloc_cache_warned) {
@@ -462,6 +465,7 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
 
         jitc_flush_malloc_cache_warned = true;
     }
+    ProfilerPhase profiler(profiler_region_flush_malloc_cache);
 
     if (flush_local) {
         if (thread_state_cuda)
