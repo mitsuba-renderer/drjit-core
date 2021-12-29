@@ -43,8 +43,19 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
 
     CUDA_TEXTURE_DESC tex_desc;
     memset(&tex_desc, 0, sizeof(CUDA_TEXTURE_DESC));
-    tex_desc.filterMode = tex_desc.mipmapFilterMode =
-        (filter_mode == 1 ? CU_TR_FILTER_MODE_LINEAR : CU_TR_FILTER_MODE_POINT);
+    switch (filter_mode) {
+        case 0:
+            tex_desc.filterMode = tex_desc.mipmapFilterMode =
+                CU_TR_FILTER_MODE_POINT;
+            break;
+        case 1:
+            tex_desc.filterMode = tex_desc.mipmapFilterMode =
+                CU_TR_FILTER_MODE_LINEAR;
+            break;
+        default:
+            jitc_raise("jit_cuda_tex_create(): invalid filter mode!");
+            break;
+    }
     tex_desc.flags = CU_TRSF_NORMALIZED_COORDINATES;
     for (size_t i = 0; i < 3; ++i) {
         switch (wrap_mode) {
@@ -58,7 +69,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                 tex_desc.addressMode[i] = CU_TR_ADDRESS_MODE_MIRROR;
                 break;
             default:
-                tex_desc.addressMode[i] = CU_TR_ADDRESS_MODE_WRAP;
+                jitc_raise("jit_cuda_tex_create(): invalid wrap mode!");
                 break;
         }
     }
