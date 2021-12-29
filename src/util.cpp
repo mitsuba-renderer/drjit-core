@@ -59,12 +59,10 @@ void jitc_submit_cpu(KernelType type, ThreadState *ts, Func &&func,
     ts->task = new_task;
 }
 
-void jitc_submit_gpu(KernelType type, CUfunction kernel,
-                     unsigned int grid_dim_x, unsigned int grid_dim_y,
-                     unsigned int grid_dim_z, unsigned int block_dim_x,
-                     unsigned int block_dim_y, unsigned int block_dim_z,
-                     unsigned int shared_mem_bytes, CUstream stream,
-                     void **args, void **extra, uint32_t width) {
+void jitc_submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
+                     uint32_t thread_count, uint32_t shared_mem_bytes,
+                     CUstream stream, void **args, void **extra,
+                     uint32_t width) {
 
     KernelHistoryEntry entry = {};
 
@@ -76,8 +74,7 @@ void jitc_submit_gpu(KernelType type, CUfunction kernel,
         cuda_check(cuEventRecord((CUevent) entry.event_start, stream));
     }
 
-    cuda_check(cuLaunchKernel(kernel, grid_dim_x, grid_dim_y, grid_dim_z,
-                              block_dim_x, block_dim_y, block_dim_z,
+    cuda_check(cuLaunchKernel(kernel, block_count, 1, 1, thread_count, 1, 1,
                               shared_mem_bytes, stream, args, extra));
 
     if (unlikely(flags & (uint32_t) JitFlag::LaunchBlocking))
@@ -145,9 +142,9 @@ void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size_,
                     device.get_launch_config(&block_count, &thread_count, size_);
                     void *args[] = { &ptr, &size_, (void *) src };
                     CUfunction kernel = jitc_cuda_fill_64[device.id];
-                    jitc_submit_gpu(KernelType::Reduce, kernel, block_count, 1,
-                                    1, thread_count, 1, 1, 0, ts->stream, args,
-                                    nullptr, size_);
+                    jitc_submit_gpu(KernelType::Reduce, kernel, block_count,
+                                    thread_count, 0, ts->stream, args, nullptr,
+                                    size_);
                 }
                 break;
         }
@@ -343,23 +340,22 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
             // This is a small array, do everything in just one reduction.
             void *args[] = { &ptr, &size, &out };
 
-            jitc_submit_gpu(KernelType::Reduce, func, 1, 1, 1, thread_count, 1,
-                            1, shared_size, ts->stream, args, nullptr, size);
+            jitc_submit_gpu(KernelType::Reduce, func, 1, thread_count,
+                            shared_size, ts->stream, args, nullptr, size);
         } else {
             void *temp = jitc_malloc(AllocType::Device, size_t(block_count) * tsize);
 
             // First reduction
             void *args_1[] = { &ptr, &size, &temp };
 
-            jitc_submit_gpu(KernelType::Reduce, func, block_count, 1, 1,
-                            thread_count, 1, 1, shared_size, ts->stream, args_1,
-                            nullptr, size);
+            jitc_submit_gpu(KernelType::Reduce, func, block_count, thread_count,
+                            shared_size, ts->stream, args_1, nullptr, size);
 
             // Second reduction
             void *args_2[] = { &temp, &block_count, &out };
 
-            jitc_submit_gpu(KernelType::Reduce, func, 1, 1, 1, thread_count, 1,
-                            1, shared_size, ts->stream, args_2, nullptr, size);
+            jitc_submit_gpu(KernelType::Reduce, func, 1, thread_count,
+                            shared_size, ts->stream, args_2, nullptr, size);
 
             jitc_free(temp);
         }
@@ -489,10 +485,9 @@ void jitc_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32
                     shared_size);
 
             void *args[] = { &in, &out, &size };
-            jitc_submit_gpu(KernelType::Other,
-                            jitc_cuda_scan_small_u32[device.id], 1, 1, 1,
-                            thread_count, 1, 1, shared_size, ts->stream, args,
-                            nullptr, size);
+            jitc_submit_gpu(
+                KernelType::Other, jitc_cuda_scan_small_u32[device.id], 1,
+                thread_count, shared_size, ts->stream, args, nullptr, size);
         } else {
             /// Kernel for large arrays
             uint32_t items_per_thread = 16,
@@ -520,15 +515,15 @@ void jitc_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32
             void *args[] = { &scratch, &scratch_items };
             jitc_submit_gpu(KernelType::Other,
                             jitc_cuda_scan_large_u32_init[device.id],
-                            block_count_init, 1, 1, thread_count_init, 1, 1, 0,
-                            ts->stream, args, nullptr, scratch_items);
+                            block_count_init, thread_count_init, 0, ts->stream,
+                            args, nullptr, scratch_items);
 
             scratch += 32; // move beyond padding area
             void *args_2[] = { &in, &out, &scratch };
             jitc_submit_gpu(KernelType::Other,
-                            jitc_cuda_scan_large_u32[device.id], block_count, 1,
-                            1, thread_count, 1, 1, shared_size, ts->stream,
-                            args_2, nullptr, scratch_items);
+                            jitc_cuda_scan_large_u32[device.id], block_count,
+                            thread_count, shared_size, ts->stream, args_2,
+                            nullptr, scratch_items);
             scratch -= 32;
 
             jitc_free(scratch);
@@ -629,10 +624,9 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
                                            ts->stream));
 
             void *args[] = { &in, &out, &size, &count_out };
-            jitc_submit_gpu(KernelType::Other,
-                            jitc_cuda_compress_small[device.id], 1, 1, 1,
-                            thread_count, 1, 1, shared_size, ts->stream, args,
-                            nullptr, size);
+            jitc_submit_gpu(
+                KernelType::Other, jitc_cuda_compress_small[device.id], 1,
+                thread_count, shared_size, ts->stream, args, nullptr, size);
         } else {
             // Kernel for large arrays
             uint32_t items_per_thread = 16,
@@ -661,8 +655,8 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
             void *args[] = { &scratch, &scratch_items };
             jitc_submit_gpu(KernelType::Other,
                             jitc_cuda_scan_large_u32_init[device.id],
-                            block_count_init, 1, 1, thread_count_init, 1, 1, 0,
-                            ts->stream, args, nullptr, scratch_items);
+                            block_count_init, thread_count_init, 0, ts->stream,
+                            args, nullptr, scratch_items);
 
             if (trailer > 0)
                 cuda_check(cuMemsetD8Async((CUdeviceptr) (in + size), 0, trailer,
@@ -671,9 +665,9 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
             scratch += 32; // move beyond padding area
             void *args_2[] = { &in, &out, &scratch, &count_out };
             jitc_submit_gpu(KernelType::Other,
-                            jitc_cuda_compress_large[device.id], block_count, 1,
-                            1, thread_count, 1, 1, shared_size, ts->stream,
-                            args_2, nullptr, scratch_items);
+                            jitc_cuda_compress_large[device.id], block_count,
+                            thread_count, shared_size, ts->stream, args_2,
+                            nullptr, scratch_items);
             scratch -= 32;
 
             jitc_free(scratch);
@@ -768,9 +762,10 @@ static void cuda_transpose(ThreadState *ts, const uint32_t *in, uint32_t *out,
             (uintptr_t) in, (uintptr_t) out, rows, cols, blocks_x, blocks_y);
 
     void *args[] = { &in, &out, &rows, &cols };
-    jitc_submit_gpu(KernelType::Other, jitc_cuda_transpose[device.id], blocks_x,
-                    blocks_y, 1, 16, 16, 1, 16 * 17 * sizeof(uint32_t),
-                    ts->stream, args, nullptr, rows * cols);
+
+    cuda_check(cuLaunchKernel(
+        jitc_cuda_transpose[device.id], blocks_x, blocks_y, 1, 16, 16, 1,
+        16 * 17 * sizeof(uint32_t), ts->stream, args, nullptr));
 }
 
 static ProfilerRegion profiler_region_mkperm("jit_mkperm");
@@ -881,9 +876,9 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         void *args_1[] = { &ptr, &buckets_1, &size, &size_per_block,
                            &bucket_count };
 
-        jitc_submit_gpu(KernelType::VCallReduce, phase_1, block_count, 1, 1,
-                        thread_count, 1, 1, shared_size, ts->stream, args_1,
-                        nullptr, size);
+        jitc_submit_gpu(KernelType::VCallReduce, phase_1, block_count,
+                        thread_count, shared_size, ts->stream, args_1, nullptr,
+                        size);
 
         // Phase 2: exclusive prefix sum over transposed buckets
         if (needs_transpose)
@@ -911,9 +906,8 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
 
             jitc_submit_gpu(KernelType::VCallReduce,
                             jitc_cuda_mkperm_phase_3[device.id], block_count_3,
-                            1, 1, thread_count_3, 1, 1,
-                            sizeof(uint32_t) * thread_count_3, ts->stream,
-                            args_3, nullptr, size);
+                            thread_count_3, sizeof(uint32_t) * thread_count_3,
+                            ts->stream, args_3, nullptr, size);
 
             cuda_check(cuMemcpyAsync((CUdeviceptr) (offsets + 4 * size_t(bucket_count)),
                                      (CUdeviceptr) counter, sizeof(uint32_t),
@@ -926,9 +920,9 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         void *args_4[] = { &ptr, &buckets_1, &perm, &size, &size_per_block,
                            &bucket_count };
 
-        jitc_submit_gpu(KernelType::VCallReduce, phase_4, block_count, 1, 1,
-                        thread_count, 1, 1, shared_size, ts->stream, args_4,
-                        nullptr, size);
+        jitc_submit_gpu(KernelType::VCallReduce, phase_4, block_count,
+                        thread_count, shared_size, ts->stream, args_4, nullptr,
+                        size);
 
         if (likely(offsets)) {
             unlock_guard guard_2(state.mutex);
@@ -1149,8 +1143,8 @@ void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void
                  block_count  = (size + thread_count - 1) / thread_count;
 
         void *args[] = { &in, &out, &size, &block_size };
-        jitc_submit_gpu(KernelType::Other, func, block_count, 1, 1,
-                        thread_count, 1, 1, 0, ts->stream, args, nullptr, size);
+        jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+                        ts->stream, args, nullptr, size);
     } else {
         uint32_t work_unit_size = size, work_units = 1;
         if (pool_size() > 1) {
@@ -1214,8 +1208,8 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
 
         void *args[] = { &in, &out, &size, &block_size };
         cuda_check(cuMemsetD8Async((CUdeviceptr) out, 0, out_size, ts->stream));
-        jitc_submit_gpu(KernelType::Other, func, block_count, 1, 1,
-                        thread_count, 1, 1, 0, ts->stream, args, nullptr, size);
+        jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+                        ts->stream, args, nullptr, size);
     } else {
         uint32_t work_unit_size = size, work_units = 1;
         if (pool_size() > 1) {
@@ -1260,7 +1254,7 @@ void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size) {
         const Device &device = state.devices[ts->device];
         CUfunction func = jitc_cuda_poke[(int) type][device.id];
         void *args[] = { &dst, (void *) src };
-        jitc_submit_gpu(KernelType::Other, func, 1, 1, 1, 1, 1, 1, 0,
+        jitc_submit_gpu(KernelType::Other, func, 1, 1, 0,
                         ts->stream, args, nullptr, 1);
     } else {
         uint8_t src8[8] { };
