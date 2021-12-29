@@ -16,3 +16,9 @@ extern VCallBucket *jitc_var_vcall_reduce(JitBackend backend,
                                           const char *domain, uint32_t index,
                                           uint32_t *bucket_count_out);
 
+/// Helper data structure used to initialize the data block consumed by a vcall
+struct VCallDataRecord {
+    uint32_t offset;
+    uint32_t size;
+    const void *src;
+};

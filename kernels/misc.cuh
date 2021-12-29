@@ -31,6 +31,31 @@ KERNEL void fill_64(uint64_t *out, uint32_t size, uint64_t value) {
         out[i] = value;
 }
 
+struct VCallDataRecord {
+    uint32_t offset;
+    uint32_t size;
+    const void *src;
+};
+
+KERNEL void vcall_prepare(void *out, const VCallDataRecord *rec_, uint32_t size) {
+    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size)
+        return;
+
+    VCallDataRecord rec = rec_[idx];
+
+    const void *src = rec.src;
+    void *dst = (uint8_t *) out + rec.offset;
+
+    switch (rec.size) {
+        case 0: *(uint64_t *) dst = (uint64_t)    src; break;
+        case 1: *(uint8_t *)  dst = *(uint8_t *)  src; break;
+        case 2: *(uint16_t *) dst = *(uint16_t *) src; break;
+        case 4: *(uint32_t *) dst = *(uint32_t *) src; break;
+        case 8: *(uint64_t *) dst = *(uint64_t *) src; break;
+    }
+}
+
 #if __CUDA_ARCH__ <= 600
 __device__ double atomicAdd(double *ptr_, double value) {
     unsigned long long int *ptr = (unsigned long long int *) ptr_;

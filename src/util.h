@@ -58,3 +58,8 @@ extern void jitc_block_sum(JitBackend backend, enum VarType type, const void *in
 
 /// Asynchronously update a single element in memory
 extern void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size);
+
+struct VCallDataRecord;
+/// Initialize the data block consumed by a vcall
+extern void jitc_vcall_prepare(JitBackend backend, void *dst,
+                               VCallDataRecord *rec, uint32_t size);

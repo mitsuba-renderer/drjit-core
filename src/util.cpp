@@ -13,6 +13,7 @@
 #include "var.h"
 #include "eval.h"
 #include "log.h"
+#include "vcall.h"
 #include "profiler.h"
 
 #if defined(_MSC_VER)
@@ -1269,5 +1270,68 @@ void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size) {
 
             size
         );
+    }
+}
+
+
+void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, uint32_t size) {
+    ThreadState *ts = thread_state(backend);
+
+    if (backend == JitBackend::CUDA) {
+        scoped_set_context guard(ts->context);
+        const Device &device = state.devices[ts->device];
+        CUfunction func = jitc_cuda_vcall_prepare[device.id];
+        void *args[] = { &dst_, &rec_, &size };
+
+        uint32_t block_count, thread_count;
+        device.get_launch_config(&block_count, &thread_count, size);
+
+        jitc_log(InfoSym,
+                 "jit_vcall_prepare(" ENOKI_PTR " -> " ENOKI_PTR
+                 ", size=%u, blocks=%u, threads=%u)",
+                 (uintptr_t) rec_, (uintptr_t) dst_, size, block_count,
+                 thread_count);
+
+        jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+                        ts->stream, args, nullptr, 1);
+
+        jitc_free(rec_);
+    } else {
+        uint32_t work_unit_size = size, work_units = 1;
+        if (pool_size() > 1) {
+            work_unit_size = ENOKI_POOL_BLOCK_SIZE;
+            work_units     = (size + work_unit_size - 1) / work_unit_size;
+        }
+
+        jitc_log(InfoSym,
+                 "jit_vcall_prepare(" ENOKI_PTR " -> " ENOKI_PTR
+                 ", size=%u, work_units=%u)",
+                 (uintptr_t) rec_, (uintptr_t) dst_, size, work_units);
+
+        jitc_submit_cpu(
+            KernelType::Other, ts,
+            [dst_, rec_, size, work_unit_size](uint32_t index) {
+                uint32_t start = index * work_unit_size,
+                         end = std::min(start + work_unit_size, size);
+
+                for (uint32_t i = start; i != end; ++i) {
+                    VCallDataRecord rec = rec_[i];
+
+                    const void *src = rec.src;
+                    void *dst = (uint8_t *) dst_ + rec.offset;
+
+                    switch (rec.size) {
+                        case 0: *(uint64_t *) dst = (uint64_t)    src; break;
+                        case 1: *(uint8_t *)  dst = *(uint8_t *)  src; break;
+                        case 2: *(uint16_t *) dst = *(uint16_t *) src; break;
+                        case 4: *(uint32_t *) dst = *(uint32_t *) src; break;
+                        case 8: *(uint64_t *) dst = *(uint64_t *) src; break;
+                    }
+                }
+            },
+            size, work_units);
+
+        jitc_submit_cpu(
+            KernelType::Other, ts, [rec_](uint32_t) { jitc_free(rec_); }, 1);
     }
 }

@@ -150,6 +150,8 @@ extern CUfunction *jitc_cuda_block_copy[(int) VarType::Count];
 extern CUfunction *jitc_cuda_block_sum [(int) VarType::Count];
 extern CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                       [(int) VarType::Count];
+extern CUfunction *jitc_cuda_vcall_prepare;
+
 extern int jitc_cuda_devices;
 
 extern int jitc_cuda_version_major;

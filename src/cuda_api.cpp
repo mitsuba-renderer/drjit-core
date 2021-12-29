@@ -118,6 +118,7 @@ CUfunction *jitc_cuda_block_copy[(int)VarType::Count] { };
 CUfunction *jitc_cuda_block_sum [(int)VarType::Count] { };
 CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                [(int) VarType::Count] = { };
+CUfunction *jitc_cuda_vcall_prepare = nullptr;
 int jitc_cuda_devices = 0;
 int jitc_cuda_version_major = 0;
 int jitc_cuda_version_minor = 0;
@@ -390,6 +391,7 @@ bool jitc_cuda_init() {
         LOAD(scan_large_u32_init);
         LOAD(compress_small);
         LOAD(compress_large);
+        LOAD(vcall_prepare);
 
         #undef LOAD
 

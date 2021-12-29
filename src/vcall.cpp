@@ -7,6 +7,9 @@
     license that can be found in the LICENSE file.
 */
 
+// Experiment: faster collection of VCall data via a single kernel launch
+#define EK_USE_VCALL_PREPARE
+
 #include "internal.h"
 #include "log.h"
 #include "var.h"
@@ -15,6 +18,7 @@
 #include "util.h"
 #include "op.h"
 #include "profiler.h"
+#include "vcall.h"
 
 /// Encodes information about a virtual function call
 struct VCall {
@@ -322,18 +326,45 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         jitc_var_set_label(data_buf, temp);
 
         data_v = steal(jitc_var_new_pointer(backend, data_d, data_buf, 0));
+
+#if defined(EK_USE_VCALL_PREPARE)
+        VCallDataRecord *rec = (VCallDataRecord *)
+            jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned
+                                                    : AllocType::Host,
+                        sizeof(VCallDataRecord) * vcall->data_map.size());
+
+        VCallDataRecord *p = rec;
+#endif
+
         for (auto kv : vcall->data_map) {
             uint32_t index = (uint32_t) kv.first, offset = kv.second;
             if (offset == (uint32_t) -1)
                 continue;
 
             const Variable *v = jitc_var(index);
+#if defined(EK_USE_VCALL_PREPARE)
+            bool is_pointer = (VarType) v->type == VarType::Pointer;
+            p->offset = offset;
+            p->size = is_pointer ? 0u : type_size[v->type];
+            p->src = is_pointer ? (const void *) v->value : v->data;
+            p++;
+#else
             if ((VarType) v->type == VarType::Pointer)
                 jitc_poke(backend, data_d + offset, &v->value, sizeof(void *));
             else
                 jitc_memcpy_async(backend, data_d + offset, v->data,
                                   type_size[v->type]);
+#endif
         }
+
+#if defined(EK_USE_VCALL_PREPARE)
+        std::sort(rec, p,
+                  [](const VCallDataRecord &a, const VCallDataRecord &b) {
+                      return a.offset < b.offset;
+                  });
+
+        jitc_vcall_prepare(backend, data_d, rec, (uint32_t)(p - rec));
+#endif
     } else {
         vcall->data_map.clear();
     }
