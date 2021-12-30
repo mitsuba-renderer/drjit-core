@@ -5,8 +5,8 @@
 #include "op.h"
 #include <string.h>
 
-void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
-                           size_t n_channels, int filter_mode) {
+void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
+                           int filter_mode, int wrap_mode) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_create(): invalid texture dimension!");
     else if (n_channels != 1 && n_channels != 2 && n_channels != 4)
@@ -43,11 +43,36 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
 
     CUDA_TEXTURE_DESC tex_desc;
     memset(&tex_desc, 0, sizeof(CUDA_TEXTURE_DESC));
-    tex_desc.filterMode = tex_desc.mipmapFilterMode =
-        (filter_mode == 1 ? CU_TR_FILTER_MODE_LINEAR : CU_TR_FILTER_MODE_POINT);
+    switch (filter_mode) {
+        case 0:
+            tex_desc.filterMode = tex_desc.mipmapFilterMode =
+                CU_TR_FILTER_MODE_POINT;
+            break;
+        case 1:
+            tex_desc.filterMode = tex_desc.mipmapFilterMode =
+                CU_TR_FILTER_MODE_LINEAR;
+            break;
+        default:
+            jitc_raise("jit_cuda_tex_create(): invalid filter mode!");
+            break;
+    }
     tex_desc.flags = CU_TRSF_NORMALIZED_COORDINATES;
-    for (int i = 0; i < 3; ++i)
-        tex_desc.addressMode[i] = CU_TR_ADDRESS_MODE_CLAMP;
+    for (size_t i = 0; i < 3; ++i) {
+        switch (wrap_mode) {
+            case 0:
+                tex_desc.addressMode[i] = CU_TR_ADDRESS_MODE_WRAP;
+                break;
+            case 1:
+                tex_desc.addressMode[i] = CU_TR_ADDRESS_MODE_CLAMP;
+                break;
+            case 2:
+                tex_desc.addressMode[i] = CU_TR_ADDRESS_MODE_MIRROR;
+                break;
+            default:
+                jitc_raise("jit_cuda_tex_create(): invalid wrap mode!");
+                break;
+        }
+    }
     tex_desc.maxAnisotropy = 1;
 
     CUDA_RESOURCE_VIEW_DESC view_desc;
