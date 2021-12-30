@@ -92,6 +92,8 @@ CUresult (*cuTexObjectGetResourceDesc)(CUDA_RESOURCE_DESC *,
 CUresult (*cuTexObjectDestroy)(CUtexObject) = nullptr;
 CUresult (*cuMemcpy3DAsync)(const CUDA_MEMCPY3D *, CUstream) = nullptr;
 CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream) = nullptr;
+CUresult (*cuMemAllocAsync)(CUdeviceptr *, size_t, CUstream) = nullptr;
+CUresult (*cuMemFreeAsync)(CUdeviceptr, CUstream) = nullptr;
 
 static void *jitc_cuda_handle = nullptr;
 #endif
@@ -177,7 +179,7 @@ bool jitc_cuda_init() {
         #define LOAD(name, ...)                                      \
             symbol = strlen(__VA_ARGS__ "") > 0                      \
                 ? (#name "_" __VA_ARGS__) : #name;                   \
-            name = decltype(name)(dlsym(jitc_cuda_handle, symbol));   \
+            name = decltype(name)(dlsym(jitc_cuda_handle, symbol));  \
             if (!name)                                               \
                 break;                                               \
             symbol = nullptr
@@ -250,6 +252,10 @@ bool jitc_cuda_init() {
         return false;
     }
 #endif
+
+    // These two functions are optional
+    cuMemAllocAsync = decltype(cuMemAllocAsync)(dlsym(jitc_cuda_handle, "cuMemAllocAsync"));
+    cuMemFreeAsync = decltype(cuMemFreeAsync)(dlsym(jitc_cuda_handle, "cuMemFreeAsync"));
 
     CUresult rv = cuInit(0);
     if (rv != CUDA_SUCCESS) {
@@ -578,6 +584,7 @@ void jitc_cuda_shutdown() {
     Z(cuPointerGetAttribute); Z(cuArrayCreate); Z(cuArray3DCreate);
     Z(cuArrayDestroy); Z(cuTexObjectCreate); Z(cuTexObjectGetResourceDesc);
     Z(cuTexObjectDestroy); Z(cuMemcpy2DAsync); Z(cuMemcpy3DAsync);
+    Z(cuMemAllocAsync); Z(cuMemFreeAsync);
 
 #if !defined(_WIN32)
     if (jitc_cuda_handle != RTLD_NEXT)

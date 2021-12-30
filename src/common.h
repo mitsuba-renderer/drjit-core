@@ -2,6 +2,7 @@
 
 #include <utility>
 #include <string>
+#include <errno.h>
 
 #if !defined(likely)
 #  if !defined(_MSC_VER)

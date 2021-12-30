@@ -128,6 +128,8 @@ extern CUresult (*cuStreamCreate)(CUstream *, unsigned int);
 extern CUresult (*cuStreamDestroy)(CUstream);
 extern CUresult (*cuStreamSynchronize)(CUstream);
 extern CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int);
+extern CUresult (*cuMemAllocAsync)(CUdeviceptr *, size_t, CUstream);
+extern CUresult (*cuMemFreeAsync)(CUdeviceptr, CUstream);
 #endif
 
 // Enoki API

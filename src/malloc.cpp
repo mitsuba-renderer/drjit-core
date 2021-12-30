@@ -153,6 +153,10 @@ void* jitc_malloc(AllocType type, size_t size) {
             scoped_set_context guard(ts->context);
             CUresult (*alloc) (CUdeviceptr *, size_t) = nullptr;
 
+            auto cuMemAllocAsync_ = [](CUdeviceptr *ptr_, size_t size_) {
+                return cuMemAllocAsync(ptr_, size_, thread_state_cuda->stream);
+            };
+
             auto cuMemAllocManaged_ = [](CUdeviceptr *ptr_, size_t size_) {
                 return cuMemAllocManaged(ptr_, size_, CU_MEM_ATTACH_GLOBAL);
             };
@@ -166,7 +170,7 @@ void* jitc_malloc(AllocType type, size_t size) {
 
             switch (type) {
                 case AllocType::HostPinned:        alloc = (decltype(alloc)) cuMemAllocHost; break;
-                case AllocType::Device:            alloc = cuMemAlloc; break;
+                case AllocType::Device:            alloc = cuMemAllocAsync ? cuMemAllocAsync_ : cuMemAlloc; break;
                 case AllocType::Managed:           alloc = cuMemAllocManaged_; break;
                 case AllocType::ManagedReadMostly: alloc = cuMemAllocManagedReadMostly_; break;
                 default:
@@ -500,6 +504,17 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
 
             switch ((AllocType) kv.first.type) {
                 case AllocType::Device:
+                    if (state.backends & (uint32_t) JitBackend::CUDA) {
+                        if (cuMemFreeAsync) {
+                            for (void *ptr : entries)
+                                cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, nullptr));
+                        } else {
+                            for (void *ptr : entries)
+                                cuda_check(cuMemFree((CUdeviceptr) ptr));
+                        }
+                    }
+                    break;
+
                 case AllocType::Managed:
                 case AllocType::ManagedReadMostly:
                     if (state.backends & (uint32_t) JitBackend::CUDA) {

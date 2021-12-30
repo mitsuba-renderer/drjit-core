@@ -313,6 +313,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     }
 }
 
+static ProfilerRegion profiler_region_backend_compile("jit_eval: compiling");
+static ProfilerRegion profiler_region_backend_load("jit_eval: loading");
+
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     uint64_t flags = 0;
 
@@ -344,6 +347,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                                          ts->backend, kernel_hash, kernel);
 
         if (!cache_hit) {
+            ProfilerPhase profiler(profiler_region_backend_compile);
             if (ts->backend == JitBackend::CUDA) {
                 if (!uses_optix) {
                     jitc_cuda_compile(buffer.get(), buffer.size(), kernel);
@@ -364,6 +368,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                 jitc_kernel_write(buffer.get(), (uint32_t) buffer.size(),
                                   ts->backend, kernel_hash, kernel);
         }
+
+        ProfilerPhase profiler(profiler_region_backend_load);
 
         if (ts->backend == JitBackend::LLVM) {
             jitc_llvm_disasm(kernel);
