@@ -813,7 +813,7 @@ void jitc_optix_check_impl(OptixResult errval, const char *file,
 
 void jit_optix_check_impl(int errval, const char *file, const int line) {
     if (errval) {
-        lock_guard guard(state.mutex);
+        lock_guard guard(state.lock);
         jitc_optix_check_impl(errval, file, line);
     }
 }

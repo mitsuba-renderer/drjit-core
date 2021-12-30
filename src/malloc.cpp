@@ -79,7 +79,7 @@ void* jitc_malloc(AllocType type, size_t size) {
         ts = thread_state(backend);
 
     /* Acquire lock protecting ts->release_chain contents and state.alloc_free */ {
-        lock_guard guard(state.malloc_mutex);
+        lock_guard guard(state.malloc_lock);
 
         if (type == AllocType::Device)
             ai.device = ts->device;
@@ -127,7 +127,7 @@ void* jitc_malloc(AllocType type, size_t size) {
         if (type == AllocType::Host || type == AllocType::HostAsync) {
             int rv;
             /* Temporarily release the main lock */ {
-                unlock_guard guard(state.mutex);
+                unlock_guard guard(state.lock);
 #if !defined(_WIN32)
                 rv = posix_memalign(&ptr, 64, ai.size);
 #else
@@ -138,7 +138,7 @@ void* jitc_malloc(AllocType type, size_t size) {
             if (rv == ENOMEM) {
                 jitc_flush_malloc_cache(true, true);
                 /* Temporarily release the main lock */ {
-                    unlock_guard guard(state.mutex);
+                    unlock_guard guard(state.lock);
 #if !defined(_WIN32)
                     rv = posix_memalign(&ptr, 64, ai.size);
 #else
@@ -176,7 +176,7 @@ void* jitc_malloc(AllocType type, size_t size) {
             CUresult ret;
 
             /* Temporarily release the main lock */ {
-                unlock_guard guard_2(state.mutex);
+                unlock_guard guard_2(state.lock);
                 ret = alloc((CUdeviceptr *) &ptr, ai.size);
             }
 
@@ -184,7 +184,7 @@ void* jitc_malloc(AllocType type, size_t size) {
                 jitc_flush_malloc_cache(true, true);
 
                 /* Temporarily release the main lock */ {
-                    unlock_guard guard_2(state.mutex);
+                    unlock_guard guard_2(state.lock);
                     ret = alloc((CUdeviceptr *) &ptr, ai.size);
                 }
 
@@ -234,7 +234,7 @@ void jitc_free(void *ptr) {
 
     if ((AllocType) ai.type == AllocType::Host) {
         // Acquire lock protecting 'state.alloc_free'
-        lock_guard guard(state.malloc_mutex);
+        lock_guard guard(state.malloc_lock);
         state.alloc_free[ai].push_back(ptr);
     } else {
         ThreadState *ts = (AllocType) ai.type == AllocType::HostAsync
@@ -242,7 +242,7 @@ void jitc_free(void *ptr) {
                               : thread_state_cuda;
         if (likely(ts)) {
             /* Acquire lock protecting 'ts->release_chain' contents */ {
-                lock_guard guard(state.malloc_mutex);
+                lock_guard guard(state.malloc_lock);
                 ReleaseChain *chain = ts->release_chain;
                 if (unlikely(!chain))
                     chain = ts->release_chain = new ReleaseChain();
@@ -255,7 +255,7 @@ void jitc_free(void *ptr) {
                asynchronously. The only thing we can do at this point is to
                flush all streams. */
             jitc_sync_all_devices();
-            lock_guard guard(state.malloc_mutex);
+            lock_guard guard(state.malloc_lock);
             state.alloc_free[ai].push_back(ptr);
         }
     }
@@ -280,7 +280,7 @@ void jitc_malloc_clear_statistics() {
 static void jitc_free_chain(void *ptr) {
     /* Acquire lock protecting ts->release_chain contents and
        state.alloc_free */
-    lock_guard guard(state.malloc_mutex);
+    lock_guard guard(state.malloc_lock);
     ReleaseChain *chain0 = (ReleaseChain *) ptr,
                  *chain1 = chain0->next;
 
@@ -479,7 +479,7 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
     AllocInfoMap alloc_free;
 
     /* Critical section */ {
-        lock_guard guard(state.malloc_mutex);
+        lock_guard guard(state.malloc_lock);
         alloc_free = std::move(state.alloc_free);
     }
 
@@ -490,7 +490,7 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
            trim_size [(int) AllocType::Count] = { 0 };
 
     /* Temporarily release the main lock */ {
-        unlock_guard guard(state.mutex);
+        unlock_guard guard(state.lock);
 
         for (auto& kv : alloc_free) {
             const std::vector<void *> &entries = kv.second;

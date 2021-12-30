@@ -539,10 +539,10 @@ using ExtraMap = tsl::robin_map<uint32_t, Extra, UInt32Hasher>;
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
     /// Must be held to access members
-    std::mutex mutex;
+    Lock lock;
 
     /// Must be held to access 'stream->release_chain' and 'state.alloc_free'
-    std::mutex malloc_mutex;
+    Lock malloc_lock;
 
     /// Stores the mapping from variable indices to variables
     VariableMap variables;
@@ -554,7 +554,7 @@ struct State {
     CSECache cse_cache;
 
     /// Must be held to execute jitc_eval()
-    std::mutex eval_mutex;
+    Lock eval_lock;
 
     /// Log level (stderr)
     LogLevel log_level_stderr = LogLevel::Info;
@@ -615,6 +615,18 @@ struct State {
     /// Return a pointer to the registry corresponding to the specified backend
     Registry *registry(JitBackend backend) {
         return backend == JitBackend::CUDA ? &registry_gpu : &registry_cpu;
+    }
+
+    State() {
+        lock_init(lock);
+        lock_init(malloc_lock);
+        lock_init(eval_lock);
+    }
+
+    ~State() {
+        lock_destroy(lock);
+        lock_destroy(malloc_lock);
+        lock_destroy(eval_lock);
     }
 };
 

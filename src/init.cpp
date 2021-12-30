@@ -489,7 +489,7 @@ void jitc_sync_thread(ThreadState *ts) {
 
 /// Wait for all computation on the current stream to finish
 void jitc_sync_thread() {
-    unlock_guard guard(state.mutex);
+    unlock_guard guard(state.lock);
     jitc_sync_thread(thread_state_cuda);
     jitc_sync_thread(thread_state_llvm);
 }
@@ -498,8 +498,8 @@ void jitc_sync_thread() {
 void jitc_sync_device() {
     ThreadState *ts = thread_state_cuda;
     if (ts) {
-        /* Release mutex while synchronizing */ {
-            unlock_guard guard(state.mutex);
+        /* Release lock while synchronizing */ {
+            unlock_guard guard(state.lock);
             scoped_set_context guard2(ts->context);
             cuda_check(cuCtxSynchronize());
         }
@@ -507,8 +507,8 @@ void jitc_sync_device() {
 
     if (thread_state_llvm) {
         std::vector<ThreadState *> tss = state.tss;
-        // Release mutex while synchronizing */
-        unlock_guard guard(state.mutex);
+        // Release lock while synchronizing */
+        unlock_guard guard(state.lock);
         for (ThreadState *ts_2 : tss) {
             if (ts_2->backend == JitBackend::LLVM)
                 jitc_sync_thread(ts_2);
@@ -519,7 +519,7 @@ void jitc_sync_device() {
 /// Wait for all computation on *all devices* to finish
 void jitc_sync_all_devices() {
     std::vector<ThreadState *> tss = state.tss;
-    unlock_guard guard(state.mutex);
+    unlock_guard guard(state.lock);
     for (ThreadState *ts : tss)
         jitc_sync_thread(ts);
 }

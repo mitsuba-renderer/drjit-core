@@ -196,7 +196,7 @@ void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size) {
     ThreadState *ts = thread_state(backend);
 
     // Temporarily release the lock while copying
-    unlock_guard guard(state.mutex);
+    unlock_guard guard(state.lock);
     if (backend == JitBackend::CUDA) {
         scoped_set_context guard_2(ts->context);
         cuda_check(cuStreamSynchronize(ts->stream));
@@ -926,7 +926,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                         size);
 
         if (likely(offsets)) {
-            unlock_guard guard_2(state.mutex);
+            unlock_guard guard_2(state.lock);
             cuda_check(cuEventSynchronize(ts->event));
         }
 

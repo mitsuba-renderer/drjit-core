@@ -126,7 +126,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
             if (extra.callback_internal) {
                 extra.callback(index, 1, extra.callback_data);
             } else {
-                unlock_guard guard(state.mutex);
+                unlock_guard guard(state.lock);
                 extra.callback(index, 1, extra.callback_data);
             }
         }

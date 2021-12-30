@@ -1,6 +1,7 @@
 #pragma once
 
-#include <mutex>
+#include <utility>
+#include <string>
 
 #if !defined(likely)
 #  if !defined(_MSC_VER)
@@ -16,20 +17,47 @@
 #  define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
 #endif
 
-using lock_guard = std::unique_lock<std::mutex>;
+#if defined(__linux__)
+#include <pthread.h>
+using Lock = pthread_spinlock_t;
 
-/// RAII helper for *unlocking* a mutex
+// Danger zone: the enoki-jit locks are held for an extremely short amount of
+// time and normally uncontended. Switching to a spin lock cuts tracing time 8-10%
+inline void lock_init(Lock &lock) { pthread_spin_init(&lock, PTHREAD_PROCESS_PRIVATE); }
+inline void lock_destroy(Lock &lock) { pthread_spin_destroy(&lock); }
+inline void lock_acquire(Lock &lock) { pthread_spin_lock(&lock); }
+inline void lock_release(Lock &lock) { pthread_spin_unlock(&lock); }
+#else
+#include <mutex>
+
+using Lock = std::mutex;
+inline void lock_init(Lock &) { }
+inline void lock_destroy(Lock &) { }
+inline void lock_acquire(Lock &lock) { lock.lock(); }
+inline void lock_release(Lock &lock) { lock.unlock(); }
+#endif
+
+/// RAII helper for scoped lock acquisition
+class lock_guard {
+public:
+    lock_guard(Lock &lock) : m_lock(lock) { lock_acquire(m_lock); }
+    ~lock_guard() { lock_release(m_lock); }
+
+    lock_guard(const lock_guard &) = delete;
+    lock_guard &operator=(const lock_guard &) = delete;
+private:
+    Lock &m_lock;
+};
+
+/// RAII helper for scoped lock release
 class unlock_guard {
 public:
-    unlock_guard(std::mutex &mutex) : m_mutex(mutex) {
-        m_mutex.unlock();
-    }
-
-    ~unlock_guard() { m_mutex.lock(); }
+    unlock_guard(Lock &lock) : m_lock(lock) { lock_release(m_lock); }
+    ~unlock_guard() { lock_acquire(m_lock); }
     unlock_guard(const unlock_guard &) = delete;
     unlock_guard &operator=(const unlock_guard &) = delete;
 private:
-    std::mutex &m_mutex;
+    Lock &m_lock;
 };
 
 namespace detail {

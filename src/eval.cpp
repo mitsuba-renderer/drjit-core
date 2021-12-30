@@ -370,13 +370,13 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         } else if (!uses_optix) {
             CUresult ret = (CUresult) 0;
             /* Unlock while synchronizing */ {
-                unlock_guard guard(state.mutex);
+                unlock_guard guard(state.lock);
                 ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
             }
             if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
                 jitc_flush_malloc_cache(true, true);
                 /* Unlock while synchronizing */ {
-                    unlock_guard guard(state.mutex);
+                    unlock_guard guard(state.lock);
                     ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
                 }
             }
@@ -562,12 +562,12 @@ void jitc_eval(ThreadState *ts) {
        places where it needs to temporarily release the main lock as part of
        its work, which is dangerous because another thread could use that
        opportunity to enter 'jitc_eval()' and cause corruption. The following
-       therefore temporarily unlocks 'state.mutex' and then locks a separate
-       mutex 'state.eval_mutex' specifically guarding these data structures */
+       therefore temporarily unlocks 'state.lock' and then locks a separate
+       lock 'state.eval_lock' specifically guarding these data structures */
 
-    state.mutex.unlock();
-    lock_guard guard(state.eval_mutex);
-    state.mutex.lock();
+    lock_release(state.lock);
+    lock_guard guard(state.eval_lock);
+    lock_acquire(state.lock);
 
     jitc_var_loop_simplify();
 
@@ -699,7 +699,7 @@ void jitc_eval(ThreadState *ts) {
                 if (extra.callback_internal) {
                     extra.callback(index, 0, extra.callback_data);
                 } else {
-                    unlock_guard guard_2(state.mutex);
+                    unlock_guard guard_2(state.lock);
                     extra.callback(index, 0, extra.callback_data);
                 }
                 v = jitc_var(index);
