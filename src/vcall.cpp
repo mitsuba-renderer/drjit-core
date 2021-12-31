@@ -1332,7 +1332,8 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
                                  uint32_t &data_offset, uint32_t inst_id,
                                  uint32_t index, bool &use_self) {
     uint64_t key = (uint64_t) index + (((uint64_t) inst_id) << 32);
-    if (data_map.find(key) != data_map.end())
+    auto it_and_status = data_map.emplace(key, (uint32_t) -1);
+    if (!it_and_status.second)
         return;
 
     const Variable *v = jitc_var(index);
@@ -1344,9 +1345,9 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
         return;
     } else if (v->data || (VarType) v->type == VarType::Pointer) {
         uint32_t tsize = type_size[v->type];
-        data_offset = (data_offset + tsize - 1) / tsize * tsize;
-        data_map.emplace(key, data_offset);
-        data_offset += tsize;
+        uint32_t offset = (data_offset + tsize - 1) / tsize * tsize;
+        it_and_status.first.value() = offset;
+        data_offset = offset + tsize;
 
         if (v->size != 1)
             jitc_raise(
@@ -1357,7 +1358,6 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
                 "virtual function calls",
                 inst_id, index, type_name[v->type], v->size);
     } else {
-        data_map.emplace(key, (uint32_t) -1);
         for (uint32_t i = 0; i < 4; ++i) {
             uint32_t index_2 = v->dep[i];
             if (!index_2)
@@ -1379,7 +1379,6 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
                                             inst_id, index_2, use_self);
             }
         }
-
     }
 }
 
