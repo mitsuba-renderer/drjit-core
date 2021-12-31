@@ -12,6 +12,19 @@
 #include "util.h"
 #include "profiler.h"
 
+#if !defined(_WIN32)
+#  include <sys/mman.h>
+#endif
+
+// Try to use huge pages for allocations > 2M (only on Linux)
+#if defined(__linux__)
+#  define ENOKI_HUGEPAGE 1
+#else
+#  define ENOKI_HUGEPAGE 0
+#endif
+
+#define ENOKI_HUGEPAGE_SIZE (2 * 1024 * 1024)
+
 static_assert(
     sizeof(tsl::detail_robin_hash::bucket_entry<AllocUsedMap::value_type, false>) == 24,
     "AllocUsedMap: incorrect bucket size, likely an issue with padding/packing!");
@@ -45,6 +58,56 @@ uint32_t round_pow2(uint32_t x) {
     x |= x >> 4;   x |= x >> 8;
     x |= x >> 16;
     return x + 1;
+}
+
+
+static void *aligned_malloc(size_t size) {
+    /* Temporarily release the main lock */
+    unlock_guard guard(state.lock);
+#if !defined(_WIN32)
+    // Use posix_memalign for small allocations and mmap() for big ones
+    if (size < ENOKI_HUGEPAGE_SIZE) {
+        void *ptr = nullptr;
+        (void) posix_memalign(&ptr, 64, size);
+        return ptr;
+    } else {
+        void *ptr;
+
+#if ENOKI_HUGEPAGE
+        // Attempt to allocate a 2M page directly
+        ptr = mmap(0, size, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANON | MAP_HUGETLB, -1, 0);
+        if (ptr != MAP_FAILED)
+            return ptr;
+#endif
+
+        // Allocate 4K pages
+        ptr = mmap(0, size, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANON, -1, 0);
+
+#if ENOKI_HUGEPAGE
+        // .. and advise the OS to convert to 2M pages
+        if (ptr != MAP_FAILED)
+            madvise(ptr, size, MADV_HUGEPAGE);
+#endif
+
+        return ptr;
+    }
+#else
+    return _aligned_malloc(size, 64);
+#endif
+}
+
+static void aligned_free(void *ptr, size_t size) {
+#if !defined(_WIN32)
+    if (size < ENOKI_HUGEPAGE_SIZE)
+        free(ptr);
+    else
+        munmap(ptr, size);
+#else
+    (void) size;
+    _aligned_free(ptr);
+#endif
 }
 
 void* jitc_malloc(AllocType type, size_t size) {
@@ -125,30 +188,11 @@ void* jitc_malloc(AllocType type, size_t size) {
     // 3. Looks like we will have to allocate some memory..
     if (unlikely(ptr == nullptr)) {
         if (type == AllocType::Host || type == AllocType::HostAsync) {
-            int rv;
-            /* Temporarily release the main lock */ {
-                unlock_guard guard(state.lock);
-#if !defined(_WIN32)
-                rv = posix_memalign(&ptr, 64, ai.size);
-#else
-                ptr = _aligned_malloc(ai.size, 64);
-                rv = ptr == nullptr ? ENOMEM : 0;
-#endif
-            }
-            if (rv == ENOMEM) {
+            ptr = aligned_malloc(ai.size);
+            if (!ptr) {
                 jitc_flush_malloc_cache(true, true);
-                /* Temporarily release the main lock */ {
-                    unlock_guard guard(state.lock);
-#if !defined(_WIN32)
-                    rv = posix_memalign(&ptr, 64, ai.size);
-#else
-                    ptr = _aligned_malloc(ai.size, 64);
-                    rv = ptr == nullptr ? ENOMEM : 0;
-#endif
-                }
+                ptr = aligned_malloc(ai.size);
             }
-            if (rv != 0)
-                ptr = nullptr;
         } else {
             scoped_set_context guard(ts->context);
             CUresult (*alloc) (CUdeviceptr *, size_t) = nullptr;
@@ -505,9 +549,11 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
             switch ((AllocType) kv.first.type) {
                 case AllocType::Device:
                     if (state.backends & (uint32_t) JitBackend::CUDA) {
-                        if (cuMemFreeAsync) {
+                        ThreadState *ts = thread_state_cuda;
+                        if (ts && cuMemFreeAsync) {
+                            scoped_set_context guard(ts->context);
                             for (void *ptr : entries)
-                                cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, nullptr));
+                                cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, ts->stream));
                         } else {
                             for (void *ptr : entries)
                                 cuda_check(cuMemFree((CUdeviceptr) ptr));
@@ -532,13 +578,8 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
 
                 case AllocType::Host:
                 case AllocType::HostAsync:
-#if !defined(_WIN32)
                     for (void *ptr : entries)
-                        free(ptr);
-#else
-                    for (void* ptr : entries)
-                        _aligned_free(ptr);
-#endif
+                        aligned_free(ptr, kv.first.size);
                     break;
 
                 default:
