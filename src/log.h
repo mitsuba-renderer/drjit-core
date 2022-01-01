@@ -16,7 +16,7 @@
 #define ENOKI_DISABLE_TRACE 1
 
 #if defined(ENOKI_DISABLE_TRACE)
-#  define jitc_trace(...)
+#  define jitc_trace(...) do { } while (0)
 #else
 #  define jitc_trace(...) jitc_log(Trace, __VA_ARGS__)
 #endif
