@@ -68,8 +68,8 @@ static void *aligned_malloc(size_t size) {
     // Use posix_memalign for small allocations and mmap() for big ones
     if (size < ENOKI_HUGEPAGE_SIZE) {
         void *ptr = nullptr;
-        (void) posix_memalign(&ptr, 64, size);
-        return ptr;
+        int rv = posix_memalign(&ptr, 64, size);
+        return rv == 0 ? ptr : nullptr;
     } else {
         void *ptr;
 
@@ -256,6 +256,7 @@ void* jitc_malloc(AllocType type, size_t size) {
 
     state.alloc_used.emplace(ptr, ai);
 
+    (void) descr; // don't warn if tracing is disabled
     if ((AllocType) ai.type == AllocType::Device)
         jitc_trace("jit_malloc(type=%s, device=%u, size=%zu): " ENOKI_PTR " (%s)",
                   alloc_type_name[ai.type], (uint32_t) ai.device, (size_t) ai.size,
