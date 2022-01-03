@@ -1452,9 +1452,6 @@ const char *jitc_var_whos() {
                state.kernel_launches, state.kernel_hits,
                state.kernel_soft_misses, state.kernel_hard_misses);
 
-    state.variable_index = 1;
-    state.variable_watermark = 0;
-
     var_buffer.put("  Memory allocator\n");
     var_buffer.put("  ================\n");
     for (int i = 0; i < (int) AllocType::Count; ++i)
