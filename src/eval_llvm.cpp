@@ -82,10 +82,10 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
 
             if (size != 1) {
                 if (vt != VarType::Bool) {
-                    buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p5, align %u, !alias.scope !1\n",
+                    buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p5, align %u, !alias.scope !1, !nontemporal !{i32 1}\n",
                                prefix, id, width, tname, width, tname, prefix, id, align);
                 } else {
-                    buffer.fmt("    %s%u_0 = load <%u x i8>, <%u x i8>* %s%u_p5, align %u, !alias.scope !1\n"
+                    buffer.fmt("    %s%u_0 = load <%u x i8>, <%u x i8>* %s%u_p5, align %u, !alias.scope !1, !nontemporal !{i32 1}\n"
                                "    %s%u = trunc <%u x i8> %s%u_0 to <%u x i1>\n",
                                prefix, id, width, width, prefix, id, align,
                                prefix, id, width, prefix, id, width);
@@ -115,11 +115,11 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
 
         if (v->param_type == ParamType::Output) {
             if (vt != VarType::Bool) {
-                buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p5, align %u, !noalias !1\n",
+                buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p5, align %u, !noalias !1, !nontemporal !{i32 1}\n",
                            width, tname, prefix, id, width, tname, prefix, id, align);
             } else {
                 buffer.fmt("    %s%u_e = zext <%u x i1> %s%u to <%u x i8>\n"
-                           "    store <%u x i8> %s%u_e, <%u x i8>* %s%u_p5, align %u, !noalias !1\n",
+                           "    store <%u x i8> %s%u_e, <%u x i8>* %s%u_p5, align %u, !noalias !1, !nontemporal !{i32 1}\n",
                            prefix, id, width, prefix, id, width,
                            width, prefix, id, width, prefix, id, align);
             }
