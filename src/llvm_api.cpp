@@ -215,11 +215,8 @@ static void jitc_llvm_mem_destroy(void * /* opaque */) { }
 
 /// Dump assembly representation
 void jitc_llvm_disasm(const Kernel &kernel) {
-#if defined(ENOKI_DISABLE_TRACE)
-    (void) kernel;
-#else
     if (std::max(state.log_level_stderr, state.log_level_callback) <
-        LogLevel::Trace)
+        LogLevel::Debug)
         return;
 
     for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i) {
@@ -229,7 +226,7 @@ void jitc_llvm_disasm(const Kernel &kernel) {
             continue;
         char ins_buf[256];
         bool last_nop = false;
-        jitc_trace("jit_llvm_disasm(): ========== %u ==========", i);
+        jitc_log(Debug, "jit_llvm_disasm(): ========== %u ==========", i);
         do {
             size_t offset      = ptr - (uint8_t *) kernel.data,
                    func_offset = ptr - func_base;
@@ -245,19 +242,18 @@ void jitc_llvm_disasm(const Kernel &kernel) {
                 ++start;
             if (strcmp(start, "nop") == 0) {
                 if (!last_nop)
-                    jitc_trace("jit_llvm_disasm(): ...");
+                    jitc_log(Debug, "jit_llvm_disasm(): ...");
                 last_nop = true;
                 ptr += size;
                 continue;
             }
             last_nop = false;
-            jitc_trace("jit_llvm_disasm(): 0x%08x   %s", (uint32_t) func_offset, start);
+            jitc_log(Debug, "jit_llvm_disasm(): 0x%08x   %s", (uint32_t) func_offset, start);
             if (strncmp(start, "ret", 3) == 0)
                 break;
             ptr += size;
         } while (true);
     }
-#endif
 }
 
 LLVMExecutionEngineRef jitc_llvm_engine_create(LLVMModuleRef mod_) {
