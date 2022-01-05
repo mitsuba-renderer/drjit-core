@@ -291,11 +291,19 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     }
 
     float codegen_time = timer();
-    jitc_log(
-        Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, ops=%u, jit=%s):",
-        (unsigned long long) kernel_hash.high64,
-        uses_optix ? "via OptiX, " : "", group.size, n_params_in,
-        n_params_out + n_side_effects, n_ops_total, jitc_time_string(codegen_time));
+
+    if (n_side_effects)
+        jitc_log(
+            Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, se=%u, ops=%u, jit=%s):",
+            (unsigned long long) kernel_hash.high64,
+            uses_optix ? "via OptiX, " : "", group.size, n_params_in,
+            n_params_out, n_side_effects, n_ops_total, jitc_time_string(codegen_time));
+    else
+        jitc_log(
+            Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, ops=%u, jit=%s):",
+            (unsigned long long) kernel_hash.high64,
+            uses_optix ? "via OptiX, " : "", group.size, n_params_in,
+            n_params_out, n_ops_total, jitc_time_string(codegen_time));
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         kernel_history_entry.backend = backend;
