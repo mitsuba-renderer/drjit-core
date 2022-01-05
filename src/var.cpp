@@ -965,7 +965,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
             void *host_ptr = jitc_malloc(AllocType::HostPinned, total_size);
             int rv;
             {
-                unlock_guard guard(state.lock);
+                unlock_guard guard2(state.lock);
                 memcpy(host_ptr, ptr, total_size);
                 rv = cuMemcpyAsync((CUdeviceptr) target_ptr,
                                    (CUdeviceptr) host_ptr, total_size,

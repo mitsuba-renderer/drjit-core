@@ -552,7 +552,7 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
                     if (state.backends & (uint32_t) JitBackend::CUDA) {
                         ThreadState *ts = thread_state_cuda;
                         if (ts && cuMemFreeAsync) {
-                            scoped_set_context guard(ts->context);
+                            scoped_set_context guard2(ts->context);
                             for (void *ptr : entries)
                                 cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, ts->stream));
                         } else {
