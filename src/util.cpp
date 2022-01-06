@@ -186,7 +186,7 @@ void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size_,
                 }
             },
 
-            size
+            (uint32_t) size
         );
     }
 }
@@ -223,7 +223,7 @@ void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t si
                 memcpy(dst, src, size);
             },
 
-            size
+            (uint32_t) size
         );
     }
 }
