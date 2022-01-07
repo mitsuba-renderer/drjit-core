@@ -868,22 +868,22 @@ void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     return jitc_cuda_tex_create(ndim, shape, n_channels, filter_mode, wrap_mode);
 }
 
-void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape, size_t n_channels,
+void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
                              const void *src_ptr, void *dst_texture) {
     lock_guard guard(state.lock);
-    jitc_cuda_tex_memcpy_d2t(ndim, shape, n_channels, src_ptr, dst_texture);
+    jitc_cuda_tex_memcpy_d2t(ndim, shape, src_ptr, dst_texture);
 }
 
-void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape, size_t n_channels,
-                         const void *src_texture, void *dst_ptr) {
+void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
+                             const void *src_texture, void *dst_ptr) {
     lock_guard guard(state.lock);
-    jitc_cuda_tex_memcpy_t2d(ndim, shape, n_channels, src_texture, dst_ptr);
+    jitc_cuda_tex_memcpy_t2d(ndim, shape, src_texture, dst_ptr);
 }
 
-void jit_cuda_tex_lookup(size_t ndim, uint32_t texture_id, const uint32_t *pos,
-                         uint32_t mask, uint32_t *out) {
+void jit_cuda_tex_lookup(size_t ndim, const void *texture_handle,
+                         const uint32_t *pos, uint32_t mask, uint32_t *out) {
     lock_guard guard(state.lock);
-    jitc_cuda_tex_lookup(ndim, texture_id, pos,mask,  out);
+    jitc_cuda_tex_lookup(ndim, texture_handle, pos, mask, out);
 }
 
 void jit_cuda_tex_destroy(void *texture) {
