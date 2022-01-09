@@ -206,6 +206,13 @@ bool jitc_optix_init() {
     if (jitc_optix_init_attempted)
         return jitc_optix_init_success;
 
+    if (jitc_cuda_version_major == 11 && jitc_cuda_version_minor == 5)
+        jitc_raise("jit_optix_init(): the driver of your graphics card is "
+                   "considered buggy and prone to miscompilation by Enoki-JIT "
+                   "(it explicitly does not support OptiX with CUDA 11.5, which "
+                   "corresponds to driver versions >= 495 and < 510). Please "
+                   "install a newer driver version (an older one is fine too).");
+
     jitc_optix_init_attempted = true;
     jitc_optix_handle = nullptr;
 
