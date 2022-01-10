@@ -1298,7 +1298,11 @@ enum class JitFlag : uint32_t {
     /// Enable constant propagation and elide unnecessary function arguments
     VCallOptimize = 64,
 
-    /// Inline calls if there is only a single instance?
+    /**
+     * \brief Inline calls if there is only a single instance? (off by default,
+     * inlining can make kernels so large that they actually run slower in
+     * CUDA/OptiX).
+     */
     VCallInline = 128,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
@@ -1325,8 +1329,7 @@ enum class JitFlag : uint32_t {
     Default = (uint32_t) ConstProp | (uint32_t) ValueNumbering |
               (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallDeduplicate |
-              (uint32_t) VCallOptimize | (uint32_t) VCallInline |
-              (uint32_t) ADOptimize
+              (uint32_t) VCallOptimize | (uint32_t) ADOptimize
 };
 #else
 enum JitFlag {
