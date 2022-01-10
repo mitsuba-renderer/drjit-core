@@ -302,40 +302,85 @@ const char *jitc_var_label(uint32_t index) {
     }
 }
 
+void jitc_var_set_label_unique(uint32_t index, const char *label) {
+    if (unlikely(index == 0))
+        return;
+
+    Variable *v = jitc_var(index);
+    size_t len = label ? strlen(label) : 0;
+
+    for (size_t i = 0; i < len; ++i) {
+        if (label[i] == '\n' || label[i] == '/')
+            jitc_raise("jit_var_set_label_unique(): invalid string (may not "
+                       "contain newline or '/' characters)");
+    }
+
+    v->extra = true;
+    Extra &extra = state.extra[index];
+    free(extra.label);
+
+    ThreadState *ts = thread_state(v->backend);
+    if (!ts->prefix) {
+        if (!label) {
+            extra.label = nullptr;
+        } else {
+            extra.label = (char *) malloc_check(len + 1);
+            memcpy(extra.label, label, len + 1);
+        }
+    } else {
+        size_t prefix_len = strlen(ts->prefix);
+        char *combined = (char *) malloc(prefix_len + len + 1);
+        memcpy(combined, ts->prefix, prefix_len);
+        if (len)
+            memcpy(combined + prefix_len, label, len);
+        combined[prefix_len + len] = '\0';
+        extra.label = combined;
+    }
+}
+
 /// Assign a descriptive label to a given variable
-void jitc_var_set_label(uint32_t index, const char *label) {
+uint32_t jitc_var_set_label(uint32_t index, const char *label) {
+    if (unlikely(index == 0))
+        return 0;
+
     if (strchr(label, '\n') || strchr(label, '/'))
         jitc_raise("jit_var_set_label(): invalid string (may not contain "
                    "newline or '/' characters)");
 
     Variable *v = jitc_var(index);
-    ThreadState *ts = thread_state(v->backend);
 
-    jitc_log(Debug, "jit_var_set_label(r%u): \"%s\"", index,
-            label ? label : "(null)");
-
-    v->extra = true;
-    Extra &extra = state.extra[index];
-
-    free(extra.label);
-    if (!ts->prefix) {
-        if (!label) {
-            extra.label = nullptr;
-        } else {
-            size_t len = strlen(label);
-            extra.label = (char *) malloc_check(len + 1);
-            memcpy(extra.label, label, len + 1);
-        }
+    uint32_t result;
+    if (v->ref_count_int == 0 && v->ref_count_ext == 1) {
+        // Nobody else holds a reference -- we can directly relabel this variable
+        jitc_var_inc_ref_ext(index, v);
+        result = index;
     } else {
-        size_t prefix_len = strlen(ts->prefix),
-               label_len = label ? strlen(label) : 0;
-        char *combined = (char *) malloc(prefix_len + label_len + 1);
-        memcpy(combined, ts->prefix, prefix_len);
-        if (label_len)
-            memcpy(combined + prefix_len, label, label_len);
-        combined[prefix_len + label_len] = '\0';
-        extra.label = combined;
+        Variable v2;
+        v2.type = v->type;
+        v2.backend = v->backend;
+        v2.placeholder = v->placeholder;
+        v2.size = v->size;
+        v2.literal = v->literal;
+
+        if (v2.literal) {
+            v2.value = v->value;
+        } else {
+            v2.dep[0] = index;
+            v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
+                                ? "mov.$t0 $r0, $r1"
+                                : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
+            jitc_var_inc_ref_int(index, v);
+        }
+
+        result = jitc_var_new(v2, true);
     }
+
+    jitc_var_set_label_unique(result, label);
+
+    jitc_log(Debug, "jit_var_set_label(r%u <- r%u): \"%s\"", result, index,
+             label ? label : "(null)");
+
+    return result;
 }
 
 // Print a literal variable to 'var_buffer' (for debug/GraphViz output)

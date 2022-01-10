@@ -317,13 +317,13 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
     char temp[128];
     snprintf(temp, sizeof(temp), "VCall: %s [call offsets]", name);
-    jitc_var_set_label(offset_buf, temp);
+    jitc_var_set_label_unique(offset_buf, temp);
 
     if (data_size) {
         data_buf = steal(
             jitc_var_mem_map(backend, VarType::UInt8, data_d, data_size, 1));
         snprintf(temp, sizeof(temp), "VCall: %s [call data]", name);
-        jitc_var_set_label(data_buf, temp);
+        jitc_var_set_label_unique(data_buf, temp);
 
         data_v = steal(jitc_var_new_pointer(backend, data_d, data_buf, 0));
 
@@ -555,9 +555,10 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             extra.callback_internal = true;
         }
 
+
         vcall->out.push_back(index_2);
         snprintf(temp, sizeof(temp), "VCall: %s [out %u]", name, i);
-        jitc_var_set_label(index_2, temp);
+        jitc_var_set_label_unique(index_2, temp);
         out[i] = index_2;
     }
 
@@ -643,7 +644,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     };
 
     snprintf(temp, sizeof(temp), "VCall: %s", name);
-    jitc_var_set_label(vcall_v, temp);
+    jitc_var_set_label_unique(vcall_v, temp);
 
     Ref se_v;
     if (se_count) {
@@ -654,7 +655,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, &vcall_id));
         snprintf(temp, sizeof(temp), "VCall: %s [side effects]", name);
         jitc_var(se_v)->placeholder = placeholder;
-        jitc_var_set_label(se_v, temp);
+        jitc_var_set_label_unique(se_v, temp);
     }
 
     vcall_v.reset();

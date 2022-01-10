@@ -1207,7 +1207,7 @@ jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
  * The label is shown in the output of \ref jit_var_whos() and \ref
  * jit_var_graphviz()
  */
-extern JIT_EXPORT void jit_var_set_label(uint32_t index, const char *label);
+extern JIT_EXPORT uint32_t jit_var_set_label(uint32_t index, const char *label);
 
 /// Query the descriptive label associated with a given variable
 extern JIT_EXPORT const char *jit_var_label(uint32_t index);

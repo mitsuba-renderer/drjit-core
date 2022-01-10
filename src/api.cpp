@@ -508,11 +508,9 @@ const char *jit_var_label(uint32_t index) {
     return jitc_var_label(index);
 }
 
-void jit_var_set_label(uint32_t index, const char *label) {
-    if (index == 0)
-        return;
+uint32_t jit_var_set_label(uint32_t index, const char *label) {
     lock_guard guard(state.lock);
-    jitc_var_set_label(index, label);
+    return jitc_var_set_label(index, label);
 }
 
 void jit_var_set_callback(uint32_t index,
