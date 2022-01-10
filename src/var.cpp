@@ -349,6 +349,13 @@ uint32_t jitc_var_set_label(uint32_t index, const char *label) {
 
     Variable *v = jitc_var(index);
 
+    if (v->ref_count_se) {
+        jitc_eval(thread_state(v->backend));
+        v = jitc_var(index);
+        if (v->ref_count_se)
+            jitc_raise("jit_var_set_label(): variable remains dirty following evaluation!");
+    }
+
     uint32_t result;
     if (v->ref_count_int == 0 && v->ref_count_ext == 1) {
         // Nobody else holds a reference -- we can directly relabel this variable
@@ -1093,6 +1100,14 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     jitc_check_size("jit_var_resize", size);
 
     Variable *v = jitc_var(index);
+
+    if (v->ref_count_se) {
+        jitc_eval(thread_state(v->backend));
+        v = jitc_var(index);
+        if (v->ref_count_se)
+            jitc_raise("jit_var_resize(): variable remains dirty following evaluation!");
+    }
+
     if (v->size == size) {
         jitc_var_inc_ref_ext(index, v);
         return index; // Nothing to do
@@ -1101,7 +1116,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     }
 
     uint32_t result;
-    if (!v->data && v->ref_count_int == 0 && v->ref_count_ext == 1 && v->ref_count_se == 0) {
+    if (!v->data && v->ref_count_int == 0 && v->ref_count_ext == 1) {
         // Nobody else holds a reference -- we can directly resize this variable
         jitc_var_inc_ref_ext(index, v);
         jitc_cse_drop(index, v);
