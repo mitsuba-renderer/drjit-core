@@ -19,7 +19,7 @@ extern "C" {
  * Allocates memory for a texture of size \c ndim with a total of
  * <tt>shape[0] x ... x shape[ndim - 1]</tt> texels/voxels, where each
  * voxel is furthermore composed of \c n_channels color components.
- * The value of the \c n_channels argument must equal 1, 2, or 4.
+ * The value of the \c n_channels argument must be greater or equal than 1.
  * The function returns an opaque texture handle.
  *
  * The \c filter_mode parameter supports the following options:
@@ -52,9 +52,8 @@ extern JIT_EXPORT void *jit_cuda_tex_create(size_t ndim, const size_t *shape,
  * asynchronously.
  */
 extern JIT_EXPORT void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
-                                               size_t n_channels,
                                                const void *src_ptr,
-                                               void *dst_texture);
+                                               void *dst_texture_handle);
 
 /**
  * \brief Copy from texture to device memory
@@ -62,8 +61,7 @@ extern JIT_EXPORT void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
  * Implements the reverse of \ref jit_cuda_tex_memcpy_d2t
  */
 extern JIT_EXPORT void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
-                                               size_t n_channels,
-                                               const void *src_texture,
+                                               const void *src_texture_handle,
                                                void *dst_ptr);
 
 /**
@@ -72,25 +70,24 @@ extern JIT_EXPORT void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
  * \param ndim
  *     Dimensionality of the texture
  *
- * \param texture_id
- *     Index of a 64 bit variable encapsulating the texture handle value
+ * \param handle
+ *     Texture handle (returned value of \ref jit_cuda_tex_create())
  *
  * \param pos
  *     Pointer to a list of <tt>ndim - 1 </tt> float32 variable indices
  *     encoding the position of the texture lookup
  *
  * \param out
- *     Pointer to an array of size 4, which will receive the lookup result.
- *     Note that 4 values are always returned even if the texture does not have
- *     4 channels---they should be ignored in this case (though note that the
- *     reference counts must still be decreased to avoid a variable leak).
+ *     Pointer to an array of size equal to the number of channels in the
+ *     texture, which will receive the lookup result.
  */
-extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim, uint32_t texture_id,
+extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
+                                           const void *texture_handle,
                                            const uint32_t *pos, uint32_t mask,
                                            uint32_t *out);
 
 /// Destroys the provided texture handle
-extern JIT_EXPORT void jit_cuda_tex_destroy(void *texture);
+extern JIT_EXPORT void jit_cuda_tex_destroy(void *texture_handle);
 
 #if defined(__cplusplus)
 }
