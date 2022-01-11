@@ -1052,18 +1052,18 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
 
     Variable *v = jitc_var(index);
 
-    if (v->ref_count_se) {
-        jitc_eval(thread_state(v->backend));
-        v = jitc_var(index);
-        if (v->ref_count_se)
-            jitc_raise("jit_var_resize(): variable remains dirty following evaluation!");
-    }
-
     if (v->size == size) {
         jitc_var_inc_ref_ext(index, v);
         return index; // Nothing to do
     } else if (v->size != 1 && !v->literal) {
         jitc_raise("jit_var_resize(): variable %u must be scalar or literal!", index);
+    }
+
+    if (v->ref_count_se) {
+        jitc_eval(thread_state(v->backend));
+        v = jitc_var(index);
+        if (v->ref_count_se)
+            jitc_raise("jit_var_resize(): variable remains dirty following evaluation!");
     }
 
     uint32_t result;
