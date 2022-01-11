@@ -705,9 +705,9 @@ extern JIT_EXPORT uint32_t jit_var_new_counter(JIT_ENUM JitBackend backend,
  * addition would be encoded as follows:
  *
  * \code
- * uint32_t result = jit_var_new_stmt_2(1, VarType::Int32,
- *                                       "add.$t0 $r0, $r1, $r2",
- *                                       op1, op2);
+ * uint32_t result = jit_var_new_stmt_2(JitBackend:::CUDA, VarType::Int32,
+ *                                      "add.$t0 $r0, $r1, $r2",
+ *                                      op1, op2);
  * \endcode
  *
  * \param backend
