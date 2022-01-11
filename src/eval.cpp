@@ -657,8 +657,20 @@ void jitc_eval(ThreadState *ts) {
 
     scoped_set_context_maybe guard2(ts->context);
     scheduled_tasks.clear();
+
+    const char *ek_raise_id = getenv("ENOKI_KERNEL_RAISE");
+    bool ek_raise = false;
+
     for (ScheduledGroup &group : schedule_groups) {
         jitc_assemble(ts, group);
+
+        if (ek_raise_id) {
+            char tmp[17];
+            snprintf(tmp, sizeof(tmp), "%016llx",
+                     (unsigned long long) kernel_hash.high64);
+            if (strncmp(ek_raise_id, tmp, 16) == 0)
+                ek_raise = true;
+        }
 
         scheduled_tasks.push_back(jitc_run(ts, group));
 
@@ -743,6 +755,11 @@ void jitc_eval(ThreadState *ts) {
 
     jitc_free_flush(ts);
     jitc_log(Info, "jit_eval(): done.");
+
+    if (ek_raise) {
+        jitc_log(Warn, "jit_eval(): raising an exception as requested.");
+        jitc_raise("jit_eval(): raising an exception as requested.");
+    }
 }
 
 static ProfilerRegion profiler_region_assemble_func("jit_assemble_func");

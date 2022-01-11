@@ -302,7 +302,7 @@ const char *jitc_var_label(uint32_t index) {
     }
 }
 
-void jitc_var_set_label_unique(uint32_t index, const char *label) {
+void jitc_var_set_label(uint32_t index, const char *label) {
     if (unlikely(index == 0))
         return;
 
@@ -311,7 +311,7 @@ void jitc_var_set_label_unique(uint32_t index, const char *label) {
 
     for (size_t i = 0; i < len; ++i) {
         if (label[i] == '\n' || label[i] == '/')
-            jitc_raise("jit_var_set_label_unique(): invalid string (may not "
+            jitc_raise("jit_var_set_label(): invalid string (may not "
                        "contain newline or '/' characters)");
     }
 
@@ -336,58 +336,9 @@ void jitc_var_set_label_unique(uint32_t index, const char *label) {
         combined[prefix_len + len] = '\0';
         extra.label = combined;
     }
-}
 
-/// Assign a descriptive label to a given variable
-uint32_t jitc_var_set_label(uint32_t index, const char *label) {
-    if (unlikely(index == 0))
-        return 0;
-
-    if (strchr(label, '\n') || strchr(label, '/'))
-        jitc_raise("jit_var_set_label(): invalid string (may not contain "
-                   "newline or '/' characters)");
-
-    Variable *v = jitc_var(index);
-
-    if (v->ref_count_se) {
-        jitc_eval(thread_state(v->backend));
-        v = jitc_var(index);
-        if (v->ref_count_se)
-            jitc_raise("jit_var_set_label(): variable remains dirty following evaluation!");
-    }
-
-    uint32_t result;
-    if (v->ref_count_int == 0 && v->ref_count_ext == 1) {
-        // Nobody else holds a reference -- we can directly relabel this variable
-        jitc_var_inc_ref_ext(index, v);
-        result = index;
-    } else {
-        Variable v2;
-        v2.type = v->type;
-        v2.backend = v->backend;
-        v2.placeholder = v->placeholder;
-        v2.size = v->size;
-        v2.literal = v->literal;
-
-        if (v2.literal) {
-            v2.value = v->value;
-        } else {
-            v2.dep[0] = index;
-            v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
-                                ? "mov.$t0 $r0, $r1"
-                                : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
-            jitc_var_inc_ref_int(index, v);
-        }
-
-        result = jitc_var_new(v2, true);
-    }
-
-    jitc_var_set_label_unique(result, label);
-
-    jitc_log(Debug, "jit_var_set_label(r%u <- r%u): \"%s\"", result, index,
+    jitc_log(Debug, "jit_var_set_label(r%u): \"%s\"", index,
              label ? label : "(null)");
-
-    return result;
 }
 
 // Print a literal variable to 'var_buffer' (for debug/GraphViz output)

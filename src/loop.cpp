@@ -324,12 +324,12 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
         snprintf(temp, sizeof(temp), "%s%sLoop (%s) [in %zu, body]",
                  label ? label : "", label ? ", " : "", name, i);
-        jitc_var_set_label_unique(loop->in_body[i], temp);
+        jitc_var_set_label(loop->in_body[i], temp);
 
         snprintf(temp, sizeof(temp), "%s%sLoop (%s) [in %zu, cond]",
                  label ? label : "", label ? ", " : "", name, i);
 
-        jitc_var_set_label_unique(loop->in_cond[i], temp);
+        jitc_var_set_label(loop->in_cond[i], temp);
     }
 
     {
@@ -340,7 +340,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         e.assemble = jitc_var_loop_assemble_init;
 
         snprintf(temp, sizeof(temp), "Loop (%s) [init]", name);
-        jitc_var_set_label_unique(loop_init, temp);
+        jitc_var_set_label(loop_init, temp);
     }
 
     {
@@ -352,7 +352,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         e.callback_data = loop.get();
 
         snprintf(temp, sizeof(temp), "Loop (%s) [cond]", name);
-        jitc_var_set_label_unique(loop_cond, temp);
+        jitc_var_set_label(loop_cond, temp);
     }
 
     // =====================================================
@@ -397,7 +397,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         }
 
         snprintf(temp, sizeof(temp), "Loop (%s) [end]", name);
-        jitc_var_set_label_unique(loop_end, temp);
+        jitc_var_set_label(loop_end, temp);
     }
 
     // =====================================================
@@ -431,7 +431,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         e.dep = dep;
 
         snprintf(temp, sizeof(temp), "Loop (%s) [side effects]", name);
-        jitc_var_set_label_unique(loop_se, temp);
+        jitc_var_set_label(loop_se, temp);
         loop->se = loop_se;
     }
 
@@ -475,7 +475,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
             const char *label = jitc_var_label(loop->in[i]);
             snprintf(temp, sizeof(temp), "%s%sLoop (%s) [out %zu]",
                      label ? label : "", label ? ", " : "", name, i);
-            jitc_var_set_label_unique(index_2, temp);
+            jitc_var_set_label(index_2, temp);
 
             if (optimize) {
                 Extra &e = state.extra[index_2];

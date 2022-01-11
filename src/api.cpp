@@ -509,8 +509,25 @@ const char *jit_var_label(uint32_t index) {
 }
 
 uint32_t jit_var_set_label(uint32_t index, const char *label) {
+    if (unlikely(index == 0))
+        return 0;
+
     lock_guard guard(state.lock);
-    return jitc_var_set_label(index, label);
+
+    Variable *v = jitc_var(index);
+
+    // Replicate literals when being labeled
+    uint32_t result;
+    if (v->literal && (v->ref_count_int != 0 || v->ref_count_ext != 1)) {
+        result = jitc_var_new(*v, true);
+    } else {
+        jitc_var_inc_ref_ext(index, v);
+        result = index;
+    }
+
+    jitc_var_set_label(result, label);
+
+    return result;
 }
 
 void jit_var_set_callback(uint32_t index,
