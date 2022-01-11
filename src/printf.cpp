@@ -88,7 +88,10 @@ uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
     };
     e.callback_internal = true;
     uint32_t result = printf_var.release();
-    ts->side_effects.push_back(result);
+
+    jitc_log(Debug, "jit_var_printf(void r%u, fmt=\"%s\")", result, fmt);
+    jitc_var_mark_side_effect(result);
+
     return result;
 }
 
