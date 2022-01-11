@@ -238,6 +238,26 @@ void jitc_shutdown(int light) {
 
     state.kernel_history.clear();
 
+    // CUDA: Try to already free some memory asynchronously (faster)
+    if (thread_state_cuda && cuMemFreeAsync) {
+        ThreadState *ts = thread_state_cuda;
+        scoped_set_context guard2(ts->context);
+
+        lock_guard guard(state.malloc_lock);
+        for (auto it = state.alloc_free.begin(); it != state.alloc_free.end(); ++it) {
+            AllocInfo ai = it->first;
+            if ((AllocType) ai.type != AllocType::Device)
+                continue;
+
+            std::vector<void *> &entries = it.value();
+            state.alloc_allocated[int(AllocType::Device)] -= ai.size * entries.size();
+
+            for (void *ptr : entries)
+                cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, ts->stream));
+            entries.clear();
+        }
+    }
+
     if (!state.tss.empty()) {
         jitc_log(Info, "jit_shutdown(): releasing %zu thread state%s ..",
                 state.tss.size(), state.tss.size() > 1 ? "s" : "");

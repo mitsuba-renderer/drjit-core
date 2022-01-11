@@ -222,7 +222,6 @@ void* jitc_malloc(AllocType type, size_t size) {
             }
 
             CUresult ret;
-
             /* Temporarily release the main lock */ {
                 unlock_guard guard_2(state.lock);
                 ret = alloc((CUdeviceptr *) &ptr, ai.size);
@@ -271,6 +270,8 @@ void* jitc_malloc(AllocType type, size_t size) {
     return ptr;
 }
 
+static uint32_t free_ctr = 0;
+
 void jitc_free(void *ptr) {
     if (ptr == nullptr)
         return;
@@ -296,6 +297,11 @@ void jitc_free(void *ptr) {
                 if (unlikely(!chain))
                     chain = ts->release_chain = new ReleaseChain();
                 chain->entries[ai].push_back(ptr);
+            }
+
+            if (free_ctr++ > 64) {
+                jitc_free_flush(ts);
+                free_ctr = 0;
             }
         } else {
             /* This is bad -- freeing a pointer outside of an active
