@@ -435,8 +435,6 @@ TEST_BOTH(04_devirtualize) {
             p1 = ek::opaque<Float>(12);
             p2 = ek::opaque<Float>(34);
         }
-        jit_var_set_label(p1.index(), "p1");
-        jit_var_set_label(p2.index(), "p2");
 
         for (uint32_t i = 0; i < 2; ++i) {
             jit_set_flag(JitFlag::VCallOptimize, i);

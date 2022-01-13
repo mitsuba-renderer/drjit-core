@@ -193,10 +193,10 @@ TEST_BOTH(06_garbage_collection) {
         UInt32 v4 = opaque<UInt32>(4);
         uint32_t v1i = v1.index(), v2i = v2.index(),
                  v3i = v3.index(), v4i = v4.index();
-        jit_var_set_label(v1i, "v1");
-        jit_var_set_label(v2i, "v2");
-        jit_var_set_label(v3i, "v3");
-        jit_var_set_label(v4i, "v4");
+        // jit_var_set_label(v1i, "v1");
+        // jit_var_set_label(v2i, "v2");
+        // jit_var_set_label(v3i, "v3");
+        // jit_var_set_label(v4i, "v4");
 
         Loop<Mask> loop("MyLoop", j, v1, v2, v3, v4);
         while (loop(j < 4)) {
@@ -240,8 +240,8 @@ TEST_BOTH(07_collatz) {
     // A more interesting nested loop
     auto collatz = [](const char *name, UInt32 value) -> UInt32 {
         UInt32 counter = 0;
-        jit_var_set_label(value.index(), "value");
-        jit_var_set_label(counter.index(), "counter");
+        // jit_var_set_label(value.index(), "value");
+        // jit_var_set_label(counter.index(), "counter");
 
         Loop<Mask> loop(name, value, counter);
         while (loop(neq(value, 1))) {

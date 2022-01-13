@@ -351,8 +351,10 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 		return jit_var_label(v.m_index);
 	}
 
-	friend void set_label(const JitArray &v, const char *label) {
-		jit_var_set_label(v.m_index, label);
+	friend void set_label(JitArray &v, const char *label) {
+		uint32_t index = jit_var_set_label(v.m_index, label);
+		jit_var_dec_ref_ext(v.m_index);
+		v.m_index = index;
 	}
 protected:
     uint32_t m_index = 0;
