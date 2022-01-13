@@ -519,7 +519,13 @@ uint32_t jit_var_set_label(uint32_t index, const char *label) {
     // Replicate literals when being labeled
     uint32_t result;
     if (v->literal && (v->ref_count_int != 0 || v->ref_count_ext != 1)) {
-        result = jitc_var_new(*v, true);
+        Variable v2;
+        memcpy(&v2.value, &v->value, sizeof(uint64_t));
+        v2.size = v->size;
+        v2.type = v->type;
+        v2.literal = 1;
+        v2.backend = v->backend;
+        result = jitc_var_new(v2, true);
     } else {
         jitc_var_inc_ref_ext(index, v);
         result = index;
