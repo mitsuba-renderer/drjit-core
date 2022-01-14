@@ -1005,7 +1005,7 @@ static void jitc_var_vcall_assemble_cuda(
             continue;
 
         const Variable *v2 = &it2.value();
-        if (v2->reg_index == 0)
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
             continue;
 
         const char *tname = type_name_ptx[v2->type],
@@ -1030,7 +1030,7 @@ static void jitc_var_vcall_assemble_cuda(
         const Variable *v2 = &it->second;
         if ((VarType) v2->type != VarType::Bool)
             continue;
-        if (v2->reg_index == 0)
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
             continue;
 
         // Special handling for predicates
@@ -1047,7 +1047,7 @@ static void jitc_var_vcall_assemble_cuda(
         if (it == state.variables.end())
             continue;
         const Variable *v2 = &it->second;
-        if (v2->reg_index == 0)
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
             continue;
 
         buffer.put("        ");
@@ -1303,7 +1303,7 @@ static void jitc_var_vcall_assemble_llvm(
 
         uint32_t vti = v2->type;
         const VarType vt = (VarType) vti;
-        if (v2->reg_index == 0)
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
             continue;
 
         const char *prefix = type_prefix[vti],
