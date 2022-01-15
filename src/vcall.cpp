@@ -431,7 +431,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
             /* Should this output value be devirtualized? We want to avoid
                completely removing the virtual function call.. */
-            if (!(n_inst > 1 || vcall_inline || jitc_var(out_nested[j])->literal))
+            if (n_inst == 1 && !vcall_inline && !jitc_var(out_nested[j])->literal)
                 continue;
 
             uint32_t dep[2] = { out_nested[j], mask };

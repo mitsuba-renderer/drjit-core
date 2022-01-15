@@ -1736,7 +1736,7 @@ extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
  * subexpression elimination
  *
  * Enoki-JIT implements a very basic approximation of common subexpression
- * elimination based on global value numbering (GVN): an attempt to create a
+ * elimination based on local value numbering (LVN): an attempt to create a
  * variable, whose statement and dependencies match a previously created
  * variable will sidestep creation and instead reuse the old variable via
  * reference counting. However, this approach of collapsing variables does not
