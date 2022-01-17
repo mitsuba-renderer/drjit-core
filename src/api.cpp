@@ -896,6 +896,13 @@ void jit_cuda_tex_lookup(size_t ndim, const void *texture_handle,
     jitc_cuda_tex_lookup(ndim, texture_handle, pos, mask, out);
 }
 
+void jit_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
+                               const uint32_t *pos, uint32_t mask,
+                               uint32_t *out) {
+    lock_guard guard(state.lock);
+    jitc_cuda_tex_bilerp_fetch(ndim, texture_handle, pos, mask, out);
+}
+
 void jit_cuda_tex_destroy(void *texture) {
     lock_guard guard(state.lock);
     jitc_cuda_tex_destroy(texture);
