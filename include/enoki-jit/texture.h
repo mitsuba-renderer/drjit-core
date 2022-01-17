@@ -86,6 +86,33 @@ extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
                                            const uint32_t *pos, uint32_t mask,
                                            uint32_t *out);
 
+/**
+ * \brief Performs a CUDA texture fetch of the 4 texels that are used in the
+ * biliniear interpolation of a texture lookup
+ *
+ * This function exclusively operates on two-dimensional textures. A lower or
+ * higher number of dimensions will raise an error.
+ *
+ * \param ndim
+ *     Dimensionality of the texture
+ *
+ * \param handle
+ *     Texture handle (returned value of \ref jit_cuda_tex_create())
+ *
+ * \param pos
+ *     Pointer to an array of two float32 variable indices encoding the position
+ *     of the texture lookup
+ *
+ * \param out
+ *     Pointer to an array of size <tt>4 * n_channels<\tt>, which will receive
+ *     the texel indices. Starting at the lower left corner, the texels are
+ *     written to the array in counter-clockwise order.
+ */
+extern JIT_EXPORT void jit_cuda_tex_bilerp_fetch(size_t ndim,
+                                                 const void *texture_handle,
+                                                 const uint32_t *pos,
+                                                 uint32_t mask, uint32_t *out);
+
 /// Destroys the provided texture handle
 extern JIT_EXPORT void jit_cuda_tex_destroy(void *texture_handle);
 

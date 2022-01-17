@@ -424,12 +424,12 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
         }
     }
 
-    EnokiCudaTexture *texture = (EnokiCudaTexture *) texture_handle;
+    EnokiCudaTexture &texture = *((EnokiCudaTexture *) texture_handle);
 
-    for (size_t tex = 0; tex < texture->n_textures; ++tex) {
+    for (size_t tex = 0; tex < texture.n_textures; ++tex) {
         uint32_t dep[3] = {
             valid,
-            texture->indices[tex],
+            texture.indices[tex],
             pos[0]
         };
 
@@ -447,7 +447,7 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
             jitc_var_inc_ref_ext(dep[2]);
         }
 
-        const char *stmt_2[4] = {
+        const char *stmt_2[3] = {
             ".reg.v4.f32 $r0$n"
             "@$r1 tex.1d.v4.f32.f32 $r0, [$r2, {$r3}]$n"
             "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
@@ -472,13 +472,103 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
             "mov.f32 $r0, $r1.a"
         };
 
-        for (size_t ch = 0; ch < texture->channels(tex); ++ch) {
+        for (size_t ch = 0; ch < texture.channels(tex); ++ch) {
             uint32_t lookup_result_index = jitc_var_new_stmt(
                 JitBackend::CUDA, VarType::Float32, stmt_3[ch], 1, 1, &lookup);
             out[tex * 4 + ch] = lookup_result_index;
         }
 
         jitc_var_dec_ref_ext(lookup);
+    }
+}
+
+void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
+                                const uint32_t *pos, uint32_t mask,
+                                uint32_t *out) {
+    if (ndim != 2)
+        jitc_raise("jitc_cuda_tex_bilerp_fetch(): invalid texture dimension, "
+                   "only 2D textures are supported!");
+
+    // Validate input types, determine size of the operation
+    uint32_t size = 0;
+    for (size_t i = 0; i <= ndim; ++i) {
+        uint32_t index = i < ndim ? pos[i] : mask;
+        VarType ref = i < ndim ? VarType::Float32 : VarType::Bool;
+        const Variable *v = jitc_var(index);
+        if ((VarType) v->type != ref)
+            jitc_raise("jitc_cuda_tex_bilerp_fetch(): type mismatch for arg. "
+                       "%zu (got %s, expected %s)",
+                       i, type_name[v->type], type_name[(int) ref]);
+        size = std::max(size, v->size);
+    }
+
+    // Potentially apply any masks on the mask stack
+    Ref valid = borrow(mask);
+    {
+        Ref mask_top = steal(jitc_var_mask_peek(JitBackend::CUDA));
+        uint32_t size_top = jitc_var(mask_top)->size;
+
+        // If the mask on the mask stack is compatible, merge it
+        if (size_top == size || size_top == 1 || size == 1) {
+            uint32_t dep[2] = { mask, mask_top };
+            valid = steal(jitc_var_new_op(JitOp::And, 2, dep));
+        }
+    }
+
+    EnokiCudaTexture &texture = *((EnokiCudaTexture *) texture_handle);
+
+    for (size_t tex = 0; tex < texture.n_textures; ++tex) {
+        uint32_t dep[3] = {
+            valid,
+            texture.indices[tex],
+            pos[0]
+        };
+
+        const char *stmt_1 = ".reg.v2.f32 $r0$n"
+                             "mov.v2.f32 $r0, { $r1, $r2 }";
+        dep[2] = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, stmt_1, 1,
+                                   (unsigned int) ndim, pos);
+
+        const char *stmt_2[4] = {
+            ".reg.v4.f32 $r0$n"
+            "@$r1 tld4.r.2d.v4.f32.f32 $r0, [$r2, $r3]$n"
+            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+
+            ".reg.v4.f32 $r0$n"
+            "@$r1 tld4.g.2d.v4.f32.f32 $r0, [$r2, $r3]$n"
+            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+
+            ".reg.v4.f32 $r0$n"
+            "@$r1 tld4.b.2d.v4.f32.f32 $r0, [$r2, $r3]$n"
+            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+
+            ".reg.v4.f32 $r0$n"
+            "@$r1 tld4.a.2d.v4.f32.f32 $r0, [$r2, $r3]$n"
+            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+        };
+
+        const char *stmt_3[4] = {
+            "mov.f32 $r0, $r1.x",
+            "mov.f32 $r0, $r1.y",
+            "mov.f32 $r0, $r1.z",
+            "mov.f32 $r0, $r1.w"
+        };
+
+        for (size_t ch = 0; ch < texture.channels(tex); ++ch) {
+            uint32_t fetch_channel = jitc_var_new_stmt(
+                JitBackend::CUDA, VarType::Void, stmt_2[ch], 1, 3, dep);
+
+            for (size_t i = 0; i < 4; ++i) {
+                uint32_t result_index =
+                    jitc_var_new_stmt(JitBackend::CUDA, VarType::Float32,
+                                      stmt_3[i], 1, 1, &fetch_channel);
+                out[(i * texture.n_channels) + (tex * 4 + ch)] = result_index;
+            }
+
+            jitc_var_dec_ref_ext(fetch_channel);
+        }
+
+        jitc_var_dec_ref_ext(dep[2]);
     }
 }
 
