@@ -91,15 +91,17 @@ uint32_t jit_cse_scope(JitBackend backend) {
     return thread_state(backend)->cse_scope;
 }
 
-void jit_set_cse_scope(JitBackend backend, uint32_t domain) {
+void jit_set_cse_scope(JitBackend backend, uint32_t scope_id) {
     lock_guard guard(state.lock);
-    thread_state(backend)->cse_scope = domain;
+    jitc_trace("jit_set_cse_scope(%u)", scope_id);
+    thread_state(backend)->cse_scope = scope_id;
 }
 
 void jit_new_cse_scope(JitBackend backend) {
     lock_guard guard(state.lock);
     ThreadState *ts = thread_state(backend);
     ts->cse_scope = ++state.cse_scope_ctr;
+    jitc_trace("jit_new_cse_scope(%u)", ts->cse_scope);
 }
 
 void jit_set_log_level_stderr(LogLevel level) {

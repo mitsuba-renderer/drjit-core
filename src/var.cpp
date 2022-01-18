@@ -402,8 +402,15 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
         do {
             index = state.variable_index++;
 
-            if (unlikely(index == 0)) // overflow
+            if (unlikely(index == 0)) { // overflow
+                jitc_fail(
+                    "Enoki-JIT has created more than 2^32 (4 billion) "
+                    "variables, which is currently the limit. Bug Wenzel to "
+                    "fix this (it will involve sorting scheduled variables by "
+                    "scope ID instead of variable ID and making the counter "
+                    "big enough that it will never overflow..).");
                 index = state.variable_index++;
+            }
 
             std::tie(var_it, var_inserted) =
                 state.variables.try_emplace(index, v);
