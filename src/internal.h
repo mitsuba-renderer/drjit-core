@@ -58,7 +58,7 @@ struct Variable {
     #  pragma GCC diagnostic pop
     #endif
 
-    // ================   References and reference counts   ================
+    // ===================   References, reference counts   ===================
 
     /// External reference count (by application using Enoki)
     uint64_t ref_count_ext : 24;
@@ -72,7 +72,7 @@ struct Variable {
     /// Up to 4 dependencies of this instruction (further possible via 'extra')
     uint32_t dep[4];
 
-    // ================   Various flags (17 bits altogether)   ================
+    // =============  Encoded instruction / data pointer / size   =============
 
     union {
         // If literal == 0: Intermediate language (PTX, LLVM IR) statement
@@ -88,7 +88,7 @@ struct Variable {
     /// Number of entries
     uint32_t size;
 
-    // ================   Various flags (16 bits altogether)   ================
+    // ============  Essential flags, basic block ID (-> LVN key)  ============
 
     /// Data type of this variable
     uint32_t type : 4;
@@ -96,8 +96,16 @@ struct Variable {
     /// Backend associated with this variable
     uint32_t backend : 2;
 
+    /// Is this a pointer variable that is used to write to some array?
+    uint32_t write_ptr : 1;
+
     /// Does this variable store a number literal?
     uint32_t literal : 1;
+
+    /// Basic block ID of this variable
+    uint32_t cse_scope : 24;
+
+    // ========================  Miscellaneous flags  =========================
 
     /// Free the 'stmt' variables at destruction time?
     uint32_t free_stmt : 1;
@@ -107,9 +115,6 @@ struct Variable {
 
     /// Does evaluation of this variable have side effects on other variables?
     uint32_t side_effect : 1;
-
-    /// Is this a pointer variable that is used to write to some array?
-    uint32_t write_ptr : 1;
 
     /// Is this a placeholder variable used to record arithmetic symbolically?
     uint32_t placeholder : 1;
@@ -126,7 +131,7 @@ struct Variable {
     /// Does this variable perform an OptiX operation?
     uint32_t optix : 1;
 
-    // ================   Temporarily used during jitc_eval()   ================
+    // ===============   Temporarily used during jitc_eval()   ================
 
     /// Argument type
     uint32_t param_type : 2;
@@ -134,26 +139,22 @@ struct Variable {
     /// Is this variable marked as an output?
     uint32_t output_flag : 1;
 
-    /// Used to isolate this variable from others when performing common subexpression elimination
-    uint32_t cse_scope : 13;
+    /// Offset of the argument in the list of kernel parameters
+    uint32_t param_offset : 21;
 
     /// Register index
     uint32_t reg_index;
-
-    /// Offset of the argument in the list of kernel parameters
-    uint32_t param_offset;
 };
 
 /// Abbreviated version of the Variable data structure
 struct VariableKey {
     uint32_t dep[4];
     uint32_t size;
-    uint32_t unused      : 11;
     uint32_t backend     : 2;
     uint32_t type        : 4;
     uint32_t write_ptr   : 1;
     uint32_t literal     : 1;
-    uint32_t cse_scope  : 13;
+    uint32_t cse_scope   : 24;
     union {
         char *stmt;
         uint64_t value;
@@ -162,20 +163,15 @@ struct VariableKey {
     VariableKey(const Variable &v) {
         memcpy(dep, v.dep, sizeof(uint32_t) * 4);
         size = v.size;
-        unused = 0;
-        backend = v.backend;
         type = v.type;
+        backend = v.backend;
         write_ptr = v.write_ptr;
-
-        if (v.literal) {
-            literal = 1;
-            value = v.value;
-        } else {
-            literal = 0;
-            stmt = v.stmt;
-        }
-
+        literal = v.literal;
         cse_scope = v.cse_scope;
+        if (literal)
+            value = v.value;
+        else
+            stmt = v.stmt;
     }
 
     bool operator==(const VariableKey &v) const {
