@@ -87,8 +87,8 @@ extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
                                            uint32_t *out);
 
 /**
- * \brief Performs a CUDA texture fetch of the 4 texels that are used in the
- * biliniear interpolation of a texture lookup
+ * \brief Fetches the four texels that would be referenced in a texture lookup
+ * with bilinear interpolation without actually performing this interpolation.
  *
  * This function exclusively operates on two-dimensional textures. A lower or
  * higher number of dimensions will raise an error.
