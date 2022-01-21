@@ -1537,6 +1537,65 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
     return jitc_var_new_cast(index, target_type, 0);
 }
 
+/// Change all indices/counters in an expression tree to 'new_index'
+static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
+                                 uint32_t size) {
+    Variable *v = jitc_var(var_index);
+
+    if (v->data)
+        return 0; // buffer input, give up
+
+    if (v->extra) {
+        Extra &e = state.extra[var_index];
+        if (e.n_dep || e.callback || e.vcall_buckets || e.assemble)
+            return 0; // "complicated" variable, give up
+    }
+
+    Ref dep[4];
+    bool rebuild = false;
+    for (uint32_t i = 0; i < 4; ++i) {
+        uint32_t index_2 = v->dep[i];
+        if (!index_2)
+            continue;
+        dep[i] = steal(jitc_var_reindex(index_2, new_index, size));
+        if (!dep[i])
+            return 0; // recursive call failed, give up
+        rebuild |= dep[i] != index_2;
+    }
+
+    const char *counter_str = (JitBackend) v->backend == JitBackend::CUDA
+                                  ? (char *) "mov.u32 $r0, %r0"
+                                  : jitc_llvm_counter_str;
+
+    uint32_t result;
+    if (rebuild) {
+        Variable v2;
+        v2.size = size;
+        v2.type = v->type;
+        v2.backend = v->backend;
+        v2.placeholder = v->placeholder;
+        if (!v->free_stmt) {
+            v2.stmt = v->stmt;
+        } else {
+            v2.stmt = strdup(v->stmt);
+            v2.free_stmt = 1;
+        }
+        for (uint32_t i = 0; i < 4; ++i) {
+            v2.dep[i] = dep[i];
+            jitc_var_inc_ref_int(dep[i]);
+        }
+        result = jitc_var_new(v2);
+    } else if (!v->literal && strcmp(v->stmt, counter_str) == 0) {
+        jitc_var_inc_ref_ext(new_index);
+        return new_index;
+    } else {
+        result = var_index;
+        jitc_var_inc_ref_ext(var_index, v);
+    }
+
+    return result;
+}
+
 uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     if (index_ == 0)
         return 0;
@@ -1565,11 +1624,12 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         return result;
     }
 
-    // Don't perform the gather operation if the inputs are trivial
-    if (v_source->literal || v_source->size == 1) {
+    // Don't perform the gather operation if the inputs are trivial / can be re-indexed
+    Ref trivial_source = steal(jitc_var_reindex(source, index_, size));
+    if (trivial_source) {
         // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'source'
-        Ref unused = borrow(source);
-        Ref tmp = steal(jitc_var_resize(source, size));
+        Ref unused = borrow(trivial_source);
+        Ref tmp = steal(jitc_var_resize(trivial_source, size));
         uint32_t deps[2] = { (uint32_t) tmp, mask_ };
         uint32_t result = jitc_var_new_op(JitOp::And, 2, deps);
 
