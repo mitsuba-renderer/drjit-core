@@ -35,8 +35,6 @@ struct Loop {
     std::vector<uint32_t> out;
     /// Are there unused loop variables that could be stripped away?
     bool simplify = false;
-    /// Is this loop 100% uniform (all threads finish together?)
-    bool uniform = false;
 };
 
 static std::vector<Loop *> loops;
@@ -159,8 +157,7 @@ uint32_t jitc_var_loop_cond(uint32_t loop_init, uint32_t cond,
 uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
                        uint32_t loop_cond, size_t n_indices,
                        uint32_t *indices_in, uint32_t **indices,
-                       uint32_t checkpoint, int first_round,
-                       int uniform) {
+                       uint32_t checkpoint, int first_round) {
     if (n_indices == 0)
         jitc_raise("jit_var_loop(): no loop state variables specified!");
 
@@ -187,7 +184,6 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
     loop->se_count = (uint32_t) se.size() - checkpoint;
     loop->init = loop_init;
     loop->cond = jitc_var(loop_cond)->dep[0];
-    loop->uniform = (bool) uniform;
 
     // =====================================================
     // 1. Various sanity checks
@@ -375,7 +371,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
         /* A loop can create complex variable dependencies across iterations
            that are not directly visible in the dependency structure maintained
-           by Enoki. To prevent variables from premature garbage collection, the
+           by Dr.Jit. To prevent variables from premature garbage collection, the
            loop end variable references the state variables at two points:
 
            1. before the loop condition
@@ -702,9 +698,8 @@ static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
              width = jitc_llvm_vector_width;
 
     if (loop->backend == JitBackend::CUDA) {
-        buffer.fmt("    @!%%p%u bra%s l_%u_done;\n", mask_reg,
-                   loop->uniform ? ".uni" : "", loop_reg);
-    } else if (!loop->uniform) {
+        buffer.fmt("    @!%%p%u bra l_%u_done;\n", mask_reg, loop_reg);
+    } else {
         char global[128];
         snprintf(
             global, sizeof(global),
@@ -715,10 +710,6 @@ static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
         buffer.fmt("    %%p%u = call i1 @llvm.experimental.vector.reduce.or.v%ui1(<%u x i1> %%p%u)\n"
                    "    br i1 %%p%u, label %%l_%u_body, label %%l_%u_done\n",
                    loop_reg, width, width, mask_reg, loop_reg, loop_reg, loop_reg);
-    } else {
-        buffer.fmt("    %%p%u = extractelement <%u x i1> %%p%u, i32 0\n"
-                   "    br i1 %%p%u, label %%l_%u_body, label %%l_%u_done\n",
-                   loop_reg, width, mask_reg, loop_reg, loop_reg, loop_reg);
     }
 
     buffer.fmt("\nl_%u_body:\n", loop_reg);
@@ -751,19 +742,12 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
         uint32_t vti = it_in->second.type;
 
         if (loop->backend == JitBackend::LLVM) {
-            if (loop->uniform) {
-                buffer.fmt("    %s%u_final = bitcast <%u x %s> %s%u to <%u x %s>\n",
-                           type_prefix[vti], v_in->reg_index, width,
-                           type_name_llvm[vti], type_prefix[vti], v_out->reg_index,
-                           width, type_name_llvm[vti]);
-            } else {
-                buffer.fmt("    %s%u_final = select <%u x i1> %%p%u, <%u x %s> %s%u, "
-                           "<%u x %s> %s%u\n",
-                           type_prefix[vti], v_in->reg_index, width, mask_reg, width,
-                           type_name_llvm[vti], type_prefix[vti], v_out->reg_index,
-                           width, type_name_llvm[vti], type_prefix[vti],
-                           v_in->reg_index);
-            }
+            buffer.fmt("    %s%u_final = select <%u x i1> %%p%u, <%u x %s> %s%u, "
+                       "<%u x %s> %s%u\n",
+                       type_prefix[vti], v_in->reg_index, width, mask_reg, width,
+                       type_name_llvm[vti], type_prefix[vti], v_out->reg_index,
+                       width, type_name_llvm[vti], type_prefix[vti],
+                       v_in->reg_index);
         } else {
             buffer.fmt("    mov.%s %s%u, %s%u;\n", type_name_ptx[vti],
                        type_prefix[vti], v_in->reg_index, type_prefix[vti],

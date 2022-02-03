@@ -1,31 +1,34 @@
-<p align="center"><img src="https://github.com/mitsuba-renderer/enoki/raw/master/docs/enoki-logo.png" alt="Enoki logo" width="300"/></p>
+<p align="center">
+<img src="https://github.com/mitsuba-renderer/drjit-core/raw/master/resources/drjit-logo-dark.svg#gh-light-mode-only" alt="Dr.Jit logo" width="500"/>
+<img src="https://github.com/mitsuba-renderer/drjit-core/raw/master/resources/drjit-logo-light.svg#gh-dark-mode-only" alt="Dr.Jit logo" width="500"/>
+</p>
 
-# Enoki-JIT — CUDA & LLVM just-in-time compiler
+# Dr.Jit — A Just-In-Time-Compiler for Differentiable Rendering (core library)
 
 | Continuous Integration |
 |         :---:          |
 |   [![rgl-ci][1]][2]    |
 
-[1]: https://rgl-ci.epfl.ch/app/rest/builds/buildType(id:EnokiJit_Build)/statusIcon.svg
-[2]: https://rgl-ci.epfl.ch/buildConfiguration/EnokiJit_Build?guest=1
+[1]: https://rgl-ci.epfl.ch/app/rest/builds/buildType(id:DrJit_Core_Build)/statusIcon.svg
+[2]: https://rgl-ci.epfl.ch/buildConfiguration/DrJit_Core_Build?guest=1
 
 
 ## Introduction
 
-This project implements a fast templating engine that can be used to implement
-lazy tracing just-in-time (JIT) compilers targeting GPUs (via CUDA and [NVIDIA
+This project implements a fast tracing engine that can be used to implement
+just-in-time (JIT) compilers targeting GPUs (via CUDA and [NVIDIA
 PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html), and
 [OptiX](https://developer.nvidia.com/optix) for ray tracing) and CPUs (via
-[LLVM IR](https://llvm.org/docs/LangRef.html)). *Lazy* refers its behavior of
-capturing operations performed in C or C++, while attempting to postpone the
-associated computation for as long as possible. Eventually, this is no longer
-possible, at which point the system generates an efficient kernel containing
-queued computation that is either evaluated on the CPU or GPU.
+[LLVM IR](https://llvm.org/docs/LangRef.html)). DrJit captures operations
+performed in C or C++, while attempting to postpone the associated computation
+for as long as possible. Eventually, this is no longer possible, at which point
+the system generates an efficient kernel containing queued computation that is
+either evaluated on the CPU or GPU.
 
-Enoki-JIT can be used just by itself, or as a component of the larger
-[Enoki](https://github.com/mitsuba-renderer/enoki) library, which additionally
-provides things like multidimensional arrays, automatic differentiation, and a
-large library of mathematical functions.
+This core library of Dr.Jit can be used just by itself, or as a component of the
+larger [Dr.Jit](https://github.com/mitsuba-renderer/drjit) project, which
+additionally provides things like multidimensional arrays, automatic
+differentiation, and a large library of mathematical functions.
 
 This project has almost no dependencies: it can be compiled without CUDA,
 OptiX, or LLVM actually being present on the system (it will attempt to find
@@ -34,7 +37,7 @@ functionality through a C99-compatible interface.
 
 ## Features
 
-Enoki-JIT has the following features:
+Dr.Jit has the following features:
 
 - Tested on Linux (`X86_64`), macOS (`x86_64` & `aarch64`), and Windows
   (`x86_64`).
@@ -55,7 +58,7 @@ Enoki-JIT has the following features:
 
   - Dead code elimination
   - Constant propagation
-  - Common subexpression elimination via global value numbering
+  - Common subexpression elimination via local value numbering
 
 - Supports parallel kernel execution on multiple devices (JITing from several
   CPU threads, or running kernels on multiple GPUs).
@@ -64,22 +67,22 @@ Enoki-JIT has the following features:
   an asynchronous computation device. This addresses a common performance bottleneck.
 
 - Caches and reuses kernels when the same computation is encountered again.
-  Caching is done both in memory and on disk (``~/.enoki`` on Linux and macOS,
-  ``~/AppData/Local/Temp/enoki`` on Windows).
+  Caching is done both in memory and on disk (``~/.drjit`` on Linux and macOS,
+  ``~/AppData/Local/Temp/drjit`` on Windows).
 
 - Provides a variety of parallel reductions for convenience.
 
 ## An example (C++)
 
 The header file
-[enoki-jit/array.h](https://github.com/mitsuba-renderer/enoki-jit/blob/master/include/enoki-jit/array.h)
+[drjit-core/array.h](https://github.com/mitsuba-renderer/drjit-core/blob/master/include/drjit-core/array.h)
 provides a convenient C++ wrapper with operator operator overloading building
 on the C-level API
-([enoki-jit/jit.h](https://github.com/mitsuba-renderer/enoki-jit/blob/master/include/enoki-jit/jit.h)).
+([drjit-core/jit.h](https://github.com/mitsuba-renderer/drjit-core/blob/master/include/drjit-core/jit.h)).
 Here is an brief example on how it can be used:
 
 ```cpp
-#include <enoki/array.h>
+#include <drjit-core/array.h>
 
 using Bool   = CUDAArray<bool>;
 using Float  = CUDAArray<float>;
@@ -139,7 +142,7 @@ postponed, e.g., because of the cross-lane memory dependency in the former case.
 Simply changing the first lines to
 
 ```cpp
-#include <enoki/llvm.h>
+#include <drjit-core/llvm.h>
 
 using Bool   = LLVMArray<bool>;
 using Float  = LLVMArray<float>;
@@ -154,7 +157,7 @@ then processed in parallel by all cores of the system.
 ## How it works
 
 To understand a bit better how all of this works, we can pop one level down to
-the C-level interface. The first operation ``jit_init`` initializes Enoki-JIT
+the C-level interface. The first operation ``jit_init`` initializes Dr.Jit
 and searches for LLVM and/or CUDA as instructed by the user. Note that users
 don't need to install the CUDA SDK—just having an NVIDIA graphics driver is
 enough.
@@ -176,11 +179,11 @@ uint32_t v0 = jit_var_new_stmt_0(/* backend = */ JitBackendCUDA,
 Note weird-looking code fragment ``mov.$t0 $r0, 0.5``. This is a *template* for
 an operation expressed in
 [PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html).
-Familiarity with PTX is not needed to use Enoki-JIT, and there are higher-level
+Familiarity with PTX is not needed to use Dr.Jit, and there are higher-level
 wrappers for any conceivable standard operation. We simply show the lowest-level
 interface here to illustrate how things fit together.
 
-The ``$`` expressions are placeholders that Enoki-JIT will replace with
+The ``$`` expressions are placeholders that Dr.Jit will replace with
 something meaningful when the final program is generated. For example ``$t0``
 is the type of the output argument (we could also have written ``f32`` as the
 type is known here), and ``$r0`` is the register name associated to the output
@@ -188,7 +191,7 @@ argument. This is a *scalar* variable, which means that it will produce a
 single element if evaluated alone, but it can also occur in any computation
 involving larger arrays and will expand to the needed size.
 
-Programs using Enoki-JIT will normally create and destroy *vast* numbers of
+Programs using Dr.Jit will normally create and destroy *vast* numbers of
 variables, and this operation is therefore highly optimized. For example, the
 default way of creating statements assumes that the instruction string template
 exists in the program's data segment and therefore doesn't need to be copied.
@@ -200,7 +203,7 @@ computation, and from this point onward ``jit_var_new_..`` will not involve any
 further dynamic memory allocation.
 
 Let's do some computation with this variable: we can create a "counter", which
-is an Enoki array containing an increasing sequence of integer elements ``[0,
+is an Dr.Jit array containing an increasing sequence of integer elements ``[0,
 1, 2, .., 9]`` in this case.
 
 ```cpp
@@ -234,7 +237,7 @@ uint32_t v3 = jit_var_new_stmt_2(/* backend = */ JitBackendCUDA,
 ```
 Suppose that we don't plan to perform any
 further computation / accesses involving ``v0``, ``v1``, and ``v2``. This must
-be indicated to Enoki-JIT by reducing their *external* reference count
+be indicated to Dr.Jit by reducing their *external* reference count
 ("external" refers to references by *your* code):
 
 ```cpp
@@ -243,7 +246,7 @@ jit_var_dec_ref_ext(v1);
 jit_var_dec_ref_ext(v2);
 ```
 
-They still have a nonzero *internal* reference count (i.e. by Enoki itself)
+They still have a nonzero *internal* reference count (i.e. by Dr.Jit itself)
 since the variable ``v3`` depends on them, and this keeps them from being
 garbage-collected.
 
@@ -259,7 +262,7 @@ This step internally invokes ``jit_var_eval(v3)`` to evaluate the variable,
 which creates a CUDA kernel containing all steps that are needed to compute
 the contents of ``v3`` and write them into device-resident memory.
 
-During this compilation step, the following happens: Enoki-JIT first traverses
+During this compilation step, the following happens: Dr.Jit first traverses
 the relevant parts of the variable hash table and concatenates all string
 templates (with appropriate substitutions) into a complete PTX representation.
 This step is highly optimized and takes on the order of a few microseconds.
@@ -269,9 +272,9 @@ we've never seen this particular sequence of steps before, and in that case the
 PTX code must be further compiled to machine code ("SASS", or *streaming
 assembly*). This step involves a full optimizing compiler embedded in the GPU
 driver, which tends to be very slow: usually it's a factor of 1000-10000×
-slower than the preceding steps within Enoki-JIT.
+slower than the preceding steps within Dr.Jit.
 
-However, once a kernel has been compiled, `Enoki-JIT` will *remember* it using
+However, once a kernel has been compiled, Dr.Jit will *remember* it using
 both an in-memory and an on-disk cache. In programs that perform the same
 sequence of steps over and over again (e.g. optimization), the slow PTX→SASS
 compilation step will only occur in the first iteration. Evaluation of ``v2``
@@ -282,7 +285,7 @@ instead of repeating the original computation.
 At the end of the program, we must not forget to decrease the external
 reference count associated with ``v2``, which will release the array from
 memory. Finally, ``jit_shutdown()`` releases any remaining resources held by
-Enoki-JIT.
+Dr.Jit.
 
 ```cpp
 jit_var_dec_ref_ext(v3);
@@ -292,7 +295,7 @@ jit_shutdown(0);
 Running this program on a Linux machine provides the following output:
 
 ```
-jit_init(): creating directory "/home/wjakob/.enoki" ..
+jit_init(): creating directory "/home/wjakob/.drjit" ..
 jit_init(): detecting devices ..
 jit_cuda_init(): enabling CUDA backend (version 11.1)
  - Found CUDA device 0: "GeForce RTX 3090" (PCI ID 65:00.0, compute cap. 8.6, 82 SMs w/99 KiB shared mem., 23.7 GiB global mem.)
@@ -307,7 +310,7 @@ jit_shutdown(): done
 jit_cuda_shutdown()
 ```
 
-These log messages show that Enoki generated a single kernel within 2.4 μs.
+These log messages show that Dr.Jit generated a single kernel within 2.4 μs.
 However, this kernel was never observed before, necessitating a compilation
 step by the CUDA driver, which took 33 ms.
 
@@ -345,7 +348,7 @@ jit_eval(): launching 1 kernel.
 .target sm_60
 .address_size 64
 
-.entry enoki_e93e70f12fcaea9cecd06e2b4b9ab180(.param .align 8 .b8 params[16]) {
+.entry drjit_e93e70f12fcaea9cecd06e2b4b9ab180(.param .align 8 .b8 params[16]) {
     .reg.b8   %b <8>; .reg.b16 %w<8>; .reg.b32 %r<8>;
     .reg.b64  %rd<8>; .reg.f32 %f<8>; .reg.f64 %d<8>;
     .reg.pred %p <8>;
@@ -403,8 +406,8 @@ These lines exactly corresponding to the variables ``v0`` to ``v3``
 that we had previously defined. The surrounding code establishes a [grid-stride
 loop](https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/)
 that processes all array elements. This time around, the kernel compilation was
-skipped, and Enoki loaded the kernel from the on-disk cache file
-``~/.enoki/e93e70f12fcaea9cecd06e2b4b9ab180.cuda.bin`` containing a
+skipped, and Dr.Jit loaded the kernel from the on-disk cache file
+``~/.drjit/e93e70f12fcaea9cecd06e2b4b9ab180.cuda.bin`` containing a
 [LZ4](https://github.com/lz4/lz4)-compressed version of code and compilation
 output. The odd hexadecimal value is simply the
 [XXH3](https://cyan4973.github.io/xxHash/) hash of the kernel source code.
@@ -414,7 +417,7 @@ are automatically launched through OptiX instead of the CUDA driver API.
 
 ### LLVM backend
 
-The preceding section provided a basic of Enoki-JIT in combination with CUDA.
+The preceding section provided a basic example of Dr.Jit in combination with CUDA.
 LLVM works essentially the same way. Now, the ``backend=`` flag must be set to
 ``JitBackendLLVM``, and ``stmt`` is expected to be a statement using LLVM's
 textual intermediate representation. For example, the previous addition
@@ -435,11 +438,11 @@ machine with AVX512.
 
 A kernel transforming less than a few thousands of elements will be
 JIT-compiled and executed immediately on the current thread. For large arrays,
-Enoki-JIT will automatically parallelize evaluation via a thread pool. The
-Enoki-JIT repository ships with
-[Enoki-Thread](https://github.com/mitsuba-renderer/enoki-thread/) (as a git
-submodule), which is a minimal implementation of the components that are
+Dr.Jit will automatically parallelize evaluation via a thread pool. The
+repository includes
+[DrJit-Thread](https://github.com/mitsuba-renderer/drjit-thread/) as a git
+submodule, which is a minimal implementation of the components that are
 necessary to realize this. The size of this thread pool can also be set to
 zero, in which case all computation will occur on the current thread. In this
-case, another type of parallelism is available by using Enoki-JIT from multiple
+case, another type of parallelism is available by using Dr.Jit from multiple
 threads at once.

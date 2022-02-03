@@ -1,10 +1,10 @@
 #pragma once
 
-#include <enoki-jit/array.h>
+#include <drjit-core/array.h>
 #include <cstdio>
 #include <cstring>
 
-using namespace enoki;
+using namespace drjit;
 
 static constexpr LogLevel Error = LogLevel::Error;
 static constexpr LogLevel Warn  = LogLevel::Warn;

@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-/// Register a pointer with Enoki's pointer registry
+/// Register a pointer with Dr.Jit's pointer registry
 extern uint32_t jitc_registry_put(JitBackend backend, const char *domain,
                                   void *ptr);
 

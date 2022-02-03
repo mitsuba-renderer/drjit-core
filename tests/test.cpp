@@ -17,8 +17,8 @@
 #  include <mach-o/dyld.h>
 #endif
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
-#  include <enoki-jit/optix.h>
+#if defined(DRJIT_ENABLE_OPTIX)
+#  include <drjit-core/optix.h>
 #endif
 
 struct Test {
@@ -114,8 +114,8 @@ void test_sanitize_log(char *buf) {
             continue;
         }
 
-        if (strncmp(src, "enoki_", 6) == 0 && src[6] != '<') {
-            memcpy(dst, "enoki_<@>", 9);
+        if (strncmp(src, "drjit_", 6) == 0 && src[6] != '<') {
+            memcpy(dst, "drjit_<@>", 9);
             src += 38;
             dst += 9;
             continue;
@@ -333,7 +333,7 @@ int main(int argc, char **argv) {
         test_cuda &= (bool) jit_has_backend(JitBackend::CUDA);
         test_llvm &= (bool) jit_has_backend(JitBackend::LLVM);
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
         test_optix &= (bool) jit_has_backend(JitBackend::CUDA);
 #else
         test_optix = false;
@@ -369,7 +369,7 @@ int main(int argc, char **argv) {
             log_value.clear();
             jit_init((uint32_t)((is_cuda || is_optix) ? JitBackend::CUDA
                                                       : JitBackend::LLVM));
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
             jit_set_flag(JitFlag::ForceOptiX, is_optix);
             if (is_optix)
                 jit_optix_context();

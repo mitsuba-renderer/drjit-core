@@ -1,5 +1,5 @@
 /*
-    src/init.cpp -- Initialization and shutdown of Enoki-JIT
+    src/init.cpp -- Initialization and shutdown of the core parts of DrJit
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -16,7 +16,7 @@
 #include "profiler.h"
 #include <sys/stat.h>
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
 #  include "optix_api.h"
 #endif
 
@@ -47,8 +47,8 @@ Buffer buffer{1024};
   __thread uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
 #endif
 
-#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
-__itt_domain *enoki_domain = __itt_domain_create("enoki");
+#if defined(DRJIT_ENABLE_ITTNOTIFY)
+__itt_domain *drjit_domain = __itt_domain_create("drjit");
 #endif
 
 static_assert(
@@ -85,7 +85,7 @@ void jitc_init(uint32_t backends) {
 
 #if !defined(_WIN32)
     char temp_path[512];
-    snprintf(temp_path, sizeof(temp_path), "%s/.enoki", getenv("HOME"));
+    snprintf(temp_path, sizeof(temp_path), "%s/.drjit", getenv("HOME"));
     struct stat st = {};
     int rv = stat(temp_path, &st);
     size_t temp_path_size = (strlen(temp_path) + 1) * sizeof(char);
@@ -96,7 +96,7 @@ void jitc_init(uint32_t backends) {
     char temp_path[512];
     if (GetTempPathW(sizeof(temp_path_w) / sizeof(wchar_t), temp_path_w) == 0)
         jitc_fail("jit_init(): could not obtain path to temporary directory!");
-    wcsncat(temp_path_w, L"enoki", sizeof(temp_path) / sizeof(wchar_t));
+    wcsncat(temp_path_w, L"drjit", sizeof(temp_path) / sizeof(wchar_t));
     struct _stat st = {};
     int rv = _wstat(temp_path_w, &st);
     size_t temp_path_size = (wcslen(temp_path_w) + 1) * sizeof(wchar_t);
@@ -270,7 +270,7 @@ void jitc_shutdown(int light) {
             jitc_free_flush(ts);
             if (ts->backend == JitBackend::CUDA) {
                 scoped_set_context guard(ts->context);
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
                 jitc_optix_context_destroy_ts(ts);
 #endif
                 cuda_check(cuEventDestroy(ts->event));
@@ -362,7 +362,7 @@ void jitc_shutdown(int light) {
 
     if (state.backends & (uint32_t) JitBackend::CUDA) {
         for (auto &v : state.devices) {
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
             jitc_optix_context_destroy(v);
 #endif
             cuda_check(cuDevicePrimaryCtxRelease(v.id));
@@ -374,7 +374,7 @@ void jitc_shutdown(int light) {
 
     if (light == 0) {
         jitc_llvm_shutdown();
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
         jitc_optix_shutdown();
 #endif
         jitc_cuda_shutdown();
@@ -416,7 +416,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
                     "jit_init_thread_state(): the CUDA backend is inactive "
                     "because it has not been initialized via jit_init(), or "
                     "because the CUDA driver library (\"%s\") could not be "
-                    "found! Set the ENOKI_LIBCUDA_PATH environment variable to "
+                    "found! Set the DRJIT_LIBCUDA_PATH environment variable to "
                     "specify its path.",
                     cuda_fname);
         }
@@ -449,7 +449,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
 
             jitc_raise("jit_init_thread_state(): the LLVM backend is inactive "
                       "because the LLVM shared library (\"%s\") could not be "
-                      "found! Set the ENOKI_LIBLLVM_PATH environment "
+                      "found! Set the DRJIT_LIBLLVM_PATH environment "
                       "variable to specify its path.",
                       llvm_fname);
         }

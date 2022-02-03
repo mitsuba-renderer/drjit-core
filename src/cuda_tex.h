@@ -1,6 +1,6 @@
 #include "cuda_api.h"
 
-#if defined(ENOKI_JIT_DYNAMIC_CUDA)
+#if defined(DRJIT_DYNAMIC_CUDA)
 using CUarray = struct CUarray_st *;
 using CUtexObject = struct CUtexObject_st *;
 

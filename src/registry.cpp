@@ -12,7 +12,7 @@
 
 static_assert(sizeof(void*) == 8, "32 bit architectures are not supported!");
 
-/// Register a pointer with Enoki's pointer registry
+/// Register a pointer with Dr.Jit's pointer registry
 uint32_t jitc_registry_put(JitBackend backend, const char *domain, void *ptr) {
     if (unlikely(ptr == nullptr))
         jitc_raise("jit_registry_put(): cannot register the null pointer!");
@@ -54,7 +54,7 @@ uint32_t jitc_registry_put(JitBackend backend, const char *domain, void *ptr) {
         // Finally, update reverse mapping
         it_rev.first.value().id = next_avail;
 
-        jitc_trace("jit_registry_put(" ENOKI_PTR ", domain=\"%s\"): %u (reused)",
+        jitc_trace("jit_registry_put(" DRJIT_PTR ", domain=\"%s\"): %u (reused)",
                   (uintptr_t) ptr, domain, next_avail);
 
         return next_avail;
@@ -73,7 +73,7 @@ uint32_t jitc_registry_put(JitBackend backend, const char *domain, void *ptr) {
         // Finally, update reverse mapping
         it_rev.first.value().id = counter;
 
-        jitc_trace("jit_registry_put(" ENOKI_PTR ", domain=\"%s\"): %u (new)",
+        jitc_trace("jit_registry_put(" DRJIT_PTR ", domain=\"%s\"): %u (new)",
                   (uintptr_t) ptr, domain, counter);
 
         return counter;
@@ -85,7 +85,7 @@ void jitc_registry_remove(JitBackend backend, void *ptr) {
     if (ptr == nullptr)
         return;
 
-    jitc_trace("jit_registry_remove(" ENOKI_PTR ")", (uintptr_t) ptr);
+    jitc_trace("jit_registry_remove(" DRJIT_PTR ")", (uintptr_t) ptr);
 
     Registry* registry = state.registry(backend);
     auto it_rev = registry->rev.find(ptr);
@@ -269,7 +269,7 @@ void jitc_registry_set_attr(JitBackend backend, void *ptr, const char *name,
     const char *domain = it.value().domain;
     uint32_t id = it.value().id;
 
-    jitc_trace("jit_registry_set_attr(" ENOKI_PTR ", id=%u, name=\"%s\", size=%zu)",
+    jitc_trace("jit_registry_set_attr(" DRJIT_PTR ", id=%u, name=\"%s\", size=%zu)",
               (uintptr_t) ptr, id, name, isize);
 
     AttributeValue &attr = registry->attributes[AttributeKey(domain, name)];

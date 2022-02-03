@@ -1,4 +1,4 @@
-#include <enoki-jit/array.h>
+#include <drjit-core/array.h>
 #include <cstdio>
 #include <cstring>
 
@@ -24,12 +24,12 @@ const char *miss_and_closesthit_ptx = R"(
 	ret;
 })";
 
-namespace ek = enoki;
+namespace dr = drjit;
 
-using Float = ek::CUDAArray<float>;
-using UInt32 = ek::CUDAArray<uint32_t>;
-using UInt64 = ek::CUDAArray<uint64_t>;
-using Mask = ek::CUDAArray<bool>;
+using Float = dr::CUDAArray<float>;
+using UInt32 = dr::CUDAArray<uint32_t>;
+using UInt64 = dr::CUDAArray<uint64_t>;
+using Mask = dr::CUDAArray<bool>;
 
 void demo() {
     OptixDeviceContext context = jit_optix_context();
@@ -147,7 +147,7 @@ void demo() {
     }
 
     // =====================================================
-    // Create program groups (raygen provided by Enoki..)
+    // Create program groups (raygen provided by Dr.Jit..)
     // =====================================================
 
     OptixProgramGroupOptions pgo {};
@@ -189,12 +189,12 @@ void demo() {
         jit_malloc_migrate(sbt.hitgroupRecordBase, AllocType::Device, 1);
 
     // =====================================================
-    // Let Enoki know about all of this
+    // Let Dr.Jit know about all of this
     // =====================================================
 
     jit_optix_configure(
         &pipeline_compile_options, // <-- these pointers must stay
-        &sbt,                      //     alive while Enoki runs
+        &sbt,                      //     alive while Dr.Jit runs
         pg, 2
     );
 
@@ -205,7 +205,7 @@ void demo() {
         // =====================================================
 
         int res = 16;
-        UInt32 index = ek::arange<UInt32>(res * res),
+        UInt32 index = dr::arange<UInt32>(res * res),
                x     = index % res,
                y     = index / res;
 
@@ -217,7 +217,7 @@ void demo() {
 
         Float mint = 0.f, maxt = 100.f, time = 0.f;
 
-        UInt64 handle = ek::opaque<UInt64>(gas_handle);
+        UInt64 handle = dr::opaque<UInt64>(gas_handle);
         UInt32 ray_mask(255), ray_flags(0), sbt_offset(0), sbt_stride(1),
             miss_sbt_index(0);
 
@@ -274,7 +274,7 @@ int main(int, char **) {
     init_optix_api();
     demo();
 
-    // Shut down Enoki (will destroy OptiX device context)
+    // Shut down Dr.Jit (will destroy OptiX device context)
     jit_shutdown();
     return 0;
 }

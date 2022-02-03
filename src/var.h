@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
+#include <drjit-core/jit.h>
 #include <utility>
 
 struct Variable;

@@ -8,7 +8,7 @@ static void jitc_render_stmt_cuda(uint32_t index, const Variable *v);
 
 void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
-    bool params_global = !uses_optix && n_params > ENOKI_CUDA_ARG_LIMIT;
+    bool params_global = !uses_optix && n_params > DRJIT_CUDA_ARG_LIMIT;
     bool print_labels  = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
@@ -33,7 +33,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                ts->compute_capability);
 
     if (!uses_optix) {
-        buffer.fmt(".entry enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
+        buffer.fmt(".entry drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
                    ".param .align 8 .b8 params[%u]) { \n",
                    params_global ? 8u : (n_params * (uint32_t) sizeof(void *)));
     } else {

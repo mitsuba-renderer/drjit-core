@@ -7,9 +7,6 @@
     license that can be found in the LICENSE file.
 */
 
-// Experiment: faster collection of VCall data via a single kernel launch
-#define EK_USE_VCALL_PREPARE
-
 #include "internal.h"
 #include "log.h"
 #include "var.h"
@@ -148,7 +145,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
     const uint32_t checkpoint_mask = 0x7fffffff;
 
-#if defined(ENOKI_JIT_ENABLE_NVTX) || defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
+#if defined(DRJIT_ENABLE_NVTX) || defined(DRJIT_ENABLE_ITTNOTIFY)
     std::string profile_name = std::string("jit_var_vcall: ") + name;
     ProfilerRegion profiler_region(profile_name.c_str());
     ProfilerPhase profiler(profiler_region);
@@ -327,14 +324,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
         data_v = steal(jitc_var_new_pointer(backend, data_d, data_buf, 0));
 
-#if defined(EK_USE_VCALL_PREPARE)
         VCallDataRecord *rec = (VCallDataRecord *)
             jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned
                                                     : AllocType::Host,
                         sizeof(VCallDataRecord) * vcall->data_map.size());
 
         VCallDataRecord *p = rec;
-#endif
 
         for (auto kv : vcall->data_map) {
             uint32_t index = (uint32_t) kv.first, offset = kv.second;
@@ -342,29 +337,19 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                 continue;
 
             const Variable *v = jitc_var(index);
-#if defined(EK_USE_VCALL_PREPARE)
             bool is_pointer = (VarType) v->type == VarType::Pointer;
             p->offset = offset;
             p->size = is_pointer ? 0u : type_size[v->type];
             p->src = is_pointer ? (const void *) v->value : v->data;
             p++;
-#else
-            if ((VarType) v->type == VarType::Pointer)
-                jitc_poke(backend, data_d + offset, &v->value, sizeof(void *));
-            else
-                jitc_memcpy_async(backend, data_d + offset, v->data,
-                                  type_size[v->type]);
-#endif
         }
 
-#if defined(EK_USE_VCALL_PREPARE)
         std::sort(rec, p,
                   [](const VCallDataRecord &a, const VCallDataRecord &b) {
                       return a.offset < b.offset;
                   });
 
         jitc_vcall_prepare(backend, data_d, rec, (uint32_t)(p - rec));
-#endif
     } else {
         vcall->data_map.clear();
     }
@@ -1468,7 +1453,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         memcpy(input_buckets + i, &bucket_out, sizeof(VCallBucket));
 
         jitc_trace("jit_var_vcall_reduce(): registered variable %u: bucket %u "
-                   "(" ENOKI_PTR ") of size %u.", index2, bucket_out.id,
+                   "(" DRJIT_PTR ") of size %u.", index2, bucket_out.id,
                    (uintptr_t) bucket_out.ptr, bucket.size);
     }
 

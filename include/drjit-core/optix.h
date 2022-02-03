@@ -1,5 +1,5 @@
 /*
-    enoki-jit/optix.h -- JIT-compilation of kernels that use OptiX ray tracing
+    drjit-core/optix.h -- JIT-compilation of kernels that use OptiX ray tracing
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -32,7 +32,7 @@ extern JIT_EXPORT void *jit_optix_lookup(const char *name);
 extern JIT_EXPORT void jit_optix_check_impl(int errval, const char *file,
                                               const int line);
 
-/// Inform Enoki about a partially created OptiX pipeline
+/// Inform Dr.Jit about a partially created OptiX pipeline
 extern JIT_EXPORT void
 jit_optix_configure(const OptixPipelineCompileOptions *pco,
                     const OptixShaderBindingTable *sbt,

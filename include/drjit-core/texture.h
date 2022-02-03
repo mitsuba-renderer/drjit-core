@@ -1,5 +1,5 @@
 /*
-    enoki-jit/texture.h -- creating and querying of 1D/2D/3D textures on CUDA
+    drjit-core/texture.h -- creating and querying of 1D/2D/3D textures on CUDA
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 

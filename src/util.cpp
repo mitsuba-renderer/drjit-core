@@ -99,7 +99,7 @@ void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size_,
     if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
         jitc_raise("jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
 
-    jitc_trace("jit_memset_async(" ENOKI_PTR ", isize=%u, size=%u)",
+    jitc_trace("jit_memset_async(" DRJIT_PTR ", isize=%u, size=%u)",
               (uintptr_t) ptr, isize, size_);
 
     if (size_ == 0)
@@ -317,7 +317,7 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
                 uint32_t size, void *out) {
     ThreadState *ts = thread_state(backend);
 
-    jitc_log(Debug, "jit_reduce(" ENOKI_PTR ", type=%s, rtype=%s, size=%u)",
+    jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, rtype=%s, size=%u)",
             (uintptr_t) ptr, type_name[(int) type],
             reduction_name[(int) rtype], size);
 
@@ -363,7 +363,7 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
     } else {
         uint32_t block_size = size, blocks = 1;
         if (pool_size() > 1) {
-            block_size = ENOKI_POOL_BLOCK_SIZE;
+            block_size = DRJIT_POOL_BLOCK_SIZE;
             blocks     = (size + block_size - 1) / block_size;
         }
 
@@ -401,7 +401,7 @@ bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
-    jitc_log(Debug, "jit_all(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
+    jitc_log(Debug, "jit_all(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
 
     if (trailing) {
         bool filler = true;
@@ -435,7 +435,7 @@ bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
-    jitc_log(Debug, "jit_any(" ENOKI_PTR ", size=%u)", (uintptr_t) values, size);
+    jitc_log(Debug, "jit_any(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
 
     if (trailing) {
         bool filler = false;
@@ -480,7 +480,7 @@ void jitc_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32
                      shared_size      = thread_count * 2 * sizeof(uint32_t);
 
             jitc_log(Debug,
-                    "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR
+                    "jit_scan(" DRJIT_PTR " -> " DRJIT_PTR
                     ", size=%u, type=small, threads=%u, shared=%u)",
                     (uintptr_t) in, (uintptr_t) out, size, thread_count,
                     shared_size);
@@ -499,7 +499,7 @@ void jitc_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32
                      scratch_items    = block_count + 32;
 
             jitc_log(Debug,
-                    "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR
+                    "jit_scan(" DRJIT_PTR " -> " DRJIT_PTR
                     ", size=%u, type=large, blocks=%u, threads=%u, shared=%u, "
                     "scratch=%u)",
                     (uintptr_t) in, (uintptr_t) out, size, block_count,
@@ -532,12 +532,12 @@ void jitc_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32
     } else {
         uint32_t block_size = size, blocks = 1;
         if (pool_size() > 1) {
-            block_size = ENOKI_POOL_BLOCK_SIZE;
+            block_size = DRJIT_POOL_BLOCK_SIZE;
             blocks     = (size + block_size - 1) / block_size;
         }
 
         jitc_log(Debug,
-                "jit_scan(" ENOKI_PTR " -> " ENOKI_PTR
+                "jit_scan(" DRJIT_PTR " -> " DRJIT_PTR
                 ", size=%u, block_size=%u, blocks=%u)",
                 (uintptr_t) in, (uintptr_t) out, size, block_size, blocks);
 
@@ -615,7 +615,7 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
                      trailer          = thread_count * items_per_thread - size;
 
             jitc_log(Debug,
-                    "jit_compress(" ENOKI_PTR " -> " ENOKI_PTR
+                    "jit_compress(" DRJIT_PTR " -> " DRJIT_PTR
                     ", size=%u, type=small, threads=%u, shared=%u)",
                     (uintptr_t) in, (uintptr_t) out, size, thread_count,
                     shared_size);
@@ -639,7 +639,7 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
                      trailer          = items_per_block * block_count - size;
 
             jitc_log(Debug,
-                    "jit_compress(" ENOKI_PTR " -> " ENOKI_PTR
+                    "jit_compress(" DRJIT_PTR " -> " DRJIT_PTR
                     ", size=%u, type=large, blocks=%u, threads=%u, shared=%u, "
                     "scratch=%u)",
                     (uintptr_t) in, (uintptr_t) out, size, block_count,
@@ -680,14 +680,14 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
     } else {
         uint32_t block_size = size, blocks = 1;
         if (pool_size() > 1) {
-            block_size = ENOKI_POOL_BLOCK_SIZE;
+            block_size = DRJIT_POOL_BLOCK_SIZE;
             blocks     = (size + block_size - 1) / block_size;
         }
 
         uint32_t count_out = 0;
 
         jitc_log(Debug,
-                "jit_compress(" ENOKI_PTR " -> " ENOKI_PTR
+                "jit_compress(" DRJIT_PTR " -> " DRJIT_PTR
                 ", size=%u, block_size=%u, blocks=%u)",
                 (uintptr_t) in, (uintptr_t) out, size, block_size, blocks);
 
@@ -758,7 +758,7 @@ static void cuda_transpose(ThreadState *ts, const uint32_t *in, uint32_t *out,
 
     scoped_set_context guard(ts->context);
     jitc_log(Debug,
-            "jit_transpose(" ENOKI_PTR " -> " ENOKI_PTR
+            "jit_transpose(" DRJIT_PTR " -> " DRJIT_PTR
             ", rows=%u, cols=%u, blocks=%ux%u)",
             (uintptr_t) in, (uintptr_t) out, rows, cols, blocks_x, blocks_y);
 
@@ -867,7 +867,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         size_per_block = (size_per_block + warp_size - 1) / warp_size * warp_size;
 
         jitc_log(Debug,
-                "jit_mkperm(" ENOKI_PTR
+                "jit_mkperm(" DRJIT_PTR
                 ", size=%u, bucket_count=%u, block_count=%u, thread_count=%u, "
                 "size_per_block=%u, variant=%s, shared_size=%u)",
                 (uintptr_t) ptr, size, bucket_count, block_count, thread_count,
@@ -945,14 +945,14 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
             block_size = (size + blocks - 1) / blocks;
 
             // But don't make the blocks too small
-            block_size = std::max((uint32_t) ENOKI_POOL_BLOCK_SIZE, block_size);
+            block_size = std::max((uint32_t) DRJIT_POOL_BLOCK_SIZE, block_size);
 
             // Finally re-adjust block count given the selected block size
             blocks = (size + block_size - 1) / block_size;
         }
 
         jitc_log(Debug,
-                "jit_mkperm(" ENOKI_PTR
+                "jit_mkperm(" DRJIT_PTR
                 ", size=%u, bucket_count=%u, block_size=%u, blocks=%u)",
                 (uintptr_t) ptr, size, bucket_count, block_size, blocks);
 
@@ -1116,7 +1116,7 @@ void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void
         jitc_raise("jit_block_copy(): block_size cannot be zero!");
 
     jitc_log(Debug,
-            "jit_block_copy(" ENOKI_PTR " -> " ENOKI_PTR
+            "jit_block_copy(" DRJIT_PTR " -> " DRJIT_PTR
             ", type=%s, block_size=%u, size=%u)",
             (uintptr_t) in, (uintptr_t) out,
             type_name[(int) type], block_size, size);
@@ -1149,7 +1149,7 @@ void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void
     } else {
         uint32_t work_unit_size = size, work_units = 1;
         if (pool_size() > 1) {
-            work_unit_size = ENOKI_POOL_BLOCK_SIZE;
+            work_unit_size = DRJIT_POOL_BLOCK_SIZE;
             work_units     = (size + work_unit_size - 1) / work_unit_size;
         }
 
@@ -1177,7 +1177,7 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
         jitc_raise("jit_block_sum(): block_size cannot be zero!");
 
     jitc_log(Debug,
-            "jit_block_sum(" ENOKI_PTR " -> " ENOKI_PTR
+            "jit_block_sum(" DRJIT_PTR " -> " DRJIT_PTR
             ", type=%s, block_size=%u, size=%u)",
             (uintptr_t) in, (uintptr_t) out,
             type_name[(int) type], block_size, size);
@@ -1214,7 +1214,7 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
     } else {
         uint32_t work_unit_size = size, work_units = 1;
         if (pool_size() > 1) {
-            work_unit_size = ENOKI_POOL_BLOCK_SIZE;
+            work_unit_size = DRJIT_POOL_BLOCK_SIZE;
             work_units     = (size + work_unit_size - 1) / work_unit_size;
         }
 
@@ -1237,7 +1237,7 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
 
 /// Asynchronously update a single element in memory
 void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size) {
-    jitc_log(Debug, "jit_poke(" ENOKI_PTR ", size=%u)", (uintptr_t) dst, size);
+    jitc_log(Debug, "jit_poke(" DRJIT_PTR ", size=%u)", (uintptr_t) dst, size);
 
     VarType type;
     switch (size) {
@@ -1287,7 +1287,7 @@ void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, u
         device.get_launch_config(&block_count, &thread_count, size);
 
         jitc_log(InfoSym,
-                 "jit_vcall_prepare(" ENOKI_PTR " -> " ENOKI_PTR
+                 "jit_vcall_prepare(" DRJIT_PTR " -> " DRJIT_PTR
                  ", size=%u, blocks=%u, threads=%u)",
                  (uintptr_t) rec_, (uintptr_t) dst_, size, block_count,
                  thread_count);
@@ -1299,12 +1299,12 @@ void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, u
     } else {
         uint32_t work_unit_size = size, work_units = 1;
         if (pool_size() > 1) {
-            work_unit_size = ENOKI_POOL_BLOCK_SIZE;
+            work_unit_size = DRJIT_POOL_BLOCK_SIZE;
             work_units     = (size + work_unit_size - 1) / work_unit_size;
         }
 
         jitc_log(InfoSym,
-                 "jit_vcall_prepare(" ENOKI_PTR " -> " ENOKI_PTR
+                 "jit_vcall_prepare(" DRJIT_PTR " -> " DRJIT_PTR
                  ", size=%u, work_units=%u)",
                  (uintptr_t) rec_, (uintptr_t) dst_, size, work_units);
 

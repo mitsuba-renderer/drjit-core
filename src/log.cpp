@@ -76,7 +76,7 @@ void jitc_vraise(const char* fmt, va_list args) {
 }
 
 void jitc_fail(const char* fmt, ...) {
-    fprintf(stderr, "\n\nCritical failure in Enoki JIT compiler: ");
+    fprintf(stderr, "\n\nCritical Dr.Jit compiler failure: ");
 
     va_list args;
     va_start(args, fmt);
@@ -89,7 +89,7 @@ void jitc_fail(const char* fmt, ...) {
 }
 
 void jitc_vfail(const char* fmt, va_list args) {
-    fprintf(stderr, "Critical failure in Enoki JIT compiler: ");
+    fprintf(stderr, "Critical Dr.Jit compiler failure: ");
     vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
     abort();

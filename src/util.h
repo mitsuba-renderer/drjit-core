@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
+#include <drjit-core/jit.h>
 #include "cuda_api.h"
 
 /// Descriptive names for the various reduction operations

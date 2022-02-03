@@ -9,9 +9,9 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
+#include <drjit-core/jit.h>
 
-#if !defined(ENOKI_JIT_DYNAMIC_CUDA)
+#if !defined(DRJIT_DYNAMIC_CUDA)
 #  include <cuda.h>
 #else
 #  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR 75
@@ -132,7 +132,7 @@ extern CUresult (*cuMemAllocAsync)(CUdeviceptr *, size_t, CUstream);
 extern CUresult (*cuMemFreeAsync)(CUdeviceptr, CUstream);
 #endif
 
-// Enoki API
+// Dr.Jit API
 extern CUfunction *jitc_cuda_fill_64;
 extern CUfunction *jitc_cuda_mkperm_phase_1_tiny;
 extern CUfunction *jitc_cuda_mkperm_phase_1_small;

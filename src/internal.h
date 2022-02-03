@@ -18,15 +18,15 @@
 #include <deque>
 #include <string.h>
 #include <inttypes.h>
-#include <enoki-thread/thread.h>
+#include <drjit-thread/thread.h>
 
 /// Number of entries to process per work unit in the parallel LLVM backend
-#define ENOKI_POOL_BLOCK_SIZE 16384
+#define DRJIT_POOL_BLOCK_SIZE 16384
 
 /// Can't pass more than 4096 bytes of parameter data to a CUDA kernel
-#define ENOKI_CUDA_ARG_LIMIT 512
+#define DRJIT_CUDA_ARG_LIMIT 512
 
-#define ENOKI_PTR "<0x%" PRIxPTR ">"
+#define DRJIT_PTR "<0x%" PRIxPTR ">"
 
 static constexpr LogLevel Disable = LogLevel::Disable;
 static constexpr LogLevel Error   = LogLevel::Error;
@@ -60,7 +60,7 @@ struct Variable {
 
     // ===================   References, reference counts   ===================
 
-    /// External reference count (by application using Enoki)
+    /// External reference count (by application using DrJit)
     uint64_t ref_count_ext : 24;
 
     /// Internal reference count (dependencies within computation graph)
@@ -218,7 +218,7 @@ struct Device {
     /// Max. bytes of shared memory per SM
     uint32_t shared_memory_bytes;
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
     /// OptiX device context
     void *optix_context = nullptr;
 #endif
@@ -262,7 +262,7 @@ struct ReleaseChain {
 };
 
 /// A few forward declarations for OptiX
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
 using OptixProgramGroup = void *;
 
 struct OptixShaderBindingTable {
@@ -356,10 +356,10 @@ struct ThreadState {
     CUevent event = nullptr;
 
     /**
-     * \brief Enoki device ID associated with this device
+     * \brief DrJit device ID associated with this device
      *
      * This value may differ from the CUDA device ID if the machine contains
-     * CUDA devices that are incompatible with Enoki.
+     * CUDA devices that are incompatible with DrJit.
      *
      * Equals -1 for LLVM ThreadState instances.
      */
@@ -371,7 +371,7 @@ struct ThreadState {
     /// Targeted PTX version (major * 10 + minor)
     uint32_t ptx_version = 60;
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
     /// ---------------------------- OptiX-specific ----------------------------
 
     /// User-provided OptiX compile options data structure
@@ -444,7 +444,7 @@ private:
     size_t m_capacity;
 };
 
-// Key associated with a pointer registered in Enoki's pointer registry
+// Key associated with a pointer registered in DrJit's pointer registry
 struct RegistryKey {
     const char *domain;
     uint32_t id;
@@ -567,7 +567,7 @@ struct State {
     /// Available devices and their CUDA IDs
     std::vector<Device> devices;
 
-    /// State associated with each Enoki-JIT thread
+    /// State associated with each DrJit thread
     std::vector<ThreadState *> tss;
 
     /// Pointer registries for LLVM and CUDA backends

@@ -1,5 +1,5 @@
 /*
-    enoki-jit/jit.h -- Self-contained JIT compiler for CUDA & LLVM.
+    drjit-core/jit.h -- Self-contained JIT compiler for CUDA & LLVM.
 
     This library implements a self-contained tracing JIT compiler that supports
     both CUDA PTX and LLVM IR as intermediate representations. It takes care of
@@ -14,9 +14,9 @@
     simultaneously dispatch computation to one or more CPUs/GPUs.
 
     As an alternative to the fairly low-level API defined here, you may prefer
-    the functionality in 'include/enoki/array.h', which provides a header-only
+    the interface in 'include/drjit-core/array.h', which provides a header-only
     C++ array abstraction with operator overloading that dispatches to the C
-    API. The Enoki parent project (https://github.com/mitsuba-renderer/enoki)
+    API. The Dr.Jit parent project (https://github.com/mitsuba-renderer/drjit)
     can also be interpreted as continuation of this kind of abstraction, which
     adds further components like a library of transcendental mathematical
     operations, automatic differentiation support, Python bindings, etc.
@@ -33,7 +33,7 @@
 #include <stdint.h>
 
 #if defined(_MSC_VER)
-#  if defined(ENOKI_JIT_BUILD)
+#  if defined(DRJIT_BUILD)
 #    define JIT_EXPORT    __declspec(dllexport)
 #  else
 #    define JIT_EXPORT    __declspec(dllimport)
@@ -75,9 +75,9 @@ extern "C" {
 // ====================================================================
 
 /**
- * \brief List of backends that can be targeted by Enoki-JIT
+ * \brief List of backends that can be targeted by Dr.Jit
  *
- * Enoki-JIT can perform computation using one of several computational
+ * Dr.Jit can perform computation using one of several computational
  * backends. Before use, a backend must be initialized via \ref jit_init().
  */
 #if defined(__cplusplus)
@@ -151,7 +151,7 @@ extern JIT_EXPORT void jit_shutdown(int light JIT_DEF(0));
 /**
  * \brief Wait for all computation scheduled by the current thread to finish
  *
- * Each thread using Enoki-JIT will issue computation to an independent queue.
+ * Each thread using Dr.Jit will issue computation to an independent queue.
  * This function only synchronizes with computation issued to the queue of the
  * calling thread.
  */
@@ -167,14 +167,14 @@ extern JIT_EXPORT void jit_sync_all_devices();
 //                    CUDA/LLVM-specific functionality
 // ====================================================================
 
-/// Return the no. of available CUDA devices that are compatible with Enoki.
+/// Return the no. of available CUDA devices that are compatible with Dr.Jit.
 extern JIT_EXPORT int jit_cuda_device_count();
 
 /**
  * \brief Set the active CUDA device.
  *
  * The argument must be between 0 and <tt>jit_cuda_device_count() - 1</tt>,
- * which only accounts for Enoki-compatible devices. This is a per-thread
+ * which only accounts for Dr.Jit-compatible devices. This is a per-thread
  * property: independent threads can optionally issue computation to different
  * GPUs.
  */
@@ -184,7 +184,7 @@ extern JIT_EXPORT void jit_cuda_set_device(int device);
  * \brief Return the CUDA device ID associated with the current thread
  *
  * The result is in the range of 0 and <tt>jit_cuda_device_count() - 1</tt>.
- * When the machine contains CUDA devices that are incompatible with Enoki (due
+ * When the machine contains CUDA devices that are incompatible with Dr.Jit (due
  * to a lack of 64-bit addressing, uniform address space, or managed memory),
  * this number may differ from the default CUDA device ID. Use
  * <tt>jit_cuda_device_raw()</tt> in that case.
@@ -206,7 +206,7 @@ extern JIT_EXPORT int jit_cuda_compute_capability();
 /**
  * \brief Override generated PTX version and compute capability
  *
- * Enoki-JIT generates code that runs on a wide variety of platforms supporting
+ * Dr.Jit generates code that runs on a wide variety of platforms supporting
  * at least the PTX version and compute capability of 60, and 50, respectively.
  * Those versions can both be bumped via this function---there is no
  * performance advantage in doing so, though some more recent features (e.g.
@@ -339,16 +339,16 @@ enum class AllocType : uint32_t {
 
     /**
      * Like \c Host memory, except that it may only be used *asynchronously*
-     * within a computation performed by enoki-jit.
+     * within a computation performed by drjit-core.
      *
      * In particular, host-asynchronous memory obtained via \ref jit_malloc()
-     * should not be written to directly (i.e. outside of enoki-jit), since it
+     * should not be written to directly (i.e. outside of drjit-core), since it
      * may still be used by a currently running kernel. Releasing
      * host-asynchronous memory via \ref jit_free() also occurs
      * asynchronously.
      *
      * This type of memory is used internally when running code via the LLVM
-     * backend, and when this process is furthermore parallelized using Enoki's
+     * backend, and when this process is furthermore parallelized using Dr.Jit's
      * internal thread pool.
      */
     HostAsync,
@@ -404,7 +404,7 @@ enum AllocType {
 /**
  * \brief Allocate memory of the specified type
  *
- * Under the hood, Enoki implements a custom allocation scheme that tries to
+ * Under the hood, Dr.Jit implements a custom allocation scheme that tries to
  * reuse allocated memory regions instead of giving them back to the OS/GPU.
  * This eliminates inefficient synchronization points in the context of CUDA
  * programs, and it can also improve performance on the CPU when working with
@@ -422,7 +422,7 @@ extern JIT_EXPORT void *jit_malloc(JIT_ENUM AllocType type, size_t size)
  *
  * For CPU-only arrays (\ref AllocType::Host), <tt>jit_free()</tt> is
  * synchronous and very similar to <tt>free()</tt>, except that the released
- * memory is placed in Enoki's internal allocation cache instead of being
+ * memory is placed in Dr.Jit's internal allocation cache instead of being
  * returned to the OS. The function \ref jit_flush_malloc_cache() can optionally
  * be called to also clear this cache.
  *
@@ -513,9 +513,9 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
 // ====================================================================
 
 /**
- * \brief Register a pointer with Enoki's pointer registry
+ * \brief Register a pointer with Dr.Jit's pointer registry
  *
- * Enoki provides a central registry that maps registered pointer values to
+ * Dr.Jit provides a central registry that maps registered pointer values to
  * low-valued 32-bit IDs. The main application is efficient virtual function
  * dispatch via \ref jit_var_vcall(), through the registry could be used for other
  * applications as well.
@@ -634,7 +634,7 @@ extern JIT_EXPORT const void *jit_registry_attr_data(JIT_ENUM JitBackend backend
 /**
  * \brief Variable types supported by the JIT compiler.
  *
- * A type promotion routine in the Enoki Python bindings depends on on this
+ * A type promotion routine in the Dr.Jit Python bindings depends on on this
  * exact ordering, so please don't change.
  */
 enum class VarType : uint32_t {
@@ -660,7 +660,7 @@ enum VarType {
  * loop references a literal constant that keeps changing (e.g. an iteration
  * counter). This change causes each iteration to generate different code,
  * requiring repeated compilation steps. By preemptively evaluating this
- * constant, Enoki-JIT can reuse a single kernel for all steps.
+ * constant, Dr.Jit can reuse a single kernel for all steps.
  *
  * The parameter \c is_class specifies whether the variable represents an
  * instance index of a class, which may trigger further optimizations within
@@ -878,7 +878,7 @@ extern JIT_EXPORT uint32_t jit_var_new_cast(uint32_t index,
  * which is useful when implementing operations that access global memory.
  *
  * A nonzero value should be passed to the \c write parameter if the pointer is
- * going to be used to perform write operations. Enoki-JIT needs to know about
+ * going to be used to perform write operations. Dr.Jit needs to know about
  * this to infer whether a future scatter operation to \c dep requires making a
  * backup copy first.
  */
@@ -1234,7 +1234,7 @@ extern JIT_EXPORT const char *jit_var_graphviz();
 /**
  * \brief Push a string onto the label stack
  *
- * Enoki-JIT maintains a per-thread label stack that is initially empty and
+ * Dr.Jit maintains a per-thread label stack that is initially empty and
  * inactive. If values are pushed onto it, they will be used to initialize the
  * labels of any newly created variables.
  *
@@ -1260,7 +1260,7 @@ extern JIT_EXPORT void jit_prefix_pop(JIT_ENUM JitBackend backend);
 /**
  * \brief Status flags to adjust/inspect the eagerness of the JIT compiler
  *
- * Certain Enoki operations can operate in two different ways: they can be
+ * Certain Dr.Jit operations can operate in two different ways: they can be
  * executed at once, or they can be recorded to postpone evaluation to a later
  * point. The latter is generally more efficient because it enables fusion of
  * multiple operations that will then exchange information via registers
@@ -1322,7 +1322,7 @@ enum class JitFlag : uint32_t {
        along with the KernelHistory feature. */
     LaunchBlocking = 4096,
 
-    /// Exploit literal constants during AD (used in the Enoki parent project)
+    /// Exploit literal constants during AD (used in the Dr.Jit parent project)
     ADOptimize = 8192,
 
     /// Default flags
@@ -1369,8 +1369,8 @@ extern JIT_EXPORT int jit_flag(JIT_ENUM JitFlag flag);
 /**
  * \brief Begin a recording session
  *
- * Enoki can record virtual function calls and loops to preserve them 1:1 in
- * the generated code. This function indicates to Enoki-JIT that the program is
+ * Dr.Jit can record virtual function calls and loops to preserve them 1:1 in
+ * the generated code. This function indicates to Dr.Jit that the program is
  * starting to record computation. The function sets \ref JitFlag.Recording and
  * returns information that will later enable stopping or canceling a recording
  * session via \ref jit_record_end().
@@ -1483,7 +1483,7 @@ extern JIT_EXPORT uint32_t jit_var_vcall(const char *name, uint32_t self,
 /**
  * \brief Initialize a set of loop state variables
  *
- * When recording an Enoki loop
+ * When recording an Dr.Jit loop
  *
  * \return A variable index representing the start of the loop. It must be
  * passed to the \c loop_start argument of \ref jit_var_loop()
@@ -1500,17 +1500,17 @@ extern JIT_EXPORT uint32_t jit_var_loop(const char *name, uint32_t loop_init,
                                         uint32_t loop_cond, size_t n_indices,
                                         uint32_t *indices_in,
                                         uint32_t **indices, uint32_t checkpoint,
-                                        int first_round, int uniform);
+                                        int first_round);
 
 /**
  * \brief Pushes a new mask variable onto the mask stack
  *
- * In advanced usage of Enoki-JIT (e.g. recorded loops, virtual function calls,
+ * In advanced usage of Dr.Jit (e.g. recorded loops, virtual function calls,
  * etc.), it may be necessary to mask scatter and gather operations to prevent
  * undefined behavior and crashes. This function can be used to push a mask
  * onto a mask stack. The top of the stack will be combined with the mask
  * argument supplied to subsequent \ref jit_var_new_gather() and \ref
- * jit_var_new_scatter() operations. While on the stack, Enoki-JIT will hold an
+ * jit_var_new_scatter() operations. While on the stack, Dr.Jit will hold an
  * internal reference to \c index to keep it from being freed. When \combine is
  * nonzero, the mask will be combined with the current top element of the
  * stack.
@@ -1735,7 +1735,7 @@ extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
  * \brief Set a new scope identifier to limit the effect of common
  * subexpression elimination
  *
- * Enoki-JIT implements a very basic approximation of common subexpression
+ * Dr.Jit implements a very basic approximation of common subexpression
  * elimination based on local value numbering (LVN): an attempt to create a
  * variable, whose statement and dependencies match a previously created
  * variable will sidestep creation and instead reuse the old variable via
@@ -1759,9 +1759,9 @@ extern JIT_EXPORT void jit_set_cse_scope(JIT_ENUM JitBackend backend, uint32_t d
 // ====================================================================
 
 /**
- * \brief List of kernel types that can be launched by Enoki-JIT
+ * \brief List of kernel types that can be launched by Dr.Jit
  *
- * Enoki-JIT sometimes launches kernels that are not generated by the JIT itself
+ * Dr.Jit sometimes launches kernels that are not generated by the JIT itself
  * (e.g. precompiled CUDA kernels for horizontal reductions). The kernel history
  * identifies them using a field of type \c KernelType.
  */
@@ -1823,13 +1823,13 @@ struct KernelHistoryEntry {
     /// Time (ms) spent executing the kernel
     float execution_time;
 
-    // Enoki-JIT internal portion, will be cleared by jit_kernel_history()
-    // ===================================================================
+    // Dr.Jit internal portion, will be cleared by jit_kernel_history()
+    // ================================================================
 
     /// CUDA events for measuring the runtime of the kernel
     void *event_start, *event_end;
 
-    /// Enoki-thread task handle
+    /// Dr.Jit-Thread task handle
     void *task;
 };
 

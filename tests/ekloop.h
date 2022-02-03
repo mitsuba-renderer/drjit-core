@@ -1,7 +1,7 @@
 /*
-    enoki/loop.h -- Infrastructure to record CUDA and LLVM loops
+    drjit/loop.h -- Infrastructure to record CUDA and LLVM loops
 
-    Enoki is a C++ template library for efficient vectorization and
+    Dr.Jit is a C++ template library for efficient vectorization and
     differentiation of numerical kernels on modern processor architectures.
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
@@ -12,11 +12,11 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
-#include <enoki-jit/containers.h>
-#include <enoki-jit/state.h>
+#include <drjit-core/jit.h>
+#include <drjit-core/containers.h>
+#include <drjit-core/state.h>
 
-NAMESPACE_BEGIN(enoki)
+NAMESPACE_BEGIN(drjit)
 NAMESPACE_BEGIN(detail)
 // A few forward declarations so that this compiles even without autodiff.h
 template <typename Value> void ad_inc_ref(int32_t) noexcept;
@@ -61,7 +61,7 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
         : m_record(jit_flag(JitFlag::LoopRecord)) {
 
         size_t size = strlen(name) + 1;
-        m_name = ek_unique_ptr<char[]>(new char[size]);
+        m_name = dr_unique_ptr<char[]>(new char[size]);
         memcpy(m_name.get(), name, size);
 
         /// Immediately initialize if loop state is specified
@@ -113,7 +113,7 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
                             "You have two options: either disable loop "
                             "recording via set_flag(JitFlag::LoopRecord, "
                             "false). Alternatively, you could implement the "
-                            "adjoint of the loop using ek::CustomOp.");
+                            "adjoint of the loop using dr::CustomOp.");
                     put(value.detach_());
                     m_indices_ad[m_indices_ad.size() - 1] = value.index_ad_ptr();
                 } else if constexpr (is_jit_array_v<T>) {
@@ -131,7 +131,7 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
                 for (size_t i = 0; i < value.size(); ++i)
                     put(value.entry(i));
             }
-        } else if constexpr (is_enoki_struct_v<T>) {
+        } else if constexpr (is_drjit_struct_v<T>) {
             struct_support_t<T>::apply_1(value, [&](auto &x) { put(x); });
         }
         put(args...);
@@ -147,7 +147,7 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
         if (m_state)
             jit_raise("Loop(\"%s\"): was already initialized!", m_name.get());
 
-        m_indices_prev  = ek_vector<uint32_t>(m_indices.size(), 0);
+        m_indices_prev  = dr_vector<uint32_t>(m_indices.size(), 0);
 
         // Capture JIT state and begin recording session
         m_jit_state.new_scope();
@@ -207,7 +207,7 @@ protected:
                 rv = jit_var_loop(m_name.get(), m_loop_init, m_loop_cond,
                                   m_indices.size(), m_indices_prev.data(),
                                   m_indices.data(), m_jit_state.checkpoint(),
-                                  m_state == 2, 0);
+                                  m_state == 2);
 
                 m_state++;
 
@@ -329,10 +329,10 @@ protected:
     detail::JitState<Backend> m_jit_state;
 
     /// A descriptive name
-    ek_unique_ptr<char[]> m_name;
+    dr_unique_ptr<char[]> m_name;
 
     /// Pointers to loop variable indices (JIT handles)
-    ek_vector<uint32_t *> m_indices;
+    dr_vector<uint32_t *> m_indices;
 
     /**
      * \brief Temporary index scratch space
@@ -343,7 +343,7 @@ protected:
      * In wavefront mode, it represents the loop state
      * of the previous iteration.
      */
-    ek_vector<uint32_t> m_indices_prev;
+    dr_vector<uint32_t> m_indices_prev;
 
     // --------------- Loop recording ---------------
 
@@ -359,14 +359,14 @@ protected:
     // --------------- Wavefront mode ---------------
 
     /// Pointers to loop variable indices (AD handles)
-    ek_vector<int32_t *> m_indices_ad;
+    dr_vector<int32_t *> m_indices_ad;
 
     /// AD variable state of the previous iteration
-    ek_vector<uint32_t> m_indices_ad_prev;
+    dr_vector<uint32_t> m_indices_ad_prev;
 
     /// Stashed mask variable from the previous iteration
     Mask m_cond;
 
 };
 
-NAMESPACE_END(enoki)
+NAMESPACE_END(drjit)

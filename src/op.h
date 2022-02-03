@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
+#include <drjit-core/jit.h>
 
 /// Create a variable representing the result of a standard operation
 extern uint32_t jitc_var_new_op(JitOp ot, uint32_t n_dep, const uint32_t *dep);

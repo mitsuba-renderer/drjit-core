@@ -1,8 +1,8 @@
 /*
-    enoki/traits.h -- C++ type traits for analyzing variable types
+    drjit/traits.h -- C++ type traits for analyzing variable types
 
     This file provides helper traits that are needed by the C++ array
-    wrappers defined in in 'enoki/jitvar.h'.
+    wrappers defined in in 'drjit/jitvar.h'.
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
+#include <drjit-core/jit.h>
 #include <type_traits>
 
 #if !defined(NAMESPACE_BEGIN)
@@ -23,7 +23,7 @@
 #  define NAMESPACE_END(name) }
 #endif
 
-NAMESPACE_BEGIN(enoki)
+NAMESPACE_BEGIN(drjit)
 
 template <bool Value> using enable_if_t = typename std::enable_if<Value, int>::type;
 
@@ -79,4 +79,4 @@ template <> struct var_type<bool> {
    template <typename T> constexpr VarType var_type_v = var_type<T>::value;
 #endif
 
-NAMESPACE_END(enoki)
+NAMESPACE_END(drjit)

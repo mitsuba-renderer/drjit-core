@@ -18,12 +18,12 @@
 
 // Try to use huge pages for allocations > 2M (only on Linux)
 #if defined(__linux__)
-#  define ENOKI_HUGEPAGE 1
+#  define DRJIT_HUGEPAGE 1
 #else
-#  define ENOKI_HUGEPAGE 0
+#  define DRJIT_HUGEPAGE 0
 #endif
 
-#define ENOKI_HUGEPAGE_SIZE (2 * 1024 * 1024)
+#define DRJIT_HUGEPAGE_SIZE (2 * 1024 * 1024)
 
 static_assert(
     sizeof(tsl::detail_robin_hash::bucket_entry<AllocUsedMap::value_type, false>) == 24,
@@ -66,14 +66,14 @@ static void *aligned_malloc(size_t size) {
     unlock_guard guard(state.lock);
 #if !defined(_WIN32)
     // Use posix_memalign for small allocations and mmap() for big ones
-    if (size < ENOKI_HUGEPAGE_SIZE) {
+    if (size < DRJIT_HUGEPAGE_SIZE) {
         void *ptr = nullptr;
         int rv = posix_memalign(&ptr, 64, size);
         return rv == 0 ? ptr : nullptr;
     } else {
         void *ptr;
 
-#if ENOKI_HUGEPAGE
+#if DRJIT_HUGEPAGE
         // Attempt to allocate a 2M page directly
         ptr = mmap(0, size, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANON | MAP_HUGETLB, -1, 0);
@@ -85,7 +85,7 @@ static void *aligned_malloc(size_t size) {
         ptr = mmap(0, size, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANON, -1, 0);
 
-#if ENOKI_HUGEPAGE
+#if DRJIT_HUGEPAGE
         // .. and advise the OS to convert to 2M pages
         if (ptr != MAP_FAILED)
             madvise(ptr, size, MADV_HUGEPAGE);
@@ -100,7 +100,7 @@ static void *aligned_malloc(size_t size) {
 
 static void aligned_free(void *ptr, size_t size) {
 #if !defined(_WIN32)
-    if (size < ENOKI_HUGEPAGE_SIZE)
+    if (size < DRJIT_HUGEPAGE_SIZE)
         free(ptr);
     else
         munmap(ptr, size);
@@ -257,11 +257,11 @@ void* jitc_malloc(AllocType type, size_t size) {
 
     (void) descr; // don't warn if tracing is disabled
     if ((AllocType) ai.type == AllocType::Device)
-        jitc_trace("jit_malloc(type=%s, device=%u, size=%zu): " ENOKI_PTR " (%s)",
+        jitc_trace("jit_malloc(type=%s, device=%u, size=%zu): " DRJIT_PTR " (%s)",
                   alloc_type_name[ai.type], (uint32_t) ai.device, (size_t) ai.size,
                   (uintptr_t) ptr, descr);
     else
-        jitc_trace("jit_malloc(type=%s, size=%zu): " ENOKI_PTR " (%s)",
+        jitc_trace("jit_malloc(type=%s, size=%zu): " DRJIT_PTR " (%s)",
                   alloc_type_name[ai.type], (size_t) ai.size, (uintptr_t) ptr,
                   descr);
 
@@ -278,7 +278,7 @@ void jitc_free(void *ptr) {
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jitc_raise("jit_free(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jitc_raise("jit_free(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
 
     AllocInfo ai = it.value();
 
@@ -316,11 +316,11 @@ void jitc_free(void *ptr) {
     }
 
     if ((AllocType) ai.type == AllocType::Device)
-        jitc_trace("jit_free(" ENOKI_PTR ", type=%s, device=%u, size=%zu)",
+        jitc_trace("jit_free(" DRJIT_PTR ", type=%s, device=%u, size=%zu)",
                   (uintptr_t) ptr, alloc_type_name[ai.type],
 		  (uint32_t) ai.device, (size_t) ai.size);
     else
-        jitc_trace("jit_free(" ENOKI_PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
+        jitc_trace("jit_free(" DRJIT_PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
                   alloc_type_name[ai.type], (size_t) ai.size);
 
     state.alloc_usage[ai.type] -= ai.size;
@@ -390,7 +390,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jitc_raise("jit_malloc_migrate(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jitc_raise("jit_malloc_migrate(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
 
     AllocInfo ai = it.value();
 
@@ -443,7 +443,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
         type = AllocType::HostPinned;
 
     void *ptr_new = jitc_malloc(type, ai.size);
-    jitc_trace("jit_malloc_migrate(" ENOKI_PTR " -> " ENOKI_PTR ", %s -> %s)",
+    jitc_trace("jit_malloc_migrate(" DRJIT_PTR " -> " DRJIT_PTR ", %s -> %s)",
               (uintptr_t) ptr, (uintptr_t) ptr_new,
               alloc_type_name[ai.type], alloc_type_name[(int) type]);
 
@@ -481,7 +481,7 @@ void jitc_malloc_prefetch(void *ptr, int device) {
 
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jitc_raise("jit_malloc_prefetch(): unknown address " ENOKI_PTR "!",
+        jitc_raise("jit_malloc_prefetch(): unknown address " DRJIT_PTR "!",
                   (uintptr_t) ptr);
 
     AllocInfo ai = it.value();
@@ -512,7 +512,7 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
     if (warn && !jitc_flush_malloc_cache_warned) {
         jitc_log(
             Warn,
-            "jit_flush_malloc_cache(): Enoki exhausted the available memory and had "
+            "jit_flush_malloc_cache(): Dr.Jit exhausted the available memory and had "
             "to flush its allocation cache to free up additional memory. This "
             "is an expensive operation and will have a negative effect on "
             "performance. You may want to change your computation so that it "
@@ -618,7 +618,7 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
 AllocType jitc_malloc_type(void *ptr) {
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jitc_raise("jit_malloc_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jitc_raise("jit_malloc_type(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
     return (AllocType) it->second.type;
 }
 
@@ -626,7 +626,7 @@ AllocType jitc_malloc_type(void *ptr) {
 int jitc_malloc_device(void *ptr) {
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jitc_raise("jit_malloc_type(): unknown address " ENOKI_PTR "!", (uintptr_t) ptr);
+        jitc_raise("jit_malloc_type(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
     const AllocInfo &ai = it.value();
     if (ai.type == (int) AllocType::Host || ai.type == (int) AllocType::HostAsync)
         return -1;

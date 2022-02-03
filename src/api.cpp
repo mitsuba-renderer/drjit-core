@@ -21,14 +21,14 @@
 #include "printf.h"
 #include <thread>
 #include <condition_variable>
-#include <enoki-jit/texture.h>
+#include <drjit-core/texture.h>
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
-#include <enoki-jit/optix.h>
+#if defined(DRJIT_ENABLE_OPTIX)
+#include <drjit-core/optix.h>
 #include "optix_api.h"
 #endif
 
-#include <enoki-thread/thread.h>
+#include <drjit-thread/thread.h>
 
 void jit_init(uint32_t backends) {
     lock_guard guard(state.lock);
@@ -818,11 +818,10 @@ uint32_t jit_var_loop_cond(uint32_t loop_init, uint32_t cond, size_t n_indices,
 
 uint32_t jit_var_loop(const char *name, uint32_t loop_init, uint32_t loop_cond,
                       size_t n_indices, uint32_t *indices_in,
-                      uint32_t **indices, uint32_t checkpoint, int first_round,
-                      int uniform) {
+                      uint32_t **indices, uint32_t checkpoint, int first_round) {
     lock_guard guard(state.lock);
     return jitc_var_loop(name, loop_init, loop_cond, n_indices, indices_in,
-                         indices, checkpoint, first_round, uniform);
+                         indices, checkpoint, first_round);
 }
 
 struct VCallBucket *
@@ -843,7 +842,7 @@ struct KernelHistoryEntry *jit_kernel_history() {
     return state.kernel_history.get();
 }
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
 OptixDeviceContext jit_optix_context() {
     lock_guard guard(state.lock);
     return jitc_optix_context();

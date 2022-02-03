@@ -1,6 +1,6 @@
 #pragma once
 
-namespace enoki {
+namespace drjit {
     namespace detail {
         /// Detector pattern that is used to drive many type traits below
         template <typename SFINAE, template <typename> typename Op, typename Arg>
@@ -24,7 +24,7 @@ namespace enoki {
     template <typename T> constexpr size_t array_depth_v = is_array_v<T> ? 1 : 0;
     template <typename T> constexpr bool is_jit_array_v = is_array_v<T>;
     template <typename T> constexpr bool is_diff_array_v = false;
-    template <typename T> constexpr bool is_enoki_struct_v = false;
+    template <typename T> constexpr bool is_drjit_struct_v = false;
     template <typename T> using mask_t = typename T::Mask;
     template <typename T> using scalar_t = typename T::Value;
 

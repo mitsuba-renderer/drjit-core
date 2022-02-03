@@ -1,8 +1,8 @@
 /*
-    enoki-jit/state.h -- JitState RAII helper class (implementation detail)
+    drjit-core/state.h -- JitState RAII helper class (implementation detail)
 
     This header file defines the 'JitState' class, which is an RAII helper
-    class used by Enoki's loop/vcall recording code. It enables setting various
+    class used by Dr.Jit's loop/vcall recording code. It enables setting various
     attributes of the JIT compiler and recovering if an exception is thrown.
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
@@ -13,16 +13,16 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
+#include <drjit-core/jit.h>
 #include <cassert>
 
-NAMESPACE_BEGIN(enoki)
+NAMESPACE_BEGIN(drjit)
 NAMESPACE_BEGIN(detail)
 
 /**
  * \brief JitState RAII wrapper
  *
- * This class encapsulates several configuration attributes of Enoki-JIT (the
+ * This class encapsulates several configuration attributes of Dr.Jit (the
  * mask stack, variable name prefixes, the CSE scope, whether program recording
  * is enabled.)
  *
@@ -130,4 +130,4 @@ private:
 
 
 NAMESPACE_END(detail)
-NAMESPACE_END(enoki)
+NAMESPACE_END(drjit)

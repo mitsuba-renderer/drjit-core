@@ -1,4 +1,4 @@
-#include <enoki-jit/optix.h>
+#include <drjit-core/optix.h>
 #define OPTIX_STUBS_IMPL
 #include "optix_stubs.h"
 

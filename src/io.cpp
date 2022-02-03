@@ -13,7 +13,7 @@
 #include "profiler.h"
 #include "cuda_api.h"
 #include "optix_api.h"
-#include "../kernels/kernels.h"
+#include "../resources/kernels.h"
 #include <stdexcept>
 #include <stdio.h>
 #include <fcntl.h>
@@ -28,10 +28,10 @@
 #endif
 
 /// Version number for cache files
-#define ENOKI_CACHE_VERSION 4
+#define DRJIT_CACHE_VERSION 4
 
 // Uncomment to write out training data for creating a compression dictionary
-// #define ENOKI_CACHE_TRAIN 1
+// #define DRJIT_CACHE_TRAIN 1
 
 #pragma pack(push)
 #pragma pack(1)
@@ -140,10 +140,10 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
     try {
         read_retry((uint8_t *) &header, sizeof(CacheFileHeader));
 
-        if (header.version != ENOKI_CACHE_VERSION)
+        if (header.version != DRJIT_CACHE_VERSION)
             jitc_raise("jit_kernel_load(): cache file \"%s\" is from an "
-                       "incompatible version of Enoki. You may want to wipe "
-                       "your ~/.enoki directory.", filename);
+                       "incompatible version of Dr.Jit. You may want to wipe "
+                       "your ~/.drjit directory.", filename);
 
         if (header.source_size != source_size)
             jitc_raise("jit_kernel_load(): cache collision in file \"%s\": size "
@@ -220,9 +220,9 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
                 jitc_fail("jit_llvm_load(): VirtualProtect() failed: %u", GetLastError());
 #endif
 
-#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
+#if defined(DRJIT_ENABLE_ITTNOTIFY)
             char name[39];
-            snprintf(name, sizeof(name), "enoki_%016llx%016llx",
+            snprintf(name, sizeof(name), "drjit_%016llx%016llx",
                      (unsigned long long) hash.high64,
                      (unsigned long long) hash.low64);
             kernel.llvm.itt = __itt_string_handle_create(name);
@@ -333,7 +333,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
 #endif
 
     CacheFileHeader header;
-    header.version = ENOKI_CACHE_VERSION;
+    header.version = DRJIT_CACHE_VERSION;
     header.source_size = source_size;
     header.kernel_size = kernel.size;
     header.reloc_size = 0;
@@ -409,8 +409,8 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
                 filename, GetLastError());
 #endif
 
-#if ENOKI_CACHE_TRAIN == 1
-    snprintf(filename, sizeof(filename), "%s/.enoki/%016llx%016llx.%s.trn",
+#if DRJIT_CACHE_TRAIN == 1
+    snprintf(filename, sizeof(filename), "%s/.drjit/%016llx%016llx.%s.trn",
              getenv("HOME"), (unsigned long long) hash.high64,
              (unsigned long long) hash.low64,
              backend == JitBackend::CUDA ? "cuda" : "llvm");
@@ -443,7 +443,7 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
             cuda_check(cuModuleUnload(kernel.cuda.mod));
             free(kernel.data);
         } else {
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
             jitc_optix_free(kernel);
 #endif
         }

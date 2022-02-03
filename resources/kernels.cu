@@ -1,5 +1,5 @@
 /*
-    kernels/compress.cuh -- Supplemental CUDA kernels used by Enoki-JIT
+    kernels/compress.cuh -- Supplemental CUDA kernels used by Dr.JIT
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 

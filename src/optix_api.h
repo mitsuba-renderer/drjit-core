@@ -31,7 +31,7 @@ extern void *jitc_optix_lookup(const char *name);
 /// Unload the OptiX library
 extern void jitc_optix_shutdown();
 
-/// Inform Enoki about a partially created OptiX pipeline
+/// Inform Dr.Jit about a partially created OptiX pipeline
 extern void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
                                  const OptixShaderBindingTable *sbt,
                                  const OptixProgramGroup *pg,

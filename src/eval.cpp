@@ -120,7 +120,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     alloca_size = alloca_align = -1;
     kernel_history_entry = {};
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
     uses_optix = ts->backend == JitBackend::CUDA && jit_flag(JitFlag::ForceOptiX);
 #endif
 
@@ -197,7 +197,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             v->param_type = ParamType::Register;
             v->param_offset = 0xFFFF;
             n_side_effects += v->side_effect;
-            #if defined(ENOKI_JIT_ENABLE_OPTIX)
+            #if defined(DRJIT_ENABLE_OPTIX)
                 uses_optix |= v->optix;
             #endif
         }
@@ -224,7 +224,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     // Pass parameters through global memory if too large or using OptiX
     if (backend == JitBackend::CUDA &&
-        (uses_optix || kernel_param_count > ENOKI_CUDA_ARG_LIMIT)) {
+        (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT)) {
         size_t size = kernel_param_count * sizeof(void *);
         uint8_t *tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, size);
         kernel_params_global = (uint8_t *) jitc_malloc(AllocType::Device, size);
@@ -273,10 +273,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     else
         jitc_assemble_llvm(ts, group);
 
-    // Replace '^'s in 'enoki_^^^^^^^^' by a hash code
+    // Replace '^'s in 'drjit_^^^^^^^^' by a hash code
     kernel_hash = hash_kernel(buffer.get());
     snprintf(kernel_name, sizeof(kernel_name), "%s%016llx%016llx",
-             uses_optix ? "__raygen__" : "enoki_",
+             uses_optix ? "__raygen__" : "drjit_",
              (unsigned long long) kernel_hash.high64,
              (unsigned long long) kernel_hash.low64);
     const char *name_start = strchr(buffer.get(), '^');
@@ -327,7 +327,7 @@ static ProfilerRegion profiler_region_backend_load("jit_eval: loading");
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     uint64_t flags = 0;
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
     if (uses_optix) {
         const OptixPipelineCompileOptions &pco =
             ts->optix_pipeline_compile_options;
@@ -360,11 +360,11 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                 if (!uses_optix) {
                     jitc_cuda_compile(buffer.get(), buffer.size(), kernel);
                 } else {
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
                     cache_hit = jitc_optix_compile(
                         ts, buffer.get(), buffer.size(), kernel_name, kernel);
 #else
-                    jitc_fail("jit_run(): OptiX support was not enabled in Enoki-JIT.");
+                    jitc_fail("jit_run(): OptiX support was not enabled in DrJit.");
 #endif
                 }
             } else {
@@ -399,7 +399,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             // Locate the kernel entry point
             char kernel_name_tmp[39];
             snprintf(kernel_name_tmp, sizeof(kernel_name_tmp),
-                     "enoki_%016llx%016llx",
+                     "drjit_%016llx%016llx",
                      (unsigned long long) kernel_hash.high64,
                      (unsigned long long) kernel_hash.low64);
 
@@ -413,7 +413,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                 kernel.cuda.func, nullptr, 0, 0));
             kernel.cuda.block_size = (uint32_t) block_size;
 
-            // Enoki doesn't use shared memory at all, prefer to have more L1 cache.
+            // DrJit doesn't use shared memory at all, prefer to have more L1 cache.
             cuda_check(cuFuncSetAttribute(
                 kernel.cuda.func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
             cuda_check(cuFuncSetAttribute(
@@ -463,7 +463,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
     Task* ret_task = nullptr;
     if (ts->backend == JitBackend::CUDA) {
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
         if (unlikely(uses_optix)) {
             jitc_optix_launch(ts, kernel, group.size, kernel_params_global,
                               kernel_param_count);
@@ -505,28 +505,28 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                      start      = index * block_size,
                      end        = std::min(start + block_size, size);
 
-#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
+#if defined(DRJIT_ENABLE_ITTNOTIFY)
             // Signal start of kernel
-            __itt_task_begin(enoki_domain, __itt_null, __itt_null,
+            __itt_task_begin(drjit_domain, __itt_null, __itt_null,
                              (__itt_string_handle *) params[2]);
 #endif
             // Perform the main computation
             kernel(start, end, params);
 
-#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
+#if defined(DRJIT_ENABLE_ITTNOTIFY)
             // Signal termination of kernel
-            __itt_task_end(enoki_domain);
+            __itt_task_end(drjit_domain);
 #endif
         };
 
-        uint32_t block_size = ENOKI_POOL_BLOCK_SIZE,
+        uint32_t block_size = DRJIT_POOL_BLOCK_SIZE,
                  blocks = (group.size + block_size - 1) / block_size;
 
         kernel_params[0] = (void *) kernel.llvm.reloc[0];
         kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) +
                                      (uintptr_t) group.size);
 
-#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
+#if defined(DRJIT_ENABLE_ITTNOTIFY)
         kernel_params[2] = kernel.llvm.itt;
 #endif
 
@@ -658,18 +658,18 @@ void jitc_eval(ThreadState *ts) {
     scoped_set_context_maybe guard2(ts->context);
     scheduled_tasks.clear();
 
-    const char *ek_raise_id = getenv("ENOKI_KERNEL_RAISE");
-    bool ek_raise = false;
+    const char *dr_raise_id = getenv("DRJIT_KERNEL_RAISE");
+    bool dr_raise = false;
 
     for (ScheduledGroup &group : schedule_groups) {
         jitc_assemble(ts, group);
 
-        if (ek_raise_id) {
+        if (dr_raise_id) {
             char tmp[17];
             snprintf(tmp, sizeof(tmp), "%016llx",
                      (unsigned long long) kernel_hash.high64);
-            if (strncmp(ek_raise_id, tmp, 16) == 0)
-                ek_raise = true;
+            if (strncmp(dr_raise_id, tmp, 16) == 0)
+                dr_raise = true;
         }
 
         scheduled_tasks.push_back(jitc_run(ts, group));
@@ -756,7 +756,7 @@ void jitc_eval(ThreadState *ts) {
     jitc_free_flush(ts);
     jitc_log(Info, "jit_eval(): done.");
 
-    if (ek_raise) {
+    if (dr_raise) {
         jitc_log(Warn, "jit_eval(): raising an exception as requested.");
         jitc_raise("jit_eval(): raising an exception as requested.");
     }

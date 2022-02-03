@@ -409,7 +409,7 @@ template <typename T> bool test_const_prop() {
 TEST_BOTH(05_const_prop) {
     /* This very large test runs every implemented operation with a variety of
        scalar and memory inputs and compares their output. This is to ensure
-       that Enoki-JIT's builtin constant propagation pass produces results
+       that Dr.Jit's builtin constant propagation pass produces results
        that are equivalent to the native implementation. */
     bool fail = false;
     fail |= test_const_prop<Float>();

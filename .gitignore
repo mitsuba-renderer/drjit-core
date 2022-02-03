@@ -15,17 +15,17 @@ build
 .vscode
 *.vcxproj
 *.vcxproj.filters
-enoki-jit.sln
-enoki-jit.dir
+drjit-core.sln
+drjit-core.dir
 Release
 Debug
 
-libenoki-jit.so
-libenoki-jit.dylib
-enoki-jit.dll
-libenoki-thread.so
-libenoki-thread.dylib
-enoki-thread.dll
+libdrjit-core.so
+libdrjit-core.dylib
+drjit-core.dll
+libdrjit-thread.so
+libdrjit-thread.dylib
+drjit-thread.dll
 tests/out_*
 tests/test_basics
 tests/test_reductions

@@ -13,7 +13,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
-    buffer.put("define void @enoki_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 %end, "
+    buffer.put("define void @drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 %end, "
                "i8** noalias %params) #0 {\n"
                "entry:\n"
                "    br label %body\n"

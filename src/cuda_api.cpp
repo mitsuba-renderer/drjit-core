@@ -12,7 +12,7 @@
 #include "var.h"
 #include "util.h"
 #include "io.h"
-#include "../kernels/kernels.h"
+#include "../resources/kernels.h"
 #include "cuda_tex.h"
 
 #if defined(_WIN32)
@@ -23,7 +23,7 @@
 
 #include <lz4.h>
 
-#if defined(ENOKI_JIT_DYNAMIC_CUDA)
+#if defined(DRJIT_DYNAMIC_CUDA)
 // Driver API
 CUresult (*cuCtxEnablePeerAccess)(CUcontext, unsigned int) = nullptr;
 CUresult (*cuCtxSynchronize)() = nullptr;
@@ -98,7 +98,7 @@ CUresult (*cuMemFreeAsync)(CUdeviceptr, CUstream) = nullptr;
 static void *jitc_cuda_handle = nullptr;
 #endif
 
-// Enoki API
+// Dr.Jit API
 static CUmodule *jitc_cuda_module = nullptr;
 
 CUfunction *jitc_cuda_fill_64 = nullptr;
@@ -147,7 +147,7 @@ bool jitc_cuda_init() {
     // #endif
 #endif
 
-#if defined(ENOKI_JIT_DYNAMIC_CUDA)
+#if defined(DRJIT_DYNAMIC_CUDA)
     jitc_cuda_handle = nullptr;
 #  if defined(_WIN32)
     const char* cuda_fname = "nvcuda.dll",
@@ -167,7 +167,7 @@ bool jitc_cuda_init() {
 #  endif
 
     if (!jitc_cuda_handle) {
-        jitc_cuda_handle = jitc_find_library(cuda_fname, cuda_glob, "ENOKI_LIBCUDA_PATH");
+        jitc_cuda_handle = jitc_find_library(cuda_fname, cuda_glob, "DRJIT_LIBCUDA_PATH");
 
         if (!jitc_cuda_handle) // CUDA library cannot be loaded, give up
             return false;
@@ -563,7 +563,7 @@ void jitc_cuda_shutdown() {
 
     #undef Z
 
-#if defined(ENOKI_JIT_DYNAMIC_CUDA)
+#if defined(DRJIT_DYNAMIC_CUDA)
     #define Z(x) x = nullptr
 
     Z(cuCtxEnablePeerAccess); Z(cuCtxSynchronize); Z(cuDeviceCanAccessPeer);
@@ -603,11 +603,11 @@ void jitc_cuda_shutdown() {
 }
 
 void *jitc_cuda_lookup(const char *name) {
-#if defined(_WIN32) && !defined(ENOKI_JIT_DYNAMIC_CUDA)
+#if defined(_WIN32) && !defined(DRJIT_DYNAMIC_CUDA)
     jitc_raise("jit_cuda_lookup(): currently unsupported on Windows when the "
-               "ENOKI_JIT_DYNAMIC_CUDA flag is disabled.");
+               "DRJIT_DYNAMIC_CUDA flag is disabled.");
 #else
-#  if defined(ENOKI_JIT_DYNAMIC_CUDA)
+#  if defined(DRJIT_DYNAMIC_CUDA)
     void *handle = jitc_cuda_handle;
 #  else
     void *handle = RTLD_DEFAULT;

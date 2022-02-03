@@ -44,12 +44,12 @@ struct Kernel {
             /// Length of the 'reloc' table
             uint32_t n_reloc;
 
-#if defined(ENOKI_JIT_ENABLE_ITTNOTIFY)
+#if defined(DRJIT_ENABLE_ITTNOTIFY)
             void *itt;
 #endif
         } llvm;
 
-#if defined(ENOKI_JIT_ENABLE_OPTIX)
+#if defined(DRJIT_ENABLE_OPTIX)
         struct {
             OptixModule mod;
             OptixProgramGroup *pg;

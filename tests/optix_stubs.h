@@ -1,4 +1,4 @@
-#include <enoki-jit/optix.h>
+#include <drjit-core/optix.h>
 // =====================================================
 //       Various opaque handles and enumerations
 // =====================================================

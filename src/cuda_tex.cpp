@@ -8,7 +8,7 @@
 
 using StagingAreaDeleter = void (*)(void *);
 
-struct EnokiCudaTexture {
+struct DrJitCudaTexture {
     size_t n_channels; /// Total number of channels
     size_t n_textures; // Number of texture objects
     std::unique_ptr<CUtexObject[]> textures; /// Array of CUDA texture objects
@@ -22,7 +22,7 @@ struct EnokiCudaTexture {
      * struct variables and defines the numbers of CUDA textures to be used for
      * the given number of channels.
      */
-    EnokiCudaTexture(size_t n_channels)
+    DrJitCudaTexture(size_t n_channels)
         : n_channels(n_channels), n_textures(1 + ((n_channels - 1) / 4)),
           textures(std::make_unique<CUtexObject[]>(n_textures)),
           indices(std::make_unique<uint32_t[]>(n_textures)),
@@ -34,7 +34,7 @@ struct EnokiCudaTexture {
      */
     size_t channels(size_t index) const {
         if (index >= n_textures)
-            jitc_raise("EnokiCudaTexture::channels(): invalid texture index!");
+            jitc_raise("DrJitCudaTexture::channels(): invalid texture index!");
 
         size_t tex_channels = 4;
         if (index == n_textures - 1) {
@@ -110,7 +110,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     view_desc.height = (ndim >= 2) ? shape[1] : 1;
     view_desc.depth = (ndim == 3) ? shape[2] : 0;
 
-    EnokiCudaTexture *texture = new EnokiCudaTexture(n_channels);
+    DrJitCudaTexture *texture = new DrJitCudaTexture(n_channels);
     for (size_t tex = 0; tex < texture->n_textures; ++tex) {
         const size_t tex_channels = texture->channels_internal(tex);
 
@@ -156,7 +156,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
 
 static std::unique_ptr<void, StagingAreaDeleter>
 jitc_cuda_tex_alloc_staging_area(size_t n_texels,
-                                 const EnokiCudaTexture &texture) {
+                                 const DrJitCudaTexture &texture) {
     // Each texture except for the last one will need exactly 4 channels
     size_t staging_area_size =
         sizeof(float) * n_texels *
@@ -174,7 +174,7 @@ jitc_cuda_tex_alloc_staging_area(size_t n_texels,
 static void jitc_cuda_tex_memcpy_d2s(
     ThreadState *ts,
     const std::unique_ptr<void, StagingAreaDeleter> &staging_area,
-    size_t n_texels, const void *src_ptr, const EnokiCudaTexture &dst_texture) {
+    size_t n_texels, const void *src_ptr, const DrJitCudaTexture &dst_texture) {
     scoped_set_context guard(ts->context);
 
     size_t texel_size = dst_texture.n_channels * sizeof(float);
@@ -210,7 +210,7 @@ void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
-    EnokiCudaTexture &dst_texture = *((EnokiCudaTexture *) dst_texture_handle);
+    DrJitCudaTexture &dst_texture = *((DrJitCudaTexture *) dst_texture_handle);
 
     size_t n_texels = shape[0];
     for (size_t dim = 1; dim < ndim; ++dim)
@@ -286,7 +286,7 @@ void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
 static void jitc_cuda_tex_memcpy_s2d(
     ThreadState *ts,
     const std::unique_ptr<void, StagingAreaDeleter> &staging_area,
-    size_t n_texels, const void *dst_ptr, const EnokiCudaTexture &src_texture) {
+    size_t n_texels, const void *dst_ptr, const DrJitCudaTexture &src_texture) {
     scoped_set_context guard(ts->context);
 
     size_t texel_size = src_texture.n_channels * sizeof(float);
@@ -322,7 +322,7 @@ void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
-    EnokiCudaTexture &src_texture = *((EnokiCudaTexture *) src_texture_handle);
+    DrJitCudaTexture &src_texture = *((DrJitCudaTexture *) src_texture_handle);
 
     size_t n_texels = shape[0];
     for (size_t dim = 1; dim < ndim; ++dim)
@@ -424,7 +424,7 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
         }
     }
 
-    EnokiCudaTexture &texture = *((EnokiCudaTexture *) texture_handle);
+    DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
 
     for (size_t tex = 0; tex < texture.n_textures; ++tex) {
         uint32_t dep[3] = {
@@ -515,7 +515,7 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
         }
     }
 
-    EnokiCudaTexture &texture = *((EnokiCudaTexture *) texture_handle);
+    DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
 
     for (size_t tex = 0; tex < texture.n_textures; ++tex) {
         uint32_t dep[3] = {
@@ -579,7 +579,7 @@ void jitc_cuda_tex_destroy(void *texture_handle) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
-    EnokiCudaTexture *texture = (EnokiCudaTexture *) texture_handle;
+    DrJitCudaTexture *texture = (DrJitCudaTexture *) texture_handle;
 
     for (size_t tex = 0; tex < texture->n_textures; ++tex) {
         cuda_check(cuTexObjectDestroy(texture->textures[tex]));

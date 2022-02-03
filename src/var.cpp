@@ -16,7 +16,7 @@
 #include "registry.h"
 
 // When debugging via valgrind, this will make iterator invalidation more obvious
-// #define ENOKI_VALGRIND 1
+// #define DRJIT_VALGRIND 1
 
 /// Descriptive names for the various variable types
 const char *type_name[(int) VarType::Count] {
@@ -152,7 +152,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
     // Remove from hash table
     state.variables.erase(index);
 
-#if defined(ENOKI_VALGRIND)
+#if defined(DRJIT_VALGRIND)
     VariableMap var_new(state.variables);
     state.variables.swap(var_new);
 #endif
@@ -362,7 +362,7 @@ void jitc_literal_print(const Variable *v, bool graphviz = false) {
         case VarType::UInt16:  JIT_LITERAL_PRINT(uint16_t, unsigned, "%u");
         case VarType::UInt32:  JIT_LITERAL_PRINT(uint32_t, unsigned, "%u");
         case VarType::UInt64:  JIT_LITERAL_PRINT(uint64_t, long long unsigned int, "%llu");
-        case VarType::Pointer: JIT_LITERAL_PRINT(uintptr_t, uintptr_t, (graphviz ? ("0x%" PRIxPTR) : (ENOKI_PTR)));
+        case VarType::Pointer: JIT_LITERAL_PRINT(uintptr_t, uintptr_t, (graphviz ? ("0x%" PRIxPTR) : (DRJIT_PTR)));
         default:
             jitc_fail("jit_literal_print(): unsupported type!");
 
@@ -391,7 +391,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
     Variable *vo;
 
     if (likely(!cse || cse_key_inserted)) {
-        #if defined(ENOKI_VALGRIND)
+        #if defined(DRJIT_VALGRIND)
             VariableMap var_new(state.variables);
             state.variables.swap(var_new);
         #endif
@@ -404,7 +404,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
 
             if (unlikely(index == 0)) { // overflow
                 jitc_fail(
-                    "Enoki-JIT has created more than 2^32 (4 billion) "
+                    "DrJit has created more than 2^32 (4 billion) "
                     "variables, which is currently the limit. Bug Wenzel to "
                     "fix this (it will involve sorting scheduled variables by "
                     "scope ID instead of variable ID and making the counter "
@@ -468,7 +468,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
             var_buffer.put("literal = ");
             jitc_literal_print(&v);
         } else if (v.data) {
-            var_buffer.fmt(ENOKI_PTR, (uintptr_t) v.data);
+            var_buffer.fmt(DRJIT_PTR, (uintptr_t) v.data);
         } else if (v.stmt) {
             var_buffer.put(v.stmt, strlen(v.stmt));
         }
@@ -672,7 +672,7 @@ void jitc_var_set_callback(uint32_t index,
                            void *callback_data) {
     Variable *v = jitc_var(index);
 
-    jitc_log(Debug, "jit_var_set_callback(r%u): " ENOKI_PTR " (" ENOKI_PTR ")",
+    jitc_log(Debug, "jit_var_set_callback(r%u): " DRJIT_PTR " (" DRJIT_PTR ")",
             index, (uintptr_t) callback, (uintptr_t) callback_data);
 
     Extra &extra = state.extra[index];
@@ -785,14 +785,14 @@ static void jitc_raise_placeholder_error(const char *func, uint32_t index) {
         "and cannot be scheduled for evaluation! This error message could appear for\n"
         "the following reasons:\n"
         "\n"
-        "1. You are using Enoki's loop or virtual function call recording feature\n"
+        "1. You are using DrJit's loop or virtual function call recording feature\n"
         "   and tried to perform an operation that is not permitted in this restricted\n"
         "   execution mode. Please see the documentation of recorded loops/virtual\n"
         "   function calls to learn about these restrictions.\n"
         "\n"
         "2. You are accessing a variable that was modified as part of a recorded\n"
         "   loop and forgot to specify it as a loop variable. Please see the\n"
-        "   enoki::Loop documentation for details.", func, index
+        "   drjit::Loop documentation for details.", func, index
     );
 }
 
@@ -1005,7 +1005,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
     }
 
     uint32_t index = jitc_var_mem_map(backend, vtype, target_ptr, size, true);
-    jitc_log(Debug, "jit_var_mem_copy(%s r%u[%zu] <- " ENOKI_PTR ")",
+    jitc_log(Debug, "jit_var_mem_copy(%s r%u[%zu] <- " DRJIT_PTR ")",
              type_name[(int) vtype], index, size, (uintptr_t) ptr);
     return index;
 }
@@ -1205,7 +1205,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     }
 
     jitc_log(Debug,
-             "jit_var_migrate(r%u <- r%u, " ENOKI_PTR " <- " ENOKI_PTR
+             "jit_var_migrate(r%u <- r%u, " DRJIT_PTR " <- " DRJIT_PTR
              ", %s <- %s)",
              dst_index, src_index, (uintptr_t) dst_ptr, (uintptr_t) src_ptr,
              alloc_type_name[(int) dst_type], alloc_type_name[(int) src_type]);

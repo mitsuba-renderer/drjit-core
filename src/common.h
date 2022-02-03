@@ -22,7 +22,7 @@
 #include <pthread.h>
 using Lock = pthread_spinlock_t;
 
-// Danger zone: the enoki-jit locks are held for an extremely short amount of
+// Danger zone: the drjit-core locks are held for an extremely short amount of
 // time and normally uncontended. Switching to a spin lock cuts tracing time 8-10%
 inline void lock_init(Lock &lock) { pthread_spin_init(&lock, PTHREAD_PROCESS_PRIVATE); }
 inline void lock_destroy(Lock &lock) { pthread_spin_destroy(&lock); }

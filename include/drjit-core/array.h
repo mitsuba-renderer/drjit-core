@@ -1,8 +1,8 @@
 /*
-    enoki-jit/array.h -- Simple C++ array class with operator overloading
+    drjit-core/array.h -- Simple C++ array class with operator overloading
 
     This library implements convenient wrapper class around the C API in
-    'enoki/jit.h'.
+    'drjit/jit.h'.
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -12,9 +12,9 @@
 
 #pragma once
 
-#include <enoki-jit/traits.h>
+#include <drjit-core/traits.h>
 
-NAMESPACE_BEGIN(enoki)
+NAMESPACE_BEGIN(drjit)
 
 template <JitBackend Backend_, typename Value_> struct JitArray {
     using Value = Value_;
@@ -455,4 +455,4 @@ void jit_eval(Args&&... args) {
 template <typename T> using CUDAArray = JitArray<JitBackend::CUDA, T>;
 template <typename T> using LLVMArray = JitArray<JitBackend::LLVM, T>;
 
-NAMESPACE_END(enoki)
+NAMESPACE_END(drjit)

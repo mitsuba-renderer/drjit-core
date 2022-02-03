@@ -9,13 +9,13 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
+#include <drjit-core/jit.h>
 #include <stdarg.h>
 #include "common.h"
 
-#define ENOKI_DISABLE_TRACE 1
+#define DRJIT_DISABLE_TRACE 1
 
-#if ENOKI_DISABLE_TRACE
+#if DRJIT_DISABLE_TRACE
 #  define jitc_trace(...) do { } while (0)
 #else
 #  define jitc_trace(...) jitc_log(Trace, __VA_ARGS__)

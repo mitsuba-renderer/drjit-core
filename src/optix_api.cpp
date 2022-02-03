@@ -1,4 +1,4 @@
-#include <enoki-jit/optix.h>
+#include <drjit-core/optix.h>
 #include <tsl/robin_map.h>
 #include "optix_api.h"
 #include "internal.h"
@@ -208,7 +208,7 @@ bool jitc_optix_init() {
 
     if (jitc_cuda_version_major == 11 && jitc_cuda_version_minor == 5)
         jitc_raise(
-            "jit_optix_init(): Enoki-JIT considers the driver of your graphics "
+            "jit_optix_init(): DrJit considers the driver of your graphics "
             "card buggy and prone to miscompilation by (we explicitly do not "
             "support OptiX with CUDA 11.5, which roughly corresponds to driver "
             "versions >= 495 and < 510). Please install a newer driver version "
@@ -232,7 +232,7 @@ bool jitc_optix_init() {
 #endif
 
     if (!jitc_optix_handle) {
-        jitc_optix_handle = jitc_find_library(optix_fname, optix_fname, "ENOKI_LIBOPTIX_PATH");
+        jitc_optix_handle = jitc_find_library(optix_fname, optix_fname, "DRJIT_LIBOPTIX_PATH");
 
 #if defined(_WIN32)
         if (!jitc_optix_handle)
@@ -241,7 +241,7 @@ bool jitc_optix_init() {
 
         if (!jitc_optix_handle) {
             jitc_log(Warn, "jit_optix_init(): %s could not be loaded -- "
-                          "disabling OptiX backend! Set the ENOKI_LIBOPTIX_PATH "
+                          "disabling OptiX backend! Set the DRJIT_LIBOPTIX_PATH "
                           "environment variable to specify its path.", optix_fname);
             return false;
         }

@@ -1,7 +1,7 @@
 /*
-    enoki-jit/containers.h -- Tiny self-contained unique_ptr/vector/tuple
+    drjit-core/containers.h -- Tiny self-contained unique_ptr/vector/tuple
 
-    unique_ptr/vector/tuple are used by the Enoki parent project and some test
+    unique_ptr/vector/tuple are used by the Dr.Jit parent project and some test
     cases in this repository. Unfortunately, the std::... versions of these
     containers pull in ~800KB / 31K LOC of headers into *every compile unit*,
     which is insane. This file satisifies all needs with < 5KB and 170 LOC.
@@ -14,24 +14,24 @@
 
 #pragma once
 
-#include <enoki-jit/jit.h>
+#include <drjit-core/jit.h>
 #include <utility>
 
-NAMESPACE_BEGIN(enoki)
+NAMESPACE_BEGIN(drjit)
 
-template <typename T> struct ek_unique_ptr {
+template <typename T> struct dr_unique_ptr {
     using Type = std::remove_extent_t<T>;
 
-    ek_unique_ptr() = default;
-    ek_unique_ptr(const ek_unique_ptr &) = delete;
-    ek_unique_ptr &operator=(const ek_unique_ptr &) = delete;
-    ek_unique_ptr(Type *data) : m_data(data) { }
-    ek_unique_ptr(ek_unique_ptr &&other) : m_data(other.m_data) {
+    dr_unique_ptr() = default;
+    dr_unique_ptr(const dr_unique_ptr &) = delete;
+    dr_unique_ptr &operator=(const dr_unique_ptr &) = delete;
+    dr_unique_ptr(Type *data) : m_data(data) { }
+    dr_unique_ptr(dr_unique_ptr &&other) : m_data(other.m_data) {
         other.m_data = nullptr;
     }
-    ~ek_unique_ptr() { reset(); }
+    ~dr_unique_ptr() { reset(); }
 
-    ek_unique_ptr &operator=(ek_unique_ptr &&other) {
+    dr_unique_ptr &operator=(dr_unique_ptr &&other) {
         reset();
         m_data = other.m_data;
         other.m_data = nullptr;
@@ -64,22 +64,22 @@ protected:
     Type *m_data = nullptr;
 };
 
-template <typename T> struct ek_vector {
-    ek_vector() = default;
-    ek_vector(const ek_vector &v)
+template <typename T> struct dr_vector {
+    dr_vector() = default;
+    dr_vector(const dr_vector &v)
         : m_data(new T[v.m_size]), m_size(v.m_size), m_capacity(v.m_size) {
         for (size_t i = 0; i < m_size; ++i)
             m_data[i] = v.m_data[i];
     }
-    ek_vector &operator=(const ek_vector &) = delete;
-    ek_vector(ek_vector &&) = default;
-    ek_vector &operator=(ek_vector &&) = default;
-    ek_vector(size_t size, const T &value)
+    dr_vector &operator=(const dr_vector &) = delete;
+    dr_vector(dr_vector &&) = default;
+    dr_vector &operator=(dr_vector &&) = default;
+    dr_vector(size_t size, const T &value)
         : m_data(new T[size]), m_size(size), m_capacity(size) {
         for (size_t i = 0; i < size; ++i)
             m_data[i] = value;
     }
-    ek_vector(const T *start, const T *end) {
+    dr_vector(const T *start, const T *end) {
         m_size = m_capacity = end-start;
         m_data = new T[end - start];
         for (size_t i = 0; i < m_size; ++i)
@@ -99,7 +99,7 @@ template <typename T> struct ek_vector {
 
     void expand() {
         size_t capacity_new = m_capacity == 0 ? 1 : (m_capacity * 2);
-        ek_unique_ptr<T[]> data_new(new T[capacity_new]);
+        dr_unique_ptr<T[]> data_new(new T[capacity_new]);
         for (size_t i = 0; i < m_size; ++i)
             data_new[i] = m_data[i];
         m_data = std::move(data_new);
@@ -110,18 +110,18 @@ template <typename T> struct ek_vector {
     const T &operator[](size_t i) const { return m_data[i]; }
 
 protected:
-    ek_unique_ptr<T[]> m_data;
+    dr_unique_ptr<T[]> m_data;
     size_t m_size = 0;
     size_t m_capacity = 0;
 };
 
-struct ek_index_vector : ek_vector<uint32_t> {
-    using Base = ek_vector<uint32_t>;
+struct dr_index_vector : dr_vector<uint32_t> {
+    using Base = dr_vector<uint32_t>;
     using Base::Base;
     using Base::operator=;
 
-    ek_index_vector(size_t size) : Base(size, 0) { }
-    ~ek_index_vector() { clear(); }
+    dr_index_vector(size_t size) : Base(size, 0) { }
+    ~dr_index_vector() { clear(); }
 
     void push_back(uint32_t value) {
         jit_var_inc_ref_ext_impl(value);
@@ -136,24 +136,24 @@ struct ek_index_vector : ek_vector<uint32_t> {
 };
 
 // Tiny self-contained tuple to avoid having to import 1000s of LOC from <tuple>
-template <typename... Ts> struct ek_tuple;
-template <> struct ek_tuple<> {
+template <typename... Ts> struct dr_tuple;
+template <> struct dr_tuple<> {
     template <size_t> using type = void;
 };
 
-template <typename T, typename... Ts> struct ek_tuple<T, Ts...> : ek_tuple<Ts...> {
-    using Base = ek_tuple<Ts...>;
+template <typename T, typename... Ts> struct dr_tuple<T, Ts...> : dr_tuple<Ts...> {
+    using Base = dr_tuple<Ts...>;
 
-    ek_tuple() = default;
-    ek_tuple(const ek_tuple &) = default;
-    ek_tuple(ek_tuple &&) = default;
-    ek_tuple& operator=(ek_tuple &&) = default;
-    ek_tuple& operator=(const ek_tuple &) = default;
+    dr_tuple() = default;
+    dr_tuple(const dr_tuple &) = default;
+    dr_tuple(dr_tuple &&) = default;
+    dr_tuple& operator=(dr_tuple &&) = default;
+    dr_tuple& operator=(const dr_tuple &) = default;
 
-    ek_tuple(const T& value, const Ts&... ts)
+    dr_tuple(const T& value, const Ts&... ts)
         : Base(ts...), value(value) { }
 
-    ek_tuple(T&& value, Ts&&... ts)
+    dr_tuple(T&& value, Ts&&... ts)
         : Base(std::move(ts)...), value(std::move(value)) { }
 
     template <size_t I> auto& get() {
@@ -178,6 +178,6 @@ private:
     T value;
 };
 
-template <typename... Ts> ek_tuple(Ts &&...) -> ek_tuple<std::decay_t<Ts>...>;
+template <typename... Ts> dr_tuple(Ts &&...) -> dr_tuple<std::decay_t<Ts>...>;
 
-NAMESPACE_END(enoki)
+NAMESPACE_END(drjit)
