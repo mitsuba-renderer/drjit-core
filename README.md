@@ -3,44 +3,53 @@
 <img src="https://github.com/mitsuba-renderer/drjit-core/raw/master/resources/drjit-logo-light.svg#gh-dark-mode-only" alt="Dr.Jit logo" width="500"/>
 </p>
 
-# Dr.Jit — A Just-In-Time-Compiler for Differentiable Rendering (core library)
+# Dr.Jit-Core — A tracing GPU/CPU Just-In-Time-Compiler
 
 | Continuous Integration |
 |         :---:          |
 |   [![rgl-ci][1]][2]    |
 
-[1]: https://rgl-ci.epfl.ch/app/rest/builds/buildType(id:DrJit_Core_Build)/statusIcon.svg
-[2]: https://rgl-ci.epfl.ch/buildConfiguration/DrJit_Core_Build?guest=1
+[1]: https://rgl-ci.epfl.ch/app/rest/builds/aggregated/strob:(buildType:(project:(id:DrJitCore)))/statusIcon.svg
+[2]: https://rgl-ci.epfl.ch/project/DrJitCore?mode=trends&guest=1
 
 
 ## Introduction
 
-This project implements a fast tracing engine that can be used to implement
-just-in-time (JIT) compilers targeting GPUs (via CUDA and [NVIDIA
+This repository contains an efficient and self-contained *just-in-time* (JIT)
+compiler that can vectorize and parallelize computation. It was designed to to
+accelerate differentiable Monte Carlo rendering that requires dynamic
+compilation of large amounts of derivative code, though other types of
+embarrassingly parallel computation are likely to benefit as well.
+
+This library exposes a C and C++ interface that can be used to *trace*
+computation, which means that the system internally builds a graph
+representation of all steps while postponing their evaluation for as long as
+possible. When the traced computation is finally evaluated, the system fuses
+all operations into an efficient kernel containing queued computation that is
+asynchronously evaluated on a desired device. On the CPU, this involves
+compilation of vectorized [LLVM IR](https://llvm.org/docs/LangRef.html) and
+parallel execution using a thread pool, while GPU compilation involves [NVIDIA
 PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html), and
-[OptiX](https://developer.nvidia.com/optix) for ray tracing) and CPUs (via
-[LLVM IR](https://llvm.org/docs/LangRef.html)). DrJit captures operations
-performed in C or C++, while attempting to postpone the associated computation
-for as long as possible. Eventually, this is no longer possible, at which point
-the system generates an efficient kernel containing queued computation that is
-either evaluated on the CPU or GPU.
+either [CUDA](https://docs.nvidia.com/cuda) or
+[OptiX](https://developer.nvidia.com/optix) depending on whether or not ray
+tracing operations are used.
 
-This core library of Dr.Jit can be used just by itself, or as a component of the
-larger [Dr.Jit](https://github.com/mitsuba-renderer/drjit) project, which
-additionally provides things like multidimensional arrays, automatic
-differentiation, and a large library of mathematical functions.
+This project can be used independently or as part of the larger
+[Dr.Jit](https://github.com/mitsuba-renderer/drjit) project, which furthermore
+provides support for automatic differentiation, multidimensional
+arrays/tensors, and a large library of mathematical functions.
 
-This project has almost no dependencies: it can be compiled without CUDA,
-OptiX, or LLVM actually being present on the system (it will attempt to find
-them at runtime as needed). The library is implemented in C++14 but exposes all
-functionality through a C99-compatible interface.
+The Dr.Jit-Core library has almost no dependencies: it can be compiled without
+CUDA, OptiX, or LLVM actually being present on the system (it will attempt to
+find them at runtime as needed). The library is implemented in C++14 but
+exposes all functionality through a C99-compatible interface.
 
 ## Features
 
 Dr.Jit has the following features:
 
-- Tested on Linux (`X86_64`), macOS (`x86_64` & `aarch64`), and Windows
-  (`x86_64`).
+- Runs on Linux (`X86_64`), macOS (`x86_64` & `aarch64`), and Windows
+  (`x86_64`). Other platforms may work as well but have not been tested.
 
 - Targets
 
