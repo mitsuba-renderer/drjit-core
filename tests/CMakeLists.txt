@@ -19,7 +19,18 @@ foreach (TEST_FILE ${TEST_FILES})
   )
 endforeach()
 
-add_custom_target(test COMMAND CTEST_OUTPUT_ON_FAILURE=1 ${CMAKE_CTEST_COMMAND})
+if (NOT TARGET check)
+  add_custom_target(check
+          ${CMAKE_COMMAND} -E echo CWD=${CMAKE_BINARY_DIR}
+          COMMAND ${CMAKE_COMMAND} -E echo CMD=${CMAKE_CTEST_COMMAND} -C $<CONFIG>
+          COMMAND ${CMAKE_COMMAND} -E echo ----------------------------------
+          COMMAND ${CMAKE_COMMAND} -E env CTEST_OUTPUT_ON_FAILURE=1
+              ${CMAKE_CTEST_COMMAND} -C $<CONFIG>
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+      USES_TERMINAL
+  )
+endif()
+
 set_property(TARGET test_vcall PROPERTY CXX_STANDARD 17)
 set_property(TARGET test_loop PROPERTY CXX_STANDARD 17)
 
