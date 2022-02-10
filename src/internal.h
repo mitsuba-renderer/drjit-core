@@ -727,9 +727,11 @@ public:
 
     /// Remove the last 'n' characters
     void rewind(size_t n) {
-        m_cur -= n;
-        if (m_cur < m_start)
+        if (m_cur < m_start + n)
             m_cur = m_start;
+        else
+            m_cur -= n;
+        *m_cur = '\0';
     }
 
     /// Check if the buffer contains a given substring
