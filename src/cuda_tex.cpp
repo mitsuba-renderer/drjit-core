@@ -5,6 +5,7 @@
 #include "op.h"
 #include <string.h>
 #include <memory>
+#include <tuple>
 
 using StagingAreaDeleter = void (*)(void *);
 
@@ -111,6 +112,8 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     view_desc.depth = (ndim == 3) ? shape[2] : 0;
 
     DrJitCudaTexture *texture = new DrJitCudaTexture(n_channels);
+    size_t *n_referenced_textures = new size_t(texture->n_textures);
+
     for (size_t tex = 0; tex < texture->n_textures; ++tex) {
         const size_t tex_channels = texture->channels_internal(tex);
 
@@ -149,7 +152,43 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
 
         texture->indices[tex] = jitc_var_new_pointer(
             JitBackend::CUDA, (void *) texture->textures[tex], 0, 0);
+
+        auto payload_ptr = new std::tuple<DrJitCudaTexture *, size_t, size_t*>(
+            texture, tex, n_referenced_textures);
+
+        jitc_var_set_callback(
+            texture->indices[tex],
+            [](uint32_t /* index */, int free, void *callback_data) {
+                if (free) {
+                    ThreadState *ts = thread_state(JitBackend::CUDA);
+                    scoped_set_context guard(ts->context);
+
+                    auto payload_ptr =
+                        (std::tuple<DrJitCudaTexture *, size_t, size_t *> *)
+                            callback_data;
+                    auto &payload = *(payload_ptr);
+
+                    DrJitCudaTexture *texture = std::get<0>(payload);
+                    size_t tex = std::get<1>(payload);
+                    size_t *n_referenced_textures = std::get<2>(payload);
+
+                    cuda_check(cuTexObjectDestroy(texture->textures[tex]));
+                    cuda_check(cuArrayDestroy(texture->arrays[tex]));
+                    *n_referenced_textures -= 1;
+
+                    delete payload_ptr;
+                    if (n_referenced_textures == 0) {
+                        delete texture;
+                        delete n_referenced_textures;
+                    }
+                }
+            },
+            (void *) payload_ptr
+        );
     }
+
+    jitc_log(LogLevel::Debug, "jitc_cuda_tex_create(): " DRJIT_PTR,
+             (uintptr_t) texture);
 
     return (void *) texture;
 }
@@ -576,16 +615,16 @@ void jitc_cuda_tex_destroy(void *texture_handle) {
     if (!texture_handle)
         return;
 
-    ThreadState *ts = thread_state(JitBackend::CUDA);
-    scoped_set_context guard(ts->context);
+    jitc_log(LogLevel::Debug, "jitc_cuda_tex_destroy(" DRJIT_PTR ")",
+             (uintptr_t) texture_handle);
 
     DrJitCudaTexture *texture = (DrJitCudaTexture *) texture_handle;
 
-    for (size_t tex = 0; tex < texture->n_textures; ++tex) {
-        cuda_check(cuTexObjectDestroy(texture->textures[tex]));
-        cuda_check(cuArrayDestroy(texture->arrays[tex]));
+    // The `texture` struct can potentially be deleted when decreasing the
+    // reference count of the individual textures. We must hoist the number of
+    // textures out of the loop condition.
+    const size_t n_textures = texture->n_textures;
+    for (size_t tex = 0; tex < n_textures; ++tex) {
         jitc_var_dec_ref_ext(texture->indices[tex]);
     }
-
-    delete texture;
 }
