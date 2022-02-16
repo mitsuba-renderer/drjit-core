@@ -5,13 +5,14 @@
 #include "op.h"
 #include <string.h>
 #include <memory>
-#include <tuple>
+#include <atomic>
 
 using StagingAreaDeleter = void (*)(void *);
 
 struct DrJitCudaTexture {
     size_t n_channels; /// Total number of channels
     size_t n_textures; // Number of texture objects
+    std::atomic_size_t n_referenced_textures; // Number of referenced textures
     std::unique_ptr<CUtexObject[]> textures; /// Array of CUDA texture objects
     std::unique_ptr<uint32_t[]> indices; /// Array of indices of texture object pointers for the JIT
     std::unique_ptr<CUarray[]> arrays; /// Array of CUDA arrays
@@ -55,6 +56,26 @@ struct DrJitCudaTexture {
         const size_t channels_raw = channels(index);
         return (channels_raw == 3) ? 4 : channels_raw;
     }
+
+    /**
+     * \brief Releases the texture object at the given index in \ref textures
+     * and returns whether or not there is at least one texture that is still
+     * not released.
+     */
+    bool release_texture(size_t index) {
+        cuda_check(cuTexObjectDestroy(textures[index]));
+        textures[index] = nullptr;
+
+        cuda_check(cuArrayDestroy(arrays[index]));
+        arrays[index] = nullptr;
+
+        return (--n_referenced_textures) > 0;
+    }
+};
+
+struct TextureReleasePayload {
+    DrJitCudaTexture* texture;
+    size_t index;
 };
 
 void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
@@ -112,8 +133,6 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     view_desc.depth = (ndim == 3) ? shape[2] : 0;
 
     DrJitCudaTexture *texture = new DrJitCudaTexture(n_channels);
-    size_t *n_referenced_textures = new size_t(texture->n_textures);
-
     for (size_t tex = 0; tex < texture->n_textures; ++tex) {
         const size_t tex_channels = texture->channels_internal(tex);
 
@@ -153,8 +172,8 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         texture->indices[tex] = jitc_var_new_pointer(
             JitBackend::CUDA, (void *) texture->textures[tex], 0, 0);
 
-        auto payload_ptr = new std::tuple<DrJitCudaTexture *, size_t, size_t*>(
-            texture, tex, n_referenced_textures);
+        TextureReleasePayload *payload_ptr =
+            new TextureReleasePayload({ texture, tex });
 
         jitc_var_set_callback(
             texture->indices[tex],
@@ -163,24 +182,16 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                     ThreadState *ts = thread_state(JitBackend::CUDA);
                     scoped_set_context guard(ts->context);
 
-                    auto payload_ptr =
-                        (std::tuple<DrJitCudaTexture *, size_t, size_t *> *)
-                            callback_data;
-                    auto &payload = *(payload_ptr);
+                    TextureReleasePayload& payload =
+                        *((TextureReleasePayload *) callback_data);
 
-                    DrJitCudaTexture *texture = std::get<0>(payload);
-                    size_t tex = std::get<1>(payload);
-                    size_t *n_referenced_textures = std::get<2>(payload);
+                    DrJitCudaTexture *texture = payload.texture;
+                    size_t tex = payload.index;
 
-                    cuda_check(cuTexObjectDestroy(texture->textures[tex]));
-                    cuda_check(cuArrayDestroy(texture->arrays[tex]));
-                    *n_referenced_textures -= 1;
-
-                    delete payload_ptr;
-                    if (n_referenced_textures == 0) {
+                    if (!texture->release_texture(tex))
                         delete texture;
-                        delete n_referenced_textures;
-                    }
+
+                    delete &payload;
                 }
             },
             (void *) payload_ptr
