@@ -28,7 +28,7 @@
 #include "optix_api.h"
 #endif
 
-#include <drjit-thread/thread.h>
+#include <nanothread/nanothread.h>
 
 void jit_init(uint32_t backends) {
     lock_guard guard(state.lock);

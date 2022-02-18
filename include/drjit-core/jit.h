@@ -1829,7 +1829,7 @@ struct KernelHistoryEntry {
     /// CUDA events for measuring the runtime of the kernel
     void *event_start, *event_end;
 
-    /// Dr.Jit-Thread task handle
+    /// nanothread task handle
     void *task;
 };
 

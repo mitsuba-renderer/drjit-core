@@ -26,7 +26,7 @@ endif()
 #  Check if submodules have been checked out, or fail early
 # ----------------------------------------------------------
 
-if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/drjit-thread/ext/cmake-defaults")
+if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/nanothread/ext/cmake-defaults")
   message(FATAL_ERROR "The Dr.Jit-Core dependencies are missing! "
     "You probably did not clone the project with --recursive. It is possible to recover "
     "by invoking\n$ git submodule update --init --recursive")
@@ -36,7 +36,7 @@ endif()
 #  Build defaults for projects by the Realistic Graphics Lab
 # ----------------------------------------------------------
 
-include(ext/drjit-thread/ext/cmake-defaults/CMakeLists.txt)
+include(ext/nanothread/ext/cmake-defaults/CMakeLists.txt)
 
 # ----------------------------------------------------------
 #  Print a few messages explaining what will be compiled
@@ -63,11 +63,11 @@ if (NOT APPLE)
 endif()
 
 # ----------------------------------------------------------
-#  Build the Dr.Jit-Thread library
+#  Build the nanothread library
 # ----------------------------------------------------------
 
-add_subdirectory(ext/drjit-thread)
-mark_as_advanced(DRJIT_THREAD_ENABLE_TESTS)
+add_subdirectory(ext/nanothread)
+mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
 
 # ----------------------------------------------------------
 #  Build Dr.Jit-Core
@@ -120,7 +120,7 @@ add_library(
 target_compile_features(drjit-core PRIVATE cxx_std_14)
 
 target_include_directories(drjit-core PRIVATE
-  ext/drjit-thread/include
+  ext/nanothread/include
   ext/robin_map/include
   ext/lz4
 )
@@ -141,7 +141,7 @@ target_include_directories(drjit-core
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 target_compile_definitions(drjit-core PRIVATE -DDRJIT_BUILD=1)
-target_link_libraries(drjit-core PRIVATE drjit-thread)
+target_link_libraries(drjit-core PRIVATE nanothread)
 
 if (DRJIT_DYNAMIC_CUDA OR APPLE)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_DYNAMIC_CUDA=1)

@@ -18,7 +18,7 @@
 #include <deque>
 #include <string.h>
 #include <inttypes.h>
-#include <drjit-thread/thread.h>
+#include <nanothread/nanothread.h>
 
 /// Number of entries to process per work unit in the parallel LLVM backend
 #define DRJIT_POOL_BLOCK_SIZE 16384

@@ -449,7 +449,7 @@ A kernel transforming less than a few thousands of elements will be
 JIT-compiled and executed immediately on the current thread. For large arrays,
 Dr.Jit will automatically parallelize evaluation via a thread pool. The
 repository includes
-[DrJit-Thread](https://github.com/mitsuba-renderer/drjit-thread/) as a git
+[nanothread](https://github.com/mitsuba-renderer/nanothread) as a git
 submodule, which is a minimal implementation of the components that are
 necessary to realize this. The size of this thread pool can also be set to
 zero, in which case all computation will occur on the current thread. In this
