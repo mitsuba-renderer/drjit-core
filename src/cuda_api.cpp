@@ -83,6 +83,7 @@ CUresult (*cuStreamSynchronize)(CUstream) = nullptr;
 CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int) = nullptr;
 CUresult (*cuArrayCreate)(CUarray *, const CUDA_ARRAY_DESCRIPTOR *) = nullptr;
 CUresult (*cuArray3DCreate)(CUarray *, const CUDA_ARRAY3D_DESCRIPTOR *) = nullptr;
+CUresult (*cuArray3DGetDescriptor)(CUDA_ARRAY3D_DESCRIPTOR *, CUarray) = nullptr;
 CUresult (*cuArrayDestroy)(CUarray) = nullptr;
 CUresult (*cuTexObjectCreate)(CUtexObject *, const CUDA_RESOURCE_DESC *,
                               const CUDA_TEXTURE_DESC *,
@@ -235,6 +236,7 @@ bool jitc_cuda_init() {
         LOAD(cuPointerGetAttribute);
         LOAD(cuArrayCreate, "v2");
         LOAD(cuArray3DCreate, "v2");
+        LOAD(cuArray3DGetDescriptor, "v2");
         LOAD(cuArrayDestroy);
         LOAD(cuTexObjectCreate);
         LOAD(cuTexObjectGetResourceDesc);
@@ -582,9 +584,9 @@ void jitc_cuda_shutdown() {
     Z(cuCtxPushCurrent); Z(cuCtxPopCurrent); Z(cuStreamCreate);
     Z(cuStreamDestroy); Z(cuStreamSynchronize); Z(cuStreamWaitEvent);
     Z(cuPointerGetAttribute); Z(cuArrayCreate); Z(cuArray3DCreate);
-    Z(cuArrayDestroy); Z(cuTexObjectCreate); Z(cuTexObjectGetResourceDesc);
-    Z(cuTexObjectDestroy); Z(cuMemcpy2DAsync); Z(cuMemcpy3DAsync);
-    Z(cuMemAllocAsync); Z(cuMemFreeAsync);
+    Z(cuArray3DGetDescriptor); Z(cuArrayDestroy); Z(cuTexObjectCreate);
+    Z(cuTexObjectGetResourceDesc); Z(cuTexObjectDestroy); Z(cuMemcpy2DAsync);
+    Z(cuMemcpy3DAsync); Z(cuMemAllocAsync); Z(cuMemFreeAsync);
 
 #if !defined(_WIN32)
     if (jitc_cuda_handle != RTLD_NEXT)

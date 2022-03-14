@@ -885,6 +885,12 @@ void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     return jitc_cuda_tex_create(ndim, shape, n_channels, filter_mode, wrap_mode);
 }
 
+void jit_cuda_tex_get_shape(size_t ndim, const void *texture_handle,
+                            size_t *shape) {
+    lock_guard guard(state.lock);
+    jitc_cuda_tex_get_shape(ndim, texture_handle, shape);
+}
+
 void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
                              const void *src_ptr, void *dst_texture) {
     lock_guard guard(state.lock);

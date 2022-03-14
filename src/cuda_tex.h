@@ -118,6 +118,7 @@ struct CUDA_MEMCPY3D {
 
 extern CUresult (*cuArrayCreate)(CUarray *, const CUDA_ARRAY_DESCRIPTOR *);
 extern CUresult (*cuArray3DCreate)(CUarray *, const CUDA_ARRAY3D_DESCRIPTOR *);
+extern CUresult (*cuArray3DGetDescriptor)(CUDA_ARRAY3D_DESCRIPTOR *, CUarray);
 extern CUresult (*cuArrayDestroy)(CUarray);
 extern CUresult (*cuTexObjectCreate)(CUtexObject *, const CUDA_RESOURCE_DESC *,
                                      const CUDA_TEXTURE_DESC *,
@@ -133,6 +134,8 @@ extern CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream);
 extern void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
                                   size_t n_channels, int filter_mode,
                                   int wrap_mode);
+extern void jitc_cuda_tex_get_shape(size_t ndim, const void *texture_handle,
+                                    size_t *shape);
 extern void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
                                      const void *src_ptr,
                                      void *dst_texture_handle);

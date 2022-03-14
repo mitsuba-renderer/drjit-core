@@ -44,6 +44,25 @@ extern JIT_EXPORT void *jit_cuda_tex_create(size_t ndim, const size_t *shape,
                                             int filter_mode JIT_DEF(1),
                                             int wrap_mode JIT_DEF(0));
 
+
+/**
+ * \brief Retrieves the shape (including channels) of an existing CUDA texture
+ *
+ * \param ndim
+ *     Dimensionality of the texture
+ *
+ * \param texture_handle
+ *     Texture handle (returned value of \ref jit_cuda_tex_create())
+ *
+ * \param shape
+ *     Pointer to an array of size <tt>ndim + 1<\tt>, to which will be written
+ *     the texture shape. The number of channels of the texture will be written
+ *     at index \c ndim.
+ */
+extern JIT_EXPORT void jit_cuda_tex_get_shape(size_t ndim,
+                                              const void *texture_handle,
+                                              size_t *shape);
+
 /**
  * \brief Copy from device to texture memory
  *
@@ -70,7 +89,7 @@ extern JIT_EXPORT void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
  * \param ndim
  *     Dimensionality of the texture
  *
- * \param handle
+ * \param texture_handle
  *     Texture handle (returned value of \ref jit_cuda_tex_create())
  *
  * \param pos
@@ -96,7 +115,7 @@ extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
  * \param ndim
  *     Dimensionality of the texture
  *
- * \param handle
+ * \param texture_handle
  *     Texture handle (returned value of \ref jit_cuda_tex_create())
  *
  * \param pos

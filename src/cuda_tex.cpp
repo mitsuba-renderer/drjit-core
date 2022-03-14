@@ -11,8 +11,8 @@ using StagingAreaDeleter = void (*)(void *);
 
 struct DrJitCudaTexture {
     size_t n_channels; /// Total number of channels
-    size_t n_textures; // Number of texture objects
-    std::atomic_size_t n_referenced_textures; // Number of referenced textures
+    size_t n_textures; /// Number of texture objects
+    std::atomic_size_t n_referenced_textures; /// Number of referenced textures
     std::unique_ptr<CUtexObject[]> textures; /// Array of CUDA texture objects
     std::unique_ptr<uint32_t[]> indices; /// Array of indices of texture object pointers for the JIT
     std::unique_ptr<CUarray[]> arrays; /// Array of CUDA arrays
@@ -202,6 +202,25 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
              (uintptr_t) texture);
 
     return (void *) texture;
+}
+
+void jitc_cuda_tex_get_shape(size_t ndim, const void *texture_handle,
+                             size_t *shape) {
+    if (ndim < 1 || ndim > 3)
+        jitc_raise("jit_cuda_tex_get_shape(): invalid texture dimension!");
+
+    DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
+
+    CUDA_ARRAY3D_DESCRIPTOR array_desc;
+    // cuArray3DGetDescriptor can also be called on 1D and 2D arrays
+    cuda_check(cuArray3DGetDescriptor(&array_desc, texture.arrays[0]));
+
+    shape[0] = array_desc.Width;
+    if (ndim >= 2)
+        shape[1] = array_desc.Height;
+    if (ndim == 3)
+        shape[2] = array_desc.Depth;
+    shape[ndim] = texture.n_channels;
 }
 
 static std::unique_ptr<void, StagingAreaDeleter>
