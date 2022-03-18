@@ -102,13 +102,13 @@ struct Variable {
     /// Does this variable store a number literal?
     uint32_t literal : 1;
 
-    /// Basic block ID of this variable
-    uint32_t cse_scope : 24;
-
-    // ========================  Miscellaneous flags  =========================
-
     /// Free the 'stmt' variables at destruction time?
     uint32_t free_stmt : 1;
+
+    /// Basic block ID of this variable
+    uint32_t cse_scope : 23;
+
+    // ========================  Miscellaneous flags  =========================
 
     /// Don't deallocate 'data' when this variable is destructed?
     uint32_t retain_data : 1;
@@ -140,7 +140,7 @@ struct Variable {
     uint32_t output_flag : 1;
 
     /// Offset of the argument in the list of kernel parameters
-    uint32_t param_offset : 21;
+    uint32_t param_offset : 22;
 
     /// Register index
     uint32_t reg_index;
@@ -154,7 +154,9 @@ struct VariableKey {
     uint32_t type        : 4;
     uint32_t write_ptr   : 1;
     uint32_t literal     : 1;
-    uint32_t cse_scope   : 24;
+    uint32_t free_stmt   : 1;
+    uint32_t cse_scope   : 23;
+
     union {
         char *stmt;
         uint64_t value;
@@ -168,6 +170,7 @@ struct VariableKey {
         write_ptr = v.write_ptr;
         literal = v.literal;
         cse_scope = v.cse_scope;
+        free_stmt = v.free_stmt;
         if (literal)
             value = v.value;
         else
@@ -179,6 +182,8 @@ struct VariableKey {
             return false;
         if (literal)
             return value == v.value;
+        else if (!free_stmt)
+            return stmt == v.stmt;
         else
             return stmt == v.stmt || strcmp(stmt, v.stmt) == 0;
     }
@@ -189,8 +194,15 @@ struct VariableKey {
 /// Helper class to hash VariableKey instances
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        return hash(k.dep, 6 * sizeof(uint32_t),
-                    k.literal ? k.value : hash_str(k.stmt));
+        uint64_t hash_1;
+        if (k.literal)
+            hash_1 = k.value;
+        else if (!k.free_stmt)
+            hash_1 = (uintptr_t) k.stmt;
+        else
+            hash_1 = hash_str(k.stmt);
+
+        return hash(k.dep, 6 * sizeof(uint32_t), hash_1);
     }
 };
 
