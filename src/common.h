@@ -28,6 +28,14 @@ inline void lock_init(Lock &lock) { pthread_spin_init(&lock, PTHREAD_PROCESS_PRI
 inline void lock_destroy(Lock &lock) { pthread_spin_destroy(&lock); }
 inline void lock_acquire(Lock &lock) { pthread_spin_lock(&lock); }
 inline void lock_release(Lock &lock) { pthread_spin_unlock(&lock); }
+#elif defined(__APPLE__)
+#include <os/lock.h>
+
+using Lock = os_unfair_lock_s;
+inline void lock_init(Lock &lock) { lock = OS_UNFAIR_LOCK_INIT; }
+inline void lock_destroy(Lock &) { }
+inline void lock_acquire(Lock &lock) { os_unfair_lock_lock(&lock);  }
+inline void lock_release(Lock &lock) { os_unfair_lock_unlock(&lock); }
 #else
 #include <mutex>
 
