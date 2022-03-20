@@ -658,6 +658,11 @@ void jit_eval() {
     jitc_eval(thread_state_llvm);
 }
 
+void jit_run_last_kernel() {
+    lock_guard guard(state.lock);
+    jitc_run_last_kernel(thread_state_llvm);
+}
+
 int jit_var_eval(uint32_t index) {
     if (index == 0)
         return 0;

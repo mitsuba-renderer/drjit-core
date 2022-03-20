@@ -78,6 +78,9 @@ extern std::vector<ScheduledGroup> schedule_groups;
 /// Evaluate all computation that is queued on the current thread
 extern void jitc_eval(ThreadState *ts);
 
+/// TODO
+extern void jitc_run_last_kernel(ThreadState *ts);
+
 /// Used by jitc_eval() to generate PTX source code
 extern void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                                uint32_t n_regs, uint32_t n_params);

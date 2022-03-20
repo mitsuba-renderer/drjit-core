@@ -1181,6 +1181,8 @@ extern JIT_EXPORT int jit_var_eval(uint32_t index);
 /// Evaluate all scheduled computation
 extern JIT_EXPORT void jit_eval();
 
+extern JIT_EXPORT void jit_run_last_kernel();
+
 /**
  * \brief Assign a callback function that is invoked when the variable is
  * evaluated or freed.
