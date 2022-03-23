@@ -626,8 +626,6 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
     }
 
     if (unlikely(size == 0)) {
-        if (!stmt_static)
-            free((char *) stmt);
         return 0;
     } else if (unlikely(uninitialized)) {
         jitc_raise("jit_var_new_stmt(): arithmetic involving an "
