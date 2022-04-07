@@ -903,7 +903,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 jitc_var_dec_ref_ext(recip);
             } else if (backend == JitBackend::CUDA) {
                 if (is_single)
-                    stmt = "div.rn.ftz.$t0 $r0, $r1, $r2";
+                    stmt = "div.approx.ftz.$t0 $r0, $r1, $r2";
                 else if (is_float)
                     stmt = "div.rn.$t0 $r0, $r1, $r2";
                 else
