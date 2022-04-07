@@ -23,9 +23,9 @@ Debug
 libdrjit-core.so
 libdrjit-core.dylib
 drjit-core.dll
-libdrjit-thread.so
-libdrjit-thread.dylib
-drjit-thread.dll
+libnanothread.so
+libnanothread.dylib
+nanothread.dll
 tests/out_*
 tests/test_basics
 tests/test_reductions
