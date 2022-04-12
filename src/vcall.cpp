@@ -179,6 +179,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                        "UInt32 (was: %s)", type_name[self_v->type]);
     }
 
+    size = std::max(size, jitc_var(mask)->size);
+
     for (uint32_t i = 0; i < n_in; ++i) {
         const Variable *v = jitc_var(in[i]);
         if (v->vcall_iface) {
