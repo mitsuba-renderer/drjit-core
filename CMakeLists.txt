@@ -133,6 +133,12 @@ if (MSVC)
   target_compile_options(drjit-core PUBLIC /EHs)
 endif()
 
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  # GCC static analysis incorrectly warns about free() application to Variable::stmt
+  target_compile_options(drjit-core PRIVATE -Wno-free-nonheap-object)
+  target_link_options(drjit-core PRIVATE -Wno-free-nonheap-object)
+endif()
+
 target_compile_definitions(drjit-core PRIVATE -DLZ4LIB_VISIBILITY=)
 
 target_include_directories(drjit-core
