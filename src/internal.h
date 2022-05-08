@@ -388,6 +388,8 @@ struct ThreadState {
     OptixModule optix_module_base = nullptr;
     void *optix_miss_record_base = nullptr;
 #endif
+
+	bool is_recording_cached_kernel = false;
 };
 
 /// Maps from variable ID to a Variable instance

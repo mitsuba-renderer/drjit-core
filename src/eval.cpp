@@ -75,13 +75,34 @@ uint32_t vcall_counter = 0;
 KernelHistoryEntry kernel_history_entry;
 
 // ====================================================================
+struct KernelParamIndexMapping {
+	uint32_t var_index;
+	uint32_t param_index;
+};
+
 
 struct ExtendedKernelHistoryEntry {
 	KernelHistoryEntry inner_entry;
 	std::vector<void *> params;
+	std::vector<KernelParamIndexMapping> param_indices;
 };
 
 static std::vector<ExtendedKernelHistoryEntry> extended_kernel_history{};
+
+// An array of indices into the kernel_params array, in the order
+// of the arguments passed to the cached kernel function.
+static std::vector<KernelParamIndexMapping> kernel_param_indices;
+
+static void record_kernel_param_mapping(Variable* v) {
+	// 0 is treated as null
+	if (v->reg_index == 0) {
+		return;
+	}
+	uint32_t var_index = v->reg_index - 1;
+	uint32_t param_index = kernel_params.size();
+	kernel_param_indices.push_back(KernelParamIndexMapping { var_index, param_index });
+}
+
 
 // ====================================================================
 
@@ -176,6 +197,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
         if (v->data) {
             v->param_type = ParamType::Input;
+			if (ts->is_recording_cached_kernel) {
+				record_kernel_param_mapping(v);
+			}
             kernel_params.push_back(v->data);
             n_params_in++;
         } else if (v->output_flag && v->size == group.size) {
@@ -194,12 +218,18 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             // The addr. of 'v' can change (jitc_malloc() may release the lock)
             v = jitc_var(index);
 
+			if (ts->is_recording_cached_kernel) {
+				record_kernel_param_mapping(v);
+			}
             v->data = data;
             v->param_type = ParamType::Output;
             kernel_params.push_back(data);
             n_params_out++;
         } else if (v->literal && (VarType) v->type == VarType::Pointer) {
             v->param_type = ParamType::Input;
+			if (ts->is_recording_cached_kernel) {
+				record_kernel_param_mapping(v);
+			}
             kernel_params.push_back((void *) v->value);
             n_params_in++;
         } else {
@@ -442,10 +472,50 @@ static uint64_t jitc_kernel_flags(ThreadState *ts) {
 	return flags;
 }
 
-static Task *jitc_run_cached(ThreadState *ts, const ExtendedKernelHistoryEntry& extended_history_entry) {
-	const KernelHistoryEntry& history_entry = extended_history_entry.inner_entry;
-	jitc_log(Info, "jit_run_last_kernel(): running kernel %016lx%016lx", history_entry.hash[1], history_entry.hash[0]);
+CachedKernelHandle jitc_start_cached_kernel_recording(ThreadState* ts, const uint32_t* param_slots, uint32_t n_slots) {
+	ts->is_recording_cached_kernel = true;
+	for (uint32_t i = 0; i < n_slots; ++i) {
+		uint32_t var_index = param_slots[i];
+		 // ensure variable is evaluated, even if it is a literal
+		jitc_var_ptr(var_index);
 
+		// We temporarily set the reg_index in the variable to its position
+		// in the input parameter list. It will be used before it is replaced
+		// by the actual register index in the backend.
+		Variable* v = jitc_var(var_index);
+		// Set it to index + 1, as 0 is treated as null.
+		v->reg_index = i + 1;
+
+	}
+	uint32_t first_entry_idx = extended_kernel_history.size();
+	return CachedKernelHandle { first_entry_idx, first_entry_idx, n_slots };
+}
+
+/// Returns the index into the extended kernel hitory entry.
+/// Input variables are passed explicitly.
+/// Output variables
+void jitc_end_cached_kernel_recording(ThreadState* ts, CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots) {
+	// Some params can be added at the end of param_slots (namely output variables)
+	// since the call to jitc_start_cached_kernel_recording, so we register those here
+	for (uint32_t i = handle.n_param_slots; i < n_slots; ++i) {
+		// We temporarily set the reg_index in the variable to its position
+		// in the input parameter list. It will be used before it is replaced
+		// by the actual register index in the backend.
+		Variable* v = jitc_var(param_slots[i]);
+		// Set it to index + 1, as 0 is treated as null.
+		v->reg_index = i + 1;
+	}
+	// Flush remaining computation
+	jitc_eval(ts);
+
+	ts->is_recording_cached_kernel = false;
+	handle.n_param_slots = n_slots;
+	handle.last_entry_idx = extended_kernel_history.size();
+}
+
+static Task *jitc_run_cached(ThreadState *ts, const ExtendedKernelHistoryEntry& extended_history_entry, const uint32_t* param_slots, uint32_t n_slots) {
+	const KernelHistoryEntry& history_entry = extended_history_entry.inner_entry;
+	jitc_log(Info, "jit_run_cached_kernel(): running kernel %016lx%016lx", history_entry.hash[1], history_entry.hash[0]);
 
 	uint64_t flags = jitc_kernel_flags(ts);
     KernelKey kernel_key(history_entry.ir, ts->device, flags);
@@ -453,7 +523,7 @@ static Task *jitc_run_cached(ThreadState *ts, const ExtendedKernelHistoryEntry& 
         kernel_key,
         KernelHash::compute_hash(history_entry.hash[1], ts->device, flags));
     if (it == state.kernel_cache.end()) {
-		jitc_fail("jit_run_last_kernel(): could not find cached kernel");
+		jitc_fail("jit_run_cached_kernel(): could not find cached kernel");
 	}
 
     snprintf(kernel_name, sizeof(kernel_name), "%s%016llx%016llx",
@@ -468,6 +538,13 @@ static Task *jitc_run_cached(ThreadState *ts, const ExtendedKernelHistoryEntry& 
 
 	kernel_params = extended_history_entry.params;
     uint32_t kernel_param_count = (uint32_t) kernel_params.size();
+	// Override kernel_params with new inputs
+	// according to the mappings we defined during recording
+	for (const KernelParamIndexMapping& mapping : extended_history_entry.param_indices) {
+		// TODO: make sure that var_index is < n_slots
+		uint32_t var_index = param_slots[mapping.var_index];
+		kernel_params[mapping.param_index] = jitc_var_ptr(var_index);
+	}
 
     // Pass parameters through global memory if too large or using OptiX
     if (ts->backend == JitBackend::CUDA &&
@@ -485,16 +562,23 @@ static Task *jitc_run_cached(ThreadState *ts, const ExtendedKernelHistoryEntry& 
 	return jitc_launch_kernel(ts, history_entry.size, it.value());
 }
 
-void jitc_run_last_kernel(ThreadState *ts) {
-    if (extended_kernel_history.empty()) {
-		jitc_log(Warn, "jit_run_last_kernel(): no kernels have been recorded!");
+void jitc_run_cached_kernel(ThreadState* ts, const CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots) {
+    if (handle.last_entry_idx > extended_kernel_history.size() || handle.first_entry_idx >= handle.last_entry_idx) {
+		jitc_log(Warn, "jit_run_cached_kernel(): invalid kernel handle");
 		return;
 	}
 
-	Task* task = jitc_run_cached(ts, extended_kernel_history.back());
+    if (handle.n_param_slots != n_slots) {
+		jitc_log(Warn, "jit_run_cached_kernel(): invalid number of parameter slots");
+		return;
+	}
 
-	task_release(ts->task);
-	ts->task = task;
+	for (uint32_t i = handle.first_entry_idx; i < handle.last_entry_idx; ++i) {
+		const ExtendedKernelHistoryEntry& entry = extended_kernel_history[i];
+		Task* task = jitc_run_cached(ts, entry, param_slots, n_slots);
+		task_release(ts->task);
+		ts->task = task;
+	}
 }
 
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
@@ -632,8 +716,11 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         }
 
         state.kernel_history.append(kernel_history_entry);
-		extended_kernel_history.push_back(ExtendedKernelHistoryEntry {kernel_history_entry, kernel_params});
     }
+
+	if (unlikely(ts->is_recording_cached_kernel)) {
+        extended_kernel_history.push_back(ExtendedKernelHistoryEntry{kernel_history_entry, kernel_params, kernel_param_indices});
+	}
 
 	return ret_task;
 }
