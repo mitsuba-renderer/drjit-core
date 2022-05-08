@@ -1860,6 +1860,22 @@ extern JIT_EXPORT void jit_kernel_history_clear();
  */
 extern JIT_EXPORT struct KernelHistoryEntry *jit_kernel_history();
 
+// ====================================================================
+//                          Cached kernels
+// ====================================================================
+
+struct CachedKernelHandle {
+	uint32_t first_entry_idx;
+	uint32_t last_entry_idx;
+	uint32_t n_param_slots;
+};
+
+extern JIT_EXPORT CachedKernelHandle jit_start_cached_kernel_recording(const uint32_t* param_slots, uint32_t n_slots);
+
+extern JIT_EXPORT void jit_end_cached_kernel_recording(CachedKernelHandle* handle, const uint32_t* param_slots, uint32_t n_slots);
+
+extern JIT_EXPORT void jit_run_cached_kernel(const CachedKernelHandle* handle, const uint32_t* param_slots, uint32_t n_slots);
+
 #if defined(__cplusplus)
 }
 

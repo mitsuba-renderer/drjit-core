@@ -114,3 +114,12 @@ jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 
 /// Register a global declaration that will be included in the final program
 extern void jitc_register_global(const char *str);
+
+
+///========= Cached Kernels
+/// TODO: docs
+extern CachedKernelHandle jitc_start_cached_kernel_recording(ThreadState* ts, const uint32_t* param_slots, uint32_t n_slots);
+
+extern void jitc_end_cached_kernel_recording(ThreadState* ts, CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots);
+
+extern void jitc_run_cached_kernel(ThreadState* ts, const CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots);

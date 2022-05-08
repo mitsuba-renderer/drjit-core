@@ -75,6 +75,36 @@ uint32_t vcall_counter = 0;
 KernelHistoryEntry kernel_history_entry;
 
 // ====================================================================
+struct KernelParamIndexMapping {
+	uint32_t var_index;
+	uint32_t param_index;
+};
+
+
+struct ExtendedKernelHistoryEntry {
+	KernelHistoryEntry inner_entry;
+	std::vector<void *> params;
+	std::vector<KernelParamIndexMapping> param_indices;
+};
+
+static std::vector<ExtendedKernelHistoryEntry> extended_kernel_history{};
+
+// An array of indices into the kernel_params array, in the order
+// of the arguments passed to the cached kernel function.
+static std::vector<KernelParamIndexMapping> kernel_param_indices;
+
+static void record_kernel_param_mapping(Variable* v) {
+	// 0 is treated as null
+	if (v->reg_index == 0) {
+		return;
+	}
+	uint32_t var_index = v->reg_index - 1;
+	uint32_t param_index = kernel_params.size();
+	kernel_param_indices.push_back(KernelParamIndexMapping { var_index, param_index });
+}
+
+
+// ====================================================================
 
 /// Recursively traverse the computation graph to find variables needed by a computation
 static void jitc_var_traverse(uint32_t size, uint32_t index) {
@@ -167,6 +197,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
         if (v->data) {
             v->param_type = ParamType::Input;
+			if (ts->is_recording_cached_kernel) {
+				record_kernel_param_mapping(v);
+			}
             kernel_params.push_back(v->data);
             n_params_in++;
         } else if (v->output_flag && v->size == group.size) {
@@ -185,12 +218,18 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             // The addr. of 'v' can change (jitc_malloc() may release the lock)
             v = jitc_var(index);
 
+			if (ts->is_recording_cached_kernel) {
+				record_kernel_param_mapping(v);
+			}
             v->data = data;
             v->param_type = ParamType::Output;
             kernel_params.push_back(data);
             n_params_out++;
         } else if (v->literal && (VarType) v->type == VarType::Pointer) {
             v->param_type = ParamType::Input;
+			if (ts->is_recording_cached_kernel) {
+				record_kernel_param_mapping(v);
+			}
             kernel_params.push_back((void *) v->value);
             n_params_in++;
         } else {
@@ -324,9 +363,100 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 static ProfilerRegion profiler_region_backend_compile("jit_eval: compiling");
 static ProfilerRegion profiler_region_backend_load("jit_eval: loading");
 
-Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
-    uint64_t flags = 0;
+static Task *jitc_launch_kernel(ThreadState *ts, uint32_t group_size, const Kernel& kernel) {
+    state.kernel_launches++;
 
+    Task* ret_task = nullptr;
+    if (ts->backend == JitBackend::CUDA) {
+#if defined(DRJIT_ENABLE_OPTIX)
+        if (unlikely(uses_optix)) {
+            jitc_optix_launch(ts, kernel, group_size, kernel_params_global,
+                              kernel_param_count);
+        }
+#endif
+
+        if (!uses_optix) {
+            size_t buffer_size = kernel_params.size() * sizeof(void *);
+
+            void *config[] = {
+                CU_LAUNCH_PARAM_BUFFER_POINTER,
+                kernel_params.data(),
+                CU_LAUNCH_PARAM_BUFFER_SIZE,
+                &buffer_size,
+                CU_LAUNCH_PARAM_END
+            };
+
+            uint32_t block_count, thread_count, size = group_size;
+            const Device &device = state.devices[ts->device];
+            device.get_launch_config(&block_count, &thread_count, size,
+                                     (uint32_t) kernel.cuda.block_size);
+
+            cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,
+                                      thread_count, 1, 1, 0, ts->stream,
+                                      nullptr, config));
+        }
+
+        if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
+            cuda_check(cuStreamSynchronize(ts->stream));
+    } else {
+        uint32_t packets =
+            (group_size + jitc_llvm_vector_width - 1) / jitc_llvm_vector_width;
+
+        auto callback = [](uint32_t index, void *ptr) {
+            void **params = (void **) ptr;
+            LLVMKernelFunction kernel = (LLVMKernelFunction) params[0];
+            uint32_t size       = (uint32_t) (uintptr_t) params[1],
+                     block_size = (uint32_t) ((uintptr_t) params[1] >> 32),
+                     start      = index * block_size,
+                     end        = std::min(start + block_size, size);
+
+#if defined(DRJIT_ENABLE_ITTNOTIFY)
+            // Signal start of kernel
+            __itt_task_begin(drjit_domain, __itt_null, __itt_null,
+                             (__itt_string_handle *) params[2]);
+#endif
+            // Perform the main computation
+            kernel(start, end, params);
+
+#if defined(DRJIT_ENABLE_ITTNOTIFY)
+            // Signal termination of kernel
+            __itt_task_end(drjit_domain);
+#endif
+        };
+
+        uint32_t block_size = DRJIT_POOL_BLOCK_SIZE,
+                 blocks = (group_size + block_size - 1) / block_size;
+
+        kernel_params[0] = (void *) kernel.llvm.reloc[0];
+        kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) +
+                                     (uintptr_t) group_size);
+
+#if defined(DRJIT_ENABLE_ITTNOTIFY)
+        kernel_params[2] = kernel.llvm.itt;
+#endif
+
+        jitc_trace("jit_run(): scheduling %u packet%s in %u block%s ..",
+                   packets, packets == 1 ? "" : "s", blocks,
+                   blocks == 1 ? "" : "s");
+        (void) packets; // jitc_trace may be disabled
+
+        ret_task = task_submit_dep(
+            nullptr, &ts->task, 1, blocks,
+            callback,
+            kernel_params.data(),
+            (uint32_t) (kernel_params.size() * sizeof(void *)),
+            nullptr
+        );
+
+        if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
+            task_wait(ret_task);
+    }
+
+    return ret_task;
+}
+
+static uint64_t jitc_kernel_flags(ThreadState *ts) {
+    uint64_t flags = 0;
 #if defined(DRJIT_ENABLE_OPTIX)
     if (uses_optix) {
         const OptixPipelineCompileOptions &pco =
@@ -339,6 +469,120 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             ((uint64_t) pco.usesPrimitiveTypeFlags << 25);  // 32 bit
     }
 #endif
+	return flags;
+}
+
+CachedKernelHandle jitc_start_cached_kernel_recording(ThreadState* ts, const uint32_t* param_slots, uint32_t n_slots) {
+	ts->is_recording_cached_kernel = true;
+	for (uint32_t i = 0; i < n_slots; ++i) {
+		uint32_t var_index = param_slots[i];
+		 // ensure variable is evaluated, even if it is a literal
+		jitc_var_ptr(var_index);
+
+		// We temporarily set the reg_index in the variable to its position
+		// in the input parameter list. It will be used before it is replaced
+		// by the actual register index in the backend.
+		Variable* v = jitc_var(var_index);
+		// Set it to index + 1, as 0 is treated as null.
+		v->reg_index = i + 1;
+
+	}
+	uint32_t first_entry_idx = extended_kernel_history.size();
+	return CachedKernelHandle { first_entry_idx, first_entry_idx, n_slots };
+}
+
+/// Returns the index into the extended kernel hitory entry.
+/// Input variables are passed explicitly.
+/// Output variables
+void jitc_end_cached_kernel_recording(ThreadState* ts, CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots) {
+	// Some params can be added at the end of param_slots (namely output variables)
+	// since the call to jitc_start_cached_kernel_recording, so we register those here
+	for (uint32_t i = handle.n_param_slots; i < n_slots; ++i) {
+		// We temporarily set the reg_index in the variable to its position
+		// in the input parameter list. It will be used before it is replaced
+		// by the actual register index in the backend.
+		Variable* v = jitc_var(param_slots[i]);
+		// Set it to index + 1, as 0 is treated as null.
+		v->reg_index = i + 1;
+	}
+	// Flush remaining computation
+	jitc_eval(ts);
+
+	ts->is_recording_cached_kernel = false;
+	handle.n_param_slots = n_slots;
+	handle.last_entry_idx = extended_kernel_history.size();
+}
+
+static Task *jitc_run_cached(ThreadState *ts, const ExtendedKernelHistoryEntry& extended_history_entry, const uint32_t* param_slots, uint32_t n_slots) {
+	const KernelHistoryEntry& history_entry = extended_history_entry.inner_entry;
+	jitc_log(Info, "jit_run_cached_kernel(): running kernel %016lx%016lx", history_entry.hash[1], history_entry.hash[0]);
+
+	uint64_t flags = jitc_kernel_flags(ts);
+    KernelKey kernel_key(history_entry.ir, ts->device, flags);
+    auto it = state.kernel_cache.find(
+        kernel_key,
+        KernelHash::compute_hash(history_entry.hash[1], ts->device, flags));
+    if (it == state.kernel_cache.end()) {
+		jitc_fail("jit_run_cached_kernel(): could not find cached kernel");
+	}
+
+    snprintf(kernel_name, sizeof(kernel_name), "%s%016llx%016llx",
+             uses_optix ? "__raygen__" : "drjit_",
+             (unsigned long long) history_entry.hash[1],
+             (unsigned long long) history_entry.hash[0]);
+
+	if (ts->backend == JitBackend::CUDA) {
+		jitc_free(kernel_params_global);
+		kernel_params_global = nullptr;
+	}
+
+	kernel_params = extended_history_entry.params;
+    uint32_t kernel_param_count = (uint32_t) kernel_params.size();
+	// Override kernel_params with new inputs
+	// according to the mappings we defined during recording
+	for (const KernelParamIndexMapping& mapping : extended_history_entry.param_indices) {
+		// TODO: make sure that var_index is < n_slots
+		uint32_t var_index = param_slots[mapping.var_index];
+		kernel_params[mapping.param_index] = jitc_var_ptr(var_index);
+	}
+
+    // Pass parameters through global memory if too large or using OptiX
+    if (ts->backend == JitBackend::CUDA &&
+        (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT)) {
+        size_t size = kernel_param_count * sizeof(void *);
+        uint8_t *tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, size);
+        kernel_params_global = (uint8_t *) jitc_malloc(AllocType::Device, size);
+        memcpy(tmp, kernel_params.data(), size);
+        jitc_memcpy_async(ts->backend, kernel_params_global, tmp, size);
+        jitc_free(tmp);
+        kernel_params.clear();
+        kernel_params.push_back(kernel_params_global);
+    }
+
+	return jitc_launch_kernel(ts, history_entry.size, it.value());
+}
+
+void jitc_run_cached_kernel(ThreadState* ts, const CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots) {
+    if (handle.last_entry_idx > extended_kernel_history.size() || handle.first_entry_idx >= handle.last_entry_idx) {
+		jitc_log(Warn, "jit_run_cached_kernel(): invalid kernel handle");
+		return;
+	}
+
+    if (handle.n_param_slots != n_slots) {
+		jitc_log(Warn, "jit_run_cached_kernel(): invalid number of parameter slots");
+		return;
+	}
+
+	for (uint32_t i = handle.first_entry_idx; i < handle.last_entry_idx; ++i) {
+		const ExtendedKernelHistoryEntry& entry = extended_kernel_history[i];
+		Task* task = jitc_run_cached(ts, entry, param_slots, n_slots);
+		task_release(ts->task);
+		ts->task = task;
+	}
+}
+
+Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
+	uint64_t flags = jitc_kernel_flags(ts);
 
     KernelKey kernel_key((char *) buffer.get(), ts->device, flags);
     auto it = state.kernel_cache.find(
@@ -451,7 +695,6 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         kernel = it.value();
         state.kernel_hits++;
     }
-    state.kernel_launches++;
 
     if (unlikely(jit_flag(JitFlag::KernelHistory) &&
                  ts->backend == JitBackend::CUDA)) {
@@ -461,91 +704,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         cuda_check(cuEventRecord((CUevent) e.event_start, ts->stream));
     }
 
-    Task* ret_task = nullptr;
-    if (ts->backend == JitBackend::CUDA) {
-#if defined(DRJIT_ENABLE_OPTIX)
-        if (unlikely(uses_optix)) {
-            jitc_optix_launch(ts, kernel, group.size, kernel_params_global,
-                              kernel_param_count);
-        }
-#endif
-
-        if (!uses_optix) {
-            size_t buffer_size = kernel_params.size() * sizeof(void *);
-
-            void *config[] = {
-                CU_LAUNCH_PARAM_BUFFER_POINTER,
-                kernel_params.data(),
-                CU_LAUNCH_PARAM_BUFFER_SIZE,
-                &buffer_size,
-                CU_LAUNCH_PARAM_END
-            };
-
-            uint32_t block_count, thread_count, size = group.size;
-            const Device &device = state.devices[ts->device];
-            device.get_launch_config(&block_count, &thread_count, size,
-                                     (uint32_t) kernel.cuda.block_size);
-
-            cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,
-                                      thread_count, 1, 1, 0, ts->stream,
-                                      nullptr, config));
-        }
-
-        if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
-            cuda_check(cuStreamSynchronize(ts->stream));
-    } else {
-        uint32_t packets =
-            (group.size + jitc_llvm_vector_width - 1) / jitc_llvm_vector_width;
-
-        auto callback = [](uint32_t index, void *ptr) {
-            void **params = (void **) ptr;
-            LLVMKernelFunction kernel = (LLVMKernelFunction) params[0];
-            uint32_t size       = (uint32_t) (uintptr_t) params[1],
-                     block_size = (uint32_t) ((uintptr_t) params[1] >> 32),
-                     start      = index * block_size,
-                     end        = std::min(start + block_size, size);
-
-#if defined(DRJIT_ENABLE_ITTNOTIFY)
-            // Signal start of kernel
-            __itt_task_begin(drjit_domain, __itt_null, __itt_null,
-                             (__itt_string_handle *) params[2]);
-#endif
-            // Perform the main computation
-            kernel(start, end, params);
-
-#if defined(DRJIT_ENABLE_ITTNOTIFY)
-            // Signal termination of kernel
-            __itt_task_end(drjit_domain);
-#endif
-        };
-
-        uint32_t block_size = DRJIT_POOL_BLOCK_SIZE,
-                 blocks = (group.size + block_size - 1) / block_size;
-
-        kernel_params[0] = (void *) kernel.llvm.reloc[0];
-        kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) +
-                                     (uintptr_t) group.size);
-
-#if defined(DRJIT_ENABLE_ITTNOTIFY)
-        kernel_params[2] = kernel.llvm.itt;
-#endif
-
-        jitc_trace("jit_run(): scheduling %u packet%s in %u block%s ..",
-                   packets, packets == 1 ? "" : "s", blocks,
-                   blocks == 1 ? "" : "s");
-        (void) packets; // jitc_trace may be disabled
-
-        ret_task = task_submit_dep(
-            nullptr, &ts->task, 1, blocks,
-            callback,
-            kernel_params.data(),
-            (uint32_t) (kernel_params.size() * sizeof(void *)),
-            nullptr
-        );
-
-        if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
-            task_wait(ret_task);
-    }
+	Task *ret_task = jitc_launch_kernel(ts, group.size, kernel);
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         if (ts->backend == JitBackend::CUDA) {
@@ -559,7 +718,11 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         state.kernel_history.append(kernel_history_entry);
     }
 
-    return ret_task;
+	if (unlikely(ts->is_recording_cached_kernel)) {
+        extended_kernel_history.push_back(ExtendedKernelHistoryEntry{kernel_history_entry, kernel_params, kernel_param_indices});
+	}
+
+	return ret_task;
 }
 
 static ProfilerRegion profiler_region_eval("jit_eval");

@@ -658,6 +658,27 @@ void jit_eval() {
     jitc_eval(thread_state_llvm);
 }
 
+CachedKernelHandle jit_start_cached_kernel_recording(const uint32_t* param_slots, uint32_t n_slots) {
+    lock_guard guard(state.lock);
+    return jitc_start_cached_kernel_recording(thread_state_llvm, param_slots, n_slots);
+}
+
+void jit_end_cached_kernel_recording(CachedKernelHandle* handle, const uint32_t* param_slots, uint32_t n_slots) {
+	if (handle == nullptr) {
+		return;
+	}
+    lock_guard guard(state.lock);
+    jitc_end_cached_kernel_recording(thread_state_llvm, *handle, param_slots, n_slots);
+}
+
+void jit_run_cached_kernel(const CachedKernelHandle* handle, const uint32_t* param_slots, uint32_t n_slots) {
+	if (handle == nullptr) {
+		return;
+	}
+    lock_guard guard(state.lock);
+    jitc_run_cached_kernel(thread_state_llvm, *handle, param_slots, n_slots);
+}
+
 int jit_var_eval(uint32_t index) {
     if (index == 0)
         return 0;
