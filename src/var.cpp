@@ -1000,7 +1000,10 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
             }
             target_ptr = jitc_malloc_migrate(target_ptr, AllocType::HostAsync, 1);
         } else {
-            jitc_fail("jit_var_mem_copy(): copy from GPU to HostAsync memory not supported!");
+            target_ptr = jitc_malloc(AllocType::HostPinned, total_size);
+            cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
+                                     (CUdeviceptr) ptr, total_size,
+                                     ts->stream));
         }
     }
 
