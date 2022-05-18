@@ -8,7 +8,7 @@
 #include "op.h"
 #include "internal.h"
 
-#define OPTIX_ABI_VERSION 41
+#define OPTIX_ABI_VERSION 55
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -17,8 +17,9 @@
 #  include <dlfcn.h>
 #endif
 
-static void *jitc_optix_table[38] { };
-static const char *jitc_optix_table_names[38] = {
+#define OPTIX_FUNCTION_TABLE_SIZE 43
+static void *jitc_optix_table[OPTIX_FUNCTION_TABLE_SIZE] { };
+static const char *jitc_optix_table_names[OPTIX_FUNCTION_TABLE_SIZE] = {
     "optixGetErrorName",
     "optixGetErrorString",
     "optixDeviceContextCreate",
@@ -32,8 +33,11 @@ static const char *jitc_optix_table_names[38] = {
     "optixDeviceContextGetCacheLocation",
     "optixDeviceContextGetCacheDatabaseSizes",
     "optixModuleCreateFromPTX",
+    "optixModuleCreateFromPTXWithTasks",
+    "optixModuleGetCompilationState",
     "optixModuleDestroy",
     "optixBuiltinISModuleGet",
+    "optixTaskExecute",
     "optixProgramGroupCreate",
     "optixProgramGroupDestroy",
     "optixProgramGroupGetStackSize",
@@ -47,6 +51,8 @@ static const char *jitc_optix_table_names[38] = {
     "optixAccelRelocate",
     "optixAccelCompact",
     "optixConvertPointerToTraversableHandle",
+    "reserved1",
+    "reserved2",
     "optixSbtRecordPackHeader",
     "optixLaunch",
     "optixDenoiserCreate",
@@ -54,9 +60,9 @@ static const char *jitc_optix_table_names[38] = {
     "optixDenoiserComputeMemoryResources",
     "optixDenoiserSetup",
     "optixDenoiserInvoke",
-    "optixDenoiserSetModel",
     "optixDenoiserComputeIntensity",
-    "optixDenoiserComputeAverageColor"
+    "optixDenoiserComputeAverageColor",
+    "optixDenoiserCreateWithUserModel"
 };
 
 using OptixResult = int;
@@ -70,7 +76,7 @@ using OptixLogCallback = void (*)(unsigned int, const char *, const char *, void
 #define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH         2
 #define OPTIX_EXCEPTION_FLAG_DEBUG               8
 #define OPTIX_COMPILE_DEBUG_LEVEL_NONE           0x2350
-#define OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO       0x2351
+#define OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL        0x2351
 #define OPTIX_COMPILE_OPTIMIZATION_LEVEL_0       0x2340
 #define OPTIX_COMPILE_OPTIMIZATION_LEVEL_1       0x2341
 #define OPTIX_COMPILE_OPTIMIZATION_LEVEL_2       0x2342
@@ -89,12 +95,19 @@ struct OptixDeviceContextOptions {
     int validationMode;
 };
 
+struct OptixPayloadType {
+    unsigned int numPayloadValues;
+    const unsigned int *payloadSemantics;
+};
+
 struct OptixModuleCompileOptions {
     int maxRegisterCount;
     int optLevel;
     int debugLevel;
     const void *boundValues;
     unsigned int numBoundValues;
+    unsigned int numPayloadTypes;
+    OptixPayloadType *payloadTypes;
 };
 
 struct OptixPipelineLinkOptions {
@@ -147,7 +160,7 @@ struct OptixStackSizes {
 };
 
 struct OptixProgramGroupOptions {
-    int opaque;
+    OptixPayloadType *payloadType;
 };
 
 OptixResult (*optixQueryFunctionTable)(int, unsigned int, void *, const void **,
@@ -263,8 +276,7 @@ bool jitc_optix_init() {
                 "jit_optix_init(): Failed to load OptiX library! Very likely, "
                 "your NVIDIA graphics driver is too old and not compatible "
                 "with the version of OptiX that is being used. In particular, "
-                "OptiX 7.2 requires driver revision R455.28 or newer on Linux "
-                "and R456.71 or newer on Windows.");
+                "OptiX 7.4 requires driver revision R495.89 or newer.");
 
         return false;
     }
@@ -290,7 +302,7 @@ bool jitc_optix_init() {
 
     #undef LOOKUP
 
-    jitc_log(Info, "jit_optix_init(): loaded OptiX (via 7.2 ABI).");
+    jitc_log(Info, "jit_optix_init(): loaded OptiX (via 7.4 ABI).");
 
     jitc_optix_init_success = true;
     return true;
@@ -368,12 +380,12 @@ OptixDeviceContext jitc_optix_context() {
         mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
         mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
 #else
-        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
+        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
         mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
 #endif
 
         const char *minimal = ".version 6.0 .target sm_50 .address_size 64 "
-                              ".entry __miss__ek() { ret; }";
+                              ".entry __miss__dr() { ret; }";
 
         char log[128];
         size_t log_size = sizeof(log);
@@ -385,7 +397,7 @@ OptixDeviceContext jitc_optix_context() {
         OptixProgramGroupDesc pgd { };
         pgd.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
         pgd.miss.module = mod;
-        pgd.miss.entryFunctionName = "__miss__ek";
+        pgd.miss.entryFunctionName = "__miss__dr";
 
         OptixProgramGroupOptions pgo { };
         OptixProgramGroup &pg = ts->optix_program_group_base;
@@ -428,7 +440,7 @@ void jitc_optix_context_destroy(Device &d) {
 }
 
 void *jitc_optix_lookup(const char *name) {
-    for (int i = 0; i < 38; ++i) {
+    for (size_t i = 0; i < OPTIX_FUNCTION_TABLE_SIZE; ++i) {
         if (strcmp(name, jitc_optix_table_names[i]) == 0)
             return jitc_optix_table[i];
     }
@@ -483,7 +495,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
     mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
 #else
-    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
+    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
     mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
 #endif
 
@@ -646,8 +658,8 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
         jitc_raise("jit_optix_ray_trace(): too few arguments (got %u < 15)", n_args);
 
     uint32_t np = n_args - 15, size = 0;
-    if (np > 8)
-        jitc_raise("jit_optix_ray_trace(): too many payloads (got %u > 8)", np);
+    if (np > 32)
+        jitc_raise("jit_optix_ray_trace(): too many payloads (got %u > 32)", np);
 
     // Validate input types, determine size of the operation
     bool placeholder = false, dirty = false;
@@ -725,9 +737,13 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
 
     extra.assemble = [](const Variable *v2, const Extra &extra) {
         uint32_t payload_count = extra.n_dep - 15;
-        if (payload_count)
-            buffer.fmt("    .reg.u32 %%u%u_result_<%u>;\n", v2->reg_index,
-                       payload_count);
+        buffer.fmt("    .reg.u32 %%u%u_result_<32>;\n", v2->reg_index);
+
+        buffer.fmt("    .reg.u32 %%u%u_payload_type;\n", v2->reg_index);
+        buffer.fmt("    mov.u32 %%u%u_payload_type, 0;\n", v2->reg_index);
+        buffer.fmt("    .reg.u32 %%u%u_payload_count;\n", v2->reg_index);
+        buffer.fmt("    mov.u32 %%u%u_payload_count, %u;\n", v2->reg_index,
+                   payload_count);
 
         buffer.putc(' ', 4);
         const Variable *mask_v = jitc_var(v2->dep[0]);
@@ -735,16 +751,29 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
             buffer.fmt("@%s%u ", type_prefix[mask_v->type], mask_v->reg_index);
         buffer.put("call (");
 
-        for (uint32_t i = 0; i < payload_count; ++i)
+        for (uint32_t i = 0; i < 32; ++i)
             buffer.fmt("%%u%u_result_%u%s", v2->reg_index, i,
-                       i + 1 < payload_count ? ", " : "");
-        buffer.fmt("), _optix_trace_%u, (", payload_count);
+                       i + 1 < 32 ? ", " : "");
+        buffer.put("), _optix_trace_typed_32, (");
 
-        for (uint32_t i = 0; i < extra.n_dep; ++i) {
+        // Arguments
+        buffer.fmt("%%u%u_payload_type, ", v2->reg_index);
+        for (uint32_t i = 0; i < 15; ++i) {
+            const Variable *v3 = jitc_var(extra.dep[i]);
+            buffer.fmt("%s%u, ", type_prefix[v3->type], v3->reg_index);
+        }
+
+        // Payloads
+        buffer.fmt("%%u%u_payload_count, ", v2->reg_index);
+        for (uint32_t i = 15; i < extra.n_dep; ++i) {
             const Variable *v3 = jitc_var(extra.dep[i]);
             buffer.fmt("%s%u%s", type_prefix[v3->type], v3->reg_index,
-                       (i + 1 < extra.n_dep) ? ", " : "");
+                       (i - 15 < 32) ? ", " : "");
         }
+        for (uint32_t i = payload_count; i < 32; ++i)
+            buffer.fmt("%%u%u_result_%u%s", v2->reg_index, i,
+                       (i + 1 < 32) ? ", " : "");
+
         buffer.put(");\n");
     };
 
