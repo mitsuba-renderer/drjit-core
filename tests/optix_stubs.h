@@ -96,12 +96,19 @@ struct OptixBuildInput {
     };
 };
 
+struct OptixPayloadType {
+    unsigned int numPayloadValues;
+    const unsigned int *payloadSemantics;
+};
+
 struct OptixModuleCompileOptions {
     int maxRegisterCount;
     int optLevel;
     int debugLevel;
     const void *boundValues;
     unsigned int numBoundValues;
+    unsigned int numPayloadTypes;
+    OptixPayloadType *payloadTypes;
 };
 
 struct OptixPipelineCompileOptions {
@@ -146,7 +153,7 @@ struct OptixProgramGroupDesc {
 };
 
 struct OptixProgramGroupOptions {
-    int placeholder;
+    OptixPayloadType *payloadType;
 };
 
 struct OptixShaderBindingTable {

@@ -13,14 +13,15 @@ const char *miss_and_closesthit_ptx = R"(
 .entry __miss__ms() {
 	.reg .b32 %r<1>;
 	mov.b32 %r0, 0;
-	call _optix_set_payload_0, (%r0);
+	call _optix_set_payload, (%r0, %r0);
 	ret;
 }
 
 .entry __closesthit__ch() {
-	.reg .b32 %r<1>;
-	mov.b32 %r0, 1;
-	call _optix_set_payload_0, (%r0);
+	.reg .b32 %r<2>;
+	mov.b32 %r0, 0;
+	mov.b32 %r1, 1;
+	call _optix_set_payload, (%r0, %r1);
 	ret;
 })";
 
@@ -150,7 +151,7 @@ void demo() {
     // Create program groups (raygen provided by Dr.Jit..)
     // =====================================================
 
-    OptixProgramGroupOptions pgo {};
+    OptixProgramGroupOptions pgo { };
     OptixProgramGroupDesc pgd[2] { };
     OptixProgramGroup pg[2];
 
