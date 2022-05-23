@@ -70,6 +70,7 @@ using OptixProgramGroupKind = int;
 using OptixCompileDebugLevel = int;
 using OptixDeviceContext = void*;
 using OptixLogCallback = void (*)(unsigned int, const char *, const char *, void *);
+using OptixTask = void*;
 
 #define OPTIX_EXCEPTION_FLAG_NONE                0
 #define OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW      1
@@ -83,6 +84,7 @@ using OptixLogCallback = void (*)(unsigned int, const char *, const char *, void
 #define OPTIX_COMPILE_OPTIMIZATION_LEVEL_3       0x2343
 #define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF 0
 #define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL ((int) 0xFFFFFFFF)
+#define OPTIX_MODULE_COMPILE_STATE_COMPLETED     0x2364
 #define OPTIX_PROGRAM_GROUP_KIND_RAYGEN          0x2421
 #define OPTIX_PROGRAM_GROUP_KIND_CALLABLES       0x2425
 #define OPTIX_PROGRAM_GROUP_KIND_MISS            0x2422
@@ -178,14 +180,23 @@ OptixResult (*optixModuleCreateFromPTX)(OptixDeviceContext,
                                         const OptixPipelineCompileOptions *,
                                         const char *, size_t, char *, size_t *,
                                         OptixModule *) = nullptr;
+OptixResult (*optixModuleCreateFromPTXWithTasks)(OptixDeviceContext,
+                                                const OptixModuleCompileOptions *,
+                                                const OptixPipelineCompileOptions *,
+                                                const char *, size_t,
+                                                char *, size_t *,
+                                                OptixModule *,
+                                                OptixTask *firstTask);
+OptixResult (*optixModuleGetCompilationState)(OptixModule, int *);
 OptixResult (*optixModuleDestroy)(OptixModule) = nullptr;
+OptixResult (*optixTaskExecute)(OptixTask task, OptixTask *, unsigned int,
+                                unsigned int *);
 OptixResult (*optixProgramGroupCreate)(OptixDeviceContext,
                                        const OptixProgramGroupDesc *,
                                        unsigned int,
                                        const OptixProgramGroupOptions *, char *,
                                        size_t *, OptixProgramGroup *) = nullptr;
 OptixResult (*optixProgramGroupDestroy)(OptixProgramGroup) = nullptr;
-
 OptixResult (*optixPipelineCreate)(OptixDeviceContext,
                                    const OptixPipelineCompileOptions *,
                                    const OptixPipelineLinkOptions *,
@@ -290,7 +301,10 @@ bool jitc_optix_init() {
     LOOKUP(optixDeviceContextSetCacheEnabled);
     LOOKUP(optixDeviceContextSetCacheLocation);
     LOOKUP(optixModuleCreateFromPTX);
+    LOOKUP(optixModuleCreateFromPTXWithTasks);
+    LOOKUP(optixModuleGetCompilationState);
     LOOKUP(optixModuleDestroy);
+    LOOKUP(optixTaskExecute);
     LOOKUP(optixProgramGroupCreate);
     LOOKUP(optixProgramGroupDestroy);
     LOOKUP(optixPipelineCreate);
@@ -502,15 +516,48 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     jitc_optix_cache_hit = !jitc_optix_cache_global_disable;
     size_t log_size = sizeof(error_log);
     OptixDeviceContext &optix_context = state.devices[ts->device].optix_context;
-    int rv = optixModuleCreateFromPTX(
-        optix_context, &mco, &ts->optix_pipeline_compile_options, buf,
-        buf_size, error_log, &log_size, &kernel.optix.mod);
+
+    OptixTask task;
+    int rv = optixModuleCreateFromPTXWithTasks(
+        optix_context, &mco, &ts->optix_pipeline_compile_options, buf, buf_size,
+        error_log, &log_size, &kernel.optix.mod, &task);
+
     if (rv) {
-        jitc_log(Error, "jit_optix_compile(): optixModuleCreateFromPTX() "
-                 "failed. Please see the PTX assembly listing and error "
-                 "message below:\n\n%s\n\n%s", buf, error_log);
+        jitc_log(Error, "jit_optix_compile(): "
+                 "optixModuleCreateFromPTXWithTasks() failed. Please see the "
+                 "PTX assembly listing and error message below:\n\n%s\n\n%s",
+                 buf, error_log);
         jitc_optix_check(rv);
     }
+
+    std::function<void(OptixTask)> execute_task = [&](OptixTask task) {
+        size_t max_new_tasks = pool_size();
+
+        OptixTask new_tasks[max_new_tasks];
+        unsigned int new_task_count = 0;
+        optixTaskExecute(task, new_tasks, max_new_tasks, &new_task_count);
+
+        parallel_for(
+            drjit::blocked_range<size_t>(0, new_task_count, 1),
+            [&](const drjit::blocked_range<size_t> &range) {
+                for (auto i = range.begin(); i != range.end();
+                     ++i) {
+                    OptixTask new_task = new_tasks[i];
+                    execute_task(new_task);
+                }
+            }
+        );
+    };
+    execute_task(task);
+
+    int compilation_state = 0;
+    jitc_optix_check(
+        optixModuleGetCompilationState(kernel.optix.mod, &compilation_state));
+    if (compilation_state != OPTIX_MODULE_COMPILE_STATE_COMPLETED)
+        jitc_fail("jit_optix_compile(): optixModuleGetCompilationState() "
+                  "indicates that the compilation did not complete "
+                  "succesfully. The module's compilation state is: %#06x",
+                  compilation_state);
 
     // =====================================================
     // 3. Create an OptiX program group
