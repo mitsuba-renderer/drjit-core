@@ -6,7 +6,6 @@
 #include "eval.h"
 #include "var.h"
 #include "op.h"
-#include "internal.h"
 
 #define OPTIX_ABI_VERSION 55
 
@@ -533,9 +532,10 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     std::function<void(OptixTask)> execute_task = [&](OptixTask task) {
         size_t max_new_tasks = pool_size();
 
-        OptixTask new_tasks[max_new_tasks];
+        std::unique_ptr<OptixTask[]> new_tasks =
+            std::make_unique<OptixTask[]>(max_new_tasks);
         unsigned int new_task_count = 0;
-        optixTaskExecute(task, new_tasks, max_new_tasks, &new_task_count);
+        optixTaskExecute(task, new_tasks.get(), max_new_tasks, &new_task_count);
 
         parallel_for(
             drjit::blocked_range<size_t>(0, new_task_count, 1),
@@ -803,14 +803,12 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask) {
                        i + 1 < 32 ? ", " : "");
         buffer.put("), _optix_trace_typed_32, (");
 
-        // Arguments
         buffer.fmt("%%u%u_payload_type, ", v2->reg_index);
         for (uint32_t i = 0; i < 15; ++i) {
             const Variable *v3 = jitc_var(extra.dep[i]);
             buffer.fmt("%s%u, ", type_prefix[v3->type], v3->reg_index);
         }
 
-        // Payloads
         buffer.fmt("%%u%u_payload_count, ", v2->reg_index);
         for (uint32_t i = 15; i < extra.n_dep; ++i) {
             const Variable *v3 = jitc_var(extra.dep[i]);
