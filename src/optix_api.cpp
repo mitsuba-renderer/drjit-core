@@ -540,8 +540,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
         parallel_for(
             drjit::blocked_range<size_t>(0, new_task_count, 1),
             [&](const drjit::blocked_range<size_t> &range) {
-                for (auto i = range.begin(); i != range.end();
-                     ++i) {
+                for (auto i = range.begin(); i != range.end(); ++i) {
                     OptixTask new_task = new_tasks[i];
                     execute_task(new_task);
                 }
