@@ -585,6 +585,15 @@ extern JIT_EXPORT uint32_t jit_registry_get_max(JIT_ENUM JitBackend backend, con
 extern JIT_EXPORT void jit_registry_trim();
 
 /**
+ * \brief Clear the registry and release all IDs and attributes
+ *
+ * Extra care must be taken when calling this function as it might result in
+ * undefined behaviour and crashes if instances are still alive and used
+ * afterward.
+ */
+extern JIT_EXPORT void jit_registry_clear();
+
+/**
  * \brief Set a custom per-pointer attribute
  *
  * The pointer registry can optionally associate one or more read-only

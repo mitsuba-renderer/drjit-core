@@ -35,6 +35,9 @@ extern void *jitc_registry_get_ptr(JitBackend backend, const char *domain,
 /// Compact the registry and release unused IDs
 extern void jitc_registry_trim();
 
+/// Clear the registry and release all IDs and attributes
+extern void jitc_registry_clean();
+
 /// Shut down the pointer registry (reports leaks)
 extern void jitc_registry_shutdown();
 

@@ -216,6 +216,27 @@ void jitc_registry_trim() {
         trim_registry(JitBackend::LLVM);
 }
 
+/// Clear the registry and release all IDs and attributes
+void jitc_registry_clean() {
+    auto clean_registry = [](JitBackend backend) {
+        Registry* registry = state.registry(backend);
+        for (auto &kv : registry->attributes) {
+            if (backend == JitBackend::CUDA)
+                cuda_check(cuMemFree((CUdeviceptr) kv.second.ptr));
+            else
+                free(kv.second.ptr);
+        }
+        registry->fwd.clear();
+        registry->rev.clear();
+        registry->attributes.clear();
+    };
+
+    if (state.backends & (uint32_t) JitBackend::CUDA)
+        clean_registry(JitBackend::CUDA);
+    if (state.backends & (uint32_t) JitBackend::LLVM)
+        clean_registry(JitBackend::LLVM);
+}
+
 /// Provide a bound (<=) on the largest ID associated with a domain
 uint32_t jitc_registry_get_max(JitBackend backend, const char *domain) {
     Registry* registry = state.registry(backend);

@@ -767,6 +767,11 @@ void jit_registry_trim() {
     jitc_registry_trim();
 }
 
+void jit_registry_clear() {
+    lock_guard guard(state.lock);
+    jitc_registry_clean();
+}
+
 void jit_registry_set_attr(JitBackend backend, void *self, const char *name,
                            const void *value, size_t size) {
     lock_guard guard(state.lock);
