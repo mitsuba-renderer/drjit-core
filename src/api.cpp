@@ -679,6 +679,14 @@ void jit_run_cached_kernel(const CachedKernelHandle* handle, const uint32_t* par
     jitc_run_cached_kernel(thread_state_llvm, *handle, param_slots, n_slots);
 }
 
+void jit_destroy_cached_kernel(const CachedKernelHandle* handle) {
+	if (handle == nullptr) {
+		return;
+	}
+    lock_guard guard(state.lock);
+    jitc_destroy_cached_kernel(thread_state_llvm, *handle);
+}
+
 int jit_var_eval(uint32_t index) {
     if (index == 0)
         return 0;

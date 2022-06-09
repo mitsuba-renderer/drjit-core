@@ -326,9 +326,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         snprintf(temp, sizeof(temp), "VCall: %s [call data]", name);
         jitc_var_set_label(data_buf, temp);
 
-		// TODO: for now this data is never freed, since overwriting vcall
-		// data requires
-        data_v = steal(jitc_var_new_pointer(backend, data_d, data_buf, 0));
+        data_v = steal(jitc_var_new_pointer(backend, data_d, data_buf, 1));
+		jitc_mark_intermediate_var(ts, (uint32_t)data_v);
 
         VCallDataRecord *rec = (VCallDataRecord *)
             jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned

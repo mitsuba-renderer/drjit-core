@@ -1876,6 +1876,8 @@ extern JIT_EXPORT void jit_end_cached_kernel_recording(CachedKernelHandle* handl
 
 extern JIT_EXPORT void jit_run_cached_kernel(const CachedKernelHandle* handle, const uint32_t* param_slots, uint32_t n_slots);
 
+extern JIT_EXPORT void jit_destroy_cached_kernel(const CachedKernelHandle* handle);
+
 #if defined(__cplusplus)
 }
 

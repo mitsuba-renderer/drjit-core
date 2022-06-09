@@ -87,6 +87,7 @@ struct ExtendedKernelHistoryEntry {
 	std::vector<void *> params;
 	std::vector<KernelParamIndexMapping> param_indices;
 	std::vector<VCallSlotRecord> vcall_slots;
+	std::vector<uint32_t> intermediate_vars;
 };
 
 static std::vector<ExtendedKernelHistoryEntry> extended_kernel_history{};
@@ -94,6 +95,8 @@ static std::vector<ExtendedKernelHistoryEntry> extended_kernel_history{};
 // An array of indices into the kernel_params array, in the order
 // of the arguments passed to the cached kernel function.
 static std::vector<KernelParamIndexMapping> kernel_param_indices;
+
+static std::vector<uint32_t> intermediate_vars;
 
 static void record_kernel_param_mapping(Variable* v) {
 	// 0 is treated as null
@@ -222,6 +225,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
 			if (ts->is_recording_cached_kernel) {
 				record_kernel_param_mapping(v);
+				// Increment refcount and store as intermediate variable
+				jitc_var_inc_ref_int(index);
+				intermediate_vars.push_back(index);
 			}
             v->data = data;
             v->param_type = ParamType::Output;
@@ -231,6 +237,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             v->param_type = ParamType::Input;
 			if (ts->is_recording_cached_kernel) {
 				record_kernel_param_mapping(v);
+				// Increment refcount and store as intermediate variable
+				jitc_var_inc_ref_int(index);
+				intermediate_vars.push_back(index);
 			}
             kernel_params.push_back((void *) v->value);
             n_params_in++;
@@ -476,6 +485,8 @@ static uint64_t jitc_kernel_flags(ThreadState *ts) {
 
 CachedKernelHandle jitc_start_cached_kernel_recording(ThreadState* ts, const uint32_t* param_slots, uint32_t n_slots) {
 	vcall_slots.clear();
+	kernel_param_indices.clear();
+	intermediate_vars.clear();
 
 	ts->is_recording_cached_kernel = true;
 	for (uint32_t i = 0; i < n_slots; ++i) {
@@ -489,7 +500,6 @@ CachedKernelHandle jitc_start_cached_kernel_recording(ThreadState* ts, const uin
 		Variable* v = jitc_var(var_index);
 		// Set it to index + 1, as 0 is treated as null.
 		v->reg_index = i + 1;
-
 	}
 	uint32_t first_entry_idx = extended_kernel_history.size();
 	return CachedKernelHandle { first_entry_idx, first_entry_idx, n_slots };
@@ -619,6 +629,20 @@ void jitc_run_cached_kernel(ThreadState* ts, const CachedKernelHandle& handle, c
 			ts->task = task;
 		}
 	}
+}
+
+void jitc_destroy_cached_kernel(ThreadState* ts, const CachedKernelHandle& handle) {
+	// Decrement reference counts of all intermediate vars
+	for (uint32_t i = handle.first_entry_idx; i < handle.last_entry_idx; ++i) {
+		const ExtendedKernelHistoryEntry& entry = extended_kernel_history[i];
+		for (uint32_t v : entry.intermediate_vars) {
+			jitc_var_dec_ref_int(v);
+		}
+	}
+}
+
+void jitc_mark_intermediate_var(ThreadState* ts, uint32_t var_index) {
+	intermediate_vars.push_back(var_index);
 }
 
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
@@ -759,8 +783,13 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 
 	if (unlikely(ts->is_recording_cached_kernel)) {
-        extended_kernel_history.push_back(ExtendedKernelHistoryEntry{kernel_history_entry, kernel_params, kernel_param_indices, vcall_slots});
+        extended_kernel_history.push_back(ExtendedKernelHistoryEntry{
+				kernel_history_entry, kernel_params,
+				kernel_param_indices, vcall_slots,
+				intermediate_vars});
+		kernel_param_indices.clear();
 		vcall_slots.clear();
+		intermediate_vars.clear();
 	}
 
 	return ret_task;

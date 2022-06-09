@@ -117,13 +117,15 @@ extern void jitc_register_global(const char *str);
 
 
 ///========= Cached Kernels
-/// TODO: docs
 extern CachedKernelHandle jitc_start_cached_kernel_recording(ThreadState* ts, const uint32_t* param_slots, uint32_t n_slots);
 
 extern void jitc_end_cached_kernel_recording(ThreadState* ts, CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots);
 
 extern void jitc_run_cached_kernel(ThreadState* ts, const CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots);
 
+extern void jitc_destroy_cached_kernel(ThreadState* ts, const CachedKernelHandle& handle);
+
+extern void jitc_mark_intermediate_var(ThreadState* ts, uint32_t var_index);
 
 struct VCallParamSlot {
 	uint32_t slot_index;
