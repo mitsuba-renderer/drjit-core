@@ -80,6 +80,8 @@ struct VCall {
     }
 };
 
+std::vector<VCallSlotRecord> vcall_slots;
+
 // Forward declarations
 static void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg,
                                     uint32_t mask_reg, uint32_t offset_reg,
@@ -320,10 +322,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
     if (data_size) {
         data_buf = steal(
-            jitc_var_mem_map(backend, VarType::UInt8, data_d, data_size, 1));
+            jitc_var_mem_map(backend, VarType::UInt8, data_d, data_size, 0));
         snprintf(temp, sizeof(temp), "VCall: %s [call data]", name);
         jitc_var_set_label(data_buf, temp);
 
+		// TODO: for now this data is never freed, since overwriting vcall
+		// data requires
         data_v = steal(jitc_var_new_pointer(backend, data_d, data_buf, 0));
 
         VCallDataRecord *rec = (VCallDataRecord *)
@@ -333,6 +337,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
         VCallDataRecord *p = rec;
 
+		std::vector<VCallParamSlot> param_slots;
         for (auto kv : vcall->data_map) {
             uint32_t index = (uint32_t) kv.first, offset = kv.second;
             if (offset == (uint32_t) -1)
@@ -343,8 +348,25 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             p->offset = offset;
             p->size = is_pointer ? 0u : type_size[v->type];
             p->src = is_pointer ? (const void *) v->value : v->data;
+
+			// If the variable is a kernel parameter, register it
+			if (v->reg_index) {
+				uint32_t slot_index = v->reg_index - 1;
+				jitc_log(Debug, "VKern [%s]: Registering %u as a parameter with slot index %u"
+						" (is_pointer=%u, offset=%u, size=%u, src=%p, dst=%p)", vcall->name, index, slot_index, is_pointer, offset, p->size, p->src, data_d);
+				param_slots.push_back(VCallParamSlot{slot_index, offset});
+			}
+
             p++;
         }
+
+		if (!param_slots.empty()) {
+			std::sort(param_slots.begin(), param_slots.end(),
+					[](const VCallParamSlot &a, const VCallParamSlot &b) {
+					return a.offset < b.offset;
+					});
+			vcall_slots.push_back(VCallSlotRecord{std::move(param_slots), data_d});
+		}
 
         std::sort(rec, p,
                   [](const VCallDataRecord &a, const VCallDataRecord &b) {

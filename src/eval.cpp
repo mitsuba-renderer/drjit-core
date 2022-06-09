@@ -15,6 +15,7 @@
 #include "util.h"
 #include "optix_api.h"
 #include "loop.h"
+#include "vcall.h"
 
 // ====================================================================
 //  The following data structures are temporarily used during program
@@ -85,6 +86,7 @@ struct ExtendedKernelHistoryEntry {
 	KernelHistoryEntry inner_entry;
 	std::vector<void *> params;
 	std::vector<KernelParamIndexMapping> param_indices;
+	std::vector<VCallSlotRecord> vcall_slots;
 };
 
 static std::vector<ExtendedKernelHistoryEntry> extended_kernel_history{};
@@ -473,6 +475,8 @@ static uint64_t jitc_kernel_flags(ThreadState *ts) {
 }
 
 CachedKernelHandle jitc_start_cached_kernel_recording(ThreadState* ts, const uint32_t* param_slots, uint32_t n_slots) {
+	vcall_slots.clear();
+
 	ts->is_recording_cached_kernel = true;
 	for (uint32_t i = 0; i < n_slots; ++i) {
 		uint32_t var_index = param_slots[i];
@@ -541,7 +545,9 @@ static Task *jitc_run_cached(ThreadState *ts, const ExtendedKernelHistoryEntry& 
 	// Override kernel_params with new inputs
 	// according to the mappings we defined during recording
 	for (const KernelParamIndexMapping& mapping : extended_history_entry.param_indices) {
-		// TODO: make sure that var_index is < n_slots
+		if (mapping.var_index >= n_slots) {
+			jitc_fail("jit_run_cached_kernel(): invalid parameter slot -> param index mapping");
+		}
 		uint32_t var_index = param_slots[mapping.var_index];
 		kernel_params[mapping.param_index] = jitc_var_ptr(var_index);
 	}
@@ -558,6 +564,38 @@ static Task *jitc_run_cached(ThreadState *ts, const ExtendedKernelHistoryEntry& 
         kernel_params.clear();
         kernel_params.push_back(kernel_params_global);
     }
+
+	// Overwrite VCall data with supplied parameters
+	for (const VCallSlotRecord& vcall : extended_history_entry.vcall_slots) {
+		VCallDataRecord *rec = (VCallDataRecord *)
+			jitc_malloc(ts->backend == JitBackend::CUDA ? AllocType::HostPinned
+					: AllocType::Host,
+					sizeof(VCallDataRecord) * vcall.slots.size());
+
+        VCallDataRecord *p = rec;
+
+		for (const VCallParamSlot& slot : vcall.slots) {
+			if (slot.slot_index >= n_slots) {
+				jitc_fail("Invalid vcall slot record!");
+			}
+
+			uint32_t index = param_slots[slot.slot_index];
+
+			const Variable *v = jitc_var(index);
+			bool is_pointer = (VarType) v->type == VarType::Pointer;
+			p->offset = slot.offset;
+			p->size = is_pointer ? 0u : type_size[v->type];
+			p->src = is_pointer ? (const void *) v->value : v->data;
+
+			jitc_log(Debug, "VKern: Assigning %u to VCall parameter slot #%u"
+					" (is_pointer=%u, offset=%u, size=%u, src=%p, dst=%p)", index, slot.slot_index, is_pointer, p->offset, p->size, p->src, vcall.buffer);
+
+			p++;
+		}
+
+		// No need to sort as they're already sorted inside vcall.slots
+		jitc_vcall_prepare(ts->backend, vcall.buffer, rec, (uint32_t)(p - rec));
+	}
 
 	return jitc_launch_kernel(ts, history_entry.size, it.value());
 }
@@ -576,8 +614,10 @@ void jitc_run_cached_kernel(ThreadState* ts, const CachedKernelHandle& handle, c
 	for (uint32_t i = handle.first_entry_idx; i < handle.last_entry_idx; ++i) {
 		const ExtendedKernelHistoryEntry& entry = extended_kernel_history[i];
 		Task* task = jitc_run_cached(ts, entry, param_slots, n_slots);
-		task_release(ts->task);
-		ts->task = task;
+		if (ts->backend == JitBackend::LLVM) {
+			task_release(ts->task);
+			ts->task = task;
+		}
 	}
 }
 
@@ -719,7 +759,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 
 	if (unlikely(ts->is_recording_cached_kernel)) {
-        extended_kernel_history.push_back(ExtendedKernelHistoryEntry{kernel_history_entry, kernel_params, kernel_param_indices});
+        extended_kernel_history.push_back(ExtendedKernelHistoryEntry{kernel_history_entry, kernel_params, kernel_param_indices, vcall_slots});
+		vcall_slots.clear();
 	}
 
 	return ret_task;

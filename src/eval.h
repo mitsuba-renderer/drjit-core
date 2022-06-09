@@ -123,3 +123,16 @@ extern CachedKernelHandle jitc_start_cached_kernel_recording(ThreadState* ts, co
 extern void jitc_end_cached_kernel_recording(ThreadState* ts, CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots);
 
 extern void jitc_run_cached_kernel(ThreadState* ts, const CachedKernelHandle& handle, const uint32_t* param_slots, uint32_t n_slots);
+
+
+struct VCallParamSlot {
+	uint32_t slot_index;
+	uint32_t offset;
+};
+
+struct VCallSlotRecord {
+	std::vector<VCallParamSlot> slots;
+	uint8_t* buffer;
+};
+
+extern std::vector<VCallSlotRecord> vcall_slots;
