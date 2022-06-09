@@ -214,6 +214,13 @@ template <typename T> bool test_const_prop() {
                      op == JitOp::Rsqrt) &&
                     (value - ref) < 1e-7)
                     continue;
+
+                // FIXME: On R515.43 OptiX incorrectly handles `rsqrt(0)` (NaN instead of Inf)
+                Value arg;
+                jit_var_read(in[ir], 0, &arg);
+                if (arg == 0 && op == JitOp::Rsqrt && jit_flag(JitFlag::ForceOptiX))
+                    continue;
+
                 char *v0 = strdup(jit_var_str(in[ir]));
                 char *v1 = strdup(jit_var_str(value_id));
                 char *v2 = strdup(jit_var_str(ref_id));
