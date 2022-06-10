@@ -355,7 +355,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             uses_optix ? "via OptiX, " : "", group.size, n_params_in,
             n_params_out, n_ops_total, jitc_time_string(codegen_time));
 
-    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+    if (unlikely(jit_flag(JitFlag::KernelHistory) || ts->is_recording_cached_kernel)) {
         kernel_history_entry.backend = backend;
         kernel_history_entry.type = KernelType::JIT;
         kernel_history_entry.hash[0] = kernel_hash.low64;
@@ -748,7 +748,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         else
             state.kernel_hard_misses++;
 
-        if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+        if (unlikely(jit_flag(JitFlag::KernelHistory) || ts->is_recording_cached_kernel)) {
             kernel_history_entry.cache_disk = cache_hit;
             kernel_history_entry.cache_hit = cache_hit;
             if (!cache_hit)
@@ -760,7 +760,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         state.kernel_hits++;
     }
 
-    if (unlikely(jit_flag(JitFlag::KernelHistory) &&
+    if (unlikely((jit_flag(JitFlag::KernelHistory) || ts->is_recording_cached_kernel) &&
                  ts->backend == JitBackend::CUDA)) {
         auto &e = kernel_history_entry;
         cuda_check(cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));
@@ -770,7 +770,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
 	Task *ret_task = jitc_launch_kernel(ts, group.size, kernel);
 
-    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+    if (unlikely(jit_flag(JitFlag::KernelHistory) || ts->is_recording_cached_kernel)) {
         if (ts->backend == JitBackend::CUDA) {
             cuda_check(cuEventRecord((CUevent) kernel_history_entry.event_end,
                                      ts->stream));
