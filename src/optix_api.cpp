@@ -71,23 +71,24 @@ using OptixDeviceContext = void*;
 using OptixLogCallback = void (*)(unsigned int, const char *, const char *, void *);
 using OptixTask = void*;
 
-#define OPTIX_EXCEPTION_FLAG_NONE                0
-#define OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW      1
-#define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH         2
-#define OPTIX_EXCEPTION_FLAG_DEBUG               8
-#define OPTIX_COMPILE_DEBUG_LEVEL_NONE           0x2350
-#define OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL        0x2351
-#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_0       0x2340
-#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_1       0x2341
-#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_2       0x2342
-#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_3       0x2343
-#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF 0
-#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL ((int) 0xFFFFFFFF)
-#define OPTIX_MODULE_COMPILE_STATE_COMPLETED     0x2364
-#define OPTIX_PROGRAM_GROUP_KIND_RAYGEN          0x2421
-#define OPTIX_PROGRAM_GROUP_KIND_CALLABLES       0x2425
-#define OPTIX_PROGRAM_GROUP_KIND_MISS            0x2422
-#define OPTIX_SBT_RECORD_HEADER_SIZE             32
+#define OPTIX_EXCEPTION_FLAG_NONE                     0
+#define OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW           1
+#define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH              2
+#define OPTIX_EXCEPTION_FLAG_DEBUG                    8
+#define OPTIX_COMPILE_DEBUG_LEVEL_NONE                0x2350
+#define OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL             0x2351
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_0            0x2340
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_1            0x2341
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_2            0x2342
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_3            0x2343
+#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF      0
+#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL      ((int) 0xFFFFFFFF)
+#define OPTIX_MODULE_COMPILE_STATE_COMPLETED          0x2364
+#define OPTIX_PROGRAM_GROUP_KIND_RAYGEN               0x2421
+#define OPTIX_PROGRAM_GROUP_KIND_CALLABLES            0x2425
+#define OPTIX_PROGRAM_GROUP_KIND_MISS                 0x2422
+#define OPTIX_SBT_RECORD_HEADER_SIZE                  32
+#define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS 1
 
 struct OptixDeviceContextOptions {
     OptixLogCallback logCallbackFunction;
@@ -647,6 +648,52 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
         jitc_log(Error, "jit_optix_compile(): optixPipelineCreate() failed. "
                  "Please see the PTX assembly listing and error message "
                  "below:\n\n%s\n\n%s", buf, error_log);
+        jitc_optix_check(rv);
+    }
+
+    // Setup the direct stack and continuation stack size.
+    // See OptiX documentation for more detail:
+    // https://raytracing-docs.nvidia.com/optix7/guide/index.html#program_pipeline_creation#7235
+
+    OptixStackSizes ssp = {};
+    for (size_t i = 0; i < ts->optix_program_groups.size(); ++i) {
+        OptixStackSizes ss;
+        rv = optixProgramGroupGetStackSize(ts->optix_program_groups[i], &ss);
+        if (rv) {
+            jitc_log(Error, "jit_optix_compile(): optixProgramGroupGetStackSize() "
+                            "failed:\n\n%s", error_log);
+            jitc_optix_check(rv);
+        }
+        ssp.cssRG = std::max(ssp.cssRG, ss.cssRG);
+        ssp.cssMS = std::max(ssp.cssMS, ss.cssMS);
+        ssp.cssCH = std::max(ssp.cssCH, ss.cssCH);
+        ssp.cssAH = std::max(ssp.cssAH, ss.cssAH);
+        ssp.cssIS = std::max(ssp.cssIS, ss.cssIS);
+        ssp.cssCC = std::max(ssp.cssCC, ss.cssCC);
+        ssp.dssDC = std::max(ssp.dssDC, ss.dssDC);
+    }
+
+    if (ssp.cssCC > 0)
+        jitc_log(Error, "jit_optix_compile(): an OptiX program is using "
+                        "continuous callables which is not supported by Dr.Jit!");
+
+    unsigned int max_dc_depth = 2; // Support nested VCalls
+    unsigned int dc_stack_size_from_traversal = 0; // DC is not invoked from IS or AH.
+    unsigned int dc_stack_size_from_state = max_dc_depth * ssp.dssDC; // DC is invoked from RG, MS, or CH.
+    unsigned int continuation_stack_size = ssp.cssRG + std::max(std::max(ssp.cssCH, ssp.cssMS), ssp.cssAH + ssp.cssIS);
+
+    unsigned int max_traversable_graph_depth = 2; // Support instancing
+    if (ts->optix_pipeline_compile_options.traversableGraphFlags == OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS)
+        max_traversable_graph_depth = 1;
+
+    rv = optixPipelineSetStackSize(kernel.optix.pipeline,
+                                   dc_stack_size_from_traversal,
+                                   dc_stack_size_from_state,
+                                   continuation_stack_size,
+                                   max_traversable_graph_depth);
+    if (rv) {
+        jitc_log(Error, "jit_optix_compile(): optixPipelineSetStackSize() "
+                        "failed:\n\n%s", error_log);
         jitc_optix_check(rv);
     }
 
