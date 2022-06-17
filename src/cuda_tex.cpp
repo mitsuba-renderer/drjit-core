@@ -26,6 +26,7 @@ struct DrJitCudaTexture {
      */
     DrJitCudaTexture(size_t n_channels)
         : n_channels(n_channels), n_textures(1 + ((n_channels - 1) / 4)),
+          n_referenced_textures(n_textures),
           textures(std::make_unique<CUtexObject[]>(n_textures)),
           indices(std::make_unique<uint32_t[]>(n_textures)),
           arrays(std::make_unique<CUarray[]>(n_textures)) {}
@@ -63,11 +64,14 @@ struct DrJitCudaTexture {
      * not released.
      */
     bool release_texture(size_t index) {
-        cuda_check(cuTexObjectDestroy(textures[index]));
-        textures[index] = nullptr;
+        ThreadState *ts = thread_state(JitBackend::CUDA);
+        scoped_set_context guard(ts->context);
 
         cuda_check(cuArrayDestroy(arrays[index]));
         arrays[index] = nullptr;
+
+        cuda_check(cuTexObjectDestroy(textures[index]));
+        textures[index] = nullptr;
 
         return (--n_referenced_textures) > 0;
     }
@@ -179,9 +183,6 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             texture->indices[tex],
             [](uint32_t /* index */, int free, void *callback_data) {
                 if (free) {
-                    ThreadState *ts = thread_state(JitBackend::CUDA);
-                    scoped_set_context guard(ts->context);
-
                     TextureReleasePayload& payload =
                         *((TextureReleasePayload *) callback_data);
 
@@ -208,6 +209,9 @@ void jitc_cuda_tex_get_shape(size_t ndim, const void *texture_handle,
                              size_t *shape) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_get_shape(): invalid texture dimension!");
+
+    ThreadState *ts = thread_state(JitBackend::CUDA);
+    scoped_set_context guard(ts->context);
 
     DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
 
