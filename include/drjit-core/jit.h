@@ -112,7 +112,7 @@ jit_init(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
                                    (uint32_t) JitBackend::LLVM));
 
 /**
- * \brief Launch an ansynchronous thread that will execute jit_init() and
+ * \brief Launch an asynchronous thread that will execute jit_init() and
  * return immediately
  *
  * On machines with several GPUs, \ref jit_init() will set up a CUDA
@@ -289,7 +289,7 @@ enum LogLevel {
  * This function can be used to control the minimum log level for such output
  * or prevent it entirely. In the latter case, you may wish to enable logging
  * via a callback in \ref jit_set_log_level_callback(). Both destinations can also
- * be enabled simultaneously, pontentially using different log levels.
+ * be enabled simultaneously, potentially using different log levels.
  */
 extern JIT_EXPORT void jit_set_log_level_stderr(JIT_ENUM LogLevel level);
 
@@ -462,7 +462,7 @@ extern JIT_EXPORT void jit_flush_kernel_cache();
  * operation only make sense for allocations of type <tt>AllocType::Managed<tt>
  * and <tt>AllocType::ManagedReadMostly</tt>. In the former case, the memory
  * region will be fully migrated to the specified device, and page mappings
- * established elswhere are cleared. For the latter, a read-only copy is
+ * established elsewhere are cleared. For the latter, a read-only copy is
  * created on the target device in addition to other copies that may exist
  * elsewhere.
  *
@@ -1207,7 +1207,7 @@ jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
                      void *callback_data);
 
 // ====================================================================
-//      Functionality for debug output and GraphViz visualizatoins
+//      Functionality for debug output and GraphViz visualizations
 // ====================================================================
 
 /**
@@ -1253,7 +1253,7 @@ extern JIT_EXPORT const char *jit_var_graphviz();
  * "name")</tt>; will change the label to <tt>"prefix1/prefix2/name"</tt>.
  *
  * This feature works hand-in-hand with \ref jit_var_graphviz(), which can
- * de-clutter large graph vizualizations by drawing boxes around variables with
+ * de-clutter large graph visualizations by drawing boxes around variables with
  * a common prefix.
  */
 extern JIT_EXPORT void jit_prefix_push(JIT_ENUM JitBackend backend,
@@ -1424,7 +1424,7 @@ extern JIT_EXPORT uint32_t jit_var_wrap_loop(uint32_t index, uint32_t cond, uint
 
 /**
  * \brief Inform the JIT compiler about the current instance while
- * recurding virtual function calls
+ * o virtual function calls
  *
  * Following a call to \ref jit_vcall_set_self(), the JIT compiler will
  * intercept constant literals referring to the instance ID 'value'. In this
@@ -1470,7 +1470,7 @@ extern JIT_EXPORT void jit_vcall_self(JIT_ENUM JitBackend backend,
  *     outputs) * n_inst</tt>
  *
  * \param out_nested
- *     Pointer to an array of output variable outdices of size \c n_out_nested
+ *     Pointer to an array of output variable indices of size \c n_out_nested
  *
  * \param se_offset
  *     Indicates the size of the side effects queue (obtained from \ref
@@ -1578,7 +1578,7 @@ extern JIT_EXPORT void jit_memcpy_async(JIT_ENUM JitBackend backend, void *dst, 
  * \brief Reduce the given array to a single value
  *
  * This operation reads \c size values of type \type from the input array \c
- * ptr and performs an specified operation (e.g., addition, multplication,
+ * ptr and performs an specified operation (e.g., addition, multiplication,
  * etc.) to combine them into a single value that is written to the device
  * variable \c out.
  *
@@ -1863,7 +1863,7 @@ extern JIT_EXPORT void jit_kernel_history_clear();
  *     free(data);
  *
  * When the kernel history is empty, the function will return a null pointer.
- * Otherwise, the size of the kernel history can be infered by iterating over
+ * Otherwise, the size of the kernel history can be inferred by iterating over
  * the entries until one reaches a entry with an invalid \c backend (e.g.
  * initialized to \c 0).
  */
