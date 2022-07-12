@@ -1562,6 +1562,8 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
         if (!dep[i])
             return 0; // recursive call failed, give up
         rebuild |= dep[i] != index_2;
+        if (rebuild)
+            v = jitc_var(var_index);
     }
 
     const char *counter_str = (JitBackend) v->backend == JitBackend::CUDA
