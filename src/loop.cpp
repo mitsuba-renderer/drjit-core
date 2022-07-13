@@ -217,15 +217,14 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
             continue;
         }
 
-        if (!v1->placeholder || !v1->dep[0] || v1->dep[1] != loop_init ||
-            v1->size != size)
+        if (!v1->placeholder || !v1->dep[0] || v1->dep[1] != loop_init)
             jitc_raise("jit_var_loop(): loop state input variable %zu (r%u) is "
                        "invalid (case 1)!", i, index_1);
 
         uint32_t index_2 = v1->dep[0];
         Variable *v2 = jitc_var(index_2);
 
-        if (!v2->placeholder || !v2->dep[0] || v2->size != size)
+        if (!v2->placeholder || !v2->dep[0])
             jitc_raise("jit_var_loop(): loop state input variable %zu (r%u) is "
                        "invalid (case 2)!", i, index_2);
 
@@ -244,12 +243,19 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         loop->out_body.push_back(index_o);
 
         const Variable *vo = jitc_var(index_o);
-        if (vo->size != size && vo->size != 1)
-            jitc_raise("jit_var_loop(): loop state variable %zu (r%u) has an "
-                       "invalid size following evaluation of the loop body "
-                       "(the loop operates on arrays of size %u, while the "
-                       "variable ends up with a size of %u)!",
+
+        if (size != v1->size && size != 1 && v1->size != 1)
+            jitc_raise("jit_var_loop(): initial shape of loop state variable %zu (r%u) "
+                       "is incompatible with the loop (%u vs %u entries)!",
+                       i, index_1, size, v1->size);
+
+        size = std::max(size, v1->size);
+
+        if (size != vo->size && size != 1 && vo->size != 1)
+            jitc_raise("jit_var_loop(): final shape of loop state variable %zu (r%u) "
+                       "is incompatible with the loop (%u vs %u entries)!",
                        i, index_o, size, vo->size);
+        size = std::max(size, vo->size);
 
         // =========== 1.3. Optimizations ============
 
@@ -421,6 +427,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         // Set a label and custom code generation hook
         Variable *v = jitc_var(loop_se);
         v->extra = 1;
+        v->size = size;
         v->placeholder = placeholder;
         Extra &e = state.extra[loop_se];
         e.n_dep = loop->se_count;
