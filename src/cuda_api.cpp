@@ -192,7 +192,7 @@ bool jitc_cuda_init() {
         LOAD(cuDeviceGetAttribute);
         LOAD(cuDeviceGetCount);
         LOAD(cuDeviceGetName);
-        LOAD(cuDevicePrimaryCtxRelease);
+        LOAD(cuDevicePrimaryCtxRelease, "v2");
         LOAD(cuDevicePrimaryCtxRetain);
         LOAD(cuDeviceTotalMem, "v2");
         LOAD(cuDriverGetVersion);

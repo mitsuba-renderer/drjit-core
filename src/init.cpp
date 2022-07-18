@@ -433,7 +433,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->context = device.context;
         ts->compute_capability = device.compute_capability >= 60 ? 60 : 50;
         scoped_set_context guard(ts->context);
-        cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_NON_BLOCKING));
+        cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_DEFAULT));
         cuda_check(cuEventCreate(&ts->event, CU_EVENT_DISABLE_TIMING));
         thread_state_cuda = ts;
     } else {
@@ -490,7 +490,7 @@ void jitc_cuda_set_device(int device_id) {
         ts->compute_capability = device.compute_capability >= 60 ? 60 : 50;
         scoped_set_context guard(ts->context);
 
-        cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_NON_BLOCKING));
+        cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_DEFAULT));
         cuda_check(cuEventCreate(&ts->event, CU_EVENT_DISABLE_TIMING));
     }
 }
