@@ -218,6 +218,7 @@ bool jitc_cuda_init() {
         LOAD(cuMemFree, "v2");
         LOAD(cuMemFreeHost);
         LOAD(cuMemPrefetchAsync, "ptsz");
+
         LOAD(cuMemcpy, "ptds");
         LOAD(cuMemcpyAsync, "ptsz");
         LOAD(cuMemsetD16Async, "ptsz");
@@ -241,9 +242,8 @@ bool jitc_cuda_init() {
         LOAD(cuTexObjectCreate);
         LOAD(cuTexObjectGetResourceDesc);
         LOAD(cuTexObjectDestroy);
-        LOAD(cuMemcpy2DAsync, "v2");
-        LOAD(cuMemcpy3DAsync, "v2");
-
+        LOAD(cuMemcpy2DAsync, "v2_ptsz");
+        LOAD(cuMemcpy3DAsync, "v2_ptsz");
         #undef LOAD
     } while (false);
 
@@ -256,8 +256,8 @@ bool jitc_cuda_init() {
 #endif
 
     // These two functions are optional
-    cuMemAllocAsync = decltype(cuMemAllocAsync)(dlsym(jitc_cuda_handle, "cuMemAllocAsync"));
-    cuMemFreeAsync = decltype(cuMemFreeAsync)(dlsym(jitc_cuda_handle, "cuMemFreeAsync"));
+    cuMemAllocAsync = decltype(cuMemAllocAsync)(dlsym(jitc_cuda_handle, "cuMemAllocAsync_ptsz"));
+    cuMemFreeAsync = decltype(cuMemFreeAsync)(dlsym(jitc_cuda_handle, "cuMemFreeAsync_ptsz"));
 
     CUresult rv = cuInit(0);
     if (rv != CUDA_SUCCESS) {
