@@ -264,7 +264,7 @@ bool jitc_optix_init() {
 #endif
 
         if (!jitc_optix_handle) {
-            jitc_log(Warn, "jit_optix_init(): %s could not be loaded -- "
+            jitc_log(Error, "jit_optix_init(): %s could not be loaded -- "
                           "disabling OptiX backend! Set the DRJIT_LIBOPTIX_PATH "
                           "environment variable to specify its path.", optix_fname);
             return false;
@@ -276,14 +276,14 @@ bool jitc_optix_init() {
         dlsym(jitc_optix_handle, "optixQueryFunctionTable"));
 
     if (!optixQueryFunctionTable) {
-        jitc_log(Warn, "jit_optix_init(): could not find symbol optixQueryFunctionTable");
+        jitc_log(Error, "jit_optix_init(): could not find symbol optixQueryFunctionTable");
         return false;
     }
 
     int rv = optixQueryFunctionTable(OPTIX_ABI_VERSION, 0, 0, 0,
                                      &jitc_optix_table, sizeof(jitc_optix_table));
     if (rv) {
-        jitc_log(Warn,
+        jitc_log(Error,
                 "jit_optix_init(): Failed to load OptiX library! Very likely, "
                 "your NVIDIA graphics driver is too old and not compatible "
                 "with the version of OptiX that is being used. In particular, "
