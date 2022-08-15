@@ -517,12 +517,8 @@ const char *jit_var_label(uint32_t index) {
 }
 
 uint32_t jit_var_set_label(uint32_t index, const char *label) {
-    if (unlikely(index == 0)) {
+    if (unlikely(index == 0))
         return 0;
-    } else {
-        jitc_var_inc_ref_ext(index, jitc_var(index));
-        return index;
-    }
 
     lock_guard guard(state.lock);
 
