@@ -401,7 +401,9 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
             #endif
 
             delete ts;
-            if (jitc_cuda_cuinit_failed)
+            if (jitc_cuda_cuinit_result != CUDA_SUCCESS) {
+                const char *msg = nullptr;
+                cuGetErrorString(jitc_cuda_cuinit_result, &msg);
                 jitc_raise("jit_cuda_init(): the CUDA backend is not available "
                            "because cuInit() failed.\nThere are two common "
                            "explanations for this type of failure:\n\n 1. your "
@@ -410,8 +412,10 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
                            "and CUDA library are out of sync. Try to see if "
                            "you\n    can run a utility like 'nvida-smi'. If "
                            "not, a reboot will likely fix this\n    issue. "
-                           "Otherwise reinstall your graphics driver.");
-            else
+                           "Otherwise reinstall your graphics driver. \n\n "
+                           "The specific error message produced by cuInit was\n"
+                           "   \"%s\"", msg);
+            } else {
                 jitc_raise(
                     "jit_init_thread_state(): the CUDA backend is inactive "
                     "because it has not been initialized via jit_init(), or "
@@ -419,6 +423,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
                     "found! Set the DRJIT_LIBCUDA_PATH environment variable to "
                     "specify its path.",
                     cuda_fname);
+            }
         }
 
         if (state.devices.empty()) {

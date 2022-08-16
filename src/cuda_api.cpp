@@ -129,7 +129,7 @@ int jitc_cuda_version_minor = 0;
 
 static bool jitc_cuda_init_attempted = false;
 static bool jitc_cuda_init_success = false;
-bool jitc_cuda_cuinit_failed = false;
+CUresult jitc_cuda_cuinit_result = false;
 
 bool jitc_cuda_init() {
     if (jitc_cuda_init_attempted)
@@ -259,24 +259,9 @@ bool jitc_cuda_init() {
     cuMemAllocAsync = decltype(cuMemAllocAsync)(dlsym(jitc_cuda_handle, "cuMemAllocAsync_ptsz"));
     cuMemFreeAsync = decltype(cuMemFreeAsync)(dlsym(jitc_cuda_handle, "cuMemFreeAsync_ptsz"));
 
-    CUresult rv = cuInit(0);
-    if (rv != CUDA_SUCCESS) {
-        const char *msg = nullptr;
-        cuGetErrorString(rv, &msg);
-        jitc_log(
-            LogLevel::Warn,
-            "jit_cuda_init(): cuInit failed, disabling CUDA backend.\nThere are "
-            "two common explanations for this type of failure:\n\n 1. your "
-            "computer simply does not contain a graphics card that supports "
-            "CUDA.\n\n 2. your CUDA kernel module and CUDA library are out of "
-            "sync. Try to see if you\n    can run a utility like 'nvida-smi'. If "
-            "not, a reboot will likely fix this\n    issue. Otherwise reinstall "
-            "your graphics driver.\n\n The specific error message produced by "
-            "cuInit was\n   \"%s\"",
-            msg);
-        jitc_cuda_cuinit_failed = true;
+    jitc_cuda_cuinit_result = cuInit(0);
+    if (jitc_cuda_cuinit_result != CUDA_SUCCESS)
         return false;
-    }
 
     cuda_check(cuDeviceGetCount(&jitc_cuda_devices));
 
