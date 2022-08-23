@@ -56,13 +56,13 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
         if (v->param_type == ParamType::Input && size == 1 && vt == VarType::Pointer) {
             buffer.fmt(
                 "    %s%u_p1 = getelementptr inbounds i8*, i8** %%params, i32 %u\n"
-                "    %s%u = load i8*, i8** %s%u_p1, align 8, !alias.scope !1\n",
+                "    %s%u = load i8*, i8** %s%u_p1, align 8, !alias.scope !2\n",
                 prefix, id, v->param_offset / (uint32_t) sizeof(void *), prefix,
                 id, prefix, id);
         } else if (v->param_type != ParamType::Register) {
             buffer.fmt(
                 "    %s%u_p1 = getelementptr inbounds i8*, i8** %%params, i32 %u\n"
-                "    %s%u_p2 = load i8*, i8** %s%u_p1, align 8, !alias.scope !1\n"
+                "    %s%u_p2 = load i8*, i8** %s%u_p1, align 8, !alias.scope !2\n"
                 "    %s%u_p3 = bitcast i8* %s%u_p2 to %s*\n",
                 prefix, id, v->param_offset / (uint32_t) sizeof(void *), prefix,
                 id, prefix, id, prefix, id, prefix, id, tname);
@@ -82,24 +82,24 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
 
             if (size != 1) {
                 if (vt != VarType::Bool) {
-                    buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p5, align %u, !alias.scope !1, !nontemporal !{i32 1}\n",
+                    buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p5, align %u, !alias.scope !2, !nontemporal !{i32 1}\n",
                                prefix, id, width, tname, width, tname, prefix, id, align);
                 } else {
-                    buffer.fmt("    %s%u_0 = load <%u x i8>, <%u x i8>* %s%u_p5, align %u, !alias.scope !1, !nontemporal !{i32 1}\n"
+                    buffer.fmt("    %s%u_0 = load <%u x i8>, <%u x i8>* %s%u_p5, align %u, !alias.scope !2, !nontemporal !{i32 1}\n"
                                "    %s%u = trunc <%u x i8> %s%u_0 to <%u x i1>\n",
                                prefix, id, width, width, prefix, id, align,
                                prefix, id, width, prefix, id, width);
                 }
             } else {
                 if (vt != VarType::Bool) {
-                    buffer.fmt("    %s%u_0 = load %s, %s* %s%u_p3, align %u, !alias.scope !1\n"
+                    buffer.fmt("    %s%u_0 = load %s, %s* %s%u_p3, align %u, !alias.scope !2\n"
                                "    %s%u_1 = insertelement <%u x %s> undef, %s %s%u_0, i32 0\n"
                                "    %s%u = shufflevector <%u x %s> %s%u_1, <%u x %s> undef, <%u x i32> zeroinitializer\n",
                                prefix, id, tname, tname, prefix, id, tsize,
                                prefix, id, width, tname, tname, prefix, id,
                                prefix, id, width, tname, prefix, id, width, tname, width);
                 } else {
-                    buffer.fmt("    %s%u_0 = load i8, i8* %s%u_p3, align %u, !alias.scope !1\n"
+                    buffer.fmt("    %s%u_0 = load i8, i8* %s%u_p3, align %u, !alias.scope !2\n"
                                "    %s%u_1 = trunc i8 %s%u_0 to i1\n"
                                "    %s%u_2 = insertelement <%u x i1> undef, i1 %s%u_1, i32 0\n"
                                "    %s%u = shufflevector <%u x i1> %s%u_2, <%u x i1> undef, <%u x i32> zeroinitializer\n",
@@ -115,11 +115,11 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
 
         if (v->param_type == ParamType::Output) {
             if (vt != VarType::Bool) {
-                buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p5, align %u, !noalias !1, !nontemporal !{i32 1}\n",
+                buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p5, align %u, !noalias !2, !nontemporal !{i32 1}\n",
                            width, tname, prefix, id, width, tname, prefix, id, align);
             } else {
                 buffer.fmt("    %s%u_e = zext <%u x i1> %s%u to <%u x i8>\n"
-                           "    store <%u x i8> %s%u_e, <%u x i8>* %s%u_p5, align %u, !noalias !1, !nontemporal !{i32 1}\n",
+                           "    store <%u x i8> %s%u_e, <%u x i8>* %s%u_p5, align %u, !noalias !2, !nontemporal !{i32 1}\n",
                            prefix, id, width, prefix, id, width,
                            width, prefix, id, width, prefix, id, align);
             }
@@ -179,7 +179,8 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
 
     buffer.put("!0 = !{!0}\n"
                "!1 = !{!1, !0}\n"
-               "!2 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
+               "!2 = !{!1}\n"
+               "!3 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
 
     buffer.fmt("attributes #0 = { norecurse nounwind \"frame-pointer\"=\"none\" \"no-builtins\" \"no-stack-arg-probe\" "
                "\"target-cpu\"=\"%s\" \"target-features\"=\"",
