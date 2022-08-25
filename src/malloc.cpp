@@ -626,7 +626,7 @@ AllocType jitc_malloc_type(void *ptr) {
 int jitc_malloc_device(void *ptr) {
     auto it = state.alloc_used.find(ptr);
     if (unlikely(it == state.alloc_used.end()))
-        jitc_raise("jit_malloc_type(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
+        jitc_raise("jitc_malloc_device(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
     const AllocInfo &ai = it.value();
     if (ai.type == (int) AllocType::Host || ai.type == (int) AllocType::HostAsync)
         return -1;
