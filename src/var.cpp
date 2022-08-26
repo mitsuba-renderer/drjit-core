@@ -935,7 +935,7 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
     if (unlikely(size == 0))
         return 0;
 
-    jitc_check_size("jit_var_mep_map", size);
+    jitc_check_size("jit_var_mem_map", size);
 
     Variable v;
     v.type = (uint32_t) type;
