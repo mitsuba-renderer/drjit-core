@@ -248,10 +248,10 @@ extern JIT_EXPORT const char *jit_llvm_target_cpu();
 /// Get the list of CPU features currently used by the LLVM backend
 extern JIT_EXPORT const char *jit_llvm_target_features();
 
-/// Return the major version of the LLVM library
-extern JIT_EXPORT int jit_llvm_version_major();
+/// Get the major, minor and patch version of the LLVM library
+extern JIT_EXPORT void jit_llvm_version(int *major, int *minor, int *patch);
 
-/// Return the major version of the LLVM library
+/// Get the vector width of the LLVM backend
 extern JIT_EXPORT uint32_t jit_llvm_vector_width();
 
 /// Specify the number of threads that are used to parallelize the computation

@@ -280,9 +280,14 @@ const char *jit_llvm_target_features() {
     return jitc_llvm_target_features;
 }
 
-int jit_llvm_version_major() {
+void jit_llvm_version(int *major, int *minor, int *patch) {
     lock_guard guard(state.lock);
-    return jitc_llvm_version_major;
+    if (major)
+        *major = jitc_llvm_version_major;
+    if (minor)
+        *minor = jitc_llvm_version_minor;
+    if (patch)
+        *patch = jitc_llvm_version_patch;
 }
 
 int jit_llvm_if_at_least(uint32_t vector_width, const char *feature) {
