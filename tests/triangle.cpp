@@ -193,11 +193,12 @@ void demo() {
     // Let Dr.Jit know about all of this
     // =====================================================
 
-    jit_optix_configure(
+    UInt32 config_handle = UInt32::steal(jit_optix_configure(
         &pipeline_compile_options, // <-- these pointers must stay
+        mod,
         &sbt,                      //     alive while Dr.Jit runs
         pg, 2
-    );
+    ));
 
     // Do four times to verify caching, with mask in it. 3 + 4
     for (int i = 0; i < 2; ++i) {
@@ -239,7 +240,8 @@ void demo() {
             miss_sbt_index.index(), payload_0.index()
         };
 
-        jit_optix_ray_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args, mask.index());
+        jit_optix_ray_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args,
+                            mask.index(), config_handle.index());
 
         payload_0 = UInt32::steal(trace_args[15]);
 
@@ -262,11 +264,6 @@ void demo() {
     // =====================================================
 
     jit_free(d_gas);
-    jit_free(sbt.missRecordBase);
-    jit_free(sbt.hitgroupRecordBase);
-    jit_optix_check(optixProgramGroupDestroy(pg[0]));
-    jit_optix_check(optixProgramGroupDestroy(pg[1]));
-    jit_optix_check(optixModuleDestroy(mod));
 }
 
 int main(int, char **) {

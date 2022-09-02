@@ -15,6 +15,7 @@ extern "C" {
 
 typedef void *OptixDeviceContext;
 typedef void *OptixProgramGroup;
+typedef void *OptixModule;
 struct OptixPipelineCompileOptions;
 struct OptixShaderBindingTable;
 
@@ -30,11 +31,23 @@ extern JIT_EXPORT void *jit_optix_lookup(const char *name);
  */
 #define jit_optix_check(err) jit_optix_check_impl((err), __FILE__, __LINE__)
 extern JIT_EXPORT void jit_optix_check_impl(int errval, const char *file,
-                                              const int line);
+                                            const int line);
 
-/// Inform Dr.Jit about a partially created OptiX pipeline
-extern JIT_EXPORT void
+/**
+ * \brief Inform Dr.Jit about a partially created OptiX pipeline
+ *
+ * This function creates a JIT variable responsible for the lifetime management
+ * of the OptiX pipeline and returns its corresponding index. Once the reference
+ * count of this variable reaches zero, the OptiX resources related to this
+ * pipeline will be freed.
+ *
+ * The returned index should be passed as argument to subsequent calls to
+ * \c jit_optix_ray_trace in order to use this pipeline for the ray tracing
+ * operations.
+ */
+extern JIT_EXPORT uint32_t
 jit_optix_configure(const OptixPipelineCompileOptions *pco,
+                    OptixModule module,
                     const OptixShaderBindingTable *sbt,
                     const OptixProgramGroup *pg,
                     uint32_t pg_count);
@@ -50,9 +63,14 @@ jit_optix_configure(const OptixPipelineCompileOptions *pco,
   * value greater than 15. In this case, the corresponding elements will be
   * overwritten with the new variable indices with external reference count 1
   * containing the final payload value.
+  *
+  * The \c pipeline JIT variable index specifies the OptiX pipeline to be used
+  * in the kernel executing this ray tracing operation. This index should be
+  * computed using the \c jit_optix_configure function.
   */
 extern JIT_EXPORT void
-jit_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask);
+jit_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
+                    uint32_t pipeline);
 
 /// Mark a variable as an expression requiring compilation via OptiX
 extern JIT_EXPORT void jit_optix_mark(uint32_t index);

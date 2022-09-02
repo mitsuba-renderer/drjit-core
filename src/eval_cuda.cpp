@@ -13,6 +13,11 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
+    // If use optix and the kernel contains no ray tracing operations, fallback
+    // to the default OptiX pipeline.
+    if (uses_optix)
+        ts->optix_pipeline = state.optix_default_pipeline;
+
     /* Special registers:
 
          %r0   :  Index

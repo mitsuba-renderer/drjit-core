@@ -258,6 +258,12 @@ void jitc_shutdown(int light) {
         }
     }
 
+#if defined(DRJIT_ENABLE_OPTIX)
+        // OptiX: free the default OptiX pipeline
+        if (state.optix_default_pipeline)
+            jitc_var_dec_ref_ext(state.optix_default_pipeline->index);
+#endif
+
     if (!state.tss.empty()) {
         jitc_log(Info, "jit_shutdown(): releasing %zu thread state%s ..",
                 state.tss.size(), state.tss.size() > 1 ? "s" : "");
@@ -270,9 +276,6 @@ void jitc_shutdown(int light) {
             jitc_free_flush(ts);
             if (ts->backend == JitBackend::CUDA) {
                 scoped_set_context guard(ts->context);
-#if defined(DRJIT_ENABLE_OPTIX)
-                jitc_optix_context_destroy_ts(ts);
-#endif
                 cuda_check(cuEventDestroy(ts->event));
                 cuda_check(cuStreamSynchronize(ts->stream));
                 cuda_check(cuStreamDestroy(ts->stream));

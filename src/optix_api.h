@@ -13,16 +13,18 @@
 
 using OptixDeviceContext = void *;
 using OptixProgramGroup = void*;
+using OptixModule = void*;
 struct OptixPipelineCompileOptions;
 struct OptixShaderBindingTable;
 struct ThreadState;
+
+struct OptixPipelineData;
 
 /// Create an OptiX device context on the current ThreadState
 extern OptixDeviceContext jitc_optix_context();
 
 /// Destroy an OptiX device context
 struct Device;
-extern void jitc_optix_context_destroy_ts(ThreadState *ts);
 extern void jitc_optix_context_destroy(Device &d);
 
 /// Look up an OptiX function by name
@@ -32,13 +34,15 @@ extern void *jitc_optix_lookup(const char *name);
 extern void jitc_optix_shutdown();
 
 /// Inform Dr.Jit about a partially created OptiX pipeline
-extern void jitc_optix_configure(const OptixPipelineCompileOptions *pco,
-                                 const OptixShaderBindingTable *sbt,
-                                 const OptixProgramGroup *pg,
-                                 uint32_t pg_count);
+extern uint32_t jitc_optix_configure(const OptixPipelineCompileOptions *pco,
+                                     OptixModule module,
+                                     const OptixShaderBindingTable *sbt,
+                                     const OptixProgramGroup *pg,
+                                     uint32_t pg_count);
 
 /// Insert a function call to optixTrace into the program
-extern void jitc_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask);
+extern void jitc_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask,
+                                 uint32_t pipeline);
 
 /// Compile an OptiX kernel
 extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,

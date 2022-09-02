@@ -300,6 +300,15 @@ struct OptixPipelineCompileOptions {
     const char* pipelineLaunchParamsVariableName;
     unsigned int usesPrimitiveTypeFlags;
 };
+
+struct OptixPipelineData {
+    OptixPipelineCompileOptions compile_options;
+    OptixModule module;
+    OptixShaderBindingTable shader_binding_table;
+    std::vector<OptixProgramGroup> program_groups;
+    // Index of the JIT variable responsible for the lifetime of this pipeline
+    uint32_t index;
+};
 #endif
 
 /// Represents a single stream of a parallel communication
@@ -384,21 +393,8 @@ struct ThreadState {
     uint32_t ptx_version = 60;
 
 #if defined(DRJIT_ENABLE_OPTIX)
-    /// ---------------------------- OptiX-specific ----------------------------
-
-    /// User-provided OptiX compile options data structure
-    OptixPipelineCompileOptions optix_pipeline_compile_options { };
-
-    /// User-provided OptiX shader binding table
-    OptixShaderBindingTable optix_shader_binding_table {};
-
-    /// User-provided list of program groups
-    std::vector<OptixProgramGroup> optix_program_groups;
-
-    /// Components for a tiny self-contained OptiX pipeline for testcases etc.
-    OptixProgramGroup optix_program_group_base = nullptr;
-    OptixModule optix_module_base = nullptr;
-    void *optix_miss_record_base = nullptr;
+    /// OptiX pipeline associated to the next kernel launch
+    OptixPipelineData *optix_pipeline;
 #endif
 };
 
@@ -619,6 +615,11 @@ struct State {
 
     /// Kernel launch history
     KernelHistory kernel_history = KernelHistory();
+
+#if defined(DRJIT_ENABLE_OPTIX)
+    /// Default OptiX pipeline for testcases etc.
+    OptixPipelineData *optix_default_pipeline = 0;
+#endif
 
     /// Return a pointer to the registry corresponding to the specified backend
     Registry *registry(JitBackend backend) {

@@ -246,8 +246,7 @@ int jit_cuda_compute_capability() {
     return state.devices[thread_state(JitBackend::CUDA)->device].compute_capability;
 }
 
-void jit_cuda_set_target(uint32_t ptx_version,
-                          uint32_t compute_capability) {
+void jit_cuda_set_target(uint32_t ptx_version, uint32_t compute_capability) {
     lock_guard guard(state.lock);
     ThreadState *ts = thread_state(JitBackend::CUDA);
     ts->ptx_version = ptx_version;
@@ -859,17 +858,19 @@ void *jit_optix_lookup(const char *name) {
     return jitc_optix_lookup(name);
 }
 
-void jit_optix_configure(const OptixPipelineCompileOptions *pco,
-                          const OptixShaderBindingTable *sbt,
-                          const OptixProgramGroup *pg,
-                          uint32_t pg_count) {
+uint32_t jit_optix_configure(const OptixPipelineCompileOptions *pco,
+                             OptixModule module,
+                             const OptixShaderBindingTable *sbt,
+                             const OptixProgramGroup *pg,
+                             uint32_t pg_count) {
     lock_guard guard(state.lock);
-    jitc_optix_configure(pco, sbt, pg, pg_count);
+    return jitc_optix_configure(pco, module, sbt, pg, pg_count);
 }
 
-void jit_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask) {
+void jit_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask,
+                         uint32_t pipeline) {
     lock_guard guard(state.lock);
-    jitc_optix_ray_trace(nargs, args, mask);
+    jitc_optix_ray_trace(nargs, args, mask, pipeline);
 }
 
 void jit_optix_mark(uint32_t index) {
