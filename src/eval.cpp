@@ -329,8 +329,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
 #if defined(DRJIT_ENABLE_OPTIX)
     if (uses_optix) {
-        const OptixPipelineCompileOptions &pco =
-            ts->optix_pipeline_compile_options;
+        const OptixPipelineCompileOptions &pco = ts->optix_pipeline->compile_options;
         flags =
             ((uint64_t) pco.numAttributeValues << 0)      + // 4 bit
             ((uint64_t) pco.numPayloadValues   << 4)      + // 4 bit
