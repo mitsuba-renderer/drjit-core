@@ -858,19 +858,23 @@ void *jit_optix_lookup(const char *name) {
     return jitc_optix_lookup(name);
 }
 
-uint32_t jit_optix_configure(const OptixPipelineCompileOptions *pco,
-                             OptixModule module,
-                             const OptixShaderBindingTable *sbt,
-                             const OptixProgramGroup *pg,
-                             uint32_t pg_count) {
+uint32_t jit_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
+                                      OptixModule module,
+                                      const OptixProgramGroup *pg,
+                                      uint32_t pg_count) {
     lock_guard guard(state.lock);
-    return jitc_optix_configure(pco, module, sbt, pg, pg_count);
+    return jitc_optix_configure_pipeline(pco, module, pg, pg_count);
+}
+
+uint32_t jit_optix_configure_sbt(const OptixShaderBindingTable *sbt, uint32_t pipeline) {
+    lock_guard guard(state.lock);
+    return jitc_optix_configure_sbt(sbt, pipeline);
 }
 
 void jit_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask,
-                         uint32_t pipeline) {
+                         uint32_t pipeline, uint32_t sbt) {
     lock_guard guard(state.lock);
-    jitc_optix_ray_trace(nargs, args, mask, pipeline);
+    jitc_optix_ray_trace(nargs, args, mask, pipeline, sbt);
 }
 
 void jit_optix_mark(uint32_t index) {
