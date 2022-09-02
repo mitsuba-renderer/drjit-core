@@ -34,15 +34,18 @@ extern void *jitc_optix_lookup(const char *name);
 extern void jitc_optix_shutdown();
 
 /// Inform Dr.Jit about a partially created OptiX pipeline
-extern uint32_t jitc_optix_configure(const OptixPipelineCompileOptions *pco,
-                                     OptixModule module,
-                                     const OptixShaderBindingTable *sbt,
-                                     const OptixProgramGroup *pg,
-                                     uint32_t pg_count);
+extern uint32_t jitc_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
+                                              OptixModule module,
+                                              const OptixProgramGroup *pg,
+                                              uint32_t pg_count);
+
+/// Inform Dr.Jit about an OptiX Shader Binding Table
+extern uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
+                                         uint32_t pipeline);
 
 /// Insert a function call to optixTrace into the program
 extern void jitc_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask,
-                                 uint32_t pipeline);
+                                 uint32_t pipeline, uint32_t sbt);
 
 /// Compile an OptiX kernel
 extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
@@ -53,8 +56,8 @@ extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
 extern void jitc_optix_free(const Kernel &kernel);
 
 /// Perform an OptiX kernel launch
-extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel, uint32_t size,
-                              const void *args, uint32_t n_args);
+extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
+                              uint32_t size, const void *args, uint32_t n_args);
 
 /// Mark a variable as an expression requiring compilation via OptiX
 extern void jitc_optix_mark(uint32_t index);

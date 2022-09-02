@@ -43,14 +43,30 @@ extern JIT_EXPORT void jit_optix_check_impl(int errval, const char *file,
  *
  * The returned index should be passed as argument to subsequent calls to
  * \c jit_optix_ray_trace in order to use this pipeline for the ray tracing
- * operations.
+ * operations. See the docstring of \c jit_optix_ray_trace for a small example
+ * of how those functions relate to each other.
  */
 extern JIT_EXPORT uint32_t
-jit_optix_configure(const OptixPipelineCompileOptions *pco,
-                    OptixModule module,
-                    const OptixShaderBindingTable *sbt,
-                    const OptixProgramGroup *pg,
-                    uint32_t pg_count);
+jit_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
+                             OptixModule module,
+                             const OptixProgramGroup *pg,
+                             uint32_t pg_count);
+
+/**
+ * \brief Inform Dr.Jit about an OptiX Shader Binding Table
+ *
+ * This function creates a JIT variable responsible for the lifetime management
+ * of the OptiX Shader Binding Table and returns its corresponding index. Once
+ * the reference count of this variable reaches zero, the OptiX resources
+ * related to this Shader Binding Table will be freed.
+ *
+ * The returned index should be passed as argument to subsequent calls to
+ * \c jit_optix_ray_trace in order to use this Shader Binding Table for the ray
+ * tracing operations. See the docstring of \c jit_optix_ray_trace for a small
+ * example of how those functions relate to each other.
+ */
+extern JIT_EXPORT uint32_t
+jit_optix_configure_sbt(const OptixShaderBindingTable *sbt, uint32_t pipeline);
 
 /**
   * \brief Insert a function call to optixTrace into the program
@@ -66,11 +82,32 @@ jit_optix_configure(const OptixPipelineCompileOptions *pco,
   *
   * The \c pipeline JIT variable index specifies the OptiX pipeline to be used
   * in the kernel executing this ray tracing operation. This index should be
-  * computed using the \c jit_optix_configure function.
+  * computed using the \c jit_optix_configure_pipeline function.
+  *
+  * The \c sbt JIT variable index specifies the OptiX Shader Binding Table to be
+  * used in the kernel executing this ray tracing operation. This index should
+  * be computed using the \c jit_optix_configure_sbt function.
+  *
+  * Here is a small example of how to use those functions together:
+  * <tt>
+  *   OptixPipelineCompileOptions pco = ...;
+  *   OptixModule mod = ...;
+  *   OptixProgramGroup pgs = ...;
+  *   uint32_t pg_count = ...;
+  *   uint32_t pipeline_idx = jit_optix_configure_pipeline(pco, mod, pgs, pg_count);
+  *
+  *   OptixShaderBindingTable sbt = ...;
+  *   uint32_t sbt_idx = jit_optix_configure_sbt(&sbt, pipeline_idx);
+  *
+  *   active_idx = ...;
+  *   trace_args = ...;
+  *   jit_optix_ray_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args,
+  *                       active_idx, pipeline_idx, sbt_idx);
+  * </tt>
   */
 extern JIT_EXPORT void
 jit_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
-                    uint32_t pipeline);
+                    uint32_t pipeline, uint32_t sbt);
 
 /// Mark a variable as an expression requiring compilation via OptiX
 extern JIT_EXPORT void jit_optix_mark(uint32_t index);

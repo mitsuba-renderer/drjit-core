@@ -304,10 +304,7 @@ struct OptixPipelineCompileOptions {
 struct OptixPipelineData {
     OptixPipelineCompileOptions compile_options;
     OptixModule module;
-    OptixShaderBindingTable shader_binding_table;
     std::vector<OptixProgramGroup> program_groups;
-    // Index of the JIT variable responsible for the lifetime of this pipeline
-    uint32_t index;
 };
 #endif
 
@@ -393,8 +390,9 @@ struct ThreadState {
     uint32_t ptx_version = 60;
 
 #if defined(DRJIT_ENABLE_OPTIX)
-    /// OptiX pipeline associated to the next kernel launch
+    /// OptiX pipeline associated with the next kernel launch
     OptixPipelineData *optix_pipeline;
+    OptixShaderBindingTable *optix_sbt;
 #endif
 };
 
@@ -619,6 +617,10 @@ struct State {
 #if defined(DRJIT_ENABLE_OPTIX)
     /// Default OptiX pipeline for testcases etc.
     OptixPipelineData *optix_default_pipeline = 0;
+    /// Default OptiX Shader Binding Table for testcases etc.
+    OptixShaderBindingTable *optix_default_sbt = 0;
+    /// Index of the JIT variable handling the lifetime of the default Optix SBT
+    uint32_t optix_default_sbt_index;
 #endif
 
     /// Return a pointer to the registry corresponding to the specified backend

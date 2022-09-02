@@ -425,11 +425,21 @@ OptixDeviceContext jitc_optix_context() {
         sbt.missRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
         sbt.missRecordCount = 1;
 
-        int32_t index = jitc_optix_configure(&pco, mod, &sbt, &pg, 1);
-        auto it = state.extra.find(index);
+        uint32_t pipeline_index = jitc_optix_configure_pipeline(&pco, mod, &pg, 1);
+        auto it2 = state.extra.find(pipeline_index);
+        if (it2 == state.extra.end())
+            jitc_fail("jitc_optix_context(): 'extra' entry not found!");
+        state.optix_default_pipeline = (OptixPipelineData*) it2->second.callback_data;
+
+        uint32_t sbt_index = jitc_optix_configure_sbt(&sbt, pipeline_index);
+        auto it = state.extra.find(sbt_index);
         if (it == state.extra.end())
-            jitc_fail("jit_optix_configure(): 'extra' entry not found!");
-        state.optix_default_pipeline = (OptixPipelineData*) it->second.callback_data;
+            jitc_fail("jitc_optix_context(): 'extra' entry not found!");
+        state.optix_default_sbt
+            = (OptixShaderBindingTable*) it->second.callback_data;
+
+        state.optix_default_sbt_index = sbt_index;
+        jitc_var_dec_ref_ext(pipeline_index);
     }
 
     return ctx;
@@ -450,15 +460,15 @@ void *jitc_optix_lookup(const char *name) {
     jitc_raise("jit_optix_lookup(): function \"%s\" not found!", name);
 }
 
-uint32_t jitc_optix_configure(const OptixPipelineCompileOptions *pco,
-                              OptixModule module,
-                              const OptixShaderBindingTable *sbt,
-                              const OptixProgramGroup *pg,
-                              uint32_t pg_count) {
-    jitc_log(InfoSym, "jit_optix_configure(pg_count=%u)", pg_count);
+uint32_t jitc_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
+                                       OptixModule module,
+                                       const OptixProgramGroup *pg,
+                                       uint32_t pg_count) {
+    jitc_log(InfoSym, "jitc_optix_configure_pipeline(pg_count=%u)", pg_count);
 
-    if (!pco || !module || !sbt || !pg || pg_count == 0)
-        jitc_raise("jit_optix_configure(): invalid input arguments!");
+    if (!pco || !module || !pg || pg_count == 0)
+        jitc_raise("jitc_optix_configure_pipeline(): invalid input arguments!");
+
 
     uint32_t index = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 0, 0);
 
@@ -469,10 +479,8 @@ uint32_t jitc_optix_configure(const OptixPipelineCompileOptions *pco,
     v->size = 1;
 
     OptixPipelineData *p = new OptixPipelineData();
-    p->index = index;
     p->module = module;
     p->program_groups = std::vector<OptixProgramGroup>();
-    memcpy(&p->shader_binding_table, sbt, sizeof(OptixShaderBindingTable));
     memcpy(&p->compile_options, pco, sizeof(OptixPipelineCompileOptions));
     for (uint32_t i = 0; i < pg_count; ++i)
         p->program_groups.push_back(pg[i]);
@@ -482,23 +490,78 @@ uint32_t jitc_optix_configure(const OptixPipelineCompileOptions *pco,
     extra.assemble = [](const Variable */*v*/, const Extra &extra) {
         ThreadState *ts = thread_state(JitBackend::CUDA);
         OptixPipelineData *p = (OptixPipelineData*) extra.callback_data;
-        if (ts->optix_pipeline != state.optix_default_pipeline && ts->optix_pipeline != p)
-            jitc_raise("jit_assemble_cuda(): a single OptiX pipeline can be used per kernel!");
-        ts->optix_pipeline = p;
+        if (ts->optix_pipeline == state.optix_default_pipeline) {
+            jitc_log(InfoSym, "jit_assemble_cuda(): set OptiX pipeline for next kernel launch");
+            ts->optix_pipeline = p;
+        } else {
+            if (ts->optix_pipeline != p)
+                jitc_raise("jit_assemble_cuda(): a single OptiX pipeline can "
+                           "be used per kernel!");
+        }
     };
 
     // Free pipeline resources when this variable is destroyed
     extra.callback = [](uint32_t /*index*/, int free, void *ptr) {
         if (free) {
+            jitc_log(InfoSym, "jit_optix_configure(): free optix pipeline");
             OptixPipelineData *p = (OptixPipelineData*) ptr;
             for (size_t i = 0; i < p->program_groups.size(); i++)
                 jitc_optix_check(optixProgramGroupDestroy(p->program_groups[i]));
-            if (p->shader_binding_table.hitgroupRecordBase)
-                jitc_free(p->shader_binding_table.hitgroupRecordBase);
-            if (p->shader_binding_table.missRecordBase)
-                jitc_free(p->shader_binding_table.missRecordBase);
             jitc_optix_check(optixModuleDestroy(p->module));
             delete p;
+        }
+    };
+
+    return index;
+}
+
+uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
+                                  uint32_t pipeline) {
+    jitc_log(InfoSym, "jitc_optix_configure_sbt()");
+
+    if (!sbt || !pipeline)
+        jitc_raise("jitc_optix_configure_sbt(): invalid input arguments!");
+
+    if (jitc_var_type(pipeline) != VarType::Void)
+        jitc_raise("jitc_optix_configure_sbt(): type mismatch for pipeline argument!");
+
+    uint32_t dep[1] = { pipeline };
+    uint32_t index = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 1, dep);
+
+    Extra &extra = state.extra[index];
+    Variable *v = jitc_var(index);
+    v->extra = 1;
+    v->optix = 1;
+    v->size = 1;
+
+    extra.callback_data = new OptixShaderBindingTable();
+    memcpy(extra.callback_data, sbt, sizeof(OptixShaderBindingTable));
+
+    // Set the OptiX SBT to use when assembling the kernel
+    extra.assemble = [](const Variable */*v*/, const Extra &extra) {
+        ThreadState *ts = thread_state(JitBackend::CUDA);
+        OptixShaderBindingTable *sbt = (OptixShaderBindingTable*) extra.callback_data;
+        if (ts->optix_sbt == state.optix_default_sbt) {
+            jitc_log(InfoSym, "jit_assemble_cuda(): set OptiX shader binding table "
+                              "for next kernel launch");
+            ts->optix_sbt = sbt;
+        } else {
+            if (ts->optix_sbt != sbt)
+                jitc_raise("jit_assemble_cuda(): a single OptiX shader binding table "
+                           "can be used per kernel!");
+        }
+    };
+
+    // Free SBT resources when this variable is destroyed
+    extra.callback = [](uint32_t /*index*/, int free, void *ptr) {
+        if (free) {
+            jitc_log(InfoSym, "jit_optix_configure(): free optix shader binding table");
+            OptixShaderBindingTable *sbt = (OptixShaderBindingTable*) ptr;
+            if (sbt->hitgroupRecordBase)
+                jitc_free(sbt->hitgroupRecordBase);
+            if (sbt->missRecordBase)
+                jitc_free(sbt->missRecordBase);
+            delete sbt;
         }
     };
 
@@ -534,17 +597,6 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     OptixDeviceContext &optix_context = state.devices[ts->device].optix_context;
     OptixPipelineData &pipeline = *ts->optix_pipeline;
 
-#if 0
-    int rv = optixModuleCreateFromPTX(
-        optix_context, &mco, &pipeline.compile_options, buf,
-        buf_size, error_log, &log_size, &kernel.optix.mod);
-    if (rv) {
-        jitc_log(Error, "jit_optix_compile(): optixModuleCreateFromPTX() "
-                 "failed. Please see the PTX assembly listing and error "
-                 "message below:\n\n%s\n\n%s", buf, error_log);
-        jitc_optix_check(rv);
-    }
-#else
     OptixTask task;
     int rv = optixModuleCreateFromPTXWithTasks(
         optix_context, &mco, &pipeline.compile_options, buf, buf_size,
@@ -577,7 +629,6 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
         );
     };
     execute_task(task);
-#endif
 
     int compilation_state = 0;
     jitc_optix_check(
@@ -744,7 +795,7 @@ void jitc_optix_free(const Kernel &kernel) {
 void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
                        uint32_t launch_size, const void *args,
                        uint32_t n_args) {
-    OptixShaderBindingTable &sbt = ts->optix_pipeline->shader_binding_table;
+    OptixShaderBindingTable &sbt = *ts->optix_sbt;
     sbt.raygenRecord = kernel.optix.sbt_record;
 
     if (kernel.optix.pg_count > 1) {
@@ -767,7 +818,7 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
 }
 
 void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
-                          uint32_t pipeline) {
+                          uint32_t pipeline, uint32_t sbt) {
     VarType types[]{ VarType::UInt64,  VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
@@ -783,6 +834,12 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
     uint32_t np = n_args - 15, size = 0;
     if (np > 32)
         jitc_raise("jit_optix_ray_trace(): too many payloads (got %u > 32)", np);
+
+    if (jitc_var_type(pipeline) != VarType::Void)
+        jitc_raise("jit_optix_ray_trace(): type mismatch for pipeline argument!");
+
+    if (jitc_var_type(sbt) != VarType::Void)
+        jitc_raise("jit_optix_ray_trace(): type mismatch for pipeline argument!");
 
     // Validate input types, determine size of the operation
     bool placeholder = false, dirty = false;
@@ -840,9 +897,9 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
              size, size != 1 ? "s" : "", np, np == 1 ? "" : "s",
              placeholder ? " (part of a recorded computation)" : "");
 
-    uint32_t dep[2] = { valid, pipeline };
+    uint32_t dep[3] = { valid, pipeline, sbt };
     uint32_t special =
-        jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 2, dep);
+        jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 3, dep);
 
     // Associate extra record with this variable
     Extra &extra = state.extra[special];

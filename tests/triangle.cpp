@@ -193,11 +193,15 @@ void demo() {
     // Let Dr.Jit know about all of this
     // =====================================================
 
-    UInt32 config_handle = UInt32::steal(jit_optix_configure(
+    UInt32 pipeline_handle = UInt32::steal(jit_optix_configure_pipeline(
         &pipeline_compile_options, // <-- these pointers must stay
         mod,
-        &sbt,                      //     alive while Dr.Jit runs
         pg, 2
+    ));
+
+    UInt32 sbt_handle = UInt32::steal(jit_optix_configure_sbt(
+        &sbt, //     alive while Dr.Jit runs
+        pipeline_handle.index()
     ));
 
     // Do four times to verify caching, with mask in it. 3 + 4
@@ -241,7 +245,7 @@ void demo() {
         };
 
         jit_optix_ray_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args,
-                            mask.index(), config_handle.index());
+                            mask.index(), pipeline_handle.index(), sbt_handle.index());
 
         payload_0 = UInt32::steal(trace_args[15]);
 

@@ -14,9 +14,11 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
     // If use optix and the kernel contains no ray tracing operations, fallback
-    // to the default OptiX pipeline.
-    if (uses_optix)
+    // to the default OptiX pipeline and shader binding table.
+    if (uses_optix) {
         ts->optix_pipeline = state.optix_default_pipeline;
+        ts->optix_sbt = state.optix_default_sbt;
+    }
 
     /* Special registers:
 

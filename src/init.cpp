@@ -259,9 +259,9 @@ void jitc_shutdown(int light) {
     }
 
 #if defined(DRJIT_ENABLE_OPTIX)
-        // OptiX: free the default OptiX pipeline
-        if (state.optix_default_pipeline)
-            jitc_var_dec_ref_ext(state.optix_default_pipeline->index);
+    // Free the default OptiX shader binding table and pipeline (ref counting)
+    if (state.optix_default_sbt_index)
+        jitc_var_dec_ref_ext(state.optix_default_sbt_index);
 #endif
 
     if (!state.tss.empty()) {
