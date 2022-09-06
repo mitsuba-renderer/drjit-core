@@ -601,6 +601,7 @@ static size_t jitc_var_loop_simplify(Loop *loop, tsl::robin_set<uint32_t, UInt32
         if (!loop->out[i] || !loop->out_body[i])
             continue;
         // jitc_trace("jit_var_loop_simplify(): DFS from %u (r%u)", i, loop->out_body[i]);
+        visited.insert(loop->in_cond[i]);
         jitc_var_loop_dfs(visited, lowest_index, loop->out_body[i]);
     }
 
