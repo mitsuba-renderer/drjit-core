@@ -260,8 +260,10 @@ void jitc_shutdown(int light) {
 
 #if defined(DRJIT_ENABLE_OPTIX)
     // Free the default OptiX shader binding table and pipeline (ref counting)
-    if (state.optix_default_sbt_index)
+    if (state.optix_default_sbt_index) {
         jitc_var_dec_ref_ext(state.optix_default_sbt_index);
+        state.optix_default_sbt_index = 0;
+    }
 #endif
 
     if (!state.tss.empty()) {
@@ -373,7 +375,7 @@ void jitc_shutdown(int light) {
         state.devices.clear();
     }
 
-    jitc_log(Info, "jit_shutdown(): done");
+    jitc_log(Info, "jit_shutdown(light=%u): done", (uint32_t) light);
 
     if (light == 0) {
         jitc_llvm_shutdown();

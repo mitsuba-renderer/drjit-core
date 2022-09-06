@@ -616,11 +616,11 @@ struct State {
 
 #if defined(DRJIT_ENABLE_OPTIX)
     /// Default OptiX pipeline for testcases etc.
-    OptixPipelineData *optix_default_pipeline = 0;
+    OptixPipelineData *optix_default_pipeline = nullptr;
     /// Default OptiX Shader Binding Table for testcases etc.
-    OptixShaderBindingTable *optix_default_sbt = 0;
+    OptixShaderBindingTable *optix_default_sbt = nullptr;
     /// Index of the JIT variable handling the lifetime of the default Optix SBT
-    uint32_t optix_default_sbt_index;
+    uint32_t optix_default_sbt_index = 0;
 #endif
 
     /// Return a pointer to the registry corresponding to the specified backend
