@@ -469,7 +469,6 @@ uint32_t jitc_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
     if (!pco || !module || !pg || pg_count == 0)
         jitc_raise("jitc_optix_configure_pipeline(): invalid input arguments!");
 
-
     uint32_t index = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 0, 0);
 
     Extra &extra = state.extra[index];
@@ -571,9 +570,6 @@ uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
 bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                         const char *kern_name, Kernel &kernel) {
     char error_log[16384];
-
-    /// Ensure OptiX is initialized
-    (void) jitc_optix_context();
 
     if (!jitc_optix_init_success)
         jitc_fail("jit_optix_compile(): OptiX not initialized, make sure "

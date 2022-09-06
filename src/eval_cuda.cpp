@@ -2,6 +2,7 @@
 #include "internal.h"
 #include "var.h"
 #include "log.h"
+#include "optix_api.h"
 
 // Forward declaration
 static void jitc_render_stmt_cuda(uint32_t index, const Variable *v);
@@ -16,6 +17,8 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
     // If use optix and the kernel contains no ray tracing operations, fallback
     // to the default OptiX pipeline and shader binding table.
     if (uses_optix) {
+        /// Ensure OptiX is initialized
+        (void) jitc_optix_context();
         ts->optix_pipeline = state.optix_default_pipeline;
         ts->optix_sbt = state.optix_default_sbt;
     }
