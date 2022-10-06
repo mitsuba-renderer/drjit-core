@@ -189,7 +189,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
     // 1. Various sanity checks
     // =====================================================
 
-    bool placeholder = false, dirty = false;
+    bool placeholder = false;
     uint32_t size = 1, n_invariant = 0;
     {
         const Variable *v = jitc_var(loop->cond);
@@ -198,7 +198,6 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         if (!v->placeholder)
             jitc_raise("jit_var_loop(): loop condition does not depend on any of the loop variables");
         size = v->size;
-        dirty = v->ref_count_se;
     }
 
     for (size_t i = 0; i < n_indices; ++i) {
@@ -235,7 +234,6 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         loop->in_cond.push_back(index_2);
         loop->in.push_back(index_3);
         placeholder |= (bool) v3->placeholder;
-        dirty |= (bool) v3->ref_count_se;
 
         // ============ 1.2. Output side =============
 
