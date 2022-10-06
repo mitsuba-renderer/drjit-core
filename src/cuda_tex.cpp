@@ -68,10 +68,7 @@ struct DrJitCudaTexture {
         scoped_set_context guard(ts->context);
 
         cuda_check(cuArrayDestroy(arrays[index]));
-        arrays[index] = nullptr;
-
         cuda_check(cuTexObjectDestroy(textures[index]));
-        textures[index] = nullptr;
 
         return (--n_referenced_textures) > 0;
     }

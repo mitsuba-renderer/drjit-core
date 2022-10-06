@@ -129,7 +129,7 @@ int jitc_cuda_version_minor = 0;
 
 static bool jitc_cuda_init_attempted = false;
 static bool jitc_cuda_init_success = false;
-CUresult jitc_cuda_cuinit_result = false;
+CUresult jitc_cuda_cuinit_result = CUDA_ERROR_NOT_INITIALIZED;
 
 bool jitc_cuda_init() {
     if (jitc_cuda_init_attempted)
@@ -138,7 +138,7 @@ bool jitc_cuda_init() {
 
     // We have our own caching scheme, disable CUDA's JIT cache
 #if 0
-    // On hinsight, this is potentially dangerous because it also disables
+    // On hindsight, this is potentially dangerous because it also disables
     // important caching functionality in PyTorch/Tensorflow/etc.
 
     // #if !defined(_WIN32)
@@ -253,11 +253,11 @@ bool jitc_cuda_init() {
                 "CUDA backend!", symbol);
         return false;
     }
-#endif
 
     // These two functions are optional
     cuMemAllocAsync = decltype(cuMemAllocAsync)(dlsym(jitc_cuda_handle, "cuMemAllocAsync_ptsz"));
     cuMemFreeAsync = decltype(cuMemFreeAsync)(dlsym(jitc_cuda_handle, "cuMemFreeAsync_ptsz"));
+#endif
 
     jitc_cuda_cuinit_result = cuInit(0);
     if (jitc_cuda_cuinit_result != CUDA_SUCCESS)

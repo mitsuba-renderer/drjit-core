@@ -973,7 +973,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
             jitc_fail("jit_var_mem_copy(): copy from HostAsync to GPU memory not supported!");
         } else if (atype == AllocType::Host) {
             void *host_ptr = jitc_malloc(AllocType::HostPinned, total_size);
-            int rv;
+            CUresult rv;
             {
                 unlock_guard guard2(state.lock);
                 memcpy(host_ptr, ptr, total_size);
