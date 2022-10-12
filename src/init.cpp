@@ -406,7 +406,12 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
             #endif
 
             delete ts;
-            if (jitc_cuda_cuinit_result != CUDA_SUCCESS) {
+            if (jitc_cuda_cuinit_result == CUDA_ERROR_NOT_INITIALIZED) {
+                jitc_raise(
+                    "jit_init_thread_state(): the CUDA backend hasn't been "
+                    "initialized. Make sure to call jit_init(JitBackend::CUDA) ",
+                    "to properly initialize this backend.");
+            } else if (jitc_cuda_cuinit_result != CUDA_SUCCESS) {
                 const char *msg = nullptr;
                 cuGetErrorString(jitc_cuda_cuinit_result, &msg);
                 jitc_raise("jit_cuda_init(): the CUDA backend is not available "
