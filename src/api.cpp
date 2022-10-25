@@ -185,7 +185,6 @@ uint32_t jit_record_checkpoint(JitBackend backend) {
     if (jit_flag(JitFlag::Recording))
         result |= 0x80000000u;
     return result;
-
 }
 
 uint32_t jit_record_begin(JitBackend backend) {
@@ -871,6 +870,11 @@ uint32_t jit_optix_configure_sbt(const OptixShaderBindingTable *sbt, uint32_t pi
     return jitc_optix_configure_sbt(sbt, pipeline);
 }
 
+void jit_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt) {
+    lock_guard guard(state.lock);
+    jitc_optix_update_sbt(index, sbt);
+}
+
 void jit_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask,
                          uint32_t pipeline, uint32_t sbt) {
     lock_guard guard(state.lock);
@@ -884,10 +888,10 @@ void jit_optix_mark(uint32_t index) {
 
 #endif
 
-void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
+void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
                         const uint32_t *in, uint32_t *out) {
     lock_guard guard(state.lock);
-    jitc_llvm_ray_trace(func, scene, occluded, in, out);
+    jitc_llvm_ray_trace(func, scene, shadow_ray, in, out);
 }
 
 void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,

@@ -541,7 +541,7 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
 
 static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra);
 
-void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
+void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
                          const uint32_t *in, uint32_t *out) {
     const uint32_t n_args = 14;
     bool double_precision = ((VarType) jitc_var(in[2])->type) == VarType::Float64;
@@ -613,13 +613,13 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
     }
 
     jitc_log(InfoSym, "jitc_llvm_ray_trace(): tracing %u %sray%s%s%s", size,
-             occluded ? "shadow " : "", size != 1 ? "s" : "",
+             shadow_ray ? "shadow " : "", size != 1 ? "s" : "",
              placeholder ? " (part of a recorded computation)" : "",
              double_precision ? " (double precision)" : "");
 
     Ref op = steal(jitc_var_new_stmt_n(JitBackend::LLVM, VarType::Void,
-                               occluded ? "// Ray trace (occluded)"
-                                        : "// Ray trace",
+                               shadow_ray ? "// Ray trace (shadow ray)"
+                                          : "// Ray trace",
                                1, func, scene));
     Variable *v_op = jitc_var(op);
     v_op->size = size;
@@ -636,7 +636,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
     e.assemble = jitc_llvm_ray_trace_assemble;
 
     char tmp[128];
-    for (int i = 0; i < (occluded ? 1 : 6); ++i) {
+    for (int i = 0; i < (shadow_ray ? 1 : 6); ++i) {
         snprintf(tmp, sizeof(tmp),
                  "$r0 = bitcast <$w x $t0> $r1_out_%u to <$w x $t0>", i);
         VarType vt = (i < 3) ? float_type : VarType::UInt32;
@@ -647,14 +647,14 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int occluded,
 static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) {
     const uint32_t width = jitc_llvm_vector_width;
     const uint32_t id = v->reg_index;
-    bool occluded = strstr(v->stmt, "occluded") != nullptr;
+    bool shadow_ray = strstr(v->stmt, "(shadow ray)") != nullptr;
     bool double_precision = ((VarType) jitc_var(extra.dep[2])->type) == VarType::Float64;
     VarType float_type = double_precision ? VarType::Float64 : VarType::Float32;
     uint32_t float_size = double_precision ? 8 : 4;
 
     uint32_t ctx_size = 6 * 4, alloca_size_rt;
 
-    if (occluded)
+    if (shadow_ray)
         alloca_size_rt = (9 * float_size + 4 * 4) * width;
     else
         alloca_size_rt = (14 * float_size + 7 * 4) * width;
@@ -685,7 +685,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         18 uint32_t primID
         19 uint32_t geomID
         20 uint32_t instID[] */
-    buffer.fmt("\n    ; -------- Ray %s -------\n", occluded ? "test" : "trace");
+    buffer.fmt("\n    ; -------- Ray %s -------\n", shadow_ray ? "test" : "trace");
 
     uint32_t offset = 0;
     for (int i = 0; i < 13; ++i) {
@@ -706,7 +706,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         offset += tsize * width;
     }
 
-    if (!occluded) {
+    if (!shadow_ray) {
         buffer.fmt(
             "    %%u%u_in_geomid_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
             "    %%u%u_in_geomid_1 = bitcast i8* %%u%u_in_geomid_0 to <%u x i32> *\n"
@@ -714,7 +714,6 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
             id, (14 * float_size + 5 * 4) * width, id, id, width, width,
             jitc_llvm_ones_str[(int) VarType::Int32], width, id, float_size * width);
     }
-
 
     const Variable *coherent = jitc_var(extra.dep[0]);
 
@@ -743,28 +742,129 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
                    id, id);
     }
 
-    const Variable *func    = jitc_var(v->dep[0]),
-                   *scene   = jitc_var(v->dep[1]);
+    const Variable *func  = jitc_var(v->dep[0]),
+                   *scene = jitc_var(v->dep[1]);
 
-    if (jitc_llvm_vector_width > 1) {
-        buffer.fmt(
-            "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*, i8*)*\n"
-            "    call void %%u%u_func(i8* %%u%u_in_0_0, i8* %%rd%u, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
-            id, func->reg_index,
-            id, id, scene->reg_index, id, id
-        );
+    /* When the ray tracing operation occurs inside a recorded function, it's
+     * possible that multiple different scenes are being traced simultaneously.
+     * In that case, it's necessary to perform one ray tracing call per scene,
+     * which is implemented by the following loop. */
+    if (!assemble_func) {
+        if (jitc_llvm_vector_width > 1) {
+            buffer.fmt(
+                "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*, i8*)*\n"
+                "    call void %%u%u_func(i8* %%u%u_in_0_0, i8* %%rd%u, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
+                id, func->reg_index,
+                id, id, scene->reg_index, id, id
+            );
+        } else {
+            buffer.fmt(
+                "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*)*\n"
+                "    call void %%u%u_func(i8* %%rd%u, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
+                id, func->reg_index,
+                id, scene->reg_index, id, id
+            );
+        }
     } else {
-        buffer.fmt(
-            "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*)*\n"
-            "    call void %%u%u_func(i8* %%rd%u, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
-            id, func->reg_index,
-            id, scene->reg_index, id, id
-        );
+        char global[128];
+        snprintf(
+            global, sizeof(global),
+            "declare i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64>)\n\n",
+            width, width);
+        jitc_register_global(global);
+
+        // =====================================================
+        // 1. Prepare the loop for the ray tracing calls
+        // =====================================================
+
+        buffer.fmt("    br label %%l%u_start\n"
+                   "\nl%u_start:\n"
+                   "    ; Ray tracing\n"
+                   "    %%u%u_func_i64 = call i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64> %%rd%u_p4)\n"
+                   "    %%u%u_func_ptr = inttoptr i64 %%u%u_func_i64 to i8*",
+                   id, id,
+                   id, width, width, func->reg_index,
+                   id, id);
+
+        if (jitc_llvm_vector_width > 1) {
+            buffer.fmt(
+                "    %%u%u_func = bitcast i8* %%u%u_func_ptr to void (i8*, i8*, i8*, i8*)*\n",
+                id, id
+            );
+        } else {
+            buffer.fmt(
+                "    %%u%u_func = bitcast i8* %%u%u_func_ptr to void (i8*, i8*, i8*)*\n",
+                id, id
+            );
+        }
+
+        // Get original mask, to be overwritten at every iteration
+        buffer.fmt("    %%u%u_mask_ptr = bitcast i8* %%u%u_in_0_0 to <%u x i1> *\n"
+                   "    %%u%u_mask_value = load <%u x i32>, <%u x i32>* %%u%u_in_0_1, align 64\n"
+                   "    br label %%l%u_check\n",
+                   id, id, width,
+                   id, width, width, id,
+                   id);
+
+        // =====================================================
+        // 2. Move on to the next instance & check if finished
+        // =====================================================
+
+        buffer.fmt("\nl%u_check:\n"
+                   "    %%u%u_scene = phi <%u x i8*> [ %%rd%u, %%l%u_start ], [ %%u%u_scene_next, %%l%u_call ]\n"
+                   "    %%u%u_scene_i64 = ptrtoint <%u x i8*> %%u%u_scene to <%u x i64>\n"
+                   "    %%u%u_next_i64 = call i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64> %%u%u_scene_i64)\n"
+                   "    %%u%u_next = inttoptr i64 %%u%u_next_i64 to i8*\n"
+                   "    %%u%u_valid = icmp ne i8* %%u%u_next, null\n"
+                   "    br i1 %%u%u_valid, label %%l%u_call, label %%l%u_end\n",
+                   id,
+                   id, width, scene->reg_index, id, id, id,
+                   id, width, id, width,
+                   id, width, width, id,
+                   id, id,
+                   id, id,
+                   id, id, id);
+
+        // =====================================================
+        // 3. Perform ray tracing call to each unique instance
+        // =====================================================
+
+        buffer.fmt("\nl%u_call:\n"
+                   "    %%u%u_bcast_0 = insertelement <%u x i64> undef, i64 %%u%u_next_i64, i32 0\n"
+                   "    %%u%u_bcast_1 = shufflevector <%u x i64> %%u%u_bcast_0, <%u x i64> undef, <%u x i32> zeroinitializer\n"
+                   "    %%u%u_bcast_2 = inttoptr <%u x i64> %%u%u_bcast_1 to <%u x i8*>\n"
+                   "    %%u%u_active = icmp eq <%u x i8*> %%u%u_scene, %%u%u_bcast_2\n"
+                   "    %%u%u_active_2 = select <%u x i1> %%u%u_active, <%u x i32> %%u%u_mask_value, <%u x i32> zeroinitializer\n"
+                   "    store <%u x i32> %%u%u_active_2, <%u x i32>* %%u%u_in_0_1, align 64\n",
+                   id,
+                   id, width, id,
+                   id, width, id, width, width,
+                   id, width, id, width,
+                   id, width, id, id,
+                   id, width, id, width, id, width,
+                   width, id, width, id);
+
+        if (jitc_llvm_vector_width > 1) {
+            buffer.fmt(
+                "    call void %%u%u_func(i8* %%u%u_in_0_0, i8* %%u%u_next, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
+                id, id, id, id, id
+            );
+        } else {
+            buffer.fmt(
+                "    call void %%u%u_func(i8* %%u%u_next, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
+                id, id, id, id
+            );
+        }
+        buffer.fmt("    %%u%u_scene_next = select <%u x i1> %%u%u_active, <%u x i8*> zeroinitializer, <%u x i8*> %%u%u_scene\n"
+                   "    br label %%l%u_check\n"
+                   "\nl%u_end:\n",
+                   id, width, id, width, width, id,
+                   id, id);
     }
 
     offset = (8 * float_size + 4) * width;
 
-    for (int i = 0; i < (occluded ? 1 : 6); ++i) {
+    for (int i = 0; i < (shadow_ray ? 1 : 6); ++i) {
         VarType vt = (i < 3) ? float_type : VarType::UInt32;
         const char *tname = type_name_llvm[(int) vt];
         uint32_t tsize = type_size[(int) vt];
@@ -781,6 +881,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         else
             offset += tsize * width;
     }
+
     buffer.put("    ; -------------------\n\n");
 }
 

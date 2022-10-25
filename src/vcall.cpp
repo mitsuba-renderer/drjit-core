@@ -99,7 +99,8 @@ static void jitc_var_vcall_assemble_llvm(
 
 static void jitc_var_vcall_collect_data(
     tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-    uint32_t &data_offset, uint32_t inst_id, uint32_t index, bool &use_self);
+    uint32_t &data_offset, uint32_t inst_id, uint32_t index, bool &use_self,
+    bool &optix);
 
 void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
     ThreadState *ts = thread_state(backend);
@@ -288,12 +289,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         for (uint32_t j = 0; j < n_out; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
                                         out_nested[j + i * n_out],
-                                        vcall->use_self);
+                                        vcall->use_self, optix);
 
         for (uint32_t j = checkpoints[i]; j != checkpoints[i + 1]; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
                                         vcall->side_effects[j - checkpoints[0]],
-                                        vcall->use_self);
+                                        vcall->use_self, optix);
 
         // Restore to full alignment
         data_size = (data_size + 7) / 8 * 8;
@@ -387,6 +388,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         Variable *v = jitc_var(vcall_v);
         v->placeholder = placeholder;
         v->size = size;
+        v->optix = optix;
     }
 
     uint32_t n_devirt = 0, flags = jitc_flags();
@@ -1318,7 +1320,7 @@ static void jitc_var_vcall_assemble_llvm(
 /// Collect scalar / pointer variables referenced by a computation
 void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                                  uint32_t &data_offset, uint32_t inst_id,
-                                 uint32_t index, bool &use_self) {
+                                 uint32_t index, bool &use_self, bool &optix) {
     uint64_t key = (uint64_t) index + (((uint64_t) inst_id) << 32);
     auto it_and_status = data_map.emplace(key, (uint32_t) -1);
     if (!it_and_status.second)
@@ -1328,6 +1330,9 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     if (!v->literal && v->stmt && strstr(v->stmt, "self"))
         use_self = true;
+
+    if (v->optix)
+        optix = true;
 
     if (v->vcall_iface) {
         return;
@@ -1351,8 +1356,8 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
             if (!index_2)
                 break;
 
-            jitc_var_vcall_collect_data(data_map, data_offset,
-                                        inst_id, index_2, use_self);
+            jitc_var_vcall_collect_data(data_map, data_offset, inst_id, index_2,
+                                        use_self, optix);
         }
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
@@ -1365,8 +1370,8 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
                 uint32_t index_2 = extra.dep[i];
                 if (index_2 == 0)
                     continue; // not break
-                jitc_var_vcall_collect_data(data_map, data_offset,
-                                            inst_id, index_2, use_self);
+                jitc_var_vcall_collect_data(data_map, data_offset, inst_id,
+                                            index_2, use_self, optix);
             }
         }
     }

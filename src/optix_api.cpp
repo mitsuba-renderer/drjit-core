@@ -9,6 +9,8 @@
 
 #define OPTIX_ABI_VERSION 55
 
+#define ENABLE_OPTIX_VALIDATION_MODE 0
+
 #if defined(_WIN32)
 #  include <windows.h>
 #  include <cfgmgr32.h>
@@ -75,8 +77,11 @@ using OptixTask = void*;
 #define OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW           1
 #define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH              2
 #define OPTIX_EXCEPTION_FLAG_DEBUG                    8
+#define OPTIX_ERROR_VALIDATION_FAILURE                7053
 #define OPTIX_COMPILE_DEBUG_LEVEL_NONE                0x2350
 #define OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL             0x2351
+#define OPTIX_COMPILE_DEBUG_LEVEL_MODERATE            0x2353
+#define OPTIX_COMPILE_DEBUG_LEVEL_FULL                0x2352
 #define OPTIX_COMPILE_OPTIMIZATION_LEVEL_0            0x2340
 #define OPTIX_COMPILE_OPTIMIZATION_LEVEL_1            0x2341
 #define OPTIX_COMPILE_OPTIMIZATION_LEVEL_2            0x2342
@@ -363,7 +368,7 @@ OptixDeviceContext jitc_optix_context() {
 
         OptixDeviceContextOptions ctx_opts {
             jitc_optix_log, nullptr, 4,
-#if defined(NDEBUG)
+#if defined(NDEBUG) || !ENABLE_OPTIX_VALIDATION_MODE
             OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF
 #else
             OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL
@@ -565,6 +570,11 @@ uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
     };
 
     return index;
+}
+
+void jitc_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt) {
+    Extra &extra = state.extra[index];
+    memcpy(extra.callback_data, sbt, sizeof(OptixShaderBindingTable));
 }
 
 bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
