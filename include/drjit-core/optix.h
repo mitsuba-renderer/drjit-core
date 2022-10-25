@@ -69,6 +69,18 @@ extern JIT_EXPORT uint32_t
 jit_optix_configure_sbt(const OptixShaderBindingTable *sbt, uint32_t pipeline);
 
 /**
+ * \brief  Update existing OptiX Shader Binding Table data
+ *
+ * This function updates the Shader Binding Table data held by the JIT
+ * variable \c index previously created using \c jit_optix_configure_sbt. This
+ * update is necessary when adding more geometry to an existing scene or when
+ * sharing the OptiX pipeline and SBT across multiple scenes (e.g. ray tracing
+ * against different scenes within the same megakernel).
+ */
+extern JIT_EXPORT void
+jit_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt);
+
+/**
   * \brief Insert a function call to optixTrace into the program
   *
   * The \c args list should contain a list of variable indices corresponding to

@@ -1737,7 +1737,7 @@ extern JIT_EXPORT void jit_block_sum(JIT_ENUM JitBackend backend, JIT_ENUM VarTy
  * </tt>.
  */
 extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
-                                          int occluded, const uint32_t *in,
+                                          int shadow_ray, const uint32_t *in,
                                           uint32_t *out);
 
 /**

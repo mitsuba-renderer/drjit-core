@@ -5,8 +5,8 @@
 #include "op.h"
 
 /// Forward declaration
-static void jitc_var_printf_assemble_cuda(const Variable *v, const Extra &extra);
 static void jitc_var_printf_assemble_llvm(const Variable *v, const Extra &extra);
+static void jitc_var_printf_assemble_cuda(const Variable *v, const Extra &extra);
 
 uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
                          uint32_t narg, const uint32_t *arg) {
@@ -79,12 +79,14 @@ uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
     for (uint32_t i = 0; i < narg; ++i)
         jitc_var_inc_ref_int(arg[i]);
 
-    e.assemble = backend == JitBackend::CUDA ? jitc_var_printf_assemble_cuda
-                                             : jitc_var_printf_assemble_llvm;
+    e.assemble = backend == JitBackend::CUDA
+                     ? jitc_var_printf_assemble_cuda
+                     : jitc_var_printf_assemble_llvm;
     e.callback_data = strdup(fmt);
     e.callback = [](uint32_t, int free_var, void *ptr) {
-        if (free_var && ptr)
+        if (free_var && ptr) {
             free(ptr);
+        }
     };
     e.callback_internal = true;
     uint32_t result = printf_var.release();
@@ -187,6 +189,7 @@ static void jitc_var_printf_assemble_cuda(const Variable *v,
 
 static void jitc_var_printf_assemble_llvm(const Variable *v,
                                           const Extra &extra) {
+    const uint32_t width = jitc_llvm_vector_width;
     size_t buffer_offset = buffer.size();
     const char *fmt = (const char *) extra.callback_data;
     size_t length = strlen(fmt);
@@ -216,24 +219,40 @@ static void jitc_var_printf_assemble_llvm(const Variable *v,
     uint32_t idx = v->reg_index;
 
     buffer.fmt("    br label %%l_%u_start\n\n"
-               "l_%u_start: ; ---- printf_async() ----\n"
-               "    %%r%u_func = bitcast i8* %%rd%u to i32 (i8*, ...)*\n"
-               "    %%r%u_fmt = getelementptr [%zu x i8], [%zu x i8]* @data_%016llu%016llu, i64 0, i64 0\n"
+               "l_%u_start: ; ---- printf_async() ----\n",
+               idx, idx);
+
+    if (assemble_func) {
+        char global[128];
+        snprintf(
+            global, sizeof(global),
+            "declare i8* @llvm.experimental.vector.reduce.umax.v%ui8(<%u x i8*>)\n\n",
+            width, width);
+        jitc_register_global(global);
+
+        buffer.fmt("    %%r%u_func_0 = call i8* @llvm.experimental.vector.reduce.umax.v%ui8(<%u x i8*> %%rd%u)"
+                   "    %%r%u_func = bitcast i8* %%r%u_func_0 to i32 (i8*, ...)*\n",
+                   idx, width, width, target->reg_index,
+                   idx, idx);
+    } else {
+        buffer.fmt("    %%r%u_func = bitcast i8* %%rd%u to i32 (i8*, ...)*\n",
+                   idx, target->reg_index);
+    }
+
+    buffer.fmt("    %%r%u_fmt = getelementptr [%zu x i8], [%zu x i8]* @data_%016llu%016llu, i64 0, i64 0\n"
                "    br label %%l_%u_cond\n\n"
                "l_%u_cond: ; ---- printf_async() ----\n"
                "    %%r%u_idx = phi i32 [ 0, %%l_%u_start ], [ %%r%u_next, %%l_%u_tail ]\n"
                "    %%r%u_cond = extractelement <%u x i1> %%p%u, i32 %%r%u_idx\n"
                "    br i1 %%r%u_cond, label %%l_%u_body, label %%l_%u_tail\n\n"
                "l_%u_body: ; ---- printf_async() ----\n",
-               idx,
-               idx,
-               idx, target->reg_index,
                idx, length + 1, length + 1, (unsigned long long) hash.high64, (unsigned long long) hash.low64,
                idx,
                idx,
                idx, idx, idx, idx,
                idx, jitc_llvm_vector_width, mask->reg_index, idx,
-               idx, idx, idx, idx);
+               idx, idx, idx,
+               idx);
 
     for (uint32_t i = 0; i < extra.n_dep; ++i) {
         Variable *v2 = jitc_var(extra.dep[i]);
