@@ -1388,11 +1388,15 @@ extern JIT_EXPORT int jit_flag(JIT_ENUM JitFlag flag);
  * the generated code. This function indicates to Dr.Jit that the program is
  * starting to record computation. The function sets \ref JitFlag.Recording and
  * returns information that will later enable stopping or canceling a recording
- * session via \ref jit_record_end().
+ * session via \ref jit_record_end(). When recording a virtual function call,
+ * the index of the last variable created to this point will be set to
+ * \c vcall_bound_index (which should be a valid pointer). This will be used to
+ * identify literal variables external to the virtual function when tracing.
  *
  * Recording sessions can be nested.
  */
-extern JIT_EXPORT uint32_t jit_record_begin(JIT_ENUM JitBackend backend);
+extern JIT_EXPORT uint32_t jit_record_begin(JIT_ENUM JitBackend backend,
+                                            uint32_t *vcall_bound_index);
 
 /// Return a checkpoint within a recorded computation for resumption via jit_record_end
 extern JIT_EXPORT uint32_t jit_record_checkpoint(JIT_ENUM JitBackend backend);
@@ -1402,10 +1406,13 @@ extern JIT_EXPORT uint32_t jit_record_checkpoint(JIT_ENUM JitBackend backend);
  *
  * The parameter \c state should be the return value from a prior call to \ref
  * jit_record_begin(). This function cleans internal data structures and
- * recovers the previous setting of the flag \ref JitFlag.Recording.
+ * recovers the previous setting of the flag \ref JitFlag.Recording. When ending
+ * the recording of a virtual function call, the parameter \c vcall_bound_index
+ * should point to the value set during a prior call to \ref jit_record_begin().
  */
 extern JIT_EXPORT void jit_record_end(JIT_ENUM JitBackend backend,
-                                      uint32_t state);
+                                      uint32_t state,
+                                      uint32_t *vcall_bound_index);
 
 /**
  * \brief Wrap an input variable of a virtual function call before recording

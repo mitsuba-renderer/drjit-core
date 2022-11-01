@@ -187,20 +187,27 @@ uint32_t jit_record_checkpoint(JitBackend backend) {
     return result;
 }
 
-uint32_t jit_record_begin(JitBackend backend) {
+uint32_t jit_record_begin(JitBackend backend, uint32_t *vcall_bound_index) {
     uint32_t result = jit_record_checkpoint(backend);
     jit_set_flag(JitFlag::Recording, true);
+    if (vcall_bound_index) {
+        ThreadState *ts = thread_state(backend);
+        *vcall_bound_index = ts->vcall_bound_index;
+        ts->vcall_bound_index = state.variable_index;
+    }
     return result;
 }
 
-void jit_record_end(JitBackend backend, uint32_t value) {
+void jit_record_end(JitBackend backend, uint32_t value, uint32_t *vcall_bound_index) {
     lock_guard guard(state.lock);
 
     // Set recording flag to previous value
     jit_set_flag(JitFlag::Recording, value & 0x80000000u);
     value &= 0x7fffffff;
 
-    auto &se = thread_state(backend)->side_effects_recorded;
+    ThreadState *ts = thread_state(backend);
+
+    auto &se = ts->side_effects_recorded;
     if (value > se.size())
         jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
 
@@ -208,6 +215,9 @@ void jit_record_end(JitBackend backend, uint32_t value) {
         jitc_var_dec_ref_ext(se.back());
         se.pop_back();
     }
+
+    if (vcall_bound_index)
+        ts->vcall_bound_index = *vcall_bound_index;
 }
 
 void* jit_cuda_stream() {
