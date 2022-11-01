@@ -268,18 +268,26 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             if (vt == VarType::Bool)
                 buffer.fmt("    %s%u = trunc <%u x i8> %s%u_i2 to <%u x i1>\n",
                            prefix, id, width, prefix, id, width);
-        } else if (v->data || vt == VarType::Pointer) {
+        } else if (v->literal || v->data) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
             auto it = data_map.find(key);
-            if (unlikely(it == data_map.end()))
-                jitc_fail("jitc_assemble_llvm_func(): could not find entry for "
-                          "variable r%u in 'data_map'", sv.index);
-            if (it->second == (uint32_t) -1)
-                jitc_fail(
-                    "jitc_assemble_llvm_func(): variable r%u is referenced by "
-                    "a recorded function call. However, it was evaluated "
-                    "between the recording step and code generation (which "
-                    "is happening now). This is not allowed.", sv.index);
+
+            if (!v->data && vt != VarType::Pointer) {
+                if (unlikely(it == data_map.end() || it->second == (uint32_t) -1)) {
+                    jitc_render_stmt_llvm(sv.index, v, true);
+                    continue;
+                }
+            } else {
+                if (unlikely(it == data_map.end()))
+                    jitc_fail("jitc_assemble_llvm_func(): could not find entry for "
+                              "variable r%u in 'data_map'", sv.index);
+                if (it->second == (uint32_t) -1)
+                    jitc_fail(
+                        "jitc_assemble_llvm_func(): variable r%u is referenced by "
+                        "a recorded function call. However, it was evaluated "
+                        "between the recording step and code generation (which "
+                        "is happening now). This is not allowed.", sv.index);
+            }
 
             uint32_t offset = it->second - data_offset;
 
@@ -309,14 +317,18 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                 "    %s%u%s = call <%u x %s> @llvm.masked.gather.v%u%s(<%u x %s*> %s%u_p3, i32 %u, <%u x i1> %%mask, <%u x %s> zeroinitializer)\n",
                 prefix, id, width, prefix, id, width, tname,
                 prefix, id,
-                vt == VarType::Pointer ? "_p4" : "",
+                (vt == VarType::Pointer || vt == VarType::Bool) ? "_p4" : "",
                 width, tname, width, type_name_llvm_abbrev[vti], width, tname, prefix, id, type_size[vti], width, width, tname
             );
 
-            if (vt == VarType::Pointer)
+            if (vt == VarType::Pointer) {
                 buffer.fmt(
                     "    %s%u = inttoptr <%u x i64> %s%u_p4 to <%u x i8*>\n",
                     prefix, id, width, prefix, id, width);
+            } else if (v->literal && vt == VarType::Bool) {
+                buffer.fmt("    %s%u = trunc <%u x i8> %s%u_p4 to <%u x i1>\n",
+                           prefix, id, width, prefix, id, width);
+            }
         } else {
             jitc_render_stmt_llvm(sv.index, v, true);
         }
