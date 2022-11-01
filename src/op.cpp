@@ -452,7 +452,6 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     bool dirty = false, literal = true, uninitialized = false, placeholder = false;
     uint32_t vti = 0;
     bool literal_zero[4] { }, literal_one[4] { };
-    uint32_t backend_i = 0;
     Variable *v[4] { };
     bool const_prop = jitc_flags() & (uint32_t) JitFlag::ConstProp;
 
@@ -460,36 +459,20 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
         jitc_fail("jit_var_new_op(): 1-4 dependent variables supported!");
 
     for (uint32_t i = 0; i < n_dep; ++i) {
-        if (likely(dep[i])) {
+        uint32_t idx = dep[i];
+        if (likely(idx)) {
             Variable *vi = jitc_var(dep[i]);
             vti = std::max(vti, vi->type);
             size = std::max(size, vi->size);
             dirty |= (bool) vi->ref_count_se;
             placeholder |= (bool) vi->placeholder;
-            backend_i |= (uint32_t) vi->backend;
             v[i] = vi;
-
-            if (vi->literal && const_prop) {
-                uint64_t one;
-                switch ((VarType) vi->type) {
-                    case VarType::Float16: one = 0x3c00ull; break;
-                    case VarType::Float32: one = 0x3f800000ull; break;
-                    case VarType::Float64: one = 0x3ff0000000000000ull; break;
-                    default: one = 1; break;
-                }
-                literal_zero[i] = vi->value == 0;
-                literal_one[i] = vi->value == one;
-            } else {
-                literal = false;
-            }
         } else {
             uninitialized = true;
         }
     }
 
-    JitBackend backend = (JitBackend) backend_i;
-    VarType vt  = (VarType) vti,
-            vtr = vt;
+    JitBackend backend = (JitBackend) v[0]->backend;
 
     // Some sanity checks
     const char *error = nullptr;
@@ -512,7 +495,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                                (VarType) v[i]->type == VarType::Bool;
             if (!exception_1 && !exception_2)
                 error = "arithmetic involving arrays of incompatible type!";
-        } else if (unlikely(v[i]->backend != backend_i)) {
+        } else if (unlikely(v[i]->backend != (uint32_t) backend)) {
             error = "mixed CUDA and LLVM arrays!";
         }
     }
@@ -520,10 +503,42 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     if (unlikely(error))
         jitc_var_new_op_fail(error, op, n_dep, dep);
 
+    /* When recording a virtual function call, disable constant propagation for
+       all variables that depend on a scalar literal that was created outside of
+       this virtual function call as this variable will later be evaluated to
+       avoid baking it into the kernel IR. */
+    ThreadState *ts = thread_state(backend);
+    if (ts->vcall_self_index) {
+        for (uint32_t i = 0; i < n_dep; ++i)
+            const_prop &= dep[i] >= ts->vcall_self_index;
+    }
+
+    for (uint32_t i = 0; i < n_dep; ++i) {
+        Variable *vi = v[i];
+        if (likely(vi)) {
+            if (vi->literal && const_prop) {
+                uint64_t one;
+                switch ((VarType) vi->type) {
+                    case VarType::Float16: one = 0x3c00ull; break;
+                    case VarType::Float32: one = 0x3f800000ull; break;
+                    case VarType::Float64: one = 0x3ff0000000000000ull; break;
+                    default: one = 1; break;
+                }
+                literal_zero[i] = vi->value == 0;
+                literal_one[i] = vi->value == one;
+            } else {
+                literal = false;
+            }
+        }
+    }
+
+    VarType vt  = (VarType) vti,
+            vtr = vt;
+
     bool is_float  = jitc_is_float(vt),
-         is_uint = jitc_is_uint(vt),
+         is_uint   = jitc_is_uint(vt),
          is_single = vt == VarType::Float32,
-         is_valid = jitc_is_arithmetic(vt);
+         is_valid  = jitc_is_arithmetic(vt);
 
     const char *stmt = nullptr;
 

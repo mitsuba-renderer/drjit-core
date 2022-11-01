@@ -340,10 +340,10 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                 continue;
 
             const Variable *v = jitc_var(index);
-            bool is_pointer = (VarType) v->type == VarType::Pointer;
             p->offset = offset;
-            p->size = is_pointer ? 0u : type_size[v->type];
-            p->src = is_pointer ? (const void *) v->value : v->data;
+            p->literal = v->literal;
+            p->size = type_size[v->type];
+            p->value = v->literal ? (uintptr_t) v->value : (uintptr_t) v->data;
             p++;
         }
 
@@ -418,7 +418,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
             if (!uniform[j])
                 continue;
 
-            /* Should this output value be devirtualized? We want to avoid
+            /* Should this output value be de-virtualized? We want to avoid
                completely removing the virtual function call.. */
             if (n_inst == 1 && !vcall_inline && !jitc_var(out_nested[j])->literal)
                 continue;
@@ -1326,7 +1326,12 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
     if (!it_and_status.second)
         return;
 
-    const Variable *v = jitc_var(index);
+    Variable *v = jitc_var(index);
+    ThreadState *ts = thread_state(v->backend);
+
+    /* Scalar literals created outside of this virtual function call should be
+       considered as data to avoid baking them inside of the kernel IR. */
+    bool ext_literal = v->literal && index < ts->vcall_self_index;
 
     if (!v->literal && v->stmt && strstr(v->stmt, "self"))
         use_self = true;
@@ -1336,7 +1341,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     if (v->vcall_iface) {
         return;
-    } else if (v->data || (VarType) v->type == VarType::Pointer) {
+    } else if (v->data || ext_literal || (VarType) v->type == VarType::Pointer) {
         uint32_t tsize = type_size[v->type];
         uint32_t offset = (data_offset + tsize - 1) / tsize * tsize;
         it_and_status.first.value() = offset;
