@@ -33,7 +33,7 @@ NAMESPACE_BEGIN(detail)
 template <JitBackend Backend> struct JitState {
     JitState()
         : m_mask_set(false), m_prefix_set(false), m_self_set(false),
-          m_cse_scope_set(false), m_recording(false) { }
+          m_cse_scope_set(false), m_recording(false), m_vcall(false) { }
 
     ~JitState() {
         if (m_mask_set)
@@ -48,9 +48,10 @@ template <JitBackend Backend> struct JitState {
             end_recording();
     }
 
-    void begin_recording() {
+    void begin_recording(bool vcall) {
         assert(!m_recording);
-        m_checkpoint = jit_record_begin(Backend);
+        m_vcall = vcall;
+        m_checkpoint = jit_record_begin(Backend, m_vcall ? &m_vcall_bound_index : nullptr);
         m_recording = true;
     }
 
@@ -58,7 +59,7 @@ template <JitBackend Backend> struct JitState {
 
     void end_recording() {
         assert(m_recording);
-        jit_record_end(Backend, m_checkpoint);
+        jit_record_end(Backend, m_checkpoint, m_vcall ? &m_vcall_bound_index : nullptr);
         m_recording = false;
     }
 
@@ -122,10 +123,12 @@ private:
     bool m_self_set;
     bool m_cse_scope_set;
     bool m_recording;
+    bool m_vcall;
     uint32_t m_cse_scope;
     uint32_t m_checkpoint;
     uint32_t m_self_value;
     uint32_t m_self_index;
+    uint32_t m_vcall_bound_index;
 };
 
 

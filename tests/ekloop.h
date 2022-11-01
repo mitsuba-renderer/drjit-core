@@ -191,7 +191,7 @@ protected:
                 }
 
                 // Start recording side effects
-                m_jit_state.begin_recording();
+                m_jit_state.begin_recording(false);
 
                 // Mask deactivated SIMD lanes
                 if constexpr (Backend == JitBackend::LLVM)
