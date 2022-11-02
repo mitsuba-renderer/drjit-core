@@ -1319,10 +1319,6 @@ static void jitc_var_vcall_assemble_llvm(
 void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                                  uint32_t &data_offset, uint32_t inst_id,
                                  uint32_t index, bool &use_self) {
-    // Skip if `index` refers to an invalid variable.
-    // NOTE: index should be refactored to something like `id`.
-    if (index == 0)
-        return;
     uint64_t key = (uint64_t) index + (((uint64_t) inst_id) << 32);
     auto it_and_status = data_map.emplace(key, (uint32_t) -1);
     if (!it_and_status.second)
@@ -1367,6 +1363,8 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
             const Extra &extra = it->second;
             for (uint32_t i = 0; i < extra.n_dep; ++i) {
                 uint32_t index_2 = extra.dep[i];
+                if (index_2 == 0)
+                    continue; // not break
                 jitc_var_vcall_collect_data(data_map, data_offset,
                                             inst_id, index_2, use_self);
             }
