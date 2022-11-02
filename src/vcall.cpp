@@ -1363,6 +1363,8 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
             const Extra &extra = it->second;
             for (uint32_t i = 0; i < extra.n_dep; ++i) {
                 uint32_t index_2 = extra.dep[i];
+                if (index_2 == 0)
+                    continue; // not break
                 jitc_var_vcall_collect_data(data_map, data_offset,
                                             inst_id, index_2, use_self);
             }
