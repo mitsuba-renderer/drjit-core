@@ -230,6 +230,9 @@ struct Device {
     /// Max. bytes of shared memory per SM
     uint32_t shared_memory_bytes;
 
+    // Support for stream ordered memory allocations (async alloc/free)
+    bool memory_pool_support;
+
 #if defined(DRJIT_ENABLE_OPTIX)
     /// OptiX device context
     void *optix_context = nullptr;

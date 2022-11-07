@@ -132,7 +132,7 @@ void jitc_init(uint32_t backends) {
     for (int i = 0; has_cuda && i < jitc_cuda_devices; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
             unified_addr = 0, managed = 0, shared_memory_bytes = 0,
-            cc_minor = 0, cc_major = 0;
+            cc_minor = 0, cc_major = 0, memory_pool_support = 0;
         size_t mem_total = 0;
         char name[256];
 
@@ -147,6 +147,8 @@ void jitc_init(uint32_t backends) {
         cuda_check(cuDeviceGetAttribute(&shared_memory_bytes, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN, i));
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
+        if (jitc_cuda_version_major > 11 || (jitc_cuda_version_major == 11 && jitc_cuda_version_minor >= 2))
+            cuda_check(cuDeviceGetAttribute(&memory_pool_support, CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED, i));
 
         jitc_log(Info,
                 " - Found CUDA device %i: \"%s\" "
@@ -168,6 +170,7 @@ void jitc_init(uint32_t backends) {
         device.compute_capability = cc_major * 10 + cc_minor;
         device.shared_memory_bytes = (uint32_t) shared_memory_bytes;
         device.num_sm = (uint32_t) num_sm;
+        device.memory_pool_support = memory_pool_support != 0;
         cuda_check(cuDevicePrimaryCtxRetain(&device.context, i));
         state.devices.push_back(device);
     }
@@ -239,7 +242,7 @@ void jitc_shutdown(int light) {
     state.kernel_history.clear();
 
     // CUDA: Try to already free some memory asynchronously (faster)
-    if (thread_state_cuda && cuMemFreeAsync) {
+    if (thread_state_cuda && state.devices[thread_state_cuda->device].memory_pool_support) {
         ThreadState *ts = thread_state_cuda;
         scoped_set_context guard2(ts->context);
 

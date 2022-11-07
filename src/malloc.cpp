@@ -212,9 +212,10 @@ void* jitc_malloc(AllocType type, size_t size) {
                 return ret;
             };
 
+            bool hasAllocAsync = state.devices[ts->device].memory_pool_support;
             switch (type) {
                 case AllocType::HostPinned:        alloc = (decltype(alloc)) cuMemAllocHost; break;
-                case AllocType::Device:            alloc = cuMemAllocAsync ? cuMemAllocAsync_ : cuMemAlloc; break;
+                case AllocType::Device:            alloc = hasAllocAsync ? cuMemAllocAsync_ : cuMemAlloc; break;
                 case AllocType::Managed:           alloc = cuMemAllocManaged_; break;
                 case AllocType::ManagedReadMostly: alloc = cuMemAllocManagedReadMostly_; break;
                 default:
@@ -460,7 +461,6 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
                                  (CUdeviceptr) ptr, ai.size,
                                  ts->stream));
-
     }
 
     if (move)
@@ -557,7 +557,7 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
                 case AllocType::Device:
                     if (state.backends & (uint32_t) JitBackend::CUDA) {
                         ThreadState *ts = thread_state_cuda;
-                        if (ts && cuMemFreeAsync) {
+                        if (ts && state.devices[ts->device].memory_pool_support) {
                             scoped_set_context guard2(ts->context);
                             for (void *ptr : entries)
                                 cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, ts->stream));
