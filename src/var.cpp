@@ -796,6 +796,13 @@ static void jitc_raise_placeholder_error(const char *func, uint32_t index) {
     );
 }
 
+static bool is_default_mask(Variable *v) {
+    return (VarType) v->type == VarType::Bool &&
+        (JitBackend) v->backend == JitBackend::LLVM &&
+        !v->data && !v->literal &&
+        strstr(v->stmt, "%end") != nullptr;
+}
+
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 int jitc_var_schedule(uint32_t index) {
     auto it = state.variables.find(index);
@@ -805,6 +812,13 @@ int jitc_var_schedule(uint32_t index) {
 
     if (unlikely(v->placeholder))
         jitc_raise_placeholder_error("jitc_var_schedule", index);
+
+    if (unlikely(is_default_mask(v))) {
+        /* The default mask is a special variable that can expand
+           to different sizes. Its value depends on the evaluation
+           context. It should not be evaluated directly. */
+        return 0;
+    }
 
     if (!v->data && !v->literal) {
         thread_state(v->backend)->scheduled.push_back(index);
@@ -830,7 +844,12 @@ void *jitc_var_ptr(uint32_t index) {
         jitc_var_eval(index);
     }
 
-    return jitc_var(index)->data;
+    void *ptr = jitc_var(index)->data;
+    if (!ptr)
+        jitc_raise("jit_var_ptr(r%u): variable could not be evaluated!", index);
+
+
+    return ptr;
 }
 
 /// Evaluate a literal constant variable
@@ -860,6 +879,13 @@ int jitc_var_eval(uint32_t index) {
 
     if (unlikely(v->placeholder))
         jitc_raise_placeholder_error("jitc_var_eval", index);
+
+    if (unlikely(is_default_mask(v))) {
+        /* The default mask is a special variable that can expand
+           to different sizes. Its value depends on the evaluation
+           context. It should not be evaluated directly. */
+        return 0;
+    }
 
     if (!v->literal && (!v->data || v->ref_count_se)) {
         ThreadState *ts = thread_state(v->backend);
