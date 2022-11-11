@@ -848,7 +848,6 @@ void *jitc_var_ptr(uint32_t index) {
     if (!ptr)
         jitc_raise("jit_var_ptr(r%u): variable could not be evaluated!", index);
 
-
     return ptr;
 }
 
