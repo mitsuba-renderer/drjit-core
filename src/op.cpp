@@ -459,6 +459,13 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     if (unlikely(n_dep == 0 || n_dep > 4))
         jitc_fail("jit_var_new_op(): 1-4 dependent variables supported!");
 
+    /* Disable constant propagation when one of the operands is the default
+     * mask. This guarantees that operations involving the default mask will
+     * return a variable that no longer is the default mask. */
+    for (uint32_t i = 0; i < n_dep; ++i)
+        if (likely(dep[i]))
+            const_prop &= !jitc_var_mask_is_default(dep[i]);
+
     for (uint32_t i = 0; i < n_dep; ++i) {
         if (likely(dep[i])) {
             Variable *vi = jitc_var(dep[i]);

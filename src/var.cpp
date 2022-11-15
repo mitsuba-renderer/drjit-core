@@ -796,13 +796,6 @@ static void jitc_raise_placeholder_error(const char *func, uint32_t index) {
     );
 }
 
-static bool is_default_mask(Variable *v) {
-    return (VarType) v->type == VarType::Bool &&
-        (JitBackend) v->backend == JitBackend::LLVM &&
-        !v->data && !v->literal &&
-        strstr(v->stmt, "%end") != nullptr;
-}
-
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 int jitc_var_schedule(uint32_t index) {
     auto it = state.variables.find(index);
@@ -813,7 +806,7 @@ int jitc_var_schedule(uint32_t index) {
     if (unlikely(v->placeholder))
         jitc_raise_placeholder_error("jitc_var_schedule", index);
 
-    if (unlikely(is_default_mask(v))) {
+    if (unlikely(jitc_var_mask_is_default(index))) {
         /* The default mask is a special variable that can expand
            to different sizes. Its value depends on the evaluation
            context. It should not be evaluated directly. */
@@ -879,7 +872,7 @@ int jitc_var_eval(uint32_t index) {
     if (unlikely(v->placeholder))
         jitc_raise_placeholder_error("jitc_var_eval", index);
 
-    if (unlikely(is_default_mask(v))) {
+    if (unlikely(jitc_var_mask_is_default(index))) {
         /* The default mask is a special variable that can expand
            to different sizes. Its value depends on the evaluation
            context. It should not be evaluated directly. */
@@ -1257,6 +1250,15 @@ uint32_t jitc_var_mask_default(JitBackend backend) {
             "$r0 = icmp ult <$w x i32> $r1, $r0_2",
             1, 1, dep_1);
     }
+}
+
+bool jitc_var_mask_is_default(uint32_t index) {
+    const Variable *v = jitc_var(index);
+
+    return (VarType) v->type == VarType::Bool &&
+        (JitBackend) v->backend == JitBackend::LLVM &&
+        !v->data && !v->literal &&
+        strstr(v->stmt, "%end") != nullptr;
 }
 
 uint32_t jitc_var_mask_peek(JitBackend backend) {

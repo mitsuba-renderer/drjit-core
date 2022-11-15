@@ -177,6 +177,9 @@ extern size_t jitc_var_mask_size(JitBackend backend);
 /// Return the default mask
 extern uint32_t jitc_var_mask_default(JitBackend backend);
 
+/// Return whether or not the given variable is the default mask
+extern bool jitc_var_mask_is_default(uint32_t index);
+
 /// Reduce (And) a boolean array to a single value, synchronizes.
 extern bool jitc_var_all(uint32_t index);
 
