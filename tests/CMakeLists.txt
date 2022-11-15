@@ -31,6 +31,7 @@ if (NOT TARGET check)
   )
 endif()
 
+set_property(TARGET test_basics PROPERTY CXX_STANDARD 17)
 set_property(TARGET test_vcall PROPERTY CXX_STANDARD 17)
 set_property(TARGET test_loop PROPERTY CXX_STANDARD 17)
 

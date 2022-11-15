@@ -687,6 +687,9 @@ TEST_BOTH(09_big) {
     uint32_t i1[n1];
     uint32_t i2[n2];
 
+    (void) i1;
+    (void) i2;
+
     for (int i = 0; i < n1; ++i) {
         v1[i].v = i;
         i1[i] = jit_registry_put(Backend, "Base1", &v1[i]);
