@@ -939,16 +939,15 @@ void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
 }
 
 void jit_cuda_tex_lookup(size_t ndim, const void *texture_handle,
-                         const uint32_t *pos, uint32_t mask, uint32_t *out) {
+                         const uint32_t *pos, uint32_t *out) {
     lock_guard guard(state.lock);
-    jitc_cuda_tex_lookup(ndim, texture_handle, pos, mask, out);
+    jitc_cuda_tex_lookup(ndim, texture_handle, pos, out);
 }
 
 void jit_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
-                               const uint32_t *pos, uint32_t mask,
-                               uint32_t *out) {
+                               const uint32_t *pos, uint32_t *out) {
     lock_guard guard(state.lock);
-    jitc_cuda_tex_bilerp_fetch(ndim, texture_handle, pos, mask, out);
+    jitc_cuda_tex_bilerp_fetch(ndim, texture_handle, pos, out);
 }
 
 void jit_cuda_tex_destroy(void *texture) {
