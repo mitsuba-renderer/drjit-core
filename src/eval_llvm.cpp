@@ -256,7 +256,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             }
         }
 
-        if (v->vcall_iface) {
+        if (v->vcall_iface && !v->literal) {
             buffer.fmt("    %s%u_i0 = getelementptr inbounds i8, i8* %%params, i64 %u\n"
                        "    %s%u_i1 = bitcast i8* %s%u_i0 to <%u x %s>*\n"
                        "    %s%u%s = load <%u x %s>, <%u x %s>* %s%u_i1, align %u\n",

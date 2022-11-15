@@ -506,11 +506,21 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     /* When recording a virtual function call, disable constant propagation for
        all variables that depend on a scalar literal that was created outside of
        this virtual function call as this variable will later be evaluated to
-       avoid baking it into the kernel IR. */
+       avoid baking it into the kernel IR. This rule shouldn't be applied to
+       input literals of the virtual function call or masks. */
     ThreadState *ts = thread_state(backend);
     if (ts->vcall_bound_index) {
-        for (uint32_t i = 0; i < n_dep; ++i)
-            const_prop &= dep[i] >= ts->vcall_bound_index;
+        for (uint32_t i = 0; i < n_dep; ++i) {
+            Variable *vi = v[i];
+            if (likely(vi)) {
+                if (!vi->vcall_iface &&
+                    (VarType) vi->type != VarType::Bool &&
+                    dep[i] < ts->vcall_bound_index) {
+                    const_prop = false;
+                    break;
+                }
+            }
+        }
     }
 
     for (uint32_t i = 0; i < n_dep; ++i) {
