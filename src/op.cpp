@@ -472,8 +472,6 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
         }
     }
 
-    JitBackend backend = (JitBackend) v[0]->backend;
-
     // Some sanity checks
     const char *error = nullptr;
     if (unlikely(size == 0))
@@ -495,13 +493,15 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                                (VarType) v[i]->type == VarType::Bool;
             if (!exception_1 && !exception_2)
                 error = "arithmetic involving arrays of incompatible type!";
-        } else if (unlikely(v[i]->backend != (uint32_t) backend)) {
+        } else if (unlikely(v[i]->backend != v[0]->backend)) {
             error = "mixed CUDA and LLVM arrays!";
         }
     }
 
     if (unlikely(error))
         jitc_var_new_op_fail(error, op, n_dep, dep);
+
+    JitBackend backend = (JitBackend) v[0]->backend;
 
     /* When recording a virtual function call, disable constant propagation for
        all variables that depend on a scalar literal that was created outside of
