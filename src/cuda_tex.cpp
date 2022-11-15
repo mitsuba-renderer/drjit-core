@@ -464,41 +464,25 @@ void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
 }
 
 void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
-                          const uint32_t *pos, uint32_t mask, uint32_t *out) {
+                          const uint32_t *pos, uint32_t *out) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_lookup(): invalid texture dimension!");
 
     // Validate input types, determine size of the operation
     uint32_t size = 0;
-    for (size_t i = 0; i <= ndim; ++i) {
-        uint32_t index = i < ndim ? pos[i] : mask;
-        VarType ref = i < ndim ? VarType::Float32 : VarType::Bool;
-        const Variable *v = jitc_var(index);
-        if ((VarType) v->type != ref)
+    for (size_t i = 0; i < ndim; ++i) {
+        const Variable *v = jitc_var(pos[i]);
+        if ((VarType) v->type != VarType::Float32)
             jitc_raise("jit_cuda_tex_lookup(): type mismatch for arg. %zu (got "
                        "%s, expected %s)", i, type_name[v->type],
-                       type_name[(int) ref]);
+                       type_name[(int) VarType::Float32]);
         size = std::max(size, v->size);
-    }
-
-    // Potentially apply any masks on the mask stack
-    Ref valid = borrow(mask);
-    {
-        Ref mask_top = steal(jitc_var_mask_peek(JitBackend::CUDA));
-        uint32_t size_top = jitc_var(mask_top)->size;
-
-        // If the mask on the mask stack is compatible, merge it
-        if (size_top == size || size_top == 1 || size == 1) {
-            uint32_t dep[2] = { mask, mask_top };
-            valid = steal(jitc_var_new_op(JitOp::And, 2, dep));
-        }
     }
 
     DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
 
     for (size_t tex = 0; tex < texture.n_textures; ++tex) {
-        uint32_t dep[3] = {
-            valid,
+        uint32_t dep[2] = {
             texture.indices[tex],
             pos[0]
         };
@@ -510,30 +494,27 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
                 ".reg.v4.f32 $r0$n"
                 "mov.v4.f32 $r0, { $r1, $r2, $r3, $r3 }"
             };
-            dep[2] = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void,
+            dep[1] = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void,
                                        stmt_1[ndim - 2], 1, (unsigned int) ndim,
                                        pos);
         } else {
-            jitc_var_inc_ref_ext(dep[2]);
+            jitc_var_inc_ref_ext(dep[1]);
         }
 
         const char *stmt_2[3] = {
             ".reg.v4.f32 $r0$n"
-            "@$r1 tex.1d.v4.f32.f32 $r0, [$r2, {$r3}]$n"
-            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+            "tex.1d.v4.f32.f32 $r0, [$r1, {$r2}]",
 
             ".reg.v4.f32 $r0$n"
-            "@$r1 tex.2d.v4.f32.f32 $r0, [$r2, $r3]$n"
-            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+            "tex.2d.v4.f32.f32 $r0, [$r1, $r2]",
 
             ".reg.v4.f32 $r0$n"
-            "@$r1 tex.3d.v4.f32.f32 $r0, [$r2, $r3]$n"
-            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}"
+            "tex.3d.v4.f32.f32 $r0, [$r1, $r2]"
         };
 
         uint32_t lookup = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void,
-                                            stmt_2[ndim - 1], 1, 3, dep);
-        jitc_var_dec_ref_ext(dep[2]);
+                                            stmt_2[ndim - 1], 1, 2, dep);
+        jitc_var_dec_ref_ext(dep[1]);
 
         const char *stmt_3[4] = {
             "mov.f32 $r0, $r1.r",
@@ -553,68 +534,48 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
 }
 
 void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
-                                const uint32_t *pos, uint32_t mask,
-                                uint32_t *out) {
+                                const uint32_t *pos, uint32_t *out) {
     if (ndim != 2)
         jitc_raise("jitc_cuda_tex_bilerp_fetch(): invalid texture dimension, "
                    "only 2D textures are supported!");
 
     // Validate input types, determine size of the operation
     uint32_t size = 0;
-    for (size_t i = 0; i <= ndim; ++i) {
-        uint32_t index = i < ndim ? pos[i] : mask;
-        VarType ref = i < ndim ? VarType::Float32 : VarType::Bool;
-        const Variable *v = jitc_var(index);
-        if ((VarType) v->type != ref)
+    for (size_t i = 0; i < ndim; ++i) {
+        const Variable *v = jitc_var(pos[i]);
+        if ((VarType) v->type != VarType::Float32)
             jitc_raise("jitc_cuda_tex_bilerp_fetch(): type mismatch for arg. "
                        "%zu (got %s, expected %s)",
-                       i, type_name[v->type], type_name[(int) ref]);
+                       i, type_name[v->type],
+                       type_name[(int) VarType::Float32]);
         size = std::max(size, v->size);
-    }
-
-    // Potentially apply any masks on the mask stack
-    Ref valid = borrow(mask);
-    {
-        Ref mask_top = steal(jitc_var_mask_peek(JitBackend::CUDA));
-        uint32_t size_top = jitc_var(mask_top)->size;
-
-        // If the mask on the mask stack is compatible, merge it
-        if (size_top == size || size_top == 1 || size == 1) {
-            uint32_t dep[2] = { mask, mask_top };
-            valid = steal(jitc_var_new_op(JitOp::And, 2, dep));
-        }
     }
 
     DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
 
     for (size_t tex = 0; tex < texture.n_textures; ++tex) {
-        uint32_t dep[3] = {
-            valid,
+        uint32_t dep[2] = {
             texture.indices[tex],
             pos[0]
         };
 
         const char *stmt_1 = ".reg.v2.f32 $r0$n"
                              "mov.v2.f32 $r0, { $r1, $r2 }";
-        dep[2] = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, stmt_1, 1,
+        dep[1] = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, stmt_1, 1,
                                    (unsigned int) ndim, pos);
 
         const char *stmt_2[4] = {
             ".reg.v4.f32 $r0$n"
-            "@$r1 tld4.r.2d.v4.f32.f32 $r0, [$r2, $r3]$n"
-            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+            "tld4.r.2d.v4.f32.f32 $r0, [$r1, $r2]",
 
             ".reg.v4.f32 $r0$n"
-            "@$r1 tld4.g.2d.v4.f32.f32 $r0, [$r2, $r3]$n"
-            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+            "tld4.g.2d.v4.f32.f32 $r0, [$r1, $r2]",
 
             ".reg.v4.f32 $r0$n"
-            "@$r1 tld4.b.2d.v4.f32.f32 $r0, [$r2, $r3]$n"
-            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+            "tld4.b.2d.v4.f32.f32 $r0, [$r1, $r2]",
 
             ".reg.v4.f32 $r0$n"
-            "@$r1 tld4.a.2d.v4.f32.f32 $r0, [$r2, $r3]$n"
-            "@!$r1 mov.v4.f32 $r0, {0.0, 0.0, 0.0, 0.0}",
+            "tld4.a.2d.v4.f32.f32 $r0, [$r1, $r2]"
         };
 
         const char *stmt_3[4] = {
@@ -626,7 +587,7 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
 
         for (size_t ch = 0; ch < texture.channels(tex); ++ch) {
             uint32_t fetch_channel = jitc_var_new_stmt(
-                JitBackend::CUDA, VarType::Void, stmt_2[ch], 1, 3, dep);
+                JitBackend::CUDA, VarType::Void, stmt_2[ch], 1, 2, dep);
 
             for (size_t i = 0; i < 4; ++i) {
                 uint32_t result_index =
@@ -638,7 +599,7 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
             jitc_var_dec_ref_ext(fetch_channel);
         }
 
-        jitc_var_dec_ref_ext(dep[2]);
+        jitc_var_dec_ref_ext(dep[1]);
     }
 }
 

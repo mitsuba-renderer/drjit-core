@@ -102,7 +102,7 @@ extern JIT_EXPORT void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
  */
 extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
                                            const void *texture_handle,
-                                           const uint32_t *pos, uint32_t mask,
+                                           const uint32_t *pos,
                                            uint32_t *out);
 
 /**
@@ -130,7 +130,7 @@ extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
 extern JIT_EXPORT void jit_cuda_tex_bilerp_fetch(size_t ndim,
                                                  const void *texture_handle,
                                                  const uint32_t *pos,
-                                                 uint32_t mask, uint32_t *out);
+                                                 uint32_t *out);
 
 /// Destroys the provided texture handle
 extern JIT_EXPORT void jit_cuda_tex_destroy(void *texture_handle);
