@@ -583,8 +583,11 @@ uint32_t jitc_var_wrap_vcall(uint32_t index) {
                    "uninitialized variable!");
 
     const Variable *v = jitc_var(index);
-    if (v->literal && (jitc_flags() & (uint32_t) JitFlag::VCallOptimize))
-        return jitc_var_resize(index, 1);
+    if (v->literal && (jitc_flags() & (uint32_t) JitFlag::VCallOptimize)) {
+        uint32_t index2 = jitc_var_resize(index, 1);
+        jitc_var(index2)->vcall_iface = true;
+        return index2;
+    }
 
     Variable v2;
     v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)

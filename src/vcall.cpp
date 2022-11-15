@@ -184,7 +184,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 
     for (uint32_t i = 0; i < n_in; ++i) {
         const Variable *v = jitc_var(in[i]);
-        if (v->vcall_iface) {
+        if (v->vcall_iface && !v->literal) {
             if (!v->dep[0])
                 jitc_raise("jit_var_vcall(): placeholder variable r%u does not "
                            "reference another input!", in[i]);
@@ -240,7 +240,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
         dirty = jitc_var(self)->ref_count_se;
         for (uint32_t i = 0; i < n_in; ++i) {
             const Variable *v = jitc_var(in[i]);
-            if (v->vcall_iface)
+            if (v->vcall_iface && !v->literal)
                 dirty |= (bool) jitc_var(v->dep[0])->ref_count_se;
         }
 
@@ -558,7 +558,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     for (uint32_t i = 0; i < n_in; ++i) {
         uint32_t index = in[i];
         Variable *v = jitc_var(index);
-        if (!v->vcall_iface)
+        if (!v->vcall_iface || v->literal)
             continue;
 
         // Ignore unreferenced inputs
@@ -1343,8 +1343,13 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
     ThreadState *ts = thread_state(v->backend);
 
     /* Scalar literals created outside of this virtual function call should be
-       considered as data to avoid baking them inside of the kernel IR. */
-    bool ext_literal = v->literal && index < ts->vcall_bound_index;
+       considered as data to avoid baking them inside of the kernel IR. This rule
+       shouldn't be applied to input literal arguments of the virtual function
+       call or masks. */
+    bool ext_literal = v->literal &&
+                       !v->vcall_iface &&
+                       (VarType) v->type != VarType::Bool &&
+                       index < ts->vcall_bound_index;
 
     if (!v->literal && v->stmt && strstr(v->stmt, "self"))
         use_self = true;

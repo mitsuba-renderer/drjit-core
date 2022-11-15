@@ -311,7 +311,7 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
             }
         }
 
-        if (v->vcall_iface) {
+        if (v->vcall_iface && !v->literal) {
             if (vt != VarType::Bool) {
                 buffer.fmt("    ld.param.%s %s%u, [params+%u];\n",
                            type_name_ptx[vti], type_prefix[vti],
