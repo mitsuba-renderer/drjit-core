@@ -87,9 +87,9 @@ static void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg,
 
 static void jitc_var_vcall_assemble_cuda(
     VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
-    uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
-    uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align);
+    uint32_t vcall_reg, uint32_t self_reg, uint32_t mask_reg,
+    uint32_t offset_reg, uint32_t data_reg, uint32_t n_out, uint32_t in_size,
+    uint32_t in_align, uint32_t out_size, uint32_t out_align);
 
 static void jitc_var_vcall_assemble_llvm(
     VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
@@ -796,9 +796,9 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     alloca_align = alloca_align_backup;
 
     if (vcall->backend == JitBackend::CUDA)
-        jitc_var_vcall_assemble_cuda(vcall, callable_hash, self_reg, mask_reg,
-                                     offset_reg, data_reg, n_out, in_size,
-                                     in_align, out_size, out_align);
+        jitc_var_vcall_assemble_cuda(vcall, callable_hash, vcall_reg, self_reg,
+                                     mask_reg, offset_reg, data_reg, n_out,
+                                     in_size, in_align, out_size, out_align);
     else
         jitc_var_vcall_assemble_llvm(vcall, callable_hash, vcall_reg, self_reg,
                                      mask_reg, offset_reg, data_reg, n_out,
@@ -839,33 +839,39 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 /// Virtual function call code generation -- CUDA/PTX-specific bits
 static void jitc_var_vcall_assemble_cuda(
     VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
-    uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
+    uint32_t vcall_reg, uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
     uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
     uint32_t out_size, uint32_t out_align) {
 
     // =====================================================
-    // 1. Determine unique callable ID
+    // 1. Conditional branch
+    // =====================================================
+
+    buffer.fmt("\n    @!%%p%u bra l_masked_%u;\n\n", mask_reg, vcall_reg);
+
+    // =====================================================
+    // 2. Determine unique callable ID
     // =====================================================
 
     buffer.fmt("    { // VCall: %s\n"
                "        mad.wide.u32 %%rd3, %%r%u, 8, %%rd%u;\n"
-               "        @%%p%u ld.global.u64 %%rd3, [%%rd3];\n"
+               "        ld.global.u64 %%rd3, [%%rd3];\n"
                "        cvt.u32.u64 %%r3, %%rd3;\n",
-               vcall->name, self_reg, offset_reg, mask_reg);
+               vcall->name, self_reg, offset_reg);
     // %r3: callable ID
     // %rd3: (high 32 bit): data offset
 
     // =====================================================
-    // 2. Turn callable ID into a function pointer
+    // 3. Turn callable ID into a function pointer
     // =====================================================
 
     if (!uses_optix)
-        buffer.fmt("        @%%p%u ld.global.u64 %%rd2, callables[%%r3];\n", mask_reg);
+        buffer.fmt("        ld.global.u64 %%rd2, callables[%%r3];\n");
     else
         buffer.put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
 
     // =====================================================
-    // 3. Obtain pointer to supplemental call data
+    // 4. Obtain pointer to supplemental call data
     // =====================================================
 
     if (data_reg) {
@@ -878,7 +884,7 @@ static void jitc_var_vcall_assemble_cuda(
     // %rd3: call data pointer with offset
 
     // =====================================================
-    // 4. Generate the actual function call
+    // 5. Generate the actual function call
     // =====================================================
 
     buffer.put("\n");
@@ -936,7 +942,7 @@ static void jitc_var_vcall_assemble_cuda(
         buffer.fmt("            .param .align %u .b8 in[%u];\n", in_align, in_size);
 
     // =====================================================
-    // 4.1. Pass the input arguments
+    // 5.1. Pass the input arguments
     // =====================================================
 
     uint32_t offset = 0;
@@ -963,18 +969,18 @@ static void jitc_var_vcall_assemble_cuda(
     }
 
     if (vcall->use_self) {
-        buffer.fmt("            @%%p%u call %s%%rd2, (%%r%u%s%s), proto;\n",
-                   mask_reg, out_size ? "(out), " : "", self_reg,
+        buffer.fmt("            call %s%%rd2, (%%r%u%s%s), proto;\n",
+                   out_size ? "(out), " : "", self_reg,
                    data_reg ? ", %rd3" : "",
                    in_size ? ", in" : "");
     } else {
-        buffer.fmt("            @%%p%u call %s%%rd2, (%s%s%s), proto;\n",
-                    mask_reg, out_size ? "(out), " : "", data_reg ? "%rd3" : "",
+        buffer.fmt("            call %s%%rd2, (%s%s%s), proto;\n",
+                    out_size ? "(out), " : "", data_reg ? "%rd3" : "",
                     data_reg && in_size ? ", " : "", in_size ? "in" : "");
     }
 
     // =====================================================
-    // 4.2. Read back the output arguments
+    // 5.2. Read back the output arguments
     // =====================================================
 
     offset = 0;
@@ -1011,6 +1017,33 @@ static void jitc_var_vcall_assemble_cuda(
     }
 
     buffer.put("        }\n\n");
+    buffer.fmt("        bra.uni l_done_%u;\n", vcall_reg);
+    buffer.put("    }\n");
+
+    // =====================================================
+    // 6. Prepare output registers for masked lanes
+    // =====================================================
+
+    buffer.fmt("\nl_masked_%u:\n", vcall_reg);
+    for (uint32_t out : vcall->out) {
+        auto it = state.variables.find(out);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+            continue;
+
+        buffer.put("    ");
+        buffer.fmt("mov.%s %s%u, 0;\n",
+                   type_name_ptx_bin[v2->type],
+                   type_prefix[v2->type], v2->reg_index);
+    }
+
+    buffer.fmt("\nl_done_%u:\n", vcall_reg);
+
+    // =====================================================
+    // 7. Special handling for predicates return value(s)
+    // =====================================================
 
     for (uint32_t out : vcall->out) {
         auto it = state.variables.find(out);
@@ -1027,26 +1060,6 @@ static void jitc_var_vcall_assemble_cuda(
                    v2->reg_index, v2->reg_index);
     }
 
-    // =====================================================
-    // 5. Set return value(s) to zero if the call was masked
-    // =====================================================
-
-    for (uint32_t out : vcall->out) {
-        auto it = state.variables.find(out);
-        if (it == state.variables.end())
-            continue;
-        const Variable *v2 = &it->second;
-        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
-            continue;
-
-        buffer.put("        ");
-        buffer.fmt("@!%%p%u ", mask_reg);
-        buffer.fmt("mov.%s %s%u, 0;\n",
-                   type_name_ptx_bin[v2->type],
-                   type_prefix[v2->type], v2->reg_index);
-    }
-
-    buffer.put("    }\n");
 }
 
 /// Virtual function call code generation -- LLVM IR-specific bits
