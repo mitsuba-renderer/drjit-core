@@ -925,17 +925,19 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
         uint32_t payload_count = extra.n_dep - 15;
         buffer.fmt("    .reg.u32 %%u%u_result_<32>;\n", v2->reg_index);
 
+        const Variable *mask_v = jitc_var(v2->dep[0]);
+        bool masked = !mask_v->literal || mask_v->value != 1;
+        if (masked)
+            buffer.fmt("    @!%s%u bra l_masked_%u;\n", type_prefix[mask_v->type],
+                       mask_v->reg_index, v2->reg_index);
+
         buffer.fmt("    .reg.u32 %%u%u_payload_type;\n", v2->reg_index);
         buffer.fmt("    mov.u32 %%u%u_payload_type, 0;\n", v2->reg_index);
         buffer.fmt("    .reg.u32 %%u%u_payload_count;\n", v2->reg_index);
         buffer.fmt("    mov.u32 %%u%u_payload_count, %u;\n", v2->reg_index,
                    payload_count);
 
-        buffer.putc(' ', 4);
-        const Variable *mask_v = jitc_var(v2->dep[0]);
-        if (!mask_v->literal || mask_v->value != 1)
-            buffer.fmt("@%s%u ", type_prefix[mask_v->type], mask_v->reg_index);
-        buffer.put("call (");
+        buffer.put("    call (");
 
         for (uint32_t i = 0; i < 32; ++i)
             buffer.fmt("%%u%u_result_%u%s", v2->reg_index, i,
@@ -959,6 +961,9 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
                        (i + 1 < 32) ? ", " : "");
 
         buffer.put(");\n");
+
+        if (masked)
+            buffer.fmt("\nl_masked_%u:\n", v2->reg_index);
     };
 
     for (uint32_t i = 0; i < np; ++i) {
