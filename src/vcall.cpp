@@ -899,6 +899,7 @@ static void jitc_var_vcall_assemble_cuda(
                    (unsigned long long) callable_hash[i].high64,
                    (unsigned long long) callable_hash[i].low64);
     }
+    buffer.put("\n");
 
     // Special handling for predicates
     for (uint32_t in : vcall->in) {
@@ -1016,12 +1017,33 @@ static void jitc_var_vcall_assemble_cuda(
                    tname, prefix, v2->reg_index, load_offset);
     }
 
-    buffer.put("        }\n\n");
+    buffer.put("        }\n");
+
+    // =====================================================
+    // 6. Special handling for predicates return value(s)
+    // =====================================================
+
+    for (uint32_t out : vcall->out) {
+        auto it = state.variables.find(out);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+        if ((VarType) v2->type != VarType::Bool)
+            continue;
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+            continue;
+
+        // Special handling for predicates
+        buffer.fmt("        setp.ne.u16 %%p%u, %%w%u, 0;\n",
+                   v2->reg_index, v2->reg_index);
+    }
+
+
     buffer.fmt("        bra.uni l_done_%u;\n", vcall_reg);
     buffer.put("    }\n");
 
     // =====================================================
-    // 6. Prepare output registers for masked lanes
+    // 7. Prepare output registers for masked lanes
     // =====================================================
 
     buffer.fmt("\nl_masked_%u:\n", vcall_reg);
@@ -1040,26 +1062,6 @@ static void jitc_var_vcall_assemble_cuda(
     }
 
     buffer.fmt("\nl_done_%u:\n", vcall_reg);
-
-    // =====================================================
-    // 7. Special handling for predicates return value(s)
-    // =====================================================
-
-    for (uint32_t out : vcall->out) {
-        auto it = state.variables.find(out);
-        if (it == state.variables.end())
-            continue;
-        const Variable *v2 = &it->second;
-        if ((VarType) v2->type != VarType::Bool)
-            continue;
-        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
-            continue;
-
-        // Special handling for predicates
-        buffer.fmt("        setp.ne.u16 %%p%u, %%w%u, 0;\n",
-                   v2->reg_index, v2->reg_index);
-    }
-
 }
 
 /// Virtual function call code generation -- LLVM IR-specific bits
