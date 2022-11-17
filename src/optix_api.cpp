@@ -870,9 +870,6 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
                        "incompatible size!");
     }
 
-    if (jitc_var_type(mask) != VarType::Bool)
-        jitc_raise("jit_optix_ray_trace(): type mismatch for mask argument!");
-
     if (dirty) {
         jitc_eval(thread_state(JitBackend::CUDA));
         dirty = false;
@@ -887,17 +884,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
     }
 
     // Potentially apply any masks on the mask stack
-    Ref valid = borrow(mask);
-    {
-        Ref mask_top = steal(jitc_var_mask_peek(JitBackend::CUDA));
-        uint32_t size_top = jitc_var(mask_top)->size;
-
-        // If the mask on the mask stack is compatible, merge it
-        if (size_top == size || size_top == 1 || size == 1) {
-            uint32_t dep[2] = { mask, mask_top };
-            valid = steal(jitc_var_new_op(JitOp::And, 2, dep));
-        }
-    }
+    Ref valid = steal(jitc_var_mask_apply(mask, size));
 
     jitc_log(InfoSym, "jit_optix_ray_trace(): tracing %u ray%s, %u payload value%s%s.",
              size, size != 1 ? "s" : "", np, np == 1 ? "" : "s",

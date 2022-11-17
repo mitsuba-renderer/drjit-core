@@ -127,7 +127,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
                 Backend, VarType::Bool,
                 "$r0 = or <$w x i1> %mask, zeroinitializer", 1, 0,
                 nullptr));
-            jit_state.set_mask(vcall_mask.index(), false);
+            jit_state.set_mask(vcall_mask.index());
         }
 
         if constexpr (std::is_same_v<Result, std::nullptr_t>)
@@ -149,11 +149,8 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
 
     dr_index_vector indices_out(indices_out_all.size() / n_inst);
 
-    Mask mask_combined =
-        mask & neq(self, nullptr) & Mask::steal(jit_var_mask_peek(Backend));
-
     uint32_t se = jit_var_vcall(
-        domain, self.index(), mask_combined.index(), n_inst, inst_id.data(),
+        domain, self.index(), mask.index(), n_inst, inst_id.data(),
         (uint32_t) indices_in.size(), indices_in.data(),
         (uint32_t) indices_out_all.size(), indices_out_all.data(), state.data(),
         indices_out.data());
@@ -447,8 +444,8 @@ TEST_BOTH(04_devirtualize) {
                 },
                 self, p1, p2);
 
-            Mask mask_combined =
-                neq(self, nullptr) & Mask::steal(jit_var_mask_peek(Backend));
+            Mask mask = neq(self, nullptr),
+                 mask_combined = Mask::steal(jit_var_mask_apply(mask.index(), 10));
 
             Float p2_wrap = Float::steal(jit_var_wrap_vcall(p2.index()));
             Float alt = (p2_wrap + 2) & mask_combined;

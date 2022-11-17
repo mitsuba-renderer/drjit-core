@@ -1219,13 +1219,13 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     return dst_index;
 }
 
-uint32_t jitc_var_mask_default(JitBackend backend) {
+uint32_t jitc_var_mask_default(JitBackend backend, uint32_t size) {
     if (backend == JitBackend::CUDA) {
         bool value = true;
-        return jitc_var_new_literal(backend, VarType::Bool, &value, 1, 0);
+        return jitc_var_new_literal(backend, VarType::Bool, &value, size, 0);
     } else {
         // Ignore SIMD lanes that lie beyond the end of the range
-        Ref counter = steal(jitc_var_new_counter(backend, 1, false));
+        Ref counter = steal(jitc_var_new_counter(backend, size, false));
         uint32_t dep_1[1] = { counter };
         return jitc_var_new_stmt(
             backend, VarType::Bool,
@@ -1241,7 +1241,7 @@ uint32_t jitc_var_mask_peek(JitBackend backend) {
     auto &stack = thread_state(backend)->mask_stack;
 
     if (stack.empty()) {
-        return jitc_var_mask_default(backend);
+        return 0;
     } else {
         uint32_t index = stack.back();
         jitc_var_inc_ref_ext(index);
@@ -1249,21 +1249,44 @@ uint32_t jitc_var_mask_peek(JitBackend backend) {
     }
 }
 
-void jitc_var_mask_push(JitBackend backend, uint32_t index, int combine) {
+void jitc_var_mask_push(JitBackend backend, uint32_t index) {
+    jitc_log(Debug, "jit_var_mask_push(index=r%u)", index);
+    jitc_var_inc_ref_int(index);
+    thread_state(backend)->mask_stack.push_back(index);
+}
+
+uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size) {
+    const Variable *v = jitc_var(index);
+    JitBackend backend = (JitBackend) v->backend;
+
+    if ((VarType) v->type != VarType::Bool)
+        jitc_raise("jit_var_mask_apply(): the mask parameter was not a boolean array!");
+
     auto &stack = thread_state(backend)->mask_stack;
+    Ref mask;
+    if (!stack.empty()) {
+        uint32_t index_2 = stack.back(),
+                 size_2  = jitc_var(index_2)->size;
 
-    jitc_log(Debug, "jit_var_mask_push(index=r%u, combine=%i)", index, combine);
-
-    if (!combine || (stack.empty() && backend == JitBackend::CUDA)) {
-        jitc_var_inc_ref_int(index);
-        stack.push_back(index);
-    } else {
-        Ref back = steal(jitc_var_mask_peek(backend));
-        uint32_t dep[2] = { back, index };
-        Ref combined = steal(jitc_var_new_op(JitOp::And, 2, dep));
-        jitc_var_inc_ref_int(combined);
-        stack.push_back(combined);
+        // Use mask from the mastk stack if its size is compatible
+        if (size == 1 || size_2 == 1 || size_2 == size)
+            mask = borrow(index_2);
     }
+
+    if (!mask && backend == JitBackend::LLVM)
+        mask = steal(jitc_var_mask_default(backend, size));
+
+    uint32_t result;
+    if (mask) {
+        // Combine given mask with mask stack
+        uint32_t deps[2] = { mask, index };
+        result = jitc_var_new_op(JitOp::And, 2, deps);
+    } else {
+        result = jitc_var_resize(index, size);
+    }
+
+    jitc_log(Debug, "jit_var_apply_mask(r%u <- r%u, size=%u)", result, index, size);
+    return result;
 }
 
 void jitc_var_mask_pop(JitBackend backend) {
@@ -1276,10 +1299,6 @@ void jitc_var_mask_pop(JitBackend backend) {
     uint32_t index = stack.back();
     stack.pop_back();
     jitc_var_dec_ref_int(index);
-}
-
-size_t jitc_var_mask_size(JitBackend backend) {
-    return thread_state(backend)->mask_stack.size();
 }
 
 bool jitc_var_any(uint32_t index) {

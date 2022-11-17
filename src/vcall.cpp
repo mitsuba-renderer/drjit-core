@@ -138,7 +138,7 @@ void jitc_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index) {
 }
 
 /// Weave a virtual function call into the computation graph
-uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
+uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
                         uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
                         const uint32_t *in, uint32_t n_out_nested,
                         const uint32_t *out_nested, const uint32_t *checkpoints,
@@ -180,7 +180,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                        "UInt32 (was: %s)", type_name[self_v->type]);
     }
 
-    size = std::max(size, jitc_var(mask)->size);
+    size = std::max(size, jitc_var(mask_)->size);
 
     for (uint32_t i = 0; i < n_in; ++i) {
         const Variable *v = jitc_var(in[i]);
@@ -249,7 +249,20 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     }
 
     // =====================================================
-    // 2. Stash information about inputs and outputs
+    // 3. Apply any masks on the stack, ignore NULL args
+    // =====================================================
+
+    Ref mask;
+    {
+        uint32_t zero = 0;
+        Ref null_instance = steal(jitc_var_new_literal(backend, VarType::UInt32, &zero, 1, 0)),
+            is_non_null   = steal(jitc_var_new_op_n(JitOp::Neq, self, null_instance)),
+            mask_2        = steal(jitc_var_new_op_n(JitOp::And, mask_, is_non_null));
+        mask = steal(jitc_var_mask_apply(mask_2, size));
+    }
+
+    // =====================================================
+    // 3. Stash information about inputs and outputs
     // =====================================================
 
     std::unique_ptr<VCall> vcall(new VCall());
@@ -271,7 +284,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     ts->side_effects_recorded.resize(checkpoints[0] & checkpoint_mask);
 
     // =====================================================
-    // 3. Collect evaluated data accessed by the instances
+    // 4. Collect evaluated data accessed by the instances
     // =====================================================
 
     vcall->data_offset.reserve(n_inst);
@@ -375,7 +388,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
 #endif
 
     // =====================================================
-    // 4. Create special variable encoding the function call
+    // 5. Create special variable encoding the function call
     // =====================================================
 
     uint32_t deps_special[4] = { self, mask, offset_v, data_v };
@@ -464,7 +477,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
              placeholder ? " (part of a recorded computation)" : "");
 
     // =====================================================
-    // 5. Create output variables
+    // 6. Create output variables
     // =====================================================
 
     auto var_callback = [](uint32_t index, int free, void *ptr) {
@@ -552,7 +565,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
     }
 
     // =====================================================
-    // 6. Optimize calling conventions by reordering args
+    // 7. Optimize calling conventions by reordering args
     // =====================================================
 
     for (uint32_t i = 0; i < n_in; ++i) {
@@ -592,7 +605,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask,
                   vcall->out_nested.begin() + (i + 1) * n_out, comp);
 
     // =====================================================
-    // 7. Install code generation and deallocation callbacks
+    // 8. Install code generation and deallocation callbacks
     // =====================================================
 
     size_t dep_size = vcall->in.size() * sizeof(uint32_t);

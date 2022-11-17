@@ -63,9 +63,9 @@ template <JitBackend Backend> struct JitState {
         m_recording = false;
     }
 
-    void set_mask(uint32_t index, bool combine = true) {
+    void set_mask(uint32_t index) {
         assert(!m_mask_set);
-        jit_var_mask_push(Backend, index, combine);
+        jit_var_mask_push(Backend, index);
         m_mask_set = true;
     }
 
@@ -73,6 +73,13 @@ template <JitBackend Backend> struct JitState {
         assert(m_mask_set);
         jit_var_mask_pop(Backend);
         m_mask_set = false;
+    }
+
+    void clear_mask_if_set() {
+        if (m_mask_set) {
+            jit_var_mask_pop(Backend);
+            m_mask_set = false;
+        }
     }
 
     void set_prefix(const char *label) {

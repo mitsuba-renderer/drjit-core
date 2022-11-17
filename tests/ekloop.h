@@ -160,11 +160,29 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
                 "Loop(\"%s\"): --------- begin recording loop ---------", m_name.get());
     }
 
-    bool operator()(const Mask &cond) {
-        if (m_record)
-            return cond_record(cond);
-        else
-            return cond_wavefront(cond);
+    bool operator()(const Mask &cond_) {
+        // Determine wavefront size
+        if (m_size <= 1) {
+            uint32_t size = jit_var_size(cond_.index());
+            for (uint32_t i = 0; i < m_indices.size(); ++i) {
+                uint32_t size_2 = jit_var_size(*m_indices[i]);
+                size = size_2 > size ? size_2 : size;
+            }
+            m_size = size;
+        }
+
+        m_jit_state.clear_mask_if_set();
+
+        // Apply any masks on the mask stack to 'cond_'
+        Mask cond = Mask::steal(jit_var_mask_apply(cond_.index(), m_size));
+
+        /* In LLVM megakernel and CUDA/LLVM wavefront modes, deactivated lanes
+           also execute the loop body. We need to push the condition onto the
+           mask stack to avoid undefined behavior e.g. due to gathers/scatters. */
+        if (!m_record || Backend == JitBackend::LLVM)
+            m_jit_state.set_mask(cond.index());
+
+        return m_record ? cond_record(cond) : cond_wavefront(cond);
     }
 
 protected:
@@ -193,10 +211,6 @@ protected:
                 // Start recording side effects
                 m_jit_state.begin_recording(false);
 
-                // Mask deactivated SIMD lanes
-                if constexpr (Backend == JitBackend::LLVM)
-                    m_jit_state.set_mask(cond.index());
-
                 m_state++;
 
                 return true;
@@ -217,6 +231,7 @@ protected:
                 if (rv == (uint32_t) -1) {
                     jit_log(::LogLevel::InfoSym,
                             "Loop(\"%s\"): ----- recording loop body *again* ------", m_name.get());
+                    m_jit_state.clear_mask_if_set();
                     return true;
                 } else {
                     jit_log(::LogLevel::InfoSym,
@@ -228,10 +243,8 @@ protected:
 
                     m_jit_state.end_recording();
                     m_jit_state.clear_scope();
+                    m_jit_state.clear_mask_if_set();
                     jit_var_mark_side_effect(rv);
-
-                    if constexpr (Backend == JitBackend::LLVM)
-                        m_jit_state.clear_mask();
 
                     if constexpr (IsDiff) {
                         using Type = typename Value::Type;
@@ -256,9 +269,6 @@ protected:
 
         // If this is not the first iteration
         if (m_cond.index()) {
-            // Clear mask from last iteration
-            m_jit_state.clear_mask();
-
             // Disable lanes that have terminated previously
             cond &= m_cond;
 
@@ -312,11 +322,11 @@ protected:
                 }
             }
 
-            // Mask scatters/gathers/vcalls in the next iteration
-            m_cond = cond;
-            m_jit_state.set_mask(m_cond.index());
+            m_cond = std::move(cond);
             return true;
         } else {
+            m_jit_state.clear_mask_if_set();
+
             return false;
         }
     }
@@ -324,6 +334,9 @@ protected:
 protected:
     /// Is the loop being recorded?
     bool m_record;
+
+    /// Wavefont size
+    uint32_t m_size = 0;
 
     /// RAII wrapper for JIT configuration
     detail::JitState<Backend> m_jit_state;
