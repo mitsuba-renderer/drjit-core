@@ -6,6 +6,7 @@
 #include "eval.h"
 #include "var.h"
 #include "op.h"
+#include "util.h"
 
 #define OPTIX_ABI_VERSION 55
 
@@ -810,17 +811,25 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
         sbt.callablesRecordCount = kernel.optix.pg_count - 1;
     }
 
-    if (launch_size >= 0x40000000u)
-        jitc_raise("jit_optix_launch(): attempted to launch a very large "
-                   "wavefront of size %u. The maximum wavefront size permitted "
-                   "by OptiX is 2**30 == 1073741824. Please render using "
-                   "multiple passes, use fewer samples, or a lower resolution.",
-                   launch_size);
+    const uint32_t limit = 0x40000000u;
+    uint32_t offset = 0;
 
-    jitc_optix_check(
-        optixLaunch(kernel.optix.pipeline, ts->stream, (CUdeviceptr) args,
-                    n_args * sizeof(void *), &sbt,
-                    launch_size, 1, 1));
+    while (launch_size > 0) {
+        uint32_t sub_launch_size = launch_size < limit ? launch_size : limit;
+
+        // Bytes 4..8 used to store optional offset parameter
+        if (offset != 0)
+            jitc_poke(JitBackend::CUDA, (uint8_t *) args + sizeof(uint32_t),
+                      &offset, (uint32_t) sizeof(uint32_t));
+
+        jitc_optix_check(
+            optixLaunch(kernel.optix.pipeline, ts->stream, (CUdeviceptr) args,
+                        n_args * sizeof(void *), &sbt,
+                        sub_launch_size, 1, 1));
+
+        launch_size -= sub_launch_size;
+        offset += sub_launch_size;
+    }
 }
 
 void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
