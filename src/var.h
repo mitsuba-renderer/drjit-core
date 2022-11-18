@@ -166,16 +166,16 @@ extern int jitc_var_device(uint32_t index);
 extern uint32_t jitc_var_mask_peek(JitBackend backend);
 
 /// Push an active mask
-extern void jitc_var_mask_push(JitBackend backend, uint32_t index, int combine);
+extern void jitc_var_mask_push(JitBackend backend, uint32_t index);
 
 /// Pop an active mask
 extern void jitc_var_mask_pop(JitBackend backend);
 
-/// Return the size of the mask stack
-extern size_t jitc_var_mask_size(JitBackend backend);
+/// Combine the given mask 'index' with the mask stack. 'size' indicates the wavefront size
+extern uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size);
 
 /// Return the default mask
-extern uint32_t jitc_var_mask_default(JitBackend backend);
+extern uint32_t jitc_var_mask_default(JitBackend backend, uint32_t size);
 
 /// Reduce (And) a boolean array to a single value, synchronizes.
 extern bool jitc_var_all(uint32_t index);

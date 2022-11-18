@@ -602,25 +602,15 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
     }
 
     // ----------------------------------------------------------
-    Ref valid;
+    Ref valid = steal(jitc_var_mask_apply(in[1], size));
     {
-        Ref mask_top = steal(jitc_var_mask_peek(JitBackend::LLVM));
-        uint32_t size_top = jitc_var(mask_top)->size;
-
-        // Mask on mask stack is incompatible -- get the default mask
-        if (size_top != size && size_top != 1 && size != 1)
-            mask_top = steal(jitc_var_mask_default(JitBackend::LLVM));
-
-        uint32_t deps_1[2] = { in[1], mask_top };
-        Ref mask_combined = steal(jitc_var_new_op(JitOp::And, 2, deps_1));
-
         int32_t minus_one_c = -1, zero_c = 0;
         Ref minus_one = steal(jitc_var_new_literal(
                 JitBackend::LLVM, VarType::Int32, &minus_one_c, 1, 0)),
             zero = steal(jitc_var_new_literal(
                 JitBackend::LLVM, VarType::Int32, &zero_c, 1, 0));
 
-        uint32_t deps_2[3] = { mask_combined, minus_one, zero };
+        uint32_t deps_2[3] = { valid, minus_one, zero };
         valid = steal(jitc_var_new_op(JitOp::Select, 3, deps_2));
     }
 

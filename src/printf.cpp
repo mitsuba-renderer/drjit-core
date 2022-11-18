@@ -18,9 +18,6 @@ uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
         Variable *mask_v = jitc_var(mask);
         size = mask_v->size;
         dirty = mask_v->ref_count_se != 0;
-
-        if (unlikely((VarType) mask_v->type != VarType::Bool))
-            jitc_raise("jit_var_printf(): mask argument must be a boolean variable!");
     }
 
     for (uint32_t i = 0; i < narg; ++i) {
@@ -41,15 +38,7 @@ uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
         jitc_fail("jit_var_printf(): variable remains dirty after evaluation!");
     }
 
-    Ref mask_top = steal(jitc_var_mask_peek(backend));
-    uint32_t size_top = jitc_var(mask_top)->size;
-
-    // Mask on mask stack is incompatible -- get the default mask
-    if (size_top != size && size_top != 1 && size != 1)
-        mask_top = steal(jitc_var_mask_default(backend));
-
-    uint32_t deps[2] = { mask, mask_top };
-    Ref mask_combined = steal(jitc_var_new_op(JitOp::And, 2, deps));
+    Ref mask_combined = steal(jitc_var_mask_apply(mask, size));
 
     Ref printf_target;
     if (backend == JitBackend::LLVM)

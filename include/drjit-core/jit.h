@@ -1530,27 +1530,31 @@ extern JIT_EXPORT uint32_t jit_var_loop(const char *name, uint32_t loop_init,
  * In advanced usage of Dr.Jit (e.g. recorded loops, virtual function calls,
  * etc.), it may be necessary to mask scatter and gather operations to prevent
  * undefined behavior and crashes. This function can be used to push a mask
- * onto a mask stack. The top of the stack will be combined with the mask
- * argument supplied to subsequent \ref jit_var_new_gather() and \ref
- * jit_var_new_scatter() operations. While on the stack, Dr.Jit will hold an
- * internal reference to \c index to keep it from being freed. When \combine is
- * nonzero, the mask will be combined with the current top element of the
- * stack.
+ * onto a mask stack.  While on the stack, Dr.Jit will hold an internal
+ * reference to \c index to keep it from being freed.
  */
-extern JIT_EXPORT void jit_var_mask_push(JIT_ENUM JitBackend backend, uint32_t index,
-                                         int combine JIT_DEF(1));
+extern JIT_EXPORT void jit_var_mask_push(JIT_ENUM JitBackend backend, uint32_t index);
 
 /// Pop the mask stack
 extern JIT_EXPORT void jit_var_mask_pop(JIT_ENUM JitBackend backend);
 
-/// Return the top entry of the mask stack and increase its ext. ref. count
+/**
+ * \brief Return the top entry of the mask stack and increase its external
+ * reference count. Returns zero when the stack is empty.
+ */
 extern JIT_EXPORT uint32_t jit_var_mask_peek(JIT_ENUM JitBackend backend);
 
-/// Return the size of the mask stack
-extern JIT_EXPORT size_t jit_var_mask_size(JIT_ENUM JitBackend backend);
+/// Return the default mask for a wavefront of the given \c size
+extern JIT_EXPORT uint32_t jit_var_mask_default(JIT_ENUM JitBackend backend,
+                                                uint32_t size);
 
-/// Return the default mask
-extern JIT_EXPORT uint32_t jit_var_mask_default(JIT_ENUM JitBackend backend);
+/**
+ * \brief Combine the given mask 'index' with the mask stack
+ *
+ * On the LLVM backend, a default mask will be created when the mask stack is empty.
+ * The \c size parameter determines the size of the associated wavefront.
+ */
+extern JIT_EXPORT uint32_t jit_var_mask_apply(uint32_t index, uint32_t size);
 
 // ====================================================================
 //                          Horizontal reductions

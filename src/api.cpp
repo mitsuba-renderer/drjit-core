@@ -605,9 +605,14 @@ uint32_t jit_var_mask_peek(JitBackend backend) {
     return jitc_var_mask_peek(backend);
 }
 
-void jit_var_mask_push(JitBackend backend, uint32_t index, int combine) {
+uint32_t jit_var_mask_apply(uint32_t index, uint32_t size) {
     lock_guard guard(state.lock);
-    jitc_var_mask_push(backend, index, combine);
+    return jitc_var_mask_apply(index, size);
+}
+
+void jit_var_mask_push(JitBackend backend, uint32_t index) {
+    lock_guard guard(state.lock);
+    jitc_var_mask_push(backend, index);
 }
 
 void jit_var_mask_pop(JitBackend backend) {
@@ -615,14 +620,9 @@ void jit_var_mask_pop(JitBackend backend) {
     jitc_var_mask_pop(backend);
 }
 
-size_t jit_var_mask_size(JitBackend backend) {
+uint32_t jit_var_mask_default(JitBackend backend, uint32_t size) {
     lock_guard guard(state.lock);
-    return jitc_var_mask_size(backend);
-}
-
-uint32_t jit_var_mask_default(JitBackend backend) {
-    lock_guard guard(state.lock);
-    return jitc_var_mask_default(backend);
+    return jitc_var_mask_default(backend, size);
 }
 
 int jit_var_any(uint32_t index) {
