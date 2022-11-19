@@ -355,7 +355,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             const Variable *v = jitc_var(index);
             p->offset = offset;
             p->literal = v->literal;
-            p->size = type_size[v->type];
+            p->size = (uint8_t) type_size[v->type];
             p->value = v->literal ? (uintptr_t) v->value : (uintptr_t) v->data;
             p++;
         }

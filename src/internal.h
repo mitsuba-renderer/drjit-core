@@ -233,6 +233,9 @@ struct Device {
     // Support for stream ordered memory allocations (async alloc/free)
     bool memory_pool_support;
 
+    /// Is this a WDDM-style driver where long launches will freeze the OS graphics?
+    bool wddm_driver;
+
 #if defined(DRJIT_ENABLE_OPTIX)
     /// OptiX device context
     void *optix_context = nullptr;

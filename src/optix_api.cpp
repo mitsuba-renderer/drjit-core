@@ -492,7 +492,7 @@ uint32_t jitc_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
     extra.callback_data = p;
 
     // Set the OptiX pipeline to use when assembling the kernel
-    extra.assemble = [](const Variable */*v*/, const Extra &extra) {
+    extra.assemble = [](const Variable * /*v*/, const Extra &extra) {
         ThreadState *ts = thread_state(JitBackend::CUDA);
         OptixPipelineData *p = (OptixPipelineData*) extra.callback_data;
         if (ts->optix_pipeline == state.optix_default_pipeline) {
@@ -811,8 +811,15 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
         sbt.callablesRecordCount = kernel.optix.pg_count - 1;
     }
 
-    const uint32_t limit = 0x40000000u;
     uint32_t offset = 0;
+
+    /* On Linux and Windows (when using a TCM-style driver), accept kernel
+       launches up to the maximum value of 2^30 threads. On Windows, when using
+       a more common WDDM-style driver, such a long-running kernel may freeze
+       the OS graphics and eventually cause a device reset. That's not good, so
+       we submit smaller batches that correspond roughly to 1 sample/pixel for a
+       full HD resolution frame. */
+    uint32_t limit = state.devices[ts->device].wddm_driver ? (1 << 21) : (1 << 30);
 
     while (launch_size > 0) {
         uint32_t sub_launch_size = launch_size < limit ? launch_size : limit;
