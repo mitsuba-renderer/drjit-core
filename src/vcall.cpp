@@ -836,6 +836,9 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                                          uint32_t in_align, uint32_t out_size,
                                          uint32_t out_align) {
 
+    bool branch_vcall = jit_flag(JitFlag::VCallBranch);
+    bool jump_table = jit_flag(JitFlag::VCallBranchJumpTable);
+
     // =====================================================
     // 1. Conditional branch
     // =====================================================
@@ -859,7 +862,6 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     // 3. Turn callable ID into a function pointer
     // =====================================================
 
-    bool branch_vcall = jit_flag(JitFlag::VCallBranch);
     if (!branch_vcall) {
         if (!uses_optix)
             buffer.fmt("        ld.global.u64 %%rd2, callables[%%r3];\n");
@@ -876,7 +878,6 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                    "        add.u64 %%rd3, %%rd3, %%rd%u;\n",
                    data_reg);
     }
-
     // %rd2: function pointer (if applicable)
     // %rd3: call data pointer with offset
 
@@ -902,9 +903,20 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
 
     // Switch statement: branch to call
     if (branch_vcall) {
-        for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
-            buffer.fmt("        setp.eq.u32 %%p0, %%r3, %u;\n", (uint32_t) i);
-            buffer.fmt("        @%%p0 bra l_%u_%u;\n", vcall->id, (uint32_t) i);
+        if (!jump_table) {
+            for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
+                buffer.fmt("        setp.eq.u32 %%p0, %%r3, %u;\n", (uint32_t) i);
+                buffer.fmt("        @%%p0 bra l_%u_%u;\n", vcall_reg, (uint32_t) i);
+            }
+        } else {
+            buffer.put("        ts: .branchtargets ");
+            for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
+                if (i != 0) {
+                    buffer.put(", ");
+                }
+                buffer.fmt("l_%u_%u", vcall_reg, (uint32_t) i);
+            }
+            buffer.put(";\n        brx.idx %r3, ts;\n");
         }
         buffer.put("\n");
     }
@@ -932,7 +944,7 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                 buffer.fmt(".param .align %u .b8 params[%u]", in_align, in_size);
             buffer.put(");\n");
         } else {
-            buffer.fmt("    l_%u_%u:\n", vcall->id, callable_id);
+            buffer.fmt("    l_%u_%u:\n", vcall_reg, callable_id);
             buffer.put("        {\n");
         }
 
@@ -1049,20 +1061,17 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                      (unsigned long long) callable_hash.low64);
             assemble_call(target);
             read_output_arguments();
-            buffer.fmt("            bra.uni l_done_%u;\n", vcall_reg);
         }
 
         buffer.put("        }\n");
-
-        if (!branch_vcall) {
-            break;
-        }
+        buffer.fmt("        bra.uni l_done_%u;\n", vcall_reg);
 
         callable_id++;
+
+        if (!branch_vcall)
+            break;
     }
 
-    if (!branch_vcall)
-        buffer.fmt("        bra.uni l_done_%u;\n", vcall_reg);
     buffer.put("    }\n");
 
     // =====================================================

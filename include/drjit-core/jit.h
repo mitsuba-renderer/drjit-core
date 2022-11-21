@@ -1343,30 +1343,33 @@ enum class JitFlag : uint32_t {
     /// Exploit literal constants during AD (used in the Dr.Jit parent project)
     ADOptimize = 16384,
 
+    VCallBranchJumpTable = 32768,
+
     /// Default flags
     Default = (uint32_t) ConstProp | (uint32_t) ValueNumbering |
               (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
-              //(uint32_t) VCallBranch |
               (uint32_t) VCallRecord | (uint32_t) VCallDeduplicate |
+              (uint32_t) VCallBranch | (uint32_t) VCallBranchJumpTable |
               (uint32_t) VCallOptimize | (uint32_t) ADOptimize
 };
 #else
 enum JitFlag {
-    JitFlagConstProp           = 1,
-    JitFlagValueNumbering      = 2,
-    JitFlagLoopRecord          = 4,
-    JitFlagLoopOptimize        = 8,
-    JitFlagVCallRecord         = 16,
-    JitFlagVCallBranch         = 32,
-    JitFlagVCallDeduplicate    = 64,
-    JitFlagVCallOptimize       = 128,
-    JitFlagVCallInline         = 256,
-    JitFlagForceOptiX          = 512,
-    JitFlagRecording           = 1024,
-    JitFlagPrintIR             = 2048,
-    JitFlagKernelHistory       = 4096,
-    JitFlagLaunchBlocking      = 8192,
-    JitFlagADOptimize          = 16384,
+    JitFlagConstProp            = 1,
+    JitFlagValueNumbering       = 2,
+    JitFlagLoopRecord           = 4,
+    JitFlagLoopOptimize         = 8,
+    JitFlagVCallRecord          = 16,
+    JitFlagVCallBranch          = 32,
+    JitFlagVCallDeduplicate     = 64,
+    JitFlagVCallOptimize        = 128,
+    JitFlagVCallInline          = 256,
+    JitFlagForceOptiX           = 512,
+    JitFlagRecording            = 1024,
+    JitFlagPrintIR              = 2048,
+    JitFlagKernelHistory        = 4096,
+    JitFlagLaunchBlocking       = 8192,
+    JitFlagADOptimize           = 16384,
+    JitFlagVCallBranchJumpTable = 32768,
 };
 #endif
 
