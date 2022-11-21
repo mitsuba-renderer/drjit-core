@@ -826,8 +826,9 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
 
         // Bytes 4..8 used to store optional offset parameter
         if (offset != 0)
-            jitc_poke(JitBackend::CUDA, (uint8_t *) args + sizeof(uint32_t),
-                      &offset, (uint32_t) sizeof(uint32_t));
+            cuMemsetD32Async(
+                (CUdeviceptr) ((uint8_t *) args + sizeof(uint32_t)),
+                offset, 1, ts->stream);
 
         jitc_optix_check(
             optixLaunch(kernel.optix.pipeline, ts->stream, (CUdeviceptr) args,
