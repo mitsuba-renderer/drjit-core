@@ -298,7 +298,7 @@ TEST_BOTH(02_calling_conventions) {
         jit_set_flag(JitFlag::VCallOptimize, i);
 
         using BasePtr = Array<Base *>;
-        BasePtr self = arange<UInt32>(10) % 3;
+        BasePtr self = arange<UInt32>(12) % 4;
 
         Mask p0(false);
         Float p1(12);
@@ -319,11 +319,11 @@ TEST_BOTH(02_calling_conventions) {
         jit_var_schedule(result.template get<3>().index());
         jit_var_schedule(result.template get<4>().index());
 
-        jit_assert(strcmp(result.template get<0>().str(), "[0, 0, 1, 0, 0, 1, 0, 0, 1, 0]") == 0);
-        jit_assert(strcmp(result.template get<1>().str(), "[0, 12, 13, 0, 12, 13, 0, 12, 13, 0]") == 0);
-        jit_assert(strcmp(result.template get<2>().str(), "[0, 34, 36, 0, 34, 36, 0, 34, 36, 0]") == 0);
-        jit_assert(strcmp(result.template get<3>().str(), "[0, 56, 59, 0, 56, 59, 0, 56, 59, 0]") == 0);
-        jit_assert(strcmp(result.template get<4>().str(), "[0, 1, 0, 0, 1, 0, 0, 1, 0, 0]") == 0);
+        jit_assert(strcmp(result.template get<0>().str(), "[0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0]") == 0);
+        jit_assert(strcmp(result.template get<1>().str(), "[0, 12, 13, 0, 0, 12, 13, 0, 0, 12, 13, 0]") == 0);
+        jit_assert(strcmp(result.template get<2>().str(), "[0, 34, 36, 0, 0, 34, 36, 0, 0, 34, 36, 0]") == 0);
+        jit_assert(strcmp(result.template get<3>().str(), "[0, 56, 59, 0, 0, 56, 59, 0, 0, 56, 59, 0]") == 0);
+        jit_assert(strcmp(result.template get<4>().str(), "[0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0]") == 0);
     }
 
     jit_registry_remove(Backend, &b1);

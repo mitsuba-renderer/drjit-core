@@ -235,27 +235,45 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         it.second.callable_index = ctr++;
     }
 
-    if (callable_count > 0 && !uses_optix) {
+    if (callable_count > 0) {
         size_t suffix_start = buffer.size(),
                suffix_target =
                    (char *) strstr(buffer.get(), ".address_size 64\n\n") -
                    buffer.get() + 18;
 
-        fmt(".extern .global .u64 callables[$u];\n\n", callable_count_unique);
-        buffer.move_suffix(suffix_start, suffix_target);
+        if (jit_flag(JitFlag::VCallBranch)) {
+            // Copy signatures to very beginning
+            for (const auto &it : globals_map) {
+                if (!it.first.callable)
+                    continue;
 
-        fmt("\n.visible .global .align 8 .u64 callables[$u] = {\n",
-            callable_count_unique);
-        for (auto const &it : globals_map) {
-            if (!it.first.callable)
-                continue;
+                const char* func_definition = globals.get() + it.second.start;
+                const char* signature_begin = strstr(func_definition, ".func");
+                const char* signature_end = strstr(func_definition, "{");
 
-            fmt("    func_$Q$Q$s\n",
-                it.first.hash.high64, it.first.hash.low64,
-                it.second.callable_index + 1 < callable_count_unique ? "," : "");
+                put(".visible ");
+                put(signature_begin, signature_end - 1 - signature_begin);
+                put(";\n");
+            }
+            put("\n");
+            buffer.move_suffix(suffix_start, suffix_target);
+        } else if (!uses_optix) {
+            fmt(".extern .global .u64 callables[$u];\n\n", callable_count_unique);
+            buffer.move_suffix(suffix_start, suffix_target);
+
+            fmt("\n.visible .global .align 8 .u64 callables[$u] = {\n",
+                callable_count_unique);
+            for (auto const &it : globals_map) {
+                if (!it.first.callable)
+                    continue;
+
+                fmt("    func_$Q$Q$s\n",
+                    it.first.hash.high64, it.first.hash.low64,
+                    it.second.callable_index + 1 < callable_count_unique ? "," : "");
+            }
+
+            put("};\n\n");
         }
-
-        put("};\n\n");
     }
 
     jitc_vcall_upload(ts);
@@ -275,8 +293,9 @@ void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
     put(".visible .func");
     if (out_size)
         fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
+    bool uses_direct_callables = uses_optix && !(jit_flag(JitFlag::VCallBranch));
     fmt(" $s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
-        uses_optix ? "__direct_callable__" : "func_");
+        uses_direct_callables ? "__direct_callable__" : "func_");
 
     if (use_self) {
         put(".reg .u32 self");
@@ -1006,10 +1025,13 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     // 3. Turn callable ID into a function pointer
     // =====================================================
 
-    if (!uses_optix)
-        put("        ld.global.u64 %rd2, callables[%r3];\n");
-    else
-        put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
+    bool branch_vcall = jit_flag(JitFlag::VCallBranch);
+    if (!branch_vcall) {
+        if (!uses_optix)
+            put("        ld.global.u64 %rd2, callables[%r3];\n");
+        else
+            put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
+    }
 
     // =====================================================
     // 4. Obtain pointer to supplemental call data
@@ -1043,127 +1065,164 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
             v2->reg_index, v2->reg_index);
     }
 
-    put("        {\n");
-
-    // Call prototype
-    put("            proto: .callprototype");
-    if (out_size)
-        fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
-    put(" _(");
-    if (vcall->use_self) {
-        put(".reg .u32 self");
-        if (data_reg || in_size)
-            put(", ");
+    // Switch statement: branch to call
+    if (branch_vcall) {
+        for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
+            fmt("        setp.eq.u32 %p0, %r3, $u;\n", (uint32_t) i);
+            fmt("        @%p0 bra l_$u_$u;\n", vcall->id, (uint32_t) i);
+        }
+        put("\n");
     }
-    if (data_reg) {
-        put(".reg .u64 data");
+
+    uint32_t callable_id = 0;
+    for (XXH128_hash_t callable_hash: vcall->callables_set) {
+        if (!branch_vcall) {
+            // Call prototype
+            put("        {\n");
+            put("            proto: .callprototype");
+            if (out_size)
+                fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
+            put(" _(");
+            if (vcall->use_self) {
+                put(".reg .u32 self");
+                if (data_reg || in_size)
+                    put(", ");
+            }
+            if (data_reg) {
+                put(".reg .u64 data");
+                if (in_size)
+                    put(", ");
+            }
+            if (in_size)
+                fmt(".param .align $u .b8 params[$u]", in_align, in_size);
+            put(");\n");
+        } else {
+            fmt("    l_$u_$u:\n", vcall->id, callable_id);
+            put("        {\n");
+        }
+
+        // Input/output parameter arrays
+        if (out_size)
+            fmt("            .param .align $u .b8 out[$u];\n", out_align, out_size);
         if (in_size)
-            put(", ");
-    }
-    if (in_size)
-        fmt(".param .align $u .b8 params[$u]", in_align, in_size);
-    put(");\n");
+            fmt("            .param .align $u .b8 in[$u];\n", in_align, in_size);
 
-    // Input/output parameter arrays
-    if (out_size)
-        fmt("            .param .align $u .b8 out[$u];\n", out_align, out_size);
-    if (in_size)
-        fmt("            .param .align $u .b8 in[$u];\n", in_align, in_size);
+        // =====================================================
+        // 5.1. Pass the input arguments
+        // =====================================================
 
-    // =====================================================
-    // 5.1. Pass the input arguments
-    // =====================================================
+        uint32_t offset = 0;
+        for (uint32_t in : vcall->in) {
+            auto it = state.variables.find(in);
+            if (it == state.variables.end())
+                continue;
+            const Variable *v2 = &it->second;
+            uint32_t size = type_size[v2->type];
 
-    uint32_t offset = 0;
-    for (uint32_t in : vcall->in) {
-        auto it = state.variables.find(in);
-        if (it == state.variables.end())
-            continue;
-        const Variable *v2 = &it->second;
-        uint32_t size = type_size[v2->type];
+            const char *tname = type_name_ptx[v2->type],
+                       *prefix = type_prefix[v2->type];
 
-        const char *tname = type_name_ptx[v2->type],
-                   *prefix = type_prefix[v2->type];
+            // Special handling for predicates (pass via u8)
+            if ((VarType) v2->type == VarType::Bool) {
+                tname = "u8";
+                prefix = "%w";
+            }
 
-        // Special handling for predicates (pass via u8)
-        if ((VarType) v2->type == VarType::Bool) {
-            tname = "u8";
-            prefix = "%w";
+            fmt("            st.param.$s [in+$u], $s$u;\n", tname, offset, prefix,
+                v2->reg_index);
+
+            offset += size;
         }
 
-        fmt("            st.param.$s [in+$u], $s$u;\n", tname, offset, prefix,
-            v2->reg_index);
+        // =====================================================
+        // 5.2. Setup the function call
+        // =====================================================
 
-        offset += size;
-    }
+        auto assemble_call = [&](const char* target) {
+            put("            ");
+            if (vcall->use_self) {
+                fmt("call $s$s, (%r$u$s$s)$s;\n",
+                    out_size ? "(out), " : "",
+                    target,
+                    self_reg,
+                    data_reg ? ", %rd3" : "",
+                    in_size ? ", in" : "",
+                    branch_vcall ? "" : ", proto");
+            } else {
+                fmt("call $s$s, ($s$s$s)$s;\n",
+                    out_size ? "(out), " : "",
+                    target,
+                    data_reg ? "%rd3" : "",
+                    data_reg && in_size ? ", " : "",
+                    in_size ? "in" : "",
+                    branch_vcall ? "" : ", proto");
+            }
+        };
 
-    if (vcall->use_self) {
-        fmt("            call $s%rd2, (%r$u$s$s), proto;\n",
-            out_size ? "(out), " : "", self_reg,
-            data_reg ? ", %rd3" : "",
-            in_size ? ", in" : "");
-    } else {
-        fmt("            call $s%rd2, ($s$s$s), proto;\n",
-            out_size ? "(out), " : "", data_reg ? "%rd3" : "",
-            data_reg && in_size ? ", " : "", in_size ? "in" : "");
-    }
+        // =====================================================
+        // 5.3. Call the function and read the output arguments
+        // =====================================================
 
-    // =====================================================
-    // 5.2. Read back the output arguments
-    // =====================================================
+        auto read_output_arguments = [&]() {
+            offset = 0;
+            for (uint32_t i = 0; i < n_out; ++i) {
+                uint32_t index = vcall->out_nested[i],
+                         index_2 = vcall->out[i];
+                auto it = state.variables.find(index);
+                if (it == state.variables.end())
+                    continue;
+                uint32_t size = type_size[it->second.type],
+                         load_offset = offset;
+                offset += size;
 
-    offset = 0;
-    for (uint32_t i = 0; i < n_out; ++i) {
-        uint32_t index = vcall->out_nested[i],
-                 index_2 = vcall->out[i];
-        auto it = state.variables.find(index);
-        if (it == state.variables.end())
-            continue;
-        uint32_t size = type_size[it->second.type],
-                 load_offset = offset;
-        offset += size;
+                // Skip if expired
+                auto it2 = state.variables.find(index_2);
+                if (it2 == state.variables.end())
+                    continue;
 
-        // Skip if expired
-        auto it2 = state.variables.find(index_2);
-        if (it2 == state.variables.end())
-            continue;
+                const Variable *v2 = &it2.value();
+                if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+                    continue;
 
-        const Variable *v2 = &it2.value();
-        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
-            continue;
+                const char *tname = type_name_ptx[v2->type],
+                           *prefix = type_prefix[v2->type];
 
-        const char *tname = type_name_ptx[v2->type],
-                   *prefix = type_prefix[v2->type];
+                // Special handling for predicates (pass via u8)
+                if ((VarType) v2->type == VarType::Bool) {
+                    tname = "u8";
+                    prefix = "%w";
+                }
 
-        // Special handling for predicates (pass via u8)
-        if ((VarType) v2->type == VarType::Bool) {
-            tname = "u8";
-            prefix = "%w";
+                fmt("            ld.param.$s $s$u, [out+$u];\n",
+                    tname, prefix, v2->reg_index, load_offset);
+
+                if ((VarType) v2->type == VarType::Bool)
+                    fmt("            setp.ne.u16 %p$u, %w$u, 0;\n",
+                        v2->reg_index, v2->reg_index);
+            }
+        };
+
+        if (!branch_vcall) {
+            const char* target = "%rd2";
+            assemble_call(target);
+            read_output_arguments();
+        } else {
+            char target[38];
+            snprintf(target, sizeof(target), "func_%016llx%016llx",
+                     (unsigned long long) callable_hash.high64,
+                     (unsigned long long) callable_hash.low64);
+            assemble_call(target);
+            read_output_arguments();
+            fmt("            bra.uni l_done_$u;\n", vcall_reg);
         }
 
-        fmt("            ld.param.$s $s$u, [out+$u];\n",
-            tname, prefix, v2->reg_index, load_offset);
-    }
+        put("        }\n\n");
 
-    put("        }\n\n");
+        if (!branch_vcall) {
+            break;
+        }
 
-    // =====================================================
-    // 6. Special handling for predicates return value(s)
-    // =====================================================
-
-    for (uint32_t out : vcall->out) {
-        auto it = state.variables.find(out);
-        if (it == state.variables.end())
-            continue;
-        const Variable *v2 = &it->second;
-        if ((VarType) v2->type != VarType::Bool)
-            continue;
-        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
-            continue;
-
-        // Special handling for predicates
-        fmt("        setp.ne.u16 %p$u, %w$u, 0;\n",
-            v2->reg_index, v2->reg_index);
+        callable_id++;
     }
 
 

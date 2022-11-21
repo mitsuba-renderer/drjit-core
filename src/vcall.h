@@ -1,4 +1,6 @@
+#include "internal.h"
 #include <stdint.h>
+#include <set>
 
 extern void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index);
 extern void jitc_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index);
@@ -27,6 +29,9 @@ struct VCallDataRecord {
 
 /// Encodes information about a virtual function call
 struct VCall {
+
+    using CallablesSet = std::set<XXH128_hash_t, XXH128Cmp>;
+
     JitBackend backend;
 
     /// A descriptive name
@@ -73,6 +78,9 @@ struct VCall {
 
     /// Does this vcall need self as argument
     bool use_self = false;
+
+    /// Set of target functions
+    CallablesSet callables_set;
 
     ~VCall() {
         for (uint32_t index : out_nested)
