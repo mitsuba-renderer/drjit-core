@@ -409,7 +409,6 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
                     "fix this (it will involve sorting scheduled variables by "
                     "scope ID instead of variable ID and making the counter "
                     "big enough that it will never overflow..).");
-                index = state.variable_index++;
             }
 
             std::tie(var_it, var_inserted) =
