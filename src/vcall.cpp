@@ -790,18 +790,12 @@ void jitc_vcall_upload(ThreadState *ts) {
         memset(data, 0, vcall->offset_size);
 
         if (ts->backend == JitBackend::CUDA && jit_flag(JitFlag::VCallBranch)) {
-            for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-                uint32_t callable_index = 0;
-                bool found = false;
-                for (auto callable: vcall->callables_set) {
-                    if (callable.high64 == vcall->inst_hash[i].high64 &&
-                        callable.low64 == vcall->inst_hash[i].low64) {
-                        found = true;
-                        break;
-                    }
-                    callable_index++;
-                }
+            tsl::robin_map<XXH128_hash_t, uint32_t, XXH128Hash, XXH128Eq> callable_indices;
+            uint32_t index = 0;
+            for (const XXH128_hash_t &callable : vcall->callables_set)
+                callable_indices[callable] = index++;
 
+            for (uint32_t i = 0; i < vcall->n_inst; ++i) {
                 auto it = globals_map.find(GlobalKey(vcall->inst_hash[i], true));
                 if (it == globals_map.end())
                     jitc_fail("jitc_vcall_upload(): could not find callable!");
@@ -809,7 +803,7 @@ void jitc_vcall_upload(ThreadState *ts) {
                 // high part: instance data offset, low part: callable index
                 data[vcall->inst_id[i]] =
                     (((uint64_t) vcall->data_offset[i]) << 32) |
-                    callable_index;
+                    callable_indices[vcall->inst_hash[i]];
             }
         }
         else {

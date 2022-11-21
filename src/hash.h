@@ -71,6 +71,18 @@ struct XXH128Cmp {
     }
 };
 
+struct XXH128Eq {
+    bool operator()(const XXH128_hash_t &lhs, const XXH128_hash_t &rhs) const {
+        return lhs.high64 == rhs.high64 && lhs.low64 == rhs.low64;
+    }
+};
+
+struct XXH128Hash {
+    size_t operator()(const XXH128_hash_t &hash) const {
+        return hash.low64 ^ hash.high64;
+    }
+};
+
 inline void hash_combine(size_t& seed, size_t value) {
     /// From CityHash (https://github.com/google/cityhash)
     const size_t mult = 0x9ddfea08eb382d69ull;
