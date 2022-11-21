@@ -828,6 +828,76 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     vcalls_assembled.push_back(vcall);
 }
 
+static void jitc_var_vcall_branch_strategy_assemble_cuda(const VCall *vcall,
+                                                         uint32_t vcall_reg) {
+    bool jump_table    = jit_flag(JitFlag::VCallBranchJumpTable);
+    bool binary_search = jit_flag(JitFlag::VCallBranchBinarySearch);
+
+    if (jump_table == binary_search) {
+        // Linear search
+        if (jump_table)
+            jitc_log(Warn, "jitc_var_vcall_assemble_cuda(): both "
+                           "JitFlag::VCallBranchJumpTable and "
+                           "JitFlag::VCallBranchBinarySearch are enabled, "
+                           "defaulting back to linear search!");
+
+        for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
+            buffer.fmt("        setp.eq.u32 %%p3, %%r3, %u;\n", (uint32_t) i);
+            buffer.fmt("        @%%p3 bra l_%u_%u;\n", vcall_reg, (uint32_t) i);
+        }
+    } else if (binary_search) {
+        uint32_t size = vcall->callables_set.size();
+
+        uint32_t max_depth = log2i_ceil(size);
+        for (uint32_t depth = 0; depth < max_depth; ++depth) {
+            for (uint32_t i = 0; i < (1 << depth); ++i) {
+                uint32_t range_start = i << (max_depth - depth);
+                if (size <= range_start)
+                    break;
+
+                uint32_t offset = 1 << (max_depth - depth - 1);
+                uint32_t spacing = offset * 2;
+                uint32_t mid = offset + i * spacing;
+
+                uint32_t next_offset = offset >> 1;
+                uint32_t next_spacing = spacing >> 1;
+                uint32_t left = next_offset + (i * 2) * next_spacing;
+                uint32_t right = next_offset + ((i * 2) + 1) * next_spacing;
+
+                if (depth != 0)
+                    buffer.fmt("    l_%u_%u_%u:\n", vcall_reg, depth, mid);
+
+                if (mid < size) {
+                    buffer.fmt("        setp.lt.u32 %%p3, %%r3, %u;\n", mid);
+                    if (depth + 1 < max_depth) {
+                        buffer.fmt("        @%%p3 bra l_%u_%u_%u;\n", vcall_reg, depth + 1, left);
+                        buffer.fmt("        bra.uni l_%u_%u_%u;\n", vcall_reg, depth + 1, right);
+                    } else {
+                        buffer.fmt("        @%%p3 bra.uni l_%u_%u;\n", vcall_reg, left);
+                        buffer.fmt("        bra.uni l_%u_%u;\n", vcall_reg, right);
+                    }
+                } else {
+                    if (depth + 1 < max_depth)
+                        buffer.fmt("        bra l_%u_%u_%u;\n", vcall_reg, depth + 1, left);
+                    else
+                        buffer.fmt("        bra.uni l_%u_%u;\n", vcall_reg, left);
+                }
+            }
+        }
+    } else {
+        // Jump table
+        buffer.put("        ts: .branchtargets ");
+        for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
+            if (i != 0)
+                buffer.put(", ");
+            buffer.fmt("l_%u_%u", vcall_reg, (uint32_t) i);
+        }
+        buffer.put(";\n        brx.idx %r3, ts;\n");
+    }
+
+    buffer.put("\n");
+}
+
 /// Virtual function call code generation -- CUDA/PTX-specific bits
 static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                                          uint32_t self_reg, uint32_t mask_reg,
@@ -837,7 +907,6 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                                          uint32_t out_align) {
 
     bool branch_vcall = jit_flag(JitFlag::VCallBranch);
-    bool jump_table = jit_flag(JitFlag::VCallBranchJumpTable);
 
     // =====================================================
     // 1. Conditional branch
@@ -901,30 +970,14 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                     v2->reg_index, v2->reg_index);
     }
 
-    // Switch statement: branch to call
-    if (branch_vcall) {
-        if (!jump_table) {
-            for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
-                buffer.fmt("        setp.eq.u32 %%p0, %%r3, %u;\n", (uint32_t) i);
-                buffer.fmt("        @%%p0 bra l_%u_%u;\n", vcall_reg, (uint32_t) i);
-            }
-        } else {
-            buffer.put("        ts: .branchtargets ");
-            for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
-                if (i != 0) {
-                    buffer.put(", ");
-                }
-                buffer.fmt("l_%u_%u", vcall_reg, (uint32_t) i);
-            }
-            buffer.put(";\n        brx.idx %r3, ts;\n");
-        }
-        buffer.put("\n");
-    }
+    // Switch statement: branch to call (multiple strategies)
+    if (branch_vcall)
+        jitc_var_vcall_branch_strategy_assemble_cuda(vcall, vcall_reg);
 
     uint32_t callable_id = 0;
-    for (XXH128_hash_t callable_hash: vcall->callables_set) {
+    for (const XXH128_hash_t &callable_hash : vcall->callables_set) {
         if (!branch_vcall) {
-            // Call prototype
+            // Generate call prototype
             buffer.put("        {\n");
             buffer.put("            proto: .callprototype");
             if (out_size)
@@ -1006,7 +1059,6 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                 }
         };
 
-
         // =====================================================
         // 5.3. Call the function and read the output arguments
         // =====================================================
@@ -1044,6 +1096,7 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                 buffer.fmt("            ld.param.%s %s%u, [out+%u];\n",
                            tname, prefix, v2->reg_index, load_offset);
 
+                // Special handling for predicates
                 if ((VarType) v2->type == VarType::Bool)
                     buffer.fmt("            setp.ne.u16 %%p%u, %%w%u, 0;\n",
                                v2->reg_index, v2->reg_index);
@@ -1423,18 +1476,12 @@ void jitc_vcall_upload(ThreadState *ts) {
         memset(data, 0, vcall->offset_size);
 
         if (ts->backend == JitBackend::CUDA && jit_flag(JitFlag::VCallBranch)) {
-            for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-                uint32_t callable_index = 0;
-                bool found = false;
-                for (auto callable: vcall->callables_set) {
-                    if (callable.high64 == vcall->inst_hash[i].high64 &&
-                        callable.low64 == vcall->inst_hash[i].low64) {
-                        found = true;
-                        break;
-                    }
-                    callable_index++;
-                }
+            tsl::robin_map<XXH128_hash_t, uint32_t, XXH128Hash, XXH128Eq> callable_indices;
+            uint32_t index = 0;
+            for (const XXH128_hash_t &callable : vcall->callables_set)
+                callable_indices[callable] = index++;
 
+            for (uint32_t i = 0; i < vcall->n_inst; ++i) {
                 auto it = globals_map.find(GlobalKey(vcall->inst_hash[i], true));
                 if (it == globals_map.end())
                     jitc_fail("jitc_vcall_upload(): could not find callable!");
@@ -1442,7 +1489,7 @@ void jitc_vcall_upload(ThreadState *ts) {
                 // high part: instance data offset, low part: callable index
                 data[vcall->inst_id[i]] =
                     (((uint64_t) vcall->data_offset[i]) << 32) |
-                    callable_index;
+                    callable_indices[vcall->inst_hash[i]];
             }
         }
         else {

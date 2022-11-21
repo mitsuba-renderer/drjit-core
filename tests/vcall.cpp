@@ -229,9 +229,6 @@ TEST_BOTH(01_recorded_vcall) {
     A1 a1;
     A2 a2;
 
-    jit_set_flag(JitFlag::PrintIR, true);
-    jit_set_log_level_stderr(LogLevel::Trace);
-
     // jit_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
     uint32_t i1 = jit_registry_put(Backend, "Base", &a1);
     uint32_t i2 = jit_registry_put(Backend, "Base", &a2);
