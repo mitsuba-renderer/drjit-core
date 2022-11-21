@@ -69,6 +69,8 @@ struct VCall {
     /// Does this vcall need self as argument
     bool use_self = false;
 
+    CallablesSet callables_set;
+
     ~VCall() {
         for (uint32_t index : out_nested)
             jitc_var_dec_ref(index);
@@ -773,7 +775,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 
     ThreadState *ts = thread_state(vcall->backend);
 
-    CallablesSet callables_set;
+    vcall->callables_set.clear();
     for (uint32_t i = 0; i < vcall->n_inst; ++i) {
         XXH128_hash_t hash = jitc_assemble_func(
             ts, vcall->name, i, in_size, in_align, out_size, out_align,
@@ -783,7 +785,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
             vcall->side_effects.data() + vcall->checkpoints[i],
             vcall->use_self);
         vcall->inst_hash[i] = hash;
-        callables_set.insert(hash);
+        vcall->callables_set.insert(hash);
     }
 
     size_t se_count = vcall->side_effects.size();
@@ -819,7 +821,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
         InfoSym,
         "jit_var_vcall_assemble(): indirect call (\"%s\") to %zu/%u instances, "
         "passing %u/%u inputs (%u/%u bytes), %u/%u outputs (%u/%u bytes), %zu side effects",
-        vcall->name, callables_set.size(), vcall->n_inst, n_in_active,
+        vcall->name, vcall->callables_set.size(), vcall->n_inst, n_in_active,
         vcall->in_count_initial, in_size, vcall->in_size_initial, n_out_active,
         n_out, out_size, vcall->out_size_initial, se_count);
 
@@ -857,10 +859,13 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     // 3. Turn callable ID into a function pointer
     // =====================================================
 
-    if (!uses_optix)
-        buffer.fmt("        ld.global.u64 %%rd2, callables[%%r3];\n");
-    else
-        buffer.put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
+    bool branch_vcall = jit_flag(JitFlag::VCallBranch);
+    if (!branch_vcall) {
+        if (!uses_optix)
+            buffer.fmt("        ld.global.u64 %%rd2, callables[%%r3];\n");
+        else
+            buffer.put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
+    }
 
     // =====================================================
     // 4. Obtain pointer to supplemental call data
@@ -895,131 +900,169 @@ static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                     v2->reg_index, v2->reg_index);
     }
 
-    buffer.put("        {\n");
-
-    // Call prototype
-    buffer.put("            proto: .callprototype");
-    if (out_size)
-        buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
-    buffer.put(" _(");
-    if (vcall->use_self) {
-        buffer.put(".reg .u32 self");
-        if (data_reg || in_size)
-            buffer.put(", ");
+    // Switch statement: branch to call
+    if (branch_vcall) {
+        for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
+            buffer.fmt("        setp.eq.u32 %%p0, %%r3, %u;\n", (uint32_t) i);
+            buffer.fmt("        @%%p0 bra l_%u_%u;\n", vcall->id, (uint32_t) i);
+        }
+        buffer.put("\n");
     }
-    if (data_reg) {
-        buffer.put(".reg .u64 data");
+
+    uint32_t callable_id = 0;
+    for (XXH128_hash_t callable_hash: vcall->callables_set) {
+        if (!branch_vcall) {
+            // Call prototype
+            buffer.put("        {\n");
+            buffer.put("            proto: .callprototype");
+            if (out_size)
+                buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
+            buffer.put(" _(");
+            if (vcall->use_self) {
+                buffer.put(".reg .u32 self");
+                if (data_reg || in_size)
+                    buffer.put(", ");
+            }
+            if (data_reg) {
+                buffer.put(".reg .u64 data");
+                if (in_size)
+                    buffer.put(", ");
+            }
+            if (in_size)
+                buffer.fmt(".param .align %u .b8 params[%u]", in_align, in_size);
+            buffer.put(");\n");
+        } else {
+            buffer.fmt("    l_%u_%u:\n", vcall->id, callable_id);
+            buffer.put("        {\n");
+        }
+
+        // Input/output parameter arrays
+        if (out_size)
+            buffer.fmt("            .param .align %u .b8 out[%u];\n", out_align, out_size);
         if (in_size)
-            buffer.put(", ");
-    }
-    if (in_size)
-        buffer.fmt(".param .align %u .b8 params[%u]", in_align, in_size);
-    buffer.put(");\n");
+            buffer.fmt("            .param .align %u .b8 in[%u];\n", in_align, in_size);
 
-    // Input/output parameter arrays
-    if (out_size)
-        buffer.fmt("            .param .align %u .b8 out[%u];\n", out_align, out_size);
-    if (in_size)
-        buffer.fmt("            .param .align %u .b8 in[%u];\n", in_align, in_size);
+        // =====================================================
+        // 5.1. Pass the input arguments
+        // =====================================================
 
-    // =====================================================
-    // 5.1. Pass the input arguments
-    // =====================================================
+        uint32_t offset = 0;
+        for (uint32_t in : vcall->in) {
+            auto it = state.variables.find(in);
+            if (it == state.variables.end())
+                continue;
+            const Variable *v2 = &it->second;
+            uint32_t size = type_size[v2->type];
 
-    uint32_t offset = 0;
-    for (uint32_t in : vcall->in) {
-        auto it = state.variables.find(in);
-        if (it == state.variables.end())
-            continue;
-        const Variable *v2 = &it->second;
-        uint32_t size = type_size[v2->type];
+            const char *tname = type_name_ptx[v2->type],
+                       *prefix = type_prefix[v2->type];
 
-        const char *tname = type_name_ptx[v2->type],
-                   *prefix = type_prefix[v2->type];
+            // Special handling for predicates (pass via u8)
+            if ((VarType) v2->type == VarType::Bool) {
+                tname = "u8";
+                prefix = "%w";
+            }
 
-        // Special handling for predicates (pass via u8)
-        if ((VarType) v2->type == VarType::Bool) {
-            tname = "u8";
-            prefix = "%w";
+            buffer.fmt("            st.param.%s [in+%u], %s%u;\n", tname, offset,
+                       prefix, v2->reg_index);
+
+            offset += size;
         }
 
-        buffer.fmt("            st.param.%s [in+%u], %s%u;\n", tname, offset,
-                   prefix, v2->reg_index);
+        // =====================================================
+        // 5.2. Setup the function call
+        // =====================================================
 
-        offset += size;
-    }
+        auto assemble_call = [&](const char* target) {
+                buffer.put("            ");
+                if (vcall->use_self) {
+                    buffer.fmt("call %s%s, (%%r%u%s%s)%s;\n",
+                               out_size ? "(out), " : "",
+                               target,
+                               self_reg,
+                               data_reg ? ", %rd3" : "",
+                               in_size ? ", in" : "",
+                               branch_vcall ? "" : ", proto");
+                } else {
+                    buffer.fmt("call %s%s, (%s%s%s)%s;\n",
+                               out_size ? "(out), " : "",
+                               target,
+                               data_reg ? "%rd3" : "",
+                               data_reg && in_size ? ", " : "",
+                               in_size ? "in" : "",
+                               branch_vcall ? "" : ", proto");
+                }
+        };
 
-    if (vcall->use_self) {
-        buffer.fmt("            call %s%%rd2, (%%r%u%s%s), proto;\n",
-                   out_size ? "(out), " : "", self_reg,
-                   data_reg ? ", %rd3" : "",
-                   in_size ? ", in" : "");
-    } else {
-        buffer.fmt("            call %s%%rd2, (%s%s%s), proto;\n",
-                    out_size ? "(out), " : "", data_reg ? "%rd3" : "",
-                    data_reg && in_size ? ", " : "", in_size ? "in" : "");
-    }
 
-    // =====================================================
-    // 5.2. Read back the output arguments
-    // =====================================================
+        // =====================================================
+        // 5.3. Call the function and read the output arguments
+        // =====================================================
 
-    offset = 0;
-    for (uint32_t i = 0; i < n_out; ++i) {
-        uint32_t index = vcall->out_nested[i],
-                 index_2 = vcall->out[i];
-        auto it = state.variables.find(index);
-        if (it == state.variables.end())
-            continue;
-        uint32_t size = type_size[it->second.type],
-                 load_offset = offset;
-        offset += size;
+        auto read_output_arguments = [&]() {
+            offset = 0;
+            for (uint32_t i = 0; i < n_out; ++i) {
+                uint32_t index = vcall->out_nested[i],
+                         index_2 = vcall->out[i];
+                auto it = state.variables.find(index);
+                if (it == state.variables.end())
+                    continue;
+                uint32_t size = type_size[it->second.type],
+                         load_offset = offset;
+                offset += size;
 
-        // Skip if outer access expired
-        auto it2 = state.variables.find(index_2);
-        if (it2 == state.variables.end())
-            continue;
+                // Skip if outer access expired
+                auto it2 = state.variables.find(index_2);
+                if (it2 == state.variables.end())
+                    continue;
 
-        const Variable *v2 = &it2.value();
-        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
-            continue;
+                const Variable *v2 = &it2.value();
+                if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+                    continue;
 
-        const char *tname = type_name_ptx[v2->type],
-                   *prefix = type_prefix[v2->type];
+                const char *tname = type_name_ptx[v2->type],
+                           *prefix = type_prefix[v2->type];
 
-        // Special handling for predicates (pass via u8)
-        if ((VarType) v2->type == VarType::Bool) {
-            tname = "u8";
-            prefix = "%w";
+                // Special handling for predicates (pass via u8)
+                if ((VarType) v2->type == VarType::Bool) {
+                    tname = "u8";
+                    prefix = "%w";
+                }
+
+                buffer.fmt("            ld.param.%s %s%u, [out+%u];\n",
+                           tname, prefix, v2->reg_index, load_offset);
+
+                if ((VarType) v2->type == VarType::Bool)
+                    buffer.fmt("            setp.ne.u16 %%p%u, %%w%u, 0;\n",
+                               v2->reg_index, v2->reg_index);
+            }
+        };
+
+        if (!branch_vcall) {
+            const char* target = "%rd2";
+            assemble_call(target);
+            read_output_arguments();
+        } else {
+            char target[38];
+            snprintf(target, sizeof(target), "func_%016llx%016llx",
+                     (unsigned long long) callable_hash.high64,
+                     (unsigned long long) callable_hash.low64);
+            assemble_call(target);
+            read_output_arguments();
+            buffer.fmt("            bra.uni l_done_%u;\n", vcall_reg);
         }
 
-        buffer.fmt("            ld.param.%s %s%u, [out+%u];\n",
-                   tname, prefix, v2->reg_index, load_offset);
+        buffer.put("        }\n");
+
+        if (!branch_vcall) {
+            break;
+        }
+
+        callable_id++;
     }
 
-    buffer.put("        }\n\n");
-
-    // =====================================================
-    // 6. Special handling for predicates return value(s)
-    // =====================================================
-
-    for (uint32_t out : vcall->out) {
-        auto it = state.variables.find(out);
-        if (it == state.variables.end())
-            continue;
-        const Variable *v2 = &it->second;
-        if ((VarType) v2->type != VarType::Bool)
-            continue;
-        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
-            continue;
-
-        // Special handling for predicates
-        buffer.fmt("        setp.ne.u16 %%p%u, %%w%u, 0;\n",
-                   v2->reg_index, v2->reg_index);
-    }
-
-
-    buffer.fmt("        bra.uni l_done_%u;\n", vcall_reg);
+    if (!branch_vcall)
+        buffer.fmt("        bra.uni l_done_%u;\n", vcall_reg);
     buffer.put("    }\n");
 
     // =====================================================
@@ -1370,15 +1413,40 @@ void jitc_vcall_upload(ThreadState *ts) {
         uint64_t *data = (uint64_t *) jitc_malloc(at, vcall->offset_size);
         memset(data, 0, vcall->offset_size);
 
-        for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-            auto it = globals_map.find(GlobalKey(vcall->inst_hash[i], true));
-            if (it == globals_map.end())
-                jitc_fail("jitc_vcall_upload(): could not find callable!");
+        if (ts->backend == JitBackend::CUDA && jit_flag(JitFlag::VCallBranch)) {
+            for (uint32_t i = 0; i < vcall->n_inst; ++i) {
+                uint32_t callable_index = 0;
+                bool found = false;
+                for (auto callable: vcall->callables_set) {
+                    if (callable.high64 == vcall->inst_hash[i].high64 &&
+                        callable.low64 == vcall->inst_hash[i].low64) {
+                        found = true;
+                        break;
+                    }
+                    callable_index++;
+                }
 
-            // high part: instance data offset, low part: callable index
-            data[vcall->inst_id[i]] =
-                (((uint64_t) vcall->data_offset[i]) << 32) |
-                it->second.callable_index;
+                auto it = globals_map.find(GlobalKey(vcall->inst_hash[i], true));
+                if (it == globals_map.end())
+                    jitc_fail("jitc_vcall_upload(): could not find callable!");
+
+                // high part: instance data offset, low part: callable index
+                data[vcall->inst_id[i]] =
+                    (((uint64_t) vcall->data_offset[i]) << 32) |
+                    callable_index;
+            }
+        }
+        else {
+            for (uint32_t i = 0; i < vcall->n_inst; ++i) {
+                auto it = globals_map.find(GlobalKey(vcall->inst_hash[i], true));
+                if (it == globals_map.end())
+                    jitc_fail("jitc_vcall_upload(): could not find callable!");
+
+                // high part: instance data offset, low part: callable index
+                data[vcall->inst_id[i]] =
+                    (((uint64_t) vcall->data_offset[i]) << 32) |
+                    it->second.callable_index;
+            }
         }
 
         jitc_memcpy_async(ts->backend, vcall->offset, data, vcall->offset_size);

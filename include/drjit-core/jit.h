@@ -1304,42 +1304,49 @@ enum class JitFlag : uint32_t {
     /// Record virtual function calls instead of splitting them into many small kernel launches
     VCallRecord = 16,
 
+    /**
+     * \brief Use branches instead of direct callables (in OptiX) or indirect
+     * function calls (in CUDA) for virtual function calls.
+     */
+    VCallBranch = 32,
+
     /// De-duplicate virtual function calls that produce the same code
-    VCallDeduplicate = 32,
+    VCallDeduplicate = 64,
 
     /// Enable constant propagation and elide unnecessary function arguments
-    VCallOptimize = 64,
+    VCallOptimize = 128,
 
     /**
      * \brief Inline calls if there is only a single instance? (off by default,
      * inlining can make kernels so large that they actually run slower in
      * CUDA/OptiX).
      */
-    VCallInline = 128,
+    VCallInline = 256,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 256,
+    ForceOptiX = 512,
 
     /// Temporarily postpone evaluation of statements with side effects
-    Recording = 512,
+    Recording = 1024,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 1024,
+    PrintIR = 2048,
 
     /// Enable writing of the kernel history
-    KernelHistory = 2048,
+    KernelHistory = 4096,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 4096,
+    LaunchBlocking = 8192,
 
     /// Exploit literal constants during AD (used in the Dr.Jit parent project)
-    ADOptimize = 8192,
+    ADOptimize = 16384,
 
     /// Default flags
     Default = (uint32_t) ConstProp | (uint32_t) ValueNumbering |
               (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
+              //(uint32_t) VCallBranch |
               (uint32_t) VCallRecord | (uint32_t) VCallDeduplicate |
               (uint32_t) VCallOptimize | (uint32_t) ADOptimize
 };
@@ -1350,15 +1357,16 @@ enum JitFlag {
     JitFlagLoopRecord          = 4,
     JitFlagLoopOptimize        = 8,
     JitFlagVCallRecord         = 16,
-    JitFlagVCallDeduplicate    = 32,
-    JitFlagVCallOptimize       = 64,
-    JitFlagVCallInline         = 128,
-    JitFlagForceOptiX          = 256,
-    JitFlagRecording           = 512,
-    JitFlagPrintIR             = 1024,
-    JitFlagKernelHistory       = 2048,
-    JitFlagLaunchBlocking      = 4096,
-    JitFlagADOptimize          = 8192
+    JitFlagVCallBranch         = 32,
+    JitFlagVCallDeduplicate    = 64,
+    JitFlagVCallOptimize       = 128,
+    JitFlagVCallInline         = 256,
+    JitFlagForceOptiX          = 512,
+    JitFlagRecording           = 1024,
+    JitFlagPrintIR             = 2048,
+    JitFlagKernelHistory       = 4096,
+    JitFlagLaunchBlocking      = 8192,
+    JitFlagADOptimize          = 16384,
 };
 #endif
 

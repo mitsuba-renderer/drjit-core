@@ -229,6 +229,9 @@ TEST_BOTH(01_recorded_vcall) {
     A1 a1;
     A2 a2;
 
+    jit_set_flag(JitFlag::PrintIR, true);
+    jit_set_log_level_stderr(LogLevel::Trace);
+
     // jit_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
     uint32_t i1 = jit_registry_put(Backend, "Base", &a1);
     uint32_t i2 = jit_registry_put(Backend, "Base", &a2);
@@ -293,7 +296,7 @@ TEST_BOTH(02_calling_conventions) {
         jit_set_flag(JitFlag::VCallOptimize, i);
 
         using BasePtr = Array<Base *>;
-        BasePtr self = arange<UInt32>(10) % 3;
+        BasePtr self = arange<UInt32>(12) % 4;
 
         Mask p0(false);
         Float p1(12);
@@ -314,11 +317,11 @@ TEST_BOTH(02_calling_conventions) {
         jit_var_schedule(result.template get<3>().index());
         jit_var_schedule(result.template get<4>().index());
 
-        jit_assert(strcmp(result.template get<0>().str(), "[0, 0, 1, 0, 0, 1, 0, 0, 1, 0]") == 0);
-        jit_assert(strcmp(result.template get<1>().str(), "[0, 12, 13, 0, 12, 13, 0, 12, 13, 0]") == 0);
-        jit_assert(strcmp(result.template get<2>().str(), "[0, 34, 36, 0, 34, 36, 0, 34, 36, 0]") == 0);
-        jit_assert(strcmp(result.template get<3>().str(), "[0, 56, 59, 0, 56, 59, 0, 56, 59, 0]") == 0);
-        jit_assert(strcmp(result.template get<4>().str(), "[0, 1, 0, 0, 1, 0, 0, 1, 0, 0]") == 0);
+        jit_assert(strcmp(result.template get<0>().str(), "[0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0]") == 0);
+        jit_assert(strcmp(result.template get<1>().str(), "[0, 12, 13, 0, 0, 12, 13, 0, 0, 12, 13, 0]") == 0);
+        jit_assert(strcmp(result.template get<2>().str(), "[0, 34, 36, 0, 0, 34, 36, 0, 0, 34, 36, 0]") == 0);
+        jit_assert(strcmp(result.template get<3>().str(), "[0, 56, 59, 0, 0, 56, 59, 0, 0, 56, 59, 0]") == 0);
+        jit_assert(strcmp(result.template get<4>().str(), "[0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0]") == 0);
     }
 
     jit_registry_remove(Backend, &b1);
