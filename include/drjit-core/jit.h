@@ -1287,63 +1287,66 @@ enum class JitFlag : uint32_t {
      */
     VCallBranch = 32,
 
+    /// Use a jump table to reach appropriate target when `VCallBranch` is enabled
+    VCallBranchJumpTable = 64,
+
     /// De-duplicate virtual function calls that produce the same code
-    VCallDeduplicate = 64,
+    VCallDeduplicate = 128,
 
     /// Enable constant propagation and elide unnecessary function arguments
-    VCallOptimize = 128,
+    VCallOptimize = 256,
 
     /**
      * \brief Inline calls if there is only a single instance? (off by default,
      * inlining can make kernels so large that they actually run slower in
      * CUDA/OptiX).
      */
-    VCallInline = 256,
+    VCallInline = 512,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 512,
+    ForceOptiX = 1024,
 
     /// Temporarily postpone evaluation of statements with side effects
-    Recording = 1024,
+    Recording = 2048,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 2048,
+    PrintIR = 4096,
 
     /// Enable writing of the kernel history
-    KernelHistory = 4096,
+    KernelHistory = 8192,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 8192,
+    LaunchBlocking = 16384,
 
     /// Exploit literal constants during AD (used in the Dr.Jit parent project)
-    ADOptimize = 16384,
+    ADOptimize = 32768,
 
     /// Default flags
     Default = (uint32_t) ConstProp | (uint32_t) ValueNumbering |
               (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
-              (uint32_t) VCallBranch |
               (uint32_t) VCallRecord | (uint32_t) VCallDeduplicate |
               (uint32_t) VCallOptimize | (uint32_t) ADOptimize
 };
 #else
 enum JitFlag {
-    JitFlagConstProp           = 1,
-    JitFlagValueNumbering      = 2,
-    JitFlagLoopRecord          = 4,
-    JitFlagLoopOptimize        = 8,
-    JitFlagVCallRecord         = 16,
-    JitFlagVCallBranch         = 32,
-    JitFlagVCallDeduplicate    = 64,
-    JitFlagVCallOptimize       = 128,
-    JitFlagVCallInline         = 256,
-    JitFlagForceOptiX          = 512,
-    JitFlagRecording           = 1024,
-    JitFlagPrintIR             = 2048,
-    JitFlagKernelHistory       = 4096,
-    JitFlagLaunchBlocking      = 8192,
-    JitFlagADOptimize          = 16384,
+    JitFlagConstProp            = 1,
+    JitFlagValueNumbering       = 2,
+    JitFlagLoopRecord           = 4,
+    JitFlagLoopOptimize         = 8,
+    JitFlagVCallRecord          = 16,
+    JitFlagVCallBranch          = 32,
+    JitFlagVCallBranchJumpTable = 64,
+    JitFlagVCallDeduplicate     = 128,
+    JitFlagVCallOptimize        = 256,
+    JitFlagVCallInline          = 512,
+    JitFlagForceOptiX           = 1024,
+    JitFlagRecording            = 2048,
+    JitFlagPrintIR              = 4096,
+    JitFlagKernelHistory        = 8192,
+    JitFlagLaunchBlocking       = 16384,
+    JitFlagADOptimize           = 32768,
 };
 #endif
 

@@ -1001,6 +1001,8 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                                   uint32_t n_out, uint32_t in_size,
                                   uint32_t in_align, uint32_t out_size,
                                   uint32_t out_align) {
+    bool branch_vcall = jit_flag(JitFlag::VCallBranch);
+    bool jump_table = jit_flag(JitFlag::VCallBranchJumpTable);
 
     // =====================================================
     // 1. Conditional branch
@@ -1025,7 +1027,6 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     // 3. Turn callable ID into a function pointer
     // =====================================================
 
-    bool branch_vcall = jit_flag(JitFlag::VCallBranch);
     if (!branch_vcall) {
         if (!uses_optix)
             put("        ld.global.u64 %rd2, callables[%r3];\n");
@@ -1067,9 +1068,20 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
 
     // Switch statement: branch to call
     if (branch_vcall) {
-        for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
-            fmt("        setp.eq.u32 %p0, %r3, $u;\n", (uint32_t) i);
-            fmt("        @%p0 bra l_$u_$u;\n", vcall->id, (uint32_t) i);
+        if (!jump_table) {
+            for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
+                fmt("        setp.eq.u32 %p0, %r3, $u;\n", (uint32_t) i);
+                fmt("        @%p0 bra l_$u_$u;\n", vcall_reg, (uint32_t) i);
+            }
+        } else {
+            put("        ts: .branchtargets ");
+            for (size_t i = 0; i < vcall->callables_set.size(); ++i) {
+                if (i != 0) {
+                    put(", ");
+                }
+                fmt("l_$u_$u", vcall_reg, (uint32_t) i);
+            }
+            put(";\n        brx.idx %r3, ts;\n");
         }
         put("\n");
     }
@@ -1077,7 +1089,7 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     uint32_t callable_id = 0;
     for (XXH128_hash_t callable_hash: vcall->callables_set) {
         if (!branch_vcall) {
-            // Call prototype
+            // Generate call prototype
             put("        {\n");
             put("            proto: .callprototype");
             if (out_size)
@@ -1097,7 +1109,7 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                 fmt(".param .align $u .b8 params[$u]", in_align, in_size);
             put(");\n");
         } else {
-            fmt("    l_$u_$u:\n", vcall->id, callable_id);
+            fmt("    l_$u_$u:\n", vcall_reg, callable_id);
             put("        {\n");
         }
 
@@ -1213,21 +1225,18 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
                      (unsigned long long) callable_hash.low64);
             assemble_call(target);
             read_output_arguments();
-            fmt("            bra.uni l_done_$u;\n", vcall_reg);
         }
 
         put("        }\n\n");
-
-        if (!branch_vcall) {
-            break;
-        }
+        fmt("        bra.uni l_done_$u;\n", vcall_reg);
 
         callable_id++;
+
+        if (!branch_vcall)
+            break;
     }
 
-
-    fmt("        bra.uni l_done_$u;\n"
-        "    }\n", vcall_reg);
+    put("    }\n");
 
     // =====================================================
     // 7. Prepare output registers for masked lanes
