@@ -184,7 +184,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
     for (uint32_t i = 0; i < n_in; ++i) {
         const Variable *v = jitc_var(in[i]);
-        if (v->vcall_iface && !v->literal) {
+        if (v->vcall_iface) {
             if (!v->dep[0])
                 jitc_raise("jit_var_vcall(): placeholder variable r%u does not "
                            "reference another input!", in[i]);
@@ -240,7 +240,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         dirty = jitc_var(self)->ref_count_se;
         for (uint32_t i = 0; i < n_in; ++i) {
             const Variable *v = jitc_var(in[i]);
-            if (v->vcall_iface && !v->literal)
+            if (v->vcall_iface)
                 dirty |= (bool) jitc_var(v->dep[0])->ref_count_se;
         }
 
@@ -353,10 +353,10 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
                 continue;
 
             const Variable *v = jitc_var(index);
+            bool is_pointer = (VarType) v->type == VarType::Pointer;
             p->offset = offset;
-            p->literal = v->literal;
-            p->size = (uint8_t) type_size[v->type];
-            p->value = v->literal ? (uintptr_t) v->value : (uintptr_t) v->data;
+            p->size = is_pointer ? 0u : type_size[v->type];
+            p->src = is_pointer ? (const void *) v->value : v->data;
             p++;
         }
 
@@ -431,7 +431,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             if (!uniform[j])
                 continue;
 
-            /* Should this output value be de-virtualized? We want to avoid
+            /* Should this output value be devirtualized? We want to avoid
                completely removing the virtual function call.. */
             if (n_inst == 1 && !vcall_inline && !jitc_var(out_nested[j])->literal)
                 continue;
@@ -571,7 +571,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     for (uint32_t i = 0; i < n_in; ++i) {
         uint32_t index = in[i];
         Variable *v = jitc_var(index);
-        if (!v->vcall_iface || v->literal)
+        if (!v->vcall_iface)
             continue;
 
         // Ignore unreferenced inputs
@@ -1354,17 +1354,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
     if (!it_and_status.second)
         return;
 
-    Variable *v = jitc_var(index);
-    ThreadState *ts = thread_state(v->backend);
-
-    /* Scalar literals created outside of this virtual function call should be
-       considered as data to avoid baking them inside of the kernel IR. This rule
-       shouldn't be applied to input literal arguments of the virtual function
-       call or masks. */
-    bool ext_literal = v->literal &&
-                       !v->vcall_iface &&
-                       (VarType) v->type != VarType::Bool &&
-                       index < ts->vcall_bound_index;
+    const Variable *v = jitc_var(index);
 
     if (!v->literal && v->stmt && strstr(v->stmt, "self"))
         use_self = true;
@@ -1374,7 +1364,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     if (v->vcall_iface) {
         return;
-    } else if (v->data || ext_literal || (VarType) v->type == VarType::Pointer) {
+    } else if (v->data || (VarType) v->type == VarType::Pointer) {
         uint32_t tsize = type_size[v->type];
         uint32_t offset = (data_offset + tsize - 1) / tsize * tsize;
         it_and_status.first.value() = offset;

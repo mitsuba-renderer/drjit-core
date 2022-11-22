@@ -302,7 +302,7 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
             }
         }
 
-        if (v->vcall_iface && !v->literal) {
+        if (v->vcall_iface) {
             if (vt != VarType::Bool) {
                 buffer.fmt("    ld.param.%s %s%u, [params+%u];\n",
                            type_name_ptx[vti], type_prefix[vti],
@@ -312,36 +312,30 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
                            "    setp.ne.u16 %%p%u, %%w0, 0;\n",
                            v->param_offset, v->reg_index);
             }
-        } else if (v->literal || v->data) {
+        } else if (v->data || vt == VarType::Pointer) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
             auto it = data_map.find(key);
 
-            if (!v->data && vt != VarType::Pointer) {
-                if (unlikely(it == data_map.end() || it->second == (uint32_t) -1)) {
-                    jitc_render_stmt_cuda(sv.index, v);
-                    continue;
-                }
-            } else {
-                if (unlikely(it == data_map.end())) {
-                    jitc_fail("jitc_assemble_cuda_func(): could not find entry for "
-                              "variable r%u in 'data_map'", sv.index);
-                    #if 0
-                        jitc_log(Warn,
-                                "jitc_assemble_cuda_func(): could not find entry for "
-                                "variable r%u in 'data_map'",
-                                sv.index);
-                        buffer.fmt("    ld.global.%s %s%u, ???;\n",
-                                type_name_ptx[vti], type_prefix[vti], v->reg_index);
-                    #endif
-                    continue;
-                }
-                if (it->second == (uint32_t) -1)
-                    jitc_fail(
-                        "jitc_assemble_cuda_func(): variable r%u is referenced by "
-                        "a recorded function call. However, it was evaluated "
-                        "between the recording step and code generation (which "
-                        "is happening now). This is not allowed.", sv.index);
+            if (unlikely(it == data_map.end())) {
+                jitc_fail("jitc_assemble_cuda_func(): could not find entry for "
+                          "variable r%u in 'data_map'", sv.index);
+                #if 0
+                    jitc_log(Warn,
+                             "jitc_assemble_cuda_func(): could not find entry for "
+                             "variable r%u in 'data_map'",
+                             sv.index);
+                    buffer.fmt("    ld.global.%s %s%u, ???;\n",
+                               type_name_ptx[vti], type_prefix[vti], v->reg_index);
+                #endif
+                continue;
             }
+
+            if (it->second == (uint32_t) -1)
+                jitc_fail(
+                    "jitc_assemble_cuda_func(): variable r%u is referenced by "
+                    "a recorded function call. However, it was evaluated "
+                    "between the recording step and code generation (which "
+                    "is happening now). This is not allowed.", sv.index);
 
             if (vt != VarType::Bool)
                 buffer.fmt("    ld.global.%s %s%u, [data+%u];\n",

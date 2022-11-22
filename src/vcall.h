@@ -19,9 +19,6 @@ extern VCallBucket *jitc_var_vcall_reduce(JitBackend backend,
 /// Helper data structure used to initialize the data block consumed by a vcall
 struct VCallDataRecord {
     uint32_t offset;
-    uint8_t size;
-    bool literal;
-    uint16_t unused;
-    uintptr_t value;
+    uint32_t size;
+    const void *src;
 };
-static_assert(sizeof(VCallDataRecord) == 16, "VCallDataRecord has unexpected size!");
