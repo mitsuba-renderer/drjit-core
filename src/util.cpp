@@ -1317,15 +1317,15 @@ void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, u
                 for (uint32_t i = start; i != end; ++i) {
                     VCallDataRecord rec = rec_[i];
 
-                    bool literal = rec.literal;
-                    uintptr_t value = rec.value;
+                    const void *src = rec.src;
                     void *dst = (uint8_t *) dst_ + rec.offset;
 
                     switch (rec.size) {
-                        case 1: *(uint8_t *)  dst = literal ? (uint8_t)  value : *(uint8_t *)  value; break;
-                        case 2: *(uint16_t *) dst = literal ? (uint16_t) value : *(uint16_t *) value; break;
-                        case 4: *(uint32_t *) dst = literal ? (uint32_t) value : *(uint32_t *) value; break;
-                        case 8: *(uint64_t *) dst = literal ? (uint64_t) value : *(uint64_t *) value; break;
+                        case 0: *(uint64_t *) dst = (uint64_t)    src; break;
+                        case 1: *(uint8_t *)  dst = *(uint8_t *)  src; break;
+                        case 2: *(uint16_t *) dst = *(uint16_t *) src; break;
+                        case 4: *(uint32_t *) dst = *(uint32_t *) src; break;
+                        case 8: *(uint64_t *) dst = *(uint64_t *) src; break;
                     }
                 }
             },

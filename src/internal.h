@@ -363,9 +363,6 @@ struct ThreadState {
     /// .. and the JIT variable that it will be mapped to
     uint32_t vcall_self_index = 0;
 
-    /// Index of the last variable created before recording the current vcall
-    uint32_t vcall_bound_index = 0;
-
     /// ---------------------------- LLVM-specific ----------------------------
 
     // Currently active task within the thread pool

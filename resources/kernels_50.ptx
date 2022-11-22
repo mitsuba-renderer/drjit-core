@@ -5389,101 +5389,77 @@ BB43_3:
 	.param .u32 vcall_prepare_param_2
 )
 {
-	.reg .pred 	%p<11>;
-	.reg .b16 	%rs<17>;
-	.reg .b32 	%r<12>;
-	.reg .b64 	%rd<13>;
+	.reg .pred 	%p<8>;
+	.reg .b16 	%rs<3>;
+	.reg .b32 	%r<11>;
+	.reg .b64 	%rd<11>;
 
 
-	ld.param.u64 	%rd5, [vcall_prepare_param_0];
-	ld.param.u64 	%rd6, [vcall_prepare_param_1];
-	ld.param.u32 	%r5, [vcall_prepare_param_2];
-	mov.u32 	%r6, %ctaid.x;
-	mov.u32 	%r7, %ntid.x;
-	mov.u32 	%r8, %tid.x;
-	mad.lo.s32 	%r1, %r7, %r6, %r8;
-	setp.ge.u32	%p1, %r1, %r5;
-	@%p1 bra 	BB44_19;
+	ld.param.u64 	%rd3, [vcall_prepare_param_0];
+	ld.param.u64 	%rd4, [vcall_prepare_param_1];
+	ld.param.u32 	%r2, [vcall_prepare_param_2];
+	mov.u32 	%r3, %ctaid.x;
+	mov.u32 	%r4, %ntid.x;
+	mov.u32 	%r5, %tid.x;
+	mad.lo.s32 	%r1, %r4, %r3, %r5;
+	setp.ge.u32	%p1, %r1, %r2;
+	@%p1 bra 	BB44_12;
 
-	cvta.to.global.u64 	%rd7, %rd6;
-	mul.wide.u32 	%rd8, %r1, 16;
-	add.s64 	%rd9, %rd7, %rd8;
-	ld.global.v2.u8 	{%rs8, %rs9}, [%rd9+4];
-	ld.global.u64 	%rd1, [%rd9+8];
-	ld.global.u32 	%rd10, [%rd9];
-	cvta.to.global.u64 	%rd11, %rd5;
-	add.s64 	%rd2, %rd11, %rd10;
-	cvt.u32.u16	%r9, %rs8;
-	setp.gt.s32	%p2, %r9, 3;
-	@%p2 bra 	BB44_6;
+	cvta.to.global.u64 	%rd5, %rd4;
+	mul.wide.u32 	%rd6, %r1, 16;
+	add.s64 	%rd7, %rd5, %rd6;
+	ld.global.v2.u32 	{%r7, %r8}, [%rd7];
+	ld.global.u64 	%rd1, [%rd7+8];
+	cvt.u64.u32	%rd8, %r7;
+	cvta.to.global.u64 	%rd9, %rd3;
+	add.s64 	%rd2, %rd9, %rd8;
+	setp.gt.s32	%p2, %r8, 1;
+	@%p2 bra 	BB44_5;
 
-	setp.eq.s32	%p5, %r9, 1;
-	@%p5 bra 	BB44_15;
+	setp.eq.s32	%p6, %r8, 0;
+	@%p6 bra 	BB44_11;
 	bra.uni 	BB44_3;
 
-BB44_15:
-	setp.eq.s16	%p10, %rs9, 0;
-	@%p10 bra 	BB44_17;
+BB44_11:
+	st.global.u64 	[%rd2], %rd1;
+	bra.uni 	BB44_12;
 
-	cvt.u16.u64	%rs16, %rd1;
-	bra.uni 	BB44_18;
+BB44_5:
+	setp.eq.s32	%p3, %r8, 2;
+	@%p3 bra 	BB44_10;
 
-BB44_6:
-	setp.eq.s32	%p3, %r9, 4;
-	@%p3 bra 	BB44_11;
+	setp.eq.s32	%p4, %r8, 4;
+	@%p4 bra 	BB44_9;
 	bra.uni 	BB44_7;
 
-BB44_11:
-	setp.eq.s16	%p8, %rs9, 0;
-	@%p8 bra 	BB44_13;
-
-	cvt.u32.u64	%r2, %rd1;
-	st.global.u32 	[%rd2], %r2;
-	bra.uni 	BB44_19;
+BB44_9:
+	ld.u32 	%r10, [%rd1];
+	st.global.u32 	[%rd2], %r10;
+	bra.uni 	BB44_12;
 
 BB44_3:
-	setp.eq.s32	%p6, %r9, 2;
-	@%p6 bra 	BB44_4;
-	bra.uni 	BB44_19;
+	setp.eq.s32	%p7, %r8, 1;
+	@%p7 bra 	BB44_4;
+	bra.uni 	BB44_12;
 
 BB44_4:
-	setp.eq.s16	%p9, %rs9, 0;
-	@%p9 bra 	BB44_14;
-
-	cvt.u16.u64	%rs2, %rd1;
-	st.global.u16 	[%rd2], %rs2;
-	bra.uni 	BB44_19;
-
-BB44_7:
-	setp.ne.s32	%p4, %r9, 8;
-	@%p4 bra 	BB44_19;
-
-	setp.ne.s16	%p7, %rs9, 0;
-	@%p7 bra 	BB44_10;
-
-	ld.u64 	%rd1, [%rd1];
+	ld.u8 	%rs2, [%rd1];
+	st.global.u8 	[%rd2], %rs2;
+	bra.uni 	BB44_12;
 
 BB44_10:
-	st.global.u64 	[%rd2], %rd1;
-	bra.uni 	BB44_19;
+	ld.u16 	%rs1, [%rd1];
+	st.global.u16 	[%rd2], %rs1;
+	bra.uni 	BB44_12;
 
-BB44_17:
-	ld.u8 	%rs16, [%rd1];
+BB44_7:
+	setp.ne.s32	%p5, %r8, 8;
+	@%p5 bra 	BB44_12;
 
-BB44_18:
-	st.global.u8 	[%rd2], %rs16;
-	bra.uni 	BB44_19;
+	ld.u64 	%rd10, [%rd1];
+	st.global.u64 	[%rd2], %rd10;
 
-BB44_13:
-	ld.u32 	%r3, [%rd1];
-	st.global.u32 	[%rd2], %r3;
-	bra.uni 	BB44_19;
-
-BB44_14:
-	ld.u16 	%rs3, [%rd1];
-	st.global.u16 	[%rd2], %rs3;
-
-BB44_19:
+BB44_12:
 	ret;
 }
 

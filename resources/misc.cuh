@@ -33,12 +33,9 @@ KERNEL void fill_64(uint64_t *out, uint32_t size, uint64_t value) {
 
 struct VCallDataRecord {
     uint32_t offset;
-    uint8_t size;
-    bool literal;
-    uint16_t unused;
-    uintptr_t value;
+    uint32_t size;
+    const void *src;
 };
-static_assert(sizeof(VCallDataRecord) == 16, "VCallDataRecord has unexpected size!");
 
 KERNEL void vcall_prepare(void *out, const VCallDataRecord *rec_, uint32_t size) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -47,15 +44,15 @@ KERNEL void vcall_prepare(void *out, const VCallDataRecord *rec_, uint32_t size)
 
     VCallDataRecord rec = rec_[idx];
 
-    bool literal = rec.literal;
-    uintptr_t value = rec.value;
+    const void *src = rec.src;
     void *dst = (uint8_t *) out + rec.offset;
 
     switch (rec.size) {
-        case 1: *(uint8_t *)  dst = literal ? (uint8_t)  value : *(uint8_t *)  value; break;
-        case 2: *(uint16_t *) dst = literal ? (uint16_t) value : *(uint16_t *) value; break;
-        case 4: *(uint32_t *) dst = literal ? (uint32_t) value : *(uint32_t *) value; break;
-        case 8: *(uint64_t *) dst = literal ? (uint64_t) value : *(uint64_t *) value; break;
+        case 0: *(uint64_t *) dst = (uint64_t)    src; break;
+        case 1: *(uint8_t *)  dst = *(uint8_t *)  src; break;
+        case 2: *(uint16_t *) dst = *(uint16_t *) src; break;
+        case 4: *(uint32_t *) dst = *(uint32_t *) src; break;
+        case 8: *(uint64_t *) dst = *(uint64_t *) src; break;
     }
 }
 

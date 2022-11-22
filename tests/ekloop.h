@@ -209,7 +209,7 @@ protected:
                 }
 
                 // Start recording side effects
-                m_jit_state.begin_recording(false);
+                m_jit_state.begin_recording();
 
                 m_state++;
 
