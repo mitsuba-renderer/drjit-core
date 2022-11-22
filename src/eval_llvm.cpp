@@ -463,7 +463,7 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
 #endif
     } else {
         const char *s = v->stmt;
-        if (unlikely(*s == '\0'))
+        if (unlikely(!s || *s == '\0'))
             return;
         buffer.put("    ");
         char c;
