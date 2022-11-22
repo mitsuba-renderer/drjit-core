@@ -729,6 +729,8 @@ void jitc_eval(ThreadState *ts) {
                 }
                 v = jitc_var(index);
             }
+
+            state.extra[index].assemble = nullptr;
         }
 
         jitc_cse_drop(index, v);

@@ -1262,8 +1262,10 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                     stmt = literal_zero[2] ? "selp.$b0 $r0, $r2, 0, $r1"
                                            : "selp.$t0 $r0, $r2, $r3, $r1";
                 } else {
-                    stmt = "@$r1 mov.pred $r0, $r2$n"
-                           "@!$r1 mov.pred $r0, $r3";
+                    // r0 = (r1 && r2) || (!r1 && r3)
+                    stmt = "and.pred %p3, $r1, $r2$n"
+                           "and.pred %p2, !$r1, $r3$n"
+                           "or.pred $r0, %p2, %p3";
                 }
             } else {
                 stmt = literal_zero[2] ? "$r0 = select <$w x $t1> $r1, <$w x "
@@ -1659,7 +1661,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
 
 #if 0
     // Debug out-of-bounds issues
-    {
+    if (backend == JitBackend::CUDA) {
         char tmp[128];
         snprintf(tmp, sizeof(tmp),
                  "setp.eq.u64 $r0, $r1, 0$n" // base pointer issue
@@ -1685,35 +1687,27 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
                     stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
                            "ld.global.nc.$t0 $r0, [%rd3]";
                 else
-                    stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
-                           "@$r3 ld.global.nc.$t0 $r0, [%rd3]$n"
-                           "@!$r3 mov.$b0 $r0, 0";
+                    stmt = ""; // Will use assemble callback set below
             } else {
                 if (unmasked)
                     stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
                            "ld.global.nc.u8 %w0, [%rd3]$n"
                            "setp.ne.u16 $r0, %w0, 0";
                 else
-                    stmt = "mad.wide.$t2 %rd3, $r2, $s0, $r1$n"
-                           "@$r3 ld.global.nc.u8 %w0, [%rd3]$n"
-                           "@!$r3 mov.u16 %w0, 0$n"
-                           "setp.ne.u16 $r0, %w0, 0";
+                    stmt = ""; // Will use assemble callback set below
             }
         } else {
             if (vt != VarType::Bool) {
                 if (unmasked)
                     stmt = "ld.global.nc.$t0 $r0, [$r1]";
                 else
-                    stmt = "@$r3 ld.global.nc.$t0 $r0, [$r1]$n"
-                           "@!$r3 mov.$b0 $r0, 0";
+                    stmt = ""; // Will use assemble callback set below
             } else {
                 if (unmasked)
                     stmt = "ld.global.nc.u8 %w0, [$r1]$n"
                            "setp.ne.u16 $r0, %w0, 0";
                 else
-                    stmt = "@$r3 ld.global.nc.u8 %w0, [$r1]$n"
-                           "@!$r3 mov.u16 %w0, 0$n"
-                           "setp.ne.u16 $r0, %w0, 0";
+                    stmt = ""; // Will use assemble callback set below
             }
         }
 
@@ -1743,6 +1737,71 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     jitc_log(Debug,
              "jit_var_new_gather(r%u <- r%u[r%u] if r%u, via ptr r%u)",
              result, source, (uint32_t) index, (uint32_t) mask, (uint32_t) ptr);
+
+    if (backend == JitBackend::CUDA && !unmasked && strcmp(stmt, "") == 0) {
+        jitc_var(result)->extra = 1;
+
+        Extra &extra = state.extra[result];
+        extra.assemble = [](const Variable *v, const Extra &/*extra*/) {
+            const Variable *v_ptr   = jitc_var(v->dep[0]);
+            const Variable *v_index = jitc_var(v->dep[1]);
+            const Variable *v_mask  = jitc_var(v->dep[2]);
+
+            uint32_t v_i     = v->reg_index;
+            uint32_t ptr_i   = v_ptr->reg_index;
+            uint32_t index_i = v_index->reg_index;
+            uint32_t mask_i  = v_mask->reg_index;
+
+            const char *v_tp     = type_prefix[v->type];
+            const char *ptr_tp   = type_prefix[v_ptr->type];
+            const char *index_tp = type_prefix[v_index->type];
+
+            bool index_zero = v_index->literal && v_index->value == 0;
+            bool is_bool = v->type == (uint32_t) VarType::Bool;
+
+            if (!index_zero) {
+                buffer.fmt("    mad.wide.%s %%rd3, %s%u, %s, %s%u;\n",
+                           type_name_ptx[v_index->type], index_tp, index_i,
+                           type_size_str[v->type], ptr_tp, ptr_i);
+            }
+
+            buffer.fmt("    @!%%p%u bra l_%u_masked;\n", mask_i, v_i);
+
+            if (!index_zero) {
+                if (!is_bool) {
+                    buffer.fmt("    ld.global.nc.%s %s%u, [%%rd3];\n",
+                               type_name_ptx[v->type], v_tp, v_i);
+                } else {
+                    buffer.put("    ld.global.nc.u8 %w0, [%rd3];\n");
+                }
+            } else {
+                if (!is_bool) {
+                    buffer.fmt("    ld.global.nc.%s %s%u, [%s%u];\n",
+                               type_name_ptx[v->type], v_tp, v_i, ptr_tp, ptr_i);
+                } else {
+                    buffer.fmt("    ld.global.nc.u8 %%w0, [%s%u];\n",
+                               ptr_tp, ptr_i);
+                }
+            }
+
+            buffer.fmt("    bra.uni l_%u_done;\n"
+                       "l_%u_masked:\n",
+                       v_i, v_i);
+
+            if (!is_bool) {
+                buffer.fmt("    mov.%s %s%u, 0;\n"
+                           "l_%u_done:\n",
+                           type_name_ptx_bin[v->type], v_tp, v_i,
+                           v_i);
+            } else {
+                buffer.fmt("    mov.u16 %%w0, 0;\n"
+                           "l_%u_done:\n"
+                           "    setp.ne.u16 %s%u, %%w0, 0;\n",
+                           v_i,
+                           v_tp, v_i);
+            }
+        };
+    }
 
     return result;
 }
@@ -1854,14 +1913,11 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     Ref mask  = steal(jitc_var_mask_apply(mask_, size)),
         index = steal(jitc_scatter_gather_index(target, index_));
 
-    // Special case for unmasked scatters, and for assigning to target[0]
-    bool unmasked = false, index_zero = false;
+    // Special case for unmasked scatters
+    bool unmasked = false;
     {
-        const Variable *v_mask  = jitc_var(mask),
-                       *v_index = jitc_var(index);
-
+        const Variable *v_mask  = jitc_var(mask);
         unmasked   = v_mask->literal  && v_mask->value  == 1;
-        index_zero = v_index->literal && v_index->value == 0;
         size = std::max(size, v_mask->size);
     }
 
@@ -1887,45 +1943,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             jitc_raise("jitc_var_new_scatter(): unsupported reduction!");
     }
 
-    if (backend == JitBackend::CUDA) {
-        const char *dst_addr = "$r1";
-
-        if (!index_zero) {
-            buf.put("mad.wide.$t3 %rd3, $r3, $s2, $r1$n");
-            dst_addr = "%rd3";
-        }
-
-        const char *src_reg = "$r2",
-                   *src_type = "$t2";
-        if (vt == VarType::Bool) {
-            buf.put("selp.u16 %w0, 1, 0, $r2$n");
-            src_reg = "%w0";
-            src_type = "u8";
-        }
-
-        bool use_atom_op = reduce_op != ReduceOp::None &&
-                           std::tie(jitc_cuda_version_major,
-                                    jitc_cuda_version_minor) < std::make_tuple(11, 5);
-
-        if (use_atom_op)
-            buf.put(".reg.$t2 $r0$n");
-
-        if (unmasked) {
-            dep[3] = 0;
-            n_dep = 3;
-        } else {
-            buf.put("@$r4 ");
-        }
-
-        if (reduce_op == ReduceOp::None)
-            buf.fmt("st.global.%s [%s], %s", src_type, dst_addr, src_reg);
-        else if (use_atom_op)
-            buf.fmt("atom.global.%s.%s $r0, [%s], %s", red_op_name,
-                    src_type, dst_addr, src_reg);
-        else
-            buf.fmt("red.global.%s.%s [%s], %s", red_op_name,
-                    src_type, dst_addr, src_reg);
-    } else {
+    if (backend == JitBackend::LLVM) {
         if (is_float && reduce_op != ReduceOp::None &&
             reduce_op != ReduceOp::Add)
             jitc_raise("jitc_var_new_scatter(): LLVM %s reduction only "
@@ -2013,10 +2031,98 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                 red_op_name
             );
         }
+    } else {
+        if (unmasked) {
+            dep[3] = 0;
+            n_dep = 3;
+        }
     }
 
     uint32_t result =
         jitc_var_new_stmt(backend, VarType::Void, buf.get(), 0, n_dep, dep);
+
+    if (backend == JitBackend::CUDA) {
+        jitc_var(result)->extra = 1;
+        Extra &extra = state.extra[result];
+        extra.callback_data = strdup(red_op_name ? red_op_name : "");
+
+        extra.assemble = [](const Variable *v, const Extra &extra) {
+            const Variable *v_dst  = jitc_var(v->dep[0]);
+            const Variable *v_src  = jitc_var(v->dep[1]);
+            const Variable *v_idx  = jitc_var(v->dep[2]);
+
+            uint32_t v_i     = v->reg_index;
+            uint32_t dst_i   = v_dst->reg_index;
+            uint32_t src_i   = v_src->reg_index;
+            uint32_t index_i = v_idx->reg_index;
+
+            const char *v_tp     = type_prefix[v->type];
+            const char *dst_tp   = type_prefix[v_dst->type];
+            const char *src_tp   = type_prefix[v_src->type];
+            const char *index_tp = type_prefix[v_idx->type];
+
+            bool index_zero = v_idx->literal && v_idx->value == 0;
+            bool is_src_bool = v_src->type == (uint32_t) VarType::Bool;
+
+            bool masked = false;
+            const Variable *v_mask;
+            if (v->dep[3]) {
+                v_mask = jitc_var(v->dep[3]);
+                masked = !(v_mask->literal && v_mask->value == 1);
+            }
+
+            const char *red_op_name = (const char *) extra.callback_data;
+            bool red_op_none = (strcmp(red_op_name, "") == 0);
+
+            Buffer dst_addr(8);
+            Buffer src_reg(8);
+
+            if (masked) {
+                buffer.fmt("    @!%%p%u bra l_%u_done;\n",
+                           v_mask->reg_index, v_i);
+            }
+
+            if (!index_zero) {
+                buffer.fmt("    mad.wide.%s %%rd3, %s%u, %s, %s%u;\n",
+                           type_name_ptx[v_idx->type], index_tp, index_i,
+                           type_size_str[v_src->type], dst_tp, dst_i);
+                dst_addr.put("%rd3");
+            } else {
+                dst_addr.fmt("%s%u", dst_tp, dst_i);
+            }
+
+            if (is_src_bool) {
+                buffer.fmt("    selp.u16 %%w0, 1, 0, %s%u;\n", src_tp, src_i);
+                src_reg.put("%w0");
+            } else {
+                src_reg.fmt("%s%u", src_tp, src_i);
+            }
+
+            bool use_atom_op =
+                red_op_none &&
+                std::tie(jitc_cuda_version_major, jitc_cuda_version_minor) <
+                    std::make_tuple(11, 5);
+
+            if (use_atom_op)
+                buffer.fmt(".reg.%s %s%u;\n", type_name_ptx[v_src->type], v_tp, v_i);
+
+            const char *src_type = is_src_bool ? "u8" : type_name_ptx[v_src->type];
+
+            if (red_op_none) {
+                buffer.fmt("    st.global.%s [%s], %s;\n",
+                           src_type, dst_addr.get(), src_reg.get());
+            } else if (use_atom_op) {
+                buffer.fmt("    atom.global.%s.%s $r0, [%s], %s;\n",
+                           red_op_name, src_type, dst_addr.get(), src_reg.get());
+            } else {
+                buffer.fmt("    red.global.%s.%s [%s], %s;\n",
+                           red_op_name, src_type, dst_addr.get(), src_reg.get());
+            }
+
+            if (masked)
+                buffer.fmt("l_%u_done:\n", v_i);
+        };
+    }
 
     print_log(((uint32_t) target == target_) ? "direct" : "copy", result);
 

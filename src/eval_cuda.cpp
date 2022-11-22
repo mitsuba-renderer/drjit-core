@@ -104,6 +104,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
         const uint32_t vti = v->type,
                        size = v->size;
         const VarType vt = (VarType) vti;
+        bool assemble = false;
 
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
@@ -119,7 +120,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
 
             if (extra.assemble) {
                 extra.assemble(v, extra);
-                continue;
+                assemble = true;
             }
         }
 
@@ -155,7 +156,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                            v->reg_index);
             }
             continue;
-        } else {
+        } else if (likely(!assemble)) {
             jitc_render_stmt_cuda(index, v);
         }
 
