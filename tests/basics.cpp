@@ -18,10 +18,10 @@ TEST_BOTH(01_creation_destruction_cse) {
             jit_assert(strcmp(jit_var_str(l),
                                i == 0 ? "[1234]" : "[1234, 1234]") == 0);
 
-        jit_var_dec_ref_ext(v0);
-        jit_var_dec_ref_ext(v1);
-        jit_var_dec_ref_ext(v2);
-        jit_var_dec_ref_ext(v3);
+        jit_var_dec_ref(v0);
+        jit_var_dec_ref(v1);
+        jit_var_dec_ref(v2);
+        jit_var_dec_ref(v3);
     }
 }
 
@@ -41,9 +41,9 @@ TEST_BOTH(02_load_store) {
                 uint32_t v1 = jit_var_new_literal(Backend, VarType::UInt32, &value2, 1 + i);
 
                 uint32_t v0p = jit_var_new_op_2(JitOp::Add, o, v0);
-                jit_var_dec_ref_ext(v0);
+                jit_var_dec_ref(v0);
                 uint32_t v1p = jit_var_new_op_2(JitOp::Add, o, v1);
-                jit_var_dec_ref_ext(v1);
+                jit_var_dec_ref(v1);
 
                 jit_assert(v0p == v1p);
 
@@ -51,11 +51,11 @@ TEST_BOTH(02_load_store) {
                     jit_assert(strcmp(jit_var_str(l),
                                        (k == 0 && i == 0) ? "[1235]"
                                                           : "[1235, 1235]") == 0);
-                jit_var_dec_ref_ext(v0p);
-                jit_var_dec_ref_ext(v1p);
+                jit_var_dec_ref(v0p);
+                jit_var_dec_ref(v1p);
             }
 
-            jit_var_dec_ref_ext(o);
+            jit_var_dec_ref(o);
         }
     }
 }
@@ -76,12 +76,12 @@ TEST_BOTH(03_load_store_mask) {
         jit_assert(strcmp(jit_var_str(flip),
                            i == 0 ? "[0]" : "[0, 1, 0, 1, 0, 1, 0, 1, 0, 1]") == 0);
 
-        jit_var_dec_ref_ext(flip);
-        jit_var_dec_ref_ext(ctr);
-        jit_var_dec_ref_ext(one);
-        jit_var_dec_ref_ext(zero);
-        jit_var_dec_ref_ext(odd);
-        jit_var_dec_ref_ext(mask);
+        jit_var_dec_ref(flip);
+        jit_var_dec_ref(ctr);
+        jit_var_dec_ref(one);
+        jit_var_dec_ref(zero);
+        jit_var_dec_ref(odd);
+        jit_var_dec_ref(mask);
     }
 }
 
@@ -107,9 +107,9 @@ TEST_BOTH(04_load_store_float) {
                 jit_assert(strcmp(jit_var_str(v2),
                                    j == 0 ? "[1235]" : "[1235, 1235]") == 0);
 
-                jit_var_dec_ref_ext(v0);
-                jit_var_dec_ref_ext(v1);
-                jit_var_dec_ref_ext(v2);
+                jit_var_dec_ref(v0);
+                jit_var_dec_ref(v1);
+                jit_var_dec_ref(v2);
             }
         }
     }
@@ -181,7 +181,7 @@ template <typename T> bool test_const_prop() {
             uint32_t index = 0;
             if ((op == JitOp::Rcp) && values[i] == 0) {
                 index = in[i];
-                jit_var_inc_ref_ext(index);
+                jit_var_inc_ref(index);
             } else {
                 index = jit_var_new_op(op, 1, in + i);
             }
@@ -234,10 +234,10 @@ template <typename T> bool test_const_prop() {
         }
 
         for (uint32_t i = 0; i < Size2 * Size2; ++i)
-            jit_var_dec_ref_ext(out[i]);
+            jit_var_dec_ref(out[i]);
 
         for (uint32_t i = 0; i < Size2; ++i)
-            jit_var_dec_ref_ext(in[i]);
+            jit_var_dec_ref(in[i]);
     }
 
     // ===============================================================
@@ -267,7 +267,7 @@ template <typename T> bool test_const_prop() {
                 if (((op == JitOp::Div || op == JitOp::Mod) && values[j] == 0) ||
                     ((op == JitOp::Shr || op == JitOp::Shl) && values[j] < Value(0))) {
                     index = in[j];
-                    jit_var_inc_ref_ext(index);
+                    jit_var_inc_ref(index);
                 } else {
                     index = jit_var_new_op(op, 2, deps);
                 }
@@ -315,10 +315,10 @@ template <typename T> bool test_const_prop() {
         }
 
         for (uint32_t i = 0; i < Size2 * Size2; ++i)
-            jit_var_dec_ref_ext(out[i]);
+            jit_var_dec_ref(out[i]);
 
         for (uint32_t i = 0; i < Size2; ++i)
-            jit_var_dec_ref_ext(in[i]);
+            jit_var_dec_ref(in[i]);
     }
 
     // ===============================================================
@@ -405,13 +405,13 @@ template <typename T> bool test_const_prop() {
         }
 
         for (uint32_t i = 0; i < Small2 * Small2 * Small2; ++i)
-            jit_var_dec_ref_ext(out[i]);
+            jit_var_dec_ref(out[i]);
 
         for (uint32_t i = 0; i < Small2; ++i)
-            jit_var_dec_ref_ext(in[i]);
+            jit_var_dec_ref(in[i]);
 
         for (int i = 0; i < 4; ++i)
-            jit_var_dec_ref_ext(in_b[i]);
+            jit_var_dec_ref(in_b[i]);
     }
 
     return fail;
@@ -526,8 +526,8 @@ TEST_BOTH(06_cast) {
                 }
 
                 for (int i = 0; i < size * 2; ++i) {
-                    jit_var_dec_ref_ext(source_value[i]);
-                    jit_var_dec_ref_ext(target_value[i]);
+                    jit_var_dec_ref(source_value[i]);
+                    jit_var_dec_ref(target_value[i]);
                 }
             }
         }
@@ -557,9 +557,9 @@ TEST_BOTH(07_and_or_mixed) {
             uint32_t v5 = jit_var_new_op_2(JitOp::Or, v1, v0);
             uint32_t v6 = jit_var_new_op_2(JitOp::Or, v2, v0);
 
-            jit_var_dec_ref_ext(v0);
-            jit_var_dec_ref_ext(v1);
-            jit_var_dec_ref_ext(v2);
+            jit_var_dec_ref(v0);
+            jit_var_dec_ref(v1);
+            jit_var_dec_ref(v2);
 
             jit_var_schedule(v3);
             jit_var_schedule(v4);
@@ -570,8 +570,8 @@ TEST_BOTH(07_and_or_mixed) {
             float out_f = 0;
             jit_var_read(v3, 0, &out_u);
             jit_var_read(v4, 0, &out_f);
-            jit_var_dec_ref_ext(v3);
-            jit_var_dec_ref_ext(v4);
+            jit_var_dec_ref(v3);
+            jit_var_dec_ref(v4);
 
             jit_assert(out_u == (b ? 1234u : 0u));
             jit_assert(out_f == (b ? 1234u : 0u));
@@ -582,8 +582,8 @@ TEST_BOTH(07_and_or_mixed) {
             jit_assert(out_u == (b ? 0xFFFFFFFF : 1234));
             jit_assert(b ? std::isnan(out_f) : (out_f == 1234));
 
-            jit_var_dec_ref_ext(v5);
-            jit_var_dec_ref_ext(v6);
+            jit_var_dec_ref(v5);
+            jit_var_dec_ref(v6);
         }
     }
 }

@@ -53,11 +53,11 @@ uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
     v->side_effect = 1;
     v->size = size;
     v->dep[0] = mask_combined;
-    jitc_var_inc_ref_int(mask_combined);
+    jitc_var_inc_ref(mask_combined);
 
     if (backend == JitBackend::LLVM) {
         v->dep[1] = printf_target;
-        jitc_var_inc_ref_int(printf_target);
+        jitc_var_inc_ref(printf_target);
     }
 
     size_t dep_size = narg * sizeof(uint32_t);
@@ -66,7 +66,7 @@ uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
     e.dep = (uint32_t *) malloc(dep_size);
     memcpy(e.dep, arg, dep_size);
     for (uint32_t i = 0; i < narg; ++i)
-        jitc_var_inc_ref_int(arg[i]);
+        jitc_var_inc_ref(arg[i]);
 
     e.assemble = backend == JitBackend::CUDA
                      ? jitc_var_printf_assemble_cuda

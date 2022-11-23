@@ -416,7 +416,7 @@ uint32_t jitc_var_shift(JitBackend backend, VarType vt, JitOp op,
     uint32_t shift = jitc_var_new_literal(backend, vt, &amount, 1, 0);
     uint32_t deps[2] = { index, shift };
     uint32_t result = jitc_var_new_op(op, 2, deps);
-    jitc_var_dec_ref_ext(shift);
+    jitc_var_dec_ref(shift);
     return result;
 }
 
@@ -589,7 +589,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                     uint32_t deps[2] = { dep[0], mask };
                     li = jitc_var_new_op(JitOp::And, 2, deps);
                     li_created = true;
-                    jitc_var_dec_ref_ext(mask);
+                    jitc_var_dec_ref(mask);
                 } else {
                     stmt = "$r0_0 = icmp slt <$w x $t0> $r1, zeroinitializer$n"
                            "$r0_1 = sub <$w x $t0> zeroinitializer, $r1$n"
@@ -628,7 +628,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                                                     1, 0);
                 uint32_t deps[2] = { one, dep[0] };
                 li = jitc_var_new_op(JitOp::Div, 2, deps);
-                jitc_var_dec_ref_ext(one);
+                jitc_var_dec_ref(one);
                 li_created = true;
             }
             break;
@@ -653,8 +653,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 uint32_t result_1 = jitc_var_new_op(JitOp::Div, 2, deps);
                 li = jitc_var_new_op(JitOp::Sqrt, 1, &result_1);
                 li_created = true;
-                jitc_var_dec_ref_ext(one);
-                jitc_var_dec_ref_ext(result_1);
+                jitc_var_dec_ref(one);
+                jitc_var_dec_ref(result_1);
             }
             break;
 
@@ -854,7 +854,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                     jitc_var_new_literal(backend, vt, &shift_amount, 1, 0);
                 uint32_t deps[3] = { dep[0], dep[1], shift };
                 li = jitc_var_new_stmt(backend, vt, stmt, 1, 3, deps);
-                jitc_var_dec_ref_ext(shift);
+                jitc_var_dec_ref(shift);
                 li_created = true;
             }
             break;
@@ -900,7 +900,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 uint32_t deps[2] = { dep[0], recip };
                 li = jitc_var_new_op(JitOp::Mul, 2, deps);
                 li_created = 1;
-                jitc_var_dec_ref_ext(recip);
+                jitc_var_dec_ref(recip);
             } else if (backend == JitBackend::CUDA) {
                 if (is_single)
                     stmt = "div.approx.ftz.$t0 $r0, $r1, $r2";
@@ -1289,7 +1289,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
     if (li) {
         result = jitc_var_resize(li, size);
         if (li_created)
-            jitc_var_dec_ref_ext(li);
+            jitc_var_dec_ref(li);
     } else {
         if (dirty) {
             jitc_eval(thread_state(backend));
@@ -1313,7 +1313,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             v2.stmt = (char *) stmt;
             for (uint32_t i = 0; i < n_dep; ++i) {
                 v2.dep[i] = dep[i];
-                jitc_var_inc_ref_int(dep[i], v[i]);
+                jitc_var_inc_ref(dep[i], v[i]);
             }
         }
 
@@ -1365,7 +1365,7 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret)
     const VarType source_type = (VarType) v->type;
 
     if (source_type == target_type) {
-        jitc_var_inc_ref_ext(index);
+        jitc_var_inc_ref(index);
         return index;
     }
 
@@ -1494,7 +1494,7 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret)
         v2.stmt = (char *) stmt;
         v2.dep[0] = index;
         v2.placeholder = v->placeholder;
-        jitc_var_inc_ref_int(index, v);
+        jitc_var_inc_ref(index, v);
         uint32_t result = jitc_var_new(v2);
 
         jitc_log(Debug, "jit_var_new_cast(%s r%u <- %s r%u)",
@@ -1568,15 +1568,15 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
         }
         for (uint32_t i = 0; i < 4; ++i) {
             v2.dep[i] = dep[i];
-            jitc_var_inc_ref_int(dep[i]);
+            jitc_var_inc_ref(dep[i]);
         }
         result = jitc_var_new(v2);
     } else if (!v->literal && strcmp(v->stmt, counter_str) == 0) {
-        jitc_var_inc_ref_ext(new_index);
+        jitc_var_inc_ref(new_index);
         return new_index;
     } else {
         result = var_index;
-        jitc_var_inc_ref_ext(var_index, v);
+        jitc_var_inc_ref(var_index, v);
     }
 
     return result;
@@ -1675,7 +1675,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
             "Issue with gather: r%u <- r%u[r%u] if r%u: ptr=%%p, index=%%u, max_size=%u\n",
             state.variable_index, source, index_, mask_, v_source->size);
         debug_print = jitc_var_printf(backend, is_null, tmp, 2, dep);
-        jitc_var_dec_ref_ext(is_null);
+        jitc_var_dec_ref(is_null);
     }
 #endif
 
@@ -1904,7 +1904,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         }
 
         // Check if it is safe to write directly
-        if (v_target->ref_count_ext > 2 || v_target->ref_count_int != 0)
+        if (v_target->ref_count > 2) /// 1 from original array, 1 from borrow above
             target = steal(jitc_var_copy(target));
     }
 

@@ -30,10 +30,10 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     JitArray() = default;
 
-    ~JitArray() { jit_var_dec_ref_ext(m_index); }
+    ~JitArray() { jit_var_dec_ref(m_index); }
 
     JitArray(const JitArray &a) : m_index(a.m_index) {
-        jit_var_inc_ref_ext(m_index);
+        jit_var_inc_ref(m_index);
     }
 
     template <typename T> JitArray(const JitArray<Backend_, T> &v) {
@@ -70,8 +70,8 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
     JitArray &operator=(const JitArray &a) {
-        jit_var_inc_ref_ext(a.m_index);
-        jit_var_dec_ref_ext(m_index);
+        jit_var_inc_ref(a.m_index);
+        jit_var_dec_ref(m_index);
         m_index = a.m_index;
         return *this;
     }
@@ -224,7 +224,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
 	void resize(size_t size) {
         uint32_t index = jit_var_resize(m_index, size);
-        jit_var_dec_ref_ext(m_index);
+        jit_var_dec_ref(m_index);
         m_index = index;
     }
 
@@ -254,7 +254,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     void write(size_t offset, Value value) {
         uint32_t index = jit_var_write(m_index, offset, &value);
-        jit_var_dec_ref_ext(m_index);
+        jit_var_dec_ref(m_index);
         m_index = index;
     }
 
@@ -353,7 +353,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
 	friend void set_label(JitArray &v, const char *label) {
 		uint32_t index = jit_var_set_label(v.m_index, label);
-		jit_var_dec_ref_ext(v.m_index);
+		jit_var_dec_ref(v.m_index);
 		v.m_index = index;
 	}
 protected:
@@ -398,7 +398,7 @@ Array gather(const Array &source, const JitArray<Array::Backend, Index> index,
 }
 
 template <typename Array, typename Index>
-void scatter(Array &target, const Array &value, const JitArray<Array::Backend, Index> index,
+void scatter(Array &target, const Array &value, const JitArray<Array::Backend, Index>& index,
              const JitArray<Array::Backend, bool> &mask = true) {
     target = Array::steal(jit_var_new_scatter(target.index(), value.index(),
                                               index.index(), mask.index(),
@@ -407,7 +407,7 @@ void scatter(Array &target, const Array &value, const JitArray<Array::Backend, I
 
 template <typename Array, typename Index>
 void scatter_reduce(ReduceOp op, Array &target, const Array &value,
-                    const JitArray<Array::Backend, Index> index,
+                    const JitArray<Array::Backend, Index> &index,
                     const JitArray<Array::Backend, bool> &mask = true) {
     target = Array::steal(jit_var_new_scatter(target.index(), value.index(),
                                               index.index(), mask.index(), op));

@@ -205,7 +205,7 @@ void jit_record_end(JitBackend backend, uint32_t value) {
         jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
 
     while (value != se.size()) {
-        jitc_var_dec_ref_ext(se.back());
+        jitc_var_dec_ref(se.back());
         se.pop_back();
     }
 }
@@ -433,18 +433,18 @@ uint32_t jit_var_wrap_vcall(uint32_t index) {
     return jitc_var_wrap_vcall(index);
 }
 
-void jit_var_inc_ref_ext_impl(uint32_t index) noexcept(true) {
+void jit_var_inc_ref_impl(uint32_t index) noexcept(true) {
     if (index == 0)
         return;
     lock_guard guard(state.lock);
-    jitc_var_inc_ref_ext(index);
+    jitc_var_inc_ref(index);
 }
 
-void jit_var_dec_ref_ext_impl(uint32_t index) noexcept(true) {
+void jit_var_dec_ref_impl(uint32_t index) noexcept(true) {
     if (index == 0)
         return;
     lock_guard guard(state.lock);
-    jitc_var_dec_ref_ext(index);
+    jitc_var_dec_ref(index);
 }
 
 int jit_var_exists(uint32_t index) {
@@ -454,18 +454,11 @@ int jit_var_exists(uint32_t index) {
     return state.variables.find(index) != state.variables.end();
 }
 
-uint32_t jit_var_ref_int(uint32_t index) {
+uint32_t jit_var_ref(uint32_t index) {
     if (index == 0)
         return 0;
     lock_guard guard(state.lock);
-    return (uint32_t) jitc_var(index)->ref_count_int;
-}
-
-uint32_t jit_var_ref_ext(uint32_t index) {
-    if (index == 0)
-        return 0;
-    lock_guard guard(state.lock);
-    return (uint32_t) jitc_var(index)->ref_count_ext;
+    return jitc_var(index)->ref_count;
 }
 
 void *jit_var_ptr(uint32_t index) {
@@ -539,7 +532,7 @@ uint32_t jit_var_set_label(uint32_t index, const char *label) {
 
     // Replicate literals when being labeled
     uint32_t result;
-    if (v->literal && (v->ref_count_int != 0 || v->ref_count_ext != 1)) {
+    if (v->literal && v->ref_count != 1) {
         Variable v2;
         memcpy(&v2.value, &v->value, sizeof(uint64_t));
         v2.size = v->size;
@@ -548,7 +541,7 @@ uint32_t jit_var_set_label(uint32_t index, const char *label) {
         v2.backend = v->backend;
         result = jitc_var_new(v2, true);
     } else {
-        jitc_var_inc_ref_ext(index, v);
+        jitc_var_inc_ref(index, v);
         result = index;
     }
 

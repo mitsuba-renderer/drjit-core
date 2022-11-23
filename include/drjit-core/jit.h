@@ -1009,35 +1009,32 @@ extern JIT_EXPORT uint32_t jit_var_mem_copy(JIT_ENUM JitBackend backend,
                                             size_t size);
 
 /// Increase the external reference count of a given variable
-extern JIT_EXPORT void jit_var_inc_ref_ext_impl(uint32_t index) JIT_NOEXCEPT;
+extern JIT_EXPORT void jit_var_inc_ref_impl(uint32_t index) JIT_NOEXCEPT;
 
 /// Decrease the external reference count of a given variable
-extern JIT_EXPORT void jit_var_dec_ref_ext_impl(uint32_t index) JIT_NOEXCEPT;
+extern JIT_EXPORT void jit_var_dec_ref_impl(uint32_t index) JIT_NOEXCEPT;
 
 #if defined(__GNUC__)
-JIT_INLINE void jit_var_inc_ref_ext(uint32_t index) JIT_NOEXCEPT {
+JIT_INLINE void jit_var_inc_ref(uint32_t index) JIT_NOEXCEPT {
     /* If 'index' is known at compile time, it can only be zero, in
-       which case we can skip the redundant call to jit_var_dec_ref_ext */
+       which case we can skip the redundant call to jit_var_dec_ref */
     if (!__builtin_constant_p(index) || index != 0)
-        jit_var_inc_ref_ext_impl(index);
+        jit_var_inc_ref_impl(index);
 }
-JIT_INLINE void jit_var_dec_ref_ext(uint32_t index) JIT_NOEXCEPT {
+JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
     if (!__builtin_constant_p(index) || index != 0)
-        jit_var_dec_ref_ext_impl(index);
+        jit_var_dec_ref_impl(index);
 }
 #else
-#define jit_var_dec_ref_ext jit_var_dec_ref_ext_impl
-#define jit_var_inc_ref_ext jit_var_inc_ref_ext_impl
+#define jit_var_dec_ref jit_var_dec_ref_impl
+#define jit_var_inc_ref jit_var_inc_ref_impl
 #endif
 
 /// Check if a variable with a given index exists
 extern JIT_EXPORT int jit_var_exists(uint32_t index);
 
-/// Query the a variable's internal reference count (used by the test suite)
-extern JIT_EXPORT uint32_t jit_var_ref_int(uint32_t index);
-
 /// Query the a variable's external reference count (used by the test suite)
-extern JIT_EXPORT uint32_t jit_var_ref_ext(uint32_t index);
+extern JIT_EXPORT uint32_t jit_var_ref(uint32_t index);
 
 /// Query the pointer variable associated with a given variable
 extern JIT_EXPORT void *jit_var_ptr(uint32_t index);
@@ -1523,8 +1520,8 @@ extern JIT_EXPORT uint32_t jit_var_loop(const char *name, uint32_t loop_init,
  * In advanced usage of Dr.Jit (e.g. recorded loops, virtual function calls,
  * etc.), it may be necessary to mask scatter and gather operations to prevent
  * undefined behavior and crashes. This function can be used to push a mask
- * onto a mask stack.  While on the stack, Dr.Jit will hold an internal
- * reference to \c index to keep it from being freed.
+ * onto a mask stack.  While on the stack, Dr.Jit will hold a reference to \c
+ * index to keep it from being freed.
  */
 extern JIT_EXPORT void jit_var_mask_push(JIT_ENUM JitBackend backend, uint32_t index);
 
@@ -1698,10 +1695,10 @@ struct VCallBucket {
  *
  * The memory region accessible via the \c VCallBucket pointer will remain
  * accessible until the variable \c index is itself freed (i.e. when its
- * internal and external reference counts both become equal to zero). Until
- * then, additional calls to \ref jit_var_vcall() will return the previously
- * computed result. This is an important optimization in situations where
- * multiple vector function calls are executed on the same set of instances.
+ * reference count becomes equal to zero). Until then, additional calls to \ref
+ * jit_var_vcall() will return the previously computed result. This is an
+ * important optimization in situations where multiple vector function calls
+ * are executed on the same set of instances.
  */
 extern JIT_EXPORT struct VCallBucket *
 jit_var_vcall_reduce(JIT_ENUM JitBackend backend, const char *domain,

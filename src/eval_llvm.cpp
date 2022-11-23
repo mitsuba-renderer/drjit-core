@@ -619,7 +619,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
     e.dep = (uint32_t *) malloc_check(sizeof(uint32_t) * n_args);
     for (uint32_t i = 0; i < n_args; ++i) {
         uint32_t index = i != 1 ? in[i] : valid;
-        jitc_var_inc_ref_int(index);
+        jitc_var_inc_ref(index);
         e.dep[i] = index;
     }
     e.n_dep = n_args;

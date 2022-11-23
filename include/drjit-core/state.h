@@ -110,7 +110,7 @@ template <JitBackend Backend> struct JitState {
     void set_self(uint32_t value, uint32_t index = 0) {
         if (!m_self_set) {
             jit_vcall_self(Backend, &m_self_value, &m_self_index);
-            jit_var_inc_ref_ext(m_self_index);
+            jit_var_inc_ref(m_self_index);
             m_self_set = true;
         }
         jit_vcall_set_self(Backend, value, index);
@@ -119,7 +119,7 @@ template <JitBackend Backend> struct JitState {
     void clear_self() {
         assert(m_self_set);
         jit_vcall_set_self(Backend, m_self_value, m_self_index);
-        jit_var_dec_ref_ext(m_self_index);
+        jit_var_dec_ref(m_self_index);
         m_self_set = false;
     }
 

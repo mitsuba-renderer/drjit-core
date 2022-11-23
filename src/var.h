@@ -64,29 +64,17 @@ extern uint32_t jitc_var_copy(uint32_t index);
 /// Create a resized copy of a variable
 extern uint32_t jitc_var_resize(uint32_t index, size_t size);
 
-/// Increase the internal reference count of a given variable
-extern void jitc_var_inc_ref_int(uint32_t index, Variable *v) noexcept(true);
-
-/// Increase the internal reference count of a given variable
-extern void jitc_var_inc_ref_int(uint32_t index) noexcept(true);
-
-/// Decrease the internal reference count of a given variable
-extern void jitc_var_dec_ref_int(uint32_t index, Variable *v) noexcept(true);
-
-/// Decrease the internal reference count of a given variable
-extern void jitc_var_dec_ref_int(uint32_t index) noexcept(true);
+/// Increase the external reference count of a given variable
+extern void jitc_var_inc_ref(uint32_t index, Variable *v) noexcept(true);
 
 /// Increase the external reference count of a given variable
-extern void jitc_var_inc_ref_ext(uint32_t index, Variable *v) noexcept(true);
-
-/// Increase the external reference count of a given variable
-extern void jitc_var_inc_ref_ext(uint32_t index) noexcept(true);
+extern void jitc_var_inc_ref(uint32_t index) noexcept(true);
 
 /// Decrease the external reference count of a given variable
-extern void jitc_var_dec_ref_ext(uint32_t index, Variable *v) noexcept(true);
+extern void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept(true);
 
 /// Decrease the external reference count of a given variable
-extern void jitc_var_dec_ref_ext(uint32_t index) noexcept(true);
+extern void jitc_var_dec_ref(uint32_t index) noexcept(true);
 
 /// Increase the side effect reference count of a given variable
 extern void jitc_var_inc_ref_se(uint32_t index, Variable *v) noexcept(true);
