@@ -579,7 +579,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             auto& on = vcall->out_nested;
             auto it  = std::find(on.begin(), on.end(), index);
             // Only skip if this variable isn't also an output
-            if (it == vcall->out_nested.end())
+            if (it == on.end())
                 continue;
         }
 

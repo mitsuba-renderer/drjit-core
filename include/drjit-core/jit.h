@@ -930,7 +930,7 @@ enum ReduceOp {
  *
  * A direct write may not be safe (e.g. if unevaluated computation references
  * the array \c target). The function thus returns the index of a new array
- * (which may happen to be identical to \c target), whose external reference
+ * (which may happen to be identical to \c target), whose reference
  * count is increased by 1.
  *
  * For performance reasons, sequences involving multiple scatters to the same
@@ -950,14 +950,14 @@ extern JIT_EXPORT uint32_t jit_var_new_scatter(uint32_t target, uint32_t value,
  * \brief Create an identical copy of the given variable
  *
  * This function creates an exact copy of the variable \c index and returns the
- * index of the copy, whose external reference count is initialized to 1.
+ * index of the copy, whose reference count is initialized to 1.
  */
 extern JIT_EXPORT uint32_t jit_var_copy(uint32_t index);
 
 
 /**
  * Register an existing memory region as a variable in the JIT compiler, and
- * return its index. Its external reference count is initialized to \c 1.
+ * return its index. Its reference count is initialized to \c 1.
  *
  * \param type
  *    Type of the variable to be created, see \ref VarType for details.
@@ -983,7 +983,7 @@ extern JIT_EXPORT uint32_t jit_var_mem_map(JIT_ENUM JitBackend backend,
 
 /**
  * Copy a memory region onto the device and return its variable index. Its
- * external reference count is initialized to \c 1.
+ * reference count is initialized to \c 1.
  *
  * \param atype
  *    Enumeration characterizing the "flavor" of the source memory.
@@ -1008,10 +1008,10 @@ extern JIT_EXPORT uint32_t jit_var_mem_copy(JIT_ENUM JitBackend backend,
                                             const void *ptr,
                                             size_t size);
 
-/// Increase the external reference count of a given variable
+/// Increase the reference count of a given variable
 extern JIT_EXPORT void jit_var_inc_ref_impl(uint32_t index) JIT_NOEXCEPT;
 
-/// Decrease the external reference count of a given variable
+/// Decrease the reference count of a given variable
 extern JIT_EXPORT void jit_var_dec_ref_impl(uint32_t index) JIT_NOEXCEPT;
 
 #if defined(__GNUC__)
@@ -1033,7 +1033,7 @@ JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
 /// Check if a variable with a given index exists
 extern JIT_EXPORT int jit_var_exists(uint32_t index);
 
-/// Query the a variable's external reference count (used by the test suite)
+/// Query the a variable's reference count (used by the test suite)
 extern JIT_EXPORT uint32_t jit_var_ref(uint32_t index);
 
 /// Query the pointer variable associated with a given variable
@@ -1064,9 +1064,9 @@ extern JIT_EXPORT int jit_var_is_placeholder(uint32_t index);
  * size, potentially creating a new copy in case something already depends on
  * \c index. The returned copy is symbolic form.
  *
- * The function increases the external reference count of the returned value.
+ * The function increases the reference count of the returned value.
  * When \c index is not a scalar variable and its size exactly matches \c size,
- * the function does nothing and just increases the external reference count of
+ * the function does nothing and just increases the reference count of
  * \c index. Otherwise, it fails.
  */
 extern JIT_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
@@ -1074,7 +1074,7 @@ extern JIT_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
 /**
  * \brief Asynchronously migrate a variable to a different flavor of memory
  *
- * Returns the resulting variable index and increases its external reference
+ * Returns the resulting variable index and increases its reference
  * count by one. When source and target type are identical, this function does
  * not perform a migration and simply returns the input index (though it
  * increases the reference count even in this case). When the source and target
@@ -1098,7 +1098,7 @@ extern JIT_EXPORT int jit_var_device(uint32_t index);
  * \brief Mark a variable as a scatter operation
  *
  * This function informs the JIT compiler that the variable 'index' has side
- * effects. It then steals an external reference, includes the variable in the
+ * effects. It then steals a reference, includes the variable in the
  * next kernel launch, and de-references it following execution.
  */
 extern JIT_EXPORT void jit_var_mark_side_effect(uint32_t index);
@@ -1137,8 +1137,8 @@ extern JIT_EXPORT void jit_var_read(uint32_t index, size_t offset,
  *
  * A direct write may not be safe (e.g. if unevaluated computation references
  * the array \c index). The function thus returns the index of a new array
- * (which may happen to be identical to \c index), whose external reference
- * count is increased by 1.
+ * (which may happen to be identical to \c index), whose reference count is
+ * increased by 1.
  */
 extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, size_t offset,
                                          const void *src);
