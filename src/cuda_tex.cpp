@@ -498,7 +498,7 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
                                        stmt_1[ndim - 2], 1, (unsigned int) ndim,
                                        pos);
         } else {
-            jitc_var_inc_ref_ext(dep[1]);
+            jitc_var_inc_ref(dep[1]);
         }
 
         const char *stmt_2[3] = {
@@ -514,7 +514,7 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
 
         uint32_t lookup = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void,
                                             stmt_2[ndim - 1], 1, 2, dep);
-        jitc_var_dec_ref_ext(dep[1]);
+        jitc_var_dec_ref(dep[1]);
 
         const char *stmt_3[4] = {
             "mov.f32 $r0, $r1.r",
@@ -529,7 +529,7 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
             out[tex * 4 + ch] = lookup_result_index;
         }
 
-        jitc_var_dec_ref_ext(lookup);
+        jitc_var_dec_ref(lookup);
     }
 }
 
@@ -596,10 +596,10 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
                 out[(i * texture.n_channels) + (tex * 4 + ch)] = result_index;
             }
 
-            jitc_var_dec_ref_ext(fetch_channel);
+            jitc_var_dec_ref(fetch_channel);
         }
 
-        jitc_var_dec_ref_ext(dep[1]);
+        jitc_var_dec_ref(dep[1]);
     }
 }
 
@@ -617,6 +617,6 @@ void jitc_cuda_tex_destroy(void *texture_handle) {
     // textures out of the loop condition.
     const size_t n_textures = texture->n_textures;
     for (size_t tex = 0; tex < n_textures; ++tex) {
-        jitc_var_dec_ref_ext(texture->indices[tex]);
+        jitc_var_dec_ref(texture->indices[tex]);
     }
 }

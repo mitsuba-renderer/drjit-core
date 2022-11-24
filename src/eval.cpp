@@ -152,7 +152,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         // Some sanity checks
         if (unlikely((JitBackend) v->backend != backend))
             jitc_raise("jit_assemble(): variable r%u scheduled in wrong ThreadState", index);
-        if (unlikely(v->ref_count_int == 0 && v->ref_count_ext == 0))
+        if (unlikely(v->ref_count == 0))
             jitc_fail("jit_assemble(): schedule contains unreferenced variable r%u!", index);
         if (unlikely(v->size != 1 && v->size != group.size))
             jitc_fail("jit_assemble(): schedule contains variable r%u with incompatible size "
@@ -602,8 +602,8 @@ void jitc_eval(ThreadState *ts) {
 
             Variable *v = &it.value();
 
-            // Skip variables that aren't externally referenced or already evaluated
-            if (v->ref_count_ext == 0 || v->data)
+            // Skip variables that are already evaluated
+            if (v->data)
                 continue;
 
             jitc_var_traverse(v->size, index);
@@ -749,9 +749,9 @@ void jitc_eval(ThreadState *ts) {
         v->side_effect = false;
 
         if (side_effect)
-            jitc_var_dec_ref_ext(index);
+            jitc_var_dec_ref(index);
         for (int j = 0; j < 4; ++j)
-            jitc_var_dec_ref_int(dep[j]);
+            jitc_var_dec_ref(dep[j]);
     }
 
     jitc_free_flush(ts);

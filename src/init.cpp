@@ -284,7 +284,7 @@ void jitc_shutdown(int light) {
 #if defined(DRJIT_ENABLE_OPTIX)
     // Free the default OptiX shader binding table and pipeline (ref counting)
     if (state.optix_default_sbt_index) {
-        jitc_var_dec_ref_ext(state.optix_default_sbt_index);
+        jitc_var_dec_ref(state.optix_default_sbt_index);
         state.optix_default_sbt_index = 0;
     }
 #endif
@@ -296,7 +296,7 @@ void jitc_shutdown(int light) {
         for (ThreadState *ts : state.tss) {
             for (uint32_t i : ts->side_effects) {
                 if (state.variables.find(i) != state.variables.end())
-                    jitc_var_dec_ref_ext(i);
+                    jitc_var_dec_ref(i);
             }
             jitc_free_flush(ts);
             if (ts->backend == JitBackend::CUDA) {
@@ -349,11 +349,10 @@ void jitc_shutdown(int light) {
             if (n_leaked < 10)
                 jitc_log(Warn,
                          " - variable r%u is still being referenced! "
-                         "(int_ref=%u, ext_ref=%u, se_ref=%u, type=%s, size=%u, "
+                         "(ref=%u, ref_se=%u, type=%s, size=%u, "
                          "stmt=\"%s\", dep=[%u, %u, %u, %u])",
                          var.first,
-                         (uint32_t) var.second.ref_count_int,
-                         (uint32_t) var.second.ref_count_ext,
+                         (uint32_t) var.second.ref_count,
                          (uint32_t) var.second.ref_count_se,
                          type_name[var.second.type],
                          var.second.size,

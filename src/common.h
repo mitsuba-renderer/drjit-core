@@ -96,20 +96,20 @@ template <> struct uint_with_size<8> { using type = uint64_t; };
 template <typename T>
 using uint_with_size_t = typename uint_with_size<sizeof(T)>::type;
 
-extern void jitc_var_dec_ref_ext(uint32_t) noexcept(true);
-extern void jitc_var_inc_ref_ext(uint32_t) noexcept(true);
+extern void jitc_var_dec_ref(uint32_t) noexcept(true);
+extern void jitc_var_inc_ref(uint32_t) noexcept(true);
 
 struct Ref {
     friend Ref steal(uint32_t);
     friend Ref borrow(uint32_t);
 
     Ref() : index(0) { }
-    ~Ref() { jitc_var_dec_ref_ext(index); }
+    ~Ref() { jitc_var_dec_ref(index); }
 
     Ref(Ref &&r) : index(r.index) { r.index = 0; }
 
     Ref &operator=(Ref &&r) {
-        jitc_var_dec_ref_ext(index);
+        jitc_var_dec_ref(index);
         index = r.index;
         r.index = 0;
         return *this;
@@ -125,7 +125,7 @@ struct Ref {
         return value;
     }
     void reset() {
-        jitc_var_dec_ref_ext(index);
+        jitc_var_dec_ref(index);
         index = 0;
     }
 
@@ -142,7 +142,7 @@ inline Ref steal(uint32_t index) {
 inline Ref borrow(uint32_t index) {
     Ref r;
     r.index = index;
-    jitc_var_inc_ref_ext(index);
+    jitc_var_inc_ref(index);
     return r;
 }
 

@@ -60,14 +60,13 @@ struct Variable {
 
     // ===================   References, reference counts   ===================
 
-    /// External reference count (by application using DrJit)
-    uint64_t ref_count_ext : 24;
+    /// Number of times that this variable is referenced elsewhere
+    uint32_t ref_count;
 
-    /// Internal reference count (dependencies within computation graph)
-    uint64_t ref_count_int : 24;
+    uint32_t unused : 16;
 
     /// Number of queued side effects
-    uint64_t ref_count_se : 16;
+    uint32_t ref_count_se : 16;
 
     /// Up to 4 dependencies of this instruction (further possible via 'extra')
     uint32_t dep[4];

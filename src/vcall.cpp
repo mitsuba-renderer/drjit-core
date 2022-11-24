@@ -65,7 +65,7 @@ struct VCall {
 
     ~VCall() {
         for (uint32_t index : out_nested)
-            jitc_var_dec_ref_ext(index);
+            jitc_var_dec_ref(index);
         clear_side_effects();
         free(name);
     }
@@ -74,7 +74,7 @@ struct VCall {
         if (checkpoints.empty() || checkpoints.back() == checkpoints.front())
             return;
         for (uint32_t index : side_effects)
-            jitc_var_dec_ref_ext(index);
+            jitc_var_dec_ref(index);
         side_effects.clear();
         std::fill(checkpoints.begin(), checkpoints.end(), 0);
     }
@@ -106,7 +106,7 @@ void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
     ThreadState *ts = thread_state(backend);
 
     if (ts->vcall_self_index) {
-        jitc_var_dec_ref_ext(ts->vcall_self_index);
+        jitc_var_dec_ref(ts->vcall_self_index);
         ts->vcall_self_index = 0;
     }
 
@@ -114,7 +114,7 @@ void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
 
     if (value) {
         if (index) {
-            jitc_var_inc_ref_ext(index);
+            jitc_var_inc_ref(index);
             ts->vcall_self_index = index;
         } else {
             Variable v;
@@ -417,7 +417,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
             /* Hold a reference to the nested computation until the cleanup
                callback later below is invoked. */
-            jitc_var_inc_ref_ext(index);
+            jitc_var_inc_ref(index);
             vcall->out_nested.push_back(index);
         }
 
@@ -442,7 +442,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
             if ((bool) v->placeholder != placeholder || v->size != size ||
                 (bool) v->optix != optix) {
-                if (v->ref_count_ext != 1 || v->ref_count_int != 0) {
+                if (v->ref_count != 1) {
                     result_v = steal(jitc_var_copy(result_v));
                     v = jitc_var(result_v);
                 }
@@ -458,7 +458,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
             for (uint32_t i = 0; i < n_inst; ++i) {
                 uint32_t &index_2 = vcall->out_nested[i * n_out + j];
-                jitc_var_dec_ref_ext(index_2);
+                jitc_var_dec_ref(index_2);
                 index_2 = 0;
             }
         }
@@ -506,7 +506,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         // Inform recursive computation graphs via reference counting
         for (uint32_t j = 0; j < vcall_2->n_inst; ++j) {
             uint32_t &index_2 = vcall_2->out_nested[n_out_2 * j + offset];
-            jitc_var_dec_ref_ext(index_2);
+            jitc_var_dec_ref(index_2);
             index_2 = 0;
         }
         vcall_2->out[offset] = 0;
@@ -519,7 +519,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
                 Extra *e = &state.extra[vcall_2->id];
                 if (unlikely(e->dep[i] != vcall_2->in[i]))
                     jitc_fail("jit_var_vcall(): internal error! (1)");
-                jitc_var_dec_ref_int(vcall_2->in[i]);
+                jitc_var_dec_ref(vcall_2->in[i]);
                 if (state.extra.find(vcall_2->id) == state.extra.end())
                     jitc_fail("jit_var_vcall(): internal error! (2)");
                 e = &state.extra[vcall_2->id]; // may have changed
@@ -547,7 +547,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         v2.backend = v->backend;
         v2.dep[0] = vcall_v;
         v2.extra = 1;
-        jitc_var_inc_ref_int(vcall_v);
+        jitc_var_inc_ref(vcall_v);
         uint32_t index_2 = jitc_var_new(v2, true);
         Extra &extra = state.extra[index_2];
 
@@ -575,7 +575,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             continue;
 
         // Ignore unreferenced inputs
-        if (vcall_optimize && v->ref_count_int == 0) {
+        if (vcall_optimize && v->ref_count == 2 /* 1 each from collect_indices + wrap_vcall */) {
             auto& on = vcall->out_nested;
             auto it  = std::find(on.begin(), on.end(), index);
             // Only skip if this variable isn't also an output
@@ -585,9 +585,9 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
         vcall->in_nested.push_back(index);
 
-        uint32_t &index_2 = v->dep[0];
+        uint32_t index_2 = v->dep[0];
         vcall->in.push_back(index_2);
-        jitc_var_inc_ref_int(index_2);
+        jitc_var_inc_ref(index_2);
     }
 
     auto comp = [](uint32_t i0, uint32_t i1) {
@@ -1478,7 +1478,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         v2.data = perm + bucket.offset;
         v2.size = bucket.size;
 
-        jitc_var_inc_ref_int(perm_var);
+        jitc_var_inc_ref(perm_var);
 
         uint32_t index2 = jitc_var_new(v2);
 
@@ -1494,7 +1494,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
                    (uintptr_t) bucket_out.ptr, bucket.size);
     }
 
-    jitc_var_dec_ref_ext(perm_var);
+    jitc_var_dec_ref(perm_var);
 
     *bucket_count_out = unique_count_out;
 

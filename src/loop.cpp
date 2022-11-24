@@ -51,9 +51,9 @@ static void wrap(Variable &v, uint32_t &index, uint32_t dep = 0) {
     v.type = v2->type;
     v.dep[0] = index;
     v.dep[1] = dep;
-    jitc_var_inc_ref_int(index, v2);
-    jitc_var_dec_ref_ext(index, v2);
-    jitc_var_inc_ref_int(dep);
+    jitc_var_inc_ref(index, v2);
+    jitc_var_dec_ref(index, v2);
+    jitc_var_inc_ref(dep);
     index = 0; // in case jitc_var_new throws
     index = jitc_var_new(v, true);
 }
@@ -270,8 +270,8 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
                     v2->stmt = (char *) "$r0 = phi <$w x $t0> [ $r0, "
                                         "%l_$i2_tail ], [ $r1, %l_$i2_start ]";
                 }
-                jitc_var_inc_ref_ext(index_3);
-                jitc_var_dec_ref_ext(index_1);
+                jitc_var_inc_ref(index_3);
+                jitc_var_dec_ref(index_1);
                 indices_in[i] = index_3;
                 n_invariant++;
             }
@@ -298,14 +298,14 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
     if (n_invariant && first_round) {
         // Release recorded computation
         for (size_t i = 0; i < n_indices; ++i) {
-            jitc_var_inc_ref_ext(indices_in[i]);
-            jitc_var_dec_ref_ext(*indices[i]);
+            jitc_var_inc_ref(indices_in[i]);
+            jitc_var_dec_ref(*indices[i]);
             *indices[i] = indices_in[i];
         }
 
         // Release side effects
         while (checkpoint != se.size()) {
-            jitc_var_dec_ref_ext(se.back());
+            jitc_var_dec_ref(se.back());
             se.pop_back();
         }
 
@@ -392,8 +392,8 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
                n_indices * sizeof(uint32_t));
 
         for (size_t i = 0; i < n_indices; ++i) {
-            jitc_var_inc_ref_int(loop->out_body[i]);
-            jitc_var_inc_ref_int(loop->in_cond[i]);
+            jitc_var_inc_ref(loop->out_body[i]);
+            jitc_var_inc_ref(loop->in_cond[i]);
         }
 
         snprintf(temp, sizeof(temp), "Loop (%s) [end]", name);
@@ -411,8 +411,8 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
             uint32_t index = se[se.size() - loop->se_count + i];
             Variable *v = jitc_var(index);
             v->side_effect = false;
-            jitc_var_inc_ref_int(index, v);
-            jitc_var_dec_ref_ext(index, v);
+            jitc_var_inc_ref(index, v);
+            jitc_var_dec_ref(index, v);
             snprintf(temp, sizeof(temp), "Loop (%s) [side effects]", name);
             dep[i] = index;
         }
@@ -457,20 +457,20 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
             if (!index) { // Optimized away
                 loop->out.push_back(0);
                 uint32_t index_2 = indices_in[i];
-                jitc_var_inc_ref_ext(index_2);
-                jitc_var_dec_ref_ext(*indices[i]);
+                jitc_var_inc_ref(index_2);
+                jitc_var_dec_ref(*indices[i]);
                 *indices[i] = index_2;
                 continue;
             }
 
             v2.type = jitc_var(index)->type;
             v2.dep[0] = loop->in_cond[i];
-            jitc_var_inc_ref_int(loop->in_cond[i]);
-            jitc_var_inc_ref_int(loop_end);
+            jitc_var_inc_ref(loop->in_cond[i]);
+            jitc_var_inc_ref(loop_end);
 
             uint32_t index_2 = jitc_var_new(v2, true);
             loop->out.push_back(index_2);
-            jitc_var_dec_ref_ext(*indices[i]);
+            jitc_var_dec_ref(*indices[i]);
             *indices[i] = index_2;
 
             const char *label = jitc_var_label(loop->in[i]);
@@ -651,8 +651,8 @@ static size_t jitc_var_loop_simplify(Loop *loop, tsl::robin_set<uint32_t, UInt32
             jitc_fail("jit_var_loop_simplify: internal error (2)");
         e_end.dep[i] = e_end.dep[n + i] = 0;
 
-        jitc_var_dec_ref_int(loop->in_cond[i]);
-        jitc_var_dec_ref_int(loop->out_body[i]);
+        jitc_var_dec_ref(loop->in_cond[i]);
+        jitc_var_dec_ref(loop->out_body[i]);
 
         loop->in[i] = loop->in_cond[i] = loop->in_body[i] = loop->out_body[i] = 0;
     }

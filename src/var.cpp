@@ -134,14 +134,14 @@ void jitc_var_free(uint32_t index, Variable *v) {
         // Decrease reference counts of extra references if needed
         if (extra.dep) {
             for (uint32_t i = 0; i < extra.n_dep; ++i)
-                jitc_var_dec_ref_int(extra.dep[i]);
+                jitc_var_dec_ref(extra.dep[i]);
             free(extra.dep);
         }
 
         // If jitc_vcall() was invoked on this variable, free bucket list
         if (extra.vcall_bucket_count) {
             for (uint32_t i = 0; i < extra.vcall_bucket_count; ++i)
-                jitc_var_dec_ref_ext(extra.vcall_buckets[i].index);
+                jitc_var_dec_ref(extra.vcall_buckets[i].index);
             jitc_free(extra.vcall_buckets);
         }
 
@@ -160,7 +160,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
     if (likely(!write_ptr)) {
         // Decrease reference count of dependencies
         for (int i = 0; i < 4; ++i)
-            jitc_var_dec_ref_int(dep[i]);
+            jitc_var_dec_ref(dep[i]);
     } else {
         jitc_var_dec_ref_se(dep[3]);
     }
@@ -175,29 +175,16 @@ Variable *jitc_var(uint32_t index) {
 }
 
 /// Increase the external reference count of a given variable
-void jitc_var_inc_ref_ext(uint32_t index, Variable *v) noexcept(true) {
+void jitc_var_inc_ref(uint32_t index, Variable *v) noexcept(true) {
     (void) index; // jitc_trace may be disabled
-    v->ref_count_ext++;
-    jitc_trace("jit_var_inc_ref_ext(r%u): %u", index, (uint32_t) v->ref_count_ext);
+    v->ref_count++;
+    jitc_trace("jit_var_inc_ref(r%u): %u", index, (uint32_t) v->ref_count);
 }
 
 /// Increase the external reference count of a given variable
-void jitc_var_inc_ref_ext(uint32_t index) noexcept(true) {
+void jitc_var_inc_ref(uint32_t index) noexcept(true) {
     if (index)
-        jitc_var_inc_ref_ext(index, jitc_var(index));
-}
-
-/// Increase the internal reference count of a given variable
-void jitc_var_inc_ref_int(uint32_t index, Variable *v) noexcept(true) {
-    (void) index; // jitc_trace may be disabled
-    v->ref_count_int++;
-    jitc_trace("jit_var_inc_ref_int(r%u): %u", index, (uint32_t) v->ref_count_int);
-}
-
-/// Increase the internal reference count of a given variable
-void jitc_var_inc_ref_int(uint32_t index) noexcept(true) {
-    if (index)
-        jitc_var_inc_ref_int(index, jitc_var(index));
+        jitc_var_inc_ref(index, jitc_var(index));
 }
 
 /// Increase the side effect reference count of a given variable
@@ -214,39 +201,21 @@ void jitc_var_inc_ref_se(uint32_t index) noexcept(true) {
 }
 
 /// Decrease the external reference count of a given variable
-void jitc_var_dec_ref_ext(uint32_t index, Variable *v) noexcept(true) {
-    if (unlikely(v->ref_count_ext == 0))
-        jitc_fail("jit_var_dec_ref_ext(): variable r%u has no external references!", index);
+void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept(true) {
+    if (unlikely(v->ref_count == 0))
+        jitc_fail("jit_var_dec_ref(): variable r%u has no external references!", index);
 
-    jitc_trace("jit_var_dec_ref_ext(r%u): %u", index, (uint32_t) v->ref_count_ext - 1);
-    v->ref_count_ext--;
+    jitc_trace("jit_var_dec_ref(r%u): %u", index, (uint32_t) v->ref_count - 1);
+    v->ref_count--;
 
-    if (v->ref_count_ext == 0 && v->ref_count_int == 0 && v->ref_count_se == 0)
+    if (v->ref_count == 0 && v->ref_count_se == 0)
         jitc_var_free(index, v);
 }
 
 /// Decrease the external reference count of a given variable
-void jitc_var_dec_ref_ext(uint32_t index) noexcept(true) {
+void jitc_var_dec_ref(uint32_t index) noexcept(true) {
     if (index != 0)
-        jitc_var_dec_ref_ext(index, jitc_var(index));
-}
-
-/// Decrease the internal reference count of a given variable
-void jitc_var_dec_ref_int(uint32_t index, Variable *v) noexcept(true) {
-    if (unlikely(v->ref_count_int == 0))
-        jitc_fail("jit_var_dec_ref_int(): variable r%u has no internal references!", index);
-
-    jitc_trace("jit_var_dec_ref_int(r%u): %u", index, (uint32_t) v->ref_count_int - 1);
-    v->ref_count_int--;
-
-    if (v->ref_count_ext == 0 && v->ref_count_int == 0 && v->ref_count_se == 0)
-        jitc_var_free(index, v);
-}
-
-/// Decrease the internal reference count of a given variable
-void jitc_var_dec_ref_int(uint32_t index) noexcept(true) {
-    if (index != 0)
-        jitc_var_dec_ref_int(index, jitc_var(index));
+        jitc_var_dec_ref(index, jitc_var(index));
 }
 
 /// Decrease the side effect reference count of a given variable
@@ -257,7 +226,7 @@ void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept(true) {
     jitc_trace("jit_var_dec_ref_se(r%u): %u", index, (uint32_t) v->ref_count_se - 1);
     v->ref_count_se--;
 
-    if (v->ref_count_ext == 0 && v->ref_count_int == 0 && v->ref_count_se == 0)
+    if (v->ref_count == 0 && v->ref_count_se == 0)
         jitc_var_free(index, v);
 }
 
@@ -434,7 +403,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
 
         if (likely(!v.write_ptr)) {
             for (int i = 0; i < 4; ++i)
-                jitc_var_dec_ref_int(v.dep[i]);
+                jitc_var_dec_ref(v.dep[i]);
         } else {
             jitc_var_dec_ref_se(v.dep[3]);
         }
@@ -487,7 +456,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_cse) {
         jitc_log(Debug, "%s", var_buffer.get());
     }
 
-    jitc_var_inc_ref_ext(index, vo);
+    jitc_var_inc_ref(index, vo);
 
     return index;
 }
@@ -507,7 +476,7 @@ uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
         ThreadState *ts = thread_state(backend);
         if (ts->vcall_self_value &&
             *((uint32_t *) value) == ts->vcall_self_value) {
-            jitc_var_inc_ref_ext(ts->vcall_self_index);
+            jitc_var_inc_ref(ts->vcall_self_index);
             return ts->vcall_self_index;
         }
     }
@@ -554,7 +523,7 @@ uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
     if (write)
         jitc_var_inc_ref_se(dep);
     else
-        jitc_var_inc_ref_int(dep);
+        jitc_var_inc_ref(dep);
 
     return jitc_var_new(v);
 }
@@ -594,7 +563,7 @@ uint32_t jitc_var_wrap_vcall(uint32_t index) {
     v2.size = 1;
     v2.placeholder = v2.vcall_iface = 1;
     v2.dep[0] = index;
-    jitc_var_inc_ref_int(index);
+    jitc_var_inc_ref(index);
 
     uint32_t result = jitc_var_new(v2);
     jitc_log(Debug, "jit_var_wrap_vcall(%s r%u <- r%u)", type_name[v2.type],
@@ -653,7 +622,7 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
     Variable v2;
     for (uint32_t i = 0; i < n_dep; ++i) {
         v2.dep[i] = dep[i];
-        jitc_var_inc_ref_int(dep[i], v[i]);
+        jitc_var_inc_ref(dep[i], v[i]);
     }
 
     v2.stmt = stmt_static ? (char *) stmt : strdup(stmt);
@@ -906,12 +875,11 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
 /// Reverse of jitc_var_read(). Copy 'dst' to a single element of a variable
 uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src) {
     Variable *v = jitc_var(index);
-    if (v->ref_count_int != 0 || v->ref_count_se != 0 ||
-        v->ref_count_ext  > 1) {
+    if (v->ref_count_se != 0 || v->ref_count > 1) {
         // Not safe to directly write to 'v'
         index = jitc_var_copy(index);
     } else {
-        jitc_var_inc_ref_ext(index);
+        jitc_var_inc_ref(index);
     }
 
     jitc_var_ptr(index); // ensure variable is evaluated, even if it is a literal
@@ -1044,7 +1012,7 @@ uint32_t jitc_var_copy(uint32_t index) {
                                 ? "mov.$t0 $r0, $r1"
                                 : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
             v2.dep[0] = index;
-            jitc_var_inc_ref_int(index, v);
+            jitc_var_inc_ref(index, v);
         }
         result = jitc_var_new(v2, true);
     }
@@ -1062,7 +1030,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     Variable *v = jitc_var(index);
 
     if (v->size == size) {
-        jitc_var_inc_ref_ext(index, v);
+        jitc_var_inc_ref(index, v);
         return index; // Nothing to do
     } else if (v->size != 1 && !v->literal) {
         jitc_raise("jit_var_resize(): variable %u must be scalar or literal!", index);
@@ -1076,9 +1044,9 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     }
 
     uint32_t result;
-    if (!v->data && v->ref_count_int == 0 && v->ref_count_ext == 1) {
+    if (!v->data && v->ref_count == 1) {
         // Nobody else holds a reference -- we can directly resize this variable
-        jitc_var_inc_ref_ext(index, v);
+        jitc_var_inc_ref(index, v);
         jitc_cse_drop(index, v);
         v->size = (uint32_t) size;
         jitc_cse_put(index, v);
@@ -1096,7 +1064,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
                             ? "mov.$t0 $r0, $r1"
                             : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
-        jitc_var_inc_ref_int(index, v);
+        jitc_var_inc_ref(index, v);
         result = jitc_var_new(v2, true);
     }
 
@@ -1197,13 +1165,12 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
         Variable v2 = *v;
         v2.data = dst_ptr;
         v2.retain_data = false;
-        v2.ref_count_int = 0;
-        v2.ref_count_ext = 0;
+        v2.ref_count = 0;
         v2.ref_count_se = 0;
         v2.extra = 0;
         dst_index = jitc_var_new(v2);
     } else {
-        jitc_var_inc_ref_ext(dst_index, v);
+        jitc_var_inc_ref(dst_index, v);
     }
 
     jitc_log(Debug,
@@ -1240,14 +1207,14 @@ uint32_t jitc_var_mask_peek(JitBackend backend) {
         return 0;
     } else {
         uint32_t index = stack.back();
-        jitc_var_inc_ref_ext(index);
+        jitc_var_inc_ref(index);
         return index;
     }
 }
 
 void jitc_var_mask_push(JitBackend backend, uint32_t index) {
     jitc_log(Debug, "jit_var_mask_push(index=r%u)", index);
-    jitc_var_inc_ref_int(index);
+    jitc_var_inc_ref(index);
     thread_state(backend)->mask_stack.push_back(index);
 }
 
@@ -1294,7 +1261,7 @@ void jitc_var_mask_pop(JitBackend backend) {
 
     uint32_t index = stack.back();
     stack.pop_back();
-    jitc_var_dec_ref_int(index);
+    jitc_var_dec_ref(index);
 }
 
 bool jitc_var_any(uint32_t index) {
@@ -1410,8 +1377,8 @@ uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
 /// Return a human-readable summary of registered variables
 const char *jitc_var_whos() {
     var_buffer.clear();
-    var_buffer.put("\n  ID        Type       Status       E/I Refs  Entries     Storage    Label");
-    var_buffer.put("\n  ========================================================================\n");
+    var_buffer.put("\n  ID        Type       Status       Refs  Entries     Storage    Label");
+    var_buffer.put("\n  ====================================================================\n");
 
     std::vector<uint32_t> indices;
     indices.reserve(state.variables.size());
@@ -1455,8 +1422,7 @@ const char *jitc_var_whos() {
             var_buffer.put("           ");
         }
 
-        size_t sz = var_buffer.fmt("  %u / %u", (uint32_t) v->ref_count_ext,
-                                   (uint32_t) v->ref_count_int);
+        size_t sz = var_buffer.fmt("  %u", (uint32_t) v->ref_count);
         const char *label = jitc_var_label(index);
 
         var_buffer.fmt("%*s%-12u%-8s   %s\n", 12 - (int) sz, "", v->size,
@@ -1464,7 +1430,7 @@ const char *jitc_var_whos() {
 
         if (v->data)
             mem_size_evaluated += mem_size;
-        else if (v->ref_count_ext == 0)
+        else if (v->ref_count == 0)
             mem_size_registers += mem_size;
         else
             mem_size_unevaluated += mem_size;
@@ -1649,11 +1615,10 @@ const char *jitc_var_graphviz() {
         if (labeled && !color)
             color = "wheat";
 
-        var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%u|E:%u|I:%u}}",
+        var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%u|refs=%u}}",
             (JitBackend) v->backend == JitBackend::CUDA ? "cuda" : "llvm",
             type_name_short[v->type], v->size, index,
-            (uint32_t) v->ref_count_ext,
-            (uint32_t) v->ref_count_int);
+            (uint32_t) v->ref_count);
 
         var_buffer.put("}\"");
         if (color)

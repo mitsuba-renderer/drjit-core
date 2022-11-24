@@ -124,13 +124,13 @@ struct dr_index_vector : dr_vector<uint32_t> {
     ~dr_index_vector() { clear(); }
 
     void push_back(uint32_t value) {
-        jit_var_inc_ref_ext_impl(value);
+        jit_var_inc_ref_impl(value);
         Base::push_back(value);
     }
 
     void clear() {
         for (size_t i = 0; i < size(); ++i)
-            jit_var_dec_ref_ext_impl(operator[](i));
+            jit_var_dec_ref_impl(operator[](i));
         Base::clear();
     }
 };

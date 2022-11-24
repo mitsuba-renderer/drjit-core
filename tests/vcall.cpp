@@ -207,6 +207,7 @@ auto vcall(const char *domain, const Func &func,
         detail::wrap_vcall(args)...);
 }
 
+
 TEST_BOTH(01_recorded_vcall) {
     /// Test a simple virtual function call
     struct Base {
@@ -328,17 +329,17 @@ TEST_BOTH(03_optimize_away_outputs) {
        collapsed, and that inputs which aren't referenced in the first place
        get optimized away. */
     struct Base {
-        virtual dr_tuple<Float, Float> f(Float p1, Float p2, Float p3) = 0;
+        virtual dr_tuple<Float, Float> f(Float p1, Float p2, Float& p3) = 0;
     };
 
     struct C12 : Base {
-        dr_tuple<Float, Float> f(Float p1, Float p2, Float /* p3 */) override {
+        dr_tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
             return { p2 + 2.34567f, p1 + 1.f };
         }
     };
 
     struct C3 : Base {
-        dr_tuple<Float, Float> f(Float p1, Float p2, Float /* p3 */) override {
+        dr_tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
             return { p2 + 1.f, p1 + 2.f };
         }
     };
@@ -357,10 +358,10 @@ TEST_BOTH(03_optimize_away_outputs) {
     BasePtr self = arange<UInt32>(10) % 4;
 
     for (uint32_t i = 0; i < 2; ++i) {
+        i = 1;
         jit_set_flag(JitFlag::VCallOptimize, i);
 
-        jit_assert(jit_var_ref_ext(p3.index()) == 1 &&
-                    jit_var_ref_int(p3.index()) == 0);
+        jit_assert(jit_var_ref(p3.index()) == 1);
 
         auto result = vcall(
             "Base",
@@ -369,23 +370,17 @@ TEST_BOTH(03_optimize_away_outputs) {
             },
             self, p1, p2, p3);
 
-        jit_assert(jit_var_ref_ext(p1.index()) == 1 &&
-                   jit_var_ref_int(p1.index()) == 2);
-        jit_assert(jit_var_ref_ext(p2.index()) == 1 &&
-                   jit_var_ref_int(p2.index()) == 2);
+        jit_assert(jit_var_ref(p1.index()) == 3);
+        jit_assert(jit_var_ref(p2.index()) == 3);
 
         // Irrelevant input optimized away
-        jit_assert(jit_var_ref_ext(p3.index()) == 1 &&
-                   jit_var_ref_int(p3.index()) == 1 - i);
+        jit_assert(jit_var_ref(p3.index()) == 2 - i);
 
         result.template get<0>() = Float(0);
 
-        jit_assert(jit_var_ref_ext(p1.index()) == 1 &&
-                   jit_var_ref_int(p1.index()) == 2);
-        jit_assert(jit_var_ref_ext(p2.index()) == 1 &&
-                   jit_var_ref_int(p2.index()) == 2 - 2*i);
-        jit_assert(jit_var_ref_ext(p3.index()) == 1 &&
-                   jit_var_ref_int(p3.index()) == 1 - i);
+        jit_assert(jit_var_ref(p1.index()) == 3);
+        jit_assert(jit_var_ref(p2.index()) == 3 - 2*i);
+        jit_assert(jit_var_ref(p3.index()) == 2 - i);
 
         jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
                             "[0, 13, 13, 14, 0, 13, 13, 14, 0, 13]") == 0);

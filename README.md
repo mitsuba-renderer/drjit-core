@@ -246,13 +246,12 @@ uint32_t v3 = jit_var_new_stmt_2(/* backend = */ JitBackendCUDA,
 ```
 Suppose that we don't plan to perform any
 further computation / accesses involving ``v0``, ``v1``, and ``v2``. This must
-be indicated to Dr.Jit by reducing their *external* reference count
-("external" refers to references by *your* code):
+be indicated to Dr.Jit by reducing their reference count.
 
 ```cpp
-jit_var_dec_ref_ext(v0);
-jit_var_dec_ref_ext(v1);
-jit_var_dec_ref_ext(v2);
+jit_var_dec_ref(v0);
+jit_var_dec_ref(v1);
+jit_var_dec_ref(v2);
 ```
 
 They still have a nonzero *internal* reference count (i.e. by Dr.Jit itself)
@@ -291,13 +290,12 @@ will turn the variable from a symbolic representation into a GPU-backed array,
 and further queued computation accessing it will simply index into that array
 instead of repeating the original computation.
 
-At the end of the program, we must not forget to decrease the external
-reference count associated with ``v2``, which will release the array from
-memory. Finally, ``jit_shutdown()`` releases any remaining resources held by
-Dr.Jit.
+At the end of the program, we must not forget to decrease the reference count
+associated with ``v2``, which will release the array from memory. Finally,
+``jit_shutdown()`` releases any remaining resources held by Dr.Jit.
 
 ```cpp
-jit_var_dec_ref_ext(v3);
+jit_var_dec_ref(v3);
 jit_shutdown(0);
 ```
 

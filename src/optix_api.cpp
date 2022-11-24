@@ -445,7 +445,7 @@ OptixDeviceContext jitc_optix_context() {
             = (OptixShaderBindingTable*) it->second.callback_data;
 
         state.optix_default_sbt_index = sbt_index;
-        jitc_var_dec_ref_ext(pipeline_index);
+        jitc_var_dec_ref(pipeline_index);
     }
 
     return ctx;
@@ -923,7 +923,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
     extra.dep = (uint32_t *) malloc(sizeof(uint32_t) * extra.n_dep);
     memcpy(extra.dep, args, n_args * sizeof(uint32_t));
     for (uint32_t i = 0; i < n_args; ++i)
-        jitc_var_inc_ref_int(args[i]);
+        jitc_var_inc_ref(args[i]);
 
     extra.assemble = [](const Variable *v2, const Extra &extra) {
         uint32_t payload_count = extra.n_dep - 15;
@@ -982,7 +982,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
         jitc_cse_put(index, v2);
     }
 
-    jitc_var_dec_ref_ext(special);
+    jitc_var_dec_ref(special);
 }
 
 void jitc_optix_mark(uint32_t index) {
