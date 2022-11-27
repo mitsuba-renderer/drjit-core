@@ -164,3 +164,18 @@ TEST_BOTH(10_scatter_atomic_rmw) {
                    "[4, 1, 2, 1, 1, 1, 1, 0, 1, 1, 2, 0, 0, 0, 0, 0]") == 0);
     }
 }
+
+TEST_BOTH(11_reindex) {
+    // Test that a gather expression can rewrite the original expression
+    UInt32 i1 = arange<UInt32>(100) + 5,
+           i2 = arange<UInt32>(10) * 2,
+           i3 = gather<UInt32>(i1, i2),
+           i4 = arange<UInt32>(10) * 2 + 5;
+
+    jit_assert(!jit_var_is_evaluated(i1.index()) &&
+               !jit_var_is_evaluated(i2.index()) &&
+               !jit_var_is_evaluated(i3.index()) &&
+               !jit_var_is_evaluated(i4.index()));
+
+    jit_assert(i3.index() == i4.index());
+}
