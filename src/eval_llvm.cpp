@@ -77,7 +77,7 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
         }
 
         if (likely(v->param_type == ParamType::Input)) {
-            if (v->literal)
+            if (v->is_literal())
                 continue;
 
             if (size != 1) {
@@ -268,7 +268,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             if (vt == VarType::Bool)
                 buffer.fmt("    %s%u = trunc <%u x i8> %s%u_i2 to <%u x i1>\n",
                            prefix, id, width, prefix, id, width);
-        } else if (v->data || vt == VarType::Pointer) {
+        } else if (v->is_data() || vt == VarType::Pointer) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
             auto it = data_map.find(key);
             if (unlikely(it == data_map.end()))
@@ -395,12 +395,12 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 
 /// Convert an IR template with '$' expressions into valid IR
 static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function) {
-    if (v->literal) {
+    if (v->is_literal()) {
         uint32_t reg = v->reg_index, width = jitc_llvm_vector_width;
         uint32_t vt = v->type;
         const char *prefix = type_prefix[vt],
                    *tname = type_name_llvm[vt];
-        uint64_t value = v->value;
+        uint64_t value = v->literal;
 
         if (vt == (uint32_t) VarType::Float32) {
             float f;
@@ -563,7 +563,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
                        i, type_name[v->type], type_name[(int) types[i]]);
         size = std::max(size, v->size);
         placeholder |= (bool) v->placeholder;
-        dirty |= (bool) v->ref_count_se;
+        dirty |= v->is_dirty();
     }
 
     for (uint32_t i = 0; i < n_args; ++i) {
@@ -582,7 +582,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
         dirty = false;
 
         for (uint32_t i = 0; i < n_args; ++i)
-            dirty |= (bool) jitc_var(in[i])->ref_count_se;
+            dirty |= jitc_var(in[i])->is_dirty();
 
         if (dirty)
             jitc_raise(
@@ -712,9 +712,9 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         "    %%u%u_in_ctx_1 = bitcast i8* %%u%u_in_ctx_0 to <6 x i32> *\n",
         id, alloca_size_rt, id, id);
 
-    if (coherent->literal && coherent->value == 0) {
+    if (coherent->is_literal() && coherent->literal == 0) {
         buffer.fmt("    store <6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>, <6 x i32>* %%u%u_in_ctx_1, align 4\n", id);
-    } else if (coherent->literal && coherent->value == 1) {
+    } else if (coherent->is_literal() && coherent->literal == 1) {
         buffer.fmt("    store <6 x i32> <i32 1, i32 0, i32 0, i32 0, i32 -1, i32 0>, <6 x i32>* %%u%u_in_ctx_1, align 4\n", id);
     } else {
         char global[128];

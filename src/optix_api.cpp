@@ -876,7 +876,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
                        i, type_name[v->type], type_name[(int) ref]);
         size = std::max(size, v->size);
         placeholder |= (bool) v->placeholder;
-        dirty |= (bool) v->ref_count_se;
+        dirty |= v->is_dirty();
     }
 
     for (uint32_t i = 0; i <= n_args; ++i) {
@@ -893,7 +893,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
 
         for (uint32_t i = 0; i <= n_args; ++i) {
             uint32_t index = (i < n_args) ? args[i] : mask;
-            dirty |= (bool) jitc_var(index)->ref_count_se;
+            dirty |= jitc_var(index)->is_dirty();
         }
 
         if (dirty)
@@ -930,7 +930,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
         buffer.fmt("    .reg.u32 %%u%u_result_<32>;\n", v2->reg_index);
 
         const Variable *mask_v = jitc_var(v2->dep[0]);
-        bool masked = !mask_v->literal || mask_v->value != 1;
+        bool masked = !mask_v->literal || mask_v->literal != 1;
         if (masked)
             buffer.fmt("    @!%s%u bra l_masked_%u;\n", type_prefix[mask_v->type],
                        mask_v->reg_index, v2->reg_index);
@@ -977,9 +977,9 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
                                          0, 1, &special);
         uint32_t index = args[15] + i;
         Variable *v2 = jitc_var(index);
-        jitc_cse_drop(index, v2);
+        jitc_lvn_drop(index, v2);
         v2->placeholder = placeholder;
-        jitc_cse_put(index, v2);
+        jitc_lvn_put(index, v2);
     }
 
     jitc_var_dec_ref(special);

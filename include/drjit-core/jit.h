@@ -825,7 +825,7 @@ enum JitOp {
  * This function can perform a large range of unary, binary, and ternary
  * arithmetic operations. It automatically infers the necessary LLVM or PTX
  * instructions and performs constant propagation if possible (when one or
- * more input are literals).
+ * more input are literal constants).
  *
  * You will probably want to access this function through the wrappers \ref
  * jit_var_new_op_0() to \ref jit_var_new_op_4() that take an explicit
@@ -1048,7 +1048,7 @@ extern JIT_EXPORT const char *jit_var_stmt(uint32_t index);
 /// Query the type of a given variable
 extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
 
-/// Check if a variable is a constant literal
+/// Check if a variable is a literal constant
 extern JIT_EXPORT int jit_var_is_literal(uint32_t index);
 
 /// Check if a variable is evaluated
@@ -1289,7 +1289,7 @@ extern JIT_EXPORT void jit_prefix_pop(JIT_ENUM JitBackend backend);
  */
 #if defined(__cplusplus)
 enum class JitFlag : uint32_t {
-    /// Constant propagation: don't generate code for arithmetic involving literals
+    /// Constant propagation: don't generate code for arithmetic involving literal constants
     ConstProp = 1,
 
     /// Local value numbering (cheap form of common subexpression elimination)
@@ -1430,7 +1430,7 @@ extern JIT_EXPORT uint32_t jit_var_wrap_loop(uint32_t index, uint32_t cond, uint
  * o virtual function calls
  *
  * Following a call to \ref jit_vcall_set_self(), the JIT compiler will
- * intercept constant literals referring to the instance ID 'value'. In this
+ * intercept literal constants referring to the instance ID 'value'. In this
  * case, it will return the variable ID 'index'.
  *
  * This feature is crucial to avoid merging instance IDs into generated code.
@@ -1762,13 +1762,13 @@ extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
  * This function sets a unique scope identifier (a simple 32 bit integer)
  * isolate the effects of this optimization.
  */
-extern JIT_EXPORT void jit_new_cse_scope(JIT_ENUM JitBackend backend);
+extern JIT_EXPORT void jit_new_scope(JIT_ENUM JitBackend backend);
 
-/// Queries the CSE scope identifier (see \ref jit_new_cse_scope())
-extern JIT_EXPORT uint32_t jit_cse_scope(JIT_ENUM JitBackend backend);
+/// Queries the scope identifier (see \ref jit_new_scope())
+extern JIT_EXPORT uint32_t jit_scope(JIT_ENUM JitBackend backend);
 
-/// Manually sets a CSE scope identifier (see \ref jit_new_cse_scope())
-extern JIT_EXPORT void jit_set_cse_scope(JIT_ENUM JitBackend backend, uint32_t domain);
+/// Manually sets a scope identifier (see \ref jit_new_scope())
+extern JIT_EXPORT void jit_set_scope(JIT_ENUM JitBackend backend, uint32_t domain);
 
 // ====================================================================
 //                            Kernel History

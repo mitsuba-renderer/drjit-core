@@ -128,7 +128,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             const char *prefix = "%rd";
             uint32_t id = 0;
 
-            if (v->literal) {
+            if (v->is_literal()) {
                 prefix = type_prefix[vti];
                 id = v->reg_index;
             }
@@ -136,7 +136,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             buffer.fmt("    ld.%s.u64 %s%u, [%s+%u];\n", params_type,
                        prefix, id, params_base, v->param_offset);
 
-            if (v->literal)
+            if (v->is_literal())
                 continue;
 
             if (size > 1)
@@ -313,7 +313,7 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
                            "    setp.ne.u16 %%p%u, %%w0, 0;\n",
                            v->param_offset, v->reg_index);
             }
-        } else if (v->data || vt == VarType::Pointer) {
+        } else if (v->is_data() || vt == VarType::Pointer) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
             auto it = data_map.find(key);
 
@@ -379,7 +379,7 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
 
 /// Convert an IR template with '$' expressions into valid IR
 static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
-    if (v->literal) {
+    if (v->is_literal()) {
         const char *prefix = type_prefix[v->type],
                    *tname = type_name_ptx_bin[v->type];
 
@@ -392,7 +392,7 @@ static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
         buffer.put(prefix, prefix_len);
         buffer.put_uint32(v->reg_index);
         buffer.put(", 0x");
-        buffer.put_uint64_hex(v->value);
+        buffer.put_uint64_hex(v->literal);
         buffer.put(";\n");
     } else {
         const char *s = v->stmt;

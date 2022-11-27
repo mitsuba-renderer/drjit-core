@@ -17,7 +17,7 @@ struct Variable;
 /// Look up a variable by its ID
 extern Variable *jitc_var(uint32_t index);
 
-/// Create a literal constant variable of the given size
+/// Create a value constant variable of the given size
 extern uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
                                      const void *value, size_t size,
                                      int eval, int is_class = 0);
@@ -120,7 +120,7 @@ extern uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src);
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 extern int jitc_var_schedule(uint32_t index);
 
-/// Evaluate a literal constant variable
+/// Evaluate a value constant variable
 extern void jitc_var_eval_literal(uint32_t index, Variable *v);
 
 /// Evaluate the variable \c index right away, if it is unevaluated/dirty.
@@ -136,13 +136,13 @@ extern const char *jitc_var_whos();
 extern const char *jitc_var_graphviz();
 
 /// Remove a variable from the cache used for common subexpression elimination
-extern void jitc_cse_drop(uint32_t index, const Variable *v);
+extern void jitc_lvn_drop(uint32_t index, const Variable *v);
 
 /// Register a variable with cache used for common subexpression elimination
-extern void jitc_cse_put(uint32_t index, const Variable *v);
+extern void jitc_lvn_put(uint32_t index, const Variable *v);
 
 /// Append the given variable to the instruction trace and return its ID
-extern uint32_t jitc_var_new(Variable &v, bool disable_cse = false);
+extern uint32_t jitc_var_new(Variable &v, bool disable_lvn = false);
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable
 extern AllocType jitc_var_alloc_type(uint32_t index);

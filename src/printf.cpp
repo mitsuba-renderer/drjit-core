@@ -168,7 +168,7 @@ static void jitc_var_printf_assemble_cuda(const Variable *v,
                (unsigned long long) hash.low64);
     if (v->dep[0]) {
         Variable *v2 = jitc_var(v->dep[0]);
-        if (!v2->literal || v2->value != 1)
+        if (!v2->is_literal() || v2->literal != 1)
             buffer.fmt("@%%p%u ", v2->reg_index);
     }
     buffer.put("call (rv_p), vprintf, (fmt_p, buf_p);\n"

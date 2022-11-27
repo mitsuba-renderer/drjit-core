@@ -52,7 +52,7 @@ __itt_domain *drjit_domain = __itt_domain_create("drjit");
 #endif
 
 static_assert(
-    sizeof(VariableKey) == 8 * sizeof(uint32_t),
+    sizeof(VariableKey) == 9 * sizeof(uint32_t),
     "VariableKey: incorrect size, likely an issue with padding/packing!");
 
 static_assert(
@@ -319,19 +319,17 @@ void jitc_shutdown(int light) {
             delete ts;
         }
 
-        if (state.variables.empty() && !state.cse_cache.empty()) {
-            for (auto &kv: state.cse_cache)
+        if (state.variables.empty() && !state.lvn_map.empty()) {
+            for (auto &kv: state.lvn_map)
                 jitc_log(Warn,
-                        " - id=%u: size=%u, type=%s, literal=%u, dep=[%u, "
-                        "%u, %u, %u], stmt=\"%s\", value=%lli",
-                        kv.second, kv.first.size,
-                        type_name[kv.first.type], kv.first.literal,
+                        " - id=%u: size=%u, type=%s, dep=[%u, "
+                        "%u, %u, %u]",
+                        kv.second, kv.first.size, type_name[kv.first.type],
                         kv.first.dep[0], kv.first.dep[1], kv.first.dep[2],
-                        kv.first.dep[3], kv.first.literal ? "" : kv.first.stmt,
-                        kv.first.literal ? (long long) kv.first.value : 0);
+                        kv.first.dep[3]);
 
             jitc_log(Warn, "jit_shutdown(): detected a common subexpression "
-                          "elimination cache leak (see above).");
+                           "elimination cache leak (see above).");
         }
 
         pool_destroy();
@@ -356,8 +354,8 @@ void jitc_shutdown(int light) {
                          (uint32_t) var.second.ref_count_se,
                          type_name[var.second.type],
                          var.second.size,
-                         var.second.literal
-                             ? "<literal>"
+                         var.second.is_literal()
+                             ? "<value>"
                              : (var.second.stmt ? var.second.stmt : "<null>"),
                          var.second.dep[0], var.second.dep[1],
                          var.second.dep[2], var.second.dep[3]);
@@ -495,7 +493,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
     }
 
     ts->backend = backend;
-    ts->cse_scope = ++state.cse_scope_ctr;
+    ts->scope = ++state.scope_ctr;
     state.tss.push_back(ts);
     return ts;
 }
