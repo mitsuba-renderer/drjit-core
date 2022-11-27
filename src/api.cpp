@@ -86,28 +86,28 @@ void jit_shutdown(int light) {
     jitc_shutdown(light);
 }
 
-uint32_t jit_cse_scope(JitBackend backend) {
+uint32_t jit_scope(JitBackend backend) {
     lock_guard guard(state.lock);
-    return thread_state(backend)->cse_scope;
+    return thread_state(backend)->scope;
 }
 
-void jit_set_cse_scope(JitBackend backend, uint32_t scope_index) {
+void jit_set_scope(JitBackend backend, uint32_t scope_index) {
     lock_guard guard(state.lock);
     if (unlikely(scope_index >= (1 << 24)))
-        jitc_raise("jit_set_cse_scope(): overflow (scope index exceeds the 24 "
+        jitc_raise("jit_set_scope(): overflow (scope index exceeds the 24 "
                    "bit counter of the Variable data structure)!");
-    jitc_trace("jit_set_cse_scope(%u)", scope_index);
-    thread_state(backend)->cse_scope = scope_index;
+    jitc_trace("jit_set_scope(%u)", scope_index);
+    thread_state(backend)->scope = scope_index;
 }
 
-void jit_new_cse_scope(JitBackend backend) {
+void jit_new_scope(JitBackend backend) {
     lock_guard guard(state.lock);
-    uint32_t scope_index = ++state.cse_scope_ctr;
+    uint32_t scope_index = ++state.scope_ctr;
     if (unlikely(scope_index >= (1 << 24)))
-        jitc_raise("jit_new_cse_scope(): overflow (scope index exceeds the 24 "
+        jitc_raise("jit_new_scope(): overflow (scope index exceeds the 24 "
                    "bit counter of the Variable data structure)!");
-    jitc_trace("jit_new_cse_scope(%u)", scope_index);
-    thread_state(backend)->cse_scope = scope_index;
+    jitc_trace("jit_new_scope(%u)", scope_index);
+    thread_state(backend)->scope = scope_index;
 }
 
 void jit_set_log_level_stderr(LogLevel level) {
@@ -480,7 +480,7 @@ const char *jit_var_stmt(uint32_t index) {
 
     lock_guard guard(state.lock);
     Variable *v = jitc_var(index);
-    return v->literal ? nullptr : v->stmt;
+    return v->is_stmt() ? v->stmt : nullptr;
 }
 
 int jit_var_is_literal(uint32_t index) {
@@ -488,7 +488,7 @@ int jit_var_is_literal(uint32_t index) {
         return 0;
 
     lock_guard guard(state.lock);
-    return (int) jitc_var(index)->literal;
+    return (int) jitc_var(index)->is_literal();
 }
 
 int jit_var_is_evaluated(uint32_t index) {
@@ -496,7 +496,7 @@ int jit_var_is_evaluated(uint32_t index) {
         return 0;
 
     lock_guard guard(state.lock);
-    return (int) (jitc_var(index)->data != nullptr);
+    return (int) jitc_var(index)->is_data();
 }
 
 int jit_var_is_placeholder(uint32_t index) {
@@ -530,14 +530,14 @@ uint32_t jit_var_set_label(uint32_t index, const char *label) {
 
     Variable *v = jitc_var(index);
 
-    // Replicate literals when being labeled
+    // Clone literal constants when being labeled
     uint32_t result;
-    if (v->literal && v->ref_count != 1) {
+    if (v->is_literal() && v->ref_count != 1) {
         Variable v2;
-        memcpy(&v2.value, &v->value, sizeof(uint64_t));
+        memcpy(&v2.literal, &v->literal, sizeof(uint64_t));
+        v2.kind = (uint32_t) VarKind::Literal;
         v2.size = v->size;
         v2.type = v->type;
-        v2.literal = 1;
         v2.backend = v->backend;
         result = jitc_var_new(v2, true);
     } else {

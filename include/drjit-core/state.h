@@ -33,7 +33,7 @@ NAMESPACE_BEGIN(detail)
 template <JitBackend Backend> struct JitState {
     JitState()
         : m_mask_set(false), m_prefix_set(false), m_self_set(false),
-          m_cse_scope_set(false), m_recording(false) { }
+          m_scope_set(false), m_recording(false) { }
 
     ~JitState() {
         if (m_mask_set)
@@ -42,7 +42,7 @@ template <JitBackend Backend> struct JitState {
             clear_prefix();
         if (m_self_set)
             clear_self();
-        if (m_cse_scope_set)
+        if (m_scope_set)
             clear_scope();
         if (m_recording)
             end_recording();
@@ -94,17 +94,17 @@ template <JitBackend Backend> struct JitState {
     }
 
     void new_scope() {
-        if (!m_cse_scope_set) {
-            m_cse_scope = jit_cse_scope(Backend);
-            m_cse_scope_set = true;
+        if (!m_scope_set) {
+            m_scope = jit_scope(Backend);
+            m_scope_set = true;
         }
-        jit_new_cse_scope(Backend);
+        jit_new_scope(Backend);
     }
 
     void clear_scope() {
-        assert(m_cse_scope_set);
-        jit_set_cse_scope(Backend, m_cse_scope);
-        m_cse_scope_set = false;
+        assert(m_scope_set);
+        jit_set_scope(Backend, m_scope);
+        m_scope_set = false;
     }
 
     void set_self(uint32_t value, uint32_t index = 0) {
@@ -127,9 +127,9 @@ private:
     bool m_mask_set;
     bool m_prefix_set;
     bool m_self_set;
-    bool m_cse_scope_set;
+    bool m_scope_set;
     bool m_recording;
-    uint32_t m_cse_scope;
+    uint32_t m_scope;
     uint32_t m_checkpoint;
     uint32_t m_self_value;
     uint32_t m_self_index;

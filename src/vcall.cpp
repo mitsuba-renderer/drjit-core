@@ -118,6 +118,7 @@ void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
             ts->vcall_self_index = index;
         } else {
             Variable v;
+            v.kind = (uint32_t) VarKind::Stmt;
             if (backend == JitBackend::CUDA)
                 v.stmt = (char *) "mov.u32 $r0, self";
             else
@@ -173,7 +174,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         const Variable *self_v = jitc_var(self);
         size = self_v->size;
         placeholder |= (bool) self_v->placeholder;
-        dirty |= (bool) self_v->ref_count_se;
+        dirty |= self_v->is_dirty();
         backend = (JitBackend) self_v->backend;
         if ((VarType) self_v->type != VarType::UInt32)
             jitc_raise("jit_var_vcall(): 'self' argument must be of type "
@@ -191,11 +192,11 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             Variable *v2 = jitc_var(v->dep[0]);
             placeholder |= (bool) v2->placeholder;
             optix |= (bool) v2->optix;
-            dirty |= (bool) v2->ref_count_se;
+            dirty |= v2->is_dirty();
             size = std::max(size, v2->size);
-        } else if (!v->literal) {
+        } else if (!v->is_literal()) {
             jitc_raise("jit_var_vcall(): input variable r%u must either be a "
-                       "literal or placeholder wrapping another variable!", in[i]);
+                       "value or placeholder wrapping another variable!", in[i]);
         }
         if (v->size != 1)
             jitc_raise("jit_var_vcall(): size of input variable r%u must be 1!", in[i]);
@@ -237,11 +238,11 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     if (dirty) {
         jitc_eval(ts);
 
-        dirty = jitc_var(self)->ref_count_se;
+        dirty = jitc_var(self)->is_dirty();
         for (uint32_t i = 0; i < n_in; ++i) {
             const Variable *v = jitc_var(in[i]);
             if (v->vcall_iface)
-                dirty |= (bool) jitc_var(v->dep[0])->ref_count_se;
+                dirty |= jitc_var(v->dep[0])->is_dirty();
         }
 
         if (unlikely(dirty))
@@ -356,7 +357,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             bool is_pointer = (VarType) v->type == VarType::Pointer;
             p->offset = offset;
             p->size = is_pointer ? 0u : type_size[v->type];
-            p->src = is_pointer ? (const void *) v->value : v->data;
+            p->src = is_pointer ? (const void *) v->literal : v->data;
             p++;
         }
 
@@ -433,7 +434,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
             /* Should this output value be devirtualized? We want to avoid
                completely removing the virtual function call.. */
-            if (n_inst == 1 && !vcall_inline && !jitc_var(out_nested[j])->literal)
+            if (n_inst == 1 && !vcall_inline && !jitc_var(out_nested[j])->is_literal())
                 continue;
 
             uint32_t dep[2] = { out_nested[j], mask };
@@ -446,11 +447,11 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
                     result_v = steal(jitc_var_copy(result_v));
                     v = jitc_var(result_v);
                 }
-                jitc_cse_drop(result_v, v);
+                jitc_lvn_drop(result_v, v);
                 v->placeholder = placeholder;
                 v->optix = optix;
                 v->size = size;
-                jitc_cse_put(result_v, v);
+                jitc_lvn_put(result_v, v);
             }
 
             out[j] = result_v.release();
@@ -539,6 +540,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
         const Variable *v = jitc_var(index);
         Variable v2;
+        v2.kind = (uint32_t) VarKind::Stmt;
         v2.stmt = (char *) "";
         v2.size = size;
         v2.placeholder = placeholder;
@@ -1356,7 +1358,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     const Variable *v = jitc_var(index);
 
-    if (!v->literal && v->stmt && strstr(v->stmt, "self"))
+    if (v->is_stmt() && strstr(v->stmt, "self"))
         use_self = true;
 
     if (v->optix)
@@ -1364,7 +1366,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     if (v->vcall_iface) {
         return;
-    } else if (v->data || (VarType) v->type == VarType::Pointer) {
+    } else if (v->is_data() || (VarType) v->type == VarType::Pointer) {
         uint32_t tsize = type_size[v->type];
         uint32_t offset = (data_offset + tsize - 1) / tsize * tsize;
         it_and_status.first.value() = offset;
@@ -1451,6 +1453,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
     uint32_t perm_var = jitc_var_mem_map(backend, VarType::UInt32, perm, size, 1);
 
     Variable v2;
+    v2.kind = (uint32_t) VarKind::Data;
     v2.type = (uint32_t) VarType::UInt32;
     v2.backend = (uint32_t) backend;
     v2.dep[3] = perm_var;

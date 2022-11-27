@@ -16,9 +16,10 @@
 struct ScheduledVariable {
     uint32_t size;
     uint32_t index;
+    void *data;
 
     ScheduledVariable(uint32_t size, uint32_t index)
-        : size(size), index(index) { }
+        : size(size), index(index), data(nullptr) { }
 };
 
 /// Start and end index of a group of variables that will be merged into the same kernel

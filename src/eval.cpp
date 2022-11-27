@@ -146,7 +146,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     (void) timer();
 
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
-        uint32_t index = schedule[group_index].index;
+        ScheduledVariable &sv = schedule[group_index];
+        uint32_t index = sv.index;
         Variable *v = jitc_var(index);
 
         // Some sanity checks
@@ -157,19 +158,22 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         if (unlikely(v->size != 1 && v->size != group.size))
             jitc_fail("jit_assemble(): schedule contains variable r%u with incompatible size "
                      "(%u and %u)!", index, v->size, group.size);
-        if (unlikely(!v->data && !v->literal && !v->stmt))
-            jitc_fail("jit_assemble(): variable r%u has no statement!", index);
-        if (unlikely(v->literal && v->data))
-            jitc_fail("jit_assemble(): variable r%u is simultaneously literal and evaluated!", index);
-        if (unlikely(v->ref_count_se))
+        if (unlikely(v->kind == (uint32_t) VarKind::Invalid))
+            jitc_fail("jit_assemble(): variable r%u is of an invalid kind!", index);
+        if (unlikely(v->is_dirty()))
             jitc_fail("jit_assemble(): dirty variable r%u encountered!", index);
 
         v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
-        if (v->data) {
+        v->reg_index = n_regs++;
+
+        if (v->is_data()) {
+            n_params_in++;
             v->param_type = ParamType::Input;
             kernel_params.push_back(v->data);
-            n_params_in++;
         } else if (v->output_flag && v->size == group.size) {
+            n_params_out++;
+            v->param_type = ParamType::Output;
+
             size_t isize = (size_t) type_size[v->type],
                    dsize = (size_t) group.size * isize;
 
@@ -177,32 +181,25 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             if (backend == JitBackend::LLVM && isize < 4)
                 dsize += 4 - isize;
 
-            void *data =
-                jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                        : AllocType::HostAsync,
-                            dsize);
+            sv.data = jitc_malloc(
+                backend == JitBackend::CUDA ? AllocType::Device
+                                            : AllocType::HostAsync,
+                dsize); // Note: unsafe to access 'v' after jitc_malloc().
 
-            // The addr. of 'v' can change (jitc_malloc() may release the lock)
-            v = jitc_var(index);
-
-            v->data = data;
-            v->param_type = ParamType::Output;
-            kernel_params.push_back(data);
-            n_params_out++;
-        } else if (v->literal && (VarType) v->type == VarType::Pointer) {
-            v->param_type = ParamType::Input;
-            kernel_params.push_back((void *) v->value);
+            kernel_params.push_back(sv.data);
+        } else if (v->is_literal() && (VarType) v->type == VarType::Pointer) {
             n_params_in++;
+            v->param_type = ParamType::Input;
+            kernel_params.push_back((void *) v->literal);
         } else {
+            n_side_effects += v->side_effect;
             v->param_type = ParamType::Register;
             v->param_offset = 0xFFFF;
-            n_side_effects += v->side_effect;
+
             #if defined(DRJIT_ENABLE_OPTIX)
                 uses_optix |= v->optix;
             #endif
         }
-
-        v->reg_index = n_regs++;
     }
 
     if (unlikely(n_regs > 0xFFFFF))
@@ -254,7 +251,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                 buffer.fmt("in, offset=%u, ", v->param_offset);
             if (v->param_type == ParamType::Output)
                 buffer.fmt("out, offset=%u, ", v->param_offset);
-            if (v->literal)
+            if (v->is_literal())
                 buffer.put("literal, ");
             if (v->size == 1 && v->param_type != ParamType::Output)
                 buffer.put("scalar, ");
@@ -603,7 +600,7 @@ void jitc_eval(ThreadState *ts) {
             Variable *v = &it.value();
 
             // Skip variables that are already evaluated
-            if (v->data)
+            if (v->is_data())
                 continue;
 
             jitc_var_traverse(v->size, index);
@@ -697,9 +694,8 @@ void jitc_eval(ThreadState *ts) {
         }
     }
 
-    /* At this point, all variables and their dependencies are computed, which
-       means that we can remove internal edges between them. This in turn will
-       cause many of the variables to be garbage-collected. */
+    /* Variables and their dependencies are now computed, hence internal edges
+       between them can be removed. This will cause many variables to expire. */
     jitc_log(Debug, "jit_eval(): cleaning up..");
 
     for (ScheduledVariable sv : schedule) {
@@ -713,6 +709,24 @@ void jitc_eval(ThreadState *ts) {
         v->reg_index = 0;
         if (!(v->output_flag || v->side_effect))
             continue;
+
+        if (unlikely(v->is_literal()))
+            jitc_fail("jit_eval(): internal error: did not expect a literal "
+                      "constant variable here!");
+
+        jitc_lvn_drop(index, v);
+
+        if (v->free_stmt) {
+            free(v->stmt);
+            v->stmt = nullptr;
+            v->free_stmt = false;
+        }
+
+        if (v->output_flag) {
+            v->kind = (uint32_t) VarKind::Data;
+            v->data = sv.data;
+            v->output_flag = false;
+        }
 
         if (unlikely(v->extra)) {
             auto it2 = state.extra.find(index);
@@ -733,23 +747,14 @@ void jitc_eval(ThreadState *ts) {
             state.extra[index].assemble = nullptr;
         }
 
-        jitc_cse_drop(index, v);
-
-        if (unlikely(v->literal))
-            jitc_fail("jit_eval(): internal error: did not expect a literal "
-                      "variable here!");
-        if (v->free_stmt)
-            free(v->stmt);
-
         uint32_t dep[4], side_effect = v->side_effect;
         memcpy(dep, v->dep, sizeof(uint32_t) * 4);
         memset(v->dep, 0, sizeof(uint32_t) * 4);
-        v->stmt = nullptr;
-        v->output_flag = false;
         v->side_effect = false;
 
         if (side_effect)
             jitc_var_dec_ref(index);
+
         for (int j = 0; j < 4; ++j)
             jitc_var_dec_ref(dep[j]);
     }
@@ -783,7 +788,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
             continue;
 
         const Variable *v = jitc_var(in[i]);
-        if (!v->literal)
+        if (!v->is_literal())
             visited.emplace(1, in[i]);
     }
 

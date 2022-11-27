@@ -70,11 +70,11 @@ TEST_BOTH(03_load_store_mask) {
         uint32_t mask = jit_var_new_op_2(JitOp::Eq, odd, zero);
 
         jit_assert(strcmp(jit_var_str(mask),
-                           i == 0 ? "[1]" : "[1, 0, 1, 0, 1, 0, 1, 0, 1, 0]") == 0);
+                          i == 0 ? "[1]" : "[1, 0, 1, 0, 1, 0, 1, 0, 1, 0]") == 0);
 
         uint32_t flip = jit_var_new_op_1(JitOp::Not, mask);
         jit_assert(strcmp(jit_var_str(flip),
-                           i == 0 ? "[0]" : "[0, 1, 0, 1, 0, 1, 0, 1, 0, 1]") == 0);
+                          i == 0 ? "[0]" : "[0, 1, 0, 1, 0, 1, 0, 1, 0, 1]") == 0);
 
         jit_var_dec_ref(flip);
         jit_var_dec_ref(ctr);
@@ -86,7 +86,7 @@ TEST_BOTH(03_load_store_mask) {
 }
 
 TEST_BOTH(04_load_store_float) {
-    /// Check usage of floats/doubles (loading, storing, literals)
+    /// Check usage of floats/doubles (loading, storing, constant literals)
     for (int i = 0; i < 2; ++i) {
         for (int j = 0; j < 2; ++j) {
             for (int k = 0; k < 2; ++k) {

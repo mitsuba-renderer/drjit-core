@@ -54,7 +54,7 @@ static bool jitc_is_not_void(VarType type) {
 }
 
 // ===========================================================================
-// Evaluation helper routines for literal constant values
+// Evaluation helper routines for value constant values
 // ===========================================================================
 
 template <bool Value>
@@ -339,7 +339,7 @@ T eval_mulhi(T a, T b) {
 
 
 // ===========================================================================
-// Infrastructure to apply a given expression (lambda) to literal varaibles
+// Infrastructure to apply a given expression (lambda) to value varaibles
 // ===========================================================================
 
 #if defined(_MSC_VER)
@@ -370,18 +370,18 @@ template <typename Arg, typename... Args> Arg first(Arg arg, Args...) { return a
 template <bool Cond = false, typename Func, typename... Args>
 uint64_t jitc_eval_literal(Func func, const Args *... args) {
     switch ((VarType) first(args->type...)) {
-        case VarType::Bool:    return v2i(func(i2v<   bool> (args->value)...));
-        case VarType::Int8:    return v2i(func(i2v< int8_t> (args->value)...));
-        case VarType::UInt8:   return v2i(func(i2v<uint8_t> (args->value)...));
-        case VarType::Int16:   return v2i(func(i2v< int16_t>(args->value)...));
-        case VarType::UInt16:  return v2i(func(i2v<uint16_t>(args->value)...));
-        case VarType::Int32:   return v2i(func(i2v< int32_t>(args->value)...));
-        case VarType::UInt32:  return v2i(func(i2v<uint32_t>(args->value)...));
-        case VarType::Int64:   return v2i(func(i2v< int64_t>(args->value)...));
-        case VarType::UInt64:  return v2i(func(i2v<uint64_t>(args->value)...));
-        case VarType::Float32: return v2i(func(i2v<   float>(args->value)...));
-        case VarType::Float64: return v2i(func(i2v<  double>(args->value)...));
-        default: jitc_fail("jit_eval_literal(): unsupported variable type!");
+        case VarType::Bool:    return v2i(func(i2v<   bool> (args->literal)...));
+        case VarType::Int8:    return v2i(func(i2v< int8_t> (args->literal)...));
+        case VarType::UInt8:   return v2i(func(i2v<uint8_t> (args->literal)...));
+        case VarType::Int16:   return v2i(func(i2v< int16_t>(args->literal)...));
+        case VarType::UInt16:  return v2i(func(i2v<uint16_t>(args->literal)...));
+        case VarType::Int32:   return v2i(func(i2v< int32_t>(args->literal)...));
+        case VarType::UInt32:  return v2i(func(i2v<uint32_t>(args->literal)...));
+        case VarType::Int64:   return v2i(func(i2v< int64_t>(args->literal)...));
+        case VarType::UInt64:  return v2i(func(i2v<uint64_t>(args->literal)...));
+        case VarType::Float32: return v2i(func(i2v<   float>(args->literal)...));
+        case VarType::Float64: return v2i(func(i2v<  double>(args->literal)...));
+        default: jitc_fail("jit_eval_value(): unsupported variable type!");
     }
 }
 
@@ -464,12 +464,12 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             Variable *vi = jitc_var(dep[i]);
             vti = std::max(vti, vi->type);
             size = std::max(size, vi->size);
-            dirty |= (bool) vi->ref_count_se;
+            dirty |= vi->is_dirty();
             placeholder |= (bool) vi->placeholder;
             backend_i |= (uint32_t) vi->backend;
             v[i] = vi;
 
-            if (vi->literal && const_prop) {
+            if (vi->is_literal() && const_prop) {
                 uint64_t one;
                 switch ((VarType) vi->type) {
                     case VarType::Float16: one = 0x3c00ull; break;
@@ -477,8 +477,8 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                     case VarType::Float64: one = 0x3ff0000000000000ull; break;
                     default: one = 1; break;
                 }
-                literal_zero[i] = vi->value == 0;
-                literal_one[i] = vi->value == one;
+                literal_zero[i] = vi->literal == 0;
+                literal_one[i] = vi->literal == one;
             } else {
                 literal = false;
             }
@@ -527,7 +527,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
 
     const char *stmt = nullptr;
 
-    // Used if the result produces a literal value
+    // Used if the result produces a value value
     uint64_t lv = 0;
 
     /* Used if the result is simply the index of an input variable,
@@ -867,11 +867,11 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                 li = dep[1];
             } else if (literal_one[1] || (literal_zero[0] && jitc_is_int(vt))) {
                 li = dep[0];
-            } else if (is_uint && v[0]->literal && jitc_is_pow2(v[0]->value) && const_prop) {
-                li = jitc_var_shift(backend, vt, JitOp::Shl, dep[1], v[0]->value);
+            } else if (is_uint && v[0]->is_literal() && jitc_is_pow2(v[0]->literal) && const_prop) {
+                li = jitc_var_shift(backend, vt, JitOp::Shl, dep[1], v[0]->literal);
                 li_created = true;
-            } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value) && const_prop) {
-                li = jitc_var_shift(backend, vt, JitOp::Shl, dep[0], v[1]->value);
+            } else if (is_uint && v[1]->is_literal() && jitc_is_pow2(v[1]->literal) && const_prop) {
+                li = jitc_var_shift(backend, vt, JitOp::Shl, dep[0], v[1]->literal);
                 li_created = true;
             } else if (backend == JitBackend::CUDA) {
                 if (is_single)
@@ -892,10 +892,10 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
                                       v[0], v[1]);
             } else if (literal_one[1]) {
                 li = dep[0];
-            } else if (is_uint && v[1]->literal && jitc_is_pow2(v[1]->value) && const_prop) {
-                li = jitc_var_shift(backend, vt, JitOp::Shr, dep[0], v[1]->value);
+            } else if (is_uint && v[1]->is_literal() && jitc_is_pow2(v[1]->literal) && const_prop) {
+                li = jitc_var_shift(backend, vt, JitOp::Shr, dep[0], v[1]->literal);
                 li_created = true;
-            } else if (jitc_is_float(vt) && v[1]->literal && const_prop) {
+            } else if (jitc_is_float(vt) && v[1]->is_literal() && const_prop) {
                 uint32_t recip = jitc_var_new_op(JitOp::Rcp, 1, &dep[1]);
                 uint32_t deps[2] = { dep[0], recip };
                 li = jitc_var_new_op(JitOp::Mul, 2, deps);
@@ -1295,7 +1295,7 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
             jitc_eval(thread_state(backend));
             for (uint32_t i = 0; i < n_dep; ++i) {
                 v[i] = jitc_var(dep[i]);
-                if (v[i]->ref_count_se)
+                if (v[i]->is_dirty())
                     error = "variable remains dirty following evaluation!";
             }
         }
@@ -1307,9 +1307,10 @@ uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
         v2.placeholder = placeholder;
 
         if (literal) {
-            v2.literal = 1;
-            v2.value = lv;
+            v2.kind = (uint32_t) VarKind::Literal;
+            v2.literal = lv;
         } else {
+            v2.kind = (uint32_t) VarKind::Stmt;
             v2.stmt = (char *) stmt;
             for (uint32_t i = 0; i < n_dep; ++i) {
                 v2.dep[i] = dep[i];
@@ -1386,17 +1387,17 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret)
         reinterpret = 1;
     }
 
-    if (v->ref_count_se) {
+    if (v->is_dirty()) {
         jitc_eval(thread_state(backend));
         v = jitc_var(index);
-        if (unlikely(v->ref_count_se))
+        if (unlikely(v->is_dirty()))
             jitc_fail("jit_var_new_cast(): variable remains dirty after evaluation!");
     }
 
-    if (v->literal && (jitc_flags() & (uint32_t) JitFlag::ConstProp)) {
+    if (v->is_literal() && (jitc_flags() & (uint32_t) JitFlag::ConstProp)) {
         uint64_t value;
         if (reinterpret) {
-            value = v->value;
+            value = v->literal;
         } else {
             value = jitc_eval_literal([target_type](auto value) -> uint64_t {
                 switch (target_type) {
@@ -1488,6 +1489,7 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret)
         }
 
         Variable v2;
+        v2.kind = (uint32_t) VarKind::Stmt;
         v2.size = v->size;
         v2.type = (uint32_t) target_type;
         v2.backend = (uint32_t) backend;
@@ -1526,13 +1528,18 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
                                  uint32_t size) {
     Variable *v = jitc_var(var_index);
 
-    if (v->data)
-        return 0; // buffer input, give up
+    if (v->is_data())
+        return 0; // evaluated variable, give up
 
     if (v->extra) {
         Extra &e = state.extra[var_index];
         if (e.n_dep || e.callback || e.vcall_buckets || e.assemble)
             return 0; // "complicated" variable, give up
+    }
+
+    if (v->is_literal()) {
+        jitc_var_inc_ref(var_index, v);
+        return var_index;
     }
 
     Ref dep[4];
@@ -1553,9 +1560,9 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
                                   ? (char *) "mov.u32 $r0, %r0"
                                   : jitc_llvm_counter_str;
 
-    uint32_t result;
     if (rebuild) {
         Variable v2;
+        v2.kind = v->kind;
         v2.size = size;
         v2.type = v->type;
         v2.backend = v->backend;
@@ -1570,16 +1577,14 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             v2.dep[i] = dep[i];
             jitc_var_inc_ref(dep[i]);
         }
-        result = jitc_var_new(v2);
-    } else if (!v->literal && strcmp(v->stmt, counter_str) == 0) {
+        return jitc_var_new(v2);
+    } else if (v->is_stmt() && strcmp(v->stmt, counter_str) == 0) {
         jitc_var_inc_ref(new_index);
         return new_index;
     } else {
-        result = var_index;
         jitc_var_inc_ref(var_index, v);
+        return var_index;
     }
-
-    return result;
 }
 
 uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
@@ -1595,13 +1600,13 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     uint32_t vti = v_source->type;
     uint32_t size = std::max(v_index->size, v_mask->size);
     JitBackend backend = (JitBackend) v_source->backend;
-    bool v_source_literal = v_source->literal;
+    bool v_source_value = v_source->is_literal();
 
     if (v_source->placeholder)
         jitc_raise("jit_var_new_gather(): cannot gather from a placeholder variable!");
 
     // Don't perform the gather operation if it is always masked
-    if (v_mask->literal && v_mask->value == 0) {
+    if (v_mask->is_literal() && v_mask->literal == 0) {
         uint64_t value = 0;
         uint32_t result = jitc_var_new_literal(backend, (VarType) vti, &value, size, 0);
         jitc_log(Debug,
@@ -1621,7 +1626,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
 
         jitc_log(Debug, "jit_var_new_gather(%s r%u <- r%u[r%u] if r%u): elided, %s source",
                  type_name[vti], result, source, index_, mask_,
-                 v_source_literal ? "literal" : "scalar");
+                 v_source_value ? "value" : "scalar");
 
         return result;
     }
@@ -1634,7 +1639,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
     v_index = jitc_var(index);
     v_mask = jitc_var(mask);
 
-    if (v_source->ref_count_se || v_index->ref_count_se || v_mask->ref_count_se) {
+    if (v_source->is_dirty() || v_index->is_dirty() || v_mask->is_dirty()) {
         jitc_eval(thread_state(backend));
 
         // Location of variables may have changed
@@ -1642,12 +1647,12 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
         v_index = jitc_var(index);
         v_mask = jitc_var(mask);
 
-        if (unlikely(v_source->ref_count_se || v_index->ref_count_se || v_mask->ref_count_se))
+        if (unlikely(v_source->is_dirty() || v_index->is_dirty() || v_mask->is_dirty()))
             jitc_fail("jit_var_new_gather(): variable remains dirty after evaluation!");
     }
 
-    bool unmasked = v_mask->literal && v_mask->value == 1;
-    bool index_zero = v_index->literal && v_index->value == 0;
+    bool unmasked = v_mask->is_literal() && v_mask->literal == 1;
+    bool index_zero = v_index->is_literal() && v_index->literal == 0;
 
     VarType vt = (VarType) v_source->type;
 
@@ -1756,7 +1761,7 @@ uint32_t jitc_var_new_gather(uint32_t source, uint32_t index_, uint32_t mask_) {
             const char *ptr_tp   = type_prefix[v_ptr->type];
             const char *index_tp = type_prefix[v_index->type];
 
-            bool index_zero = v_index->literal && v_index->value == 0;
+            bool index_zero = v_index->is_literal() && v_index->literal == 0;
             bool is_bool = v->type == (uint32_t) VarType::Bool;
 
             if (!index_zero) {
@@ -1847,7 +1852,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     for (uint32_t index : { index_, mask_, value }) {
         const Variable *v = jitc_var(index);
         size = std::max(v->size, size);
-        dirty |= (bool) v->ref_count_se;
+        dirty |= v->is_dirty();
         // Fetch type + backend from 'value'
         backend = (JitBackend) v->backend;
         vt = (VarType) v->type;
@@ -1858,7 +1863,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         jitc_eval(ts);
 
         for (uint32_t index : { index_, mask_, value }) {
-            if (jitc_var(index)->ref_count_se)
+            if (jitc_var(index)->is_dirty())
                 jitc_fail("jit_var_new_scatter(): variable remains dirty after "
                           "evaluation!");
         }
@@ -1879,7 +1884,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // Don't do anything if the mask is always false
     {
         const Variable *v_mask = jitc_var(mask_);
-        if (v_mask->literal && v_mask->value == 0) {
+        if (v_mask->is_literal() && v_mask->literal == 0) {
             print_log("skipped, always masked");
             return target.release();
         }
@@ -1892,13 +1897,13 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         if (v_target->placeholder)
             jitc_raise("jit_var_new_scatter(): cannot scatter to a placeholder variable!");
 
-        if (v_target->literal && v_value->literal &&
-            v_target->value == v_value->value && reduce_op == ReduceOp::None) {
-            print_log("skipped, target/source are literal variables with the same value");
+        if (v_target->is_literal() && v_value->is_literal() &&
+            v_target->literal == v_value->literal && reduce_op == ReduceOp::None) {
+            print_log("skipped, target/source are value variables with the same value");
             return target.release();
         }
 
-        if (v_value->literal && v_value->value == 0 && reduce_op == ReduceOp::Add) {
+        if (v_value->is_literal() && v_value->literal == 0 && reduce_op == ReduceOp::Add) {
             print_log("skipped, scatter_reduce(ScatterOp.Add) with zero-valued source variable");
             return target.release();
         }
@@ -1917,7 +1922,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     bool unmasked = false;
     {
         const Variable *v_mask  = jitc_var(mask);
-        unmasked   = v_mask->literal  && v_mask->value  == 1;
+        unmasked   = v_mask->is_literal() && v_mask->literal  == 1;
         size = std::max(size, v_mask->size);
     }
 
@@ -2061,14 +2066,14 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             const char *src_tp   = type_prefix[v_src->type];
             const char *index_tp = type_prefix[v_idx->type];
 
-            bool index_zero = v_idx->literal && v_idx->value == 0;
+            bool index_zero = v_idx->is_literal() && v_idx->literal == 0;
             bool is_src_bool = v_src->type == (uint32_t) VarType::Bool;
 
             bool masked = false;
             const Variable *v_mask;
             if (v->dep[3]) {
                 v_mask = jitc_var(v->dep[3]);
-                masked = !(v_mask->literal && v_mask->value == 1);
+                masked = !(v_mask->is_literal() && v_mask->literal == 1);
             }
 
             const char *red_op_name = (const char *) extra.callback_data;

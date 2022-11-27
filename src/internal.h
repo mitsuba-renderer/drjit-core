@@ -38,6 +38,13 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 
 #pragma pack(push, 1)
 
+enum class VarKind : uint32_t {
+    Invalid = 0,
+    Literal,
+    Stmt,
+    Data
+};
+
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     #if defined(__GNUC__)
@@ -58,62 +65,62 @@ struct Variable {
     #  pragma GCC diagnostic pop
     #endif
 
-    // ===================   References, reference counts   ===================
+    // =================  Reference count, dependencies, scope ================
 
     /// Number of times that this variable is referenced elsewhere
     uint32_t ref_count;
 
-    uint32_t unused : 16;
+    /// Identifier of the basic block containing this variable
+    uint32_t scope;
 
-    /// Number of queued side effects
-    uint32_t ref_count_se : 16;
-
-    /// Up to 4 dependencies of this instruction (further possible via 'extra')
+    /**
+     * \brief Up to 4 dependencies of this instruction
+     *
+     * Certain complex operations (e.g. a ray tracing call) may reference
+     * further operands via an entry in the 'State::extra' map. They must set
+     * the 'Variable::extra' bit to 1 to indicate the presence of such
+     * supplemental information.
+     */
     uint32_t dep[4];
 
-    // =============  Encoded instruction / data pointer / size   =============
+    // ======  Size & encoded instruction (IR statement, literal, data) =======
 
+    /// The 'kind' field determines which entry of the following union is used
     union {
-        // If literal == 0: Intermediate language (PTX, LLVM IR) statement
+        // Floating point/integer value (reinterpreted as u64)
+        uint64_t literal;
+
+        // Statement in an intermediate representation (PTX, LLVM IR)
         char *stmt;
 
-        // If literal == 1, floating point/integer value (reinterpreted as u64)
-        uint64_t value;
+        /// Pointer to device memory
+        void *data;
     };
-
-    /// Pointer to device memory, equals NULL if the variable is not evaluated
-    void *data;
 
     /// Number of entries
     uint32_t size;
 
-    // ============  Essential flags, basic block ID (-> LVN key)  ============
-
-    /// Data type of this variable
-    uint32_t type : 4;
+    // ================  Essential flags used in the LVN key  =================
 
     /// Backend associated with this variable
     uint32_t backend : 2;
 
+    // Variable kind (IR statement / literal constant / data)
+    uint32_t kind : 2;
+
+    /// Variable type (Bool/Int/Float/....)
+    uint32_t type : 4;
+
     /// Is this a pointer variable that is used to write to some array?
     uint32_t write_ptr : 1;
-
-    /// Does this variable store a number literal?
-    uint32_t literal : 1;
 
     /// Free the 'stmt' variables at destruction time?
     uint32_t free_stmt : 1;
 
-    /// Basic block ID of this variable
-    uint32_t cse_scope : 23;
+    // =======================  Miscellaneous fields =========================
 
-    // ========================  Miscellaneous flags  =========================
-
-    /// Don't deallocate 'data' when this variable is destructed?
+    /// If set, 'data' will not be deallocated when the variable is destructed
     uint32_t retain_data : 1;
-
-    /// Does evaluation of this variable have side effects on other variables?
-    uint32_t side_effect : 1;
 
     /// Is this a placeholder variable used to record arithmetic symbolically?
     uint32_t placeholder : 1;
@@ -121,16 +128,19 @@ struct Variable {
     /// Is this a placeholder variable used to record arithmetic symbolically?
     uint32_t vcall_iface : 1;
 
-    /// Is this variable associated with extra information?
+    /// Must be set if the variable is associated with an 'Extra' instance
     uint32_t extra : 1;
 
-    /// Do the variable contents have irregular alignment? (e.g. due to jitc_var_mem_map())
+    /// Must be set if 'data' is not properly aligned in memory
     uint32_t unaligned : 1;
 
     /// Does this variable perform an OptiX operation?
     uint32_t optix : 1;
 
-    // ===============   Temporarily used during jitc_eval()   ================
+    /// If set, evaluation will have side effects on other variables
+    uint32_t side_effect : 1;
+
+    // =========== Entries that are temporarily used in jitc_eval() ============
 
     /// Argument type
     uint32_t param_type : 2;
@@ -138,49 +148,67 @@ struct Variable {
     /// Is this variable marked as an output?
     uint32_t output_flag : 1;
 
+    /// Unused for now
+    uint32_t unused : 12;
+
     /// Offset of the argument in the list of kernel parameters
-    uint32_t param_offset : 22;
+    uint32_t param_offset;
 
     /// Register index
     uint32_t reg_index;
+
+    /// Number of queued side effects
+    uint32_t ref_count_se;
+
+    uint32_t unused_2;
+
+    // =========================   Helper functions   ==========================
+
+    bool is_data()    const { return kind == (uint32_t) VarKind::Data;    }
+    bool is_literal() const { return kind == (uint32_t) VarKind::Literal; }
+    bool is_stmt()    const { return kind == (uint32_t) VarKind::Stmt;    }
+    bool is_dirty()   const { return ref_count_se > 0; }
 };
 
 /// Abbreviated version of the Variable data structure
 struct VariableKey {
-    uint32_t dep[4];
     uint32_t size;
-    uint32_t backend     : 2;
-    uint32_t type        : 4;
-    uint32_t write_ptr   : 1;
-    uint32_t literal     : 1;
-    uint32_t free_stmt   : 1;
-    uint32_t cse_scope   : 23;
+    uint32_t scope;
+    uint32_t dep[4];
+    uint32_t backend   : 2;
+    uint32_t kind      : 2;
+    uint32_t type      : 4;
+    uint32_t write_ptr : 1;
+    uint32_t free_stmt : 1;
+    uint32_t unused    : 22;
 
     union {
+        uint64_t literal;
         char *stmt;
-        uint64_t value;
     };
 
     VariableKey(const Variable &v) {
-        memcpy(dep, v.dep, sizeof(uint32_t) * 4);
         size = v.size;
-        type = v.type;
-        backend = v.backend;
-        write_ptr = v.write_ptr;
-        literal = v.literal;
-        cse_scope = v.cse_scope;
-        free_stmt = v.free_stmt;
-        if (literal)
-            value = v.value;
+        scope = v.scope;
+        for (int i = 0; i < 4; ++i)
+            dep[i] = v.dep[i];
+        if (v.is_literal())
+            literal = v.literal;
         else
             stmt = v.stmt;
+        backend = v.backend;
+        kind = v.kind;
+        type = v.type;
+        write_ptr = v.write_ptr;
+        free_stmt = v.free_stmt;
+        unused = 0;
     }
 
     bool operator==(const VariableKey &v) const {
-        if (memcmp(this, &v, 6 * sizeof(uint32_t)) != 0)
+        if (memcmp(this, &v, 7 * sizeof(uint32_t)) != 0)
             return false;
-        if (literal)
-            return value == v.value;
+        if (kind == (uint32_t) VarKind::Literal)
+            return literal == v.literal;
         else if (!free_stmt)
             return stmt == v.stmt;
         else
@@ -194,19 +222,22 @@ struct VariableKey {
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
         uint64_t hash_1;
-        if (k.literal)
-            hash_1 = k.value;
+        if (k.kind == (uint32_t) VarKind::Literal)
+            hash_1 = k.literal;
         else if (!k.free_stmt)
             hash_1 = (uintptr_t) k.stmt;
         else
             hash_1 = hash_str(k.stmt);
 
-        return hash(k.dep, 6 * sizeof(uint32_t), hash_1);
+        uint32_t buf[7];
+        size_t size = 7 * sizeof(uint32_t);
+        memcpy(buf, &k, size);
+        return hash(buf, size, hash_1);
     }
 };
 
-/// Cache data structure for common subexpression elimination
-using CSECache =
+/// Cache data structure for local value numbering
+using LVNMap =
     tsl::robin_map<VariableKey, uint32_t, VariableKeyHasher,
                    std::equal_to<VariableKey>,
                    std::allocator<std::pair<VariableKey, uint32_t>>,
@@ -353,8 +384,8 @@ struct ThreadState {
     /// Combined version of the elements of 'prefix_stack'
     char *prefix = nullptr;
 
-    /// Index used to isolate CSE from other parts of the program
-    uint32_t cse_scope = 0;
+    /// Identifier associated with the current basic block
+    uint32_t scope = 0;
 
     /// Registry index of the 'self' pointer of the vcall being recorded
     uint32_t vcall_self_value = 0;
@@ -554,11 +585,11 @@ struct State {
     /// Stores the mapping from variable indices to variables
     VariableMap variables;
 
-    /// Unique counter to create new CSE domains
-    uint32_t cse_scope_ctr = 0;
+    /// Counter to create variable scopes that enforce a variable ordering
+    uint32_t scope_ctr = 0;
 
     /// Maps from a key characterizing a variable to its index
-    CSECache cse_cache;
+    LVNMap lvn_map;
 
     /// Must be held to execute jitc_eval()
     Lock eval_lock;

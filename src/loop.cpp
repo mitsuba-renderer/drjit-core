@@ -76,7 +76,7 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
         if (vsize > size)
             size = vsize;
 
-        dirty |= (bool) v->ref_count_se;
+        dirty |= v->is_dirty();
     }
 
     // Ensure side effects are fully processed
@@ -84,13 +84,14 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
         jitc_eval(thread_state(backend));
         dirty = false;
         for (size_t i = 0; i < n_indices; ++i)
-            dirty |= (bool) jitc_var(*indices[i])->ref_count_se;
+            dirty |= jitc_var(*indices[i])->is_dirty();
         if (unlikely(dirty))
             jitc_raise(
                 "jit_var_loop_init(): inputs remain dirty after evaluation!");
     }
 
     Variable v;
+    v.kind = (uint32_t) VarKind::Stmt;
     v.size = size;
     v.placeholder = 1;
     v.backend = (uint32_t) backend;
@@ -109,7 +110,7 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
     // Create Phi nodes (LLVM)
     if (backend == JitBackend::LLVM) {
         v.stmt = (char *) "$r0 = phi <$w x $t0> [ $r0_final, %l_$i2_tail ], "
-                          "[ $r1, %l_$i2_start ]";
+                           "[ $r1, %l_$i2_start ]";
         for (size_t i = 0; i < n_indices; ++i)
             wrap(v, *indices[i], result);
     }
@@ -136,6 +137,7 @@ uint32_t jitc_var_loop_cond(uint32_t loop_init, uint32_t cond,
         steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, dep));
 
     Variable v;
+    v.kind = (uint32_t) VarKind::Stmt;
     v.size = size;
     v.placeholder = 1;
     v.backend = (uint32_t) backend;
@@ -258,17 +260,17 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         // =========== 1.3. Optimizations ============
 
         if (optimize && first_round) {
-            bool eq_literal =
-                     v3->literal && vo->literal && v3->value == vo->value,
+            bool eq_value = v3->is_literal() && vo->is_literal() &&
+                            v3->literal == vo->literal,
                  unchanged = index_o == index_1;
 
-            if (eq_literal || unchanged) {
+            if (eq_value || unchanged) {
                 if (backend == JitBackend::LLVM) {
                     // Rewrite the previously generated phi expression. Needed
                     // in case the loop condition depends on a loop-invariant
                     // variable (see loop test 09_optim_cond)
                     v2->stmt = (char *) "$r0 = phi <$w x $t0> [ $r0, "
-                                        "%l_$i2_tail ], [ $r1, %l_$i2_start ]";
+                                         "%l_$i2_tail ], [ $r1, %l_$i2_start ]";
                 }
                 jitc_var_inc_ref(index_3);
                 jitc_var_dec_ref(index_1);
@@ -442,6 +444,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
     {
         Variable v2;
+        v2.kind = (uint32_t) VarKind::Stmt;
         if (backend == JitBackend::CUDA)
             v2.stmt = (char *) "mov.$t0 $r0, $r1";
         else
