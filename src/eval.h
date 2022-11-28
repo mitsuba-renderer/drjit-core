@@ -16,10 +16,11 @@
 struct ScheduledVariable {
     uint32_t size;
     uint32_t index;
+    uint32_t scope;
     void *data;
 
-    ScheduledVariable(uint32_t size, uint32_t index)
-        : size(size), index(index), data(nullptr) { }
+    ScheduledVariable(uint32_t size, uint32_t scope, uint32_t index)
+        : size(size), index(index), scope(scope), data(nullptr) { }
 };
 
 /// Start and end index of a group of variables that will be merged into the same kernel
@@ -83,10 +84,10 @@ extern bool assemble_func;
 extern int32_t alloca_size;
 extern int32_t alloca_align;
 
-/// Number of callables that were compiled so far
+/// Number of tentative callables that were assembled in the kernel being compiled
 extern uint32_t callable_count;
 
-/// Number of unique callables that were compiled so far
+/// Number of unique callables in the kernel being compiled
 extern uint32_t callable_count_unique;
 
 /// Specifies the nesting level of virtual calls being compiled

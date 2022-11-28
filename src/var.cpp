@@ -375,14 +375,8 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         do {
             index = state.variable_index++;
 
-            if (unlikely(index == 0)) { // overflow
-                jitc_fail(
-                    "DrJit has created more than 2^32 (4 billion) "
-                    "variables, which is currently the limit. Bug Wenzel to "
-                    "fix this (it will involve sorting scheduled variables by "
-                    "scope ID instead of variable ID and making the counter "
-                    "big enough that it will never overflow..).");
-            }
+            if (unlikely(index == 0)) // overflow
+                continue;
 
             std::tie(var_it, var_inserted) =
                 state.variables.try_emplace(index, v);
@@ -435,7 +429,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         var_buffer.put("): ");
 
         if (v.is_literal()) {
-            var_buffer.put("value = ");
+            var_buffer.put("literal = ");
             jitc_value_print(&v);
         } else if (v.is_data()) {
             var_buffer.fmt(DRJIT_PTR, (uintptr_t) v.data);
@@ -554,8 +548,15 @@ uint32_t jitc_var_wrap_vcall(uint32_t index) {
                    "uninitialized variable!");
 
     const Variable *v = jitc_var(index);
-    if (v->is_literal() && (jitc_flags() & (uint32_t) JitFlag::VCallOptimize))
-        return jitc_var_resize(index, 1);
+    if (v->is_literal() && (jitc_flags() & (uint32_t) JitFlag::VCallOptimize)) {
+        Variable v2;
+        v2.backend = v->backend;
+        v2.kind = (uint32_t) VarKind::Literal;
+        v2.literal = v->literal;
+        v2.type = v->type;
+        v2.size = 1;
+        return jitc_var_new(v2);
+    }
 
     Variable v2;
     v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
@@ -573,6 +574,14 @@ uint32_t jitc_var_wrap_vcall(uint32_t index) {
     jitc_log(Debug, "jit_var_wrap_vcall(%s r%u <- r%u)", type_name[v2.type],
              result, index);
     return result;
+}
+
+void jitc_new_scope(JitBackend backend) {
+    uint32_t scope_index = ++state.scope_ctr;
+    if (unlikely(scope_index == 0))
+        jitc_raise("jit_new_scope(): overflow (more than 2^32=4294967296 scopes created!");
+    jitc_trace("jit_new_scope(%u)", scope_index);
+    thread_state(backend)->scope = scope_index;
 }
 
 uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
@@ -808,7 +817,7 @@ void *jitc_var_ptr(uint32_t index) {
 /// Evaluate a literal constant variable
 void jitc_var_eval_literal(uint32_t index, Variable *v) {
     jitc_log(Debug,
-            "jit_var_eval_literal(r%u): writing %s value of size %u",
+            "jit_var_eval_literal(r%u): writing %s literal of size %u",
             index, type_name[v->type], v->size);
 
     jitc_lvn_drop(index, v);

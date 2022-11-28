@@ -91,23 +91,15 @@ uint32_t jit_scope(JitBackend backend) {
     return thread_state(backend)->scope;
 }
 
-void jit_set_scope(JitBackend backend, uint32_t scope_index) {
+void jit_set_scope(JitBackend backend, uint32_t scope) {
     lock_guard guard(state.lock);
-    if (unlikely(scope_index >= (1 << 24)))
-        jitc_raise("jit_set_scope(): overflow (scope index exceeds the 24 "
-                   "bit counter of the Variable data structure)!");
-    jitc_trace("jit_set_scope(%u)", scope_index);
-    thread_state(backend)->scope = scope_index;
+    jitc_trace("jit_set_scope(%u)", scope);
+    thread_state(backend)->scope = scope;
 }
 
 void jit_new_scope(JitBackend backend) {
     lock_guard guard(state.lock);
-    uint32_t scope_index = ++state.scope_ctr;
-    if (unlikely(scope_index >= (1 << 24)))
-        jitc_raise("jit_new_scope(): overflow (scope index exceeds the 24 "
-                   "bit counter of the Variable data structure)!");
-    jitc_trace("jit_new_scope(%u)", scope_index);
-    thread_state(backend)->scope = scope_index;
+    jitc_new_scope(backend);
 }
 
 void jit_set_log_level_stderr(LogLevel level) {

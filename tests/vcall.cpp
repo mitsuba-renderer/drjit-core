@@ -157,6 +157,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
 
     jit_state.end_recording();
     jit_var_mark_side_effect(se);
+    jit_new_scope(Backend);
 
     if constexpr (!std::is_same_v<Result, std::nullptr_t>) {
         uint32_t offset = 0;
@@ -200,6 +201,8 @@ auto vcall(const char *domain, const Func &func,
         }
     }
 #endif
+
+    jit_new_scope(Backend);
 
     return vcall_impl<Result_2>(
         domain, n_inst, func, self,
@@ -420,17 +423,18 @@ TEST_BOTH(04_devirtualize) {
     BasePtr self = arange<UInt32>(10) % 3;
 
     for (uint32_t k = 0; k < 2; ++k) {
-        Float p1, p2;
-        if (k == 0) {
-            p1 = 12;
-            p2 = 34;
-        } else {
-            p1 = dr::opaque<Float>(12);
-            p2 = dr::opaque<Float>(34);
-        }
-
         for (uint32_t i = 0; i < 2; ++i) {
+            Float p1, p2;
+            if (k == 0) {
+                p1 = 12;
+                p2 = 34;
+            } else {
+                p1 = dr::opaque<Float>(12);
+                p2 = dr::opaque<Float>(34);
+            }
+
             jit_set_flag(JitFlag::VCallOptimize, i);
+            uint32_t scope = jit_scope(Backend);
 
             auto result = vcall(
                 "Base",
@@ -439,11 +443,16 @@ TEST_BOTH(04_devirtualize) {
                 },
                 self, p1, p2);
 
+            jit_set_scope(Backend, scope + 1);
+
+            Float p2_wrap = Float::steal(jit_var_wrap_vcall(p2.index()));
+
             Mask mask = neq(self, nullptr),
                  mask_combined = Mask::steal(jit_var_mask_apply(mask.index(), 10));
 
-            Float p2_wrap = Float::steal(jit_var_wrap_vcall(p2.index()));
             Float alt = (p2_wrap + 2) & mask_combined;
+
+            jit_set_scope(Backend, scope + 2);
 
             jit_assert((result.template get<0>().index() == alt.index()) == (i == 1));
             jit_assert(jit_var_is_literal(result.template get<2>().index()) == (i == 1));

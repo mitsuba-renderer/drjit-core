@@ -147,10 +147,7 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
         if (m_state)
             jit_raise("Loop(\"%s\"): was already initialized!", m_name.get());
 
-        m_indices_prev  = dr_vector<uint32_t>(m_indices.size(), 0);
-
-        // Capture JIT state and begin recording session
-        m_jit_state.new_scope();
+        m_indices_prev = dr_vector<uint32_t>(m_indices.size(), 0);
 
         // Rewrite loop state variables (1)
         m_loop_init = jit_var_loop_init(m_indices.size(), m_indices.data());
@@ -242,7 +239,6 @@ protected:
                     m_indices_prev.clear();
 
                     m_jit_state.end_recording();
-                    m_jit_state.clear_scope();
                     m_jit_state.clear_mask_if_set();
                     jit_var_mark_side_effect(rv);
 

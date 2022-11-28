@@ -165,6 +165,9 @@ extern uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size);
 /// Return the default mask
 extern uint32_t jitc_var_mask_default(JitBackend backend, uint32_t size);
 
+/// Start a new scope of the program being recorded
+extern void jitc_new_scope(JitBackend backend);
+
 /// Reduce (And) a boolean array to a single value, synchronizes.
 extern bool jitc_var_all(uint32_t index);
 

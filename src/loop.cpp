@@ -98,14 +98,19 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
 
     // Copy loop state before entering loop (CUDA)
     if (backend == JitBackend::CUDA) {
+        jitc_new_scope(backend);
         v.stmt = (char *) "mov.$t0 $r0, $r1";
         for (size_t i = 0; i < n_indices; ++i)
             wrap(v, *indices[i]);
     }
 
+    jitc_new_scope(backend);
+
     // Create a special node indicating the loop start
     Ref result = steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 0, nullptr));
     jitc_var(result)->size = size;
+
+    jitc_new_scope(backend);
 
     // Create Phi nodes (LLVM)
     if (backend == JitBackend::LLVM) {
@@ -113,7 +118,10 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
                            "[ $r1, %l_$i2_start ]";
         for (size_t i = 0; i < n_indices; ++i)
             wrap(v, *indices[i], result);
+
+        jitc_new_scope(backend);
     }
+
 
     jitc_log(Debug, "jit_var_loop_init(r%u, n_indices=%zu, size=%u)",
              (uint32_t) result, n_indices, size);
@@ -131,10 +139,14 @@ uint32_t jitc_var_loop_cond(uint32_t loop_init, uint32_t cond,
         backend = (JitBackend) v->backend;
     }
 
+    jitc_new_scope(backend);
+
     uint32_t dep[2] = { cond, loop_init };
 
     Ref result =
         steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, dep));
+
+    jitc_new_scope(backend);
 
     Variable v;
     v.kind = (uint32_t) VarKind::Stmt;
@@ -149,6 +161,8 @@ uint32_t jitc_var_loop_cond(uint32_t loop_init, uint32_t cond,
 
     for (size_t i = 0; i < n_indices; ++i)
         wrap(v, *indices[i], loop_init);
+
+    jitc_new_scope(backend);
 
     jitc_log(Debug, "jit_var_loop_cond(r%u, loop_init=r%u, cond=r%u)",
              (uint32_t) result, loop_init, cond);
@@ -361,11 +375,14 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
     // 3. Create variable representing the end of the loop
     // =====================================================
 
-    uint32_t loop_end_dep[2] = { loop_init, loop_cond };
+    jitc_new_scope(backend);
 
+    uint32_t loop_end_dep[2] = { loop_init, loop_cond };
     Ref loop_end = steal(
         jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, loop_end_dep));
     loop->end = loop_end;
+
+    jitc_new_scope(backend);
 
     {
         // Set a label and custom code generation hook
@@ -712,7 +729,7 @@ static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
         char global[128];
         snprintf(
             global, sizeof(global),
-            "declare i1 @llvm.experimental.vector.reduce.or.v%ui1(<%u x i1>)\n\n",
+            "declare i1 @llvm.experimental.vector.reduce.or.v%ui1(<%u x i1>)",
             width, width);
         jitc_register_global(global);
 
