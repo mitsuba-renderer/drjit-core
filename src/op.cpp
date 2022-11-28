@@ -2061,7 +2061,6 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             uint32_t src_i   = v_src->reg_index;
             uint32_t index_i = v_idx->reg_index;
 
-            const char *v_tp     = type_prefix[v->type];
             const char *dst_tp   = type_prefix[v_dst->type];
             const char *src_tp   = type_prefix[v_src->type];
             const char *index_tp = type_prefix[v_idx->type];
