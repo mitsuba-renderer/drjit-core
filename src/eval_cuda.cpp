@@ -2,6 +2,7 @@
 #include "internal.h"
 #include "var.h"
 #include "log.h"
+#include "vcall.h"
 #include "optix_api.h"
 
 // Forward declaration
@@ -192,54 +193,43 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
     buffer.put("    ret;\n"
                "}\n");
 
-    if (!uses_optix && !callables.empty()) {
-        size_t callables_offset = buffer.size();
+    uint32_t ctr = 0;
+    for (auto &it : globals_map) {
+        buffer.putc('\n');
+        buffer.put(globals.get() + it.second.start, it.second.length);
+        buffer.putc('\n');
+        if (!it.first.callable)
+            continue;
+        it.second.callable_index = ctr++;
+    }
 
-        for (size_t i = 0; i < callables.size(); ++i) {
-            const char *s = callables[i].c_str();
-            buffer.put(s, strchr(s, '{') - s - 1);
-            buffer.put(";\n");
+    if (callable_count > 0 && !uses_optix) {
+        size_t insertion_point =
+                   (char *) strstr(buffer.get(), ".address_size 64\n\n") -
+                   buffer.get() + 18,
+               insertion_start = buffer.size();
+
+        buffer.fmt(".extern .global .u64 callables[%u];\n\n",
+                   callable_count_unique);
+
+        jitc_insert_code_at(insertion_point, insertion_start);
+
+        buffer.fmt("\n.visible .global .align 8 .u64 callables[%u] = {\n",
+                   callable_count_unique);
+        for (auto const &it : globals_map) {
+            if (!it.first.callable)
+                continue;
+
+            buffer.fmt("    func_%016llx%016llx%s\n",
+                       (unsigned long long) it.first.hash.high64,
+                       (unsigned long long) it.first.hash.low64,
+                       it.second.callable_index + 1 < callable_count_unique ? "," : "");
         }
-        buffer.put("\n.global .u64 callables[] = {\n");
-        for (size_t i = 0; i < callables.size(); ++i) {
-            const char *s       = callables[i].c_str(),
-                       *pattern = uses_optix ? "__direct_callable__" : "func_";
-            buffer.put("    ");
-            buffer.put(strstr(s, pattern), strlen(pattern) + 32);
-            if (i + 1 < callables.size())
-                buffer.put(",\n");
-            else
-                buffer.put("\n");
-        }
+
         buffer.put("};\n\n");
-        size_t callables_length = buffer.size() - callables_offset;
-        globals.push_back(std::string(buffer.get() + callables_offset, callables_length));
-        buffer.rewind(callables_length);
     }
 
-    size_t globals_strlen = 0;
-    for (const std::string &s : globals)
-        globals_strlen += s.length();
-    for (const std::string &s : callables)
-        globals_strlen += s.length();
-
-    if (globals_strlen) {
-        size_t body_length = buffer.size();
-        buffer.putc(' ', globals_strlen);
-        char *p = (char *) strstr(buffer.get(), "\n\n") + 2;
-        memmove(p + globals_strlen, p, body_length - (p - buffer.get()));
-        for (auto it = globals.begin(); it != globals.end(); ++it) {
-            const std::string &s = *it;
-            memcpy(p, s.c_str(), s.length());
-            p += s.length();
-        }
-        for (auto it = callables.begin(); it != callables.end(); ++it) {
-            const std::string &s = *it;
-            memcpy(p, s.c_str(), s.length());
-            p += s.length();
-        }
-    }
-
+    jitc_vcall_upload(ts);
 }
 
 void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
@@ -375,7 +365,7 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
     }
 
     buffer.put("    ret;\n"
-               "}\n");
+               "}");
 }
 
 /// Convert an IR template with '$' expressions into valid IR

@@ -2,12 +2,13 @@
 #include "internal.h"
 #include "log.h"
 #include "var.h"
+#include "vcall.h"
 #include "op.h"
 
 // Forward declaration
 static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function);
 
-void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
+void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group) {
     uint32_t width = jitc_llvm_vector_width;
     bool print_labels = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
@@ -135,18 +136,15 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                "    br i1 %cond, label %done, label %body, !llvm.loop !2\n\n"
                "done:\n"
                "    ret void\n"
-               "}\n"
-               "\n");
+               "}\n");
 
     /* The program requires extra memory or uses callables. Insert
        setup code the top of the function to accomplish this */
-    if (!callables.empty() || alloca_size >= 0) {
-        // Ultimately we want to insert at this location
-        size_t header_offset = (char *) strchr(buffer.get(), ':') - buffer.get() + 2;
+    if (callable_count > 0 || alloca_size >= 0) {
+        size_t insertion_point = (char *) strchr(buffer.get(), ':') - buffer.get() + 2,
+               insertion_start = buffer.size();
 
-        // Append at the end for now
-        size_t cur_offset = buffer.size();
-        if (!callables.empty())
+        if (callable_count > 0)
             buffer.put("    %callables = load i8**, i8*** @callables\n");
 
         if (alloca_size >= 0)
@@ -154,30 +152,21 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
                        alloca_size, alloca_align);
         buffer.put("\n");
 
-        size_t buffer_size = buffer.size(),
-               insertion_size = buffer_size - cur_offset;
-
-        // Extra space for moving things around
-        buffer.putc('\0', insertion_size);
-
-        // Move the generated source code to make space for the header addition
-        memmove((char *) buffer.get() + header_offset + insertion_size,
-                buffer.get() + header_offset, buffer_size - header_offset);
-
-        // Finally copy the code to the insertion point
-        memcpy((char *) buffer.get() + header_offset,
-               buffer.get() + buffer_size, insertion_size);
-
-        buffer.rewind(insertion_size);
+        jitc_insert_code_at(insertion_point, insertion_start);
     }
 
-    for (const std::string &s : callables)
-        buffer.put(s.c_str(), s.length());
+    uint32_t ctr = 0;
+    for (auto &it : globals_map) {
+        buffer.putc('\n');
+        buffer.put(globals.get() + it.second.start, it.second.length);
+        buffer.putc('\n');
+        if (!it.first.callable)
+            continue;
+        it.second.callable_index = 1 + ctr++;
+    }
 
-    for (const std::string &s : globals)
-        buffer.put(s.c_str(), s.length());
-
-    buffer.put("!0 = !{!0}\n"
+    buffer.put("\n"
+               "!0 = !{!0}\n"
                "!1 = !{!1, !0}\n"
                "!2 = !{!1}\n"
                "!3 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
@@ -196,6 +185,8 @@ void jitc_assemble_llvm(ThreadState *, ScheduledGroup group) {
         buffer.put(jitc_llvm_target_features, strlen(jitc_llvm_target_features));
 
     buffer.put("\" }");
+
+    jitc_vcall_upload(ts);
 }
 
 void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
@@ -206,7 +197,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
     bool print_labels = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
-    uint32_t width = jitc_llvm_vector_width;
+    uint32_t width = jitc_llvm_vector_width, callables_local = callable_count;
     if (use_self) {
         buffer.fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
                    "<%u x i1> %%mask, <%u x i32> %%self, i8* noalias %%params",
@@ -217,7 +208,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                    width);
     }
     if (!data_map.empty()) {
-        if (vcall_depth == 1)
+        if (callable_depth == 1)
             buffer.fmt(", i8* noalias %%data, <%u x i32> %%offsets", width);
         else
             buffer.fmt(", <%u x i8*> %%data, <%u x i32> %%offsets", width, width);
@@ -285,14 +276,14 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 
             size_t intrinsic_offset = buffer.size();
             buffer.fmt("declare <%u x %s> @llvm.masked.gather.v%u%s(<%u x "
-                       "%s*>, i32, <%u x i1>, <%u x %s>)\n\n",
+                       "%s*>, i32, <%u x i1>, <%u x %s>)",
                        width, tname, width, type_name_llvm_abbrev[vti], width,
                        tname, width, width, tname);
             jitc_register_global(buffer.get() + intrinsic_offset);
             size_t intrinsic_length = buffer.size() - intrinsic_offset;
             buffer.rewind(intrinsic_length);
 
-            if (vcall_depth == 1) {
+            if (callable_depth == 1) {
                 buffer.fmt("    %s%u_p1 = getelementptr inbounds i8, i8* %%data, i32 %u\n"
                            "    %s%u_p2 = getelementptr inbounds i8, i8* %s%u_p1, <%u x i32> %%offsets\n",
                            prefix, id, offset,
@@ -359,38 +350,22 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 
     /* The function requires extra memory or uses callables. Insert
        setup code the top of the function to accomplish this */
-    if (alloca_size >= 0) {
-        // Ultimately we want to insert at this location
-        size_t header_offset = (char *) strrchr(buffer.get(), '{') - buffer.get() + 9;
+    if (alloca_size >= 0 || callables_local != callable_count) {
+        size_t insertion_point = (char *) strrchr(buffer.get(), '{') - buffer.get() + 9,
+               insertion_start = buffer.size();
 
-        // Append at the end for now
-        size_t cur_offset = buffer.size();
-        if (!callables.empty())
+        if (callables_local != callable_count)
             buffer.put("    %callables = load i8**, i8*** @callables\n");
 
         if (alloca_size >= 0)
             buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n",
                        alloca_size, alloca_align);
 
-        size_t buffer_size = buffer.size(),
-               insertion_size = buffer_size - cur_offset;
-
-        // Extra space for moving things around
-        buffer.putc('\0', insertion_size);
-        //
-        // Move the generated source code to make space for the header addition
-        memmove((char *) buffer.get() + header_offset + insertion_size,
-                buffer.get() + header_offset, buffer_size - header_offset);
-
-        // Finally copy the code to the insertion point
-        memcpy((char *) buffer.get() + header_offset,
-               buffer.get() + buffer_size, insertion_size);
-
-        buffer.rewind(insertion_size);
+        jitc_insert_code_at(insertion_point, insertion_start);
     }
 
     buffer.put("    ret void;\n"
-               "}\n");
+               "}");
 }
 
 /// Convert an IR template with '$' expressions into valid IR
@@ -483,7 +458,6 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
                         continue;
 
                     case ']':
-                        buffer.put("\n\n");
                         jitc_register_global(buffer.get() + intrinsic_start);
                         buffer.rewind(buffer.size() - intrinsic_start);
                         continue;
@@ -720,7 +694,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         char global[128];
         snprintf(
             global, sizeof(global),
-            "declare i1 @llvm.experimental.vector.reduce.and.v%ui1(<%u x i1>)\n\n",
+            "declare i1 @llvm.experimental.vector.reduce.and.v%ui1(<%u x i1>)",
             width, width);
         jitc_register_global(global);
 
@@ -759,7 +733,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         char global[128];
         snprintf(
             global, sizeof(global),
-            "declare i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64>)\n\n",
+            "declare i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64>)",
             width, width);
         jitc_register_global(global);
 

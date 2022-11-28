@@ -15,6 +15,7 @@
 #include "util.h"
 #include "optix_api.h"
 #include "loop.h"
+#include <tsl/robin_set.h>
 
 // ====================================================================
 //  The following data structures are temporarily used during program
@@ -36,14 +37,11 @@ static std::vector<void *> kernel_params;
 static uint8_t *kernel_params_global = nullptr;
 static uint32_t kernel_param_count = 0;
 
-/// List of global declarations (intrinsics, constant arrays)
-std::vector<std::string> globals;
-
-/// List of device functions or direct callables (OptiX)
-std::vector<std::string> callables;
-
 /// Ensure uniqueness of globals/callables arrays
 GlobalsMap globals_map;
+
+/// Buffer for global definitions (intrinsics, callables, etc.)
+Buffer globals { 1000 };
 
 /// Temporary scratch space for scheduled tasks (LLVM only)
 static std::vector<Task *> scheduled_tasks;
@@ -68,8 +66,9 @@ int32_t alloca_size = -1;
 int32_t alloca_align = -1;
 
 /// Specifies the nesting level of virtual calls being compiled
-uint32_t vcall_depth = 0;
-uint32_t vcall_counter = 0;
+uint32_t callable_depth = 0;
+uint32_t callable_count = 0;
+uint32_t callable_count_unique = 0;
 
 /// Information about the kernel launch to go in the kernel launch history
 KernelHistoryEntry kernel_history_entry;
@@ -115,13 +114,13 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     kernel_params.clear();
     globals.clear();
-    callables.clear();
     globals_map.clear();
     alloca_size = alloca_align = -1;
     kernel_history_entry = {};
 
 #if defined(DRJIT_ENABLE_OPTIX)
-    uses_optix = ts->backend == JitBackend::CUDA && jit_flag(JitFlag::ForceOptiX);
+    uses_optix = ts->backend == JitBackend::CUDA &&
+                 jit_flag(JitFlag::ForceOptiX);
 #endif
 
     uint32_t n_params_in    = 0,
@@ -393,14 +392,14 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             cuda_check(ret);
 
             // Locate the kernel entry point
-            char kernel_name_tmp[39];
-            snprintf(kernel_name_tmp, sizeof(kernel_name_tmp),
+            char tmp[39];
+            snprintf(tmp, sizeof(tmp),
                      "drjit_%016llx%016llx",
                      (unsigned long long) kernel_hash.high64,
                      (unsigned long long) kernel_hash.low64);
 
-            cuda_check(cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod,
-                                           kernel_name_tmp));
+            cuda_check(
+                cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod, tmp));
 
             // Determine a suitable thread count to maximize occupancy
             int unused, block_size;
@@ -583,7 +582,8 @@ void jitc_eval(ThreadState *ts) {
 
     visited.clear();
     schedule.clear();
-    vcall_counter = 0;
+    callable_count = 0;
+    callable_count_unique = 0;
 
     // Collect variables that must be computed along with their dependencies
     for (int j = 0; j < 2; ++j) {
@@ -770,7 +770,7 @@ void jitc_eval(ThreadState *ts) {
 
 static ProfilerRegion profiler_region_assemble_func("jit_assemble_func");
 
-std::pair<XXH128_hash_t, uint32_t>
+XXH128_hash_t
 jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                    uint32_t in_size, uint32_t in_align, uint32_t out_size,
                    uint32_t out_align, uint32_t data_offset,
@@ -824,7 +824,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     bool assemble_func_prev = assemble_func;
     assemble_func = true;
 
-    vcall_depth++;
+    callable_depth++;
     if (ts->backend == JitBackend::CUDA)
         jitc_assemble_cuda_func(name, inst_id, n_regs, in_size, in_align,
                                 out_size, out_align, data_offset, data_map,
@@ -832,11 +832,9 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     else
         jitc_assemble_llvm_func(name, inst_id, in_size, data_offset, data_map,
                                 n_out, out_nested, use_self);
-    vcall_depth--;
+    callable_depth--;
 
     assemble_func = assemble_func_prev;
-
-    buffer.putc('\n');
 
     size_t kernel_length = buffer.size() - offset;
     char *kernel_str = (char *) buffer.get() + offset;
@@ -844,12 +842,12 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     if (jit_flag(JitFlag::VCallDeduplicate)) {
         kernel_hash = XXH128(kernel_str, kernel_length, 0);
     } else {
-        kernel_hash.low64 = (uint64_t) vcall_counter++;
+        kernel_hash.low64 = callable_count;
         kernel_hash.high64 = 0;
     }
 
-    auto result = globals_map.emplace(kernel_hash, (uint32_t) callables.size());
-    if (result.second) {
+    if (globals_map.emplace(GlobalKey(kernel_hash, true),
+                            GlobalValue(globals.size(), kernel_length)).second) {
         // Replace '^'s in 'func_^^^..' or '__direct_callable__^^^..' with hash
         char *id = strchr(kernel_str, '^');
         char tmp[33];
@@ -857,16 +855,42 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                  (unsigned long long) kernel_hash.high64,
                  (unsigned long long) kernel_hash.low64);
         memcpy(id, tmp, 32);
-        callables.push_back(std::string(kernel_str, kernel_length));
         n_ops_total += n_regs;
+        callable_count_unique++;
+        globals.put(kernel_str, kernel_length);
     }
+
+    callable_count++;
+
     buffer.rewind(kernel_length);
 
-    return { kernel_hash, result.first->second };
+    return kernel_hash;
 }
 
+/// Register a global declaration that will be included in the final program
 void jitc_register_global(const char *str) {
-    auto global_hash = XXH128(str, strlen(str), 0);
-    if (globals_map.emplace(global_hash, (uint32_t) globals_map.size()).second)
-        globals.push_back(str);
+    size_t length = strlen(str);
+    if (globals_map.emplace(GlobalKey(XXH128(str, length, 0), false),
+                            GlobalValue(globals.size(), length)).second)
+        globals.put(str, length);
+}
+
+
+/// Move a code block to an earlier position in 'buffer'
+void jitc_insert_code_at(size_t insertion_point, size_t insertion_start) {
+    size_t buffer_size = buffer.size(),
+           insertion_size = buffer_size - insertion_start;
+
+    // Extra space for moving things around
+    buffer.putc('\0', insertion_size);
+
+    // Move the generated source code to make space for the header addition
+    memmove((char *) buffer.get() + insertion_point + insertion_size,
+            buffer.get() + insertion_point, buffer_size - insertion_point);
+
+    // Finally copy the code to the insertion point
+    memcpy((char *) buffer.get() + insertion_point,
+           buffer.get() + buffer_size, insertion_size);
+
+    buffer.rewind(insertion_size);
 }

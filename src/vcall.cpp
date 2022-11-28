@@ -16,6 +16,9 @@
 #include "op.h"
 #include "profiler.h"
 #include "vcall.h"
+#include <set>
+
+using CallablesSet = std::set<XXH128_hash_t, XXH128Cmp>;
 
 /// Encodes information about a virtual function call
 struct VCall {
@@ -27,11 +30,14 @@ struct VCall {
     /// ID of call variable
     uint32_t id = 0;
 
-    /// Number of instances
+    /// Max # of distinct instances that might be referenced by the call
     uint32_t n_inst = 0;
 
-    /// Mapping from instance ID -> vcall branch
+    /// Array of size 'n_inst' with all instance IDs that might be referenced
     std::vector<uint32_t> inst_id;
+
+    /// Array of size 'n_inst' listing the associated callable hash
+    std::vector<XXH128_hash_t> inst_hash;
 
     /// Input variables at call site
     std::vector<uint32_t> in;
@@ -52,8 +58,8 @@ struct VCall {
     tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> data_map;
     std::vector<uint32_t> data_offset;
 
-    uint64_t *offset_d = nullptr, *offset_h = nullptr;
-    size_t offset_d_size = 0;
+    uint64_t *offset = nullptr;
+    size_t offset_size = 0;
 
     /// Storage in bytes for inputs/outputs before simplifications
     uint32_t in_count_initial = 0;
@@ -80,22 +86,28 @@ struct VCall {
     }
 };
 
+static std::vector<VCall *> vcalls_assembled;
+
 // Forward declarations
 static void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg,
                                     uint32_t mask_reg, uint32_t offset_reg,
                                     uint32_t data_reg);
 
-static void jitc_var_vcall_assemble_cuda(
-    VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
-    uint32_t vcall_reg, uint32_t self_reg, uint32_t mask_reg,
-    uint32_t offset_reg, uint32_t data_reg, uint32_t n_out, uint32_t in_size,
-    uint32_t in_align, uint32_t out_size, uint32_t out_align);
+static void jitc_var_vcall_assemble_cuda(VCall *vcall,
+                                         const CallablesSet &callables_set,
+                                         uint32_t vcall_reg, uint32_t self_reg,
+                                         uint32_t mask_reg, uint32_t offset_reg,
+                                         uint32_t data_reg, uint32_t n_out,
+                                         uint32_t in_size, uint32_t in_align,
+                                         uint32_t out_size, uint32_t out_align);
 
-static void jitc_var_vcall_assemble_llvm(
-    VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
-    uint32_t vcall_reg, uint32_t self_reg, uint32_t mask_reg,
-    uint32_t offset_reg, uint32_t data_reg, uint32_t n_out, uint32_t in_size,
-    uint32_t in_align, uint32_t out_size, uint32_t out_align);
+static void jitc_var_vcall_assemble_llvm(VCall *vcall,
+                                         const CallablesSet &callables_set,
+                                         uint32_t vcall_reg, uint32_t self_reg,
+                                         uint32_t mask_reg, uint32_t offset_reg,
+                                         uint32_t data_reg, uint32_t n_out,
+                                         uint32_t in_size, uint32_t in_align,
+                                         uint32_t out_size, uint32_t out_align);
 
 static void jitc_var_vcall_collect_data(
     tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
@@ -271,6 +283,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     vcall->name = strdup(name);
     vcall->n_inst = n_inst;
     vcall->inst_id = std::vector<uint32_t>(inst_id, inst_id + n_inst);
+    vcall->inst_hash.resize(n_inst);
     vcall->in.reserve(n_in);
     vcall->in_nested.reserve(n_in);
     vcall->out.reserve(n_out);
@@ -316,18 +329,18 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     }
 
     // Allocate memory + wrapper variables for call offset and data arrays
-    vcall->offset_d_size = (inst_id_max + 1) * sizeof(uint64_t);
+    vcall->offset_size = (inst_id_max + 1) * sizeof(uint64_t);
 
     AllocType at =
         backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync;
-    vcall->offset_d = (uint64_t *) jitc_malloc(at, vcall->offset_d_size);
+    vcall->offset = (uint64_t *) jitc_malloc(at, vcall->offset_size);
     uint8_t *data_d = (uint8_t *) jitc_malloc(at, data_size);
 
     Ref data_buf, data_v,
         offset_buf = steal(jitc_var_mem_map(
-            backend, VarType::UInt64, vcall->offset_d, inst_id_max + 1, 1)),
+            backend, VarType::UInt64, vcall->offset, inst_id_max + 1, 1)),
         offset_v =
-            steal(jitc_var_new_pointer(backend, vcall->offset_d, offset_buf, 0));
+            steal(jitc_var_new_pointer(backend, vcall->offset, offset_buf, 0));
 
     char temp[128];
     snprintf(temp, sizeof(temp), "VCall: %s [call offsets]", name);
@@ -669,6 +682,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
 static ProfilerRegion profiler_region_vcall_assemble("jit_var_vcall_assemble");
 
+
 /// Called by the JIT compiler when compiling a virtual function call
 static void jitc_var_vcall_assemble(VCall *vcall,
                                     uint32_t self_reg,
@@ -759,36 +773,20 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     // 3. Compile code for all instances and collapse
     // =====================================================
 
-    std::vector<XXH128_hash_t> callable_hash(vcall->n_inst);
-
-    AllocType at = vcall->backend == JitBackend::CUDA ? AllocType::HostPinned
-                                                      : AllocType::Host;
-    vcall->offset_h = (uint64_t *) jitc_malloc(at, vcall->offset_d_size);
-    memset(vcall->offset_h, 0, vcall->offset_d_size);
-
     ThreadState *ts = thread_state(vcall->backend);
-    for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-        uint32_t data_offset = vcall->data_offset[i];
 
-        auto result = jitc_assemble_func(
+    CallablesSet callables_set;
+    for (uint32_t i = 0; i < vcall->n_inst; ++i) {
+        XXH128_hash_t hash = jitc_assemble_func(
             ts, vcall->name, i, in_size, in_align, out_size, out_align,
-            data_offset, vcall->data_map, n_in, vcall->in.data(),
+            vcall->data_offset[i], vcall->data_map, n_in, vcall->in.data(),
             n_out, vcall->out_nested.data() + n_out * i,
             vcall->checkpoints[i + 1] - vcall->checkpoints[i],
             vcall->side_effects.data() + vcall->checkpoints[i],
             vcall->use_self);
-
-        if (vcall->backend == JitBackend::LLVM)
-            result.second += 1;
-
-        // high part: instance data offset, low part: callable index
-        vcall->offset_h[vcall->inst_id[i]] =
-            (((uint64_t) data_offset) << 32) | result.second;
-        callable_hash[i] = result.first;
+        vcall->inst_hash[i] = hash;
+        callables_set.insert(hash);
     }
-
-    jitc_memcpy_async(vcall->backend, vcall->offset_d, vcall->offset_h,
-                      vcall->offset_d_size);
 
     size_t se_count = vcall->side_effects.size();
     vcall->clear_side_effects();
@@ -811,50 +809,29 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     alloca_align = alloca_align_backup;
 
     if (vcall->backend == JitBackend::CUDA)
-        jitc_var_vcall_assemble_cuda(vcall, callable_hash, vcall_reg, self_reg,
+        jitc_var_vcall_assemble_cuda(vcall, callables_set, vcall_reg, self_reg,
                                      mask_reg, offset_reg, data_reg, n_out,
                                      in_size, in_align, out_size, out_align);
     else
-        jitc_var_vcall_assemble_llvm(vcall, callable_hash, vcall_reg, self_reg,
+        jitc_var_vcall_assemble_llvm(vcall, callables_set, vcall_reg, self_reg,
                                      mask_reg, offset_reg, data_reg, n_out,
                                      in_size, in_align, out_size, out_align);
 
-    std::sort(
-        callable_hash.begin(), callable_hash.end(), [](const auto &a, const auto &b) {
-            return std::tie(a.high64, a.low64) < std::tie(b.high64, b.low64);
-        });
-
-    size_t n_unique = std::unique(
-        callable_hash.begin(), callable_hash.end(), [](const auto &a, const auto &b) {
-            return std::tie(a.high64, a.low64) == std::tie(b.high64, b.low64);
-        }) - callable_hash.begin();
-
-    // Free call offset table asynchronously
-    if (vcall->backend == JitBackend::CUDA) {
-        jitc_free(vcall->offset_h);
-    } else {
-        Task *new_task = task_submit_dep(
-            nullptr, &ts->task, 1, 1,
-            [](uint32_t, void *payload) { jitc_free(*((void **) payload)); },
-            &vcall->offset_h, sizeof(void *));
-        task_release(ts->task);
-        ts->task = new_task;
-    }
-    vcall->offset_h = nullptr;
-
     jitc_log(
         InfoSym,
-        "jit_var_vcall_assemble(): indirect call (\"%s\") to %zu/%zu instances, "
+        "jit_var_vcall_assemble(): indirect call (\"%s\") to %zu/%u instances, "
         "passing %u/%u inputs (%u/%u bytes), %u/%u outputs (%u/%u bytes), %zu side effects",
-        vcall->name, n_unique, callable_hash.size(), n_in_active,
+        vcall->name, callables_set.size(), vcall->n_inst, n_in_active,
         vcall->in_count_initial, in_size, vcall->in_size_initial, n_out_active,
         n_out, out_size, vcall->out_size_initial, se_count);
+
+    vcalls_assembled.push_back(vcall);
 }
 
 /// Virtual function call code generation -- CUDA/PTX-specific bits
 static void jitc_var_vcall_assemble_cuda(
-    VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
-    uint32_t vcall_reg, uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
+    VCall *vcall, const CallablesSet &callables_set, uint32_t vcall_reg,
+    uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
     uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
     uint32_t out_size, uint32_t out_align) {
 
@@ -862,17 +839,27 @@ static void jitc_var_vcall_assemble_cuda(
     // 1. Conditional branch
     // =====================================================
 
-    buffer.fmt("\n    @!%%p%u bra l_masked_%u;\n\n", mask_reg, vcall_reg);
+    buffer.fmt("\n    @!%%p%u bra l_masked_%u;\n\n"
+               "    {   // VCall: %s\n", mask_reg, vcall_reg, vcall->name);
+
+    size_t ctr = 0;
+    for (XXH128_hash_t h: callables_set) {
+        buffer.fmt("        //    target %zu = %s%016llx%016llx\n",
+                   ctr++,
+                   uses_optix ? "__direct_callable__" : "func_",
+                   (unsigned long long) h.high64,
+                   (unsigned long long) h.low64);
+    }
 
     // =====================================================
     // 2. Determine unique callable ID
     // =====================================================
 
-    buffer.fmt("    { // VCall: %s\n"
+    buffer.fmt("\n"
                "        mad.wide.u32 %%rd3, %%r%u, 8, %%rd%u;\n"
                "        ld.global.u64 %%rd3, [%%rd3];\n"
                "        cvt.u32.u64 %%r3, %%rd3;\n",
-               vcall->name, self_reg, offset_reg);
+               self_reg, offset_reg);
     // %r3: callable ID
     // %rd3: (high 32 bit): data offset
 
@@ -902,18 +889,6 @@ static void jitc_var_vcall_assemble_cuda(
     // 5. Generate the actual function call
     // =====================================================
 
-    buffer.put("\n");
-    tsl::robin_set<uint32_t> seen;
-    for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-        uint32_t callable_id = (uint32_t) vcall->offset_h[vcall->inst_id[i]];
-        if (!seen.insert(callable_id).second)
-            continue;
-        buffer.fmt("        // target %zu = %s%016llx%016llx\n",
-                   seen.size(),
-                   uses_optix ? "__direct_callable__" : "func_",
-                   (unsigned long long) callable_hash[i].high64,
-                   (unsigned long long) callable_hash[i].low64);
-    }
     buffer.put("\n");
 
     // Special handling for predicates
@@ -1032,7 +1007,7 @@ static void jitc_var_vcall_assemble_cuda(
                    tname, prefix, v2->reg_index, load_offset);
     }
 
-    buffer.put("        }\n");
+    buffer.put("        }\n\n");
 
     // =====================================================
     // 6. Special handling for predicates return value(s)
@@ -1081,10 +1056,10 @@ static void jitc_var_vcall_assemble_cuda(
 
 /// Virtual function call code generation -- LLVM IR-specific bits
 static void jitc_var_vcall_assemble_llvm(
-    VCall *vcall, const std::vector<XXH128_hash_t> &callable_hash,
-    uint32_t vcall_reg, uint32_t self_reg, uint32_t mask_reg,
-    uint32_t offset_reg, uint32_t data_reg, uint32_t n_out, uint32_t in_size,
-    uint32_t in_align, uint32_t out_size, uint32_t out_align) {
+    VCall *vcall, const CallablesSet &callables_set, uint32_t vcall_reg,
+    uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
+    uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
+    uint32_t out_size, uint32_t out_align) {
 
     uint32_t width = jitc_llvm_vector_width;
     alloca_size  = std::max(alloca_size, (int32_t) ((in_size + out_size) * width));
@@ -1096,10 +1071,10 @@ static void jitc_var_vcall_assemble_llvm(
 
     char tmp[128];
     snprintf(tmp, sizeof(tmp),
-             "declare i32 @llvm.experimental.vector.reduce.umax.v%ui32(<%u x i32>)\n\n",
+             "declare i32 @llvm.experimental.vector.reduce.umax.v%ui32(<%u x i32>)",
              width, width);
     jitc_register_global(tmp);
-    jitc_register_global("@callables = internal local_unnamed_addr global i8** null, align 8\n\n");
+    jitc_register_global("@callables = internal local_unnamed_addr global i8** null, align 8");
 
     /* How to prevent @callables from being optimized away as a constant, while at the same time
        not turning it an external variable that would require a global offset table (GOT)?
@@ -1107,11 +1082,11 @@ static void jitc_var_vcall_assemble_llvm(
     jitc_register_global("define void @set_callables(i8** %ptr) local_unnamed_addr #0 {\n"
                          "    store i8** %ptr, i8*** @callables\n"
                          "    ret void\n"
-                         "}\n\n");
+                         "}");
 
     snprintf(tmp, sizeof(tmp),
              "declare <%u x i64> @llvm.masked.gather.v%ui64(<%u x i64*>, i32, "
-             "<%u x i1>, <%u x i64>)\n\n",
+             "<%u x i1>, <%u x i64>)",
              width, width, width, width, width);
     jitc_register_global(tmp);
 
@@ -1120,15 +1095,12 @@ static void jitc_var_vcall_assemble_llvm(
                "    ; VCall: %s\n",
                vcall_reg, vcall_reg, vcall->name);
 
-    tsl::robin_set<uint32_t, UInt32Hasher> seen;
-    for (uint32_t i = 0; i < vcall->n_inst; ++i) {
-        uint32_t callable_id = (uint32_t) vcall->offset_h[i + 1];
-        if (!seen.insert(callable_id).second)
-            continue;
-        buffer.fmt("    ;  - target %zu = @func_%016llx%016llx;\n",
-                   seen.size(),
-                   (unsigned long long) callable_hash[i].high64,
-                   (unsigned long long) callable_hash[i].low64);
+    size_t ctr = 0;
+    for (XXH128_hash_t h: callables_set) {
+        buffer.fmt("    ;     target %zu = func_%016llx%016llx\n",
+                   ctr++,
+                   (unsigned long long) h.high64,
+                   (unsigned long long) h.low64);
     }
 
     if (!assemble_func) {
@@ -1265,7 +1237,7 @@ static void jitc_var_vcall_assemble_llvm(
 
     buffer.put(", i8*");
     if (data_reg) {
-        if (vcall_depth == 0)
+        if (callable_depth == 0)
             buffer.fmt(", i8*, <%u x i32>", width);
         else
             buffer.fmt(", <%u x i8*>, <%u x i32>", width, width);
@@ -1282,7 +1254,7 @@ static void jitc_var_vcall_assemble_llvm(
     buffer.put(", i8* %buffer");
 
     if (data_reg) {
-        if (vcall_depth == 0)
+        if (callable_depth == 0)
             buffer.fmt(", i8* %%rd%u, <%u x i32> %%u%u_offset", data_reg,
                        width, vcall_reg);
         else
@@ -1405,6 +1377,42 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
             }
         }
     }
+}
+
+void jitc_vcall_upload(ThreadState *ts) {
+    AllocType at = ts->backend == JitBackend::CUDA ? AllocType::HostPinned
+                                                   : AllocType::Host;
+
+    for (VCall *vcall : vcalls_assembled) {
+        uint64_t *data = (uint64_t *) jitc_malloc(at, vcall->offset_size);
+        memset(data, 0, vcall->offset_size);
+
+        for (uint32_t i = 0; i < vcall->n_inst; ++i) {
+            auto it = globals_map.find(GlobalKey(vcall->inst_hash[i], true));
+            if (it == globals_map.end())
+                jitc_fail("jitc_vcall_upload(): could not find callable!");
+
+            // high part: instance data offset, low part: callable index
+            data[vcall->inst_id[i]] =
+                (((uint64_t) vcall->data_offset[i]) << 32) |
+                it->second.callable_index;
+        }
+
+        jitc_memcpy_async(ts->backend, vcall->offset, data, vcall->offset_size);
+
+        // Free call offset table asynchronously
+        if (vcall->backend == JitBackend::CUDA) {
+            jitc_free(data);
+        } else {
+            Task *new_task = task_submit_dep(
+                nullptr, &ts->task, 1, 1,
+                [](uint32_t, void *payload) { jitc_free(*((void **) payload)); },
+                &data, sizeof(void *));
+            task_release(ts->task);
+            ts->task = new_task;
+        }
+    }
+    vcalls_assembled.clear();
 }
 
 // Compute a permutation to reorder an array of registered pointers

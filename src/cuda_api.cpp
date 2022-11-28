@@ -12,8 +12,9 @@
 #include "var.h"
 #include "util.h"
 #include "io.h"
-#include "../resources/kernels.h"
+#include "eval.h"
 #include "cuda_tex.h"
+#include "../resources/kernels.h"
 
 #if defined(_WIN32)
 #  include <windows.h>

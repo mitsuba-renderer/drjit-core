@@ -88,24 +88,7 @@ uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
 
 static void jitc_var_printf_assemble_cuda(const Variable *v,
                                           const Extra &extra) {
-    size_t buffer_offset = buffer.size();
     const char *fmt = (const char *) extra.callback_data;
-    auto hash = XXH128(fmt, strlen(fmt), 0);
-    buffer.fmt(".global .align 1 .b8 data_%016llu%016llu[] = { ",
-               (unsigned long long) hash.high64,
-               (unsigned long long) hash.low64);
-    for (uint32_t i = 0; ; ++i) {
-        buffer.put_uint32((uint32_t) fmt[i]);
-        if (fmt[i] == '\0')
-            break;
-        buffer.put(", ");
-    }
-    buffer.put(" };\n\n");
-
-    jitc_register_global(buffer.get() + buffer_offset);
-    jitc_register_global(".extern .func (.param .b32 rv) vprintf (.param .b64 fmt, .param .b64 buf);\n\n");
-    buffer.rewind(buffer.size() - buffer_offset);
-    buffer.put("    {\n");
 
     uint32_t offset = 0, align = 0;
     for (uint32_t i = 0; i < extra.n_dep; ++i) {
@@ -128,6 +111,16 @@ static void jitc_var_printf_assemble_cuda(const Variable *v,
         offset = 1;
 
     buffer.fmt("        .local .align %u .b8 buf[%u];\n", align, offset);
+    buffer.put("        .extern .func (.param .b32 rv) vprintf (.param .b64 fmt, .param .b64 buf);\n");
+    buffer.put("        .global .align 1 .b8 data[] = { ");
+
+    for (uint32_t i = 0; ; ++i) {
+        buffer.put_uint32((uint32_t) fmt[i]);
+        if (fmt[i] == '\0')
+            break;
+        buffer.put(", ");
+    }
+    buffer.put(" };");
 
     offset = 0;
     for (uint32_t i = 0; i < extra.n_dep; ++i) {
@@ -153,19 +146,17 @@ static void jitc_var_printf_assemble_cuda(const Variable *v,
 
         offset += tsize;
     }
-    buffer.fmt("\n"
-               "        .reg.b64 %%fmt_generic, %%buf_generic;\n"
-               "        cvta.global.u64 %%fmt_generic, data_%016llu%016llu;\n"
-               "        cvta.local.u64 %%buf_generic, buf;\n"
+    buffer.put("\n"
+               "        .reg.b64 %fmt_generic, %buf_generic;\n"
+               "        cvta.global.u64 %fmt_generic, print_data;\n"
+               "        cvta.local.u64 %buf_generic, buf;\n"
                "        {\n"
                "            .param .b64 fmt_p;\n"
                "            .param .b64 buf_p;\n"
                "            .param .b32 rv_p;\n"
-               "            st.param.b64 [fmt_p], %%fmt_generic;\n"
-               "            st.param.b64 [buf_p], %%buf_generic;\n"
-               "            ",
-               (unsigned long long) hash.high64,
-               (unsigned long long) hash.low64);
+               "            st.param.b64 [fmt_p], %fmt_generic;\n"
+               "            st.param.b64 [buf_p], %buf_generic;\n"
+               "            ");
     if (v->dep[0]) {
         Variable *v2 = jitc_var(v->dep[0]);
         if (!v2->is_literal() || v2->literal != 1)
@@ -198,7 +189,7 @@ static void jitc_var_printf_assemble_llvm(const Variable *v,
         buffer.put(", ");
     }
 
-    buffer.put("], align 1\n\n");
+    buffer.put("], align 1");
     jitc_register_global(buffer.get() + buffer_offset);
     buffer.rewind(buffer.size() - buffer_offset);
 
@@ -215,7 +206,7 @@ static void jitc_var_printf_assemble_llvm(const Variable *v,
         char global[128];
         snprintf(
             global, sizeof(global),
-            "declare i8* @llvm.experimental.vector.reduce.umax.v%ui8(<%u x i8*>)\n\n",
+            "declare i8* @llvm.experimental.vector.reduce.umax.v%ui8(<%u x i8*>)",
             width, width);
         jitc_register_global(global);
 

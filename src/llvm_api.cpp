@@ -370,39 +370,41 @@ void jitc_llvm_compile(const char *buf, size_t buf_size,
             "following kernel code was responsible for this problem:\n\n%s",
             buf);
 
-    std::vector<uint8_t *> reloc;
-    reloc.push_back(func);
+    std::vector<uint8_t *> reloc(
+        callable_count_unique ? (callable_count_unique + 2) : 1);
+    size_t reloc_pos = 0;
+    reloc[reloc_pos++] = func;
 
     /// Does the kernel perform virtual function calls via @callables?
-    uint8_t *callables_global =
-        (uint8_t *) LLVMGetFunctionAddress(engine, "callables");
-
-    if (callables_global) {
-        reloc.push_back(callables_global);
+    if (callable_count_unique) {
+        uint8_t *callables_global =
+            (uint8_t *) LLVMGetFunctionAddress(engine, "callables");
+        reloc[reloc_pos++] = callables_global;
 
         if (unlikely(callables_global < jitc_llvm_mem))
             jitc_fail("jit_llvm_compile(): internal error: invalid address (2): "
                       "%p < %p!\n", callables_global, jitc_llvm_mem);
 
-        std::vector<void *> global_ptrs(callables.size(), nullptr);
+        for (auto const &kv: globals_map) {
+            if (!kv.first.callable)
+                continue;
 
-        for (size_t i = 0; i < callables.size(); ++i) {
-            const char *s = callables[i].c_str();
-            const char *offset = strstr(s, "func_");
             char name_buf[38];
-            memcpy(name_buf, offset, 37);
-            name_buf[37] = '\0';
-
+            snprintf(name_buf, sizeof(name_buf), "func_%016llx%016llx",
+                     (unsigned long long) kv.first.hash.high64,
+                     (unsigned long long) kv.first.hash.low64);
             uint8_t *func_2 =
                 (uint8_t *) LLVMGetFunctionAddress(engine, name_buf);
 
             if (unlikely(!func_2))
                 jitc_fail("jit_llvm_compile(): internal error: could not fetch function "
                           "address of kernel \"%s\"!\n", name_buf);
+
             else if (unlikely(func_2 < jitc_llvm_mem))
                 jitc_fail("jit_llvm_compile(): internal error: invalid address (3): "
                           "%p < %p!\n", func_2, jitc_llvm_mem);
-            reloc.push_back(func_2);
+
+            reloc[reloc_pos++] = func_2;
         }
     }
 

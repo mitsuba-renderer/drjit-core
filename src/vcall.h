@@ -12,6 +12,8 @@ extern uint32_t jitc_var_vcall(const char *domain, uint32_t self, uint32_t mask,
                                const uint32_t *out_nested,
                                const uint32_t *checkpoints, uint32_t *out);
 
+extern void jitc_vcall_upload(ThreadState *ts);
+
 extern VCallBucket *jitc_var_vcall_reduce(JitBackend backend,
                                           const char *domain, uint32_t index,
                                           uint32_t *bucket_count_out);

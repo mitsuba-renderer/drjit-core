@@ -64,6 +64,13 @@ struct UInt64Hasher {
     }
 };
 
+struct XXH128Cmp {
+    size_t operator()(const XXH128_hash_t &h1,
+                      const XXH128_hash_t &h2) const {
+        return std::tie(h1.high64, h1.low64) < std::tie(h2.high64, h2.low64);
+    }
+};
+
 inline void hash_combine(size_t& seed, size_t value) {
     /// From CityHash (https://github.com/google/cityhash)
     const size_t mult = 0x9ddfea08eb382d69ull;

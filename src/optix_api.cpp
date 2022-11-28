@@ -651,7 +651,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     // 3. Create an OptiX program group
     // =====================================================
 
-    size_t n_programs = 1 + callables.size();
+    size_t n_programs = 1 + callable_count_unique;
 
     OptixProgramGroupOptions pgo { };
     std::unique_ptr<OptixProgramGroupDesc[]> pgd(
@@ -662,14 +662,19 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     pgd[0].raygen.module = kernel.optix.mod;
     pgd[0].raygen.entryFunctionName = strdup(kern_name);
 
-    for (size_t i = 0; i < callables.size(); ++i) {
-        const char *s = strstr(callables[i].c_str(), "__direct_callable__");
-        char tmp[52];
-        memcpy(tmp, s, 51);
-        tmp[51] = '\0';
-        pgd[i + 1].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
-        pgd[i + 1].callables.moduleDC = kernel.optix.mod;
-        pgd[i + 1].callables.entryFunctionNameDC = strdup(tmp);
+    for (auto const &it : globals_map) {
+        if (!it.first.callable)
+            continue;
+
+        char *name = (char *) malloc_check(52);
+        snprintf(name, 52, "__direct_callable__%016llx%016llx",
+                 (unsigned long long) it.first.hash.high64,
+                 (unsigned long long) it.first.hash.low64);
+
+        uint32_t index = 1 + it.second.callable_index;
+        pgd[index].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+        pgd[index].callables.moduleDC = kernel.optix.mod;
+        pgd[index].callables.entryFunctionNameDC = name;
     }
 
     kernel.optix.pg = new OptixProgramGroup[n_programs];
@@ -690,7 +695,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     uint8_t *sbt_record = (uint8_t *)
         jitc_malloc(AllocType::HostPinned, n_programs * stride);
 
-    for (size_t i = 0; i <= callables.size(); ++i)
+    for (size_t i = 0; i < n_programs; ++i)
         jitc_optix_check(optixSbtRecordPackHeader(
             kernel.optix.pg[i], sbt_record + stride * i));
 

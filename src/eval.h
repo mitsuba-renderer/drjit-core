@@ -10,7 +10,7 @@
 #pragma once
 
 #include "internal.h"
-#include <tsl/robin_set.h>
+#include <map>
 
 /// A single variable that is scheduled to execute for a launch with 'size' entries
 struct ScheduledVariable {
@@ -32,30 +32,46 @@ struct ScheduledGroup {
         : size(size), start(start), end(end) { }
 };
 
-/// Hashing helper for GlobalMap
-struct XXH128Hash {
-    size_t operator()(const XXH128_hash_t &h) const { return h.low64; }
-};
-struct XXH128Eq {
-    size_t operator()(const XXH128_hash_t &h1, const XXH128_hash_t &h2) const {
-        return h1.low64 == h2.low64 && h1.high64 == h2.high64;
+struct GlobalKey {
+    XXH128_hash_t hash;
+    bool callable;
+
+    GlobalKey(XXH128_hash_t hash, bool callable)
+        : hash(hash), callable(callable) { }
+
+    /* Order so that callables are defined before other globals, but don't use
+       the callable ID itself for ordering (it can be non-deterministic in
+       programs that use Dr.Jit with parallelization) */
+    bool operator<(const GlobalKey &v) const {
+        int callable_key_t =   callable ? 0 : 1,
+            callable_key_v = v.callable ? 0 : 1;
+        return std::tie(callable_key_t, hash.high64, hash.low64) <
+               std::tie(callable_key_v, v.hash.high64, v.hash.low64);
     }
 };
 
+struct GlobalValue {
+    /// Offset and length for the 'globals' buffer
+    size_t start, length;
+
+    /// Index within the callable list, if applicable
+    uint32_t callable_index;
+
+    GlobalValue(size_t start, size_t length)
+        : start(start), length(length), callable_index(0) { }
+};
+
 /// Cache data structure for global declarations
-using GlobalsMap = tsl::robin_map<XXH128_hash_t, uint32_t, XXH128Hash, XXH128Eq>;
+using GlobalsMap = std::map<GlobalKey, GlobalValue>;
+
+/// Buffer for global definitions (intrinsics, callables, etc.)
+extern Buffer globals;
+
+/// Mapping that describes the contents of the 'globals' buffer
+extern GlobalsMap globals_map;
 
 /// Name of the last generated kernel
 extern char kernel_name[52];
-
-/// List of global declarations (intrinsics, constant arrays)
-extern std::vector<std::string> globals;
-
-/// List of device functions or direct callables (OptiX)
-extern std::vector<std::string> callables;
-
-/// Ensure uniqueness of globals/callables arrays
-extern GlobalsMap globals_map;
 
 /// Are we recording an OptiX kernel?
 extern bool uses_optix;
@@ -67,8 +83,14 @@ extern bool assemble_func;
 extern int32_t alloca_size;
 extern int32_t alloca_align;
 
+/// Number of callables that were compiled so far
+extern uint32_t callable_count;
+
+/// Number of unique callables that were compiled so far
+extern uint32_t callable_count_unique;
+
 /// Specifies the nesting level of virtual calls being compiled
-extern uint32_t vcall_depth;
+extern uint32_t callable_depth;
 
 /// Ordered list of variables that should be computed
 extern std::vector<ScheduledVariable> schedule;
@@ -87,7 +109,7 @@ extern void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
 extern void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group);
 
 /// Used by jitc_vcall() to generate source code for vcalls
-extern std::pair<XXH128_hash_t, uint32_t>
+extern XXH128_hash_t
 jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                    uint32_t in_size, uint32_t in_align, uint32_t out_size,
                    uint32_t out_align, uint32_t data_offset,
@@ -115,3 +137,6 @@ jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 
 /// Register a global declaration that will be included in the final program
 extern void jitc_register_global(const char *str);
+
+/// Move a code block to an earlier position in 'buffer'
+extern void jitc_insert_code_at(size_t insertion_point, size_t insertion_start);
