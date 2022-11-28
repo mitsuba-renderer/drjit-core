@@ -2108,17 +2108,14 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                 std::tie(jitc_cuda_version_major, jitc_cuda_version_minor) <
                     std::make_tuple(11, 5);
 
-            if (use_atom_op)
-                buffer.fmt(".reg.%s %s%u;\n", type_name_ptx[v_src->type], v_tp, v_i);
-
             const char *src_type = is_src_bool ? "u8" : type_name_ptx[v_src->type];
 
             if (red_op_none) {
                 buffer.fmt("    st.global.%s [%s], %s;\n",
                            src_type, dst_addr.get(), src_reg.get());
             } else if (use_atom_op) {
-                buffer.fmt("    atom.global.%s.%s $r0, [%s], %s;\n",
-                           red_op_name, src_type, dst_addr.get(), src_reg.get());
+                buffer.fmt("    atom.global.%s.%s %s%u, [%s], %s;\n",
+                           red_op_name, src_type, src_tp, v_i, dst_addr.get(), src_reg.get());
             } else {
                 buffer.fmt("    red.global.%s.%s [%s], %s;\n",
                            red_op_name, src_type, dst_addr.get(), src_reg.get());
