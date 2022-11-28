@@ -2078,8 +2078,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             ThreadState *ts = thread_state_cuda;
             const char *red_op_name = (const char *) extra.callback_data;
             bool red_op_none = (strcmp(red_op_name, "") == 0);
-            Buffer dst_addr(8);
-            Buffer src_reg(8);
+            char dst_addr[8], src_reg[8];
 
             if (masked) {
                 buffer.fmt("    @!%%p%u bra l_%u_done;\n",
@@ -2179,7 +2178,10 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                     "    ret;\n"
                     "}\n\n");
 
-                buffer.fmt("    call reduce_f32, (%%rd%u, %%r%u, %%f%u);\n",
+                buffer.fmt("    {\n"
+                           "        .visible .func reduce_f32(.param .u64 ptr, .param .u32 index, .param .f32 value);\n"
+                           "        call reduce_f32, (%%rd%u, %%r%u, %%f%u);\n"
+                           "    }\n",
                            dst_i, index_i, src_i);
                 if (masked)
                     buffer.fmt("l_%u_done:\n", v_i);
@@ -2190,16 +2192,16 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                 buffer.fmt("    mad.wide.%s %%rd3, %s%u, %s, %s%u;\n",
                            type_name_ptx[v_idx->type], index_tp, index_i,
                            type_size_str[v_src->type], dst_tp, dst_i);
-                dst_addr.put("%rd3");
+                strncpy(dst_addr, "%rd3", sizeof(dst_addr));
             } else {
-                dst_addr.fmt("%s%u", dst_tp, dst_i);
+                snprintf(dst_addr, sizeof(dst_addr), "%s%u", dst_tp, dst_i);
             }
 
             if (is_src_bool) {
                 buffer.fmt("    selp.u16 %%w0, 1, 0, %s%u;\n", src_tp, src_i);
-                src_reg.put("%w0");
+                strncpy(src_reg, "%w0", sizeof(src_reg));
             } else {
-                src_reg.fmt("%s%u", src_tp, src_i);
+                snprintf(src_reg, sizeof(src_reg), "%s%u", src_tp, src_i);
             }
 
             bool use_atom_op =
@@ -2211,13 +2213,13 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
             if (red_op_none) {
                 buffer.fmt("    st.global.%s [%s], %s;\n",
-                           src_type, dst_addr.get(), src_reg.get());
+                           src_type, dst_addr, src_reg);
             } else if (use_atom_op) {
                 buffer.fmt("    atom.global.%s.%s %s%u, [%s], %s;\n",
-                           red_op_name, src_type, src_tp, v_i, dst_addr.get(), src_reg.get());
+                           red_op_name, src_type, src_tp, v_i, dst_addr, src_reg);
             } else {
                 buffer.fmt("    red.global.%s.%s [%s], %s;\n",
-                           red_op_name, src_type, dst_addr.get(), src_reg.get());
+                           red_op_name, src_type, dst_addr, src_reg);
             }
 
             if (masked)
