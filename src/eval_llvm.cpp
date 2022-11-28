@@ -150,7 +150,6 @@ void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group) {
         if (alloca_size >= 0)
             buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n",
                        alloca_size, alloca_align);
-        buffer.put("\n");
 
         jitc_insert_code_at(insertion_point, insertion_start);
     }

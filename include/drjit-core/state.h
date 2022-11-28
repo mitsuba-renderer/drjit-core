@@ -22,9 +22,8 @@ NAMESPACE_BEGIN(detail)
 /**
  * \brief JitState RAII wrapper
  *
- * This class encapsulates several configuration attributes of Dr.Jit (the
- * mask stack, variable name prefixes, the CSE scope, whether program recording
- * is enabled.)
+ * This class encapsulates several configuration attributes of Dr.Jit (the mask
+ * stack, variable name prefixes, whether program recording is enabled.)
  *
  * The <tt>set_*</tt>, <tt>clear_*</tt>, <tt>begin_*</tt>, and <tt>end_*</tt>
  * methods can be used to change and clear these attributes. The deconstructor
@@ -33,7 +32,7 @@ NAMESPACE_BEGIN(detail)
 template <JitBackend Backend> struct JitState {
     JitState()
         : m_mask_set(false), m_prefix_set(false), m_self_set(false),
-          m_scope_set(false), m_recording(false) { }
+          m_recording(false) { }
 
     ~JitState() {
         if (m_mask_set)
@@ -42,8 +41,6 @@ template <JitBackend Backend> struct JitState {
             clear_prefix();
         if (m_self_set)
             clear_self();
-        if (m_scope_set)
-            clear_scope();
         if (m_recording)
             end_recording();
     }
@@ -94,17 +91,7 @@ template <JitBackend Backend> struct JitState {
     }
 
     void new_scope() {
-        if (!m_scope_set) {
-            m_scope = jit_scope(Backend);
-            m_scope_set = true;
-        }
         jit_new_scope(Backend);
-    }
-
-    void clear_scope() {
-        assert(m_scope_set);
-        jit_set_scope(Backend, m_scope);
-        m_scope_set = false;
     }
 
     void set_self(uint32_t value, uint32_t index = 0) {
@@ -127,9 +114,7 @@ private:
     bool m_mask_set;
     bool m_prefix_set;
     bool m_self_set;
-    bool m_scope_set;
     bool m_recording;
-    uint32_t m_scope;
     uint32_t m_checkpoint;
     uint32_t m_self_value;
     uint32_t m_self_index;

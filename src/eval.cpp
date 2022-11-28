@@ -65,10 +65,14 @@ bool assemble_func = false;
 int32_t alloca_size = -1;
 int32_t alloca_align = -1;
 
+/// Number of tentative callables that were assembled in the kernel being compiled
+uint32_t callable_count = 0;
+
+/// Number of unique callables in the kernel being compiled
+uint32_t callable_count_unique = 0;
+
 /// Specifies the nesting level of virtual calls being compiled
 uint32_t callable_depth = 0;
-uint32_t callable_count = 0;
-uint32_t callable_count_unique = 0;
 
 /// Information about the kernel launch to go in the kernel launch history
 KernelHistoryEntry kernel_history_entry;
@@ -106,7 +110,7 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
     if (visited.emplace(0, index).second)
         v->output_flag = false;
 
-    schedule.emplace_back(size, index);
+    schedule.emplace_back(size, v->scope, index);
 }
 
 void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
@@ -116,7 +120,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     globals.clear();
     globals_map.clear();
     alloca_size = alloca_align = -1;
-    kernel_history_entry = {};
+    callable_count = 0;
+    callable_count_unique = 0;
+    kernel_history_entry = { };
 
 #if defined(DRJIT_ENABLE_OPTIX)
     uses_optix = ts->backend == JitBackend::CUDA &&
@@ -582,8 +588,6 @@ void jitc_eval(ThreadState *ts) {
 
     visited.clear();
     schedule.clear();
-    callable_count = 0;
-    callable_count_unique = 0;
 
     // Collect variables that must be computed along with their dependencies
     for (int j = 0; j < 2; ++j) {
@@ -614,16 +618,16 @@ void jitc_eval(ThreadState *ts) {
         return;
 
     // Order variables into groups of matching size
-    std::sort(
+    std::stable_sort(
         schedule.begin(), schedule.end(),
         [](const ScheduledVariable &a, const ScheduledVariable &b) {
             if (a.size > b.size)
                 return true;
             else if (a.size < b.size)
                 return false;
-            else if (a.index > b.index)
+            else if (a.scope > b.scope)
                 return false;
-            else if (a.index < b.index)
+            else if (a.scope < b.scope)
                 return true;
             else
                 return false;
@@ -806,10 +810,10 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     for (uint32_t i = 0; i < n_se; ++i)
         traverse(se[i]);
 
-    std::sort(
+    std::stable_sort(
         schedule.begin(), schedule.end(),
         [](const ScheduledVariable &a, const ScheduledVariable &b) {
-            return a.index < b.index;
+            return a.scope < b.scope;
         });
 
     uint32_t n_regs = ts->backend == JitBackend::CUDA ? 4 : 1;

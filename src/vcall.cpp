@@ -93,21 +93,19 @@ static void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg,
                                     uint32_t mask_reg, uint32_t offset_reg,
                                     uint32_t data_reg);
 
-static void jitc_var_vcall_assemble_cuda(VCall *vcall,
-                                         const CallablesSet &callables_set,
-                                         uint32_t vcall_reg, uint32_t self_reg,
-                                         uint32_t mask_reg, uint32_t offset_reg,
-                                         uint32_t data_reg, uint32_t n_out,
-                                         uint32_t in_size, uint32_t in_align,
-                                         uint32_t out_size, uint32_t out_align);
+static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
+                                         uint32_t self_reg, uint32_t mask_reg,
+                                         uint32_t offset_reg, uint32_t data_reg,
+                                         uint32_t n_out, uint32_t in_size,
+                                         uint32_t in_align, uint32_t out_size,
+                                         uint32_t out_align);
 
-static void jitc_var_vcall_assemble_llvm(VCall *vcall,
-                                         const CallablesSet &callables_set,
-                                         uint32_t vcall_reg, uint32_t self_reg,
-                                         uint32_t mask_reg, uint32_t offset_reg,
-                                         uint32_t data_reg, uint32_t n_out,
-                                         uint32_t in_size, uint32_t in_align,
-                                         uint32_t out_size, uint32_t out_align);
+static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
+                                         uint32_t self_reg, uint32_t mask_reg,
+                                         uint32_t offset_reg, uint32_t data_reg,
+                                         uint32_t n_out, uint32_t in_size,
+                                         uint32_t in_align, uint32_t out_size,
+                                         uint32_t out_align);
 
 static void jitc_var_vcall_collect_data(
     tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
@@ -809,13 +807,13 @@ static void jitc_var_vcall_assemble(VCall *vcall,
     alloca_align = alloca_align_backup;
 
     if (vcall->backend == JitBackend::CUDA)
-        jitc_var_vcall_assemble_cuda(vcall, callables_set, vcall_reg, self_reg,
-                                     mask_reg, offset_reg, data_reg, n_out,
-                                     in_size, in_align, out_size, out_align);
+        jitc_var_vcall_assemble_cuda(vcall, vcall_reg, self_reg, mask_reg,
+                                     offset_reg, data_reg, n_out, in_size,
+                                     in_align, out_size, out_align);
     else
-        jitc_var_vcall_assemble_llvm(vcall, callables_set, vcall_reg, self_reg,
-                                     mask_reg, offset_reg, data_reg, n_out,
-                                     in_size, in_align, out_size, out_align);
+        jitc_var_vcall_assemble_llvm(vcall, vcall_reg, self_reg, mask_reg,
+                                     offset_reg, data_reg, n_out, in_size,
+                                     in_align, out_size, out_align);
 
     jitc_log(
         InfoSym,
@@ -829,27 +827,19 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 }
 
 /// Virtual function call code generation -- CUDA/PTX-specific bits
-static void jitc_var_vcall_assemble_cuda(
-    VCall *vcall, const CallablesSet &callables_set, uint32_t vcall_reg,
-    uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
-    uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align) {
+static void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
+                                         uint32_t self_reg, uint32_t mask_reg,
+                                         uint32_t offset_reg, uint32_t data_reg,
+                                         uint32_t n_out, uint32_t in_size,
+                                         uint32_t in_align, uint32_t out_size,
+                                         uint32_t out_align) {
 
     // =====================================================
     // 1. Conditional branch
     // =====================================================
 
     buffer.fmt("\n    @!%%p%u bra l_masked_%u;\n\n"
-               "    {   // VCall: %s\n", mask_reg, vcall_reg, vcall->name);
-
-    size_t ctr = 0;
-    for (XXH128_hash_t h: callables_set) {
-        buffer.fmt("        //    target %zu = %s%016llx%016llx\n",
-                   ctr++,
-                   uses_optix ? "__direct_callable__" : "func_",
-                   (unsigned long long) h.high64,
-                   (unsigned long long) h.low64);
-    }
+               "    { // VCall: %s\n", mask_reg, vcall_reg, vcall->name);
 
     // =====================================================
     // 2. Determine unique callable ID
@@ -1055,11 +1045,12 @@ static void jitc_var_vcall_assemble_cuda(
 }
 
 /// Virtual function call code generation -- LLVM IR-specific bits
-static void jitc_var_vcall_assemble_llvm(
-    VCall *vcall, const CallablesSet &callables_set, uint32_t vcall_reg,
-    uint32_t self_reg, uint32_t mask_reg, uint32_t offset_reg,
-    uint32_t data_reg, uint32_t n_out, uint32_t in_size, uint32_t in_align,
-    uint32_t out_size, uint32_t out_align) {
+static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
+                                         uint32_t self_reg, uint32_t mask_reg,
+                                         uint32_t offset_reg, uint32_t data_reg,
+                                         uint32_t n_out, uint32_t in_size,
+                                         uint32_t in_align, uint32_t out_size,
+                                         uint32_t out_align) {
 
     uint32_t width = jitc_llvm_vector_width;
     alloca_size  = std::max(alloca_size, (int32_t) ((in_size + out_size) * width));
@@ -1094,14 +1085,6 @@ static void jitc_var_vcall_assemble_llvm(
                "\nl%u_start:\n"
                "    ; VCall: %s\n",
                vcall_reg, vcall_reg, vcall->name);
-
-    size_t ctr = 0;
-    for (XXH128_hash_t h: callables_set) {
-        buffer.fmt("    ;     target %zu = func_%016llx%016llx\n",
-                   ctr++,
-                   (unsigned long long) h.high64,
-                   (unsigned long long) h.low64);
-    }
 
     if (!assemble_func) {
         buffer.fmt("\n"
