@@ -1410,7 +1410,12 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         }
     }
 
-    uint32_t bucket_count = jitc_registry_get_max(backend, domain) + 1;
+    uint32_t bucket_count;
+    if (domain)
+        bucket_count = jitc_registry_get_max(backend, domain) + 1;
+    else
+        bucket_count = *bucket_count_out + 1;
+
     if (unlikely(bucket_count == 1)) {
         *bucket_count_out = 0;
         return nullptr;
@@ -1421,7 +1426,10 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
 
     uint32_t size = jitc_var(index)->size;
 
-    jitc_log(Debug, "jit_vcall(r%u, domain=\"%s\")", index, domain);
+    if (domain)
+        jitc_log(Debug, "jit_vcall(r%u, domain=\"%s\")", index, domain);
+    else
+        jitc_log(Debug, "jitc_var_vcall_reduce(r%u)", index);
 
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
            offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
@@ -1477,7 +1485,12 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         uint32_t index2 = jitc_var_new(v2);
 
         VCallBucket bucket_out;
-        bucket_out.ptr = jitc_registry_get_ptr(backend, domain, bucket.id);
+
+        if (domain)
+            bucket_out.ptr = jitc_registry_get_ptr(backend, domain, bucket.id);
+        else
+            bucket_out.ptr = nullptr;
+
         bucket_out.index = index2;
         bucket_out.id = bucket.id;
 
