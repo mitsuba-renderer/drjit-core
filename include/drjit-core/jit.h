@@ -1680,8 +1680,8 @@ struct VCallBucket {
 };
 
 /**
- * \brief Compute a permutation to reorder an array of registered pointers
- * in preparation for a vectorized method call
+ * \brief Compute a permutation to reorder an array of registered pointers or
+ * indices in preparation for a vectorized function call
  *
  * This function expects an array of integers, whose entries correspond to
  * pointers that have previously been registered by calling \ref
@@ -1692,6 +1692,14 @@ struct VCallBucket {
  * jit_registry_get_ptr()) and the variable index of an unsigned 32 bit array
  * containing the corresponding entries of the input array. The total number of
  * buckets is returned via the \c bucket_count_out argument.
+ *
+ * Alternatively, this function can be used to abuse the virtual function call
+ * mechanism of Dr.Jit to dispatch the wavefront on an arbitrary list of
+ * callables. In this case, \c domain should be set to \c nullptr and the
+ * function will expects an array of integers that correspond to the indices of
+ * the callable to execute. The largest possible value in the array of indices
+ * has to be passed via the \c bucket_count_out argument, which will then be
+ * overwritten with the total number of buckets.
  *
  * The memory region accessible via the \c VCallBucket pointer will remain
  * accessible until the variable \c index is itself freed (i.e. when its
