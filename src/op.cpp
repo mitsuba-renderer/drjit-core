@@ -2075,15 +2075,118 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                 masked = !(v_mask->is_literal() && v_mask->literal == 1);
             }
 
+            ThreadState *ts = thread_state_cuda;
             const char *red_op_name = (const char *) extra.callback_data;
             bool red_op_none = (strcmp(red_op_name, "") == 0);
-
             Buffer dst_addr(8);
             Buffer src_reg(8);
 
             if (masked) {
                 buffer.fmt("    @!%%p%u bra l_%u_done;\n",
                            v_mask->reg_index, v_i);
+            }
+
+            /* Performance optimization for an important special case (FP32
+               atomic scatter-reduction). Begin with an intra-warp reduction to
+               issue fewer atomic global memory transactions */
+
+            if ((VarType) v_src->type == VarType::Float32 &&
+                (VarType) v_idx->type == VarType::UInt32 &&
+                red_op_name &&
+                ts->ptx_version>= 62 &&
+                ts->compute_capability >= 70 &&
+                strcmp(red_op_name, "add") == 0) {
+                jitc_register_global(
+                    ".visible .func reduce_f32(.param .u64 ptr,\n"
+                    "                          .param .u32 index,\n"
+                    "                          .param .f32 value) {\n"
+                    "    .reg .pred %p<15>;\n"
+                    "    .reg .f32 %f<22>;\n"
+                    "    .reg .b32 %r<42>;\n"
+                    "    .reg .b64 %rd<4>;\n"
+                    "\n"
+                    "    ld.param.u64 %rd1, [ptr];\n"
+                    "    ld.param.u32 %r11, [index];\n"
+                    "    ld.param.f32 %f5, [value];\n"
+                    "    activemask.b32 %r12;\n"
+                    "    match.any.sync.b32 %r40, %r11, %r12;\n"
+                    "    mov.u32 %r13, %laneid;\n"
+                    "    setp.eq.s32 %p1, %r40, -1;\n"
+                    "    @%p1 bra fast_path;\n"
+                    "    brev.b32 %r14, %r40;\n"
+                    "    bfind.shiftamt.u32 %r41, %r14;\n"
+                    "    setp.ne.s32 %p2, %r40, 0;\n"
+                    "    vote.sync.any.pred %p3, %p2, %r12;\n"
+                    "    mov.f32 %f21, 0f00000000;\n"
+                    "    not.pred %p4, %p3;\n"
+                    "    @%p4 bra maybe_scatter;\n"
+                    "    mov.b32 %r5, %f5;\n"
+                    "    mov.u32 %r39, %r41;\n"
+                    "\n"
+                    "slow_path:\n"
+                    "    mov.u32 %r16, 31;\n"
+                    "    shfl.sync.idx.b32 %r17|%p5, %r5, %r39, %r16, %r12;\n"
+                    "    mov.b32 %f8, %r17;\n"
+                    "    add.f32 %f9, %f21, %f8;\n"
+                    "    setp.eq.s32 %p6, %r40, 0;\n"
+                    "    selp.f32 %f21, %f21, %f9, %p6;\n"
+                    "    mov.u32 %r18, -2;\n"
+                    "    shf.l.wrap.b32 %r19, %r18, %r18, %r39;\n"
+                    "    and.b32 %r40, %r40, %r19;\n"
+                    "    brev.b32 %r20, %r40;\n"
+                    "    bfind.shiftamt.u32 %r39, %r20;\n"
+                    "    setp.ne.s32 %p7, %r40, 0;\n"
+                    "    vote.sync.any.pred %p8, %p7, %r12;\n"
+                    "    @%p8 bra slow_path;\n"
+                    "    bra.uni maybe_scatter;\n"
+                    "\n"
+                    "fast_path:\n"
+                    "    mov.b32 %r23, %f5;\n"
+                    "    mov.u32 %r24, 2;\n"
+                    "    mov.u32 %r25, 31;\n"
+                    "    mov.u32 %r26, 16;\n"
+                    "    shfl.sync.down.b32 %r27|%p9, %r23, %r26, %r25, %r12;\n"
+                    "    mov.b32 %f10, %r27;\n"
+                    "    add.f32 %f11, %f10, %f5;\n"
+                    "    mov.b32 %r28, %f11;\n"
+                    "    mov.u32 %r29, 8;\n"
+                    "    shfl.sync.down.b32 %r30|%p10, %r28, %r29, %r25, %r12;\n"
+                    "    mov.b32 %f12, %r30;\n"
+                    "    add.f32 %f13, %f11, %f12;\n"
+                    "    mov.b32 %r31, %f13;\n"
+                    "    mov.u32 %r32, 4;\n"
+                    "    shfl.sync.down.b32 %r33|%p11, %r31, %r32, %r25, %r12;\n"
+                    "    mov.b32 %f14, %r33;\n"
+                    "    add.f32 %f15, %f13, %f14;\n"
+                    "    mov.b32 %r34, %f15;\n"
+                    "    shfl.sync.down.b32 %r35|%p12, %r34, %r24, %r25, %r12;\n"
+                    "    mov.b32 %f16, %r35;\n"
+                    "    add.f32 %f17, %f15, %f16;\n"
+                    "    mov.b32 %r36, %f17;\n"
+                    "    mov.u32 %r37, 1;\n"
+                    "    shfl.sync.down.b32 %r38|%p13, %r36, %r37, %r25, %r12;\n"
+                    "    mov.b32 %f18, %r38;\n"
+                    "    add.f32 %f21, %f17, %f18;\n"
+                    "    mov.u32 %r41, 0;\n"
+                    "\n"
+                    "maybe_scatter:\n"
+                    "    setp.ne.s32 %p14, %r13, %r41;\n"
+                    "    @%p14 bra done;\n"
+                    "    mul.wide.u32 %rd2, %r11, 4;\n"
+                    "    add.s64 %rd3, %rd1, %rd2;\n"
+                    "    atom.add.f32 %f19, [%rd3], %f21;\n"
+                    "done:\n"
+                    "    ret;\n"
+                    "}");
+
+                buffer.put("    {\n");
+                buffer.put("        .visible .func reduce_f32(.param .u64 ptr, .param .u32 index, .param .f32 value);\n");
+                buffer.fmt("        call reduce_f32, (%%rd%u, %%r%u, %%f%u);\n",
+                           dst_i, index_i, src_i);
+                buffer.put("    }\n");
+                if (masked)
+                    buffer.fmt("l_%u_done:\n", v_i);
+                return;
             }
 
             if (!index_zero) {
