@@ -252,7 +252,10 @@ struct Device {
     int id;
 
     /// Device compute capability (major * 10 + minor)
-    int compute_capability;
+    uint32_t compute_capability = 0;
+
+    /// Targeted PTX version (major * 10 + minor)
+    uint32_t ptx_version = 0;
 
     /// Number of SMs
     uint32_t num_sm;
@@ -419,16 +422,16 @@ struct ThreadState {
      */
     int device = 0;
 
-    /// Targeted compute compatibility
-    uint32_t compute_capability = 50;
+    /// Device compute capability (major * 10 + minor)
+    uint32_t compute_capability = 0;
 
     /// Targeted PTX version (major * 10 + minor)
-    uint32_t ptx_version = 60;
+    uint32_t ptx_version = 0;
 
 #if defined(DRJIT_ENABLE_OPTIX)
     /// OptiX pipeline associated with the next kernel launch
-    OptixPipelineData *optix_pipeline;
-    OptixShaderBindingTable *optix_sbt;
+    OptixPipelineData *optix_pipeline = nullptr;
+    OptixShaderBindingTable *optix_sbt = nullptr;
 #endif
 };
 
