@@ -181,6 +181,19 @@ void jitc_init(uint32_t backends) {
         device.num_sm = (uint32_t) num_sm;
         device.memory_pool_support = memory_pool_support != 0;
         device.wddm_driver = tcc_driver == 0;
+        device.compute_capability = 50;
+        device.ptx_version = 60;
+
+        const uint32_t sm_table[][2] = { { 70, 60 }, { 72, 61 }, { 75, 63 }, { 80, 70 },
+                                         { 86, 71 }, { 87, 74 }, { 87, 74 }, { 90, 78 } };
+        uint32_t cc_combined = cc_major * 10 + cc_minor;
+        for (int i = 0; i < 8; ++i) {
+            if (cc_combined >= sm_table[i][0]) {
+                device.compute_capability = sm_table[i][0];
+                device.ptx_version = sm_table[i][1];
+            }
+        }
+
         cuda_check(cuDevicePrimaryCtxRetain(&device.context, i));
         state.devices.push_back(device);
     }
@@ -466,7 +479,8 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         const Device &device = state.devices[0];
         ts->device = 0;
         ts->context = device.context;
-        ts->compute_capability = device.compute_capability >= 60 ? 60 : 50;
+        ts->compute_capability = device.compute_capability;
+        ts->ptx_version = device.ptx_version;
         scoped_set_context guard(ts->context);
         cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_DEFAULT));
         cuda_check(cuEventCreate(&ts->event, CU_EVENT_DISABLE_TIMING));
