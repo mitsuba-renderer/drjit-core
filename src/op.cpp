@@ -2177,13 +2177,10 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                     "    atom.add.f32 %f19, [%rd3], %f21;\n"
                     "done:\n"
                     "    ret;\n"
-                    "}");
+                    "}\n\n");
 
-                buffer.put("    {\n");
-                buffer.put("        .visible .func reduce_f32(.param .u64 ptr, .param .u32 index, .param .f32 value);\n");
-                buffer.fmt("        call reduce_f32, (%%rd%u, %%r%u, %%f%u);\n",
+                buffer.fmt("    call reduce_f32, (%%rd%u, %%r%u, %%f%u);\n",
                            dst_i, index_i, src_i);
-                buffer.put("    }\n");
                 if (masked)
                     buffer.fmt("l_%u_done:\n", v_i);
                 return;
