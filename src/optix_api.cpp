@@ -643,8 +643,9 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     if (compilation_state != OPTIX_MODULE_COMPILE_STATE_COMPLETED)
         jitc_fail("jit_optix_compile(): optixModuleGetCompilationState() "
                   "indicates that the compilation did not complete "
-                  "succesfully. The module's compilation state is: %#06x",
-                  compilation_state);
+                  "succesfully. The module's compilation state is: %#06x\n"
+                  "Please see the PTX assembly listing and error message "
+                  "below:\n\n%s\n\n%s", compilation_state, buf, error_log);
 
     // =====================================================
     // 3. Create an OptiX program group
