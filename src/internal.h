@@ -252,10 +252,10 @@ struct Device {
     int id;
 
     /// Device compute capability (major * 10 + minor)
-    uint32_t compute_capability = 0;
+    uint32_t compute_capability;
 
     /// Targeted PTX version (major * 10 + minor)
-    uint32_t ptx_version = 0;
+    uint32_t ptx_version;
 
     /// Number of SMs
     uint32_t num_sm;
@@ -266,8 +266,9 @@ struct Device {
     // Support for stream ordered memory allocations (async alloc/free)
     bool memory_pool_support;
 
-    /// Is this a WDDM-style driver where long launches will freeze the OS graphics?
-    bool wddm_driver;
+    /** \brief If preemptable is false, long-running kernels might freeze
+     * the OS GUI and time out after 2 sec */
+    bool preemptable;
 
 #if defined(DRJIT_ENABLE_OPTIX)
     /// OptiX device context
