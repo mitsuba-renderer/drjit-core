@@ -814,13 +814,12 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
 
     uint32_t offset = 0;
 
-    /* On Linux and Windows (when using a TCM-style driver), accept kernel
-       launches up to the maximum value of 2^30 threads. On Windows, when using
-       a more common WDDM-style driver, such a long-running kernel may freeze
-       the OS graphics and eventually cause a device reset. That's not good, so
-       we submit smaller batches that correspond roughly to 1 sample/pixel for a
-       full HD resolution frame. */
-    uint32_t limit = state.devices[ts->device].wddm_driver ? (1 << 21) : (1 << 30);
+    /* We accept kernel launches up to the maximum value of 2^30 threads by
+       default. When using an older non-preemptable WDDM driver setup on
+       Windows, a long-running kernel may freeze the OS graphics and eventually
+       cause a device reset. That's not good, so we submit smaller batches that
+       correspond roughly to 1 sample/pixel for a full HD resolution frame. */
+    uint32_t limit = state.devices[ts->device].preemptable ? (1 << 30) : (1 << 21);
 
     while (launch_size > 0) {
         uint32_t sub_launch_size = launch_size < limit ? launch_size : limit;

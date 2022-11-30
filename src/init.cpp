@@ -133,7 +133,7 @@ void jitc_init(uint32_t backends) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
             unified_addr = 0, managed = 0, shared_memory_bytes = 0,
             cc_minor = 0, cc_major = 0, memory_pool_support = 0,
-            tcc_driver = 1;
+            tcc_driver = 0, preemptable = 0;
 
         size_t mem_total = 0;
         char name[256];
@@ -150,9 +150,13 @@ void jitc_init(uint32_t backends) {
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
 
+
         #if defined(_WIN32)
             // Distinguish WDDM and TCM-style drivers on Windows. The default for other OSes is tcc_driver=1
             cuda_check(cuDeviceGetAttribute(&tcc_driver, CU_DEVICE_ATTRIBUTE_TCC_DRIVER, i));
+            cuda_check(cuDeviceGetAttribute(&preemptable, CU_DEVICE_ATTRIBUTE_COMPUTE_PREEMPTION_SUPPORTED, i));
+        #else
+            preemptable = 1;
         #endif
 
         if (jitc_cuda_version_major > 11 || (jitc_cuda_version_major == 11 && jitc_cuda_version_minor >= 2))
@@ -180,17 +184,17 @@ void jitc_init(uint32_t backends) {
         device.shared_memory_bytes = (uint32_t) shared_memory_bytes;
         device.num_sm = (uint32_t) num_sm;
         device.memory_pool_support = memory_pool_support != 0;
-        device.wddm_driver = tcc_driver == 0;
+        device.preemptable = preemptable || tcc_driver;
         device.compute_capability = 50;
         device.ptx_version = 60;
 
         const uint32_t sm_table[][2] = { { 70, 60 }, { 72, 61 }, { 75, 63 }, { 80, 70 },
                                          { 86, 71 }, { 87, 74 }, { 87, 74 }, { 90, 78 } };
         uint32_t cc_combined = cc_major * 10 + cc_minor;
-        for (int i = 0; i < 8; ++i) {
-            if (cc_combined >= sm_table[i][0]) {
-                device.compute_capability = sm_table[i][0];
-                device.ptx_version = sm_table[i][1];
+        for (int j = 0; j < 8; ++j) {
+            if (cc_combined >= sm_table[j][0]) {
+                device.compute_capability = sm_table[j][0];
+                device.ptx_version = sm_table[j][1];
             }
         }
 
