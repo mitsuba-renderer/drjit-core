@@ -163,6 +163,7 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
         detail::write_indices(indices_out, result, offset);
         return result;
     } else {
+        (void) result;
         return nullptr;
     }
 }
