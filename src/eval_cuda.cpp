@@ -121,6 +121,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             if (extra.assemble) {
                 extra.assemble(v, extra);
                 assemble = true;
+                v = jitc_var(index); // The address of 'v' can change
             }
         }
 
