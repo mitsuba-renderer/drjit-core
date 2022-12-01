@@ -876,11 +876,6 @@ void jit_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask,
     jitc_optix_ray_trace(nargs, args, mask, pipeline, sbt);
 }
 
-void jit_optix_mark(uint32_t index) {
-    lock_guard guard(state.lock);
-    jitc_optix_mark(index);
-}
-
 #endif
 
 void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,

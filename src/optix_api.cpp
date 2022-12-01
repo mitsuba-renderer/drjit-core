@@ -543,7 +543,7 @@ uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
     memcpy(extra.callback_data, sbt, sizeof(OptixShaderBindingTable));
 
     // Set the OptiX SBT to use when assembling the kernel
-    extra.assemble = [](const Variable */*v*/, const Extra &extra) {
+    extra.assemble = [](const Variable * /*v*/, const Extra &extra) {
         ThreadState *ts = thread_state(JitBackend::CUDA);
         OptixShaderBindingTable *sbt = (OptixShaderBindingTable*) extra.callback_data;
         if (ts->optix_sbt == state.optix_default_sbt) {
@@ -854,7 +854,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
                      VarType::UInt32,  VarType::UInt32,  VarType::UInt32,
                      VarType::UInt32,  VarType::UInt32,  VarType::UInt32,
                      VarType::UInt32,  VarType::UInt32,  VarType::UInt32,
-                     VarType::UInt32,  VarType::UInt32};
+                     VarType::UInt32,  VarType::UInt32 };
 
     if (n_args < 15)
         jitc_raise("jit_optix_ray_trace(): too few arguments (got %u < 15)", n_args);

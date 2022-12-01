@@ -121,9 +121,6 @@ extern JIT_EXPORT void
 jit_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
                     uint32_t pipeline, uint32_t sbt);
 
-/// Mark a variable as an expression requiring compilation via OptiX
-extern JIT_EXPORT void jit_optix_mark(uint32_t index);
-
 #if defined(__cplusplus)
 }
 #endif
