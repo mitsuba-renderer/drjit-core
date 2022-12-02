@@ -2094,7 +2094,8 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                 red_op_name &&
                 ts->ptx_version>= 62 &&
                 ts->compute_capability >= 70 &&
-                strcmp(red_op_name, "add") == 0) {
+                strcmp(red_op_name, "add") == 0 &&
+                callable_depth == 0) {
                 jitc_register_global(
                     ".visible .func reduce_f32(.param .u64 ptr,\n"
                     "                          .param .u32 index,\n"
