@@ -244,10 +244,15 @@ TEST_BOTH(01_recorded_vcall) {
     BasePtr self = arange<UInt32>(10) % 3;
 
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
-        Float y = vcall(
-            "Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
-        jit_assert(strcmp(y.str(), "[0, 22, 204, 0, 28, 210, 0, 34, 216, 0]") == 0);
+        for (uint32_t j = 0; j < 4; ++j) {
+            jit_set_flag(JitFlag::VCallBranch, j > 0);
+            jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+            jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
+            jit_set_flag(JitFlag::VCallOptimize, i);
+            Float y = vcall(
+                "Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
+            jit_assert(strcmp(y.str(), "[0, 22, 204, 0, 28, 210, 0, 34, 216, 0]") == 0);
+        }
     }
 
     jit_registry_remove(Backend, &a1);
@@ -295,35 +300,40 @@ TEST_BOTH(02_calling_conventions) {
     (void) i1; (void) i2; (void) i3;
 
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        for (uint32_t j = 0; j < 4; ++j) {
+            jit_set_flag(JitFlag::VCallBranch, j > 0);
+            jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+            jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
+            jit_set_flag(JitFlag::VCallOptimize, i);
 
-        using BasePtr = Array<Base *>;
-        BasePtr self = arange<UInt32>(12) % 4;
+            using BasePtr = Array<Base *>;
+            BasePtr self = arange<UInt32>(12) % 4;
 
-        Mask p0(false);
-        Float p1(12);
-        Double p2(34);
-        Float p3(56);
-        Mask p4(true);
+            Mask p0(false);
+            Float p1(12);
+            Double p2(34);
+            Float p3(56);
+            Mask p4(true);
 
-        auto result = vcall(
-            "Base",
-            [](Base *self2, Mask p0, Float p1, Double p2, Float p3, Mask p4) {
-                return self2->f(p0, p1, p2, p3, p4);
-            },
-            self, p0, p1, p2, p3, p4);
+            auto result = vcall(
+                "Base",
+                [](Base *self2, Mask p0, Float p1, Double p2, Float p3, Mask p4) {
+                    return self2->f(p0, p1, p2, p3, p4);
+                },
+                self, p0, p1, p2, p3, p4);
 
-        jit_var_schedule(result.template get<0>().index());
-        jit_var_schedule(result.template get<1>().index());
-        jit_var_schedule(result.template get<2>().index());
-        jit_var_schedule(result.template get<3>().index());
-        jit_var_schedule(result.template get<4>().index());
+            jit_var_schedule(result.template get<0>().index());
+            jit_var_schedule(result.template get<1>().index());
+            jit_var_schedule(result.template get<2>().index());
+            jit_var_schedule(result.template get<3>().index());
+            jit_var_schedule(result.template get<4>().index());
 
-        jit_assert(strcmp(result.template get<0>().str(), "[0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0]") == 0);
-        jit_assert(strcmp(result.template get<1>().str(), "[0, 12, 13, 0, 0, 12, 13, 0, 0, 12, 13, 0]") == 0);
-        jit_assert(strcmp(result.template get<2>().str(), "[0, 34, 36, 0, 0, 34, 36, 0, 0, 34, 36, 0]") == 0);
-        jit_assert(strcmp(result.template get<3>().str(), "[0, 56, 59, 0, 0, 56, 59, 0, 0, 56, 59, 0]") == 0);
-        jit_assert(strcmp(result.template get<4>().str(), "[0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0]") == 0);
+            jit_assert(strcmp(result.template get<0>().str(), "[0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0]") == 0);
+            jit_assert(strcmp(result.template get<1>().str(), "[0, 12, 13, 0, 0, 12, 13, 0, 0, 12, 13, 0]") == 0);
+            jit_assert(strcmp(result.template get<2>().str(), "[0, 34, 36, 0, 0, 34, 36, 0, 0, 34, 36, 0]") == 0);
+            jit_assert(strcmp(result.template get<3>().str(), "[0, 56, 59, 0, 0, 56, 59, 0, 0, 56, 59, 0]") == 0);
+            jit_assert(strcmp(result.template get<4>().str(), "[0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0]") == 0);
+        }
     }
 
     jit_registry_remove(Backend, &b1);
@@ -367,32 +377,36 @@ TEST_BOTH(03_optimize_away_outputs) {
     BasePtr self = arange<UInt32>(10) % 4;
 
     for (uint32_t i = 0; i < 2; ++i) {
-        i = 1;
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        for (uint32_t j = 0; j < 4; ++j) {
+            jit_set_flag(JitFlag::VCallBranch, j > 0);
+            jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+            jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
+            jit_set_flag(JitFlag::VCallOptimize, i);
 
-        jit_assert(jit_var_ref(p3.index()) == 1);
+            jit_assert(jit_var_ref(p3.index()) == 1);
 
-        auto result = vcall(
-            "Base",
-            [](Base *self2, Float p1, Float p2, Float p3) {
-                return self2->f(p1, p2, p3);
-            },
-            self, p1, p2, p3);
+            auto result = vcall(
+                "Base",
+                [](Base *self2, Float p1, Float p2, Float p3) {
+                    return self2->f(p1, p2, p3);
+                },
+                self, p1, p2, p3);
 
-        jit_assert(jit_var_ref(p1.index()) == 3);
-        jit_assert(jit_var_ref(p2.index()) == 3);
+            jit_assert(jit_var_ref(p1.index()) == 3);
+            jit_assert(jit_var_ref(p2.index()) == 3);
 
-        // Irrelevant input optimized away
-        jit_assert(jit_var_ref(p3.index()) == 2 - i);
+            // Irrelevant input optimized away
+            jit_assert(jit_var_ref(p3.index()) == 2 - i);
 
-        result.template get<0>() = Float(0);
+            result.template get<0>() = Float(0);
 
-        jit_assert(jit_var_ref(p1.index()) == 3);
-        jit_assert(jit_var_ref(p2.index()) == 3 - 2*i);
-        jit_assert(jit_var_ref(p3.index()) == 2 - i);
+            jit_assert(jit_var_ref(p1.index()) == 3);
+            jit_assert(jit_var_ref(p2.index()) == 3 - 2*i);
+            jit_assert(jit_var_ref(p3.index()) == 2 - i);
 
-        jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
-                            "[0, 13, 13, 14, 0, 13, 13, 14, 0, 13]") == 0);
+            jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
+                                "[0, 13, 13, 14, 0, 13, 13, 14, 0, 13]") == 0);
+        }
     }
 
     jit_registry_remove(Backend, &c1);
@@ -429,47 +443,52 @@ TEST_BOTH(04_devirtualize) {
 
     for (uint32_t k = 0; k < 2; ++k) {
         for (uint32_t i = 0; i < 2; ++i) {
-            Float p1, p2;
-            if (k == 0) {
-                p1 = 12;
-                p2 = 34;
-            } else {
-                p1 = dr::opaque<Float>(12);
-                p2 = dr::opaque<Float>(34);
+            for (uint32_t j = 0; j < 4; ++j) {
+                jit_set_flag(JitFlag::VCallBranch, j > 0);
+                jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+                jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
+                Float p1, p2;
+                if (k == 0) {
+                    p1 = 12;
+                    p2 = 34;
+                } else {
+                    p1 = dr::opaque<Float>(12);
+                    p2 = dr::opaque<Float>(34);
+                }
+
+                jit_set_flag(JitFlag::VCallOptimize, i);
+                uint32_t scope = jit_scope(Backend);
+
+                auto result = vcall(
+                    "Base",
+                    [](Base *self2, Float p1, Float p2) {
+                        return self2->f(p1, p2);
+                    },
+                    self, p1, p2);
+
+                jit_set_scope(Backend, scope + 1);
+
+                Float p2_wrap = Float::steal(jit_var_wrap_vcall(p2.index()));
+
+                Mask mask = neq(self, nullptr),
+                     mask_combined = Mask::steal(jit_var_mask_apply(mask.index(), 10));
+
+                Float alt = (p2_wrap + 2) & mask_combined;
+
+                jit_set_scope(Backend, scope + 2);
+
+                jit_assert((result.template get<0>().index() == alt.index()) == (i == 1));
+                jit_assert(jit_var_is_literal(result.template get<2>().index()) == (i == 1));
+
+                jit_var_schedule(result.template get<0>().index());
+                jit_var_schedule(result.template get<1>().index());
+
+                jit_assert(
+                    strcmp(jit_var_str(result.template get<0>().index()),
+                                "[0, 36, 36, 0, 36, 36, 0, 36, 36, 0]") == 0);
+                jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
+                                "[0, 13, 14, 0, 13, 14, 0, 13, 14, 0]") == 0);
             }
-
-            jit_set_flag(JitFlag::VCallOptimize, i);
-            uint32_t scope = jit_scope(Backend);
-
-            auto result = vcall(
-                "Base",
-                [](Base *self2, Float p1, Float p2) {
-                    return self2->f(p1, p2);
-                },
-                self, p1, p2);
-
-            jit_set_scope(Backend, scope + 1);
-
-            Float p2_wrap = Float::steal(jit_var_wrap_vcall(p2.index()));
-
-            Mask mask = neq(self, nullptr),
-                 mask_combined = Mask::steal(jit_var_mask_apply(mask.index(), 10));
-
-            Float alt = (p2_wrap + 2) & mask_combined;
-
-            jit_set_scope(Backend, scope + 2);
-
-            jit_assert((result.template get<0>().index() == alt.index()) == (i == 1));
-            jit_assert(jit_var_is_literal(result.template get<2>().index()) == (i == 1));
-
-            jit_var_schedule(result.template get<0>().index());
-            jit_var_schedule(result.template get<1>().index());
-
-            jit_assert(
-                strcmp(jit_var_str(result.template get<0>().index()),
-                            "[0, 36, 36, 0, 36, 36, 0, 36, 36, 0]") == 0);
-            jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
-                            "[0, 13, 14, 0, 13, 14, 0, 13, 14, 0]") == 0);
         }
     }
     jit_registry_remove(Backend, &d1);
@@ -514,11 +533,16 @@ TEST_BOTH(05_extra_data) {
         }
 
         for (uint32_t i = 0; i < 2; ++i) {
-            jit_set_flag(JitFlag::VCallOptimize, i);
-            Float result = vcall(
-                "Base", [](Base *self2, Float x) { return self2->f(x); }, self,
-                x);
-            jit_assert(strcmp(result.str(), "[0, 9, 13, 0, 21, 28, 0, 33, 43, 0]") == 0);
+            for (uint32_t j = 0; j < 4; ++j) {
+                jit_set_flag(JitFlag::VCallBranch, j > 0);
+                jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+                jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
+                jit_set_flag(JitFlag::VCallOptimize, i);
+                Float result = vcall(
+                    "Base", [](Base *self2, Float x) { return self2->f(x); }, self,
+                    x);
+                jit_assert(strcmp(result.str(), "[0, 9, 13, 0, 21, 28, 0, 33, 43, 0]") == 0);
+            }
         }
     }
     jit_registry_remove(Backend, &e1);
@@ -555,20 +579,25 @@ TEST_BOTH(06_side_effects) {
     BasePtr self = arange<UInt32>(11) % 3;
 
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        for (uint32_t j = 0; j < 4; ++j) {
+            jit_set_flag(JitFlag::VCallBranch, j > 0);
+            jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+            jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
+            jit_set_flag(JitFlag::VCallOptimize, i);
 
-        F1 f1; F2 f2;
-        uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
-        uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
-        jit_assert(i1 == 1 && i2 == 2);
+            F1 f1; F2 f2;
+            uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
+            uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
+            jit_assert(i1 == 1 && i2 == 2);
 
-        vcall("Base", [](Base *self2) { self2->go(); }, self);
-        jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
-        jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
+            vcall("Base", [](Base *self2) { self2->go(); }, self);
+            jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
+            jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
 
-        jit_registry_remove(Backend, &f1);
-        jit_registry_remove(Backend, &f2);
-        jit_registry_trim();
+            jit_registry_remove(Backend, &f1);
+            jit_registry_remove(Backend, &f2);
+            jit_registry_trim();
+        }
     }
 }
 
@@ -600,26 +629,31 @@ TEST_BOTH(07_side_effects_only_once) {
     BasePtr self = arange<UInt32>(11) % 3;
 
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        for (uint32_t j = 0; j < 4; ++j) {
+            jit_set_flag(JitFlag::VCallBranch, j > 0);
+            jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+            jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
+            jit_set_flag(JitFlag::VCallOptimize, i);
 
-        G1 g1; G2 g2;
-        uint32_t i1 = jit_registry_put(Backend, "Base", &g1);
-        uint32_t i2 = jit_registry_put(Backend, "Base", &g2);
-        jit_assert(i1 == 1 && i2 == 2);
+            G1 g1; G2 g2;
+            uint32_t i1 = jit_registry_put(Backend, "Base", &g1);
+            uint32_t i2 = jit_registry_put(Backend, "Base", &g2);
+            jit_assert(i1 == 1 && i2 == 2);
 
-        auto result = vcall("Base", [](Base *self2) { return self2->f(); }, self);
-        Float f1 = result.template get<0>();
-        Float f2 = result.template get<1>();
-        jit_assert(strcmp(f1.str(), "[0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1]") == 0);
-        jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
-        jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
-        jit_assert(strcmp(f2.str(), "[0, 2, 1, 0, 2, 1, 0, 2, 1, 0, 2]") == 0);
-        jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
-        jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
+            auto result = vcall("Base", [](Base *self2) { return self2->f(); }, self);
+            Float f1 = result.template get<0>();
+            Float f2 = result.template get<1>();
+            jit_assert(strcmp(f1.str(), "[0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1]") == 0);
+            jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
+            jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
+            jit_assert(strcmp(f2.str(), "[0, 2, 1, 0, 2, 1, 0, 2, 1, 0, 2]") == 0);
+            jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
+            jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
 
-        jit_registry_remove(Backend, &g1);
-        jit_registry_remove(Backend, &g2);
-        jit_registry_trim();
+            jit_registry_remove(Backend, &g1);
+            jit_registry_remove(Backend, &g2);
+            jit_registry_trim();
+        }
     }
 }
 
@@ -657,12 +691,17 @@ TEST_BOTH(08_multiple_calls) {
 
 
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        for (uint32_t j = 0; j < 4; ++j) {
+            jit_set_flag(JitFlag::VCallBranch, j > 0);
+            jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+            jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
+            jit_set_flag(JitFlag::VCallOptimize, i);
 
-        Float y = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
-        Float z = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, y);
+            Float y = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
+            Float z = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, y);
 
-        jit_assert(strcmp(z.str(), "[0, 12, 14, 0, 12, 14, 0, 12, 14, 0]") == 0);
+            jit_assert(strcmp(z.str(), "[0, 12, 14, 0, 12, 14, 0, 12, 14, 0]") == 0);
+        }
     }
 
     jit_registry_remove(Backend, &h1);
@@ -715,26 +754,31 @@ TEST_BOTH(09_big) {
     self2 = select(self2 <= n2, self2, 0);
 
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        for (uint32_t j = 0; j < 4; ++j) {
+            jit_set_flag(JitFlag::VCallBranch, j > 0);
+            jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+            jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
+            jit_set_flag(JitFlag::VCallOptimize, i);
 
-        Float x = vcall("Base1", [](Base1 *self_) { return self_->f(); }, Base1Ptr(self1));
-        Float y = vcall("Base2", [](Base2 *self_) { return self_->f(); }, Base2Ptr(self2));
+            Float x = vcall("Base1", [](Base1 *self_) { return self_->f(); }, Base1Ptr(self1));
+            Float y = vcall("Base2", [](Base2 *self_) { return self_->f(); }, Base2Ptr(self2));
 
-        jit_var_schedule(x.index());
-        jit_var_schedule(y.index());
+            jit_var_schedule(x.index());
+            jit_var_schedule(y.index());
 
-        jit_assert(x.read(0) == 0);
-        jit_assert(y.read(0) == 0);
+            jit_assert(x.read(0) == 0);
+            jit_assert(y.read(0) == 0);
 
-        for (uint32_t j = 1; j <= n1; ++j)
-            jit_assert(x.read(j) == j - 1);
-        for (uint32_t j = 1; j <= n2; ++j)
-            jit_assert(y.read(j) == 100 + j - 1);
+            for (uint32_t j = 1; j <= n1; ++j)
+                jit_assert(x.read(j) == j - 1);
+            for (uint32_t j = 1; j <= n2; ++j)
+                jit_assert(y.read(j) == 100 + j - 1);
 
-        for (uint32_t j = n1 + 1; j < n; ++j)
-            jit_assert(x.read(j + 1) == 0);
-        for (uint32_t j = n2 + 1; j < n; ++j)
-            jit_assert(y.read(j + 1) == 0);
+            for (uint32_t j = n1 + 1; j < n; ++j)
+                jit_assert(x.read(j + 1) == 0);
+            for (uint32_t j = n2 + 1; j < n; ++j)
+                jit_assert(y.read(j + 1) == 0);
+        }
     }
 
     for (int i = 0; i < n1; ++i)
@@ -759,12 +803,18 @@ TEST_BOTH(09_self) {
     uint32_t i2_id = jit_registry_put(Backend, "Base", &i2);
 
     UInt32 self(i1_id, i2_id);
-    UInt32 y = vcall(
-        "Base",
-        [](Base *self_) { return self_->f(); },
-        BasePtr(self));
+    for (uint32_t j = 0; j < 4; ++j) {
+        jit_set_flag(JitFlag::VCallBranch, j > 0);
+        jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+        jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
 
-    jit_assert(strcmp(y.str(), "[1, 2]") == 0);
+        UInt32 y = vcall(
+            "Base",
+            [](Base *self_) { return self_->f(); },
+            BasePtr(self));
+
+        jit_assert(strcmp(y.str(), "[1, 2]") == 0);
+    }
 
     jit_registry_remove(Backend, &i1);
     jit_registry_remove(Backend, &i2);
@@ -801,14 +851,20 @@ TEST_BOTH(10_recursion) {
     UInt32 self2(i21_id, i22_id);
     Float x(3.f, 5.f);
 
-    Float y = vcall(
-        "Base2",
-        [](Base2 *self_, const Base1Ptr &ptr_, const Float &x_) {
-            return self_->g(ptr_, x_);
-        },
-        Base2Ptr(self2), Base1Ptr(self1), x);
+    for (uint32_t j = 0; j < 4; ++j) {
+        jit_set_flag(JitFlag::VCallBranch, j > 0);
+        jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+        jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
 
-    jit_assert(strcmp(y.str(), "[7, 16]") == 0);
+        Float y = vcall(
+            "Base2",
+            [](Base2 *self_, const Base1Ptr &ptr_, const Float &x_) {
+                return self_->g(ptr_, x_);
+            },
+            Base2Ptr(self2), Base1Ptr(self1), x);
+
+        jit_assert(strcmp(y.str(), "[7, 16]") == 0);
+    }
 
     jit_registry_remove(Backend, &i11);
     jit_registry_remove(Backend, &i12);
@@ -847,14 +903,20 @@ TEST_BOTH(11_recursion_with_local) {
     UInt32 self2(i21_id, i22_id);
     Float x(3.f, 5.f);
 
-    Float y = vcall(
-        "Base2",
-        [](Base2 *self_, const Base1Ptr &ptr_, const Float &x_) {
-            return self_->g(ptr_, x_);
-        },
-        Base2Ptr(self2), Base1Ptr(self1), x);
+    for (uint32_t j = 0; j < 4; ++j) {
+        jit_set_flag(JitFlag::VCallBranch, j > 0);
+        jit_set_flag(JitFlag::VCallBranchBinarySearch, j == 2);
+        jit_set_flag(JitFlag::VCallBranchJumpTable, j == 3);
 
-    jit_assert(strcmp(y.str(), "[7, 16]") == 0);
+        Float y = vcall(
+            "Base2",
+            [](Base2 *self_, const Base1Ptr &ptr_, const Float &x_) {
+                return self_->g(ptr_, x_);
+            },
+            Base2Ptr(self2), Base1Ptr(self1), x);
+
+        jit_assert(strcmp(y.str(), "[7, 16]") == 0);
+    }
 
     jit_registry_remove(Backend, &i11);
     jit_registry_remove(Backend, &i12);
