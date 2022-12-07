@@ -90,10 +90,6 @@ template <JitBackend Backend> struct JitState {
         m_prefix_set = false;
     }
 
-    void new_scope() {
-        jit_new_scope(Backend);
-    }
-
     void set_self(uint32_t value, uint32_t index = 0) {
         if (!m_self_set) {
             jit_vcall_self(Backend, &m_self_value, &m_self_index);

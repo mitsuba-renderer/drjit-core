@@ -744,7 +744,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
                    "\nl%u_start:\n"
                    "    ; Ray tracing\n"
                    "    %%u%u_func_i64 = call i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64> %%rd%u_p4)\n"
-                   "    %%u%u_func_ptr = inttoptr i64 %%u%u_func_i64 to i8*",
+                   "    %%u%u_func_ptr = inttoptr i64 %%u%u_func_i64 to i8*\n",
                    id, id,
                    id, width, width, func->reg_index,
                    id, id);
