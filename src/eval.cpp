@@ -726,7 +726,7 @@ void jitc_eval(ThreadState *ts) {
             v->free_stmt = false;
         }
 
-        if (v->output_flag) {
+        if (v->output_flag && v->size == sv.size) {
             v->kind = (uint32_t) VarKind::Data;
             v->data = sv.data;
             v->output_flag = false;
