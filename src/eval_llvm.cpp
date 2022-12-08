@@ -736,6 +736,9 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
             width, width);
         jitc_register_global(global);
 
+        uint32_t offset_tfar = (8 * float_size + 4) * width;
+        const char *tname_tfar = type_name_llvm[(int) float_type];
+
         // =====================================================
         // 1. Prepare the loop for the ray tracing calls
         // =====================================================
@@ -744,10 +747,14 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
                    "\nl%u_start:\n"
                    "    ; Ray tracing\n"
                    "    %%u%u_func_i64 = call i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64> %%rd%u_p4)\n"
-                   "    %%u%u_func_ptr = inttoptr i64 %%u%u_func_i64 to i8*\n",
+                   "    %%u%u_func_ptr = inttoptr i64 %%u%u_func_i64 to i8*\n"
+                   "    %%u%u_tfar_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
+                   "    %%u%u_tfar_1 = bitcast i8* %%u%u_tfar_0 to <%u x %s> *\n",
                    id, id,
                    id, width, width, func->reg_index,
-                   id, id);
+                   id, id,
+                   id, offset_tfar,
+                   id, id, width, tname_tfar);
 
         if (jitc_llvm_vector_width > 1) {
             buffer.fmt(
@@ -762,10 +769,8 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         }
 
         // Get original mask, to be overwritten at every iteration
-        buffer.fmt("    %%u%u_mask_ptr = bitcast i8* %%u%u_in_0_0 to <%u x i1> *\n"
-                   "    %%u%u_mask_value = load <%u x i32>, <%u x i32>* %%u%u_in_0_1, align 64\n"
+        buffer.fmt("    %%u%u_mask_value = load <%u x i32>, <%u x i32>* %%u%u_in_0_1, align 64\n"
                    "    br label %%l%u_check\n",
-                   id, id, width,
                    id, width, width, id,
                    id);
 
@@ -793,6 +798,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         // =====================================================
 
         buffer.fmt("\nl%u_call:\n"
+                   "    %%u%u_tfar_prev = load <%u x %s>, <%u x %s>* %%u%u_tfar_1, align %u\n"
                    "    %%u%u_bcast_0 = insertelement <%u x i64> undef, i64 %%u%u_next_i64, i32 0\n"
                    "    %%u%u_bcast_1 = shufflevector <%u x i64> %%u%u_bcast_0, <%u x i64> undef, <%u x i32> zeroinitializer\n"
                    "    %%u%u_bcast_2 = inttoptr <%u x i64> %%u%u_bcast_1 to <%u x i8*>\n"
@@ -800,6 +806,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
                    "    %%u%u_active_2 = select <%u x i1> %%u%u_active, <%u x i32> %%u%u_mask_value, <%u x i32> zeroinitializer\n"
                    "    store <%u x i32> %%u%u_active_2, <%u x i32>* %%u%u_in_0_1, align 64\n",
                    id,
+                   id, width, tname_tfar, width, tname_tfar, id, float_size * width,
                    id, width, id,
                    id, width, id, width, width,
                    id, width, id, width,
@@ -818,9 +825,16 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
                 id, id, id, id
             );
         }
-        buffer.fmt("    %%u%u_scene_next = select <%u x i1> %%u%u_active, <%u x i8*> zeroinitializer, <%u x i8*> %%u%u_scene\n"
+
+        buffer.fmt("    %%u%u_tfar_new = load <%u x %s>, <%u x %s>* %%u%u_tfar_1, align %u\n"
+                   "    %%u%u_tfar_masked = select <%u x i1> %%u%u_active, <%u x %s> %%u%u_tfar_new, <%u x %s> %%u%u_tfar_prev\n"
+                   "    store <%u x %s> %%u%u_tfar_masked, <%u x %s>* %%u%u_tfar_1, align %u\n"
+                   "    %%u%u_scene_next = select <%u x i1> %%u%u_active, <%u x i8*> zeroinitializer, <%u x i8*> %%u%u_scene\n"
                    "    br label %%l%u_check\n"
                    "\nl%u_end:\n",
+                   id, width, tname_tfar, width, tname_tfar, id, float_size * width,
+                   id, width, id, width, tname_tfar, id, width, tname_tfar, id,
+                   width, tname_tfar, id, width, tname_tfar, id, float_size * width,
                    id, width, id, width, width, id,
                    id, id);
     }
