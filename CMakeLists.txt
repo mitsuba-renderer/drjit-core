@@ -97,6 +97,10 @@ add_library(
   src/cuda_api.h      src/cuda_api.cpp
   src/cuda_tex.h      src/cuda_tex.cpp
   src/llvm_api.h      src/llvm_api.cpp
+  src/llvm_memmgr.h   src/llvm_memmgr.cpp
+                      src/llvm_core.cpp
+                      src/llvm_mcjit.cpp
+                      src/llvm_orcv2.cpp
   src/io.h            src/io.cpp
   src/eval.h          src/eval.cpp
   src/vcall.h         src/vcall.cpp
@@ -117,7 +121,7 @@ add_library(
   resources/kernels.h resources/kernels.c
 )
 
-target_compile_features(drjit-core PRIVATE cxx_std_14)
+target_compile_features(drjit-core PRIVATE cxx_std_17)
 
 target_include_directories(drjit-core PRIVATE
   ext/nanothread/include
@@ -162,7 +166,9 @@ if (DRJIT_DYNAMIC_LLVM)
 else()
   find_package(LLVM REQUIRED)
   target_include_directories(drjit-core PRIVATE ${LLVM_INCLUDE_DIRS})
-  target_link_libraries(drjit-core PRIVATE LLVM)
+  target_link_directories(drjit-core PRIVATE ${LLVM_LIB_DIRS})
+  llvm_map_components_to_libnames(llvm_libs core support executionengine orcjit analysis native target mcdisassembler irreader scalaropts mcjit)
+  target_link_libraries(drjit-core PRIVATE ${llvm_libs})
 endif()
 
 if (DRJIT_ENABLE_OPTIX)

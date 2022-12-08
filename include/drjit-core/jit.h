@@ -263,16 +263,6 @@ extern JIT_EXPORT uint32_t jit_llvm_vector_width();
 /// Specify the number of threads that are used to parallelize the computation
 extern JIT_EXPORT void jit_llvm_set_thread_count(uint32_t size);
 
-/**
- * \brief Convenience function for intrinsic function selection
- *
- * Returns \c 1 if the current vector width is is at least as large as a
- * provided value, and when the host CPU provides a given target feature (e.g.
- * "+avx512f").
- */
-extern JIT_EXPORT int jit_llvm_if_at_least(uint32_t vector_width,
-                                           const char *feature);
-
 // ====================================================================
 //                        Logging infrastructure
 // ====================================================================
