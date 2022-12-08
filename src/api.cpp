@@ -13,7 +13,7 @@
 #include "log.h"
 #include "util.h"
 #include "registry.h"
-#include "llvm_api.h"
+#include "llvm.h"
 #include "cuda_tex.h"
 #include "op.h"
 #include "vcall.h"
@@ -288,11 +288,6 @@ void jit_llvm_version(int *major, int *minor, int *patch) {
         *minor = jitc_llvm_version_minor;
     if (patch)
         *patch = jitc_llvm_version_patch;
-}
-
-int jit_llvm_if_at_least(uint32_t vector_width, const char *feature) {
-    lock_guard guard(state.lock);
-    return jitc_llvm_if_at_least(vector_width, feature);
 }
 
 uint32_t jit_llvm_vector_width() {

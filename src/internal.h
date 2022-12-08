@@ -12,7 +12,7 @@
 #include "common.h"
 #include "malloc.h"
 #include "cuda_api.h"
-#include "llvm_api.h"
+#include "llvm.h"
 #include "alloc.h"
 #include "io.h"
 #include <deque>
@@ -27,14 +27,6 @@
 #define DRJIT_CUDA_ARG_LIMIT 512
 
 #define DRJIT_PTR "<0x%" PRIxPTR ">"
-
-static constexpr LogLevel Disable = LogLevel::Disable;
-static constexpr LogLevel Error   = LogLevel::Error;
-static constexpr LogLevel Warn    = LogLevel::Warn;
-static constexpr LogLevel Info    = LogLevel::Info;
-static constexpr LogLevel InfoSym = LogLevel::InfoSym;
-static constexpr LogLevel Debug   = LogLevel::Debug;
-static constexpr LogLevel Trace   = LogLevel::Trace;
 
 #pragma pack(push, 1)
 

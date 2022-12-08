@@ -363,7 +363,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
         jitc_insert_code_at(insertion_point, insertion_start);
     }
 
-    buffer.put("    ret void;\n"
+    buffer.put("    ret void\n"
                "}");
 }
 

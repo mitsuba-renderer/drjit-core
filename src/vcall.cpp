@@ -1065,7 +1065,7 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
              "declare i32 @llvm.experimental.vector.reduce.umax.v%ui32(<%u x i32>)",
              width, width);
     jitc_register_global(tmp);
-    jitc_register_global("@callables = internal local_unnamed_addr global i8** null, align 8");
+    jitc_register_global("@callables = dso_local local_unnamed_addr global i8** null, align 8");
 
     /* How to prevent @callables from being optimized away as a constant, while at the same time
        not turning it an external variable that would require a global offset table (GOT)?

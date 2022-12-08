@@ -369,8 +369,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 #endif
                 }
             } else {
-                jitc_llvm_compile(buffer.get(), buffer.size(), kernel_name,
-                                  kernel);
+                jitc_llvm_compile(kernel);
             }
 
             if (kernel.data)
