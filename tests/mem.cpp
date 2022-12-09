@@ -3,6 +3,7 @@
 
 TEST_BOTH(01_gather) {
     Int32 r = arange<Int32>(100) + 100;
+    r.eval();
     UInt32 index = UInt32(34, 62, 75, 2);
     Int32 ref = Int32(134, 162, 175, 102);
     Int32 value = gather<Int32>(r, index);
@@ -11,6 +12,7 @@ TEST_BOTH(01_gather) {
 
 TEST_BOTH(02_gather_mask) {
     Mask r = eq(arange<Int32>(100) & Int32(1), 1);
+    r.eval();
     UInt32 index = UInt32(33, 62, 75, 2);
     Mask ref = UInt32(1, 0, 1, 0);
     Mask value = gather<Mask>(r, index);
@@ -19,6 +21,7 @@ TEST_BOTH(02_gather_mask) {
 
 TEST_BOTH(03_gather_masked) {
     Int32 r = arange<Int32>(100) + 100;
+    r.eval();
     UInt32 index = UInt32(34, 62, 75, 2);
     Mask mask = index > 50;
     UInt32 ref = UInt32(0, 162, 175, 0);
@@ -28,6 +31,7 @@ TEST_BOTH(03_gather_masked) {
 
 TEST_BOTH(04_gather_mask_masked) {
     Mask r = eq(arange<Int32>(100) & Int32(1), 1);
+    r.eval();
     UInt32 index = UInt32(33, 62, 75, 2);
     Mask ref = UInt32(0, 0, 1, 0);
     Mask mask = index > 50;

@@ -10,6 +10,7 @@
 #pragma once
 
 #include "internal.h"
+#include "strbuf.h"
 #include <map>
 
 /// A single variable that is scheduled to execute for a launch with 'size' entries
@@ -65,8 +66,8 @@ struct GlobalValue {
 /// Cache data structure for global declarations
 using GlobalsMap = std::map<GlobalKey, GlobalValue>;
 
-/// Buffer for global definitions (intrinsics, callables, etc.)
-extern Buffer globals;
+/// StringBuffer for global definitions (intrinsics, callables, etc.)
+extern StringBuffer globals;
 
 /// Mapping that describes the contents of the 'globals' buffer
 extern GlobalsMap globals_map;
@@ -76,9 +77,6 @@ extern char kernel_name[52];
 
 /// Are we recording an OptiX kernel?
 extern bool uses_optix;
-
-/// Are we currently compiling a virtual function call
-extern bool assemble_func;
 
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 extern int32_t alloca_size;
@@ -138,6 +136,3 @@ jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 
 /// Register a global declaration that will be included in the final program
 extern void jitc_register_global(const char *str);
-
-/// Move a code block to an earlier position in 'buffer'
-extern void jitc_insert_code_at(size_t insertion_point, size_t insertion_start);

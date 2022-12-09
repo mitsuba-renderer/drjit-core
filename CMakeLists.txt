@@ -89,6 +89,7 @@ add_library(
   src/hash.h
   src/profiler.h
   src/log.h           src/log.cpp
+  src/strbuf.h        src/strbuf.cpp
   src/var.h           src/var.cpp
   src/op.h            src/op.cpp
   src/malloc.h        src/malloc.cpp

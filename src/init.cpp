@@ -29,7 +29,6 @@
 #endif
 
 State state;
-Buffer buffer{1024};
 
 #if !defined(_WIN32)
   char* jitc_temp_path = nullptr;

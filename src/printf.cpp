@@ -116,7 +116,7 @@ static void jitc_var_printf_assemble_cuda(const Variable *v,
     buffer.put("        .global .align 1 .b8 print_data[] = { ");
 
     for (uint32_t i = 0; ; ++i) {
-        buffer.put_uint32((uint32_t) fmt[i]);
+        buffer.put_u32((uint32_t) fmt[i]);
         if (fmt[i] == '\0')
             break;
         buffer.put(", ");
@@ -184,7 +184,7 @@ static void jitc_var_printf_assemble_llvm(const Variable *v,
 
     for (uint32_t i = 0; ; ++i) {
         buffer.put("i8 ");
-        buffer.put_uint32((uint32_t) fmt[i]);
+        buffer.put_u32((uint32_t) fmt[i]);
         if (fmt[i] == '\0')
             break;
         buffer.put(", ");
@@ -192,7 +192,7 @@ static void jitc_var_printf_assemble_llvm(const Variable *v,
 
     buffer.put("], align 1");
     jitc_register_global(buffer.get() + buffer_offset);
-    buffer.rewind(buffer.size() - buffer_offset);
+    buffer.rewind_to(buffer_offset);
 
     const Variable *mask = jitc_var(v->dep[0]),
                    *target = jitc_var(v->dep[1]);
@@ -203,7 +203,7 @@ static void jitc_var_printf_assemble_llvm(const Variable *v,
                "l_%u_start: ; ---- printf_async() ----\n",
                idx, idx);
 
-    if (assemble_func) {
+    if (callable_depth == 0) {
         char global[128];
         snprintf(
             global, sizeof(global),

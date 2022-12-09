@@ -1,3 +1,57 @@
+/**
+ * This file contains the logic that assembles a LLVM IR representation from a
+ * recorded Dr.Jit computation graph. It implements a small template engine
+ * involving plentiful use of the 'fmt' formatting routine.
+ *
+ * Its format interface supports the following format string characters. Note
+ * that it uses the '$' (dollar) escape character, since '%' is used for LLVM
+ * register prefixes (otherwise, lots of escaping would be needed).
+ *
+ *  Format  Input          Example result    Description
+ * --------------------------------------------------------------------------
+ *  $u      uint32_t      `1234`             Decimal number (32 bit)
+ *  $U      uint64_t      `1234`             Decimal number (64 bit)
+ * --------------------------------------------------------------------------
+ *  $x      uint32_t      `4d2`              Hexadecimal number (32 bit)
+ *  $X      uint64_t      `4d2`              Hexadecimal number (64 bit)
+ * --------------------------------------------------------------------------
+ *  $s      const char *  `foo`              Zero-terminated string
+ * --------------------------------------------------------------------------
+ *  $t      Variable      `i1`               Scalar variable type
+ *  $T      Variable      `<8 x i1>`         Vector variable type
+ *  $h      Variable      `f32`              Short type abbreviation
+ * --------------------------------------------------------------------------
+ *  $m      Variable      `i8`               Scalar variable type
+ *                                           (masks promoted to 8 bits)
+ *  $M      Variable      `<8 x i8>`         Vector variable type
+ *                                           (masks promoted to 8 bits)
+ * --------------------------------------------------------------------------
+ *  $v      Variable      `%p1234`           Variable name
+ * --------------------------------------------------------------------------
+ *  $V      Variable      `<8 x i1> %p1234`  Type-qualified vector var. name
+ * --------------------------------------------------------------------------
+ *  $a      Variable      `1`                Scalar variable alignment
+ *  $A      Variable      `16`               Vector variable alignment
+ * --------------------------------------------------------------------------
+ *  $o      Variable      `5`                Variable offset in param. array
+ * --------------------------------------------------------------------------
+ *  $l      Variable      `1`                Literal value of variable
+ * --------------------------------------------------------------------------
+ *  $w      (none)        `16`               Vector width of LLVM backend
+ *  $z      (none)        `zeroinitializer`  Zero initializer string
+ * --------------------------------------------------------------------------
+ *
+ * Pointers should be wrapped in braces, as in `{i8*}` or `{$t*}`. This will
+ * allow them to be replaced by the opaque `ptr` type on newer versions of LLVM
+ * that use this convention. An extended form of this syntax `{a|b}` causes `a`
+ * and `b` to be generated for LLVM with non-opaque and opaque pointers,
+ * respectively.
+ *
+ * Another syntax pattern used in a few places is `$<foo$>`. It expands to
+ * `foo` at the top level and `<16 x foo>` when the generated code is part
+ * of a subroutine (where 16 is the vector width in this example).
+ */
+
 #include "eval.h"
 #include "internal.h"
 #include "log.h"
@@ -5,37 +59,45 @@
 #include "vcall.h"
 #include "op.h"
 
+#define put(...)                                                               \
+    buffer.put(__VA_ARGS__)
+
+#define fmt(fmt, ...)                                                          \
+    buffer.fmt_llvm(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
+
+#define fmt_intrinsic(fmt, ...)                                                \
+    do {                                                                       \
+        size_t tmpoff = buffer.size();                                         \
+        buffer.fmt_llvm(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__);          \
+        jitc_register_global(buffer.get() + tmpoff);                           \
+        buffer.rewind_to(tmpoff);                                              \
+    } while (0)
+
 // Forward declaration
 static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function);
+static void jitc_render_node_llvm(Variable *v);
 
 void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group) {
-    uint32_t width = jitc_llvm_vector_width;
     bool print_labels = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
-    buffer.put("define void @drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 %end, "
-               "i8** noalias %params) #0 {\n"
-               "entry:\n"
-               "    br label %body\n"
-               "\n"
-               "body:\n"
-               "    %index = phi i64 [ %index_next, %suffix ], [ %start, %entry ]\n");
+    fmt("define void @drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 "
+        "%end, {i8**} noalias %params) #0 ${\n"
+        "entry:\n"
+        "    br label %body\n"
+        "\n"
+        "body:\n"
+        "    %index = phi i64 [ %index_next, %suffix ], [ %start, %entry ]\n");
 
     for (uint32_t gi = group.start; gi != group.end; ++gi) {
         uint32_t index = schedule[gi].index;
-        const Variable *v = jitc_var(index);
-        const uint32_t vti = v->type;
-        const VarType vt = (VarType) vti;
+        Variable *v = jitc_var(index);
+        uint32_t vti = v->type;
+        VarType vt = (VarType) vti;
+        uint32_t size = v->size;
 
-        const char *prefix = type_prefix[vti],
-                   *tname = vt == VarType::Bool
-                            ? "i8" : type_name_llvm[vti];
-        uint32_t tsize = type_size[vti],
-                 id = v->reg_index,
-                 align = v->unaligned ? 1 : (tsize * width),
-                 size = v->size;
-
+        /// If a variable has a custom code generation hook, call it
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
             if (it == state.extra.end())
@@ -45,7 +107,7 @@ void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group) {
             if (print_labels && vt != VarType::Void) {
                 const char *label =  jitc_var_label(index);
                 if (label && label[0])
-                    buffer.fmt("    ; %s\n", label);
+                    fmt("    ; $s\n", label);
             }
 
             if (extra.assemble) {
@@ -54,27 +116,25 @@ void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group) {
             }
         }
 
+        /// Determine source/destination address of input/output parameters
         if (v->param_type == ParamType::Input && size == 1 && vt == VarType::Pointer) {
-            buffer.fmt(
-                "    %s%u_p1 = getelementptr inbounds i8*, i8** %%params, i32 %u\n"
-                "    %s%u = load i8*, i8** %s%u_p1, align 8, !alias.scope !2\n",
-                prefix, id, v->param_offset / (uint32_t) sizeof(void *), prefix,
-                id, prefix, id);
+            // Case 1: load a pointer address from the parameter array
+            fmt("    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
+                "    $v = load {i8*}, {i8**} $v_p1, align 8, !alias.scope !2\n",
+                v, v, v, v);
         } else if (v->param_type != ParamType::Register) {
-            buffer.fmt(
-                "    %s%u_p1 = getelementptr inbounds i8*, i8** %%params, i32 %u\n"
-                "    %s%u_p2 = load i8*, i8** %s%u_p1, align 8, !alias.scope !2\n"
-                "    %s%u_p3 = bitcast i8* %s%u_p2 to %s*\n",
-                prefix, id, v->param_offset / (uint32_t) sizeof(void *), prefix,
-                id, prefix, id, prefix, id, prefix, id, tname);
+            // Case 2: read an input/output parameter
 
-            // For output parameters, and non-scalar inputs
-            if (v->param_type != ParamType::Input || size != 1) {
-                buffer.fmt("    %s%u_p4 = getelementptr inbounds %s, %s* %s%u_p3, i64 %%index\n"
-                           "    %s%u_p5 = bitcast %s* %s%u_p4 to <%u x %s>*\n",
-                           prefix, id, tname, tname, prefix, id, prefix, id, tname,
-                           prefix, id, width, tname);
-            }
+            fmt( "    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
+                 "    $v_p{2|3} = load {i8*}, {i8**} $v_p1, align 8, !alias.scope !2\n"
+                "{    $v_p3 = bitcast i8* $v_p2 to $m*\n|}",
+                v, v, v, v, v, v, v);
+
+            // For output parameters and non-scalar inputs
+            if (v->param_type != ParamType::Input || size != 1)
+                fmt( "    $v_p{4|5} = getelementptr inbounds $m, {$m*} $v_p3, i64 %index\n"
+                    "{    $v_p5 = bitcast $m* $v_p4 to $M*\n|}",
+                    v, v, v, v, v, v, v, v);
         }
 
         if (likely(v->param_type == ParamType::Input)) {
@@ -82,108 +142,107 @@ void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group) {
                 continue;
 
             if (size != 1) {
-                if (vt != VarType::Bool) {
-                    buffer.fmt("    %s%u = load <%u x %s>, <%u x %s>* %s%u_p5, align %u, !alias.scope !2, !nontemporal !{i32 1}\n",
-                               prefix, id, width, tname, width, tname, prefix, id, align);
-                } else {
-                    buffer.fmt("    %s%u_0 = load <%u x i8>, <%u x i8>* %s%u_p5, align %u, !alias.scope !2, !nontemporal !{i32 1}\n"
-                               "    %s%u = trunc <%u x i8> %s%u_0 to <%u x i1>\n",
-                               prefix, id, width, width, prefix, id, align,
-                               prefix, id, width, prefix, id, width);
-                }
+                // Load a packet of values
+                fmt("    $v$s = load $M, {$M*} $v_p5, align $A, !alias.scope !2, !nontemporal !3\n",
+                    v, vt == VarType::Bool ? "_0" : "", v, v, v, v);
+                if (vt == VarType::Bool)
+                    fmt("    $v = trunc $M $v_0 to $T\n", v, v, v, v);
             } else {
-                if (vt != VarType::Bool) {
-                    buffer.fmt("    %s%u_0 = load %s, %s* %s%u_p3, align %u, !alias.scope !2\n"
-                               "    %s%u_1 = insertelement <%u x %s> undef, %s %s%u_0, i32 0\n"
-                               "    %s%u = shufflevector <%u x %s> %s%u_1, <%u x %s> undef, <%u x i32> zeroinitializer\n",
-                               prefix, id, tname, tname, prefix, id, tsize,
-                               prefix, id, width, tname, tname, prefix, id,
-                               prefix, id, width, tname, prefix, id, width, tname, width);
-                } else {
-                    buffer.fmt("    %s%u_0 = load i8, i8* %s%u_p3, align %u, !alias.scope !2\n"
-                               "    %s%u_1 = trunc i8 %s%u_0 to i1\n"
-                               "    %s%u_2 = insertelement <%u x i1> undef, i1 %s%u_1, i32 0\n"
-                               "    %s%u = shufflevector <%u x i1> %s%u_2, <%u x i1> undef, <%u x i32> zeroinitializer\n",
-                               prefix, id, prefix, id, tsize,
-                               prefix, id,
-                               prefix, id, prefix, id, width, prefix, id,
-                               prefix, id, width, prefix, id, width, width);
-                }
+                // Load a scalar value and broadcast it
+                fmt("    $v_0 = load $m, {$m*} $v_p3, align $a, !alias.scope !2\n",
+                    v, v, v, v, v);
+
+                if (vt == VarType::Bool)
+                    fmt("    $v_1 = trunc i8 $v_0 to i1\n", v, v);
+
+                uint32_t src = vt == VarType::Bool ? 1 : 0,
+                         dst = vt == VarType::Bool ? 2 : 1;
+
+                fmt("    $v_$u = insertelement $T undef, $t $v_$u, i32 0\n"
+                    "    $v = shufflevector $T $v_$u, $T undef, <$w x i32> $z\n",
+                    v, dst, v, v, v, src,
+                    v, v, v, dst, v);
             }
+        } else if (v->is_literal()) {
+            fmt("    $v_1 = insertelement $T undef, $t $l, i32 0\n"
+                "    $v = shufflevector $T $v_1, $T undef, <$w x i32> $z\n",
+                v, v, v, v,
+                v, v, v, v);
+        } else if (v->is_node()) {
+            jitc_render_node_llvm(v);
         } else {
             jitc_render_stmt_llvm(index, v, false);
         }
 
         if (v->param_type == ParamType::Output) {
             if (vt != VarType::Bool) {
-                buffer.fmt("    store <%u x %s> %s%u, <%u x %s>* %s%u_p5, align %u, !noalias !2, !nontemporal !{i32 1}\n",
-                           width, tname, prefix, id, width, tname, prefix, id, align);
+                fmt("    store $V, {$T*} $v_p5, align $A, !noalias !2, !nontemporal !3\n",
+                    v, v, v, v);
             } else {
-                buffer.fmt("    %s%u_e = zext <%u x i1> %s%u to <%u x i8>\n"
-                           "    store <%u x i8> %s%u_e, <%u x i8>* %s%u_p5, align %u, !noalias !2, !nontemporal !{i32 1}\n",
-                           prefix, id, width, prefix, id, width,
-                           width, prefix, id, width, prefix, id, align);
+                fmt("    $v_e = zext $V to $M\n"
+                    "    store $M $v_e, {$M*} $v_p5, align $A, !noalias !2, !nontemporal !3\n",
+                    v, v, v, v, v, v, v, v);
             }
         }
     }
 
-    buffer.put("\n"
-               "    br label %suffix\n"
-               "\n"
-               "suffix:\n");
-    buffer.fmt("    %%index_next = add i64 %%index, %u\n", width);
-    buffer.put("    %cond = icmp uge i64 %index_next, %end\n"
-               "    br i1 %cond, label %done, label %body, !llvm.loop !2\n\n"
-               "done:\n"
-               "    ret void\n"
-               "}\n");
+    put("    br label %suffix\n"
+        "\n"
+        "suffix:\n");
+    fmt("    %index_next = add i64 %index, $w\n");
+    put("    %cond = icmp uge i64 %index_next, %end\n"
+        "    br i1 %cond, label %done, label %body, !llvm.loop !4\n\n"
+        "done:\n"
+        "    ret void\n"
+        "}\n");
 
     /* The program requires extra memory or uses callables. Insert
        setup code the top of the function to accomplish this */
     if (callable_count > 0 || alloca_size >= 0) {
-        size_t insertion_point = (char *) strchr(buffer.get(), ':') - buffer.get() + 2,
-               insertion_start = buffer.size();
+        size_t suffix_start = buffer.size(),
+               suffix_target = (char *) strchr(buffer.get(), ':') - buffer.get() + 2;
 
         if (callable_count > 0)
-            buffer.put("    %callables = load i8**, i8*** @callables\n");
+            fmt("    %callables = load {i8**}, {i8***} @callables\n");
 
         if (alloca_size >= 0)
-            buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n",
-                       alloca_size, alloca_align);
+            fmt("    %buffer = alloca i8, i32 $u, align $u\n",
+                alloca_size, alloca_align);
 
-        jitc_insert_code_at(insertion_point, insertion_start);
+        buffer.move_suffix(suffix_start, suffix_target);
     }
 
     uint32_t ctr = 0;
     for (auto &it : globals_map) {
-        buffer.putc('\n');
-        buffer.put(globals.get() + it.second.start, it.second.length);
-        buffer.putc('\n');
+        put('\n');
+        put(globals.get() + it.second.start, it.second.length);
+        put('\n');
         if (!it.first.callable)
             continue;
         it.second.callable_index = 1 + ctr++;
     }
 
-    buffer.put("\n"
-               "!0 = !{!0}\n"
-               "!1 = !{!1, !0}\n"
-               "!2 = !{!1}\n"
-               "!3 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
+    put("\n"
+        "!0 = !{!0}\n"
+        "!1 = !{!1, !0}\n"
+        "!2 = !{!1}\n"
+        "!3 = !{i32 1}\n"
+        "!4 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
 
-    buffer.fmt("attributes #0 = { norecurse nounwind \"frame-pointer\"=\"none\" \"no-builtins\" \"no-stack-arg-probe\" "
-               "\"target-cpu\"=\"%s\" \"target-features\"=\"",
-               jitc_llvm_target_cpu);
+    fmt("attributes #0 = ${ norecurse nounwind \"frame-pointer\"=\"none\" "
+        "\"no-builtins\" \"no-stack-arg-probe\" \"target-cpu\"=\"$s\" "
+        "\"target-features\"=\"", jitc_llvm_target_cpu);
 
 #if !defined(__aarch64__)
-    buffer.put("-vzeroupper");
+    put("-vzeroupper");
     if (jitc_llvm_target_features)
-        buffer.putc(',');
+        put(",");
 #endif
 
     if (jitc_llvm_target_features)
-        buffer.put(jitc_llvm_target_features, strlen(jitc_llvm_target_features));
+        put(jitc_llvm_target_features, strlen(jitc_llvm_target_features));
 
-    buffer.put("\" }");
+    put("\" }");
 
     jitc_vcall_upload(ts);
 }
@@ -197,35 +256,29 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
     uint32_t width = jitc_llvm_vector_width, callables_local = callable_count;
-    if (use_self) {
-        buffer.fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
-                   "<%u x i1> %%mask, <%u x i32> %%self, i8* noalias %%params",
-                   width, width);
-    } else {
-        buffer.fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
-                   "<%u x i1> %%mask, i8* noalias %%params",
-                   width);
-    }
+    if (use_self)
+        fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
+                    "<$w x i1> %mask, <$w x i32> %self, {i8*} noalias %params");
+    else
+        fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
+                    "<$w x i1> %mask, {i8*} noalias %params");
+
     if (!data_map.empty()) {
         if (callable_depth == 1)
-            buffer.fmt(", i8* noalias %%data, <%u x i32> %%offsets", width);
+            fmt(", {i8*} noalias %data, <$w x i32> %offsets");
         else
-            buffer.fmt(", <%u x i8*> %%data, <%u x i32> %%offsets", width, width);
+            fmt(", <$w x {i8*}> %data, <$w x i32> %offsets");
     }
 
-    buffer.fmt(") #0 {\n"
-               "entry:\n"
-               "    ; VCall: %s\n", name);
+    fmt(") #0 ${\n"
+        "entry:\n"
+        "    ; VCall: $s\n", name);
 
     alloca_size = alloca_align = -1;
 
     for (ScheduledVariable &sv : schedule) {
-        const Variable *v = jitc_var(sv.index);
-        const uint32_t vti = v->type;
-        const VarType vt = (VarType) vti;
-        uint32_t id = v->reg_index;
-        const char *prefix = type_prefix[vti],
-                   *tname  = vt == VarType::Bool ? "i8" : type_name_llvm[vti];
+        Variable *v = jitc_var(sv.index);
+        VarType vt = (VarType) v->type;
 
         if (unlikely(v->extra)) {
             auto it = state.extra.find(sv.index);
@@ -237,7 +290,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             if (print_labels && vt != VarType::Void) {
                 const char *label =  jitc_var_label(sv.index);
                 if (label && label[0])
-                    buffer.fmt("    ; %s\n", label);
+                    fmt("    ; $s\n", label);
             }
 
             if (extra.assemble) {
@@ -247,17 +300,16 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
         }
 
         if (v->vcall_iface) {
-            buffer.fmt("    %s%u_i0 = getelementptr inbounds i8, i8* %%params, i64 %u\n"
-                       "    %s%u_i1 = bitcast i8* %s%u_i0 to <%u x %s>*\n"
-                       "    %s%u%s = load <%u x %s>, <%u x %s>* %s%u_i1, align %u\n",
-                       prefix, id, v->param_offset * width,
-                       prefix, id, prefix, id,
-                       width, tname,
-                       prefix, id, vt == VarType::Bool ? "_i2" : "", width,
-                       tname, width, tname, prefix, id, width * type_size[vti]);
+            fmt( "    $v_i{0|1} = getelementptr inbounds i8, {i8*} %params, i64 $u\n"
+                "{    $v_i1 = bitcast i8* $v_i0 to $M*\n|}"
+                 "    $v$s = load $M, {$M*} $v_i1, align $A\n",
+                v, v->param_offset * width,
+                v, v, v,
+                v, vt == VarType::Bool ? "_i2" : "", v, v, v, v);
+
             if (vt == VarType::Bool)
-                buffer.fmt("    %s%u = trunc <%u x i8> %s%u_i2 to <%u x i1>\n",
-                           prefix, id, width, prefix, id, width);
+                fmt("    $v = trunc $M $v_i2 to $T\n",
+                    v, v, v, v);
         } else if (v->is_data() || vt == VarType::Pointer) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
             auto it = data_map.find(key);
@@ -268,45 +320,35 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                 jitc_fail(
                     "jitc_assemble_llvm_func(): variable r%u is referenced by "
                     "a recorded function call. However, it was evaluated "
-                    "between the recording step and code generation (which "
-                    "is happening now). This is not allowed.", sv.index);
+                    "between the recording step and code generation (which is "
+                    "happening now). This is not allowed.", sv.index);
+
+            fmt_intrinsic("declare $M @llvm.masked.gather.v$w$h(<$w x {$m*}>, i32, <$w x i1>, $M)",
+                          v, v, v, v);
 
             uint32_t offset = it->second - data_offset;
-
-            size_t intrinsic_offset = buffer.size();
-            buffer.fmt("declare <%u x %s> @llvm.masked.gather.v%u%s(<%u x "
-                       "%s*>, i32, <%u x i1>, <%u x %s>)",
-                       width, tname, width, type_name_llvm_abbrev[vti], width,
-                       tname, width, width, tname);
-            jitc_register_global(buffer.get() + intrinsic_offset);
-            size_t intrinsic_length = buffer.size() - intrinsic_offset;
-            buffer.rewind(intrinsic_length);
-
-            if (callable_depth == 1) {
-                buffer.fmt("    %s%u_p1 = getelementptr inbounds i8, i8* %%data, i32 %u\n"
-                           "    %s%u_p2 = getelementptr inbounds i8, i8* %s%u_p1, <%u x i32> %%offsets\n",
-                           prefix, id, offset,
-                           prefix, id, prefix, id, width);
-            } else {
-                buffer.fmt("    %s%u_p1 = getelementptr inbounds i8, <%u x i8*> %%data, i32 %u\n"
-                           "    %s%u_p2 = getelementptr inbounds i8, <%u x i8*> %s%u_p1, <%u x i32> %%offsets\n",
-                           prefix, id, width, offset,
-                           prefix, id, width, prefix, id, width);
-            }
-
-            buffer.fmt(
-                "    %s%u_p3 = bitcast <%u x i8*> %s%u_p2 to <%u x %s*>\n"
-                "    %s%u%s = call <%u x %s> @llvm.masked.gather.v%u%s(<%u x %s*> %s%u_p3, i32 %u, <%u x i1> %%mask, <%u x %s> zeroinitializer)\n",
-                prefix, id, width, prefix, id, width, tname,
-                prefix, id,
-                vt == VarType::Pointer ? "_p4" : "",
-                width, tname, width, type_name_llvm_abbrev[vti], width, tname, prefix, id, type_size[vti], width, width, tname
-            );
+            // Expand $<..$> only when we are compiling a recursive function call
+            callable_depth--;
+            fmt( "    $v_p1 = getelementptr inbounds i8, $<{i8*}$> %data, i32 $u\n"
+                 "    $v_p2 = getelementptr inbounds i8, $<{i8*}$> $v_p1, <$w x i32> %offsets\n"
+                "{    $v_p3 = bitcast <$w x i8*> $v_p2 to <$w x {$m*}>\n|}"
+                 "    $v$s = call $M @llvm.masked.gather.v$w$h(<$w x {$m*}> $v_p{3|2}, i32 $a, <$w x i1> %mask, $M $z)\n",
+                v, offset,
+                v, v,
+                v, v, v,
+                v, vt == VarType::Pointer ? "_p4" : "", v, v, v, v, v, v);
+            callable_depth++;
 
             if (vt == VarType::Pointer)
-                buffer.fmt(
-                    "    %s%u = inttoptr <%u x i64> %s%u_p4 to <%u x i8*>\n",
-                    prefix, id, width, prefix, id, width);
+                fmt("    $v = inttoptr <$w x i64> $v_p4 to <$w x {i8*}>\n",
+                    v, v);
+        } else if (v->is_literal()) {
+            fmt("    $v_1 = insertelement $T undef, $t $l, i32 0\n"
+                "    $v = shufflevector $T $v_1, $T undef, <$w x i32> $z\n",
+                v, v, v, v,
+                v, v, v, v);
+        } else if (v->is_node()) {
+            jitc_render_node_llvm(v);
         } else {
             jitc_render_stmt_llvm(sv.index, v, true);
         }
@@ -320,196 +362,297 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
         const Variable *v = jitc_var(index);
         uint32_t vti = v->type;
         const VarType vt = (VarType) vti;
-        const char *tname = vt == VarType::Bool ? "i8" : type_name_llvm[vti],
-                   *prefix = type_prefix[vti];
-        uint32_t align = type_size[vti] * width, reg_index = v->reg_index;
 
-        buffer.fmt(
-            "    %%out_%u_0 = getelementptr inbounds i8, i8* %%params, i64 %u\n"
-            "    %%out_%u_1 = bitcast i8* %%out_%u_0 to <%u x %s>*\n"
-            "    %%out_%u_2 = load <%u x %s>, <%u x %s>* %%out_%u_1, align %u\n",
+        fmt( "    %out_$u_{0|1} = getelementptr inbounds i8, {i8*} %params, i64 $u\n"
+            "{    %out_$u_1 = bitcast i8* %out_$u_0 to $M*\n|}"
+             "    %out_$u_2 = load $M, $M* %out_$u_1, align $A\n",
             i, output_offset,
-            i, i, width, tname,
-            i, width, tname, width, tname, i, align);
+            i, i, v,
+            i, v, v, i, v);
 
         if (vt == VarType::Bool)
-            buffer.fmt("    %%out_%u_zext = zext <%u x i1> %s%u to <%u x i8>\n"
-                       "    %%out_%u_3 = select <%u x i1> %%mask, <%u x i8> %%out_%u_zext, <%u x i8> %%out_%u_2\n",
-                       i, width, prefix, reg_index, width,
-                       i, width, width, i, width, i);
+            fmt("    %out_$u_zext = zext $V to $M\n"
+                "    %out_$u_3 = select <$w x i1> %mask, $M %out_$u_zext, $M %out_$u_2\n",
+                i, v, v,
+                i, v, i, v, i);
         else
-            buffer.fmt("    %%out_%u_3 = select <%u x i1> %%mask, <%u x %s> %s%u, <%u x %s> %%out_%u_2\n",
-                       i, width, width, tname, prefix, reg_index, width, tname, i);
+            fmt("    %out_$u_3 = select <$w x i1> %mask, $V, $T %out_$u_2\n",
+                i, v, v, i);
 
-        buffer.fmt(
-            "    store <%u x %s> %%out_%u_3, <%u x %s>* %%out_%u_1, align %u\n",
-            width, tname, i, width, tname, i, align);
+        fmt("    store $M %out_$u_3, {$M*} %out_$u_1, align $A\n",
+            v, i, v, i, v);
+
         output_offset += type_size[vti] * width;
     }
 
     /* The function requires extra memory or uses callables. Insert
        setup code the top of the function to accomplish this */
     if (alloca_size >= 0 || callables_local != callable_count) {
-        size_t insertion_point = (char *) strrchr(buffer.get(), '{') - buffer.get() + 9,
-               insertion_start = buffer.size();
+        size_t suffix_start = buffer.size(),
+               suffix_target =
+                   (char *) strrchr(buffer.get(), '{') - buffer.get() + 9;
 
         if (callables_local != callable_count)
-            buffer.put("    %callables = load i8**, i8*** @callables\n");
+            put("    %callables = load i8**, i8*** @callables\n");
 
         if (alloca_size >= 0)
-            buffer.fmt("    %%buffer = alloca i8, i32 %i, align %i\n",
-                       alloca_size, alloca_align);
+            fmt("    %buffer = alloca i8, i32 $u, align $u\n",
+                alloca_size, alloca_align);
 
-        jitc_insert_code_at(insertion_point, insertion_start);
+        buffer.move_suffix(suffix_start, suffix_target);
     }
 
-    buffer.put("    ret void\n"
-               "}");
+    put("    ret void\n"
+        "}");
+}
+
+inline bool is_float(const Variable *v) {
+    VarType type = (VarType) v->type;
+    return type == VarType::Float16 ||
+           type == VarType::Float32 ||
+           type == VarType::Float64;
+}
+
+inline bool is_single(const Variable *v) {
+    return (VarType) v->type == VarType::Float32;
+}
+
+inline bool is_double(const Variable *v) {
+    return (VarType) v->type == VarType::Float64;
+}
+
+inline bool is_uint(const Variable *v) {
+    VarType type = (VarType) v->type;
+    return type == VarType::UInt8 ||
+           type == VarType::UInt16 ||
+           type == VarType::UInt32 ||
+           type == VarType::UInt64;
+}
+
+static void jitc_render_node_llvm(Variable *v) {
+    Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
+             *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
+             *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
+             *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
+
+    switch (v->node) {
+        case NodeType::Add:
+            fmt(is_float(v) ? "    $v = fadd $V, $v\n"
+                            : "    $v = add $V, $v\n",
+                v, a0, a1);
+            break;
+
+        case NodeType::Gather: {
+                bool is_bool = v->type == (uint32_t) VarType::Bool;
+                if (is_bool) // Temporary change
+                    v->type = (uint32_t) VarType::UInt8;
+
+                fmt_intrinsic(
+                    "declare $T @llvm.masked.gather.v$w$h(<$w x {$t*}>, i32, $T, $T)",
+                    v, v, v, a2, v);
+
+                fmt("{    $v_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
+                     "    $v_1 = getelementptr $t, {$<$t*$>} {$v_0|$v}, $V\n"
+                     "    $v$s = call $T @llvm.masked.gather.v$w$h(<$w x {$t*}> $v_1, i32 $a, $V, $T $z)\n",
+                     v, a0, v,
+                     v, v, v, v, a0, a1,
+                     v, is_bool ? "_2" : "", v, v, v, v, v, a2, v);
+
+                if (is_bool) { // Restore
+                    v->type = (uint32_t) VarType::Bool;
+                    fmt("    $v = trunc <$w x i8> %b$u_2 to <$w x i1>\n", v, v->reg_index);
+                }
+            }
+            break;
+
+        case NodeType::Scatter: {
+                // ptr, value, index, mask
+                fmt("{    $v_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
+                     "    $v_1 = getelementptr $t, $<{$t*}$> {$v_0|$v}, $V\n",
+                    v, a0, a1,
+                    v, a1, a1, v, a0, a2);
+
+                if (!v->payload) {
+                    fmt_intrinsic("declare void @llvm.masked.scatter.v$w$h($T, <$w x {$t*}>, i32, $T)",
+                         a1, a1, a1, a3);
+                    fmt("    call void @llvm.masked.scatter.v$w$h($V, <$w x {$t*}> $v_1, i32 $a, $V)\n",
+                         a1, a1, a1, v, a1, a3);
+                } else {
+                    const char *op, *zero_elem = nullptr, *intrinsic_name = nullptr;
+                    switch ((ReduceOp) v->payload) {
+                        case ReduceOp::Add:
+                            op = "fadd";
+                            if (is_single(a1)) {
+                                zero_elem = "float -0.0, ";
+                                intrinsic_name = "v2.fadd.f32";
+                            } else if (is_double(a1)) {
+                                zero_elem = "double -0.0, ";
+                                intrinsic_name = "v2.fadd.f64";
+                            } else {
+                                op = "add";
+                            }
+                            break;
+
+                        case ReduceOp::Mul:
+                            op = "fmul";
+                            if (is_single(a1)) {
+                                zero_elem = "float -0.0, ";
+                                intrinsic_name = "v2.fmul.f32";
+                            } else if (is_double(a1)) {
+                                zero_elem = "double -0.0, ";
+                                intrinsic_name = "v2.fmul.f64";
+                            } else {
+                                op = "mul";
+                            }
+                            break;
+
+                        case ReduceOp::Min:
+                            op = is_float(a1) ? "fmin" : (is_uint(a1) ? "umin" : "smin");
+                            break;
+
+                        case ReduceOp::Max:
+                            op = is_float(a1) ? "fmax" : (is_uint(a1) ? "umax" : "smax");
+                            break;
+
+                        case ReduceOp::And: op = "and"; break;
+                        case ReduceOp::Or : op = "or"; break;
+                        default: op = nullptr;
+                    }
+
+                    if (!intrinsic_name)
+                        intrinsic_name = op;
+
+                    fmt_intrinsic("declare i1 @llvm.experimental.vector.reduce.or.v$wi1(<$w x i1>)");
+
+                    if (zero_elem)
+                        fmt_intrinsic(
+                            "declare $t @llvm.experimental.vector.reduce.$s.v$w$h($t, $T)", a1,
+                            intrinsic_name, a1, a1, a1);
+                    else
+                        fmt_intrinsic("declare $t @llvm.experimental.vector.reduce.$s.v$w$h($T)",
+                                      a1, op, a1, a1);
+
+                    const char *reassoc = is_float(a1) ? "reassoc " : "";
+
+                    fmt_intrinsic(
+                        "define internal void @reduce_$s_$h(<$w x {$t*}> %ptr, $T %value, <$w x i1> %active_in) #0 ${\n"
+                        "L0:\n"
+                        "   br label %L1\n\n"
+                        "L1:\n"
+                        "   %index = phi i32 [ 0, %L0 ], [ %index_next, %L3 ]\n"
+                        "   %active = phi <$w x i1> [ %active_in, %L0 ], [ %active_next_2, %L3 ]\n"
+                        "   %active_i = extractelement <$w x i1> %active, i32 %index\n"
+                        "   br i1 %active_i, label %L2, label %L3\n\n"
+                        "L2:\n"
+                        "   %ptr_0 = extractelement <$w x {$t*}> %ptr, i32 %index\n"
+                        "   %ptr_1 = insertelement <$w x {$t*}> undef, {$t*} %ptr_0, i32 0\n"
+                        "   %ptr_2 = shufflevector <$w x {$t*}> %ptr_1, <$w x {$t*}> undef, <$w x i32> $z\n"
+                        "   %ptr_eq = icmp eq <$w x {$t*}> %ptr, %ptr_2\n"
+                        "   %active_cur = and <$w x i1> %ptr_eq, %active\n"
+                        "   %value_cur = select <$w x i1> %active_cur, $T %value, $T $z\n"
+                        "   %sum = call $s$t @llvm.experimental.vector.reduce.$s.v$w$h($s$T %value_cur)\n"
+                        "   atomicrmw $s {$t*} %ptr_0, $t %sum monotonic\n"
+                        "   %active_next = xor <$w x i1> %active, %active_cur\n"
+                        "   %active_red = call i1 @llvm.experimental.vector.reduce.or.v$wi1(<$w x i1> %active_next)\n"
+                        "   br i1 %active_red, label %L3, label %L4\n\n"
+                        "L3:\n"
+                        "   %active_next_2 = phi <$w x i1> [ %active, %L1 ], [ %active_next, %L2 ]\n"
+                        "   %index_next = add nuw nsw i32 %index, 1\n"
+                        "   %cond_2 = icmp eq i32 %index_next, $w\n"
+                        "   br i1 %cond_2, label %L4, label %L1\n\n"
+                        "L4:\n"
+                        "   ret void\n"
+                        "$}",
+                        op, a1, a1, a1, a1, a1, a1, a1, a1, a1, a1, a1, reassoc,
+                        a1, intrinsic_name, a1, zero_elem ? zero_elem : "", a1, op, a1, a1
+                    );
+
+                    fmt("    call void @reduce_$s_$h(<$w x {$t*}> $v_1, $V, $V)\n",
+                        op, a1, a1, v, a1, a3);
+                }
+            }
+            break;
+
+        default:
+            jitc_fail("jitc_render_node_llvm(): unhandled node type!");
+    }
 }
 
 /// Convert an IR template with '$' expressions into valid IR
 static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function) {
-    if (v->is_literal()) {
-        uint32_t reg = v->reg_index, width = jitc_llvm_vector_width;
-        uint32_t vt = v->type;
-        const char *prefix = type_prefix[vt],
-                   *tname = type_name_llvm[vt];
-        uint64_t value = v->literal;
+    const char *s = v->stmt;
+    if (unlikely(!s || *s == '\0'))
+        return;
+    put("    ");
+    char c;
+    size_t intrinsic_start = 0;
+    do {
+        const char *start = s;
+        while (c = *s, c != '\0' && c != '$')
+            s++;
+        put(start, s - start);
 
-        if (vt == (uint32_t) VarType::Float32) {
-            float f;
-            memcpy(&f, &value, sizeof(float));
-            double d = f;
-            memcpy(&value, &d, sizeof(uint64_t));
-            vt = (uint32_t) VarType::Float64;
-        }
+        if (c == '$') {
+            s++;
+            const char **prefix_table = nullptr, tname = *s++;
+            switch (tname) {
+                case '[':
+                    intrinsic_start = buffer.size();
+                    continue;
 
-#if 0
-        /* The commented code here uses snprintf(), which internally relies on
-           FILE*-style streams and becomes a performance bottleneck of the
-           whole stringification process .. */
+                case ']':
+                    jitc_register_global(buffer.get() + intrinsic_start);
+                    buffer.rewind_to(intrinsic_start);
+                    continue;
 
-        buffer.fmt("    %s%u_1 = insertelement <%u x %s> undef, %s %llu, i32 0\n"
-                   "    %s%u = shufflevector <%u x %s> %s%u_1, <%u x %s> undef, <%u x i32> zeroinitializer\n",
-                   prefix, reg, width, tname, tname, (unsigned long long) value,
-                   prefix, reg, width, tname, prefix, reg, width, tname, width);
-#else
-        // .. the ridiculous explicit variant below is equivalent and faster.
-
-        size_t tname_len = strlen(tname),
-               prefix_len = strlen(prefix);
-
-        buffer.put("    ");
-        buffer.put(prefix, strlen(prefix));
-        buffer.put_uint32(reg);
-        buffer.put("_1 = insertelement <");
-        buffer.put_uint32(width);
-        buffer.put(" x ");
-        buffer.put(tname, tname_len);
-        buffer.put("> undef, ");
-        buffer.put(tname, tname_len);
-
-        if (vt == (uint32_t) VarType::Float64) {
-            buffer.put(" 0x");
-            buffer.put_uint64_hex(value);
-        } else {
-            buffer.putc(' ');
-            buffer.put_uint64(value);
-        }
-
-        buffer.put(", i32 0\n    ");
-        buffer.put(prefix, prefix_len);
-        buffer.put_uint32(reg);
-        buffer.put(" = shufflevector <");
-        buffer.put_uint32(width);
-        buffer.put(" x ");
-        buffer.put(tname, tname_len);
-        buffer.put("> ");
-        buffer.put(prefix, prefix_len);
-        buffer.put_uint32(reg);
-        buffer.put("_1, <");
-        buffer.put_uint32(width);
-        buffer.put(" x ");
-        buffer.put(tname, tname_len);
-        buffer.put("> undef, <");
-        buffer.put_uint32(width);
-        buffer.put(" x i32> zeroinitializer\n");
-#endif
-    } else {
-        const char *s = v->stmt;
-        if (unlikely(!s || *s == '\0'))
-            return;
-        buffer.put("    ");
-        char c;
-        size_t intrinsic_start = 0;
-        do {
-            const char *start = s;
-            while (c = *s, c != '\0' && c != '$')
-                s++;
-            buffer.put(start, s - start);
-
-            if (c == '$') {
-                s++;
-                const char **prefix_table = nullptr, tname = *s++;
-                switch (tname) {
-                    case '[':
-                        intrinsic_start = buffer.size();
-                        continue;
-
-                    case ']':
-                        jitc_register_global(buffer.get() + intrinsic_start);
-                        buffer.rewind(buffer.size() - intrinsic_start);
-                        continue;
-
-                    case 'n': buffer.put("\n    "); continue;
-                    case 'w': buffer.put(jitc_llvm_vector_width_str,
-                                         strlen(jitc_llvm_vector_width_str)); continue;
-                    case 't': prefix_table = type_name_llvm; break;
-                    case 'T': prefix_table = type_name_llvm_big; break;
-                    case 'b': prefix_table = type_name_llvm_bin; break;
-                    case 'a': prefix_table = type_name_llvm_abbrev; break;
-                    case 's': prefix_table = type_size_str; break;
-                    case 'r': prefix_table = type_prefix; break;
-                    case 'i': prefix_table = nullptr; break;
-                    case '<': if (in_function) {
-                                  buffer.putc('<');
-                                  buffer.put(jitc_llvm_vector_width_str,
-                                             strlen(jitc_llvm_vector_width_str));
-                                  buffer.put(" x ");
-                               }
-                               continue;
-                    case '>': if (in_function)
-                                  buffer.putc('>');
-                               continue;
-                    case 'o': prefix_table = (const char **) jitc_llvm_ones_str; break;
-                    default:
-                        jitc_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
-                                  "expression (unknown character \"%c\") in \"%s\"!", tname, v->stmt);
-                }
-
-                uint32_t arg_id = *s++ - '0';
-                if (unlikely(arg_id > 4))
-                    jitc_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
-                              "expression (argument out of bounds)!", v->stmt);
-
-                uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
-                if (unlikely(dep_id == 0))
-                    jitc_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
-                              "expression (referenced variable %u is missing)!", v->stmt, arg_id);
-
-                const Variable *dep = jitc_var(dep_id);
-                if (likely(prefix_table)) {
-                    const char *prefix = prefix_table[(int) dep->type];
-                    buffer.put(prefix, strlen(prefix));
-                }
-
-                if (tname == 'r' || tname == 'i')
-                    buffer.put_uint32(dep->reg_index);
+                case 'n': put("\n    "); continue;
+                case 'w': put(jitc_llvm_vector_width_str,
+                                     strlen(jitc_llvm_vector_width_str)); continue;
+                case 't': prefix_table = type_name_llvm; break;
+                case 'T': prefix_table = type_name_llvm_big; break;
+                case 'b': prefix_table = type_name_llvm_bin; break;
+                case 'a': prefix_table = type_name_llvm_abbrev; break;
+                case 's': prefix_table = type_size_str; break;
+                case 'r': prefix_table = type_prefix; break;
+                case 'i': prefix_table = nullptr; break;
+                case '<': if (in_function) {
+                              put('<');
+                              put(jitc_llvm_vector_width_str,
+                                         strlen(jitc_llvm_vector_width_str));
+                              put(" x ");
+                           }
+                           continue;
+                case '>': if (in_function)
+                              put('>');
+                           continue;
+                case 'o': prefix_table = (const char **) jitc_llvm_ones_str; break;
+                default:
+                    jitc_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
+                              "expression (unknown character \"%c\") in \"%s\"!", tname, v->stmt);
             }
-        } while (c != '\0');
 
-        buffer.putc('\n');
-    }
+            uint32_t arg_id = *s++ - '0';
+            if (unlikely(arg_id > 4))
+                jitc_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
+                          "expression (argument out of bounds)!", v->stmt);
+
+            uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
+            if (unlikely(dep_id == 0))
+                jitc_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
+                          "expression (referenced variable %u is missing)!", v->stmt, arg_id);
+
+            const Variable *dep = jitc_var(dep_id);
+            if (likely(prefix_table)) {
+                const char *prefix = prefix_table[(int) dep->type];
+                put(prefix, strlen(prefix));
+            }
+
+            if (tname == 'r' || tname == 'i')
+                buffer.put_u32(dep->reg_index);
+        }
+    } while (c != '\0');
+
+    put('\n');
 }
 
 static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra);
@@ -648,7 +791,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         18 uint32_t primID
         19 uint32_t geomID
         20 uint32_t instID[] */
-    buffer.fmt("\n    ; -------- Ray %s -------\n", shadow_ray ? "test" : "trace");
+    fmt("\n    ; -------- Ray $s -------\n", shadow_ray ? "test" : "trace");
 
     uint32_t offset = 0;
     for (int i = 0; i < 13; ++i) {
@@ -656,85 +799,71 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
             continue; // valid flag not needed for 1-lane versions
 
         const Variable *v2 = jitc_var(extra.dep[i + 1]);
-        const char *tname = type_name_llvm[v2->type];
-        uint32_t tsize = type_size[v2->type];
-        buffer.fmt(
-            "    %%u%u_in_%u_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
-            "    %%u%u_in_%u_1 = bitcast i8* %%u%u_in_%u_0 to <%u x %s> *\n"
-            "    store <%u x %s> %s%u, <%u x %s>* %%u%u_in_%u_1, align %u\n",
-            id, i, offset,
-            id, i, id, i, width, tname,
-            width, tname, type_prefix[v2->type], v2->reg_index, width, tname, id, i,
-            float_size * width);
-        offset += tsize * width;
+        fmt( "    %u$u_in_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
+            "{    %u$u_in_$u_1 = bitcast i8* %u$u_in_$u_0 to $T*\n|}"
+             "    store $V, {$T*} %u$u_in_$u_1, align $A\n",
+             id, i, offset,
+             id, i, id, i, v2,
+             v2, v2, v2);
+
+        offset += type_size[v2->type] * width;
     }
 
     if (!shadow_ray) {
-        buffer.fmt(
-            "    %%u%u_in_geomid_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
-            "    %%u%u_in_geomid_1 = bitcast i8* %%u%u_in_geomid_0 to <%u x i32> *\n"
-            "    store <%u x i32> %s, <%u x i32>* %%u%u_in_geomid_1, align %u\n",
-            id, (14 * float_size + 5 * 4) * width, id, id, width, width,
-            jitc_llvm_ones_str[(int) VarType::Int32], width, id, float_size * width);
+        fmt( "    %u$u_in_geomid_0 = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
+            "{    %u$u_in_geomid_1 = bitcast i8* %u$u_in_geomid_0 to <$w x i32> *\n|}"
+             "    store <$w x i32> $s, {<$w x i32>*} %u$u_in_geomid_1, align $u\n",
+            id, (14 * float_size + 5 * 4) * width,
+            id, id,
+            jitc_llvm_ones_str[(int) VarType::Int32], id, float_size * width);
     }
 
     const Variable *coherent = jitc_var(extra.dep[0]);
 
-    buffer.fmt(
-        "    %%u%u_in_ctx_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
-        "    %%u%u_in_ctx_1 = bitcast i8* %%u%u_in_ctx_0 to <6 x i32> *\n",
+    fmt( "    %u$u_in_ctx_0 = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
+        "{    %u$u_in_ctx_1 = bitcast i8* %u$u_in_ctx_0 to <6 x i32>*\n|}",
         id, alloca_size_rt, id, id);
 
     if (coherent->is_literal() && coherent->literal == 0) {
-        buffer.fmt("    store <6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>, <6 x i32>* %%u%u_in_ctx_1, align 4\n", id);
+        fmt("    store <6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>, {<6 x i32>*} %u$u_in_ctx_1, align 4\n", id);
     } else if (coherent->is_literal() && coherent->literal == 1) {
-        buffer.fmt("    store <6 x i32> <i32 1, i32 0, i32 0, i32 0, i32 -1, i32 0>, <6 x i32>* %%u%u_in_ctx_1, align 4\n", id);
+        fmt("    store <6 x i32> <i32 1, i32 0, i32 0, i32 0, i32 -1, i32 0>, {<6 x i32>*} %u$u_in_ctx_1, align 4\n", id);
     } else {
-        char global[128];
-        snprintf(
-            global, sizeof(global),
-            "declare i1 @llvm.experimental.vector.reduce.and.v%ui1(<%u x i1>)",
-            width, width);
-        jitc_register_global(global);
+        fmt_intrinsic("declare i1 @llvm.experimental.vector.reduce.and.v$wi1(<$w x i1>)");
 
-        buffer.fmt("    %%u%u_coherent = call i1 @llvm.experimental.vector.reduce.and.v%ui1(<%u x i1> %%p%u)\n"
-                   "    %%u%u_ctx = select i1 %%u%u_coherent, <6 x i32> <i32 1, i32 0, i32 0, i32 0, i32 -1, i32 0>, <6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>\n"
-                   "    store <6 x i32> %%u%u_ctx, <6 x i32>* %%u%u_in_ctx_1, align 4\n",
-                   id, width, width, coherent->reg_index,
-                   id, id,
-                   id, id);
+        fmt("    %u$u_coherent = call i1 @llvm.experimental.vector.reduce.and.v$wi1($V)\n"
+            "    %u$u_ctx = select i1 %u$u_coherent, <6 x i32> <i32 1, i32 0, i32 0, i32 0, i32 -1, i32 0>, "
+                                                    "<6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>\n"
+            "    store <6 x i32> %u$u_ctx, {<6 x i32>*} %u$u_in_ctx_1, align 4\n",
+            id, coherent,
+            id, id,
+            id, id);
     }
 
     const Variable *func  = jitc_var(v->dep[0]),
                    *scene = jitc_var(v->dep[1]);
 
     /* When the ray tracing operation occurs inside a recorded function, it's
-     * possible that multiple different scenes are being traced simultaneously.
-     * In that case, it's necessary to perform one ray tracing call per scene,
-     * which is implemented by the following loop. */
-    if (!assemble_func) {
+       possible that multiple different scenes are being traced simultaneously.
+       In that case, it's necessary to perform one ray tracing call per scene,
+       which is implemented by the following loop. */
+    if (callable_depth == 0) {
         if (jitc_llvm_vector_width > 1) {
-            buffer.fmt(
-                "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*, i8*)*\n"
-                "    call void %%u%u_func(i8* %%u%u_in_0_0, i8* %%rd%u, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
-                id, func->reg_index,
-                id, id, scene->reg_index, id, id
+            fmt("{    %u$u_func = bitcast i8* $v to void (i8*, i8*, i8*, i8*)*\n|}"
+                 "    call void {%u$u_func|$v}({i8*} %u$u_in_0_0, {i8*} $v, {i8*} %u$u_in_ctx_0, {i8*} %u$u_in_1_0)\n",
+                id, func,
+                id, func, id, scene, id, id
             );
         } else {
-            buffer.fmt(
-                "    %%u%u_func = bitcast i8* %%rd%u to void (i8*, i8*, i8*)*\n"
-                "    call void %%u%u_func(i8* %%rd%u, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
-                id, func->reg_index,
-                id, scene->reg_index, id, id
+            fmt(
+                "{    %u$u_func = bitcast i8* $v to void (i8*, i8*, i8*)*\n|}"
+                "     call void {%u$u_func|$v}({i8*} $v, {i8*} %u$u_in_ctx_0, {i8*} %u$u_in_1_0)\n",
+                id, func,
+                id, func, scene, id, id
             );
         }
     } else {
-        char global[128];
-        snprintf(
-            global, sizeof(global),
-            "declare i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64>)",
-            width, width);
-        jitc_register_global(global);
+        fmt_intrinsic("declare i64 @llvm.experimental.vector.reduce.umax.v$wi64(<$w x i64>)");
 
         uint32_t offset_tfar = (8 * float_size + 4) * width;
         const char *tname_tfar = type_name_llvm[(int) float_type];
@@ -743,100 +872,91 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         // 1. Prepare the loop for the ray tracing calls
         // =====================================================
 
-        buffer.fmt("    br label %%l%u_start\n"
-                   "\nl%u_start:\n"
-                   "    ; Ray tracing\n"
-                   "    %%u%u_func_i64 = call i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64> %%rd%u_p4)\n"
-                   "    %%u%u_func_ptr = inttoptr i64 %%u%u_func_i64 to i8*\n"
-                   "    %%u%u_tfar_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
-                   "    %%u%u_tfar_1 = bitcast i8* %%u%u_tfar_0 to <%u x %s> *\n",
-                   id, id,
-                   id, width, width, func->reg_index,
-                   id, id,
-                   id, offset_tfar,
-                   id, id, width, tname_tfar);
+        fmt( "    br label %l$u_start\n"
+             "\nl$u_start:\n"
+             "    ; Ray tracing\n"
+             "    %u$u_func_i64 = call i64 @llvm.experimental.vector.reduce.umax.v$wi64(<$w x i64> %rd$u_p4)\n"
+             "    %u$u_func_ptr = inttoptr i64 %u$u_func_i64 to {i8*}\n"
+             "    %u$u_tfar_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
+            "{    %u$u_tfar_1 = bitcast i8* %u$u_tfar_0 to <$w x $s> *\n|}",
+            id, id,
+            id, func->reg_index,
+            id, id,
+            id, offset_tfar,
+            id, id, tname_tfar);
 
         if (jitc_llvm_vector_width > 1) {
-            buffer.fmt(
-                "    %%u%u_func = bitcast i8* %%u%u_func_ptr to void (i8*, i8*, i8*, i8*)*\n",
-                id, id
-            );
+            fmt("    %u$u_func = bitcast {i8*} %u$u_func_ptr to {void (i8*, i8*, i8*, i8*)*}\n",
+                id, id);
         } else {
-            buffer.fmt(
-                "    %%u%u_func = bitcast i8* %%u%u_func_ptr to void (i8*, i8*, i8*)*\n",
-                id, id
-            );
+            fmt("    %u$u_func = bitcast {i8*} %u$u_func_ptr to {void (i8*, i8*, i8*)*}\n",
+                id, id);
         }
 
         // Get original mask, to be overwritten at every iteration
-        buffer.fmt("    %%u%u_mask_value = load <%u x i32>, <%u x i32>* %%u%u_in_0_1, align 64\n"
-                   "    br label %%l%u_check\n",
-                   id, width, width, id,
-                   id);
+        fmt("    %u$u_mask_value = load <$w x i32>, {<$w x i32>*} %u$u_in_0_1, align 64\n"
+            "    br label %l$u_check\n",
+            id, id, id);
 
         // =====================================================
         // 2. Move on to the next instance & check if finished
         // =====================================================
 
-        buffer.fmt("\nl%u_check:\n"
-                   "    %%u%u_scene = phi <%u x i8*> [ %%rd%u, %%l%u_start ], [ %%u%u_scene_next, %%l%u_call ]\n"
-                   "    %%u%u_scene_i64 = ptrtoint <%u x i8*> %%u%u_scene to <%u x i64>\n"
-                   "    %%u%u_next_i64 = call i64 @llvm.experimental.vector.reduce.umax.v%ui64(<%u x i64> %%u%u_scene_i64)\n"
-                   "    %%u%u_next = inttoptr i64 %%u%u_next_i64 to i8*\n"
-                   "    %%u%u_valid = icmp ne i8* %%u%u_next, null\n"
-                   "    br i1 %%u%u_valid, label %%l%u_call, label %%l%u_end\n",
-                   id,
-                   id, width, scene->reg_index, id, id, id,
-                   id, width, id, width,
-                   id, width, width, id,
-                   id, id,
-                   id, id,
-                   id, id, id);
+        fmt("\nl$u_check:\n"
+            "    %u$u_scene = phi <$w x {i8*}> [ %rd$u, %l$u_start ], [ %u$u_scene_next, %l$u_call ]\n"
+            "    %u$u_scene_i64 = ptrtoint <$w x {i8*}> %u$u_scene to <$w x i64>\n"
+            "    %u$u_next_i64 = call i64 @llvm.experimental.vector.reduce.umax.v%wi64(<$w x i64> %u$u_scene_i64)\n"
+            "    %u$u_next = inttoptr i64 %u$u_next_i64 to {i8*}\n"
+            "    %u$u_valid = icmp ne {i8*} %u$u_next, null\n"
+            "    br i1 %u$u_valid, label %l$u_call, label %l$u_end\n",
+            id,
+            id, scene->reg_index, id, id, id,
+            id, id,
+            id, id,
+            id, id,
+            id, id,
+            id, id, id);
 
         // =====================================================
         // 3. Perform ray tracing call to each unique instance
         // =====================================================
 
-        buffer.fmt("\nl%u_call:\n"
-                   "    %%u%u_tfar_prev = load <%u x %s>, <%u x %s>* %%u%u_tfar_1, align %u\n"
-                   "    %%u%u_bcast_0 = insertelement <%u x i64> undef, i64 %%u%u_next_i64, i32 0\n"
-                   "    %%u%u_bcast_1 = shufflevector <%u x i64> %%u%u_bcast_0, <%u x i64> undef, <%u x i32> zeroinitializer\n"
-                   "    %%u%u_bcast_2 = inttoptr <%u x i64> %%u%u_bcast_1 to <%u x i8*>\n"
-                   "    %%u%u_active = icmp eq <%u x i8*> %%u%u_scene, %%u%u_bcast_2\n"
-                   "    %%u%u_active_2 = select <%u x i1> %%u%u_active, <%u x i32> %%u%u_mask_value, <%u x i32> zeroinitializer\n"
-                   "    store <%u x i32> %%u%u_active_2, <%u x i32>* %%u%u_in_0_1, align 64\n",
-                   id,
-                   id, width, tname_tfar, width, tname_tfar, id, float_size * width,
-                   id, width, id,
-                   id, width, id, width, width,
-                   id, width, id, width,
-                   id, width, id, id,
-                   id, width, id, width, id, width,
-                   width, id, width, id);
+        fmt("\nl$u_call:\n"
+            "    %u$u_tfar_prev = load <$w x $s>, {<$w x $s>*} %u$u_tfar_1, align $u\n"
+            "    %u$u_bcast_0 = insertelement <$w x i64> undef, i64 %u$u_next_i64, i32 0\n"
+            "    %u$u_bcast_1 = shufflevector <$w x i64> %u$u_bcast_0, <$w x i64> undef, <$w x i32> $z\n"
+            "    %u$u_bcast_2 = inttoptr <$w x i64> %u$u_bcast_1 to <$w x {i8*}>\n"
+            "    %u$u_active = icmp eq <$w x {i8*}> %u$u_scene, %u$u_bcast_2\n"
+            "    %u$u_active_2 = select <$w x i1> %u$u_active, <$w x i32> %u$u_mask_value, <$w x i32> $z\n"
+            "    store <$u x i32> %u$u_active_2, {<$w x i32>*} %u$u_in_0_1, align 64\n",
+            id,
+            id, tname_tfar, tname_tfar, id, float_size * width,
+            id, id,
+            id, id,
+            id, id,
+            id, id, id,
+            id, id, id,
+            id, id);
 
         if (jitc_llvm_vector_width > 1) {
-            buffer.fmt(
-                "    call void %%u%u_func(i8* %%u%u_in_0_0, i8* %%u%u_next, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
-                id, id, id, id, id
-            );
+            fmt("    call void %u$u_func({i8*} %u$u_in_0_0, {i8*} %u$u_next, {i8*} %u$u_in_ctx_0, {i8*} %u$u_in_1_0)\n",
+                id, id, id, id, id);
         } else {
-            buffer.fmt(
-                "    call void %%u%u_func(i8* %%u%u_next, i8* %%u%u_in_ctx_0, i8* %%u%u_in_1_0)\n",
-                id, id, id, id
-            );
+            fmt("    call void %u$u_func({i8*} %u$u_next, {i8*} %u$u_in_ctx_0, {i8*} %u$u_in_1_0)\n",
+                id, id, id, id);
         }
 
-        buffer.fmt("    %%u%u_tfar_new = load <%u x %s>, <%u x %s>* %%u%u_tfar_1, align %u\n"
-                   "    %%u%u_tfar_masked = select <%u x i1> %%u%u_active, <%u x %s> %%u%u_tfar_new, <%u x %s> %%u%u_tfar_prev\n"
-                   "    store <%u x %s> %%u%u_tfar_masked, <%u x %s>* %%u%u_tfar_1, align %u\n"
-                   "    %%u%u_scene_next = select <%u x i1> %%u%u_active, <%u x i8*> zeroinitializer, <%u x i8*> %%u%u_scene\n"
-                   "    br label %%l%u_check\n"
-                   "\nl%u_end:\n",
-                   id, width, tname_tfar, width, tname_tfar, id, float_size * width,
-                   id, width, id, width, tname_tfar, id, width, tname_tfar, id,
-                   width, tname_tfar, id, width, tname_tfar, id, float_size * width,
-                   id, width, id, width, width, id,
-                   id, id);
+        fmt("    %u$u_tfar_new = load <$w x $s>, {<$w x $s>*} %u$u_tfar_1, align $u\n"
+            "    %u$u_tfar_masked = select <$w x i1> %u$u_active, <$w x $s> %u$u_tfar_new, <$w x $s> %u$u_tfar_prev\n"
+            "    store <$w x $s> %u$u_tfar_masked, {<$w x $s>*} %u$u_tfar_1, align $u\n"
+            "    %u$u_scene_next = select <$w x i1> %u$u_active, <$w x {i8*}> $z, <$w x {i8*}> %u$u_scene\n"
+            "    br label %l$u_check\n"
+            "\nl%u_end:\n",
+            id, tname_tfar, tname_tfar, id, float_size * width,
+            id, id, tname_tfar, id, tname_tfar, id,
+            width, tname_tfar, id, tname_tfar, id, float_size * width,
+            id, id, id,
+            id, id);
     }
 
     offset = (8 * float_size + 4) * width;
@@ -845,13 +965,12 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         VarType vt = (i < 3) ? float_type : VarType::UInt32;
         const char *tname = type_name_llvm[(int) vt];
         uint32_t tsize = type_size[(int) vt];
-        buffer.fmt(
-            "    %%u%u_out_%u_0 = getelementptr inbounds i8, i8* %%buffer, i32 %u\n"
-            "    %%u%u_out_%u_1 = bitcast i8* %%u%u_out_%u_0 to <%u x %s> *\n"
-            "    %%u%u_out_%u = load <%u x %s>, <%u x %s>* %%u%u_out_%u_1, align %u\n",
+        fmt( "    %u$u_out_%u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
+            "{    %u$u_out_%u_1 = bitcast i8* %u$u_out_%u_0 to <$w x $s> *\n|}"
+             "    %u$u_out_%u = load <$w x $s>, {<$w x $s>*} %u$u_out_%u_1, align $u\n",
             id, i, offset,
-            id, i, id, i, width, tname,
-            id, i, width, tname, width, tname, id, i, float_size * width);
+            id, i, id, i, tname,
+            id, i, tname, tname, id, i, float_size * width);
 
         if (i == 0)
             offset += (4 * float_size + 3 * 4) * width;
@@ -859,6 +978,6 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
             offset += tsize * width;
     }
 
-    buffer.put("    ; -------------------\n\n");
+    put("    ; -------------------\n\n");
 }
 
