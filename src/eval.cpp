@@ -40,8 +40,8 @@ static uint32_t kernel_param_count = 0;
 /// Ensure uniqueness of globals/callables arrays
 GlobalsMap globals_map;
 
-/// Buffer for global definitions (intrinsics, callables, etc.)
-Buffer globals { 1000 };
+/// StringBuffer for global definitions (intrinsics, callables, etc.)
+StringBuffer globals { 1000 };
 
 /// Temporary scratch space for scheduled tasks (LLVM only)
 static std::vector<Task *> scheduled_tasks;
@@ -57,9 +57,6 @@ static uint32_t n_ops_total = 0;
 
 /// Are we recording an OptiX kernel?
 bool uses_optix = false;
-
-/// Are we currently compiling a virtual function call
-bool assemble_func = false;
 
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 int32_t alloca_size = -1;
@@ -163,8 +160,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         if (unlikely(v->size != 1 && v->size != group.size))
             jitc_fail("jit_assemble(): schedule contains variable r%u with incompatible size "
                      "(%u and %u)!", index, v->size, group.size);
-        if (unlikely(v->kind == (uint32_t) VarKind::Invalid))
-            jitc_fail("jit_assemble(): variable r%u is of an invalid kind!", index);
         if (unlikely(v->is_dirty()))
             jitc_fail("jit_assemble(): dirty variable r%u encountered!", index);
 
@@ -262,8 +257,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                 buffer.put("scalar, ");
             if (v->side_effect)
                 buffer.put("side effects, ");
-            buffer.rewind(2);
-            buffer.putc('\n');
+            buffer.rewind_to(buffer.size() - 2);
+            buffer.put('\n');
         }
         jitc_trace("jit_assemble(size=%u): register map:\n%s",
                   group.size, buffer.get());
@@ -275,17 +270,20 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     else
         jitc_assemble_llvm(ts, group);
 
-    // Replace '^'s in 'drjit_^^^^^^^^' by a hash code
+    // Replace '^'s in '__raygen__^^^..' or 'drjit_^^^..' with hash
     kernel_hash = hash_kernel(buffer.get());
-    snprintf(kernel_name, sizeof(kernel_name), "%s%016llx%016llx",
-             uses_optix ? "__raygen__" : "drjit_",
-             (unsigned long long) kernel_hash.high64,
-             (unsigned long long) kernel_hash.low64);
-    const char *name_start = strchr(buffer.get(), '^');
-    if (unlikely(!name_start))
-        jitc_fail("jit_eval(): could not find kernel name!");
-    memcpy((char *) name_start - (uses_optix ? 10 : 6), kernel_name,
-           strlen(kernel_name));
+
+    size_t hash_offset = strchr(buffer.get(), '^') - buffer.get(),
+           end_offset = buffer.size(),
+           prefix_len = uses_optix ? 10 : 6;
+
+    buffer.rewind_to(hash_offset);
+    buffer.put_q64_unchecked(kernel_hash.high64);
+    buffer.put_q64_unchecked(kernel_hash.low64);
+    buffer.rewind_to(end_offset);
+    memset(kernel_name, 0, sizeof(kernel_name));
+    memcpy(kernel_name, buffer.get() + hash_offset - prefix_len,
+           prefix_len + 32);
 
     if (unlikely(trace || (jitc_flags() & (uint32_t) JitFlag::PrintIR))) {
         LogLevel level = std::max(state.log_level_stderr, state.log_level_callback);
@@ -312,7 +310,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_history_entry.type = KernelType::JIT;
         kernel_history_entry.hash[0] = kernel_hash.low64;
         kernel_history_entry.hash[1] = kernel_hash.high64;
-        kernel_history_entry.ir = (char *) malloc(buffer.size() + 1);
+        kernel_history_entry.ir = (char *) malloc_check(buffer.size() + 1);
         memcpy(kernel_history_entry.ir, buffer.get(), buffer.size() + 1);
         kernel_history_entry.uses_optix = uses_optix;
         kernel_history_entry.size = group.size;
@@ -397,14 +395,12 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             cuda_check(ret);
 
             // Locate the kernel entry point
-            char tmp[39];
-            snprintf(tmp, sizeof(tmp),
-                     "drjit_%016llx%016llx",
-                     (unsigned long long) kernel_hash.high64,
-                     (unsigned long long) kernel_hash.low64);
-
-            cuda_check(
-                cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod, tmp));
+            size_t offset = buffer.size();
+            buffer.fmt_cuda(2, "drjit_$Q$Q", kernel_hash.high64,
+                            kernel_hash.low64);
+            cuda_check(cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod,
+                                           buffer.get() + offset));
+            buffer.rewind_to(offset);
 
             // Determine a suitable thread count to maximize occupancy
             int unused, block_size;
@@ -464,10 +460,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     Task* ret_task = nullptr;
     if (ts->backend == JitBackend::CUDA) {
 #if defined(DRJIT_ENABLE_OPTIX)
-        if (unlikely(uses_optix)) {
+        if (unlikely(uses_optix))
             jitc_optix_launch(ts, kernel, group.size, kernel_params_global,
                               kernel_param_count);
-        }
 #endif
 
         if (!uses_optix) {
@@ -657,19 +652,8 @@ void jitc_eval(ThreadState *ts) {
     scoped_set_context_maybe guard2(ts->context);
     scheduled_tasks.clear();
 
-    const char *dr_raise_id = getenv("DRJIT_KERNEL_RAISE");
-    bool dr_raise = false;
-
     for (ScheduledGroup &group : schedule_groups) {
         jitc_assemble(ts, group);
-
-        if (dr_raise_id) {
-            char tmp[17];
-            snprintf(tmp, sizeof(tmp), "%016llx",
-                     (unsigned long long) kernel_hash.high64);
-            if (strncmp(dr_raise_id, tmp, 16) == 0)
-                dr_raise = true;
-        }
 
         scheduled_tasks.push_back(jitc_run(ts, group));
 
@@ -764,11 +748,6 @@ void jitc_eval(ThreadState *ts) {
 
     jitc_free_flush(ts);
     jitc_log(Info, "jit_eval(): done.");
-
-    if (dr_raise) {
-        jitc_log(Warn, "jit_eval(): raising an exception as requested.");
-        jitc_raise("jit_eval(): raising an exception as requested.");
-    }
 }
 
 static ProfilerRegion profiler_region_assemble_func("jit_assemble_func");
@@ -822,10 +801,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
         v->reg_index = n_regs++;
     }
 
-    size_t offset = buffer.size();
-
-    bool assemble_func_prev = assemble_func;
-    assemble_func = true;
+    size_t kernel_offset = buffer.size();
 
     callable_depth++;
     if (ts->backend == JitBackend::CUDA)
@@ -837,13 +813,10 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
                                 n_out, out_nested, use_self);
     callable_depth--;
 
-    assemble_func = assemble_func_prev;
-
-    size_t kernel_length = buffer.size() - offset;
-    char *kernel_str = (char *) buffer.get() + offset;
+    size_t kernel_length = buffer.size() - kernel_offset;
 
     if (jit_flag(JitFlag::VCallDeduplicate)) {
-        kernel_hash = XXH128(kernel_str, kernel_length, 0);
+        kernel_hash = XXH128(buffer.get() + kernel_offset, kernel_length, 0);
     } else {
         kernel_hash.low64 = callable_count;
         kernel_hash.high64 = 0;
@@ -852,20 +825,22 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     if (globals_map.emplace(GlobalKey(kernel_hash, true),
                             GlobalValue(globals.size(), kernel_length)).second) {
         // Replace '^'s in 'func_^^^..' or '__direct_callable__^^^..' with hash
-        char *id = strchr(kernel_str, '^');
-        char tmp[33];
-        snprintf(tmp, sizeof(tmp), "%016llx%016llx",
-                 (unsigned long long) kernel_hash.high64,
-                 (unsigned long long) kernel_hash.low64);
-        memcpy(id, tmp, 32);
+        size_t hash_offset = strchr(buffer.get() + kernel_offset, '^') - buffer.get(),
+               end_offset = buffer.size();
+
+        buffer.rewind_to(hash_offset);
+        buffer.put_q64_unchecked(kernel_hash.high64);
+        buffer.put_q64_unchecked(kernel_hash.low64);
+        buffer.rewind_to(end_offset);
+
         n_ops_total += n_regs;
         callable_count_unique++;
-        globals.put(kernel_str, kernel_length);
+        globals.put(buffer.get() + kernel_offset, kernel_length);
     }
 
     callable_count++;
 
-    buffer.rewind(kernel_length);
+    buffer.rewind_to(kernel_offset);
 
     return kernel_hash;
 }
@@ -876,24 +851,4 @@ void jitc_register_global(const char *str) {
     if (globals_map.emplace(GlobalKey(XXH128(str, length, 0), false),
                             GlobalValue(globals.size(), length)).second)
         globals.put(str, length);
-}
-
-
-/// Move a code block to an earlier position in 'buffer'
-void jitc_insert_code_at(size_t insertion_point, size_t insertion_start) {
-    size_t buffer_size = buffer.size(),
-           insertion_size = buffer_size - insertion_start;
-
-    // Extra space for moving things around
-    buffer.putc('\0', insertion_size);
-
-    // Move the generated source code to make space for the header addition
-    memmove((char *) buffer.get() + insertion_point + insertion_size,
-            buffer.get() + insertion_point, buffer_size - insertion_point);
-
-    // Finally copy the code to the insertion point
-    memcpy((char *) buffer.get() + insertion_point,
-           buffer.get() + buffer_size, insertion_size);
-
-    buffer.rewind(insertion_size);
 }

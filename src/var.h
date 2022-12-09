@@ -12,6 +12,8 @@
 #include <drjit-core/jit.h>
 #include <utility>
 
+enum NodeType : uint32_t;
+
 struct Variable;
 
 /// Look up a variable by its ID
@@ -32,6 +34,12 @@ extern uint32_t jitc_var_new_stmt(JitBackend backend,
                                   const char *stmt,
                                   int stmt_static,
                                   uint32_t n_dep,
+                                  const uint32_t *dep);
+
+/// Create a new IR node. Just a wrapper around jitc_var_new without any error checking
+extern uint32_t jitc_var_new_node(JitBackend backend, VarType vt, NodeType node,
+                                  uint32_t payload, uint32_t size,
+                                  bool placeholder, uint32_t n_dep,
                                   const uint32_t *dep);
 
 template <typename... Ts>

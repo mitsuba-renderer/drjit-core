@@ -1086,7 +1086,7 @@ static void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
                "    ; VCall: %s\n",
                vcall_reg, vcall_reg, vcall->name);
 
-    if (!assemble_func) {
+    if (callable_depth == 0) {
         buffer.fmt("\n"
                    "    %%u%u_self_ptr_0 = bitcast i8* %%rd%u to i64*\n"
                    "    %%u%u_self_ptr = getelementptr i64, i64* %%u%u_self_ptr_0, <%u x i32> %%r%u\n",

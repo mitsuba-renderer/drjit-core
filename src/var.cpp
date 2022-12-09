@@ -83,8 +83,16 @@ const char *type_size_str[(int) VarType::Count] {
     "4", "8", "8", "8", "2", "4", "8"
 };
 
+///
+const char *node_names[(int) NodeType::Count] {
+    "invalid",
+    "add",
+    "gather",
+    "scatter"
+};
+
 /// Temporary string buffer for miscellaneous variable-related tasks
-Buffer var_buffer(0);
+StringBuffer var_buffer(0);
 
 #define jitc_check_size(name, size)                                            \
     if (unlikely(size > 0xFFFFFFFF))                                           \
@@ -344,11 +352,8 @@ void jitc_value_print(const Variable *v, bool graphviz = false) {
 uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     ThreadState *ts = thread_state(v.backend);
 
-    if (v.kind == (int) VarKind::Invalid)
-        abort();
-
     bool lvn = !disable_lvn && (VarType) v.type != VarType::Void &&
-               (v.is_literal() || v.is_stmt()) &&
+               !v.is_data() &&
                jit_flag(JitFlag::ValueNumbering);
 
     v.scope = ts->scope;
@@ -435,6 +440,8 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
             var_buffer.fmt(DRJIT_PTR, (uintptr_t) v.data);
         } else if (v.is_stmt()) {
             var_buffer.put(v.stmt, strlen(v.stmt));
+        } else if (v.is_node()) {
+            var_buffer.fmt("%s node", node_names[v.node]);
         }
 
         bool lvn_hit = lvn && !lvn_key_inserted;
@@ -649,6 +656,27 @@ uint32_t jitc_var_new_stmt(JitBackend backend, VarType vt, const char *stmt,
     return jitc_var_new(v2);
 }
 
+/// Create a new IR node. Just a wrapper around jitc_var_new without any error checking
+uint32_t jitc_var_new_node(JitBackend backend, VarType vt, NodeType node,
+                           uint32_t payload, uint32_t size, bool placeholder,
+                           uint32_t n_dep, const uint32_t *dep) {
+    Variable v2;
+    for (uint32_t i = 0; i < n_dep; ++i) {
+        jitc_var_inc_ref(dep[i]);
+        v2.dep[i] = dep[i];
+    }
+
+    v2.node = node;
+    v2.payload = payload;
+    v2.size = size;
+    v2.backend = (uint32_t) backend;
+    v2.kind = (uint32_t) VarKind::Node;
+    v2.type = (uint32_t) vt;
+    v2.placeholder = placeholder;
+
+    return jitc_var_new(v2);
+}
+
 void jitc_var_set_callback(uint32_t index,
                            void (*callback)(uint32_t, int, void *),
                            void *callback_data) {
@@ -728,7 +756,7 @@ const char *jitc_var_str(uint32_t index) {
         memcpy(dst, &v->literal, isize);
 
     var_buffer.clear();
-    var_buffer.putc('[');
+    var_buffer.put('[');
     for (uint32_t i = 0; i < size; ++i) {
         if (size > state.print_limit && i == limit_remainder / 2) {
             var_buffer.fmt(".. %zu skipped .., ", size - limit_remainder);
@@ -757,7 +785,7 @@ const char *jitc_var_str(uint32_t index) {
             default: jitc_fail("jit_var_str(): unsupported type!");
         }
     }
-    var_buffer.putc(']');
+    var_buffer.put(']');
     return var_buffer.get();
 }
 
@@ -788,7 +816,7 @@ int jitc_var_schedule(uint32_t index) {
     if (unlikely(v->placeholder))
         jitc_raise_placeholder_error("jitc_var_schedule", index);
 
-    if (v->is_stmt()) {
+    if (v->is_stmt() || v->is_node()) {
         thread_state(v->backend)->scheduled.push_back(index);
         jitc_log(Debug, "jit_var_schedule(r%u)", index);
         return 1;
@@ -808,7 +836,7 @@ void *jitc_var_ptr(uint32_t index) {
        generating code to do so.. */
     if (v->is_literal())
         jitc_var_eval_literal(index, v);
-    else if (v->is_stmt())
+    else if (v->is_stmt() || v->is_node())
         jitc_var_eval(index);
 
     return jitc_var(index)->data;
@@ -841,7 +869,7 @@ int jitc_var_eval(uint32_t index) {
     if (unlikely(v->placeholder))
         jitc_raise_placeholder_error("jitc_var_eval", index);
 
-    if (v->is_stmt() || (v->is_data() && v->is_dirty())) {
+    if (v->is_stmt() || v->is_node() || (v->is_data() && v->is_dirty())) {
         ThreadState *ts = thread_state(v->backend);
 
         if (!v->is_data())
@@ -865,7 +893,7 @@ int jitc_var_eval(uint32_t index) {
 void jitc_var_read(uint32_t index, size_t offset, void *dst) {
     const Variable *v = jitc_var(index);
 
-    if (v->is_stmt() || (v->is_data() && v->is_dirty())) {
+    if (v->is_stmt() || v->is_node() || (v->is_data() && v->is_dirty())) {
         jitc_var_eval(index);
         v = jitc_var(index);
     }
@@ -1520,7 +1548,7 @@ const char *jitc_var_graphviz() {
 
         if (prefix_hash != current_hash) {
             for (size_t i = current_depth - 1; i > 0; --i) {
-                var_buffer.putc(' ', 4 * i);
+                var_buffer.put(' ', 4 * i);
                 var_buffer.put("}\n");
             }
 
@@ -1533,17 +1561,17 @@ const char *jitc_var_graphviz() {
                 if (!pn)
                     break;
 
-                var_buffer.putc(' ', 4 * current_depth);
+                var_buffer.put(' ', 4 * current_depth);
                 var_buffer.fmt("subgraph cluster_%08llx {\n",
                                (unsigned long long) hash(label, pn - label));
                 current_depth++;
-                var_buffer.putc(' ', 4 * current_depth);
+                var_buffer.put(' ', 4 * current_depth);
                 var_buffer.put("label=\"");
                 var_buffer.put(p, pn - p);
                 var_buffer.put("\";\n");
-                var_buffer.putc(' ', 4 * current_depth);
+                var_buffer.put(' ', 4 * current_depth);
                 var_buffer.put("color=gray95;\n");
-                var_buffer.putc(' ', 4 * current_depth);
+                var_buffer.put(' ', 4 * current_depth);
                 var_buffer.put("style=filled;\n");
 
                 p = pn + 1;
@@ -1551,8 +1579,8 @@ const char *jitc_var_graphviz() {
         }
 
         const Variable *v = jitc_var(index);
-        var_buffer.putc(' ', 4 * current_depth);
-        var_buffer.put_uint32(index);
+        var_buffer.put(' ', 4 * current_depth);
+        var_buffer.put_u32(index);
         var_buffer.put(" [label=\"{");
 
         auto print_escape = [](const char *s) {
@@ -1584,8 +1612,8 @@ const char *jitc_var_graphviz() {
                         break;
                 }
                 if (escape)
-                    var_buffer.putc('\\');
-                var_buffer.putc(c);
+                    var_buffer.put('\\');
+                var_buffer.put(c);
             }
         };
 
@@ -1618,8 +1646,11 @@ const char *jitc_var_graphviz() {
                 print_escape(v->stmt);
                 var_buffer.put("\\l");
             } else if (labeled) {
-                var_buffer.rewind(1);
+                var_buffer.rewind_to(var_buffer.size() - 1);
             }
+        } else if (v->is_node()) {
+            print_escape(node_names[v->node]);
+            var_buffer.put("\\l");
         }
 
         if (v->placeholder && !color)
@@ -1639,7 +1670,7 @@ const char *jitc_var_graphviz() {
     }
 
     for (size_t i = current_depth - 1; i > 0; --i) {
-        var_buffer.putc(' ', 4 * i);
+        var_buffer.put(' ', 4 * i);
         var_buffer.put("}\n");
     }
 

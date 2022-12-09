@@ -12,12 +12,13 @@
 #include <ctime>
 #include "internal.h"
 #include "log.h"
+#include "strbuf.h"
 
 #if defined(_WIN32)
 #  include <windows.h>
 #endif
 
-static Buffer log_buffer{128};
+static StringBuffer log_buffer;
 static char jitc_string_buf[64];
 
 void jitc_log(LogLevel log_level, const char* fmt, ...) {
@@ -158,61 +159,6 @@ const char *jitc_time_string(float value_) {
                           value, true, orders[i].suffix);
 
     return jitc_string_buf;
-}
-
-Buffer::Buffer(size_t size) : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
-    m_start = (char *) malloc_check(size);
-    m_end = m_start + size;
-    clear();
-}
-
-size_t Buffer::fmt(const char *format, ...) {
-    size_t written;
-    do {
-        size_t size = remain();
-        va_list args;
-        va_start(args, format);
-        written = (size_t) vsnprintf(m_cur, size, format, args);
-        va_end(args);
-
-        if (likely(written + 1 < size)) {
-            m_cur += written;
-            break;
-        }
-
-        expand();
-    } while (true);
-
-    return written;
-}
-
-size_t Buffer::vfmt(const char *format, va_list args_) {
-    size_t written;
-    va_list args;
-    do {
-        size_t size = remain();
-        va_copy(args, args_);
-        written = (size_t) vsnprintf(m_cur, size, format, args);
-        va_end(args);
-
-        if (likely(written + 1 < size)) {
-            m_cur += written;
-            break;
-        }
-
-        expand();
-    } while (true);
-    return written;
-}
-
-void Buffer::expand(size_t minval) {
-    size_t old_alloc_size = m_end - m_start,
-           new_alloc_size = 2 * old_alloc_size + minval,
-           used_size      = m_cur - m_start;
-
-    m_start = (char *) realloc_check(m_start, new_alloc_size);
-    m_end = m_start + new_alloc_size;
-    m_cur = m_start + used_size;
 }
 
 #if !defined(_WIN32)

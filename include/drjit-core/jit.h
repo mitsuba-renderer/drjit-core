@@ -8,7 +8,7 @@
     and release, multi-device computation, kernel caching and reuse, common
     subexpression elimination, etc.
 
-    While the library is internally implemented using C++14, this header file
+    While the library is internally implemented using C++17, this header file
     provides a compact C99-compatible API that can be used to access all
     functionality. The library is thread-safe: multiple threads can
     simultaneously dispatch computation to one or more CPUs/GPUs.
@@ -82,6 +82,8 @@ extern "C" {
  */
 #if defined(__cplusplus)
 enum class JitBackend : uint32_t {
+    Invalid = 0,
+
     /// CUDA backend (requires CUDA >= 10, generates PTX instructions)
     CUDA = (1 << 0),
 

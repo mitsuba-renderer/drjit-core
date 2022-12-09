@@ -28,14 +28,23 @@
 
 #define DRJIT_PTR "<0x%" PRIxPTR ">"
 
-#pragma pack(push, 1)
+
+enum NodeType : uint32_t {
+    Invalid,
+    Add,
+    Gather,
+    Scatter,
+    Count
+};
 
 enum class VarKind : uint32_t {
-    Invalid = 0,
+    Stmt = 0,
     Literal,
-    Stmt,
+    Node,
     Data
 };
+
+#pragma pack(push, 1)
 
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
@@ -79,10 +88,16 @@ struct Variable {
 
     /// The 'kind' field determines which entry of the following union is used
     union {
+        /// Unevaluated node in a computation graph
+        struct {
+            NodeType node;
+            uint32_t payload;
+        };
+
         // Floating point/integer value (reinterpreted as u64)
         uint64_t literal;
 
-        // Statement in an intermediate representation (PTX, LLVM IR)
+        // Raw statement in an intermediate representation (PTX, LLVM IR)
         char *stmt;
 
         /// Pointer to device memory
@@ -159,6 +174,7 @@ struct Variable {
     bool is_data()    const { return kind == (uint32_t) VarKind::Data;    }
     bool is_literal() const { return kind == (uint32_t) VarKind::Literal; }
     bool is_stmt()    const { return kind == (uint32_t) VarKind::Stmt;    }
+    bool is_node()    const { return kind == (uint32_t) VarKind::Node;    }
     bool is_dirty()   const { return ref_count_se > 0; }
 };
 
@@ -177,6 +193,10 @@ struct VariableKey {
     union {
         uint64_t literal;
         char *stmt;
+        struct {
+            NodeType node;
+            uint32_t payload;
+        };
     };
 
     VariableKey(const Variable &v) {
@@ -184,10 +204,15 @@ struct VariableKey {
         scope = v.scope;
         for (int i = 0; i < 4; ++i)
             dep[i] = v.dep[i];
-        if (v.is_literal())
+        if (v.is_literal()) {
             literal = v.literal;
-        else
+        } else if (v.is_stmt()) {
             stmt = v.stmt;
+        } else {
+            node = v.node;
+            payload = v.payload;
+        }
+
         backend = v.backend;
         kind = v.kind;
         type = v.type;
@@ -201,6 +226,8 @@ struct VariableKey {
             return false;
         if (kind == (uint32_t) VarKind::Literal)
             return literal == v.literal;
+        else if (kind == (uint32_t) VarKind::Node)
+            return node == v.node && payload == v.payload;
         else if (!free_stmt)
             return stmt == v.stmt;
         else
@@ -216,6 +243,8 @@ struct VariableKeyHasher {
         uint64_t hash_1;
         if (k.kind == (uint32_t) VarKind::Literal)
             hash_1 = k.literal;
+        else if (k.kind == (uint32_t) VarKind::Node)
+            hash_1 = (((uint64_t) k.node) << 32) + k.payload;
         else if (!k.free_stmt)
             hash_1 = (uintptr_t) k.stmt;
         else
@@ -679,142 +708,6 @@ struct State {
     }
 };
 
-struct Buffer {
-public:
-    Buffer(size_t size);
-
-    // Disable copy/move constructor and assignment
-    Buffer(const Buffer &) = delete;
-    Buffer(Buffer &&) = delete;
-    Buffer &operator=(const Buffer &) = delete;
-    Buffer &operator=(Buffer &&) = delete;
-
-    ~Buffer() {
-        free(m_start);
-    }
-
-    const char *get() { return m_start; }
-    const char *cur() { return m_cur; }
-
-    void clear() {
-        m_cur = m_start;
-        if (m_start != m_end)
-            m_start[0] = '\0';
-    }
-
-    template <size_t N> void put(const char (&str)[N]) {
-        put(str, N - 1);
-    }
-
-    /// Append a string with the specified length
-    void put(const char *str, size_t size) {
-        if (unlikely(m_cur + size >= m_end))
-            expand(size + 1 - remain());
-
-        memcpy(m_cur, str, size);
-        m_cur += size;
-        *m_cur = '\0';
-    }
-
-    /// Append an unsigned 32 bit integer
-    void put_uint32(uint32_t value) {
-        const int digits = 10;
-        const char *num = "0123456789";
-        char buf[digits];
-        int i = digits;
-
-        do {
-            buf[--i] = num[value % 10];
-            value /= 10;
-        } while (value);
-
-        return put(buf + i, digits - i);
-    }
-
-    /// Append an unsigned 64 bit integer
-    void put_uint64(uint64_t value) {
-        const int digits = 20;
-        const char *num = "0123456789";
-        char buf[digits];
-        int i = digits;
-
-        do {
-            buf[--i] = num[value % 10];
-            value /= 10;
-        } while (value);
-
-        return put(buf + i, digits - i);
-    }
-
-    /// Append an unsigned 64 bit integer (hex version)
-    void put_uint64_hex(uint64_t value) {
-        const int digits = 18;
-        const char *num = "0123456789abcdef";
-        char buf[digits];
-        int i = digits;
-
-        do {
-            buf[--i] = num[value & 0xF];
-            value >>= 4;
-        } while (value);
-
-        return put(buf + i, digits - i);
-    }
-
-    /// Append a single character to the buffer
-    void putc(char c) {
-        if (unlikely(m_cur + 1 >= m_end))
-            expand();
-        *m_cur++ = c;
-        *m_cur = '\0';
-    }
-
-    /// Append multiple copies of a single character to the buffer
-    void putc(char c, size_t count) {
-        if (unlikely(m_cur + count >= m_end))
-            expand(count + 1 - remain());
-        for (size_t i = 0; i < count; ++i)
-            *m_cur++ = c;
-        *m_cur = '\0';
-    }
-
-    /// Remove the last 'n' characters
-    void rewind(size_t n) {
-        if (m_cur < m_start + n)
-            m_cur = m_start;
-        else
-            m_cur -= n;
-        *m_cur = '\0';
-    }
-
-    /// Check if the buffer contains a given substring
-    bool contains(const char *needle) const {
-        return strstr(m_start, needle) != nullptr;
-    }
-
-    /// Append a formatted (printf-style) string to the buffer
-#if defined(__GNUC__)
-    __attribute__((__format__ (__printf__, 2, 3)))
-#endif
-    size_t fmt(const char *format, ...);
-
-    /// Like \ref fmt, but specify arguments through a va_list.
-    size_t vfmt(const char *format, va_list args_);
-
-    size_t size() const { return m_cur - m_start; }
-    size_t remain() const { return m_end - m_cur; }
-
-    void swap(Buffer &b) {
-        std::swap(m_start, b.m_start);
-        std::swap(m_cur, b.m_cur);
-        std::swap(m_end, b.m_end);
-    }
-    void expand(size_t minval = 2);
-
-private:
-    char *m_start, *m_cur, *m_end;
-};
-
 enum ParamType { Register, Input, Output };
 
 /// State specific to threads
@@ -840,7 +733,6 @@ inline ThreadState *thread_state(uint32_t backend) {
 }
 
 extern State state;
-extern Buffer buffer;
 
 #if !defined(_WIN32)
   extern char *jitc_temp_path;
@@ -894,3 +786,21 @@ extern void jitc_prefix_push(JitBackend backend, const char *label);
 
 /// Pop a label from the prefix stack
 extern void jitc_prefix_pop(JitBackend backend);
+
+JIT_MALLOC inline void* malloc_check(size_t size) {
+    void *ptr = malloc(size);
+    if (unlikely(!ptr)) {
+        fprintf(stderr, "malloc_check(): failed to allocate %zu bytes!", size);
+        abort();
+    }
+    return ptr;
+}
+
+JIT_MALLOC inline void* realloc_check(void *orig, size_t size) {
+    void *ptr = realloc(orig, size);
+    if (unlikely(!ptr)) {
+        fprintf(stderr, "realloc_check(): could not resize memory region to %zu bytes!", size);
+        abort();
+    }
+    return ptr;
+}
