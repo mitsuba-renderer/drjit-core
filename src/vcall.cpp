@@ -1389,8 +1389,8 @@ void jitc_vcall_upload(ThreadState *ts) {
         } else {
             Task *new_task = task_submit_dep(
                 nullptr, &ts->task, 1, 1,
-                [](uint32_t, void *payload) { jitc_free(*((void **) payload)); },
-                &data, sizeof(void *));
+                [](uint32_t, void *payload) { jit_free(*((void **) payload)); },
+                &data, sizeof(void *), nullptr, 1);
             task_release(ts->task);
             ts->task = new_task;
         }
