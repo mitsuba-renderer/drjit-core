@@ -35,6 +35,8 @@ struct Loop {
     std::vector<uint32_t> out;
     /// Are there unused loop variables that could be stripped away?
     bool simplify = false;
+    /// Is this loop only performing a single iteration?
+    bool single_iteration;
 };
 
 static std::vector<Loop *> loops;
@@ -173,7 +175,8 @@ uint32_t jitc_var_loop_cond(uint32_t loop_init, uint32_t cond,
 uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
                        uint32_t loop_cond, size_t n_indices,
                        uint32_t *indices_in, uint32_t **indices,
-                       uint32_t checkpoint, int first_round) {
+                       uint32_t checkpoint, int first_round,
+                       int single_iteration) {
     if (n_indices == 0)
         jitc_raise("jit_var_loop(): no loop state variables specified!");
 
@@ -200,6 +203,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
     loop->se_count = (uint32_t) se.size() - checkpoint;
     loop->init = loop_init;
     loop->cond = jitc_var(loop_cond)->dep[0];
+    loop->single_iteration = single_iteration;
 
     // =====================================================
     // 1. Various sanity checks
@@ -784,10 +788,11 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
         storage_size += type_size[vti];
     }
 
+    const char *label = (loop->single_iteration ? "done" : "cond");
     if (loop->backend == JitBackend::CUDA)
-        buffer.fmt("    bra l_%u_cond;\n", loop_reg);
+        buffer.fmt("    bra l_%u_%s;\n", loop_reg, label);
     else
-        buffer.fmt("    br label %%l_%u_cond;\n", loop_reg);
+        buffer.fmt("    br label %%l_%u_%s;\n", loop_reg, label);
 
     buffer.fmt("\nl_%u_done:\n", loop_reg);
 

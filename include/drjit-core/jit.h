@@ -1512,7 +1512,7 @@ extern JIT_EXPORT uint32_t jit_var_loop(const char *name, uint32_t loop_init,
                                         uint32_t loop_cond, size_t n_indices,
                                         uint32_t *indices_in,
                                         uint32_t **indices, uint32_t checkpoint,
-                                        int first_round);
+                                        int first_round, int single_iteration);
 
 /**
  * \brief Pushes a new mask variable onto the mask stack
