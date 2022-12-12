@@ -26,7 +26,8 @@ const char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
 void jitc_submit_cpu(KernelType type, ThreadState *ts, Func &&func,
-                     uint32_t width, uint32_t size = 1, bool release_prev = true) {
+                     uint32_t width, uint32_t size = 1, bool release_prev = true,
+                     bool always_async = false) {
 
     struct Payload { Func f; };
     Payload payload{ std::forward<Func>(func) };
@@ -37,7 +38,7 @@ void jitc_submit_cpu(KernelType type, ThreadState *ts, Func &&func,
     Task *new_task = task_submit_dep(
         nullptr, &ts->task, 1, size,
         [](uint32_t index, void *payload) { ((Payload *) payload)->f(index); },
-        &payload, sizeof(Payload));
+        &payload, sizeof(Payload), nullptr, (int) always_async);
 
     if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
         task_wait(new_task);
@@ -1332,6 +1333,7 @@ void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, u
             size, work_units);
 
         jitc_submit_cpu(
-            KernelType::Other, ts, [rec_](uint32_t) { jitc_free(rec_); }, 1);
+            KernelType::Other, ts, [rec_](uint32_t) { jit_free(rec_); }, 1, 1,
+            true, true);
     }
 }
