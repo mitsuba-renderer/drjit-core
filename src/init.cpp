@@ -316,11 +316,9 @@ void jitc_shutdown(int light) {
                     jitc_var_dec_ref(i);
             }
             jitc_free_flush(ts);
-            if (ts->backend == JitBackend::CUDA) {
+            if (ts->backend == JitBackend::CUDA && ts->stream) {
                 scoped_set_context guard(ts->context);
-                cuda_check(cuEventDestroy(ts->event));
                 cuda_check(cuStreamSynchronize(ts->stream));
-                cuda_check(cuStreamDestroy(ts->stream));
             }
 
             if (!ts->prefix_stack.empty()) {
@@ -334,6 +332,14 @@ void jitc_shutdown(int light) {
 
             delete ts->release_chain;
             delete ts;
+        }
+
+        for (const Device &d : state.devices) {
+            scoped_set_context guard(d.context);
+            if (d.stream) {
+                cuda_check(cuStreamDestroy(d.stream));
+                cuda_check(cuEventDestroy(d.event));
+            }
         }
 
         if (state.variables.empty() && !state.lvn_map.empty()) {
@@ -480,14 +486,18 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
                        "system.");
         }
 
-        const Device &device = state.devices[0];
+        Device &device = state.devices[0];
         ts->device = 0;
         ts->context = device.context;
         ts->compute_capability = device.compute_capability;
         ts->ptx_version = device.ptx_version;
         scoped_set_context guard(ts->context);
-        cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_DEFAULT));
-        cuda_check(cuEventCreate(&ts->event, CU_EVENT_DISABLE_TIMING));
+        if (!device.stream) {
+            cuda_check(cuStreamCreate(&device.stream, CU_STREAM_DEFAULT));
+            cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
+        }
+        ts->stream = device.stream;
+        ts->event = device.event;
         thread_state_cuda = ts;
     } else {
         if ((state.backends & (uint32_t) JitBackend::LLVM) == 0) {
@@ -528,23 +538,23 @@ void jitc_cuda_set_device(int device_id) {
     jitc_log(Info, "jit_cuda_set_device(%i)", device_id);
 
     Device &device = state.devices[device_id];
-    CUcontext new_context = device.context;
 
-    /* Disassociate from old context */ {
+    if (ts->stream) {
         scoped_set_context guard(ts->context);
         cuda_check(cuStreamSynchronize(ts->stream));
-        cuda_check(cuEventDestroy(ts->event));
-        cuda_check(cuStreamDestroy(ts->stream));
     }
 
     /* Associate with new context */ {
-        ts->context = new_context;
+        ts->context = device.context;
         ts->device = device_id;
         ts->compute_capability = device.compute_capability >= 60 ? 60 : 50;
         scoped_set_context guard(ts->context);
-
-        cuda_check(cuStreamCreate(&ts->stream, CU_STREAM_DEFAULT));
-        cuda_check(cuEventCreate(&ts->event, CU_EVENT_DISABLE_TIMING));
+        if (!device.stream) {
+            cuda_check(cuStreamCreate(&device.stream, CU_STREAM_DEFAULT));
+            cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
+        }
+        ts->stream = device.stream;
+        ts->event = device.event;
     }
 }
 

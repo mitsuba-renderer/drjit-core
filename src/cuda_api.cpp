@@ -199,15 +199,15 @@ bool jitc_cuda_init() {
         LOAD(cuDriverGetVersion);
         LOAD(cuEventCreate);
         LOAD(cuEventDestroy, "v2");
-        LOAD(cuEventRecord, "ptsz");
+        LOAD(cuEventRecord);
         LOAD(cuEventSynchronize);
         LOAD(cuEventElapsedTime);
         LOAD(cuFuncSetAttribute);
         LOAD(cuGetErrorName);
         LOAD(cuGetErrorString);
         LOAD(cuInit);
-        LOAD(cuLaunchHostFunc, "ptsz");
-        LOAD(cuLaunchKernel, "ptsz");
+        LOAD(cuLaunchHostFunc);
+        LOAD(cuLaunchKernel);
         LOAD(cuLinkAddData, "v2");
         LOAD(cuLinkComplete);
         LOAD(cuLinkCreate, "v2");
@@ -218,13 +218,13 @@ bool jitc_cuda_init() {
         LOAD(cuMemAllocManaged);
         LOAD(cuMemFree, "v2");
         LOAD(cuMemFreeHost);
-        LOAD(cuMemPrefetchAsync, "ptsz");
+        LOAD(cuMemPrefetchAsync);
 
-        LOAD(cuMemcpy, "ptds");
-        LOAD(cuMemcpyAsync, "ptsz");
-        LOAD(cuMemsetD16Async, "ptsz");
-        LOAD(cuMemsetD32Async, "ptsz");
-        LOAD(cuMemsetD8Async, "ptsz");
+        LOAD(cuMemcpy);
+        LOAD(cuMemcpyAsync);
+        LOAD(cuMemsetD16Async);
+        LOAD(cuMemsetD32Async);
+        LOAD(cuMemsetD8Async);
         LOAD(cuModuleGetFunction);
         LOAD(cuModuleLoadData);
         LOAD(cuModuleUnload);
@@ -233,8 +233,8 @@ bool jitc_cuda_init() {
         LOAD(cuCtxPopCurrent, "v2");
         LOAD(cuStreamCreate);
         LOAD(cuStreamDestroy, "v2");
-        LOAD(cuStreamSynchronize, "ptsz");
-        LOAD(cuStreamWaitEvent, "ptsz");
+        LOAD(cuStreamSynchronize);
+        LOAD(cuStreamWaitEvent);
         LOAD(cuPointerGetAttribute);
         LOAD(cuArrayCreate, "v2");
         LOAD(cuArray3DCreate, "v2");
@@ -243,8 +243,8 @@ bool jitc_cuda_init() {
         LOAD(cuTexObjectCreate);
         LOAD(cuTexObjectGetResourceDesc);
         LOAD(cuTexObjectDestroy);
-        LOAD(cuMemcpy2DAsync, "v2_ptsz");
-        LOAD(cuMemcpy3DAsync, "v2_ptsz");
+        LOAD(cuMemcpy2DAsync, "v2");
+        LOAD(cuMemcpy3DAsync, "v2");
         #undef LOAD
     } while (false);
 
@@ -256,8 +256,8 @@ bool jitc_cuda_init() {
     }
 
     // These two functions are optional
-    cuMemAllocAsync = decltype(cuMemAllocAsync)(dlsym(jitc_cuda_handle, "cuMemAllocAsync_ptsz"));
-    cuMemFreeAsync = decltype(cuMemFreeAsync)(dlsym(jitc_cuda_handle, "cuMemFreeAsync_ptsz"));
+    cuMemAllocAsync = decltype(cuMemAllocAsync)(dlsym(jitc_cuda_handle, "cuMemAllocAsync"));
+    cuMemFreeAsync = decltype(cuMemFreeAsync)(dlsym(jitc_cuda_handle, "cuMemFreeAsync"));
 #endif
 
     jitc_cuda_cuinit_result = cuInit(0);

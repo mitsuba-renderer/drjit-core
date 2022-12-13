@@ -337,6 +337,7 @@ void jitc_registry_set_attr(JitBackend backend, void *ptr, const char *name,
     }
 
     if (backend == JitBackend::CUDA) {
+        scoped_set_context guard(state.devices[0].context);
         cuda_check(
             cuMemcpyAsync((CUdeviceptr)((uint8_t *) attr.ptr + id * isize),
                           (CUdeviceptr) value, isize, ts->stream));
