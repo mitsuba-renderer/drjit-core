@@ -110,9 +110,10 @@ static void jitc_var_printf_assemble_cuda(const Variable *v,
     if (offset == 0)
         offset = 1;
 
+    buffer.put("    {\n");
     buffer.fmt("        .local .align %u .b8 buf[%u];\n", align, offset);
     buffer.put("        .extern .func (.param .b32 rv) vprintf (.param .b64 fmt, .param .b64 buf);\n");
-    buffer.put("        .global .align 1 .b8 data[] = { ");
+    buffer.put("        .global .align 1 .b8 print_data[] = { ");
 
     for (uint32_t i = 0; ; ++i) {
         buffer.put_uint32((uint32_t) fmt[i]);
@@ -120,7 +121,7 @@ static void jitc_var_printf_assemble_cuda(const Variable *v,
             break;
         buffer.put(", ");
     }
-    buffer.put(" };");
+    buffer.put(" };\n");
 
     offset = 0;
     for (uint32_t i = 0; i < extra.n_dep; ++i) {
