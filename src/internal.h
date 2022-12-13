@@ -248,6 +248,12 @@ struct Device {
     // CUDA device context
     CUcontext context;
 
+    /// Associated CUDA stream handle
+    CUstream stream = nullptr;
+
+    /// A CUDA event for synchronization purposes
+    CUevent event = nullptr;
+
     /// CUDA device ID
     int id;
 
