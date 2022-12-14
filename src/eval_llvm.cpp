@@ -331,7 +331,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             callable_depth--;
             fmt( "    $v_p1 = getelementptr inbounds i8, $<{i8*}$> %data, i32 $u\n"
                  "    $v_p2 = getelementptr inbounds i8, $<{i8*}$> $v_p1, <$w x i32> %offsets\n"
-                "{    $v_p3 = bitcast <$w x i8*> $v_p2 to <$w x {$m*}>\n|}"
+                "{    $v_p3 = bitcast <$w x i8*> $v_p2 to <$w x $m*>\n|}"
                  "    $v$s = call $M @llvm.masked.gather.v$w$h(<$w x {$m*}> $v_p{3|2}, i32 $a, <$w x i1> %mask, $M $z)\n",
                 v, offset,
                 v, v,
@@ -393,7 +393,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                    (char *) strrchr(buffer.get(), '{') - buffer.get() + 9;
 
         if (callables_local != callable_count)
-            put("    %callables = load i8**, i8*** @callables\n");
+            fmt("    %callables = load {i8**}, {i8***} @callables\n");
 
         if (alloca_size >= 0)
             fmt("    %buffer = alloca i8, i32 $u, align $u\n",
@@ -981,3 +981,217 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
     put("    ; -------------------\n\n");
 }
 
+
+/// Virtual function call code generation -- LLVM IR-specific bits
+void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
+                                  uint32_t self_reg, uint32_t mask_reg,
+                                  uint32_t offset_reg, uint32_t data_reg,
+                                  uint32_t n_out, uint32_t in_size,
+                                  uint32_t in_align, uint32_t out_size,
+                                  uint32_t out_align) {
+
+    uint32_t width = jitc_llvm_vector_width;
+    alloca_size  = std::max(alloca_size, (int32_t) ((in_size + out_size) * width));
+    alloca_align = std::max(alloca_align, (int32_t) (std::max(in_align, out_align) * width));
+
+    // =====================================================
+    // 1. Declare a few intrinsics that we will use
+    // =====================================================
+
+    fmt_intrinsic("@callables = dso_local local_unnamed_addr global {i8**} null, align 8");
+
+    /* How to prevent @callables from being optimized away as a constant, while
+       at the same time not turning it an external variable that would require a
+       global offset table (GOT)? Let's make a dummy function that writes to it.. */
+    fmt_intrinsic("define void @set_callables({i8**} %ptr) local_unnamed_addr #0 ${\n"
+                  "    store {i8**} %ptr, {i8***} @callables\n"
+                  "    ret void\n"
+                  "$}");
+
+    fmt_intrinsic("declare i32 @llvm.experimental.vector.reduce.umax.v$wi32(<$w x i32>)");
+    fmt_intrinsic("declare <$w x i64> @llvm.masked.gather.v$wi64(<$w x {i64*}>, i32, <$w x i1>, <$w x i64>)");
+
+    fmt( "\n"
+         "    br label %l$u_start\n"
+         "\nl$u_start:\n"
+         "    ; VCall: $s\n"
+        "{    %u$u_self_ptr_0 = bitcast $<i8*$> %rd$u to $<i64*$>\n|}"
+         "    %u$u_self_ptr = getelementptr i64, $<{i64*}$> {%u$u_self_ptr_0|%rd$u}, <$w x i32> %r$u\n"
+         "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x i64*> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z)\n"
+         "    %u$u_self_initial = trunc <$w x i64> %u$u_self_combined to <$w x i32>\n",
+        vcall_reg, vcall_reg, vcall->name,
+        vcall_reg, offset_reg,
+        vcall_reg, vcall_reg, offset_reg, self_reg,
+        vcall_reg, vcall_reg, mask_reg,
+        vcall_reg, vcall_reg);
+
+    if (data_reg) {
+        fmt("    %u$u_offset_1 = lshr <$w x i64> %u$u_self_combined, <",
+                 vcall_reg, vcall_reg);
+        for (uint32_t i = 0; i < width; ++i)
+            fmt("i64 32$s", i + 1 < width ? ", " : "");
+        fmt(">\n"
+            "    %u$u_offset = trunc <$w x i64> %u$u_offset_1 to <$w x i32>\n",
+            vcall_reg, vcall_reg);
+    }
+
+    // =====================================================
+    // 2. Pass the input arguments
+    // =====================================================
+
+    uint32_t offset = 0;
+    for (uint32_t i = 0; i < (uint32_t) vcall->in.size(); ++i) {
+        uint32_t index = vcall->in[i];
+        auto it = state.variables.find(index);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+
+        fmt(
+             "    %u$u_in_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
+            "{    %u$u_in_$u_1 = bitcast i8* %u$u_in_$u_0 to $M*\n|}",
+            vcall_reg, i, offset,
+            vcall_reg, i, vcall_reg, i, v2
+        );
+
+        if ((VarType) v2->type != VarType::Bool) {
+            fmt("    store $V, {$T*} %u$u_in_$u_1, align $A\n",
+                v2, v2, vcall_reg, i, v2);
+        } else {
+            fmt("    %u$u_$u_zext = zext $V to $M\n"
+                "    store $M %u$u_$u_zext, {$M*} %u$u_in_$u_1, align $A\n",
+                vcall_reg, i, v2, v2,
+                v2, vcall_reg, i, v2, vcall_reg, i, v2);
+        }
+
+        offset += type_size[v2->type] * width;
+    }
+
+    if (out_size)
+        fmt("    %u$u_out = getelementptr i8, {i8*} %buffer, i32 $u\n",
+            vcall_reg, in_size * width);
+
+    offset = 0;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        uint32_t index = vcall->out_nested[i];
+        auto it = state.variables.find(index);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+
+        fmt( "    %u$u_tmp_$u_{0|1} = getelementptr inbounds i8, {i8*} %u$u_out, i64 $u\n"
+            "{    %u$u_tmp_$u_1 = bitcast i8* %u$u_tmp_$u_0 to $M*\n|}"
+             "    store $M $z, {$M*} %u$u_tmp_$u_1, align $A\n",
+            vcall_reg, i, vcall_reg, offset,
+            vcall_reg, i, vcall_reg, i, v2,
+            v2, v2, vcall_reg, i, v2);
+
+        offset += type_size[v2->type] * width;
+    }
+
+    // =====================================================
+    // 3. Perform one call to each unique instance
+    // =====================================================
+
+    fmt("    br label %l$u_check\n"
+        "\nl$u_check:\n"
+        "    %u$u_self = phi <$w x i32> [ %u$u_self_initial, %l$u_start ], [ %u$u_self_next, %l$u_call ]\n",
+        vcall_reg,
+        vcall_reg,
+        vcall_reg, vcall_reg, vcall_reg, vcall_reg, vcall_reg);
+
+    fmt("    %u$u_next = call i32 @llvm.experimental.vector.reduce.umax.v$wi32(<$w x i32> %u$u_self)\n"
+        "    %u$u_valid = icmp ne i32 %u$u_next, 0\n"
+        "    br i1 %u$u_valid, label %l$u_call, label %l$u_end\n",
+        vcall_reg, vcall_reg,
+        vcall_reg, vcall_reg,
+        vcall_reg, vcall_reg, vcall_reg);
+
+    fmt("\nl$u_call:\n"
+        "    %u$u_bcast_0 = insertelement <$w x i32> undef, i32 %u$u_next, i32 0\n"
+        "    %u$u_bcast = shufflevector <$w x i32> %u$u_bcast_0, <$w x i32> undef, <$w x i32> $z\n"
+        "    %u$u_active = icmp eq <$w x i32> %u$u_self, %u$u_bcast\n"
+        "    %u$u_func_0 = getelementptr inbounds {i8*}, {i8**} %callables, i32 %u$u_next\n"
+        "    %u$u_func{_1|} = load {i8*}, {i8**} %u$u_func_0\n",
+        vcall_reg,
+        vcall_reg, vcall_reg, // bcast_0
+        vcall_reg, vcall_reg, // bcast
+        vcall_reg, vcall_reg, vcall_reg, // active
+        vcall_reg, vcall_reg, // func_0
+        vcall_reg, vcall_reg // func_1
+    );
+
+    // Cast into correctly typed function pointer
+    if (!jitc_llvm_opaque_pointers) {
+        fmt("    %u$u_func = bitcast i8* %u$u_func_1 to void (<$w x i1>",
+                 vcall_reg, vcall_reg);
+
+        if (vcall->use_self)
+            fmt(", <$w x i32>");
+
+        fmt(", i8*");
+        if (data_reg)
+            fmt(", $<i8*$>, <$w x i32>");
+
+        fmt(")*\n");
+    }
+
+    // Perform the actual function call
+    fmt("    call void %u$u_func(<$w x i1> %u$u_active",
+        vcall_reg, vcall_reg);
+
+    if (vcall->use_self)
+        fmt(", <$w x i32> %r$u", self_reg);
+
+    fmt(", {i8*} %buffer");
+
+    if (data_reg)
+        fmt(", $<{i8*}$> %rd$u, <$w x i32> %u$u_offset", data_reg, vcall_reg);
+
+    fmt(")\n"
+        "    %u$u_self_next = select <$w x i1> %u$u_active, <$w x i32> $z, <$w x i32> %u$u_self\n"
+        "    br label %l$u_check\n"
+        "\nl$u_end:\n",
+        vcall_reg, vcall_reg, vcall_reg, vcall_reg,
+        vcall_reg);
+
+    // =====================================================
+    // 5. Read back the output arguments
+    // =====================================================
+
+    offset = 0;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        uint32_t index = vcall->out_nested[i],
+                 index_2 = vcall->out[i];
+        auto it = state.variables.find(index);
+        if (it == state.variables.end())
+            continue;
+        uint32_t size = type_size[it->second.type],
+                 load_offset = offset;
+        offset += size * width;
+
+        // Skip if outer access expired
+        auto it2 = state.variables.find(index_2);
+        if (it2 == state.variables.end())
+            continue;
+
+        const Variable *v2 = &it2.value();
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+            continue;
+
+        VarType vt = (VarType) v2->type;
+
+        fmt( "    %u$u_out_$u_{0|1} = getelementptr inbounds i8, {i8*} %u$u_out, i64 $u\n"
+            "{    %u$u_out_$u_1 = bitcast i8* %u$u_out_$u_0 to $M*\n|}"
+             "    $v$s = load $M, {$M*} %u$u_out_$u_1, align $A\n",
+            vcall_reg, i, vcall_reg, load_offset,
+            vcall_reg, i, vcall_reg, i, v2,
+            v2, vt == VarType::Bool ? "_0" : "", v2, v2, vcall_reg, i, v2);
+
+            if (vt == VarType::Bool)
+                fmt("    $v = trunc $M $v_0 to $T\n", v2, v2, v2, v2);
+    }
+
+    fmt("    br label %l$u_done\n"
+        "\nl$u_done:\n", vcall_reg, vcall_reg);
+}
