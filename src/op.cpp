@@ -18,42 +18,6 @@
 extern StringBuffer var_buffer;
 
 // ===========================================================================
-// Helper functions to classify different variable types
-// ===========================================================================
-
-static bool jitc_is_arithmetic(VarType type) {
-    return type != VarType::Void && type != VarType::Bool;
-}
-
-static bool jitc_is_float(VarType type) {
-    return type == VarType::Float16 ||
-           type == VarType::Float32 ||
-           type == VarType::Float64;
-}
-
-static bool jitc_is_sint(VarType type) {
-    return type == VarType::Int8 ||
-           type == VarType::Int16 ||
-           type == VarType::Int32 ||
-           type == VarType::Int64;
-}
-
-static bool jitc_is_uint(VarType type) {
-    return type == VarType::UInt8 ||
-           type == VarType::UInt16 ||
-           type == VarType::UInt32 ||
-           type == VarType::UInt64;
-}
-
-static bool jitc_is_int(VarType type) {
-    return jitc_is_sint(type) || jitc_is_uint(type);
-}
-
-static bool jitc_is_not_void(VarType type) {
-    return type != VarType::Void;
-}
-
-// ===========================================================================
 // Evaluation helper routines for value constant values
 // ===========================================================================
 
@@ -1761,7 +1725,7 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index,
         if (v_target->placeholder)
             jitc_raise("jit_var_new_scatter(): cannot scatter to a placeholder variable!");
 
-        var_info.placeholder |= jitc_flags() & (uint32_t) JitFlag::Recording;
+        var_info.placeholder |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
         if (v_target->type != v_value->type)
             jitc_raise("jit_var_new_scatter(): target/value type mismatch!");
