@@ -137,8 +137,13 @@ bool jitc_llvm_init() {
         return false;
     }
 
-    // Check if it is safe to use opaque pointers
-    const char *typed_ptr_test = "@x = global ptr null, align 8\n";
+    // Check if it is safe to use opaque pointers (only parses on LLVM 14+)
+    const char *typed_ptr_test =
+        "@x = global ptr null, align 8\n"
+        "define void @foo {\n"
+        "    %x = load ptr, ptr @x, align 8\n"
+        "    ret void\n"
+        "}\n";
 
     LLVMMemoryBufferRef llvm_buf = LLVMCreateMemoryBufferWithMemoryRange(
         typed_ptr_test, strlen(typed_ptr_test), "typed_ptr_test", 0);
@@ -261,8 +266,8 @@ void jitc_llvm_update_strings() {
             else if (vt == VarType::Float16 || vt == VarType::Float32 ||
                      vt == VarType::Float64){
                 buf.put("0x");
-                for (uint32_t j = 0; j < 16; ++j)
-                    buf.put(j < 2 * type_size[i] ? 'F' : '0');
+                for (uint32_t k = 0; k < 16; ++k)
+                    buf.put(k < 2 * type_size[i] ? 'F' : '0');
             } else {
                 buf.put("-1");
             }

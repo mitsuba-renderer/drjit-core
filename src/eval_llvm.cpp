@@ -203,7 +203,7 @@ void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group) {
                suffix_target = (char *) strchr(buffer.get(), ':') - buffer.get() + 2;
 
         if (callable_count > 0)
-            fmt("    %callables = load {i8**}, {i8***} @callables\n");
+            fmt("    %callables = load {i8**}, {i8***} @callables, align 8\n");
 
         if (alloca_size >= 0)
             fmt("    %buffer = alloca i8, i32 $u, align $u\n",
@@ -365,7 +365,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 
         fmt( "    %out_$u_{0|1} = getelementptr inbounds i8, {i8*} %params, i64 $u\n"
             "{    %out_$u_1 = bitcast i8* %out_$u_0 to $M*\n|}"
-             "    %out_$u_2 = load $M, $M* %out_$u_1, align $A\n",
+             "    %out_$u_2 = load $M, {$M*} %out_$u_1, align $A\n",
             i, output_offset,
             i, i, v,
             i, v, v, i, v);
@@ -393,7 +393,7 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
                    (char *) strrchr(buffer.get(), '{') - buffer.get() + 9;
 
         if (callables_local != callable_count)
-            fmt("    %callables = load {i8**}, {i8***} @callables\n");
+            fmt("    %callables = load {i8**}, {i8***} @callables, align 8\n");
 
         if (alloca_size >= 0)
             fmt("    %buffer = alloca i8, i32 $u, align $u\n",
@@ -406,29 +406,6 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
         "}");
 }
 
-inline bool is_float(const Variable *v) {
-    VarType type = (VarType) v->type;
-    return type == VarType::Float16 ||
-           type == VarType::Float32 ||
-           type == VarType::Float64;
-}
-
-inline bool is_single(const Variable *v) {
-    return (VarType) v->type == VarType::Float32;
-}
-
-inline bool is_double(const Variable *v) {
-    return (VarType) v->type == VarType::Float64;
-}
-
-inline bool is_uint(const Variable *v) {
-    VarType type = (VarType) v->type;
-    return type == VarType::UInt8 ||
-           type == VarType::UInt16 ||
-           type == VarType::UInt32 ||
-           type == VarType::UInt64;
-}
-
 static void jitc_render_node_llvm(Variable *v) {
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
@@ -437,8 +414,8 @@ static void jitc_render_node_llvm(Variable *v) {
 
     switch (v->node) {
         case NodeType::Add:
-            fmt(is_float(v) ? "    $v = fadd $V, $v\n"
-                            : "    $v = add $V, $v\n",
+            fmt(jitc_is_float(v) ? "    $v = fadd $V, $v\n"
+                                 : "    $v = add $V, $v\n",
                 v, a0, a1);
             break;
 
@@ -481,11 +458,12 @@ static void jitc_render_node_llvm(Variable *v) {
                     const char *op, *zero_elem = nullptr, *intrinsic_name = nullptr;
                     switch ((ReduceOp) v->payload) {
                         case ReduceOp::Add:
-                            op = "fadd";
-                            if (is_single(a1)) {
+                            if (jitc_is_single(a1)) {
+                                op = "fadd";
                                 zero_elem = "float -0.0, ";
                                 intrinsic_name = "v2.fadd.f32";
-                            } else if (is_double(a1)) {
+                            } else if (jitc_is_double(a1)) {
+                                op = "fadd";
                                 zero_elem = "double -0.0, ";
                                 intrinsic_name = "v2.fadd.f64";
                             } else {
@@ -494,11 +472,12 @@ static void jitc_render_node_llvm(Variable *v) {
                             break;
 
                         case ReduceOp::Mul:
-                            op = "fmul";
-                            if (is_single(a1)) {
+                            if (jitc_is_single(a1)) {
+                                op = "fmul";
                                 zero_elem = "float -0.0, ";
                                 intrinsic_name = "v2.fmul.f32";
-                            } else if (is_double(a1)) {
+                            } else if (jitc_is_double(a1)) {
+                                op = "fmul";
                                 zero_elem = "double -0.0, ";
                                 intrinsic_name = "v2.fmul.f64";
                             } else {
@@ -507,11 +486,15 @@ static void jitc_render_node_llvm(Variable *v) {
                             break;
 
                         case ReduceOp::Min:
-                            op = is_float(a1) ? "fmin" : (is_uint(a1) ? "umin" : "smin");
+                            op = jitc_is_float(a1)
+                                     ? "fmin"
+                                     : (jitc_is_uint(a1) ? "umin" : "smin");
                             break;
 
                         case ReduceOp::Max:
-                            op = is_float(a1) ? "fmax" : (is_uint(a1) ? "umax" : "smax");
+                            op = jitc_is_float(a1)
+                                     ? "fmax"
+                                     : (jitc_is_uint(a1) ? "umax" : "smax");
                             break;
 
                         case ReduceOp::And: op = "and"; break;
@@ -532,7 +515,7 @@ static void jitc_render_node_llvm(Variable *v) {
                         fmt_intrinsic("declare $t @llvm.experimental.vector.reduce.$s.v$w$h($T)",
                                       a1, op, a1, a1);
 
-                    const char *reassoc = is_float(a1) ? "reassoc " : "";
+                    const char *reassoc = jitc_is_float(a1) ? "reassoc " : "";
 
                     fmt_intrinsic(
                         "define internal void @reduce_$s_$h(<$w x {$t*}> %ptr, $T %value, <$w x i1> %active_in) #0 ${\n"
@@ -804,7 +787,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
              "    store $V, {$T*} %u$u_in_$u_1, align $A\n",
              id, i, offset,
              id, i, id, i, v2,
-             v2, v2, v2);
+             v2, v2, id, i, v2);
 
         offset += type_size[v2->type] * width;
     }
@@ -905,7 +888,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         fmt("\nl$u_check:\n"
             "    %u$u_scene = phi <$w x {i8*}> [ %rd$u, %l$u_start ], [ %u$u_scene_next, %l$u_call ]\n"
             "    %u$u_scene_i64 = ptrtoint <$w x {i8*}> %u$u_scene to <$w x i64>\n"
-            "    %u$u_next_i64 = call i64 @llvm.experimental.vector.reduce.umax.v%wi64(<$w x i64> %u$u_scene_i64)\n"
+            "    %u$u_next_i64 = call i64 @llvm.experimental.vector.reduce.umax.v$wi64(<$w x i64> %u$u_scene_i64)\n"
             "    %u$u_next = inttoptr i64 %u$u_next_i64 to {i8*}\n"
             "    %u$u_valid = icmp ne {i8*} %u$u_next, null\n"
             "    br i1 %u$u_valid, label %l$u_call, label %l$u_end\n",
@@ -928,7 +911,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
             "    %u$u_bcast_2 = inttoptr <$w x i64> %u$u_bcast_1 to <$w x {i8*}>\n"
             "    %u$u_active = icmp eq <$w x {i8*}> %u$u_scene, %u$u_bcast_2\n"
             "    %u$u_active_2 = select <$w x i1> %u$u_active, <$w x i32> %u$u_mask_value, <$w x i32> $z\n"
-            "    store <$u x i32> %u$u_active_2, {<$w x i32>*} %u$u_in_0_1, align 64\n",
+            "    store <$w x i32> %u$u_active_2, {<$w x i32>*} %u$u_in_0_1, align 64\n",
             id,
             id, tname_tfar, tname_tfar, id, float_size * width,
             id, id,
@@ -951,10 +934,10 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
             "    store <$w x $s> %u$u_tfar_masked, {<$w x $s>*} %u$u_tfar_1, align $u\n"
             "    %u$u_scene_next = select <$w x i1> %u$u_active, <$w x {i8*}> $z, <$w x {i8*}> %u$u_scene\n"
             "    br label %l$u_check\n"
-            "\nl%u_end:\n",
+            "\nl$u_end:\n",
             id, tname_tfar, tname_tfar, id, float_size * width,
             id, id, tname_tfar, id, tname_tfar, id,
-            width, tname_tfar, id, tname_tfar, id, float_size * width,
+            tname_tfar, id, tname_tfar, id, float_size * width,
             id, id, id,
             id, id);
     }
@@ -965,9 +948,9 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
         VarType vt = (i < 3) ? float_type : VarType::UInt32;
         const char *tname = type_name_llvm[(int) vt];
         uint32_t tsize = type_size[(int) vt];
-        fmt( "    %u$u_out_%u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
-            "{    %u$u_out_%u_1 = bitcast i8* %u$u_out_%u_0 to <$w x $s> *\n|}"
-             "    %u$u_out_%u = load <$w x $s>, {<$w x $s>*} %u$u_out_%u_1, align $u\n",
+        fmt( "    %u$u_out_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
+            "{    %u$u_out_$u_1 = bitcast i8* %u$u_out_$u_0 to <$w x $s> *\n|}"
+             "    %u$u_out_$u = load <$w x $s>, {<$w x $s>*} %u$u_out_$u_1, align $u\n",
             id, i, offset,
             id, i, id, i, tname,
             id, i, tname, tname, id, i, float_size * width);
@@ -1017,7 +1000,7 @@ void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
          "    ; VCall: $s\n"
         "{    %u$u_self_ptr_0 = bitcast $<i8*$> %rd$u to $<i64*$>\n|}"
          "    %u$u_self_ptr = getelementptr i64, $<{i64*}$> {%u$u_self_ptr_0|%rd$u}, <$w x i32> %r$u\n"
-         "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x i64*> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z)\n"
+         "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x {i64*}> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z)\n"
          "    %u$u_self_initial = trunc <$w x i64> %u$u_self_combined to <$w x i32>\n",
         vcall_reg, vcall_reg, vcall->name,
         vcall_reg, offset_reg,

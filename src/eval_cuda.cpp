@@ -385,17 +385,6 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
         "}");
 }
 
-inline bool is_single(const Variable *v) {
-    return (VarType) v->type == VarType::Float32;
-}
-
-inline bool is_float(const Variable *v) {
-    VarType type = (VarType) v->type;
-    return type == VarType::Float16 ||
-           type == VarType::Float32 ||
-           type == VarType::Float64;
-}
-
 static const char *reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
 };
@@ -408,8 +397,8 @@ static void jitc_render_node_cuda(const Variable *v) {
 
     switch (v->node) {
         case NodeType::Add:
-            fmt(is_single(v) ? "    add.ftz.$t $v, $v, $v;\n"
-                             : "    add.$t $v, $v, $v;\n",
+            fmt(jitc_is_single(v) ? "    add.ftz.$t $v, $v, $v;\n"
+                                  : "    add.$t $v, $v, $v;\n",
                 v, v, a0, a1);
             break;
 
@@ -495,8 +484,7 @@ static void jitc_render_node_cuda(const Variable *v) {
                         "\n"
                         "    brev.b32 %r10, %r2;\n"
                         "    bfind.shiftamt.u32 %r40, %r10;\n"
-                        "    mov.u32 %r11, -2;\n"
-                        "    shf.l.wrap.b32 %r12, %r11, %r11, %r40;\n"
+                        "    shf.l.wrap.b32 %r12, -2, -2, %r40;\n"
                         "    and.b32 %r39, %r2, %r12;\n"
                         "    setp.ne.s32 %p2, %r39, 0;\n"
                         "    vote.sync.any.pred %p3, %p2, %r1;\n"
@@ -508,12 +496,12 @@ static void jitc_render_node_cuda(const Variable *v) {
                         "    bfind.shiftamt.u32 %r15, %r14;\n"
                         "    shfl.sync.idx.b32 %r17, %r5, %r15, 31, %r1;\n"
                         "    mov.b32 %q6, %r17;\n"
-                        "    $s.$t %q3, %q3, %q6;\n"
-                        "    shf.l.wrap.b32 %r19, %r11, %r11, %r15;\n"
+                        "    @%p2 $s.$t %q3, %q3, %q6;\n"
+                        "    shf.l.wrap.b32 %r19, -2, -2, %r15;\n"
                         "    and.b32 %r39, %r39, %r19;\n"
-                        "    setp.ne.s32 %p6, %r39, 0;\n"
-                        "    vote.sync.any.pred %p7, %p6, %r1;\n"
-                        "    @!%p7 bra maybe_scatter;\n"
+                        "    setp.ne.s32 %p2, %r39, 0;\n"
+                        "    vote.sync.any.pred %p3, %p2, %r1;\n"
+                        "    @!%p3 bra maybe_scatter;\n"
                         "    bra.uni slow_path_repeat;\n"
                         "\n"
                         "fast_path:\n"

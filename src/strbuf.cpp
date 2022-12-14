@@ -33,7 +33,6 @@ StringBuffer &StringBuffer::operator=(StringBuffer &&b) {
 
 void StringBuffer::clear() {
     m_cur = m_start;
-
     if (m_start != m_end)
         m_start[0] = '\0';
 }
@@ -241,7 +240,7 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
     const char *p = fmt;
     size_t arg = 0;
     char c;
-    while ((c = *p++)) {
+    while ((c = *p++) != '\0') {
         if (c != '$') {
             len++;
         } else {
@@ -307,7 +306,7 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
 
     // Phase 2: convert the string
     p = fmt;
-    while ((c = *p++)) {
+    while ((c = *p++) != '\0') {
         if (c == '$') {
             switch (*p++) {
                 case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
@@ -384,7 +383,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
     const char *p = fmt;
     size_t arg = 0;
     char c;
-    while ((c = *p++)) {
+    while ((c = *p++) != '\0') {
         if (c != '$') {
             len++;
         } else {
@@ -485,7 +484,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
     // Phase 2: convert the string
     size_t offset = 0;
     p = fmt;
-    while ((c = *p++)) {
+    while ((c = *p++) != '\0') {
         if (c == '$') {
             switch (*p++) {
                 case '{': *m_cur++= '{'; break;

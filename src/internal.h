@@ -57,6 +57,8 @@ struct Variable {
     #  else
     #    pragma GCC diagnostic ignored "-Wclass-memaccess"
     #  endif
+    #elif defined(_MSC_VER)
+    #  pragma warning (disable:4201) // nonstandard extension used: nameless struct/union
     #endif
 
     /// Zero-initialize by default
@@ -804,3 +806,57 @@ JIT_MALLOC inline void* realloc_check(void *orig, size_t size) {
     }
     return ptr;
 }
+
+
+// ===========================================================================
+// Helper functions to classify different variable types
+// ===========================================================================
+//
+
+inline bool jitc_is_arithmetic(VarType type) {
+    return type != VarType::Void && type != VarType::Bool;
+}
+
+inline bool jitc_is_float(VarType type) {
+    return type == VarType::Float16 ||
+           type == VarType::Float32 ||
+           type == VarType::Float64;
+}
+
+inline bool jitc_is_single(VarType type) {
+    return type == VarType::Float32;
+}
+
+inline bool jitc_is_double(VarType type) {
+    return type == VarType::Float64;
+}
+
+inline bool jitc_is_sint(VarType type) {
+    return type == VarType::Int8 ||
+           type == VarType::Int16 ||
+           type == VarType::Int32 ||
+           type == VarType::Int64;
+}
+
+inline bool jitc_is_uint(VarType type) {
+    return type == VarType::UInt8 ||
+           type == VarType::UInt16 ||
+           type == VarType::UInt32 ||
+           type == VarType::UInt64;
+}
+
+inline bool jitc_is_int(VarType type) {
+    return jitc_is_sint(type) || jitc_is_uint(type);
+}
+
+inline bool jitc_is_not_void(VarType type) {
+    return type != VarType::Void;
+}
+
+inline bool jitc_is_arithmetic(const Variable *v) { return jitc_is_arithmetic((VarType) v->type); }
+inline bool jitc_is_float(const Variable *v) { return jitc_is_float((VarType) v->type); }
+inline bool jitc_is_single(const Variable *v) { return jitc_is_single((VarType) v->type); }
+inline bool jitc_is_double(const Variable *v) { return jitc_is_double((VarType) v->type); }
+inline bool jitc_is_sint(const Variable *v) { return jitc_is_sint((VarType) v->type); }
+inline bool jitc_is_uint(const Variable *v) { return jitc_is_uint((VarType) v->type); }
+inline bool jitc_is_int(const Variable *v) { return jitc_is_int((VarType) v->type); }
