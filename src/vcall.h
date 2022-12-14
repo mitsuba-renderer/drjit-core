@@ -24,3 +24,85 @@ struct VCallDataRecord {
     uint32_t size;
     const void *src;
 };
+
+/// Encodes information about a virtual function call
+struct VCall {
+    JitBackend backend;
+
+    /// A descriptive name
+    char *name = nullptr;
+
+    /// ID of call variable
+    uint32_t id = 0;
+
+    /// Max # of distinct instances that might be referenced by the call
+    uint32_t n_inst = 0;
+
+    /// Array of size 'n_inst' with all instance IDs that might be referenced
+    std::vector<uint32_t> inst_id;
+
+    /// Array of size 'n_inst' listing the associated callable hash
+    std::vector<XXH128_hash_t> inst_hash;
+
+    /// Input variables at call site
+    std::vector<uint32_t> in;
+    /// Input placeholder variables
+    std::vector<uint32_t> in_nested;
+
+    /// Output variables at call site
+    std::vector<uint32_t> out;
+    /// Output variables *per instance*
+    std::vector<uint32_t> out_nested;
+
+    /// Per-instance offsets into side effects list
+    std::vector<uint32_t> checkpoints;
+    /// Compressed side effect index list
+    std::vector<uint32_t> side_effects;
+
+    /// Mapping from variable index to offset into call data
+    tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> data_map;
+    std::vector<uint32_t> data_offset;
+
+    uint64_t *offset = nullptr;
+    size_t offset_size = 0;
+
+    /// Storage in bytes for inputs/outputs before simplifications
+    uint32_t in_count_initial = 0;
+    uint32_t in_size_initial = 0;
+    uint32_t out_size_initial = 0;
+
+    /// Does this vcall need self as argument
+    bool use_self = false;
+
+    ~VCall() {
+        for (uint32_t index : out_nested)
+            jitc_var_dec_ref(index);
+        clear_side_effects();
+        free(name);
+    }
+
+    void clear_side_effects() {
+        if (checkpoints.empty() || checkpoints.back() == checkpoints.front())
+            return;
+        for (uint32_t index : side_effects)
+            jitc_var_dec_ref(index);
+        side_effects.clear();
+        std::fill(checkpoints.begin(), checkpoints.end(), 0);
+    }
+};
+
+
+
+extern void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
+                                         uint32_t self_reg, uint32_t mask_reg,
+                                         uint32_t offset_reg, uint32_t data_reg,
+                                         uint32_t n_out, uint32_t in_size,
+                                         uint32_t in_align, uint32_t out_size,
+                                         uint32_t out_align);
+
+extern void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
+                                         uint32_t self_reg, uint32_t mask_reg,
+                                         uint32_t offset_reg, uint32_t data_reg,
+                                         uint32_t n_out, uint32_t in_size,
+                                         uint32_t in_align, uint32_t out_size,
+                                         uint32_t out_align);

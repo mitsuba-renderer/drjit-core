@@ -34,7 +34,7 @@ enum NodeType : uint32_t {
     Add,
     Gather,
     Scatter,
-    Count
+    Count /// Denotes the number of different node types
 };
 
 enum class VarKind : uint32_t {

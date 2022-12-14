@@ -4,6 +4,9 @@
 #include "eval.h"
 #include <cstdarg>
 
+/// Global string buffer used to generate PTX/LLVM IR
+StringBuffer buffer { 1024 };
+
 static const char num[] = "0123456789abcdef";
 
 StringBuffer::StringBuffer(size_t capacity)
@@ -323,7 +326,6 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                         const Variable *v = va_arg(args2, const Variable *);
                         put_unchecked(type_name_ptx[v->type]);
                     }
-
                     break;
 
                 case 'b': {
@@ -655,5 +657,3 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
 
     *m_cur = '\0';
 }
-
-StringBuffer buffer { 1024 };

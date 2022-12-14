@@ -624,3 +624,218 @@ static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
 
     put(";\n");
 }
+
+/// Virtual function call code generation -- CUDA/PTX-specific bits
+void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
+                                  uint32_t self_reg, uint32_t mask_reg,
+                                  uint32_t offset_reg, uint32_t data_reg,
+                                  uint32_t n_out, uint32_t in_size,
+                                  uint32_t in_align, uint32_t out_size,
+                                  uint32_t out_align) {
+
+    // =====================================================
+    // 1. Conditional branch
+    // =====================================================
+
+    fmt("\n    @!%p$u bra l_masked_$u;\n\n"
+        "    { // VCall: $s\n", mask_reg, vcall_reg, vcall->name);
+
+    // =====================================================
+    // 2. Determine unique callable ID
+    // =====================================================
+
+    // %r3: callable ID
+    // %rd3: (high 32 bit): data offset
+    fmt("\n"
+        "        mad.wide.u32 %rd3, %r$u, 8, %rd$u;\n"
+        "        ld.global.u64 %rd3, [%rd3];\n"
+        "        cvt.u32.u64 %r3, %rd3;\n",
+        self_reg, offset_reg);
+
+    // =====================================================
+    // 3. Turn callable ID into a function pointer
+    // =====================================================
+
+    if (!uses_optix)
+        put("        ld.global.u64 %rd2, callables[%r3];\n");
+    else
+        put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
+
+    // =====================================================
+    // 4. Obtain pointer to supplemental call data
+    // =====================================================
+
+    if (data_reg)
+        fmt("        shr.u64 %rd3, %rd3, 32;\n"
+            "        add.u64 %rd3, %rd3, %rd$u;\n",
+            data_reg);
+
+    // %rd2: function pointer (if applicable)
+    // %rd3: call data pointer with offset
+
+    // =====================================================
+    // 5. Generate the actual function call
+    // =====================================================
+
+    put("\n");
+
+    // Special handling for predicates
+    for (uint32_t in : vcall->in) {
+        auto it = state.variables.find(in);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+
+        if ((VarType) v2->type != VarType::Bool)
+            continue;
+
+        fmt("        selp.u16 %w$u, 1, 0, %p$u;\n",
+            v2->reg_index, v2->reg_index);
+    }
+
+    put("        {\n");
+
+    // Call prototype
+    put("            proto: .callprototype");
+    if (out_size)
+        fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
+    put(" _(");
+    if (vcall->use_self) {
+        put(".reg .u32 self");
+        if (data_reg || in_size)
+            put(", ");
+    }
+    if (data_reg) {
+        put(".reg .u64 data");
+        if (in_size)
+            put(", ");
+    }
+    if (in_size)
+        fmt(".param .align $u .b8 params[$u]", in_align, in_size);
+    put(");\n");
+
+    // Input/output parameter arrays
+    if (out_size)
+        fmt("            .param .align $u .b8 out[$u];\n", out_align, out_size);
+    if (in_size)
+        fmt("            .param .align $u .b8 in[$u];\n", in_align, in_size);
+
+    // =====================================================
+    // 5.1. Pass the input arguments
+    // =====================================================
+
+    uint32_t offset = 0;
+    for (uint32_t in : vcall->in) {
+        auto it = state.variables.find(in);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+        uint32_t size = type_size[v2->type];
+
+        const char *tname = type_name_ptx[v2->type],
+                   *prefix = type_prefix[v2->type];
+
+        // Special handling for predicates (pass via u8)
+        if ((VarType) v2->type == VarType::Bool) {
+            tname = "u8";
+            prefix = "%w";
+        }
+
+        fmt("            st.param.$s [in+$u], $s$u;\n", tname, offset, prefix,
+            v2->reg_index);
+
+        offset += size;
+    }
+
+    if (vcall->use_self) {
+        fmt("            call $s%rd2, (%r$u$s$s), proto;\n",
+            out_size ? "(out), " : "", self_reg,
+            data_reg ? ", %rd3" : "",
+            in_size ? ", in" : "");
+    } else {
+        fmt("            call $s%rd2, ($s$s$s), proto;\n",
+            out_size ? "(out), " : "", data_reg ? "%rd3" : "",
+            data_reg && in_size ? ", " : "", in_size ? "in" : "");
+    }
+
+    // =====================================================
+    // 5.2. Read back the output arguments
+    // =====================================================
+
+    offset = 0;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        uint32_t index = vcall->out_nested[i],
+                 index_2 = vcall->out[i];
+        auto it = state.variables.find(index);
+        if (it == state.variables.end())
+            continue;
+        uint32_t size = type_size[it->second.type],
+                 load_offset = offset;
+        offset += size;
+
+        // Skip if expired
+        auto it2 = state.variables.find(index_2);
+        if (it2 == state.variables.end())
+            continue;
+
+        const Variable *v2 = &it2.value();
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+            continue;
+
+        const char *tname = type_name_ptx[v2->type],
+                   *prefix = type_prefix[v2->type];
+
+        // Special handling for predicates (pass via u8)
+        if ((VarType) v2->type == VarType::Bool) {
+            tname = "u8";
+            prefix = "%w";
+        }
+
+        fmt("            ld.param.$s $s$u, [out+$u];\n",
+            tname, prefix, v2->reg_index, load_offset);
+    }
+
+    put("        }\n\n");
+
+    // =====================================================
+    // 6. Special handling for predicates return value(s)
+    // =====================================================
+
+    for (uint32_t out : vcall->out) {
+        auto it = state.variables.find(out);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+        if ((VarType) v2->type != VarType::Bool)
+            continue;
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+            continue;
+
+        // Special handling for predicates
+        fmt("        setp.ne.u16 %p$u, %w$u, 0;\n",
+            v2->reg_index, v2->reg_index);
+    }
+
+
+    fmt("        bra.uni l_done_$u;\n"
+        "    }\n", vcall_reg);
+
+    // =====================================================
+    // 7. Prepare output registers for masked lanes
+    // =====================================================
+
+    fmt("\nl_masked_$u:\n", vcall_reg);
+    for (uint32_t out : vcall->out) {
+        auto it = state.variables.find(out);
+        if (it == state.variables.end())
+            continue;
+        const Variable *v2 = &it->second;
+        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+            continue;
+
+        fmt("    mov.$b $v, 0;\n", v2, v2);
+    }
+
+    fmt("\nl_done_$u:\n", vcall_reg);
+}
+
