@@ -662,19 +662,21 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     pgd[0].raygen.module = kernel.optix.mod;
     pgd[0].raygen.entryFunctionName = strdup(kern_name);
 
-    for (auto const &it : globals_map) {
-        if (!it.first.callable)
-            continue;
+    if (!jit_flag(JitFlag::VCallBranch)) {
+        for (auto const &it : globals_map) {
+            if (!it.first.callable)
+                continue;
 
-        char *name = (char *) malloc_check(52);
-        snprintf(name, 52, "__direct_callable__%016llx%016llx",
-                 (unsigned long long) it.first.hash.high64,
-                 (unsigned long long) it.first.hash.low64);
+            char *name = (char *) malloc_check(52);
+            snprintf(name, 52, "__direct_callable__%016llx%016llx",
+                     (unsigned long long) it.first.hash.high64,
+                     (unsigned long long) it.first.hash.low64);
 
-        uint32_t index = 1 + it.second.callable_index;
-        pgd[index].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
-        pgd[index].callables.moduleDC = kernel.optix.mod;
-        pgd[index].callables.entryFunctionNameDC = name;
+            uint32_t index = 1 + it.second.callable_index;
+            pgd[index].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+            pgd[index].callables.moduleDC = kernel.optix.mod;
+            pgd[index].callables.entryFunctionNameDC = name;
+        }
     }
 
     kernel.optix.pg = new OptixProgramGroup[n_programs];

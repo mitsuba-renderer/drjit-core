@@ -203,30 +203,48 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
         it.second.callable_index = ctr++;
     }
 
-    if (callable_count > 0 && !uses_optix) {
+    if (callable_count > 0) {
         size_t insertion_point =
                    (char *) strstr(buffer.get(), ".address_size 64\n\n") -
                    buffer.get() + 18,
                insertion_start = buffer.size();
 
-        buffer.fmt(".extern .global .u64 callables[%u];\n\n",
-                   callable_count_unique);
+        if (jit_flag(JitFlag::VCallBranch)) {
+            // Copy signatures to very beginning
+            for (const auto &it : globals_map) {
+                if (!it.first.callable)
+                    continue;
 
-        jitc_insert_code_at(insertion_point, insertion_start);
+                const char* func_definition = globals.get() + it.second.start;
+                const char* signature_begin = strstr(func_definition, ".func");
+                const char* signature_end = strstr(func_definition, "{");
 
-        buffer.fmt("\n.visible .global .align 8 .u64 callables[%u] = {\n",
-                   callable_count_unique);
-        for (auto const &it : globals_map) {
-            if (!it.first.callable)
-                continue;
+                buffer.put(".visible ");
+                buffer.put(signature_begin,
+                           signature_end - 1 - signature_begin);
+                buffer.put(";\n");
+            }
+            buffer.fmt("\n");
+            jitc_insert_code_at(insertion_point, insertion_start);
+        } else if (!uses_optix) {
+            buffer.fmt(".extern .global .u64 callables[%u];\n\n",
+                       callable_count_unique);
+            jitc_insert_code_at(insertion_point, insertion_start);
 
-            buffer.fmt("    func_%016llx%016llx%s\n",
-                       (unsigned long long) it.first.hash.high64,
-                       (unsigned long long) it.first.hash.low64,
-                       it.second.callable_index + 1 < callable_count_unique ? "," : "");
+            buffer.fmt("\n.visible .global .align 8 .u64 callables[%u] = {\n",
+                       callable_count_unique);
+            for (auto const &it : globals_map) {
+                if (!it.first.callable)
+                    continue;
+
+                buffer.fmt("    func_%016llx%016llx%s\n",
+                           (unsigned long long) it.first.hash.high64,
+                           (unsigned long long) it.first.hash.low64,
+                           it.second.callable_index + 1 < callable_count_unique ? "," : "");
+            }
+
+            buffer.put("};\n\n");
         }
-
-        buffer.put("};\n\n");
     }
 
     jitc_vcall_upload(ts);
@@ -245,8 +263,9 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
 
     buffer.put(".visible .func");
     if (out_size) buffer.fmt(" (.param .align %u .b8 result[%u])", out_align, out_size);
+    bool uses_direct_callables = uses_optix && !(jit_flag(JitFlag::VCallBranch));
     buffer.fmt(" %s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
-               uses_optix ? "__direct_callable__" : "func_");
+               uses_direct_callables ? "__direct_callable__" : "func_");
 
     if (use_self) {
         buffer.put(".reg .u32 self");
