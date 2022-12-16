@@ -1599,8 +1599,8 @@ uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
 /// Return a human-readable summary of registered variables
 const char *jitc_var_whos() {
     var_buffer.clear();
-    var_buffer.put("\n  ID        Type       Status       Refs  Entries     Storage    Label");
-    var_buffer.put("\n  ====================================================================\n");
+    var_buffer.put("\n  ID        Type       Status       Refs    Entries   Storage     Label");
+    var_buffer.put("\n  =======================================================================\n");
 
     std::vector<uint32_t> indices;
     indices.reserve(state.variables.size());
@@ -1646,7 +1646,7 @@ const char *jitc_var_whos() {
         size_t sz = var_buffer.fmt("  %u", (uint32_t) v->ref_count);
         const char *label = jitc_var_label(index);
 
-        var_buffer.fmt("%*s%-12u%-8s   %s\n", 12 - (int) sz, "", v->size,
+        var_buffer.fmt("%*s%-10u%-8s   %s\n", 10 - (int) sz, "", v->size,
                    jitc_mem_string(mem_size), label ? label : "");
 
         if (v->is_data())
@@ -1657,19 +1657,22 @@ const char *jitc_var_whos() {
     if (indices.empty())
         var_buffer.put("                       -- No variables registered --\n");
 
-    constexpr size_t BucketSize = sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>);
+    constexpr size_t BucketSize1 = sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>);
+    constexpr size_t BucketSize2 = sizeof(tsl::detail_robin_hash::bucket_entry<LVNMap::value_type, false>);
 
-    var_buffer.put("  ========================================================================\n\n");
+    var_buffer.put("  =======================================================================\n\n");
     var_buffer.put("  JIT compiler\n");
     var_buffer.put("  ============\n");
-    var_buffer.fmt("   - Evaluated variables     : %s used.\n",
+    var_buffer.fmt("   - Storage           : %s on device, ",
                jitc_mem_string(mem_size_evaluated));
-    var_buffer.fmt("   - Unevaluated variables   : %s saved.\n",
+    var_buffer.fmt("%s unevaluated.\n",
                jitc_mem_string(mem_size_unevaluated));
-    var_buffer.fmt("   - Variables created       : %u (peak: %u, table size: %s).\n",
+    var_buffer.fmt("   - Variables created : %u (peak: %u, table size: %s).\n",
                state.variable_index, state.variable_watermark,
-               jitc_mem_string(state.variables.bucket_count() * BucketSize));
-    var_buffer.fmt("   - Kernel launches         : %zu (%zu cache hits, "
+               jitc_mem_string(
+                   state.variables.bucket_count() * BucketSize1 +
+                   state.lvn_map.bucket_count() * BucketSize2));
+    var_buffer.fmt("   - Kernel launches   : %zu (%zu cache hits, "
                "%zu soft, %zu hard misses).\n\n",
                state.kernel_launches, state.kernel_hits,
                state.kernel_soft_misses, state.kernel_hard_misses);
@@ -1677,7 +1680,7 @@ const char *jitc_var_whos() {
     var_buffer.put("  Memory allocator\n");
     var_buffer.put("  ================\n");
     for (int i = 0; i < (int) AllocType::Count; ++i)
-        var_buffer.fmt("   - %-20s: %s/%s used (peak: %s).\n",
+        var_buffer.fmt("   - %-18s: %s/%s used (peak: %s).\n",
                    alloc_type_name[i],
                    std::string(jitc_mem_string(state.alloc_usage[i])).c_str(),
                    std::string(jitc_mem_string(state.alloc_allocated[i])).c_str(),
@@ -1802,7 +1805,7 @@ const char *jitc_var_graphviz() {
         }
 
         if (v->is_literal()) {
-            var_buffer.put("Value constant: ");
+            var_buffer.put("Literal: ");
             jitc_value_print(v, true);
             color = "gray90";
         } else if (v->is_data()) {
@@ -1824,8 +1827,8 @@ const char *jitc_var_graphviz() {
                 var_buffer.rewind_to(var_buffer.size() - 1);
             }
         } else if (v->is_node()) {
-            print_escape(node_names[v->node]);
-            var_buffer.put("\\l");
+            const char *name = node_names[v->node];
+            var_buffer.put(name, strlen(name));
         }
 
         if (v->placeholder && !color)
@@ -1833,7 +1836,7 @@ const char *jitc_var_graphviz() {
         if (labeled && !color)
             color = "wheat";
 
-        var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%u|refs=%u}}",
+        var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%u|Refs: %u}}",
             (JitBackend) v->backend == JitBackend::CUDA ? "cuda" : "llvm",
             type_name_short[v->type], v->size, index,
             (uint32_t) v->ref_count);
