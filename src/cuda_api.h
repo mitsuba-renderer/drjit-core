@@ -16,8 +16,6 @@
 #else
 #  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR 75
 #  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR 76
-#  define CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS 89
-#  define CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY 83
 #  define CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN 97
 #  define CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED 115
 #  define CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT 16
@@ -113,10 +111,8 @@ extern CUresult (*cuPointerGetAttribute)(void* data, int, void*);
 extern CUresult (*cuMemAdvise)(void *, size_t, int, CUdevice);
 extern CUresult (*cuMemAlloc)(void **, size_t);
 extern CUresult (*cuMemAllocHost)(void **, size_t);
-extern CUresult (*cuMemAllocManaged)(void **, size_t, unsigned int);
 extern CUresult (*cuMemFree)(void *);
 extern CUresult (*cuMemFreeHost)(void *);
-extern CUresult (*cuMemPrefetchAsync)(const void *, size_t, CUdevice, CUstream);
 extern CUresult (*cuMemcpy)(void *, const void *, size_t);
 extern CUresult (*cuMemcpyAsync)(void *, const void *, size_t, CUstream);
 extern CUresult (*cuMemsetD16Async)(void *, unsigned short, size_t, CUstream);

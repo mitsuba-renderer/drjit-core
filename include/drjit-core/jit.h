@@ -369,22 +369,6 @@ enum class AllocType : uint32_t {
      */
     Device,
 
-    /**
-     * Memory that is mapped in the address space of the host & all GPUs.
-     *
-     * Managed memory has asynchronous semantics similar to \c HostAsync.
-     */
-    Managed,
-
-    /**
-     * Like \c Managed, but more efficient when accesses are mostly reads. In
-     * this case, the system will distribute multiple read-only copies instead
-     * of moving memory back and forth.
-     *
-     * This type of memory has asynchronous semantics similar to \c HostAsync.
-     */
-    ManagedReadMostly,
-
     /// Number of possible allocation types
     Count
 };
@@ -393,8 +377,6 @@ enum AllocType {
     AllocTypeHost,
     AllocTypeHostPinned,
     AllocTypeDevice,
-    AllocTypeManaged,
-    AllocTypeManagedReadMostly,
     AllocTypeCount
 };
 #endif
@@ -425,10 +407,10 @@ extern JIT_EXPORT void *jit_malloc(JIT_ENUM AllocType type, size_t size)
  * be called to also clear this cache.
  *
  * When \c ptr is an asynchronous host pointer (\ref AllocType::HostAsync) or
- * GPU-accessible pointer (\ref AllocType::Device, \ref AllocType::HostPinned,
- * \ref AllocType::Managed, \ref AllocType::ManagedReadMostly), the associated
- * memory region is possibly still being used by a running kernel, and it is
- * therefore merely *scheduled* to be reclaimed once this kernel finishes.
+ * GPU-accessible pointer (\ref AllocType::Device, \ref AllocType::HostPinned),
+ * the associated memory region is possibly still being used by a running
+ * kernel, and it is therefore merely *scheduled* to be reclaimed once this
+ * kernel finishes.
  *
  * Kernel launches and memory-related operations (malloc, free) occur
  * asynchronously but using a linear ordering when they are scheduled by the
@@ -450,29 +432,6 @@ extern JIT_EXPORT void jit_malloc_clear_statistics();
 
 /// Flush internal kernel cache
 extern JIT_EXPORT void jit_flush_kernel_cache();
-
-/**
- * \brief Asynchronously prefetch a managed memory region allocated using \ref
- * jit_malloc() so that it is available on a specified device
- *
- * This operation prefetches a memory region so that it is available on the CPU
- * (<tt>device==-1</tt>) or specified CUDA device (<tt>device&gt;=0</tt>). This
- * operation only make sense for allocations of type <tt>AllocType::Managed<tt>
- * and <tt>AllocType::ManagedReadMostly</tt>. In the former case, the memory
- * region will be fully migrated to the specified device, and page mappings
- * established elsewhere are cleared. For the latter, a read-only copy is
- * created on the target device in addition to other copies that may exist
- * elsewhere.
- *
- * The function also takes a special argument <tt>device==-2</tt>, which
- * creates a read-only mapping on *all* available GPUs.
- *
- * The prefetch operation is enqueued on the current device and thread and runs
- * asynchronously with respect to the CPU, hence a \ref jit_sync_thread()
- * operation is advisable if data is <tt>target==-1</tt> (i.e. prefetching into
- * CPU memory).
- */
-extern JIT_EXPORT void jit_malloc_prefetch(void *ptr, int device);
 
 /// Query the flavor of a memory allocation made using \ref jit_malloc()
 extern JIT_EXPORT JIT_ENUM AllocType jit_malloc_type(void *ptr);

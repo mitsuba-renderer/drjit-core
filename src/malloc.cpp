@@ -30,17 +30,14 @@ static_assert(
     "AllocUsedMap: incorrect bucket size, likely an issue with padding/packing!");
 
 const char *alloc_type_name[(int) AllocType::Count] = {
-    "host",   "host-async", "host-pinned",
-    "device", "managed",    "managed-read-mostly"
+    "host",   "host-async", "host-pinned", "device"
 };
 
 const char *alloc_type_name_short[(int) AllocType::Count] = {
     "host       ",
     "host-async ",
     "host-pinned",
-    "device     ",
-    "managed    ",
-    "managed/rm "
+    "device     "
 };
 
 // Round an unsigned integer up to a power of two
@@ -201,23 +198,10 @@ void* jitc_malloc(AllocType type, size_t size) {
                 return cuMemAllocAsync(ptr_, size_, thread_state_cuda->stream);
             };
 
-            auto cuMemAllocManaged_ = [](CUdeviceptr *ptr_, size_t size_) {
-                return cuMemAllocManaged(ptr_, size_, CU_MEM_ATTACH_GLOBAL);
-            };
-
-            auto cuMemAllocManagedReadMostly_ = [](CUdeviceptr *ptr_, size_t size_) {
-                CUresult ret = cuMemAllocManaged(ptr_, size_, CU_MEM_ATTACH_GLOBAL);
-                if (ret == CUDA_SUCCESS)
-                    cuda_check(cuMemAdvise(*ptr_, size_, CU_MEM_ADVISE_SET_READ_MOSTLY, 0));
-                return ret;
-            };
-
             bool hasAllocAsync = state.devices[ts->device].memory_pool_support;
             switch (type) {
                 case AllocType::HostPinned:        alloc = (decltype(alloc)) cuMemAllocHost; break;
                 case AllocType::Device:            alloc = hasAllocAsync ? cuMemAllocAsync_ : cuMemAlloc; break;
-                case AllocType::Managed:           alloc = cuMemAllocManaged_; break;
-                case AllocType::ManagedReadMostly: alloc = cuMemAllocManagedReadMostly_; break;
                 default:
                     jitc_fail("jit_malloc(): internal-error unsupported allocation type!");
             }
@@ -469,40 +453,6 @@ void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
     return ptr_new;
 }
 
-/// Asynchronously prefetch a memory region
-void jitc_malloc_prefetch(void *ptr, int device) {
-    if (device == -1) {
-        device = CU_DEVICE_CPU;
-    } else {
-        if ((size_t) device >= state.devices.size())
-            jitc_raise("jit_malloc_prefetch(): invalid device ID!");
-        device = state.devices[device].id;
-    }
-
-    auto it = state.alloc_used.find(ptr);
-    if (unlikely(it == state.alloc_used.end()))
-        jitc_raise("jit_malloc_prefetch(): unknown address " DRJIT_PTR "!",
-                  (uintptr_t) ptr);
-
-    AllocInfo ai = it.value();
-
-    if ((AllocType) ai.type != AllocType::Managed &&
-        (AllocType) ai.type != AllocType::ManagedReadMostly)
-        jitc_raise("jit_malloc_prefetch(): invalid memory type, expected "
-                  "Managed or ManagedReadMostly.");
-
-    ThreadState *ts = thread_state(JitBackend::CUDA);
-    scoped_set_context guard(ts->context);
-    if (device == -2) {
-        for (const Device &d : state.devices)
-            cuda_check(cuMemPrefetchAsync((CUdeviceptr) ptr, ai.size, d.id,
-                                          ts->stream));
-    } else {
-        cuda_check(cuMemPrefetchAsync((CUdeviceptr) ptr, ai.size, device,
-                                      ts->stream));
-    }
-}
-
 static bool jitc_flush_malloc_cache_warned = false;
 
 static ProfilerRegion profiler_region_flush_malloc_cache("jit_flush_malloc_cache");
@@ -565,14 +515,6 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
                             for (void *ptr : entries)
                                 cuda_check(cuMemFree((CUdeviceptr) ptr));
                         }
-                    }
-                    break;
-
-                case AllocType::Managed:
-                case AllocType::ManagedReadMostly:
-                    if (state.backends & (uint32_t) JitBackend::CUDA) {
-                        for (void *ptr : entries)
-                            cuda_check(cuMemFree((CUdeviceptr) ptr));
                     }
                     break;
 

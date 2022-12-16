@@ -69,9 +69,6 @@ extern void jitc_free_flush(ThreadState *ts);
 /// Change the flavor of an allocated memory region
 extern void* jitc_malloc_migrate(void *ptr, AllocType type, int move);
 
-/// Asynchronously prefetch a memory region
-extern void jitc_malloc_prefetch(void *ptr, int device);
-
 /// Release all unused memory to the GPU / OS
 extern void jitc_flush_malloc_cache(bool flush_local, bool warn);
 

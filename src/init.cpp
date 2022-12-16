@@ -130,7 +130,7 @@ void jitc_init(uint32_t backends) {
     bool has_cuda = state.backends & (uint32_t) JitBackend::CUDA;
     for (int i = 0; has_cuda && i < jitc_cuda_devices; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
-            unified_addr = 0, managed = 0, shared_memory_bytes = 0,
+            unified_addr = 0, shared_memory_bytes = 0,
             cc_minor = 0, cc_major = 0, memory_pool_support = 0,
             tcc_driver = 0, preemptable = 0;
 
@@ -144,7 +144,6 @@ void jitc_init(uint32_t backends) {
         cuda_check(cuDeviceGetAttribute(&pci_dom_id, CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID, i));
         cuda_check(cuDeviceGetAttribute(&num_sm, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, i));
         cuda_check(cuDeviceGetAttribute(&unified_addr, CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING, i));
-        cuda_check(cuDeviceGetAttribute(&managed, CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY, i));
         cuda_check(cuDeviceGetAttribute(&shared_memory_bytes, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN, i));
         cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
         cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
@@ -174,9 +173,6 @@ void jitc_init(uint32_t backends) {
 
         if (unified_addr == 0) {
             jitc_log(Warn, " - Warning: device does *not* support unified addressing, skipping ..");
-            continue;
-        } else if (managed == 0) {
-            jitc_log(Warn, " - Warning: device does *not* support managed memory, skipping ..");
             continue;
         }
 

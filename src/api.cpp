@@ -334,11 +334,6 @@ void jit_malloc_clear_statistics() {
     jitc_malloc_clear_statistics();
 }
 
-void jit_malloc_prefetch(void *ptr, int device) {
-    lock_guard guard(state.lock);
-    jitc_malloc_prefetch(ptr, device);
-}
-
 enum AllocType jit_malloc_type(void *ptr) {
     lock_guard guard(state.lock);
     return jitc_malloc_type(ptr);
