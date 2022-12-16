@@ -1,28 +1,217 @@
-/*
-    src/op.cpp -- Conversion of standard operations into PTX and LLVM IR
-
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
-
-    All rights reserved. Use of this source code is governed by a BSD-style
-    license that can be found in the LICENSE file.
-*/
-
+#include <drjit-core/containers.h>
 #include "internal.h"
 #include "var.h"
-#include "eval.h"
 #include "log.h"
+#include "eval.h"
 #include "op.h"
-#include "printf.h"
 
-/// Temporary string buffer for miscellaneous variable-related tasks
-extern StringBuffer var_buffer;
+template <bool Value> using enable_if_t = std::enable_if_t<Value, int>;
 
-// ===========================================================================
-// Evaluation helper routines for value constant values
-// ===========================================================================
+/// Various checks that can be requested from jitc_var_check()
+enum CheckFlags {
+    Disabled = 0,
+    IsArithmetic = 1,
+    IsInt = 2,
+    IsIntOrBool = 4,
+    IsNotVoid = 8,
+    IsFloat = 16,
+    IsCUDA = 32
+};
 
-template <bool Value>
-using enable_if_t = typename std::enable_if<Value, int>::type;
+/// Summary information about a set of variables returned by jitc_var_check()
+struct VarInfo {
+    /// Backend (assuming consistent operands)
+    JitBackend backend;
+
+    /// Type (assuming consistent operands)
+    VarType type;
+
+    /// Output size given the size of the operands
+    uint32_t size;
+
+    /// Should Dr.Jit try to simplify the operation? (if some operands are literals)
+    bool simplify;
+
+    /// Are *all* operands literals?
+    bool literal;
+
+    /// Did an operand have the 'placeholder' bit set?
+    bool placeholder;
+};
+
+/**
+ * \brief Check a set of variable indices and return summary information about them
+ *
+ * This function checks that the input arguments have a compatible size In
+ * debug mode, it performs further checks (all of these are technically
+ * "impossible" because the type system of the Dr.Jit C++ wrapper should have
+ * caught them. But we still check just in case..):
+ *
+ * - It ensures that all arguments have a consistent backend
+ * - It checks that the input types are consistent (if Check != Disabled)
+ * - If Check == IsArithmetic, IsFloat, etc., it checks that the types make sense
+ *
+ * Note that the function does not check if any input arguments have pending
+ * side effects (`is_dirty() == true`). This step is postponed to the
+ * `jitc_var_new_node_x()` function to permit simplifications of operations
+ * combining dirty and literal arguments (this is important for autodiff).
+ *
+ * Finally, the function returns a tuple containing a `VarInfo` record (see the
+ * documentation of its fields for details) and a `const Variable *` pointer
+ * per operand.
+ */
+template <int Flags, typename... Args, size_t... Is>
+auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... args) {
+    constexpr size_t Size = sizeof...(Args);
+    uint32_t dep[Size] = { args... };
+    Variable *v[Size];
+
+    bool placeholder = false,
+         simplify = false,
+         literal = true;
+
+    JitBackend backend = JitBackend::Invalid;
+    VarType type = VarType::Void;
+    uint32_t size = 0;
+    const char *err = nullptr;
+
+    for (uint32_t i = 0; i < Size; ++i) {
+        if (!dep[i])
+            continue;
+        Variable *vi = jitc_var(dep[i]);
+
+#if !defined(NDEBUG)
+        if constexpr (Flags & IsArithmetic) {
+            if (unlikely(!jitc_is_arithmetic(vi))) {
+                err = "expected arithmetic operand types";
+                goto fail;
+            }
+        }
+
+        if constexpr (Flags & IsInt) {
+            if (unlikely(!jitc_is_int(vi))) {
+                err = "expected integer operand types";
+                goto fail;
+            }
+        }
+
+        if constexpr (Flags & IsIntOrBool) {
+            if (unlikely(!jitc_is_int(vi) && !jitc_is_bool(vi))) {
+                err = "expected integer or boolean operand types";
+                goto fail;
+            }
+        }
+
+        if constexpr (Flags & IsNotVoid) {
+            if (unlikely(jitc_is_void(vi))) {
+                err = "operand cannot be void";
+                goto fail;
+            }
+        }
+
+        if constexpr (Flags & IsFloat) {
+            if (unlikely(!jitc_is_float(vi))) {
+                err = "expected floating point operand types";
+                goto fail;
+            }
+        }
+
+        if constexpr (Flags & IsCUDA) {
+            if (unlikely((JitBackend) vi->backend != JitBackend::CUDA)) {
+                err = "operation is only supported on the CUDA backend";
+                goto fail;
+            }
+        }
+
+        if constexpr (Flags != Disabled) {
+            if (unlikely(type != VarType::Void && (VarType) vi->type != type)) {
+                err = "operands have incompatible types";
+                goto fail;
+            }
+        }
+
+        if (unlikely(backend != JitBackend::Invalid && (JitBackend) vi->backend != backend)) {
+            err = "operands have different backends";
+            goto fail;
+        }
+
+#endif
+
+        size = std::max(size, vi->size);
+        placeholder |= (bool) vi->placeholder;
+        bool is_literal = vi->is_literal();
+        literal &= is_literal;
+        simplify |= is_literal;
+        backend = (JitBackend) vi->backend;
+        if (type == VarType::Void)
+            type = (VarType) vi->type;
+        v[i] = vi;
+    }
+
+    if (size > 0) {
+        // Try simplifying binary expressions with matched arguments
+        if constexpr (Size == 2)
+            simplify |= dep[0] == dep[1];
+
+        for (uint32_t i = 0; i < Size; ++i) {
+            if (unlikely(v[i]->size != size && v[i]->size != 1)) {
+                err = "operands have incompatible sizes";
+                size = (uint32_t) -1;
+                goto fail;
+            }
+        }
+
+        if (simplify)
+            simplify = jitc_flags() & (uint32_t) JitFlag::ConstProp;
+    }
+
+    return drjit::dr_tuple(
+        VarInfo{ backend, type, size, simplify, literal, placeholder },
+        v[Is]...
+    );
+
+fail:
+    buffer.clear();
+    buffer.fmt("%s(", name);
+    for (uint32_t i = 0; i < Size; ++i)
+        buffer.fmt("r%u%s", dep[i], i + 1 < Size ? ", " : "");
+    buffer.fmt("): %s!", err);
+
+    if (size == (uint32_t) -1) {
+        buffer.put(" (sizes: ");
+        for (uint32_t i = 0; i < Size; ++i)
+            buffer.fmt("%u%s", dep[i] ? jitc_var(dep[i])->size : 0,
+                       i + 1 < Size ? ", " : "");
+        buffer.put(")");
+    }
+
+    throw std::runtime_error(buffer.get());
+}
+
+template <int Flags = Disabled, typename... Args>
+JIT_INLINE auto jitc_var_check(const char *name, Args... args) {
+    return jitc_var_check_impl<Flags>(
+        name, std::make_index_sequence<sizeof...(Args)>(), args...);
+}
+
+// Convert from an 64-bit integer container to a literal type
+template <typename Type> Type i2v(uint64_t value) {
+    Type result;
+    memcpy(&result, &value, sizeof(Type));
+    return result;
+}
+
+// Convert from a literal type to a 64-bit integer container
+template <typename Type> uint64_t v2i(Type value) {
+    uint64_t result;
+    if constexpr (std::is_same_v<Type, bool>) {
+        result = value ? 1 : 0;
+    } else {
+        result = 0;
+        memcpy(&result, &value, sizeof(Type));
+    }
+    return result;
+}
 
 template <typename Dst, typename Src>
 Dst memcpy_cast(const Src &src) {
@@ -32,332 +221,50 @@ Dst memcpy_cast(const Src &src) {
     return dst;
 }
 
-template <typename T> T eval_not(T v) {
-    using U = uint_with_size_t<T>;
-    return memcpy_cast<T>(U(~memcpy_cast<U>(v)));
-}
+template <typename T, typename... Ts> T first(T arg, Ts...) { return arg; }
 
-template <typename T> T eval_and(T v0, T v1) {
-    using U = uint_with_size_t<T>;
-    return memcpy_cast<T>(U(memcpy_cast<U>(v0) & memcpy_cast<U>(v1)));
-}
+template <typename Func, typename... Args>
+JIT_INLINE uint32_t jitc_eval_literal(const VarInfo &info, Func func,
+                                      const Args *...args) {
+    uint64_t r = 0;
 
-template <typename T> T eval_or(T v0, T v1) {
-    using U = uint_with_size_t<T>;
-    return memcpy_cast<T>(U(memcpy_cast<U>(v0) | memcpy_cast<U>(v1)));
-}
-
-template <typename T> T eval_xor(T v0, T v1) {
-    using U = uint_with_size_t<T>;
-    return memcpy_cast<T>(U(memcpy_cast<U>(v0) ^ memcpy_cast<U>(v1)));
-}
-
-template <typename T, enable_if_t<std::is_integral<T>::value &&
-                                 !std::is_same<T, bool>::value> = 0>
-T eval_shl(T v0, T v1) {
-    return v0 << v1;
-}
-
-template <typename T, enable_if_t<!std::is_integral<T>::value ||
-                                  std::is_same<T, bool>::value> = 0>
-T eval_shl(T, T) {
-    jitc_raise("eval_shl(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_integral<T>::value &&
-                                 !std::is_same<T, bool>::value> = 0>
-T eval_shr(T v0, T v1) {
-    return v0 >> v1;
-}
-
-template <typename T, enable_if_t<!std::is_integral<T>::value ||
-                                   std::is_same<T, bool>::value> = 0>
-T eval_shr(T, T) {
-    jitc_raise("eval_shr(): unsupported operands!");
-}
-
-inline bool eval_and(bool v0, bool v1) { return v0 && v1; }
-inline bool eval_or(bool v0, bool v1) { return v0 || v1; }
-inline bool eval_xor(bool v0, bool v1) { return v0 != v1; }
-inline bool eval_not(bool v) { return !v; }
-
-template <typename T, enable_if_t<std::is_unsigned<T>::value> = 0>
-T eval_neg(T v) {
-    using TS = typename std::make_signed<T>::type;
-    return T(-(TS) v);
-}
-
-template <typename T, enable_if_t<std::is_signed<T>::value> = 0>
-T eval_neg(T v) {
-    return -v;
-}
-
-inline bool eval_neg(bool) {
-    jitc_raise("eval_neg(): unsupported operands!");
-}
-
-template <typename T> T eval_div(T v0, T v1) { return v0 / v1; }
-inline bool eval_div(bool, bool) {
-    jitc_raise("eval_div(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_signed<T>::value> = 0>
-T eval_abs(T value) { return (T) std::abs(value); }
-
-template <typename T, enable_if_t<!std::is_signed<T>::value> = 0>
-T eval_abs(T value) { return value; }
-
-template <typename T, enable_if_t<!std::is_integral<T>::value ||
-                                  std::is_same<T, bool>::value> = 0>
-T eval_mod(T, T) {
-    jitc_raise("eval_mod(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_integral<T>::value &&
-                                  !std::is_same<T, bool>::value> = 0>
-T eval_mod(T v0, T v1) {
-    return v0 % v1;
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_rcp(T value) { return 1 / value; }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_rcp(T) {
-    jitc_raise("eval_rcp(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_sqrt(T value) { return std::sqrt(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_sqrt(T) {
-    jitc_raise("eval_sqrt(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_rsqrt(T value) { return 1 / std::sqrt(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_rsqrt(T) {
-    jitc_raise("eval_rsqrt(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_ceil(T value) { return std::ceil(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_ceil(T) {
-    jitc_raise("eval_ceil(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_floor(T value) { return std::floor(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_floor(T) {
-    jitc_raise("eval_floor(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_round(T value) { return std::rint(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_round(T) {
-    jitc_raise("eval_round(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_trunc(T value) { return std::trunc(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_trunc(T) {
-    jitc_raise("eval_trunc(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_exp2(T value) { return std::exp2(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_exp2(T) {
-    jitc_raise("eval_exp2(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_log2(T value) { return std::log2(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_log2(T) {
-    jitc_raise("eval_log2(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_sin(T value) { return std::sin(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_sin(T) {
-    jitc_raise("eval_sin(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_cos(T value) { return std::cos(value); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
-T eval_cos(T) {
-    jitc_raise("eval_cos(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<!std::is_integral<T>::value ||
-                                  std::is_same<T, bool>::value> = 0>
-T eval_popc(T) {
-    jitc_raise("eval_popc(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_integral<T>::value &&
-                                 !std::is_same<T, bool>::value> = 0>
-T eval_popc(T value_) {
-    using T2 = typename std::make_unsigned<T>::type;
-    T2 value = (T2) value_;
-    T result = 0;
-
-    while (value) {
-        result += value & 1;
-        value >>= 1;
+    switch ((VarType) first(args...)->type) {
+        case VarType::Bool:    r = v2i(func(i2v<   bool> (args->literal)...)); break;
+        case VarType::Int8:    r = v2i(func(i2v< int8_t> (args->literal)...)); break;
+        case VarType::UInt8:   r = v2i(func(i2v<uint8_t> (args->literal)...)); break;
+        case VarType::Int16:   r = v2i(func(i2v< int16_t>(args->literal)...)); break;
+        case VarType::UInt16:  r = v2i(func(i2v<uint16_t>(args->literal)...)); break;
+        case VarType::Int32:   r = v2i(func(i2v< int32_t>(args->literal)...)); break;
+        case VarType::UInt32:  r = v2i(func(i2v<uint32_t>(args->literal)...)); break;
+        case VarType::Int64:   r = v2i(func(i2v< int64_t>(args->literal)...)); break;
+        case VarType::UInt64:  r = v2i(func(i2v<uint64_t>(args->literal)...)); break;
+        case VarType::Float32: r = v2i(func(i2v<   float>(args->literal)...)); break;
+        case VarType::Float64: r = v2i(func(i2v<  double>(args->literal)...)); break;
+        default: jitc_fail("jit_eval_literal(): unsupported variable type!");
     }
 
-    return result;
+    return jitc_var_literal(info.backend, info.type, &r, info.size, 0);
 }
 
-template <typename T, enable_if_t<!std::is_integral<T>::value ||
-                                  std::is_same<T, bool>::value> = 0>
-T eval_clz(T) {
-    jitc_raise("eval_clz(): unsupported operands!");
+// --------------------------------------------------------------------------
+// Common constants
+// --------------------------------------------------------------------------
+
+uint32_t jitc_make_zero(VarInfo info) {
+    uint64_t value = 0;
+    return jitc_var_literal(info.backend, info.type, &value, info.size, 0);
 }
 
-template <typename T, enable_if_t<std::is_integral<T>::value &&
-                                 !std::is_same<T, bool>::value> = 0>
-T eval_clz(T value_) {
-    using T2 = typename std::make_unsigned<T>::type;
-    T2 value = (T2) value_;
-    T result = sizeof(T) * 8;
-    while (value) {
-        value >>= 1;
-        result -= 1;
-    }
-    return result;
+uint32_t jitc_make_true(VarInfo info) {
+    bool value = true;
+    return jitc_var_literal(info.backend, VarType::Bool, &value, info.size, 0);
 }
 
-template <typename T, enable_if_t<!std::is_integral<T>::value ||
-                                  std::is_same<T, bool>::value> = 0>
-T eval_ctz(T) {
-    jitc_raise("eval_ctz(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_integral<T>::value &&
-                                 !std::is_same<T, bool>::value> = 0>
-T eval_ctz(T value) {
-    T result = sizeof(T) * 8;
-    while (value) {
-        value <<= 1;
-        result -= 1;
-    }
-    return result;
-}
-
-template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
-T eval_fma(T a, T b, T c) { return std::fma(a, b, c); }
-
-template <typename T, enable_if_t<!std::is_floating_point<T>::value &&
-                                  !std::is_same<T, bool>::value> = 0>
-T eval_fma(T a, T b, T c) {
-    return (T) (a * b + c);
-}
-
-template <typename T, enable_if_t<std::is_same<T, bool>::value> = 0>
-T eval_fma(T, T, T) {
-    jitc_raise("eval_fma(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<!(std::is_integral<T>::value && (sizeof(T) == 4 || sizeof(T) == 8))> = 0>
-T eval_mulhi(T, T) {
-    jitc_raise("eval_mulhi(): unsupported operands!");
-}
-
-template <typename T, enable_if_t<std::is_integral<T>::value && (sizeof(T) == 4 || sizeof(T) == 8)> = 0>
-T eval_mulhi(T a, T b) {
-    if (sizeof(T) == 4) {
-        using Wide = std::conditional_t<std::is_signed<T>::value, int64_t, uint64_t>;
-        return T(((Wide) a * (Wide) b) >> 32);
-    } else {
-#if defined(_MSC_VER)
-        if (std::is_signed<T>::value)
-            return (T) __mulh((__int64) a, (__int64) b);
-        else
-            return (T) __umulh((unsigned __int64) a, (unsigned __int64) b);
-#else
-        using Wide = std::conditional_t<std::is_signed<T>::value, __int128_t, __uint128_t>;
-        return T(((Wide) a * (Wide) b) >> 64);
-#endif
-    }
-}
-
-
-// ===========================================================================
-// Infrastructure to apply a given expression (lambda) to value varaibles
-// ===========================================================================
-
-#if defined(_MSC_VER)
-#  pragma warning(push)
-#  pragma warning(disable: 4702) // unreachable code
-#endif
-
-template <typename Type> Type i2v(uint64_t value) {
-    Type result;
-    memcpy(&result, &value, sizeof(Type));
-    return result;
-}
-
-template <typename Type, enable_if_t<!std::is_same<Type, bool>::value> = 0>
-uint64_t v2i(Type value) {
-    uint64_t result = 0;
-    memcpy(&result, &value, sizeof(Type));
-    return result;
-}
-
-template <typename Type, enable_if_t<std::is_same<Type, bool>::value> = 0>
-uint64_t v2i(Type value) {
-    return value ? 1 : 0;
-}
-
-template <typename Arg, typename... Args> Arg first(Arg arg, Args...) { return arg; }
-
-template <bool Cond = false, typename Func, typename... Args>
-uint64_t jitc_eval_literal(Func func, const Args *... args) {
-    switch ((VarType) first(args->type...)) {
-        case VarType::Bool:    return v2i(func(i2v<   bool> (args->literal)...));
-        case VarType::Int8:    return v2i(func(i2v< int8_t> (args->literal)...));
-        case VarType::UInt8:   return v2i(func(i2v<uint8_t> (args->literal)...));
-        case VarType::Int16:   return v2i(func(i2v< int16_t>(args->literal)...));
-        case VarType::UInt16:  return v2i(func(i2v<uint16_t>(args->literal)...));
-        case VarType::Int32:   return v2i(func(i2v< int32_t>(args->literal)...));
-        case VarType::UInt32:  return v2i(func(i2v<uint32_t>(args->literal)...));
-        case VarType::Int64:   return v2i(func(i2v< int64_t>(args->literal)...));
-        case VarType::UInt64:  return v2i(func(i2v<uint64_t>(args->literal)...));
-        case VarType::Float32: return v2i(func(i2v<   float>(args->literal)...));
-        case VarType::Float64: return v2i(func(i2v<  double>(args->literal)...));
-        default: jitc_fail("jit_eval_value(): unsupported variable type!");
-    }
-}
-
-#if defined(_MSC_VER)
-#  pragma warning(pop)
-#endif
-
-// ===========================================================================
+// --------------------------------------------------------------------------
 // Helper routines for turning multiplies and divisions into shifts
-// ===========================================================================
+// --------------------------------------------------------------------------
 
-static bool jitc_is_pow2(uint64_t value) {
+bool jitc_is_pow2(uint64_t value) {
     return value != 0 && (value & (value - 1)) == 0;
 }
 
@@ -374,996 +281,1089 @@ static int jitc_clz(uint64_t value) {
 #endif
 }
 
-uint32_t jitc_var_shift(JitBackend backend, VarType vt, JitOp op,
-                        uint32_t index, uint64_t amount) {
+template <bool Shl>
+uint32_t jitc_var_shift(const VarInfo &info, uint32_t index, uint64_t amount) {
     amount = 63 - jitc_clz(amount);
-    uint32_t shift = jitc_var_new_literal(backend, vt, &amount, 1, 0);
-    uint32_t deps[2] = { index, shift };
-    uint32_t result = jitc_var_new_op(op, 2, deps);
-    jitc_var_dec_ref(shift);
+    Ref shift = steal(jitc_var_literal(info.backend, info.type, &amount, info.size, 0));
+    return Shl ? jitc_var_shl(index, shift)
+               : jitc_var_shr(index, shift);
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<!std::is_signed_v<T>> = 0>
+T eval_neg(T v) { return T(-(std::make_signed_t<T>) v); }
+
+template <typename T, enable_if_t<std::is_signed_v<T>> = 0>
+T eval_neg(T v) { return -v; }
+
+static bool eval_neg(bool) { jitc_fail("eval_neg(): unsupported operands!"); }
+
+uint32_t jitc_var_neg(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsArithmetic>("jit_var_neg", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_neg(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Neg, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_neg(r%u <- r%u)", result, a0);
     return result;
 }
 
-// ===========================================================================
-// jitc_var_new_op(): various standard operations for DrJit variables
-// ===========================================================================
+// --------------------------------------------------------------------------
 
-const char *op_name[(int) JitOp::Count] {
-    // ---- Unary ----
-    "not", "neg", "abs", "sqrt", "rcp", "rsqrt", "ceil", "floor", "round", "trunc", "exp2", "log2", "sin", "cos",
-    "popc", "clz", "ctz",
+template <typename T> T eval_not(T v) {
+    using U = uint_with_size_t<T>;
+    return memcpy_cast<T>(U(~memcpy_cast<U>(v)));
+}
 
-    // ---- Binary ----
-    "add", "sub", "mul", "mulhi", "div", "mod", "min", "max", "and", "or",
-    "xor", "shl", "shr",
+static bool eval_not(bool v) { return !v; }
 
-    // ---- Comparisons ----
-    "eq", "neq", "lt", "le", "gt", "ge",
+uint32_t jitc_var_not(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsIntOrBool>("jit_var_not", a0);
 
-    // ---- Ternary ----
-    "fmadd", "select"
-};
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_not(l0); }, v0);
 
-static_assert(sizeof(op_name) / sizeof(const char *) == (size_t) JitOp::Count,
-              "op_name and JitOp enum are out of sync!");
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Not, 0,
+                                     info.size, info.placeholder, a0, v0);
 
-// Error handler
-JIT_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op,
-                                           uint32_t n_dep, const uint32_t *dep);
+    jitc_log(Debug, "jit_var_not(r%u <- r%u)", result, a0);
+    return result;
+}
 
-uint32_t jitc_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
-    uint32_t size = 0;
-    bool dirty = false, literal = true, uninitialized = false, placeholder = false;
-    uint32_t vti = 0;
-    bool literal_zero[4] { }, literal_one[4] { };
-    uint32_t backend_i = 0;
-    Variable *v[4] { };
-    bool const_prop = jitc_flags() & (uint32_t) JitFlag::ConstProp;
+// --------------------------------------------------------------------------
 
-    if (unlikely(n_dep == 0 || n_dep > 4))
-        jitc_fail("jit_var_new_op(): 1-4 dependent variables supported!");
+template <typename T, enable_if_t<std::is_floating_point_v<T>> = 0>
+T eval_sqrt(T value) { return std::sqrt(value); }
 
-    for (uint32_t i = 0; i < n_dep; ++i) {
-        if (likely(dep[i])) {
-            Variable *vi = jitc_var(dep[i]);
-            vti = std::max(vti, vi->type);
-            size = std::max(size, vi->size);
-            dirty |= vi->is_dirty();
-            placeholder |= (bool) vi->placeholder;
-            backend_i |= (uint32_t) vi->backend;
-            v[i] = vi;
+template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
+T eval_sqrt(T) { jitc_fail("eval_sqrt(): unsupported operands!"); }
 
-            if (vi->is_literal() && const_prop) {
-                uint64_t one;
-                switch ((VarType) vi->type) {
-                    case VarType::Float16: one = 0x3c00ull; break;
-                    case VarType::Float32: one = 0x3f800000ull; break;
-                    case VarType::Float64: one = 0x3ff0000000000000ull; break;
-                    default: one = 1; break;
-                }
-                literal_zero[i] = vi->literal == 0;
-                literal_one[i] = vi->literal == one;
-            } else {
-                literal = false;
-            }
-        } else {
-            uninitialized = true;
+uint32_t jitc_var_sqrt(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat>("jit_var_sqrt", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_sqrt(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Sqrt, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_sqrt(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_signed_v<T>> = 0>
+T eval_abs(T value) { return (T) std::abs(value); }
+
+template <typename T, enable_if_t<!std::is_signed_v<T>> = 0>
+T eval_abs(T value) { return value; }
+
+uint32_t jitc_var_abs(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsArithmetic>("jit_var_abs", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_abs(l0); }, v0);
+
+    if (!result && jitc_is_uint(info.type))
+        result = jitc_var_new_ref(a0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Abs, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_abs(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_add(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_add", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return l0 + l1; }, v0, v1);
+        else if (jitc_is_zero(v0))
+            result = jitc_var_resize(a1, info.size);
+        else if (jitc_is_zero(v1))
+            result = jitc_var_resize(a0, info.size);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Add, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_add(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_sub(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_sub", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return l0 - l1; }, v0, v1);
+        else if (jitc_is_zero(v1))
+            result = jitc_var_resize(a0, info.size);
+        else if (a0 == a1 && !jitc_is_float(v0))
+            result = jitc_make_zero(info);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Sub, 0,
+                                   info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_sub(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_mul(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_mul", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return l0 * l1; }, v0, v1);
+        else if (jitc_is_one(v0) || (jitc_is_zero(v1) && jitc_is_int(v0)))
+            result = jitc_var_resize(a1, info.size);
+        else if (jitc_is_one(v1) || (jitc_is_zero(v0) && jitc_is_int(v0)))
+            result = jitc_var_resize(a0, info.size);
+        else if (jitc_is_uint(info.type) && v0->is_literal() && jitc_is_pow2(v0->literal))
+            result = jitc_var_shift<true>(info, a1, v0->literal);
+        else if (jitc_is_uint(info.type) && v1->is_literal() && jitc_is_pow2(v1->literal))
+            result = jitc_var_shift<true>(info, a0, v1->literal);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Mul, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_mul(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T> T eval_div(T v0, T v1) { return v0 / v1; }
+
+static bool eval_div(bool, bool) { jitc_fail("eval_div(): unsupported operands!"); }
+
+uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_div", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal) {
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_div(l0, l1); }, v0, v1);
+        } else if (jitc_is_one(v1)) {
+            result = jitc_var_resize(a0, info.size);
+        } else if (jitc_is_uint(info.type) && v1->is_literal() && jitc_is_pow2(v1->literal)) {
+            result = jitc_var_shift<false>(info, a0, v1->literal);
+        } else if (jitc_is_float(info.type) && v1->is_literal()) {
+            uint32_t recip = jitc_var_rcp(a1);
+            result = jitc_var_mul(a0, recip);
+            jitc_var_dec_ref(recip);
+        } else if (a0 == a1 && !jitc_is_float(v0)) {
+            uint64_t value = 1;
+            result = jitc_var_literal(info.backend, info.type, &value, info.size, 0);
         }
     }
 
-    JitBackend backend = (JitBackend) backend_i;
-    VarType vt  = (VarType) vti,
-            vtr = vt;
 
-    // Some sanity checks
-    const char *error = nullptr;
-    if (unlikely(size == 0))
-        return 0;
-    else if (unlikely(uninitialized))
-        error = "arithmetic involving an uninitialized variable!";
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Div, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
 
-    for (uint32_t i = 0; i < n_dep; ++i) {
-        if (error)
-            break;
+    jitc_log(Debug, "jit_var_div(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
 
-        else if (unlikely(v[i]->size != size && v[i]->size != 1)) {
-            error = "arithmetic involving arrays of incompatible size!";
-        } else if (unlikely(v[i]->type != vti)) {
-            // Two special cases in which mixed mask/value arguments are OK
-            bool exception_1 = op == JitOp::Select && i == 0 &&
-                               (VarType) v[i]->type == VarType::Bool;
-            bool exception_2 = (op == JitOp::And || op == JitOp::Or) && i == 1 &&
-                               (VarType) v[i]->type == VarType::Bool;
-            if (!exception_1 && !exception_2)
-                error = "arithmetic involving arrays of incompatible type!";
-        } else if (unlikely(v[i]->backend != backend_i)) {
-            error = "mixed CUDA and LLVM arrays!";
-        }
-    }
+// --------------------------------------------------------------------------
 
-    if (unlikely(error))
-        jitc_var_new_op_fail(error, op, n_dep, dep);
+template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bool>> = 0>
+T eval_mod(T, T) { jitc_fail("eval_mod(): unsupported operands!"); }
 
-    bool is_float  = jitc_is_float(vt),
-         is_uint = jitc_is_uint(vt),
-         is_single = vt == VarType::Float32,
-         is_valid = jitc_is_arithmetic(vt);
+template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
+T eval_mod(T v0, T v1) { return v0 % v1; }
 
-    const char *stmt = nullptr;
+uint32_t jitc_var_mod(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsIntOrBool>("jit_var_mod", a0, a1);
 
-    // Used if the result produces a value value
-    uint64_t lv = 0;
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(
+            info, [](auto l0, auto l1) { return eval_mod(l0, l1); }, v0, v1);
 
-    /* Used if the result is simply the index of an input variable,
-       or when the operation-specific implementation has created its own
-       variable (in that case, it must set li_created=true below) */
-    uint32_t li = 0;
-    bool li_created = false;
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Mod, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
 
-    switch (op) {
-        case JitOp::Not:
-            is_valid = jitc_is_not_void(vt) && !is_float;
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_not(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "not.$b0 $r0, $r1";
-            } else {
-                stmt = !jitc_is_float(vt)
-                           ? "$r0 = xor <$w x $t1> $r1, $o0"
-                           : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
-                             "$r0_1 = xor <$w x $b0> $r0_0, $o0$n"
-                             "$r0 = bitcast <$w x $b0> $r0_1 to <$w x $t0>";
-            }
-            break;
+    jitc_log(Debug, "jit_var_mod(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
 
-        case JitOp::Neg:
-            is_valid = jitc_is_arithmetic(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_neg(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                if (is_uint) {
-                    stmt = type_size[vti] == 4 ?
-                           "neg.s32 $r0, $r1" :
-                           "neg.s64 $r0, $r1";
-                } else {
-                    stmt = is_single ? "neg.ftz.$t0 $r0, $r1"
-                                     : "neg.$t0 $r0, $r1";
-                }
-            } else if (is_float) {
-                if (jitc_llvm_version_major > 7)
-                    stmt = "$r0 = fneg <$w x $t0> $r1";
-                else
-                    stmt = "$r0 = fsub <$w x $t0> zeroinitializer, $r1";
-            } else {
-                stmt = "$r0 = sub <$w x $t0> zeroinitializer, $r1";
-            }
-            break;
+// --------------------------------------------------------------------------
 
-        case JitOp::Abs:
-            if (is_uint) {
-                li = dep[0];
-            } else if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_abs(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "abs.$t0 $r0, $r1";
-            } else {
-                if (is_float) {
-                    uint64_t mask_value = ((uint64_t) 1 << (type_size[vti] * 8 - 1)) - 1;
-                    uint32_t mask = jitc_var_new_literal(backend, vt, &mask_value, 1, 0);
-                    uint32_t deps[2] = { dep[0], mask };
-                    li = jitc_var_new_op(JitOp::And, 2, deps);
-                    li_created = true;
-                    jitc_var_dec_ref(mask);
-                } else {
-                    stmt = "$r0_0 = icmp slt <$w x $t0> $r1, zeroinitializer$n"
-                           "$r0_1 = sub <$w x $t0> zeroinitializer, $r1$n"
-                           "$r0 = select <$w x i1> $r0_0, <$w x $t1> $r0_1, <$w x $t1> $r1";
-                }
-            }
-            break;
+template <typename T, enable_if_t<!(std::is_integral_v<T> && (sizeof(T) == 4 || sizeof(T) == 8))> = 0>
+T eval_mulhi(T, T) { jitc_fail("eval_mulhi(): unsupported operands!"); }
 
-        case JitOp::Sqrt:
-            is_valid = jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_sqrt(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_single ? "sqrt.approx.ftz.$t0 $r0, $r1"
-                                 : "sqrt.rn.$t0 $r0, $r1";
-            } else {
-                stmt = "$r0 = call <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1> $r1)"
-                       "$[declare <$w x $t0> @llvm.sqrt.v$w$a1(<$w x $t1>)$]";
-            }
-            break;
-
-        case JitOp::Rcp:
-            is_valid = jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_rcp(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_single ? "rcp.approx.ftz.$t0 $r0, $r1"
-                                 : "rcp.rn.$t0 $r0, $r1";
-            } else {
-                // TODO can do better here..
-                float f1 = 1.f; double d1 = 1.0;
-                uint32_t one = jitc_var_new_literal(backend, vt,
-                                                    vt == VarType::Float32
-                                                        ? (const void *) &f1
-                                                        : (const void *) &d1,
-                                                    1, 0);
-                uint32_t deps[2] = { one, dep[0] };
-                li = jitc_var_new_op(JitOp::Div, 2, deps);
-                jitc_var_dec_ref(one);
-                li_created = true;
-            }
-            break;
-
-        case JitOp::Rsqrt:
-            is_valid = jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_rsqrt(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_single ? "rsqrt.approx.ftz.$t0 $r0, $r1"
-                                 : "rcp.rn.$t0 $r0, $r1$n"
-                                   "sqrt.rn.$t0 $r0, $r0";
-            } else {
-                // TODO can do better here..
-                float f1 = 1.f; double d1 = 1.0;
-                uint32_t one = jitc_var_new_literal(backend, vt,
-                                                    vt == VarType::Float32
-                                                        ? (const void *) &f1
-                                                        : (const void *) &d1,
-                                                    1, 0);
-                uint32_t deps[2] = { one, dep[0] };
-                uint32_t result_1 = jitc_var_new_op(JitOp::Div, 2, deps);
-                li = jitc_var_new_op(JitOp::Sqrt, 1, &result_1);
-                li_created = true;
-                jitc_var_dec_ref(one);
-                jitc_var_dec_ref(result_1);
-            }
-            break;
-
-        case JitOp::Ceil:
-            is_valid = jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_ceil(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "cvt.rpi.$t0.$t0 $r0, $r1";
-            } else {
-                stmt = "$r0 = call <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1> $r1)"
-                       "$[declare <$w x $t0> @llvm.ceil.v$w$a1(<$w x $t1>)$]";
-            }
-            break;
-
-        case JitOp::Floor:
-            is_valid = jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_floor(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "cvt.rmi.$t0.$t0 $r0, $r1";
-            } else {
-                stmt = "$r0 = call <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1> $r1)"
-                       "$[declare <$w x $t0> @llvm.floor.v$w$a1(<$w x $t1>)$]";
-            }
-            break;
-
-        case JitOp::Round:
-            is_valid = jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_round(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "cvt.rni.$t0.$t0 $r0, $r1";
-            } else {
-                stmt = "$r0 = call <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1> $r1)"
-                       "$[declare <$w x $t0> @llvm.nearbyint.v$w$a1(<$w x $t1>)$]";
-            }
-            break;
-
-        case JitOp::Trunc:
-            is_valid = jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_trunc(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "cvt.rzi.$t0.$t0 $r0, $r1";
-            } else {
-                stmt = "$r0 = call <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1> $r1)"
-                       "$[declare <$w x $t0> @llvm.trunc.v$w$a1(<$w x $t1>)$]";
-            }
-            break;
-
-        case JitOp::Exp2:
-            is_valid = jitc_is_float(vt) && backend == JitBackend::CUDA;
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_exp2(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "ex2.approx.ftz.$t0 $r0, $r1";
-            }
-            break;
-
-        case JitOp::Log2:
-            is_valid = jitc_is_float(vt) && backend == JitBackend::CUDA;
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_log2(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "lg2.approx.ftz.$t1 $r0, $r1";
-            }
-            break;
-
-        case JitOp::Sin:
-            is_valid = jitc_is_float(vt) && backend == JitBackend::CUDA;
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_sin(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "sin.approx.ftz.$t1 $r0, $r1";
-            }
-            break;
-
-        case JitOp::Cos:
-            is_valid = jitc_is_float(vt) && backend == JitBackend::CUDA;
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_cos(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "cos.approx.ftz.$t1 $r0, $r1";
-            }
-            break;
-
-        case JitOp::Popc:
-            is_valid = jitc_is_arithmetic(vt) && !is_float;
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_popc(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = (vt == VarType::UInt32 || vt == VarType::Int32)
-                           ? "popc.$b0 $r0, $r1"
-                           : "popc.$b0 %r3, $r1$n"
-                             "cvt.$t0.u32 $r0, %r3";
-            } else {
-                stmt = "$r0 = call <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1> $r1)"
-                       "$[declare <$w x $t0> @llvm.ctpop.v$w$a1(<$w x $t1>)$]";
-            }
-            break;
-
-        case JitOp::Clz:
-            is_valid = jitc_is_arithmetic(vt) && !is_float;
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_clz(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = (vt == VarType::UInt32 || vt == VarType::Int32)
-                           ? "clz.$b0 $r0, $r1"
-                           : "clz.$b0 %r3, $r1$n"
-                             "cvt.$t0.u32 $r0, %r3";
-            } else {
-                stmt = "$r0 = call <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1> $r1, i1 0)"
-                       "$[declare <$w x $t0> @llvm.ctlz.v$w$a1(<$w x $t1>, i1)$]";
-            }
-            break;
-
-        case JitOp::Ctz:
-            is_valid = jitc_is_arithmetic(vt) && !is_float;
-            if (literal) {
-                lv = jitc_eval_literal([](auto value) { return eval_ctz(value); }, v[0]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = (vt == VarType::UInt32 || vt == VarType::Int32)
-                           ? "brev.$b0 %r3, $r1$n"
-                             "clz.$b0 $r0, %r3"
-                           : "brev.$b0 %rd3, $r1$n"
-                             "clz.$b0 %r3, %rd3$n"
-                             "cvt.$t0.u32 $r0, %r3";
-            } else {
-                stmt = "$r0 = call <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1> $r1, i1 0)"
-                       "$[declare <$w x $t0> @llvm.cttz.v$w$a1(<$w x $t1>, i1)$]";
-            }
-            break;
-
-        case JitOp::Add:
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 + v1; },
-                                     v[0], v[1]);
-            } else if (literal_zero[0]) {
-                li = dep[1];
-            } else if (literal_zero[1]) {
-                li = dep[0];
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_single ? "add.ftz.$t0 $r0, $r1, $r2"
-                                 : "add.$t0 $r0, $r1, $r2";
-            } else {
-                stmt = is_float ? "$r0 = fadd <$w x $t0> $r1, $r2"
-                                : "$r0 = add <$w x $t0> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Sub:
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 - v1; },
-                                      v[0], v[1]);
-            } else if (literal_zero[1]) {
-                li = dep[0];
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_single ? "sub.ftz.$t0 $r0, $r1, $r2"
-                                 : "sub.$t0 $r0, $r1, $r2";
-            } else {
-                stmt = is_float ? "$r0 = fsub <$w x $t0> $r1, $r2"
-                                : "$r0 = sub <$w x $t0> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Mulhi:
-            is_valid = jitc_is_arithmetic(vt) && !jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_mulhi(v0, v1); },
-                                       v[0], v[1]);
-            } else if (literal_zero[0]) {
-                li = dep[0];
-            } else if (literal_zero[1]) {
-                li = dep[1];
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "mul.hi.$t0 $r0, $r1, $r2";
-            } else {
-                if (jitc_is_sint(vt))
-                    stmt = "$r0_0 = sext <$w x $t1> $r1 to <$w x $T1>$n"
-                           "$r0_1 = sext <$w x $t2> $r2 to <$w x $T2>$n"
-                           "$r0_2 = sext <$w x $t3> $r3 to <$w x $T3>$n"
-                           "$r0_3 = mul <$w x $T1> $r0_0, $r0_1$n"
-                           "$r0_4 = lshr <$w x $T1> $r0_3, $r0_2$n"
-                           "$r0 = trunc <$w x $T1> $r0_4 to <$w x $t1>";
-                else
-                    stmt = "$r0_0 = zext <$w x $t1> $r1 to <$w x $T1>$n"
-                           "$r0_1 = zext <$w x $t2> $r2 to <$w x $T2>$n"
-                           "$r0_2 = zext <$w x $t3> $r3 to <$w x $T3>$n"
-                           "$r0_3 = mul <$w x $T1> $r0_0, $r0_1$n"
-                           "$r0_4 = lshr <$w x $T1> $r0_3, $r0_2$n"
-                           "$r0 = trunc <$w x $T1> $r0_4 to <$w x $t1>";
-
-                uint64_t shift_amount = type_size[vti] * 8;
-
-                uint32_t shift =
-                    jitc_var_new_literal(backend, vt, &shift_amount, 1, 0);
-                uint32_t deps[3] = { dep[0], dep[1], shift };
-                li = jitc_var_new_stmt(backend, vt, stmt, 1, 3, deps);
-                jitc_var_dec_ref(shift);
-                li_created = true;
-            }
-            break;
-
-        case JitOp::Mul:
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 * v1; },
-                                       v[0], v[1]);
-            } else if (literal_one[0] || (literal_zero[1] && jitc_is_int(vt))) {
-                li = dep[1];
-            } else if (literal_one[1] || (literal_zero[0] && jitc_is_int(vt))) {
-                li = dep[0];
-            } else if (is_uint && v[0]->is_literal() && jitc_is_pow2(v[0]->literal) && const_prop) {
-                li = jitc_var_shift(backend, vt, JitOp::Shl, dep[1], v[0]->literal);
-                li_created = true;
-            } else if (is_uint && v[1]->is_literal() && jitc_is_pow2(v[1]->literal) && const_prop) {
-                li = jitc_var_shift(backend, vt, JitOp::Shl, dep[0], v[1]->literal);
-                li_created = true;
-            } else if (backend == JitBackend::CUDA) {
-                if (is_single)
-                    stmt = "mul.ftz.$t0 $r0, $r1, $r2";
-                else if (is_float)
-                    stmt = "mul.$t0 $r0, $r1, $r2";
-                else
-                    stmt = "mul.lo.$t0 $r0, $r1, $r2";
-            } else {
-                stmt = is_float ? "$r0 = fmul <$w x $t0> $r1, $r2"
-                                : "$r0 = mul <$w x $t0> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Div:
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_div(v0, v1); },
-                                      v[0], v[1]);
-            } else if (literal_one[1]) {
-                li = dep[0];
-            } else if (is_uint && v[1]->is_literal() && jitc_is_pow2(v[1]->literal) && const_prop) {
-                li = jitc_var_shift(backend, vt, JitOp::Shr, dep[0], v[1]->literal);
-                li_created = true;
-            } else if (jitc_is_float(vt) && v[1]->is_literal() && const_prop) {
-                uint32_t recip = jitc_var_new_op(JitOp::Rcp, 1, &dep[1]);
-                uint32_t deps[2] = { dep[0], recip };
-                li = jitc_var_new_op(JitOp::Mul, 2, deps);
-                li_created = 1;
-                jitc_var_dec_ref(recip);
-            } else if (backend == JitBackend::CUDA) {
-                if (is_single)
-                    stmt = "div.approx.ftz.$t0 $r0, $r1, $r2";
-                else if (is_float)
-                    stmt = "div.rn.$t0 $r0, $r1, $r2";
-                else
-                    stmt = "div.$t0 $r0, $r1, $r2";
-            } else {
-                if (is_float)
-                    stmt = "$r0 = fdiv <$w x $t0> $r1, $r2";
-                else if (is_uint)
-                    stmt = "$r0 = udiv <$w x $t0> $r1, $r2";
-                else
-                    stmt = "$r0 = sdiv <$w x $t0> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Mod:
-            is_valid = jitc_is_arithmetic(vt) && !jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_mod(v0, v1); },
-                                      v[0], v[1]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "rem.$t0 $r0, $r1, $r2";
-            } else {
-                if (is_uint)
-                    stmt = "$r0 = urem <$w x $t0> $r1, $r2";
-                else
-                    stmt = "$r0 = srem <$w x $t0> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Min:
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return std::min(v0, v1); },
-                                      v[0], v[1]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_single ? "min.ftz.$t0 $r0, $r1, $r2"
-                                 : "min.$t0 $r0, $r1, $r2";
-            } else {
-                if (is_float)
-                    stmt = "$r0 = call <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)"
-                           "$[declare <$w x $t0> @llvm.minnum.v$w$a1(<$w x $t1>, <$w x $t2>)$]";
-                else if (is_uint)
-                    stmt = "$r0_0 = icmp ult <$w x $t0> $r1, $r2$n"
-                           "$r0 = select <$w x i1> $r0_0, <$w x $t1> $r1, <$w x $t1> $r2";
-                else
-                    stmt = "$r0_0 = icmp slt <$w x $t0> $r1, $r2$n"
-                           "$r0 = select <$w x i1> $r0_0, <$w x $t1> $r1, <$w x $t1> $r2";
-            }
-            break;
-
-        case JitOp::Max:
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return std::max(v0, v1); },
-                                      v[0], v[1]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_single ? "max.ftz.$t0 $r0, $r1, $r2"
-                                 : "max.$t0 $r0, $r1, $r2";
-            } else {
-                if (is_float)
-                    stmt = "$r0 = call <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2)"
-                           "$[declare <$w x $t0> @llvm.maxnum.v$w$a1(<$w x $t1>, <$w x $t2>)$]";
-                else if (is_uint)
-                    stmt = "$r0_0 = icmp ugt <$w x $t0> $r1, $r2$n"
-                           "$r0 = select <$w x i1> $r0_0, <$w x $t1> $r1, <$w x $t1> $r2";
-                else
-                    stmt = "$r0_0 = icmp sgt <$w x $t0> $r1, $r2$n"
-                           "$r0 = select <$w x i1> $r0_0, <$w x $t1> $r1, <$w x $t1> $r2";
-            }
-            break;
-
-        case JitOp::Shr:
-            is_valid = jitc_is_arithmetic(vt) && !jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_shr(v0, v1); },
-                                      v[0], v[1]);
-            } else if (literal_zero[0] || literal_zero[1]) {
-                li = dep[0];
-            } else if (backend == JitBackend::CUDA) {
-                if (is_uint)
-                    stmt = (vt == VarType::UInt32)
-                               ? "shr.$b0 $r0, $r1, $r2"
-                               : "cvt.u32.$t2 %r3, $r2$n"
-                                 "shr.$b0 $r0, $r1, %r3";
-                else
-                    stmt = (vt == VarType::Int32)
-                               ? "shr.$t0 $r0, $r1, $r2"
-                               : "cvt.u32.$t2 %r3, $r2$n"
-                                 "shr.$t0 $r0, $r1, %r3";
-            } else {
-                stmt = is_uint ? "$r0 = lshr <$w x $t0> $r1, $r2"
-                               : "$r0 = ashr <$w x $t0> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Shl:
-            is_valid = jitc_is_arithmetic(vt) && !jitc_is_float(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_shl(v0, v1); },
-                                      v[0], v[1]);
-            } else if (literal_zero[0] || literal_zero[1]) {
-                li = dep[0];
-            } else if (backend == JitBackend::CUDA) {
-                stmt = (vt == VarType::UInt32 || vt == VarType::Int32)
-                           ? "shl.$b0 $r0, $r1, $r2"
-                           : "cvt.u32.$t2 %r3, $r2$n"
-                             "shl.$b0 $r0, $r1, %r3";
-            } else {
-                stmt = "$r0 = shl <$w x $t0> $r1, $r2";
-            }
-            break;
-
-        case JitOp::And:
-            is_valid = jitc_is_not_void(vt);
-            literal &= v[0]->type == v[1]->type;
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_and(v0, v1); },
-                                       v[0], v[1]);
-            } else if (((VarType) v[0]->type == VarType::Bool && literal_one[0]) ||
-                        (literal_zero[1] && v[0]->type == v[1]->type)) {
-                li = dep[1];
-            } else if (((VarType) v[1]->type == VarType::Bool && literal_one[1]) || literal_zero[0]) {
-                li = dep[0];
-            } else if (dep[0] == dep[1]) {
-                li = dep[0];
-            } else if (backend == JitBackend::CUDA) {
-                stmt = ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool)
-                           ? "selp.$b0 $r0, $r1, 0, $r2"
-                           : "and.$b0 $r0, $r1, $r2";
-            } else {
-                if ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool) {
-                    stmt = "$r0 = select <$w x $t2> $r2, <$w x $t1> $r1, <$w x $t1> zeroinitializer";
-                } else {
-                    stmt = !is_float
-                               ? "$r0 = and <$w x $t1> $r1, $r2"
-                               : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
-                                 "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
-                                 "$r0_2 = and <$w x $b0> $r0_0, $r0_1$n"
-                                 "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
-                }
-            }
-            break;
-
-        case JitOp::Or:
-            is_valid = jitc_is_not_void(vt);
-            literal &= v[0]->type == v[1]->type;
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_or(v0, v1); },
-                                      v[0], v[1]);
-            } else if ((vt == VarType::Bool && literal_one[0]) || literal_zero[1]) {
-                li = dep[0];
-            } else if ((vt == VarType::Bool && literal_one[1]) ||
-                       (literal_zero[0] && v[0]->type == v[1]->type)) {
-                li = dep[1];
-            } else if (dep[0] == dep[1]) {
-                li = dep[0];
-            } else if (backend == JitBackend::CUDA) {
-                stmt = ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool)
-                           ? "selp.$b0 $r0, -1, $r1, $r2"
-                           : "or.$b0 $r0, $r1, $r2";
-            } else {
-                if ((VarType) v[1]->type == VarType::Bool && vt != VarType::Bool) {
-                    stmt = "$r0_0 = sext <$w x $t2> $r2 to <$w x $b0>$n"
-                           "$r0_1 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
-                           "$r0_2 = or <$w x $b0> $r0_0, $r0_1$n"
-                           "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
-                } else {
-                    stmt = !is_float
-                               ? "$r0 = or <$w x $t1> $r1, $r2"
-                               : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
-                                 "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
-                                 "$r0_2 = or <$w x $b0> $r0_0, $r0_1$n"
-                                 "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
-                }
-            }
-            break;
-
-        case JitOp::Xor:
-            is_valid = jitc_is_not_void(vt);
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return eval_xor(v0, v1); },
-                                      v[0], v[1]);
-            } else if (literal_zero[0]) {
-                li = dep[1];
-            } else if (literal_zero[1]) {
-                li = dep[0];
-            } else if (backend == JitBackend::CUDA) {
-                stmt = "xor.$b0 $r0, $r1, $r2";
-            } else {
-                stmt = !is_float
-                           ? "$r0 = xor <$w x $t1> $r1, $r2"
-                           : "$r0_0 = bitcast <$w x $t1> $r1 to <$w x $b0>$n"
-                             "$r0_1 = bitcast <$w x $t2> $r2 to <$w x $b0>$n"
-                             "$r0_2 = xor <$w x $b0> $r0_0, $r0_1$n"
-                             "$r0 = bitcast <$w x $b0> $r0_2 to <$w x $t0>";
-            }
-            break;
-
-        case JitOp::Eq:
-            is_valid = jitc_is_not_void(vt);
-            vtr = VarType::Bool;
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 == v1; },
-                                      v[0], v[1]);
-            } else if (backend == JitBackend::CUDA) {
-                if (vt == VarType::Bool)
-                    stmt = "xor.$t1 $r0, $r1, $r2$n"
-                           "not.$t1 $r0, $r0";
-                else
-                    stmt = "setp.eq.$t1 $r0, $r1, $r2";
-            } else {
-                stmt = is_float ? "$r0 = fcmp oeq <$w x $t1> $r1, $r2"
-                                : "$r0 = icmp eq <$w x $t1> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Neq:
-            is_valid = jitc_is_not_void(vt);
-            vtr = VarType::Bool;
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 != v1; },
-                                      v[0], v[1]);
-            } else if (backend == JitBackend::CUDA) {
-                if (vt == VarType::Bool)
-                    stmt = "xor.$t1 $r0, $r1, $r2";
-                else
-                    stmt = "setp.ne.$t1 $r0, $r1, $r2";
-            } else {
-                stmt = is_float ? "$r0 = fcmp one <$w x $t1> $r1, $r2"
-                                : "$r0 = icmp ne <$w x $t1> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Lt:
-            vtr = VarType::Bool;
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 < v1; },
-                                      v[0], v[1]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_uint ? "setp.lo.$t1 $r0, $r1, $r2"
-                               : "setp.lt.$t1 $r0, $r1, $r2";
-            } else {
-                if (is_float)
-                    stmt = "$r0 = fcmp olt <$w x $t1> $r1, $r2";
-                else if (is_uint)
-                    stmt = "$r0 = icmp ult <$w x $t1> $r1, $r2";
-                else
-                    stmt = "$r0 = icmp slt <$w x $t1> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Le:
-            vtr = VarType::Bool;
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 <= v1; },
-                                      v[0], v[1]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_uint ? "setp.ls.$t1 $r0, $r1, $r2"
-                               : "setp.le.$t1 $r0, $r1, $r2";
-            } else {
-                if (is_float)
-                    stmt = "$r0 = fcmp ole <$w x $t1> $r1, $r2";
-                else if (is_uint)
-                    stmt = "$r0 = icmp ule <$w x $t1> $r1, $r2";
-                else
-                    stmt = "$r0 = icmp sle <$w x $t1> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Gt:
-            vtr = VarType::Bool;
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 > v1; },
-                                      v[0], v[1]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_uint ? "setp.hi.$t1 $r0, $r1, $r2"
-                               : "setp.gt.$t1 $r0, $r1, $r2";
-            } else {
-                if (is_float)
-                    stmt = "$r0 = fcmp ogt <$w x $t1> $r1, $r2";
-                else if (is_uint)
-                    stmt = "$r0 = icmp ugt <$w x $t1> $r1, $r2";
-                else
-                    stmt = "$r0 = icmp sgt <$w x $t1> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Ge:
-            vtr = VarType::Bool;
-            if (literal) {
-                lv = jitc_eval_literal([](auto v0, auto v1) { return v0 >= v1; },
-                                      v[0], v[1]);
-            } else if (backend == JitBackend::CUDA) {
-                stmt = is_uint ? "setp.hs.$t1 $r0, $r1, $r2"
-                               : "setp.ge.$t1 $r0, $r1, $r2";
-            } else {
-                if (is_float)
-                    stmt = "$r0 = fcmp oge <$w x $t1> $r1, $r2";
-                else if (is_uint)
-                    stmt = "$r0 = icmp uge <$w x $t1> $r1, $r2";
-                else
-                    stmt = "$r0 = icmp sge <$w x $t1> $r1, $r2";
-            }
-            break;
-
-        case JitOp::Fmadd:
-            if (literal) {
-                lv = jitc_eval_literal(
-                    [](auto v0, auto v1, auto v2) {
-                        return eval_fma(v0, v1, v2);
-                    },
-                    v[0], v[1], v[2]);
-            } else if (literal_one[0]) {
-                uint32_t deps[2] = { dep[1], dep[2] };
-                li = jitc_var_new_op(JitOp::Add, 2, deps);
-                li_created = true;
-            } else if (literal_one[1]) {
-                uint32_t deps[2] = { dep[0], dep[2] };
-                li = jitc_var_new_op(JitOp::Add, 2, deps);
-                li_created = true;
-            } else if (literal_zero[2]) {
-                uint32_t deps[2] = { dep[0], dep[1] };
-                li = jitc_var_new_op(JitOp::Mul, 2, deps);
-                li_created = true;
-            } else if (literal_zero[0] && literal_zero[1]) {
-                li = dep[2];
-            } else if (backend == JitBackend::CUDA) {
-                if (is_float) {
-                    stmt = is_single ? "fma.rn.ftz.$t0 $r0, $r1, $r2, $r3"
-                                     : "fma.rn.$t0 $r0, $r1, $r2, $r3";
-                } else {
-                    stmt = "mad.lo.$t0 $r0, $r1, $r2, $r3";
-                }
-            } else {
-                if (is_float) {
-                    stmt = "$r0 = call <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1> $r1, <$w x $t2> $r2, <$w x $t3> $r3)"
-                           "$[declare <$w x $t0> @llvm.fma.v$w$a1(<$w x $t1>, <$w x $t2>, <$w x $t3>)$]";
-                } else {
-                    stmt = "$r0_0 = mul <$w x $t0> $r1, $r2$n"
-                           "$r0 = add <$w x $t0> $r0_0, $r3";
-                }
-            }
-            break;
-
-        case JitOp::Select:
-            is_valid = (VarType) v[0]->type == VarType::Bool &&
-                       v[1]->type == v[2]->type;
-            if (literal_one[0]) {
-                li = dep[1];
-            } else if (literal_zero[0]) {
-                li = dep[2];
-            } else if (literal) {
-                jitc_fail("jit_var_new_op(): select: internal error!");
-            } else if (dep[1] == dep[2]) {
-                li = dep[1];
-            } else if (backend == JitBackend::CUDA) {
-                if ((VarType) v[1]->type != VarType::Bool) {
-                    stmt = literal_zero[2] ? "selp.$b0 $r0, $r2, 0, $r1"
-                                           : "selp.$t0 $r0, $r2, $r3, $r1";
-                } else {
-                    // r0 = (r1 && r2) || (!r1 && r3)
-                    stmt = "and.pred %p3, $r1, $r2$n"
-                           "and.pred %p2, !$r1, $r3$n"
-                           "or.pred $r0, %p2, %p3";
-                }
-            } else {
-                stmt = literal_zero[2] ? "$r0 = select <$w x $t1> $r1, <$w x "
-                                         "$t2> $r2, <$w x $t2> zeroinitializer"
-                                       : "$r0 = select <$w x $t1> $r1, <$w x "
-                                         "$t2> $r2, <$w x $t3> $r3";
-            }
-            break;
-
-        default:
-            error = "operation not supported!";
-    }
-
-    if (unlikely(error || !is_valid)) {
-        if (!error)
-            error = "invalid input operands";
-        jitc_var_new_op_fail(error, op, n_dep, dep);
-    }
-
-    uint32_t result;
-    if (li) {
-        result = jitc_var_resize(li, size);
-        if (li_created)
-            jitc_var_dec_ref(li);
+template <typename T, enable_if_t<std::is_integral_v<T> && (sizeof(T) == 4 || sizeof(T) == 8)> = 0>
+T eval_mulhi(T a, T b) {
+    if constexpr (sizeof(T) == 4) {
+        using Wide = std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>;
+        return T(((Wide) a * (Wide) b) >> 32);
     } else {
-        if (dirty) {
-            jitc_eval(thread_state(backend));
-            for (uint32_t i = 0; i < n_dep; ++i) {
-                v[i] = jitc_var(dep[i]);
-                if (v[i]->is_dirty())
-                    error = "variable remains dirty following evaluation!";
-            }
-        }
+#if defined(_MSC_VER)
+        if constexpr (std::is_signed_v<T>)
+            return (T) __mulh((__int64) a, (__int64) b);
+        else
+            return (T) __umulh((unsigned __int64) a, (unsigned __int64) b);
+#else
+        using Wide = std::conditional_t<std::is_signed_v<T>, __int128_t, __uint128_t>;
+        return T(((Wide) a * (Wide) b) >> 64);
+#endif
+    }
+}
 
-        Variable v2;
-        v2.size = size;
-        v2.type = (uint32_t) vtr;
-        v2.backend = (uint32_t) backend;
-        v2.placeholder = placeholder;
+uint32_t jitc_var_mulhi(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsInt>("jit_var_mulhi", a0, a1);
 
-        if (literal) {
-            v2.kind = (uint32_t) VarKind::Literal;
-            v2.literal = lv;
-        } else {
-            v2.kind = (uint32_t) VarKind::Stmt;
-            v2.stmt = (char *) stmt;
-            for (uint32_t i = 0; i < n_dep; ++i) {
-                v2.dep[i] = dep[i];
-                jitc_var_inc_ref(dep[i], v[i]);
-            }
-        }
-
-        result = jitc_var_new(v2);
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_mulhi(l0, l1); }, v0, v1);
+        else if (jitc_is_zero(v0))
+            result = jitc_var_resize(a0, info.size);
+        else if (jitc_is_zero(v1))
+            result = jitc_var_resize(a1, info.size);
     }
 
-    if (unlikely(std::max(state.log_level_stderr, state.log_level_callback) >=
-                 LogLevel::Debug)) {
-        var_buffer.clear();
-        var_buffer.fmt("jit_var_new_op(%s r%u <- %s ",
-                       type_name[(uint32_t) vtr], result, op_name[(int) op]);
-        for (uint32_t i = 0; i < n_dep; ++i)
-            var_buffer.fmt("r%u%s", dep[i], i + 1 < n_dep ? ", " : ")");
-        if (literal)
-            var_buffer.put(": literal");
-        else if (li)
-            var_buffer.put(": simplified");
-        jitc_log(Debug, "%s", var_buffer.get());
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Mulhi, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_mulhi(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point_v<T>> = 0>
+T eval_fma(T a, T b, T c) { return std::fma(a, b, c); }
+
+template <typename T, enable_if_t<!std::is_floating_point_v<T> &&
+                                  !std::is_same_v<T, bool>> = 0>
+T eval_fma(T a, T b, T c) { return (T) (a * b + c); }
+
+template <typename T, enable_if_t<std::is_same<T, bool>::value> = 0>
+T eval_fma(T, T, T) { jitc_fail("eval_fma(): unsupported operands!"); }
+
+uint32_t jitc_var_fma(uint32_t a0, uint32_t a1, uint32_t a2) {
+    auto [info, v0, v1, v2] = jitc_var_check<IsArithmetic>("jit_var_fma", a0, a1, a2);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal) {
+            result = jitc_eval_literal(
+                info,
+                [](auto l0, auto l1, auto l2) { return eval_fma(l0, l1, l2); },
+                v0, v1, v2);
+        } else {
+            uint32_t tmp = 0;
+            if (jitc_is_one(v0))
+                tmp = jitc_var_add(a1, a2);
+            else if (jitc_is_one(v1))
+                tmp = jitc_var_add(a0, a2);
+            else if (jitc_is_zero(v2))
+                tmp = jitc_var_mul(a0, a1);
+            else if (jitc_is_zero(v0) && jitc_is_zero(v1))
+                tmp = jitc_var_new_ref(a2);
+
+            if (tmp) {
+                result = jitc_var_resize(tmp, info.size);
+                jitc_var_dec_ref(tmp);
+            }
+        }
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_3(info.backend, info.type, NodeType::Fma, 0,
+                                     info.size, info.placeholder,
+                                     a0, v0, a1, v1, a2, v2);
+
+    jitc_log(Debug, "jit_var_fma(r%u <- r%u, r%u, r%u)", result, a0, a1, a2);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_min(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_min", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return std::min(l0, l1); }, v0, v1);
+        else if (a0 == a1)
+            result = jitc_var_resize(a0, info.size);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Min, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_min(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_max(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_max", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return std::max(l0, l1); }, v0, v1);
+        else if (a0 == a1)
+            result = jitc_var_resize(a0, info.size);
+    }
+
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Max, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_max(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
+T eval_ceil(T value) { return std::ceil(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+T eval_ceil(T) { jitc_fail("eval_ceil(): unsupported operands!"); }
+
+uint32_t jitc_var_ceil(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat>("jit_var_ceil", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_ceil(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Ceil, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_ceil(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
+T eval_floor(T value) { return std::floor(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+T eval_floor(T) { jitc_fail("eval_floor(): unsupported operands!"); }
+
+uint32_t jitc_var_floor(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat>("jit_var_floor", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_floor(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Floor, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_floor(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
+T eval_round(T value) { return std::rint(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+T eval_round(T) { jitc_fail("eval_round(): unsupported operands!"); }
+
+uint32_t jitc_var_round(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat>("jit_var_round", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_round(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Round, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_round(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
+T eval_trunc(T value) { return std::trunc(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+T eval_trunc(T) { jitc_fail("eval_trunc(): unsupported operands!"); }
+
+uint32_t jitc_var_trunc(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat>("jit_var_trunc", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_trunc(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Trunc, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_trunc(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_eq(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsNotVoid>("jit_var_eq", a0, a1);
+    info.type = VarType::Bool;
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return l0 == l1; }, v0, v1);
+        else if (a0 == a1 && !jitc_is_float(v0))
+            result = jitc_make_true(info);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Eq, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_eq(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_neq(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsNotVoid>("jit_var_neq", a0, a1);
+    info.type = VarType::Bool;
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return l0 != l1; }, v0, v1);
+        else if (a0 == a1)
+            result = jitc_make_zero(info);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Neq, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_neq(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_lt(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_lt", a0, a1);
+    info.type = VarType::Bool;
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return l0 < l1; }, v0, v1);
+        else if (a0 == a1)
+            result = jitc_make_zero(info);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Lt, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_lt(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_le(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_le", a0, a1);
+    info.type = VarType::Bool;
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return l0 <= l1; }, v0, v1);
+        else if (a0 == a1 && !jitc_is_float(v0))
+            result = jitc_make_true(info);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Le, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_le(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_gt(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_gt", a0, a1);
+    info.type = VarType::Bool;
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return l0 > l1; }, v0, v1);
+        else if (a0 == a1)
+            result = jitc_make_zero(info);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Gt, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_gt(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_ge(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_ge", a0, a1);
+    info.type = VarType::Bool;
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return l0 >= l1; }, v0, v1);
+        else if (a0 == a1 && !jitc_is_float(v0))
+            result = jitc_make_true(info);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Ge, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_ge(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_select(uint32_t a0, uint32_t a1, uint32_t a2) {
+    auto [info, v0, v1, v2] = jitc_var_check("jit_var_select", a0, a1, a2);
+
+    if (info.size && (!jitc_is_bool(v0) || v1->type != v2->type))
+        jitc_raise("jitc_var_select(): invalid operands!");
+
+    info.type = (VarType) v1->type;
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (jitc_is_one(v0) || a1 == a2)
+            return jitc_var_resize(a1, info.size);
+        else if (jitc_is_zero(v0))
+            return jitc_var_resize(a2, info.size);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_3(info.backend, info.type, NodeType::Select, 0,
+                                    info.size, info.placeholder,
+                                    a0, v0, a1, v1, a2, v2);
+
+    jitc_log(Debug, "jit_var_select(r%u <- r%u, r%u, r%u)", result, a0, a1, a2);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bool>> = 0>
+T eval_popc(T) { jitc_fail("eval_popc(): unsupported operands!"); }
+
+template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
+T eval_popc(T value_) {
+    auto value = (std::make_unsigned_t<T>) value_;
+    T result = 0;
+
+    while (value) {
+        result += value & 1;
+        value >>= 1;
     }
 
     return result;
 }
 
-JIT_NOINLINE uint32_t jitc_var_new_op_fail(const char *error, JitOp op, uint32_t n_dep, const uint32_t *dep) {
-    switch (n_dep) {
-        case 1:
-            jitc_raise("jit_var_new_op(%s, r%u): %s", op_name[(int) op], dep[0],
-                      error);
-        case 2:
-            jitc_raise("jit_var_new_op(%s, r%u, r%u): %s", op_name[(int) op],
-                      dep[0], dep[1], error);
-        case 3:
-            jitc_raise("jit_var_new_op(%s, r%u, r%u, r%u): %s", op_name[(int) op],
-                      dep[0], dep[1], dep[2], error);
-        case 4:
-            jitc_raise("jit_var_new_op(%s, r%u, r%u, r%u, r%u): %s",
-                      op_name[(int) op], dep[0], dep[1], dep[2], dep[3], error);
-        default:
-            jitc_fail("jit_var_new_op(): invalid number of arguments!");
-    }
+uint32_t jitc_var_popc(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsInt>("jit_var_popc", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_popc(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Popc, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_popc(r%u <- r%u)", result, a0);
+    return result;
 }
 
-uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret) {
-    if (index == 0)
-        return 0;
+// --------------------------------------------------------------------------
 
-    Variable *v = jitc_var(index);
-    const JitBackend backend = (JitBackend) v->backend;
-    const VarType source_type = (VarType) v->type;
+template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bool>> = 0>
+T eval_clz(T) { jitc_fail("eval_clz(): unsupported operands!"); }
 
-    if (source_type == target_type) {
-        jitc_var_inc_ref(index);
-        return index;
+template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
+T eval_clz(T value_) {
+    auto value = (std::make_unsigned_t<T>) value_;
+    T result = sizeof(T) * 8;
+    while (value) {
+        value >>= 1;
+        result -= 1;
+    }
+    return result;
+}
+
+uint32_t jitc_var_clz(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsInt>("jit_var_clz", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_clz(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Clz, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_clz(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bool>> = 0>
+T eval_ctz(T) { jitc_fail("eval_ctz(): unsupported operands!"); }
+
+template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
+T eval_ctz(T value) {
+    T result = sizeof(T) * 8;
+    while (value) {
+        value <<= 1;
+        result -= 1;
+    }
+    return result;
+}
+
+uint32_t jitc_var_ctz(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsInt>("jit_var_ctz", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_ctz(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Ctz, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_ctz(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T> T eval_and(T v0, T v1) {
+    using U = uint_with_size_t<T>;
+    return memcpy_cast<T>(U(memcpy_cast<U>(v0) & memcpy_cast<U>(v1)));
+}
+
+static bool eval_and(bool v0, bool v1) { return v0 && v1; }
+
+uint32_t jitc_var_and(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check("jit_var_and", a0, a1);
+
+    if (info.size && v0->type != v1->type && !jitc_is_bool(v1))
+        jitc_raise("jitc_var_and(): invalid operands!");
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal && v0->type == v1->type)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_and(l0, l1); }, v0, v1);
+        else if (jitc_is_zero(v0) || jitc_is_zero(v1))
+            result = jitc_make_zero(info);
+        else if ((jitc_is_one(v1) && jitc_is_bool(v1)) || a0 == a1)
+            result = jitc_var_resize(a0, info.size);
+        else if (jitc_is_one(v0) && jitc_is_bool(v0))
+            result = jitc_var_resize(a1, info.size);
     }
 
-    bool source_bool = source_type == VarType::Bool,
-         target_bool = target_type == VarType::Bool,
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::And, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_and(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T> T eval_or(T v0, T v1) {
+    using U = uint_with_size_t<T>;
+    return memcpy_cast<T>(U(memcpy_cast<U>(v0) | memcpy_cast<U>(v1)));
+}
+
+static bool eval_or(bool v0, bool v1) { return v0 || v1; }
+
+uint32_t jitc_var_or(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check("jit_var_or", a0, a1);
+
+    if (info.size && v0->type != v1->type && !jitc_is_bool(v1))
+        jitc_raise("jitc_var_or(): invalid operands!");
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal && v0->type == v1->type)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_or(l0, l1); }, v0, v1);
+        else if ((jitc_is_bool(v0) && jitc_is_one(v1)) ||
+                 (jitc_is_zero(v0) && v0->type == v1->type) || a0 == a1)
+            result = jitc_var_resize(a1, info.size);
+        else if ((jitc_is_bool(v0) && jitc_is_one(v0)) || jitc_is_zero(v1))
+            result = jitc_var_resize(a0, info.size);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Or, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_or(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T> T eval_xor(T v0, T v1) {
+    using U = uint_with_size_t<T>;
+    return memcpy_cast<T>(U(memcpy_cast<U>(v0) ^ memcpy_cast<U>(v1)));
+}
+
+static bool eval_xor(bool v0, bool v1) { return v0 != v1; }
+
+uint32_t jitc_var_xor(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsNotVoid>("jit_var_xor", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_xor(l0, l1); }, v0, v1);
+        else if (jitc_is_zero(v1))
+            result = jitc_var_resize(a0, info.size);
+        else if (jitc_is_zero(v0))
+            result = jitc_var_resize(a1, info.size);
+        else if (a0 == a1)
+            result = jitc_make_zero(info);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Xor, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_xor(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
+T eval_shl(T v0, T v1) { return v0 << v1; }
+
+template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bool>> = 0>
+T eval_shl(T, T) { jitc_fail("eval_shl(): unsupported operands!"); }
+
+uint32_t jitc_var_shl(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsInt>("jit_var_shl", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_shl(l0, l1); }, v0, v1);
+        else if (jitc_is_zero(v0) || jitc_is_zero(v1))
+            result = jitc_var_resize(a0, info.size);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Shl, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_shl(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
+T eval_shr(T v0, T v1) { return v0 >> v1; }
+
+template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bool>> = 0>
+T eval_shr(T, T) { jitc_fail("eval_shr(): unsupported operands!"); }
+
+uint32_t jitc_var_shr(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsInt>("jit_var_shr", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_shr(l0, l1); }, v0, v1);
+        else if (jitc_is_zero(v0) || jitc_is_zero(v1))
+            result = jitc_var_resize(a0, info.size);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Shr, 0,
+                                     info.size, info.placeholder, a0, v0, a1, v1);
+
+    jitc_log(Debug, "jit_var_shr(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point_v<T>> = 0>
+T eval_rcp(T value) { return 1 / value; }
+
+template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
+T eval_rcp(T) { jitc_fail("eval_rcp(): unsupported operands!"); }
+
+uint32_t jitc_var_rcp(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat>("jit_var_rcp", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_rcp(l0); }, v0);
+
+    if (!result && info.backend == JitBackend::LLVM) {
+        float f1 = 1.f; double d1 = 1.0;
+        uint32_t one = jitc_var_literal(info.backend, info.type,
+                                            info.type == VarType::Float32
+                                                ? (const void *) &f1
+                                                : (const void *) &d1, 1, 0);
+        result = jitc_var_div(one, a0);
+        jitc_var_dec_ref(one);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Rcp, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_rcp(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point<T>::value> = 0>
+T eval_rsqrt(T value) { return 1 / std::sqrt(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point<T>::value> = 0>
+T eval_rsqrt(T) { jitc_fail("eval_rsqrt(): unsupported operands!"); }
+
+uint32_t jitc_var_rsqrt(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat>("jit_var_rsqrt", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_rsqrt(l0); }, v0);
+
+    if (!result && info.backend == JitBackend::LLVM) {
+        // Reciprocal, then square root (lower error than the other way around)
+        uint32_t rcp = jitc_var_rcp(a0);
+        result = jitc_var_sqrt(rcp);
+        jitc_var_dec_ref(rcp);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Rsqrt, 0,
+                                    info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_rsqrt(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point_v<T>> = 0>
+T eval_sin(T value) { return std::sin(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
+T eval_sin(T) { jitc_fail("eval_sin(): unsupported operands!"); }
+
+uint32_t jitc_var_sin(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_sin", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_sin(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Sin, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_sin(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point_v<T>> = 0>
+T eval_cos(T value) { return std::cos(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
+T eval_cos(T) { jitc_fail("eval_cos(): unsupported operands!"); }
+
+uint32_t jitc_var_cos(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_cos", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_cos(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Cos, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_cos(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point_v<T>> = 0>
+T eval_exp2(T value) { return std::exp2(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
+T eval_exp2(T) { jitc_fail("eval_exp2(): unsupported operands!"); }
+
+uint32_t jitc_var_exp2(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_exp2", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_exp2(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Exp2, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_exp2(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<std::is_floating_point_v<T>> = 0>
+T eval_log2(T value) { return std::log2(value); }
+
+template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
+T eval_log2(T) { jitc_fail("eval_log2(): unsupported operands!"); }
+
+uint32_t jitc_var_log2(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_log2", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_log2(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Log2, 0,
+                                     info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_log2(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_cast(uint32_t a0, VarType target_type, int reinterpret) {
+    if (a0 == 0)
+        return 0;
+
+    auto [info, v0] = jitc_var_check<IsNotVoid>("jit_var_cast", a0);
+    info.type = target_type;
+
+    const VarType source_type = (VarType) v0->type;
+
+    bool source_bool = jitc_is_bool(source_type),
+         target_bool = jitc_is_bool(target_type),
          source_float = jitc_is_float(source_type),
          target_float = jitc_is_float(target_type);
 
-    uint32_t source_size =
-                 source_bool ? 0 : type_size[(uint32_t) source_type],
-             target_size =
-                 target_bool ? 0 : type_size[(uint32_t) target_type];
+    uint32_t source_size = source_bool ? 0 : type_size[(uint32_t) source_type],
+             target_size = target_bool ? 0 : type_size[(uint32_t) target_type];
 
     if (reinterpret && source_size != target_size) {
-        jitc_raise("jit_var_new_cast(): reinterpret cast between types of "
+        jitc_raise("jit_var_cast(): cannot reinterpret-cast between types of "
                    "different size!");
     } else if (source_size == target_size && !source_float && !target_float) {
         reinterpret = 1;
     }
 
-    if (v->is_dirty()) {
-        jitc_eval(thread_state(backend));
-        v = jitc_var(index);
-        if (unlikely(v->is_dirty()))
-            jitc_fail("jit_var_new_cast(): variable remains dirty after evaluation!");
-    }
-
-    if (v->is_literal() && (jitc_flags() & (uint32_t) JitFlag::ConstProp)) {
-        uint64_t value;
+    uint32_t result = 0;
+    if (source_type == target_type) {
+        result = jitc_var_new_ref(a0);
+    } else if (info.simplify && info.literal) {
         if (reinterpret) {
-            value = v->literal;
+            uint64_t value = v0->literal;
+            result = jitc_var_literal(info.backend, info.type, &value, info.size, 0);
         } else {
-            value = jitc_eval_literal([target_type](auto value) -> uint64_t {
+            result = jitc_eval_literal(info, [target_type](auto value) -> uint64_t {
                 switch (target_type) {
                     case VarType::Bool:    return v2i((bool) value);
                     case VarType::Int8:    return v2i((int8_t) value);
@@ -1376,100 +1376,23 @@ uint32_t jitc_var_new_cast(uint32_t index, VarType target_type, int reinterpret)
                     case VarType::UInt64:  return v2i((uint64_t) value);
                     case VarType::Float32: return v2i((float) value);
                     case VarType::Float64: return v2i((double) value);
-                    default: jitc_fail("jit_var_new_cast(): unsupported variable type!");
+                    default: jitc_fail("jit_var_cast(): unsupported variable type!");
                 }
-            }, v);
+            }, v0);
         }
-        return jitc_var_new_literal((JitBackend) v->backend, target_type,
-                                    &value, v->size, 0);
-    } else {
-        bool source_uint   = jitc_is_uint(source_type),
-             target_uint   = jitc_is_uint(target_type);
-
-        const char *stmt = nullptr;
-        if (reinterpret) {
-            stmt = backend == JitBackend::CUDA
-                       ? "mov.$b0 $r0, $r1"
-                       : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>";
-        } else if (target_bool) {
-            if (backend == JitBackend::CUDA) {
-                stmt = source_float ? "setp.ne.$t1 $r0, $r1, 0.0"
-                                    : "setp.ne.$t1 $r0, $r1, 0";
-            } else {
-                stmt = source_float ? "$r0 = fcmp one <$w x $t1> $r1, zeroinitializer"
-                                    : "$r0 = icmp ne <$w x $t1> $r1, zeroinitializer";
-            }
-        } else if (source_bool) {
-            if (backend == JitBackend::CUDA) {
-                stmt = target_float ? "selp.$t0 $r0, 1.0, 0.0, $r1"
-                                    : "selp.$t0 $r0, 1, 0, $r1";
-            } else {
-                if (target_float)
-                    stmt = "$r0_1 = insertelement <$w x $t0> undef, $t0 1.0, i32 0$n"
-                           "$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n"
-                           "$r0 = select <$w x $t1> $r1, <$w x $t0> $r0_2, <$w x $t0> zeroinitializer";
-                else
-                    stmt = "$r0_1 = insertelement <$w x $t0> undef, $t0 1, i32 0$n"
-                           "$r0_2 = shufflevector <$w x $t0> $r0_1, <$w x $t0> undef, <$w x i32> zeroinitializer$n"
-                           "$r0 = select <$w x $t1> $r1, <$w x $t0> $r0_2, <$w x $t0> zeroinitializer";
-            }
-        } else if (!source_float && target_float) {
-            if (backend == JitBackend::CUDA) {
-                stmt = "cvt.rn.$t0.$t1 $r0, $r1";
-            } else {
-                stmt = source_uint ? "$r0 = uitofp <$w x $t1> $r1 to <$w x $t0>"
-                                   : "$r0 = sitofp <$w x $t1> $r1 to <$w x $t0>";
-            }
-        } else if (source_float && !target_float) {
-            if (backend == JitBackend::CUDA) {
-                stmt = "cvt.rzi.$t0.$t1 $r0, $r1";
-            } else {
-                stmt = target_uint ? "$r0 = fptoui <$w x $t1> $r1 to <$w x $t0>"
-                                   : "$r0 = fptosi <$w x $t1> $r1 to <$w x $t0>";
-            }
-        } else if (source_float && target_float) {
-            if (target_size < source_size) {
-                stmt = backend == JitBackend::CUDA
-                           ? "cvt.rn.$t0.$t1 $r0, $r1"
-                           : "$r0 = fptrunc <$w x $t1> $r1 to <$w x $t0>";
-            } else {
-                stmt = backend == JitBackend::CUDA
-                           ? "cvt.$t0.$t1 $r0, $r1"
-                           : "$r0 = fpext <$w x $t1> $r1 to <$w x $t0>";
-
-            }
-        } else if (!source_float && !target_float) {
-            if (backend == JitBackend::CUDA) {
-                stmt = "cvt.$t0.$t1 $r0, $r1";
-            } else {
-                stmt = target_size < source_size
-                         ? "$r0 = trunc <$w x $t1> $r1 to <$w x $t0>"
-                         : (source_uint
-                                ? "$r0 = zext <$w x $t1> $r1 to <$w x $t0>"
-                                : "$r0 = sext <$w x $t1> $r1 to <$w x $t0>");
-            }
-        } else {
-            jitc_raise("Unsupported conversion!");
-        }
-
-        Variable v2;
-        v2.kind = (uint32_t) VarKind::Stmt;
-        v2.size = v->size;
-        v2.type = (uint32_t) target_type;
-        v2.backend = (uint32_t) backend;
-        v2.stmt = (char *) stmt;
-        v2.dep[0] = index;
-        v2.placeholder = v->placeholder;
-        jitc_var_inc_ref(index, v);
-        uint32_t result = jitc_var_new(v2);
-
-        jitc_log(Debug, "jit_var_new_cast(%s r%u <- %s r%u)",
-                 type_name[(int) target_type], result,
-                 type_name[(int) source_type], index);
-
-        return result;
     }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, info.type,
+                                     reinterpret ? NodeType::Bitcast
+                                                 : NodeType::Cast,
+                                     0, info.size, info.placeholder, a0, v0);
+
+    jitc_log(Debug, "jit_var_cast(r%u <- r%u)", result, a0);
+    return result;
 }
+
+// --------------------------------------------------------------------------
 
 static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
     const Variable *v_source = jitc_var(source),
@@ -1484,7 +1407,7 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
     if (v_source->size > 0x7fffffff && (JitBackend) v_source->backend == JitBackend::LLVM)
         target_type = VarType::UInt64;
 
-    return jitc_var_new_cast(index, target_type, 0);
+    return jitc_var_cast(index, target_type, 0);
 }
 
 /// Change all indices/counters in an expression tree to 'new_index'
@@ -1520,10 +1443,6 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             v = jitc_var(var_index);
     }
 
-    const char *counter_str = (JitBackend) v->backend == JitBackend::CUDA
-                                  ? (char *) "mov.u32 $r0, %r0"
-                                  : jitc_llvm_counter_str;
-
     if (rebuild) {
         Variable v2;
         v2.kind = v->kind;
@@ -1542,115 +1461,54 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             v2.node = v->node;
             v2.payload = v->payload;
         } else {
-            abort(); /// XXX
+            jitc_fail("jit_var_reindex(): internal error!");
         }
         for (uint32_t i = 0; i < 4; ++i) {
             v2.dep[i] = dep[i];
             jitc_var_inc_ref(dep[i]);
         }
         return jitc_var_new(v2);
-    } else if (v->is_stmt() && strcmp(v->stmt, counter_str) == 0) {
-        jitc_var_inc_ref(new_index);
-        return new_index;
+    } else if (v->is_node() && v->node == NodeType::Counter) {
+        return jitc_var_new_ref(new_index);
     } else {
         jitc_var_inc_ref(var_index, v);
         return var_index;
     }
 }
 
-/// Summary of a set of variables
-struct VarInfo {
-    JitBackend backend;
-    VarType type;
-    uint32_t size;
-    bool placeholder;
-};
 
-/// Implementation detail, see jitc_var_check() below
-template <size_t Size> VarInfo jitc_var_check_impl(uint32_t (&dep)[Size]) {
-    Variable *v[Size];
-    uint32_t size = 0;
-    bool dirty = false, placeholder = false;
-    JitBackend backend = JitBackend::Invalid;
-    VarType type = VarType::Void;
-
-    for (uint32_t i = 0; i < Size; ++i) {
-        if (!dep[i])
-            continue;
-        Variable *vi = jitc_var(dep[i]);
-        size = std::max(size, vi->size);
-        dirty |= vi->is_dirty();
-        placeholder |= (bool) vi->placeholder;
-        backend = (JitBackend) vi->backend;
-        type = (VarType) vi->type;
-        v[i] = vi;
-    }
-
-    if (size > 0) {
-        for (uint32_t i = 0; i < Size; ++i) {
-            if (v[i]->size != size && v[i]->size != 1)
-                jitc_raise("jit_var_lookup(): arithmetic involving arrays of "
-                           "incompatible size (%u vs %u)!", v[i]->size, size);
-        }
-
-        if (unlikely(dirty)) {
-            jitc_eval(thread_state(backend));
-            for (uint32_t i = 0; i < Size; ++i) {
-                if (jitc_var(dep[i])->is_dirty())
-                    jitc_fail("jit_var_lookup(): variable r%u remains dirty "
-                              "following evaluation!", dep[i]);
-            }
-        }
-    }
-
-    return { backend, type, size, placeholder };
-}
-
-/**
- * \brief Check a set of variable indices and return a summary record about them
- *
- * This function checks that
- *
- * - The input arguments have a compatible size
- * - None of the input arguments are dirty (i.e. have pending side effects).
- *   Otherwise, it evaluates the variables and double-checks that this worked
- *   as expected.
- *
- * Finally, it returns some summary information:
- *
- * - The backend
- * - The type (assuming they are homogeneous, no type checking is done)
- * - The size of an arithmetic operation involving the inputs
- * - Whether any of the variables have the 'placeholder' bit set
- */
-template <typename... Ts> JIT_INLINE VarInfo jitc_var_check(Ts... args) {
-    uint32_t dep[] = { args... };
-    return jitc_var_check_impl(dep);
-}
-
-
-uint32_t jitc_var_new_gather(uint32_t src, uint32_t index, uint32_t mask) {
+uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
     if (index == 0)
         return 0;
 
-    VarInfo src_info = jitc_var_check(src),
-            var_info = jitc_var_check(index, mask);
+    auto [src_info, src_v] =
+        jitc_var_check("jit_var_gather", src);
+    auto [var_info, index_v, mask_v] =
+        jitc_var_check("jit_var_gather", index, mask);
 
     uint32_t result = 0, ptr = 0;
     const char *msg = "";
 
     {
+        /// Variables with _v subscript only inspected in this scope
         if (src_info.placeholder)
-            jitc_raise("jit_var_new_gather(): cannot gather from a placeholder variable!");
+            jitc_raise("jit_var_gather(): cannot gather from a placeholder variable!");
 
-        Variable *v_mask = jitc_var(mask);
-        if (v_mask->is_literal() && v_mask->literal == 0) {
-            // Don't perform the gather operation if it is always masked
-            uint64_t value = 0;
-            result = jitc_var_new_literal(src_info.backend, src_info.type,
-                                          &value, var_info.size, 0);
+        if (mask_v->is_literal() && mask_v->literal == 0) {
+            var_info.type = src_info.type;
+            result = jitc_make_zero(var_info);
             msg = ": elided (always masked)";
         }
+
+        /// Make sure that the src and index variables doesn't have pending side effects
+        if (unlikely(index_v->is_dirty() || src_v->is_dirty())) {
+            jitc_eval(thread_state(src_info.backend));
+            if (jitc_var(index)->is_dirty())
+                jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!", index);
+            if (jitc_var(src)->is_dirty())
+                jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!", src);
+        }
+
     }
 
     // Don't perform the gather operation if the inputs are trivial / can be re-indexed
@@ -1660,27 +1518,27 @@ uint32_t jitc_var_new_gather(uint32_t src, uint32_t index, uint32_t mask) {
             // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'src'
             Ref unused = borrow(src_reindexed);
             Ref tmp = steal(jitc_var_resize(src_reindexed, var_info.size));
-            uint32_t deps[2] = { (uint32_t) tmp, mask };
-            result = jitc_var_new_op(JitOp::And, 2, deps);
+            result = jitc_var_and(tmp, mask);
             msg = ": elided (reindexed)";
         }
     }
 
     if (!result) {
-        Ref ptr_2 = steal(jitc_var_new_pointer(src_info.backend, jitc_var_ptr(src), src, 0)),
+        Ref ptr_2   = steal(jitc_var_pointer(src_info.backend, jitc_var_ptr(src), src, 0)),
             index_2 = steal(jitc_scatter_gather_index(src, index)),
             mask_2  = steal(jitc_var_mask_apply(mask, var_info.size));
 
         var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
-        uint32_t dep[3] = { ptr_2, index_2, mask_2 };
-        result = jitc_var_new_node(src_info.backend, src_info.type, NodeType::Gather, 0,
-                                   var_info.size, var_info.placeholder, 3, dep);
+        result = jitc_var_new_node_3(
+            src_info.backend, src_info.type, NodeType::Gather, 0, var_info.size,
+            var_info.placeholder, ptr_2, jitc_var(ptr_2), index_2,
+            jitc_var(index_2), mask_2, jitc_var(mask_2));
         ptr = (uint32_t) ptr_2;
     }
 
     jitc_log(Debug,
-             "jit_var_new_gather(r%u <- r%u[r%u] if r%u, via ptr r%u)%s",
+             "jit_var_gather(r%u <- r%u[r%u] if r%u, via ptr r%u)%s",
              result, src, index, mask, ptr, msg);
 
     return result;
@@ -1690,21 +1548,21 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
     "none", "add", "mul", "min", "max", "and", "or"
 };
 
-uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index,
-                              uint32_t mask, ReduceOp reduce_op) {
+uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
+                          uint32_t mask, ReduceOp reduce_op) {
     Ref target = borrow(target_), ptr;
 
     auto print_log = [&](const char *reason, uint32_t result_node = 0) {
         if (result_node)
             jitc_log(Debug,
-                     "jit_var_new_scatter(r%u[r%u] <- r%u if r%u, via "
+                     "jit_var_scatter(r%u[r%u] <- r%u if r%u, via "
                      "ptr r%u, reduce_op=%s): r%u (output=r%u, %s)",
                      target_, index, value, mask, (uint32_t) ptr,
                      reduce_op_name[(int) reduce_op], result_node,
                      (uint32_t) target, reason);
         else
             jitc_log(Debug,
-                     "jit_var_new_scatter(r%u[r%u] <- r%u if r%u, via "
+                     "jit_var_scatter(r%u[r%u] <- r%u if r%u, via "
                      "ptr r%u, reduce_op=%s) (%s)",
                      target_, index, value, mask, (uint32_t) ptr,
                      reduce_op_name[(int) reduce_op], reason);
@@ -1715,56 +1573,53 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index,
         return target.release();
     }
 
-    VarInfo var_info = jitc_var_check(value, index, mask);
+    auto [var_info, value_v, index_v, mask_v] =
+        jitc_var_check("jit_var_scatter", value, index, mask);
 
-    {
-        const Variable *v_target = jitc_var(target),
-                       *v_mask = jitc_var(mask),
-                       *v_value  = jitc_var(value);
+    const Variable *target_v = jitc_var(target);
 
-        if (v_target->placeholder)
-            jitc_raise("jit_var_new_scatter(): cannot scatter to a placeholder variable!");
+    if (target_v->placeholder)
+        jitc_raise("jit_var_scatter(): cannot scatter to a placeholder variable!");
 
-        var_info.placeholder |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
+    var_info.placeholder |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
-        if (v_target->type != v_value->type)
-            jitc_raise("jit_var_new_scatter(): target/value type mismatch!");
+    if (target_v->type != value_v->type)
+        jitc_raise("jit_var_scatter(): target/value type mismatch!");
 
-        if (v_target->is_literal() && v_value->is_literal() &&
-            v_target->literal == v_value->literal && reduce_op == ReduceOp::None) {
-            print_log("skipped, target/source are value variables with the "
-                      "same value");
-            return target.release();
-        }
-
-        if (v_mask->is_literal() && v_mask->literal == 0) {
-            print_log("skipped, always masked");
-            return target.release();
-        }
-
-        if (v_value->is_literal() && v_value->literal == 0 && reduce_op == ReduceOp::Add) {
-            print_log("skipped, scatter_reduce(ScatterOp.Add) with zero-valued "
-                      "source variable");
-            return target.release();
-        }
-
-        // Check if it is safe to write directly
-        if (v_target->ref_count > 2) /// 1 from original array, 1 from borrow above
-            target = steal(jitc_var_copy(target));
+    if (target_v->is_literal() && value_v->is_literal() &&
+        target_v->literal == value_v->literal && reduce_op == ReduceOp::None) {
+        print_log("skipped, target/source are value variables with the "
+                  "same value");
+        return target.release();
     }
 
-    ptr = steal(jitc_var_new_pointer(var_info.backend, jitc_var_ptr(target), target, 1));
+    if (mask_v->is_literal() && mask_v->literal == 0) {
+        print_log("skipped, always masked");
+        return target.release();
+    }
+
+    if (value_v->is_literal() && value_v->literal == 0 && reduce_op == ReduceOp::Add) {
+        print_log("skipped, scatter_reduce(ScatterOp.Add) with zero-valued "
+                  "source variable");
+        return target.release();
+    }
+
+    // Check if it is safe to write directly
+    if (target_v->ref_count > 2) /// 1 from original array, 1 from borrow above
+        target = steal(jitc_var_copy(target));
+
+    ptr = steal(jitc_var_pointer(var_info.backend, jitc_var_ptr(target), target, 1));
 
     Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
         index_2 = steal(jitc_scatter_gather_index(target, index));
 
-    uint32_t dep[4] = { ptr, value, index_2, mask_2 };
-
     var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
-    uint32_t result = jitc_var_new_node(
+    uint32_t result = jitc_var_new_node_4(
         var_info.backend, VarType::Void, NodeType::Scatter,
-        (uint32_t) reduce_op, var_info.size, var_info.placeholder, 4, dep);
+        (uint32_t) reduce_op, var_info.size, var_info.placeholder, ptr,
+        jitc_var(ptr), value, jitc_var(value), index_2, jitc_var(index_2),
+        mask_2, jitc_var(mask_2));
 
     print_log(((uint32_t) target == target_) ? "direct" : "copy", result);
 
@@ -1772,3 +1627,53 @@ uint32_t jitc_var_new_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
     return target.release();
 }
+
+
+// --------------------------------------------------------------------------
+// Dynamic interface to operations
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_op(JitOp op, const uint32_t *dep) {
+    switch (op) {
+        case JitOp::Add:    return jitc_var_add(dep[0], dep[1]);
+        case JitOp::Sub:    return jitc_var_sub(dep[0], dep[1]);
+        case JitOp::Mul:    return jitc_var_mul(dep[0], dep[1]);
+        case JitOp::Mulhi:  return jitc_var_mulhi(dep[0], dep[1]);
+        case JitOp::Div:    return jitc_var_div(dep[0], dep[1]);
+        case JitOp::Mod:    return jitc_var_mod(dep[0], dep[1]);
+        case JitOp::Min:    return jitc_var_min(dep[0], dep[1]);
+        case JitOp::Max:    return jitc_var_max(dep[0], dep[1]);
+        case JitOp::Neg:    return jitc_var_neg(dep[0]);
+        case JitOp::Not:    return jitc_var_not(dep[0]);
+        case JitOp::Sqrt:   return jitc_var_sqrt(dep[0]);
+        case JitOp::Rcp:    return jitc_var_rcp(dep[0]);
+        case JitOp::Rsqrt:  return jitc_var_rsqrt(dep[0]);
+        case JitOp::Abs:    return jitc_var_abs(dep[0]);
+        case JitOp::Round:  return jitc_var_round(dep[0]);
+        case JitOp::Trunc:  return jitc_var_trunc(dep[0]);
+        case JitOp::Floor:  return jitc_var_floor(dep[0]);
+        case JitOp::Ceil:   return jitc_var_ceil(dep[0]);
+        case JitOp::Fma:    return jitc_var_fma(dep[0], dep[1], dep[2]);
+        case JitOp::Select: return jitc_var_select(dep[0], dep[1], dep[2]);
+        case JitOp::Sin:    return jitc_var_sin(dep[0]);
+        case JitOp::Cos:    return jitc_var_cos(dep[0]);
+        case JitOp::Exp2:   return jitc_var_exp2(dep[0]);
+        case JitOp::Log2:   return jitc_var_log2(dep[0]);
+        case JitOp::Eq:     return jitc_var_eq(dep[0], dep[1]);
+        case JitOp::Neq:    return jitc_var_neq(dep[0], dep[1]);
+        case JitOp::Lt:     return jitc_var_lt(dep[0], dep[1]);
+        case JitOp::Le:     return jitc_var_le(dep[0], dep[1]);
+        case JitOp::Gt:     return jitc_var_gt(dep[0], dep[1]);
+        case JitOp::Ge:     return jitc_var_ge(dep[0], dep[1]);
+        case JitOp::Popc:   return jitc_var_popc(dep[0]);
+        case JitOp::Clz:    return jitc_var_clz(dep[0]);
+        case JitOp::Ctz:    return jitc_var_ctz(dep[0]);
+        case JitOp::Shr:    return jitc_var_shr(dep[0], dep[1]);
+        case JitOp::Shl:    return jitc_var_shl(dep[0], dep[1]);
+        case JitOp::And:    return jitc_var_and(dep[0], dep[1]);
+        case JitOp::Or:     return jitc_var_or(dep[0], dep[1]);
+        case JitOp::Xor:    return jitc_var_xor(dep[0], dep[1]);
+        default: jitc_raise("jit_var_new_op(): unsupported operation!");
+    }
+}
+

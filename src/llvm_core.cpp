@@ -47,9 +47,7 @@ uint32_t jitc_llvm_vector_width = 0;
 bool jitc_llvm_opaque_pointers = false;
 
 /// Strings related to the vector width, used by template engine
-char *jitc_llvm_vector_width_str = nullptr;
 char **jitc_llvm_ones_str = nullptr;
-char *jitc_llvm_counter_str = nullptr;
 
 void jitc_llvm_update_strings();
 
@@ -202,10 +200,6 @@ void jitc_llvm_shutdown() {
     jitc_llvm_vector_width = 0;
     jitc_llvm_context = nullptr;
 
-    free(jitc_llvm_vector_width_str);
-    jitc_llvm_vector_width_str = nullptr;
-    free(jitc_llvm_counter_str);
-    jitc_llvm_counter_str = nullptr;
     if (jitc_llvm_ones_str) {
         for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
             free(jitc_llvm_ones_str[i]);
@@ -223,26 +217,7 @@ void jitc_llvm_update_strings() {
     StringBuffer buf;
     uint32_t width = jitc_llvm_vector_width;
 
-    // Vector width
-    buf.fmt("%u", width);
-    free(jitc_llvm_vector_width_str);
-    jitc_llvm_vector_width_str = strdup(buf.get());
-
     buf.clear();
-    buf.fmt(
-        "$r0_0 = trunc i64 %%index to i32$n"
-        "$r0_1 = insertelement <%u x i32> undef, i32 $r0_0, i32 0$n"
-        "$r0_2 = shufflevector <%u x i32> $r0_1, <%u x i32> undef, <%u x i32> zeroinitializer$n"
-        "$r0 = add <%u x i32> $r0_2, <",
-        width, width, width, width, width
-    );
-
-    for (uint32_t i = 0; i < width; ++i)
-        buf.fmt("i32 %u%s", i, i + 1 < width ? ", " : ">");
-
-    free(jitc_llvm_counter_str);
-    jitc_llvm_counter_str = strdup(buf.get());
-
     if (jitc_llvm_ones_str) {
         for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
             free(jitc_llvm_ones_str[i]);

@@ -43,10 +43,10 @@ uint32_t jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
     Ref printf_target;
     if (backend == JitBackend::LLVM)
         printf_target =
-            steal(jitc_var_new_pointer(backend, (const void *) &printf, 0, 0));
+            steal(jitc_var_pointer(backend, (const void *) &printf, 0, 0));
 
     Ref printf_var =
-        steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 0, nullptr));
+        steal(jitc_var_stmt(backend, VarType::Void, "", 1, 0, nullptr));
 
     Variable *v = jitc_var(printf_var);
     v->extra = 1;

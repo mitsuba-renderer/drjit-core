@@ -181,3 +181,13 @@ private:
 template <typename... Ts> dr_tuple(Ts &&...) -> dr_tuple<std::decay_t<Ts>...>;
 
 NAMESPACE_END(drjit)
+
+// Support for C++17 structured bindings
+template <typename... Ts>
+struct std::tuple_size<drjit::dr_tuple<Ts...>>
+    : std::integral_constant<size_t, sizeof...(Ts)> { };
+
+template <size_t I, typename... Ts>
+struct std::tuple_element<I, drjit::dr_tuple<Ts...>> {
+    using type = typename drjit::dr_tuple<Ts...>::template type<I>;
+};

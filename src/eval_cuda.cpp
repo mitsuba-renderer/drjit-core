@@ -390,16 +390,277 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
 };
 
 static void jitc_render_node_cuda(const Variable *v) {
+    const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
     switch (v->node) {
+        case NodeType::Neg:
+            if (jitc_is_uint(v))
+                fmt("    neg.s$u $v, $v;\n", type_size[v->type]*8, v, a0);
+            else
+                fmt(jitc_is_single(v) ? "    neg.ftz.$t $v, $v;\n"
+                                      : "    neg.$t $v, $v;\n",
+                    v, v, a0);
+            break;
+
+        case NodeType::Not:
+            fmt("    not.$b $v, $v;\n", v, v, a0);
+            break;
+
+        case NodeType::Sqrt:
+            fmt(jitc_is_single(v) ? "    sqrt.approx.ftz.$t $v, $v;\n"
+                                  : "    sqrt.rn.$t $v, $v;\n", v, v, a0);
+            break;
+
+        case NodeType::Abs:
+            fmt("    abs.$t $v, $v;\n", v, v, a0);
+            break;
+
         case NodeType::Add:
             fmt(jitc_is_single(v) ? "    add.ftz.$t $v, $v, $v;\n"
                                   : "    add.$t $v, $v, $v;\n",
                 v, v, a0, a1);
+            break;
+
+        case NodeType::Sub:
+            fmt(jitc_is_single(v) ? "    sub.ftz.$t $v, $v, $v;\n"
+                                  : "    sub.$t $v, $v, $v;\n",
+                v, v, a0, a1);
+            break;
+
+        case NodeType::Mul:
+            if (jitc_is_single(v))
+                stmt = "    mul.ftz.$t $v, $v, $v;\n";
+            else if (jitc_is_double(v))
+                stmt = "    mul.$t $v, $v, $v;\n";
+            else
+                stmt = "    mul.lo.$t $v, $v, $v;\n";
+            fmt(stmt, v, v, a0, a1);
+            break;
+
+        case NodeType::Div:
+            if (jitc_is_single(v))
+                stmt = "    div.approx.ftz.$t $v, $v, $v;\n";
+            else if (jitc_is_double(v))
+                stmt = "    div.rn.$t $v, $v, $v;\n";
+            else
+                stmt = "    div.$t $v, $v, $v;\n";
+            fmt(stmt, v, v, a0, a1);
+            break;
+
+        case NodeType::Mod:
+            fmt("    rem.$t $v, $v, $v;\n", v, v, a0, a1);
+            break;
+
+        case NodeType::Mulhi:
+            fmt("    mul.hi.$t $v, $v, $v;\n", v, v, a0, a1);
+            break;
+
+        case NodeType::Fma:
+            if (jitc_is_single(v))
+                stmt = "    fma.rn.ftz.$t $v, $v, $v, $v;\n";
+            else if (jitc_is_double(v))
+                stmt = "    fma.rn.$t $v, $v, $v, $v;\n";
+            else
+                stmt = "    mad.lo.$t $v, $v, $v, $v;\n";
+            fmt(stmt, v, v, a0, a1, a2);
+            break;
+
+        case NodeType::Min:
+            fmt(jitc_is_single(v) ? "    min.ftz.$t $v, $v, $v;\n"
+                                  : "    min.$t $v, $v, $v;\n",
+                                    v, v, a0, a1);
+            break;
+
+        case NodeType::Max:
+            fmt(jitc_is_single(v) ? "    max.ftz.$t $v, $v, $v;\n"
+                                  : "    max.$t $v, $v, $v;\n",
+                                    v, v, a0, a1);
+            break;
+
+        case NodeType::Ceil:
+            fmt("    cvt.rpi.$t.$t $v, $v;\n", v, v, v, a0);
+            break;
+
+        case NodeType::Floor:
+            fmt("    cvt.rmi.$t.$t $v, $v;\n", v, v, v, a0);
+            break;
+
+        case NodeType::Round:
+            fmt("    cvt.rni.$t.$t $v, $v;\n", v, v, v, a0);
+            break;
+
+        case NodeType::Trunc:
+            fmt("    cvt.rzi.$t.$t $v, $v;\n", v, v, v, a0);
+            break;
+
+        case NodeType::Eq:
+            if (jitc_is_bool(a0))
+                fmt("    xor.$t $v, $v, $v;\n"
+                    "    not.$t $v, $v;", v, v, a0, a1, v, v, v);
+            else
+                fmt("    setp.eq.$t $v, $v, $v;\n", a0, v, a0, a1);
+            break;
+
+        case NodeType::Neq:
+            if (jitc_is_bool(a0))
+                fmt("    xor.$t $v, $v, $v;\n", v, v, a0, a1);
+            else
+                fmt("    setp.ne.$t $v, $v, $v;\n", a0, v, a0, a1);
+            break;
+
+        case NodeType::Lt:
+            fmt(jitc_is_uint(a0) ? "    setp.lo.$t $v, $v, $v;\n"
+                                 : "    setp.lt.$t $v, $v, $v;\n",
+                a0, v, a0, a1);
+            break;
+
+        case NodeType::Le:
+            fmt(jitc_is_uint(a0) ? "    setp.ls.$t $v, $v, $v;\n"
+                                 : "    setp.le.$t $v, $v, $v;\n",
+                a0, v, a0, a1);
+            break;
+
+        case NodeType::Gt:
+            fmt(jitc_is_uint(a0) ? "    setp.hi.$t $v, $v, $v;\n"
+                                 : "    setp.gt.$t $v, $v, $v;\n",
+                a0, v, a0, a1);
+            break;
+
+        case NodeType::Ge:
+            fmt(jitc_is_uint(a0) ? "    setp.hs.$t $v, $v, $v;\n"
+                                 : "    setp.ge.$t $v, $v, $v;\n",
+                a0, v, a0, a1);
+            break;
+
+        case NodeType::Select:
+            if (!jitc_is_bool(a1)) {
+                fmt("    selp.$t $v, $v, $v, $v;\n", v, v, a1, a2, a0);
+            } else {
+                fmt("    and.pred %p3, $v, $v;\n"
+                    "    and.pred %p2, !$v, $v;\n"
+                    "    or.pred $v, %p2, %p3;\n",
+                    a0, a1, a0, a2, v);
+            }
+            break;
+
+        case NodeType::Popc:
+            if (type_size[v->type] == 4)
+                fmt("    popc.$b $v, $v;\n", v, v, a0);
+            else
+                fmt("    popc.$b %r3, $v;\n"
+                    "    cvt.$t.u32 $v, %r3;\n", v, a0, v, v);
+            break;
+
+        case NodeType::Clz:
+            if (type_size[v->type] == 4)
+                fmt("    clz.$b $v, $v;\n", v, v, a0);
+            else
+                fmt("    clz.$b %r3, $v;\n"
+                    "    cvt.$t.u32 $v, %r3;\n", v, a0, v, v);
+            break;
+
+        case NodeType::Ctz:
+            if (type_size[v->type] == 4)
+                fmt("    brev.$b $v, $v;\n"
+                    "    clz.$b $v, $v;\n", v, v, a0, v, v, v);
+            else
+                fmt("    brev.$b $v, $v;\n"
+                    "    clz.$b %r3, $v;\n"
+                    "    cvt.$t.u32 $v, %r3;\n", v, v, a0, v, v, v, v);
+            break;
+
+        case NodeType::And:
+            if (a0->type == a1->type)
+                fmt("    and.$b $v, $v, $v;\n", v, v, a0, a1);
+            else
+                fmt("    selp.$b $v, $v, 0, $v;\n", v, v, a0, a1);
+            break;
+
+        case NodeType::Or:
+            if (a0->type == a1->type)
+                fmt("    or.$b $v, $v, $v;\n", v, v, a0, a1);
+            else
+                fmt("    selp.$b $v, -1, $v, $v;\n", v, v, a0, a1);
+            break;
+
+        case NodeType::Xor:
+            fmt("    xor.$b $v, $v, $v;\n", v, v, a0, a1);
+            break;
+
+        case NodeType::Shl:
+            if (type_size[v->type] == 4)
+                fmt("    shl.$b $v, $v, $v;\n", v, v, a0, a1);
+            else
+                fmt("    cvt.u32.$t %r3, $v;\n"
+                    "    shl.$b $v, $v, %r3;\n", a1, a1, v, v, a0);
+            break;
+
+        case NodeType::Shr:
+            if (type_size[v->type] == 4)
+                fmt("    shr.$t $v, $v, $v;\n", v, v, a0, a1);
+            else
+                fmt("    cvt.u32.$t %r3, $v;\n"
+                    "    shr.$t $v, $v, %r3;\n", a1, a1, v, v, a0);
+            break;
+
+        case NodeType::Rcp:
+            fmt(jitc_is_single(v) ? "    rcp.approx.ftz.$t $v, $v;\n"
+                                  : "    rcp.rn.$t $v, $v;\n", v, v, a0);
+            break;
+
+        case NodeType::Rsqrt:
+            if (jitc_is_single(v))
+                fmt("    rsqrt.approx.ftz.$t $v, $v;\n", v, v, a0);
+            else
+                fmt("    rcp.rn.$t $v, $v;\n"
+                    "    sqrt.rn.$t $v, $v;\n", v, v, a0, v, v, v);
+            break;
+
+        case NodeType::Sin:
+            fmt("    sin.approx.ftz.$t $v, $v;\n", v, v, a0);
+            break;
+
+        case NodeType::Cos:
+            fmt("    cos.approx.ftz.$t $v, $v;\n", v, v, a0);
+            break;
+
+        case NodeType::Exp2:
+            fmt("    ex2.approx.ftz.$t $v, $v;\n", v, v, a0);
+            break;
+
+        case NodeType::Log2:
+            fmt("    lg2.approx.ftz.$t $v, $v;\n", v, v, a0);
+            break;
+
+
+        case NodeType::Cast:
+            if (jitc_is_bool(v)) {
+                fmt(jitc_is_float(a0) ? "    setp.ne.$t $v, $v, 0.0;\n"
+                                      : "    setp.ne.$t $v, $v, 0;\n",
+                    a0, v, a0);
+            } else if (jitc_is_bool(a0)) {
+                fmt(jitc_is_float(v) ? "    selp.$t $v, 1.0, 0.0, $v;\n"
+                                     : "    selp.$t $v, 1, 0, $v;\n",
+                    v, v, a0);
+            } else if (jitc_is_float(v) && !jitc_is_float(a0)) {
+                fmt("    cvt.rn.$t.$t $v, $v;\n", v, a0, v, a0);
+            } else if (!jitc_is_float(v) && jitc_is_float(a0)) {
+                fmt("    cvt.rzi.$t.$t $v, $v;\n", v, a0, v, a0);
+            } else {
+                fmt(jitc_is_float(v) && jitc_is_float(a0) &&
+                            type_size[v->type] < type_size[a0->type]
+                        ? "    cvt.rn.$t.$t $v, $v;\n"
+                        : "    cvt.$t.$t $v, $v;\n",
+                    v, a0, v, a0);
+            }
+            break;
+
+        case NodeType::Bitcast:
+            fmt("    mov.$b $v, $v;\n", v, v, a0);
             break;
 
         case NodeType::Gather: {
@@ -556,8 +817,17 @@ static void jitc_render_node_cuda(const Variable *v) {
             }
             break;
 
+        case NodeType::VCallSelf:
+            fmt("    mov.u32 $v, self;\n", v);
+            break;
+
+        case NodeType::Counter:
+            fmt("    mov.$t $v, %r0;\n", v, v);
+            break;
+
         default:
-            jitc_fail("jitc_render_node_cuda(): unhandled node type!");
+            jitc_fail("jitc_render_node_cuda(): unhandled node type \"%s\"!",
+                      node_names[(uint32_t) v->node]);
     }
 }
 

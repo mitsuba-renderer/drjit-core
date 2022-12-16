@@ -107,7 +107,7 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
     jitc_new_scope(backend);
 
     // Create a special node indicating the loop start
-    Ref result = steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 0, nullptr));
+    Ref result = steal(jitc_var_stmt(backend, VarType::Void, "", 1, 0, nullptr));
     jitc_var(result)->size = size;
 
     jitc_new_scope(backend);
@@ -144,7 +144,7 @@ uint32_t jitc_var_loop_cond(uint32_t loop_init, uint32_t cond,
     uint32_t dep[2] = { cond, loop_init };
 
     Ref result =
-        steal(jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, dep));
+        steal(jitc_var_stmt(backend, VarType::Void, "", 1, 2, dep));
 
     jitc_new_scope(backend);
 
@@ -379,7 +379,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
     uint32_t loop_end_dep[2] = { loop_init, loop_cond };
     Ref loop_end = steal(
-        jitc_var_new_stmt(backend, VarType::Void, "", 1, 2, loop_end_dep));
+        jitc_var_stmt(backend, VarType::Void, "", 1, 2, loop_end_dep));
     loop->end = loop_end;
 
     jitc_new_scope(backend);
@@ -439,7 +439,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
         uint32_t loop_se_dep[1] = { loop_end };
         loop_se = steal(
-            jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, loop_se_dep));
+            jitc_var_stmt(backend, VarType::Void, "", 1, 1, loop_se_dep));
 
         // Set a label and custom code generation hook
         Variable *v = jitc_var(loop_se);

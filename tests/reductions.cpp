@@ -151,29 +151,29 @@ TEST_BOTH(04_mkperm) {
                 jit_fail("Size mismatch: %u vs %u\n", total_size, size);
 
             const uint64_t *ref_ptr = ref;
-            for (uint32_t i = 0; i < num_unique; ++i) {
-                const Bucket &entry = buckets[i];
+            for (uint32_t j = 0; j < num_unique; ++j) {
+                const Bucket &entry = buckets[j];
                 uint32_t *perm_cur = perm + entry.start;
 
 #if 0
-                for (size_t j = 0; j < entry.size; ++j) {
-                    uint64_t ref_value = ref_ptr[j];
+                for (size_t k = 0; k < entry.size; ++k) {
+                    uint64_t ref_value = ref_ptr[k];
                     uint32_t bucket_id = (uint32_t) (ref_value >> 32);
                     uint32_t perm_index = (uint32_t) ref_value;
-                    fprintf(stderr, "id=%u/%u perm=%u/%u\n", entry.id, bucket_id, perm_cur[j], perm_index);
+                    fprintf(stderr, "id=%u/%u perm=%u/%u\n", entry.id, bucket_id, perm_cur[k], perm_index);
                 }
 #endif
 
                 std::sort(perm_cur, perm_cur + entry.size);
 
-                for (size_t j = 0; j < entry.size; ++j) {
+                for (size_t k = 0; k < entry.size; ++k) {
                     uint64_t ref_value = *ref_ptr++;
                     uint32_t bucket_id = (uint32_t) (ref_value >> 32);
                     uint32_t perm_index = (uint32_t) ref_value;
 
                     if (bucket_id != entry.id)
                         jit_fail("Mismatched bucket ID");
-                    if (perm_index != perm_cur[j])
+                    if (perm_index != perm_cur[k])
                         jit_fail("Mismatched permutation index");
                 }
             }

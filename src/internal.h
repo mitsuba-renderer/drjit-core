@@ -28,12 +28,60 @@
 
 #define DRJIT_PTR "<0x%" PRIxPTR ">"
 
-
 enum NodeType : uint32_t {
     Invalid,
-    Add,
-    Gather,
-    Scatter,
+
+    // Common unary operations
+    Neg, Not, Sqrt, Abs,
+
+    // Common binary arithmetic operations
+    Add, Sub, Mul, Div, Mod,
+
+    // High multiplication
+    Mulhi,
+
+    // Fused multiply-add
+    Fma,
+
+    // Minimum, maximum
+    Min, Max,
+
+    // Rounding operations
+    Ceil, Floor, Round, Trunc,
+
+    // Comparisons
+    Eq, Neq, Lt, Le, Gt, Ge,
+
+    // Ternary operator
+    Select,
+
+    // Bit-level counting operations
+    Popc, Clz, Ctz,
+
+    /// Bit-wise operations
+    And, Or, Xor,
+
+    // Shifts
+    Shl, Shr,
+
+    // Fast approximations
+    Rcp, Rsqrt,
+
+    // Multi-function generator (CUDA)
+    Sin, Cos, Exp2, Log2,
+
+    // Casts
+    Cast, Bitcast,
+
+    // Memory-related operations
+    Gather, Scatter,
+
+    // Specialized nodes for vcalls
+    VCallMask, VCallSelf,
+
+    /// Counter node to determine the current lane ID
+    Counter,
+
     Count /// Denotes the number of different node types
 };
 
@@ -823,13 +871,9 @@ inline bool jitc_is_float(VarType type) {
            type == VarType::Float64;
 }
 
-inline bool jitc_is_single(VarType type) {
-    return type == VarType::Float32;
-}
-
-inline bool jitc_is_double(VarType type) {
-    return type == VarType::Float64;
-}
+inline bool jitc_is_single(VarType type) { return type == VarType::Float32; }
+inline bool jitc_is_double(VarType type) { return type == VarType::Float64; }
+inline bool jitc_is_bool(VarType type) { return type == VarType::Bool; }
 
 inline bool jitc_is_sint(VarType type) {
     return type == VarType::Int8 ||
@@ -849,8 +893,8 @@ inline bool jitc_is_int(VarType type) {
     return jitc_is_sint(type) || jitc_is_uint(type);
 }
 
-inline bool jitc_is_not_void(VarType type) {
-    return type != VarType::Void;
+inline bool jitc_is_void(VarType type) {
+    return type == VarType::Void;
 }
 
 inline bool jitc_is_arithmetic(const Variable *v) { return jitc_is_arithmetic((VarType) v->type); }
@@ -860,3 +904,23 @@ inline bool jitc_is_double(const Variable *v) { return jitc_is_double((VarType) 
 inline bool jitc_is_sint(const Variable *v) { return jitc_is_sint((VarType) v->type); }
 inline bool jitc_is_uint(const Variable *v) { return jitc_is_uint((VarType) v->type); }
 inline bool jitc_is_int(const Variable *v) { return jitc_is_int((VarType) v->type); }
+inline bool jitc_is_void(const Variable *v) { return jitc_is_void((VarType) v->type); }
+inline bool jitc_is_bool(const Variable *v) { return jitc_is_bool((VarType) v->type); }
+inline bool jitc_is_zero(Variable *v) { return v->is_literal() && v->literal == 0; }
+
+inline bool jitc_is_one(Variable *v) {
+    if (!v->is_literal())
+        return false;
+
+    uint64_t one;
+    switch ((VarType) v->type) {
+        case VarType::Float16: one = 0x3c00ull; break;
+        case VarType::Float32: one = 0x3f800000ull; break;
+        case VarType::Float64: one = 0x3ff0000000000000ull; break;
+        default: one = 1; break;
+    }
+
+    return v->literal == one;
+}
+
+extern const char *node_names[(int) NodeType::Count];
