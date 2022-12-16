@@ -155,11 +155,14 @@ void jitc_init(uint32_t backends) {
             cuda_check(cuDeviceGetAttribute(&tcc_driver, CU_DEVICE_ATTRIBUTE_TCC_DRIVER, i));
             cuda_check(cuDeviceGetAttribute(&preemptable, CU_DEVICE_ATTRIBUTE_COMPUTE_PREEMPTION_SUPPORTED, i));
         #else
+            tcc_driver = 0;
             preemptable = 1;
         #endif
 
         if (jitc_cuda_version_major > 11 || (jitc_cuda_version_major == 11 && jitc_cuda_version_minor >= 2))
             cuda_check(cuDeviceGetAttribute(&memory_pool_support, CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED, i));
+
+        bool non_preemptable = !preemptable && !tcc_driver;
 
         jitc_log(Info,
                 " - Found CUDA device %i: \"%s\" "
@@ -167,7 +170,7 @@ void jitc_init(uint32_t backends) {
                 i, name, pci_bus_id, pci_dev_id, pci_dom_id, cc_major, cc_minor, num_sm,
                 std::string(jitc_mem_string(shared_memory_bytes)).c_str(),
                 std::string(jitc_mem_string(mem_total)).c_str(),
-                tcc_driver == 0 ? ", WDDM driver" : "");
+                non_preemptable ? ", non-preemptable": "");
 
         if (unified_addr == 0) {
             jitc_log(Warn, " - Warning: device does *not* support unified addressing, skipping ..");

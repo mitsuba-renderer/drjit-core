@@ -43,10 +43,10 @@ extern uint32_t jitc_llvm_vector_width;
 /// Should the LLVM IR use typed (e.g., "i8*") or untyped ("ptr") pointers?
 extern bool jitc_llvm_opaque_pointers;
 
-/// LLVM version
-extern uint32_t jitc_llvm_version_major;
-extern uint32_t jitc_llvm_version_minor;
-extern uint32_t jitc_llvm_version_patch;
+/// LLVM version (parts can equal -1, which means: not sure)
+extern int jitc_llvm_version_major;
+extern int jitc_llvm_version_minor;
+extern int jitc_llvm_version_patch;
 
 /// Pre-generated strings for use by the template engine
 extern char **jitc_llvm_ones_str;
