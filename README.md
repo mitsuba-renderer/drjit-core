@@ -177,38 +177,30 @@ jit_init(JitBackendCUDA);
 
 Let's calculate something: we will start by creating a single-precision
 floating point variable that is initialized with the value ``0.5``. This
-involves the function ``jit_var_new_stmt_0``, which creates a new variable that
-depends on no other variables.
+involves the function ``jit_var_literal``, which creates a literal constant
+variable that depends on no other variables.
 
 ```cpp
-uint32_t v0 = jit_var_new_stmt_0(/* backend = */ JitBackendCUDA,
-                                 /* type    = */ VarTypeFloat32,
-                                 /* stmt    = */ "mov.$t0 $r0, 0.5");
+float value = 0.5f;
+uint32_t v0 = jit_var_literal(/* backend  = */ JitBackendCUDA,
+                              /* type     = */ VarTypeFloat32,
+                              /* value    = */ &value,
+                              /* size     = */ 1,
+                              /* eval     = */ 0,
+                              /* is_class = */ 0);
+);
 ```
-Note weird-looking code fragment ``mov.$t0 $r0, 0.5``. This is a *template* for
-an operation expressed in
-[PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html).
-Familiarity with PTX is not needed to use Dr.Jit, and there are higher-level
-wrappers for any conceivable standard operation. We simply show the lowest-level
-interface here to illustrate how things fit together.
-
-The ``$`` expressions are placeholders that Dr.Jit will replace with
-something meaningful when the final program is generated. For example ``$t0``
-is the type of the output argument (we could also have written ``f32`` as the
-type is known here), and ``$r0`` is the register name associated to the output
-argument. This is a *scalar* variable, which means that it will produce a
+This is a *scalar* variable, which means that it will produce a
 single element if evaluated alone, but it can also occur in any computation
 involving larger arrays and will expand to the needed size.
 
 Programs using Dr.Jit will normally create and destroy *vast* numbers of
-variables, and this operation is therefore highly optimized. For example, the
-default way of creating statements assumes that the instruction string template
-exists in the program's data segment and therefore doesn't need to be copied.
-The operation then creates an entry in a [very efficient hash
+variables, and this operation is therefore highly optimized. The operation
+creates an entry in a [very efficient hash
 table](https://github.com/Tessil/robin-map) mapping the resulting variable
-index ``v0`` to a record ``(backend, type, stmt, <operands>)``. Over time, this
-hash table will expand to the size that is needed to support the active
-computation, and from this point onward ``jit_var_new_..`` will not involve any
+index ``v0`` to a record ``(backend, type, <operands>)``. Over time, this hash
+table will expand to the size that is needed to support the active computation,
+and from this point onward ``jit_var_..()`` operations will not involve any
 further dynamic memory allocation.
 
 Let's do some computation with this variable: we can create a "counter", which
@@ -216,33 +208,23 @@ is an Dr.Jit array containing an increasing sequence of integer elements ``[0,
 1, 2, .., 9]`` in this case.
 
 ```cpp
-uint32_t v1 = jit_var_new_counter(/* backend = */ JitBackendCUDA,
-                                  /* size    = */ 10);
+uint32_t v1 = jit_var_counter(/* backend = */ JitBackendCUDA,
+                              /* size    = */ 10);
 ```
 Counters always have the variable type ``VarTypeUInt32`` that we next
 convert into a single precision floating point variable.
 
 ```cpp
-uint32_t v2 = jit_var_new_cast(/* index       = */ v1,
-                               /* target_type = */ VarTypeFloat32,
-                               /* reinterpret = */ 0);
+uint32_t v2 = jit_var_cast(/* index       = */ v1,
+                           /* target_type = */ VarTypeFloat32,
+                           /* reinterpret = */ 0);
 ```
 
 Finally, let's create a more interesting variable that references some of the
 previous results via ``op0`` and ``op1``.
 
 ```cpp
-uint32_t v3 = jit_var_new_op_2(JitOpAdd, v0, v2)
-```
-
-Or, equivalently, using the lower-level string template interface:
-
-```cpp
-uint32_t v3 = jit_var_new_stmt_2(/* backend = */ JitBackendCUDA,
-                                 /* type    = */ VarTypeFloat32,
-                                 /* stmt    = */ "add.$t0 $r0, $r1, $r2",
-                                 /* op0     = */ v0,
-                                 /* op1     = */ v2);
+uint32_t v3 = jit_var_add(v0, v2)
 ```
 Suppose that we don't plan to perform any
 further computation / accesses involving ``v0``, ``v1``, and ``v2``. This must
@@ -346,7 +328,7 @@ jit_cuda_init(): enabling CUDA backend (version 11.1)
 jit_var_new(float32 r1): mov.$t0 $r0, 0.5
 jit_var_new(uint32 r2[10]): mov.u32 $r0, %r0
 jit_var_new(float32 r3[10] <- r2): cvt.rn.$t0.$t1 $r0, $r1
-jit_var_new_cast(float32 r3 <- uint32 r2)
+jit_var_cast(float32 r3 <- uint32 r2)
 jit_var_new(float32 r4[10] <- r1, r3): add.$t0 $r0, $r1, $r2
 jit_eval(): launching 1 kernel.
   -> launching e93e70f12fcaea9c (n=10, in=0, out=1, ops=8, jit=2.9 us):
@@ -426,22 +408,10 @@ are automatically launched through OptiX instead of the CUDA driver API.
 
 The preceding section provided a basic example of Dr.Jit in combination with CUDA.
 LLVM works essentially the same way. Now, the ``backend=`` flag must be set to
-``JitBackendLLVM``, and ``stmt`` is expected to be a statement using LLVM's
-textual intermediate representation. For example, the previous addition
-operation would be written as
-
-```cpp
-uint32_t v3 = jit_var_new_2(/* backend = */ JitBackendLLVM,
-                            /* type    = */ VarTypeFloat32,
-                            /* stmt    = */ "$r0 = fadd <$w x $t0> $r1, $r2",
-                            /* op0     = */ v0,
-                            /* op1     = */ v2);
-```
+``JitBackendLLVM``.
 
 The LLVM backend operates on vectors matching the SIMD instruction set of the
-host processor. For example, ``<$w x $t0>`` will e.g. expand to ``<8 x float>``
-on a machine supporting the AVX/AVX2 instruction set, and ``<16 x float>`` on a
-machine with AVX512.
+host processor such as AVX/AVX2/AVX512 or ARM NEON.
 
 A kernel transforming less than a few thousands of elements will be
 JIT-compiled and executed immediately on the current thread. For large arrays,

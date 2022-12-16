@@ -296,7 +296,8 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
 
     if (nargs != arg) {
         fprintf(stderr,
-                "StringBuffer::fmt_llvm(): given %zu args, format string accessed %zu\n", nargs, arg);
+                "StringBuffer::fmt_cuda(): given %zu args, format string "
+                "accessed %zu\n", nargs, arg);
         abort();
     }
 
@@ -406,6 +407,8 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                 case 'w': len += MAXSIZE_U32; break;
 
                 case 't':
+                case 'd':
+                case 'b':
                 case 'm':
                     (void) va_arg(args, const Variable *); arg++;
                     len += MAXSIZE_TYPE;
@@ -417,6 +420,8 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     break;
 
                 case 'T':
+                case 'D':
+                case 'B':
                 case 'M':
                     (void) va_arg(args, const Variable *); arg++;
                     len += MAXSIZE_U32 + MAXSIZE_TYPE + 5;
@@ -473,7 +478,8 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
 
     if (nargs != arg) {
         fprintf(stderr,
-                "StringBuffer::fmt_llvm(): given %zu args, format string accessed %zu\n", nargs, arg);
+                "StringBuffer::fmt_llvm(): given %zu args, format string "
+                "accessed %zu\n", nargs, arg);
         abort();
     }
 
@@ -512,6 +518,19 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     }
                     break;
 
+                case 'b': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_unchecked(type_name_llvm_bin[v->type]);
+                    }
+                    break;
+
+                case 'd': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_unchecked(type_name_llvm_big[v->type]);
+                    }
+                    break;
+
+
                 case 'h': {
                         const Variable *v = va_arg(args2, const Variable *);
                         put_unchecked(type_name_llvm_abbrev[v->type]);
@@ -533,6 +552,26 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                         put_u32_unchecked(jitc_llvm_vector_width);
                         *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
                         put_unchecked(type_name_llvm[v->type]);
+                        *m_cur ++= '>';
+                    }
+                    break;
+
+                case 'B': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        *m_cur ++= '<';
+                        put_u32_unchecked(jitc_llvm_vector_width);
+                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
+                        put_unchecked(type_name_llvm_bin[v->type]);
+                        *m_cur ++= '>';
+                    }
+                    break;
+
+                case 'D': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        *m_cur ++= '<';
+                        put_u32_unchecked(jitc_llvm_vector_width);
+                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
+                        put_unchecked(type_name_llvm_big[v->type]);
                         *m_cur ++= '>';
                     }
                     break;

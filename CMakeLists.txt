@@ -97,18 +97,23 @@ add_library(
   src/util.h          src/util.cpp
   src/cuda_api.h      src/cuda_api.cpp
   src/cuda_tex.h      src/cuda_tex.cpp
-  src/llvm_api.h      src/llvm_api.cpp
-  src/llvm_memmgr.h   src/llvm_memmgr.cpp
-                      src/llvm_core.cpp
-                      src/llvm_mcjit.cpp
-                      src/llvm_orcv2.cpp
+
+  # LLVM backend
+  src/llvm_api.h
+  src/llvm_api.cpp
+  src/llvm_memmgr.h
+  src/llvm_memmgr.cpp
+  src/llvm_core.cpp
+  src/llvm_mcjit.cpp
+  src/llvm_orcv2.cpp
+  src/eval_llvm.cpp
+
   src/io.h            src/io.cpp
   src/eval.h          src/eval.cpp
   src/vcall.h         src/vcall.cpp
   src/loop.h          src/loop.cpp
   src/printf.h        src/printf.cpp
   src/eval_cuda.cpp
-  src/eval_llvm.cpp
   src/init.cpp
   src/api.cpp
 

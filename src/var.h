@@ -20,39 +20,47 @@ struct Variable;
 extern Variable *jitc_var(uint32_t index);
 
 /// Create a value constant variable of the given size
-extern uint32_t jitc_var_new_literal(JitBackend backend, VarType type,
+extern uint32_t jitc_var_literal(JitBackend backend, VarType type,
                                      const void *value, size_t size,
                                      int eval, int is_class = 0);
 
 /// Create a variable counting from 0 ... size - 1
-extern uint32_t jitc_var_new_counter(JitBackend backend, size_t size,
+extern uint32_t jitc_var_counter(JitBackend backend, size_t size,
                                      bool simplify_scalar);
 
 /// Create a variable representing the result of a custom IR statement
-extern uint32_t jitc_var_new_stmt(JitBackend backend,
-                                  VarType type,
-                                  const char *stmt,
-                                  int stmt_static,
-                                  uint32_t n_dep,
-                                  const uint32_t *dep);
+extern uint32_t jitc_var_stmt(JitBackend backend,
+                              VarType type,
+                              const char *stmt,
+                              int stmt_static,
+                              uint32_t n_dep,
+                              const uint32_t *dep);
 
 /// Create a new IR node. Just a wrapper around jitc_var_new without any error checking
-extern uint32_t jitc_var_new_node(JitBackend backend, VarType vt, NodeType node,
-                                  uint32_t payload, uint32_t size,
-                                  bool placeholder, uint32_t n_dep,
-                                  const uint32_t *dep);
+extern uint32_t jitc_var_new_node_0(JitBackend backend, VarType vt, NodeType node,
+                                    uint32_t payload, uint32_t size, bool placeholder);
 
-template <typename... Ts>
-uint32_t jitc_var_new_stmt_n(JitBackend backend, VarType type, const char *stmt,
-                             int stmt_static, const Ts &... indices_) {
-    uint32_t indices[] = { indices_... };
-    return jitc_var_new_stmt(backend, type, stmt, stmt_static,
-                             (uint32_t) sizeof...(Ts), indices);
-}
+extern uint32_t jitc_var_new_node_1(JitBackend backend, VarType vt, NodeType node,
+                                    uint32_t payload, uint32_t size, bool placeholder,
+                                    uint32_t a0, Variable *v0);
+
+extern uint32_t jitc_var_new_node_2(JitBackend backend, VarType vt, NodeType node,
+                                    uint32_t payload, uint32_t size, bool placeholder,
+                                    uint32_t a0, Variable *v0, uint32_t a1, Variable *v1);
+
+extern uint32_t jitc_var_new_node_3(JitBackend backend, VarType vt, NodeType node,
+                                    uint32_t payload, uint32_t size, bool placeholder,
+                                    uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
+                                    uint32_t a2, Variable *v2);
+
+extern uint32_t jitc_var_new_node_4(JitBackend backend, VarType vt, NodeType node,
+                                    uint32_t payload, uint32_t size, bool placeholder,
+                                    uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
+                                    uint32_t a2, Variable *v2, uint32_t a3, Variable *v4);
 
 /// Create a variable that refers to a memory region
-extern uint32_t jitc_var_new_pointer(JitBackend backend, const void *value,
-                                     uint32_t dep, int write);
+extern uint32_t jitc_var_pointer(JitBackend backend, const void *value,
+                                 uint32_t dep, int write);
 
 /// Wrap an input variable of a virtual function call before recording computation
 extern uint32_t jitc_var_wrap_vcall(uint32_t index);
@@ -77,6 +85,12 @@ extern void jitc_var_inc_ref(uint32_t index, Variable *v) noexcept(true);
 
 /// Increase the external reference count of a given variable
 extern void jitc_var_inc_ref(uint32_t index) noexcept(true);
+
+/// Increase the external reference count of a given variable
+inline uint32_t jitc_var_new_ref(uint32_t index) noexcept(true) {
+    jitc_var_inc_ref(index);
+    return index;
+}
 
 /// Decrease the external reference count of a given variable
 extern void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept(true);
@@ -188,6 +202,9 @@ extern uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op);
 /// Create a variable containing the buffer storing a specific attribute
 extern uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
                                        const char *domain, const char *name);
+
+/// Return an implicit mask for operations within a virtual function call
+extern uint32_t jitc_var_vcall_mask(JitBackend);
 
 /// Descriptive names and byte sizes for the various variable types
 extern const char *type_name      [(int) VarType::Count];

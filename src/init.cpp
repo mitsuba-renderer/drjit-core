@@ -510,10 +510,10 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
             #endif
 
             jitc_raise("jit_init_thread_state(): the LLVM backend is inactive "
-                      "because the LLVM shared library (\"%s\") could not be "
-                      "found! Set the DRJIT_LIBLLVM_PATH environment "
-                      "variable to specify its path.",
-                      llvm_fname);
+                       "because the LLVM shared library (\"%s\") could not be "
+                       "found! Set the DRJIT_LIBLLVM_PATH environment "
+                       "variable to specify its path.",
+                       llvm_fname);
         }
         thread_state_llvm = ts;
         ts->device = -1;
@@ -650,7 +650,7 @@ void jitc_prefix_pop(JitBackend backend) {
 
 /// Glob for a shared library and try to load the most recent version
 void *jitc_find_library(const char *fname, const char *glob_pat,
-                       const char *env_var) {
+                        const char *env_var) {
 #if !defined(_WIN32)
     const char* env_var_val = env_var ? getenv(env_var) : nullptr;
     if (env_var_val != nullptr && strlen(env_var_val) == 0)

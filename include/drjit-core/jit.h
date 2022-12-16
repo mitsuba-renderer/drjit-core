@@ -673,12 +673,12 @@ enum VarType {
  * instance index of a class, which may trigger further optimizations within
  * virtual function calls.
  */
-extern JIT_EXPORT uint32_t jit_var_new_literal(JIT_ENUM JitBackend backend,
-                                               JIT_ENUM VarType type,
-                                               const void *value,
-                                               size_t size JIT_DEF(1),
-                                               int eval JIT_DEF(0),
-                                               int is_class JIT_DEF(0));
+extern JIT_EXPORT uint32_t jit_var_literal(JIT_ENUM JitBackend backend,
+                                           JIT_ENUM VarType type,
+                                           const void *value,
+                                           size_t size JIT_DEF(1),
+                                           int eval JIT_DEF(0),
+                                           int is_class JIT_DEF(0));
 
 /**
  * \brief Create a counter variable
@@ -686,181 +686,210 @@ extern JIT_EXPORT uint32_t jit_var_new_literal(JIT_ENUM JitBackend backend,
  * This operation creates a variable of type \ref VarType::UInt32 that will
  * evaluate to <tt>0, ..., size - 1</tt>.
  */
-extern JIT_EXPORT uint32_t jit_var_new_counter(JIT_ENUM JitBackend backend,
-                                               size_t size);
-
-/**
- * \brief Create a new variable representing the result of a LLVM/PTX statement
- *
- * This function takes a statement in an intermediate representation (CUDA PTX or
- * LLVM IR) and registers it in the global variable list. It returns the index
- * of the variable that will store the result of the statement, whose external
- * reference count is initialized to \c 1.
- *
- * You will probably want to access this function through the wrappers \ref
- * jit_var_new_stmt_0() to \ref jit_var_new_stmt_4() that take an explicit
- * list of parameter indices and assume that it's not necessary to make a copy
- * of \c stmt (i.e. <tt>stmt_static == 1</tt>).
- *
- * The string \c stmt may contain special dollar-prefixed expressions
- * (<tt>$rN</tt>, <tt>$tN</tt>, or <tt>$bN</tt>, where <tt>N</tt> ranges from
- * 0-4) to refer to operands and their types. During compilation, these will
- * then be rewritten into a register name of the variable (<tt>r</tt>), its
- * type (<tt>t</tt>), or a generic binary type of matching size (<tt>b</tt>).
- * Index <tt>0</tt> refers to the variable being generated, while indices
- * <tt>1<tt>-<tt>3</tt> refer to the operands. For instance, a PTX integer
- * addition would be encoded as follows:
- *
- * \code
- * uint32_t result = jit_var_new_stmt_2(JitBackend:::CUDA, VarType::Int32,
- *                                      "add.$t0 $r0, $r1, $r2",
- *                                      op1, op2);
- * \endcode
- *
- * \param backend
- *    Specifies whether 'stmt' contains a CUDA PTX or LLVM IR instruction.
- *
- * \param vt
- *    Type of the variable to be created, see \ref VarType for details.
- *
- * \param stmt
- *    Intermediate language statement.
- *
- * \param stmt_static
- *    When 'stmt' is a static string stored in the data segment of the
- *    executable, it is not necessary to make a copy. In this case, set
- *    <tt>stmt_static == 1</tt>, and <tt>0</tt> otherwise.
- *
- * \param n_dep
- *    Number of dependencies (between 0 and 4)
- *
- * \param dep
- *    Pointer to a list of \c n_dep valid variable indices
- */
-extern JIT_EXPORT uint32_t jit_var_new_stmt(JIT_ENUM JitBackend backend,
-                                            JIT_ENUM VarType vt,
-                                            const char *stmt,
-                                            int stmt_static,
-                                            uint32_t n_dep,
-                                            const uint32_t *dep);
-
-// Create a new variable with 0 dependencies (wraps \c jit_var_new_stmt())
-static inline uint32_t jit_var_new_stmt_0(JIT_ENUM JitBackend backend,
-                                          JIT_ENUM VarType vt,
-                                          const char *stmt) {
-    return jit_var_new_stmt(backend, vt, stmt, 1, 0, NULL);
-}
-
-// Create a new variable with 1 dependency (wraps \c jit_var_new_stmt())
-static inline uint32_t jit_var_new_stmt_1(JIT_ENUM JitBackend backend,
-                                          JIT_ENUM VarType vt, const char *stmt,
-                                          uint32_t dep0) {
-    return jit_var_new_stmt(backend, vt, stmt, 1, 1, &dep0);
-}
-
-// Create a new variable with 2 dependencies (wraps \c jit_var_new_stmt())
-static inline uint32_t jit_var_new_stmt_2(JIT_ENUM JitBackend backend,
-                                          JIT_ENUM VarType vt, const char *stmt,
-                                          uint32_t dep0, uint32_t dep1) {
-    const uint32_t dep[] = { dep0, dep1 };
-    return jit_var_new_stmt(backend, vt, stmt, 1, 2, dep);
-}
-
-// Create a new variable with 3 dependencies (wraps \c jit_var_new_stmt())
-static inline uint32_t jit_var_new_stmt_3(JIT_ENUM JitBackend backend,
-                                          JIT_ENUM VarType vt, const char *stmt,
-                                          uint32_t dep0, uint32_t dep1,
-                                          uint32_t dep2) {
-    const uint32_t dep[] = { dep0, dep1, dep2 };
-    return jit_var_new_stmt(backend, vt, stmt, 1, 3, dep);
-}
-
-// Create a new variable with 4 dependencies (wraps \c jit_var_new_stmt())
-static inline uint32_t jit_var_new_stmt_4(JIT_ENUM JitBackend backend,
-                                          JIT_ENUM VarType vt, const char *stmt,
-                                          uint32_t dep0, uint32_t dep1,
-                                          uint32_t dep2, uint32_t dep3) {
-    const uint32_t dep[] = { dep0, dep1, dep2, dep3 };
-    return jit_var_new_stmt(backend, vt, stmt, 1, 4, dep);
-}
+extern JIT_EXPORT uint32_t jit_var_counter(JIT_ENUM JitBackend backend,
+                                           size_t size);
 
 #if defined(__cplusplus)
 /// List of operations supported by \ref jit_var_new_op()
 enum class JitOp : uint32_t {
-    // ---- Unary ----
-    Not, Neg, Abs, Sqrt, Rcp, Rsqrt, Ceil, Floor, Round, Trunc, Exp2, Log2, Sin, Cos,
-    Popc, Clz, Ctz,
-    // ---- Binary ----
-    Add, Sub, Mul, Mulhi, Div, Mod, Min, Max, And, Or, Xor, Shl, Shr,
-    // ---- Comparisons ----
-    Eq, Neq, Lt, Le, Gt, Ge,
-    // ---- Ternary ----
-    Fmadd, Select,
+    // Common unary operations
+    Neg, Not, Sqrt, Abs,
 
+    // Common binary arithmetic operations
+    Add, Sub, Mul, Div, Mod,
+
+    // High multiplication
+    Mulhi,
+
+    // Fused multiply-add
+    Fma,
+
+    // Minimum, maximum
+    Min, Max,
+
+    // Rounding operations
+    Ceil, Floor, Round, Trunc,
+
+    // Comparisons
+    Eq, Neq, Lt, Le, Gt, Ge,
+
+    // Ternary operator
+    Select,
+
+    // Bit-level counting operations
+    Popc, Clz, Ctz,
+
+    /// Bit-wise operations
+    And, Or, Xor,
+
+    // Shifts
+    Shl, Shr,
+
+    // Fast approximations
+    Rcp, Rsqrt,
+
+    // Multi-function generator (CUDA)
+    Sin, Cos, Exp2, Log2,
+
+    // Total number of operations
     Count
 };
 #else
 enum JitOp {
-    JitOpNot, JitOpNeg, JitOpAbs, JitOpSqrt, JitOpRcp, JitOpRsqrt, JitOpCeil,
-    JitOpFloor, JitOpRound, JitOpTrunc, JitOpExp2, JitOpLog2, JitOpSin,
-    JitOpCos, JitOpPopc, JitOpClz, JitOpCtz, JitOpAdd, JitOpSub, JitOpMul,
-    JitOpMulhi, JitOpDiv, JitOpMod, JitOpMin, JitOpMax, JitOpAnd, JitOpOr,
-    JitOpXor, JitOpShl, JitOpShr, JitOpEq, JitOpNeq, JitOpLt, JitOpLe, JitOpGt,
-    JitOpGe, JitOpFmadd, JitOpSelect, JitOpCount
+    JitOpNeg, JitOpNot, JitOpSqrt, JitOpAbs, JitOpAdd, JitOpSub, JitOpMul,
+    JitOpDiv, JitOpMod, JitOpMulhi, JitOpFma, JitOpMin, JitOpMax, JitOpCeil,
+    JitOpFloor, JitOpRound, JitOpTrunc, JitOpEq, JitOpNeq, JitOpLt, JitOpLe,
+    JitOpGt, JitOpGe, JitOpSelect, JitOpPopc, JitOpClz, JitOpCtz, JitOpAnd,
+    JitOpOr, JitOpXor, JitOpShl, JitOpShr, JitOpRcp, JitOpRsqrt, JitOpSin,
+    JitOpCos, JitOpExp2, JitOpLog2, JitOpCount
 };
 #endif
 
 
 /**
- * \brief Perform an arithmetic operation involving one or more variables
+ * \brief Perform an arithmetic operation dynamically
  *
- * This function can perform a large range of unary, binary, and ternary
- * arithmetic operations. It automatically infers the necessary LLVM or PTX
- * instructions and performs constant propagation if possible (when one or
- * more input are literal constants).
+ * This function dynamically dispatches to the set of unary, binary, and
+ * ternary arithmetic arithmetic operations supported by Dr.Jit. The following
+ * are equivalent:
  *
- * You will probably want to access this function through the wrappers \ref
- * jit_var_new_op_0() to \ref jit_var_new_op_4() that take an explicit
- * list of parameter indices.
+ * ```
+ * // Perform operation statically (preferred)
+ * result = jit_var_add(a0, a1);
+ *
+ * // Perform operation dynamically
+ * uint32_t deps[2] = { a0, a1 };
+ * result = jit_var_op(JitOp::Add, deps);
+ * ```
+ *
+ * This function exists to handle situations where the static style
+ * is inconvenient.
  *
  * \param op
  *    The operation to be performed
  *
- * \param n_dep
- *    Number of dependencies (between 0 and 4)
- *
  * \param dep
- *    Pointer to a list of \c n_dep valid variable indices
+ *    Operand list. It is the developer's responsibility to supply an array
+ *    containing the right number of operands for the requested operation.
  */
-extern JIT_EXPORT uint32_t jit_var_new_op(JIT_ENUM JitOp op,
-                                          uint32_t n_dep, const uint32_t *dep);
+extern JIT_EXPORT uint32_t jit_var_op(JIT_ENUM JitOp op, const uint32_t *dep);
 
-// Perform an operation with 1 input (wraps \c jit_var_new_op())
-static inline uint32_t jit_var_new_op_1(JIT_ENUM JitOp op, uint32_t dep0) {
-    return jit_var_new_op(op, 1, &dep0);
-}
+/// Compute `-a0` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_neg(uint32_t a0);
 
-// Perform an operation with 2 inputs (wraps \c jit_var_new_op())
-static inline uint32_t jit_var_new_op_2(JIT_ENUM JitOp op, uint32_t dep0,
-                                        uint32_t dep1) {
-    const uint32_t dep[] = { dep0, dep1 };
-    return jit_var_new_op(op, 2, dep);
-}
+/// Compute `~a0` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_not(uint32_t a0);
 
-// Perform an operation with 3 inputs (wraps \c jit_var_new_op())
-static inline uint32_t jit_var_new_op_3(JIT_ENUM JitOp op, uint32_t dep0,
-                                        uint32_t dep1, uint32_t dep2) {
-    const uint32_t dep[] = { dep0, dep1, dep2 };
-    return jit_var_new_op(op, 3, dep);
-}
+/// Compute `sqrt(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_sqrt(uint32_t a0);
 
-// Perform an operation with 4 inputs (wraps \c jit_var_new_op())
-static inline uint32_t jit_var_new_op_4(JIT_ENUM JitOp op, uint32_t dep0,
-                                        uint32_t dep1, uint32_t dep2,
-                                        uint32_t dep3) {
-    const uint32_t dep[] = { dep0, dep1, dep2, dep3 };
-    return jit_var_new_op(op, 4, dep);
-}
+/// Compute `abs(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_abs(uint32_t a0);
+
+/// Compute `a0 + a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_add(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 - a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_sub(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 * a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_mul(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 / a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_div(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 % a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_mod(uint32_t a0, uint32_t a1);
+
+/// Compute the high part of `a0 * a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_mulhi(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 * a1 + a2` (fused) and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_fma(uint32_t a0, uint32_t a1, uint32_t a2);
+
+/// Compute `min(a0, a1)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_min(uint32_t a0, uint32_t a1);
+
+/// Compute `max(a0, a1)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_max(uint32_t a0, uint32_t a1);
+
+/// Compute `ceil(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_ceil(uint32_t a0);
+
+/// Compute `floor(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_floor(uint32_t a0);
+
+/// Compute `round(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_round(uint32_t a0);
+
+/// Compute `trunc(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_trunc(uint32_t a0);
+
+/// Compute `a0 == a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_eq(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 != a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_neq(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 < a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_lt(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 <= a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_le(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 > a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_gt(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 >= a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_ge(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 ? a1 : a2` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_select(uint32_t a0, uint32_t a1, uint32_t a2);
+
+/// Compute the population count of `a0` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_popc(uint32_t a0);
+
+/// Count leading zeros of `a0` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_clz(uint32_t a0);
+
+/// Count trailing zeros of `a0` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_ctz(uint32_t a0);
+
+/// Compute `a0 & a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_and(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 | a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_or(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 ^ a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_xor(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 << a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_shl(uint32_t a0, uint32_t a1);
+
+/// Compute `a0 >> a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_shr(uint32_t a0, uint32_t a1);
+
+/// Approximate `1 / a0` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_rcp(uint32_t a0);
+
+/// Approximate `1 / sqrt(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_rsqrt(uint32_t a0);
+
+/// Approximate `sin(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_sin(uint32_t a0);
+
+/// Approximate `cos(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_cos(uint32_t a0);
+
+/// Approximate `exp2(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_exp2(uint32_t a0);
+
+/// Approximate `log2(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_log2(uint32_t a0);
+
+/// Return a variable indicating valid lanes within a function call
+extern JIT_EXPORT uint32_t jit_var_vcall_mask(JitBackend backend);
 
 /**
  * \brief Perform an ordinary or reinterpreting cast of a variable
@@ -872,9 +901,9 @@ static inline uint32_t jit_var_new_op_4(JIT_ENUM JitOp op, uint32_t dep0,
  * <tt>memcpy(&new_value, &old_value, sizeof(Type));</tt>), which requires that
  * source and target type are of the same size.
  */
-extern JIT_EXPORT uint32_t jit_var_new_cast(uint32_t index,
-                                            JIT_ENUM VarType target_type,
-                                            int reinterpret);
+extern JIT_EXPORT uint32_t jit_var_cast(uint32_t index,
+                                        JIT_ENUM VarType target_type,
+                                        int reinterpret);
 
 /**
  * \brief Create a variable that refers to a memory region
@@ -889,7 +918,7 @@ extern JIT_EXPORT uint32_t jit_var_new_cast(uint32_t index,
  * this to infer whether a future scatter operation to \c dep requires making a
  * backup copy first.
  */
-extern JIT_EXPORT uint32_t jit_var_new_pointer(JIT_ENUM JitBackend backend,
+extern JIT_EXPORT uint32_t jit_var_pointer(JIT_ENUM JitBackend backend,
                                                const void *value,
                                                uint32_t dep,
                                                int write);
@@ -900,11 +929,11 @@ extern JIT_EXPORT uint32_t jit_var_new_pointer(JIT_ENUM JitBackend backend,
  * operation equivalent to <tt>mask ? source[index] : 0</tt>. The variable
  * \c index must be an integer array, and \c mask must be a boolean array.
  */
-extern JIT_EXPORT uint32_t jit_var_new_gather(uint32_t source, uint32_t index,
-                                              uint32_t mask);
+extern JIT_EXPORT uint32_t jit_var_gather(uint32_t source, uint32_t index,
+                                          uint32_t mask);
 
 #if defined(__cplusplus)
-/// Reduction operations for \ref jit_var_new_scatter() \ref jit_reduce()
+/// Reduction operations for \ref jit_var_scatter() \ref jit_reduce()
 enum class ReduceOp : uint32_t { None, Add, Mul, Min, Max, And, Or, Count };
 #else
 enum ReduceOp {
@@ -934,9 +963,9 @@ enum ReduceOp {
  * If <t>op != ReduceOp::None</tt>, an atomic read-modify-write operation will
  * be used instead of simply overwriting entries of 'target'.
  */
-extern JIT_EXPORT uint32_t jit_var_new_scatter(uint32_t target, uint32_t value,
-                                               uint32_t index, uint32_t mask,
-                                               JIT_ENUM ReduceOp reduce_op);
+extern JIT_EXPORT uint32_t jit_var_scatter(uint32_t target, uint32_t value,
+                                           uint32_t index, uint32_t mask,
+                                           JIT_ENUM ReduceOp reduce_op);
 
 /**
  * \brief Create an identical copy of the given variable
@@ -1033,9 +1062,6 @@ extern JIT_EXPORT void *jit_var_ptr(uint32_t index);
 
 /// Query the size of a given variable
 extern JIT_EXPORT size_t jit_var_size(uint32_t index);
-
-/// Query the IR string of a given variable
-extern JIT_EXPORT const char *jit_var_stmt(uint32_t index);
 
 /// Query the type of a given variable
 extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);

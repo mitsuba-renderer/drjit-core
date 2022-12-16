@@ -170,7 +170,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         cuda_check(cuTexObjectCreate(&(texture->textures[tex]), &res_desc,
                                      &tex_desc, &view_desc));
 
-        texture->indices[tex] = jitc_var_new_pointer(
+        texture->indices[tex] = jitc_var_pointer(
             JitBackend::CUDA, (void *) texture->textures[tex], 0, 0);
 
         TextureReleasePayload *payload_ptr =
@@ -494,7 +494,7 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
                 ".reg.v4.f32 $r0$n"
                 "mov.v4.f32 $r0, { $r1, $r2, $r3, $r3 }"
             };
-            dep[1] = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void,
+            dep[1] = jitc_var_stmt(JitBackend::CUDA, VarType::Void,
                                        stmt_1[ndim - 2], 1, (unsigned int) ndim,
                                        pos);
         } else {
@@ -512,7 +512,7 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
             "tex.3d.v4.f32.f32 $r0, [$r1, $r2]"
         };
 
-        uint32_t lookup = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void,
+        uint32_t lookup = jitc_var_stmt(JitBackend::CUDA, VarType::Void,
                                             stmt_2[ndim - 1], 1, 2, dep);
         jitc_var_dec_ref(dep[1]);
 
@@ -524,7 +524,7 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
         };
 
         for (size_t ch = 0; ch < texture.channels(tex); ++ch) {
-            uint32_t lookup_result_index = jitc_var_new_stmt(
+            uint32_t lookup_result_index = jitc_var_stmt(
                 JitBackend::CUDA, VarType::Float32, stmt_3[ch], 1, 1, &lookup);
             out[tex * 4 + ch] = lookup_result_index;
         }
@@ -561,7 +561,7 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
 
         const char *stmt_1 = ".reg.v2.f32 $r0$n"
                              "mov.v2.f32 $r0, { $r1, $r2 }";
-        dep[1] = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, stmt_1, 1,
+        dep[1] = jitc_var_stmt(JitBackend::CUDA, VarType::Void, stmt_1, 1,
                                    (unsigned int) ndim, pos);
 
         const char *stmt_2[4] = {
@@ -586,12 +586,12 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
         };
 
         for (size_t ch = 0; ch < texture.channels(tex); ++ch) {
-            uint32_t fetch_channel = jitc_var_new_stmt(
+            uint32_t fetch_channel = jitc_var_stmt(
                 JitBackend::CUDA, VarType::Void, stmt_2[ch], 1, 2, dep);
 
             for (size_t i = 0; i < 4; ++i) {
                 uint32_t result_index =
-                    jitc_var_new_stmt(JitBackend::CUDA, VarType::Float32,
+                    jitc_var_stmt(JitBackend::CUDA, VarType::Float32,
                                       stmt_3[i], 1, 1, &fetch_channel);
                 out[(i * texture.n_channels) + (tex * 4 + ch)] = result_index;
             }

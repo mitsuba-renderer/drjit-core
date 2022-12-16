@@ -366,53 +366,47 @@ int jit_var_device(uint32_t index) {
     return jitc_var_device(index);
 }
 
-uint32_t jit_var_new_stmt(JitBackend backend, JIT_ENUM VarType vt,
+uint32_t jit_var_stmt(JitBackend backend, JIT_ENUM VarType vt,
                           const char *stmt, int stmt_static, uint32_t n_dep,
                           const uint32_t *dep) {
 
     lock_guard guard(state.lock);
-    return jitc_var_new_stmt(backend, vt, stmt, stmt_static, n_dep, dep);
+    return jitc_var_stmt(backend, vt, stmt, stmt_static, n_dep, dep);
 }
 
-uint32_t jit_var_new_literal(JitBackend backend, VarType type, const void *value,
+uint32_t jit_var_literal(JitBackend backend, VarType type, const void *value,
                              size_t size, int eval, int is_class) {
     lock_guard guard(state.lock);
-    return jitc_var_new_literal(backend, type, value, size, eval, is_class);
+    return jitc_var_literal(backend, type, value, size, eval, is_class);
 }
 
-uint32_t jit_var_new_counter(JitBackend backend, size_t size) {
+uint32_t jit_var_counter(JitBackend backend, size_t size) {
     lock_guard guard(state.lock);
-    return jitc_var_new_counter(backend, size, true);
+    return jitc_var_counter(backend, size, true);
 }
 
-uint32_t jit_var_new_op(JitOp op, uint32_t n_dep, const uint32_t *dep) {
+uint32_t jit_var_op(JitOp op, const uint32_t *dep) {
     lock_guard guard(state.lock);
-    return jitc_var_new_op(op, n_dep, dep);
+    return jitc_var_op(op, dep);
 }
 
-uint32_t jit_var_new_cast(uint32_t index, VarType target_type,
-                          int reinterpret) {
-    lock_guard guard(state.lock);
-    return jitc_var_new_cast(index, target_type, reinterpret);
-}
-
-uint32_t jit_var_new_gather(uint32_t source, uint32_t index,
+uint32_t jit_var_gather(uint32_t source, uint32_t index,
                             uint32_t mask) {
     lock_guard guard(state.lock);
-    return jitc_var_new_gather(source, index, mask);
+    return jitc_var_gather(source, index, mask);
 }
 
-uint32_t jit_var_new_scatter(uint32_t target, uint32_t value,
+uint32_t jit_var_scatter(uint32_t target, uint32_t value,
                              uint32_t index, uint32_t mask,
                              ReduceOp reduce_op) {
     lock_guard guard(state.lock);
-    return jitc_var_new_scatter(target, value, index, mask, reduce_op);
+    return jitc_var_scatter(target, value, index, mask, reduce_op);
 }
 
-uint32_t jit_var_new_pointer(JitBackend backend, const void *value,
+uint32_t jit_var_pointer(JitBackend backend, const void *value,
                              uint32_t dep, int write) {
     lock_guard guard(state.lock);
-    return jitc_var_new_pointer(backend, value, dep, write);
+    return jitc_var_pointer(backend, value, dep, write);
 }
 
 uint32_t jit_var_wrap_vcall(uint32_t index) {
@@ -459,15 +453,6 @@ size_t jit_var_size(uint32_t index) {
 
     lock_guard guard(state.lock);
     return (size_t) jitc_var(index)->size;
-}
-
-const char *jit_var_stmt(uint32_t index) {
-    if (index == 0)
-        return 0;
-
-    lock_guard guard(state.lock);
-    Variable *v = jitc_var(index);
-    return v->is_stmt() ? v->stmt : nullptr;
 }
 
 int jit_var_is_literal(uint32_t index) {
@@ -918,4 +903,205 @@ void jit_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
 void jit_cuda_tex_destroy(void *texture) {
     lock_guard guard(state.lock);
     jitc_cuda_tex_destroy(texture);
+}
+
+uint32_t jit_var_neg(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_neg(a0);
+}
+
+uint32_t jit_var_not(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_not(a0);
+}
+
+uint32_t jit_var_sqrt(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_sqrt(a0);
+}
+
+uint32_t jit_var_abs(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_abs(a0);
+}
+
+uint32_t jit_var_add(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_add(a0, a1);
+}
+
+uint32_t jit_var_sub(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_sub(a0, a1);
+}
+
+uint32_t jit_var_mul(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_mul(a0, a1);
+}
+
+uint32_t jit_var_div(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_div(a0, a1);
+}
+
+uint32_t jit_var_mod(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_mod(a0, a1);
+}
+
+uint32_t jit_var_mulhi(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_mulhi(a0, a1);
+}
+
+uint32_t jit_var_fma(uint32_t a0, uint32_t a1, uint32_t a2) {
+    lock_guard guard(state.lock);
+    return jitc_var_fma(a0, a1, a2);
+}
+
+uint32_t jit_var_min(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_min(a0, a1);
+}
+
+uint32_t jit_var_max(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_max(a0, a1);
+}
+
+uint32_t jit_var_ceil(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_ceil(a0);
+}
+
+uint32_t jit_var_floor(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_floor(a0);
+}
+
+uint32_t jit_var_round(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_round(a0);
+}
+
+uint32_t jit_var_trunc(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_trunc(a0);
+}
+
+uint32_t jit_var_eq(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_eq(a0, a1);
+}
+
+uint32_t jit_var_neq(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_neq(a0, a1);
+}
+
+uint32_t jit_var_lt(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_lt(a0, a1);
+}
+
+uint32_t jit_var_le(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_le(a0, a1);
+}
+
+uint32_t jit_var_gt(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_gt(a0, a1);
+}
+
+uint32_t jit_var_ge(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_ge(a0, a1);
+}
+
+uint32_t jit_var_select(uint32_t a0, uint32_t a1, uint32_t a2) {
+    lock_guard guard(state.lock);
+    return jitc_var_select(a0, a1, a2);
+}
+
+uint32_t jit_var_popc(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_popc(a0);
+}
+
+uint32_t jit_var_clz(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_clz(a0);
+}
+
+uint32_t jit_var_ctz(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_ctz(a0);
+}
+
+uint32_t jit_var_and(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_and(a0, a1);
+}
+
+uint32_t jit_var_or(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_or(a0, a1);
+}
+
+uint32_t jit_var_xor(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_xor(a0, a1);
+}
+
+uint32_t jit_var_shl(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_shl(a0, a1);
+}
+
+uint32_t jit_var_shr(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_shr(a0, a1);
+}
+
+uint32_t jit_var_rcp(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_rcp(a0);
+}
+
+uint32_t jit_var_rsqrt(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_rsqrt(a0);
+}
+
+uint32_t jit_var_sin(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_sin(a0);
+}
+
+uint32_t jit_var_cos(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_cos(a0);
+}
+
+uint32_t jit_var_exp2(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_exp2(a0);
+}
+
+uint32_t jit_var_log2(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_log2(a0);
+}
+
+uint32_t jit_var_cast(uint32_t index, VarType target_type,
+                      int reinterpret) {
+    lock_guard guard(state.lock);
+    return jitc_var_cast(index, target_type, reinterpret);
+}
+
+uint32_t jit_var_vcall_mask(JitBackend backend) {
+    lock_guard guard(state.lock);
+    return jitc_var_vcall_mask(backend);
 }

@@ -17,9 +17,15 @@
  * --------------------------------------------------------------------------
  *  $s      const char *  `foo`              Zero-terminated string
  * --------------------------------------------------------------------------
- *  $t      Variable      `i1`               Scalar variable type
- *  $T      Variable      `<8 x i1>`         Vector variable type
- *  $h      Variable      `f32`              Short type abbreviation
+ *  $t      Variable      `f32`              Scalar variable type
+ *  $T      Variable      `<8 x f32>`        Vector variable type
+ *  $h      Variable      `f32`              Type abbreviation for intrinsics
+ * --------------------------------------------------------------------------
+ *  $b      Variable      `i32`              Scalar variable type (as int)
+ *  $B      Variable      `<8 x i32>`        Vector variable type (as int)
+ * --------------------------------------------------------------------------
+ *  $d      Variable      `i64`              Double-size variable type
+ *  $D      Variable      `<8 x i64>`        Vector double-size variable type
  * --------------------------------------------------------------------------
  *  $m      Variable      `i8`               Scalar variable type
  *                                           (masks promoted to 8 bits)
@@ -30,8 +36,8 @@
  * --------------------------------------------------------------------------
  *  $V      Variable      `<8 x i1> %p1234`  Type-qualified vector var. name
  * --------------------------------------------------------------------------
- *  $a      Variable      `1`                Scalar variable alignment
- *  $A      Variable      `16`               Vector variable alignment
+ *  $a      Variable      `4`                Scalar variable alignment
+ *  $A      Variable      `64`               Vector variable alignment
  * --------------------------------------------------------------------------
  *  $o      Variable      `5`                Variable offset in param. array
  * --------------------------------------------------------------------------
@@ -407,16 +413,320 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
 }
 
 static void jitc_render_node_llvm(Variable *v) {
+    const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
     switch (v->node) {
+        case NodeType::Neg:
+            if (jitc_is_float(v))
+                fmt("    $v = fneg $V\n", v, a0);
+            else
+                fmt("    $v = sub $T $z, $v\n", v, v, a0);
+            break;
+
+        case NodeType::Not:
+            fmt("    $v = xor $V, $s\n", v, a0, jitc_llvm_ones_str[v->type]);
+            break;
+
+        case NodeType::Sqrt:
+            fmt_intrinsic("declare $T @llvm.sqrt.v$w$h($T)", v, v, a0);
+            fmt("    $v = call $T @llvm.sqrt.v$w$h($V)\n", v, v, v, a0);
+            break;
+
+        case NodeType::Abs:
+            if (jitc_is_float(v)) {
+                fmt_intrinsic("declare $T @llvm.fabs.v$w$h($T)", v, v, a0);
+                fmt("    $v = call $T @llvm.fabs.v$w$h($V)\n", v, v, v, a0);
+            } else {
+                fmt("    $v_0 = icmp slt $V, $z\n"
+                    "    $v_1 = sub nsw $T $z, $v\n"
+                    "    $v = select <$w x i1> $v_0, $V_1, $V\n",
+                    v, a0,
+                    v, v, a0,
+                    v, v, v, a0);
+            }
+            break;
+
         case NodeType::Add:
             fmt(jitc_is_float(v) ? "    $v = fadd $V, $v\n"
                                  : "    $v = add $V, $v\n",
                 v, a0, a1);
+            break;
+
+        case NodeType::Sub:
+            fmt(jitc_is_float(v) ? "    $v = fsub $V, $v\n"
+                                 : "    $v = sub $V, $v\n",
+                v, a0, a1);
+            break;
+
+        case NodeType::Mul:
+            fmt(jitc_is_float(v) ? "    $v = fmul $V, $v\n"
+                                 : "    $v = mul $V, $v\n",
+                v, a0, a1);
+            break;
+
+        case NodeType::Div:
+            if (jitc_is_float(v))
+                stmt = "    $v = fdiv $V, $v\n";
+            else if (jitc_is_uint(v))
+                stmt = "    $v = udiv $V, $v\n";
+            else
+                stmt = "    $v = sdiv $V, $v\n";
+            fmt(stmt, v, a0, a1);
+            break;
+
+        case NodeType::Mod:
+            fmt(jitc_is_uint(v) ? "    $v = urem $V, $v\n"
+                                : "    $v = srem $V, $v\n",
+                v, a0, a1);
+            break;
+
+        case NodeType::Mulhi:
+            fmt("    $v_0 = $sext $V to $D\n"
+                "    $v_1 = $sext $V to $D\n"
+                "    $v_3 = insertelement $D undef, $d $u, i32 0\n"
+                "    $v_4 = shufflevector $D $v_3, $D undef, <$w x i32> $z\n"
+                "    $v_5 = mul $D $v_0, $v_1\n"
+                "    $v_6 = lshr $D $v_5, $v_4\n"
+                "    $v = trunc $D $v_6 to $T\n",
+                v, jitc_is_uint(v) ? "z" : "s", a0, a0,
+                v, jitc_is_uint(v) ? "z" : "s", a1, a1,
+                v, v, v, type_size[v->type] * 8,
+                v, v, v, v,
+                v, v, v, v,
+                v, v, v, v,
+                v, v, v, v);
+            break;
+
+        case NodeType::Fma:
+            if (jitc_is_float(v)) {
+                fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)\n",
+                    v, v, a0, a1, a2);
+                fmt("    $v = call $T @llvm.fma.v$w$h($V, $V, $V)\n",
+                    v, v, v, a0, a1, a2);
+            } else {
+                fmt("    $v_0 = mul $V, $v\n"
+                    "    $v = add $V_0, $v\n",
+                    v, a0, a1, v, v, a2);
+            }
+            break;
+
+        case NodeType::Min:
+            if (jitc_llvm_version_major >= 12 || jitc_is_float(v)) {
+                if (jitc_is_float(v))
+                    stmt = "minnum";
+                else if (jitc_is_uint(v))
+                    stmt = "umin";
+                else
+                    stmt = "smin";
+                fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
+                fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
+            } else {
+                fmt("    $v_0 = icmp $s $V, $v\n"
+                    "    $v = select <$w x i1> $v_0, $V, $V\n",
+                    v, jitc_is_uint(v) ? "ult" : "slt", a0, a1,
+                    v, v, a0, a1);
+            }
+            break;
+
+        case NodeType::Max:
+            if (jitc_llvm_version_major >= 12 || jitc_is_float(v)) {
+                if (jitc_is_float(v))
+                    stmt = "maxnum";
+                else if (jitc_is_uint(v))
+                    stmt = "umax";
+                else
+                    stmt = "smax";
+                fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
+                fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
+            } else {
+                fmt("    $v_0 = icmp $s $V, $v\n"
+                    "    $v = select <$w x i1> $v_0, $V, $V\n",
+                    v, jitc_is_uint(v) ? "ugt" : "sgt", a0, a1,
+                    v, v, a0, a1);
+            }
+            break;
+
+        case NodeType::Ceil:
+            fmt_intrinsic("declare $T @llvm.ceil.v$w$h($T)", v, v, a0);
+            fmt("    $v = call $T @llvm.ceil.v$w$h($V)\n", v, v, v, a0);
+            break;
+
+        case NodeType::Floor:
+            fmt_intrinsic("declare $T @llvm.floor.v$w$h($T)", v, v, a0);
+            fmt("    $v = call $T @llvm.floor.v$w$h($V)\n", v, v, v, a0);
+            break;
+
+        case NodeType::Round:
+            fmt_intrinsic("declare $T @llvm.nearbyint.v$w$h($T)", v, v, a0);
+            fmt("    $v = call $T @llvm.nearbyint.v$w$h($V)\n", v, v, v, a0);
+            break;
+
+        case NodeType::Trunc:
+            fmt_intrinsic("declare $T @llvm.trunc.v$w$h($T)", v, v, a0);
+            fmt("    $v = call $T @llvm.trunc.v$w$h($V)\n", v, v, v, a0);
+            break;
+
+        case NodeType::Eq:
+            fmt(jitc_is_float(a0) ? "    $v = fcmp oeq $V, $v\n"
+                                  : "    $v = icmp eq $V, $v\n", v, a0, a1);
+            break;
+
+        case NodeType::Neq:
+            fmt(jitc_is_float(a0) ? "    $v = fcmp one $V, $v\n"
+                                  : "    $v = icmp ne $V, $v\n", v, a0, a1);
+            break;
+
+        case NodeType::Lt:
+            if (jitc_is_float(a0))
+                stmt = "    $v = fcmp olt $V, $v\n";
+            else if (jitc_is_uint(a0))
+                stmt = "    $v = icmp ult $V, $v\n";
+            else
+                stmt = "    $v = icmp slt $V, $v\n";
+            fmt(stmt, v, a0, a1);
+            break;
+
+        case NodeType::Le:
+            if (jitc_is_float(a0))
+                stmt = "    $v = fcmp ole $V, $v\n";
+            else if (jitc_is_uint(a0))
+                stmt = "    $v = icmp ule $V, $v\n";
+            else
+                stmt = "    $v = icmp sle $V, $v\n";
+            fmt(stmt, v, a0, a1);
+            break;
+
+        case NodeType::Gt:
+            if (jitc_is_float(a0))
+                stmt = "    $v = fcmp ogt $V, $v\n";
+            else if (jitc_is_uint(a0))
+                stmt = "    $v = icmp ugt $V, $v\n";
+            else
+                stmt = "    $v = icmp sgt $V, $v\n";
+            fmt(stmt, v, a0, a1);
+            break;
+
+        case NodeType::Ge:
+            if (jitc_is_float(a0))
+                stmt = "    $v = fcmp oge $V, $v\n";
+            else if (jitc_is_uint(a0))
+                stmt = "    $v = icmp uge $V, $v\n";
+            else
+                stmt = "    $v = icmp sge $V, $v\n";
+            fmt(stmt, v, a0, a1);
+            break;
+
+        case NodeType::Select:
+            fmt("    $v = select $V, $V, $V\n", v, a0, a1, a2);
+            break;
+
+        case NodeType::Popc:
+            fmt_intrinsic("declare $T @llvm.ctpop.v$w$h($T)", v, a0, a0);
+            fmt("    $v = call $T @llvm.ctpop.v$w$h($V)\n", v, v, a0, a0);
+            break;
+
+        case NodeType::Clz:
+            fmt_intrinsic("declare $T @llvm.ctlz.v$w$h($T, i1)", v, a0, a0);
+            fmt("    $v = call $T @llvm.ctlz.v$w$h($V, i1 0)\n", v, v, a0, a0);
+            break;
+
+        case NodeType::Ctz:
+            fmt_intrinsic("declare $T @llvm.cttz.v$w$h($T, i1)", v, a0, a0);
+            fmt("    $v = call $T @llvm.cttz.v$w$h($V, i1 0)\n", v, v, a0, a0);
+            break;
+
+        case NodeType::And:
+            if (a0->type != a1->type)
+                fmt("    $v = select $V, $V, $T $z\n",
+                    v, a1, a0, a0);
+            else if (jitc_is_float(v))
+                fmt("    $v_0 = bitcast $V to $B\n"
+                    "    $v_1 = bitcast $V to $B\n"
+                    "    $v_2 = and $B $v_0, $v_1\n"
+                    "    $v = bitcast $B $v_2 to $T\n",
+                    v, a0, v, v, a1, v, v, v, v, v, v, v, v, v);
+            else
+                fmt("    $v = and $V, $v\n", v, a0, a1);
+            break;
+
+        case NodeType::Or:
+            if (a0->type != a1->type)
+                fmt("    $v_0 = bitcast $V to $B\n"
+                    "    $v_1 = sext $V to $B\n"
+                    "    $v_2 = or $B $v_0, $v_1\n"
+                    "    $v = bitcast $B $v_2 to $T\n",
+                    v, a0, v, v, a1, v, v, v, v, v, v, v, v, v);
+            else if (jitc_is_float(v))
+                fmt("    $v_0 = bitcast $V to $B\n"
+                    "    $v_1 = bitcast $V to $B\n"
+                    "    $v_2 = or $B $v_0, $v_1\n"
+                    "    $v = bitcast $B $v_2 to $T\n",
+                    v, a0, v, v, a1, v, v, v, v, v, v, v, v, v);
+            else
+                fmt("    $v = or $V, $v\n", v, a0, a1);
+            break;
+
+        case NodeType::Xor:
+            if (jitc_is_float(v))
+                fmt("    $v_0 = bitcast $V to $B\n"
+                    "    $v_1 = bitcast $V to $B\n"
+                    "    $v_2 = xor $B $v_0, $v_1\n"
+                    "    $v = bitcast $B $v_2 to $T\n",
+                    v, a0, v, v, a1, v, v, v, v, v, v, v, v, v);
+            else
+                fmt("    $v = xor $V, $v\n", v, a0, a1);
+            break;
+
+        case NodeType::Shl:
+            fmt("    $v = shl $V, $v\n", v, a0, a1);
+            break;
+
+        case NodeType::Shr:
+            fmt(jitc_is_uint(v) ? "    $v = lshr $V, $v\n"
+                                : "    $v = ashr $V, $v\n",
+                v, a0, a1);
+            break;
+
+        case NodeType::Cast:
+            if (jitc_is_bool(v)) {
+                fmt(jitc_is_float(a0) ? "    $v = fcmp one $V, $z\n"
+                                      : "    $v = icmp ne $V, $z\n",
+                    v, a0);
+            } else if (jitc_is_bool(a0)) {
+                fmt("    $v_1 = insertelement $T undef, $t $s, i32 0\n"
+                    "    $v_2 = shufflevector $T $v_1, $T undef, <$w x i32> $z\n"
+                    "    $v = select $V, $T $v_2, $T $z\n",
+                    v, v, v, jitc_is_float(v) ? "1.0" : "1",
+                    v, v, v, v,
+                    v, a0, v, v, v);
+            } else if (jitc_is_float(v) && !jitc_is_float(a0)) {
+                fmt(jitc_is_uint(a0) ? "    $v = uitofp $V to $T\n"
+                                     : "    $v = sitofp $V to $T\n",
+                    v, a0, v);
+            } else if (!jitc_is_float(v) && jitc_is_float(a0)) {
+                fmt(jitc_is_uint(v) ? "    $v = fptoui $V to $T\n"
+                                    : "    $v = fptosi $V to $T\n",
+                    v, a0, v);
+            } else if (jitc_is_float(v) && jitc_is_float(a0)) {
+                fmt(type_size[v->type] > type_size[a0->type]
+                        ? "    $v = fpext $V to $T\n"
+                        : "    $v = fptrunc $V to $T\n",
+                    v, a0, v);
+            } else if (type_size[v->type] < type_size[a0->type]) {
+                fmt("    $v = trunc $V to $T\n", v, a0, v);
+            } else {
+                fmt(jitc_is_uint(a0) ? "    $v = zext $V to $T\n"
+                                     : "    $v = sext $V to $T\n",
+                    v, a0, v);
+            }
+            break;
+
+        case NodeType::Bitcast:
+            fmt("    $v = bitcast $V to $T\n", v, a0, v);
             break;
 
         case NodeType::Gather: {
@@ -429,7 +739,7 @@ static void jitc_render_node_llvm(Variable *v) {
                     v, v, v, a2, v);
 
                 fmt("{    $v_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
-                     "    $v_1 = getelementptr $t, {$<$t*$>} {$v_0|$v}, $V\n"
+                     "    $v_1 = getelementptr $t, $<{$t*}$> {$v_0|$v}, $V\n"
                      "    $v$s = call $T @llvm.masked.gather.v$w$h(<$w x {$t*}> $v_1, i32 $a, $V, $T $z)\n",
                      v, a0, v,
                      v, v, v, v, a0, a1,
@@ -556,8 +866,27 @@ static void jitc_render_node_llvm(Variable *v) {
             }
             break;
 
+        case NodeType::VCallMask:
+            fmt("    $v = bitcast <$w x i1> %mask to <$w x i1>\n", v);
+            break;
+
+        case NodeType::VCallSelf:
+            fmt("    $v = bitcast <$w x i32> %self to <$w x i32>\n", v);
+            break;
+
+        case NodeType::Counter:
+            fmt("    $v_0 = trunc i64 %index to $t\n"
+                "    $v_1 = insertelement $T undef, $t $v_0, i32 0\n"
+                "    $v_2 = shufflevector $V_1, $T undef, <$w x i32> $z\n"
+                "    $v = add $V_2, <",
+                v, v, v, v, v, v, v, v, v, v, v);
+            for (uint32_t i = 0; i < jitc_llvm_vector_width; ++i)
+                fmt("i32 $u$s", i, i + 1 < jitc_llvm_vector_width ? ", " : ">\n");
+            break;
+
         default:
-            jitc_fail("jitc_render_node_llvm(): unhandled node type!");
+            jitc_fail("jitc_render_node_llvm(): unhandled node type \"%s\"!",
+                      node_names[(uint32_t) v->node]);
     }
 }
 
@@ -589,8 +918,8 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
                     continue;
 
                 case 'n': put("\n    "); continue;
-                case 'w': put(jitc_llvm_vector_width_str,
-                                     strlen(jitc_llvm_vector_width_str)); continue;
+                case 'z': put("zeroinitializer"); continue;
+                case 'w': buffer.put_u32(jitc_llvm_vector_width); continue;
                 case 't': prefix_table = type_name_llvm; break;
                 case 'T': prefix_table = type_name_llvm_big; break;
                 case 'b': prefix_table = type_name_llvm_bin; break;
@@ -600,8 +929,7 @@ static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_fun
                 case 'i': prefix_table = nullptr; break;
                 case '<': if (in_function) {
                               put('<');
-                              put(jitc_llvm_vector_width_str,
-                                         strlen(jitc_llvm_vector_width_str));
+                              buffer.put_u32(jitc_llvm_vector_width);
                               put(" x ");
                            }
                            continue;
@@ -692,13 +1020,12 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
     Ref valid = steal(jitc_var_mask_apply(in[1], size));
     {
         int32_t minus_one_c = -1, zero_c = 0;
-        Ref minus_one = steal(jitc_var_new_literal(
+        Ref minus_one = steal(jitc_var_literal(
                 JitBackend::LLVM, VarType::Int32, &minus_one_c, 1, 0)),
-            zero = steal(jitc_var_new_literal(
+            zero = steal(jitc_var_literal(
                 JitBackend::LLVM, VarType::Int32, &zero_c, 1, 0));
 
-        uint32_t deps_2[3] = { valid, minus_one, zero };
-        valid = steal(jitc_var_new_op(JitOp::Select, 3, deps_2));
+        valid = steal(jitc_var_select(valid, minus_one, zero));
     }
 
     jitc_log(InfoSym, "jitc_llvm_ray_trace(): tracing %u %sray%s%s%s", size,
@@ -706,10 +1033,11 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
              placeholder ? " (part of a recorded computation)" : "",
              double_precision ? " (double precision)" : "");
 
-    Ref op = steal(jitc_var_new_stmt_n(JitBackend::LLVM, VarType::Void,
-                               shadow_ray ? "// Ray trace (shadow ray)"
-                                          : "// Ray trace",
-                               1, func, scene));
+    uint32_t dep[2] = { func, scene };
+    Ref op = steal(jitc_var_stmt(JitBackend::LLVM, VarType::Void,
+                                 shadow_ray ? "// Ray trace (shadow ray)"
+                                            : "// Ray trace",
+                                 1, 2, dep));
     Variable *v_op = jitc_var(op);
     v_op->size = size;
     v_op->extra = 1;
@@ -729,7 +1057,8 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
         snprintf(tmp, sizeof(tmp),
                  "$r0 = bitcast <$w x $t0> $r1_out_%u to <$w x $t0>", i);
         VarType vt = (i < 3) ? float_type : VarType::UInt32;
-        out[i] = jitc_var_new_stmt_n(JitBackend::LLVM, vt, tmp, 0, op);
+        uint32_t dep2[1] = { op };
+        out[i] = jitc_var_stmt(JitBackend::LLVM, vt, tmp, 0, 1, dep2);
     }
 }
 
@@ -793,7 +1122,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
     }
 
     if (!shadow_ray) {
-        fmt( "    %u$u_in_geomid_0 = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
+        fmt( "    %u$u_in_geomid_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
             "{    %u$u_in_geomid_1 = bitcast i8* %u$u_in_geomid_0 to <$w x i32> *\n|}"
              "    store <$w x i32> $s, {<$w x i32>*} %u$u_in_geomid_1, align $u\n",
             id, (14 * float_size + 5 * 4) * width,
@@ -803,7 +1132,7 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
 
     const Variable *coherent = jitc_var(extra.dep[0]);
 
-    fmt( "    %u$u_in_ctx_0 = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
+    fmt( "    %u$u_in_ctx_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
         "{    %u$u_in_ctx_1 = bitcast i8* %u$u_in_ctx_0 to <6 x i32>*\n|}",
         id, alloca_size_rt, id, id);
 
@@ -833,14 +1162,14 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
     if (callable_depth == 0) {
         if (jitc_llvm_vector_width > 1) {
             fmt("{    %u$u_func = bitcast i8* $v to void (i8*, i8*, i8*, i8*)*\n|}"
-                 "    call void {%u$u_func|$v}({i8*} %u$u_in_0_0, {i8*} $v, {i8*} %u$u_in_ctx_0, {i8*} %u$u_in_1_0)\n",
+                 "    call void {%u$u_func|$v}({i8*} %u$u_in_0_{0|1}, {i8*} $v, {i8*} %u$u_in_ctx_{0|1}, {i8*} %u$u_in_1_{0|1})\n",
                 id, func,
                 id, func, id, scene, id, id
             );
         } else {
             fmt(
                 "{    %u$u_func = bitcast i8* $v to void (i8*, i8*, i8*)*\n|}"
-                "     call void {%u$u_func|$v}({i8*} $v, {i8*} %u$u_in_ctx_0, {i8*} %u$u_in_1_0)\n",
+                "     call void {%u$u_func|$v}({i8*} $v, {i8*} %u$u_in_ctx_{0|1}, {i8*} %u$u_in_1_{0|1})\n",
                 id, func,
                 id, func, scene, id, id
             );
@@ -922,10 +1251,10 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
             id, id);
 
         if (jitc_llvm_vector_width > 1) {
-            fmt("    call void %u$u_func({i8*} %u$u_in_0_0, {i8*} %u$u_next, {i8*} %u$u_in_ctx_0, {i8*} %u$u_in_1_0)\n",
+            fmt("    call void %u$u_func({i8*} %u$u_in_0_{0|1}, {i8*} %u$u_next, {i8*} %u$u_in_ctx_{0|1}, {i8*} %u$u_in_1_{0|1})\n",
                 id, id, id, id, id);
         } else {
-            fmt("    call void %u$u_func({i8*} %u$u_next, {i8*} %u$u_in_ctx_0, {i8*} %u$u_in_1_0)\n",
+            fmt("    call void %u$u_func({i8*} %u$u_next, {i8*} %u$u_in_ctx_{0|1}, {i8*} %u$u_in_1_{0|1})\n",
                 id, id, id, id);
         }
 
@@ -963,7 +1292,6 @@ static void jitc_llvm_ray_trace_assemble(const Variable *v, const Extra &extra) 
 
     put("    ; -------------------\n\n");
 }
-
 
 /// Virtual function call code generation -- LLVM IR-specific bits
 void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,

@@ -48,11 +48,8 @@ void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
             ts->vcall_self_index = index;
         } else {
             Variable v;
-            v.kind = (uint32_t) VarKind::Stmt;
-            if (backend == JitBackend::CUDA)
-                v.stmt = (char *) "mov.u32 $r0, self";
-            else
-                v.stmt = (char *) "$r0 = bitcast <$w x i32> %self to <$w x i32>";
+            v.kind = (uint32_t) VarKind::Node;
+            v.node = NodeType::VCallSelf;
             v.size = 1u;
             v.type = (uint32_t) VarType::UInt32;
             v.backend = (uint32_t) backend;
@@ -186,9 +183,9 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     Ref mask;
     {
         uint32_t zero = 0;
-        Ref null_instance = steal(jitc_var_new_literal(backend, VarType::UInt32, &zero, 1, 0)),
-            is_non_null   = steal(jitc_var_new_op_n(JitOp::Neq, self, null_instance)),
-            mask_2        = steal(jitc_var_new_op_n(JitOp::And, mask_, is_non_null));
+        Ref null_instance = steal(jitc_var_literal(backend, VarType::UInt32, &zero, 1, 0)),
+            is_non_null   = steal(jitc_var_neq(self, null_instance)),
+            mask_2        = steal(jitc_var_and(mask_, is_non_null));
         mask = steal(jitc_var_mask_apply(mask_2, size));
     }
 
@@ -258,7 +255,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         offset_buf = steal(jitc_var_mem_map(
             backend, VarType::UInt64, vcall->offset, inst_id_max + 1, 1)),
         offset_v =
-            steal(jitc_var_new_pointer(backend, vcall->offset, offset_buf, 0));
+            steal(jitc_var_pointer(backend, vcall->offset, offset_buf, 0));
 
     char temp[128];
     snprintf(temp, sizeof(temp), "VCall: %s [call offsets]", name);
@@ -270,7 +267,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         snprintf(temp, sizeof(temp), "VCall: %s [call data]", name);
         jitc_var_set_label(data_buf, temp);
 
-        data_v = steal(jitc_var_new_pointer(backend, data_d, data_buf, 0));
+        data_v = steal(jitc_var_pointer(backend, data_d, data_buf, 0));
 
         VCallDataRecord *rec = (VCallDataRecord *)
             jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned
@@ -307,7 +304,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     // =====================================================
 
     uint32_t deps_special[4] = { self, mask, offset_v, data_v };
-    Ref vcall_v = steal(jitc_var_new_stmt(backend, VarType::Void, "", 0,
+    Ref vcall_v = steal(jitc_var_stmt(backend, VarType::Void, "", 0,
                                           data_size ? 4 : 3, deps_special));
 
     vcall->id = vcall_v;
@@ -351,8 +348,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             if (n_inst == 1 && !vcall_inline && !jitc_var(out_nested[j])->is_literal())
                 continue;
 
-            uint32_t dep[2] = { out_nested[j], mask };
-            Ref result_v = steal(jitc_var_new_op(JitOp::And, 2, dep));
+            Ref result_v = steal(jitc_var_and(out_nested[j], mask));
             Variable *v = jitc_var(result_v);
 
             if ((bool) v->placeholder != placeholder || v->size != size ||
@@ -570,7 +566,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
            ensure that they are evaluated */
         uint32_t vcall_id = vcall_v;
         se_v = steal(
-            jitc_var_new_stmt(backend, VarType::Void, "", 1, 1, &vcall_id));
+            jitc_var_stmt(backend, VarType::Void, "", 1, 1, &vcall_id));
         snprintf(temp, sizeof(temp), "VCall: %s [side effects]", name);
         jitc_var(se_v)->placeholder = placeholder;
         jitc_var_set_label(se_v, temp);
@@ -740,7 +736,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     const Variable *v = jitc_var(index);
 
-    if (v->is_stmt() && strstr(v->stmt, "self"))
+    if (v->is_node() && (NodeType) v->node == NodeType::VCallSelf)
         use_self = true;
 
     if (v->optix)

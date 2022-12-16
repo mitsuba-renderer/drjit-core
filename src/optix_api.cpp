@@ -475,7 +475,7 @@ uint32_t jitc_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
     if (!pco || !module || !pg || pg_count == 0)
         jitc_raise("jitc_optix_configure_pipeline(): invalid input arguments!");
 
-    uint32_t index = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 0, 0);
+    uint32_t index = jitc_var_stmt(JitBackend::CUDA, VarType::Void, "", 1, 0, 0);
 
     Extra &extra = state.extra[index];
     Variable *v = jitc_var(index);
@@ -531,7 +531,7 @@ uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
         jitc_raise("jitc_optix_configure_sbt(): type mismatch for pipeline argument!");
 
     uint32_t dep[1] = { pipeline };
-    uint32_t index = jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 1, dep);
+    uint32_t index = jitc_var_stmt(JitBackend::CUDA, VarType::Void, "", 1, 1, dep);
 
     Extra &extra = state.extra[index];
     Variable *v = jitc_var(index);
@@ -914,7 +914,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
 
     uint32_t dep[3] = { valid, pipeline, sbt };
     uint32_t special =
-        jitc_var_new_stmt(JitBackend::CUDA, VarType::Void, "", 1, 3, dep);
+        jitc_var_stmt(JitBackend::CUDA, VarType::Void, "", 1, 3, dep);
 
     // Associate extra record with this variable
     Extra &extra = state.extra[special];
@@ -978,7 +978,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
     for (uint32_t i = 0; i < np; ++i) {
         char tmp[80];
         snprintf(tmp, sizeof(tmp), "mov.u32 $r0, $r1_result_%u", i);
-        args[15 + i] = jitc_var_new_stmt(JitBackend::CUDA, VarType::UInt32, tmp,
+        args[15 + i] = jitc_var_stmt(JitBackend::CUDA, VarType::UInt32, tmp,
                                          0, 1, &special);
         uint32_t index = args[15] + i;
         Variable *v2 = jitc_var(index);

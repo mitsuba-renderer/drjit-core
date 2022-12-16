@@ -48,9 +48,7 @@ extern uint32_t jitc_llvm_version_major;
 extern uint32_t jitc_llvm_version_minor;
 extern uint32_t jitc_llvm_version_patch;
 
-/// Strings related to the vector width, used by template engine
-extern char *jitc_llvm_vector_width_str;
-extern char *jitc_llvm_counter_str;
+/// Pre-generated strings for use by the template engine
 extern char **jitc_llvm_ones_str;
 
 /// Try to load initialize LLVM backend

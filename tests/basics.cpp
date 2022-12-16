@@ -1,3 +1,7 @@
+#if defined(_MSC_VER)
+#  pragma warning (disable:4127) // conditional expression is constant
+#endif
+
 #include "test.h"
 #include <initializer_list>
 #include <cmath>
@@ -8,10 +12,10 @@ TEST_BOTH(01_creation_destruction_cse) {
     // Test CSE involving normal and evaluated constant literals
     for (int i = 0; i < 2; ++i) {
         uint32_t value = 1234;
-        uint32_t v0 = jit_var_new_literal(Backend, VarType::UInt32, &value, i + 1);
-        uint32_t v1 = jit_var_new_literal(Backend, VarType::UInt32, &value, i + 1);
-        uint32_t v2 = jit_var_new_literal(Backend, VarType::UInt32, &value, i + 1, 1);
-        uint32_t v3 = jit_var_new_literal(Backend, VarType::UInt32, &value, i + 1, 1);
+        uint32_t v0 = jit_var_literal(Backend, VarType::UInt32, &value, i + 1);
+        uint32_t v1 = jit_var_literal(Backend, VarType::UInt32, &value, i + 1);
+        uint32_t v2 = jit_var_literal(Backend, VarType::UInt32, &value, i + 1, 1);
+        uint32_t v3 = jit_var_literal(Backend, VarType::UInt32, &value, i + 1, 1);
 
         jit_assert(v0 == v1 && v0 != v3 && v2 != v3);
         for (uint32_t l : { v0, v1, v2, v3 })
@@ -30,19 +34,19 @@ TEST_BOTH(02_load_store) {
     for (int k = 0; k < 2; ++k) {
         for (int j = 0; j < 2; ++j) {
             uint32_t value = 1;
-            uint32_t o = jit_var_new_literal(Backend, VarType::UInt32, &value, 1 + k);
+            uint32_t o = jit_var_literal(Backend, VarType::UInt32, &value, 1 + k);
 
             if (j == 1)
                 jit_var_eval(o);
 
             for (int i = 0; i < 2; ++i) {
                 uint32_t value2 = 1234;
-                uint32_t v0 = jit_var_new_literal(Backend, VarType::UInt32, &value2, 1 + i);
-                uint32_t v1 = jit_var_new_literal(Backend, VarType::UInt32, &value2, 1 + i);
+                uint32_t v0 = jit_var_literal(Backend, VarType::UInt32, &value2, 1 + i);
+                uint32_t v1 = jit_var_literal(Backend, VarType::UInt32, &value2, 1 + i);
 
-                uint32_t v0p = jit_var_new_op_2(JitOp::Add, o, v0);
+                uint32_t v0p = jit_var_add(o, v0);
                 jit_var_dec_ref(v0);
-                uint32_t v1p = jit_var_new_op_2(JitOp::Add, o, v1);
+                uint32_t v1p = jit_var_add(o, v1);
                 jit_var_dec_ref(v1);
 
                 jit_assert(v0p == v1p);
@@ -63,16 +67,16 @@ TEST_BOTH(02_load_store) {
 TEST_BOTH(03_load_store_mask) {
     /// Masks are a bit more tricky, check that those also work
     for (int i = 0; i < 2; ++i) {
-        uint32_t ctr = jit_var_new_counter(Backend, i == 0 ? 1 : 10);
-        uint32_t one_v = 1, one = jit_var_new_literal(Backend, VarType::UInt32, &one_v);
-        uint32_t zero_v = 0, zero = jit_var_new_literal(Backend, VarType::UInt32, &zero_v);
-        uint32_t odd = jit_var_new_op_2(JitOp::And, ctr, one);
-        uint32_t mask = jit_var_new_op_2(JitOp::Eq, odd, zero);
+        uint32_t ctr = jit_var_counter(Backend, i == 0 ? 1 : 10);
+        uint32_t one_v = 1, one = jit_var_literal(Backend, VarType::UInt32, &one_v);
+        uint32_t zero_v = 0, zero = jit_var_literal(Backend, VarType::UInt32, &zero_v);
+        uint32_t odd = jit_var_and(ctr, one);
+        uint32_t mask = jit_var_eq(odd, zero);
 
         jit_assert(strcmp(jit_var_str(mask),
                           i == 0 ? "[1]" : "[1, 0, 1, 0, 1, 0, 1, 0, 1, 0]") == 0);
 
-        uint32_t flip = jit_var_new_op_1(JitOp::Not, mask);
+        uint32_t flip = jit_var_not(mask);
         jit_assert(strcmp(jit_var_str(flip),
                           i == 0 ? "[0]" : "[0, 1, 0, 1, 0, 1, 0, 1, 0, 1]") == 0);
 
@@ -94,15 +98,15 @@ TEST_BOTH(04_load_store_float) {
 
                 if (i == 0) {
                     float f1 = 1, f1234 = 1234;
-                    v0 = jit_var_new_literal(Backend, VarType::Float32, &f1, 1 + j, k);
-                    v1 = jit_var_new_literal(Backend, VarType::Float32, &f1234, 1 + j);
+                    v0 = jit_var_literal(Backend, VarType::Float32, &f1, 1 + j, k);
+                    v1 = jit_var_literal(Backend, VarType::Float32, &f1234, 1 + j);
                 } else {
                     double d1 = 1, d1234 = 1234;
-                    v0 = jit_var_new_literal(Backend, VarType::Float64, &d1, 1 + j, k);
-                    v1 = jit_var_new_literal(Backend, VarType::Float64, &d1234, 1 + j);
+                    v0 = jit_var_literal(Backend, VarType::Float64, &d1, 1 + j, k);
+                    v1 = jit_var_literal(Backend, VarType::Float64, &d1234, 1 + j);
                 }
 
-                uint32_t v2 = jit_var_new_op_2(JitOp::Add, v0, v1);
+                uint32_t v2 = jit_var_add(v0, v1);
 
                 jit_assert(strcmp(jit_var_str(v2),
                                    j == 0 ? "[1235]" : "[1235, 1235]") == 0);
@@ -116,19 +120,44 @@ TEST_BOTH(04_load_store_float) {
 }
 
 const char *op_name[(int) JitOp::Count] {
-    // ---- Unary ----
-    "not", "neg", "abs", "sqrt", "rcp", "rsqrt", "ceil", "floor", "round", "trunc", "exp2", "log2", "sin", "cos",
-    "popc", "clz", "ctz",
+    // Common unary operations
+    "neg", "not", "sqrt", "abs",
 
-    // ---- Binary ----
-    "add", "sub", "mul", "mulhi", "div", "mod", "min", "max", "and", "or",
-    "xor", "shl", "shr",
+    // Common binary arithmetic operations
+    "add", "sub", "mul", "div", "mod",
 
-    // ---- Comparisons ----
+    // High multiplication
+    "mulhi",
+
+    // Fused multiply-add
+    "fma",
+
+    // Minimum, maximum
+    "min", "max",
+
+    // Rounding operations
+    "ceil", "floor", "round", "trunc",
+
+    // Comparisons
     "eq", "neq", "lt", "le", "gt", "ge",
 
-    // ---- Ternary ----
-    "fmadd", "select"
+    // Ternary operator
+    "select",
+
+    // Bit-level counting operations
+    "popc", "clz", "ctz",
+
+    /// Bit-wise operations
+    "and", "or", "xor",
+
+    // Shifts
+    "shl", "shr",
+
+    // Fast approximations
+    "rcp", "rsqrt",
+
+    // Multi-function generator (CUDA)
+    "sin", "cos", "exp2", "log2",
 };
 
 template <typename T> bool test_const_prop() {
@@ -175,7 +204,7 @@ template <typename T> bool test_const_prop() {
             continue;
 
         for (uint32_t i = 0; i < Size2; ++i)
-            in[i] = jit_var_new_literal(Backend, T::Type, values + i, 1, i >= Size);
+            in[i] = jit_var_literal(Backend, T::Type, values + i, 1, i >= Size);
 
         for (uint32_t i = 0; i < Size2; ++i) {
             uint32_t index = 0;
@@ -183,7 +212,7 @@ template <typename T> bool test_const_prop() {
                 index = in[i];
                 jit_var_inc_ref(index);
             } else {
-                index = jit_var_new_op(op, 1, in + i);
+                index = jit_var_op(op, in + i);
             }
 
             if (i < Size)
@@ -248,16 +277,18 @@ template <typename T> bool test_const_prop() {
          { JitOp::Add, JitOp::Sub, JitOp::Mul, JitOp::Div,
            JitOp::Mod, JitOp::Min, JitOp::Max, JitOp::And, JitOp::Or,
            JitOp::Xor, JitOp::Shl, JitOp::Shr, JitOp::Eq, JitOp::Neq,
-           JitOp::Lt, JitOp::Le, JitOp::Gt, JitOp::Ge }) {
+           JitOp::Lt, JitOp::Le, JitOp::Gt, JitOp::Ge, JitOp::Mulhi }) {
         if (op == JitOp::Mod && IsFloat)
             continue;
         if ((IsFloat || IsMask) && (op == JitOp::Shl || op == JitOp::Shr))
             continue;
         if (IsMask && !(op == JitOp::Or || op == JitOp::And || op == JitOp::Xor))
             continue;
+        if (!IsInt && op == JitOp::Mulhi)
+            continue;
 
         for (uint32_t i = 0; i < Size2; ++i)
-            in[i] = jit_var_new_literal(Backend, T::Type, values + i, 1, i >= Size);
+            in[i] = jit_var_literal(Backend, T::Type, values + i, 1, i >= Size);
 
         for (uint32_t i = 0; i < Size2; ++i) {
             for (uint32_t j = 0; j < Size2; ++j) {
@@ -269,7 +300,7 @@ template <typename T> bool test_const_prop() {
                     index = in[j];
                     jit_var_inc_ref(index);
                 } else {
-                    index = jit_var_new_op(op, 2, deps);
+                    index = jit_var_op(op, deps);
                 }
 
                 if (i < Size && j < Size) {
@@ -339,17 +370,17 @@ template <typename T> bool test_const_prop() {
         }
     }
 
-    for (JitOp op : { JitOp::Fmadd, JitOp::Select }) {
-        if (op == JitOp::Fmadd && IsMask)
+    for (JitOp op : { JitOp::Fma, JitOp::Select }) {
+        if (op == JitOp::Fma && IsMask)
             continue;
 
         for (uint32_t i = 0; i < 4; ++i) {
             bool b = i & 1;
-            in_b[i] = jit_var_new_literal(Backend, VarType::Bool, &b, 1, i >= Small);
+            in_b[i] = jit_var_literal(Backend, VarType::Bool, &b, 1, i >= Small);
         }
 
         for (uint32_t i = 0; i < Small2; ++i)
-            in[i] = jit_var_new_literal(Backend, T::Type, values + i, 1, i >= Small);
+            in[i] = jit_var_literal(Backend, T::Type, values + i, 1, i >= Small);
 
         memset(out, 0, Small2 * Small2 * Small2 * sizeof(uint32_t));
 
@@ -357,7 +388,7 @@ template <typename T> bool test_const_prop() {
             for (uint32_t j = 0; j < Small2; ++j) {
                 for (uint32_t k = 0; k < Small2; ++k) {
                     uint32_t deps[3] = { op == JitOp::Select ? in_b[i] : in[i], in[j], in[k] };
-                    uint32_t index = jit_var_new_op(op, 3, deps);
+                    uint32_t index = jit_var_op(op, deps);
 
                     jit_var_schedule(index);
                     out[k + Small2 * (j + Small2 * i)] = index;
@@ -388,7 +419,7 @@ template <typename T> bool test_const_prop() {
                     jit_var_read(ref_id, 0, &ref);
 
                     if (memcmp(&value, &ref, sizeof(Value)) != 0) {
-                        if (op == JitOp::Fmadd && value == ref)
+                        if (op == JitOp::Fma && value == ref)
                             continue;
                         char *v0 = strdup(jit_var_str(op == JitOp::Select ? in_b[ir] : in[ir]));
                         char *v1 = strdup(jit_var_str(in[jr]));
@@ -494,9 +525,9 @@ TEST_BOTH(06_cast) {
                             d += d * .1;
                     }
 
-                    source_value[i] = jit_var_new_literal(Backend, source_type,
+                    source_value[i] = jit_var_literal(Backend, source_type,
                                                           &value, 1, i < size);
-                    target_value[i] = jit_var_new_cast(
+                    target_value[i] = jit_var_cast(
                         source_value[i], target_type, reinterpret);
                     jit_var_schedule(target_value[i]);
                 }
@@ -515,7 +546,7 @@ TEST_BOTH(06_cast) {
                         char *v2 = strdup(jit_var_str(ref_id));
                         fprintf(stderr,
                                 "Mismatch: %scast(source_type=%s, "
-                                "target_type=%s, in=%s) == %s vs %s\n",
+                                "target_type=%s, in=%s): computed=%s vs const=%s\n",
                                 reinterpret ? "reinterpret_" : "",
                                 type_names[(uint32_t) source_type],
                                 type_names[(uint32_t) target_type],
@@ -541,21 +572,21 @@ TEST_BOTH(07_and_or_mixed) {
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 2; ++j) {
             bool b = (i & 1);
-            uint32_t v0 = jit_var_new_literal(Backend, VarType::Bool,
+            uint32_t v0 = jit_var_literal(Backend, VarType::Bool,
                                               &b, 1, i < 2);
 
             uint32_t u = 1234;
-            uint32_t v1 = jit_var_new_literal(Backend, VarType::UInt32,
+            uint32_t v1 = jit_var_literal(Backend, VarType::UInt32,
                                               &u, 1, j == 0);
 
             float f = 1234;
-            uint32_t v2 = jit_var_new_literal(Backend, VarType::Float32,
+            uint32_t v2 = jit_var_literal(Backend, VarType::Float32,
                                               &f, 1, j == 0);
 
-            uint32_t v3 = jit_var_new_op_2(JitOp::And, v1, v0);
-            uint32_t v4 = jit_var_new_op_2(JitOp::And, v2, v0);
-            uint32_t v5 = jit_var_new_op_2(JitOp::Or, v1, v0);
-            uint32_t v6 = jit_var_new_op_2(JitOp::Or, v2, v0);
+            uint32_t v3 = jit_var_and(v1, v0);
+            uint32_t v4 = jit_var_and(v2, v0);
+            uint32_t v5 = jit_var_or(v1, v0);
+            uint32_t v6 = jit_var_or(v2, v0);
 
             jit_var_dec_ref(v0);
             jit_var_dec_ref(v1);

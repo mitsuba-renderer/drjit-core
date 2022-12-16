@@ -121,7 +121,7 @@ CUfunction *jitc_cuda_poke[(int)VarType::Count] { };
 CUfunction *jitc_cuda_block_copy[(int)VarType::Count] { };
 CUfunction *jitc_cuda_block_sum [(int)VarType::Count] { };
 CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
-                               [(int) VarType::Count] = { };
+                                [(int) VarType::Count] = { };
 CUfunction *jitc_cuda_vcall_prepare = nullptr;
 int jitc_cuda_devices = 0;
 int jitc_cuda_version_major = 0;
@@ -288,8 +288,8 @@ bool jitc_cuda_init() {
     }
 
     jitc_log(LogLevel::Info,
-            "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
-            jitc_cuda_version_major, jitc_cuda_version_minor);
+             "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
+             jitc_cuda_version_major, jitc_cuda_version_minor);
 
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
         for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
