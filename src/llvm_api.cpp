@@ -37,9 +37,9 @@ void jitc_llvm_api_shutdown() {}
 bool jitc_llvm_api_has_core() { return true; }
 bool jitc_llvm_api_has_mcjit() { return true; }
 bool jitc_llvm_api_has_orcv2() { return true; }
-uint32_t jitc_llvm_version_major = LLVM_VERSION_MAJOR;
-uint32_t jitc_llvm_version_minor = LLVM_VERSION_MINOR;
-uint32_t jitc_llvm_version_patch = LLVM_VERSION_PATCH;
+int jitc_llvm_version_major = LLVM_VERSION_MAJOR;
+int jitc_llvm_version_minor = LLVM_VERSION_MINOR;
+int jitc_llvm_version_patch = LLVM_VERSION_PATCH;
 
 #else
 
@@ -50,9 +50,9 @@ static bool jitc_llvm_has_version = false;
 static bool jitc_llvm_has_mcjit = false;
 static bool jitc_llvm_has_orcv2 = false;
 
-uint32_t jitc_llvm_version_major = 0;
-uint32_t jitc_llvm_version_minor = 0;
-uint32_t jitc_llvm_version_patch = 0;
+int jitc_llvm_version_major = -1;
+int jitc_llvm_version_minor = -1;
+int jitc_llvm_version_patch = -1;
 
 bool jitc_llvm_api_init() {
     if (!jitc_llvm_handle) {
@@ -88,9 +88,9 @@ bool jitc_llvm_api_init() {
     jitc_llvm_has_version = true;
     jitc_llvm_has_mcjit = true;
     jitc_llvm_has_orcv2 = true;
-    jitc_llvm_version_major = 0;
-    jitc_llvm_version_minor = 0;
-    jitc_llvm_version_patch = 0;
+    jitc_llvm_version_major = -1;
+    jitc_llvm_version_minor = -1;
+    jitc_llvm_version_patch = -1;
 
     void *handle = jitc_llvm_handle;
     LOAD(core, LLVMLinkInMCJIT);
@@ -153,38 +153,76 @@ bool jitc_llvm_api_init() {
     LOAD(orcv2, LLVMOrcDisposeLLJIT);
     LOAD(orcv2, LLVMOrcJITDylibClear);
 
-    // It's tricky to find the LLVM version ..
+    /*
+       Dr.Jit needs to know the LLVM version number to emit the right set of
+       intrinsics. Unfortunately, it's tricky to find the exact version.
+
+       LLVM 16+ exposes 'LLVMGetVersion()', which solves the problem. On older
+       versions, we can try to call an obscure function from the link-time
+       optimization code generator to extract the version.
+
+       If that doesn't work, we try to roughly get it right by searching the
+       shared library for telltale symbols that are only available in some LLVM
+       versions. This is good enough for determining the major version, which
+       is what matters.
+    */
+
     if (jitc_llvm_has_version) {
         unsigned major, minor, patch;
         LLVMGetVersion(&major, &minor, &patch);
-        jitc_llvm_version_major = major;
-        jitc_llvm_version_minor = minor;
-        jitc_llvm_version_patch = patch;
+        jitc_llvm_version_major = (int) major;
+        jitc_llvm_version_minor = (int) minor;
+        jitc_llvm_version_patch = (int) patch;
     } else {
         auto get_version_string = (const char *(*) ()) dlsym(
             handle, "_ZN4llvm16LTOCodeGenerator16getVersionStringEv");
 
         if (get_version_string) {
             const char *version_string = get_version_string();
-            if (sscanf(version_string, "LLVM version %u.%u.%u",
+            if (sscanf(version_string, "LLVM version %i.%i.%i",
                        &jitc_llvm_version_major, &jitc_llvm_version_minor,
                        &jitc_llvm_version_patch) != 3) {
                 jitc_log(
                     Warn,
                     "jit_llvm_init(): could not parse LLVM version string \"%s\".",
                     version_string);
+                jitc_llvm_version_major = -1;
+                jitc_llvm_version_minor = -1;
+                jitc_llvm_version_patch = -1;
             }
         }
     }
 
-    if (jitc_llvm_version_major == 0) {
-        // Assume some generic LLVM version :-(
-        jitc_llvm_version_major = 10;
-        jitc_llvm_version_minor = 0;
-        jitc_llvm_version_patch = 0;
+    // Try to at least guess the LLVM major version based on what symbols are available
+    if (jitc_llvm_version_major == -1) {
+        struct Symbol {
+            int major;
+            const char *name;
+        };
+
+        Symbol symbols[] = {
+            { 8,  "LLVMDisposeErrorMessage" },
+            { 9,  "LLVMCreateBinary" },
+            { 10, "LLVMBuildFreeze" },
+            { 12, "LLVMIsPoison" },
+            { 13, "LLVMRunPasses" },
+            { 14, "LLVMAddMetadataToInst" },
+            { 15, "LLVMDeleteInstruction" }
+        };
+
+        for (Symbol s : symbols) {
+            if (dlsym(handle, s.name))
+                jitc_llvm_version_major = s.major;
+        }
+
+        if (jitc_llvm_version_major < 8) {
+            jitc_log(Warn, "jit_llvm_init(): the detected LLVM version was too "
+                           "old, at least 8.0.0 is needed.");
+            return false;
+        }
     }
 
-    return jitc_llvm_version_major >= 8;
+    return true;
 }
 
 void jitc_llvm_api_shutdown() {
@@ -266,9 +304,9 @@ void jitc_llvm_api_shutdown() {
     jitc_llvm_has_version = false;
     jitc_llvm_has_mcjit = false;
     jitc_llvm_has_orcv2 = false;
-    jitc_llvm_version_major = 0;
-    jitc_llvm_version_minor = 0;
-    jitc_llvm_version_patch = 0;
+    jitc_llvm_version_major = -1;
+    jitc_llvm_version_minor = -1;
+    jitc_llvm_version_patch = -1;
 }
 
 bool jitc_llvm_api_has_core() { return jitc_llvm_has_core; }
