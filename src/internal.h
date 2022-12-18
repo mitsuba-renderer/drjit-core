@@ -11,7 +11,7 @@
 
 #include "common.h"
 #include "malloc.h"
-#include "cuda_api.h"
+#include "cuda.h"
 #include "llvm.h"
 #include "alloc.h"
 #include "io.h"
@@ -843,6 +843,12 @@ JIT_MALLOC inline void* malloc_check(size_t size) {
         fprintf(stderr, "malloc_check(): failed to allocate %zu bytes!", size);
         abort();
     }
+    return ptr;
+}
+
+JIT_MALLOC inline void* malloc_check_zero(size_t size) {
+    void *ptr = malloc_check(size);
+    memset(ptr, 0, size);
     return ptr;
 }
 

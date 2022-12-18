@@ -74,7 +74,11 @@ mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
 # ----------------------------------------------------------
 
 if (DRJIT_ENABLE_OPTIX)
-  set(DRJIT_OPTIX_FILES src/optix_api.h src/optix_api.cpp)
+  set(DRJIT_OPTIX_FILES
+    src/optix_api.h
+    src/optix_api.cpp
+    src/optix_core.h
+    src/optix_core.cpp)
 endif()
 
 add_library(
@@ -95,8 +99,17 @@ add_library(
   src/malloc.h        src/malloc.cpp
   src/registry.h      src/registry.cpp
   src/util.h          src/util.cpp
-  src/cuda_api.h      src/cuda_api.cpp
-  src/cuda_tex.h      src/cuda_tex.cpp
+
+  # CUDA backend
+  src/cuda_api.h
+  src/cuda_api.cpp
+  src/cuda_core.cpp
+  src/cuda_tex.h
+  src/cuda_tex.cpp
+  src/cuda_eval.cpp
+
+  # OptiX backend
+  ${DRJIT_OPTIX_FILES}
 
   # LLVM backend
   src/llvm_api.h
@@ -106,18 +119,15 @@ add_library(
   src/llvm_core.cpp
   src/llvm_mcjit.cpp
   src/llvm_orcv2.cpp
-  src/eval_llvm.cpp
+  src/llvm_eval.cpp
 
   src/io.h            src/io.cpp
   src/eval.h          src/eval.cpp
   src/vcall.h         src/vcall.cpp
   src/loop.h          src/loop.cpp
   src/printf.h        src/printf.cpp
-  src/eval_cuda.cpp
   src/init.cpp
   src/api.cpp
-
-  ${DRJIT_OPTIX_FILES}
 
   # LZ4 compression library & XXHash hash function
   ext/lz4/lz4.h ext/lz4/lz4.c

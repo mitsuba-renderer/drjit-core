@@ -13,7 +13,7 @@
 #include "eval.h"
 #include "profiler.h"
 #include "util.h"
-#include "optix_api.h"
+#include "optix.h"
 #include "loop.h"
 #include <tsl/robin_set.h>
 

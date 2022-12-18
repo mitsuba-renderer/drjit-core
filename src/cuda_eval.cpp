@@ -35,7 +35,7 @@
 #include "var.h"
 #include "log.h"
 #include "vcall.h"
-#include "optix_api.h"
+#include "optix.h"
 
 #define fmt(fmt, ...) buffer.fmt_cuda(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
 #define put(...)      buffer.put(__VA_ARGS__)

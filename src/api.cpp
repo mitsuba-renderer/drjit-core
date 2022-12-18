@@ -25,7 +25,7 @@
 
 #if defined(DRJIT_ENABLE_OPTIX)
 #include <drjit-core/optix.h>
-#include "optix_api.h"
+#include "optix.h"
 #endif
 
 #include <nanothread/nanothread.h>

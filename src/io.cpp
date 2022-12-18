@@ -11,8 +11,8 @@
 #include "log.h"
 #include "internal.h"
 #include "profiler.h"
-#include "cuda_api.h"
-#include "optix_api.h"
+#include "cuda.h"
+#include "optix.h"
 #include "../resources/kernels.h"
 #include <stdexcept>
 #include <stdio.h>

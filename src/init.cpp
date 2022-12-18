@@ -18,6 +18,7 @@
 
 #if defined(DRJIT_ENABLE_OPTIX)
 #  include "optix_api.h"
+#  include "optix.h"
 #endif
 
 #if defined(_WIN32)
@@ -126,99 +127,6 @@ void jitc_init(uint32_t backends) {
 
     if ((backends & (uint32_t) JitBackend::CUDA) && jitc_cuda_init())
         state.backends |= (uint32_t) JitBackend::CUDA;
-
-    bool has_cuda = state.backends & (uint32_t) JitBackend::CUDA;
-    for (int i = 0; has_cuda && i < jitc_cuda_devices; ++i) {
-        int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
-            unified_addr = 0, shared_memory_bytes = 0,
-            cc_minor = 0, cc_major = 0, memory_pool_support = 0,
-            tcc_driver = 0, preemptable = 0;
-
-        size_t mem_total = 0;
-        char name[256];
-
-        cuda_check(cuDeviceTotalMem(&mem_total, i));
-        cuda_check(cuDeviceGetName(name, sizeof(name), i));
-        cuda_check(cuDeviceGetAttribute(&pci_bus_id, CU_DEVICE_ATTRIBUTE_PCI_BUS_ID, i));
-        cuda_check(cuDeviceGetAttribute(&pci_dev_id, CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID, i));
-        cuda_check(cuDeviceGetAttribute(&pci_dom_id, CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID, i));
-        cuda_check(cuDeviceGetAttribute(&num_sm, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, i));
-        cuda_check(cuDeviceGetAttribute(&unified_addr, CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING, i));
-        cuda_check(cuDeviceGetAttribute(&shared_memory_bytes, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN, i));
-        cuda_check(cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, i));
-        cuda_check(cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, i));
-
-
-        #if defined(_WIN32)
-            // Distinguish WDDM and TCM-style drivers on Windows. The default for other OSes is tcc_driver=1
-            cuda_check(cuDeviceGetAttribute(&tcc_driver, CU_DEVICE_ATTRIBUTE_TCC_DRIVER, i));
-            cuda_check(cuDeviceGetAttribute(&preemptable, CU_DEVICE_ATTRIBUTE_COMPUTE_PREEMPTION_SUPPORTED, i));
-        #else
-            tcc_driver = 0;
-            preemptable = 1;
-        #endif
-
-        if (jitc_cuda_version_major > 11 || (jitc_cuda_version_major == 11 && jitc_cuda_version_minor >= 2))
-            cuda_check(cuDeviceGetAttribute(&memory_pool_support, CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED, i));
-
-        bool non_preemptable = !preemptable && !tcc_driver;
-
-        jitc_log(Info,
-                " - Found CUDA device %i: \"%s\" "
-                "(PCI ID %02x:%02x.%i, compute cap. %i.%i, %i SMs w/%s shared mem., %s global mem.%s)",
-                i, name, pci_bus_id, pci_dev_id, pci_dom_id, cc_major, cc_minor, num_sm,
-                std::string(jitc_mem_string(shared_memory_bytes)).c_str(),
-                std::string(jitc_mem_string(mem_total)).c_str(),
-                non_preemptable ? ", non-preemptable": "");
-
-        if (unified_addr == 0) {
-            jitc_log(Warn, " - Warning: device does *not* support unified addressing, skipping ..");
-            continue;
-        }
-
-        Device device;
-        device.id = i;
-        device.compute_capability = cc_major * 10 + cc_minor;
-        device.shared_memory_bytes = (uint32_t) shared_memory_bytes;
-        device.num_sm = (uint32_t) num_sm;
-        device.memory_pool_support = memory_pool_support != 0;
-        device.preemptable = preemptable || tcc_driver;
-        device.compute_capability = 50;
-        device.ptx_version = 60;
-
-        const uint32_t sm_table[][2] = { { 70, 60 }, { 72, 61 }, { 75, 63 }, { 80, 70 },
-                                         { 86, 71 }, { 87, 74 }, { 87, 74 }, { 90, 78 } };
-        uint32_t cc_combined = cc_major * 10 + cc_minor;
-        for (int j = 0; j < 8; ++j) {
-            if (cc_combined >= sm_table[j][0]) {
-                device.compute_capability = sm_table[j][0];
-                device.ptx_version = sm_table[j][1];
-            }
-        }
-
-        cuda_check(cuDevicePrimaryCtxRetain(&device.context, i));
-        state.devices.push_back(device);
-    }
-
-    // Enable P2P communication if possible
-    for (auto &a : state.devices) {
-        for (auto &b : state.devices) {
-            if (a.id == b.id)
-                continue;
-
-            int peer_ok = 0;
-            scoped_set_context guard(a.context);
-            cuda_check(cuDeviceCanAccessPeer(&peer_ok, a.id, b.id));
-            if (peer_ok) {
-                jitc_log(Debug, " - Enabling peer access from device %i -> %i",
-                        a.id, b.id);
-                CUresult rv_2 = cuCtxEnablePeerAccess(b.context, 0);
-                if (rv_2 == CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED)
-                    continue;
-                cuda_check(rv_2);
-            }
-        }
-    }
 
     state.variable_index = 1;
     state.variable_watermark = 0;
@@ -332,14 +240,6 @@ void jitc_shutdown(int light) {
             delete ts;
         }
 
-        for (const Device &d : state.devices) {
-            scoped_set_context guard(d.context);
-            if (d.stream) {
-                cuda_check(cuStreamDestroy(d.stream));
-                cuda_check(cuEventDestroy(d.event));
-            }
-        }
-
         if (state.variables.empty() && !state.lvn_map.empty()) {
             for (auto &kv: state.lvn_map)
                 jitc_log(Warn,
@@ -406,24 +306,14 @@ void jitc_shutdown(int light) {
     jitc_registry_shutdown();
     jitc_malloc_shutdown();
 
-    if (state.backends & (uint32_t) JitBackend::CUDA) {
-        for (auto &v : state.devices) {
-#if defined(DRJIT_ENABLE_OPTIX)
-            jitc_optix_context_destroy(v);
-#endif
-            cuda_check(cuDevicePrimaryCtxRelease(v.id));
-        }
-        state.devices.clear();
-    }
-
     jitc_log(Info, "jit_shutdown(light=%u): done", (uint32_t) light);
 
     if (light == 0) {
         jitc_llvm_shutdown();
-#if defined(DRJIT_ENABLE_OPTIX)
-        jitc_optix_shutdown();
-#endif
         jitc_cuda_shutdown();
+#if defined(DRJIT_ENABLE_OPTIX)
+        jitc_optix_api_shutdown();
+#endif
     }
 
     free(jitc_temp_path);
@@ -489,11 +379,6 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->context = device.context;
         ts->compute_capability = device.compute_capability;
         ts->ptx_version = device.ptx_version;
-        scoped_set_context guard(ts->context);
-        if (!device.stream) {
-            cuda_check(cuStreamCreate(&device.stream, CU_STREAM_DEFAULT));
-            cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
-        }
         ts->stream = device.stream;
         ts->event = device.event;
         thread_state_cuda = ts;
@@ -545,12 +430,8 @@ void jitc_cuda_set_device(int device_id) {
     /* Associate with new context */ {
         ts->context = device.context;
         ts->device = device_id;
-        ts->compute_capability = device.compute_capability >= 60 ? 60 : 50;
-        scoped_set_context guard(ts->context);
-        if (!device.stream) {
-            cuda_check(cuStreamCreate(&device.stream, CU_STREAM_DEFAULT));
-            cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
-        }
+        ts->compute_capability = device.compute_capability;
+        ts->ptx_version = device.ptx_version;
         ts->stream = device.stream;
         ts->event = device.event;
     }

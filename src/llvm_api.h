@@ -1,3 +1,12 @@
+/*
+    src/cuda_api.h -- Low-level interface to the LLVM C API
+
+    Copyright (c) 2022 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
+
 #pragma once
 
 #  if defined(__aarch64__)
@@ -79,105 +88,105 @@ struct LLVMMCJITCompilerOptions {
   void *MCJMM;
 };
 
-#if !defined(DRJIT_SYMBOL)
-#  define DRJIT_SYMBOL(x) extern x;
+#if !defined(DR_LLVM_SYM)
+#  define DR_LLVM_SYM(x) extern x;
 #endif
 
-DRJIT_SYMBOL(void (*LLVMLinkInMCJIT)());
-DRJIT_SYMBOL(void (*LLVMInitializeDrJitAsmPrinter)());
-DRJIT_SYMBOL(void (*LLVMInitializeDrJitDisassembler)());
-DRJIT_SYMBOL(void (*LLVMInitializeDrJitTarget)());
-DRJIT_SYMBOL(void (*LLVMInitializeDrJitTargetInfo)());
-DRJIT_SYMBOL(void (*LLVMInitializeDrJitTargetMC)());
-DRJIT_SYMBOL(char *(*LLVMCreateMessage)(const char *));
-DRJIT_SYMBOL(void (*LLVMDisposeMessage)(char *));
-DRJIT_SYMBOL(char *(*LLVMGetDefaultTargetTriple)());
-DRJIT_SYMBOL(char *(*LLVMGetHostCPUName)());
-DRJIT_SYMBOL(char *(*LLVMGetHostCPUFeatures)());
-DRJIT_SYMBOL(LLVMContextRef (*LLVMGetGlobalContext)());
-DRJIT_SYMBOL(LLVMDisasmContextRef (*LLVMCreateDisasm)(const char *, void *, int,
-                                                void *, void *));
-DRJIT_SYMBOL(void (*LLVMDisasmDispose)(LLVMDisasmContextRef));
-DRJIT_SYMBOL(int (*LLVMSetDisasmOptions)(LLVMDisasmContextRef, uint64_t));
-DRJIT_SYMBOL(void (*LLVMAddModule)(LLVMExecutionEngineRef, LLVMModuleRef));
-DRJIT_SYMBOL(void (*LLVMDisposeModule)(LLVMModuleRef));
-DRJIT_SYMBOL(LLVMMemoryBufferRef (*LLVMCreateMemoryBufferWithMemoryRange)(
+DR_LLVM_SYM(void (*LLVMLinkInMCJIT)());
+DR_LLVM_SYM(void (*LLVMInitializeDrJitAsmPrinter)());
+DR_LLVM_SYM(void (*LLVMInitializeDrJitDisassembler)());
+DR_LLVM_SYM(void (*LLVMInitializeDrJitTarget)());
+DR_LLVM_SYM(void (*LLVMInitializeDrJitTargetInfo)());
+DR_LLVM_SYM(void (*LLVMInitializeDrJitTargetMC)());
+DR_LLVM_SYM(char *(*LLVMCreateMessage)(const char *) );
+DR_LLVM_SYM(void (*LLVMDisposeMessage)(char *));
+DR_LLVM_SYM(char *(*LLVMGetDefaultTargetTriple)());
+DR_LLVM_SYM(char *(*LLVMGetHostCPUName)());
+DR_LLVM_SYM(char *(*LLVMGetHostCPUFeatures)());
+DR_LLVM_SYM(LLVMContextRef (*LLVMGetGlobalContext)());
+DR_LLVM_SYM(LLVMDisasmContextRef (*LLVMCreateDisasm)(const char *, void *, int,
+                                                     void *, void *));
+DR_LLVM_SYM(void (*LLVMDisasmDispose)(LLVMDisasmContextRef));
+DR_LLVM_SYM(int (*LLVMSetDisasmOptions)(LLVMDisasmContextRef, uint64_t));
+DR_LLVM_SYM(void (*LLVMAddModule)(LLVMExecutionEngineRef, LLVMModuleRef));
+DR_LLVM_SYM(void (*LLVMDisposeModule)(LLVMModuleRef));
+DR_LLVM_SYM(LLVMMemoryBufferRef (*LLVMCreateMemoryBufferWithMemoryRange)(
     const char *, size_t, const char *, LLVMBool));
-DRJIT_SYMBOL(LLVMBool (*LLVMParseIRInContext)(LLVMContextRef, LLVMMemoryBufferRef,
-                                        LLVMModuleRef *, char **));
-DRJIT_SYMBOL(char *(*LLVMPrintModuleToString)(LLVMModuleRef));
-DRJIT_SYMBOL(uint64_t (*LLVMGetGlobalValueAddress)(LLVMExecutionEngineRef, const char *));
-DRJIT_SYMBOL(LLVMBool (*LLVMRemoveModule)(LLVMExecutionEngineRef, LLVMModuleRef,
-                                    LLVMModuleRef *, char **));
-DRJIT_SYMBOL(size_t (*LLVMDisasmInstruction)(LLVMDisasmContextRef, uint8_t *,
-                                       uint64_t, uint64_t, char *,
-                                       size_t));
-DRJIT_SYMBOL(LLVMPassManagerRef (*LLVMCreatePassManager)());
-DRJIT_SYMBOL(void (*LLVMRunPassManager)(LLVMPassManagerRef, LLVMModuleRef));
-DRJIT_SYMBOL(void (*LLVMDisposePassManager)(LLVMPassManagerRef));
-DRJIT_SYMBOL(void (*LLVMAddLICMPass)(LLVMPassManagerRef));
-DRJIT_SYMBOL(LLVMPassManagerBuilderRef (*LLVMPassManagerBuilderCreate)());
-DRJIT_SYMBOL(void (*LLVMPassManagerBuilderSetOptLevel)(
-    LLVMPassManagerBuilderRef, unsigned));
-DRJIT_SYMBOL(void (*LLVMPassManagerBuilderPopulateModulePassManager)(
+DR_LLVM_SYM(LLVMBool (*LLVMParseIRInContext)(LLVMContextRef,
+                                             LLVMMemoryBufferRef,
+                                             LLVMModuleRef *, char **));
+DR_LLVM_SYM(char *(*LLVMPrintModuleToString)(LLVMModuleRef));
+DR_LLVM_SYM(uint64_t (*LLVMGetGlobalValueAddress)(LLVMExecutionEngineRef,
+                                                  const char *));
+DR_LLVM_SYM(LLVMBool (*LLVMRemoveModule)(LLVMExecutionEngineRef, LLVMModuleRef,
+                                         LLVMModuleRef *, char **));
+DR_LLVM_SYM(size_t (*LLVMDisasmInstruction)(LLVMDisasmContextRef, uint8_t *,
+                                            uint64_t, uint64_t, char *,
+                                            size_t));
+DR_LLVM_SYM(LLVMPassManagerRef (*LLVMCreatePassManager)());
+DR_LLVM_SYM(void (*LLVMRunPassManager)(LLVMPassManagerRef, LLVMModuleRef));
+DR_LLVM_SYM(void (*LLVMDisposePassManager)(LLVMPassManagerRef));
+DR_LLVM_SYM(void (*LLVMAddLICMPass)(LLVMPassManagerRef));
+DR_LLVM_SYM(LLVMPassManagerBuilderRef (*LLVMPassManagerBuilderCreate)());
+DR_LLVM_SYM(void (*LLVMPassManagerBuilderSetOptLevel)(LLVMPassManagerBuilderRef,
+                                                      unsigned));
+DR_LLVM_SYM(void (*LLVMPassManagerBuilderPopulateModulePassManager)(
     LLVMPassManagerBuilderRef, LLVMPassManagerRef));
-DRJIT_SYMBOL(void (*LLVMPassManagerBuilderDispose)(LLVMPassManagerBuilderRef));
-DRJIT_SYMBOL(bool (*LLVMVerifyModule)(LLVMModuleRef, int action, char **msg));
-DRJIT_SYMBOL(void (*LLVMGetVersion)(unsigned*, unsigned*, unsigned*));
+DR_LLVM_SYM(void (*LLVMPassManagerBuilderDispose)(LLVMPassManagerBuilderRef));
+DR_LLVM_SYM(bool (*LLVMVerifyModule)(LLVMModuleRef, int action, char **msg));
+DR_LLVM_SYM(void (*LLVMGetVersion)(unsigned *, unsigned *, unsigned *));
 
 // API for MCJIT interface
-DRJIT_SYMBOL(LLVMModuleRef (*LLVMModuleCreateWithName)(const char *));
-DRJIT_SYMBOL(LLVMTargetMachineRef (*LLVMGetExecutionEngineTargetMachine)(
+DR_LLVM_SYM(LLVMModuleRef (*LLVMModuleCreateWithName)(const char *));
+DR_LLVM_SYM(LLVMTargetMachineRef (*LLVMGetExecutionEngineTargetMachine)(
     LLVMExecutionEngineRef));
-DRJIT_SYMBOL(LLVMBool (*LLVMCreateMCJITCompilerForModule)(
+DR_LLVM_SYM(LLVMBool (*LLVMCreateMCJITCompilerForModule)(
     LLVMExecutionEngineRef *, LLVMModuleRef, LLVMMCJITCompilerOptions *, size_t,
     char **));
-DRJIT_SYMBOL(LLVMMCJITMemoryManagerRef (*LLVMCreateSimpleMCJITMemoryManager)(
+DR_LLVM_SYM(LLVMMCJITMemoryManagerRef (*LLVMCreateSimpleMCJITMemoryManager)(
     void *, LLVMMemoryManagerAllocateCodeSectionCallback,
     LLVMMemoryManagerAllocateDataSectionCallback,
     LLVMMemoryManagerFinalizeMemoryCallback, LLVMMemoryManagerDestroyCallback));
-DRJIT_SYMBOL(void (*LLVMDisposeExecutionEngine)(LLVMExecutionEngineRef));
-DRJIT_SYMBOL(uint64_t (*LLVMGetFunctionAddress)(LLVMExecutionEngineRef, const char *));
+DR_LLVM_SYM(void (*LLVMDisposeExecutionEngine)(LLVMExecutionEngineRef));
+DR_LLVM_SYM(uint64_t (*LLVMGetFunctionAddress)(LLVMExecutionEngineRef,
+                                               const char *));
 
 // API for ORCv2 interface
-DRJIT_SYMBOL(LLVMBool (*LLVMGetTargetFromTriple)(const char *, LLVMTargetRef *,
-                                                 char **));
-DRJIT_SYMBOL(LLVMTargetMachineRef (*LLVMCreateTargetMachine)(
+DR_LLVM_SYM(LLVMBool (*LLVMGetTargetFromTriple)(const char *, LLVMTargetRef *,
+                                                char **));
+DR_LLVM_SYM(LLVMTargetMachineRef (*LLVMCreateTargetMachine)(
     LLVMTargetRef, const char *, const char *, const char *,
     LLVMCodeGenOptLevel, LLVMRelocMode, LLVMCodeModel));
-DRJIT_SYMBOL(LLVMOrcThreadSafeContextRef (*LLVMOrcCreateNewThreadSafeContext)());
-DRJIT_SYMBOL(LLVMOrcThreadSafeModuleRef (*LLVMOrcCreateNewThreadSafeModule)(
+DR_LLVM_SYM(LLVMOrcThreadSafeContextRef (*LLVMOrcCreateNewThreadSafeContext)());
+DR_LLVM_SYM(LLVMOrcThreadSafeModuleRef (*LLVMOrcCreateNewThreadSafeModule)(
     LLVMModuleRef, LLVMOrcThreadSafeContextRef));
-DRJIT_SYMBOL(
+DR_LLVM_SYM(
     void (*LLVMOrcDisposeThreadSafeContext)(LLVMOrcThreadSafeContextRef));
-DRJIT_SYMBOL(LLVMOrcJITTargetMachineBuilderRef (
+DR_LLVM_SYM(LLVMOrcJITTargetMachineBuilderRef (
     *LLVMOrcJITTargetMachineBuilderCreateFromTargetMachine)(
     LLVMTargetMachineRef));
-DRJIT_SYMBOL(LLVMOrcLLJITBuilderRef (*LLVMOrcCreateLLJITBuilder)());
-DRJIT_SYMBOL(void (*LLVMOrcLLJITBuilderSetJITTargetMachineBuilder)(
+DR_LLVM_SYM(LLVMOrcLLJITBuilderRef (*LLVMOrcCreateLLJITBuilder)());
+DR_LLVM_SYM(void (*LLVMOrcLLJITBuilderSetJITTargetMachineBuilder)(
     LLVMOrcLLJITBuilderRef, LLVMOrcJITTargetMachineBuilderRef));
-DRJIT_SYMBOL(LLVMErrorRef (*LLVMOrcCreateLLJIT)(LLVMOrcLLJITRef *,
-                                                LLVMOrcLLJITBuilderRef));
-DRJIT_SYMBOL(char *(*LLVMGetErrorMessage)(LLVMErrorRef));
-DRJIT_SYMBOL(LLVMErrorRef (*LLVMOrcLLJITAddLLVMIRModule)(
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcCreateLLJIT)(LLVMOrcLLJITRef *,
+                                               LLVMOrcLLJITBuilderRef));
+DR_LLVM_SYM(char *(*LLVMGetErrorMessage)(LLVMErrorRef));
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcLLJITAddLLVMIRModule)(
     LLVMOrcLLJITRef, LLVMOrcJITDylibRef, LLVMOrcThreadSafeModuleRef));
-DRJIT_SYMBOL(LLVMErrorRef (*LLVMOrcLLJITLookup)(LLVMOrcLLJITRef,
-                                                LLVMOrcExecutorAddress *,
-                                                const char *));
-DRJIT_SYMBOL(
-    LLVMOrcJITDylibRef (*LLVMOrcLLJITGetMainJITDylib)(LLVMOrcLLJITRef));
-DRJIT_SYMBOL(void (*LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator)(
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcLLJITLookup)(LLVMOrcLLJITRef,
+                                               LLVMOrcExecutorAddress *,
+                                               const char *));
+DR_LLVM_SYM(LLVMOrcJITDylibRef (*LLVMOrcLLJITGetMainJITDylib)(LLVMOrcLLJITRef));
+DR_LLVM_SYM(void (*LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator)(
     LLVMOrcLLJITBuilderRef,
     LLVMOrcLLJITBuilderObjectLinkingLayerCreatorFunction, void *));
-DRJIT_SYMBOL(LLVMOrcObjectLayerRef (
+DR_LLVM_SYM(LLVMOrcObjectLayerRef (
     *LLVMOrcCreateRTDyldObjectLinkingLayerWithMCJITMemoryManagerLikeCallbacks)(
-    LLVMOrcExecutionSessionRef, void *,
-    LLVMMemoryManagerCreateContextCallback,
+    LLVMOrcExecutionSessionRef, void *, LLVMMemoryManagerCreateContextCallback,
     LLVMMemoryManagerNotifyTerminatingCallback,
     LLVMMemoryManagerAllocateCodeSectionCallback,
     LLVMMemoryManagerAllocateDataSectionCallback,
-    LLVMMemoryManagerFinalizeMemoryCallback,
-    LLVMMemoryManagerDestroyCallback));
-DRJIT_SYMBOL(LLVMErrorRef (*LLVMOrcDisposeLLJIT)(LLVMOrcLLJITRef));
-DRJIT_SYMBOL(LLVMErrorRef (*LLVMOrcJITDylibClear)(LLVMOrcJITDylibRef));
+    LLVMMemoryManagerFinalizeMemoryCallback, LLVMMemoryManagerDestroyCallback));
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcDisposeLLJIT)(LLVMOrcLLJITRef));
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcJITDylibClear)(LLVMOrcJITDylibRef));
 #endif
