@@ -811,11 +811,11 @@ void jitc_vcall_upload(ThreadState *ts) {
             jitc_free(data);
         } else {
             Task *new_task = task_submit_dep(
-                nullptr, &ts->task, 1, 1,
+                nullptr, &jitc_task, 1, 1,
                 [](uint32_t, void *payload) { jit_free(*((void **) payload)); },
                 &data, sizeof(void *), nullptr, 1);
-            task_release(ts->task);
-            ts->task = new_task;
+            task_release(jitc_task);
+            jitc_task = new_task;
         }
     }
     vcalls_assembled.clear();

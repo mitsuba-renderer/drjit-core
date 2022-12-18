@@ -10,44 +10,24 @@
 #pragma once
 
 #include <drjit-core/jit.h>
+#include <drjit-core/containers.h>
 #include "hash.h"
 
-/// Data structure characterizing a memory allocation
-#pragma pack(push, 1)
-struct AllocInfo {
-    uint64_t size : 48;
-    uint64_t type : 8;
-    uint64_t device : 8;
+using AllocInfo = uint64_t;
 
-    AllocInfo() { memset(this, 0, sizeof(AllocInfo)); }
+inline AllocInfo alloc_info_encode(size_t size, AllocType type, int device) {
+    return (((uint64_t) size) << 16) + (((uint64_t) type) << 8) +
+           ((uint64_t) device);
+}
 
-    AllocInfo(size_t size, AllocType type, int device)
-        : size(size), type((unsigned) type), device(device) { }
+inline drjit::dr_tuple<size_t, AllocType, int> alloc_info_decode(AllocInfo value) {
+    return drjit::dr_tuple((size_t)(value >> 16),
+                           (AllocType)((value >> 8) & 0xFF),
+                           (int) (value & 0xFF));
+}
 
-    bool operator==(const AllocInfo &at) const {
-        return type == at.type && device == at.device &&
-               size == at.size;
-    }
-
-    bool operator!=(const AllocInfo &at) const {
-        return type != at.type || device != at.device ||
-               size != at.size;
-    }
-};
-#pragma pack(pop)
-
-/// Custom hasher for \ref AllocInfo
-struct AllocInfoHasher {
-    size_t operator()(const AllocInfo &at) const {
-        size_t result = std::hash<size_t>()(at.size);
-        hash_combine(result, std::hash<uint32_t>()((uint32_t) at.device << 8) + at.type);
-        return result;
-    }
-};
-
-using AllocInfoMap = tsl::robin_map<AllocInfo, std::vector<void *>, AllocInfoHasher>;
-using AllocUsedMap = tsl::robin_pg_map<const void *, AllocInfo>;
-struct ThreadState;
+using AllocInfoMap = tsl::robin_map<AllocInfo, std::vector<void *>, UInt64Hasher>;
+using AllocUsedMap = tsl::robin_map<uintptr_t, AllocInfo, UInt64Hasher>;
 
 /// Round to the next power of two
 extern size_t round_pow2(size_t x);
@@ -63,14 +43,11 @@ extern void *jitc_malloc(AllocType type, size_t size) JIT_MALLOC;
 /// Release the given pointer
 extern void jitc_free(void *ptr);
 
-/// Schedule a function that will reclaim memory from pending jitc_free()s
-extern void jitc_free_flush(ThreadState *ts);
-
 /// Change the flavor of an allocated memory region
 extern void* jitc_malloc_migrate(void *ptr, AllocType type, int move);
 
 /// Release all unused memory to the GPU / OS
-extern void jitc_flush_malloc_cache(bool flush_local, bool warn);
+extern void jitc_flush_malloc_cache(bool warn);
 
 /// Shut down the memory allocator (calls \ref jitc_flush_malloc_cache() and reports leaks)
 extern void jitc_malloc_shutdown();

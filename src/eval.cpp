@@ -386,7 +386,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                 ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
             }
             if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
-                jitc_flush_malloc_cache(true, true);
+                jitc_flush_malloc_cache(true);
                 /* Unlock while synchronizing */ {
                     unlock_guard guard(state.lock);
                     ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
@@ -531,9 +531,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         (void) packets; // jitc_trace may be disabled
 
         ret_task = task_submit_dep(
-            nullptr, &ts->task, 1, blocks,
-            callback,
-            kernel_params.data(),
+            nullptr, &jitc_task, 1, blocks,
+            callback, kernel_params.data(),
             (uint32_t) (kernel_params.size() * sizeof(void *)),
             nullptr
         );
@@ -665,8 +664,8 @@ void jitc_eval(ThreadState *ts) {
 
     if (ts->backend == JitBackend::LLVM) {
         if (scheduled_tasks.size() == 1) {
-            task_release(ts->task);
-            ts->task = scheduled_tasks[0];
+            task_release(jitc_task);
+            jitc_task = scheduled_tasks[0];
         } else {
             if (unlikely(scheduled_tasks.empty()))
                 jitc_fail("jit_eval(): no tasks generated!");
@@ -674,10 +673,10 @@ void jitc_eval(ThreadState *ts) {
             // Insert a barrier task
             Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
                                              (uint32_t) scheduled_tasks.size());
-            task_release(ts->task);
+            task_release(jitc_task);
             for (Task *t : scheduled_tasks)
                 task_release(t);
-            ts->task = new_task;
+            jitc_task = new_task;
         }
     }
 
@@ -746,7 +745,6 @@ void jitc_eval(ThreadState *ts) {
             jitc_var_dec_ref(dep[j]);
     }
 
-    jitc_free_flush(ts);
     jitc_log(Info, "jit_eval(): done.");
 }
 

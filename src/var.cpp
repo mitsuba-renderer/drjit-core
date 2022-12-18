@@ -513,9 +513,8 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     return index;
 }
 
-uint32_t jitc_var_literal(JitBackend backend, VarType type,
-                              const void *value, size_t size,
-                              int eval, int is_class) {
+uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
+                          size_t size, int eval, int is_class) {
     if (unlikely(size == 0))
         return 0;
 
@@ -1268,8 +1267,8 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         jitc_lvn_put(index, v);
         result = index;
     } else if (v->is_literal()) {
-        result = jitc_var_literal((JitBackend) v->backend,
-                                      (VarType) v->type, &v->literal, size, 0);
+        result = jitc_var_literal((JitBackend) v->backend, (VarType) v->type,
+                                  &v->literal, size, 0);
     } else {
         Variable v2;
         v2.kind = (uint32_t) VarKind::Stmt;
@@ -1349,10 +1348,10 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     void *src_ptr = v->data,
          *dst_ptr;
 
-    auto it = state.alloc_used.find(v->data);
+    auto it = state.alloc_used.find((uintptr_t) v->data);
     if (unlikely(it == state.alloc_used.end())) {
-        /* Cannot resolve pointer to allocation, likely created by
-           another framework */
+        /* Cannot resolve pointer to allocation, it was likely
+           likely created by another framework */
         if ((JitBackend) v->backend == JitBackend::CUDA) {
             int type;
             ThreadState *ts = thread_state(v->backend);
@@ -1371,7 +1370,9 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
         dst_ptr = jitc_malloc(dst_type, size);
         jitc_memcpy_async(backend, dst_ptr, src_ptr, size);
     } else {
-        src_type = (AllocType) it.value().type;
+        auto [size, type, device] = alloc_info_decode(it->second);
+        (void) size; (void) device;
+        src_type = type;
         dst_ptr = jitc_malloc_migrate(src_ptr, dst_type, 0);
     }
 
@@ -1623,19 +1624,20 @@ const char *jitc_var_whos() {
         if (v->is_literal()) {
             var_buffer.put("const.     ");
         } else if (v->is_data()) {
-            auto it = state.alloc_used.find(v->data);
+            auto it = state.alloc_used.find((uintptr_t) v->data);
             if (unlikely(it == state.alloc_used.end())) {
                 if (!v->retain_data)
                     jitc_raise("jit_var_whos(): Cannot resolve pointer to actual allocation!");
                 else
                     var_buffer.put("mapped mem.");
             } else {
-                AllocInfo ai = it.value();
+                auto [size, type, device] = alloc_info_decode(it->first);
+                (void) size;
 
-                if ((AllocType) ai.type == AllocType::Device) {
-                    var_buffer.fmt("device %-4i", (int) ai.device);
+                if ((AllocType) type == AllocType::Device) {
+                    var_buffer.fmt("device %-4i", (int) device);
                 } else {
-                    const char *tname = alloc_type_name_short[ai.type];
+                    const char *tname = alloc_type_name_short[(int) type];
                     var_buffer.put(tname, strlen(tname));
                 }
             }

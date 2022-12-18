@@ -138,8 +138,7 @@ bool jitc_cuda_init() {
         return false;
     }
 
-    jitc_log(Info,
-             "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
+    jitc_log(Info, "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
              jitc_cuda_version_major, jitc_cuda_version_minor);
 
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
@@ -162,8 +161,8 @@ bool jitc_cuda_init() {
 
     for (int i = 0; i < device_count; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, num_sm = 0,
-            unified_addr = 0, shared_memory_bytes = 0,
-            cc_minor = 0, cc_major = 0, memory_pool_support = 0;
+            unified_addr = 0, shared_memory_bytes = 0, cc_minor = 0,
+            cc_major = 0, memory_pool = 0;
         bool preemptable = true;
         size_t mem_total = 0;
         char name[256];
@@ -184,7 +183,7 @@ bool jitc_cuda_init() {
         cuda_check(cuDeviceTotalMem(&mem_total, i));
 
         if (jitc_cuda_version_major > 11 || (jitc_cuda_version_major == 11 && jitc_cuda_version_minor >= 2))
-            cuda_check(cuDeviceGetAttribute(&memory_pool_support, CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED, i));
+            cuda_check(cuDeviceGetAttribute(&memory_pool, CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED, i));
 
         // Determine the device compute capability
         int cc = cc_major * 10 + cc_minor;
@@ -334,7 +333,7 @@ bool jitc_cuda_init() {
         device.compute_capability = cc_major * 10 + cc_minor;
         device.shared_memory_bytes = (uint32_t) shared_memory_bytes;
         device.num_sm = (uint32_t) num_sm;
-        device.memory_pool_support = memory_pool_support != 0;
+        device.memory_pool = memory_pool != 0;
         device.preemptable = preemptable;
         device.compute_capability = 50;
         device.ptx_version = 60;

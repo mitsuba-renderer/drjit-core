@@ -21,12 +21,12 @@
 #endif
 
 const char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
-                                                       "min", "max", "and", "or" };
+                                                      "min", "max", "and", "or" };
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
-void jitc_submit_cpu(KernelType type, ThreadState *ts, Func &&func,
-                     uint32_t width, uint32_t size = 1, bool release_prev = true,
+void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
+                     uint32_t size = 1, bool release_prev = true,
                      bool always_async = false) {
 
     struct Payload { Func f; };
@@ -36,7 +36,7 @@ void jitc_submit_cpu(KernelType type, ThreadState *ts, Func &&func,
                   std::is_trivially_destructible<Payload>::value, "Internal error!");
 
     Task *new_task = task_submit_dep(
-        nullptr, &ts->task, 1, size,
+        nullptr, &jitc_task, 1, size,
         [](uint32_t index, void *payload) { ((Payload *) payload)->f(index); },
         &payload, sizeof(Payload), nullptr, (int) always_async);
 
@@ -56,9 +56,9 @@ void jitc_submit_cpu(KernelType type, ThreadState *ts, Func &&func,
     }
 
     if (release_prev)
-        task_release(ts->task);
+        task_release(jitc_task);
 
-    ts->task = new_task;
+    jitc_task = new_task;
 }
 
 void jitc_submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
@@ -154,7 +154,7 @@ void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size_,
         uint8_t src8[8] { };
         memcpy(&src8, src, isize);
 
-        jitc_submit_cpu(KernelType::Other, ts,
+        jitc_submit_cpu(KernelType::Other,
             [ptr, src8, size, isize](uint32_t) {
                 switch (isize) {
                     case 1:
@@ -219,7 +219,6 @@ void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t si
     } else {
         jitc_submit_cpu(
             KernelType::Other,
-            ts,
             [dst, src, size](uint32_t) {
                 memcpy(dst, src, size);
             },
@@ -375,7 +374,6 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
         Reduction reduction = jitc_reduce_create(type, rtype);
         jitc_submit_cpu(
             KernelType::Reduce,
-            ts,
             [block_size, size, tsize, ptr, reduction, target](uint32_t index) {
                 reduction(ptr, index * block_size,
                           std::min((index + 1) * block_size, size),
@@ -550,7 +548,6 @@ void jitc_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32
 
             jitc_submit_cpu(
                 KernelType::Other,
-                ts,
                 [block_size, size, in, scratch](uint32_t index) {
                     uint32_t start = index * block_size,
                              end = std::min(start + block_size, size);
@@ -570,7 +567,6 @@ void jitc_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32
 
         jitc_submit_cpu(
             KernelType::Other,
-            ts,
             [block_size, size, in, out, scratch](uint32_t index) {
                 uint32_t start = index * block_size,
                          end = std::min(start + block_size, size);
@@ -700,7 +696,6 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
 
             jitc_submit_cpu(
                 KernelType::Other,
-                ts,
                 [block_size, size, in, scratch](uint32_t index) {
                     uint32_t start = index * block_size,
                              end = std::min(start + block_size, size);
@@ -720,7 +715,6 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
 
         jitc_submit_cpu(
             KernelType::Other,
-            ts,
             [block_size, size, scratch, in, out, &count_out](uint32_t index) {
                 uint32_t start = index * block_size,
                          end = std::min(start + block_size, size);
@@ -965,7 +959,6 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         // Phase 1
         jitc_submit_cpu(
             KernelType::VCallReduce,
-            ts,
             [block_size, size, buckets, bucket_count, ptr](uint32_t index) {
                 ProfilerPhase profiler(profiler_region_mkperm_phase_1);
 
@@ -988,7 +981,6 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         // Local accumulation step
         jitc_submit_cpu(
             KernelType::VCallReduce,
-            ts,
             [bucket_count, blocks, buckets, offsets, &unique_count](uint32_t) {
                 uint32_t sum = 0, unique_count_local = 0;
                 for (uint32_t i = 0; i < bucket_count; ++i) {
@@ -1016,12 +1008,11 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
             size
         );
 
-        Task *local_task = ts->task;
+        Task *local_task = jitc_task;
 
         // Phase 2
         jitc_submit_cpu(
             KernelType::VCallReduce,
-            ts,
             [block_size, size, buckets, perm, ptr](uint32_t index) {
                 ProfilerPhase profiler(profiler_region_mkperm_phase_2);
 
@@ -1158,7 +1149,6 @@ void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void
 
         jitc_submit_cpu(
             KernelType::Other,
-            ts,
             [in, out, op, work_unit_size, size, block_size](uint32_t index) {
                 uint32_t start = index * work_unit_size,
                          end = std::min(start + work_unit_size, size);
@@ -1223,7 +1213,6 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
 
         jitc_submit_cpu(
             KernelType::Other,
-            ts,
             [in, out, op, work_unit_size, size, block_size](uint32_t index) {
                 uint32_t start = index * work_unit_size,
                          end = std::min(start + work_unit_size, size);
@@ -1264,7 +1253,6 @@ void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size) {
 
         jitc_submit_cpu(
             KernelType::Other,
-            ts,
             [src8, size, dst](uint32_t) {
                 memcpy(dst, &src8, size);
             },
@@ -1310,7 +1298,7 @@ void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, u
                  (uintptr_t) rec_, (uintptr_t) dst_, size, work_units);
 
         jitc_submit_cpu(
-            KernelType::Other, ts,
+            KernelType::Other,
             [dst_, rec_, size, work_unit_size](uint32_t index) {
                 uint32_t start = index * work_unit_size,
                          end = std::min(start + work_unit_size, size);
@@ -1333,7 +1321,7 @@ void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, u
             size, work_units);
 
         jitc_submit_cpu(
-            KernelType::Other, ts, [rec_](uint32_t) { jit_free(rec_); }, 1, 1,
+            KernelType::Other, [rec_](uint32_t) { jit_free(rec_); }, 1, 1,
             true, true);
     }
 }

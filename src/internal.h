@@ -340,8 +340,8 @@ struct Device {
     /// Max. bytes of shared memory per SM
     uint32_t shared_memory_bytes;
 
-    // Support for stream ordered memory allocations (async alloc/free)
-    bool memory_pool_support;
+    // Support for stream-ordered memory allocations (async alloc/free)
+    bool memory_pool;
 
     /** \brief If preemptable is false, long-running kernels might freeze
      * the OS GUI and time out after 2 sec */
@@ -380,14 +380,6 @@ struct Device {
         if (threads_out)
             *threads_out = threads;
     }
-};
-
-/// Keeps track of asynchronous deallocations via jitc_free()
-struct ReleaseChain {
-    AllocInfoMap entries;
-
-    /// Pointer to next linked list entry
-    ReleaseChain *next = nullptr;
 };
 
 /// A few forward declarations for OptiX
@@ -431,13 +423,6 @@ struct ThreadState {
     JitBackend backend;
 
     /**
-     * Memory regions that were freed via jitc_free(), but which might still be
-     * used by a currently running kernel. They will be safe to re-use once the
-     * currently running kernel has finished.
-     */
-    ReleaseChain *release_chain = nullptr;
-
-    /**
      * List of variables that are scheduled for evaluation (via
      * jitc_var_schedule()) that will take place at the next call to jitc_eval().
      */
@@ -474,11 +459,6 @@ struct ThreadState {
     /// .. and the JIT variable that it will be mapped to
     uint32_t vcall_self_index = 0;
 
-    /// ---------------------------- LLVM-specific ----------------------------
-
-    // Currently active task within the thread pool
-    Task *task = nullptr;
-
     /// ---------------------------- CUDA-specific ----------------------------
 
     /// Redundant copy of the device context
@@ -505,6 +485,9 @@ struct ThreadState {
 
     /// Targeted PTX version (major * 10 + minor)
     uint32_t ptx_version = 0;
+
+    // Support for stream-ordered memory allocations (async alloc/free)
+    bool memory_pool = false;
 
 #if defined(DRJIT_ENABLE_OPTIX)
     /// OptiX pipeline associated with the next kernel launch
@@ -660,8 +643,8 @@ struct State {
     /// Must be held to access members
     Lock lock;
 
-    /// Must be held to access 'stream->release_chain' and 'state.alloc_free'
-    Lock malloc_lock;
+    /// Must be held to access 'state.alloc_free'
+    Lock alloc_free_lock;
 
     /// Stores the mapping from variable indices to variables
     VariableMap variables;
@@ -747,13 +730,13 @@ struct State {
 
     State() {
         lock_init(lock);
-        lock_init(malloc_lock);
+        lock_init(alloc_free_lock);
         lock_init(eval_lock);
     }
 
     ~State() {
         lock_destroy(lock);
-        lock_destroy(malloc_lock);
+        lock_destroy(alloc_free_lock);
         lock_destroy(eval_lock);
     }
 };

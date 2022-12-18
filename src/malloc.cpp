@@ -59,8 +59,6 @@ uint32_t round_pow2(uint32_t x) {
 
 
 static void *aligned_malloc(size_t size) {
-    /* Temporarily release the main lock */
-    unlock_guard guard(state.lock);
 #if !defined(_WIN32)
     // Use posix_memalign for small allocations and mmap() for big ones
     if (size < DRJIT_HUGEPAGE_SIZE) {
@@ -125,191 +123,136 @@ void* jitc_malloc(AllocType type, size_t size) {
        can have to a manageable amount that facilitates re-use. */
     size = round_pow2(size);
 
-    AllocInfo ai(size, type, 0);
-
-    const char *descr = nullptr;
-    void *ptr = nullptr;
     JitBackend backend =
-        (type != AllocType::Host && type != AllocType::HostAsync)
+        (type == AllocType::Device || type == AllocType::HostPinned)
             ? JitBackend::CUDA
             : JitBackend::LLVM;
     ThreadState *ts = nullptr;
 
-    if (type != AllocType::Host)
+    int device = 0;
+    if (backend == JitBackend::CUDA) {
         ts = thread_state(backend);
+        device = ts->device;
+    }
 
-    /* Acquire lock protecting ts->release_chain contents and state.alloc_free */ {
-        lock_guard guard(state.malloc_lock);
+    AllocInfo ai = alloc_info_encode(size, type, device);
+    const char *descr = nullptr;
+    void *ptr = nullptr;
 
-        if (type == AllocType::Device)
-            ai.device = ts->device;
+    /* Try to reuse a freed allocation */ {
+        lock_guard guard(state.alloc_free_lock);
+        auto it = state.alloc_free.find(ai);
 
-        if (type == AllocType::Device || type == AllocType::HostAsync) {
-            /* Check for arrays with a pending free operation on the current
-               stream. This only works for device or host-async memory, as other
-               allocation flavors (host-pinned, shared, shared-read-mostly) can be
-               accessed from both CPU & GPU and might still be used. */
-
-            ReleaseChain *chain = ts->release_chain;
-            while (chain) {
-                auto it = chain->entries.find(ai);
-                if (it != chain->entries.end()) {
-                    auto &list = it.value();
-                    if (!list.empty()) {
-                        ptr = list.back();
-                        list.pop_back();
-                        descr = "reused local";
-                        break;
-                    }
-                }
-
-                chain = chain->next;
-            }
-        }
-
-        // Look globally. Are there suitable freed arrays?
-        if (ptr == nullptr) {
-            auto it = state.alloc_free.find(ai);
-
-            if (it != state.alloc_free.end()) {
-                std::vector<void *> &list = it.value();
-                if (!list.empty()) {
-                    ptr = list.back();
-                    list.pop_back();
-                    descr = "reused global";
-                }
+        if (it != state.alloc_free.end()) {
+            std::vector<void *> &list = it.value();
+            if (!list.empty()) {
+                ptr = list.back();
+                list.pop_back();
+                descr = "reused";
             }
         }
     }
 
-    // 3. Looks like we will have to allocate some memory..
-    if (unlikely(ptr == nullptr)) {
-        if (type == AllocType::Host || type == AllocType::HostAsync) {
-            ptr = aligned_malloc(ai.size);
-            if (!ptr) {
-                jitc_flush_malloc_cache(true, true);
-                ptr = aligned_malloc(ai.size);
-            }
-        } else {
-            scoped_set_context guard(ts->context);
-            CUresult (*alloc) (CUdeviceptr *, size_t) = nullptr;
-
-            auto cuMemAllocAsync_ = [](CUdeviceptr *ptr_, size_t size_) {
-                return cuMemAllocAsync(ptr_, size_, thread_state_cuda->stream);
-            };
-
-            bool hasAllocAsync = state.devices[ts->device].memory_pool_support;
-            switch (type) {
-                case AllocType::HostPinned:        alloc = (decltype(alloc)) cuMemAllocHost; break;
-                case AllocType::Device:            alloc = hasAllocAsync ? cuMemAllocAsync_ : cuMemAlloc; break;
-                default:
-                    jitc_fail("jit_malloc(): internal-error unsupported allocation type!");
-            }
-
-            CUresult ret;
+    // Otherwise, allocate memory
+    if (unlikely(!ptr)) {
+        for (int i = 0; i < 2; ++i) {
+            unlock_guard guard(state.lock);
             /* Temporarily release the main lock */ {
-                unlock_guard guard_2(state.lock);
-                ret = alloc((CUdeviceptr *) &ptr, ai.size);
-            }
+                if (backend != JitBackend::CUDA) {
+                    ptr = aligned_malloc(size);
+                } else {
+                    scoped_set_context guard_2(ts->context);
+                    CUresult ret;
 
-            if (ret != CUDA_SUCCESS) {
-                jitc_flush_malloc_cache(true, true);
+                    if (type == AllocType::HostPinned)
+                        ret = cuMemAllocHost(&ptr, size);
+                    else if (ts->memory_pool)
+                        ret = cuMemAllocAsync(&ptr, size, ts->stream);
+                    else
+                        ret = cuMemAlloc(&ptr, size);
 
-                /* Temporarily release the main lock */ {
-                    unlock_guard guard_2(state.lock);
-                    ret = alloc((CUdeviceptr *) &ptr, ai.size);
+                    if (ret)
+                        ptr = nullptr;
                 }
-
-                if (ret != CUDA_SUCCESS)
-                    ptr = nullptr;
             }
+            if (ptr)
+                break;
+            if (i == 0) // free memory, then retry
+                jitc_flush_malloc_cache(true);
         }
         descr = "new allocation";
 
-        size_t &allocated = state.alloc_allocated[ai.type],
-               &watermark = state.alloc_watermark[ai.type];
+        size_t &allocated = state.alloc_allocated[(int) type],
+               &watermark = state.alloc_watermark[(int) type];
 
-        allocated += ai.size;
+        allocated += size;
         watermark = std::max(allocated, watermark);
     }
 
-    if (unlikely(ptr == nullptr))
-        jitc_raise("jit_malloc(): out of memory! Could not "
-                  "allocate %zu bytes of %s memory.",
-                  size, alloc_type_name[ai.type]);
+    if (unlikely(!ptr))
+        jitc_raise("jit_malloc(): out of memory! Could not allocate %zu bytes "
+                   "of %s memory.", size, alloc_type_name[(int) type]);
 
-    state.alloc_used.emplace(ptr, ai);
+    state.alloc_used.emplace((uintptr_t) ptr, ai);
+    state.alloc_usage[(int) type] += size;
 
     (void) descr; // don't warn if tracing is disabled
-    if ((AllocType) ai.type == AllocType::Device)
+    if (ts)
         jitc_trace("jit_malloc(type=%s, device=%u, size=%zu): " DRJIT_PTR " (%s)",
-                  alloc_type_name[ai.type], (uint32_t) ai.device, (size_t) ai.size,
-                  (uintptr_t) ptr, descr);
+                  alloc_type_name[(int) type], device, size, (uintptr_t) ptr, descr);
     else
         jitc_trace("jit_malloc(type=%s, size=%zu): " DRJIT_PTR " (%s)",
-                  alloc_type_name[ai.type], (size_t) ai.size, (uintptr_t) ptr,
-                  descr);
-
-    state.alloc_usage[ai.type] += ai.size;
+                   alloc_type_name[(int) type], size, (uintptr_t) ptr, descr);
 
     return ptr;
 }
 
-static uint32_t free_ctr = 0;
-
 void jitc_free(void *ptr) {
-    if (ptr == nullptr)
+    if (!ptr)
         return;
 
-    auto it = state.alloc_used.find(ptr);
+    auto it = state.alloc_used.find((uintptr_t) ptr);
     if (unlikely(it == state.alloc_used.end()))
         jitc_raise("jit_free(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
+    AllocInfo info = it->second;
+    state.alloc_used.erase(it);
 
-    AllocInfo ai = it.value();
+    auto [size, type, device] = alloc_info_decode(info);
+    state.alloc_usage[(int) type] -= size;
 
-    if ((AllocType) ai.type == AllocType::Host) {
-        // Acquire lock protecting 'state.alloc_free'
-        lock_guard guard(state.malloc_lock);
-        state.alloc_free[ai].push_back(ptr);
+    if (type != AllocType::HostPinned) {
+        lock_guard guard(state.alloc_free_lock);
+        state.alloc_free[info].push_back(ptr);
     } else {
-        ThreadState *ts = (AllocType) ai.type == AllocType::HostAsync
-                              ? thread_state_llvm
-                              : thread_state_cuda;
-        if (likely(ts)) {
-            /* Acquire lock protecting 'ts->release_chain' contents */ {
-                lock_guard guard(state.malloc_lock);
-                ReleaseChain *chain = ts->release_chain;
-                if (unlikely(!chain))
-                    chain = ts->release_chain = new ReleaseChain();
-                chain->entries[ai].push_back(ptr);
-            }
-
-            if (free_ctr++ > 64) {
-                jitc_free_flush(ts);
-                free_ctr = 0;
-            }
-        } else {
-            /* This is bad -- freeing a pointer outside of an active
-               stream, or with the wrong backend activated. That pointer may
-               still be used in a kernel that is currently being executed
-               asynchronously. The only thing we can do at this point is to
-               flush all streams. */
-            jitc_sync_all_devices();
-            lock_guard guard(state.malloc_lock);
-            state.alloc_free[ai].push_back(ptr);
-        }
+        /* Host-pinned memory is released asynchronously by inserting
+           an event into the CUDA stream */
+        struct ReleaseRecord {
+            AllocInfo info;
+            void *ptr;
+        };
+        ReleaseRecord *r =
+            (ReleaseRecord *) malloc_check(sizeof(ReleaseRecord));
+        r->info = info;
+        r->ptr = ptr;
+        cuda_check(cuLaunchHostFunc(
+            thread_state_cuda->stream,
+            [](void *p) {
+                ReleaseRecord *r2 = (ReleaseRecord *) p;
+                {
+                    lock_guard guard(state.alloc_free_lock);
+                    state.alloc_free[r2->info].push_back(r2->ptr);
+                }
+                free(r2);
+            },
+            r));
     }
 
-    if ((AllocType) ai.type == AllocType::Device)
-        jitc_trace("jit_free(" DRJIT_PTR ", type=%s, device=%u, size=%zu)",
-                  (uintptr_t) ptr, alloc_type_name[ai.type],
-		  (uint32_t) ai.device, (size_t) ai.size);
+    if (type == AllocType::Device || type == AllocType::HostPinned)
+        jitc_trace("jit_free(" DRJIT_PTR ", type=%s, device=%i, size=%zu)",
+                   (uintptr_t) ptr, alloc_type_name[(int) type], device, size);
     else
-        jitc_trace("jit_free(" DRJIT_PTR ", type=%s, size=%zu)", (uintptr_t) ptr,
-                  alloc_type_name[ai.type], (size_t) ai.size);
-
-    state.alloc_usage[ai.type] -= ai.size;
-    state.alloc_used.erase(it);
+        jitc_trace("jit_free(" DRJIT_PTR ", type=%s, size=%zu)",
+                   (uintptr_t) ptr, alloc_type_name[(int) type], size);
 }
 
 void jitc_malloc_clear_statistics() {
@@ -317,133 +260,85 @@ void jitc_malloc_clear_statistics() {
         state.alloc_watermark[i] = state.alloc_allocated[i];
 }
 
-static void jitc_free_chain(void *ptr) {
-    /* Acquire lock protecting ts->release_chain contents and
-       state.alloc_free */
-    lock_guard guard(state.malloc_lock);
-    ReleaseChain *chain0 = (ReleaseChain *) ptr,
-                 *chain1 = chain0->next;
-
-    for (auto &kv : chain1->entries) {
-        const AllocInfo &ai = kv.first;
-        std::vector<void *> &target = state.alloc_free[ai];
-        target.insert(target.end(), kv.second.begin(),
-                      kv.second.end());
-    }
-
-    delete chain1;
-    chain0->next = nullptr;
-}
-
-void jitc_free_flush(ThreadState *ts) {
-    if (unlikely(!ts))
-        return;
-
-    ReleaseChain *chain = ts->release_chain;
-    if (chain == nullptr || chain->entries.empty())
-        return;
-
-    size_t n_dealloc = 0;
-    for (auto &kv: chain->entries)
-        n_dealloc += kv.second.size();
-
-    if (n_dealloc == 0)
-        return;
-
-    ReleaseChain *chain_new = new ReleaseChain();
-    chain_new->next = chain;
-    ts->release_chain = chain_new;
-
-    jitc_trace("jit_free_flush(): scheduling %zu deallocation%s",
-              n_dealloc, n_dealloc > 1 ? "s" : "");
-
-    if (ts->backend == JitBackend::CUDA) {
-        scoped_set_context guard(ts->context);
-        cuda_check(cuLaunchHostFunc(ts->stream, jitc_free_chain, chain_new));
-    } else {
-        Task *new_task = task_submit_dep(
-            nullptr, &ts->task, 1, 1,
-            [](uint32_t, void *ptr) { jitc_free_chain(ptr); }, chain_new);
-        task_release(ts->task);
-        ts->task = new_task;
-    }
-}
-
-void* jitc_malloc_migrate(void *ptr, AllocType type, int move) {
-    if (ptr == nullptr)
+void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
+    if (!ptr)
         return nullptr;
 
-    auto it = state.alloc_used.find(ptr);
+    auto it = state.alloc_used.find((uintptr_t) ptr);
     if (unlikely(it == state.alloc_used.end()))
         jitc_raise("jit_malloc_migrate(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
 
-    AllocInfo ai = it.value();
+    auto [size, src_type, device] = alloc_info_decode(it->second);
+
+    JitBackend src_backend =
+        (src_type == AllocType::Device || src_type == AllocType::HostPinned)
+            ? JitBackend::CUDA
+            : JitBackend::LLVM;
 
     // Maybe nothing needs to be done..
-    if ((AllocType) ai.type == type &&
-        (type != AllocType::Device || ai.device == thread_state(JitBackend::CUDA)->device)) {
+    if (src_type == dst_type &&
+        (dst_type != AllocType::Device ||
+         device == thread_state(JitBackend::CUDA)->device)) {
         if (move) {
             return ptr;
         } else {
-            void *ptr_new = jitc_malloc(type, ai.size);
-            if (type == AllocType::Host) {
-                memcpy(ptr_new, ptr, ai.size);
-            } else {
-                JitBackend backend =
-                    (type != AllocType::Host && type != AllocType::HostAsync)
-                        ? JitBackend::CUDA
-                        : JitBackend::LLVM;
-                jitc_memcpy_async(backend, ptr_new, ptr, ai.size);
-            }
+            void *ptr_new = jitc_malloc(dst_type, size);
+            if (dst_type == AllocType::Host)
+                memcpy(ptr_new, ptr, size);
+            else
+                jitc_memcpy_async(src_backend, ptr_new, ptr, size);
             return ptr_new;
         }
     }
 
-    if (((AllocType) ai.type == AllocType::Host && type == AllocType::HostAsync) ||
-        ((AllocType) ai.type == AllocType::HostAsync && type == AllocType::Host)) {
+    if ((src_type == AllocType::Host && dst_type == AllocType::HostAsync) ||
+        (src_type == AllocType::HostAsync && dst_type == AllocType::Host)) {
         if (move) {
-            state.alloc_usage[ai.type] -= ai.size;
-            state.alloc_usage[(int) type] += ai.size;
-            state.alloc_allocated[ai.type] -= ai.size;
-            state.alloc_allocated[(int) type] += ai.size;
-            it.value().type = (uint32_t) type;
+            state.alloc_usage[(int) src_type] -= size;
+            state.alloc_usage[(int) dst_type] += size;
+            state.alloc_allocated[(int) src_type] -= size;
+            state.alloc_allocated[(int) dst_type] += size;
+            it.value() = alloc_info_encode(size, dst_type, device);
             return ptr;
         } else {
-            void *ptr_new = jitc_malloc(type, ai.size);
-            jitc_memcpy_async(JitBackend::LLVM, ptr_new, ptr, ai.size);
-            if ((AllocType) ai.type == AllocType::Host)
-                jitc_sync_thread(); // be careful when copying from host
+            void *ptr_new = jitc_malloc(dst_type, size);
+            jitc_memcpy_async(src_backend, ptr_new, ptr, size);
+
+            // When copying from the host, wait for the operation to finish
+            if (src_type == AllocType::Host)
+                jitc_sync_thread();
             return ptr_new;
         }
     }
 
-    if (type == AllocType::HostAsync || (AllocType) ai.type == AllocType::HostAsync)
+    if (dst_type == AllocType::HostAsync || src_type == AllocType::HostAsync)
         jitc_raise("jit_malloc_migrate(): migrations between CUDA and "
                    "host-asynchronous memory are not supported.");
 
     /// At this point, source or destination is a GPU array, get assoc. state
     ThreadState *ts = thread_state(JitBackend::CUDA);
 
-    if (type == AllocType::Host) // Upgrade from host to host-pinned memory
-        type = AllocType::HostPinned;
+    if (dst_type == AllocType::Host) // Upgrade from host to host-pinned memory
+        dst_type = AllocType::HostPinned;
 
-    void *ptr_new = jitc_malloc(type, ai.size);
+    void *ptr_new = jitc_malloc(dst_type, size);
     jitc_trace("jit_malloc_migrate(" DRJIT_PTR " -> " DRJIT_PTR ", %s -> %s)",
               (uintptr_t) ptr, (uintptr_t) ptr_new,
-              alloc_type_name[ai.type], alloc_type_name[(int) type]);
+              alloc_type_name[(int) src_type],
+              alloc_type_name[(int) dst_type]);
 
     scoped_set_context guard(ts->context);
-    if ((AllocType) ai.type == AllocType::Host) {
+    if (src_type == AllocType::Host) {
         // Host -> Device memory, create an intermediate host-pinned array
-        void *tmp = jitc_malloc(AllocType::HostPinned, ai.size);
-        memcpy(tmp, ptr, ai.size);
+        void *tmp = jitc_malloc(AllocType::HostPinned, size);
+        memcpy(tmp, ptr, size);
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
-                                 (CUdeviceptr) ptr, ai.size,
+                                 (CUdeviceptr) ptr, size,
                                  ts->stream));
         jitc_free(tmp);
     } else {
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
-                                 (CUdeviceptr) ptr, ai.size,
+                                 (CUdeviceptr) ptr, size,
                                  ts->stream));
     }
 
@@ -458,7 +353,7 @@ static bool jitc_flush_malloc_cache_warned = false;
 static ProfilerRegion profiler_region_flush_malloc_cache("jit_flush_malloc_cache");
 
 /// Release all unused memory to the GPU / OS
-void jitc_flush_malloc_cache(bool flush_local, bool warn) {
+void jitc_flush_malloc_cache(bool warn) {
     if (warn && !jitc_flush_malloc_cache_warned) {
         jitc_log(
             Warn,
@@ -472,24 +367,15 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
     }
     ProfilerPhase profiler(profiler_region_flush_malloc_cache);
 
-    if (flush_local) {
-        if (thread_state_cuda)
-            jitc_free_flush(thread_state_cuda);
-        if (thread_state_llvm)
-            jitc_free_flush(thread_state_llvm);
-        // Ensure that all computation has completed
-        jitc_sync_all_devices();
-    }
-
     AllocInfoMap alloc_free;
-
-    /* Critical section */ {
-        lock_guard guard(state.malloc_lock);
-        alloc_free = std::move(state.alloc_free);
-    }
 
     // Another synchronization to be sure that 'alloc_free' can be released
     jitc_sync_all_devices();
+
+    /* Critical section */ {
+        lock_guard guard(state.alloc_free_lock);
+        alloc_free.swap(state.alloc_free);
+    }
 
     size_t trim_count[(int) AllocType::Count] = { 0 },
            trim_size [(int) AllocType::Count] = { 0 };
@@ -498,19 +384,20 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
         unlock_guard guard(state.lock);
 
         for (auto& kv : alloc_free) {
+            auto [size, type, device] = alloc_info_decode(kv.first);
             const std::vector<void *> &entries = kv.second;
 
-            trim_count[(int) kv.first.type] += entries.size();
-            trim_size[(int) kv.first.type] += kv.first.size * entries.size();
+            trim_count[(int) type] += entries.size();
+            trim_size[(int) type] += size * entries.size();
 
-            switch ((AllocType) kv.first.type) {
+            switch ((AllocType) type) {
                 case AllocType::Device:
                     if (state.backends & (uint32_t) JitBackend::CUDA) {
-                        ThreadState *ts = thread_state_cuda;
-                        if (ts && state.devices[ts->device].memory_pool_support) {
-                            scoped_set_context guard2(ts->context);
+                        const Device &dev = state.devices[device];
+                        scoped_set_context guard2(dev.context);
+                        if (dev.memory_pool) {
                             for (void *ptr : entries)
-                                cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, ts->stream));
+                                cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, dev.stream));
                         } else {
                             for (void *ptr : entries)
                                 cuda_check(cuMemFree((CUdeviceptr) ptr));
@@ -520,6 +407,8 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
 
                 case AllocType::HostPinned:
                     if (state.backends & (uint32_t) JitBackend::CUDA) {
+                        const Device &dev = state.devices[device];
+                        scoped_set_context guard2(dev.context);
                         for (void *ptr : entries)
                             cuda_check(cuMemFreeHost(ptr));
                     }
@@ -528,7 +417,7 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
                 case AllocType::Host:
                 case AllocType::HostAsync:
                     for (void *ptr : entries)
-                        aligned_free(ptr, kv.first.size);
+                        aligned_free(ptr, size);
                     break;
 
                 default:
@@ -558,32 +447,38 @@ void jitc_flush_malloc_cache(bool flush_local, bool warn) {
 
 /// Query the flavor of a memory allocation made using \ref jitc_malloc()
 AllocType jitc_malloc_type(void *ptr) {
-    auto it = state.alloc_used.find(ptr);
+    auto it = state.alloc_used.find((uintptr_t) ptr);
     if (unlikely(it == state.alloc_used.end()))
         jitc_raise("jit_malloc_type(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
-    return (AllocType) it->second.type;
+    auto [size, type, device] = alloc_info_decode(it->second);
+    (void) size; (void) device;
+    return type;
 }
 
 /// Query the device associated with a memory allocation made using \ref jitc_malloc()
 int jitc_malloc_device(void *ptr) {
-    auto it = state.alloc_used.find(ptr);
+    auto it = state.alloc_used.find((uintptr_t) ptr);
     if (unlikely(it == state.alloc_used.end()))
         jitc_raise("jitc_malloc_device(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
-    const AllocInfo &ai = it.value();
-    if (ai.type == (int) AllocType::Host || ai.type == (int) AllocType::HostAsync)
+    auto [size, type, device] = alloc_info_decode(it->second);
+    (void) size;
+
+    if (type == AllocType::Host || type == AllocType::HostAsync)
         return -1;
     else
-        return ai.device;
+        return device;
 }
 
 void jitc_malloc_shutdown() {
-    jitc_flush_malloc_cache(false, false);
+    jitc_flush_malloc_cache(false);
 
     size_t leak_count[(int) AllocType::Count] = { 0 },
            leak_size [(int) AllocType::Count] = { 0 };
     for (auto kv : state.alloc_used) {
-        leak_count[(int) kv.second.type]++;
-        leak_size[(int) kv.second.type] += kv.second.size;
+        auto [size, type, device] = alloc_info_decode(kv.second);
+        (void) device;
+        leak_count[(int) type]++;
+        leak_size[(int) type] += size;
     }
 
     size_t total = 0;

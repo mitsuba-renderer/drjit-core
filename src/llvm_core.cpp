@@ -49,6 +49,9 @@ bool jitc_llvm_opaque_pointers = false;
 /// Strings related to the vector width, used by template engine
 char **jitc_llvm_ones_str = nullptr;
 
+/// Current top-level task in the task queue
+Task *jitc_task = nullptr;
+
 void jitc_llvm_update_strings();
 
 bool jitc_llvm_init() {
