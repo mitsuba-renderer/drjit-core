@@ -1,69 +1,173 @@
 /*
-    src/optix_api.h -- Low-level interface to OptiX
+    src/optix_api.h -- Low-level interface to OptiX API
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2022 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 */
 
-#pragma once
+// ---------------------------------------------------------------------
 
-#include "cuda_api.h"
+/// Try to resolve the OptiX API functions
+extern bool jitc_optix_api_init();
 
-using OptixDeviceContext = void *;
-using OptixProgramGroup = void*;
+/// Free any resources allocated by jitc_optix_api_init()
+extern void jitc_optix_api_shutdown();
+
+// ---------------------------------------------------------------------
+
+#if !defined(DR_OPTIX_SYM)
+#  define DR_OPTIX_SYM(x) extern x;
+#endif
+
+using OptixResult = int;
+using OptixProgramGroupKind = int;
+using OptixCompileDebugLevel = int;
+using OptixDeviceContext = void*;
+using OptixLogCallback = void (*)(unsigned int, const char *, const char *, void *);
+using OptixTask = void*;
 using OptixModule = void*;
-struct OptixPipelineCompileOptions;
-struct OptixShaderBindingTable;
-struct ThreadState;
+using OptixProgramGroup = void*;
+using OptixPipeline = void*;
 
-struct OptixPipelineData;
+#define OPTIX_EXCEPTION_FLAG_NONE                     0
+#define OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW           1
+#define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH              2
+#define OPTIX_EXCEPTION_FLAG_DEBUG                    8
+#define OPTIX_ERROR_VALIDATION_FAILURE                7053
+#define OPTIX_COMPILE_DEBUG_LEVEL_NONE                0x2350
+#define OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL             0x2351
+#define OPTIX_COMPILE_DEBUG_LEVEL_MODERATE            0x2353
+#define OPTIX_COMPILE_DEBUG_LEVEL_FULL                0x2352
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_0            0x2340
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_1            0x2341
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_2            0x2342
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_3            0x2343
+#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF      0
+#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL      ((int) 0xFFFFFFFF)
+#define OPTIX_MODULE_COMPILE_STATE_COMPLETED          0x2364
+#define OPTIX_PROGRAM_GROUP_KIND_RAYGEN               0x2421
+#define OPTIX_PROGRAM_GROUP_KIND_CALLABLES            0x2425
+#define OPTIX_PROGRAM_GROUP_KIND_MISS                 0x2422
+#define OPTIX_SBT_RECORD_HEADER_SIZE                  32
+#define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS 1
 
-/// Create an OptiX device context on the current ThreadState
-extern OptixDeviceContext jitc_optix_context();
+struct OptixDeviceContextOptions {
+    OptixLogCallback logCallbackFunction;
+    void *logCallbackData;
+    int logCallbackLevel;
+    int validationMode;
+};
 
-/// Destroy an OptiX device context
-struct Device;
-extern void jitc_optix_context_destroy(Device &d);
+struct OptixPayloadType {
+    unsigned int numPayloadValues;
+    const unsigned int *payloadSemantics;
+};
 
-/// Look up an OptiX function by name
-extern void *jitc_optix_lookup(const char *name);
+struct OptixModuleCompileOptions {
+    int maxRegisterCount;
+    int optLevel;
+    int debugLevel;
+    const void *boundValues;
+    unsigned int numBoundValues;
+    unsigned int numPayloadTypes;
+    OptixPayloadType *payloadTypes;
+};
 
-/// Unload the OptiX library
-extern void jitc_optix_shutdown();
+struct OptixPipelineLinkOptions {
+    unsigned int maxTraceDepth;
+    OptixCompileDebugLevel debugLevel;
+};
 
-/// Inform Dr.Jit about a partially created OptiX pipeline
-extern uint32_t jitc_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
-                                              OptixModule module,
-                                              const OptixProgramGroup *pg,
-                                              uint32_t pg_count);
+struct OptixProgramGroupSingleModule {
+    OptixModule module;
+    const char* entryFunctionName;
+};
 
-/// Inform Dr.Jit about an OptiX Shader Binding Table
-extern uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
-                                         uint32_t pipeline);
+struct OptixProgramGroupHitgroup {
+    OptixModule moduleCH;
+    const char* entryFunctionNameCH;
+    OptixModule moduleAH;
+    const char* entryFunctionNameAH;
+    OptixModule moduleIS;
+    const char* entryFunctionNameIS;
+};
 
-/// Overwrite existing OptiX Shader Binding Table given an index
-extern void jitc_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt);
+struct OptixProgramGroupCallables {
+    OptixModule moduleDC;
+    const char* entryFunctionNameDC;
+    OptixModule moduleCC;
+    const char* entryFunctionNameCC;
+};
 
-/// Insert a function call to optixTrace into the program
-extern void jitc_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask,
-                                 uint32_t pipeline, uint32_t sbt);
+struct OptixProgramGroupDesc {
+    OptixProgramGroupKind kind;
+    unsigned int flags;
 
-/// Compile an OptiX kernel
-extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
-                               size_t buffer_size, const char *kernel_name,
-                               Kernel &kernel);
+    union {
+        OptixProgramGroupSingleModule raygen;
+        OptixProgramGroupSingleModule miss;
+        OptixProgramGroupSingleModule exception;
+        OptixProgramGroupCallables callables;
+        OptixProgramGroupHitgroup hitgroup;
+    };
+};
 
-/// Free a compiled OptiX kernel
-extern void jitc_optix_free(const Kernel &kernel);
+struct OptixStackSizes {
+    unsigned int cssRG;
+    unsigned int cssMS;
+    unsigned int cssCH;
+    unsigned int cssAH;
+    unsigned int cssIS;
+    unsigned int cssCC;
+    unsigned int dssDC;
+};
 
-/// Perform an OptiX kernel launch
-extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
-                              uint32_t size, const void *args, uint32_t n_args);
+struct OptixProgramGroupOptions {
+    OptixPayloadType *payloadType;
+};
 
-/// Mark a variable as an expression requiring compilation via OptiX
-extern void jitc_optix_mark(uint32_t index);
-
-/// Optional: set the desired launch size
-extern void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples);
+DR_OPTIX_SYM(OptixResult (*optixQueryFunctionTable)(int, unsigned int, void *,
+                                                    const void **, void *,
+                                                    size_t));
+DR_OPTIX_SYM(const char *(*optixGetErrorName)(OptixResult));
+DR_OPTIX_SYM(const char *(*optixGetErrorString)(OptixResult));
+DR_OPTIX_SYM(OptixResult (*optixDeviceContextCreate)(
+    CUcontext, const OptixDeviceContextOptions *, OptixDeviceContext *));
+DR_OPTIX_SYM(OptixResult (*optixDeviceContextDestroy)(OptixDeviceContext));
+DR_OPTIX_SYM(
+    OptixResult (*optixDeviceContextSetCacheEnabled)(OptixDeviceContext, int));
+DR_OPTIX_SYM(OptixResult (*optixDeviceContextSetCacheLocation)(
+    OptixDeviceContext, const char *));
+DR_OPTIX_SYM(OptixResult (*optixModuleCreateFromPTX)(
+    OptixDeviceContext, const OptixModuleCompileOptions *,
+    const OptixPipelineCompileOptions *, const char *, size_t, char *, size_t *,
+    OptixModule *));
+DR_OPTIX_SYM(OptixResult (*optixModuleCreateFromPTXWithTasks)(
+    OptixDeviceContext, const OptixModuleCompileOptions *,
+    const OptixPipelineCompileOptions *, const char *, size_t, char *, size_t *,
+    OptixModule *, OptixTask *));
+DR_OPTIX_SYM(OptixResult (*optixModuleGetCompilationState)(OptixModule, int *));
+DR_OPTIX_SYM(OptixResult (*optixModuleDestroy)(OptixModule));
+DR_OPTIX_SYM(OptixResult (*optixTaskExecute)(OptixTask, OptixTask *,
+                                             unsigned int, unsigned int *));
+DR_OPTIX_SYM(OptixResult (*optixProgramGroupCreate)(
+    OptixDeviceContext, const OptixProgramGroupDesc *, unsigned int,
+    const OptixProgramGroupOptions *, char *, size_t *, OptixProgramGroup *));
+DR_OPTIX_SYM(OptixResult (*optixProgramGroupDestroy)(OptixProgramGroup));
+DR_OPTIX_SYM(OptixResult (*optixPipelineCreate)(
+    OptixDeviceContext, const OptixPipelineCompileOptions *,
+    const OptixPipelineLinkOptions *, const OptixProgramGroup *, unsigned int,
+    char *, size_t *, OptixPipeline *));
+DR_OPTIX_SYM(OptixResult (*optixPipelineDestroy)(OptixPipeline));
+DR_OPTIX_SYM(OptixResult (*optixLaunch)(OptixPipeline, CUstream, CUdeviceptr,
+                                        size_t, const OptixShaderBindingTable *,
+                                        unsigned int, unsigned int,
+                                        unsigned int));
+DR_OPTIX_SYM(OptixResult (*optixSbtRecordPackHeader)(OptixProgramGroup,
+                                                     void *));
+DR_OPTIX_SYM(OptixResult (*optixPipelineSetStackSize)(
+    OptixPipeline, unsigned int, unsigned int, unsigned int, unsigned int));
+DR_OPTIX_SYM(OptixResult (*optixProgramGroupGetStackSize)(OptixProgramGroup,
+                                                          OptixStackSizes *));

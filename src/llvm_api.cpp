@@ -7,7 +7,7 @@
     license that can be found in the LICENSE file.
 */
 
-#define DRJIT_SYMBOL(...) __VA_ARGS__ = nullptr;
+#define DR_LLVM_SYM(...) __VA_ARGS__ = nullptr;
 
 #include "llvm_api.h"
 #include "internal.h"

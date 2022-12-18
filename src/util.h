@@ -10,7 +10,7 @@
 #pragma once
 
 #include <drjit-core/jit.h>
-#include "cuda_api.h"
+#include "cuda.h"
 
 /// Descriptive names for the various reduction operations
 extern const char *reduction_name[(int) ReduceOp::Count];
