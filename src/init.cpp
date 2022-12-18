@@ -157,16 +157,18 @@ void* jitc_cuda_pop_context() {
 void jitc_shutdown(int light) {
     // Synchronize with everything
     for (ThreadState *ts : state.tss) {
-        jitc_free_flush(ts);
         if (ts->backend == JitBackend::CUDA) {
             scoped_set_context guard(ts->context);
             cuda_check(cuStreamSynchronize(ts->stream));
-        } else {
-            task_wait_and_release(ts->task);
         }
         if (!ts->mask_stack.empty())
             jitc_log(Warn, "jit_shutdown(): leaked %zu active masks!",
-                    ts->mask_stack.size());
+                     ts->mask_stack.size());
+    }
+
+    if (jitc_task) {
+        task_wait_and_release(jitc_task);
+        jitc_task = nullptr;
     }
 
     if (!state.kernel_cache.empty()) {
@@ -185,22 +187,24 @@ void jitc_shutdown(int light) {
     state.kernel_history.clear();
 
     // CUDA: Try to already free some memory asynchronously (faster)
-    if (thread_state_cuda && state.devices[thread_state_cuda->device].memory_pool_support) {
+    if (thread_state_cuda && thread_state_cuda->memory_pool) {
         ThreadState *ts = thread_state_cuda;
         scoped_set_context guard2(ts->context);
 
-        lock_guard guard(state.malloc_lock);
+        lock_guard guard(state.alloc_free_lock);
         for (auto it = state.alloc_free.begin(); it != state.alloc_free.end(); ++it) {
-            AllocInfo ai = it->first;
-            if ((AllocType) ai.type != AllocType::Device)
+            auto [size, type, device] = alloc_info_decode(it->first);
+            (void) device;
+
+            if (type != AllocType::Device)
                 continue;
 
-            std::vector<void *> &entries = it.value();
-            state.alloc_allocated[int(AllocType::Device)] -= ai.size * entries.size();
+            std::vector<void *> entries;
+            entries.swap(it.value());
+            state.alloc_allocated[(int) type] -= size * entries.size();
 
             for (void *ptr : entries)
                 cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, ts->stream));
-            entries.clear();
         }
     }
 
@@ -217,11 +221,9 @@ void jitc_shutdown(int light) {
                 state.tss.size(), state.tss.size() > 1 ? "s" : "");
 
         for (ThreadState *ts : state.tss) {
-            for (uint32_t i : ts->side_effects) {
-                if (state.variables.find(i) != state.variables.end())
-                    jitc_var_dec_ref(i);
-            }
-            jitc_free_flush(ts);
+            for (uint32_t index : ts->side_effects)
+                jitc_var_dec_ref(index);
+
             if (ts->backend == JitBackend::CUDA && ts->stream) {
                 scoped_set_context guard(ts->context);
                 cuda_check(cuStreamSynchronize(ts->stream));
@@ -236,7 +238,6 @@ void jitc_shutdown(int light) {
                 free(ts->prefix);
             }
 
-            delete ts->release_chain;
             delete ts;
         }
 
@@ -379,6 +380,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->context = device.context;
         ts->compute_capability = device.compute_capability;
         ts->ptx_version = device.ptx_version;
+        ts->memory_pool = device.memory_pool;
         ts->stream = device.stream;
         ts->event = device.event;
         thread_state_cuda = ts;
@@ -432,6 +434,7 @@ void jitc_cuda_set_device(int device_id) {
         ts->device = device_id;
         ts->compute_capability = device.compute_capability;
         ts->ptx_version = device.ptx_version;
+        ts->memory_pool = device.memory_pool;
         ts->stream = device.stream;
         ts->event = device.event;
     }
@@ -444,8 +447,8 @@ void jitc_sync_thread(ThreadState *ts) {
         scoped_set_context guard(ts->context);
         cuda_check(cuStreamSynchronize(ts->stream));
     } else {
-        task_wait_and_release(ts->task);
-        ts->task = nullptr;
+        task_wait_and_release(jitc_task);
+        jitc_task = nullptr;
     }
 }
 

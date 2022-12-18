@@ -309,7 +309,7 @@ void jitc_registry_set_attr(JitBackend backend, void *ptr, const char *name,
             scoped_set_context guard(state.devices[0].context);
             CUresult ret = cuMemAlloc((CUdeviceptr *) &new_ptr, new_size);
             if (ret != CUDA_SUCCESS) {
-                jitc_flush_malloc_cache(true, true);
+                jitc_flush_malloc_cache(true);
                 cuda_check(cuMemAlloc((CUdeviceptr *) &new_ptr, new_size));
             }
 

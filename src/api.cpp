@@ -326,7 +326,7 @@ void jit_free(void *ptr) {
 
 void jit_flush_malloc_cache() {
     lock_guard guard(state.lock);
-    jitc_flush_malloc_cache(true, false);
+    jitc_flush_malloc_cache(false);
 }
 
 void jit_malloc_clear_statistics() {

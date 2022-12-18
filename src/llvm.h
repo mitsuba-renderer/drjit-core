@@ -13,7 +13,12 @@
 #include <stdint.h>
 #include <vector>
 
+// Forward declarations
+struct Task;
 struct Kernel;
+
+/// Current top-level task in the task queue
+extern Task *jitc_task;
 
 /// Attempt to dynamically load LLVM into the process
 extern bool jitc_llvm_api_init();
