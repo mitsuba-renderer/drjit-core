@@ -625,7 +625,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                         if (vt == VarType::Float64) {
                             *m_cur ++= '0';
                             *m_cur ++= 'x';
-                            put_q64_unchecked(literal);
+                            put_x64_unchecked(literal);
                         } else {
                             put_u64_unchecked(literal);
                         }

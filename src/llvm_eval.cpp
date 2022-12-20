@@ -81,7 +81,7 @@
 
 // Forward declaration
 static void jitc_render_stmt_llvm(uint32_t index, const Variable *v, bool in_function);
-static void jitc_render_node_llvm(Variable *v);
+static void jitc_render_var_llvm(Variable *v);
 
 void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group) {
     bool print_labels = std::max(state.log_level_stderr,
@@ -174,8 +174,8 @@ void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group) {
                 "    $v = shufflevector $T $v_1, $T undef, <$w x i32> $z\n",
                 v, v, v, v,
                 v, v, v, v);
-        } else if (v->is_node()) {
-            jitc_render_node_llvm(v);
+        } else if (!v->is_stmt()) {
+            jitc_render_var_llvm(v);
         } else {
             jitc_render_stmt_llvm(index, v, false);
         }
@@ -348,13 +348,8 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
             if (vt == VarType::Pointer)
                 fmt("    $v = inttoptr <$w x i64> $v_p4 to <$w x {i8*}>\n",
                     v, v);
-        } else if (v->is_literal()) {
-            fmt("    $v_1 = insertelement $T undef, $t $l, i32 0\n"
-                "    $v = shufflevector $T $v_1, $T undef, <$w x i32> $z\n",
-                v, v, v, v,
-                v, v, v, v);
-        } else if (v->is_node()) {
-            jitc_render_node_llvm(v);
+        } else if (!v->is_stmt()) {
+            jitc_render_var_llvm(v);
         } else {
             jitc_render_stmt_llvm(sv.index, v, true);
         }
@@ -412,31 +407,38 @@ void jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
         "}");
 }
 
-static void jitc_render_node_llvm(Variable *v) {
+static void jitc_render_var_llvm(Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
-    switch (v->node) {
-        case NodeType::Neg:
+    switch (v->kind) {
+        case VarKind::Literal:
+            fmt("    $v_1 = insertelement $T undef, $t $l, i32 0\n"
+                "    $v = shufflevector $T $v_1, $T undef, <$w x i32> $z\n",
+                v, v, v, v,
+                v, v, v, v);
+            break;
+
+        case VarKind::Neg:
             if (jitc_is_float(v))
                 fmt("    $v = fneg $V\n", v, a0);
             else
                 fmt("    $v = sub $T $z, $v\n", v, v, a0);
             break;
 
-        case NodeType::Not:
+        case VarKind::Not:
             fmt("    $v = xor $V, $s\n", v, a0, jitc_llvm_ones_str[v->type]);
             break;
 
-        case NodeType::Sqrt:
+        case VarKind::Sqrt:
             fmt_intrinsic("declare $T @llvm.sqrt.v$w$h($T)", v, v, a0);
             fmt("    $v = call $T @llvm.sqrt.v$w$h($V)\n", v, v, v, a0);
             break;
 
-        case NodeType::Abs:
+        case VarKind::Abs:
             if (jitc_is_float(v)) {
                 fmt_intrinsic("declare $T @llvm.fabs.v$w$h($T)", v, v, a0);
                 fmt("    $v = call $T @llvm.fabs.v$w$h($V)\n", v, v, v, a0);
@@ -450,25 +452,25 @@ static void jitc_render_node_llvm(Variable *v) {
             }
             break;
 
-        case NodeType::Add:
+        case VarKind::Add:
             fmt(jitc_is_float(v) ? "    $v = fadd $V, $v\n"
                                  : "    $v = add $V, $v\n",
                 v, a0, a1);
             break;
 
-        case NodeType::Sub:
+        case VarKind::Sub:
             fmt(jitc_is_float(v) ? "    $v = fsub $V, $v\n"
                                  : "    $v = sub $V, $v\n",
                 v, a0, a1);
             break;
 
-        case NodeType::Mul:
+        case VarKind::Mul:
             fmt(jitc_is_float(v) ? "    $v = fmul $V, $v\n"
                                  : "    $v = mul $V, $v\n",
                 v, a0, a1);
             break;
 
-        case NodeType::Div:
+        case VarKind::Div:
             if (jitc_is_float(v))
                 stmt = "    $v = fdiv $V, $v\n";
             else if (jitc_is_uint(v))
@@ -478,13 +480,13 @@ static void jitc_render_node_llvm(Variable *v) {
             fmt(stmt, v, a0, a1);
             break;
 
-        case NodeType::Mod:
+        case VarKind::Mod:
             fmt(jitc_is_uint(v) ? "    $v = urem $V, $v\n"
                                 : "    $v = srem $V, $v\n",
                 v, a0, a1);
             break;
 
-        case NodeType::Mulhi:
+        case VarKind::Mulhi:
             fmt("    $v_0 = $sext $V to $D\n"
                 "    $v_1 = $sext $V to $D\n"
                 "    $v_3 = insertelement $D undef, $d $u, i32 0\n"
@@ -501,7 +503,7 @@ static void jitc_render_node_llvm(Variable *v) {
                 v, v, v, v);
             break;
 
-        case NodeType::Fma:
+        case VarKind::Fma:
             if (jitc_is_float(v)) {
                 fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)\n",
                     v, v, a0, a1, a2);
@@ -514,7 +516,7 @@ static void jitc_render_node_llvm(Variable *v) {
             }
             break;
 
-        case NodeType::Min:
+        case VarKind::Min:
             if (jitc_llvm_version_major >= 12 || jitc_is_float(v)) {
                 if (jitc_is_float(v))
                     stmt = "minnum";
@@ -532,7 +534,7 @@ static void jitc_render_node_llvm(Variable *v) {
             }
             break;
 
-        case NodeType::Max:
+        case VarKind::Max:
             if (jitc_llvm_version_major >= 12 || jitc_is_float(v)) {
                 if (jitc_is_float(v))
                     stmt = "maxnum";
@@ -550,37 +552,37 @@ static void jitc_render_node_llvm(Variable *v) {
             }
             break;
 
-        case NodeType::Ceil:
+        case VarKind::Ceil:
             fmt_intrinsic("declare $T @llvm.ceil.v$w$h($T)", v, v, a0);
             fmt("    $v = call $T @llvm.ceil.v$w$h($V)\n", v, v, v, a0);
             break;
 
-        case NodeType::Floor:
+        case VarKind::Floor:
             fmt_intrinsic("declare $T @llvm.floor.v$w$h($T)", v, v, a0);
             fmt("    $v = call $T @llvm.floor.v$w$h($V)\n", v, v, v, a0);
             break;
 
-        case NodeType::Round:
+        case VarKind::Round:
             fmt_intrinsic("declare $T @llvm.nearbyint.v$w$h($T)", v, v, a0);
             fmt("    $v = call $T @llvm.nearbyint.v$w$h($V)\n", v, v, v, a0);
             break;
 
-        case NodeType::Trunc:
+        case VarKind::Trunc:
             fmt_intrinsic("declare $T @llvm.trunc.v$w$h($T)", v, v, a0);
             fmt("    $v = call $T @llvm.trunc.v$w$h($V)\n", v, v, v, a0);
             break;
 
-        case NodeType::Eq:
+        case VarKind::Eq:
             fmt(jitc_is_float(a0) ? "    $v = fcmp oeq $V, $v\n"
                                   : "    $v = icmp eq $V, $v\n", v, a0, a1);
             break;
 
-        case NodeType::Neq:
+        case VarKind::Neq:
             fmt(jitc_is_float(a0) ? "    $v = fcmp one $V, $v\n"
                                   : "    $v = icmp ne $V, $v\n", v, a0, a1);
             break;
 
-        case NodeType::Lt:
+        case VarKind::Lt:
             if (jitc_is_float(a0))
                 stmt = "    $v = fcmp olt $V, $v\n";
             else if (jitc_is_uint(a0))
@@ -590,7 +592,7 @@ static void jitc_render_node_llvm(Variable *v) {
             fmt(stmt, v, a0, a1);
             break;
 
-        case NodeType::Le:
+        case VarKind::Le:
             if (jitc_is_float(a0))
                 stmt = "    $v = fcmp ole $V, $v\n";
             else if (jitc_is_uint(a0))
@@ -600,7 +602,7 @@ static void jitc_render_node_llvm(Variable *v) {
             fmt(stmt, v, a0, a1);
             break;
 
-        case NodeType::Gt:
+        case VarKind::Gt:
             if (jitc_is_float(a0))
                 stmt = "    $v = fcmp ogt $V, $v\n";
             else if (jitc_is_uint(a0))
@@ -610,7 +612,7 @@ static void jitc_render_node_llvm(Variable *v) {
             fmt(stmt, v, a0, a1);
             break;
 
-        case NodeType::Ge:
+        case VarKind::Ge:
             if (jitc_is_float(a0))
                 stmt = "    $v = fcmp oge $V, $v\n";
             else if (jitc_is_uint(a0))
@@ -620,26 +622,26 @@ static void jitc_render_node_llvm(Variable *v) {
             fmt(stmt, v, a0, a1);
             break;
 
-        case NodeType::Select:
+        case VarKind::Select:
             fmt("    $v = select $V, $V, $V\n", v, a0, a1, a2);
             break;
 
-        case NodeType::Popc:
+        case VarKind::Popc:
             fmt_intrinsic("declare $T @llvm.ctpop.v$w$h($T)", v, a0, a0);
             fmt("    $v = call $T @llvm.ctpop.v$w$h($V)\n", v, v, a0, a0);
             break;
 
-        case NodeType::Clz:
+        case VarKind::Clz:
             fmt_intrinsic("declare $T @llvm.ctlz.v$w$h($T, i1)", v, a0, a0);
             fmt("    $v = call $T @llvm.ctlz.v$w$h($V, i1 0)\n", v, v, a0, a0);
             break;
 
-        case NodeType::Ctz:
+        case VarKind::Ctz:
             fmt_intrinsic("declare $T @llvm.cttz.v$w$h($T, i1)", v, a0, a0);
             fmt("    $v = call $T @llvm.cttz.v$w$h($V, i1 0)\n", v, v, a0, a0);
             break;
 
-        case NodeType::And:
+        case VarKind::And:
             if (a0->type != a1->type)
                 fmt("    $v = select $V, $V, $T $z\n",
                     v, a1, a0, a0);
@@ -653,7 +655,7 @@ static void jitc_render_node_llvm(Variable *v) {
                 fmt("    $v = and $V, $v\n", v, a0, a1);
             break;
 
-        case NodeType::Or:
+        case VarKind::Or:
             if (a0->type != a1->type)
                 fmt("    $v_0 = bitcast $V to $B\n"
                     "    $v_1 = sext $V to $B\n"
@@ -670,7 +672,7 @@ static void jitc_render_node_llvm(Variable *v) {
                 fmt("    $v = or $V, $v\n", v, a0, a1);
             break;
 
-        case NodeType::Xor:
+        case VarKind::Xor:
             if (jitc_is_float(v))
                 fmt("    $v_0 = bitcast $V to $B\n"
                     "    $v_1 = bitcast $V to $B\n"
@@ -681,17 +683,17 @@ static void jitc_render_node_llvm(Variable *v) {
                 fmt("    $v = xor $V, $v\n", v, a0, a1);
             break;
 
-        case NodeType::Shl:
+        case VarKind::Shl:
             fmt("    $v = shl $V, $v\n", v, a0, a1);
             break;
 
-        case NodeType::Shr:
+        case VarKind::Shr:
             fmt(jitc_is_uint(v) ? "    $v = lshr $V, $v\n"
                                 : "    $v = ashr $V, $v\n",
                 v, a0, a1);
             break;
 
-        case NodeType::Cast:
+        case VarKind::Cast:
             if (jitc_is_bool(v)) {
                 fmt(jitc_is_float(a0) ? "    $v = fcmp one $V, $z\n"
                                       : "    $v = icmp ne $V, $z\n",
@@ -725,11 +727,11 @@ static void jitc_render_node_llvm(Variable *v) {
             }
             break;
 
-        case NodeType::Bitcast:
+        case VarKind::Bitcast:
             fmt("    $v = bitcast $V to $T\n", v, a0, v);
             break;
 
-        case NodeType::Gather: {
+        case VarKind::Gather: {
                 bool is_bool = v->type == (uint32_t) VarType::Bool;
                 if (is_bool) // Temporary change
                     v->type = (uint32_t) VarType::UInt8;
@@ -752,21 +754,21 @@ static void jitc_render_node_llvm(Variable *v) {
             }
             break;
 
-        case NodeType::Scatter: {
+        case VarKind::Scatter: {
                 // ptr, value, index, mask
                 fmt("{    $v_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
                      "    $v_1 = getelementptr $t, $<{$t*}$> {$v_0|$v}, $V\n",
                     v, a0, a1,
                     v, a1, a1, v, a0, a2);
 
-                if (!v->payload) {
+                if (!v->literal) {
                     fmt_intrinsic("declare void @llvm.masked.scatter.v$w$h($T, <$w x {$t*}>, i32, $T)",
                          a1, a1, a1, a3);
                     fmt("    call void @llvm.masked.scatter.v$w$h($V, <$w x {$t*}> $v_1, i32 $a, $V)\n",
                          a1, a1, a1, v, a1, a3);
                 } else {
                     const char *op, *zero_elem = nullptr, *intrinsic_name = nullptr;
-                    switch ((ReduceOp) v->payload) {
+                    switch ((ReduceOp) v->literal) {
                         case ReduceOp::Add:
                             if (jitc_is_single(a1)) {
                                 op = "fadd";
@@ -866,15 +868,15 @@ static void jitc_render_node_llvm(Variable *v) {
             }
             break;
 
-        case NodeType::VCallMask:
+        case VarKind::VCallMask:
             fmt("    $v = bitcast <$w x i1> %mask to <$w x i1>\n", v);
             break;
 
-        case NodeType::VCallSelf:
+        case VarKind::VCallSelf:
             fmt("    $v = bitcast <$w x i32> %self to <$w x i32>\n", v);
             break;
 
-        case NodeType::Counter:
+        case VarKind::Counter:
             fmt("    $v_0 = trunc i64 %index to $t\n"
                 "    $v_1 = insertelement $T undef, $t $v_0, i32 0\n"
                 "    $v_2 = shufflevector $V_1, $T undef, <$w x i32> $z\n"
@@ -885,8 +887,8 @@ static void jitc_render_node_llvm(Variable *v) {
             break;
 
         default:
-            jitc_fail("jitc_render_node_llvm(): unhandled node type \"%s\"!",
-                      node_names[(uint32_t) v->node]);
+            jitc_fail("jitc_render_var_llvm(): unhandled node type \"%s\"!",
+                      var_kind_name[(uint32_t) v->kind]);
     }
 }
 

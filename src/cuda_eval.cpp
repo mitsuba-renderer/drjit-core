@@ -49,7 +49,7 @@
 
 // Forward declaration
 static void jitc_render_stmt_cuda(uint32_t index, const Variable *v);
-static void jitc_render_node_cuda(const Variable *v);
+static void jitc_render_var_cuda(const Variable *v);
 
 void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
@@ -188,10 +188,8 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
                     size > 1 ? "ld.global.cs.u8" : "ldu.global.u8", v);
             }
             continue;
-        } else if (v->is_literal()) {
-            fmt("    mov.$b $v, $l;\n", v, v, v);
-        } else if (v->is_node()) {
-            jitc_render_node_cuda(v);
+        } else if (!v->is_stmt()) {
+            jitc_render_var_cuda(v);
         } else if (likely(!assemble)) {
             jitc_render_stmt_cuda(index, v);
         }
@@ -356,7 +354,7 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
         } else if (v->is_literal()) {
             fmt("    mov.$b $v, $l;\n", v, v, v);
         } else if (v->is_node()) {
-            jitc_render_node_cuda(v);
+            jitc_render_var_cuda(v);
         } else {
             jitc_render_stmt_cuda(sv.index, v);
         }
@@ -389,15 +387,19 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
 };
 
-static void jitc_render_node_cuda(const Variable *v) {
+static void jitc_render_var_cuda(const Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
-    switch (v->node) {
-        case NodeType::Neg:
+    switch (v->kind) {
+        case VarKind::Literal:
+            fmt("    mov.$b $v, $l;\n", v, v, v);
+            break;
+
+        case VarKind::Neg:
             if (jitc_is_uint(v))
                 fmt("    neg.s$u $v, $v;\n", type_size[v->type]*8, v, a0);
             else
@@ -406,32 +408,32 @@ static void jitc_render_node_cuda(const Variable *v) {
                     v, v, a0);
             break;
 
-        case NodeType::Not:
+        case VarKind::Not:
             fmt("    not.$b $v, $v;\n", v, v, a0);
             break;
 
-        case NodeType::Sqrt:
+        case VarKind::Sqrt:
             fmt(jitc_is_single(v) ? "    sqrt.approx.ftz.$t $v, $v;\n"
                                   : "    sqrt.rn.$t $v, $v;\n", v, v, a0);
             break;
 
-        case NodeType::Abs:
+        case VarKind::Abs:
             fmt("    abs.$t $v, $v;\n", v, v, a0);
             break;
 
-        case NodeType::Add:
+        case VarKind::Add:
             fmt(jitc_is_single(v) ? "    add.ftz.$t $v, $v, $v;\n"
                                   : "    add.$t $v, $v, $v;\n",
                 v, v, a0, a1);
             break;
 
-        case NodeType::Sub:
+        case VarKind::Sub:
             fmt(jitc_is_single(v) ? "    sub.ftz.$t $v, $v, $v;\n"
                                   : "    sub.$t $v, $v, $v;\n",
                 v, v, a0, a1);
             break;
 
-        case NodeType::Mul:
+        case VarKind::Mul:
             if (jitc_is_single(v))
                 stmt = "    mul.ftz.$t $v, $v, $v;\n";
             else if (jitc_is_double(v))
@@ -441,7 +443,7 @@ static void jitc_render_node_cuda(const Variable *v) {
             fmt(stmt, v, v, a0, a1);
             break;
 
-        case NodeType::Div:
+        case VarKind::Div:
             if (jitc_is_single(v))
                 stmt = "    div.approx.ftz.$t $v, $v, $v;\n";
             else if (jitc_is_double(v))
@@ -451,15 +453,15 @@ static void jitc_render_node_cuda(const Variable *v) {
             fmt(stmt, v, v, a0, a1);
             break;
 
-        case NodeType::Mod:
+        case VarKind::Mod:
             fmt("    rem.$t $v, $v, $v;\n", v, v, a0, a1);
             break;
 
-        case NodeType::Mulhi:
+        case VarKind::Mulhi:
             fmt("    mul.hi.$t $v, $v, $v;\n", v, v, a0, a1);
             break;
 
-        case NodeType::Fma:
+        case VarKind::Fma:
             if (jitc_is_single(v))
                 stmt = "    fma.rn.ftz.$t $v, $v, $v, $v;\n";
             else if (jitc_is_double(v))
@@ -469,35 +471,35 @@ static void jitc_render_node_cuda(const Variable *v) {
             fmt(stmt, v, v, a0, a1, a2);
             break;
 
-        case NodeType::Min:
+        case VarKind::Min:
             fmt(jitc_is_single(v) ? "    min.ftz.$t $v, $v, $v;\n"
                                   : "    min.$t $v, $v, $v;\n",
                                     v, v, a0, a1);
             break;
 
-        case NodeType::Max:
+        case VarKind::Max:
             fmt(jitc_is_single(v) ? "    max.ftz.$t $v, $v, $v;\n"
                                   : "    max.$t $v, $v, $v;\n",
                                     v, v, a0, a1);
             break;
 
-        case NodeType::Ceil:
+        case VarKind::Ceil:
             fmt("    cvt.rpi.$t.$t $v, $v;\n", v, v, v, a0);
             break;
 
-        case NodeType::Floor:
+        case VarKind::Floor:
             fmt("    cvt.rmi.$t.$t $v, $v;\n", v, v, v, a0);
             break;
 
-        case NodeType::Round:
+        case VarKind::Round:
             fmt("    cvt.rni.$t.$t $v, $v;\n", v, v, v, a0);
             break;
 
-        case NodeType::Trunc:
+        case VarKind::Trunc:
             fmt("    cvt.rzi.$t.$t $v, $v;\n", v, v, v, a0);
             break;
 
-        case NodeType::Eq:
+        case VarKind::Eq:
             if (jitc_is_bool(a0))
                 fmt("    xor.$t $v, $v, $v;\n"
                     "    not.$t $v, $v;", v, v, a0, a1, v, v, v);
@@ -505,38 +507,38 @@ static void jitc_render_node_cuda(const Variable *v) {
                 fmt("    setp.eq.$t $v, $v, $v;\n", a0, v, a0, a1);
             break;
 
-        case NodeType::Neq:
+        case VarKind::Neq:
             if (jitc_is_bool(a0))
                 fmt("    xor.$t $v, $v, $v;\n", v, v, a0, a1);
             else
                 fmt("    setp.ne.$t $v, $v, $v;\n", a0, v, a0, a1);
             break;
 
-        case NodeType::Lt:
+        case VarKind::Lt:
             fmt(jitc_is_uint(a0) ? "    setp.lo.$t $v, $v, $v;\n"
                                  : "    setp.lt.$t $v, $v, $v;\n",
                 a0, v, a0, a1);
             break;
 
-        case NodeType::Le:
+        case VarKind::Le:
             fmt(jitc_is_uint(a0) ? "    setp.ls.$t $v, $v, $v;\n"
                                  : "    setp.le.$t $v, $v, $v;\n",
                 a0, v, a0, a1);
             break;
 
-        case NodeType::Gt:
+        case VarKind::Gt:
             fmt(jitc_is_uint(a0) ? "    setp.hi.$t $v, $v, $v;\n"
                                  : "    setp.gt.$t $v, $v, $v;\n",
                 a0, v, a0, a1);
             break;
 
-        case NodeType::Ge:
+        case VarKind::Ge:
             fmt(jitc_is_uint(a0) ? "    setp.hs.$t $v, $v, $v;\n"
                                  : "    setp.ge.$t $v, $v, $v;\n",
                 a0, v, a0, a1);
             break;
 
-        case NodeType::Select:
+        case VarKind::Select:
             if (!jitc_is_bool(a1)) {
                 fmt("    selp.$t $v, $v, $v, $v;\n", v, v, a1, a2, a0);
             } else {
@@ -547,7 +549,7 @@ static void jitc_render_node_cuda(const Variable *v) {
             }
             break;
 
-        case NodeType::Popc:
+        case VarKind::Popc:
             if (type_size[v->type] == 4)
                 fmt("    popc.$b $v, $v;\n", v, v, a0);
             else
@@ -555,7 +557,7 @@ static void jitc_render_node_cuda(const Variable *v) {
                     "    cvt.$t.u32 $v, %r3;\n", v, a0, v, v);
             break;
 
-        case NodeType::Clz:
+        case VarKind::Clz:
             if (type_size[v->type] == 4)
                 fmt("    clz.$b $v, $v;\n", v, v, a0);
             else
@@ -563,7 +565,7 @@ static void jitc_render_node_cuda(const Variable *v) {
                     "    cvt.$t.u32 $v, %r3;\n", v, a0, v, v);
             break;
 
-        case NodeType::Ctz:
+        case VarKind::Ctz:
             if (type_size[v->type] == 4)
                 fmt("    brev.$b $v, $v;\n"
                     "    clz.$b $v, $v;\n", v, v, a0, v, v, v);
@@ -573,25 +575,25 @@ static void jitc_render_node_cuda(const Variable *v) {
                     "    cvt.$t.u32 $v, %r3;\n", v, v, a0, v, v, v, v);
             break;
 
-        case NodeType::And:
+        case VarKind::And:
             if (a0->type == a1->type)
                 fmt("    and.$b $v, $v, $v;\n", v, v, a0, a1);
             else
                 fmt("    selp.$b $v, $v, 0, $v;\n", v, v, a0, a1);
             break;
 
-        case NodeType::Or:
+        case VarKind::Or:
             if (a0->type == a1->type)
                 fmt("    or.$b $v, $v, $v;\n", v, v, a0, a1);
             else
                 fmt("    selp.$b $v, -1, $v, $v;\n", v, v, a0, a1);
             break;
 
-        case NodeType::Xor:
+        case VarKind::Xor:
             fmt("    xor.$b $v, $v, $v;\n", v, v, a0, a1);
             break;
 
-        case NodeType::Shl:
+        case VarKind::Shl:
             if (type_size[v->type] == 4)
                 fmt("    shl.$b $v, $v, $v;\n", v, v, a0, a1);
             else
@@ -599,7 +601,7 @@ static void jitc_render_node_cuda(const Variable *v) {
                     "    shl.$b $v, $v, %r3;\n", a1, a1, v, v, a0);
             break;
 
-        case NodeType::Shr:
+        case VarKind::Shr:
             if (type_size[v->type] == 4)
                 fmt("    shr.$t $v, $v, $v;\n", v, v, a0, a1);
             else
@@ -607,12 +609,12 @@ static void jitc_render_node_cuda(const Variable *v) {
                     "    shr.$t $v, $v, %r3;\n", a1, a1, v, v, a0);
             break;
 
-        case NodeType::Rcp:
+        case VarKind::Rcp:
             fmt(jitc_is_single(v) ? "    rcp.approx.ftz.$t $v, $v;\n"
                                   : "    rcp.rn.$t $v, $v;\n", v, v, a0);
             break;
 
-        case NodeType::Rsqrt:
+        case VarKind::Rsqrt:
             if (jitc_is_single(v))
                 fmt("    rsqrt.approx.ftz.$t $v, $v;\n", v, v, a0);
             else
@@ -620,24 +622,24 @@ static void jitc_render_node_cuda(const Variable *v) {
                     "    sqrt.rn.$t $v, $v;\n", v, v, a0, v, v, v);
             break;
 
-        case NodeType::Sin:
+        case VarKind::Sin:
             fmt("    sin.approx.ftz.$t $v, $v;\n", v, v, a0);
             break;
 
-        case NodeType::Cos:
+        case VarKind::Cos:
             fmt("    cos.approx.ftz.$t $v, $v;\n", v, v, a0);
             break;
 
-        case NodeType::Exp2:
+        case VarKind::Exp2:
             fmt("    ex2.approx.ftz.$t $v, $v;\n", v, v, a0);
             break;
 
-        case NodeType::Log2:
+        case VarKind::Log2:
             fmt("    lg2.approx.ftz.$t $v, $v;\n", v, v, a0);
             break;
 
 
-        case NodeType::Cast:
+        case VarKind::Cast:
             if (jitc_is_bool(v)) {
                 fmt(jitc_is_float(a0) ? "    setp.ne.$t $v, $v, 0.0;\n"
                                       : "    setp.ne.$t $v, $v, 0;\n",
@@ -659,11 +661,11 @@ static void jitc_render_node_cuda(const Variable *v) {
             }
             break;
 
-        case NodeType::Bitcast:
+        case VarKind::Bitcast:
             fmt("    mov.$b $v, $v;\n", v, v, a0);
             break;
 
-        case NodeType::Gather: {
+        case VarKind::Gather: {
                 bool index_zero = a1->is_literal() && a1->literal == 0;
                 bool unmasked = a2->is_literal() && a2->literal == 1;
                 bool is_bool = v->type == (uint32_t) VarType::Bool;
@@ -697,7 +699,7 @@ static void jitc_render_node_cuda(const Variable *v) {
             }
             break;
 
-        case NodeType::Scatter: {
+        case VarKind::Scatter: {
                 bool index_zero = a2->is_literal() && a2->literal == 0;
                 bool unmasked = a3->is_literal() && a3->literal == 1;
                 bool is_bool = a1->type == (uint32_t) VarType::Bool;
@@ -714,10 +716,10 @@ static void jitc_render_node_cuda(const Variable *v) {
                     fmt("    mad.wide.$t %rd3, $v, $a, $v;\n",
                         a2, a2, a1, a0);
                 }
-                const char *op = reduce_op_name[v->payload];
+                const char *op = reduce_op_name[v->literal];
                 const ThreadState *ts = thread_state_cuda;
 
-                if (v->payload && callable_depth == 0 &&
+                if (v->literal && callable_depth == 0 &&
                     type_size[a1->type] == 4 &&
                     ts->ptx_version>= 62 &&
                     ts->compute_capability >= 70) {
@@ -801,15 +803,15 @@ static void jitc_render_node_cuda(const Variable *v) {
                         a1, op, a1, op, a1
                     );
                 } else {
-                    const char *op_type = v->payload ? "red" : "st";
+                    const char *op_type = v->literal ? "red" : "st";
 
                     if (is_bool)
                         fmt("    selp.u16 %w0, 1, 0, $v;\n"
                             "    $s.global$s$s.u8 [%rd3], %w0;\n",
-                            a1, op_type, v->payload ? "." : "", op);
+                            a1, op_type, v->literal ? "." : "", op);
                     else
                         fmt("    $s.global$s$s.$t [%rd3], $v;\n", op_type,
-                            v->payload ? "." : "", op, a1, a1);
+                            v->literal ? "." : "", op, a1, a1);
                 }
 
                 if (!unmasked)
@@ -817,17 +819,17 @@ static void jitc_render_node_cuda(const Variable *v) {
             }
             break;
 
-        case NodeType::VCallSelf:
+        case VarKind::VCallSelf:
             fmt("    mov.u32 $v, self;\n", v);
             break;
 
-        case NodeType::Counter:
+        case VarKind::Counter:
             fmt("    mov.$t $v, %r0;\n", v, v);
             break;
 
         default:
-            jitc_fail("jitc_render_node_cuda(): unhandled node type \"%s\"!",
-                      node_names[(uint32_t) v->node]);
+            jitc_fail("jitc_render_var_cuda(): unhandled variable kind \"%s\"!",
+                      var_kind_name[(uint32_t) v->kind]);
     }
 }
 

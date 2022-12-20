@@ -307,7 +307,7 @@ uint32_t jitc_var_neg(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_neg(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Neg, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Neg, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_neg(r%u <- r%u)", result, a0);
@@ -331,7 +331,7 @@ uint32_t jitc_var_not(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_not(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Not, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Not, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_not(r%u <- r%u)", result, a0);
@@ -354,7 +354,7 @@ uint32_t jitc_var_sqrt(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_sqrt(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Sqrt, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Sqrt, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_sqrt(r%u <- r%u)", result, a0);
@@ -380,7 +380,7 @@ uint32_t jitc_var_abs(uint32_t a0) {
         result = jitc_var_new_ref(a0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Abs, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Abs, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_abs(r%u <- r%u)", result, a0);
@@ -404,7 +404,7 @@ uint32_t jitc_var_add(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Add, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Add, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_add(r%u <- r%u, r%u)", result, a0, a1);
@@ -428,8 +428,8 @@ uint32_t jitc_var_sub(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Sub, 0,
-                                   info.size, info.placeholder, a0, v0, a1, v1);
+        result = jitc_var_new_node_2(info.backend, VarKind::Sub, info.type,
+                                    info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_sub(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -456,7 +456,7 @@ uint32_t jitc_var_mul(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Mul, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Mul, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_mul(r%u <- r%u, r%u)", result, a0, a1);
@@ -493,7 +493,7 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
 
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Div, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Div, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_div(r%u <- r%u, r%u)", result, a0, a1);
@@ -517,7 +517,7 @@ uint32_t jitc_var_mod(uint32_t a0, uint32_t a1) {
             info, [](auto l0, auto l1) { return eval_mod(l0, l1); }, v0, v1);
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Mod, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Mod, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_mod(r%u <- r%u, r%u)", result, a0, a1);
@@ -562,7 +562,7 @@ uint32_t jitc_var_mulhi(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Mulhi, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Mulhi, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_mulhi(r%u <- r%u, r%u)", result, a0, a1);
@@ -610,7 +610,7 @@ uint32_t jitc_var_fma(uint32_t a0, uint32_t a1, uint32_t a2) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_3(info.backend, info.type, NodeType::Fma, 0,
+        result = jitc_var_new_node_3(info.backend, VarKind::Fma, info.type,
                                      info.size, info.placeholder,
                                      a0, v0, a1, v1, a2, v2);
 
@@ -633,7 +633,7 @@ uint32_t jitc_var_min(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Min, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Min, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_min(r%u <- r%u, r%u)", result, a0, a1);
@@ -656,7 +656,7 @@ uint32_t jitc_var_max(uint32_t a0, uint32_t a1) {
 
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Max, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Max, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_max(r%u <- r%u, r%u)", result, a0, a1);
@@ -679,7 +679,7 @@ uint32_t jitc_var_ceil(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_ceil(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Ceil, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Ceil, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_ceil(r%u <- r%u)", result, a0);
@@ -702,7 +702,7 @@ uint32_t jitc_var_floor(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_floor(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Floor, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Floor, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_floor(r%u <- r%u)", result, a0);
@@ -725,7 +725,7 @@ uint32_t jitc_var_round(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_round(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Round, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Round, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_round(r%u <- r%u)", result, a0);
@@ -748,7 +748,7 @@ uint32_t jitc_var_trunc(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_trunc(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Trunc, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Trunc, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_trunc(r%u <- r%u)", result, a0);
@@ -771,7 +771,7 @@ uint32_t jitc_var_eq(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Eq, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Eq, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_eq(r%u <- r%u, r%u)", result, a0, a1);
@@ -794,7 +794,7 @@ uint32_t jitc_var_neq(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Neq, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Neq, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_neq(r%u <- r%u, r%u)", result, a0, a1);
@@ -817,7 +817,7 @@ uint32_t jitc_var_lt(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Lt, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Lt, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_lt(r%u <- r%u, r%u)", result, a0, a1);
@@ -840,7 +840,7 @@ uint32_t jitc_var_le(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Le, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Le, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_le(r%u <- r%u, r%u)", result, a0, a1);
@@ -863,7 +863,7 @@ uint32_t jitc_var_gt(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Gt, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Gt, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_gt(r%u <- r%u, r%u)", result, a0, a1);
@@ -886,7 +886,7 @@ uint32_t jitc_var_ge(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Ge, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Ge, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_ge(r%u <- r%u, r%u)", result, a0, a1);
@@ -912,7 +912,7 @@ uint32_t jitc_var_select(uint32_t a0, uint32_t a1, uint32_t a2) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_3(info.backend, info.type, NodeType::Select, 0,
+        result = jitc_var_new_node_3(info.backend, VarKind::Select, info.type,
                                     info.size, info.placeholder,
                                     a0, v0, a1, v1, a2, v2);
 
@@ -946,7 +946,7 @@ uint32_t jitc_var_popc(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_popc(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Popc, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Popc, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_popc(r%u <- r%u)", result, a0);
@@ -977,7 +977,7 @@ uint32_t jitc_var_clz(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_clz(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Clz, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Clz, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_clz(r%u <- r%u)", result, a0);
@@ -1007,7 +1007,7 @@ uint32_t jitc_var_ctz(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_ctz(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Ctz, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Ctz, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_ctz(r%u <- r%u)", result, a0);
@@ -1043,7 +1043,7 @@ uint32_t jitc_var_and(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::And, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::And, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_and(r%u <- r%u, r%u)", result, a0, a1);
@@ -1078,7 +1078,7 @@ uint32_t jitc_var_or(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Or, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Or, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_or(r%u <- r%u, r%u)", result, a0, a1);
@@ -1111,7 +1111,7 @@ uint32_t jitc_var_xor(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Xor, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Xor, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_xor(r%u <- r%u, r%u)", result, a0, a1);
@@ -1139,7 +1139,7 @@ uint32_t jitc_var_shl(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Shl, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Shl, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_shl(r%u <- r%u, r%u)", result, a0, a1);
@@ -1167,7 +1167,7 @@ uint32_t jitc_var_shr(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, info.type, NodeType::Shr, 0,
+        result = jitc_var_new_node_2(info.backend, VarKind::Shr, info.type,
                                      info.size, info.placeholder, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_shr(r%u <- r%u, r%u)", result, a0, a1);
@@ -1200,7 +1200,7 @@ uint32_t jitc_var_rcp(uint32_t a0) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Rcp, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Rcp, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_rcp(r%u <- r%u)", result, a0);
@@ -1230,7 +1230,7 @@ uint32_t jitc_var_rsqrt(uint32_t a0) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Rsqrt, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Rsqrt, info.type,
                                     info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_rsqrt(r%u <- r%u)", result, a0);
@@ -1253,7 +1253,7 @@ uint32_t jitc_var_sin(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_sin(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Sin, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Sin, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_sin(r%u <- r%u)", result, a0);
@@ -1276,7 +1276,7 @@ uint32_t jitc_var_cos(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_cos(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Cos, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Cos, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_cos(r%u <- r%u)", result, a0);
@@ -1299,7 +1299,7 @@ uint32_t jitc_var_exp2(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_exp2(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Exp2, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Exp2, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_exp2(r%u <- r%u)", result, a0);
@@ -1322,7 +1322,7 @@ uint32_t jitc_var_log2(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_log2(l0); }, v0);
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type, NodeType::Log2, 0,
+        result = jitc_var_new_node_1(info.backend, VarKind::Log2, info.type,
                                      info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_log2(r%u <- r%u)", result, a0);
@@ -1383,10 +1383,9 @@ uint32_t jitc_var_cast(uint32_t a0, VarType target_type, int reinterpret) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, info.type,
-                                     reinterpret ? NodeType::Bitcast
-                                                 : NodeType::Cast,
-                                     0, info.size, info.placeholder, a0, v0);
+        result = jitc_var_new_node_1(
+            info.backend, reinterpret ? VarKind::Bitcast : VarKind::Cast,
+            info.type, info.size, info.placeholder, a0, v0);
 
     jitc_log(Debug, "jit_var_cast(r%u <- r%u)", result, a0);
     return result;
@@ -1399,12 +1398,13 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
                    *v_index = jitc_var(index);
 
     VarType source_type = (VarType) v_index->type;
-    if (!jitc_is_uint(source_type) && !jitc_is_sint(source_type))
+    if (!jitc_is_int(source_type))
         jitc_raise("jit_scatter_gather_index(): expected an integer array as scatter/gather index");
 
     VarType target_type = VarType::UInt32;
     // Need 64 bit indices for upper 2G entries (gather indices are signed in LLVM)
-    if (v_source->size > 0x7fffffff && (JitBackend) v_source->backend == JitBackend::LLVM)
+    if (v_source->size > 0x7fffffff &&
+        (JitBackend) v_source->backend == JitBackend::LLVM)
         target_type = VarType::UInt64;
 
     return jitc_var_cast(index, target_type, 0);
@@ -1457,18 +1457,15 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
                 v2.stmt = strdup(v->stmt);
                 v2.free_stmt = 1;
             }
-        } else if (v->is_node()) {
-            v2.node = v->node;
-            v2.payload = v->payload;
         } else {
-            jitc_fail("jit_var_reindex(): internal error!");
+            v2.literal = v->literal;
         }
         for (uint32_t i = 0; i < 4; ++i) {
             v2.dep[i] = dep[i];
             jitc_var_inc_ref(dep[i]);
         }
         return jitc_var_new(v2);
-    } else if (v->is_node() && v->node == NodeType::Counter) {
+    } else if (v->kind == VarKind::Counter) {
         return jitc_var_new_ref(new_index);
     } else {
         jitc_var_inc_ref(var_index, v);
@@ -1531,7 +1528,7 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
         var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
         result = jitc_var_new_node_3(
-            src_info.backend, src_info.type, NodeType::Gather, 0, var_info.size,
+            src_info.backend, VarKind::Gather, src_info.type, var_info.size,
             var_info.placeholder, ptr_2, jitc_var(ptr_2), index_2,
             jitc_var(index_2), mask_2, jitc_var(mask_2));
         ptr = (uint32_t) ptr_2;
@@ -1616,10 +1613,10 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
     uint32_t result = jitc_var_new_node_4(
-        var_info.backend, VarType::Void, NodeType::Scatter,
-        (uint32_t) reduce_op, var_info.size, var_info.placeholder, ptr,
+        var_info.backend, VarKind::Scatter, VarType::Void,
+        var_info.size, var_info.placeholder, ptr,
         jitc_var(ptr), value, jitc_var(value), index_2, jitc_var(index_2),
-        mask_2, jitc_var(mask_2));
+        mask_2, jitc_var(mask_2), (uint64_t) reduce_op);
 
     print_log(((uint32_t) target == target_) ? "direct" : "copy", result);
 

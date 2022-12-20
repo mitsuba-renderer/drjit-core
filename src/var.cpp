@@ -84,8 +84,17 @@ const char *type_size_str[(int) VarType::Count] {
 };
 
 ///
-const char *node_names[(int) NodeType::Count] {
+const char *var_kind_name[(int) VarKind::Count] {
     "invalid",
+
+    /// An evaluated node representing data
+    "data",
+
+    /// Legacy string-based IR statement
+    "stmt",
+
+    /// A literal constant
+    "literal",
 
     // Common unary operations
     "neg", "not", "sqrt", "abs",
@@ -490,7 +499,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         } else if (v.is_stmt()) {
             var_buffer.put(v.stmt, strlen(v.stmt));
         } else if (v.is_node()) {
-            var_buffer.fmt("\"%s\" node", node_names[v.node]);
+            var_buffer.fmt("\"%s\" operation", var_kind_name[v.kind]);
         }
 
         bool lvn_hit = lvn && !lvn_key_inserted;
@@ -588,11 +597,10 @@ uint32_t jitc_var_counter(JitBackend backend, size_t size,
 
     jitc_check_size("jit_var_counter", size);
     Variable v;
-    v.kind = (uint32_t) VarKind::Node;
-    v.type = (uint32_t) VarType::UInt32;
-    v.node = NodeType::Counter;
-    v.size = (uint32_t) size;
+    v.kind = VarKind::Counter;
     v.backend = (uint32_t) backend;
+    v.type = (uint32_t) VarType::UInt32;
+    v.size = (uint32_t) size;
     return jitc_var_new(v);
 }
 
@@ -713,24 +721,23 @@ uint32_t jitc_var_stmt(JitBackend backend, VarType vt, const char *stmt,
  * - ensure that no operands have pending side effects. Otherwise, they are
  *   evaluated, and the function checks that this worked as expected.
  */
-uint32_t jitc_var_new_node_0(JitBackend backend, VarType vt, NodeType node,
-                             uint32_t payload, uint32_t size, bool placeholder) {
+uint32_t jitc_var_new_node_0(JitBackend backend, VarKind kind, VarType vt,
+                             uint32_t size, bool placeholder, uint64_t payload) {
 
     Variable v;
-    v.node = node;
-    v.payload = payload;
+    v.literal = payload;
     v.size = size;
+    v.kind = kind;
     v.backend = (uint32_t) backend;
-    v.kind = (uint32_t) VarKind::Node;
     v.type = (uint32_t) vt;
     v.placeholder = placeholder;
 
     return jitc_var_new(v);
 }
 
-uint32_t jitc_var_new_node_1(JitBackend backend, VarType vt, NodeType node,
-                             uint32_t payload, uint32_t size, bool placeholder,
-                             uint32_t a0, Variable *v0) {
+uint32_t jitc_var_new_node_1(JitBackend backend, VarKind kind, VarType vt,
+                             uint32_t size, bool placeholder,
+                             uint32_t a0, Variable *v0, uint64_t payload) {
 
     if (unlikely(v0->is_dirty())) {
         jitc_eval(thread_state(backend));
@@ -742,11 +749,10 @@ uint32_t jitc_var_new_node_1(JitBackend backend, VarType vt, NodeType node,
 
     Variable v;
     v.dep[0] = a0;
-    v.node = node;
-    v.payload = payload;
+    v.literal = payload;
     v.size = size;
+    v.kind = kind;
     v.backend = (uint32_t) backend;
-    v.kind = (uint32_t) VarKind::Node;
     v.type = (uint32_t) vt;
     v.placeholder = placeholder;
 
@@ -755,10 +761,10 @@ uint32_t jitc_var_new_node_1(JitBackend backend, VarType vt, NodeType node,
     return jitc_var_new(v);
 }
 
-uint32_t jitc_var_new_node_2(JitBackend backend, VarType vt, NodeType node,
-                             uint32_t payload, uint32_t size, bool placeholder,
+uint32_t jitc_var_new_node_2(JitBackend backend, VarKind kind, VarType vt,
+                             uint32_t size, bool placeholder,
                              uint32_t a0, Variable *v0,
-                             uint32_t a1, Variable *v1) {
+                             uint32_t a1, Variable *v1, uint64_t payload) {
 
     if (unlikely(v0->is_dirty() || v1->is_dirty())) {
         jitc_eval(thread_state(backend));
@@ -770,11 +776,10 @@ uint32_t jitc_var_new_node_2(JitBackend backend, VarType vt, NodeType node,
     Variable v;
     v.dep[0] = a0;
     v.dep[1] = a1;
-    v.node = node;
-    v.payload = payload;
+    v.literal = payload;
     v.size = size;
+    v.kind = kind;
     v.backend = (uint32_t) backend;
-    v.kind = (uint32_t) VarKind::Node;
     v.type = (uint32_t) vt;
     v.placeholder = placeholder;
 
@@ -784,10 +789,10 @@ uint32_t jitc_var_new_node_2(JitBackend backend, VarType vt, NodeType node,
     return jitc_var_new(v);
 }
 
-uint32_t jitc_var_new_node_3(JitBackend backend, VarType vt, NodeType node,
-                             uint32_t payload, uint32_t size, bool placeholder,
+uint32_t jitc_var_new_node_3(JitBackend backend, VarKind kind, VarType vt,
+                             uint32_t size, bool placeholder,
                              uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
-                             uint32_t a2, Variable *v2) {
+                             uint32_t a2, Variable *v2, uint64_t payload) {
     if (unlikely(v0->is_dirty() || v1->is_dirty() || v2->is_dirty())) {
         jitc_eval(thread_state(backend));
         v0 = jitc_var(a0); v1 = jitc_var(a1); v2 = jitc_var(a2);
@@ -799,11 +804,10 @@ uint32_t jitc_var_new_node_3(JitBackend backend, VarType vt, NodeType node,
     v.dep[0] = a0;
     v.dep[1] = a1;
     v.dep[2] = a2;
-    v.node = node;
-    v.payload = payload;
+    v.literal = payload;
     v.size = size;
+    v.kind = kind;
     v.backend = (uint32_t) backend;
-    v.kind = (uint32_t) VarKind::Node;
     v.type = (uint32_t) vt;
     v.placeholder = placeholder;
 
@@ -814,10 +818,11 @@ uint32_t jitc_var_new_node_3(JitBackend backend, VarType vt, NodeType node,
     return jitc_var_new(v);
 }
 
-uint32_t jitc_var_new_node_4(JitBackend backend, VarType vt, NodeType node,
-                             uint32_t payload, uint32_t size, bool placeholder,
+uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind, VarType vt,
+                             uint32_t size, bool placeholder,
                              uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
-                             uint32_t a2, Variable *v2, uint32_t a3, Variable *v3) {
+                             uint32_t a2, Variable *v2, uint32_t a3, Variable *v3,
+                             uint64_t payload) {
     if (unlikely(v0->is_dirty() || v1->is_dirty() || v2->is_dirty() || v3->is_dirty())) {
         jitc_eval(thread_state(backend));
         v0 = jitc_var(a0); v1 = jitc_var(a1); v2 = jitc_var(a2); v3 = jitc_var(a3);
@@ -830,11 +835,10 @@ uint32_t jitc_var_new_node_4(JitBackend backend, VarType vt, NodeType node,
     v.dep[1] = a1;
     v.dep[2] = a2;
     v.dep[3] = a3;
-    v.node = node;
-    v.payload = payload;
+    v.literal = payload;
     v.size = size;
+    v.kind = kind;
     v.backend = (uint32_t) backend;
-    v.kind = (uint32_t) VarKind::Node;
     v.type = (uint32_t) vt;
     v.placeholder = placeholder;
 
@@ -1484,7 +1488,7 @@ void jitc_var_mask_pop(JitBackend backend) {
 
 /// Return an implicit mask for operations within a virtual function call
 uint32_t jitc_var_vcall_mask(JitBackend backend) {
-    return jitc_var_new_node_0(backend, VarType::Bool, NodeType::VCallMask, 0, 1, 1);
+    return jitc_var_new_node_0(backend, VarKind::VCallMask, VarType::Bool, 1, 1);
 }
 
 bool jitc_var_any(uint32_t index) {
@@ -1828,8 +1832,8 @@ const char *jitc_var_graphviz() {
             } else if (labeled) {
                 var_buffer.rewind_to(var_buffer.size() - 1);
             }
-        } else if (v->is_node()) {
-            const char *name = node_names[v->node];
+        } else {
+            const char *name = var_kind_name[v->kind];
             var_buffer.put(name, strlen(name));
         }
 

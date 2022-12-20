@@ -48,11 +48,10 @@ void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
             ts->vcall_self_index = index;
         } else {
             Variable v;
-            v.kind = (uint32_t) VarKind::Node;
-            v.node = NodeType::VCallSelf;
+            v.kind = VarKind::VCallSelf;
+            v.backend = (uint32_t) backend;
             v.size = 1u;
             v.type = (uint32_t) VarType::UInt32;
-            v.backend = (uint32_t) backend;
             v.placeholder = true;
             ts->vcall_self_index = jitc_var_new(v, true);
         }
@@ -736,7 +735,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     const Variable *v = jitc_var(index);
 
-    if (v->is_node() && (NodeType) v->node == NodeType::VCallSelf)
+    if ((VarKind) v->kind == VarKind::VCallSelf)
         use_self = true;
 
     if (v->optix)

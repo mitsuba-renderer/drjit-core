@@ -28,8 +28,19 @@
 
 #define DRJIT_PTR "<0x%" PRIxPTR ">"
 
-enum NodeType : uint32_t {
+enum VarKind : uint32_t {
+    /// Invalid node (default)
     Invalid,
+
+    /// An evaluated node representing data
+    Data,
+
+    /// Legacy string-based IR statement
+    Stmt,
+
+    /// A literal constant
+    /// (note: this must be the last enumeration entry before the regular nodes start)
+    Literal,
 
     // Common unary operations
     Neg, Not, Sqrt, Abs,
@@ -85,13 +96,6 @@ enum NodeType : uint32_t {
     Count /// Denotes the number of different node types
 };
 
-enum class VarKind : uint32_t {
-    Stmt = 0,
-    Literal,
-    Node,
-    Data
-};
-
 #pragma pack(push, 1)
 
 /// Central variable data structure, which represents an assignment in SSA form
@@ -138,32 +142,29 @@ struct Variable {
 
     /// The 'kind' field determines which entry of the following union is used
     union {
-        /// Unevaluated node in a computation graph
-        struct {
-            NodeType node;
-            uint32_t payload;
-        };
-
-        // Floating point/integer value (reinterpreted as u64)
+        // Floating point/integer value, reinterpreted as u64
         uint64_t literal;
 
-        // Raw statement in an intermediate representation (PTX, LLVM IR)
-        char *stmt;
-
-        /// Pointer to device memory
+        /// Pointer to device memory. Used when kind == VarKind::Data
         void *data;
+
+        // Legacy string-based IR (to be removed)
+        char *stmt;
     };
 
     /// Number of entries
     uint32_t size;
 
+    /// Unused, to be eventually used to upgrade to 64 bit array sizes
+    uint32_t unused;
+
     // ================  Essential flags used in the LVN key  =================
+
+    // Variable kind (IR statement / literal constant / data)
+    uint32_t kind : 8;
 
     /// Backend associated with this variable
     uint32_t backend : 2;
-
-    // Variable kind (IR statement / literal constant / data)
-    uint32_t kind : 2;
 
     /// Variable type (Bool/Int/Float/....)
     uint32_t type : 4;
@@ -206,7 +207,7 @@ struct Variable {
     uint32_t output_flag : 1;
 
     /// Unused for now
-    uint32_t unused : 12;
+    uint32_t unused_2 : 6;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;
@@ -214,17 +215,17 @@ struct Variable {
     /// Register index
     uint32_t reg_index;
 
+    // ========================  Side effect tracking  =========================
+
     /// Number of queued side effects
     uint32_t ref_count_se;
-
-    uint32_t unused_2;
 
     // =========================   Helper functions   ==========================
 
     bool is_data()    const { return kind == (uint32_t) VarKind::Data;    }
     bool is_literal() const { return kind == (uint32_t) VarKind::Literal; }
     bool is_stmt()    const { return kind == (uint32_t) VarKind::Stmt;    }
-    bool is_node()    const { return kind == (uint32_t) VarKind::Node;    }
+    bool is_node()    const { return (uint32_t) kind > VarKind::Literal; }
     bool is_dirty()   const { return ref_count_se > 0; }
 };
 
@@ -233,20 +234,16 @@ struct VariableKey {
     uint32_t size;
     uint32_t scope;
     uint32_t dep[4];
+    uint32_t kind      : 8;
     uint32_t backend   : 2;
-    uint32_t kind      : 2;
     uint32_t type      : 4;
     uint32_t write_ptr : 1;
     uint32_t free_stmt : 1;
-    uint32_t unused    : 22;
+    uint32_t unused    : 16;
 
     union {
         uint64_t literal;
         char *stmt;
-        struct {
-            NodeType node;
-            uint32_t payload;
-        };
     };
 
     VariableKey(const Variable &v) {
@@ -254,17 +251,13 @@ struct VariableKey {
         scope = v.scope;
         for (int i = 0; i < 4; ++i)
             dep[i] = v.dep[i];
-        if (v.is_literal()) {
-            literal = v.literal;
-        } else if (v.is_stmt()) {
+        if (v.is_stmt())
             stmt = v.stmt;
-        } else {
-            node = v.node;
-            payload = v.payload;
-        }
+        else
+            literal = v.literal;
 
-        backend = v.backend;
         kind = v.kind;
+        backend = v.backend;
         type = v.type;
         write_ptr = v.write_ptr;
         free_stmt = v.free_stmt;
@@ -274,10 +267,8 @@ struct VariableKey {
     bool operator==(const VariableKey &v) const {
         if (memcmp(this, &v, 7 * sizeof(uint32_t)) != 0)
             return false;
-        if (kind == (uint32_t) VarKind::Literal)
+        if ((VarKind) kind != VarKind::Stmt)
             return literal == v.literal;
-        else if (kind == (uint32_t) VarKind::Node)
-            return node == v.node && payload == v.payload;
         else if (!free_stmt)
             return stmt == v.stmt;
         else
@@ -291,10 +282,8 @@ struct VariableKey {
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
         uint64_t hash_1;
-        if (k.kind == (uint32_t) VarKind::Literal)
+        if ((VarKind) k.kind != VarKind::Stmt)
             hash_1 = k.literal;
-        else if (k.kind == (uint32_t) VarKind::Node)
-            hash_1 = (((uint64_t) k.node) << 32) + k.payload;
         else if (!k.free_stmt)
             hash_1 = (uintptr_t) k.stmt;
         else
@@ -848,7 +837,6 @@ JIT_MALLOC inline void* realloc_check(void *orig, size_t size) {
 // ===========================================================================
 // Helper functions to classify different variable types
 // ===========================================================================
-//
 
 inline bool jitc_is_arithmetic(VarType type) {
     return type != VarType::Void && type != VarType::Bool;
@@ -912,4 +900,4 @@ inline bool jitc_is_one(Variable *v) {
     return v->literal == one;
 }
 
-extern const char *node_names[(int) NodeType::Count];
+extern const char *var_kind_name[(int) VarKind::Count];
