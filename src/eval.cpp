@@ -266,9 +266,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     buffer.clear();
     if (backend == JitBackend::CUDA)
-        jitc_assemble_cuda(ts, group, n_regs, kernel_param_count);
+        jitc_cuda_assemble(ts, group, n_regs, kernel_param_count);
     else
-        jitc_assemble_llvm(ts, group);
+        jitc_llvm_assemble(ts, group);
 
     // Replace '^'s in '__raygen__^^^..' or 'drjit_^^^..' with hash
     kernel_hash = hash_kernel(buffer.get());
@@ -803,11 +803,11 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
 
     callable_depth++;
     if (ts->backend == JitBackend::CUDA)
-        jitc_assemble_cuda_func(name, inst_id, n_regs, in_size, in_align,
+        jitc_cuda_assemble_func(name, inst_id, n_regs, in_size, in_align,
                                 out_size, out_align, data_offset, data_map,
                                 n_out, out_nested, use_self);
     else
-        jitc_assemble_llvm_func(name, inst_id, in_size, data_offset, data_map,
+        jitc_llvm_assemble_func(name, inst_id, in_size, data_offset, data_map,
                                 n_out, out_nested, use_self);
     callable_depth--;
 

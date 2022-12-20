@@ -620,7 +620,6 @@ TEST_BOTH(07_and_or_mixed) {
 }
 
 #if 0
-
 template <JitBackend Backend, typename... Ts>
 void printf_async(const JitArray<Backend, bool> &mask, const char *fmt,
                      const Ts &... ts) {

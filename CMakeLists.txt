@@ -125,7 +125,6 @@ add_library(
   src/eval.h          src/eval.cpp
   src/vcall.h         src/vcall.cpp
   src/loop.h          src/loop.cpp
-  src/printf.h        src/printf.cpp
   src/init.cpp
   src/api.cpp
 
