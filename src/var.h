@@ -12,7 +12,7 @@
 #include <drjit-core/jit.h>
 #include <utility>
 
-enum NodeType : uint32_t;
+enum VarKind : uint32_t;
 
 struct Variable;
 
@@ -21,12 +21,12 @@ extern Variable *jitc_var(uint32_t index);
 
 /// Create a value constant variable of the given size
 extern uint32_t jitc_var_literal(JitBackend backend, VarType type,
-                                     const void *value, size_t size,
-                                     int eval, int is_class = 0);
+                                 const void *value, size_t size,
+                                 int eval, int is_class = 0);
 
 /// Create a variable counting from 0 ... size - 1
 extern uint32_t jitc_var_counter(JitBackend backend, size_t size,
-                                     bool simplify_scalar);
+                                 bool simplify_scalar);
 
 /// Create a variable representing the result of a custom IR statement
 extern uint32_t jitc_var_stmt(JitBackend backend,
@@ -37,26 +37,30 @@ extern uint32_t jitc_var_stmt(JitBackend backend,
                               const uint32_t *dep);
 
 /// Create a new IR node. Just a wrapper around jitc_var_new without any error checking
-extern uint32_t jitc_var_new_node_0(JitBackend backend, VarType vt, NodeType node,
-                                    uint32_t payload, uint32_t size, bool placeholder);
+extern uint32_t jitc_var_new_node_0(JitBackend backend, VarKind kind,
+                                    VarType vt, uint32_t size, bool placeholder,
+                                    uint64_t payload = 0);
 
-extern uint32_t jitc_var_new_node_1(JitBackend backend, VarType vt, NodeType node,
-                                    uint32_t payload, uint32_t size, bool placeholder,
-                                    uint32_t a0, Variable *v0);
+extern uint32_t jitc_var_new_node_1(JitBackend backend, VarKind kind,
+                                    VarType vt, uint32_t size, bool placeholder,
+                                    uint32_t a0, Variable *v0,
+                                    uint64_t payload = 0);
 
-extern uint32_t jitc_var_new_node_2(JitBackend backend, VarType vt, NodeType node,
-                                    uint32_t payload, uint32_t size, bool placeholder,
-                                    uint32_t a0, Variable *v0, uint32_t a1, Variable *v1);
-
-extern uint32_t jitc_var_new_node_3(JitBackend backend, VarType vt, NodeType node,
-                                    uint32_t payload, uint32_t size, bool placeholder,
+extern uint32_t jitc_var_new_node_2(JitBackend backend, VarKind kind,
+                                    VarType vt, uint32_t size, bool placeholder,
                                     uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
-                                    uint32_t a2, Variable *v2);
+                                    uint64_t payload = 0);
 
-extern uint32_t jitc_var_new_node_4(JitBackend backend, VarType vt, NodeType node,
-                                    uint32_t payload, uint32_t size, bool placeholder,
+extern uint32_t jitc_var_new_node_3(JitBackend backend, VarKind kind,
+                                    VarType vt, uint32_t size, bool placeholder,
                                     uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
-                                    uint32_t a2, Variable *v2, uint32_t a3, Variable *v4);
+                                    uint32_t a2, Variable *v2, uint64_t payload = 0);
+
+extern uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind,
+                                    VarType vt, uint32_t size, bool placeholder,
+                                    uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
+                                    uint32_t a2, Variable *v2, uint32_t a3, Variable *v4,
+                                    uint64_t payload = 0);
 
 /// Create a variable that refers to a memory region
 extern uint32_t jitc_var_pointer(JitBackend backend, const void *value,
