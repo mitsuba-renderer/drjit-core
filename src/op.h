@@ -14,6 +14,11 @@
 /// Create a variable representing the result of a standard operation
 extern uint32_t jitc_var_op(JitOp ot, const uint32_t *dep);
 
+// Asynchronously print to the screen
+extern void jitc_var_printf(JitBackend backend, uint32_t mask,
+                            const char *fmt, uint32_t narg,
+                            const uint32_t *arg);
+
 /// Create a variable that reads from another variable
 extern uint32_t jitc_var_gather(uint32_t source, uint32_t index,
                                 uint32_t mask);

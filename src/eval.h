@@ -101,11 +101,11 @@ extern std::vector<ScheduledGroup> schedule_groups;
 extern void jitc_eval(ThreadState *ts);
 
 /// Used by jitc_eval() to generate PTX source code
-extern void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
+extern void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                                uint32_t n_regs, uint32_t n_params);
 
 /// Used by jitc_eval() to generate LLVM IR source code
-extern void jitc_assemble_llvm(ThreadState *ts, ScheduledGroup group);
+extern void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group);
 
 /// Used by jitc_vcall() to generate source code for vcalls
 extern XXH128_hash_t
@@ -119,7 +119,7 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
 
 /// Used by jitc_vcall() to generate PTX source code for vcalls
 extern void
-jitc_assemble_cuda_func(const char *name, uint32_t inst_id, uint32_t n_regs,
+jitc_cuda_assemble_func(const char *name, uint32_t inst_id, uint32_t n_regs,
                         uint32_t in_size, uint32_t in_align, uint32_t out_size,
                         uint32_t out_align, uint32_t data_offset,
                         const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
@@ -128,7 +128,7 @@ jitc_assemble_cuda_func(const char *name, uint32_t inst_id, uint32_t n_regs,
 
 /// Used by jitc_vcall() to generate LLVM IR source code for vcalls
 extern void
-jitc_assemble_llvm_func(const char *name, uint32_t inst_id,
+jitc_llvm_assemble_func(const char *name, uint32_t inst_id,
                         uint32_t in_size, uint32_t data_offset,
                         const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                         uint32_t n_out, const uint32_t *out_nested,

@@ -203,6 +203,14 @@ auto vcall(const char *domain, const Func &func,
 }
 
 
+template <JitBackend Backend, typename... Ts>
+void printf_async(const JitArray<Backend, bool> &mask, const char *fmt,
+                     const Ts &... ts) {
+    uint32_t indices[] = { ts.index()... };
+    jit_var_printf(Backend, mask.index(), fmt, (uint32_t) sizeof...(Ts),
+                   indices);
+}
+
 TEST_BOTH(01_recorded_vcall) {
     /// Test a simple virtual function call
     struct Base {
@@ -210,11 +218,17 @@ TEST_BOTH(01_recorded_vcall) {
     };
 
     struct A1 : Base {
-        Float f(Float x) override { return (x + 10) * 2; }
+        Float f(Float x) override {
+            // printf_async(Mask(true), "A1::f(%f)\n", x);
+            return (x + 10) * 2;
+        }
     };
 
     struct A2 : Base {
-        Float f(Float x) override { return (x + 100) * 2; }
+        Float f(Float x) override {
+            // printf_async(Mask(true), "A2::f(%f)\n", x);
+            return (x + 100) * 2;
+        }
     };
 
     A1 a1;

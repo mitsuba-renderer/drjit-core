@@ -18,7 +18,6 @@
 #include "op.h"
 #include "vcall.h"
 #include "loop.h"
-#include "printf.h"
 #include <thread>
 #include <condition_variable>
 #include <drjit-core/texture.h>

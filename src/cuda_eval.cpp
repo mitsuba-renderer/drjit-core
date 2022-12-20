@@ -48,10 +48,15 @@
     } while (0);
 
 // Forward declaration
-static void jitc_render_stmt_cuda(uint32_t index, const Variable *v);
-static void jitc_render_var_cuda(const Variable *v);
+static void jitc_cuda_render_stmt(uint32_t index, const Variable *v);
+static void jitc_cuda_render_var(uint32_t index, const Variable *v);
+static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
+                                     const Variable *value, const Variable *index,
+                                     const Variable *mask);
+static void jitc_cuda_render_printf(uint32_t index, const Variable *v,
+                                    const Variable *mask);
 
-void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
+void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
     bool params_global = !uses_optix && n_params > DRJIT_CUDA_ARG_LIMIT;
     bool print_labels  = std::max(state.log_level_stderr,
@@ -189,9 +194,9 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
             }
             continue;
         } else if (!v->is_stmt()) {
-            jitc_render_var_cuda(v);
+            jitc_cuda_render_var(index, v);
         } else if (likely(!assemble)) {
-            jitc_render_stmt_cuda(index, v);
+            jitc_cuda_render_stmt(index, v);
         }
 
         if (v->param_type == ParamType::Output) {
@@ -256,7 +261,7 @@ void jitc_assemble_cuda(ThreadState *ts, ScheduledGroup group,
     jitc_vcall_upload(ts);
 }
 
-void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
+void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
                              uint32_t n_regs, uint32_t in_size,
                              uint32_t in_align, uint32_t out_size,
                              uint32_t out_align, uint32_t data_offset,
@@ -332,14 +337,14 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
             auto it = data_map.find(key);
 
             if (unlikely(it == data_map.end())) {
-                jitc_fail("jitc_assemble_cuda_func(): could not find entry for "
+                jitc_fail("jitc_cuda_assemble_func(): could not find entry for "
                           "variable r%u in 'data_map'", sv.index);
                 continue;
             }
 
             if (it->second == (uint32_t) -1)
                 jitc_fail(
-                    "jitc_assemble_cuda_func(): variable r%u is referenced by "
+                    "jitc_cuda_assemble_func(): variable r%u is referenced by "
                     "a recorded function call. However, it was evaluated "
                     "between the recording step and code generation (which "
                     "is happening now). This is not allowed.", sv.index);
@@ -354,9 +359,9 @@ void jitc_assemble_cuda_func(const char *name, uint32_t inst_id,
         } else if (v->is_literal()) {
             fmt("    mov.$b $v, $l;\n", v, v, v);
         } else if (v->is_node()) {
-            jitc_render_var_cuda(v);
+            jitc_cuda_render_var(sv.index, v);
         } else {
-            jitc_render_stmt_cuda(sv.index, v);
+            jitc_cuda_render_stmt(sv.index, v);
         }
     }
 
@@ -387,7 +392,7 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
 };
 
-static void jitc_render_var_cuda(const Variable *v) {
+static void jitc_cuda_render_var(uint32_t index, const Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
@@ -699,124 +704,8 @@ static void jitc_render_var_cuda(const Variable *v) {
             }
             break;
 
-        case VarKind::Scatter: {
-                bool index_zero = a2->is_literal() && a2->literal == 0;
-                bool unmasked = a3->is_literal() && a3->literal == 1;
-                bool is_bool = a1->type == (uint32_t) VarType::Bool;
-
-                if (!unmasked)
-                    fmt("    @!$v bra l_$u_done;\n", a3, v->reg_index);
-
-                if (index_zero) {
-                    fmt("    mov.u64 %rd3, $v;\n", a0);
-                } else if (type_size[v->type] == 1) {
-                    fmt("    cvt.u64.$t %rd3, $v;\n"
-                        "    add.u64 %rd3, %rd3, $v;\n", a2, a2, a0);
-                } else {
-                    fmt("    mad.wide.$t %rd3, $v, $a, $v;\n",
-                        a2, a2, a1, a0);
-                }
-                const char *op = reduce_op_name[v->literal];
-                const ThreadState *ts = thread_state_cuda;
-
-                if (v->literal && callable_depth == 0 &&
-                    type_size[a1->type] == 4 &&
-                    ts->ptx_version>= 62 &&
-                    ts->compute_capability >= 70) {
-                    fmt("    {\n"
-                        "        .visible .func reduce_$s_$t(.param .u64 ptr, .param .$t value);\n"
-                        "        call reduce_$s_$t, (%rd3, $v);\n"
-                        "    }\n",
-                        op, a1, a1, op, a1, a1);
-
-                    // Intrinsic to perform an intra-warp reduction before writing to global memory
-                    fmt_intrinsic(
-                        ".visible .func reduce_$s_$t(.param .u64 ptr,\n"
-                        "                              .param .$t value) {\n"
-                        "    .reg .pred %p<14>;\n"
-                        "    .reg .$t %q<19>;\n"
-                        "    .reg .b32 %r<41>;\n"
-                        "    .reg .b64 %rd<2>;\n"
-                        "\n"
-                        "    ld.param.u64 %rd0, [ptr];\n"
-                        "    ld.param.$t %q3, [value];\n"
-                        "    activemask.b32 %r1;\n"
-                        "    match.any.sync.b64 %r2, %rd0, %r1;\n"
-                        "    setp.eq.s32 %p1, %r2, -1;\n"
-                        "    @%p1 bra.uni fast_path;\n"
-                        "\n"
-                        "    brev.b32 %r10, %r2;\n"
-                        "    bfind.shiftamt.u32 %r40, %r10;\n"
-                        "    shf.l.wrap.b32 %r12, -2, -2, %r40;\n"
-                        "    and.b32 %r39, %r2, %r12;\n"
-                        "    setp.ne.s32 %p2, %r39, 0;\n"
-                        "    vote.sync.any.pred %p3, %p2, %r1;\n"
-                        "    @!%p3 bra maybe_scatter;\n"
-                        "    mov.b32 %r5, %q3;\n"
-                        "\n"
-                        "slow_path_repeat:\n"
-                        "    brev.b32 %r14, %r39;\n"
-                        "    bfind.shiftamt.u32 %r15, %r14;\n"
-                        "    shfl.sync.idx.b32 %r17, %r5, %r15, 31, %r1;\n"
-                        "    mov.b32 %q6, %r17;\n"
-                        "    @%p2 $s.$t %q3, %q3, %q6;\n"
-                        "    shf.l.wrap.b32 %r19, -2, -2, %r15;\n"
-                        "    and.b32 %r39, %r39, %r19;\n"
-                        "    setp.ne.s32 %p2, %r39, 0;\n"
-                        "    vote.sync.any.pred %p3, %p2, %r1;\n"
-                        "    @!%p3 bra maybe_scatter;\n"
-                        "    bra.uni slow_path_repeat;\n"
-                        "\n"
-                        "fast_path:\n"
-                        "    mov.b32 %r22, %q3;\n"
-                        "    shfl.sync.down.b32 %r26, %r22, 16, 31, %r1;\n"
-                        "    mov.b32 %q7, %r26;\n"
-                        "    $s.$t %q8, %q7, %q3;\n"
-                        "    mov.b32 %r27, %q8;\n"
-                        "    shfl.sync.down.b32 %r29, %r27, 8, 31, %r1;\n"
-                        "    mov.b32 %q9, %r29;\n"
-                        "    $s.$t %q10, %q8, %q9;\n"
-                        "    mov.b32 %r30, %q10;\n"
-                        "    shfl.sync.down.b32 %r32, %r30, 4, 31, %r1;\n"
-                        "    mov.b32 %q11, %r32;\n"
-                        "    $s.$t %q12, %q10, %q11;\n"
-                        "    mov.b32 %r33, %q12;\n"
-                        "    shfl.sync.down.b32 %r34, %r33, 2, 31, %r1;\n"
-                        "    mov.b32 %q13, %r34;\n"
-                        "    $s.$t %q14, %q12, %q13;\n"
-                        "    mov.b32 %r35, %q14;\n"
-                        "    shfl.sync.down.b32 %r37, %r35, 1, 31, %r1;\n"
-                        "    mov.b32 %q15, %r37;\n"
-                        "    $s.$t %q3, %q14, %q15;\n"
-                        "    mov.u32 %r40, 0;\n"
-                        "\n"
-                        "maybe_scatter:\n"
-                        "    mov.u32 %r38, %laneid;\n"
-                        "    setp.ne.s32 %p13, %r40, %r38;\n"
-                        "    @%p13 bra done;\n"
-                        "    red.$s.$t [%rd0], %q3;\n"
-                        "\n"
-                        "done:\n"
-                        "    ret;\n"
-                        "}",
-                        op, a1, a1, a1, a1, op, a1, op, a1, op, a1, op, a1, op,
-                        a1, op, a1, op, a1
-                    );
-                } else {
-                    const char *op_type = v->literal ? "red" : "st";
-
-                    if (is_bool)
-                        fmt("    selp.u16 %w0, 1, 0, $v;\n"
-                            "    $s.global$s$s.u8 [%rd3], %w0;\n",
-                            a1, op_type, v->literal ? "." : "", op);
-                    else
-                        fmt("    $s.global$s$s.$t [%rd3], $v;\n", op_type,
-                            v->literal ? "." : "", op, a1, a1);
-                }
-
-                if (!unmasked)
-                    fmt("\nl_$u_done:\n", v->reg_index);
-            }
+        case VarKind::Scatter:
+            jitc_cuda_render_scatter(v, a0, a1, a2, a3);
             break;
 
         case VarKind::VCallSelf:
@@ -827,14 +716,215 @@ static void jitc_render_var_cuda(const Variable *v) {
             fmt("    mov.$t $v, %r0;\n", v, v);
             break;
 
+        case VarKind::Printf:
+            jitc_cuda_render_printf(index, v, a0);
+            break;
+
         default:
-            jitc_fail("jitc_render_var_cuda(): unhandled variable kind \"%s\"!",
+            jitc_fail("jitc_cuda_render_var(): unhandled variable kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);
     }
 }
 
+static void jitc_cuda_render_scatter(const Variable *v,
+                                     const Variable *ptr,
+                                     const Variable *value,
+                                     const Variable *index,
+                                     const Variable *mask) {
+    bool index_zero = index->is_literal() && index->literal == 0;
+    bool unmasked = mask->is_literal() && mask->literal == 1;
+    bool is_bool = value->type == (uint32_t) VarType::Bool;
+
+    if (!unmasked)
+        fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
+
+    if (index_zero) {
+        fmt("    mov.u64 %rd3, $v;\n", ptr);
+    } else if (type_size[v->type] == 1) {
+        fmt("    cvt.u64.$t %rd3, $v;\n"
+            "    add.u64 %rd3, %rd3, $v;\n", index, index, ptr);
+    } else {
+        fmt("    mad.wide.$t %rd3, $v, $a, $v;\n",
+            index, index, value, ptr);
+    }
+    const char *op = reduce_op_name[v->literal];
+    const ThreadState *ts = thread_state_cuda;
+
+    if (v->literal && callable_depth == 0 && type_size[value->type] == 4 &&
+        ts->ptx_version >= 62 && ts->compute_capability >= 70) {
+        fmt("    {\n"
+            "        .visible .func reduce_$s_$t(.param .u64 ptr, .param .$t value);\n"
+            "        call reduce_$s_$t, (%rd3, $v);\n"
+            "    }\n",
+            op, value, value, op, value, value);
+
+        // Intrinsic to perform an intra-warp reduction before writing to global memory
+        fmt_intrinsic(
+            ".visible .func reduce_$s_$t(.param .u64 ptr,\n"
+            "                              .param .$t value) {\n"
+            "    .reg .pred %p<14>;\n"
+            "    .reg .$t %q<19>;\n"
+            "    .reg .b32 %r<41>;\n"
+            "    .reg .b64 %rd<2>;\n"
+            "\n"
+            "    ld.param.u64 %rd0, [ptr];\n"
+            "    ld.param.$t %q3, [value];\n"
+            "    activemask.b32 %r1;\n"
+            "    match.any.sync.b64 %r2, %rd0, %r1;\n"
+            "    setp.eq.s32 %p1, %r2, -1;\n"
+            "    @%p1 bra.uni fast_path;\n"
+            "\n"
+            "    brev.b32 %r10, %r2;\n"
+            "    bfind.shiftamt.u32 %r40, %r10;\n"
+            "    shf.l.wrap.b32 %r12, -2, -2, %r40;\n"
+            "    and.b32 %r39, %r2, %r12;\n"
+            "    setp.ne.s32 %p2, %r39, 0;\n"
+            "    vote.sync.any.pred %p3, %p2, %r1;\n"
+            "    @!%p3 bra maybe_scatter;\n"
+            "    mov.b32 %r5, %q3;\n"
+            "\n"
+            "slow_path_repeat:\n"
+            "    brev.b32 %r14, %r39;\n"
+            "    bfind.shiftamt.u32 %r15, %r14;\n"
+            "    shfl.sync.idx.b32 %r17, %r5, %r15, 31, %r1;\n"
+            "    mov.b32 %q6, %r17;\n"
+            "    @%p2 $s.$t %q3, %q3, %q6;\n"
+            "    shf.l.wrap.b32 %r19, -2, -2, %r15;\n"
+            "    and.b32 %r39, %r39, %r19;\n"
+            "    setp.ne.s32 %p2, %r39, 0;\n"
+            "    vote.sync.any.pred %p3, %p2, %r1;\n"
+            "    @!%p3 bra maybe_scatter;\n"
+            "    bra.uni slow_path_repeat;\n"
+            "\n"
+            "fast_path:\n"
+            "    mov.b32 %r22, %q3;\n"
+            "    shfl.sync.down.b32 %r26, %r22, 16, 31, %r1;\n"
+            "    mov.b32 %q7, %r26;\n"
+            "    $s.$t %q8, %q7, %q3;\n"
+            "    mov.b32 %r27, %q8;\n"
+            "    shfl.sync.down.b32 %r29, %r27, 8, 31, %r1;\n"
+            "    mov.b32 %q9, %r29;\n"
+            "    $s.$t %q10, %q8, %q9;\n"
+            "    mov.b32 %r30, %q10;\n"
+            "    shfl.sync.down.b32 %r32, %r30, 4, 31, %r1;\n"
+            "    mov.b32 %q11, %r32;\n"
+            "    $s.$t %q12, %q10, %q11;\n"
+            "    mov.b32 %r33, %q12;\n"
+            "    shfl.sync.down.b32 %r34, %r33, 2, 31, %r1;\n"
+            "    mov.b32 %q13, %r34;\n"
+            "    $s.$t %q14, %q12, %q13;\n"
+            "    mov.b32 %r35, %q14;\n"
+            "    shfl.sync.down.b32 %r37, %r35, 1, 31, %r1;\n"
+            "    mov.b32 %q15, %r37;\n"
+            "    $s.$t %q3, %q14, %q15;\n"
+            "    mov.u32 %r40, 0;\n"
+            "\n"
+            "maybe_scatter:\n"
+            "    mov.u32 %r38, %laneid;\n"
+            "    setp.ne.s32 %p13, %r40, %r38;\n"
+            "    @%p13 bra done;\n"
+            "    red.$s.$t [%rd0], %q3;\n"
+            "\n"
+            "done:\n"
+            "    ret;\n"
+            "}",
+            op, value, value, value, value, op, value, op, value, op, value, op, value, op,
+            value, op, value, op, value
+        );
+    } else {
+        const char *op_type = v->literal ? "red" : "st";
+
+        if (is_bool)
+            fmt("    selp.u16 %w0, 1, 0, $v;\n"
+                "    $s.global$s$s.u8 [%rd3], %w0;\n",
+                value, op_type, v->literal ? "." : "", op);
+        else
+            fmt("    $s.global$s$s.$t [%rd3], $v;\n", op_type,
+                v->literal ? "." : "", op, value, value);
+    }
+
+    if (!unmasked)
+        fmt("\nl_$u_done:\n", v->reg_index);
+}
+
+static void jitc_cuda_render_printf(uint32_t index, const Variable *v,
+                                    const Variable *mask) {
+    const Extra &extra = state.extra[index];
+    const char *format_str = (const char *) v->literal;
+
+    uint32_t offset = 0, align = 0;
+    for (uint32_t i = 0; i < extra.n_dep; ++i) {
+        Variable *v2 = jitc_var(extra.dep[i]);
+        uint32_t vti = v2->type;
+        if ((VarType) vti == VarType::Void)
+            continue;
+        uint32_t tsize = type_size[vti];
+        if ((VarType) vti == VarType::Float32)
+            tsize = 8;
+
+        offset = (offset + tsize - 1) / tsize * tsize;
+        offset += tsize;
+        align = std::max(align, tsize);
+    }
+
+    if (align == 0)
+        align = 1;
+    if (offset == 0)
+        offset = 1;
+
+    put("    {\n");
+    fmt("        .local .align $u .b8 buf[$u];\n", align, offset);
+    put("        .extern .func (.param .b32 rv) vprintf (.param .b64 fmt, .param .b64 buf);\n");
+    put("        .global .align 1 .b8 print_data[] = { ");
+
+    for (uint32_t i = 0; ; ++i) {
+        buffer.put_u32((uint32_t) format_str[i]);
+        if (!format_str[i])
+            break;
+        put(", ");
+    }
+    put(" };\n");
+
+    offset = 0;
+    for (uint32_t i = 0; i < extra.n_dep; ++i) {
+        Variable *v2 = jitc_var(extra.dep[i]);
+        const VarType vt = (VarType) v2->type;
+        uint32_t tsize = vt == VarType::Float32 ? 8 : type_size[(int) vt];
+
+        if (vt == VarType::Void)
+            continue;
+
+        offset = (offset + tsize - 1) / tsize * tsize;
+
+        if (vt == VarType::Float32) {
+            fmt("        cvt.f64.f32 %d3, $v;\n"
+                "        st.local.f64 [buf+$u], %d3;\n", v2, offset);
+        } else {
+            fmt("        st.local.$t [buf+$u], $v;\n", v2, offset, v2);
+        }
+
+        offset += tsize;
+    }
+    put("\n"
+        "        .reg.b64 %fmt_generic, %buf_generic;\n"
+        "        cvta.global.u64 %fmt_generic, print_data;\n"
+        "        cvta.local.u64 %buf_generic, buf;\n"
+        "        {\n"
+        "            .param .b64 fmt_p;\n"
+        "            .param .b64 buf_p;\n"
+        "            .param .b32 rv_p;\n"
+        "            st.param.b64 [fmt_p], %fmt_generic;\n"
+        "            st.param.b64 [buf_p], %buf_generic;\n"
+        "            ");
+    if (mask && !(mask->is_literal() && mask->literal == 1))
+        fmt("@$v ", mask);
+    put("call (rv_p), vprintf, (fmt_p, buf_p);\n"
+        "        }\n"
+        "    }\n");
+}
+
 /// Convert an IR template with '$' expressions into valid IR
-static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
+static void jitc_cuda_render_stmt(uint32_t index, const Variable *v) {
     const char *s = v->stmt;
     if (unlikely(*s == '\0'))
         return;
@@ -856,18 +946,18 @@ static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
                 case 's': prefix_table = type_size_str; break;
                 case 'r': prefix_table = type_prefix; break;
                 default:
-                    jitc_fail("jit_render_stmt_cuda(): encountered invalid \"$\" "
+                    jitc_fail("jit_cuda_render_stmt(): encountered invalid \"$\" "
                               "expression (unknown type \"%c\") in \"%s\"!", type, v->stmt);
             }
 
             uint32_t arg_id = *s++ - '0';
             if (unlikely(arg_id > 4))
-                jitc_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
+                jitc_fail("jit_cuda_render_stmt(%s): encountered invalid \"$\" "
                           "expression (argument out of bounds)!", v->stmt);
 
             uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
             if (unlikely(dep_id == 0))
-                jitc_fail("jit_render_stmt_cuda(%s): encountered invalid \"$\" "
+                jitc_fail("jit_cuda_render_stmt(%s): encountered invalid \"$\" "
                           "expression (referenced variable %u is missing)!", v->stmt, arg_id);
 
             const Variable *dep = jitc_var(dep_id);
@@ -877,7 +967,7 @@ static void jitc_render_stmt_cuda(uint32_t index, const Variable *v) {
             if (type == 'r') {
                 buffer.put_u32(dep->reg_index);
                 if (unlikely(dep->reg_index == 0))
-                    jitc_fail("jitc_render_stmt_cuda(): variable has no register index!");
+                    jitc_fail("jitc_cuda_render_stmt(): variable has no register index!");
             }
         }
     } while (c != '\0');

@@ -93,6 +93,9 @@ enum VarKind : uint32_t {
     /// Counter node to determine the current lane ID
     Counter,
 
+    /// Recorded 'printf' instruction for debugging purposes
+    Printf,
+
     Count /// Denotes the number of different node types
 };
 

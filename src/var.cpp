@@ -145,7 +145,10 @@ const char *var_kind_name[(int) VarKind::Count] {
     "vcall_mask", "self",
 
     /// Counter node to determine the current lane ID
-    "counter"
+    "counter",
+
+    /// Recorded 'printf' instruction for debugging purposes
+    "printf"
 };
 
 
