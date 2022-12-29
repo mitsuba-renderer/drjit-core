@@ -144,11 +144,20 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Specialized nodes for vcalls
     "vcall_mask", "self",
 
-    /// Counter node to determine the current lane ID
+    // Counter node to determine the current lane ID
     "counter",
 
-    /// Recorded 'printf' instruction for debugging purposes
-    "printf"
+    // Recorded 'printf' instruction for debugging purposes
+    "printf",
+
+    // Perform a standard texture lookup (CUDA)
+    "tex_lookup",
+
+    // Load all texels used for bilinear interpolation (CUDA)
+    "tex_fetch_bilerp",
+
+    // Extract a component from a preceding texture lookup (CUDA)
+    "tex_extract",
 };
 
 
@@ -533,8 +542,8 @@ uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
     jitc_check_size("jit_var_literal", size);
 
     /* When initializing a value pointer array while recording a virtual
-       function, we can leverage the already available `self` variable instead
-       of creating a new one. */
+       function, we can leverage the already available `self` variable
+       instead of creating a new one. */
     if (is_class) {
         ThreadState *ts = thread_state(backend);
         if (ts->vcall_self_value &&
@@ -852,7 +861,6 @@ uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind, VarType vt,
 
     return jitc_var_new(v);
 }
-
 
 void jitc_var_set_callback(uint32_t index,
                            void (*callback)(uint32_t, int, void *),

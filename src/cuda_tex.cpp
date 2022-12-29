@@ -3,6 +3,7 @@
 #include "log.h"
 #include "var.h"
 #include "op.h"
+#include "eval.h"
 #include <string.h>
 #include <memory>
 #include <atomic>
@@ -463,143 +464,106 @@ void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
                                  src_texture);
 }
 
-void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
-                          const uint32_t *pos, uint32_t *out) {
-    if (ndim < 1 || ndim > 3)
-        jitc_raise("jit_cuda_tex_lookup(): invalid texture dimension!");
-
+Variable jitc_cuda_tex_check(size_t ndim, const uint32_t *pos) {
     // Validate input types, determine size of the operation
     uint32_t size = 0;
+    bool dirty = false, placeholder = false;
+    JitBackend backend = JitBackend::Invalid;
+
+    if (ndim < 1 || ndim > 3)
+        jitc_raise("jit_cuda_tex_check(): invalid texture dimension!");
+
     for (size_t i = 0; i < ndim; ++i) {
         const Variable *v = jitc_var(pos[i]);
         if ((VarType) v->type != VarType::Float32)
-            jitc_raise("jit_cuda_tex_lookup(): type mismatch for arg. %zu (got "
+            jitc_raise("jit_cuda_tex_check(): type mismatch for arg. %zu (got "
                        "%s, expected %s)", i, type_name[v->type],
                        type_name[(int) VarType::Float32]);
         size = std::max(size, v->size);
+        dirty |= v->is_dirty();
+        placeholder |= (bool) v->placeholder;
+        backend = (JitBackend) v->backend;
     }
 
-    DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
-
-    for (size_t tex = 0; tex < texture.n_textures; ++tex) {
-        uint32_t dep[2] = {
-            texture.indices[tex],
-            pos[0]
-        };
-
-        if (ndim >= 2) {
-            const char *stmt_1[2] = {
-                ".reg.v2.f32 $r0$n"
-                "mov.v2.f32 $r0, { $r1, $r2 }",
-                ".reg.v4.f32 $r0$n"
-                "mov.v4.f32 $r0, { $r1, $r2, $r3, $r3 }"
-            };
-            dep[1] = jitc_var_stmt(JitBackend::CUDA, VarType::Void,
-                                       stmt_1[ndim - 2], 1, (unsigned int) ndim,
-                                       pos);
-        } else {
-            jitc_var_inc_ref(dep[1]);
+    if (dirty) {
+        jitc_eval(thread_state(backend));
+        for (size_t i = 0; i < ndim; ++i) {
+            if (jitc_var(pos[i])->is_dirty())
+                jitc_fail("jit_cuda_tex_check(): operand r%u remains dirty "
+                          "following evaluation!", pos[i]);
         }
+    }
 
-        const char *stmt_2[3] = {
-            ".reg.v4.f32 $r0$n"
-            "tex.1d.v4.f32.f32 $r0, [$r1, {$r2}]",
+    Variable v;
+    v.size = size;
+    v.backend = (uint32_t) backend;
+    v.placeholder = placeholder;
+    v.type = (uint32_t) VarType::Float32;
+    return v;
+}
 
-            ".reg.v4.f32 $r0$n"
-            "tex.2d.v4.f32.f32 $r0, [$r1, $r2]",
+void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
+                          const uint32_t *pos, uint32_t *out) {
+    DrJitCudaTexture &tex = *((DrJitCudaTexture *) texture_handle);
+    Variable v = jitc_cuda_tex_check(ndim, pos);
 
-            ".reg.v4.f32 $r0$n"
-            "tex.3d.v4.f32.f32 $r0, [$r1, $r2]"
-        };
-
-        uint32_t lookup = jitc_var_stmt(JitBackend::CUDA, VarType::Void,
-                                            stmt_2[ndim - 1], 1, 2, dep);
-        jitc_var_dec_ref(dep[1]);
-
-        const char *stmt_3[4] = {
-            "mov.f32 $r0, $r1.r",
-            "mov.f32 $r0, $r1.g",
-            "mov.f32 $r0, $r1.b",
-            "mov.f32 $r0, $r1.a"
-        };
-
-        for (size_t ch = 0; ch < texture.channels(tex); ++ch) {
-            uint32_t lookup_result_index = jitc_var_stmt(
-                JitBackend::CUDA, VarType::Float32, stmt_3[ch], 1, 1, &lookup);
-            out[tex * 4 + ch] = lookup_result_index;
+    for (size_t ti = 0; ti < tex.n_textures; ++ti) {
+        // Perform a fetch per texture ..
+        v.kind = VarKind::TexLookup;
+        v.literal = 0;
+        memset(v.dep, 0, sizeof(v.dep));
+        v.dep[0] = tex.indices[ti];
+        jitc_var_inc_ref(tex.indices[ti]);
+        for (size_t j = 0; j < ndim; ++j) {
+            v.dep[j + 1] = pos[j];
+            jitc_var_inc_ref(pos[j]);
         }
+        Ref tex_load = steal(jitc_var_new(v));
 
-        jitc_var_dec_ref(lookup);
+        // .. and then extract components
+        v.kind = VarKind::TexExtract;
+        memset(v.dep, 0, sizeof(v.dep));
+        for (size_t ch = 0; ch < tex.channels(ti); ++ch) {
+            v.literal = (uint64_t) ch;
+            v.dep[0] = tex_load;
+            jitc_var_inc_ref(tex_load);
+            *out++ = jitc_var_new(v);
+        }
     }
 }
 
 void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
                                 const uint32_t *pos, uint32_t *out) {
     if (ndim != 2)
-        jitc_raise("jitc_cuda_tex_bilerp_fetch(): invalid texture dimension, "
-                   "only 2D textures are supported!");
+        jitc_raise("jitc_cuda_tex_bilerp_fetch(): only 2D textures are supported!");
 
-    // Validate input types, determine size of the operation
-    uint32_t size = 0;
-    for (size_t i = 0; i < ndim; ++i) {
-        const Variable *v = jitc_var(pos[i]);
-        if ((VarType) v->type != VarType::Float32)
-            jitc_raise("jitc_cuda_tex_bilerp_fetch(): type mismatch for arg. "
-                       "%zu (got %s, expected %s)",
-                       i, type_name[v->type],
-                       type_name[(int) VarType::Float32]);
-        size = std::max(size, v->size);
-    }
+    DrJitCudaTexture &tex = *((DrJitCudaTexture *) texture_handle);
+    Variable v = jitc_cuda_tex_check(ndim, pos);
 
-    DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
-
-    for (size_t tex = 0; tex < texture.n_textures; ++tex) {
-        uint32_t dep[2] = {
-            texture.indices[tex],
-            pos[0]
-        };
-
-        const char *stmt_1 = ".reg.v2.f32 $r0$n"
-                             "mov.v2.f32 $r0, { $r1, $r2 }";
-        dep[1] = jitc_var_stmt(JitBackend::CUDA, VarType::Void, stmt_1, 1,
-                                   (unsigned int) ndim, pos);
-
-        const char *stmt_2[4] = {
-            ".reg.v4.f32 $r0$n"
-            "tld4.r.2d.v4.f32.f32 $r0, [$r1, $r2]",
-
-            ".reg.v4.f32 $r0$n"
-            "tld4.g.2d.v4.f32.f32 $r0, [$r1, $r2]",
-
-            ".reg.v4.f32 $r0$n"
-            "tld4.b.2d.v4.f32.f32 $r0, [$r1, $r2]",
-
-            ".reg.v4.f32 $r0$n"
-            "tld4.a.2d.v4.f32.f32 $r0, [$r1, $r2]"
-        };
-
-        const char *stmt_3[4] = {
-            "mov.f32 $r0, $r1.x",
-            "mov.f32 $r0, $r1.y",
-            "mov.f32 $r0, $r1.z",
-            "mov.f32 $r0, $r1.w"
-        };
-
-        for (size_t ch = 0; ch < texture.channels(tex); ++ch) {
-            uint32_t fetch_channel = jitc_var_stmt(
-                JitBackend::CUDA, VarType::Void, stmt_2[ch], 1, 2, dep);
-
-            for (size_t i = 0; i < 4; ++i) {
-                uint32_t result_index =
-                    jitc_var_stmt(JitBackend::CUDA, VarType::Float32,
-                                      stmt_3[i], 1, 1, &fetch_channel);
-                out[(i * texture.n_channels) + (tex * 4 + ch)] = result_index;
+    for (size_t ti = 0; ti < tex.n_textures; ++ti) {
+        for (size_t ch = 0; ch < tex.channels(ti); ++ch) {
+            // Perform a fetch per texture and channel..
+            v.kind = VarKind::TexFetchBilerp;
+            v.literal = ch;
+            memset(v.dep, 0, sizeof(v.dep));
+            v.dep[0] = tex.indices[ti];
+            jitc_var_inc_ref(tex.indices[ti]);
+            for (size_t j = 0; j < ndim; ++j) {
+                v.dep[j + 1] = pos[j];
+                jitc_var_inc_ref(pos[j]);
             }
+            Ref tex_load = steal(jitc_var_new(v));
 
-            jitc_var_dec_ref(fetch_channel);
+            memset(v.dep, 0, sizeof(v.dep));
+            v.kind = VarKind::TexExtract;
+            for (uint32_t j = 0; j < 4; ++j) {
+                // .. and then extract components
+                v.literal = (uint64_t) j;
+                v.dep[0] = tex_load;
+                jitc_var_inc_ref(tex_load);
+                *out++ = jitc_var_new(v);
+            }
         }
-
-        jitc_var_dec_ref(dep[1]);
     }
 }
 
@@ -612,11 +576,10 @@ void jitc_cuda_tex_destroy(void *texture_handle) {
 
     DrJitCudaTexture *texture = (DrJitCudaTexture *) texture_handle;
 
-    // The `texture` struct can potentially be deleted when decreasing the
-    // reference count of the individual textures. We must hoist the number of
-    // textures out of the loop condition.
+    /* The `texture` struct can potentially be deleted when decreasing the
+       reference count of the individual textures. We must hoist the number
+       of textures out of the loop condition. */
     const size_t n_textures = texture->n_textures;
-    for (size_t tex = 0; tex < n_textures; ++tex) {
+    for (size_t tex = 0; tex < n_textures; ++tex)
         jitc_var_dec_ref(texture->indices[tex]);
-    }
 }

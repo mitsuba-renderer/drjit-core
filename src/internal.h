@@ -90,13 +90,23 @@ enum VarKind : uint32_t {
     // Specialized nodes for vcalls
     VCallMask, VCallSelf,
 
-    /// Counter node to determine the current lane ID
+    // Counter node to determine the current lane ID
     Counter,
 
-    /// Recorded 'printf' instruction for debugging purposes
+    // Recorded 'printf' instruction for debugging purposes
     Printf,
 
-    Count /// Denotes the number of different node types
+    // Perform a standard texture lookup (CUDA)
+    TexLookup,
+
+    // Load all texels used for bilinear interpolation (CUDA)
+    TexFetchBilerp,
+
+    // Extract a component from a preceding texture lookup (CUDA)
+    TexExtract,
+
+    // Denotes the number of different node types
+    Count
 };
 
 #pragma pack(push, 1)

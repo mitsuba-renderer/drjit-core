@@ -1,9 +1,5 @@
 #include "cuda_api.h"
 
-#if defined(DRJIT_DYNAMIC_CUDA)
-
-#endif
-
 extern void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
                                   size_t n_channels, int filter_mode,
                                   int wrap_mode);

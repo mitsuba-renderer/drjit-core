@@ -252,6 +252,8 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                 case 'Q':
                 case 'X': len += MAXSIZE_X64; (void) va_arg(args, uint64_t); arg++; break;
 
+                case 'c': len++; (void) va_arg(args, int); arg++; break;
+
                 case 's':
                     len += strlen(va_arg(args, const char *));
                     arg++;
@@ -315,6 +317,8 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                 case 'x': put_x32_unchecked(va_arg(args2, uint32_t)); break;
                 case 'X': put_x64_unchecked(va_arg(args2, uint64_t)); break;
                 case 'Q': put_q64_unchecked(va_arg(args2, uint64_t)); break;
+
+                case 'c': *m_cur++ = (char) va_arg(args2, int); break;
 
                 case 's': {
                         const char *s = va_arg(args2, const char *);

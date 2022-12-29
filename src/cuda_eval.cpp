@@ -17,6 +17,7 @@
  *  $Q      uint64_t      `00000000000004d2` Hex. number, 0-filled (64 bit)
  * --------------------------------------------------------------------------
  *  $s      const char *  `foo`              Zero-terminated string
+ *  $c      char          `f`                A single ASCII character
  * --------------------------------------------------------------------------
  *  $t      Variable      `f32`              Variable type
  * --------------------------------------------------------------------------
@@ -718,6 +719,26 @@ static void jitc_cuda_render_var(uint32_t index, const Variable *v) {
 
         case VarKind::Printf:
             jitc_cuda_render_printf(index, v, a0);
+            break;
+
+        case VarKind::TexLookup:
+            fmt("    .reg.v4.f32 $v_v4;\n", v);
+            if (a3)
+                fmt("    tex.3d.v4.f32.f32 $v_v4, [$v, {$v, $v, $v, $v}];\n", v, a0, a1, a2, a3, a3);
+            else if (a2)
+                fmt("    tex.2d.v4.f32.f32 $v_v4, [$v, {$v, $v}];\n", v, a0, a1, a2);
+            else
+                fmt("    tex.1d.v4.f32.f32 $v_v4, [$v, {$v}];\n", v, a0, a1);
+            break;
+
+        case VarKind::TexFetchBilerp:
+            fmt("    .reg.v4.f32 $v_v4;\n"
+                "    tld4.$c.2d.v4.f32.f32 $v_v4, [$v, {$v, $v}];\n",
+                v, "rgba"[v->literal], v, a0, a1, a2);
+            break;
+
+        case VarKind::TexExtract:
+            fmt("    mov.$t $v, $v_v4.$c;\n", v, v, a0, "xyzw"[v->literal]);
             break;
 
         default:
