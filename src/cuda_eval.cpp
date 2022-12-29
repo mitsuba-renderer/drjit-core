@@ -48,7 +48,7 @@
         buffer.rewind_to(tmpoff);                                              \
     } while (0);
 
-// Forward declaration
+// Forward declarations
 static void jitc_cuda_render_stmt(uint32_t index, const Variable *v);
 static void jitc_cuda_render_var(uint32_t index, const Variable *v);
 static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
@@ -56,6 +56,13 @@ static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *mask);
 static void jitc_cuda_render_printf(uint32_t index, const Variable *v,
                                     const Variable *mask);
+
+#if defined(DRJIT_ENABLE_OPTIX)
+static void jitc_cuda_render_trace(uint32_t index, const Variable *v,
+                                   const Variable *valid,
+                                   const Variable *pipeline,
+                                   const Variable *sbt);
+#endif
 
 void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
@@ -65,8 +72,8 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
 #if defined(DRJIT_ENABLE_OPTIX)
-    // If use optix and the kernel contains no ray tracing operations, fallback
-    // to the default OptiX pipeline and shader binding table.
+    /* If use optix and the kernel contains no ray tracing operations,
+       fall back to the default OptiX pipeline and shader binding table. */
     if (uses_optix) {
         /// Ensure OptiX is initialized
         (void) jitc_optix_context();
@@ -405,6 +412,9 @@ static void jitc_cuda_render_var(uint32_t index, const Variable *v) {
             fmt("    mov.$b $v, $l;\n", v, v, v);
             break;
 
+        case VarKind::Nop:
+            break;
+
         case VarKind::Neg:
             if (jitc_is_uint(v))
                 fmt("    neg.s$u $v, $v;\n", type_size[v->type]*8, v, a0);
@@ -741,6 +751,16 @@ static void jitc_cuda_render_var(uint32_t index, const Variable *v) {
             fmt("    mov.$t $v, $v_v4.$c;\n", v, v, a0, "xyzw"[v->literal]);
             break;
 
+#if defined(DRJIT_ENABLE_OPTIX)
+        case VarKind::TraceRay:
+            jitc_cuda_render_trace(index, v, a0, a1, a2);
+            break;
+
+        case VarKind::TraceExtract:
+            fmt("    mov.u32 $v, %u$u_scratch_$u;\n", v, a0->reg_index, (uint32_t) v->literal);
+            break;
+#endif
+
         default:
             jitc_fail("jitc_cuda_render_var(): unhandled variable kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);
@@ -943,6 +963,85 @@ static void jitc_cuda_render_printf(uint32_t index, const Variable *v,
         "        }\n"
         "    }\n");
 }
+
+#if defined(DRJIT_ENABLE_OPTIX)
+static void jitc_cuda_render_trace(uint32_t index, const Variable *v,
+                                   const Variable *valid,
+                                   const Variable *pipeline,
+                                   const Variable *sbt) {
+    ThreadState *ts = thread_state(JitBackend::CUDA);
+    OptixPipelineData *pipeline_p = (OptixPipelineData *) pipeline->literal;
+    OptixShaderBindingTable *sbt_p = (OptixShaderBindingTable*) sbt->literal;
+    bool problem = false;
+
+    if (ts->optix_pipeline == state.optix_default_pipeline) {
+        ts->optix_pipeline = pipeline_p;
+    } else if (ts->optix_pipeline != pipeline_p) {
+        jitc_log(
+            Warn,
+            "jit_eval(): more than one OptiX pipeline was used within a single "
+            "kernel, which is not supported. Please split your kernel into "
+            "smaller parts (e.g. using `dr::eval()`). Disabling the ray "
+            "tracing operation to avoid potential undefined behavior.");
+        problem = true;
+    }
+
+    if (ts->optix_sbt == state.optix_default_sbt) {
+        ts->optix_sbt = sbt_p;
+    } else if (ts->optix_sbt != sbt_p) {
+        jitc_log(
+            Warn,
+            "jit_eval(): more than one OptiX shader binding table was used "
+            "within a single kernel, which is not supported. Please split your "
+            "kernel into smaller parts (e.g. using `dr::eval()`). Disabling "
+            "the ray tracing operation to avoid potential undefined behavior.");
+        problem = true;
+    }
+
+    Extra &extra = state.extra[index];
+    uint32_t payload_count = extra.n_dep - 15,
+             reg = v->reg_index;
+
+    fmt("    .reg.u32 %u$u_scratch_<32>;\n", reg);
+
+    if (problem) {
+        for (int i = 0; i < 32; ++i)
+            fmt("    mov.b32 %u$u_scratch_$u, 0;\n", reg, i);
+        return;
+    }
+
+
+    bool masked = !valid->is_literal() || valid->literal != 1;
+    if (masked)
+        fmt("    @!$v bra l_masked_$u;\n", valid, reg);
+
+    fmt("    .reg.u32 %u$u_payload_type, %u$u_payload_count;\n"
+        "    mov.u32 %u$u_payload_type, 0;\n"
+        "    mov.u32 %u$u_payload_count, $u;\n",
+            reg, reg, reg, reg, payload_count);
+
+    put("    call (");
+    for (uint32_t i = 0; i < 32; ++i)
+        fmt("%u$u_scratch_$u$s", reg, i, i + 1 < 32 ? ", " : "");
+    put("), _optix_trace_typed_32, (");
+
+    fmt("%u$u_payload_type, ", reg);
+    for (uint32_t i = 0; i < 15; ++i)
+        fmt("$v, ", jitc_var(extra.dep[i]));
+
+    fmt("%u$u_payload_count, ", reg);
+    for (uint32_t i = 15; i < extra.n_dep; ++i)
+        fmt("$v$s", jitc_var(extra.dep[i]), (i - 15 < 32) ? ", " : "");
+
+    for (uint32_t i = payload_count; i < 32; ++i)
+        fmt("%u$u_scratch_$u$s", reg, i, (i + 1 < 32) ? ", " : "");
+
+    put(");\n");
+
+    if (masked)
+        fmt("\nl_masked_$u:\n", reg);
+}
+#endif
 
 /// Convert an IR template with '$' expressions into valid IR
 static void jitc_cuda_render_stmt(uint32_t index, const Variable *v) {

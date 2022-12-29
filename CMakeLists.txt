@@ -75,9 +75,9 @@ mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
 
 if (DRJIT_ENABLE_OPTIX)
   set(DRJIT_OPTIX_FILES
+    src/optix.h
     src/optix_api.h
     src/optix_api.cpp
-    src/optix_core.h
     src/optix_core.cpp)
 endif()
 

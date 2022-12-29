@@ -29,18 +29,21 @@
 #define DRJIT_PTR "<0x%" PRIxPTR ">"
 
 enum VarKind : uint32_t {
-    /// Invalid node (default)
+    // Invalid node (default)
     Invalid,
 
-    /// An evaluated node representing data
+    // An evaluated node representing data
     Data,
 
-    /// Legacy string-based IR statement
+    // Legacy string-based IR statement
     Stmt,
 
-    /// A literal constant
-    /// (note: this must be the last enumeration entry before the regular nodes start)
+    // A literal constant
+    // (note: this must be the last enumeration entry before the regular nodes start)
     Literal,
+
+    /// A no-op (generates no code)
+    Nop,
 
     // Common unary operations
     Neg, Not, Sqrt, Abs,
@@ -102,8 +105,14 @@ enum VarKind : uint32_t {
     // Load all texels used for bilinear interpolation (CUDA)
     TexFetchBilerp,
 
-    // Extract a component from a preceding texture lookup (CUDA)
+    // Extract a component from a prior texture lookup (CUDA)
     TexExtract,
+
+    // Perform a ray tracing call
+    TraceRay,
+
+    // Extract a result from a prior ray tracing call
+    TraceExtract,
 
     // Denotes the number of different node types
     Count

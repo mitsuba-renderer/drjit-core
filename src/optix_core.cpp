@@ -155,46 +155,31 @@ uint32_t jitc_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
     if (!pco || !module || !pg || pg_count == 0)
         jitc_raise("jitc_optix_configure_pipeline(): invalid input arguments!");
 
-    uint32_t index = jitc_var_stmt(JitBackend::CUDA, VarType::Void, "", 1, 0, 0);
-
-    Extra &extra = state.extra[index];
-    Variable *v = jitc_var(index);
-    v->extra = 1;
-    v->optix = 1;
-    v->size = 1;
-
     OptixPipelineData *p = new OptixPipelineData();
     p->module = module;
     p->program_groups = std::vector<OptixProgramGroup>();
     memcpy(&p->compile_options, pco, sizeof(OptixPipelineCompileOptions));
     for (uint32_t i = 0; i < pg_count; ++i)
         p->program_groups.push_back(pg[i]);
-    extra.callback_data = p;
 
-    // Set the OptiX pipeline to use when assembling the kernel
-    extra.assemble = [](const Variable * /*v*/, const Extra &extra) {
-        ThreadState *ts = thread_state(JitBackend::CUDA);
-        OptixPipelineData *p = (OptixPipelineData*) extra.callback_data;
-        if (ts->optix_pipeline == state.optix_default_pipeline) {
-            jitc_log(InfoSym, "jit_assemble_cuda(): set OptiX pipeline for next kernel launch");
-            ts->optix_pipeline = p;
-        } else {
-            if (ts->optix_pipeline != p)
-                jitc_raise("jit_assemble_cuda(): a single OptiX pipeline can "
-                           "be used per kernel!");
-        }
-    };
+    uint32_t index =
+        jitc_var_new_node_0(JitBackend::CUDA, VarKind::Nop,
+                            VarType::Void, 1, 0, (uintptr_t) p);
+
+    jitc_var(index)->extra = 1;
 
     // Free pipeline resources when this variable is destroyed
+    Extra &extra = state.extra[index];
+    extra.callback_data = p;
     extra.callback = [](uint32_t /*index*/, int free, void *ptr) {
-        if (free) {
-            jitc_log(InfoSym, "jit_optix_configure(): free optix pipeline");
-            OptixPipelineData *p = (OptixPipelineData*) ptr;
-            for (size_t i = 0; i < p->program_groups.size(); i++)
-                jitc_optix_check(optixProgramGroupDestroy(p->program_groups[i]));
-            jitc_optix_check(optixModuleDestroy(p->module));
-            delete p;
-        }
+        if (!free)
+            return;
+        jitc_log(InfoSym, "jit_optix_configure_pipeline(): free optix pipeline");
+        OptixPipelineData *p = (OptixPipelineData*) ptr;
+        for (size_t i = 0; i < p->program_groups.size(); i++)
+            jitc_optix_check(optixProgramGroupDestroy(p->program_groups[i]));
+        jitc_optix_check(optixModuleDestroy(p->module));
+        delete p;
     };
 
     return index;
@@ -210,44 +195,26 @@ uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
     if (jitc_var_type(pipeline) != VarType::Void)
         jitc_raise("jitc_optix_configure_sbt(): type mismatch for pipeline argument!");
 
-    uint32_t dep[1] = { pipeline };
-    uint32_t index = jitc_var_stmt(JitBackend::CUDA, VarType::Void, "", 1, 1, dep);
+    OptixShaderBindingTable *p = new OptixShaderBindingTable();
+    memcpy(p, sbt, sizeof(OptixShaderBindingTable));
 
-    Extra &extra = state.extra[index];
-    Variable *v = jitc_var(index);
-    v->extra = 1;
-    v->optix = 1;
-    v->size = 1;
+    uint32_t index = jitc_var_new_node_1(
+        JitBackend::CUDA, VarKind::Nop, VarType::Void, 1, 0, pipeline,
+        jitc_var(pipeline), (uintptr_t) p);
 
-    extra.callback_data = new OptixShaderBindingTable();
-    memcpy(extra.callback_data, sbt, sizeof(OptixShaderBindingTable));
-
-    // Set the OptiX SBT to use when assembling the kernel
-    extra.assemble = [](const Variable * /*v*/, const Extra &extra) {
-        ThreadState *ts = thread_state(JitBackend::CUDA);
-        OptixShaderBindingTable *sbt = (OptixShaderBindingTable*) extra.callback_data;
-        if (ts->optix_sbt == state.optix_default_sbt) {
-            jitc_log(InfoSym, "jit_assemble_cuda(): set OptiX shader binding table "
-                              "for next kernel launch");
-            ts->optix_sbt = sbt;
-        } else {
-            if (ts->optix_sbt != sbt)
-                jitc_raise("jit_assemble_cuda(): a single OptiX shader binding table "
-                           "can be used per kernel!");
-        }
-    };
+    jitc_var(index)->extra = 1;
 
     // Free SBT resources when this variable is destroyed
+    Extra &extra = state.extra[index];
+    extra.callback_data = p;
     extra.callback = [](uint32_t /*index*/, int free, void *ptr) {
-        if (free) {
-            jitc_log(InfoSym, "jit_optix_configure(): free optix shader binding table");
-            OptixShaderBindingTable *sbt = (OptixShaderBindingTable*) ptr;
-            if (sbt->hitgroupRecordBase)
-                jitc_free(sbt->hitgroupRecordBase);
-            if (sbt->missRecordBase)
-                jitc_free(sbt->missRecordBase);
-            delete sbt;
-        }
+        if (!free)
+            return;
+        jitc_log(InfoSym, "jit_optix_configure_sbt(): free optix shader binding table");
+        OptixShaderBindingTable *sbt = (OptixShaderBindingTable*) ptr;
+        jitc_free(sbt->hitgroupRecordBase);
+        jitc_free(sbt->missRecordBase);
+        delete sbt;
     };
 
     return index;
@@ -543,10 +510,8 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
     if (np > 32)
         jitc_raise("jit_optix_ray_trace(): too many payloads (got %u > 32)", np);
 
-    if (jitc_var_type(pipeline) != VarType::Void)
-        jitc_raise("jit_optix_ray_trace(): type mismatch for pipeline argument!");
-
-    if (jitc_var_type(sbt) != VarType::Void)
+    if (jitc_var_type(pipeline) != VarType::Void ||
+        jitc_var_type(sbt) != VarType::Void)
         jitc_raise("jit_optix_ray_trace(): type mismatch for pipeline argument!");
 
     // Validate input types, determine size of the operation
@@ -592,86 +557,26 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
              size, size != 1 ? "s" : "", np, np == 1 ? "" : "s",
              placeholder ? " (part of a recorded computation)" : "");
 
-    uint32_t dep[3] = { valid, pipeline, sbt };
-    uint32_t special =
-        jitc_var_stmt(JitBackend::CUDA, VarType::Void, "", 1, 3, dep);
+    Ref index = steal(jitc_var_new_node_3(
+        JitBackend::CUDA, VarKind::TraceRay, VarType::Float32, size,
+        placeholder, valid, jitc_var(valid), pipeline, jitc_var(pipeline), sbt,
+        jitc_var(sbt)));
 
-    // Associate extra record with this variable
-    Extra &extra = state.extra[special];
-    Variable *v = jitc_var(special);
+    Variable *v = jitc_var(index);
     v->extra = 1;
     v->optix = 1;
-    v->size = size;
 
-    // Register dependencies
+    Extra &extra = state.extra[index];
     extra.n_dep = n_args;
-    extra.dep = (uint32_t *) malloc(sizeof(uint32_t) * extra.n_dep);
+    extra.dep = (uint32_t *) malloc_check(sizeof(uint32_t) * extra.n_dep);
     memcpy(extra.dep, args, n_args * sizeof(uint32_t));
     for (uint32_t i = 0; i < n_args; ++i)
         jitc_var_inc_ref(args[i]);
 
-    extra.assemble = [](const Variable *v2, const Extra &extra) {
-        uint32_t payload_count = extra.n_dep - 15;
-        buffer.fmt("    .reg.u32 %%u%u_result_<32>;\n", v2->reg_index);
-
-        const Variable *mask_v = jitc_var(v2->dep[0]);
-        bool masked = !mask_v->literal || mask_v->literal != 1;
-        if (masked)
-            buffer.fmt("    @!%s%u bra l_masked_%u;\n", type_prefix[mask_v->type],
-                       mask_v->reg_index, v2->reg_index);
-
-        buffer.fmt("    .reg.u32 %%u%u_payload_type;\n", v2->reg_index);
-        buffer.fmt("    mov.u32 %%u%u_payload_type, 0;\n", v2->reg_index);
-        buffer.fmt("    .reg.u32 %%u%u_payload_count;\n", v2->reg_index);
-        buffer.fmt("    mov.u32 %%u%u_payload_count, %u;\n", v2->reg_index,
-                   payload_count);
-
-        buffer.put("    call (");
-
-        for (uint32_t i = 0; i < 32; ++i)
-            buffer.fmt("%%u%u_result_%u%s", v2->reg_index, i,
-                       i + 1 < 32 ? ", " : "");
-        buffer.put("), _optix_trace_typed_32, (");
-
-        buffer.fmt("%%u%u_payload_type, ", v2->reg_index);
-        for (uint32_t i = 0; i < 15; ++i) {
-            const Variable *v3 = jitc_var(extra.dep[i]);
-            buffer.fmt("%s%u, ", type_prefix[v3->type], v3->reg_index);
-        }
-
-        buffer.fmt("%%u%u_payload_count, ", v2->reg_index);
-        for (uint32_t i = 15; i < extra.n_dep; ++i) {
-            const Variable *v3 = jitc_var(extra.dep[i]);
-            buffer.fmt("%s%u%s", type_prefix[v3->type], v3->reg_index,
-                       (i - 15 < 32) ? ", " : "");
-        }
-        for (uint32_t i = payload_count; i < 32; ++i)
-            buffer.fmt("%%u%u_result_%u%s", v2->reg_index, i,
-                       (i + 1 < 32) ? ", " : "");
-
-        buffer.put(");\n");
-
-        if (masked)
-            buffer.fmt("\nl_masked_%u:\n", v2->reg_index);
-    };
-
-    for (uint32_t i = 0; i < np; ++i) {
-        char tmp[80];
-        snprintf(tmp, sizeof(tmp), "mov.u32 $r0, $r1_result_%u", i);
-        args[15 + i] = jitc_var_stmt(JitBackend::CUDA, VarType::UInt32, tmp,
-                                         0, 1, &special);
-        uint32_t index = args[15] + i;
-        Variable *v2 = jitc_var(index);
-        jitc_lvn_drop(index, v2);
-        v2->placeholder = placeholder;
-        jitc_lvn_put(index, v2);
-    }
-
-    jitc_var_dec_ref(special);
-}
-
-void jitc_optix_mark(uint32_t index) {
-    jitc_var(index)->optix = true;
+    for (uint32_t i = 0; i < np; ++i)
+        args[15 + i] = jitc_var_new_node_1(
+            JitBackend::CUDA, VarKind::TraceExtract, VarType::UInt32,
+            size, placeholder, index, v, (uint64_t) i);
 }
 
 void jitc_optix_check_impl(OptixResult errval, const char *file,
