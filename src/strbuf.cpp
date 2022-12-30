@@ -299,7 +299,7 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
     if (nargs != arg) {
         fprintf(stderr,
                 "StringBuffer::fmt_cuda(): given %zu args, format string "
-                "accessed %zu\n", nargs, arg);
+                "accessed %zu (%s)\n", nargs, arg, fmt);
         abort();
     }
 
@@ -483,7 +483,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
     if (nargs != arg) {
         fprintf(stderr,
                 "StringBuffer::fmt_llvm(): given %zu args, format string "
-                "accessed %zu\n", nargs, arg);
+                "accessed %zu (%s)\n", nargs, arg, fmt);
         abort();
     }
 

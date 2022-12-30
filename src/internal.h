@@ -105,14 +105,11 @@ enum VarKind : uint32_t {
     // Load all texels used for bilinear interpolation (CUDA)
     TexFetchBilerp,
 
-    // Extract a component from a prior texture lookup (CUDA)
-    TexExtract,
-
     // Perform a ray tracing call
     TraceRay,
 
-    // Extract a result from a prior ray tracing call
-    TraceExtract,
+    // Extract a component from an operation that produced multiple results
+    Extract,
 
     // Denotes the number of different node types
     Count

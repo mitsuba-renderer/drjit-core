@@ -521,7 +521,7 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
         Ref tex_load = steal(jitc_var_new(v));
 
         // .. and then extract components
-        v.kind = VarKind::TexExtract;
+        v.kind = VarKind::Extract;
         memset(v.dep, 0, sizeof(v.dep));
         for (size_t ch = 0; ch < tex.channels(ti); ++ch) {
             v.literal = (uint64_t) ch;
@@ -555,7 +555,7 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
             Ref tex_load = steal(jitc_var_new(v));
 
             memset(v.dep, 0, sizeof(v.dep));
-            v.kind = VarKind::TexExtract;
+            v.kind = VarKind::Extract;
             for (uint32_t j = 0; j < 4; ++j) {
                 // .. and then extract components
                 v.literal = (uint64_t) j;

@@ -159,14 +159,11 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Load all texels used for bilinear interpolation (CUDA)
     "tex_fetch_bilerp",
 
-    // Extract a component from a prior texture lookup (CUDA)
-    "tex_extract",
-
     // Perform a ray tracing call
     "trace_ray",
 
-    // Extract a result from a prior ray tracing call
-    "trace_extract"
+    // Extract a component from an operation that produced multiple results
+    "extract"
 };
 
 
@@ -421,7 +418,6 @@ void jitc_value_print(const Variable *v, bool graphviz = false) {
         case VarType::Pointer: JIT_LITERAL_PRINT(uintptr_t, uintptr_t, (graphviz ? ("0x%" PRIxPTR) : (DRJIT_PTR)));
         default:
             jitc_fail("jit_value_print(): unsupported type!");
-
     }
 
     #undef JIT_LITERAL_PRINT

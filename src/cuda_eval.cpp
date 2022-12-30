@@ -732,34 +732,33 @@ static void jitc_cuda_render_var(uint32_t index, const Variable *v) {
             break;
 
         case VarKind::TexLookup:
-            fmt("    .reg.v4.f32 $v_v4;\n", v);
+            fmt("    .reg.f32 $v_out_<4>;\n", v);
             if (a3)
-                fmt("    tex.3d.v4.f32.f32 $v_v4, [$v, {$v, $v, $v, $v}];\n", v, a0, a1, a2, a3, a3);
+                fmt("    tex.3d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}];\n",
+                    v, v, v, v, a0, a1, a2, a3, a3);
             else if (a2)
-                fmt("    tex.2d.v4.f32.f32 $v_v4, [$v, {$v, $v}];\n", v, a0, a1, a2);
+                fmt("    tex.2d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
+                    v, v, v, v, a0, a1, a2);
             else
-                fmt("    tex.1d.v4.f32.f32 $v_v4, [$v, {$v}];\n", v, a0, a1);
+                fmt("    tex.1d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}];\n",
+                    v, v, v, v, a0, a1);
             break;
 
         case VarKind::TexFetchBilerp:
-            fmt("    .reg.v4.f32 $v_v4;\n"
-                "    tld4.$c.2d.v4.f32.f32 $v_v4, [$v, {$v, $v}];\n",
-                v, "rgba"[v->literal], v, a0, a1, a2);
-            break;
-
-        case VarKind::TexExtract:
-            fmt("    mov.$t $v, $v_v4.$c;\n", v, v, a0, "xyzw"[v->literal]);
+            fmt("    .reg.f32 $v_out_<4>;\n"
+                "    tld4.$c.2d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
+                v, "rgba"[v->literal], v, v, v, v, a0, a1, a2);
             break;
 
 #if defined(DRJIT_ENABLE_OPTIX)
         case VarKind::TraceRay:
             jitc_cuda_render_trace(index, v, a0, a1, a2);
             break;
-
-        case VarKind::TraceExtract:
-            fmt("    mov.u32 $v, %u$u_scratch_$u;\n", v, a0->reg_index, (uint32_t) v->literal);
-            break;
 #endif
+
+        case VarKind::Extract:
+            fmt("    mov.$b $v, $v_out_$u;\n", v, v, a0, (uint32_t) v->literal);
+            break;
 
         default:
             jitc_fail("jitc_cuda_render_var(): unhandled variable kind \"%s\"!",
@@ -998,48 +997,46 @@ static void jitc_cuda_render_trace(uint32_t index, const Variable *v,
         problem = true;
     }
 
-    Extra &extra = state.extra[index];
-    uint32_t payload_count = extra.n_dep - 15,
-             reg = v->reg_index;
+    const Extra &extra = state.extra[index];
+    uint32_t payload_count = extra.n_dep - 15;
 
-    fmt("    .reg.u32 %u$u_scratch_<32>;\n", reg);
+    fmt("    .reg.u32 $v_out_<32>;\n", v);
 
     if (problem) {
-        for (int i = 0; i < 32; ++i)
-            fmt("    mov.b32 %u$u_scratch_$u, 0;\n", reg, i);
+        for (uint32_t i = 0; i < 32; ++i)
+            fmt("    mov.b32 $v_out_$u, 0;\n", v, i);
         return;
     }
 
-
     bool masked = !valid->is_literal() || valid->literal != 1;
     if (masked)
-        fmt("    @!$v bra l_masked_$u;\n", valid, reg);
+        fmt("    @!$v bra l_masked_$u;\n", valid, v->reg_index);
 
-    fmt("    .reg.u32 %u$u_payload_type, %u$u_payload_count;\n"
-        "    mov.u32 %u$u_payload_type, 0;\n"
-        "    mov.u32 %u$u_payload_count, $u;\n",
-            reg, reg, reg, reg, payload_count);
+    fmt("    .reg.u32 $v_payload_type, $v_payload_count;\n"
+        "    mov.u32 $v_payload_type, 0;\n"
+        "    mov.u32 $v_payload_count, $u;\n",
+            v, v, v, v, payload_count);
 
     put("    call (");
     for (uint32_t i = 0; i < 32; ++i)
-        fmt("%u$u_scratch_$u$s", reg, i, i + 1 < 32 ? ", " : "");
+        fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
     put("), _optix_trace_typed_32, (");
 
-    fmt("%u$u_payload_type, ", reg);
+    fmt("$v_payload_type, ", v);
     for (uint32_t i = 0; i < 15; ++i)
         fmt("$v, ", jitc_var(extra.dep[i]));
 
-    fmt("%u$u_payload_count, ", reg);
+    fmt("$v_payload_count, ", v);
     for (uint32_t i = 15; i < extra.n_dep; ++i)
         fmt("$v$s", jitc_var(extra.dep[i]), (i - 15 < 32) ? ", " : "");
 
     for (uint32_t i = payload_count; i < 32; ++i)
-        fmt("%u$u_scratch_$u$s", reg, i, (i + 1 < 32) ? ", " : "");
+        fmt("$v_out_$u$s", v, i, (i + 1 < 32) ? ", " : "");
 
     put(");\n");
 
     if (masked)
-        fmt("\nl_masked_$u:\n", reg);
+        fmt("\nl_masked_$u:\n", v->reg_index);
 }
 #endif
 

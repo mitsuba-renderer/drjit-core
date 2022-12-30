@@ -44,6 +44,7 @@ static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
                          OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                          OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
 #endif
+
     return pco;
 }
 
@@ -558,34 +559,35 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
              placeholder ? " (part of a recorded computation)" : "");
 
     Ref index = steal(jitc_var_new_node_3(
-        JitBackend::CUDA, VarKind::TraceRay, VarType::Float32, size,
+        JitBackend::CUDA, VarKind::TraceRay, VarType::Void, size,
         placeholder, valid, jitc_var(valid), pipeline, jitc_var(pipeline), sbt,
         jitc_var(sbt)));
 
     Variable *v = jitc_var(index);
-    v->extra = 1;
-    v->optix = 1;
+    v->extra = v->optix = 1;
 
     Extra &extra = state.extra[index];
     extra.n_dep = n_args;
     extra.dep = (uint32_t *) malloc_check(sizeof(uint32_t) * extra.n_dep);
-    memcpy(extra.dep, args, n_args * sizeof(uint32_t));
-    for (uint32_t i = 0; i < n_args; ++i)
-        jitc_var_inc_ref(args[i]);
+    for (uint32_t i = 0; i < n_args; ++i) {
+        uint32_t id = args[i];
+        extra.dep[i] = id;
+        jitc_var_inc_ref(id);
+    }
 
     for (uint32_t i = 0; i < np; ++i)
         args[15 + i] = jitc_var_new_node_1(
-            JitBackend::CUDA, VarKind::TraceExtract, VarType::UInt32,
+            JitBackend::CUDA, VarKind::Extract, VarType::UInt32,
             size, placeholder, index, v, (uint64_t) i);
 }
 
 void jitc_optix_check_impl(OptixResult errval, const char *file,
-                          const int line) {
+                           const int line) {
     if (unlikely(errval != 0)) {
         const char *name = optixGetErrorName(errval),
                    *msg  = optixGetErrorString(errval);
         jitc_fail("jit_optix_check(): API error %04i (%s): \"%s\" in "
-                 "%s:%i.", (int) errval, name, msg, file, line);
+                  "%s:%i.", (int) errval, name, msg, file, line);
     }
 }
 
