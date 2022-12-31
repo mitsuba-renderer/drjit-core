@@ -485,6 +485,13 @@ Variable jitc_cuda_tex_check(size_t ndim, const uint32_t *pos) {
         backend = (JitBackend) v->backend;
     }
 
+    for (uint32_t i = 0; i < ndim; ++i) {
+        const Variable *v = jitc_var(pos[i]);
+        if (v->size != 1 && v->size != size)
+            jitc_raise("jit_cuda_tex_check(): arithmetic involving arrays of "
+                       "incompatible size!");
+    }
+
     if (dirty) {
         jitc_eval(thread_state(backend));
         for (size_t i = 0; i < ndim; ++i) {

@@ -578,7 +578,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
     for (uint32_t i = 0; i < np; ++i)
         args[15 + i] = jitc_var_new_node_1(
             JitBackend::CUDA, VarKind::Extract, VarType::UInt32,
-            size, placeholder, index, v, (uint64_t) i);
+            size, placeholder, index, jitc_var(index), (uint64_t) i);
 }
 
 void jitc_optix_check_impl(OptixResult errval, const char *file,
