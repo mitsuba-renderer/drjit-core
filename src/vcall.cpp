@@ -22,15 +22,9 @@ using CallablesSet = std::set<XXH128_hash_t, XXH128Cmp>;
 
 static std::vector<VCall *> vcalls_assembled;
 
-// Forward declarations
-static void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg,
-                                    uint32_t mask_reg, uint32_t offset_reg,
-                                    uint32_t data_reg);
-
 static void jitc_var_vcall_collect_data(
     tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-    uint32_t &data_offset, uint32_t inst_id, uint32_t index, bool &use_self,
-    bool &optix);
+    uint32_t &data_offset, uint32_t inst_id, uint32_t index, bool &use_self);
 
 void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
     ThreadState *ts = thread_state(backend);
@@ -93,7 +87,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     uint32_t n_out = n_out_nested / n_inst, size = 0,
              in_size_initial = 0, out_size_initial = 0;
 
-    bool placeholder = false, optix = false, dirty = false;
+    bool placeholder = false, dirty = false;
 
     JitBackend backend;
     /* Check 'self' */ {
@@ -117,7 +111,6 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
                            "reference another input!", in[i]);
             Variable *v2 = jitc_var(v->dep[0]);
             placeholder |= (bool) v2->placeholder;
-            optix |= (bool) v2->optix;
             dirty |= v2->is_dirty();
             size = std::max(size, v2->size);
         } else if (!v->is_literal()) {
@@ -230,12 +223,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         for (uint32_t j = 0; j < n_out; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
                                         out_nested[j + i * n_out],
-                                        vcall->use_self, optix);
+                                        vcall->use_self);
 
         for (uint32_t j = checkpoints[i]; j != checkpoints[i + 1]; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
                                         vcall->side_effects[j - checkpoints[0]],
-                                        vcall->use_self, optix);
+                                        vcall->use_self);
 
         // Restore to full alignment
         data_size = (data_size + 7) / 8 * 8;
@@ -302,18 +295,20 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     // 5. Create special variable encoding the function call
     // =====================================================
 
-    uint32_t deps_special[4] = { self, mask, offset_v, data_v };
-    Ref vcall_v = steal(jitc_var_stmt(backend, VarType::Void, "", 0,
-                                          data_size ? 4 : 3, deps_special));
+    Ref vcall_v;
+
+    if (data_size)
+        vcall_v = steal(jitc_var_new_node_4(
+            backend, VarKind::Dispatch, VarType::Void, size, placeholder, self,
+            jitc_var(self), mask, jitc_var(mask), offset_v, jitc_var(offset_v),
+            data_v, jitc_var(data_v)));
+    else
+        vcall_v = steal(
+            jitc_var_new_node_3(backend, VarKind::Dispatch, VarType::Void, size,
+                                placeholder, self, jitc_var(self), mask,
+                                jitc_var(mask), offset_v, jitc_var(offset_v)));
 
     vcall->id = vcall_v;
-
-    {
-        Variable *v = jitc_var(vcall_v);
-        v->placeholder = placeholder;
-        v->size = size;
-        v->optix = optix;
-    }
 
     uint32_t n_devirt = 0, flags = jitc_flags();
 
@@ -350,15 +345,13 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             Ref result_v = steal(jitc_var_and(out_nested[j], mask));
             Variable *v = jitc_var(result_v);
 
-            if ((bool) v->placeholder != placeholder || v->size != size ||
-                (bool) v->optix != optix) {
+            if ((bool) v->placeholder != placeholder || v->size != size) {
                 if (v->ref_count != 1) {
                     result_v = steal(jitc_var_copy(result_v));
                     v = jitc_var(result_v);
                 }
                 jitc_lvn_drop(result_v, v);
                 v->placeholder = placeholder;
-                v->optix = optix;
                 v->size = size;
                 jitc_lvn_put(result_v, v);
             }
@@ -448,18 +441,11 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         }
 
         const Variable *v = jitc_var(index);
-        Variable v2;
-        v2.kind = (uint32_t) VarKind::Stmt;
-        v2.stmt = (char *) "";
-        v2.size = size;
-        v2.placeholder = placeholder;
-        v2.optix = optix;
-        v2.type = v->type;
-        v2.backend = v->backend;
-        v2.dep[0] = vcall_v;
-        v2.extra = 1;
-        jitc_var_inc_ref(vcall_v);
-        uint32_t index_2 = jitc_var_new(v2, true);
+        uint32_t index_2 = jitc_var_new_node_1(
+            backend, VarKind::Nop, (VarType) v->type, size, placeholder,
+            vcall_v, jitc_var(vcall_v), i);
+
+        jitc_var(index_2)->extra = 1;
         Extra &extra = state.extra[index_2];
 
         if (vcall_optimize) {
@@ -467,7 +453,6 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             extra.callback_data = vcall.get();
             extra.callback_internal = true;
         }
-
 
         vcall->out.push_back(index_2);
         snprintf(temp, sizeof(temp), "VCall: %s [out %u]", name, i);
@@ -521,12 +506,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
     size_t dep_size = vcall->in.size() * sizeof(uint32_t);
 
-    {
-        Variable *v_special = jitc_var(vcall_v);
-        v_special->extra = 1;
-        v_special->size = size;
-    }
-
+    jitc_var(vcall_v)->extra = 1;
     Extra *e_special = &state.extra[vcall_v];
     e_special->n_dep = (uint32_t) vcall->in.size();
     e_special->dep = (uint32_t *) malloc_check(dep_size);
@@ -541,21 +521,6 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     e_special->callback_internal = true;
     e_special->callback_data = vcall.release();
 
-    e_special->assemble = [](const Variable *v, const Extra &extra) {
-        const Variable *self_2 = jitc_var(v->dep[0]),
-                       *valid_2 = jitc_var(v->dep[1]);
-        uint32_t self_reg = self_2->reg_index,
-                 mask_reg = valid_2->reg_index,
-                 offset_reg = 0, data_reg = 0;
-
-        offset_reg = jitc_var(v->dep[2])->reg_index;
-        if (v->dep[3])
-            data_reg = jitc_var(v->dep[3])->reg_index;
-
-        jitc_var_vcall_assemble((VCall *) extra.callback_data, self_reg,
-                                mask_reg, offset_reg, data_reg);
-    };
-
     snprintf(temp, sizeof(temp), "VCall: %s", name);
     jitc_var_set_label(vcall_v, temp);
 
@@ -563,11 +528,11 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     if (se_count) {
         /* The call has side effects. Create a dummy variable to
            ensure that they are evaluated */
-        uint32_t vcall_id = vcall_v;
-        se_v = steal(
-            jitc_var_stmt(backend, VarType::Void, "", 1, 1, &vcall_id));
+        se_v = steal(jitc_var_new_node_1(backend, VarKind::Nop, VarType::Void,
+                                         size, placeholder, vcall_v,
+                                         jitc_var(vcall_v)));
+
         snprintf(temp, sizeof(temp), "VCall: %s [side effects]", name);
-        jitc_var(se_v)->placeholder = placeholder;
         jitc_var_set_label(se_v, temp);
     }
 
@@ -580,11 +545,8 @@ static ProfilerRegion profiler_region_vcall_assemble("jit_var_vcall_assemble");
 
 
 /// Called by the JIT compiler when compiling a virtual function call
-static void jitc_var_vcall_assemble(VCall *vcall,
-                                    uint32_t self_reg,
-                                    uint32_t mask_reg,
-                                    uint32_t offset_reg,
-                                    uint32_t data_reg) {
+void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg, uint32_t mask_reg,
+                             uint32_t offset_reg, uint32_t data_reg) {
     uint32_t vcall_reg = jitc_var(vcall->id)->reg_index;
 
     ProfilerPhase profiler(profiler_region_vcall_assemble);
@@ -727,7 +689,7 @@ static void jitc_var_vcall_assemble(VCall *vcall,
 /// Collect scalar / pointer variables referenced by a computation
 void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                                  uint32_t &data_offset, uint32_t inst_id,
-                                 uint32_t index, bool &use_self, bool &optix) {
+                                 uint32_t index, bool &use_self) {
     uint64_t key = (uint64_t) index + (((uint64_t) inst_id) << 32);
     auto it_and_status = data_map.emplace(key, (uint32_t) -1);
     if (!it_and_status.second)
@@ -737,9 +699,6 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     if ((VarKind) v->kind == VarKind::VCallSelf)
         use_self = true;
-
-    if (v->optix)
-        optix = true;
 
     if (v->vcall_iface) {
         return;
@@ -764,7 +723,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
                 break;
 
             jitc_var_vcall_collect_data(data_map, data_offset, inst_id, index_2,
-                                        use_self, optix);
+                                        use_self);
         }
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
@@ -778,7 +737,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
                 if (index_2 == 0)
                     continue; // not break
                 jitc_var_vcall_collect_data(data_map, data_offset, inst_id,
-                                            index_2, use_self, optix);
+                                            index_2, use_self);
             }
         }
     }

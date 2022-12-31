@@ -153,6 +153,9 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Recorded 'printf' instruction for debugging purposes
     "printf",
 
+    // A polymorphic function call
+    "dispatch",
+
     // Perform a standard texture lookup (CUDA)
     "tex_lookup",
 

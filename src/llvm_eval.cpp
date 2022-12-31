@@ -430,6 +430,9 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
                 v, v, v, v);
             break;
 
+        case VarKind::Nop:
+            break;
+
         case VarKind::Neg:
             if (jitc_is_float(v))
                 fmt("    $v = fneg $V\n", v, a0);
@@ -786,6 +789,12 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
 
         case VarKind::Printf:
             jitc_llvm_render_printf(index, v, a0, a1);
+            break;
+
+        case VarKind::Dispatch:
+            jitc_var_vcall_assemble((VCall *) state.extra[index].callback_data,
+                                    a0->reg_index, a1->reg_index, a2->reg_index,
+                                    a3 ? a3->reg_index : 0);
             break;
 
         case VarKind::TraceRay:

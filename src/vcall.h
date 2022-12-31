@@ -91,6 +91,10 @@ struct VCall {
     }
 };
 
+// Forward declarations
+extern void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg,
+                                    uint32_t mask_reg, uint32_t offset_reg,
+                                    uint32_t data_reg);
 
 
 extern void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,

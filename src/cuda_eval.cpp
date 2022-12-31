@@ -731,6 +731,12 @@ static void jitc_cuda_render_var(uint32_t index, const Variable *v) {
             jitc_cuda_render_printf(index, v, a0);
             break;
 
+        case VarKind::Dispatch:
+            jitc_var_vcall_assemble((VCall *) state.extra[index].callback_data,
+                                    a0->reg_index, a1->reg_index, a2->reg_index,
+                                    a3 ? a3->reg_index : 0);
+            break;
+
         case VarKind::TexLookup:
             fmt("    .reg.f32 $v_out_<4>;\n", v);
             if (a3)

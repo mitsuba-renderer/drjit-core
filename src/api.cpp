@@ -360,14 +360,6 @@ int jit_var_device(uint32_t index) {
     return jitc_var_device(index);
 }
 
-uint32_t jit_var_stmt(JitBackend backend, JIT_ENUM VarType vt,
-                          const char *stmt, int stmt_static, uint32_t n_dep,
-                          const uint32_t *dep) {
-
-    lock_guard guard(state.lock);
-    return jitc_var_stmt(backend, vt, stmt, stmt_static, n_dep, dep);
-}
-
 uint32_t jit_var_literal(JitBackend backend, VarType type, const void *value,
                              size_t size, int eval, int is_class) {
     lock_guard guard(state.lock);

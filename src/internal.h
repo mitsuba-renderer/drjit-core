@@ -99,6 +99,9 @@ enum VarKind : uint32_t {
     // Recorded 'printf' instruction for debugging purposes
     Printf,
 
+    // A polymorphic function call
+    Dispatch,
+
     // Perform a standard texture lookup (CUDA)
     TexLookup,
 
