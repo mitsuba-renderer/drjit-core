@@ -211,7 +211,7 @@ void printf_async(const JitArray<Backend, bool> &mask, const char *fmt,
                    indices);
 }
 
-TEST_BOTH(01_recorded_vcall) {
+TEST_ALL(01_recorded_vcall) {
     /// Test a simple virtual function call
     struct Base {
         virtual Float f(Float x) = 0;
@@ -254,7 +254,7 @@ TEST_BOTH(01_recorded_vcall) {
     jit_registry_remove(Backend, &a2);
 }
 
-TEST_BOTH(02_calling_conventions) {
+TEST_ALL(02_calling_conventions) {
     /* This tests 4 things at once: passing masks, reordering inputs/outputs to
        avoid alignment issues, immediate copying of an input to an output.
        Finally, it runs twice: the second time with optimizations, which
@@ -331,7 +331,7 @@ TEST_BOTH(02_calling_conventions) {
     jit_registry_remove(Backend, &b3);
 }
 
-TEST_BOTH(03_optimize_away_outputs) {
+TEST_ALL(03_optimize_away_outputs) {
     /* This test checks that unreferenced outputs are detected by the virtual
        function call interface, and that garbage collection propagates from
        outputs to inputs. It also checks that functions with identical code are
@@ -400,7 +400,7 @@ TEST_BOTH(03_optimize_away_outputs) {
     jit_registry_remove(Backend, &c3);
 }
 
-TEST_BOTH(04_devirtualize) {
+TEST_ALL(04_devirtualize) {
     /* This test checks that outputs which produce identical values across
        all instances are moved out of the virtual call interface. */
     struct Base {
@@ -476,7 +476,7 @@ TEST_BOTH(04_devirtualize) {
     jit_registry_remove(Backend, &d2);
 }
 
-TEST_BOTH(05_extra_data) {
+TEST_ALL(05_extra_data) {
     using Double = Array<double>;
 
     /// Ensure that evaluated scalar fields in instances can be accessed
@@ -525,7 +525,7 @@ TEST_BOTH(05_extra_data) {
     jit_registry_remove(Backend, &e2);
 }
 
-TEST_BOTH(06_side_effects) {
+TEST_ALL(06_side_effects) {
     /*  This tests three things:
        - side effects in virtual functions
        - functions without inputs/outputs
@@ -572,7 +572,7 @@ TEST_BOTH(06_side_effects) {
     }
 }
 
-TEST_BOTH(07_side_effects_only_once) {
+TEST_ALL(07_side_effects_only_once) {
     /* This tests ensures that side effects baked into a function only happen
        once, even when that function is evaluated multiple times. */
 
@@ -623,7 +623,7 @@ TEST_BOTH(07_side_effects_only_once) {
     }
 }
 
-TEST_BOTH(08_multiple_calls) {
+TEST_ALL(08_multiple_calls) {
     /* This tests ensures that a function can be called several times,
        reusing the generated code (at least in the function-based variant).
        This reuse cannot be verified automatically via assertions, you must
@@ -669,7 +669,7 @@ TEST_BOTH(08_multiple_calls) {
     jit_registry_remove(Backend, &h2);
 }
 
-TEST_BOTH(09_big) {
+TEST_ALL(09_big) {
     /* This performs two vcalls with different numbers of instances, and
        relatively many of them. This tests the various tables, offset
        calculations, binary search trees, etc. */
@@ -743,7 +743,7 @@ TEST_BOTH(09_big) {
         jit_registry_remove(Backend, &v2[i]);
 }
 
-TEST_BOTH(09_self) {
+TEST_ALL(09_self) {
     struct Base;
     using BasePtr = Array<Base *>;
 
@@ -770,7 +770,7 @@ TEST_BOTH(09_self) {
     jit_registry_remove(Backend, &i2);
 }
 
-TEST_BOTH(10_recursion) {
+TEST_ALL(10_recursion) {
     struct Base1 { virtual Float f(const Float &x) = 0; };
     using Base1Ptr = Array<Base1 *>;
 
@@ -816,7 +816,7 @@ TEST_BOTH(10_recursion) {
     jit_registry_remove(Backend, &i22);
 }
 
-TEST_BOTH(11_recursion_with_local) {
+TEST_ALL(11_recursion_with_local) {
     struct Base1 { virtual Float f(const Float &x) = 0; };
     using Base1Ptr = Array<Base1 *>;
 

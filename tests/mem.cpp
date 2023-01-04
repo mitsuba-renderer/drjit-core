@@ -1,7 +1,7 @@
 #include "test.h"
 #include <cstring>
 
-TEST_BOTH(01_gather) {
+TEST_ALL(01_gather) {
     Int32 r = arange<Int32>(100) + 100;
     r.eval();
     UInt32 index = UInt32(34, 62, 75, 2);
@@ -10,7 +10,7 @@ TEST_BOTH(01_gather) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH(02_gather_mask) {
+TEST_ALL(02_gather_mask) {
     Mask r = eq(arange<Int32>(100) & Int32(1), 1);
     r.eval();
     UInt32 index = UInt32(33, 62, 75, 2);
@@ -19,7 +19,7 @@ TEST_BOTH(02_gather_mask) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH(03_gather_masked) {
+TEST_ALL(03_gather_masked) {
     Int32 r = arange<Int32>(100) + 100;
     r.eval();
     UInt32 index = UInt32(34, 62, 75, 2);
@@ -29,7 +29,7 @@ TEST_BOTH(03_gather_masked) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH(04_gather_mask_masked) {
+TEST_ALL(04_gather_mask_masked) {
     Mask r = eq(arange<Int32>(100) & Int32(1), 1);
     r.eval();
     UInt32 index = UInt32(33, 62, 75, 2);
@@ -39,7 +39,7 @@ TEST_BOTH(04_gather_mask_masked) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH(05_gather_scalar) {
+TEST_ALL(05_gather_scalar) {
     /* unmasked, doesn't launch any kernels */ {
         Int32 r = 124;
         Array<uint64_t> index = Array<uint64_t>(34, 62, 75, 2);
@@ -57,7 +57,7 @@ TEST_BOTH(05_gather_scalar) {
     }
 }
 
-TEST_BOTH(06_gather_scalar_mask) {
+TEST_ALL(06_gather_scalar_mask) {
     /* unmasked, doesn't launch any kernels */ {
         Mask r = true;
         Array<uint64_t> index = Array<uint64_t>(34, 62, 75, 2);
@@ -75,7 +75,7 @@ TEST_BOTH(06_gather_scalar_mask) {
     }
 }
 
-TEST_BOTH(07_scatter) {
+TEST_ALL(07_scatter) {
     UInt32 r = arange<UInt32>(10);
     UInt32 index = UInt32(1, 7, 5);
     UInt32 value = UInt32(8, 2, 3);
@@ -84,7 +84,7 @@ TEST_BOTH(07_scatter) {
     jit_assert(all(eq(ref, r)));
 }
 
-TEST_BOTH(08_scatter_mask) {
+TEST_ALL(08_scatter_mask) {
     UInt32 r = arange<UInt32>(10);
     UInt32 index = UInt32(1, 7, 5);
     UInt32 value = UInt32(8, 2, 3);
@@ -94,7 +94,7 @@ TEST_BOTH(08_scatter_mask) {
     jit_assert(all(eq(ref, r)));
 }
 
-TEST_BOTH(09_safety) {
+TEST_ALL(09_safety) {
     /* Collapse adjacent scatters */ {
         Float a = arange<Float>(5);
         a.eval();
@@ -133,7 +133,7 @@ TEST_BOTH(09_safety) {
     }
 }
 
-TEST_BOTH(10_scatter_atomic_rmw) {
+TEST_ALL(10_scatter_atomic_rmw) {
     /* scatter 16 values */ {
         Float target = zero<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
@@ -169,7 +169,7 @@ TEST_BOTH(10_scatter_atomic_rmw) {
     }
 }
 
-TEST_BOTH(11_reindex) {
+TEST_ALL(11_reindex) {
     // Test that a gather expression can rewrite the original expression
     UInt32 i1 = arange<UInt32>(100) + 5,
            i2 = arange<UInt32>(10) * 3,

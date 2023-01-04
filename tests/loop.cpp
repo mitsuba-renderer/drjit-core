@@ -2,7 +2,7 @@
 #include "traits.h"
 #include "ekloop.h"
 
-TEST_BOTH(01_record_loop) {
+TEST_ALL(01_record_loop) {
     // Tests a simple loop evaluated at once, or in parts
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -40,7 +40,7 @@ TEST_BOTH(01_record_loop) {
     }
 }
 
-TEST_BOTH(02_side_effect) {
+TEST_ALL(02_side_effect) {
     // Tests that side effects happen (and only once, even if the loop is re-evaluated)
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -70,7 +70,7 @@ TEST_BOTH(02_side_effect) {
     }
 }
 
-TEST_BOTH(03_side_effect_2) {
+TEST_ALL(03_side_effect_2) {
     // Tests that side effects work even if they don't reference any loop variables
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -100,7 +100,7 @@ TEST_BOTH(03_side_effect_2) {
     }
 }
 
-TEST_BOTH(04_side_effect_masking) {
+TEST_ALL(04_side_effect_masking) {
     // Tests that side effects are correctly masked by the loop condition
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -122,7 +122,7 @@ TEST_BOTH(04_side_effect_masking) {
     }
 }
 
-TEST_BOTH(05_optimize_invariant) {
+TEST_ALL(05_optimize_invariant) {
     /* Test to check that variables which stay unchanged or constant and
        equal-valued are optimized out of the loop */
     for (uint32_t i = 0; i < 3; ++i) {
@@ -179,7 +179,7 @@ TEST_BOTH(05_optimize_invariant) {
     }
 }
 
-TEST_BOTH(06_garbage_collection) {
+TEST_ALL(06_garbage_collection) {
     // Checks that unused loop variables are optimized away
 
     jit_set_flag(JitFlag::LoopRecord, 1);
@@ -236,7 +236,7 @@ TEST_BOTH(06_garbage_collection) {
     }
 }
 
-TEST_BOTH(07_collatz) {
+TEST_ALL(07_collatz) {
     // A more interesting nested loop
     auto collatz = [](const char *name, UInt32 value) -> UInt32 {
         UInt32 counter = 0;
@@ -277,7 +277,7 @@ TEST_BOTH(07_collatz) {
     }
 }
 
-TEST_BOTH(08_nested_write) {
+TEST_ALL(08_nested_write) {
     // Nested loop where both loops write to the same loop variable
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -298,7 +298,7 @@ TEST_BOTH(08_nested_write) {
     }
 }
 
-TEST_BOTH(09_optim_cond) {
+TEST_ALL(09_optim_cond) {
     // Loop condition depends on variables that are optimized away (loop-invariants)
 
     for (uint32_t i = 0; i < 3; ++i) {

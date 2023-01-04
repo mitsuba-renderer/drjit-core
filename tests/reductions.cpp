@@ -1,7 +1,7 @@
 #include "test.h"
 #include <algorithm>
 
-TEST_BOTH(01_all_any) {
+TEST_ALL(01_all_any) {
     using Bool = Array<bool>;
 
     scoped_set_log_level ssll(LogLevel::Info);
@@ -33,7 +33,7 @@ TEST_BOTH(01_all_any) {
     }
 }
 
-TEST_BOTH(02_scan) {
+TEST_ALL(02_scan) {
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
         uint32_t size = 23*i*i*i + 1;
@@ -55,7 +55,7 @@ TEST_BOTH(02_scan) {
     }
 }
 
-TEST_BOTH(03_compress) {
+TEST_ALL(03_compress) {
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 30; ++i) {
         uint32_t size = 23*i*i*i + 1;
@@ -98,7 +98,7 @@ TEST_BOTH(03_compress) {
     }
 }
 
-TEST_BOTH(04_mkperm) {
+TEST_ALL(04_mkperm) {
     scoped_set_log_level ssll(LogLevel::Info);
     srand(0);
     for (uint32_t i = 0; i < 30; ++i) {
@@ -186,7 +186,7 @@ TEST_BOTH(04_mkperm) {
 }
 
 #if 0
-TEST_BOTH(05_block_ops) {
+TEST_ALL(05_block_ops) {
     Float a(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f);
 
     jit_log(Info, "block_copy: %s\n", block_copy(a, 3).str());

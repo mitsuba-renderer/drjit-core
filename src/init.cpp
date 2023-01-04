@@ -69,20 +69,6 @@ extern float timer_frequency_scale;
 void jitc_init(uint32_t backends) {
     ProfilerPhase profiler(profiler_region_init);
 
-#if defined(_WIN32)
-    // Initialize frequency scale for performance counters
-    LARGE_INTEGER timer_frequency;
-    QueryPerformanceFrequency(&timer_frequency);
-    timer_frequency_scale = 1e6f / timer_frequency.QuadPart;
-#endif
-
-#if defined(__APPLE__)
-    backends &= ~(uint32_t) JitBackend::CUDA;
-#endif
-
-    if ((backends & ~state.backends) == 0)
-        return;
-
 #if !defined(_WIN32)
     char temp_path[512];
     snprintf(temp_path, sizeof(temp_path), "%s/.drjit", getenv("HOME"));
@@ -103,6 +89,11 @@ void jitc_init(uint32_t backends) {
     jitc_temp_path = (wchar_t*) malloc(temp_path_size);
     memcpy(jitc_temp_path, temp_path_w, temp_path_size);
     wcstombs(temp_path, temp_path_w, sizeof(temp_path));
+
+    // Initialize frequency scale for performance counters
+    LARGE_INTEGER timer_frequency;
+    QueryPerformanceFrequency(&timer_frequency);
+    timer_frequency_scale = 1e6f / timer_frequency.QuadPart;
 #endif
 
     if (rv == -1) {
@@ -119,14 +110,24 @@ void jitc_init(uint32_t backends) {
     // Enumerate CUDA devices and collect suitable ones
     jitc_log(Info, "jit_init(): detecting devices ..");
 
+    // Filter backends that are not available on the current platform
+    uint32_t available_backends = (1 << (uint32_t) JitBackend::LLVM);
+#if defined(__APPLE__)
+    available_backends |= (1 << (uint32_t) JitBackend::Metal);
+#else
+    available_backends |= (1 << (uint32_t) JitBackend::CUDA);
+#endif
+    backends &= available_backends;
+
+    // Leave if already initialized
     if ((backends & ~state.backends) == 0)
         return;
 
-    if ((backends & (uint32_t) JitBackend::LLVM) && jitc_llvm_init())
-        state.backends |= (uint32_t) JitBackend::LLVM;
+    if ((backends & (1 << (uint32_t) JitBackend::LLVM)) && jitc_llvm_init())
+        state.backends |= 1 << (uint32_t) JitBackend::LLVM;
 
-    if ((backends & (uint32_t) JitBackend::CUDA) && jitc_cuda_init())
-        state.backends |= (uint32_t) JitBackend::CUDA;
+    if ((backends & (1 << (uint32_t) JitBackend::CUDA)) && jitc_cuda_init())
+        state.backends |= 1 << (uint32_t) JitBackend::CUDA;
 
     state.variable_index = 1;
     state.variable_watermark = 0;

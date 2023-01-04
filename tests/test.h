@@ -23,6 +23,10 @@ using FloatL  = LLVMArray<float>;
 using Int32L  = LLVMArray<int32_t>;
 using UInt32L = LLVMArray<uint32_t>;
 using MaskL   = LLVMArray<bool>;
+using FloatM  = MetalArray<float>;
+using Int32M  = MetalArray<int32_t>;
+using UInt32M = MetalArray<uint32_t>;
+using MaskM   = MetalArray<bool>;
 
 #define TEST_CUDA(name, ...)                                                   \
     template <JitBackend Backend, typename Float, typename Int32,              \
@@ -55,7 +59,21 @@ using MaskL   = LLVMArray<bool>;
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
 
-#define TEST_BOTH(name, ...)                                                   \
+#define TEST_METAL(name, ...)                                                  \
+    template <JitBackend Backend, typename Float, typename Int32,              \
+              typename UInt32, typename Mask, template <class> class Array>    \
+    void test##name();                                                         \
+    int test##name##_l =                                                       \
+        test_register("test" #name "_metal",                                   \
+                      test##name<JitBackend::Metal, FloatM, Int32M, UInt32M,   \
+                                 MaskM, MetalArray>,                           \
+                      ##__VA_ARGS__);                                          \
+    template <JitBackend Backend, typename Float, typename Int32,              \
+              typename UInt32, typename Mask, template <class> class Array>    \
+    void test##name()
+
+
+#define TEST_ALL(name, ...)                                                    \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name();                                                         \
@@ -74,14 +92,19 @@ using MaskL   = LLVMArray<bool>;
                       test##name<JitBackend::LLVM, FloatL, Int32L, UInt32L,    \
                                  MaskL, LLVMArray>,                            \
                       ##__VA_ARGS__);                                          \
+    int test##name##_m =                                                       \
+        test_register("test" #name "_metal",                                   \
+                      test##name<JitBackend::Metal, FloatM, Int32M, UInt32M,   \
+                                 MaskM, MetalArray>,                           \
+                      ##__VA_ARGS__);                                          \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
 
-#define jit_assert(cond)                                                      \
+#define jit_assert(cond)                                                       \
     do {                                                                       \
         if (!(cond))                                                           \
-            jit_fail("Assertion failure: %s in line %u.", #cond, __LINE__);   \
+            jit_fail("Assertion failure: %s in line %u.", #cond, __LINE__);    \
     } while (0)
 
 /// RAII helper for temporarily decreasing the log level

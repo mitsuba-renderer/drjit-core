@@ -82,36 +82,51 @@ extern "C" {
  */
 #if defined(__cplusplus)
 enum class JitBackend : uint32_t {
-    Invalid = 0,
+    Invalid,
 
-    /// CUDA backend (requires CUDA >= 10, generates PTX instructions)
-    CUDA = (1 << 0),
+    /// CUDA GPU backend (generates PTX IR)
+    CUDA,
 
-    /// LLVM backend targeting the CPU (generates LLVM IR)
-    LLVM = (1 << 1)
+    /// LLVM CPU backend (generates vectorized LLVM IR)
+    LLVM,
+
+    /// Metal GPU backend (generates MSL C++ code)
+    Metal
 };
 #else
 enum JitBackend {
-    JitBackendCUDA = (1 << 0),
-    JitBackendLLVM = (1 << 1)
+    JitBackendInvalid,
+    JitBackendCUDA,
+    JitBackendLLVM,
+    JitBackendMetal
 };
 #endif
 
 /**
  * \brief Initialize a JIT compiler backend
  *
- * The function <tt>jit_init()</tt> must be called before using the JIT
- * compiler. It takes a bit-wise OR of elements of the \ref JitBackend
- * enumeration and tries to initialize each specified backend. Query \ref
- * jit_has_backend() following this operation to check if a backend was
- * initialized successfully. This function does nothing when initialization has
- * already occurred. It is possible to re-initialize the JIT following a call
- * to \ref jit_shutdown(), which can be useful to reset the state, e.g., in
- * testcases.
+ * The function <tt>jit_init()</tt> must be called before using other
+ * Dr.Jit API functionality.
+ *
+ * It takes a bit-wise OR of appropriately bit-shifted elements of the
+ * \ref JitBackend enumeration and tries to initialize each specified backend.
+ * For example,
+ *
+ * <pre>
+ * jit_init((1 << (int) JitBackend::CUDA) | (1 << (int) JitBackend::LLVM));
+ * </pre>
+ *
+ * will cause the system to initialize the CUDA and LLVM backends. The argument
+ * \c -1 indicates that Dr.Jit should initialize all available backends. The
+ * function does nothing the specified backend(s) were already initialized.
+ *
+ * You may call \ref jit_has_backend() following this operation to check if a
+ * backend was initialized successfully.
+ *
+ * It is possible to reinitialize Dr.Jit following a call to \ref
+ * jit_shutdown(), which can be useful to reset the state, e.g., in testcases.
  */
-extern JIT_EXPORT void
-jit_init(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
-                                   (uint32_t) JitBackend::LLVM));
+extern JIT_EXPORT void jit_init(uint32_t backends JIT_DEF((uint32_t) -1));
 
 /**
  * \brief Launch an asynchronous thread that will execute jit_init() and
@@ -119,20 +134,18 @@ jit_init(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
  *
  * On machines with several GPUs, \ref jit_init() will set up a CUDA
  * environment on all devices when <tt>cuda=true</tt> is specified. This can be
- * a rather slow operation (e.g. 1 second). This function provides a convenient
- * alternative to hide this latency, for instance when importing this library
- * from an interactive Python session which doesn't need the JIT right away.
- *
- * The \c llvm and \c cuda arguments should be set to \c 1 to initialize the
- * corresponding backend, and \c 0 otherwise.
+ * a rather slow operation (e.g. 1 second or more) since gigabytes of GPU
+ * memory have to be mapped into the process address space. This function
+ * provides a convenient alternative to hide this latency, for instance when
+ * importing this library from an interactive Python session that doesn't need
+ * the JIT right away.
  *
  * Note that it is safe to call <tt>jit_*</tt> API functions following
  * initialization via \ref jit_init_async(), since it acquires a lock to the
- * internal data structures.
+ * internal data structures that will only be realized once the initialization
+ * is complete.
  */
-extern JIT_EXPORT void
-jit_init_async(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
-                                         (uint32_t) JitBackend::LLVM));
+extern JIT_EXPORT void jit_init_async(uint32_t backends JIT_DEF((uint32_t) -1));
 
 /// Check whether the LLVM backend was successfully initialized
 extern JIT_EXPORT int jit_has_backend(JIT_ENUM JitBackend backend);

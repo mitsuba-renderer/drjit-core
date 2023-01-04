@@ -65,12 +65,16 @@ int jit_has_backend(JitBackend backend) {
     bool result;
     switch (backend) {
         case JitBackend::LLVM:
-            result = state.backends & (uint32_t) JitBackend::LLVM;
+            result = state.backends & (1 << (uint32_t) JitBackend::LLVM);
             break;
 
         case JitBackend::CUDA:
-            result = (state.backends & (uint32_t) JitBackend::CUDA)
+            result = (state.backends & (1 << (uint32_t) JitBackend::CUDA))
                 && !state.devices.empty();
+            break;
+
+        case JitBackend::Metal:
+            result = state.backends & (1 << (uint32_t) JitBackend::Metal);
             break;
 
         default:

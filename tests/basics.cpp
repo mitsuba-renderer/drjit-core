@@ -8,7 +8,7 @@
 #include <cstring>
 #include <typeinfo>
 
-TEST_BOTH(01_creation_destruction_cse) {
+TEST_ALL(01_creation_destruction_cse) {
     // Test CSE involving normal and evaluated constant literals
     for (int i = 0; i < 2; ++i) {
         uint32_t value = 1234;
@@ -29,7 +29,7 @@ TEST_BOTH(01_creation_destruction_cse) {
     }
 }
 
-TEST_BOTH(02_load_store) {
+TEST_ALL(02_load_store) {
     /// Test CSE and simple variables loads/stores involving scalar and non-scalars
     for (int k = 0; k < 2; ++k) {
         for (int j = 0; j < 2; ++j) {
@@ -64,7 +64,7 @@ TEST_BOTH(02_load_store) {
     }
 }
 
-TEST_BOTH(03_load_store_mask) {
+TEST_ALL(03_load_store_mask) {
     /// Masks are a bit more tricky, check that those also work
     for (int i = 0; i < 2; ++i) {
         uint32_t ctr = jit_var_counter(Backend, i == 0 ? 1 : 10);
@@ -89,7 +89,7 @@ TEST_BOTH(03_load_store_mask) {
     }
 }
 
-TEST_BOTH(04_load_store_float) {
+TEST_ALL(04_load_store_float) {
     /// Check usage of floats/doubles (loading, storing, literal constants)
     for (int i = 0; i < 2; ++i) {
         for (int j = 0; j < 2; ++j) {
@@ -448,7 +448,7 @@ template <typename T> bool test_const_prop() {
     return fail;
 }
 
-TEST_BOTH(05_const_prop) {
+TEST_ALL(05_const_prop) {
     /* This very large test runs every implemented operation with a variety of
        scalar and memory inputs and compares their output. This is to ensure
        that Dr.Jit's builtin constant propagation pass produces results
@@ -464,7 +464,7 @@ TEST_BOTH(05_const_prop) {
     jit_assert(!fail);
 }
 
-TEST_BOTH(06_cast) {
+TEST_ALL(06_cast) {
     /* This test tries every possible type conversion, verifying constant
        propagation to the native CUDA/LLVM implementation */
 
@@ -566,7 +566,7 @@ TEST_BOTH(06_cast) {
     jit_assert(!fail);
 }
 
-TEST_BOTH(07_and_or_mixed) {
+TEST_ALL(07_and_or_mixed) {
     // Tests JitOp::And/Or applied to a non-mask type and a mask
 
     for (int i = 0; i < 4; ++i) {
@@ -628,7 +628,7 @@ void printf_async(const JitArray<Backend, bool> &mask, const char *fmt,
                    indices);
 }
 
-TEST_BOTH(08_printf) {
+TEST_ALL(08_printf) {
     UInt32 x = arange<UInt32>(10);
     Float y = arange<Float>(10) + 1;
     UInt32 z = arange<UInt32>(10) + 2;
