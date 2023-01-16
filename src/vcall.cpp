@@ -24,7 +24,8 @@ static std::vector<VCall *> vcalls_assembled;
 
 static void jitc_var_vcall_collect_data(
     tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-    uint32_t &data_offset, uint32_t inst_id, uint32_t index, bool &use_self);
+    uint32_t &data_offset, uint32_t inst_id, uint32_t index,
+    bool &use_self, bool &use_optix);
 
 void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
     ThreadState *ts = thread_state(backend);
@@ -212,6 +213,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
     // Collect accesses to evaluated variables/pointers
     uint32_t data_size = 0, inst_id_max = 0;
+    bool use_optix = false;
     for (uint32_t i = 0; i < n_inst; ++i) {
         if (unlikely(checkpoints[i] > checkpoints[i + 1]))
             jitc_raise("jitc_var_vcall(): checkpoints parameter is not "
@@ -223,12 +225,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         for (uint32_t j = 0; j < n_out; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
                                         out_nested[j + i * n_out],
-                                        vcall->use_self);
+                                        vcall->use_self, use_optix);
 
         for (uint32_t j = checkpoints[i]; j != checkpoints[i + 1]; ++j)
             jitc_var_vcall_collect_data(vcall->data_map, data_size, i,
                                         vcall->side_effects[j - checkpoints[0]],
-                                        vcall->use_self);
+                                        vcall->use_self, use_optix);
 
         // Restore to full alignment
         data_size = (data_size + 7) / 8 * 8;
@@ -506,7 +508,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
     size_t dep_size = vcall->in.size() * sizeof(uint32_t);
 
-    jitc_var(vcall_v)->extra = 1;
+    {
+        Variable *vcall_var = jitc_var(vcall_v);
+        vcall_var->extra = 1;
+        vcall_var->optix = use_optix;
+    }
+
     Extra *e_special = &state.extra[vcall_v];
     e_special->n_dep = (uint32_t) vcall->in.size();
     e_special->dep = (uint32_t *) malloc_check(dep_size);
@@ -689,7 +696,7 @@ void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg, uint32_t mask_reg,
 /// Collect scalar / pointer variables referenced by a computation
 void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
                                  uint32_t &data_offset, uint32_t inst_id,
-                                 uint32_t index, bool &use_self) {
+                                 uint32_t index, bool &use_self, bool &use_optix) {
     uint64_t key = (uint64_t) index + (((uint64_t) inst_id) << 32);
     auto it_and_status = data_map.emplace(key, (uint32_t) -1);
     if (!it_and_status.second)
@@ -699,6 +706,11 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     if ((VarKind) v->kind == VarKind::VCallSelf)
         use_self = true;
+
+#if defined(DRJIT_ENABLE_OPTIX)
+    if ((JitBackend) v->backend == JitBackend::CUDA)
+        use_optix |= v->optix;
+#endif
 
     if (v->vcall_iface) {
         return;
@@ -723,7 +735,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
                 break;
 
             jitc_var_vcall_collect_data(data_map, data_offset, inst_id, index_2,
-                                        use_self);
+                                        use_self, use_optix);
         }
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
@@ -737,7 +749,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
                 if (index_2 == 0)
                     continue; // not break
                 jitc_var_vcall_collect_data(data_map, data_offset, inst_id,
-                                            index_2, use_self);
+                                            index_2, use_self, use_optix);
             }
         }
     }

@@ -192,7 +192,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             v->param_type = ParamType::Input;
             kernel_params.push_back((void *) v->literal);
         } else {
-            n_side_effects += v->side_effect;
+            n_side_effects += (uint32_t) v->side_effect;
             v->param_type = ParamType::Register;
             v->param_offset = 0xFFFF;
 
