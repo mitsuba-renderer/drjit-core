@@ -1415,7 +1415,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
                                  uint32_t size) {
     Variable *v = jitc_var(var_index);
 
-    if (v->is_data())
+    if (v->is_data() || (VarType) v->type == VarType::Void)
         return 0; // evaluated variable, give up
 
     if (v->extra) {
@@ -1424,31 +1424,32 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             return 0; // "complicated" variable, give up
     }
 
-    if (v->is_literal()) {
-        jitc_var_inc_ref(var_index, v);
-        return var_index;
-    }
-
     Ref dep[4];
-    bool rebuild = false;
-    for (uint32_t i = 0; i < 4; ++i) {
-        uint32_t index_2 = v->dep[i];
-        if (!index_2)
-            continue;
-        dep[i] = steal(jitc_var_reindex(index_2, new_index, size));
-        if (!dep[i])
-            return 0; // recursive call failed, give up
-        rebuild |= dep[i] != index_2;
-        if (rebuild)
-            v = jitc_var(var_index);
+    bool rebuild = v->size != size && v->size != 1;
+
+    if (!v->is_literal()) {
+        for (uint32_t i = 0; i < 4; ++i) {
+            uint32_t index_2 = v->dep[i];
+            if (!index_2)
+                continue;
+            dep[i] = steal(jitc_var_reindex(index_2, new_index, size));
+            if (!dep[i])
+                return 0; // recursive call failed, give up
+            rebuild |= dep[i] != index_2;
+        }
     }
 
-    if (rebuild) {
+    v = jitc_var(var_index);
+
+    if (v->kind == VarKind::Counter) {
+        return jitc_var_new_ref(new_index);
+    } else if (rebuild) {
         Variable v2;
         v2.kind = v->kind;
-        v2.size = size;
-        v2.type = v->type;
         v2.backend = v->backend;
+        v2.type = v->type;
+        v2.size = size;
+        v2.optix = v->optix;
         v2.placeholder = v->placeholder;
         if (v->is_stmt()) {
             if (!v->free_stmt) {
@@ -1465,8 +1466,6 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             jitc_var_inc_ref(dep[i]);
         }
         return jitc_var_new(v2);
-    } else if (v->kind == VarKind::Counter) {
-        return jitc_var_new_ref(new_index);
     } else {
         jitc_var_inc_ref(var_index, v);
         return var_index;
