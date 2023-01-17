@@ -429,6 +429,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         for (uint32_t i = 0; i < loop->se_count; ++i) {
             uint32_t index = se[se.size() - loop->se_count + i];
             Variable *v = jitc_var(index);
+            size = std::max(size, v->size);
             v->side_effect = false;
             jitc_var_inc_ref(index, v);
             jitc_var_dec_ref(index, v);
