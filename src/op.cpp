@@ -1433,13 +1433,12 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             if (!index_2)
                 continue;
             dep[i] = steal(jitc_var_reindex(index_2, new_index, size));
+            v = jitc_var(var_index);
             if (!dep[i])
                 return 0; // recursive call failed, give up
             rebuild |= dep[i] != index_2;
         }
     }
-
-    v = jitc_var(var_index);
 
     if (v->kind == VarKind::Counter) {
         return jitc_var_new_ref(new_index);
