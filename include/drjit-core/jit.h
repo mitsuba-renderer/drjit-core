@@ -1331,11 +1331,15 @@ enum class JitFlag : uint32_t {
     /// Exploit literal constants during AD (used in the Dr.Jit parent project)
     ADOptimize = 8192,
 
+    /// Perform a intra-warp/SIMD register reduction before issuing global atomics
+    AtomicReduceLocal = 16384,
+
     /// Default flags
     Default = (uint32_t) ConstProp | (uint32_t) ValueNumbering |
               (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallDeduplicate |
-              (uint32_t) VCallOptimize | (uint32_t) ADOptimize
+              (uint32_t) VCallOptimize | (uint32_t) ADOptimize |
+              (uint32_t) AtomicReduceLocal
 };
 #else
 enum JitFlag {
@@ -1352,7 +1356,8 @@ enum JitFlag {
     JitFlagPrintIR             = 1024,
     JitFlagKernelHistory       = 2048,
     JitFlagLaunchBlocking      = 4096,
-    JitFlagADOptimize          = 8192
+    JitFlagADOptimize          = 8192,
+    JitFlagAtomicReduceLocal = 16384
 };
 #endif
 

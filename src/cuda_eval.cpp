@@ -802,8 +802,10 @@ static void jitc_cuda_render_scatter(const Variable *v,
     const char *op = reduce_op_name[v->literal];
     const ThreadState *ts = thread_state_cuda;
 
+
     if (v->literal && callable_depth == 0 && type_size[value->type] == 4 &&
-        ts->ptx_version >= 62 && ts->compute_capability >= 70) {
+        ts->ptx_version >= 62 && ts->compute_capability >= 70 &&
+        (jitc_flags() & (uint32_t) JitFlag::AtomicReduceLocal)) {
         fmt("    {\n"
             "        .visible .func reduce_$s_$t(.param .u64 ptr, .param .$t value);\n"
             "        call reduce_$s_$t, (%rd3, $v);\n"
