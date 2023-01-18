@@ -409,6 +409,14 @@ void scatter_reduce(ReduceOp op, Array &target, const Array &value,
                                           index.index(), mask.index(), op));
 }
 
+template <typename Array, typename Index>
+void scatter_reduce_kahan(Array &target_1, Array &target_2, const Array &value,
+                          const JitArray<Array::Backend, Index> &index,
+                          const JitArray<Array::Backend, bool> &mask = true) {
+    jit_var_scatter_reduce_kahan(target_1.index_ptr(), target_2.index_ptr(),
+                                 value.index(), index.index(), mask.index());
+}
+
 template <typename Array>
 Array arange(size_t start, size_t stop, size_t step) {
     using UInt32 = typename Array::template ReplaceValue<uint32_t>;

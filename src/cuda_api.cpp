@@ -156,7 +156,6 @@ bool jitc_cuda_api_init() {
     return true;
 }
 
-
 void jitc_cuda_api_shutdown() {
     if (!jitc_cuda_handle)
         return;

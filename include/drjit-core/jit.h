@@ -927,6 +927,23 @@ extern JIT_EXPORT uint32_t jit_var_scatter(uint32_t target, uint32_t value,
                                            JIT_ENUM ReduceOp reduce_op);
 
 /**
+ * \brief Schedule a Kahan-compensated floating point atomic scatter-write
+ *
+ * This operation is just like `jit_var(scatter, ..., ReduceOp::Add)`. The
+ * difference is that it simultaneously adds to two different target buffers
+ * using the Kahan summation algorithm.
+ *
+ * The implementation may overwrite the 'target_1' / 'target_2' pointers
+ * if a copy needs to be made (for example, if another variable elsewhere
+ * references the same variable).
+ */
+extern JIT_EXPORT void jit_var_scatter_reduce_kahan(uint32_t *target_1,
+                                                    uint32_t *target_2,
+                                                    uint32_t value,
+                                                    uint32_t index,
+                                                    uint32_t mask);
+
+/**
  * \brief Create an identical copy of the given variable
  *
  * This function creates an exact copy of the variable \c index and returns the

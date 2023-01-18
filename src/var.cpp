@@ -142,7 +142,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "cast", "bitcast",
 
     // Memory-related operations
-    "gather", "scatter",
+    "gather", "scatter", "scatter_kahan",
 
     // Specialized nodes for vcalls
     "vcall_mask", "self",

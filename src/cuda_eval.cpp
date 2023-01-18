@@ -54,6 +54,7 @@ static void jitc_cuda_render_var(uint32_t index, const Variable *v);
 static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value, const Variable *index,
                                      const Variable *mask);
+static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t index);
 static void jitc_cuda_render_printf(uint32_t index, const Variable *v,
                                     const Variable *mask);
 
@@ -719,6 +720,11 @@ static void jitc_cuda_render_var(uint32_t index, const Variable *v) {
             jitc_cuda_render_scatter(v, a0, a1, a2, a3);
             break;
 
+        case VarKind::ScatterKahan:
+            jitc_cuda_render_scatter_kahan(v, index);
+            break;
+
+
         case VarKind::VCallSelf:
             fmt("    mov.u32 $v, self;\n", v);
             break;
@@ -888,6 +894,52 @@ static void jitc_cuda_render_scatter(const Variable *v,
             fmt("    $s.global$s$s.$t [%rd3], $v;\n", op_type,
                 v->literal ? "." : "", op, value, value);
     }
+
+    if (!unmasked)
+        fmt("\nl_$u_done:\n", v->reg_index);
+}
+
+static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) {
+    const Extra &extra = state.extra[v_index];
+
+    const Variable *ptr_1 = jitc_var(extra.dep[0]),
+                   *ptr_2 = jitc_var(extra.dep[1]),
+                   *index = jitc_var(extra.dep[2]),
+                   *mask = jitc_var(extra.dep[3]),
+                   *value = jitc_var(extra.dep[4]);
+
+    bool unmasked = mask->is_literal() && mask->literal == 1;
+
+    if (!unmasked)
+        fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
+
+    fmt("    mad.wide.$t %rd2, $v, $a, $v;\n"
+        "    mad.wide.$t %rd3, $v, $a, $v;\n",
+        index, index, value, ptr_1,
+        index, index, value, ptr_2);
+
+    fmt(
+        "    {\n"
+        "        .reg.f32 %before, %after, %value, %case_1, %case_2;\n"
+        "        .reg.f32 %abs_before, %abs_value, %result;\n"
+        "        .reg.pred %cond;\n"
+        "\n"
+        "        mov.f32 %value, $v;\n"
+        "        atom.global.add.f32 %before, [%rd2], %value;\n"
+        "        add.ftz.f32 %after, %before, %value;\n"
+        "        sub.ftz.f32 %case_1, %before, %after;\n"
+        "        add.ftz.f32 %case_1, %case_1, %value;\n"
+        "        sub.ftz.f32 %case_2, %value, %after;\n"
+        "        add.ftz.f32 %case_2, %case_2, %before;\n"
+        "        abs.ftz.f32 %abs_before, %before;\n"
+        "        abs.ftz.f32 %abs_value, %value;\n"
+        "        setp.ge.f32 %cond, %abs_before, %abs_value;\n"
+        "        selp.f32 %result, %case_1, %case_2, %cond;\n"
+        "        red.global.add.f32 [%rd3], %result;\n"
+        "    }\n",
+        value
+    );
+
 
     if (!unmasked)
         fmt("\nl_$u_done:\n", v->reg_index);
