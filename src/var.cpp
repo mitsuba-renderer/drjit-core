@@ -1654,7 +1654,7 @@ const char *jitc_var_whos() {
                 else
                     var_buffer.put("mapped mem.");
             } else {
-                auto [size, type, device] = alloc_info_decode(it->first);
+                auto [size, type, device] = alloc_info_decode(it->second);
                 (void) size;
 
                 if ((AllocType) type == AllocType::Device) {
