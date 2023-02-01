@@ -28,7 +28,7 @@
 #endif
 
 /// Version number for cache files
-#define DRJIT_CACHE_VERSION 4
+#define DRJIT_CACHE_VERSION 5
 
 // Uncomment to write out training data for creating a compression dictionary
 // #define DRJIT_CACHE_TRAIN 1
@@ -61,6 +61,15 @@ void jitc_lz4_init() {
         jitc_fail("jit_init_lz4(): decompression of dictionary failed!");
 
     jitc_lz4_dict_ready = true;
+}
+
+/* Computes padding to align cache file content to a multiple of sizeof(void*). 
+This prevents undefiend behavior due to misaligned memory reads/writes. */
+static uint32_t compute_padding(const CacheFileHeader &header) {
+    uint32_t padding_size = (header.source_size + header.kernel_size) % sizeof(void *);
+    if (padding_size)
+        padding_size = sizeof(void *) - static_cast<int>(padding_size);
+    return padding_size;
 }
 
 bool jitc_kernel_load(const char *source, uint32_t source_size,
@@ -134,6 +143,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
     char *compressed = nullptr, *uncompressed = nullptr;
 
     CacheFileHeader header;
+    uint32_t padding_size;
     bool success = true;
     std::vector<void *> func;
 
@@ -150,8 +160,9 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
                        "mismatch (%u vs %u bytes).",
                        filename, header.source_size, source_size);
 
+        padding_size = compute_padding(header);
         uint32_t uncompressed_size =
-            header.source_size + header.kernel_size + header.reloc_size;
+            header.source_size + header.kernel_size + padding_size + header.reloc_size;
 
         compressed = (char *) malloc_check(header.compressed_size);
         uncompressed = (char *) malloc_check(size_t(uncompressed_size) + jitc_lz4_dict_size);
@@ -201,7 +212,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
             memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
 
 #endif
-            uintptr_t *reloc = (uintptr_t *) (uncompressed_data + header.source_size + header.kernel_size);
+            uintptr_t *reloc = (uintptr_t *) (uncompressed_data + header.source_size + padding_size + header.kernel_size);
             kernel.llvm.n_reloc = header.reloc_size / sizeof(void *);
             kernel.llvm.reloc = (void **) malloc(header.reloc_size);
             for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
@@ -341,8 +352,9 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     if (backend == JitBackend::LLVM)
         header.reloc_size = kernel.llvm.n_reloc * sizeof(void *);
 
-    uint32_t in_size =
-                 header.source_size + header.kernel_size + header.reloc_size,
+    uint32_t padding_size = compute_padding(header);
+    uint32_t in_size = header.source_size + header.kernel_size 
+                     + padding_size + header.reloc_size,
              out_size = LZ4_compressBound(in_size);
 
     uint8_t *temp_in  = (uint8_t *) malloc_check(in_size),
@@ -350,9 +362,11 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
 
     memcpy(temp_in, source, header.source_size);
     memcpy(temp_in + source_size, kernel.data, header.kernel_size);
+    memset(temp_in + header.source_size + header.kernel_size, 0, padding_size);
 
     if (backend == JitBackend::LLVM) {
-        uintptr_t *reloc_out = (uintptr_t *) (temp_in + header.source_size + header.kernel_size);
+        uintptr_t *reloc_out = (uintptr_t *) (temp_in + header.source_size + 
+                                              header.kernel_size + padding_size);
         for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
             reloc_out[i] = (uintptr_t) kernel.llvm.reloc[i] - (uintptr_t) kernel.data;
     }
