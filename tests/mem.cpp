@@ -184,7 +184,7 @@ TEST_BOTH(11_reindex) {
     jit_assert(i3.index() == i4.index());
 }
 
-TEST_CUDA(12_scatter_reduce_kahan) {
+TEST_BOTH(12_scatter_reduce_kahan) {
     Float buf_1 = zero<Float>(1),
           buf_2 = zero<Float>(1);
 
