@@ -17,8 +17,8 @@
  * --------------------------------------------------------------------------
  *  $s      const char *  `foo`              Zero-terminated string
  * --------------------------------------------------------------------------
- *  $t      Variable      `f32`              Scalar variable type
- *  $T      Variable      `<8 x f32>`        Vector variable type
+ *  $t      Variable      `float`            Scalar variable type
+ *  $T      Variable      `<8 x float>`      Vector variable type
  *  $h      Variable      `f32`              Type abbreviation for intrinsics
  * --------------------------------------------------------------------------
  *  $b      Variable      `i32`              Scalar variable type (as int)
@@ -85,6 +85,7 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v);
 static void jitc_llvm_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value, const Variable *index,
                                      const Variable *mask);
+static void jitc_llvm_render_scatter_kahan(const Variable *v, uint32_t index);
 static void jitc_llvm_render_printf(uint32_t index, const Variable *v,
                                     const Variable *mask, const Variable *target);
 static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
@@ -769,6 +770,10 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
             jitc_llvm_render_scatter(v, a0, a1, a2, a3);
             break;
 
+        case VarKind::ScatterKahan:
+            jitc_llvm_render_scatter_kahan(v, index);
+            break;
+
         case VarKind::VCallMask:
             fmt("    $v = bitcast <$w x i1> %mask to <$w x i1>\n", v);
             break;
@@ -927,6 +932,87 @@ static void jitc_llvm_render_scatter(const Variable *v,
             op, value, value, v, value, mask);
     }
 }
+
+static void jitc_llvm_render_scatter_kahan(const Variable *v, uint32_t v_index) {
+    const Extra &extra = state.extra[v_index];
+    const Variable *ptr_1 = jitc_var(extra.dep[0]),
+                   *ptr_2 = jitc_var(extra.dep[1]),
+                   *index = jitc_var(extra.dep[2]),
+                   *mask = jitc_var(extra.dep[3]),
+                   *value = jitc_var(extra.dep[4]);
+
+    fmt_intrinsic("declare $t @llvm.fabs.$h($t)", value, value, value);
+
+    fmt("{    $v_ptr1 = bitcast $<i8*$> $v to $<$t*$>\n|}"
+         "    $v_target1 = getelementptr $t, $<{$t*}$> {$v_ptr1|$v}, $V\n",
+        v, ptr_1, value,
+        v, value, value, v, ptr_1, index);
+    fmt("{    $v_ptr2 = bitcast $<i8*$> $v to $<$t*$>\n|}"
+         "    $v_target2 = getelementptr $t, $<{$t*}$> {$v_ptr2|$v}, $V\n"
+         "    br label %l$u_0\n\n",
+        v, ptr_2, value,
+        v, value, value, v, ptr_2, index,
+        v_index);
+
+    fmt("l$u_0:\n"
+        "    br label %l$u_1\n\n",
+        v_index,
+        v_index);
+
+    fmt("l$u_1:\n"
+        "    $v_index = phi i32 [ 0, %l$u_0 ], [ $v_index_next, %l$u_3 ]\n"
+        "    $v_active_i = extractelement <$w x i1> $v, i32 $v_index\n"
+        "    br i1 $v_active_i, label %l$u_2, label %l$u_3\n\n",
+        v_index,
+        v, v_index, v, v_index,
+        v, mask, v,
+        v, v_index, v_index);
+
+    fmt("l$u_2:\n"
+        "    $v_target1_i = extractelement <$w x {$t*}> $v_target1, i32 $v_index\n"
+        "    $v_target2_i = extractelement <$w x {$t*}> $v_target2, i32 $v_index\n"
+        "    $v_value_i = extractelement <$w x $t> $v, i32 $v_index\n"
+        "    $v_before = atomicrmw fadd {$t*} $v_target1_i, $t $v_value_i monotonic\n"
+        "    $v_after = fadd $t $v_before, $v_value_i\n"
+        "    $v_case1_0 = fsub $t $v_before, $v_after\n"
+        "    $v_case1 = fadd $t $v_case1_0, $v_value_i\n"
+        "    $v_case2_0 = fsub $t $v_value_i, $v_after\n"
+        "    $v_case2 = fadd $t $v_case2_0, $v_before\n"
+        "    $v_abs_before = call $t @llvm.fabs.$h($t $v_before)\n"
+        "    $v_abs_value = call $t @llvm.fabs.$h($t $v_value_i)\n"
+        "    $v_pred = fcmp oge $t $v_abs_before, $v_abs_value\n"
+        "    $v_result = select i1 $v_pred, $t $v_case1, $t $v_case2\n"
+        "    atomicrmw fadd {$t*} $v_target2_i, $t $v_result monotonic\n"
+        "    br label %l$u_3\n\n",
+        v_index,
+        v, value, v, v,
+        v, value, v, v,
+        v, value, value, v,
+        v, value, v, value, v,
+        v, value, v, v,
+        v, value, v, v,
+        v, value, v, v,
+        v, value, v, v,
+        v, value, v, v,
+        v, value, value, value, v,
+        v, value, value, value, v,
+        v, value, v, v,
+        v, v, value, v, value, v,
+        value, v, value, v,
+        v_index);
+
+    fmt("l$u_3:\n"
+        "    $v_index_next = add nuw nsw i32 $v_index, 1\n"
+        "    $v_cond = icmp eq i32 $v_index_next, $w\n"
+        "    br i1 $v_cond, label %l$u_4, label %l$u_1\n\n"
+        "l$u_4:\n",
+        v_index,
+        v, v,
+        v, v,
+        v, v_index, v_index,
+        v_index);
+}
+
 
 static void jitc_llvm_render_printf(uint32_t index, const Variable *v,
                                     const Variable *mask,

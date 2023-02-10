@@ -1602,14 +1602,14 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1, uint32_t *target_2,
     uint32_t *dep = (uint32_t *) malloc_check(sizeof(uint32_t) * 5);
     dep[0] = ptr_1;
     dep[1] = ptr_2;
-    dep[2] = index;
-    dep[3] = mask;
+    dep[2] = index_2;
+    dep[3] = mask_2;
     dep[4] = value;
 
     jitc_var_inc_ref(ptr_1);
     jitc_var_inc_ref(ptr_2);
-    jitc_var_inc_ref(index);
-    jitc_var_inc_ref(mask);
+    jitc_var_inc_ref(index_2);
+    jitc_var_inc_ref(mask_2);
     jitc_var_inc_ref(value);
 
     Variable *result_v = jitc_var(result);
@@ -1622,8 +1622,8 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1, uint32_t *target_2,
     jitc_log(Debug,
              "jit_var_scatter_reduce_kahan((r%u[r%u], r%u[r%u]) += r%u if r%u, via "
              "ptrs (r%u, r%u)): r%u",
-             *target_1, index, *target_2, index, value, mask, (uint32_t) ptr_1,
-             (uint32_t) ptr_2, result);
+             *target_1, index, *target_2, (uint32_t) index_2, value, (uint32_t) mask_2,
+             (uint32_t) ptr_1, (uint32_t) ptr_2, result);
 
     jitc_var_mark_side_effect(result);
 }
