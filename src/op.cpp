@@ -81,42 +81,42 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
         Variable *vi = jitc_var(dep[i]);
 
 #if !defined(NDEBUG)
-        if constexpr (Flags & IsArithmetic) {
+        if constexpr (bool(Flags & IsArithmetic)) {
             if (unlikely(!jitc_is_arithmetic(vi))) {
                 err = "expected arithmetic operand types";
                 goto fail;
             }
         }
 
-        if constexpr (Flags & IsInt) {
+        if constexpr (bool(Flags & IsInt)) {
             if (unlikely(!jitc_is_int(vi))) {
                 err = "expected integer operand types";
                 goto fail;
             }
         }
 
-        if constexpr (Flags & IsIntOrBool) {
+        if constexpr (bool(Flags & IsIntOrBool)) {
             if (unlikely(!jitc_is_int(vi) && !jitc_is_bool(vi))) {
                 err = "expected integer or boolean operand types";
                 goto fail;
             }
         }
 
-        if constexpr (Flags & IsNotVoid) {
+        if constexpr (bool(Flags & IsNotVoid)) {
             if (unlikely(jitc_is_void(vi))) {
                 err = "operand cannot be void";
                 goto fail;
             }
         }
 
-        if constexpr (Flags & IsFloat) {
+        if constexpr (bool(Flags & IsFloat)) {
             if (unlikely(!jitc_is_float(vi))) {
                 err = "expected floating point operand types";
                 goto fail;
             }
         }
 
-        if constexpr (Flags & IsCUDA) {
+        if constexpr (bool(Flags & IsCUDA)) {
             if (unlikely((JitBackend) vi->backend != JitBackend::CUDA)) {
                 err = "operation is only supported on the CUDA backend";
                 goto fail;
