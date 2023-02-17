@@ -450,16 +450,22 @@ TEST_BOTH(04_devirtualize) {
 
             jit_set_scope(Backend, scope + 1);
 
+            Float p1_wrap = Float::steal(jit_var_wrap_vcall(p1.index()));
             Float p2_wrap = Float::steal(jit_var_wrap_vcall(p2.index()));
 
             Mask mask = neq(self, nullptr),
                  mask_combined = Mask::steal(jit_var_mask_apply(mask.index(), 10));
 
-            Float alt = (p2_wrap + 2) & mask_combined;
+            Float alt0 = (p2_wrap + 2) & mask_combined;
+            Float alt1 = (p1_wrap + 2) & mask_combined;
+            Float alt2 = Float(0) & mask_combined;
 
             jit_set_scope(Backend, scope + 2);
 
-            jit_assert((result.template get<0>().index() == alt.index()) == (i == 1));
+            jit_assert((result.template get<0>().index() == alt0.index()) == ((i == 1) && (k == 0)));
+            jit_assert((result.template get<1>().index() != alt1.index()));
+            jit_assert((result.template get<2>().index() == alt2.index()) == (i == 1));
+
             jit_assert(jit_var_is_literal(result.template get<2>().index()) == (i == 1));
 
             jit_var_schedule(result.template get<0>().index());
