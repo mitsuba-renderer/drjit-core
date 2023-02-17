@@ -339,9 +339,9 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             if (!uniform[j])
                 continue;
 
-            /* Should this output value be devirtualized? We want to avoid
-               completely removing the virtual function call.. */
-            if (n_inst == 1 && !vcall_inline && !jitc_var(out_nested[j])->is_literal())
+            /* Only devirtualize literals unless inlining is requested */
+            if (!jitc_var(out_nested[j])->is_literal() &&
+                !((n_inst == 1) && vcall_inline))
                 continue;
 
             Ref result_v = steal(jitc_var_and(out_nested[j], mask));
