@@ -1508,7 +1508,8 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
 
     // Don't perform the gather operation if the inputs are trivial / can be re-indexed
     if (!result) {
-        Ref src_reindexed = steal(jitc_var_reindex(src, index, var_info.size));
+        Ref index_2 = steal(jitc_var_cast(index, VarType::UInt32, 0));
+        Ref src_reindexed = steal(jitc_var_reindex(src, index_2, var_info.size));
         if (src_reindexed) {
             // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'src'
             Ref unused = borrow(src_reindexed);
