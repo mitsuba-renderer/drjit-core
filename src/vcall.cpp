@@ -519,7 +519,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     e_special->dep = (uint32_t *) malloc_check(dep_size);
 
     // Steal input dependencies from placeholder arguments
-    memcpy(e_special->dep, vcall->in.data(), dep_size);
+    if (dep_size)
+        memcpy(e_special->dep, vcall->in.data(), dep_size);
 
     e_special->callback = [](uint32_t, int free, void *ptr) {
         if (free)
