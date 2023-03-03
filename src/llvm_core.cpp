@@ -327,7 +327,8 @@ void jitc_llvm_compile(Kernel &kernel) {
     if (unlikely(error))
         jitc_fail("jit_llvm_compile(): parsing failed. Please see the LLVM "
                   "IR and error message below:\n\n%s\n\n%s", buffer.get(), error);
-
+    LLVMDisposeMessage(error);
+    
 #if !defined(NDEBUG)
     bool status = LLVMVerifyModule(llvm_module, LLVMReturnStatusAction, &error);
     if (unlikely(status))
@@ -335,6 +336,7 @@ void jitc_llvm_compile(Kernel &kernel) {
                   "see the LLVM IR and error message below:\n\n%s\n\n%s",
                   buffer.get(), error);
 #endif
+    LLVMDisposeMessage(error);
 
     LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
 
