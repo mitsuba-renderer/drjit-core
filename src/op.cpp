@@ -1504,6 +1504,10 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
                 jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!", src);
         }
 
+        if (src_v->size == 1) {
+            Ref tmp = steal(jitc_var_resize(src, var_info.size));
+            result = jitc_var_and(tmp, mask);
+        }
     }
 
     // Don't perform the gather operation if the inputs are trivial / can be re-indexed

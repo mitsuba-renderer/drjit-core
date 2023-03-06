@@ -200,3 +200,9 @@ TEST_BOTH(12_scatter_reduce_kahan) {
     jit_assert(all(eq(buf_1 - Float(2e7), Float(0))));
     jit_assert(all(eq(buf_2, Float(2))));
 }
+
+TEST_BOTH(13_gather_scalar_opaque) {
+    Float buf_1 = opaque<Float>(1),
+          buf_2 = gather<Float>(buf_1, arange<UInt32>(10));
+    jit_assert(strcmp(buf_2.str(), "[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]") == 0);
+}
