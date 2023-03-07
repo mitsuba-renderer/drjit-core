@@ -167,9 +167,9 @@ void* jitc_malloc(AllocType type, size_t size) {
                     if (type == AllocType::HostPinned)
                         ret = cuMemAllocHost(&ptr, size);
                     else if (ts->memory_pool)
-                        ret = cuMemAllocAsync(&ptr, size, ts->stream);
+                        ret = cuMemAllocAsync((CUdeviceptr*) &ptr, size, ts->stream);
                     else
-                        ret = cuMemAlloc(&ptr, size);
+                        ret = cuMemAlloc((CUdeviceptr*) &ptr, size);
 
                     if (ret)
                         ptr = nullptr;
