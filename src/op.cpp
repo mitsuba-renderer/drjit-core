@@ -1505,6 +1505,8 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
         }
 
         if (src_v->size == 1) {
+            // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'src'
+            Ref unused = borrow(src);
             Ref tmp = steal(jitc_var_resize(src, var_info.size));
             result = jitc_var_and(tmp, mask);
         }
