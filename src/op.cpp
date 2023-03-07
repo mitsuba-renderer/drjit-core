@@ -1496,20 +1496,24 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
         }
 
         /// Make sure that the src and index variables doesn't have pending side effects
-        if (unlikely(index_v->is_dirty() || src_v->is_dirty())) {
+        if (!result && unlikely(index_v->is_dirty() || src_v->is_dirty())) {
             jitc_eval(thread_state(src_info.backend));
             if (jitc_var(index)->is_dirty())
                 jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!", index);
             if (jitc_var(src)->is_dirty())
                 jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!", src);
-        }
 
-        if (src_v->size == 1) {
-            // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'src'
-            Ref unused = borrow(src);
-            Ref tmp = steal(jitc_var_resize(src, var_info.size));
-            result = jitc_var_and(tmp, mask);
+            src_v = jitc_var(src);
+            index_v = jitc_var(index);
         }
+    }
+
+    // If the source is scalar we can just resize it
+    if (!result && src_v->size == 1) {
+        // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'src'
+        Ref unused = borrow(src);
+        Ref tmp = steal(jitc_var_resize(src, var_info.size));
+        result = jitc_var_and(tmp, mask);
     }
 
     // Don't perform the gather operation if the inputs are trivial / can be re-indexed
