@@ -991,9 +991,12 @@ T eval_ctz(T) { jitc_fail("eval_ctz(): unsupported operands!"); }
 
 template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
 T eval_ctz(T value) {
+    using U = uint_with_size_t<T>;
+    U u_value = memcpy_cast<U>(value);
+
     T result = sizeof(T) * 8;
-    while (value) {
-        value <<= 1;
+    while (u_value) {
+        u_value <<= 1;
         result -= 1;
     }
     return result;
