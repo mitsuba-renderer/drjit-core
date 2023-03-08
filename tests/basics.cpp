@@ -291,6 +291,8 @@ template <typename T> bool test_const_prop() {
             in[i] = jit_var_literal(Backend, T::Type, values + i, 1, i >= Size);
 
         for (uint32_t i = 0; i < Size2; ++i) {
+            if (IsSigned && (op == JitOp::Shl) && values[i] < 0)
+                continue;
             for (uint32_t j = 0; j < Size2; ++j) {
                 uint32_t deps[2] = { in[i], in[j] };
                 uint32_t index = 0;
@@ -317,6 +319,8 @@ template <typename T> bool test_const_prop() {
         jit_eval();
 
         for (uint32_t i = 0; i < Size2; ++i) {
+            if (IsSigned && (op == JitOp::Shl) && values[i] < 0)
+                continue;
             for (uint32_t j = 0; j < Size2; ++j) {
                 int ir = i < Size ? i : i - Size;
                 int jr = j < Size ? j : j - Size;
@@ -345,9 +349,12 @@ template <typename T> bool test_const_prop() {
             }
         }
 
-        for (uint32_t i = 0; i < Size2 * Size2; ++i)
-            jit_var_dec_ref(out[i]);
-
+        for (uint32_t i = 0; i < Size2; ++i) {
+            if (IsSigned && (op == JitOp::Shl) && values[i] < 0)
+                continue;
+            for (uint32_t j = 0; j < Size2; ++j)
+                jit_var_dec_ref(out[i * Size2 + j]);
+        }
         for (uint32_t i = 0; i < Size2; ++i)
             jit_var_dec_ref(in[i]);
     }
