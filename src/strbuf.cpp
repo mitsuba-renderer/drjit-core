@@ -99,26 +99,26 @@ static void reverse_str(char *start, char *end) {
 }
 
 void StringBuffer::put_u32(uint32_t value) {
-    if (unlikely(m_cur + MAXSIZE_U32 >= m_end))
+    if (unlikely(!m_cur || m_cur + MAXSIZE_U32 >= m_end))
         expand(MAXSIZE_U32);
     put_u32_unchecked(value);
 }
 
 void StringBuffer::put_u64(uint64_t value) {
-    if (unlikely(m_cur + MAXSIZE_U64 >= m_end))
+    if (unlikely(!m_cur || m_cur + MAXSIZE_U64 >= m_end))
         expand(MAXSIZE_U64);
     put_u64_unchecked(value);
 }
 
 
 void StringBuffer::put_x32(uint32_t value) {
-    if (unlikely(m_cur + MAXSIZE_X32 >= m_end))
+    if (unlikely(!m_cur || m_cur + MAXSIZE_X32 >= m_end))
         expand(MAXSIZE_X32);
     put_x32_unchecked(value);
 }
 
 void StringBuffer::put_x64(uint64_t value) {
-    if (unlikely(m_cur + MAXSIZE_X64 >= m_end))
+    if (unlikely(!m_cur || m_cur + MAXSIZE_X64 >= m_end))
         expand(MAXSIZE_X64);
     put_x64_unchecked(value);
 }
@@ -195,7 +195,7 @@ size_t StringBuffer::fmt(const char *fmt, ...) {
         }
         va_end(args);
 
-        if (likely(m_cur + rv < m_end)) {
+        if (likely(m_cur && m_cur + rv < m_end)) {
             m_cur += rv;
             return (size_t) rv;
         } else {
@@ -220,7 +220,7 @@ size_t StringBuffer::vfmt(const char *fmt, va_list args_) {
             abort();
         }
 
-        if (likely(m_cur + rv < m_end)) {
+        if (likely(m_cur && m_cur + rv < m_end)) {
             m_cur += rv;
             return (size_t) rv;
         } else {
@@ -304,7 +304,7 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
     }
 
     // Enlarge the buffer if necessary
-    if (unlikely(m_cur + len >= m_end))
+    if (unlikely(!m_cur || m_cur + len >= m_end))
         expand(len);
 
     // Phase 2: convert the string
@@ -488,7 +488,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
     }
 
     // Enlarge the buffer if necessary
-    if (unlikely(m_cur + len >= m_end))
+    if (unlikely(!m_cur || m_cur + len >= m_end))
         expand(len);
 
     // Phase 2: convert the string
