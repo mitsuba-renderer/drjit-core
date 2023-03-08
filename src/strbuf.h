@@ -108,7 +108,7 @@ public:
 
     /// Append a string with the specified length
     void put(const char *str, size_t size) {
-        if (unlikely(m_cur + size >= m_end))
+        if (unlikely(!m_cur || m_cur + size >= m_end))
             expand(size);
 
         std::memcpy(m_cur, str, size);
@@ -118,7 +118,7 @@ public:
 
     /// Append a single character to the buffer
     void put(char c) {
-        if (unlikely(m_cur + 1 >= m_end))
+        if (unlikely(!m_cur || m_cur + 1 >= m_end))
             expand(1);
         *m_cur++ = c;
         *m_cur = '\0';
@@ -126,7 +126,7 @@ public:
 
     /// Append multiple copies of a single character to the buffer
     void put(char c, size_t count) {
-        if (unlikely(m_cur + count >= m_end))
+        if (unlikely(!m_cur || m_cur + count >= m_end))
             expand(count);
 
         for (size_t i = 0; i < count; ++i)
