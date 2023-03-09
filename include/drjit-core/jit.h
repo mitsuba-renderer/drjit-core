@@ -1388,7 +1388,7 @@ extern JIT_EXPORT int jit_flag(JIT_ENUM JitFlag flag);
  *
  * Recording sessions can be nested.
  */
-extern JIT_EXPORT uint32_t jit_record_begin(JIT_ENUM JitBackend backend);
+extern JIT_EXPORT uint32_t jit_record_begin(JIT_ENUM JitBackend backend, const char *name);
 
 /// Return a checkpoint within a recorded computation for resumption via jit_record_end
 extern JIT_EXPORT uint32_t jit_record_checkpoint(JIT_ENUM JitBackend backend);

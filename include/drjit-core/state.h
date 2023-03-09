@@ -45,10 +45,13 @@ template <JitBackend Backend> struct JitState {
             end_recording();
     }
 
-    void begin_recording() {
+    bool begin_recording(const char *name = nullptr) {
         assert(!m_recording);
-        m_checkpoint = jit_record_begin(Backend);
+        m_checkpoint = jit_record_begin(Backend, name);
+        if (m_checkpoint == (uint32_t) -1)
+            return false;
         m_recording = true;
+        return true;
     }
 
     uint32_t checkpoint() const { return m_checkpoint; }

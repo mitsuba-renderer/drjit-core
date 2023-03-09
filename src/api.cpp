@@ -178,14 +178,26 @@ uint32_t jit_record_checkpoint(JitBackend backend) {
     return result;
 }
 
-uint32_t jit_record_begin(JitBackend backend) {
+static std::vector<std::string> record_stack;
+
+uint32_t jit_record_begin(JitBackend backend, const char *name) {
     uint32_t result = jit_record_checkpoint(backend);
+
+    lock_guard guard(state.lock);
     jit_set_flag(JitFlag::Recording, true);
+    if (name && std::count(record_stack.begin(), record_stack.end(), name) > 1)
+        return uint32_t(-1); // signal failure to limit recursion depth
+    record_stack.push_back(name ? name : "");
     return result;
 }
 
 void jit_record_end(JitBackend backend, uint32_t value) {
     lock_guard guard(state.lock);
+
+    if (unlikely(record_stack.empty()))
+        jitc_fail("jit_record_end(): stack underflow!");
+
+    record_stack.pop_back();
 
     // Set recording flag to previous value
     jit_set_flag(JitFlag::Recording, value & 0x80000000u);
