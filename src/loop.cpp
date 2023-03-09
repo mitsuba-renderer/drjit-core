@@ -35,6 +35,10 @@ struct Loop {
     std::vector<uint32_t> out;
     /// Are there unused loop variables that could be stripped away?
     bool simplify = false;
+
+    ~Loop() {
+        free(name);
+    }
 };
 
 static std::vector<Loop *> loops;
@@ -518,7 +522,6 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
             if (free_var && ptr) {
                 Loop *loop_2 = (Loop *) ptr;
                 jitc_trace("jit_var_loop(\"%s\"): freeing loop.", loop_2->name);
-                free(loop_2->name);
                 loops.erase(std::remove(loops.begin(), loops.end(), loop_2), loops.end());
                 delete loop_2;
             }
