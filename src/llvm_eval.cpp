@@ -189,6 +189,10 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
             jitc_llvm_render_stmt(index, v, false);
         }
 
+        // Fetch "v" again, as the original pointer may have been invalidated by now
+        // due to modifications to the hash map "state.variables".
+        v = jitc_var(index);
+
         if (v->param_type == ParamType::Output) {
             if (vt != VarType::Bool) {
                 fmt("    store $V, {$T*} $v_p5, align $A, !noalias !2, !nontemporal !3\n",
