@@ -206,3 +206,10 @@ TEST_BOTH(13_gather_scalar_opaque) {
           buf_2 = gather<Float>(buf_1, arange<UInt32>(10));
     jit_assert(strcmp(buf_2.str(), "[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]") == 0);
 }
+
+TEST_LLVM(14_gather_symbolic_llvm_mask) {
+    Float buf_1 = Float(1, 2, 3, 4, 5, 6, 7, 8);
+    Float buf_2 = gather<Float>(buf_1, arange<UInt32>(0, 8, 1));
+    Float buf_3 = gather<Float>(buf_2, arange<UInt32>(4, 8, 1));
+    jit_assert(strcmp(buf_3.str(), "[5, 6, 7, 8]") == 0);
+}

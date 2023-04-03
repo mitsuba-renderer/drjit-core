@@ -96,6 +96,9 @@ enum VarKind : uint32_t {
     // Counter node to determine the current lane ID
     Counter,
 
+    // Default mask used to ignore out-of-range SIMD lanes (LLVM)
+    DefaultMask,
+
     // Recorded 'printf' instruction for debugging purposes
     Printf,
 

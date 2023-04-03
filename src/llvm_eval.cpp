@@ -189,9 +189,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
             jitc_llvm_render_stmt(index, v, false);
         }
 
-        // Fetch "v" again, as the original pointer may have been invalidated by now
-        // due to modifications to the hash map "state.variables".
-        v = jitc_var(index);
+        v = jitc_var(index); // `v` might have been invalidated during its assembly
 
         if (v->param_type == ParamType::Output) {
             if (vt != VarType::Bool) {
@@ -794,6 +792,14 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
                 v, v, v, v, v, v, v, v, v, v, v);
             for (uint32_t i = 0; i < jitc_llvm_vector_width; ++i)
                 fmt("i32 $u$s", i, i + 1 < jitc_llvm_vector_width ? ", " : ">\n");
+            break;
+
+        case VarKind::DefaultMask:
+            fmt("    $v_0 = trunc i64 %end to i32\n"
+                "    $v_1 = insertelement <$w x i32> undef, i32 $v_0, i32 0\n"
+                "    $v_2 = shufflevector <$w x i32> $v_1, <$w x i32> undef, <$w x i32> zeroinitializer\n"
+                "    $v = icmp ult <$w x i32> $v, $v_2\n",
+                v, v, v, v, v, v, a0, v);
             break;
 
         case VarKind::Printf:

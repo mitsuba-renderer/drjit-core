@@ -150,6 +150,9 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Counter node to determine the current lane ID
     "counter",
 
+    // Default mask used to ignore out-of-range SIMD lanes (LLVM)
+    "default_mask",
+
     // Recorded 'printf' instruction for debugging purposes
     "printf",
 
@@ -1431,14 +1434,10 @@ uint32_t jitc_var_mask_default(JitBackend backend, uint32_t size) {
     } else {
         // Ignore SIMD lanes that lie beyond the end of the range
         Ref counter = steal(jitc_var_counter(backend, size, false));
-        uint32_t dep_1[1] = { counter };
-        return jitc_var_stmt(
-            backend, VarType::Bool,
-            "$r0_0 = trunc i64 %end to i32$n"
-            "$r0_1 = insertelement <$w x i32> undef, i32 $r0_0, i32 0$n"
-            "$r0_2 = shufflevector <$w x i32> $r0_1, <$w x i32> undef, <$w x i32> zeroinitializer$n"
-            "$r0 = icmp ult <$w x i32> $r1, $r0_2",
-            1, 1, dep_1);
+        Variable *v_counter = jitc_var(counter);
+        return jitc_var_new_node_1(backend, VarKind::DefaultMask, VarType::Bool,
+                                   v_counter->size, v_counter->placeholder,
+                                   counter, v_counter);
     }
 }
 

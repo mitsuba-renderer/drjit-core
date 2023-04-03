@@ -1430,6 +1430,10 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
     Ref dep[4];
     bool rebuild = v->size != size && v->size != 1;
 
+    if (v->kind == VarKind::DefaultMask && rebuild)
+        // Do not re-index the mask, only resize it
+        return jitc_var_mask_default((JitBackend) v->backend, size);
+
     if (!v->is_literal()) {
         for (uint32_t i = 0; i < 4; ++i) {
             uint32_t index_2 = v->dep[i];
@@ -1442,6 +1446,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             rebuild |= dep[i] != index_2;
         }
     }
+
 
     if (v->kind == VarKind::Counter) {
         return jitc_var_new_ref(new_index);
