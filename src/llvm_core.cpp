@@ -103,6 +103,14 @@ bool jitc_llvm_init() {
         }
     }
 
+    if (!strstr(jitc_llvm_target_features, "+fma")) {
+        jitc_log(Warn, "jit_llvm_init(): your CPU does not support the `fma` "
+                       "instruction set, shutting down the LLVM "
+                       "backend...");
+        jitc_llvm_shutdown();
+        return false;
+    }
+
     jitc_llvm_vector_width = 1;
 
     if (strstr(jitc_llvm_target_features, "+sse4.2"))
