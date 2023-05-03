@@ -920,28 +920,40 @@ static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) 
         index, index, value, ptr_1,
         index, index, value, ptr_2);
 
-    fmt(
-        "    {\n"
-        "        .reg.f32 %before, %after, %value, %case_1, %case_2;\n"
-        "        .reg.f32 %abs_before, %abs_value, %result;\n"
+    const char* op_suffix = jitc_is_single(value) ? ".ftz" : "";
+
+    fmt("    {\n"
+        "        .reg.$t %before, %after, %value, %case_1, %case_2;\n"
+        "        .reg.$t %abs_before, %abs_value, %result;\n"
         "        .reg.pred %cond;\n"
         "\n"
-        "        mov.f32 %value, $v;\n"
-        "        atom.global.add.f32 %before, [%rd2], %value;\n"
-        "        add.ftz.f32 %after, %before, %value;\n"
-        "        sub.ftz.f32 %case_1, %before, %after;\n"
-        "        add.ftz.f32 %case_1, %case_1, %value;\n"
-        "        sub.ftz.f32 %case_2, %value, %after;\n"
-        "        add.ftz.f32 %case_2, %case_2, %before;\n"
-        "        abs.ftz.f32 %abs_before, %before;\n"
-        "        abs.ftz.f32 %abs_value, %value;\n"
-        "        setp.ge.f32 %cond, %abs_before, %abs_value;\n"
-        "        selp.f32 %result, %case_1, %case_2, %cond;\n"
-        "        red.global.add.f32 [%rd3], %result;\n"
+        "        mov.$t %value, $v;\n"
+        "        atom.global.add.$t %before, [%rd2], %value;\n"
+        "        add$s.$t %after, %before, %value;\n"
+        "        sub$s.$t %case_1, %before, %after;\n"
+        "        add$s.$t %case_1, %case_1, %value;\n"
+        "        sub$s.$t %case_2, %value, %after;\n"
+        "        add$s.$t %case_2, %case_2, %before;\n"
+        "        abs$s.$t %abs_before, %before;\n"
+        "        abs$s.$t %abs_value, %value;\n"
+        "        setp.ge.$t %cond, %abs_before, %abs_value;\n"
+        "        selp.$t %result, %case_1, %case_2, %cond;\n"
+        "        red.global.add.$t [%rd3], %result;\n"
         "    }\n",
-        value
-    );
-
+        value,
+        value,
+        value, value,
+        value,
+        op_suffix, value,
+        op_suffix, value,
+        op_suffix, value,
+        op_suffix, value,
+        op_suffix, value,
+        op_suffix, value,
+        op_suffix, value,
+        value,
+        value,
+        value);
 
     if (!unmasked)
         fmt("\nl_$u_done:\n", v->reg_index);
