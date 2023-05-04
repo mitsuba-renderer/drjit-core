@@ -1,3 +1,4 @@
+#include "internal.h"
 #include <stdint.h>
 
 extern void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index);

@@ -691,6 +691,7 @@ void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg, uint32_t mask_reg,
         vcall->in_count_initial, in_size, vcall->in_size_initial, n_out_active,
         n_out, out_size, vcall->out_size_initial, se_count);
 
+    jitc_var_inc_ref(vcall->id);
     vcalls_assembled.push_back(vcall);
 }
 
@@ -789,6 +790,9 @@ void jitc_vcall_upload(ThreadState *ts) {
             jitc_task = new_task;
         }
     }
+
+    for (VCall *vcall : vcalls_assembled)
+        jitc_var_dec_ref(vcall->id);
     vcalls_assembled.clear();
 }
 
