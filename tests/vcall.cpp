@@ -867,3 +867,52 @@ TEST_BOTH(11_recursion_with_local) {
     jit_registry_remove(Backend, &i21);
     jit_registry_remove(Backend, &i22);
 }
+
+TEST_BOTH(12_nested_with_side_effects) {
+    struct Base {
+        virtual void f() = 0;
+        virtual void g() = 0;
+    };
+    using BasePtr = Array<Base *>;
+
+    struct F1 : Base {
+        Float buffer = zero<Float>(5);
+        void f() override {
+            BasePtr self = full<UInt32>(1, 11);
+            vcall("Base", [](Base *self2) { self2->g(); }, self);
+        }
+
+        void g() override {
+            scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(1));
+            scatter_reduce(ReduceOp::Add, buffer, Float(2), UInt32(3));
+        }
+    };
+
+    struct F2 : Base {
+        Float buffer = arange<Float>(4);
+        void f() override {
+            scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(2));
+        }
+        void g() override {
+        }
+    };
+
+    BasePtr self = arange<UInt32>(11) % 3;
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        jit_set_flag(JitFlag::VCallOptimize, i);
+
+        F1 f1; F2 f2;
+        uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
+        uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
+        jit_assert(i1 == 1 && i2 == 2);
+
+        vcall("Base", [](Base *self2) { self2->f(); }, self);
+        jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
+        jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
+
+        jit_registry_remove(Backend, &f1);
+        jit_registry_remove(Backend, &f2);
+        jit_registry_trim();
+    }
+}
