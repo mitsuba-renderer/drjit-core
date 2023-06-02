@@ -1,8 +1,10 @@
 #pragma once
 
+#include <drjit-core/jit.h>
 #include <utility>
 #include <string>
 #include <errno.h>
+#include <inttypes.h>
 
 #if !defined(likely)
 #  if !defined(_MSC_VER)
@@ -17,6 +19,14 @@
 #if defined(_WIN32)
 #  define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
 #endif
+
+#define DRJIT_PTR "<0x%" PRIxPTR ">"
+
+/* Some forward declarations */
+struct State;
+struct Variable;
+struct Kernel;
+class ThreadState;
 
 #if defined(__linux__)
 #include <pthread.h>
@@ -158,3 +168,38 @@ inline uint32_t log2i_ceil(uint32_t x) {
     return 32u - __builtin_clz(x);
 #endif
 }
+
+extern JIT_MALLOC void* malloc_check(size_t size);
+
+extern JIT_MALLOC void* malloc_check_zero(size_t size);
+
+extern JIT_MALLOC void* realloc_check(void *orig, size_t size) ;
+
+
+/// Wait for all computation on the current stream to finish
+extern void jitc_sync_thread();
+
+/// Wait for all computation on the current stream to finish
+extern void jitc_sync_thread(ThreadState *stream);
+
+/// Wait for all computation on the current device to finish
+extern void jitc_sync_device();
+
+/// Wait for all computation on *all devices* to finish
+extern void jitc_sync_all_devices();
+
+/// Search for a shared library and dlopen it if possible
+void *jitc_find_library(const char *fname, const char *glob_pat,
+                        const char *env_var);
+
+/// Push a new label onto the prefix stack
+extern void jitc_prefix_push(JitBackend backend, const char *label);
+
+/// Pop a label from the prefix stack
+extern void jitc_prefix_pop(JitBackend backend);
+
+/// Free all kernels that are currently cached
+extern void jitc_flush_kernel_cache();
+
+/// Free a specific kernel from the device
+extern void jitc_kernel_free(int device_id, const Kernel &kernel);

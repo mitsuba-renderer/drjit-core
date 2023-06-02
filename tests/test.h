@@ -15,91 +15,73 @@ static constexpr LogLevel Trace = LogLevel::Trace;
 extern int test_register(const char *name, void (*func)(), const char *flags = nullptr);
 extern "C" void log_level_callback(LogLevel cb, const char *msg);
 
-using FloatC  = CUDAArray<float>;
-using Int32C  = CUDAArray<int32_t>;
-using UInt32C = CUDAArray<uint32_t>;
-using MaskC   = CUDAArray<bool>;
-using FloatL  = LLVMArray<float>;
-using Int32L  = LLVMArray<int32_t>;
-using UInt32L = LLVMArray<uint32_t>;
-using MaskL   = LLVMArray<bool>;
-using FloatM  = MetalArray<float>;
-using Int32M  = MetalArray<int32_t>;
-using UInt32M = MetalArray<uint32_t>;
-using MaskM   = MetalArray<bool>;
+#define INST_TEST(Backend, Suffix, name_suffix, name, ...)                     \
+    int test##name##_##S = test_register(                                      \
+        "test" #name "_" name_suffix,                                          \
+        test##name<JitBackend::Backend, Float##Suffix, Int32##Suffix,          \
+                   UInt32##Suffix, Mask##Suffix, Backend##Array>,              \
+        ##__VA_ARGS__);
+
+#if defined(DRJIT_ENABLE_LLVM)
+#  define INST_LLVM(name) INST_TEST(LLVM, L, "llvm", name, __VA_ARGS__)
+   using FloatL  = LLVMArray<float>;
+   using Int32L  = LLVMArray<int32_t>;
+   using UInt32L = LLVMArray<uint32_t>;
+   using MaskL   = LLVMArray<bool>;
+#else
+#  define INST_LLVM(...)
+#endif
+
+#if defined(DRJIT_ENABLE_CUDA)
+#  define INST_CUDA(name) INST_TEST(CUDA, C, "cuda", name, __VA_ARGS__)
+#  define INST_OPTIX(name) INST_TEST(CUDA, C, "optix", name, __VA_ARGS__)
+   using FloatC  = CUDAArray<float>;
+   using Int32C  = CUDAArray<int32_t>;
+   using UInt32C = CUDAArray<uint32_t>;
+   using MaskC   = CUDAArray<bool>;
+#else
+#  define INST_CUDA(...)
+#  define INST_OPTIX(...)
+#endif
+
+#if defined(DRJIT_ENABLE_METAL)
+#  define INST_METAL(name) INST_TEST(METAL, M, "metal", name, __VA_ARGS__)
+   using FloatM  = MetalArray<float>;
+   using Int32M  = MetalArray<int32_t>;
+   using UInt32M = MetalArray<uint32_t>;
+   using MaskM   = MetalArray<bool>;
+#else
+#  define INST_METAL(...)
+#endif
+
+#define DECL_TEST(name)                                                        \
+    template <JitBackend Backend, typename Float, typename Int32,              \
+              typename UInt32, typename Mask, template <class> class Array>    \
+    void test##name()                                                          \
 
 #define TEST_CUDA(name, ...)                                                   \
-    template <JitBackend Backend, typename Float, typename Int32,              \
-              typename UInt32, typename Mask, template <class> class Array>    \
-    void test##name();                                                         \
-    int test##name##_c =                                                       \
-        test_register("test" #name "_cuda",                                    \
-                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_o =                                                       \
-        test_register("test" #name "_optix",                                   \
-                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    template <JitBackend Backend, typename Float, typename Int32,              \
-              typename UInt32, typename Mask, template <class> class Array>    \
-    void test##name()
+    DECL_TEST(name);                                                           \
+    INST_CUDA(name, __VA_ARGS__)                                               \
+    INST_OPTIX(name, __VA_ARGS__)                                              \
+    DECL_TEST(name)
 
 #define TEST_LLVM(name, ...)                                                   \
-    template <JitBackend Backend, typename Float, typename Int32,              \
-              typename UInt32, typename Mask, template <class> class Array>    \
-    void test##name();                                                         \
-    int test##name##_l =                                                       \
-        test_register("test" #name "_llvm",                                    \
-                      test##name<JitBackend::LLVM, FloatL, Int32L, UInt32L,    \
-                                 MaskL, LLVMArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    template <JitBackend Backend, typename Float, typename Int32,              \
-              typename UInt32, typename Mask, template <class> class Array>    \
-    void test##name()
+    DECL_TEST(name);                                                           \
+    INST_LLVM(name, __VA_ARGS__)                                               \
+    DECL_TEST(name)
 
 #define TEST_METAL(name, ...)                                                  \
-    template <JitBackend Backend, typename Float, typename Int32,              \
-              typename UInt32, typename Mask, template <class> class Array>    \
-    void test##name();                                                         \
-    int test##name##_l =                                                       \
-        test_register("test" #name "_metal",                                   \
-                      test##name<JitBackend::Metal, FloatM, Int32M, UInt32M,   \
-                                 MaskM, MetalArray>,                           \
-                      ##__VA_ARGS__);                                          \
-    template <JitBackend Backend, typename Float, typename Int32,              \
-              typename UInt32, typename Mask, template <class> class Array>    \
-    void test##name()
-
+    DECL_TEST(name);                                                           \
+    INST_METAL(name, __VA_ARGS__)                                              \
+    DECL_TEST(name)
 
 #define TEST_ALL(name, ...)                                                    \
-    template <JitBackend Backend, typename Float, typename Int32,              \
-              typename UInt32, typename Mask, template <class> class Array>    \
-    void test##name();                                                         \
-    int test##name##_c =                                                       \
-        test_register("test" #name "_cuda",                                    \
-                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_o =                                                       \
-        test_register("test" #name "_optix",                                   \
-                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_l =                                                       \
-        test_register("test" #name "_llvm",                                    \
-                      test##name<JitBackend::LLVM, FloatL, Int32L, UInt32L,    \
-                                 MaskL, LLVMArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_m =                                                       \
-        test_register("test" #name "_metal",                                   \
-                      test##name<JitBackend::Metal, FloatM, Int32M, UInt32M,   \
-                                 MaskM, MetalArray>,                           \
-                      ##__VA_ARGS__);                                          \
-    template <JitBackend Backend, typename Float, typename Int32,              \
-              typename UInt32, typename Mask, template <class> class Array>    \
-    void test##name()
+    DECL_TEST(name);                                                           \
+    INST_LLVM(name, __VA_ARGS__)                                               \
+    INST_CUDA(name, __VA_ARGS__)                                               \
+    INST_OPTIX(name, __VA_ARGS__)                                              \
+    INST_METAL(name, __VA_ARGS__)                                              \
+    DECL_TEST(name)
 
 #define jit_assert(cond)                                                       \
     do {                                                                       \

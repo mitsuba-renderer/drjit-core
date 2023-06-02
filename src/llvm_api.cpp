@@ -1,7 +1,7 @@
 /*
     src/llvm_api.cpp -- Dynamic interface to LLVM via the C API bindings
 
-    Copyright (c) 2022 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -10,7 +10,7 @@
 #define DR_LLVM_SYM(...) __VA_ARGS__ = nullptr;
 
 #include "llvm_api.h"
-#include "internal.h"
+#include "init.h"
 #include "log.h"
 
 #if defined(_WIN32)

@@ -1,15 +1,13 @@
 /*
     src/cuda.h -- CUDA backend functionality
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 */
 
 #pragma once
-
-#include "cuda_api.h"
 
 /// Major version of the detected CUDA version
 extern int jitc_cuda_version_major;
@@ -40,32 +38,29 @@ struct Kernel;
 /// Compile an IR string
 extern void jitc_cuda_compile(const char *str, size_t size, Kernel &kernel);
 
-/// Assert that a CUDA operation is correctly issued
-#define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
-extern void cuda_check_impl(CUresult errval, const char *file, const int line);
+/// Set the currently active device & stream
+extern void jitc_cuda_set_device(int device);
 
-/// RAII wrapper to set the CUDA context within a scope
-struct scoped_set_context {
-    scoped_set_context(CUcontext ctx) {
-        cuda_check(cuCtxPushCurrent(ctx));
-    }
-    ~scoped_set_context() {
-        cuda_check(cuCtxPopCurrent(nullptr));
-    }
-};
+/// Return a pointer to the CUDA stream associated with the currently active device
+extern void* jitc_cuda_stream();
 
-/// Like `scoped_set_context`, but only trigger a CUDA call if `ctx != nullptr`
-struct scoped_set_context_maybe {
-    scoped_set_context_maybe(CUcontext ctx) : active(ctx != nullptr) {
-        if (active)
-            cuda_check(cuCtxPushCurrent(ctx));
-    }
-    ~scoped_set_context_maybe() {
-        if (active)
-            cuda_check(cuCtxPopCurrent(nullptr));
-    }
-    bool active;
-};
+/// Return a pointer to the CUDA context associated with the currently active device
+extern void* jitc_cuda_context();
+
+/// Push a new CUDA context to the currently active device
+extern void jitc_cuda_push_context(void *);
+
+/// Pop the current CUDA context and return it
+extern void* jitc_cuda_pop_context();
+
+/// Initialize a per-thread state (requires that the backend is initialized)
+extern ThreadState *jitc_cuda_thread_state_new();
+
+/// Free a compiled CUDA kernel
+extern void jitc_cuda_free(int device_id, bool shared, void *ptr);
+
+/// Release a memory allocation made by the CUDA backend
+extern void jitc_cuda_kernel_free(int device_id, const Kernel &kernel);
 
 // Dr.Jit kernel functions
 extern CUfunction *jitc_cuda_fill_64;
@@ -82,9 +77,11 @@ extern CUfunction *jitc_cuda_scan_large_u32;
 extern CUfunction *jitc_cuda_scan_large_u32_init;
 extern CUfunction *jitc_cuda_compress_small;
 extern CUfunction *jitc_cuda_compress_large;
-extern CUfunction *jitc_cuda_poke[(int) VarType::Count];
 extern CUfunction *jitc_cuda_block_copy[(int) VarType::Count];
 extern CUfunction *jitc_cuda_block_sum [(int) VarType::Count];
 extern CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                        [(int) VarType::Count];
 extern CUfunction *jitc_cuda_vcall_prepare;
+
+/// Can't pass more than 4096 bytes of parameter data to a CUDA kernel
+#define DRJIT_CUDA_ARG_LIMIT 512

@@ -1,7 +1,7 @@
 /*
     src/eval.h -- Main computation graph evaluation routine
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "internal.h"
+#include "hash.h"
 #include "strbuf.h"
 #include <map>
 
@@ -76,7 +76,7 @@ extern GlobalsMap globals_map;
 extern char kernel_name[52];
 
 /// Are we recording an OptiX kernel?
-extern bool uses_optix;
+extern bool uses_rt;
 
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 extern int32_t alloca_size;

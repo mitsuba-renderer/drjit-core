@@ -1,0 +1,12 @@
+All backends can be enabled/disabled using CMake flags. When disabled, no
+related code is compiled.
+
+Convert ThreadState into a class with abstract virtual functions and subclasses
+(CUDAThreadState, etc.) that implement them.
+
+Separate all backend code from the rest of Dr.Jit
+
+Changed the memory allocation interface so that allocations are parameterized
+by a JitBackend. The AllocType enumeratoin is gone.
+
+Added very basic Metal backend. Currently, it can only do memory allocation.

@@ -75,6 +75,16 @@ struct OptixModuleCompileOptions {
     OptixPayloadType *payloadTypes;
 };
 
+struct OptixPipelineCompileOptions {
+    int usesMotionBlur;
+    unsigned int traversableGraphFlags;
+    int numPayloadValues;
+    int numAttributeValues;
+    unsigned int exceptionFlags;
+    const char* pipelineLaunchParamsVariableName;
+    unsigned int usesPrimitiveTypeFlags;
+};
+
 struct OptixPipelineLinkOptions {
     unsigned int maxTraceDepth;
     OptixCompileDebugLevel debugLevel;
@@ -114,6 +124,20 @@ struct OptixProgramGroupDesc {
     };
 };
 
+struct OptixShaderBindingTable {
+    void* raygenRecord;
+    void* exceptionRecord;
+    void* missRecordBase;
+    unsigned int missRecordStrideInBytes;
+    unsigned int missRecordCount;
+    void* hitgroupRecordBase;
+    unsigned int hitgroupRecordStrideInBytes;
+    unsigned int hitgroupRecordCount;
+    void* callablesRecordBase;
+    unsigned int callablesRecordStrideInBytes;
+    unsigned int callablesRecordCount;
+};
+
 struct OptixStackSizes {
     unsigned int cssRG;
     unsigned int cssMS;
@@ -126,6 +150,12 @@ struct OptixStackSizes {
 
 struct OptixProgramGroupOptions {
     OptixPayloadType *payloadType;
+};
+
+struct OptixPipelineData {
+    OptixPipelineCompileOptions compile_options;
+    OptixModule module;
+    std::vector<OptixProgramGroup> program_groups;
 };
 
 DR_OPTIX_SYM(OptixResult (*optixQueryFunctionTable)(int, unsigned int, void *,
@@ -171,3 +201,10 @@ DR_OPTIX_SYM(OptixResult (*optixPipelineSetStackSize)(
     OptixPipeline, unsigned int, unsigned int, unsigned int, unsigned int));
 DR_OPTIX_SYM(OptixResult (*optixProgramGroupGetStackSize)(OptixProgramGroup,
                                                           OptixStackSizes *));
+
+/// A few forward declarations for OptiX
+#if defined(DRJIT_ENABLE_OPTIX)
+
+
+#endif
+

@@ -4,7 +4,7 @@
     This file provides helper traits that are needed by the C++ array
     wrappers defined in in 'drjit/jitvar.h'.
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.

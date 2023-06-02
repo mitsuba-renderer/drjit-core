@@ -2,7 +2,7 @@
     kernels/compress.cuh -- CUDA kernels for converting a mask into a set of
     indices that can be used to compress an associated array.
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.

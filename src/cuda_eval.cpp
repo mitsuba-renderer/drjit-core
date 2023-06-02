@@ -32,7 +32,7 @@
  */
 
 #include "eval.h"
-#include "internal.h"
+#include "core.h"
 #include "var.h"
 #include "log.h"
 #include "vcall.h"
@@ -66,7 +66,7 @@ static void jitc_cuda_render_trace(uint32_t index, const Variable *v,
 
 void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
-    bool params_global = !uses_optix && n_params > DRJIT_CUDA_ARG_LIMIT;
+    bool params_global = !uses_rt && n_params > DRJIT_CUDA_ARG_LIMIT;
     bool print_labels  = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
@@ -74,7 +74,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
 #if defined(DRJIT_ENABLE_OPTIX)
     /* If use optix and the kernel contains no ray tracing operations,
        fall back to the default OptiX pipeline and shader binding table. */
-    if (uses_optix) {
+    if (uses_rt) {
         /// Ensure OptiX is initialized
         (void) jitc_optix_context();
         ts->optix_pipeline = state.optix_default_pipeline;
@@ -101,7 +101,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         ts->ptx_version / 10, ts->ptx_version % 10,
         ts->compute_capability);
 
-    if (!uses_optix) {
+    if (!uses_rt) {
         fmt(".entry drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
             ".param .align 8 .b8 params[$u]) { \n",
             params_global ? 8u : (n_params * (uint32_t) sizeof(void *)));
@@ -116,7 +116,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         "    .reg.pred %p <$u>;\n\n",
         n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
 
-    if (!uses_optix) {
+    if (!uses_rt) {
         put("    mov.u32 %r0, %ctaid.x;\n"
             "    mov.u32 %r1, %ntid.x;\n"
             "    mov.u32 %r2, %tid.x;\n"
@@ -147,7 +147,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
     const char *params_base = "params",
                *params_type = "param";
 
-    if (uses_optix) {
+    if (uses_rt) {
         params_type = "const";
     } else if (params_global) {
         params_base = "%rd1";
@@ -221,7 +221,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         }
     }
 
-    if (!uses_optix) {
+    if (!uses_rt) {
         put("\n"
             "    add.u32 %r0, %r0, %r1;\n"
             "    setp.ge.u32 %p0, %r0, %r2;\n"
@@ -243,7 +243,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         it.second.callable_index = ctr++;
     }
 
-    if (callable_count > 0 && !uses_optix) {
+    if (callable_count > 0 && !uses_rt) {
         size_t suffix_start = buffer.size(),
                suffix_target =
                    (char *) strstr(buffer.get(), ".address_size 64\n\n") -
@@ -284,7 +284,7 @@ void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
     if (out_size)
         fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
     fmt(" $s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
-        uses_optix ? "__direct_callable__" : "func_");
+        uses_rt ? "__direct_callable__" : "func_");
 
     if (use_self) {
         put(".reg .u32 self");
@@ -1129,7 +1129,7 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     // 3. Turn callable ID into a function pointer
     // =====================================================
 
-    if (!uses_optix)
+    if (!uses_rt)
         put("        ld.global.u64 %rd2, callables[%r3];\n");
     else
         put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");

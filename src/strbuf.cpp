@@ -1,7 +1,8 @@
 #include "strbuf.h"
-#include "internal.h"
+#include "core.h"
 #include "var.h"
 #include "eval.h"
+#include "llvm.h"
 #include <cstdarg>
 
 /// Global string buffer used to generate PTX/LLVM IR

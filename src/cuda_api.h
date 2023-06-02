@@ -272,3 +272,18 @@ DR_CUDA_SYM(CUresult (*cuTexObjectGetResourceDesc)(CUDA_RESOURCE_DESC *,
 DR_CUDA_SYM(CUresult (*cuMemcpy3DAsync)(const CUDA_MEMCPY3D *, CUstream));
 DR_CUDA_SYM(CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream));
 #endif
+
+/// RAII wrapper to set the CUDA context within a scope
+struct scoped_set_context {
+    scoped_set_context(CUcontext ctx) {
+        cuda_check(cuCtxPushCurrent(ctx));
+    }
+    ~scoped_set_context() {
+        cuda_check(cuCtxPopCurrent(nullptr));
+    }
+};
+
+/// Assert that a CUDA operation is correctly issued
+#define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
+extern void cuda_check_impl(CUresult errval, const char *file, const int line);
+

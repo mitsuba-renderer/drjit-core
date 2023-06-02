@@ -1,13 +1,13 @@
 /*
     src/vcall.cpp -- Code generation for virtual function calls
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 */
 
-#include "internal.h"
+#include "core.h"
 #include "log.h"
 #include "var.h"
 #include "eval.h"
@@ -16,6 +16,9 @@
 #include "op.h"
 #include "profiler.h"
 #include "vcall.h"
+#include "state.h"
+#include "thread_state.h"
+#include "malloc.h"
 #include <set>
 
 using CallablesSet = std::set<XXH128_hash_t, XXH128Cmp>;
@@ -238,10 +241,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     // Allocate memory + wrapper variables for call offset and data arrays
     vcall->offset_size = (inst_id_max + 1) * sizeof(uint64_t);
 
-    AllocType at =
-        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync;
-    vcall->offset = (uint64_t *) jitc_malloc(at, vcall->offset_size);
-    uint8_t *data_d = (uint8_t *) jitc_malloc(at, data_size);
+    vcall->offset = (uint64_t *) jitc_malloc(backend, vcall->offset_size);
+    uint8_t *data_d = (uint8_t *) jitc_malloc(backend, data_size);
 
     Ref data_buf, data_v,
         offset_buf = steal(jitc_var_mem_map(
@@ -261,10 +262,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
         data_v = steal(jitc_var_pointer(backend, data_d, data_buf, 0));
 
-        VCallDataRecord *rec = (VCallDataRecord *)
-            jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned
-                                                    : AllocType::Host,
-                        sizeof(VCallDataRecord) * vcall->data_map.size());
+        VCallDataRecord *rec = (VCallDataRecord *) jitc_malloc_shared(
+            backend, sizeof(VCallDataRecord) * vcall->data_map.size());
 
         VCallDataRecord *p = rec;
 
@@ -744,11 +743,9 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 }
 
 void jitc_vcall_upload(ThreadState *ts) {
-    AllocType at = ts->backend == JitBackend::CUDA ? AllocType::HostPinned
-                                                   : AllocType::Host;
-
     for (VCall *vcall : vcalls_assembled) {
-        uint64_t *data = (uint64_t *) jitc_malloc(at, vcall->offset_size);
+        uint64_t *data =
+            (uint64_t *) jitc_malloc_shared(ts->backend, vcall->offset_size);
         memset(data, 0, vcall->offset_size);
 
         for (uint32_t i = 0; i < vcall->n_inst; ++i) {
@@ -763,18 +760,7 @@ void jitc_vcall_upload(ThreadState *ts) {
         }
 
         jitc_memcpy_async(ts->backend, vcall->offset, data, vcall->offset_size);
-
-        // Free call offset table asynchronously
-        if (vcall->backend == JitBackend::CUDA) {
-            jitc_free(data);
-        } else {
-            Task *new_task = task_submit_dep(
-                nullptr, &jitc_task, 1, 1,
-                [](uint32_t, void *payload) { jit_free(*((void **) payload)); },
-                &data, sizeof(void *), nullptr, 1);
-            task_release(jitc_task);
-            jitc_task = new_task;
-        }
+        jitc_free(data);
     }
     vcalls_assembled.clear();
 }

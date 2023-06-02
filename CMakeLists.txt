@@ -14,13 +14,23 @@ project(drjit-core
 #  Optional features available to users
 # ----------------------------------------------------------
 
-option(DRJIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
-option(DRJIT_ENABLE_TESTS "Build Dr.Jit-Core test suite?" OFF)
-
 if (NOT APPLE)
-  option(DRJIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
-  option(DRJIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
+  set(DRJIT_ENABLE_CUDA_DEFAULT TRUE)
+  set(DRJIT_ENABLE_METAL_DEFAULT FALSE)
+else()
+  set(DRJIT_ENABLE_CUDA_DEFAULT FALSE)
+  set(DRJIT_ENABLE_METAL_DEFAULT TRUE)
 endif()
+
+option(DRJIT_ENABLE_LLVM "Enable the LLVM backend?" ON)
+option(DRJIT_ENABLE_CUDA "Enable the CUDA backend?" ${DRJIT_ENABLE_CUDA_DEFAULT})
+option(DRJIT_ENABLE_OPTIX "Enable the OptiX backend?" ${DRJIT_ENABLE_CUDA_DEFAULT})
+option(DRJIT_ENABLE_METAL "Enable the Metal backend?" ${DRJIT_ENABLE_METAL_DEFAULT})
+
+option(DRJIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
+option(DRJIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ${DRJIT_ENABLE_CUDA_DEFAULT})
+
+option(DRJIT_ENABLE_TESTS "Build Dr.Jit-Core test suite?" OFF)
 
 # ----------------------------------------------------------
 #  Check if submodules have been checked out, or fail early
@@ -42,24 +52,39 @@ include(ext/nanothread/ext/cmake-defaults/CMakeLists.txt)
 #  Print a few messages explaining what will be compiled
 # ----------------------------------------------------------
 
-if (DRJIT_DYNAMIC_LLVM)
-  message(STATUS "Dr.Jit-Core: LLVM will be loaded dynamically at runtime.")
+if (DRJIT_ENABLE_LLVM)
+  if (DRJIT_DYNAMIC_LLVM)
+    message(STATUS "Dr.Jit-Core: LLVM backend enabled (loaded dynamically at runtime).")
+  else()
+    message(STATUS "Dr.Jit-Core: LLVM backend enabled (linking against LLVM shared libraries).")
+  endif()
 else()
-  message(STATUS "Dr.Jit-Core: linking against LLVM shared libraries.")
+  message(STATUS "Dr.Jit-Core: LLVM backend disabled.")
 endif()
 
-if (NOT APPLE)
+if (DRJIT_ENABLE_CUDA)
   if (DRJIT_DYNAMIC_CUDA)
-    message(STATUS "Dr.Jit-Core: CUDA will be loaded dynamically at runtime.")
+    message(STATUS "Dr.Jit-Core: CUDA backend enabled (loaded dynamically at runtime).")
   else()
-    message(STATUS "Dr.Jit-Core: linking against CUDA shared libraries.")
+    message(STATUS "Dr.Jit-Core: CUDA backend enabled (linking against CUDA shared libraries).")
   endif()
+else()
+  message(STATUS "Dr.Jit-Core: CUDA backend disabled.")
+endif()
 
-  if (DRJIT_ENABLE_OPTIX)
-    message(STATUS "Dr.Jit-Core: OptiX support enabled.")
-  else()
-    message(STATUS "Dr.Jit-Core: OptiX support disabled.")
+if (DRJIT_ENABLE_OPTIX)
+  if (NOT DRJIT_ENABLE_CUDA)
+    message(FATAL_ERROR "DrJit-Core: The OptiX backend requires that the CUDA backend is also enabled.")
   endif()
+  message(STATUS "Dr.Jit-Core: OptiX backend enabled.")
+else()
+  message(STATUS "Dr.Jit-Core: OptiX backend disabled.")
+endif()
+
+if (DRJIT_ENABLE_METAL)
+  message(STATUS "Dr.Jit-Core: Metal backend enabled.")
+else()
+  message(STATUS "Dr.Jit-Core: Metal backend disabled.")
 endif()
 
 # ----------------------------------------------------------
@@ -73,6 +98,30 @@ mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
 #  Build Dr.Jit-Core
 # ----------------------------------------------------------
 
+if (DRJIT_ENABLE_LLVM)
+  set (DRJIT_LLVM_FILES
+    src/llvm_api.h
+    src/llvm_api.cpp
+    src/llvm_memmgr.h
+    src/llvm_memmgr.cpp
+    src/llvm_init.cpp
+    src/llvm_ts.cpp
+    src/llvm_mcjit.cpp
+    src/llvm_orcv2.cpp
+    src/llvm_eval.cpp)
+endif()
+
+if (DRJIT_ENABLE_CUDA)
+  set (DRJIT_CUDA_FILES
+    src/cuda_api.h
+    src/cuda_api.cpp
+    src/cuda_init.cpp
+    src/cuda_ts.cpp
+    src/cuda_tex.h
+    src/cuda_tex.cpp
+    src/cuda_eval.cpp)
+endif()
+
 if (DRJIT_ENABLE_OPTIX)
   set(DRJIT_OPTIX_FILES
     src/optix.h
@@ -81,45 +130,46 @@ if (DRJIT_ENABLE_OPTIX)
     src/optix_core.cpp)
 endif()
 
+if (DRJIT_ENABLE_METAL)
+  set(DRJIT_METAL_FILES
+    src/metal.h
+    src/metal_init.mm
+    src/metal_ts.mm)
+endif()
+
 add_library(
   drjit-core SHARED
   include/drjit-core/jit.h
   include/drjit-core/traits.h
   include/drjit-core/array.h
 
-  src/common.h
-  src/internal.h
+  src/backends.h
+  src/core.h          src/core.cpp
+  src/init.h          src/init.cpp
   src/alloc.h
   src/hash.h
+  src/state.h
+  src/thread_state.h
   src/profiler.h
   src/log.h           src/log.cpp
   src/strbuf.h        src/strbuf.cpp
   src/var.h           src/var.cpp
   src/op.h            src/op.cpp
   src/malloc.h        src/malloc.cpp
-  src/registry.h      src/registry.cpp
-  src/util.h          src/util.cpp
+  # src/registry.h      src/registry.cpp
+  # src/util.h          src/util.cpp
+
+  # LLVM backend
+  ${DRJIT_LLVM_FILES}
 
   # CUDA backend
-  src/cuda_api.h
-  src/cuda_api.cpp
-  src/cuda_core.cpp
-  src/cuda_tex.h
-  src/cuda_tex.cpp
-  src/cuda_eval.cpp
+  ${DRJIT_CUDA_FILES}
 
   # OptiX backend
   ${DRJIT_OPTIX_FILES}
 
-  # LLVM backend
-  src/llvm_api.h
-  src/llvm_api.cpp
-  src/llvm_memmgr.h
-  src/llvm_memmgr.cpp
-  src/llvm_core.cpp
-  src/llvm_mcjit.cpp
-  src/llvm_orcv2.cpp
-  src/llvm_eval.cpp
+  # Metal backend
+  ${DRJIT_METAL_FILES}
 
   src/io.h            src/io.cpp
   src/eval.h          src/eval.cpp
@@ -168,22 +218,36 @@ target_include_directories(drjit-core
 target_compile_definitions(drjit-core PRIVATE -DDRJIT_BUILD=1)
 target_link_libraries(drjit-core PRIVATE nanothread)
 
-if (DRJIT_DYNAMIC_CUDA OR APPLE)
-  target_compile_definitions(drjit-core PRIVATE -DDRJIT_DYNAMIC_CUDA=1)
-else()
-  find_package(CUDA REQUIRED)
-  target_include_directories(drjit-core PRIVATE ${CUDA_INCLUDE_DIRS})
-  target_link_libraries(drjit-core PRIVATE cuda)
+if (DRJIT_ENABLE_LLVM)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_LLVM=1)
+
+  if (DRJIT_DYNAMIC_LLVM)
+    target_compile_definitions(drjit-core PRIVATE -DDRJIT_DYNAMIC_LLVM=1)
+  else()
+    find_package(LLVM REQUIRED)
+    target_include_directories(drjit-core PRIVATE ${LLVM_INCLUDE_DIRS})
+    target_link_directories(drjit-core PRIVATE ${LLVM_LIB_DIRS})
+    llvm_map_components_to_libnames(llvm_libs core support executionengine orcjit analysis native target mcdisassembler irreader scalaropts mcjit)
+    target_link_libraries(drjit-core PRIVATE ${llvm_libs})
+  endif()
 endif()
 
-if (DRJIT_DYNAMIC_LLVM)
-  target_compile_definitions(drjit-core PRIVATE -DDRJIT_DYNAMIC_LLVM=1)
-else()
-  find_package(LLVM REQUIRED)
-  target_include_directories(drjit-core PRIVATE ${LLVM_INCLUDE_DIRS})
-  target_link_directories(drjit-core PRIVATE ${LLVM_LIB_DIRS})
-  llvm_map_components_to_libnames(llvm_libs core support executionengine orcjit analysis native target mcdisassembler irreader scalaropts mcjit)
-  target_link_libraries(drjit-core PRIVATE ${llvm_libs})
+if (DRJIT_ENABLE_CUDA)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_CUDA=1)
+
+  if (DRJIT_DYNAMIC_CUDA)
+    target_compile_definitions(drjit-core PRIVATE -DDRJIT_DYNAMIC_CUDA=1)
+  else()
+    find_package(CUDA REQUIRED)
+    target_include_directories(drjit-core PRIVATE ${CUDA_INCLUDE_DIRS})
+    target_link_libraries(drjit-core PRIVATE cuda)
+  endif()
+
+  # Profiling notifications for NVIDIA profilers
+  if (DRJIT_ENABLE_NVTX)
+    include_directories(${CUDA_TOOLKIT_ROOT_DIR}/include)
+    target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_NVTX=1)
+  endif()
 endif()
 
 if (DRJIT_ENABLE_OPTIX)
@@ -193,18 +257,16 @@ if (DRJIT_ENABLE_OPTIX)
   endif()
 endif()
 
+if (DRJIT_ENABLE_METAL)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_METAL=1)
+endif()
+
 # Generate ITT notifications (e.g. for VTune) if part of a larger project
 # that provides an 'ittnotify' target
 if (TARGET ittnotify)
   target_link_libraries(drjit-core PRIVATE ittnotify)
   target_include_directories(drjit-core PRIVATE ${ITT_INCLUDE_DIRS})
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_ITTNOTIFY=1)
-endif()
-
-# Similar notifications for NVIDIA profilers
-if (DRJIT_ENABLE_NVTX)
-  include_directories(${CUDA_TOOLKIT_ROOT_DIR}/include)
-  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_NVTX=1)
 endif()
 
 if (UNIX)

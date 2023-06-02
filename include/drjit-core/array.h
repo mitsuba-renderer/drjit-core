@@ -4,7 +4,7 @@
     This library implements convenient wrapper class around the C API in
     'drjit/jit.h'.
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -58,15 +58,13 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     template <typename... Ts, enable_if_t<(sizeof...(Ts) > 1 && IsClass)> = 0>
     JitArray(Ts&&... ts) {
         uint32_t data[] = { jit_registry_get_id(Backend,  ts)... };
-        m_index = jit_var_mem_copy(Backend, AllocType::Host, Type, data,
-                                   sizeof...(Ts));
+        m_index = jit_var_mem_copy(Backend, Type, false, data, sizeof...(Ts));
     }
 
     template <typename... Ts, enable_if_t<(sizeof...(Ts) > 1 && !IsClass)> = 0>
     JitArray(Ts&&... ts) {
         Value data[] = { (Value) ts... };
-        m_index = jit_var_mem_copy(Backend, AllocType::Host, Type, data,
-                                   sizeof...(Ts));
+        m_index = jit_var_mem_copy(Backend, Type, false, data, sizeof...(Ts));
     }
 
     JitArray &operator=(const JitArray &a) {
@@ -264,8 +262,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
     static JitArray copy(const void *ptr, size_t size) {
-        return steal(
-            jit_var_mem_copy(Backend, AllocType::Host, Type, ptr, size));
+        return steal(jit_var_mem_copy(Backend, Type, false, ptr, size));
     }
 
     static JitArray steal(uint32_t index) {
@@ -359,10 +356,7 @@ protected:
 template <typename Array>
 Array empty(size_t size) {
     size_t byte_size = size * sizeof(typename Array::Value);
-    void *ptr =
-        jit_malloc(Array::Backend == JitBackend::CUDA ? AllocType::Device
-                                                      : AllocType::HostAsync,
-                   byte_size);
+    void *ptr = jit_malloc(Array::Backend, byte_size);
     return Array::steal(
         jit_var_map_mem(Array::Backend, Array::Type, ptr, size, 1));
 }

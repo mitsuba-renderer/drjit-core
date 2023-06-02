@@ -1,19 +1,21 @@
 /*
     src/var.cpp -- Operations for creating and querying variables
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 */
 
 #include "var.h"
-#include "internal.h"
 #include "log.h"
 #include "eval.h"
 #include "util.h"
 #include "op.h"
+#include "state.h"
 #include "registry.h"
+#include "malloc.h"
+#include "thread_state.h"
 
 // When debugging via valgrind, this will make iterator invalidation more obvious
 // #define DRJIT_VALGRIND 1
@@ -83,7 +85,7 @@ const char *type_size_str[(int) VarType::Count] {
     "4", "8", "8", "8", "2", "4", "8"
 };
 
-///
+/// Variable kind names
 const char *var_kind_name[(int) VarKind::Count] {
     "invalid",
 
@@ -168,7 +170,6 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Extract a component from an operation that produced multiple results
     "extract"
 };
-
 
 /// Temporary string buffer for miscellaneous variable-related tasks
 StringBuffer var_buffer(0);
@@ -323,7 +324,7 @@ void jitc_var_dec_ref_se(uint32_t index) noexcept(true) {
         jitc_var_dec_ref_se(index, jitc_var(index));
 }
 
-/// Remove a variable from the cache used for common subexpression elimination
+/// Remove a variable from the cache used for local value numbering
 void jitc_lvn_drop(uint32_t index, const Variable *v) {
     VariableKey key(*v);
     LVNMap &cache = state.lvn_map;
@@ -332,7 +333,7 @@ void jitc_lvn_drop(uint32_t index, const Variable *v) {
         cache.erase(it);
 }
 
-/// Register a variable with cache used for common subexpression elimination
+/// Register a variable within the cache used for local value numbering
 void jitc_lvn_put(uint32_t index, const Variable *v) {
     state.lvn_map.try_emplace(VariableKey(*v), index);
 }
@@ -572,10 +573,7 @@ uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
         return jitc_var_new(v);
     } else {
         uint32_t isize = type_size[(int) type];
-        void *data =
-            jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                    : AllocType::HostAsync,
-                        size * (size_t) isize);
+        void *data = jitc_malloc(backend, size * (size_t) isize);
         jitc_memset_async(backend, data, (uint32_t) size, isize, value);
         return jitc_var_mem_map(backend, type, data, size, 1);
     }
@@ -693,8 +691,8 @@ uint32_t jitc_var_stmt(JitBackend backend, VarType vt, const char *stmt,
             free((char *) stmt);
         return 0;
     } else if (unlikely(uninitialized)) {
-        jitc_raise("jit_var_stmt(): arithmetic involving an "
-                   "uninitialized variable!");
+        jitc_raise(
+            "jit_var_stmt(): arithmetic involving an uninitialized variable!");
     }
 
     for (uint32_t i = 0; i < n_dep; ++i) {
@@ -711,7 +709,8 @@ uint32_t jitc_var_stmt(JitBackend backend, VarType vt, const char *stmt,
             dirty |= v[i]->is_dirty();
         }
         if (dirty)
-            jitc_raise("jit_var_stmt(): variable remains dirty following evaluation!");
+            jitc_raise(
+                "jit_var_stmt(): variable remains dirty following evaluation!");
     }
 
     Variable v2;
@@ -888,17 +887,6 @@ void jitc_var_set_callback(uint32_t index,
         v->extra = true;
 }
 
-/// Query the current (or future, if not yet evaluated) allocation flavor of a variable
-AllocType jitc_var_alloc_type(uint32_t index) {
-    const Variable *v = jitc_var(index);
-
-    if (v->is_data())
-        return jitc_malloc_type(v->data);
-
-    return (JitBackend) v->backend == JitBackend::CUDA ? AllocType::Device
-                                                       : AllocType::HostAsync;
-}
-
 /// Query the device associated with a variable
 int jitc_var_device(uint32_t index) {
     const Variable *v = jitc_var(index);
@@ -1044,13 +1032,12 @@ void jitc_var_eval_literal(uint32_t index, Variable *v) {
     jitc_lvn_drop(index, v);
 
     JitBackend backend = (JitBackend) v->backend;
-    uint32_t isize = type_size[v->type];
-    void* data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                         : AllocType::HostAsync,
-                             (size_t) v->size * (size_t) isize);
-    v = jitc_var(index);
-    jitc_memset_async(backend, data, v->size, isize, &v->literal);
+    uint32_t size = v->size, isize = type_size[v->type];
+    uint64_t value = v->literal;
+    void *data = jitc_malloc(backend, size * (size_t) isize);
+    jitc_memset_async(backend, data, size, isize, &value);
 
+    v = jitc_var(index);
     v->kind = (uint32_t) VarKind::Data;
     v->data = data;
 }
@@ -1126,7 +1113,7 @@ uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src) {
 
     uint32_t isize = type_size[v->type];
     uint8_t *dst = (uint8_t *) v->data + offset * isize;
-    jitc_poke((JitBackend) v->backend, dst, src, isize);
+    jitc_memset_async(v->backend, dst, 1, isize, src);
 
     return index;
 }
@@ -1157,7 +1144,7 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
 }
 
 /// Copy a memory region onto the device and return its variable index
-uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
+uint32_t jitc_var_mem_copy(JitBackend backend, VarType vtype, bool on_device,
                            const void *ptr, size_t size) {
     if (unlikely(size == 0))
         return 0;
@@ -1165,49 +1152,15 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
     jitc_check_size("jit_var_mem_copy", size);
 
     size_t total_size = (size_t) size * (size_t) type_size[(int) vtype];
-    void *target_ptr;
+    void *target_ptr = nullptr;
 
-    ThreadState *ts = thread_state(backend);
-    if (backend == JitBackend::CUDA) {
-        target_ptr = jitc_malloc(AllocType::Device, total_size);
-
-        scoped_set_context guard(ts->context);
-        if (atype == AllocType::HostAsync) {
-            jitc_fail("jit_var_mem_copy(): copy from HostAsync to GPU memory not supported!");
-        } else if (atype == AllocType::Host) {
-            void *host_ptr = jitc_malloc(AllocType::HostPinned, total_size);
-            CUresult rv;
-            {
-                unlock_guard guard2(state.lock);
-                memcpy(host_ptr, ptr, total_size);
-                rv = cuMemcpyAsync((CUdeviceptr) target_ptr,
-                                   (CUdeviceptr) host_ptr, total_size,
-                                   ts->stream);
-            }
-            cuda_check(rv);
-            jitc_free(host_ptr);
-        } else {
-            cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
-                                     (CUdeviceptr) ptr, total_size,
-                                     ts->stream));
-        }
+    if (!on_device) {
+        void *tmp = jitc_malloc(backend, total_size, true);
+        memcpy(tmp, ptr, total_size);
+        target_ptr = jitc_malloc_migrate(tmp, backend, 1);
     } else {
-        if (atype == AllocType::HostAsync) {
-            target_ptr = jitc_malloc(AllocType::HostAsync, total_size);
-            jitc_memcpy_async(backend, target_ptr, ptr, total_size);
-        } else if (atype == AllocType::Host) {
-            target_ptr = jitc_malloc(AllocType::Host, total_size);
-            {
-                unlock_guard guard(state.lock);
-                memcpy(target_ptr, ptr, total_size);
-            }
-            target_ptr = jitc_malloc_migrate(target_ptr, AllocType::HostAsync, 1);
-        } else {
-            target_ptr = jitc_malloc(AllocType::HostPinned, total_size);
-            cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
-                                     (CUdeviceptr) ptr, total_size,
-                                     ts->stream));
-        }
+        target_ptr = jitc_malloc(backend, total_size);
+        jitc_memcpy_async(backend, target_ptr, ptr, total_size);
     }
 
     uint32_t index = jitc_var_mem_map(backend, vtype, target_ptr, size, true);
@@ -1862,7 +1815,7 @@ const char *jitc_var_graphviz() {
             color = "wheat";
 
         var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%u|Refs: %u}}",
-            (JitBackend) v->backend == JitBackend::CUDA ? "cuda" : "llvm",
+            backend_name[v->backend],
             type_name_short[v->type], v->size, index,
             (uint32_t) v->ref_count);
 

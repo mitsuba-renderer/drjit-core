@@ -21,7 +21,7 @@
     adds further components like a library of transcendental mathematical
     operations, automatic differentiation support, Python bindings, etc.
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -82,23 +82,28 @@ extern "C" {
  */
 #if defined(__cplusplus)
 enum class JitBackend : uint32_t {
-    Invalid,
-
-    /// CUDA GPU backend (generates PTX IR)
-    CUDA,
+    /// Refers to the host CPU (e.g. in memory allocations)
+    None,
 
     /// LLVM CPU backend (generates vectorized LLVM IR)
     LLVM,
 
+    /// CUDA GPU backend (generates PTX IR)
+    CUDA,
+
     /// Metal GPU backend (generates MSL C++ code)
-    Metal
+    Metal,
+
+    /// Indicates the length of the backend enumeration
+    Count
 };
 #else
 enum JitBackend {
-    JitBackendInvalid,
+    JitBackendNone,
     JitBackendCUDA,
     JitBackendLLVM,
-    JitBackendMetal
+    JitBackendMetal,
+    JitBackendCount
 };
 #endif
 
@@ -335,105 +340,44 @@ extern JIT_EXPORT void jit_fail(const char* fmt, ...);
 //                         Memory allocation
 // ====================================================================
 
-#if defined(__cplusplus)
-enum class AllocType : uint32_t {
-    /**
-     * Memory that is located on the host (i.e., the CPU). When allocated via
-     * \ref jit_malloc(), host memory is immediately ready for use, and
-     * its later release via \ref jit_free() also occurs instantaneously.
-     *
-     * Note, however, that released memory is kept within a cache and not
-     * immediately given back to the operating system. Call \ref
-     * jit_flush_malloc_cache() to also flush this cache.
-     */
-    Host,
-
-    /**
-     * Like \c Host memory, except that it may only be used *asynchronously*
-     * within a computation performed by drjit-core.
-     *
-     * In particular, host-asynchronous memory obtained via \ref jit_malloc()
-     * should not be written to directly (i.e. outside of drjit-core), since it
-     * may still be used by a currently running kernel. Releasing
-     * host-asynchronous memory via \ref jit_free() also occurs
-     * asynchronously.
-     *
-     * This type of memory is used internally when running code via the LLVM
-     * backend, and when this process is furthermore parallelized using Dr.Jit's
-     * internal thread pool.
-     */
-    HostAsync,
-
-    /**
-     * Memory on the host that is "pinned" and thus cannot be paged out.
-     * Host-pinned memory is accessible (albeit slowly) from CUDA-capable GPUs
-     * as part of the unified memory model, and it also can be a source or
-     * destination of asynchronous host <-> device memcpy operations.
-     *
-     * Host-pinned memory has asynchronous semantics similar to \c HostAsync.
-     */
-    HostPinned,
-
-    /**
-     * Memory that is located on a device (i.e., one of potentially several
-     * GPUs).
-     *
-     * Device memory has asynchronous semantics similar to \c HostAsync.
-     */
-    Device,
-
-    /// Number of possible allocation types
-    Count
-};
-#else
-enum AllocType {
-    AllocTypeHost,
-    AllocTypeHostPinned,
-    AllocTypeDevice,
-    AllocTypeCount
-};
-#endif
-
 /**
- * \brief Allocate memory of the specified type
+ * \brief Allocate memory on the desired backend
  *
- * Under the hood, Dr.Jit implements a custom allocation scheme that tries to
- * reuse allocated memory regions instead of giving them back to the OS/GPU.
- * This eliminates inefficient synchronization points in the context of CUDA
- * programs, and it can also improve performance on the CPU when working with
- * large allocations.
+ * The returned memory region is private to the device and may not be
+ * accessed from the host.
+ *
+ * When no backend is specified (\ref JitBackend::None), \ref jit_malloc()
+ * resembles <tt>malloc()</tt>.
  *
  * The returned pointer is guaranteed to be sufficiently aligned for any kind
  * of use.
- *
  */
-extern JIT_EXPORT void *jit_malloc(JIT_ENUM AllocType type, size_t size)
-    JIT_MALLOC;
+extern JIT_EXPORT void *jit_malloc(JIT_ENUM JitBackend backend,
+                                   size_t size) JIT_MALLOC;
+
+/// Like jit_malloc(), but allocate memory that is accessible on both host and device
+extern JIT_EXPORT void *jit_malloc_shared(JIT_ENUM JitBackend backend,
+                                          size_t size) JIT_MALLOC;
 
 /**
- * \brief Release a given pointer asynchronously
+ * \brief Release a previously made allocation asynchronously
  *
- * For CPU-only arrays (\ref AllocType::Host), <tt>jit_free()</tt> is
- * synchronous and very similar to <tt>free()</tt>, except that the released
- * memory is placed in Dr.Jit's internal allocation cache instead of being
- * returned to the OS. The function \ref jit_flush_malloc_cache() can optionally
- * be called to also clear this cache.
+ * Freeing a memory region asynchronously may seem dangerous: a subsequent call
+ * to \ref jit_malloc() could return the same region again, while kernels using
+ * the old allocation are potentially still running on the compute device. The
+ * key aspect to keep in mind is that Dr.Jit operations are ordered in a
+ * central queue, which guarantees that any current use of the old allocation
+ * will have concluded before future use of a new allocation can start.
  *
- * When \c ptr is an asynchronous host pointer (\ref AllocType::HostAsync) or
- * GPU-accessible pointer (\ref AllocType::Device, \ref AllocType::HostPinned),
- * the associated memory region is possibly still being used by a running
- * kernel, and it is therefore merely *scheduled* to be reclaimed once this
- * kernel finishes.
+ * Dr.Jit employs a memory allocation cache for performance reasons, since
+ * allocations on some backend (e.g., on CUDA) are extremely costly. This means
+ * that the function never returns memory to the OS/GPU. If you wish to free up
+ * memory for other users, call \ref jit_flush_malloc_cache() to clear this
+ * cache.
  *
- * Kernel launches and memory-related operations (malloc, free) occur
- * asynchronously but using a linear ordering when they are scheduled by the
- * same thread (they will be placed into the same <i>stream</i> in CUDA
- * terminology). Extra care must be taken in the context of multi-threaded
- * software: it is not permissible to e.g. allocate memory on one thread,
- * launch a kernel using it, then immediately release that memory from a
- * different thread, because a valid ordering is not guaranteed in that case.
- * Operations like \ref jit_sync_thread(), \ref jit_sync_device(), and \ref
- * jit_sync_all_devices() can be used to defuse such situations.
+ * For host allocations (\ref JitBackend::None), \ref jit_free() is
+ * synchronous and resembles <tt>free()</tt>, except that the released
+ * memory is placed in Dr.Jit's memory allocation cache.
  */
 extern JIT_EXPORT void jit_free(void *ptr);
 
@@ -446,22 +390,16 @@ extern JIT_EXPORT void jit_malloc_clear_statistics();
 /// Flush internal kernel cache
 extern JIT_EXPORT void jit_flush_kernel_cache();
 
-/// Query the flavor of a memory allocation made using \ref jit_malloc()
-extern JIT_EXPORT JIT_ENUM AllocType jit_malloc_type(void *ptr);
-
-/// Query the device associated with a memory allocation made using \ref jit_malloc()
-extern JIT_EXPORT int jit_malloc_device(void *ptr);
-
 /**
  * \brief Asynchronously change the flavor of an allocated memory region and
  * return the new pointer
  *
- * The operation is *always* asynchronous and, hence, will need to be followed
- * by an explicit synchronization via \ref jit_sync_thread() if memory is
- * migrated from the GPU to the CPU and expected to be accessed on the CPU
- * before the transfer has finished. Nothing needs to be done in the other
- * direction, e.g. when migrating memory that is subsequently accessed by
- * a GPU kernel.
+ * The function returns private/non-shared memory region on the destination
+ * backend. It is *always* asynchronous will need to be followed by an explicit
+ * synchronization via \ref jit_sync_thread() if memory is migrated from the
+ * GPU to the CPU and expected to be accessed on the CPU before the transfer
+ * has finished. Nothing needs to be done in the other direction, e.g. when
+ * migrating memory that is subsequently accessed by a GPU kernel.
  *
  * When no migration is necessary, the function simply returns the input
  * pointer. If migration is necessary, the behavior depends on the supplied
@@ -475,7 +413,7 @@ extern JIT_EXPORT int jit_malloc_device(void *ptr);
  * jit_set_device()) does not match the device associated with the allocation,
  * a peer-to-peer migration is performed.
  */
-extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
+extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM JitBackend dst,
                                            int move JIT_DEF(1));
 
 // ====================================================================
@@ -949,14 +887,14 @@ extern JIT_EXPORT uint32_t jit_var_copy(uint32_t index);
 
 
 /**
- * Register an existing memory region as a variable in the JIT compiler, and
+ * Register an existing device memory region as a JIT variable, and
  * return its index. Its reference count is initialized to \c 1.
+ *
+ * \param backend
+ *    Denotes the backend in which the variable should be created
  *
  * \param type
  *    Type of the variable to be created, see \ref VarType for details.
- *
- * \param cuda
- *    Is this a CUDA variable?
  *
  * \param ptr
  *    Point of the memory region
@@ -965,7 +903,7 @@ extern JIT_EXPORT uint32_t jit_var_copy(uint32_t index);
  *    Number of elements (and *not* the size in bytes)
  *
  * \param free
- *    If free != 0, the JIT compiler will free the memory region via
+ *    If \c free is nonzero, the JIT compiler will free the memory region via
  *    \ref jit_free() once its reference count reaches zero.
  *
  * \sa jit_var_mem_copy()
@@ -978,14 +916,18 @@ extern JIT_EXPORT uint32_t jit_var_mem_map(JIT_ENUM JitBackend backend,
  * Copy a memory region onto the device and return its variable index. Its
  * reference count is initialized to \c 1.
  *
- * \param atype
- *    Enumeration characterizing the "flavor" of the source memory.
  *
- * \param cuda
- *    Is this a CUDA variable?
+ * \param backend
+ *    Denotes the backend in which the variable should be created
  *
- * \param vtype
+ * \param type
  *    Type of the variable to be created, see \ref VarType for details.
+ *
+ * \param on_device
+ *    Is the pointer \c ptr already accessible on the target device? This is
+ *    the case when the address represents a memory allocation done by the
+ *    same backend (either device or shared memory). Otherwise, extra steps are
+ *    needed to allocate a staging area and perform the actual copy.
  *
  * \param ptr
  *    Point of the memory region
@@ -995,9 +937,9 @@ extern JIT_EXPORT uint32_t jit_var_mem_map(JIT_ENUM JitBackend backend,
  *
  * \sa jit_var_mem_map()
  */
-extern JIT_EXPORT uint32_t jit_var_mem_copy(JIT_ENUM JitBackend backend,
-                                            JIT_ENUM AllocType atype,
-                                            JIT_ENUM VarType vtype,
+extern JIT_EXPORT uint32_t jit_var_mem_copy(JIT_ENUM JitBackend dst,
+                                            JIT_ENUM VarType type,
+                                            int on_device,
                                             const void *ptr,
                                             size_t size);
 
@@ -1075,14 +1017,8 @@ extern JIT_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
  * current device (\ref jit_set_device()) does not match the device associated
  * with the allocation, a peer-to-peer migration is performed.
  */
-extern JIT_EXPORT uint32_t jit_var_migrate(uint32_t index,
-                                           JIT_ENUM AllocType type);
-
-/// Query the current (or future, if unevaluated) allocation flavor of a variable
-extern JIT_EXPORT JIT_ENUM AllocType jit_var_alloc_type(uint32_t index);
-
-/// Query the device (or future, if not yet evaluated) associated with a variable
-extern JIT_EXPORT int jit_var_device(uint32_t index);
+// extern JIT_EXPORT uint32_t jit_var_migrate(uint32_t index,
+//                                            JIT_ENUM AllocType type);
 
 /**
  * \brief Mark a variable as a scatter operation
@@ -1642,7 +1578,7 @@ extern JIT_EXPORT uint32_t jit_compress(JIT_ENUM JitBackend backend, const uint8
  *
  * \param offsets
  *     When \c offset is non-NULL, the parameter should point to a host (LLVM)
- *     or host-pinned (CUDA) memory region with a size of at least
+ *     or host-shared (CUDA) memory region with a size of at least
  *     <tt>(bucket_count * 4 + 1) * sizeof(uint32_t)<tt> bytes that will be
  *     used to record the details of non-empty buckets. It will contain
  *     quadruples <tt>(index, start, size, unused)<tt> where \c index is the

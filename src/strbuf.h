@@ -1,5 +1,5 @@
 #pragma once
-#include "common.h"
+#include "core.h"
 #include <cstring>
 
 // Maximum stringified length of a 32 bit integer (decimal)

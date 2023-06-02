@@ -1,7 +1,7 @@
 /*
     src/util.h -- Parallel reductions and miscellaneous utility routines.
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -10,7 +10,6 @@
 #pragma once
 
 #include <drjit-core/jit.h>
-#include "cuda.h"
 
 /// Descriptive names for the various reduction operations
 extern const char *reduction_name[(int) ReduceOp::Count];
@@ -55,9 +54,6 @@ extern void jitc_block_copy(JitBackend backend, enum VarType type, const void *i
 /// Sum over elements within blocks
 extern void jitc_block_sum(JitBackend backend, enum VarType type, const void *in,
                            void *out, uint32_t size, uint32_t block_size);
-
-/// Asynchronously update a single element in memory
-extern void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size);
 
 struct VCallDataRecord;
 /// Initialize the data block consumed by a vcall

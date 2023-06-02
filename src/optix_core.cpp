@@ -2,7 +2,7 @@
 #include <tsl/robin_map.h>
 #include "optix.h"
 #include "optix_api.h"
-#include "internal.h"
+#include "core.h"
 #include "log.h"
 #include "eval.h"
 #include "var.h"
@@ -11,11 +11,21 @@
 
 #define ENABLE_OPTIX_VALIDATION_MODE 0
 
-#define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
-extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
+/// Default OptiX pipeline for testcases etc.
+// static OptixPipelineData *default_pipeline = nullptr;
+// XXX these should move to the device
+
+/// Default OptiX Shader Binding Table for testcases etc.
+// static OptixShaderBindingTable *default_sbt = nullptr;
+
+/// Index of the JIT variable handling the lifetime of the default Optix SBT
+static uint32_t optix_default_sbt_index = 0;
 
 static bool jitc_optix_cache_hit = false;
 static bool jitc_optix_cache_global_disable = false;
+
+#define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
+extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
 
 void jitc_optix_log(unsigned int level, const char *tag, const char *message, void *) {
     size_t len = strlen(message);
@@ -50,7 +60,8 @@ static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
 
 OptixDeviceContext jitc_optix_context() {
     ThreadState *ts = thread_state(JitBackend::CUDA);
-    OptixDeviceContext &ctx = state.devices[ts->device].optix_context;
+    Device &device = state.devices[ts->device];
+    OptixDeviceContext &ctx = device.optix_context;
 
     if (!ctx) {
         if (!jitc_optix_api_init())
@@ -82,7 +93,7 @@ OptixDeviceContext jitc_optix_context() {
     // Create default OptiX pipeline for testcases, etc.
     // =====================================================
 
-    if (!state.optix_default_sbt_index) {
+    if (!default_sbt_index) {
         OptixPipelineCompileOptions pco = jitc_optix_default_compile_options();
         OptixModuleCompileOptions mco { };
 #if 1
@@ -121,20 +132,22 @@ OptixDeviceContext jitc_optix_context() {
         sbt.missRecordCount = 1;
 
         uint32_t pipeline_index = jitc_optix_configure_pipeline(&pco, mod, &pg, 1);
-        auto it2 = state.extra.find(pipeline_index);
-        if (it2 == state.extra.end())
-            jitc_fail("jitc_optix_context(): 'extra' entry not found!");
-        state.optix_default_pipeline = (OptixPipelineData*) it2->second.callback_data;
 
-        uint32_t sbt_index = jitc_optix_configure_sbt(&sbt, pipeline_index);
-        auto it = state.extra.find(sbt_index);
+        auto it = state.extra.find(pipeline_index);
         if (it == state.extra.end())
             jitc_fail("jitc_optix_context(): 'extra' entry not found!");
-        state.optix_default_sbt
-            = (OptixShaderBindingTable*) it->second.callback_data;
 
-        state.optix_default_sbt_index = sbt_index;
+        default_pipeline = (OptixPipelineData*) it2->second.callback_data;
+
+        uint32_t sbt_index = jitc_optix_configure_sbt(&sbt, pipeline_index);
         jitc_var_dec_ref(pipeline_index);
+
+        it = state.extra.find(sbt_index);
+        if (it == state.extra.end())
+            jitc_fail("jitc_optix_context(): 'extra' entry not found!");
+
+        default_sbt = (OptixShaderBindingTable*) it->second.callback_data;
+        default_sbt_index = sbt_index;
     }
 
     return ctx;
@@ -142,6 +155,7 @@ OptixDeviceContext jitc_optix_context() {
 
 void jitc_optix_context_destroy(Device &d) {
     if (d.optix_context) {
+        XXX destroy default_sbt here
         jitc_optix_check(optixDeviceContextDestroy(d.optix_context));
         d.optix_context = nullptr;
     }
@@ -444,7 +458,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     return jitc_optix_cache_hit;
 }
 
-void jitc_optix_free(const Kernel &kernel) {
+void jitc_optix_kernel_free(const Kernel &kernel) {
     jitc_optix_check(optixPipelineDestroy(kernel.optix.pipeline));
     for (uint32_t i = 0; i < kernel.optix.pg_count; ++i)
         jitc_optix_check(optixProgramGroupDestroy(kernel.optix.pg[i]));
@@ -597,4 +611,3 @@ void jit_optix_check_impl(int errval, const char *file, const int line) {
         jitc_optix_check_impl(errval, file, line);
     }
 }
-

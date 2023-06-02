@@ -6,7 +6,7 @@
     containers pull in ~800KB / 31K LOC of headers into *every compile unit*,
     which is insane. This file satisifies all needs with < 5KB and 170 LOC.
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.

@@ -1,20 +1,20 @@
 /*
     src/eval.cpp -- Main computation graph evaluation routine
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 */
 
-#include "internal.h"
+#include "state.h"
 #include "log.h"
-#include "var.h"
 #include "eval.h"
 #include "profiler.h"
 #include "util.h"
-#include "optix.h"
+#include "backends.h"
 #include "loop.h"
+#include "thread_state.h"
 #include <tsl/robin_set.h>
 
 // ====================================================================
@@ -37,7 +37,7 @@ static std::vector<void *> kernel_params;
 static uint8_t *kernel_params_global = nullptr;
 static uint32_t kernel_param_count = 0;
 
-/// Ensure uniqueness of globals/callables arrays
+/// Map to ensure the uniqueness of globals/callables
 GlobalsMap globals_map;
 
 /// StringBuffer for global definitions (intrinsics, callables, etc.)
@@ -55,8 +55,8 @@ char kernel_name[52 /* strlen("__direct_callable__") + 32 + 1 */] { };
 // Total number of operations used across the entire kernel (including functions)
 static uint32_t n_ops_total = 0;
 
-/// Are we recording an OptiX kernel?
-bool uses_optix = false;
+/// Does the kernel contain any ray tracing API calls?
+bool uses_rt = false;
 
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 int32_t alloca_size = -1;
@@ -122,8 +122,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     kernel_history_entry = { };
 
 #if defined(DRJIT_ENABLE_OPTIX)
-    uses_optix = ts->backend == JitBackend::CUDA &&
-                 jit_flag(JitFlag::ForceOptiX);
+    uses_rt = ts->backend == JitBackend::CUDA && jit_flag(JitFlag::ForceOptiX);
 #endif
 
     uint32_t n_params_in    = 0,
@@ -131,6 +130,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
              n_side_effects = 0,
              n_regs         = 0;
 
+#if defined(DRJIT_ENABLE_CUDA)
     if (backend == JitBackend::CUDA) {
         uintptr_t size = 0;
         memcpy(&size, &group.size, sizeof(uint32_t));
@@ -138,12 +138,17 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
         // The first 3 variables are reserved on the CUDA backend
         n_regs = 4;
-    } else {
+    }
+#endif
+
+#if defined(DRJIT_ENABLE_LLVM)
+    if (backend == JitBackend::LLVM) {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
         for (int i = 0; i < 3; ++i)
             kernel_params.push_back(nullptr);
         n_regs = 1;
     }
+#endif
 
     (void) timer();
 
@@ -177,15 +182,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             size_t isize = (size_t) type_size[v->type],
                    dsize = (size_t) group.size * isize;
 
-            // Padding to support out-of-bounds accesses in LLVM gather operations
-            if (backend == JitBackend::LLVM && isize < 4)
-                dsize += 4 - isize;
-
-            sv.data = jitc_malloc(
-                backend == JitBackend::CUDA ? AllocType::Device
-                                            : AllocType::HostAsync,
-                dsize); // Note: unsafe to access 'v' after jitc_malloc().
-
+            // Note: unsafe to access 'v' after jitc_malloc()!
+            sv.data = jitc_malloc(backend, dsize);
             kernel_params.push_back(sv.data);
         } else if (v->is_literal() && (VarType) v->type == VarType::Pointer) {
             n_params_in++;
@@ -195,10 +193,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             n_side_effects += v->side_effect;
             v->param_type = ParamType::Register;
             v->param_offset = 0xFFFF;
-
-            #if defined(DRJIT_ENABLE_OPTIX)
-                uses_optix |= v->optix;
-            #endif
+            uses_rt |= v->rt;
         }
     }
 
@@ -221,10 +216,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     // Pass parameters through global memory if too large or using OptiX
     if (backend == JitBackend::CUDA &&
-        (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT)) {
+        (uses_rt || kernel_param_count > DRJIT_CUDA_ARG_LIMIT)) {
         size_t size = kernel_param_count * sizeof(void *);
-        uint8_t *tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, size);
-        kernel_params_global = (uint8_t *) jitc_malloc(AllocType::Device, size);
+        uint8_t *tmp = (uint8_t *) jitc_malloc_shared(backend, size);
+        kernel_params_global = (uint8_t *) jitc_malloc(backend, size);
         memcpy(tmp, kernel_params.data(), size);
         jitc_memcpy_async(backend, kernel_params_global, tmp, size);
         jitc_free(tmp);
@@ -275,7 +270,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     size_t hash_offset = strchr(buffer.get(), '^') - buffer.get(),
            end_offset = buffer.size(),
-           prefix_len = uses_optix ? 10 : 6;
+           prefix_len = uses_rt ? 10 : 6;
 
     buffer.rewind_to(hash_offset);
     buffer.put_q64_unchecked(kernel_hash.high64);
@@ -296,13 +291,13 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         jitc_log(
             Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, se=%u, ops=%u, jit=%s):",
             (unsigned long long) kernel_hash.high64,
-            uses_optix ? "via OptiX, " : "", group.size, n_params_in,
+            uses_rt ? "rt, " : "", group.size, n_params_in,
             n_params_out, n_side_effects, n_ops_total, jitc_time_string(codegen_time));
     else
         jitc_log(
             Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, ops=%u, jit=%s):",
             (unsigned long long) kernel_hash.high64,
-            uses_optix ? "via OptiX, " : "", group.size, n_params_in,
+            uses_rt ? "rt, " : "", group.size, n_params_in,
             n_params_out, n_ops_total, jitc_time_string(codegen_time));
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
@@ -312,7 +307,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_history_entry.hash[1] = kernel_hash.high64;
         kernel_history_entry.ir = (char *) malloc_check(buffer.size() + 1);
         memcpy(kernel_history_entry.ir, buffer.get(), buffer.size() + 1);
-        kernel_history_entry.uses_optix = uses_optix;
+        kernel_history_entry.uses_rt = uses_rt;
         kernel_history_entry.size = group.size;
         kernel_history_entry.input_count = n_params_in;
         kernel_history_entry.output_count = n_params_out + n_side_effects;
@@ -325,19 +320,7 @@ static ProfilerRegion profiler_region_backend_compile("jit_eval: compiling");
 static ProfilerRegion profiler_region_backend_load("jit_eval: loading");
 
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
-    uint64_t flags = 0;
-
-#if defined(DRJIT_ENABLE_OPTIX)
-    if (uses_optix) {
-        const OptixPipelineCompileOptions &pco = ts->optix_pipeline->compile_options;
-        flags =
-            ((uint64_t) pco.numAttributeValues << 0)      + // 4 bit
-            ((uint64_t) pco.numPayloadValues   << 4)      + // 4 bit
-            ((uint64_t) pco.usesMotionBlur     << 8)      + // 1 bit
-            ((uint64_t) pco.traversableGraphFlags  << 9)  + // 16 bit
-            ((uint64_t) pco.usesPrimitiveTypeFlags << 25);  // 32 bit
-    }
-#endif
+    uint64_t flags = ts->kernel_flags();
 
     KernelKey kernel_key((char *) buffer.get(), ts->device, flags);
     auto it = state.kernel_cache.find(
@@ -349,75 +332,22 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     if (it == state.kernel_cache.end()) {
         bool cache_hit = false;
 
-        if (!uses_optix)
+        if (!uses_rt)
             cache_hit = jitc_kernel_load(buffer.get(), (uint32_t) buffer.size(),
                                          ts->backend, kernel_hash, kernel);
 
         if (!cache_hit) {
-            ProfilerPhase profiler(profiler_region_backend_compile);
-            if (ts->backend == JitBackend::CUDA) {
-                if (!uses_optix) {
-                    jitc_cuda_compile(buffer.get(), buffer.size(), kernel);
-                } else {
-#if defined(DRJIT_ENABLE_OPTIX)
-                    cache_hit = jitc_optix_compile(
-                        ts, buffer.get(), buffer.size(), kernel_name, kernel);
-#else
-                    jitc_fail("jit_run(): OptiX support was not enabled in DrJit.");
-#endif
-                }
-            } else {
-                jitc_llvm_compile(kernel);
+            /* Compile the kernel and keep track of the time spent */ {
+                ProfilerPhase profiler(profiler_region_backend_compile);
+                cache_hit = ts->compile(buffer.get(), buffer.size(), kernel_name, kernel);
             }
 
             if (kernel.data)
                 jitc_kernel_write(buffer.get(), (uint32_t) buffer.size(),
                                   ts->backend, kernel_hash, kernel);
-        }
-
-        ProfilerPhase profiler(profiler_region_backend_load);
-
-        if (ts->backend == JitBackend::LLVM) {
-            jitc_llvm_disasm(kernel);
-        } else if (!uses_optix) {
-            CUresult ret = (CUresult) 0;
-            /* Unlock while synchronizing */ {
-                unlock_guard guard(state.lock);
-                ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
-            }
-            if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
-                jitc_flush_malloc_cache(true);
-                /* Unlock while synchronizing */ {
-                    unlock_guard guard(state.lock);
-                    ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
-                }
-            }
-            cuda_check(ret);
-
-            // Locate the kernel entry point
-            size_t offset = buffer.size();
-            buffer.fmt_cuda(2, "drjit_$Q$Q", kernel_hash.high64,
-                            kernel_hash.low64);
-            cuda_check(cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod,
-                                           buffer.get() + offset));
-            buffer.rewind_to(offset);
-
-            // Determine a suitable thread count to maximize occupancy
-            int unused, block_size;
-            cuda_check(cuOccupancyMaxPotentialBlockSize(
-                &unused, &block_size,
-                kernel.cuda.func, nullptr, 0, 0));
-            kernel.cuda.block_size = (uint32_t) block_size;
-
-            // DrJit doesn't use shared memory at all, prefer to have more L1 cache.
-            cuda_check(cuFuncSetAttribute(
-                kernel.cuda.func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 0));
-            cuda_check(cuFuncSetAttribute(
-                kernel.cuda.func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
-                CU_SHAREDMEM_CARVEOUT_MAX_L1));
-
-            free(kernel.data);
-            kernel.data = nullptr;
+        } else {
+            ProfilerPhase profiler(profiler_region_backend_load);
+            ts->load(kernel, kernel_name);
         }
 
         float link_time = timer();
@@ -460,12 +390,12 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     Task* ret_task = nullptr;
     if (ts->backend == JitBackend::CUDA) {
 #if defined(DRJIT_ENABLE_OPTIX)
-        if (unlikely(uses_optix))
+        if (unlikely(uses_rt))
             jitc_optix_launch(ts, kernel, group.size, kernel_params_global,
                               kernel_param_count);
 #endif
 
-        if (!uses_optix) {
+        if (!uses_rt) {
             size_t buffer_size = kernel_params.size() * sizeof(void *);
 
             void *config[] = {
@@ -648,7 +578,6 @@ void jitc_eval(ThreadState *ts) {
             schedule_groups.size(),
             schedule_groups.size() == 1 ? "" : "s");
 
-    scoped_set_context_maybe guard2(ts->context);
     scheduled_tasks.clear();
 
     for (ScheduledGroup &group : schedule_groups) {

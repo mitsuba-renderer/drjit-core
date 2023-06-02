@@ -1,9 +1,11 @@
-#include "internal.h"
+#include "core.h"
 #include "var.h"
 #include "log.h"
 #include "eval.h"
 #include "op.h"
 #include "profiler.h"
+#include "state.h"
+#include "thread_state.h"
 #include <tsl/robin_set.h>
 
 struct Loop {

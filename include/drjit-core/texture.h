@@ -1,7 +1,7 @@
 /*
     drjit-core/texture.h -- creating and querying of 1D/2D/3D textures on CUDA
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.

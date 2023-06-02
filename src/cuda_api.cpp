@@ -1,7 +1,7 @@
 /*
     src/cuda_api.cpp -- Low-level interface to CUDA driver API
 
-    Copyright (c) 2022 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -11,7 +11,7 @@
 
 #include "cuda_api.h"
 #include "log.h"
-#include "internal.h"
+#include "core.h"
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -199,3 +199,14 @@ void *jitc_cuda_lookup(const char *name) {
     return ptr;
 }
 #endif
+
+void cuda_check_impl(CUresult errval, const char *file, const int line) {
+    if (unlikely(errval != CUDA_SUCCESS && errval != CUDA_ERROR_DEINITIALIZED)) {
+        const char *name = nullptr, *msg = nullptr;
+        cuGetErrorName(errval, &name);
+        cuGetErrorString(errval, &msg);
+        jitc_fail("cuda_check(): API error %04i (%s): \"%s\" in "
+                  "%s:%i.", (int) errval, name, msg, file, line);
+    }
+}
+

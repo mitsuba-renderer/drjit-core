@@ -1,5 +1,5 @@
 #include "cuda_tex.h"
-#include "internal.h"
+#include "core.h"
 #include "log.h"
 #include "var.h"
 #include "op.h"

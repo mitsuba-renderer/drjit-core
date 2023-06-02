@@ -1,6 +1,6 @@
 #include "llvm_memmgr.h"
 #include "eval.h"
-#include "internal.h"
+#include "core.h"
 #include "log.h"
 
 static uint32_t jitc_llvm_patch_loc = 0;

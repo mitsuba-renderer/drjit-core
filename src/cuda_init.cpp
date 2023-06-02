@@ -36,58 +36,14 @@ CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                 [(int) VarType::Count] = { };
 CUfunction *jitc_cuda_vcall_prepare = nullptr;
 
-void jitc_cuda_compile(const char *buf, size_t buf_size, Kernel &kernel) {
-    const uintptr_t log_size = 16384;
-    char error_log[log_size], info_log[log_size];
-
-    CUjit_option arg[] = {
-        CU_JIT_OPTIMIZATION_LEVEL,
-        CU_JIT_LOG_VERBOSE,
-        CU_JIT_INFO_LOG_BUFFER,
-        CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
-        CU_JIT_ERROR_LOG_BUFFER,
-        CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES,
-        CU_JIT_GENERATE_LINE_INFO,
-        CU_JIT_GENERATE_DEBUG_INFO
-    };
-
-    void *argv[] = {
-        (void *) 4,
-        (void *) 1,
-        (void *) info_log,
-        (void *) log_size,
-        (void *) error_log,
-        (void *) log_size,
-        (void *) 0,
-        (void *) 0
-    };
-
-    CUlinkState link_state;
-    cuda_check(cuLinkCreate(sizeof(argv) / sizeof(void *), arg, argv, &link_state));
-
-    int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buf,
-                           buf_size, nullptr, 0, nullptr, nullptr);
-    if (rt != CUDA_SUCCESS)
-        jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
-                  "assembly listing and error message below:\n\n%s\n\n%s",
-                  buf, error_log);
-
-    void *link_output = nullptr;
-    size_t link_output_size = 0;
-    cuda_check(cuLinkComplete(link_state, &link_output, &link_output_size));
-    if (rt != CUDA_SUCCESS)
-        jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
-                  "assembly listing and error message below:\n\n%s\n\n%s",
-                  buf, error_log);
-
-    jitc_trace("Detailed linker output:\n%s", info_log);
-
-    kernel.data = malloc_check(link_output_size);
-    kernel.size = (uint32_t) link_output_size;
-    memcpy(kernel.data, link_output, link_output_size);
-
-    // Destroy the linker invocation
-    cuda_check(cuLinkDestroy(link_state));
+void cuda_check_impl(CUresult errval, const char *file, const int line) {
+    if (unlikely(errval != CUDA_SUCCESS && errval != CUDA_ERROR_DEINITIALIZED)) {
+        const char *name = nullptr, *msg = nullptr;
+        cuGetErrorName(errval, &name);
+        cuGetErrorString(errval, &msg);
+        jitc_fail("cuda_check(): API error %04i (%s): \"%s\" in "
+                  "%s:%i.", (int) errval, name, msg, file, line);
+    }
 }
 
 bool jitc_cuda_init() {
@@ -420,35 +376,4 @@ void* jitc_cuda_pop_context() {
     CUcontext out;
     cuda_check(cuCtxPopCurrent(&out));
     return out;
-}
-
-void jitc_cuda_kernel_free(int device_id, const Kernel &kernel) {
-    const Device &device = state.devices.at(device_id);
-    scoped_set_context guard(device.context);
-
-    if (kernel.size) {
-        cuda_check(cuModuleUnload(kernel.cuda.mod));
-        free(kernel.data);
-    } else {
-#if defined(DRJIT_ENABLE_OPTIX)
-        jitc_optix_kernel_free(kernel);
-#endif
-    }
-}
-
-void jitc_cuda_free(int device, bool shared, void *ptr) {
-    const Device &device = state.devices[device];
-    scoped_set_context guard(device.context);
-    CUresult rv;
-
-    if (!shared) {
-        if (device.memory_pool)
-            rv = cuMemFreeAsync((CUdeviceptr) ptr, dev.stream);
-        else
-            rv = cuMemFree((CUdeviceptr) ptr);
-    } else {
-        rv = cuMemFreeHost(ptr);
-    }
-
-    cuda_check(rv);
 }

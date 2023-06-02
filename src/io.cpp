@@ -1,24 +1,22 @@
 /*
-    src/io.cpp -- Disk cache for LLVM/CUDA kernels
+    src/io.cpp -- Disk cache for kernel files
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 */
 
+#include "../resources/kernels.h"
 #include "io.h"
 #include "log.h"
-#include "internal.h"
 #include "profiler.h"
-#include "cuda.h"
-#include "optix.h"
-#include "../resources/kernels.h"
-#include <stdexcept>
-#include <stdio.h>
+#include "backends.h"
+#include "state.h"
+#include <lz4.h>
+
 #include <fcntl.h>
 #include <errno.h>
-#include <lz4.h>
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -47,6 +45,16 @@ struct CacheFileHeader {
 char jitc_lz4_dict[jitc_lz4_dict_size];
 static bool jitc_lz4_dict_ready = false;
 
+static const char *backend_name[(int) JitBackend::Count] {
+    "none", "llvm", "cuda", "metal"
+};
+
+#if defined(_WIN32)
+static const wchar_t *backend_name_w[(int) JitBackend::Count] {
+    L"none", L"llvm", L"cuda", L"metal"
+};
+#endif
+
 void jitc_lz4_init() {
     if (jitc_lz4_dict_ready)
         return;
@@ -70,9 +78,9 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 #if !defined(_WIN32)
     char filename[512];
     if (unlikely(snprintf(filename, sizeof(filename), "%s/%016llx%016llx.%s.bin",
-                          jitc_temp_path, (unsigned long long) hash.high64,
+                          state.temp_path, (unsigned long long) hash.high64,
                           (unsigned long long) hash.low64,
-                          backend == JitBackend::CUDA ? "cuda" : "llvm") < 0))
+                          backend_name[(int) backend]) < 0))
         jitc_fail("jit_kernel_load(): scratch space for filename insufficient!");
 
     int fd = open(filename, O_RDONLY);
@@ -86,10 +94,10 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
                 if (errno == EINTR) {
                     continue;
                 } else {
-                    jitc_raise("jit_kernel_load(): I/O error while while "
-                              "reading compiled kernel from cache "
-                              "file \"%s\": %s",
-                              filename, strerror(errno));
+                    jitc_raise(
+                        "jit_kernel_load(): I/O error while while reading "
+                        "compiled kernel from cache file \"%s\": %s",
+                        filename, strerror(errno));
                 }
             }
             data += n_read;
@@ -102,9 +110,9 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 
     int rv = _snwprintf(filename_w, sizeof(filename_w) / sizeof(wchar_t),
                         L"%s\\%016llx%016llx.%s.bin",
-                        jitc_temp_path, (unsigned long long) hash.high64,
+                        state.temp_path, (unsigned long long) hash.high64,
                         (unsigned long long) hash.low64,
-                        backend == JitBackend::CUDA ? L"cuda" : L"llvm");
+                        backend_name_w[(int) backend]);
 
     if (rv < 0 || rv == sizeof(filename) ||
         wcstombs(filename, filename_w, sizeof(filename)) == sizeof(filename))
@@ -121,9 +129,9 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
         while (data_size > 0) {
             DWORD n_read = 0;
             if (!ReadFile(fd, data, (DWORD) data_size, &n_read, nullptr) || n_read == 0)
-                jitc_raise("jit_kernel_load(): I/O error while while "
-                           "reading compiled kernel from cache "
-                           "file \"%s\": %u", filename, GetLastError());
+                jitc_raise("jit_kernel_load(): I/O error while while reading "
+                           "compiled kernel from cache file \"%s\": %u",
+                           filename, GetLastError());
 
             data += n_read;
             data_size -= n_read;
@@ -182,26 +190,40 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
     if (success) {
         jitc_log(Trace, "jit_kernel_load(\"%s\")", filename);
         kernel.size = header.kernel_size;
+
+#if defined(DRJIT_ENABLE_LLVM)
         if (backend == JitBackend::CUDA) {
             kernel.data = malloc_check(header.kernel_size);
             memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
-        } else {
+        }
+#endif
+
+#if defined(DRJIT_ENABLE_LLVM)
+        if (backend == JitBackend::LLVM) {
 #if !defined(_WIN32)
-            kernel.data = mmap(nullptr, header.kernel_size, PROT_READ | PROT_WRITE,
-                               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            kernel.data =
+                mmap(nullptr, header.kernel_size, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (kernel.data == MAP_FAILED)
                 jitc_fail("jit_llvm_load(): could not mmap() memory: %s",
-                         strerror(errno));
-
-            memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
+                          strerror(errno));
+            memcpy(kernel.data, uncompressed_data + source_size,
+                   header.kernel_size);
 #else
-            kernel.data = VirtualAlloc(nullptr, header.kernel_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            kernel.data =
+                VirtualAlloc(nullptr, header.kernel_size,
+                             MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
             if (!kernel.data)
-                jitc_fail("jit_llvm_load(): could not VirtualAlloc() memory: %u", GetLastError());
-            memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
+                jitc_fail(
+                    "jit_llvm_load(): could not VirtualAlloc() memory: %u",
+                    GetLastError());
+            memcpy(kernel.data, uncompressed_data + source_size,
+                   header.kernel_size);
 
 #endif
-            uintptr_t *reloc = (uintptr_t *) (uncompressed_data + header.source_size + header.kernel_size);
+            uintptr_t *reloc =
+                (uintptr_t *) (uncompressed_data + header.source_size +
+                               header.kernel_size);
             kernel.llvm.n_reloc = header.reloc_size / sizeof(void *);
             kernel.llvm.reloc = (void **) malloc(header.reloc_size);
             for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
@@ -228,6 +250,13 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
             kernel.llvm.itt = __itt_string_handle_create(name);
 #endif
         }
+#endif // DRJIT_ENABLE_LLVM
+
+#if defined(DRJIT_ENABLE_METAL)
+        if (backend == JitBackend::Metal) {
+            /// ...
+        }
+#endif
     }
 
     free(compressed);
@@ -250,9 +279,9 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
 #if !defined(_WIN32)
     char filename[512], filename_tmp[512];
     if (unlikely(snprintf(filename, sizeof(filename), "%s/%016llx%016llx.%s.bin",
-                          jitc_temp_path, (unsigned long long) hash.high64,
+                          state.temp_path, (unsigned long long) hash.high64,
                           (unsigned long long) hash.low64,
-                          backend == JitBackend::CUDA ? "cuda" : "llvm") < 0))
+                          backend_name[(int) backend]) < 0))
         jitc_fail("jit_kernel_write(): scratch space for filename insufficient!");
 
     if (unlikely(snprintf(filename_tmp, sizeof(filename_tmp), "%s.tmp",
@@ -291,9 +320,9 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
 
     int rv = _snwprintf(filename_w, sizeof(filename_w) / sizeof(wchar_t),
                         L"%s\\%016llx%016llx.%s.bin",
-                        jitc_temp_path, (unsigned long long) hash.high64,
+                        state.temp_path, (unsigned long long) hash.high64,
                         (unsigned long long) hash.low64,
-                        backend == JitBackend::CUDA ? L"cuda" : L"llvm");
+                        backend_name_w[(int) backend]);
 
     if (rv < 0 || rv == sizeof(filename) ||
         wcstombs(filename, filename_w, sizeof(filename)) == sizeof(filename))
@@ -338,8 +367,10 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     header.kernel_size = kernel.size;
     header.reloc_size = 0;
 
+#if defined(DRJIT_ENABLE_LLVM)
     if (backend == JitBackend::LLVM)
         header.reloc_size = kernel.llvm.n_reloc * sizeof(void *);
+#endif
 
     uint32_t in_size =
                  header.source_size + header.kernel_size + header.reloc_size,
@@ -351,11 +382,13 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     memcpy(temp_in, source, header.source_size);
     memcpy(temp_in + source_size, kernel.data, header.kernel_size);
 
+#if defined(DRJIT_ENABLE_LLVM)
     if (backend == JitBackend::LLVM) {
         uintptr_t *reloc_out = (uintptr_t *) (temp_in + header.source_size + header.kernel_size);
         for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
             reloc_out[i] = (uintptr_t) kernel.llvm.reloc[i] - (uintptr_t) kernel.data;
     }
+#endif
 
     LZ4_stream_t stream;
     memset(&stream, 0, sizeof(LZ4_stream_t));
@@ -413,7 +446,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     snprintf(filename, sizeof(filename), "%s/.drjit/%016llx%016llx.%s.trn",
              getenv("HOME"), (unsigned long long) hash.high64,
              (unsigned long long) hash.low64,
-             backend == JitBackend::CUDA ? "cuda" : "llvm");
+             backend_name[(int) backend]);
     fd = open(filename, O_CREAT | O_WRONLY, mode);
     if (fd) {
         write_retry(temp_in, in_size);
@@ -425,40 +458,4 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     free(temp_in);
 
     return success;
-}
-
-void jitc_kernel_free(int device_id, const Kernel &kernel) {
-    if (device_id == -1) {
-#if !defined(_WIN32)
-        if (munmap((void *) kernel.data, kernel.size) == -1)
-            jitc_fail("jit_kernel_free(): munmap() failed!");
-#else
-        if (VirtualFree((void*) kernel.data, 0, MEM_RELEASE) == 0)
-            jitc_fail("jit_kernel_free(): VirtualFree() failed!");
-#endif
-    } else {
-        const Device &device = state.devices.at(device_id);
-        if (kernel.size) {
-            scoped_set_context guard(device.context);
-            cuda_check(cuModuleUnload(kernel.cuda.mod));
-            free(kernel.data);
-        } else {
-#if defined(DRJIT_ENABLE_OPTIX)
-            jitc_optix_free(kernel);
-#endif
-        }
-    }
-}
-
-void jitc_flush_kernel_cache() {
-    jitc_log(Info, "jit_flush_kernel_cache(): releasing %zu kernel%s ..",
-            state.kernel_cache.size(),
-            state.kernel_cache.size() > 1 ? "s" : "");
-
-    for (auto &v : state.kernel_cache) {
-        jitc_kernel_free(v.first.device, v.second);
-        free(v.first.str);
-    }
-
-    state.kernel_cache.clear();
 }

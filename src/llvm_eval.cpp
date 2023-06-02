@@ -59,10 +59,12 @@
  */
 
 #include "eval.h"
-#include "internal.h"
+#include "core.h"
 #include "log.h"
 #include "var.h"
 #include "vcall.h"
+#include "state.h"
+#include "thread_state.h"
 #include "op.h"
 
 #define put(...)                                                               \

@@ -1,9 +1,9 @@
 #include <drjit-core/containers.h>
-#include "internal.h"
-#include "var.h"
+#include "state.h"
 #include "log.h"
 #include "eval.h"
 #include "op.h"
+#include "thread_state.h"
 
 template <bool Value> using enable_if_t = std::enable_if_t<Value, int>;
 
@@ -70,7 +70,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
          simplify = false,
          literal = true;
 
-    JitBackend backend = JitBackend::Invalid;
+    JitBackend backend = JitBackend::None;
     VarType type = VarType::Void;
     uint32_t size = 0;
     const char *err = nullptr;
@@ -130,7 +130,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
             }
         }
 
-        if (unlikely(backend != JitBackend::Invalid && (JitBackend) vi->backend != backend)) {
+        if (unlikely(backend != JitBackend::None && (JitBackend) vi->backend != backend)) {
             err = "operands have different backends";
             goto fail;
         }

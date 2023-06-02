@@ -1,7 +1,7 @@
 /*
     src/optix_api.cpp -- Low-level interface to OptiX API
 
-    Copyright (c) 2022 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -13,7 +13,7 @@
 
 #include "optix.h"
 #include "optix_api.h"
-#include "internal.h"
+#include "core.h"
 #include "log.h"
 
 #if defined(_WIN32)

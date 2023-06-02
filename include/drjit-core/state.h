@@ -5,7 +5,7 @@
     class used by Dr.Jit's loop/vcall recording code. It enables setting various
     attributes of the JIT compiler and recovering if an exception is thrown.
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.

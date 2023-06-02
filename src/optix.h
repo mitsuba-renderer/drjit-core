@@ -1,7 +1,7 @@
 /*
     src/optix.h -- Low-level interface to OptiX
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -52,7 +52,7 @@ extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
                                Kernel &kernel);
 
 /// Free a compiled OptiX kernel
-extern void jitc_optix_free(const Kernel &kernel);
+extern void jitc_optix_kernel_free(const Kernel &kernel);
 
 /// Perform an OptiX kernel launch
 extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,

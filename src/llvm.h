@@ -1,7 +1,7 @@
 /*
     src/llvm.h -- LLVM backend functionality
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -9,9 +9,7 @@
 
 #pragma once
 
-#include <stdlib.h>
-#include <stdint.h>
-#include <vector>
+#include "core.h"
 
 // Forward declarations
 struct Task;
@@ -90,3 +88,8 @@ extern void jitc_llvm_set_target(const char *target_cpu,
 /// Insert a ray tracing function call into the LLVM program
 extern void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
                                 const uint32_t *in, uint32_t *out);
+
+/// Initialize a per-thread state (requires that the backend is initialized)
+extern ThreadState *jitc_llvm_thread_state_new();
+
+extern void jitc_llvm_kernel_free(const Kernel &kernel);

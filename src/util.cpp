@@ -1,14 +1,14 @@
 /*
     src/util.cpp -- Parallel reductions and miscellaneous utility routines.
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 */
 
 #include <condition_variable>
-#include "internal.h"
+#include "core.h"
 #include "util.h"
 #include "var.h"
 #include "eval.h"
@@ -22,77 +22,6 @@
 
 const char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
                                                       "min", "max", "and", "or" };
-
-/// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
-template <typename Func>
-void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
-                     uint32_t size = 1, bool release_prev = true,
-                     bool always_async = false) {
-
-    struct Payload { Func f; };
-    Payload payload{ std::forward<Func>(func) };
-
-    static_assert(std::is_trivially_copyable<Payload>::value &&
-                  std::is_trivially_destructible<Payload>::value, "Internal error!");
-
-    Task *new_task = task_submit_dep(
-        nullptr, &jitc_task, 1, size,
-        [](uint32_t index, void *payload) { ((Payload *) payload)->f(index); },
-        &payload, sizeof(Payload), nullptr, (int) always_async);
-
-    if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
-        task_wait(new_task);
-
-    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
-        KernelHistoryEntry entry = {};
-        entry.backend = JitBackend::LLVM;
-        entry.type = type;
-        entry.size = width;
-        entry.input_count = 1;
-        entry.output_count = 1;
-        task_retain(new_task);
-        entry.task = new_task;
-        state.kernel_history.append(entry);
-    }
-
-    if (release_prev)
-        task_release(jitc_task);
-
-    jitc_task = new_task;
-}
-
-void jitc_submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
-                     uint32_t thread_count, uint32_t shared_mem_bytes,
-                     CUstream stream, void **args, void **extra,
-                     uint32_t width) {
-
-    KernelHistoryEntry entry = {};
-
-    uint32_t flags = jit_flags();
-
-    if (unlikely(flags & (uint32_t) JitFlag::KernelHistory)) {
-        cuda_check(cuEventCreate((CUevent *) &entry.event_start, CU_EVENT_DEFAULT));
-        cuda_check(cuEventCreate((CUevent *) &entry.event_end, CU_EVENT_DEFAULT));
-        cuda_check(cuEventRecord((CUevent) entry.event_start, stream));
-    }
-
-    cuda_check(cuLaunchKernel(kernel, block_count, 1, 1, thread_count, 1, 1,
-                              shared_mem_bytes, stream, args, extra));
-
-    if (unlikely(flags & (uint32_t) JitFlag::LaunchBlocking))
-        cuda_check(cuStreamSynchronize(stream));
-
-    if (unlikely(flags & (uint32_t) JitFlag::KernelHistory)) {
-        entry.backend = JitBackend::CUDA;
-        entry.type = type;
-        entry.size = width;
-        entry.input_count = 1;
-        entry.output_count = 1;
-        cuda_check(cuEventRecord((CUevent) entry.event_end, stream));
-
-        state.kernel_history.append(entry);
-    }
-}
 
 /// Fill a device memory region with constants of a given type
 void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size_,
@@ -192,39 +121,25 @@ void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size_,
     }
 }
 
-/// Perform a synchronous copy operation
-void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size) {
-    ThreadState *ts = thread_state(backend);
 
-    // Temporarily release the lock while copying
-    unlock_guard guard(state.lock);
-    if (backend == JitBackend::CUDA) {
-        scoped_set_context guard_2(ts->context);
-        cuda_check(cuStreamSynchronize(ts->stream));
-        cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
-    } else {
-        jitc_sync_thread(ts);
-        memcpy(dst, src, size);
-    }
-}
 
 /// Perform an asynchronous copy operation
 void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t size) {
-    ThreadState *ts = thread_state(backend);
+    if (backend == JitBackend::None)
+        memcpy(dst, src, size);
+    else
+        thread_state(backend)->enqueue_memcpy(dst, src, size);
+}
 
-    if (backend == JitBackend::CUDA) {
-        scoped_set_context guard(ts->context);
-        cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
-                                 ts->stream));
+/// Perform an synchronous copy operation. Temporarily unlocks the JIT mutex
+void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size) {
+    if (backend == JitBackend::None) {
+        unlock_guard guard(state.lock);
+        memcpy(dst, src, size);
     } else {
-        jitc_submit_cpu(
-            KernelType::Other,
-            [dst, src, size](uint32_t) {
-                memcpy(dst, src, size);
-            },
-
-            (uint32_t) size
-        );
+        ThreadState *ts = thread_state(backend);
+        ts->enqueue_memcpy(dst, src, size);
+        ts->sync();
     }
 }
 
@@ -1224,44 +1139,6 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
         );
     }
 }
-
-/// Asynchronously update a single element in memory
-void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size) {
-    jitc_log(Debug, "jit_poke(" DRJIT_PTR ", size=%u)", (uintptr_t) dst, size);
-
-    VarType type;
-    switch (size) {
-        case 1: type = VarType::UInt8; break;
-        case 2: type = VarType::UInt16; break;
-        case 4: type = VarType::UInt32; break;
-        case 8: type = VarType::UInt64; break;
-        default:
-            jitc_raise("jit_poke(): only size=1, 2, 4 or 8 are supported!");
-    }
-
-    ThreadState *ts = thread_state(backend);
-    if (backend == JitBackend::CUDA) {
-        scoped_set_context guard(ts->context);
-        const Device &device = state.devices[ts->device];
-        CUfunction func = jitc_cuda_poke[(int) type][device.id];
-        void *args[] = { &dst, (void *) src };
-        jitc_submit_gpu(KernelType::Other, func, 1, 1, 0,
-                        ts->stream, args, nullptr, 1);
-    } else {
-        uint8_t src8[8] { };
-        memcpy(&src8, src, size);
-
-        jitc_submit_cpu(
-            KernelType::Other,
-            [src8, size, dst](uint32_t) {
-                memcpy(dst, &src8, size);
-            },
-
-            size
-        );
-    }
-}
-
 
 void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, uint32_t size) {
     ThreadState *ts = thread_state(backend);

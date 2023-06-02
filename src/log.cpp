@@ -1,7 +1,7 @@
 /*
     src/log.cpp -- Logging, log levels, assertions, string-related code.
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
@@ -10,7 +10,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <ctime>
-#include "internal.h"
+#include "state.h"
 #include "log.h"
 #include "strbuf.h"
 

@@ -1,30 +1,34 @@
 /*
     src/api.cpp -- C -> C++ API locking wrappers
 
-    Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
+    Copyright (c) 2023 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 */
 
-#include "internal.h"
+#include "core.h"
 #include "var.h"
 #include "eval.h"
 #include "log.h"
 #include "util.h"
 #include "registry.h"
 #include "llvm.h"
-#include "cuda_tex.h"
 #include "op.h"
 #include "vcall.h"
 #include "loop.h"
+#include "state.h"
 #include <thread>
 #include <condition_variable>
 #include <drjit-core/texture.h>
 
+#if defined(DRJIT_ENABLE_CUDA)
+#  include "cuda_tex.h"
+#endif
+
 #if defined(DRJIT_ENABLE_OPTIX)
-#include <drjit-core/optix.h>
-#include "optix.h"
+#  include <drjit-core/optix.h>
+#  include "optix.h"
 #endif
 
 #include <nanothread/nanothread.h>
@@ -205,6 +209,7 @@ void jit_record_end(JitBackend backend, uint32_t value) {
     }
 }
 
+#if defined(DRJIT_ENABLE_CUDA)
 void* jit_cuda_stream() {
     lock_guard guard(state.lock);
     return jitc_cuda_stream();
@@ -261,6 +266,7 @@ void *jit_cuda_lookup(const char *name) {
     lock_guard guard(state.lock);
     return jitc_cuda_lookup(name);
 }
+#endif
 
 void jit_llvm_set_thread_count(uint32_t size) {
     pool_set_size(nullptr, size);
@@ -322,6 +328,11 @@ void *jit_malloc(AllocType type, size_t size) {
     return jitc_malloc(type, size);
 }
 
+void *jit_malloc_shared(AllocType type, size_t size) {
+    lock_guard guard(state.lock);
+    return jitc_malloc_shared(type, size);
+}
+
 void jit_free(void *ptr) {
     lock_guard guard(state.lock);
     jitc_free(ptr);
@@ -337,24 +348,9 @@ void jit_malloc_clear_statistics() {
     jitc_malloc_clear_statistics();
 }
 
-enum AllocType jit_malloc_type(void *ptr) {
+void *jit_malloc_migrate(void *ptr, JitBackend backend, int move) {
     lock_guard guard(state.lock);
-    return jitc_malloc_type(ptr);
-}
-
-int jit_malloc_device(void *ptr) {
-    lock_guard guard(state.lock);
-    return jitc_malloc_device(ptr);
-}
-
-void *jit_malloc_migrate(void *ptr, AllocType type, int move) {
-    lock_guard guard(state.lock);
-    return jitc_malloc_migrate(ptr, type, move);
-}
-
-enum AllocType jit_var_alloc_type(uint32_t index) {
-    lock_guard guard(state.lock);
-    return jitc_var_alloc_type(index);
+    return jitc_malloc_migrate(ptr, backend, move);
 }
 
 int jit_var_device(uint32_t index) {
@@ -365,7 +361,7 @@ int jit_var_device(uint32_t index) {
 }
 
 uint32_t jit_var_literal(JitBackend backend, VarType type, const void *value,
-                             size_t size, int eval, int is_class) {
+                         size_t size, int eval, int is_class) {
     lock_guard guard(state.lock);
     return jitc_var_literal(backend, type, value, size, eval, is_class);
 }
@@ -524,10 +520,10 @@ uint32_t jit_var_mem_map(JitBackend backend, VarType type, void *ptr, size_t siz
     return jitc_var_mem_map(backend, type, ptr, size, free);
 }
 
-uint32_t jit_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
-                          const void *value, size_t size) {
+uint32_t jit_var_mem_copy(JitBackend backend, VarType type, bool on_device,
+                          const void *ptr, size_t size) {
     lock_guard guard(state.lock);
-    return jitc_var_mem_copy(backend, atype, vtype, value, size);
+    return jitc_var_mem_copy(backend, type, on_device, ptr, size);
 }
 
 uint32_t jit_var_copy(uint32_t index) {
@@ -848,12 +844,7 @@ void jit_optix_ray_trace(uint32_t nargs, uint32_t *args, uint32_t mask,
 
 #endif
 
-void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
-                        const uint32_t *in, uint32_t *out) {
-    lock_guard guard(state.lock);
-    jitc_llvm_ray_trace(func, scene, shadow_ray, in, out);
-}
-
+#if defined(DRJIT_ENABLE_CUDA)
 void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                           int filter_mode, int wrap_mode) {
     lock_guard guard(state.lock);
@@ -893,6 +884,13 @@ void jit_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
 void jit_cuda_tex_destroy(void *texture) {
     lock_guard guard(state.lock);
     jitc_cuda_tex_destroy(texture);
+}
+#endif
+
+void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
+                        const uint32_t *in, uint32_t *out) {
+    lock_guard guard(state.lock);
+    jitc_llvm_ray_trace(func, scene, shadow_ray, in, out);
 }
 
 uint32_t jit_var_neg(uint32_t a0) {
