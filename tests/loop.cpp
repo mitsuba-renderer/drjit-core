@@ -317,3 +317,33 @@ TEST_BOTH(09_optim_cond) {
             jit_assert(jit_var_is_literal(l.index()));
     }
 }
+
+TEST_BOTH(10_eval_side_effect_in_loop) {
+    // Loop depends needs to access a dirty variable
+
+    for (uint32_t i = 0; i < 3; ++i) {
+        jit_set_flag(JitFlag::LoopRecord, i != 0);
+        jit_set_flag(JitFlag::LoopOptimize, i == 2);
+
+        UInt32 j = arange<UInt32>(3); // [0, 1, 2]
+
+        UInt32 k = full<UInt32>(3, 3);
+        scatter(k, full<UInt32>(4, 2), arange<UInt32>(2)); // [4, 4, 3]
+        // k is a dirty variable
+
+        Loop<Mask> loop("Outer", j);
+
+        bool first_iteration = false;
+        while (loop(j < 10)) {
+            if (first_iteration) {
+                jit_assert(!jit_var_is_evaluated(k.index()));
+                first_iteration = false;
+            }
+
+            j += k; // Needs to evaluate k
+            jit_assert(jit_var_is_evaluated(k.index()));
+        }
+
+        jit_assert(strcmp(j.str(), "[12, 13, 11]") == 0);
+    }
+}
