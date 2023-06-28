@@ -1914,6 +1914,9 @@ extern JIT_EXPORT void jit_kernel_history_clear();
  */
 extern JIT_EXPORT struct KernelHistoryEntry *jit_kernel_history();
 
+/// Return the item size of a JIT variable type
+extern JIT_EXPORT size_t jit_type_size(JIT_ENUM VarType type) JIT_NOEXCEPT;
+
 #if defined(__cplusplus)
 }
 
