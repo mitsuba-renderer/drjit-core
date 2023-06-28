@@ -1116,3 +1116,7 @@ uint32_t jit_var_vcall_mask(JitBackend backend) {
     lock_guard guard(state.lock);
     return jitc_var_vcall_mask(backend);
 }
+
+size_t jit_type_size(VarType type) noexcept(true) {
+    return type_size[(int) type];
+}
