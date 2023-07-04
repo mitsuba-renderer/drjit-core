@@ -3,6 +3,7 @@
 #include "var.h"
 #include "log.h"
 #include "eval.h"
+#include "util.h"
 #include "op.h"
 
 #if defined(_MSC_VER)
@@ -1552,6 +1553,23 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
             result = jitc_var_and(tmp, mask);
             msg = ": elided (reindexed)";
         }
+    }
+
+    /// Perform a memcpy when this is a size-1 literal load
+    if (!result && var_info.size == 1 && var_info.literal) {
+        size_t size = type_size[(int) src_info.type];
+        AllocType atype = (JitBackend) src_info.backend == JitBackend::CUDA
+                              ? AllocType::Device
+                              : AllocType::HostAsync;
+
+        void *ptr = (uint8_t *) jitc_var_ptr(src) +
+                    size * jitc_var(index)->literal,
+             *ptr_out = jitc_malloc(atype, size);
+
+        jitc_memcpy_async(src_info.backend, ptr_out, ptr, size);
+
+        result = jitc_var_mem_map(src_info.backend, src_info.type, ptr_out, 1, 1);
+        msg = ": elided (memcpy)";
     }
 
     if (!result) {
