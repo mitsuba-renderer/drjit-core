@@ -4,7 +4,7 @@
     unique_ptr/vector/tuple are used by the Dr.Jit parent project and some test
     cases in this repository. Unfortunately, the std::... versions of these
     containers pull in ~800KB / 31K LOC of headers into *every compile unit*,
-    which is insane. This file satisifies all needs with < 5KB and 170 LOC.
+    which is insane. This file satisifies all needs with < 6KB and 210 LOC.
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -66,19 +66,31 @@ protected:
 
 template <typename T> struct dr_vector {
     dr_vector() = default;
-    dr_vector(const dr_vector &v)
-        : m_data(new T[v.m_size]), m_size(v.m_size), m_capacity(v.m_size) {
-        for (size_t i = 0; i < m_size; ++i)
-            m_data[i] = v.m_data[i];
-    }
-    dr_vector &operator=(const dr_vector &) = delete;
-    dr_vector(dr_vector &&) = default;
-    dr_vector &operator=(dr_vector &&) = default;
+    dr_vector(const dr_vector &v) { operator=(v); }
+    dr_vector(dr_vector &&v) { operator=(std::move(v)); }
+
     dr_vector(size_t size, const T &value)
         : m_data(new T[size]), m_size(size), m_capacity(size) {
         for (size_t i = 0; i < size; ++i)
             m_data[i] = value;
     }
+
+    dr_vector &operator=(const dr_vector &v) {
+        m_data = new T[v.m_size];
+        m_size = v.m_size;
+        m_capacity = v.m_size;
+        for (size_t i = 0; i < m_size; ++i)
+            m_data[i] = v.m_data[i];
+        return *this;
+    }
+    dr_vector &operator=(dr_vector &&v) {
+        m_data = std::move(v.m_data);
+        m_size = v.m_size;
+        m_capacity = v.m_capacity;
+        v.m_size = v.m_capacity = 0;
+        return *this;
+    }
+
     dr_vector(const T *start, const T *end) {
         m_size = m_capacity = end-start;
         m_data = new T[end - start];
@@ -92,18 +104,25 @@ template <typename T> struct dr_vector {
         m_data[m_size++] = value;
     }
 
+    void resize(size_t size) {
+        dr_unique_ptr<T[]> data_new(new T[size]);
+        size_t copy_size = m_size < size ? m_size : size;
+        for (size_t i = 0; i < copy_size; ++i)
+            data_new[i] = m_data[i];
+        m_data = std::move(data_new);
+        m_size = m_capacity = size;
+    }
+
     void clear() { m_size = 0; }
     size_t size() const { return m_size; }
     T *data() { return m_data.get(); }
     const T *data() const { return m_data.get(); }
+    bool empty() const { return m_size == 0; }
 
     void expand() {
-        size_t capacity_new = m_capacity == 0 ? 1 : (m_capacity * 2);
-        dr_unique_ptr<T[]> data_new(new T[capacity_new]);
-        for (size_t i = 0; i < m_size; ++i)
-            data_new[i] = m_data[i];
-        m_data = std::move(data_new);
-        m_capacity = capacity_new;
+        size_t size = m_size;
+        resize(m_capacity == 0 ? 1 : (m_capacity * 2));
+        m_size = size;
     }
 
     T &operator[](size_t i) { return m_data[i]; }
