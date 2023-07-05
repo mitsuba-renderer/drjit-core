@@ -1540,6 +1540,7 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
         Ref unused = borrow(src);
         Ref tmp = steal(jitc_var_resize(src, var_info.size));
         result = jitc_var_and(tmp, mask);
+        msg = ": elided (scalar source)";
     }
 
     // Don't perform the gather operation if the inputs are trivial / can be re-indexed
