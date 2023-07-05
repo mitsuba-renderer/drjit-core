@@ -343,9 +343,9 @@ bool jitc_cuda_init() {
         cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
 
         const uint32_t sm_table[][2] = { { 70, 60 }, { 72, 61 }, { 75, 63 }, { 80, 70 },
-                                         { 86, 71 }, { 87, 74 }, { 87, 74 }, { 90, 78 } };
+                                         { 86, 71 }, { 89, 78 }, { 90, 78 } };
         uint32_t cc_combined = cc_major * 10 + cc_minor;
-        for (int j = 0; j < 8; ++j) {
+        for (int j = 0; j < 7; ++j) {
             if (cc_combined >= sm_table[j][0]) {
                 device.compute_capability = sm_table[j][0];
                 device.ptx_version = sm_table[j][1];
