@@ -764,9 +764,11 @@ enum ParamType { Register, Input, Output };
 #if defined(_MSC_VER)
   extern __declspec(thread) ThreadState* thread_state_llvm;
   extern __declspec(thread) ThreadState* thread_state_cuda;
+  extern __declspec(thread) JitBackend default_backend;
 #else
   extern __thread ThreadState* thread_state_llvm;
   extern __thread ThreadState* thread_state_cuda;
+  extern __thread JitBackend default_backend;
 #endif
 
 extern ThreadState *jitc_init_thread_state(JitBackend backend);

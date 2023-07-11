@@ -100,7 +100,7 @@ extern uint32_t jitc_var_rcp(uint32_t a0);
 extern uint32_t jitc_var_rsqrt(uint32_t a0);
 
 // Multi-function generator (CUDA)
-extern uint32_t jitc_var_sin(uint32_t a0);
-extern uint32_t jitc_var_cos(uint32_t a0);
-extern uint32_t jitc_var_exp2(uint32_t a0);
-extern uint32_t jitc_var_log2(uint32_t a0);
+extern uint32_t jitc_var_sin_intrinsic(uint32_t a0);
+extern uint32_t jitc_var_cos_intrinsic(uint32_t a0);
+extern uint32_t jitc_var_exp2_intrinsic(uint32_t a0);
+extern uint32_t jitc_var_log2_intrinsic(uint32_t a0);

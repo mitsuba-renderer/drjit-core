@@ -468,7 +468,7 @@ Variable jitc_cuda_tex_check(size_t ndim, const uint32_t *pos) {
     // Validate input types, determine size of the operation
     uint32_t size = 0;
     bool dirty = false, placeholder = false;
-    JitBackend backend = JitBackend::Invalid;
+    JitBackend backend = JitBackend::None;
 
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_check(): invalid texture dimension!");

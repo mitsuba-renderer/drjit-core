@@ -75,7 +75,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
          simplify = false,
          literal = true;
 
-    JitBackend backend = JitBackend::Invalid;
+    JitBackend backend = JitBackend::None;
     VarType type = VarType::Void;
     uint32_t size = 0;
     const char *err = nullptr;
@@ -135,7 +135,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
             }
         }
 
-        if (unlikely(backend != JitBackend::Invalid && (JitBackend) vi->backend != backend)) {
+        if (unlikely(backend != JitBackend::None && (JitBackend) vi->backend != backend)) {
             err = "operands have different backends";
             goto fail;
         }
@@ -1257,7 +1257,7 @@ T eval_sin(T value) { return std::sin(value); }
 template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
 T eval_sin(T) { jitc_fail("eval_sin(): unsupported operands!"); }
 
-uint32_t jitc_var_sin(uint32_t a0) {
+uint32_t jitc_var_sin_intrinsic(uint32_t a0) {
     auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_sin", a0);
 
     uint32_t result = 0;
@@ -1268,7 +1268,7 @@ uint32_t jitc_var_sin(uint32_t a0) {
         result = jitc_var_new_node_1(info.backend, VarKind::Sin, info.type,
                                      info.size, info.placeholder, a0, v0);
 
-    jitc_log(Debug, "jit_var_sin(r%u <- r%u)", result, a0);
+    jitc_log(Debug, "jit_var_sin_intrinsic(r%u <- r%u)", result, a0);
     return result;
 }
 
@@ -1280,8 +1280,8 @@ T eval_cos(T value) { return std::cos(value); }
 template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
 T eval_cos(T) { jitc_fail("eval_cos(): unsupported operands!"); }
 
-uint32_t jitc_var_cos(uint32_t a0) {
-    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_cos", a0);
+uint32_t jitc_var_cos_intrinsic(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_cos_intrinsic", a0);
 
     uint32_t result = 0;
     if (info.simplify && info.literal)
@@ -1291,7 +1291,7 @@ uint32_t jitc_var_cos(uint32_t a0) {
         result = jitc_var_new_node_1(info.backend, VarKind::Cos, info.type,
                                      info.size, info.placeholder, a0, v0);
 
-    jitc_log(Debug, "jit_var_cos(r%u <- r%u)", result, a0);
+    jitc_log(Debug, "jit_var_cos_intrinsic(r%u <- r%u)", result, a0);
     return result;
 }
 
@@ -1303,8 +1303,8 @@ T eval_exp2(T value) { return std::exp2(value); }
 template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
 T eval_exp2(T) { jitc_fail("eval_exp2(): unsupported operands!"); }
 
-uint32_t jitc_var_exp2(uint32_t a0) {
-    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_exp2", a0);
+uint32_t jitc_var_exp2_intrinsic(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_exp2_intrinsic", a0);
 
     uint32_t result = 0;
     if (info.simplify && info.literal)
@@ -1314,7 +1314,7 @@ uint32_t jitc_var_exp2(uint32_t a0) {
         result = jitc_var_new_node_1(info.backend, VarKind::Exp2, info.type,
                                      info.size, info.placeholder, a0, v0);
 
-    jitc_log(Debug, "jit_var_exp2(r%u <- r%u)", result, a0);
+    jitc_log(Debug, "jit_var_exp2_intrinsic(r%u <- r%u)", result, a0);
     return result;
 }
 
@@ -1326,8 +1326,8 @@ T eval_log2(T value) { return std::log2(value); }
 template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
 T eval_log2(T) { jitc_fail("eval_log2(): unsupported operands!"); }
 
-uint32_t jitc_var_log2(uint32_t a0) {
-    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_log2", a0);
+uint32_t jitc_var_log2_intrinsic(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_log2_intrinsic", a0);
 
     uint32_t result = 0;
     if (info.simplify && info.literal)
@@ -1337,7 +1337,7 @@ uint32_t jitc_var_log2(uint32_t a0) {
         result = jitc_var_new_node_1(info.backend, VarKind::Log2, info.type,
                                      info.size, info.placeholder, a0, v0);
 
-    jitc_log(Debug, "jit_var_log2(r%u <- r%u)", result, a0);
+    jitc_log(Debug, "jit_var_log2_intrinsic(r%u <- r%u)", result, a0);
     return result;
 }
 
@@ -1919,10 +1919,10 @@ uint32_t jitc_var_op(JitOp op, const uint32_t *dep) {
         case JitOp::Ceil:   return jitc_var_ceil(dep[0]);
         case JitOp::Fma:    return jitc_var_fma(dep[0], dep[1], dep[2]);
         case JitOp::Select: return jitc_var_select(dep[0], dep[1], dep[2]);
-        case JitOp::Sin:    return jitc_var_sin(dep[0]);
-        case JitOp::Cos:    return jitc_var_cos(dep[0]);
-        case JitOp::Exp2:   return jitc_var_exp2(dep[0]);
-        case JitOp::Log2:   return jitc_var_log2(dep[0]);
+        case JitOp::Sin:    return jitc_var_sin_intrinsic(dep[0]);
+        case JitOp::Cos:    return jitc_var_cos_intrinsic(dep[0]);
+        case JitOp::Exp2:   return jitc_var_exp2_intrinsic(dep[0]);
+        case JitOp::Log2:   return jitc_var_log2_intrinsic(dep[0]);
         case JitOp::Eq:     return jitc_var_eq(dep[0], dep[1]);
         case JitOp::Neq:    return jitc_var_neq(dep[0], dep[1]);
         case JitOp::Lt:     return jitc_var_lt(dep[0], dep[1]);

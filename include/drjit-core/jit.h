@@ -82,7 +82,7 @@ extern "C" {
  */
 #if defined(__cplusplus)
 enum class JitBackend : uint32_t {
-    Invalid = 0,
+    None = 0,
 
     /// CUDA backend (requires CUDA >= 10, generates PTX instructions)
     CUDA = (1 << 0),
@@ -92,6 +92,7 @@ enum class JitBackend : uint32_t {
 };
 #else
 enum JitBackend {
+    JitBackendNone = 0,
     JitBackendCUDA = (1 << 0),
     JitBackendLLVM = (1 << 1)
 };
@@ -639,6 +640,19 @@ extern JIT_EXPORT uint32_t jit_var_literal(JIT_ENUM JitBackend backend,
                                            int eval JIT_DEF(0),
                                            int is_class JIT_DEF(0));
 
+
+// Short-hand versions for making scalar literals
+extern JIT_EXPORT uint32_t jit_var_u32(JitBackend backend, uint32_t value);
+extern JIT_EXPORT uint32_t jit_var_i32(JitBackend backend, int32_t value);
+
+extern JIT_EXPORT uint32_t jit_var_f32(JitBackend backend, float value);
+extern JIT_EXPORT uint32_t jit_var_f64(JitBackend backend, double value);
+
+extern JIT_EXPORT uint32_t jit_var_u64(JitBackend backend, uint64_t value);
+extern JIT_EXPORT uint32_t jit_var_i64(JitBackend backend, int64_t value);
+
+extern JIT_EXPORT uint32_t jit_var_bool(JitBackend backend, bool value);
+
 /**
  * \brief Create a counter variable
  *
@@ -836,16 +850,16 @@ extern JIT_EXPORT uint32_t jit_var_rcp(uint32_t a0);
 extern JIT_EXPORT uint32_t jit_var_rsqrt(uint32_t a0);
 
 /// Approximate `sin(a0)` and return a variable representing the result
-extern JIT_EXPORT uint32_t jit_var_sin(uint32_t a0);
+extern JIT_EXPORT uint32_t jit_var_sin_intrinsic(uint32_t a0);
 
 /// Approximate `cos(a0)` and return a variable representing the result
-extern JIT_EXPORT uint32_t jit_var_cos(uint32_t a0);
+extern JIT_EXPORT uint32_t jit_var_cos_intrinsic(uint32_t a0);
 
 /// Approximate `exp2(a0)` and return a variable representing the result
-extern JIT_EXPORT uint32_t jit_var_exp2(uint32_t a0);
+extern JIT_EXPORT uint32_t jit_var_exp2_intrinsic(uint32_t a0);
 
 /// Approximate `log2(a0)` and return a variable representing the result
-extern JIT_EXPORT uint32_t jit_var_log2(uint32_t a0);
+extern JIT_EXPORT uint32_t jit_var_log2_intrinsic(uint32_t a0);
 
 /// Return a variable indicating valid lanes within a function call
 extern JIT_EXPORT uint32_t jit_var_vcall_mask(JitBackend backend);
@@ -1923,3 +1937,9 @@ extern JIT_EXPORT size_t jit_type_size(JIT_ENUM VarType type) JIT_NOEXCEPT;
 static inline void jit_init(JIT_ENUM JitBackend backend)       { jit_init((uint32_t) backend); }
 static inline void jit_init_async(JIT_ENUM JitBackend backend) { jit_init((uint32_t) backend); }
 #endif
+
+/// Set the default backend that takes precedence when other operations are called with JitBackend::None
+extern JIT_EXPORT void jit_set_default_backend(JitBackend backend) noexcept(true);
+
+/// Like the above, but copy the backend state from an existing variable
+extern JIT_EXPORT JitBackend jit_set_default_backend_from(uint32_t index) noexcept(true);

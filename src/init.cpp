@@ -41,10 +41,12 @@ State state;
   __declspec(thread) ThreadState* thread_state_cuda = nullptr;
   __declspec(thread) ThreadState* thread_state_llvm = nullptr;
   __declspec(thread) uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
+  __declspec(thread) JitBackend default_backend = JitBackend::None;
 #else
   __thread ThreadState* thread_state_cuda = nullptr;
   __thread ThreadState* thread_state_llvm = nullptr;
   __thread uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
+  __thread JitBackend default_backend = JitBackend::None;
 #endif
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
