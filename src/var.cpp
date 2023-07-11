@@ -446,6 +446,9 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         std::tie(key_it, lvn_key_inserted) =
             state.lvn_map.try_emplace(VariableKey(v), 0);
 
+    if (unlikely(v.backend == (uint32_t) JitBackend::None))
+        v.backend = (uint32_t) default_backend;
+
     uint32_t index;
     Variable *vo;
 
