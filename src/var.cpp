@@ -431,6 +431,9 @@ void jitc_value_print(const Variable *v, bool graphviz = false) {
 
 /// Append the given variable to the instruction trace and return its ID
 uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
+    if (unlikely(v.backend == (uint32_t) JitBackend::None))
+        v.backend = (uint32_t) default_backend;
+
     ThreadState *ts = thread_state(v.backend);
 
     bool lvn = !disable_lvn && (VarType) v.type != VarType::Void &&
@@ -445,9 +448,6 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     if (lvn)
         std::tie(key_it, lvn_key_inserted) =
             state.lvn_map.try_emplace(VariableKey(v), 0);
-
-    if (unlikely(v.backend == (uint32_t) JitBackend::None))
-        v.backend = (uint32_t) default_backend;
 
     uint32_t index;
     Variable *vo;
