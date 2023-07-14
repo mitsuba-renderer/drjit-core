@@ -1078,6 +1078,9 @@ extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
 /// Check if a variable is a literal constant
 extern JIT_EXPORT int jit_var_is_literal(uint32_t index);
 
+/// Check if a variable is a literal zero
+extern JIT_EXPORT int jit_var_is_literal_zero(uint32_t index);
+
 /// Check if a variable is evaluated
 extern JIT_EXPORT int jit_var_is_evaluated(uint32_t index);
 

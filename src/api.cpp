@@ -403,9 +403,9 @@ uint32_t jit_var_u32(JitBackend backend, uint32_t value) {
 uint32_t jit_var_i32(JitBackend backend, int32_t value) {
     lock_guard guard(state.lock);
     Variable v;
-    memcpy(&v.literal, &value, sizeof(uint32_t));
+    memcpy(&v.literal, &value, sizeof(int32_t));
     v.kind = (uint32_t) VarKind::Literal;
-    v.type = (uint32_t) VarType::UInt32;
+    v.type = (uint32_t) VarType::Int32;
     v.size = 1;
     v.backend = (uint32_t) backend;
     return jitc_var_new(v);
@@ -436,9 +436,9 @@ uint32_t jit_var_u64(JitBackend backend, uint64_t value) {
 uint32_t jit_var_i64(JitBackend backend, int64_t value) {
     lock_guard guard(state.lock);
     Variable v;
-    memcpy(&v.literal, &value, sizeof(uint64_t));
+    memcpy(&v.literal, &value, sizeof(int64_t));
     v.kind = (uint32_t) VarKind::Literal;
-    v.type = (uint32_t) VarType::UInt64;
+    v.type = (uint32_t) VarType::Int64;
     v.size = 1;
     v.backend = (uint32_t) backend;
     return jitc_var_new(v);
@@ -547,6 +547,15 @@ int jit_var_is_literal(uint32_t index) {
 
     lock_guard guard(state.lock);
     return (int) jitc_var(index)->is_literal();
+}
+
+int jit_var_is_literal_zero(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    lock_guard guard(state.lock);
+    const Variable *v = jitc_var(index);
+    return v->is_literal() && v->literal == 0;
 }
 
 int jit_var_is_evaluated(uint32_t index) {
