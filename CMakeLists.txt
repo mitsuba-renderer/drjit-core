@@ -132,6 +132,9 @@ add_library(
   src/cuda_packet.cpp
   src/cuda_array.h
   src/cuda_array.cpp
+  # CUDA / OpenGL interop
+  include/drjit-core/gl_interop.h
+  src/gl_interop.cpp
 
   # OptiX backend
   ${DRJIT_OPTIX_FILES}
@@ -203,9 +206,9 @@ if (MSVC)
   # so force enable it
   target_compile_definitions(drjit-core PUBLIC -D__F16C__)
 
-  # Workaround to avoid a particular crash due to MS VC++ runtime library binary 
-  # incompatibility. In general the runtime version needs to be at least as new 
-  # as toolset version but this define provides one such "escape hatch" if that 
+  # Workaround to avoid a particular crash due to MS VC++ runtime library binary
+  # incompatibility. In general the runtime version needs to be at least as new
+  # as toolset version but this define provides one such "escape hatch" if that
   # strictly isn't the case to combat against a commonly encountered reported crash
   target_compile_definitions(drjit-core PUBLIC -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()

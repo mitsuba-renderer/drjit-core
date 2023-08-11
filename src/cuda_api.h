@@ -280,4 +280,40 @@ DR_CUDA_SYM(CUresult (*cuMemcpy3DAsync)(const CUDA_MEMCPY3D *, CUstream));
 DR_CUDA_SYM(CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream));
 DR_CUDA_SYM(CUresult (*cuProfilerStart)());
 DR_CUDA_SYM(CUresult (*cuProfilerStop)());
+
+// ----- CUDA / OpenGL interop
+using CUgraphicsResource = struct CUgraphicsResource_st *;
+using GLuint = unsigned int;
+using GLenum = unsigned int;
+
+enum cudaGraphicsMapFlags {
+    cudaGraphicsMapFlagsNone         = 0,  /**< Default; Assume resource can be read/written */
+    cudaGraphicsMapFlagsReadOnly     = 1,  /**< CUDA will not write to this resource */
+    cudaGraphicsMapFlagsWriteDiscard = 2   /**< CUDA will only write to and will not read from this resource */
+};
+
+enum cudaMemcpyKind {
+    cudaMemcpyHostToHost          =   0,      /**< Host   -> Host */
+    cudaMemcpyHostToDevice        =   1,      /**< Host   -> Device */
+    cudaMemcpyDeviceToHost        =   2,      /**< Device -> Host */
+    cudaMemcpyDeviceToDevice      =   3,      /**< Device -> Device */
+    cudaMemcpyDefault             =   4       /**< Direction of the transfer is inferred from the pointer values. Requires unified virtual addressing */
+};
+
+DR_CUDA_SYM(CUresult (*cuGraphicsGLRegisterBuffer)(CUgraphicsResource *, GLuint,
+                                                   unsigned int));
+DR_CUDA_SYM(CUresult (*cuGraphicsGLRegisterImage)(
+    CUgraphicsResource *pCudaResource, GLuint, GLenum, unsigned int));
+DR_CUDA_SYM(CUresult (*cuGraphicsUnregisterResource)(CUgraphicsResource));
+DR_CUDA_SYM(CUresult (*cuGraphicsMapResources)(unsigned int,
+                                               CUgraphicsResource *, CUstream));
+DR_CUDA_SYM(CUresult (*cuGraphicsUnmapResources)(unsigned int,
+                                                 CUgraphicsResource *,
+                                                 CUstream));
+DR_CUDA_SYM(CUresult (*cuGraphicsSubResourceGetMappedArray)(
+    CUarray *, CUgraphicsResource, unsigned int, unsigned int mipLevel));
+DR_CUDA_SYM(CUresult (*cuGraphicsResourceGetMappedPointer)(CUdeviceptr *,
+                                                           size_t *,
+                                                           CUgraphicsResource));
+
 #endif

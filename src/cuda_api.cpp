@@ -137,6 +137,15 @@ bool jitc_cuda_api_init() {
 
         LOAD(cuProfilerStart);
         LOAD(cuProfilerStop);
+
+        // CUDA / OpenGL interop
+        LOAD(cuGraphicsGLRegisterBuffer);
+        LOAD(cuGraphicsGLRegisterImage);
+        LOAD(cuGraphicsUnregisterResource);
+        LOAD(cuGraphicsMapResources);
+        LOAD(cuGraphicsUnmapResources);
+        LOAD(cuGraphicsSubResourceGetMappedArray);
+        LOAD(cuGraphicsResourceGetMappedPointer);
         #undef LOAD
     } while (false);
 
@@ -180,6 +189,13 @@ void jitc_cuda_api_shutdown() {
     Z(cuArrayDestroy); Z(cuTexObjectCreate); Z(cuTexObjectGetResourceDesc);
     Z(cuTexObjectDestroy); Z(cuMemcpy2DAsync); Z(cuMemcpy3DAsync);
     Z(cuProfilerStart); Z(cuProfilerStop);
+
+    // CUDA / OpenGL interop
+    Z(cuGraphicsGLRegisterBuffer); Z(cuGraphicsGLRegisterImage);
+    Z(cuGraphicsUnregisterResource); Z(cuGraphicsMapResources);
+    Z(cuGraphicsUnmapResources); Z(cuGraphicsSubResourceGetMappedArray);
+    Z(cuGraphicsResourceGetMappedPointer);
+
     #undef Z
 
 #if !defined(_WIN32)
