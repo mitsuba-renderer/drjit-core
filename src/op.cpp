@@ -24,7 +24,7 @@ enum CheckFlags {
 };
 
 /// Summary information about a set of variables returned by jitc_var_check()
-struct VarInfo {
+struct OpInfo {
     /// Backend (assuming consistent operands)
     JitBackend backend;
 
@@ -61,7 +61,7 @@ struct VarInfo {
  * `jitc_var_new_node_x()` function to permit simplifications of operations
  * combining dirty and literal arguments (this is important for autodiff).
  *
- * Finally, the function returns a tuple containing a `VarInfo` record (see the
+ * Finally, the function returns a tuple containing a `OpInfo` record (see the
  * documentation of its fields for details) and a `const Variable *` pointer
  * per operand.
  */
@@ -175,7 +175,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
     }
 
     return drjit::dr_tuple(
-        VarInfo{ backend, type, size, simplify, literal, placeholder },
+        OpInfo{ backend, type, size, simplify, literal, placeholder },
         v[Is]...
     );
 
@@ -233,7 +233,7 @@ Dst memcpy_cast(const Src &src) {
 template <typename T, typename... Ts> T first(T arg, Ts...) { return arg; }
 
 template <typename Func, typename... Args>
-JIT_INLINE uint32_t jitc_eval_literal(const VarInfo &info, Func func,
+JIT_INLINE uint32_t jitc_eval_literal(const OpInfo &info, Func func,
                                       const Args *...args) {
     uint64_t r = 0;
 
@@ -259,12 +259,12 @@ JIT_INLINE uint32_t jitc_eval_literal(const VarInfo &info, Func func,
 // Common constants
 // --------------------------------------------------------------------------
 
-uint32_t jitc_make_zero(VarInfo info) {
+uint32_t jitc_make_zero(OpInfo info) {
     uint64_t value = 0;
     return jitc_var_literal(info.backend, info.type, &value, info.size, 0);
 }
 
-uint32_t jitc_make_true(VarInfo info) {
+uint32_t jitc_make_true(OpInfo info) {
     bool value = true;
     return jitc_var_literal(info.backend, VarType::Bool, &value, info.size, 0);
 }
@@ -291,7 +291,7 @@ static int jitc_clz(uint64_t value) {
 }
 
 template <bool Shl>
-uint32_t jitc_var_shift(const VarInfo &info, uint32_t index, uint64_t amount) {
+uint32_t jitc_var_shift(const OpInfo &info, uint32_t index, uint64_t amount) {
     amount = 63 - jitc_clz(amount);
     Ref shift = steal(jitc_var_literal(info.backend, info.type, &amount, info.size, 0));
     return Shl ? jitc_var_shl(index, shift)

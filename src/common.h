@@ -96,8 +96,8 @@ template <> struct uint_with_size<8> { using type = uint64_t; };
 template <typename T>
 using uint_with_size_t = typename uint_with_size<sizeof(T)>::type;
 
-extern void jitc_var_dec_ref(uint32_t) noexcept(true);
-extern void jitc_var_inc_ref(uint32_t) noexcept(true);
+extern void jitc_var_dec_ref(uint32_t) noexcept;
+extern void jitc_var_inc_ref(uint32_t) noexcept;
 
 struct Ref {
     friend Ref steal(uint32_t);

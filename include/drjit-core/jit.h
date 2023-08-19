@@ -41,17 +41,19 @@
 #  define JIT_MALLOC
 #  define JIT_INLINE    __forceinline
 #  define JIT_NOINLINE  __declspec(noinline)
+#  define JIT_NORETURN_FORMAT
 #else
 #  define JIT_EXPORT    __attribute__ ((visibility("default")))
 #  define JIT_MALLOC    __attribute__((malloc))
 #  define JIT_INLINE    __attribute__ ((always_inline)) inline
 #  define JIT_NOINLINE  __attribute__ ((noinline))
+#  define JIT_NORETURN_FORMAT __attribute__((noreturn, __format__ (__printf__, 1, 2)))
 #endif
 
 #if defined(__cplusplus)
 #  define JIT_CONSTEXPR constexpr
 #  define JIT_DEF(x) = x
-#  define JIT_NOEXCEPT noexcept(true)
+#  define JIT_NOEXCEPT noexcept
 #  define JIT_ENUM ::
 #  if !defined(NAMESPACE_BEGIN)
 #    define NAMESPACE_BEGIN(name) namespace name {
@@ -314,10 +316,10 @@ extern JIT_EXPORT JIT_ENUM LogLevel jit_log_level_callback();
 extern JIT_EXPORT void jit_log(JIT_ENUM LogLevel level, const char* fmt, ...);
 
 /// Raise an exception message with the specified message
-extern JIT_EXPORT void jit_raise(const char* fmt, ...);
+extern JIT_EXPORT void jit_raise(const char* fmt, ...) JIT_NORETURN_FORMAT;
 
 /// Terminate the application due to a non-recoverable error
-extern JIT_EXPORT void jit_fail(const char* fmt, ...);
+extern JIT_EXPORT void jit_fail(const char* fmt, ...) JIT_NORETURN_FORMAT;
 
 // ====================================================================
 //                         Memory allocation
@@ -1048,11 +1050,11 @@ extern JIT_EXPORT void jit_var_dec_ref_impl(uint32_t index) JIT_NOEXCEPT;
 JIT_INLINE void jit_var_inc_ref(uint32_t index) JIT_NOEXCEPT {
     /* If 'index' is known at compile time, it can only be zero, in
        which case we can skip the redundant call to jit_var_dec_ref */
-    if (!__builtin_constant_p(index) || index != 0)
+    if (!__builtin_constant_p(index))
         jit_var_inc_ref_impl(index);
 }
 JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
-    if (!__builtin_constant_p(index) || index != 0)
+    if (!__builtin_constant_p(index))
         jit_var_dec_ref_impl(index);
 }
 #else
@@ -1934,15 +1936,30 @@ extern JIT_EXPORT struct KernelHistoryEntry *jit_kernel_history();
 /// Return the item size of a JIT variable type
 extern JIT_EXPORT size_t jit_type_size(JIT_ENUM VarType type) JIT_NOEXCEPT;
 
+static inline void jit_init(JIT_ENUM JitBackend backend)       { jit_init((uint32_t) backend); }
+static inline void jit_init_async(JIT_ENUM JitBackend backend) { jit_init_async((uint32_t) backend); }
+
+/// Return value of \ref jit_set_backend()
+struct VarInfo {
+    JitBackend backend : 16;
+    VarType type : 16;
+};
+
+static_assert(sizeof(VarInfo) == 4);
+
+/**
+ * \brief Copy the default backend from an existing Dr.Jit variable
+ *
+ * Dr.Jit operations can be called with a backend value of ``JitBackend::None``,
+ * in which case the default backend set via this operation takes precedence.
+ *
+ * This is useful to implement a generic version of an operation that works
+ * for various different backends. The function also returns a brief summary
+ * of the specified variable (backen value and type) packed as a 32-bit integer
+ * that can be helpful in some cases.
+ * */
+extern JIT_EXPORT VarInfo jit_set_backend(uint32_t index) JIT_NOEXCEPT;
+
 #if defined(__cplusplus)
 }
-
-static inline void jit_init(JIT_ENUM JitBackend backend)       { jit_init((uint32_t) backend); }
-static inline void jit_init_async(JIT_ENUM JitBackend backend) { jit_init((uint32_t) backend); }
 #endif
-
-/// Set the default backend that takes precedence when other operations are called with JitBackend::None
-extern JIT_EXPORT void jit_set_default_backend(JitBackend backend) noexcept(true);
-
-/// Like the above, but copy the backend state from an existing variable
-extern JIT_EXPORT JitBackend jit_set_default_backend_from(uint32_t index) noexcept(true);

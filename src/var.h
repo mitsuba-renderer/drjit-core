@@ -85,34 +85,34 @@ extern uint32_t jitc_var_copy(uint32_t index);
 extern uint32_t jitc_var_resize(uint32_t index, size_t size);
 
 /// Increase the external reference count of a given variable
-extern void jitc_var_inc_ref(uint32_t index, Variable *v) noexcept(true);
+extern void jitc_var_inc_ref(uint32_t index, Variable *v) noexcept;
 
 /// Increase the external reference count of a given variable
-extern void jitc_var_inc_ref(uint32_t index) noexcept(true);
+extern void jitc_var_inc_ref(uint32_t index) noexcept;
 
 /// Increase the external reference count of a given variable
-inline uint32_t jitc_var_new_ref(uint32_t index) noexcept(true) {
+inline uint32_t jitc_var_new_ref(uint32_t index) noexcept {
     jitc_var_inc_ref(index);
     return index;
 }
 
 /// Decrease the external reference count of a given variable
-extern void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept(true);
+extern void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept;
 
 /// Decrease the external reference count of a given variable
-extern void jitc_var_dec_ref(uint32_t index) noexcept(true);
+extern void jitc_var_dec_ref(uint32_t index) noexcept;
 
 /// Increase the side effect reference count of a given variable
-extern void jitc_var_inc_ref_se(uint32_t index, Variable *v) noexcept(true);
+extern void jitc_var_inc_ref_se(uint32_t index, Variable *v) noexcept;
 
 /// Increase the side effect reference count of a given variable
-extern void jitc_var_inc_ref_se(uint32_t index) noexcept(true);
+extern void jitc_var_inc_ref_se(uint32_t index) noexcept;
 
 /// Decrease the side effect reference count of a given variable
-extern void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept(true);
+extern void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept;
 
 /// Decrease the side effect reference count of a given variable
-extern void jitc_var_dec_ref_se(uint32_t index) noexcept(true);
+extern void jitc_var_dec_ref_se(uint32_t index) noexcept;
 
 // Query the type of a given variable
 extern VarType jitc_var_type(uint32_t index);

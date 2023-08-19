@@ -500,14 +500,14 @@ uint32_t jit_var_wrap_vcall(uint32_t index) {
     return jitc_var_wrap_vcall(index);
 }
 
-void jit_var_inc_ref_impl(uint32_t index) noexcept(true) {
+void jit_var_inc_ref_impl(uint32_t index) noexcept {
     if (index == 0)
         return;
     lock_guard guard(state.lock);
     jitc_var_inc_ref(index);
 }
 
-void jit_var_dec_ref_impl(uint32_t index) noexcept(true) {
+void jit_var_dec_ref_impl(uint32_t index) noexcept {
     if (index == 0)
         return;
     lock_guard guard(state.lock);
@@ -1202,17 +1202,13 @@ uint32_t jit_var_vcall_mask(JitBackend backend) {
     return jitc_var_vcall_mask(backend);
 }
 
-size_t jit_type_size(VarType type) noexcept(true) {
+size_t jit_type_size(VarType type) noexcept {
     return type_size[(int) type];
 }
 
-void jit_set_default_backend(JitBackend backend) noexcept(true) {
-    default_backend = backend;
-}
-
-JitBackend jit_set_default_backend_from(uint32_t index) noexcept(true) {
+VarInfo jit_set_backend(uint32_t index) noexcept {
     lock_guard guard(state.lock);
-    JitBackend backend = (JitBackend) jitc_var(index)->backend;
-    default_backend = backend;
-    return backend;
+    Variable *var = jitc_var(index);
+    default_backend = (JitBackend) var->backend;
+    return VarInfo { (JitBackend) var->backend, (VarType) var->type };
 }
