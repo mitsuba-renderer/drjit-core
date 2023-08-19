@@ -265,33 +265,33 @@ Variable *jitc_var(uint32_t index) {
 }
 
 /// Increase the external reference count of a given variable
-void jitc_var_inc_ref(uint32_t index, Variable *v) noexcept(true) {
+void jitc_var_inc_ref(uint32_t index, Variable *v) noexcept {
     (void) index; // jitc_trace may be disabled
     v->ref_count++;
     jitc_trace("jit_var_inc_ref(r%u): %u", index, (uint32_t) v->ref_count);
 }
 
 /// Increase the external reference count of a given variable
-void jitc_var_inc_ref(uint32_t index) noexcept(true) {
+void jitc_var_inc_ref(uint32_t index) noexcept {
     if (index)
         jitc_var_inc_ref(index, jitc_var(index));
 }
 
 /// Increase the side effect reference count of a given variable
-void jitc_var_inc_ref_se(uint32_t index, Variable *v) noexcept(true) {
+void jitc_var_inc_ref_se(uint32_t index, Variable *v) noexcept {
     (void) index; // jitc_trace may be disabled
     v->ref_count_se++;
     jitc_trace("jit_var_inc_ref_se(r%u): %u", index, (uint32_t) v->ref_count_se);
 }
 
 /// Increase the side effect reference count of a given variable
-void jitc_var_inc_ref_se(uint32_t index) noexcept(true) {
+void jitc_var_inc_ref_se(uint32_t index) noexcept {
     if (index)
         jitc_var_inc_ref_se(index, jitc_var(index));
 }
 
 /// Decrease the external reference count of a given variable
-void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept(true) {
+void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept {
     if (unlikely(v->ref_count == 0))
         jitc_fail("jit_var_dec_ref(): variable r%u has no external references!", index);
 
@@ -303,13 +303,13 @@ void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept(true) {
 }
 
 /// Decrease the external reference count of a given variable
-void jitc_var_dec_ref(uint32_t index) noexcept(true) {
+void jitc_var_dec_ref(uint32_t index) noexcept {
     if (index != 0)
         jitc_var_dec_ref(index, jitc_var(index));
 }
 
 /// Decrease the side effect reference count of a given variable
-void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept(true) {
+void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept {
     if (unlikely(v->ref_count_se == 0))
         jitc_fail("jit_var_dec_ref_se(): variable r%u has no side effect references!", index);
 
@@ -321,7 +321,7 @@ void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept(true) {
 }
 
 /// Decrease the side effect reference count of a given variable
-void jitc_var_dec_ref_se(uint32_t index) noexcept(true) {
+void jitc_var_dec_ref_se(uint32_t index) noexcept {
     if (index != 0)
         jitc_var_dec_ref_se(index, jitc_var(index));
 }
