@@ -1527,6 +1527,9 @@ uint32_t jitc_var_vcall_mask(JitBackend backend) {
 }
 
 bool jitc_var_any(uint32_t index) {
+    if (!index)
+        return false;
+
     const Variable *v = jitc_var(index);
 
     if (unlikely((VarType) v->type != VarType::Bool))
@@ -1542,6 +1545,9 @@ bool jitc_var_any(uint32_t index) {
 }
 
 bool jitc_var_all(uint32_t index) {
+    if (!index)
+        return true;
+
     const Variable *v = jitc_var(index);
 
     if (unlikely((VarType) v->type != VarType::Bool))
@@ -1563,23 +1569,55 @@ template <typename T> static void jitc_var_reduce_scalar(uint32_t size, void *pt
     memcpy(ptr, &value, sizeof(T));
 }
 
-uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op) {
+uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
+                         uint32_t index) {
     if (unlikely(reduce_op == ReduceOp::And || reduce_op == ReduceOp::Or))
-        jitc_raise("jitc_var_reduce: doesn't support And/Or operation!");
-    else if (index == 0)
-        return 0;
+        jitc_raise("jit_var_reduce: doesn't support And/Or operation!");
+
+    if (unlikely(index == 0)) {
+        const uint64_t all_zero = 0, all_one = 0xFFFFFFFF;
+
+        const uint64_t type_one[(int) VarType::Count] {
+            0, 1, 1, 1, 1,      1,          1,
+            1, 1, 1, 0, 0x3c00, 0x3f800000, 0x3ff0000000000000ull
+        };
+
+        const uint64_t type_min[(int) VarType::Count] {
+            0, 0, 0x80, 0, 0x8000, 0, 0x80000000, 0,
+            0x8000000000000000ull, 0ull,
+            0xfc00, 0xff800000, 0xfff0000000000000
+        };
+
+        const uint64_t type_max[(int) VarType::Count] {
+            0, 1, 0x7f, 0xff, 0x7fff, 0xffff, 0x7fffffff, 0xffffffff,
+            0x7fffffffffffffffull, 0xffffffffffffffffull,
+            0x7c00, 0x7f800000, 0x7ff0000000000000ull
+        };
+
+        const void *source = nullptr;
+        switch (reduce_op) {
+            case ReduceOp::Or:
+            case ReduceOp::Add: source = &all_zero; break;
+            case ReduceOp::And: source = &all_one; break;
+            case ReduceOp::Mul: source = &type_one[(int) vt]; break;
+            case ReduceOp::Min: source = &type_max[(int) vt]; break;
+            case ReduceOp::Max: source = &type_min[(int) vt]; break;
+            default: jitc_raise("jitc_var_reduce(): unsupported reduction type!");
+        }
+
+        return jitc_var_literal(backend, vt, source, 1, 0);
+    }
 
     const Variable *v = jitc_var(index);
-
-    JitBackend backend = (JitBackend) v->backend;
-    VarType type = (VarType) v->type;
+    if ((VarType) v->type != vt || (JitBackend) v->backend == backend)
+        jitc_raise("jit_var_reduce(): variable mismatch!");
 
     if (v->is_literal()) {
         uint64_t value = v->literal;
         uint32_t size = v->size;
 
         // Tricky cases
-        if (size != 1 && (reduce_op == ReduceOp::Add)) {
+        if (size != 1 && reduce_op == ReduceOp::Add) {
             switch ((VarType) v->type) {
                 case VarType::Int8:    jitc_var_reduce_scalar<int8_t>  (size, &value); break;
                 case VarType::UInt8:   jitc_var_reduce_scalar<uint8_t> (size, &value); break;
@@ -1593,14 +1631,15 @@ uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op) {
                 case VarType::Float64: jitc_var_reduce_scalar<double>  (size, &value); break;
                 default: jitc_raise("jit_var_reduce(): unsupported operand type!");
             }
-        } else if (size != 1 && (reduce_op == ReduceOp::Mul)) {
+        } else if (size != 1 && reduce_op == ReduceOp::Mul) {
             jitc_raise("jit_var_reduce(): ReduceOp::Mul is not supported for vector values!");
         }
 
-        return jitc_var_literal(backend, type, &value, 1, 0);
+        return jitc_var_literal(backend, vt, &value, 1, 0);
     }
 
-    jitc_log(Debug, "jit_var_reduce(index=%u, reduce_op=%s)", index, reduction_name[(int) reduce_op]);
+    jitc_log(Debug, "jit_var_reduce(index=%u, reduce_op=%s)", index,
+             reduction_name[(int) reduce_op]);
 
     if (jitc_var_eval(index))
         v = jitc_var(index);
@@ -1611,9 +1650,9 @@ uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op) {
     void *data =
         jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
                                                 : AllocType::HostAsync,
-                    (size_t) type_size[(int) type]);
-    jitc_reduce(backend, type, reduce_op, values, size, data);
-    return jitc_var_mem_map(backend, type, data, 1, 1);
+                    (size_t) type_size[(int) vt]);
+    jitc_reduce(backend, vt, reduce_op, values, size, data);
+    return jitc_var_mem_map(backend, vt, data, 1, 1);
 }
 
 uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,

@@ -324,19 +324,19 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
     friend JitArray hsum(const JitArray &v) {
-        return steal(jit_var_reduce(v.m_index, ReduceOp::Add));
+        return steal(jit_var_reduce(Backend, Type, ReduceOp::Add, v.m_index));
     }
 
     friend JitArray hmul(const JitArray &v) {
-        return steal(jit_var_reduce(v.m_index, ReduceOp::Mul));
+        return steal(jit_var_reduce(Backend, Type, ReduceOp::Mul, v.m_index));
     }
 
     friend JitArray hmin(const JitArray &v) {
-        return steal(jit_var_reduce(v.m_index, ReduceOp::Min));
+        return steal(jit_var_reduce(Backend, Type, ReduceOp::Min, v.m_index));
     }
 
     friend JitArray hmax(const JitArray &v) {
-        return steal(jit_var_reduce(v.m_index, ReduceOp::Max));
+        return steal(jit_var_reduce(Backend, Type, ReduceOp::Max, v.m_index));
     }
 
     friend bool all(const JitArray &a) { return jit_var_all(a.m_index); }

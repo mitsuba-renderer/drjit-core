@@ -444,13 +444,15 @@ bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
     bool result;
     if (backend == JitBackend::CUDA) {
         uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
-        jitc_reduce(backend, VarType::UInt32, ReduceOp::Or, values, reduced_size, out);
+        jitc_reduce(backend, VarType::UInt32, ReduceOp::Or, values,
+                    reduced_size, out);
         jitc_sync_thread();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
         jitc_free(out);
     } else {
         uint8_t out[4];
-        jitc_reduce(backend, VarType::UInt32, ReduceOp::Or, values, reduced_size, out);
+        jitc_reduce(backend, VarType::UInt32, ReduceOp::Or, values,
+                    reduced_size, out);
         jitc_sync_thread();
         result = (out[0] | out[1] | out[2] | out[3]) != 0;
     }

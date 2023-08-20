@@ -685,9 +685,10 @@ int jit_var_all(uint32_t index) {
     return jitc_var_all(index);
 }
 
-uint32_t jit_var_reduce(uint32_t index, ReduceOp reduce_op) {
+uint32_t jit_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
+                        uint32_t index) {
     lock_guard guard(state.lock);
-    return jitc_var_reduce(index, reduce_op);
+    return jitc_var_reduce(backend, vt, reduce_op, index);
 }
 
 const char *jit_var_whos() {
