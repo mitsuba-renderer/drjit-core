@@ -201,7 +201,8 @@ extern bool jitc_var_all(uint32_t index);
 extern bool jitc_var_any(uint32_t index);
 
 /// Reduce a variable to a single value
-extern uint32_t jitc_var_reduce(uint32_t index, ReduceOp reduce_op);
+extern uint32_t jitc_var_reduce(JitBackend backend, VarType vt,
+                                ReduceOp reduce_op, uint32_t index);
 
 /// Create a variable containing the buffer storing a specific attribute
 extern uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,

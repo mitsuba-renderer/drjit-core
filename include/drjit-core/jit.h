@@ -1587,14 +1587,16 @@ extern JIT_EXPORT uint32_t jit_var_mask_apply(uint32_t index, uint32_t size);
 //                          Horizontal reductions
 // ====================================================================
 
-/// Reduce (And) a boolean array to a single value, synchronizes.
+/// Reduce (And) a boolean array to a single value (synchronous).
 extern JIT_EXPORT int jit_var_all(uint32_t index);
 
-/// Reduce (Or) a boolean array to a single value, synchronizes.
+/// Reduce (Or) a boolean array to a single value (synchronous).
 extern JIT_EXPORT int jit_var_any(uint32_t index);
 
-/// Reduce a variable to a single value
-extern JIT_EXPORT uint32_t jit_var_reduce(uint32_t index, JIT_ENUM ReduceOp reduce_op);
+/// Reduce a variable to a single value (asynchronous)
+extern JIT_EXPORT uint32_t jit_var_reduce(JitBackend backend, VarType vt,
+                                          JIT_ENUM ReduceOp reduce_op,
+                                          uint32_t index);
 
 // ====================================================================
 //  Assortment of tuned kernels for initialization, reductions, etc.
