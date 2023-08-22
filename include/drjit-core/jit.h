@@ -1089,6 +1089,9 @@ extern JIT_EXPORT int jit_var_is_evaluated(uint32_t index);
 /// Check if a variable is a special placeholder value used to record computation
 extern JIT_EXPORT int jit_var_is_placeholder(uint32_t index);
 
+/// Check if a variable represents a normal (not NaN/infinity) literal
+extern JIT_EXPORT int jit_var_is_normal_literal(uint32_t index);
+
 /**
  * \brief Resize a scalar variable to a new size
  *
