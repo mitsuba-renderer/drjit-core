@@ -558,6 +558,37 @@ int jit_var_is_literal_zero(uint32_t index) {
     return v->is_literal() && v->literal == 0;
 }
 
+int jit_var_is_normal_literal(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    lock_guard guard(state.lock);
+    const Variable *v = jitc_var(index);
+    if (!v->is_literal())
+        return 0;
+
+    switch ((VarType) v->type) {
+        case VarType::Float16:
+            jitc_raise(
+                "jit_var_is_normal_literal(): float16 case unsupported!");
+
+        case VarType::Float32: {
+                float f;
+                memcpy(&f, &v->literal, sizeof(float));
+                return (int) std::isnormal(f);
+            }
+
+        case VarType::Float64: {
+                double d;
+                memcpy(&d, &v->literal, sizeof(double));
+                return (int) std::isnormal(d);
+            }
+
+        default:
+            return 1;
+    }
+}
+
 int jit_var_is_evaluated(uint32_t index) {
     if (index == 0)
         return 0;
