@@ -378,79 +378,80 @@ uint32_t jit_var_literal(JitBackend backend, VarType type, const void *value,
     return jitc_var_literal(backend, type, value, size, eval, is_class);
 }
 
-uint32_t jit_var_f32(JitBackend backend, float value) {
-    lock_guard guard(state.lock);
+uint32_t jit_var_bool(JitBackend backend, bool value) {
     Variable v;
-    memcpy(&v.literal, &value, sizeof(float));
+    memcpy(&v.literal, &value, sizeof(bool));
     v.kind = (uint32_t) VarKind::Literal;
-    v.type = (uint32_t) VarType::Float32;
+    v.type = (uint32_t) VarType::Bool;
     v.size = 1;
     v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
     return jitc_var_new(v);
 }
 
 uint32_t jit_var_u32(JitBackend backend, uint32_t value) {
-    lock_guard guard(state.lock);
     Variable v;
     memcpy(&v.literal, &value, sizeof(uint32_t));
     v.kind = (uint32_t) VarKind::Literal;
     v.type = (uint32_t) VarType::UInt32;
     v.size = 1;
     v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
     return jitc_var_new(v);
 }
 
 uint32_t jit_var_i32(JitBackend backend, int32_t value) {
-    lock_guard guard(state.lock);
     Variable v;
     memcpy(&v.literal, &value, sizeof(int32_t));
     v.kind = (uint32_t) VarKind::Literal;
     v.type = (uint32_t) VarType::Int32;
     v.size = 1;
     v.backend = (uint32_t) backend;
-    return jitc_var_new(v);
-}
-
-uint32_t jit_var_f64(JitBackend backend, double value) {
     lock_guard guard(state.lock);
-    Variable v;
-    memcpy(&v.literal, &value, sizeof(double));
-    v.kind = (uint32_t) VarKind::Literal;
-    v.type = (uint32_t) VarType::Float64;
-    v.size = 1;
-    v.backend = (uint32_t) backend;
     return jitc_var_new(v);
 }
 
 uint32_t jit_var_u64(JitBackend backend, uint64_t value) {
-    lock_guard guard(state.lock);
     Variable v;
     memcpy(&v.literal, &value, sizeof(uint64_t));
     v.kind = (uint32_t) VarKind::Literal;
     v.type = (uint32_t) VarType::UInt64;
     v.size = 1;
     v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
     return jitc_var_new(v);
 }
 
 uint32_t jit_var_i64(JitBackend backend, int64_t value) {
-    lock_guard guard(state.lock);
     Variable v;
     memcpy(&v.literal, &value, sizeof(int64_t));
     v.kind = (uint32_t) VarKind::Literal;
     v.type = (uint32_t) VarType::Int64;
     v.size = 1;
     v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
     return jitc_var_new(v);
 }
 
-uint32_t jit_var_bool(JitBackend backend, bool value) {
+uint32_t jit_var_f32(JitBackend backend, float value) {
     Variable v;
-    memcpy(&v.literal, &value, sizeof(uint32_t));
+    memcpy(&v.literal, &value, sizeof(float));
     v.kind = (uint32_t) VarKind::Literal;
-    v.type = (uint32_t) VarType::Bool;
+    v.type = (uint32_t) VarType::Float32;
     v.size = 1;
     v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
+    return jitc_var_new(v);
+}
+
+uint32_t jit_var_f64(JitBackend backend, double value) {
+    Variable v;
+    memcpy(&v.literal, &value, sizeof(double));
+    v.kind = (uint32_t) VarKind::Literal;
+    v.type = (uint32_t) VarType::Float64;
+    v.size = 1;
+    v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
     return jitc_var_new(v);
 }
 
