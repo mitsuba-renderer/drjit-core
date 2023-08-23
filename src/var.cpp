@@ -1572,9 +1572,12 @@ template <typename T> static void jitc_var_reduce_scalar(uint32_t size, void *pt
 uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
                          uint32_t index) {
     if (unlikely(reduce_op == ReduceOp::And || reduce_op == ReduceOp::Or))
-        jitc_raise("jit_var_reduce: doesn't support And/Or operation!");
+        jitc_raise("jit_var_reduce(): does not support And/Or operation!");
 
     if (unlikely(index == 0)) {
+        if (backend == JitBackend::None || vt == VarType::Void)
+            jitc_raise("jit_var_reduce(): missing backend/type information!");
+
         const uint64_t all_zero = 0, all_one = 0xFFFFFFFF;
 
         const uint64_t type_one[(int) VarType::Count] {
@@ -1609,7 +1612,13 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
     }
 
     const Variable *v = jitc_var(index);
-    if ((VarType) v->type != vt || (JitBackend) v->backend == backend)
+
+    if (vt == VarType::Void)
+        vt = (VarType) v->type;
+    if (backend == JitBackend::None)
+        backend = (JitBackend) v->backend;
+
+    if ((VarType) v->type != vt || (JitBackend) v->backend != backend)
         jitc_raise("jit_var_reduce(): variable mismatch!");
 
     if (v->is_literal()) {
