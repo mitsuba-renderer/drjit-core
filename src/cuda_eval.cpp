@@ -807,15 +807,15 @@ static void jitc_cuda_render_scatter(const Variable *v,
         ts->ptx_version >= 62 && ts->compute_capability >= 70 &&
         (jitc_flags() & (uint32_t) JitFlag::AtomicReduceLocal)) {
         fmt("    {\n"
-            "        .visible .func reduce_$s_$t(.param .u64 ptr, .param .$t value);\n"
+            "        .func reduce_$s_$t(.param .u64 ptr, .param .$t value);\n"
             "        call reduce_$s_$t, (%rd3, $v);\n"
             "    }\n",
             op, value, value, op, value, value);
 
         // Intrinsic to perform an intra-warp reduction before writing to global memory
         fmt_intrinsic(
-            ".visible .func reduce_$s_$t(.param .u64 ptr,\n"
-            "                              .param .$t value) {\n"
+            ".func reduce_$s_$t(.param .u64 ptr,\n"
+            "                   .param .$t value) {\n"
             "    .reg .pred %p<14>;\n"
             "    .reg .$t %q<19>;\n"
             "    .reg .b32 %r<41>;\n"
