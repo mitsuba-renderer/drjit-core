@@ -20,6 +20,7 @@ option(DRJIT_ENABLE_TESTS "Build Dr.Jit-Core test suite?" OFF)
 if (NOT APPLE)
   option(DRJIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
   option(DRJIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
+  option(DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION "Enable debug and validation flags for OptiX" OFF)
 endif()
 
 # ----------------------------------------------------------
@@ -59,6 +60,12 @@ if (NOT APPLE)
     message(STATUS "Dr.Jit-Core: OptiX support enabled.")
   else()
     message(STATUS "Dr.Jit-Core: OptiX support disabled.")
+  endif()
+
+  if (DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION)
+    message(STATUS "Dr.Jit-Core: OptiX debug and validation flags enabled.")
+  else()
+    message(STATUS "Dr.Jit-Core: OptiX debug and validation flags disabled.")
   endif()
 endif()
 
@@ -191,6 +198,10 @@ if (DRJIT_ENABLE_OPTIX)
   if (WIN32)
     target_link_libraries(drjit-core PRIVATE Cfgmgr32)
   endif()
+endif()
+
+if (DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_OPTIX_DEBUG_VALIDATION)
 endif()
 
 # Generate ITT notifications (e.g. for VTune) if part of a larger project

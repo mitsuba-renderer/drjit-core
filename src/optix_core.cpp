@@ -9,7 +9,9 @@
 #include "op.h"
 #include "util.h"
 
-#define ENABLE_OPTIX_VALIDATION_MODE 0
+#if !defined(NDEBUG) || defined(DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION)
+#define DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
+#endif
 
 #define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
 extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
@@ -37,7 +39,7 @@ static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
     pco.numAttributeValues = 2;
     pco.pipelineLaunchParamsVariableName = "params";
 
-#if defined(NDEBUG)
+#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
     pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
 #else
     pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_DEBUG |
@@ -58,7 +60,7 @@ OptixDeviceContext jitc_optix_context() {
 
         OptixDeviceContextOptions ctx_opts {
             jitc_optix_log, nullptr, 4,
-#if defined(NDEBUG) || !ENABLE_OPTIX_VALIDATION_MODE
+#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
             OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF
 #else
             OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL
@@ -85,11 +87,11 @@ OptixDeviceContext jitc_optix_context() {
     if (!state.optix_default_sbt_index) {
         OptixPipelineCompileOptions pco = jitc_optix_default_compile_options();
         OptixModuleCompileOptions mco { };
-#if 1
+#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
         mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
         mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
 #else
-        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
         mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
 #endif
 
@@ -239,11 +241,11 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     // =====================================================
 
     OptixModuleCompileOptions mco { };
-#if 1
+#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
     mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
     mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
 #else
-    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
     mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
 #endif
 
@@ -356,7 +358,11 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
 
     OptixPipelineLinkOptions link_options {};
     link_options.maxTraceDepth = 1;
+#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
     link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+#else
+    link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+#endif
 
     size_t size_before = pipeline.program_groups.size();
 #if 0
