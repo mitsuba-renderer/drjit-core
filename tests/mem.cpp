@@ -213,3 +213,22 @@ TEST_LLVM(14_gather_symbolic_llvm_mask) {
     Float buf_3 = gather<Float>(buf_2, arange<UInt32>(4, 8, 1));
     jit_assert(strcmp(buf_3.str(), "[5, 6, 7, 8]") == 0);
 }
+
+TEST_BOTH(15_gather_symbolic_multiple_mask) {
+    /* A gather expression that is reindexed/rewritten should properly apply its
+     * mask to any previous gather operations it depends on */
+    Float buf_0 = Float(1, 2, 3, 4, 5, 6, 7, 8);
+
+    // true, true, true, false, true
+    Mask mask_1 = (arange<UInt32>(0, 5, 1) % 4) != 0;
+    UInt32 index_1 = arange<UInt32>(0, 5, 1);
+    Float buf_1 = gather<Float>(buf_0, index_1, mask_1);
+
+    Mask mask_2 = Mask(true, true, false, false);
+    UInt32 index_2 = UInt32(0, 1, -1, -1);
+
+    // This gather will reindex, and should apply `mask_2` to the previous
+    // gather, or else it will lookup invalid memory
+    Float buf_2 = gather<Float>(buf_1, index_2, mask_2);
+    jit_assert(strcmp(buf_2.str(), "[1, 2, 0, 0]") == 0);
+}

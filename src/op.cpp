@@ -1415,7 +1415,7 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
 
 /// Change all indices/counters in an expression tree to 'new_index'
 static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
-                                 uint32_t size) {
+                                 uint32_t mask, uint32_t size) {
     Variable *v = jitc_var(var_index);
 
     if (v->is_data() || (VarType) v->type == VarType::Void)
@@ -1439,7 +1439,16 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             uint32_t index_2 = v->dep[i];
             if (!index_2)
                 continue;
-            dep[i] = steal(jitc_var_reindex(index_2, new_index, size));
+
+            if (v->kind == VarKind::Gather && i == 2) {
+                // Gather nodes must have their masks replaced rather than reindexed
+                JitBackend backend = (JitBackend) v->backend;
+                Ref default_mask = steal(jitc_var_mask_default(backend, size));
+                dep[i] = steal(jitc_var_and(mask, default_mask));
+            } else {
+                dep[i] = steal(jitc_var_reindex(index_2, new_index, mask, size));
+            }
+
             v = jitc_var(var_index);
             if (!dep[i])
                 return 0; // recursive call failed, give up
@@ -1527,7 +1536,7 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
     // Don't perform the gather operation if the inputs are trivial / can be re-indexed
     if (!result) {
         Ref index_2 = steal(jitc_var_cast(index, VarType::UInt32, 0));
-        Ref src_reindexed = steal(jitc_var_reindex(src, index_2, var_info.size));
+        Ref src_reindexed = steal(jitc_var_reindex(src, index_2, mask, var_info.size));
         if (src_reindexed) {
             // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'src'
             Ref unused = borrow(src_reindexed);
