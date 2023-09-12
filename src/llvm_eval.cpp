@@ -353,11 +353,14 @@ void jitc_llvm_assemble_func(const char *name, uint32_t inst_id,
                 v, offset,
                 v, v,
                 v, v, v,
-                v, vt == VarType::Pointer ? "_p4" : "", v, v, v, v, v, v);
+                v, (vt == VarType::Bool) ? "_2" : (vt == VarType::Pointer) ? "_p4" : "", v, v, v, v, v, v);
             callable_depth++;
 
             if (vt == VarType::Pointer)
                 fmt("    $v = inttoptr <$w x i64> $v_p4 to <$w x {i8*}>\n",
+                    v, v);
+            else if (vt == VarType::Bool)
+                fmt("    $v = trunc <$w x i8> $v_2 to <$w x i1>\n",
                     v, v);
         } else if (!v->is_stmt()) {
             jitc_llvm_render_var(sv.index, v);
