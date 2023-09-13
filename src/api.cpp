@@ -784,6 +784,10 @@ void jit_prefix_pop(JitBackend backend) {
     jitc_prefix_pop(backend);
 }
 
+const char *jit_prefix(JitBackend backend) {
+    return thread_state(backend)->prefix;
+}
+
 void jit_memset_async(JitBackend backend, void *ptr, uint32_t size, uint32_t isize,
                       const void *src) {
     lock_guard guard(state.lock);
@@ -1243,5 +1247,5 @@ VarInfo jit_set_backend(uint32_t index) noexcept {
     lock_guard guard(state.lock);
     Variable *var = jitc_var(index);
     default_backend = (JitBackend) var->backend;
-    return VarInfo { (JitBackend) var->backend, (VarType) var->type };
+    return VarInfo{ (JitBackend) var->backend, (VarType) var->type, var->size };
 }

@@ -1279,26 +1279,23 @@ extern JIT_EXPORT const char *jit_var_whos();
 extern JIT_EXPORT const char *jit_var_graphviz();
 
 /**
- * \brief Push a string onto the label stack
+ * \brief Push a string onto the label prefix stack
  *
- * Dr.Jit maintains a per-thread label stack that is initially empty and
- * inactive. If values are pushed onto it, they will be used to initialize the
- * labels of any newly created variables.
+ * Dr.Jit maintains a per-thread stack that is initially empty. If values are
+ * pushed onto it, they will be concatenated to generate a prefix associated
+ * with any subsequently created variables.
  *
- * For example, if <tt>"prefix"</tt> and <tt>"prefix2"</tt> are pushed via this
- * function, any newly created variable \c index will be labeled
- * <tt>"prefix1/prefix2/"</tt>. A subsequent call to <tt>jit_var_set_label(index,
- * "name")</tt>; will change the label to <tt>"prefix1/prefix2/name"</tt>.
- *
- * This feature works hand-in-hand with \ref jit_var_graphviz(), which can
- * de-clutter large graph visualizations by drawing boxes around variables with
- * a common prefix.
+ * The function \ref jit_var_graphviz() uses these prefixes de-clutter large
+ * graph visualizations by drawing boxes around variables with a common prefix.
  */
 extern JIT_EXPORT void jit_prefix_push(JIT_ENUM JitBackend backend,
                                        const char *value);
 
 /// Pop a string from the label stack
 extern JIT_EXPORT void jit_prefix_pop(JIT_ENUM JitBackend backend);
+
+/// Query the current prefix. Returns \c nullptr if inactive.
+extern JIT_EXPORT const char *jit_prefix(JIT_ENUM JitBackend);
 
 // ====================================================================
 //  JIT compiler status flags
@@ -1946,23 +1943,26 @@ static inline void jit_init_async(JIT_ENUM JitBackend backend) { jit_init_async(
 
 /// Return value of \ref jit_set_backend()
 struct VarInfo {
-    JitBackend backend : 16;
-    VarType type : 16;
+    JitBackend backend;
+    VarType type;
+    size_t size;
 };
 
-static_assert(sizeof(VarInfo) == 4);
-
 /**
- * \brief Copy the default backend from an existing Dr.Jit variable
+ * \brief Query details about a variable and remember its backend
  *
- * Dr.Jit operations can be called with a backend value of ``JitBackend::None``,
- * in which case the default backend set via this operation takes precedence.
+ * This operations serves a dual role:
  *
- * This is useful to implement a generic version of an operation that works
- * for various different backends. The function also returns a brief summary
- * of the specified variable (backen value and type) packed as a 32-bit integer
- * that can be helpful in some cases.
- * */
+ * 1. It returns several pieces of information characterizing the given
+ * variable: its Jit backend, variable type, and size (number of entries).
+ *
+ * 2. It stashes the variable's backend in a thread-local variable.
+ *
+ * The second step is useful in a few places: Dr.Jit operations can be called
+ * with a backend value of ``JitBackend::None``, in which case the default
+ * backend set via this operation takes precedence. This is useful to implement
+ * generic code that works on various different backends.
+ */
 extern JIT_EXPORT VarInfo jit_set_backend(uint32_t index) JIT_NOEXCEPT;
 
 #if defined(__cplusplus)

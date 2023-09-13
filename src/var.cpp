@@ -362,10 +362,6 @@ const char *jitc_var_label(uint32_t index) {
 }
 
 void jitc_var_set_label(uint32_t index, const char *label) {
-    if (unlikely(index == 0))
-        return;
-
-    Variable *v = jitc_var(index);
     size_t len = label ? strlen(label) : 0;
 
     for (size_t i = 0; i < len; ++i) {
@@ -373,6 +369,11 @@ void jitc_var_set_label(uint32_t index, const char *label) {
             jitc_raise("jit_var_set_label(): invalid string (may not "
                        "contain newline or '/' characters)");
     }
+
+    if (unlikely(index == 0))
+        return;
+
+    Variable *v = jitc_var(index);
 
     v->extra = true;
     Extra &extra = state.extra[index];
@@ -388,7 +389,7 @@ void jitc_var_set_label(uint32_t index, const char *label) {
         }
     } else {
         size_t prefix_len = strlen(ts->prefix);
-        char *combined = (char *) malloc(prefix_len + len + 1);
+        char *combined = (char *) malloc_check(prefix_len + len + 1);
         memcpy(combined, ts->prefix, prefix_len);
         if (len)
             memcpy(combined + prefix_len, label, len);
@@ -1687,8 +1688,8 @@ uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
 /// Return a human-readable summary of registered variables
 const char *jitc_var_whos() {
     var_buffer.clear();
-    var_buffer.put("\n  ID        Type       Status       Refs    Entries   Storage     Label");
-    var_buffer.put("\n  =======================================================================\n");
+    var_buffer.put("\n  ID       Type       Status     Refs       Size      Storage   Label");
+    var_buffer.put("\n  ========================================================================\n");
 
     std::vector<uint32_t> indices;
     indices.reserve(state.variables.size());
@@ -1703,7 +1704,7 @@ const char *jitc_var_whos() {
         const Variable *v = jitc_var(index);
         size_t mem_size = (size_t) v->size * (size_t) type_size[v->type];
 
-        var_buffer.fmt("  %-9u %s %-5s ", index,
+        var_buffer.fmt("  %-8u %s %-5s ", index,
                        (JitBackend) v->backend == JitBackend::CUDA ? "cuda"
                                                                    : "llvm",
                        type_name_short[v->type]);
@@ -1732,11 +1733,11 @@ const char *jitc_var_whos() {
             var_buffer.put("           ");
         }
 
-        size_t sz = var_buffer.fmt("  %u", (uint32_t) v->ref_count);
         const char *label = jitc_var_label(index);
 
-        var_buffer.fmt("%*s%-10u%-8s   %s\n", 10 - (int) sz, "", v->size,
-                   jitc_mem_string(mem_size), label ? label : "");
+        var_buffer.fmt(" %3u %10u %12s   %s\n", (uint32_t) v->ref_count, v->size,
+jitc_mem_string(mem_size), label ? label : ""
+                );
 
         if (v->is_data())
             mem_size_evaluated += mem_size;
@@ -1749,7 +1750,7 @@ const char *jitc_var_whos() {
     constexpr size_t BucketSize1 = sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>);
     constexpr size_t BucketSize2 = sizeof(tsl::detail_robin_hash::bucket_entry<LVNMap::value_type, false>);
 
-    var_buffer.put("  =======================================================================\n\n");
+    var_buffer.put("  ========================================================================\n\n");
     var_buffer.put("  JIT compiler\n");
     var_buffer.put("  ============\n");
     var_buffer.fmt("   - Storage           : %s on device, ",
