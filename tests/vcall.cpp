@@ -916,3 +916,48 @@ TEST_BOTH(12_nested_with_side_effects) {
         jit_registry_trim();
     }
 }
+
+TEST_BOTH(13_load_bool_data) {
+    struct Base {
+        virtual Float f() = 0;
+    };
+    using BasePtr = Array<Base *>;
+
+    struct F1 : Base {
+        Mask cond = dr::opaque<Mask>(true);
+        Float val1 = dr::opaque<Float>(1);
+        Float val2 = dr::opaque<Float>(2);
+        Float f() override {
+            return select(cond, val1, val2);
+        }
+    };
+
+    struct F2 : Base {
+        Mask cond = dr::opaque<Mask>(false);
+        Float val1 = dr::opaque<Float>(3);
+        Float val2 = dr::opaque<Float>(4);
+        Float f() override {
+            return select(cond, val1, val2);
+        }
+    };
+
+    BasePtr self = arange<UInt32>(5) % 3;
+    for (uint32_t i = 0; i < 2; ++i) {
+        jit_set_flag(JitFlag::VCallOptimize, i);
+
+        F1 f1; F2 f2;
+        uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
+        uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
+        jit_assert(i1 == 1 && i2 == 2);
+
+        Float result = vcall(
+            "Base", [](Base *self2) { return self2->f(); }, self);
+
+        jit_var_schedule(result.index());
+        jit_assert(strcmp(result.str(), "[0, 1, 4, 0, 1]") == 0);
+
+        jit_registry_remove(Backend, &f1);
+        jit_registry_remove(Backend, &f2);
+        jit_registry_trim();
+    }
+}

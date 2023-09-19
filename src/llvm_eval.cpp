@@ -344,6 +344,8 @@ void jitc_llvm_assemble_func(const char *name, uint32_t inst_id,
                           v, v, v, v);
 
             uint32_t offset = it->second - data_offset;
+            bool is_pointer_or_bool =
+                (vt == VarType::Pointer) || (vt == VarType::Bool);
             // Expand $<..$> only when we are compiling a recursive function call
             callable_depth--;
             fmt( "    $v_p1 = getelementptr inbounds i8, $<{i8*}$> %data, i32 $u\n"
@@ -353,11 +355,14 @@ void jitc_llvm_assemble_func(const char *name, uint32_t inst_id,
                 v, offset,
                 v, v,
                 v, v, v,
-                v, vt == VarType::Pointer ? "_p4" : "", v, v, v, v, v, v);
+                v, is_pointer_or_bool ? "_p4" : "", v, v, v, v, v, v);
             callable_depth++;
 
             if (vt == VarType::Pointer)
                 fmt("    $v = inttoptr <$w x i64> $v_p4 to <$w x {i8*}>\n",
+                    v, v);
+            else if (vt == VarType::Bool)
+                fmt("    $v = trunc <$w x i8> $v_p4 to <$w x i1>\n",
                     v, v);
         } else if (!v->is_stmt()) {
             jitc_llvm_render_var(sv.index, v);
