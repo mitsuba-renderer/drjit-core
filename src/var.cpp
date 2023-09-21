@@ -362,6 +362,9 @@ const char *jitc_var_label(uint32_t index) {
 }
 
 void jitc_var_set_label(uint32_t index, const char *label) {
+    if (unlikely(index == 0))
+        return;
+
     size_t len = label ? strlen(label) : 0;
 
     for (size_t i = 0; i < len; ++i) {
@@ -370,12 +373,9 @@ void jitc_var_set_label(uint32_t index, const char *label) {
                        "contain newline or '/' characters)");
     }
 
-    if (unlikely(index == 0))
-        return;
-
     Variable *v = jitc_var(index);
-
     v->extra = true;
+
     Extra &extra = state.extra[index];
     free(extra.label);
 
