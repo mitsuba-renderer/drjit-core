@@ -629,24 +629,15 @@ uint32_t jit_var_set_label(uint32_t index, const char *label) {
 
     Variable *v = jitc_var(index);
 
-    // Clone literal constants when being labeled
-    uint32_t result;
-    if (v->is_literal() && v->ref_count != 1) {
-        Variable v2;
-        memcpy(&v2.literal, &v->literal, sizeof(uint64_t));
-        v2.kind = (uint32_t) VarKind::Literal;
-        v2.size = v->size;
-        v2.type = v->type;
-        v2.backend = v->backend;
-        result = jitc_var_new(v2, true);
-    } else {
+    if (v->ref_count == 1) {
+        jitc_var_set_label(index, label);
         jitc_var_inc_ref(index, v);
-        result = index;
+        return index;
+    } else {
+        uint32_t result = jitc_var_copy(index);
+        jitc_var_set_label(result, label);
+        return result;
     }
-
-    jitc_var_set_label(result, label);
-
-    return result;
 }
 
 void jit_var_set_callback(uint32_t index,
