@@ -33,7 +33,7 @@ TEST_BOTH(01_all_any) {
     }
 }
 
-TEST_BOTH(02_scan) {
+TEST_BOTH(02_prefix_sum_exc_u32) {
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
         uint32_t size = 23*i*i*i + 1;
@@ -42,7 +42,7 @@ TEST_BOTH(02_scan) {
 
         if (i < 15) {
             result = arange<UInt32>(size);
-            ref    = result * (result - 1) / 2;
+            ref    = (result * (result - 1)) / 2;
         } else {
             result = full<UInt32>(1, size);
             ref    = arange<UInt32>(size);
@@ -50,12 +50,148 @@ TEST_BOTH(02_scan) {
         jit_var_schedule(result.index());
         jit_var_schedule(ref.index());
         jit_eval();
-        jit_scan_u32(Float::Backend, result.data(), size, result.data());
+        jit_prefix_sum(Float::Backend, VarType::UInt32, true, result.data(), size, result.data());
         jit_assert(result == ref);
     }
 }
 
-TEST_BOTH(03_compress) {
+TEST_BOTH(03_prefix_sum_inc_u32) {
+    scoped_set_log_level ssll(LogLevel::Info);
+    for (uint32_t i = 0; i < 100; ++i) {
+        uint32_t size = 23*i*i*i + 1;
+
+        UInt32 result, ref;
+
+        if (i < 15) {
+            result = arange<UInt32>(size);
+            ref    = ((result + 1) * result) / 2;
+        } else {
+            result = full<UInt32>(1, size);
+            ref    = arange<UInt32>(size) + 1;
+        }
+        jit_var_schedule(result.index());
+        jit_var_schedule(ref.index());
+        jit_eval();
+        jit_prefix_sum(Float::Backend, VarType::UInt32, false, result.data(), size, result.data());
+        jit_assert(result == ref);
+    }
+}
+
+TEST_BOTH(04_prefix_sum_exc_f32) {
+    scoped_set_log_level ssll(LogLevel::Info);
+    for (uint32_t i = 0; i < 80; ++i) {
+        uint32_t size = 23*i*i*i + 1;
+
+        Float result = full<Float>(1, size);
+        Float ref    = arange<Float>(size);
+        jit_var_schedule(result.index());
+        jit_var_schedule(ref.index());
+        jit_prefix_sum(Float::Backend, VarType::Float32, true, result.data(), size, result.data());
+        float f = hsum(abs(result - ref)).read(0);
+        jit_assert(f < 1e-6);
+    }
+}
+
+TEST_BOTH(05_prefix_sum_inc_f32) {
+    for (uint32_t i = 0; i < 80; ++i) {
+        uint32_t size = 23*i*i*i + 1;
+
+        Float result = full<Float>(1, size);
+        Float ref    = arange<Float>(size) + 1.f;
+        jit_var_schedule(result.index());
+        jit_var_schedule(ref.index());
+        jit_prefix_sum(Float::Backend, VarType::Float32, false, result.data(), size, result.data());
+        float f = hsum(abs(result - ref)).read(0);
+        jit_assert(f < 1e-6);
+    }
+}
+
+TEST_BOTH(06_prefix_sum_exc_u64) {
+    using UInt64 = typename UInt32::template ReplaceValue<uint64_t>;
+    scoped_set_log_level ssll(LogLevel::Info);
+    for (uint32_t i = 0; i < 100; ++i) {
+        uint32_t size = 23*i*i*i + 1;
+
+        UInt64 result, ref;
+
+        if (i < 15) {
+            result = arange<UInt64>(size);
+            ref    = (result * (result - 1)) / 2;
+        } else {
+            result = full<UInt64>(1, size);
+            ref    = arange<UInt64>(size);
+        }
+        jit_var_schedule(result.index());
+        jit_var_schedule(ref.index());
+        jit_eval();
+        jit_prefix_sum(UInt64::Backend, VarType::UInt64, true, result.data(), size, result.data());
+
+        jit_assert(result == ref);
+    }
+}
+
+TEST_BOTH(07_prefix_sum_inc_u64) {
+    using UInt64 = typename UInt32::template ReplaceValue<uint64_t>;
+    scoped_set_log_level ssll(LogLevel::Info);
+    for (uint32_t i = 0; i < 100; ++i) {
+        uint32_t size = 23*i*i*i + 1;
+
+        UInt64 result, ref;
+
+        if (i < 15) {
+            result = arange<UInt64>(size);
+            ref    = (result * (result + 1)) / 2;
+        } else {
+            result = full<UInt64>(1, size);
+            ref    = arange<UInt64>(size) + 1;
+        }
+        jit_var_schedule(result.index());
+        jit_var_schedule(ref.index());
+        jit_eval();
+        jit_prefix_sum(UInt64::Backend, VarType::UInt64, false, result.data(), size, result.data());
+
+        jit_assert(result == ref);
+    }
+}
+
+TEST_BOTH(08_prefix_sum_exc_f64) {
+    using Double = typename Float::template ReplaceValue<double>;
+    scoped_set_log_level ssll(LogLevel::Info);
+    for (uint32_t i = 0; i < 100; ++i) {
+        uint32_t size = 23*i*i*i + 1;
+
+        Double input  = full<Double>(1, size);
+        Double output = empty<Double>(size);
+        Double ref    = arange<Double>(size);
+        jit_var_schedule(input.index());
+        jit_var_schedule(ref.index());
+        jit_eval();
+        jit_prefix_sum(Double::Backend, VarType::Float64, true, input.data(), size, output.data());
+        double f = hsum(abs(output - ref)).read(0);
+        jit_assert(f < 1e-6);
+    }
+}
+
+TEST_BOTH(09_prefix_sum_inc_f64) {
+    using Double = typename Float::template ReplaceValue<double>;
+    scoped_set_log_level ssll(LogLevel::Info);
+    for (uint32_t i = 0; i < 100; ++i) {
+        uint32_t size = 23*i*i*i + 1;
+
+        Double input  = full<Double>(1, size);
+        Double output = empty<Double>(size);
+        Double ref    = arange<Double>(size)+1.0;
+        jit_var_schedule(input.index());
+        jit_var_schedule(ref.index());
+        jit_eval();
+        jit_prefix_sum(Double::Backend, VarType::Float64, false, input.data(), size, output.data());
+        double f = hsum(abs(output - ref)).read(0);
+        jit_assert(f < 1e-6);
+    }
+}
+
+
+TEST_BOTH(10_compress) {
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 30; ++i) {
         uint32_t size = 23*i*i*i + 1;
@@ -98,7 +234,7 @@ TEST_BOTH(03_compress) {
     }
 }
 
-TEST_BOTH(04_mkperm) {
+TEST_BOTH(11_mkperm) {
     scoped_set_log_level ssll(LogLevel::Info);
     srand(0);
     for (uint32_t i = 0; i < 30; ++i) {
@@ -186,20 +322,10 @@ TEST_BOTH(04_mkperm) {
 }
 
 #if 0
-TEST_BOTH(05_block_ops) {
+TEST_BOTH(12_block_ops) {
     Float a(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f);
 
     jit_log(Info, "block_copy: %s\n", block_copy(a, 3).str());
     jit_log(Info, "block_sum:  %s\n", block_sum(a, 3).str());
-}
-
-TEST_LLVM(06_parallel_scatter_reduce) {
-    scoped_set_log_level ssll(LogLevel::Info);
-    UInt32 a = zero<UInt32>(10);
-
-    UInt32 index = block_copy(arange<UInt32>(10), 1024 * 1024 + 10);
-    scatter_reduce(a, UInt32(1), index, ReduceOp::Add);
-    UInt32 ref = full<UInt32>(1024 * 1024 + 10, 10);
-    jit_assert(ref == a);
 }
 #endif

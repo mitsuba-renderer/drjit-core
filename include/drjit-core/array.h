@@ -364,7 +364,7 @@ Array empty(size_t size) {
                                                       : AllocType::HostAsync,
                    byte_size);
     return Array::steal(
-        jit_var_map_mem(Array::Backend, Array::Type, ptr, size, 1));
+        jit_var_mem_map(Array::Backend, Array::Type, ptr, size, 1));
 }
 
 template <typename Array>

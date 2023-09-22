@@ -55,8 +55,8 @@ __device__ void reduce(const Value *data, uint32_t size, Value *out) {
             value = reduce(value, shared[tid + 32]);
 
         // Block-level reduction from nb*32 -> nb values
-        for (int offset = 16; offset > 0; offset /= 2)
-            value = reduce(value, __shfl_down_sync(0xFFFFFFFF, value, offset, 32));
+        for (uint32_t offset = WARP_SIZE / 2; offset > 0; offset /= 2)
+            value = reduce(value, __shfl_down_sync(FULL_MASK, value, offset, WARP_SIZE));
 
         if (tid == 0)
             out[bid] = value;

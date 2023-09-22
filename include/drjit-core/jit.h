@@ -1592,30 +1592,42 @@ extern JIT_EXPORT void jit_memcpy_async(JIT_ENUM JitBackend backend, void *dst, 
  */
 extern JIT_EXPORT void jit_reduce(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
                                   JIT_ENUM ReduceOp rtype,
-                                  const void *ptr, uint32_t size, void *out);
+                                  const void *in, uint32_t size, void *out);
 
-/**
- * \brief Perform an exclusive scan / prefix sum over an unsigned 32 bit integer
- * array
+/** \brief Compute n prefix sum over the given input array
  *
- * If desired, the scan can be performed in-place (i.e. <tt>in == out</tt>).
- * Note that the CUDA implementation will round up \c size to the maximum of
- * the following three values for performance reasons:
+ * Both exclusive and inclusive variants are supported. If desired, the scan
+ * can be performed in-place (i.e., <tt>out == in</tt>). The operation runs
+ * asynchronously.
  *
- * - the value 4,
+ * The operation is currenly implemented for the following numeric types:
+ * ``VarType::Int32``, ``VarType::UInt32``, ``VarType::UInt64``,
+ * ``VarType::Float32``, and ``VarType::Float64``.
+ *
+ * Note that the CUDA implementation may round \c size to the maximum of the
+ * following three values for performance and implementation-related reasons
+ * (the prefix sum uses a tree-based parallelization scheme).
+ *
+ * - the value 4
  * - the next highest power of two (when size <= 4096),
  * - the next highest multiple of 2K (when size > 4096),
  *
  * For this reason, the the supplied memory regions must be sufficiently large
- * to avoid both out-of-bounds reads and writes. This is not an issue for
- * memory obtained using \ref jit_malloc(), which internally rounds
- * allocations to the next largest power of two and enforces a 64 byte minimum
- * allocation size.
+ * to avoid out-of-bounds reads and writes. This is not an issue for memory
+ * obtained using \ref jit_malloc(), which internally rounds allocations to the
+ * next largest power of two and enforces a 64 byte minimum allocation size.
  *
- * Runs asynchronously.
+ * The CUDA backend implementation for *large* numeric types (double precision
+ * floats, 64 bit integers) has the following technical limitation: when
+ * reducing 64-bit integers, their values must be smaller than 2**62. When
+ * reducing double precision arrays, the two least significant mantissa bits
+ * are clamped to zero when forwarding the prefix from one 512-wide block to
+ * the next (at a very minor loss in accuracy). See the implementation for
+ * details on this.
  */
-extern JIT_EXPORT void jit_scan_u32(JIT_ENUM JitBackend backend, const uint32_t *in,
-                                    uint32_t size, uint32_t *out);
+extern JIT_EXPORT void jit_prefix_sum(JIT_ENUM JitBackend backend,
+                                      JIT_ENUM VarType type, int exclusive,
+                                      const void *in, uint32_t size, void *out);
 
 /**
  * \brief Compress a mask into a list of nonzero indices
@@ -1625,7 +1637,7 @@ extern JIT_EXPORT void jit_scan_u32(JIT_ENUM JitBackend backend, const uint32_t 
  * indices of nonzero entries to \c out (in increasing order), and it
  * furthermore returns the total number of nonzero mask entries.
  *
- * The internals resemble \ref jit_scan_u32(), and the CUDA implementation may
+ * The internals resemble \ref jit_prefix_sum_u32(), and the CUDA implementation may
  * similarly access regions beyond the end of \c in and \c out.
  *
  * This function internally performs a synchronization step.

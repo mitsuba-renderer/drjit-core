@@ -16,8 +16,8 @@
 extern const char *reduction_name[(int) ReduceOp::Count];
 
 /// Fill a device memory region with constants of a given type
-extern void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size, uint32_t isize,
-                              const void *src);
+extern void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size,
+                              uint32_t isize, const void *src);
 
 /// Reduce the given array to a single value
 extern void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype,
@@ -30,8 +30,8 @@ extern bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size);
 extern bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size);
 
 /// Exclusive prefix sum
-extern void jitc_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size,
-                          uint32_t *out);
+extern void jitc_prefix_sum(JitBackend backend, VarType vt, bool exclusive,
+                            const void *in, uint32_t size, void *out);
 
 /// Mask compression
 extern uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size,

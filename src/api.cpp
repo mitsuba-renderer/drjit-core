@@ -682,9 +682,10 @@ void jit_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *pt
     jitc_reduce(backend, type, rtype, ptr, size, out);
 }
 
-void jit_scan_u32(JitBackend backend, const uint32_t *in, uint32_t size, uint32_t *out) {
+void jit_prefix_sum(JitBackend backend, VarType type, int exclusive, const void *in,
+              uint32_t size, void *out) {
     lock_guard guard(state.lock);
-    jitc_scan_u32(backend, in, size, out);
+    jitc_prefix_sum(backend, type, exclusive != 0, in, size, out);
 }
 
 uint32_t jit_compress(JitBackend backend, const uint8_t *in, uint32_t size, uint32_t *out) {

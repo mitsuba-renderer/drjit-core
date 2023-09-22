@@ -5,6 +5,10 @@
 #include <limits>
 
 #define KERNEL extern "C" __global__
+#define DEVICE __device__
+#define FINLINE __forceinline__
+#define WARP_SIZE 32
+#define FULL_MASK 0xffffffff
 
 template <typename T> struct SharedMemory {
     __device__ inline static T *get() {

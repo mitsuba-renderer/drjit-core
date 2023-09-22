@@ -10,6 +10,16 @@
 
 #include "common.h"
 
+DEVICE FINLINE void store_cg(uint64_t *ptr, uint64_t val) {
+    asm volatile("st.cg.u64 [%0], %1;" : : "l"(ptr), "l"(val));
+}
+
+DEVICE FINLINE uint64_t load_cg(uint64_t *ptr) {
+    uint64_t retval;
+    asm volatile("ld.cg.u64 %0, [%1];" : "=l"(retval) : "l"(ptr));
+    return retval;
+}
+
 KERNEL void compress_small(const uint8_t *in, uint32_t *out, uint32_t size, uint32_t *count_out) {
     uint32_t *shared = SharedMemory<uint32_t>::get();
 
