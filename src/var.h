@@ -204,6 +204,9 @@ extern bool jitc_var_any(uint32_t index);
 extern uint32_t jitc_var_reduce(JitBackend backend, VarType vt,
                                 ReduceOp reduce_op, uint32_t index);
 
+/// Compute an inclusive or exclusive prefix sum of a given variable
+extern uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive);
+
 /// Create a variable containing the buffer storing a specific attribute
 extern uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
                                        const char *domain, const char *name);

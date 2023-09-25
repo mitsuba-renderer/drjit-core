@@ -1665,6 +1665,29 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
     return jitc_var_mem_map(backend, vt, data, 1, 1);
 }
 
+uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
+    if (!index)
+        return index;
+
+    jitc_var_eval(index);
+
+    const Variable *v = jitc_var(index);
+    VarType vt = (VarType) v->type;
+    const void *data_in = v->data;
+    uint32_t size = v->size;
+    JitBackend backend = (JitBackend) v->backend;
+
+    void *data_out =
+        jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
+                                                : AllocType::HostAsync,
+                    (size_t) type_size[(int) vt] * size);
+
+    Ref result = steal(jitc_var_mem_map(backend, vt, data_out, size, 1));
+
+    jitc_prefix_sum(backend, vt, exclusive, data_in, size, data_out);
+    return result.release();
+}
+
 uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
                                 const char *domain, const char *name) {
     uint32_t index = 0;
@@ -1735,9 +1758,8 @@ const char *jitc_var_whos() {
 
         const char *label = jitc_var_label(index);
 
-        var_buffer.fmt(" %3u %10u %12s   %s\n", (uint32_t) v->ref_count, v->size,
-jitc_mem_string(mem_size), label ? label : ""
-                );
+        var_buffer.fmt(" %3u %10u %12s   %s\n", (uint32_t) v->ref_count,
+                       v->size, jitc_mem_string(mem_size), label ? label : "");
 
         if (v->is_data())
             mem_size_evaluated += mem_size;

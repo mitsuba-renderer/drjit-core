@@ -714,6 +714,11 @@ uint32_t jit_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
     return jitc_var_reduce(backend, vt, reduce_op, index);
 }
 
+uint32_t jit_var_prefix_sum(uint32_t index, int exclusive) {
+    lock_guard guard(state.lock);
+    return jitc_var_prefix_sum(index, exclusive != 0);
+}
+
 const char *jit_var_whos() {
     lock_guard guard(state.lock);
     return jitc_var_whos();

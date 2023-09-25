@@ -1598,6 +1598,9 @@ extern JIT_EXPORT uint32_t jit_var_reduce(JitBackend backend, VarType vt,
                                           JIT_ENUM ReduceOp reduce_op,
                                           uint32_t index);
 
+/// Compute an exclusive (exclusive == 1) or inclusive (exclusive == 0) prefix sum (asynchronous)
+extern JIT_EXPORT uint32_t jit_var_prefix_sum(uint32_t index, int exclusive);
+
 // ====================================================================
 //  Assortment of tuned kernels for initialization, reductions, etc.
 // ====================================================================
