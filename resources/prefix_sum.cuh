@@ -1,5 +1,5 @@
 /*
-    kernels/mkperm.cuh -- CUDA, exclusive prefix sum for 32 bit unsigned integers
+    kernels/prefix_sum.cuh -- CUDA exclusive/inclusive prefix sum for various types
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -272,7 +272,7 @@ DEVICE void prefix_sum_large(const Type *in, Type *out, uint32_t size, uint64_t 
     // Offset the local block sum with the final prefix
     sum_block += prefix;
 
-    // Store block-level complete inclusive prefixnsum value in global memory
+    // Store block-level complete inclusive prefix sum value in global memory
     if (threadIdx.x == thread_count - 1)
         store_pair(scratch, 2, sum_block);
 
