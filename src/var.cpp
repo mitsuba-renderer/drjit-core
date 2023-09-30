@@ -83,6 +83,26 @@ const char *type_size_str[(int) VarType::Count] {
     "4", "8", "8", "8", "2", "4", "8"
 };
 
+// Representation of the value 1
+const uint64_t type_one[(int) VarType::Count] {
+    0, 1, 1, 1, 1,      1,          1,
+    1, 1, 1, 0, 0x3c00, 0x3f800000, 0x3ff0000000000000ull
+};
+
+/// Smallest representable value (neg. infinity for FP values)
+const uint64_t type_min[(int) VarType::Count] {
+    0, 0, 0x80, 0, 0x8000, 0, 0x80000000, 0,
+    0x8000000000000000ull, 0ull,
+    0xfc00, 0xff800000, 0xfff0000000000000
+};
+
+/// Largest representable value (infinity for FP values)
+const uint64_t type_max[(int) VarType::Count] {
+    0, 1, 0x7f, 0xff, 0x7fff, 0xffff, 0x7fffffff, 0xffffffff,
+    0x7fffffffffffffffull, 0xffffffffffffffffull,
+    0x7c00, 0x7f800000, 0x7ff0000000000000ull
+};
+
 ///
 const char *var_kind_name[(int) VarKind::Count] {
     "invalid",
@@ -1581,23 +1601,6 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
 
         const uint64_t all_zero = 0, all_one = 0xFFFFFFFF;
 
-        const uint64_t type_one[(int) VarType::Count] {
-            0, 1, 1, 1, 1,      1,          1,
-            1, 1, 1, 0, 0x3c00, 0x3f800000, 0x3ff0000000000000ull
-        };
-
-        const uint64_t type_min[(int) VarType::Count] {
-            0, 0, 0x80, 0, 0x8000, 0, 0x80000000, 0,
-            0x8000000000000000ull, 0ull,
-            0xfc00, 0xff800000, 0xfff0000000000000
-        };
-
-        const uint64_t type_max[(int) VarType::Count] {
-            0, 1, 0x7f, 0xff, 0x7fff, 0xffff, 0x7fffffff, 0xffffffff,
-            0x7fffffffffffffffull, 0xffffffffffffffffull,
-            0x7c00, 0x7f800000, 0x7ff0000000000000ull
-        };
-
         const void *source = nullptr;
         switch (reduce_op) {
             case ReduceOp::Or:
@@ -1669,13 +1672,28 @@ uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
     if (!index)
         return index;
 
-    jitc_var_eval(index);
-
     const Variable *v = jitc_var(index);
     VarType vt = (VarType) v->type;
-    const void *data_in = v->data;
-    uint32_t size = v->size;
     JitBackend backend = (JitBackend) v->backend;
+    uint32_t size = v->size;
+
+    if (v->is_literal()) {
+        Ref ctr = steal(jitc_var_counter(backend, size, true));
+        if (vt != VarType::UInt32)
+            ctr = steal(jitc_var_cast(ctr, vt, false));
+
+        if (!exclusive) {
+            Ref one = steal(jitc_var_literal(backend, vt, &type_one[(int) vt], 1, 0));
+            ctr = steal(jitc_var_add(one, ctr));
+        }
+
+        return jitc_var_mul(ctr, index);
+    } else if (!v->is_data() || v->is_dirty()) {
+        jitc_var_eval(index);
+        v = jitc_var(index);
+    }
+
+    const void *data_in = v->data;
 
     void *data_out =
         jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
