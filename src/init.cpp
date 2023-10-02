@@ -352,7 +352,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
                            "computer simply does not contain a graphics card "
                            "that supports CUDA.\n\n 2. your CUDA kernel module "
                            "and CUDA library are out of sync. Try to see if "
-                           "you\n    can run a utility like 'nvida-smi'. If "
+                           "you\n    can run a utility like 'nvidia-smi'. If "
                            "not, a reboot will likely fix this\n    issue. "
                            "Otherwise reinstall your graphics driver. \n\n "
                            "The specific error message produced by cuInit was\n"
