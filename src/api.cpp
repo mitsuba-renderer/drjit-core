@@ -138,7 +138,7 @@ void jit_raise(const char* fmt, ...) {
     // va_end(args); (dead code)
 }
 
-void jit_fail(const char* fmt, ...) {
+void jit_fail(const char* fmt, ...) noexcept {
     lock_guard guard(state.lock);
     va_list args;
     va_start(args, fmt);

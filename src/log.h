@@ -55,10 +55,10 @@ extern void jitc_raise(const char* fmt, ...);
 #else
    [[noreturn]]
 #endif
-extern void jitc_fail(const char* fmt, ...);
+extern void jitc_fail(const char* fmt, ...) noexcept;
 
 /// Immediately terminate the application due to a fatal internal error
-[[noreturn]] extern void jitc_vfail(const char* fmt, va_list args);
+[[noreturn]] extern void jitc_vfail(const char* fmt, va_list args) noexcept;
 
 /// Return and clear the log buffer
 extern char *jitc_log_buffer();

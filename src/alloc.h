@@ -17,7 +17,7 @@
 #else
     [[noreturn]]
 #endif
-extern void jitc_fail(const char* fmt, ...);
+extern void jitc_fail(const char* fmt, ...) noexcept;
 
 template <typename T, size_t Align = alignof(T)>
 struct aligned_allocator {

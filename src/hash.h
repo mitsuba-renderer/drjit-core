@@ -38,7 +38,7 @@
 #else
     [[noreturn]]
 #endif
-extern void jitc_fail(const char* fmt, ...);
+extern void jitc_fail(const char* fmt, ...) noexcept;
 
 struct UInt32Hasher {
     size_t operator()(uint32_t v) const {

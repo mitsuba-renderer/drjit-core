@@ -76,7 +76,7 @@ void jitc_vraise(const char* fmt, va_list args) {
     throw std::runtime_error(log_buffer.get());
 }
 
-void jitc_fail(const char* fmt, ...) {
+void jitc_fail(const char* fmt, ...) noexcept {
     fprintf(stderr, "\n\nCritical Dr.Jit compiler failure: ");
 
     va_list args;
@@ -89,7 +89,7 @@ void jitc_fail(const char* fmt, ...) {
     abort();
 }
 
-void jitc_vfail(const char* fmt, va_list args) {
+void jitc_vfail(const char* fmt, va_list args) noexcept {
     fprintf(stderr, "Critical Dr.Jit compiler failure: ");
     vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
