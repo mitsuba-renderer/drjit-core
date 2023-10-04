@@ -319,7 +319,7 @@ extern JIT_EXPORT void jit_log(JIT_ENUM LogLevel level, const char* fmt, ...);
 extern JIT_EXPORT void jit_raise(const char* fmt, ...) JIT_NORETURN_FORMAT;
 
 /// Terminate the application due to a non-recoverable error
-extern JIT_EXPORT void jit_fail(const char* fmt, ...) JIT_NORETURN_FORMAT;
+extern JIT_EXPORT void jit_fail(const char* fmt, ...) JIT_NOEXCEPT JIT_NORETURN_FORMAT;
 
 // ====================================================================
 //                         Memory allocation
