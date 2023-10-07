@@ -271,18 +271,16 @@ void jitc_shutdown(int light) {
             if (n_leaked < 10)
                 jitc_log(Warn,
                          " - variable r%u is still being referenced! "
-                         "(ref=%u, ref_se=%u, type=%s, size=%u, "
-                         "stmt=\"%s\", dep=[%u, %u, %u, %u])",
+                         "(type=%s, size=%u, "
+                         "kind=\"%s\", dep=[%u, %u, %u, %u], ref=%u, ref_se=%u)",
                          var.first,
-                         (uint32_t) var.second.ref_count,
-                         (uint32_t) var.second.ref_count_se,
                          type_name[var.second.type],
                          var.second.size,
-                         var.second.is_literal()
-                             ? "<value>"
-                             : (var.second.stmt ? var.second.stmt : "<null>"),
+                         var_kind_name[var.second.kind],
                          var.second.dep[0], var.second.dep[1],
-                         var.second.dep[2], var.second.dep[3]);
+                         var.second.dep[2], var.second.dep[3],
+                         (uint32_t) var.second.ref_count,
+                         (uint32_t) var.second.ref_count_se);
             else if (n_leaked == 10)
                 jitc_log(Warn, " - (skipping remainder)");
             ++n_leaked;
