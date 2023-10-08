@@ -127,31 +127,15 @@ template <typename T> struct dr_vector {
 
     T &operator[](size_t i) { return m_data[i]; }
     const T &operator[](size_t i) const { return m_data[i]; }
+    T *begin() { return m_data.get(); }
+    T *end() { return m_data.get() + m_size; }
+    const T *begin() const { return m_data.get(); }
+    const T *end() const { return m_data.get() + m_size; }
 
 protected:
     dr_unique_ptr<T[]> m_data;
     size_t m_size = 0;
     size_t m_capacity = 0;
-};
-
-struct dr_index_vector : dr_vector<uint32_t> {
-    using Base = dr_vector<uint32_t>;
-    using Base::Base;
-    using Base::operator=;
-
-    dr_index_vector(size_t size) : Base(size, 0) { }
-    ~dr_index_vector() { clear(); }
-
-    void push_back(uint32_t value) {
-        jit_var_inc_ref_impl(value);
-        Base::push_back(value);
-    }
-
-    void clear() {
-        for (size_t i = 0; i < size(); ++i)
-            jit_var_dec_ref_impl(operator[](i));
-        Base::clear();
-    }
 };
 
 // Tiny self-contained tuple to avoid having to import 1000s of LOC from <tuple>
