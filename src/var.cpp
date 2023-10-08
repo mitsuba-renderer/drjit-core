@@ -198,9 +198,9 @@ StringBuffer var_buffer(0);
 
 #define jitc_check_size(name, size)                                            \
     if (unlikely(size > 0xFFFFFFFF))                                           \
-        jitc_raise("%s(): tried to create an array with %zu entries, which "   \
-                   "exceeds the limit of 2^32 == 4294967296 entries.",         \
-                   name, size);
+    jitc_raise(name "(): tried to create an array with %zu entries, "          \
+                    "which exceeds the limit of 2^32 == 4294967296 entries.",  \
+               size)
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
 void jitc_var_free(uint32_t index, Variable *v) {
@@ -1465,7 +1465,9 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     return dst_index;
 }
 
-uint32_t jitc_var_mask_default(JitBackend backend, uint32_t size) {
+uint32_t jitc_var_mask_default(JitBackend backend, size_t size) {
+    jitc_check_size("jit_var_mask_default", size);
+
     if (backend == JitBackend::CUDA) {
         bool value = true;
         return jitc_var_literal(backend, VarType::Bool, &value, size, 0);

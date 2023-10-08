@@ -1317,7 +1317,7 @@ extern JIT_EXPORT const char *jit_prefix(JIT_ENUM JitBackend);
  * The default set of flags is:
  *
  * <tt>ConstProp | ValueNumbering | LoopRecord | LoopOptimize |
- * VCallRecord | VCallOptimize | ADOptimize</tt>
+ * VCallRecord | VCallOptimize | AtomicReduceLocal </tt>
  */
 #if defined(__cplusplus)
 enum class JitFlag : uint32_t {
@@ -1366,9 +1366,6 @@ enum class JitFlag : uint32_t {
        along with the KernelHistory feature. */
     LaunchBlocking = 4096,
 
-    /// Exploit literal constants during AD (used in the Dr.Jit parent project)
-    ADOptimize = 8192,
-
     /// Perform a intra-warp/SIMD register reduction before issuing global atomics
     AtomicReduceLocal = 16384,
 
@@ -1376,8 +1373,7 @@ enum class JitFlag : uint32_t {
     Default = (uint32_t) ConstProp | (uint32_t) ValueNumbering |
               (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallDeduplicate |
-              (uint32_t) VCallOptimize | (uint32_t) ADOptimize |
-              (uint32_t) AtomicReduceLocal
+              (uint32_t) VCallOptimize | (uint32_t) AtomicReduceLocal
 };
 #else
 enum JitFlag {
@@ -1394,7 +1390,6 @@ enum JitFlag {
     JitFlagPrintIR             = 1024,
     JitFlagKernelHistory       = 2048,
     JitFlagLaunchBlocking      = 4096,
-    JitFlagADOptimize          = 8192,
     JitFlagAtomicReduceLocal = 16384
 };
 #endif
@@ -1573,7 +1568,7 @@ extern JIT_EXPORT uint32_t jit_var_mask_peek(JIT_ENUM JitBackend backend);
 
 /// Return the default mask for a wavefront of the given \c size
 extern JIT_EXPORT uint32_t jit_var_mask_default(JIT_ENUM JitBackend backend,
-                                                uint32_t size);
+                                                size_t size);
 
 /**
  * \brief Combine the given mask 'index' with the mask stack
@@ -1745,26 +1740,25 @@ struct VCallBucket {
  * both the resolved pointer address (obtained via \ref
  * jit_registry_get_ptr()) and the variable index of an unsigned 32 bit array
  * containing the corresponding entries of the input array. The total number of
- * buckets is returned via the \c bucket_count_out argument.
+ * buckets is returned via the \c bucket_count_inout argument.
  *
- * Alternatively, this function can be used to abuse the virtual function call
- * mechanism of Dr.Jit to dispatch the wavefront on an arbitrary list of
- * callables. In this case, \c domain should be set to \c nullptr and the
+ * Alternatively, this function can be used to to dispatch using an arbitrary
+ * index list. In this case, \c domain should be set to \c nullptr and the
  * function will expects an array of integers that correspond to the indices of
  * the callable to execute. The largest possible value in the array of indices
- * has to be passed via the \c bucket_count_out argument, which will then be
+ * has to be passed via the \c bucket_count_inout argument, which will then be
  * overwritten with the total number of buckets.
  *
  * The memory region accessible via the \c VCallBucket pointer will remain
  * accessible until the variable \c index is itself freed (i.e. when its
  * reference count becomes equal to zero). Until then, additional calls to \ref
  * jit_var_vcall() will return the previously computed result. This is an
- * important optimization in situations where multiple vector function calls
- * are executed on the same set of instances.
+ * important optimization in situations where multiple calls target the same
+ * set of instances.
  */
 extern JIT_EXPORT struct VCallBucket *
 jit_var_vcall_reduce(JIT_ENUM JitBackend backend, const char *domain,
-                     uint32_t index, uint32_t *bucket_count_out);
+                     uint32_t index, uint32_t *bucket_count_inout);
 
 /**
  * \brief Replicate individual input elements across larger blocks
@@ -1940,6 +1934,9 @@ extern JIT_EXPORT struct KernelHistoryEntry *jit_kernel_history();
 
 /// Return the item size of a JIT variable type
 extern JIT_EXPORT size_t jit_type_size(JIT_ENUM VarType type) JIT_NOEXCEPT;
+
+/// Return a name (e.g., "float32") for a given a JIT variable type
+extern JIT_EXPORT const char *jit_type_name(JIT_ENUM VarType type) JIT_NOEXCEPT;
 
 static inline void jit_init(JIT_ENUM JitBackend backend)       { jit_init((uint32_t) backend); }
 static inline void jit_init_async(JIT_ENUM JitBackend backend) { jit_init_async((uint32_t) backend); }
