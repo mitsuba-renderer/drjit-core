@@ -693,7 +693,7 @@ void jit_var_mask_pop(JitBackend backend) {
     jitc_var_mask_pop(backend);
 }
 
-uint32_t jit_var_mask_default(JitBackend backend, uint32_t size) {
+uint32_t jit_var_mask_default(JitBackend backend, size_t size) {
     lock_guard guard(state.lock);
     return jitc_var_mask_default(backend, size);
 }
@@ -934,9 +934,9 @@ uint32_t jit_var_loop(const char *name, uint32_t loop_init, uint32_t loop_cond,
 
 struct VCallBucket *
 jit_var_vcall_reduce(JitBackend backend, const char *domain, uint32_t index,
-                     uint32_t *bucket_count_out) {
+                     uint32_t *bucket_count_inout) {
     lock_guard guard(state.lock);
-    return jitc_var_vcall_reduce(backend, domain, index, bucket_count_out);
+    return jitc_var_vcall_reduce(backend, domain, index, bucket_count_inout);
 }
 
 void jit_kernel_history_clear() {
@@ -1237,6 +1237,10 @@ uint32_t jit_var_vcall_mask(JitBackend backend) {
 
 size_t jit_type_size(VarType type) noexcept {
     return type_size[(int) type];
+}
+
+const char *jit_type_name(VarType type) noexcept {
+    return type_name[(int) type];
 }
 
 VarInfo jit_set_backend(uint32_t index) noexcept {

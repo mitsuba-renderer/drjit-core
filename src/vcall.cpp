@@ -798,12 +798,12 @@ void jitc_vcall_upload(ThreadState *ts) {
 
 // Compute a permutation to reorder an array of registered pointers
 VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
-                                   uint32_t index, uint32_t *bucket_count_out) {
+                                   uint32_t index, uint32_t *bucket_count_inout) {
     auto it = state.extra.find(index);
     if (it != state.extra.end()) {
         auto &v = it.value();
         if (v.vcall_bucket_count) {
-            *bucket_count_out = v.vcall_bucket_count;
+            *bucket_count_inout = v.vcall_bucket_count;
             return v.vcall_buckets;
         }
     }
@@ -812,10 +812,10 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
     if (domain)
         bucket_count = jitc_registry_get_max(backend, domain) + 1;
     else
-        bucket_count = *bucket_count_out + 1;
+        bucket_count = *bucket_count_inout + 1;
 
     if (unlikely(bucket_count == 1)) {
-        *bucket_count_out = 0;
+        *bucket_count_inout = 0;
         return nullptr;
     }
 
@@ -901,7 +901,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
 
     jitc_var_dec_ref(perm_var);
 
-    *bucket_count_out = unique_count_out;
+    *bucket_count_inout = unique_count_out;
 
     jitc_var(index)->extra = true;
     Extra &extra = state.extra[index];
