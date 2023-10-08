@@ -275,7 +275,7 @@ void jitc_llvm_set_target(const char *target_cpu,
 /// Dump assembly representation
 void jitc_llvm_disasm(const Kernel &kernel) {
     if (std::max(state.log_level_stderr, state.log_level_callback) <
-        LogLevel::Debug)
+        LogLevel::Trace)
         return;
 
     for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i) {
