@@ -96,9 +96,9 @@ void jit_set_scope(JitBackend backend, uint32_t scope) {
     thread_state(backend)->scope = scope;
 }
 
-void jit_new_scope(JitBackend backend) {
+uint32_t jit_new_scope(JitBackend backend) {
     lock_guard guard(state.lock);
-    jitc_new_scope(backend);
+    return jitc_new_scope(backend);
 }
 
 void jit_set_log_level_stderr(LogLevel level) {
@@ -170,43 +170,47 @@ int jit_flag(JitFlag flag) {
 }
 
 uint32_t jit_record_checkpoint(JitBackend backend) {
-    lock_guard guard(state.lock);
-    uint32_t result =
-        (uint32_t) thread_state(backend)->side_effects_recorded.size();
+    uint32_t result = (uint32_t) thread_state(backend)->side_effects_recorded.size();
     if (jit_flag(JitFlag::Recording))
         result |= 0x80000000u;
     return result;
 }
 
-static std::vector<std::string> record_stack;
-
 uint32_t jit_record_begin(JitBackend backend, const char *name) {
-    uint32_t result = jit_record_checkpoint(backend);
+    ThreadState *ts = thread_state(backend);
+    std::vector<std::string> &stack = ts->record_stack;
 
-    lock_guard guard(state.lock);
+    // Potentially signal failure to limit recursion depth
+    if (name && std::count(stack.begin(), stack.end(), name) > 1)
+        return uint32_t(-1);
+    stack.push_back(name ? name : "");
+
+    uint32_t result = (uint32_t) ts->side_effects_recorded.size();
+    if (jit_flag(JitFlag::Recording))
+        result |= 0x80000000u;
     jit_set_flag(JitFlag::Recording, true);
-    if (name && std::count(record_stack.begin(), record_stack.end(), name) > 1)
-        return uint32_t(-1); // signal failure to limit recursion depth
-    record_stack.push_back(name ? name : "");
+
     return result;
 }
 
 void jit_record_end(JitBackend backend, uint32_t value) {
-    lock_guard guard(state.lock);
+    ThreadState *ts = thread_state(backend);
+    std::vector<std::string> &stack = ts->record_stack;
 
-    if (unlikely(record_stack.empty()))
+    if (unlikely(stack.empty()))
         jitc_fail("jit_record_end(): stack underflow!");
 
-    record_stack.pop_back();
+    stack.pop_back();
 
     // Set recording flag to previous value
     jit_set_flag(JitFlag::Recording, value & 0x80000000u);
     value &= 0x7fffffff;
 
-    auto &se = thread_state(backend)->side_effects_recorded;
+    std::vector<uint32_t> &se = ts->side_effects_recorded;
     if (value > se.size())
         jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
 
+    lock_guard guard(state.lock);
     while (value != se.size()) {
         jitc_var_dec_ref(se.back());
         se.pop_back();

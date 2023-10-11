@@ -99,7 +99,7 @@ template <typename T> struct dr_vector {
     }
 
     void push_back(const T &value) {
-        if (m_size >= m_capacity)
+        if (m_size == m_capacity)
             expand();
         m_data[m_size++] = value;
     }

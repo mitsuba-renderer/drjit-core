@@ -685,12 +685,13 @@ uint32_t jitc_var_wrap_vcall(uint32_t index) {
     return result;
 }
 
-void jitc_new_scope(JitBackend backend) {
+uint32_t jitc_new_scope(JitBackend backend) {
     uint32_t scope_index = ++state.scope_ctr;
     if (unlikely(scope_index == 0))
         jitc_raise("jit_new_scope(): overflow (more than 2^32=4294967296 scopes created!");
     jitc_trace("jit_new_scope(%u)", scope_index);
     thread_state(backend)->scope = scope_index;
+    return scope_index;
 }
 
 uint32_t jitc_var_stmt(JitBackend backend, VarType vt, const char *stmt,
@@ -1546,7 +1547,12 @@ void jitc_var_mask_pop(JitBackend backend) {
 
 /// Return an implicit mask for operations within a virtual function call
 uint32_t jitc_var_vcall_mask(JitBackend backend) {
-    return jitc_var_new_node_0(backend, VarKind::VCallMask, VarType::Bool, 1, 1);
+    if (backend == JitBackend::LLVM) {
+        return jitc_var_new_node_0(backend, VarKind::VCallMask, VarType::Bool, 1, 1);
+    } else {
+        bool value = true;
+        return jitc_var_literal(backend, VarType::Bool, &value, 1, 0, 0);
+    }
 }
 
 bool jitc_var_any(uint32_t index) {

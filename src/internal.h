@@ -464,6 +464,9 @@ struct ThreadState {
     /// Stack of variable name prefixes, mainly useful for GraphViz exports
     std::vector<char *> prefix_stack;
 
+    /// Stack of symbolic recording sessions
+    std::vector<std::string> record_stack;
+
     /// Combined version of the elements of 'prefix_stack'
     char *prefix = nullptr;
 
