@@ -105,25 +105,29 @@ template <typename T> struct dr_vector {
     }
 
     void resize(size_t size) {
-        dr_unique_ptr<T[]> data_new(new T[size]);
-        size_t copy_size = m_size < size ? m_size : size;
-        for (size_t i = 0; i < copy_size; ++i)
-            data_new[i] = m_data[i];
-        m_data = std::move(data_new);
-        m_size = m_capacity = size;
+        reserve(size);
+        m_size = size;
     }
+
+    void reserve(size_t size) {
+        if (size <= m_capacity)
+            return;
+
+        dr_unique_ptr<T[]> data_new(new T[size]);
+        for (size_t i = 0; i < m_size; ++i)
+            data_new[i] = m_data[i];
+
+        m_data = std::move(data_new);
+        m_capacity = size;
+    }
+
+    void expand() { reserve(m_capacity ? m_capacity * 2 : 1); }
 
     void clear() { m_size = 0; }
     size_t size() const { return m_size; }
     T *data() { return m_data.get(); }
     const T *data() const { return m_data.get(); }
     bool empty() const { return m_size == 0; }
-
-    void expand() {
-        size_t size = m_size;
-        resize(m_capacity == 0 ? 1 : (m_capacity * 2));
-        m_size = size;
-    }
 
     T &operator[](size_t i) { return m_data[i]; }
     const T &operator[](size_t i) const { return m_data[i]; }
