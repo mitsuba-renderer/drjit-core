@@ -1316,13 +1316,13 @@ extern JIT_EXPORT const char *jit_prefix(JIT_ENUM JitBackend);
  *
  * The default set of flags is:
  *
- * <tt>ConstProp | ValueNumbering | LoopRecord | LoopOptimize |
+ * <tt>ConstantPropagation | ValueNumbering | LoopRecord | LoopOptimize |
  * VCallRecord | VCallOptimize | AtomicReduceLocal </tt>
  */
 #if defined(__cplusplus)
 enum class JitFlag : uint32_t {
     /// Constant propagation: don't generate code for arithmetic involving literal constants
-    ConstProp = 1,
+    ConstantPropagation = 1,
 
     /// Local value numbering (cheap form of common subexpression elimination)
     ValueNumbering = 2,
@@ -1370,14 +1370,14 @@ enum class JitFlag : uint32_t {
     AtomicReduceLocal = 16384,
 
     /// Default flags
-    Default = (uint32_t) ConstProp | (uint32_t) ValueNumbering |
+    Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallDeduplicate |
               (uint32_t) VCallOptimize | (uint32_t) AtomicReduceLocal
 };
 #else
 enum JitFlag {
-    JitFlagConstProp           = 1,
+    JitFlagConstantPropagation           = 1,
     JitFlagValueNumbering      = 2,
     JitFlagLoopRecord          = 4,
     JitFlagLoopOptimize        = 8,
@@ -1818,7 +1818,7 @@ extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
  * This function sets a unique scope identifier (a simple 32 bit integer)
  * isolate the effects of this optimization.
  */
-extern JIT_EXPORT void jit_new_scope(JIT_ENUM JitBackend backend);
+extern JIT_EXPORT uint32_t jit_new_scope(JIT_ENUM JitBackend backend);
 
 /// Queries the scope identifier (see \ref jit_new_scope())
 extern JIT_EXPORT uint32_t jit_scope(JIT_ENUM JitBackend backend);

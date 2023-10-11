@@ -171,7 +171,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
         }
 
         if (simplify)
-            simplify = jitc_flags() & (uint32_t) JitFlag::ConstProp;
+            simplify = jitc_flags() & (uint32_t) JitFlag::ConstantPropagation;
     }
 
     return drjit::dr_tuple(
