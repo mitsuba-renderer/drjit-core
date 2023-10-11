@@ -1366,6 +1366,9 @@ enum class JitFlag : uint32_t {
        along with the KernelHistory feature. */
     LaunchBlocking = 4096,
 
+    /// Disable this flag to keep the Dr.Jit from reusing variable indices (helpful for low-level debugging)
+    IndexReuse = 8192,
+
     /// Perform a intra-warp/SIMD register reduction before issuing global atomics
     AtomicReduceLocal = 16384,
 
@@ -1373,11 +1376,12 @@ enum class JitFlag : uint32_t {
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
               (uint32_t) VCallRecord | (uint32_t) VCallDeduplicate |
-              (uint32_t) VCallOptimize | (uint32_t) AtomicReduceLocal
+              (uint32_t) VCallOptimize | (uint32_t) IndexReuse |
+              (uint32_t) AtomicReduceLocal
 };
 #else
 enum JitFlag {
-    JitFlagConstantPropagation           = 1,
+    JitFlagConstantPropagation = 1,
     JitFlagValueNumbering      = 2,
     JitFlagLoopRecord          = 4,
     JitFlagLoopOptimize        = 8,
@@ -1390,7 +1394,8 @@ enum JitFlag {
     JitFlagPrintIR             = 1024,
     JitFlagKernelHistory       = 2048,
     JitFlagLaunchBlocking      = 4096,
-    JitFlagAtomicReduceLocal = 16384
+    JitFlagIndexReuse          = 8192,
+    JitFlagAtomicReduceLocal   = 16384
 };
 #endif
 
@@ -1937,9 +1942,6 @@ extern JIT_EXPORT size_t jit_type_size(JIT_ENUM VarType type) JIT_NOEXCEPT;
 
 /// Return a name (e.g., "float32") for a given a JIT variable type
 extern JIT_EXPORT const char *jit_type_name(JIT_ENUM VarType type) JIT_NOEXCEPT;
-
-static inline void jit_init(JIT_ENUM JitBackend backend)       { jit_init((uint32_t) backend); }
-static inline void jit_init_async(JIT_ENUM JitBackend backend) { jit_init_async((uint32_t) backend); }
 
 /// Return value of \ref jit_set_backend()
 struct VarInfo {
