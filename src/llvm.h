@@ -33,6 +33,10 @@ extern bool jitc_llvm_api_has_core();
 extern bool jitc_llvm_api_has_mcjit();
 extern bool jitc_llvm_api_has_orcv2();
 
+// Which pass builder interface is available?
+extern bool jitc_llvm_api_has_pb_legacy();
+extern bool jitc_llvm_api_has_pb_new();
+
 /// String describing the LLVM target
 extern char *jitc_llvm_target_triple;
 

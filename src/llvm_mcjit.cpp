@@ -4,6 +4,8 @@
 #include "log.h"
 
 static uint32_t jitc_llvm_patch_loc = 0;
+static LLVMExecutionEngineRef m_jitc_llvm_engine = nullptr;
+extern LLVMTargetMachineRef jitc_llvm_tm;
 
 /// Create a MCJIT compilation engine configured for use with Dr.Jit
 LLVMExecutionEngineRef jitc_llvm_engine_create(LLVMModuleRef mod_) {
@@ -31,6 +33,8 @@ LLVMExecutionEngineRef jitc_llvm_engine_create(LLVMModuleRef mod_) {
         return nullptr;
     }
 
+    jitc_llvm_tm = LLVMGetExecutionEngineTargetMachine(engine);
+
     if (jitc_llvm_patch_loc) {
         uint32_t *base = (uint32_t *) LLVMGetExecutionEngineTargetMachine(engine);
         base[jitc_llvm_patch_loc] = 1 /* Reloc::Model::PIC_ */;
@@ -41,8 +45,8 @@ LLVMExecutionEngineRef jitc_llvm_engine_create(LLVMModuleRef mod_) {
 
 bool jitc_llvm_mcjit_init() {
 #if defined(DRJIT_DYNAMIC_LLVM) && !defined(__aarch64__)
-    LLVMExecutionEngineRef engine = jitc_llvm_engine_create(nullptr);
-    if (!engine)
+    m_jitc_llvm_engine = jitc_llvm_engine_create(nullptr);
+    if (!m_jitc_llvm_engine)
         return false;
 
     /**
@@ -71,7 +75,8 @@ bool jitc_llvm_mcjit_init() {
        precise byte offset and them overwrite the 'RM' field.
     */
 
-    uint32_t *base = (uint32_t *) LLVMGetExecutionEngineTargetMachine(engine);
+    uint32_t *base =
+        (uint32_t *) LLVMGetExecutionEngineTargetMachine(m_jitc_llvm_engine);
     jitc_llvm_patch_loc = 142 - 16;
 
     int key[3] = { 0, 1, 3 };
@@ -84,8 +89,6 @@ bool jitc_llvm_mcjit_init() {
         jitc_llvm_patch_loc += 1;
     }
 
-    LLVMDisposeExecutionEngine(engine);
-
     if (!found) {
         jitc_log(Warn, "jit_llvm_init(): could not hot-patch TargetMachine "
                        "relocation model!");
@@ -97,15 +100,23 @@ bool jitc_llvm_mcjit_init() {
 }
 
 void jitc_llvm_mcjit_shutdown() {
+    if (m_jitc_llvm_engine) {
+        LLVMDisposeExecutionEngine(m_jitc_llvm_engine);
+        m_jitc_llvm_engine = nullptr;
+    }
     jitc_llvm_patch_loc = 0;
+    jitc_llvm_tm = nullptr;
 }
 
 void jitc_llvm_mcjit_compile(void *llvm_module,
                              std::vector<uint8_t*> &symbols) {
-    LLVMExecutionEngineRef engine = jitc_llvm_engine_create((LLVMModuleRef) llvm_module);
+    if (m_jitc_llvm_engine)
+        LLVMDisposeExecutionEngine(m_jitc_llvm_engine);
+
+    m_jitc_llvm_engine = jitc_llvm_engine_create((LLVMModuleRef) llvm_module);
 
     auto resolve = [&](const char *name) -> uint8_t * {
-        uint8_t *p = (uint8_t *) LLVMGetFunctionAddress(engine, name);
+        uint8_t *p = (uint8_t *) LLVMGetFunctionAddress(m_jitc_llvm_engine, name);
         if (unlikely(!p))
             jitc_fail("jit_llvm_compile(): internal error: could not resolve "
                       "symbol \"%s\"!\n", name);
@@ -131,6 +142,4 @@ void jitc_llvm_mcjit_compile(void *llvm_module,
             symbols[symbol_pos++] = resolve(name_buf);
         }
     }
-
-    LLVMDisposeExecutionEngine(engine);
 }

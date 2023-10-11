@@ -27,7 +27,6 @@ static bool jitc_llvm_init_attempted  = false;
 static bool jitc_llvm_init_success    = false;
 static bool jitc_llvm_use_orcv2       = false;
 
-static LLVMPassManagerRef jitc_llvm_pass_manager = nullptr;
 static LLVMDisasmContextRef jitc_llvm_disasm_ctx = nullptr;
 static LLVMContextRef jitc_llvm_context = nullptr;
 
@@ -52,6 +51,9 @@ char **jitc_llvm_ones_str = nullptr;
 /// Current top-level task in the task queue
 Task *jitc_task = nullptr;
 
+/// Reference to the target machine used for compilation
+LLVMTargetMachineRef jitc_llvm_tm = nullptr;
+
 void jitc_llvm_update_strings();
 
 bool jitc_llvm_init() {
@@ -63,11 +65,19 @@ bool jitc_llvm_init() {
         return false;
 
     if (!jitc_llvm_api_has_core()) {
-        jitc_log(Warn, "jit_llvm_init(): detected LLVM version lacks critical "
-                       "functionality, shutting down LLVM backend..");
+        jitc_log(Warn, "jit_llvm_init(): detected LLVM version lacks core API "
+                       "used by Dr.Jit, shutting down LLVM backend ..");
         jitc_llvm_api_shutdown();
         return false;
     }
+
+    if (!jitc_llvm_api_has_pb_new() && !jitc_llvm_api_has_pb_legacy()) {
+        jitc_log(Warn, "jit_llvm_init(): detected LLVM version lacks pass "
+                       "manager API used by Dr.Jit, shutting down LLVM backend ..");
+        jitc_llvm_api_shutdown();
+        return false;
+    }
+
 
     LLVMLinkInMCJIT();
     LLVMInitializeDrJitTargetInfo();
@@ -80,16 +90,6 @@ bool jitc_llvm_init() {
     jitc_llvm_target_cpu = LLVMGetHostCPUName();
     jitc_llvm_target_features = LLVMGetHostCPUFeatures();
     jitc_llvm_context = LLVMGetGlobalContext();
-
-    jitc_llvm_pass_manager = LLVMCreatePassManager();
-#if 0
-    LLVMPassManagerBuilderRef pm_builder = LLVMPassManagerBuilderCreate();
-    LLVMPassManagerBuilderSetOptLevel(pm_builder, 3);
-    LLVMPassManagerBuilderPopulateModulePassManager(pm_builder, jitc_llvm_pass_manager);
-    LLVMPassManagerBuilderDispose(pm_builder);
-#else
-    LLVMAddLICMPass(jitc_llvm_pass_manager);
-#endif
 
     jitc_llvm_disasm_ctx =
         LLVMCreateDisasm(jitc_llvm_target_triple, nullptr, 0, nullptr, nullptr);
@@ -185,14 +185,11 @@ void jitc_llvm_shutdown() {
     LLVMDisposeMessage(jitc_llvm_target_triple);
     LLVMDisposeMessage(jitc_llvm_target_cpu);
     LLVMDisposeMessage(jitc_llvm_target_features);
-    LLVMDisposePassManager(jitc_llvm_pass_manager);
-
     if (jitc_llvm_disasm_ctx) {
         LLVMDisasmDispose(jitc_llvm_disasm_ctx);
         jitc_llvm_disasm_ctx = nullptr;
     }
 
-    jitc_llvm_pass_manager = nullptr;
     jitc_llvm_target_cpu = nullptr;
     jitc_llvm_target_features = nullptr;
     jitc_llvm_vector_width = 0;
@@ -348,7 +345,46 @@ void jitc_llvm_compile(Kernel &kernel) {
 #endif
     LLVMDisposeMessage(error);
 
-    LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);
+    #define DRJIT_RUN_LEGACY_PASS_MANAGER()                                   \
+        LLVMPassManagerRef jitc_llvm_pass_manager = LLVMCreatePassManager();  \
+        LLVMAddLICMPass(jitc_llvm_pass_manager);                              \
+        LLVMRunPassManager(jitc_llvm_pass_manager, llvm_module);              \
+        LLVMDisposePassManager(jitc_llvm_pass_manager);
+
+    #define DRJIT_RUN_NEW_PASS_MANAGER()                                      \
+        LLVMPassBuilderOptionsRef pb_opt = LLVMCreatePassBuilderOptions();    \
+        /* Disable some things we won't need for typical Dr.Jit programs */   \
+        /* (they are already vectorized, and we don't want to make the */     \
+        /* generated code even larger by unrolling it */                      \
+        LLVMPassBuilderOptionsSetLoopUnrolling(pb_opt, 0);                    \
+        LLVMPassBuilderOptionsSetLoopVectorization(pb_opt, 0);                \
+        LLVMPassBuilderOptionsSetSLPVectorization(pb_opt, 0);                 \
+        LLVMErrorRef error_ref =                                              \
+            LLVMRunPasses(llvm_module, "default<O2>", jitc_llvm_tm, pb_opt);  \
+        if (error_ref)                                                        \
+            jitc_fail(                                                        \
+                "jit_llvm_compile(): failed to run optimization passes: %s!", \
+                LLVMGetErrorMessage(error_ref));                              \
+        LLVMDisposePassBuilderOptions(pb_opt);
+
+#if defined(LLVM_VERSION_MAJOR) && LLVM_VERSION_MAJOR < 15
+    // Legacy pass manager, static interface to LLVM
+    DRJIT_RUN_LEGACY_PASS_MANAGER();
+#elif !defined(LLVM_VERSION_MAJOR)
+    // Try resolving the legacy pass manager when dynamically resolving LLVM
+    if (jitc_llvm_api_has_pb_legacy() && !jitc_llvm_api_has_pb_new()) {
+        DRJIT_RUN_LEGACY_PASS_MANAGER();
+    }
+#endif
+
+#if defined(LLVM_VERSION_MAJOR) && LLVM_VERSION_MAJOR >= 15
+    // New pass manager, static interface to LLVM
+    DRJIT_RUN_NEW_PASS_MANAGER();
+#elif !defined(LLVM_VERSION_MAJOR)
+    if (jitc_llvm_api_has_pb_new()) {
+        DRJIT_RUN_NEW_PASS_MANAGER();
+    }
+#endif
 
     std::vector<uint8_t *> reloc(
         callable_count_unique ? (callable_count_unique + 2) : 1);

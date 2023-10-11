@@ -29,7 +29,12 @@
 #  include <llvm-c/Disassembler.h>
 #  include <llvm-c/IRReader.h>
 #  include <llvm-c/Analysis.h>
-#  include <llvm-c/Transforms/Scalar.h>
+#  if LLVM_VERSION_MAJOR >= 15
+#    include <llvm-c/Transforms/PassBuilder.h>
+#  endif
+#  if LLVM_VERSION_MAJOR < 17
+#    include <llvm-c/Transforms/Scalar.h>
+#  endif
 #  include <llvm-c/LLJIT.h>
 #  include <llvm-c/OrcEE.h>
 #else
@@ -50,7 +55,7 @@ using LLVMModuleRef = void *;
 using LLVMMemoryBufferRef = void *;
 using LLVMContextRef = void *;
 using LLVMPassManagerRef = void *;
-using LLVMPassManagerBuilderRef = void *;
+using LLVMPassBuilderOptionsRef = void *;
 using LLVMMCJITMemoryManagerRef = void *;
 using LLVMTargetMachineRef = void *;
 using LLVMTargetRef = void *;
@@ -123,18 +128,25 @@ DR_LLVM_SYM(LLVMBool (*LLVMRemoveModule)(LLVMExecutionEngineRef, LLVMModuleRef,
 DR_LLVM_SYM(size_t (*LLVMDisasmInstruction)(LLVMDisasmContextRef, uint8_t *,
                                             uint64_t, uint64_t, char *,
                                             size_t));
+DR_LLVM_SYM(bool (*LLVMVerifyModule)(LLVMModuleRef, int action, char **msg));
+DR_LLVM_SYM(void (*LLVMGetVersion)(unsigned *, unsigned *, unsigned *));
+DR_LLVM_SYM(void (*LLVMDisposeTargetMachine)(LLVMTargetMachineRef));
+
+// Legacy pass manager
 DR_LLVM_SYM(LLVMPassManagerRef (*LLVMCreatePassManager)());
 DR_LLVM_SYM(void (*LLVMRunPassManager)(LLVMPassManagerRef, LLVMModuleRef));
 DR_LLVM_SYM(void (*LLVMDisposePassManager)(LLVMPassManagerRef));
 DR_LLVM_SYM(void (*LLVMAddLICMPass)(LLVMPassManagerRef));
-DR_LLVM_SYM(LLVMPassManagerBuilderRef (*LLVMPassManagerBuilderCreate)());
-DR_LLVM_SYM(void (*LLVMPassManagerBuilderSetOptLevel)(LLVMPassManagerBuilderRef,
-                                                      unsigned));
-DR_LLVM_SYM(void (*LLVMPassManagerBuilderPopulateModulePassManager)(
-    LLVMPassManagerBuilderRef, LLVMPassManagerRef));
-DR_LLVM_SYM(void (*LLVMPassManagerBuilderDispose)(LLVMPassManagerBuilderRef));
-DR_LLVM_SYM(bool (*LLVMVerifyModule)(LLVMModuleRef, int action, char **msg));
-DR_LLVM_SYM(void (*LLVMGetVersion)(unsigned *, unsigned *, unsigned *));
+
+// New pass manager
+DR_LLVM_SYM(LLVMPassBuilderOptionsRef (*LLVMCreatePassBuilderOptions)());
+DR_LLVM_SYM(void (*LLVMPassBuilderOptionsSetLoopVectorization)(LLVMPassBuilderOptionsRef, LLVMBool));
+DR_LLVM_SYM(void (*LLVMPassBuilderOptionsSetLoopUnrolling)(LLVMPassBuilderOptionsRef, LLVMBool));
+DR_LLVM_SYM(void (*LLVMPassBuilderOptionsSetSLPVectorization)(LLVMPassBuilderOptionsRef, LLVMBool));
+DR_LLVM_SYM(void (*LLVMDisposePassBuilderOptions)(LLVMPassBuilderOptionsRef));
+DR_LLVM_SYM(LLVMErrorRef (*LLVMRunPasses)(LLVMModuleRef, const char *,
+                                          LLVMTargetMachineRef,
+                                          LLVMPassBuilderOptionsRef));
 
 // API for MCJIT interface
 DR_LLVM_SYM(LLVMModuleRef (*LLVMModuleCreateWithName)(const char *));

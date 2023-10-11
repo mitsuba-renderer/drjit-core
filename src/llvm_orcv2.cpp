@@ -6,8 +6,13 @@
 
 static LLVMOrcLLJITRef jitc_llvm_lljit = nullptr;
 static LLVMOrcJITDylibRef jitc_llvm_lljit_dylib = nullptr;
+extern LLVMTargetMachineRef jitc_llvm_tm;
 
 LLVMOrcObjectLayerRef oll_creator(void *, LLVMOrcExecutionSessionRef es, const char *) {
+#if defined(LLVM_VERSION_MAJOR) && LLVM_VERSION_MAJOR < 16
+    (void) es;
+    jitc_fail("OrcV2 interface is not usable in LLVM versions < 16");
+#else
     return LLVMOrcCreateRTDyldObjectLinkingLayerWithMCJITMemoryManagerLikeCallbacks(
         es, nullptr,
         jitc_llvm_memmgr_create_context,
@@ -17,6 +22,7 @@ LLVMOrcObjectLayerRef oll_creator(void *, LLVMOrcExecutionSessionRef es, const c
         jitc_llvm_memmgr_finalize,
         jitc_llvm_memmgr_destroy
     );
+#endif
 }
 
 bool jitc_llvm_orcv2_init() {
@@ -33,10 +39,16 @@ bool jitc_llvm_orcv2_init() {
         return false;
     }
 
-    LLVMTargetMachineRef tm = LLVMCreateTargetMachine(
-        target_ref, jitc_llvm_target_triple, jitc_llvm_target_cpu,
-        jitc_llvm_target_features, LLVMCodeGenLevelAggressive, LLVMRelocPIC,
-        LLVMCodeModelSmall);
+    LLVMTargetMachineRef tm;
+    for (int i = 0; i < 2; ++i) {
+        // Create twice -- once for pass manager, once for LLJIT
+        tm = LLVMCreateTargetMachine(
+            target_ref, jitc_llvm_target_triple, jitc_llvm_target_cpu,
+            jitc_llvm_target_features, LLVMCodeGenLevelAggressive, LLVMRelocPIC,
+            LLVMCodeModelSmall);
+        if (i == 0)
+            jitc_llvm_tm = tm;
+    }
 
     LLVMOrcJITTargetMachineBuilderRef machine_builder =
         LLVMOrcJITTargetMachineBuilderCreateFromTargetMachine(tm);
@@ -67,9 +79,11 @@ void jitc_llvm_orcv2_shutdown() {
     if (err)
         jitc_fail("jit_llvm_orcv2_shutdown(): could not dispose LLJIT: %s",
                   LLVMGetErrorMessage(err));
+    LLVMDisposeTargetMachine(jitc_llvm_tm);
 
     jitc_llvm_lljit = nullptr;
     jitc_llvm_lljit_dylib = nullptr;
+    jitc_llvm_tm = nullptr;
 }
 
 void jitc_llvm_orcv2_compile(void *llvm_module,

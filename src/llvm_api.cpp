@@ -36,7 +36,9 @@ bool jitc_llvm_api_init() { return LLVM_VERSION_MAJOR >= 8; }
 void jitc_llvm_api_shutdown() {}
 bool jitc_llvm_api_has_core() { return true; }
 bool jitc_llvm_api_has_mcjit() { return true; }
-bool jitc_llvm_api_has_orcv2() { return true; }
+bool jitc_llvm_api_has_orcv2() { return LLVM_VERSION_MAJOR >= 16; }
+bool jitc_llvm_api_has_pb_legacy() { return LLVM_VERSION_MAJOR < 17; }
+bool jitc_llvm_api_has_pb_new() { return LLVM_VERSION_MAJOR >= 17; }
 int jitc_llvm_version_major = LLVM_VERSION_MAJOR;
 int jitc_llvm_version_minor = LLVM_VERSION_MINOR;
 int jitc_llvm_version_patch = LLVM_VERSION_PATCH;
@@ -49,6 +51,8 @@ static bool jitc_llvm_has_core = false;
 static bool jitc_llvm_has_version = false;
 static bool jitc_llvm_has_mcjit = false;
 static bool jitc_llvm_has_orcv2 = false;
+static bool jitc_llvm_has_pb_legacy = false;
+static bool jitc_llvm_has_pb_new = false;
 
 int jitc_llvm_version_major = -1;
 int jitc_llvm_version_minor = -1;
@@ -88,6 +92,8 @@ bool jitc_llvm_api_init() {
     jitc_llvm_has_version = true;
     jitc_llvm_has_mcjit = true;
     jitc_llvm_has_orcv2 = true;
+    jitc_llvm_has_pb_legacy = true;
+    jitc_llvm_has_pb_new = true;
     jitc_llvm_version_major = -1;
     jitc_llvm_version_minor = -1;
     jitc_llvm_version_patch = -1;
@@ -116,17 +122,22 @@ bool jitc_llvm_api_init() {
     LOAD(core, LLVMGetGlobalValueAddress);
     LOAD(core, LLVMRemoveModule);
     LOAD(core, LLVMDisasmInstruction);
-    LOAD(core, LLVMCreatePassManager);
-    LOAD(core, LLVMRunPassManager);
-    LOAD(core, LLVMDisposePassManager);
-    LOAD(core, LLVMAddLICMPass);
-    LOAD(core, LLVMPassManagerBuilderCreate);
-    LOAD(core, LLVMPassManagerBuilderSetOptLevel);
-    LOAD(core, LLVMPassManagerBuilderPopulateModulePassManager);
-    LOAD(core, LLVMPassManagerBuilderDispose);
     LOAD(core, LLVMVerifyModule);
+    LOAD(core, LLVMDisposeTargetMachine);
 
     LOAD(version, LLVMGetVersion);
+
+    LOAD(pb_legacy, LLVMCreatePassManager);
+    LOAD(pb_legacy, LLVMRunPassManager);
+    LOAD(pb_legacy, LLVMDisposePassManager);
+    LOAD(pb_legacy, LLVMAddLICMPass);
+
+    LOAD(pb_new, LLVMCreatePassBuilderOptions);
+    LOAD(pb_new, LLVMPassBuilderOptionsSetLoopVectorization);
+    LOAD(pb_new, LLVMPassBuilderOptionsSetLoopUnrolling);
+    LOAD(pb_new, LLVMPassBuilderOptionsSetSLPVectorization);
+    LOAD(pb_new, LLVMDisposePassBuilderOptions);
+    LOAD(pb_new, LLVMRunPasses);
 
     LOAD(mcjit, LLVMModuleCreateWithName);
     LOAD(mcjit, LLVMGetExecutionEngineTargetMachine);
@@ -252,18 +263,25 @@ void jitc_llvm_api_shutdown() {
     CLEAR(LLVMGetGlobalValueAddress);
     CLEAR(LLVMRemoveModule);
     CLEAR(LLVMDisasmInstruction);
+    CLEAR(LLVMVerifyModule);
+    CLEAR(LLVMDisposeTargetMachine);
+
+    // Version
+    CLEAR(LLVMGetVersion);
+
+    // Legacy pass manager
     CLEAR(LLVMCreatePassManager);
     CLEAR(LLVMRunPassManager);
     CLEAR(LLVMDisposePassManager);
     CLEAR(LLVMAddLICMPass);
-    CLEAR(LLVMPassManagerBuilderCreate);
-    CLEAR(LLVMPassManagerBuilderSetOptLevel);
-    CLEAR(LLVMPassManagerBuilderPopulateModulePassManager);
-    CLEAR(LLVMPassManagerBuilderDispose);
-    CLEAR(LLVMVerifyModule);
 
-    // Version
-    CLEAR(LLVMGetVersion);
+    // New pass manager
+    CLEAR(LLVMCreatePassBuilderOptions);
+    CLEAR(LLVMPassBuilderOptionsSetLoopVectorization);
+    CLEAR(LLVMPassBuilderOptionsSetLoopUnrolling);
+    CLEAR(LLVMPassBuilderOptionsSetSLPVectorization);
+    CLEAR(LLVMDisposePassBuilderOptions);
+    CLEAR(LLVMRunPasses);
 
     // MCJIT
     CLEAR(LLVMModuleCreateWithName);
@@ -304,6 +322,8 @@ void jitc_llvm_api_shutdown() {
     jitc_llvm_has_version = false;
     jitc_llvm_has_mcjit = false;
     jitc_llvm_has_orcv2 = false;
+    jitc_llvm_has_pb_legacy = false;
+    jitc_llvm_has_pb_new = false;
     jitc_llvm_version_major = -1;
     jitc_llvm_version_minor = -1;
     jitc_llvm_version_patch = -1;
@@ -312,5 +332,7 @@ void jitc_llvm_api_shutdown() {
 bool jitc_llvm_api_has_core() { return jitc_llvm_has_core; }
 bool jitc_llvm_api_has_mcjit() { return jitc_llvm_has_mcjit; }
 bool jitc_llvm_api_has_orcv2() { return jitc_llvm_has_orcv2; }
+bool jitc_llvm_api_has_pb_legacy() { return jitc_llvm_has_pb_legacy; }
+bool jitc_llvm_api_has_pb_new() { return jitc_llvm_has_pb_new; }
 
 #endif
