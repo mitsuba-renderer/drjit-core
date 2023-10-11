@@ -38,7 +38,7 @@ bool jitc_llvm_api_has_core() { return true; }
 bool jitc_llvm_api_has_mcjit() { return true; }
 bool jitc_llvm_api_has_orcv2() { return LLVM_VERSION_MAJOR >= 16; }
 bool jitc_llvm_api_has_pb_legacy() { return LLVM_VERSION_MAJOR < 17; }
-bool jitc_llvm_api_has_pb_new() { return LLVM_VERSION_MAJOR >= 17; }
+bool jitc_llvm_api_has_pb_new() { return LLVM_VERSION_MAJOR >= 15; }
 int jitc_llvm_version_major = LLVM_VERSION_MAJOR;
 int jitc_llvm_version_minor = LLVM_VERSION_MINOR;
 int jitc_llvm_version_patch = LLVM_VERSION_PATCH;
