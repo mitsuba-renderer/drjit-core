@@ -1,6 +1,7 @@
 #pragma once
 
 #include <drjit-core/array.h>
+#include <drjit-core/half.h>
 #include <cstdio>
 #include <cstring>
 
@@ -23,6 +24,7 @@ using FloatL  = LLVMArray<float>;
 using Int32L  = LLVMArray<int32_t>;
 using UInt32L = LLVMArray<uint32_t>;
 using MaskL   = LLVMArray<bool>;
+using HalfL   = LLVMArray<drjit::dr_half>;
 
 #define TEST_CUDA(name, ...)                                                   \
     template <JitBackend Backend, typename Float, typename Int32,              \
@@ -49,6 +51,11 @@ using MaskL   = LLVMArray<bool>;
     int test##name##_l =                                                       \
         test_register("test" #name "_llvm",                                    \
                       test##name<JitBackend::LLVM, FloatL, Int32L, UInt32L,    \
+                                 MaskL, LLVMArray>,                            \
+                      ##__VA_ARGS__);                                          \
+    int test##name##_l_half =                                                  \
+        test_register("test" #name "_llvm",                                    \
+                      test##name<JitBackend::LLVM, HalfL, Int32L, UInt32L,     \
                                  MaskL, LLVMArray>,                            \
                       ##__VA_ARGS__);                                          \
     template <JitBackend Backend, typename Float, typename Int32,              \
