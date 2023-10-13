@@ -1,4 +1,5 @@
 #include <drjit-core/containers.h>
+#include <drjit-core/half.h>
 #include "internal.h"
 #include "var.h"
 #include "log.h"
@@ -237,6 +238,8 @@ JIT_INLINE uint32_t jitc_eval_literal(const OpInfo &info, Func func,
                                       const Args *...args) {
     uint64_t r = 0;
 
+    using half = drjit::dr_half;
+
     switch ((VarType) first(args...)->type) {
         case VarType::Bool:    r = v2i(func(i2v<   bool> (args->literal)...)); break;
         case VarType::Int8:    r = v2i(func(i2v< int8_t> (args->literal)...)); break;
@@ -247,6 +250,7 @@ JIT_INLINE uint32_t jitc_eval_literal(const OpInfo &info, Func func,
         case VarType::UInt32:  r = v2i(func(i2v<uint32_t>(args->literal)...)); break;
         case VarType::Int64:   r = v2i(func(i2v< int64_t>(args->literal)...)); break;
         case VarType::UInt64:  r = v2i(func(i2v<uint64_t>(args->literal)...)); break;
+        case VarType::Float16: r = v2i(func(i2v<    half>(args->literal)...)); break;
         case VarType::Float32: r = v2i(func(i2v<   float>(args->literal)...)); break;
         case VarType::Float64: r = v2i(func(i2v<  double>(args->literal)...)); break;
         default: jitc_fail("jit_eval_literal(): unsupported variable type!");
@@ -306,6 +310,9 @@ T eval_neg(T v) { return T(-(std::make_signed_t<T>) v); }
 template <typename T, enable_if_t<std::is_signed_v<T>> = 0>
 T eval_neg(T v) { return -v; }
 
+template <>
+drjit::dr_half eval_neg(drjit::dr_half h) { return -h; }
+
 static bool eval_neg(bool) { jitc_fail("eval_neg(): unsupported operands!"); }
 
 uint32_t jitc_var_neg(uint32_t a0) {
@@ -350,7 +357,7 @@ uint32_t jitc_var_not(uint32_t a0) {
 // --------------------------------------------------------------------------
 
 template <typename T, enable_if_t<std::is_floating_point_v<T>> = 0>
-T eval_sqrt(T value) { return std::sqrt(value); }
+T eval_sqrt(T value) { using std::sqrt, drjit::dr_half; return ::sqrt(value); }
 
 template <typename T, enable_if_t<!std::is_floating_point_v<T>> = 0>
 T eval_sqrt(T) { jitc_fail("eval_sqrt(): unsupported operands!"); }
@@ -377,6 +384,9 @@ T eval_abs(T value) { return (T) std::abs(value); }
 
 template <typename T, enable_if_t<!std::is_signed_v<T>> = 0>
 T eval_abs(T value) { return value; }
+
+template <>
+drjit::dr_half eval_abs(drjit::dr_half value) { return std::abs(value); }
 
 uint32_t jitc_var_abs(uint32_t a0) {
     auto [info, v0] = jitc_var_check<IsArithmetic>("jit_var_abs", a0);
@@ -490,7 +500,7 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
             result = jitc_var_resize(a0, info.size);
         } else if (jitc_is_uint(info.type) && v1->is_literal() && jitc_is_pow2(v1->literal)) {
             result = jitc_var_shift<false>(info, a0, v1->literal);
-        } else if (jitc_is_float(info.type) && v1->is_literal()) {
+        } else if (jitc_is_float(info.type) && info.type != VarType::Float16 && v1->is_literal()) {
             uint32_t recip = jitc_var_rcp(a1);
             result = jitc_var_mul(a0, recip);
             jitc_var_dec_ref(recip);
@@ -1202,11 +1212,15 @@ uint32_t jitc_var_rcp(uint32_t a0) {
         result = jitc_eval_literal(info, [](auto l0) { return eval_rcp(l0); }, v0);
 
     if (!result && info.backend == JitBackend::LLVM) {
-        float f1 = 1.f; double d1 = 1.0;
-        uint32_t one = jitc_var_literal(info.backend, info.type,
-                                            info.type == VarType::Float32
-                                                ? (const void *) &f1
-                                                : (const void *) &d1, 1, 0);
+        drjit::dr_half h1 = 1.f; float f1 = 1.f; double d1 = 1.0;
+        const void* num_ptr = nullptr;
+        switch(info.type) {
+            case VarType::Float16: num_ptr = &h1; break;
+            case VarType::Float32: num_ptr = &f1; break;
+            case VarType::Float64: num_ptr = &d1; break;
+            default: jitc_fail("jitc_var_rcp(): Invalid variable type");
+        }
+        uint32_t one = jitc_var_literal(info.backend, info.type, num_ptr, 1, 0);
         result = jitc_var_div(one, a0);
         jitc_var_dec_ref(one);
     }
@@ -1386,6 +1400,7 @@ uint32_t jitc_var_cast(uint32_t a0, VarType target_type, int reinterpret) {
                     case VarType::UInt32:  return v2i((uint32_t) value);
                     case VarType::Int64:   return v2i((int64_t) value);
                     case VarType::UInt64:  return v2i((uint64_t) value);
+                    case VarType::Float16: return v2i((drjit::dr_half) value);
                     case VarType::Float32: return v2i((float) value);
                     case VarType::Float64: return v2i((double) value);
                     default: jitc_fail("jit_var_cast(): unsupported variable type!");
