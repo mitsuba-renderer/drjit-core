@@ -629,6 +629,13 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                             memcpy(&literal, &d, sizeof(uint64_t));
                             vt = VarType::Float64;
                         }
+                        else if (vt == VarType::Float16) {
+                            drjit::dr_half h;
+                            memcpy(&h, &literal, sizeof(drjit::dr_half));
+                            double d = float(h);
+                            memcpy(&literal, &d, sizeof(uint64_t));
+                            vt = VarType::Float64;
+                        }
 
                         if (vt == VarType::Float64) {
                             *m_cur ++= '0';

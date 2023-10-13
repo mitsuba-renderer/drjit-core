@@ -11,6 +11,7 @@
 
 #include <drjit-core/jit.h>
 #include <drjit-core/containers.h>
+#include <drjit-core/half.h>
 #include "hash.h"
 
 using AllocInfo = uint64_t;

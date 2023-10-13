@@ -8,6 +8,7 @@
 #include <cstring>
 #include <typeinfo>
 
+
 TEST_BOTH(01_creation_destruction_cse) {
     // Test CSE involving normal and evaluated constant literals
     for (int i = 0; i < 2; ++i) {
@@ -90,8 +91,8 @@ TEST_BOTH(03_load_store_mask) {
 }
 
 TEST_BOTH(04_load_store_float) {
-    /// Check usage of floats/doubles (loading, storing, literal constants)
-    for (int i = 0; i < 2; ++i) {
+    /// Check usage of halfs/floats/doubles (loading, storing, literal constants)
+    for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 2; ++j) {
             for (int k = 0; k < 2; ++k) {
                 uint32_t v0, v1;
@@ -100,10 +101,14 @@ TEST_BOTH(04_load_store_float) {
                     float f1 = 1, f1234 = 1234;
                     v0 = jit_var_literal(Backend, VarType::Float32, &f1, 1 + j, k);
                     v1 = jit_var_literal(Backend, VarType::Float32, &f1234, 1 + j);
-                } else {
+                } else if (i == 1) {
                     double d1 = 1, d1234 = 1234;
                     v0 = jit_var_literal(Backend, VarType::Float64, &d1, 1 + j, k);
                     v1 = jit_var_literal(Backend, VarType::Float64, &d1234, 1 + j);
+                } else {
+                    dr_half h1 = 1, h1234 = 1234;
+                    v0 = jit_var_literal(Backend, VarType::Float16, &h1.value, 1 + j, k);
+                    v1 = jit_var_literal(Backend, VarType::Float16, &h1234.value, 1 + j);
                 }
 
                 uint32_t v2 = jit_var_add(v0, v1);
@@ -208,7 +213,7 @@ template <typename T> bool test_const_prop() {
 
         for (uint32_t i = 0; i < Size2; ++i) {
             uint32_t index = 0;
-            if ((op == JitOp::Rcp) && values[i] == 0) {
+            if ((op == JitOp::Rcp) && values[i] == Value(0)) {
                 index = in[i];
                 jit_var_inc_ref(index);
             } else {
@@ -243,13 +248,13 @@ template <typename T> bool test_const_prop() {
                     continue;
                 if ((op == JitOp::Sqrt || op == JitOp::Rcp ||
                      op == JitOp::Rsqrt) &&
-                    (value - ref) < 1e-7)
+                    double(value - ref) < 1e-7)
                     continue;
 
                 // FIXME: On R515.43 OptiX incorrectly handles `rsqrt(0)` (NaN instead of Inf)
                 Value arg;
                 jit_var_read(in[ir], 0, &arg);
-                if (arg == 0 && op == JitOp::Rsqrt && jit_flag(JitFlag::ForceOptiX))
+                if (arg == Value(0) && op == JitOp::Rsqrt && jit_flag(JitFlag::ForceOptiX))
                     continue;
 
                 char *v0 = strdup(jit_var_str(in[ir]));
@@ -339,7 +344,7 @@ template <typename T> bool test_const_prop() {
                 jit_var_read(ref_id, 0, &ref);
 
                 if (memcmp(&value, &ref, sizeof(Value)) != 0) {
-                    if (op == JitOp::Div && (value - ref) < 1e-6)
+                    if (op == JitOp::Div && double(value - ref) < 1e-6)
                         continue;
                     char *v0 = strdup(jit_var_str(in[ir]));
                     char *v1 = strdup(jit_var_str(in[jr]));
@@ -482,6 +487,7 @@ TEST_BOTH(06_cast) {
        propagation to the native CUDA/LLVM implementation */
 
     VarType types[] {
+        //VarType::Float16,
         VarType::Float32,
         VarType::Float64,
         VarType::Int32,
@@ -536,6 +542,11 @@ TEST_BOTH(06_cast) {
                         memcpy(&value, &d, sizeof(double));
                         if (std::abs(d) > 2.0)
                             d += d * .1;
+                    } else if (source_type == VarType::Float16) {
+                        drjit::dr_half h = (float) value;
+                        memcpy(&value, &h, sizeof(drjit::dr_half));
+                        if (std::abs(h) > 2.f)
+                            h += h * drjit::dr_half(.1f);
                     }
 
                     source_value[i] = jit_var_literal(Backend, source_type,

@@ -449,6 +449,7 @@ void jitc_value_print(const Variable *v, bool graphviz = false) {
         break;
 
     switch ((VarType) v->type) {
+        case VarType::Float16: JIT_LITERAL_PRINT(uint16_t, unsigned, "%u");
         case VarType::Float32: JIT_LITERAL_PRINT(float, float, "%g");
         case VarType::Float64: JIT_LITERAL_PRINT(double, double, "%g");
         case VarType::Bool:    JIT_LITERAL_PRINT(bool, int, "%i");
@@ -978,6 +979,7 @@ const char *jitc_var_str(uint32_t index) {
             case VarType::UInt32:  var_buffer.fmt("%"   PRIu32 "%s", *((uint32_t *) dst), comma); break;
             case VarType::Int64:   var_buffer.fmt("%"   PRId64 "%s", *(( int64_t *) dst), comma); break;
             case VarType::UInt64:  var_buffer.fmt("%"   PRIu64 "%s", *((uint64_t *) dst), comma); break;
+            case VarType::Float16: var_buffer.fmt("%g%s", float(*((drjit::dr_half *) dst)), comma); break;
             case VarType::Float32: var_buffer.fmt("%g%s", *((float *) dst), comma); break;
             case VarType::Float64: var_buffer.fmt("%g%s", *((double *) dst), comma); break;
             default: jitc_fail("jit_var_str(): unsupported type!");

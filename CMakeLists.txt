@@ -95,6 +95,7 @@ add_library(
   include/drjit-core/hash.h
   include/drjit-core/array.h
   include/drjit-core/texture.h
+  include/drjit-core/half.h
 
   src/common.h
   src/internal.h
