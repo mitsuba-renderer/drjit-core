@@ -856,7 +856,8 @@ static void jitc_llvm_render_scatter(const Variable *v,
         fmt("    call void @llvm.masked.scatter.v$w$h($V, <$w x {$t*}> $v_1, i32 $a, $V)\n",
              value, value, value, v, value, mask);
     } else {
-        const char *op, *zero_elem = nullptr, *intrinsic_name = nullptr;
+        const char *op, *zero_elem = nullptr, *intrinsic_name = nullptr,
+                        *atomicrmw_name = nullptr;
         switch ((ReduceOp) v->literal) {
             case ReduceOp::Add:
                 if (jitc_is_single(value)) {
@@ -887,15 +888,25 @@ static void jitc_llvm_render_scatter(const Variable *v,
                 break;
 
             case ReduceOp::Min:
-                op = jitc_is_float(value)
-                         ? "fmin"
-                         : (jitc_is_uint(value) ? "umin" : "smin");
+                if (jitc_is_float(value)) {
+                    op = "fmin";
+                } else if (jitc_is_uint(value)) {
+                    op = "umin";
+                } else {
+                    op = "smin";
+                    atomicrmw_name = "min";
+                }
                 break;
 
             case ReduceOp::Max:
-                op = jitc_is_float(value)
-                         ? "fmax"
-                         : (jitc_is_uint(value) ? "umax" : "smax");
+                if (jitc_is_float(value)) {
+                    op = "fmax";
+                } else if (jitc_is_uint(value)) {
+                    op = "umax";
+                } else {
+                    op = "smax";
+                    atomicrmw_name = "max";
+                }
                 break;
 
             case ReduceOp::And: op = "and"; break;
@@ -905,6 +916,8 @@ static void jitc_llvm_render_scatter(const Variable *v,
 
         if (!intrinsic_name)
             intrinsic_name = op;
+        if (!atomicrmw_name)
+            atomicrmw_name = op;
 
         fmt_intrinsic("declare i1 @llvm.experimental.vector.reduce.or.v$wi1(<$w x i1>)");
 
@@ -948,7 +961,7 @@ static void jitc_llvm_render_scatter(const Variable *v,
             "   ret void\n"
             "$}",
             op, value, value, value, value, value, value, value, value, value, value, value, reassoc,
-            value, intrinsic_name, value, zero_elem ? zero_elem : "", value, op, value, value
+            value, intrinsic_name, value, zero_elem ? zero_elem : "", value, atomicrmw_name, value, value
         );
 
         fmt("    call void @reduce_$s_$h(<$w x {$t*}> $v_1, $V, $V)\n",
