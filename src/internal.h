@@ -775,6 +775,7 @@ inline bool jitc_is_float(VarType type) {
            type == VarType::Float64;
 }
 
+inline bool jitc_is_half(VarType type) { return type == VarType::Float16; }
 inline bool jitc_is_single(VarType type) { return type == VarType::Float32; }
 inline bool jitc_is_double(VarType type) { return type == VarType::Float64; }
 inline bool jitc_is_bool(VarType type) { return type == VarType::Bool; }
@@ -803,6 +804,7 @@ inline bool jitc_is_void(VarType type) {
 
 inline bool jitc_is_arithmetic(const Variable *v) { return jitc_is_arithmetic((VarType) v->type); }
 inline bool jitc_is_float(const Variable *v) { return jitc_is_float((VarType) v->type); }
+inline bool jitc_is_half(const Variable* v) { return jitc_is_half((VarType) v->type); }
 inline bool jitc_is_single(const Variable *v) { return jitc_is_single((VarType) v->type); }
 inline bool jitc_is_double(const Variable *v) { return jitc_is_double((VarType) v->type); }
 inline bool jitc_is_sint(const Variable *v) { return jitc_is_sint((VarType) v->type); }
