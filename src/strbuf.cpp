@@ -261,6 +261,7 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
 
                 case 'b':
                 case 't':
+                case 'T':
                     (void) va_arg(args, const Variable *); arg++;
                     len += MAXSIZE_TYPE;
                     break;
@@ -329,6 +330,12 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                 case 't': {
                         const Variable *v = va_arg(args2, const Variable *);
                         put_unchecked(type_name_ptx[v->type]);
+                    }
+                    break;
+
+                case 'T': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_unchecked(type_name_ptx_fp16_adjusted[v->type]);
                     }
                     break;
 

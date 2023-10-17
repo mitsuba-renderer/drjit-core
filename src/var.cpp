@@ -33,6 +33,12 @@ const char *type_name_ptx[(int) VarType::Count] {
     "u32", "s64",  "u64", "u64", "f16", "f32", "f64"
 };
 
+/// CUDA PTX type names (mapping f16 to b16)
+const char *type_name_ptx_fp16_adjusted[(int) VarType::Count] {
+    "???", "pred", "s8",  "u8",  "s16", "u16", "s32",
+    "u32", "s64",  "u64", "u64", "b16", "f32", "f64"
+};
+
 /// CUDA PTX type names (binary view)
 const char *type_name_ptx_bin[(int) VarType::Count] {
     "???", "pred", "b8",  "b8",  "b16", "b16", "b32",

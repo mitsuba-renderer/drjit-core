@@ -20,6 +20,7 @@ using FloatC  = CUDAArray<float>;
 using Int32C  = CUDAArray<int32_t>;
 using UInt32C = CUDAArray<uint32_t>;
 using MaskC   = CUDAArray<bool>;
+using HalfC   = CUDAArray<drjit::dr_half>;
 using FloatL  = LLVMArray<float>;
 using Int32L  = LLVMArray<int32_t>;
 using UInt32L = LLVMArray<uint32_t>;
@@ -71,9 +72,19 @@ using HalfL   = LLVMArray<drjit::dr_half>;
                       test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
                                  MaskC, CUDAArray>,                            \
                       ##__VA_ARGS__);                                          \
+    int test##name##_c_half =                                                  \
+        test_register("test" #name "_cuda",                                    \
+                      test##name<JitBackend::CUDA, HalfC, Int32C, UInt32C,     \
+                                 MaskC, CUDAArray>,                            \
+                      ##__VA_ARGS__);                                          \
     int test##name##_o =                                                       \
         test_register("test" #name "_optix",                                   \
                       test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
+                                 MaskC, CUDAArray>,                            \
+                      ##__VA_ARGS__);                                          \
+    int test##name##_o_half =                                                  \
+        test_register("test" #name "_optix",                                   \
+                      test##name<JitBackend::CUDA, HalfC, Int32C, UInt32C,     \
                                  MaskC, CUDAArray>,                            \
                       ##__VA_ARGS__);                                          \
     int test##name##_l =                                                       \
