@@ -47,7 +47,7 @@ struct VCall {
 
     /// Input variables at call site
     std::vector<uint32_t> in;
-    /// Input placeholder variables
+    /// Input symbolic variables
     std::vector<uint32_t> in_nested;
 
     /// Output variables at call site

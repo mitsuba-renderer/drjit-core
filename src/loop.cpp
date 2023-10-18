@@ -17,7 +17,7 @@ struct Loop {
     uint32_t end = 0;
     /// Variable index of loop condition
     uint32_t cond = 0;
-    /// Variable index of side effect placeholder
+    /// Variable index of side effect symbolic
     uint32_t se = 0;
     /// Number of side effects
     uint32_t se_count = 0;
@@ -29,7 +29,7 @@ struct Loop {
     std::vector<uint32_t> in_cond;
     /// Input variables before loop body
     std::vector<uint32_t> in_body;
-    /// Output placeholder variables within loop
+    /// Output symbolic variables within loop
     std::vector<uint32_t> out_body;
     /// Output variables after loop
     std::vector<uint32_t> out;
@@ -97,7 +97,7 @@ uint32_t jitc_var_loop_init(size_t n_indices, uint32_t **indices) {
     Variable v;
     v.kind = (uint32_t) VarKind::Stmt;
     v.size = size;
-    v.placeholder = 1;
+    v.symbolic = 1;
     v.backend = (uint32_t) backend;
 
     // Copy loop state before entering loop (CUDA)
@@ -155,7 +155,7 @@ uint32_t jitc_var_loop_cond(uint32_t loop_init, uint32_t cond,
     Variable v;
     v.kind = (uint32_t) VarKind::Stmt;
     v.size = size;
-    v.placeholder = 1;
+    v.symbolic = 1;
     v.backend = (uint32_t) backend;
 
     // Create Phi nodes to represent state at the beginning of the loop body
@@ -209,13 +209,13 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
     // 1. Various sanity checks
     // =====================================================
 
-    bool placeholder = false;
+    bool symbolic = false;
     uint32_t size = 1, n_invariant = 0;
     {
         const Variable *v = jitc_var(loop->cond);
         if ((VarType) v->type != VarType::Bool)
             jitc_raise("jit_var_loop(): loop condition must be a boolean variable");
-        if (!v->placeholder)
+        if (!v->symbolic)
             jitc_raise("jit_var_loop(): loop condition does not depend on any of the loop variables");
         size = v->size;
     }
@@ -236,14 +236,14 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
             continue;
         }
 
-        if (!v1->placeholder || !v1->dep[0] || v1->dep[1] != loop_init)
+        if (!v1->symbolic || !v1->dep[0] || v1->dep[1] != loop_init)
             jitc_raise("jit_var_loop(): loop state input variable %zu (r%u) is "
                        "invalid (case 1)!", i, index_1);
 
         uint32_t index_2 = v1->dep[0];
         Variable *v2 = jitc_var(index_2);
 
-        if (!v2->placeholder || !v2->dep[0])
+        if (!v2->symbolic || !v2->dep[0])
             jitc_raise("jit_var_loop(): loop state input variable %zu (r%u) is "
                        "invalid (case 2)!", i, index_2);
 
@@ -253,7 +253,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         loop->in_body.push_back(index_1);
         loop->in_cond.push_back(index_2);
         loop->in.push_back(index_3);
-        placeholder |= (bool) v3->placeholder;
+        symbolic |= (bool) v3->symbolic;
 
         // ============ 1.2. Output side =============
 
@@ -313,10 +313,10 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
              "%zu loop variable%s, %u side effect%s, %u elements%s%s",
              loop_init, loop_cond, name, n_indices, n_indices == 1 ? "" : "s",
              loop->se_count, loop->se_count == 1 ? "" : "s", size, temp,
-             placeholder ? " (part of a recorded computation)" : "");
+             symbolic ? " (part of a symbolic computation)" : "");
 
     if (n_invariant && first_round) {
-        // Release recorded computation
+        // Release symbolic computation
         for (size_t i = 0; i < n_indices; ++i) {
             jitc_var_inc_ref(indices_in[i]);
             jitc_var_dec_ref(*indices[i]);
@@ -450,7 +450,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         Variable *v = jitc_var(loop_se);
         v->extra = 1;
         v->size = size;
-        v->placeholder = placeholder;
+        v->symbolic = symbolic;
         Extra &e = state.extra[loop_se];
         e.n_dep = loop->se_count;
         e.dep = dep;
@@ -472,7 +472,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
         else
             v2.stmt = (char *) "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>";
         v2.size = size;
-        v2.placeholder = placeholder;
+        v2.symbolic = symbolic;
         v2.backend = (uint32_t) backend;
         v2.dep[1] = loop_end;
 

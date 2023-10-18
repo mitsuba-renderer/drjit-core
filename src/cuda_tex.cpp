@@ -467,7 +467,7 @@ void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
 Variable jitc_cuda_tex_check(size_t ndim, const uint32_t *pos) {
     // Validate input types, determine size of the operation
     uint32_t size = 0;
-    bool dirty = false, placeholder = false;
+    bool dirty = false, symbolic = false;
     JitBackend backend = JitBackend::None;
 
     if (ndim < 1 || ndim > 3)
@@ -481,7 +481,7 @@ Variable jitc_cuda_tex_check(size_t ndim, const uint32_t *pos) {
                        type_name[(int) VarType::Float32]);
         size = std::max(size, v->size);
         dirty |= v->is_dirty();
-        placeholder |= (bool) v->placeholder;
+        symbolic |= (bool) v->symbolic;
         backend = (JitBackend) v->backend;
     }
 
@@ -504,7 +504,7 @@ Variable jitc_cuda_tex_check(size_t ndim, const uint32_t *pos) {
     Variable v;
     v.size = size;
     v.backend = (uint32_t) backend;
-    v.placeholder = placeholder;
+    v.symbolic = symbolic;
     v.type = (uint32_t) VarType::Float32;
     return v;
 }

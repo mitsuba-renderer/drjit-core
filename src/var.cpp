@@ -26,7 +26,7 @@ const char *type_name[(int) VarType::Count] {
 
 /// Descriptive names for the various variable types (extra-short version)
 const char *type_name_short[(int) VarType::Count] {
-    "void ", "msk", "i8",  "u8",  "i16", "u16", "i32",
+    "void ", "msk", "i8", "u8",  "i16", "u16", "i32",
     "u32", "i64", "u64", "ptr", "f16", "f32", "f64"
 };
 
@@ -550,11 +550,11 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         }
 
         bool lvn_hit = lvn && !lvn_key_inserted;
-        if (v.placeholder || lvn_hit) {
+        if (v.symbolic || lvn_hit) {
             var_buffer.put(" (");
-            if (v.placeholder)
-                var_buffer.put("placeholder");
-            if (v.placeholder && lvn_hit)
+            if (v.symbolic)
+                var_buffer.put("symbolic");
+            if (v.symbolic && lvn_hit)
                 var_buffer.put(", ");
             if (lvn_hit)
                 var_buffer.put("lvn hit");
@@ -675,7 +675,7 @@ uint32_t jitc_var_wrap_vcall(uint32_t index) {
     v2.kind = (uint32_t) VarKind::Stmt;
     v2.type = v->type;
     v2.size = 1;
-    v2.placeholder = v2.vcall_iface = 1;
+    v2.symbolic = v2.vcall_iface = 1;
     v2.dep[0] = index;
     jitc_var_inc_ref(index);
 
@@ -698,7 +698,7 @@ uint32_t jitc_var_stmt(JitBackend backend, VarType vt, const char *stmt,
                        int stmt_static, uint32_t n_dep,
                        const uint32_t *dep) {
     uint32_t size = n_dep == 0 ? 1 : 0;
-    bool dirty = false, uninitialized = false, placeholder = false;
+    bool dirty = false, uninitialized = false, symbolic = false;
     Variable *v[4] { };
 
     if (unlikely(n_dep > 4))
@@ -709,7 +709,7 @@ uint32_t jitc_var_stmt(JitBackend backend, VarType vt, const char *stmt,
             Variable *vi = jitc_var(dep[i]);
             size = std::max(size, vi->size);
             dirty |= vi->is_dirty();
-            placeholder |= (bool) vi->placeholder;
+            symbolic |= (bool) vi->symbolic;
             v[i] = vi;
         } else {
             uninitialized = true;
@@ -754,7 +754,7 @@ uint32_t jitc_var_stmt(JitBackend backend, VarType vt, const char *stmt,
     v2.type = (uint32_t) vt;
     v2.backend = (uint32_t) backend;
     v2.free_stmt = stmt_static == 0;
-    v2.placeholder = placeholder;
+    v2.symbolic = symbolic;
 
     return jitc_var_new(v2);
 }
@@ -770,7 +770,7 @@ uint32_t jitc_var_stmt(JitBackend backend, VarType vt, const char *stmt,
  *   evaluated, and the function checks that this worked as expected.
  */
 uint32_t jitc_var_new_node_0(JitBackend backend, VarKind kind, VarType vt,
-                             uint32_t size, bool placeholder, uint64_t payload) {
+                             uint32_t size, bool symbolic, uint64_t payload) {
 
     Variable v;
     v.literal = payload;
@@ -778,13 +778,13 @@ uint32_t jitc_var_new_node_0(JitBackend backend, VarKind kind, VarType vt,
     v.kind = kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
-    v.placeholder = placeholder;
+    v.symbolic = symbolic;
 
     return jitc_var_new(v);
 }
 
 uint32_t jitc_var_new_node_1(JitBackend backend, VarKind kind, VarType vt,
-                             uint32_t size, bool placeholder,
+                             uint32_t size, bool symbolic,
                              uint32_t a0, Variable *v0, uint64_t payload) {
 
     if (unlikely(v0->is_dirty())) {
@@ -802,7 +802,7 @@ uint32_t jitc_var_new_node_1(JitBackend backend, VarKind kind, VarType vt,
     v.kind = kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
-    v.placeholder = placeholder;
+    v.symbolic = symbolic;
 
     jitc_var_inc_ref(a0, v0);
 
@@ -810,7 +810,7 @@ uint32_t jitc_var_new_node_1(JitBackend backend, VarKind kind, VarType vt,
 }
 
 uint32_t jitc_var_new_node_2(JitBackend backend, VarKind kind, VarType vt,
-                             uint32_t size, bool placeholder,
+                             uint32_t size, bool symbolic,
                              uint32_t a0, Variable *v0,
                              uint32_t a1, Variable *v1, uint64_t payload) {
 
@@ -829,7 +829,7 @@ uint32_t jitc_var_new_node_2(JitBackend backend, VarKind kind, VarType vt,
     v.kind = kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
-    v.placeholder = placeholder;
+    v.symbolic = symbolic;
 
     jitc_var_inc_ref(a0, v0);
     jitc_var_inc_ref(a1, v1);
@@ -838,7 +838,7 @@ uint32_t jitc_var_new_node_2(JitBackend backend, VarKind kind, VarType vt,
 }
 
 uint32_t jitc_var_new_node_3(JitBackend backend, VarKind kind, VarType vt,
-                             uint32_t size, bool placeholder,
+                             uint32_t size, bool symbolic,
                              uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
                              uint32_t a2, Variable *v2, uint64_t payload) {
     if (unlikely(v0->is_dirty() || v1->is_dirty() || v2->is_dirty())) {
@@ -857,7 +857,7 @@ uint32_t jitc_var_new_node_3(JitBackend backend, VarKind kind, VarType vt,
     v.kind = kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
-    v.placeholder = placeholder;
+    v.symbolic = symbolic;
 
     jitc_var_inc_ref(a0, v0);
     jitc_var_inc_ref(a1, v1);
@@ -867,7 +867,7 @@ uint32_t jitc_var_new_node_3(JitBackend backend, VarKind kind, VarType vt,
 }
 
 uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind, VarType vt,
-                             uint32_t size, bool placeholder,
+                             uint32_t size, bool symbolic,
                              uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
                              uint32_t a2, Variable *v2, uint32_t a3, Variable *v3,
                              uint64_t payload) {
@@ -888,7 +888,7 @@ uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind, VarType vt,
     v.kind = kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
-    v.placeholder = placeholder;
+    v.symbolic = symbolic;
 
     jitc_var_inc_ref(a0, v0);
     jitc_var_inc_ref(a1, v1);
@@ -946,15 +946,15 @@ void jitc_var_mark_side_effect(uint32_t index) {
     v->side_effect = true;
 
     /* Include all side effects in recorded program, even if
-       they don't depend on other placeholder variables */
-    v->placeholder |= jit_flag(JitFlag::Recording);
+       they don't depend on other symbolic variables */
+    v->symbolic |= jit_flag(JitFlag::Recording);
 
     jitc_log(Debug, "jit_var_mark_side_effect(r%u)%s", index,
-             v->placeholder ? " (part of a recorded computation)" : "");
+             v->symbolic ? " (part of a symbolic computation)" : "");
 
     ThreadState *ts = thread_state(v->backend);
     std::vector<uint32_t> &output =
-        v->placeholder ? ts->side_effects_recorded : ts->side_effects;
+        v->symbolic ? ts->side_effects_recorded : ts->side_effects;
     output.push_back(index);
 }
 
@@ -1010,20 +1010,20 @@ const char *jitc_var_str(uint32_t index) {
     return var_buffer.get();
 }
 
-static void jitc_raise_placeholder_error(const char *func, uint32_t index) {
+static void jitc_raise_symbolic_error(const char *func, uint32_t index) {
     jitc_raise(
-        "%s(r%u): placeholder variables are used to record computation symbolically\n"
-        "and cannot be scheduled for evaluation! This error message could appear for\n"
+        "%s(r%u): symbolic variables capture abstract computation and can neither be\n"
+        "evaluated nor scheduled for evaluation. This error message could appear for\n"
         "the following reasons:\n"
         "\n"
-        "1. You are using DrJit's loop or virtual function call recording feature\n"
+        "1. You are using Dr.Jit's loop or virtual function call recording feature\n"
         "   and tried to perform an operation that is not permitted in this restricted\n"
         "   execution mode. Please see the documentation of recorded loops/virtual\n"
         "   function calls to learn about these restrictions.\n"
         "\n"
         "2. You are accessing a variable that was modified as part of a recorded\n"
         "   loop and forgot to specify it as a loop variable. Please see the\n"
-        "   drjit::Loop documentation for details.", func, index
+        "   drjit.Loop documentation for details.", func, index
     );
 }
 
@@ -1040,10 +1040,10 @@ int jitc_var_schedule(uint32_t index) {
         jitc_raise("jit_var_schedule(r%u): unknown variable!", index);
     Variable *v = &it.value();
 
-    if (unlikely(v->placeholder))
-        jitc_raise_placeholder_error("jitc_var_schedule", index);
+    if (unlikely(v->symbolic))
+        jitc_raise_symbolic_error("jitc_var_schedule", index);
     if (unlikely(v->consumed))
-        jitc_raise_placeholder_error("jitc_var_schedule", index);
+        jitc_raise_consumed_error("jitc_var_schedule", index);
 
     if (v->is_stmt() || v->is_node()) {
         thread_state(v->backend)->scheduled.push_back(index);
@@ -1095,8 +1095,8 @@ void jitc_var_eval_literal(uint32_t index, Variable *v) {
 int jitc_var_eval(uint32_t index) {
     Variable *v = jitc_var(index);
 
-    if (unlikely(v->placeholder))
-        jitc_raise_placeholder_error("jitc_var_eval", index);
+    if (unlikely(v->symbolic))
+        jitc_raise_symbolic_error("jitc_var_eval", index);
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_eval", index);
 
@@ -1277,7 +1277,7 @@ uint32_t jitc_var_copy(uint32_t index) {
         Variable v2;
         v2.type = v->type;
         v2.backend = v->backend;
-        v2.placeholder = v->placeholder;
+        v2.symbolic = v->symbolic;
         v2.size = v->size;
 
         if (v->is_literal()) {
@@ -1339,7 +1339,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         v2.kind = (uint32_t) VarKind::Stmt;
         v2.type = v->type;
         v2.backend = v->backend;
-        v2.placeholder = v->placeholder;
+        v2.symbolic = v->symbolic;
         v2.size = (uint32_t) size;
         v2.dep[0] = index;
         v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
@@ -1477,7 +1477,7 @@ uint32_t jitc_var_mask_default(JitBackend backend, size_t size) {
         Ref counter = steal(jitc_var_counter(backend, size, false));
         Variable *v_counter = jitc_var(counter);
         return jitc_var_new_node_1(backend, VarKind::DefaultMask, VarType::Bool,
-                                   v_counter->size, v_counter->placeholder,
+                                   v_counter->size, v_counter->symbolic,
                                    counter, v_counter);
     }
 }
@@ -1969,7 +1969,7 @@ const char *jitc_var_graphviz() {
             var_buffer.put(name, strlen(name));
         }
 
-        if (v->placeholder && !color)
+        if (v->symbolic && !color)
             color = "yellow";
         if (labeled && !color)
             color = "wheat";
@@ -2038,7 +2038,7 @@ const char *jitc_var_graphviz() {
     var_buffer.put(
         "    subgraph cluster_legend {\n"
         "        label=\"Legend\";\n"
-        "        l5 [style=filled fillcolor=yellow label=\"Placeholder\"];\n"
+        "        l5 [style=filled fillcolor=yellow label=\"Symbolic\"];\n"
         "        l4 [style=filled fillcolor=yellowgreen label=\"Special\"];\n"
         "        l3 [style=filled fillcolor=salmon label=\"Dirty\"];\n"
         "        l2 [style=filled fillcolor=lightblue2 label=\"Evaluated\"];\n"

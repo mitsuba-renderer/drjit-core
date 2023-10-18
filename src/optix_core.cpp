@@ -522,7 +522,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
         jitc_raise("jit_optix_ray_trace(): type mismatch for pipeline argument!");
 
     // Validate input types, determine size of the operation
-    bool placeholder = false, dirty = false;
+    bool symbolic = false, dirty = false;
     for (uint32_t i = 0; i <= n_args; ++i) {
         uint32_t index = i < n_args ? args[i] : mask;
         VarType ref = i < n_args ? types[i] : VarType::Bool;
@@ -532,7 +532,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
                        "expected %s)",
                        i, type_name[v->type], type_name[(int) ref]);
         size = std::max(size, v->size);
-        placeholder |= (bool) v->placeholder;
+        symbolic |= (bool) v->symbolic;
         dirty |= v->is_dirty();
     }
 
@@ -562,11 +562,11 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
 
     jitc_log(InfoSym, "jit_optix_ray_trace(): tracing %u ray%s, %u payload value%s%s.",
              size, size != 1 ? "s" : "", np, np == 1 ? "" : "s",
-             placeholder ? " (part of a recorded computation)" : "");
+             symbolic ? " (part of a symbolic computation)" : "");
 
     Ref index = steal(jitc_var_new_node_3(
         JitBackend::CUDA, VarKind::TraceRay, VarType::Void, size,
-        placeholder, valid, jitc_var(valid), pipeline, jitc_var(pipeline), sbt,
+        symbolic, valid, jitc_var(valid), pipeline, jitc_var(pipeline), sbt,
         jitc_var(sbt)));
 
     Variable *v = jitc_var(index);
@@ -584,7 +584,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
     for (uint32_t i = 0; i < np; ++i)
         args[15 + i] = jitc_var_new_node_1(
             JitBackend::CUDA, VarKind::Extract, VarType::UInt32,
-            size, placeholder, index, jitc_var(index), (uint64_t) i);
+            size, symbolic, index, jitc_var(index), (uint64_t) i);
 }
 
 void jitc_optix_check_impl(OptixResult errval, const char *file,

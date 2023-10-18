@@ -1259,7 +1259,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
                      float_type,      float_type,     VarType::UInt32,
                      VarType::UInt32, VarType::UInt32 };
 
-    bool placeholder = false, dirty = false;
+    bool symbolic = false, dirty = false;
     uint32_t size = 0;
     for (uint32_t i = 0; i < n_args; ++i) {
         const Variable *v = jitc_var(in[i]);
@@ -1268,7 +1268,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
                        "expected %s)",
                        i, type_name[v->type], type_name[(int) types[i]]);
         size = std::max(size, v->size);
-        placeholder |= (bool) v->placeholder;
+        symbolic |= (bool) v->symbolic;
         dirty |= v->is_dirty();
     }
 
@@ -1308,11 +1308,11 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
 
     jitc_log(InfoSym, "jitc_llvm_ray_trace(): tracing %u %sray%s%s", size,
              shadow_ray ? "shadow " : "", size != 1 ? "s" : "",
-             placeholder ? " (part of a recorded computation)" : "");
+             symbolic ? " (part of a symbolic computation)" : "");
 
     Ref index = steal(jitc_var_new_node_2(
         JitBackend::LLVM, VarKind::TraceRay, VarType::Void, size,
-        placeholder, func, jitc_var(func), scene,
+        symbolic, func, jitc_var(func), scene,
         jitc_var(scene), (uint64_t) shadow_ray));
 
     Variable *v = jitc_var(index);
@@ -1330,7 +1330,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
     for (int i = 0; i < (shadow_ray ? 1 : 6); ++i)
         out[i] = jitc_var_new_node_1(JitBackend::LLVM, VarKind::Extract,
                                      i < 3 ? float_type : VarType::UInt32, size,
-                                     placeholder, index, jitc_var(index),
+                                     symbolic, index, jitc_var(index),
                                      (uint64_t) i);
 }
 

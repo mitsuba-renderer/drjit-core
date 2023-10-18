@@ -602,12 +602,12 @@ int jit_var_is_evaluated(uint32_t index) {
     return (int) jitc_var(index)->is_data();
 }
 
-int jit_var_is_placeholder(uint32_t index) {
+int jit_var_is_symbolic(uint32_t index) {
     if (index == 0)
         return 0;
 
     lock_guard guard(state.lock);
-    return (int) jitc_var(index)->placeholder;
+    return (int) jitc_var(index)->symbolic;
 }
 
 uint32_t jit_var_resize(uint32_t index, size_t size) {
