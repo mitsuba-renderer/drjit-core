@@ -1086,8 +1086,8 @@ extern JIT_EXPORT int jit_var_is_literal_zero(uint32_t index);
 /// Check if a variable is evaluated
 extern JIT_EXPORT int jit_var_is_evaluated(uint32_t index);
 
-/// Check if a variable is a special placeholder value used to record computation
-extern JIT_EXPORT int jit_var_is_placeholder(uint32_t index);
+/// Check if a variable represents symbolic computation (i.e. with abstract inputs)
+extern JIT_EXPORT int jit_var_is_symbolic(uint32_t index);
 
 /// Check if a variable represents a normal (not NaN/infinity) literal
 extern JIT_EXPORT int jit_var_is_normal_literal(uint32_t index);
@@ -1097,7 +1097,7 @@ extern JIT_EXPORT int jit_var_is_normal_literal(uint32_t index);
  *
  * This function takes a scalar variable as input and changes its size to \c
  * size, potentially creating a new copy in case something already depends on
- * \c index. The returned copy is symbolic form.
+ * \c index. The returned copy is unevaluated.
  *
  * The function increases the reference count of the returned value.
  * When \c index is not a scalar variable and its size exactly matches \c size,
@@ -1446,8 +1446,8 @@ extern JIT_EXPORT void jit_record_end(JIT_ENUM JitBackend backend,
  * computation
  *
  * Creates a copy of a virtual function call input argument. The copy has a
- * 'placeholder' bit set that propagates into any computation referencing it.
- * Placeholder variables trigger an error when the user tries to evaluate or
+ * 'symbolic' bit set that propagates into any computation referencing it.
+ * Symbolic variables trigger an error when the user tries to evaluate or
  * print them (these operations are not allowed in a recording session).
  */
 extern JIT_EXPORT uint32_t jit_var_wrap_vcall(uint32_t index);
@@ -1455,8 +1455,8 @@ extern JIT_EXPORT uint32_t jit_var_wrap_vcall(uint32_t index);
 /**
  * \brief Wrap a loop state variable before recording computation
  *
- * Creates a copy of a loop state variable. The copy has a 'placeholder' bit
- * set that propagates into any computation referencing it. Placeholder
+ * Creates a copy of a loop state variable. The copy has a 'symbolic' bit
+ * set that propagates into any computation referencing it. Symbolic
  * variables trigger an error when the user tries to evaluate or print them
  * (these operations are not allowed in a recording session).
  */

@@ -205,10 +205,10 @@ struct Variable {
     /// If set, 'data' will not be deallocated when the variable is destructed
     uint32_t retain_data : 1;
 
-    /// Is this a placeholder variable used to record arithmetic symbolically?
-    uint32_t placeholder : 1;
+    /// Does this variable represent symbolic computation? (abstract inputs)
+    uint32_t symbolic : 1;
 
-    /// Is this a placeholder variable used to record arithmetic symbolically?
+    /// Does this variable represent the input of a symbolic virtual function call?
     uint32_t vcall_iface : 1;
 
     /// Must be set if the variable is associated with an 'Extra' instance

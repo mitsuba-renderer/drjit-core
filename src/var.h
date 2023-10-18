@@ -38,26 +38,26 @@ extern uint32_t jitc_var_stmt(JitBackend backend,
 
 /// Create a new IR node. Just a wrapper around jitc_var_new without any error checking
 extern uint32_t jitc_var_new_node_0(JitBackend backend, VarKind kind,
-                                    VarType vt, uint32_t size, bool placeholder,
+                                    VarType vt, uint32_t size, bool symbolic,
                                     uint64_t payload = 0);
 
 extern uint32_t jitc_var_new_node_1(JitBackend backend, VarKind kind,
-                                    VarType vt, uint32_t size, bool placeholder,
+                                    VarType vt, uint32_t size, bool symbolic,
                                     uint32_t a0, Variable *v0,
                                     uint64_t payload = 0);
 
 extern uint32_t jitc_var_new_node_2(JitBackend backend, VarKind kind,
-                                    VarType vt, uint32_t size, bool placeholder,
+                                    VarType vt, uint32_t size, bool symbolic,
                                     uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
                                     uint64_t payload = 0);
 
 extern uint32_t jitc_var_new_node_3(JitBackend backend, VarKind kind,
-                                    VarType vt, uint32_t size, bool placeholder,
+                                    VarType vt, uint32_t size, bool symbolic,
                                     uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
                                     uint32_t a2, Variable *v2, uint64_t payload = 0);
 
 extern uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind,
-                                    VarType vt, uint32_t size, bool placeholder,
+                                    VarType vt, uint32_t size, bool symbolic,
                                     uint32_t a0, Variable *v0, uint32_t a1, Variable *v1,
                                     uint32_t a2, Variable *v2, uint32_t a3, Variable *v4,
                                     uint64_t payload = 0);

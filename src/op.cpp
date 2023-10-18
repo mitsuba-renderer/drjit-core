@@ -40,8 +40,8 @@ struct OpInfo {
     /// Are *all* operands literals?
     bool literal;
 
-    /// Did an operand have the 'placeholder' bit set?
-    bool placeholder;
+    /// Did an operand have the 'symbolic' bit set?
+    bool symbolic;
 };
 
 /**
@@ -71,7 +71,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
     uint32_t dep[Size] = { args... };
     Variable *v[Size];
 
-    bool placeholder = false,
+    bool symbolic = false,
          simplify = false,
          literal = true;
 
@@ -147,7 +147,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
         }
 
         size = std::max(size, vi->size);
-        placeholder |= (bool) vi->placeholder;
+        symbolic |= (bool) vi->symbolic;
         bool is_literal = vi->is_literal();
         literal &= is_literal;
         simplify |= is_literal;
@@ -175,7 +175,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
     }
 
     return drjit::dr_tuple(
-        OpInfo{ backend, type, size, simplify, literal, placeholder },
+        OpInfo{ backend, type, size, simplify, literal, symbolic },
         v[Is]...
     );
 
@@ -317,7 +317,7 @@ uint32_t jitc_var_neg(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Neg, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_neg(r%u <- r%u)", result, a0);
     return result;
@@ -341,7 +341,7 @@ uint32_t jitc_var_not(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Not, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_not(r%u <- r%u)", result, a0);
     return result;
@@ -364,7 +364,7 @@ uint32_t jitc_var_sqrt(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Sqrt, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_sqrt(r%u <- r%u)", result, a0);
     return result;
@@ -390,7 +390,7 @@ uint32_t jitc_var_abs(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Abs, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_abs(r%u <- r%u)", result, a0);
     return result;
@@ -414,7 +414,7 @@ uint32_t jitc_var_add(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Add, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_add(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -438,7 +438,7 @@ uint32_t jitc_var_sub(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Sub, info.type,
-                                    info.size, info.placeholder, a0, v0, a1, v1);
+                                    info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_sub(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -466,7 +466,7 @@ uint32_t jitc_var_mul(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Mul, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_mul(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -503,7 +503,7 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Div, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_div(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -527,7 +527,7 @@ uint32_t jitc_var_mod(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Mod, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_mod(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -572,7 +572,7 @@ uint32_t jitc_var_mulhi(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Mulhi, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_mulhi(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -620,7 +620,7 @@ uint32_t jitc_var_fma(uint32_t a0, uint32_t a1, uint32_t a2) {
 
     if (!result && info.size)
         result = jitc_var_new_node_3(info.backend, VarKind::Fma, info.type,
-                                     info.size, info.placeholder,
+                                     info.size, info.symbolic,
                                      a0, v0, a1, v1, a2, v2);
 
     jitc_log(Debug, "jit_var_fma(r%u <- r%u, r%u, r%u)", result, a0, a1, a2);
@@ -643,7 +643,7 @@ uint32_t jitc_var_min(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Min, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_min(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -666,7 +666,7 @@ uint32_t jitc_var_max(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Max, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_max(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -689,7 +689,7 @@ uint32_t jitc_var_ceil(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Ceil, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_ceil(r%u <- r%u)", result, a0);
     return result;
@@ -712,7 +712,7 @@ uint32_t jitc_var_floor(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Floor, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_floor(r%u <- r%u)", result, a0);
     return result;
@@ -735,7 +735,7 @@ uint32_t jitc_var_round(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Round, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_round(r%u <- r%u)", result, a0);
     return result;
@@ -758,7 +758,7 @@ uint32_t jitc_var_trunc(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Trunc, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_trunc(r%u <- r%u)", result, a0);
     return result;
@@ -781,7 +781,7 @@ uint32_t jitc_var_eq(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Eq, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_eq(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -804,7 +804,7 @@ uint32_t jitc_var_neq(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Neq, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_neq(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -827,7 +827,7 @@ uint32_t jitc_var_lt(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Lt, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_lt(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -850,7 +850,7 @@ uint32_t jitc_var_le(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Le, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_le(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -873,7 +873,7 @@ uint32_t jitc_var_gt(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Gt, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_gt(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -896,7 +896,7 @@ uint32_t jitc_var_ge(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Ge, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_ge(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -922,7 +922,7 @@ uint32_t jitc_var_select(uint32_t a0, uint32_t a1, uint32_t a2) {
 
     if (!result && info.size)
         result = jitc_var_new_node_3(info.backend, VarKind::Select, info.type,
-                                    info.size, info.placeholder,
+                                    info.size, info.symbolic,
                                     a0, v0, a1, v1, a2, v2);
 
     jitc_log(Debug, "jit_var_select(r%u <- r%u, r%u, r%u)", result, a0, a1, a2);
@@ -956,7 +956,7 @@ uint32_t jitc_var_popc(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Popc, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_popc(r%u <- r%u)", result, a0);
     return result;
@@ -987,7 +987,7 @@ uint32_t jitc_var_clz(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Clz, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_clz(r%u <- r%u)", result, a0);
     return result;
@@ -1020,7 +1020,7 @@ uint32_t jitc_var_ctz(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Ctz, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_ctz(r%u <- r%u)", result, a0);
     return result;
@@ -1056,7 +1056,7 @@ uint32_t jitc_var_and(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::And, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_and(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -1091,7 +1091,7 @@ uint32_t jitc_var_or(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Or, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_or(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -1124,7 +1124,7 @@ uint32_t jitc_var_xor(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Xor, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_xor(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -1152,7 +1152,7 @@ uint32_t jitc_var_shl(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Shl, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_shl(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -1180,7 +1180,7 @@ uint32_t jitc_var_shr(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Shr, info.type,
-                                     info.size, info.placeholder, a0, v0, a1, v1);
+                                     info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_log(Debug, "jit_var_shr(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -1213,7 +1213,7 @@ uint32_t jitc_var_rcp(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Rcp, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_rcp(r%u <- r%u)", result, a0);
     return result;
@@ -1243,7 +1243,7 @@ uint32_t jitc_var_rsqrt(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Rsqrt, info.type,
-                                    info.size, info.placeholder, a0, v0);
+                                    info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_rsqrt(r%u <- r%u)", result, a0);
     return result;
@@ -1266,7 +1266,7 @@ uint32_t jitc_var_sin_intrinsic(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Sin, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_sin_intrinsic(r%u <- r%u)", result, a0);
     return result;
@@ -1289,7 +1289,7 @@ uint32_t jitc_var_cos_intrinsic(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Cos, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_cos_intrinsic(r%u <- r%u)", result, a0);
     return result;
@@ -1312,7 +1312,7 @@ uint32_t jitc_var_exp2_intrinsic(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Exp2, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_exp2_intrinsic(r%u <- r%u)", result, a0);
     return result;
@@ -1335,7 +1335,7 @@ uint32_t jitc_var_log2_intrinsic(uint32_t a0) {
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Log2, info.type,
-                                     info.size, info.placeholder, a0, v0);
+                                     info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_log2_intrinsic(r%u <- r%u)", result, a0);
     return result;
@@ -1397,7 +1397,7 @@ uint32_t jitc_var_cast(uint32_t a0, VarType target_type, int reinterpret) {
     if (!result && info.size)
         result = jitc_var_new_node_1(
             info.backend, reinterpret ? VarKind::Bitcast : VarKind::Cast,
-            info.type, info.size, info.placeholder, a0, v0);
+            info.type, info.size, info.symbolic, a0, v0);
 
     jitc_log(Debug, "jit_var_cast(r%u <- r%u)", result, a0);
     return result;
@@ -1475,7 +1475,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
         v2.type = v->type;
         v2.size = size;
         v2.optix = v->optix;
-        v2.placeholder = v->placeholder;
+        v2.symbolic = v->symbolic;
         if (v->is_stmt()) {
             if (!v->free_stmt) {
                 v2.stmt = v->stmt;
@@ -1512,8 +1512,8 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
 
     {
         /// Variables with _v subscript only inspected in this scope
-        if (src_info.placeholder)
-            jitc_raise("jit_var_gather(): cannot gather from a placeholder variable!");
+        if (src_info.symbolic)
+            jitc_raise("jit_var_gather(): cannot gather from a symbolic variable!");
 
         if (mask_v->is_literal() && mask_v->literal == 0) {
             var_info.type = src_info.type;
@@ -1582,7 +1582,7 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
 
         result = jitc_var_new_node_3(
             src_info.backend, VarKind::Gather, src_info.type, var_info.size,
-            var_info.placeholder, ptr_2, jitc_var(ptr_2), index_2,
+            var_info.symbolic, ptr_2, jitc_var(ptr_2), index_2,
             jitc_var(index_2), mask_2, jitc_var(mask_2));
         ptr = (uint32_t) ptr_2;
     }
@@ -1612,8 +1612,8 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1, uint32_t *target_2,
     if (target_1 == target_2)
         jitc_raise("jit_var_scatter_reduce_kahan(): the destination arrays cannot be the same!");
 
-    if (target_1_v->placeholder || target_2_v->placeholder)
-        jitc_raise("jit_var_scatter_reduce_kahan(): cannot scatter to a placeholder variable!");
+    if (target_1_v->symbolic || target_2_v->symbolic)
+        jitc_raise("jit_var_scatter_reduce_kahan(): cannot scatter to a symbolic variable!");
 
     if (target_1_v->type != value_v->type || target_2_v->type != value_v->type)
         jitc_raise("jit_var_scatter_reduce_kahan(): target/value type mismatch!");
@@ -1627,7 +1627,7 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1, uint32_t *target_2,
     if (mask_v->is_literal() && mask_v->literal == 0)
         return;
 
-    var_info.placeholder |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
+    var_info.symbolic |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
     // Check if it is safe to write directly
     if (jitc_var(*target_1)->ref_count > 1) {
@@ -1652,7 +1652,7 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1, uint32_t *target_2,
 
     uint32_t result = jitc_var_new_node_0(
         var_info.backend, VarKind::ScatterKahan, VarType::Void,
-        var_info.size, var_info.placeholder);
+        var_info.size, var_info.symbolic);
 
     uint32_t *dep = (uint32_t *) malloc_check(sizeof(uint32_t) * 5);
     dep[0] = ptr_1;
@@ -1690,8 +1690,8 @@ uint32_t jitc_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t mask) {
     auto [target_info, target_v] =
         jitc_var_check("jit_var_scatter_inc", *target);
 
-    if (target_v->placeholder)
-        jitc_raise("jit_var_scatter_inc(): cannot scatter to a placeholder variable!");
+    if (target_v->symbolic)
+        jitc_raise("jit_var_scatter_inc(): cannot scatter to a symbolic variable!");
 
     if ((VarType) target_v->type != VarType::UInt32)
         jitc_raise("jit_var_scatter_inc(): target must be an unsigned 32-bit array!");
@@ -1707,7 +1707,7 @@ uint32_t jitc_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t mask) {
     if (mask_v->is_literal() && mask_v->literal == 0)
         return 0;
 
-    var_info.placeholder |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
+    var_info.symbolic |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
     // Check if it is safe to write directly
     if (jitc_var(*target)->ref_count > 1) { // 1 from original array, 1 from borrow above
@@ -1725,7 +1725,7 @@ uint32_t jitc_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t mask) {
 
     uint32_t result = jitc_var_new_node_3(
         var_info.backend, VarKind::ScatterInc, VarType::UInt32, var_info.size,
-        var_info.placeholder, ptr, jitc_var(ptr), index_2, jitc_var(index_2),
+        var_info.symbolic, ptr, jitc_var(ptr), index_2, jitc_var(index_2),
         mask_2, jitc_var(mask_2));
 
     jitc_log(Debug,
@@ -1784,10 +1784,10 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     if (reduce_op == ReduceOp::Mul)
         jitc_raise("jit_var_scatter(): ReduceOp::Mul unsupported for atomic reductions!");
 
-    if (target_v->placeholder)
-        jitc_raise("jit_var_scatter(): cannot scatter to a placeholder variable!");
+    if (target_v->symbolic)
+        jitc_raise("jit_var_scatter(): cannot scatter to a symbolic variable!");
 
-    var_info.placeholder |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
+    var_info.symbolic |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
     if (target_v->type != value_v->type)
         jitc_raise("jit_var_scatter(): target/value type mismatch!");
@@ -1823,7 +1823,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
     uint32_t result = jitc_var_new_node_4(
         var_info.backend, VarKind::Scatter, VarType::Void,
-        var_info.size, var_info.placeholder, ptr,
+        var_info.size, var_info.symbolic, ptr,
         jitc_var(ptr), value, jitc_var(value), index_2, jitc_var(index_2),
         mask_2, jitc_var(mask_2), (uint64_t) reduce_op);
 
@@ -1839,12 +1839,12 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 void jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
                      uint32_t narg, const uint32_t *arg) {
     ThreadState *ts = thread_state(backend);
-    bool dirty, placeholder;
+    bool dirty, symbolic;
     uint32_t size;
 
     {
         Variable *mask_v = jitc_var(mask);
-        placeholder = mask_v->placeholder;
+        symbolic = mask_v->symbolic;
         dirty = mask_v->ref_count_se != 0;
         size = mask_v->size;
     }
@@ -1854,11 +1854,11 @@ void jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
         if (unlikely(size != v->size && v->size != 1 && size != 1))
             jitc_raise("jit_var_printf(): arrays have incompatible size!");
         dirty |= v->ref_count_se != 0;
-        placeholder |= v->placeholder;
+        symbolic |= v->symbolic;
         size = std::max(size, v->size);
     }
 
-    placeholder |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
+    symbolic |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
     if (dirty) {
         jitc_eval(ts);
@@ -1879,12 +1879,12 @@ void jitc_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
         Ref target = steal(jitc_var_pointer(backend, (const void *) &printf, 0, 0));
         result = steal(
             jitc_var_new_node_2(backend, VarKind::Printf, VarType::Void, size,
-                                placeholder, mask_2, jitc_var(mask_2), target,
+                                symbolic, mask_2, jitc_var(mask_2), target,
                                 jitc_var(target), (uintptr_t) fmt_copy.get()));
     } else {
         result = steal(
             jitc_var_new_node_1(backend, VarKind::Printf, VarType::Void, size,
-                                placeholder, mask_2, jitc_var(mask_2),
+                                symbolic, mask_2, jitc_var(mask_2),
                                 (uintptr_t) fmt_copy.get()));
     }
 

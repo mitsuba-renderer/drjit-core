@@ -47,7 +47,7 @@ void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
             v.backend = (uint32_t) backend;
             v.size = 1u;
             v.type = (uint32_t) VarType::UInt32;
-            v.placeholder = true;
+            v.symbolic = true;
             ts->vcall_self_index = jitc_var_new(v, true);
         }
     }
@@ -88,13 +88,13 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     uint32_t n_out = n_out_nested / n_inst, size = 0,
              in_size_initial = 0, out_size_initial = 0;
 
-    bool placeholder = false, dirty = false;
+    bool symbolic = false, dirty = false;
 
     JitBackend backend;
     /* Check 'self' */ {
         const Variable *self_v = jitc_var(self);
         size = self_v->size;
-        placeholder |= (bool) self_v->placeholder;
+        symbolic |= (bool) self_v->symbolic;
         dirty |= self_v->is_dirty();
         backend = (JitBackend) self_v->backend;
         if ((VarType) self_v->type != VarType::UInt32)
@@ -108,15 +108,15 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         const Variable *v = jitc_var(in[i]);
         if (v->vcall_iface) {
             if (!v->dep[0])
-                jitc_raise("jit_var_vcall(): placeholder variable r%u does not "
+                jitc_raise("jit_var_vcall(): symbolic variable r%u does not "
                            "reference another input!", in[i]);
             Variable *v2 = jitc_var(v->dep[0]);
-            placeholder |= (bool) v2->placeholder;
+            symbolic |= (bool) v2->symbolic;
             dirty |= v2->is_dirty();
             size = std::max(size, v2->size);
         } else if (!v->is_literal()) {
             jitc_raise("jit_var_vcall(): input variable r%u must either be a "
-                       "value or placeholder wrapping another variable!", in[i]);
+                       "value or symbolic wrapping another variable!", in[i]);
         }
         if (v->size != 1)
             jitc_raise("jit_var_vcall(): size of input variable r%u must be 1!", in[i]);
@@ -301,13 +301,13 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
     if (data_size)
         vcall_v = steal(jitc_var_new_node_4(
-            backend, VarKind::Dispatch, VarType::Void, size, placeholder, self,
+            backend, VarKind::Dispatch, VarType::Void, size, symbolic, self,
             jitc_var(self), mask, jitc_var(mask), offset_v, jitc_var(offset_v),
             data_v, jitc_var(data_v)));
     else
         vcall_v = steal(
             jitc_var_new_node_3(backend, VarKind::Dispatch, VarType::Void, size,
-                                placeholder, self, jitc_var(self), mask,
+                                symbolic, self, jitc_var(self), mask,
                                 jitc_var(mask), offset_v, jitc_var(offset_v)));
 
     vcall->id = vcall_v;
@@ -347,13 +347,13 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             Ref result_v = steal(jitc_var_and(out_nested[j], mask));
             Variable *v = jitc_var(result_v);
 
-            if ((bool) v->placeholder != placeholder || v->size != size) {
+            if ((bool) v->symbolic != symbolic || v->size != size) {
                 if (v->ref_count != 1) {
                     result_v = steal(jitc_var_copy(result_v));
                     v = jitc_var(result_v);
                 }
                 jitc_lvn_drop(result_v, v);
-                v->placeholder = placeholder;
+                v->symbolic = symbolic;
                 v->size = size;
                 jitc_lvn_put(result_v, v);
             }
@@ -379,7 +379,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
              n_out == 1 ? "" : "s", n_devirt, se_count, se_count == 1 ? "" : "s",
              data_size, data_size == 1 ? "" : "s", size,
              (n_devirt == n_out && se_count == 0) ? " (optimized away)" : "",
-             placeholder ? " (part of a recorded computation)" : "");
+             symbolic ? " (part of a symbolic computation)" : "");
 
     // =====================================================
     // 6. Create output variables
@@ -444,7 +444,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
         const Variable *v = jitc_var(index);
         uint32_t index_2 = jitc_var_new_node_1(
-            backend, VarKind::Nop, (VarType) v->type, size, placeholder,
+            backend, VarKind::Nop, (VarType) v->type, size, symbolic,
             vcall_v, jitc_var(vcall_v), i);
 
         jitc_var(index_2)->extra = 1;
@@ -518,7 +518,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     e_special->n_dep = (uint32_t) vcall->in.size();
     e_special->dep = (uint32_t *) malloc_check(dep_size);
 
-    // Steal input dependencies from placeholder arguments
+    // Steal input dependencies from symbolic arguments
     if (dep_size)
         memcpy(e_special->dep, vcall->in.data(), dep_size);
 
@@ -537,7 +537,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         /* The call has side effects. Create a dummy variable to
            ensure that they are evaluated */
         se_v = steal(jitc_var_new_node_1(backend, VarKind::Nop, VarType::Void,
-                                         size, placeholder, vcall_v,
+                                         size, symbolic, vcall_v,
                                          jitc_var(vcall_v)));
 
         snprintf(temp, sizeof(temp), "VCall: %s [side effects]", name);

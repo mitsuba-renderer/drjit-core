@@ -76,7 +76,7 @@ TEST_CUDA(01_graphviz) {
             17 [label="{Evaluated|{Type: cuda f32|Size: 11}|{ID #17|E:0|I:1}}}" fillcolor=lightblue2 style=filled];
         }
     }
-    18 [label="{Placeholder|{Type: cuda f32|Size: 11}|{ID #18|E:1|I:0}}}" fillcolor=yellow style=filled];
+    18 [label="{Symbolic|{Type: cuda f32|Size: 11}|{ID #18|E:1|I:0}}}" fillcolor=yellow style=filled];
     19 [label="{Literal constant: 0|{Type: cuda u32|Size: 1}|{ID #19|E:0|I:1}}}" fillcolor=gray90 style=filled];
     22 [label="{Evaluated (dirty)|{Type: cuda f32|Size: 11}|{ID #22|E:1|I:1}}}" fillcolor=salmon style=filled];
     23 [label="{Literal constant: 0x000000000000|{Type: cuda ptr|Size: 1}|{ID #23|E:0|I:1}}}" fillcolor=gray90 style=filled];
@@ -101,7 +101,7 @@ TEST_CUDA(01_graphviz) {
     19 -> 24 [label=" 3"];
     subgraph cluster_legend {
         label="Legend";
-        l5 [style=filled fillcolor=yellow label="Placeholder"];
+        l5 [style=filled fillcolor=yellow label="Symbolic"];
         l4 [style=filled fillcolor=yellowgreen label="Special"];
         l3 [style=filled fillcolor=salmon label="Dirty"];
         l2 [style=filled fillcolor=lightblue2 label="Evaluated"];
