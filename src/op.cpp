@@ -1768,7 +1768,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     const Variable *target_v = jitc_var(target);
     switch ((VarType) target_v->type) {
         case VarType::Bool:
-            jitc_raise("jit_var_scatter(): atomic reductions are not supported for masks!");
+            if (reduce_op != ReduceOp::None)
+                jitc_raise("jit_var_scatter(): atomic reductions are not supported for masks!");
             break;
 
         case VarType::Float16:
