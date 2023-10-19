@@ -13,8 +13,6 @@
 #include <stdarg.h>
 #include "common.h"
 
-#define DRJIT_DISABLE_TRACE 1
-
 static constexpr LogLevel Disable = LogLevel::Disable;
 static constexpr LogLevel Error   = LogLevel::Error;
 static constexpr LogLevel Warn    = LogLevel::Warn;
@@ -23,7 +21,7 @@ static constexpr LogLevel InfoSym = LogLevel::InfoSym;
 static constexpr LogLevel Debug   = LogLevel::Debug;
 static constexpr LogLevel Trace   = LogLevel::Trace;
 
-#if DRJIT_DISABLE_TRACE
+#if defined(NDEBUG)
 #  define jitc_trace(...) do { } while (0)
 #else
 #  define jitc_trace(...) jitc_log(Trace, __VA_ARGS__)
