@@ -15,7 +15,7 @@ project(drjit-core
 # ----------------------------------------------------------
 
 option(DRJIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
-option(DRJIT_ENABLE_TESTS "Build Dr.Jit-Core test suite?" OFF)
+option(DRJIT_CORE_ENABLE_TESTS "Build Dr.Jit-Core test suite?" OFF)
 
 if (NOT APPLE)
   option(DRJIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
@@ -226,6 +226,6 @@ set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_MINSIZE
 set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO FALSE)
 set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_DEBUG          FALSE)
 
-if (DRJIT_ENABLE_TESTS)
+if (DRJIT_CORE_ENABLE_TESTS)
   add_subdirectory(tests)
 endif()
