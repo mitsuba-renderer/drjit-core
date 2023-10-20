@@ -839,62 +839,29 @@ void jit_block_sum(JitBackend backend, enum VarType type, const void *in, void *
     jitc_block_sum(backend, type, in, out, size, block_size);
 }
 
-uint32_t jit_registry_put(JitBackend backend, const char *domain, void *ptr) {
+void jit_registry_put(JitBackend backend, const char *domain, void *ptr) {
     lock_guard guard(state.lock);
-    return jitc_registry_put(backend, domain, ptr);
+    jitc_registry_put(backend, domain, ptr);
 }
 
-void jit_registry_remove(JitBackend backend, void *ptr) {
+void jit_registry_remove(const void *ptr) {
     lock_guard guard(state.lock);
-    jitc_registry_remove(backend, ptr);
+    jitc_registry_remove(ptr);
 }
 
-uint32_t jit_registry_get_id(JitBackend backend, const void *ptr) {
+uint32_t jit_registry_id(const void *ptr) {
     lock_guard guard(state.lock);
-    return jitc_registry_get_id(backend, ptr);
+    return jitc_registry_id(ptr);
 }
 
-const char *jit_registry_get_domain(JitBackend backend, const void *ptr) {
+uint32_t jit_registry_id_bound(JitBackend backend, const char *domain) {
     lock_guard guard(state.lock);
-    return jitc_registry_get_domain(backend, ptr);
+    return jitc_registry_id_bound(backend, domain);
 }
 
-void *jit_registry_get_ptr(JitBackend backend, const char *domain, uint32_t id) {
+void *jit_registry_ptr(JitBackend backend, const char *domain, uint32_t id) {
     lock_guard guard(state.lock);
-    return jitc_registry_get_ptr(backend, domain, id);
-}
-
-uint32_t jit_registry_get_max(JitBackend backend, const char *domain) {
-    lock_guard guard(state.lock);
-    return jitc_registry_get_max(backend, domain);
-}
-
-void jit_registry_trim() {
-    lock_guard guard(state.lock);
-    jitc_registry_trim();
-}
-
-void jit_registry_clear() {
-    lock_guard guard(state.lock);
-    jitc_registry_clean();
-}
-
-void jit_registry_set_attr(JitBackend backend, void *self, const char *name,
-                           const void *value, size_t size) {
-    lock_guard guard(state.lock);
-    jitc_registry_set_attr(backend, self, name, value, size);
-}
-
-const void *jit_registry_attr_data(JitBackend backend, const char *domain,
-                                   const char *name) {
-    lock_guard guard(state.lock);
-    return jitc_registry_attr_data(backend, domain, name);
-}
-
-uint32_t jit_var_registry_attr(JitBackend backend, VarType type,
-                               const char *domain, const char *name) {
-    lock_guard guard(state.lock);
-    return jitc_var_registry_attr(backend, type, domain, name);
+    return jitc_registry_ptr(backend, domain, id);
 }
 
 void jit_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {

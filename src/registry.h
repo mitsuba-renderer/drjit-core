@@ -9,44 +9,23 @@
 
 #pragma once
 
-#include <stdint.h>
+#include "internal.h"
 
 /// Register a pointer with Dr.Jit's pointer registry
-extern uint32_t jitc_registry_put(JitBackend backend, const char *domain,
-                                  void *ptr);
+extern void jitc_registry_put(JitBackend backend, const char *domain,
+                              void *ptr);
 
 /// Remove a pointer from the registry
-extern void jitc_registry_remove(JitBackend backend, void *ptr);
+extern void jitc_registry_remove(const void *ptr);
 
-/// Provide a bound (<=) on the largest ID associated with a domain
-extern uint32_t jitc_registry_get_max(JitBackend backend, const char *domain);
+/// Get the instance ID associated with the given pointer
+extern uint32_t jitc_registry_id(const void *ptr);
 
-/// Query the ID associated a registered pointer
-extern uint32_t jitc_registry_get_id(JitBackend backend, const void *ptr);
+/// Return a number that exceeds the highest-valued instance ID for the given domain
+extern uint32_t jitc_registry_id_bound(JitBackend backend, const char *domain);
 
-/// Query the domain associated a registered pointer
-extern const char *jitc_registry_get_domain(JitBackend backend,
-                                            const void *ptr);
+/// Return the pointer value associated with a given instance ID
+extern void *jitc_registry_ptr(JitBackend backend, const char *domain, uint32_t id);
 
-/// Query the pointer associated a given domain and ID
-extern void *jitc_registry_get_ptr(JitBackend backend, const char *domain,
-                                   uint32_t id);
-
-/// Compact the registry and release unused IDs
-extern void jitc_registry_trim();
-
-/// Clear the registry and release all IDs and attributes
-extern void jitc_registry_clean();
-
-/// Shut down the pointer registry (reports leaks)
+/// Check for leaks in the registry
 extern void jitc_registry_shutdown();
-
-/// Set a custom per-pointer attribute
-extern void jitc_registry_set_attr(JitBackend backend, void *ptr,
-                                   const char *name, const void *value,
-                                   size_t size);
-
-/// Retrieve a pointer to a buffer storing a specific attribute
-extern const void *jitc_registry_attr_data(JitBackend backend,
-                                           const char *domain,
-                                           const char *name);

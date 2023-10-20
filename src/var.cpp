@@ -1714,26 +1714,6 @@ uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
     return result.release();
 }
 
-uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
-                                const char *domain, const char *name) {
-    uint32_t index = 0;
-    Registry* registry = state.registry(backend);
-    auto it = registry->attributes.find(AttributeKey(domain, name));
-    if (unlikely(it == registry->attributes.end())) {
-        if (jitc_registry_get_max(backend, domain) > 0) {
-            jitc_log(Warn,
-                     "jit_var_registry_attr(): entry with domain=\"%s\", "
-                     "name=\"%s\" not found!",
-                     domain, name);
-        }
-    } else {
-        AttributeValue &val = it.value();
-        index = jitc_var_mem_map(backend, type, val.ptr, val.count, false);
-    }
-    jitc_log(Debug, "jit_var_registry_attr(\"%s\", \"%s\"): r%u", domain, name, index);
-    return index;
-}
-
 /// Return a human-readable summary of registered variables
 const char *jitc_var_whos() {
     var_buffer.clear();

@@ -810,7 +810,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
 
     uint32_t bucket_count;
     if (domain)
-        bucket_count = jitc_registry_get_max(backend, domain) + 1;
+        bucket_count = jitc_registry_id_bound(backend, domain);
     else
         bucket_count = *bucket_count_inout + 1;
 
@@ -883,9 +883,8 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         uint32_t index2 = jitc_var_new(v2);
 
         VCallBucket bucket_out;
-
         if (domain)
-            bucket_out.ptr = jitc_registry_get_ptr(backend, domain, bucket.id);
+            bucket_out.ptr = jitc_registry_ptr(backend, domain, bucket.id);
         else
             bucket_out.ptr = nullptr;
 
