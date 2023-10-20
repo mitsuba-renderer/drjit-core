@@ -27,20 +27,35 @@ using UInt32L = LLVMArray<uint32_t>;
 using MaskL   = LLVMArray<bool>;
 using HalfL   = LLVMArray<drjit::dr_half>;
 
+#define TEST_REGISTER_CUDA(name, suffix, FloatType, ...)                       \
+    int test##name##_##suffix =                                                \
+        test_register("test" #name#suffix,                                     \
+                      test##name<JitBackend::CUDA, FloatType, Int32C, UInt32C, \
+                                 MaskC, CUDAArray>,                            \
+                      ##__VA_ARGS__);
+
+#define TEST_REGISTER_OPTIX(name, suffix, FloatType, ...)                      \
+    int test##name##_##suffix =                                                \
+        test_register("test" #name#suffix,                                     \
+                      test##name<JitBackend::CUDA, FloatType, Int32C, UInt32C, \
+                                 MaskC, CUDAArray>,                            \
+                      ##__VA_ARGS__);
+
+#define TEST_REGISTER_LLVM(name, suffix, FloatType, ...)                       \
+    int test##name##_##suffix =                                                \
+        test_register("test" #name#suffix,                                     \
+                      test##name<JitBackend::LLVM, FloatType, Int32L, UInt32L, \
+                                 MaskL, LLVMArray>,                            \
+                      ##__VA_ARGS__);
+
 #define TEST_CUDA(name, ...)                                                   \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name();                                                         \
-    int test##name##_c =                                                       \
-        test_register("test" #name "_cuda",                                    \
-                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_o =                                                       \
-        test_register("test" #name "_optix",                                   \
-                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
+    TEST_REGISTER_CUDA(name,    _cuda_fp32,     FloatC)                        \
+    TEST_REGISTER_OPTIX(name,   _optix_fp32,    FloatC)                        \
+    TEST_REGISTER_CUDA(name,    _cuda_fp16,     HalfC)                         \
+    TEST_REGISTER_OPTIX(name,   _optix_fp16,    HalfC)                         \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
@@ -49,16 +64,8 @@ using HalfL   = LLVMArray<drjit::dr_half>;
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name();                                                         \
-    int test##name##_l =                                                       \
-        test_register("test" #name "_llvm",                                    \
-                      test##name<JitBackend::LLVM, FloatL, Int32L, UInt32L,    \
-                                 MaskL, LLVMArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_l_half =                                                  \
-        test_register("test" #name "_llvm",                                    \
-                      test##name<JitBackend::LLVM, HalfL, Int32L, UInt32L,     \
-                                 MaskL, LLVMArray>,                            \
-                      ##__VA_ARGS__);                                          \
+    TEST_REGISTER_LLVM(name,    _llvm_fp32,     FloatL)                        \
+    TEST_REGISTER_LLVM(name,    _llvm_fp16,     HalfL)                         \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
@@ -67,34 +74,28 @@ using HalfL   = LLVMArray<drjit::dr_half>;
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name();                                                         \
-    int test##name##_c =                                                       \
-        test_register("test" #name "_cuda",                                    \
-                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_c_half =                                                  \
-        test_register("test" #name "_cuda",                                    \
-                      test##name<JitBackend::CUDA, HalfC, Int32C, UInt32C,     \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_o =                                                       \
-        test_register("test" #name "_optix",                                   \
-                      test##name<JitBackend::CUDA, FloatC, Int32C, UInt32C,    \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_o_half =                                                  \
-        test_register("test" #name "_optix",                                   \
-                      test##name<JitBackend::CUDA, HalfC, Int32C, UInt32C,     \
-                                 MaskC, CUDAArray>,                            \
-                      ##__VA_ARGS__);                                          \
-    int test##name##_l =                                                       \
-        test_register("test" #name "_llvm",                                    \
-                      test##name<JitBackend::LLVM, FloatL, Int32L, UInt32L,    \
-                                 MaskL, LLVMArray>,                            \
-                      ##__VA_ARGS__);                                          \
+    TEST_REGISTER_CUDA(name,    _cuda_fp32,     FloatC)                        \
+    TEST_REGISTER_OPTIX(name,   _optix_fp32,    FloatC)                        \
+    TEST_REGISTER_CUDA(name,    _cuda_fp16,     HalfC)                         \
+    TEST_REGISTER_OPTIX(name,   _optix_fp16,    HalfC)                         \
+    TEST_REGISTER_LLVM(name,    _llvm_fp32,     FloatL)                        \
+    TEST_REGISTER_LLVM(name,    _llvm_fp16,     HalfL)                         \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
+
+#define TEST_BOTH_FP32(name, ...)                                              \
+    template <JitBackend Backend, typename Float, typename Int32,              \
+              typename UInt32, typename Mask, template <class> class Array>    \
+    void test##name();                                                         \
+    TEST_REGISTER_CUDA(name,    _cuda,     FloatC)                             \
+    TEST_REGISTER_OPTIX(name,   _optix,    FloatC)                             \
+    TEST_REGISTER_LLVM(name,    _llvm,     FloatL)                             \
+    template <JitBackend Backend, typename Float, typename Int32,              \
+              typename UInt32, typename Mask, template <class> class Array>    \
+    void test##name()
+
+#define TEST_BOTH_FLOAT_AGNOSTIC(name, ...) TEST_BOTH_FP32(name, ##__VA_ARGS__)
 
 #define jit_assert(cond)                                                      \
     do {                                                                       \

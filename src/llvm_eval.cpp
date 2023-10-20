@@ -747,10 +747,22 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
                                     : "    $v = fptosi $V to $T\n",
                     v, a0, v);
             } else if (jitc_is_float(v) && jitc_is_float(a0)) {
-                fmt(type_size[v->type] > type_size[a0->type]
-                        ? "    $v = fpext $V to $T\n"
-                        : "    $v = fptrunc $V to $T\n",
-                    v, a0, v);
+                // On x86, direct double-half casting relies on external builtin function call
+                // unless AVX512_FP16 instructions are supported so split casting into two-steps
+                // i.e. double<->float<->half
+                if ((jitc_is_double(v) && jitc_is_half(a0)) || (jitc_is_half(v) && jitc_is_double(a0))) {
+                    fmt(type_size[v->type] > type_size[a0->type]
+                            ? "    %cast_$u = fpext $V to <$w x float>\n"
+                              "    $v = fpext <$w x float> %cast_$u to $T\n"
+                            : "    %cast_$u = fptrunc $V to <$w x float>\n"
+                              "    $v  = fptrunc <$w x float> %cast_$u to $T\n",
+                        v->reg_index, a0, v, v->reg_index, v);
+                } else {
+                    fmt(type_size[v->type] > type_size[a0->type]
+                            ? "    $v = fpext $V to $T\n"
+                            : "    $v = fptrunc $V to $T\n",
+                        v, a0, v);
+                }
             } else if (type_size[v->type] < type_size[a0->type]) {
                 fmt("    $v = trunc $V to $T\n", v, a0, v);
             } else {
@@ -922,6 +934,10 @@ static void jitc_llvm_render_scatter(const Variable *v,
                     op = "fadd";
                     zero_elem = "double -0.0, ";
                     intrinsic_name = "v2.fadd.f64";
+                } else if (jitc_is_half(value)) {
+                    op = "fadd";
+                    zero_elem = "half -0.0, ";
+                    intrinsic_name = "v2.fadd.f16";
                 } else {
                     op = "add";
                 }
@@ -936,6 +952,10 @@ static void jitc_llvm_render_scatter(const Variable *v,
                     op = "fmul";
                     zero_elem = "double -0.0, ";
                     intrinsic_name = "v2.fmul.f64";
+                } else if (jitc_is_half(value)) {
+                    op = "fmul";
+                    zero_elem = "half -0.0, ";
+                    intrinsic_name = "v2.fmul.f16";
                 } else {
                     op = "mul";
                 }

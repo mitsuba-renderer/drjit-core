@@ -251,14 +251,14 @@ TEST_BOTH(01_recorded_vcall) {
     struct A1 : Base {
         Float f(Float x) override {
             // printf_async(Mask(true), "A1::f(%f)\n", x);
-            return (x + 10) * 2;
+            return (x + Float(10)) * Float(2);
         }
     };
 
     struct A2 : Base {
         Float f(Float x) override {
             // printf_async(Mask(true), "A2::f(%f)\n", x);
-            return (x + 100) * 2;
+            return (x + Float(100)) * Float(2);
         }
     };
 
@@ -307,14 +307,14 @@ TEST_BOTH(02_calling_conventions) {
     struct B2 : Base {
         dr_tuple<Mask, Float, Double, Float, Mask>
         f(Mask p0, Float p1, Double p2, Float p3, Mask) override {
-            return { !p0, p1 + 1, p2 + 2, p3 + 3, false };
+            return { !p0, p1 + Float(1), p2 + Double(2), p3 + Float(3), false };
         }
     };
 
     struct B3 : Base {
         dr_tuple<Mask, Float, Double, Float, Mask>
         f(Mask, Float, Double, Float, Mask) override {
-            return { 0, 0, 0, 0, 0 };
+            return { 0, Float(0), Double(0), Float(0), 0 };
         }
     };
 
@@ -374,13 +374,13 @@ TEST_BOTH(03_optimize_away_outputs) {
 
     struct C12 : Base {
         dr_tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
-            return { p2 + 2.34567f, p1 + 1.f };
+            return { p2 + Float(2.34567f), p1 + Float(1.f) };
         }
     };
 
     struct C3 : Base {
         dr_tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
-            return { p2 + 1.f, p1 + 2.f };
+            return { p2 + Float(1.f), p1 + Float(2.f) };
         }
     };
 
@@ -440,13 +440,13 @@ TEST_BOTH(04_devirtualize) {
 
     struct D1 : Base {
         dr_tuple<Float, Float, Float> f(Float p1, Float p2) override {
-            return { p2 + 2, p1 + 1, 0 };
+            return { p2 + Float(2), p1 + Float(1), Float(0) };
         }
     };
 
     struct D2 : Base {
         dr_tuple<Float, Float, Float> f(Float p1, Float p2) override {
-            return { p2 + 2, p1 + 2, 0 };
+            return { p2 + Float(2), p1 + Float(2), Float(0) };
         }
     };
 
@@ -462,8 +462,8 @@ TEST_BOTH(04_devirtualize) {
         for (uint32_t i = 0; i < 2; ++i) {
             Float p1, p2;
             if (k == 0) {
-                p1 = 12;
-                p2 = 34;
+                p1 = Float(12);
+                p2 = Float(34);
             } else {
                 p1 = dr::opaque<Float>(12);
                 p2 = dr::opaque<Float>(34);
@@ -488,8 +488,8 @@ TEST_BOTH(04_devirtualize) {
             Mask mask = neq(self, nullptr),
                  mask_combined = Mask::steal(jit_var_mask_apply(mask.index(), 10));
 
-            Float alt0 = (p2_wrap + 2) & mask_combined;
-            Float alt1 = (p1_wrap + 2) & mask_combined;
+            Float alt0 = (p2_wrap + Float(2)) & mask_combined;
+            Float alt1 = (p1_wrap + Float(2)) & mask_combined;
             Float alt2 = Float(0) & mask_combined;
 
             jit_set_scope(Backend, scope + 2);
@@ -523,14 +523,14 @@ TEST_BOTH(05_extra_data) {
     };
 
     struct E1 : Base {
-        Double local_1 = 4;
-        Float local_2 = 5;
+        Double local_1 = Double(4);
+        Float local_2 = Float(5);
         Float f(Float x) override { return Float(Double(x) * local_1) + local_2; }
     };
 
     struct E2 : Base {
-        Float local_1 = 3;
-        Double local_2 = 5;
+        Float local_1 = Float(3);
+        Double local_2 = Float(5);
         Float f(Float x) override { return local_1 + Float(Double(x) * local_2); }
     };
 
@@ -563,7 +563,7 @@ TEST_BOTH(05_extra_data) {
     jit_registry_remove(&e2);
 }
 
-TEST_BOTH(06_side_effects) {
+TEST_BOTH_FP32(06_side_effects) {
     /*  This tests three things:
        - side effects in virtual functions
        - functions without inputs/outputs
@@ -609,7 +609,7 @@ TEST_BOTH(06_side_effects) {
     }
 }
 
-TEST_BOTH(07_side_effects_only_once) {
+TEST_BOTH_FP32(07_side_effects_only_once) {
     /* This tests ensures that side effects baked into a function only happen
        once, even when that function is evaluated multiple times. */
 
@@ -621,7 +621,7 @@ TEST_BOTH(07_side_effects_only_once) {
         Float buffer = zeros<Float>(5);
         dr_tuple<Float, Float> f() override {
             scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(1));
-            return { 1, 2 };
+            return { Float(1), Float(2) };
         }
     };
 
@@ -629,7 +629,7 @@ TEST_BOTH(07_side_effects_only_once) {
         Float buffer = zeros<Float>(5);
         dr_tuple<Float, Float> f() override {
             scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(2));
-            return { 2, 1 };
+            return { Float(2), Float(1) };
         }
     };
 
@@ -759,18 +759,18 @@ TEST_BOTH(09_big) {
         jit_var_schedule(x.index());
         jit_var_schedule(y.index());
 
-        jit_assert(x.read(0) == 0);
-        jit_assert(y.read(0) == 0);
+        jit_assert((float)x.read(0) == 0);
+        jit_assert((float)y.read(0) == 0);
 
         for (uint32_t j = 1; j <= n1; ++j)
-            jit_assert(x.read(j) == j - 1);
+            jit_assert((float)x.read(j) == j - 1);
         for (uint32_t j = 1; j <= n2; ++j)
-            jit_assert(y.read(j) == 100 + j - 1);
+            jit_assert((float)y.read(j) == 100 + j - 1);
 
         for (uint32_t j = n1 + 1; j < n; ++j)
-            jit_assert(x.read(j + 1) == 0);
+            jit_assert((float)x.read(j + 1) == 0);
         for (uint32_t j = n2 + 1; j < n; ++j)
-            jit_assert(y.read(j + 1) == 0);
+            jit_assert((float)y.read(j + 1) == 0);
     }
 
     for (int i = 0; i < n1; ++i)
@@ -820,13 +820,13 @@ TEST_BOTH(10_recursion) {
 
     struct I2 : Base2 {
         Float g(const Base1Ptr &ptr, const Float &x) override {
-            return vcall("Base1", [&](Base1 *self_, Float x_) { return self_->f(x_); }, ptr, x) + 1;
+            return vcall("Base1", [&](Base1 *self_, Float x_) { return self_->f(x_); }, ptr, x) + Float(1);
         }
     };
 
     I1 i11, i12;
-    i11.c = 2;
-    i12.c = 3;
+    i11.c = Float(2);
+    i12.c = Float(3);
     I2 i21, i22;
     uint32_t i11_id = jit_registry_put(Backend, "Base1", &i11);
     uint32_t i12_id = jit_registry_put(Backend, "Base1", &i12);
@@ -866,7 +866,7 @@ TEST_BOTH(11_recursion_with_local) {
 
     struct I2 : Base2 {
         Float g(const Base1Ptr &ptr, const Float &x) override {
-            return vcall("Base1", [&](Base1 *self_, Float x_) { return self_->f(x_); }, ptr, x) + 1;
+            return vcall("Base1", [&](Base1 *self_, Float x_) { return self_->f(x_); }, ptr, x) + Float(1);
         }
     };
 
@@ -898,7 +898,7 @@ TEST_BOTH(11_recursion_with_local) {
     jit_registry_remove(&i22);
 }
 
-TEST_BOTH(12_nested_with_side_effects) {
+TEST_BOTH_FP32(12_nested_with_side_effects) {
     struct Base {
         virtual void f() = 0;
         virtual void g() = 0;
