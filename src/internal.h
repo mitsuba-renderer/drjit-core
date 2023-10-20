@@ -570,71 +570,6 @@ private:
     size_t m_capacity;
 };
 
-// Key associated with a pointer registered in DrJit's pointer registry
-struct RegistryKey {
-    const char *domain;
-    uint32_t id;
-    RegistryKey(const char *domain, uint32_t id) : domain(domain), id(id) { }
-
-    bool operator==(const RegistryKey &k) const {
-        return id == k.id && strcmp(domain, k.domain) == 0;
-    }
-
-    /// Helper class to hash RegistryKey instances
-    struct Hasher {
-        size_t operator()(const RegistryKey &k) const {
-            return hash_str(k.domain, k.id);
-        }
-    };
-};
-
-struct AttributeKey {
-    const char *domain;
-    const char *name;
-
-    AttributeKey(const char *domain, const char *name) : domain(domain), name(name) { }
-
-    bool operator==(const AttributeKey &k) const {
-        return strcmp(domain, k.domain) == 0 && strcmp(name, k.name) == 0;
-    }
-
-    /// Helper class to hash AttributeKey instances
-    struct Hasher {
-        size_t operator()(const AttributeKey &k) const {
-            return hash_str(k.domain, hash_str(k.name));
-        }
-    };
-};
-
-struct AttributeValue {
-    uint32_t isize = 0;
-    uint32_t count = 0;
-    void *ptr = nullptr;
-};
-
-struct Registry {
-    using RegistryFwdMap =
-        tsl::robin_map<RegistryKey, void *, RegistryKey::Hasher,
-                       std::equal_to<RegistryKey>,
-                       std::allocator<std::pair<RegistryKey, void *>>,
-                       /* StoreHash = */ true>;
-
-    using RegistryRevMap = tsl::robin_pg_map<const void *, RegistryKey>;
-
-    using AttributeMap =
-        tsl::robin_map<AttributeKey, AttributeValue, AttributeKey::Hasher,
-                       std::equal_to<AttributeKey>,
-                       std::allocator<std::pair<AttributeKey, AttributeValue>>,
-                       /* StoreHash = */ true>;
-
-    /// Two-way mapping that can be used to associate pointers with unique 32 bit IDs
-    RegistryFwdMap fwd;
-    RegistryRevMap rev;
-
-    /// Per-pointer attributes provided by the pointer registry
-    AttributeMap attributes;
-};
-
 struct Extra {
     /// Optional descriptive label
     char *label = nullptr;
@@ -696,9 +631,6 @@ struct State {
     /// State associated with each DrJit thread
     std::vector<ThreadState *> tss;
 
-    /// Pointer registries for LLVM and CUDA backends
-    Registry registry_cpu, registry_gpu;
-
     /// Map of currently allocated memory regions
     AllocUsedMap alloc_used;
 
@@ -742,11 +674,6 @@ struct State {
     /// Index of the JIT variable handling the lifetime of the default Optix SBT
     uint32_t optix_default_sbt_index = 0;
 #endif
-
-    /// Return a pointer to the registry corresponding to the specified backend
-    Registry *registry(JitBackend backend) {
-        return backend == JitBackend::CUDA ? &registry_gpu : &registry_cpu;
-    }
 
     State() {
         lock_init(lock);

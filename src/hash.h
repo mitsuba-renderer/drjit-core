@@ -54,7 +54,7 @@ struct UInt32Hasher {
 
 struct UInt64Hasher {
     size_t operator()(uint64_t v) const {
-        // fmix32 from MurmurHash by Austin Appleby (public domain)
+        // fmix64 from MurmurHash by Austin Appleby (public domain)
         v ^= v >> 33;
         v *= (uint64_t) 0xff51afd7ed558ccdull;
         v ^= v >> 33;
@@ -63,6 +63,16 @@ struct UInt64Hasher {
         return (size_t) v;
     }
 };
+
+struct PointerHasher {
+    size_t operator()(void *p) const {
+        if constexpr (sizeof(void *) == 4)
+            return UInt32Hasher()((uint32_t) (uintptr_t) p);
+        else
+            return UInt64Hasher()((uint64_t) (uintptr_t) p);
+    }
+};
+
 
 struct XXH128Cmp {
     size_t operator()(const XXH128_hash_t &h1,

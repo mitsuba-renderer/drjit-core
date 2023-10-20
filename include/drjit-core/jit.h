@@ -492,108 +492,29 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  * <tt>typeid(MyClass).name()<tt> is a reasonable choice that satisfies this
  * requirement.
  *
- * Returns zero if <tt>ptr == nullptr</tt> and throws if the pointer is already
- * registered (with *any* domain).
+ * Raises an exception when ``ptr`` is ``nullptr``, or when it has already been
+ * registered with *any* domain.
  */
-extern JIT_EXPORT uint32_t jit_registry_put(JIT_ENUM JitBackend backend,
-                                            const char *domain, void *ptr);
+extern JIT_EXPORT void jit_registry_put(JIT_ENUM JitBackend backend,
+                                        const char *domain, void *ptr);
 
 /**
  * \brief Remove a pointer from the registry
  *
- * No-op if <tt>ptr == nullptr</tt>. Throws an exception if the pointer is not
- * currently registered.
+ * Throws an exception if the pointer is not currently registered.
  */
-extern JIT_EXPORT void jit_registry_remove(JIT_ENUM JitBackend backend,
-                                           void *ptr);
+extern JIT_EXPORT void jit_registry_remove(const void *ptr);
 
-/**
- * \brief Query the ID associated a registered pointer
- *
- * Returns 0 if <tt>ptr==nullptr</tt> and throws if the pointer is not known.
- */
-extern JIT_EXPORT uint32_t jit_registry_get_id(JIT_ENUM JitBackend backend,
-                                               const void *ptr);
+/// Return the instance ID associated with the pointer, or 0 if it is ``NULL``.
+extern JIT_EXPORT uint32_t jit_registry_id(const void *ptr);
 
-/**
- * \brief Query the domain associated a registered pointer
- *
- * Returns \c nullptr if <tt>ptr==nullptr</tt> and throws if the pointer is not
- * known.
- */
-extern JIT_EXPORT const char *jit_registry_get_domain(JIT_ENUM JitBackend backend,
-                                                      const void *ptr);
+/// Return a number that exceeds the highest-valued instance ID for the given domain
+extern JIT_EXPORT uint32_t jit_registry_id_bound(JitBackend backend,
+                                                 const char *domain);
 
-/**
- * \brief Query the pointer associated a given domain and ID
- *
- * Returns \c nullptr if <tt>id==0</tt>, or when the (domain, ID) combination
- * is not known.
- */
-extern JIT_EXPORT void *jit_registry_get_ptr(JIT_ENUM JitBackend backend,
-                                             const char *domain, uint32_t id);
-
-/// Provide a bound (<=) on the largest ID associated with a domain
-extern JIT_EXPORT uint32_t jit_registry_get_max(JIT_ENUM JitBackend backend, const char *domain);
-
-/**
- * \brief Compact the registry and release unused IDs and attributes
- *
- * It's a good idea to call this function following a large number of calls to
- * \ref jit_registry_remove().
- */
-extern JIT_EXPORT void jit_registry_trim();
-
-/**
- * \brief Clear the registry and release all IDs and attributes
- *
- * Extra care must be taken when calling this function as it might result in
- * undefined behaviour and crashes if instances are still alive and used
- * afterward.
- */
-extern JIT_EXPORT void jit_registry_clear();
-
-/**
- * \brief Set a custom per-pointer attribute
- *
- * The pointer registry can optionally associate one or more read-only
- * attribute with each pointer that can be set using this function. Such
- * pointer attributes provide an efficient way to avoid expensive vectorized
- * method calls (via \ref jit_var_vcall()) for simple getter-like functions. In
- * particular, this feature would be used in conjunction with \ref
- * jit_registry_attr_data(), which returns a pointer to a linear array
- * containing all attributes. A vector of 32-bit IDs (returned by \ref
- * jit_registry_put() or \ref jit_registry_get_id()) can then be used to
- * gather from this address.
- *
- * \param ptr
- *     Pointer, whose attribute should be set. Must have been previously
- *     registered using \ref jit_registry_put()
- *
- * \param name
- *     Name of the attribute to be set.
- *
- * \param value
- *     Pointer to the attribute value (in CPU memory)
- *
- * \param size
- *     Size of the pointed-to region.
- */
-extern JIT_EXPORT void jit_registry_set_attr(JIT_ENUM JitBackend backend,
-                                             void *ptr,
-                                             const char *name,
-                                             const void *value,
-                                             size_t size);
-
-/**
- * \brief Return a pointer to a contiguous array containing a specific
- * attribute associated with a specific domain
- *
- * \sa jit_registry_set_attr
- */
-extern JIT_EXPORT const void *jit_registry_attr_data(JIT_ENUM JitBackend backend,
-                                                     const char *domain,
-                                                     const char *name);
+/// Return the pointer value associated with a given instance ID
+extern JIT_EXPORT void *jit_registry_ptr(JitBackend backend,
+                                          const char *domain, uint32_t id);
 
 // ====================================================================
 //                        Variable management
@@ -1739,7 +1660,7 @@ struct VCallBucket {
  *
  * This function expects an array of integers, whose entries correspond to
  * pointers that have previously been registered by calling \ref
- * jit_registry_put() with domain \c domain. It then invokes \ref jitc_mkperm()
+ * jit_registry_put() with domain \c domain. It then invokes \ref jit_mkperm()
  * to compute a permutation that reorders the array into coherent buckets. The
  * buckets are returned using an array of type \ref VCallBucket, which contains
  * both the resolved pointer address (obtained via \ref
