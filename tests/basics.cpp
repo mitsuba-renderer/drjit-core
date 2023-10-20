@@ -291,36 +291,40 @@ template <typename T> bool test_const_prop() {
             in[i] = jit_var_literal(Backend, T::Type, values + i, 1, i >= Size);
 
         for (uint32_t i = 0; i < Size2; ++i) {
-            if (IsSigned && (op == JitOp::Shl) && values[i] < 0)
-                continue;
-            for (uint32_t j = 0; j < Size2; ++j) {
-                uint32_t deps[2] = { in[i], in[j] };
+            if constexpr (IsSigned) {
+                if (op == JitOp::Shl && values[i] < 0)
+                    continue;
+            }
+            for (uint32_t k = 0; k < Size2; ++k) {
+                uint32_t deps[2] = { in[i], in[k] };
                 uint32_t index = 0;
 
-                if (((op == JitOp::Div || op == JitOp::Mod) && values[j] == 0) ||
-                    ((op == JitOp::Shr || op == JitOp::Shl) && values[j] < Value(0))) {
-                    index = in[j];
+                if (((op == JitOp::Div || op == JitOp::Mod) && values[k] == 0) ||
+                    ((op == JitOp::Shr || op == JitOp::Shl) && values[k] < Value(0))) {
+                    index = in[k];
                     jit_var_inc_ref(index);
                 } else {
                     index = jit_var_op(op, deps);
                 }
 
-                if (i < Size && j < Size) {
+                if (i < Size && k < Size) {
                     jit_assert(jit_var_is_literal(index));
                     jit_assert(!jit_var_is_evaluated(index));
                 } else {
                     jit_var_schedule(index);
                 }
 
-                out[i * Size2 + j] = index;
+                out[i * Size2 + k] = index;
             }
         }
 
         jit_eval();
 
         for (uint32_t i = 0; i < Size2; ++i) {
-            if (IsSigned && (op == JitOp::Shl) && values[i] < 0)
-                continue;
+            if constexpr (IsSigned) {
+                if (op == JitOp::Shl && values[i] < 0)
+                    continue;
+            }
             for (uint32_t j = 0; j < Size2; ++j) {
                 int ir = i < Size ? i : i - Size;
                 int jr = j < Size ? j : j - Size;
@@ -350,8 +354,10 @@ template <typename T> bool test_const_prop() {
         }
 
         for (uint32_t i = 0; i < Size2; ++i) {
-            if (IsSigned && (op == JitOp::Shl) && values[i] < 0)
-                continue;
+            if constexpr (IsSigned) {
+                if (op == JitOp::Shl && values[i] < 0)
+                    continue;
+            }
             for (uint32_t j = 0; j < Size2; ++j)
                 jit_var_dec_ref(out[i * Size2 + j]);
         }

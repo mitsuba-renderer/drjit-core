@@ -10,7 +10,7 @@ TEST_BOTH(01_record_loop) {
 
         for (uint32_t j = 0; j < 2; ++j) {
             UInt32 x = arange<UInt32>(10);
-            Float y = zero<Float>(1);
+            Float y = zeros<Float>(1);
             Float z = 1;
 
             Loop<Mask> loop("MyLoop", x, y, z);
@@ -48,8 +48,8 @@ TEST_BOTH(02_side_effect) {
 
         for (uint32_t j = 0; j < 2; ++j) {
             UInt32 x = arange<UInt32>(10);
-            Float y = zero<Float>(1);
-            UInt32 target = zero<UInt32>(11);
+            Float y = zeros<Float>(1);
+            UInt32 target = zeros<UInt32>(11);
 
             Loop<Mask> loop("MyLoop", x, y);
             while (loop(x < 5)) {
@@ -78,8 +78,8 @@ TEST_BOTH(03_side_effect_2) {
 
         for (uint32_t j = 0; j < 3; ++j) {
             UInt32 x = arange<UInt32>(10);
-            Float y = zero<Float>(1);
-            UInt32 target = zero<UInt32>(11);
+            Float y = zeros<Float>(1);
+            UInt32 target = zeros<UInt32>(11);
 
             Loop<Mask> loop("MyLoop", x, y);
             while (loop(x < 5)) {
@@ -108,7 +108,7 @@ TEST_BOTH(04_side_effect_masking) {
 
         for (uint32_t j = 0; j < 3; ++j) {
             UInt32 x = arange<UInt32>(1000000);
-            UInt32 target = zero<UInt32>(10);
+            UInt32 target = zeros<UInt32>(10);
 
             Loop<Mask> loop("MyLoop", x);
             while (loop(x < 9)) {

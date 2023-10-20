@@ -86,6 +86,10 @@ static void jitc_llvm_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value, const Variable *index,
                                      const Variable *mask);
 static void jitc_llvm_render_scatter_kahan(const Variable *v, uint32_t index);
+static void jitc_llvm_render_scatter_inc(Variable *v,
+                                         const Variable *ptr,
+                                         const Variable *index,
+                                         const Variable *mask);
 static void jitc_llvm_render_printf(uint32_t index, const Variable *v,
                                     const Variable *mask, const Variable *target);
 static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
@@ -777,6 +781,10 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
             jitc_llvm_render_scatter(v, a0, a1, a2, a3);
             break;
 
+        case VarKind::ScatterInc:
+            jitc_llvm_render_scatter_inc(v, a0, a1, a2);
+            break;
+
         case VarKind::ScatterKahan:
             jitc_llvm_render_scatter_kahan(v, index);
             break;
@@ -946,6 +954,54 @@ static void jitc_llvm_render_scatter(const Variable *v,
         fmt("    call void @reduce_$s_$h(<$w x {$t*}> $v_1, $V, $V)\n",
             op, value, value, v, value, mask);
     }
+}
+
+static void jitc_llvm_render_scatter_inc(Variable *v,
+                                         const Variable *ptr,
+                                         const Variable *index,
+                                         const Variable *mask) {
+    fmt( "    $v_1 = extractelement $V, i32 0\n"
+        "{    $v_2 = bitcast i8* $v to i32*\n"
+         "    $v_3 = getelementptr i32, i32* $v_2, i32 $v_1\n|"
+         "    $v_3 = getelementptr i32, ptr $v, i32 $v_1\n}"
+         "    $v = call $T @reduce_inc_u32({$t*} $v_3, $V)\n",
+        v, index,
+        v, ptr,
+        v, v, v,
+        v, ptr, v,
+        v, v, v, v, mask);
+
+    fmt_intrinsic(
+        "define internal <$w x i32> @reduce_inc_u32({i32*} %ptr, <$w x i1> %active) #0 ${\n"
+        "L0:\n"
+        "   br label %L1\n\n"
+        "L1:\n"
+        "   %index = phi i32 [ 0, %L0 ], [ %index_next, %L1 ]\n"
+        "   %sum = phi i32 [ 0, %L0 ], [ %sum_next, %L1 ]\n"
+        "   %sum_vec = phi <$w x i32> [ undef, %L0 ], [ %sum_vec_next, %L1 ]\n"
+        "   %active_i = extractelement <$w x i1> %active, i32 %index\n"
+        "   %active_u = zext i1 %active_i to i32\n"
+        "   %sum_next = add nuw i32 %sum, %active_u\n"
+        "   %sum_vec_next = insertelement <$w x i32> %sum_vec, i32 %sum, i32 %index\n"
+        "   %index_next = add nuw nsw i32 %index, 1\n"
+        "   %cond_1 = icmp eq i32 %index_next, $w\n"
+        "   br i1 %cond_1, label %L2, label %L1\n\n"
+        "L2:\n"
+        "   %cond_2 = icmp eq i32 %sum_next, 0\n"
+        "   br i1 %cond_2, label %L4, label %L3\n\n"
+        "L3:\n"
+        "   %old_1 = atomicrmw add {i32*} %ptr, i32 %sum_next monotonic\n"
+        "   %old_2 = insertelement <$w x i32> undef, i32 %old_1, i32 0\n"
+        "   %old_3 = shufflevector <$w x i32> %old_2, <$w x i32> undef, <$w x i32> $z\n"
+        "   %sum_vec_final = add <$w x i32> %sum_vec_next, %old_3\n"
+        "   br label %L4;\n\n"
+        "L4:\n"
+        "   %sum_vec_combined = phi <$w x i32> [ %sum_vec_next, %L2 ], [ %sum_vec_final, %L3 ]\n"
+        "   ret <$w x i32> %sum_vec_combined\n"
+        "$}"
+    );
+
+    v->consumed = 1;
 }
 
 static void jitc_llvm_render_scatter_kahan(const Variable *v, uint32_t v_index) {
@@ -1258,7 +1314,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
         jitc_var_inc_ref(id);
     }
 
-    for (uint32_t i = 0; i < (shadow_ray ? 1 : 6); ++i)
+    for (int i = 0; i < (shadow_ray ? 1 : 6); ++i)
         out[i] = jitc_var_new_node_1(JitBackend::LLVM, VarKind::Extract,
                                      i < 3 ? float_type : VarType::UInt32, size,
                                      placeholder, index, jitc_var(index),
@@ -1467,7 +1523,7 @@ static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
 
     offset = (8 * float_size + 4) * width;
 
-    for (uint32_t i = 0; i < (shadow_ray ? 1 : 6); ++i) {
+    for (int i = 0; i < (shadow_ray ? 1 : 6); ++i) {
         VarType vt = (i < 3) ? float_type : VarType::UInt32;
         const char *tname = type_name_llvm[(int) vt];
         uint32_t tsize = type_size[(int) vt];

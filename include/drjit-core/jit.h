@@ -929,9 +929,11 @@ extern JIT_EXPORT uint32_t jit_var_scatter(uint32_t target, uint32_t value,
 /**
  * \brief Schedule a Kahan-compensated floating point atomic scatter-write
  *
- * This operation is just like `jit_var(scatter, ..., ReduceOp::Add)`. The
- * difference is that it simultaneously adds to two different target buffers
- * using the Kahan summation algorithm.
+ * This operation is just like ``jit_var_scatter`` invoked with a floating
+ * point operands and reduce_op=ReduceOp::Add.
+ *
+ * The difference is that it simultaneously adds to
+ * two different target buffers using the Kahan summation algorithm.
  *
  * The implementation may overwrite the 'target_1' / 'target_2' pointers
  * if a copy needs to be made (for example, if another variable elsewhere
@@ -942,6 +944,23 @@ extern JIT_EXPORT void jit_var_scatter_reduce_kahan(uint32_t *target_1,
                                                     uint32_t value,
                                                     uint32_t index,
                                                     uint32_t mask);
+
+/**
+ * \brief Atomically increment a counter and return the old value
+ *
+ * This operation is just like ``jit_var_scatter`` invoked with 32-bit unsigned
+ * integer operands, the value ``1``, and reduce_op=ReduceOp::Add.
+ *
+ * The main difference is that this variant returns the *old* value before the
+ * atomic write (in contrast to the more general scatter reduction, where doing
+ * so would be rather complicated).
+ *
+ * This operation is a building block for stream compaction: threads can
+ * scatter-increment a global counter to request a spot in an array.
+ */
+extern JIT_EXPORT uint32_t jit_var_scatter_inc(uint32_t *target,
+                                               uint32_t index,
+                                               uint32_t mask);
 
 /**
  * \brief Create an identical copy of the given variable

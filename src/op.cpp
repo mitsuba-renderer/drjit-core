@@ -5,6 +5,10 @@
 #include "eval.h"
 #include "op.h"
 
+#if defined(_MSC_VER)
+#  pragma warning (disable: 4702) // unreachable code
+#endif
+
 template <bool Value> using enable_if_t = std::enable_if_t<Value, int>;
 
 /// Various checks that can be requested from jitc_var_check()
@@ -136,6 +140,10 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
         }
 
 #endif
+        if (vi->consumed) {
+            err = "operation references an operand that can only be evaluated once";
+            goto fail;
+        }
 
         size = std::max(size, vi->size);
         placeholder |= (bool) vi->placeholder;
@@ -1603,13 +1611,13 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1, uint32_t *target_2,
     var_info.placeholder |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
     // Check if it is safe to write directly
-    if (jitc_var(*target_1)->ref_count > 2) { // 1 from original array, 1 from borrow above
+    if (jitc_var(*target_1)->ref_count > 1) {
         uint32_t tmp = jitc_var_copy(*target_1);
         jitc_var_dec_ref(*target_1);
         *target_1 = tmp;
     }
 
-    if (jitc_var(*target_2)->ref_count > 2 || *target_1 == *target_2) {
+    if (jitc_var(*target_2)->ref_count > 1 || *target_1 == *target_2) {
         uint32_t tmp = jitc_var_copy(*target_2);
         jitc_var_dec_ref(*target_2);
         *target_2 = tmp;
@@ -1650,10 +1658,64 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1, uint32_t *target_2,
     jitc_log(Debug,
              "jit_var_scatter_reduce_kahan((r%u[r%u], r%u[r%u]) += r%u if r%u, via "
              "ptrs (r%u, r%u)): r%u",
-             *target_1, index, *target_2, (uint32_t) index_2, value, (uint32_t) mask_2,
+             *target_1, (uint32_t) index_2, *target_2, (uint32_t) index_2, value, (uint32_t) mask_2,
              (uint32_t) ptr_1, (uint32_t) ptr_2, result);
 
     jitc_var_mark_side_effect(result);
+}
+
+uint32_t jitc_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t mask) {
+    auto [var_info, index_v, mask_v] =
+        jitc_var_check("jit_var_scatter_inc", index, mask);
+
+    auto [target_info, target_v] =
+        jitc_var_check("jit_var_scatter_inc", *target);
+
+    if (target_v->placeholder)
+        jitc_raise("jit_var_scatter_inc(): cannot scatter to a placeholder variable!");
+
+    if ((VarType) target_v->type != VarType::UInt32)
+        jitc_raise("jit_var_scatter_inc(): target must be an unsigned 32-bit array!");
+
+    if ((VarType) index_v->type != VarType::UInt32)
+        jitc_raise("jit_var_scatter_inc(): index must be an unsigned 32-bit array!");
+
+    if (index_v->size != 1)
+        jitc_raise("jit_var_scatter_inc(): index must be a scalar! (this is a "
+                   "limitation of the current implementation that enables a "
+                   "particularly simple and efficient implementation)");
+
+    if (mask_v->is_literal() && mask_v->literal == 0)
+        return 0;
+
+    var_info.placeholder |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
+
+    // Check if it is safe to write directly
+    if (jitc_var(*target)->ref_count > 1) { // 1 from original array, 1 from borrow above
+        uint32_t tmp = jitc_var_copy(*target);
+        jitc_var_dec_ref(*target);
+        *target = tmp;
+    }
+
+    Ref ptr = steal(jitc_var_pointer(var_info.backend, jitc_var_ptr(*target), *target, 0));
+
+    Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
+        index_2 = steal(jitc_scatter_gather_index(*target, index));
+
+    var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
+
+    uint32_t result = jitc_var_new_node_3(
+        var_info.backend, VarKind::ScatterInc, VarType::UInt32, var_info.size,
+        var_info.placeholder, ptr, jitc_var(ptr), index_2, jitc_var(index_2),
+        mask_2, jitc_var(mask_2));
+
+    jitc_log(Debug,
+             "jit_var_scatter_inc(r%u[r%u] += 1 if r%u, via "
+             "ptr r%u): r%u",
+             *target, (uint32_t) index_2, (uint32_t) mask_2, (uint32_t) ptr,
+             result);
+
+    return result;
 }
 
 uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,

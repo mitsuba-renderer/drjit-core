@@ -50,10 +50,12 @@
 
 // Forward declarations
 static void jitc_cuda_render_stmt(uint32_t index, const Variable *v);
-static void jitc_cuda_render_var(uint32_t index, const Variable *v);
+static void jitc_cuda_render_var(uint32_t index, Variable *v);
 static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value, const Variable *index,
                                      const Variable *mask);
+static void jitc_cuda_render_scatter_inc(Variable *v, const Variable *ptr,
+                                         const Variable *index, const Variable *mask);
 static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t index);
 static void jitc_cuda_render_printf(uint32_t index, const Variable *v,
                                     const Variable *mask);
@@ -157,7 +159,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
 
     for (uint32_t gi = group.start; gi != group.end; ++gi) {
         uint32_t index = schedule[gi].index;
-        const Variable *v = jitc_var(index);
+        Variable *v = jitc_var(index);
         const uint32_t vti = v->type,
                        size = v->size;
         const VarType vt = (VarType) vti;
@@ -311,7 +313,7 @@ void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
         name, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
 
     for (ScheduledVariable &sv : schedule) {
-        const Variable *v = jitc_var(sv.index);
+        Variable *v = jitc_var(sv.index);
         const uint32_t vti = v->type;
         const VarType vt = (VarType) vti;
 
@@ -401,7 +403,7 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
 };
 
-static void jitc_cuda_render_var(uint32_t index, const Variable *v) {
+static void jitc_cuda_render_var(uint32_t index, Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
@@ -720,6 +722,10 @@ static void jitc_cuda_render_var(uint32_t index, const Variable *v) {
             jitc_cuda_render_scatter(v, a0, a1, a2, a3);
             break;
 
+        case VarKind::ScatterInc:
+            jitc_cuda_render_scatter_inc(v, a0, a1, a2);
+            break;
+
         case VarKind::ScatterKahan:
             jitc_cuda_render_scatter_kahan(v, index);
             break;
@@ -808,7 +814,7 @@ static void jitc_cuda_render_scatter(const Variable *v,
         (jitc_flags() & (uint32_t) JitFlag::AtomicReduceLocal)) {
         fmt("    {\n"
             "        .func reduce_$s_$t(.param .u64 ptr, .param .$t value);\n"
-            "        call reduce_$s_$t, (%rd3, $v);\n"
+            "        call.uni reduce_$s_$t, (%rd3, $v);\n"
             "    }\n",
             op, value, value, op, value, value);
 
@@ -899,6 +905,61 @@ static void jitc_cuda_render_scatter(const Variable *v,
 
     if (!unmasked)
         fmt("\nl_$u_done:\n", v->reg_index);
+}
+
+static void jitc_cuda_render_scatter_inc(Variable *v,
+                                         const Variable *ptr,
+                                         const Variable *index,
+                                         const Variable *mask) {
+    bool index_zero = index->is_literal() && index->literal == 0;
+    bool unmasked = mask->is_literal() && mask->literal == 1;
+
+    fmt_intrinsic(
+        ".func (.param .u32 rv) reduce_inc_u32 (.param .u64 ptr) {\n"
+        "    .reg .pred %p<2>;\n"
+        "    .reg .b32 %r<11>;\n"
+        "    .reg .b64 %rd<2>;\n"
+        "\n"
+        "    ld.param.u64 %rd1, [ptr];\n"
+        "    activemask.b32 %r2;\n"
+        "    mov.u32 %r3, %lanemask_lt;\n"
+        "    and.b32 %r3, %r3, %r2;\n"
+        "    setp.ne.u32 %p1, %r3, 0;\n"
+        "    @%p1 bra L2;\n"
+        "\n"
+        "L1:\n"
+        "    popc.b32 %r4, %r2;\n"
+        "    atom.global.add.u32 %r5, [%rd1], %r4;\n"
+        "\n"
+        "L2:\n"
+        "    popc.b32 %r6, %r3;\n"
+        "    brev.b32 %r7, %r2;\n"
+        "    bfind.shiftamt.u32 %r8, %r7;\n"
+        "    shfl.sync.idx.b32 %r9, %r5, %r8, 31, %r2;\n"
+        "    add.u32 %r10, %r6, %r9;\n"
+        "    st.param.u32 [rv], %r10;\n"
+        "    ret;\n"
+        "}\n");
+
+    if (!unmasked)
+        fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
+
+    if (index_zero) {
+        fmt("    mov.u64 %rd3, $v;\n", ptr);
+    } else {
+        fmt("    mad.wide.$t %rd3, $v, 4, $v;\n",
+            index, index, ptr);
+    }
+
+    fmt("    {\n"
+        "        .func (.param .u32 rv) reduce_inc_u32 (.param .u64 ptr);\n"
+        "        call.uni ($v), reduce_inc_u32, (%rd3);\n"
+        "    }\n", v);
+
+    if (!unmasked)
+        fmt("\nl_$u_done:\n", v->reg_index);
+
+    v->consumed = 1;
 }
 
 static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) {

@@ -709,6 +709,7 @@ void jitc_eval(ThreadState *ts) {
             v->kind = (uint32_t) VarKind::Data;
             v->data = sv.data;
             v->output_flag = false;
+            v->consumed = false;
         }
 
         if (unlikely(v->extra)) {

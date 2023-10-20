@@ -287,8 +287,8 @@ TEST_BOTH(11_mkperm) {
                 jit_fail("Size mismatch: %u vs %u\n", total_size, size);
 
             const uint64_t *ref_ptr = ref;
-            for (uint32_t j = 0; j < num_unique; ++j) {
-                const Bucket &entry = buckets[j];
+            for (uint32_t l = 0; l < num_unique; ++l) {
+                const Bucket &entry = buckets[l];
                 uint32_t *perm_cur = perm + entry.start;
 
 #if 0

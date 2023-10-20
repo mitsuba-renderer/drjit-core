@@ -142,7 +142,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "cast", "bitcast",
 
     // Memory-related operations
-    "gather", "scatter", "scatter_kahan",
+    "gather", "scatter", "scatter_inc", "scatter_kahan",
 
     // Specialized nodes for vcalls
     "vcall_mask", "self",
@@ -1002,6 +1002,12 @@ static void jitc_raise_placeholder_error(const char *func, uint32_t index) {
     );
 }
 
+static void jitc_raise_consumed_error(const char *func, uint32_t index) {
+    jitc_raise("%s(r%u): the provided variable of kind \"%s\" can only be "
+               "evaluated once and was consumed by a prior operation",
+               func, index, var_kind_name[jitc_var(index)->kind]);
+}
+
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 int jitc_var_schedule(uint32_t index) {
     auto it = state.variables.find(index);
@@ -1010,6 +1016,8 @@ int jitc_var_schedule(uint32_t index) {
     Variable *v = &it.value();
 
     if (unlikely(v->placeholder))
+        jitc_raise_placeholder_error("jitc_var_schedule", index);
+    if (unlikely(v->consumed))
         jitc_raise_placeholder_error("jitc_var_schedule", index);
 
     if (v->is_stmt() || v->is_node()) {
@@ -1064,6 +1072,8 @@ int jitc_var_eval(uint32_t index) {
 
     if (unlikely(v->placeholder))
         jitc_raise_placeholder_error("jitc_var_eval", index);
+    if (unlikely(v->consumed))
+        jitc_raise_consumed_error("jitc_var_eval", index);
 
     if (v->is_stmt() || v->is_node() || (v->is_data() && v->is_dirty())) {
         ThreadState *ts = thread_state(v->backend);
@@ -1228,6 +1238,8 @@ uint32_t jitc_var_copy(uint32_t index) {
         jitc_var_eval(index);
         v = jitc_var(index);
     }
+    if (unlikely(v->consumed))
+        jitc_raise_consumed_error("jitc_var_copy", index);
 
     uint32_t result;
     if (v->is_data()) {
@@ -1269,6 +1281,8 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     jitc_check_size("jit_var_resize", size);
 
     Variable *v = jitc_var(index);
+    if (unlikely(v->consumed))
+        jitc_raise_consumed_error("jitc_var_resize", index);
 
     if (v->size == size) {
         jitc_var_inc_ref(index, v);

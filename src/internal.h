@@ -88,7 +88,7 @@ enum VarKind : uint32_t {
     Cast, Bitcast,
 
     // Memory-related operations
-    Gather, Scatter, ScatterKahan,
+    Gather, Scatter, ScatterInc, ScatterKahan,
 
     // Specialized nodes for vcalls
     VCallMask, VCallSelf,
@@ -231,8 +231,11 @@ struct Variable {
     /// Is this variable marked as an output?
     uint32_t output_flag : 1;
 
+    /// Consumed bit for operations that should only be executed once
+    uint32_t consumed : 1;
+
     /// Unused for now
-    uint32_t unused_2 : 6;
+    uint32_t unused_2 : 5;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;

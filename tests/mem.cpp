@@ -1,5 +1,6 @@
 #include "test.h"
 #include <cstring>
+#include <algorithm>
 
 TEST_BOTH(01_gather) {
     Int32 r = arange<Int32>(100) + 100;
@@ -135,7 +136,7 @@ TEST_BOTH(09_safety) {
 
 TEST_BOTH(10_scatter_atomic_rmw) {
     /* scatter 16 values */ {
-        Float target = zero<Float>(16);
+        Float target = zeros<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
 
         scatter_reduce(ReduceOp::Add, target, Float(1), index);
@@ -146,7 +147,7 @@ TEST_BOTH(10_scatter_atomic_rmw) {
     }
 
     /* scatter 17 values, tests LLVM masking */ {
-        Float target = zero<Float>(16);
+        Float target = zeros<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
 
         scatter_reduce(ReduceOp::Add, target, Float(1), index);
@@ -157,7 +158,7 @@ TEST_BOTH(10_scatter_atomic_rmw) {
     }
 
     /* masked scatter */ {
-        Float target = zero<Float>(16);
+        Float target = zeros<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
         Mask mask = neq(index, 7);
 
@@ -185,8 +186,8 @@ TEST_BOTH(11_reindex) {
 }
 
 TEST_BOTH(12_scatter_reduce_kahan) {
-    Float buf_1 = zero<Float>(1),
-          buf_2 = zero<Float>(1);
+    Float buf_1 = zeros<Float>(1),
+          buf_2 = zeros<Float>(1);
 
     scatter_reduce_kahan(buf_1, buf_2, Float(1e7 + 1), UInt32(0));
     jit_assert(all(eq(buf_1 - Float(1e7 + 1), Float(0))));
@@ -231,4 +232,86 @@ TEST_BOTH(15_gather_symbolic_multiple_mask) {
     // gather, or else it will lookup invalid memory
     Float buf_2 = gather<Float>(buf_1, index_2, mask_2);
     jit_assert(strcmp(buf_2.str(), "[1, 2, 0, 0]") == 0);
+}
+
+TEST_BOTH(16_scatter_inc) {
+    constexpr size_t n = 10000;
+    uint32_t out_cpu[n];
+    UInt32 counter(0);
+    UInt32 index = arange<UInt32>(n);
+    UInt32 out = zeros<UInt32>(n);
+    UInt32 offset = scatter_inc(counter, UInt32(0), Mask(true));
+    scatter(out, index, offset);
+    jit_assert(all(eq(counter, n)));
+    jit_memcpy(Backend, out_cpu, out.data(), n * sizeof(uint32_t));
+
+    try {
+        scatter(out, index, offset);
+        jit_fail("16_scatter_inc(): Exception not raised!");
+    } catch (...) { }
+
+    try {
+        offset.eval();
+        jit_fail("16_scatter_inc(): Exception not raised!");
+    } catch (...) { }
+
+    std::sort(out_cpu, out_cpu + n);
+    for (size_t i = 0; i < n; ++i) {
+        if (i != out_cpu[i]) {
+            printf("%zu - %u\n", i, out_cpu[i]);
+            abort();
+        }
+    }
+}
+
+TEST_BOTH(17_scatter_inc_2) {
+    constexpr size_t n = 10000;
+    uint32_t out_cpu[n];
+    UInt32 counter(0);
+    UInt32 index = arange<UInt32>(n);
+    UInt32 out = zeros<UInt32>(n);
+    UInt32 offset = scatter_inc(counter, UInt32(0), full<Mask>(true, n));
+    scatter(out, index, offset);
+    jit_var_schedule(out.index());
+    jit_var_schedule(offset.index());
+    jit_eval();
+
+    UInt32 out2 = zeros<UInt32>(n);
+    scatter(out2, index, offset);
+    out2.eval();
+    jit_memcpy(Backend, out_cpu, out2.data(), n * sizeof(uint32_t));
+    std::sort(out_cpu, out_cpu + n);
+    for (size_t i = 0; i < n; ++i) {
+        if (i != out_cpu[i]) {
+            printf("%zu - %u\n", i, out_cpu[i]);
+            abort();
+        }
+    }
+}
+
+TEST_BOTH(18_scatter_inc_mask) {
+    constexpr size_t n = 100000;
+    uint32_t out_cpu[n];
+    UInt32 counter(0);
+    UInt32 index = arange<UInt32>(n);
+    UInt32 out = zeros<UInt32>(n);
+    Mask active = eq(index & UInt32(1), 0);
+    UInt32 offset = scatter_inc(counter, UInt32(0), active);
+    scatter(out, index, offset, active);
+    out.eval();
+    jit_assert(all(eq(counter, n/2)));
+    jit_memcpy(Backend, out_cpu, out.data(), n * sizeof(uint32_t));
+    std::sort(out_cpu, out_cpu + n/2);
+    for (size_t i = 0; i < n/2; ++i) {
+        if (out_cpu[i] != i*2) {
+            printf("%zu - %u\n", i, out_cpu[i]);
+            abort();
+        }
+    }
+    for (size_t i = n/2; i < n; ++i) {
+        if (out_cpu[i] != 0) {
+            printf("%zu - %u\n", i, out_cpu[i]);
+            abort();
+        }
+    }
 }

@@ -176,7 +176,7 @@ auto vcall(const char *domain, const Func &func,
         if constexpr (IsVoid)
             return std::nullptr_t;
         else
-            return zero<Result>(dr::width(args...));
+            return zeros<Result>(dr::width(args...));
     } else if (n_inst == 1) {
         uint32_t i = 1;
         Base *inst = nullptr;
@@ -543,7 +543,7 @@ TEST_BOTH(06_side_effects) {
     };
 
     struct F1 : Base {
-        Float buffer = zero<Float>(5);
+        Float buffer = zeros<Float>(5);
         void go() override {
             scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(1));
             scatter_reduce(ReduceOp::Add, buffer, Float(2), UInt32(3));
@@ -587,7 +587,7 @@ TEST_BOTH(07_side_effects_only_once) {
     };
 
     struct G1 : Base {
-        Float buffer = zero<Float>(5);
+        Float buffer = zeros<Float>(5);
         dr_tuple<Float, Float> f() override {
             scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(1));
             return { 1, 2 };
@@ -595,7 +595,7 @@ TEST_BOTH(07_side_effects_only_once) {
     };
 
     struct G2 : Base {
-        Float buffer = zero<Float>(5);
+        Float buffer = zeros<Float>(5);
         dr_tuple<Float, Float> f() override {
             scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(2));
             return { 2, 1 };
@@ -703,12 +703,12 @@ TEST_BOTH(09_big) {
     (void) i2;
 
     for (int i = 0; i < n1; ++i) {
-        v1[i].v = (Float) i;
+        v1[i].v = (Float) (float) i;
         i1[i] = jit_registry_put(Backend, "Base1", &v1[i]);
     }
 
     for (int i = 0; i < n2; ++i) {
-        v2[i].v = (Float) (100 + i);
+        v2[i].v = (Float) (100.f + (float) i);
         i2[i] = jit_registry_put(Backend, "Base2", &v2[i]);
     }
 
@@ -876,7 +876,7 @@ TEST_BOTH(12_nested_with_side_effects) {
     using BasePtr = Array<Base *>;
 
     struct F1 : Base {
-        Float buffer = zero<Float>(5);
+        Float buffer = zeros<Float>(5);
         void f() override {
             BasePtr self = full<UInt32>(1, 11);
             vcall("Base", [](Base *self2) { self2->g(); }, self);

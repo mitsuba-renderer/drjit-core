@@ -63,8 +63,8 @@ void jitc_lz4_init() {
     jitc_lz4_dict_ready = true;
 }
 
-/* Computes padding to align cache file content to a multiple of sizeof(void*). 
-This prevents undefiend behavior due to misaligned memory reads/writes. */
+/* Computes padding to align cache file content to a multiple of sizeof(void*).
+   This prevents undefiend behavior due to misaligned memory reads/writes. */
 static uint32_t compute_padding(const CacheFileHeader &header) {
     uint32_t padding_size = (header.source_size + header.kernel_size) % sizeof(void *);
     if (padding_size)
@@ -353,7 +353,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
         header.reloc_size = kernel.llvm.n_reloc * sizeof(void *);
 
     uint32_t padding_size = compute_padding(header);
-    uint32_t in_size = header.source_size + header.kernel_size 
+    uint32_t in_size = header.source_size + header.kernel_size
                      + padding_size + header.reloc_size,
              out_size = LZ4_compressBound(in_size);
 
@@ -365,7 +365,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     memset(temp_in + header.source_size + header.kernel_size, 0, padding_size);
 
     if (backend == JitBackend::LLVM) {
-        uintptr_t *reloc_out = (uintptr_t *) (temp_in + header.source_size + 
+        uintptr_t *reloc_out = (uintptr_t *) (temp_in + header.source_size +
                                               header.kernel_size + padding_size);
         for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
             reloc_out[i] = (uintptr_t) kernel.llvm.reloc[i] - (uintptr_t) kernel.data;
