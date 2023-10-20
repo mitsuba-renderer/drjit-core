@@ -2,7 +2,7 @@
 #include <cstring>
 #include <algorithm>
 
-TEST_BOTH(01_gather) {
+TEST_BOTH_FLOAT_AGNOSTIC(01_gather) {
     Int32 r = arange<Int32>(100) + 100;
     r.eval();
     UInt32 index = UInt32(34, 62, 75, 2);
@@ -11,7 +11,7 @@ TEST_BOTH(01_gather) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH(02_gather_mask) {
+TEST_BOTH_FLOAT_AGNOSTIC(02_gather_mask) {
     Mask r = eq(arange<Int32>(100) & Int32(1), 1);
     r.eval();
     UInt32 index = UInt32(33, 62, 75, 2);
@@ -20,7 +20,7 @@ TEST_BOTH(02_gather_mask) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH(03_gather_masked) {
+TEST_BOTH_FLOAT_AGNOSTIC(03_gather_masked) {
     Int32 r = arange<Int32>(100) + 100;
     r.eval();
     UInt32 index = UInt32(34, 62, 75, 2);
@@ -30,7 +30,7 @@ TEST_BOTH(03_gather_masked) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH(04_gather_mask_masked) {
+TEST_BOTH_FLOAT_AGNOSTIC(04_gather_mask_masked) {
     Mask r = eq(arange<Int32>(100) & Int32(1), 1);
     r.eval();
     UInt32 index = UInt32(33, 62, 75, 2);
@@ -40,7 +40,7 @@ TEST_BOTH(04_gather_mask_masked) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH(05_gather_scalar) {
+TEST_BOTH_FLOAT_AGNOSTIC(05_gather_scalar) {
     /* unmasked, doesn't launch any kernels */ {
         Int32 r = 124;
         Array<uint64_t> index = Array<uint64_t>(34, 62, 75, 2);
@@ -58,7 +58,7 @@ TEST_BOTH(05_gather_scalar) {
     }
 }
 
-TEST_BOTH(06_gather_scalar_mask) {
+TEST_BOTH_FLOAT_AGNOSTIC(06_gather_scalar_mask) {
     /* unmasked, doesn't launch any kernels */ {
         Mask r = true;
         Array<uint64_t> index = Array<uint64_t>(34, 62, 75, 2);
@@ -76,7 +76,7 @@ TEST_BOTH(06_gather_scalar_mask) {
     }
 }
 
-TEST_BOTH(07_scatter) {
+TEST_BOTH_FLOAT_AGNOSTIC(07_scatter) {
     UInt32 r = arange<UInt32>(10);
     UInt32 index = UInt32(1, 7, 5);
     UInt32 value = UInt32(8, 2, 3);
@@ -85,7 +85,7 @@ TEST_BOTH(07_scatter) {
     jit_assert(all(eq(ref, r)));
 }
 
-TEST_BOTH(08_scatter_mask) {
+TEST_BOTH_FLOAT_AGNOSTIC(08_scatter_mask) {
     UInt32 r = arange<UInt32>(10);
     UInt32 index = UInt32(1, 7, 5);
     UInt32 value = UInt32(8, 2, 3);
@@ -134,7 +134,7 @@ TEST_BOTH(09_safety) {
     }
 }
 
-TEST_BOTH(10_scatter_atomic_rmw) {
+TEST_BOTH_FP32(10_scatter_atomic_rmw) {
     /* scatter 16 values */ {
         Float target = zeros<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
@@ -185,7 +185,7 @@ TEST_BOTH(11_reindex) {
     jit_assert(i3.index() == i4.index());
 }
 
-TEST_BOTH(12_scatter_reduce_kahan) {
+TEST_BOTH_FP32(12_scatter_reduce_kahan) {
     Float buf_1 = zeros<Float>(1),
           buf_2 = zeros<Float>(1);
 

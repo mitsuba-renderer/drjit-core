@@ -192,11 +192,8 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
             if (size > 1)
                 fmt("    mad.wide.u32 %rd0, %r0, $a, %rd0;\n", v);
 
-            if (vt == VarType::Float16) {
-                fmt("    $s $v, [%rd0];\n",
-                    size > 1 ? "ld.global.cs.b16" : "ldu.global.b16", v);
-            } else if (vt != VarType::Bool) {
-                fmt("    $s$t $v, [%rd0];\n",
+            if (vt != VarType::Bool) {
+                fmt("    $s$T $v, [%rd0];\n",
                     size > 1 ? "ld.global.cs." : "ldu.global.", v, v);
             } else {
                 fmt("    $s %w0, [%rd0];\n"
@@ -213,10 +210,8 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                 "    mad.wide.u32 %rd0, %r0, $a, %rd0;\n",
                 params_type, params_base, v, v);
 
-            if (vt == VarType::Float16) {
-                fmt("    st.global.cs.b16 [%rd0], $v;\n", v);
-            } else if (vt != VarType::Bool) {
-                fmt("    st.global.cs.$t [%rd0], $v;\n", v, v);
+            if (vt != VarType::Bool) {
+                fmt("    st.global.cs.$T [%rd0], $v;\n", v, v);
             } else {
                 fmt("    selp.u16 %w0, 1, 0, $v;\n"
                     "    st.global.cs.u8 [%rd0], %w0;\n", v);
@@ -682,12 +677,15 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
 
         case VarKind::Cast:
             if (jitc_is_bool(v)) {
-                fmt(jitc_is_float(a0) ? "    setp.ne.$t $v, $v, 0.0;\n"
-                                      : "    setp.ne.$t $v, $v, 0;\n",
+                fmt(jitc_is_float(a0) && !jitc_is_half(a0) 
+                    ? "    setp.ne.$t $v, $v, 0.0;\n"
+                    : "    setp.ne.$T $v, $v, 0;\n",
                     a0, v, a0);
             } else if (jitc_is_bool(a0)) {
-                fmt(jitc_is_float(v) ? "    selp.$t $v, 1.0, 0.0, $v;\n"
-                                     : "    selp.$t $v, 1, 0, $v;\n",
+                // No selp for fp16 so use b16 view
+                fmt(jitc_is_half(v)  ? "    selp.$T $v, 0x3C00, 0, $v;\n" :
+                    jitc_is_float(v) ? "    selp.$t $v, 1.0, 0.0, $v;\n" :
+                                       "    selp.$t $v, 1, 0, $v;\n",
                     v, v, a0);
             } else if (jitc_is_float(v) && !jitc_is_float(a0)) {
                 fmt("    cvt.rn.$t.$t $v, $v;\n", v, a0, v, a0);
@@ -873,6 +871,8 @@ static void jitc_cuda_render_scatter(const Variable *v,
     const char *op = reduce_op_name[v->literal];
     const ThreadState *ts = thread_state_cuda;
 
+    if (jitc_is_half(value) && v->literal != 0)
+        jitc_fail("jitc_cuda_render_scatter(): unhandled variable type fp16");
 
     if (v->literal && callable_depth == 0 && type_size[value->type] == 4 &&
         ts->ptx_version >= 62 && ts->compute_capability >= 70 &&
@@ -958,17 +958,16 @@ static void jitc_cuda_render_scatter(const Variable *v,
         );
     } else {
         const char *op_type = v->literal ? "red" : "st";
-        const char* op_suffix = jitc_is_half(value) && v->literal ? ".noftz"  : "";
 
         if (is_bool)
             fmt("    selp.u16 %w0, 1, 0, $v;\n"
                 "    $s.global$s$s.u8 [%rd3], %w0;\n",
                 value, op_type, v->literal ? "." : "", op);
         else
-            fmt(v->literal ? "    $s.global$s$s$s.$t [%rd3], $v;\n"
-                           : "    $s.global$s$s$s.$T [%rd3], $v;\n"
+            fmt(v->literal ? "    $s.global$s$s.$t [%rd3], $v;\n"
+                           : "    $s.global$s$s.$T [%rd3], $v;\n"
                 , op_type,
-                v->literal ? "." : "", op, op_suffix, value, value);
+                v->literal ? "." : "", op, value, value);
     }
 
     if (!unmasked)
