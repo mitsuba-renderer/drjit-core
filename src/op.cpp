@@ -304,14 +304,11 @@ uint32_t jitc_var_shift(const OpInfo &info, uint32_t index, uint64_t amount) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<!std::is_signed_v<T>> = 0>
+template <typename T, enable_if_t<!std::is_signed<T>::value> = 0>
 T eval_neg(T v) { return T(-(std::make_signed_t<T>) v); }
 
-template <typename T, enable_if_t<std::is_signed_v<T>> = 0>
+template <typename T, enable_if_t<std::is_signed<T>::value> = 0>
 T eval_neg(T v) { return -v; }
-
-template <>
-drjit::dr_half eval_neg(drjit::dr_half h) { return -h; }
 
 static bool eval_neg(bool) { jitc_fail("eval_neg(): unsupported operands!"); }
 
@@ -379,14 +376,11 @@ uint32_t jitc_var_sqrt(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<std::is_signed_v<T>> = 0>
+template <typename T, enable_if_t<std::is_signed<T>::value> = 0>
 T eval_abs(T value) { return (T) std::abs(value); }
 
-template <typename T, enable_if_t<!std::is_signed_v<T>> = 0>
+template <typename T, enable_if_t<!std::is_signed<T>::value> = 0>
 T eval_abs(T value) { return value; }
-
-template <>
-drjit::dr_half eval_abs(drjit::dr_half value) { return std::abs(value); }
 
 uint32_t jitc_var_abs(uint32_t a0) {
     auto [info, v0] = jitc_var_check<IsArithmetic>("jit_var_abs", a0);
@@ -500,7 +494,7 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
             result = jitc_var_resize(a0, info.size);
         } else if (jitc_is_uint(info.type) && v1->is_literal() && jitc_is_pow2(v1->literal)) {
             result = jitc_var_shift<false>(info, a0, v1->literal);
-        } else if (jitc_is_float(info.type) && info.type != VarType::Float16 && v1->is_literal()) {
+        } else if (jitc_is_float(info.type) && !jitc_is_half(info.type) && v1->is_literal()) {
             uint32_t recip = jitc_var_rcp(a1);
             result = jitc_var_mul(a0, recip);
             jitc_var_dec_ref(recip);

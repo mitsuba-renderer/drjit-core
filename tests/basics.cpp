@@ -8,7 +8,6 @@
 #include <cstring>
 #include <typeinfo>
 
-
 TEST_BOTH(01_creation_destruction_cse) {
     // Test CSE involving normal and evaluated constant literals
     for (int i = 0; i < 2; ++i) {
@@ -466,13 +465,18 @@ template <typename T> bool test_const_prop() {
     return fail;
 }
 
-TEST_BOTH(05_const_prop) {
+TEST_BOTH_FLOAT_AGNOSTIC(05_const_prop) {
     /* This very large test runs every implemented operation with a variety of
        scalar and memory inputs and compares their output. This is to ensure
        that Dr.Jit's builtin constant propagation pass produces results
        that are equivalent to the native implementation. */
     bool fail = false;
-    fail |= test_const_prop<Float>();
+
+    using Float32 = typename Float::template ReplaceValue<float>;
+    using Float16 = typename Float::template ReplaceValue<drjit::dr_half>;
+
+    fail |= test_const_prop<Float32>();
+    fail |= test_const_prop<Float16>();
     fail |= test_const_prop<Array<double>>();
     fail |= test_const_prop<UInt32>();
     fail |= test_const_prop<Int32>();
@@ -482,12 +486,12 @@ TEST_BOTH(05_const_prop) {
     jit_assert(!fail);
 }
 
-TEST_BOTH(06_cast) {
+TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
     /* This test tries every possible type conversion, verifying constant
        propagation to the native CUDA/LLVM implementation */
 
     VarType types[] {
-        //VarType::Float16,
+        VarType::Float16,
         VarType::Float32,
         VarType::Float64,
         VarType::Int32,
@@ -590,7 +594,7 @@ TEST_BOTH(06_cast) {
     jit_assert(!fail);
 }
 
-TEST_BOTH(07_and_or_mixed) {
+TEST_BOTH_FLOAT_AGNOSTIC(07_and_or_mixed) {
     // Tests JitOp::And/Or applied to a non-mask type and a mask
 
     for (int i = 0; i < 4; ++i) {

@@ -1,7 +1,7 @@
 #include "test.h"
 #include <algorithm>
 
-TEST_BOTH(01_all_any) {
+TEST_BOTH_FLOAT_AGNOSTIC(01_all_any) {
     using Bool = Array<bool>;
 
     scoped_set_log_level ssll(LogLevel::Info);
@@ -33,7 +33,7 @@ TEST_BOTH(01_all_any) {
     }
 }
 
-TEST_BOTH(02_prefix_sum_exc_u32) {
+TEST_BOTH_FLOAT_AGNOSTIC(02_prefix_sum_exc_u32) {
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
         uint32_t size = 23*i*i*i + 1;
@@ -55,7 +55,7 @@ TEST_BOTH(02_prefix_sum_exc_u32) {
     }
 }
 
-TEST_BOTH(03_prefix_sum_inc_u32) {
+TEST_BOTH_FLOAT_AGNOSTIC(03_prefix_sum_inc_u32) {
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
         uint32_t size = 23*i*i*i + 1;
@@ -77,23 +77,22 @@ TEST_BOTH(03_prefix_sum_inc_u32) {
     }
 }
 
-TEST_BOTH(04_prefix_sum_exc_f32) {
-    using Float32 = typename Float::template ReplaceValue<float>;
+TEST_BOTH_FP32(04_prefix_sum_exc_f32) {
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 80; ++i) {
         uint32_t size = 23*i*i*i + 1;
 
-        Float32 result = full<Float32>(1, size);
-        Float32 ref    = arange<Float32>(size);
+        Float result = full<Float>(1, size);
+        Float ref    = arange<Float>(size);
         jit_var_schedule(result.index());
         jit_var_schedule(ref.index());
-        jit_prefix_sum(Float32::Backend, VarType::Float32, true, result.data(), size, result.data());
+        jit_prefix_sum(Float::Backend, VarType::Float32, true, result.data(), size, result.data());
         float f = hsum(abs(result - ref)).read(0);
         jit_assert(f < 1e-6);
     }
 }
 
-TEST_BOTH(05_prefix_sum_inc_f32) {
+TEST_BOTH_FP32(05_prefix_sum_inc_f32) {
     using Float32 = typename Float::template ReplaceValue<float>;
     for (uint32_t i = 0; i < 80; ++i) {
         uint32_t size = 23*i*i*i + 1;
@@ -108,7 +107,7 @@ TEST_BOTH(05_prefix_sum_inc_f32) {
     }
 }
 
-TEST_BOTH(06_prefix_sum_exc_u64) {
+TEST_BOTH_FLOAT_AGNOSTIC(06_prefix_sum_exc_u64) {
     using UInt64 = typename UInt32::template ReplaceValue<uint64_t>;
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
@@ -132,7 +131,7 @@ TEST_BOTH(06_prefix_sum_exc_u64) {
     }
 }
 
-TEST_BOTH(07_prefix_sum_inc_u64) {
+TEST_BOTH_FLOAT_AGNOSTIC(07_prefix_sum_inc_u64) {
     using UInt64 = typename UInt32::template ReplaceValue<uint64_t>;
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
@@ -156,7 +155,7 @@ TEST_BOTH(07_prefix_sum_inc_u64) {
     }
 }
 
-TEST_BOTH(08_prefix_sum_exc_f64) {
+TEST_BOTH_FLOAT_AGNOSTIC(08_prefix_sum_exc_f64) {
     using Double = typename Float::template ReplaceValue<double>;
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
@@ -174,7 +173,7 @@ TEST_BOTH(08_prefix_sum_exc_f64) {
     }
 }
 
-TEST_BOTH(09_prefix_sum_inc_f64) {
+TEST_BOTH_FLOAT_AGNOSTIC(09_prefix_sum_inc_f64) {
     using Double = typename Float::template ReplaceValue<double>;
     scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
