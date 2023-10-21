@@ -143,7 +143,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
     char *compressed = nullptr, *uncompressed = nullptr;
 
     CacheFileHeader header;
-    uint32_t padding_size;
+    uint32_t padding_size = 0;
     bool success = true;
     std::vector<void *> func;
 
