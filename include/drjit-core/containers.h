@@ -157,11 +157,9 @@ template <typename T, typename... Ts> struct dr_tuple<T, Ts...> : dr_tuple<Ts...
     dr_tuple& operator=(dr_tuple &&) = default;
     dr_tuple& operator=(const dr_tuple &) = default;
 
-    dr_tuple(const T& value, const Ts&... ts)
-        : Base(ts...), value(value) { }
-
-    dr_tuple(T&& value, Ts&&... ts)
-        : Base(std::move(ts)...), value(std::move(value)) { }
+    template <typename T_, typename... Ts_>
+    dr_tuple(T_&& value, Ts_&&... ts)
+        : Base(std::forward<Ts_>(ts)...), value(std::forward<T_>(value)) { }
 
     template <size_t I> auto& get() {
         if constexpr (I == 0)
