@@ -81,6 +81,7 @@ void jitc_registry_put(JitBackend backend, const char *domain_name, void *ptr) {
     if (!domain.free_pq.empty()) {
         index = domain.free_pq.top();
         domain.free_pq.pop();
+        domain.fwd_map[index] = ptr;
     } else {
         index = domain.fwd_map.size();
         domain.fwd_map.push_back(ptr);
@@ -138,21 +139,22 @@ uint32_t jitc_registry_id_bound(JitBackend backend, const char *domain) {
         return r.domains[it->second].id_bound;
 }
 
-void *jitc_registry_ptr(JitBackend backend, const char *domain, uint32_t id) {
+void *jitc_registry_ptr(JitBackend backend, const char *domain_name, uint32_t id) {
     if (id == 0)
         return nullptr;
 
     Registry &r = registry;
-    auto it = r.domain_ids.find(DomainKey{ backend, domain });
+    auto it = r.domain_ids.find(DomainKey{ backend, domain_name });
     void *ptr = nullptr;
+
     if (it != r.domain_ids.end()) {
         Domain &domain = r.domains[it->second];
-        if (id <= domain.fwd_map.size())
-            ptr = domain.fwd_map[id - 1];
+        if (id - 1 >= domain.fwd_map.size())
+            jitc_raise("jit_registry_ptr(domain=\"%s\", id=%u): instance is "
+                       "not registered!",
+                       domain_name, id);
+        ptr = domain.fwd_map[id - 1];
     }
-
-    if (!ptr)
-        jitc_raise("jit_registry_ptr(domain=\"%s\", id=%u): instance is not registered!", domain, id);
 
     return ptr;
 }
