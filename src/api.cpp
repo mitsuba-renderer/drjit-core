@@ -546,15 +546,23 @@ size_t jit_var_size(uint32_t index) {
     return (size_t) jitc_var(index)->size;
 }
 
-int jit_var_is_literal(uint32_t index) {
+VarState jit_var_state(uint32_t index) {
     if (index == 0)
-        return 0;
+        return VarState::Invalid;
 
     lock_guard guard(state.lock);
-    return (int) jitc_var(index)->is_literal();
+    const Variable *v = jitc_var(index);
+    if (v->symbolic)
+        return VarState::Symbolic;
+    else if (v->is_data())
+        return VarState::Evaluated;
+    else if (v->is_literal())
+        return VarState::Literal;
+    else
+        return VarState::Normal;
 }
 
-int jit_var_is_literal_zero(uint32_t index) {
+int jit_var_is_zero_literal(uint32_t index) {
     if (index == 0)
         return 0;
 
@@ -563,7 +571,7 @@ int jit_var_is_literal_zero(uint32_t index) {
     return v->is_literal() && v->literal == 0;
 }
 
-int jit_var_is_normal_literal(uint32_t index) {
+int jit_var_is_finite_literal(uint32_t index) {
     if (index == 0)
         return 0;
 
@@ -575,7 +583,7 @@ int jit_var_is_normal_literal(uint32_t index) {
     switch ((VarType) v->type) {
         case VarType::Float16:
             jitc_raise(
-                "jit_var_is_normal_literal(): float16 case unsupported!");
+                "jit_var_is_finite_literal(): float16 case unsupported!");
 
         case VarType::Float32: {
                 float f;
@@ -592,22 +600,6 @@ int jit_var_is_normal_literal(uint32_t index) {
         default:
             return 1;
     }
-}
-
-int jit_var_is_evaluated(uint32_t index) {
-    if (index == 0)
-        return 0;
-
-    lock_guard guard(state.lock);
-    return (int) jitc_var(index)->is_data();
-}
-
-int jit_var_is_symbolic(uint32_t index) {
-    if (index == 0)
-        return 0;
-
-    lock_guard guard(state.lock);
-    return (int) jitc_var(index)->symbolic;
 }
 
 uint32_t jit_var_resize(uint32_t index, size_t size) {

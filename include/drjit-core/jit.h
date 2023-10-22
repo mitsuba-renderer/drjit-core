@@ -998,20 +998,48 @@ extern JIT_EXPORT size_t jit_var_size(uint32_t index);
 /// Query the type of a given variable
 extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
 
+
+#if defined(__cplusplus)
+
+// Enumeration describing possible evaluation states of a Dr.Jit variable
+enum class VarState : uint32_t {
+    /// The variable has length 0 and effectively does not exist
+    Invalid,
+
+    /// An ordinary unevaluated variable that is neither a literal constant nor symbolic.
+    Normal,
+
+    /// A literal constant. Does not consume device memory.
+    Literal,
+
+    /// An evaluated variable backed by a device memory region.
+    Evaluated,
+
+    /// A symbolic variable that could take on various inputs. Cannot be evaluated.
+    Symbolic,
+
+    /// This is a nested array, and the components have mixed states
+    Mixed
+};
+#else
+enum VarState {
+    VarStateInvalid,
+    VarStateNormal,
+    VarStateLiteral,
+    VarStateEvaluated,
+    VarStateSymbolic,
+    VarStateMixed
+};
+#endif
+
 /// Check if a variable is a literal constant
-extern JIT_EXPORT int jit_var_is_literal(uint32_t index);
+extern JIT_EXPORT JIT_ENUM VarState jit_var_state(uint32_t index);
 
 /// Check if a variable is a literal zero
-extern JIT_EXPORT int jit_var_is_literal_zero(uint32_t index);
-
-/// Check if a variable is evaluated
-extern JIT_EXPORT int jit_var_is_evaluated(uint32_t index);
-
-/// Check if a variable represents symbolic computation (i.e. with abstract inputs)
-extern JIT_EXPORT int jit_var_is_symbolic(uint32_t index);
+extern JIT_EXPORT int jit_var_is_zero_literal(uint32_t index);
 
 /// Check if a variable represents a normal (not NaN/infinity) literal
-extern JIT_EXPORT int jit_var_is_normal_literal(uint32_t index);
+extern JIT_EXPORT int jit_var_is_finite_literal(uint32_t index);
 
 /**
  * \brief Resize a scalar variable to a new size
