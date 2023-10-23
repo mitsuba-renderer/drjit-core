@@ -508,7 +508,7 @@ extern JIT_EXPORT void jit_registry_remove(const void *ptr);
 /// Return the instance ID associated with the pointer, or 0 if it is ``NULL``.
 extern JIT_EXPORT uint32_t jit_registry_id(const void *ptr);
 
-/// Return a number that exceeds the highest-valued instance ID for the given domain
+/// Return the largest instance ID for the given domain
 extern JIT_EXPORT uint32_t jit_registry_id_bound(JitBackend backend,
                                                  const char *domain);
 
