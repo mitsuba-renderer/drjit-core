@@ -812,12 +812,14 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
     if (domain)
         bucket_count = jitc_registry_id_bound(backend, domain);
     else
-        bucket_count = *bucket_count_inout + 1;
+        bucket_count = *bucket_count_inout;
 
-    if (unlikely(bucket_count == 1)) {
+    if (unlikely(bucket_count == 0)) {
         *bucket_count_inout = 0;
         return nullptr;
     }
+
+    bucket_count++;
 
     // Ensure input index array is fully evaluated
     jitc_var_eval(index);
@@ -825,9 +827,9 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
     uint32_t size = jitc_var(index)->size;
 
     if (domain)
-        jitc_log(Debug, "jit_vcall(r%u, domain=\"%s\")", index, domain);
+        jitc_log(InfoSym, "jit_var_vcall_reduce(r%u, domain=\"%s\")", index, domain);
     else
-        jitc_log(Debug, "jitc_var_vcall_reduce(r%u)", index);
+        jitc_log(InfoSym, "jit_var_vcall_reduce(r%u)", index);
 
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
            offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
