@@ -21,7 +21,7 @@ extern void jitc_registry_remove(const void *ptr);
 /// Get the instance ID associated with the given pointer
 extern uint32_t jitc_registry_id(const void *ptr);
 
-/// Return a number that exceeds the highest-valued instance ID for the given domain
+/// Return the largest instance ID for the given domain
 extern uint32_t jitc_registry_id_bound(JitBackend backend, const char *domain);
 
 /// Return the pointer value associated with a given instance ID
