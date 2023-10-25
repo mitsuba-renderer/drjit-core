@@ -167,6 +167,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         ScheduledVariable &sv = schedule[group_index];
         uint32_t index = sv.index;
         Variable *v = jitc_var(index);
+        v->ssa_f32_cast = 0;
 
         // Some sanity checks
         if (unlikely((JitBackend) v->backend != backend))

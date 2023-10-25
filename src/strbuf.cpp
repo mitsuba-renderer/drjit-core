@@ -261,7 +261,6 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
 
                 case 'b':
                 case 't':
-                case 'T':
                     (void) va_arg(args, const Variable *); arg++;
                     len += MAXSIZE_TYPE;
                     break;
@@ -330,12 +329,6 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                 case 't': {
                         const Variable *v = va_arg(args2, const Variable *);
                         put_unchecked(type_name_ptx[v->type]);
-                    }
-                    break;
-
-                case 'T': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_ptx_fp16_adjusted[v->type]);
                     }
                     break;
 
@@ -637,8 +630,8 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                             vt = VarType::Float64;
                         }
                         else if (vt == VarType::Float16) {
-                            drjit::dr_half h;
-                            memcpy(&h, &literal, sizeof(drjit::dr_half));
+                            drjit::half h;
+                            memcpy(&h, &literal, sizeof(drjit::half));
                             double d = float(h);
                             memcpy(&literal, &d, sizeof(uint64_t));
                             vt = VarType::Float64;

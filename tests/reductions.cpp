@@ -93,15 +93,14 @@ TEST_BOTH_FP32(04_prefix_sum_exc_f32) {
 }
 
 TEST_BOTH_FP32(05_prefix_sum_inc_f32) {
-    using Float32 = typename Float::template ReplaceValue<float>;
     for (uint32_t i = 0; i < 80; ++i) {
         uint32_t size = 23*i*i*i + 1;
 
-        Float32 result = full<Float32>(1, size);
-        Float32 ref    = arange<Float32>(size) + Float32(1.f);
+        Float result = full<Float>(1, size);
+        Float ref    = arange<Float>(size) + 1.f;
         jit_var_schedule(result.index());
         jit_var_schedule(ref.index());
-        jit_prefix_sum(Float32::Backend, VarType::Float32, false, result.data(), size, result.data());
+        jit_prefix_sum(Float::Backend, VarType::Float32, false, result.data(), size, result.data());
         float f = hsum(abs(result - ref)).read(0);
         jit_assert(f < 1e-6);
     }
