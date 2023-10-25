@@ -216,12 +216,11 @@ extern const char *type_name_short[(int) VarType::Count];
 extern const uint32_t type_size   [(int) VarType::Count];
 
 /// Type names and register names for CUDA and LLVM
-extern const char *type_name_llvm               [(int) VarType::Count];
-extern const char *type_name_llvm_bin           [(int) VarType::Count];
-extern const char *type_name_llvm_abbrev        [(int) VarType::Count];
-extern const char *type_name_llvm_big           [(int) VarType::Count];
-extern const char *type_name_ptx                [(int) VarType::Count];
-extern const char* type_name_ptx_fp16_adjusted  [(int) VarType::Count];
-extern const char *type_name_ptx_bin            [(int) VarType::Count];
-extern const char *type_prefix                  [(int) VarType::Count];
-extern const char *type_size_str                [(int) VarType::Count];
+extern const char *type_name_llvm       [(int) VarType::Count];
+extern const char *type_name_llvm_bin   [(int) VarType::Count];
+extern const char *type_name_llvm_abbrev[(int) VarType::Count];
+extern const char *type_name_llvm_big   [(int) VarType::Count];
+extern const char *type_name_ptx        [(int) VarType::Count];
+extern const char *type_name_ptx_bin    [(int) VarType::Count];
+extern const char *type_prefix          [(int) VarType::Count];
+extern const char *type_size_str        [(int) VarType::Count];

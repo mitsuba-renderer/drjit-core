@@ -13,6 +13,7 @@
 #pragma once
 
 #include <drjit-core/traits.h>
+#include <drjit-core/half.h>
 
 NAMESPACE_BEGIN(drjit)
 
@@ -25,7 +26,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     static constexpr bool IsClass =
         std::is_pointer<Value_>::value &&
         std::is_class<typename std::remove_pointer<Value_>::type>::value;
-	template <typename T> using ReplaceValue = JitArray<Backend_, T>;
+    template <typename T> using ReplaceValue = JitArray<Backend_, T>;
     using ActualValue = typename std::conditional<IsClass, uint32_t, Value>::type;
 
     JitArray() = default;
@@ -76,6 +77,9 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         m_index = jit_var_mem_copy(Backend, AllocType::Host, Type, data,
                                    sizeof...(Ts));
     }
+
+    template <typename T, enable_if_t<drjit::is_arithmetic_v<T>> = 0>
+    JitArray(T val) : JitArray((Value)val) {}
 
     JitArray &operator=(const JitArray &a) {
         jit_var_inc_ref(a.m_index);

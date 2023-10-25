@@ -33,12 +33,6 @@ const char *type_name_ptx[(int) VarType::Count] {
     "u32", "s64",  "u64", "u64", "f16", "f32", "f64"
 };
 
-/// CUDA PTX type names (mapping f16 to b16)
-const char *type_name_ptx_fp16_adjusted[(int) VarType::Count] {
-    "???", "pred", "s8",  "u8",  "s16", "u16", "s32",
-    "u32", "s64",  "u64", "u64", "b16", "f32", "f64"
-};
-
 /// CUDA PTX type names (binary view)
 const char *type_name_ptx_bin[(int) VarType::Count] {
     "???", "pred", "b8",  "b8",  "b16", "b16", "b32",
@@ -205,6 +199,186 @@ const char *var_kind_name[(int) VarKind::Count] {
 
     // SSA Phi variable at end of loop
     "loop_result"
+};
+
+const bool var_kind_fp16_supported_cuda[(int) VarKind::Count] {
+    // Invalid
+    true,
+
+    // An evaluated node representing data
+    true,
+
+    // Legacy string-based IR statement
+    true,
+
+    // A literal constant
+    true,
+
+    // A no-op (generates no code)
+    true,
+
+    // Common unary operations
+    true, true, false /* sqrt */, true,
+
+    // Common binary arithmetic operations
+    true, true, true, false /*div*/, true,
+
+    // High multiplication
+    true,
+
+    // Fused multiply-add
+    true,
+
+    // Minimum, maximum
+    true, true,
+
+    // Rounding operations
+    true, true, true, true,
+
+    // Comparisons
+    true, true, true, true, true, true,
+
+    // Ternary operator
+    true,
+
+    // Bit-level counting operations
+    true, true, true,
+
+    // Bit-wise operations
+    true, true, true,
+
+    // Shifts
+    true, true,
+
+    // Fast approximations
+    false /*rcp*/, false /*rsqrt*/,
+
+    // Multi-function generator (CUDA)
+    true, true, true, true,
+
+    // Casts
+    true, true,
+
+    // Memory-related operations
+    true, true, true,
+
+    // Specialized nodes for vcalls
+    true, true,
+
+    // Counter node to determine the current lane ID
+    true,
+
+    // Default mask used to ignore out-of-range SIMD lanes (LLVM)
+    true,
+
+    // Recorded 'printf' instruction for debugging purposes
+    true,
+
+    // A polymorphic function call
+    true,
+
+    // Perform a standard texture lookup (CUDA)
+    true,
+
+    // Load all texels used for bilinear interpolation (CUDA)
+    true,
+
+    // Perform a ray tracing call
+    true,
+
+    // Extract a component from an operation that produced multiple results
+    true, 
+};
+
+const bool var_kind_fp16_supported_llvm[(int) VarKind::Count] {
+    // Invalid
+    true,
+
+    // An evaluated node representing data
+    true,
+
+    // Legacy string-based IR statement
+    true,
+
+    // A literal constant
+    true,
+
+    // A no-op (generates no code)
+    true,
+
+    // Common unary operations
+    true, true, true, true,
+
+    // Common binary arithmetic operations
+    true, true, true, true, true,
+
+    // High multiplication
+    true,
+
+    // Fused multiply-add
+    true,
+    // Minimum, maximum
+#if defined (__aarch64__)
+    true, true,
+#else
+    false, false,
+#endif
+    // Rounding operations
+    true, true, true, true,
+
+    // Comparisons
+    true, true, true, true, true, true,
+
+    // Ternary operator
+    true,
+
+    // Bit-level counting operations
+    true, true, true,
+
+    // Bit-wise operations
+    true, true, true,
+
+    // Shifts
+    true, true,
+
+    // Fast approximations
+    true, true,
+
+    // Multi-function generator (CUDA)
+    true, true, true, true,
+
+    // Casts
+    true, true,
+
+    // Memory-related operations
+    true, true, true,
+
+    // Specialized nodes for vcalls
+    true, true,
+
+    // Counter node to determine the current lane ID
+    true,
+
+    // Default mask used to ignore out-of-range SIMD lanes (LLVM)
+    true,
+
+    // Recorded 'printf' instruction for debugging purposes
+    true,
+
+    // A polymorphic function call
+    true,
+
+    // Perform a standard texture lookup (CUDA)
+    true,
+
+    // Load all texels used for bilinear interpolation (CUDA)
+    true,
+
+    // Perform a ray tracing call
+    true,
+
+    // Extract a component from an operation that produced multiple results
+    true, 
 };
 
 
@@ -455,7 +629,7 @@ void jitc_value_print(const Variable *v, bool graphviz = false) {
         break;
 
     switch ((VarType) v->type) {
-        case VarType::Float16: JIT_LITERAL_PRINT(uint16_t, unsigned, "%u");
+        case VarType::Float16: JIT_LITERAL_PRINT(drjit::half, float, "%g");
         case VarType::Float32: JIT_LITERAL_PRINT(float, float, "%g");
         case VarType::Float64: JIT_LITERAL_PRINT(double, double, "%g");
         case VarType::Bool:    JIT_LITERAL_PRINT(bool, int, "%i");
@@ -952,7 +1126,7 @@ const char *jitc_var_str(uint32_t index) {
             case VarType::UInt32:  var_buffer.fmt("%"   PRIu32 "%s", *((uint32_t *) dst), comma); break;
             case VarType::Int64:   var_buffer.fmt("%"   PRId64 "%s", *(( int64_t *) dst), comma); break;
             case VarType::UInt64:  var_buffer.fmt("%"   PRIu64 "%s", *((uint64_t *) dst), comma); break;
-            case VarType::Float16: var_buffer.fmt("%g%s", float(*((drjit::dr_half *) dst)), comma); break;
+            case VarType::Float16: var_buffer.fmt("%g%s", float(*((drjit::half *) dst)), comma); break;
             case VarType::Float32: var_buffer.fmt("%g%s", *((float *) dst), comma); break;
             case VarType::Float64: var_buffer.fmt("%g%s", *((double *) dst), comma); break;
             default: jitc_fail("jit_var_str(): unsupported type!");

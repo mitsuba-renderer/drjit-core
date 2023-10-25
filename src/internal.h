@@ -217,6 +217,9 @@ struct Variable {
     /// If set, evaluation will have side effects on other variables
     uint32_t side_effect : 1;
 
+    /// Tracks if an SSA (LLVM) implicit f32 cast has been performed during assembly
+    uint32_t ssa_f32_cast : 1;
+
     // =========== Entries that are temporarily used in jitc_eval() ============
 
     /// Argument type
@@ -229,7 +232,7 @@ struct Variable {
     uint32_t consumed : 1;
 
     /// Unused for now
-    uint32_t unused_2 : 6;
+    uint32_t unused_2 : 5;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;
@@ -832,3 +835,5 @@ inline bool jitc_is_one(Variable *v) {
 }
 
 extern const char *var_kind_name[(int) VarKind::Count];
+extern const bool var_kind_fp16_supported_cuda[(int) VarKind::Count];
+extern const bool var_kind_fp16_supported_llvm[(int) VarKind::Count];

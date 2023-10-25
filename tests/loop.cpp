@@ -17,7 +17,7 @@ TEST_BOTH(01_record_loop) {
             while (loop(x < 5)) {
                 y += Float(x);
                 x += 1;
-                z += Float(1);
+                z += 1;
             }
 
             if (j == 0) {

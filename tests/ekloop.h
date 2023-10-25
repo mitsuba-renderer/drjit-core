@@ -30,7 +30,7 @@ template <typename Mask, typename SFINAE = int> struct Loop;
 
 /// Scalar fallback, expands into normal C++ loop
 template <typename Value>
-struct Loop<Value, enable_if_t<std::is_scalar_v<Value>>> {
+struct Loop<Value, enable_if_t<drjit::is_scalar_v<Value>>> {
     Loop(const Loop &) = delete;
     Loop(Loop &&) = delete;
     Loop& operator=(const Loop &) = delete;

@@ -20,12 +20,12 @@ using FloatC  = CUDAArray<float>;
 using Int32C  = CUDAArray<int32_t>;
 using UInt32C = CUDAArray<uint32_t>;
 using MaskC   = CUDAArray<bool>;
-using HalfC   = CUDAArray<drjit::dr_half>;
+using HalfC   = CUDAArray<drjit::half>;
 using FloatL  = LLVMArray<float>;
 using Int32L  = LLVMArray<int32_t>;
 using UInt32L = LLVMArray<uint32_t>;
 using MaskL   = LLVMArray<bool>;
-using HalfL   = LLVMArray<drjit::dr_half>;
+using HalfL   = LLVMArray<drjit::half>;
 
 #define TEST_REGISTER_CUDA(name, suffix, FloatType, ...)                       \
     int test##name##_##suffix =                                                \

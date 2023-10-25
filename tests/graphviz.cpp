@@ -26,7 +26,7 @@ TEST_CUDA(01_graphviz) {
 
     jit_prefix_push(Backend, "Scope 2");
     jit_prefix_push(Backend, "Nested scope");
-    Float f = a + Float(6);
+    Float f = a + 6;
     jit_prefix_pop(Backend);
     jit_prefix_pop(Backend);
     Float g = Float::steal(jit_var_wrap_vcall(f.index()));
