@@ -895,6 +895,12 @@ uint32_t jit_var_loop(const char *name, uint32_t loop_init, uint32_t loop_cond,
                          indices, checkpoint, first_round);
 }
 
+void jit_aggregate(JitBackend backend, void *dst, AggregationEntry *agg,
+                   uint32_t size) {
+    lock_guard guard(state.lock);
+    return jitc_aggregate(backend, dst, agg, size);
+}
+
 struct VCallBucket *
 jit_var_vcall_reduce(JitBackend backend, const char *domain, uint32_t index,
                      uint32_t *bucket_count_inout) {

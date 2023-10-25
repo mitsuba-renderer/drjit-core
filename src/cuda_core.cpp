@@ -37,7 +37,7 @@ CUfunction *jitc_cuda_block_copy[(int) VarType::Count] { };
 CUfunction *jitc_cuda_block_sum [(int) VarType::Count] { };
 CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                 [(int) VarType::Count] = { };
-CUfunction *jitc_cuda_vcall_prepare = nullptr;
+CUfunction *jitc_cuda_aggregate = nullptr;
 
 void jitc_cuda_compile(const char *buf, size_t buf_size, Kernel &kernel) {
     const uintptr_t log_size = 16384;
@@ -280,7 +280,7 @@ bool jitc_cuda_init() {
         LOAD(prefix_sum_large_init);
         LOAD(compress_small);
         LOAD(compress_large);
-        LOAD(vcall_prepare);
+        LOAD(aggregate);
 
         #undef LOAD
 

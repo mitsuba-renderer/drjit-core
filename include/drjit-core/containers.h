@@ -104,8 +104,10 @@ template <typename T> struct dr_vector {
         m_data[m_size++] = value;
     }
 
-    void resize(size_t size) {
+    void resize(size_t size, T value = T()) {
         reserve(size);
+        for (size_t i = m_size; i < size; ++i)
+            m_data[i] = value;
         m_size = size;
     }
 
