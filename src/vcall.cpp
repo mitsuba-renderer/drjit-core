@@ -263,12 +263,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
         data_v = steal(jitc_var_pointer(backend, data_d, data_buf, 0));
 
-        VCallDataRecord *rec = (VCallDataRecord *)
+        AggregationEntry *agg = (AggregationEntry *)
             jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned
                                                     : AllocType::Host,
-                        sizeof(VCallDataRecord) * vcall->data_map.size());
+                        sizeof(AggregationEntry) * vcall->data_map.size());
 
-        VCallDataRecord *p = rec;
+        AggregationEntry *p = agg;
 
         for (auto kv : vcall->data_map) {
             uint32_t index = (uint32_t) kv.first, offset = kv.second;
@@ -278,17 +278,17 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             const Variable *v = jitc_var(index);
             bool is_pointer = (VarType) v->type == VarType::Pointer;
             p->offset = offset;
-            p->size = is_pointer ? 0u : type_size[v->type];
+            p->size = is_pointer ? 8 : -(int) type_size[v->type];
             p->src = is_pointer ? (const void *) v->literal : v->data;
             p++;
         }
 
-        std::sort(rec, p,
-                  [](const VCallDataRecord &a, const VCallDataRecord &b) {
+        std::sort(agg, p,
+                  [](const AggregationEntry &a, const AggregationEntry &b) {
                       return a.offset < b.offset;
                   });
 
-        jitc_vcall_prepare(backend, data_d, rec, (uint32_t)(p - rec));
+        jitc_aggregate(backend, data_d, agg, (uint32_t) (p - agg));
     } else {
         vcall->data_map.clear();
     }

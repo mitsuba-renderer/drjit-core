@@ -5,7 +5,7 @@
     both CUDA PTX and LLVM IR as intermediate representations. It takes care of
     many tricky aspects, such as recording of arithmetic and higher-level
     operations (loops, virtual function calls), asynchronous memory allocation
-    and release, multi-device computation, kernel caching and reuse, common
+    and release, kernel caching and reuse, constant propagation, common
     subexpression elimination, etc.
 
     While the library is internally implemented using C++17, this header file
@@ -1669,6 +1669,37 @@ extern JIT_EXPORT uint32_t jit_compress(JIT_ENUM JitBackend backend, const uint8
 extern JIT_EXPORT uint32_t jit_mkperm(JIT_ENUM JitBackend backend, const uint32_t *values,
                                       uint32_t size, uint32_t bucket_count,
                                       uint32_t *perm, uint32_t *offsets);
+
+/// Helper data structure used to initialize the data block consumed by a vcall
+struct AggregationEntry {
+    int32_t size;
+    uint32_t offset;
+    const void *src;
+};
+
+/**
+ * \brief Aggregate memory from different sources and write it to an output
+ * array
+ *
+ * This function writes to the device memory address ``dst`` following the
+ * instructions provided in the form of ``size`` separate ``AggregationEntry``
+ * values reachable through the ``agg``` pointer.
+ *
+ * For each entry, it does the following:
+ *
+ * - if ``AggregationEntry::size`` is positive, it interprets
+ *   ``AggregationEntry::src`` as an integer and copies its
+ *   lowest ``size`` bytes to ``dst+offset``.
+ *
+ * - if ``AggregationEntry::size`` is negative, it interprets
+ *   ``AggregationEntry::src`` as a ponter and copies
+ *   ``-size`` bytes from this address to ``dst+offset``.
+ *
+ * Only size = +/- 1, 2, 4, and 8 are supported. The function runs
+ * asynchronously.
+ */
+extern JIT_EXPORT void jit_aggregate(JitBackend backend, void *dst,
+                                     AggregationEntry *agg, uint32_t size);
 
 /// Helper data structure for vector method calls, see \ref jit_var_vcall()
 struct VCallBucket {

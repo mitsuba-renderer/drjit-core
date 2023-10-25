@@ -1332,29 +1332,29 @@ void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size) {
     }
 }
 
-
-void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, uint32_t size) {
+void jitc_aggregate(JitBackend backend, void *dst_, AggregationEntry *agg,
+                    uint32_t size) {
     ThreadState *ts = thread_state(backend);
 
     if (backend == JitBackend::CUDA) {
         scoped_set_context guard(ts->context);
         const Device &device = state.devices[ts->device];
-        CUfunction func = jitc_cuda_vcall_prepare[device.id];
-        void *args[] = { &dst_, &rec_, &size };
+        CUfunction func = jitc_cuda_aggregate[device.id];
+        void *args[] = { &dst_, &agg, &size };
 
         uint32_t block_count, thread_count;
         device.get_launch_config(&block_count, &thread_count, size);
 
         jitc_log(InfoSym,
-                 "jit_vcall_prepare(" DRJIT_PTR " -> " DRJIT_PTR
+                 "jit_aggregate(" DRJIT_PTR " -> " DRJIT_PTR
                  ", size=%u, blocks=%u, threads=%u)",
-                 (uintptr_t) rec_, (uintptr_t) dst_, size, block_count,
+                 (uintptr_t) agg, (uintptr_t) dst_, size, block_count,
                  thread_count);
 
         jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
                         ts->stream, args, nullptr, 1);
 
-        jitc_free(rec_);
+        jitc_free(agg);
     } else {
         uint32_t work_unit_size = size, work_units = 1;
         if (pool_size() > 1) {
@@ -1363,35 +1363,38 @@ void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, u
         }
 
         jitc_log(InfoSym,
-                 "jit_vcall_prepare(" DRJIT_PTR " -> " DRJIT_PTR
+                 "jit_aggregate(" DRJIT_PTR " -> " DRJIT_PTR
                  ", size=%u, work_units=%u)",
-                 (uintptr_t) rec_, (uintptr_t) dst_, size, work_units);
+                 (uintptr_t) agg, (uintptr_t) dst_, size, work_units);
 
         jitc_submit_cpu(
             KernelType::Other,
-            [dst_, rec_, size, work_unit_size](uint32_t index) {
+            [dst_, agg, size, work_unit_size](uint32_t index) {
                 uint32_t start = index * work_unit_size,
                          end = std::min(start + work_unit_size, size);
 
                 for (uint32_t i = start; i != end; ++i) {
-                    VCallDataRecord rec = rec_[i];
+                    AggregationEntry e = agg[i];
 
-                    const void *src = rec.src;
-                    void *dst = (uint8_t *) dst_ + rec.offset;
+                    const void *src = e.src;
+                    void *dst = (uint8_t *) dst_ + e.offset;
 
-                    switch (rec.size) {
-                        case 0: *(uint64_t *) dst = (uint64_t)    src; break;
-                        case 1: *(uint8_t *)  dst = *(uint8_t *)  src; break;
-                        case 2: *(uint16_t *) dst = *(uint16_t *) src; break;
-                        case 4: *(uint32_t *) dst = *(uint32_t *) src; break;
-                        case 8: *(uint64_t *) dst = *(uint64_t *) src; break;
+                    switch (e.size) {
+                        case  1: *(uint8_t *)  dst =  (uint8_t)  (uintptr_t) src; break;
+                        case  2: *(uint16_t *) dst =  (uint16_t) (uintptr_t) src; break;
+                        case  4: *(uint32_t *) dst =  (uint32_t) (uintptr_t) src; break;
+                        case  8: *(uint64_t *) dst =  (uint64_t) (uintptr_t) src; break;
+                        case -1: *(uint8_t *)  dst = *(uint8_t *)  src; break;
+                        case -2: *(uint16_t *) dst = *(uint16_t *) src; break;
+                        case -4: *(uint32_t *) dst = *(uint32_t *) src; break;
+                        case -8: *(uint64_t *) dst = *(uint64_t *) src; break;
                     }
                 }
             },
             size, work_units);
 
         jitc_submit_cpu(
-            KernelType::Other, [rec_](uint32_t) { jit_free(rec_); }, 1, 1,
+            KernelType::Other, [agg](uint32_t) { jit_free(agg); }, 1, 1,
             true, true);
     }
 }

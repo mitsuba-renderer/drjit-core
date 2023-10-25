@@ -32,12 +32,12 @@ KERNEL void fill_64(uint64_t *out, uint32_t size, uint64_t value) {
 }
 
 struct VCallDataRecord {
+    int32_t size;
     uint32_t offset;
-    uint32_t size;
     const void *src;
 };
 
-KERNEL void vcall_prepare(void *out, const VCallDataRecord *rec_, uint32_t size) {
+KERNEL void aggregate(void *out, const VCallDataRecord *rec_, uint32_t size) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size)
         return;
@@ -48,11 +48,14 @@ KERNEL void vcall_prepare(void *out, const VCallDataRecord *rec_, uint32_t size)
     void *dst = (uint8_t *) out + rec.offset;
 
     switch (rec.size) {
-        case 0: *(uint64_t *) dst = (uint64_t)    src; break;
-        case 1: *(uint8_t *)  dst = *(uint8_t *)  src; break;
-        case 2: *(uint16_t *) dst = *(uint16_t *) src; break;
-        case 4: *(uint32_t *) dst = *(uint32_t *) src; break;
-        case 8: *(uint64_t *) dst = *(uint64_t *) src; break;
+        case  1: *(uint8_t *)  dst = (uint8_t)  (uintptr_t) src; break;
+        case  2: *(uint16_t *) dst = (uint16_t) (uintptr_t) src; break;
+        case  4: *(uint32_t *) dst = (uint32_t) (uintptr_t) src; break;
+        case  8: *(uint64_t *) dst = (uint64_t) (uintptr_t) src; break;
+        case -1: *(uint8_t *)  dst = *(uint8_t *)  src; break;
+        case -2: *(uint16_t *) dst = *(uint16_t *) src; break;
+        case -4: *(uint32_t *) dst = *(uint32_t *) src; break;
+        case -8: *(uint64_t *) dst = *(uint64_t *) src; break;
     }
 }
 
