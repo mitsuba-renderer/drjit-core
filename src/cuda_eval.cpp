@@ -21,9 +21,6 @@
  * --------------------------------------------------------------------------
  *  $t      Variable      `f32`              Variable type
  * --------------------------------------------------------------------------
- *  $T      Variable      `b16`              Variable type, as above except
- *                                           mapping f16 to b16
- *  * -----------------------------------------------------------------------
  *  $b      Variable      `b32`              Variable type, binary format
  * --------------------------------------------------------------------------
  *  $v      Variable      `%f1234`           Variable name
@@ -193,7 +190,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                 fmt("    mad.wide.u32 %rd0, %r0, $a, %rd0;\n", v);
 
             if (vt != VarType::Bool) {
-                fmt("    $s$T $v, [%rd0];\n",
+                fmt("    $s$b $v, [%rd0];\n",
                     size > 1 ? "ld.global.cs." : "ldu.global.", v, v);
             } else {
                 fmt("    $s %w0, [%rd0];\n"
@@ -211,7 +208,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                 params_type, params_base, v, v);
 
             if (vt != VarType::Bool) {
-                fmt("    st.global.cs.$T [%rd0], $v;\n", v, v);
+                fmt("    st.global.cs.$b [%rd0], $v;\n", v, v);
             } else {
                 fmt("    selp.u16 %w0, 1, 0, $v;\n"
                     "    st.global.cs.u8 [%rd0], %w0;\n", v);
@@ -327,7 +324,7 @@ void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
 
         if (v->vcall_iface) {
             if (vt != VarType::Bool) {
-                fmt("    ld.param.$T $v, [params+$o];\n", v, v, v);
+                fmt("    ld.param.$b $v, [params+$o];\n", v, v, v);
             } else {
                 fmt("    ld.param.u8 %w0, [params+$o];\n"
                     "    setp.ne.u16 $v, %w0, 0;\n", v, v);
@@ -350,7 +347,7 @@ void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
                     "is happening now). This is not allowed.", sv.index);
 
             if (vt != VarType::Bool)
-                fmt("    ld.global.$T $v, [data+$u];\n",
+                fmt("    ld.global.$b $v, [data+$u];\n",
                     v, v, it->second - data_offset);
             else
                 fmt("    ld.global.u8 %w0, [data+$u];\n"
@@ -372,7 +369,7 @@ void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
         uint32_t vti = v->type;
 
         if ((VarType) vti != VarType::Bool) {
-            fmt("    st.param.$T [result+$u], $v;\n", v, offset, v);
+            fmt("    st.param.$b [result+$u], $v;\n", v, offset, v);
         } else {
             fmt("    selp.u16 %w0, 1, 0, $v;\n"
                 "    st.param.u8 [result+$u], %w0;\n",
@@ -397,6 +394,20 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
+    bool f32_upcast = jitc_is_half(v) && !var_kind_fp16_supported_cuda[v->kind];
+
+    if (f32_upcast) {
+        Variable* b = const_cast<Variable*>(v);
+        b->type = (uint32_t)VarType::Float32;
+        for (size_t i = 0; i < 4; ++i) {
+            Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
+            if (dep) {
+                fmt("    cvt.f32.f16 %f$u, %h$u;\n", dep->reg_index, dep->reg_index);
+                dep->type = (uint32_t)VarType::Float32;
+            }
+        }
+    }
+
     switch (v->kind) {
         case VarKind::Undefined:
         case VarKind::Literal:
@@ -420,17 +431,9 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::Sqrt:
-            if (jitc_is_half(v))
-                fmt("    cvt.f32.f16 %f0, $v;\n"
-                    "    sqrt.approx.ftz.f32 %f0, %f0;\n"
-                    "    cvt.rn.f16.f32 $v, %f0;\n",
-                    a0, v);
-            else if (jitc_is_single(v))
-                fmt("    sqrt.approx.ftz.$t $v, $v;\n",
-                    v, v, a0);
-            else
-                fmt("    sqrt.rn.$t $v, $v;\n",
-                    v, v, a0);
+            fmt(jitc_is_single(v) || jitc_is_half(v)
+                ? "    sqrt.approx.ftz.$t $v, $v;\n"
+                : "    sqrt.rn.$t $v, $v;\n", v, v, a0);
             break;
 
         case VarKind::Abs:
@@ -460,21 +463,13 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::Div:
-            if (jitc_is_half(v))
-                fmt("    cvt.f32.f16 %f0, $v;\n"
-                    "    cvt.f32.f16 %f1, $v;\n"
-                    "    div.approx.ftz.f32 %f0, %f0, %f1;\n"
-                    "    cvt.rn.f16.f32 $v, %f0;\n",
-                    a0, a1, v);
-            else {
-                if (jitc_is_single(v))
-                    stmt = "    div.approx.ftz.$t $v, $v, $v;\n";
-                else if (jitc_is_double(v))
-                    stmt = "    div.rn.$t $v, $v, $v;\n";
-                else
-                    stmt = "    div.$t $v, $v, $v;\n";
-                fmt(stmt, v, v, a0, a1);
-            }
+            if (jitc_is_single(v) || jitc_is_half(v))
+                stmt = "    div.approx.ftz.$t $v, $v, $v;\n";
+            else if (jitc_is_double(v))
+                stmt = "    div.rn.$t $v, $v, $v;\n";
+            else
+                stmt = "    div.$t $v, $v, $v;\n";
+            fmt(stmt, v, v, a0, a1);
             break;
 
         case VarKind::Mod:
@@ -564,7 +559,7 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
 
         case VarKind::Select:
             if (!jitc_is_bool(a1)) {
-                fmt("    selp.$T $v, $v, $v, $v;\n", v, v, a1, a2, a0);
+                fmt("    selp.$b $v, $v, $v, $v;\n", v, v, a1, a2, a0);
             } else {
                 fmt("    and.pred %p3, $v, $v;\n"
                     "    and.pred %p2, !$v, $v;\n"
@@ -634,24 +629,13 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::Rcp:
-            if (jitc_is_half(v))
-                fmt("    cvt.f32.f16 %f0, $v;\n"
-                    "    rcp.approx.ftz.f32 %f0, %f0;\n"
-                    "    cvt.rn.f16.f32 $v, %f0;\n",
-                    a0, v);
-            else {
-                fmt(jitc_is_single(v) ? "    rcp.approx.ftz.$t $v, $v;\n"
-                                      : "    rcp.rn.$t $v, $v;\n", v, v, a0);
-            }
+            fmt(jitc_is_single(v) || jitc_is_half(v)
+                ? "    rcp.approx.ftz.$t $v, $v;\n"
+                : "    rcp.rn.$t $v, $v;\n", v, v, a0);
             break;
 
         case VarKind::Rsqrt:
-            if (jitc_is_half(v))
-                fmt("    cvt.f32.f16 %f0, $v;\n"
-                    "    rsqrt.approx.ftz.f32 %f0, %f0;\n"
-                    "    cvt.rn.f16.f32 $v, %f0;\n",
-                    a0, v);
-            else if (jitc_is_single(v))
+            if (jitc_is_single(v) || jitc_is_half(v))
                 fmt("    rsqrt.approx.ftz.$t $v, $v;\n", v, v, a0);
             else
                 fmt("    rcp.rn.$t $v, $v;\n"
@@ -679,11 +663,11 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             if (jitc_is_bool(v)) {
                 fmt(jitc_is_float(a0) && !jitc_is_half(a0) 
                     ? "    setp.ne.$t $v, $v, 0.0;\n"
-                    : "    setp.ne.$T $v, $v, 0;\n",
+                    : "    setp.ne.$b $v, $v, 0;\n",
                     a0, v, a0);
             } else if (jitc_is_bool(a0)) {
                 // No selp for fp16 so use b16 view
-                fmt(jitc_is_half(v)  ? "    selp.$T $v, 0x3C00, 0, $v;\n" :
+                fmt(jitc_is_half(v)  ? "    selp.$b $v, 0x3C00, 0, $v;\n" :
                     jitc_is_float(v) ? "    selp.$t $v, 1.0, 0.0, $v;\n" :
                                        "    selp.$t $v, 1, 0, $v;\n",
                     v, v, a0);
@@ -726,7 +710,7 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
                     fmt("    ld.global.nc.u8 %w0, [%rd3];\n"
                         "    setp.ne.u16 $v, %w0, 0;\n", v);
                 } else {
-                    fmt("    ld.global.nc.$T $v, [%rd3];\n", v, v);
+                    fmt("    ld.global.nc.$b $v, [%rd3];\n", v, v);
                 }
 
                 if (!unmasked)
@@ -756,7 +740,7 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::Counter:
-            fmt("    mov.$T $v, %r0;\n", v, v);
+            fmt("    mov.$b $v, %r0;\n", v, v);
             break;
 
         case VarKind::Dispatch:
@@ -845,6 +829,18 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             jitc_fail("jitc_cuda_render_var(): unhandled variable kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);
     }
+
+    if (f32_upcast) {
+        Variable* b = const_cast<Variable*>(v);
+        b->type = (uint32_t)VarType::Float16;
+        for (size_t i = 0; i < 4; ++i) {
+            Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
+            if (dep)
+                dep->type = (uint32_t)VarType::Float16;
+        }
+
+        fmt("    cvt.rn.f16.f32 $v, %f$u;\n", v, v->reg_index);
+    }
 }
 
 static void jitc_cuda_render_scatter(const Variable *v,
@@ -871,8 +867,6 @@ static void jitc_cuda_render_scatter(const Variable *v,
     const char *op = reduce_op_name[v->literal];
     const ThreadState *ts = thread_state_cuda;
 
-    if (jitc_is_half(value) && v->literal != 0)
-        jitc_fail("jitc_cuda_render_scatter(): unhandled variable type fp16");
 
     if (v->literal && callable_depth == 0 && type_size[value->type] == 4 &&
         ts->ptx_version >= 62 && ts->compute_capability >= 70 &&
@@ -893,7 +887,7 @@ static void jitc_cuda_render_scatter(const Variable *v,
             "    .reg .b64 %rd<2>;\n"
             "\n"
             "    ld.param.u64 %rd0, [ptr];\n"
-            "    ld.param.$T %q3, [value];\n"
+            "    ld.param.$t %q3, [value];\n"
             "    activemask.b32 %r1;\n"
             "    match.any.sync.b64 %r2, %rd0, %r1;\n"
             "    setp.eq.s32 %p1, %r2, -1;\n"
@@ -965,7 +959,7 @@ static void jitc_cuda_render_scatter(const Variable *v,
                 value, op_type, v->literal ? "." : "", op);
         else
             fmt(v->literal ? "    $s.global$s$s.$t [%rd3], $v;\n"
-                           : "    $s.global$s$s.$T [%rd3], $v;\n"
+                           : "    $s.global$s$s.$b [%rd3], $v;\n"
                 , op_type,
                 v->literal ? "." : "", op, value, value);
     }
@@ -1048,16 +1042,15 @@ static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) 
         index, index, value, ptr_1,
         index, index, value, ptr_2);
 
-    const char* op_suffix = jitc_is_single(value) ? ".ftz"  : "";
-    const char* red_atom_suffix = jitc_is_half(value) ? ".noftz" : "";
+    const char* op_suffix = jitc_is_single(value) ? ".ftz" : "";
 
     fmt("    {\n"
         "        .reg.$t %before, %after, %value, %case_1, %case_2;\n"
         "        .reg.$t %abs_before, %abs_value, %result;\n"
         "        .reg.pred %cond;\n"
         "\n"
-        "        mov.$T %value, $v;\n"
-        "        atom.global.add$s.$t %before, [%rd2], %value;\n"
+        "        mov.$t %value, $v;\n"
+        "        atom.global.add.$t %before, [%rd2], %value;\n"
         "        add$s.$t %after, %before, %value;\n"
         "        sub$s.$t %case_1, %before, %after;\n"
         "        add$s.$t %case_1, %case_1, %value;\n"
@@ -1066,13 +1059,13 @@ static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) 
         "        abs$s.$t %abs_before, %before;\n"
         "        abs$s.$t %abs_value, %value;\n"
         "        setp.ge.$t %cond, %abs_before, %abs_value;\n"
-        "        selp.$T %result, %case_1, %case_2, %cond;\n"
-        "        red.global.add$s.$t [%rd3], %result;\n"
+        "        selp.$t %result, %case_1, %case_2, %cond;\n"
+        "        red.global.add.$t [%rd3], %result;\n"
         "    }\n",
         value,
         value,
         value, value,
-        red_atom_suffix, value,
+        value,
         op_suffix, value,
         op_suffix, value,
         op_suffix, value,
@@ -1082,7 +1075,7 @@ static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) 
         op_suffix, value,
         value,
         value,
-        red_atom_suffix, value);
+        value);
 
     if (!unmasked)
         fmt("\nl_$u_done:\n", v->reg_index);
@@ -1270,8 +1263,8 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
         const Variable *v2 = jitc_var(in);
         uint32_t size = type_size[v2->type];
 
-        const char *tname               = type_name_ptx_fp16_adjusted[v2->type],
-                   *prefix              = type_prefix[v2->type];
+        const char *tname  = type_name_ptx_bin[v2->type],
+                   *prefix = type_prefix[v2->type];
 
         // Special handling for predicates (pass via u8)
         if ((VarType) v2->type == VarType::Bool) {
@@ -1316,7 +1309,7 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
         if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
             continue;
 
-        const char *tname = type_name_ptx_fp16_adjusted[v2->type],
+        const char *tname = type_name_ptx_bin[v2->type],
                    *prefix = type_prefix[v2->type];
 
         // Special handling for predicates (pass via u8)

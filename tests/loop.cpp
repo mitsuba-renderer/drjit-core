@@ -2,7 +2,7 @@
 #include "traits.h"
 #include "ekloop.h"
 
-TEST_BOTH(01_record_loop) {
+TEST_BOTH_FP32(01_record_loop) {
     // Tests a simple loop evaluated at once, or in parts
     for (uint32_t i = 0; i < 3; ++i) {
         jit_set_flag(JitFlag::LoopRecord, i != 0);
@@ -17,7 +17,7 @@ TEST_BOTH(01_record_loop) {
             while (loop(x < 5)) {
                 y += Float(x);
                 x += 1;
-                z += Float(1);
+                z += 1;
             }
 
             if (j == 0) {

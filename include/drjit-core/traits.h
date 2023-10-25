@@ -25,6 +25,30 @@
 
 NAMESPACE_BEGIN(drjit)
 
+template<typename T>
+struct is_signed : std::is_signed<T>::type {};
+
+template< class T >
+inline constexpr bool is_signed_v = is_signed<T>::value;
+
+template<typename T>
+struct is_floating_point : std::is_floating_point<T>::type {};
+
+template< class T >
+inline constexpr bool is_floating_point_v = is_floating_point<T>::value;
+
+template<typename T>
+struct is_arithmetic : std::is_arithmetic<T>::type {};
+
+template<typename T>
+inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
+
+template<typename T>
+struct is_scalar : std::is_scalar<T>::type {};
+
+template< class T >
+inline constexpr bool is_scalar_v = is_scalar<T>::value;
+
 template <bool Value> using enable_if_t = typename std::enable_if<Value, int>::type;
 
 template <typename T, typename = int> struct var_type {
@@ -55,7 +79,7 @@ template <typename T> struct var_type<T, enable_if_t<std::is_enum<T>::value>> {
     static constexpr VarType value = var_type<typename std::underlying_type<T>::type>::value;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_floating_point<T>::value && sizeof(T) == 2>> {
+template <typename T> struct var_type<T, enable_if_t<drjit::is_floating_point_v<T> && sizeof(T) == 2>> {
     static constexpr VarType value = VarType::Float16;
 };
 

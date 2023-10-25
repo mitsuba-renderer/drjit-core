@@ -430,6 +430,25 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
+    bool f32_upcast = jitc_is_half(v) && !var_kind_fp16_supported_llvm[v->kind];
+
+    if (f32_upcast) {
+        Variable* b = const_cast<Variable*>(v);
+        b->type = (uint32_t)VarType::Float32;
+
+        for (size_t i = 0; i < 4; ++i) {
+            Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
+            if (dep) {
+                if (!dep->ssa_f32_cast) {
+                    fmt("    %f$u = fpext <$w x half> %h$u to <$w x float>\n",
+                        dep->reg_index, dep->reg_index);
+                    dep->ssa_f32_cast = 1;
+                }
+                dep->type = (uint32_t)VarType::Float32;
+            }
+        }
+    }
+
     switch (v->kind) {
         case VarKind::Undefined:
         case VarKind::Literal:
@@ -891,6 +910,21 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
             jitc_fail("jitc_llvm_render_var(): unhandled node kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);
     }
+
+    if (f32_upcast) {
+        Variable* b = const_cast<Variable*>(v);
+        b->type = (uint32_t)VarType::Float16;
+        for (size_t i = 0; i < 4; ++i) {
+            Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
+            if (dep)
+                dep->type = (uint32_t)VarType::Float16;
+        }
+
+        fmt("    %h$u = fptrunc <$w x float> %f$u to <$w x half>\n", 
+            v->reg_index, v->reg_index);
+    }
+
+
 }
 
 static void jitc_llvm_render_scatter(const Variable *v,

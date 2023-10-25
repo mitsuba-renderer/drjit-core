@@ -146,7 +146,7 @@ add_library(
   resources/kernels.h resources/kernels.c
 )
 
-target_compile_features(drjit-core PRIVATE cxx_std_17)
+target_compile_features(drjit-core PUBLIC cxx_std_17)
 
 target_include_directories(drjit-core PRIVATE
   ext/nanothread/include
@@ -160,6 +160,10 @@ if (MSVC)
 
   # Allow throwing exceptions even from "extern C" code
   target_compile_options(drjit-core PUBLIC /EHs)
+
+  # MSVC doesn't define this instruction set macro unlike all other compilers
+  # so force enable it
+  target_compile_definitions(drjit-core PUBLIC -D__F16C__)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")

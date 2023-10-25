@@ -105,7 +105,7 @@ TEST_BOTH(04_load_store_float) {
                     v0 = jit_var_literal(Backend, VarType::Float64, &d1, 1 + j, k);
                     v1 = jit_var_literal(Backend, VarType::Float64, &d1234, 1 + j);
                 } else {
-                    dr_half h1 = 1, h1234 = 1234;
+                    half h1 = 1, h1234 = 1234;
                     v0 = jit_var_literal(Backend, VarType::Float16, &h1.value, 1 + j, k);
                     v1 = jit_var_literal(Backend, VarType::Float16, &h1234.value, 1 + j);
                 }
@@ -167,8 +167,8 @@ const char *op_name[(int) JitOp::Count] {
 template <typename T> bool test_const_prop() {
     using Value = typename T::Value;
     constexpr JitBackend Backend = T::Backend;
-    constexpr bool IsFloat = std::is_floating_point<Value>::value;
-    constexpr bool IsSigned = std::is_signed<Value>::value;
+    constexpr bool IsFloat = drjit::is_floating_point_v<Value>;
+    constexpr bool IsSigned = drjit::is_signed_v<Value>;
     constexpr bool IsMask = std::is_same<Value, bool>::value;
     constexpr bool IsInt = !IsFloat && !IsMask;
     constexpr size_t Size = IsMask ? 2 : 10, Size2 = 2 * Size;
@@ -212,7 +212,7 @@ template <typename T> bool test_const_prop() {
 
         for (uint32_t i = 0; i < Size2; ++i) {
             uint32_t index = 0;
-            if ((op == JitOp::Rcp) && values[i] == Value(0)) {
+            if ((op == JitOp::Rcp) && values[i] == 0) {
                 index = in[i];
                 jit_var_inc_ref(index);
             } else {
@@ -253,7 +253,7 @@ template <typename T> bool test_const_prop() {
                 // FIXME: On R515.43 OptiX incorrectly handles `rsqrt(0)` (NaN instead of Inf)
                 Value arg;
                 jit_var_read(in[ir], 0, &arg);
-                if (arg == Value(0) && op == JitOp::Rsqrt && jit_flag(JitFlag::ForceOptiX))
+                if (arg == 0 && op == JitOp::Rsqrt && jit_flag(JitFlag::ForceOptiX))
                     continue;
 
                 char *v0 = strdup(jit_var_str(in[ir]));
@@ -473,7 +473,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(05_const_prop) {
     bool fail = false;
 
     using Float32 = typename Float::template ReplaceValue<float>;
-    using Float16 = typename Float::template ReplaceValue<drjit::dr_half>;
+    using Float16 = typename Float::template ReplaceValue<drjit::half>;
 
     fail |= test_const_prop<Float32>();
     fail |= test_const_prop<Float16>();
@@ -547,10 +547,10 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
                         if (std::abs(d) > 2.0)
                             d += d * .1;
                     } else if (source_type == VarType::Float16) {
-                        drjit::dr_half h = (float) value;
-                        memcpy(&value, &h, sizeof(drjit::dr_half));
+                        drjit::half h((float) value);
+                        memcpy(&value, &h, sizeof(drjit::half));
                         if (std::abs(h) > 2.f)
-                            h += h * drjit::dr_half(.1f);
+                            h += h * drjit::half(.1f);
                     }
 
                     source_value[i] = jit_var_literal(Backend, source_type,
