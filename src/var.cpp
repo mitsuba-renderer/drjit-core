@@ -668,11 +668,8 @@ uint32_t jitc_var_wrap_vcall(uint32_t index) {
     }
 
     Variable v2;
-    v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
-                            ? "mov.$t0 $r0, $r1"
-                            : "$r0 = bitcast <$w x $t0> $r1 to <$w x $t0>");
     v2.backend = v->backend;
-    v2.kind = (uint32_t) VarKind::Stmt;
+    v2.kind = (uint32_t) VarKind::Bitcast;
     v2.type = v->type;
     v2.size = 1;
     v2.symbolic = v2.vcall_iface = 1;
