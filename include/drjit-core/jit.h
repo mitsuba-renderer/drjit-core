@@ -983,9 +983,6 @@ JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
 #define jit_var_inc_ref jit_var_inc_ref_impl
 #endif
 
-/// Check if a variable with a given index exists
-extern JIT_EXPORT int jit_var_exists(uint32_t index);
-
 /// Query the a variable's reference count (used by the test suite)
 extern JIT_EXPORT uint32_t jit_var_ref(uint32_t index);
 

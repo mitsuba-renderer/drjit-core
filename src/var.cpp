@@ -15,9 +15,6 @@
 #include "op.h"
 #include "registry.h"
 
-// When debugging via valgrind, this will make iterator invalidation more obvious
-// #define DRJIT_VALGRIND 1
-
 /// Descriptive names for the various variable types
 const char *type_name[(int) VarType::Count] {
     "void",   "bool",  "int8",   "uint8",   "int16",   "uint16",  "int32",
@@ -260,12 +257,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
     }
 
     // Remove from hash table
-    state.variables.erase(index);
-
-#if defined(DRJIT_VALGRIND)
-    VariableMap var_new(state.variables);
-    state.variables.swap(var_new);
-#endif
+    state.unused_variables.push(index);
 
     if (likely(!write_ptr)) {
         // Decrease reference count of dependencies
@@ -278,10 +270,27 @@ void jitc_var_free(uint32_t index, Variable *v) {
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
 Variable *jitc_var(uint32_t index) {
-    auto it = state.variables.find(index);
-    if (unlikely(it == state.variables.end()))
+    auto &variables = state.variables;
+    Variable *v = variables.data() + index;
+
+    if (unlikely(index == 0 || index >= variables.size() ||
+                 (v->ref_count == 0 && v->ref_count_se == 0)))
         jitc_fail("jit_var(r%u): unknown variable!", index);
-    return &it.value();
+
+    return v;
+}
+
+/// Access a variable through a weak reference. May return ``nullptr``
+Variable *jitc_var(WeakRef ref) {
+    auto &variables = state.variables;
+    if (unlikely(ref.index >= variables.size()))
+        jitc_fail("jit_var(r%u): unknown variable!", ref.index);
+
+    Variable *v = variables.data() + ref.index;
+    if (ref.index == 0 || v->counter != ref.counter)
+        return nullptr;
+
+    return v;
 }
 
 /// Increase the external reference count of a given variable
@@ -350,7 +359,7 @@ void jitc_var_dec_ref_se(uint32_t index) noexcept {
 void jitc_lvn_drop(uint32_t index, const Variable *v) {
     VariableKey key(*v);
     LVNMap &cache = state.lvn_map;
-    auto it = cache.find(key);
+    LVNMap::iterator it = cache.find(key);
     if (it != cache.end() && it.value() == index)
         cache.erase(it);
 }
@@ -452,14 +461,15 @@ void jitc_value_print(const Variable *v, bool graphviz = false) {
 
 /// Append the given variable to the instruction trace and return its ID
 uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
+    State &state = ::state;
     if (unlikely(v.backend == (uint32_t) JitBackend::None))
         v.backend = (uint32_t) default_backend;
 
     ThreadState *ts = thread_state(v.backend);
+    uint32_t flags = jitc_flags();
 
     bool lvn = !disable_lvn && (VarType) v.type != VarType::Void &&
-               !v.is_data() &&
-               jit_flag(JitFlag::ValueNumbering);
+               !v.is_data() && (flags & (uint32_t) JitFlag::ValueNumbering);
 
     v.scope = ts->scope;
 
@@ -474,36 +484,34 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     Variable *vo;
 
     if (likely(!lvn || lvn_key_inserted)) {
-        #if defined(DRJIT_VALGRIND)
-            VariableMap var_new(state.variables);
-            state.variables.swap(var_new);
-        #endif
+        bool index_reuse = flags & (uint32_t) JitFlag::IndexReuse;
+        auto &unused = state.unused_variables;
 
-        // .. nope, it is new.
-        VariableMap::iterator var_it;
-        bool var_inserted = false;
-        do {
-            index = state.variable_index++;
-
-            if (unlikely(index == 0)) // overflow
-                continue;
-
-            std::tie(var_it, var_inserted) =
-                state.variables.try_emplace(index, v);
-        } while (!var_inserted);
-
-        state.variable_watermark = std::max(state.variable_watermark,
-                                            (uint32_t) state.variables.size());
+        if (unlikely(unused.empty() || !index_reuse)) {
+            index = state.variables.size();
+            state.variables.emplace_back();
+        } else {
+            index = unused.top();
+            unused.pop();
+        }
 
         if (lvn_key_inserted)
             key_it.value() = index;
 
-        vo = &var_it.value();
+        vo = &state.variables[index];
+        jitc_assert(vo->ref_count == 0 && vo->ref_count_se == 0,
+                    "jit_var_new(): selected entry of variable data structure "
+                    "is already used.");
+
+        v.counter = vo->counter + 1;
+        *vo = v;
 
         if (unlikely(ts->prefix)) {
             vo->extra = true;
             state.extra[index].label = strdup(ts->prefix);
         }
+
+        state.variable_counter++;
     } else {
         // .. found a match! Deallocate 'v'.
         if (v.free_stmt)
@@ -517,7 +525,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         }
 
         index = key_it.value();
-        vo = jitc_var(index);
+        vo = &state.variables[index];
     }
 
     if (unlikely(std::max(state.log_level_stderr, state.log_level_callback) >=
@@ -951,7 +959,7 @@ void jitc_var_mark_side_effect(uint32_t index) {
 
     ThreadState *ts = thread_state(v->backend);
     std::vector<uint32_t> &output =
-        v->symbolic ? ts->side_effects_recorded : ts->side_effects;
+        v->symbolic ? ts->side_effects_symbolic : ts->side_effects;
     output.push_back(index);
 }
 
@@ -1032,18 +1040,17 @@ static void jitc_raise_consumed_error(const char *func, uint32_t index) {
 
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 int jitc_var_schedule(uint32_t index) {
-    auto it = state.variables.find(index);
-    if (unlikely(it == state.variables.end()))
-        jitc_raise("jit_var_schedule(r%u): unknown variable!", index);
-    Variable *v = &it.value();
+    if (index == 0)
+        return 0;
 
+    Variable *v = jitc_var(index);
     if (unlikely(v->symbolic))
         jitc_raise_symbolic_error("jitc_var_schedule", index);
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_schedule", index);
 
     if (v->is_stmt() || v->is_node()) {
-        thread_state(v->backend)->scheduled.push_back(index);
+        thread_state(v->backend)->scheduled.emplace_back(index, v->counter);
         jitc_log(Debug, "jit_var_schedule(r%u)", index);
         return 1;
     } else if (v->is_dirty()) {
@@ -1056,10 +1063,10 @@ int jitc_var_schedule(uint32_t index) {
 void *jitc_var_ptr(uint32_t index) {
     if (index == 0)
         return nullptr;
-    Variable *v = jitc_var(index);
 
     /* If 'v' is a constant, initialize it directly instead of
        generating code to do so.. */
+    Variable *v = jitc_var(index);
     if (v->is_literal())
         jitc_var_eval_literal(index, v);
     else if (v->is_stmt() || v->is_node())
@@ -1101,7 +1108,7 @@ int jitc_var_eval(uint32_t index) {
         ThreadState *ts = thread_state(v->backend);
 
         if (!v->is_data())
-            ts->scheduled.push_back(index);
+            ts->scheduled.emplace_back(index, v->counter);
 
         jitc_eval(ts);
         v = jitc_var(index);
@@ -1717,30 +1724,28 @@ const char *jitc_var_whos() {
     var_buffer.put("\n  ID       Type       Status     Refs       Size      Storage   Label");
     var_buffer.put("\n  ========================================================================\n");
 
-    std::vector<uint32_t> indices;
-    indices.reserve(state.variables.size());
-    for (const auto& it : state.variables)
-        indices.push_back(it.first);
-    std::sort(indices.begin(), indices.end());
-
     size_t mem_size_evaluated = 0,
-           mem_size_unevaluated = 0;
+           mem_size_unevaluated = 0,
+           variable_counter = 0;
 
-    for (uint32_t index: indices) {
-        const Variable *v = jitc_var(index);
-        size_t mem_size = (size_t) v->size * (size_t) type_size[v->type];
+    for (size_t index = 1; index < state.variables.size(); ++index) {
+        const Variable &v = state.variables[index];
+        if (v.ref_count == 0 && v.ref_count_se == 0)
+            continue;
 
-        var_buffer.fmt("  %-8u %s %-5s ", index,
-                       (JitBackend) v->backend == JitBackend::CUDA ? "cuda"
-                                                                   : "llvm",
-                       type_name_short[v->type]);
+        size_t mem_size = (size_t) v.size * (size_t) type_size[v.type];
 
-        if (v->is_literal()) {
+        var_buffer.fmt("  %-8zu %s %-5s ", index,
+                       (JitBackend) v.backend == JitBackend::CUDA ? "cuda"
+                                                                  : "llvm",
+                       type_name_short[v.type]);
+
+        if (v.is_literal()) {
             var_buffer.put("const.     ");
-        } else if (v->is_data()) {
-            auto it = state.alloc_used.find((uintptr_t) v->data);
+        } else if (v.is_data()) {
+            auto it = state.alloc_used.find((uintptr_t) v.data);
             if (unlikely(it == state.alloc_used.end())) {
-                if (!v->retain_data)
+                if (!v.retain_data)
                     jitc_raise("jit_var_whos(): Cannot resolve pointer to actual allocation!");
                 else
                     var_buffer.put("mapped mem.");
@@ -1761,19 +1766,20 @@ const char *jitc_var_whos() {
 
         const char *label = jitc_var_label(index);
 
-        var_buffer.fmt(" %3u %10u %12s   %s\n", (uint32_t) v->ref_count,
-                       v->size, jitc_mem_string(mem_size), label ? label : "");
+        var_buffer.fmt(" %3u %10u %12s   %s\n", (uint32_t) v.ref_count,
+                       v.size, jitc_mem_string(mem_size), label ? label : "");
 
-        if (v->is_data())
+        if (v.is_data())
             mem_size_evaluated += mem_size;
         else
             mem_size_unevaluated += mem_size;
+
+        variable_counter++;
     }
-    if (indices.empty())
+    if (variable_counter == 0)
         var_buffer.put("                       -- No variables registered --\n");
 
-    constexpr size_t BucketSize1 = sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>);
-    constexpr size_t BucketSize2 = sizeof(tsl::detail_robin_hash::bucket_entry<LVNMap::value_type, false>);
+    constexpr size_t LVNBucketSize = sizeof(tsl::detail_robin_hash::bucket_entry<LVNMap::value_type, false>);
 
     var_buffer.put("  ========================================================================\n\n");
     var_buffer.put("  JIT compiler\n");
@@ -1782,11 +1788,11 @@ const char *jitc_var_whos() {
                jitc_mem_string(mem_size_evaluated));
     var_buffer.fmt("%s unevaluated.\n",
                jitc_mem_string(mem_size_unevaluated));
-    var_buffer.fmt("   - Variables created : %u (peak: %u, table size: %s).\n",
-               state.variable_index, state.variable_watermark,
+    var_buffer.fmt("   - Variables created : %zu (peak: %zu, table size: %s).\n",
+               state.variable_counter, state.variables.size(),
                jitc_mem_string(
-                   state.variables.bucket_count() * BucketSize1 +
-                   state.lvn_map.bucket_count() * BucketSize2));
+                   state.variables.capacity() * sizeof(Variable)+
+                   state.lvn_map.bucket_count() * LVNBucketSize));
     var_buffer.fmt("   - Kernel launches   : %zu (%zu cache hits, "
                "%zu soft, %zu hard misses).\n\n",
                state.kernel_launches, state.kernel_hits,
@@ -1806,12 +1812,6 @@ const char *jitc_var_whos() {
 
 /// Return a GraphViz representation of registered variables
 const char *jitc_var_graphviz() {
-    std::vector<uint32_t> indices;
-    indices.reserve(state.variables.size());
-    for (const auto& it : state.variables)
-        indices.push_back(it.first);
-
-    std::sort(indices.begin(), indices.end());
     var_buffer.clear();
     var_buffer.put("digraph {\n"
                    "    rankdir=TB;\n"
@@ -1821,7 +1821,11 @@ const char *jitc_var_graphviz() {
 
     size_t current_hash = 0, current_depth = 1;
 
-    for (int32_t index : indices) {
+    for (size_t index = 1; index < state.variables.size(); ++index) {
+        const Variable &v = state.variables[index];
+        if (v.ref_count == 0 && v.ref_count_se == 0)
+            continue;
+
         ExtraMap::iterator it = state.extra.find(index);
 
         const char *label = nullptr;
@@ -1871,7 +1875,6 @@ const char *jitc_var_graphviz() {
             }
         }
 
-        const Variable *v = jitc_var(index);
         var_buffer.put(' ', 4 * current_depth);
         var_buffer.put_u32(index);
         var_buffer.put(" [label=\"{");
@@ -1919,42 +1922,42 @@ const char *jitc_var_graphviz() {
             labeled = true;
         }
 
-        if (v->is_literal()) {
+        if (v.is_literal()) {
             var_buffer.put("Literal: ");
-            jitc_value_print(v, true);
+            jitc_value_print(&v, true);
             color = "gray90";
-        } else if (v->is_data()) {
-            if (v->is_dirty()) {
+        } else if (v.is_data()) {
+            if (v.is_dirty()) {
                 var_buffer.put("Evaluated (dirty)");
                 color = "salmon";
             } else {
                 var_buffer.put("Evaluated");
                 color = "lightblue2";
             }
-        } else if (v->is_stmt()) {
-            if ((VarType) v->type == VarType::Void)
+        } else if (v.is_stmt()) {
+            if ((VarType) v.type == VarType::Void)
                 color = "yellowgreen";
 
-            if (*v->stmt != '\0') {
-                print_escape(v->stmt);
+            if (*v.stmt != '\0') {
+                print_escape(v.stmt);
                 var_buffer.put("\\l");
             } else if (labeled) {
                 var_buffer.rewind_to(var_buffer.size() - 1);
             }
         } else {
-            const char *name = var_kind_name[v->kind];
+            const char *name = var_kind_name[v.kind];
             var_buffer.put(name, strlen(name));
         }
 
-        if (v->symbolic && !color)
+        if (v.symbolic && !color)
             color = "yellow";
         if (labeled && !color)
             color = "wheat";
 
-        var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%u|Refs: %u}}",
-            (JitBackend) v->backend == JitBackend::CUDA ? "cuda" : "llvm",
-            type_name_short[v->type], v->size, index,
-            (uint32_t) v->ref_count);
+        var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%zu|Refs: %u}}",
+            (JitBackend) v.backend == JitBackend::CUDA ? "cuda" : "llvm",
+            type_name_short[v.type], v.size, index,
+            (uint32_t) v.ref_count);
 
         var_buffer.put("}\"");
         if (color)
@@ -1967,15 +1970,17 @@ const char *jitc_var_graphviz() {
         var_buffer.put("}\n");
     }
 
-    for (int32_t index : indices) {
-        const Variable *v = jitc_var(index);
+    for (size_t index = 1; index < state.variables.size(); ++index) {
+        const Variable &v = state.variables[index];
+        if (v.ref_count == 0 && v.ref_count_se == 0)
+            continue;
 
         int n_dep = 0;
         for (uint32_t i = 0; i < 4; ++i)
-            n_dep += v->dep[i] ? 1 : 0;
+            n_dep += v.dep[i] ? 1 : 0;
 
         const Extra *extra = nullptr;
-        if (unlikely(v->extra)) {
+        if (unlikely(v.extra)) {
             auto it = state.extra.find(index);
             if (it == state.extra.end())
                 jitc_fail("jit_var_graphviz(): could not find matching 'extra' "
@@ -1986,11 +1991,11 @@ const char *jitc_var_graphviz() {
 
         uint32_t edge_index = 0;
         for (uint32_t i = 0; i < 4; ++i) {
-            if (!v->dep[i])
+            if (!v.dep[i])
                 continue;
 
-            var_buffer.fmt("    %u -> %u", v->dep[i], index);
-            bool special = i == 3 && v->dep[2] == 0;
+            var_buffer.fmt("    %u -> %zu", v.dep[i], index);
+            bool special = i == 3 && v.dep[2] == 0;
             if (n_dep > 1 || special) {
                 var_buffer.put(" [");
                 if (n_dep > 1)
@@ -2005,7 +2010,7 @@ const char *jitc_var_graphviz() {
         for (uint32_t i = 0; i < (extra ? extra->n_dep : 0); ++i) {
             if (!extra->dep[i])
                 continue;
-            var_buffer.fmt("    %u -> %u", extra->dep[i], index);
+            var_buffer.fmt("    %u -> %zu", extra->dep[i], index);
             if (n_dep > 1)
                 var_buffer.fmt(" [label=\" %u\"]", ++edge_index);
             var_buffer.put(";\n");

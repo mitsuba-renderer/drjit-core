@@ -15,9 +15,13 @@
 enum VarKind : uint32_t;
 
 struct Variable;
+struct WeakRef;
 
-/// Look up a variable by its ID
+/// Access a variable by ID, terminate with an error if it doesn't exist
 extern Variable *jitc_var(uint32_t index);
+
+/// Access a variable through a weak reference. May return ``nullptr``
+extern Variable *jitc_var(WeakRef ref);
 
 /// Create a value constant variable of the given size
 extern uint32_t jitc_var_literal(JitBackend backend, VarType type,

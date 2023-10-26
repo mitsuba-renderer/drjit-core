@@ -150,7 +150,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     }
 
     ThreadState *ts = thread_state(backend);
-    if (ts->side_effects_recorded.size() !=
+    if (ts->side_effects_symbolic.size() !=
         (checkpoints[n_inst] & checkpoint_mask))
         jitc_raise("jitc_var_vcall(): side effect queue doesn't have the "
                    "expected size!");
@@ -201,9 +201,9 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
     vcall->in_count_initial = n_in;
     vcall->checkpoints.reserve(n_inst + 1);
     vcall->side_effects = std::vector<uint32_t>(
-        ts->side_effects_recorded.begin() + (checkpoints[0] & checkpoint_mask),
-        ts->side_effects_recorded.begin() + (checkpoints[n_inst] & checkpoint_mask));
-    ts->side_effects_recorded.resize(checkpoints[0] & checkpoint_mask);
+        ts->side_effects_symbolic.begin() + (checkpoints[0] & checkpoint_mask),
+        ts->side_effects_symbolic.begin() + (checkpoints[n_inst] & checkpoint_mask));
+    ts->side_effects_symbolic.resize(checkpoints[0] & checkpoint_mask);
 
     // =====================================================
     // 4. Collect evaluated data accessed by the instances
@@ -390,10 +390,9 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             return;
 
         VCall *vcall_2 = (VCall *) ptr;
-        if (!free) {
-            // Disable callback
+        // Disable callback
+        if (!free)
             state.extra[index].callback_data = nullptr;
-        }
 
         // An output variable is no longer referenced. Find out which one.
         uint32_t n_out_2 = (uint32_t) vcall_2->out.size(),
@@ -418,20 +417,15 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
         // Check if any input parameters became irrelevant
         for (uint32_t i = 0; i < vcall_2->in.size(); ++i) {
-            uint32_t index_2 = vcall_2->in_nested[i];
-            if (index_2 &&
-                state.variables.find(index_2) == state.variables.end()) {
-                Extra *e = &state.extra[vcall_2->id];
-                if (unlikely(e->dep[i] != vcall_2->in[i]))
-                    jitc_fail("jit_var_vcall(): internal error! (1)");
-                jitc_var_dec_ref(vcall_2->in[i]);
-                if (state.extra.find(vcall_2->id) == state.extra.end())
-                    jitc_fail("jit_var_vcall(): internal error! (2)");
-                e = &state.extra[vcall_2->id]; // may have changed
-                e->dep[i] = 0;
-                vcall_2->in[i] = 0;
-                vcall_2->in_nested[i] = 0;
-            }
+            WeakRef &wr = vcall_2->in_nested[i];
+            Variable *v2 = jitc_var(wr);
+            if (v2)
+                continue;
+            uint32_t in = vcall_2->in[i];
+            vcall_2->in[i] = 0;
+            vcall_2->in_nested[i] = WeakRef();
+            state.extra[vcall_2->id].dep[i] = 0;
+            jitc_var_dec_ref(in);
         }
     };
 
@@ -481,7 +475,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
                 continue;
         }
 
-        vcall->in_nested.push_back(index);
+        vcall->in_nested.emplace_back(index, v->counter);
 
         uint32_t index_2 = v->dep[0];
         vcall->in.push_back(index_2);
@@ -494,8 +488,16 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         return s0 > s1;
     };
 
+    auto comp_wr = [](WeakRef i0, WeakRef i1) {
+        const Variable *v0 = jitc_var(i0);
+        const Variable *v1 = jitc_var(i1);
+        int s0 = v0 ? type_size[v0->type] : 0;
+        int s1 = v1 ? type_size[v1->type] : 0;
+        return s0 > s1;
+    };
+
     std::sort(vcall->in.begin(), vcall->in.end(), comp);
-    std::sort(vcall->in_nested.begin(), vcall->in_nested.end(), comp);
+    std::sort(vcall->in_nested.begin(), vcall->in_nested.end(), comp_wr);
 
     std::sort(vcall->out.begin(), vcall->out.end(), comp);
     for (uint32_t i = 0; i < n_inst; ++i)
@@ -598,33 +600,32 @@ void jitc_var_vcall_assemble(VCall *vcall, uint32_t self_reg, uint32_t mask_reg,
              n_out_active = 0;
 
     for (uint32_t i = 0; i < n_in; ++i) {
-        auto it = state.variables.find(vcall->in[i]);
-        if (it == state.variables.end())
+        uint32_t index = vcall->in[i];
+        if (!index)
             continue;
+        const Variable *v = jitc_var(index);
 
-        uint32_t size = type_size[it.value().type],
+        uint32_t size = type_size[v->type],
                  offset = in_size;
-        Variable *v = &it.value();
         in_size += size;
         in_align = std::max(size, in_align);
         n_in_active++;
 
         // Transfer parameter offset to instances
-        auto it2 = state.variables.find(vcall->in_nested[i]);
-        if (it2 == state.variables.end())
+        Variable *v2 = jitc_var(vcall->in_nested[i]);
+        if (!v2)
             continue;
 
-        Variable *v2 = &it2.value();
         v2->param_offset = offset;
         v2->reg_index = v->reg_index;
     }
 
     for (uint32_t i = 0; i < n_out; ++i) {
-        auto it = state.variables.find(vcall->out_nested[i]);
-        if (it == state.variables.end())
+        uint32_t index = vcall->out_nested[i];
+        if (!index)
             continue;
 
-        Variable *v = &it.value();
+        Variable *v = jitc_var(index);
         uint32_t size = type_size[v->type];
         out_size += size;
         out_align = std::max(size, out_align);

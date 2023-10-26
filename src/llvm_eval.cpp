@@ -1617,10 +1617,9 @@ void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
     uint32_t offset = 0;
     for (uint32_t i = 0; i < (uint32_t) vcall->in.size(); ++i) {
         uint32_t index = vcall->in[i];
-        auto it = state.variables.find(index);
-        if (it == state.variables.end())
+        if (!index)
             continue;
-        const Variable *v2 = &it->second;
+        const Variable *v2 = jitc_var(index);
 
         fmt(
              "    %u$u_in_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
@@ -1649,10 +1648,9 @@ void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
     offset = 0;
     for (uint32_t i = 0; i < n_out; ++i) {
         uint32_t index = vcall->out_nested[i];
-        auto it = state.variables.find(index);
-        if (it == state.variables.end())
+        if (!index)
             continue;
-        const Variable *v2 = &it->second;
+        const Variable *v2 = jitc_var(index);
 
         fmt( "    %u$u_tmp_$u_{0|1} = getelementptr inbounds i8, {i8*} %u$u_out, i64 $u\n"
             "{    %u$u_tmp_$u_1 = bitcast i8* %u$u_tmp_$u_0 to $M*\n|}"
@@ -1738,19 +1736,19 @@ void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
     for (uint32_t i = 0; i < n_out; ++i) {
         uint32_t index = vcall->out_nested[i],
                  index_2 = vcall->out[i];
-        auto it = state.variables.find(index);
-        if (it == state.variables.end())
+        if (!index)
             continue;
-        uint32_t size = type_size[it->second.type],
+
+        const Variable *v = jitc_var(index);
+        uint32_t size = type_size[v->type],
                  load_offset = offset;
         offset += size * width;
 
         // Skip if outer access expired
-        auto it2 = state.variables.find(index_2);
-        if (it2 == state.variables.end())
+        if (!index_2)
             continue;
 
-        const Variable *v2 = &it2.value();
+        const Variable *v2 = jitc_var(index_2);
         if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
             continue;
 

@@ -186,7 +186,7 @@ uint32_t jitc_var_loop(const char *name, uint32_t loop_init,
 
     const uint32_t checkpoint_mask = 0x7fffffff;
     bool optimize = jitc_flags() & (uint32_t) JitFlag::LoopOptimize;
-    auto &se = ts->side_effects_recorded;
+    auto &se = ts->side_effects_symbolic;
 
     checkpoint &= checkpoint_mask;
     if (unlikely(checkpoint > se.size()))
@@ -595,8 +595,9 @@ static void jitc_var_loop_dfs(tsl::robin_set<uint32_t, UInt32Hasher> &set, uint3
 static size_t jitc_var_loop_simplify(Loop *loop, tsl::robin_set<uint32_t, UInt32Hasher> &visited) {
     loop->simplify = false;
 
-    if (state.variables.find(loop->end) == state.variables.end())
-        return 0;
+    /// XXX
+    // if (state.variables.find(loop->end) == state.variables.end())
+    //     return 0;
 
     const uint32_t n = (uint32_t) loop->in.size();
 
@@ -746,6 +747,8 @@ static void jitc_var_loop_assemble_cond(const Variable *, const Extra &extra) {
 }
 
 static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
+    (void) extra;
+#if 0
     Loop *loop = (Loop *) extra.callback_data;
     uint32_t loop_reg = jitc_var(loop->init)->reg_index,
              mask_reg = jitc_var(loop->cond)->reg_index;
@@ -807,4 +810,6 @@ static void jitc_var_loop_assemble_end(const Variable *, const Extra &extra) {
         loop->se = 0;
         loop->simplify = true;
     }
+#endif
+    /// XXX
 }

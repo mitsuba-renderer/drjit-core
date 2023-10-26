@@ -29,7 +29,7 @@ std::vector<ScheduledVariable> schedule;
 /// Groups of variables with the same size
 std::vector<ScheduledGroup> schedule_groups;
 
-/// Auxiliary data structure needed to compute 'schedule_sizes' and 'schedule'
+/// Auxiliary data structure needed to compute 'schedule' and 'schedule_gropus'
 static tsl::robin_set<std::pair<uint32_t, uint32_t>, pair_hash> visited;
 
 /// Kernel parameter buffer and device copy
@@ -103,11 +103,12 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
         }
     }
 
-    // If we're really visiting this variable the first time, no matter its size
+    // If we're visiting this variable the first time regardless of size
     if (visited.emplace(0, index).second)
         v->output_flag = false;
 
     schedule.emplace_back(size, v->scope, index);
+    jitc_var_inc_ref(index, v);
 }
 
 void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
@@ -582,27 +583,21 @@ void jitc_eval(ThreadState *ts) {
     visited.clear();
     schedule.clear();
 
-    // Collect variables that must be computed along with their dependencies
-    for (int j = 0; j < 2; ++j) {
-        auto &source = j == 0 ? ts->scheduled : ts->side_effects;
-        for (size_t i = 0; i < source.size(); ++i) {
-            uint32_t index = source[i];
-            auto it = state.variables.find(index);
-            if (it == state.variables.end())
-                continue;
-
-            Variable *v = &it.value();
-
-            // Skip variables that are already evaluated
-            if (v->is_data())
-                continue;
-
-            jitc_var_traverse(v->size, index);
-            v->output_flag = (VarType) v->type != VarType::Void;
-        }
-
-        source.clear();
+    for (WeakRef wr: ts->scheduled) {
+        // Skip variables that expired, or which we already evaluated
+        Variable *v = jitc_var(wr);
+        if (!v || v->is_data())
+            continue;
+        jitc_var_traverse(v->size, wr.index);
+        v->output_flag = true;
     }
+
+    ts->scheduled.clear();
+
+    for (uint32_t index: ts->side_effects)
+        jitc_var_traverse(jitc_var(index)->size, index);
+
+    ts->side_effects.clear();
 
     if (schedule.empty())
         return;
@@ -664,8 +659,8 @@ void jitc_eval(ThreadState *ts) {
             task_release(jitc_task);
             jitc_task = scheduled_tasks[0];
         } else {
-            if (unlikely(scheduled_tasks.empty()))
-                jitc_fail("jit_eval(): no tasks generated!");
+            jitc_assert(!scheduled_tasks.empty(),
+                        "jit_eval(): no tasks generated!");
 
             // Insert a barrier task
             Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
@@ -683,19 +678,17 @@ void jitc_eval(ThreadState *ts) {
 
     for (ScheduledVariable sv : schedule) {
         uint32_t index = sv.index;
+        Variable *v = jitc_var(index);
 
-        auto it = state.variables.find(index);
-        if (it == state.variables.end())
-            continue;
-
-        Variable *v = &it.value();
         v->reg_index = 0;
-        if (!(v->output_flag || v->side_effect))
+        if (!(v->output_flag || v->side_effect)) {
+            jitc_var_dec_ref(index, v);
             continue;
+        }
 
-        if (unlikely(v->is_literal()))
-            jitc_fail("jit_eval(): internal error: did not expect a literal "
-                      "constant variable here!");
+        jitc_assert(!v->is_literal(),
+                   "jit_eval(): internal error: did not expect a literal "
+                   "constant variable here!");
 
         jitc_lvn_drop(index, v);
 
@@ -741,6 +734,8 @@ void jitc_eval(ThreadState *ts) {
 
         for (int j = 0; j < 4; ++j)
             jitc_var_dec_ref(dep[j]);
+
+        jitc_var_dec_ref(index, v);
     }
 
     jitc_log(Info, "jit_eval(): done.");
@@ -762,27 +757,28 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     schedule.clear();
 
     for (uint32_t i = 0; i < n_in; ++i) {
-        if (in[i] == 0)
+        uint32_t index = in[i];
+        if (!index)
             continue;
-
-        const Variable *v = jitc_var(in[i]);
+        const Variable *v = jitc_var(index);
         if (!v->is_literal())
-            visited.emplace(1, in[i]);
+            visited.emplace(1, index);
     }
 
-    auto traverse = [](uint32_t index) {
+    for (uint32_t i = 0; i < n_out; ++i) {
+        uint32_t index = out_nested[i];
         if (!index)
-            return;
+            continue;
         jitc_var_traverse(1, index);
-        Variable *v = jitc_var(index);
-        v->output_flag = (VarType) v->type != VarType::Void;
-    };
+        jitc_var(index)->output_flag = true;
+    }
 
-    for (uint32_t i = 0; i < n_out; ++i)
-        traverse(out_nested[i]);
-
-    for (uint32_t i = 0; i < n_se; ++i)
-        traverse(se[i]);
+    for (uint32_t i = 0; i < n_se; ++i) {
+        uint32_t index = se[i];
+        if (!index)
+            continue;
+        jitc_var_traverse(1, index);
+    }
 
     std::stable_sort(
         schedule.begin(), schedule.end(),
@@ -837,6 +833,9 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     callable_count++;
 
     buffer.rewind_to(kernel_offset);
+
+    for (ScheduledVariable &sv: schedule)
+        jitc_var_dec_ref(sv.index);
 
     return kernel_hash;
 }

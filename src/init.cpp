@@ -57,10 +57,6 @@ static_assert(
     sizeof(VariableKey) == 9 * sizeof(uint32_t),
     "VariableKey: incorrect size, likely an issue with padding/packing!");
 
-static_assert(
-    sizeof(tsl::detail_robin_hash::bucket_entry<VariableMap::value_type, false>) == 64,
-    "VariableMap: incorrect bucket size, likely an issue with padding/packing!");
-
 static ProfilerRegion profiler_region_init("jit_init");
 
 #if defined(_WIN32)
@@ -130,9 +126,7 @@ void jitc_init(uint32_t backends) {
     if ((backends & (uint32_t) JitBackend::CUDA) && jitc_cuda_init())
         state.backends |= (uint32_t) JitBackend::CUDA;
 
-    state.variable_index = 1;
-    state.variable_watermark = 0;
-
+    state.variable_counter = 0;
     state.kernel_hard_misses = state.kernel_soft_misses = 0;
     state.kernel_hits = state.kernel_launches = 0;
 }
@@ -264,32 +258,29 @@ void jitc_shutdown(int light) {
     thread_state_cuda = nullptr;
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
-        uint32_t n_leaked = 0;
-        for (auto &var : state.variables) {
-            if (n_leaked == 0)
-                jitc_log(Warn, "jit_shutdown(): detected variable leaks:");
-            if (n_leaked < 10)
-                jitc_log(Warn,
-                         " - variable r%u is still being referenced! "
-                         "(type=%s, size=%u, "
-                         "kind=\"%s\", dep=[%u, %u, %u, %u], ref=%u, ref_se=%u)",
-                         var.first,
-                         type_name[var.second.type],
-                         var.second.size,
-                         var_kind_name[var.second.kind],
-                         var.second.dep[0], var.second.dep[1],
-                         var.second.dep[2], var.second.dep[3],
-                         (uint32_t) var.second.ref_count,
-                         (uint32_t) var.second.ref_count_se);
-            else if (n_leaked == 10)
-                jitc_log(Warn, " - (skipping remainder)");
-            ++n_leaked;
+        size_t n_leaked = state.variables.size() - state.unused_variables.size() - 1;
+
+        if (n_leaked > 0) {
+            jitc_log(Warn, "jit_shutdown(): detected %zu variable leaks:", n_leaked);
+
+            for (size_t i = 1; i < state.variables.size(); ++i) {
+                const Variable &v = state.variables[i];
+                if (v.ref_count == 0 && v.ref_count_se == 0)
+                    continue;
+                if (n_leaked < 10)
+                    jitc_log(Warn,
+                             " - variable r%zu: type=%s, size=%u, kind=\"%s\", "
+                             "deps=[r%u, r%u, r%u, r%u], ref_count=%u, "
+                             "ref_count_se=%u", i, type_name[v.type], v.size,
+                             var_kind_name[v.kind], v.dep[0], v.dep[1],
+                             v.dep[2], v.dep[3], v.ref_count, v.ref_count_se);
+                else if (n_leaked == 10)
+                    jitc_log(Warn, " - (skipping remainder)");
+                ++n_leaked;
+            }
         }
 
-        if (n_leaked > 0)
-            jitc_log(Warn, "jit_shutdown(): %u variables are still referenced!", n_leaked);
-
-        if (state.variables.empty() && !state.extra.empty()) {
+        if (n_leaked == 0 && !state.extra.empty()) {
             jitc_log(Warn,
                     "jit_shutdown(): %zu 'extra' records were not cleaned up:",
                     state.extra.size());

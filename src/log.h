@@ -23,8 +23,13 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 
 #if defined(NDEBUG)
 #  define jitc_trace(...) do { } while (0)
+#  define jitc_assert(...) do { } while (0)
 #else
 #  define jitc_trace(...) jitc_log(Trace, __VA_ARGS__)
+#define jitc_assert(cond, fmt, ...)                                            \
+    if (unlikely(!(cond)))                                                     \
+        jit_fail("drjit: assertion failure (\"%s\") in line %i: " fmt, #cond,  \
+                 __LINE__, ##__VA_ARGS__);
 #endif
 
 /// Print a log message with the specified log level and message

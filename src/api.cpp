@@ -170,7 +170,7 @@ int jit_flag(JitFlag flag) {
 }
 
 uint32_t jit_record_checkpoint(JitBackend backend) {
-    uint32_t result = (uint32_t) thread_state(backend)->side_effects_recorded.size();
+    uint32_t result = (uint32_t) thread_state(backend)->side_effects_symbolic.size();
     if (jit_flag(JitFlag::Recording))
         result |= 0x80000000u;
     return result;
@@ -185,7 +185,7 @@ uint32_t jit_record_begin(JitBackend backend, const char *name) {
         return uint32_t(-1);
     stack.push_back(name ? name : "");
 
-    uint32_t result = (uint32_t) ts->side_effects_recorded.size();
+    uint32_t result = (uint32_t) ts->side_effects_symbolic.size();
     if (jit_flag(JitFlag::Recording))
         result |= 0x80000000u;
     jit_set_flag(JitFlag::Recording, true);
@@ -206,7 +206,7 @@ void jit_record_end(JitBackend backend, uint32_t value) {
     jit_set_flag(JitFlag::Recording, value & 0x80000000u);
     value &= 0x7fffffff;
 
-    std::vector<uint32_t> &se = ts->side_effects_recorded;
+    std::vector<uint32_t> &se = ts->side_effects_symbolic;
     if (value > se.size())
         jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
 
@@ -517,13 +517,6 @@ void jit_var_dec_ref_impl(uint32_t index) noexcept {
         return;
     lock_guard guard(state.lock);
     jitc_var_dec_ref(index);
-}
-
-int jit_var_exists(uint32_t index) {
-    if (index == 0)
-        return 0;
-    lock_guard guard(state.lock);
-    return state.variables.find(index) != state.variables.end();
 }
 
 uint32_t jit_var_ref(uint32_t index) {
