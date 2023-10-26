@@ -1281,11 +1281,10 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
 
     // Special handling for predicates
     for (uint32_t in : vcall->in) {
-        auto it = state.variables.find(in);
-        if (it == state.variables.end())
+        if (!in)
             continue;
-        const Variable *v2 = &it->second;
 
+        const Variable *v2 = jitc_var(in);
         if ((VarType) v2->type != VarType::Bool)
             continue;
 
@@ -1326,10 +1325,9 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
 
     uint32_t offset = 0;
     for (uint32_t in : vcall->in) {
-        auto it = state.variables.find(in);
-        if (it == state.variables.end())
+        if (!in)
             continue;
-        const Variable *v2 = &it->second;
+        const Variable *v2 = jitc_var(in);
         uint32_t size = type_size[v2->type];
 
         const char *tname = type_name_ptx[v2->type],
@@ -1366,19 +1364,15 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     for (uint32_t i = 0; i < n_out; ++i) {
         uint32_t index = vcall->out_nested[i],
                  index_2 = vcall->out[i];
-        auto it = state.variables.find(index);
-        if (it == state.variables.end())
+        if (!index)
             continue;
-        uint32_t size = type_size[it->second.type],
+        const Variable *v = jitc_var(index);
+        uint32_t size = type_size[v->type],
                  load_offset = offset;
         offset += size;
 
         // Skip if expired
-        auto it2 = state.variables.find(index_2);
-        if (it2 == state.variables.end())
-            continue;
-
-        const Variable *v2 = &it2.value();
+        const Variable *v2 = jitc_var(index_2);
         if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
             continue;
 
@@ -1402,10 +1396,9 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     // =====================================================
 
     for (uint32_t out : vcall->out) {
-        auto it = state.variables.find(out);
-        if (it == state.variables.end())
+        if (!out)
             continue;
-        const Variable *v2 = &it->second;
+        const Variable *v2 = jitc_var(out);
         if ((VarType) v2->type != VarType::Bool)
             continue;
         if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
@@ -1426,10 +1419,9 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
 
     fmt("\nl_masked_$u:\n", vcall_reg);
     for (uint32_t out : vcall->out) {
-        auto it = state.variables.find(out);
-        if (it == state.variables.end())
+        if (!out)
             continue;
-        const Variable *v2 = &it->second;
+        const Variable *v2 = jitc_var(out);
         if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
             continue;
 

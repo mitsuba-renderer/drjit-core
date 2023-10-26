@@ -177,17 +177,11 @@ jit_init(JitBackendCUDA);
 
 Let's calculate something: we will start by creating a single-precision
 floating point variable that is initialized with the value ``0.5``. This
-involves the function ``jit_var_literal``, which creates a literal constant
+involves the function ``jit_var_f32``, which creates a literal constant
 variable that depends on no other variables.
 
 ```cpp
-float value = 0.5f;
-uint32_t v0 = jit_var_literal(/* backend  = */ JitBackendCUDA,
-                              /* type     = */ VarTypeFloat32,
-                              /* value    = */ &value,
-                              /* size     = */ 1,
-                              /* eval     = */ 0,
-                              /* is_class = */ 0);
+uint32_t v0 = jit_var_f32(JitBackendCUDA, .5f);
 );
 ```
 This is a *scalar* variable, which means that it will produce a

@@ -15,7 +15,7 @@
 #include "llvm.h"
 #include "alloc.h"
 #include "io.h"
-#include <deque>
+#include <queue>
 #include <string.h>
 #include <inttypes.h>
 #include <nanothread/nanothread.h>
@@ -121,34 +121,24 @@ enum VarKind : uint32_t {
     Count
 };
 
+#if defined(_MSC_VER)
+#  pragma warning (disable:4201) // nonstandard extension used: nameless struct/union
+#endif
+
 #pragma pack(push, 1)
 
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
-    #if defined(__GNUC__)
-    #  pragma GCC diagnostic push
-    #  if defined(__has_warning)
-    #    if __has_warning("-Wclass-memaccess")
-    #      pragma GCC diagnostic ignored "-Wclass-memaccess"
-    #    endif
-    #  else
-    #    pragma GCC diagnostic ignored "-Wclass-memaccess"
-    #  endif
-    #elif defined(_MSC_VER)
-    #  pragma warning (disable:4201) // nonstandard extension used: nameless struct/union
-    #endif
-
     /// Zero-initialize by default
-    Variable() { memset(this, 0, sizeof(Variable)); }
-
-    #if defined(__GNUC__)
-    #  pragma GCC diagnostic pop
-    #endif
+    Variable() { memset((void *) this, 0, sizeof(Variable)); }
 
     // =================  Reference count, dependencies, scope ================
 
     /// Number of times that this variable is referenced elsewhere
     uint32_t ref_count;
+
+    /// How many times has this variable entry been (re-) used?
+    uint32_t counter;
 
     /// Identifier of the basic block containing this variable
     uint32_t scope;
@@ -205,7 +195,7 @@ struct Variable {
     /// If set, 'data' will not be deallocated when the variable is destructed
     uint32_t retain_data : 1;
 
-    /// Does this variable represent symbolic computation? (abstract inputs)
+    /// Does this variable represent symbolic computation?
     uint32_t symbolic : 1;
 
     /// Does this variable represent the input of a symbolic virtual function call?
@@ -434,6 +424,15 @@ struct OptixPipelineData {
 };
 #endif
 
+struct WeakRef {
+    uint32_t index;
+    uint32_t counter;
+    WeakRef() : index(0), counter(0) { }
+    WeakRef(uint32_t index, uint32_t counter)
+        : index(index), counter(counter) { }
+};
+
+
 /// Represents a single stream of a parallel communication
 struct ThreadState {
     /// Backend type
@@ -443,7 +442,7 @@ struct ThreadState {
      * List of variables that are scheduled for evaluation (via
      * jitc_var_schedule()) that will take place at the next call to jitc_eval().
      */
-    std::vector<uint32_t> scheduled;
+    std::vector<WeakRef> scheduled;
 
     /**
      * List of special variables of type VarType::Void, whose evaluation will
@@ -453,7 +452,7 @@ struct ThreadState {
     std::vector<uint32_t> side_effects;
 
     /// When recording loops or virtual function calls, side effects go here.
-    std::vector<uint32_t> side_effects_recorded;
+    std::vector<uint32_t> side_effects_symbolic;
 
     /**
      * Stack of variable indices indicating the list of active SIMD lanes.
@@ -515,13 +514,6 @@ struct ThreadState {
     OptixShaderBindingTable *optix_sbt = nullptr;
 #endif
 };
-
-/// Maps from variable ID to a Variable instance
-using VariableMap =
-    tsl::robin_map<uint32_t, Variable, UInt32Hasher,
-                   std::equal_to<uint32_t>,
-                   aligned_allocator<std::pair<uint32_t, Variable>, 64>,
-                   /* StoreHash = */ false>;
 
 /// Key data structure for kernel source code & device ID
 struct KernelKey {
@@ -595,20 +587,25 @@ using ExtraMap = tsl::robin_map<uint32_t, Extra, UInt32Hasher>;
 
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
-    /// Must be held to access members
+    /// Must be held to access members of this data structure
     Lock lock;
 
     /// Must be held to access 'state.alloc_free'
     Lock alloc_free_lock;
 
-    /// Stores the mapping from variable indices to variables
-    VariableMap variables;
+    /// A flat list of variable data structures, including unused one
+    std::vector<Variable> variables{ 1 };
 
-    /// Counter to create variable scopes that enforce a variable ordering
-    uint32_t scope_ctr = 0;
+    /// A priority queue of indices into 'variables' that are currently unued
+    std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>
+        unused_variables;
 
     /// Maps from a key characterizing a variable to its index
     LVNMap lvn_map;
+
+    /// Counter to create variable scopes that enforce a variable ordering
+    uint32_t scope_ctr = 0;
+    size_t variable_counter = 0;
 
     /// Must be held to execute jitc_eval()
     Lock eval_lock;
@@ -642,14 +639,8 @@ struct State {
            alloc_allocated[(int) AllocType::Count] { 0 },
            alloc_watermark[(int) AllocType::Count] { 0 };
 
-    /// Keep track of the number of created JIT variables
-    uint32_t variable_watermark = 0;
-
     /// Maps from variable ID to extra information for a fraction of variables
     ExtraMap extra;
-
-    /// Current variable index
-    uint32_t variable_index = 1;
 
     /// Limit the output of jit_var_str()?
     uint32_t print_limit = 20;

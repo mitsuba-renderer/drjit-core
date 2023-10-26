@@ -1,5 +1,4 @@
 #include "internal.h"
-#include <stdint.h>
 
 extern void jitc_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index);
 extern void jitc_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index);
@@ -26,7 +25,7 @@ struct VCall {
     /// A descriptive name
     char *name = nullptr;
 
-    /// ID of call variable
+    /// ID of the variable representing the call
     uint32_t id = 0;
 
     /// Max # of distinct instances that might be referenced by the call
@@ -41,14 +40,13 @@ struct VCall {
     /// Input variables at call site
     std::vector<uint32_t> in;
     /// Input symbolic variables
-    std::vector<uint32_t> in_nested;
-
+    std::vector<WeakRef> in_nested;
     /// Output variables at call site
     std::vector<uint32_t> out;
-    /// Output variables *per instance*
+    /// Output variables *per instance*. VCall holds a reference to these.
     std::vector<uint32_t> out_nested;
 
-    /// Per-instance offsets into side effects list
+    /// Per-instance offsets into the 'side_effects' list below
     std::vector<uint32_t> checkpoints;
     /// Compressed side effect index list
     std::vector<uint32_t> side_effects;
