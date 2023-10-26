@@ -40,8 +40,10 @@ void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
         [](uint32_t index, void *payload) { ((Payload *) payload)->f(index); },
         &payload, sizeof(Payload), nullptr, (int) always_async);
 
-    if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
+    if (unlikely(jit_flag(JitFlag::LaunchBlocking))) {
+        unlock_guard guard(state.lock);
         task_wait(new_task);
+    }
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         KernelHistoryEntry entry = {};
@@ -1104,7 +1106,10 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         // Free memory (happens asynchronously after the above stmt.)
         jitc_free(buckets);
 
-        task_wait_and_release(local_task);
+        if (unlikely(jit_flag(JitFlag::LaunchBlocking))) {
+            unlock_guard guard(state.lock);
+            task_wait_and_release(local_task);
+        }
 
         return unique_count;
     }
