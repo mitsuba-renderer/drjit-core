@@ -418,9 +418,12 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
         // Check if any input parameters became irrelevant
         for (uint32_t i = 0; i < vcall_2->in.size(); ++i) {
             WeakRef &wr = vcall_2->in_nested[i];
+            if (wr.index == 0)
+                continue;
+
             Variable *v2 = jitc_var(wr);
             if (v2)
-                continue;
+                continue; // still referenced
             uint32_t in = vcall_2->in[i];
             vcall_2->in[i] = 0;
             vcall_2->in_nested[i] = WeakRef();

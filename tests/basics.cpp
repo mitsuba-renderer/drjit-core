@@ -216,7 +216,7 @@ template <typename T> bool test_const_prop() {
             }
 
             if (i < Size)
-                jit_assert(jit_var_is_literal(index));
+                jit_assert(jit_var_state(index) == VarState::Literal);
             else
                 jit_var_schedule(index);
 
@@ -308,8 +308,8 @@ template <typename T> bool test_const_prop() {
                 }
 
                 if (i < Size && k < Size) {
-                    jit_assert(jit_var_is_literal(index));
-                    jit_assert(!jit_var_is_evaluated(index));
+                    jit_assert(jit_var_state(index) == VarState::Literal);
+                    jit_assert(jit_var_state(index) != VarState::Evaluated);
                 } else {
                     jit_var_schedule(index);
                 }

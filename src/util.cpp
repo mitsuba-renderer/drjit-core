@@ -1033,7 +1033,6 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
             KernelType::VCallReduce,
             [block_size, size, buckets, bucket_count, ptr](uint32_t index) {
                 ProfilerPhase profiler(profiler_region_mkperm_phase_1);
-
                 uint32_t start = index * block_size,
                          end = std::min(start + block_size, size);
 
@@ -1097,6 +1096,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                     uint32_t idx = buckets_local[ptr[i]]++;
                     perm[idx] = i;
                 }
+
                 free(buckets_local);
             },
 
@@ -1106,11 +1106,8 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         // Free memory (happens asynchronously after the above stmt.)
         jitc_free(buckets);
 
-        if (unlikely(jit_flag(JitFlag::LaunchBlocking))) {
-            unlock_guard guard(state.lock);
-            task_wait_and_release(local_task);
-        }
-
+        unlock_guard guard(state.lock);
+        task_wait_and_release(local_task);
         return unique_count;
     }
 }
