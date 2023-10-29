@@ -1,20 +1,39 @@
 #include "test.h"
 #include "traits.h"
 #include <drjit-core/containers.h>
-#include <drjit-core/state.h>
 #include <utility>
 
 namespace dr = drjit;
 
 namespace drjit {
 namespace detail {
+    struct dr_index_vector : dr_vector<uint32_t> {
+        using Base = dr_vector<uint32_t>;
+        using Base::Base;
+        using Base::operator=;
+
+        dr_index_vector(size_t size) : Base(size, 0) { }
+        ~dr_index_vector() { clear(); }
+
+        void push_back(uint32_t value) {
+            jit_var_inc_ref_impl(value);
+            Base::push_back(value);
+        }
+
+        void clear() {
+            for (size_t i = 0; i < size(); ++i)
+                jit_var_dec_ref_impl(operator[](i));
+            Base::clear();
+        }
+    };
+
     template <typename Value, enable_if_t<Value::IsArray> = 0>
     void collect_indices(dr_index_vector &indices, const Value &value) {
         indices.push_back(value.index());
     }
 
     template <typename Value, enable_if_t<Value::IsArray> = 0>
-    void write_indices(dr_index_vector &indices, Value &value, uint32_t &offset) {
+    void update_indices(dr_index_vector &indices, Value &value, uint32_t &offset) {
         uint32_t &index = indices[offset++];
         value = Value::steal(index);
         index = 0;
@@ -33,15 +52,15 @@ namespace detail {
     }
 
     template <typename... Ts, size_t... Is>
-    void write_indices_tuple(dr_index_vector &indices, dr_tuple<Ts...> &value,
+    void update_indices_tuple(dr_index_vector &indices, dr_tuple<Ts...> &value,
                              uint32_t &offset, std::index_sequence<Is...>) {
-        (write_indices(indices, value.template get<Is>(), offset), ...);
+        (update_indices(indices, value.template get<Is>(), offset), ...);
     }
 
     template <typename... Ts>
-    void write_indices(dr_index_vector &indices, dr_tuple<Ts...> &value,
+    void update_indices(dr_index_vector &indices, dr_tuple<Ts...> &value,
                              uint32_t &offset) {
-        write_indices_tuple(indices, value, offset, std::make_index_sequence<sizeof...(Ts)>());
+        update_indices_tuple(indices, value, offset, std::make_index_sequence<sizeof...(Ts)>());
     }
 
     inline bool extract_mask() { return true; }
@@ -81,8 +100,59 @@ namespace detail {
             return (const T &) value;
         }
     }
-};
-};
+
+    struct scoped_set_mask {
+        scoped_set_mask(JitBackend backend, uint32_t index) : backend(backend) {
+            jit_var_mask_push(backend, index);
+            jit_var_dec_ref(index);
+        }
+
+        ~scoped_set_mask() {
+            jit_var_mask_pop(backend);
+        }
+
+        JitBackend backend;
+    };
+
+    struct scoped_set_self {
+        scoped_set_self(JitBackend backend, uint32_t value, uint32_t self_index = 0)
+            : m_backend(backend) {
+            jit_vcall_self(backend, &m_self_value, &m_self_index);
+            jit_var_inc_ref(m_self_index);
+            jit_vcall_set_self(m_backend, value, self_index);
+        }
+
+        ~scoped_set_self() {
+            jit_vcall_set_self(m_backend, m_self_value, m_self_index);
+            jit_var_dec_ref(m_self_index);
+        }
+
+    private:
+        JitBackend m_backend;
+        uint32_t m_self_value;
+        uint32_t m_self_index;
+    };
+
+    struct scoped_record {
+        scoped_record(JitBackend backend, const char *name) : backend(backend) {
+            checkpoint = jit_record_begin(backend, name);
+            scope = jit_new_scope(backend);
+        }
+
+        uint32_t checkpoint_and_rewind() {
+            jit_set_scope(backend, scope);
+            return jit_record_checkpoint(backend);
+        }
+
+        ~scoped_record() {
+            jit_record_end(backend, checkpoint);
+        }
+
+        JitBackend backend;
+        uint32_t checkpoint, scope;
+    };
+} // namespace detail
+} // namespace drjit
 
 template <typename Result, typename Func, JitBackend Backend, typename Base,
           typename... Args, size_t... Is>
@@ -95,50 +165,36 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
     (void) N;
     Result result;
 
-    dr_index_vector indices_in, indices_out_all;
+    detail::dr_index_vector indices_in, indices_out_all;
     dr_vector<uint32_t> state(n_inst + 1, 0);
     dr_vector<uint32_t> inst_id(n_inst, 0);
 
     (detail::collect_indices(indices_in, args), ...);
 
-    detail::JitState<Backend> jit_state;
-    jit_state.begin_recording();
+    {
+        detail::scoped_record rec(Backend, "Test");
 
-    state[0] = jit_record_checkpoint(Backend);
+        state[0] = jit_record_checkpoint(Backend);
 
-    for (uint32_t i = 1; i <= n_inst; ++i) {
-        char label[128];
-        snprintf(label, sizeof(label), "VCall: %s [instance %u]", domain, i);
-        Base *base = (Base *) jit_registry_get_ptr(Backend, domain, i);
+        for (uint32_t i = 1; i <= n_inst; ++i) {
+            char label[128];
+            snprintf(label, sizeof(label), "VCall: %s [instance %u]", domain, i);
+            Base *base = (Base *) jit_registry_ptr(Backend, domain, i);
+            detail::scoped_set_mask mask_guard(Backend, jit_var_vcall_mask(Backend));
+            detail::scoped_set_self self_guard(Backend, i);
 
-#if defined(JIT_DEBUG_VCALL)
-        jit_state.set_prefix(label);
-#endif
-        jit_state.set_self(i);
+            if constexpr (std::is_same_v<Result, std::nullptr_t>)
+                func(base, (detail::set_mask_true<Is, N>(args))...);
+            else
+                detail::collect_indices(indices_out_all, func(base, args...));
 
-        if constexpr (Backend == JitBackend::LLVM) {
-            Mask vcall_mask = Mask::steal(jit_var_vcall_mask(Backend));
-            jit_state.set_mask(vcall_mask.index());
+            state[i] = jit_record_checkpoint(Backend);
+
+            inst_id[i - 1] = i;
         }
-
-        if constexpr (std::is_same_v<Result, std::nullptr_t>)
-            func(base, (detail::set_mask_true<Is, N>(args))...);
-        else
-            detail::collect_indices(indices_out_all, func(base, args...));
-
-        state[i] = jit_record_checkpoint(Backend);
-
-        if constexpr (Backend == JitBackend::LLVM)
-            jit_state.clear_mask();
-
-#if defined(JIT_DEBUG_VCALL)
-        jit_state.clear_prefix();
-#endif
-
-        inst_id[i - 1] = i;
     }
 
-    dr_index_vector indices_out(indices_out_all.size() / n_inst);
+    detail::dr_index_vector indices_out(indices_out_all.size() / n_inst);
 
     uint32_t se = jit_var_vcall(
         domain, self.index(), mask.index(), n_inst, inst_id.data(),
@@ -146,13 +202,12 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
         (uint32_t) indices_out_all.size(), indices_out_all.data(), state.data(),
         indices_out.data());
 
-    jit_state.end_recording();
     jit_var_mark_side_effect(se);
     jit_new_scope(Backend);
 
     if constexpr (!std::is_same_v<Result, std::nullptr_t>) {
         uint32_t offset = 0;
-        detail::write_indices(indices_out, result, offset);
+        detail::update_indices(indices_out, result, offset);
         return result;
     } else {
         (void) result;
@@ -169,31 +224,7 @@ auto vcall(const char *domain, const Func &func,
     using Result_2 = std::conditional_t<IsVoid, std::nullptr_t, Result>;
     using Bool = JitArray<Backend, bool>;
 
-    uint32_t n_inst = jit_registry_get_max(Backend, domain);
-
-#if 0
-    if (n_inst == 0) {
-        if constexpr (IsVoid)
-            return std::nullptr_t;
-        else
-            return zeros<Result>(dr::width(args...));
-    } else if (n_inst == 1) {
-        uint32_t i = 1;
-        Base *inst = nullptr;
-        do {
-            inst = (Base *) jit_registry_get_ptr(Backend, domain, i++);
-        } while (!inst);
-
-        if constexpr (IsVoid) {
-            func(inst, args...);
-            return std::nullptr_t;
-        } else {
-            return func(inst, args...);
-        }
-    }
-#endif
-
-    jit_new_scope(Backend);
+    uint32_t n_inst = jit_registry_id_bound(Backend, domain);
 
     return vcall_impl<Result_2>(
         domain, n_inst, func, self,
@@ -250,8 +281,8 @@ TEST_BOTH(01_recorded_vcall) {
         jit_assert(strcmp(y.str(), "[0, 22, 204, 0, 28, 210, 0, 34, 216, 0]") == 0);
     }
 
-    jit_registry_remove(Backend, &a1);
-    jit_registry_remove(Backend, &a2);
+    jit_registry_remove(&a1);
+    jit_registry_remove(&a2);
 }
 
 TEST_BOTH(02_calling_conventions) {
@@ -326,9 +357,9 @@ TEST_BOTH(02_calling_conventions) {
         jit_assert(strcmp(result.template get<4>().str(), "[0, 1, 0, 0, 1, 0, 0, 1, 0, 0]") == 0);
     }
 
-    jit_registry_remove(Backend, &b1);
-    jit_registry_remove(Backend, &b2);
-    jit_registry_remove(Backend, &b3);
+    jit_registry_remove(&b1);
+    jit_registry_remove(&b2);
+    jit_registry_remove(&b3);
 }
 
 TEST_BOTH(03_optimize_away_outputs) {
@@ -367,10 +398,10 @@ TEST_BOTH(03_optimize_away_outputs) {
     BasePtr self = arange<UInt32>(10) % 4;
 
     for (uint32_t i = 0; i < 2; ++i) {
-        i = 1;
         jit_set_flag(JitFlag::VCallOptimize, i);
 
         jit_assert(jit_var_ref(p3.index()) == 1);
+        jit_set_log_level_stderr((LogLevel) 10);
 
         auto result = vcall(
             "Base",
@@ -395,9 +426,9 @@ TEST_BOTH(03_optimize_away_outputs) {
                             "[0, 13, 13, 14, 0, 13, 13, 14, 0, 13]") == 0);
     }
 
-    jit_registry_remove(Backend, &c1);
-    jit_registry_remove(Backend, &c2);
-    jit_registry_remove(Backend, &c3);
+    jit_registry_remove(&c1);
+    jit_registry_remove(&c2);
+    jit_registry_remove(&c3);
 }
 
 TEST_BOTH(04_devirtualize) {
@@ -441,6 +472,7 @@ TEST_BOTH(04_devirtualize) {
             jit_set_flag(JitFlag::VCallOptimize, i);
             uint32_t scope = jit_scope(Backend);
 
+            scoped_set_log_level x((LogLevel) 10);
             auto result = vcall(
                 "Base",
                 [](Base *self2, Float p1, Float p2) {
@@ -466,7 +498,7 @@ TEST_BOTH(04_devirtualize) {
             jit_assert((result.template get<1>().index() != alt1.index()));
             jit_assert((result.template get<2>().index() == alt2.index()) == (i == 1));
 
-            jit_assert(jit_var_is_literal(result.template get<2>().index()) == (i == 1));
+            jit_assert((jit_var_state(result.template get<2>().index()) == VarState::Literal) == (i == 1));
 
             jit_var_schedule(result.template get<0>().index());
             jit_var_schedule(result.template get<1>().index());
@@ -478,8 +510,8 @@ TEST_BOTH(04_devirtualize) {
                             "[0, 13, 14, 0, 13, 14, 0, 13, 14, 0]") == 0);
         }
     }
-    jit_registry_remove(Backend, &d1);
-    jit_registry_remove(Backend, &d2);
+    jit_registry_remove(&d1);
+    jit_registry_remove(&d2);
 }
 
 TEST_BOTH(05_extra_data) {
@@ -527,8 +559,8 @@ TEST_BOTH(05_extra_data) {
             jit_assert(strcmp(result.str(), "[0, 9, 13, 0, 21, 28, 0, 33, 43, 0]") == 0);
         }
     }
-    jit_registry_remove(Backend, &e1);
-    jit_registry_remove(Backend, &e2);
+    jit_registry_remove(&e1);
+    jit_registry_remove(&e2);
 }
 
 TEST_BOTH(06_side_effects) {
@@ -572,9 +604,8 @@ TEST_BOTH(06_side_effects) {
         jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
         jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
 
-        jit_registry_remove(Backend, &f1);
-        jit_registry_remove(Backend, &f2);
-        jit_registry_trim();
+        jit_registry_remove(&f1);
+        jit_registry_remove(&f2);
     }
 }
 
@@ -623,9 +654,8 @@ TEST_BOTH(07_side_effects_only_once) {
         jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
         jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
 
-        jit_registry_remove(Backend, &g1);
-        jit_registry_remove(Backend, &g2);
-        jit_registry_trim();
+        jit_registry_remove(&g1);
+        jit_registry_remove(&g2);
     }
 }
 
@@ -671,8 +701,8 @@ TEST_BOTH(08_multiple_calls) {
         jit_assert(strcmp(z.str(), "[0, 12, 14, 0, 12, 14, 0, 12, 14, 0]") == 0);
     }
 
-    jit_registry_remove(Backend, &h1);
-    jit_registry_remove(Backend, &h2);
+    jit_registry_remove(&h1);
+    jit_registry_remove(&h2);
 }
 
 TEST_BOTH(09_big) {
@@ -744,9 +774,9 @@ TEST_BOTH(09_big) {
     }
 
     for (int i = 0; i < n1; ++i)
-        jit_registry_remove(Backend, &v1[i]);
+        jit_registry_remove(&v1[i]);
     for (int i = 0; i < n2; ++i)
-        jit_registry_remove(Backend, &v2[i]);
+        jit_registry_remove(&v2[i]);
 }
 
 TEST_BOTH(09_self) {
@@ -772,8 +802,8 @@ TEST_BOTH(09_self) {
 
     jit_assert(strcmp(y.str(), "[1, 2]") == 0);
 
-    jit_registry_remove(Backend, &i1);
-    jit_registry_remove(Backend, &i2);
+    jit_registry_remove(&i1);
+    jit_registry_remove(&i2);
 }
 
 TEST_BOTH(10_recursion) {
@@ -816,10 +846,10 @@ TEST_BOTH(10_recursion) {
 
     jit_assert(strcmp(y.str(), "[7, 16]") == 0);
 
-    jit_registry_remove(Backend, &i11);
-    jit_registry_remove(Backend, &i12);
-    jit_registry_remove(Backend, &i21);
-    jit_registry_remove(Backend, &i22);
+    jit_registry_remove(&i11);
+    jit_registry_remove(&i12);
+    jit_registry_remove(&i21);
+    jit_registry_remove(&i22);
 }
 
 TEST_BOTH(11_recursion_with_local) {
@@ -862,10 +892,10 @@ TEST_BOTH(11_recursion_with_local) {
 
     jit_assert(strcmp(y.str(), "[7, 16]") == 0);
 
-    jit_registry_remove(Backend, &i11);
-    jit_registry_remove(Backend, &i12);
-    jit_registry_remove(Backend, &i21);
-    jit_registry_remove(Backend, &i22);
+    jit_registry_remove(&i11);
+    jit_registry_remove(&i12);
+    jit_registry_remove(&i21);
+    jit_registry_remove(&i22);
 }
 
 TEST_BOTH(12_nested_with_side_effects) {
@@ -911,9 +941,8 @@ TEST_BOTH(12_nested_with_side_effects) {
         jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
         jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
 
-        jit_registry_remove(Backend, &f1);
-        jit_registry_remove(Backend, &f2);
-        jit_registry_trim();
+        jit_registry_remove(&f1);
+        jit_registry_remove(&f2);
     }
 }
 
@@ -956,8 +985,7 @@ TEST_BOTH(13_load_bool_data) {
         jit_var_schedule(result.index());
         jit_assert(strcmp(result.str(), "[0, 1, 4, 0, 1]") == 0);
 
-        jit_registry_remove(Backend, &f1);
-        jit_registry_remove(Backend, &f2);
-        jit_registry_trim();
+        jit_registry_remove(&f1);
+        jit_registry_remove(&f2);
     }
 }

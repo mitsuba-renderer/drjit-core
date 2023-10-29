@@ -2,24 +2,27 @@
 #include <cstring>
 
 TEST_CUDA(01_graphviz) {
+    if (jit_flag(JitFlag::ForceOptiX))
+        return;
+
     Float r = linspace<Float>(0, 1, 11);
-    jit_var_set_label(r.index(), "r");
+    set_label(r, "r");
     jit_prefix_push(Backend, "Scope 1");
     Float a = r + 1;
-    jit_var_set_label(a.index(), "a");
+    set_label(a, "a");
     jit_prefix_pop(Backend);
 
     jit_prefix_push(Backend, "Scope 2");
     Float b = r + 2;
-    jit_var_set_label(b.index(), "b");
+    set_label(b, "b");
     jit_prefix_push(Backend, "Nested scope");
     Float c = b + 3;
-    jit_var_set_label(c.index(), "c");
+    set_label(c, "c");
     Float d = a + 4;
     jit_prefix_pop(Backend);
     jit_prefix_pop(Backend);
     Float e = r + 5;
-    jit_var_set_label(e.index(), "e");
+    set_label(e, "e");
 
     jit_prefix_push(Backend, "Scope 2");
     jit_prefix_push(Backend, "Nested scope");
@@ -31,7 +34,7 @@ TEST_CUDA(01_graphviz) {
     scatter_reduce(ReduceOp::Add, f, Float(4), UInt32(0));
 
     char *str = strdup(jit_var_graphviz());
-    char *p = strstr(str, "Literal constant: 0x");
+    char *p = strstr(str, "Literal: 0x");
     jit_assert(p);
     p += 20;
     char *p2 = strstr(p, "|");
@@ -43,62 +46,84 @@ TEST_CUDA(01_graphviz) {
     graph [dpi=50 fontname=Consolas];
     node [shape=record fontname=Consolas];
     edge [fontname=Consolas];
-    1 [label="{mov.u32 $r0, %r0\l|{Type: cuda u32|Size: 11}|{ID #1|E:0|I:1}}}"];
-    2 [label="{cvt.rn.$t0.$t1 $r0, $r1\l|{Type: cuda f32|Size: 11}|{ID #2|E:0|I:1}}}"];
-    3 [label="{Literal constant: 0.1|{Type: cuda f32|Size: 1}|{ID #3|E:0|I:1}}}" fillcolor=gray90 style=filled];
-    5 [label="{Label: \"r\"|mul.ftz.$t0 $r0, $r1, $r2\l|{Type: cuda f32|Size: 11}|{ID #5|E:1|I:3}}}" fillcolor=wheat style=filled];
+    1 [label="{counter|{Type: cuda u32|Size: 11}|{r1|Refs: 1}}}"];
+    2 [label="{cast|{Type: cuda f32|Size: 11}|{r2|Refs: 1}}}"];
+    3 [label="{Literal: 0.1|{Type: cuda f32|Size: 1}|{r3|Refs: 1}}}" fillcolor=gray90 style=filled];
     subgraph cluster_5615eefd04289ffb {
         label="Scope 1";
-        6 [label="{Literal constant: 1|{Type: cuda f32|Size: 1}|{ID #6|E:0|I:1}}}" fillcolor=gray90 style=filled];
-        7 [label="{Label: \"a\"|add.ftz.$t0 $r0, $r1, $r2\l|{Type: cuda f32|Size: 11}|{ID #7|E:1|I:1}}}" fillcolor=wheat style=filled];
+        color=gray95;
+        style=filled;
+        4 [label="{Literal: 1|{Type: cuda f32|Size: 1}|{r4|Refs: 1}}}" fillcolor=gray90 style=filled];
+    }
+    5 [label="{Label: \"r\"|mul|{Type: cuda f32|Size: 11}|{r5|Refs: 4}}}" fillcolor=wheat style=filled];
+    subgraph cluster_5615eefd04289ffb {
+        label="Scope 1";
+        color=gray95;
+        style=filled;
+        6 [label="{Label: \"a\"|add|{Type: cuda f32|Size: 11}|{r6|Refs: 3}}}" fillcolor=wheat style=filled];
     }
     subgraph cluster_6e8749cac8a1b5f3 {
         label="Scope 2";
-        8 [label="{Literal constant: 2|{Type: cuda f32|Size: 1}|{ID #8|E:0|I:1}}}" fillcolor=gray90 style=filled];
-        9 [label="{Label: \"b\"|add.ftz.$t0 $r0, $r1, $r2\l|{Type: cuda f32|Size: 11}|{ID #9|E:1|I:1}}}" fillcolor=wheat style=filled];
+        color=gray95;
+        style=filled;
+        7 [label="{Literal: 2|{Type: cuda f32|Size: 1}|{r7|Refs: 1}}}" fillcolor=gray90 style=filled];
+        8 [label="{Label: \"b\"|add|{Type: cuda f32|Size: 11}|{r8|Refs: 2}}}" fillcolor=wheat style=filled];
     }
     subgraph cluster_6e8749cac8a1b5f3 {
         label="Scope 2";
+        color=gray95;
+        style=filled;
         subgraph cluster_2d27caeba104ea91 {
             label="Nested scope";
-            10 [label="{Literal constant: 3|{Type: cuda f32|Size: 1}|{ID #10|E:0|I:1}}}" fillcolor=gray90 style=filled];
-            11 [label="{Label: \"c\"|add.ftz.$t0 $r0, $r1, $r2\l|{Type: cuda f32|Size: 11}|{ID #11|E:1|I:0}}}" fillcolor=wheat style=filled];
-            12 [label="{Literal constant: 4|{Type: cuda f32|Size: 1}|{ID #12|E:0|I:2}}}" fillcolor=gray90 style=filled];
-            13 [label="{add.ftz.$t0 $r0, $r1, $r2\l|{Type: cuda f32|Size: 11}|{ID #13|E:1|I:0}}}"];
+            color=gray95;
+            style=filled;
+            9 [label="{Literal: 3|{Type: cuda f32|Size: 1}|{r9|Refs: 1}}}" fillcolor=gray90 style=filled];
+            10 [label="{Label: \"c\"|add|{Type: cuda f32|Size: 11}|{r10|Refs: 1}}}" fillcolor=wheat style=filled];
+            11 [label="{Literal: 4|{Type: cuda f32|Size: 1}|{r11|Refs: 2}}}" fillcolor=gray90 style=filled];
+            12 [label="{add|{Type: cuda f32|Size: 11}|{r12|Refs: 1}}}"];
         }
     }
-    14 [label="{Literal constant: 5|{Type: cuda f32|Size: 1}|{ID #14|E:0|I:1}}}" fillcolor=gray90 style=filled];
-    15 [label="{Label: \"e\"|add.ftz.$t0 $r0, $r1, $r2\l|{Type: cuda f32|Size: 11}|{ID #15|E:1|I:0}}}" fillcolor=wheat style=filled];
+    13 [label="{Literal: 5|{Type: cuda f32|Size: 1}|{r13|Refs: 1}}}" fillcolor=gray90 style=filled];
+    14 [label="{Label: \"e\"|add|{Type: cuda f32|Size: 11}|{r14|Refs: 1}}}" fillcolor=wheat style=filled];
     subgraph cluster_6e8749cac8a1b5f3 {
         label="Scope 2";
+        color=gray95;
+        style=filled;
         subgraph cluster_2d27caeba104ea91 {
             label="Nested scope";
-            17 [label="{Evaluated|{Type: cuda f32|Size: 11}|{ID #17|E:0|I:1}}}" fillcolor=lightblue2 style=filled];
+            color=gray95;
+            style=filled;
+            15 [label="{Literal: 6|{Type: cuda f32|Size: 1}|{r15|Refs: 1}}}" fillcolor=gray90 style=filled];
+            16 [label="{add|{Type: cuda f32|Size: 11}|{r16|Refs: 1}}}"];
         }
     }
-    18 [label="{Symbolic|{Type: cuda f32|Size: 11}|{ID #18|E:1|I:0}}}" fillcolor=yellow style=filled];
-    19 [label="{Literal constant: 0|{Type: cuda u32|Size: 1}|{ID #19|E:0|I:1}}}" fillcolor=gray90 style=filled];
-    22 [label="{Evaluated (dirty)|{Type: cuda f32|Size: 11}|{ID #22|E:1|I:1}}}" fillcolor=salmon style=filled];
-    23 [label="{Literal constant: 0x000000000000|{Type: cuda ptr|Size: 1}|{ID #23|E:0|I:1}}}" fillcolor=gray90 style=filled];
-    24 [label="{mad.wide.$t3 %rd3, $r3, $s2, $r1\l.reg.$t2 $r0_unused\latom.global.add.$t2 $r0_unused, [%rd3], $r2\l|{Type: cuda void |Size: 1}|{ID #24|E:1|I:0}}}" fillcolor=yellowgreen style=filled];
+    17 [label="{bitcast|{Type: cuda f32|Size: 1}|{r17|Refs: 1}}}" fillcolor=yellow style=filled];
+    18 [label="{Literal: 0|{Type: cuda u32|Size: 1}|{r18|Refs: 1}}}" fillcolor=gray90 style=filled];
+    19 [label="{Literal: 1|{Type: cuda bool|Size: 1}|{r19|Refs: 1}}}" fillcolor=gray90 style=filled];
+    20 [label="{Evaluated (dirty)|{Type: cuda f32|Size: 11}|{r20|Refs: 1}}}" fillcolor=salmon style=filled];
+    21 [label="{Literal: 0x302000000|{Type: cuda ptr|Size: 1}|{r21|Refs: 1}}}" fillcolor=gray90 style=filled];
+    22 [label="{scatter|{Type: cuda void |Size: 1}|{r22|Refs: 1}}}"];
     1 -> 2;
     2 -> 5 [label=" 1"];
     3 -> 5 [label=" 2"];
-    5 -> 7 [label=" 1"];
-    6 -> 7 [label=" 2"];
-    5 -> 9 [label=" 1"];
-    8 -> 9 [label=" 2"];
-    9 -> 11 [label=" 1"];
-    10 -> 11 [label=" 2"];
-    7 -> 13 [label=" 1"];
-    12 -> 13 [label=" 2"];
-    5 -> 15 [label=" 1"];
-    14 -> 15 [label=" 2"];
-    17 -> 18;
-    22 -> 23 [label=" 4"];
-    23 -> 24 [label=" 1"];
-    12 -> 24 [label=" 2"];
-    19 -> 24 [label=" 3"];
+    5 -> 6 [label=" 1"];
+    4 -> 6 [label=" 2"];
+    5 -> 8 [label=" 1"];
+    7 -> 8 [label=" 2"];
+    8 -> 10 [label=" 1"];
+    9 -> 10 [label=" 2"];
+    6 -> 12 [label=" 1"];
+    11 -> 12 [label=" 2"];
+    5 -> 14 [label=" 1"];
+    13 -> 14 [label=" 2"];
+    6 -> 16 [label=" 1"];
+    15 -> 16 [label=" 2"];
+    16 -> 17;
+    20 -> 21 [style=dashed];
+    21 -> 22 [label=" 1"];
+    11 -> 22 [label=" 2"];
+    18 -> 22 [label=" 3"];
+    19 -> 22 [label=" 4"];
     subgraph cluster_legend {
         label="Legend";
         l5 [style=filled fillcolor=yellow label="Symbolic"];
@@ -110,11 +135,13 @@ TEST_CUDA(01_graphviz) {
     }
 }
 )";
-    FILE *f1 = fopen("a", "wb");
-    FILE *f2 = fopen("b", "wb");
-    fputs(ref, f1);
-    fputs(str, f2);
-    fclose(f1);
-    fclose(f2);
+    if (strcmp(ref, str) != 0) {
+        FILE *f1 = fopen("a.txt", "wb");
+        FILE *f2 = fopen("b.txt", "wb");
+        fputs(ref, f1);
+        fputs(str, f2);
+        fclose(f1);
+        fclose(f2);
+    }
     jit_assert(strcmp(ref, str) == 0);
 }

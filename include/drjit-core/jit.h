@@ -495,8 +495,8 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  * Raises an exception when ``ptr`` is ``nullptr``, or when it has already been
  * registered with *any* domain.
  */
-extern JIT_EXPORT void jit_registry_put(JIT_ENUM JitBackend backend,
-                                        const char *domain, void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_put(JIT_ENUM JitBackend backend,
+                                            const char *domain, void *ptr);
 
 /**
  * \brief Remove a pointer from the registry
@@ -546,11 +546,7 @@ enum VarType {
  * <b>Advanced usage</b>: When \c eval is nonzero, the variable is directly
  * created in evaluated form, which means that subsequent usage will access the
  * contents via memory instead of including the actual constant value in
- * generated PTX/LLVM code. This is particularly useful for loops: suppose a
- * loop references a literal constant that keeps changing (e.g. an iteration
- * counter). This change causes each iteration to generate different code,
- * requiring repeated compilation steps. By preemptively evaluating this
- * constant, Dr.Jit can reuse a single kernel for all steps.
+ * generated PTX/LLVM code.
  *
  * The parameter \c is_class specifies whether the variable represents an
  * instance index of a class, which may trigger further optimizations within
@@ -575,6 +571,7 @@ extern JIT_EXPORT uint32_t jit_var_u64(JitBackend backend, uint64_t value);
 extern JIT_EXPORT uint32_t jit_var_i64(JitBackend backend, int64_t value);
 
 extern JIT_EXPORT uint32_t jit_var_bool(JitBackend backend, bool value);
+extern JIT_EXPORT uint32_t jit_var_class(JitBackend backend, void *value);
 
 /**
  * \brief Create a counter variable

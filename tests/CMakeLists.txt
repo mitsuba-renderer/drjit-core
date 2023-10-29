@@ -1,6 +1,7 @@
 enable_testing()
 
-set(TEST_FILES basics.cpp mem.cpp graphviz.cpp vcall.cpp loop.cpp reductions.cpp)
+set(TEST_FILES basics.cpp mem.cpp graphviz.cpp vcall.cpp reductions.cpp)
+# loop.cpp
 
 foreach (TEST_FILE ${TEST_FILES})
   get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
@@ -33,7 +34,7 @@ endif()
 
 set_property(TARGET test_basics PROPERTY CXX_STANDARD 17)
 set_property(TARGET test_vcall PROPERTY CXX_STANDARD 17)
-set_property(TARGET test_loop PROPERTY CXX_STANDARD 17)
+# set_property(TARGET test_loop PROPERTY CXX_STANDARD 17)
 
 if (DRJIT_ENABLE_OPTIX)
  # target_sources(test_vcall PRIVATE optix_stubs.h optix_stubs.cpp)

@@ -126,7 +126,7 @@ TEST_BOTH(09_safety) {
         a.eval();
         uint32_t index = a.index();
 
-        Float b = gather(a, UInt32(0));
+        Float b = gather(a, UInt32(0, 1));
         jit_assert(index == a.index());
 
         scatter(a, Float(0), UInt32(0));
@@ -177,10 +177,10 @@ TEST_BOTH(11_reindex) {
            i3 = gather<UInt32>(i1, i2),
            i4 = arange<UInt32>(10) * 3 + 5;
 
-    jit_assert(!jit_var_is_evaluated(i1.index()) &&
-               !jit_var_is_evaluated(i2.index()) &&
-               !jit_var_is_evaluated(i3.index()) &&
-               !jit_var_is_evaluated(i4.index()));
+    jit_assert(jit_var_state(i1.index()) != VarState::Evaluated &&
+               jit_var_state(i2.index()) != VarState::Evaluated &&
+               jit_var_state(i3.index()) != VarState::Evaluated &&
+               jit_var_state(i4.index()) != VarState::Evaluated);
 
     jit_assert(i3.index() == i4.index());
 }

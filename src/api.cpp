@@ -459,6 +459,18 @@ uint32_t jit_var_f64(JitBackend backend, double value) {
     return jitc_var_new(v);
 }
 
+uint32_t jit_var_class(JitBackend backend, void *ptr) {
+    uint32_t value = jit_registry_id(ptr);
+
+    ThreadState *ts = thread_state(backend);
+    if (value && ts->vcall_self_value == value) {
+        jit_var_inc_ref(ts->vcall_self_index);
+        return ts->vcall_self_index;
+    }
+
+    return jit_var_u32(backend, value);
+}
+
 uint32_t jit_var_counter(JitBackend backend, size_t size) {
     lock_guard guard(state.lock);
     return jitc_var_counter(backend, size, true);
@@ -824,9 +836,9 @@ void jit_block_sum(JitBackend backend, enum VarType type, const void *in, void *
     jitc_block_sum(backend, type, in, out, size, block_size);
 }
 
-void jit_registry_put(JitBackend backend, const char *domain, void *ptr) {
+uint32_t jit_registry_put(JitBackend backend, const char *domain, void *ptr) {
     lock_guard guard(state.lock);
-    jitc_registry_put(backend, domain, ptr);
+    return jitc_registry_put(backend, domain, ptr);
 }
 
 void jit_registry_remove(const void *ptr) {

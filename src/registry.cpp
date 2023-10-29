@@ -55,7 +55,7 @@ struct Registry {
 static Registry registry;
 
 /// Register a pointer with Dr.Jit's pointer registry
-void jitc_registry_put(JitBackend backend, const char *domain_name, void *ptr) {
+uint32_t jitc_registry_put(JitBackend backend, const char *domain_name, void *ptr) {
     Registry &r = registry;
 
     auto [it1, result1] =
@@ -93,6 +93,8 @@ void jitc_registry_put(JitBackend backend, const char *domain_name, void *ptr) {
 
     // Create a reverse mapping
     it1.value() = ReverseKey { domain_id, index };
+
+    return index + 1;
 }
 
 /// Remove a pointer from the registry

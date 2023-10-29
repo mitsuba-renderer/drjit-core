@@ -23,7 +23,7 @@ const char *type_name[(int) VarType::Count] {
 
 /// Descriptive names for the various variable types (extra-short version)
 const char *type_name_short[(int) VarType::Count] {
-    "void ", "msk", "i8", "u8",  "i16", "u16", "i32",
+    "void ", "bool", "i8", "u8",  "i16", "u16", "i32",
     "u32", "i64", "u64", "ptr", "f16", "f32", "f64"
 };
 
@@ -219,6 +219,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
     uint32_t dep[4];
     bool write_ptr = v->write_ptr;
     memcpy(dep, v->dep, sizeof(uint32_t) * 4);
+    v->counter++;
 
     if (unlikely(v->extra)) {
         auto it = state.extra.find(index);
@@ -426,7 +427,7 @@ void jitc_var_set_label(uint32_t index, const char *label) {
         extra.label = combined;
     }
 
-    jitc_log(Debug, "jit_var_set_label(r%u): \"%s\"", index,
+    jitc_log(Debug, "jit_var_set_label(): r%u.label = \"%s\"", index,
              label ? label : "(null)");
 }
 
@@ -503,7 +504,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
                     "jit_var_new(): selected entry of variable data structure "
                     "is already used.");
 
-        v.counter = vo->counter + 1;
+        v.counter = vo->counter;
         *vo = v;
 
         if (unlikely(ts->prefix)) {
@@ -531,42 +532,42 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     if (unlikely(std::max(state.log_level_stderr, state.log_level_callback) >=
                  LogLevel::Debug)) {
         var_buffer.clear();
-        var_buffer.fmt("jit_var_new(%s r%u", type_name[v.type], index);
+        var_buffer.fmt("jit_var_new(): %s r%u", type_name[v.type], index);
         if (v.size > 1)
             var_buffer.fmt("[%u]", v.size);
 
-        uint32_t n_dep = 0;
-        for (int i = 0; i < 4; ++i) {
-            if (v.dep[i])
-                n_dep = i + 1;
-        }
-        if (n_dep)
-            var_buffer.put(" <- ");
-        for (uint32_t i = 0; i < n_dep; ++i)
-            var_buffer.fmt("r%u%s", v.dep[i], i + 1 < n_dep ? ", " : "");
-        var_buffer.put("): ");
+        var_buffer.put(" = ");
 
-        if (v.is_literal()) {
-            var_buffer.put("literal = ");
+        if (v.is_node()) {
+            var_buffer.fmt("%s(", var_kind_name[v.kind]);
+            for (int i = 0; i < 4; ++i) {
+                if (!v.dep[i])
+                    break;
+                if (i > 0)
+                    var_buffer.put(", ");
+                var_buffer.fmt("r%u", v.dep[i]);
+            }
+            var_buffer.put(")");
+        } else if (v.is_literal()) {
             jitc_value_print(&v);
         } else if (v.is_data()) {
+            var_buffer.put("data(");
             var_buffer.fmt(DRJIT_PTR, (uintptr_t) v.data);
+            var_buffer.put(")");
         } else if (v.is_stmt()) {
             var_buffer.put(v.stmt, strlen(v.stmt));
-        } else if (v.is_node()) {
-            var_buffer.fmt("\"%s\" operation", var_kind_name[v.kind]);
         }
 
         bool lvn_hit = lvn && !lvn_key_inserted;
         if (v.symbolic || lvn_hit) {
-            var_buffer.put(" (");
+            var_buffer.put(" [");
             if (v.symbolic)
                 var_buffer.put("symbolic");
             if (v.symbolic && lvn_hit)
                 var_buffer.put(", ");
             if (lvn_hit)
                 var_buffer.put("lvn hit");
-            var_buffer.put(")");
+            var_buffer.put("]");
         }
 
         jitc_log(Debug, "%s", var_buffer.get());
@@ -588,12 +589,6 @@ uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
        function, we can leverage the already available `self` variable
        instead of creating a new one. */
     if (is_class) {
-        ThreadState *ts = thread_state(backend);
-        if (ts->vcall_self_value &&
-            *((uint32_t *) value) == ts->vcall_self_value) {
-            jitc_var_inc_ref(ts->vcall_self_index);
-            return ts->vcall_self_index;
-        }
     }
 
     if (!eval) {
@@ -684,10 +679,7 @@ uint32_t jitc_var_wrap_vcall(uint32_t index) {
     v2.dep[0] = index;
     jitc_var_inc_ref(index);
 
-    uint32_t result = jitc_var_new(v2);
-    jitc_log(Debug, "jit_var_wrap_vcall(%s r%u <- r%u)", type_name[v2.type],
-             result, index);
-    return result;
+    return jitc_var_new(v2);
 }
 
 uint32_t jitc_new_scope(JitBackend backend) {
@@ -1499,7 +1491,7 @@ uint32_t jitc_var_mask_peek(JitBackend backend) {
 }
 
 void jitc_var_mask_push(JitBackend backend, uint32_t index) {
-    jitc_log(Debug, "jit_var_mask_push(index=r%u)", index);
+    jitc_log(Debug, "jit_var_mask_push(r%u)", index);
     jitc_var_inc_ref(index);
     thread_state(backend)->mask_stack.push_back(index);
 }
@@ -1517,7 +1509,7 @@ uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size) {
         uint32_t index_2 = stack.back(),
                  size_2  = jitc_var(index_2)->size;
 
-        // Use mask from the mastk stack if its size is compatible
+        // Use mask from the mask stack if its size is compatible
         if (size == 1 || size_2 == 1 || size_2 == size)
             mask = borrow(index_2);
     }
@@ -1526,14 +1518,12 @@ uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size) {
         mask = steal(jitc_var_mask_default(backend, size));
 
     uint32_t result;
-    if (mask) {
-        // Combine given mask with mask stack
+    // Combine given mask with mask stack
+    if (mask)
         result = jitc_var_and(mask, index);
-    } else {
+    else
         result = jitc_var_resize(index, size);
-    }
 
-    jitc_log(Debug, "jit_var_apply_mask(r%u <- r%u, size=%u)", result, index, size);
     return result;
 }
 

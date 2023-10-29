@@ -12,8 +12,8 @@
 #include "internal.h"
 
 /// Register a pointer with Dr.Jit's pointer registry
-extern void jitc_registry_put(JitBackend backend, const char *domain,
-                              void *ptr);
+extern uint32_t jitc_registry_put(JitBackend backend, const char *domain,
+                                  void *ptr);
 
 /// Remove a pointer from the registry
 extern void jitc_registry_remove(const void *ptr);
