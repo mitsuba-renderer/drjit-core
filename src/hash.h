@@ -15,6 +15,7 @@
 #endif
 
 #include <tsl/robin_map.h>
+#include <drjit-core/hash.h>
 #include <xxh3.h>
 
 #if defined (_MSC_VER)
@@ -39,40 +40,6 @@
     [[noreturn]]
 #endif
 extern void jitc_fail(const char* fmt, ...) noexcept;
-
-struct UInt32Hasher {
-    size_t operator()(uint32_t v) const {
-        // fmix32 from MurmurHash by Austin Appleby (public domain)
-        v ^= v >> 16;
-        v *= 0x85ebca6b;
-        v ^= v >> 13;
-        v *= 0xc2b2ae35;
-        v ^= v >> 16;
-        return (size_t) v;
-    }
-};
-
-struct UInt64Hasher {
-    size_t operator()(uint64_t v) const {
-        // fmix64 from MurmurHash by Austin Appleby (public domain)
-        v ^= v >> 33;
-        v *= (uint64_t) 0xff51afd7ed558ccdull;
-        v ^= v >> 33;
-        v *= (uint64_t) 0xc4ceb9fe1a85ec53ull;
-        v ^= v >> 33;
-        return (size_t) v;
-    }
-};
-
-struct PointerHasher {
-    size_t operator()(void *p) const {
-        if constexpr (sizeof(void *) == 4)
-            return UInt32Hasher()((uint32_t) (uintptr_t) p);
-        else
-            return UInt64Hasher()((uint64_t) (uintptr_t) p);
-    }
-};
-
 
 struct XXH128Cmp {
     size_t operator()(const XXH128_hash_t &h1,
