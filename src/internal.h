@@ -125,8 +125,6 @@ enum VarKind : uint32_t {
 #  pragma warning (disable:4201) // nonstandard extension used: nameless struct/union
 #endif
 
-#pragma pack(push, 1)
-
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
     /// Zero-initialize by default
@@ -136,9 +134,6 @@ struct Variable {
 
     /// Number of times that this variable is referenced elsewhere
     uint32_t ref_count;
-
-    /// How many times has this variable entry been (re-) used?
-    uint32_t counter;
 
     /// Identifier of the basic block containing this variable
     uint32_t scope;
@@ -172,6 +167,9 @@ struct Variable {
 
     /// Unused, to be eventually used to upgrade to 64 bit array sizes
     uint32_t unused;
+
+    /// How many times has this variable entry been (re-) used?
+    uint32_t counter;
 
     // ================  Essential flags used in the LVN key  =================
 
@@ -246,6 +244,8 @@ struct Variable {
     bool is_node()    const { return (uint32_t) kind > VarKind::Literal; }
     bool is_dirty()   const { return ref_count_se > 0; }
 };
+
+#pragma pack(push, 1)
 
 /// Abbreviated version of the Variable data structure
 struct VariableKey {

@@ -92,7 +92,9 @@ add_library(
   drjit-core SHARED
   include/drjit-core/jit.h
   include/drjit-core/traits.h
+  include/drjit-core/hash.h
   include/drjit-core/array.h
+  include/drjit-core/texture.h
 
   src/common.h
   src/internal.h
