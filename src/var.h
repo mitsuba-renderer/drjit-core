@@ -32,14 +32,6 @@ extern uint32_t jitc_var_literal(JitBackend backend, VarType type,
 extern uint32_t jitc_var_counter(JitBackend backend, size_t size,
                                  bool simplify_scalar);
 
-/// Create a variable representing the result of a custom IR statement
-extern uint32_t jitc_var_stmt(JitBackend backend,
-                              VarType type,
-                              const char *stmt,
-                              int stmt_static,
-                              uint32_t n_dep,
-                              const uint32_t *dep);
-
 /// Create a new IR node. Just a wrapper around jitc_var_new without any error checking
 extern uint32_t jitc_var_new_node_0(JitBackend backend, VarKind kind,
                                     VarType vt, uint32_t size, bool symbolic,

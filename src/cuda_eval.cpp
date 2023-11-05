@@ -49,7 +49,6 @@
     } while (0);
 
 // Forward declarations
-static void jitc_cuda_render_stmt(uint32_t index, const Variable *v);
 static void jitc_cuda_render_var(uint32_t index, Variable *v);
 static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value, const Variable *index,
@@ -163,7 +162,6 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         const uint32_t vti = v->type,
                        size = v->size;
         const VarType vt = (VarType) vti;
-        bool assemble = false;
 
         if (unlikely(v->extra)) {
             auto it = state.extra.find(index);
@@ -179,7 +177,6 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
 
             if (extra.assemble) {
                 extra.assemble(v, extra);
-                assemble = true;
                 v = jitc_var(index); // The address of 'v' can change
             }
         }
@@ -204,10 +201,8 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                     size > 1 ? "ld.global.cs.u8" : "ldu.global.u8", v);
             }
             continue;
-        } else if (!v->is_stmt()) {
+        } else {
             jitc_cuda_render_var(index, v);
-        } else if (likely(!assemble)) {
-            jitc_cuda_render_stmt(index, v);
         }
 
         if (v->param_type == ParamType::Output) {
@@ -369,10 +364,8 @@ void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
                     it->second - data_offset, v);
         } else if (v->is_literal()) {
             fmt("    mov.$b $v, $l;\n", v, v, v);
-        } else if (v->is_node()) {
-            jitc_cuda_render_var(sv.index, v);
         } else {
-            jitc_cuda_render_stmt(sv.index, v);
+            jitc_cuda_render_var(sv.index, v);
         }
     }
 
@@ -1172,58 +1165,6 @@ static void jitc_cuda_render_trace(uint32_t index, const Variable *v,
         fmt("\nl_masked_$u:\n", v->reg_index);
 }
 #endif
-
-/// Convert an IR template with '$' expressions into valid IR
-static void jitc_cuda_render_stmt(uint32_t index, const Variable *v) {
-    const char *s = v->stmt;
-    if (unlikely(*s == '\0'))
-        return;
-    put("    ");
-    char c;
-    do {
-        const char *start = s;
-        while (c = *s, c != '\0' && c != '$')
-            s++;
-        put(start, s - start);
-
-        if (c == '$') {
-            s++;
-            const char **prefix_table = nullptr, type = *s++;
-            switch (type) {
-                case 'n': put(";\n    "); continue;
-                case 't': prefix_table = type_name_ptx; break;
-                case 'b': prefix_table = type_name_ptx_bin; break;
-                case 's': prefix_table = type_size_str; break;
-                case 'r': prefix_table = type_prefix; break;
-                default:
-                    jitc_fail("jit_cuda_render_stmt(): encountered invalid \"$\" "
-                              "expression (unknown type \"%c\") in \"%s\"!", type, v->stmt);
-            }
-
-            uint32_t arg_id = *s++ - '0';
-            if (unlikely(arg_id > 4))
-                jitc_fail("jit_cuda_render_stmt(%s): encountered invalid \"$\" "
-                          "expression (argument out of bounds)!", v->stmt);
-
-            uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
-            if (unlikely(dep_id == 0))
-                jitc_fail("jit_cuda_render_stmt(%s): encountered invalid \"$\" "
-                          "expression (referenced variable %u is missing)!", v->stmt, arg_id);
-
-            const Variable *dep = jitc_var(dep_id);
-            const char *prefix = prefix_table[(int) dep->type];
-            put(prefix, strlen(prefix));
-
-            if (type == 'r') {
-                buffer.put_u32(dep->reg_index);
-                if (unlikely(dep->reg_index == 0))
-                    jitc_fail("jitc_cuda_render_stmt(): variable has no register index!");
-            }
-        }
-    } while (c != '\0');
-
-    put(";\n");
-}
 
 /// Virtual function call code generation -- CUDA/PTX-specific bits
 void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,

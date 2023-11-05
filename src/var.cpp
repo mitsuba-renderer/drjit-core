@@ -107,9 +107,6 @@ const char *var_kind_name[(int) VarKind::Count] {
     // An evaluated node representing data
     "data",
 
-    // Legacy string-based IR statement
-    "stmt",
-
     // A literal constant
     "literal",
 
@@ -186,7 +183,22 @@ const char *var_kind_name[(int) VarKind::Count] {
     "trace_ray",
 
     // Extract a component from an operation that produced multiple results
-    "extract"
+    "extract",
+
+    // Variable marking the start of a loop
+    "loop_start",
+
+    // Variable marking the loop condition
+    "loop_cond",
+
+    // Variable marking the end of a loop
+    "loop_end",
+
+    // SSA Phi variable at start of loop
+    "loop_phi",
+
+    // SSA Phi variable at end of loop
+    "loop_result"
 };
 
 
@@ -211,10 +223,6 @@ void jitc_var_free(uint32_t index, Variable *v) {
         // Unevaluated variable, drop from CSE cache
         jitc_lvn_drop(index, v);
     }
-
-    // Free IR string if needed
-    if (unlikely(v->free_stmt))
-        free(v->stmt);
 
     uint32_t dep[4];
     bool write_ptr = v->write_ptr;
@@ -514,10 +522,6 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
 
         state.variable_counter++;
     } else {
-        // .. found a match! Deallocate 'v'.
-        if (v.free_stmt)
-            free(v.stmt);
-
         if (likely(!v.write_ptr)) {
             for (int i = 0; i < 4; ++i)
                 jitc_var_dec_ref(v.dep[i]);
@@ -554,19 +558,27 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
             var_buffer.put("data(");
             var_buffer.fmt(DRJIT_PTR, (uintptr_t) v.data);
             var_buffer.put(")");
-        } else if (v.is_stmt()) {
-            var_buffer.put(v.stmt, strlen(v.stmt));
         }
 
         bool lvn_hit = lvn && !lvn_key_inserted;
-        if (v.symbolic || lvn_hit) {
+        if (v.symbolic || lvn_hit || (v.is_node() && v.literal)) {
             var_buffer.put(" [");
-            if (v.symbolic)
+            bool prev = false;
+            if (v.symbolic) {
                 var_buffer.put("symbolic");
-            if (v.symbolic && lvn_hit)
-                var_buffer.put(", ");
-            if (lvn_hit)
+                prev = true;
+            }
+            if (v.is_node() && v.literal) {
+                if (prev)
+                    var_buffer.put(", ");
+                prev = true;
+                var_buffer.fmt("#%llu", (unsigned long long) v.literal);
+            }
+            if (lvn_hit) {
+                if (prev)
+                    var_buffer.put(", ");
                 var_buffer.put("lvn hit");
+            }
             var_buffer.put("]");
         }
 
@@ -689,71 +701,6 @@ uint32_t jitc_new_scope(JitBackend backend) {
     jitc_trace("jit_new_scope(%u)", scope_index);
     thread_state(backend)->scope = scope_index;
     return scope_index;
-}
-
-uint32_t jitc_var_stmt(JitBackend backend, VarType vt, const char *stmt,
-                       int stmt_static, uint32_t n_dep,
-                       const uint32_t *dep) {
-    uint32_t size = n_dep == 0 ? 1 : 0;
-    bool dirty = false, uninitialized = false, symbolic = false;
-    Variable *v[4] { };
-
-    if (unlikely(n_dep > 4))
-        jitc_fail("jit_var_stmt(): 0-4 dependent variables supported!");
-
-    for (uint32_t i = 0; i < n_dep; ++i) {
-        if (likely(dep[i])) {
-            Variable *vi = jitc_var(dep[i]);
-            size = std::max(size, vi->size);
-            dirty |= vi->is_dirty();
-            symbolic |= (bool) vi->symbolic;
-            v[i] = vi;
-        } else {
-            uninitialized = true;
-        }
-    }
-
-    if (unlikely(size == 0)) {
-        if (!stmt_static)
-            free((char *) stmt);
-        return 0;
-    } else if (unlikely(uninitialized)) {
-        jitc_raise("jit_var_stmt(): arithmetic involving an "
-                   "uninitialized variable!");
-    }
-
-    for (uint32_t i = 0; i < n_dep; ++i) {
-        if (v[i]->size != size && v[i]->size != 1)
-            jitc_raise("jit_var_stmt(): arithmetic involving arrays of "
-                       "incompatible size!");
-    }
-
-    if (dirty) {
-        jitc_eval(thread_state(backend));
-        dirty = false;
-        for (uint32_t i = 0; i < n_dep; ++i) {
-            v[i] = jitc_var(dep[i]);
-            dirty |= v[i]->is_dirty();
-        }
-        if (dirty)
-            jitc_raise("jit_var_stmt(): variable remains dirty following evaluation!");
-    }
-
-    Variable v2;
-    for (uint32_t i = 0; i < n_dep; ++i) {
-        v2.dep[i] = dep[i];
-        jitc_var_inc_ref(dep[i], v[i]);
-    }
-
-    v2.kind = (uint32_t) VarKind::Stmt;
-    v2.stmt = stmt_static ? (char *) stmt : strdup(stmt);
-    v2.size = size;
-    v2.type = (uint32_t) vt;
-    v2.backend = (uint32_t) backend;
-    v2.free_stmt = stmt_static == 0;
-    v2.symbolic = symbolic;
-
-    return jitc_var_new(v2);
 }
 
 /**
@@ -1041,7 +988,7 @@ int jitc_var_schedule(uint32_t index) {
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_schedule", index);
 
-    if (v->is_stmt() || v->is_node()) {
+    if (v->is_node()) {
         thread_state(v->backend)->scheduled.emplace_back(index, v->counter);
         jitc_log(Debug, "jit_var_schedule(r%u)", index);
         return 1;
@@ -1061,7 +1008,7 @@ void *jitc_var_ptr(uint32_t index) {
     Variable *v = jitc_var(index);
     if (v->is_literal())
         jitc_var_eval_literal(index, v);
-    else if (v->is_stmt() || v->is_node())
+    else if (v->is_node())
         jitc_var_eval(index);
 
     return jitc_var(index)->data;
@@ -1096,7 +1043,7 @@ int jitc_var_eval(uint32_t index) {
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_eval", index);
 
-    if (v->is_stmt() || v->is_node() || (v->is_data() && v->is_dirty())) {
+    if (v->is_node() || (v->is_data() && v->is_dirty())) {
         ThreadState *ts = thread_state(v->backend);
 
         if (!v->is_data())
@@ -1120,7 +1067,7 @@ int jitc_var_eval(uint32_t index) {
 void jitc_var_read(uint32_t index, size_t offset, void *dst) {
     const Variable *v = jitc_var(index);
 
-    if (v->is_stmt() || v->is_node() || (v->is_data() && v->is_dirty())) {
+    if (v->is_node() || (v->is_data() && v->is_dirty())) {
         jitc_var_eval(index);
         v = jitc_var(index);
     }
@@ -1280,10 +1227,7 @@ uint32_t jitc_var_copy(uint32_t index) {
             v2.kind = (uint32_t) VarKind::Literal;
             v2.literal = v->literal;
         } else {
-            v2.kind = (uint32_t) VarKind::Stmt;
-            v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
-                                ? "mov.$t0 $r0, $r1"
-                                : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
+            v2.kind = (uint32_t) VarKind::Bitcast;
             v2.dep[0] = index;
             jitc_var_inc_ref(index, v);
         }
@@ -1332,15 +1276,12 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
                                   &v->literal, size, 0);
     } else {
         Variable v2;
-        v2.kind = (uint32_t) VarKind::Stmt;
+        v2.kind = (uint32_t) VarKind::Bitcast;
         v2.type = v->type;
         v2.backend = v->backend;
         v2.symbolic = v->symbolic;
         v2.size = (uint32_t) size;
         v2.dep[0] = index;
-        v2.stmt = (char *) (((JitBackend) v->backend == JitBackend::CUDA)
-                            ? "mov.$t0 $r0, $r1"
-                            : "$r0 = bitcast <$w x $t1> $r1 to <$w x $t0>");
         jitc_var_inc_ref(index, v);
         result = jitc_var_new(v2, true);
     }
@@ -1923,16 +1864,6 @@ const char *jitc_var_graphviz() {
             } else {
                 var_buffer.put("Evaluated");
                 color = "lightblue2";
-            }
-        } else if (v.is_stmt()) {
-            if ((VarType) v.type == VarType::Void)
-                color = "yellowgreen";
-
-            if (*v.stmt != '\0') {
-                print_escape(v.stmt);
-                var_buffer.put("\\l");
-            } else if (labeled) {
-                var_buffer.rewind_to(var_buffer.size() - 1);
             }
         } else {
             const char *name = var_kind_name[v.kind];

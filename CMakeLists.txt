@@ -130,10 +130,10 @@ add_library(
   src/llvm_orcv2.cpp
   src/llvm_eval.cpp
 
-  src/io.h            src/io.cpp
-  src/eval.h          src/eval.cpp
-  src/vcall.h         src/vcall.cpp
-  src/loop.h          src/loop.cpp
+  src/io.h       src/io.cpp
+  src/eval.h     src/eval.cpp
+  src/vcall.h    src/vcall.cpp
+  src/loop.h     src/loop.cpp
   src/init.cpp
   src/api.cpp
 

@@ -881,25 +881,6 @@ uint32_t jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
                           n_out_nested, out_nested, se_offset, out);
 }
 
-uint32_t jit_var_loop_init(size_t n_indices, uint32_t **indices) {
-    lock_guard guard(state.lock);
-    return jitc_var_loop_init(n_indices, indices);
-}
-
-uint32_t jit_var_loop_cond(uint32_t loop_init, uint32_t cond, size_t n_indices,
-                           uint32_t **indices) {
-    lock_guard guard(state.lock);
-    return jitc_var_loop_cond(loop_init, cond, n_indices, indices);
-}
-
-uint32_t jit_var_loop(const char *name, uint32_t loop_init, uint32_t loop_cond,
-                      size_t n_indices, uint32_t *indices_in,
-                      uint32_t **indices, uint32_t checkpoint, int first_round) {
-    lock_guard guard(state.lock);
-    return jitc_var_loop(name, loop_init, loop_cond, n_indices, indices_in,
-                         indices, checkpoint, first_round);
-}
-
 void jit_aggregate(JitBackend backend, void *dst, AggregationEntry *agg,
                    uint32_t size) {
     lock_guard guard(state.lock);
@@ -1222,4 +1203,19 @@ VarInfo jit_set_backend(uint32_t index) noexcept {
     Variable *var = jitc_var(index);
     default_backend = (JitBackend) var->backend;
     return VarInfo{ (JitBackend) var->backend, (VarType) var->type, var->size };
+}
+
+uint32_t jit_var_loop_start(const char *name, size_t n_indices, uint32_t *indices) {
+    lock_guard guard(state.lock);
+    return jitc_var_loop_start(name, n_indices, indices);
+}
+
+uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active) {
+    lock_guard guard(state.lock);
+    return jitc_var_loop_cond(loop, active);
+}
+
+int jit_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices) {
+    lock_guard guard(state.lock);
+    return jitc_var_loop_end(loop, cond, indices);
 }

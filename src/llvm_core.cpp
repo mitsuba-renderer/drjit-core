@@ -125,7 +125,10 @@ bool jitc_llvm_init() {
 #if defined(__APPLE__) && defined(__aarch64__)
     jitc_llvm_vector_width = 4;
     LLVMDisposeMessage(jitc_llvm_target_cpu);
-    jitc_llvm_target_cpu = LLVMCreateMessage("apple-a14");
+    const char *machine_name = "apple-a14";
+    if (jitc_llvm_version_major > 15)
+        machine_name = "apple-m1";
+    jitc_llvm_target_cpu = LLVMCreateMessage(machine_name);
 #endif
 
     jitc_llvm_init_success = jitc_llvm_vector_width > 1;

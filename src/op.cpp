@@ -913,7 +913,7 @@ uint32_t jitc_var_select(uint32_t a0, uint32_t a1, uint32_t a2) {
     info.type = (VarType) v1->type;
 
     uint32_t result = 0;
-    if (info.simplify) {
+    if (info.simplify || a1 == a2) {
         if (jitc_is_one(v0) || a1 == a2)
             return jitc_var_resize(a1, info.size);
         else if (jitc_is_zero(v0))
@@ -1476,16 +1476,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
         v2.size = size;
         v2.optix = v->optix;
         v2.symbolic = v->symbolic;
-        if (v->is_stmt()) {
-            if (!v->free_stmt) {
-                v2.stmt = v->stmt;
-            } else {
-                v2.stmt = strdup(v->stmt);
-                v2.free_stmt = 1;
-            }
-        } else {
-            v2.literal = v->literal;
-        }
+        v2.literal = v->literal;
         for (uint32_t i = 0; i < 4; ++i) {
             v2.dep[i] = dep[i];
             jitc_var_inc_ref(dep[i]);

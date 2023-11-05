@@ -89,10 +89,24 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
         jitc_var_traverse(size, index2);
     }
 
+    switch ((VarKind) v->kind) {
+        case VarKind::LoopPhi:
+        case VarKind::LoopResult: {
+                LoopData *ld = (LoopData *) state.extra[v->dep[0]].callback_data;
+                jitc_var_traverse(size, ld->outer_inputs[v->literal]);
+                jitc_var_traverse(size, ld->inner_outputs[v->literal]);
+            }
+            break;
+
+        default:
+            break;
+    }
+
     if (unlikely(v->extra)) {
         auto it = state.extra.find(index);
         if (it == state.extra.end())
-            jitc_fail("jit_var_traverse(): could not find matching 'extra' record!");
+            jitc_fail("jit_var_traverse(r%u): could not find matching 'extra' "
+                      "record!", index);
 
         const Extra &extra = it->second;
         for (uint32_t i = 0; i < extra.n_dep; ++i) {
@@ -578,8 +592,6 @@ void jitc_eval(ThreadState *ts) {
     lock_guard guard(state.eval_lock);
     lock_acquire(state.lock);
 
-    jitc_var_loop_simplify();
-
     visited.clear();
     schedule.clear();
 
@@ -691,12 +703,6 @@ void jitc_eval(ThreadState *ts) {
                    "constant variable here!");
 
         jitc_lvn_drop(index, v);
-
-        if (v->free_stmt) {
-            free(v->stmt);
-            v->stmt = nullptr;
-            v->free_stmt = false;
-        }
 
         if (v->output_flag && v->size == sv.size) {
             v->kind = (uint32_t) VarKind::Data;

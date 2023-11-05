@@ -45,6 +45,7 @@
  * --------------------------------------------------------------------------
  *  $w      (none)        `16`               Vector width of LLVM backend
  *  $z      (none)        `zeroinitializer`  Zero initializer string
+ *  $e      (none)        `.experimental`    Ignored on newer LLVM versions
  * --------------------------------------------------------------------------
  *
  * Pointers should be wrapped in braces, as in `{i8*}` or `{$t*}`. This will
@@ -63,6 +64,7 @@
 #include "log.h"
 #include "var.h"
 #include "vcall.h"
+#include "loop.h"
 #include "op.h"
 
 #define put(...)                                                               \
@@ -80,7 +82,6 @@
     } while (0)
 
 // Forward declaration
-static void jitc_llvm_render_stmt(uint32_t index, const Variable *v, bool in_function);
 static void jitc_llvm_render_var(uint32_t index, Variable *v);
 static void jitc_llvm_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value, const Variable *index,
@@ -187,10 +188,8 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
                 "    $v = shufflevector $T $v_1, $T undef, <$w x i32> $z\n",
                 v, v, v, v,
                 v, v, v, v);
-        } else if (!v->is_stmt()) {
-            jitc_llvm_render_var(index, v);
         } else {
-            jitc_llvm_render_stmt(index, v, false);
+            jitc_llvm_render_var(index, v);
         }
 
         v = jitc_var(index); // `v` might have been invalidated during its assembly
@@ -251,19 +250,32 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         "!4 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
 
     fmt("attributes #0 = ${ norecurse nounwind \"frame-pointer\"=\"none\" "
-        "\"no-builtins\" \"no-stack-arg-probe\" \"target-cpu\"=\"$s\" "
-        "\"target-features\"=\"", jitc_llvm_target_cpu);
+        "\"no-builtins\" \"no-stack-arg-probe\" \"target-cpu\"=\"$s\"", jitc_llvm_target_cpu);
 
-#if !defined(__aarch64__)
-    put("-vzeroupper");
-    if (jitc_llvm_target_features)
-        put(",");
+    bool has_target_features =
+        jitc_llvm_target_features && strlen(jitc_llvm_target_features) > 0;
+
+#if defined(__aarch64__)
+    constexpr bool is_intel = false;
+#else
+    constexpr bool is_intel = true;
 #endif
 
-    if (jitc_llvm_target_features)
-        put(jitc_llvm_target_features, strlen(jitc_llvm_target_features));
+    if (has_target_features || is_intel) {
+        put(" \"target-features\"=\"");
 
-    put("\" }");
+        if (is_intel) {
+            put("-vzeroupper");
+            if (jitc_llvm_target_features)
+                put(",");
+        }
+
+        if (has_target_features)
+            put(jitc_llvm_target_features, strlen(jitc_llvm_target_features));
+        put("\"");
+    }
+
+    put(" }");
 
     jitc_vcall_upload(ts);
 }
@@ -368,10 +380,8 @@ void jitc_llvm_assemble_func(const char *name, uint32_t inst_id,
             else if (vt == VarType::Bool)
                 fmt("    $v = trunc <$w x i8> $v_p4 to <$w x i1>\n",
                     v, v);
-        } else if (!v->is_stmt()) {
-            jitc_llvm_render_var(sv.index, v);
         } else {
-            jitc_llvm_render_stmt(sv.index, v, true);
+            jitc_llvm_render_var(sv.index, v);
         }
     }
 
@@ -834,6 +844,50 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
                 (uint32_t) v->literal, v);
             break;
 
+        case VarKind::LoopStart:
+            fmt("    br label %l_$u_before\n\n"
+                "l_$u_before:\n"
+                "    br label %l_$u_cond\n\n"
+                "l_$u_cond:\n",
+                v->reg_index, v->reg_index, v->reg_index, v->reg_index);
+            break;
+
+        case VarKind::LoopCond:
+            fmt_intrinsic("declare i1 @llvm$e.vector.reduce.or.v$wi1($T)", a1);
+            fmt("    $v_red = call i1 @llvm$e.vector.reduce.or.v$wi1($V)\n"
+                "    br i1 $v_red, label %l_$u_body, label %l_$u_done\n\n"
+                "l_$u_body:\n",
+                a1, a1,
+                a1, a0->reg_index, a0->reg_index, a0->reg_index);
+            break;
+
+        case VarKind::LoopEnd:
+            fmt("    br label %l_$u_end\n\n"
+                "l_$u_end:\n"
+                "    br label %l_$u_cond\n\n"
+                "l_$u_done:\n",
+                a0->reg_index, a0->reg_index,
+                a0->reg_index, a0->reg_index);
+            break;
+
+        case VarKind::LoopPhi: {
+                const LoopData *ld = (LoopData *) state.extra[v->dep[0]].callback_data;
+                size_t index = (size_t) v->literal;
+                Variable *inner_in  = jitc_var(ld->inner_inputs[index]),
+                         *outer_in  = jitc_var(ld->outer_inputs[index]),
+                         *inner_out = jitc_var(ld->inner_outputs[index]),
+                         *outer_out = jitc_var(ld->outer_outputs[index]);
+                fmt("    $v = phi $T [ $v, %l_$u_before ], [ $v, %l_$u_end ] \n",
+                    v, v, outer_in, a0->reg_index, inner_out, a0->reg_index);
+                if (outer_out)
+                    outer_out->reg_index = inner_in->reg_index;
+            }
+            break;
+
+        case VarKind::LoopResult:
+            // No code generated for this node
+            break;
+
         default:
             jitc_fail("jitc_llvm_render_var(): unhandled node kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);
@@ -919,7 +973,7 @@ static void jitc_llvm_render_scatter(const Variable *v,
         if (!atomicrmw_name)
             atomicrmw_name = op;
 
-        fmt_intrinsic("declare i1 @llvm.experimental.vector.reduce.or.v$wi1(<$w x i1>)");
+        fmt_intrinsic("declare i1 @llvm$e.vector.reduce.or.v$wi1(<$w x i1>)");
 
         if (zero_elem)
             fmt_intrinsic(
@@ -947,10 +1001,10 @@ static void jitc_llvm_render_scatter(const Variable *v,
             "   %ptr_eq = icmp eq <$w x {$t*}> %ptr, %ptr_2\n"
             "   %active_cur = and <$w x i1> %ptr_eq, %active\n"
             "   %value_cur = select <$w x i1> %active_cur, $T %value, $T $z\n"
-            "   %sum = call $s$t @llvm.experimental.vector.reduce.$s.v$w$h($s$T %value_cur)\n"
-            "   atomicrmw $s {$t*} %ptr_0, $t %sum monotonic\n"
+            "   %reduced = call $s$t @llvm.experimental.vector.reduce.$s.v$w$h($s$T %value_cur)\n"
+            "   atomicrmw $s {$t*} %ptr_0, $t %reduced monotonic\n"
             "   %active_next = xor <$w x i1> %active, %active_cur\n"
-            "   %active_red = call i1 @llvm.experimental.vector.reduce.or.v$wi1(<$w x i1> %active_next)\n"
+            "   %active_red = call i1 @llvm$e.vector.reduce.or.v$wi1(<$w x i1> %active_next)\n"
             "   br i1 %active_red, label %L3, label %L4\n\n"
             "L3:\n"
             "   %active_next_2 = phi <$w x i1> [ %active, %L1 ], [ %active_next, %L2 ]\n"
@@ -1172,82 +1226,6 @@ static void jitc_llvm_render_printf(uint32_t index, const Variable *v,
         idx, idx, v, v, v, v, v, idx, idx, idx);
 }
 
-/// Convert an IR template with '$' expressions into valid IR
-static void jitc_llvm_render_stmt(uint32_t index, const Variable *v, bool in_function) {
-    const char *s = v->stmt;
-    if (unlikely(!s || *s == '\0'))
-        return;
-    put("    ");
-    char c;
-    size_t intrinsic_start = 0;
-    do {
-        const char *start = s;
-        while (c = *s, c != '\0' && c != '$')
-            s++;
-        put(start, s - start);
-
-        if (c == '$') {
-            s++;
-            const char **prefix_table = nullptr, tname = *s++;
-            switch (tname) {
-                case '[':
-                    intrinsic_start = buffer.size();
-                    continue;
-
-                case ']':
-                    jitc_register_global(buffer.get() + intrinsic_start);
-                    buffer.rewind_to(intrinsic_start);
-                    continue;
-
-                case 'n': put("\n    "); continue;
-                case 'z': put("zeroinitializer"); continue;
-                case 'w': buffer.put_u32(jitc_llvm_vector_width); continue;
-                case 't': prefix_table = type_name_llvm; break;
-                case 'T': prefix_table = type_name_llvm_big; break;
-                case 'b': prefix_table = type_name_llvm_bin; break;
-                case 'a': prefix_table = type_name_llvm_abbrev; break;
-                case 's': prefix_table = type_size_str; break;
-                case 'r': prefix_table = type_prefix; break;
-                case 'i': prefix_table = nullptr; break;
-                case '<': if (in_function) {
-                              put('<');
-                              buffer.put_u32(jitc_llvm_vector_width);
-                              put(" x ");
-                           }
-                           continue;
-                case '>': if (in_function)
-                              put('>');
-                           continue;
-                case 'o': prefix_table = (const char **) jitc_llvm_ones_str; break;
-                default:
-                    jitc_fail("jit_render_stmt_llvm(): encountered invalid \"$\" "
-                              "expression (unknown character \"%c\") in \"%s\"!", tname, v->stmt);
-            }
-
-            uint32_t arg_id = *s++ - '0';
-            if (unlikely(arg_id > 4))
-                jitc_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
-                          "expression (argument out of bounds)!", v->stmt);
-
-            uint32_t dep_id = arg_id == 0 ? index : v->dep[arg_id - 1];
-            if (unlikely(dep_id == 0))
-                jitc_fail("jit_render_stmt_llvm(%s): encountered invalid \"$\" "
-                          "expression (referenced variable %u is missing)!", v->stmt, arg_id);
-
-            const Variable *dep = jitc_var(dep_id);
-            if (likely(prefix_table)) {
-                const char *prefix = prefix_table[(int) dep->type];
-                put(prefix, strlen(prefix));
-            }
-
-            if (tname == 'r' || tname == 'i')
-                buffer.put_u32(dep->reg_index);
-        }
-    } while (c != '\0');
-
-    put('\n');
-}
-
 void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
                          const uint32_t *in, uint32_t *out) {
     const uint32_t n_args = 14;
@@ -1412,9 +1390,9 @@ static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
         fmt("    store <6 x i32> <i32 $u, i32 0, i32 0, i32 0, i32 -1, i32 0>, {<6 x i32>*} $v_in_ctx_1, align 4\n",
             (uint32_t) coherent->literal, v);
     } else {
-        fmt_intrinsic("declare i1 @llvm.experimental.vector.reduce.and.v$wi1(<$w x i1>)");
+        fmt_intrinsic("declare i1 @llvm$e.vector.reduce.and.v$wi1(<$w x i1>)");
 
-        fmt("    $v_coherent_0 = call i1 @llvm.experimental.vector.reduce.and.v$wi1($V)\n"
+        fmt("    $v_coherent_0 = call i1 @llvm$e.vector.reduce.and.v$wi1($V)\n"
 			"    $v_coherent_1 = zext i1 $v_coherent_0 to i32\n"
             "    $v_ctx = insertelement <6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>, i32 $v_coherent_1, i32 0\n"
             "    store <6 x i32> $v_ctx, {<6 x i32>*} $v_in_ctx_1, align 4\n",
@@ -1441,7 +1419,7 @@ static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
             );
         }
     } else {
-        fmt_intrinsic("declare i64 @llvm.experimental.vector.reduce.umax.v$wi64(<$w x i64>)");
+        fmt_intrinsic("declare i64 @llvm$e.vector.reduce.umax.v$wi64(<$w x i64>)");
 
         // =====================================================
         // 1. Prepare the loop for the ray tracing calls
@@ -1453,7 +1431,7 @@ static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
         fmt( "    br label %l$u_start\n"
              "\nl$u_start:\n"
              "    ; Ray tracing\n"
-             "    $v_func_i64 = call i64 @llvm.experimental.vector.reduce.umax.v$wi64(<$w x i64> %rd$u_p4)\n"
+             "    $v_func_i64 = call i64 @llvm$e.vector.reduce.umax.v$wi64(<$w x i64> %rd$u_p4)\n"
              "    $v_func_ptr = inttoptr i64 $v_func_i64 to {i8*}\n"
              "    $v_tfar_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
             "{    $v_tfar_1 = bitcast i8* $v_tfar_0 to <$w x $s> *\n|}",
@@ -1481,7 +1459,7 @@ static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
         fmt("\nl$u_check:\n"
             "    $v_scene = phi <$w x {i8*}> [ %rd$u, %l$u_start ], [ $v_scene_next, %l$u_call ]\n"
             "    $v_scene_i64 = ptrtoint <$w x {i8*}> $v_scene to <$w x i64>\n"
-            "    $v_next_i64 = call i64 @llvm.experimental.vector.reduce.umax.v$wi64(<$w x i64> $v_scene_i64)\n"
+            "    $v_next_i64 = call i64 @llvm$e.vector.reduce.umax.v$wi64(<$w x i64> $v_scene_i64)\n"
             "    $v_next = inttoptr i64 $v_next_i64 to {i8*}\n"
             "    $v_valid = icmp ne {i8*} $v_next, null\n"
             "    br i1 $v_valid, label %l$u_call, label %l$u_end\n",
@@ -1583,7 +1561,7 @@ void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
                   "    ret void\n"
                   "$}");
 
-    fmt_intrinsic("declare i32 @llvm.experimental.vector.reduce.umax.v$wi32(<$w x i32>)");
+    fmt_intrinsic("declare i32 @llvm$e.vector.reduce.umax.v$wi32(<$w x i32>)");
     fmt_intrinsic("declare <$w x i64> @llvm.masked.gather.v$wi64(<$w x {i64*}>, i32, <$w x i1>, <$w x i64>)");
 
     fmt( "\n"
@@ -1673,7 +1651,7 @@ void jitc_var_vcall_assemble_llvm(VCall *vcall, uint32_t vcall_reg,
         vcall_reg,
         vcall_reg, vcall_reg, vcall_reg, vcall_reg, vcall_reg);
 
-    fmt("    %u$u_next = call i32 @llvm.experimental.vector.reduce.umax.v$wi32(<$w x i32> %u$u_self)\n"
+    fmt("    %u$u_next = call i32 @llvm$e.vector.reduce.umax.v$wi32(<$w x i32> %u$u_self)\n"
         "    %u$u_valid = icmp ne i32 %u$u_next, 0\n"
         "    br i1 %u$u_valid, label %l$u_call, label %l$u_end\n",
         vcall_reg, vcall_reg,
