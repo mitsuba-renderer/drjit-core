@@ -461,6 +461,10 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     len += 15;
                     break;
 
+                case 'e':
+                    len += 13;
+                    break;
+
                 case '<':
                     len += MAXSIZE_U32 + 4;
                     break;
@@ -656,6 +660,11 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
 
                 case 'z':
                     put_unchecked("zeroinitializer");
+                    break;
+
+                case 'e':
+                    if (jitc_llvm_version_major < 16)
+                        put_unchecked(".experimental");
                     break;
 
                 case '<':

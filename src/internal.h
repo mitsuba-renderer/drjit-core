@@ -35,9 +35,6 @@ enum VarKind : uint32_t {
     // An evaluated node representing data
     Data,
 
-    // Legacy string-based IR statement
-    Stmt,
-
     // A literal constant
     // (note: this must be the last enumeration entry before the regular nodes start)
     Literal,
@@ -117,6 +114,21 @@ enum VarKind : uint32_t {
     // Extract a component from an operation that produced multiple results
     Extract,
 
+    // Variable marking the start of a loop
+    LoopStart,
+
+    // Variable marking the loop condition
+    LoopCond,
+
+    // Variable marking the end of a loop
+    LoopEnd,
+
+    // SSA Phi variable at start of loop
+    LoopPhi,
+
+    // SSA Phi variable at end of loop
+    LoopResult,
+
     // Denotes the number of different node types
     Count
 };
@@ -157,9 +169,6 @@ struct Variable {
 
         /// Pointer to device memory. Used when kind == VarKind::Data
         void *data;
-
-        // Legacy string-based IR (to be removed)
-        char *stmt;
     };
 
     /// Number of entries
@@ -184,9 +193,6 @@ struct Variable {
 
     /// Is this a pointer variable that is used to write to some array?
     uint32_t write_ptr : 1;
-
-    /// Free the 'stmt' variables at destruction time?
-    uint32_t free_stmt : 1;
 
     // =======================  Miscellaneous fields =========================
 
@@ -223,7 +229,7 @@ struct Variable {
     uint32_t consumed : 1;
 
     /// Unused for now
-    uint32_t unused_2 : 5;
+    uint32_t unused_2 : 6;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;
@@ -240,14 +246,13 @@ struct Variable {
 
     bool is_data()    const { return kind == (uint32_t) VarKind::Data;    }
     bool is_literal() const { return kind == (uint32_t) VarKind::Literal; }
-    bool is_stmt()    const { return kind == (uint32_t) VarKind::Stmt;    }
     bool is_node()    const { return (uint32_t) kind > VarKind::Literal; }
     bool is_dirty()   const { return ref_count_se > 0; }
 };
 
 #pragma pack(push, 1)
 
-/// Abbreviated version of the Variable data structure
+/// Abbreviated version of the Variable data structure for Local Value Numbering (LVN)
 struct VariableKey {
     uint32_t size;
     uint32_t scope;
@@ -256,41 +261,25 @@ struct VariableKey {
     uint32_t backend   : 2;
     uint32_t type      : 4;
     uint32_t write_ptr : 1;
-    uint32_t free_stmt : 1;
-    uint32_t unused    : 16;
-
-    union {
-        uint64_t literal;
-        char *stmt;
-    };
+    uint32_t unused    : 17;
+    uint64_t literal;
 
     VariableKey(const Variable &v) {
         size = v.size;
         scope = v.scope;
         for (int i = 0; i < 4; ++i)
             dep[i] = v.dep[i];
-        if (v.is_stmt())
-            stmt = v.stmt;
-        else
-            literal = v.literal;
+        literal = v.literal;
 
         kind = v.kind;
         backend = v.backend;
         type = v.type;
         write_ptr = v.write_ptr;
-        free_stmt = v.free_stmt;
         unused = 0;
     }
 
     bool operator==(const VariableKey &v) const {
-        if (memcmp(this, &v, 7 * sizeof(uint32_t)) != 0)
-            return false;
-        if ((VarKind) kind != VarKind::Stmt)
-            return literal == v.literal;
-        else if (!free_stmt)
-            return stmt == v.stmt;
-        else
-            return stmt == v.stmt || strcmp(stmt, v.stmt) == 0;
+        return memcmp((const void *) this, (const void *) &v, 9 * sizeof(uint32_t)) == 0;
     }
 };
 
@@ -299,18 +288,7 @@ struct VariableKey {
 /// Helper class to hash VariableKey instances
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        uint64_t hash_1;
-        if ((VarKind) k.kind != VarKind::Stmt)
-            hash_1 = k.literal;
-        else if (!k.free_stmt)
-            hash_1 = (uintptr_t) k.stmt;
-        else
-            hash_1 = hash_str(k.stmt);
-
-        uint32_t buf[7];
-        size_t size = 7 * sizeof(uint32_t);
-        memcpy(buf, &k, size);
-        return hash(buf, size, hash_1);
+        return hash((const void *) &k, 9 * sizeof(uint32_t), 0);
     }
 };
 

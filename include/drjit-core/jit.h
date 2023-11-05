@@ -1256,89 +1256,90 @@ extern JIT_EXPORT const char *jit_prefix(JIT_ENUM JitBackend);
  * development (one e.g. cannot simply print array contents while something is
  * being recorded). The following list of flags can be used to control the
  * behavior of these features.
- *
- * The default set of flags is:
- *
- * <tt>ConstantPropagation | ValueNumbering | LoopRecord | LoopOptimize |
- * VCallRecord | VCallOptimize | AtomicReduceLocal </tt>
  */
 #if defined(__cplusplus)
 enum class JitFlag : uint32_t {
-    /// Constant propagation: don't generate code for arithmetic involving literal constants
-    ConstantPropagation = 1,
+    /// Disable this flag to keep the Dr.Jit from reusing variable indices
+    /// (helpful for low-level debugging)
+    IndexReuse = 1 << 0,
 
-    /// Local value numbering (cheap form of common subexpression elimination)
-    ValueNumbering = 2,
+    /// Constant propagation: don't generate code for arithmetic involving
+    /// literal constants
+    ConstantPropagation = 1 << 1,
 
-    /// Record loops instead of unrolling them into wavefronts
-    LoopRecord = 4,
+    /// Local value numbering: a cheap form of common subexpression elimination
+    ValueNumbering = 1 << 2,
 
-    /// Try to detect and remove unnecessary (constant/unreferenced) loop variables
-    LoopOptimize = 8,
+    /// Capture loops symbolically instead of unrolling and evaluating them
+    /// iteratively
+    SymbolicLoops = 1 << 3,
 
-    /// Record virtual function calls instead of splitting them into many small kernel launches
-    VCallRecord = 16,
+    /// Simplify loops by removing constant loop state variables. This also
+    /// propagates literal constants into loops, which is useful for autodiff.
+    OptimizeLoops = 1 << 4,
 
-    /// De-duplicate virtual function calls that produce the same code
-    VCallDeduplicate = 32,
+    /// Capture function calls symbolically instead of evaluating their inputs,
+    /// grouping them by instance ID, and then lauching a kernel per group
+    SymbolicCalls = 1 << 5,
 
-    /// Enable constant propagation and elide unnecessary function arguments
-    VCallOptimize = 64,
+    /// Propagate constants through function calls and remove
+    OptimizeCalls = 1 << 6,
 
-    /**
-     * \brief Inline calls if there is only a single instance? (off by default,
-     * inlining can make kernels so large that they actually run slower in
-     * CUDA/OptiX).
-     */
-    VCallInline = 128,
+    /// Merge functions produced by Dr.Jit when they have a compatible structure
+    MergeFunctions = 1 << 7,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 256,
-
-    /// Temporarily postpone evaluation of statements with side effects
-    Recording = 512,
+    ForceOptiX = 1 << 8,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 1024,
+    PrintIR = 1 << 9,
 
-    /// Enable writing of the kernel history
-    KernelHistory = 2048,
+    /// Maintain a history of kernel launches. Useful for profiling Dr.Jit code.
+    KernelHistory = 1 << 10,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 4096,
+    LaunchBlocking = 1 << 11,
 
-    /// Disable this flag to keep the Dr.Jit from reusing variable indices (helpful for low-level debugging)
-    IndexReuse = 8192,
+    /// Perform a local (warp/SIMD) reduction before issuing global atomics
+    AtomicReduceLocal = 1 << 12,
 
-    /// Perform a intra-warp/SIMD register reduction before issuing global atomics
-    AtomicReduceLocal = 16384,
+    /// This flag should not be set in user code. Dr.Jit sets it whenever it is
+    /// capturing computation symbolically
+    Symbolic = 1 << 13,
 
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
-              (uint32_t) LoopRecord | (uint32_t) LoopOptimize |
-              (uint32_t) VCallRecord | (uint32_t) VCallDeduplicate |
-              (uint32_t) VCallOptimize | (uint32_t) IndexReuse |
-              (uint32_t) AtomicReduceLocal
+              (uint32_t) SymbolicLoops | (uint32_t) OptimizeLoops |
+              (uint32_t) SymbolicCalls | (uint32_t) MergeFunctions |
+              (uint32_t) OptimizeCalls | (uint32_t) IndexReuse |
+              (uint32_t) AtomicReduceLocal,
+
+    // Deprecated aliases, will be removed in a future version of Dr.Jit
+    LoopRecord = SymbolicLoops,
+    LoopOptimize = OptimizeLoops,
+    VCallRecord = SymbolicCalls,
+    VCallDeduplicate = MergeFunctions,
+    VCallOptimize = OptimizeCalls,
+    Recording = Symbolic
 };
 #else
 enum JitFlag {
-    JitFlagConstantPropagation = 1,
-    JitFlagValueNumbering      = 2,
-    JitFlagLoopRecord          = 4,
-    JitFlagLoopOptimize        = 8,
-    JitFlagVCallRecord         = 16,
-    JitFlagVCallDeduplicate    = 32,
-    JitFlagVCallOptimize       = 64,
-    JitFlagVCallInline         = 128,
-    JitFlagForceOptiX          = 256,
-    JitFlagRecording           = 512,
-    JitFlagPrintIR             = 1024,
-    JitFlagKernelHistory       = 2048,
-    JitFlagLaunchBlocking      = 4096,
-    JitFlagIndexReuse          = 8192,
-    JitFlagAtomicReduceLocal   = 16384
+    JitFlagIndexReuse = 1 << 0,
+    JitFlagConstantPropagation = 1 << 1,
+    JitFlagValueNumbering = 1 << 2,
+    JitFlagSymbolicLoops = 1 << 3,
+    JitFlagOptimizeLoops = 1 << 4,
+    JitFlagSymbolicCalls = 1 << 5,
+    JitFlagOptimizeCalls = 1 << 6,
+    JitFlagMergeFunctions = 1 << 7,
+    JitFlagForceOptiX = 1 << 8,
+    JitFlagPrintIR = 1 << 9,
+    JitFlagKernelHistory = 1 << 10,
+    JitFlagLaunchBlocking = 1 << 11,
+    JitFlagAtomicReduceLocal = 1 << 12,
+    JitFlagSymbolic = 1 << 13
 };
 #endif
 
@@ -1385,25 +1386,83 @@ extern JIT_EXPORT void jit_record_end(JIT_ENUM JitBackend backend,
                                       uint32_t state);
 
 /**
+ * \brief Begin recording a symbolic loop
+ *
+ * \param name
+ *    A descriptive name
+ *
+ * \param n_indices
+ *    Number of loop state variables
+ *
+ * \param indices
+ *    Variable indices of the loop state variables
+ *
+ * \return
+ *    Produces an opaque loop handle that holds a reference to all initial loop
+ *    state variables.
+ *
+ * \remark
+ *    Upon return, the function will additionally have modified the \c indices
+ *    array to store borrowed references representing symbolic variables that
+ *    should be used to record the computation performed by loop body.
+ *
+ *    In case of an inconsistency (e.g., incompatible state variable sizes),
+ *    the function reverts any changes and raises an exception.
+ */
+extern JIT_EXPORT uint32_t jit_var_loop_start(const char *name,
+                                              size_t n_indices,
+                                              uint32_t *indices);
+
+/**
+ * \brief Create a node representing the loop condition of a symbolic loop.
+ *
+ * \param loop
+ *    A symbolic loop handle produced by ``jit_var_loop_start()``.
+ *
+ * \param active
+ *    A boolean-valued Dr.Jit array with the loop's condition expression.
+ *
+ * \return
+ *     Returns an handle that holds a reference to ``active``. This object
+ *     should be passed to ``jit_var_loop_end``.
+ */
+extern JIT_EXPORT uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active);
+
+/**
+ * \brief Finish recording a symbolic loop
+ *
+ * \param loop
+ *    A symbolic loop handle produced by ``jit_var_loop_start()``.
+ *
+ * \param
+ *    A loop condition handle produced by ``jit_var_loop_cond()``.
+ *
+ * \param indices
+ *    The indices array should contain the loop variable state following
+ *    execution of the loop body.
+ *
+ * \return
+ *    When the function returns ``1``, the loop recording process has concluded.
+ *    When the function returns ``0``, Dr.Jit identified an optimization opportunity
+ *    to simplify unnecessary loop state variables, and the caller should record
+ *    the loop body once more (with initial state values provided by ``indices``).
+ *
+ * \remark
+ *    Upon successful termination (return value ``1``), the function will
+ *    additionally have modified the \c indices array to store new references
+ *    representing the variable state following termination of the loop.
+ */
+extern JIT_EXPORT int jit_var_loop_end(uint32_t loop, uint32_t cond,
+                                       uint32_t *indices);
+
+/**
  * \brief Wrap an input variable of a virtual function call before recording
  * computation
  *
  * Creates a copy of a virtual function call input argument. The copy has a
  * 'symbolic' bit set that propagates into any computation referencing it.
- * Symbolic variables trigger an error when the user tries to evaluate or
- * print them (these operations are not allowed in a recording session).
  */
 extern JIT_EXPORT uint32_t jit_var_wrap_vcall(uint32_t index);
-
-/**
- * \brief Wrap a loop state variable before recording computation
- *
- * Creates a copy of a loop state variable. The copy has a 'symbolic' bit
- * set that propagates into any computation referencing it. Symbolic
- * variables trigger an error when the user tries to evaluate or print them
- * (these operations are not allowed in a recording session).
- */
-extern JIT_EXPORT uint32_t jit_var_wrap_loop(uint32_t index, uint32_t cond, uint32_t size);
 
 /**
  * \brief Inform the JIT compiler about the current instance while
@@ -1471,28 +1530,6 @@ extern JIT_EXPORT uint32_t jit_var_vcall(const char *name, uint32_t self,
                                          uint32_t n_out_nested,
                                          const uint32_t *out_nested,
                                          const uint32_t *se_offset, uint32_t *out);
-
-/**
- * \brief Initialize a set of loop state variables
- *
- * When recording an Dr.Jit loop
- *
- * \return A variable index representing the start of the loop. It must be
- * passed to the \c loop_start argument of \ref jit_var_loop()
- */
-extern JIT_EXPORT uint32_t jit_var_loop_init(size_t n_indices,
-                                             uint32_t **indices);
-
-extern JIT_EXPORT uint32_t jit_var_loop_cond(uint32_t loop_init,
-                                             uint32_t cond,
-                                             size_t n_indices,
-                                             uint32_t **indices);
-
-extern JIT_EXPORT uint32_t jit_var_loop(const char *name, uint32_t loop_init,
-                                        uint32_t loop_cond, size_t n_indices,
-                                        uint32_t *indices_in,
-                                        uint32_t **indices, uint32_t checkpoint,
-                                        int first_round);
 
 /**
  * \brief Pushes a new mask variable onto the mask stack

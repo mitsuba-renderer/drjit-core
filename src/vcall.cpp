@@ -314,8 +314,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
     uint32_t n_devirt = 0, flags = jitc_flags();
 
-    bool vcall_optimize = flags & (uint32_t) JitFlag::VCallOptimize,
-         vcall_inline   = flags & (uint32_t) JitFlag::VCallInline;
+    bool vcall_optimize = flags & (uint32_t) JitFlag::VCallOptimize;
 
     std::vector<bool> uniform(n_out, true);
     for (uint32_t i = 0; i < n_inst; ++i) {
@@ -339,9 +338,8 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
             if (!uniform[j])
                 continue;
 
-            /* Only devirtualize literals unless inlining is requested */
-            if (!jitc_var(out_nested[j])->is_literal() &&
-                !((n_inst == 1) && vcall_inline))
+            /* Only devirtualize non-literals when there is only 1 instance */
+            if (!jitc_var(out_nested[j])->is_literal() && n_inst != 1)
                 continue;
 
             Ref result_v = steal(jitc_var_and(out_nested[j], mask));

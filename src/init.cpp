@@ -262,6 +262,7 @@ void jitc_shutdown(int light) {
 
         if (n_leaked > 0) {
             jitc_log(Warn, "jit_shutdown(): detected %zu variable leaks:", n_leaked);
+            n_leaked = 0;
 
             for (size_t i = 1; i < state.variables.size(); ++i) {
                 const Variable &v = state.variables[i];
