@@ -33,7 +33,7 @@ NAMESPACE_END(drjit)
 NAMESPACE_BEGIN(drjit)
 struct half {
 
-    uint16_t value = 0;
+    uint16_t value;
 
     #define DRJIT_IF_INT template <typename Value, enable_if_t<std::is_integral_v<Value>> = 0>
 
@@ -72,7 +72,7 @@ struct half {
 
     operator float() const { return float16_to_float32(value); }
 
-    static constexpr half from_binary(uint16_t value) { half h; h.value = value; return h; }
+    static half from_binary(uint16_t value) { half h; h.value = value; return h; }
 
     #undef DRJIT_IF_INT
 private:
