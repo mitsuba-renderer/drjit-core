@@ -214,13 +214,19 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices) {
 
             size = std::max(v2->size, size);
 
+            uint32_t new_index;
             if (ld->inner_inputs[i] != ld->outer_inputs[i]) {
-                ld->inner_outputs.push_back(
-                    jitc_var_select(active, index, ld->inner_inputs[i]));
+                if (backend == JitBackend::LLVM) {
+                    new_index = jitc_var_select(active, index, ld->inner_inputs[i]);
+                } else {
+                    new_index = index;
+                    jitc_var_inc_ref(index);
+                }
             } else {
                 jitc_var_inc_ref(ld->inner_inputs[i]);
-                ld->inner_outputs.push_back(ld->inner_inputs[i]);
+                new_index = ld->inner_inputs[i];
             }
+            ld->inner_outputs.push_back(new_index);
         }
     }
 
