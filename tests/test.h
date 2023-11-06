@@ -95,6 +95,16 @@ using HalfL   = LLVMArray<drjit::half>;
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
 
+#define TEST_CUDA_FP32(name, ...)                                              \
+    template <JitBackend Backend, typename Float, typename Int32,              \
+              typename UInt32, typename Mask, template <class> class Array>    \
+    void test##name();                                                         \
+    TEST_REGISTER_CUDA(name,    _cuda,     FloatC)                             \
+    TEST_REGISTER_OPTIX(name,   _optix,    FloatC)                             \
+    template <JitBackend Backend, typename Float, typename Int32,              \
+              typename UInt32, typename Mask, template <class> class Array>    \
+    void test##name()
+
 #define TEST_BOTH_FLOAT_AGNOSTIC(name, ...) TEST_BOTH_FP32(name, ##__VA_ARGS__)
 
 #define jit_assert(cond)                                                      \

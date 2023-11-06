@@ -52,12 +52,14 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     template <bool B = IsClass, enable_if_t<!B> = 0>
     JitArray(Value value) {
+        using half = drjit::half;
         switch (Type) {
             case VarType::Bool:    m_index = jit_var_bool(Backend, (bool) value); break;
             case VarType::Int32:   m_index = jit_var_i32 (Backend, (int32_t) value); break;
             case VarType::UInt32:  m_index = jit_var_u32 (Backend, (uint32_t) value); break;
             case VarType::Int64:   m_index = jit_var_i64 (Backend, (int64_t) value); break;
             case VarType::UInt64:  m_index = jit_var_u64 (Backend, (uint64_t) value); break;
+            case VarType::Float16: m_index = jit_var_f16 (Backend, (half) value); break;
             case VarType::Float32: m_index = jit_var_f32 (Backend, (float) value); break;
             case VarType::Float64: m_index = jit_var_f64 (Backend, (double) value); break;
             default: jit_fail("JitArray(): tried to initialize scalar array with unsupported type!");

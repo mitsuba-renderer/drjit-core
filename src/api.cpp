@@ -20,6 +20,7 @@
 #include "loop.h"
 #include <thread>
 #include <condition_variable>
+#include <drjit-core/half.h>
 #include <drjit-core/texture.h>
 
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -437,6 +438,17 @@ uint32_t jit_var_i64(JitBackend backend, int64_t value) {
     return jitc_var_new(v);
 }
 
+uint32_t jit_var_f16(JitBackend backend, drjit::half value) {
+    Variable v;
+    memcpy(&v.literal, &value, sizeof(drjit::half));
+    v.kind = (uint32_t) VarKind::Literal;
+    v.type = (uint32_t) VarType::Float16;
+    v.size = 1;
+    v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
+    return jitc_var_new(v);
+}
+
 uint32_t jit_var_f32(JitBackend backend, float value) {
     Variable v;
     memcpy(&v.literal, &value, sizeof(float));
@@ -586,9 +598,11 @@ int jit_var_is_finite_literal(uint32_t index) {
         return 0;
 
     switch ((VarType) v->type) {
-        case VarType::Float16:
-            jitc_raise(
-                "jit_var_is_finite_literal(): float16 case unsupported!");
+        case VarType::Float16: {
+                drjit::half h;
+                memcpy(&h, &v->literal, sizeof(drjit::half));
+                return (int) std::isnormal((float)h);
+        }
 
         case VarType::Float32: {
                 float f;

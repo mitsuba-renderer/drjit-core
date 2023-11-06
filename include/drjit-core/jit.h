@@ -564,6 +564,10 @@ extern JIT_EXPORT uint32_t jit_var_literal(JIT_ENUM JitBackend backend,
 extern JIT_EXPORT uint32_t jit_var_u32(JitBackend backend, uint32_t value);
 extern JIT_EXPORT uint32_t jit_var_i32(JitBackend backend, int32_t value);
 
+NAMESPACE_BEGIN(drjit)
+struct half;
+NAMESPACE_END(drjit)
+extern JIT_EXPORT uint32_t jit_var_f16(JitBackend backend, drjit::half value);
 extern JIT_EXPORT uint32_t jit_var_f32(JitBackend backend, float value);
 extern JIT_EXPORT uint32_t jit_var_f64(JitBackend backend, double value);
 

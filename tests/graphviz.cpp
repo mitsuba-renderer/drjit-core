@@ -1,7 +1,7 @@
 #include "test.h"
 #include <cstring>
 
-TEST_CUDA(01_graphviz) {
+TEST_CUDA_FP32(01_graphviz) {
     if (jit_flag(JitFlag::ForceOptiX))
         return;
 

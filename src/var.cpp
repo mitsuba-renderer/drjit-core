@@ -208,9 +208,6 @@ const bool var_kind_fp16_supported_cuda[(int) VarKind::Count] {
     // An evaluated node representing data
     true,
 
-    // Legacy string-based IR statement
-    true,
-
     // A literal constant
     true,
 
@@ -287,7 +284,22 @@ const bool var_kind_fp16_supported_cuda[(int) VarKind::Count] {
     true,
 
     // Extract a component from an operation that produced multiple results
-    true, 
+    true,
+
+    // Variable marking the start of a loop
+    true,
+
+    // Variable marking the loop condition
+    true,
+
+    // Variable marking the end of a loop
+    true,
+
+    // SSA Phi variable at start of loop
+    true,
+
+    // SSA Phi variable at end of loop
+    true,
 };
 
 const bool var_kind_fp16_supported_llvm[(int) VarKind::Count] {
@@ -295,9 +307,6 @@ const bool var_kind_fp16_supported_llvm[(int) VarKind::Count] {
     true,
 
     // An evaluated node representing data
-    true,
-
-    // Legacy string-based IR statement
     true,
 
     // A literal constant
@@ -378,7 +387,22 @@ const bool var_kind_fp16_supported_llvm[(int) VarKind::Count] {
     true,
 
     // Extract a component from an operation that produced multiple results
-    true, 
+    true,
+
+    // Variable marking the start of a loop
+    true,
+
+    // Variable marking the loop condition
+    true,
+
+    // Variable marking the end of a loop
+    true,
+
+    // SSA Phi variable at start of loop
+    true,
+
+    // SSA Phi variable at end of loop
+    true,
 };
 
 
