@@ -1336,43 +1336,46 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     Variable *v = jitc_var(src_index);
     JitBackend backend = (JitBackend) v->backend;
 
-    if (v->is_literal()) {
+    if (v->is_literal() || v->kind == VarKind::Undefined) {
         size_t size = v->size;
         void *ptr = jitc_malloc(dst_type, type_size[v->type] * size);
-        if (dst_type == AllocType::Host) {
-            switch (type_size[v->type]) {
-                case 1: {
-                    uint8_t *p = (uint8_t *) ptr, q = (uint8_t) v->literal;
-                    for (size_t i = 0; i < size; ++i)
-                        p[i] = q;
-                    break;
+
+        if (v->is_literal()) {
+            if (dst_type == AllocType::Host) {
+                switch (type_size[v->type]) {
+                    case 1: {
+                        uint8_t *p = (uint8_t *) ptr, q = (uint8_t) v->literal;
+                        for (size_t i = 0; i < size; ++i)
+                            p[i] = q;
+                        break;
+                    }
+                    case 2: {
+                        uint16_t *p = (uint16_t *) ptr, q = (uint16_t) v->literal;
+                        for (size_t i = 0; i < size; ++i)
+                            p[i] = q;
+                        break;
+                    }
+                    case 4: {
+                        uint32_t *p = (uint32_t *) ptr, q = (uint32_t) v->literal;
+                        for (size_t i = 0; i < size; ++i)
+                            p[i] = q;
+                        break;
+                    }
+                    case 8: {
+                        uint64_t *p = (uint64_t *) ptr, q = (uint64_t) v->literal;
+                        for (size_t i = 0; i < size; ++i)
+                            p[i] = q;
+                        break;
+                    }
+                    default:
+                        jitc_fail("jit_var_migrate(): invalid element size!");
                 }
-                case 2: {
-                    uint16_t *p = (uint16_t *) ptr, q = (uint16_t) v->literal;
-                    for (size_t i = 0; i < size; ++i)
-                        p[i] = q;
-                    break;
-                }
-                case 4: {
-                    uint32_t *p = (uint32_t *) ptr, q = (uint32_t) v->literal;
-                    for (size_t i = 0; i < size; ++i)
-                        p[i] = q;
-                    break;
-                }
-                case 8: {
-                    uint64_t *p = (uint64_t *) ptr, q = (uint64_t) v->literal;
-                    for (size_t i = 0; i < size; ++i)
-                        p[i] = q;
-                    break;
-                }
-                default:
-                    jitc_fail("jit_var_migrate(): invalid element size!");
+            } else {
+                jitc_memset_async(dst_type == AllocType::HostAsync
+                                      ? JitBackend::LLVM
+                                      : JitBackend::CUDA,
+                                  ptr, (uint32_t) size, type_size[v->type], &v->literal);
             }
-        } else {
-            jitc_memset_async(dst_type == AllocType::HostAsync
-                                  ? JitBackend::LLVM
-                                  : JitBackend::CUDA,
-                              ptr, (uint32_t) size, type_size[v->type], &v->literal);
         }
 
         return jitc_var_mem_map(backend, (VarType) v->type, ptr, v->size, 1);
