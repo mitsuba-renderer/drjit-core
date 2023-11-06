@@ -42,6 +42,9 @@ enum VarKind : uint32_t {
     /// A no-op (generates no code)
     Nop,
 
+    /// Undefined memory
+    Undefined,
+
     // Common unary operations
     Neg, Not, Sqrt, Abs,
 

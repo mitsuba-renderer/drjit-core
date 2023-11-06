@@ -113,6 +113,9 @@ const char *var_kind_name[(int) VarKind::Count] {
     // A no-op (generates no code)
     "nop",
 
+    // Undefined memory
+    "undefined",
+
     // Common unary operations
     "neg", "not", "sqrt", "abs",
 
@@ -650,6 +653,20 @@ uint32_t jitc_var_pointer(JitBackend backend, const void *value,
     return jitc_var_new(v);
 }
 
+uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size) {
+    if (size == 0)
+        return 0;
+
+    jitc_check_size("jit_var_undefined", size);
+    Variable v;
+    v.kind = VarKind::Undefined;
+    v.backend = (uint32_t) backend;
+    v.type = (uint32_t) type;
+    v.size = (uint32_t) size;
+    v.literal = (uint64_t) -1;
+    return jitc_var_new(v, true);
+}
+
 uint32_t jitc_var_counter(JitBackend backend, size_t size,
                           bool simplify_scalar) {
     if (size == 1 && simplify_scalar) {
@@ -987,6 +1004,8 @@ int jitc_var_schedule(uint32_t index) {
         jitc_raise_symbolic_error("jitc_var_schedule", index);
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_schedule", index);
+    if (unlikely(v->kind == VarKind::Undefined))
+        return 0;
 
     if (v->is_node()) {
         thread_state(v->backend)->scheduled.emplace_back(index, v->counter);
@@ -1008,6 +1027,8 @@ void *jitc_var_ptr(uint32_t index) {
     Variable *v = jitc_var(index);
     if (v->is_literal())
         jitc_var_eval_literal(index, v);
+    else if (v->kind == VarKind::Undefined)
+        jitc_var_eval_undefined(index, v);
     else if (v->is_node())
         jitc_var_eval(index);
 
@@ -1024,12 +1045,25 @@ void jitc_var_eval_literal(uint32_t index, Variable *v) {
 
     JitBackend backend = (JitBackend) v->backend;
     uint32_t isize = type_size[v->type];
-    void* data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                         : AllocType::HostAsync,
-                             (size_t) v->size * (size_t) isize);
-    v = jitc_var(index);
-    jitc_memset_async(backend, data, v->size, isize, &v->literal);
+    size_t size = v->size;
 
+    void *data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
+                                                         : AllocType::HostAsync,
+                             size * isize);
+    v = jitc_var(index);
+    jitc_memset_async(backend, data, size, isize, &v->literal);
+
+    v->kind = (uint32_t) VarKind::Data;
+    v->data = data;
+}
+
+/// Evaluate an uninitialized variable
+void jitc_var_eval_undefined(uint32_t index, Variable *v) {
+    JitBackend backend = (JitBackend) v->backend;
+    size_t size = type_size[v->type] * (size_t) v->size;
+    void* data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
+                                                         : AllocType::HostAsync, size);
+    v = jitc_var(index);
     v->kind = (uint32_t) VarKind::Data;
     v->data = data;
 }
@@ -1042,6 +1076,8 @@ int jitc_var_eval(uint32_t index) {
         jitc_raise_symbolic_error("jitc_var_eval", index);
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_eval", index);
+    if (unlikely(v->kind == VarKind::Undefined))
+        return 0;
 
     if (v->is_node() || (v->is_data() && v->is_dirty())) {
         ThreadState *ts = thread_state(v->backend);
@@ -1079,13 +1115,14 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
                    "size %u!", offset, v->size);
 
     uint32_t isize = type_size[v->type];
-    if (v->is_literal())
+    if (v->is_literal() || (VarKind) v->kind == VarKind::Undefined) {
         memcpy(dst, &v->literal, isize);
-    else if (v->is_data())
+    } else if (v->is_data()) {
         jitc_memcpy((JitBackend) v->backend, dst,
                     (const uint8_t *) v->data + offset * isize, isize);
-    else
+    } else {
         jitc_fail("jit_var_read(): internal error!");
+    }
 }
 
 /// Reverse of jitc_var_read(). Copy 'dst' to a single element of a variable

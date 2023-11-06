@@ -65,7 +65,7 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
         v.extra = 1;
 
         jitc_new_scope(backend);
-        loop_start = steal(jitc_var_new(v, false));
+        loop_start = steal(jitc_var_new(v, true));
         jitc_new_scope(backend);
 
     }
@@ -93,7 +93,7 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
         v_phi.type = v2->type;
         v_phi.literal = (uint64_t) i;
         jitc_var_inc_ref(ld->loop_start);
-        uint32_t index_new = jitc_var_new(v_phi, false);
+        uint32_t index_new = jitc_var_new(v_phi, true);
         ld->inner_inputs.push_back(index_new);
         jitc_var_inc_ref(index_new);
         indices[i] = index_new;
@@ -108,7 +108,7 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
     v.size = 1;
     v.backend = (uint32_t) backend;
     v.extra = 1;
-    Ref loop_holder = steal(jitc_var_new(v, false));
+    Ref loop_holder = steal(jitc_var_new(v, true));
 
     Extra &e = state.extra[loop_holder];
     e.callback = [](uint32_t, int free, void *p) {
@@ -145,7 +145,7 @@ uint32_t jitc_var_loop_cond(uint32_t loop, uint32_t active) {
 
     JitBackend backend = (JitBackend) active_v->backend;
     jitc_new_scope(backend);
-    uint32_t cond = jitc_var_new(v, false);
+    uint32_t cond = jitc_var_new(v, true);
     jitc_new_scope(backend);
     return cond;
 }
@@ -243,7 +243,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices) {
     jitc_var_inc_ref(cond);
 
     jitc_new_scope(backend);
-    Ref loop_end = steal(jitc_var_new(v, false));
+    Ref loop_end = steal(jitc_var_new(v, true));
     jitc_new_scope(backend);
 
     Variable v_phi;
@@ -266,7 +266,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices) {
             v_phi.type = v2->type;
             jitc_var_inc_ref(ld->loop_start);
             jitc_var_inc_ref(loop_end);
-            index_new = jitc_var_new(v_phi, false);
+            index_new = jitc_var_new(v_phi, true);
             state_vars_actual++;
             state_vars_actual_size += type_size[v2->type];
         } else {
