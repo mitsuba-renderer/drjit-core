@@ -445,6 +445,7 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
     switch (v->kind) {
+        case VarKind::Undefined:
         case VarKind::Literal:
             fmt("    $v_1 = insertelement $T undef, $t $l, i32 0\n"
                 "    $v = shufflevector $T $v_1, $T undef, <$w x i32> $z\n",

@@ -405,6 +405,7 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
     switch (v->kind) {
+        case VarKind::Undefined:
         case VarKind::Literal:
             fmt("    mov.$b $v, $l;\n", v, v, v);
             break;

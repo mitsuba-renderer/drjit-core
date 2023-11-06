@@ -573,6 +573,10 @@ extern JIT_EXPORT uint32_t jit_var_i64(JitBackend backend, int64_t value);
 extern JIT_EXPORT uint32_t jit_var_bool(JitBackend backend, bool value);
 extern JIT_EXPORT uint32_t jit_var_class(JitBackend backend, void *value);
 
+// Create an array representing uninitialized memory. The actual allocation is delayed.
+extern JIT_EXPORT uint32_t jit_var_undefined(JitBackend backend, VarType type,
+                                             size_t size);
+
 /**
  * \brief Create a counter variable
  *

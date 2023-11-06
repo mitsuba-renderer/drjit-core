@@ -471,6 +471,11 @@ uint32_t jit_var_class(JitBackend backend, void *ptr) {
     return jit_var_u32(backend, value);
 }
 
+uint32_t jit_var_undefined(JitBackend backend, VarType type, size_t size) {
+    lock_guard guard(state.lock);
+    return jitc_var_undefined(backend, type, size);
+}
+
 uint32_t jit_var_counter(JitBackend backend, size_t size) {
     lock_guard guard(state.lock);
     return jitc_var_counter(backend, size, true);

@@ -58,6 +58,9 @@ extern uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind,
                                     uint32_t a2, Variable *v2, uint32_t a3, Variable *v4,
                                     uint64_t payload = 0);
 
+/// Create a variable representing uninitialized memory
+extern uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size);
+
 /// Create a variable that refers to a memory region
 extern uint32_t jitc_var_pointer(JitBackend backend, const void *value,
                                  uint32_t dep, int write);
@@ -144,6 +147,9 @@ extern int jitc_var_schedule(uint32_t index);
 
 /// Evaluate a value constant variable
 extern void jitc_var_eval_literal(uint32_t index, Variable *v);
+
+/// Evaluate an uninitialized variable
+extern void jitc_var_eval_undefined(uint32_t index, Variable *v);
 
 /// Evaluate the variable \c index right away, if it is unevaluated/dirty.
 extern int jitc_var_eval(uint32_t index);
