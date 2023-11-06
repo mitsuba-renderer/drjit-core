@@ -36,6 +36,7 @@
 #include "var.h"
 #include "log.h"
 #include "vcall.h"
+#include "loop.h"
 #include "optix.h"
 
 #define fmt(fmt, ...) buffer.fmt_cuda(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
@@ -769,6 +770,54 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
 
         case VarKind::Extract:
             fmt("    mov.$b $v, $v_out_$u;\n", v, v, a0, (uint32_t) v->literal);
+            break;
+
+        case VarKind::LoopStart: {
+                const LoopData *ld = (LoopData *) state.extra[index].callback_data;
+                for (uint32_t i = 0; i < ld->size; ++i) {
+                    Variable *inner_in  = jitc_var(ld->inner_inputs[i]),
+                             *outer_in  = jitc_var(ld->outer_inputs[i]),
+                             *outer_out = jitc_var(ld->outer_outputs[i]);
+
+                    if (inner_in == outer_in)
+                        continue; // ignore eliminated loop state variables
+
+                    // PTX doesn't require Phi variables at the at the beginning
+                    // of basic blocks. Simply assign the same register index.
+                    if (outer_in->reg_index) {
+                        if (inner_in->reg_index)
+                            inner_in->reg_index = outer_in->reg_index;
+                        if (outer_out)
+                            outer_out->reg_index = outer_in->reg_index;
+                    }
+                }
+                fmt("\nl_$u_cond:\n", v->reg_index);
+            }
+            break;
+
+        case VarKind::LoopCond:
+            fmt("    @!$v bra l_$u_done;\n\n"
+                "l_$u_body:\n", a1, a0->reg_index, a0->reg_index);
+            break;
+
+        case VarKind::LoopEnd: {
+                const LoopData *ld = (LoopData *) state.extra[v->dep[0]].callback_data;
+                for (uint32_t i = 0; i < ld->size; ++i) {
+                    const Variable *outer_in  = jitc_var(ld->outer_inputs[i]),
+                                   *inner_out = jitc_var(ld->inner_outputs[i]);
+                    if (outer_in != inner_out && outer_in->reg_index &&
+                        outer_in->reg_index != inner_out->reg_index)
+                        fmt("    mov.$b $v, $v;\n", outer_in, outer_in, inner_out);
+                }
+                fmt("    bra l_$u_cond;\n\n"
+                    "l_$u_done:\n",
+                    a0->reg_index, a0->reg_index);
+            }
+            break;
+
+        case VarKind::LoopPhi:
+        case VarKind::LoopResult:
+            // No code generated for this node
             break;
 
         default:

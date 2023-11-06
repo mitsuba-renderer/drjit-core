@@ -840,8 +840,11 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
 
     buffer.rewind_to(kernel_offset);
 
-    for (ScheduledVariable &sv: schedule)
-        jitc_var_dec_ref(sv.index);
+    for (ScheduledVariable &sv: schedule) {
+        Variable *v = jitc_var(sv.index);
+        v->reg_index = 0;
+        jitc_var_dec_ref(sv.index, v);
+    }
 
     return kernel_hash;
 }
