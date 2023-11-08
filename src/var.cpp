@@ -257,7 +257,7 @@ const bool var_kind_fp16_supported_cuda[(int) VarKind::Count] {
     true, true,
 
     // Memory-related operations
-    true, true, true,
+    true, true, true, true,
 
     // Specialized nodes for vcalls
     true, true,
@@ -360,7 +360,7 @@ const bool var_kind_fp16_supported_llvm[(int) VarKind::Count] {
     true, true,
 
     // Memory-related operations
-    true, true, true,
+    true, true, true, true,
 
     // Specialized nodes for vcalls
     true, true,
@@ -1898,6 +1898,7 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
 
         // Tricky cases
         if (size != 1 && reduce_op == ReduceOp::Add) {
+            using half = drjit::half;
             switch ((VarType) v->type) {
                 case VarType::Int8:    jitc_var_reduce_scalar<int8_t>  (size, &value); break;
                 case VarType::UInt8:   jitc_var_reduce_scalar<uint8_t> (size, &value); break;
@@ -1907,6 +1908,7 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
                 case VarType::UInt32:  jitc_var_reduce_scalar<uint32_t>(size, &value); break;
                 case VarType::Int64:   jitc_var_reduce_scalar<int64_t> (size, &value); break;
                 case VarType::UInt64:  jitc_var_reduce_scalar<uint64_t>(size, &value); break;
+                case VarType::Float16: jitc_var_reduce_scalar<half>    (size, &value); break;
                 case VarType::Float32: jitc_var_reduce_scalar<float>   (size, &value); break;
                 case VarType::Float64: jitc_var_reduce_scalar<double>  (size, &value); break;
                 default: jitc_raise("jit_var_reduce(): unsupported operand type!");

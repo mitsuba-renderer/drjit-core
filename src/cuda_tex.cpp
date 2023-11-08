@@ -11,6 +11,7 @@
 using StagingAreaDeleter = void (*)(void *);
 
 struct DrJitCudaTexture {
+    size_t type_size;  /// Size in bytes of underlying storage type e.g float32, float16
     size_t n_channels; /// Total number of channels
     size_t n_textures; /// Number of texture objects
     std::atomic_size_t n_referenced_textures; /// Number of referenced textures
@@ -25,8 +26,8 @@ struct DrJitCudaTexture {
      * struct variables and defines the numbers of CUDA textures to be used for
      * the given number of channels.
      */
-    DrJitCudaTexture(size_t n_channels)
-        : n_channels(n_channels), n_textures(1 + ((n_channels - 1) / 4)),
+    DrJitCudaTexture(size_t type_size, size_t n_channels)
+        : type_size(type_size), n_channels(n_channels), n_textures(1 + ((n_channels - 1) / 4)),
           n_referenced_textures(n_textures),
           textures(std::make_unique<CUtexObject[]>(n_textures)),
           indices(std::make_unique<uint32_t[]>(n_textures)),
@@ -81,7 +82,7 @@ struct TextureReleasePayload {
 };
 
 void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
-                           int filter_mode, int wrap_mode) {
+                           int format, int filter_mode, int wrap_mode) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_create(): invalid texture dimension!");
     else if (n_channels == 0)
@@ -134,7 +135,24 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     view_desc.height = (ndim >= 2) ? shape[1] : 1;
     view_desc.depth = (ndim == 3) ? shape[2] : 0;
 
-    DrJitCudaTexture *texture = new DrJitCudaTexture(n_channels);
+    size_t storage_format = 0;
+    size_t type_size = 0;
+
+    switch (format) {
+        case 0:
+            storage_format = CU_AD_FORMAT_FLOAT;
+            type_size = sizeof(float);
+            break;
+        case 1:
+            storage_format = CU_AD_FORMAT_HALF;
+            type_size = sizeof(uint16_t);
+            break;
+        default:
+            jitc_raise("jit_cuda_tex_create(): invalid data type!");
+            break;
+    };
+
+    DrJitCudaTexture *texture = new DrJitCudaTexture(type_size, n_channels);
     for (size_t tex = 0; tex < texture->n_textures; ++tex) {
         const size_t tex_channels = texture->channels_internal(tex);
 
@@ -144,7 +162,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             memset(&array_desc, 0, sizeof(CUDA_ARRAY_DESCRIPTOR));
             array_desc.Width = shape[0];
             array_desc.Height = (ndim == 2) ? shape[1] : 1;
-            array_desc.Format = CU_AD_FORMAT_FLOAT;
+            array_desc.Format = storage_format;
             array_desc.NumChannels = (unsigned int) tex_channels;
             cuda_check(cuArrayCreate(&array, &array_desc));
         } else {
@@ -153,7 +171,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             array_desc.Width = shape[0];
             array_desc.Height = shape[1];
             array_desc.Depth = shape[2];
-            array_desc.Format = CU_AD_FORMAT_FLOAT;
+            array_desc.Format = storage_format;
             array_desc.NumChannels = (unsigned int) tex_channels;
             cuda_check(cuArray3DCreate(&array, &array_desc));
         }
@@ -162,11 +180,14 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         texture->arrays[tex] = array;
 
         if (tex_channels == 1)
-            view_desc.format = CU_RES_VIEW_FORMAT_FLOAT_1X32;
+            view_desc.format = format == 0 ? 
+                CU_RES_VIEW_FORMAT_FLOAT_1X32 : CU_RES_VIEW_FORMAT_FLOAT_1X16;
         else if (tex_channels == 2)
-            view_desc.format = CU_RES_VIEW_FORMAT_FLOAT_2X32;
+            view_desc.format = format == 0 ?
+                CU_RES_VIEW_FORMAT_FLOAT_2X32 : CU_RES_VIEW_FORMAT_FLOAT_2X16;
         else
-            view_desc.format = CU_RES_VIEW_FORMAT_FLOAT_4X32;
+            view_desc.format = format == 0 ?
+                CU_RES_VIEW_FORMAT_FLOAT_4X32 : CU_RES_VIEW_FORMAT_FLOAT_4X16;
 
         cuda_check(cuTexObjectCreate(&(texture->textures[tex]), &res_desc,
                                      &tex_desc, &view_desc));
@@ -230,7 +251,7 @@ jitc_cuda_tex_alloc_staging_area(size_t n_texels,
                                  const DrJitCudaTexture &texture) {
     // Each texture except for the last one will need exactly 4 channels
     size_t staging_area_size =
-        sizeof(float) * n_texels *
+        texture.type_size * n_texels *
         ((texture.n_textures - 1) * 4 +
          texture.channels_internal(texture.n_textures - 1));
     void *staging_area = jitc_malloc(AllocType::Device, staging_area_size);
@@ -248,13 +269,13 @@ static void jitc_cuda_tex_memcpy_d2s(
     size_t n_texels, const void *src_ptr, const DrJitCudaTexture &dst_texture) {
     scoped_set_context guard(ts->context);
 
-    size_t texel_size = dst_texture.n_channels * sizeof(float);
+    size_t texel_size = dst_texture.n_channels * dst_texture.type_size;
 
     CUDA_MEMCPY2D op;
     memset(&op, 0, sizeof(CUDA_MEMCPY2D));
 
     for (size_t tex = 0; tex < dst_texture.n_textures; ++tex) {
-        size_t texel_offset = tex * 4 * sizeof(float);
+        size_t texel_offset = tex * 4 * dst_texture.type_size;
 
         op.srcXInBytes = texel_offset;
         op.srcMemoryType = CU_MEMORYTYPE_DEVICE;
@@ -264,9 +285,9 @@ static void jitc_cuda_tex_memcpy_d2s(
         op.dstXInBytes = n_texels * texel_offset;
         op.dstMemoryType = CU_MEMORYTYPE_DEVICE;
         op.dstDevice = (CUdeviceptr) staging_area.get();
-        op.dstPitch = dst_texture.channels_internal(tex) * sizeof(float);
+        op.dstPitch = dst_texture.channels_internal(tex) * dst_texture.type_size;
 
-        op.WidthInBytes = dst_texture.channels(tex) * sizeof(float);
+        op.WidthInBytes = dst_texture.channels(tex) * dst_texture.type_size;
         op.Height = n_texels;
 
         cuda_check(cuMemcpy2DAsync(&op, ts->stream));
@@ -303,14 +324,14 @@ void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
 
         for (size_t tex = 0; tex < dst_texture.n_textures; ++tex) {
             size_t pitch =
-                shape[0] * dst_texture.channels_internal(tex) * sizeof(float);
+                shape[0] * dst_texture.channels_internal(tex) * dst_texture.type_size;
 
             op.srcMemoryType = CU_MEMORYTYPE_DEVICE;
             op.srcDevice = (CUdeviceptr) src_ptr;
             op.srcPitch = pitch;
             if (needs_staging_area) {
                 op.srcDevice = (CUdeviceptr) staging_area.get();
-                op.srcXInBytes = tex * n_texels * 4 * sizeof(float);
+                op.srcXInBytes = tex * n_texels * 4 * dst_texture.type_size;
             }
 
             op.dstMemoryType = CU_MEMORYTYPE_ARRAY;
@@ -327,14 +348,14 @@ void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
 
         for (size_t tex = 0; tex < dst_texture.n_textures; ++tex) {
             size_t pitch =
-                shape[0] * dst_texture.channels_internal(tex) * sizeof(float);
+                shape[0] * dst_texture.channels_internal(tex) * dst_texture.type_size;
 
             op.srcMemoryType = CU_MEMORYTYPE_DEVICE;
             op.srcDevice = (CUdeviceptr) src_ptr;
             op.srcPitch = pitch;
             op.srcHeight = shape[1];
             if (needs_staging_area) {
-                op.srcXInBytes = tex * n_texels * 4 * sizeof(float);
+                op.srcXInBytes = tex * n_texels * 4 * dst_texture.type_size;
                 op.srcDevice = (CUdeviceptr) staging_area.get();
             }
 
@@ -360,25 +381,25 @@ static void jitc_cuda_tex_memcpy_s2d(
     size_t n_texels, const void *dst_ptr, const DrJitCudaTexture &src_texture) {
     scoped_set_context guard(ts->context);
 
-    size_t texel_size = src_texture.n_channels * sizeof(float);
+    size_t texel_size = src_texture.n_channels * src_texture.type_size;
 
     CUDA_MEMCPY2D op;
     memset(&op, 0, sizeof(CUDA_MEMCPY2D));
 
     for (size_t tex = 0; tex < src_texture.n_textures; ++tex) {
-        size_t texel_offset = tex * 4 * sizeof(float);
+        size_t texel_offset = tex * 4 * src_texture.type_size;
 
         op.srcXInBytes = n_texels * texel_offset;
         op.srcMemoryType = CU_MEMORYTYPE_DEVICE;
         op.srcDevice = (CUdeviceptr) staging_area.get();
-        op.srcPitch = src_texture.channels_internal(tex) * sizeof(float);
+        op.srcPitch = src_texture.channels_internal(tex) * src_texture.type_size;
 
         op.dstXInBytes = texel_offset;
         op.dstMemoryType = CU_MEMORYTYPE_DEVICE;
         op.dstDevice = (CUdeviceptr) dst_ptr;
         op.dstPitch = texel_size;
 
-        op.WidthInBytes = src_texture.channels(tex) * sizeof(float);
+        op.WidthInBytes = src_texture.channels(tex) * src_texture.type_size;
         op.Height = n_texels;
 
         cuda_check(cuMemcpy2DAsync(&op, ts->stream));
@@ -413,7 +434,7 @@ void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
 
         for (size_t tex = 0; tex < src_texture.n_textures; ++tex) {
             size_t pitch =
-                shape[0] * src_texture.channels_internal(tex) * sizeof(float);
+                shape[0] * src_texture.channels_internal(tex) * src_texture.type_size;
 
             op.srcMemoryType = CU_MEMORYTYPE_ARRAY;
             op.srcArray = src_texture.arrays[tex];
@@ -422,7 +443,7 @@ void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
             op.dstDevice = (CUdeviceptr) dst_ptr;
             op.dstPitch = pitch;
             if (needs_staging_area) {
-                op.dstXInBytes = tex * n_texels * 4 * sizeof(float);
+                op.dstXInBytes = tex * n_texels * 4 * src_texture.type_size;
                 op.dstDevice = (CUdeviceptr) staging_area.get();
             }
 
@@ -437,7 +458,7 @@ void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
 
         for (size_t tex = 0; tex < src_texture.n_textures; ++tex) {
             size_t pitch =
-                shape[0] * src_texture.channels_internal(tex) * sizeof(float);
+                shape[0] * src_texture.channels_internal(tex) * src_texture.type_size;
 
             op.srcMemoryType = CU_MEMORYTYPE_ARRAY;
             op.srcArray = src_texture.arrays[tex];
@@ -447,7 +468,7 @@ void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
             op.dstPitch = pitch;
             op.dstHeight = shape[1];
             if (needs_staging_area) {
-                op.dstXInBytes = tex * n_texels * 4 * sizeof(float);
+                op.dstXInBytes = tex * n_texels * 4 * src_texture.type_size;
                 op.dstDevice = (CUdeviceptr) staging_area.get();
             }
 
@@ -464,7 +485,7 @@ void jitc_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
                                  src_texture);
 }
 
-Variable jitc_cuda_tex_check(size_t ndim, const uint32_t *pos) {
+Variable jitc_cuda_tex_check(VarType out_type, size_t ndim, const uint32_t *pos) {
     // Validate input types, determine size of the operation
     uint32_t size = 0;
     bool dirty = false, symbolic = false;
@@ -505,14 +526,15 @@ Variable jitc_cuda_tex_check(size_t ndim, const uint32_t *pos) {
     v.size = size;
     v.backend = (uint32_t) backend;
     v.symbolic = symbolic;
-    v.type = (uint32_t) VarType::Float32;
+    v.type = (uint32_t) out_type;
     return v;
 }
 
 void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
                           const uint32_t *pos, uint32_t *out) {
     DrJitCudaTexture &tex = *((DrJitCudaTexture *) texture_handle);
-    Variable v = jitc_cuda_tex_check(ndim, pos);
+    VarType out_type = tex.type_size == 4 ? VarType::Float32 : VarType::Float16;
+    Variable v = jitc_cuda_tex_check(out_type, ndim, pos);
 
     for (size_t ti = 0; ti < tex.n_textures; ++ti) {
         // Perform a fetch per texture ..
@@ -545,7 +567,8 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
         jitc_raise("jitc_cuda_tex_bilerp_fetch(): only 2D textures are supported!");
 
     DrJitCudaTexture &tex = *((DrJitCudaTexture *) texture_handle);
-    Variable v = jitc_cuda_tex_check(ndim, pos);
+    VarType out_type = tex.type_size == 4 ? VarType::Float32 : VarType::Float16;
+    Variable v = jitc_cuda_tex_check(out_type, ndim, pos);
 
     for (size_t ti = 0; ti < tex.n_textures; ++ti) {
         for (size_t ch = 0; ch < tex.channels(ti); ++ch) {

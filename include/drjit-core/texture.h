@@ -7,6 +7,8 @@
     license that can be found in the LICENSE file.
 */
 
+#pragma once
+
 #include "jit.h"
 
 #if defined(__cplusplus)
@@ -22,6 +24,12 @@ extern "C" {
  * The value of the \c n_channels argument must be greater or equal than 1.
  * The function returns an opaque texture handle.
  *
+ * The \c format parameter supports the following options:
+ * <ul>
+ * <li><tt>format == 0</tt>: Single precision storage foramt </li>
+ * <li><tt>format == 1</tt>: Half precision storage format </li>
+ * <ul>
+ * 
  * The \c filter_mode parameter supports the following options:
  *
  * <ul>
@@ -41,6 +49,7 @@ extern "C" {
  */
 extern JIT_EXPORT void *jit_cuda_tex_create(size_t ndim, const size_t *shape,
                                             size_t n_channels,
+                                            int format,
                                             int filter_mode JIT_DEF(1),
                                             int wrap_mode JIT_DEF(0));
 

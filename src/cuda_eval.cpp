@@ -750,22 +750,32 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::TexLookup:
-            fmt("    .reg.f32 $v_out_<4>;\n", v);
+            fmt("    .reg.$t $v_out_<4>;\n", v, v);
             if (a3)
-                fmt("    tex.3d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}];\n",
-                    v, v, v, v, a0, a1, a2, a3, a3);
+                fmt("    tex.3d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}];\n",
+                    v, v, v, v, v, a0, a1, a2, a3, a3);
             else if (a2)
-                fmt("    tex.2d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
-                    v, v, v, v, a0, a1, a2);
+                fmt("    tex.2d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
+                    v, v, v, v, v, a0, a1, a2);
             else
-                fmt("    tex.1d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}];\n",
-                    v, v, v, v, a0, a1);
+                fmt("    tex.1d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}];\n",
+                    v, v, v, v, v, a0, a1);
             break;
 
         case VarKind::TexFetchBilerp:
-            fmt("    .reg.f32 $v_out_<4>;\n"
-                "    tld4.$c.2d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
-                v, "rgba"[v->literal], v, v, v, v, a0, a1, a2);
+            fmt("    .reg.f32 %f$u_out_<4>;\n"
+                "    tld4.$c.2d.v4.f32.f32 {%f$u_out_0, %f$u_out_1, %f$u_out_2, %f$u_out_3}, [$v, {$v, $v}];\n",
+                v->reg_index, "rgba"[v->literal], v->reg_index, v->reg_index, v->reg_index, v->reg_index, a0, a1, a2);
+            if (jitc_is_half(v)) {
+                fmt("    .reg.f16 %h$u_out_<4>;\n"
+                    "    cvt.rn.f16.f32 %h$u_out_0, %f$u_out_0;\n"
+                    "    cvt.rn.f16.f32 %h$u_out_1, %f$u_out_1;\n"
+                    "    cvt.rn.f16.f32 %h$u_out_2, %f$u_out_2;\n"
+                    "    cvt.rn.f16.f32 %h$u_out_3, %f$u_out_3;\n",
+                    v->reg_index,
+                    v->reg_index, v->reg_index, v->reg_index, v->reg_index,
+                    v->reg_index, v->reg_index, v->reg_index, v->reg_index);
+            }
             break;
 
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -851,6 +861,7 @@ static void jitc_cuda_render_scatter(const Variable *v,
     bool index_zero = index->is_literal() && index->literal == 0;
     bool unmasked = mask->is_literal() && mask->literal == 1;
     bool is_bool = value->type == (uint32_t) VarType::Bool;
+    bool is_half = value->type == (uint32_t) VarType::Float16;
 
     if (!unmasked)
         fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
@@ -950,6 +961,23 @@ static void jitc_cuda_render_scatter(const Variable *v,
             op, value, value, value, value, op, value, op, value, op, value, op, value, op,
             value, op, value, op, value
         );
+    } else if (v->literal && is_half) {
+        // Encountered OptiX link errors attempting to use red.global.add.noftz.f16
+        // so use f16x2 instead
+        fmt("    {\n"
+            "        .reg .f16x2 %packed;\n"
+            "        .reg .b64 %align, %offset;\n"
+            "        .reg .b32 %offset_32;\n"
+            "        .reg .f16 %initial;\n"
+            "        mov.b16 %initial, 0;\n"
+            "        and.b64 %align, %rd3, ~0x3;\n"
+            "        and.b64 %offset, %rd3, 0x2;\n"
+            "        cvt.u32.s64 %offset_32, %offset;\n"
+            "        shl.b32 %offset_32, %offset_32, 3;\n"
+            "        mov.b32 %packed, {$v, %initial};\n"
+            "        shl.b32 %packed, %packed, %offset_32;\n"
+            "        red.global.add.noftz.f16x2 [%align], %packed;\n"
+            "    }\n", value);
     } else {
         const char *op_type = v->literal ? "red" : "st";
 
