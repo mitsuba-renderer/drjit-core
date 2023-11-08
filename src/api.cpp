@@ -962,10 +962,10 @@ void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
     jitc_llvm_ray_trace(func, scene, shadow_ray, in, out);
 }
 
-void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
+void *jit_cuda_tex_create(CudaTextureType type, size_t ndim, const size_t *shape, size_t n_channels,
                           int filter_mode, int wrap_mode) {
     lock_guard guard(state.lock);
-    return jitc_cuda_tex_create(ndim, shape, n_channels, filter_mode, wrap_mode);
+    return jitc_cuda_tex_create(type, ndim, shape, n_channels, filter_mode, wrap_mode);
 }
 
 void jit_cuda_tex_get_shape(size_t ndim, const void *texture_handle,

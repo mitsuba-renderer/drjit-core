@@ -7,7 +7,25 @@
     license that can be found in the LICENSE file.
 */
 
+#pragma once
+
 #include "jit.h"
+
+#if defined(__cplusplus)
+enum class CudaTextureType : uint32_t {
+    /// Single-precision storage
+    Float32,
+
+    /// Half-precision storage
+    Float16
+};
+#else
+enum CudaTextureType {
+    CudaTextureTypeFloat32,
+    CudaTextureTypeFloat16
+};
+#endif
+
 
 #if defined(__cplusplus)
 extern "C" {
@@ -39,7 +57,8 @@ extern "C" {
  *
  * Further modes (e.g. MIP-mapping) may be added in the future.
  */
-extern JIT_EXPORT void *jit_cuda_tex_create(size_t ndim, const size_t *shape,
+extern JIT_EXPORT void *jit_cuda_tex_create(CudaTextureType type,
+                                            size_t ndim, const size_t *shape,
                                             size_t n_channels,
                                             int filter_mode JIT_DEF(1),
                                             int wrap_mode JIT_DEF(0));

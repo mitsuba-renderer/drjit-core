@@ -49,6 +49,11 @@ struct half {
     half operator*(half h) const { return half(float(*this) * float(h)); }
     half operator/(half h) const { return half(float(*this) / float(h)); }
 
+    DRJIT_IF_INT half operator+(Value v) const { return half(float(*this) + float(v)); }
+    DRJIT_IF_INT half operator-(Value v) const { return half(float(*this) - float(v)); }
+    DRJIT_IF_INT half operator*(Value v) const { return half(float(*this) * float(v)); }
+    DRJIT_IF_INT half operator/(Value v) const { return half(float(*this) / float(v)); }
+
     half operator-() const { return half(-float(*this)); }
 
     half& operator+=(half h) { return operator=(*this + h); }

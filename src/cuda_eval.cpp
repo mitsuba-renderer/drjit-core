@@ -763,22 +763,22 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::TexLookup:
-            fmt("    .reg.f32 $v_out_<4>;\n", v);
+            fmt("    .reg.$t $v_out_<4>;\n", v, v);
             if (a3)
-                fmt("    tex.3d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}];\n",
-                    v, v, v, v, a0, a1, a2, a3, a3);
+                fmt("    tex.3d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}];\n",
+                    v, v, v, v, v, a0, a1, a2, a3, a3);
             else if (a2)
-                fmt("    tex.2d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
-                    v, v, v, v, a0, a1, a2);
+                fmt("    tex.2d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
+                    v, v, v, v, v, a0, a1, a2);
             else
-                fmt("    tex.1d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}];\n",
-                    v, v, v, v, a0, a1);
+                fmt("    tex.1d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}];\n",
+                    v, v, v, v, v, a0, a1);
             break;
 
         case VarKind::TexFetchBilerp:
-            fmt("    .reg.f32 $v_out_<4>;\n"
-                "    tld4.$c.2d.v4.f32.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
-                v, "rgba"[v->literal], v, v, v, v, a0, a1, a2);
+            fmt("    .reg.$t $v_out_<4>;\n"
+                "    tld4.$c.2d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
+                v, v, "rgba"[v->literal], v, v, v, v, a0, a1, a2);
             break;
 
 #if defined(DRJIT_ENABLE_OPTIX)
