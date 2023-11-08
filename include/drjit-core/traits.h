@@ -32,6 +32,12 @@ template< class T >
 inline constexpr bool is_signed_v = is_signed<T>::value;
 
 template<typename T>
+struct is_integral : std::is_integral<T>::type {};
+
+template< class T >
+inline constexpr bool is_integral_v = is_integral<T>::value;
+
+template<typename T>
 struct is_floating_point : std::is_floating_point<T>::type {};
 
 template< class T >

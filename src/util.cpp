@@ -300,6 +300,7 @@ static Reduction jitc_reduce_create(ReduceOp rtype) {
 }
 
 static Reduction jitc_reduce_create(VarType type, ReduceOp rtype) {
+    using half = drjit::half;
     switch (type) {
         case VarType::Int8:    return jitc_reduce_create<int8_t  >(rtype);
         case VarType::UInt8:   return jitc_reduce_create<uint8_t >(rtype);
@@ -309,6 +310,7 @@ static Reduction jitc_reduce_create(VarType type, ReduceOp rtype) {
         case VarType::UInt32:  return jitc_reduce_create<uint32_t>(rtype);
         case VarType::Int64:   return jitc_reduce_create<int64_t >(rtype);
         case VarType::UInt64:  return jitc_reduce_create<uint64_t>(rtype);
+        case VarType::Float16: return jitc_reduce_create<half    >(rtype);
         case VarType::Float32: return jitc_reduce_create<float   >(rtype);
         case VarType::Float64: return jitc_reduce_create<double  >(rtype);
         default: jitc_raise("jit_reduce_create(): unsupported data type!");
