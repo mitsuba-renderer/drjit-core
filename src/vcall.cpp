@@ -60,11 +60,11 @@ void jitc_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index) {
 }
 
 /// Weave a virtual function call into the computation graph
-uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
-                        uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
-                        const uint32_t *in, uint32_t n_out_nested,
-                        const uint32_t *out_nested, const uint32_t *checkpoints,
-                        uint32_t *out) {
+void jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
+                    uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
+                    const uint32_t *in, uint32_t n_out_nested,
+                    const uint32_t *out_nested, const uint32_t *checkpoints,
+                    uint32_t *out) {
 
     const uint32_t checkpoint_mask = 0x7fffffff;
 
@@ -549,7 +549,7 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
     vcall_v.reset();
 
-    return se_v.release();
+    jitc_var_mark_side_effect(se_v.release());
 }
 
 static ProfilerRegion profiler_region_vcall_assemble("jit_var_vcall_assemble");

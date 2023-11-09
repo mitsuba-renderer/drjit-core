@@ -564,14 +564,14 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         }
 
         bool lvn_hit = lvn && !lvn_key_inserted;
-        if (v.symbolic || lvn_hit || (v.is_node() && v.literal)) {
+        if (v.symbolic || lvn_hit || (v.is_node() && !v.is_undefined() && v.literal)) {
             var_buffer.put(" [");
             bool prev = false;
             if (v.symbolic) {
                 var_buffer.put("symbolic");
                 prev = true;
             }
-            if (v.is_node() && v.literal) {
+            if (v.is_node() && !v.is_undefined() && v.literal) {
                 if (prev)
                     var_buffer.put(", ");
                 prev = true;
@@ -906,12 +906,8 @@ void jitc_var_mark_side_effect(uint32_t index) {
     Variable *v = jitc_var(index);
     v->side_effect = true;
 
-    /* Include all side effects in recorded program, even if
-       they don't depend on other symbolic variables */
-    v->symbolic |= jit_flag(JitFlag::Recording);
-
     jitc_log(Debug, "jit_var_mark_side_effect(r%u)%s", index,
-             v->symbolic ? " (part of a symbolic computation)" : "");
+             v->symbolic ? " [symbolic]" : "");
 
     ThreadState *ts = thread_state(v->backend);
     std::vector<uint32_t> &output =
@@ -973,19 +969,42 @@ const char *jitc_var_str(uint32_t index) {
 
 static void jitc_raise_symbolic_error(const char *func, uint32_t index) {
     jitc_raise(
-        "%s(r%u): symbolic variables capture abstract computation and can neither be\n"
-        "evaluated nor scheduled for evaluation. This error message could appear for\n"
-        "the following reasons:\n"
+        "%s(r%u): not permitted.\n\n"
+        "You performed an operation that tried to evalute a *symbolic*\n"
+        "variable which is not permitted.\n\n"
+        "Tracing operations like dr.while_loop(), dr.if_stmt(), dr.switch(),\n"
+        "dr.dispatch(), etc., employ such symbolic variables to call code with\n"
+        "abstract inputs and record the resulting computation. It is also\n"
+        "possible that you used ordinary Python loops/if statements together\n"
+        "with the @dr.syntax decorator, which automatically rewrites code to\n"
+        "use such tracing operations. The following operations cannot be \n"
+        "performed on symbolic variables:\n"
         "\n"
-        "1. You are using Dr.Jit's loop or virtual function call recording feature\n"
-        "   and tried to perform an operation that is not permitted in this restricted\n"
-        "   execution mode. Please see the documentation of recorded loops/virtual\n"
-        "   function calls to learn about these restrictions.\n"
+        " - You cannot use dr.eval() or dr.schedule() to evaluate them.\n"
         "\n"
-        "2. You are accessing a variable that was modified as part of a recorded\n"
-        "   loop and forgot to specify it as a loop variable. Please see the\n"
-        "   drjit.Loop documentation for details.", func, index
-    );
+        " - You cannot print() their contents. (But you may use dr.print() to\n"
+        "   print them *asynchronously*)\n"
+        "\n"
+        " - You cannot perform reductions that would require evaluation of the\n"
+        "   entire input array (e.g. dr.all(x > 0, axis=None) to check if the\n"
+        "   elements of an array are positive).\n"
+        "\n"
+        " - You cannot access specific values in 1D arrays (this would require\n"
+        "   the contents to be known.\n"
+        "\n"
+        "The common pattern of these limitation is that the contents of symbolic\n"
+        "of variables are *simply not known*. Any attempt to access or otherwise\n"
+        "reveal their contents is therefore doomed to fail.\n"
+        "\n"
+        "Symbolic variables can be inconvenient for debugging, where it is nice\n"
+        "to be able to stick a print() call into code, or to single-step through\n"
+        "a program and investigate intermediate results. If you wish to do this,\n"
+        "then you should switch Dr.Jit from *symbolic* into *evaluated* mode.\n"
+        "\n"
+        "This mode tends to be far more expensive in terms of memory storage and\n"
+        "bandwidth, which is why it is not enabled by default. Please see the\n"
+        "Dr.Jit documentation for more information on symbolic and evaluated\n"
+        "evaluation modes: (TODO: insert link).\n", func, index);
 }
 
 static void jitc_raise_consumed_error(const char *func, uint32_t index) {
@@ -1004,7 +1023,7 @@ int jitc_var_schedule(uint32_t index) {
         jitc_raise_symbolic_error("jitc_var_schedule", index);
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_schedule", index);
-    if (unlikely(v->kind == VarKind::Undefined))
+    if (unlikely(v->is_undefined()))
         return 0;
 
     if (v->is_node()) {
@@ -1027,7 +1046,7 @@ void *jitc_var_ptr(uint32_t index) {
     Variable *v = jitc_var(index);
     if (v->is_literal())
         jitc_var_eval_literal(index, v);
-    else if (v->kind == VarKind::Undefined)
+    else if (v->is_undefined())
         jitc_var_eval_undefined(index, v);
     else if (v->is_node())
         jitc_var_eval(index);
@@ -1037,10 +1056,6 @@ void *jitc_var_ptr(uint32_t index) {
 
 /// Evaluate a literal constant variable
 void jitc_var_eval_literal(uint32_t index, Variable *v) {
-    jitc_log(Debug,
-            "jit_var_eval_literal(r%u): writing %s literal of size %u",
-            index, type_name[v->type], v->size);
-
     jitc_lvn_drop(index, v);
 
     JitBackend backend = (JitBackend) v->backend;
@@ -1055,6 +1070,9 @@ void jitc_var_eval_literal(uint32_t index, Variable *v) {
 
     v->kind = (uint32_t) VarKind::Data;
     v->data = data;
+    jitc_log(Debug,
+             "jit_var_eval_literal(): %s r%u[%u] = data(" DRJIT_PTR ")",
+             type_name[v->type], index, v->size, (uintptr_t) v->data);
 }
 
 /// Evaluate an uninitialized variable
@@ -1066,6 +1084,9 @@ void jitc_var_eval_undefined(uint32_t index, Variable *v) {
     v = jitc_var(index);
     v->kind = (uint32_t) VarKind::Data;
     v->data = data;
+    jitc_log(Debug,
+             "jit_var_eval_undefined(): %s r%u[%u] = data(" DRJIT_PTR ")",
+             type_name[v->type], index, v->size, (uintptr_t) v->data);
 }
 
 /// Evaluate the variable \c index right away if it is unevaluated/dirty.
@@ -1076,7 +1097,7 @@ int jitc_var_eval(uint32_t index) {
         jitc_raise_symbolic_error("jitc_var_eval", index);
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_eval", index);
-    if (unlikely(v->kind == VarKind::Undefined))
+    if (unlikely(v->is_undefined()))
         return 0;
 
     if (v->is_node() || (v->is_data() && v->is_dirty())) {
@@ -1115,7 +1136,7 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
                    "size %u!", offset, v->size);
 
     uint32_t isize = type_size[v->type];
-    if (v->is_literal() || (VarKind) v->kind == VarKind::Undefined) {
+    if (v->is_literal() || v->is_undefined()) {
         memcpy(dst, &v->literal, isize);
     } else if (v->is_data()) {
         jitc_memcpy((JitBackend) v->backend, dst,
@@ -1229,8 +1250,10 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
     }
 
     uint32_t index = jitc_var_mem_map(backend, vtype, target_ptr, size, true);
-    jitc_log(Debug, "jit_var_mem_copy(%s r%u[%zu] <- " DRJIT_PTR ")",
-             type_name[(int) vtype], index, size, (uintptr_t) ptr);
+    jitc_log(Debug,
+             "jit_var_mem_copy(): %s r%u[%zu] = copy_from(%s, " DRJIT_PTR ")",
+             type_name[(int) vtype], index, size, alloc_type_name[(int) atype],
+             (uintptr_t) ptr);
     return index;
 }
 
@@ -1261,6 +1284,9 @@ uint32_t jitc_var_copy(uint32_t index) {
         v2.size = v->size;
 
         if (v->is_literal()) {
+            v2.kind = (uint32_t) VarKind::Literal;
+            v2.literal = v->literal;
+        } else if (v->is_undefined()) {
             v2.kind = (uint32_t) VarKind::Literal;
             v2.literal = v->literal;
         } else {
@@ -1336,7 +1362,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     Variable *v = jitc_var(src_index);
     JitBackend backend = (JitBackend) v->backend;
 
-    if (v->is_literal() || v->kind == VarKind::Undefined) {
+    if (v->is_literal() || v->is_undefined()) {
         size_t size = v->size;
         void *ptr = jitc_malloc(dst_type, type_size[v->type] * size);
 
