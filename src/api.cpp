@@ -185,6 +185,11 @@ uint32_t jit_record_begin(JitBackend backend, const char *name) {
         return uint32_t(-1);
     stack.push_back(name ? name : "");
 
+    if (name)
+        jitc_log(Debug, "jit_record_begin(\"%s\")", name);
+    else
+        jitc_log(Debug, "jit_record_begin()");
+
     uint32_t result = (uint32_t) ts->side_effects_symbolic.size();
     if (jit_flag(JitFlag::Recording))
         result |= 0x80000000u;
@@ -193,7 +198,9 @@ uint32_t jit_record_begin(JitBackend backend, const char *name) {
     return result;
 }
 
-void jit_record_end(JitBackend backend, uint32_t value) {
+void jit_record_end(JitBackend backend, uint32_t value, int cleanup) {
+    jitc_log(Debug, "jit_record_end()");
+
     ThreadState *ts = thread_state(backend);
     std::vector<std::string> &stack = ts->record_stack;
 
@@ -206,14 +213,18 @@ void jit_record_end(JitBackend backend, uint32_t value) {
     jit_set_flag(JitFlag::Recording, value & 0x80000000u);
     value &= 0x7fffffff;
 
-    std::vector<uint32_t> &se = ts->side_effects_symbolic;
-    if (value > se.size())
-        jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
+    if (cleanup) {
+        lock_guard guard(state.lock);
+        std::vector<uint32_t> &se = ts->side_effects_symbolic;
+        if (value > se.size())
+            jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
 
-    lock_guard guard(state.lock);
-    while (value != se.size()) {
-        jitc_var_dec_ref(se.back());
-        se.pop_back();
+        while (value != se.size()) {
+            uint32_t index = se.back();
+            se.pop_back();
+            jitc_log(Debug, "jit_record_end(): deleting side effect r%u", index);
+            jitc_var_dec_ref(index);
+        }
     }
 }
 
@@ -622,6 +633,11 @@ VarType jit_var_type(uint32_t index) {
     return jitc_var_type(index);
 }
 
+int jit_var_is_dirty(uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_var(index)->is_dirty();
+}
+
 const char *jit_var_label(uint32_t index) {
     lock_guard guard(state.lock);
     return jitc_var_label(index);
@@ -876,14 +892,14 @@ void jit_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index) {
     jitc_vcall_self(backend, value, index);
 }
 
-uint32_t jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
-                       uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
-                       const uint32_t *in, uint32_t n_out_nested,
-                       const uint32_t *out_nested, const uint32_t *se_offset,
-                       uint32_t *out) {
+void jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
+                   uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
+                   const uint32_t *in, uint32_t n_out_nested,
+                   const uint32_t *out_nested, const uint32_t *se_offset,
+                   uint32_t *out) {
     lock_guard guard(state.lock);
-    return jitc_var_vcall(name, self, mask, n_inst, inst_id, n_in, in,
-                          n_out_nested, out_nested, se_offset, out);
+    jitc_var_vcall(name, self, mask, n_inst, inst_id, n_in, in, n_out_nested,
+                   out_nested, se_offset, out);
 }
 
 void jit_aggregate(JitBackend backend, void *dst, AggregationEntry *agg,
@@ -1220,7 +1236,7 @@ uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active) {
     return jitc_var_loop_cond(loop, active);
 }
 
-int jit_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices) {
+int jit_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t checkpoint) {
     lock_guard guard(state.lock);
-    return jitc_var_loop_end(loop, cond, indices);
+    return jitc_var_loop_end(loop, cond, indices, checkpoint);
 }

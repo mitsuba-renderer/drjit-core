@@ -996,6 +996,9 @@ extern JIT_EXPORT size_t jit_var_size(uint32_t index);
 /// Query the type of a given variable
 extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
 
+/// Check if a variable has pending side effects
+extern JIT_EXPORT int jit_var_is_dirty(uint32_t index);
+
 
 #if defined(__cplusplus)
 
@@ -1387,7 +1390,7 @@ extern JIT_EXPORT uint32_t jit_record_checkpoint(JIT_ENUM JitBackend backend);
  * recovers the previous setting of the flag \ref JitFlag.Recording.
  */
 extern JIT_EXPORT void jit_record_end(JIT_ENUM JitBackend backend,
-                                      uint32_t state);
+                                      uint32_t state, int cleanup);
 
 /**
  * \brief Begin recording a symbolic loop
@@ -1445,6 +1448,9 @@ extern JIT_EXPORT uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active);
  *    The indices array should contain the loop variable state following
  *    execution of the loop body.
  *
+ * \param checkpoint
+ *    A checkpoint handle obtained by jit_record_begin()
+ *
  * \return
  *    When the function returns ``1``, the loop recording process has concluded.
  *    When the function returns ``0``, Dr.Jit identified an optimization opportunity
@@ -1457,7 +1463,7 @@ extern JIT_EXPORT uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active);
  *    representing the variable state following termination of the loop.
  */
 extern JIT_EXPORT int jit_var_loop_end(uint32_t loop, uint32_t cond,
-                                       uint32_t *indices);
+                                       uint32_t *indices, uint32_t checkpoint);
 
 /**
  * \brief Wrap an input variable of a virtual function call before recording
@@ -1527,13 +1533,13 @@ extern JIT_EXPORT void jit_vcall_self(JIT_ENUM JitBackend backend,
  *     The final output variables representing the result of the operation
  *     are written into this argument (size <tt>n_out_nested / n_inst</tt>)
  */
-extern JIT_EXPORT uint32_t jit_var_vcall(const char *name, uint32_t self,
-                                         uint32_t mask, uint32_t n_inst,
-                                         const uint32_t *inst_id,
-                                         uint32_t n_in, const uint32_t *in,
-                                         uint32_t n_out_nested,
-                                         const uint32_t *out_nested,
-                                         const uint32_t *se_offset, uint32_t *out);
+extern JIT_EXPORT void jit_var_vcall(const char *name, uint32_t self,
+                                     uint32_t mask, uint32_t n_inst,
+                                     const uint32_t *inst_id,
+                                     uint32_t n_in, const uint32_t *in,
+                                     uint32_t n_out_nested,
+                                     const uint32_t *out_nested,
+                                     const uint32_t *se_offset, uint32_t *out);
 
 /**
  * \brief Pushes a new mask variable onto the mask stack

@@ -247,10 +247,11 @@ struct Variable {
 
     // =========================   Helper functions   ==========================
 
-    bool is_data()    const { return kind == (uint32_t) VarKind::Data;    }
-    bool is_literal() const { return kind == (uint32_t) VarKind::Literal; }
-    bool is_node()    const { return (uint32_t) kind > VarKind::Literal; }
-    bool is_dirty()   const { return ref_count_se > 0; }
+    bool is_data()      const { return kind == (uint32_t) VarKind::Data;    }
+    bool is_literal()   const { return kind == (uint32_t) VarKind::Literal; }
+    bool is_undefined() const { return kind == (uint32_t) VarKind::Undefined; }
+    bool is_node()      const { return (uint32_t) kind > VarKind::Literal; }
+    bool is_dirty()     const { return ref_count_se > 0; }
 };
 
 #pragma pack(push, 1)
