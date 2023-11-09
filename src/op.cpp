@@ -1432,7 +1432,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
 
     if (v->extra) {
         Extra &e = state.extra[var_index];
-        if (e.n_dep || e.callback || e.vcall_buckets || e.assemble)
+        if (e.n_dep || e.callback || e.vcall_buckets)
             return 0; // "complicated" variable, give up
     }
 

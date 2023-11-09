@@ -123,16 +123,10 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
             if (it == state.extra.end())
                 jitc_fail("jit_assemble_llvm(): internal error: 'extra' entry not found!");
 
-            const Extra &extra = it->second;
             if (print_labels && vt != VarType::Void) {
                 const char *label =  jitc_var_label(index);
                 if (label && label[0])
                     fmt("    ; $s\n", label);
-            }
-
-            if (extra.assemble) {
-                extra.assemble(v, extra);
-                continue;
             }
         }
 
@@ -319,16 +313,10 @@ void jitc_llvm_assemble_func(const char *name, uint32_t inst_id,
                 jitc_fail("jit_assemble_llvm(): internal error: 'extra' entry "
                           "not found!");
 
-            const Extra &extra = it->second;
             if (print_labels && vt != VarType::Void) {
                 const char *label =  jitc_var_label(sv.index);
                 if (label && label[0])
                     fmt("    ; $s\n", label);
-            }
-
-            if (extra.assemble) {
-                extra.assemble(v, extra);
-                continue;
             }
         }
 

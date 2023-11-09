@@ -726,8 +726,6 @@ void jitc_eval(ThreadState *ts) {
                 }
                 v = jitc_var(index);
             }
-
-            state.extra[index].assemble = nullptr;
         }
 
         uint32_t dep[4], side_effect = v->side_effect;

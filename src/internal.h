@@ -560,9 +560,6 @@ struct Extra {
     /// Bucket decomposition for virtual function calls
     uint32_t vcall_bucket_count = 0;
     VCallBucket *vcall_buckets = nullptr;
-
-    /// Code generation callback
-    void (*assemble)(const Variable *v, const Extra &extra) = nullptr;
 };
 
 using ExtraMap = tsl::robin_map<uint32_t, Extra, UInt32Hasher>;
