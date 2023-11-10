@@ -156,23 +156,25 @@ void* jitc_malloc(AllocType type, size_t size) {
     // Otherwise, allocate memory
     if (unlikely(!ptr)) {
         for (int i = 0; i < 2; ++i) {
-            unlock_guard guard(state.lock);
-            /* Temporarily release the main lock */ {
-                if (backend != JitBackend::CUDA) {
-                    ptr = aligned_malloc(size);
-                } else {
-                    scoped_set_context guard_2(ts->context);
-                    CUresult ret;
+            {
+                unlock_guard guard(state.lock);
+                /* Temporarily release the main lock */ {
+                    if (backend != JitBackend::CUDA) {
+                        ptr = aligned_malloc(size);
+                    } else {
+                        scoped_set_context guard_2(ts->context);
+                        CUresult ret;
 
-                    if (type == AllocType::HostPinned)
-                        ret = cuMemAllocHost(&ptr, size);
-                    else if (ts->memory_pool)
-                        ret = cuMemAllocAsync((CUdeviceptr*) &ptr, size, ts->stream);
-                    else
-                        ret = cuMemAlloc((CUdeviceptr*) &ptr, size);
+                        if (type == AllocType::HostPinned)
+                            ret = cuMemAllocHost(&ptr, size);
+                        else if (ts->memory_pool)
+                            ret = cuMemAllocAsync((CUdeviceptr*) &ptr, size, ts->stream);
+                        else
+                            ret = cuMemAlloc((CUdeviceptr*) &ptr, size);
 
-                    if (ret)
-                        ptr = nullptr;
+                        if (ret)
+                            ptr = nullptr;
+                    }
                 }
             }
             if (ptr)
