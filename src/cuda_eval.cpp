@@ -780,6 +780,8 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
                             outer_out->reg_index = outer_in->reg_index;
                     }
                 }
+                if (ld->name != "unnamed")
+                    fmt("    // Loop: $s\n", ld->name.c_str());
                 fmt("\nl_$u_cond:\n", v->reg_index);
             }
             break;
