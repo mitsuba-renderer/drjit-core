@@ -1427,7 +1427,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
                                  uint32_t mask, uint32_t size) {
     Variable *v = jitc_var(var_index);
 
-    if (v->is_data() || (VarType) v->type == VarType::Void)
+    if (v->is_evaluated() || (VarType) v->type == VarType::Void)
         return 0; // evaluated variable, give up
 
     if (v->extra) {
@@ -1547,6 +1547,8 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
         }
     }
 
+    jitc_var_eval(src);
+
     /// Perform a memcpy when this is a size-1 literal load
     if (!result && var_info.size == 1 && var_info.literal) {
         size_t size = type_size[(int) src_info.type];
@@ -1554,7 +1556,7 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
                               ? AllocType::Device
                               : AllocType::HostAsync;
 
-        void *ptr = (uint8_t *) jitc_var_ptr(src) +
+        void *ptr = (uint8_t *) jitc_var(src)->data +
                     size * jitc_var(index)->literal,
              *ptr_out = jitc_malloc(atype, size);
 
@@ -1565,7 +1567,7 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
     }
 
     if (!result) {
-        Ref ptr_2   = steal(jitc_var_pointer(src_info.backend, jitc_var_ptr(src), src, 0)),
+        Ref ptr_2   = steal(jitc_var_pointer(src_info.backend, jitc_var(src)->data, src, 0)),
             index_2 = steal(jitc_scatter_gather_index(src, index)),
             mask_2  = steal(jitc_var_mask_apply(mask, var_info.size));
 
@@ -1598,17 +1600,21 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     auto [var_info, value_v, index_v, mask_v] =
         jitc_var_check("jit_var_scatter_reduce_kahan", value, index, mask);
 
-    uint32_t target_1 = *target_1_p, target_2 = *target_2_p;
+    Ref target_1 = borrow(*target_1_p),
+        target_2 = borrow(*target_2_p);
+
     auto [target_info, target_1_v, target_2_v] =
-        jitc_var_check("jit_var_scatter_reduce_kahan", target_1, target_2);
+        jitc_var_check("jit_var_scatter_reduce_kahan",
+                       (uint32_t) target_1,
+                       (uint32_t) target_2);
 
     // Go to the original if 'target' is wrapped into a loop state variable
     while (target_1_v->kind == VarKind::LoopPhi) {
-        target_1 = target_1_v->dep[3];
+        target_1 = borrow(target_1_v->dep[3]);
         target_1_v = jitc_var(target_1);
     }
     while (target_2_v->kind == VarKind::LoopPhi) {
-        target_2 = target_2_v->dep[3];
+        target_2 = borrow(target_2_v->dep[3]);
         target_2_v = jitc_var(target_2);
     }
 
@@ -1633,22 +1639,25 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     var_info.symbolic |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
     // Check if it is safe to write directly
-    if (jitc_var(target_1)->ref_count > 1) {
-        uint32_t tmp = jitc_var_copy(target_1);
-        jitc_var_dec_ref(target_1);
-        target_1 = tmp;
-        *target_1_p = target_1;
+    if (target_1_v->ref_count > 2) { // 1 from original array, 1 from borrow above
+        target_1 = steal(jitc_var_copy(target_1));
+
+        // The above operation may have invalidated 'target_2_v' whichis accessed below
+        target_2_v = jitc_var(target_2);
     }
 
-    if (jitc_var(target_2)->ref_count > 1 || target_1 == target_2) {
-        uint32_t tmp = jitc_var_copy(target_2);
-        jitc_var_dec_ref(target_2);
-        target_2 = tmp;
-        *target_2_p = target_2;
-    }
+    if (target_2_v->ref_count > 2 || target_1 == target_2)
+        target_2 = steal(jitc_var_copy(target_2));
 
-    Ref ptr_1 = steal(jitc_var_pointer(var_info.backend, jitc_var_ptr(target_1), target_1, 1));
-    Ref ptr_2 = steal(jitc_var_pointer(var_info.backend, jitc_var_ptr(target_2), target_2, 1));
+    void *target_1_addr = nullptr, *target_2_addr = nullptr;
+    target_1 = steal(jitc_var_data(target_1, false, &target_1_addr));
+    target_2 = steal(jitc_var_data(target_2, false, &target_2_addr));
+
+    *target_1_p = target_1;
+    *target_2_p = target_2;
+
+    Ref ptr_1 = steal(jitc_var_pointer(var_info.backend, target_1_addr, target_1, 1));
+    Ref ptr_2 = steal(jitc_var_pointer(var_info.backend, target_2_addr, target_2, 1));
 
     Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
         index_2 = steal(jitc_scatter_gather_index(target_1, index));
@@ -1688,8 +1697,9 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     jitc_log(Debug,
              "jit_var_scatter_reduce_kahan(): (r%u[r%u], r%u[r%u]) += r%u "
              "(mask=r%u, ptrs=(r%u, r%u), se=r%u)",
-             target_1, (uint32_t) index_2, target_2, (uint32_t) index_2, value,
-             (uint32_t) mask_2, (uint32_t) ptr_1, (uint32_t) ptr_2, result);
+             (uint32_t) target_1, (uint32_t) index_2, (uint32_t) target_2,
+             (uint32_t) index_2, value, (uint32_t) mask_2, (uint32_t) ptr_1,
+             (uint32_t) ptr_2, result);
 
     jitc_var_mark_side_effect(result);
 }
@@ -1698,13 +1708,13 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     auto [var_info, index_v, mask_v] =
         jitc_var_check("jit_var_scatter_inc", index, mask);
 
-    uint32_t target = *target_p;
+    Ref target = borrow(*target_p);
     auto [target_info, target_v] =
-        jitc_var_check("jit_var_scatter_inc", target);
+        jitc_var_check("jit_var_scatter_inc", (uint32_t) target);
 
     // Go to the original if 'target' is wrapped into a loop state variable
     while (target_v->kind == VarKind::LoopPhi) {
-        target = target_v->dep[3];
+        target = borrow(target_v->dep[3]);
         target_v = jitc_var(target);
     }
 
@@ -1728,14 +1738,15 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     var_info.symbolic |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
     // Check if it is safe to write directly
-    if (target_v->ref_count > 1) { // 1 from original array, 1 from borrow above
-        uint32_t tmp = jitc_var_copy(target);
-        jitc_var_dec_ref(target);
-        target = tmp;
-        *target_p = target;
-    }
+    if (target_v->ref_count > 2) // 1 from original array, 1 from borrow above
+        target = steal(jitc_var_copy(target));
 
-    Ref ptr = steal(jitc_var_pointer(var_info.backend, jitc_var_ptr(target), target, 0));
+    void *target_addr = nullptr;
+    target = steal(jitc_var_data(target, false, &target_addr));
+
+    *target_p = target;
+
+    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0));
 
     Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
         index_2 = steal(jitc_scatter_gather_index(target, index));
@@ -1755,8 +1766,8 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
 
     jitc_log(Debug,
              "jit_var_scatter_inc(): r%u[r%u] += 1 (mask=r%u, ptr=r%u, se=r%u)",
-             target, (uint32_t) index_2, (uint32_t) mask_2, (uint32_t) ptr,
-             result);
+             (uint32_t) target, (uint32_t) index_2, (uint32_t) mask_2,
+             (uint32_t) ptr, result);
 
     return result;
 }
@@ -1846,7 +1857,10 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     if (target_v->ref_count > 2) // 1 from original array, 1 from borrow above
         target = steal(jitc_var_copy(target));
 
-    ptr = steal(jitc_var_pointer(var_info.backend, jitc_var_ptr(target), target, 1));
+    void *target_addr = nullptr;
+    target = steal(jitc_var_data(target, false, &target_addr));
+
+    ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 1));
 
     Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
         index_2 = steal(jitc_scatter_gather_index(target, index));

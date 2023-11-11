@@ -111,6 +111,12 @@ template <typename T> struct dr_vector {
         m_size = size;
     }
 
+    void swap(dr_vector &v) {
+        std::swap(m_data, v.m_data);
+        std::swap(m_size, v.m_size);
+        std::swap(m_capacity, v.m_capacity);
+    }
+
     void reserve(size_t size) {
         if (size <= m_capacity)
             return;

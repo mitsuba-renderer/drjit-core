@@ -718,7 +718,7 @@ void jitc_var_vcall_collect_data(tsl::robin_map<uint64_t, uint32_t, UInt64Hasher
 
     if (v->vcall_iface) {
         return;
-    } else if (v->is_data() || (VarType) v->type == VarType::Pointer) {
+    } else if (v->is_evaluated() || (VarType) v->type == VarType::Pointer) {
         uint32_t tsize = type_size[v->type];
         uint32_t offset = (data_offset + tsize - 1) / tsize * tsize;
         it_and_status.first.value() = offset;
@@ -824,7 +824,8 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
     bucket_count++;
 
     // Ensure input index array is fully evaluated
-    jitc_var_eval(index);
+    void *self = nullptr;
+    Ref index_ptr = steal(jitc_var_data(index, true, &self));
 
     uint32_t size = jitc_var(index)->size;
 
@@ -845,8 +846,7 @@ VCallBucket *jitc_var_vcall_reduce(JitBackend backend, const char *domain,
         backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, perm_size);
 
     // Compute permutation
-    const uint32_t *self = (const uint32_t *) jitc_var_ptr(index);
-    uint32_t unique_count = jitc_mkperm(backend, self, size,
+    uint32_t unique_count = jitc_mkperm(backend, (const uint32_t *) self, size,
                                         bucket_count, perm, (uint32_t *) offsets),
              unique_count_out = unique_count;
 

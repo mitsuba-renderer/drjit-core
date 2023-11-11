@@ -554,9 +554,9 @@ uint32_t jit_var_ref(uint32_t index) {
     return jitc_var(index)->ref_count;
 }
 
-void *jit_var_ptr(uint32_t index) {
+uint32_t jit_var_data(uint32_t index, void **ptr_out) {
     lock_guard guard(state.lock);
-    return jitc_var_ptr(index);
+    return jitc_var_data(index, true, ptr_out);
 }
 
 size_t jit_var_size(uint32_t index) {
@@ -575,12 +575,14 @@ VarState jit_var_state(uint32_t index) {
     const Variable *v = jitc_var(index);
     if (v->symbolic)
         return VarState::Symbolic;
-    else if (v->is_data())
+    else if (v->is_evaluated())
         return VarState::Evaluated;
     else if (v->is_literal())
         return VarState::Literal;
+    else if (v->is_undefined())
+        return VarState::Undefined;
     else
-        return VarState::Normal;
+        return VarState::Unevaluated;
 }
 
 int jit_var_is_zero_literal(uint32_t index) {
@@ -790,6 +792,11 @@ int jit_var_schedule(uint32_t index) {
         return 0;
     lock_guard guard(state.lock);
     return jitc_var_schedule(index);
+}
+
+uint32_t jit_var_schedule_force(uint32_t index, int *rv) {
+    lock_guard guard(state.lock);
+    return jitc_var_schedule_force(index, rv);
 }
 
 void jit_prefix_push(JitBackend backend, const char *value) {

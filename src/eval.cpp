@@ -181,7 +181,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
         v->reg_index = n_regs++;
 
-        if (v->is_data()) {
+        if (v->is_evaluated()) {
             n_params_in++;
             v->param_type = ParamType::Input;
             kernel_params.push_back(v->data);
@@ -598,7 +598,7 @@ void jitc_eval(ThreadState *ts) {
     for (WeakRef wr: ts->scheduled) {
         // Skip variables that expired, or which we already evaluated
         Variable *v = jitc_var(wr);
-        if (!v || v->is_data())
+        if (!v || v->is_evaluated())
             continue;
         jitc_var_traverse(v->size, wr.index);
         v->output_flag = true;
