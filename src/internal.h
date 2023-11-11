@@ -35,15 +35,15 @@ enum VarKind : uint32_t {
     // An evaluated node representing data
     Data,
 
+    /// Undefined memory
+    Undefined,
+
     // A literal constant
     // (note: this must be the last enumeration entry before the regular nodes start)
     Literal,
 
     /// A no-op (generates no code)
     Nop,
-
-    /// Undefined memory
-    Undefined,
 
     // Common unary operations
     Neg, Not, Sqrt, Abs,
@@ -247,7 +247,7 @@ struct Variable {
 
     // =========================   Helper functions   ==========================
 
-    bool is_data()      const { return kind == (uint32_t) VarKind::Data;    }
+    bool is_evaluated()      const { return kind == (uint32_t) VarKind::Data;    }
     bool is_literal()   const { return kind == (uint32_t) VarKind::Literal; }
     bool is_undefined() const { return kind == (uint32_t) VarKind::Undefined; }
     bool is_node()      const { return (uint32_t) kind > VarKind::Literal; }

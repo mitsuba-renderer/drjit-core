@@ -331,7 +331,7 @@ void jitc_llvm_assemble_func(const char *name, uint32_t inst_id,
             if (vt == VarType::Bool)
                 fmt("    $v = trunc $M $v_i2 to $T\n",
                     v, v, v, v);
-        } else if (v->is_data() || vt == VarType::Pointer) {
+        } else if (v->is_evaluated() || vt == VarType::Pointer) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
             auto it = data_map.find(key);
             if (unlikely(it == data_map.end()))

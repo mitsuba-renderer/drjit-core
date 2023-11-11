@@ -987,8 +987,28 @@ JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
 /// Query the a variable's reference count (used by the test suite)
 extern JIT_EXPORT uint32_t jit_var_ref(uint32_t index);
 
-/// Query the pointer variable associated with a given variable
-extern JIT_EXPORT void *jit_var_ptr(uint32_t index);
+/**
+ * \brief Potentially evaluate a variable and return a pointer to its address
+ * in device memory.
+ *
+ * This operation combines the following steps:
+ *
+ * - If the variable ``index`` is unevaluated or has pending side effects, then
+ *   these taken care of first.
+ *
+ * - The function returns a pointer via the ``ptr_out`` parameter, which
+ *   points to the array in device memory.
+ *
+ * - If ``index`` represents a literal constant or an undefined memory region,
+ *   then the function returns a reference to a *new* variable with the
+ *   evaluated result.
+ *
+ *   This is done because literal constant variables in Dr.Jit tend to be
+ *   shared by many expressions. Evaluting such shared variables might
+ *   therefore negatively impact the performance elsewhere. Otherwise, the
+ *   function returns a new reference to the original ``index``.
+ */
+extern JIT_EXPORT uint32_t jit_var_data(uint32_t index, void **ptr_out);
 
 /// Query the size of a given variable
 extern JIT_EXPORT size_t jit_var_size(uint32_t index);
@@ -1007,11 +1027,14 @@ enum class VarState : uint32_t {
     /// The variable has length 0 and effectively does not exist
     Invalid,
 
-    /// An ordinary unevaluated variable that is neither a literal constant nor symbolic.
-    Normal,
+    /// An undefined memory region. Does not (yet) consume device memory.
+    Undefined,
 
     /// A literal constant. Does not consume device memory.
     Literal,
+
+    /// An ordinary unevaluated variable that is neither a literal constant nor symbolic.
+    Unevaluated,
 
     /// An evaluated variable backed by a device memory region.
     Evaluated,
@@ -1025,8 +1048,9 @@ enum class VarState : uint32_t {
 #else
 enum VarState {
     VarStateInvalid,
-    VarStateNormal,
+    VarStateUndefined,
     VarStateLiteral,
+    VarStateUnevaluated,
     VarStateEvaluated,
     VarStateSymbolic,
     VarStateMixed
@@ -1161,21 +1185,65 @@ extern JIT_EXPORT uint32_t jit_var_registry_attr(JIT_ENUM JitBackend backend,
 //                 Kernel compilation and evaluation
 // ====================================================================
 
-/**
- * \brief Schedule a variable \c index for future evaluation via \ref jit_eval()
+/** \brief Schedule a variable \c index for future evaluation
  *
- * Returns \c 1 if anything was scheduled, and \c 0 otherwise.
+ * The function ignores literal constant arrays, because literal they tend to
+ * be shared by many expressions. Evaluting such shared variables might
+ * therefore negatively impact the performance elsewhere. Use the \ref
+ * jit_var_schedule_force() interface to evaluate such variables into a *new*
+ * representation.
+ *
+ * The function also ignores evaluated arrays and undefined memory regions
+ * (created via \ref jit_var_undefined), since there is nothing to evaluate in
+ * that case (that said, you may use \ref jit_var_schedule_force() to turn
+ * undefined variables into a raw memory buffer).
+ *
+ * The function raises an error when \c index represents a *symbolic* variable,
+ * which may never be evaluated.
+ *
+ * Returns \c 1 if anything was scheduled, and \c 0 otherwise. In the former
+ * case, the caller should eventually invoke \ref jit_eval() to complete the
+ * variable evaluation process.
  */
 extern JIT_EXPORT int jit_var_schedule(uint32_t index);
 
 /**
+ * \brief Forcefully schedule a variable \c index for future evaluation via
+ * \ref jit_eval()
+ *
+ * This function is is similar to \ref jit_var_schedule() but more aggressive.
+ * In addition to the set of variable types handled by the former, it also
+ * evaluates undefined arrays (by allocating uninitialized memory for them) and
+ * literal constant arrays (by allocating memory and filling it with copies of
+ * the constant). Both of these cases are handled immediately, rather than
+ * postponing them to the next kernel compilation (\ref jit_eval()) since no
+ * code generation is needed. In both of these cases, it returns a reference to
+ * a new array representing the result. Otherwise, it returns a new reference
+ * to ``index``.
+ *
+ * The function sets the \c rv output parameter to \c 1 when variables were
+ * scheduled for later evaluation, which means that the caller should
+ * eventually invoke \ref jit_eval() to complete the process. Otherwise, it
+ * sets \c rv to \c 0.
+ */
+extern JIT_EXPORT uint32_t jit_var_schedule_force(uint32_t index, int *rv);
+
+/**
  * \brief Evaluate the variable \c index right away, if it is unevaluated/dirty.
+ *
+ * This is a convenient shortcut to writing
+ *
+ * ```
+ * if (jit_var_schedule(index))
+ *    jit_eval();
+ * ```
  *
  * Returns \c 1 if anything was evaluated, and \c 0 otherwise.
  */
 extern JIT_EXPORT int jit_var_eval(uint32_t index);
 
-/// Evaluate all scheduled computation
+/// Evaluate computation scheduled via \ref jit_var_schedule() and \ref
+/// jit_var_schedule_force()
 extern JIT_EXPORT void jit_eval();
 
 /**

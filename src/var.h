@@ -145,6 +145,9 @@ extern uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src);
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 extern int jitc_var_schedule(uint32_t index);
 
+/// More aggressive version of the above function
+extern uint32_t jitc_var_schedule_force(uint32_t index, int *rv);
+
 /// Evaluate a value constant variable
 extern void jitc_var_eval_literal(uint32_t index, Variable *v);
 
@@ -155,7 +158,7 @@ extern void jitc_var_eval_undefined(uint32_t index, Variable *v);
 extern int jitc_var_eval(uint32_t index);
 
 /// Return the pointer location of the variable, evaluate if needed
-extern void *jitc_var_ptr(uint32_t index);
+extern uint32_t jitc_var_data(uint32_t index, bool eval_dirty, void **ptr_out);
 
 /// Return a human-readable summary of registered variables
 extern const char *jitc_var_whos();

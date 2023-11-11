@@ -218,7 +218,7 @@ StringBuffer var_buffer(0);
 void jitc_var_free(uint32_t index, Variable *v) {
     jitc_trace("jit_var_free(r%u)", index);
 
-    if (v->is_data()) {
+    if (v->is_evaluated()) {
         // Release memory referenced by this variable
         if (!v->retain_data)
             jitc_free(v->data);
@@ -481,7 +481,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     uint32_t flags = jitc_flags();
 
     bool lvn = !disable_lvn && (VarType) v.type != VarType::Void &&
-               !v.is_data() && (flags & (uint32_t) JitFlag::ValueNumbering);
+               !v.is_evaluated() && (flags & (uint32_t) JitFlag::ValueNumbering);
 
     v.scope = ts->scope;
 
@@ -557,7 +557,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
             var_buffer.put(")");
         } else if (v.is_literal()) {
             jitc_value_print(&v);
-        } else if (v.is_data()) {
+        } else if (v.is_evaluated()) {
             var_buffer.put("data(");
             var_buffer.fmt(DRJIT_PTR, (uintptr_t) v.data);
             var_buffer.put(")");
@@ -664,7 +664,7 @@ uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size) {
     v.type = (uint32_t) type;
     v.size = (uint32_t) size;
     v.literal = (uint64_t) -1;
-    return jitc_var_new(v, true);
+    return jitc_var_new(v);
 }
 
 uint32_t jitc_var_counter(JitBackend backend, size_t size,
@@ -881,7 +881,7 @@ void jitc_var_set_callback(uint32_t index,
 AllocType jitc_var_alloc_type(uint32_t index) {
     const Variable *v = jitc_var(index);
 
-    if (v->is_data())
+    if (v->is_evaluated())
         return jitc_malloc_type(v->data);
 
     return (JitBackend) v->backend == JitBackend::CUDA ? AllocType::Device
@@ -892,7 +892,7 @@ AllocType jitc_var_alloc_type(uint32_t index) {
 int jitc_var_device(uint32_t index) {
     const Variable *v = jitc_var(index);
 
-    if (v->is_data())
+    if (v->is_evaluated())
         return jitc_malloc_device(v->data);
 
     return thread_state(v->backend)->device;
@@ -919,7 +919,7 @@ void jitc_var_mark_side_effect(uint32_t index) {
 const char *jitc_var_str(uint32_t index) {
     const Variable *v = jitc_var(index);
 
-    if (!v->is_literal() && (!v->is_data() || v->is_dirty())) {
+    if (!v->is_literal() && (!v->is_evaluated() || v->is_dirty())) {
         jitc_var_eval(index);
         v = jitc_var(index);
     }
@@ -942,7 +942,7 @@ const char *jitc_var_str(uint32_t index) {
             continue;
         }
 
-        if (v->is_data()) {
+        if (v->is_evaluated()) {
             const uint8_t *src_offset = (const uint8_t *) v->data + i * isize;
             jitc_memcpy((JitBackend) v->backend, dst, src_offset, isize);
         }
@@ -1001,7 +1001,7 @@ static void jitc_raise_symbolic_error(const char *func, uint32_t index) {
         "a program and investigate intermediate results. If you wish to do this,\n"
         "then you should switch Dr.Jit from *symbolic* into *evaluated* mode.\n"
         "\n"
-        "This mode tends to be far more expensive in terms of memory storage and\n"
+        "This mode tends to be more expensive in terms of memory storage and\n"
         "bandwidth, which is why it is not enabled by default. Please see the\n"
         "Dr.Jit documentation for more information on symbolic and evaluated\n"
         "evaluation modes: (TODO: insert link).\n", func, index);
@@ -1013,6 +1013,65 @@ static void jitc_raise_consumed_error(const char *func, uint32_t index) {
                func, index, var_kind_name[jitc_var(index)->kind]);
 }
 
+/// Force-evaluate a variable of type 'literal' or 'undefined'
+uint32_t jitc_var_eval_force(uint32_t index, Variable v, void **ptr_out) {
+    uint32_t isize = type_size[v.type];
+
+    void *ptr = jitc_malloc((JitBackend) v.backend == JitBackend::CUDA
+                                ? AllocType::Device
+                                : AllocType::HostAsync,
+                            v.size * (size_t) isize);
+
+    if (v.is_literal()) {
+        jitc_memset_async((JitBackend) v.backend, ptr, v.size, isize,
+                          &v.literal);
+    }
+
+    uint32_t result = jitc_var_mem_map((JitBackend) v.backend, (VarType) v.type,
+                                       ptr, v.size, 1);
+
+    jitc_log(Debug,
+             "jit_var_eval(): %s r%u[%u] = data(" DRJIT_PTR ") [copy of r%u]",
+             type_name[v.type], result, v.size, (uintptr_t) ptr, index);
+
+    *ptr_out = ptr;
+
+    return result;
+}
+
+uint32_t jitc_var_data(uint32_t index, bool eval_dirty, void **ptr_out) {
+    if (index == 0) {
+        *ptr_out = nullptr;
+        return 0;
+    }
+
+    Variable *v = jitc_var(index);
+    if (v->is_literal() || v->is_undefined()) {
+        return jitc_var_eval_force(index, *v, ptr_out);
+    } else if (v->is_evaluated()) {
+        if (v->is_dirty() && eval_dirty) {
+            jitc_eval(thread_state(v->backend));
+            v = jitc_var(index);
+
+            if (unlikely(v->is_dirty()))
+                jitc_raise("jit_var_ptr(): variable r%u remains dirty after "
+                           "evaluation!", index);
+        }
+    } else if (v->is_node()) {
+        jitc_var_eval(index);
+        v = jitc_var(index);
+        if (unlikely(!v->is_evaluated()))
+            jitc_fail("jit_var_ptr(): evaluation of variable r%u failed!", index);
+    } else {
+        jitc_fail("jit_var_ptr(): unhandled variable r%u!", index);
+    }
+
+    *ptr_out = v->data;
+    jitc_var_inc_ref(index, v);
+
+    return index;
+}
+
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 int jitc_var_schedule(uint32_t index) {
     if (index == 0)
@@ -1020,11 +1079,10 @@ int jitc_var_schedule(uint32_t index) {
 
     Variable *v = jitc_var(index);
     if (unlikely(v->symbolic))
-        jitc_raise_symbolic_error("jitc_var_schedule", index);
+        jitc_raise_symbolic_error("jit_var_schedule", index);
+
     if (unlikely(v->consumed))
-        jitc_raise_consumed_error("jitc_var_schedule", index);
-    if (unlikely(v->is_undefined()))
-        return 0;
+        jitc_raise_consumed_error("jit_var_schedule", index);
 
     if (v->is_node()) {
         thread_state(v->backend)->scheduled.emplace_back(index, v->counter);
@@ -1037,98 +1095,66 @@ int jitc_var_schedule(uint32_t index) {
     return 0;
 }
 
-void *jitc_var_ptr(uint32_t index) {
-    if (index == 0)
-        return nullptr;
+/// More aggressive version of the above
+uint32_t jitc_var_schedule_force(uint32_t index, int *rv) {
+    if (index == 0) {
+        *rv = 0;
+        return 0;
+    }
 
-    /* If 'v' is a constant, initialize it directly instead of
-       generating code to do so.. */
-    Variable *v = jitc_var(index);
-    if (v->is_literal())
-        jitc_var_eval_literal(index, v);
-    else if (v->is_undefined())
-        jitc_var_eval_undefined(index, v);
-    else if (v->is_node())
-        jitc_var_eval(index);
-
-    return jitc_var(index)->data;
-}
-
-/// Evaluate a literal constant variable
-void jitc_var_eval_literal(uint32_t index, Variable *v) {
-    jitc_lvn_drop(index, v);
-
-    JitBackend backend = (JitBackend) v->backend;
-    uint32_t isize = type_size[v->type];
-    size_t size = v->size;
-
-    void *data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                         : AllocType::HostAsync,
-                             size * isize);
-    v = jitc_var(index);
-    jitc_memset_async(backend, data, size, isize, &v->literal);
-
-    v->kind = (uint32_t) VarKind::Data;
-    v->data = data;
-    jitc_log(Debug,
-             "jit_var_eval_literal(): %s r%u[%u] = data(" DRJIT_PTR ")",
-             type_name[v->type], index, v->size, (uintptr_t) v->data);
-}
-
-/// Evaluate an uninitialized variable
-void jitc_var_eval_undefined(uint32_t index, Variable *v) {
-    JitBackend backend = (JitBackend) v->backend;
-    size_t size = type_size[v->type] * (size_t) v->size;
-    void* data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                         : AllocType::HostAsync, size);
-    v = jitc_var(index);
-    v->kind = (uint32_t) VarKind::Data;
-    v->data = data;
-    jitc_log(Debug,
-             "jit_var_eval_undefined(): %s r%u[%u] = data(" DRJIT_PTR ")",
-             type_name[v->type], index, v->size, (uintptr_t) v->data);
-}
-
-/// Evaluate the variable \c index right away if it is unevaluated/dirty.
-int jitc_var_eval(uint32_t index) {
     Variable *v = jitc_var(index);
 
     if (unlikely(v->symbolic))
-        jitc_raise_symbolic_error("jitc_var_eval", index);
+        jitc_raise_symbolic_error("jit_var_schedule_force", index);
+
     if (unlikely(v->consumed))
-        jitc_raise_consumed_error("jitc_var_eval", index);
-    if (unlikely(v->is_undefined()))
-        return 0;
+        jitc_raise_consumed_error("jit_var_schedule_force", index);
 
-    if (v->is_node() || (v->is_data() && v->is_dirty())) {
-        ThreadState *ts = thread_state(v->backend);
+    if (v->is_evaluated()) {
+        *rv = v->is_dirty();
+    } else {
+        jitc_log(Debug, "jit_var_schedule_force(r%u)", index);
 
-        if (!v->is_data())
-            ts->scheduled.emplace_back(index, v->counter);
-
-        jitc_eval(ts);
-        v = jitc_var(index);
-
-        if (unlikely(v->is_dirty()))
-            jitc_raise("jit_var_eval(): variable r%u remains dirty after evaluation!", index);
-        else if (unlikely(!v->is_data() || !v->data))
-            jitc_raise("jit_var_eval(): invalid/uninitialized variable r%u!", index);
-
-        return 1;
+        if (v->is_literal() || v->is_undefined()) {
+            *rv = 0;
+            void *unused = nullptr;
+            return jitc_var_eval_force(index, *v, &unused);
+        } else if (v->is_node()) {
+            thread_state(v->backend)->scheduled.emplace_back(index, v->counter);
+            *rv = 1;
+        } else {
+            *rv = 0;
+        }
     }
 
-    return 0;
+    jitc_var_inc_ref(index, v);
+
+    return index;
+}
+
+
+/// Evaluate the variable \c index right away if it is unevaluated/dirty.
+int jitc_var_eval(uint32_t index) {
+    if (!jitc_var_schedule(index))
+        return 0;
+
+    Variable *v = jitc_var(index);
+    jitc_eval(thread_state(v->backend));
+
+    v = jitc_var(index);
+    if (unlikely(v->is_dirty()))
+        jitc_raise("jit_var_eval(): variable r%u remains dirty after evaluation!", index);
+    else if (unlikely(!v->is_evaluated() || !v->data))
+        jitc_raise("jit_var_eval(): invalid/uninitialized variable r%u!", index);
+
+    return 1;
 }
 
 /// Read a single element of a variable and write it to 'dst'
 void jitc_var_read(uint32_t index, size_t offset, void *dst) {
+    jitc_var_eval(index);
+
     const Variable *v = jitc_var(index);
-
-    if (v->is_node() || (v->is_data() && v->is_dirty())) {
-        jitc_var_eval(index);
-        v = jitc_var(index);
-    }
-
     if (v->size == 1)
         offset = 0;
     else if (unlikely(offset >= (size_t) v->size))
@@ -1138,27 +1164,28 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
     uint32_t isize = type_size[v->type];
     if (v->is_literal() || v->is_undefined()) {
         memcpy(dst, &v->literal, isize);
-    } else if (v->is_data()) {
+    } else if (v->is_evaluated()) {
         jitc_memcpy((JitBackend) v->backend, dst,
                     (const uint8_t *) v->data + offset * isize, isize);
     } else {
-        jitc_fail("jit_var_read(): internal error!");
+        jitc_fail("jit_var_read(): unhandled variable type!");
     }
 }
 
 /// Reverse of jitc_var_read(). Copy 'dst' to a single element of a variable
-uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src) {
+uint32_t jitc_var_write(uint32_t index_, size_t offset, const void *src) {
+    void *ptr = nullptr;
+    Ref index = steal(jitc_var_data(index_, true, &ptr));
     Variable *v = jitc_var(index);
-    if (v->is_dirty() || v->ref_count > 1) {
-        // Not safe to directly write to 'v'
-        index = jitc_var_copy(index);
-    } else {
-        jitc_var_inc_ref(index);
+
+    // Check if it is safe to write directly
+    if (v->ref_count > 2) { // 1 from original array, 1 from jitc_var_data() above
+        index = steal(jitc_var_copy(index));
+
+        // The above operation may have invalidated 'v'
+        v = jitc_var(index);
     }
 
-    jitc_var_ptr(index); // ensure variable is evaluated, even if it is a value
-
-    v = jitc_var(index);
     if (unlikely(offset >= (size_t) v->size))
         jitc_raise("jit_var_write(): attempted to access entry %zu in an array of "
                    "size %u!", offset, v->size);
@@ -1167,7 +1194,7 @@ uint32_t jitc_var_write(uint32_t index, size_t offset, const void *src) {
     uint8_t *dst = (uint8_t *) v->data + offset * isize;
     jitc_poke((JitBackend) v->backend, dst, src, isize);
 
-    return index;
+    return index.release();
 }
 
 /// Register an existing variable with the JIT compiler
@@ -1265,29 +1292,32 @@ uint32_t jitc_var_copy(uint32_t index) {
     if (v->is_dirty()) {
         jitc_var_eval(index);
         v = jitc_var(index);
+        if (unlikely(v->is_dirty()))
+            jitc_raise("jit_var_copy(): variable r%u remains dirty following "
+                       "evaluation!", index);
     }
+
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_copy", index);
 
     uint32_t result;
-    if (v->is_data()) {
+    VarType vt = (VarType) v->type;
+    uint32_t size = v->size;
+
+    if (v->is_evaluated()) {
         JitBackend backend = (JitBackend) v->backend;
         AllocType atype = backend == JitBackend::CUDA ? AllocType::Device
                                                       : AllocType::HostAsync;
-        result = jitc_var_mem_copy(backend, atype, (VarType) v->type, v->data,
-                                   v->size);
+        result = jitc_var_mem_copy(backend, atype, vt, v->data, size);
     } else {
         Variable v2;
-        v2.type = v->type;
+        v2.type = (uint32_t) vt;
         v2.backend = v->backend;
         v2.symbolic = v->symbolic;
-        v2.size = v->size;
+        v2.size = size;
 
-        if (v->is_literal()) {
-            v2.kind = (uint32_t) VarKind::Literal;
-            v2.literal = v->literal;
-        } else if (v->is_undefined()) {
-            v2.kind = (uint32_t) VarKind::Literal;
+        if (v->is_literal() || v->is_undefined()) {
+            v2.kind = v->kind;
             v2.literal = v->literal;
         } else {
             v2.kind = (uint32_t) VarKind::Bitcast;
@@ -1298,7 +1328,9 @@ uint32_t jitc_var_copy(uint32_t index) {
         result = jitc_var_new(v2, true);
     }
 
-    jitc_log(Debug, "jit_var_copy(r%u <- r%u)", result, index);
+    jitc_log(Debug, "jit_var_copy(): %s r%u[%u] = r%u", type_name[(int) vt],
+             result, size, index);
+
     return result;
 }
 
@@ -1327,7 +1359,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     }
 
     uint32_t result;
-    if (!v->is_data() && v->ref_count == 1) {
+    if (!v->is_evaluated() && v->ref_count == 1) {
         // Nobody else holds a reference -- we can directly resize this variable
         jitc_var_inc_ref(index, v);
         jitc_lvn_drop(index, v);
@@ -1407,7 +1439,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
         return jitc_var_mem_map(backend, (VarType) v->type, ptr, v->size, 1);
     }
 
-    if (!v->is_data() || v->is_dirty()) {
+    if (!v->is_evaluated() || v->is_dirty()) {
         jitc_var_eval(src_index);
         v = jitc_var(src_index);
     }
@@ -1486,7 +1518,7 @@ uint32_t jitc_var_mask_default(JitBackend backend, size_t size) {
 }
 
 uint32_t jitc_var_mask_peek(JitBackend backend) {
-    auto &stack = thread_state(backend)->mask_stack;
+    std::vector<uint32_t> &stack = thread_state(backend)->mask_stack;
 
     if (stack.empty()) {
         return 0;
@@ -1510,7 +1542,7 @@ uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size) {
     if ((VarType) v->type != VarType::Bool)
         jitc_raise("jit_var_mask_apply(): the mask parameter was not a boolean array!");
 
-    auto &stack = thread_state(backend)->mask_stack;
+    std::vector<uint32_t> &stack = thread_state(backend)->mask_stack;
     Ref mask;
     if (!stack.empty()) {
         uint32_t index_2 = stack.back(),
@@ -1535,7 +1567,7 @@ uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size) {
 }
 
 void jitc_var_mask_pop(JitBackend backend) {
-    auto &stack = thread_state(backend)->mask_stack;
+    std::vector<uint32_t> &stack = thread_state(backend)->mask_stack;
     if (unlikely(stack.empty()))
         jitc_raise("jit_var_mask_pop(): stack underflow!");
 
@@ -1697,7 +1729,7 @@ uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
         }
 
         return jitc_var_mul(ctr, index);
-    } else if (!v->is_data() || v->is_dirty()) {
+    } else if (!v->is_evaluated() || v->is_dirty()) {
         jitc_var_eval(index);
         v = jitc_var(index);
     }
@@ -1739,7 +1771,7 @@ const char *jitc_var_whos() {
 
         if (v.is_literal()) {
             var_buffer.put("const.     ");
-        } else if (v.is_data()) {
+        } else if (v.is_evaluated()) {
             auto it = state.alloc_used.find((uintptr_t) v.data);
             if (unlikely(it == state.alloc_used.end())) {
                 if (!v.retain_data)
@@ -1766,7 +1798,7 @@ const char *jitc_var_whos() {
         var_buffer.fmt(" %3u %10u %12s   %s\n", (uint32_t) v.ref_count,
                        v.size, jitc_mem_string(mem_size), label ? label : "");
 
-        if (v.is_data())
+        if (v.is_evaluated())
             mem_size_evaluated += mem_size;
         else
             mem_size_unevaluated += mem_size;
@@ -1923,7 +1955,7 @@ const char *jitc_var_graphviz() {
             var_buffer.put("Literal: ");
             jitc_value_print(&v, true);
             color = "gray90";
-        } else if (v.is_data()) {
+        } else if (v.is_evaluated()) {
             if (v.is_dirty()) {
                 var_buffer.put("Evaluated (dirty)");
                 color = "salmon";
