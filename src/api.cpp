@@ -183,7 +183,7 @@ uint32_t jit_record_begin(JitBackend backend, const char *name) {
     // Potentially signal failure to limit recursion depth
     if (name && std::count(stack.begin(), stack.end(), name) > 1)
         return uint32_t(-1);
-    stack.push_back(name ? name : "");
+    stack.push_back(name ? name : std::string());
 
     if (name)
         jitc_log(Debug, "jit_record_begin(\"%s\")", name);
@@ -210,7 +210,7 @@ void jit_record_end(JitBackend backend, uint32_t value, int cleanup) {
     stack.pop_back();
 
     // Set recording flag to previous value
-    jit_set_flag(JitFlag::Recording, value & 0x80000000u);
+    jit_set_flag(JitFlag::Recording, (value & 0x80000000u) != 0);
     value &= 0x7fffffff;
 
     if (cleanup) {
@@ -219,7 +219,7 @@ void jit_record_end(JitBackend backend, uint32_t value, int cleanup) {
         if (value > se.size())
             jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
 
-        while (value != se.size()) {
+        while (value < se.size()) {
             uint32_t index = se.back();
             se.pop_back();
             jitc_log(Debug, "jit_record_end(): deleting side effect r%u", index);

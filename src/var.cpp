@@ -100,21 +100,21 @@ const uint64_t type_max[(int) VarType::Count] {
     0x7c00, 0x7f800000, 0x7ff0000000000000ull
 };
 
-///
+/// Label for each VarKind entry (used for trace messages in jitc_var_new)
 const char *var_kind_name[(int) VarKind::Count] {
     "invalid",
 
     // An evaluated node representing data
     "data",
 
+    // Undefined memory
+    "undefined",
+
     // A literal constant
     "literal",
 
     // A no-op (generates no code)
     "nop",
-
-    // Undefined memory
-    "undefined",
 
     // Common unary operations
     "neg", "not", "sqrt", "abs",

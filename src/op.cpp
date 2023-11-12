@@ -1498,6 +1498,12 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
     auto [var_info, index_v, mask_v] =
         jitc_var_check("jit_var_gather", index, mask);
 
+    // Go to the original if 'src' is wrapped into a loop state variable
+    while (src_v->kind == VarKind::LoopPhi) {
+        src = src_v->dep[3];
+        src_v = jitc_var(src);
+    }
+
     uint32_t result = 0, ptr = 0;
     const char *msg = "";
 

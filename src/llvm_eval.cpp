@@ -834,14 +834,14 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::LoopStart: {
-                const LoopData *ld = (LoopData *) state.extra[v->dep[0]].callback_data;
-                if (ld->name != "unnamed")
-                    fmt("    ; Loop: $s\n", ld->name.c_str());
+                const LoopData *ld = (LoopData *) state.extra[index].callback_data;
                 fmt("    br label %l_$u_before\n\n"
                     "l_$u_before:\n"
                     "    br label %l_$u_cond\n\n"
                     "l_$u_cond:\n",
                     v->reg_index, v->reg_index, v->reg_index, v->reg_index);
+                if (ld->name != "unnamed")
+                    fmt("    ; Symbolic loop: $s\n", ld->name.c_str());
             }
             break;
 
