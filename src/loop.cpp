@@ -39,11 +39,12 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
     // Ensure side effects are fully processed
     if (dirty) {
         jitc_eval(thread_state(backend));
-        dirty = false;
-        for (size_t i = 0; i < n_indices; ++i)
-            dirty |= jitc_var(indices[i])->is_dirty();
-        if (dirty)
-            jitc_raise("jit_var_loop_start(): inputs remain dirty after evaluation!");
+        for (size_t i = 0; i < n_indices; ++i) {
+            if (jitc_var(indices[i])->is_dirty())
+                jitc_raise("jit_var_loop_start(): input %zu (r%u) remains "
+                           "dirty after evaluation.",
+                           i, indices[i]);
+        }
     }
 
     Ref loop_start;
@@ -122,9 +123,7 @@ uint32_t jitc_var_loop_cond(uint32_t loop, uint32_t active) {
              *active_v = jitc_var(active);
 
     if ((VarType) active_v->type != VarType::Bool)
-        jitc_raise("jit_var_loop_cond(): loop condition must be a boolean variable");
-    if (!active_v->symbolic)
-        jitc_raise("jit_var_loop_cond(): loop condition does not depend on any of the loop variables");
+        jitc_raise("jit_var_loop_cond(): condition must be a boolean variable");
 
     Variable v;
     v.kind = (uint32_t) VarKind::LoopCond;
@@ -147,6 +146,8 @@ uint32_t jitc_var_loop_cond(uint32_t loop, uint32_t active) {
 bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t checkpoint) {
     LoopData *ld = (LoopData *) state.extra[loop].callback_data;
     bool optimize = jitc_flags() & (uint32_t) JitFlag::OptimizeLoops;
+
+    checkpoint &= 0x7fffffff; // ignore top bit, which jit_record_start() uses as a flag
 
     // Determine the size of variables that are processed by this loop
     uint32_t size = jitc_var(cond)->size;
@@ -186,6 +187,9 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             }
 
             if (eliminate) {
+                jitc_trace("jit_var_loop(r%u): eliminating redundant loop "
+                           "variable r%u.",
+                           ld->loop_start, ld->inner_inputs[i]);
                 jitc_var_inc_ref(ld->outer_inputs[i]);
                 jitc_var_dec_ref(ld->inner_inputs[i]);
                 ld->inner_inputs[i] = ld->outer_inputs[i];
@@ -194,12 +198,27 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
         }
 
         if (n_eliminated > 0) {
-            for (size_t i = 0; i < ld->size; ++i)
+            jitc_log(Debug,
+                     "jit_var_loop(r%u): re-recording loop \"%s\" to eliminate "
+                     "%zu/%zu redundant loop state variables.",
+                     ld->loop_start, ld->name.c_str(), n_eliminated, ld->size);
+            for (size_t i = 0; i < ld->size; ++i) {
                 indices[i] = ld->inner_inputs[i];
-            if (n_eliminated > 0)
-                jitc_log(Debug,
-                         "jit_var_loop(r%u): re-recording to eliminate %zu/%zu redundant "
-                         "loop state variables.", ld->loop_start, n_eliminated, ld->size);
+                jitc_var_inc_ref(indices[i]);
+            }
+
+            std::vector<uint32_t> &se_list =
+                thread_state(jitc_var(cond)->backend)->side_effects_symbolic;
+            if (checkpoint > se_list.size())
+                jitc_fail("jit_var_loop(): invalid 'checkpoint' parameter!");
+
+            while (checkpoint < se_list.size()) {
+                uint32_t index = se_list.back();
+                se_list.pop_back();
+                jitc_log(Debug, "jit_var_loop(): deleting side effect r%u", index);
+                jitc_var_dec_ref(index);
+            }
+
             ld->retry = true;
             return false;
         }
@@ -307,11 +326,19 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             WeakRef(index_new, jitc_var(index_new)->counter));
     }
 
-    std::vector<uint32_t> &se_list = thread_state(backend)->side_effects_symbolic;
-    uint32_t se_prev = 0, se_count = 0;
-    while (se_list.size() != checkpoint) {
-        uint32_t se = se_list.back();
+    std::vector<uint32_t> &se_list =
+        thread_state(backend)->side_effects_symbolic;
+
+    if (checkpoint > se_list.size())
+        jitc_fail("jit_var_loop(): invalid 'checkpoint' parameter!");
+
+    Ref se = borrow(loop_end);
+    uint32_t se_count = 0;
+
+    while (checkpoint < se_list.size()) {
+        uint32_t se_index = se_list.back();
         se_list.pop_back();
+        jitc_var(se_index)->side_effect = false;
 
         Variable v_se;
         v_se.kind = (uint32_t) VarKind::Nop;
@@ -319,16 +346,15 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
         v_se.backend = (uint32_t) backend;
         v_se.symbolic = ld->symbolic;
         v_se.size = size;
-        v_se.dep[0] = se;
-        if (!se_prev)
-            se_prev = loop_end;
-        v_se.dep[1] = se_prev;
-        jitc_var_inc_ref(se_prev);
+        v_se.dep[0] = se_index;
+        v_se.dep[1] = se;
         jitc_var_inc_ref(se);
-        se_prev = jitc_var_new(v_se, true);
+        se = steal(jitc_var_new(v_se, true));
         se_count++;
     }
-    jitc_var_mark_side_effect(se_prev);
+
+    if (se != loop_end)
+        jitc_var_mark_side_effect(se.release());
 
     // Transfer ownership of the LoopData instance
     {
