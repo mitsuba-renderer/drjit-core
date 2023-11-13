@@ -2,11 +2,9 @@
 
 #include "cuda_api.h"
 
-#include <drjit-core/texture.h>
-
-extern void *jitc_cuda_tex_create(CudaTextureType type, size_t ndim, const size_t *shape,
-                                  size_t n_channels, int filter_mode,
-                                  int wrap_mode);
+extern void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
+                                  size_t n_channels, int format,
+                                  int filter_mode, int wrap_mode);
 extern void jitc_cuda_tex_get_shape(size_t ndim, const void *texture_handle,
                                     size_t *shape);
 extern void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,

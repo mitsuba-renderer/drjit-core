@@ -81,8 +81,8 @@ struct TextureReleasePayload {
     size_t index;
 };
 
-void *jitc_cuda_tex_create(CudaTextureType type, size_t ndim, const size_t *shape, size_t n_channels,
-                           int filter_mode, int wrap_mode) {
+void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
+                           int format, int filter_mode, int wrap_mode) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_create(): invalid texture dimension!");
     else if (n_channels == 0)
@@ -135,11 +135,22 @@ void *jitc_cuda_tex_create(CudaTextureType type, size_t ndim, const size_t *shap
     view_desc.height = (ndim >= 2) ? shape[1] : 1;
     view_desc.depth = (ndim == 3) ? shape[2] : 0;
 
-    auto storage_format = type == CudaTextureType::Float32 ? 
-        CU_AD_FORMAT_FLOAT : CU_AD_FORMAT_HALF;
+    size_t storage_format = 0;
+    size_t type_size = 0;
 
-    size_t type_size = type == CudaTextureType::Float32 ?
-        sizeof(float) : sizeof(uint16_t);
+    switch (format) {
+        case 0:
+            storage_format = CU_AD_FORMAT_FLOAT;
+            type_size = sizeof(float);
+            break;
+        case 1:
+            storage_format = CU_AD_FORMAT_HALF;
+            type_size = sizeof(uint16_t);
+            break;
+        default:
+            jitc_raise("jit_cuda_tex_create(): invalid data type!");
+            break;
+    };
 
     DrJitCudaTexture *texture = new DrJitCudaTexture(type_size, n_channels);
     for (size_t tex = 0; tex < texture->n_textures; ++tex) {
@@ -169,13 +180,13 @@ void *jitc_cuda_tex_create(CudaTextureType type, size_t ndim, const size_t *shap
         texture->arrays[tex] = array;
 
         if (tex_channels == 1)
-            view_desc.format = type == CudaTextureType::Float32 ? 
+            view_desc.format = format == 0 ? 
                 CU_RES_VIEW_FORMAT_FLOAT_1X32 : CU_RES_VIEW_FORMAT_FLOAT_1X16;
         else if (tex_channels == 2)
-            view_desc.format = type == CudaTextureType::Float32 ?
+            view_desc.format = format == 0 ?
                 CU_RES_VIEW_FORMAT_FLOAT_2X32 : CU_RES_VIEW_FORMAT_FLOAT_2X16;
         else
-            view_desc.format = type == CudaTextureType::Float32 ?
+            view_desc.format = format == 0 ?
                 CU_RES_VIEW_FORMAT_FLOAT_4X32 : CU_RES_VIEW_FORMAT_FLOAT_4X16;
 
         cuda_check(cuTexObjectCreate(&(texture->textures[tex]), &res_desc,
