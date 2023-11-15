@@ -94,6 +94,7 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
         case VarKind::LoopResult: {
                 LoopData *ld = (LoopData *) state.extra[v->dep[0]].callback_data;
                 jitc_var_traverse(size, ld->outer_inputs[v->literal]);
+                jitc_var_traverse(size, ld->inner_inputs[v->literal]);
                 jitc_var_traverse(size, ld->inner_outputs[v->literal]);
             }
             break;
@@ -226,7 +227,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     if (unlikely(kernel_params.size() > 0xFFFF))
         jitc_log(Warn,
-                 "jit_run(): The generated kernel accesses more than 8192 "
+                 "jit_run(): The generated kernel accesses more than 64K "
                  "arrays (%zu) and will likely not run efficiently. Consider "
                  "periodically running jit_eval() to break the computation "
                  "into smaller chunks.", kernel_params.size());
