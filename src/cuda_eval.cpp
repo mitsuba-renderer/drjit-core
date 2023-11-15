@@ -169,7 +169,11 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
             if (it == state.extra.end())
                 jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
 
-            if (print_labels && vt != VarType::Void) {
+            VarKind vk = (VarKind) v->kind;
+            bool is_nop = vk == VarKind::Nop || vk == VarKind::LoopPhi ||
+                          vk == VarKind::LoopResult;
+
+            if (print_labels && !is_nop) {
                 const char *label =  jitc_var_label(index);
                 if (label && label[0])
                     fmt("    // $s\n", label);

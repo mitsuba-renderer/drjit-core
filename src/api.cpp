@@ -1247,3 +1247,8 @@ int jit_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t c
     lock_guard guard(state.lock);
     return jitc_var_loop_end(loop, cond, indices, checkpoint);
 }
+
+void jit_set_source_location(const char *fname, size_t lineno) noexcept {
+    lock_guard guard(state.lock);
+    jitc_set_source_location(fname, lineno);
+}

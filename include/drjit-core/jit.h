@@ -1334,55 +1334,58 @@ extern JIT_EXPORT const char *jit_prefix(JIT_ENUM JitBackend);
  */
 #if defined(__cplusplus)
 enum class JitFlag : uint32_t {
+    /// Debug mode: annotates generated PTX/LLVM IR with Python line number information (if available)
+    Debug = 1 << 0,
+
     /// Disable this flag to keep the Dr.Jit from reusing variable indices
-    /// (helpful for low-level debugging)
-    IndexReuse = 1 << 0,
+    /// (helpful for low-level debugging of the Dr.Jit implementation)
+    IndexReuse = 1 << 1,
 
     /// Constant propagation: don't generate code for arithmetic involving
     /// literal constants
-    ConstantPropagation = 1 << 1,
+    ConstantPropagation = 1 << 2,
 
     /// Local value numbering: a cheap form of common subexpression elimination
-    ValueNumbering = 1 << 2,
+    ValueNumbering = 1 << 3,
 
     /// Capture loops symbolically instead of unrolling and evaluating them
     /// iteratively
-    SymbolicLoops = 1 << 3,
+    SymbolicLoops = 1 << 4,
 
     /// Simplify loops by removing constant loop state variables. This also
     /// propagates literal constants into loops, which is useful for autodiff.
-    OptimizeLoops = 1 << 4,
+    OptimizeLoops = 1 << 5,
 
     /// Capture function calls symbolically instead of evaluating their inputs,
     /// grouping them by instance ID, and then lauching a kernel per group
-    SymbolicCalls = 1 << 5,
+    SymbolicCalls = 1 << 6,
 
     /// Propagate constants through function calls and remove
-    OptimizeCalls = 1 << 6,
+    OptimizeCalls = 1 << 7,
 
     /// Merge functions produced by Dr.Jit when they have a compatible structure
-    MergeFunctions = 1 << 7,
+    MergeFunctions = 1 << 8,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 1 << 8,
+    ForceOptiX = 1 << 9,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 1 << 9,
+    PrintIR = 1 << 10,
 
     /// Maintain a history of kernel launches. Useful for profiling Dr.Jit code.
-    KernelHistory = 1 << 10,
+    KernelHistory = 1 << 11,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 1 << 11,
+    LaunchBlocking = 1 << 12,
 
     /// Perform a local (warp/SIMD) reduction before issuing global atomics
-    AtomicReduceLocal = 1 << 12,
+    AtomicReduceLocal = 1 << 13,
 
     /// This flag should not be set in user code. Dr.Jit sets it whenever it is
     /// capturing computation symbolically
-    Symbolic = 1 << 13,
+    Symbolic = 1 << 14,
 
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
@@ -1401,20 +1404,21 @@ enum class JitFlag : uint32_t {
 };
 #else
 enum JitFlag {
-    JitFlagIndexReuse = 1 << 0,
-    JitFlagConstantPropagation = 1 << 1,
-    JitFlagValueNumbering = 1 << 2,
-    JitFlagSymbolicLoops = 1 << 3,
-    JitFlagOptimizeLoops = 1 << 4,
-    JitFlagSymbolicCalls = 1 << 5,
-    JitFlagOptimizeCalls = 1 << 6,
-    JitFlagMergeFunctions = 1 << 7,
-    JitFlagForceOptiX = 1 << 8,
-    JitFlagPrintIR = 1 << 9,
-    JitFlagKernelHistory = 1 << 10,
-    JitFlagLaunchBlocking = 1 << 11,
-    JitFlagAtomicReduceLocal = 1 << 12,
-    JitFlagSymbolic = 1 << 13
+    JitFlagDebug = 1 << 0,
+    JitFlagIndexReuse = 1 << 1,
+    JitFlagConstantPropagation = 1 << 2,
+    JitFlagValueNumbering = 1 << 3,
+    JitFlagSymbolicLoops = 1 << 4,
+    JitFlagOptimizeLoops = 1 << 5,
+    JitFlagSymbolicCalls = 1 << 6,
+    JitFlagOptimizeCalls = 1 << 7,
+    JitFlagMergeFunctions = 1 << 8,
+    JitFlagForceOptiX = 1 << 9,
+    JitFlagPrintIR = 1 << 10,
+    JitFlagKernelHistory = 1 << 11,
+    JitFlagLaunchBlocking = 1 << 12,
+    JitFlagAtomicReduceLocal = 1 << 13,
+    JitFlagSymbolic = 1 << 14
 };
 #endif
 
@@ -2055,6 +2059,17 @@ struct VarInfo {
  * generic code that works on various different backends.
  */
 extern JIT_EXPORT VarInfo jit_set_backend(uint32_t index) JIT_NOEXCEPT;
+
+/**
+ * \brief Inform Dr.Jit about the current source code location
+ *
+ * The Python bindings use this function in combination with the JitFlag::Debug
+ * flag. In this case, a tracing callback regularly updates e file and line
+ * number information, which is then propagated into the 'label' field of newly
+ * created variables.
+ */
+extern JIT_EXPORT void jit_set_source_location(const char *fname,
+                                               size_t lineno) JIT_NOEXCEPT;
 
 #if defined(__cplusplus)
 }
