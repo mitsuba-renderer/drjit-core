@@ -767,7 +767,7 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
 
         case VarKind::LoopStart: {
                 const LoopData *ld = (LoopData *) state.extra[index].callback_data;
-                for (uint32_t i = 0; i < ld->size; ++i) {
+                for (size_t i = 0; i < ld->size; ++i) {
                     Variable *inner_in  = jitc_var(ld->inner_inputs[i]),
                              *outer_in  = jitc_var(ld->outer_inputs[i]),
                              *outer_out = jitc_var(ld->outer_outputs[i]);
@@ -775,14 +775,11 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
                     if (inner_in == outer_in)
                         continue; // ignore eliminated loop state variables
 
-                    // PTX doesn't require Phi variables at the at the beginning
-                    // of basic blocks. Simply assign the same register index.
-                    if (outer_in->reg_index) {
-                        if (inner_in->reg_index)
-                            inner_in->reg_index = outer_in->reg_index;
-                        if (outer_out)
-                            outer_out->reg_index = outer_in->reg_index;
-                    }
+                    if (inner_in->reg_index && outer_in->reg_index)
+                        fmt("    mov.$b $v, $v;\n", inner_in, inner_in, outer_in);
+
+                    if (outer_out && outer_out->reg_index && inner_in->reg_index)
+                        outer_out->reg_index = inner_in->reg_index;
                 }
 
                 fmt("\nl_$u_cond:\n", v->reg_index);
@@ -799,11 +796,10 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
         case VarKind::LoopEnd: {
                 const LoopData *ld = (LoopData *) state.extra[v->dep[0]].callback_data;
                 for (uint32_t i = 0; i < ld->size; ++i) {
-                    const Variable *outer_in  = jitc_var(ld->outer_inputs[i]),
-                                   *inner_out = jitc_var(ld->inner_outputs[i]);
-                    if (outer_in != inner_out && outer_in->reg_index &&
-                        outer_in->reg_index != inner_out->reg_index)
-                        fmt("    mov.$b $v, $v;\n", outer_in, outer_in, inner_out);
+                    const Variable *inner_out = jitc_var(ld->inner_outputs[i]),
+                                   *inner_in = jitc_var(ld->inner_inputs[i]);
+                    if (inner_out != inner_in && inner_in->reg_index && inner_out->reg_index)
+                        fmt("    mov.$b $v, $v;\n", inner_in, inner_in, inner_out);
                 }
                 fmt("    bra l_$u_cond;\n\n"
                     "l_$u_done:\n",
