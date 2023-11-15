@@ -471,6 +471,12 @@ void jitc_value_print(const Variable *v, bool graphviz = false) {
     #undef JIT_LITERAL_PRINT
 }
 
+static char source_location_buf[256] { 0 };
+
+void jitc_set_source_location(const char *fname, size_t lineno) noexcept {
+    snprintf(source_location_buf, sizeof(source_location_buf), "%s:%zu", fname, lineno);
+}
+
 /// Append the given variable to the instruction trace and return its ID
 uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     State &state = ::state;
@@ -518,9 +524,26 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         v.counter = vo->counter;
         *vo = v;
 
-        if (unlikely(ts->prefix)) {
+        bool has_prefix = ts->prefix != nullptr,
+             has_loc = (flags & (uint32_t) JitFlag::Debug) && (source_location_buf[0] != '\0');
+
+        if (unlikely(has_prefix || has_loc)) {
+            size_t size_prefix = has_prefix ? strlen(ts->prefix) : 0,
+                   size_loc    = has_loc ? strlen(source_location_buf) : 0;
+            char *s = (char *) malloc_check(size_prefix + size_loc + 1), *p = s;
+            if (has_prefix) {
+                memcpy(p, ts->prefix, size_prefix);
+                p += size_prefix;
+            }
+
+            if (size_loc) {
+                memcpy(p, source_location_buf, size_loc);
+                p += size_loc;
+            }
+
+            *p++ = '\0';
             vo->extra = true;
-            state.extra[index].label = strdup(ts->prefix);
+            state.extra[index].label = s;
         }
 
         state.variable_counter++;

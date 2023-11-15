@@ -219,6 +219,9 @@ extern uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
 /// Return an implicit mask for operations within a virtual function call
 extern uint32_t jitc_var_vcall_mask(JitBackend);
 
+/// Register the current Python source code location with Dr.Jit
+extern void jitc_set_source_location(const char *fname, size_t lineno) noexcept;
+
 /// Descriptive names and byte sizes for the various variable types
 extern const char *type_name      [(int) VarType::Count];
 extern const char *type_name_short[(int) VarType::Count];
