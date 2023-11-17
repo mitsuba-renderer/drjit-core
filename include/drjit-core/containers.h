@@ -156,6 +156,9 @@ template <> struct dr_tuple<> {
     template <size_t> using type = void;
 };
 
+template <typename T>
+using forward_t = std::conditional_t<std::is_lvalue_reference_v<T>, T, T &&>;
+
 template <typename T, typename... Ts> struct dr_tuple<T, Ts...> : dr_tuple<Ts...> {
     using Base = dr_tuple<Ts...>;
 
@@ -165,18 +168,18 @@ template <typename T, typename... Ts> struct dr_tuple<T, Ts...> : dr_tuple<Ts...
     dr_tuple& operator=(dr_tuple &&) = default;
     dr_tuple& operator=(const dr_tuple &) = default;
 
-    template <typename T_, typename... Ts_>
-    dr_tuple(T_&& value, Ts_&&... ts)
-        : Base(std::forward<Ts_>(ts)...), value(std::forward<T_>(value)) { }
+    template <typename A, typename... As>
+    JIT_INLINE dr_tuple(A &&a, As &&...as)
+        : Base((forward_t<As>) as...), value((forward_t<A>) a) { }
 
-    template <size_t I> auto& get() {
+    template <size_t I> JIT_INLINE auto& get() {
         if constexpr (I == 0)
             return value;
         else
             return Base::template get<I - 1>();
     }
 
-    template <size_t I> const auto& get() const {
+    template <size_t I> JIT_INLINE const auto& get() const {
         if constexpr (I == 0)
             return value;
         else
@@ -192,6 +195,23 @@ private:
 };
 
 template <typename... Ts> dr_tuple(Ts &&...) -> dr_tuple<std::decay_t<Ts>...>;
+
+template <typename... Ts>
+dr_tuple<std::decay_t<Ts>...> make_tuple(Ts&&... args) {
+    return { forward_t<Ts>(args) ... };
+}
+
+template <size_t Is, typename... Args> JIT_INLINE auto &dr_get(const dr_tuple<Args...> &t) {
+    return t.template get<Is>();
+}
+
+template <size_t Is, typename... Args> JIT_INLINE auto &dr_get(dr_tuple<Args...> &t) {
+    return t.template get<Is>();
+}
+
+template <size_t Is, typename Tuple> JIT_INLINE auto &dr_get(Tuple &t) {
+    return std::get<Is>(t);
+}
 
 NAMESPACE_END(drjit)
 
