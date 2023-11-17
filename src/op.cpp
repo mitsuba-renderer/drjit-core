@@ -1659,8 +1659,17 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     target_1 = steal(jitc_var_data(target_1, false, &target_1_addr));
     target_2 = steal(jitc_var_data(target_2, false, &target_2_addr));
 
-    *target_1_p = target_1;
-    *target_2_p = target_2;
+    if (target_1 != *target_1_p) {
+        jitc_var_inc_ref(target_1);
+        jitc_var_dec_ref(*target_1_p);
+        *target_1_p = target_1;
+    }
+
+    if (target_2 != *target_2_p) {
+        jitc_var_inc_ref(target_2);
+        jitc_var_dec_ref(*target_2_p);
+        *target_2_p = target_2;
+    }
 
     Ref ptr_1 = steal(jitc_var_pointer(var_info.backend, target_1_addr, target_1, 1));
     Ref ptr_2 = steal(jitc_var_pointer(var_info.backend, target_2_addr, target_2, 1));
@@ -1750,7 +1759,11 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
 
-    *target_p = target;
+    if (target != *target_p) {
+        jitc_var_inc_ref(target);
+        jitc_var_dec_ref(*target_p);
+        *target_p = target;
+    }
 
     Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0));
 
