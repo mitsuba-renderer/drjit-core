@@ -1787,9 +1787,6 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
     if (target_v->symbolic)
         jitc_raise("jit_var_scatter(): cannot scatter to a symbolic variable!");
-    
-    if (jitc_is_half(target_v) && reduce_op != ReduceOp::None)
-        jitc_fail("jit_var_scatter(): scatter_reduce unsupported for half-precision variables");
 
     var_info.symbolic |= (bool) (jitc_flags() & (uint32_t) JitFlag::Recording);
 
