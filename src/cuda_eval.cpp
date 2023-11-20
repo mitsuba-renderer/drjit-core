@@ -776,9 +776,19 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::TexFetchBilerp:
-            fmt("    .reg.$t $v_out_<4>;\n"
-                "    tld4.$c.2d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
-                v, v, "rgba"[v->literal], v, v, v, v, a0, a1, a2);
+            fmt("    .reg.f32 %f$u_out_<4>;\n"
+                "    tld4.$c.2d.v4.f32.f32 {%f$u_out_0, %f$u_out_1, %f$u_out_2, %f$u_out_3}, [$v, {$v, $v}];\n",
+                v->reg_index, "rgba"[v->literal], v->reg_index, v->reg_index, v->reg_index, v->reg_index, a0, a1, a2);
+            if (jitc_is_half(v)) {
+                fmt("    .reg.f16 %h$u_out_<4>;\n"
+                    "    cvt.rn.f16.f32 %h$u_out_0, %f$u_out_0;\n"
+                    "    cvt.rn.f16.f32 %h$u_out_1, %f$u_out_1;\n"
+                    "    cvt.rn.f16.f32 %h$u_out_2, %f$u_out_2;\n"
+                    "    cvt.rn.f16.f32 %h$u_out_3, %f$u_out_3;\n",
+                    v->reg_index,
+                    v->reg_index, v->reg_index, v->reg_index, v->reg_index,
+                    v->reg_index, v->reg_index, v->reg_index, v->reg_index);
+            }
             break;
 
 #if defined(DRJIT_ENABLE_OPTIX)

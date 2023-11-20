@@ -257,7 +257,7 @@ const bool var_kind_fp16_supported_cuda[(int) VarKind::Count] {
     true, true,
 
     // Memory-related operations
-    true, true, true,
+    true, true, true, true,
 
     // Specialized nodes for vcalls
     true, true,
@@ -360,7 +360,7 @@ const bool var_kind_fp16_supported_llvm[(int) VarKind::Count] {
     true, true,
 
     // Memory-related operations
-    true, true, true,
+    true, true, true, true,
 
     // Specialized nodes for vcalls
     true, true,
