@@ -966,39 +966,18 @@ static void jitc_cuda_render_scatter(const Variable *v,
             value, op, value, op, value
         );
     } else if (v->literal && is_half) {
-
         fmt("    {\n"
-            "        .func reduce_$s_$t(.param .u64 ptr, .param .$t value);\n"
-            "        call.uni reduce_$s_$t, (%rd3, $v);\n"
-            "    }\n",
-            op, value, value, op, value, value);
-
-        // Instrinsic to manually perform fp16 atomic reductions using CAS
-        fmt_intrinsic(
-            ".func reduce_$s_f16(.param .u64 ptr,\n"
-            "                     .param .f16 value) {\n"
-            "    .reg .pred %p<10>;\n"
-            "    .reg .f16 %h<10>;\n"
-            "    .reg .b64 %rd<10>;\n"
-            "\n"
-            "    ld.param.u64 %rd0, [ptr];\n"
-            "    ld.param.b16 %h1, [value];\n"
-            "    cvta.to.global.u64 %rd1, %rd0;\n"
-            "    ld.global.b16 %h2, [%rd1];\n"
-            "    $s.ftz.f16 %h3, %h2, %h1;\n"
-            "    atom.global.cas.b16 %h4, [%rd1], %h2, %h3;\n"
-            "    setp.eq.f16 %p1, %h4, %h2;\n"
-            "    @%p1 bra done;\n"
-            "retry_cas:\n"
-            "    mov.b16 %h5, %h4;\n"
-            "    $s.ftz.f16 %h6, %h5, %h1;\n"
-            "    atom.global.cas.b16 %h4, [%rd1], %h5, %h6;\n"
-            "    setp.ne.f16 %p2, %h4, %h5;\n"
-            "    @%p2 bra retry_cas;\n"
-            "done:\n"
-            "    ret;\n"
-            "}",
-            op, op, op);
+            "        .reg .f16x2 %packed;\n"
+            "        .reg .pred %p;\n"
+            "        .reg .b64 %align;\n"
+            "        .reg .f16 %initial;\n"
+            "        mov.b16 %initial, 0;\n"
+            "        and.b64 %align, %rd3, ~0x3;\n"
+            "        setp.eq.b64 %p, %align, %rd3;\n"
+            "        @%p  mov.b32  %packed, {$v, %initial};\n"
+            "        @!%p mov.b32  %packed, {%initial, $v};\n"
+            "        red.global.add.noftz.f16x2 [%align], %packed;\n"
+            "    }\n", value, value);
     } else {
         const char *op_type = v->literal ? "red" : "st";
 
