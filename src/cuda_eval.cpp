@@ -966,21 +966,22 @@ static void jitc_cuda_render_scatter(const Variable *v,
             value, op, value, op, value
         );
     } else if (v->literal && is_half) {
+
         fmt("    {\n"
-            "        .func reduce_$s_fp16(.param .u64 ptr, .param .fp16 value);\n"
-            "        call.uni reduce_$s_fp16, (%rd3, $v);\n"
+            "        .func reduce_$s_$t(.param .u64 ptr, .param .$t value);\n"
+            "        call.uni reduce_$s_$t, (%rd3, $v);\n"
             "    }\n",
-            op, op, value);
+            op, value, value, op, value, value);
 
         // Instrinsic to manually perform fp16 atomic reductions using CAS
         fmt_intrinsic(
-            ".func reduce_$s_fp16(.param .u64 ptr,\n"
+            ".func reduce_$s_f16(.param .u64 ptr,\n"
             "                     .param .f16 value) {\n"
             "    .reg .pred %p<10>;\n"
             "    .reg .f16 %h<10>;\n"
-            "    .reg .b64 %rd<10>;\n",
+            "    .reg .b64 %rd<10>;\n"
             "\n"
-            "    ld.param.b16 %rd0, [ptr];\n"
+            "    ld.param.u64 %rd0, [ptr];\n"
             "    ld.param.b16 %h1, [value];\n"
             "    cvta.to.global.u64 %rd1, %rd0;\n"
             "    ld.global.b16 %h2, [%rd1];\n"

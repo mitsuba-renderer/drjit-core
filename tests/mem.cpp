@@ -134,7 +134,7 @@ TEST_BOTH(09_safety) {
     }
 }
 
-TEST_BOTH_FP32(10_scatter_atomic_rmw) {
+TEST_BOTH(10_scatter_atomic_rmw) {
     /* scatter 16 values */ {
         Float target = zeros<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
