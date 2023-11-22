@@ -8,6 +8,7 @@
 */
 
 #include "common.h"
+#include <cuda_fp16.h>
 
 template <typename Value, typename Reduce, uint32_t BlockSize>
 __device__ void reduce(const Value *data, uint32_t size, Value *out) {
@@ -70,10 +71,24 @@ template <typename Value> struct reduction_add {
     }
 };
 
+template <> struct reduction_add<half> {
+    __device__ half init() { return (half) 0; }
+    __device__ half operator()(half a, half b) const {
+        return __hadd(a, b);
+    }
+};
+
 template <typename Value> struct reduction_mul {
     __device__ Value init() { return (Value) 1; }
     __device__ Value operator()(Value a, Value b) const {
         return a * b;
+    }
+};
+
+template <> struct reduction_mul<half> {
+    __device__ half init() { return (half) 1; }
+    __device__ half operator()(half a, half b) const {
+        return (float)a * (float)b;
     }
 };
 
@@ -88,6 +103,13 @@ template <typename Value> struct reduction_max {
     }
 };
 
+template <> struct reduction_max<half> {
+    __device__ half init() { return __ushort_as_half((unsigned short)0xFC00U); }
+    __device__ half operator()(half a, half b) const {
+        return max((float)a, (float)b);
+    }
+};
+
 template <typename Value> struct reduction_min {
     __device__ Value init() {
         return std::is_integral<Value>::value
@@ -96,6 +118,13 @@ template <typename Value> struct reduction_min {
     }
     __device__ Value operator()(Value a, Value b) const {
         return min(a, b);
+    }
+};
+
+template <> struct reduction_min<half> {
+    __device__ half init() { return __ushort_as_half((unsigned short)0x7BFFU); }
+    __device__ half operator()(half a, half b) const {
+        return min((float)a, (float)b);
     }
 };
 
@@ -125,6 +154,7 @@ template <typename Value> struct reduction_and {
     HORIZ_OP(Name, Reduction, uint32_t, u32)                                   \
     HORIZ_OP(Name, Reduction, int64_t, i64)                                    \
     HORIZ_OP(Name, Reduction, uint64_t, u64)                                   \
+    HORIZ_OP(Name, Reduction, half, f16)                                       \
     HORIZ_OP(Name, Reduction, float, f32)                                      \
     HORIZ_OP(Name, Reduction, double, f64)
 
