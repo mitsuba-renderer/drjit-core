@@ -91,8 +91,6 @@ static void jitc_llvm_render_scatter_inc(Variable *v,
                                          const Variable *ptr,
                                          const Variable *index,
                                          const Variable *mask);
-static void jitc_llvm_render_printf(uint32_t index, const Variable *v,
-                                    const Variable *mask, const Variable *target);
 static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
                                    const Variable *func,
                                    const Variable *scene);
@@ -814,10 +812,6 @@ static void jitc_llvm_render_var(uint32_t index, Variable *v) {
                 v, v, v, v, v, v, a0, v);
             break;
 
-        case VarKind::Printf:
-            jitc_llvm_render_printf(index, v, a0, a1);
-            break;
-
         case VarKind::Dispatch:
             jitc_var_vcall_assemble((VCall *) state.extra[index].callback_data,
                                     a0->reg_index, a1->reg_index, a2->reg_index,
@@ -1144,80 +1138,6 @@ static void jitc_llvm_render_scatter_kahan(const Variable *v, uint32_t v_index) 
         v_index);
 }
 
-
-static void jitc_llvm_render_printf(uint32_t index, const Variable *v,
-                                    const Variable *mask,
-                                    const Variable *target) {
-    const char *format_str = (const char *) v->literal;
-    const uint32_t len = (uint32_t) strlen(format_str);
-    XXH128_hash_t hash = XXH128(format_str, len, 0);
-
-    size_t buffer_offset = buffer.size();
-    fmt("@data_$Q$Q = private unnamed_addr constant [$u x i8] [",
-        hash.high64, hash.low64, len + 1);
-    for (uint32_t i = 0; ; ++i) {
-        fmt("i8 $u", (uint32_t) format_str[i]);
-        if (!format_str[i])
-            break;
-        put(", ");
-    }
-    put("], align 1");
-    jitc_register_global(buffer.get() + buffer_offset);
-    buffer.rewind_to(buffer_offset);
-
-    uint32_t idx = v->reg_index;
-
-    fmt("    br label %l$u_start\n\n"
-        "l$u_start: ; ---- printf_async() ----\n"
-        "    $v_fmt = getelementptr [$u x i8], {[$u x i8]*} @data_$Q$Q, i64 0, i64 0\n"
-        "    br label %l$u_cond\n\n"
-        "l$u_cond: ; ---- printf_async() ----\n"
-        "    $v_idx = phi i32 [ 0, %l$u_start ], [ $v_next, %l$u_tail ]\n"
-        "    $v_msk = extractelement $V, i32 $v_idx\n"
-        "    br i1 $v_msk, label %l$u_body, label %l$u_tail\n\n"
-        "l$u_body: ; ---- printf_async() ----\n",
-        idx, idx, v, len + 1, len + 1, hash.high64, hash.low64, idx, idx, v, idx, v,
-        idx, v, mask, v, v, idx, idx, idx);
-
-    const Extra &extra = state.extra[index];
-    for (uint32_t i = 0; i < extra.n_dep; ++i) {
-        Variable *v2 = jitc_var(extra.dep[i]);
-        VarType vt = (VarType) v2->type;
-
-        fmt("    $v_$u$s = extractelement $V, i32 $v_idx\n",
-            v, i, vt == VarType::Float32 ? "_0" : "", v2, v);
-
-        if (vt == VarType::Float32)
-            fmt("    $v_$u = fpext float $v_$u_0 to double\n", v, i, v, i);
-    }
-
-    if (callable_depth == 0)
-        fmt("    $v_fun = bitcast {i8*} $v to {i32 (i8*, ...)*}\n", v, target);
-    else
-        fmt( "    $v_fun{_0|} = extractelement <$w x {i8*}> $v, i32 $v_idx\n"
-            "{    $v_fun = bitcast i8* $v_fun_0 to i32 (i8*, ...)*\n|}",
-            v, target, v,
-            v, v);
-
-    fmt("    $v_rv = call i32 ({i8*}, ...) $v_fun ({i8*} $v_fmt", v, v, v);
-
-    for (uint32_t i = 0; i < extra.n_dep; ++i) {
-        Variable *v2 = jitc_var(extra.dep[i]);
-        VarType vt = (VarType) v2->type;
-        if (vt == VarType::Float32)
-            vt = VarType::Float64;
-        fmt(", $s $v_$u", type_name_llvm[(int) vt], v, i);
-    }
-
-    fmt(")\n"
-        "    br label %l$u_tail\n\n"
-        "l$u_tail: ; ---- printf_async() ----\n"
-        "    $v_next = add i32 $v_idx, 1\n"
-        "    $v_again = icmp ult i32 $v_next, $w\n"
-        "    br i1 $v_again, label %l$u_cond, label %l$u_end\n\n"
-        "l$u_end:\n",
-        idx, idx, v, v, v, v, v, idx, idx, idx);
-}
 
 void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
                          const uint32_t *in, uint32_t *out) {

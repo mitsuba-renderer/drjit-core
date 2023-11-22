@@ -170,9 +170,6 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Default mask used to ignore out-of-range SIMD lanes (LLVM)
     "default_mask",
 
-    // Recorded 'printf' instruction for debugging purposes
-    "printf",
-
     // A polymorphic function call
     "dispatch",
 

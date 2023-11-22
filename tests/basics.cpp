@@ -631,24 +631,3 @@ TEST_BOTH(07_and_or_mixed) {
         }
     }
 }
-
-#if 0
-template <JitBackend Backend, typename... Ts>
-void printf_async(const JitArray<Backend, bool> &mask, const char *fmt,
-                     const Ts &... ts) {
-    uint32_t indices[] = { ts.index()... };
-    jit_var_printf(Backend, mask.index(), fmt, (uint32_t) sizeof...(Ts),
-                   indices);
-}
-
-TEST_BOTH(08_printf) {
-    UInt32 x = arange<UInt32>(10);
-    Float y = arange<Float>(10) + 1;
-    UInt32 z = arange<UInt32>(10) + 2;
-    Mask q = eq(x & UInt32(1), 0);
-
-    printf_async(Mask(true), "Hello world 1: %u %f %u\n", x, y, z);
-    printf_async(q, "Hello world 2: %u %f %u\n", x, y, z);
-    jit_eval();
-}
-#endif

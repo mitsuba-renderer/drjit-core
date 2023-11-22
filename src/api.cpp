@@ -768,12 +768,6 @@ uint32_t jit_var_write(uint32_t index, size_t offset, const void *src) {
     return jitc_var_write(index, offset, src);
 }
 
-void jit_var_printf(JitBackend backend, uint32_t mask, const char *fmt,
-                    uint32_t narg, const uint32_t *arg) {
-    lock_guard guard(state.lock);
-    jitc_var_printf(backend, mask, fmt, narg, arg);
-}
-
 void jit_eval() {
     lock_guard guard(state.lock);
     jitc_eval(thread_state_cuda);
