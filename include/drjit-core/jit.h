@@ -1153,21 +1153,6 @@ extern JIT_EXPORT uint32_t jit_var_write(uint32_t index, size_t offset,
                                          const void *src);
 
 /**
- * \brief Print the specified variable contents from the kernel
- *
- * This function inserts a print statement directly into the kernel being
- * generated. Note that this may produce a very large volume of output,
- * and a nonzero \c mask parameter can be supplied to suppress it based
- * on condition.
- *
- * Example: <tt>jit_var_printf(JIT_ENUM JitBackend::CUDA, 0, "Hello world: %f\n", 1,
- * &my_variable_id);</tt>
- */
-extern JIT_EXPORT void jit_var_printf(JIT_ENUM JitBackend backend,
-                                      uint32_t mask, const char *fmt,
-                                      uint32_t narg, const uint32_t *arg);
-
-/**
  * \brief Create a new variable representing an array containing a specific
  * attribute associated with a specific domain in the registry.
  *

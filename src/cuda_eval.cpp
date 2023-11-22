@@ -57,8 +57,6 @@ static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
 static void jitc_cuda_render_scatter_inc(Variable *v, const Variable *ptr,
                                          const Variable *index, const Variable *mask);
 static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t index);
-static void jitc_cuda_render_printf(uint32_t index, const Variable *v,
-                                    const Variable *mask);
 
 #if defined(DRJIT_ENABLE_OPTIX)
 static void jitc_cuda_render_trace(uint32_t index, const Variable *v,
@@ -726,10 +724,6 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             fmt("    mov.$t $v, %r0;\n", v, v);
             break;
 
-        case VarKind::Printf:
-            jitc_cuda_render_printf(index, v, a0);
-            break;
-
         case VarKind::Dispatch:
             jitc_var_vcall_assemble((VCall *) state.extra[index].callback_data,
                                     a0->reg_index, a1->reg_index, a2->reg_index,
@@ -1052,82 +1046,6 @@ static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) 
 
     if (!unmasked)
         fmt("\nl_$u_done:\n", v->reg_index);
-}
-
-static void jitc_cuda_render_printf(uint32_t index, const Variable *v,
-                                    const Variable *mask) {
-    const Extra &extra = state.extra[index];
-    const char *format_str = (const char *) v->literal;
-
-    uint32_t offset = 0, align = 0;
-    for (uint32_t i = 0; i < extra.n_dep; ++i) {
-        Variable *v2 = jitc_var(extra.dep[i]);
-        uint32_t vti = v2->type;
-        if ((VarType) vti == VarType::Void)
-            continue;
-        uint32_t tsize = type_size[vti];
-        if ((VarType) vti == VarType::Float32)
-            tsize = 8;
-
-        offset = (offset + tsize - 1) / tsize * tsize;
-        offset += tsize;
-        align = std::max(align, tsize);
-    }
-
-    if (align == 0)
-        align = 1;
-    if (offset == 0)
-        offset = 1;
-
-    put("    {\n");
-    fmt("        .local .align $u .b8 buf[$u];\n", align, offset);
-    put("        .extern .func (.param .b32 rv) vprintf (.param .b64 fmt, .param .b64 buf);\n");
-    put("        .global .align 1 .b8 print_data[] = { ");
-
-    for (uint32_t i = 0; ; ++i) {
-        buffer.put_u32((uint32_t) format_str[i]);
-        if (!format_str[i])
-            break;
-        put(", ");
-    }
-    put(" };\n");
-
-    offset = 0;
-    for (uint32_t i = 0; i < extra.n_dep; ++i) {
-        Variable *v2 = jitc_var(extra.dep[i]);
-        const VarType vt = (VarType) v2->type;
-        uint32_t tsize = vt == VarType::Float32 ? 8 : type_size[(int) vt];
-
-        if (vt == VarType::Void)
-            continue;
-
-        offset = (offset + tsize - 1) / tsize * tsize;
-
-        if (vt == VarType::Float32) {
-            fmt("        cvt.f64.f32 %d3, $v;\n"
-                "        st.local.f64 [buf+$u], %d3;\n", v2, offset);
-        } else {
-            fmt("        st.local.$t [buf+$u], $v;\n", v2, offset, v2);
-        }
-
-        offset += tsize;
-    }
-    put("\n"
-        "        .reg.b64 %fmt_generic, %buf_generic;\n"
-        "        cvta.global.u64 %fmt_generic, print_data;\n"
-        "        cvta.local.u64 %buf_generic, buf;\n"
-        "        {\n"
-        "            .param .b64 fmt_p;\n"
-        "            .param .b64 buf_p;\n"
-        "            .param .b32 rv_p;\n"
-        "            st.param.b64 [fmt_p], %fmt_generic;\n"
-        "            st.param.b64 [buf_p], %buf_generic;\n"
-        "            ");
-    if (mask && !(mask->is_literal() && mask->literal == 1))
-        fmt("@$v ", mask);
-    put("call (rv_p), vprintf, (fmt_p, buf_p);\n"
-        "        }\n"
-        "    }\n");
 }
 
 #if defined(DRJIT_ENABLE_OPTIX)
