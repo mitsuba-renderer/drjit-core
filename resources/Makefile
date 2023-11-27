@@ -1,5 +1,5 @@
 COMPUTE_CAPABILITY=compute_70
-CUDA_VER=11.7
+CUDA_VER=10.2
 NVCC=/usr/local/cuda-$(CUDA_VER)/bin/nvcc -m64 --ptx --expt-relaxed-constexpr -std=c++14
 
 all: kernels.h
