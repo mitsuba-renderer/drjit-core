@@ -236,7 +236,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return jit_var_size(m_index);
     }
 
-	void resize(size_t size) {
+    void resize(size_t size) {
         uint32_t index = jit_var_resize(m_index, size);
         jit_var_dec_ref(m_index);
         m_index = index;
@@ -253,11 +253,15 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     }
 
     const Value *data() const {
-        return (const Value *) jit_var_ptr(m_index);
+        void* ptr_out = nullptr;
+        m_index = jit_var_data(m_index, &ptr_out);
+        return (const Value *) ptr_out;
     }
 
     Value *data() {
-        return (Value *) jit_var_ptr(m_index);
+        void* ptr_out = nullptr;
+        m_index = jit_var_data(m_index, &ptr_out);
+        return (Value *) ptr_out;
     }
 
     Value read(size_t offset) const {
