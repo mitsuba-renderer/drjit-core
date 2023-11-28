@@ -988,7 +988,7 @@ static void jitc_cuda_render_scatter(const Variable *v,
             "        and.b64 %offset, %rd3, 0x2;\n"
             "        cvt.u32.s64 %offset_32, %offset;\n"
             "        shl.b32 %offset_32, %offset_32, 3;\n"
-            "        mov.b32  %packed, {$v, %initial};\n"
+            "        mov.b32 %packed, {$v, %initial};\n"
             "        shl.b32 %packed, %packed, %offset_32;\n"
             "        red.global.add.noftz.f16x2 [%align], %packed;\n"
             "    }\n", value);
