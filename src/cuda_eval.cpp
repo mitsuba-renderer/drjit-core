@@ -976,18 +976,22 @@ static void jitc_cuda_render_scatter(const Variable *v,
             value, op, value, op, value
         );
     } else if (v->literal && is_half) {
+        // Encountered OptiX link errors attempting to use red.global.add.noftz.f16
+        // so use f16x2 instead
         fmt("    {\n"
             "        .reg .f16x2 %packed;\n"
-            "        .reg .pred %p;\n"
-            "        .reg .b64 %align;\n"
+            "        .reg .b64 %align, %offset;\n"
+            "        .reg .b32 %offset_32;\n"
             "        .reg .f16 %initial;\n"
             "        mov.b16 %initial, 0;\n"
             "        and.b64 %align, %rd3, ~0x3;\n"
-            "        setp.eq.b64 %p, %align, %rd3;\n"
-            "        @%p  mov.b32  %packed, {$v, %initial};\n"
-            "        @!%p mov.b32  %packed, {%initial, $v};\n"
+            "        and.b64 %offset, %rd3, 0x2;\n"
+            "        cvt.u32.s64 %offset_32, %offset;\n"
+            "        shl.b32 %offset_32, %offset_32, 3;\n"
+            "        mov.b32  %packed, {$v, %initial};\n"
+            "        shl.b32 %packed, %packed, %offset_32;\n"
             "        red.global.add.noftz.f16x2 [%align], %packed;\n"
-            "    }\n", value, value);
+            "    }\n", value);
     } else {
         const char *op_type = v->literal ? "red" : "st";
 
