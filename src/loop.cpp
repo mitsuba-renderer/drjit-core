@@ -55,8 +55,6 @@ static void wrap(Variable &v, uint32_t &index, uint32_t dep = 0) {
     v.type = v2->type;
     v.dep[0] = index;
     v.dep[1] = dep;
-    jitc_var_inc_ref(index, v2);
-    jitc_var_dec_ref(index, v2);
     jitc_var_inc_ref(dep);
     index = 0; // in case jitc_var_new throws
     index = jitc_var_new(v, true);
