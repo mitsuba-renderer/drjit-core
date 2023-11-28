@@ -26,7 +26,7 @@ extern "C" {
  *
  * The \c format parameter supports the following options:
  * <ul>
- * <li><tt>format == 0</tt>: Single precision storage foramt </li>
+ * <li><tt>format == 0</tt>: Single precision storage format </li>
  * <li><tt>format == 1</tt>: Half precision storage format </li>
  * <ul>
  * 

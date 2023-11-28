@@ -208,6 +208,9 @@ const bool var_kind_fp16_supported_cuda[(int) VarKind::Count] {
     // An evaluated node representing data
     true,
 
+    // Undefined memory
+    true,
+
     // A literal constant
     true,
 
@@ -268,9 +271,6 @@ const bool var_kind_fp16_supported_cuda[(int) VarKind::Count] {
     // Default mask used to ignore out-of-range SIMD lanes (LLVM)
     true,
 
-    // Recorded 'printf' instruction for debugging purposes
-    true,
-
     // A polymorphic function call
     true,
 
@@ -307,6 +307,9 @@ const bool var_kind_fp16_supported_llvm[(int) VarKind::Count] {
     true,
 
     // An evaluated node representing data
+    true,
+
+    // Undefined memory
     true,
 
     // A literal constant
@@ -369,9 +372,6 @@ const bool var_kind_fp16_supported_llvm[(int) VarKind::Count] {
     true,
 
     // Default mask used to ignore out-of-range SIMD lanes (LLVM)
-    true,
-
-    // Recorded 'printf' instruction for debugging purposes
     true,
 
     // A polymorphic function call
@@ -1280,16 +1280,16 @@ uint32_t jitc_var_data(uint32_t index, bool eval_dirty, void **ptr_out) {
             v = jitc_var(index);
 
             if (unlikely(v->is_dirty()))
-                jitc_raise("jit_var_ptr(): variable r%u remains dirty after "
+                jitc_raise("jitc_var_data(): variable r%u remains dirty after "
                            "evaluation!", index);
         }
     } else if (v->is_node()) {
         jitc_var_eval(index);
         v = jitc_var(index);
         if (unlikely(!v->is_evaluated()))
-            jitc_fail("jit_var_ptr(): evaluation of variable r%u failed!", index);
+            jitc_fail("jitc_var_data(): evaluation of variable r%u failed!", index);
     } else {
-        jitc_fail("jit_var_ptr(): unhandled variable r%u!", index);
+        jitc_fail("jitc_var_data(): unhandled variable r%u!", index);
     }
 
     *ptr_out = v->data;
