@@ -15,6 +15,7 @@
 #include "util.h"
 #include "optix.h"
 #include "loop.h"
+#include "call.h"
 #include <tsl/robin_set.h>
 
 // ====================================================================
@@ -29,8 +30,26 @@ std::vector<ScheduledVariable> schedule;
 /// Groups of variables with the same size
 std::vector<ScheduledGroup> schedule_groups;
 
+struct VisitedKey {
+    uint32_t size;
+    uint32_t index;
+    uint32_t depth;
+    VisitedKey(uint32_t size, uint32_t index, uint32_t depth)
+        : size(size), index(index), depth(depth) { }
+
+    bool operator==(VisitedKey k) const {
+        return k.size == size && k.index == index && k.depth == depth;
+    }
+};
+
+struct VisitedKeyHash {
+    size_t operator()(VisitedKey k) const {
+        return (size_t) fmix64((uint64_t(k.size ^ k.depth) << 32) |  k.index);
+    }
+};
+
 /// Auxiliary data structure needed to compute 'schedule' and 'schedule_gropus'
-static tsl::robin_set<std::pair<uint32_t, uint32_t>, pair_hash> visited;
+static tsl::robin_set<VisitedKey, VisitedKeyHash> visited;
 
 /// Kernel parameter buffer and device copy
 static std::vector<void *> kernel_params;
@@ -77,25 +96,51 @@ KernelHistoryEntry kernel_history_entry;
 // ====================================================================
 
 /// Recursively traverse the computation graph to find variables needed by a computation
-static void jitc_var_traverse(uint32_t size, uint32_t index) {
-    if (!visited.emplace(size, index).second)
+static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0) {
+    if (!visited.emplace(size, index, depth).second)
         return;
 
     Variable *v = jitc_var(index);
-    for (int i = 0; i < 4; ++i) {
-        uint32_t index2 = v->dep[i];
-        if (index2 == 0)
-            break;
-        jitc_var_traverse(size, index2);
-    }
-
     switch ((VarKind) v->kind) {
         case VarKind::LoopPhi:
-        case VarKind::LoopResult: {
-                LoopData *ld = (LoopData *) state.extra[v->dep[0]].callback_data;
-                jitc_var_traverse(size, ld->outer_inputs[v->literal]);
-                jitc_var_traverse(size, ld->inner_inputs[v->literal]);
-                jitc_var_traverse(size, ld->inner_outputs[v->literal]);
+        case VarKind::LoopOutput: {
+                LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
+                jitc_var_traverse(size, loop->outer_in[v->literal], depth);
+                jitc_var_traverse(size, loop->inner_in[v->literal], depth);
+                jitc_var_traverse(size, loop->inner_out[v->literal], depth);
+            }
+            break;
+
+        case VarKind::CallInput: {
+                if (depth == 0) {
+                    schedule.emplace_back(size, v->scope, index);
+                    jitc_var_inc_ref(index, v);
+                    return;
+                } else {
+                    jitc_var_traverse(size, v->dep[0], depth - 1);
+                    return;
+                }
+            };
+
+        case VarKind::Call: {
+                CallData *call = (CallData *) v->data;
+                if (unlikely(!call->optimize)) {
+                    for (uint32_t i = 0; i < call->n_in; ++i)
+                        jitc_var_traverse(size, call->outer_in[i], depth);
+                    for (uint32_t i = 0; i < call->n_inst; ++i)
+                        for (uint32_t j = 0; j < call->n_out; ++j)
+                            jitc_var_traverse(size, call->inner_out[j + i*call->n_out], depth + 1);
+                }
+                for (uint32_t i : call->side_effects)
+                    jitc_var_traverse(size, i, depth + 1);
+            };
+            break;
+
+        case VarKind::CallOutput: {
+                CallData *call = (CallData *) jitc_var(v->dep[0])->data;
+                for (uint32_t i = 0; i < call->n_inst; ++i)
+                    jitc_var_traverse(size, call->inner_out[v->literal + i * call->n_out], depth + 1);
+
             }
             break;
 
@@ -103,27 +148,20 @@ static void jitc_var_traverse(uint32_t size, uint32_t index) {
             break;
     }
 
-    if (unlikely(v->extra)) {
-        auto it = state.extra.find(index);
-        if (it == state.extra.end())
-            jitc_fail("jit_var_traverse(r%u): could not find matching 'extra' "
-                      "record!", index);
-
-        const Extra &extra = it->second;
-        for (uint32_t i = 0; i < extra.n_dep; ++i) {
-            uint32_t index2 = extra.dep[i];
-            if (index2 == 0)
-                continue;
-            jitc_var_traverse(size, index2);
-        }
+    for (int i = 0; i < 4; ++i) {
+        uint32_t index2 = v->dep[i];
+        if (index2 == 0)
+            break;
+        jitc_var_traverse(size, index2, depth);
     }
 
-    // If we're visiting this variable the first time regardless of size
-    if (visited.emplace(0, index).second)
-        v->output_flag = false;
-
-    schedule.emplace_back(size, v->scope, index);
-    jitc_var_inc_ref(index, v);
+    if (depth == 0) {
+        // If we're visiting this variable the first time regardless of size
+        if (visited.emplace(0, index, depth).second)
+            v->output_flag = false;
+        schedule.emplace_back(size, v->scope, index);
+        jitc_var_inc_ref(index, v);
+    }
 }
 
 void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
@@ -693,8 +731,21 @@ void jitc_eval(ThreadState *ts) {
     for (ScheduledVariable sv : schedule) {
         uint32_t index = sv.index;
         Variable *v = jitc_var(index);
-
         v->reg_index = 0;
+
+        if (unlikely(v->extra)) {
+            VariableExtra &extra = state.extra[v->extra];
+            if (extra.callback) {
+                if (extra.callback_internal) {
+                    extra.callback(index, 0, extra.callback_data);
+                } else {
+                    unlock_guard guard_2(state.lock);
+                    extra.callback(index, 0, extra.callback_data);
+                }
+                v = jitc_var(index);
+            }
+        }
+
         if (!(v->output_flag || v->side_effect)) {
             jitc_var_dec_ref(index, v);
             continue;
@@ -707,27 +758,10 @@ void jitc_eval(ThreadState *ts) {
         jitc_lvn_drop(index, v);
 
         if (v->output_flag && v->size == sv.size) {
-            v->kind = (uint32_t) VarKind::Data;
+            v->kind = (uint32_t) VarKind::Evaluated;
             v->data = sv.data;
             v->output_flag = false;
             v->consumed = false;
-        }
-
-        if (unlikely(v->extra)) {
-            auto it2 = state.extra.find(index);
-            if (it2 == state.extra.end())
-                jitc_fail("jit_eval(): could not find 'extra' record of variable %u", index);
-            const Extra &extra = it2->second;
-
-            if (extra.callback) {
-                if (extra.callback_internal) {
-                    extra.callback(index, 0, extra.callback_data);
-                } else {
-                    unlock_guard guard_2(state.lock);
-                    extra.callback(index, 0, extra.callback_data);
-                }
-                v = jitc_var(index);
-            }
         }
 
         uint32_t dep[4], side_effect = v->side_effect;
@@ -749,42 +783,30 @@ void jitc_eval(ThreadState *ts) {
 
 static ProfilerRegion profiler_region_assemble_func("jit_assemble_func");
 
-XXH128_hash_t
-jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
-                   uint32_t in_size, uint32_t in_align, uint32_t out_size,
-                   uint32_t out_align, uint32_t data_offset,
-                   const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-                   uint32_t n_in, const uint32_t *in, uint32_t n_out,
-                   const uint32_t *out_nested, uint32_t n_se,
-                   const uint32_t *se, bool use_self) {
+XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
+                                 uint32_t in_size, uint32_t in_align,
+                                 uint32_t out_size, uint32_t out_align) {
     ProfilerPhase profiler(profiler_region_assemble_func);
 
     visited.clear();
     schedule.clear();
 
-    for (uint32_t i = 0; i < n_in; ++i) {
-        uint32_t index = in[i];
-        if (!index)
+    const std::vector<uint32_t> &check = call->checkpoints;
+
+    const size_t n_out = call->n_out,
+                 n_se = check.empty() ? 0 : (check[inst + 1] - check[inst]);
+
+    const uint32_t *out = call->inner_out.data() + n_out * inst,
+                   *se = call->side_effects.data() + check[inst];
+
+    for (size_t i = 0; i < n_out; ++i) {
+        if (call->out_offset[i] == (uint32_t) -1)
             continue;
-        const Variable *v = jitc_var(index);
-        if (!v->is_literal())
-            visited.emplace(1, index);
+        jitc_var_traverse(1, out[i]);
     }
 
-    for (uint32_t i = 0; i < n_out; ++i) {
-        uint32_t index = out_nested[i];
-        if (!index)
-            continue;
-        jitc_var_traverse(1, index);
-        jitc_var(index)->output_flag = true;
-    }
-
-    for (uint32_t i = 0; i < n_se; ++i) {
-        uint32_t index = se[i];
-        if (!index)
-            continue;
-        jitc_var_traverse(1, index);
-    }
+    for (uint32_t i = 0; i < n_se; ++i)
+        jitc_var_traverse(1, se[i]);
 
     std::stable_sort(
         schedule.begin(), schedule.end(),
@@ -792,9 +814,8 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
             return a.scope < b.scope;
         });
 
-    uint32_t n_regs = ts->backend == JitBackend::CUDA ? 4 : 1;
-
-    for (auto &sv : schedule) {
+    uint32_t n_regs = call->backend == JitBackend::CUDA ? 4 : 1;
+    for (ScheduledVariable &sv : schedule) {
         Variable *v = jitc_var(sv.index);
         v->reg_index = n_regs++;
     }
@@ -802,18 +823,24 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
     size_t kernel_offset = buffer.size();
 
     callable_depth++;
-    if (ts->backend == JitBackend::CUDA)
-        jitc_cuda_assemble_func(name, inst_id, n_regs, in_size, in_align,
-                                out_size, out_align, data_offset, data_map,
-                                n_out, out_nested, use_self);
-    else
-        jitc_llvm_assemble_func(name, inst_id, in_size, data_offset, data_map,
-                                n_out, out_nested, use_self);
+    switch (call->backend) {
+        case JitBackend::LLVM:
+            jitc_llvm_assemble_func(call, inst);
+            break;
+
+        case JitBackend::CUDA:
+            jitc_cuda_assemble_func(call, inst, in_size, in_align, out_size,
+                                    out_align, n_regs);
+            break;
+
+        default:
+            jitc_fail("jitc_assemble_func(): unsupported backend!");
+    }
     callable_depth--;
 
     size_t kernel_length = buffer.size() - kernel_offset;
 
-    if (jit_flag(JitFlag::VCallDeduplicate)) {
+    if (jit_flag(JitFlag::MergeFunctions)) {
         kernel_hash = XXH128(buffer.get() + kernel_offset, kernel_length, 0);
     } else {
         kernel_hash.low64 = callable_count;
@@ -842,7 +869,20 @@ jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
 
     for (ScheduledVariable &sv: schedule) {
         Variable *v = jitc_var(sv.index);
+        if (unlikely(v->extra)) {
+            VariableExtra &extra = state.extra[v->extra];
+            if (extra.callback) {
+                if (extra.callback_internal) {
+                    extra.callback(sv.index, 0, extra.callback_data);
+                } else {
+                    unlock_guard guard_2(state.lock);
+                    extra.callback(sv.index, 0, extra.callback_data);
+                }
+                v = jitc_var(sv.index);
+            }
+        }
         v->reg_index = 0;
+        v->output_flag = false;
         jitc_var_dec_ref(sv.index, v);
     }
 

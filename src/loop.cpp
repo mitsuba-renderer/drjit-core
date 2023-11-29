@@ -5,9 +5,9 @@
 #include "eval.h"
 #include "op.h"
 
-uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indices) {
+uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, uint32_t *indices) {
     JitBackend backend = JitBackend::None;
-    bool symbolic = false, dirty = false;
+    bool dirty = false;
 
     // A few sanity checks
     if (!n_indices)
@@ -23,7 +23,6 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
         const Variable *v2 = jitc_var(index);
         if (i == 0) {
             backend = (JitBackend) v2->backend;
-            symbolic = v2->symbolic;
             dirty = v2->is_dirty();
         } else {
             if ((JitBackend) v2->backend != backend)
@@ -31,7 +30,6 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
                     "jit_var_loop_start(): the loop state involves variables with "
                     "different Dr.Jit backends, which is not permitted.");
 
-            symbolic |= v2->symbolic;
             dirty |= v2->is_dirty();
         }
     }
@@ -54,20 +52,18 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
         v.type = (uint32_t) VarType::Void;
         v.size = 1;
         v.backend = (uint32_t) backend;
-        v.symbolic = 1;
-        v.extra = 1;
+        v.symbolic = symbolic;
 
         jitc_new_scope(backend);
         loop_start = steal(jitc_var_new(v, true));
         jitc_new_scope(backend);
-
     }
 
     if (!name)
         name = "unnamed";
 
     std::unique_ptr<LoopData> ld(new LoopData(name, loop_start, n_indices, symbolic));
-    state.extra[loop_start].callback_data = ld.get();
+    jitc_var(loop_start)->data = ld.get();
     loop_start.release();
 
     Variable v_phi;
@@ -81,7 +77,7 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
         Variable *v2 = jitc_var(index);
         jitc_var_inc_ref(index, v2);
         jitc_var_inc_ref(index, v2);
-        ld->outer_inputs.push_back(index);
+        ld->outer_in.push_back(index);
 
         v_phi.type = v2->type;
         v_phi.literal = (uint64_t) i;
@@ -89,7 +85,7 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
         v_phi.dep[3] = index;
         jitc_var_inc_ref(ld->loop_start);
         uint32_t index_new = jitc_var_new(v_phi, true);
-        ld->inner_inputs.push_back(index_new);
+        ld->inner_in.push_back(index_new);
         jitc_var_inc_ref(index_new);
         indices[i] = index_new;
     }
@@ -102,22 +98,22 @@ uint32_t jitc_var_loop_start(const char *name, size_t n_indices, uint32_t *indic
     v.type = (uint32_t) VarType::Void;
     v.size = 1;
     v.backend = (uint32_t) backend;
-    v.extra = 1;
-    Ref loop_holder = steal(jitc_var_new(v, true));
+    v.data = ld.get();
 
-    Extra &e = state.extra[loop_holder];
-    e.callback = [](uint32_t, int free, void *p) {
-        if (free)
-            delete (LoopData *) p;
-    };
-    e.callback_internal = true;
-    e.callback_data = ld.release();
+    Ref loop_holder = steal(jitc_var_new(v, true));
+    jitc_var_set_callback(
+        loop_holder,
+        [](uint32_t, int free, void *p) {
+            if (free)
+                delete (LoopData *) p;
+        },
+        ld.release(), true);
 
     return loop_holder.release();
 }
 
 uint32_t jitc_var_loop_cond(uint32_t loop, uint32_t active) {
-    LoopData *ld = (LoopData *) state.extra[loop].callback_data;
+    LoopData *ld = (LoopData *) jitc_var(loop)->data;
 
     Variable *loop_start_v = jitc_var(ld->loop_start),
              *active_v = jitc_var(active);
@@ -144,7 +140,7 @@ uint32_t jitc_var_loop_cond(uint32_t loop, uint32_t active) {
 }
 
 bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t checkpoint) {
-    LoopData *ld = (LoopData *) state.extra[loop].callback_data;
+    LoopData *ld = (LoopData *) jitc_var(loop)->data;
     bool optimize = jitc_flags() & (uint32_t) JitFlag::OptimizeLoops;
 
     checkpoint &= 0x7fffffff; // ignore top bit, which jit_record_start() uses as a flag
@@ -153,10 +149,10 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
     uint32_t size = jitc_var(cond)->size;
     for (size_t i = 0; i < ld->size; ++i) {
         // Ignore loop-invariant state variables
-        if (indices[i] == ld->inner_inputs[i])
+        if (indices[i] == ld->inner_in[i])
             continue;
 
-        const Variable *v1 = jitc_var(ld->outer_inputs[i]),
+        const Variable *v1 = jitc_var(ld->outer_in[i]),
                        *v2 = jitc_var(indices[i]);
 
         // Ignore variables that are the target of side effects from the loop state
@@ -169,14 +165,14 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
     if (!ld->retry) {
         size_t n_eliminated = 0;
         for (size_t i = 0; i < ld->size; ++i) {
-            const Variable *v1 = jitc_var(ld->outer_inputs[i]),
+            const Variable *v1 = jitc_var(ld->outer_in[i]),
                            *v2 = jitc_var(indices[i]);
 
             bool eliminate = false;
             if (v2->is_dirty()) {
                 // Remove variables that are the target of side effects from the loop state
                 eliminate = true;
-            } else if (indices[i] == ld->inner_inputs[i]) {
+            } else if (indices[i] == ld->inner_in[i]) {
                 // Remove loop-invariant state variables. Do this always when optimizations are
                 // turned on. Otherwise, only do it when they aren't compatible with the loop shape.
                 eliminate = optimize || v2->size != size;
@@ -189,10 +185,10 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             if (eliminate) {
                 jitc_trace("jit_var_loop(r%u): eliminating redundant loop "
                            "variable r%u.",
-                           ld->loop_start, ld->inner_inputs[i]);
-                jitc_var_inc_ref(ld->outer_inputs[i]);
-                jitc_var_dec_ref(ld->inner_inputs[i]);
-                ld->inner_inputs[i] = ld->outer_inputs[i];
+                           ld->loop_start, ld->inner_in[i]);
+                jitc_var_inc_ref(ld->outer_in[i]);
+                jitc_var_dec_ref(ld->inner_in[i]);
+                ld->inner_in[i] = ld->outer_in[i];
                 n_eliminated++;
             }
         }
@@ -203,7 +199,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                      "%zu/%zu redundant loop state variables.",
                      ld->loop_start, ld->name.c_str(), n_eliminated, ld->size);
             for (size_t i = 0; i < ld->size; ++i) {
-                indices[i] = ld->inner_inputs[i];
+                indices[i] = ld->inner_in[i];
                 jitc_var_inc_ref(indices[i]);
             }
 
@@ -238,11 +234,11 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                     "jit_var_loop_end(): loop state variable %zu has become "
                     "uninitialized (i.e., it now has size 0)", i);
 
-            const Variable *v1 = jitc_var(ld->inner_inputs[i]);
+            const Variable *v1 = jitc_var(ld->inner_in[i]);
             Variable *v2 = jitc_var(index);
 
             uint32_t new_index;
-            if (ld->inner_inputs[i] != ld->outer_inputs[i]) {
+            if (ld->inner_in[i] != ld->outer_in[i]) {
                 if (v2->size != size && size != 1 && v2->size != 1)
                     jitc_raise(
                         "jit_var_loop_end(): loop state variable %zu (r%u) has "
@@ -253,7 +249,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                 size = std::max(v2->size, size);
 
                 if (backend == JitBackend::LLVM) {
-                    new_index = jitc_var_select(active, index, ld->inner_inputs[i]);
+                    new_index = jitc_var_select(active, index, ld->inner_in[i]);
                 } else {
                     new_index = index;
                     jitc_var_inc_ref(index);
@@ -262,17 +258,17 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                 jitc_var_inc_ref(index);
                 new_index = index;
             } else {
-                if (index != ld->inner_inputs[i] &&
+                if (index != ld->inner_in[i] &&
                     !(v2->is_literal() && v1->is_literal() && v1->literal == v2->literal))
                     jitc_raise(
                         "jit_var_loop_end(): loop state variable %zu (r%u) was "
                         "presumed to be constant, but it changed (to r%u) when "
                         "re-recording the loop a second time.",
-                        i, index, ld->inner_inputs[i]);
-                jitc_var_inc_ref(ld->inner_inputs[i]);
-                new_index = ld->inner_inputs[i];
+                        i, index, ld->inner_in[i]);
+                jitc_var_inc_ref(ld->inner_in[i]);
+                new_index = ld->inner_in[i];
             }
-            ld->inner_outputs.push_back(new_index);
+            ld->inner_out.push_back(new_index);
         }
     }
 
@@ -284,7 +280,6 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
     v.dep[0] = ld->loop_start;
     v.dep[1] = cond;
     v.symbolic = 1;
-    v.extra = 1;
     jitc_var_inc_ref(ld->loop_start);
     jitc_var_inc_ref(cond);
 
@@ -293,7 +288,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
     jitc_new_scope(backend);
 
     Variable v_phi;
-    v_phi.kind = (uint32_t) VarKind::LoopResult;
+    v_phi.kind = (uint32_t) VarKind::LoopOutput;
     v_phi.backend = (uint32_t) backend;
     v_phi.symbolic = ld->symbolic;
     v_phi.size = size;
@@ -306,7 +301,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
     for (size_t i = 0; i < ld->size; ++i) {
         uint32_t index = indices[i], index_new;
 
-        if (ld->inner_inputs[i] != ld->outer_inputs[i]) {
+        if (ld->inner_in[i] != ld->outer_in[i]) {
             const Variable *v2 = jitc_var(index);
             v_phi.literal = (uint64_t) i;
             v_phi.type = v2->type;
@@ -316,13 +311,13 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             state_vars_actual++;
             state_vars_actual_size += type_size[v2->type];
         } else {
-            index_new = ld->inner_outputs[i];
+            index_new = ld->inner_out[i];
             jitc_var_inc_ref(index_new);
         }
 
         state_vars_size += type_size[jitc_var(index_new)->type];
         indices[i] = index_new;
-        ld->outer_outputs.push_back(
+        ld->outer_out.push_back(
             WeakRef(index_new, jitc_var(index_new)->counter));
     }
 
@@ -358,11 +353,11 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
 
     // Transfer ownership of the LoopData instance
     {
-        Extra &e1 = state.extra[loop_end]; // keep order, don't merge on same line
-        Extra &e2 = state.extra[(uint32_t) loop];
-        std::swap(e1.callback, e2.callback);
-        std::swap(e1.callback_data, e2.callback_data);
-        std::swap(e1.callback_internal, e2.callback_internal);
+        VariableExtra *e1 = jitc_var_extra(jitc_var(loop_end));
+        VariableExtra *e2 = jitc_var_extra(jitc_var(loop));
+        std::swap(e1->callback, e2->callback);
+        std::swap(e1->callback_data, e2->callback_data);
+        std::swap(e1->callback_internal, e2->callback_internal);
     }
 
     jitc_log(InfoSym,

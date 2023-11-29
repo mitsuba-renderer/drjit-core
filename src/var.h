@@ -15,6 +15,7 @@
 enum VarKind : uint32_t;
 
 struct Variable;
+struct VariableExtra;
 struct WeakRef;
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
@@ -66,7 +67,7 @@ extern uint32_t jitc_var_pointer(JitBackend backend, const void *value,
                                  uint32_t dep, int write);
 
 /// Wrap an input variable of a virtual function call before recording computation
-extern uint32_t jitc_var_wrap_vcall(uint32_t index);
+extern uint32_t jitc_var_call_input(uint32_t index);
 
 /// Register an existing variable with the JIT compiler
 extern uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
@@ -125,7 +126,8 @@ extern const char *jitc_var_label(uint32_t index);
 /// Assign a callback function that is invoked when the given variable is freed
 extern void jitc_var_set_callback(uint32_t index,
                                   void (*callback)(uint32_t, int, void *),
-                                  void *payload);
+                                  void *data,
+                                  bool is_internal);
 
 /// Migrate a variable to a different flavor of memory
 extern uint32_t jitc_var_migrate(uint32_t index, AllocType type);
@@ -217,10 +219,19 @@ extern uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
                                        const char *domain, const char *name);
 
 /// Return an implicit mask for operations within a virtual function call
-extern uint32_t jitc_var_vcall_mask(JitBackend);
+extern uint32_t jitc_var_call_mask(JitBackend);
 
 /// Register the current Python source code location with Dr.Jit
 extern void jitc_set_source_location(const char *fname, size_t lineno) noexcept;
+
+/// Set the 'self' variable, which plays a special role when tracing method calls
+extern void jitc_var_set_self(JitBackend backend, uint32_t value, uint32_t index);
+
+/// Return the 'self' variable, which plays a special role when tracing method calls
+extern void jitc_var_self(JitBackend backend, uint32_t *value, uint32_t *index);
+
+/// Return the 'VariableExtra' record associated with a variable (or create it)
+extern VariableExtra *jitc_var_extra(Variable *v);
 
 /// Descriptive names and byte sizes for the various variable types
 extern const char *type_name      [(int) VarType::Count];

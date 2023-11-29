@@ -10,6 +10,7 @@
 #include "var.h"
 #include "internal.h"
 #include "log.h"
+#include "var.h"
 #include "eval.h"
 #include "util.h"
 #include "op.h"
@@ -105,7 +106,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "invalid",
 
     // An evaluated node representing data
-    "data",
+    "evaluated",
 
     // Undefined memory
     "undefined",
@@ -161,9 +162,6 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Memory-related operations
     "gather", "scatter", "scatter_inc", "scatter_kahan",
 
-    // Specialized nodes for vcalls
-    "vcall_mask", "self",
-
     // Counter node to determine the current lane ID
     "counter",
 
@@ -171,8 +169,16 @@ const char *var_kind_name[(int) VarKind::Count] {
     "default_mask",
 
     // A polymorphic function call
-    "dispatch",
+    "call",
 
+    // Specialized nodes for calls
+    "call_mask", "call_self",
+
+    /// Input argument to a function call
+    "call_input",
+
+    /// Output of a function call
+    "call_output",
     // Perform a standard texture lookup (CUDA)
     "tex_lookup",
 
@@ -198,7 +204,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "loop_phi",
 
     // SSA Phi variable at end of loop
-    "loop_result"
+    "loop_output"
 };
 
 const uint32_t var_kind_fp16_min_compute_cuda[(int) VarKind::Count] {
@@ -434,11 +440,9 @@ void jitc_var_free(uint32_t index, Variable *v) {
     v->counter++;
 
     if (unlikely(v->extra)) {
-        auto it = state.extra.find(index);
-        if (it == state.extra.end())
-            jitc_fail("jit_var_free(): entry in 'extra' hash table not found!");
-        Extra extra = it.value();
-        state.extra.erase(it);
+        uint32_t index2 = v->extra;
+        VariableExtra &extra = state.extra[index2];
+        char *label = extra.label;
 
         /* Notify callback that the variable was freed.
            Do this first, before freeing any dependencies */
@@ -451,23 +455,10 @@ void jitc_var_free(uint32_t index, Variable *v) {
             }
         }
 
-        // Decrease reference counts of extra references if needed
-        if (extra.dep) {
-            for (uint32_t i = 0; i < extra.n_dep; ++i)
-                jitc_var_dec_ref(extra.dep[i]);
-            free(extra.dep);
-        }
-
-        // If jitc_vcall() was invoked on this variable, free bucket list
-        if (extra.vcall_bucket_count) {
-            for (uint32_t i = 0; i < extra.vcall_bucket_count; ++i)
-                jitc_var_dec_ref(extra.vcall_buckets[i].index);
-            jitc_free(extra.vcall_buckets);
-        }
-
-        // Free descriptive label
-        free(extra.label);
+        free(label);
+        state.unused_extra.push(index2);
     }
+
 
     // Remove from hash table
     state.unused_variables.push(index);
@@ -483,7 +474,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
 Variable *jitc_var(uint32_t index) {
-    auto &variables = state.variables;
+    std::vector<Variable> &variables = state.variables;
     Variable *v = variables.data() + index;
 
     if (unlikely(index == 0 || index >= variables.size() ||
@@ -495,7 +486,7 @@ Variable *jitc_var(uint32_t index) {
 
 /// Access a variable through a weak reference. May return ``nullptr``
 Variable *jitc_var(WeakRef ref) {
-    auto &variables = state.variables;
+    std::vector<Variable> &variables = state.variables;
     if (unlikely(ref.index >= variables.size()))
         jitc_fail("jit_var(r%u): unknown variable!", ref.index);
 
@@ -589,18 +580,17 @@ VarType jitc_var_type(uint32_t index) {
 
 /// Query the descriptive label associated with a given variable
 const char *jitc_var_label(uint32_t index) {
-    ExtraMap::iterator it = state.extra.find(index);
-    if (it == state.extra.end()) {
-        return nullptr;
-    } else {
-        const char *label = it.value().label;
-        if (label) {
-            const char *delim = strrchr(label, '/');
-            return delim ? (delim + 1) : label;
-        } else {
-            return nullptr;
+    if (index) {
+        const Variable *v = jitc_var(index);
+        if (v->extra) {
+            const char *label = state.extra[v->extra].label;
+            if (label) {
+                const char *delim = strrchr(label, '/');
+                return delim ? (delim + 1) : label;
+            }
         }
     }
+    return nullptr;
 }
 
 void jitc_var_set_label(uint32_t index, const char *label) {
@@ -616,18 +606,16 @@ void jitc_var_set_label(uint32_t index, const char *label) {
     }
 
     Variable *v = jitc_var(index);
-    v->extra = true;
-
-    Extra &extra = state.extra[index];
-    free(extra.label);
-
     ThreadState *ts = thread_state(v->backend);
+    VariableExtra *e = jitc_var_extra(v);
+    free(e->label);
+
     if (!ts->prefix) {
         if (!label) {
-            extra.label = nullptr;
+            e->label = nullptr;
         } else {
-            extra.label = (char *) malloc_check(len + 1);
-            memcpy(extra.label, label, len + 1);
+            e->label = (char *) malloc_check(len + 1);
+            memcpy(e->label, label, len + 1);
         }
     } else {
         size_t prefix_len = strlen(ts->prefix);
@@ -636,7 +624,7 @@ void jitc_var_set_label(uint32_t index, const char *label) {
         if (len)
             memcpy(combined + prefix_len, label, len);
         combined[prefix_len + len] = '\0';
-        extra.label = combined;
+        e->label = combined;
     }
 
     jitc_log(Debug, "jit_var_set_label(): r%u.label = \"%s\"", index,
@@ -704,10 +692,10 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     Variable *vo;
 
     if (likely(!lvn || lvn_key_inserted)) {
-        bool index_reuse = flags & (uint32_t) JitFlag::IndexReuse;
-        auto &unused = state.unused_variables;
+        bool reuse_indices = flags & (uint32_t) JitFlag::ReuseIndices;
+        UnusedPQ &unused = state.unused_variables;
 
-        if (unlikely(unused.empty() || !index_reuse)) {
+        if (unlikely(unused.empty() || !reuse_indices)) {
             index = state.variables.size();
             state.variables.emplace_back();
         } else {
@@ -744,8 +732,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
             }
 
             *p++ = '\0';
-            vo->extra = true;
-            state.extra[index].label = s;
+            jitc_var_extra(vo)->label = s;
         }
 
         state.variable_counter++;
@@ -770,7 +757,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
 
         var_buffer.put(" = ");
 
-        if (v.is_node()) {
+        if (v.is_node() || v.is_undefined()) {
             var_buffer.fmt("%s(", var_kind_name[v.kind]);
             for (int i = 0; i < 4; ++i) {
                 if (!v.dep[i])
@@ -788,15 +775,16 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
             var_buffer.put(")");
         }
 
-        bool lvn_hit = lvn && !lvn_key_inserted;
-        if (v.symbolic || lvn_hit || (v.is_node() && !v.is_undefined() && v.literal)) {
+        bool lvn_hit = lvn && !lvn_key_inserted,
+             show_lit = v.is_node() && !v.is_undefined() && (VarKind) v.kind != VarKind::Nop && v.literal;
+        if (v.symbolic || lvn_hit || show_lit) {
             var_buffer.put(" [");
             bool prev = false;
             if (v.symbolic) {
                 var_buffer.put("symbolic");
                 prev = true;
             }
-            if (v.is_node() && !v.is_undefined() && v.literal) {
+            if (show_lit) {
                 if (prev)
                     var_buffer.put(", ");
                 prev = true;
@@ -894,7 +882,7 @@ uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size) {
 
 uint32_t jitc_var_counter(JitBackend backend, size_t size,
                           bool simplify_scalar) {
-    if (size == 1 && simplify_scalar) {
+    if (size == 1 && simplify_scalar && !jit_flag(JitFlag::Symbolic)) {
         uint32_t zero = 0;
         return jitc_var_literal(backend, VarType::UInt32, &zero, 1, 0);
     }
@@ -908,32 +896,32 @@ uint32_t jitc_var_counter(JitBackend backend, size_t size,
     return jitc_var_new(v);
 }
 
-uint32_t jitc_var_wrap_vcall(uint32_t index) {
+uint32_t jitc_var_call_input(uint32_t index) {
     if (index == 0)
-        jitc_raise("jit_var_wrap_vcall(): invoked with an "
+        jitc_raise("jit_var_call_input(): invoked with an "
                    "uninitialized variable!");
 
     const Variable *v = jitc_var(index);
-    if (v->is_literal() && (jitc_flags() & (uint32_t) JitFlag::VCallOptimize)) {
-        Variable v2;
-        v2.backend = v->backend;
-        v2.kind = (uint32_t) VarKind::Literal;
-        v2.literal = v->literal;
-        v2.type = v->type;
-        v2.size = 1;
-        return jitc_var_new(v2);
-    }
 
     Variable v2;
     v2.backend = v->backend;
-    v2.kind = (uint32_t) VarKind::Bitcast;
     v2.type = v->type;
     v2.size = 1;
-    v2.symbolic = v2.vcall_iface = 1;
-    v2.dep[0] = index;
-    jitc_var_inc_ref(index);
 
-    return jitc_var_new(v2);
+    bool optimize = jitc_flags() & (uint32_t) JitFlag::OptimizeCalls;
+
+    if (v->is_literal() && optimize) {
+        v2.kind = (uint32_t) VarKind::Literal;
+        v2.literal = v->literal;
+        return jitc_var_new(v2);
+    } else {
+        v2.kind = (uint32_t) VarKind::CallInput;
+        v2.symbolic = 1;
+        v2.dep[0] = index;
+        jitc_var_inc_ref(index);
+    }
+
+    return jitc_var_new(v2, !optimize);
 }
 
 uint32_t jitc_new_scope(JitBackend backend) {
@@ -1086,20 +1074,20 @@ uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind, VarType vt,
 
 void jitc_var_set_callback(uint32_t index,
                            void (*callback)(uint32_t, int, void *),
-                           void *callback_data) {
+                           void *data,
+                           bool is_internal) {
     Variable *v = jitc_var(index);
 
     jitc_log(Debug, "jit_var_set_callback(r%u): " DRJIT_PTR " (" DRJIT_PTR ")",
-            index, (uintptr_t) callback, (uintptr_t) callback_data);
+            index, (uintptr_t) callback, (uintptr_t) data);
 
-    Extra &extra = state.extra[index];
-    if (callback && unlikely(extra.callback))
+    VariableExtra *extra = jitc_var_extra(v);
+    if (unlikely(callback && extra->callback))
         jitc_fail("jit_var_set_callback(): a callback was already set!");
-    extra.callback = callback;
-    extra.callback_data = callback_data;
-    extra.callback_internal = false;
-    if (callback)
-        v->extra = true;
+
+    extra->callback = callback;
+    extra->callback_data = data;
+    extra->callback_internal = is_internal;
 }
 
 /// Query the current (or future, if not yet evaluated) allocation flavor of a variable
@@ -1216,7 +1204,7 @@ static void jitc_raise_symbolic_error(const char *func, uint32_t index) {
         "   elements of an array are positive).\n"
         "\n"
         " - You cannot access specific values in 1D arrays (this would require\n"
-        "   the contents to be known.\n"
+        "   the contents to be known.)\n"
         "\n"
         "The common pattern of these limitation is that the contents of symbolic\n"
         "of variables are *simply not known*. Any attempt to access or otherwise\n"
@@ -1432,7 +1420,7 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
     jitc_check_size("jit_var_mem_map", size);
 
     Variable v;
-    v.kind = (uint32_t) VarKind::Data;
+    v.kind = (uint32_t) VarKind::Evaluated;
     v.type = (uint32_t) type;
     v.backend = (uint32_t) backend;
     v.data = ptr;
@@ -1567,6 +1555,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     jitc_check_size("jit_var_resize", size);
 
     Variable *v = jitc_var(index);
+    VarType vt = (VarType) v->type;
     if (unlikely(v->consumed))
         jitc_raise_consumed_error("jitc_var_resize", index);
 
@@ -1574,7 +1563,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         jitc_var_inc_ref(index, v);
         return index; // Nothing to do
     } else if (v->size != 1 && !v->is_literal()) {
-        jitc_raise("jit_var_resize(): variable %u must be scalar or value!", index);
+        jitc_raise("jit_var_resize(): variable %u must be scalar or a literal constant!", index);
     }
 
     if (v->is_dirty()) {
@@ -1607,7 +1596,8 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         result = jitc_var_new(v2, true);
     }
 
-    jitc_log(Debug, "jit_var_resize(r%u <- r%u, size=%zu)", result, index, size);
+    jitc_log(Debug, "jit_var_resize(): %s r%u[%zu] = resize(r%u)",
+             type_name[(int) vt], result, size, index);
 
     return result;
 }
@@ -1707,7 +1697,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     v = jitc_var(src_index);
     if (src_ptr != dst_ptr) {
         Variable v2 = *v;
-        v2.kind = (uint32_t) VarKind::Data;
+        v2.kind = (uint32_t) VarKind::Evaluated;
         v2.data = dst_ptr;
         v2.retain_data = false;
         v2.ref_count = 0;
@@ -1741,6 +1731,26 @@ uint32_t jitc_var_mask_default(JitBackend backend, size_t size) {
                                    v_counter->size, v_counter->symbolic,
                                    counter, v_counter);
     }
+}
+
+/// Return the 'VariableExtra' record associated with a variable (or create it)
+VariableExtra *jitc_var_extra(Variable *v) {
+    State &state = ::state;
+
+    uint32_t index = v->extra;
+    if (!index) {
+        UnusedPQ &unused = state.unused_extra;
+        if (unused.empty()) {
+            index = state.extra.size();
+            state.extra.emplace_back();
+        } else {
+            index = unused.top();
+            unused.pop();
+        }
+        v->extra = index;
+        state.extra[index] = VariableExtra();
+    }
+    return &state.extra[index];
 }
 
 uint32_t jitc_var_mask_peek(JitBackend backend) {
@@ -1805,9 +1815,9 @@ void jitc_var_mask_pop(JitBackend backend) {
 }
 
 /// Return an implicit mask for operations within a virtual function call
-uint32_t jitc_var_vcall_mask(JitBackend backend) {
+uint32_t jitc_var_call_mask(JitBackend backend) {
     if (backend == JitBackend::LLVM) {
-        return jitc_var_new_node_0(backend, VarKind::VCallMask, VarType::Bool, 1, 1);
+        return jitc_var_new_node_0(backend, VarKind::CallMask, VarType::Bool, 1, 1);
     } else {
         bool value = true;
         return jitc_var_literal(backend, VarType::Bool, &value, 1, 0, 0);
@@ -1855,6 +1865,38 @@ template <typename T> static void jitc_var_reduce_scalar(uint32_t size, void *pt
     memcpy(&value, ptr, sizeof(T));
     value = T(value * T(size));
     memcpy(ptr, &value, sizeof(T));
+}
+
+void jitc_var_set_self(JitBackend backend, uint32_t value, uint32_t index) {
+    ThreadState *ts = thread_state(backend);
+
+    if (ts->call_self_index) {
+        jitc_var_dec_ref(ts->call_self_index);
+        ts->call_self_index = 0;
+    }
+
+    ts->call_self_value = value;
+
+    if (value) {
+        if (index) {
+            jitc_var_inc_ref(index);
+            ts->call_self_index = index;
+        } else {
+            Variable v;
+            v.kind = VarKind::CallSelf;
+            v.backend = (uint32_t) backend;
+            v.size = 1u;
+            v.type = (uint32_t) VarType::UInt32;
+            v.symbolic = true;
+            ts->call_self_index = jitc_var_new(v, true);
+        }
+    }
+}
+
+void jitc_var_self(JitBackend backend, uint32_t *value, uint32_t *index) {
+    ThreadState *ts = thread_state(backend);
+    *value = ts->call_self_value;
+    *index = ts->call_self_index;
 }
 
 uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
@@ -2083,11 +2125,9 @@ const char *jitc_var_graphviz() {
         if (v.ref_count == 0 && v.ref_count_se == 0)
             continue;
 
-        ExtraMap::iterator it = state.extra.find(index);
-
         const char *label = nullptr;
-        if (it != state.extra.end())
-            label = it.value().label;
+        if (v.extra)
+            label = state.extra[v.extra].label;
 
         const char *label_without_prefix = label;
 
@@ -2226,16 +2266,6 @@ const char *jitc_var_graphviz() {
         for (uint32_t i = 0; i < 4; ++i)
             n_dep += v.dep[i] ? 1 : 0;
 
-        const Extra *extra = nullptr;
-        if (unlikely(v.extra)) {
-            auto it = state.extra.find(index);
-            if (it == state.extra.end())
-                jitc_fail("jit_var_graphviz(): could not find matching 'extra' "
-                          "record!");
-            extra = &it->second;
-            n_dep += extra->n_dep;
-        }
-
         uint32_t edge_index = 0;
         for (uint32_t i = 0; i < 4; ++i) {
             if (!v.dep[i])
@@ -2251,15 +2281,6 @@ const char *jitc_var_graphviz() {
                     var_buffer.fmt("%sstyle=dashed", n_dep > 1 ? " " : "");
                 var_buffer.put("]");
             }
-            var_buffer.put(";\n");
-        }
-
-        for (uint32_t i = 0; i < (extra ? extra->n_dep : 0); ++i) {
-            if (!extra->dep[i])
-                continue;
-            var_buffer.fmt("    %u -> %zu", extra->dep[i], index);
-            if (n_dep > 1)
-                var_buffer.fmt(" [label=\" %u\"]", ++edge_index);
             var_buffer.put(";\n");
         }
     }

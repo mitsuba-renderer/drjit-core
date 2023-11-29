@@ -13,7 +13,7 @@
 #include "var.h"
 #include "eval.h"
 #include "log.h"
-#include "vcall.h"
+#include "call.h"
 #include "profiler.h"
 
 #if defined(_MSC_VER)
@@ -945,7 +945,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         void *args_1[] = { &ptr, &buckets_1, &size, &size_per_block,
                            &bucket_count };
 
-        jitc_submit_gpu(KernelType::VCallReduce, phase_1, block_count,
+        jitc_submit_gpu(KernelType::CallReduce, phase_1, block_count,
                         thread_count, shared_size, ts->stream, args_1, nullptr,
                         size);
 
@@ -974,7 +974,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
             void *args_3[] = { &buckets_1, &bucket_count, &bucket_count_rounded,
                                &size,      &counter,      &offsets };
 
-            jitc_submit_gpu(KernelType::VCallReduce,
+            jitc_submit_gpu(KernelType::CallReduce,
                             jitc_cuda_mkperm_phase_3[device.id], block_count_3,
                             thread_count_3, sizeof(uint32_t) * thread_count_3,
                             ts->stream, args_3, nullptr, size);
@@ -990,7 +990,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         void *args_4[] = { &ptr, &buckets_1, &perm, &size, &size_per_block,
                            &bucket_count };
 
-        jitc_submit_gpu(KernelType::VCallReduce, phase_4, block_count,
+        jitc_submit_gpu(KernelType::CallReduce, phase_4, block_count,
                         thread_count, shared_size, ts->stream, args_4, nullptr,
                         size);
 
@@ -1032,7 +1032,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
 
         // Phase 1
         jitc_submit_cpu(
-            KernelType::VCallReduce,
+            KernelType::CallReduce,
             [block_size, size, buckets, bucket_count, ptr](uint32_t index) {
                 ProfilerPhase profiler(profiler_region_mkperm_phase_1);
                 uint32_t start = index * block_size,
@@ -1053,7 +1053,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
 
         // Local accumulation step
         jitc_submit_cpu(
-            KernelType::VCallReduce,
+            KernelType::CallReduce,
             [bucket_count, blocks, buckets, offsets, &unique_count](uint32_t) {
                 uint32_t sum = 0, unique_count_local = 0;
                 for (uint32_t i = 0; i < bucket_count; ++i) {
@@ -1085,7 +1085,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
 
         // Phase 2
         jitc_submit_cpu(
-            KernelType::VCallReduce,
+            KernelType::CallReduce,
             [block_size, size, buckets, perm, ptr](uint32_t index) {
                 ProfilerPhase profiler(profiler_region_mkperm_phase_2);
 

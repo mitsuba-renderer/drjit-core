@@ -26,6 +26,16 @@ StringBuffer::StringBuffer(StringBuffer &&b)
 
 StringBuffer::~StringBuffer() { free(m_start); }
 
+void StringBuffer::delete_trailing_commas() {
+    while (m_cur > m_start) {
+        char ch = *(m_cur - 1);
+        if (ch == ',' || ch == ' ')
+            m_cur--;
+        else
+            break;
+    }
+}
+
 StringBuffer &StringBuffer::operator=(StringBuffer &&b) {
     swap(b);
     return *this;

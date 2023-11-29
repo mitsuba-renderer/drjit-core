@@ -477,7 +477,7 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  *
  * Dr.Jit provides a central registry that maps registered pointer values to
  * low-valued 32-bit IDs. The main application is efficient virtual function
- * dispatch via \ref jit_var_vcall(), through the registry could be used for other
+ * dispatch via \ref jit_var_call(), through the registry could be used for other
  * applications as well.
  *
  * This function registers the specified pointer \c ptr with the registry,
@@ -790,7 +790,7 @@ extern JIT_EXPORT uint32_t jit_var_exp2_intrinsic(uint32_t a0);
 extern JIT_EXPORT uint32_t jit_var_log2_intrinsic(uint32_t a0);
 
 /// Return a variable indicating valid lanes within a function call
-extern JIT_EXPORT uint32_t jit_var_vcall_mask(JitBackend backend);
+extern JIT_EXPORT uint32_t jit_var_call_mask(JitBackend backend);
 
 /**
  * \brief Perform an ordinary or reinterpreting cast of a variable
@@ -1042,6 +1042,9 @@ enum class VarState : uint32_t {
 
     /// An evaluated variable backed by a device memory region.
     Evaluated,
+
+    /// An evaluated variable backed by a device memory region, with pending side effects.
+    Dirty,
 
     /// A symbolic variable that could take on various inputs. Cannot be evaluated.
     Symbolic,
@@ -1328,7 +1331,7 @@ enum class JitFlag : uint32_t {
 
     /// Disable this flag to keep the Dr.Jit from reusing variable indices
     /// (helpful for low-level debugging of the Dr.Jit implementation)
-    IndexReuse = 1 << 1,
+    ReuseIndices = 1 << 1,
 
     /// Constant propagation: don't generate code for arithmetic involving
     /// literal constants
@@ -1380,7 +1383,7 @@ enum class JitFlag : uint32_t {
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) SymbolicLoops | (uint32_t) OptimizeLoops |
               (uint32_t) SymbolicCalls | (uint32_t) MergeFunctions |
-              (uint32_t) OptimizeCalls | (uint32_t) IndexReuse |
+              (uint32_t) OptimizeCalls | (uint32_t) ReuseIndices |
               (uint32_t) AtomicReduceLocal,
 
     // Deprecated aliases, will be removed in a future version of Dr.Jit
@@ -1394,7 +1397,7 @@ enum class JitFlag : uint32_t {
 #else
 enum JitFlag {
     JitFlagDebug = 1 << 0,
-    JitFlagIndexReuse = 1 << 1,
+    JitFlagReuseIndices = 1 << 1,
     JitFlagConstantPropagation = 1 << 2,
     JitFlagValueNumbering = 1 << 3,
     JitFlagSymbolicLoops = 1 << 4,
@@ -1459,6 +1462,10 @@ extern JIT_EXPORT void jit_record_end(JIT_ENUM JitBackend backend,
  * \param name
  *    A descriptive name
  *
+ * \param symbolic
+ *    Does this loop occur within a symbolic execution context? (For example,
+ *    is this a symbolic loop nested within another symbolic loop?)
+ *
  * \param n_indices
  *    Number of loop state variables
  *
@@ -1478,6 +1485,7 @@ extern JIT_EXPORT void jit_record_end(JIT_ENUM JitBackend backend,
  *    the function reverts any changes and raises an exception.
  */
 extern JIT_EXPORT uint32_t jit_var_loop_start(const char *name,
+                                              bool symbolic,
                                               size_t n_indices,
                                               uint32_t *indices);
 
@@ -1533,24 +1541,24 @@ extern JIT_EXPORT int jit_var_loop_end(uint32_t loop, uint32_t cond,
  * Creates a copy of a virtual function call input argument. The copy has a
  * 'symbolic' bit set that propagates into any computation referencing it.
  */
-extern JIT_EXPORT uint32_t jit_var_wrap_vcall(uint32_t index);
+extern JIT_EXPORT uint32_t jit_var_call_input(uint32_t index);
 
 /**
  * \brief Inform the JIT compiler about the current instance while
  * o virtual function calls
  *
- * Following a call to \ref jit_vcall_set_self(), the JIT compiler will
+ * Following a call to \ref jit_var_set_self(), the JIT compiler will
  * intercept literal constants referring to the instance ID 'value'. In this
  * case, it will return the variable ID 'index'.
  *
  * This feature is crucial to avoid merging instance IDs into generated code.
  */
-extern JIT_EXPORT void jit_vcall_set_self(JIT_ENUM JitBackend backend,
+extern JIT_EXPORT void jit_var_set_self(JIT_ENUM JitBackend backend,
                                           uint32_t value, uint32_t index);
 
-/// Query the information set via \ref jit_vcall_set_self
-extern JIT_EXPORT void jit_vcall_self(JIT_ENUM JitBackend backend,
-                                      uint32_t *value, uint32_t *index);
+/// Query the information set via \ref jit_var_set_self
+extern JIT_EXPORT void jit_var_self(JIT_ENUM JitBackend backend,
+                                    uint32_t *value, uint32_t *index);
 
 /**
  * \brief Record a virtual function call
@@ -1594,13 +1602,12 @@ extern JIT_EXPORT void jit_vcall_self(JIT_ENUM JitBackend backend,
  *     The final output variables representing the result of the operation
  *     are written into this argument (size <tt>n_out_nested / n_inst</tt>)
  */
-extern JIT_EXPORT void jit_var_vcall(const char *name, uint32_t self,
-                                     uint32_t mask, uint32_t n_inst,
-                                     const uint32_t *inst_id,
-                                     uint32_t n_in, const uint32_t *in,
-                                     uint32_t n_out_nested,
-                                     const uint32_t *out_nested,
-                                     const uint32_t *se_offset, uint32_t *out);
+extern JIT_EXPORT void jit_var_call(const char *name, uint32_t self,
+                                    uint32_t mask, uint32_t n_inst,
+                                    const uint32_t *inst_id, uint32_t n_in,
+                                    const uint32_t *in, uint32_t n_out_nested,
+                                    const uint32_t *out_nested,
+                                    const uint32_t *se_offset, uint32_t *out);
 
 /**
  * \brief Pushes a new mask variable onto the mask stack
@@ -1803,8 +1810,8 @@ struct AggregationEntry {
 extern JIT_EXPORT void jit_aggregate(JitBackend backend, void *dst,
                                      AggregationEntry *agg, uint32_t size);
 
-/// Helper data structure for vector method calls, see \ref jit_var_vcall()
-struct VCallBucket {
+/// Helper data structure for vector method calls, see \ref jit_var_call()
+struct CallBucket {
     /// Resolved pointer address associated with this bucket
     void *ptr;
 
@@ -1823,7 +1830,7 @@ struct VCallBucket {
  * pointers that have previously been registered by calling \ref
  * jit_registry_put() with domain \c domain. It then invokes \ref jit_mkperm()
  * to compute a permutation that reorders the array into coherent buckets. The
- * buckets are returned using an array of type \ref VCallBucket, which contains
+ * buckets are returned using an array of type \ref CallBucket, which contains
  * both the resolved pointer address (obtained via \ref
  * jit_registry_get_ptr()) and the variable index of an unsigned 32 bit array
  * containing the corresponding entries of the input array. The total number of
@@ -1836,15 +1843,15 @@ struct VCallBucket {
  * has to be passed via the \c bucket_count_inout argument, which will then be
  * overwritten with the total number of buckets.
  *
- * The memory region accessible via the \c VCallBucket pointer will remain
+ * The memory region accessible via the \c CallBucket pointer will remain
  * accessible until the variable \c index is itself freed (i.e. when its
  * reference count becomes equal to zero). Until then, additional calls to \ref
- * jit_var_vcall() will return the previously computed result. This is an
+ * jit_var_call() will return the previously computed result. This is an
  * important optimization in situations where multiple calls target the same
  * set of instances.
  */
-extern JIT_EXPORT struct VCallBucket *
-jit_var_vcall_reduce(JIT_ENUM JitBackend backend, const char *domain,
+extern JIT_EXPORT struct CallBucket *
+jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *domain,
                      uint32_t index, uint32_t *bucket_count_inout);
 
 /**
@@ -1932,7 +1939,7 @@ enum KernelType : uint32_t {
     Reduce,
 
     /// Permutation kernel produced by \ref jit_mkperm()
-    VCallReduce,
+    CallReduce,
 
     /// Any other kernel
     Other

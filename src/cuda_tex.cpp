@@ -214,7 +214,8 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                     delete &payload;
                 }
             },
-            (void *) payload_ptr
+            (void *) payload_ptr,
+            false
         );
     }
 
