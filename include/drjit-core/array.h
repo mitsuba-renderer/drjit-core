@@ -254,13 +254,17 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     const Value *data() const {
         void* ptr_out = nullptr;
-        m_index = jit_var_data(m_index, &ptr_out);
+        uint32_t new_index = jit_var_data(m_index, &ptr_out);
+        jit_var_dec_ref(m_index);
+        m_index = new_index;
         return (const Value *) ptr_out;
     }
 
     Value *data() {
         void* ptr_out = nullptr;
-        m_index = jit_var_data(m_index, &ptr_out);
+        uint32_t new_index = jit_var_data(m_index, &ptr_out);
+        jit_var_dec_ref(m_index);
+        m_index = new_index;
         return (Value *) ptr_out;
     }
 
