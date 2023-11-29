@@ -21,12 +21,16 @@
 
 
 NAMESPACE_BEGIN(drjit)
-struct half;
 
-template<> struct is_signed<half>                   : std::true_type { };
+NAMESPACE_BEGIN(detail)
+
+template<> struct is_signed<drjit::half>            : std::true_type { };
 template<> struct is_floating_point<drjit::half>    : std::true_type { };
 template<> struct is_arithmetic<drjit::half>        : std::true_type { };
 template<> struct is_scalar<drjit::half>            : std::true_type { };
+
+NAMESPACE_END(detail)
+
 NAMESPACE_END(drjit)
 
 

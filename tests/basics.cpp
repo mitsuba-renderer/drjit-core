@@ -167,8 +167,8 @@ const char *op_name[(int) JitOp::Count] {
 template <typename T> bool test_const_prop() {
     using Value = typename T::Value;
     constexpr JitBackend Backend = T::Backend;
-    constexpr bool IsFloat = drjit::is_floating_point_v<Value>;
-    constexpr bool IsSigned = drjit::is_signed_v<Value>;
+    constexpr bool IsFloat = drjit::detail::is_floating_point_v<Value>;
+    constexpr bool IsSigned = drjit::detail::is_signed_v<Value>;
     constexpr bool IsMask = std::is_same<Value, bool>::value;
     constexpr bool IsInt = !IsFloat && !IsMask;
     constexpr size_t Size = IsMask ? 2 : 10, Size2 = 2 * Size;

@@ -304,10 +304,10 @@ uint32_t jitc_var_shift(const OpInfo &info, uint32_t index, uint64_t amount) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<!drjit::is_signed_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_signed_v<T>> = 0>
 T eval_neg(T v) { return T(-(std::make_signed_t<T>) v); }
 
-template <typename T, enable_if_t<drjit::is_signed_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_signed_v<T>> = 0>
 T eval_neg(T v) { return -v; }
 
 static bool eval_neg(bool) { jitc_fail("eval_neg(): unsupported operands!"); }
@@ -353,10 +353,10 @@ uint32_t jitc_var_not(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_sqrt(T value) { using std::sqrt, drjit::half; return T(::sqrt(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_sqrt(T) { jitc_fail("eval_sqrt(): unsupported operands!"); }
 
 uint32_t jitc_var_sqrt(uint32_t a0) {
@@ -376,10 +376,10 @@ uint32_t jitc_var_sqrt(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_signed_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_signed_v<T>> = 0>
 T eval_abs(T value) { return (T) std::abs(value); }
 
-template <typename T, enable_if_t<!drjit::is_signed_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_signed_v<T>> = 0>
 T eval_abs(T value) { return value; }
 
 uint32_t jitc_var_abs(uint32_t a0) {
@@ -545,16 +545,16 @@ T eval_mulhi(T, T) { jitc_fail("eval_mulhi(): unsupported operands!"); }
 template <typename T, enable_if_t<std::is_integral_v<T> && (sizeof(T) == 4 || sizeof(T) == 8)> = 0>
 T eval_mulhi(T a, T b) {
     if constexpr (sizeof(T) == 4) {
-        using Wide = std::conditional_t<drjit::is_signed_v<T>, int64_t, uint64_t>;
+        using Wide = std::conditional_t<drjit::detail::is_signed_v<T>, int64_t, uint64_t>;
         return T(((Wide) a * (Wide) b) >> 32);
     } else {
 #if defined(_MSC_VER)
-        if constexpr (drjit::is_signed_v<T>)
+        if constexpr (drjit::detail::is_signed_v<T>)
             return (T) __mulh((__int64) a, (__int64) b);
         else
             return (T) __umulh((unsigned __int64) a, (unsigned __int64) b);
 #else
-        using Wide = std::conditional_t<drjit::is_signed_v<T>, __int128_t, __uint128_t>;
+        using Wide = std::conditional_t<drjit::detail::is_signed_v<T>, __int128_t, __uint128_t>;
         return T(((Wide) a * (Wide) b) >> 64);
 #endif
     }
@@ -584,10 +584,10 @@ uint32_t jitc_var_mulhi(uint32_t a0, uint32_t a1) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_fma(T a, T b, T c) { return T(std::fma(a, b, c)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T> &&
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T> &&
                                   !std::is_same_v<T, bool>> = 0>
 T eval_fma(T a, T b, T c) { return (T) (a * b + c); }
 
@@ -678,10 +678,10 @@ uint32_t jitc_var_max(uint32_t a0, uint32_t a1) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_ceil(T value) { return T(std::ceil(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_ceil(T) { jitc_fail("eval_ceil(): unsupported operands!"); }
 
 uint32_t jitc_var_ceil(uint32_t a0) {
@@ -701,10 +701,10 @@ uint32_t jitc_var_ceil(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_floor(T value) { return T(std::floor(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_floor(T) { jitc_fail("eval_floor(): unsupported operands!"); }
 
 uint32_t jitc_var_floor(uint32_t a0) {
@@ -724,10 +724,10 @@ uint32_t jitc_var_floor(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_round(T value) { return T(std::rint(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_round(T) { jitc_fail("eval_round(): unsupported operands!"); }
 
 uint32_t jitc_var_round(uint32_t a0) {
@@ -747,10 +747,10 @@ uint32_t jitc_var_round(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point<T>::value> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point<T>::value> = 0>
 T eval_trunc(T value) { return T(std::trunc(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point<T>::value> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point<T>::value> = 0>
 T eval_trunc(T) { jitc_fail("eval_trunc(): unsupported operands!"); }
 
 uint32_t jitc_var_trunc(uint32_t a0) {
@@ -1192,10 +1192,10 @@ uint32_t jitc_var_shr(uint32_t a0, uint32_t a1) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_rcp(T value) { return T(1 / value); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_rcp(T) { jitc_fail("eval_rcp(): unsupported operands!"); }
 
 uint32_t jitc_var_rcp(uint32_t a0) {
@@ -1229,10 +1229,10 @@ uint32_t jitc_var_rcp(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point<T>::value> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point<T>::value> = 0>
 T eval_rsqrt(T value) { return T(1 / std::sqrt(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point<T>::value> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point<T>::value> = 0>
 T eval_rsqrt(T) { jitc_fail("eval_rsqrt(): unsupported operands!"); }
 
 uint32_t jitc_var_rsqrt(uint32_t a0) {
@@ -1259,10 +1259,10 @@ uint32_t jitc_var_rsqrt(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_sin(T value) { return T(std::sin(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_sin(T) { jitc_fail("eval_sin(): unsupported operands!"); }
 
 uint32_t jitc_var_sin_intrinsic(uint32_t a0) {
@@ -1282,10 +1282,10 @@ uint32_t jitc_var_sin_intrinsic(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_cos(T value) { return T(std::cos(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_cos(T) { jitc_fail("eval_cos(): unsupported operands!"); }
 
 uint32_t jitc_var_cos_intrinsic(uint32_t a0) {
@@ -1305,10 +1305,10 @@ uint32_t jitc_var_cos_intrinsic(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_exp2(T value) { return T(std::exp2(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_exp2(T) { jitc_fail("eval_exp2(): unsupported operands!"); }
 
 uint32_t jitc_var_exp2_intrinsic(uint32_t a0) {
@@ -1328,10 +1328,10 @@ uint32_t jitc_var_exp2_intrinsic(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
-template <typename T, enable_if_t<drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_log2(T value) { return T(std::log2(value)); }
 
-template <typename T, enable_if_t<!drjit::is_floating_point_v<T>> = 0>
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_log2(T) { jitc_fail("eval_log2(): unsupported operands!"); }
 
 uint32_t jitc_var_log2_intrinsic(uint32_t a0) {

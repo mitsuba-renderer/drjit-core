@@ -25,6 +25,8 @@
 
 NAMESPACE_BEGIN(drjit)
 
+NAMESPACE_BEGIN(detail)
+
 template<typename T>
 struct is_signed : std::is_signed<T>::type {};
 
@@ -54,6 +56,8 @@ struct is_scalar : std::is_scalar<T>::type {};
 
 template< class T >
 inline constexpr bool is_scalar_v = is_scalar<T>::value;
+
+NAMESPACE_END(detail)
 
 template <bool Value> using enable_if_t = typename std::enable_if<Value, int>::type;
 
@@ -85,7 +89,7 @@ template <typename T> struct var_type<T, enable_if_t<std::is_enum<T>::value>> {
     static constexpr VarType value = var_type<typename std::underlying_type<T>::type>::value;
 };
 
-template <typename T> struct var_type<T, enable_if_t<drjit::is_floating_point_v<T> && sizeof(T) == 2>> {
+template <typename T> struct var_type<T, enable_if_t<drjit::detail::is_floating_point_v<T> && sizeof(T) == 2>> {
     static constexpr VarType value = VarType::Float16;
 };
 
