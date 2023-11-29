@@ -58,15 +58,6 @@ inline void hash_combine(size_t& seed, size_t value) {
     seed = b * mult;
 }
 
-struct pair_hash {
-    template <typename T1, typename T2>
-    size_t operator()(const std::pair<T1, T2> &x) const {
-        size_t result = std::hash<T1>()(x.first);
-        hash_combine(result, std::hash<T2>()(x.second));
-        return result;
-    }
-};
-
 inline size_t hash(const void *ptr, size_t size, size_t seed) {
     return (size_t) XXH3_64bits_withSeed(ptr, size, (unsigned long long) seed);
 }

@@ -72,15 +72,13 @@ public:
     void clear();
 
     /**
-     * \brief Remove the last \c n characters from the StringBuffer
-     *
-     * Values of \c n that are too large and would cause the StringBuffer to
-     * rewind beyond its start are safely handled by rewinding to the
-     * beginning.
-     *
-     * The operation runs in constant time.
+     * \brief Rewind to an earlier position and discard the later
+     * parts of the buffer. Runs in constant time.
      */
     void rewind_to(size_t pos);
+
+    /// Delete trailing spaces and commas
+    void delete_trailing_commas();
 
     /// Move region `suffix_start .. size()-1` to position `suffix_target`
     void move_suffix(size_t suffix_start, size_t suffix_target);

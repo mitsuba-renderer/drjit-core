@@ -281,18 +281,10 @@ void jitc_shutdown(int light) {
             }
         }
 
-        if (n_leaked == 0 && !state.extra.empty()) {
+        if (n_leaked == 0 && state.extra.size() != state.unused_extra.size() + 1) {
             jitc_log(Warn,
                     "jit_shutdown(): %zu 'extra' records were not cleaned up:",
-                    state.extra.size());
-            n_leaked = 0;
-            for (const auto &kv : state.extra) {
-                jitc_log(Warn, "- variable r%u", kv.first);
-                if (++n_leaked == 10) {
-                    jitc_log(Warn, " - (skipping remainder)");
-                    break;
-                }
-            }
+                    state.extra.size() - state.unused_extra.size() - 1);
         }
     }
 

@@ -35,7 +35,7 @@
 #include "internal.h"
 #include "var.h"
 #include "log.h"
-#include "vcall.h"
+#include "call.h"
 #include "loop.h"
 #include "optix.h"
 
@@ -50,7 +50,7 @@
     } while (0);
 
 // Forward declarations
-static void jitc_cuda_render_var(uint32_t index, Variable *v);
+static void jitc_cuda_render(uint32_t index, Variable *v);
 static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value, const Variable *index,
                                      const Variable *mask);
@@ -161,21 +161,12 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         const uint32_t vti = v->type,
                        size = v->size;
         const VarType vt = (VarType) vti;
+        const VarKind kind = (VarKind) v->kind;
 
-        if (unlikely(v->extra)) {
-            auto it = state.extra.find(index);
-            if (it == state.extra.end())
-                jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry not found!");
-
-            VarKind vk = (VarKind) v->kind;
-            bool is_nop = vk == VarKind::Nop || vk == VarKind::LoopPhi ||
-                          vk == VarKind::LoopResult;
-
-            if (print_labels && !is_nop) {
-                const char *label =  jitc_var_label(index);
-                if (label && label[0])
-                    fmt("    // $s\n", label);
-            }
+        if (unlikely(print_labels && v->extra)) {
+            const char *label = jitc_var_label(index);
+            if (label && *label && vt != VarType::Void && kind != VarKind::CallOutput)
+                fmt("    // $s\n", label);
         }
 
         if (likely(v->param_type == ParamType::Input)) {
@@ -199,7 +190,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
             }
             continue;
         } else {
-            jitc_cuda_render_var(index, v);
+            jitc_cuda_render(index, v);
         }
 
         if (v->param_type == ParamType::Output) {
@@ -261,16 +252,13 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         put("};\n\n");
     }
 
-    jitc_vcall_upload(ts);
+    jitc_call_upload(ts);
 }
 
-void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
-                             uint32_t n_regs, uint32_t in_size,
-                             uint32_t in_align, uint32_t out_size,
-                             uint32_t out_align, uint32_t data_offset,
-                             const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-                             uint32_t n_out, const uint32_t *out_nested,
-                             bool use_self) {
+void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
+                             uint32_t in_size, uint32_t in_align,
+                             uint32_t out_size, uint32_t out_align,
+                             uint32_t n_regs) {
     bool print_labels = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
@@ -281,59 +269,51 @@ void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
     fmt(" $s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
         uses_optix ? "__direct_callable__" : "func_");
 
-    if (use_self) {
-        put(".reg .u32 self");
-        if (!data_map.empty() || in_size)
-            put(", ");
-    }
-
-    if (!data_map.empty()) {
-        put(".reg .u64 data");
-        if (in_size)
-            put(", ");
-    }
-
+    if (call->use_index)
+        put(".reg .u32 index, ");
+    if (call->use_self)
+        put(".reg .u32 self, ");
+    if (!call->data_map.empty())
+        put(".reg .u64 data, ");
     if (in_size)
-        fmt(".param .align $u .b8 params[$u]", in_align, in_size);
+        fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
+    buffer.delete_trailing_commas();
 
-    fmt(
-        ") {\n"
-        "    // VCall: $s\n"
+    fmt(") {\n"
+        "    // Call: $s\n"
         "    .reg.b8   %b <$u>; .reg.b16  %w<$u>; .reg.b32 %r<$u>;\n"
         "    .reg.b64  %rd<$u>; .reg.f16  %h<$u>; .reg.f32 %f<$u>;\n"
         "    .reg.f64  %d <$u>; .reg.pred %p<$u>;\n",
-        name, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs, n_regs);
+        call->name.c_str(), n_regs, n_regs, n_regs, n_regs, n_regs, n_regs,
+        n_regs, n_regs);
 
     for (ScheduledVariable &sv : schedule) {
         Variable *v = jitc_var(sv.index);
         const uint32_t vti = v->type;
         const VarType vt = (VarType) vti;
+        const VarKind kind = (VarKind) v->kind;
 
-        if (unlikely(v->extra)) {
-            auto it = state.extra.find(sv.index);
-            if (it == state.extra.end())
-                jitc_fail("jit_assemble_cuda(): internal error: 'extra' entry "
-                          "not found!");
-
-            if (print_labels && vt != VarType::Void) {
-                const char *label =  jitc_var_label(sv.index);
-                if (label && label[0])
-                    fmt("    // $s\n", label);
-            }
+        if (unlikely(print_labels && v->extra)) {
+            const char *label = jitc_var_label(sv.index);
+            if (label && *label && vt != VarType::Void && kind != VarKind::CallOutput)
+                fmt("    // $s\n", label);
         }
 
-        if (v->vcall_iface) {
+        if (kind == VarKind::Counter) {
+            fmt("    mov.$b $v, index;\n", v, v);
+        } else if (kind == VarKind::CallInput) {
+            Variable *a = jitc_var(v->dep[0]);
             if (vt != VarType::Bool) {
-                fmt("    ld.param.$b $v, [params+$o];\n", v, v, v);
+                fmt("    ld.param.$b $v, [params+$o];\n", v, v, a);
             } else {
                 fmt("    ld.param.u8 %w0, [params+$o];\n"
-                    "    setp.ne.u16 $v, %w0, 0;\n", v, v);
+                    "    setp.ne.u16 $v, %w0, 0;\n", v, a);
             }
         } else if (v->is_evaluated() || vt == VarType::Pointer) {
-            uint64_t key = (uint64_t) sv.index + (((uint64_t) inst_id) << 32);
-            auto it = data_map.find(key);
+            uint64_t key = (uint64_t) sv.index + (((uint64_t) inst) << 32);
+            auto it = call->data_map.find(key);
 
-            if (unlikely(it == data_map.end())) {
+            if (unlikely(it == call->data_map.end())) {
                 jitc_fail("jitc_cuda_assemble_func(): could not find entry for "
                           "variable r%u in 'data_map'", sv.index);
                 continue;
@@ -346,37 +326,35 @@ void jitc_cuda_assemble_func(const char *name, uint32_t inst_id,
                     "between the recording step and code generation (which "
                     "is happening now). This is not allowed.", sv.index);
 
+            uint32_t offset = it->second - call->data_offset[inst];
             if (vt != VarType::Bool)
                 fmt("    ld.global.$b $v, [data+$u];\n",
-                    v, v, it->second - data_offset);
+                    v, v, offset);
             else
                 fmt("    ld.global.u8 %w0, [data+$u];\n"
                     "    setp.ne.u16 $v, %w0, 0;\n",
-                    it->second - data_offset, v);
+                    offset, v);
         } else if (v->is_literal()) {
             fmt("    mov.$b $v, $l;\n", v, v, v);
         } else {
-            jitc_cuda_render_var(sv.index, v);
+            jitc_cuda_render(sv.index, v);
         }
     }
 
-    uint32_t offset = 0;
-    for (uint32_t i = 0; i < n_out; ++i) {
-        uint32_t index = out_nested[i];
-        if (!index)
-            continue;
-        const Variable *v = jitc_var(index);
-        uint32_t vti = v->type;
+    for (uint32_t i = 0; i < call->n_out; ++i) {
+        const Variable *v = jitc_var(call->inner_out[inst * call->n_out + i]);
+        const uint32_t offset = call->out_offset[i];
 
-        if ((VarType) vti != VarType::Bool) {
+        if (offset == (uint32_t) -1)
+            continue;
+
+        if ((VarType) v->type != VarType::Bool) {
             fmt("    st.param.$b [result+$u], $v;\n", v, offset, v);
         } else {
             fmt("    selp.u16 %w0, 1, 0, $v;\n"
                 "    st.param.u8 [result+$u], %w0;\n",
                 v, offset);
         }
-
-        offset += type_size[vti];
     }
 
     put("    ret;\n"
@@ -387,7 +365,7 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
 };
 
-static void jitc_cuda_render_var(uint32_t index, Variable *v) {
+static void jitc_cuda_render(uint32_t index, Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
@@ -663,7 +641,7 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
 
         case VarKind::Cast:
             if (jitc_is_bool(v)) {
-                fmt(jitc_is_float(a0) && !jitc_is_half(a0) 
+                fmt(jitc_is_float(a0) && !jitc_is_half(a0)
                     ? "    setp.ne.$t $v, $v, 0.0;\n"
                     : "    setp.ne.$b $v, $v, 0;\n",
                     a0, v, a0);
@@ -737,18 +715,21 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
 
-        case VarKind::VCallSelf:
-            fmt("    mov.u32 $v, self;\n", v);
-            break;
-
         case VarKind::Counter:
             fmt("    mov.$b $v, %r0;\n", v, v);
             break;
 
-        case VarKind::Dispatch:
-            jitc_var_vcall_assemble((VCall *) state.extra[index].callback_data,
-                                    a0->reg_index, a1->reg_index, a2->reg_index,
-                                    a3 ? a3->reg_index : 0);
+        case VarKind::Call:
+            jitc_var_call_assemble((CallData *) v->data, v->reg_index,
+                                   a0->reg_index, a1->reg_index, a2->reg_index,
+                                   a3 ? a3->reg_index : 0);
+            break;
+
+        case VarKind::CallOutput:
+            break;
+
+        case VarKind::CallSelf:
+            fmt("    mov.u32 $v, self;\n", v);
             break;
 
         case VarKind::TexLookup:
@@ -791,11 +772,11 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::LoopStart: {
-                const LoopData *ld = (LoopData *) state.extra[index].callback_data;
+                const LoopData *ld = (LoopData *) v->data;
                 for (size_t i = 0; i < ld->size; ++i) {
-                    Variable *inner_in  = jitc_var(ld->inner_inputs[i]),
-                             *outer_in  = jitc_var(ld->outer_inputs[i]),
-                             *outer_out = jitc_var(ld->outer_outputs[i]);
+                    Variable *inner_in  = jitc_var(ld->inner_in[i]),
+                             *outer_in  = jitc_var(ld->outer_in[i]),
+                             *outer_out = jitc_var(ld->outer_out[i]);
 
                     if (inner_in == outer_in)
                         continue; // ignore eliminated loop state variables
@@ -819,10 +800,10 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::LoopEnd: {
-                const LoopData *ld = (LoopData *) state.extra[v->dep[0]].callback_data;
+                const LoopData *ld = (LoopData *) a0->data;
                 for (uint32_t i = 0; i < ld->size; ++i) {
-                    const Variable *inner_out = jitc_var(ld->inner_outputs[i]),
-                                   *inner_in = jitc_var(ld->inner_inputs[i]);
+                    const Variable *inner_out = jitc_var(ld->inner_out[i]),
+                                   *inner_in = jitc_var(ld->inner_in[i]);
                     if (inner_out != inner_in && inner_in->reg_index && inner_out->reg_index)
                         fmt("    mov.$b $v, $v;\n", inner_in, inner_in, inner_out);
                 }
@@ -833,12 +814,12 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
             break;
 
         case VarKind::LoopPhi:
-        case VarKind::LoopResult:
+        case VarKind::LoopOutput:
             // No code generated for this node
             break;
 
         default:
-            jitc_fail("jitc_cuda_render_var(): unhandled variable kind \"%s\"!",
+            jitc_fail("jitc_cuda_render(): unhandled variable kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);
     }
 
@@ -1006,31 +987,32 @@ static void jitc_cuda_render_scatter_inc(Variable *v,
     bool unmasked = mask->is_literal() && mask->literal == 1;
 
     fmt_intrinsic(
-        ".func (.param .u32 rv) reduce_inc_u32 (.param .u64 ptr) {\n"
-        "    .reg .pred %p<2>;\n"
-        "    .reg .b32 %r<11>;\n"
-        "    .reg .b64 %rd<2>;\n"
+        ".func  (.param .u32 rv) reduce_inc_u32 (.param .u64 ptr) {\n"
+        "    .reg .b64 %rd<1>;\n"
+        "    .reg .pred %p<1>;\n"
+        "    .reg .b32 %r<12>;\n"
         "\n"
-        "    ld.param.u64 %rd1, [ptr];\n"
-        "    activemask.b32 %r2;\n"
-        "    mov.u32 %r3, %lanemask_lt;\n"
-        "    and.b32 %r3, %r3, %r2;\n"
-        "    setp.ne.u32 %p1, %r3, 0;\n"
-        "    @%p1 bra L2;\n"
+        "    ld.param.u64 %rd0, [ptr];\n"
+        "    activemask.b32 %r1;\n"
+        "    match.any.sync.b64 %r2, %rd0, %r1;\n"
+	    "    brev.b32 %r3, %r2;\n"
+	    "    bfind.shiftamt.u32 %r4, %r3;\n"
+        "    mov.u32 %r5, %lanemask_lt;\n"
+        "    and.b32 %r6, %r5, %r2;\n"
+        "    popc.b32 %r7, %r6;\n"
+        "    setp.ne.u32 %p0, %r6, 0;\n"
+        "    @%p0 bra L0;\n"
         "\n"
-        "L1:\n"
-        "    popc.b32 %r4, %r2;\n"
-        "    atom.global.add.u32 %r5, [%rd1], %r4;\n"
+        "    popc.b32 %r8, %r2;\n"
+        "    atom.global.add.u32 %r9, [%rd0], %r8;\n"
         "\n"
-        "L2:\n"
-        "    popc.b32 %r6, %r3;\n"
-        "    brev.b32 %r7, %r2;\n"
-        "    bfind.shiftamt.u32 %r8, %r7;\n"
-        "    shfl.sync.idx.b32 %r9, %r5, %r8, 31, %r2;\n"
-        "    add.u32 %r10, %r6, %r9;\n"
-        "    st.param.u32 [rv], %r10;\n"
+        "L0:\n"
+        "    shfl.sync.idx.b32 %r10, %r9, %r4, 31, %r2;\n"
+        "    add.u32 %r11, %r7, %r10;\n"
+        "    st.param.u32 [rv], %r11;\n"
         "    ret;\n"
-        "}\n");
+        "}\n"
+    );
 
     if (!unmasked)
         fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
@@ -1054,6 +1036,10 @@ static void jitc_cuda_render_scatter_inc(Variable *v,
 }
 
 static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) {
+#if 1
+    (void) v;
+    (void) v_index;
+#else
     const Extra &extra = state.extra[v_index];
 
     const Variable *ptr_1 = jitc_var(extra.dep[0]),
@@ -1109,6 +1095,7 @@ static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) 
 
     if (!unmasked)
         fmt("\nl_$u_done:\n", v->reg_index);
+#endif
 }
 
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -1145,6 +1132,7 @@ static void jitc_cuda_render_trace(uint32_t index, const Variable *v,
         problem = true;
     }
 
+#if 0
     const Extra &extra = state.extra[index];
     uint32_t payload_count = extra.n_dep - 15;
 
@@ -1185,23 +1173,22 @@ static void jitc_cuda_render_trace(uint32_t index, const Variable *v,
 
     if (masked)
         fmt("\nl_masked_$u:\n", v->reg_index);
+#endif
 }
 #endif
 
 /// Virtual function call code generation -- CUDA/PTX-specific bits
-void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
-                                  uint32_t self_reg, uint32_t mask_reg,
-                                  uint32_t offset_reg, uint32_t data_reg,
-                                  uint32_t n_out, uint32_t in_size,
-                                  uint32_t in_align, uint32_t out_size,
-                                  uint32_t out_align) {
-
+void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
+                                 uint32_t self_reg, uint32_t mask_reg,
+                                 uint32_t offset_reg, uint32_t data_reg,
+                                 uint32_t in_size, uint32_t in_align,
+                                 uint32_t out_size, uint32_t out_align) {
     // =====================================================
     // 1. Conditional branch
     // =====================================================
 
     fmt("\n    @!%p$u bra l_masked_$u;\n\n"
-        "    { // VCall: $s\n", mask_reg, vcall_reg, vcall->name);
+        "    { // Call: $s\n", mask_reg, call_reg, call->name.c_str());
 
     // =====================================================
     // 2. Determine unique callable ID
@@ -1243,8 +1230,9 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     put("\n");
 
     // Special handling for predicates
-    for (uint32_t in : vcall->in) {
-        if (!in)
+    for (uint32_t in : call->outer_in) {
+        const Variable *v = jitc_var(in);
+        if (!v->reg_index)
             continue;
 
         const Variable *v2 = jitc_var(in);
@@ -1262,18 +1250,16 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     if (out_size)
         fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
     put(" _(");
-    if (vcall->use_self) {
-        put(".reg .u32 self");
-        if (data_reg || in_size)
-            put(", ");
-    }
-    if (data_reg) {
-        put(".reg .u64 data");
-        if (in_size)
-            put(", ");
-    }
+
+    if (call->use_index)
+        put(".reg .u32 index, ");
+    if (call->use_self)
+        put(".reg .u32 self, ");
+    if (data_reg)
+        put(".reg .u64 data, ");
     if (in_size)
-        fmt(".param .align $u .b8 params[$u]", in_align, in_size);
+        fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
+    buffer.delete_trailing_commas();
     put(");\n");
 
     // Input/output parameter arrays
@@ -1286,12 +1272,11 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     // 5.1. Pass the input arguments
     // =====================================================
 
-    uint32_t offset = 0;
-    for (uint32_t in : vcall->in) {
-        if (!in)
+    for (uint32_t in : call->outer_in) {
+        const Variable *v = jitc_var(in);
+        if (!v->reg_index)
             continue;
         const Variable *v2 = jitc_var(in);
-        uint32_t size = type_size[v2->type];
 
         const char *tname  = type_name_ptx_bin[v2->type],
                    *prefix = type_prefix[v2->type];
@@ -1302,54 +1287,50 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
             prefix = "%w";
         }
 
-        fmt("            st.param.$s [in+$u], $s$u;\n", tname, offset, prefix, 
-            v2->reg_index);
-
-        offset += size;
+        fmt("            st.param.$s [in+$u], $s$u;\n",
+            tname, v->param_offset, prefix, v2->reg_index);
     }
 
-    if (vcall->use_self) {
-        fmt("            call $s%rd2, (%r$u$s$s), proto;\n",
-            out_size ? "(out), " : "", self_reg,
-            data_reg ? ", %rd3" : "",
-            in_size ? ", in" : "");
-    } else {
-        fmt("            call $s%rd2, ($s$s$s), proto;\n",
-            out_size ? "(out), " : "", data_reg ? "%rd3" : "",
-            data_reg && in_size ? ", " : "", in_size ? "in" : "");
+    put("            call ");
+    if (out_size)
+        put("(out), ");
+    put("%rd2, (");
+    if (call->use_index) {
+        if (callable_depth == 0)
+            put("%r0, ");
+        else
+            put("index, ");
     }
+    if (call->use_self)
+        fmt("%r$u, ", self_reg);
+    if (data_reg)
+        put("%rd3, ");
+    if (in_size)
+        put("in, ");
+    buffer.delete_trailing_commas();
+    put("), proto;\n");
+
 
     // =====================================================
     // 5.2. Read back the output arguments
     // =====================================================
 
-    offset = 0;
-    for (uint32_t i = 0; i < n_out; ++i) {
-        uint32_t index = vcall->out_nested[i],
-                 index_2 = vcall->out[i];
-        if (!index)
-            continue;
-        const Variable *v = jitc_var(index);
-        uint32_t size = type_size[v->type],
-                 load_offset = offset;
-        offset += size;
-
-        // Skip if expired
-        const Variable *v2 = jitc_var(index_2);
-        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+    for (uint32_t i = 0; i < call->n_out; ++i) {
+        const Variable *v = jitc_var(call->outer_out[i]);
+        if (!v || !v->reg_index)
             continue;
 
-        const char *tname = type_name_ptx_bin[v2->type],
-                   *prefix = type_prefix[v2->type];
+        const char *tname = type_name_ptx_bin[v->type],
+                   *prefix = type_prefix[v->type];
 
         // Special handling for predicates (pass via u8)
-        if ((VarType) v2->type == VarType::Bool) {
+        if ((VarType) v->type == VarType::Bool) {
             tname = "u8";
             prefix = "%w";
         }
 
         fmt("            ld.param.$s $s$u, [out+$u];\n",
-            tname, prefix, v2->reg_index, load_offset);
+            tname, prefix, v->reg_index, call->out_offset[i]);
     }
 
     put("        }\n\n");
@@ -1358,39 +1339,33 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
     // 6. Special handling for predicates return value(s)
     // =====================================================
 
-    for (uint32_t out : vcall->out) {
-        if (!out)
-            continue;
-        const Variable *v2 = jitc_var(out);
-        if ((VarType) v2->type != VarType::Bool)
-            continue;
-        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
+    for (uint32_t i = 0; i < call->n_out; ++i) {
+        const Variable *v = jitc_var(call->outer_out[i]);
+        if (!v || !v->reg_index || (VarType) v->type != VarType::Bool)
             continue;
 
         // Special handling for predicates
         fmt("        setp.ne.u16 %p$u, %w$u, 0;\n",
-            v2->reg_index, v2->reg_index);
+            v->reg_index, v->reg_index);
     }
 
 
     fmt("        bra.uni l_done_$u;\n"
-        "    }\n", vcall_reg);
+        "    }\n", call_reg);
 
     // =====================================================
     // 7. Prepare output registers for masked lanes
     // =====================================================
 
-    fmt("\nl_masked_$u:\n", vcall_reg);
-    for (uint32_t out : vcall->out) {
-        if (!out)
-            continue;
-        const Variable *v2 = jitc_var(out);
-        if (v2->reg_index == 0 || v2->param_type == ParamType::Input)
-            continue;
+    fmt("\nl_masked_$u:\n", call_reg);
 
-        fmt("    mov.$b $v, 0;\n", v2, v2);
+    for (uint32_t i = 0; i < call->n_out; ++i) {
+        const Variable *v = jitc_var(call->outer_out[i]);
+        if (!v || !v->reg_index)
+            continue;
+        fmt("    mov.$b $v, 0;\n", v, v);
     }
 
-    fmt("\nl_done_$u:\n", vcall_reg);
+    fmt("\nl_done_$u:\n", call_reg);
 }
 

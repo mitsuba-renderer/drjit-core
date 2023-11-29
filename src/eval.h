@@ -107,32 +107,20 @@ extern void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
 /// Used by jitc_eval() to generate LLVM IR source code
 extern void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group);
 
-/// Used by jitc_vcall() to generate source code for vcalls
-extern XXH128_hash_t
-jitc_assemble_func(ThreadState *ts, const char *name, uint32_t inst_id,
-                   uint32_t in_size, uint32_t in_align, uint32_t out_size,
-                   uint32_t out_align, uint32_t data_offset,
-                   const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-                   uint32_t n_in, const uint32_t *in, uint32_t n_out,
-                   const uint32_t *out_nested, uint32_t n_se,
-                   const uint32_t *se, bool use_self);
+/// Used by jitc_call() to generate source code for calls
+struct CallData;
+extern XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
+                                        uint32_t in_size, uint32_t in_align,
+                                        uint32_t out_size, uint32_t out_align);
 
-/// Used by jitc_vcall() to generate PTX source code for vcalls
-extern void
-jitc_cuda_assemble_func(const char *name, uint32_t inst_id, uint32_t n_regs,
-                        uint32_t in_size, uint32_t in_align, uint32_t out_size,
-                        uint32_t out_align, uint32_t data_offset,
-                        const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-                        uint32_t n_out, const uint32_t *out_nested,
-                        bool use_self);
+/// Used by jitc_call() to generate LLVM IR source code for callables
+extern void jitc_llvm_assemble_func(const CallData *call, uint32_t inst);
 
-/// Used by jitc_vcall() to generate LLVM IR source code for vcalls
-extern void
-jitc_llvm_assemble_func(const char *name, uint32_t inst_id,
-                        uint32_t in_size, uint32_t data_offset,
-                        const tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> &data_map,
-                        uint32_t n_out, const uint32_t *out_nested,
-                        bool use_self);
+/// Used by jitc_call() to generate PTX source code for callables
+extern void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
+                                    uint32_t in_size, uint32_t in_align,
+                                    uint32_t out_size, uint32_t out_align,
+                                    uint32_t n_regs);
 
 /// Register a global declaration that will be included in the final program
 extern void jitc_register_global(const char *str);

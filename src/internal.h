@@ -20,29 +20,21 @@
 #include <inttypes.h>
 #include <nanothread/nanothread.h>
 
-/// Number of entries to process per work unit in the parallel LLVM backend
-#define DRJIT_POOL_BLOCK_SIZE 16384
-
-/// Can't pass more than 4096 bytes of parameter data to a CUDA kernel
-#define DRJIT_CUDA_ARG_LIMIT 512
-
-#define DRJIT_PTR "<0x%" PRIxPTR ">"
-
+/// List of operations in Dr.Jit-Core's intermediate representation (see ``Variable::kind``)
 enum VarKind : uint32_t {
-    // Invalid node (default)
+    // Invalid operation (default initialization in the Variable class)
     Invalid,
 
-    // An evaluated node representing data
-    Data,
+    // An evaluated variable represented by a device memory region
+    Evaluated,
 
-    /// Undefined memory
+    // Undefined/uninitialized memory
     Undefined,
 
-    // A literal constant
-    // (note: this must be the last enumeration entry before the regular nodes start)
+    // A literal constant. Standard variable types ("nodes") start after this entry.
     Literal,
 
-    /// A no-op (generates no code)
+    // A no-op (generates no code)
     Nop,
 
     // Common unary operations
@@ -90,9 +82,6 @@ enum VarKind : uint32_t {
     // Memory-related operations
     Gather, Scatter, ScatterInc, ScatterKahan,
 
-    // Specialized nodes for vcalls
-    VCallMask, VCallSelf,
-
     // Counter node to determine the current lane ID
     Counter,
 
@@ -100,7 +89,16 @@ enum VarKind : uint32_t {
     DefaultMask,
 
     // A polymorphic function call
-    Dispatch,
+    Call,
+
+    // Specialized nodes for calls
+    CallMask, CallSelf,
+
+    /// Input argument to a function call
+    CallInput,
+
+    /// Output of a function call
+    CallOutput,
 
     // Perform a standard texture lookup (CUDA)
     TexLookup,
@@ -127,15 +125,11 @@ enum VarKind : uint32_t {
     LoopPhi,
 
     // SSA Phi variable at end of loop
-    LoopResult,
+    LoopOutput,
 
     // Denotes the number of different node types
     Count
 };
-
-#if defined(_MSC_VER)
-#  pragma warning (disable:4201) // nonstandard extension used: nameless struct/union
-#endif
 
 /// Central variable data structure, which represents an assignment in SSA form
 struct Variable {
@@ -150,14 +144,7 @@ struct Variable {
     /// Identifier of the basic block containing this variable
     uint32_t scope;
 
-    /**
-     * \brief Up to 4 dependencies of this instruction
-     *
-     * Certain complex operations (e.g. a ray tracing call) may reference
-     * further operands via an entry in the 'State::extra' map. They must set
-     * the 'Variable::extra' bit to 1 to indicate the presence of such
-     * supplemental information.
-     */
+    /// Up to 4 dependencies of this instruction
     uint32_t dep[4];
 
     // ======  Size & encoded instruction (IR statement, literal, data) =======
@@ -167,7 +154,7 @@ struct Variable {
         // Floating point/integer value, reinterpreted as u64
         uint64_t literal;
 
-        /// Pointer to device memory. Used when kind == VarKind::Data
+        /// Pointer to device memory. Used when kind == VarKind::Evaluated
         void *data;
     };
 
@@ -202,12 +189,6 @@ struct Variable {
     /// Does this variable represent symbolic computation?
     uint32_t symbolic : 1;
 
-    /// Does this variable represent the input of a symbolic virtual function call?
-    uint32_t vcall_iface : 1;
-
-    /// Must be set if the variable is associated with an 'Extra' instance
-    uint32_t extra : 1;
-
     /// Must be set if 'data' is not properly aligned in memory
     uint32_t unaligned : 1;
 
@@ -232,7 +213,7 @@ struct Variable {
     uint32_t consumed : 1;
 
     /// Unused for now
-    uint32_t unused_2 : 5;
+    uint32_t unused_2 : 7;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;
@@ -245,14 +226,36 @@ struct Variable {
     /// Number of queued side effects
     uint32_t ref_count_se;
 
+    /// If nonzero, references an associated 'VariableExtra' field in 'state.extra'
+    uint32_t extra;
+
     // =========================   Helper functions   ==========================
 
-    bool is_evaluated()      const { return kind == (uint32_t) VarKind::Data;    }
+    bool is_evaluated() const { return kind == (uint32_t) VarKind::Evaluated; }
     bool is_literal()   const { return kind == (uint32_t) VarKind::Literal; }
     bool is_undefined() const { return kind == (uint32_t) VarKind::Undefined; }
     bool is_node()      const { return (uint32_t) kind > VarKind::Literal; }
     bool is_dirty()     const { return ref_count_se > 0; }
 };
+
+/// This record represents additional information that can *optionally* be
+/// associated with a 'Variable' instance. These are factored out into a struct
+/// since only very few variables need these fields, and to to ensure that
+/// ``sizeof(Variable) == 64`` (i.e. a variable fits into a L1 cache line)
+struct VariableExtra {
+    /// A human-readable variable label (for GraphViz visualizations, debugging LLVM/PTX IR)
+    char *label = nullptr;
+
+    /// Callback to be invoked when the variable is evaluated/deallocated
+    void (*callback)(uint32_t, int, void *) = nullptr;
+
+    /// An opaque pointer that will be passed to the callback
+    void *callback_data = nullptr;
+
+    /// Set to 'true' if the central mutex should be released before invoking 'callback'
+    bool callback_internal = false;
+};
+
 
 #pragma pack(push, 1)
 
@@ -454,11 +457,11 @@ struct ThreadState {
     /// Identifier associated with the current basic block
     uint32_t scope = 0;
 
-    /// Registry index of the 'self' pointer of the vcall being recorded
-    uint32_t vcall_self_value = 0;
+    /// Registry index of the 'self' pointer of the call being recorded
+    uint32_t call_self_value = 0;
 
     /// .. and the JIT variable that it will be mapped to
-    uint32_t vcall_self_index = 0;
+    uint32_t call_self_index = 0;
 
     /// ---------------------------- CUDA-specific ----------------------------
 
@@ -544,25 +547,7 @@ private:
     size_t m_capacity;
 };
 
-struct Extra {
-    /// Optional descriptive label
-    char *label = nullptr;
-
-    /// Additional references
-    uint32_t *dep = nullptr;
-    uint32_t n_dep = 0;
-
-    /// Callback to be invoked when the variable is evaluated/deallocated
-    void (*callback)(uint32_t, int, void *) = nullptr;
-    void *callback_data = nullptr;
-    bool callback_internal = false;
-
-    /// Bucket decomposition for virtual function calls
-    uint32_t vcall_bucket_count = 0;
-    VCallBucket *vcall_buckets = nullptr;
-};
-
-using ExtraMap = tsl::robin_map<uint32_t, Extra, UInt32Hasher>;
+using UnusedPQ = std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>;
 
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
@@ -575,12 +560,18 @@ struct State {
     /// A flat list of variable data structures, including unused one
     std::vector<Variable> variables{ 1 };
 
-    /// A priority queue of indices into 'variables' that are currently unued
-    std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>
-        unused_variables;
+    /// A priority queue of indices into 'variables' that are currently unused
+    UnusedPQ unused_variables;
 
     /// Maps from a key characterizing a variable to its index
     LVNMap lvn_map;
+
+    /// A flast list of variable VariableExtra data structures (see its
+    /// definition for documentation). Includes unused ones.
+    std::vector<VariableExtra> extra { 1 };
+
+    // A priority queu of indices into 'extra' that are currently unused
+    UnusedPQ unused_extra;
 
     /// Counter to create variable scopes that enforce a variable ordering
     uint32_t scope_ctr = 0;
@@ -617,9 +608,6 @@ struct State {
     size_t alloc_usage    [(int) AllocType::Count] { 0 },
            alloc_allocated[(int) AllocType::Count] { 0 },
            alloc_watermark[(int) AllocType::Count] { 0 };
-
-    /// Maps from variable ID to extra information for a fraction of variables
-    ExtraMap extra;
 
     /// Limit the output of jit_var_str()?
     uint32_t print_limit = 20;

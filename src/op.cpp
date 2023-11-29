@@ -1440,8 +1440,8 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
         return 0; // evaluated variable, give up
 
     if (v->extra) {
-        Extra &e = state.extra[var_index];
-        if (e.n_dep || e.callback || e.vcall_buckets)
+        VariableExtra *e = jitc_var_extra(v);
+        if (e->callback)
             return 0; // "complicated" variable, give up
     }
 
@@ -1693,6 +1693,8 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
         jitc_raise(
             "jit_var_scatter_kahan(): input arrays are symbolic, but the "
             "operation was issued outside of a symbolic recording session.");
+    jitc_fail("unimplemented!");
+#if 0
 
     uint32_t result = jitc_var_new_node_0(
         var_info.backend, VarKind::ScatterKahan, VarType::Void,
@@ -1712,7 +1714,6 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     jitc_var_inc_ref(value);
 
     Variable *result_v = jitc_var(result);
-    result_v->extra = 1;
 
     Extra &e = state.extra[result];
     e.n_dep = 5;
@@ -1726,6 +1727,7 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
              (uint32_t) ptr_2, result);
 
     jitc_var_mark_side_effect(result);
+#endif
 }
 
 uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask) {
@@ -1750,11 +1752,6 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
 
     if ((VarType) index_v->type != VarType::UInt32)
         jitc_raise("jit_var_scatter_inc(): 'index' must be an unsigned 32-bit array.");
-
-    if (index_v->size != 1)
-        jitc_raise("jit_var_scatter_inc(): index must be a scalar! (this is a "
-                   "limitation of the current implementation that enables a "
-                   "particularly simple and efficient implementation)");
 
     if (mask_v->is_literal() && mask_v->literal == 0)
         return 0;

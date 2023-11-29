@@ -4,6 +4,10 @@
 #include <string>
 #include <errno.h>
 
+#if defined(_MSC_VER)
+#  pragma warning (disable:4201) // nonstandard extension used: nameless struct/union
+#endif
+
 #if !defined(likely)
 #  if !defined(_MSC_VER)
 #    define likely(x)   __builtin_expect(!!(x), 1)
@@ -17,6 +21,14 @@
 #if defined(_WIN32)
 #  define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
 #endif
+
+/// Number of entries to process per work unit in the parallel LLVM backend
+#define DRJIT_POOL_BLOCK_SIZE 16384
+
+/// Can't pass more than 4096 bytes of parameter data to a CUDA kernel
+#define DRJIT_CUDA_ARG_LIMIT 512
+
+#define DRJIT_PTR "<0x%" PRIxPTR ">"
 
 #if defined(__linux__)
 #include <pthread.h>

@@ -133,7 +133,7 @@ add_library(
 
   src/io.h       src/io.cpp
   src/eval.h     src/eval.cpp
-  src/vcall.h    src/vcall.cpp
+  src/call.h     src/call.cpp
   src/loop.h     src/loop.cpp
   src/init.cpp
   src/api.cpp

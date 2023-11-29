@@ -16,7 +16,7 @@
 #include "llvm.h"
 #include "cuda_tex.h"
 #include "op.h"
-#include "vcall.h"
+#include "call.h"
 #include "loop.h"
 #include <thread>
 #include <condition_variable>
@@ -486,9 +486,9 @@ uint32_t jit_var_class(JitBackend backend, void *ptr) {
     uint32_t value = jit_registry_id(ptr);
 
     ThreadState *ts = thread_state(backend);
-    if (value && ts->vcall_self_value == value) {
-        jit_var_inc_ref(ts->vcall_self_index);
-        return ts->vcall_self_index;
+    if (value && ts->call_self_value == value) {
+        jit_var_inc_ref(ts->call_self_index);
+        return ts->call_self_index;
     }
 
     return jit_var_u32(backend, value);
@@ -540,9 +540,9 @@ uint32_t jit_var_pointer(JitBackend backend, const void *value,
     return jitc_var_pointer(backend, value, dep, write);
 }
 
-uint32_t jit_var_wrap_vcall(uint32_t index) {
+uint32_t jit_var_call_input(uint32_t index) {
     lock_guard guard(state.lock);
-    return jitc_var_wrap_vcall(index);
+    return jitc_var_call_input(index);
 }
 
 void jit_var_inc_ref_impl(uint32_t index) noexcept {
@@ -587,6 +587,8 @@ VarState jit_var_state(uint32_t index) {
     const Variable *v = jitc_var(index);
     if (v->symbolic)
         return VarState::Symbolic;
+    else if (v->is_dirty())
+        return VarState::Dirty;
     else if (v->is_evaluated())
         return VarState::Evaluated;
     else if (v->is_literal())
@@ -680,9 +682,9 @@ uint32_t jit_var_set_label(uint32_t index, const char *label) {
 
 void jit_var_set_callback(uint32_t index,
                           void (*callback)(uint32_t, int, void *),
-                          void *payload) {
+                          void *data) {
     lock_guard guard(state.lock);
-    jitc_var_set_callback(index, callback, payload);
+    jitc_var_set_callback(index, callback, data, false);
 }
 
 uint32_t jit_var_mem_map(JitBackend backend, VarType type, void *ptr, size_t size, int free) {
@@ -897,24 +899,24 @@ void *jit_registry_ptr(JitBackend backend, const char *domain, uint32_t id) {
     return jitc_registry_ptr(backend, domain, id);
 }
 
-void jit_vcall_set_self(JitBackend backend, uint32_t value, uint32_t index) {
+void jit_var_set_self(JitBackend backend, uint32_t value, uint32_t index) {
     lock_guard guard(state.lock);
-    jitc_vcall_set_self(backend, value, index);
+    jitc_var_set_self(backend, value, index);
 }
 
-void jit_vcall_self(JitBackend backend, uint32_t *value, uint32_t *index) {
+void jit_var_self(JitBackend backend, uint32_t *value, uint32_t *index) {
     lock_guard guard(state.lock);
-    jitc_vcall_self(backend, value, index);
+    jitc_var_self(backend, value, index);
 }
 
-void jit_var_vcall(const char *name, uint32_t self, uint32_t mask,
-                   uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
-                   const uint32_t *in, uint32_t n_out_nested,
-                   const uint32_t *out_nested, const uint32_t *se_offset,
-                   uint32_t *out) {
+void jit_var_call(const char *name, uint32_t self, uint32_t mask,
+                  uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
+                  const uint32_t *in, uint32_t n_out_nested,
+                  const uint32_t *out_nested, const uint32_t *se_offset,
+                  uint32_t *out) {
     lock_guard guard(state.lock);
-    jitc_var_vcall(name, self, mask, n_inst, inst_id, n_in, in, n_out_nested,
-                   out_nested, se_offset, out);
+    jitc_var_call(name, self, mask, n_inst, inst_id, n_in, in, n_out_nested,
+                  out_nested, se_offset, out);
 }
 
 void jit_aggregate(JitBackend backend, void *dst, AggregationEntry *agg,
@@ -923,11 +925,11 @@ void jit_aggregate(JitBackend backend, void *dst, AggregationEntry *agg,
     return jitc_aggregate(backend, dst, agg, size);
 }
 
-struct VCallBucket *
-jit_var_vcall_reduce(JitBackend backend, const char *domain, uint32_t index,
+struct CallBucket *
+jit_var_call_reduce(JitBackend backend, const char *domain, uint32_t index,
                      uint32_t *bucket_count_inout) {
     lock_guard guard(state.lock);
-    return jitc_var_vcall_reduce(backend, domain, index, bucket_count_inout);
+    return jitc_var_call_reduce(backend, domain, index, bucket_count_inout);
 }
 
 void jit_kernel_history_clear() {
@@ -1221,9 +1223,9 @@ uint32_t jit_var_cast(uint32_t index, VarType target_type,
     return jitc_var_cast(index, target_type, reinterpret);
 }
 
-uint32_t jit_var_vcall_mask(JitBackend backend) {
+uint32_t jit_var_call_mask(JitBackend backend) {
     lock_guard guard(state.lock);
-    return jitc_var_vcall_mask(backend);
+    return jitc_var_call_mask(backend);
 }
 
 size_t jit_type_size(VarType type) noexcept {
@@ -1241,9 +1243,9 @@ VarInfo jit_set_backend(uint32_t index) noexcept {
     return VarInfo{ (JitBackend) var->backend, (VarType) var->type, var->size };
 }
 
-uint32_t jit_var_loop_start(const char *name, size_t n_indices, uint32_t *indices) {
+uint32_t jit_var_loop_start(const char *name, bool symbolic, size_t n_indices, uint32_t *indices) {
     lock_guard guard(state.lock);
-    return jitc_var_loop_start(name, n_indices, indices);
+    return jitc_var_loop_start(name, symbolic, n_indices, indices);
 }
 
 uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active) {

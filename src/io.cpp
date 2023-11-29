@@ -218,7 +218,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
             for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
                 kernel.llvm.reloc[i] = (uint8_t *) kernel.data + reloc[i];
 
-            // Write address of @vcall_table
+            // Write address of @call_table
             if (kernel.llvm.n_reloc > 1)
                 *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 1;
 
