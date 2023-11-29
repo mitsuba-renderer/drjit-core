@@ -140,15 +140,7 @@ bool jitc_llvm_init() {
         jitc_llvm_shutdown();
     }
 
-    bool force_exclude_orcv2 = false;
-
-    // MSVC issue with instruction selection for LLVM 16+ where ORCv2 is available
-    // Until C-interface allows us to set instruction selection options, use MCJIT
-#if defined(_MSVC_LANG)
-    force_exclude_orcv2 = true;
-#endif
-
-    if (jitc_llvm_api_has_orcv2() && jitc_llvm_orcv2_init() && !force_exclude_orcv2) {
+    if (jitc_llvm_api_has_orcv2() && jitc_llvm_orcv2_init()) {
         jitc_llvm_use_orcv2 = true;
     } else if (jitc_llvm_api_has_mcjit() && jitc_llvm_mcjit_init()) {
         jitc_llvm_use_orcv2 = false;

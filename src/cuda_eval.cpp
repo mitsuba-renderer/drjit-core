@@ -394,7 +394,9 @@ static void jitc_cuda_render_var(uint32_t index, Variable *v) {
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
-    bool f32_upcast = jitc_is_half(v) && !var_kind_fp16_supported_cuda[v->kind];
+    const ThreadState *ts = thread_state_cuda;
+
+    bool f32_upcast = jitc_is_half(v) && ts->compute_capability < var_kind_fp16_min_compute_cuda[v->kind];
 
     if (f32_upcast) {
         Variable* b = const_cast<Variable*>(v);

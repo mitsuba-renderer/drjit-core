@@ -833,5 +833,5 @@ inline bool jitc_is_one(Variable *v) {
 }
 
 extern const char *var_kind_name[(int) VarKind::Count];
-extern const bool var_kind_fp16_supported_cuda[(int) VarKind::Count];
+extern const uint32_t var_kind_fp16_min_compute_cuda[(int) VarKind::Count];
 extern const bool var_kind_fp16_supported_llvm[(int) VarKind::Count];
