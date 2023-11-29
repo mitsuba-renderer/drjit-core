@@ -360,13 +360,13 @@ bool jitc_cuda_init() {
         device.memory_pool = memory_pool != 0;
         device.preemptable = preemptable;
         device.compute_capability = 50;
-        device.ptx_version = 60;
+        device.ptx_version = 65;
         device.context = context;
 
         cuda_check(cuStreamCreate(&device.stream, CU_STREAM_DEFAULT));
         cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
 
-        const uint32_t sm_table[][2] = { { 70, 60 }, { 72, 61 }, { 75, 63 }, { 80, 70 },
+        const uint32_t sm_table[][2] = { { 70, 65 }, { 71, 65 }, { 75, 65 }, { 80, 70 },
                                          { 86, 71 }, { 89, 78 }, { 90, 78 } };
         uint32_t cc_combined = cc_major * 10 + cc_minor;
         for (int j = 0; j < 7; ++j) {

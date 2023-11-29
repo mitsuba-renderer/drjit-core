@@ -201,105 +201,105 @@ const char *var_kind_name[(int) VarKind::Count] {
     "loop_result"
 };
 
-const bool var_kind_fp16_supported_cuda[(int) VarKind::Count] {
+const uint32_t var_kind_fp16_min_compute_cuda[(int) VarKind::Count] {
     // Invalid
-    true,
+    53,
 
     // An evaluated node representing data
-    true,
+    53,
 
     // Undefined memory
-    true,
+    53,
 
     // A literal constant
-    true,
+    53,
 
     // A no-op (generates no code)
-    true,
+    53,
 
     // Common unary operations
-    true, true, false /* sqrt */, true,
+    53, 53, UINT_MAX /* sqrt */, 53,
 
     // Common binary arithmetic operations
-    true, true, true, false /*div*/, true,
+    53, 53, 53,  UINT_MAX /*div*/, 53,
 
     // High multiplication
-    true,
+    53,
 
     // Fused multiply-add
-    true,
+    53,
 
     // Minimum, maximum
-    true, true,
+    80, 80,
 
     // Rounding operations
-    true, true, true, true,
+    53, 53, 53, 53,
 
     // Comparisons
-    true, true, true, true, true, true,
+    53, 53, 53, 53, 53, 53,
 
     // Ternary operator
-    true,
+    53,
 
     // Bit-level counting operations
-    true, true, true,
+    53, 53, 53,
 
     // Bit-wise operations
-    true, true, true,
+    53, 53, 53,
 
     // Shifts
-    true, true,
+    53, 53,
 
     // Fast approximations
-    false /*rcp*/, false /*rsqrt*/,
+    UINT_MAX /*rcp*/,  UINT_MAX /*rsqrt*/,
 
     // Multi-function generator (CUDA)
-    true, true, true, true,
+    53, 53, 53, 53,
 
     // Casts
-    true, true,
+    53, 53,
 
     // Memory-related operations
-    true, true, true, true,
+    53, 53, 53, 53,
 
     // Specialized nodes for vcalls
-    true, true,
+    53, 53,
 
     // Counter node to determine the current lane ID
-    true,
+    53,
 
     // Default mask used to ignore out-of-range SIMD lanes (LLVM)
-    true,
+    53,
 
     // A polymorphic function call
-    true,
+    53,
 
     // Perform a standard texture lookup (CUDA)
-    true,
+    53,
 
     // Load all texels used for bilinear interpolation (CUDA)
-    true,
+    53,
 
     // Perform a ray tracing call
-    true,
+    53,
 
     // Extract a component from an operation that produced multiple results
-    true,
+    53,
 
     // Variable marking the start of a loop
-    true,
+    53,
 
     // Variable marking the loop condition
-    true,
+    53,
 
     // Variable marking the end of a loop
-    true,
+    53,
 
     // SSA Phi variable at start of loop
-    true,
+    53,
 
     // SSA Phi variable at end of loop
-    true,
+    53,
 };
 
 const bool var_kind_fp16_supported_llvm[(int) VarKind::Count] {
