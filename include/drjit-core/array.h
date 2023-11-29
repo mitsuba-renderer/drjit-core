@@ -80,7 +80,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
                                    sizeof...(Ts));
     }
 
-    template <typename T, enable_if_t<drjit::is_arithmetic_v<T>> = 0>
+    template <typename T, enable_if_t<drjit::detail::is_arithmetic_v<T>> = 0>
     JitArray(T val) : JitArray((Value)val) {}
 
     JitArray &operator=(const JitArray &a) {
