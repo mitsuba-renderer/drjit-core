@@ -244,26 +244,36 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
     fmt("attributes #0 = ${ norecurse nounwind \"frame-pointer\"=\"none\" "
         "\"no-builtins\" \"no-stack-arg-probe\" \"target-cpu\"=\"$s\"", jitc_llvm_target_cpu);
 
+    const char *target_features = jitc_llvm_target_features;
+
     bool has_target_features =
-        jitc_llvm_target_features && strlen(jitc_llvm_target_features) > 0;
+        target_features && strlen(target_features) > 0;
 
 #if defined(__aarch64__)
     constexpr bool is_intel = false;
+
+    // LLVM doesn't populate target features on AArch64 devices. Use
+    // a representative subset from a recent machine (Apple M1)
+    if (!has_target_features) {
+        target_features = "+fp-armv8,+fp16fml,+fullfp16,+lse,+neon,+ras,+rcpc,+rdm,+v8.1a,+v8.2a,+v8.3a,+v8.4a,+v8.5a,+v8a";
+        has_target_features = true;
+    }
 #else
     constexpr bool is_intel = true;
 #endif
+
 
     if (has_target_features || is_intel) {
         put(" \"target-features\"=\"");
 
         if (is_intel) {
             put("-vzeroupper");
-            if (jitc_llvm_target_features)
+            if (target_features)
                 put(",");
         }
 
         if (has_target_features)
-            put(jitc_llvm_target_features, strlen(jitc_llvm_target_features));
+            put(target_features, strlen(target_features));
         put("\"");
     }
 
