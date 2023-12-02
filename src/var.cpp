@@ -712,8 +712,8 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
 
         vo = &state.variables[index];
         jitc_assert(vo->ref_count == 0 && vo->ref_count_se == 0,
-                    "jit_var_new(): selected entry of variable data structure "
-                    "is already used.");
+                    "jit_var_new(): selected entry of variable r%u "
+                    "is already used.", index);
 
         v.counter = vo->counter;
         *vo = v;
@@ -811,17 +811,11 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
 }
 
 uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
-                          size_t size, int eval, int is_class) {
+                          size_t size, int eval) {
     if (unlikely(size == 0))
         return 0;
 
     jitc_check_size("jit_var_literal", size);
-
-    /* When initializing a value pointer array while recording a virtual
-       function, we can leverage the already available `self` variable
-       instead of creating a new one. */
-    if (is_class) {
-    }
 
     if (!eval) {
         Variable v;
@@ -1824,7 +1818,7 @@ uint32_t jitc_var_call_mask(JitBackend backend) {
         return jitc_var_new_node_0(backend, VarKind::CallMask, VarType::Bool, 1, 1);
     } else {
         bool value = true;
-        return jitc_var_literal(backend, VarType::Bool, &value, 1, 0, 0);
+        return jitc_var_literal(backend, VarType::Bool, &value, 1, 0);
     }
 }
 

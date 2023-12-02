@@ -389,9 +389,9 @@ int jit_var_device(uint32_t index) {
 }
 
 uint32_t jit_var_literal(JitBackend backend, VarType type, const void *value,
-                             size_t size, int eval, int is_class) {
+                             size_t size, int eval) {
     lock_guard guard(state.lock);
-    return jitc_var_literal(backend, type, value, size, eval, is_class);
+    return jitc_var_literal(backend, type, value, size, eval);
 }
 
 uint32_t jit_var_bool(JitBackend backend, bool value) {
