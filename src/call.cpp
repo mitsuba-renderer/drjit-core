@@ -126,20 +126,28 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
     // 3. Apply any masks on the stack, ignore self==NULL
     // =====================================================
 
+    uint32_t flags = jitc_flags();
+    bool optimize = flags & (uint32_t) JitFlag::OptimizeCalls,
+         debug = flags & (uint32_t) JitFlag::Debug;
+
     Ref mask;
     {
         uint32_t zero = 0;
         Ref null_instance = steal(jitc_var_literal(backend, VarType::UInt32, &zero, size, 0)),
             is_non_null   = steal(jitc_var_neq(self, null_instance)),
             mask_2        = steal(jitc_var_and(mask_, is_non_null));
+
         mask = steal(jitc_var_mask_apply(mask_2, size));
+
+        if (debug)
+            mask = steal(jitc_var_check_bounds(BoundsCheckType::Call, self,
+                                               mask, n_inst));
     }
 
     // =====================================================
     // 3. Stash information about inputs and outputs
     // =====================================================
-
-    bool optimize = jitc_flags() & (uint32_t) JitFlag::OptimizeCalls;
+    //
     std::unique_ptr<CallData> call(new CallData());
     call->backend = backend;
     call->name = strdup(name);

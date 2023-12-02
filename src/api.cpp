@@ -172,7 +172,7 @@ int jit_flag(JitFlag flag) {
 
 uint32_t jit_record_checkpoint(JitBackend backend) {
     uint32_t result = (uint32_t) thread_state(backend)->side_effects_symbolic.size();
-    if (jit_flag(JitFlag::Recording))
+    if (jit_flag(JitFlag::Symbolic))
         result |= 0x80000000u;
     return result;
 }
@@ -192,9 +192,9 @@ uint32_t jit_record_begin(JitBackend backend, const char *name) {
         jitc_log(Debug, "jit_record_begin()");
 
     uint32_t result = (uint32_t) ts->side_effects_symbolic.size();
-    if (jit_flag(JitFlag::Recording))
+    if (jit_flag(JitFlag::Symbolic))
         result |= 0x80000000u;
-    jit_set_flag(JitFlag::Recording, true);
+    jit_set_flag(JitFlag::Symbolic, true);
 
     return result;
 }
@@ -211,7 +211,7 @@ void jit_record_end(JitBackend backend, uint32_t value, int cleanup) {
     stack.pop_back();
 
     // Set recording flag to previous value
-    jit_set_flag(JitFlag::Recording, (value & 0x80000000u) != 0);
+    jit_set_flag(JitFlag::Symbolic, (value & 0x80000000u) != 0);
     value &= 0x7fffffff;
 
     if (cleanup) {
@@ -1259,6 +1259,5 @@ int jit_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t c
 }
 
 void jit_set_source_location(const char *fname, size_t lineno) noexcept {
-    lock_guard guard(state.lock);
     jitc_set_source_location(fname, lineno);
 }

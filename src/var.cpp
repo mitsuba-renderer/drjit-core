@@ -144,7 +144,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Bit-level counting operations
     "popc", "clz", "ctz",
 
-    /// Bit-wise operations
+    // Bit-wise operations
     "and", "or", "xor",
 
     // Shifts
@@ -158,6 +158,9 @@ const char *var_kind_name[(int) VarKind::Count] {
 
     // Casts
     "cast", "bitcast",
+
+    // Ensure that an index is within the array bounds
+    "bounds_check",
 
     // Memory-related operations
     "gather", "scatter", "scatter_inc", "scatter_kahan",
@@ -174,11 +177,12 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Specialized nodes for calls
     "call_mask", "call_self",
 
-    /// Input argument to a function call
+    // Input argument to a function call
     "call_input",
 
-    /// Output of a function call
+    // Output of a function call
     "call_output",
+
     // Perform a standard texture lookup (CUDA)
     "tex_lookup",
 
