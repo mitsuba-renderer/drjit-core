@@ -27,7 +27,7 @@ extern Variable *jitc_var(WeakRef ref);
 /// Create a value constant variable of the given size
 extern uint32_t jitc_var_literal(JitBackend backend, VarType type,
                                  const void *value, size_t size,
-                                 int eval, int is_class = 0);
+                                 int eval);
 
 /// Create a variable counting from 0 ... size - 1
 extern uint32_t jitc_var_counter(JitBackend backend, size_t size,

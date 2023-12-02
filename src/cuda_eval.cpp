@@ -714,6 +714,18 @@ static void jitc_cuda_render(uint32_t index, Variable *v) {
             jitc_cuda_render_scatter_kahan(v, index);
             break;
 
+        case VarKind::BoundsCheck:
+            fmt("    setp.ge.and.u32 $v, $v, $u, $v;\n"
+                "    @$v st.global.u32 [$v], $v;\n"
+                "    xor.pred $v, $v, $v;\n"
+                ,
+                v, a0, (uint32_t) v->literal, a1,
+                v, a2, a0,
+                v, a1, v);
+            jitc_var_inc_ref(index, v);
+            bounds_checks.push_back(index);
+
+            break;
 
         case VarKind::Counter:
             fmt("    mov.$b $v, %r0;\n", v, v);
@@ -1309,7 +1321,6 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
         put("in, ");
     buffer.delete_trailing_commas();
     put("), proto;\n");
-
 
     // =====================================================
     // 5.2. Read back the output arguments

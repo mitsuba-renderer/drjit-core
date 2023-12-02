@@ -547,17 +547,12 @@ enum VarType {
  * created in evaluated form, which means that subsequent usage will access the
  * contents via memory instead of including the actual constant value in
  * generated PTX/LLVM code.
- *
- * The parameter \c is_class specifies whether the variable represents an
- * instance index of a class, which may trigger further optimizations within
- * virtual function calls.
  */
 extern JIT_EXPORT uint32_t jit_var_literal(JIT_ENUM JitBackend backend,
                                            JIT_ENUM VarType type,
                                            const void *value,
                                            size_t size JIT_DEF(1),
-                                           int eval JIT_DEF(0),
-                                           int is_class JIT_DEF(0));
+                                           int eval JIT_DEF(0));
 
 
 // Short-hand versions for making scalar literals

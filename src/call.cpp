@@ -141,7 +141,7 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
 
         if (debug)
             mask = steal(jitc_var_check_bounds(BoundsCheckType::Call, self,
-                                               mask, n_inst));
+                                               mask, n_inst + 1));
     }
 
     // =====================================================

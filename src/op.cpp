@@ -1513,7 +1513,10 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index, uint32_t mas
 
     jitc_var_dec_ref(buffer_ptr);
 
-    jitc_var(result)->literal = size | (((uint64_t) bct) << 32);
+    Variable *result_v = jitc_var(result);
+    jitc_lvn_drop(result, result_v);
+    result_v->literal = size | (((uint64_t) bct) << 32);
+    jitc_lvn_put(result, result_v);
 
     return result;
 }
