@@ -64,7 +64,7 @@ enum VarKind : uint32_t {
     // Bit-level counting operations
     Popc, Clz, Ctz,
 
-    /// Bit-wise operations
+    // Bit-wise operations
     And, Or, Xor,
 
     // Shifts
@@ -78,6 +78,9 @@ enum VarKind : uint32_t {
 
     // Casts
     Cast, Bitcast,
+
+    // Ensure that an index is within the array bounds
+    BoundsCheck,
 
     // Memory-related operations
     Gather, Scatter, ScatterInc, ScatterKahan,
@@ -94,10 +97,10 @@ enum VarKind : uint32_t {
     // Specialized nodes for calls
     CallMask, CallSelf,
 
-    /// Input argument to a function call
+    // Input argument to a function call
     CallInput,
 
-    /// Output of a function call
+    // Output of a function call
     CallOutput,
 
     // Perform a standard texture lookup (CUDA)

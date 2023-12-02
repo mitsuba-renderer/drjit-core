@@ -93,6 +93,9 @@ uint32_t callable_depth = 0;
 /// Information about the kernel launch to go in the kernel launch history
 KernelHistoryEntry kernel_history_entry;
 
+/// List of enqueued bound checks
+std::vector<uint32_t> bounds_checks;
+
 // ====================================================================
 
 /// Recursively traverse the computation graph to find variables needed by a computation
@@ -379,6 +382,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 static ProfilerRegion profiler_region_backend_compile("jit_eval: compiling");
 static ProfilerRegion profiler_region_backend_load("jit_eval: loading");
 
+// forward declaration
+static void jitc_process_bounds_checks();
+
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     uint64_t flags = 0;
 
@@ -607,6 +613,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 
         state.kernel_history.append(kernel_history_entry);
     }
+
+    if (unlikely(!bounds_checks.empty()))
+        jitc_process_bounds_checks();
 
     return ret_task;
 }
@@ -895,4 +904,53 @@ void jitc_register_global(const char *str) {
     if (globals_map.emplace(GlobalKey(XXH128(str, length, 0), false),
                             GlobalValue(globals.size(), length)).second)
         globals.put(str, length);
+}
+
+static JIT_NOINLINE void jitc_process_bounds_checks() {
+    for (uint32_t index: bounds_checks) {
+        Variable *v = jitc_var(index);
+        uint32_t captured = 0;
+        jitc_memcpy((JitBackend) v->backend, &captured,
+                    jitc_var(v->dep[2])->data, sizeof(uint32_t));
+        const char *label = jitc_var_label(index);
+        if (captured) {
+            const char *msg = nullptr;
+            const char *msg2 = " in an array of size";
+            switch ((BoundsCheckType) (v->literal >> 32)) {
+                case BoundsCheckType::Gather:
+                    msg = "drjit.gather(): out-of-bounds read from position";
+                    break;
+
+                case BoundsCheckType::Scatter:
+                    msg = "drjit.scatter(): out-of-bounds write to position";
+                    break;
+
+                case BoundsCheckType::ScatterReduce:
+                    msg = "drjit.scatter_reduce(): out-of-bounds write to position";
+                    break;
+
+                case BoundsCheckType::ScatterInc:
+                    msg = "drjit.scatter_inc(): out-of-bounds write to position";
+                    break;
+
+                case BoundsCheckType::ScatterAddKahan:
+                    msg = "drjit.scatter_add_kahan(): out-of-bounds write to position";
+                    break;
+
+                case BoundsCheckType::Call:
+                    msg = "attempted to invoke callable with index";
+                    msg2 = ", but this value must be smaller than";
+                    break;
+
+                default:
+                    jit_fail("jitc_process_bound_checks(): unhandled case!");
+            }
+
+            jitc_log(Warn, "Warning%s%s%s: %s %u%s %u.", label ? " (" : "",
+                     label ? label : "", label ? ")" : "", msg,
+                     (uint32_t) captured, msg2, (uint32_t) v->literal);
+        }
+        jitc_var_dec_ref(index, v);
+    }
+    bounds_checks.clear();
 }

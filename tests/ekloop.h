@@ -244,7 +244,7 @@ protected:
 
                     if constexpr (IsDiff) {
                         using Type = typename Value::Type;
-                        if (!jit_flag(JitFlag::Recording))
+                        if (!jit_flag(JitFlag::Symbolic))
                             detail::ad_traverse_postponed<Type>();
                     }
 

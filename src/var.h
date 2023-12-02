@@ -233,6 +233,20 @@ extern void jitc_var_self(JitBackend backend, uint32_t *value, uint32_t *index);
 /// Return the 'VariableExtra' record associated with a variable (or create it)
 extern VariableExtra *jitc_var_extra(Variable *v);
 
+/// Identify different types of bounds checks (used to choose a suitable error message)
+enum class BoundsCheckType {
+    Scatter,
+    ScatterReduce,
+    ScatterAddKahan,
+    ScatterInc,
+    Gather,
+    Call
+};
+
+/// In debug mode: insert a bounds check, e.g. before gathering/scattering
+extern uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
+                                      uint32_t mask, uint32_t size);
+
 /// Descriptive names and byte sizes for the various variable types
 extern const char *type_name      [(int) VarType::Count];
 extern const char *type_name_short[(int) VarType::Count];
