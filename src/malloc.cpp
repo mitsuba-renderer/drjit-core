@@ -333,7 +333,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
         void *tmp = jitc_malloc(AllocType::HostPinned, size);
         memcpy(tmp, ptr, size);
         cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
-                                 (CUdeviceptr) ptr, size,
+                                 (CUdeviceptr) tmp, size,
                                  ts->stream));
         jitc_free(tmp);
     } else {
