@@ -1075,6 +1075,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         );
 
         Task *local_task = jitc_task;
+        task_retain(local_task);
 
         // Phase 2
         jitc_submit_cpu(
@@ -1094,7 +1095,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                 free(buckets_local);
             },
 
-            size, blocks, false
+            size, blocks
         );
 
         // Free memory (happens asynchronously after the above stmt.)
