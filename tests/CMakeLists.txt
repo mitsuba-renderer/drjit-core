@@ -4,6 +4,11 @@ set(TEST_FILES basics.cpp mem.cpp graphviz.cpp reductions.cpp)
 # vcall.cpp
 # loop.cpp
 
+add_executable(test_half half.cpp)
+add_test(NAME test_half COMMAND test_half
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(test_half PRIVATE drjit-core)
+
 foreach (TEST_FILE ${TEST_FILES})
   get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
   add_executable(test_${TEST_NAME} ${TEST_NAME}.cpp test.h test.cpp ${TEST_NAME}.cpp)

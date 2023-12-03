@@ -14,87 +14,70 @@
 #include <cstring>
 
 #if defined __aarch64__
-#include <arm_fp16.h>
+#  include <arm_fp16.h>
 #elif defined(__F16C__)
-#include <immintrin.h>
+#  include <immintrin.h>
 #endif
 
-
 NAMESPACE_BEGIN(drjit)
-
 NAMESPACE_BEGIN(detail)
-
 template<> struct is_signed<drjit::half>            : std::true_type { };
 template<> struct is_floating_point<drjit::half>    : std::true_type { };
 template<> struct is_arithmetic<drjit::half>        : std::true_type { };
 template<> struct is_scalar<drjit::half>            : std::true_type { };
-
 NAMESPACE_END(detail)
-
 NAMESPACE_END(drjit)
-
 
 NAMESPACE_BEGIN(drjit)
 struct half {
-
     uint16_t value;
 
-    #define DRJIT_IF_INT template <typename Value, enable_if_t<std::is_integral_v<Value>> = 0>
-
     half() = default;
+    half(const half &) = default;
+    half(half &&) = default;
+    half &operator=(const half &) = default;
+    half &operator=(half &&) = default;
 
-    DRJIT_IF_INT half(Value val) : value(float32_to_float16((float)val)) { }
+    template <typename Value,
+              enable_if_t<drjit::detail::is_arithmetic_v<Value> &&
+                          !std::is_same_v<Value, half>> = 0>
+    half(Value val) : value(float32_to_float16((float) val)) {}
 
-    explicit half(float val)    : value(float32_to_float16(val)) {}
-    explicit half(double val)   : value(float32_to_float16((float)val)) {}
+    half operator-() const { return from_binary(value ^ (uint16_t) 0x8000); }
 
-    half operator+(half h) const { return half(float(*this) + float(h)); }
-    half operator-(half h) const { return half(float(*this) - float(h)); }
-    half operator*(half h) const { return half(float(*this) * float(h)); }
-    half operator/(half h) const { return half(float(*this) / float(h)); }
+    #define DRJIT_ARITH_T template <typename Value, enable_if_t<drjit::detail::is_arithmetic_v<Value>> = 0>
+    DRJIT_ARITH_T half operator+(Value v) const { return half(operator float() + float(v)); }
+    DRJIT_ARITH_T half operator-(Value v) const { return half(operator float() - float(v)); }
+    DRJIT_ARITH_T half operator*(Value v) const { return half(operator float() * float(v)); }
+    DRJIT_ARITH_T half operator/(Value v) const { return half(operator float() / float(v)); }
 
-    DRJIT_IF_INT half operator+(Value v) const { return half(float(*this) + float(v)); }
-    DRJIT_IF_INT half operator-(Value v) const { return half(float(*this) - float(v)); }
-    DRJIT_IF_INT half operator*(Value v) const { return half(float(*this) * float(v)); }
-    DRJIT_IF_INT half operator/(Value v) const { return half(float(*this) / float(v)); }
+    DRJIT_ARITH_T half& operator+=(Value v) { return operator=(*this + v); }
+    DRJIT_ARITH_T half& operator-=(Value v) { return operator=(*this - v); }
+    DRJIT_ARITH_T half& operator*=(Value v) { return operator=(*this * v); }
+    DRJIT_ARITH_T half& operator/=(Value v) { return operator=(*this / v); }
 
-    half operator-() const { return half(-float(*this)); }
+    DRJIT_ARITH_T bool operator==(Value v) const { return operator float() == (float) v; }
+    DRJIT_ARITH_T bool operator!=(Value v) const { return operator float() != (float) v; }
+    DRJIT_ARITH_T bool operator< (Value v) const { return operator float() <  (float) v; }
+    DRJIT_ARITH_T bool operator> (Value v) const { return operator float() >  (float) v; }
+    DRJIT_ARITH_T bool operator<=(Value v) const { return operator float() <= (float) v; }
+    DRJIT_ARITH_T bool operator>=(Value v) const { return operator float() >= (float) v; }
 
-    half& operator+=(half h) { return operator=(*this + h); }
-    half& operator-=(half h) { return operator=(*this - h); }
-    half& operator*=(half h) { return operator=(*this * h); }
-    half& operator/=(half h) { return operator=(*this / h); }
-
-    bool operator==(half h) const { return float(*this) == float(h); }
-    bool operator!=(half h) const { return float(*this) != float(h); }
-    bool operator<(half h) const  { return float(*this) < float(h); }
-    bool operator>(half h) const  { return float(*this) > float(h); }
-    bool operator<=(half h) const { return float(*this) <= float(h); }
-    bool operator>=(half h) const { return float(*this) >= float(h); }
-
-    DRJIT_IF_INT bool operator==(Value val) const { return float(*this) == float(val); }
-    DRJIT_IF_INT bool operator!=(Value val) const { return float(*this) != float(val); }
-    DRJIT_IF_INT bool operator<(Value val) const  { return float(*this) < float(val); }
-    DRJIT_IF_INT bool operator>(Value val) const  { return float(*this) > float(val); }
-    DRJIT_IF_INT bool operator<=(Value val) const { return float(*this) <= float(val); }
-    DRJIT_IF_INT bool operator>=(Value val) const { return float(*this) >= float(val); }
+    #undef DRJIT_ARITH_T
 
     operator float() const { return float16_to_float32(value); }
 
     static half from_binary(uint16_t value) { half h; h.value = value; return h; }
-
-    #undef DRJIT_IF_INT
 private:
-    template <typename Dst, typename Src>
-    static Dst memcpy_cast(const Src &src) {
-        static_assert(sizeof(Src) == sizeof(Dst), "memcpy_cast: size mismatch!");
-        Dst dst;
-        std::memcpy(&dst, &src, sizeof(Dst));
+    template <typename Out, typename In>
+    static Out memcpy_cast(const In &src) {
+        static_assert(sizeof(In) == sizeof(Out), "memcpy_cast: size mismatch!");
+        Out dst;
+        std::memcpy(&dst, &src, sizeof(Out));
         return dst;
     }
 
 public:
-
     static uint16_t float32_to_float16(float value) {
         #if defined(__F16C__)
             return (uint16_t) _mm_cvtsi128_si32(
@@ -102,7 +85,7 @@ public:
         #elif defined(__aarch64__)
             return memcpy_cast<uint16_t>((__fp16) value);
         #else
-            jit_fail("Unsupported architecture");
+            return float32_to_float16_fallback(value);
         #endif
     }
 
@@ -112,13 +95,80 @@ public:
         #elif defined(__aarch64__)
             return (float) memcpy_cast<__fp16>(value);
         #else
-            jit_fail("Unsupported architecture");
+            return float16_to_float32_fallback(value);
         #endif
     }
 
-    static half sqrt(half h) { 
+    #if (!defined(__F16C__) && !defined(__aarch64__)) ||                           \
+        defined(DRJIT_INCLUDE_FLOAT16_FALLBACK)
+    /*
+       The two functions below
+           - ``float16_to_float32_fallback()``, and
+           - ``float32_to_float16_fallback()``,
+       are based on code by Paul A. Tessier (@Phernost). It is included with
+       permission by the author, who released this code into the public domain.
+
+       The Dr.Jit test suite compares the implementation against all possible
+       half precision values (64K of them) and all single precision values (4B of
+       them..). The implementation is equivalent to hardware rounding except for
+       the conversion of NaN mantissa bits. This is arguably a quite minor point,
+       and hopefully nobody relies on information there being preserved.
+    */
+
+    static float float16_to_float32_fallback(uint16_t value) {
+        const uint32_t inf_h = 0x7c00, inf_f = 0x7f800000,
+                       bit_diff = 16, sig_diff = 13;
+
+        const float bias_mul = 0x1p+112f;
+
+        uint32_t sign = value & (uint16_t) 0x8000,
+                 bits = value ^ sign; // clear sign
+
+        bool is_norm = bits < inf_h;
+        bits = (sign << bit_diff) | (bits << sig_diff);
+        bits = memcpy_cast<uint32_t>(memcpy_cast<float>(bits) * bias_mul);
+        bits |= -!is_norm & inf_f;
+        return memcpy_cast<float>(bits);
+    }
+
+    static uint16_t float32_to_float16_fallback(float value) {
+      const uint32_t inf_h = 0x7c00, inf_f = 0x7f800000,
+                     min_norm = 0x38800000,
+                     sig_diff = 13, bit_diff = 16,
+                     qnan_h = 0x7e00;
+
+      const float sub_rnd = 0x1p-125f, sub_mul = 0x1p+13f,
+                  bias_mul = 0x1p-112f;
+
+      uint32_t bits = memcpy_cast<uint32_t>(value),
+               sign = bits & (uint32_t) 0x80000000;
+
+        bits ^= sign;
+        bool is_nan = inf_f < bits, is_sub = bits < min_norm;
+
+        float norm = memcpy_cast<float>(bits),
+              subn = norm;
+
+        subn *= sub_rnd; // round subnormals
+        subn *= sub_mul; // correct subnormal exp
+        norm *= bias_mul; // fix exp bias
+        bits = memcpy_cast<uint32_t>(norm);
+        bits += (bits >> sig_diff) & 1;              // add tie breaking bias
+        bits += (uint32_t(1) << (sig_diff - 1)) - 1; // round up to half
+        bits ^= -is_sub & (memcpy_cast<uint32_t>(subn) ^ bits);
+        bits >>= sig_diff; // truncate
+        bits ^= -(inf_h < bits) & (inf_h ^ bits); // fix overflow
+        bits ^= -is_nan & (qnan_h ^ bits);
+        bits |= sign >> bit_diff; // restore sign
+
+        return (uint16_t) bits;
+    }
+#endif
+
+    static half sqrt(half h) {
         #if defined(__aarch64__)
-            return from_binary(memcpy_cast<uint16_t>(vsqrth_f16(memcpy_cast<__fp16>(h.value))));
+            return from_binary(
+                memcpy_cast<uint16_t>(vsqrth_f16(memcpy_cast<__fp16>(h.value))));
         #else
             return half(std::sqrt((float) h));
         #endif
