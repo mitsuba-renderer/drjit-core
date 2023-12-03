@@ -14,6 +14,7 @@
 #include "registry.h"
 #include "var.h"
 #include "profiler.h"
+#include "strbuf.h"
 #include <sys/stat.h>
 
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -272,15 +273,29 @@ void jitc_shutdown(int light) {
                 const Variable &v = state.variables[i];
                 if (v.ref_count == 0 && v.ref_count_se == 0)
                     continue;
-                if (n_leaked < 10)
-                    jitc_log(Warn,
-                             " - variable r%zu: type=%s, size=%u, kind=\"%s\", "
-                             "deps=[r%u, r%u, r%u, r%u], ref_count=%u, "
-                             "ref_count_se=%u", i, type_name[v.type], v.size,
-                             var_kind_name[v.kind], v.dep[0], v.dep[1],
-                             v.dep[2], v.dep[3], v.ref_count, v.ref_count_se);
-                else if (n_leaked == 10)
+
+                if (n_leaked < 50) {
+                    buffer.clear();
+                    buffer.fmt("%s r%zu[%u] = %s(", type_name[v.type], i,
+                               v.size, var_kind_name[v.kind]);
+                    bool prev_dep = false;
+                    for (int j = 0; j < 4; ++j) {
+                        if (!v.dep[j])
+                            continue;
+                        if (prev_dep)
+                            buffer.put(", ");
+                        buffer.fmt("r%u", v.dep[j]);
+                        prev_dep = true;
+                    }
+                    buffer.put(")");
+                    if (v.ref_count)
+                        buffer.fmt(", refs=%u", v.ref_count);
+                    if (v.ref_count_se)
+                        buffer.fmt(", refs_se=%u", v.ref_count_se);
+                    jitc_log(Warn, " - %s", buffer.get());
+                } else if (n_leaked == 50) {
                     jitc_log(Warn, " - (skipping remainder)");
+                }
                 ++n_leaked;
             }
         }

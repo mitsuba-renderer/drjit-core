@@ -614,9 +614,6 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         state.kernel_history.append(kernel_history_entry);
     }
 
-    if (unlikely(!bounds_checks.empty()))
-        jitc_process_bounds_checks();
-
     return ret_task;
 }
 
@@ -732,6 +729,9 @@ void jitc_eval(ThreadState *ts) {
             jitc_task = new_task;
         }
     }
+
+    if (unlikely(!bounds_checks.empty()))
+        jitc_process_bounds_checks();
 
     /* Variables and their dependencies are now computed, hence internal edges
        between them can be removed. This will cause many variables to expire. */
@@ -916,6 +916,8 @@ static JIT_NOINLINE void jitc_process_bounds_checks() {
         if (captured) {
             const char *msg = nullptr;
             const char *msg2 = " in an array of size";
+            uint32_t size = (uint32_t) v->literal;
+
             switch ((BoundsCheckType) (v->literal >> 32)) {
                 case BoundsCheckType::Gather:
                     msg = "drjit.gather(): out-of-bounds read from position";
@@ -940,15 +942,17 @@ static JIT_NOINLINE void jitc_process_bounds_checks() {
                 case BoundsCheckType::Call:
                     msg = "attempted to invoke callable with index";
                     msg2 = ", but this value must be smaller than";
+                    captured--;
+                    size--;
                     break;
 
                 default:
                     jit_fail("jitc_process_bound_checks(): unhandled case!");
             }
 
-            jitc_log(Warn, "Warning%s%s%s: %s %u%s %u.", label ? " (" : "",
-                     label ? label : "", label ? ")" : "", msg,
-                     (uint32_t) captured, msg2, (uint32_t) v->literal);
+            jitc_log(Warn, "%s %u%s %u. %s%s%s", msg, captured, msg2,
+                     (uint32_t) size, label ? "(" : "", label ? label : "",
+                     label ? ")" : "");
         }
         jitc_var_dec_ref(index, v);
     }

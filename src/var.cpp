@@ -750,6 +750,10 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
 
         index = key_it.value();
         vo = &state.variables[index];
+        jitc_assert(VariableKey(*vo) == VariableKey(v),
+                    "jit_var_new(): LVN data structure is out of sync! (1)");
+        jitc_assert(vo->ref_count != 0 || vo->ref_count_se != 0,
+                    "jit_var_new(): LVN data structure is out of sync! (2)");
     }
 
     if (unlikely(std::max(state.log_level_stderr, state.log_level_callback) >=

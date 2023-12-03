@@ -843,7 +843,7 @@ static void jitc_llvm_render(uint32_t index, Variable *v) {
                 "    $v_2 = icmp uge $V, $v_1\n"
                 "    $v_3 = and $V, $v_2\n"
                 "    $v_4 = call i1 @llvm$e.vector.reduce.or.v$wi1(<$w x i1> $v_3)\n"
-                "    br i1 $v_4, label %l_$u_cont, label %l_$u_cont\n\n"
+                "    br i1 $v_4, label %l_$u_err, label %l_$u_cont\n\n"
                 "l_$u_err:\n",
                 v, (uint32_t) v->literal,
                 v, v,
