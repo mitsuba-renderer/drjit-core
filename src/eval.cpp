@@ -96,6 +96,9 @@ KernelHistoryEntry kernel_history_entry;
 /// List of enqueued bound checks
 std::vector<uint32_t> bounds_checks;
 
+/// Temporary todo list needed to correctly process loops in jitc_var_traverse()
+std::vector<VisitedKey> visit_later;
+
 // ====================================================================
 
 /// Recursively traverse the computation graph to find variables needed by a computation
@@ -105,12 +108,19 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
 
     Variable *v = jitc_var(index);
     switch ((VarKind) v->kind) {
-        case VarKind::LoopPhi:
-        case VarKind::LoopOutput: {
+        case VarKind::LoopPhi: {
                 LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
                 jitc_var_traverse(size, loop->outer_in[v->literal], depth);
-                jitc_var_traverse(size, loop->inner_in[v->literal], depth);
+                visit_later.emplace_back(
+                    size, loop->inner_out[v->literal], depth);
+            }
+            break;
+
+        case VarKind::LoopOutput: {
+                LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
                 jitc_var_traverse(size, loop->inner_out[v->literal], depth);
+                jitc_var_traverse(size, loop->outer_in[v->literal], depth);
+                jitc_var_traverse(size, loop->inner_in[v->literal], depth);
             }
             break;
 
@@ -639,6 +649,7 @@ void jitc_eval(ThreadState *ts) {
     lock_acquire(state.lock);
 
     visited.clear();
+    visit_later.clear();
     schedule.clear();
 
     for (WeakRef wr: ts->scheduled) {
@@ -656,6 +667,13 @@ void jitc_eval(ThreadState *ts) {
         jitc_var_traverse(jitc_var(index)->size, index);
 
     ts->side_effects.clear();
+
+    // Should not be replaced by a range-based for loop,
+    // as the traversal may append further items
+    for (size_t i = 0; i < visit_later.size(); ++i) {
+        VisitedKey vk = visit_later[i];
+        jitc_var_traverse(vk.size, vk.index, vk.depth);
+    }
 
     if (schedule.empty())
         return;
@@ -798,6 +816,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
     ProfilerPhase profiler(profiler_region_assemble_func);
 
     visited.clear();
+    visit_later.clear();
     schedule.clear();
 
     const std::vector<uint32_t> &check = call->checkpoints;
@@ -816,6 +835,13 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
 
     for (uint32_t i = 0; i < n_se; ++i)
         jitc_var_traverse(1, se[i]);
+
+    // Should not be replaced by a range-based for loop,
+    // as the traversal may append further items
+    for (size_t i = 0; i < visit_later.size(); ++i) {
+        VisitedKey vk = visit_later[i];
+        jitc_var_traverse(vk.size, vk.index, vk.depth);
+    }
 
     std::stable_sort(
         schedule.begin(), schedule.end(),

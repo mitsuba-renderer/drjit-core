@@ -339,13 +339,14 @@ void jitc_llvm_compile(Kernel &kernel) {
                   "IR and error message below:\n\n%s\n\n%s", buffer.get(), error);
     LLVMDisposeMessage(error);
 
-#if !defined(NDEBUG)
+// Always validate for now -- at least, until this Dr.Jit version has stabilized a bit more
+// #if !defined(NDEBUG)
     bool status = LLVMVerifyModule(llvm_module, LLVMReturnStatusAction, &error);
     if (unlikely(status))
         jitc_fail("jit_llvm_compile(): module could not be verified! Please "
                   "see the LLVM IR and error message below:\n\n%s\n\n%s",
                   buffer.get(), error);
-#endif
+// #endif
     LLVMDisposeMessage(error);
 
     #define DRJIT_RUN_LEGACY_PASS_MANAGER()                                   \
