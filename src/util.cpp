@@ -1387,7 +1387,6 @@ void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, u
             size, work_units);
 
         jitc_submit_cpu(
-            KernelType::Other, [rec_](uint32_t) { jit_free(rec_); }, 1, 1,
-            true, true);
+            KernelType::Other, [rec_](uint32_t) { free(rec_); }, 1, 1);
     }
 }

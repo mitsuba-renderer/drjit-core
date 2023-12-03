@@ -263,10 +263,13 @@ uint32_t jitc_var_vcall(const char *name, uint32_t self, uint32_t mask_,
 
         data_v = steal(jitc_var_pointer(backend, data_d, data_buf, 0));
 
-        VCallDataRecord *rec = (VCallDataRecord *)
-            jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned
-                                                    : AllocType::Host,
-                        sizeof(VCallDataRecord) * vcall->data_map.size());
+        VCallDataRecord *rec;
+
+        size_t rec_size = sizeof(VCallDataRecord) * vcall->data_map.size();
+        if (backend == JitBackend::CUDA)
+            rec = (VCallDataRecord *) jitc_malloc(AllocType::HostPinned, rec_size);
+        else
+            rec = (VCallDataRecord *) malloc_check(rec_size);
 
         VCallDataRecord *p = rec;
 
