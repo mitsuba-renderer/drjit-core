@@ -242,10 +242,13 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
 
         data_v = steal(jitc_var_pointer(backend, data_d, data_buf, 0));
 
-        AggregationEntry *agg = (AggregationEntry *)
-            jitc_malloc(backend == JitBackend::CUDA ? AllocType::HostPinned
-                                                    : AllocType::Host,
-                        sizeof(AggregationEntry) * call->data_map.size());
+        AggregationEntry *agg = nullptr;
+        size_t agg_size = sizeof(AggregationEntry) * call->data_map.size();
+
+        if (backend == JitBackend::CUDA)
+            agg = (AggregationEntry *) jitc_malloc(AllocType::HostPinned, agg_size);
+        else
+            agg = (AggregationEntry *) malloc_check(agg_size);
 
         AggregationEntry *p = agg;
 
@@ -611,11 +614,13 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
 }
 
 void jitc_call_upload(ThreadState *ts) {
-    AllocType at = ts->backend == JitBackend::CUDA ? AllocType::HostPinned
-                                                   : AllocType::Host;
-
     for (CallData *call : calls_assembled) {
-        uint64_t *data = (uint64_t *) jitc_malloc(at, call->offset_size);
+        uint64_t *data;
+        if (ts->backend == JitBackend::CUDA)
+            data = (uint64_t *) jitc_malloc(AllocType::HostPinned, call->offset_size);
+        else
+            data = (uint64_t *) malloc_check(call->offset_size);
+
         memset(data, 0, call->offset_size);
 
         for (uint32_t i = 0; i < call->n_inst; ++i) {
@@ -637,7 +642,7 @@ void jitc_call_upload(ThreadState *ts) {
         } else {
             Task *new_task = task_submit_dep(
                 nullptr, &jitc_task, 1, 1,
-                [](uint32_t, void *payload) { jit_free(*((void **) payload)); },
+                [](uint32_t, void *payload) { free(*((void **) payload)); },
                 &data, sizeof(void *), nullptr, 1);
             task_release(jitc_task);
             jitc_task = new_task;

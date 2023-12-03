@@ -1398,7 +1398,6 @@ void jitc_aggregate(JitBackend backend, void *dst_, AggregationEntry *agg,
             size, work_units);
 
         jitc_submit_cpu(
-            KernelType::Other, [agg](uint32_t) { jit_free(agg); }, 1, 1,
-            true, true);
+            KernelType::Other, [agg](uint32_t) { free(agg); }, 1, 1);
     }
 }
