@@ -1497,26 +1497,21 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
     }
 }
 
-uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index, uint32_t mask, uint32_t size) {
+uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index, uint32_t mask, uint32_t array_size) {
     auto [info, v_index, v_mask] = jitc_var_check<Disabled>("jit_var_check_bounds", index, mask);
 
     uint64_t zero = 0;
     uint32_t buffer =
         jitc_var_literal(info.backend, VarType::UInt32, &zero, 1, 1);
     uint32_t buffer_ptr = jitc_var_pointer(info.backend, jitc_var(buffer)->data, buffer, 1);
+
+    uint32_t result = jitc_var_new_node_3(
+        info.backend, VarKind::BoundsCheck, VarType::Bool, info.size,
+        info.symbolic, index, jitc_var(index), mask, jitc_var(mask), buffer_ptr,
+        jitc_var(buffer_ptr), array_size | (((uint64_t) bct) << 32));
+
     jitc_var_dec_ref(buffer);
-
-    uint32_t result =
-        jitc_var_new_node_3(info.backend, VarKind::BoundsCheck, VarType::Bool,
-                            info.size, info.symbolic, index, jitc_var(index), mask,
-                            jitc_var(mask), buffer_ptr, jitc_var(buffer_ptr));
-
     jitc_var_dec_ref(buffer_ptr);
-
-    Variable *result_v = jitc_var(result);
-    jitc_lvn_drop(result, result_v);
-    result_v->literal = size | (((uint64_t) bct) << 32);
-    jitc_lvn_put(result, result_v);
 
     return result;
 }
@@ -1590,12 +1585,17 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
     /// Perform a memcpy when this is a size-1 literal load
     if (!result && var_info.size == 1 && var_info.literal) {
         size_t size = type_size[(int) src_info.type];
+        size_t pos = (size_t) jitc_var(index)->literal;
+
+        if (pos >= src_info.size)
+            jitc_raise("jit_var_gather(): out-of-bounds read from position %zu "
+                       "in an array of size %u.", pos, src_info.size);
+
         AllocType atype = (JitBackend) src_info.backend == JitBackend::CUDA
                               ? AllocType::Device
                               : AllocType::HostAsync;
 
-        void *ptr = (uint8_t *) jitc_var(src)->data +
-                    size * jitc_var(index)->literal,
+        void *ptr = (uint8_t *) jitc_var(src)->data + size * pos,
              *ptr_out = jitc_malloc(atype, size);
 
         jitc_memcpy_async(src_info.backend, ptr_out, ptr, size);
