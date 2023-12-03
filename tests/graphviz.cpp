@@ -29,7 +29,7 @@ TEST_CUDA_FP32(01_graphviz) {
     Float f = a + 6;
     jit_prefix_pop(Backend);
     jit_prefix_pop(Backend);
-    Float g = Float::steal(jit_var_wrap_vcall(f.index()));
+    Float g = Float::steal(jit_var_call_input(f.index()));
 
     scatter_reduce(ReduceOp::Add, f, Float(4), UInt32(0));
 
