@@ -354,8 +354,12 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
            prefix_len + 32);
 
     if (unlikely(trace || (jitc_flags() & (uint32_t) JitFlag::PrintIR))) {
-        LogLevel level = std::max(state.log_level_stderr, state.log_level_callback);
-        jitc_log(level, "%s", buffer.get());
+        buffer.put('\n');
+        if (state.log_callback)
+            state.log_callback(LogLevel::Info, buffer.get());
+        else
+            fputs(buffer.get(), stderr);
+        buffer.rewind_to(buffer.size() - 1);
     }
 
     float codegen_time = timer();
