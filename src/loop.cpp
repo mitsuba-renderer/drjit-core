@@ -317,8 +317,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
 
         state_vars_size += type_size[jitc_var(index_new)->type];
         indices[i] = index_new;
-        ld->outer_out.push_back(
-            WeakRef(index_new, jitc_var(index_new)->counter));
+        ld->outer_out.emplace_back(index_new, jitc_var(index_new)->counter);
     }
 
     std::vector<uint32_t> &se_list =

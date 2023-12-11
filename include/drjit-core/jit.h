@@ -1321,7 +1321,8 @@ extern JIT_EXPORT const char *jit_prefix(JIT_ENUM JitBackend);
  */
 #if defined(__cplusplus)
 enum class JitFlag : uint32_t {
-    /// Debug mode: annotates generated PTX/LLVM IR with Python line number information (if available)
+    /// Debug mode: annotates generated PTX/LLVM IR with Python line number
+    /// information (if available)
     Debug = 1 << 0,
 
     /// Disable this flag to keep the Dr.Jit from reusing variable indices
@@ -1353,33 +1354,37 @@ enum class JitFlag : uint32_t {
     /// Merge functions produced by Dr.Jit when they have a compatible structure
     MergeFunctions = 1 << 8,
 
+    /// Capture conditionals symbolically instead of evaluating both branches
+    /// and combining their results.
+    SymbolicConditionals = 1 << 9,
+
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 1 << 9,
+    ForceOptiX = 1 << 10,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 1 << 10,
+    PrintIR = 1 << 11,
 
     /// Maintain a history of kernel launches. Useful for profiling Dr.Jit code.
-    KernelHistory = 1 << 11,
+    KernelHistory = 1 << 12,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 1 << 12,
+    LaunchBlocking = 1 << 13,
 
     /// Perform a local (warp/SIMD) reduction before issuing global atomics
-    AtomicReduceLocal = 1 << 13,
+    AtomicReduceLocal = 1 << 14,
 
-    /// This flag should not be set in user code. Dr.Jit sets it whenever it is
-    /// capturing computation symbolically
-    Symbolic = 1 << 14,
+    /// Set to \c true when Dr.Jit is capturing symbolic computation. This flag
+    /// is managed automatically and should not be set by application code.
+    SymbolicScope = 1 << 15,
 
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) SymbolicLoops | (uint32_t) OptimizeLoops |
               (uint32_t) SymbolicCalls | (uint32_t) MergeFunctions |
-              (uint32_t) OptimizeCalls | (uint32_t) ReuseIndices |
-              (uint32_t) AtomicReduceLocal,
+              (uint32_t) OptimizeCalls | (uint32_t) SymbolicConditionals |
+              (uint32_t) ReuseIndices | (uint32_t) AtomicReduceLocal,
 
     // Deprecated aliases, will be removed in a future version of Dr.Jit
     LoopRecord = SymbolicLoops,
@@ -1387,7 +1392,7 @@ enum class JitFlag : uint32_t {
     VCallRecord = SymbolicCalls,
     VCallDeduplicate = MergeFunctions,
     VCallOptimize = OptimizeCalls,
-    Recording = Symbolic
+    Recording = SymbolicScope
 };
 #else
 enum JitFlag {
@@ -1400,12 +1405,13 @@ enum JitFlag {
     JitFlagSymbolicCalls = 1 << 6,
     JitFlagOptimizeCalls = 1 << 7,
     JitFlagMergeFunctions = 1 << 8,
-    JitFlagForceOptiX = 1 << 9,
-    JitFlagPrintIR = 1 << 10,
-    JitFlagKernelHistory = 1 << 11,
-    JitFlagLaunchBlocking = 1 << 12,
-    JitFlagAtomicReduceLocal = 1 << 13,
-    JitFlagSymbolic = 1 << 14
+    JitFlagSymbolicConditionals = 1 << 9,
+    JitFlagForceOptiX = 1 << 10,
+    JitFlagPrintIR = 1 << 11,
+    JitFlagKernelHistory = 1 << 12,
+    JitFlagLaunchBlocking = 1 << 13,
+    JitFlagAtomicReduceLocal = 1 << 14,
+    JitFlagSymbolic = 1 << 15
 };
 #endif
 
@@ -1500,12 +1506,12 @@ extern JIT_EXPORT uint32_t jit_var_loop_start(const char *name,
 extern JIT_EXPORT uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active);
 
 /**
- * \brief Finish recording a symbolic loop
+ * \brief Finish symbolic recording of a loop
  *
  * \param loop
  *    A symbolic loop handle produced by ``jit_var_loop_start()``.
  *
- * \param
+ * \param cond
  *    A loop condition handle produced by ``jit_var_loop_cond()``.
  *
  * \param indices
@@ -1528,6 +1534,73 @@ extern JIT_EXPORT uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active);
  */
 extern JIT_EXPORT int jit_var_loop_end(uint32_t loop, uint32_t cond,
                                        uint32_t *indices, uint32_t checkpoint);
+
+/**
+ * \brief Begin symbolic recording of an ``if`` statement
+ *
+ * \param name
+ *    A descriptive name
+ *
+ * \param symbolic
+ *    Does this conditional occur within a symbolic execution context? (For
+ *    example, is it nested within a symbolic loop?)
+ *
+ * \param cond_t
+ *    Variable index of a boolean array specifying whether the 'true' branch
+ *    should be executed. Set this to (condition & loop mask)
+ *
+ * \param cond_f
+ *    Variable index of a boolean array specifying whether the 'false' branch
+ *    should be executed. Set this to (!condition & loop mask)
+ *
+ * \return
+ *    A temporary handle that should be passed to the later routines.
+ *    The caller has the responsibility of reducing the reference count
+ *    of this variable once the conditional statement has been created.
+ */
+extern JIT_EXPORT uint32_t jit_var_cond_start(const char *name, bool symbolic,
+                                              uint32_t cond_t, uint32_t cond_f);
+
+/**
+ * \brief Append a case to the ``if`` statement.
+ *
+ * This function should be called exactly twice: first, to specify the
+ * return values of the ``if`` block. Second, to specify the return
+ * values of the associated ``else`` block.
+ *
+ * \param index
+ *    A symbolic handle produced by ``jit_var_cond_start()``.
+ *
+ * \param rv
+ *    Pointer to an array of return value variable indices
+ *
+ * \param count
+ *    Specifies the number of return values (i.e., the size of the array ``rv``)
+ *
+ * \param cond
+ *    Variable index of a boolean array specifying the conditional expression
+ *
+ * \return
+ *    A temporary handle. The caller has the responsibility of reducing the
+ *    reference count of this variable once the conditional statement has been
+ *    created.
+ */
+extern JIT_EXPORT uint32_t jit_var_cond_append(uint32_t index,
+                                               const uint32_t *rv,
+                                               size_t count);
+
+/**
+ * \brief Finish symbolic recording of a conditional expression
+ *
+ * \param index
+ *    A symbolic handle produced by ``jit_var_cond_start()``.
+ *
+ * \param rv_out
+ *    Output array that will receive the combined return values. The
+ *    size must match the ``count`` argument of the preceding calls to
+ *    ``jit_var_cond_append()``.
+ */
+extern JIT_EXPORT void jit_var_cond_end(uint32_t index, uint32_t *rv_out);
 
 /**
  * \brief Wrap an input variable of a virtual function call before recording

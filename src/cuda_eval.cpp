@@ -36,6 +36,7 @@
 #include "var.h"
 #include "log.h"
 #include "call.h"
+#include "cond.h"
 #include "loop.h"
 #include "optix.h"
 
@@ -738,9 +739,6 @@ static void jitc_cuda_render(uint32_t index, Variable *v) {
                 v, a0, (uint32_t) v->literal, a1,
                 v, a2, a0,
                 v, a1, v);
-            jitc_var_inc_ref(index, v);
-            bounds_checks.push_back(index);
-
             break;
 
         case VarKind::Counter:
@@ -846,6 +844,47 @@ static void jitc_cuda_render(uint32_t index, Variable *v) {
             // No code generated for this node
             break;
 
+        case VarKind::CondStart: {
+                const CondData *cd = (CondData *) v->data;
+                if (cd->name != "unnamed")
+                    fmt("    // Symbolic conditional: $s\n", cd->name.c_str());
+                fmt("    @!$v bra l_$u_f;\n\n"
+                    "\nl_$u_t:\n",
+                    a0, v->reg_index, v->reg_index);
+            }
+            break;
+
+        case VarKind::CondMid: {
+                const CondData *cd = (CondData *) a0->data;
+                for (size_t i = 0; i < cd->indices_out.size(); ++i) {
+                    Variable *vt = jitc_var(cd->indices_t[i]),
+                             *vo = jitc_var(cd->indices_out[i]);
+                    if (!vo || !vo->reg_index)
+                        continue;
+                    fmt("    mov.$b $v, $v;\n", vo, vo, vt);
+                }
+                fmt("    bra l_$u_end;\n\n"
+                    "l_$u_f:\n", a0->reg_index, a0->reg_index);
+            }
+            break;
+
+        case VarKind::CondEnd: {
+                const CondData *cd = (CondData *) a0->data;
+                for (size_t i = 0; i < cd->indices_out.size(); ++i) {
+                    Variable *vf = jitc_var(cd->indices_f[i]),
+                             *vo = jitc_var(cd->indices_out[i]);
+                    if (!vo || !vo->reg_index)
+                        continue;
+                    fmt("    mov.$b $v, $v;\n", vo, vo, vf);
+                }
+                fmt("\nl_$u_end:\n", a0->reg_index);
+            }
+            break;
+
+        case VarKind::CondOutput: // No output
+            break;
+
+
         default:
             jitc_fail("jitc_cuda_render(): unhandled variable kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);
@@ -902,7 +941,7 @@ static void jitc_cuda_render_scatter(const Variable *v,
         // Intrinsic to perform an intra-warp reduction before writing to global memory
         fmt_intrinsic(
             ".func reduce_$s_$t(.param .u64 ptr,\n"
-            "                   .param .$t value) {\n"
+            "                     .param .$t value) {\n"
             "    .reg .pred %p<14>;\n"
             "    .reg .$t %q<19>;\n"
             "    .reg .b32 %r<41>;\n"

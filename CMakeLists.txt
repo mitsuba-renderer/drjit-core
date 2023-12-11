@@ -135,6 +135,7 @@ add_library(
   src/eval.h     src/eval.cpp
   src/call.h     src/call.cpp
   src/loop.h     src/loop.cpp
+  src/cond.h     src/cond.cpp
   src/init.cpp
   src/api.cpp
 
