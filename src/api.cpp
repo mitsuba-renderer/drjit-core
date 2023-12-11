@@ -18,6 +18,7 @@
 #include "op.h"
 #include "call.h"
 #include "loop.h"
+#include "cond.h"
 #include <thread>
 #include <condition_variable>
 #include <drjit-core/half.h>
@@ -172,7 +173,7 @@ int jit_flag(JitFlag flag) {
 
 uint32_t jit_record_checkpoint(JitBackend backend) {
     uint32_t result = (uint32_t) thread_state(backend)->side_effects_symbolic.size();
-    if (jit_flag(JitFlag::Symbolic))
+    if (jit_flag(JitFlag::SymbolicScope))
         result |= 0x80000000u;
     return result;
 }
@@ -192,9 +193,9 @@ uint32_t jit_record_begin(JitBackend backend, const char *name) {
         jitc_log(Debug, "jit_record_begin()");
 
     uint32_t result = (uint32_t) ts->side_effects_symbolic.size();
-    if (jit_flag(JitFlag::Symbolic))
+    if (jit_flag(JitFlag::SymbolicScope))
         result |= 0x80000000u;
-    jit_set_flag(JitFlag::Symbolic, true);
+    jit_set_flag(JitFlag::SymbolicScope, true);
 
     return result;
 }
@@ -211,7 +212,7 @@ void jit_record_end(JitBackend backend, uint32_t value, int cleanup) {
     stack.pop_back();
 
     // Set recording flag to previous value
-    jit_set_flag(JitFlag::Symbolic, (value & 0x80000000u) != 0);
+    jit_set_flag(JitFlag::SymbolicScope, (value & 0x80000000u) != 0);
     value &= 0x7fffffff;
 
     if (cleanup) {
@@ -1256,6 +1257,21 @@ uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active) {
 int jit_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t checkpoint) {
     lock_guard guard(state.lock);
     return jitc_var_loop_end(loop, cond, indices, checkpoint);
+}
+
+uint32_t jit_var_cond_start(const char *name, bool symbolic, uint32_t cond_t, uint32_t cond_f) {
+    lock_guard guard(state.lock);
+    return jitc_var_cond_start(name, symbolic, cond_t, cond_f);
+}
+
+uint32_t jit_var_cond_append(uint32_t index, const uint32_t *rv, size_t count) {
+    lock_guard guard(state.lock);
+    return jitc_var_cond_append(index, rv, count);
+}
+
+void jit_var_cond_end(uint32_t index, uint32_t *rv_out) {
+    lock_guard guard(state.lock);
+    jitc_var_cond_end(index, rv_out);
 }
 
 void jit_set_source_location(const char *fname, size_t lineno) noexcept {

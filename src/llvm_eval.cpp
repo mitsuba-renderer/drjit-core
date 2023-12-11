@@ -62,6 +62,7 @@
 #include "eval.h"
 #include "internal.h"
 #include "log.h"
+#include "cond.h"
 #include "var.h"
 #include "call.h"
 #include "loop.h"
@@ -882,8 +883,6 @@ static void jitc_llvm_render(uint32_t index, Variable *v) {
                 v->reg_index,
                 v, a1, v);
 
-            jitc_var_inc_ref(index, v);
-            bounds_checks.push_back(index);
             break;
 
         case VarKind::Counter:
@@ -979,6 +978,79 @@ static void jitc_llvm_render(uint32_t index, Variable *v) {
             // No code generated for this node
             break;
 
+        case VarKind::CondStart: {
+                const CondData *cd = (CondData *) v->data;
+                fmt_intrinsic("declare i1 @llvm$e.vector.reduce.or.v$wi1($T)", a0);
+                fmt("    br label %l_$u_start\n\n"
+                    "l_$u_start:\n",
+                    v->reg_index,
+                    v->reg_index);
+                if (cd->name != "unnamed")
+                    fmt("    ; Symbolic conditional: $s\n", cd->name.c_str());
+                fmt("    $v_t = call i1 @llvm$e.vector.reduce.or.v$wi1($V)\n"
+                    "    br i1 $v_t, label %l_$u_t, label %l_$u_next\n\n"
+                    "l_$u_t:\n",
+                    v, a0,
+                    v, v->reg_index, v->reg_index,
+                    v->reg_index);
+            }
+            break;
+
+        case VarKind::CondMid: {
+                const CondData *cd = (CondData *) a0->data;
+                uint32_t loop_reg = a0->reg_index;
+                fmt("    br label %l_$u_next\n\n"
+                    "l_$u_next:\n",
+                    loop_reg, loop_reg);
+
+                for (size_t i = 0; i < cd->indices_t.size(); ++i) {
+                    const Variable *vt = jitc_var(cd->indices_t[i]),
+                                   *vo = jitc_var(cd->indices_out[i]);
+                    if (!vo || !vo->reg_index)
+                        continue;
+                    fmt("    $v_$u_t = phi $T [ $v, %l_$u_t ], [ undef, %l_$u_start ]\n",
+                        a0, (uint32_t) i, vt, vt, loop_reg, loop_reg);
+                }
+
+                fmt("    $v_f = call i1 @llvm$e.vector.reduce.or.v$wi1($V)\n"
+                    "    br i1 $v_f, label %l_$u_f, label %l_$u_end\n\n"
+                    "l_$u_f:\n",
+                    a0, jitc_var(a0->dep[1]),
+                    a0, loop_reg, loop_reg,
+                    loop_reg);
+            }
+            break;
+
+        case VarKind::CondEnd: {
+                const CondData *cd = (CondData *) a0->data;
+                uint32_t loop_reg = a0->reg_index;
+
+                fmt("    br label %l_$u_end\n\n"
+                    "l_$u_end:\n",
+                    loop_reg, loop_reg);
+
+                for (size_t i = 0; i < cd->indices_t.size(); ++i) {
+                    const Variable *vf = jitc_var(cd->indices_f[i]),
+                                   *vo = jitc_var(cd->indices_out[i]);
+                    if (!vo || !vo->reg_index)
+                        continue;
+                    fmt("    $v_$u_f = phi $T [ $v, %l_$u_f ], [ undef, %l_$u_next ]\n",
+                        a0, (uint32_t) i, vf, vf, loop_reg, loop_reg);
+                }
+
+                for (size_t i = 0; i < cd->indices_t.size(); ++i) {
+                    const Variable *vo = jitc_var(cd->indices_out[i]);
+                    if (!vo || !vo->reg_index)
+                        continue;
+                    fmt("    $v = select $V, $T $v_$u_t, $T $v_$u_f\n",
+                        vo, jitc_var(a0->dep[0]), vo, a0, (uint32_t) i, vo, a0, (uint32_t) i);
+                }
+            }
+            break;
+
+        case VarKind::CondOutput: // No output
+            break;
+
         default:
             jitc_fail("jitc_llvm_render(): unhandled node kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);
@@ -990,7 +1062,7 @@ static void jitc_llvm_render(uint32_t index, Variable *v) {
         for (size_t i = 0; i < 4; ++i) {
             Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
             if (dep)
-                dep->type = (uint32_t)VarType::Float16;
+                dep->type = (uint32_t) VarType::Float16;
         }
 
         fmt("    %h$u = fptrunc <$w x float> %f$u to <$w x half>\n",

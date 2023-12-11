@@ -130,6 +130,18 @@ enum VarKind : uint32_t {
     // SSA Phi variable at end of loop
     LoopOutput,
 
+    // Variable marking the start of a conditional statement
+    CondStart,
+
+    // Variable marking the start of the 'false' branch
+    CondMid,
+
+    // Variable marking the end of a conditional statement
+    CondEnd,
+
+    // SSA Phi variable marking an output of a conditional statement
+    CondOutput,
+
     // Denotes the number of different node types
     Count
 };
@@ -258,7 +270,6 @@ struct VariableExtra {
     /// Set to 'true' if the central mutex should be released before invoking 'callback'
     bool callback_internal = false;
 };
-
 
 #pragma pack(push, 1)
 

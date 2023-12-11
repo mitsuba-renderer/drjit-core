@@ -208,7 +208,19 @@ const char *var_kind_name[(int) VarKind::Count] {
     "loop_phi",
 
     // SSA Phi variable at end of loop
-    "loop_output"
+    "loop_output",
+
+    // Variable marking the start of a conditional statement
+    "cond_start",
+
+    // Variable marking the 'false' branch of a conditional statement
+    "cond_mid",
+
+    // Variable marking the end of a conditional statement
+    "cond_end",
+
+    // SSA Phi variable marking an output of a conditional statement
+    "cond_output"
 };
 
 /// Temporary string buffer for miscellaneous variable-related tasks
@@ -258,8 +270,7 @@ void jitc_var_free(uint32_t index, Variable *v) {
         state.unused_extra.push(index2);
     }
 
-
-    // Remove from hash table
+    // Remove from unused variable list
     state.unused_variables.push(index);
 
     if (likely(!write_ptr)) {
@@ -579,7 +590,9 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         }
 
         bool lvn_hit = lvn && !lvn_key_inserted,
-             show_lit = v.is_node() && !v.is_undefined() && (VarKind) v.kind != VarKind::Nop && v.literal;
+             show_lit = v.is_node() && !v.is_undefined() &&
+                        (VarKind) v.kind != VarKind::Nop &&
+                        (VarKind) v.kind != VarKind::BoundsCheck && v.literal;
         if (v.symbolic || lvn_hit || show_lit) {
             var_buffer.put(" [");
             bool prev = false;
@@ -679,7 +692,7 @@ uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size) {
 
 uint32_t jitc_var_counter(JitBackend backend, size_t size,
                           bool simplify_scalar) {
-    if (size == 1 && simplify_scalar && !jit_flag(JitFlag::Symbolic)) {
+    if (size == 1 && simplify_scalar && !jit_flag(JitFlag::SymbolicScope)) {
         uint32_t zero = 0;
         return jitc_var_literal(backend, VarType::UInt32, &zero, 1, 0);
     }

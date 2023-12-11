@@ -1501,19 +1501,71 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index, uint32_t mas
     auto [info, v_index, v_mask] = jitc_var_check<Disabled>("jit_var_check_bounds", index, mask);
 
     uint64_t zero = 0;
-    uint32_t buffer =
-        jitc_var_literal(info.backend, VarType::UInt32, &zero, 1, 1);
-    uint32_t buffer_ptr = jitc_var_pointer(info.backend, jitc_var(buffer)->data, buffer, 1);
+    Ref buffer =
+        steal(jitc_var_literal(info.backend, VarType::UInt32, &zero, 1, 1));
+    Ref buffer_ptr = steal(jitc_var_pointer(info.backend, jitc_var(buffer)->data, buffer, 1));
 
-    uint32_t result = jitc_var_new_node_3(
+    Ref result = steal(jitc_var_new_node_3(
         info.backend, VarKind::BoundsCheck, VarType::Bool, info.size,
         info.symbolic, index, jitc_var(index), mask, jitc_var(mask), buffer_ptr,
-        jitc_var(buffer_ptr), array_size | (((uint64_t) bct) << 32));
+        jitc_var(buffer_ptr), array_size | (((uint64_t) bct) << 32)));
 
-    jitc_var_dec_ref(buffer);
-    jitc_var_dec_ref(buffer_ptr);
+    jitc_var_set_callback(result,
+         [](uint32_t index, int free, void *) {
+             if (free)
+                 return;
 
-    return result;
+            Variable *v = jitc_var(index);
+            uint32_t captured = 0;
+            jitc_memcpy((JitBackend) v->backend, &captured,
+                        jitc_var(v->dep[2])->data, sizeof(uint32_t));
+
+            const char *label = jitc_var_label(index);
+            if (captured) {
+                const char *msg = nullptr;
+                const char *msg2 = " in an array of size";
+                uint32_t size = (uint32_t) v->literal;
+
+                switch ((BoundsCheckType) (v->literal >> 32)) {
+                    case BoundsCheckType::Gather:
+                        msg = "drjit.gather(): out-of-bounds read from position";
+                        break;
+
+                    case BoundsCheckType::Scatter:
+                        msg = "drjit.scatter(): out-of-bounds write to position";
+                        break;
+
+                    case BoundsCheckType::ScatterReduce:
+                        msg = "drjit.scatter_reduce(): out-of-bounds write to position";
+                        break;
+
+                    case BoundsCheckType::ScatterInc:
+                        msg = "drjit.scatter_inc(): out-of-bounds write to position";
+                        break;
+
+                    case BoundsCheckType::ScatterAddKahan:
+                        msg = "drjit.scatter_add_kahan(): out-of-bounds write to position";
+                        break;
+
+                    case BoundsCheckType::Call:
+                        msg = "attempted to invoke callable with index";
+                        msg2 = ", but this value must be smaller than";
+                        captured--;
+                        size--;
+                        break;
+
+                    default:
+                        jit_fail("jitc_var_check_bounds(): unhandled case!");
+                }
+
+                jitc_log(Warn, "%s %u%s %u. %s%s%s", msg, captured, msg2,
+                         (uint32_t) size, label ? "(" : "", label ? label : "",
+                         label ? ")" : "");
+            }
+        },
+        nullptr, true);
+
+    return result.release();
 }
 
 uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
@@ -1679,7 +1731,7 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
         return;
 
     uint32_t flags = jitc_flags();
-    var_info.symbolic |= flags & (uint32_t) JitFlag::Symbolic;
+    var_info.symbolic |= flags & (uint32_t) JitFlag::SymbolicScope;
 
     // Check if it is safe to write directly
     if (target_1_v->ref_count > 2) { // 1 from original array, 1 from borrow above
@@ -1719,7 +1771,7 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
 
     var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
-    bool symbolic = jit_flag(JitFlag::Symbolic);
+    bool symbolic = jit_flag(JitFlag::SymbolicScope);
     if (var_info.symbolic && !symbolic)
         jitc_raise(
             "jit_var_scatter_kahan(): input arrays are symbolic, but the "
@@ -1788,7 +1840,7 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
         return 0;
 
     uint32_t flags = jitc_flags();
-    var_info.symbolic |= flags & (uint32_t) JitFlag::Symbolic;
+    var_info.symbolic |= flags & (uint32_t) JitFlag::SymbolicScope;
 
     // Check if it is safe to write directly
     if (target_v->ref_count > 2) // 1 from original array, 1 from borrow above
@@ -1813,7 +1865,7 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
 
     var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
-    bool symbolic = jit_flag(JitFlag::Symbolic);
+    bool symbolic = jit_flag(JitFlag::SymbolicScope);
     if (var_info.symbolic && !symbolic)
         jitc_raise(
             "jit_var_scatter_inc(): input arrays are symbolic, but the "
@@ -1894,7 +1946,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         jitc_fail("jit_var_scatter(): Only scatter and scatter_reduce_add supported for half-precision variables");
 
     uint32_t flags = jitc_flags();
-    var_info.symbolic |= flags & (uint32_t) JitFlag::Symbolic;
+    var_info.symbolic |= flags & (uint32_t) JitFlag::SymbolicScope;
 
     if (target_v->type != value_v->type)
         jitc_raise("jit_var_scatter(): target/value type mismatch!");
@@ -1938,7 +1990,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
     var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
-    bool symbolic = jit_flag(JitFlag::Symbolic);
+    bool symbolic = jit_flag(JitFlag::SymbolicScope);
     if (var_info.symbolic && !symbolic)
         jitc_raise(
             "jit_var_scatter(): input arrays are symbolic, but the operation "
