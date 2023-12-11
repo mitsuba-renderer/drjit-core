@@ -365,6 +365,21 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
 };
 
+static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
+    switch(kind) {
+        case VarKind::Sqrt:
+        case VarKind::Div:
+        case VarKind::Rcp:
+        case VarKind::Rsqrt:
+            return UINT_MAX;
+        case VarKind::Min:
+        case VarKind::Max:
+            return 80;
+        default:
+            return 53;
+    }
+}
+
 static void jitc_cuda_render(uint32_t index, Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
@@ -374,7 +389,8 @@ static void jitc_cuda_render(uint32_t index, Variable *v) {
 
     const ThreadState *ts = thread_state_cuda;
 
-    bool f32_upcast = jitc_is_half(v) && ts->compute_capability < var_kind_fp16_min_compute_cuda[v->kind];
+    bool f32_upcast = jitc_is_half(v) && 
+        ts->compute_capability < jitc_fp16_min_compute_cuda((VarKind)v->kind);
 
     if (f32_upcast) {
         Variable* b = const_cast<Variable*>(v);

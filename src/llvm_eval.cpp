@@ -436,6 +436,18 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
         "}");
 }
 
+static inline bool jitc_fp16_supported_llvm(VarKind kind) {
+    switch(kind) {
+        case Min:
+        case Max:
+#if !defined (__aarch64__)
+            return false;
+#endif
+        default:
+            return true;
+    }
+}
+
 static void jitc_llvm_render(uint32_t index, Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
@@ -443,7 +455,7 @@ static void jitc_llvm_render(uint32_t index, Variable *v) {
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
-    bool f32_upcast = jitc_is_half(v) && !var_kind_fp16_supported_llvm[v->kind];
+    bool f32_upcast = jitc_is_half(v) && !jitc_fp16_supported_llvm((VarKind)v->kind);
 
     if (f32_upcast) {
         Variable* b = const_cast<Variable*>(v);
