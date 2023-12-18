@@ -54,6 +54,9 @@ Task *jitc_task = nullptr;
 /// Reference to the target machine used for compilation
 LLVMTargetMachineRef jitc_llvm_tm = nullptr;
 
+/// Number of packets per block handed to nanothread
+uint32_t jitc_llvm_block_size = 1024;
+
 void jitc_llvm_update_strings();
 
 bool jitc_llvm_init() {

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdlib>
 
 // fmix32 from MurmurHash by Austin Appleby (public domain)
 inline uint32_t fmix32(uint32_t h) {

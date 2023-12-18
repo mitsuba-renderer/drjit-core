@@ -60,6 +60,8 @@ extern int jitc_llvm_version_patch;
 /// Pre-generated strings for use by the template engine
 extern char **jitc_llvm_ones_str;
 
+extern uint32_t jitc_llvm_block_size;
+
 /// Try to load initialize LLVM backend
 extern bool jitc_llvm_init();
 
