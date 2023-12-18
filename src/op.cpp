@@ -1497,8 +1497,10 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
     }
 }
 
-uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index, uint32_t mask, uint32_t array_size) {
-    auto [info, v_index, v_mask] = jitc_var_check<Disabled>("jit_var_check_bounds", index, mask);
+uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
+                               uint32_t mask, uint32_t array_size) {
+    auto [info, v_index, v_mask] =
+        jitc_var_check<Disabled>("jit_var_check_bounds", index, mask);
 
     uint64_t zero = 0;
     Ref buffer =
@@ -1686,19 +1688,19 @@ static const char *reduce_op_symbol[(int) ReduceOp::Count] = {
     "=", "+=", "*=", "= min", "= max", "&=", "|="
 };
 
-void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
-                                   uint32_t value, uint32_t index, uint32_t mask) {
+void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
+                                uint32_t value, uint32_t index, uint32_t mask) {
     if (value == 0 && index == 0)
         return;
 
     auto [var_info, value_v, index_v, mask_v] =
-        jitc_var_check("jit_var_scatter_reduce_kahan", value, index, mask);
+        jitc_var_check("jit_var_scatter_add_kahan", value, index, mask);
 
     Ref target_1 = borrow(*target_1_p),
         target_2 = borrow(*target_2_p);
 
     auto [target_info, target_1_v, target_2_v] =
-        jitc_var_check("jit_var_scatter_reduce_kahan",
+        jitc_var_check("jit_var_scatter_add_kahan",
                        (uint32_t) target_1,
                        (uint32_t) target_2);
 
@@ -1712,17 +1714,14 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
         target_2_v = jitc_var(target_2);
     }
 
-    if (target_1 == target_2)
-        jitc_raise("jit_var_scatter_reduce_kahan(): the destination arrays cannot be the same.");
-
     if (target_1_v->symbolic || target_2_v->symbolic)
-        jitc_raise("jit_var_scatter_reduce_kahan(): cannot scatter to a symbolic variable.");
+        jitc_raise("jit_var_scatter_add_kahan(): cannot scatter to a symbolic variable.");
 
     if (target_1_v->type != value_v->type || target_2_v->type != value_v->type)
-        jitc_raise("jit_var_scatter_reduce_kahan(): target/value type mismatch.");
+        jitc_raise("jit_var_scatter_add_kahan(): target/value type mismatch.");
 
     if (target_1_v->size != target_2_v->size)
-        jitc_raise("jit_var_scatter_reduce_kahan(): target size mismatch.");
+        jitc_raise("jit_var_scatter_add_kahan(): target size mismatch.");
 
     if (value_v->is_literal() && value_v->literal == 0)
         return;
@@ -1737,7 +1736,7 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     if (target_1_v->ref_count > 2) { // 1 from original array, 1 from borrow above
         target_1 = steal(jitc_var_copy(target_1));
 
-        // The above operation may have invalidated 'target_2_v' whichis accessed below
+        // The above operation may have invalidated 'target_2_v' which is accessed below
         target_2_v = jitc_var(target_2);
     }
 
@@ -1767,50 +1766,32 @@ void jitc_var_scatter_reduce_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
         index_2 = steal(jitc_scatter_gather_index(target_1, index));
 
     if (flags & (uint32_t) JitFlag::Debug)
-        mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::ScatterAddKahan, index, mask_2, target_info.size));
+        mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::ScatterAddKahan,
+                                             index, mask_2, target_info.size));
 
     var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
+
+    Ref value_2 = steal(jitc_var_and(value, mask_2));
 
     bool symbolic = jit_flag(JitFlag::SymbolicScope);
     if (var_info.symbolic && !symbolic)
         jitc_raise(
             "jit_var_scatter_kahan(): input arrays are symbolic, but the "
             "operation was issued outside of a symbolic recording session.");
-    jitc_fail("unimplemented!");
-#if 0
 
-    uint32_t result = jitc_var_new_node_0(
-        var_info.backend, VarKind::ScatterKahan, VarType::Void,
-        var_info.size, symbolic);
-
-    uint32_t *dep = (uint32_t *) malloc_check(sizeof(uint32_t) * 5);
-    dep[0] = ptr_1;
-    dep[1] = ptr_2;
-    dep[2] = index_2;
-    dep[3] = mask_2;
-    dep[4] = value;
-
-    jitc_var_inc_ref(ptr_1);
-    jitc_var_inc_ref(ptr_2);
-    jitc_var_inc_ref(index_2);
-    jitc_var_inc_ref(mask_2);
-    jitc_var_inc_ref(value);
-
-    Variable *result_v = jitc_var(result);
-
-    Extra &e = state.extra[result];
-    e.n_dep = 5;
-    e.dep = dep;
+    uint32_t result = jitc_var_new_node_4(
+        var_info.backend, VarKind::ScatterKahan, VarType::Void, var_info.size,
+        symbolic, ptr_1, jitc_var(ptr_1), ptr_2, jitc_var(ptr_2), index_2,
+        jitc_var(index_2), value_2, jitc_var(value_2));
 
     jitc_log(Debug,
              "jit_var_scatter_reduce_kahan(): (r%u[r%u], r%u[r%u]) += r%u "
              "(mask=r%u, ptrs=(r%u, r%u), se=r%u)",
              (uint32_t) target_1, (uint32_t) index_2, (uint32_t) target_2,
-             (uint32_t) index_2, value, (uint32_t) mask_2, (uint32_t) ptr_1,
-             (uint32_t) ptr_2, result);
+             (uint32_t) index_2, (uint32_t) value_2, (uint32_t) mask_2,
+             (uint32_t) ptr_1, (uint32_t) ptr_2, result);
 
     jitc_var_mark_side_effect(result);
-#endif
 }
 
 uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask) {
@@ -1937,13 +1918,14 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     }
 
     if (reduce_op == ReduceOp::Mul)
-        jitc_raise("jit_var_scatter(): ReduceOp::Mul unsupported for atomic reductions!");
+        jitc_raise("jit_var_scatter(): ReduceOp.Mul unsupported for atomic reductions!");
 
     if (target_v->symbolic)
         jitc_raise("jit_var_scatter(): cannot scatter to a symbolic variable!");
 
     if (jitc_is_half(target_v) && !(reduce_op == ReduceOp::None || reduce_op == ReduceOp::Add))
-        jitc_fail("jit_var_scatter(): Only scatter and scatter_reduce_add supported for half-precision variables");
+        jitc_fail("jit_var_scatter(): half-precision variables only support "
+                  "dr.scatter() and dr.scatter_add()");
 
     uint32_t flags = jitc_flags();
     var_info.symbolic |= flags & (uint32_t) JitFlag::SymbolicScope;
@@ -1963,7 +1945,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         return target.release();
     }
 
-    if (value_v->is_literal() && value_v->literal == 0 && reduce_op == ReduceOp::Add) {
+    if (value_v->is_literal() && value_v->literal == 0 &&
+        reduce_op == ReduceOp::Add) {
         print_log("skipped, scatter_reduce(ScatterOp.Add) with zero-valued "
                   "source variable");
         return target.release();

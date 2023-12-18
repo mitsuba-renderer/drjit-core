@@ -885,11 +885,11 @@ extern JIT_EXPORT uint32_t jit_var_scatter(uint32_t target, uint32_t value,
  * if a copy needs to be made (for example, if another variable elsewhere
  * references the same variable).
  */
-extern JIT_EXPORT void jit_var_scatter_reduce_kahan(uint32_t *target_1,
-                                                    uint32_t *target_2,
-                                                    uint32_t value,
-                                                    uint32_t index,
-                                                    uint32_t mask);
+extern JIT_EXPORT void jit_var_scatter_add_kahan(uint32_t *target_1,
+                                                 uint32_t *target_2,
+                                                 uint32_t value,
+                                                 uint32_t index,
+                                                 uint32_t mask);
 
 /**
  * \brief Atomically increment a counter and return the old value
