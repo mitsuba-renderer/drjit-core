@@ -233,6 +233,14 @@ extern void jitc_var_self(JitBackend backend, uint32_t *value, uint32_t *index);
 /// Return the 'VariableExtra' record associated with a variable (or create it)
 extern VariableExtra *jitc_var_extra(Variable *v);
 
+/// Temporarily stash the reference count of a variable used to make
+/// copy-on-write (COW) decisions in jit_var_scatter. Returns a handle for
+/// \ref jitc_var_unstash_ref().
+extern uint64_t jitc_var_stash_ref(uint32_t index);
+
+/// Undo the change performed by \ref jitc_var_stash_ref()
+extern void jitc_var_unstash_ref(uint64_t handle);
+
 /// Identify different types of bounds checks (used to choose a suitable error message)
 enum class BoundsCheckType {
     Scatter,

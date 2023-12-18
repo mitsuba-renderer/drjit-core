@@ -196,7 +196,7 @@ struct Variable {
     /// Is this a pointer variable that is used to write to some array?
     uint32_t write_ptr : 1;
 
-    // =======================  Miscellaneous fields =========================
+    // =======================  Miscellaneous flags ==========================
 
     /// If set, 'data' will not be deallocated when the variable is destructed
     uint32_t retain_data : 1;
@@ -213,10 +213,10 @@ struct Variable {
     /// If set, evaluation will have side effects on other variables
     uint32_t side_effect : 1;
 
+    // =========== Entries that are temporarily used in jitc_eval() ============
+
     /// Tracks if an SSA (LLVM) implicit f32 cast has been performed during assembly
     uint32_t ssa_f32_cast : 1;
-
-    // =========== Entries that are temporarily used in jitc_eval() ============
 
     /// Argument type
     uint32_t param_type : 2;
@@ -239,7 +239,10 @@ struct Variable {
     // ========================  Side effect tracking  =========================
 
     /// Number of queued side effects
-    uint32_t ref_count_se;
+    uint32_t ref_count_se : 16;
+
+    /// Reference count stash, see \ref jit_var_stash_ref()
+    uint32_t ref_count_stashed : 16;
 
     /// If nonzero, references an associated 'VariableExtra' field in 'state.extra'
     uint32_t extra;
