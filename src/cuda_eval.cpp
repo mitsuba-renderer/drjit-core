@@ -51,13 +51,17 @@
     } while (0);
 
 // Forward declarations
-static void jitc_cuda_render(uint32_t index, Variable *v);
+static void jitc_cuda_render(Variable *v);
 static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value, const Variable *index,
                                      const Variable *mask);
 static void jitc_cuda_render_scatter_inc(Variable *v, const Variable *ptr,
                                          const Variable *index, const Variable *mask);
-static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t index);
+static void jitc_cuda_render_scatter_add_kahan(const Variable *v,
+                                               const Variable *ptr_1,
+                                               const Variable *ptr_2,
+                                               const Variable *index,
+                                               const Variable *value);
 
 #if defined(DRJIT_ENABLE_OPTIX)
 static void jitc_cuda_render_trace(uint32_t index, const Variable *v,
@@ -191,7 +195,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
             }
             continue;
         } else {
-            jitc_cuda_render(index, v);
+            jitc_cuda_render(v);
         }
 
         if (v->param_type == ParamType::Output) {
@@ -338,7 +342,7 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
         } else if (v->is_literal()) {
             fmt("    mov.$b $v, $l;\n", v, v, v);
         } else {
-            jitc_cuda_render(sv.index, v);
+            jitc_cuda_render(v);
         }
     }
 
@@ -381,7 +385,7 @@ static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
     }
 }
 
-static void jitc_cuda_render(uint32_t index, Variable *v) {
+static void jitc_cuda_render(Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
@@ -728,7 +732,7 @@ static void jitc_cuda_render(uint32_t index, Variable *v) {
             break;
 
         case VarKind::ScatterKahan:
-            jitc_cuda_render_scatter_kahan(v, index);
+            jitc_cuda_render_scatter_add_kahan(v, a0, a1, a2, a3);
             break;
 
         case VarKind::BoundsCheck:
@@ -1102,26 +1106,17 @@ static void jitc_cuda_render_scatter_inc(Variable *v,
     v->consumed = 1;
 }
 
-static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) {
-#if 1
-    (void) v;
-    (void) v_index;
-#else
-    const Extra &extra = state.extra[v_index];
-
-    const Variable *ptr_1 = jitc_var(extra.dep[0]),
-                   *ptr_2 = jitc_var(extra.dep[1]),
-                   *index = jitc_var(extra.dep[2]),
-                   *mask = jitc_var(extra.dep[3]),
-                   *value = jitc_var(extra.dep[4]);
-
-    bool unmasked = mask->is_literal() && mask->literal == 1;
-
-    if (!unmasked)
-        fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
-
-    fmt("    mad.wide.$t %rd2, $v, $a, $v;\n"
+static void jitc_cuda_render_scatter_add_kahan(const Variable *v,
+                                               const Variable *ptr_1,
+                                               const Variable *ptr_2,
+                                               const Variable *index,
+                                               const Variable *value) {
+    fmt("    setp.eq %p3, $v, 0;\n"
+        "    @%p3 bra l_$u_done;\n"
+        "    mad.wide.$t %rd2, $v, $a, $v;\n"
         "    mad.wide.$t %rd3, $v, $a, $v;\n",
+        value,
+        v->reg_index,
         index, index, value, ptr_1,
         index, index, value, ptr_2);
 
@@ -1160,9 +1155,7 @@ static void jitc_cuda_render_scatter_kahan(const Variable *v, uint32_t v_index) 
         value,
         value);
 
-    if (!unmasked)
-        fmt("\nl_$u_done:\n", v->reg_index);
-#endif
+    fmt("\nl_$u_done:\n", v->reg_index);
 }
 
 #if defined(DRJIT_ENABLE_OPTIX)
