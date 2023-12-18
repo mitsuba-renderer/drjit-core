@@ -268,6 +268,15 @@ extern JIT_EXPORT uint32_t jit_llvm_vector_width();
 /// Specify the number of threads that are used to parallelize the computation
 extern JIT_EXPORT void jit_llvm_set_thread_count(uint32_t size);
 
+/// Return the number of threads that are used to parallelize the computation
+extern JIT_EXPORT uint32_t jit_llvm_thread_count();
+
+/// Specify the number of SIMD packets that form one parallel work item
+extern JIT_EXPORT void jit_llvm_set_block_size(uint32_t size);
+
+/// Return the number of SIMD packets that form one parallel work item
+extern JIT_EXPORT uint32_t jit_llvm_block_size();
+
 // ====================================================================
 //                        Logging infrastructure
 // ====================================================================

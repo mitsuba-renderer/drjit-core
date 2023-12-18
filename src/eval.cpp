@@ -557,6 +557,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,
                                       thread_count, 1, 1, 0, ts->stream,
                                       nullptr, config));
+            jitc_trace("jit_run(): launching %u thread%s in %u block%s ..",
+                       thread_count, thread_count == 1 ? "" : "s", block_count,
+                       block_count == 1 ? "" : "s");
         }
 
         if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
@@ -587,7 +590,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 #endif
         };
 
-        uint32_t block_size = DRJIT_POOL_BLOCK_SIZE,
+        uint32_t block_size = jitc_llvm_block_size,
                  blocks = (group.size + block_size - 1) / block_size;
 
         kernel_params[0] = (void *) kernel.llvm.reloc[0];
@@ -598,7 +601,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         kernel_params[2] = kernel.llvm.itt;
 #endif
 
-        jitc_trace("jit_run(): scheduling %u packet%s in %u block%s ..",
+        jitc_trace("jit_run(): launching %u packet%s in %u block%s ..",
                    packets, packets == 1 ? "" : "s", blocks,
                    blocks == 1 ? "" : "s");
         (void) packets; // jitc_trace may be disabled

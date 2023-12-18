@@ -291,6 +291,18 @@ void jit_llvm_set_thread_count(uint32_t size) {
     pool_set_size(nullptr, size);
 }
 
+void jit_llvm_set_block_size(uint32_t size) {
+    jitc_llvm_block_size = size;
+}
+
+uint32_t jit_llvm_block_size() {
+    return jitc_llvm_block_size;
+}
+
+uint32_t jit_llvm_thread_count() {
+    return pool_size(nullptr);
+}
+
 void jit_llvm_set_target(const char *target_cpu,
                          const char *target_features,
                          uint32_t vector_width) {

@@ -22,9 +22,6 @@
 #  define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
 #endif
 
-/// Number of entries to process per work unit in the parallel LLVM backend
-#define DRJIT_POOL_BLOCK_SIZE 16384
-
 /// Can't pass more than 4096 bytes of parameter data to a CUDA kernel
 #define DRJIT_CUDA_ARG_LIMIT 512
 

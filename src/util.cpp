@@ -362,7 +362,7 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
     } else {
         uint32_t block_size = size, blocks = 1;
         if (pool_size() > 1) {
-            block_size = DRJIT_POOL_BLOCK_SIZE;
+            block_size = jitc_llvm_block_size;
             blocks     = (size + block_size - 1) / block_size;
         }
 
@@ -615,7 +615,7 @@ void jitc_prefix_sum(JitBackend backend, VarType vt, bool exclusive,
     } else {
         uint32_t block_size = size, blocks = 1;
         if (pool_size() > 1) {
-            block_size = DRJIT_POOL_BLOCK_SIZE;
+            block_size = jitc_llvm_block_size;
             blocks     = (size + block_size - 1) / block_size;
         }
 
@@ -745,7 +745,7 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
     } else {
         uint32_t block_size = size, blocks = 1;
         if (pool_size() > 1) {
-            block_size = DRJIT_POOL_BLOCK_SIZE;
+            block_size = jitc_llvm_block_size;
             blocks     = (size + block_size - 1) / block_size;
         }
 
@@ -1009,7 +1009,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
             block_size = (size + blocks - 1) / blocks;
 
             // But don't make the blocks too small
-            block_size = std::max((uint32_t) DRJIT_POOL_BLOCK_SIZE, block_size);
+            block_size = std::max(jitc_llvm_block_size, block_size);
 
             // Finally re-adjust block count given the selected block size
             blocks = (size + block_size - 1) / block_size;
@@ -1211,7 +1211,7 @@ void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void
     } else {
         uint32_t work_unit_size = size, work_units = 1;
         if (pool_size() > 1) {
-            work_unit_size = DRJIT_POOL_BLOCK_SIZE;
+            work_unit_size = jitc_llvm_block_size;
             work_units     = (size + work_unit_size - 1) / work_unit_size;
         }
 
@@ -1275,7 +1275,7 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
     } else {
         uint32_t work_unit_size = size, work_units = 1;
         if (pool_size() > 1) {
-            work_unit_size = DRJIT_POOL_BLOCK_SIZE;
+            work_unit_size = jitc_llvm_block_size;
             work_units     = (size + work_unit_size - 1) / work_unit_size;
         }
 
@@ -1358,7 +1358,7 @@ void jitc_aggregate(JitBackend backend, void *dst_, AggregationEntry *agg,
     } else {
         uint32_t work_unit_size = size, work_units = 1;
         if (pool_size() > 1) {
-            work_unit_size = DRJIT_POOL_BLOCK_SIZE;
+            work_unit_size = jitc_llvm_block_size;
             work_units     = (size + work_unit_size - 1) / work_unit_size;
         }
 
