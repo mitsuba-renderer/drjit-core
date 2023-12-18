@@ -21,6 +21,22 @@
 static StringBuffer log_buffer;
 static char jitc_string_buf[64];
 
+static const char *fatal_error_msg =
+    "\n\nDr.Jit encountered an unrecoverable error and will now shut\n"
+    "down. Please re-run your program in debug mode to check for\n"
+    "out-of-bounds reads, writes, and other sources of undefined\n"
+    "behavior. You can do so by calling\n"
+    "\n"
+    "   dr.set_flag(drjit.JitFlag.Debug, True)\n"
+    "\n"
+    "at the beginning of the program. If these additional checks\n"
+    "fail to pinpoint the problem, then you have likely found a\n"
+    "bug. We are happy to help investigate and fix the problem if\n"
+    "you can you create a self-contained reproducer and submit it\n"
+    "at https://github.com/mitsuba-renderer/drjit.\n"
+    "\n"
+    "The message associated with this failure is: \n";
+
 void jitc_log(LogLevel log_level, const char* fmt, ...) {
     if (unlikely(log_level <= state.log_level_stderr)) {
         va_list args;
@@ -77,22 +93,46 @@ void jitc_vraise(const char* fmt, va_list args) {
 }
 
 void jitc_fail(const char* fmt, ...) noexcept {
-    fprintf(stderr, "\n\nCritical Dr.Jit compiler failure: ");
+    if (state.log_callback) {
+        va_list args;
+        va_start(args, fmt);
+        log_buffer.clear();
+        log_buffer.put(fatal_error_msg, strlen(fatal_error_msg));
+        log_buffer.vfmt(fmt, args);
+        va_end(args);
+        state.log_callback(Error, log_buffer.get());
+    } else {
+        va_list args;
+        va_start(args, fmt);
+        fputs(fatal_error_msg, stderr);
+        vfprintf(stderr, fmt, args);
+        fputc('\n', stderr);
+        va_end(args);
+    }
 
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
-    va_end(args);
-
-    fputc('\n', stderr);
     lock_release(state.lock);
     abort();
 }
 
-void jitc_vfail(const char* fmt, va_list args) noexcept {
-    fprintf(stderr, "Critical Dr.Jit compiler failure: ");
-    vfprintf(stderr, fmt, args);
-    fputc('\n', stderr);
+void jitc_vfail(const char* fmt, va_list args_) noexcept {
+    if (state.log_callback) {
+        va_list args;
+        va_copy(args, args_);
+        log_buffer.clear();
+        log_buffer.put(fatal_error_msg, strlen(fatal_error_msg));
+        log_buffer.vfmt(fmt, args);
+        va_end(args);
+        state.log_callback(Error, log_buffer.get());
+    } else {
+        va_list args;
+        va_copy(args, args_);
+        fputs(fatal_error_msg, stderr);
+        vfprintf(stderr, fmt, args);
+        fputc('\n', stderr);
+        va_end(args);
+    }
+
+    lock_release(state.lock);
     abort();
 }
 
