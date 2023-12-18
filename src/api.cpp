@@ -560,6 +560,7 @@ uint32_t jit_var_call_input(uint32_t index) {
 void jit_var_inc_ref_impl(uint32_t index) noexcept {
     if (index == 0)
         return;
+
     lock_guard guard(state.lock);
     jitc_var_inc_ref(index);
 }
@@ -567,6 +568,7 @@ void jit_var_inc_ref_impl(uint32_t index) noexcept {
 void jit_var_dec_ref_impl(uint32_t index) noexcept {
     if (index == 0)
         return;
+
     lock_guard guard(state.lock);
     jitc_var_dec_ref(index);
 }
@@ -574,6 +576,7 @@ void jit_var_dec_ref_impl(uint32_t index) noexcept {
 uint32_t jit_var_ref(uint32_t index) {
     if (index == 0)
         return 0;
+
     lock_guard guard(state.lock);
     return jitc_var(index)->ref_count;
 }
@@ -1287,4 +1290,14 @@ void jit_var_cond_end(uint32_t index, uint32_t *rv_out) {
 
 void jit_set_source_location(const char *fname, size_t lineno) noexcept {
     jitc_set_source_location(fname, lineno);
+}
+
+uint64_t jit_var_stash_ref(uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_var_stash_ref(index);
+}
+
+void jit_var_unstash_ref(uint64_t handle) {
+    lock_guard guard(state.lock);
+    return jitc_var_unstash_ref(handle);
 }

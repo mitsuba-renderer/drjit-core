@@ -996,6 +996,35 @@ JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
 extern JIT_EXPORT uint32_t jit_var_ref(uint32_t index);
 
 /**
+ * \brief Temporarily stash the reference count of a variable
+ *
+ * The explanation of this operation needs a bit more context: Operations like
+ * dr.if_stmt(), dr.while_loop(), etc., create temporary copies of their
+ * inputs, which are needed to roll back changes (otherwise, the 'true_fn' of
+ * dr.if_stmt() could, e.g., modify an input argument that is subsequently
+ * accessed by 'false_fn')
+ *
+ * These copies have no actual cost since Dr.Jit's employs a copy-on-write
+ * (COW) mechanism to simply reference the inputs multiple times.
+ *
+ * However, these extra copies cause problems when such a symbolic operation
+ * has side effects (e.g., via dr.scatter). COW now requires the creation of a
+ * copy in device memory, and that often turns out to be unncecessary
+ * specifically for side effects.
+ *
+ * This operation provides a solution to this problem: when entering a symbolic
+ * region, the reference counts of inputs are temporarily stashed, and these
+ * stashed counts are subsequently used to make COW-related decision.
+ *
+ * It returns a handle that should be used to later undo the operation via \ref
+ * jit_var_unstash_ref() when leaving the symbolic region.
+ */
+extern JIT_EXPORT uint64_t jit_var_stash_ref(uint32_t index);
+
+/// Undo the change performed by \ref jit_var_stash_ref()
+extern JIT_EXPORT void jit_var_unstash_ref(uint64_t handle);
+
+/**
  * \brief Potentially evaluate a variable and return a pointer to its address
  * in device memory.
  *
@@ -2090,7 +2119,7 @@ extern JIT_EXPORT void jit_kernel_history_clear();
  *
  *     KernelHistoryEntry *data = jit_kernel_history();
  *     KernelHistoryEntry *e = data;
- *     while (e->ir) {
+ *     while (e->backend) {
  *         free(e->ir);
  *         e++;
  *     }

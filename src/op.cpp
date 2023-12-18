@@ -1953,8 +1953,13 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     }
     const uint32_t target_size = target_v->size;
 
-    // Check if it is safe to write directly
-    if (target_v->ref_count > 2) // 1 from original array, 1 from borrow above
+    // Check if it is safe to directly to ``target``. We borrowed ``target``
+    // above, and the caller also owns one reference. Therefore, the target
+    // array can be directly modified when the reference count exactly equals
+    // 2. Otherwise, we must make a copy first. If a reference count was
+    // stashed via \ref jitc_var_stash_ref() (e.g., prior to a control flow
+    // operation like dr.if_stmt()), then use that instead.
+    if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));
 
     void *target_addr = nullptr;
@@ -1981,8 +1986,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
     uint32_t result = jitc_var_new_node_4(
         var_info.backend, VarKind::Scatter, VarType::Void,
-        var_info.size, symbolic, ptr,
-        jitc_var(ptr), value, jitc_var(value), index_2, jitc_var(index_2),
+        var_info.size, symbolic, ptr, jitc_var(ptr),
+        value, jitc_var(value), index_2, jitc_var(index_2),
         mask_2, jitc_var(mask_2), (uint64_t) reduce_op);
 
     print_log(((uint32_t) target == target_) ? "direct" : "copied target", result);
@@ -2039,4 +2044,3 @@ uint32_t jitc_var_op(JitOp op, const uint32_t *dep) {
         default: jitc_raise("jit_var_new_op(): unsupported operation!");
     }
 }
-

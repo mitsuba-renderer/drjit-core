@@ -314,6 +314,38 @@ void jitc_var_inc_ref(uint32_t index, Variable *v) noexcept {
     jitc_trace("jit_var_inc_ref(r%u): %u", index, (uint32_t) v->ref_count);
 }
 
+/// Temporarily stash the reference count of a variable used to make
+/// copy-on-write (COW) decisions in jit_var_scatter. Returns a handle for
+/// \ref jitc_var_unstash_ref().
+uint64_t jitc_var_stash_ref(uint32_t index) {
+    if (!index)
+        return 0;
+
+    Variable *v = jitc_var(index);
+    if (v->ref_count_stashed)
+        return 0;
+
+    v->ref_count_stashed = v->ref_count;
+    jitc_trace("jit_var_stash_ref(r%u): %u", index, v->ref_count);
+    return (((uint64_t) v->counter) << 32) | index;
+}
+
+/// Undo the change performed by jitc_var_stash_ref
+void jitc_var_unstash_ref(uint64_t handle) {
+    if (!handle)
+        return;
+
+    uint32_t index = (uint32_t) handle;
+
+    Variable *v = jitc_var(WeakRef(index, (uint32_t) (handle >> 32)));
+    if (v) {
+        v->ref_count_stashed = 0;
+        jitc_trace("jit_var_unstash_ref(r%u)", index);
+    } else {
+        jitc_trace("jit_var_unstash_ref(r%u): expired.", index);
+    }
+}
+
 /// Increase the external reference count of a given variable
 void jitc_var_inc_ref(uint32_t index) noexcept {
     if (index)
@@ -335,8 +367,9 @@ void jitc_var_inc_ref_se(uint32_t index) noexcept {
 
 /// Decrease the external reference count of a given variable
 void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept {
-    if (unlikely(v->ref_count == 0))
-        jitc_fail("jit_var_dec_ref(): variable r%u has no external references!", index);
+    jitc_assert(v->ref_count != 0,
+                "jit_var_dec_ref(): reference count underflow in variable r%u!",
+                index);
 
     jitc_trace("jit_var_dec_ref(r%u): %u", index, (uint32_t) v->ref_count - 1);
     v->ref_count--;
@@ -591,8 +624,8 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
 
         bool lvn_hit = lvn && !lvn_key_inserted,
              show_lit = v.is_node() && !v.is_undefined() &&
-                        (VarKind) v.kind != VarKind::Nop &&
-                        (VarKind) v.kind != VarKind::BoundsCheck && v.literal;
+                        (VarKind) v.kind != VarKind::BoundsCheck &&
+                        (VarType) v.type != VarType::Void && v.literal;
         if (v.symbolic || lvn_hit || show_lit) {
             var_buffer.put(" [");
             bool prev = false;
