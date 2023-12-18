@@ -1732,15 +1732,17 @@ void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     uint32_t flags = jitc_flags();
     var_info.symbolic |= flags & (uint32_t) JitFlag::SymbolicScope;
 
-    // Check if it is safe to write directly
-    if (target_1_v->ref_count > 2) { // 1 from original array, 1 from borrow above
+    // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
+    if (target_1_v->ref_count != 2 && target_1_v->ref_count_stashed != 1) {
         target_1 = steal(jitc_var_copy(target_1));
 
         // The above operation may have invalidated 'target_2_v' which is accessed below
         target_2_v = jitc_var(target_2);
     }
 
-    if (target_2_v->ref_count > 2 || target_1 == target_2)
+    // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
+    if ((target_2_v->ref_count != 2 && target_2_v->ref_count_stashed != 1) ||
+        target_1 == target_2)
         target_2 = steal(jitc_var_copy(target_2));
 
     void *target_1_addr = nullptr, *target_2_addr = nullptr;
@@ -1823,8 +1825,8 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     uint32_t flags = jitc_flags();
     var_info.symbolic |= flags & (uint32_t) JitFlag::SymbolicScope;
 
-    // Check if it is safe to write directly
-    if (target_v->ref_count > 2) // 1 from original array, 1 from borrow above
+    // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
+    if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));
 
     void *target_addr = nullptr;
@@ -1897,6 +1899,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     while (target_v->kind == VarKind::LoopPhi) {
         target = borrow(target_v->dep[3]);
         target_v = jitc_var(target);
+        target_ = target;
     }
 
     switch ((VarType) target_v->type) {
