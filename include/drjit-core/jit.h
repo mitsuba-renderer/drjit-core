@@ -523,7 +523,10 @@ extern JIT_EXPORT uint32_t jit_registry_id_bound(JitBackend backend,
 
 /// Return the pointer value associated with a given instance ID
 extern JIT_EXPORT void *jit_registry_ptr(JitBackend backend,
-                                          const char *domain, uint32_t id);
+                                         const char *domain, uint32_t id);
+
+/// Disable any instances that are currently registered in the registry
+extern JIT_EXPORT void jit_registry_clear();
 
 // ====================================================================
 //                        Variable management

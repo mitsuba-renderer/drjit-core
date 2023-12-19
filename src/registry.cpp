@@ -31,11 +31,17 @@ struct DomainKey {
 
 };
 
+struct Ptr {
+    void *ptr;
+    bool active;
+    Ptr(void *ptr, bool active) : ptr(ptr), active(active) { }
+};
+
 // Per-domain information: a forward map (index-> pointer) and a list of unused entries
 struct Domain {
     const char *name;
     uint32_t id_bound;
-    std::vector<void*> fwd_map;
+    std::vector<Ptr> fwd_map;
     std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>
         free_pq;
 };
@@ -73,6 +79,7 @@ uint32_t jitc_registry_put(JitBackend backend, const char *domain_name, void *pt
         domain.name = domain_name;
         domain.id_bound = 0;
     }
+
     uint32_t domain_id = it2->second;
 
     // Allocate the lowest-valued ID
@@ -81,15 +88,16 @@ uint32_t jitc_registry_put(JitBackend backend, const char *domain_name, void *pt
     if (!domain.free_pq.empty()) {
         index = domain.free_pq.top();
         domain.free_pq.pop();
-        domain.fwd_map[index] = ptr;
+        domain.fwd_map[index] = Ptr(ptr, true);
     } else {
         index = domain.fwd_map.size();
-        domain.fwd_map.push_back(ptr);
+        domain.fwd_map.emplace_back(ptr, true);
     }
 
     domain.id_bound = std::max(domain.id_bound, index + 1);
 
-    jitc_log(Debug, "jit_registry_put(domain=\"%s\", ptr=%p): id_bound=%u", domain_name, ptr, domain.id_bound);
+    jitc_log(Debug, "jit_registry_put(domain=\"%s\", ptr=%p): id_bound=%u",
+             domain_name, ptr, domain.id_bound);
 
     // Create a reverse mapping
     it1.value() = ReverseKey { domain_id, index };
@@ -103,15 +111,19 @@ void jitc_registry_remove(const void *ptr) {
     auto it = r.rev_map.find((void *) ptr);
     if (it == r.rev_map.end())
         jitc_raise("jit_registry_remove(ptr=%p): pointer is not registered!", ptr);
+
     ReverseKey rk = it->second;
     r.rev_map.erase(it);
 
     Domain &domain = r.domains[rk.domain_id];
     domain.free_pq.push(rk.index);
-    domain.fwd_map[rk.index] = nullptr;
+    if (domain.fwd_map[rk.index].ptr != ptr)
+        jitc_fail("jit_registry_remove(ptr=%p): data structure corrupt!", ptr);
+
+    domain.fwd_map[rk.index] = Ptr(nullptr, false);
 
     if (domain.id_bound == rk.index + 1) {
-        while (domain.id_bound > 0 && !domain.fwd_map[domain.id_bound - 1])
+        while (domain.id_bound > 0 && !domain.fwd_map[domain.id_bound - 1].ptr)
             domain.id_bound--;
     }
 
@@ -155,10 +167,22 @@ void *jitc_registry_ptr(JitBackend backend, const char *domain_name, uint32_t id
             jitc_raise("jit_registry_ptr(domain=\"%s\", id=%u): instance is "
                        "not registered!",
                        domain_name, id);
-        ptr = domain.fwd_map[id - 1];
+        Ptr entry = domain.fwd_map[id - 1];
+        if (entry.active)
+            ptr = entry.ptr;
     }
 
     return ptr;
+}
+
+void jitc_registry_clear() {
+    jitc_log(Debug, "jit_registry_clear()");
+    Registry &r = registry;
+    for (Domain &d : r.domains) {
+        for (Ptr &p : d.fwd_map)
+            p.active = false;
+        d.id_bound = 0;
+    }
 }
 
 void jitc_registry_shutdown() {

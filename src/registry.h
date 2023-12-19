@@ -29,3 +29,6 @@ extern void *jitc_registry_ptr(JitBackend backend, const char *domain, uint32_t 
 
 /// Check for leaks in the registry
 extern void jitc_registry_shutdown();
+
+/// Disable any instances that are currently registered in the registry
+extern void jitc_registry_clear();

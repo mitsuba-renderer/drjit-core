@@ -21,7 +21,8 @@
 
 static std::vector<CallData *> calls_assembled;
 
-extern void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index, uint32_t &data_offset);
+extern void jitc_var_call_analyze(CallData *call, uint32_t inst_id,
+                                  uint32_t index, uint32_t &data_offset);
 
 /// Weave a virtual function call into the computation graph
 void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
