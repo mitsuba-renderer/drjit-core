@@ -1301,3 +1301,9 @@ void jit_var_unstash_ref(uint64_t handle) {
     lock_guard guard(state.lock);
     return jitc_var_unstash_ref(handle);
 }
+
+void jit_enqueue_host_func(JitBackend backend, void (*callback)(void *),
+                           void *payload) {
+    lock_guard guard(state.lock);
+    jitc_enqueue_host_func(backend, callback, payload);
+}

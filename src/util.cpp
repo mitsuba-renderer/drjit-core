@@ -1397,3 +1397,21 @@ void jitc_aggregate(JitBackend backend, void *dst_, AggregationEntry *agg,
             KernelType::Other, [agg](uint32_t) { free(agg); }, 1, 1);
     }
 }
+
+void jitc_enqueue_host_func(JitBackend backend, void (*callback)(void *),
+                            void *payload) {
+    ThreadState *ts = thread_state(backend);
+
+    if (backend == JitBackend::CUDA) {
+        scoped_set_context guard(ts->context);
+        cuda_check(cuLaunchHostFunc(ts->stream, callback, payload));
+    } else {
+        if (!jitc_task) {
+            unlock_guard guard(state.lock);
+            callback(payload);
+        } else {
+            jitc_submit_cpu(
+                KernelType::Other, [payload, callback](uint32_t) { callback(payload); }, 1, 1);
+        }
+    }
+}
