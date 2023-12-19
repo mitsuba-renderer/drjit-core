@@ -914,6 +914,11 @@ void *jit_registry_ptr(JitBackend backend, const char *domain, uint32_t id) {
     return jitc_registry_ptr(backend, domain, id);
 }
 
+void jit_registry_clear() {
+    lock_guard guard(state.lock);
+    jitc_registry_clear();
+}
+
 void jit_var_set_self(JitBackend backend, uint32_t value, uint32_t index) {
     lock_guard guard(state.lock);
     jitc_var_set_self(backend, value, index);
@@ -1307,3 +1312,4 @@ void jit_enqueue_host_func(JitBackend backend, void (*callback)(void *),
     lock_guard guard(state.lock);
     jitc_enqueue_host_func(backend, callback, payload);
 }
+
