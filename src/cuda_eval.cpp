@@ -792,9 +792,9 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
 #if defined(DRJIT_ENABLE_OPTIX)
-        case VarKind::TraceRay:
-            jitc_cuda_render_trace(index, v, a0, a1, a2);
-            break;
+        // case VarKind::TraceRay:
+        //     jitc_cuda_render_trace(index, v, a0, a1, a2);
+        //     break;
 #endif
 
         case VarKind::Extract:
@@ -1111,11 +1111,11 @@ static void jitc_cuda_render_scatter_add_kahan(const Variable *v,
                                                const Variable *ptr_2,
                                                const Variable *index,
                                                const Variable *value) {
-    fmt("    setp.eq %p3, $v, 0;\n"
+    fmt("    setp.eq.$t %p3, $v, 0.0;\n"
         "    @%p3 bra l_$u_done;\n"
         "    mad.wide.$t %rd2, $v, $a, $v;\n"
         "    mad.wide.$t %rd3, $v, $a, $v;\n",
-        value,
+        value, value,
         v->reg_index,
         index, index, value, ptr_1,
         index, index, value, ptr_2);
