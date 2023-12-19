@@ -2173,6 +2173,17 @@ extern JIT_EXPORT VarInfo jit_set_backend(uint32_t index) JIT_NOEXCEPT;
 extern JIT_EXPORT void jit_set_source_location(const char *fname,
                                                size_t lineno) JIT_NOEXCEPT;
 
+
+/**
+ * \brief Enqueue a callback to be run on the host once all previously launched
+ * backend operations have finished.
+ *
+ * Note that the callback might run right away if the backend's queue is empty.
+ */
+extern JIT_EXPORT void jit_enqueue_host_func(JitBackend backend,
+                                             void (*callback)(void *),
+                                             void *payload);
+
 #if defined(__cplusplus)
 }
 #endif

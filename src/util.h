@@ -61,3 +61,7 @@ extern void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t s
 
 extern void jitc_aggregate(JitBackend backend, void *dst,
                            AggregationEntry *agg, uint32_t size);
+
+// Enqueue a function to be run on the host once backend computation is done
+extern void jitc_enqueue_host_func(JitBackend backend, void (*callback)(void *),
+                                   void *payload);
