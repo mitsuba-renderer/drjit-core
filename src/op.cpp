@@ -1550,7 +1550,7 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
                         break;
 
                     case BoundsCheckType::Call:
-                        msg = "attempted to invoke callable with index";
+                        msg = "Attempted to invoke callable with index";
                         msg2 = ", but this value must be smaller than";
                         captured--;
                         size--;
@@ -1570,20 +1570,30 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
     return result.release();
 }
 
-uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
+static void unwrap(Ref &index, Variable *&v) {
+    while (true) {
+        if (v->kind == VarKind::LoopPhi) {
+            index = borrow(v->dep[3]);
+            v = jitc_var(index);
+        } else {
+            break;
+        }
+    }
+}
+
+uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
     if (index == 0)
         return 0;
 
+    Ref src = borrow(src_);
+
     auto [src_info, src_v] =
-        jitc_var_check("jit_var_gather", src);
+        jitc_var_check("jit_var_gather", src_);
     auto [var_info, index_v, mask_v] =
         jitc_var_check("jit_var_gather", index, mask);
 
     // Go to the original if 'src' is wrapped into a loop state variable
-    while (src_v->kind == VarKind::LoopPhi) {
-        src = src_v->dep[3];
-        src_v = jitc_var(src);
-    }
+    unwrap(src, src_v);
 
     uint32_t result = 0, ptr = 0;
     const char *msg = "";
@@ -1605,7 +1615,8 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
             if (jitc_var(index)->is_dirty())
                 jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!", index);
             if (jitc_var(src)->is_dirty())
-                jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!", src);
+                jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!",
+                          (uint32_t) src);
 
             src_v = jitc_var(src);
             index_v = jitc_var(index);
@@ -1678,8 +1689,8 @@ uint32_t jitc_var_gather(uint32_t src, uint32_t index, uint32_t mask) {
 
     jitc_log(Debug,
              "jit_var_gather(): %s r%u[%u] = r%u[r%u] (mask=r%u, ptr=r%u)%s",
-             type_name[(int) src_info.type], result, var_info.size, src, index,
-             mask, ptr, msg);
+             type_name[(int) src_info.type], result, var_info.size,
+             (uint32_t) src, index, mask, ptr, msg);
 
     return result;
 }
@@ -1705,14 +1716,8 @@ void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
                        (uint32_t) target_2);
 
     // Go to the original if 'target' is wrapped into a loop state variable
-    while (target_1_v->kind == VarKind::LoopPhi) {
-        target_1 = borrow(target_1_v->dep[3]);
-        target_1_v = jitc_var(target_1);
-    }
-    while (target_2_v->kind == VarKind::LoopPhi) {
-        target_2 = borrow(target_2_v->dep[3]);
-        target_2_v = jitc_var(target_2);
-    }
+    unwrap(target_1, target_1_v);
+    unwrap(target_2, target_2_v);
 
     if (target_1_v->symbolic || target_2_v->symbolic)
         jitc_raise("jit_var_scatter_add_kahan(): cannot scatter to a symbolic variable.");
@@ -1805,10 +1810,7 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
         jitc_var_check("jit_var_scatter_inc", (uint32_t) target);
 
     // Go to the original if 'target' is wrapped into a loop state variable
-    while (target_v->kind == VarKind::LoopPhi) {
-        target = borrow(target_v->dep[3]);
-        target_v = jitc_var(target);
-    }
+    unwrap(target, target_v);
 
     if (target_v->symbolic)
         jitc_raise("jit_var_scatter_inc(): cannot scatter to a symbolic variable.");
@@ -1893,14 +1895,11 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     auto [var_info, value_v, index_v, mask_v] =
         jitc_var_check("jit_var_scatter", value, index, mask);
 
-    const Variable *target_v = jitc_var(target);
+    Variable *target_v = jitc_var(target);
 
     // Go to the original if 'target' is wrapped into a loop state variable
-    while (target_v->kind == VarKind::LoopPhi) {
-        target = borrow(target_v->dep[3]);
-        target_v = jitc_var(target);
-        target_ = target;
-    }
+    unwrap(target, target_v);
+    target_ = target;
 
     switch ((VarType) target_v->type) {
         case VarType::Bool:
