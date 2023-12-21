@@ -667,6 +667,9 @@ VarType jit_var_type(uint32_t index) {
 }
 
 int jit_var_is_dirty(uint32_t index) {
+    if (index == 0)
+        return 0;
+
     lock_guard guard(state.lock);
     return jitc_var(index)->is_dirty();
 }

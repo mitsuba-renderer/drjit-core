@@ -22,7 +22,7 @@ static StringBuffer log_buffer;
 static char jitc_string_buf[64];
 
 static const char *fatal_error_msg =
-    "\n\nDr.Jit encountered an unrecoverable error and will now shut\n"
+    "\nDr.Jit encountered an unrecoverable error and will now shut\n"
     "down. Please re-run your program in debug mode to check for\n"
     "out-of-bounds reads, writes, and other sources of undefined\n"
     "behavior. You can do so by calling\n"
@@ -35,7 +35,7 @@ static const char *fatal_error_msg =
     "you can you create a self-contained reproducer and submit it\n"
     "at https://github.com/mitsuba-renderer/drjit.\n"
     "\n"
-    "The message associated with this failure is: \n";
+    "The error message of this specific failure is as follows:\n>>> ";
 
 void jitc_log(LogLevel log_level, const char* fmt, ...) {
     if (unlikely(log_level <= state.log_level_stderr)) {

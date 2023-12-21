@@ -3,6 +3,7 @@
 #include "cond.h"
 #include "log.h"
 #include "eval.h"
+#include <vector>
 
 uint32_t jitc_var_cond_start(const char *name, bool symbolic, uint32_t cond_t, uint32_t cond_f) {
     Variable *cond_t_v = jitc_var(cond_t),
@@ -106,6 +107,11 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
 
     for (size_t i = 0; i < cd->indices_t.size(); ++i) {
         uint32_t i_t = cd->indices_t[i], i_f = cd->indices_f[i];
+        if (i_t == 0 || i_f == 0)
+            jitc_raise("jit_var_cond(): return variable %zu is "
+                       "uninitialized/partially initialized (r%u, r%u).",
+                       i, i_t, i_f);
+
         Variable *v_t = jitc_var(i_t),
                  *v_f = jitc_var(i_f);
 
