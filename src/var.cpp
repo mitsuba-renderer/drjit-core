@@ -118,10 +118,10 @@ const char *var_kind_name[(int) VarKind::Count] {
     "nop",
 
     // Common unary operations
-    "neg", "not", "sqrt", "abs",
+    "neg", "not", "sqrt", "sqrt.approx", "abs",
 
     // Common binary arithmetic operations
-    "add", "sub", "mul", "div", "mod",
+    "add", "sub", "mul", "div", "div.approx", "mod",
 
     // High multiplication
     "mulhi",
@@ -151,7 +151,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "shl", "shr",
 
     // Fast approximations
-    "rcp", "rsqrt",
+    "rcp", "rcp.approx", "rsqrt.approx",
 
     // Multi-function generator (CUDA)
     "sin", "cos", "exp2", "log2",
@@ -1061,7 +1061,9 @@ static void jitc_raise_symbolic_error(const char *func, uint32_t index) {
         "This mode tends to be more expensive in terms of memory storage and\n"
         "bandwidth, which is why it is not enabled by default. Please see the\n"
         "Dr.Jit documentation for more information on symbolic and evaluated\n"
-        "evaluation modes: (TODO: insert link).\n", func, index);
+        "evaluation modes:\n\n"
+        "https://drjit.readthedocs.io/en/latest/cflow.html#symbolic-versus-evaluated-modes",
+        func, index);
 }
 
 static void jitc_raise_consumed_error(const char *func, uint32_t index) {

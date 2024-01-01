@@ -366,9 +366,13 @@ uint32_t jitc_var_sqrt(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_sqrt(l0); }, v0);
 
-    if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, VarKind::Sqrt, info.type,
-                                     info.size, info.symbolic, a0, v0);
+    if (!result && info.size) {
+        bool approx =
+            info.backend == JitBackend::CUDA && info.type == VarType::Float32;
+        result = jitc_var_new_node_1(
+            info.backend, approx ? VarKind::SqrtApprox : VarKind::Sqrt,
+            info.type, info.size, info.symbolic, a0, v0);
+    }
 
     jitc_trace("jit_var_sqrt(r%u <- r%u)", result, a0);
     return result;
@@ -410,9 +414,9 @@ uint32_t jitc_var_add(uint32_t a0, uint32_t a1) {
         if (info.literal)
             result = jitc_eval_literal(
                 info, [](auto l0, auto l1) { return l0 + l1; }, v0, v1);
-        else if (jitc_is_zero(v0))
+        else if (jitc_is_any_zero(v0))
             result = jitc_var_resize(a1, info.size);
-        else if (jitc_is_zero(v1))
+        else if (jitc_is_any_zero(v1))
             result = jitc_var_resize(a0, info.size);
     }
 
@@ -434,7 +438,7 @@ uint32_t jitc_var_sub(uint32_t a0, uint32_t a1) {
         if (info.literal)
             result = jitc_eval_literal(
                 info, [](auto l0, auto l1) { return l0 - l1; }, v0, v1);
-        else if (jitc_is_zero(v1))
+        else if (jitc_is_any_zero(v1))
             result = jitc_var_resize(a0, info.size);
         else if (a0 == a1 && !jitc_is_float(v0))
             result = jitc_make_zero(info);
@@ -455,12 +459,14 @@ uint32_t jitc_var_mul(uint32_t a0, uint32_t a1) {
 
     uint32_t result = 0;
     if (info.simplify) {
+        bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
+
         if (info.literal)
             result = jitc_eval_literal(
                 info, [](auto l0, auto l1) { return l0 * l1; }, v0, v1);
-        else if (jitc_is_one(v0) || (jitc_is_zero(v1) && jitc_is_int(v0)))
+        else if (jitc_is_one(v0) || (jitc_is_any_zero(v1) && (jitc_is_int(v0) || fast_math)))
             result = jitc_var_resize(a1, info.size);
-        else if (jitc_is_one(v1) || (jitc_is_zero(v0) && jitc_is_int(v0)))
+        else if (jitc_is_one(v1) || (jitc_is_any_zero(v0) && (jitc_is_int(v0) || fast_math)))
             result = jitc_var_resize(a0, info.size);
         else if (jitc_is_uint(info.type) && v0->is_literal() && jitc_is_pow2(v0->literal))
             result = jitc_var_shift<true>(info, a1, v0->literal);
@@ -505,9 +511,13 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
     }
 
 
-    if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, VarKind::Div, info.type,
-                                     info.size, info.symbolic, a0, v0, a1, v1);
+    if (!result && info.size) {
+        bool approx =
+            info.backend == JitBackend::CUDA && info.type == VarType::Float32;
+        result = jitc_var_new_node_2(
+            info.backend, approx ? VarKind::DivApprox : VarKind::Div, info.type,
+            info.size, info.symbolic, a0, v0, a1, v1);
+    }
 
     jitc_trace("jit_var_div(r%u <- r%u, r%u)", result, a0, a1);
     return result;
@@ -605,14 +615,19 @@ uint32_t jitc_var_fma(uint32_t a0, uint32_t a1, uint32_t a2) {
                 [](auto l0, auto l1, auto l2) { return eval_fma(l0, l1, l2); },
                 v0, v1, v2);
         } else {
+            bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath,
+                 z0 = jitc_is_any_zero(v0),
+                 z1 = jitc_is_any_zero(v1),
+                 z2 = jitc_is_any_zero(v2);
+
             uint32_t tmp = 0;
             if (jitc_is_one(v0))
                 tmp = jitc_var_add(a1, a2);
             else if (jitc_is_one(v1))
                 tmp = jitc_var_add(a0, a2);
-            else if (jitc_is_zero(v2))
+            else if (z2)
                 tmp = jitc_var_mul(a0, a1);
-            else if (jitc_is_zero(v0) && jitc_is_zero(v1))
+            else if ((z0 && z1) || ((z0 || z1) && fast_math))
                 tmp = jitc_var_new_ref(a2);
 
             if (tmp) {
@@ -1219,9 +1234,12 @@ uint32_t jitc_var_rcp(uint32_t a0) {
         jitc_var_dec_ref(one);
     }
 
-    if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, VarKind::Rcp, info.type,
-                                     info.size, info.symbolic, a0, v0);
+    if (!result && info.size) {
+        bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
+        result = jitc_var_new_node_1(
+            info.backend, fast_math ? VarKind::RcpApprox : VarKind::Rcp,
+            info.type, info.size, info.symbolic, a0, v0);
+    }
 
     jitc_trace("jit_var_rcp(r%u <- r%u)", result, a0);
     return result;
@@ -1242,16 +1260,21 @@ uint32_t jitc_var_rsqrt(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_rsqrt(l0); }, v0);
 
-    if (!result && info.backend == JitBackend::LLVM) {
+    bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
+
+    if (!result && info.backend == JitBackend::CUDA &&
+        info.type == VarType::Float32 && fast_math) {
+        result =
+            jitc_var_new_node_1(info.backend, VarKind::RSqrtApprox, info.type,
+                                info.size, info.symbolic, a0, v0);
+    }
+
+    if (!result && info.size) {
         // Reciprocal, then square root (lower error than the other way around)
         uint32_t rcp = jitc_var_rcp(a0);
         result = jitc_var_sqrt(rcp);
         jitc_var_dec_ref(rcp);
     }
-
-    if (!result && info.size)
-        result = jitc_var_new_node_1(info.backend, VarKind::Rsqrt, info.type,
-                                    info.size, info.symbolic, a0, v0);
 
     jitc_trace("jit_var_rsqrt(r%u <- r%u)", result, a0);
     return result;
