@@ -1374,58 +1374,62 @@ enum class JitFlag : uint32_t {
     /// literal constants
     ConstantPropagation = 1 << 2,
 
+    /// Fast math (analogous to -ffast-math in C)
+    FastMath = 1 << 3,
+
     /// Local value numbering: a cheap form of common subexpression elimination
-    ValueNumbering = 1 << 3,
+    ValueNumbering = 1 << 4,
 
     /// Capture loops symbolically instead of unrolling and evaluating them
     /// iteratively
-    SymbolicLoops = 1 << 4,
+    SymbolicLoops = 1 << 5,
 
     /// Simplify loops by removing constant loop state variables. This also
     /// propagates literal constants into loops, which is useful for autodiff.
-    OptimizeLoops = 1 << 5,
+    OptimizeLoops = 1 << 6,
 
     /// Capture function calls symbolically instead of evaluating their inputs,
     /// grouping them by instance ID, and then lauching a kernel per group
-    SymbolicCalls = 1 << 6,
+    SymbolicCalls = 1 << 7,
 
     /// Propagate constants through function calls and remove
-    OptimizeCalls = 1 << 7,
+    OptimizeCalls = 1 << 8,
 
     /// Merge functions produced by Dr.Jit when they have a compatible structure
-    MergeFunctions = 1 << 8,
+    MergeFunctions = 1 << 9,
 
     /// Capture conditionals symbolically instead of evaluating both branches
     /// and combining their results.
-    SymbolicConditionals = 1 << 9,
+    SymbolicConditionals = 1 << 10,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 1 << 10,
+    ForceOptiX = 1 << 11,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 1 << 11,
+    PrintIR = 1 << 12,
 
     /// Maintain a history of kernel launches. Useful for profiling Dr.Jit code.
-    KernelHistory = 1 << 12,
+    KernelHistory = 1 << 13,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 1 << 13,
+    LaunchBlocking = 1 << 14,
 
     /// Perform a local (warp/SIMD) reduction before issuing global atomics
-    AtomicReduceLocal = 1 << 14,
+    AtomicReduceLocal = 1 << 15,
 
     /// Set to \c true when Dr.Jit is capturing symbolic computation. This flag
     /// is managed automatically and should not be set by application code.
-    SymbolicScope = 1 << 15,
+    SymbolicScope = 1 << 16,
 
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
-              (uint32_t) SymbolicLoops | (uint32_t) OptimizeLoops |
-              (uint32_t) SymbolicCalls | (uint32_t) MergeFunctions |
-              (uint32_t) OptimizeCalls | (uint32_t) SymbolicConditionals |
-              (uint32_t) ReuseIndices | (uint32_t) AtomicReduceLocal,
+              (uint32_t) FastMath | (uint32_t) SymbolicLoops |
+              (uint32_t) OptimizeLoops | (uint32_t) SymbolicCalls |
+              (uint32_t) MergeFunctions | (uint32_t) OptimizeCalls |
+              (uint32_t) SymbolicConditionals | (uint32_t) ReuseIndices |
+              (uint32_t) AtomicReduceLocal,
 
     // Deprecated aliases, will be removed in a future version of Dr.Jit
     LoopRecord = SymbolicLoops,
@@ -1440,19 +1444,20 @@ enum JitFlag {
     JitFlagDebug = 1 << 0,
     JitFlagReuseIndices = 1 << 1,
     JitFlagConstantPropagation = 1 << 2,
-    JitFlagValueNumbering = 1 << 3,
-    JitFlagSymbolicLoops = 1 << 4,
-    JitFlagOptimizeLoops = 1 << 5,
-    JitFlagSymbolicCalls = 1 << 6,
-    JitFlagOptimizeCalls = 1 << 7,
-    JitFlagMergeFunctions = 1 << 8,
-    JitFlagSymbolicConditionals = 1 << 9,
-    JitFlagForceOptiX = 1 << 10,
-    JitFlagPrintIR = 1 << 11,
-    JitFlagKernelHistory = 1 << 12,
-    JitFlagLaunchBlocking = 1 << 13,
-    JitFlagAtomicReduceLocal = 1 << 14,
-    JitFlagSymbolic = 1 << 15
+    JitFlagFastMath = 1 << 3,
+    JitFlagValueNumbering = 1 << 4,
+    JitFlagSymbolicLoops = 1 << 5,
+    JitFlagOptimizeLoops = 1 << 6,
+    JitFlagSymbolicCalls = 1 << 7,
+    JitFlagOptimizeCalls = 1 << 8,
+    JitFlagMergeFunctions = 1 << 9,
+    JitFlagSymbolicConditionals = 1 << 10,
+    JitFlagForceOptiX = 1 << 11,
+    JitFlagPrintIR = 1 << 12,
+    JitFlagKernelHistory = 1 << 13,
+    JitFlagLaunchBlocking = 1 << 14,
+    JitFlagAtomicReduceLocal = 1 << 15,
+    JitFlagSymbolic = 1 << 16
 };
 #endif
 

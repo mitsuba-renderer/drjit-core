@@ -375,7 +375,6 @@ static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
         case VarKind::Sqrt:
         case VarKind::Div:
         case VarKind::Rcp:
-        case VarKind::Rsqrt:
             return UINT_MAX;
         case VarKind::Min:
         case VarKind::Max:
@@ -431,10 +430,12 @@ static void jitc_cuda_render(Variable *v) {
             fmt("    not.$b $v, $v;\n", v, v, a0);
             break;
 
+        case VarKind::SqrtApprox:
+            fmt("    sqrt.approx.ftz.$t $v, $v;\n", v, v, a0);
+            break;
+
         case VarKind::Sqrt:
-            fmt(jitc_is_single(v) || jitc_is_half(v)
-                ? "    sqrt.approx.ftz.$t $v, $v;\n"
-                : "    sqrt.rn.$t $v, $v;\n", v, v, a0);
+            fmt("    sqrt.rn.$t $v, $v;\n", v, v, a0);
             break;
 
         case VarKind::Abs:
@@ -463,13 +464,17 @@ static void jitc_cuda_render(Variable *v) {
             fmt(stmt, v, v, a0, a1);
             break;
 
+        case VarKind::DivApprox:
+            stmt = "    div.approx.ftz.$t $v, $v, $v;\n";
+            fmt(stmt, v, v, a0, a1);
+            break;
+
         case VarKind::Div:
-            if (jitc_is_single(v) || jitc_is_half(v))
-                stmt = "    div.approx.ftz.$t $v, $v, $v;\n";
-            else if (jitc_is_double(v))
-                stmt = "    div.rn.$t $v, $v, $v;\n";
-            else
+            if (jitc_is_int(v))
                 stmt = "    div.$t $v, $v, $v;\n";
+            else
+                stmt = "    div.rn.$t $v, $v, $v;\n";
+
             fmt(stmt, v, v, a0, a1);
             break;
 
@@ -629,18 +634,16 @@ static void jitc_cuda_render(Variable *v) {
                     "    shr.$t $v, $v, %r3;\n", a1, a1, v, v, a0);
             break;
 
-        case VarKind::Rcp:
-            fmt(jitc_is_single(v) || jitc_is_half(v)
-                ? "    rcp.approx.ftz.$t $v, $v;\n"
-                : "    rcp.rn.$t $v, $v;\n", v, v, a0);
+        case VarKind::RcpApprox:
+            fmt("    rcp.approx.ftz.$t $v, $v;\n", v, v, a0);
             break;
 
-        case VarKind::Rsqrt:
-            if (jitc_is_single(v) || jitc_is_half(v))
-                fmt("    rsqrt.approx.ftz.$t $v, $v;\n", v, v, a0);
-            else
-                fmt("    rcp.rn.$t $v, $v;\n"
-                    "    sqrt.rn.$t $v, $v;\n", v, v, a0, v, v, v);
+        case VarKind::Rcp:
+            fmt("    rcp.rn.$t $v, $v;\n", v, v, a0);
+            break;
+
+        case VarKind::RSqrtApprox:
+            fmt("    rsqrt.approx.ftz.$t $v, $v;\n", v, v, a0);
             break;
 
         case VarKind::Sin:

@@ -38,10 +38,10 @@ enum VarKind : uint32_t {
     Nop,
 
     // Common unary operations
-    Neg, Not, Sqrt, Abs,
+    Neg, Not, Sqrt, SqrtApprox, Abs,
 
     // Common binary arithmetic operations
-    Add, Sub, Mul, Div, Mod,
+    Add, Sub, Mul, Div, DivApprox, Mod,
 
     // High multiplication
     Mulhi,
@@ -71,7 +71,7 @@ enum VarKind : uint32_t {
     Shl, Shr,
 
     // Fast approximations
-    Rcp, Rsqrt,
+    Rcp, RcpApprox, RSqrtApprox,
 
     // Multi-function generator (CUDA)
     Sin, Cos, Exp2, Log2,
@@ -820,7 +820,19 @@ inline bool jitc_is_uint(const Variable *v) { return jitc_is_uint((VarType) v->t
 inline bool jitc_is_int(const Variable *v) { return jitc_is_int((VarType) v->type); }
 inline bool jitc_is_void(const Variable *v) { return jitc_is_void((VarType) v->type); }
 inline bool jitc_is_bool(const Variable *v) { return jitc_is_bool((VarType) v->type); }
+
 inline bool jitc_is_zero(Variable *v) { return v->is_literal() && v->literal == 0; }
+inline bool jitc_is_any_zero(Variable *v) {
+    if (!v->is_literal())
+        return false;
+
+    switch ((VarType) v->type) {
+        case VarType::Float16: return v->literal == 0x8000ull || v->literal == 0;
+        case VarType::Float32: return v->literal == 0x80000000ull || v->literal == 0;
+        case VarType::Float64: return v->literal == 0x8000000000000000ull || v->literal == 0;
+        default: return v->literal == 0;
+    }
+}
 
 inline bool jitc_is_one(Variable *v) {
     if (!v->is_literal())
