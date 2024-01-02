@@ -575,7 +575,7 @@ struct State {
     Lock alloc_free_lock;
 
     /// A flat list of variable data structures, including unused one
-    std::vector<Variable> variables{ 1 };
+    std::vector<Variable> variables;
 
     /// A priority queue of indices into 'variables' that are currently unused
     UnusedPQ unused_variables;
@@ -585,7 +585,7 @@ struct State {
 
     /// A flast list of variable VariableExtra data structures (see its
     /// definition for documentation). Includes unused ones.
-    std::vector<VariableExtra> extra { 1 };
+    std::vector<VariableExtra> extra;
 
     // A priority queu of indices into 'extra' that are currently unused
     UnusedPQ unused_extra;
@@ -651,6 +651,8 @@ struct State {
 #endif
 
     State() {
+        variables.resize(1);
+        extra.resize(1);
         lock_init(lock);
         lock_init(alloc_free_lock);
         lock_init(eval_lock);
