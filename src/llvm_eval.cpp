@@ -871,11 +871,12 @@ static void jitc_llvm_render(uint32_t index, Variable *v) {
                 v->reg_index);
 
             if (callable_depth == 0)
-                fmt(
-                    "    $v_5 = getelementptr i32, {i32*} $v, <$w x i32> $z\n"
-                    "    call void @llvm.masked.scatter.v$wi32($V, <$w x {i32*}> $v_5, i32 4, <$w x i1> $v_3)\n",
-                    v, a2,
-                    a0, v, v);
+                fmt("{    $v_5 = bitcast i8* $v to i32 *\n|}"
+                     "    $v_6 = getelementptr i32, {i32*} {$v_5|$v}, <$w x i32> $z\n"
+                     "    call void @llvm.masked.scatter.v$wi32($V, <$w x {i32*}> $v_6, i32 4, <$w x i1> $v_3)\n",
+                     v, a2,
+                     v, v, a2,
+                     a0, v, v);
             else
                 fmt("    call void @llvm.masked.scatter.v$wi32($V, <$w x {i32*}> $v, i32 4, <$w x i1> $v_3)\n",
                     a0, a2, v);
