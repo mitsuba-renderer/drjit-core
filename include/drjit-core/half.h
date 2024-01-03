@@ -30,7 +30,7 @@ NAMESPACE_END(drjit)
 
 NAMESPACE_BEGIN(drjit)
 struct half {
-    uint16_t value;
+    uint16_t value = 0;
 
     half() = default;
     half(const half &) = default;
@@ -67,7 +67,7 @@ struct half {
 
     operator float() const { return float16_to_float32(value); }
 
-    static half from_binary(uint16_t value) { half h; h.value = value; return h; }
+    static constexpr half from_binary(uint16_t value) { half h; h.value = value; return h; }
 private:
     template <typename Out, typename In>
     static Out memcpy_cast(const In &src) {

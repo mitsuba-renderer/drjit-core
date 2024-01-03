@@ -375,6 +375,7 @@ static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
         case VarKind::Sqrt:
         case VarKind::Div:
         case VarKind::Rcp:
+        case VarKind::RcpApprox:
             return UINT_MAX;
         case VarKind::Min:
         case VarKind::Max:
