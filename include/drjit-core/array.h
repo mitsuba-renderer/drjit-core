@@ -440,7 +440,7 @@ template <typename Array, typename Index>
 void scatter_reduce_kahan(Array &target_1, Array &target_2, const Array &value,
                           const JitArray<Array::Backend, Index> &index,
                           const JitArray<Array::Backend, bool> &mask = true) {
-    jit_var_scatter_reduce_kahan(target_1.index_ptr(), target_2.index_ptr(),
+    jit_var_scatter_add_kahan(target_1.index_ptr(), target_2.index_ptr(),
                                  value.index(), index.index(), mask.index());
 }
 

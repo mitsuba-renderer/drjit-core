@@ -207,7 +207,7 @@ JIT_INLINE auto jitc_var_check(const char *name, Args... args) {
 // Convert from an 64-bit integer container to a literal type
 template <typename Type> Type i2v(uint64_t value) {
     Type result;
-    memcpy(&result, &value, sizeof(Type));
+    memcpy((void*)&result, &value, sizeof(Type));
     return result;
 }
 
@@ -227,7 +227,7 @@ template <typename Dst, typename Src>
 Dst memcpy_cast(const Src &src) {
     static_assert(sizeof(Src) == sizeof(Dst), "memcpy_cast: size mismatch!");
     Dst dst;
-    memcpy(&dst, &src, sizeof(Dst));
+    memcpy((void*)&dst, &src, sizeof(Dst));
     return dst;
 }
 
@@ -1806,7 +1806,7 @@ void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     bool symbolic = jit_flag(JitFlag::SymbolicScope);
     if (var_info.symbolic && !symbolic)
         jitc_raise(
-            "jit_var_scatter_kahan(): input arrays are symbolic, but the "
+            "jit_var_scatter_add_kahan(): input arrays are symbolic, but the "
             "operation was issued outside of a symbolic recording session.");
 
     uint32_t result = jitc_var_new_node_4(
@@ -1815,7 +1815,7 @@ void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
         jitc_var(index_2), value_2, jitc_var(value_2));
 
     jitc_log(Debug,
-             "jit_var_scatter_reduce_kahan(): (r%u[r%u], r%u[r%u]) += r%u "
+             "jit_var_scatter_add_kahan(): (r%u[r%u], r%u[r%u]) += r%u "
              "(mask=r%u, ptrs=(r%u, r%u), se=r%u)",
              (uint32_t) target_1, (uint32_t) index_2, (uint32_t) target_2,
              (uint32_t) index_2, (uint32_t) value_2, (uint32_t) mask_2,
