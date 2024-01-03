@@ -478,7 +478,7 @@ void jitc_var_set_label(uint32_t index, const char *label) {
 void jitc_value_print(const Variable *v, bool graphviz = false) {
     #define JIT_LITERAL_PRINT(type, ptype, fmtstr)  {  \
             type value;                                \
-            memcpy(&value, &v->literal, sizeof(type)); \
+            memcpy((void*)&value, &v->literal, sizeof(type)); \
             var_buffer.fmt(fmtstr, (ptype) value);     \
         }                                              \
         break;

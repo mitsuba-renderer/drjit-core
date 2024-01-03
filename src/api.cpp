@@ -635,7 +635,7 @@ int jit_var_is_finite_literal(uint32_t index) {
     switch ((VarType) v->type) {
         case VarType::Float16: {
                 drjit::half h;
-                memcpy(&h, &v->literal, sizeof(drjit::half));
+                memcpy((void*)&h, &v->literal, sizeof(drjit::half));
                 return (int) std::isnormal((float)h);
         }
 

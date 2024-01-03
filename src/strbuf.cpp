@@ -641,7 +641,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                         }
                         else if (vt == VarType::Float16) {
                             drjit::half h;
-                            memcpy(&h, &literal, sizeof(drjit::half));
+                            memcpy((void*)&h, &literal, sizeof(drjit::half));
                             double d = float(h);
                             memcpy(&literal, &d, sizeof(uint64_t));
                             vt = VarType::Float64;
