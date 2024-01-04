@@ -72,7 +72,7 @@ uint32_t jitc_registry_put(JitBackend backend, const char *domain_name, void *pt
 
     // Allocate a domain entry for the key (backend, domain) if unregistered
     auto [it2, result2] = r.domain_ids.try_emplace(DomainKey{ backend, domain_name },
-                                                   r.domains.size());
+                                                   (uint32_t) r.domains.size());
     if (result2) {
         r.domains.emplace_back();
         Domain &domain = r.domains.back();

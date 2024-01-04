@@ -136,23 +136,23 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     view_desc.depth = (ndim == 3) ? shape[2] : 0;
 
     size_t storage_format = 0;
-    size_t type_size = 0;
+    size_t tsize = 0;
 
     switch (format) {
         case 0:
             storage_format = CU_AD_FORMAT_FLOAT;
-            type_size = sizeof(float);
+            tsize = sizeof(float);
             break;
         case 1:
             storage_format = CU_AD_FORMAT_HALF;
-            type_size = sizeof(uint16_t);
+            tsize = sizeof(uint16_t);
             break;
         default:
             jitc_raise("jit_cuda_tex_create(): invalid data type!");
             break;
     };
 
-    DrJitCudaTexture *texture = new DrJitCudaTexture(type_size, n_channels);
+    DrJitCudaTexture *texture = new DrJitCudaTexture(tsize, n_channels);
     for (size_t tex = 0; tex < texture->n_textures; ++tex) {
         const size_t tex_channels = texture->channels_internal(tex);
 
