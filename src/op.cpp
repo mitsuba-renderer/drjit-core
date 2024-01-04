@@ -1526,9 +1526,9 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
         jitc_var_check<Disabled>("jit_var_check_bounds", index, mask);
 
     uint64_t zero = 0;
-    Ref buffer =
+    Ref buf =
         steal(jitc_var_literal(info.backend, VarType::UInt32, &zero, 1, 1));
-    Ref buffer_ptr = steal(jitc_var_pointer(info.backend, jitc_var(buffer)->data, buffer, 1));
+    Ref buffer_ptr = steal(jitc_var_pointer(info.backend, jitc_var(buf)->data, buf, 1));
 
     Ref result = steal(jitc_var_new_node_3(
         info.backend, VarKind::BoundsCheck, VarType::Bool, info.size,
@@ -1683,12 +1683,12 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
                               ? AllocType::Device
                               : AllocType::HostAsync;
 
-        void *ptr = (uint8_t *) jitc_var(src)->data + size * pos,
-             *ptr_out = jitc_malloc(atype, size);
+        void *p = (uint8_t *) jitc_var(src)->data + size * pos,
+             *p_out = jitc_malloc(atype, size);
 
-        jitc_memcpy_async(src_info.backend, ptr_out, ptr, size);
+        jitc_memcpy_async(src_info.backend, p_out, p, size);
 
-        result = jitc_var_mem_map(src_info.backend, src_info.type, ptr_out, 1, 1);
+        result = jitc_var_mem_map(src_info.backend, src_info.type, p_out, 1, 1);
         msg = " [elided, memcpy]";
     }
 
@@ -1758,7 +1758,7 @@ void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
         return;
 
     uint32_t flags = jitc_flags();
-    var_info.symbolic |= flags & (uint32_t) JitFlag::SymbolicScope;
+    var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
 
     // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
     if (target_1_v->ref_count != 2 && target_1_v->ref_count_stashed != 1) {
@@ -1848,7 +1848,7 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
         return 0;
 
     uint32_t flags = jitc_flags();
-    var_info.symbolic |= flags & (uint32_t) JitFlag::SymbolicScope;
+    var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
 
     // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
     if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
@@ -1953,7 +1953,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
                   "dr.scatter() and dr.scatter_add()");
 
     uint32_t flags = jitc_flags();
-    var_info.symbolic |= flags & (uint32_t) JitFlag::SymbolicScope;
+    var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
 
     if (target_v->type != value_v->type)
         jitc_raise("jit_var_scatter(): target/value type mismatch!");

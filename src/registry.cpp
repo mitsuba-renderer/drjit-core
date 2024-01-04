@@ -18,7 +18,7 @@ struct DomainKey {
     const char *domain;
 
     struct Eq {
-        size_t operator()(DomainKey k1, DomainKey k2) const {
+        bool operator()(DomainKey k1, DomainKey k2) const {
             return k1.backend == k2.backend && strcmp(k1.domain, k2.domain) == 0;
         }
     };
@@ -90,7 +90,7 @@ uint32_t jitc_registry_put(JitBackend backend, const char *domain_name, void *pt
         domain.free_pq.pop();
         domain.fwd_map[index] = Ptr(ptr, true);
     } else {
-        index = domain.fwd_map.size();
+        index = (uint32_t) domain.fwd_map.size();
         domain.fwd_map.emplace_back(ptr, true);
     }
 

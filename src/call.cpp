@@ -331,13 +331,13 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
             uint32_t out_index =
                 jitc_var_new_node_1(backend, VarKind::CallOutput, (VarType) v->type,
                                     size, symbolic, call_v, jitc_var(call_v), i);
-            Variable *v = jitc_var(out_index);
-            v->literal = i;
+            Variable *v2 = jitc_var(out_index);
+            v2->literal = i;
 
             snprintf(temp, sizeof(temp), "Call: %s [out %u]", name, i);
             jitc_var_set_label(out_index, temp);
 
-            call->outer_out.emplace_back(out_index, v->counter);
+            call->outer_out.emplace_back(out_index, v2->counter);
             out[i] = out_index;
         }
     }
@@ -512,7 +512,7 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
 
     for (size_t i = 0; i < n_inst; ++i) {
         XXH128_hash_t hash =
-            jitc_assemble_func(call, i, in_size, in_align, out_size, out_align);
+            jitc_assemble_func(call, (uint32_t) i, in_size, in_align, out_size, out_align);
         call->inst_hash[i] = hash;
         callables_set.insert(hash);
     }
