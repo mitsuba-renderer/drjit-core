@@ -967,11 +967,11 @@ static void jitc_llvm_render(uint32_t index, Variable *v) {
 
         case VarKind::LoopPhi: {
                 const LoopData *ld = (LoopData *) a0->data;
-                size_t index = (size_t) v->literal;
-                Variable *inner_in  = jitc_var(ld->inner_in[index]),
-                         *outer_in  = jitc_var(ld->outer_in[index]),
-                         *inner_out = jitc_var(ld->inner_out[index]),
-                         *outer_out = jitc_var(ld->outer_out[index]);
+                size_t l = (size_t) v->literal;
+                Variable *inner_in  = jitc_var(ld->inner_in[l]),
+                         *outer_in  = jitc_var(ld->outer_in[l]),
+                         *inner_out = jitc_var(ld->inner_out[l]),
+                         *outer_out = jitc_var(ld->outer_out[l]);
                 fmt("    $v = phi $T [ $v, %l_$u_before ], [ $v, %l_$u_end ] \n",
                     v, v, outer_in, a0->reg_index, inner_out, a0->reg_index);
                 if (outer_out)
