@@ -512,7 +512,7 @@ void jitc_set_source_location(const char *fname, size_t lineno) noexcept {
 
 /// Append the given variable to the instruction trace and return its ID
 uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
-    State &state = ::state;
+    State &st = ::state;
     if (unlikely(v.backend == (uint32_t) JitBackend::None))
         v.backend = (uint32_t) default_backend;
 
@@ -529,18 +529,18 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     bool lvn_key_inserted = false;
     if (lvn)
         std::tie(key_it, lvn_key_inserted) =
-            state.lvn_map.try_emplace(VariableKey(v), 0);
+            st.lvn_map.try_emplace(VariableKey(v), 0);
 
     uint32_t index;
     Variable *vo;
 
     if (likely(!lvn || lvn_key_inserted)) {
         bool reuse_indices = flags & (uint32_t) JitFlag::ReuseIndices;
-        UnusedPQ &unused = state.unused_variables;
+        UnusedPQ &unused = st.unused_variables;
 
         if (unlikely(unused.empty() || !reuse_indices)) {
-            index = state.variables.size();
-            state.variables.emplace_back();
+            index = (uint32_t) st.variables.size();
+            st.variables.emplace_back();
         } else {
             index = unused.top();
             unused.pop();
@@ -549,7 +549,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         if (lvn_key_inserted)
             key_it.value() = index;
 
-        vo = &state.variables[index];
+        vo = &st.variables[index];
         jitc_assert(vo->ref_count == 0 && vo->ref_count_se == 0,
                     "jit_var_new(): selected entry of variable r%u "
                     "is already used.", index);
@@ -578,7 +578,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
             jitc_var_extra(vo)->label = s;
         }
 
-        state.variable_counter++;
+        st.variable_counter++;
     } else {
         if (likely(!v.write_ptr)) {
             for (int i = 0; i < 4; ++i)
@@ -588,14 +588,14 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         }
 
         index = key_it.value();
-        vo = &state.variables[index];
+        vo = &st.variables[index];
         jitc_assert(VariableKey(*vo) == VariableKey(v),
                     "jit_var_new(): LVN data structure is out of sync! (1)");
         jitc_assert(vo->ref_count != 0 || vo->ref_count_se != 0,
                     "jit_var_new(): LVN data structure is out of sync! (2)");
     }
 
-    if (unlikely(std::max(state.log_level_stderr, state.log_level_callback) >=
+    if (unlikely(std::max(st.log_level_stderr, st.log_level_callback) >=
                  LogLevel::Debug)) {
         var_buffer.clear();
         var_buffer.fmt("jit_var_new(): %s r%u", type_name[v.type], index);
@@ -1580,22 +1580,22 @@ uint32_t jitc_var_mask_default(JitBackend backend, size_t size) {
 
 /// Return the 'VariableExtra' record associated with a variable (or create it)
 VariableExtra *jitc_var_extra(Variable *v) {
-    State &state = ::state;
+    State &st = ::state;
 
     uint32_t index = v->extra;
     if (!index) {
-        UnusedPQ &unused = state.unused_extra;
+        UnusedPQ &unused = st.unused_extra;
         if (unused.empty()) {
-            index = state.extra.size();
-            state.extra.emplace_back();
+            index = (uint32_t) st.extra.size();
+            st.extra.emplace_back();
         } else {
             index = unused.top();
             unused.pop();
         }
         v->extra = index;
-        state.extra[index] = VariableExtra();
+        st.extra[index] = VariableExtra();
     }
-    return &state.extra[index];
+    return &st.extra[index];
 }
 
 uint32_t jitc_var_mask_peek(JitBackend backend) {
@@ -1908,7 +1908,7 @@ const char *jitc_var_whos() {
             var_buffer.put("           ");
         }
 
-        const char *label = jitc_var_label(index);
+        const char *label = jitc_var_label((uint32_t) index);
 
         var_buffer.fmt(" %3u %10u %12s   %s\n", (uint32_t) v.ref_count,
                        v.size, jitc_mem_string(mem_size), label ? label : "");
@@ -2018,7 +2018,7 @@ const char *jitc_var_graphviz() {
         }
 
         var_buffer.put(' ', 4 * current_depth);
-        var_buffer.put_u32(index);
+        var_buffer.put_u32((uint32_t) index);
         var_buffer.put(" [label=\"{");
 
         auto print_escape = [](const char *s) {

@@ -162,7 +162,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             memset(&array_desc, 0, sizeof(CUDA_ARRAY_DESCRIPTOR));
             array_desc.Width = shape[0];
             array_desc.Height = (ndim == 2) ? shape[1] : 1;
-            array_desc.Format = storage_format;
+            array_desc.Format = (int) storage_format;
             array_desc.NumChannels = (unsigned int) tex_channels;
             cuda_check(cuArrayCreate(&array, &array_desc));
         } else {
@@ -171,7 +171,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             array_desc.Width = shape[0];
             array_desc.Height = shape[1];
             array_desc.Depth = shape[2];
-            array_desc.Format = storage_format;
+            array_desc.Format = (int) storage_format;
             array_desc.NumChannels = (unsigned int) tex_channels;
             cuda_check(cuArray3DCreate(&array, &array_desc));
         }

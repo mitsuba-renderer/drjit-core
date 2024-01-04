@@ -71,8 +71,8 @@ uint32_t jitc_var_cond_append(uint32_t index, const uint32_t *rv, size_t count) 
     if (!cd->labels[0]) {
         cd->labels[0] = index_2;
         cd->indices_t = std::vector<uint32_t>(rv, rv + count);
-        for (uint32_t index: cd->indices_t)
-            jitc_var_inc_ref(index);
+        for (uint32_t index_t: cd->indices_t)
+            jitc_var_inc_ref(index_t);
         cd->se_t = std::vector<uint32_t>(se.end() - se_count, se.end());
         se.resize(se.size() - se_count);
     } else if (!cd->labels[1]) {
@@ -80,8 +80,8 @@ uint32_t jitc_var_cond_append(uint32_t index, const uint32_t *rv, size_t count) 
         if (count != cd->indices_t.size())
             jitc_raise("jitc_var_cond_append(): inconsistent number of return values!");
         cd->indices_f = std::vector<uint32_t>(rv, rv + count);
-        for (uint32_t index: cd->indices_f)
-            jitc_var_inc_ref(index);
+        for (uint32_t index_f: cd->indices_f)
+            jitc_var_inc_ref(index_f);
         cd->se_f = std::vector<uint32_t>(se.end() - se_count, se.end());
         se.resize(se.size() - se_count);
     } else {
