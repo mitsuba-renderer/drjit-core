@@ -287,6 +287,11 @@ void *jit_cuda_lookup(const char *name) {
     return jitc_cuda_lookup(name);
 }
 
+void jit_cuda_sync_stream(uintptr_t stream) {
+    // Only using thread-local state so no shared JIT state synchronization needed
+    return jitc_cuda_sync_stream(stream);
+}
+
 void jit_llvm_set_thread_count(uint32_t size) {
     pool_set_size(nullptr, size);
 }
