@@ -185,19 +185,19 @@ TEST_BOTH(11_reindex) {
     jit_assert(i3.index() == i4.index());
 }
 
-TEST_BOTH_FP32(12_scatter_reduce_kahan) {
+TEST_BOTH_FP32(12_scatter_add_kahan) {
     Float buf_1 = zeros<Float>(1),
           buf_2 = zeros<Float>(1);
 
-    scatter_reduce_kahan(buf_1, buf_2, Float(1e7 + 1), UInt32(0));
+    scatter_add_kahan(buf_1, buf_2, Float(1e7 + 1), UInt32(0));
     jit_assert(all(eq(buf_1 - Float(1e7 + 1), Float(0))));
     jit_assert(all(eq(buf_2, Float(0))));
 
-    scatter_reduce_kahan(buf_1, buf_2, Float(1e7), UInt32(0));
+    scatter_add_kahan(buf_1, buf_2, Float(1e7), UInt32(0));
     jit_assert(all(eq(buf_1 - Float(2e7), Float(0))));
     jit_assert(all(eq(buf_2, Float(1))));
 
-    scatter_reduce_kahan(buf_1, buf_2, Float(1), UInt32(0));
+    scatter_add_kahan(buf_1, buf_2, Float(1), UInt32(0));
     jit_assert(all(eq(buf_1 - Float(2e7), Float(0))));
     jit_assert(all(eq(buf_2, Float(2))));
 }
