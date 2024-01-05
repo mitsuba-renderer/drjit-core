@@ -334,6 +334,9 @@ struct Device {
     /// A CUDA event for synchronization purposes
     CUevent event = nullptr;
 
+    /// A CUDA event for synchronization with external streams
+    CUevent sync_stream_event = nullptr;
+
     /// CUDA device ID
     int id;
 
@@ -490,6 +493,9 @@ struct ThreadState {
 
     /// A CUDA event for synchronization purposes
     CUevent event = nullptr;
+
+    /// A CUDA event for synchronization with external streams
+    CUevent sync_stream_event = nullptr;
 
     /**
      * \brief DrJit device ID associated with this device

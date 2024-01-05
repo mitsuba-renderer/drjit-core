@@ -365,6 +365,7 @@ bool jitc_cuda_init() {
 
         cuda_check(cuStreamCreate(&device.stream, CU_STREAM_DEFAULT));
         cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
+        cuda_check(cuEventCreate(&device.sync_stream_event, CU_EVENT_DISABLE_TIMING));
 
         const uint32_t sm_table[][2] = { { 70, 65 }, { 71, 65 }, { 75, 65 }, { 80, 70 },
                                          { 86, 71 }, { 89, 78 }, { 90, 78 } };
@@ -414,6 +415,7 @@ void jitc_cuda_shutdown() {
             cuda_check(cuModuleUnload(jitc_cuda_module[dev.id]));
             cuda_check(cuStreamDestroy(dev.stream));
             cuda_check(cuEventDestroy(dev.event));
+            cuda_check(cuEventDestroy(dev.sync_stream_event));
         }
         cuda_check(cuDevicePrimaryCtxRelease(dev.id));
     }

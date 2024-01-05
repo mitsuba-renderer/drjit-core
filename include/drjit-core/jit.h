@@ -231,6 +231,17 @@ extern JIT_EXPORT void jit_cuda_set_target(uint32_t ptx_version,
 extern JIT_EXPORT void *jit_cuda_lookup(const char *name);
 
 /**
+ * \brief Add CUDA event synchronization between thread state's and external
+ * CUDA stream.
+ *
+ * An event will be recorded into the thread's states stream and the external stream
+ * will wait on the event before performing any subsequent work.
+ * 
+ * \param stream The CUstream handle of the external stream
+ */
+extern JIT_EXPORT void jit_cuda_sync_stream(uintptr_t stream);
+
+/**
  * \brief Override the target CPU, features, and vector width of the LLVM backend
  *
  * The LLVM backend normally generates code for the detected native hardware

@@ -386,6 +386,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->memory_pool = device.memory_pool;
         ts->stream = device.stream;
         ts->event = device.event;
+        ts->sync_stream_event = device.sync_stream_event;
         thread_state_cuda = ts;
     } else {
         if ((state.backends & (uint32_t) JitBackend::LLVM) == 0) {
@@ -440,6 +441,7 @@ void jitc_cuda_set_device(int device_id) {
         ts->memory_pool = device.memory_pool;
         ts->stream = device.stream;
         ts->event = device.event;
+        ts->sync_stream_event = device.sync_stream_event;
     }
 }
 

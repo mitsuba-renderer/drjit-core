@@ -20,6 +20,9 @@ extern void jitc_cuda_api_shutdown();
 /// Look up a device driver function
 extern void *jitc_cuda_lookup(const char *name);
 
+/// Add CUDA event synchronization between thread state's and external CUDA stream
+extern void jitc_cuda_sync_stream(uintptr_t stream);
+
 #if !defined(DRJIT_DYNAMIC_CUDA)
 #  include <cuda.h>
 #else
