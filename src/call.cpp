@@ -16,6 +16,7 @@
 #include "op.h"
 #include "profiler.h"
 #include "loop.h"
+#include "trace.h"
 #include "call.h"
 #include <set>
 
@@ -352,7 +353,7 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
              n_out == 1 ? "" : "s", n_devirt, se_count, se_count == 1 ? "" : "s",
              data_size, data_size == 1 ? "" : "s", size,
              (n_devirt == n_out && se_count == 0) ? " (optimized away)" : "",
-             symbolic ? " (part of a symbolic computation)" : "");
+             symbolic ? " ([symbolic])" : "");
 
 
     // =====================================================
@@ -588,6 +589,10 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
     } else if (kind == VarKind::LoopCond) {
         LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
         for (uint32_t index_2: loop->inner_out)
+            jitc_var_call_analyze(call, inst_id, index_2, data_offset);
+    } else if (kind == VarKind::TraceRay) {
+        TraceData *td = (TraceData *) v->data;
+        for (uint32_t index_2: td->indices)
             jitc_var_call_analyze(call, inst_id, index_2, data_offset);
     } else if (v->is_evaluated() || (VarType) v->type == VarType::Pointer) {
         uint32_t tsize = type_size[v->type],

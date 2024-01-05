@@ -16,6 +16,7 @@
 #include "optix.h"
 #include "loop.h"
 #include "call.h"
+#include "trace.h"
 #include <tsl/robin_set.h>
 
 // ====================================================================
@@ -49,7 +50,7 @@ struct VisitedKeyHash {
     }
 };
 
-/// Auxiliary data structure needed to compute 'schedule' and 'schedule_gropus'
+/// Auxiliary data structure needed to compute 'schedule' and 'schedule_groups'
 static tsl::robin_set<VisitedKey, VisitedKeyHash> visited;
 
 /// Kernel parameter buffer and device copy
@@ -154,6 +155,14 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
                 CallData *call = (CallData *) jitc_var(v->dep[0])->data;
                 for (uint32_t i = 0; i < call->n_inst; ++i)
                     jitc_var_traverse(size, call->inner_out[v->literal + i * call->n_out], depth + 1);
+
+            }
+            break;
+
+        case VarKind::TraceRay: {
+                TraceData *call = (TraceData *) v->data;
+                for (uint32_t i: call->indices)
+                    jitc_var_traverse(size, i, depth);
 
             }
             break;

@@ -8,6 +8,7 @@
 #include "var.h"
 #include "op.h"
 #include "util.h"
+#include "trace.h"
 
 #if !defined(NDEBUG) || defined(DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION)
 #define DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
@@ -558,31 +559,36 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
 
     jitc_log(InfoSym, "jit_optix_ray_trace(): tracing %u ray%s, %u payload value%s%s.",
              size, size != 1 ? "s" : "", np, np == 1 ? "" : "s",
-             symbolic ? " (part of a symbolic computation)" : "");
+             symbolic ? " ([symbolic])" : "");
+
+    TraceData *td = new TraceData();
+    td->indices.reserve(n_args);
+    for (uint32_t i = 0; i < n_args; ++i) {
+        uint32_t id = args[i];
+        td->indices.push_back(id);
+        jitc_var_inc_ref(id);
+    }
 
     Ref index = steal(jitc_var_new_node_3(
         JitBackend::CUDA, VarKind::TraceRay, VarType::Void, size,
         symbolic, valid, jitc_var(valid), pipeline, jitc_var(pipeline), sbt,
-        jitc_var(sbt)));
+        jitc_var(sbt), (uintptr_t) td));
 
     Variable *v = jitc_var(index);
-    v->extra = v->optix = 1;
-
-#if 0
-    Extra &extra = state.extra[index];
-    extra.n_dep = n_args;
-    extra.dep = (uint32_t *) malloc_check(sizeof(uint32_t) * extra.n_dep);
-    for (uint32_t i = 0; i < n_args; ++i) {
-        uint32_t id = args[i];
-        extra.dep[i] = id;
-        jitc_var_inc_ref(id);
-    }
+    v->optix = 1;
 
     for (uint32_t i = 0; i < np; ++i)
         args[15 + i] = jitc_var_new_node_1(
             JitBackend::CUDA, VarKind::Extract, VarType::UInt32,
             size, symbolic, index, jitc_var(index), (uint64_t) i);
-#endif
+
+    // Free resources when this variable is destroyed
+    auto callback = [](uint32_t /*index*/, int free, void *ptr) {
+        if (free)
+            delete (TraceData *) ptr;
+    };
+
+    jitc_var_set_callback(index, callback, td, true);
 }
 
 void jitc_optix_check_impl(OptixResult errval, const char *file,

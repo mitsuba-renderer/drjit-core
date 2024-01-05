@@ -67,6 +67,7 @@
 #include "call.h"
 #include "loop.h"
 #include "op.h"
+#include "trace.h"
 
 #define put(...)                                                               \
     buffer.put(__VA_ARGS__)
@@ -83,7 +84,7 @@
     } while (0)
 
 // Forward declaration
-static void jitc_llvm_render(uint32_t index, Variable *v);
+static void jitc_llvm_render(Variable *v);
 
 static void jitc_llvm_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value, const Variable *index,
@@ -100,7 +101,7 @@ static void jitc_llvm_render_scatter_inc(Variable *v,
                                          const Variable *index,
                                          const Variable *mask);
 
-static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
+static void jitc_llvm_render_trace(const Variable *v,
                                    const Variable *func,
                                    const Variable *scene);
 
@@ -184,7 +185,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
                 v, v, v, v,
                 v, v, v, v);
         } else {
-            jitc_llvm_render(index, v);
+            jitc_llvm_render(v);
         }
 
         v = jitc_var(index); // `v` might have been invalidated during its assembly
@@ -384,7 +385,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                 break;
 
             default:
-                jitc_llvm_render(sv.index, v);
+                jitc_llvm_render(v);
                 break;
         }
     }
@@ -453,7 +454,7 @@ static inline bool jitc_fp16_supported_llvm(VarKind kind) {
     }
 }
 
-static void jitc_llvm_render(uint32_t index, Variable *v) {
+static void jitc_llvm_render(Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
@@ -927,7 +928,7 @@ static void jitc_llvm_render(uint32_t index, Variable *v) {
             break;
 
         case VarKind::TraceRay:
-            jitc_llvm_render_trace(index, v, a0, a1);
+            jitc_llvm_render_trace(v, a0, a1);
             break;
 
         case VarKind::Extract:
@@ -1411,36 +1412,38 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
 
     jitc_log(InfoSym, "jitc_llvm_ray_trace(): tracing %u %sray%s%s", size,
              shadow_ray ? "shadow " : "", size != 1 ? "s" : "",
-             symbolic ? " (part of a symbolic computation)" : "");
+             symbolic ? " [symbolic]" : "");
+
+    TraceData *td = new TraceData();
+    td->indices.reserve(n_args);
+    for (uint32_t i = 0; i < n_args; ++i) {
+        uint32_t id = i != 1 ? in[i] : valid;
+        td->indices.push_back(id);
+        jitc_var_inc_ref(id);
+    }
 
     Ref index = steal(jitc_var_new_node_2(
         JitBackend::LLVM, VarKind::TraceRay, VarType::Void, size,
         symbolic, func, jitc_var(func), scene,
         jitc_var(scene), (uint64_t) shadow_ray));
 
-#if 0
-    Variable *v = jitc_var(index);
-
-    Extra &extra = state.extra[index];
-    extra.n_dep = n_args;
-    extra.dep = (uint32_t *) malloc_check(sizeof(uint32_t) * n_args);
-    for (uint32_t i = 0; i < n_args; ++i) {
-        uint32_t id = i != 1 ? in[i] : valid;
-        extra.dep[i] = id;
-        jitc_var_inc_ref(id);
-    }
+    jitc_var(index)->data = td;
 
     for (int i = 0; i < (shadow_ray ? 1 : 6); ++i)
         out[i] = jitc_var_new_node_1(JitBackend::LLVM, VarKind::Extract,
                                      i < 3 ? float_type : VarType::UInt32, size,
                                      symbolic, index, jitc_var(index),
                                      (uint64_t) i);
-#else
-    (void) out;
-#endif
+    // Free resources when this variable is destroyed
+    auto callback = [](uint32_t /*index*/, int free, void *ptr) {
+        if (free)
+            delete (TraceData *) ptr;
+    };
+
+    jitc_var_set_callback(index, callback, td, true);
 }
 
-static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
+static void jitc_llvm_render_trace(const Variable *v,
                                    const Variable *func,
                                    const Variable *scene) {
     /* Intersection data structure layout:
@@ -1465,15 +1468,10 @@ static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
         18 uint32_t primID
         19 uint32_t geomID
         20 uint32_t instID[] */
-#if 1
-    (void) index;
-    (void) v;
-    (void) func;
-    (void) scene;
-#else
-    const Extra &extra = state.extra[index];
+
+    const std::vector<uint32_t> &indices = ((TraceData *) v->data)->indices;
     bool shadow_ray = v->literal == 1;
-    VarType float_type = jitc_var_type(extra.dep[2]);
+    VarType float_type = jitc_var_type(indices[2]);
 
     uint32_t width          = jitc_llvm_vector_width,
              ctx_size       = 6 * 4,
@@ -1492,7 +1490,7 @@ static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
         if (jitc_llvm_vector_width == 1 && i == 0)
             continue; // valid flag not needed for 1-lane versions
 
-        const Variable *v2 = jitc_var(extra.dep[i + 1]);
+        const Variable *v2 = jitc_var(indices[i + 1]);
         fmt( "    $v_in_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
             "{    $v_in_$u_1 = bitcast i8* $v_in_$u_0 to $T*\n|}"
              "    store $V, {$T*} $v_in_$u_1, align $A\n",
@@ -1513,8 +1511,8 @@ static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
             jitc_llvm_ones_str[(int) VarType::Int32], v, float_size * width);
     }
 
-	/// Determine whether to mark the rays as coherent or incoherent
-    const Variable *coherent = jitc_var(extra.dep[0]);
+	// Determine whether to mark the rays as coherent or incoherent
+    const Variable *coherent = jitc_var(indices[0]);
 
     fmt( "    $v_in_ctx_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
         "{    $v_in_ctx_1 = bitcast i8* $v_in_ctx_0 to <6 x i32>*\n|}",
@@ -1667,7 +1665,6 @@ static void jitc_llvm_render_trace(uint32_t index, const Variable *v,
     }
 
     put("    ; -------------------\n\n");
-#endif
 }
 
 /// Virtual function call code generation -- LLVM IR-specific bits
