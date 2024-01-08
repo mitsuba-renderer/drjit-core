@@ -796,9 +796,11 @@ static void jitc_cuda_render(Variable *v) {
             }
             break;
 
+#if defined(DRJIT_ENABLE_OPTIX)
         case VarKind::TraceRay:
             jitc_cuda_render_trace(v, a0, a1, a2);
             break;
+#endif
 
         case VarKind::Extract:
             fmt("    mov.$b $v, $v_out_$u;\n", v, v, a0, (uint32_t) v->literal);
