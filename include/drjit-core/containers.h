@@ -168,7 +168,7 @@ template <typename T, typename... Ts> struct dr_tuple<T, Ts...> : dr_tuple<Ts...
     dr_tuple& operator=(dr_tuple &&) = default;
     dr_tuple& operator=(const dr_tuple &) = default;
 
-    template <typename A, typename... As>
+    template <typename A, typename... As, std::enable_if_t<sizeof...(As) == sizeof...(Ts), int> = 0>
     JIT_INLINE dr_tuple(A &&a, As &&...as)
         : Base((forward_t<As>) as...), value((forward_t<A>) a) { }
 
