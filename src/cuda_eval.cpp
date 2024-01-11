@@ -856,8 +856,8 @@ static void jitc_cuda_render(Variable *v) {
         case VarKind::CondStart: {
                 const CondData *cd = (CondData *) v->data;
                 if (cd->name != "unnamed")
-                    fmt("    // Symbolic conditional: $s\n", cd->name.c_str());
-                fmt("    @!$v bra l_$u_f;\n\n"
+                    fmt("\n    // Symbolic conditional: $s\n", cd->name.c_str());
+                fmt("    @!$v bra l_$u_f;\n"
                     "\nl_$u_t:\n",
                     a0, v->reg_index, v->reg_index);
             }
