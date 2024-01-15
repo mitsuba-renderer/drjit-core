@@ -82,8 +82,10 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
     const char *err = nullptr;
 
     for (uint32_t i = 0; i < Size; ++i) {
-        if (!dep[i])
+        if (!dep[i]) {
+            v[i] = nullptr;
             continue;
+        }
         Variable *vi = jitc_var(dep[i]);
 
 #if !defined(NDEBUG)
@@ -164,7 +166,8 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
             simplify |= dep[0] == dep[1];
 
         for (uint32_t i = 0; i < Size; ++i) {
-            if (unlikely(v[i]->size != size && v[i]->size != 1)) {
+            uint32_t vs = v[i] ? v[i]->size : 0;
+            if (unlikely(vs != size && vs != 1)) {
                 err = "operands have incompatible sizes";
                 size = (uint32_t) -1;
                 goto fail;
