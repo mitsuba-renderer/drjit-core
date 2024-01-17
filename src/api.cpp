@@ -1321,3 +1321,14 @@ void jit_enqueue_host_func(JitBackend backend, void (*callback)(void *),
     jitc_enqueue_host_func(backend, callback, payload);
 }
 
+/// Compress a sparse boolean array into an index array of the active indices
+uint32_t jit_var_compress(uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_var_compress(index);
+}
+
+// Shrink a variable after it has been created
+void jit_var_shrink(uint32_t index, size_t size) {
+    lock_guard guard(state.lock);
+    jitc_var_shrink(index, size);
+}

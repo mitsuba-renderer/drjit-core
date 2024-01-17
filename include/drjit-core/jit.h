@@ -1134,6 +1134,9 @@ extern JIT_EXPORT int jit_var_is_finite_literal(uint32_t index);
  */
 extern JIT_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
 
+/// Shrink a variable representing an opaque memory region *after* it has been created
+extern JIT_EXPORT void jit_var_shrink(uint32_t index, size_t size);
+
 /**
  * \brief Asynchronously migrate a variable to a different flavor of memory
  *
@@ -1399,40 +1402,43 @@ enum class JitFlag : uint32_t {
     /// propagates literal constants into loops, which is useful for autodiff.
     OptimizeLoops = 1 << 6,
 
+    /// Compress the loop state when executing evaluated loops?
+    CompressLoops = 1 << 7,
+
     /// Capture function calls symbolically instead of evaluating their inputs,
     /// grouping them by instance ID, and then lauching a kernel per group
-    SymbolicCalls = 1 << 7,
+    SymbolicCalls = 1 << 8,
 
     /// Propagate constants through function calls and remove
-    OptimizeCalls = 1 << 8,
+    OptimizeCalls = 1 << 9,
 
     /// Merge functions produced by Dr.Jit when they have a compatible structure
-    MergeFunctions = 1 << 9,
+    MergeFunctions = 1 << 10,
 
     /// Capture conditionals symbolically instead of evaluating both branches
     /// and combining their results.
-    SymbolicConditionals = 1 << 10,
+    SymbolicConditionals = 1 << 11,
 
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 1 << 11,
+    ForceOptiX = 1 << 12,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 1 << 12,
+    PrintIR = 1 << 13,
 
     /// Maintain a history of kernel launches. Useful for profiling Dr.Jit code.
-    KernelHistory = 1 << 13,
+    KernelHistory = 1 << 14,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 1 << 14,
+    LaunchBlocking = 1 << 15,
 
     /// Perform a local (warp/SIMD) reduction before issuing global atomics
-    AtomicReduceLocal = 1 << 15,
+    AtomicReduceLocal = 1 << 16,
 
     /// Set to \c true when Dr.Jit is capturing symbolic computation. This flag
     /// is managed automatically and should not be set by application code.
-    SymbolicScope = 1 << 16,
+    SymbolicScope = 1 << 17,
 
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
@@ -1459,16 +1465,17 @@ enum JitFlag {
     JitFlagValueNumbering = 1 << 4,
     JitFlagSymbolicLoops = 1 << 5,
     JitFlagOptimizeLoops = 1 << 6,
-    JitFlagSymbolicCalls = 1 << 7,
-    JitFlagOptimizeCalls = 1 << 8,
-    JitFlagMergeFunctions = 1 << 9,
-    JitFlagSymbolicConditionals = 1 << 10,
-    JitFlagForceOptiX = 1 << 11,
-    JitFlagPrintIR = 1 << 12,
-    JitFlagKernelHistory = 1 << 13,
-    JitFlagLaunchBlocking = 1 << 14,
-    JitFlagAtomicReduceLocal = 1 << 15,
-    JitFlagSymbolic = 1 << 16
+    JitFlagCopmressLoops = 1 << 7,
+    JitFlagSymbolicCalls = 1 << 8,
+    JitFlagOptimizeCalls = 1 << 9,
+    JitFlagMergeFunctions = 1 << 10,
+    JitFlagSymbolicConditionals = 1 << 11,
+    JitFlagForceOptiX = 1 << 12,
+    JitFlagPrintIR = 1 << 13,
+    JitFlagKernelHistory = 1 << 14,
+    JitFlagLaunchBlocking = 1 << 15,
+    JitFlagAtomicReduceLocal = 1 << 16,
+    JitFlagSymbolic = 1 << 17
 };
 #endif
 
@@ -1765,6 +1772,9 @@ extern JIT_EXPORT uint32_t jit_var_mask_default(JIT_ENUM JitBackend backend,
  * The \c size parameter determines the size of the associated wavefront.
  */
 extern JIT_EXPORT uint32_t jit_var_mask_apply(uint32_t index, uint32_t size);
+
+/// Compress a sparse boolean array into an index array of the active indices
+extern JIT_EXPORT uint32_t jit_var_compress(uint32_t index);
 
 // ====================================================================
 //                          Horizontal reductions
