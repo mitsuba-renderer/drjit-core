@@ -1656,10 +1656,13 @@ uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size) {
 
     uint32_t result;
     // Combine given mask with mask stack
-    if (mask)
+    if (mask) {
         result = jitc_var_and(mask, index);
-    else
+    } else {
+        // Hold a temporary reference so that the following operation does not mutate 'index'
+        Ref temp = borrow(index);
         result = jitc_var_resize(index, size);
+    }
 
     return result;
 }
