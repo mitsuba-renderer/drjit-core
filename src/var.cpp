@@ -1393,6 +1393,23 @@ uint32_t jitc_var_copy(uint32_t index) {
     return result;
 }
 
+void jitc_var_shrink(uint32_t index, size_t size) {
+    if (index == 0)
+        return;
+    if (size == 0)
+        jitc_raise("jit_var_shrink(): cannot reduce size to zero!");
+    Variable *v = jitc_var(index);
+    if ((size_t) v->size == size)
+        return;
+    if ((size_t) v->size < size)
+        jitc_raise("jit_var_shrink(): requested size exceeds current size!");
+    if ((VarKind) v->kind != VarKind::Evaluated)
+        jitc_raise("jit_var_shrink(): only supports evaluated variables!");
+    if (v->ref_count > 1)
+        jitc_raise("jit_var_shrink(): variable reference count must be 1!");
+    v->size = (uint32_t) size;
+}
+
 uint32_t jitc_var_resize(uint32_t index, size_t size) {
     if (index == 0 && size == 0)
         return 0;
@@ -1703,6 +1720,35 @@ bool jitc_var_all(uint32_t index) {
         v = jitc_var(index);
 
     return jitc_all((JitBackend) v->backend, (uint8_t *) v->data, v->size);
+}
+
+uint32_t jitc_var_compress(uint32_t index) {
+    if (!index)
+        return 0;
+
+    const Variable *v = jitc_var(index);
+
+    if (unlikely((VarType) v->type != VarType::Bool))
+        jitc_raise("jit_var_compress(r%u): requires a boolean array as input!", index);
+
+    if (jitc_var_eval(index))
+        v = jitc_var(index);
+
+    JitBackend backend = (JitBackend) v->backend;
+    const uint32_t size_in = v->size;
+    const uint8_t *ptr = (const uint8_t *) v->data;
+
+    uint32_t *indices_out = (uint32_t *) jitc_malloc(
+        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync,
+        size_in * sizeof(uint32_t));
+
+    uint32_t size_out = jitc_compress(backend, ptr, size_in, indices_out);
+    if (size_out > 0) {
+        return jitc_var_mem_map(backend, VarType::UInt32, indices_out, size_out, 1);
+    } else {
+        jitc_free(indices_out);
+        return 0;
+    }
 }
 
 template <typename T> static void jitc_var_reduce_scalar(uint32_t size, void *ptr) {
