@@ -347,7 +347,7 @@ struct Device {
     uint32_t ptx_version;
 
     /// Number of SMs
-    uint32_t num_sm;
+    uint32_t sm_count;
 
     /// Max. bytes of shared memory per SM
     uint32_t shared_memory_bytes;
@@ -364,33 +364,80 @@ struct Device {
     void *optix_context = nullptr;
 #endif
 
-    /// Compute a good configuration for a grid-stride loop
+    // Compute a good launch configuration. This heuristic has three "regimes"
+    //
+    // 1. For very small workloads with just a few warps, try to maximize
+    //    the number of used SMs by generating single-warp blocks.
+    //
+    // 2. As the workload gets larger, maintain a number of blocks
+    //    matching the hardware SM count and progressively add warps.
+    //
+    // 3. At some point, the maximum number of warps per block is reached,
+    //    and we switch over to generating more blocks instead. The method
+    //    tries to maintain a block count that is a multiple of the number of
+    //    SMs when the block count is less than 4*#SM count, to avoid
+    //    imbalance.
+    //
+    //    The maximum # of warps per block for a particular kernel is not the
+    //    hardware maximum but rather inferred by the occupancy-optimizing
+    //    function ``cuOccupancyMaxPotentialBlockSize()``.
     void get_launch_config(uint32_t *blocks_out, uint32_t *threads_out,
                            uint32_t size, uint32_t max_threads = 1024,
-                           uint32_t max_blocks_per_sm = 4) const {
-        uint32_t blocks_avail  = (size + max_threads - 1) / max_threads;
+                           uint32_t max_blocks_per_sm = 0) const {
 
-        uint32_t blocks;
-        if (blocks_avail < num_sm) {
-            // Not enough work for 1 full wave
-            blocks = blocks_avail;
+        uint32_t warp_size           = 32,
+                 warp_count          = (size + warp_size - 1) / warp_size,
+                 max_warps_per_block = (max_threads + warp_size - 1) / warp_size;
+
+        uint32_t block_count, warps_per_block;
+        if (warp_count <= sm_count) {
+            block_count = warp_count;
+            warps_per_block = 1;
         } else {
-            // Don't produce more than 4 blocks per SM
-            uint32_t blocks_per_sm = blocks_avail / num_sm;
-            if (blocks_per_sm > max_blocks_per_sm)
-                blocks_per_sm = max_blocks_per_sm;
-            blocks = blocks_per_sm * num_sm;
+            block_count = sm_count;
+            warps_per_block = (warp_count + block_count - 1) / block_count;
+
+            if (warps_per_block > max_warps_per_block) {
+                // Compute the needed number of blocks given the max. warps per block
+                block_count = (warp_count + max_warps_per_block - 1) / max_warps_per_block;
+
+                // Ideally, the block count should be a multiple of the SM count, in
+                // case they all take a very similar amount of time. Let's just do this
+                // when the # of blocks is still small-ish.
+                if (block_count < sm_count * 4)
+                    block_count = (block_count + sm_count - 1) / sm_count * sm_count;
+
+                uint32_t max_blocks = max_blocks_per_sm * sm_count;
+                if (max_blocks && block_count > max_blocks) {
+                    // Optional: the caller can upper-bound the number of blocks
+                    // per SM. In that case, we can't generate a configuration with
+                    // a thread per element, and the caller will need some kind of
+                    // grid-stride loop or similar.
+                    block_count = max_blocks;
+                    warps_per_block = max_warps_per_block;
+                } else {
+                    // Given the block count, we can now compute the number of warps per block
+                    warps_per_block = (warp_count + block_count - 1) / block_count;
+
+                    // Some blocks may no longer be needed following this computation, remove them
+                    block_count = (warp_count + warps_per_block - 1) / warps_per_block;
+                }
+            }
         }
 
-        uint32_t threads = max_threads;
-        if (blocks <= 1 && size < max_threads)
-            threads = size;
+        if (block_count * warps_per_block < warp_count && !max_blocks_per_sm) {
+            fprintf(stderr,
+                    "get_launch_config(): internal error for size=%u, "
+                    "max_threads=%u, max_blocks_per_sm=%u.\n",
+                    size, max_threads, max_blocks_per_sm);
+            abort();
+        }
 
         if (blocks_out)
-            *blocks_out  = blocks;
+            *blocks_out  = block_count;
 
         if (threads_out)
-            *threads_out = threads;
+            *threads_out = warps_per_block * warp_size;
     }
 };
 

@@ -15,7 +15,8 @@ static Out memcpy_cast(const In &src) {
 
 int main(int, char **) {
 #if !defined(__F16C__) && !defined(__aarch64__)
-    fprintf("Hardware support for half precision arithmetic is not available. "
+    fprintf(stderr,
+            "Hardware support for half precision arithmetic is not available. "
             "There is nothing to test.\n");
     return 0;
 #endif
