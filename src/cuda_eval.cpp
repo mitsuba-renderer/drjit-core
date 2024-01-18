@@ -136,14 +136,10 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                "    ldu.global.u32 %r2, [%rd1];\n");
         }
 
-        put("    setp.ge.u32 %p0, %r0, %r2;\n"
-            "    @%p0 bra done;\n"
-            "\n"
-            "    mov.u32 %r3, %nctaid.x;\n"
-            "    mul.lo.u32 %r1, %r3, %r1;\n"
-            "\n");
-
-        fmt("body: // sm_$u\n", state.devices[ts->device].compute_capability);
+        fmt("    setp.ge.u32 %p0, %r0, %r2;\n"
+            "    @%p0 ret;\n\n"
+            "body: // sm_$u\n",
+            state.devices[ts->device].compute_capability);
     } else {
         put("    call (%r0), _optix_get_launch_index_x, ();\n"
             "    ld.const.u32 %r1, [params + 4];\n"
@@ -211,15 +207,6 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                     "    st.global.cs.u8 [%rd0], %w0;\n", v);
             }
         }
-    }
-
-    if (!uses_optix) {
-        put("\n"
-            "    add.u32 %r0, %r0, %r1;\n"
-            "    setp.ge.u32 %p0, %r0, %r2;\n"
-            "    @!%p0 bra body;\n"
-            "\n"
-            "done:\n");
     }
 
     put("    ret;\n"
