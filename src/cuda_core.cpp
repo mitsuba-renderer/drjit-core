@@ -83,7 +83,7 @@ void jitc_cuda_compile(const char *buf, size_t buf_size, Kernel &kernel) {
                   "assembly listing and error message below:\n\n%s\n\n%s",
                   buf, error_log);
 
-    jitc_trace("Detailed linker output:\n%s", info_log);
+    jitc_log(Trace, "Detailed linker output:\n%s", info_log);
 
     kernel.data = malloc_check(link_output_size);
     kernel.size = (uint32_t) link_output_size;

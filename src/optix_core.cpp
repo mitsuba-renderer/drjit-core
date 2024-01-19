@@ -252,6 +252,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     OptixPipelineData &pipeline = *ts->optix_pipeline;
 
     OptixTask task;
+    error_log[0] = '\0';
     int rv = optixModuleCreateFromPTXWithTasks(
         optix_context, &mco, &pipeline.compile_options, buf, buf_size,
         error_log, &log_size, &kernel.optix.mod, &task);
@@ -287,12 +288,15 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     int compilation_state = 0;
     jitc_optix_check(
         optixModuleGetCompilationState(kernel.optix.mod, &compilation_state));
-    if (compilation_state != OPTIX_MODULE_COMPILE_STATE_COMPLETED)
+    if (compilation_state != OPTIX_MODULE_COMPILE_STATE_COMPLETED) {
         jitc_fail("jit_optix_compile(): optixModuleGetCompilationState() "
                   "indicates that the compilation did not complete "
                   "succesfully. The module's compilation state is: %#06x\n"
                   "Please see the PTX assembly listing and error message "
                   "below:\n\n%s\n\n%s", compilation_state, buf, error_log);
+    } else if (error_log[0]) {
+        jitc_log(Trace, "Detailed pipeline compile output:\n%s", error_log);
+    }
 
     // =====================================================
     // 3. Create an OptiX program group
@@ -328,6 +332,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     kernel.optix.pg_count = (uint32_t) n_programs;
 
     log_size = sizeof(error_log);
+    error_log[0] = '\0';
     rv = optixProgramGroupCreate(optix_context, pgd.get(),
                                  (unsigned int) n_programs, &pgo, error_log,
                                  &log_size, kernel.optix.pg);
@@ -336,6 +341,8 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                  "failed. Please see the PTX assembly listing and error "
                  "message below:\n\n%s\n\n%s", buf, error_log);
         jitc_optix_check(rv);
+    } else if (error_log[0]) {
+        jitc_log(Trace, "Detailed program group creation output:\n%s", error_log);
     }
 
     const size_t stride = OPTIX_SBT_RECORD_HEADER_SIZE;
@@ -384,6 +391,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     }
 
     log_size = sizeof(error_log);
+    error_log[0] = '\0';
     rv = optixPipelineCreate(optix_context, &pipeline.compile_options,
                              &link_options, pipeline.program_groups.data(),
                              (unsigned int) pipeline.program_groups.size(),
@@ -393,6 +401,8 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                  "Please see the PTX assembly listing and error message "
                  "below:\n\n%s\n\n%s", buf, error_log);
         jitc_optix_check(rv);
+    } else if (error_log[0]) {
+        jitc_log(Trace, "Detailed pipeline link output:\n%s", error_log);
     }
 
     // Setup the direct stack and continuation stack size.
