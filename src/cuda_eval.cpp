@@ -908,6 +908,7 @@ static void jitc_cuda_render_scatter(const Variable *v,
     bool unmasked = mask->is_literal() && mask->literal == 1;
     bool is_bool = value->type == (uint32_t) VarType::Bool;
     bool is_half = value->type == (uint32_t) VarType::Float16;
+    bool reduce = v->literal != 0;
 
     if (!unmasked)
         fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
@@ -924,8 +925,7 @@ static void jitc_cuda_render_scatter(const Variable *v,
     const char *op = reduce_op_name[v->literal];
     const ThreadState *ts = thread_state_cuda;
 
-
-    if (v->literal && callable_depth == 0 && type_size[value->type] == 4 &&
+    if (reduce && callable_depth == 0 && type_size[value->type] == 4 &&
         ts->ptx_version >= 62 && ts->compute_capability >= 70 &&
         (jitc_flags() & (uint32_t) JitFlag::AtomicReduceLocal)) {
         fmt("    {\n"
@@ -934,82 +934,83 @@ static void jitc_cuda_render_scatter(const Variable *v,
             "    }\n",
             op, value, value, op, value, value);
 
+        const char *op_ftz = op;
+        if ((ReduceOp) v->literal == ReduceOp::Add && (VarType) value->type == VarType::Float32)
+            op_ftz = "add.ftz";
+
         // Intrinsic to perform an intra-warp reduction before writing to global memory
         fmt_intrinsic(
             ".func reduce_$s_$t(.param .u64 ptr,\n"
             "                     .param .$t value) {\n"
-            "    .reg .pred %p<14>;\n"
-            "    .reg .$t %q<19>;\n"
-            "    .reg .b32 %r<41>;\n"
-            "    .reg .b64 %rd<2>;\n"
-            "\n"
-            "    ld.param.u64 %rd0, [ptr];\n"
-            "    ld.param.$t %q3, [value];\n"
-            "    activemask.b32 %r1;\n"
-            "    match.any.sync.b64 %r2, %rd0, %r1;\n"
-            "    setp.eq.s32 %p1, %r2, -1;\n"
-            "    @%p1 bra.uni fast_path;\n"
-            "\n"
-            "    brev.b32 %r10, %r2;\n"
-            "    bfind.shiftamt.u32 %r40, %r10;\n"
-            "    shf.l.wrap.b32 %r12, -2, -2, %r40;\n"
-            "    and.b32 %r39, %r2, %r12;\n"
-            "    setp.ne.s32 %p2, %r39, 0;\n"
-            "    vote.sync.any.pred %p3, %p2, %r1;\n"
-            "    @!%p3 bra maybe_scatter;\n"
-            "    mov.b32 %r5, %q3;\n"
-            "\n"
-            "slow_path_repeat:\n"
-            "    brev.b32 %r14, %r39;\n"
-            "    bfind.shiftamt.u32 %r15, %r14;\n"
-            "    shfl.sync.idx.b32 %r17, %r5, %r15, 31, %r1;\n"
-            "    mov.b32 %q6, %r17;\n"
-            "    @%p2 $s.$t %q3, %q3, %q6;\n"
-            "    shf.l.wrap.b32 %r19, -2, -2, %r15;\n"
-            "    and.b32 %r39, %r39, %r19;\n"
-            "    setp.ne.s32 %p2, %r39, 0;\n"
-            "    vote.sync.any.pred %p3, %p2, %r1;\n"
-            "    @!%p3 bra maybe_scatter;\n"
-            "    bra.uni slow_path_repeat;\n"
-            "\n"
-            "fast_path:\n"
-            "    mov.b32 %r22, %q3;\n"
-            "    shfl.sync.down.b32 %r26, %r22, 16, 31, %r1;\n"
-            "    mov.b32 %q7, %r26;\n"
-            "    $s.$t %q8, %q7, %q3;\n"
-            "    mov.b32 %r27, %q8;\n"
-            "    shfl.sync.down.b32 %r29, %r27, 8, 31, %r1;\n"
-            "    mov.b32 %q9, %r29;\n"
-            "    $s.$t %q10, %q8, %q9;\n"
-            "    mov.b32 %r30, %q10;\n"
-            "    shfl.sync.down.b32 %r32, %r30, 4, 31, %r1;\n"
-            "    mov.b32 %q11, %r32;\n"
-            "    $s.$t %q12, %q10, %q11;\n"
-            "    mov.b32 %r33, %q12;\n"
-            "    shfl.sync.down.b32 %r34, %r33, 2, 31, %r1;\n"
-            "    mov.b32 %q13, %r34;\n"
-            "    $s.$t %q14, %q12, %q13;\n"
-            "    mov.b32 %r35, %q14;\n"
-            "    shfl.sync.down.b32 %r37, %r35, 1, 31, %r1;\n"
-            "    mov.b32 %q15, %r37;\n"
-            "    $s.$t %q3, %q14, %q15;\n"
-            "    mov.u32 %r40, 0;\n"
-            "\n"
-            "maybe_scatter:\n"
-            "    mov.u32 %r38, %laneid;\n"
-            "    setp.ne.s32 %p13, %r40, %r38;\n"
-            "    @%p13 bra done;\n"
-            "    red.$s.$t [%rd0], %q3;\n"
-            "\n"
-            "done:\n"
+            "    .reg .b32 %active, %active_p, %idx, %base;\n"
+            "    .reg .b64 %ptr, %ptr_shift;"
+            "    .reg .$t %q0, %q1;\n"
+            "    .reg .pred %valid, %leader, %partial, %individual;\n\n"
+            ""
+            "    ld.param.$t %q0, [value];\n"
+            "    ld.param.b64 %ptr, [ptr];\n"
+            "    mov.b32 %base, %laneid;\n"
+            "    activemask.b32 %active;\n"
+            "    shl.b64 %ptr_shift, %ptr, 2;\n"
+            "    cvt.u32.u64 %idx, %ptr_shift;\n"
+            "    match.any.sync.b32 %active_p, %idx, %active;\n"
+            "    setp.ne.s32 %partial, %active_p, -1;\n"
+            "    @%partial bra.uni reduce_partial;\n\n"
+            ""
+            "reduce_full:\n"
+            "    setp.eq.u32 %leader, %base, 0;\n"
+            "    shfl.sync.bfly.b32 %q1, %q0, 1, 31, %active;\n"
+            "    $s.$t %q0, %q0, %q1;\n"
+            "    shfl.sync.bfly.b32 %q1, %q0, 2, 31, %active;\n"
+            "    $s.$t %q0, %q0, %q1;\n"
+            "    shfl.sync.bfly.b32 %q1, %q0, 4, 31, %active;\n"
+            "    $s.$t %q0, %q0, %q1;\n"
+            "    shfl.sync.bfly.b32 %q1, %q0, 8, 31, %active;\n"
+            "    $s.$t %q0, %q0, %q1;\n"
+            "    shfl.sync.bfly.b32 %q1, %q0, 16, 31, %active;\n"
+            "    $s.$t %q0, %q0, %q1;\n"
+            "    bra do_write;\n\n"
+            ""
+            "reduce_partial:\n"
+            "    fns.b32 %idx, %active_p, %base, -2;\n"
+            "    setp.eq.u32 %leader, %idx, -1;\n"
+            "    vote.sync.all.pred %individual, %leader, %active;\n"
+            "    @%individual bra.uni do_write;\n\n"
+            ""
+            "reduce_partial_2:\n"
+            "    fns.b32 %idx, %active_p, %base, 17;\n"
+            "    setp.ne.s32 %valid, %idx, -1;\n"
+            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
+            "    @%valid $s.$t %q0, %q0, %q1;\n"
+            "    fns.b32 %idx, %active_p, %base, 9;\n"
+            "    setp.ne.s32 %valid, %idx, -1;\n"
+            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
+            "    @%valid $s.$t %q0, %q0, %q1;\n"
+            "    fns.b32 %idx, %active_p, %base, 5;\n"
+            "    setp.ne.s32 %valid, %idx, -1;\n"
+            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
+            "    @%valid $s.$t %q0, %q0, %q1;\n"
+            "    fns.b32 %idx, %active_p, %base, 3;\n"
+            "    setp.ne.s32 %valid, %idx, -1;\n"
+            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
+            "    @%valid $s.$t %q0, %q0, %q1;\n"
+            "    fns.b32 %idx, %active_p, %base, 2;\n"
+            "    setp.ne.s32 %valid, %idx, -1;\n"
+            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
+            "    @%valid $s.$t %q0, %q0, %q1;\n\n"
+            ""
+            "do_write:\n"
+            "    @%leader red.$s.$t [%ptr], %q0;\n"
             "    ret;\n"
             "}",
-            op, value, value, value, value, op, value, op, value, op, value, op, value, op,
-            value, op, value, op, value
-        );
-    } else if (v->literal && is_half) {
-        // Encountered OptiX link errors attempting to use red.global.add.noftz.f16
-        // so use f16x2 instead
+            op, value, value, value, value, op_ftz, value,
+            op_ftz, value, op_ftz, value, op_ftz, value,
+            op_ftz, value, op_ftz, value, op_ftz, value,
+            op_ftz, value, op_ftz, value, op_ftz, value,
+            op, value);
+    } else if (reduce && is_half) {
+        // For half precision, use the f16x2 scatter-add that is actually
+        // implemented in hardware.
         fmt("    {\n"
             "        .reg .f16x2 %packed;\n"
             "        .reg .b64 %align, %offset;\n"
@@ -1025,17 +1026,14 @@ static void jitc_cuda_render_scatter(const Variable *v,
             "        red.global.add.noftz.f16x2 [%align], %packed;\n"
             "    }\n", value);
     } else {
-        const char *op_type = v->literal ? "red" : "st";
-
         if (is_bool)
             fmt("    selp.u16 %w0, 1, 0, $v;\n"
-                "    $s.global$s$s.u8 [%rd3], %w0;\n",
-                value, op_type, v->literal ? "." : "", op);
+                "    st.global.u8 [%rd3], %w0;\n",
+                value);
         else
-            fmt(v->literal ? "    $s.global$s$s.$t [%rd3], $v;\n"
-                           : "    $s.global$s$s.$b [%rd3], $v;\n"
-                , op_type,
-                v->literal ? "." : "", op, value, value);
+            fmt(reduce ? "    red.global.$s.$t [%rd3], $v;\n"
+                       : "    st.global$s.$b [%rd3], $v;\n",
+                op, value, value);
     }
 
     if (!unmasked)
@@ -1051,30 +1049,34 @@ static void jitc_cuda_render_scatter_inc(Variable *v,
 
     fmt_intrinsic(
         ".func  (.param .u32 rv) reduce_inc_u32 (.param .u64 ptr) {\n"
-        "    .reg .b64 %rd<1>;\n"
-        "    .reg .pred %p<1>;\n"
-        "    .reg .b32 %r<12>;\n"
-        "\n"
-        "    ld.param.u64 %rd0, [ptr];\n"
-        "    activemask.b32 %r1;\n"
-        "    match.any.sync.b64 %r2, %rd0, %r1;\n"
-	    "    brev.b32 %r3, %r2;\n"
-	    "    bfind.shiftamt.u32 %r4, %r3;\n"
-        "    mov.u32 %r5, %lanemask_lt;\n"
-        "    and.b32 %r6, %r5, %r2;\n"
-        "    popc.b32 %r7, %r6;\n"
-        "    setp.ne.u32 %p0, %r6, 0;\n"
-        "    @%p0 bra L0;\n"
-        "\n"
-        "    popc.b32 %r8, %r2;\n"
-        "    atom.global.add.u32 %r9, [%rd0], %r8;\n"
-        "\n"
-        "L0:\n"
-        "    shfl.sync.idx.b32 %r10, %r9, %r4, 31, %r2;\n"
-        "    add.u32 %r11, %r7, %r10;\n"
-        "    st.param.u32 [rv], %r11;\n"
+        "    .reg .b64 %ptr, %ptr_shift;\n"
+        "    .reg .b32 %active, %ptr_id, %active_p, %active_p_rev,\n"
+        "              %leader_offset, %lt_mask, %lt_active_p, %lt_ct,\n"
+        "              %active_p_ct, %prev, %leader_val, %rv;\n"
+        "    .reg .pred %leader;\n\n"
+        ""
+        "    ld.param.u64 %ptr, [ptr];\n"
+        "    activemask.b32 %active;\n"
+        "    shl.b64 %ptr_shift, %ptr, 2;\n"
+        "    cvt.u32.u64 %ptr_id, %ptr_shift;\n"
+        "    match.any.sync.b32 %active_p, %ptr_id, %active;\n"
+        "    brev.b32 %active_p_rev, %active_p;\n"
+        "    bfind.shiftamt.u32 %leader_offset, %active_p_rev;\n"
+        "    mov.u32 %lt_mask, %lanemask_lt;\n"
+        "    and.b32 %lt_active_p, %lt_mask, %active_p;\n"
+        "    popc.b32 %lt_ct, %lt_active_p;\n"
+        "    setp.eq.u32 %leader, %lt_active_p, 0;\n"
+        "    @!%leader bra fetch_from_leader;\n\n"
+        ""
+        "    popc.b32 %active_p_ct, %active_p;\n"
+        "    atom.global.add.u32 %prev, [%ptr], %active_p_ct;\n\n"
+        ""
+        "fetch_from_leader:\n"
+        "    shfl.sync.idx.b32 %leader_val, %prev, %leader_offset, 31, %active;\n"
+        "    add.u32 %rv, %lt_ct, %leader_val;\n"
+        "    st.param.u32 [rv], %rv;\n"
         "    ret;\n"
-        "}\n"
+        "}"
     );
 
     if (!unmasked)

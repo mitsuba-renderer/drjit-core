@@ -853,10 +853,10 @@ extern JIT_EXPORT uint32_t jit_var_gather(uint32_t source, uint32_t index,
 
 #if defined(__cplusplus)
 /// Reduction operations for \ref jit_var_scatter() \ref jit_reduce()
-enum class ReduceOp : uint32_t { None, Add, Mul, Min, Max, And, Or, Count };
+enum class ReduceOp : uint32_t { Identity, Add, Mul, Min, Max, And, Or, Count };
 #else
 enum ReduceOp {
-    ReduceOpNone, ReduceOpAdd, ReduceOpMul, ReduceOpMin, ReduceOpMax,
+    ReduceOpIdentity, ReduceOpAdd, ReduceOpMul, ReduceOpMin, ReduceOpMax,
     ReduceOpAnd, ReduceOpOr, ReduceOpCount
 };
 #endif

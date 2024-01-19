@@ -420,7 +420,7 @@ void scatter(Array &target, const Array &value, const JitArray<Array::Backend, I
              const JitArray<Array::Backend, bool> &mask = true) {
     target = Array::steal(jit_var_scatter(target.index(), value.index(),
                                           index.index(), mask.index(),
-                                          ReduceOp::None));
+                                          ReduceOp::Identity));
 }
 
 template <typename Array, typename Index>

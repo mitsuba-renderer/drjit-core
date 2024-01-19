@@ -1671,7 +1671,9 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
         }
     }
 
-    jitc_var_eval(src);
+    // At this point, we *will* have to evalute the source, if not done already.
+    if (!result)
+        jitc_var_eval(src);
 
     /// Perform a memcpy when this is a size-1 literal load
     if (!result && var_info.size == 1 && var_info.literal) {
@@ -1929,7 +1931,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
     switch ((VarType) target_v->type) {
         case VarType::Bool:
-            if (reduce_op != ReduceOp::None)
+            if (reduce_op != ReduceOp::Identity)
                 jitc_raise("jit_var_scatter(): atomic reductions are not "
                            "supported for masks!");
             break;
@@ -1951,7 +1953,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     if (target_v->symbolic)
         jitc_raise("jit_var_scatter(): cannot scatter to a symbolic variable!");
 
-    if (jitc_is_half(target_v) && !(reduce_op == ReduceOp::None || reduce_op == ReduceOp::Add))
+    if (jitc_is_half(target_v) &&
+        !(reduce_op == ReduceOp::Identity || reduce_op == ReduceOp::Add))
         jitc_fail("jit_var_scatter(): half-precision variables only support "
                   "dr.scatter() and dr.scatter_add()");
 
@@ -1962,7 +1965,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         jitc_raise("jit_var_scatter(): target/value type mismatch!");
 
     if (target_v->is_literal() && value_v->is_literal() &&
-        target_v->literal == value_v->literal && reduce_op == ReduceOp::None) {
+        target_v->literal == value_v->literal && reduce_op == ReduceOp::Identity) {
         print_log("skipped, target/source are value variables with the "
                   "same value");
         return target.release();
@@ -2000,8 +2003,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
     if (flags & (uint32_t) JitFlag::Debug)
         mask_2 = steal(jitc_var_check_bounds(
-            reduce_op == ReduceOp::None ? BoundsCheckType::Scatter
-                                        : BoundsCheckType::ScatterReduce,
+            reduce_op == ReduceOp::Identity ? BoundsCheckType::Scatter
+                                            : BoundsCheckType::ScatterReduce,
             index, mask_2, target_size));
 
     var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
