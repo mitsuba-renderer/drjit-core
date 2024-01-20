@@ -263,6 +263,7 @@ set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELWITH
 set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_DEBUG          FALSE)
 
 if (DRJIT_ENABLE_TESTS)
+  include(CTest)
   add_subdirectory(tests)
 endif()
 
