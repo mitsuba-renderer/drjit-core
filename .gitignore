@@ -1,6 +1,7 @@
 /.clangd
 /compile_commands.json
 *.cmake
+!drjit-core-config.cmake
 CMakeCache.txt
 CMakeFiles
 Makefile
