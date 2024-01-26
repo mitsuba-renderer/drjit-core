@@ -1920,6 +1920,9 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         return target.release();
     }
 
+    if (target == 0)
+        jitc_raise("jit_var_scatter(): attempted to scatter to an empty array!");
+
     auto [var_info, value_v, index_v, mask_v] =
         jitc_var_check("jit_var_scatter", value, index, mask);
 
