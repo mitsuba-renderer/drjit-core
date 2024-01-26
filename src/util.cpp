@@ -14,7 +14,7 @@
 #include "eval.h"
 #include "log.h"
 #include "call.h"
-#include "profiler.h"
+#include "profile.h"
 
 #if defined(_MSC_VER)
 #  pragma warning (disable: 4146) // unary minus operator applied to unsigned type, result still unsigned

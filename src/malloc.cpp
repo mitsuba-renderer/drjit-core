@@ -10,7 +10,7 @@
 #include "internal.h"
 #include "log.h"
 #include "util.h"
-#include "profiler.h"
+#include "profile.h"
 
 #if !defined(_WIN32)
 #  include <sys/mman.h>

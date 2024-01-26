@@ -14,7 +14,7 @@
 #include "registry.h"
 #include "util.h"
 #include "op.h"
-#include "profiler.h"
+#include "profile.h"
 #include "loop.h"
 #include "trace.h"
 #include "call.h"

@@ -2161,6 +2161,23 @@ extern JIT_EXPORT void jit_kernel_history_clear();
  */
 extern JIT_EXPORT struct KernelHistoryEntry *jit_kernel_history();
 
+// ====================================================================
+//                        Profiling (NVTX, etc.)
+// ====================================================================
+
+/// Generate a profiling mark (single event)
+extern JIT_EXPORT void jit_profile_mark(const char *message);
+
+/// Inform the profiler (if present) about the start of a tracked range
+extern JIT_EXPORT void jit_profile_range_push(const char *message);
+
+/// Inform the profiler (if present) about the end of a tracked range
+extern JIT_EXPORT void jit_profile_range_pop();
+
+// ====================================================================
+//                               Other
+// ====================================================================
+
 /// Return the item size of a JIT variable type
 extern JIT_EXPORT size_t jit_type_size(JIT_ENUM VarType type) JIT_NOEXCEPT;
 

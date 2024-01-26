@@ -19,6 +19,7 @@
 #include "call.h"
 #include "loop.h"
 #include "cond.h"
+#include "profile.h"
 #include <thread>
 #include <condition_variable>
 #include <drjit-core/half.h>
@@ -1331,4 +1332,16 @@ uint32_t jit_var_compress(uint32_t index) {
 void jit_var_shrink(uint32_t index, size_t size) {
     lock_guard guard(state.lock);
     jitc_var_shrink(index, size);
+}
+
+void jit_profile_mark(const char *message) {
+    jitc_profile_mark(message);
+}
+
+void jit_profile_range_push(const char *message) {
+    jitc_profile_range_push(message);
+}
+
+void jit_profile_range_pop() {
+    jitc_profile_range_pop();
 }

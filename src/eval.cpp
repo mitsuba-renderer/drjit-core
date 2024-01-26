@@ -11,7 +11,7 @@
 #include "log.h"
 #include "var.h"
 #include "eval.h"
-#include "profiler.h"
+#include "profile.h"
 #include "util.h"
 #include "optix.h"
 #include "loop.h"
