@@ -101,7 +101,6 @@ add_library(
   src/internal.h
   src/alloc.h
   src/hash.h
-  src/profiler.h
   src/log.h           src/log.cpp
   src/strbuf.h        src/strbuf.cpp
   src/var.h           src/var.cpp
@@ -138,6 +137,10 @@ add_library(
   src/cond.h     src/cond.cpp
   src/init.cpp
   src/api.cpp
+
+  # Profiling
+  src/nvtx_api.h src/nvtx_api.cpp
+  src/profile.h src/profile.cpp
 
   # LZ4 compression library & XXHash hash function
   ext/lz4/lz4.h ext/lz4/lz4.c
@@ -209,20 +212,6 @@ endif()
 
 if (DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_OPTIX_DEBUG_VALIDATION)
-endif()
-
-# Generate ITT notifications (e.g. for VTune) if part of a larger project
-# that provides an 'ittnotify' target
-if (TARGET ittnotify)
-  target_link_libraries(drjit-core PRIVATE ittnotify)
-  target_include_directories(drjit-core PRIVATE ${ITT_INCLUDE_DIRS})
-  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_ITTNOTIFY=1)
-endif()
-
-# Similar notifications for NVIDIA profilers
-if (DRJIT_ENABLE_NVTX)
-  include_directories(${CUDA_TOOLKIT_ROOT_DIR}/include)
-  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_NVTX=1)
 endif()
 
 if (UNIX)

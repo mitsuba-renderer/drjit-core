@@ -10,7 +10,7 @@
 #include "io.h"
 #include "log.h"
 #include "internal.h"
-#include "profiler.h"
+#include "profile.h"
 #include "cuda.h"
 #include "optix.h"
 #include "../resources/kernels.h"

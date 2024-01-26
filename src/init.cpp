@@ -13,9 +13,11 @@
 #include "log.h"
 #include "registry.h"
 #include "var.h"
-#include "profiler.h"
+#include "profile.h"
 #include "strbuf.h"
 #include <sys/stat.h>
+
+#include "nvtx_api.h"
 
 #if defined(DRJIT_ENABLE_OPTIX)
 #  include "optix_api.h"
@@ -130,6 +132,7 @@ void jitc_init(uint32_t backends) {
     state.variable_counter = 0;
     state.kernel_hard_misses = state.kernel_soft_misses = 0;
     state.kernel_hits = state.kernel_launches = 0;
+    jitc_nvtx_init();
 }
 
 void* jitc_cuda_stream() {
@@ -309,6 +312,7 @@ void jitc_shutdown(int light) {
 
     jitc_registry_shutdown();
     jitc_malloc_shutdown();
+    jitc_nvtx_shutdown();
 
     jitc_log(Info, "jit_shutdown(light=%u): done", (uint32_t) light);
 

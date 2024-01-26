@@ -21,7 +21,7 @@
 #include "log.h"
 #include "var.h"
 #include "eval.h"
-#include "profiler.h"
+#include "profile.h"
 
 static bool jitc_llvm_init_attempted  = false;
 static bool jitc_llvm_init_success    = false;
