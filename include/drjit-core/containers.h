@@ -154,12 +154,15 @@ protected:
 template <typename... Ts> struct dr_tuple;
 template <> struct dr_tuple<> {
     template <size_t> using type = void;
+    static constexpr size_t Size = 0;
 };
 
 template <typename T>
 using forward_t = std::conditional_t<std::is_lvalue_reference_v<T>, T, T &&>;
 
 template <typename T, typename... Ts> struct dr_tuple<T, Ts...> : dr_tuple<Ts...> {
+    static constexpr size_t Size = 1 + sizeof...(Ts);
+    static constexpr size_t IsDrJitTuple = true;
     using Base = dr_tuple<Ts...>;
 
     dr_tuple() = default;
@@ -186,19 +189,24 @@ template <typename T, typename... Ts> struct dr_tuple<T, Ts...> : dr_tuple<Ts...
             return Base::template get<I - 1>();
     }
 
+    JIT_INLINE Base &base() { return *this; }
+    JIT_INLINE const Base &base() const { return *this; }
+
     template <size_t I>
     using type =
         std::conditional_t<I == 0, T, typename Base::template type<I - 1>>;
 
-private:
     T value;
 };
 
 template <typename... Ts> dr_tuple(Ts &&...) -> dr_tuple<std::decay_t<Ts>...>;
 
-template <typename... Ts>
-dr_tuple<std::decay_t<Ts>...> make_tuple(Ts&&... args) {
+template <typename... Ts> dr_tuple<std::decay_t<Ts>...> make_tuple(Ts&&... args) {
     return { forward_t<Ts>(args) ... };
+}
+
+template <typename... Ts> dr_tuple<Ts&...> tie(Ts&... args) {
+    return { args ... };
 }
 
 template <size_t Is, typename... Args> JIT_INLINE auto &dr_get(const dr_tuple<Args...> &t) {
