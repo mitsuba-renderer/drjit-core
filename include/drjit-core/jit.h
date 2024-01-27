@@ -853,47 +853,130 @@ extern JIT_EXPORT uint32_t jit_var_gather(uint32_t source, uint32_t index,
 
 #if defined(__cplusplus)
 /// Reduction operations for \ref jit_var_scatter() \ref jit_reduce()
-enum class ReduceOp : uint32_t { Identity, Add, Mul, Min, Max, And, Or, Count };
+enum class ReduceOp : uint32_t {
+    // Plain scatter, overwrites the previous element
+    Identity,
+
+    // Combine additively
+    Add,
+
+    /// Combine multiplicatively
+    Mul,
+
+    /// Combine via min(old, new)
+    Min,
+
+    /// Combine via max(old, new)
+    Max,
+
+    /// Binary AND
+    And,
+
+    /// Binary OR
+    Or,
+
+    // This isn't an operation, it just tracks the total number of supported strategies
+    Count
+};
+
+/// For scatter-reductions, this enumeration specifies the strategy to be used
+enum class ReduceMode : uint32_t {
+    /// Inspect the JIT flags to choose between 'AtomicReduceLocal' (the
+    /// default) and 'Atomic'
+    Auto,
+
+    /// Insert an atomic operation into the program
+    Direct,
+
+    /// Preprocess scatters going to the same address within the warp (CUDA) or
+    /// packet (SSE/AVX/AVX512/..) to issue fewer atomic memory transactions.
+    Local,
+
+    /// The caller guarantees that there are no conflicts (scatters targeting
+    /// the same elements). This means that the generated code can safely
+    /// perform an ordinary gather, update the value, and then write back the
+    /// result.
+    NoConflicts,
+
+    /// Temporarily expand the target array to a much larger size to avoid
+    /// write conflicts, which enables the use of non-atomic operations (i.e.,
+    /// the 'NoConflicts' mode). This is particularly helpful for small (e.g.
+    /// scalar) arrays. For bigger arrays and on machines with many cores (which
+    /// increases the amount of replication needed), the resulting storage
+    /// costs can be prohibitive.
+    ///
+    /// This feature is only supported on the LLVM backend. Other backends
+    /// interpret this flag as if 'Auto' had been specified.
+    Expand,
+
+    /// When setting this mode, the caller guarantees that there will be no
+    /// conflicts, and that every entry is written exactly single time using an
+    /// index vector representing a permutation (it's fine this permutation is
+    /// accomplished by multiple separate write operations, but there should be no
+    /// more than 1 write to each element).
+    ///
+    /// This mode primarily exists to enable internal optimizations that
+    /// Dr.Jit uses when differentiating vectorized function calls and compressed
+    /// loops.
+    ///
+    /// Giving 'Permute' as an argument to a (nominally read-only) gather
+    /// operation is helpful because we then know that the reverse-mode derivative
+    /// of this operation can be a plain scatter instead of a more costly
+    /// atomic scatter-add.
+    ///
+    /// Giving 'Permute' as an argument to a scatter operation is helpful
+    /// because we then know that the forward-mode derivative does not depend
+    /// on any prior derivative values associated with that array, as all
+    /// current entries will be overwritten.
+    Permute
+};
 #else
 enum ReduceOp {
     ReduceOpIdentity, ReduceOpAdd, ReduceOpMul, ReduceOpMin, ReduceOpMax,
-    ReduceOpAnd, ReduceOpOr, ReduceOpCount
+    ReduceOpAnd, ReduceOpOr
+};
+enum ReduceMode {
+    ReduceModeAuto, ReduceModeDirect, ReduceModeLocal,
+    ReduceReplicate
 };
 #endif
 
 /**
- * \brief Schedule a scatter or atomic read-modify-write operation
+ * \brief Schedule a scatter or atomic scatter-reduction
  *
- * This operation schedules a side effect that will perform an operation
- * equivalent to <tt>if (mask) target[index] = value</tt>. The variable \c
- * index must be an integer array, and \c mask must be a boolean array.
+ * When ``op == ReduceOp::None``, this function performs an ordinary
+ * scatter operation, i.e. a vectorized verson of the statement ``if (mask)
+ * target[index] = value``. The variable ``index`` must be an integer array,
+ * and ``mask`` must be a boolean array. The ``mode`` parameter is
+ * ignored in this case.
  *
  * A direct write may not be safe (e.g. if unevaluated computation references
- * the array \c target). The function thus returns the index of a new array
- * (which may happen to be identical to \c target), whose reference
- * count is increased by 1.
+ * the array ``target``). The function thus returns the index of a new array
+ * (which may happen to be identical to ``target``) and increases its reference
+ * count by 1.
  *
  * For performance reasons, sequences involving multiple scatters to the same
- * array are exempt from this safety check, and these may furthermore execute
- * in arbitrary order due to the inherent parallelism. This is fine if the
- * written addresses do not overlap. Otherwise, explicit evaluation via
- * <tt>jit_var_eval(target)</tt> is necessary to ensure a fixed ordering.
+ * array are assumed not to be in conflict with each other. They may execute in
+ * an arbitrary order due to the underlying parallelization. This is fine if
+ * the written addresses do not overlap. Otherwise, explicit evaluation via
+ * ``jit_var_eval()`` is necessary to ensure a fixed ordering.
  *
- * If <t>op != ReduceOp::None</tt>, an atomic read-modify-write operation will
- * be used instead of simply overwriting entries of 'target'.
+ * If ``op != ReduceOp::None``, an atomic read-modify-write operation of
+ * the desired type will be used instead of simply overwriting entries of
+ * \c target. The ``mode`` parameter selects a compilation strategy in this ase.
  */
 extern JIT_EXPORT uint32_t jit_var_scatter(uint32_t target, uint32_t value,
                                            uint32_t index, uint32_t mask,
-                                           JIT_ENUM ReduceOp reduce_op);
+                                           JIT_ENUM ReduceOp op JIT_DEF(ReduceOp::Identity),
+                                           JIT_ENUM ReduceMode mode JIT_DEF(ReduceMode::Auto));
 
 /**
  * \brief Schedule a Kahan-compensated floating point atomic scatter-write
  *
- * This operation is just like ``jit_var_scatter`` invoked with a floating
- * point operands and reduce_op=ReduceOp::Add.
- *
- * The difference is that it simultaneously adds to
- * two different target buffers using the Kahan summation algorithm.
+ * This operation is just like ``jit_var_scatter()`` invoked with a floating
+ * point operands and ``op=ReduceOp::Add``. The difference is that it
+ * simultaneously adds to two different target buffers using the Kahan
+ * summation algorithm.
  *
  * The implementation may overwrite the 'target_1' / 'target_2' pointers
  * if a copy needs to be made (for example, if another variable elsewhere
@@ -1434,7 +1517,7 @@ enum class JitFlag : uint32_t {
     LaunchBlocking = 1 << 15,
 
     /// Perform a local (warp/SIMD) reduction before issuing global atomics
-    AtomicReduceLocal = 1 << 16,
+    ScatterReduceLocal = 1 << 16,
 
     /// Set to \c true when Dr.Jit is capturing symbolic computation. This flag
     /// is managed automatically and should not be set by application code.
@@ -1446,7 +1529,7 @@ enum class JitFlag : uint32_t {
               (uint32_t) OptimizeLoops | (uint32_t) SymbolicCalls |
               (uint32_t) MergeFunctions | (uint32_t) OptimizeCalls |
               (uint32_t) SymbolicConditionals | (uint32_t) ReuseIndices |
-              (uint32_t) AtomicReduceLocal,
+              (uint32_t) ScatterReduceLocal,
 
     // Deprecated aliases, will be removed in a future version of Dr.Jit
     LoopRecord = SymbolicLoops,
@@ -2229,6 +2312,18 @@ extern JIT_EXPORT void jit_set_source_location(const char *fname,
 extern JIT_EXPORT void jit_enqueue_host_func(JitBackend backend,
                                              void (*callback)(void *),
                                              void *payload);
+
+/**
+ * \brief Set the target array size threshold where ``ReduceMode::Expand`` is
+ * no longer used. Set to "1" by default.
+ */
+extern JIT_EXPORT void jit_llvm_set_expand_threshold(size_t size);
+extern JIT_EXPORT size_t jit_llvm_expand_threshold() JIT_NOEXCEPT;
+
+/// Return the identity element of a particular type of reduction
+extern JIT_EXPORT uint32_t jit_var_reduce_identity(JitBackend backend,
+                                                   VarType vt,
+                                                   ReduceOp reduce_op);
 
 #if defined(__cplusplus)
 }

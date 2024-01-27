@@ -65,3 +65,6 @@ extern void jitc_aggregate(JitBackend backend, void *dst,
 // Enqueue a function to be run on the host once backend computation is done
 extern void jitc_enqueue_host_func(JitBackend backend, void (*callback)(void *),
                                    void *payload);
+
+/// LLVM: reduce a variable that was previously expanded due to dr.ReduceOp.Expand
+extern void jitc_reduce_expanded(VarType vt, ReduceOp op, void *data, uint32_t exp, uint32_t size);

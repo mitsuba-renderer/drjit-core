@@ -40,29 +40,11 @@
 #include "loop.h"
 #include "optix.h"
 #include "trace.h"
-
-#define fmt(fmt, ...) buffer.fmt_cuda(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
-#define put(...)      buffer.put(__VA_ARGS__)
-#define fmt_intrinsic(fmt, ...)                                                \
-    do {                                                                       \
-        size_t tmpoff = buffer.size();                                         \
-        buffer.fmt_cuda(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__);          \
-        jitc_register_global(buffer.get() + tmpoff);                           \
-        buffer.rewind_to(tmpoff);                                              \
-    } while (0);
+#include "cuda_eval.h"
+#include "cuda_scatter.h"
 
 // Forward declarations
 static void jitc_cuda_render(Variable *v);
-static void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
-                                     const Variable *value, const Variable *index,
-                                     const Variable *mask);
-static void jitc_cuda_render_scatter_inc(Variable *v, const Variable *ptr,
-                                         const Variable *index, const Variable *mask);
-static void jitc_cuda_render_scatter_add_kahan(const Variable *v,
-                                               const Variable *ptr_1,
-                                               const Variable *ptr_2,
-                                               const Variable *index,
-                                               const Variable *value);
 
 #if defined(DRJIT_ENABLE_OPTIX)
 static void jitc_cuda_render_trace(const Variable *v,
@@ -354,10 +336,6 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
         "}");
 }
 
-static const char *reduce_op_name[(int) ReduceOp::Count] = {
-    "", "add", "mul", "min", "max", "and", "or"
-};
-
 static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
     switch(kind) {
         case VarKind::Sqrt:
@@ -382,7 +360,7 @@ static void jitc_cuda_render(Variable *v) {
 
     const ThreadState *ts = thread_state_cuda;
 
-    bool f32_upcast = jitc_is_half(v) && 
+    bool f32_upcast = jitc_is_half(v) &&
         ts->compute_capability < jitc_fp16_min_compute_cuda((VarKind)v->kind);
 
     if (f32_upcast) {
@@ -683,11 +661,8 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::Gather: {
                 bool index_zero = a1->is_literal() && a1->literal == 0;
-                bool unmasked = a2->is_literal() && a2->literal == 1;
+                bool masked = !a2->is_literal() || a2->literal != 1;
                 bool is_bool = v->type == (uint32_t) VarType::Bool;
-
-                if (!unmasked)
-                    fmt("    @!$v bra l_$u_masked;\n", a2, v->reg_index);
 
                 if (index_zero) {
                     fmt("    mov.u64 %rd3, $v;\n", a0);
@@ -699,24 +674,30 @@ static void jitc_cuda_render(Variable *v) {
                         a1, a1, v, a0);
                 }
 
-                if (is_bool) {
-                    fmt("    ld.global.nc.u8 %w0, [%rd3];\n"
-                        "    setp.ne.u16 $v, %w0, 0;\n", v);
+                if (masked) {
+                    if (is_bool)
+                        fmt("    mov.b16 %w0, 0;\n", v);
+                    else
+                        fmt("    mov.$b $v, 0;\n", v, v);
+                    fmt("    @$v ", a2);
                 } else {
-                    fmt("    ld.global.nc.$b $v, [%rd3];\n", v, v);
+                    put("    ");
                 }
 
-                if (!unmasked)
-                    fmt("    bra.uni l_$u_done;\n\n"
-                        "l_$u_masked:\n"
-                        "    mov.$b $v, 0;\n\n"
-                        "l_$u_done:\n", v->reg_index,
-                        v->reg_index, v, v, v->reg_index);
+                if (is_bool) {
+                    fmt("ld.global.nc.u8 %w0, [%rd3];\n"
+                        "    setp.ne.u16 $v, %w0, 0;\n", v);
+                } else {
+                    fmt("ld.global.nc.$b $v, [%rd3];\n", v, v);
+                }
             }
             break;
 
         case VarKind::Scatter:
-            jitc_cuda_render_scatter(v, a0, a1, a2, a3);
+            if (v->literal)
+                jitc_cuda_render_scatter_reduce(v, a0, a1, a2, a3);
+            else
+                jitc_cuda_render_scatter(v, a0, a1, a2, a3);
             break;
 
         case VarKind::ScatterInc:
@@ -897,259 +878,6 @@ static void jitc_cuda_render(Variable *v) {
 
         fmt("    cvt.rn.f16.f32 $v, %f$u;\n", v, v->reg_index);
     }
-}
-
-static void jitc_cuda_render_scatter(const Variable *v,
-                                     const Variable *ptr,
-                                     const Variable *value,
-                                     const Variable *index,
-                                     const Variable *mask) {
-    bool index_zero = index->is_literal() && index->literal == 0;
-    bool unmasked = mask->is_literal() && mask->literal == 1;
-    bool is_bool = value->type == (uint32_t) VarType::Bool;
-    bool is_half = value->type == (uint32_t) VarType::Float16;
-    bool reduce = v->literal != 0;
-
-    if (!unmasked)
-        fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
-
-    if (index_zero) {
-        fmt("    mov.u64 %rd3, $v;\n", ptr);
-    } else if (type_size[v->type] == 1) {
-        fmt("    cvt.u64.$t %rd3, $v;\n"
-            "    add.u64 %rd3, %rd3, $v;\n", index, index, ptr);
-    } else {
-        fmt("    mad.wide.$t %rd3, $v, $a, $v;\n",
-            index, index, value, ptr);
-    }
-    const char *op = reduce_op_name[v->literal];
-    const ThreadState *ts = thread_state_cuda;
-
-    if (reduce && callable_depth == 0 && type_size[value->type] == 4 &&
-        ts->ptx_version >= 62 && ts->compute_capability >= 70 &&
-        (jitc_flags() & (uint32_t) JitFlag::AtomicReduceLocal)) {
-        fmt("    {\n"
-            "        .func reduce_$s_$t(.param .u64 ptr, .param .$t value);\n"
-            "        call.uni reduce_$s_$t, (%rd3, $v);\n"
-            "    }\n",
-            op, value, value, op, value, value);
-
-        const char *op_ftz = op;
-        if ((ReduceOp) v->literal == ReduceOp::Add && (VarType) value->type == VarType::Float32)
-            op_ftz = "add.ftz";
-
-        // Intrinsic to perform an intra-warp reduction before writing to global memory
-        fmt_intrinsic(
-            ".func reduce_$s_$t(.param .u64 ptr,\n"
-            "                     .param .$t value) {\n"
-            "    .reg .b32 %active, %active_p, %idx, %base;\n"
-            "    .reg .b64 %ptr, %ptr_shift;"
-            "    .reg .$t %q0, %q1;\n"
-            "    .reg .pred %valid, %leader, %partial, %individual;\n\n"
-            ""
-            "    ld.param.$t %q0, [value];\n"
-            "    ld.param.b64 %ptr, [ptr];\n"
-            "    mov.b32 %base, %laneid;\n"
-            "    activemask.b32 %active;\n"
-            "    shl.b64 %ptr_shift, %ptr, 2;\n"
-            "    cvt.u32.u64 %idx, %ptr_shift;\n"
-            "    match.any.sync.b32 %active_p, %idx, %active;\n"
-            "    setp.ne.s32 %partial, %active_p, -1;\n"
-            "    @%partial bra.uni reduce_partial;\n\n"
-            ""
-            "reduce_full:\n"
-            "    setp.eq.u32 %leader, %base, 0;\n"
-            "    shfl.sync.bfly.b32 %q1, %q0, 1, 31, %active;\n"
-            "    $s.$t %q0, %q0, %q1;\n"
-            "    shfl.sync.bfly.b32 %q1, %q0, 2, 31, %active;\n"
-            "    $s.$t %q0, %q0, %q1;\n"
-            "    shfl.sync.bfly.b32 %q1, %q0, 4, 31, %active;\n"
-            "    $s.$t %q0, %q0, %q1;\n"
-            "    shfl.sync.bfly.b32 %q1, %q0, 8, 31, %active;\n"
-            "    $s.$t %q0, %q0, %q1;\n"
-            "    shfl.sync.bfly.b32 %q1, %q0, 16, 31, %active;\n"
-            "    $s.$t %q0, %q0, %q1;\n"
-            "    bra do_write;\n\n"
-            ""
-            "reduce_partial:\n"
-            "    fns.b32 %idx, %active_p, %base, -2;\n"
-            "    setp.eq.u32 %leader, %idx, -1;\n"
-            "    vote.sync.all.pred %individual, %leader, %active;\n"
-            "    @%individual bra.uni do_write;\n\n"
-            ""
-            "reduce_partial_2:\n"
-            "    fns.b32 %idx, %active_p, %base, 17;\n"
-            "    setp.ne.s32 %valid, %idx, -1;\n"
-            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
-            "    @%valid $s.$t %q0, %q0, %q1;\n"
-            "    fns.b32 %idx, %active_p, %base, 9;\n"
-            "    setp.ne.s32 %valid, %idx, -1;\n"
-            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
-            "    @%valid $s.$t %q0, %q0, %q1;\n"
-            "    fns.b32 %idx, %active_p, %base, 5;\n"
-            "    setp.ne.s32 %valid, %idx, -1;\n"
-            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
-            "    @%valid $s.$t %q0, %q0, %q1;\n"
-            "    fns.b32 %idx, %active_p, %base, 3;\n"
-            "    setp.ne.s32 %valid, %idx, -1;\n"
-            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
-            "    @%valid $s.$t %q0, %q0, %q1;\n"
-            "    fns.b32 %idx, %active_p, %base, 2;\n"
-            "    setp.ne.s32 %valid, %idx, -1;\n"
-            "    shfl.sync.idx.b32 %q1|%valid, %q0, %idx, 31, %active;\n"
-            "    @%valid $s.$t %q0, %q0, %q1;\n\n"
-            ""
-            "do_write:\n"
-            "    @%leader red.$s.$t [%ptr], %q0;\n"
-            "    ret;\n"
-            "}",
-            op, value, value, value, value, op_ftz, value,
-            op_ftz, value, op_ftz, value, op_ftz, value,
-            op_ftz, value, op_ftz, value, op_ftz, value,
-            op_ftz, value, op_ftz, value, op_ftz, value,
-            op, value);
-    } else if (reduce && is_half) {
-        // For half precision, use the f16x2 scatter-add that is actually
-        // implemented in hardware.
-        fmt("    {\n"
-            "        .reg .f16x2 %packed;\n"
-            "        .reg .b64 %align, %offset;\n"
-            "        .reg .b32 %offset_32;\n"
-            "        .reg .f16 %initial;\n"
-            "        mov.b16 %initial, 0;\n"
-            "        and.b64 %align, %rd3, ~0x3;\n"
-            "        and.b64 %offset, %rd3, 0x2;\n"
-            "        cvt.u32.s64 %offset_32, %offset;\n"
-            "        shl.b32 %offset_32, %offset_32, 3;\n"
-            "        mov.b32 %packed, {$v, %initial};\n"
-            "        shl.b32 %packed, %packed, %offset_32;\n"
-            "        red.global.add.noftz.f16x2 [%align], %packed;\n"
-            "    }\n", value);
-    } else {
-        if (is_bool)
-            fmt("    selp.u16 %w0, 1, 0, $v;\n"
-                "    st.global.u8 [%rd3], %w0;\n",
-                value);
-        else
-            fmt(reduce ? "    red.global.$s.$t [%rd3], $v;\n"
-                       : "    st.global$s.$b [%rd3], $v;\n",
-                op, value, value);
-    }
-
-    if (!unmasked)
-        fmt("\nl_$u_done:\n", v->reg_index);
-}
-
-static void jitc_cuda_render_scatter_inc(Variable *v,
-                                         const Variable *ptr,
-                                         const Variable *index,
-                                         const Variable *mask) {
-    bool index_zero = index->is_literal() && index->literal == 0;
-    bool unmasked = mask->is_literal() && mask->literal == 1;
-
-    fmt_intrinsic(
-        ".func  (.param .u32 rv) reduce_inc_u32 (.param .u64 ptr) {\n"
-        "    .reg .b64 %ptr, %ptr_shift;\n"
-        "    .reg .b32 %active, %ptr_id, %active_p, %active_p_rev,\n"
-        "              %leader_offset, %lt_mask, %lt_active_p, %lt_ct,\n"
-        "              %active_p_ct, %prev, %leader_val, %rv;\n"
-        "    .reg .pred %leader;\n\n"
-        ""
-        "    ld.param.u64 %ptr, [ptr];\n"
-        "    activemask.b32 %active;\n"
-        "    shl.b64 %ptr_shift, %ptr, 2;\n"
-        "    cvt.u32.u64 %ptr_id, %ptr_shift;\n"
-        "    match.any.sync.b32 %active_p, %ptr_id, %active;\n"
-        "    brev.b32 %active_p_rev, %active_p;\n"
-        "    bfind.shiftamt.u32 %leader_offset, %active_p_rev;\n"
-        "    mov.u32 %lt_mask, %lanemask_lt;\n"
-        "    and.b32 %lt_active_p, %lt_mask, %active_p;\n"
-        "    popc.b32 %lt_ct, %lt_active_p;\n"
-        "    setp.eq.u32 %leader, %lt_active_p, 0;\n"
-        "    @!%leader bra fetch_from_leader;\n\n"
-        ""
-        "    popc.b32 %active_p_ct, %active_p;\n"
-        "    atom.global.add.u32 %prev, [%ptr], %active_p_ct;\n\n"
-        ""
-        "fetch_from_leader:\n"
-        "    shfl.sync.idx.b32 %leader_val, %prev, %leader_offset, 31, %active;\n"
-        "    add.u32 %rv, %lt_ct, %leader_val;\n"
-        "    st.param.u32 [rv], %rv;\n"
-        "    ret;\n"
-        "}"
-    );
-
-    if (!unmasked)
-        fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
-
-    if (index_zero) {
-        fmt("    mov.u64 %rd3, $v;\n", ptr);
-    } else {
-        fmt("    mad.wide.$t %rd3, $v, 4, $v;\n",
-            index, index, ptr);
-    }
-
-    fmt("    {\n"
-        "        .func (.param .u32 rv) reduce_inc_u32 (.param .u64 ptr);\n"
-        "        call.uni ($v), reduce_inc_u32, (%rd3);\n"
-        "    }\n", v);
-
-    if (!unmasked)
-        fmt("\nl_$u_done:\n", v->reg_index);
-
-    v->consumed = 1;
-}
-
-static void jitc_cuda_render_scatter_add_kahan(const Variable *v,
-                                               const Variable *ptr_1,
-                                               const Variable *ptr_2,
-                                               const Variable *index,
-                                               const Variable *value) {
-    fmt("    setp.eq.$t %p3, $v, 0.0;\n"
-        "    @%p3 bra l_$u_done;\n"
-        "    mad.wide.$t %rd2, $v, $a, $v;\n"
-        "    mad.wide.$t %rd3, $v, $a, $v;\n",
-        value, value,
-        v->reg_index,
-        index, index, value, ptr_1,
-        index, index, value, ptr_2);
-
-    const char* op_suffix = jitc_is_single(value) ? ".ftz" : "";
-
-    fmt("    {\n"
-        "        .reg.$t %before, %after, %value, %case_1, %case_2;\n"
-        "        .reg.$t %abs_before, %abs_value, %result;\n"
-        "        .reg.pred %cond;\n"
-        "\n"
-        "        mov.$t %value, $v;\n"
-        "        atom.global.add.$t %before, [%rd2], %value;\n"
-        "        add$s.$t %after, %before, %value;\n"
-        "        sub$s.$t %case_1, %before, %after;\n"
-        "        add$s.$t %case_1, %case_1, %value;\n"
-        "        sub$s.$t %case_2, %value, %after;\n"
-        "        add$s.$t %case_2, %case_2, %before;\n"
-        "        abs$s.$t %abs_before, %before;\n"
-        "        abs$s.$t %abs_value, %value;\n"
-        "        setp.ge.$t %cond, %abs_before, %abs_value;\n"
-        "        selp.$t %result, %case_1, %case_2, %cond;\n"
-        "        red.global.add.$t [%rd3], %result;\n"
-        "    }\n",
-        value,
-        value,
-        value, value,
-        value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        value,
-        value,
-        value);
-
-    fmt("\nl_$u_done:\n", v->reg_index);
 }
 
 #if defined(DRJIT_ENABLE_OPTIX)

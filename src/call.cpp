@@ -579,6 +579,8 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
         call->use_self = true;
     } else if (kind == VarKind::Counter) {
         call->use_index = true;
+    } else if (kind == VarKind::ThreadIndex) {
+        call->use_thread_id = true;
     } else if (kind == VarKind::CallInput) {
         return;
     } else if (kind == VarKind::Call) {
@@ -586,6 +588,7 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
         call->use_self  |= call2->use_self;
         call->use_optix |= call2->use_optix;
         call->use_index |= call2->use_index;
+        call->use_thread_id |= call2->use_thread_id;
     } else if (kind == VarKind::LoopCond) {
         LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
         for (uint32_t index_2: loop->inner_out)

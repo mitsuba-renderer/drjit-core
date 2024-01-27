@@ -228,10 +228,10 @@ void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t si
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
 
 template <typename Value>
-static Reduction jitc_reduce_create(ReduceOp rtype) {
+static Reduction jitc_reduce_create(ReduceOp op) {
     using UInt = uint_with_size_t<Value>;
 
-    switch (rtype) {
+    switch (op) {
         case ReduceOp::Add:
             return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
                 const Value *ptr = (const Value *) ptr_;
@@ -294,41 +294,41 @@ static Reduction jitc_reduce_create(ReduceOp rtype) {
     }
 }
 
-static Reduction jitc_reduce_create(VarType type, ReduceOp rtype) {
+static Reduction jitc_reduce_create(VarType type, ReduceOp op) {
     using half = drjit::half;
     switch (type) {
-        case VarType::Int8:    return jitc_reduce_create<int8_t  >(rtype);
-        case VarType::UInt8:   return jitc_reduce_create<uint8_t >(rtype);
-        case VarType::Int16:   return jitc_reduce_create<int16_t >(rtype);
-        case VarType::UInt16:  return jitc_reduce_create<uint16_t>(rtype);
-        case VarType::Int32:   return jitc_reduce_create<int32_t >(rtype);
-        case VarType::UInt32:  return jitc_reduce_create<uint32_t>(rtype);
-        case VarType::Int64:   return jitc_reduce_create<int64_t >(rtype);
-        case VarType::UInt64:  return jitc_reduce_create<uint64_t>(rtype);
-        case VarType::Float16: return jitc_reduce_create<half    >(rtype);
-        case VarType::Float32: return jitc_reduce_create<float   >(rtype);
-        case VarType::Float64: return jitc_reduce_create<double  >(rtype);
+        case VarType::Int8:    return jitc_reduce_create<int8_t  >(op);
+        case VarType::UInt8:   return jitc_reduce_create<uint8_t >(op);
+        case VarType::Int16:   return jitc_reduce_create<int16_t >(op);
+        case VarType::UInt16:  return jitc_reduce_create<uint16_t>(op);
+        case VarType::Int32:   return jitc_reduce_create<int32_t >(op);
+        case VarType::UInt32:  return jitc_reduce_create<uint32_t>(op);
+        case VarType::Int64:   return jitc_reduce_create<int64_t >(op);
+        case VarType::UInt64:  return jitc_reduce_create<uint64_t>(op);
+        case VarType::Float16: return jitc_reduce_create<half    >(op);
+        case VarType::Float32: return jitc_reduce_create<float   >(op);
+        case VarType::Float64: return jitc_reduce_create<double  >(op);
         default: jitc_raise("jit_reduce_create(): unsupported data type!");
     }
 }
 
-void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *ptr,
+void jitc_reduce(JitBackend backend, VarType type, ReduceOp op, const void *ptr,
                 uint32_t size, void *out) {
     ThreadState *ts = thread_state(backend);
 
-    jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, rtype=%s, size=%u)",
+    jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u)",
             (uintptr_t) ptr, type_name[(int) type],
-            reduction_name[(int) rtype], size);
+            reduction_name[(int) op], size);
 
     uint32_t tsize = type_size[(int) type];
 
     if (backend == JitBackend::CUDA) {
         scoped_set_context guard(ts->context);
         const Device &device = state.devices[ts->device];
-        CUfunction func = jitc_cuda_reductions[(int) rtype][(int) type][device.id];
+        CUfunction func = jitc_cuda_reductions[(int) op][(int) type][device.id];
         if (!func)
-            jitc_raise("jit_reduce(): no existing kernel for type=%s, rtype=%s!",
-                      type_name[(int) type], reduction_name[(int) rtype]);
+            jitc_raise("jit_reduce(): no existing kernel for type=%s, op=%s!",
+                      type_name[(int) type], reduction_name[(int) op]);
 
         uint32_t thread_count = 1024,
                  shared_size = thread_count * tsize,
@@ -370,7 +370,7 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
         if (blocks > 1)
             target = jitc_malloc(AllocType::HostAsync, blocks * tsize);
 
-        Reduction reduction = jitc_reduce_create(type, rtype);
+        Reduction reduction = jitc_reduce_create(type, op);
         jitc_submit_cpu(
             KernelType::Reduce,
             [block_size, size, tsize, ptr, reduction, target](uint32_t index) {
@@ -383,7 +383,7 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *p
             std::max(1u, blocks));
 
         if (blocks > 1) {
-            jitc_reduce(backend, type, rtype, target, blocks, out);
+            jitc_reduce(backend, type, op, target, blocks, out);
             jitc_free(target);
         }
     }
@@ -1414,4 +1414,100 @@ void jitc_enqueue_host_func(JitBackend backend, void (*callback)(void *),
                 KernelType::Other, [payload, callback](uint32_t) { callback(payload); }, 1, 1);
         }
     }
+}
+
+using ReduceExpanded = void (*) (void *ptr, uint32_t start, uint32_t end, uint32_t exp, uint32_t size);
+
+template <typename Value, typename Op>
+static void jitc_reduce_expanded_impl(void *ptr_, uint32_t start, uint32_t end,
+                                 uint32_t exp, uint32_t size) {
+    Value *ptr = (Value *) ptr_;
+    Op op;
+
+    const uint32_t block = 128;
+
+    uint32_t i = start;
+    for (; i + block <= end; i += block)
+        for (uint32_t j = 1; j < exp; ++j)
+            for (uint32_t k = 0; k < block; ++k)
+                ptr[i + k] = op(ptr[i + k], ptr[i + k + j * size]);
+
+    for (; i < end; i += 1)
+        for (uint32_t j = 1; j < exp; ++j)
+            ptr[i] = op(ptr[i], ptr[i + j * size]);
+}
+
+template <typename Value>
+static ReduceExpanded jitc_reduce_expanded_create(ReduceOp op) {
+    using UInt = uint_with_size_t<Value>;
+
+    struct Add { Value operator()(Value a, Value b) { return a + b; }};
+    struct Mul { Value operator()(Value a, Value b) { return a * b; }};
+    struct Min { Value operator()(Value a, Value b) { return std::min(a, b); }};
+    struct Max { Value operator()(Value a, Value b) { return std::max(a, b); }};
+    struct And {
+        Value operator()(Value a, Value b) {
+            if constexpr (std::is_integral_v<Value>)
+                return a & b;
+            else
+                return 0;
+        }
+    };
+    struct Or {
+        Value operator()(Value a, Value b) {
+            if constexpr (std::is_integral_v<Value>)
+                return a | b;
+            else
+                return 0;
+        }
+    };
+
+    switch (op) {
+        case ReduceOp::Add: return jitc_reduce_expanded_impl<Value, Add>;
+        case ReduceOp::Mul: return jitc_reduce_expanded_impl<Value, Mul>;
+        case ReduceOp::Max: return jitc_reduce_expanded_impl<Value, Max>;
+        case ReduceOp::Min: return jitc_reduce_expanded_impl<Value, Min>;
+        case ReduceOp::And: return jitc_reduce_expanded_impl<Value, And>;
+        case ReduceOp::Or: return jitc_reduce_expanded_impl<Value, Or>;
+
+        default: jitc_raise("jit_reduce_expanded_create(): unsupported reduction type!");
+    }
+}
+
+
+static ReduceExpanded jitc_reduce_expanded_create(VarType type, ReduceOp op) {
+    using half = drjit::half;
+    switch (type) {
+        case VarType::Int32:   return jitc_reduce_expanded_create<int32_t >(op);
+        case VarType::UInt32:  return jitc_reduce_expanded_create<uint32_t>(op);
+        case VarType::Int64:   return jitc_reduce_expanded_create<int64_t >(op);
+        case VarType::UInt64:  return jitc_reduce_expanded_create<uint64_t>(op);
+        case VarType::Float16: return jitc_reduce_expanded_create<half    >(op);
+        case VarType::Float32: return jitc_reduce_expanded_create<float   >(op);
+        case VarType::Float64: return jitc_reduce_expanded_create<double  >(op);
+        default: jitc_raise("jit_reduce_create(): unsupported data type!");
+    }
+}
+
+void jitc_reduce_expanded(VarType vt, ReduceOp op, void *ptr, uint32_t exp, uint32_t size) {
+    jitc_log(Debug, "jit_reduce_expanded(" DRJIT_PTR ", type=%s, op=%s, expfactor=%u, size=%u)",
+            (uintptr_t) ptr, type_name[(int) vt],
+            reduction_name[(int) op], exp, size);
+
+    ReduceExpanded kernel = jitc_reduce_expanded_create(vt, op);
+
+    uint32_t block_size = size, blocks = 1;
+    if (pool_size() > 1) {
+        block_size = jitc_llvm_block_size;
+        blocks     = (size + block_size - 1) / block_size;
+    }
+
+    jitc_submit_cpu(
+        KernelType::Reduce,
+        [ptr, block_size, exp, size, kernel](uint32_t index) {
+            kernel(ptr, index * block_size,
+                   std::min((index + 1) * block_size, size), exp, size);
+        },
+
+        size, std::max(1u, blocks));
 }
