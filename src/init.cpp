@@ -634,9 +634,16 @@ void *jitc_find_library(const char *fname, const char *glob_pat,
     return handle;
 }
 
-void jitc_set_flags(uint32_t flags) {
-    pool_set_profile(int(flags & (uint32_t) JitFlag::KernelHistory));
-    jitc_flags_v = flags;
+void jitc_set_flags(uint32_t new_flags) {
+    uint32_t cur_flags = jitc_flags_v;
+
+    if (cur_flags & (uint32_t) JitFlag::KernelHistory) {
+        // Must leave this on, since kernels may terminate outside of
+        // the KernelHistory capture region
+        pool_set_profile(true);
+    }
+
+    jitc_flags_v = new_flags;
 }
 
 uint32_t jitc_flags() {
@@ -678,6 +685,7 @@ KernelHistoryEntry *KernelHistory::get() {
             cuEventDestroy((CUevent) k.event_end);
             k.event_start = k.event_end = 0;
         } else {
+            task_wait((Task *) k.task);
             k.execution_time = task_time((Task *) k.task);
             task_release((Task *) k.task);
             k.task = nullptr;

@@ -583,6 +583,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             uint32_t size       = (uint32_t) (uintptr_t) params[1],
                      block_size = (uint32_t) ((uintptr_t) params[1] >> 32),
                      start      = index * block_size,
+                     thread_id  = pool_thread_id(),
                      end        = std::min(start + block_size, size);
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
@@ -591,7 +592,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                              (__itt_string_handle *) params[2]);
 #endif
             // Perform the main computation
-            kernel(start, end, params);
+            kernel(start, end, thread_id, params);
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
             // Signal termination of kernel

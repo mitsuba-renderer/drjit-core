@@ -247,6 +247,15 @@ extern uint64_t jitc_var_stash_ref(uint32_t index);
 /// Undo the change performed by \ref jitc_var_stash_ref()
 extern void jitc_var_unstash_ref(uint64_t handle);
 
+/// Return the identity element for different horizontal reductions
+extern uint64_t jitc_reduce_identity(ReduceOp reduce_op, VarType vt);
+
+/// LLVM: expand a variable to a larger storage area to avoid atomic scatters
+extern std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op);
+
+/// Undo the above
+extern void jitc_var_reduce_expanded(uint32_t index);
+
 /// Identify different types of bounds checks (used to choose a suitable error message)
 enum class BoundsCheckType {
     Scatter,

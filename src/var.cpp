@@ -81,6 +81,14 @@ const char *type_size_str[(int) VarType::Count] {
     "4", "8", "8", "8", "2", "4", "8"
 };
 
+// Representation an all-1 bit vector
+const uint64_t type_all_ones[(int) VarType::Count] {
+    0, 1, 0xff, 0xff, 0xffff, 0xffff, 0xffffffffu,
+    0xffffffffu, 0xffffffffffffffffull,
+    0xffffffffffffffffull, 0xffffffffffffffffull,
+    0xffff, 0xffffffffu, 0xffffffffffffffffull
+};
+
 // Representation of the value 1
 const uint64_t type_one[(int) VarType::Count] {
     0, 1, 1, 1, 1,      1,          1,
@@ -90,14 +98,14 @@ const uint64_t type_one[(int) VarType::Count] {
 /// Smallest representable value (neg. infinity for FP values)
 const uint64_t type_min[(int) VarType::Count] {
     0, 0, 0x80, 0, 0x8000, 0, 0x80000000, 0,
-    0x8000000000000000ull, 0ull,
+    0x8000000000000000ull, 0, 0,
     0xfc00, 0xff800000, 0xfff0000000000000
 };
 
 /// Largest representable value (infinity for FP values)
 const uint64_t type_max[(int) VarType::Count] {
     0, 1, 0x7f, 0xff, 0x7fff, 0xffff, 0x7fffffff, 0xffffffff,
-    0x7fffffffffffffffull, 0xffffffffffffffffull,
+    0x7fffffffffffffffull, 0xffffffffffffffffull, 0xffffffffffffffffull,
     0x7c00, 0x7f800000, 0x7ff0000000000000ull
 };
 
@@ -194,6 +202,9 @@ const char *var_kind_name[(int) VarKind::Count] {
 
     // Extract a component from an operation that produced multiple results
     "extract",
+
+    /// Retrieve the index of the current thread (LLVM mode)
+    "thread_index",
 
     // Variable marking the start of a loop
     "loop_start",
@@ -1793,6 +1804,20 @@ void jitc_var_self(JitBackend backend, uint32_t *value, uint32_t *index) {
     *index = ts->call_self_index;
 }
 
+/// Return the identity element for different horizontal reductions
+uint64_t jitc_reduce_identity(ReduceOp reduce_op, VarType vt) {
+    switch (reduce_op) {
+        case ReduceOp::Or:
+        case ReduceOp::Add: return 0; break;
+        case ReduceOp::And: return type_all_ones[(int) vt]; break;
+        case ReduceOp::Mul: return type_one[(int) vt]; break;
+        case ReduceOp::Min: return type_max[(int) vt]; break;
+        case ReduceOp::Max: return type_min[(int) vt]; break;
+        default: jitc_fail("jitc_reduce_identity(): unsupported reduction type!");
+                 return 0;
+    }
+}
+
 uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
                          uint32_t index) {
     if (unlikely(reduce_op == ReduceOp::And || reduce_op == ReduceOp::Or))
@@ -1802,20 +1827,8 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
         if (backend == JitBackend::None || vt == VarType::Void)
             jitc_raise("jit_var_reduce(): missing backend/type information!");
 
-        const uint64_t all_zero = 0, all_one = 0xFFFFFFFF;
-
-        const void *source = nullptr;
-        switch (reduce_op) {
-            case ReduceOp::Or:
-            case ReduceOp::Add: source = &all_zero; break;
-            case ReduceOp::And: source = &all_one; break;
-            case ReduceOp::Mul: source = &type_one[(int) vt]; break;
-            case ReduceOp::Min: source = &type_max[(int) vt]; break;
-            case ReduceOp::Max: source = &type_min[(int) vt]; break;
-            default: jitc_raise("jitc_var_reduce(): unsupported reduction type!");
-        }
-
-        return jitc_var_literal(backend, vt, source, 1, 0);
+        uint64_t identity = jitc_reduce_identity(reduce_op, vt);
+        return jitc_var_literal(backend, vt, &identity, 1, 0);
     }
 
     const Variable *v = jitc_var(index);
@@ -1909,6 +1922,84 @@ uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
 
     jitc_prefix_sum(backend, vt, exclusive, data_in, size, data_out);
     return result.release();
+}
+
+
+std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op) {
+    Variable *v = jitc_var(index);
+    VarType vt = (VarType) v->type;
+
+    uint32_t type_size = ::type_size[v->type],
+             workers = pool_size() + 1,
+             size = v->size;
+
+    // 1 cache line per worker for scalar targets, otherwise be a bit more reasonable
+    uint32_t replication_per_worker = size == 1u ? (64u / type_size) : 1u,
+             index_scale = replication_per_worker * size;
+
+    if (workers == 1) {
+        jitc_var_inc_ref(index);
+        return { index, 1 };
+    }
+
+    if (v->reduce_op == (uint32_t) reduce_op) {
+        jitc_var_inc_ref(index);
+        return { index, index_scale };
+    }
+
+    size_t new_size = size * (size_t) replication_per_worker * (size_t) workers;
+    if (new_size > 0xffffffffull)
+        jitc_raise("jitc_var_expand(): scatter with drjit.ReduceMode.Expand is "
+                   "not possible, as this would expand the array size beyond 4 "
+                   "billion entries!");
+
+    uint64_t identity = jitc_reduce_identity(reduce_op, vt);
+
+    Ref dst;
+    void *dst_addr = nullptr;
+    dst = steal(jitc_var_literal(JitBackend::LLVM, vt, &identity, new_size, 0));
+    dst = steal(jitc_var_data(dst, false, &dst_addr));
+
+    if (!v->is_literal() || v->literal != identity) {
+        void *src_addr = nullptr;
+        Ref src = steal(jitc_var_data(index, false, &src_addr));
+        jitc_memcpy_async(JitBackend::LLVM, dst_addr, src_addr,
+                          size * type_size);
+    }
+
+    Variable *v2 = jitc_var(dst);
+    v2->reduce_op = (uint32_t) reduce_op;
+    v2->size = size;
+
+    jitc_log(Debug, "jit_var_expand(): %s r%u[%zu] = expand(r%u, factor=%zu)",
+             type_name[(int) vt], (uint32_t) dst, new_size, index,
+             new_size / size);
+
+    return { dst.release(), index_scale };
+}
+
+void jitc_var_reduce_expanded(uint32_t index) {
+    Variable *v = jitc_var(index);
+
+    if ((ReduceOp) v->reduce_op == ReduceOp::Identity)
+        return;
+
+    uint32_t workers = pool_size() + 1,
+             type_size = ::type_size[v->type],
+             size = v->size;
+
+    // 1 cache line per worker for scalar targets, otherwise be a bit more reasonable
+    uint32_t replication_per_worker = size == 1u ? (64u / type_size) : 1u;
+
+    jitc_reduce_expanded(
+        (VarType) v->type,
+        (ReduceOp) v->reduce_op,
+        v->data,
+        replication_per_worker * workers,
+        size
+    );
+
+    v->reduce_op = (uint32_t) ReduceOp::Identity;
 }
 
 /// Return a human-readable summary of registered variables

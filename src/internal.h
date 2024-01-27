@@ -115,6 +115,9 @@ enum VarKind : uint32_t {
     // Extract a component from an operation that produced multiple results
     Extract,
 
+    /// Retrieve the index of the current thread (LLVM mode)
+    ThreadIndex,
+
     // Variable marking the start of a loop
     LoopStart,
 
@@ -162,6 +165,9 @@ struct Variable {
     /// Up to 4 dependencies of this instruction
     uint32_t dep[4];
 
+    /// Unused, to be eventually used to upgrade to 64 bit array sizes
+    uint32_t unused;
+
     // ======  Size & encoded instruction (IR statement, literal, data) =======
 
     /// The 'kind' field determines which entry of the following union is used
@@ -175,9 +181,6 @@ struct Variable {
 
     /// Number of entries
     uint32_t size;
-
-    /// Unused, to be eventually used to upgrade to 64 bit array sizes
-    uint32_t unused;
 
     /// How many times has this variable entry been (re-) used?
     uint32_t counter;
@@ -227,8 +230,14 @@ struct Variable {
     /// Consumed bit for operations that should only be executed once
     uint32_t consumed : 1;
 
+    /// When nonzero, this flag specifies that the array is currently stored
+    /// in an expanded form to avoid write conflicts during scatter-reductions
+    /// (i.e. drjit.ReduceOp.Expand). The contents will later be reduced
+    /// according to the ReduceOp operation encoded by this integer.
+    uint32_t reduce_op : 3;
+
     /// Unused for now
-    uint32_t unused_2 : 7;
+    uint32_t unused_2 : 4;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;

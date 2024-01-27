@@ -11,7 +11,7 @@
 
 #include "hash.h"
 
-using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, void **ptr);
+using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, uint32_t thread_id, void **ptr);
 using CUmodule = struct CUmod_st *;
 using CUfunction = struct CUfunc_st *;
 using OptixModule = void*;

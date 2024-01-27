@@ -528,17 +528,16 @@ uint32_t jit_var_op(JitOp op, const uint32_t *dep) {
     return jitc_var_op(op, dep);
 }
 
-uint32_t jit_var_gather(uint32_t source, uint32_t index,
-                            uint32_t mask) {
+uint32_t jit_var_gather(uint32_t source, uint32_t index, uint32_t mask) {
     lock_guard guard(state.lock);
     return jitc_var_gather(source, index, mask);
 }
 
 uint32_t jit_var_scatter(uint32_t target, uint32_t value,
                          uint32_t index, uint32_t mask,
-                         ReduceOp reduce_op) {
+                         ReduceOp op, ReduceMode mode) {
     lock_guard guard(state.lock);
-    return jitc_var_scatter(target, value, index, mask, reduce_op);
+    return jitc_var_scatter(target, value, index, mask, op, mode);
 }
 
 void jit_var_scatter_add_kahan(uint32_t *target_1, uint32_t *target_2,
@@ -1344,4 +1343,25 @@ void jit_profile_range_push(const char *message) {
 
 void jit_profile_range_pop() {
     jitc_profile_range_pop();
+}
+
+size_t llvm_expand_threshold = 1024 * 1024; // 1M entries
+
+void jit_llvm_set_expand_threshold(size_t size) {
+    llvm_expand_threshold = size;
+}
+
+size_t jit_llvm_expand_threshold() noexcept {
+    return llvm_expand_threshold;
+}
+
+uint32_t jit_var_reduce_identity(JitBackend backend, VarType vt, ReduceOp reduce_op) {
+    Variable v;
+    v.literal = jitc_reduce_identity(reduce_op, vt);
+    v.kind = (uint32_t) VarKind::Literal;
+    v.type = (uint32_t) vt;
+    v.size = 1;
+    v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
+    return jitc_var_new(v);
 }

@@ -21,7 +21,7 @@ extern uint32_t jitc_var_gather(uint32_t source, uint32_t index,
 /// Schedule a scatter opartion that writes to an array
 extern uint32_t jitc_var_scatter(uint32_t target, uint32_t value,
                                  uint32_t index, uint32_t mask,
-                                 ReduceOp reduce_op);
+                                 ReduceOp op, ReduceMode mode);
 
 /// Atomic Kahan summation
 extern void jitc_var_scatter_add_kahan(uint32_t *target_1, uint32_t *target_2,

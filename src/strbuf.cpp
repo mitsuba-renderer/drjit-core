@@ -428,6 +428,11 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     len += MAXSIZE_TYPE;
                     break;
 
+                case 'p':
+                    (void) va_arg(args, const Variable *); arg++;
+                    len += MAXSIZE_TYPE + 1;
+                    break;
+
                 case 'h':
                     (void) va_arg(args, const Variable *); arg++;
                     len += MAXSIZE_TYPE_ABBREV;
@@ -439,6 +444,11 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                 case 'M':
                     (void) va_arg(args, const Variable *); arg++;
                     len += MAXSIZE_U32 + MAXSIZE_TYPE + 5;
+                    break;
+
+                case 'P':
+                    (void) va_arg(args, const Variable *); arg++;
+                    len += MAXSIZE_U32 + MAXSIZE_TYPE + 6;
                     break;
 
                 case 'v':
@@ -533,6 +543,32 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                 case 't': {
                         const Variable *v = va_arg(args2, const Variable *);
                         put_unchecked(type_name_llvm[v->type]);
+                    }
+                    break;
+
+                case 'p': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        if (jitc_llvm_opaque_pointers) {
+                            put_unchecked("ptr");
+                        } else {
+                            put_unchecked(type_name_llvm[v->type]);
+                            *m_cur ++= '*';
+                        }
+                    }
+                    break;
+
+                case 'P': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        *m_cur ++= '<';
+                        put_u32_unchecked(jitc_llvm_vector_width);
+                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
+                        if (jitc_llvm_opaque_pointers) {
+                            put_unchecked("ptr");
+                        } else {
+                            put_unchecked(type_name_llvm[v->type]);
+                            *m_cur ++= '*';
+                        }
+                        *m_cur ++= '>';
                     }
                     break;
 
@@ -638,8 +674,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                             double d = f;
                             memcpy(&literal, &d, sizeof(uint64_t));
                             vt = VarType::Float64;
-                        }
-                        else if (vt == VarType::Float16) {
+                        } else if (vt == VarType::Float16) {
                             drjit::half h;
                             memcpy((void*)&h, &literal, sizeof(drjit::half));
                             double d = float(h);

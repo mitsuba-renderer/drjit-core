@@ -53,6 +53,8 @@ struct CallData {
     bool use_self = false;
     /// Does this call contain a 'Counter' variable?
     bool use_index = false;
+    /// Does this call contain a 'ThreadIndex' variable?
+    bool use_thread_id = false;
     /// Does this call contain OptiX operations?
     bool use_optix = false;
 

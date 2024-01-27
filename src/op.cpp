@@ -1446,7 +1446,8 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
 
     VarType source_type = (VarType) v_index->type;
     if (!jitc_is_int(source_type))
-        jitc_raise("jit_scatter_gather_index(): expected an integer array as scatter/gather index");
+        jitc_raise("jit_scatter_gather_index(): expected an integer array as "
+                   "scatter/gather index");
 
     VarType target_type = VarType::UInt32;
     // Need 64 bit indices for upper 2G entries (gather indices are signed in LLVM)
@@ -1897,8 +1898,10 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     return result;
 }
 
+extern size_t llvm_expand_threshold;
+
 uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
-                          uint32_t mask, ReduceOp reduce_op) {
+                          uint32_t mask, ReduceOp op, ReduceMode mode) {
     Ref target = borrow(target_), ptr;
 
     auto print_log = [&](const char *msg, uint32_t result_node = 0) {
@@ -1906,12 +1909,12 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
             jitc_log(Debug,
                      "jit_var_scatter(): r%u[r%u] %s r%u (mask=r%u, ptr=r%u, "
                      "se=r%u, out=r%u) [%s]",
-                     target_, index, reduce_op_symbol[(int) reduce_op], value,
+                     target_, index, reduce_op_symbol[(int) op], value,
                      mask, (uint32_t) ptr, result_node, (uint32_t) target, msg);
         else
             jitc_log(Debug,
                      "jit_var_scatter(): r%u[r%u] %s r%u (mask=r%u, ptr=r%u) [%s]",
-                     target_, index, reduce_op_symbol[(int) reduce_op], value,
+                     target_, index, reduce_op_symbol[(int) op], value,
                      mask, (uint32_t) ptr, msg);
     };
 
@@ -1934,7 +1937,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
     switch ((VarType) target_v->type) {
         case VarType::Bool:
-            if (reduce_op != ReduceOp::Identity)
+            if (op != ReduceOp::Identity)
                 jitc_raise("jit_var_scatter(): atomic reductions are not "
                            "supported for masks!");
             break;
@@ -1942,24 +1945,27 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         case VarType::Float16:
         case VarType::Float32:
         case VarType::Float64:
-            if (reduce_op == ReduceOp::Or || reduce_op == ReduceOp::And)
+            if (op == ReduceOp::Or || op == ReduceOp::And)
                 jitc_raise("jit_var_scatter(): bitwise reductions are not "
                            "supported for floating point operands!");
+
+            if (var_info.backend == JitBackend::CUDA &&
+                (op == ReduceOp::Min || op == ReduceOp::Max) &&
+                ((VarType) target_v->type) != VarType::Float16)
+                jitc_raise("jit_var_scatter(): min/max reductions are "
+                           "supported for integer and float16 operands but "
+                           "*not* float32/float64 operands! This is an "
+                           "inherited limitation of CUDA/PTX.");
             break;
 
         default: break;
     }
 
-    if (reduce_op == ReduceOp::Mul)
+    if (op == ReduceOp::Mul)
         jitc_raise("jit_var_scatter(): ReduceOp.Mul unsupported for atomic reductions!");
 
     if (target_v->symbolic)
         jitc_raise("jit_var_scatter(): cannot scatter to a symbolic variable!");
-
-    if (jitc_is_half(target_v) &&
-        !(reduce_op == ReduceOp::Identity || reduce_op == ReduceOp::Add))
-        jitc_fail("jit_var_scatter(): half-precision variables only support "
-                  "dr.scatter() and dr.scatter_add()");
 
     uint32_t flags = jitc_flags();
     var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
@@ -1968,7 +1974,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         jitc_raise("jit_var_scatter(): target/value type mismatch!");
 
     if (target_v->is_literal() && value_v->is_literal() &&
-        target_v->literal == value_v->literal && reduce_op == ReduceOp::Identity) {
+        target_v->literal == value_v->literal && op == ReduceOp::Identity) {
         print_log("skipped, target/source are value variables with the "
                   "same value");
         return target.release();
@@ -1979,36 +1985,98 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         return target.release();
     }
 
-    if (value_v->is_literal() && value_v->literal == 0 &&
-        reduce_op == ReduceOp::Add) {
-        print_log("skipped, scatter_reduce(ScatterOp.Add) with zero-valued "
-                  "source variable");
+    if (value_v->is_literal() && value_v->literal == 0 && op == ReduceOp::Add) {
+        print_log("skipped, scatter-addition with zero-valued source variable");
         return target.release();
     }
+
     const uint32_t target_size = target_v->size;
 
-    // Check if it is safe to directly to ``target``. We borrowed ``target``
-    // above, and the caller also owns one reference. Therefore, the target
-    // array can be directly modified when the reference count exactly equals
-    // 2. Otherwise, we must make a copy first. If a reference count was
+    // Raise an error if the target array is currently stored in an expanded
+    // form that isn't compatible with the operation to be performed.
+    if (target_v->reduce_op && target_v->reduce_op != (uint32_t) op)
+        jitc_raise(
+            "jitc_var_scatter(): it is not legal to mix different types of "
+            "scatter-reductions when using dr.ReduceMode.Expand. Evaluate the "
+            "array first before using a different kind of reduction.");
+
+    // The backends may employ various strategies to reduce the number of
+    // atomic memory operations, or to avoid them altogether. Check if the user
+    // requested this.
+    Ref index_2 = borrow(index);
+    uint32_t reduce_expanded = 0;
+    if (op != ReduceOp::Identity) {
+        if (mode == ReduceMode::Permute)
+            jitc_raise("jitc_var_scatter(): drjit.ReduceMode.Permute is not a "
+                       "valid mode for scatter-reductions.");
+
+        if (var_info.backend == JitBackend::LLVM) {
+            uint32_t target_size = jitc_var(target)->size;
+            if (mode == ReduceMode::Auto && target_size <= llvm_expand_threshold)
+                mode = ReduceMode::Expand;
+        } else {
+            // ReduceMode::Expand is only supported on the LLVM backend
+            if (mode == ReduceMode::Expand)
+                mode = ReduceMode::Auto;
+        }
+
+        if (mode == ReduceMode::Auto)
+            mode = (flags & (uint32_t) JitFlag::ScatterReduceLocal)
+                       ? ReduceMode::Local
+                       : ReduceMode::Direct;
+
+        if (mode == ReduceMode::Expand) {
+            index_2 = steal(jitc_var_cast(index_2, VarType::UInt32, 0));
+            const Variable *index_v = jitc_var(index_2);
+            uint32_t size = index_v->size;
+
+            auto [target_i, expand_i] = jitc_var_expand(target, op);
+            target = steal(target_i);
+            target_v = jitc_var(target);
+            reduce_expanded = target_i;
+
+            Variable v{};
+            v.kind = (uint32_t) VarKind::ThreadIndex;
+            v.type = (uint32_t) VarType::UInt32;
+            v.size = (uint32_t) size;
+            v.backend = (uint32_t) var_info.backend;
+
+            Ref expand = steal(jitc_var_literal(
+                    var_info.backend, VarType::UInt32, &expand_i, size, 0)),
+                thread_idx = steal(jitc_var_new(v));
+
+            index_2 = steal(jitc_var_fma(thread_idx, expand, index_2));
+
+            mode = ReduceMode::NoConflicts;
+        }
+    } else {
+        mode = ReduceMode::Auto;
+    }
+
+    // Check if it is safe to directly write to ``target``. We borrowed
+    // ``target`` above, and the caller also owns one reference. Therefore, the
+    // target array can be directly modified when the reference count exactly
+    // equals 2. Otherwise, we must make a copy first. If a reference count was
     // stashed via \ref jitc_var_stash_ref() (e.g., prior to a control flow
     // operation like dr.if_stmt()), then use that instead.
-    if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
+    if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));
 
+    // Get a pointer to the array data. This evaluates the array if needed
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
 
+    // Construct the scatter operation
     ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 1));
 
-    Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
-        index_2 = steal(jitc_scatter_gather_index(target, index));
+    Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size));
+    index_2 = steal(jitc_scatter_gather_index(target, index_2));
 
     if (flags & (uint32_t) JitFlag::Debug)
         mask_2 = steal(jitc_var_check_bounds(
-            reduce_op == ReduceOp::Identity ? BoundsCheckType::Scatter
-                                            : BoundsCheckType::ScatterReduce,
-            index, mask_2, target_size));
+            op == ReduceOp::Identity ? BoundsCheckType::Scatter
+                                     : BoundsCheckType::ScatterReduce,
+            index /* original index */, mask_2, target_size));
 
     var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
@@ -2018,13 +2086,30 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
             "jit_var_scatter(): input arrays are symbolic, but the operation "
             "was issued outside of a symbolic recording session.");
 
+    // Encode the 'op' and 'mode' variables into variable's literal field
+    uint64_t literal = (((uint64_t) mode) << 32) + ((uint64_t) op);
+
     uint32_t result = jitc_var_new_node_4(
         var_info.backend, VarKind::Scatter, VarType::Void,
         var_info.size, symbolic, ptr, jitc_var(ptr),
         value, jitc_var(value), index_2, jitc_var(index_2),
-        mask_2, jitc_var(mask_2), (uint64_t) reduce_op);
+        mask_2, jitc_var(mask_2), literal);
 
     print_log(((uint32_t) target == target_) ? "direct" : "copied target", result);
+
+
+    if (reduce_expanded) {
+        jitc_var_set_callback(
+            result,
+            [](uint32_t, int free, void *p) {
+                if (free)
+                    return;
+                jitc_var_reduce_expanded((uint32_t) (uintptr_t) p);
+            },
+            (void*) (uintptr_t) reduce_expanded,
+            true
+        );
+    }
 
     jitc_var_mark_side_effect(result);
 
