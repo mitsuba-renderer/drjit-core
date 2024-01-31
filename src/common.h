@@ -20,6 +20,7 @@
 
 #if defined(__linux__)
 #include <pthread.h>
+#include <cstdint>
 using Lock = pthread_spinlock_t;
 
 // Danger zone: the drjit-core locks are held for an extremely short amount of
