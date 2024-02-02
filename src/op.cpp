@@ -1,4 +1,4 @@
-#include <drjit-core/containers.h>
+#include <drjit-core/nanostl.h>
 #include <drjit-core/half.h>
 #include "internal.h"
 #include "var.h"
@@ -178,7 +178,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
             simplify = jitc_flags() & (uint32_t) JitFlag::ConstantPropagation;
     }
 
-    return drjit::dr_tuple(
+    return drjit::tuple(
         OpInfo{ backend, type, size, simplify, literal, symbolic },
         v[Is]...
     );

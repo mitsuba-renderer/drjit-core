@@ -55,7 +55,7 @@ static const char *jitc_llvm_atomicrmw_name(VarType vt, ReduceOp op) {
               (int) op, (int) vt);
 }
 
-static std::tuple<const char *, const char *, const char *, const char *>
+static drjit::tuple<const char *, const char *, const char *, const char *>
 jitc_llvm_vector_reduce_config(VarType vt, ReduceOp op) {
     const char *name = nullptr,
                *modifier = "",

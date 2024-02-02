@@ -370,7 +370,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 	}
 
 	friend void set_label(JitArray &v, const char *label) {
-		uint32_t index = jit_var_set_label(v.m_index, label);
+		uint32_t index = jit_var_set_label(v.m_index, 1, label);
 		jit_var_dec_ref(v.m_index);
 		v.m_index = index;
 	}

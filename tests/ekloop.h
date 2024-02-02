@@ -61,7 +61,7 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
         : m_record(jit_flag(JitFlag::LoopRecord)) {
 
         size_t size = strlen(name) + 1;
-        m_name = dr_unique_ptr<char[]>(new char[size]);
+        m_name = unique_ptr<char[]>(new char[size]);
         memcpy(m_name.get(), name, size);
 
         /// Immediately initialize if loop state is specified
@@ -147,7 +147,7 @@ struct Loop<Value, enable_if_jit_array_t<Value>> {
         if (m_state)
             jit_raise("Loop(\"%s\"): was already initialized!", m_name.get());
 
-        m_indices_prev = dr_vector<uint32_t>(m_indices.size(), 0);
+        m_indices_prev = vector<uint32_t>(m_indices.size(), 0);
 
         // Rewrite loop state variables (1)
         m_loop_init = jit_var_loop_init(m_indices.size(), m_indices.data());
@@ -338,10 +338,10 @@ protected:
     detail::JitState<Backend> m_jit_state;
 
     /// A descriptive name
-    dr_unique_ptr<char[]> m_name;
+    unique_ptr<char[]> m_name;
 
     /// Pointers to loop variable indices (JIT handles)
-    dr_vector<uint32_t *> m_indices;
+    vector<uint32_t *> m_indices;
 
     /**
      * \brief Temporary index scratch space
@@ -352,7 +352,7 @@ protected:
      * In wavefront mode, it represents the loop state
      * of the previous iteration.
      */
-    dr_vector<uint32_t> m_indices_prev;
+    vector<uint32_t> m_indices_prev;
 
     // --------------- Loop recording ---------------
 
@@ -368,10 +368,10 @@ protected:
     // --------------- Wavefront mode ---------------
 
     /// Pointers to loop variable indices (AD handles)
-    dr_vector<int32_t *> m_indices_ad;
+    vector<int32_t *> m_indices_ad;
 
     /// AD variable state of the previous iteration
-    dr_vector<uint32_t> m_indices_ad_prev;
+    vector<uint32_t> m_indices_ad_prev;
 
     /// Stashed mask variable from the previous iteration
     Mask m_cond;

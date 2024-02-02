@@ -25,37 +25,23 @@
 
 NAMESPACE_BEGIN(drjit)
 
+struct half;
+
 NAMESPACE_BEGIN(detail)
 
-template<typename T>
-struct is_signed : std::is_signed<T>::type {};
-
-template< class T >
-inline constexpr bool is_signed_v = is_signed<T>::value;
-
-template<typename T>
-struct is_integral : std::is_integral<T>::type {};
-
-template< class T >
-inline constexpr bool is_integral_v = is_integral<T>::value;
-
-template<typename T>
-struct is_floating_point : std::is_floating_point<T>::type {};
-
-template< class T >
-inline constexpr bool is_floating_point_v = is_floating_point<T>::value;
-
-template<typename T>
-struct is_arithmetic : std::is_arithmetic<T>::type {};
-
-template<typename T>
-inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
-
-template<typename T>
-struct is_scalar : std::is_scalar<T>::type {};
-
-template< class T >
-inline constexpr bool is_scalar_v = is_scalar<T>::value;
+// Type traits that can be legally overwritten within Dr.Jit
+template <typename T> struct is_signed : std::is_signed<T> { };
+template <typename T> constexpr bool is_signed_v = is_signed<T>::value;
+template <typename T> struct is_unsigned : std::is_unsigned<T> { };
+template <typename T> constexpr bool is_unsigned_v = is_unsigned<T>::value;
+template <typename T> struct is_floating_point : std::is_floating_point<T> { };
+template <typename T> constexpr bool is_floating_point_v = is_floating_point<T>::value;
+template <typename T> struct is_arithmetic : std::is_arithmetic<T> { };
+template <typename T> constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
+template <typename T> struct is_integral : std::is_integral<T> { };
+template <typename T> constexpr bool is_integral_v = is_integral<T>::value;
+template <typename T> struct is_scalar : std::is_scalar<T> { };
+template <typename T> constexpr bool is_scalar_v = is_scalar<T>::value;
 
 NAMESPACE_END(detail)
 
@@ -65,35 +51,35 @@ template <typename T, typename = int> struct var_type {
     static constexpr VarType value = VarType::Void;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_integral<T>::value && sizeof(T) == 1>> {
+template <typename T> struct var_type<T, enable_if_t<detail::is_integral_v<T> && sizeof(T) == 1>> {
     static constexpr VarType value =
         std::is_signed<T>::value ? VarType::Int8 : VarType::UInt8;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_integral<T>::value && sizeof(T) == 2>> {
+template <typename T> struct var_type<T, enable_if_t<detail::is_integral_v<T> && sizeof(T) == 2>> {
     static constexpr VarType value =
         std::is_signed<T>::value ? VarType::Int16 : VarType::UInt16;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_integral<T>::value && sizeof(T) == 4>> {
+template <typename T> struct var_type<T, enable_if_t<detail::is_integral_v<T> && sizeof(T) == 4>> {
     static constexpr VarType value =
         std::is_signed<T>::value ? VarType::Int32 : VarType::UInt32;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_integral<T>::value && sizeof(T) == 8>> {
+template <typename T> struct var_type<T, enable_if_t<detail::is_integral_v<T> && sizeof(T) == 8>> {
     static constexpr VarType value =
         std::is_signed<T>::value ? VarType::Int64 : VarType::UInt64;
 };
 
 template <typename T> struct var_type<T, enable_if_t<std::is_enum<T>::value>> {
-    static constexpr VarType value = var_type<typename std::underlying_type<T>::type>::value;
+    static constexpr VarType value = var_type<std::underlying_type_t<T>>::value;
 };
 
-template <typename T> struct var_type<T, enable_if_t<drjit::detail::is_floating_point_v<T> && sizeof(T) == 2>> {
+template <typename T> struct var_type<T, enable_if_t<detail::is_floating_point_v<T> && sizeof(T) == 2>> {
     static constexpr VarType value = VarType::Float16;
 };
 
-template <typename T> struct var_type<T, enable_if_t<std::is_pointer<T>::value>> {
+template <typename T> struct var_type<T, enable_if_t<std::is_pointer_v<T>>> {
     static constexpr VarType value = VarType::UInt32;
 };
 

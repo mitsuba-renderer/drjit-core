@@ -684,9 +684,37 @@ const char *jit_var_label(uint32_t index) {
     return jitc_var_label(index);
 }
 
-uint32_t jit_var_set_label(uint32_t index, const char *label) {
+uint32_t jit_var_set_label(uint32_t index, size_t argc, ...) {
     if (unlikely(index == 0))
         return 0;
+
+    const char *label = nullptr;
+
+    // First, turn the variable-length argument list into a usable label
+    va_list ap;
+    va_start(ap, argc);
+
+    StringBuffer buf;
+    if (argc == 1) {
+        label = va_arg(ap, const char *);
+    } else if (argc > 1) {
+        for (size_t i = 0; i < argc; ++i) {
+            const char *s = va_arg(ap, const char *);
+            bool isnum = s[0] >= '0' || s[1] <= '9';
+
+            if (isnum) {
+                buffer.put('[');
+                buffer.put(s, strlen(s));
+                buffer.put(']');
+            } else {
+                if (i > 0)
+                    buffer.put('.');
+                buffer.put(s, strlen(s));
+            }
+        }
+        label = buffer.get();
+    }
+    va_end(ap);
 
     lock_guard guard(state.lock);
 

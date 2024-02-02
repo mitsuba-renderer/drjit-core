@@ -63,7 +63,8 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
         dirty |= self_v->is_dirty();
         backend = (JitBackend) self_v->backend;
         if ((VarType) self_v->type != VarType::UInt32)
-            jitc_raise("jit_var_call(): 'self' argument must be an unsigned 32-bit integer array");
+            jitc_raise("jit_var_call(): 'self' argument must be an unsigned "
+                       "32-bit integer array");
     }
 
     /* Check 'mask' */ {
@@ -72,7 +73,8 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
         symbolic |= (bool) mask_v->symbolic;
         dirty |= (bool) mask_v->symbolic;
         if ((VarType) mask_v->type != VarType::Bool)
-            jitc_raise("jit_var_call(): 'mask' argument must be a boolean array");
+            jitc_raise(
+                "jit_var_call(): 'mask' argument must be a boolean array");
     }
 
     for (uint32_t i = 0; i < n_in; ++i) {
@@ -90,7 +92,9 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
                        "literal or symbolic wrapper around another variable!", in[i]);
         }
         if (v->size != 1)
-            jitc_raise("jit_var_call(): size of input variable r%u must be 1!", in[i]);
+            jitc_raise(
+                "jit_var_call(): size of input variable r%u is %u (must be 1)!",
+                in[i], v->size);
     }
 
     for (uint32_t i = 0; i < n_inner_out; ++i) {
@@ -101,7 +105,8 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
             jitc_raise("jit_var_call(): output types don't match between instances.");
 
         if (v1->size != 1)
-            jitc_raise("jit_var_call(): size of output variable r%u must be 1!", inner_out[i]);
+            jitc_raise("jit_var_call(): size of output variable r%u is %u "
+                       "(must be 1)!", inner_out[i], v1->size);
     }
 
     ThreadState *ts = thread_state(backend);

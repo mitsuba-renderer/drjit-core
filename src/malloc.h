@@ -10,7 +10,7 @@
 #pragma once
 
 #include <drjit-core/jit.h>
-#include <drjit-core/containers.h>
+#include <drjit-core/nanostl.h>
 #include <drjit-core/half.h>
 #include "hash.h"
 
@@ -21,8 +21,8 @@ inline AllocInfo alloc_info_encode(size_t size, AllocType type, int device) {
            ((uint64_t) device);
 }
 
-inline drjit::dr_tuple<size_t, AllocType, int> alloc_info_decode(AllocInfo value) {
-    return drjit::dr_tuple((size_t)(value >> 16),
+inline drjit::tuple<size_t, AllocType, int> alloc_info_decode(AllocInfo value) {
+    return drjit::make_tuple((size_t)(value >> 16),
                            (AllocType)((value >> 8) & 0xFF),
                            (int) (value & 0xFF));
 }
