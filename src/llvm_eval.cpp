@@ -99,6 +99,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         uint32_t vti = v->type;
         VarType vt = (VarType) vti;
         VarKind kind = (VarKind) v->kind;
+        ParamType ptype = (ParamType) v->param_type;
         uint32_t size = v->size;
 
         if (unlikely(print_labels && v->extra)) {
@@ -108,12 +109,12 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         }
 
         /// Determine source/destination address of input/output parameters
-        if (v->param_type == ParamType::Input && size == 1 && vt == VarType::Pointer) {
+        if (ptype == ParamType::Input && size == 1 && vt == VarType::Pointer) {
             // Case 1: load a pointer address from the parameter array
             fmt("    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
                 "    $v = load {i8*}, {i8**} $v_p1, align 8, !alias.scope !2\n",
                 v, v, v, v);
-        } else if (v->param_type != ParamType::Register) {
+        } else if (ptype != ParamType::Register) {
             // Case 2: read an input/output parameter
 
             fmt( "    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
@@ -122,13 +123,13 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
                 v, v, v, v, v, v, v);
 
             // For output parameters and non-scalar inputs
-            if (v->param_type != ParamType::Input || size != 1)
+            if (ptype != ParamType::Input || size != 1)
                 fmt( "    $v_p{4|5} = getelementptr inbounds $m, {$m*} $v_p3, i64 %index\n"
                     "{    $v_p5 = bitcast $m* $v_p4 to $M*\n|}",
                     v, v, v, v, v, v, v, v);
         }
 
-        if (likely(v->param_type == ParamType::Input)) {
+        if (likely(ptype == ParamType::Input)) {
             if (v->is_literal())
                 continue;
 
@@ -163,9 +164,10 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
             jitc_llvm_render(v);
         }
 
-        v = jitc_var(index); // `v` might have been invalidated during its assembly
+        if (ptype == ParamType::Output) {
+            jitc_assert(jitc_var(index) == v,
+                        "Unexpected mutation of the variable data structure.");
 
-        if (v->param_type == ParamType::Output) {
             if (vt != VarType::Bool) {
                 fmt("    store $V, {$T*} $v_p5, align $A, !noalias !2, !nontemporal !3\n",
                     v, v, v, v);
