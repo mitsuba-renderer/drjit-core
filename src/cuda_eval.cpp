@@ -146,6 +146,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                        size = v->size;
         const VarType vt = (VarType) vti;
         const VarKind kind = (VarKind) v->kind;
+        ParamType ptype = (ParamType) v->param_type;
 
         if (unlikely(print_labels && v->extra)) {
             const char *label = jitc_var_label(index);
@@ -153,7 +154,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                 fmt("    // $s\n", label);
         }
 
-        if (likely(v->param_type == ParamType::Input)) {
+        if (likely(ptype == ParamType::Input)) {
             if (v->is_literal()) {
                 fmt("    ld.$s.u64 $v, [$s+$o];\n", params_type, v, params_base, v);
                 continue;
@@ -177,7 +178,10 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
             jitc_cuda_render(v);
         }
 
-        if (v->param_type == ParamType::Output) {
+        if (ptype == ParamType::Output) {
+            jitc_assert(jitc_var(index) == v,
+                        "Unexpected mutation of the variable data structure.");
+
             fmt("    ld.$s.u64 %rd0, [$s+$o];\n"
                 "    mad.wide.u32 %rd0, %r0, $a, %rd0;\n",
                 params_type, params_base, v, v);
