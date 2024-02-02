@@ -1,14 +1,14 @@
 #include "test.h"
 #include "traits.h"
-#include <drjit-core/containers.h>
+#include <drjit-core/tinystl.h>
 #include <utility>
 
 namespace dr = drjit;
 
 namespace drjit {
 namespace detail {
-    struct dr_index_vector : dr_vector<uint32_t> {
-        using Base = dr_vector<uint32_t>;
+    struct dr_index_vector : vector<uint32_t> {
+        using Base = vector<uint32_t>;
         using Base::Base;
         using Base::operator=;
 
@@ -41,24 +41,24 @@ namespace detail {
 
     template <typename... Ts, size_t... Is>
     void collect_indices_tuple(dr_index_vector &indices,
-                               const dr_tuple<Ts...> &value,
+                               const tuple<Ts...> &value,
                                std::index_sequence<Is...>) {
         (collect_indices(indices, value.template get<Is>()), ...);
     }
 
     template <typename... Ts>
-    void collect_indices(dr_index_vector &indices, const dr_tuple<Ts...> &value) {
+    void collect_indices(dr_index_vector &indices, const tuple<Ts...> &value) {
         collect_indices_tuple(indices, value, std::make_index_sequence<sizeof...(Ts)>());
     }
 
     template <typename... Ts, size_t... Is>
-    void update_indices_tuple(dr_index_vector &indices, dr_tuple<Ts...> &value,
+    void update_indices_tuple(dr_index_vector &indices, tuple<Ts...> &value,
                              uint32_t &offset, std::index_sequence<Is...>) {
         (update_indices(indices, value.template get<Is>(), offset), ...);
     }
 
     template <typename... Ts>
-    void update_indices(dr_index_vector &indices, dr_tuple<Ts...> &value,
+    void update_indices(dr_index_vector &indices, tuple<Ts...> &value,
                              uint32_t &offset) {
         update_indices_tuple(indices, value, offset, std::make_index_sequence<sizeof...(Ts)>());
     }
@@ -166,8 +166,8 @@ Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
     Result result;
 
     detail::dr_index_vector indices_in, indices_out_all;
-    dr_vector<uint32_t> state(n_inst + 1, 0);
-    dr_vector<uint32_t> inst_id(n_inst, 0);
+    vector<uint32_t> state(n_inst + 1, 0);
+    vector<uint32_t> inst_id(n_inst, 0);
 
     (detail::collect_indices(indices_in, args), ...);
 
@@ -283,26 +283,26 @@ TEST_BOTH(02_calling_conventions) {
     using Double = Array<double>;
 
     struct Base {
-        virtual dr_tuple<Mask, Float, Double, Float, Mask>
+        virtual tuple<Mask, Float, Double, Float, Mask>
         f(Mask p0, Float p1, Double p2, Float p3, Mask p4) = 0;
     };
 
     struct B1 : Base {
-        dr_tuple<Mask, Float, Double, Float, Mask>
+        tuple<Mask, Float, Double, Float, Mask>
         f(Mask p0, Float p1, Double p2, Float p3, Mask p4) override {
             return { p0, p1, p2, p3, p4 };
         }
     };
 
     struct B2 : Base {
-        dr_tuple<Mask, Float, Double, Float, Mask>
+        tuple<Mask, Float, Double, Float, Mask>
         f(Mask p0, Float p1, Double p2, Float p3, Mask) override {
             return { !p0, p1 + 1, p2 + 2, p3 + 3, false };
         }
     };
 
     struct B3 : Base {
-        dr_tuple<Mask, Float, Double, Float, Mask>
+        tuple<Mask, Float, Double, Float, Mask>
         f(Mask, Float, Double, Float, Mask) override {
             return { 0, 0, 0, 0, 0 };
         }
@@ -359,17 +359,17 @@ TEST_BOTH(03_optimize_away_outputs) {
        collapsed, and that inputs which aren't referenced in the first place
        get optimized away. */
     struct Base {
-        virtual dr_tuple<Float, Float> f(Float p1, Float p2, Float& p3) = 0;
+        virtual tuple<Float, Float> f(Float p1, Float p2, Float& p3) = 0;
     };
 
     struct C12 : Base {
-        dr_tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
+        tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
             return { p2 + 2.34567f, p1 + 1.f };
         }
     };
 
     struct C3 : Base {
-        dr_tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
+        tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
             return { p2 + 1.f, p1 + 2.f };
         }
     };
@@ -425,17 +425,17 @@ TEST_BOTH(04_devirtualize) {
     /* This test checks that outputs which produce identical values across
        all instances are moved out of the virtual call interface. */
     struct Base {
-        virtual dr_tuple<Float, Float, Float> f(Float p1, Float p2) = 0;
+        virtual tuple<Float, Float, Float> f(Float p1, Float p2) = 0;
     };
 
     struct D1 : Base {
-        dr_tuple<Float, Float, Float> f(Float p1, Float p2) override {
+        tuple<Float, Float, Float> f(Float p1, Float p2) override {
             return { p2 + 2, p1 + 1, 0 };
         }
     };
 
     struct D2 : Base {
-        dr_tuple<Float, Float, Float> f(Float p1, Float p2) override {
+        tuple<Float, Float, Float> f(Float p1, Float p2) override {
             return { p2 + 2, p1 + 2, 0 };
         }
     };
@@ -604,12 +604,12 @@ TEST_BOTH_FP32(07_side_effects_only_once) {
        once, even when that function is evaluated multiple times. */
 
     struct Base {
-        virtual dr_tuple<Float, Float> f() = 0;
+        virtual tuple<Float, Float> f() = 0;
     };
 
     struct G1 : Base {
         Float buffer = zeros<Float>(5);
-        dr_tuple<Float, Float> f() override {
+        tuple<Float, Float> f() override {
             scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(1));
             return { 1, 2 };
         }
@@ -617,7 +617,7 @@ TEST_BOTH_FP32(07_side_effects_only_once) {
 
     struct G2 : Base {
         Float buffer = zeros<Float>(5);
-        dr_tuple<Float, Float> f() override {
+        tuple<Float, Float> f() override {
             scatter_reduce(ReduceOp::Add, buffer, Float(1), UInt32(2));
             return { 2, 1 };
         }

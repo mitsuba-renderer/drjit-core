@@ -31,42 +31,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
-
-#if defined(_MSC_VER)
-#  if defined(DRJIT_BUILD)
-#    define JIT_EXPORT    __declspec(dllexport)
-#  else
-#    define JIT_EXPORT    __declspec(dllimport)
-#  endif
-#  define JIT_MALLOC
-#  define JIT_INLINE    __forceinline
-#  define JIT_NOINLINE  __declspec(noinline)
-#  define JIT_NORETURN_FORMAT
-#else
-#  define JIT_EXPORT    __attribute__ ((visibility("default")))
-#  define JIT_MALLOC    __attribute__((malloc))
-#  define JIT_INLINE    __attribute__ ((always_inline)) inline
-#  define JIT_NOINLINE  __attribute__ ((noinline))
-#  define JIT_NORETURN_FORMAT __attribute__((noreturn, __format__ (__printf__, 1, 2)))
-#endif
-
-#if defined(__cplusplus)
-#  define JIT_CONSTEXPR constexpr
-#  define JIT_DEF(x) = x
-#  define JIT_NOEXCEPT noexcept
-#  define JIT_ENUM ::
-#  if !defined(NAMESPACE_BEGIN)
-#    define NAMESPACE_BEGIN(name) namespace name {
-#  endif
-#  if !defined(NAMESPACE_END)
-#    define NAMESPACE_END(name) }
-#  endif
-#else
-#  define JIT_CONSTEXPR inline
-#  define JIT_DEF(x)
-#  define JIT_NOEXCEPT
-#  define JIT_ENUM enum
-#endif
+#include "macros.h"
 
 #if defined(__cplusplus)
 extern "C" {
@@ -1397,7 +1362,7 @@ jit_var_set_callback(uint32_t index, void (*callback)(uint32_t, int, void *),
  * The label is shown in the output of \ref jit_var_whos() and \ref
  * jit_var_graphviz()
  */
-extern JIT_EXPORT uint32_t jit_var_set_label(uint32_t index, const char *label);
+extern JIT_EXPORT uint32_t jit_var_set_label(uint32_t index, size_t nargs, ...);
 
 /// Query the descriptive label associated with a given variable
 extern JIT_EXPORT const char *jit_var_label(uint32_t index);
