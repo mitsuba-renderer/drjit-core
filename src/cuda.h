@@ -10,6 +10,7 @@
 #pragma once
 
 #include "cuda_api.h"
+#include <utility>
 
 /// Major version of the detected CUDA version
 extern int jitc_cuda_version_major;
@@ -37,8 +38,8 @@ extern void *jitc_cuda_lookup(const char *name);
 
 struct Kernel;
 
-/// Compile an IR string
-extern void jitc_cuda_compile(const char *str, size_t size, Kernel &kernel);
+/// Compile an PTX string. Returns the resulting module and a cache hit true/false flag
+extern std::pair<CUmodule, bool> jitc_cuda_compile(const char *str);
 
 /// Assert that a CUDA operation is correctly issued
 #define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)

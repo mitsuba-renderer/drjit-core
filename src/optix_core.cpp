@@ -369,10 +369,6 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
 #endif
 
     size_t size_before = pipeline.program_groups.size();
-#if 0
-    OptixStackSizes stack_sizes;
-    unsigned int cssRG = 0, dssDC = 0;
-#endif
 
     for (uint32_t i = 0; i < n_programs; ++i) {
         if (i == 0)
@@ -380,14 +376,6 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
         else
             free((char *) pgd[i].callables.entryFunctionNameDC);
         pipeline.program_groups.push_back(kernel.optix.pg[i]);
-#if 0
-        jitc_optix_check(optixProgramGroupGetStackSize(
-            pipeline.program_groups[i], &stack_sizes));
-        if (i == 0)
-            cssRG = stack_sizes.cssRG;
-        else
-            dssDC = std::max(dssDC, stack_sizes.dssDC);
-#endif
     }
 
     log_size = sizeof(error_log);
@@ -431,7 +419,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
         jitc_log(Error, "jit_optix_compile(): an OptiX program is using "
                         "continuous callables which is not supported by Dr.Jit!");
 
-    unsigned int max_dc_depth = 2; // Support nested Calls
+    unsigned int max_dc_depth = 2; // Support nested calls
     unsigned int dc_stack_size_from_traversal = 0; // DC is not invoked from IS or AH.
     unsigned int dc_stack_size_from_state = max_dc_depth * ssp.dssDC; // DC is invoked from RG, MS, or CH.
     unsigned int continuation_stack_size = ssp.cssRG + std::max(std::max(ssp.cssCH, ssp.cssMS), ssp.cssAH + ssp.cssIS);
