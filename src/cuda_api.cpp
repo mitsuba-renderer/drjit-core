@@ -101,10 +101,6 @@ bool jitc_cuda_api_init() {
         LOAD(cuInit);
         LOAD(cuLaunchHostFunc);
         LOAD(cuLaunchKernel);
-        LOAD(cuLinkAddData, "v2");
-        LOAD(cuLinkComplete);
-        LOAD(cuLinkCreate, "v2");
-        LOAD(cuLinkDestroy);
         LOAD(cuMemAdvise);
         LOAD(cuMemAlloc, "v2");
         LOAD(cuMemAllocHost, "v2");
@@ -118,6 +114,7 @@ bool jitc_cuda_api_init() {
         LOAD(cuMemsetD8Async);
         LOAD(cuModuleGetFunction);
         LOAD(cuModuleLoadData);
+        LOAD(cuModuleLoadDataEx);
         LOAD(cuModuleUnload);
         LOAD(cuOccupancyMaxPotentialBlockSize);
         LOAD(cuCtxPushCurrent, "v2");
@@ -168,11 +165,10 @@ void jitc_cuda_api_shutdown() {
     Z(cuEventCreate); Z(cuEventDestroy); Z(cuEventRecord);
     Z(cuEventSynchronize); Z(cuEventElapsedTime); Z(cuFuncSetAttribute);
     Z(cuGetErrorName); Z(cuGetErrorString); Z(cuInit); Z(cuLaunchHostFunc);
-    Z(cuLaunchKernel); Z(cuLinkAddData); Z(cuLinkComplete); Z(cuLinkCreate);
-    Z(cuLinkDestroy); Z(cuMemAdvise); Z(cuMemAlloc); Z(cuMemAllocHost);
+    Z(cuLaunchKernel); Z(cuMemAdvise); Z(cuMemAlloc); Z(cuMemAllocHost);
     Z(cuMemFree); Z(cuMemFreeHost); Z(cuMemcpy); Z(cuMemcpyAsync);
     Z(cuMemsetD16Async); Z(cuMemsetD32Async); Z(cuMemsetD8Async);
-    Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleUnload);
+    Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleLoadDataEx); Z(cuModuleUnload);
     Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxPushCurrent);
     Z(cuCtxPopCurrent); Z(cuStreamCreate); Z(cuStreamDestroy);
     Z(cuStreamSynchronize); Z(cuStreamWaitEvent); Z(cuPointerGetAttribute);

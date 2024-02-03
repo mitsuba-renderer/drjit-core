@@ -39,9 +39,11 @@ CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                 [(int) VarType::Count] = { };
 CUfunction *jitc_cuda_aggregate = nullptr;
 
-void jitc_cuda_compile(const char *buf, size_t buf_size, Kernel &kernel) {
+std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf) {
     const uintptr_t log_size = 16384;
     char error_log[log_size], info_log[log_size];
+	info_log[0] = '\0';
+	error_log[0] = '\0';
 
     CUjit_option arg[] = {
         CU_JIT_OPTIMIZATION_LEVEL,
@@ -65,32 +67,37 @@ void jitc_cuda_compile(const char *buf, size_t buf_size, Kernel &kernel) {
         (void *) 0
     };
 
-    CUlinkState link_state;
-    cuda_check(cuLinkCreate(sizeof(argv) / sizeof(void *), arg, argv, &link_state));
+	size_t nargs = sizeof(arg) / sizeof(CUjit_option);
 
-    int rt = cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *) buf,
-                           buf_size, nullptr, 0, nullptr, nullptr);
-    if (rt != CUDA_SUCCESS)
-        jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
-                  "assembly listing and error message below:\n\n%s\n\n%s",
-                  buf, error_log);
+	CUmodule mod = nullptr;
+	CUresult rv = 0;
 
-    void *link_output = nullptr;
-    size_t link_output_size = 0;
-    cuda_check(cuLinkComplete(link_state, &link_output, &link_output_size));
-    if (rt != CUDA_SUCCESS)
-        jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
-                  "assembly listing and error message below:\n\n%s\n\n%s",
-                  buf, error_log);
+	for (int i = 0; i < 2; ++i) {
+		{
+			unlock_guard guard(state.lock);
+            rv = cuModuleLoadDataEx(&mod, buf, nargs, arg, argv);
+        }
 
-    jitc_log(Trace, "Detailed linker output:\n%s", info_log);
+		if (rv == CUDA_ERROR_OUT_OF_MEMORY) {
+			if (i == 0)
+                jitc_flush_malloc_cache(true);
+			else
+				cuda_check(rv);
+		} else {
+			break;
+		}
+	}
 
-    kernel.data = malloc_check(link_output_size);
-    kernel.size = (uint32_t) link_output_size;
-    memcpy(kernel.data, link_output, link_output_size);
+	if (rv != CUDA_SUCCESS)
+		jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
+				  "assembly listing and error message below:\n\n%s\n\n%s",
+				  buf, error_log);
 
-    // Destroy the linker invocation
-    cuda_check(cuLinkDestroy(link_state));
+	bool cache_hit = info_log[0] == '\0';
+	if (!cache_hit)
+		jitc_log(Trace, "Detailed linker output:\n%s", info_log);
+
+    return { mod, cache_hit };
 }
 
 void cuda_check_impl(CUresult errval, const char *file, const int line) {
@@ -224,9 +231,6 @@ bool jitc_cuda_init() {
                                                  : kernels_50_size_uncompressed;
         int kernels_size_compressed   = cc >= 70 ? kernels_70_size_compressed
                                                  : kernels_50_size_compressed;
-        XXH128_hash_t kernels_hash;
-        kernels_hash.low64  = cc >= 70 ? kernels_70_hash_low64  : kernels_50_hash_low64;
-        kernels_hash.high64 = cc >= 70 ? kernels_70_hash_high64 : kernels_50_hash_high64;
 
         // Decompress the supplemental PTX content
         char *uncompressed =
@@ -242,25 +246,9 @@ bool jitc_cuda_init() {
 
         uncompressed_ptx[kernels_size_uncompressed] = '\0';
 
-        hash_combine((size_t &) kernels_hash.low64, (size_t) cc);
-        hash_combine((size_t &) kernels_hash.high64, (size_t) cc);
-
-        Kernel kernel;
-        if (!jitc_kernel_load(uncompressed_ptx, kernels_size_uncompressed,
-                              JitBackend::CUDA, kernels_hash, kernel)) {
-            jitc_cuda_compile(uncompressed_ptx, kernels_size_uncompressed,
-                              kernel);
-            jitc_kernel_write(uncompressed_ptx, kernels_size_uncompressed,
-                              JitBackend::CUDA, kernels_hash, kernel);
-        }
-
+		CUmodule m = jitc_cuda_compile(uncompressed_ptx).first;
+		jitc_cuda_module[i] = m;
         free(uncompressed);
-
-        // .. and register it with CUDA
-        CUmodule m;
-        cuda_check(cuModuleLoadData(&m, kernel.data));
-        free(kernel.data);
-        jitc_cuda_module[i] = m;
 
         #define LOAD(name)                                                       \
             if (i == 0)                                                          \

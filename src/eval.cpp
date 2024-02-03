@@ -404,7 +404,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 }
 
 static ProfilerRegion profiler_region_backend_compile("jit_eval: compiling");
-static ProfilerRegion profiler_region_backend_load("jit_eval: loading");
 
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     uint64_t flags = 0;
@@ -431,51 +430,32 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     if (it == state.kernel_cache.end()) {
         bool cache_hit = false;
 
-        if (!uses_optix)
+        if (ts->backend == JitBackend::CUDA) {
+			ProfilerPhase profiler(profiler_region_backend_compile);
+			if (!uses_optix) {
+				kernel.size = 1; // dummy size value to distinguish between OptiX and CUDA kernels
+				kernel.data = nullptr;
+				std::tie(kernel.cuda.mod, cache_hit) = jitc_cuda_compile(buffer.get());
+			} else {
+				#if defined(DRJIT_ENABLE_OPTIX)
+					cache_hit = jitc_optix_compile(
+						ts, buffer.get(), buffer.size(), kernel_name, kernel);
+				#endif
+			}
+		} else {
             cache_hit = jitc_kernel_load(buffer.get(), (uint32_t) buffer.size(),
                                          ts->backend, kernel_hash, kernel);
 
-        if (!cache_hit) {
-            ProfilerPhase profiler(profiler_region_backend_compile);
-            if (ts->backend == JitBackend::CUDA) {
-                if (!uses_optix) {
-                    jitc_cuda_compile(buffer.get(), buffer.size(), kernel);
-                } else {
-#if defined(DRJIT_ENABLE_OPTIX)
-                    cache_hit = jitc_optix_compile(
-                        ts, buffer.get(), buffer.size(), kernel_name, kernel);
-#else
-                    jitc_fail("jit_run(): OptiX support was not enabled in DrJit.");
-#endif
-                }
-            } else {
-                jitc_llvm_compile(kernel);
-            }
-
-            if (kernel.data)
+			if (!cache_hit) {
+				ProfilerPhase profiler(profiler_region_backend_compile);
+				jitc_llvm_compile(kernel);
                 jitc_kernel_write(buffer.get(), (uint32_t) buffer.size(),
                                   ts->backend, kernel_hash, kernel);
-        }
+				jitc_llvm_disasm(kernel);
+			}
+		}
 
-        ProfilerPhase profiler(profiler_region_backend_load);
-
-        if (ts->backend == JitBackend::LLVM) {
-            jitc_llvm_disasm(kernel);
-        } else if (!uses_optix) {
-            CUresult ret = (CUresult) 0;
-            /* Unlock while synchronizing */ {
-                unlock_guard guard(state.lock);
-                ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
-            }
-            if (ret == CUDA_ERROR_OUT_OF_MEMORY) {
-                jitc_flush_malloc_cache(true);
-                /* Unlock while synchronizing */ {
-                    unlock_guard guard(state.lock);
-                    ret = cuModuleLoadData(&kernel.cuda.mod, kernel.data);
-                }
-            }
-            cuda_check(ret);
-
+        if (ts->backend == JitBackend::CUDA && !uses_optix) {
             // Locate the kernel entry point
             size_t offset = buffer.size();
             buffer.fmt_cuda(2, "drjit_$Q$Q", kernel_hash.high64,
@@ -497,9 +477,6 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             cuda_check(cuFuncSetAttribute(
                 kernel.cuda.func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
                 CU_SHAREDMEM_CARVEOUT_MAX_L1));
-
-            free(kernel.data);
-            kernel.data = nullptr;
         }
 
         float link_time = timer();

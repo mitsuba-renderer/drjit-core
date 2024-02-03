@@ -44,7 +44,6 @@ extern void jitc_cuda_sync_stream(uintptr_t stream);
 #  define CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT 9
 #  define CU_FUNC_CACHE_PREFER_L1 2
 
-#  define CU_JIT_INPUT_PTX 1
 #  define CU_JIT_INFO_LOG_BUFFER 3
 #  define CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES 4
 #  define CU_JIT_ERROR_LOG_BUFFER 5
@@ -236,11 +235,6 @@ DR_CUDA_SYM(CUresult (*cuLaunchKernel)(CUfunction f, unsigned int, unsigned int,
                                        unsigned int, unsigned int, unsigned int,
                                        unsigned int, unsigned int, CUstream, void **,
                                        void **));
-DR_CUDA_SYM(CUresult (*cuLinkAddData)(CUlinkState, int, void *, size_t, const char *,
-                                      unsigned int, int *, void **));
-DR_CUDA_SYM(CUresult (*cuLinkComplete)(CUlinkState, void **, size_t *));
-DR_CUDA_SYM(CUresult (*cuLinkCreate)(unsigned int, int *, void **, CUlinkState *));
-DR_CUDA_SYM(CUresult (*cuLinkDestroy)(CUlinkState));
 DR_CUDA_SYM(CUresult (*cuPointerGetAttribute)(void* data, int, void*));
 DR_CUDA_SYM(CUresult (*cuMemAdvise)(void *, size_t, int, CUdevice));
 DR_CUDA_SYM(CUresult (*cuMemAlloc)(void **, size_t));
@@ -254,6 +248,7 @@ DR_CUDA_SYM(CUresult (*cuMemsetD32Async)(void *, unsigned int, size_t, CUstream)
 DR_CUDA_SYM(CUresult (*cuMemsetD8Async)(void *, unsigned char, size_t, CUstream));
 DR_CUDA_SYM(CUresult (*cuModuleGetFunction)(CUfunction *, CUmodule, const char *));
 DR_CUDA_SYM(CUresult (*cuModuleLoadData)(CUmodule *, const void *));
+DR_CUDA_SYM(CUresult (*cuModuleLoadDataEx)(CUmodule *, const void *, unsigned int, CUjit_option*, void**));
 DR_CUDA_SYM(CUresult (*cuModuleUnload)(CUmodule));
 DR_CUDA_SYM(CUresult (*cuOccupancyMaxPotentialBlockSize)(int *, int *, CUfunction,
                                                          void *, size_t, int));
