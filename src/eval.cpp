@@ -551,8 +551,43 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
             cuda_check(cuStreamSynchronize(ts->stream));
     } else {
-        uint32_t packets =
-            (group.size + jitc_llvm_vector_width - 1) / jitc_llvm_vector_width;
+        uint32_t size = group.size,
+                 packet_size = jitc_llvm_vector_width,
+                 desired_block_size = jitc_llvm_block_size,
+                 packets = (size + packet_size - 1) / packet_size,
+                 cores = pool_size();
+
+        // We really don't know how much computation this kernel performs, and
+        // it's important to benefit from parallelism. The following heuristic
+        // therefore errs on the side of making too many parallel work units
+        // ("blocks").
+        //
+        // The code below implements the following strategy with 3 "regimes":
+        //
+        // 1. If there is very little work to be done, 1 block == 1 SIMD packet.
+        //    As the amount of work increases, add more blocks until we have
+        //    enough of them to give one to each processor.
+        //
+        // 2. As the amount of work further increases, do more work within each
+        //    block until a maximum is reached (16K elements per block by default)
+        //
+        // 3. Now, keep the block size fixed and instead more blocks. This permits
+        //    better load balancing in case some of the blocks terminate early.
+
+        uint32_t blocks, block_size;
+        if (cores <= 1) {
+            blocks = 1;
+            block_size = size;
+        } else if (packets <= cores) {
+            blocks = packets;
+            block_size = packet_size;
+        } else if (size <= desired_block_size * cores * 2) {
+            blocks = cores;
+            block_size = (packets + blocks - 1) / blocks * packet_size;
+        } else {
+            block_size = desired_block_size;
+            blocks = (size + block_size - 1) / block_size;
+        }
 
         auto callback = [](uint32_t index, void *ptr) {
             void **params = (void **) ptr;
@@ -562,6 +597,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                      start      = index * block_size,
                      thread_id  = pool_thread_id(),
                      end        = std::min(start + block_size, size);
+
+            if (start >= end)
+                return;
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
             // Signal start of kernel
@@ -577,21 +615,17 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 #endif
         };
 
-        uint32_t block_size = jitc_llvm_block_size,
-                 blocks = (group.size + block_size - 1) / block_size;
-
         kernel_params[0] = (void *) kernel.llvm.reloc[0];
         kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) +
-                                     (uintptr_t) group.size);
+                                     (uintptr_t) size);
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
         kernel_params[2] = kernel.llvm.itt;
 #endif
 
-        jitc_trace("jit_run(): launching %u packet%s in %u block%s ..",
-                   packets, packets == 1 ? "" : "s", blocks,
-                   blocks == 1 ? "" : "s");
-        (void) packets; // jitc_trace may be disabled
+        jitc_trace("jit_run(): launching %u %u-wide packet%s in %u block%s of size %u ..",
+                   packets, packet_size, packets == 1 ? "" : "s", blocks,
+                   blocks == 1 ? "" : "s", block_size);
 
         ret_task = task_submit_dep(
             nullptr, &jitc_task, 1, blocks,
