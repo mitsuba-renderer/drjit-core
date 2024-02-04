@@ -298,6 +298,9 @@ void jit_llvm_set_thread_count(uint32_t size) {
 }
 
 void jit_llvm_set_block_size(uint32_t size) {
+    if ((size & (size - 1)) != 0 || size < jitc_llvm_vector_width)
+        jit_raise("jit_llvm_set_block_size(): value must be a power of two and "
+                  "bigger than the packet size (%u)!", jitc_llvm_vector_width);
     jitc_llvm_block_size = size;
 }
 
