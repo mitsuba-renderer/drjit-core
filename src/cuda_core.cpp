@@ -56,6 +56,10 @@ std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf) {
         CU_JIT_GENERATE_DEBUG_INFO
     };
 
+    /// Generate debug ine information when this code is run within NSight Compute
+    const bool have_line_info =
+        getenv("NV_NSIGHT_INJECTION_TRANSPORT_TYPE") != nullptr;
+
     void *argv[] = {
         (void *) 4,
         (void *) 1,
@@ -63,7 +67,7 @@ std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf) {
         (void *) log_size,
         (void *) error_log,
         (void *) log_size,
-        (void *) 0,
+        (void *) (uintptr_t) have_line_info,
         (void *) 0
     };
 
