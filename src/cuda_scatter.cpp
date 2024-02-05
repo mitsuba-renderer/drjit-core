@@ -246,46 +246,6 @@ void jitc_cuda_render_scatter_reduce_bfly_64(const char *tp, const char *op,
         op, tp);
 }
 
-/// Faster variant of the above that uses a native PTX reduction operation
-/// (redux.sync). Sadly, this is only supported for 32 bit signed/unsigned
-/// integers and newer hardware (compute capability 8.0+).
-void jitc_cuda_render_scatter_reduce_redux_32(const char *tp, const char *op,
-                                              uint32_t shiftamt) {
-    fmt_intrinsic(
-        ".func reduce_$s_$s (.param .u64 ptr, .param .$s value) {\n"
-        "    .reg .$s %value, %combined;\n"
-        "    .reg .b64 %ptr, %ptr_shift;\n"
-        "    .reg .b32 %active, %ptr_id, %active_p, %active_p_rev,\n"
-        "              %leader_idx, %cur_idx;\n"
-        "    .reg .pred %leader;\n\n"
-        ""
-        "    ld.param.u64 %ptr, [ptr];\n"
-        "    ld.param.$s %value, [value];\n"
-        "    activemask.b32 %active;\n"
-        "    mov.u32 %cur_idx, %laneid;\n"
-        "    shr.b64 %ptr_shift, %ptr, $u;\n"
-        "    cvt.u32.u64 %ptr_id, %ptr_shift;\n"
-        "    match.any.sync.b32 %active_p, %ptr_id, %active;\n"
-        "    redux.sync.$s.$s %combined, %value, %active_p;\n"
-        "    brev.b32 %active_p_rev, %active_p;\n"
-        "    clz.b32 %leader_idx, %active_p_rev;\n"
-        "    setp.eq.u32 %leader, %leader_idx, %cur_idx;\n"
-        "    @!%leader bra done;\n\n"
-        ""
-        "    red.global.$s.$s [%ptr], %combined;\n\n"
-        ""
-        "done:\n"
-        "    ret;\n"
-        "}",
-        op, tp, tp,
-        tp,
-        tp,
-        shiftamt,
-        op, tp,
-        op, tp
-    );
-}
-
 void jitc_cuda_render_scatter_reduce(const Variable *v,
                                      const Variable *ptr,
                                      const Variable *value,
@@ -325,9 +285,7 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
     bool reduce_bfly_32 = ts->ptx_version >= 63 && ts->compute_capability >= 70 &&
                           (vt == VarType::UInt32 || vt == VarType::Int32 || vt == VarType::Float32),
          reduce_bfly_64 = ts->ptx_version >= 63 && ts->compute_capability >= 70 &&
-                          (vt == VarType::UInt64 || vt == VarType::Int64 || vt == VarType::Float64),
-         reduce_redux_32 = ts->ptx_version >= 70 && ts->compute_capability >= 80 &&
-                          (vt == VarType::UInt32 || vt == VarType::Int32);
+                          (vt == VarType::UInt64 || vt == VarType::Int64 || vt == VarType::Float64);
 
     if (mode == ReduceMode::NoConflicts) {
         fmt("    {\n"
@@ -337,11 +295,9 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
             "        st.global.$s [%rd3], %tmp;\n"
             "    }\n",
             tp, tp, op_name, tp, value);
-    } else if (mode == ReduceMode::Local && (reduce_bfly_32 || reduce_bfly_64 || reduce_redux_32)) {
+    } else if (mode == ReduceMode::Local && (reduce_bfly_32 || reduce_bfly_64)) {
         uint32_t shiftamt = log2i_ceil(type_size[(int) vt]);
-        if (reduce_redux_32)
-            jitc_cuda_render_scatter_reduce_redux_32(tp, op_name, shiftamt);
-        else if (reduce_bfly_32)
+        if (reduce_bfly_32)
             jitc_cuda_render_scatter_reduce_bfly_32(tp, op_name, op_name_ftz, shiftamt);
         else if (reduce_bfly_64)
             jitc_cuda_render_scatter_reduce_bfly_64(tp, op_name, op_name_ftz, shiftamt);
