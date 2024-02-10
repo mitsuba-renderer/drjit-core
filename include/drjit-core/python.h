@@ -11,6 +11,7 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
+#include <nanobind/stl/detail/nb_list.h>
 #include <drjit-core/nanostl.h>
 #include <drjit-core/half.h>
 
@@ -113,6 +114,29 @@ template <> struct type_caster<drjit::half> {
 
     NB_TYPE_CASTER(drjit::half, const_name("half"))
 };
+
+template <> struct type_caster<drjit::string> {
+    NB_TYPE_CASTER(drjit::string, const_name("str"))
+
+    bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
+        Py_ssize_t size;
+        const char *str = PyUnicode_AsUTF8AndSize(src.ptr(), &size);
+        if (!str) {
+            PyErr_Clear();
+            return false;
+        }
+        value = drjit::string(str, (size_t) size);
+        return true;
+    }
+
+    static handle from_cpp(const drjit::string &value, rv_policy,
+                           cleanup_list *) noexcept {
+        return PyUnicode_FromStringAndSize(value.begin(), value.size());
+    }
+};
+
+template <typename Type>
+struct type_caster<drjit::vector<Type>> : list_caster<drjit::vector<Type>, Type> { };
 
 NAMESPACE_END(detail)
 

@@ -22,12 +22,16 @@
 #  define JIT_INLINE    __forceinline
 #  define JIT_NOINLINE  __declspec(noinline)
 #  define JIT_NORETURN_FORMAT
+#  define JIT_NO_UBSAN
+#  define JIT_BUILTIN(name) ::name
 #else
 #  define JIT_EXPORT    __attribute__ ((visibility("default")))
 #  define JIT_MALLOC    __attribute__((malloc))
 #  define JIT_INLINE    __attribute__ ((always_inline)) inline
 #  define JIT_NOINLINE  __attribute__ ((noinline))
 #  define JIT_NORETURN_FORMAT __attribute__((noreturn, __format__ (__printf__, 1, 2)))
+#  define JIT_NO_UBSAN __attribute__ ((no_sanitize("undefined")))
+#  define JIT_BUILTIN(name) ::__builtin_##name
 #endif
 
 #if defined(__cplusplus)
