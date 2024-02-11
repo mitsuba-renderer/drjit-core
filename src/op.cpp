@@ -1155,7 +1155,10 @@ uint32_t jitc_var_xor(uint32_t a0, uint32_t a1) {
 // --------------------------------------------------------------------------
 
 template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
-T eval_shl(T v0, T v1) { return v0 << v1; }
+T eval_shl(T v0, T v1) {
+    using UInt = std::make_unsigned_t<T>;
+    return (T) (((UInt) v0) << ((UInt) v1));
+}
 
 template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bool>> = 0>
 T eval_shl(T, T) { jitc_fail("eval_shl(): unsupported operands!"); }
@@ -1548,6 +1551,7 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
             uint32_t captured = 0;
             jitc_memcpy((JitBackend) v->backend, &captured,
                         jitc_var(v->dep[2])->data, sizeof(uint32_t));
+            v = jitc_var(index);
 
             const char *label = jitc_var_label(index);
             if (captured) {
@@ -2032,7 +2036,6 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
             auto [target_i, expand_i] = jitc_var_expand(target, op);
             target = steal(target_i);
-            target_v = jitc_var(target);
             reduce_expanded = target_i;
 
             Variable v{};
@@ -2059,6 +2062,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     // equals 2. Otherwise, we must make a copy first. If a reference count was
     // stashed via \ref jitc_var_stash_ref() (e.g., prior to a control flow
     // operation like dr.if_stmt()), then use that instead.
+    target_v = jitc_var(target);
     if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));
 

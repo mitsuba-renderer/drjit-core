@@ -35,6 +35,8 @@ uint32_t jitc_var_cond_start(const char *name, bool symbolic, uint32_t cond_t, u
 
     jitc_new_scope((JitBackend) cond_t_v->backend);
     uint32_t index = jitc_var_new(v2);
+
+    cond_t_v = jitc_var(cond_t);
     jitc_new_scope((JitBackend) cond_t_v->backend);
 
     jitc_var_set_callback(
@@ -51,21 +53,22 @@ uint32_t jitc_var_cond_start(const char *name, bool symbolic, uint32_t cond_t, u
 uint32_t jitc_var_cond_append(uint32_t index, const uint32_t *rv, size_t count) {
     const Variable *v = jitc_var(index);
     CondData *cd = (CondData *) v->data;
+    JitBackend backend = (JitBackend) v->backend;
 
     Variable v2;
     v2.kind = (uint32_t) cd->labels[0] ? VarKind::CondEnd : VarKind::CondMid;
     v2.type = (uint32_t) VarType::Void;
     v2.size = v->size;
-    v2.backend = v->backend;
+    v2.backend = (uint32_t) backend;
     v2.dep[0] = index;
     v2.dep[1] = cd->labels[0];
     jitc_var_inc_ref(index);
     jitc_var_inc_ref(cd->labels[0]);
-    jitc_new_scope((JitBackend) v->backend);
+    jitc_new_scope(backend);
     uint32_t index_2 = jitc_var_new(v2);
-    jitc_new_scope((JitBackend) v->backend);
+    jitc_new_scope(backend);
 
-    std::vector<uint32_t> &se = thread_state(v->backend)->side_effects_symbolic;
+    std::vector<uint32_t> &se = thread_state(backend)->side_effects_symbolic;
     uint32_t se_count = (uint32_t) se.size() - cd->se_offset;
 
     if (!cd->labels[0]) {
@@ -94,11 +97,15 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
     const Variable *v = jitc_var(index);
     CondData *cd = (CondData *) v->data;
     uint32_t pred = cd->labels[1];
+    JitBackend backend = (JitBackend) v->backend;
+    uint32_t size = v->size;
+    uint32_t i_cond = v->dep[0];
+    bool symbolic = v->symbolic;
 
     Variable v2;
     v2.kind = (uint32_t) VarKind::CondOutput;
-    v2.size = v->size;
-    v2.backend = v->backend;
+    v2.size = size;
+    v2.backend = (uint32_t) backend;
     cd->indices_out.reserve(cd->indices_f.size());
 
     size_t variable_count_actual = 0,
@@ -114,8 +121,9 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
 
         Variable *v_t = jitc_var(i_t),
                  *v_f = jitc_var(i_f);
+        VarType vt = (VarType) v_t->type;
 
-        storage += type_size[v_t->type];
+        storage += type_size[(int) vt];
         if (i_t == i_f) {
             jitc_var_inc_ref(i_t, v_t);
             rv_out[i] = i_t;
@@ -123,7 +131,7 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
             continue;
         }
 
-        uint32_t l1 = v->size, l2 = v_t->size, l3 = v_f->size,
+        uint32_t l1 = size, l2 = v_t->size, l3 = v_f->size,
                  lm = std::max(std::max(l1, l2), l3);
 
         if ((l1 != lm && l1 != 1) || (l2 != lm && l2 != 1) ||
@@ -132,13 +140,13 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
                 jitc_var_dec_ref(rv_out[j]);
             jitc_raise("jit_var_cond(): operands r%u, r%u, and r%u have "
                        "incompatible sizes! (%u, %u, %u)",
-                       v->dep[0], i_t, i_f, l1, l2, l3);
+                       i_cond, i_t, i_f, l1, l2, l3);
         }
 
         v2.dep[0] = i_t;
         v2.dep[1] = i_f;
         v2.dep[2] = pred;
-        v2.type = v_t->type;
+        v2.type = (uint32_t) vt;
         jitc_var_inc_ref(i_t, v_t);
         jitc_var_inc_ref(i_f, v_f);
         jitc_var_inc_ref(pred);
@@ -149,25 +157,25 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
         );
         rv_out[i] = index_2;
         variable_count_actual++;
-        storage_actual += type_size[v_t->type];
+        storage_actual += type_size[(int) vt];
     }
 
     size_t side_effect_count = cd->se_t.size() + cd->se_f.size();
     if (side_effect_count > 0) {
-        auto traverse_se = [v, pred](std::vector<uint32_t> &list) {
+        auto traverse_se = [backend, size, pred, symbolic](std::vector<uint32_t> &list) {
             for (uint32_t index: list) {
                 Variable *v2 = jitc_var(index);
-                if (v->size != v2->size && v2->size != 1 && v->size != 1)
+                if (size != v2->size && v2->size != 1 && size != 1)
                     jitc_raise(
                         "jitc_var_cond_end(): size of side effect (%u) is "
                         "incompatible with size of loop condition (%u).",
-                        v2->size, v->size);
+                        v2->size, size);
                 Variable v_se;
                 v_se.kind = (uint32_t) VarKind::Nop;
                 v_se.type = (uint32_t) VarType::Void;
-                v_se.backend = (uint32_t) v->backend;
-                v_se.symbolic = v->symbolic;
-                v_se.size = std::max(v->size, v2->size);
+                v_se.backend = (uint32_t) backend;
+                v_se.symbolic = (uint32_t) symbolic;
+                v_se.size = std::max(size, v2->size);
                 v_se.dep[0] = index; // steal ref
                 v_se.dep[1] = pred;
                 v2->side_effect = false;
