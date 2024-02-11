@@ -291,6 +291,11 @@ void jitc_var_free(uint32_t index, Variable *v) {
     } else {
         jitc_var_dec_ref_se(dep[3]);
     }
+
+    // Optional: intense internal sanitation instrumentation
+#if defined(DRJIT_SANITIZE_INTENSE)
+    jitc_sanitation_checkpoint();
+#endif
 }
 
 /// Access a variable by ID, terminate with an error if it doesn't exist
@@ -662,6 +667,11 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     }
 
     jitc_var_inc_ref(index, vo);
+
+    // Optional: intense internal sanitation instrumentation
+#if defined(DRJIT_SANITIZE_INTENSE)
+    jitc_sanitation_checkpoint();
+#endif
 
     return index;
 }
@@ -1960,6 +1970,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op
     dst = steal(jitc_var_literal(JitBackend::LLVM, vt, &identity, new_size, 0));
     dst = steal(jitc_var_data(dst, false, &dst_addr));
 
+    v = jitc_var(index);
     if (!v->is_literal() || v->literal != identity) {
         void *src_addr = nullptr;
         Ref src = steal(jitc_var_data(index, false, &src_addr));
@@ -2284,3 +2295,11 @@ const char *jitc_var_graphviz() {
 
     return var_buffer.get();
 }
+
+// Intense internal instrumentation to catch undefined behavior
+#if defined(DRJIT_SANITIZE_INTENSE)
+void jitc_sanitation_checkpoint() {
+    std::vector<Variable> variables_copy(state.variables);
+    state.variables = std::move(variables_copy);
+}
+#endif

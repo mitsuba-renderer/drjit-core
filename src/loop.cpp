@@ -307,9 +307,9 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             v_phi.type = v2->type;
             jitc_var_inc_ref(ld->loop_start);
             jitc_var_inc_ref(loop_end);
-            index_new = jitc_var_new(v_phi, true);
-            state_vars_actual++;
             state_vars_actual_size += type_size[v2->type];
+            state_vars_actual++;
+            index_new = jitc_var_new(v_phi, true);
         } else {
             index_new = ld->inner_out[i];
             jitc_var_inc_ref(index_new);

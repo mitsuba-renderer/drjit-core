@@ -844,13 +844,13 @@ void jitc_eval_impl(ThreadState *ts) {
         memset(v->dep, 0, sizeof(uint32_t) * 4);
         v->side_effect = false;
 
+        jitc_var_dec_ref(index, v);
+
         if (side_effect)
-            jitc_var_dec_ref(index);
+            jitc_var_dec_ref(index, v);
 
         for (int j = 0; j < 4; ++j)
             jitc_var_dec_ref(dep[j]);
-
-        jitc_var_dec_ref(index, v);
     }
 }
 
@@ -871,7 +871,9 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
                  n_se = check.empty() ? 0 : (check[inst + 1] - check[inst]);
 
     const uint32_t *out = call->inner_out.data() + n_out * inst,
-                   *se = call->side_effects.data() + check[inst];
+                   *se = call->side_effects.empty()
+                             ? nullptr
+                             : (call->side_effects.data() + check[inst]);
 
     for (size_t i = 0; i < n_out; ++i) {
         if (call->out_offset[i] == (uint32_t) -1)

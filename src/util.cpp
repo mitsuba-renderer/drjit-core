@@ -233,7 +233,7 @@ static Reduction jitc_reduce_create(ReduceOp op) {
 
     switch (op) {
         case ReduceOp::Add:
-            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) JIT_NO_UBSAN {
                 const Value *ptr = (const Value *) ptr_;
                 Value result = 0;
                 for (uint32_t i = start; i != end; ++i)
@@ -242,7 +242,7 @@ static Reduction jitc_reduce_create(ReduceOp op) {
             };
 
         case ReduceOp::Mul:
-            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) JIT_NO_UBSAN {
                 const Value *ptr = (const Value *) ptr_;
                 Value result = 1;
                 for (uint32_t i = start; i != end; ++i)
@@ -1441,8 +1441,8 @@ template <typename Value>
 static ReduceExpanded jitc_reduce_expanded_create(ReduceOp op) {
     using UInt = uint_with_size_t<Value>;
 
-    struct Add { Value operator()(Value a, Value b) { return a + b; }};
-    struct Mul { Value operator()(Value a, Value b) { return a * b; }};
+    struct Add { Value operator()(Value a, Value b) JIT_NO_UBSAN { return a + b; }};
+    struct Mul { Value operator()(Value a, Value b) JIT_NO_UBSAN { return a * b; }};
     struct Min { Value operator()(Value a, Value b) { return std::min(a, b); }};
     struct Max { Value operator()(Value a, Value b) { return std::max(a, b); }};
     struct And {

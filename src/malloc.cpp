@@ -206,6 +206,11 @@ void* jitc_malloc(AllocType type, size_t size) {
         jitc_trace("jit_malloc(type=%s, size=%zu): " DRJIT_PTR " (%s)",
                    alloc_type_name[(int) type], size, (uintptr_t) ptr, descr);
 
+    // Optional: intense internal sanitation instrumentation
+#if defined(DRJIT_SANITIZE_INTENSE)
+    jitc_sanitation_checkpoint();
+#endif
+
     return ptr;
 }
 
@@ -255,6 +260,7 @@ void jitc_free(void *ptr) {
     else
         jitc_trace("jit_free(" DRJIT_PTR ", type=%s, size=%zu)",
                    (uintptr_t) ptr, alloc_type_name[(int) type], size);
+
 }
 
 void jitc_malloc_clear_statistics() {

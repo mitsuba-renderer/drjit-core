@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include <cstdlib>
+#include <cstdint>
 #include <utility>
 #include <new>
 #include "macros.h"
