@@ -993,6 +993,10 @@ static void jitc_llvm_render(Variable *v) {
         case VarKind::CondMid: {
                 const CondData *cd = (CondData *) a0->data;
                 uint32_t loop_reg = a0->reg_index;
+                fmt("    br label %l_$u_t_trailer\n\n"
+                    "l_$u_t_trailer:\n",
+                    loop_reg, loop_reg);
+
                 fmt("    br label %l_$u_next\n\n"
                     "l_$u_next:\n",
                     loop_reg, loop_reg);
@@ -1002,7 +1006,7 @@ static void jitc_llvm_render(Variable *v) {
                                    *vo = jitc_var(cd->indices_out[i]);
                     if (!vo || !vo->reg_index)
                         continue;
-                    fmt("    $v_$u_t = phi $T [ $v, %l_$u_t ], [ undef, %l_$u_start ]\n",
+                    fmt("    $v_$u_t = phi $T [ $v, %l_$u_t_trailer ], [ undef, %l_$u_start ]\n",
                         a0, (uint32_t) i, vt, vt, loop_reg, loop_reg);
                 }
 
@@ -1019,6 +1023,10 @@ static void jitc_llvm_render(Variable *v) {
                 const CondData *cd = (CondData *) a0->data;
                 uint32_t loop_reg = a0->reg_index;
 
+                fmt("    br label %l_$u_f_trailer\n\n"
+                    "l_$u_f_trailer:\n",
+                    loop_reg, loop_reg);
+
                 fmt("    br label %l_$u_end\n\n"
                     "l_$u_end:\n",
                     loop_reg, loop_reg);
@@ -1028,7 +1036,7 @@ static void jitc_llvm_render(Variable *v) {
                                    *vo = jitc_var(cd->indices_out[i]);
                     if (!vo || !vo->reg_index)
                         continue;
-                    fmt("    $v_$u_f = phi $T [ $v, %l_$u_f ], [ undef, %l_$u_next ]\n",
+                    fmt("    $v_$u_f = phi $T [ $v, %l_$u_f_trailer ], [ undef, %l_$u_next ]\n",
                         a0, (uint32_t) i, vf, vf, loop_reg, loop_reg);
                 }
 
