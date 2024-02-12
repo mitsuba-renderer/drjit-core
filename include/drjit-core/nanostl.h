@@ -328,7 +328,18 @@ template <size_t I, typename... Args> JIT_INLINE auto&& get(drjit::tuple<Args...
 }
 
 namespace detail {
+    // Intrinsic to prune all occurrences of references and 'const'
+    template <typename T> struct strip_cr { using type = T; };
+    template <typename T> using strip_cr_t = typename strip_cr<T>::type;
+    template <typename T> struct strip_cr<const T> { using type = strip_cr_t<T>; };
+    template <typename T, size_t Size> struct strip_cr<T[Size]> { using type = strip_cr_t<T>[Size]; };
+    template <typename T, size_t Size> struct strip_cr<const T[Size]> { using type = strip_cr_t<T>[Size]; };
+    template <typename T> struct strip_cr<T*> { using type = strip_cr_t<T>*; };
+    template <typename T> struct strip_cr<T&> { using type = strip_cr_t<T>; };
+    template <typename T> struct strip_cr<T&&> { using type = strip_cr_t<T>; };
+
     template <typename, typename = int> struct formatter;
+    template <typename T> using make_formatter = formatter<strip_cr_t<T>>;
 };
 
 class string {
@@ -358,7 +369,7 @@ public:
     }
 
     template <typename T> string &assign(const T &value) {
-        using formatter = detail::formatter<T>;
+        using formatter = detail::make_formatter<T>;
         size_t bound = formatter::bound(0, value);
         m_data = unique_ptr<char[]>(new char[bound + 1]);
         m_capacity = bound;
@@ -413,18 +424,18 @@ public:
 
     template <typename T> string operator+(const T &v) const & {
         string r;
-        size_t s1 = size(), s2 = detail::formatter<T>::bound(0, v);
+        size_t s1 = size(), s2 = detail::make_formatter<T>::bound(0, v);
         r.grow(s1 + s2);
         r.put_unchecked(m_data.get(), s1);
-        detail::formatter<T>::format(r, 0, s2, v);
+        detail::make_formatter<T>::format(r, 0, s2, v);
         return r;
     }
 
     template <typename T> friend string operator+(const T &v, const string &s) {
         string r;
-        size_t s1 = detail::formatter<T>::bound(0, v), s2 = s.size();
+        size_t s1 = detail::make_formatter<T>::bound(0, v), s2 = s.size();
         r.grow(s1 + s2);
-        detail::formatter<T>::format(r, 0, s1, v);
+        detail::make_formatter<T>::format(r, 0, s1, v);
         r.put_unchecked(s.m_data.get(), s2);
         return r;
     }
@@ -437,22 +448,22 @@ public:
 
     string &iput(size_t) { return *this; }
     template <typename T> string &iput(size_t indent, const T &value) {
-        size_t bound = detail::formatter<T>::bound(indent, value);
+        size_t bound = detail::make_formatter<T>::bound(indent, value);
         grow(bound);
-        detail::formatter<T>::format(*this, indent, bound, value);
+        detail::make_formatter<T>::format(*this, indent, bound, value);
         return *this;
     }
 
     template <typename... Ts> string &iput(size_t indent, const Ts &...args) {
         size_t bounds[sizeof...(Ts)];
         int ctr = 0;
-        ((bounds[ctr++] = detail::formatter<Ts>::bound(indent, args)), ...);
+        ((bounds[ctr++] = detail::make_formatter<Ts>::bound(indent, args)), ...);
         size_t bound = 0;
         for (size_t i : bounds)
             bound += i;
         grow(bound);
         ctr = 0;
-        (detail::formatter<Ts>::format(*this, indent, bounds[ctr++], args), ...);
+        (detail::make_formatter<Ts>::format(*this, indent, bounds[ctr++], args), ...);
         return *this;
     }
 
@@ -580,7 +591,7 @@ template <> struct formatter<char> {
 };
 
 template <> struct formatter<char *> {
-    static size_t bound(size_t, const char *s) { return __builtin_strlen(s); }
+    static size_t bound(size_t, const char *s) { return JIT_BUILTIN(strlen)(s); }
     static void format(string &s, size_t, size_t bound, const char *value) {
         s.put_unchecked(value, bound);
     }
@@ -598,7 +609,7 @@ template <typename T> struct formatter<T, enable_if_t<std::is_floating_point_v<T
     static size_t bound(size_t, T) { return MaxSize; }
     static void format(string &s, size_t, size_t, T value) {
         char buf[MaxSize + 1];
-        size_t size = __builtin_snprintf(buf, MaxSize + 1, "%g", (double) value);
+        size_t size = JIT_BUILTIN(snprintf)(buf, MaxSize + 1, "%g", (double) value);
         s.put_unchecked(buf, size > MaxSize ? MaxSize : size);
     }
 };
@@ -619,6 +630,13 @@ struct dummy_string {
     size_t m_size = 0;
 };
 
+template <> struct formatter<bool> {
+    static size_t bound(size_t, bool) { return 1; }
+    static void format(string &s, size_t, size_t, bool value) {
+        char c = value ? '1' : '0';
+        s.put_unchecked(&c, 1);
+    }
+};
 
 NAMESPACE_END(detail)
 
