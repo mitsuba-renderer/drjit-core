@@ -175,6 +175,20 @@ public:
         m_size++;
     }
 
+    bool operator==(const vector &s) const {
+        if (m_size != s.m_size)
+            return false;
+        if (m_size == 0)
+            return true;
+        for (size_t i = 0; i < s.m_size; ++i) {
+            if (m_data[i] != s.m_data[i])
+                return false;
+        }
+        return true;
+    }
+
+    bool operator!=(const vector &s) const { return !operator==(s); }
+
     void pop_back() {
         back().~T();
         --m_size;
