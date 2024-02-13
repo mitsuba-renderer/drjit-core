@@ -107,6 +107,7 @@ using CUresult     = int;
 using CUdevice     = int;
 using CUdeviceptr  = void *;
 using CUjit_option = int;
+using CUarray_format = int;
 
 struct CUDA_ARRAY_DESCRIPTOR {
     size_t Width;
