@@ -2103,15 +2103,20 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
 
     if (reduce_expanded) {
+        WeakRef wr(target, jitc_var(target)->counter);
+        uintptr_t wr_i = memcpy_cast<uintptr_t>(wr);
+
         jitc_var_set_callback(
             result,
             [](uint32_t, int free, void *p) {
                 if (free)
                     return;
-                jitc_var_reduce_expanded((uint32_t) (uintptr_t) p);
+                WeakRef wr = memcpy_cast<WeakRef>((uintptr_t) p);
+                if (!jitc_var(wr))
+                    return;
+                jitc_var_reduce_expanded(wr.index);
             },
-            (void*) (uintptr_t) reduce_expanded,
-            true
+            (void*) wr_i, true
         );
     }
 
