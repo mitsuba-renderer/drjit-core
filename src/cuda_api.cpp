@@ -194,11 +194,4 @@ void *jitc_cuda_lookup(const char *name) {
     return ptr;
 }
 
-void jitc_cuda_sync_stream(uintptr_t stream) {
-    ThreadState* ts = thread_state(JitBackend::CUDA);
-    CUevent sync_event = ts->sync_stream_event;
-    cuda_check(cuEventRecord(sync_event, (CUstream)ts->stream));
-    cuda_check(cuStreamWaitEvent((CUstream)stream, sync_event, CU_EVENT_DEFAULT));
-}
-
 #endif

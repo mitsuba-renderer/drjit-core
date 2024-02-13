@@ -74,7 +74,7 @@ std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf) {
 	size_t nargs = sizeof(arg) / sizeof(CUjit_option);
 
 	CUmodule mod = nullptr;
-	CUresult rv = 0;
+	CUresult rv = (CUresult) 0;
 
 	for (int i = 0; i < 2; ++i) {
 		{
@@ -102,6 +102,13 @@ std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf) {
 		jitc_log(Trace, "Detailed linker output:\n%s", info_log);
 
     return { mod, cache_hit };
+}
+
+void jitc_cuda_sync_stream(uintptr_t stream) {
+    ThreadState* ts = thread_state(JitBackend::CUDA);
+    CUevent sync_event = ts->sync_stream_event;
+    cuda_check(cuEventRecord(sync_event, (CUstream)ts->stream));
+    cuda_check(cuStreamWaitEvent((CUstream)stream, sync_event, CU_EVENT_DEFAULT));
 }
 
 void cuda_check_impl(CUresult errval, const char *file, const int line) {
