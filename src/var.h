@@ -233,8 +233,8 @@ extern void jitc_var_self(JitBackend backend, uint32_t *value, uint32_t *index);
 /// Return the 'VariableExtra' record associated with a variable (or create it)
 extern VariableExtra *jitc_var_extra(Variable *v);
 
-// Shrink a variable after it has been created
-extern void jitc_var_shrink(uint32_t index, size_t size);
+/// Create a view of an existing variable that has a smaller size
+extern uint32_t jitc_var_shrink(uint32_t index, size_t size);
 
 /// Compress a sparse boolean array into an index array of the active indices
 extern uint32_t jitc_var_compress(uint32_t index);
