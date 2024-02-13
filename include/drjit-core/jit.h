@@ -1182,8 +1182,8 @@ extern JIT_EXPORT int jit_var_is_finite_literal(uint32_t index);
  */
 extern JIT_EXPORT uint32_t jit_var_resize(uint32_t index, size_t size);
 
-/// Shrink a variable representing an opaque memory region *after* it has been created
-extern JIT_EXPORT void jit_var_shrink(uint32_t index, size_t size);
+/// Create a view of an existing variable that has a smaller size
+extern JIT_EXPORT uint32_t jit_var_shrink(uint32_t index, size_t size);
 
 /**
  * \brief Asynchronously migrate a variable to a different flavor of memory

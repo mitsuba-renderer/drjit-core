@@ -1414,21 +1414,37 @@ uint32_t jitc_var_copy(uint32_t index) {
     return result;
 }
 
-void jitc_var_shrink(uint32_t index, size_t size) {
-    if (index == 0)
-        return;
-    if (size == 0)
-        jitc_raise("jit_var_shrink(): cannot reduce size to zero!");
+uint32_t jitc_var_shrink(uint32_t index, size_t size) {
+    if (index == 0 || size == 0)
+        return 0;
     Variable *v = jitc_var(index);
-    if ((size_t) v->size == size)
-        return;
+    if ((size_t) v->size == size) {
+        jitc_var_inc_ref(index, v);
+        return index;
+    }
     if ((size_t) v->size < size)
-        jitc_raise("jit_var_shrink(): requested size exceeds current size!");
-    if ((VarKind) v->kind != VarKind::Evaluated)
-        jitc_raise("jit_var_shrink(): only supports evaluated variables!");
-    if (v->ref_count > 1)
-        jitc_raise("jit_var_shrink(): variable reference count must be 1!");
-    v->size = (uint32_t) size;
+        jitc_raise("jit_var_shrink(r%u): requested size (%zu) exceeds current "
+                   "size (%u)!", index, size, v->size);
+
+    VarType vt = (VarType) v->type;
+    JitBackend backend = (JitBackend) v->backend;
+
+    uint32_t result;
+    if (v->is_literal()) {
+        result = jitc_var_literal(backend, vt, &v->literal, size, 0);
+    } else {
+        void *dst_addr = nullptr;
+        Ref dst = steal(jitc_var_data(index, false, &dst_addr));
+
+        result = jitc_var_mem_map(backend, vt, dst_addr, size, false);
+        jitc_var(result)->dep[3] = index;
+        jitc_var_inc_ref(index);
+    }
+
+    jitc_log(Debug, "jit_var_shrink(): %s r%u[%zu] = shrink(r%u)",
+             type_name[(int) vt], result, size, index);
+
+    return result;
 }
 
 uint32_t jitc_var_resize(uint32_t index, size_t size) {

@@ -1359,9 +1359,9 @@ uint32_t jit_var_compress(uint32_t index) {
 }
 
 // Shrink a variable after it has been created
-void jit_var_shrink(uint32_t index, size_t size) {
+uint32_t jit_var_shrink(uint32_t index, size_t size) {
     lock_guard guard(state.lock);
-    jitc_var_shrink(index, size);
+    return jitc_var_shrink(index, size);
 }
 
 void jit_profile_mark(const char *message) {

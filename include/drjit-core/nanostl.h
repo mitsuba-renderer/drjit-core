@@ -342,7 +342,7 @@ template <size_t I, typename... Args> JIT_INLINE auto&& get(drjit::tuple<Args...
 }
 
 namespace detail {
-    // Intrinsic to prune all occurrences of references and 'const'
+    // Type rait to prune all occurrences of references and 'const'
     template <typename T> struct strip_cr { using type = T; };
     template <typename T> using strip_cr_t = typename strip_cr<T>::type;
     template <typename T> struct strip_cr<const T> { using type = strip_cr_t<T>; };
