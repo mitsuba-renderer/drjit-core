@@ -1496,6 +1496,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     if (v->is_literal() || v->is_undefined()) {
         size_t size = v->size;
         void *ptr = jitc_malloc(dst_type, type_size[v->type] * size);
+        v = jitc_var(src_index);
 
         if (v->is_literal()) {
             if (dst_type == AllocType::Host) {
