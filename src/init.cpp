@@ -336,15 +336,8 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
 
     if (backend == JitBackend::CUDA) {
         if ((state.backends & (uint32_t) JitBackend::CUDA) == 0) {
-            #if defined(_WIN32)
-                const char *cuda_fname = "nvcuda.dll";
-            #elif defined(__linux__)
-                const char *cuda_fname  = "libcuda.so";
-            #else
-                const char *cuda_fname  = "libcuda.dylib";
-            #endif
-
             delete ts;
+
             if (jitc_cuda_cuinit_result == CUDA_ERROR_NOT_INITIALIZED) {
                 jitc_raise(
                     "jit_init_thread_state(): the CUDA backend hasn't been "
@@ -365,13 +358,20 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
                            "The specific error message produced by cuInit was\n"
                            "   \"%s\"", msg);
             } else {
-                jitc_raise(
-                    "jit_init_thread_state(): the CUDA backend is inactive "
-                    "because it has not been initialized via jit_init(), or "
-                    "because the CUDA driver library (\"%s\") could not be "
-                    "found! Set the DRJIT_LIBCUDA_PATH environment variable to "
-                    "specify its path.",
-                    cuda_fname);
+#if defined(_WIN32)
+              const char *cuda_fname = "nvcuda.dll";
+#elif defined(__linux__)
+              const char *cuda_fname = "libcuda.so";
+#else
+              const char *cuda_fname = "libcuda.dylib";
+#endif
+              jitc_raise(
+                  "jit_init_thread_state(): the CUDA backend is inactive "
+                  "because it has not been initialized via jit_init(), or "
+                  "because the CUDA driver library (\"%s\") could not be "
+                  "found! Set the DRJIT_LIBCUDA_PATH environment variable to "
+                  "specify its path.",
+                  cuda_fname);
             }
         }
 

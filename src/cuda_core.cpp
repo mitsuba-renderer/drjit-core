@@ -39,11 +39,11 @@ CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                 [(int) VarType::Count] = { };
 CUfunction *jitc_cuda_aggregate = nullptr;
 
-std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf) {
+std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf, bool release_state_lock) {
     const uintptr_t log_size = 16384;
     char error_log[log_size], info_log[log_size];
-	info_log[0] = '\0';
-	error_log[0] = '\0';
+    info_log[0] = '\0';
+    error_log[0] = '\0';
 
     CUjit_option arg[] = {
         CU_JIT_OPTIMIZATION_LEVEL,
@@ -71,35 +71,37 @@ std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf) {
         (void *) 0
     };
 
-	size_t nargs = sizeof(arg) / sizeof(CUjit_option);
+    size_t nargs = sizeof(arg) / sizeof(CUjit_option);
 
-	CUmodule mod = nullptr;
-	CUresult rv = (CUresult) 0;
+    CUmodule mod = nullptr;
+    CUresult rv = (CUresult) 0;
 
-	for (int i = 0; i < 2; ++i) {
-		{
-			unlock_guard guard(state.lock);
+    for (int i = 0; i < 2; ++i) {
+        if (release_state_lock) {
+            unlock_guard guard(state.lock);
+            rv = cuModuleLoadDataEx(&mod, buf, nargs, arg, argv);
+        } else {
             rv = cuModuleLoadDataEx(&mod, buf, nargs, arg, argv);
         }
 
-		if (rv == CUDA_ERROR_OUT_OF_MEMORY) {
-			if (i == 0)
+        if (rv == CUDA_ERROR_OUT_OF_MEMORY) {
+            if (i == 0)
                 jitc_flush_malloc_cache(true);
-			else
-				cuda_check(rv);
-		} else {
-			break;
-		}
-	}
+            else
+                cuda_check(rv);
+        } else {
+            break;
+        }
+    }
 
-	if (rv != CUDA_SUCCESS)
-		jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
-				  "assembly listing and error message below:\n\n%s\n\n%s",
-				  buf, error_log);
+    if (rv != CUDA_SUCCESS)
+        jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
+                  "assembly listing and error message below:\n\n%s\n\n%s",
+                  buf, error_log);
 
-	bool cache_hit = info_log[0] == '\0';
-	if (!cache_hit)
-		jitc_log(Trace, "Detailed linker output:\n%s", info_log);
+    bool cache_hit = info_log[0] == '\0';
+    if (!cache_hit)
+        jitc_log(Trace, "Detailed linker output:\n%s", info_log);
 
     return { mod, cache_hit };
 }
@@ -257,8 +259,8 @@ bool jitc_cuda_init() {
 
         uncompressed_ptx[kernels_size_uncompressed] = '\0';
 
-		CUmodule m = jitc_cuda_compile(uncompressed_ptx).first;
-		jitc_cuda_module[i] = m;
+        CUmodule m = jitc_cuda_compile(uncompressed_ptx, /* release_state_lock */ false).first;
+        jitc_cuda_module[i] = m;
         free(uncompressed);
 
         #define LOAD(name)                                                       \
