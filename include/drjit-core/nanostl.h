@@ -376,6 +376,7 @@ public:
         }
     }
 
+    string(const char *s) { assign(s); }
     template <typename T> explicit string(const T &v) { assign(v); }
     string(const string &v) { assign(v); }
 
