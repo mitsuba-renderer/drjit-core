@@ -369,7 +369,7 @@ public:
         }
     }
 
-    template <typename T> string(const T &v) { assign(v); }
+    template <typename T> explicit string(const T &v) { assign(v); }
     string(const string &v) { assign(v); }
 
     template <typename T> string &operator=(const T &v) { return assign(v); }
