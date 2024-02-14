@@ -532,7 +532,7 @@ Variable jitc_cuda_tex_check(VarType out_type, size_t ndim, const uint32_t *pos)
 }
 
 void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
-                          const uint32_t *pos, uint32_t *out) {
+                          const uint32_t *pos, uint32_t active, uint32_t *out) {
     DrJitCudaTexture &tex = *((DrJitCudaTexture *) texture_handle);
     VarType out_type = tex.type_size == 4 ? VarType::Float32 : VarType::Float16;
     Variable v = jitc_cuda_tex_check(out_type, ndim, pos);
@@ -540,10 +540,18 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
     for (size_t ti = 0; ti < tex.n_textures; ++ti) {
         // Perform a fetch per texture ..
         v.kind = VarKind::TexLookup;
-        v.literal = 0;
         memset(v.dep, 0, sizeof(v.dep));
-        v.dep[0] = tex.indices[ti];
-        jitc_var_inc_ref(tex.indices[ti]);
+        const Variable *active_v = jitc_var(active);
+        if (active_v->is_literal() && active_v->literal == 1) {
+            v.dep[0] = tex.indices[ti];
+            jitc_var_inc_ref(tex.indices[ti]);
+            v.literal = 0;
+        } else {
+            v.literal = 1; // encode a masked operation
+            uint64_t zero_i = 0;
+            Ref zero = steal(jitc_var_literal((JitBackend) v.backend, VarType::Pointer, &zero_i, 1, 0));
+            v.dep[0] = jitc_var_select(active, tex.indices[ti], zero);
+        }
         for (size_t j = 0; j < ndim; ++j) {
             v.dep[j + 1] = pos[j];
             jitc_var_inc_ref(pos[j]);
@@ -563,7 +571,8 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
 }
 
 void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
-                                const uint32_t *pos, uint32_t *out) {
+                                const uint32_t *pos, uint32_t active,
+                                uint32_t *out) {
     if (ndim != 2)
         jitc_raise("jitc_cuda_tex_bilerp_fetch(): only 2D textures are supported!");
 
@@ -578,9 +587,11 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
             v.literal = ch;
             memset(v.dep, 0, sizeof(v.dep));
             v.dep[0] = tex.indices[ti];
+            v.dep[1] = active;
             jitc_var_inc_ref(tex.indices[ti]);
+            jitc_var_inc_ref(active);
             for (size_t j = 0; j < ndim; ++j) {
-                v.dep[j + 1] = pos[j];
+                v.dep[j + 2] = pos[j];
                 jitc_var_inc_ref(pos[j]);
             }
             Ref tex_load = steal(jitc_var_new(v));

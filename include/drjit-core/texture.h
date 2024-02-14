@@ -29,7 +29,7 @@ extern "C" {
  * <li><tt>format == 0</tt>: Single precision storage format </li>
  * <li><tt>format == 1</tt>: Half precision storage format </li>
  * <ul>
- * 
+ *
  * The \c filter_mode parameter supports the following options:
  *
  * <ul>
@@ -105,6 +105,11 @@ extern JIT_EXPORT void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
  *     Pointer to a list of <tt>ndim - 1 </tt> float32 variable indices
  *     encoding the position of the texture lookup
  *
+ * \param active
+ *     A mask value that specified whether the texture fetch should be
+ *     performed. When the associated predicate is false, the operation
+ *     returns zero.
+ *
  * \param out
  *     Pointer to an array of size equal to the number of channels in the
  *     texture, which will receive the lookup result.
@@ -112,6 +117,7 @@ extern JIT_EXPORT void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
 extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
                                            const void *texture_handle,
                                            const uint32_t *pos,
+                                           uint32_t active,
                                            uint32_t *out);
 
 /**
@@ -131,6 +137,11 @@ extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
  *     Pointer to an array of two float32 variable indices encoding the position
  *     of the texture lookup
  *
+ * \param active
+ *     A mask value that specified whether the texture fetch should be
+ *     performed. When the associated predicate is false, the operation
+ *     returns zero.
+ *
  * \param out
  *     Pointer to an array of size <tt>4 * n_channels<\tt>, which will receive
  *     the texel indices. Starting at the lower left corner, the texels are
@@ -139,6 +150,7 @@ extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
 extern JIT_EXPORT void jit_cuda_tex_bilerp_fetch(size_t ndim,
                                                  const void *texture_handle,
                                                  const uint32_t *pos,
+                                                 uint32_t active,
                                                  uint32_t *out);
 
 /// Destroys the provided texture handle
