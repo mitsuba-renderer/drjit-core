@@ -255,10 +255,17 @@ protected:
 
     void release() {
         clear();
-        if (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
-            return operator delete[](m_data, sizeof(T) * m_capacity, (std::align_val_t) alignof(T));
-        else
-            return operator delete[](m_data, sizeof(T) * m_capacity);
+        #if defined (__cpp_sized_deallocation)
+            if (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
+                operator delete[]((void *) m_data, sizeof(T) * m_capacity, (std::align_val_t) alignof(T));
+            else
+                operator delete[]((void *) m_data, sizeof(T) * m_capacity);
+        #else
+            if (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
+                operator delete[]((void *) m_data, (std::align_val_t) alignof(T));
+            else
+                operator delete[]((void *) m_data);
+        #endif
     }
 
 protected:
