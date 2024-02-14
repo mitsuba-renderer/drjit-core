@@ -1899,6 +1899,18 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
              (uint32_t) target, (uint32_t) index_2, (uint32_t) mask_2,
              (uint32_t) ptr, result);
 
+    // Create a dummy node that represents a side effect, and which holds a
+    // write pointer to 'target' so that it will be marked dirty
+    Ref write_ptr =
+        steal(jitc_var_pointer(var_info.backend, target_addr, target, 1));
+
+    Ref se = steal(jitc_var_new_node_1(var_info.backend, VarKind::Nop,
+                                       VarType::Void, var_info.size, symbolic,
+                                       result, jitc_var(result)));
+
+    jitc_var(se)->dep[3] = write_ptr.release();
+    jitc_var_mark_side_effect(se.release());
+
     return result;
 }
 
