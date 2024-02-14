@@ -741,21 +741,41 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::TexLookup:
             fmt("    .reg.$t $v_out_<4>;\n", v, v);
+
+            if (v->literal /* masked */) {
+                fmt("    mov.v4.$b {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, {0, 0, 0, 0};\n"
+                    "    setp.ne.b64 %p3, $v, 0;\n"
+                    "    @%p3 ",
+                    v, v, v, v, v,
+                    a0);
+            } else {
+                put("    ");
+            }
+
             if (a3)
-                fmt("    tex.3d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}];\n",
+                fmt("tex.3d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}];\n",
                     v, v, v, v, v, a0, a1, a2, a3, a3);
             else if (a2)
-                fmt("    tex.2d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
+                fmt("tex.2d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}];\n",
                     v, v, v, v, v, a0, a1, a2);
             else
-                fmt("    tex.1d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}];\n",
+                fmt("tex.1d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}];\n",
                     v, v, v, v, v, a0, a1);
             break;
 
         case VarKind::TexFetchBilerp:
-            fmt("    .reg.f32 %f$u_out_<4>;\n"
-                "    tld4.$c.2d.v4.f32.f32 {%f$u_out_0, %f$u_out_1, %f$u_out_2, %f$u_out_3}, [$v, {$v, $v}];\n",
-                v->reg_index, "rgba"[v->literal], v->reg_index, v->reg_index, v->reg_index, v->reg_index, a0, a1, a2);
+            fmt("    .reg.f32 %f$u_out_<4>;\n",
+                v->reg_index);
+            if (!(a1->is_literal() && a1->literal == 1)) {
+                fmt("    mov.v4.f32 {%f$u_out_0, %f$u_out_1, %f$u_out_2, %f$u_out_3}, {0.0, 0.0, 0.0, 0.0};\n"
+                    "    @$v ",
+                    v->reg_index, v->reg_index, v->reg_index, v->reg_index,
+                    a1);
+            } else {
+                put("    ");
+            }
+            fmt("tld4.$c.2d.v4.f32.f32 {%f$u_out_0, %f$u_out_1, %f$u_out_2, %f$u_out_3}, [$v, {$v, $v}];\n",
+                "rgba"[v->literal], v->reg_index, v->reg_index, v->reg_index, v->reg_index, a0, a2, a3);
             if (jitc_is_half(v)) {
                 fmt("    .reg.f16 %h$u_out_<4>;\n"
                     "    cvt.rn.f16.f32 %h$u_out_0, %f$u_out_0;\n"
