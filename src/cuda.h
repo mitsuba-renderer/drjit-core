@@ -39,7 +39,8 @@ extern void *jitc_cuda_lookup(const char *name);
 struct Kernel;
 
 /// Compile an PTX string. Returns the resulting module and a cache hit true/false flag
-extern std::pair<CUmodule, bool> jitc_cuda_compile(const char *str);
+extern std::pair<CUmodule, bool>
+jitc_cuda_compile(const char *str, bool release_state_lock = true);
 
 /// Assert that a CUDA operation is correctly issued
 #define cuda_check(err) cuda_check_impl(err, __FILE__, __LINE__)
