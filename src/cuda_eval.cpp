@@ -288,7 +288,7 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                 fmt("    ld.param.u8 %w0, [params+$o];\n"
                     "    setp.ne.u16 $v, %w0, 0;\n", v, a);
             }
-        } else if (v->is_evaluated() || vt == VarType::Pointer) {
+        } else if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst) << 32);
             auto it = call->data_map.find(key);
 
