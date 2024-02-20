@@ -307,7 +307,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                 fmt("    ; $s\n", label);
         }
 
-        if (v->is_evaluated() || vt == VarType::Pointer) {
+        if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst) << 32);
             auto it = call->data_map.find(key);
             if (unlikely(it == call->data_map.end())) {
