@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <utility>
+#include <type_traits>
 #include <new>
 #include "macros.h"
 
@@ -577,7 +578,8 @@ template <typename T> struct formatter<T, enable_if_t<std::is_integral_v<T>>> {
     }
 };
 
-template <typename T> struct formatter<T, enable_if_t<std::is_pointer_v<T>>> {
+template <typename T_> struct formatter<T_, enable_if_t<std::is_pointer_v<T_>>> {
+    using T = std::add_pointer_t<const std::remove_pointer_t<T_>>;
     static constexpr size_t MaxSize = 2 + 2 * sizeof(T);
     static size_t bound(size_t, T) { return MaxSize; }
     static void format(string &s, size_t, size_t, T value_) {
