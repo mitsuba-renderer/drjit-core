@@ -112,7 +112,7 @@ template <> struct type_caster<drjit::half> {
         return PyFloat_FromDouble((double) src);
     }
 
-    NB_TYPE_CASTER(drjit::half, const_name("half"))
+    NB_TYPE_CASTER(drjit::half, const_name("float"))
 };
 
 template <> struct type_caster<drjit::string> {
