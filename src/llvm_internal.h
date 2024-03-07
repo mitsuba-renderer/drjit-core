@@ -23,5 +23,9 @@ struct LLVMThreadState: ThreadState{
     /// Perform a synchronous copy operation
     void jitc_memcpy(void *dst, const void *src, size_t size) override;
     
+    /// Mask compression
+    uint32_t jitc_compress(const uint8_t *in, uint32_t size,
+                                   uint32_t *out) override;
+    
     ~LLVMThreadState(){}
 };

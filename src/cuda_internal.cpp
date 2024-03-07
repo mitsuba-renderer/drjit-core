@@ -296,6 +296,91 @@ void CUDAThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
     }
 }
 
+uint32_t CUDAThreadState::jitc_compress(const uint8_t *in, uint32_t size,
+                                        uint32_t *out) {
+    if (size == 0)
+        return 0;
+
+    // CUDA specific
+    const Device &device = state.devices[this->device];
+    scoped_set_context guard(this->context);
+
+    uint32_t *count_out = (uint32_t *) jitc_malloc(
+        AllocType::HostPinned, sizeof(uint32_t));
+
+    if (size <= 4096) {
+        // Kernel for small arrays
+        uint32_t items_per_thread = 4,
+                 thread_count     = round_pow2((size + items_per_thread - 1)
+                                                / items_per_thread),
+                 shared_size      = thread_count * 2 * sizeof(uint32_t),
+                 trailer          = thread_count * items_per_thread - size;
+
+        jitc_log(Debug,
+                "jit_compress(" DRJIT_PTR " -> " DRJIT_PTR
+                ", size=%u, type=small, threads=%u, shared=%u)",
+                (uintptr_t) in, (uintptr_t) out, size, thread_count,
+                shared_size);
+
+        if (trailer > 0)
+            cuda_check(cuMemsetD8Async((CUdeviceptr) (in + size), 0, trailer,
+                                       this->stream));
+
+        void *args[] = { &in, &out, &size, &count_out };
+        jitc_submit_gpu(
+            KernelType::Other, jitc_cuda_compress_small[device.id], 1,
+            thread_count, shared_size, this->stream, args, nullptr, size);
+    } else {
+        // Kernel for large arrays
+        uint32_t items_per_thread = 16,
+                 thread_count     = 128,
+                 items_per_block  = items_per_thread * thread_count,
+                 block_count      = (size + items_per_block - 1) / items_per_block,
+                 shared_size      = items_per_block * sizeof(uint32_t),
+                 scratch_items    = block_count + 32,
+                 trailer          = items_per_block * block_count - size;
+
+        jitc_log(Debug,
+                "jit_compress(" DRJIT_PTR " -> " DRJIT_PTR
+                ", size=%u, type=large, blocks=%u, threads=%u, shared=%u, "
+                "scratch=%u)",
+                (uintptr_t) in, (uintptr_t) out, size, block_count,
+                thread_count, shared_size, scratch_items * 4);
+
+        uint64_t *scratch = (uint64_t *) jitc_malloc(
+            AllocType::Device, scratch_items * sizeof(uint64_t));
+
+        // Initialize scratch space and padding
+        uint32_t block_count_init, thread_count_init;
+        device.get_launch_config(&block_count_init, &thread_count_init,
+                                 scratch_items);
+
+        void *args[] = { &scratch, &scratch_items };
+        jitc_submit_gpu(KernelType::Other,
+                        jitc_cuda_prefix_sum_large_init[device.id],
+                        block_count_init, thread_count_init, 0, this->stream,
+                        args, nullptr, scratch_items);
+
+        if (trailer > 0)
+            cuda_check(cuMemsetD8Async((CUdeviceptr) (in + size), 0, trailer,
+                                       this->stream));
+
+        scratch += 32; // move beyond padding area
+        void *args_2[] = { &in, &out, &scratch, &count_out };
+        jitc_submit_gpu(KernelType::Other,
+                        jitc_cuda_compress_large[device.id], block_count,
+                        thread_count, shared_size, this->stream, args_2,
+                        nullptr, scratch_items);
+        scratch -= 32;
+
+        jitc_free(scratch);
+    }
+    jitc_sync_thread();
+    uint32_t count_out_v = *count_out;
+    jitc_free(count_out);
+    return count_out_v;
+}
+
 void CUDAThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {
     scoped_set_context guard_2(this->context);
     cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));

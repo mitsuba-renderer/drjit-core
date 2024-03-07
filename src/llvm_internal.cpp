@@ -398,6 +398,80 @@ void LLVMThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
     jitc_free(scratch);
 }
 
+uint32_t LLVMThreadState::jitc_compress(const uint8_t *in, uint32_t size,
+                                        uint32_t *out) {
+    if (size == 0)
+        return 0;
+
+    // LLVM specific
+    uint32_t block_size = size, blocks = 1;
+    if (pool_size() > 1) {
+        block_size = jitc_llvm_block_size;
+        blocks     = (size + block_size - 1) / block_size;
+    }
+
+    uint32_t count_out = 0;
+
+    jitc_log(Debug,
+            "jit_compress(" DRJIT_PTR " -> " DRJIT_PTR
+            ", size=%u, block_size=%u, blocks=%u)",
+            (uintptr_t) in, (uintptr_t) out, size, block_size, blocks);
+
+    uint32_t *scratch = nullptr;
+
+    if (blocks > 1) {
+        scratch = (uint32_t *) jitc_malloc(AllocType::HostAsync,
+                                           blocks * sizeof(uint32_t));
+
+        jitc_submit_cpu(
+            KernelType::Other,
+            [block_size, size, in, scratch](uint32_t index) {
+                uint32_t start = index * block_size,
+                         end = std::min(start + block_size, size);
+
+                uint32_t accum = 0;
+                for (uint32_t i = start; i != end; ++i)
+                    accum += (uint32_t) in[i];
+
+                scratch[index] = accum;
+            },
+
+            size, blocks
+        );
+
+        this->jitc_prefix_sum(VarType::UInt32, true, scratch, blocks, scratch);
+    }
+
+    jitc_submit_cpu(
+        KernelType::Other,
+        [block_size, size, scratch, in, out, &count_out](uint32_t index) {
+            uint32_t start = index * block_size,
+                     end = std::min(start + block_size, size);
+
+            uint32_t accum = 0;
+            if (scratch)
+                accum = scratch[index];
+
+            for (uint32_t i = start; i != end; ++i) {
+                uint32_t value = (uint32_t) in[i];
+                if (value)
+                    out[accum] = i;
+                accum += value;
+            }
+
+            if (end == size)
+                count_out = accum;
+        },
+
+        size, blocks
+    );
+
+    jitc_free(scratch);
+    jitc_sync_thread();
+
+    return count_out;
+}
+
 void LLVMThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {
     memcpy(dst, src, size);
 }

@@ -601,6 +601,10 @@ struct ThreadState {
     virtual void jitc_prefix_sum(VarType vt, bool exclusive, const void *in,
                                  uint32_t size, void *out) = 0;
 
+    /// Mask compression
+    virtual uint32_t jitc_compress(const uint8_t *in, uint32_t size,
+                                   uint32_t *out) = 0;
+
     /// Perform a synchronous copy operation
     virtual void jitc_memcpy(void *dst, const void *src, size_t size) = 0;
 };
