@@ -197,12 +197,7 @@ void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size) {
 
     // Temporarily release the lock while copying
     jitc_sync_thread(ts);
-    if (backend == JitBackend::CUDA) {
-        scoped_set_context guard_2(ts->context);
-        cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
-    } else {
-        memcpy(dst, src, size);
-    }
+    ts->jitc_memcpy(dst, src, size);
 }
 
 /// Perform an asynchronous copy operation

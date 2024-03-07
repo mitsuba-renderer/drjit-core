@@ -577,6 +577,14 @@ struct ThreadState {
     OptixPipelineData *optix_pipeline = nullptr;
     OptixShaderBindingTable *optix_sbt = nullptr;
 #endif
+
+
+    virtual ~ThreadState(){}
+    ThreadState() = default;
+    ThreadState(const ThreadState &other) = default;
+    
+    /// Perform a synchronous copy operation
+    virtual void jitc_memcpy(void *dst, const void *src, size_t size) = 0;
 };
 
 /// Key data structure for kernel source code & device ID
