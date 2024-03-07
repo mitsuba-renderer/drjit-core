@@ -590,6 +590,13 @@ struct ThreadState {
     /// Reduce the given array to a single value
     virtual void jitc_reduce(VarType type, ReduceOp rtype, const void *ptr,
                              uint32_t size, void *out) = 0;
+    
+    /// 'All' reduction for boolean arrays
+    virtual bool jitc_all(uint8_t *values, uint32_t size) = 0;
+
+    /// 'Any' reduction for boolean arrays
+    virtual bool jitc_any(uint8_t *values, uint32_t size) = 0;
+
 
     /// Perform a synchronous copy operation
     virtual void jitc_memcpy(void *dst, const void *src, size_t size) = 0;

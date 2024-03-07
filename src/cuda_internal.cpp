@@ -143,6 +143,64 @@ void CUDAThreadState::jitc_reduce(VarType type, ReduceOp op, const void *ptr,
     }
 }
 
+bool CUDAThreadState::jitc_all(uint8_t *values, uint32_t size) {
+    /* When \c size is not a multiple of 4, the implementation will initialize up
+       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
+       reduction algorithm can be used. This is fine for allocations made using
+       \ref jit_malloc(), which allow for this. */
+
+    uint32_t reduced_size = (size + 3) / 4,
+             trailing     = reduced_size * 4 - size;
+
+    jitc_log(Debug, "jit_all(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
+
+    if (trailing) {
+        bool filler = true;
+        this->jitc_memset_async(values + size, trailing, sizeof(bool), &filler);
+    }
+
+    // CUDA specific
+    bool result;
+    
+    uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
+    this->jitc_reduce(VarType::UInt32, ReduceOp::And, values, reduced_size, out);
+    jitc_sync_thread();
+    result = (out[0] & out[1] & out[2] & out[3]) != 0;
+    jitc_free(out);
+
+    return result;
+}
+
+bool CUDAThreadState::jitc_any(uint8_t *values, uint32_t size) {
+    /* When \c size is not a multiple of 4, the implementation will initialize up
+       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
+       reduction algorithm can be used. This is fine for allocations made using
+       \ref jit_malloc(), which allow for this. */
+    
+    uint32_t reduced_size = (size + 3) / 4,
+             trailing     = reduced_size * 4 - size;
+
+    jitc_log(Debug, "jit_any(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
+
+    if (trailing) {
+        bool filler = false;
+        this->jitc_memset_async(values + size, trailing, sizeof(bool), &filler);
+    }
+
+    // CUDA specific
+    bool result;
+    
+    uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
+    this->jitc_reduce(VarType::UInt32, ReduceOp::Or, values,
+                      reduced_size, out);
+    jitc_sync_thread();
+    result = (out[0] | out[1] | out[2] | out[3]) != 0;
+    jitc_free(out);
+
+    return result;
+    
+}
+
 void CUDAThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {
     scoped_set_context guard_2(this->context);
     cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));

@@ -9,6 +9,12 @@ struct LLVMThreadState: ThreadState{
     /// Reduce the given array to a single value
     void jitc_reduce(VarType type, ReduceOp rtype, const void *ptr,
                              uint32_t size, void *out) override;
+    
+    /// 'All' reduction for boolean arrays
+    bool jitc_all(uint8_t *values, uint32_t size) override;
+
+    /// 'Any' reduction for boolean arrays
+    bool jitc_any(uint8_t *values, uint32_t size) override;
 
     /// Perform a synchronous copy operation
     void jitc_memcpy(void *dst, const void *src, size_t size) override;
