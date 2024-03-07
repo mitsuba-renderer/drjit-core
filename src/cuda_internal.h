@@ -15,6 +15,10 @@ struct CUDAThreadState: ThreadState{
 
     /// 'Any' reduction for boolean arrays
     bool jitc_any(uint8_t *values, uint32_t size) override;
+    
+    /// Exclusive prefix sum
+    void jitc_prefix_sum(VarType vt, bool exclusive, const void *in,
+                                 uint32_t size, void *out) override;
 
     /// Perform a synchronous copy operation
     void jitc_memcpy(void *dst, const void *src, size_t size) override;

@@ -285,6 +285,119 @@ bool LLVMThreadState::jitc_any(uint8_t *values, uint32_t size) {
     return result;
 }
 
+template <typename T>
+static void sum_reduce_1(uint32_t start, uint32_t end, const void *in_, uint32_t index,
+                  void *scratch) {
+    const T *in = (const T *) in_;
+    T accum = T(0);
+    for (uint32_t i = start; i != end; ++i)
+        accum += in[i];
+    ((T*) scratch)[index] = accum;
+}
+
+template <typename T>
+static void sum_reduce_2(uint32_t start, uint32_t end, const void *in_, void *out_,
+                  uint32_t index, const void *scratch, bool exclusive) {
+    const T *in = (const T *) in_;
+    T *out = (T *) out_;
+
+    T accum;
+    if (scratch)
+        accum = ((const T *) scratch)[index];
+    else
+        accum = T(0);
+
+    if (exclusive) {
+        for (uint32_t i = start; i != end; ++i) {
+            T value = in[i];
+            out[i] = accum;
+            accum += value;
+        }
+    } else {
+        for (uint32_t i = start; i != end; ++i) {
+            T value = in[i];
+            accum += value;
+            out[i] = accum;
+        }
+    }
+}
+
+static void sum_reduce_1(VarType vt, uint32_t start, uint32_t end, const void *in, uint32_t index, void *scratch) {
+    switch (vt) {
+        case VarType::UInt32:  sum_reduce_1<uint32_t>(start, end, in, index, scratch); break;
+        case VarType::UInt64:  sum_reduce_1<uint64_t>(start, end, in, index, scratch); break;
+        case VarType::Float32: sum_reduce_1<float>   (start, end, in, index, scratch); break;
+        case VarType::Float64: sum_reduce_1<double>  (start, end, in, index, scratch); break;
+        default:
+            jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
+    }
+}
+
+static void sum_reduce_2(VarType vt, uint32_t start, uint32_t end, const void *in, void *out, uint32_t index, const void *scratch, bool exclusive) {
+    switch (vt) {
+        case VarType::UInt32:  sum_reduce_2<uint32_t>(start, end, in, out, index, scratch, exclusive); break;
+        case VarType::UInt64:  sum_reduce_2<uint64_t>(start, end, in, out, index, scratch, exclusive); break;
+        case VarType::Float32: sum_reduce_2<float>   (start, end, in, out, index, scratch, exclusive); break;
+        case VarType::Float64: sum_reduce_2<double>  (start, end, in, out, index, scratch, exclusive); break;
+        default:
+            jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
+    }
+}
+
+void LLVMThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
+                                      const void *in, uint32_t size,
+                                      void *out) {
+    if (size == 0)
+        return;
+    if (vt == VarType::Int32)
+        vt = VarType::UInt32;
+
+    const uint32_t isize = type_size[(int) vt];
+
+    // LLVM specific
+    uint32_t block_size = size, blocks = 1;
+    if (pool_size() > 1) {
+        block_size = jitc_llvm_block_size;
+        blocks     = (size + block_size - 1) / block_size;
+    }
+
+    jitc_log(Debug,
+            "jit_prefix_sum(" DRJIT_PTR " -> " DRJIT_PTR
+            ", size=%u, block_size=%u, blocks=%u)",
+            (uintptr_t) in, (uintptr_t) out, size, block_size, blocks);
+
+    void *scratch = nullptr;
+
+    if (blocks > 1) {
+        scratch = (void *) jitc_malloc(AllocType::HostAsync, blocks * isize);
+
+        jitc_submit_cpu(
+            KernelType::Other,
+            [block_size, size, in, vt, scratch](uint32_t index) {
+                uint32_t start = index * block_size,
+                         end = std::min(start + block_size, size);
+
+                sum_reduce_1(vt, start, end, in, index, scratch);
+            },
+            size, blocks);
+
+        this->jitc_prefix_sum(vt, true, scratch, blocks, scratch);
+    }
+
+    jitc_submit_cpu(
+        KernelType::Other,
+        [block_size, size, in, out, vt, scratch, exclusive](uint32_t index) {
+            uint32_t start = index * block_size,
+                     end = std::min(start + block_size, size);
+
+            sum_reduce_2(vt, start, end, in, out, index, scratch, exclusive);
+        },
+        size, blocks
+    );
+
+    jitc_free(scratch);
+}
+
 void LLVMThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {
     memcpy(dst, src, size);
 }

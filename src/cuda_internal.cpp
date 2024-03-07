@@ -201,6 +201,101 @@ bool CUDAThreadState::jitc_any(uint8_t *values, uint32_t size) {
     
 }
 
+void CUDAThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
+                                      const void *in, uint32_t size,
+                                      void *out) {
+    if (size == 0)
+        return;
+    if (vt == VarType::Int32)
+        vt = VarType::UInt32;
+
+    const uint32_t isize = type_size[(int) vt];
+
+    // CUDA specific
+    const Device &device = state.devices[this->device];
+    scoped_set_context guard(this->context);
+
+    if (size == 1) {
+        if (exclusive) {
+            cuda_check(cuMemsetD8Async((CUdeviceptr) out, 0, isize, this->stream));
+        } else {
+            if (in != out)
+                cuda_check(cuMemcpyAsync((CUdeviceptr) out,
+                                         (CUdeviceptr) in, isize,
+                                         this->stream));
+        }
+    } else if ((isize == 4 && size <= 4096) || (isize == 8 && size < 2048)) {
+        // Kernel for small arrays
+        uint32_t items_per_thread = isize == 8 ? 2 : 4,
+                 thread_count     = round_pow2((size + items_per_thread - 1)
+                                                / items_per_thread),
+                 shared_size      = thread_count * 2 * isize;
+
+        jitc_log(Debug,
+                 "jit_prefix_sum(" DRJIT_PTR " -> " DRJIT_PTR
+                 ", type=%s, exclusive=%i, size=%u, type=small, threads=%u, shared=%u)",
+                 (uintptr_t) in, (uintptr_t) out, type_name[(int) vt], exclusive, size,
+                 thread_count, shared_size);
+
+        CUfunction kernel =
+            (exclusive ? jitc_cuda_prefix_sum_exc_small
+                       : jitc_cuda_prefix_sum_inc_small)[(int) vt][device.id];
+
+        if (!kernel)
+            jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
+
+        void *args[] = { &in, &out, &size };
+        jitc_submit_gpu(
+            KernelType::Other, kernel, 1,
+            thread_count, shared_size, this->stream, args, nullptr, size);
+    } else {
+        // Kernel for large arrays
+        uint32_t items_per_thread = isize == 8 ? 8 : 16,
+                 thread_count     = 128,
+                 items_per_block  = items_per_thread * thread_count,
+                 block_count      = (size + items_per_block - 1) / items_per_block,
+                 shared_size      = items_per_block * isize,
+                 scratch_items    = block_count + 32;
+
+        jitc_log(Debug,
+                 "jit_prefix_sum(" DRJIT_PTR " -> " DRJIT_PTR
+                 ", type=%s, exclusive=%i, size=%u, type=large, blocks=%u, threads=%u, "
+                 "shared=%u, scratch=%zu)",
+                 (uintptr_t) in, (uintptr_t) out, type_name[(int) vt], exclusive, size,
+                 block_count, thread_count, shared_size, scratch_items * sizeof(uint64_t));
+
+        CUfunction kernel =
+            (exclusive ? jitc_cuda_prefix_sum_exc_large
+                       : jitc_cuda_prefix_sum_inc_large)[(int) vt][device.id];
+
+        if (!kernel)
+            jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
+
+        uint64_t *scratch = (uint64_t *) jitc_malloc(
+            AllocType::Device, scratch_items * sizeof(uint64_t));
+
+        /// Initialize scratch space and padding
+        uint32_t block_count_init, thread_count_init;
+        device.get_launch_config(&block_count_init, &thread_count_init,
+                                 scratch_items);
+
+        void *args[] = { &scratch, &scratch_items };
+        jitc_submit_gpu(KernelType::Other,
+                        jitc_cuda_prefix_sum_large_init[device.id],
+                        block_count_init, thread_count_init, 0, this->stream,
+                        args, nullptr, scratch_items);
+
+        scratch += 32; // move beyond padding area
+        void *args_2[] = { &in, &out, &size, &scratch };
+        jitc_submit_gpu(KernelType::Other, kernel, block_count,
+                        thread_count, shared_size, this->stream, args_2,
+                        nullptr, scratch_items);
+        scratch -= 32;
+
+        jitc_free(scratch);
+    }
+}
+
 void CUDAThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {
     scoped_set_context guard_2(this->context);
     cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));

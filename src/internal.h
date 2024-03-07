@@ -597,6 +597,9 @@ struct ThreadState {
     /// 'Any' reduction for boolean arrays
     virtual bool jitc_any(uint8_t *values, uint32_t size) = 0;
 
+    /// Exclusive prefix sum
+    virtual void jitc_prefix_sum(VarType vt, bool exclusive, const void *in,
+                                 uint32_t size, void *out) = 0;
 
     /// Perform a synchronous copy operation
     virtual void jitc_memcpy(void *dst, const void *src, size_t size) = 0;
