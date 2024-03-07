@@ -1,9 +1,101 @@
 #include "llvm_internal.h"
 #include "log.h"
+#include "var.h"
+#include "common.h"
+
+const static char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
+                                                      "min", "max", "and", "or" };
+
+using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
+
+template <typename Value>
+static Reduction jitc_reduce_create(ReduceOp op) {
+    using UInt = uint_with_size_t<Value>;
+
+    switch (op) {
+        case ReduceOp::Add:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) JIT_NO_UBSAN {
+                const Value *ptr = (const Value *) ptr_;
+                Value result = 0;
+                for (uint32_t i = start; i != end; ++i)
+                    result += ptr[i];
+                *((Value *) out) = result;
+            };
+
+        case ReduceOp::Mul:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) JIT_NO_UBSAN {
+                const Value *ptr = (const Value *) ptr_;
+                Value result = 1;
+                for (uint32_t i = start; i != end; ++i)
+                    result *= ptr[i];
+                *((Value *) out) = result;
+            };
+
+        case ReduceOp::Max:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const Value *ptr = (const Value *) ptr_;
+                Value result = std::is_integral<Value>::value
+                                   ?  std::numeric_limits<Value>::min()
+                                   : -std::numeric_limits<Value>::infinity();
+                for (uint32_t i = start; i != end; ++i)
+                    result = std::max(result, ptr[i]);
+                *((Value *) out) = result;
+            };
+
+        case ReduceOp::Min:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const Value *ptr = (const Value *) ptr_;
+                Value result = std::is_integral<Value>::value
+                                   ?  std::numeric_limits<Value>::max()
+                                   :  std::numeric_limits<Value>::infinity();
+                for (uint32_t i = start; i != end; ++i)
+                    result = std::min(result, ptr[i]);
+                *((Value *) out) = result;
+            };
+
+        case ReduceOp::Or:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const UInt *ptr = (const UInt *) ptr_;
+                UInt result = 0;
+                for (uint32_t i = start; i != end; ++i)
+                    result |= ptr[i];
+                *((UInt *) out) = result;
+            };
+
+        case ReduceOp::And:
+            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
+                const UInt *ptr = (const UInt *) ptr_;
+                UInt result = (UInt) -1;
+                for (uint32_t i = start; i != end; ++i)
+                    result &= ptr[i];
+                *((UInt *) out) = result;
+            };
+
+        default: jitc_raise("jit_reduce_create(): unsupported reduction type!");
+    }
+}
+
+static Reduction jitc_reduce_create(VarType type, ReduceOp op) {
+    using half = drjit::half;
+    switch (type) {
+        case VarType::Int8:    return jitc_reduce_create<int8_t  >(op);
+        case VarType::UInt8:   return jitc_reduce_create<uint8_t >(op);
+        case VarType::Int16:   return jitc_reduce_create<int16_t >(op);
+        case VarType::UInt16:  return jitc_reduce_create<uint16_t>(op);
+        case VarType::Int32:   return jitc_reduce_create<int32_t >(op);
+        case VarType::UInt32:  return jitc_reduce_create<uint32_t>(op);
+        case VarType::Int64:   return jitc_reduce_create<int64_t >(op);
+        case VarType::UInt64:  return jitc_reduce_create<uint64_t>(op);
+        case VarType::Float16: return jitc_reduce_create<half    >(op);
+        case VarType::Float32: return jitc_reduce_create<float   >(op);
+        case VarType::Float64: return jitc_reduce_create<double  >(op);
+        default: jitc_raise("jit_reduce_create(): unsupported data type!");
+    }
+}
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
-void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
+static void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
                      uint32_t size = 1) {
 
     struct Payload { Func f; };
@@ -98,6 +190,44 @@ void LLVMThreadState::jitc_memset_async(void *ptr, uint32_t size_,
 
         (uint32_t) size
     );
+}
+
+void LLVMThreadState::jitc_reduce(VarType type, ReduceOp op, const void *ptr,
+                                  uint32_t size, void *out) {
+    
+    jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u)",
+             (uintptr_t) ptr, type_name[(int) type],
+             reduction_name[(int) op], size);
+
+    uint32_t tsize = type_size[(int) type];
+
+    // LLVM specific
+    uint32_t block_size = size, blocks = 1;
+    if (pool_size() > 1) {
+        block_size = jitc_llvm_block_size;
+        blocks     = (size + block_size - 1) / block_size;
+    }
+
+    void *target = out;
+    if (blocks > 1)
+        target = jitc_malloc(AllocType::HostAsync, blocks * tsize);
+
+    Reduction reduction = jitc_reduce_create(type, op);
+    jitc_submit_cpu(
+        KernelType::Reduce,
+        [block_size, size, tsize, ptr, reduction, target](uint32_t index) {
+            reduction(ptr, index * block_size,
+                      std::min((index + 1) * block_size, size),
+                      (uint8_t *) target + index * tsize);
+        },
+
+        size,
+        std::max(1u, blocks));
+
+    if (blocks > 1) {
+        this->jitc_reduce(type, op, target, blocks, out);
+        jitc_free(target);
+    }
 }
 
 void LLVMThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {

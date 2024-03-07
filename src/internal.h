@@ -584,9 +584,13 @@ struct ThreadState {
     ThreadState(const ThreadState &other) = default;
     
     /// Fill a device memory region with constants of a given type
-    virtual void jitc_memset_async(void *ptr, uint32_t size,
-                                   uint32_t isize, const void *src) = 0;
-    
+    virtual void jitc_memset_async(void *ptr, uint32_t size, uint32_t isize,
+                                   const void *src) = 0;
+
+    /// Reduce the given array to a single value
+    virtual void jitc_reduce(VarType type, ReduceOp rtype, const void *ptr,
+                             uint32_t size, void *out) = 0;
+
     /// Perform a synchronous copy operation
     virtual void jitc_memcpy(void *dst, const void *src, size_t size) = 0;
 };

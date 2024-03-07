@@ -1,7 +1,11 @@
 #include "cuda_internal.h"
+#include "var.h"
 #include "log.h"
 
-void jitc_submit_gpu2(KernelType type, CUfunction kernel, uint32_t block_count,
+const static char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
+                                                      "min", "max", "and", "or" };
+
+static void jitc_submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
                      uint32_t thread_count, uint32_t shared_mem_bytes,
                      CUstream stream, void **args, void **extra,
                      uint32_t width) {
@@ -83,11 +87,59 @@ void CUDAThreadState::jitc_memset_async(void *ptr, uint32_t size_,
                 device.get_launch_config(&block_count, &thread_count, size_);
                 void *args[] = { &ptr, &size_, (void *) src };
                 CUfunction kernel = jitc_cuda_fill_64[device.id];
-                jitc_submit_gpu2(KernelType::Other, kernel, block_count,
+                jitc_submit_gpu(KernelType::Other, kernel, block_count,
                                 thread_count, 0, this->stream, args, nullptr,
                                 size_);
             }
             break;
+    }
+}
+
+void CUDAThreadState::jitc_reduce(VarType type, ReduceOp op, const void *ptr,
+                                  uint32_t size, void *out) {
+    
+    jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u)",
+            (uintptr_t) ptr, type_name[(int) type],
+            reduction_name[(int) op], size);
+
+    uint32_t tsize = type_size[(int) type];
+    
+    // CUDA specific
+    scoped_set_context guard(this->context);
+    const Device &device = state.devices[this->device];
+    CUfunction func = jitc_cuda_reductions[(int) op][(int) type][device.id];
+    if (!func)
+        jitc_raise("jit_reduce(): no existing kernel for type=%s, op=%s!",
+                  type_name[(int) type], reduction_name[(int) op]);
+
+    uint32_t thread_count = 1024,
+             shared_size = thread_count * tsize,
+             block_count;
+
+    device.get_launch_config(&block_count, nullptr, size, thread_count);
+
+    if (size <= 1024) {
+        // This is a small array, do everything in just one reduction.
+        void *args[] = { &ptr, &size, &out };
+
+        jitc_submit_gpu(KernelType::Reduce, func, 1, thread_count,
+                        shared_size, this->stream, args, nullptr, size);
+    } else {
+        void *temp = jitc_malloc(AllocType::Device, size_t(block_count) * tsize);
+
+        // First reduction
+        void *args_1[] = { &ptr, &size, &temp };
+
+        jitc_submit_gpu(KernelType::Reduce, func, block_count, thread_count,
+                        shared_size, this->stream, args_1, nullptr, size);
+
+        // Second reduction
+        void *args_2[] = { &temp, &block_count, &out };
+
+        jitc_submit_gpu(KernelType::Reduce, func, 1, thread_count,
+                        shared_size, this->stream, args_2, nullptr, size);
+
+        jitc_free(temp);
     }
 }
 
