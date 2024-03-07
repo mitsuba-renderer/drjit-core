@@ -20,12 +20,17 @@ struct LLVMThreadState: ThreadState{
     void jitc_prefix_sum(VarType vt, bool exclusive, const void *in,
                                  uint32_t size, void *out) override;
 
-    /// Perform a synchronous copy operation
-    void jitc_memcpy(void *dst, const void *src, size_t size) override;
-    
     /// Mask compression
     uint32_t jitc_compress(const uint8_t *in, uint32_t size,
                                    uint32_t *out) override;
+    
+    /// Compute a permutation to reorder an integer array into discrete groups
+    uint32_t jitc_mkperm(const uint32_t *values, uint32_t size,
+                                 uint32_t bucket_count, uint32_t *perm,
+                                 uint32_t *offsets) override;
+    
+    /// Perform a synchronous copy operation
+    void jitc_memcpy(void *dst, const void *src, size_t size) override;
     
     ~LLVMThreadState(){}
 };

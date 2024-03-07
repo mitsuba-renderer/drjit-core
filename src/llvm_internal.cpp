@@ -2,6 +2,7 @@
 #include "log.h"
 #include "var.h"
 #include "common.h"
+#include "profile.h"
 
 const static char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
                                                       "min", "max", "and", "or" };
@@ -470,6 +471,126 @@ uint32_t LLVMThreadState::jitc_compress(const uint8_t *in, uint32_t size,
     jitc_sync_thread();
 
     return count_out;
+}
+
+static ProfilerRegion profiler_region_mkperm_phase_1("jit_mkperm_phase_1");
+static ProfilerRegion profiler_region_mkperm_phase_2("jit_mkperm_phase_2");
+
+uint32_t LLVMThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
+                                      uint32_t bucket_count, uint32_t *perm,
+                                      uint32_t *offsets) {
+    if (size == 0)
+        return 0;
+    else if (unlikely(bucket_count == 0))
+        jitc_fail("jit_mkperm(): bucket_count cannot be zero!");
+
+    // LLVM specific
+    uint32_t blocks = 1, block_size = size, pool_size = ::pool_size();
+
+    if (pool_size > 1) {
+        // Try to spread out uniformly over cores
+        blocks = pool_size * 4;
+        block_size = (size + blocks - 1) / blocks;
+
+        // But don't make the blocks too small
+        block_size = std::max(jitc_llvm_block_size, block_size);
+
+        // Finally re-adjust block count given the selected block size
+        blocks = (size + block_size - 1) / block_size;
+    }
+
+    jitc_log(Debug,
+            "jit_mkperm(" DRJIT_PTR
+            ", size=%u, bucket_count=%u, block_size=%u, blocks=%u)",
+            (uintptr_t) ptr, size, bucket_count, block_size, blocks);
+
+    uint32_t **buckets =
+        (uint32_t **) jitc_malloc(AllocType::HostAsync, sizeof(uint32_t *) * blocks);
+
+    uint32_t unique_count = 0;
+
+    // Phase 1
+    jitc_submit_cpu(
+        KernelType::CallReduce,
+        [block_size, size, buckets, bucket_count, ptr](uint32_t index) {
+            ProfilerPhase profiler(profiler_region_mkperm_phase_1);
+            uint32_t start = index * block_size,
+                     end = std::min(start + block_size, size);
+
+            size_t bsize = sizeof(uint32_t) * (size_t) bucket_count;
+            uint32_t *buckets_local = (uint32_t *) malloc_check(bsize);
+            memset(buckets_local, 0, bsize);
+
+             for (uint32_t i = start; i != end; ++i)
+                 buckets_local[ptr[i]]++;
+
+             buckets[index] = buckets_local;
+        },
+
+        size, blocks
+    );
+
+    // Local accumulation step
+    jitc_submit_cpu(
+        KernelType::CallReduce,
+        [bucket_count, blocks, buckets, offsets, &unique_count](uint32_t) {
+            uint32_t sum = 0, unique_count_local = 0;
+            for (uint32_t i = 0; i < bucket_count; ++i) {
+                uint32_t sum_local = 0;
+                for (uint32_t j = 0; j < blocks; ++j) {
+                    uint32_t value = buckets[j][i];
+                    buckets[j][i] = sum + sum_local;
+                    sum_local += value;
+                }
+                if (sum_local > 0) {
+                    if (offsets) {
+                        offsets[unique_count_local*4] = i;
+                        offsets[unique_count_local*4 + 1] = sum;
+                        offsets[unique_count_local*4 + 2] = sum_local;
+                        offsets[unique_count_local*4 + 3] = 0;
+                    }
+                    unique_count_local++;
+                    sum += sum_local;
+                }
+            }
+
+            unique_count = unique_count_local;
+        },
+
+        size
+    );
+
+    Task *local_task = jitc_task;
+    task_retain(local_task);
+
+    // Phase 2
+    jitc_submit_cpu(
+        KernelType::CallReduce,
+        [block_size, size, buckets, perm, ptr](uint32_t index) {
+            ProfilerPhase profiler(profiler_region_mkperm_phase_2);
+
+            uint32_t start = index * block_size,
+                     end = std::min(start + block_size, size);
+
+            uint32_t *buckets_local = buckets[index];
+
+            for (uint32_t i = start; i != end; ++i) {
+                uint32_t idx = buckets_local[ptr[i]]++;
+                perm[idx] = i;
+            }
+
+            free(buckets_local);
+        },
+
+        size, blocks
+    );
+
+    // Free memory (happens asynchronously after the above stmt.)
+    jitc_free(buckets);
+
+    unlock_guard guard(state.lock);
+    task_wait_and_release(local_task);
+    return unique_count;
 }
 
 void LLVMThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {

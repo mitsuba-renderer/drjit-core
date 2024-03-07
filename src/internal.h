@@ -605,6 +605,11 @@ struct ThreadState {
     virtual uint32_t jitc_compress(const uint8_t *in, uint32_t size,
                                    uint32_t *out) = 0;
 
+    /// Compute a permutation to reorder an integer array into discrete groups
+    virtual uint32_t jitc_mkperm(const uint32_t *values, uint32_t size,
+                                 uint32_t bucket_count, uint32_t *perm,
+                                 uint32_t *offsets) = 0;
+
     /// Perform a synchronous copy operation
     virtual void jitc_memcpy(void *dst, const void *src, size_t size) = 0;
 };
