@@ -612,6 +612,32 @@ struct ThreadState {
 
     /// Perform a synchronous copy operation
     virtual void jitc_memcpy(void *dst, const void *src, size_t size) = 0;
+    
+    /// Perform an assynchronous copy operation
+    virtual void jitc_memcpy_async(void *dst, const void *src, size_t size) = 0;
+    
+    /// Replicate individual input elements to larger blocks
+    virtual void jitc_block_copy(enum VarType type, const void *in, void *out,
+                                 uint32_t size, uint32_t block_size) = 0;
+
+    /// Sum over elements within blocks
+    virtual void jitc_block_sum(enum VarType type, const void *in, void *out,
+                                uint32_t size, uint32_t block_size) = 0;
+    
+    /// Asynchronously update a single element in memory
+    virtual void jitc_poke(void *dst, const void *src, uint32_t size) = 0;
+
+    virtual void jitc_aggregate(void *dst, AggregationEntry *agg,
+                                uint32_t size) = 0;
+
+    // Enqueue a function to be run on the host once backend computation is done
+    virtual void jitc_enqueue_host_func(void (*callback)(void *),
+                                        void *payload) = 0;
+
+    /// LLVM: reduce a variable that was previously expanded due to
+    /// dr.ReduceOp.Expand
+    virtual void jitc_reduce_expanded(VarType vt, ReduceOp op, void *data,
+                                      uint32_t exp, uint32_t size) = 0;
 };
 
 /// Key data structure for kernel source code & device ID

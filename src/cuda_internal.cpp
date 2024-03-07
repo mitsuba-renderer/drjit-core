@@ -568,3 +568,151 @@ void CUDAThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {
     scoped_set_context guard_2(this->context);
     cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
 }
+
+void CUDAThreadState::jitc_memcpy_async(void *dst, const void *src,
+                                        size_t size) {
+    scoped_set_context guard(this->context);
+    cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
+                             this->stream));
+}
+
+static VarType make_int_type_unsigned(VarType type) {
+    switch (type) {
+        case VarType::Int8:  return VarType::UInt8;
+        case VarType::Int16: return VarType::UInt16;
+        case VarType::Int32: return VarType::UInt32;
+        case VarType::Int64: return VarType::UInt64;
+        default: return type;
+    }
+}
+
+void CUDAThreadState::jitc_block_copy(enum VarType type, const void *in,
+                                      void *out, uint32_t size,
+                                      uint32_t block_size) {
+    if (block_size == 0)
+        jitc_raise("jit_block_copy(): block_size cannot be zero!");
+
+    jitc_log(Debug,
+            "jit_block_copy(" DRJIT_PTR " -> " DRJIT_PTR
+            ", type=%s, block_size=%u, size=%u)",
+            (uintptr_t) in, (uintptr_t) out,
+            type_name[(int) type], block_size, size);
+
+    if (block_size == 1) {
+        uint32_t tsize = type_size[(int) type];
+        this->jitc_memcpy_async(out, in, size * tsize);
+        return;
+    }
+
+    type = make_int_type_unsigned(type);
+
+    // CUDA specific
+    scoped_set_context guard(this->context);
+    const Device &device = state.devices[this->device];
+    size *= block_size;
+
+    CUfunction func = jitc_cuda_block_copy[(int) type][device.id];
+    if (!func)
+        jitc_raise("jit_block_copy(): no existing kernel for type=%s!",
+                  type_name[(int) type]);
+
+    uint32_t thread_count = std::min(size, 1024u),
+             block_count  = (size + thread_count - 1) / thread_count;
+
+    void *args[] = { &in, &out, &size, &block_size };
+    jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+                    this->stream, args, nullptr, size);
+}
+
+void CUDAThreadState::jitc_block_sum(enum VarType type, const void *in,
+                                     void *out, uint32_t size,
+                                     uint32_t block_size) {
+    if (block_size == 0)
+        jitc_raise("jit_block_sum(): block_size cannot be zero!");
+
+    jitc_log(Debug,
+            "jit_block_sum(" DRJIT_PTR " -> " DRJIT_PTR
+            ", type=%s, block_size=%u, size=%u)",
+            (uintptr_t) in, (uintptr_t) out,
+            type_name[(int) type], block_size, size);
+
+    uint32_t tsize = type_size[(int) type];
+    size_t out_size = size * tsize;
+
+    if (block_size == 1) {
+        this->jitc_memcpy_async(out, in, out_size);
+        return;
+    }
+
+    type = make_int_type_unsigned(type);
+
+    // CUDA specific
+    scoped_set_context guard(this->context);
+    const Device &device = state.devices[this->device];
+
+    size *= block_size;
+
+    CUfunction func = jitc_cuda_block_sum[(int) type][device.id];
+    if (!func)
+        jitc_raise("jit_block_sum(): no existing kernel for type=%s!",
+                  type_name[(int) type]);
+
+    uint32_t thread_count = std::min(size, 1024u),
+             block_count  = (size + thread_count - 1) / thread_count;
+
+    void *args[] = { &in, &out, &size, &block_size };
+    cuda_check(cuMemsetD8Async((CUdeviceptr) out, 0, out_size, this->stream));
+    jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+                    this->stream, args, nullptr, size);
+}
+
+void CUDAThreadState::jitc_poke(void *dst, const void *src, uint32_t size) {
+    jitc_log(Debug, "jit_poke(" DRJIT_PTR ", size=%u)", (uintptr_t) dst, size);
+
+    VarType type;
+    switch (size) {
+        case 1: type = VarType::UInt8; break;
+        case 2: type = VarType::UInt16; break;
+        case 4: type = VarType::UInt32; break;
+        case 8: type = VarType::UInt64; break;
+        default:
+            jitc_raise("jit_poke(): only size=1, 2, 4 or 8 are supported!");
+    }
+
+    // CUDA specific
+    scoped_set_context guard(this->context);
+    const Device &device = state.devices[this->device];
+    CUfunction func = jitc_cuda_poke[(int) type][device.id];
+    void *args[] = { &dst, (void *) src };
+    jitc_submit_gpu(KernelType::Other, func, 1, 1, 0,
+                    this->stream, args, nullptr, 1);
+}
+
+void CUDAThreadState::jitc_aggregate(void *dst_, AggregationEntry *agg,
+                                     uint32_t size) {
+    scoped_set_context guard(this->context);
+    const Device &device = state.devices[this->device];
+    CUfunction func = jitc_cuda_aggregate[device.id];
+    void *args[] = { &dst_, &agg, &size };
+
+    uint32_t block_count, thread_count;
+    device.get_launch_config(&block_count, &thread_count, size);
+
+    jitc_log(InfoSym,
+             "jit_aggregate(" DRJIT_PTR " -> " DRJIT_PTR
+             ", size=%u, blocks=%u, threads=%u)",
+             (uintptr_t) agg, (uintptr_t) dst_, size, block_count,
+             thread_count);
+
+    jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+                    this->stream, args, nullptr, 1);
+
+    jitc_free(agg);
+}
+
+void CUDAThreadState::jitc_enqueue_host_func(void (*callback)(void *),
+                                             void *payload) {
+    
+    scoped_set_context guard(this->context);
+    cuda_check(cuLaunchHostFunc(this->stream, callback, payload));
+}
