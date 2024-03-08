@@ -680,7 +680,7 @@ static void jitc_cuda_render(Variable *v) {
 
                 if (masked) {
                     if (is_bool)
-                        fmt("    mov.b16 %w0, 0;\n", v);
+                        fmt("    mov.b16 %w0, 0;\n");
                     else
                         fmt("    mov.$b $v, 0;\n", v, v);
                     fmt("    @$v ", a2);

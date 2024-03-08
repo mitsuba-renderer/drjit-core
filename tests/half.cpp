@@ -2,6 +2,7 @@
 
 #include <drjit-core/half.h>
 #include <stdio.h>
+#include <cmath>
 
 using drjit::half;
 
