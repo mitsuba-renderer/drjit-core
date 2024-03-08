@@ -241,6 +241,12 @@ void jitc_free(void *ptr) {
             (ReleaseRecord *) malloc_check(sizeof(ReleaseRecord));
         r->info = info;
         r->ptr = ptr;
+        if (!thread_state_cuda) {
+            // Dr.Jit has shut down, and we can't make further CUDA API calls.
+            // Some static destructor likely caused this code to run. At this
+            // point, the only remaining option is to ignore it.
+            return;
+        }
         cuda_check(cuLaunchHostFunc(
             thread_state_cuda->stream,
             [](void *p) {
