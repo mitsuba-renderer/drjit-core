@@ -1,4 +1,4 @@
-#include "llvm_internal.h"
+#include "llvm_ts.h"
 #include "log.h"
 #include "var.h"
 #include "common.h"
@@ -10,7 +10,7 @@ const static char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
 
 template <typename Value>
-static Reduction jitc_reduce_create(ReduceOp op) {
+static Reduction reduce_create(ReduceOp op) {
     using UInt = uint_with_size_t<Value>;
 
     switch (op) {
@@ -79,24 +79,24 @@ static Reduction jitc_reduce_create(ReduceOp op) {
 static Reduction jitc_reduce_create(VarType type, ReduceOp op) {
     using half = drjit::half;
     switch (type) {
-        case VarType::Int8:    return jitc_reduce_create<int8_t  >(op);
-        case VarType::UInt8:   return jitc_reduce_create<uint8_t >(op);
-        case VarType::Int16:   return jitc_reduce_create<int16_t >(op);
-        case VarType::UInt16:  return jitc_reduce_create<uint16_t>(op);
-        case VarType::Int32:   return jitc_reduce_create<int32_t >(op);
-        case VarType::UInt32:  return jitc_reduce_create<uint32_t>(op);
-        case VarType::Int64:   return jitc_reduce_create<int64_t >(op);
-        case VarType::UInt64:  return jitc_reduce_create<uint64_t>(op);
-        case VarType::Float16: return jitc_reduce_create<half    >(op);
-        case VarType::Float32: return jitc_reduce_create<float   >(op);
-        case VarType::Float64: return jitc_reduce_create<double  >(op);
+        case VarType::Int8:    return reduce_create<int8_t  >(op);
+        case VarType::UInt8:   return reduce_create<uint8_t >(op);
+        case VarType::Int16:   return reduce_create<int16_t >(op);
+        case VarType::UInt16:  return reduce_create<uint16_t>(op);
+        case VarType::Int32:   return reduce_create<int32_t >(op);
+        case VarType::UInt32:  return reduce_create<uint32_t>(op);
+        case VarType::Int64:   return reduce_create<int64_t >(op);
+        case VarType::UInt64:  return reduce_create<uint64_t>(op);
+        case VarType::Float16: return reduce_create<half    >(op);
+        case VarType::Float32: return reduce_create<float   >(op);
+        case VarType::Float64: return reduce_create<double  >(op);
         default: jitc_raise("jit_reduce_create(): unsupported data type!");
     }
 }
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
-static void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
+static void submit_cpu(KernelType type, Func &&func, uint32_t width,
                      uint32_t size = 1) {
 
     struct Payload { Func f; };
@@ -131,7 +131,7 @@ static void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
     jitc_task = new_task;
 }
 
-void LLVMThreadState::jitc_memset_async(void *ptr, uint32_t size_,
+void LLVMThreadState::memset_async(void *ptr, uint32_t size_,
                                         uint32_t isize, const void *src){
     if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
         jitc_raise("LLVMThreadState::jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
@@ -154,9 +154,9 @@ void LLVMThreadState::jitc_memset_async(void *ptr, uint32_t size_,
 
     // LLVM Specific
     uint8_t src8[8] { };
-    memcpy(&src8, src, isize);
+    std::memcpy(&src8, src, isize);
 
-    jitc_submit_cpu(KernelType::Other,
+    submit_cpu(KernelType::Other,
         [ptr, src8, size, isize](uint32_t) {
             switch (isize) {
                 case 1:
@@ -193,7 +193,7 @@ void LLVMThreadState::jitc_memset_async(void *ptr, uint32_t size_,
     );
 }
 
-void LLVMThreadState::jitc_reduce(VarType type, ReduceOp op, const void *ptr,
+void LLVMThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
                                   uint32_t size, void *out) {
     
     jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u)",
@@ -214,7 +214,7 @@ void LLVMThreadState::jitc_reduce(VarType type, ReduceOp op, const void *ptr,
         target = jitc_malloc(AllocType::HostAsync, blocks * tsize);
 
     Reduction reduction = jitc_reduce_create(type, op);
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Reduce,
         [block_size, size, tsize, ptr, reduction, target](uint32_t index) {
             reduction(ptr, index * block_size,
@@ -226,12 +226,12 @@ void LLVMThreadState::jitc_reduce(VarType type, ReduceOp op, const void *ptr,
         std::max(1u, blocks));
 
     if (blocks > 1) {
-        this->jitc_reduce(type, op, target, blocks, out);
+        this->reduce(type, op, target, blocks, out);
         jitc_free(target);
     }
 }
 
-bool LLVMThreadState::jitc_all(uint8_t *values, uint32_t size) {
+bool LLVMThreadState::all(uint8_t *values, uint32_t size) {
     /* When \c size is not a multiple of 4, the implementation will initialize up
        to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
        reduction algorithm can be used. This is fine for allocations made using
@@ -244,21 +244,21 @@ bool LLVMThreadState::jitc_all(uint8_t *values, uint32_t size) {
 
     if (trailing) {
         bool filler = true;
-        this->jitc_memset_async(values + size, trailing, sizeof(bool), &filler);
+        this->memset_async(values + size, trailing, sizeof(bool), &filler);
     }
     
     // LLVM specific
     bool result;
     
     uint8_t out[4];
-    this->jitc_reduce(VarType::UInt32, ReduceOp::And, values, reduced_size, out);
+    this->reduce(VarType::UInt32, ReduceOp::And, values, reduced_size, out);
     jitc_sync_thread();
     result = (out[0] & out[1] & out[2] & out[3]) != 0;
 
     return result;
 }
 
-bool LLVMThreadState::jitc_any(uint8_t *values, uint32_t size) {
+bool LLVMThreadState::any(uint8_t *values, uint32_t size) {
     /* When \c size is not a multiple of 4, the implementation will initialize up
        to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
        reduction algorithm can be used. This is fine for allocations made using
@@ -271,14 +271,14 @@ bool LLVMThreadState::jitc_any(uint8_t *values, uint32_t size) {
 
     if (trailing) {
         bool filler = false;
-        this->jitc_memset_async(values + size, trailing, sizeof(bool), &filler);
+        this->memset_async(values + size, trailing, sizeof(bool), &filler);
     }
 
     // LLVM specific
     bool result;
     
     uint8_t out[4];
-    this->jitc_reduce(VarType::UInt32, ReduceOp::Or, values,
+    this->reduce(VarType::UInt32, ReduceOp::Or, values,
                 reduced_size, out);
     jitc_sync_thread();
     result = (out[0] | out[1] | out[2] | out[3]) != 0;
@@ -345,7 +345,7 @@ static void sum_reduce_2(VarType vt, uint32_t start, uint32_t end, const void *i
     }
 }
 
-void LLVMThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
+void LLVMThreadState::prefix_sum(VarType vt, bool exclusive,
                                       const void *in, uint32_t size,
                                       void *out) {
     if (size == 0)
@@ -372,7 +372,7 @@ void LLVMThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
     if (blocks > 1) {
         scratch = (void *) jitc_malloc(AllocType::HostAsync, blocks * isize);
 
-        jitc_submit_cpu(
+        submit_cpu(
             KernelType::Other,
             [block_size, size, in, vt, scratch](uint32_t index) {
                 uint32_t start = index * block_size,
@@ -382,10 +382,10 @@ void LLVMThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
             },
             size, blocks);
 
-        this->jitc_prefix_sum(vt, true, scratch, blocks, scratch);
+        this->prefix_sum(vt, true, scratch, blocks, scratch);
     }
 
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Other,
         [block_size, size, in, out, vt, scratch, exclusive](uint32_t index) {
             uint32_t start = index * block_size,
@@ -399,7 +399,7 @@ void LLVMThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
     jitc_free(scratch);
 }
 
-uint32_t LLVMThreadState::jitc_compress(const uint8_t *in, uint32_t size,
+uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
                                         uint32_t *out) {
     if (size == 0)
         return 0;
@@ -424,7 +424,7 @@ uint32_t LLVMThreadState::jitc_compress(const uint8_t *in, uint32_t size,
         scratch = (uint32_t *) jitc_malloc(AllocType::HostAsync,
                                            blocks * sizeof(uint32_t));
 
-        jitc_submit_cpu(
+        submit_cpu(
             KernelType::Other,
             [block_size, size, in, scratch](uint32_t index) {
                 uint32_t start = index * block_size,
@@ -440,10 +440,10 @@ uint32_t LLVMThreadState::jitc_compress(const uint8_t *in, uint32_t size,
             size, blocks
         );
 
-        this->jitc_prefix_sum(VarType::UInt32, true, scratch, blocks, scratch);
+        this->prefix_sum(VarType::UInt32, true, scratch, blocks, scratch);
     }
 
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Other,
         [block_size, size, scratch, in, out, &count_out](uint32_t index) {
             uint32_t start = index * block_size,
@@ -476,7 +476,7 @@ uint32_t LLVMThreadState::jitc_compress(const uint8_t *in, uint32_t size,
 static ProfilerRegion profiler_region_mkperm_phase_1("jit_mkperm_phase_1");
 static ProfilerRegion profiler_region_mkperm_phase_2("jit_mkperm_phase_2");
 
-uint32_t LLVMThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
+uint32_t LLVMThreadState::mkperm(const uint32_t *ptr, uint32_t size,
                                       uint32_t bucket_count, uint32_t *perm,
                                       uint32_t *offsets) {
     if (size == 0)
@@ -510,7 +510,7 @@ uint32_t LLVMThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
     uint32_t unique_count = 0;
 
     // Phase 1
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::CallReduce,
         [block_size, size, buckets, bucket_count, ptr](uint32_t index) {
             ProfilerPhase profiler(profiler_region_mkperm_phase_1);
@@ -531,7 +531,7 @@ uint32_t LLVMThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
     );
 
     // Local accumulation step
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::CallReduce,
         [bucket_count, blocks, buckets, offsets, &unique_count](uint32_t) {
             uint32_t sum = 0, unique_count_local = 0;
@@ -564,7 +564,7 @@ uint32_t LLVMThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
     task_retain(local_task);
 
     // Phase 2
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::CallReduce,
         [block_size, size, buckets, perm, ptr](uint32_t index) {
             ProfilerPhase profiler(profiler_region_mkperm_phase_2);
@@ -593,16 +593,16 @@ uint32_t LLVMThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
     return unique_count;
 }
 
-void LLVMThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {
-    memcpy(dst, src, size);
+void LLVMThreadState::memcpy(void *dst, const void *src, size_t size) {
+    std::memcpy(dst, src, size);
 }
 
-void LLVMThreadState::jitc_memcpy_async(void *dst, const void *src,
+void LLVMThreadState::memcpy_async(void *dst, const void *src,
                                         size_t size) {
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Other,
         [dst, src, size](uint32_t) {
-            memcpy(dst, src, size);
+            std::memcpy(dst, src, size);
         },
 
         (uint32_t) size
@@ -670,7 +670,7 @@ static VarType make_int_type_unsigned(VarType type) {
     }
 }
 
-void LLVMThreadState::jitc_block_copy(enum VarType type, const void *in,
+void LLVMThreadState::block_copy(enum VarType type, const void *in,
                                       void *out, uint32_t size,
                                       uint32_t block_size) {
     if (block_size == 0)
@@ -684,7 +684,7 @@ void LLVMThreadState::jitc_block_copy(enum VarType type, const void *in,
 
     if (block_size == 1) {
         uint32_t tsize = type_size[(int) type];
-        this->jitc_memcpy_async(out, in, size * tsize);
+        this->memcpy_async(out, in, size * tsize);
         return;
     }
 
@@ -699,7 +699,7 @@ void LLVMThreadState::jitc_block_copy(enum VarType type, const void *in,
 
     BlockOp op = jitc_block_copy_create(type);
 
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Other,
         [in, out, op, work_unit_size, size, block_size](uint32_t index) {
             uint32_t start = index * work_unit_size,
@@ -712,7 +712,7 @@ void LLVMThreadState::jitc_block_copy(enum VarType type, const void *in,
     );
 }
 
-void LLVMThreadState::jitc_block_sum(enum VarType type, const void *in,
+void LLVMThreadState::block_sum(enum VarType type, const void *in,
                                      void *out, uint32_t size,
                                      uint32_t block_size) {
     if (block_size == 0)
@@ -728,7 +728,7 @@ void LLVMThreadState::jitc_block_sum(enum VarType type, const void *in,
     size_t out_size = size * tsize;
 
     if (block_size == 1) {
-        this->jitc_memcpy_async(out, in, out_size);
+        this->memcpy_async(out, in, out_size);
         return;
     }
 
@@ -743,7 +743,7 @@ void LLVMThreadState::jitc_block_sum(enum VarType type, const void *in,
 
     BlockOp op = jitc_block_sum_create(type);
 
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Other,
         [in, out, op, work_unit_size, size, block_size](uint32_t index) {
             uint32_t start = index * work_unit_size,
@@ -756,34 +756,24 @@ void LLVMThreadState::jitc_block_sum(enum VarType type, const void *in,
     );
 }
 
-void LLVMThreadState::jitc_poke(void *dst, const void *src, uint32_t size) {
+void LLVMThreadState::poke(void *dst, const void *src, uint32_t size) {
     jitc_log(Debug, "jit_poke(" DRJIT_PTR ", size=%u)", (uintptr_t) dst, size);
-
-    VarType type;
-    switch (size) {
-        case 1: type = VarType::UInt8; break;
-        case 2: type = VarType::UInt16; break;
-        case 4: type = VarType::UInt32; break;
-        case 8: type = VarType::UInt64; break;
-        default:
-            jitc_raise("jit_poke(): only size=1, 2, 4 or 8 are supported!");
-    }
     
     // LLVM specific
     uint8_t src8[8] { };
-    memcpy(&src8, src, size);
+    std::memcpy(&src8, src, size);
 
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Other,
         [src8, size, dst](uint32_t) {
-            memcpy(dst, &src8, size);
+            std::memcpy(dst, &src8, size);
         },
 
         size
     );
 }
 
-void LLVMThreadState::jitc_aggregate(void *dst_, AggregationEntry *agg,
+void LLVMThreadState::aggregate(void *dst_, AggregationEntry *agg,
                                      uint32_t size) {
     uint32_t work_unit_size = size, work_units = 1;
     if (pool_size() > 1) {
@@ -796,7 +786,7 @@ void LLVMThreadState::jitc_aggregate(void *dst_, AggregationEntry *agg,
              ", size=%u, work_units=%u)",
              (uintptr_t) agg, (uintptr_t) dst_, size, work_units);
 
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Other,
         [dst_, agg, size, work_unit_size](uint32_t index) {
             uint32_t start = index * work_unit_size,
@@ -822,17 +812,17 @@ void LLVMThreadState::jitc_aggregate(void *dst_, AggregationEntry *agg,
         },
         size, work_units);
 
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Other, [agg](uint32_t) { free(agg); }, 1, 1);
 }
 
-void LLVMThreadState::jitc_enqueue_host_func(void (*callback)(void *),
+void LLVMThreadState::enqueue_host_func(void (*callback)(void *),
                                              void *payload) {
     if (!jitc_task) {
         unlock_guard guard(state.lock);
         callback(payload);
     } else {
-        jitc_submit_cpu(
+        submit_cpu(
             KernelType::Other, [payload, callback](uint32_t) { callback(payload); }, 1, 1);
     }
 }
@@ -840,7 +830,7 @@ void LLVMThreadState::jitc_enqueue_host_func(void (*callback)(void *),
 using ReduceExpanded = void (*) (void *ptr, uint32_t start, uint32_t end, uint32_t exp, uint32_t size);
 
 template <typename Value, typename Op>
-static void jitc_reduce_expanded_impl(void *ptr_, uint32_t start, uint32_t end,
+static void reduce_expanded_impl(void *ptr_, uint32_t start, uint32_t end,
                                  uint32_t exp, uint32_t size) {
     Value *ptr = (Value *) ptr_;
     Op op;
@@ -859,7 +849,7 @@ static void jitc_reduce_expanded_impl(void *ptr_, uint32_t start, uint32_t end,
 }
 
 template <typename Value>
-static ReduceExpanded jitc_reduce_expanded_create(ReduceOp op) {
+static ReduceExpanded reduce_expanded_create(ReduceOp op) {
     using UInt = uint_with_size_t<Value>;
 
     struct Add { Value operator()(Value a, Value b) JIT_NO_UBSAN { return a + b; }};
@@ -884,38 +874,38 @@ static ReduceExpanded jitc_reduce_expanded_create(ReduceOp op) {
     };
 
     switch (op) {
-        case ReduceOp::Add: return jitc_reduce_expanded_impl<Value, Add>;
-        case ReduceOp::Mul: return jitc_reduce_expanded_impl<Value, Mul>;
-        case ReduceOp::Max: return jitc_reduce_expanded_impl<Value, Max>;
-        case ReduceOp::Min: return jitc_reduce_expanded_impl<Value, Min>;
-        case ReduceOp::And: return jitc_reduce_expanded_impl<Value, And>;
-        case ReduceOp::Or: return jitc_reduce_expanded_impl<Value, Or>;
+        case ReduceOp::Add: return reduce_expanded_impl<Value, Add>;
+        case ReduceOp::Mul: return reduce_expanded_impl<Value, Mul>;
+        case ReduceOp::Max: return reduce_expanded_impl<Value, Max>;
+        case ReduceOp::Min: return reduce_expanded_impl<Value, Min>;
+        case ReduceOp::And: return reduce_expanded_impl<Value, And>;
+        case ReduceOp::Or: return reduce_expanded_impl<Value, Or>;
 
         default: jitc_raise("jit_reduce_expanded_create(): unsupported reduction type!");
     }
 }
 
-static ReduceExpanded jitc_reduce_expanded_create(VarType type, ReduceOp op) {
+static ReduceExpanded reduce_expanded_create(VarType type, ReduceOp op) {
     using half = drjit::half;
     switch (type) {
-        case VarType::Int32:   return jitc_reduce_expanded_create<int32_t >(op);
-        case VarType::UInt32:  return jitc_reduce_expanded_create<uint32_t>(op);
-        case VarType::Int64:   return jitc_reduce_expanded_create<int64_t >(op);
-        case VarType::UInt64:  return jitc_reduce_expanded_create<uint64_t>(op);
-        case VarType::Float16: return jitc_reduce_expanded_create<half    >(op);
-        case VarType::Float32: return jitc_reduce_expanded_create<float   >(op);
-        case VarType::Float64: return jitc_reduce_expanded_create<double  >(op);
+        case VarType::Int32:   return reduce_expanded_create<int32_t >(op);
+        case VarType::UInt32:  return reduce_expanded_create<uint32_t>(op);
+        case VarType::Int64:   return reduce_expanded_create<int64_t >(op);
+        case VarType::UInt64:  return reduce_expanded_create<uint64_t>(op);
+        case VarType::Float16: return reduce_expanded_create<half    >(op);
+        case VarType::Float32: return reduce_expanded_create<float   >(op);
+        case VarType::Float64: return reduce_expanded_create<double  >(op);
         default: jitc_raise("jit_reduce_create(): unsupported data type!");
     }
 }
 
-void LLVMThreadState::jitc_reduce_expanded(VarType vt, ReduceOp op, void *ptr,
+void LLVMThreadState::reduce_expanded(VarType vt, ReduceOp op, void *ptr,
                                            uint32_t exp, uint32_t size) {
     jitc_log(Debug, "jit_reduce_expanded(" DRJIT_PTR ", type=%s, op=%s, expfactor=%u, size=%u)",
             (uintptr_t) ptr, type_name[(int) vt],
             reduction_name[(int) op], exp, size);
 
-    ReduceExpanded kernel = jitc_reduce_expanded_create(vt, op);
+    ReduceExpanded kernel = reduce_expanded_create(vt, op);
 
     uint32_t block_size = size, blocks = 1;
     if (pool_size() > 1) {
@@ -923,7 +913,7 @@ void LLVMThreadState::jitc_reduce_expanded(VarType vt, ReduceOp op, void *ptr,
         blocks     = (size + block_size - 1) / block_size;
     }
 
-    jitc_submit_cpu(
+    submit_cpu(
         KernelType::Reduce,
         [ptr, block_size, exp, size, kernel](uint32_t index) {
             kernel(ptr, index * block_size,

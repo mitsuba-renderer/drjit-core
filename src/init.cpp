@@ -8,8 +8,8 @@
 */
 
 #include "internal.h"
-#include "cuda_internal.h"
-#include "llvm_internal.h"
+#include "cuda_ts.h"
+#include "llvm_ts.h"
 #include "malloc.h"
 #include "internal.h"
 #include "log.h"

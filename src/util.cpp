@@ -97,7 +97,7 @@ void jitc_submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
 void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size_,
                        uint32_t isize, const void *src) {
     ThreadState *ts = thread_state(backend);
-    ts->jitc_memset_async(ptr, size_, isize, src);
+    ts->memset_async(ptr, size_, isize, src);
 }
 
 /// Perform a synchronous copy operation
@@ -106,35 +106,35 @@ void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size) {
 
     // Temporarily release the lock while copying
     jitc_sync_thread(ts);
-    ts->jitc_memcpy(dst, src, size);
+    ts->memcpy(dst, src, size);
 }
 
 /// Perform an asynchronous copy operation
 void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t size) {
     ThreadState *ts = thread_state(backend);
 
-    ts->jitc_memcpy_async(dst, src, size);
+    ts->memcpy_async(dst, src, size);
 }
 
 void jitc_reduce(JitBackend backend, VarType type, ReduceOp op, const void *ptr,
                 uint32_t size, void *out) {
     ThreadState *ts = thread_state(backend);
 
-    ts->jitc_reduce(type, op, ptr, size, out);
+    ts->reduce(type, op, ptr, size, out);
 }
 
 /// 'All' reduction for boolean arrays
 bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
     ThreadState *ts = thread_state(backend);
 
-    return ts->jitc_all(values, size);
+    return ts->all(values, size);
 }
 
 /// 'Any' reduction for boolean arrays
 bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
     ThreadState *ts = thread_state(backend);
 
-    return ts->jitc_any(values, size);
+    return ts->any(values, size);
 }
 
 /// Exclusive prefix sum
@@ -142,14 +142,14 @@ void jitc_prefix_sum(JitBackend backend, VarType vt, bool exclusive,
                const void *in, uint32_t size, void *out) {
     ThreadState *ts = thread_state(backend);
 
-    ts->jitc_prefix_sum(vt, exclusive, in, size, out);
+    ts->prefix_sum(vt, exclusive, in, size, out);
 }
 
 /// Mask compression
 uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uint32_t *out) {
     ThreadState *ts = thread_state(backend);
 
-    return ts->jitc_compress(in, size, out);
+    return ts->compress(in, size, out);
 }
 
 static ProfilerRegion profiler_region_mkperm("jit_mkperm");
@@ -161,7 +161,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
     ProfilerPhase profiler(profiler_region_mkperm);
     ThreadState *ts = thread_state(backend);
 
-    return ts->jitc_mkperm(ptr, size, bucket_count, perm, offsets);
+    return ts->mkperm(ptr, size, bucket_count, perm, offsets);
 }
 
 using BlockOp = void (*) (const void *ptr, void *out, uint32_t start, uint32_t end, uint32_t block_size);
@@ -230,7 +230,7 @@ void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void
                     uint32_t size, uint32_t block_size) {
     ThreadState *ts = thread_state(backend);
 
-    ts->jitc_block_copy(type, in, out, size, block_size);
+    ts->block_copy(type, in, out, size, block_size);
 }
 
 /// Sum over elements within blocks
@@ -238,30 +238,30 @@ void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void 
                     uint32_t size, uint32_t block_size) {
     ThreadState *ts = thread_state(backend);
 
-    ts->jitc_block_sum(type, in, out, size, block_size);
+    ts->block_sum(type, in, out, size, block_size);
 }
 
 /// Asynchronously update a single element in memory
 void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size) {
     ThreadState *ts = thread_state(backend);
 
-    ts->jitc_poke(dst, src, size);
+    ts->poke(dst, src, size);
 }
 
 void jitc_aggregate(JitBackend backend, void *dst_, AggregationEntry *agg,
                     uint32_t size) {
     ThreadState *ts = thread_state(backend);
 
-    ts->jitc_aggregate(dst_, agg, size);
+    ts->aggregate(dst_, agg, size);
 }
 
 void jitc_enqueue_host_func(JitBackend backend, void (*callback)(void *),
                             void *payload) {
     ThreadState *ts = thread_state(backend);
 
-    ts->jitc_enqueue_host_func(callback, payload);
+    ts->enqueue_host_func(callback, payload);
 }
 
 void jitc_reduce_expanded(VarType vt, ReduceOp op, void *ptr, uint32_t exp, uint32_t size) {
-    thread_state_llvm->jitc_reduce_expanded(vt, op, ptr, exp, size);
+    thread_state_llvm->reduce_expanded(vt, op, ptr, exp, size);
 }

@@ -1,11 +1,11 @@
-#include "cuda_internal.h"
+#include "cuda_ts.h"
 #include "var.h"
 #include "log.h"
 
 const static char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
                                                       "min", "max", "and", "or" };
 
-static void jitc_submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
+static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
                      uint32_t thread_count, uint32_t shared_mem_bytes,
                      CUstream stream, void **args, void **extra,
                      uint32_t width) {
@@ -39,7 +39,7 @@ static void jitc_submit_gpu(KernelType type, CUfunction kernel, uint32_t block_c
 }
 
 /// Fill a device memory region with constants of a given type
-void CUDAThreadState::jitc_memset_async(void *ptr, uint32_t size_,
+void CUDAThreadState::memset_async(void *ptr, uint32_t size_,
                                         uint32_t isize, const void *src){
     
     if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
@@ -87,7 +87,7 @@ void CUDAThreadState::jitc_memset_async(void *ptr, uint32_t size_,
                 device.get_launch_config(&block_count, &thread_count, size_);
                 void *args[] = { &ptr, &size_, (void *) src };
                 CUfunction kernel = jitc_cuda_fill_64[device.id];
-                jitc_submit_gpu(KernelType::Other, kernel, block_count,
+                submit_gpu(KernelType::Other, kernel, block_count,
                                 thread_count, 0, this->stream, args, nullptr,
                                 size_);
             }
@@ -95,7 +95,7 @@ void CUDAThreadState::jitc_memset_async(void *ptr, uint32_t size_,
     }
 }
 
-void CUDAThreadState::jitc_reduce(VarType type, ReduceOp op, const void *ptr,
+void CUDAThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
                                   uint32_t size, void *out) {
     
     jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u)",
@@ -122,7 +122,7 @@ void CUDAThreadState::jitc_reduce(VarType type, ReduceOp op, const void *ptr,
         // This is a small array, do everything in just one reduction.
         void *args[] = { &ptr, &size, &out };
 
-        jitc_submit_gpu(KernelType::Reduce, func, 1, thread_count,
+        submit_gpu(KernelType::Reduce, func, 1, thread_count,
                         shared_size, this->stream, args, nullptr, size);
     } else {
         void *temp = jitc_malloc(AllocType::Device, size_t(block_count) * tsize);
@@ -130,20 +130,20 @@ void CUDAThreadState::jitc_reduce(VarType type, ReduceOp op, const void *ptr,
         // First reduction
         void *args_1[] = { &ptr, &size, &temp };
 
-        jitc_submit_gpu(KernelType::Reduce, func, block_count, thread_count,
+        submit_gpu(KernelType::Reduce, func, block_count, thread_count,
                         shared_size, this->stream, args_1, nullptr, size);
 
         // Second reduction
         void *args_2[] = { &temp, &block_count, &out };
 
-        jitc_submit_gpu(KernelType::Reduce, func, 1, thread_count,
+        submit_gpu(KernelType::Reduce, func, 1, thread_count,
                         shared_size, this->stream, args_2, nullptr, size);
 
         jitc_free(temp);
     }
 }
 
-bool CUDAThreadState::jitc_all(uint8_t *values, uint32_t size) {
+bool CUDAThreadState::all(uint8_t *values, uint32_t size) {
     /* When \c size is not a multiple of 4, the implementation will initialize up
        to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
        reduction algorithm can be used. This is fine for allocations made using
@@ -156,14 +156,14 @@ bool CUDAThreadState::jitc_all(uint8_t *values, uint32_t size) {
 
     if (trailing) {
         bool filler = true;
-        this->jitc_memset_async(values + size, trailing, sizeof(bool), &filler);
+        this->memset_async(values + size, trailing, sizeof(bool), &filler);
     }
 
     // CUDA specific
     bool result;
     
     uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
-    this->jitc_reduce(VarType::UInt32, ReduceOp::And, values, reduced_size, out);
+    this->reduce(VarType::UInt32, ReduceOp::And, values, reduced_size, out);
     jitc_sync_thread();
     result = (out[0] & out[1] & out[2] & out[3]) != 0;
     jitc_free(out);
@@ -171,7 +171,7 @@ bool CUDAThreadState::jitc_all(uint8_t *values, uint32_t size) {
     return result;
 }
 
-bool CUDAThreadState::jitc_any(uint8_t *values, uint32_t size) {
+bool CUDAThreadState::any(uint8_t *values, uint32_t size) {
     /* When \c size is not a multiple of 4, the implementation will initialize up
        to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
        reduction algorithm can be used. This is fine for allocations made using
@@ -184,14 +184,14 @@ bool CUDAThreadState::jitc_any(uint8_t *values, uint32_t size) {
 
     if (trailing) {
         bool filler = false;
-        this->jitc_memset_async(values + size, trailing, sizeof(bool), &filler);
+        this->memset_async(values + size, trailing, sizeof(bool), &filler);
     }
 
     // CUDA specific
     bool result;
     
     uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
-    this->jitc_reduce(VarType::UInt32, ReduceOp::Or, values,
+    this->reduce(VarType::UInt32, ReduceOp::Or, values,
                       reduced_size, out);
     jitc_sync_thread();
     result = (out[0] | out[1] | out[2] | out[3]) != 0;
@@ -201,7 +201,7 @@ bool CUDAThreadState::jitc_any(uint8_t *values, uint32_t size) {
     
 }
 
-void CUDAThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
+void CUDAThreadState::prefix_sum(VarType vt, bool exclusive,
                                       const void *in, uint32_t size,
                                       void *out) {
     if (size == 0)
@@ -245,7 +245,7 @@ void CUDAThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
             jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
 
         void *args[] = { &in, &out, &size };
-        jitc_submit_gpu(
+        submit_gpu(
             KernelType::Other, kernel, 1,
             thread_count, shared_size, this->stream, args, nullptr, size);
     } else {
@@ -280,14 +280,14 @@ void CUDAThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
                                  scratch_items);
 
         void *args[] = { &scratch, &scratch_items };
-        jitc_submit_gpu(KernelType::Other,
+        submit_gpu(KernelType::Other,
                         jitc_cuda_prefix_sum_large_init[device.id],
                         block_count_init, thread_count_init, 0, this->stream,
                         args, nullptr, scratch_items);
 
         scratch += 32; // move beyond padding area
         void *args_2[] = { &in, &out, &size, &scratch };
-        jitc_submit_gpu(KernelType::Other, kernel, block_count,
+        submit_gpu(KernelType::Other, kernel, block_count,
                         thread_count, shared_size, this->stream, args_2,
                         nullptr, scratch_items);
         scratch -= 32;
@@ -296,7 +296,7 @@ void CUDAThreadState::jitc_prefix_sum(VarType vt, bool exclusive,
     }
 }
 
-uint32_t CUDAThreadState::jitc_compress(const uint8_t *in, uint32_t size,
+uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
                                         uint32_t *out) {
     if (size == 0)
         return 0;
@@ -327,7 +327,7 @@ uint32_t CUDAThreadState::jitc_compress(const uint8_t *in, uint32_t size,
                                        this->stream));
 
         void *args[] = { &in, &out, &size, &count_out };
-        jitc_submit_gpu(
+        submit_gpu(
             KernelType::Other, jitc_cuda_compress_small[device.id], 1,
             thread_count, shared_size, this->stream, args, nullptr, size);
     } else {
@@ -356,7 +356,7 @@ uint32_t CUDAThreadState::jitc_compress(const uint8_t *in, uint32_t size,
                                  scratch_items);
 
         void *args[] = { &scratch, &scratch_items };
-        jitc_submit_gpu(KernelType::Other,
+        submit_gpu(KernelType::Other,
                         jitc_cuda_prefix_sum_large_init[device.id],
                         block_count_init, thread_count_init, 0, this->stream,
                         args, nullptr, scratch_items);
@@ -367,7 +367,7 @@ uint32_t CUDAThreadState::jitc_compress(const uint8_t *in, uint32_t size,
 
         scratch += 32; // move beyond padding area
         void *args_2[] = { &in, &out, &scratch, &count_out };
-        jitc_submit_gpu(KernelType::Other,
+        submit_gpu(KernelType::Other,
                         jitc_cuda_compress_large[device.id], block_count,
                         thread_count, shared_size, this->stream, args_2,
                         nullptr, scratch_items);
@@ -401,7 +401,7 @@ static void cuda_transpose(ThreadState *ts, const uint32_t *in, uint32_t *out,
         16 * 17 * sizeof(uint32_t), ts->stream, args, nullptr));
 }
 
-uint32_t CUDAThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
+uint32_t CUDAThreadState::mkperm(const uint32_t *ptr, uint32_t size,
                                       uint32_t bucket_count, uint32_t *perm,
                                       uint32_t *offsets) {
     if (size == 0)
@@ -502,7 +502,7 @@ uint32_t CUDAThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
     void *args_1[] = { &ptr, &buckets_1, &size, &size_per_block,
                        &bucket_count };
 
-    jitc_submit_gpu(KernelType::CallReduce, phase_1, block_count,
+    submit_gpu(KernelType::CallReduce, phase_1, block_count,
                     thread_count, shared_size, this->stream, args_1, nullptr,
                     size);
 
@@ -511,7 +511,7 @@ uint32_t CUDAThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
         cuda_transpose(this, buckets_1, buckets_2,
                        bucket_size_all / bucket_size_1, bucket_count);
 
-    this->jitc_prefix_sum(VarType::UInt32, true, buckets_2,
+    this->prefix_sum(VarType::UInt32, true, buckets_2,
               bucket_size_all / sizeof(uint32_t), buckets_2);
 
     if (needs_transpose)
@@ -531,7 +531,7 @@ uint32_t CUDAThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
         void *args_3[] = { &buckets_1, &bucket_count, &bucket_count_rounded,
                            &size,      &counter,      &offsets };
 
-        jitc_submit_gpu(KernelType::CallReduce,
+        submit_gpu(KernelType::CallReduce,
                         jitc_cuda_mkperm_phase_3[device.id], block_count_3,
                         thread_count_3, sizeof(uint32_t) * thread_count_3,
                         this->stream, args_3, nullptr, size);
@@ -547,7 +547,7 @@ uint32_t CUDAThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
     void *args_4[] = { &ptr, &buckets_1, &perm, &size, &size_per_block,
                        &bucket_count };
 
-    jitc_submit_gpu(KernelType::CallReduce, phase_4, block_count,
+    submit_gpu(KernelType::CallReduce, phase_4, block_count,
                     thread_count, shared_size, this->stream, args_4, nullptr,
                     size);
 
@@ -564,12 +564,12 @@ uint32_t CUDAThreadState::jitc_mkperm(const uint32_t *ptr, uint32_t size,
     return offsets ? offsets[4 * bucket_count] : 0u;
 }
 
-void CUDAThreadState::jitc_memcpy(void *dst, const void *src, size_t size) {
+void CUDAThreadState::memcpy(void *dst, const void *src, size_t size) {
     scoped_set_context guard_2(this->context);
     cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
 }
 
-void CUDAThreadState::jitc_memcpy_async(void *dst, const void *src,
+void CUDAThreadState::memcpy_async(void *dst, const void *src,
                                         size_t size) {
     scoped_set_context guard(this->context);
     cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
@@ -586,7 +586,7 @@ static VarType make_int_type_unsigned(VarType type) {
     }
 }
 
-void CUDAThreadState::jitc_block_copy(enum VarType type, const void *in,
+void CUDAThreadState::block_copy(enum VarType type, const void *in,
                                       void *out, uint32_t size,
                                       uint32_t block_size) {
     if (block_size == 0)
@@ -600,7 +600,7 @@ void CUDAThreadState::jitc_block_copy(enum VarType type, const void *in,
 
     if (block_size == 1) {
         uint32_t tsize = type_size[(int) type];
-        this->jitc_memcpy_async(out, in, size * tsize);
+        this->memcpy_async(out, in, size * tsize);
         return;
     }
 
@@ -620,11 +620,11 @@ void CUDAThreadState::jitc_block_copy(enum VarType type, const void *in,
              block_count  = (size + thread_count - 1) / thread_count;
 
     void *args[] = { &in, &out, &size, &block_size };
-    jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+    submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
                     this->stream, args, nullptr, size);
 }
 
-void CUDAThreadState::jitc_block_sum(enum VarType type, const void *in,
+void CUDAThreadState::block_sum(enum VarType type, const void *in,
                                      void *out, uint32_t size,
                                      uint32_t block_size) {
     if (block_size == 0)
@@ -640,7 +640,7 @@ void CUDAThreadState::jitc_block_sum(enum VarType type, const void *in,
     size_t out_size = size * tsize;
 
     if (block_size == 1) {
-        this->jitc_memcpy_async(out, in, out_size);
+        this->memcpy_async(out, in, out_size);
         return;
     }
 
@@ -662,11 +662,11 @@ void CUDAThreadState::jitc_block_sum(enum VarType type, const void *in,
 
     void *args[] = { &in, &out, &size, &block_size };
     cuda_check(cuMemsetD8Async((CUdeviceptr) out, 0, out_size, this->stream));
-    jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+    submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
                     this->stream, args, nullptr, size);
 }
 
-void CUDAThreadState::jitc_poke(void *dst, const void *src, uint32_t size) {
+void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
     jitc_log(Debug, "jit_poke(" DRJIT_PTR ", size=%u)", (uintptr_t) dst, size);
 
     VarType type;
@@ -684,11 +684,11 @@ void CUDAThreadState::jitc_poke(void *dst, const void *src, uint32_t size) {
     const Device &device = state.devices[this->device];
     CUfunction func = jitc_cuda_poke[(int) type][device.id];
     void *args[] = { &dst, (void *) src };
-    jitc_submit_gpu(KernelType::Other, func, 1, 1, 0,
+    submit_gpu(KernelType::Other, func, 1, 1, 0,
                     this->stream, args, nullptr, 1);
 }
 
-void CUDAThreadState::jitc_aggregate(void *dst_, AggregationEntry *agg,
+void CUDAThreadState::aggregate(void *dst_, AggregationEntry *agg,
                                      uint32_t size) {
     scoped_set_context guard(this->context);
     const Device &device = state.devices[this->device];
@@ -704,13 +704,13 @@ void CUDAThreadState::jitc_aggregate(void *dst_, AggregationEntry *agg,
              (uintptr_t) agg, (uintptr_t) dst_, size, block_count,
              thread_count);
 
-    jitc_submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+    submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
                     this->stream, args, nullptr, 1);
 
     jitc_free(agg);
 }
 
-void CUDAThreadState::jitc_enqueue_host_func(void (*callback)(void *),
+void CUDAThreadState::enqueue_host_func(void (*callback)(void *),
                                              void *payload) {
     
     scoped_set_context guard(this->context);
