@@ -5,7 +5,7 @@
 #include "profile.h"
 
 const static char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
-                                                      "min", "max", "and", "or" };
+                                                             "min",  "max", "and", "or" };
 
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
 
@@ -97,7 +97,7 @@ static Reduction jitc_reduce_create(VarType type, ReduceOp op) {
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
 static void submit_cpu(KernelType type, Func &&func, uint32_t width,
-                     uint32_t size = 1) {
+                       uint32_t size = 1) {
 
     struct Payload { Func f; };
     Payload payload{ std::forward<Func>(func) };
@@ -131,8 +131,8 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
     jitc_task = new_task;
 }
 
-void LLVMThreadState::memset_async(void *ptr, uint32_t size_,
-                                        uint32_t isize, const void *src){
+void LLVMThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize, 
+                                   const void *src){
     if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
         jitc_raise("LLVMThreadState::jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
 
@@ -194,7 +194,7 @@ void LLVMThreadState::memset_async(void *ptr, uint32_t size_,
 }
 
 void LLVMThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
-                                  uint32_t size, void *out) {
+                             uint32_t size, void *out) {
     
     jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u)",
              (uintptr_t) ptr, type_name[(int) type],
@@ -287,8 +287,8 @@ bool LLVMThreadState::any(uint8_t *values, uint32_t size) {
 }
 
 template <typename T>
-static void sum_reduce_1(uint32_t start, uint32_t end, const void *in_, uint32_t index,
-                  void *scratch) {
+static void sum_reduce_1(uint32_t start, uint32_t end, const void *in_,
+                         uint32_t index, void *scratch) {
     const T *in = (const T *) in_;
     T accum = T(0);
     for (uint32_t i = start; i != end; ++i)
@@ -297,8 +297,9 @@ static void sum_reduce_1(uint32_t start, uint32_t end, const void *in_, uint32_t
 }
 
 template <typename T>
-static void sum_reduce_2(uint32_t start, uint32_t end, const void *in_, void *out_,
-                  uint32_t index, const void *scratch, bool exclusive) {
+static void sum_reduce_2(uint32_t start, uint32_t end, const void *in_, 
+                         void *out_, uint32_t index, const void *scratch, 
+                         bool exclusive) {
     const T *in = (const T *) in_;
     T *out = (T *) out_;
 
@@ -323,7 +324,8 @@ static void sum_reduce_2(uint32_t start, uint32_t end, const void *in_, void *ou
     }
 }
 
-static void sum_reduce_1(VarType vt, uint32_t start, uint32_t end, const void *in, uint32_t index, void *scratch) {
+static void sum_reduce_1(VarType vt, uint32_t start, uint32_t end, 
+                         const void *in, uint32_t index, void *scratch) {
     switch (vt) {
         case VarType::UInt32:  sum_reduce_1<uint32_t>(start, end, in, index, scratch); break;
         case VarType::UInt64:  sum_reduce_1<uint64_t>(start, end, in, index, scratch); break;
@@ -334,7 +336,9 @@ static void sum_reduce_1(VarType vt, uint32_t start, uint32_t end, const void *i
     }
 }
 
-static void sum_reduce_2(VarType vt, uint32_t start, uint32_t end, const void *in, void *out, uint32_t index, const void *scratch, bool exclusive) {
+static void sum_reduce_2(VarType vt, uint32_t start, uint32_t end, 
+                         const void *in, void *out, uint32_t index, 
+                         const void *scratch, bool exclusive) {
     switch (vt) {
         case VarType::UInt32:  sum_reduce_2<uint32_t>(start, end, in, out, index, scratch, exclusive); break;
         case VarType::UInt64:  sum_reduce_2<uint64_t>(start, end, in, out, index, scratch, exclusive); break;
@@ -345,9 +349,8 @@ static void sum_reduce_2(VarType vt, uint32_t start, uint32_t end, const void *i
     }
 }
 
-void LLVMThreadState::prefix_sum(VarType vt, bool exclusive,
-                                      const void *in, uint32_t size,
-                                      void *out) {
+void LLVMThreadState::prefix_sum(VarType vt, bool exclusive, const void *in, 
+                                 uint32_t size, void *out) {
     if (size == 0)
         return;
     if (vt == VarType::Int32)
@@ -400,7 +403,7 @@ void LLVMThreadState::prefix_sum(VarType vt, bool exclusive,
 }
 
 uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
-                                        uint32_t *out) {
+                                   uint32_t *out) {
     if (size == 0)
         return 0;
 
@@ -477,8 +480,8 @@ static ProfilerRegion profiler_region_mkperm_phase_1("jit_mkperm_phase_1");
 static ProfilerRegion profiler_region_mkperm_phase_2("jit_mkperm_phase_2");
 
 uint32_t LLVMThreadState::mkperm(const uint32_t *ptr, uint32_t size,
-                                      uint32_t bucket_count, uint32_t *perm,
-                                      uint32_t *offsets) {
+                                 uint32_t bucket_count, uint32_t *perm,
+                                 uint32_t *offsets) {
     if (size == 0)
         return 0;
     else if (unlikely(bucket_count == 0))
@@ -597,8 +600,7 @@ void LLVMThreadState::memcpy(void *dst, const void *src, size_t size) {
     std::memcpy(dst, src, size);
 }
 
-void LLVMThreadState::memcpy_async(void *dst, const void *src,
-                                        size_t size) {
+void LLVMThreadState::memcpy_async(void *dst, const void *src, size_t size) {
     submit_cpu(
         KernelType::Other,
         [dst, src, size](uint32_t) {
@@ -609,7 +611,8 @@ void LLVMThreadState::memcpy_async(void *dst, const void *src,
     );
 }
 
-using BlockOp = void (*) (const void *ptr, void *out, uint32_t start, uint32_t end, uint32_t block_size);
+using BlockOp = void (*) (const void *ptr, void *out, uint32_t start,
+                          uint32_t end, uint32_t block_size);
 
 template <typename Value> static BlockOp jitc_block_copy_create() {
     return [](const void *in_, void *out_, uint32_t start, uint32_t end, uint32_t block_size) {
@@ -670,9 +673,8 @@ static VarType make_int_type_unsigned(VarType type) {
     }
 }
 
-void LLVMThreadState::block_copy(enum VarType type, const void *in,
-                                      void *out, uint32_t size,
-                                      uint32_t block_size) {
+void LLVMThreadState::block_copy(enum VarType type, const void *in, void *out, 
+                                 uint32_t size, uint32_t block_size) {
     if (block_size == 0)
         jitc_raise("jit_block_copy(): block_size cannot be zero!");
 
@@ -712,9 +714,8 @@ void LLVMThreadState::block_copy(enum VarType type, const void *in,
     );
 }
 
-void LLVMThreadState::block_sum(enum VarType type, const void *in,
-                                     void *out, uint32_t size,
-                                     uint32_t block_size) {
+void LLVMThreadState::block_sum(enum VarType type, const void *in, void *out, 
+                                uint32_t size, uint32_t block_size) {
     if (block_size == 0)
         jitc_raise("jit_block_sum(): block_size cannot be zero!");
 
@@ -774,7 +775,7 @@ void LLVMThreadState::poke(void *dst, const void *src, uint32_t size) {
 }
 
 void LLVMThreadState::aggregate(void *dst_, AggregationEntry *agg,
-                                     uint32_t size) {
+                                uint32_t size) {
     uint32_t work_unit_size = size, work_units = 1;
     if (pool_size() > 1) {
         work_unit_size = jitc_llvm_block_size;
@@ -817,7 +818,7 @@ void LLVMThreadState::aggregate(void *dst_, AggregationEntry *agg,
 }
 
 void LLVMThreadState::enqueue_host_func(void (*callback)(void *),
-                                             void *payload) {
+                                        void *payload) {
     if (!jitc_task) {
         unlock_guard guard(state.lock);
         callback(payload);
@@ -900,7 +901,7 @@ static ReduceExpanded reduce_expanded_create(VarType type, ReduceOp op) {
 }
 
 void LLVMThreadState::reduce_expanded(VarType vt, ReduceOp op, void *ptr,
-                                           uint32_t exp, uint32_t size) {
+                                      uint32_t exp, uint32_t size) {
     jitc_log(Debug, "jit_reduce_expanded(" DRJIT_PTR ", type=%s, op=%s, expfactor=%u, size=%u)",
             (uintptr_t) ptr, type_name[(int) vt],
             reduction_name[(int) op], exp, size);

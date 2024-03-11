@@ -6,9 +6,9 @@ const static char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul
                                                       "min", "max", "and", "or" };
 
 static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
-                     uint32_t thread_count, uint32_t shared_mem_bytes,
-                     CUstream stream, void **args, void **extra,
-                     uint32_t width) {
+                       uint32_t thread_count, uint32_t shared_mem_bytes,
+                       CUstream stream, void **args, void **extra,
+                       uint32_t width) {
 
     KernelHistoryEntry entry = {};
 
@@ -39,8 +39,8 @@ static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
 }
 
 /// Fill a device memory region with constants of a given type
-void CUDAThreadState::memset_async(void *ptr, uint32_t size_,
-                                        uint32_t isize, const void *src){
+void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize, 
+                                   const void *src){
     
     if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
         jitc_raise("CUDAThreadState::jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
@@ -96,7 +96,7 @@ void CUDAThreadState::memset_async(void *ptr, uint32_t size_,
 }
 
 void CUDAThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
-                                  uint32_t size, void *out) {
+                             uint32_t size, void *out) {
     
     jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u)",
             (uintptr_t) ptr, type_name[(int) type],
@@ -201,9 +201,8 @@ bool CUDAThreadState::any(uint8_t *values, uint32_t size) {
     
 }
 
-void CUDAThreadState::prefix_sum(VarType vt, bool exclusive,
-                                      const void *in, uint32_t size,
-                                      void *out) {
+void CUDAThreadState::prefix_sum(VarType vt, bool exclusive, const void *in, uint32_t size,
+                                 void *out) {
     if (size == 0)
         return;
     if (vt == VarType::Int32)
@@ -297,7 +296,7 @@ void CUDAThreadState::prefix_sum(VarType vt, bool exclusive,
 }
 
 uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
-                                        uint32_t *out) {
+                                   uint32_t *out) {
     if (size == 0)
         return 0;
 
@@ -402,8 +401,8 @@ static void cuda_transpose(ThreadState *ts, const uint32_t *in, uint32_t *out,
 }
 
 uint32_t CUDAThreadState::mkperm(const uint32_t *ptr, uint32_t size,
-                                      uint32_t bucket_count, uint32_t *perm,
-                                      uint32_t *offsets) {
+                                 uint32_t bucket_count, uint32_t *perm,
+                                 uint32_t *offsets) {
     if (size == 0)
         return 0;
     else if (unlikely(bucket_count == 0))
@@ -569,8 +568,7 @@ void CUDAThreadState::memcpy(void *dst, const void *src, size_t size) {
     cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
 }
 
-void CUDAThreadState::memcpy_async(void *dst, const void *src,
-                                        size_t size) {
+void CUDAThreadState::memcpy_async(void *dst, const void *src, size_t size) {
     scoped_set_context guard(this->context);
     cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
                              this->stream));
@@ -586,9 +584,8 @@ static VarType make_int_type_unsigned(VarType type) {
     }
 }
 
-void CUDAThreadState::block_copy(enum VarType type, const void *in,
-                                      void *out, uint32_t size,
-                                      uint32_t block_size) {
+void CUDAThreadState::block_copy(enum VarType type, const void *in, void *out, 
+                                 uint32_t size, uint32_t block_size) {
     if (block_size == 0)
         jitc_raise("jit_block_copy(): block_size cannot be zero!");
 
@@ -624,9 +621,8 @@ void CUDAThreadState::block_copy(enum VarType type, const void *in,
                     this->stream, args, nullptr, size);
 }
 
-void CUDAThreadState::block_sum(enum VarType type, const void *in,
-                                     void *out, uint32_t size,
-                                     uint32_t block_size) {
+void CUDAThreadState::block_sum(enum VarType type, const void *in, void *out, 
+                                uint32_t size, uint32_t block_size) {
     if (block_size == 0)
         jitc_raise("jit_block_sum(): block_size cannot be zero!");
 
@@ -689,7 +685,7 @@ void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
 }
 
 void CUDAThreadState::aggregate(void *dst_, AggregationEntry *agg,
-                                     uint32_t size) {
+                                uint32_t size) {
     scoped_set_context guard(this->context);
     const Device &device = state.devices[this->device];
     CUfunction func = jitc_cuda_aggregate[device.id];
@@ -711,7 +707,7 @@ void CUDAThreadState::aggregate(void *dst_, AggregationEntry *agg,
 }
 
 void CUDAThreadState::enqueue_host_func(void (*callback)(void *),
-                                             void *payload) {
+                                        void *payload) {
     
     scoped_set_context guard(this->context);
     cuda_check(cuLaunchHostFunc(this->stream, callback, payload));
