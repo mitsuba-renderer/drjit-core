@@ -118,6 +118,7 @@ add_library(
   src/cuda_eval.cpp
   src/cuda_scatter.h
   src/cuda_scatter.cpp
+  src/cuda_ts.h
   src/cuda_ts.cpp
 
   # OptiX backend
@@ -135,6 +136,7 @@ add_library(
   src/llvm_eval.cpp
   src/llvm_scatter.h
   src/llvm_scatter.cpp
+  src/llvm_ts.h
   src/llvm_ts.cpp
 
   src/io.h       src/io.cpp
