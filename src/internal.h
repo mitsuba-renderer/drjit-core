@@ -585,12 +585,12 @@ struct ThreadState {
     
     /// Fill a device memory region with constants of a given type
     virtual void memset_async(void *ptr, uint32_t size, uint32_t isize,
-                                   const void *src) = 0;
+                              const void *src) = 0;
 
     /// Reduce the given array to a single value
     virtual void reduce(VarType type, ReduceOp rtype, const void *ptr,
-                             uint32_t size, void *out) = 0;
-    
+                        uint32_t size, void *out) = 0;
+
     /// 'All' reduction for boolean arrays
     virtual bool all(uint8_t *values, uint32_t size) = 0;
 
@@ -599,16 +599,16 @@ struct ThreadState {
 
     /// Exclusive prefix sum
     virtual void prefix_sum(VarType vt, bool exclusive, const void *in,
-                                 uint32_t size, void *out) = 0;
+                            uint32_t size, void *out) = 0;
 
     /// Mask compression
     virtual uint32_t compress(const uint8_t *in, uint32_t size,
-                                   uint32_t *out) = 0;
+                              uint32_t *out) = 0;
 
     /// Compute a permutation to reorder an integer array into discrete groups
     virtual uint32_t mkperm(const uint32_t *values, uint32_t size,
-                                 uint32_t bucket_count, uint32_t *perm,
-                                 uint32_t *offsets) = 0;
+                            uint32_t bucket_count, uint32_t *perm,
+                            uint32_t *offsets) = 0;
 
     /// Perform a synchronous copy operation
     virtual void memcpy(void *dst, const void *src, size_t size) = 0;
@@ -618,26 +618,24 @@ struct ThreadState {
     
     /// Replicate individual input elements to larger blocks
     virtual void block_copy(enum VarType type, const void *in, void *out,
-                                 uint32_t size, uint32_t block_size) = 0;
+                            uint32_t size, uint32_t block_size) = 0;
 
     /// Sum over elements within blocks
     virtual void block_sum(enum VarType type, const void *in, void *out,
-                                uint32_t size, uint32_t block_size) = 0;
-    
+                           uint32_t size, uint32_t block_size) = 0;
+
     /// Asynchronously update a single element in memory
     virtual void poke(void *dst, const void *src, uint32_t size) = 0;
 
-    virtual void aggregate(void *dst, AggregationEntry *agg,
-                                uint32_t size) = 0;
+    virtual void aggregate(void *dst, AggregationEntry *agg, uint32_t size) = 0;
 
     // Enqueue a function to be run on the host once backend computation is done
-    virtual void enqueue_host_func(void (*callback)(void *),
-                                        void *payload) = 0;
+    virtual void enqueue_host_func(void (*callback)(void *), void *payload) = 0;
 
     /// LLVM: reduce a variable that was previously expanded due to
     /// dr.ReduceOp.Expand
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
-                                      uint32_t exp, uint32_t size) = 0;
+                                 uint32_t exp, uint32_t size) = 0;
 };
 
 /// Key data structure for kernel source code & device ID
