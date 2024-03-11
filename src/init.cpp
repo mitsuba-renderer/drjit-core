@@ -690,7 +690,7 @@ KernelHistoryEntry *KernelHistory::get() {
             k.event_start = k.event_end = 0;
         } else {
             task_wait((Task *) k.task);
-            k.execution_time = task_time((Task *) k.task);
+            k.execution_time = (float) task_time((Task *) k.task);
             task_release((Task *) k.task);
             k.task = nullptr;
         }

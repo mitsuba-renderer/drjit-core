@@ -35,9 +35,12 @@ static Reduction reduce_create(ReduceOp op) {
         case ReduceOp::Max:
             return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
                 const Value *ptr = (const Value *) ptr_;
-                Value result = std::is_integral<Value>::value
-                                   ?  std::numeric_limits<Value>::min()
-                                   : -std::numeric_limits<Value>::infinity();
+                Value result;
+                if constexpr (std::is_integral<Value>::value)
+                    result = std::numeric_limits<Value>::min();
+                else // the next line generates a warning if not performed in an 'if constexpr' block
+                    result = -std::numeric_limits<Value>::infinity();
+
                 for (uint32_t i = start; i != end; ++i)
                     result = std::max(result, ptr[i]);
                 *((Value *) out) = result;

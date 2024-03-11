@@ -50,13 +50,13 @@ struct nvtxEventAttributes_t {
     const void *message;
 };
 
-extern void NVTX_API (*nvtxDomainMarkEx)(nvtxDomainHandle_t,
+extern void (NVTX_API *nvtxDomainMarkEx)(nvtxDomainHandle_t,
                                          const nvtxEventAttributes_t *);
-extern int NVTX_API (*nvtxDomainRangePushEx)(nvtxDomainHandle_t,
+extern int (NVTX_API *nvtxDomainRangePushEx)(nvtxDomainHandle_t,
                                              const nvtxEventAttributes_t *);
-extern int NVTX_API (*nvtxDomainRangePop)(nvtxDomainHandle_t);
+extern int (NVTX_API *nvtxDomainRangePop)(nvtxDomainHandle_t);
 extern nvtxStringHandle_t
-    NVTX_API (*nvtxDomainRegisterStringA)(nvtxDomainHandle_t, const char *);
-extern nvtxDomainHandle_t NVTX_API (*nvtxDomainCreateA)(const char *);
-extern void NVTX_API (*nvtxDomainDestroy)(nvtxDomainHandle_t);
-extern void NVTX_API (*nvtxInitialize)(const void *);
+    (NVTX_API *nvtxDomainRegisterStringA)(nvtxDomainHandle_t, const char*);
+extern nvtxDomainHandle_t (*nvtxDomainCreateA)(const char *);
+extern void (NVTX_API *nvtxDomainDestroy)(nvtxDomainHandle_t);
+extern void (NVTX_API *nvtxInitialize)(const void *);

@@ -23,9 +23,9 @@
 #  define NVTX_STR(x) L##x
 #  define NVTX_GETENV _wgetenv
 #  define NVTX_CHAR wchar_t
-#  define NVTX_DLOPEN(x) LoadLibraryW(x)
-#  define NVTX_DLCLOSE FreeLibrary
-#  define NVTX_DLSYM GetProcAddress
+#  define NVTX_DLOPEN(m) LoadLibraryW(m)
+#  define NVTX_DLCLOSE(m) FreeLibrary((HMODULE) (m))
+#  define NVTX_DLSYM(m, s) GetProcAddress((HMODULE) (m), s)
 #else
 #  define NVTX_STR(x) x
 #  define NVTX_GETENV getenv
@@ -83,19 +83,19 @@ static void *nvtxPointers[NVTX_CBID_ALL_SIZE];
 static void **nvtxPointers_p[NVTX_CBID_ALL_SIZE];
 nvtxDomainHandle_t nvtxDomain = nullptr;
 
-void NVTX_API (*nvtxDomainMarkEx)(nvtxDomainHandle_t,
+void (NVTX_API *nvtxDomainMarkEx)(nvtxDomainHandle_t,
                                   const nvtxEventAttributes_t *) = nullptr;
-int NVTX_API (*nvtxDomainRangePushEx)(nvtxDomainHandle_t,
+int (NVTX_API *nvtxDomainRangePushEx)(nvtxDomainHandle_t,
                                       const nvtxEventAttributes_t *);
-int NVTX_API (*nvtxDomainRangePop)(nvtxDomainHandle_t) = nullptr;
+int (NVTX_API *nvtxDomainRangePop)(nvtxDomainHandle_t) = nullptr;
 nvtxStringHandle_t
-    NVTX_API (*nvtxDomainRegisterStringA)(nvtxDomainHandle_t,
+    (NVTX_API *nvtxDomainRegisterStringA)(nvtxDomainHandle_t,
                                           const char *) = nullptr;
-nvtxDomainHandle_t NVTX_API (*nvtxDomainCreateA)(const char *) = nullptr;
-void NVTX_API (*nvtxDomainDestroy)(nvtxDomainHandle_t) = nullptr;
-void NVTX_API (*nvtxInitialize)(const void *) = nullptr;
+nvtxDomainHandle_t (NVTX_API *nvtxDomainCreateA)(const char *) = nullptr;
+void (NVTX_API *nvtxDomainDestroy)(nvtxDomainHandle_t) = nullptr;
+void (NVTX_API *nvtxInitialize)(const void *) = nullptr;
 
-static const void *NVTX_API nvtxGetExportTable(uint32_t etid) {
+static  const void * NVTX_API nvtxGetExportTable(uint32_t etid) {
     switch (etid) {
         case NVTX_ETID_CALLBACKS:
             return &nvtxCallbacks;
@@ -106,7 +106,7 @@ static const void *NVTX_API nvtxGetExportTable(uint32_t etid) {
     }
 }
 
-static void NVTX_API nvtxEtiSetInjectionNvtxVersion(uint32_t) {}
+static void NVTX_API nvtxEtiSetInjectionNvtxVersion(uint32_t) { }
 
 static int NVTX_API nvtxEtiGetModuleFunctionTable(
     int module_id, void ***out_table, unsigned int *out_size) {
