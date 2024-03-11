@@ -1,5 +1,3 @@
-enable_testing()
-
 set(TEST_FILES basics.cpp mem.cpp graphviz.cpp vcall.cpp loop.cpp reductions.cpp)
 
 foreach (TEST_FILE ${TEST_FILES})

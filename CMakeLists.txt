@@ -14,6 +14,11 @@ project(drjit-core
 #  Optional features available to users
 # ----------------------------------------------------------
 
+option(DRJIT_USE_SYSTEM_NANOTHREAD "Use the system nanothread library?" OFF)
+option(DRJIT_USE_SYSTEM_LZ4 "Use the system lz4 library?" OFF)
+option(DRJIT_USE_SYSTEM_XXHASH "Use the system xxHash library?" OFF)
+option(DRJIT_USE_SYSTEM_ROBIN_MAP "Use the system robin-map library?" OFF)
+
 option(DRJIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 option(DRJIT_ENABLE_TESTS "Build Dr.Jit-Core test suite?" OFF)
 
@@ -43,6 +48,11 @@ include(ext/nanothread/ext/cmake-defaults/CMakeLists.txt)
 #  Print a few messages explaining what will be compiled
 # ----------------------------------------------------------
 
+message(STATUS "Dr.Jit-Core: using system nanothread: ${DRJIT_USE_SYSTEM_NANOTHREAD}")
+message(STATUS "Dr.Jit-Core: using system lz4: ${DRJIT_USE_SYSTEM_LZ4}")
+message(STATUS "Dr.Jit-Core: using system xxHash: ${DRJIT_USE_SYSTEM_XXHASH}")
+message(STATUS "Dr.Jit-Core: using system robin-map: ${DRJIT_USE_SYSTEM_ROBIN_MAP}")
+
 if (DRJIT_DYNAMIC_LLVM)
   message(STATUS "Dr.Jit-Core: LLVM will be loaded dynamically at runtime.")
 else()
@@ -70,11 +80,45 @@ if (NOT APPLE)
 endif()
 
 # ----------------------------------------------------------
-#  Build the nanothread library
+#  Find or build the dependencies
 # ----------------------------------------------------------
 
-add_subdirectory(ext/nanothread)
-mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
+if (DRJIT_USE_SYSTEM_NANOTHREAD)
+  find_package(nanothread REQUIRED)
+else()
+  add_subdirectory(ext/nanothread)
+  mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
+endif()
+
+if (DRJIT_USE_SYSTEM_LZ4)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(LZ4 REQUIRED liblz4 IMPORTED_TARGET)
+  add_library(lz4 ALIAS PkgConfig::LZ4)
+else()
+  add_library(lz4 SHARED ext/lz4/lz4.c)
+  # We only need to link against the lz4 library, not include its headers.
+  # NOTE: It is important that we use a generator here to avoid including a relative path
+  # in the INTERFACE_INCLUDE_DIRECTORIES of the lz4 target. This would cause the path to
+  # be invalid when the library is used in another project.
+  target_include_directories(lz4 PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ext/lz4>)
+endif()
+
+if (DRJIT_USE_SYSTEM_XXHASH)
+  find_package(xxHash REQUIRED)
+  add_library(xxhash ALIAS xxHash::xxhash)
+else()
+  add_library(xxhash SHARED ext/lz4/xxhash.c)
+  # We directly include the headers from the xxHash library, so we add the include directory
+  # as a public include directory.
+  # See note above for LZ4 about why we must use a generator expression for the path.
+  target_include_directories(xxhash PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ext/lz4>)
+endif()
+
+if (DRJIT_USE_SYSTEM_ROBIN_MAP)
+  find_package(tsl-robin-map REQUIRED)
+else()
+  add_subdirectory(ext/robin_map)
+endif()
 
 # ----------------------------------------------------------
 #  Build Dr.Jit-Core
@@ -135,21 +179,14 @@ add_library(
   src/init.cpp
   src/api.cpp
 
-  # LZ4 compression library & XXHash hash function
-  ext/lz4/lz4.h ext/lz4/lz4.c
-  ext/lz4/xxhash.h ext/lz4/xxh3.h ext/lz4/xxhash.c
-
   # Precompiled kernels in compressed PTX format
   resources/kernels.h resources/kernels.c
 )
 
 target_compile_features(drjit-core PRIVATE cxx_std_17)
 
-target_include_directories(drjit-core PRIVATE
-  ext/nanothread/include
-  ext/robin_map/include
-  ext/lz4
-)
+# Link against the dependencies
+target_link_libraries(drjit-core PRIVATE nanothread tsl::robin_map lz4 xxhash)
 
 if (MSVC)
   # Conditional expression is constant (a few in robin_hash.h)
@@ -173,7 +210,6 @@ target_include_directories(drjit-core
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 target_compile_definitions(drjit-core PRIVATE -DDRJIT_BUILD=1)
-target_link_libraries(drjit-core PRIVATE nanothread)
 
 if (DRJIT_DYNAMIC_CUDA OR APPLE)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_DYNAMIC_CUDA=1)
@@ -227,5 +263,30 @@ set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELWITH
 set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_DEBUG          FALSE)
 
 if (DRJIT_ENABLE_TESTS)
+  include(CTest)
   add_subdirectory(tests)
 endif()
+
+configure_file(drjit-core-config.cmake "${CMAKE_CURRENT_BINARY_DIR}/drjit-core/drjit-core-config.cmake")
+install(
+  TARGETS drjit-core
+  EXPORT drjit-core-targets
+  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# Install the dependencies if they are not system libraries or packaged with CMake.
+foreach(_dep nanothread lz4 xxhash)
+  string(TOUPPER ${_dep} _dep_upper)
+  if (NOT DRJIT_USE_SYSTEM_${_dep_upper})
+    install(
+      TARGETS ${_dep}
+      EXPORT drjit-core-targets
+      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  endif()
+endforeach()
+
+install(DIRECTORY include/drjit-core DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES drjit-core-config.cmake DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/drjit-core)
+install(
+  EXPORT drjit-core-targets
+  FILE drjit-core-targets.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/drjit-core)
