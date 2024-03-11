@@ -2027,8 +2027,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
                        "valid mode for scatter-reductions.");
 
         if (var_info.backend == JitBackend::LLVM) {
-            uint32_t target_size = jitc_var(target)->size;
-            if (mode == ReduceMode::Auto && target_size <= llvm_expand_threshold)
+            uint32_t tsize = jitc_var(target)->size;
+            if (mode == ReduceMode::Auto && tsize <= llvm_expand_threshold)
                 mode = ReduceMode::Expand;
         } else {
             // ReduceMode::Expand is only supported on the LLVM backend
@@ -2043,8 +2043,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
         if (mode == ReduceMode::Expand) {
             index_2 = steal(jitc_var_cast(index_2, VarType::UInt32, 0));
-            const Variable *index_v = jitc_var(index_2);
-            uint32_t size = index_v->size;
+            const Variable *index_v2 = jitc_var(index_2);
+            uint32_t size = index_v2->size;
 
             auto [target_i, expand_i] = jitc_var_expand(target, op);
             target = steal(target_i);

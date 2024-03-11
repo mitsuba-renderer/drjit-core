@@ -71,7 +71,7 @@ std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf, bool release_state_
         (void *) 0
     };
 
-    size_t nargs = sizeof(arg) / sizeof(CUjit_option);
+    uint32_t nargs = (uint32_t) (sizeof(arg) / sizeof(CUjit_option));
 
     CUmodule mod = nullptr;
     CUresult rv = (CUresult) 0;

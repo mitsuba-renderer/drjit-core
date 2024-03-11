@@ -164,67 +164,6 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
     return ts->mkperm(ptr, size, bucket_count, perm, offsets);
 }
 
-using BlockOp = void (*) (const void *ptr, void *out, uint32_t start, uint32_t end, uint32_t block_size);
-
-template <typename Value> static BlockOp jitc_block_copy_create() {
-    return [](const void *in_, void *out_, uint32_t start, uint32_t end, uint32_t block_size) {
-        const Value *in = (const Value *) in_ + start;
-        Value *out = (Value *) out_ + start * block_size;
-        for (uint32_t i = start; i != end; ++i) {
-            Value value = *in++;
-            for (uint32_t j = 0; j != block_size; ++j)
-                *out++ = value;
-        }
-    };
-}
-
-template <typename Value> static BlockOp jitc_block_sum_create() {
-    return [](const void *in_, void *out_, uint32_t start, uint32_t end, uint32_t block_size) {
-        const Value *in = (const Value *) in_ + start * block_size;
-        Value *out = (Value *) out_ + start;
-        for (uint32_t i = start; i != end; ++i) {
-            Value sum = 0;
-            for (uint32_t j = 0; j != block_size; ++j)
-                sum += *in++;
-            *out++ = sum;
-        }
-    };
-}
-
-static BlockOp jitc_block_copy_create(VarType type) {
-    switch (type) {
-        case VarType::UInt8:   return jitc_block_copy_create<uint8_t >();
-        case VarType::UInt16:  return jitc_block_copy_create<uint16_t>();
-        case VarType::UInt32:  return jitc_block_copy_create<uint32_t>();
-        case VarType::UInt64:  return jitc_block_copy_create<uint64_t>();
-        case VarType::Float32: return jitc_block_copy_create<float   >();
-        case VarType::Float64: return jitc_block_copy_create<double  >();
-        default: jitc_raise("jit_block_copy_create(): unsupported data type!");
-    }
-}
-
-static BlockOp jitc_block_sum_create(VarType type) {
-    switch (type) {
-        case VarType::UInt8:   return jitc_block_sum_create<uint8_t >();
-        case VarType::UInt16:  return jitc_block_sum_create<uint16_t>();
-        case VarType::UInt32:  return jitc_block_sum_create<uint32_t>();
-        case VarType::UInt64:  return jitc_block_sum_create<uint64_t>();
-        case VarType::Float32: return jitc_block_sum_create<float   >();
-        case VarType::Float64: return jitc_block_sum_create<double  >();
-        default: jitc_raise("jit_block_sum_create(): unsupported data type!");
-    }
-}
-
-static VarType make_int_type_unsigned(VarType type) {
-    switch (type) {
-        case VarType::Int8:  return VarType::UInt8;
-        case VarType::Int16: return VarType::UInt16;
-        case VarType::Int32: return VarType::UInt32;
-        case VarType::Int64: return VarType::UInt64;
-        default: return type;
-    }
-}
-
 /// Replicate individual input elements to larger blocks
 void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void *out,
                     uint32_t size, uint32_t block_size) {

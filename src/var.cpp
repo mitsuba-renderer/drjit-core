@@ -1956,12 +1956,12 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op
     Variable *v = jitc_var(index);
     VarType vt = (VarType) v->type;
 
-    uint32_t type_size = ::type_size[v->type],
+    uint32_t tsize = ::type_size[v->type],
              workers = pool_size() + 1,
              size = v->size;
 
     // 1 cache line per worker for scalar targets, otherwise be a bit more reasonable
-    uint32_t replication_per_worker = size == 1u ? (64u / type_size) : 1u,
+    uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u,
              index_scale = replication_per_worker * size;
 
     if (workers == 1) {
@@ -1992,7 +1992,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op
         void *src_addr = nullptr;
         Ref src = steal(jitc_var_data(index, false, &src_addr));
         jitc_memcpy_async(JitBackend::LLVM, dst_addr, src_addr,
-                          size * type_size);
+                          size * tsize);
     }
 
     Variable *v2 = jitc_var(dst);
@@ -2013,11 +2013,11 @@ void jitc_var_reduce_expanded(uint32_t index) {
         return;
 
     uint32_t workers = pool_size() + 1,
-             type_size = ::type_size[v->type],
+             tsize = type_size[v->type],
              size = v->size;
 
     // 1 cache line per worker for scalar targets, otherwise be a bit more reasonable
-    uint32_t replication_per_worker = size == 1u ? (64u / type_size) : 1u;
+    uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u;
 
     jitc_reduce_expanded(
         (VarType) v->type,

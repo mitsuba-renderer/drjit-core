@@ -82,14 +82,14 @@ void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
             break;
 
         case 8: {
-                const Device &device = state.devices[this->device];
+                const Device &dev = state.devices[device];
                 uint32_t block_count, thread_count;
-                device.get_launch_config(&block_count, &thread_count, size_);
+                dev.get_launch_config(&block_count, &thread_count, size_);
                 void *args[] = { &ptr, &size_, (void *) src };
-                CUfunction kernel = jitc_cuda_fill_64[device.id];
+                CUfunction kernel = jitc_cuda_fill_64[dev.id];
                 submit_gpu(KernelType::Other, kernel, block_count,
-                                thread_count, 0, this->stream, args, nullptr,
-                                size_);
+                           thread_count, 0, this->stream, args, nullptr,
+                           size_);
             }
             break;
     }
@@ -106,8 +106,8 @@ void CUDAThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
     
     // CUDA specific
     scoped_set_context guard(this->context);
-    const Device &device = state.devices[this->device];
-    CUfunction func = jitc_cuda_reductions[(int) op][(int) type][device.id];
+    const Device &dev = state.devices[device];
+    CUfunction func = jitc_cuda_reductions[(int) op][(int) type][dev.id];
     if (!func)
         jitc_raise("jit_reduce(): no existing kernel for type=%s, op=%s!",
                   type_name[(int) type], reduction_name[(int) op]);
@@ -116,14 +116,14 @@ void CUDAThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
              shared_size = thread_count * tsize,
              block_count;
 
-    device.get_launch_config(&block_count, nullptr, size, thread_count);
+    dev.get_launch_config(&block_count, nullptr, size, thread_count);
 
     if (size <= 1024) {
         // This is a small array, do everything in just one reduction.
         void *args[] = { &ptr, &size, &out };
 
         submit_gpu(KernelType::Reduce, func, 1, thread_count,
-                        shared_size, this->stream, args, nullptr, size);
+                   shared_size, this->stream, args, nullptr, size);
     } else {
         void *temp = jitc_malloc(AllocType::Device, size_t(block_count) * tsize);
 
@@ -131,13 +131,13 @@ void CUDAThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
         void *args_1[] = { &ptr, &size, &temp };
 
         submit_gpu(KernelType::Reduce, func, block_count, thread_count,
-                        shared_size, this->stream, args_1, nullptr, size);
+                   shared_size, this->stream, args_1, nullptr, size);
 
         // Second reduction
         void *args_2[] = { &temp, &block_count, &out };
 
         submit_gpu(KernelType::Reduce, func, 1, thread_count,
-                        shared_size, this->stream, args_2, nullptr, size);
+                   shared_size, this->stream, args_2, nullptr, size);
 
         jitc_free(temp);
     }
@@ -211,7 +211,7 @@ void CUDAThreadState::prefix_sum(VarType vt, bool exclusive, const void *in, uin
     const uint32_t isize = type_size[(int) vt];
 
     // CUDA specific
-    const Device &device = state.devices[this->device];
+    const Device &dev = state.devices[this->device];
     scoped_set_context guard(this->context);
 
     if (size == 1) {
@@ -238,7 +238,7 @@ void CUDAThreadState::prefix_sum(VarType vt, bool exclusive, const void *in, uin
 
         CUfunction kernel =
             (exclusive ? jitc_cuda_prefix_sum_exc_small
-                       : jitc_cuda_prefix_sum_inc_small)[(int) vt][device.id];
+                       : jitc_cuda_prefix_sum_inc_small)[(int) vt][dev.id];
 
         if (!kernel)
             jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
@@ -265,7 +265,7 @@ void CUDAThreadState::prefix_sum(VarType vt, bool exclusive, const void *in, uin
 
         CUfunction kernel =
             (exclusive ? jitc_cuda_prefix_sum_exc_large
-                       : jitc_cuda_prefix_sum_inc_large)[(int) vt][device.id];
+                       : jitc_cuda_prefix_sum_inc_large)[(int) vt][dev.id];
 
         if (!kernel)
             jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
@@ -275,12 +275,12 @@ void CUDAThreadState::prefix_sum(VarType vt, bool exclusive, const void *in, uin
 
         /// Initialize scratch space and padding
         uint32_t block_count_init, thread_count_init;
-        device.get_launch_config(&block_count_init, &thread_count_init,
+        dev.get_launch_config(&block_count_init, &thread_count_init,
                                  scratch_items);
 
         void *args[] = { &scratch, &scratch_items };
         submit_gpu(KernelType::Other,
-                        jitc_cuda_prefix_sum_large_init[device.id],
+                        jitc_cuda_prefix_sum_large_init[dev.id],
                         block_count_init, thread_count_init, 0, this->stream,
                         args, nullptr, scratch_items);
 
@@ -301,7 +301,7 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
         return 0;
 
     // CUDA specific
-    const Device &device = state.devices[this->device];
+    const Device &dev = state.devices[device];
     scoped_set_context guard(this->context);
 
     uint32_t *count_out = (uint32_t *) jitc_malloc(
@@ -327,7 +327,7 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
 
         void *args[] = { &in, &out, &size, &count_out };
         submit_gpu(
-            KernelType::Other, jitc_cuda_compress_small[device.id], 1,
+            KernelType::Other, jitc_cuda_compress_small[dev.id], 1,
             thread_count, shared_size, this->stream, args, nullptr, size);
     } else {
         // Kernel for large arrays
@@ -351,14 +351,14 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
 
         // Initialize scratch space and padding
         uint32_t block_count_init, thread_count_init;
-        device.get_launch_config(&block_count_init, &thread_count_init,
+        dev.get_launch_config(&block_count_init, &thread_count_init,
                                  scratch_items);
 
         void *args[] = { &scratch, &scratch_items };
         submit_gpu(KernelType::Other,
-                        jitc_cuda_prefix_sum_large_init[device.id],
-                        block_count_init, thread_count_init, 0, this->stream,
-                        args, nullptr, scratch_items);
+                   jitc_cuda_prefix_sum_large_init[dev.id],
+                   block_count_init, thread_count_init, 0, this->stream,
+                   args, nullptr, scratch_items);
 
         if (trailer > 0)
             cuda_check(cuMemsetD8Async((CUdeviceptr) (in + size), 0, trailer,
@@ -367,7 +367,7 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
         scratch += 32; // move beyond padding area
         void *args_2[] = { &in, &out, &scratch, &count_out };
         submit_gpu(KernelType::Other,
-                        jitc_cuda_compress_large[device.id], block_count,
+                        jitc_cuda_compress_large[dev.id], block_count,
                         thread_count, shared_size, this->stream, args_2,
                         nullptr, scratch_items);
         scratch -= 32;
@@ -410,12 +410,12 @@ uint32_t CUDAThreadState::mkperm(const uint32_t *ptr, uint32_t size,
 
     // CUDA specific
     scoped_set_context guard(this->context);
-    const Device &device = state.devices[this->device];
+    const Device &dev = state.devices[device];
 
     // Don't use more than 1 block/SM due to shared memory requirement
     const uint32_t warp_size = 32;
     uint32_t block_count, thread_count;
-    device.get_launch_config(&block_count, &thread_count, size, 1024, 1);
+    dev.get_launch_config(&block_count, &thread_count, size, 1024, 1);
 
     // Always launch full warps (the kernel impl. assumes that this is the case)
     uint32_t warp_count = (thread_count + warp_size - 1) / warp_size;
@@ -431,24 +431,24 @@ uint32_t CUDAThreadState::mkperm(const uint32_t *ptr, uint32_t size,
     CUfunction phase_1 = nullptr, phase_4 = nullptr;
     bool initialize_buckets = false;
 
-    if (bucket_size_1 * warp_count <= device.shared_memory_bytes) {
+    if (bucket_size_1 * warp_count <= dev.shared_memory_bytes) {
         /* "Tiny" variant, which uses shared memory atomics to produce a stable
            permutation. Handles up to 512 buckets with 64KiB of shared memory. */
 
-        phase_1 = jitc_cuda_mkperm_phase_1_tiny[device.id];
-        phase_4 = jitc_cuda_mkperm_phase_4_tiny[device.id];
+        phase_1 = jitc_cuda_mkperm_phase_1_tiny[dev.id];
+        phase_4 = jitc_cuda_mkperm_phase_4_tiny[dev.id];
         shared_size = bucket_size_1 * warp_count;
         bucket_size_all *= warp_count;
         variant = "tiny";
-    } else if (bucket_size_1 <= device.shared_memory_bytes) {
+    } else if (bucket_size_1 <= dev.shared_memory_bytes) {
         /* "Small" variant, which uses shared memory atomics and handles up to
            16K buckets with 64KiB of shared memory. The permutation can be
            somewhat unstable due to scheduling variations when performing atomic
            operations (although some effort is made to keep it stable within
            each group of 32 elements by performing an intra-warp reduction.) */
 
-        phase_1 = jitc_cuda_mkperm_phase_1_small[device.id];
-        phase_4 = jitc_cuda_mkperm_phase_4_small[device.id];
+        phase_1 = jitc_cuda_mkperm_phase_1_small[dev.id];
+        phase_4 = jitc_cuda_mkperm_phase_4_small[dev.id];
         shared_size = bucket_size_1;
         variant = "small";
     } else {
@@ -460,8 +460,8 @@ uint32_t CUDAThreadState::mkperm(const uint32_t *ptr, uint32_t size,
            each group of 32 elements by performing an intra-warp reduction.)
            Buckets must be zero-initialized explicitly. */
 
-        phase_1 = jitc_cuda_mkperm_phase_1_large[device.id];
-        phase_4 = jitc_cuda_mkperm_phase_4_large[device.id];
+        phase_1 = jitc_cuda_mkperm_phase_1_large[dev.id];
+        phase_4 = jitc_cuda_mkperm_phase_4_large[dev.id];
         variant = "large";
         initialize_buckets = true;
     }
@@ -520,7 +520,7 @@ uint32_t CUDAThreadState::mkperm(const uint32_t *ptr, uint32_t size,
     // Phase 3: collect non-empty buckets (optional)
     if (likely(offsets)) {
         uint32_t block_count_3, thread_count_3;
-        device.get_launch_config(&block_count_3, &thread_count_3,
+        dev.get_launch_config(&block_count_3, &thread_count_3,
                                  bucket_count * block_count);
 
         // Round up to a multiple of the thread count
@@ -531,7 +531,7 @@ uint32_t CUDAThreadState::mkperm(const uint32_t *ptr, uint32_t size,
                            &size,      &counter,      &offsets };
 
         submit_gpu(KernelType::CallReduce,
-                        jitc_cuda_mkperm_phase_3[device.id], block_count_3,
+                        jitc_cuda_mkperm_phase_3[dev.id], block_count_3,
                         thread_count_3, sizeof(uint32_t) * thread_count_3,
                         this->stream, args_3, nullptr, size);
 
@@ -605,10 +605,10 @@ void CUDAThreadState::block_copy(enum VarType type, const void *in, void *out,
 
     // CUDA specific
     scoped_set_context guard(this->context);
-    const Device &device = state.devices[this->device];
+    const Device &dev = state.devices[device];
     size *= block_size;
 
-    CUfunction func = jitc_cuda_block_copy[(int) type][device.id];
+    CUfunction func = jitc_cuda_block_copy[(int) type][dev.id];
     if (!func)
         jitc_raise("jit_block_copy(): no existing kernel for type=%s!",
                   type_name[(int) type]);
@@ -618,7 +618,7 @@ void CUDAThreadState::block_copy(enum VarType type, const void *in, void *out,
 
     void *args[] = { &in, &out, &size, &block_size };
     submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
-                    this->stream, args, nullptr, size);
+               this->stream, args, nullptr, size);
 }
 
 void CUDAThreadState::block_sum(enum VarType type, const void *in, void *out, 
@@ -644,11 +644,11 @@ void CUDAThreadState::block_sum(enum VarType type, const void *in, void *out,
 
     // CUDA specific
     scoped_set_context guard(this->context);
-    const Device &device = state.devices[this->device];
+    const Device &dev = state.devices[device];
 
     size *= block_size;
 
-    CUfunction func = jitc_cuda_block_sum[(int) type][device.id];
+    CUfunction func = jitc_cuda_block_sum[(int) type][dev.id];
     if (!func)
         jitc_raise("jit_block_sum(): no existing kernel for type=%s!",
                   type_name[(int) type]);
@@ -659,7 +659,7 @@ void CUDAThreadState::block_sum(enum VarType type, const void *in, void *out,
     void *args[] = { &in, &out, &size, &block_size };
     cuda_check(cuMemsetD8Async((CUdeviceptr) out, 0, out_size, this->stream));
     submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
-                    this->stream, args, nullptr, size);
+               this->stream, args, nullptr, size);
 }
 
 void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
@@ -677,8 +677,8 @@ void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
 
     // CUDA specific
     scoped_set_context guard(this->context);
-    const Device &device = state.devices[this->device];
-    CUfunction func = jitc_cuda_poke[(int) type][device.id];
+    const Device &dev = state.devices[device];
+    CUfunction func = jitc_cuda_poke[(int) type][dev.id];
     void *args[] = { &dst, (void *) src };
     submit_gpu(KernelType::Other, func, 1, 1, 0,
                     this->stream, args, nullptr, 1);
@@ -687,12 +687,12 @@ void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
 void CUDAThreadState::aggregate(void *dst_, AggregationEntry *agg,
                                 uint32_t size) {
     scoped_set_context guard(this->context);
-    const Device &device = state.devices[this->device];
-    CUfunction func = jitc_cuda_aggregate[device.id];
+    const Device &dev = state.devices[device];
+    CUfunction func = jitc_cuda_aggregate[dev.id];
     void *args[] = { &dst_, &agg, &size };
 
     uint32_t block_count, thread_count;
-    device.get_launch_config(&block_count, &thread_count, size);
+    dev.get_launch_config(&block_count, &thread_count, size);
 
     jitc_log(InfoSym,
              "jit_aggregate(" DRJIT_PTR " -> " DRJIT_PTR
@@ -701,7 +701,7 @@ void CUDAThreadState::aggregate(void *dst_, AggregationEntry *agg,
              thread_count);
 
     submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
-                    this->stream, args, nullptr, 1);
+               this->stream, args, nullptr, 1);
 
     jitc_free(agg);
 }
