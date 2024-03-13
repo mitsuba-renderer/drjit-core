@@ -80,7 +80,7 @@ template <typename... Ts> struct type_caster<drjit::tuple<Ts...>> {
         bool success =
             (... &&
              ((o[Is] = steal(make_caster<Ts>::from_cpp(
-                   forward_like<T>(drjit::get<Is>(value)), policy, cleanup))),
+                   forward_like_<T>(drjit::get<Is>(value)), policy, cleanup))),
               o[Is].is_valid()));
 
         if (!success)
