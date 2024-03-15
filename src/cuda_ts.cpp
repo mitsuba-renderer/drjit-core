@@ -42,37 +42,37 @@ static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
 
 Task *CUDAThreadState::launch(Kernel kernel, uint32_t size){
 #if defined(DRJIT_ENABLE_OPTIX)
-        if (unlikely(uses_optix))
-            jitc_optix_launch(this, kernel, size, kernel_params_global,
-                              kernel_param_count);
+    if (unlikely(uses_optix))
+        jitc_optix_launch(this, kernel, size, kernel_params_global,
+                          kernel_param_count);
 #endif
 
-        if (!uses_optix) {
-            size_t buffer_size = kernel_params.size() * sizeof(void *);
+    if (!uses_optix) {
+        size_t buffer_size = kernel_params.size() * sizeof(void *);
 
-            void *config[] = {
-                CU_LAUNCH_PARAM_BUFFER_POINTER,
-                kernel_params.data(),
-                CU_LAUNCH_PARAM_BUFFER_SIZE,
-                &buffer_size,
-                CU_LAUNCH_PARAM_END
-            };
+        void *config[] = {
+            CU_LAUNCH_PARAM_BUFFER_POINTER,
+            kernel_params.data(),
+            CU_LAUNCH_PARAM_BUFFER_SIZE,
+            &buffer_size,
+            CU_LAUNCH_PARAM_END
+        };
 
-            uint32_t block_count, thread_count;
-            const Device &device = state.devices[this->device];
-            device.get_launch_config(&block_count, &thread_count, size,
-                                     (uint32_t) kernel.cuda.block_size);
+        uint32_t block_count, thread_count;
+        const Device &device = state.devices[this->device];
+        device.get_launch_config(&block_count, &thread_count, size,
+                                 (uint32_t) kernel.cuda.block_size);
 
-            cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,
-                                      thread_count, 1, 1, 0, this->stream,
-                                      nullptr, config));
-            jitc_trace("jit_run(): launching %u thread%s in %u block%s ..",
-                       thread_count, thread_count == 1 ? "" : "s", block_count,
-                       block_count == 1 ? "" : "s");
-        }
+        cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,
+                                  thread_count, 1, 1, 0, this->stream,
+                                  nullptr, config));
+        jitc_trace("jit_run(): launching %u thread%s in %u block%s ..",
+                   thread_count, thread_count == 1 ? "" : "s", block_count,
+                   block_count == 1 ? "" : "s");
+    }
 
-        if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
-            cuda_check(cuStreamSynchronize(this->stream));
+    if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
+        cuda_check(cuStreamSynchronize(this->stream));
 
     return nullptr;
 }
