@@ -45,14 +45,14 @@ public:
     unique_ptr(const unique_ptr &) = delete;
     unique_ptr &operator=(const unique_ptr &) = delete;
     unique_ptr(Type *data) : m_data(data) { }
-    unique_ptr(unique_ptr &&other) : m_data(other.m_data) {
+    unique_ptr(unique_ptr &&other) noexcept : m_data(other.m_data) {
         other.m_data = nullptr;
     }
     template <typename E>
     unique_ptr(unique_ptr<E> &&other) : m_data(other.release()) {}
     ~unique_ptr() { reset(); }
 
-    unique_ptr &operator=(unique_ptr &&other) {
+    unique_ptr &operator=(unique_ptr &&other) noexcept {
         reset(other.m_data);
         other.m_data = nullptr;
         return *this;
@@ -63,7 +63,7 @@ public:
         return *this;
     }
 
-    void reset(Type *p = nullptr) noexcept(true) {
+    void reset(Type *p = nullptr) noexcept {
         if constexpr (std::is_array_v<T>)
             delete[] m_data;
         else
@@ -105,7 +105,7 @@ public:
             m_size++;
         }
     }
-    vector(vector &&v)
+    vector(vector &&v) noexcept
         : m_data(v.m_data), m_size(v.m_size), m_capacity(v.m_capacity) {
         v.m_data = nullptr;
         v.m_size = v.m_capacity = 0;
@@ -148,7 +148,7 @@ public:
         return operator=(vector(v));
     }
 
-    vector &operator=(vector &&v) {
+    vector &operator=(vector &&v) noexcept {
         release();
         m_data = v.m_data;
         m_size = v.m_size;
@@ -257,7 +257,7 @@ protected:
             return (T*) operator new[](sizeof(T) * size);
     }
 
-    void release() {
+    void release() noexcept {
         clear();
         #if defined (__cpp_sized_deallocation)
             if (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
@@ -395,12 +395,8 @@ public:
     }
 
     template <typename T> string &assign(const T &value) {
-        using formatter = detail::make_formatter<T>;
-        size_t bound = formatter::bound(0, value);
-        m_data = unique_ptr<char[]>(new char[bound + 1]);
-        m_capacity = bound;
-        m_data[0] = '\0';
-        formatter::format(*this, 0, bound, value);
+        clear();
+        put(value);
         return *this;
     }
 
@@ -446,7 +442,11 @@ public:
         m_size = size;
     }
 
-    void clear() { resize(0); }
+    void clear() {
+        if (m_data)
+            m_data[0] = '\0';
+        m_size = 0;
+    }
 
     template <typename T> string operator+(const T &v) const & {
         string r;

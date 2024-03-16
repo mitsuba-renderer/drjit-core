@@ -12,13 +12,13 @@ uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, 
     // A few sanity checks
     if (!n_indices)
         jitc_raise("jit_var_loop_start(): attempted to record a symbolic loop "
-                   "without state variables.");
+                   "without state variables");
 
     for (size_t i = 0; i < n_indices; ++i) {
         uint32_t index = indices[i];
         if (!index)
             jitc_raise("jit_var_loop_start(): loop state variable %zu is "
-                       "uninitialized (i.e., it has size 0).", i);
+                       "uninitialized (i.e., it has size 0)", i);
 
         const Variable *v2 = jitc_var(index);
         if (i == 0) {
@@ -28,7 +28,7 @@ uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, 
             if ((JitBackend) v2->backend != backend)
                 jitc_raise(
                     "jit_var_loop_start(): the loop state involves variables with "
-                    "different Dr.Jit backends, which is not permitted.");
+                    "different Dr.Jit backends, which is not permitted");
 
             dirty |= v2->is_dirty();
         }
@@ -40,8 +40,7 @@ uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, 
         for (size_t i = 0; i < n_indices; ++i) {
             if (jitc_var(indices[i])->is_dirty())
                 jitc_raise("jit_var_loop_start(): input %zu (r%u) remains "
-                           "dirty after evaluation.",
-                           i, indices[i]);
+                           "dirty after evaluation", i, indices[i]);
         }
     }
 
@@ -185,7 +184,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             if (eliminate) {
                 jitc_trace("jit_var_loop(r%u): eliminating redundant loop "
                            "variable r%u.",
-                           ld->loop_start, ld->inner_in[i]);
+                           ld->loop_start, ld->outer_in[i]);
                 jitc_var_inc_ref(ld->outer_in[i]);
                 jitc_var_dec_ref(ld->inner_in[i]);
                 ld->inner_in[i] = ld->outer_in[i];
@@ -243,7 +242,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                     jitc_raise(
                         "jit_var_loop_end(): loop state variable %zu (r%u) has "
                         "a final shape (size %u) that is incompatible with "
-                        "that of the loop (size %u).",
+                        "that of the loop (size %u)",
                         i, index, v2->size, size);
 
                 size = std::max(v2->size, size);
@@ -263,7 +262,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                     jitc_raise(
                         "jit_var_loop_end(): loop state variable %zu (r%u) was "
                         "presumed to be constant, but it changed (to r%u) when "
-                        "re-recording the loop a second time.",
+                        "re-recording the loop a second time",
                         i, index, ld->inner_in[i]);
                 jitc_var_inc_ref(ld->inner_in[i]);
                 new_index = ld->inner_in[i];
@@ -324,7 +323,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
         thread_state(backend)->side_effects_symbolic;
 
     if (checkpoint > se_list.size())
-        jitc_fail("jit_var_loop(): invalid 'checkpoint' parameter!");
+        jitc_fail("jit_var_loop(): invalid 'checkpoint' parameter");
 
     Ref se = borrow(loop_end);
     uint32_t se_count = 0;
