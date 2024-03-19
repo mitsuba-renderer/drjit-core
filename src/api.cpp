@@ -947,6 +947,11 @@ void *jit_registry_ptr(JitBackend backend, const char *domain, uint32_t id) {
     return jitc_registry_ptr(backend, domain, id);
 }
 
+void *jit_registry_peek(JitBackend backend, const char *domain) {
+    lock_guard guard(state.lock);
+    return jitc_registry_peek(backend, domain);
+}
+
 void jit_registry_clear() {
     lock_guard guard(state.lock);
     jitc_registry_clear();
