@@ -175,6 +175,23 @@ void *jitc_registry_ptr(JitBackend backend, const char *domain_name, uint32_t id
     return ptr;
 }
 
+void *jitc_registry_peek(JitBackend backend, const char *domain_name) {
+    Registry &r = registry;
+    auto it = r.domain_ids.find(DomainKey{ backend, domain_name });
+    void *ptr = nullptr;
+
+    if (it != r.domain_ids.end()) {
+        Domain &domain = r.domains[it->second];
+        uint32_t bound = domain.id_bound;
+        if (bound > 0) {
+            Ptr entry = domain.fwd_map[bound - 1];
+            return entry.ptr;
+        }
+    }
+
+    return ptr;
+}
+
 void jitc_registry_clear() {
     jitc_log(Debug, "jit_registry_clear()");
     Registry &r = registry;
