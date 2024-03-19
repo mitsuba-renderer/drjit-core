@@ -27,6 +27,9 @@ extern uint32_t jitc_registry_id_bound(JitBackend backend, const char *domain);
 /// Return the pointer value associated with a given instance ID
 extern void *jitc_registry_ptr(JitBackend backend, const char *domain, uint32_t id);
 
+/// Return an arbitrary pointer value associated with a given domain
+extern void *jitc_registry_peek(JitBackend backend, const char *domain);
+
 /// Check for leaks in the registry
 extern void jitc_registry_shutdown();
 

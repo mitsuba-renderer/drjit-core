@@ -501,6 +501,9 @@ extern JIT_EXPORT uint32_t jit_registry_id_bound(JitBackend backend,
 extern JIT_EXPORT void *jit_registry_ptr(JitBackend backend,
                                          const char *domain, uint32_t id);
 
+/// Return an arbitrary pointer value associated with a given domain
+extern JIT_EXPORT void *jit_registry_peek(JitBackend backend, const char *domain);
+
 /// Disable any instances that are currently registered in the registry
 extern JIT_EXPORT void jit_registry_clear();
 
