@@ -39,9 +39,9 @@ static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
 }
 
 /// Fill a device memory region with constants of a given type
-void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize, 
+void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
                                    const void *src){
-    
+
     if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
         jitc_raise("CUDAThreadState::jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
 
@@ -59,7 +59,7 @@ void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
         size *= isize;
         isize = 1;
     }
-    
+
     // CUDA Specific
     scoped_set_context guard(this->context);
     switch (isize) {
@@ -97,13 +97,13 @@ void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
 
 void CUDAThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
                              uint32_t size, void *out) {
-    
+
     jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u)",
             (uintptr_t) ptr, type_name[(int) type],
             reduction_name[(int) op], size);
 
     uint32_t tsize = type_size[(int) type];
-    
+
     // CUDA specific
     scoped_set_context guard(this->context);
     const Device &dev = state.devices[device];
@@ -161,7 +161,7 @@ bool CUDAThreadState::all(uint8_t *values, uint32_t size) {
 
     // CUDA specific
     bool result;
-    
+
     uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
     this->reduce(VarType::UInt32, ReduceOp::And, values, reduced_size, out);
     jitc_sync_thread();
@@ -176,7 +176,7 @@ bool CUDAThreadState::any(uint8_t *values, uint32_t size) {
        to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
        reduction algorithm can be used. This is fine for allocations made using
        \ref jit_malloc(), which allow for this. */
-    
+
     uint32_t reduced_size = (size + 3) / 4,
              trailing     = reduced_size * 4 - size;
 
@@ -189,7 +189,7 @@ bool CUDAThreadState::any(uint8_t *values, uint32_t size) {
 
     // CUDA specific
     bool result;
-    
+
     uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
     this->reduce(VarType::UInt32, ReduceOp::Or, values,
                       reduced_size, out);
@@ -198,7 +198,7 @@ bool CUDAThreadState::any(uint8_t *values, uint32_t size) {
     jitc_free(out);
 
     return result;
-    
+
 }
 
 void CUDAThreadState::prefix_sum(VarType vt, bool exclusive, const void *in, uint32_t size,
@@ -584,81 +584,56 @@ static VarType make_int_type_unsigned(VarType type) {
     }
 }
 
-void CUDAThreadState::block_copy(enum VarType type, const void *in, void *out, 
-                                 uint32_t size, uint32_t block_size) {
+void CUDAThreadState::block_sum(enum VarType type, const void *in, void *out,
+                                uint32_t size, uint32_t block_size) {
     if (block_size == 0)
-        jitc_raise("jit_block_copy(): block_size cannot be zero!");
+        jitc_raise("jit_block_sum(): 'block_size' cannot be zero!");
 
-    jitc_log(Debug,
-            "jit_block_copy(" DRJIT_PTR " -> " DRJIT_PTR
-            ", type=%s, block_size=%u, size=%u)",
-            (uintptr_t) in, (uintptr_t) out,
-            type_name[(int) type], block_size, size);
+    uint32_t tsize = type_size[(int) type];
 
     if (block_size == 1) {
-        uint32_t tsize = type_size[(int) type];
-        this->memcpy_async(out, in, size * tsize);
+        memcpy_async(out, in, size * tsize);
         return;
     }
 
-    type = make_int_type_unsigned(type);
+    if (block_size & (block_size - 1))
+        jitc_raise(
+            "jit_block_sum(): 'block_size' must be a power of two! (got %u)",
+            block_size);
 
-    // CUDA specific
-    scoped_set_context guard(this->context);
-    const Device &dev = state.devices[device];
-    size *= block_size;
+    if (block_size > 1024) {
+        // Our largest kernel can reduce 1K elements. Split into several steps.
+        uint32_t tmp_size = size / 1024;
+        void *tmp = jitc_malloc(AllocType::Device, tmp_size * tsize);
+        block_sum(type, in, tmp, size, 1024);
+        block_sum(type, tmp, out, tmp_size, block_size / 1024);
+        jitc_free(tmp);
+        return;
+    }
 
-    CUfunction func = jitc_cuda_block_copy[(int) type][dev.id];
-    if (!func)
-        jitc_raise("jit_block_copy(): no existing kernel for type=%s!",
-                  type_name[(int) type]);
-
-    uint32_t thread_count = std::min(size, 1024u),
-             block_count  = (size + thread_count - 1) / thread_count;
-
-    void *args[] = { &in, &out, &size, &block_size };
-    submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
-               this->stream, args, nullptr, size);
-}
-
-void CUDAThreadState::block_sum(enum VarType type, const void *in, void *out, 
-                                uint32_t size, uint32_t block_size) {
-    if (block_size == 0)
-        jitc_raise("jit_block_sum(): block_size cannot be zero!");
+    uint32_t thread_count = block_size / 2, // detail of the implementation
+             log_thread_count = log2i_ceil(thread_count),
+             block_count = size / block_size,
+             smem_bytes = thread_count * type_size[(int) type];
 
     jitc_log(Debug,
             "jit_block_sum(" DRJIT_PTR " -> " DRJIT_PTR
-            ", type=%s, block_size=%u, size=%u)",
+            ", type=%s, block_size=%u, thread_count=%u, block_count=%u)",
             (uintptr_t) in, (uintptr_t) out,
-            type_name[(int) type], block_size, size);
-
-    uint32_t tsize = type_size[(int) type];
-    size_t out_size = size * tsize;
-
-    if (block_size == 1) {
-        this->memcpy_async(out, in, out_size);
-        return;
-    }
-
-    type = make_int_type_unsigned(type);
+            type_name[(int) type], block_size, thread_count, block_count);
 
     // CUDA specific
     scoped_set_context guard(this->context);
     const Device &dev = state.devices[device];
 
-    size *= block_size;
-
-    CUfunction func = jitc_cuda_block_sum[(int) type][dev.id];
+    CUfunction func = jitc_cuda_block_sum[(int) make_int_type_unsigned(type)]
+                                         [log_thread_count][dev.id];
     if (!func)
         jitc_raise("jit_block_sum(): no existing kernel for type=%s!",
                   type_name[(int) type]);
 
-    uint32_t thread_count = std::min(size, 1024u),
-             block_count  = (size + thread_count - 1) / thread_count;
-
-    void *args[] = { &in, &out, &size, &block_size };
-    cuda_check(cuMemsetD8Async((CUdeviceptr) out, 0, out_size, this->stream));
-    submit_gpu(KernelType::Other, func, block_count, thread_count, 0,
+    void *args[] = { &in, &out };
+    submit_gpu(KernelType::Other, func, block_count, thread_count, smem_bytes,
                this->stream, args, nullptr, size);
 }
 
@@ -708,7 +683,7 @@ void CUDAThreadState::aggregate(void *dst_, AggregationEntry *agg,
 
 void CUDAThreadState::enqueue_host_func(void (*callback)(void *),
                                         void *payload) {
-    
+
     scoped_set_context guard(this->context);
     cuda_check(cuLaunchHostFunc(this->stream, callback, payload));
 }

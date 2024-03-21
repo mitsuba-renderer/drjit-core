@@ -211,6 +211,12 @@ extern bool jitc_var_any(uint32_t index);
 extern uint32_t jitc_var_reduce(JitBackend backend, VarType vt,
                                 ReduceOp reduce_op, uint32_t index);
 
+/// Reduce a variable over blocks
+uint32_t jitc_var_block_sum(uint32_t index, uint32_t block_size, int symbolic);
+
+/// Replicate entries of a a variable into blocks
+uint32_t jitc_var_block_copy(uint32_t index, uint32_t block_size);
+
 /// Compute an inclusive or exclusive prefix sum of a given variable
 extern uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive);
 

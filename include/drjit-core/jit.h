@@ -1839,6 +1839,12 @@ extern JIT_EXPORT uint32_t jit_var_reduce(JitBackend backend, VarType vt,
                                           JIT_ENUM ReduceOp reduce_op,
                                           uint32_t index);
 
+/// Sum-reduce a avariable within blocks of size 'block_size'
+extern JIT_EXPORT uint32_t jit_var_block_sum(uint32_t index, uint32_t block_size, int symbolic);
+
+/// Replicate values of an array into larger blocks
+extern JIT_EXPORT uint32_t jit_var_block_copy(uint32_t index, uint32_t block_size);
+
 /// Compute an exclusive (exclusive == 1) or inclusive (exclusive == 0) prefix sum (asynchronous)
 extern JIT_EXPORT uint32_t jit_var_prefix_sum(uint32_t index, int exclusive);
 
@@ -2036,19 +2042,6 @@ struct CallBucket {
 extern JIT_EXPORT struct CallBucket *
 jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *domain,
                      uint32_t index, uint32_t *bucket_count_inout);
-
-/**
- * \brief Replicate individual input elements across larger blocks
- *
- * This function copies each element of the input array \c to a contiguous
- * block of size \c block_size in the output array \c out. For example, <tt>a,
- * b, c</tt> turns into <tt>a, a, b, b, c, c</tt> when the \c block_size is set
- * to \c 2. The input array must contain <tt>size</tt> elements, and the output
- * array must have space for <tt>size * block_size</tt> elements.
- */
-extern JIT_EXPORT void jit_block_copy(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
-                                      const void *in, void *out,
-                                      uint32_t size, uint32_t block_size);
 
 /**
  * \brief Sum over elements within blocks
