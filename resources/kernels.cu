@@ -12,3 +12,4 @@
 #include "compress.cuh"
 #include "mkperm.cuh"
 #include "misc.cuh"
+#include "block_sum.cuh"

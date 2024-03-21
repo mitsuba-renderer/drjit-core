@@ -9314,320 +9314,3793 @@ BB62_20:
 	ret;
 }
 
-	// .globl	block_copy_u32
-.visible .entry block_copy_u32(
-	.param .u64 block_copy_u32_param_0,
-	.param .u64 block_copy_u32_param_1,
-	.param .u32 block_copy_u32_param_2,
-	.param .u32 block_copy_u32_param_3
+	// .globl	block_sum_f16_512
+.visible .entry block_sum_f16_512(
+	.param .u64 block_sum_f16_512_param_0,
+	.param .u64 block_sum_f16_512_param_1
 )
 {
-	.reg .pred 	%p<2>;
-	.reg .b32 	%r<9>;
+	.reg .pred 	%p<11>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<31>;
+	.reg .b32 	%r<46>;
 	.reg .b64 	%rd<9>;
 
 
-	ld.param.u64 	%rd1, [block_copy_u32_param_0];
-	ld.param.u64 	%rd2, [block_copy_u32_param_1];
-	ld.param.u32 	%r3, [block_copy_u32_param_2];
-	ld.param.u32 	%r2, [block_copy_u32_param_3];
-	mov.u32 	%r4, %ctaid.x;
-	mov.u32 	%r5, %ntid.x;
-	mov.u32 	%r6, %tid.x;
-	mad.lo.s32 	%r1, %r5, %r4, %r6;
-	setp.ge.u32	%p1, %r1, %r3;
+	ld.param.u64 	%rd2, [block_sum_f16_512_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_512_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r2, %ctaid.x;
+	shl.b32 	%r3, %r2, 10;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r4, %r3, %r1;
+	mul.wide.u32 	%rd4, %r4, 2;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f10, %rs1;}
+
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+1024];
+	// inline asm
+	{  cvt.f32.f16 %f11, %rs2;}
+
+	// inline asm
+	add.f32 	%f28, %f10, %f11;
+	shl.b32 	%r5, %r1, 2;
+	mov.u32 	%r6, shared;
+	add.s32 	%r7, %r6, %r5;
+	st.shared.f32 	[%r7], %f28;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 255;
 	@%p1 bra 	BB63_2;
 
-	cvta.to.global.u64 	%rd3, %rd1;
-	div.u32 	%r7, %r1, %r2;
-	mul.wide.u32 	%rd4, %r7, 4;
-	add.s64 	%rd5, %rd3, %rd4;
-	ld.global.u32 	%r8, [%rd5];
-	cvta.to.global.u64 	%rd6, %rd2;
-	mul.wide.u32 	%rd7, %r1, 4;
-	add.s64 	%rd8, %rd6, %rd7;
-	st.global.u32 	[%rd8], %r8;
+	ld.shared.f32 	%f12, [%r7+1024];
+	add.f32 	%f28, %f28, %f12;
+	st.shared.f32 	[%r7], %f28;
 
 BB63_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r1, 127;
+	@%p2 bra 	BB63_4;
+
+	ld.shared.f32 	%f13, [%r7+512];
+	add.f32 	%f28, %f28, %f13;
+	st.shared.f32 	[%r7], %f28;
+
+BB63_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r1, 63;
+	@%p3 bra 	BB63_6;
+
+	ld.shared.f32 	%f14, [%r7+256];
+	add.f32 	%f28, %f28, %f14;
+	st.shared.f32 	[%r7], %f28;
+
+BB63_6:
+	bar.sync 	0;
+	setp.gt.u32	%p4, %r1, 31;
+	@%p4 bra 	BB63_8;
+
+	ld.shared.f32 	%f15, [%r7+128];
+	add.f32 	%f16, %f28, %f15;
+	mov.b32 	 %r27, %f16;
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r31|%p5, %r27, %r29, %r28, %r30;
+	mov.b32 	 %f17, %r31;
+	add.f32 	%f18, %f16, %f17;
+	mov.b32 	 %r32, %f18;
+	mov.u32 	%r33, 2;
+	shfl.sync.bfly.b32 	%r34|%p6, %r32, %r33, %r28, %r30;
+	mov.b32 	 %f19, %r34;
+	add.f32 	%f20, %f18, %f19;
+	mov.b32 	 %r35, %f20;
+	mov.u32 	%r36, 4;
+	shfl.sync.bfly.b32 	%r37|%p7, %r35, %r36, %r28, %r30;
+	mov.b32 	 %f21, %r37;
+	add.f32 	%f22, %f20, %f21;
+	mov.b32 	 %r38, %f22;
+	mov.u32 	%r39, 8;
+	shfl.sync.bfly.b32 	%r40|%p8, %r38, %r39, %r28, %r30;
+	mov.b32 	 %f23, %r40;
+	add.f32 	%f24, %f22, %f23;
+	mov.b32 	 %r41, %f24;
+	mov.u32 	%r42, 16;
+	shfl.sync.bfly.b32 	%r43|%p9, %r41, %r42, %r28, %r30;
+	mov.b32 	 %f25, %r43;
+	add.f32 	%f28, %f24, %f25;
+
+BB63_8:
+	setp.ne.s32	%p10, %r1, 0;
+	@%p10 bra 	BB63_10;
+
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f28;}
+
+	// inline asm
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r2, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB63_10:
 	ret;
 }
 
-	// .globl	block_sum_u32
-.visible .entry block_sum_u32(
-	.param .u64 block_sum_u32_param_0,
-	.param .u64 block_sum_u32_param_1,
-	.param .u32 block_sum_u32_param_2,
-	.param .u32 block_sum_u32_param_3
+	// .globl	block_sum_f16_256
+.visible .entry block_sum_f16_256(
+	.param .u64 block_sum_f16_256_param_0,
+	.param .u64 block_sum_f16_256_param_1
 )
 {
-	.reg .pred 	%p<2>;
+	.reg .pred 	%p<10>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<27>;
+	.reg .b32 	%r<29>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f16_256_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_256_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r3, %ctaid.x;
+	shl.b32 	%r4, %r3, 9;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r5, %r4, %r1;
+	mul.wide.u32 	%rd4, %r5, 2;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f8, %rs1;}
+
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+512];
+	// inline asm
+	{  cvt.f32.f16 %f9, %rs2;}
+
+	// inline asm
+	add.f32 	%f25, %f8, %f9;
+	shl.b32 	%r6, %r1, 2;
+	mov.u32 	%r7, shared;
+	add.s32 	%r2, %r7, %r6;
+	st.shared.f32 	[%r2], %f25;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 127;
+	@%p1 bra 	BB64_2;
+
+	ld.shared.f32 	%f10, [%r2+512];
+	add.f32 	%f25, %f25, %f10;
+	st.shared.f32 	[%r2], %f25;
+
+BB64_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r1, 63;
+	@%p2 bra 	BB64_4;
+
+	ld.shared.f32 	%f11, [%r2+256];
+	add.f32 	%f25, %f25, %f11;
+	st.shared.f32 	[%r2], %f25;
+
+BB64_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r1, 31;
+	@%p3 bra 	BB64_6;
+
+	ld.shared.f32 	%f12, [%r2+128];
+	add.f32 	%f13, %f25, %f12;
+	mov.b32 	 %r10, %f13;
+	mov.u32 	%r11, 31;
+	mov.u32 	%r12, 1;
+	mov.u32 	%r13, -1;
+	shfl.sync.bfly.b32 	%r14|%p4, %r10, %r12, %r11, %r13;
+	mov.b32 	 %f14, %r14;
+	add.f32 	%f15, %f13, %f14;
+	mov.b32 	 %r15, %f15;
+	mov.u32 	%r16, 2;
+	shfl.sync.bfly.b32 	%r17|%p5, %r15, %r16, %r11, %r13;
+	mov.b32 	 %f16, %r17;
+	add.f32 	%f17, %f15, %f16;
+	mov.b32 	 %r18, %f17;
+	mov.u32 	%r19, 4;
+	shfl.sync.bfly.b32 	%r20|%p6, %r18, %r19, %r11, %r13;
+	mov.b32 	 %f18, %r20;
+	add.f32 	%f19, %f17, %f18;
+	mov.b32 	 %r21, %f19;
+	mov.u32 	%r22, 8;
+	shfl.sync.bfly.b32 	%r23|%p7, %r21, %r22, %r11, %r13;
+	mov.b32 	 %f20, %r23;
+	add.f32 	%f21, %f19, %f20;
+	mov.b32 	 %r24, %f21;
+	mov.u32 	%r25, 16;
+	shfl.sync.bfly.b32 	%r26|%p8, %r24, %r25, %r11, %r13;
+	mov.b32 	 %f22, %r26;
+	add.f32 	%f25, %f21, %f22;
+
+BB64_6:
+	setp.ne.s32	%p9, %r1, 0;
+	@%p9 bra 	BB64_8;
+
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f25;}
+
+	// inline asm
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r3, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB64_8:
+	ret;
+}
+
+	// .globl	block_sum_f16_128
+.visible .entry block_sum_f16_128(
+	.param .u64 block_sum_f16_128_param_0,
+	.param .u64 block_sum_f16_128_param_1
+)
+{
+	.reg .pred 	%p<9>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<23>;
+	.reg .b32 	%r<26>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f16_128_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_128_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r3, %ctaid.x;
+	shl.b32 	%r4, %r3, 8;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r5, %r4, %r1;
+	mul.wide.u32 	%rd4, %r5, 2;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f6, %rs1;}
+
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+256];
+	// inline asm
+	{  cvt.f32.f16 %f7, %rs2;}
+
+	// inline asm
+	add.f32 	%f21, %f6, %f7;
+	shl.b32 	%r6, %r1, 2;
+	mov.u32 	%r7, shared;
+	add.s32 	%r2, %r7, %r6;
+	st.shared.f32 	[%r2], %f21;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 63;
+	@%p1 bra 	BB65_2;
+
+	ld.shared.f32 	%f8, [%r2+256];
+	add.f32 	%f21, %f21, %f8;
+	st.shared.f32 	[%r2], %f21;
+
+BB65_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r1, 31;
+	@%p2 bra 	BB65_4;
+
+	ld.shared.f32 	%f9, [%r2+128];
+	add.f32 	%f10, %f21, %f9;
+	mov.b32 	 %r8, %f10;
+	mov.u32 	%r9, 31;
+	mov.u32 	%r10, 1;
+	mov.u32 	%r11, -1;
+	shfl.sync.bfly.b32 	%r12|%p3, %r8, %r10, %r9, %r11;
+	mov.b32 	 %f11, %r12;
+	add.f32 	%f12, %f10, %f11;
+	mov.b32 	 %r13, %f12;
+	mov.u32 	%r14, 2;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r14, %r9, %r11;
+	mov.b32 	 %f13, %r15;
+	add.f32 	%f14, %f12, %f13;
+	mov.b32 	 %r16, %f14;
+	mov.u32 	%r17, 4;
+	shfl.sync.bfly.b32 	%r18|%p5, %r16, %r17, %r9, %r11;
+	mov.b32 	 %f15, %r18;
+	add.f32 	%f16, %f14, %f15;
+	mov.b32 	 %r19, %f16;
+	mov.u32 	%r20, 8;
+	shfl.sync.bfly.b32 	%r21|%p6, %r19, %r20, %r9, %r11;
+	mov.b32 	 %f17, %r21;
+	add.f32 	%f18, %f16, %f17;
+	mov.b32 	 %r22, %f18;
+	mov.u32 	%r23, 16;
+	shfl.sync.bfly.b32 	%r24|%p7, %r22, %r23, %r9, %r11;
+	mov.b32 	 %f19, %r24;
+	add.f32 	%f21, %f18, %f19;
+
+BB65_4:
+	setp.ne.s32	%p8, %r1, 0;
+	@%p8 bra 	BB65_6;
+
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f21;}
+
+	// inline asm
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r3, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB65_6:
+	ret;
+}
+
+	// .globl	block_sum_f16_64
+.visible .entry block_sum_f16_64(
+	.param .u64 block_sum_f16_64_param_0,
+	.param .u64 block_sum_f16_64_param_1
+)
+{
+	.reg .pred 	%p<8>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<19>;
+	.reg .b32 	%r<26>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f16_64_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_64_param_1];
+	mov.u32 	%r3, %ctaid.x;
+	shl.b32 	%r4, %r3, 7;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r5, %r4, %r1;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r5, 2;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f4, %rs1;}
+
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+128];
+	// inline asm
+	{  cvt.f32.f16 %f5, %rs2;}
+
+	// inline asm
+	add.f32 	%f18, %f4, %f5;
+	shl.b32 	%r6, %r1, 2;
+	mov.u32 	%r7, shared;
+	add.s32 	%r2, %r7, %r6;
+	st.shared.f32 	[%r2], %f18;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 31;
+	@%p1 bra 	BB66_2;
+
+	ld.shared.f32 	%f6, [%r2+128];
+	add.f32 	%f7, %f18, %f6;
+	mov.b32 	 %r8, %f7;
+	mov.u32 	%r9, 31;
+	mov.u32 	%r10, 1;
+	mov.u32 	%r11, -1;
+	shfl.sync.bfly.b32 	%r12|%p2, %r8, %r10, %r9, %r11;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f9, %f7, %f8;
+	mov.b32 	 %r13, %f9;
+	mov.u32 	%r14, 2;
+	shfl.sync.bfly.b32 	%r15|%p3, %r13, %r14, %r9, %r11;
+	mov.b32 	 %f10, %r15;
+	add.f32 	%f11, %f9, %f10;
+	mov.b32 	 %r16, %f11;
+	mov.u32 	%r17, 4;
+	shfl.sync.bfly.b32 	%r18|%p4, %r16, %r17, %r9, %r11;
+	mov.b32 	 %f12, %r18;
+	add.f32 	%f13, %f11, %f12;
+	mov.b32 	 %r19, %f13;
+	mov.u32 	%r20, 8;
+	shfl.sync.bfly.b32 	%r21|%p5, %r19, %r20, %r9, %r11;
+	mov.b32 	 %f14, %r21;
+	add.f32 	%f15, %f13, %f14;
+	mov.b32 	 %r22, %f15;
+	mov.u32 	%r23, 16;
+	shfl.sync.bfly.b32 	%r24|%p6, %r22, %r23, %r9, %r11;
+	mov.b32 	 %f16, %r24;
+	add.f32 	%f18, %f15, %f16;
+
+BB66_2:
+	setp.ne.s32	%p7, %r1, 0;
+	@%p7 bra 	BB66_4;
+
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f18;}
+
+	// inline asm
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r3, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB66_4:
+	ret;
+}
+
+	// .globl	block_sum_f16_32
+.visible .entry block_sum_f16_32(
+	.param .u64 block_sum_f16_32_param_0,
+	.param .u64 block_sum_f16_32_param_1
+)
+{
+	.reg .pred 	%p<8>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<17>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f16_32_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_32_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 6;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 2;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f4, %rs1;}
+
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+64];
+	// inline asm
+	{  cvt.f32.f16 %f5, %rs2;}
+
+	// inline asm
+	add.f32 	%f16, %f4, %f5;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB67_2;
+
+	mov.b32 	 %r5, %f16;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, -1;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f7, %f16, %f6;
+	mov.b32 	 %r10, %f7;
+	mov.u32 	%r11, 2;
+	shfl.sync.bfly.b32 	%r12|%p3, %r10, %r11, %r6, %r8;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f9, %f7, %f8;
+	mov.b32 	 %r13, %f9;
+	mov.u32 	%r14, 4;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r14, %r6, %r8;
+	mov.b32 	 %f10, %r15;
+	add.f32 	%f11, %f9, %f10;
+	mov.b32 	 %r16, %f11;
+	mov.u32 	%r17, 8;
+	shfl.sync.bfly.b32 	%r18|%p5, %r16, %r17, %r6, %r8;
+	mov.b32 	 %f12, %r18;
+	add.f32 	%f13, %f11, %f12;
+	mov.b32 	 %r19, %f13;
+	mov.u32 	%r20, 16;
+	shfl.sync.bfly.b32 	%r21|%p6, %r19, %r20, %r6, %r8;
+	mov.b32 	 %f14, %r21;
+	add.f32 	%f16, %f13, %f14;
+
+BB67_2:
+	setp.ne.s32	%p7, %r2, 0;
+	@%p7 bra 	BB67_4;
+
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f16;}
+
+	// inline asm
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB67_4:
+	ret;
+}
+
+	// .globl	block_sum_f16_16
+.visible .entry block_sum_f16_16(
+	.param .u64 block_sum_f16_16_param_0,
+	.param .u64 block_sum_f16_16_param_1
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<15>;
+	.reg .b32 	%r<19>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f16_16_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_16_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 5;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 2;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f4, %rs1;}
+
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+32];
+	// inline asm
+	{  cvt.f32.f16 %f5, %rs2;}
+
+	// inline asm
+	add.f32 	%f14, %f4, %f5;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB68_2;
+
+	mov.b32 	 %r5, %f14;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, 65535;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f7, %f14, %f6;
+	mov.b32 	 %r10, %f7;
+	mov.u32 	%r11, 2;
+	shfl.sync.bfly.b32 	%r12|%p3, %r10, %r11, %r6, %r8;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f9, %f7, %f8;
+	mov.b32 	 %r13, %f9;
+	mov.u32 	%r14, 4;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r14, %r6, %r8;
+	mov.b32 	 %f10, %r15;
+	add.f32 	%f11, %f9, %f10;
+	mov.b32 	 %r16, %f11;
+	mov.u32 	%r17, 8;
+	shfl.sync.bfly.b32 	%r18|%p5, %r16, %r17, %r6, %r8;
+	mov.b32 	 %f12, %r18;
+	add.f32 	%f14, %f11, %f12;
+
+BB68_2:
+	setp.ne.s32	%p6, %r2, 0;
+	@%p6 bra 	BB68_4;
+
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f14;}
+
+	// inline asm
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB68_4:
+	ret;
+}
+
+	// .globl	block_sum_f16_8
+.visible .entry block_sum_f16_8(
+	.param .u64 block_sum_f16_8_param_0,
+	.param .u64 block_sum_f16_8_param_1
+)
+{
+	.reg .pred 	%p<6>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<13>;
+	.reg .b32 	%r<16>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f16_8_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_8_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 4;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 2;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f4, %rs1;}
+
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+16];
+	// inline asm
+	{  cvt.f32.f16 %f5, %rs2;}
+
+	// inline asm
+	add.f32 	%f12, %f4, %f5;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB69_2;
+
+	mov.b32 	 %r5, %f12;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, 255;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f7, %f12, %f6;
+	mov.b32 	 %r10, %f7;
+	mov.u32 	%r11, 2;
+	shfl.sync.bfly.b32 	%r12|%p3, %r10, %r11, %r6, %r8;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f9, %f7, %f8;
+	mov.b32 	 %r13, %f9;
+	mov.u32 	%r14, 4;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r14, %r6, %r8;
+	mov.b32 	 %f10, %r15;
+	add.f32 	%f12, %f9, %f10;
+
+BB69_2:
+	setp.ne.s32	%p5, %r2, 0;
+	@%p5 bra 	BB69_4;
+
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f12;}
+
+	// inline asm
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB69_4:
+	ret;
+}
+
+	// .globl	block_sum_f16_4
+.visible .entry block_sum_f16_4(
+	.param .u64 block_sum_f16_4_param_0,
+	.param .u64 block_sum_f16_4_param_1
+)
+{
+	.reg .pred 	%p<5>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<11>;
+	.reg .b32 	%r<13>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f16_4_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_4_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 3;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 2;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f4, %rs1;}
+
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+8];
+	// inline asm
+	{  cvt.f32.f16 %f5, %rs2;}
+
+	// inline asm
+	add.f32 	%f10, %f4, %f5;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB70_2;
+
+	mov.b32 	 %r5, %f10;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, 15;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f7, %f10, %f6;
+	mov.b32 	 %r10, %f7;
+	mov.u32 	%r11, 2;
+	shfl.sync.bfly.b32 	%r12|%p3, %r10, %r11, %r6, %r8;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f10, %f7, %f8;
+
+BB70_2:
+	setp.ne.s32	%p4, %r2, 0;
+	@%p4 bra 	BB70_4;
+
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f10;}
+
+	// inline asm
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB70_4:
+	ret;
+}
+
+	// .globl	block_sum_f16_2
+.visible .entry block_sum_f16_2(
+	.param .u64 block_sum_f16_2_param_0,
+	.param .u64 block_sum_f16_2_param_1
+)
+{
+	.reg .pred 	%p<4>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<9>;
 	.reg .b32 	%r<10>;
 	.reg .b64 	%rd<9>;
 
 
-	ld.param.u64 	%rd1, [block_sum_u32_param_0];
-	ld.param.u64 	%rd2, [block_sum_u32_param_1];
-	ld.param.u32 	%r3, [block_sum_u32_param_2];
-	ld.param.u32 	%r2, [block_sum_u32_param_3];
-	mov.u32 	%r4, %ctaid.x;
-	mov.u32 	%r5, %ntid.x;
-	mov.u32 	%r6, %tid.x;
-	mad.lo.s32 	%r1, %r5, %r4, %r6;
-	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB64_2;
-
-	cvta.to.global.u64 	%rd3, %rd1;
-	div.u32 	%r7, %r1, %r2;
-	cvta.to.global.u64 	%rd4, %rd2;
-	mul.wide.u32 	%rd5, %r7, 4;
-	add.s64 	%rd6, %rd4, %rd5;
-	mul.wide.u32 	%rd7, %r1, 4;
-	add.s64 	%rd8, %rd3, %rd7;
-	ld.global.u32 	%r8, [%rd8];
-	atom.global.add.u32 	%r9, [%rd6], %r8;
-
-BB64_2:
-	ret;
-}
-
-	// .globl	block_copy_u64
-.visible .entry block_copy_u64(
-	.param .u64 block_copy_u64_param_0,
-	.param .u64 block_copy_u64_param_1,
-	.param .u32 block_copy_u64_param_2,
-	.param .u32 block_copy_u64_param_3
-)
-{
-	.reg .pred 	%p<2>;
-	.reg .b32 	%r<8>;
-	.reg .b64 	%rd<10>;
-
-
-	ld.param.u64 	%rd1, [block_copy_u64_param_0];
-	ld.param.u64 	%rd2, [block_copy_u64_param_1];
-	ld.param.u32 	%r3, [block_copy_u64_param_2];
-	ld.param.u32 	%r2, [block_copy_u64_param_3];
-	mov.u32 	%r4, %ctaid.x;
-	mov.u32 	%r5, %ntid.x;
-	mov.u32 	%r6, %tid.x;
-	mad.lo.s32 	%r1, %r5, %r4, %r6;
-	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB65_2;
-
-	cvta.to.global.u64 	%rd3, %rd1;
-	div.u32 	%r7, %r1, %r2;
-	mul.wide.u32 	%rd4, %r7, 8;
+	ld.param.u64 	%rd2, [block_sum_f16_2_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_2_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 2;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 2;
 	add.s64 	%rd5, %rd3, %rd4;
-	ld.global.u64 	%rd6, [%rd5];
-	cvta.to.global.u64 	%rd7, %rd2;
-	mul.wide.u32 	%rd8, %r1, 8;
-	add.s64 	%rd9, %rd7, %rd8;
-	st.global.u64 	[%rd9], %rd6;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f4, %rs1;}
 
-BB65_2:
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+4];
+	// inline asm
+	{  cvt.f32.f16 %f5, %rs2;}
+
+	// inline asm
+	add.f32 	%f8, %f4, %f5;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB71_2;
+
+	mov.b32 	 %r5, %f8;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, 3;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f8, %f8, %f6;
+
+BB71_2:
+	setp.ne.s32	%p3, %r2, 0;
+	@%p3 bra 	BB71_4;
+
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f8;}
+
+	// inline asm
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB71_4:
 	ret;
 }
 
-	// .globl	block_sum_u64
-.visible .entry block_sum_u64(
-	.param .u64 block_sum_u64_param_0,
-	.param .u64 block_sum_u64_param_1,
-	.param .u32 block_sum_u64_param_2,
-	.param .u32 block_sum_u64_param_3
+	// .globl	block_sum_f16_1
+.visible .entry block_sum_f16_1(
+	.param .u64 block_sum_f16_1_param_0,
+	.param .u64 block_sum_f16_1_param_1
 )
 {
 	.reg .pred 	%p<2>;
-	.reg .b32 	%r<8>;
-	.reg .b64 	%rd<11>;
-
-
-	ld.param.u64 	%rd1, [block_sum_u64_param_0];
-	ld.param.u64 	%rd2, [block_sum_u64_param_1];
-	ld.param.u32 	%r3, [block_sum_u64_param_2];
-	ld.param.u32 	%r2, [block_sum_u64_param_3];
-	mov.u32 	%r4, %ctaid.x;
-	mov.u32 	%r5, %ntid.x;
-	mov.u32 	%r6, %tid.x;
-	mad.lo.s32 	%r1, %r5, %r4, %r6;
-	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB66_2;
-
-	cvta.to.global.u64 	%rd3, %rd1;
-	div.u32 	%r7, %r1, %r2;
-	cvta.to.global.u64 	%rd4, %rd2;
-	mul.wide.u32 	%rd5, %r7, 8;
-	add.s64 	%rd6, %rd4, %rd5;
-	mul.wide.u32 	%rd7, %r1, 8;
-	add.s64 	%rd8, %rd3, %rd7;
-	ld.global.u64 	%rd9, [%rd8];
-	atom.global.add.u64 	%rd10, [%rd6], %rd9;
-
-BB66_2:
-	ret;
-}
-
-	// .globl	block_copy_f32
-.visible .entry block_copy_f32(
-	.param .u64 block_copy_f32_param_0,
-	.param .u64 block_copy_f32_param_1,
-	.param .u32 block_copy_f32_param_2,
-	.param .u32 block_copy_f32_param_3
-)
-{
-	.reg .pred 	%p<2>;
-	.reg .f32 	%f<2>;
-	.reg .b32 	%r<8>;
+	.reg .b16 	%rs<4>;
+	.reg .f32 	%f<5>;
+	.reg .b32 	%r<5>;
 	.reg .b64 	%rd<9>;
 
 
-	ld.param.u64 	%rd1, [block_copy_f32_param_0];
-	ld.param.u64 	%rd2, [block_copy_f32_param_1];
-	ld.param.u32 	%r3, [block_copy_f32_param_2];
-	ld.param.u32 	%r2, [block_copy_f32_param_3];
-	mov.u32 	%r4, %ctaid.x;
-	mov.u32 	%r5, %ntid.x;
-	mov.u32 	%r6, %tid.x;
-	mad.lo.s32 	%r1, %r5, %r4, %r6;
-	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB67_2;
+	ld.param.u64 	%rd2, [block_sum_f16_1_param_0];
+	ld.param.u64 	%rd1, [block_sum_f16_1_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r2, %r1, 1;
+	mov.u32 	%r3, %tid.x;
+	add.s32 	%r4, %r2, %r3;
+	mul.wide.u32 	%rd4, %r4, 2;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u16 	%rs1, [%rd5];
+	// inline asm
+	{  cvt.f32.f16 %f2, %rs1;}
 
+	// inline asm
+	ld.global.u16 	%rs2, [%rd5+2];
+	// inline asm
+	{  cvt.f32.f16 %f3, %rs2;}
+
+	// inline asm
+	add.f32 	%f1, %f2, %f3;
+	setp.ne.s32	%p1, %r3, 0;
+	@%p1 bra 	BB72_2;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	// inline asm
+	{  cvt.rn.f16.f32 %rs3, %f1;}
+
+	// inline asm
+	mul.wide.u32 	%rd7, %r1, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u16 	[%rd8], %rs3;
+
+BB72_2:
+	ret;
+}
+
+	// .globl	block_sum_f32_512
+.visible .entry block_sum_f32_512(
+	.param .u64 block_sum_f32_512_param_0,
+	.param .u64 block_sum_f32_512_param_1
+)
+{
+	.reg .pred 	%p<11>;
+	.reg .f32 	%f<30>;
+	.reg .b32 	%r<46>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f32_512_param_0];
+	ld.param.u64 	%rd1, [block_sum_f32_512_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r2, %ctaid.x;
+	shl.b32 	%r3, %r2, 10;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r4, %r3, %r1;
+	mul.wide.u32 	%rd4, %r4, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f10, [%rd5+2048];
+	ld.global.f32 	%f11, [%rd5];
+	add.f32 	%f27, %f11, %f10;
+	shl.b32 	%r5, %r1, 2;
+	mov.u32 	%r6, shared;
+	add.s32 	%r7, %r6, %r5;
+	st.shared.f32 	[%r7], %f27;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 255;
+	@%p1 bra 	BB73_2;
+
+	ld.shared.f32 	%f12, [%r7+1024];
+	add.f32 	%f27, %f27, %f12;
+	st.shared.f32 	[%r7], %f27;
+
+BB73_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r1, 127;
+	@%p2 bra 	BB73_4;
+
+	ld.shared.f32 	%f13, [%r7+512];
+	add.f32 	%f27, %f27, %f13;
+	st.shared.f32 	[%r7], %f27;
+
+BB73_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r1, 63;
+	@%p3 bra 	BB73_6;
+
+	ld.shared.f32 	%f14, [%r7+256];
+	add.f32 	%f27, %f27, %f14;
+	st.shared.f32 	[%r7], %f27;
+
+BB73_6:
+	bar.sync 	0;
+	setp.gt.u32	%p4, %r1, 31;
+	@%p4 bra 	BB73_8;
+
+	ld.shared.f32 	%f15, [%r7+128];
+	add.f32 	%f16, %f27, %f15;
+	mov.b32 	 %r27, %f16;
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r31|%p5, %r27, %r29, %r28, %r30;
+	mov.b32 	 %f17, %r31;
+	add.f32 	%f18, %f16, %f17;
+	mov.b32 	 %r32, %f18;
+	mov.u32 	%r33, 2;
+	shfl.sync.bfly.b32 	%r34|%p6, %r32, %r33, %r28, %r30;
+	mov.b32 	 %f19, %r34;
+	add.f32 	%f20, %f18, %f19;
+	mov.b32 	 %r35, %f20;
+	mov.u32 	%r36, 4;
+	shfl.sync.bfly.b32 	%r37|%p7, %r35, %r36, %r28, %r30;
+	mov.b32 	 %f21, %r37;
+	add.f32 	%f22, %f20, %f21;
+	mov.b32 	 %r38, %f22;
+	mov.u32 	%r39, 8;
+	shfl.sync.bfly.b32 	%r40|%p8, %r38, %r39, %r28, %r30;
+	mov.b32 	 %f23, %r40;
+	add.f32 	%f24, %f22, %f23;
+	mov.b32 	 %r41, %f24;
+	mov.u32 	%r42, 16;
+	shfl.sync.bfly.b32 	%r43|%p9, %r41, %r42, %r28, %r30;
+	mov.b32 	 %f25, %r43;
+	add.f32 	%f27, %f24, %f25;
+
+BB73_8:
+	setp.ne.s32	%p10, %r1, 0;
+	@%p10 bra 	BB73_10;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r2, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f32 	[%rd8], %f27;
+
+BB73_10:
+	ret;
+}
+
+	// .globl	block_sum_f32_256
+.visible .entry block_sum_f32_256(
+	.param .u64 block_sum_f32_256_param_0,
+	.param .u64 block_sum_f32_256_param_1
+)
+{
+	.reg .pred 	%p<10>;
+	.reg .f32 	%f<26>;
+	.reg .b32 	%r<29>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f32_256_param_0];
+	ld.param.u64 	%rd1, [block_sum_f32_256_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r3, %ctaid.x;
+	shl.b32 	%r4, %r3, 9;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r5, %r4, %r1;
+	mul.wide.u32 	%rd4, %r5, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f8, [%rd5+1024];
+	ld.global.f32 	%f9, [%rd5];
+	add.f32 	%f24, %f9, %f8;
+	shl.b32 	%r6, %r1, 2;
+	mov.u32 	%r7, shared;
+	add.s32 	%r2, %r7, %r6;
+	st.shared.f32 	[%r2], %f24;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 127;
+	@%p1 bra 	BB74_2;
+
+	ld.shared.f32 	%f10, [%r2+512];
+	add.f32 	%f24, %f24, %f10;
+	st.shared.f32 	[%r2], %f24;
+
+BB74_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r1, 63;
+	@%p2 bra 	BB74_4;
+
+	ld.shared.f32 	%f11, [%r2+256];
+	add.f32 	%f24, %f24, %f11;
+	st.shared.f32 	[%r2], %f24;
+
+BB74_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r1, 31;
+	@%p3 bra 	BB74_6;
+
+	ld.shared.f32 	%f12, [%r2+128];
+	add.f32 	%f13, %f24, %f12;
+	mov.b32 	 %r10, %f13;
+	mov.u32 	%r11, 31;
+	mov.u32 	%r12, 1;
+	mov.u32 	%r13, -1;
+	shfl.sync.bfly.b32 	%r14|%p4, %r10, %r12, %r11, %r13;
+	mov.b32 	 %f14, %r14;
+	add.f32 	%f15, %f13, %f14;
+	mov.b32 	 %r15, %f15;
+	mov.u32 	%r16, 2;
+	shfl.sync.bfly.b32 	%r17|%p5, %r15, %r16, %r11, %r13;
+	mov.b32 	 %f16, %r17;
+	add.f32 	%f17, %f15, %f16;
+	mov.b32 	 %r18, %f17;
+	mov.u32 	%r19, 4;
+	shfl.sync.bfly.b32 	%r20|%p6, %r18, %r19, %r11, %r13;
+	mov.b32 	 %f18, %r20;
+	add.f32 	%f19, %f17, %f18;
+	mov.b32 	 %r21, %f19;
+	mov.u32 	%r22, 8;
+	shfl.sync.bfly.b32 	%r23|%p7, %r21, %r22, %r11, %r13;
+	mov.b32 	 %f20, %r23;
+	add.f32 	%f21, %f19, %f20;
+	mov.b32 	 %r24, %f21;
+	mov.u32 	%r25, 16;
+	shfl.sync.bfly.b32 	%r26|%p8, %r24, %r25, %r11, %r13;
+	mov.b32 	 %f22, %r26;
+	add.f32 	%f24, %f21, %f22;
+
+BB74_6:
+	setp.ne.s32	%p9, %r1, 0;
+	@%p9 bra 	BB74_8;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r3, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f32 	[%rd8], %f24;
+
+BB74_8:
+	ret;
+}
+
+	// .globl	block_sum_f32_128
+.visible .entry block_sum_f32_128(
+	.param .u64 block_sum_f32_128_param_0,
+	.param .u64 block_sum_f32_128_param_1
+)
+{
+	.reg .pred 	%p<9>;
+	.reg .f32 	%f<22>;
+	.reg .b32 	%r<26>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f32_128_param_0];
+	ld.param.u64 	%rd1, [block_sum_f32_128_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r3, %ctaid.x;
+	shl.b32 	%r4, %r3, 8;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r5, %r4, %r1;
+	mul.wide.u32 	%rd4, %r5, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f6, [%rd5+512];
+	ld.global.f32 	%f7, [%rd5];
+	add.f32 	%f20, %f7, %f6;
+	shl.b32 	%r6, %r1, 2;
+	mov.u32 	%r7, shared;
+	add.s32 	%r2, %r7, %r6;
+	st.shared.f32 	[%r2], %f20;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 63;
+	@%p1 bra 	BB75_2;
+
+	ld.shared.f32 	%f8, [%r2+256];
+	add.f32 	%f20, %f20, %f8;
+	st.shared.f32 	[%r2], %f20;
+
+BB75_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r1, 31;
+	@%p2 bra 	BB75_4;
+
+	ld.shared.f32 	%f9, [%r2+128];
+	add.f32 	%f10, %f20, %f9;
+	mov.b32 	 %r8, %f10;
+	mov.u32 	%r9, 31;
+	mov.u32 	%r10, 1;
+	mov.u32 	%r11, -1;
+	shfl.sync.bfly.b32 	%r12|%p3, %r8, %r10, %r9, %r11;
+	mov.b32 	 %f11, %r12;
+	add.f32 	%f12, %f10, %f11;
+	mov.b32 	 %r13, %f12;
+	mov.u32 	%r14, 2;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r14, %r9, %r11;
+	mov.b32 	 %f13, %r15;
+	add.f32 	%f14, %f12, %f13;
+	mov.b32 	 %r16, %f14;
+	mov.u32 	%r17, 4;
+	shfl.sync.bfly.b32 	%r18|%p5, %r16, %r17, %r9, %r11;
+	mov.b32 	 %f15, %r18;
+	add.f32 	%f16, %f14, %f15;
+	mov.b32 	 %r19, %f16;
+	mov.u32 	%r20, 8;
+	shfl.sync.bfly.b32 	%r21|%p6, %r19, %r20, %r9, %r11;
+	mov.b32 	 %f17, %r21;
+	add.f32 	%f18, %f16, %f17;
+	mov.b32 	 %r22, %f18;
+	mov.u32 	%r23, 16;
+	shfl.sync.bfly.b32 	%r24|%p7, %r22, %r23, %r9, %r11;
+	mov.b32 	 %f19, %r24;
+	add.f32 	%f20, %f18, %f19;
+
+BB75_4:
+	setp.ne.s32	%p8, %r1, 0;
+	@%p8 bra 	BB75_6;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r3, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f32 	[%rd8], %f20;
+
+BB75_6:
+	ret;
+}
+
+	// .globl	block_sum_f32_64
+.visible .entry block_sum_f32_64(
+	.param .u64 block_sum_f32_64_param_0,
+	.param .u64 block_sum_f32_64_param_1
+)
+{
+	.reg .pred 	%p<8>;
+	.reg .f32 	%f<18>;
+	.reg .b32 	%r<26>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f32_64_param_0];
+	ld.param.u64 	%rd1, [block_sum_f32_64_param_1];
+	mov.u32 	%r3, %ctaid.x;
+	shl.b32 	%r4, %r3, 7;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r5, %r4, %r1;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r5, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f4, [%rd5+256];
+	ld.global.f32 	%f5, [%rd5];
+	add.f32 	%f17, %f5, %f4;
+	shl.b32 	%r6, %r1, 2;
+	mov.u32 	%r7, shared;
+	add.s32 	%r2, %r7, %r6;
+	st.shared.f32 	[%r2], %f17;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 31;
+	@%p1 bra 	BB76_2;
+
+	ld.shared.f32 	%f6, [%r2+128];
+	add.f32 	%f7, %f17, %f6;
+	mov.b32 	 %r8, %f7;
+	mov.u32 	%r9, 31;
+	mov.u32 	%r10, 1;
+	mov.u32 	%r11, -1;
+	shfl.sync.bfly.b32 	%r12|%p2, %r8, %r10, %r9, %r11;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f9, %f7, %f8;
+	mov.b32 	 %r13, %f9;
+	mov.u32 	%r14, 2;
+	shfl.sync.bfly.b32 	%r15|%p3, %r13, %r14, %r9, %r11;
+	mov.b32 	 %f10, %r15;
+	add.f32 	%f11, %f9, %f10;
+	mov.b32 	 %r16, %f11;
+	mov.u32 	%r17, 4;
+	shfl.sync.bfly.b32 	%r18|%p4, %r16, %r17, %r9, %r11;
+	mov.b32 	 %f12, %r18;
+	add.f32 	%f13, %f11, %f12;
+	mov.b32 	 %r19, %f13;
+	mov.u32 	%r20, 8;
+	shfl.sync.bfly.b32 	%r21|%p5, %r19, %r20, %r9, %r11;
+	mov.b32 	 %f14, %r21;
+	add.f32 	%f15, %f13, %f14;
+	mov.b32 	 %r22, %f15;
+	mov.u32 	%r23, 16;
+	shfl.sync.bfly.b32 	%r24|%p6, %r22, %r23, %r9, %r11;
+	mov.b32 	 %f16, %r24;
+	add.f32 	%f17, %f15, %f16;
+
+BB76_2:
+	setp.ne.s32	%p7, %r1, 0;
+	@%p7 bra 	BB76_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r3, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f32 	[%rd8], %f17;
+
+BB76_4:
+	ret;
+}
+
+	// .globl	block_sum_f32_32
+.visible .entry block_sum_f32_32(
+	.param .u64 block_sum_f32_32_param_0,
+	.param .u64 block_sum_f32_32_param_1
+)
+{
+	.reg .pred 	%p<8>;
+	.reg .f32 	%f<16>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f32_32_param_0];
+	ld.param.u64 	%rd1, [block_sum_f32_32_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 6;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f4, [%rd5+128];
+	ld.global.f32 	%f5, [%rd5];
+	add.f32 	%f15, %f5, %f4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB77_2;
+
+	mov.b32 	 %r5, %f15;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, -1;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f7, %f15, %f6;
+	mov.b32 	 %r10, %f7;
+	mov.u32 	%r11, 2;
+	shfl.sync.bfly.b32 	%r12|%p3, %r10, %r11, %r6, %r8;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f9, %f7, %f8;
+	mov.b32 	 %r13, %f9;
+	mov.u32 	%r14, 4;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r14, %r6, %r8;
+	mov.b32 	 %f10, %r15;
+	add.f32 	%f11, %f9, %f10;
+	mov.b32 	 %r16, %f11;
+	mov.u32 	%r17, 8;
+	shfl.sync.bfly.b32 	%r18|%p5, %r16, %r17, %r6, %r8;
+	mov.b32 	 %f12, %r18;
+	add.f32 	%f13, %f11, %f12;
+	mov.b32 	 %r19, %f13;
+	mov.u32 	%r20, 16;
+	shfl.sync.bfly.b32 	%r21|%p6, %r19, %r20, %r6, %r8;
+	mov.b32 	 %f14, %r21;
+	add.f32 	%f15, %f13, %f14;
+
+BB77_2:
+	setp.ne.s32	%p7, %r2, 0;
+	@%p7 bra 	BB77_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f32 	[%rd8], %f15;
+
+BB77_4:
+	ret;
+}
+
+	// .globl	block_sum_f32_16
+.visible .entry block_sum_f32_16(
+	.param .u64 block_sum_f32_16_param_0,
+	.param .u64 block_sum_f32_16_param_1
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<14>;
+	.reg .b32 	%r<19>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f32_16_param_0];
+	ld.param.u64 	%rd1, [block_sum_f32_16_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 5;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f4, [%rd5+64];
+	ld.global.f32 	%f5, [%rd5];
+	add.f32 	%f13, %f5, %f4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB78_2;
+
+	mov.b32 	 %r5, %f13;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, 65535;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f7, %f13, %f6;
+	mov.b32 	 %r10, %f7;
+	mov.u32 	%r11, 2;
+	shfl.sync.bfly.b32 	%r12|%p3, %r10, %r11, %r6, %r8;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f9, %f7, %f8;
+	mov.b32 	 %r13, %f9;
+	mov.u32 	%r14, 4;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r14, %r6, %r8;
+	mov.b32 	 %f10, %r15;
+	add.f32 	%f11, %f9, %f10;
+	mov.b32 	 %r16, %f11;
+	mov.u32 	%r17, 8;
+	shfl.sync.bfly.b32 	%r18|%p5, %r16, %r17, %r6, %r8;
+	mov.b32 	 %f12, %r18;
+	add.f32 	%f13, %f11, %f12;
+
+BB78_2:
+	setp.ne.s32	%p6, %r2, 0;
+	@%p6 bra 	BB78_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f32 	[%rd8], %f13;
+
+BB78_4:
+	ret;
+}
+
+	// .globl	block_sum_f32_8
+.visible .entry block_sum_f32_8(
+	.param .u64 block_sum_f32_8_param_0,
+	.param .u64 block_sum_f32_8_param_1
+)
+{
+	.reg .pred 	%p<6>;
+	.reg .f32 	%f<12>;
+	.reg .b32 	%r<16>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f32_8_param_0];
+	ld.param.u64 	%rd1, [block_sum_f32_8_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 4;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f4, [%rd5+32];
+	ld.global.f32 	%f5, [%rd5];
+	add.f32 	%f11, %f5, %f4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB79_2;
+
+	mov.b32 	 %r5, %f11;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, 255;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f7, %f11, %f6;
+	mov.b32 	 %r10, %f7;
+	mov.u32 	%r11, 2;
+	shfl.sync.bfly.b32 	%r12|%p3, %r10, %r11, %r6, %r8;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f9, %f7, %f8;
+	mov.b32 	 %r13, %f9;
+	mov.u32 	%r14, 4;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r14, %r6, %r8;
+	mov.b32 	 %f10, %r15;
+	add.f32 	%f11, %f9, %f10;
+
+BB79_2:
+	setp.ne.s32	%p5, %r2, 0;
+	@%p5 bra 	BB79_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f32 	[%rd8], %f11;
+
+BB79_4:
+	ret;
+}
+
+	// .globl	block_sum_f32_4
+.visible .entry block_sum_f32_4(
+	.param .u64 block_sum_f32_4_param_0,
+	.param .u64 block_sum_f32_4_param_1
+)
+{
+	.reg .pred 	%p<5>;
+	.reg .f32 	%f<10>;
+	.reg .b32 	%r<13>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f32_4_param_0];
+	ld.param.u64 	%rd1, [block_sum_f32_4_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 3;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f4, [%rd5+16];
+	ld.global.f32 	%f5, [%rd5];
+	add.f32 	%f9, %f5, %f4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB80_2;
+
+	mov.b32 	 %r5, %f9;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, 15;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f7, %f9, %f6;
+	mov.b32 	 %r10, %f7;
+	mov.u32 	%r11, 2;
+	shfl.sync.bfly.b32 	%r12|%p3, %r10, %r11, %r6, %r8;
+	mov.b32 	 %f8, %r12;
+	add.f32 	%f9, %f7, %f8;
+
+BB80_2:
+	setp.ne.s32	%p4, %r2, 0;
+	@%p4 bra 	BB80_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f32 	[%rd8], %f9;
+
+BB80_4:
+	ret;
+}
+
+	// .globl	block_sum_f32_2
+.visible .entry block_sum_f32_2(
+	.param .u64 block_sum_f32_2_param_0,
+	.param .u64 block_sum_f32_2_param_1
+)
+{
+	.reg .pred 	%p<4>;
+	.reg .f32 	%f<8>;
+	.reg .b32 	%r<10>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f32_2_param_0];
+	ld.param.u64 	%rd1, [block_sum_f32_2_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 2;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f4, [%rd5+8];
+	ld.global.f32 	%f5, [%rd5];
+	add.f32 	%f7, %f5, %f4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB81_2;
+
+	mov.b32 	 %r5, %f7;
+	mov.u32 	%r6, 31;
+	mov.u32 	%r7, 1;
+	mov.u32 	%r8, 3;
+	shfl.sync.bfly.b32 	%r9|%p2, %r5, %r7, %r6, %r8;
+	mov.b32 	 %f6, %r9;
+	add.f32 	%f7, %f7, %f6;
+
+BB81_2:
+	setp.ne.s32	%p3, %r2, 0;
+	@%p3 bra 	BB81_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f32 	[%rd8], %f7;
+
+BB81_4:
+	ret;
+}
+
+	// .globl	block_sum_f32_1
+.visible .entry block_sum_f32_1(
+	.param .u64 block_sum_f32_1_param_0,
+	.param .u64 block_sum_f32_1_param_1
+)
+{
+	.reg .pred 	%p<2>;
+	.reg .f32 	%f<4>;
+	.reg .b32 	%r<5>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd1, [block_sum_f32_1_param_0];
+	ld.param.u64 	%rd2, [block_sum_f32_1_param_1];
+	mov.u32 	%r1, %tid.x;
+	setp.ne.s32	%p1, %r1, 0;
+	@%p1 bra 	BB82_2;
+
+	mov.u32 	%r2, %ctaid.x;
+	shl.b32 	%r3, %r2, 1;
+	add.s32 	%r4, %r3, %r1;
 	cvta.to.global.u64 	%rd3, %rd1;
-	div.u32 	%r7, %r1, %r2;
+	mul.wide.u32 	%rd4, %r4, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f32 	%f1, [%rd5+4];
+	ld.global.f32 	%f2, [%rd5];
+	cvta.to.global.u64 	%rd6, %rd2;
+	mul.wide.u32 	%rd7, %r2, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	add.f32 	%f3, %f2, %f1;
+	st.global.f32 	[%rd8], %f3;
+
+BB82_2:
+	ret;
+}
+
+	// .globl	block_sum_f64_512
+.visible .entry block_sum_f64_512(
+	.param .u64 block_sum_f64_512_param_0,
+	.param .u64 block_sum_f64_512_param_1
+)
+{
+	.reg .pred 	%p<16>;
+	.reg .b32 	%r<35>;
+	.reg .f64 	%fd<30>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f64_512_param_0];
+	ld.param.u64 	%rd1, [block_sum_f64_512_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r4, %r1, 10;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r5, %r4, %r2;
+	mul.wide.u32 	%rd4, %r5, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd10, [%rd5+4096];
+	ld.global.f64 	%fd11, [%rd5];
+	add.f64 	%fd27, %fd11, %fd10;
+	shl.b32 	%r6, %r2, 3;
+	mov.u32 	%r7, shared_d;
+	add.s32 	%r3, %r7, %r6;
+	st.shared.f64 	[%r3], %fd27;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r2, 255;
+	@%p1 bra 	BB83_2;
+
+	ld.shared.f64 	%fd12, [%r3+2048];
+	add.f64 	%fd27, %fd27, %fd12;
+	st.shared.f64 	[%r3], %fd27;
+
+BB83_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r2, 127;
+	@%p2 bra 	BB83_4;
+
+	ld.shared.f64 	%fd13, [%r3+1024];
+	add.f64 	%fd27, %fd27, %fd13;
+	st.shared.f64 	[%r3], %fd27;
+
+BB83_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r2, 63;
+	@%p3 bra 	BB83_6;
+
+	ld.shared.f64 	%fd14, [%r3+512];
+	add.f64 	%fd27, %fd27, %fd14;
+	st.shared.f64 	[%r3], %fd27;
+
+BB83_6:
+	bar.sync 	0;
+	setp.gt.u32	%p4, %r2, 31;
+	@%p4 bra 	BB83_8;
+
+	ld.shared.f64 	%fd25, [%r3+256];
+	add.f64 	%fd15, %fd27, %fd25;
+	// inline asm
+	mov.b64 {%r8,%r9}, %fd15;
+	// inline asm
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r29, %r28, %r30;
+	shfl.sync.bfly.b32 	%r10|%p6, %r8, %r29, %r28, %r30;
+	// inline asm
+	mov.b64 %fd16, {%r10,%r11};
+	// inline asm
+	add.f64 	%fd17, %fd15, %fd16;
+	// inline asm
+	mov.b64 {%r12,%r13}, %fd17;
+	// inline asm
+	mov.u32 	%r31, 2;
+	shfl.sync.bfly.b32 	%r15|%p7, %r13, %r31, %r28, %r30;
+	shfl.sync.bfly.b32 	%r14|%p8, %r12, %r31, %r28, %r30;
+	// inline asm
+	mov.b64 %fd18, {%r14,%r15};
+	// inline asm
+	add.f64 	%fd19, %fd17, %fd18;
+	// inline asm
+	mov.b64 {%r16,%r17}, %fd19;
+	// inline asm
+	mov.u32 	%r32, 4;
+	shfl.sync.bfly.b32 	%r19|%p9, %r17, %r32, %r28, %r30;
+	shfl.sync.bfly.b32 	%r18|%p10, %r16, %r32, %r28, %r30;
+	// inline asm
+	mov.b64 %fd20, {%r18,%r19};
+	// inline asm
+	add.f64 	%fd21, %fd19, %fd20;
+	// inline asm
+	mov.b64 {%r20,%r21}, %fd21;
+	// inline asm
+	mov.u32 	%r33, 8;
+	shfl.sync.bfly.b32 	%r23|%p11, %r21, %r33, %r28, %r30;
+	shfl.sync.bfly.b32 	%r22|%p12, %r20, %r33, %r28, %r30;
+	// inline asm
+	mov.b64 %fd22, {%r22,%r23};
+	// inline asm
+	add.f64 	%fd23, %fd21, %fd22;
+	// inline asm
+	mov.b64 {%r24,%r25}, %fd23;
+	// inline asm
+	mov.u32 	%r34, 16;
+	shfl.sync.bfly.b32 	%r27|%p13, %r25, %r34, %r28, %r30;
+	shfl.sync.bfly.b32 	%r26|%p14, %r24, %r34, %r28, %r30;
+	// inline asm
+	mov.b64 %fd24, {%r26,%r27};
+	// inline asm
+	add.f64 	%fd27, %fd23, %fd24;
+
+BB83_8:
+	setp.ne.s32	%p15, %r2, 0;
+	@%p15 bra 	BB83_10;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f64 	[%rd8], %fd27;
+
+BB83_10:
+	ret;
+}
+
+	// .globl	block_sum_f64_256
+.visible .entry block_sum_f64_256(
+	.param .u64 block_sum_f64_256_param_0,
+	.param .u64 block_sum_f64_256_param_1
+)
+{
+	.reg .pred 	%p<15>;
+	.reg .b32 	%r<35>;
+	.reg .f64 	%fd<26>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f64_256_param_0];
+	ld.param.u64 	%rd1, [block_sum_f64_256_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r4, %r1, 9;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r5, %r4, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r5, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd8, [%rd5+2048];
+	ld.global.f64 	%fd9, [%rd5];
+	add.f64 	%fd24, %fd9, %fd8;
+	shl.b32 	%r6, %r2, 3;
+	mov.u32 	%r7, shared_d;
+	add.s32 	%r3, %r7, %r6;
+	st.shared.f64 	[%r3], %fd24;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r2, 127;
+	@%p1 bra 	BB84_2;
+
+	ld.shared.f64 	%fd10, [%r3+1024];
+	add.f64 	%fd24, %fd24, %fd10;
+	st.shared.f64 	[%r3], %fd24;
+
+BB84_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r2, 63;
+	@%p2 bra 	BB84_4;
+
+	ld.shared.f64 	%fd11, [%r3+512];
+	add.f64 	%fd24, %fd24, %fd11;
+	st.shared.f64 	[%r3], %fd24;
+
+BB84_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r2, 31;
+	@%p3 bra 	BB84_6;
+
+	ld.shared.f64 	%fd22, [%r3+256];
+	add.f64 	%fd12, %fd24, %fd22;
+	// inline asm
+	mov.b64 {%r8,%r9}, %fd12;
+	// inline asm
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r11|%p4, %r9, %r29, %r28, %r30;
+	shfl.sync.bfly.b32 	%r10|%p5, %r8, %r29, %r28, %r30;
+	// inline asm
+	mov.b64 %fd13, {%r10,%r11};
+	// inline asm
+	add.f64 	%fd14, %fd12, %fd13;
+	// inline asm
+	mov.b64 {%r12,%r13}, %fd14;
+	// inline asm
+	mov.u32 	%r31, 2;
+	shfl.sync.bfly.b32 	%r15|%p6, %r13, %r31, %r28, %r30;
+	shfl.sync.bfly.b32 	%r14|%p7, %r12, %r31, %r28, %r30;
+	// inline asm
+	mov.b64 %fd15, {%r14,%r15};
+	// inline asm
+	add.f64 	%fd16, %fd14, %fd15;
+	// inline asm
+	mov.b64 {%r16,%r17}, %fd16;
+	// inline asm
+	mov.u32 	%r32, 4;
+	shfl.sync.bfly.b32 	%r19|%p8, %r17, %r32, %r28, %r30;
+	shfl.sync.bfly.b32 	%r18|%p9, %r16, %r32, %r28, %r30;
+	// inline asm
+	mov.b64 %fd17, {%r18,%r19};
+	// inline asm
+	add.f64 	%fd18, %fd16, %fd17;
+	// inline asm
+	mov.b64 {%r20,%r21}, %fd18;
+	// inline asm
+	mov.u32 	%r33, 8;
+	shfl.sync.bfly.b32 	%r23|%p10, %r21, %r33, %r28, %r30;
+	shfl.sync.bfly.b32 	%r22|%p11, %r20, %r33, %r28, %r30;
+	// inline asm
+	mov.b64 %fd19, {%r22,%r23};
+	// inline asm
+	add.f64 	%fd20, %fd18, %fd19;
+	// inline asm
+	mov.b64 {%r24,%r25}, %fd20;
+	// inline asm
+	mov.u32 	%r34, 16;
+	shfl.sync.bfly.b32 	%r27|%p12, %r25, %r34, %r28, %r30;
+	shfl.sync.bfly.b32 	%r26|%p13, %r24, %r34, %r28, %r30;
+	// inline asm
+	mov.b64 %fd21, {%r26,%r27};
+	// inline asm
+	add.f64 	%fd24, %fd20, %fd21;
+
+BB84_6:
+	setp.ne.s32	%p14, %r2, 0;
+	@%p14 bra 	BB84_8;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f64 	[%rd8], %fd24;
+
+BB84_8:
+	ret;
+}
+
+	// .globl	block_sum_f64_128
+.visible .entry block_sum_f64_128(
+	.param .u64 block_sum_f64_128_param_0,
+	.param .u64 block_sum_f64_128_param_1
+)
+{
+	.reg .pred 	%p<14>;
+	.reg .b32 	%r<35>;
+	.reg .f64 	%fd<22>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f64_128_param_0];
+	ld.param.u64 	%rd1, [block_sum_f64_128_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r4, %r1, 8;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r5, %r4, %r2;
+	mul.wide.u32 	%rd4, %r5, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd6, [%rd5+1024];
+	ld.global.f64 	%fd7, [%rd5];
+	add.f64 	%fd20, %fd7, %fd6;
+	shl.b32 	%r6, %r2, 3;
+	mov.u32 	%r7, shared_d;
+	add.s32 	%r3, %r7, %r6;
+	st.shared.f64 	[%r3], %fd20;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r2, 63;
+	@%p1 bra 	BB85_2;
+
+	ld.shared.f64 	%fd8, [%r3+512];
+	add.f64 	%fd20, %fd20, %fd8;
+	st.shared.f64 	[%r3], %fd20;
+
+BB85_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r2, 31;
+	@%p2 bra 	BB85_4;
+
+	ld.shared.f64 	%fd19, [%r3+256];
+	add.f64 	%fd9, %fd20, %fd19;
+	// inline asm
+	mov.b64 {%r8,%r9}, %fd9;
+	// inline asm
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r11|%p3, %r9, %r29, %r28, %r30;
+	shfl.sync.bfly.b32 	%r10|%p4, %r8, %r29, %r28, %r30;
+	// inline asm
+	mov.b64 %fd10, {%r10,%r11};
+	// inline asm
+	add.f64 	%fd11, %fd9, %fd10;
+	// inline asm
+	mov.b64 {%r12,%r13}, %fd11;
+	// inline asm
+	mov.u32 	%r31, 2;
+	shfl.sync.bfly.b32 	%r15|%p5, %r13, %r31, %r28, %r30;
+	shfl.sync.bfly.b32 	%r14|%p6, %r12, %r31, %r28, %r30;
+	// inline asm
+	mov.b64 %fd12, {%r14,%r15};
+	// inline asm
+	add.f64 	%fd13, %fd11, %fd12;
+	// inline asm
+	mov.b64 {%r16,%r17}, %fd13;
+	// inline asm
+	mov.u32 	%r32, 4;
+	shfl.sync.bfly.b32 	%r19|%p7, %r17, %r32, %r28, %r30;
+	shfl.sync.bfly.b32 	%r18|%p8, %r16, %r32, %r28, %r30;
+	// inline asm
+	mov.b64 %fd14, {%r18,%r19};
+	// inline asm
+	add.f64 	%fd15, %fd13, %fd14;
+	// inline asm
+	mov.b64 {%r20,%r21}, %fd15;
+	// inline asm
+	mov.u32 	%r33, 8;
+	shfl.sync.bfly.b32 	%r23|%p9, %r21, %r33, %r28, %r30;
+	shfl.sync.bfly.b32 	%r22|%p10, %r20, %r33, %r28, %r30;
+	// inline asm
+	mov.b64 %fd16, {%r22,%r23};
+	// inline asm
+	add.f64 	%fd17, %fd15, %fd16;
+	// inline asm
+	mov.b64 {%r24,%r25}, %fd17;
+	// inline asm
+	mov.u32 	%r34, 16;
+	shfl.sync.bfly.b32 	%r27|%p11, %r25, %r34, %r28, %r30;
+	shfl.sync.bfly.b32 	%r26|%p12, %r24, %r34, %r28, %r30;
+	// inline asm
+	mov.b64 %fd18, {%r26,%r27};
+	// inline asm
+	add.f64 	%fd20, %fd17, %fd18;
+
+BB85_4:
+	setp.ne.s32	%p13, %r2, 0;
+	@%p13 bra 	BB85_6;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f64 	[%rd8], %fd20;
+
+BB85_6:
+	ret;
+}
+
+	// .globl	block_sum_f64_64
+.visible .entry block_sum_f64_64(
+	.param .u64 block_sum_f64_64_param_0,
+	.param .u64 block_sum_f64_64_param_1
+)
+{
+	.reg .pred 	%p<13>;
+	.reg .b32 	%r<35>;
+	.reg .f64 	%fd<18>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f64_64_param_0];
+	ld.param.u64 	%rd1, [block_sum_f64_64_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r4, %r1, 7;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r5, %r4, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r5, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd4, [%rd5+512];
+	ld.global.f64 	%fd5, [%rd5];
+	add.f64 	%fd17, %fd5, %fd4;
+	shl.b32 	%r6, %r2, 3;
+	mov.u32 	%r7, shared_d;
+	add.s32 	%r3, %r7, %r6;
+	st.shared.f64 	[%r3], %fd17;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB86_2;
+
+	ld.shared.f64 	%fd16, [%r3+256];
+	add.f64 	%fd6, %fd17, %fd16;
+	// inline asm
+	mov.b64 {%r8,%r9}, %fd6;
+	// inline asm
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r11|%p2, %r9, %r29, %r28, %r30;
+	shfl.sync.bfly.b32 	%r10|%p3, %r8, %r29, %r28, %r30;
+	// inline asm
+	mov.b64 %fd7, {%r10,%r11};
+	// inline asm
+	add.f64 	%fd8, %fd6, %fd7;
+	// inline asm
+	mov.b64 {%r12,%r13}, %fd8;
+	// inline asm
+	mov.u32 	%r31, 2;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r31, %r28, %r30;
+	shfl.sync.bfly.b32 	%r14|%p5, %r12, %r31, %r28, %r30;
+	// inline asm
+	mov.b64 %fd9, {%r14,%r15};
+	// inline asm
+	add.f64 	%fd10, %fd8, %fd9;
+	// inline asm
+	mov.b64 {%r16,%r17}, %fd10;
+	// inline asm
+	mov.u32 	%r32, 4;
+	shfl.sync.bfly.b32 	%r19|%p6, %r17, %r32, %r28, %r30;
+	shfl.sync.bfly.b32 	%r18|%p7, %r16, %r32, %r28, %r30;
+	// inline asm
+	mov.b64 %fd11, {%r18,%r19};
+	// inline asm
+	add.f64 	%fd12, %fd10, %fd11;
+	// inline asm
+	mov.b64 {%r20,%r21}, %fd12;
+	// inline asm
+	mov.u32 	%r33, 8;
+	shfl.sync.bfly.b32 	%r23|%p8, %r21, %r33, %r28, %r30;
+	shfl.sync.bfly.b32 	%r22|%p9, %r20, %r33, %r28, %r30;
+	// inline asm
+	mov.b64 %fd13, {%r22,%r23};
+	// inline asm
+	add.f64 	%fd14, %fd12, %fd13;
+	// inline asm
+	mov.b64 {%r24,%r25}, %fd14;
+	// inline asm
+	mov.u32 	%r34, 16;
+	shfl.sync.bfly.b32 	%r27|%p10, %r25, %r34, %r28, %r30;
+	shfl.sync.bfly.b32 	%r26|%p11, %r24, %r34, %r28, %r30;
+	// inline asm
+	mov.b64 %fd15, {%r26,%r27};
+	// inline asm
+	add.f64 	%fd17, %fd14, %fd15;
+
+BB86_2:
+	setp.ne.s32	%p12, %r2, 0;
+	@%p12 bra 	BB86_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f64 	[%rd8], %fd17;
+
+BB86_4:
+	ret;
+}
+
+	// .globl	block_sum_f64_32
+.visible .entry block_sum_f64_32(
+	.param .u64 block_sum_f64_32_param_0,
+	.param .u64 block_sum_f64_32_param_1
+)
+{
+	.reg .pred 	%p<13>;
+	.reg .b32 	%r<32>;
+	.reg .f64 	%fd<17>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f64_32_param_0];
+	ld.param.u64 	%rd1, [block_sum_f64_32_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 6;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd4, [%rd5+256];
+	ld.global.f64 	%fd5, [%rd5];
+	add.f64 	%fd16, %fd5, %fd4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB87_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %fd16;
+	// inline asm
+	mov.u32 	%r25, 31;
+	mov.u32 	%r26, 1;
+	mov.u32 	%r27, -1;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r26, %r25, %r27;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r26, %r25, %r27;
+	// inline asm
+	mov.b64 %fd7, {%r7,%r8};
+	// inline asm
+	add.f64 	%fd8, %fd16, %fd7;
+	// inline asm
+	mov.b64 {%r9,%r10}, %fd8;
+	// inline asm
+	mov.u32 	%r28, 2;
+	shfl.sync.bfly.b32 	%r12|%p4, %r10, %r28, %r25, %r27;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r28, %r25, %r27;
+	// inline asm
+	mov.b64 %fd9, {%r11,%r12};
+	// inline asm
+	add.f64 	%fd10, %fd8, %fd9;
+	// inline asm
+	mov.b64 {%r13,%r14}, %fd10;
+	// inline asm
+	mov.u32 	%r29, 4;
+	shfl.sync.bfly.b32 	%r16|%p6, %r14, %r29, %r25, %r27;
+	shfl.sync.bfly.b32 	%r15|%p7, %r13, %r29, %r25, %r27;
+	// inline asm
+	mov.b64 %fd11, {%r15,%r16};
+	// inline asm
+	add.f64 	%fd12, %fd10, %fd11;
+	// inline asm
+	mov.b64 {%r17,%r18}, %fd12;
+	// inline asm
+	mov.u32 	%r30, 8;
+	shfl.sync.bfly.b32 	%r20|%p8, %r18, %r30, %r25, %r27;
+	shfl.sync.bfly.b32 	%r19|%p9, %r17, %r30, %r25, %r27;
+	// inline asm
+	mov.b64 %fd13, {%r19,%r20};
+	// inline asm
+	add.f64 	%fd14, %fd12, %fd13;
+	// inline asm
+	mov.b64 {%r21,%r22}, %fd14;
+	// inline asm
+	mov.u32 	%r31, 16;
+	shfl.sync.bfly.b32 	%r24|%p10, %r22, %r31, %r25, %r27;
+	shfl.sync.bfly.b32 	%r23|%p11, %r21, %r31, %r25, %r27;
+	// inline asm
+	mov.b64 %fd15, {%r23,%r24};
+	// inline asm
+	add.f64 	%fd16, %fd14, %fd15;
+
+BB87_2:
+	setp.ne.s32	%p12, %r2, 0;
+	@%p12 bra 	BB87_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f64 	[%rd8], %fd16;
+
+BB87_4:
+	ret;
+}
+
+	// .globl	block_sum_f64_16
+.visible .entry block_sum_f64_16(
+	.param .u64 block_sum_f64_16_param_0,
+	.param .u64 block_sum_f64_16_param_1
+)
+{
+	.reg .pred 	%p<11>;
+	.reg .b32 	%r<27>;
+	.reg .f64 	%fd<15>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f64_16_param_0];
+	ld.param.u64 	%rd1, [block_sum_f64_16_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 5;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd4, [%rd5+128];
+	ld.global.f64 	%fd5, [%rd5];
+	add.f64 	%fd14, %fd5, %fd4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB88_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %fd14;
+	// inline asm
+	mov.u32 	%r21, 31;
+	mov.u32 	%r22, 1;
+	mov.u32 	%r23, 65535;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r22, %r21, %r23;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r22, %r21, %r23;
+	// inline asm
+	mov.b64 %fd7, {%r7,%r8};
+	// inline asm
+	add.f64 	%fd8, %fd14, %fd7;
+	// inline asm
+	mov.b64 {%r9,%r10}, %fd8;
+	// inline asm
+	mov.u32 	%r24, 2;
+	shfl.sync.bfly.b32 	%r12|%p4, %r10, %r24, %r21, %r23;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r24, %r21, %r23;
+	// inline asm
+	mov.b64 %fd9, {%r11,%r12};
+	// inline asm
+	add.f64 	%fd10, %fd8, %fd9;
+	// inline asm
+	mov.b64 {%r13,%r14}, %fd10;
+	// inline asm
+	mov.u32 	%r25, 4;
+	shfl.sync.bfly.b32 	%r16|%p6, %r14, %r25, %r21, %r23;
+	shfl.sync.bfly.b32 	%r15|%p7, %r13, %r25, %r21, %r23;
+	// inline asm
+	mov.b64 %fd11, {%r15,%r16};
+	// inline asm
+	add.f64 	%fd12, %fd10, %fd11;
+	// inline asm
+	mov.b64 {%r17,%r18}, %fd12;
+	// inline asm
+	mov.u32 	%r26, 8;
+	shfl.sync.bfly.b32 	%r20|%p8, %r18, %r26, %r21, %r23;
+	shfl.sync.bfly.b32 	%r19|%p9, %r17, %r26, %r21, %r23;
+	// inline asm
+	mov.b64 %fd13, {%r19,%r20};
+	// inline asm
+	add.f64 	%fd14, %fd12, %fd13;
+
+BB88_2:
+	setp.ne.s32	%p10, %r2, 0;
+	@%p10 bra 	BB88_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f64 	[%rd8], %fd14;
+
+BB88_4:
+	ret;
+}
+
+	// .globl	block_sum_f64_8
+.visible .entry block_sum_f64_8(
+	.param .u64 block_sum_f64_8_param_0,
+	.param .u64 block_sum_f64_8_param_1
+)
+{
+	.reg .pred 	%p<9>;
+	.reg .b32 	%r<22>;
+	.reg .f64 	%fd<13>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f64_8_param_0];
+	ld.param.u64 	%rd1, [block_sum_f64_8_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 4;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd4, [%rd5+64];
+	ld.global.f64 	%fd5, [%rd5];
+	add.f64 	%fd12, %fd5, %fd4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB89_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %fd12;
+	// inline asm
+	mov.u32 	%r17, 31;
+	mov.u32 	%r18, 1;
+	mov.u32 	%r19, 255;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r18, %r17, %r19;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r18, %r17, %r19;
+	// inline asm
+	mov.b64 %fd7, {%r7,%r8};
+	// inline asm
+	add.f64 	%fd8, %fd12, %fd7;
+	// inline asm
+	mov.b64 {%r9,%r10}, %fd8;
+	// inline asm
+	mov.u32 	%r20, 2;
+	shfl.sync.bfly.b32 	%r12|%p4, %r10, %r20, %r17, %r19;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r20, %r17, %r19;
+	// inline asm
+	mov.b64 %fd9, {%r11,%r12};
+	// inline asm
+	add.f64 	%fd10, %fd8, %fd9;
+	// inline asm
+	mov.b64 {%r13,%r14}, %fd10;
+	// inline asm
+	mov.u32 	%r21, 4;
+	shfl.sync.bfly.b32 	%r16|%p6, %r14, %r21, %r17, %r19;
+	shfl.sync.bfly.b32 	%r15|%p7, %r13, %r21, %r17, %r19;
+	// inline asm
+	mov.b64 %fd11, {%r15,%r16};
+	// inline asm
+	add.f64 	%fd12, %fd10, %fd11;
+
+BB89_2:
+	setp.ne.s32	%p8, %r2, 0;
+	@%p8 bra 	BB89_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f64 	[%rd8], %fd12;
+
+BB89_4:
+	ret;
+}
+
+	// .globl	block_sum_f64_4
+.visible .entry block_sum_f64_4(
+	.param .u64 block_sum_f64_4_param_0,
+	.param .u64 block_sum_f64_4_param_1
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .b32 	%r<17>;
+	.reg .f64 	%fd<11>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f64_4_param_0];
+	ld.param.u64 	%rd1, [block_sum_f64_4_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 3;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd4, [%rd5+32];
+	ld.global.f64 	%fd5, [%rd5];
+	add.f64 	%fd10, %fd5, %fd4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB90_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %fd10;
+	// inline asm
+	mov.u32 	%r13, 31;
+	mov.u32 	%r14, 1;
+	mov.u32 	%r15, 15;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r14, %r13, %r15;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r14, %r13, %r15;
+	// inline asm
+	mov.b64 %fd7, {%r7,%r8};
+	// inline asm
+	add.f64 	%fd8, %fd10, %fd7;
+	// inline asm
+	mov.b64 {%r9,%r10}, %fd8;
+	// inline asm
+	mov.u32 	%r16, 2;
+	shfl.sync.bfly.b32 	%r12|%p4, %r10, %r16, %r13, %r15;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r16, %r13, %r15;
+	// inline asm
+	mov.b64 %fd9, {%r11,%r12};
+	// inline asm
+	add.f64 	%fd10, %fd8, %fd9;
+
+BB90_2:
+	setp.ne.s32	%p6, %r2, 0;
+	@%p6 bra 	BB90_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f64 	[%rd8], %fd10;
+
+BB90_4:
+	ret;
+}
+
+	// .globl	block_sum_f64_2
+.visible .entry block_sum_f64_2(
+	.param .u64 block_sum_f64_2_param_0,
+	.param .u64 block_sum_f64_2_param_1
+)
+{
+	.reg .pred 	%p<5>;
+	.reg .b32 	%r<12>;
+	.reg .f64 	%fd<9>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_f64_2_param_0];
+	ld.param.u64 	%rd1, [block_sum_f64_2_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 2;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r4, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd4, [%rd5+16];
+	ld.global.f64 	%fd5, [%rd5];
+	add.f64 	%fd8, %fd5, %fd4;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB91_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %fd8;
+	// inline asm
+	mov.u32 	%r9, 31;
+	mov.u32 	%r10, 1;
+	mov.u32 	%r11, 3;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r10, %r9, %r11;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r10, %r9, %r11;
+	// inline asm
+	mov.b64 %fd7, {%r7,%r8};
+	// inline asm
+	add.f64 	%fd8, %fd8, %fd7;
+
+BB91_2:
+	setp.ne.s32	%p4, %r2, 0;
+	@%p4 bra 	BB91_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.f64 	[%rd8], %fd8;
+
+BB91_4:
+	ret;
+}
+
+	// .globl	block_sum_f64_1
+.visible .entry block_sum_f64_1(
+	.param .u64 block_sum_f64_1_param_0,
+	.param .u64 block_sum_f64_1_param_1
+)
+{
+	.reg .pred 	%p<2>;
+	.reg .b32 	%r<5>;
+	.reg .f64 	%fd<4>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd1, [block_sum_f64_1_param_0];
+	ld.param.u64 	%rd2, [block_sum_f64_1_param_1];
+	mov.u32 	%r1, %tid.x;
+	setp.ne.s32	%p1, %r1, 0;
+	@%p1 bra 	BB92_2;
+
+	mov.u32 	%r2, %ctaid.x;
+	shl.b32 	%r3, %r2, 1;
+	add.s32 	%r4, %r3, %r1;
+	cvta.to.global.u64 	%rd3, %rd1;
+	mul.wide.u32 	%rd4, %r4, 8;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.f64 	%fd1, [%rd5+8];
+	ld.global.f64 	%fd2, [%rd5];
+	cvta.to.global.u64 	%rd6, %rd2;
+	mul.wide.u32 	%rd7, %r2, 8;
+	add.s64 	%rd8, %rd6, %rd7;
+	add.f64 	%fd3, %fd2, %fd1;
+	st.global.f64 	[%rd8], %fd3;
+
+BB92_2:
+	ret;
+}
+
+	// .globl	block_sum_u32_512
+.visible .entry block_sum_u32_512(
+	.param .u64 block_sum_u32_512_param_0,
+	.param .u64 block_sum_u32_512_param_1
+)
+{
+	.reg .pred 	%p<11>;
+	.reg .b32 	%r<65>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_u32_512_param_0];
+	ld.param.u64 	%rd1, [block_sum_u32_512_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r11, %ctaid.x;
+	shl.b32 	%r12, %r11, 10;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r13, %r12, %r1;
+	mul.wide.u32 	%rd4, %r13, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u32 	%r14, [%rd5+2048];
+	ld.global.u32 	%r15, [%rd5];
+	add.s32 	%r62, %r14, %r15;
+	shl.b32 	%r16, %r1, 2;
+	mov.u32 	%r17, shared;
+	add.s32 	%r18, %r17, %r16;
+	st.shared.u32 	[%r18], %r62;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 255;
+	@%p1 bra 	BB93_2;
+
+	ld.shared.u32 	%r23, [%r18+1024];
+	add.s32 	%r62, %r23, %r62;
+	st.shared.u32 	[%r18], %r62;
+
+BB93_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r1, 127;
+	@%p2 bra 	BB93_4;
+
+	ld.shared.u32 	%r29, [%r18+512];
+	add.s32 	%r62, %r29, %r62;
+	st.shared.u32 	[%r18], %r62;
+
+BB93_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r1, 63;
+	@%p3 bra 	BB93_6;
+
+	ld.shared.u32 	%r35, [%r18+256];
+	add.s32 	%r62, %r35, %r62;
+	st.shared.u32 	[%r18], %r62;
+
+BB93_6:
+	bar.sync 	0;
+	setp.gt.u32	%p4, %r1, 31;
+	@%p4 bra 	BB93_8;
+
+	ld.shared.u32 	%r41, [%r18+128];
+	add.s32 	%r42, %r41, %r62;
+	mov.u32 	%r43, 31;
+	mov.u32 	%r44, 1;
+	mov.u32 	%r45, -1;
+	shfl.sync.bfly.b32 	%r46|%p5, %r42, %r44, %r43, %r45;
+	add.s32 	%r47, %r46, %r42;
+	mov.u32 	%r48, 2;
+	shfl.sync.bfly.b32 	%r49|%p6, %r47, %r48, %r43, %r45;
+	add.s32 	%r50, %r49, %r47;
+	mov.u32 	%r51, 4;
+	shfl.sync.bfly.b32 	%r52|%p7, %r50, %r51, %r43, %r45;
+	add.s32 	%r53, %r52, %r50;
+	mov.u32 	%r54, 8;
+	shfl.sync.bfly.b32 	%r55|%p8, %r53, %r54, %r43, %r45;
+	add.s32 	%r56, %r55, %r53;
+	mov.u32 	%r57, 16;
+	shfl.sync.bfly.b32 	%r58|%p9, %r56, %r57, %r43, %r45;
+	add.s32 	%r62, %r58, %r56;
+
+BB93_8:
+	setp.ne.s32	%p10, %r1, 0;
+	@%p10 bra 	BB93_10;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r11, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u32 	[%rd8], %r62;
+
+BB93_10:
+	ret;
+}
+
+	// .globl	block_sum_u32_256
+.visible .entry block_sum_u32_256(
+	.param .u64 block_sum_u32_256_param_0,
+	.param .u64 block_sum_u32_256_param_1
+)
+{
+	.reg .pred 	%p<10>;
+	.reg .b32 	%r<53>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_u32_256_param_0];
+	ld.param.u64 	%rd1, [block_sum_u32_256_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r9, %ctaid.x;
+	shl.b32 	%r10, %r9, 9;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r11, %r10, %r1;
+	mul.wide.u32 	%rd4, %r11, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u32 	%r12, [%rd5+1024];
+	ld.global.u32 	%r13, [%rd5];
+	add.s32 	%r51, %r12, %r13;
+	shl.b32 	%r14, %r1, 2;
+	mov.u32 	%r15, shared;
+	add.s32 	%r16, %r15, %r14;
+	st.shared.u32 	[%r16], %r51;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 127;
+	@%p1 bra 	BB94_2;
+
+	ld.shared.u32 	%r21, [%r16+512];
+	add.s32 	%r51, %r21, %r51;
+	st.shared.u32 	[%r16], %r51;
+
+BB94_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r1, 63;
+	@%p2 bra 	BB94_4;
+
+	ld.shared.u32 	%r26, [%r16+256];
+	add.s32 	%r51, %r26, %r51;
+	st.shared.u32 	[%r16], %r51;
+
+BB94_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r1, 31;
+	@%p3 bra 	BB94_6;
+
+	ld.shared.u32 	%r31, [%r16+128];
+	add.s32 	%r32, %r31, %r51;
+	mov.u32 	%r33, 31;
+	mov.u32 	%r34, 1;
+	mov.u32 	%r35, -1;
+	shfl.sync.bfly.b32 	%r36|%p4, %r32, %r34, %r33, %r35;
+	add.s32 	%r37, %r36, %r32;
+	mov.u32 	%r38, 2;
+	shfl.sync.bfly.b32 	%r39|%p5, %r37, %r38, %r33, %r35;
+	add.s32 	%r40, %r39, %r37;
+	mov.u32 	%r41, 4;
+	shfl.sync.bfly.b32 	%r42|%p6, %r40, %r41, %r33, %r35;
+	add.s32 	%r43, %r42, %r40;
+	mov.u32 	%r44, 8;
+	shfl.sync.bfly.b32 	%r45|%p7, %r43, %r44, %r33, %r35;
+	add.s32 	%r46, %r45, %r43;
+	mov.u32 	%r47, 16;
+	shfl.sync.bfly.b32 	%r48|%p8, %r46, %r47, %r33, %r35;
+	add.s32 	%r51, %r48, %r46;
+
+BB94_6:
+	setp.ne.s32	%p9, %r1, 0;
+	@%p9 bra 	BB94_8;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r9, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u32 	[%rd8], %r51;
+
+BB94_8:
+	ret;
+}
+
+	// .globl	block_sum_u32_128
+.visible .entry block_sum_u32_128(
+	.param .u64 block_sum_u32_128_param_0,
+	.param .u64 block_sum_u32_128_param_1
+)
+{
+	.reg .pred 	%p<9>;
+	.reg .b32 	%r<37>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_u32_128_param_0];
+	ld.param.u64 	%rd1, [block_sum_u32_128_param_1];
+	cvta.to.global.u64 	%rd3, %rd2;
+	mov.u32 	%r8, %ctaid.x;
+	shl.b32 	%r9, %r8, 8;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r10, %r9, %r1;
+	mul.wide.u32 	%rd4, %r10, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u32 	%r11, [%rd5+512];
+	ld.global.u32 	%r12, [%rd5];
+	add.s32 	%r35, %r11, %r12;
+	shl.b32 	%r13, %r1, 2;
+	mov.u32 	%r14, shared;
+	add.s32 	%r3, %r14, %r13;
+	st.shared.u32 	[%r3], %r35;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 63;
+	@%p1 bra 	BB95_2;
+
+	ld.shared.u32 	%r15, [%r3+256];
+	add.s32 	%r35, %r15, %r35;
+	st.shared.u32 	[%r3], %r35;
+
+BB95_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r1, 31;
+	@%p2 bra 	BB95_4;
+
+	ld.shared.u32 	%r16, [%r3+128];
+	add.s32 	%r17, %r16, %r35;
+	mov.u32 	%r18, 31;
+	mov.u32 	%r19, 1;
+	mov.u32 	%r20, -1;
+	shfl.sync.bfly.b32 	%r21|%p3, %r17, %r19, %r18, %r20;
+	add.s32 	%r22, %r21, %r17;
+	mov.u32 	%r23, 2;
+	shfl.sync.bfly.b32 	%r24|%p4, %r22, %r23, %r18, %r20;
+	add.s32 	%r25, %r24, %r22;
+	mov.u32 	%r26, 4;
+	shfl.sync.bfly.b32 	%r27|%p5, %r25, %r26, %r18, %r20;
+	add.s32 	%r28, %r27, %r25;
+	mov.u32 	%r29, 8;
+	shfl.sync.bfly.b32 	%r30|%p6, %r28, %r29, %r18, %r20;
+	add.s32 	%r31, %r30, %r28;
+	mov.u32 	%r32, 16;
+	shfl.sync.bfly.b32 	%r33|%p7, %r31, %r32, %r18, %r20;
+	add.s32 	%r35, %r33, %r31;
+
+BB95_4:
+	setp.ne.s32	%p8, %r1, 0;
+	@%p8 bra 	BB95_6;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r8, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u32 	[%rd8], %r35;
+
+BB95_6:
+	ret;
+}
+
+	// .globl	block_sum_u32_64
+.visible .entry block_sum_u32_64(
+	.param .u64 block_sum_u32_64_param_0,
+	.param .u64 block_sum_u32_64_param_1
+)
+{
+	.reg .pred 	%p<8>;
+	.reg .b32 	%r<33>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_u32_64_param_0];
+	ld.param.u64 	%rd1, [block_sum_u32_64_param_1];
+	mov.u32 	%r6, %ctaid.x;
+	shl.b32 	%r7, %r6, 7;
+	mov.u32 	%r1, %tid.x;
+	add.s32 	%r8, %r7, %r1;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r8, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u32 	%r9, [%rd5+256];
+	ld.global.u32 	%r10, [%rd5];
+	add.s32 	%r32, %r9, %r10;
+	shl.b32 	%r11, %r1, 2;
+	mov.u32 	%r12, shared;
+	add.s32 	%r3, %r12, %r11;
+	st.shared.u32 	[%r3], %r32;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r1, 31;
+	@%p1 bra 	BB96_2;
+
+	ld.shared.u32 	%r13, [%r3+128];
+	add.s32 	%r14, %r13, %r32;
+	mov.u32 	%r15, 31;
+	mov.u32 	%r16, 1;
+	mov.u32 	%r17, -1;
+	shfl.sync.bfly.b32 	%r18|%p2, %r14, %r16, %r15, %r17;
+	add.s32 	%r19, %r18, %r14;
+	mov.u32 	%r20, 2;
+	shfl.sync.bfly.b32 	%r21|%p3, %r19, %r20, %r15, %r17;
+	add.s32 	%r22, %r21, %r19;
+	mov.u32 	%r23, 4;
+	shfl.sync.bfly.b32 	%r24|%p4, %r22, %r23, %r15, %r17;
+	add.s32 	%r25, %r24, %r22;
+	mov.u32 	%r26, 8;
+	shfl.sync.bfly.b32 	%r27|%p5, %r25, %r26, %r15, %r17;
+	add.s32 	%r28, %r27, %r25;
+	mov.u32 	%r29, 16;
+	shfl.sync.bfly.b32 	%r30|%p6, %r28, %r29, %r15, %r17;
+	add.s32 	%r32, %r30, %r28;
+
+BB96_2:
+	setp.ne.s32	%p7, %r1, 0;
+	@%p7 bra 	BB96_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r6, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u32 	[%rd8], %r32;
+
+BB96_4:
+	ret;
+}
+
+	// .globl	block_sum_u32_32
+.visible .entry block_sum_u32_32(
+	.param .u64 block_sum_u32_32_param_0,
+	.param .u64 block_sum_u32_32_param_1
+)
+{
+	.reg .pred 	%p<8>;
+	.reg .b32 	%r<27>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_u32_32_param_0];
+	ld.param.u64 	%rd1, [block_sum_u32_32_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r6, %r1, 6;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r7, %r6, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
 	mul.wide.u32 	%rd4, %r7, 4;
 	add.s64 	%rd5, %rd3, %rd4;
-	ld.global.f32 	%f1, [%rd5];
-	cvta.to.global.u64 	%rd6, %rd2;
+	ld.global.u32 	%r8, [%rd5+128];
+	ld.global.u32 	%r9, [%rd5];
+	add.s32 	%r26, %r8, %r9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB97_2;
+
+	mov.u32 	%r10, 31;
+	mov.u32 	%r11, 1;
+	mov.u32 	%r12, -1;
+	shfl.sync.bfly.b32 	%r13|%p2, %r26, %r11, %r10, %r12;
+	add.s32 	%r14, %r13, %r26;
+	mov.u32 	%r15, 2;
+	shfl.sync.bfly.b32 	%r16|%p3, %r14, %r15, %r10, %r12;
+	add.s32 	%r17, %r16, %r14;
+	mov.u32 	%r18, 4;
+	shfl.sync.bfly.b32 	%r19|%p4, %r17, %r18, %r10, %r12;
+	add.s32 	%r20, %r19, %r17;
+	mov.u32 	%r21, 8;
+	shfl.sync.bfly.b32 	%r22|%p5, %r20, %r21, %r10, %r12;
+	add.s32 	%r23, %r22, %r20;
+	mov.u32 	%r24, 16;
+	shfl.sync.bfly.b32 	%r25|%p6, %r23, %r24, %r10, %r12;
+	add.s32 	%r26, %r25, %r23;
+
+BB97_2:
+	setp.ne.s32	%p7, %r2, 0;
+	@%p7 bra 	BB97_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
 	mul.wide.u32 	%rd7, %r1, 4;
 	add.s64 	%rd8, %rd6, %rd7;
-	st.global.f32 	[%rd8], %f1;
+	st.global.u32 	[%rd8], %r26;
 
-BB67_2:
+BB97_4:
 	ret;
 }
 
-	// .globl	block_sum_f32
-.visible .entry block_sum_f32(
-	.param .u64 block_sum_f32_param_0,
-	.param .u64 block_sum_f32_param_1,
-	.param .u32 block_sum_f32_param_2,
-	.param .u32 block_sum_f32_param_3
+	// .globl	block_sum_u32_16
+.visible .entry block_sum_u32_16(
+	.param .u64 block_sum_u32_16_param_0,
+	.param .u64 block_sum_u32_16_param_1
 )
 {
-	.reg .pred 	%p<2>;
-	.reg .f32 	%f<3>;
-	.reg .b32 	%r<8>;
+	.reg .pred 	%p<7>;
+	.reg .b32 	%r<24>;
 	.reg .b64 	%rd<9>;
 
 
-	ld.param.u64 	%rd1, [block_sum_f32_param_0];
-	ld.param.u64 	%rd2, [block_sum_f32_param_1];
-	ld.param.u32 	%r3, [block_sum_f32_param_2];
-	ld.param.u32 	%r2, [block_sum_f32_param_3];
-	mov.u32 	%r4, %ctaid.x;
-	mov.u32 	%r5, %ntid.x;
-	mov.u32 	%r6, %tid.x;
-	mad.lo.s32 	%r1, %r5, %r4, %r6;
-	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB68_2;
-
-	cvta.to.global.u64 	%rd3, %rd1;
-	div.u32 	%r7, %r1, %r2;
-	cvta.to.global.u64 	%rd4, %rd2;
-	mul.wide.u32 	%rd5, %r7, 4;
-	add.s64 	%rd6, %rd4, %rd5;
-	mul.wide.u32 	%rd7, %r1, 4;
-	add.s64 	%rd8, %rd3, %rd7;
-	ld.global.f32 	%f1, [%rd8];
-	atom.global.add.f32 	%f2, [%rd6], %f1;
-
-BB68_2:
-	ret;
-}
-
-	// .globl	block_copy_f64
-.visible .entry block_copy_f64(
-	.param .u64 block_copy_f64_param_0,
-	.param .u64 block_copy_f64_param_1,
-	.param .u32 block_copy_f64_param_2,
-	.param .u32 block_copy_f64_param_3
-)
-{
-	.reg .pred 	%p<2>;
-	.reg .b32 	%r<8>;
-	.reg .f64 	%fd<2>;
-	.reg .b64 	%rd<9>;
-
-
-	ld.param.u64 	%rd1, [block_copy_f64_param_0];
-	ld.param.u64 	%rd2, [block_copy_f64_param_1];
-	ld.param.u32 	%r3, [block_copy_f64_param_2];
-	ld.param.u32 	%r2, [block_copy_f64_param_3];
-	mov.u32 	%r4, %ctaid.x;
-	mov.u32 	%r5, %ntid.x;
-	mov.u32 	%r6, %tid.x;
-	mad.lo.s32 	%r1, %r5, %r4, %r6;
-	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB69_2;
-
-	cvta.to.global.u64 	%rd3, %rd1;
-	div.u32 	%r7, %r1, %r2;
-	mul.wide.u32 	%rd4, %r7, 8;
+	ld.param.u64 	%rd2, [block_sum_u32_16_param_0];
+	ld.param.u64 	%rd1, [block_sum_u32_16_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r6, %r1, 5;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r7, %r6, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r7, 4;
 	add.s64 	%rd5, %rd3, %rd4;
-	ld.global.f64 	%fd1, [%rd5];
-	cvta.to.global.u64 	%rd6, %rd2;
-	mul.wide.u32 	%rd7, %r1, 8;
-	add.s64 	%rd8, %rd6, %rd7;
-	st.global.f64 	[%rd8], %fd1;
+	ld.global.u32 	%r8, [%rd5+64];
+	ld.global.u32 	%r9, [%rd5];
+	add.s32 	%r23, %r8, %r9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB98_2;
 
-BB69_2:
+	mov.u32 	%r10, 31;
+	mov.u32 	%r11, 1;
+	mov.u32 	%r12, 65535;
+	shfl.sync.bfly.b32 	%r13|%p2, %r23, %r11, %r10, %r12;
+	add.s32 	%r14, %r13, %r23;
+	mov.u32 	%r15, 2;
+	shfl.sync.bfly.b32 	%r16|%p3, %r14, %r15, %r10, %r12;
+	add.s32 	%r17, %r16, %r14;
+	mov.u32 	%r18, 4;
+	shfl.sync.bfly.b32 	%r19|%p4, %r17, %r18, %r10, %r12;
+	add.s32 	%r20, %r19, %r17;
+	mov.u32 	%r21, 8;
+	shfl.sync.bfly.b32 	%r22|%p5, %r20, %r21, %r10, %r12;
+	add.s32 	%r23, %r22, %r20;
+
+BB98_2:
+	setp.ne.s32	%p6, %r2, 0;
+	@%p6 bra 	BB98_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u32 	[%rd8], %r23;
+
+BB98_4:
 	ret;
 }
 
-	// .globl	block_sum_f64
-.visible .entry block_sum_f64(
-	.param .u64 block_sum_f64_param_0,
-	.param .u64 block_sum_f64_param_1,
-	.param .u32 block_sum_f64_param_2,
-	.param .u32 block_sum_f64_param_3
+	// .globl	block_sum_u32_8
+.visible .entry block_sum_u32_8(
+	.param .u64 block_sum_u32_8_param_0,
+	.param .u64 block_sum_u32_8_param_1
 )
 {
-	.reg .pred 	%p<3>;
+	.reg .pred 	%p<6>;
+	.reg .b32 	%r<21>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_u32_8_param_0];
+	ld.param.u64 	%rd1, [block_sum_u32_8_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r6, %r1, 4;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r7, %r6, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r7, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u32 	%r8, [%rd5+32];
+	ld.global.u32 	%r9, [%rd5];
+	add.s32 	%r20, %r8, %r9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB99_2;
+
+	mov.u32 	%r10, 31;
+	mov.u32 	%r11, 1;
+	mov.u32 	%r12, 255;
+	shfl.sync.bfly.b32 	%r13|%p2, %r20, %r11, %r10, %r12;
+	add.s32 	%r14, %r13, %r20;
+	mov.u32 	%r15, 2;
+	shfl.sync.bfly.b32 	%r16|%p3, %r14, %r15, %r10, %r12;
+	add.s32 	%r17, %r16, %r14;
+	mov.u32 	%r18, 4;
+	shfl.sync.bfly.b32 	%r19|%p4, %r17, %r18, %r10, %r12;
+	add.s32 	%r20, %r19, %r17;
+
+BB99_2:
+	setp.ne.s32	%p5, %r2, 0;
+	@%p5 bra 	BB99_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u32 	[%rd8], %r20;
+
+BB99_4:
+	ret;
+}
+
+	// .globl	block_sum_u32_4
+.visible .entry block_sum_u32_4(
+	.param .u64 block_sum_u32_4_param_0,
+	.param .u64 block_sum_u32_4_param_1
+)
+{
+	.reg .pred 	%p<5>;
+	.reg .b32 	%r<18>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_u32_4_param_0];
+	ld.param.u64 	%rd1, [block_sum_u32_4_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r6, %r1, 3;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r7, %r6, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r7, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u32 	%r8, [%rd5+16];
+	ld.global.u32 	%r9, [%rd5];
+	add.s32 	%r17, %r8, %r9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB100_2;
+
+	mov.u32 	%r10, 31;
+	mov.u32 	%r11, 1;
+	mov.u32 	%r12, 15;
+	shfl.sync.bfly.b32 	%r13|%p2, %r17, %r11, %r10, %r12;
+	add.s32 	%r14, %r13, %r17;
+	mov.u32 	%r15, 2;
+	shfl.sync.bfly.b32 	%r16|%p3, %r14, %r15, %r10, %r12;
+	add.s32 	%r17, %r16, %r14;
+
+BB100_2:
+	setp.ne.s32	%p4, %r2, 0;
+	@%p4 bra 	BB100_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u32 	[%rd8], %r17;
+
+BB100_4:
+	ret;
+}
+
+	// .globl	block_sum_u32_2
+.visible .entry block_sum_u32_2(
+	.param .u64 block_sum_u32_2_param_0,
+	.param .u64 block_sum_u32_2_param_1
+)
+{
+	.reg .pred 	%p<4>;
+	.reg .b32 	%r<15>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd2, [block_sum_u32_2_param_0];
+	ld.param.u64 	%rd1, [block_sum_u32_2_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r6, %r1, 2;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r7, %r6, %r2;
+	cvta.to.global.u64 	%rd3, %rd2;
+	mul.wide.u32 	%rd4, %r7, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u32 	%r8, [%rd5+8];
+	ld.global.u32 	%r9, [%rd5];
+	add.s32 	%r14, %r8, %r9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB101_2;
+
+	mov.u32 	%r10, 31;
+	mov.u32 	%r11, 1;
+	mov.u32 	%r12, 3;
+	shfl.sync.bfly.b32 	%r13|%p2, %r14, %r11, %r10, %r12;
+	add.s32 	%r14, %r13, %r14;
+
+BB101_2:
+	setp.ne.s32	%p3, %r2, 0;
+	@%p3 bra 	BB101_4;
+
+	cvta.to.global.u64 	%rd6, %rd1;
+	mul.wide.u32 	%rd7, %r1, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	st.global.u32 	[%rd8], %r14;
+
+BB101_4:
+	ret;
+}
+
+	// .globl	block_sum_u32_1
+.visible .entry block_sum_u32_1(
+	.param .u64 block_sum_u32_1_param_0,
+	.param .u64 block_sum_u32_1_param_1
+)
+{
+	.reg .pred 	%p<2>;
 	.reg .b32 	%r<8>;
-	.reg .f64 	%fd<4>;
-	.reg .b64 	%rd<14>;
+	.reg .b64 	%rd<9>;
 
 
-	ld.param.u64 	%rd5, [block_sum_f64_param_0];
-	ld.param.u64 	%rd6, [block_sum_f64_param_1];
-	ld.param.u32 	%r3, [block_sum_f64_param_2];
-	ld.param.u32 	%r2, [block_sum_f64_param_3];
-	mov.u32 	%r4, %ctaid.x;
-	mov.u32 	%r5, %ntid.x;
-	mov.u32 	%r6, %tid.x;
-	mad.lo.s32 	%r1, %r5, %r4, %r6;
-	setp.ge.u32	%p1, %r1, %r3;
-	@%p1 bra 	BB70_3;
+	ld.param.u64 	%rd1, [block_sum_u32_1_param_0];
+	ld.param.u64 	%rd2, [block_sum_u32_1_param_1];
+	mov.u32 	%r1, %tid.x;
+	setp.ne.s32	%p1, %r1, 0;
+	@%p1 bra 	BB102_2;
 
-	cvta.to.global.u64 	%rd7, %rd5;
-	div.u32 	%r7, %r1, %r2;
-	cvta.to.global.u64 	%rd8, %rd6;
-	mul.wide.u32 	%rd9, %r7, 8;
-	add.s64 	%rd1, %rd8, %rd9;
-	mul.wide.u32 	%rd10, %r1, 8;
-	add.s64 	%rd11, %rd7, %rd10;
-	ld.global.f64 	%fd1, [%rd11];
-	ld.global.u64 	%rd13, [%rd1];
+	mov.u32 	%r2, %ctaid.x;
+	shl.b32 	%r3, %r2, 1;
+	add.s32 	%r4, %r3, %r1;
+	cvta.to.global.u64 	%rd3, %rd1;
+	mul.wide.u32 	%rd4, %r4, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u32 	%r5, [%rd5+4];
+	ld.global.u32 	%r6, [%rd5];
+	cvta.to.global.u64 	%rd6, %rd2;
+	mul.wide.u32 	%rd7, %r2, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	add.s32 	%r7, %r5, %r6;
+	st.global.u32 	[%rd8], %r7;
 
-BB70_2:
-	mov.b64 	 %fd2, %rd13;
-	add.f64 	%fd3, %fd1, %fd2;
-	mov.b64 	 %rd12, %fd3;
-	atom.global.cas.b64 	%rd4, [%rd1], %rd13, %rd12;
-	setp.ne.s64	%p2, %rd13, %rd4;
-	mov.u64 	%rd13, %rd4;
-	@%p2 bra 	BB70_2;
+BB102_2:
+	ret;
+}
 
-BB70_3:
+	// .globl	block_sum_u64_512
+.visible .entry block_sum_u64_512(
+	.param .u64 block_sum_u64_512_param_0,
+	.param .u64 block_sum_u64_512_param_1
+)
+{
+	.reg .pred 	%p<16>;
+	.reg .b32 	%r<35>;
+	.reg .b64 	%rd<38>;
+
+
+	ld.param.u64 	%rd11, [block_sum_u64_512_param_0];
+	ld.param.u64 	%rd10, [block_sum_u64_512_param_1];
+	cvta.to.global.u64 	%rd12, %rd11;
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r4, %r1, 10;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r5, %r4, %r2;
+	mul.wide.u32 	%rd13, %r5, 4;
+	add.s64 	%rd14, %rd12, %rd13;
+	ld.global.u32 	%rd15, [%rd14];
+	ld.global.u32 	%rd16, [%rd14+2048];
+	add.s64 	%rd35, %rd16, %rd15;
+	shl.b32 	%r6, %r2, 3;
+	mov.u32 	%r7, shared;
+	add.s32 	%r3, %r7, %r6;
+	st.shared.u64 	[%r3], %rd35;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r2, 255;
+	@%p1 bra 	BB103_2;
+
+	ld.shared.u64 	%rd17, [%r3+2048];
+	add.s64 	%rd35, %rd17, %rd35;
+	st.shared.u64 	[%r3], %rd35;
+
+BB103_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r2, 127;
+	@%p2 bra 	BB103_4;
+
+	ld.shared.u64 	%rd18, [%r3+1024];
+	add.s64 	%rd35, %rd18, %rd35;
+	st.shared.u64 	[%r3], %rd35;
+
+BB103_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r2, 63;
+	@%p3 bra 	BB103_6;
+
+	ld.shared.u64 	%rd19, [%r3+512];
+	add.s64 	%rd35, %rd19, %rd35;
+	st.shared.u64 	[%r3], %rd35;
+
+BB103_6:
+	bar.sync 	0;
+	setp.gt.u32	%p4, %r2, 31;
+	@%p4 bra 	BB103_8;
+
+	ld.shared.u64 	%rd30, [%r3+256];
+	add.s64 	%rd20, %rd30, %rd35;
+	// inline asm
+	mov.b64 {%r8,%r9}, %rd20;
+	// inline asm
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r29, %r28, %r30;
+	shfl.sync.bfly.b32 	%r10|%p6, %r8, %r29, %r28, %r30;
+	// inline asm
+	mov.b64 %rd21, {%r10,%r11};
+	// inline asm
+	add.s64 	%rd22, %rd21, %rd20;
+	// inline asm
+	mov.b64 {%r12,%r13}, %rd22;
+	// inline asm
+	mov.u32 	%r31, 2;
+	shfl.sync.bfly.b32 	%r15|%p7, %r13, %r31, %r28, %r30;
+	shfl.sync.bfly.b32 	%r14|%p8, %r12, %r31, %r28, %r30;
+	// inline asm
+	mov.b64 %rd23, {%r14,%r15};
+	// inline asm
+	add.s64 	%rd24, %rd23, %rd22;
+	// inline asm
+	mov.b64 {%r16,%r17}, %rd24;
+	// inline asm
+	mov.u32 	%r32, 4;
+	shfl.sync.bfly.b32 	%r19|%p9, %r17, %r32, %r28, %r30;
+	shfl.sync.bfly.b32 	%r18|%p10, %r16, %r32, %r28, %r30;
+	// inline asm
+	mov.b64 %rd25, {%r18,%r19};
+	// inline asm
+	add.s64 	%rd26, %rd25, %rd24;
+	// inline asm
+	mov.b64 {%r20,%r21}, %rd26;
+	// inline asm
+	mov.u32 	%r33, 8;
+	shfl.sync.bfly.b32 	%r23|%p11, %r21, %r33, %r28, %r30;
+	shfl.sync.bfly.b32 	%r22|%p12, %r20, %r33, %r28, %r30;
+	// inline asm
+	mov.b64 %rd27, {%r22,%r23};
+	// inline asm
+	add.s64 	%rd28, %rd27, %rd26;
+	// inline asm
+	mov.b64 {%r24,%r25}, %rd28;
+	// inline asm
+	mov.u32 	%r34, 16;
+	shfl.sync.bfly.b32 	%r27|%p13, %r25, %r34, %r28, %r30;
+	shfl.sync.bfly.b32 	%r26|%p14, %r24, %r34, %r28, %r30;
+	// inline asm
+	mov.b64 %rd29, {%r26,%r27};
+	// inline asm
+	add.s64 	%rd35, %rd29, %rd28;
+
+BB103_8:
+	setp.ne.s32	%p15, %r2, 0;
+	@%p15 bra 	BB103_10;
+
+	cvta.to.global.u64 	%rd31, %rd10;
+	mul.wide.u32 	%rd32, %r1, 4;
+	add.s64 	%rd33, %rd31, %rd32;
+	st.global.u32 	[%rd33], %rd35;
+
+BB103_10:
+	ret;
+}
+
+	// .globl	block_sum_u64_256
+.visible .entry block_sum_u64_256(
+	.param .u64 block_sum_u64_256_param_0,
+	.param .u64 block_sum_u64_256_param_1
+)
+{
+	.reg .pred 	%p<15>;
+	.reg .b32 	%r<35>;
+	.reg .b64 	%rd<34>;
+
+
+	ld.param.u64 	%rd9, [block_sum_u64_256_param_0];
+	ld.param.u64 	%rd8, [block_sum_u64_256_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r4, %r1, 9;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r5, %r4, %r2;
+	cvta.to.global.u64 	%rd10, %rd9;
+	mul.wide.u32 	%rd11, %r5, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	ld.global.u32 	%rd13, [%rd12];
+	ld.global.u32 	%rd14, [%rd12+1024];
+	add.s64 	%rd32, %rd14, %rd13;
+	shl.b32 	%r6, %r2, 3;
+	mov.u32 	%r7, shared;
+	add.s32 	%r3, %r7, %r6;
+	st.shared.u64 	[%r3], %rd32;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r2, 127;
+	@%p1 bra 	BB104_2;
+
+	ld.shared.u64 	%rd15, [%r3+1024];
+	add.s64 	%rd32, %rd15, %rd32;
+	st.shared.u64 	[%r3], %rd32;
+
+BB104_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r2, 63;
+	@%p2 bra 	BB104_4;
+
+	ld.shared.u64 	%rd16, [%r3+512];
+	add.s64 	%rd32, %rd16, %rd32;
+	st.shared.u64 	[%r3], %rd32;
+
+BB104_4:
+	bar.sync 	0;
+	setp.gt.u32	%p3, %r2, 31;
+	@%p3 bra 	BB104_6;
+
+	ld.shared.u64 	%rd27, [%r3+256];
+	add.s64 	%rd17, %rd27, %rd32;
+	// inline asm
+	mov.b64 {%r8,%r9}, %rd17;
+	// inline asm
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r11|%p4, %r9, %r29, %r28, %r30;
+	shfl.sync.bfly.b32 	%r10|%p5, %r8, %r29, %r28, %r30;
+	// inline asm
+	mov.b64 %rd18, {%r10,%r11};
+	// inline asm
+	add.s64 	%rd19, %rd18, %rd17;
+	// inline asm
+	mov.b64 {%r12,%r13}, %rd19;
+	// inline asm
+	mov.u32 	%r31, 2;
+	shfl.sync.bfly.b32 	%r15|%p6, %r13, %r31, %r28, %r30;
+	shfl.sync.bfly.b32 	%r14|%p7, %r12, %r31, %r28, %r30;
+	// inline asm
+	mov.b64 %rd20, {%r14,%r15};
+	// inline asm
+	add.s64 	%rd21, %rd20, %rd19;
+	// inline asm
+	mov.b64 {%r16,%r17}, %rd21;
+	// inline asm
+	mov.u32 	%r32, 4;
+	shfl.sync.bfly.b32 	%r19|%p8, %r17, %r32, %r28, %r30;
+	shfl.sync.bfly.b32 	%r18|%p9, %r16, %r32, %r28, %r30;
+	// inline asm
+	mov.b64 %rd22, {%r18,%r19};
+	// inline asm
+	add.s64 	%rd23, %rd22, %rd21;
+	// inline asm
+	mov.b64 {%r20,%r21}, %rd23;
+	// inline asm
+	mov.u32 	%r33, 8;
+	shfl.sync.bfly.b32 	%r23|%p10, %r21, %r33, %r28, %r30;
+	shfl.sync.bfly.b32 	%r22|%p11, %r20, %r33, %r28, %r30;
+	// inline asm
+	mov.b64 %rd24, {%r22,%r23};
+	// inline asm
+	add.s64 	%rd25, %rd24, %rd23;
+	// inline asm
+	mov.b64 {%r24,%r25}, %rd25;
+	// inline asm
+	mov.u32 	%r34, 16;
+	shfl.sync.bfly.b32 	%r27|%p12, %r25, %r34, %r28, %r30;
+	shfl.sync.bfly.b32 	%r26|%p13, %r24, %r34, %r28, %r30;
+	// inline asm
+	mov.b64 %rd26, {%r26,%r27};
+	// inline asm
+	add.s64 	%rd32, %rd26, %rd25;
+
+BB104_6:
+	setp.ne.s32	%p14, %r2, 0;
+	@%p14 bra 	BB104_8;
+
+	cvta.to.global.u64 	%rd28, %rd8;
+	mul.wide.u32 	%rd29, %r1, 4;
+	add.s64 	%rd30, %rd28, %rd29;
+	st.global.u32 	[%rd30], %rd32;
+
+BB104_8:
+	ret;
+}
+
+	// .globl	block_sum_u64_128
+.visible .entry block_sum_u64_128(
+	.param .u64 block_sum_u64_128_param_0,
+	.param .u64 block_sum_u64_128_param_1
+)
+{
+	.reg .pred 	%p<14>;
+	.reg .b32 	%r<35>;
+	.reg .b64 	%rd<30>;
+
+
+	ld.param.u64 	%rd7, [block_sum_u64_128_param_0];
+	ld.param.u64 	%rd6, [block_sum_u64_128_param_1];
+	cvta.to.global.u64 	%rd8, %rd7;
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r4, %r1, 8;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r5, %r4, %r2;
+	mul.wide.u32 	%rd9, %r5, 4;
+	add.s64 	%rd10, %rd8, %rd9;
+	ld.global.u32 	%rd11, [%rd10];
+	ld.global.u32 	%rd12, [%rd10+512];
+	add.s64 	%rd28, %rd12, %rd11;
+	shl.b32 	%r6, %r2, 3;
+	mov.u32 	%r7, shared;
+	add.s32 	%r3, %r7, %r6;
+	st.shared.u64 	[%r3], %rd28;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r2, 63;
+	@%p1 bra 	BB105_2;
+
+	ld.shared.u64 	%rd13, [%r3+512];
+	add.s64 	%rd28, %rd13, %rd28;
+	st.shared.u64 	[%r3], %rd28;
+
+BB105_2:
+	bar.sync 	0;
+	setp.gt.u32	%p2, %r2, 31;
+	@%p2 bra 	BB105_4;
+
+	ld.shared.u64 	%rd24, [%r3+256];
+	add.s64 	%rd14, %rd24, %rd28;
+	// inline asm
+	mov.b64 {%r8,%r9}, %rd14;
+	// inline asm
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r11|%p3, %r9, %r29, %r28, %r30;
+	shfl.sync.bfly.b32 	%r10|%p4, %r8, %r29, %r28, %r30;
+	// inline asm
+	mov.b64 %rd15, {%r10,%r11};
+	// inline asm
+	add.s64 	%rd16, %rd15, %rd14;
+	// inline asm
+	mov.b64 {%r12,%r13}, %rd16;
+	// inline asm
+	mov.u32 	%r31, 2;
+	shfl.sync.bfly.b32 	%r15|%p5, %r13, %r31, %r28, %r30;
+	shfl.sync.bfly.b32 	%r14|%p6, %r12, %r31, %r28, %r30;
+	// inline asm
+	mov.b64 %rd17, {%r14,%r15};
+	// inline asm
+	add.s64 	%rd18, %rd17, %rd16;
+	// inline asm
+	mov.b64 {%r16,%r17}, %rd18;
+	// inline asm
+	mov.u32 	%r32, 4;
+	shfl.sync.bfly.b32 	%r19|%p7, %r17, %r32, %r28, %r30;
+	shfl.sync.bfly.b32 	%r18|%p8, %r16, %r32, %r28, %r30;
+	// inline asm
+	mov.b64 %rd19, {%r18,%r19};
+	// inline asm
+	add.s64 	%rd20, %rd19, %rd18;
+	// inline asm
+	mov.b64 {%r20,%r21}, %rd20;
+	// inline asm
+	mov.u32 	%r33, 8;
+	shfl.sync.bfly.b32 	%r23|%p9, %r21, %r33, %r28, %r30;
+	shfl.sync.bfly.b32 	%r22|%p10, %r20, %r33, %r28, %r30;
+	// inline asm
+	mov.b64 %rd21, {%r22,%r23};
+	// inline asm
+	add.s64 	%rd22, %rd21, %rd20;
+	// inline asm
+	mov.b64 {%r24,%r25}, %rd22;
+	// inline asm
+	mov.u32 	%r34, 16;
+	shfl.sync.bfly.b32 	%r27|%p11, %r25, %r34, %r28, %r30;
+	shfl.sync.bfly.b32 	%r26|%p12, %r24, %r34, %r28, %r30;
+	// inline asm
+	mov.b64 %rd23, {%r26,%r27};
+	// inline asm
+	add.s64 	%rd28, %rd23, %rd22;
+
+BB105_4:
+	setp.ne.s32	%p13, %r2, 0;
+	@%p13 bra 	BB105_6;
+
+	cvta.to.global.u64 	%rd25, %rd6;
+	mul.wide.u32 	%rd26, %r1, 4;
+	add.s64 	%rd27, %rd25, %rd26;
+	st.global.u32 	[%rd27], %rd28;
+
+BB105_6:
+	ret;
+}
+
+	// .globl	block_sum_u64_64
+.visible .entry block_sum_u64_64(
+	.param .u64 block_sum_u64_64_param_0,
+	.param .u64 block_sum_u64_64_param_1
+)
+{
+	.reg .pred 	%p<13>;
+	.reg .b32 	%r<35>;
+	.reg .b64 	%rd<26>;
+
+
+	ld.param.u64 	%rd5, [block_sum_u64_64_param_0];
+	ld.param.u64 	%rd4, [block_sum_u64_64_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r4, %r1, 7;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r5, %r4, %r2;
+	cvta.to.global.u64 	%rd6, %rd5;
+	mul.wide.u32 	%rd7, %r5, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	ld.global.u32 	%rd9, [%rd8];
+	ld.global.u32 	%rd10, [%rd8+256];
+	add.s64 	%rd25, %rd10, %rd9;
+	shl.b32 	%r6, %r2, 3;
+	mov.u32 	%r7, shared;
+	add.s32 	%r3, %r7, %r6;
+	st.shared.u64 	[%r3], %rd25;
+	bar.sync 	0;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB106_2;
+
+	ld.shared.u64 	%rd21, [%r3+256];
+	add.s64 	%rd11, %rd21, %rd25;
+	// inline asm
+	mov.b64 {%r8,%r9}, %rd11;
+	// inline asm
+	mov.u32 	%r28, 31;
+	mov.u32 	%r29, 1;
+	mov.u32 	%r30, -1;
+	shfl.sync.bfly.b32 	%r11|%p2, %r9, %r29, %r28, %r30;
+	shfl.sync.bfly.b32 	%r10|%p3, %r8, %r29, %r28, %r30;
+	// inline asm
+	mov.b64 %rd12, {%r10,%r11};
+	// inline asm
+	add.s64 	%rd13, %rd12, %rd11;
+	// inline asm
+	mov.b64 {%r12,%r13}, %rd13;
+	// inline asm
+	mov.u32 	%r31, 2;
+	shfl.sync.bfly.b32 	%r15|%p4, %r13, %r31, %r28, %r30;
+	shfl.sync.bfly.b32 	%r14|%p5, %r12, %r31, %r28, %r30;
+	// inline asm
+	mov.b64 %rd14, {%r14,%r15};
+	// inline asm
+	add.s64 	%rd15, %rd14, %rd13;
+	// inline asm
+	mov.b64 {%r16,%r17}, %rd15;
+	// inline asm
+	mov.u32 	%r32, 4;
+	shfl.sync.bfly.b32 	%r19|%p6, %r17, %r32, %r28, %r30;
+	shfl.sync.bfly.b32 	%r18|%p7, %r16, %r32, %r28, %r30;
+	// inline asm
+	mov.b64 %rd16, {%r18,%r19};
+	// inline asm
+	add.s64 	%rd17, %rd16, %rd15;
+	// inline asm
+	mov.b64 {%r20,%r21}, %rd17;
+	// inline asm
+	mov.u32 	%r33, 8;
+	shfl.sync.bfly.b32 	%r23|%p8, %r21, %r33, %r28, %r30;
+	shfl.sync.bfly.b32 	%r22|%p9, %r20, %r33, %r28, %r30;
+	// inline asm
+	mov.b64 %rd18, {%r22,%r23};
+	// inline asm
+	add.s64 	%rd19, %rd18, %rd17;
+	// inline asm
+	mov.b64 {%r24,%r25}, %rd19;
+	// inline asm
+	mov.u32 	%r34, 16;
+	shfl.sync.bfly.b32 	%r27|%p10, %r25, %r34, %r28, %r30;
+	shfl.sync.bfly.b32 	%r26|%p11, %r24, %r34, %r28, %r30;
+	// inline asm
+	mov.b64 %rd20, {%r26,%r27};
+	// inline asm
+	add.s64 	%rd25, %rd20, %rd19;
+
+BB106_2:
+	setp.ne.s32	%p12, %r2, 0;
+	@%p12 bra 	BB106_4;
+
+	cvta.to.global.u64 	%rd22, %rd4;
+	mul.wide.u32 	%rd23, %r1, 4;
+	add.s64 	%rd24, %rd22, %rd23;
+	st.global.u32 	[%rd24], %rd25;
+
+BB106_4:
+	ret;
+}
+
+	// .globl	block_sum_u64_32
+.visible .entry block_sum_u64_32(
+	.param .u64 block_sum_u64_32_param_0,
+	.param .u64 block_sum_u64_32_param_1
+)
+{
+	.reg .pred 	%p<13>;
+	.reg .b32 	%r<32>;
+	.reg .b64 	%rd<25>;
+
+
+	ld.param.u64 	%rd5, [block_sum_u64_32_param_0];
+	ld.param.u64 	%rd4, [block_sum_u64_32_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 6;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd6, %rd5;
+	mul.wide.u32 	%rd7, %r4, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	ld.global.u32 	%rd9, [%rd8];
+	ld.global.u32 	%rd10, [%rd8+128];
+	add.s64 	%rd24, %rd10, %rd9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB107_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %rd24;
+	// inline asm
+	mov.u32 	%r25, 31;
+	mov.u32 	%r26, 1;
+	mov.u32 	%r27, -1;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r26, %r25, %r27;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r26, %r25, %r27;
+	// inline asm
+	mov.b64 %rd12, {%r7,%r8};
+	// inline asm
+	add.s64 	%rd13, %rd12, %rd24;
+	// inline asm
+	mov.b64 {%r9,%r10}, %rd13;
+	// inline asm
+	mov.u32 	%r28, 2;
+	shfl.sync.bfly.b32 	%r12|%p4, %r10, %r28, %r25, %r27;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r28, %r25, %r27;
+	// inline asm
+	mov.b64 %rd14, {%r11,%r12};
+	// inline asm
+	add.s64 	%rd15, %rd14, %rd13;
+	// inline asm
+	mov.b64 {%r13,%r14}, %rd15;
+	// inline asm
+	mov.u32 	%r29, 4;
+	shfl.sync.bfly.b32 	%r16|%p6, %r14, %r29, %r25, %r27;
+	shfl.sync.bfly.b32 	%r15|%p7, %r13, %r29, %r25, %r27;
+	// inline asm
+	mov.b64 %rd16, {%r15,%r16};
+	// inline asm
+	add.s64 	%rd17, %rd16, %rd15;
+	// inline asm
+	mov.b64 {%r17,%r18}, %rd17;
+	// inline asm
+	mov.u32 	%r30, 8;
+	shfl.sync.bfly.b32 	%r20|%p8, %r18, %r30, %r25, %r27;
+	shfl.sync.bfly.b32 	%r19|%p9, %r17, %r30, %r25, %r27;
+	// inline asm
+	mov.b64 %rd18, {%r19,%r20};
+	// inline asm
+	add.s64 	%rd19, %rd18, %rd17;
+	// inline asm
+	mov.b64 {%r21,%r22}, %rd19;
+	// inline asm
+	mov.u32 	%r31, 16;
+	shfl.sync.bfly.b32 	%r24|%p10, %r22, %r31, %r25, %r27;
+	shfl.sync.bfly.b32 	%r23|%p11, %r21, %r31, %r25, %r27;
+	// inline asm
+	mov.b64 %rd20, {%r23,%r24};
+	// inline asm
+	add.s64 	%rd24, %rd20, %rd19;
+
+BB107_2:
+	setp.ne.s32	%p12, %r2, 0;
+	@%p12 bra 	BB107_4;
+
+	cvta.to.global.u64 	%rd21, %rd4;
+	mul.wide.u32 	%rd22, %r1, 4;
+	add.s64 	%rd23, %rd21, %rd22;
+	st.global.u32 	[%rd23], %rd24;
+
+BB107_4:
+	ret;
+}
+
+	// .globl	block_sum_u64_16
+.visible .entry block_sum_u64_16(
+	.param .u64 block_sum_u64_16_param_0,
+	.param .u64 block_sum_u64_16_param_1
+)
+{
+	.reg .pred 	%p<11>;
+	.reg .b32 	%r<27>;
+	.reg .b64 	%rd<23>;
+
+
+	ld.param.u64 	%rd5, [block_sum_u64_16_param_0];
+	ld.param.u64 	%rd4, [block_sum_u64_16_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 5;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd6, %rd5;
+	mul.wide.u32 	%rd7, %r4, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	ld.global.u32 	%rd9, [%rd8];
+	ld.global.u32 	%rd10, [%rd8+64];
+	add.s64 	%rd22, %rd10, %rd9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB108_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %rd22;
+	// inline asm
+	mov.u32 	%r21, 31;
+	mov.u32 	%r22, 1;
+	mov.u32 	%r23, 65535;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r22, %r21, %r23;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r22, %r21, %r23;
+	// inline asm
+	mov.b64 %rd12, {%r7,%r8};
+	// inline asm
+	add.s64 	%rd13, %rd12, %rd22;
+	// inline asm
+	mov.b64 {%r9,%r10}, %rd13;
+	// inline asm
+	mov.u32 	%r24, 2;
+	shfl.sync.bfly.b32 	%r12|%p4, %r10, %r24, %r21, %r23;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r24, %r21, %r23;
+	// inline asm
+	mov.b64 %rd14, {%r11,%r12};
+	// inline asm
+	add.s64 	%rd15, %rd14, %rd13;
+	// inline asm
+	mov.b64 {%r13,%r14}, %rd15;
+	// inline asm
+	mov.u32 	%r25, 4;
+	shfl.sync.bfly.b32 	%r16|%p6, %r14, %r25, %r21, %r23;
+	shfl.sync.bfly.b32 	%r15|%p7, %r13, %r25, %r21, %r23;
+	// inline asm
+	mov.b64 %rd16, {%r15,%r16};
+	// inline asm
+	add.s64 	%rd17, %rd16, %rd15;
+	// inline asm
+	mov.b64 {%r17,%r18}, %rd17;
+	// inline asm
+	mov.u32 	%r26, 8;
+	shfl.sync.bfly.b32 	%r20|%p8, %r18, %r26, %r21, %r23;
+	shfl.sync.bfly.b32 	%r19|%p9, %r17, %r26, %r21, %r23;
+	// inline asm
+	mov.b64 %rd18, {%r19,%r20};
+	// inline asm
+	add.s64 	%rd22, %rd18, %rd17;
+
+BB108_2:
+	setp.ne.s32	%p10, %r2, 0;
+	@%p10 bra 	BB108_4;
+
+	cvta.to.global.u64 	%rd19, %rd4;
+	mul.wide.u32 	%rd20, %r1, 4;
+	add.s64 	%rd21, %rd19, %rd20;
+	st.global.u32 	[%rd21], %rd22;
+
+BB108_4:
+	ret;
+}
+
+	// .globl	block_sum_u64_8
+.visible .entry block_sum_u64_8(
+	.param .u64 block_sum_u64_8_param_0,
+	.param .u64 block_sum_u64_8_param_1
+)
+{
+	.reg .pred 	%p<9>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<21>;
+
+
+	ld.param.u64 	%rd5, [block_sum_u64_8_param_0];
+	ld.param.u64 	%rd4, [block_sum_u64_8_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 4;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd6, %rd5;
+	mul.wide.u32 	%rd7, %r4, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	ld.global.u32 	%rd9, [%rd8];
+	ld.global.u32 	%rd10, [%rd8+32];
+	add.s64 	%rd20, %rd10, %rd9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB109_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %rd20;
+	// inline asm
+	mov.u32 	%r17, 31;
+	mov.u32 	%r18, 1;
+	mov.u32 	%r19, 255;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r18, %r17, %r19;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r18, %r17, %r19;
+	// inline asm
+	mov.b64 %rd12, {%r7,%r8};
+	// inline asm
+	add.s64 	%rd13, %rd12, %rd20;
+	// inline asm
+	mov.b64 {%r9,%r10}, %rd13;
+	// inline asm
+	mov.u32 	%r20, 2;
+	shfl.sync.bfly.b32 	%r12|%p4, %r10, %r20, %r17, %r19;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r20, %r17, %r19;
+	// inline asm
+	mov.b64 %rd14, {%r11,%r12};
+	// inline asm
+	add.s64 	%rd15, %rd14, %rd13;
+	// inline asm
+	mov.b64 {%r13,%r14}, %rd15;
+	// inline asm
+	mov.u32 	%r21, 4;
+	shfl.sync.bfly.b32 	%r16|%p6, %r14, %r21, %r17, %r19;
+	shfl.sync.bfly.b32 	%r15|%p7, %r13, %r21, %r17, %r19;
+	// inline asm
+	mov.b64 %rd16, {%r15,%r16};
+	// inline asm
+	add.s64 	%rd20, %rd16, %rd15;
+
+BB109_2:
+	setp.ne.s32	%p8, %r2, 0;
+	@%p8 bra 	BB109_4;
+
+	cvta.to.global.u64 	%rd17, %rd4;
+	mul.wide.u32 	%rd18, %r1, 4;
+	add.s64 	%rd19, %rd17, %rd18;
+	st.global.u32 	[%rd19], %rd20;
+
+BB109_4:
+	ret;
+}
+
+	// .globl	block_sum_u64_4
+.visible .entry block_sum_u64_4(
+	.param .u64 block_sum_u64_4_param_0,
+	.param .u64 block_sum_u64_4_param_1
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .b32 	%r<17>;
+	.reg .b64 	%rd<19>;
+
+
+	ld.param.u64 	%rd5, [block_sum_u64_4_param_0];
+	ld.param.u64 	%rd4, [block_sum_u64_4_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 3;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd6, %rd5;
+	mul.wide.u32 	%rd7, %r4, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	ld.global.u32 	%rd9, [%rd8];
+	ld.global.u32 	%rd10, [%rd8+16];
+	add.s64 	%rd18, %rd10, %rd9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB110_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %rd18;
+	// inline asm
+	mov.u32 	%r13, 31;
+	mov.u32 	%r14, 1;
+	mov.u32 	%r15, 15;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r14, %r13, %r15;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r14, %r13, %r15;
+	// inline asm
+	mov.b64 %rd12, {%r7,%r8};
+	// inline asm
+	add.s64 	%rd13, %rd12, %rd18;
+	// inline asm
+	mov.b64 {%r9,%r10}, %rd13;
+	// inline asm
+	mov.u32 	%r16, 2;
+	shfl.sync.bfly.b32 	%r12|%p4, %r10, %r16, %r13, %r15;
+	shfl.sync.bfly.b32 	%r11|%p5, %r9, %r16, %r13, %r15;
+	// inline asm
+	mov.b64 %rd14, {%r11,%r12};
+	// inline asm
+	add.s64 	%rd18, %rd14, %rd13;
+
+BB110_2:
+	setp.ne.s32	%p6, %r2, 0;
+	@%p6 bra 	BB110_4;
+
+	cvta.to.global.u64 	%rd15, %rd4;
+	mul.wide.u32 	%rd16, %r1, 4;
+	add.s64 	%rd17, %rd15, %rd16;
+	st.global.u32 	[%rd17], %rd18;
+
+BB110_4:
+	ret;
+}
+
+	// .globl	block_sum_u64_2
+.visible .entry block_sum_u64_2(
+	.param .u64 block_sum_u64_2_param_0,
+	.param .u64 block_sum_u64_2_param_1
+)
+{
+	.reg .pred 	%p<5>;
+	.reg .b32 	%r<12>;
+	.reg .b64 	%rd<17>;
+
+
+	ld.param.u64 	%rd5, [block_sum_u64_2_param_0];
+	ld.param.u64 	%rd4, [block_sum_u64_2_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	shl.b32 	%r3, %r1, 2;
+	mov.u32 	%r2, %tid.x;
+	add.s32 	%r4, %r3, %r2;
+	cvta.to.global.u64 	%rd6, %rd5;
+	mul.wide.u32 	%rd7, %r4, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	ld.global.u32 	%rd9, [%rd8];
+	ld.global.u32 	%rd10, [%rd8+8];
+	add.s64 	%rd16, %rd10, %rd9;
+	setp.gt.u32	%p1, %r2, 31;
+	@%p1 bra 	BB111_2;
+
+	// inline asm
+	mov.b64 {%r5,%r6}, %rd16;
+	// inline asm
+	mov.u32 	%r9, 31;
+	mov.u32 	%r10, 1;
+	mov.u32 	%r11, 3;
+	shfl.sync.bfly.b32 	%r8|%p2, %r6, %r10, %r9, %r11;
+	shfl.sync.bfly.b32 	%r7|%p3, %r5, %r10, %r9, %r11;
+	// inline asm
+	mov.b64 %rd12, {%r7,%r8};
+	// inline asm
+	add.s64 	%rd16, %rd12, %rd16;
+
+BB111_2:
+	setp.ne.s32	%p4, %r2, 0;
+	@%p4 bra 	BB111_4;
+
+	cvta.to.global.u64 	%rd13, %rd4;
+	mul.wide.u32 	%rd14, %r1, 4;
+	add.s64 	%rd15, %rd13, %rd14;
+	st.global.u32 	[%rd15], %rd16;
+
+BB111_4:
+	ret;
+}
+
+	// .globl	block_sum_u64_1
+.visible .entry block_sum_u64_1(
+	.param .u64 block_sum_u64_1_param_0,
+	.param .u64 block_sum_u64_1_param_1
+)
+{
+	.reg .pred 	%p<2>;
+	.reg .b32 	%r<8>;
+	.reg .b64 	%rd<9>;
+
+
+	ld.param.u64 	%rd1, [block_sum_u64_1_param_0];
+	ld.param.u64 	%rd2, [block_sum_u64_1_param_1];
+	mov.u32 	%r1, %tid.x;
+	setp.ne.s32	%p1, %r1, 0;
+	@%p1 bra 	BB112_2;
+
+	mov.u32 	%r2, %ctaid.x;
+	shl.b32 	%r3, %r2, 1;
+	add.s32 	%r4, %r3, %r1;
+	cvta.to.global.u64 	%rd3, %rd1;
+	mul.wide.u32 	%rd4, %r4, 4;
+	add.s64 	%rd5, %rd3, %rd4;
+	ld.global.u32 	%r5, [%rd5+4];
+	ld.global.u32 	%r6, [%rd5];
+	cvta.to.global.u64 	%rd6, %rd2;
+	mul.wide.u32 	%rd7, %r2, 4;
+	add.s64 	%rd8, %rd6, %rd7;
+	add.s32 	%r7, %r5, %r6;
+	st.global.u32 	[%rd8], %r7;
+
+BB112_2:
 	ret;
 }
 

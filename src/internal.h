@@ -582,7 +582,7 @@ struct ThreadState {
     virtual ~ThreadState(){}
     ThreadState() = default;
     ThreadState(const ThreadState &other) = default;
-    
+
     /// Fill a device memory region with constants of a given type
     virtual void memset_async(void *ptr, uint32_t size, uint32_t isize,
                               const void *src) = 0;
@@ -612,13 +612,9 @@ struct ThreadState {
 
     /// Perform a synchronous copy operation
     virtual void memcpy(void *dst, const void *src, size_t size) = 0;
-    
+
     /// Perform an assynchronous copy operation
     virtual void memcpy_async(void *dst, const void *src, size_t size) = 0;
-    
-    /// Replicate individual input elements to larger blocks
-    virtual void block_copy(enum VarType type, const void *in, void *out,
-                            uint32_t size, uint32_t block_size) = 0;
 
     /// Sum over elements within blocks
     virtual void block_sum(enum VarType type, const void *in, void *out,

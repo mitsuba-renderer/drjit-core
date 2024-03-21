@@ -2,7 +2,7 @@
 #include "log.h"
 
 struct CUDAThreadState: ThreadState{
-    
+
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
                       const void *src) override;
@@ -16,7 +16,7 @@ struct CUDAThreadState: ThreadState{
 
     /// 'Any' reduction for boolean arrays
     bool any(uint8_t *values, uint32_t size) override;
-    
+
     /// Exclusive prefix sum
     void prefix_sum(VarType vt, bool exclusive, const void *in, uint32_t size,
                     void *out) override;
@@ -31,13 +31,9 @@ struct CUDAThreadState: ThreadState{
 
     /// Perform a synchronous copy operation
     void memcpy(void *dst, const void *src, size_t size) override;
-    
+
     /// Perform an assynchronous copy operation
     void memcpy_async(void *dst, const void *src, size_t size) override;
-    
-    /// Replicate individual input elements to larger blocks
-    void block_copy(enum VarType type, const void *in, void *out, uint32_t size,
-                    uint32_t block_size) override;
 
     /// Sum over elements within blocks
     void block_sum(enum VarType type, const void *in, void *out, uint32_t size,

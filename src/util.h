@@ -48,10 +48,6 @@ extern void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t s
 /// Perform an assynchronous copy operation
 extern void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t size);
 
-/// Replicate individual input elements to larger blocks
-extern void jitc_block_copy(JitBackend backend, enum VarType type, const void *in,
-                            void *out, uint32_t size, uint32_t block_size);
-
 /// Sum over elements within blocks
 extern void jitc_block_sum(JitBackend backend, enum VarType type, const void *in,
                            void *out, uint32_t size, uint32_t block_size);

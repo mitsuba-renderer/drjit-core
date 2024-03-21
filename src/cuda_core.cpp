@@ -33,8 +33,7 @@ CUfunction *jitc_cuda_prefix_sum_large_init = nullptr;
 CUfunction *jitc_cuda_compress_small = nullptr;
 CUfunction *jitc_cuda_compress_large = nullptr;
 CUfunction *jitc_cuda_poke[(int)VarType::Count] { };
-CUfunction *jitc_cuda_block_copy[(int) VarType::Count] { };
-CUfunction *jitc_cuda_block_sum [(int) VarType::Count] { };
+CUfunction *jitc_cuda_block_sum [(int) VarType::Count][10] { };
 CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                 [(int) VarType::Count] = { };
 CUfunction *jitc_cuda_aggregate = nullptr;
@@ -166,8 +165,8 @@ bool jitc_cuda_init() {
     size_t asize = sizeof(CUfunction) * device_count;
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
         jitc_cuda_poke[k] = (CUfunction *) malloc_check_zero(asize);
-        jitc_cuda_block_copy[k] = (CUfunction *) malloc_check_zero(asize);
-        jitc_cuda_block_sum[k] = (CUfunction *) malloc_check_zero(asize);
+        for (int l = 0; l < 10; ++l)
+            jitc_cuda_block_sum[k][l] = (CUfunction *) malloc_check_zero(asize);
         jitc_cuda_prefix_sum_exc_small[k] = (CUfunction *) malloc_check_zero(asize);
         jitc_cuda_prefix_sum_inc_small[k] = (CUfunction *) malloc_check_zero(asize);
         jitc_cuda_prefix_sum_exc_large[k] = (CUfunction *) malloc_check_zero(asize);
@@ -307,16 +306,12 @@ bool jitc_cuda_init() {
                 jitc_cuda_poke[k][i] = func;
             }
 
-            snprintf(name, sizeof(name), "block_copy_%s", type_name_short[k]);
-            if (strstr(kernels_list, name)) {
-                cuda_check(cuModuleGetFunction(&func, m, name));
-                jitc_cuda_block_copy[k][i] = func;
-            }
-
-            snprintf(name, sizeof(name), "block_sum_%s", type_name_short[k]);
-            if (strstr(kernels_list, name)) {
-                cuda_check(cuModuleGetFunction(&func, m, name));
-                jitc_cuda_block_sum[k][i] = func;
+            for (uint32_t l = 0; l < 10; ++l) {
+                snprintf(name, sizeof(name), "block_sum_%s_%u", type_name_short[k], 1<<l);
+                if (strstr(kernels_list, name)) {
+                    cuda_check(cuModuleGetFunction(&func, m, name));
+                    jitc_cuda_block_sum[k][l][i] = func;
+                }
             }
 
             for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
@@ -444,8 +439,8 @@ void jitc_cuda_shutdown() {
         Z(jitc_cuda_prefix_sum_inc_small[k]);
         Z(jitc_cuda_prefix_sum_inc_large[k]);
         Z(jitc_cuda_poke[k]);
-        Z(jitc_cuda_block_copy[k]);
-        Z(jitc_cuda_block_sum[k]);
+        for (uint32_t l = 0; l < 10; ++l)
+            Z(jitc_cuda_block_sum[k][l]);
         for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++)
             Z(jitc_cuda_reductions[j][k]);
     }

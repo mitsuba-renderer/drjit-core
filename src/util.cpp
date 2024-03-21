@@ -157,19 +157,11 @@ static ProfilerRegion profiler_region_mkperm("jit_mkperm");
 /// Compute a permutation to reorder an integer array into a sorted configuration
 uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                      uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
-    
+
     ProfilerPhase profiler(profiler_region_mkperm);
     ThreadState *ts = thread_state(backend);
 
     return ts->mkperm(ptr, size, bucket_count, perm, offsets);
-}
-
-/// Replicate individual input elements to larger blocks
-void jitc_block_copy(JitBackend backend, enum VarType type, const void *in, void *out,
-                    uint32_t size, uint32_t block_size) {
-    ThreadState *ts = thread_state(backend);
-
-    ts->block_copy(type, in, out, size, block_size);
 }
 
 /// Sum over elements within blocks

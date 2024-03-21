@@ -916,12 +916,6 @@ uint32_t jit_mkperm(JitBackend backend, const uint32_t *values, uint32_t size,
     return jitc_mkperm(backend, values, size, bucket_count, perm, offsets);
 }
 
-void jit_block_copy(JitBackend backend, enum VarType type, const void *in, void *out,
-                    uint32_t size, uint32_t block_size) {
-    lock_guard guard(state.lock);
-    jitc_block_copy(backend, type, in, out, size, block_size);
-}
-
 void jit_block_sum(JitBackend backend, enum VarType type, const void *in, void *out,
                    uint32_t size, uint32_t block_size) {
     lock_guard guard(state.lock);
@@ -1396,4 +1390,14 @@ uint32_t jit_var_reduce_identity(JitBackend backend, VarType vt, ReduceOp reduce
     v.backend = (uint32_t) backend;
     lock_guard guard(state.lock);
     return jitc_var_new(v);
+}
+
+uint32_t jit_var_block_sum(uint32_t index, uint32_t block_size, int symbolic) {
+    lock_guard guard(state.lock);
+    return jitc_var_block_sum(index, block_size, symbolic);
+}
+
+uint32_t jit_var_block_copy(uint32_t index, uint32_t block_size) {
+    lock_guard guard(state.lock);
+    return jitc_var_block_copy(index, block_size);
 }
