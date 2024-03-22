@@ -54,9 +54,9 @@ struct VisitedKeyHash {
 static tsl::robin_set<VisitedKey, VisitedKeyHash> visited;
 
 /// Kernel parameter buffer and device copy
-std::vector<void *> kernel_params;
-uint8_t *kernel_params_global = nullptr;
-uint32_t kernel_param_count = 0;
+static std::vector<void *> kernel_params;
+static uint8_t *kernel_params_global = nullptr;
+static uint32_t kernel_param_count = 0;
 
 /// Ensure uniqueness of globals/callables arrays
 GlobalsMap globals_map;
@@ -517,7 +517,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 
     Task* ret_task = nullptr;
-    ret_task = ts->launch(kernel, group.size);
+    ret_task = ts->launch(kernel, group.size, &kernel_params,
+                          kernel_param_count, kernel_params_global);
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         if (ts->backend == JitBackend::CUDA) {

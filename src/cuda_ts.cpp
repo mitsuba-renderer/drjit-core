@@ -40,7 +40,10 @@ static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
     }
 }
 
-Task *CUDAThreadState::launch(Kernel kernel, uint32_t size){
+Task *CUDAThreadState::launch(Kernel kernel, uint32_t size,
+                              std::vector<void *> *kernel_params,
+                              uint32_t kernel_param_count,
+                              const uint8_t *kernel_params_global) {
 #if defined(DRJIT_ENABLE_OPTIX)
     if (unlikely(uses_optix))
         jitc_optix_launch(this, kernel, size, kernel_params_global,
@@ -48,11 +51,11 @@ Task *CUDAThreadState::launch(Kernel kernel, uint32_t size){
 #endif
 
     if (!uses_optix) {
-        size_t buffer_size = kernel_params.size() * sizeof(void *);
+        size_t buffer_size = kernel_params->size() * sizeof(void *);
 
         void *config[] = {
             CU_LAUNCH_PARAM_BUFFER_POINTER,
-            kernel_params.data(),
+            kernel_params->data(),
             CU_LAUNCH_PARAM_BUFFER_SIZE,
             &buffer_size,
             CU_LAUNCH_PARAM_END
