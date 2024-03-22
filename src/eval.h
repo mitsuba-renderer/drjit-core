@@ -72,11 +72,6 @@ extern StringBuffer globals;
 /// Mapping that describes the contents of the 'globals' buffer
 extern GlobalsMap globals_map;
 
-/// Kernel parameter buffer and device copy
-extern std::vector<void *> kernel_params;
-extern uint8_t *kernel_params_global;
-extern uint32_t kernel_param_count;
-
 /// Name of the last generated kernel
 extern char kernel_name[52];
 

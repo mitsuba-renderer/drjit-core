@@ -135,7 +135,10 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
     jitc_task = new_task;
 }
 
-Task *LLVMThreadState::launch(Kernel kernel, uint32_t size){
+Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
+                              std::vector<void *> *kernel_params,
+                              uint32_t kernel_param_count,
+                              const uint8_t *kernel_params_global) {
     Task *ret_task = nullptr;
     
     uint32_t packet_size = jitc_llvm_vector_width,
@@ -201,8 +204,8 @@ Task *LLVMThreadState::launch(Kernel kernel, uint32_t size){
 #endif
     };
 
-    kernel_params[0] = (void *) kernel.llvm.reloc[0];
-    kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) +
+    (*kernel_params)[0] = (void *) kernel.llvm.reloc[0];
+    (*kernel_params)[1] = (void *) ((((uintptr_t) block_size) << 32) +
                                  (uintptr_t) size);
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
@@ -215,8 +218,8 @@ Task *LLVMThreadState::launch(Kernel kernel, uint32_t size){
 
     ret_task = task_submit_dep(
         nullptr, &jitc_task, 1, blocks,
-        callback, kernel_params.data(),
-        (uint32_t) (kernel_params.size() * sizeof(void *)),
+        callback, kernel_params->data(),
+        (uint32_t) (kernel_params->size() * sizeof(void *)),
         nullptr
     );
 
