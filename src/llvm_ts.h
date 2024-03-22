@@ -2,7 +2,10 @@
 
 struct LLVMThreadState: ThreadState{
 
-    Task *launch(Kernel kernel, uint32_t size) override;
+    Task *launch(Kernel kernel, uint32_t size,
+                 std::vector<void *> *kernel_params,
+                 uint32_t kernel_param_count,
+                 const uint8_t *kernel_params_global) override;
     
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
