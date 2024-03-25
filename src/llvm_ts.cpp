@@ -137,10 +137,10 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
 
 Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
                               std::vector<void *> *kernel_params,
-                              uint32_t kernel_param_count,
-                              const uint8_t *kernel_params_global) {
+                              uint32_t /* kernel_param_count */,
+                              const uint8_t* /* kernel_params_global */) {
     Task *ret_task = nullptr;
-    
+
     uint32_t packet_size = jitc_llvm_vector_width,
              desired_block_size = jitc_llvm_block_size,
              packets = (size + packet_size - 1) / packet_size,
