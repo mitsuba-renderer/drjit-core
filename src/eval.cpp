@@ -55,8 +55,7 @@ static tsl::robin_set<VisitedKey, VisitedKeyHash> visited;
 
 /// Kernel parameter buffer and device copy
 static std::vector<void *> kernel_params;
-static uint8_t *kernel_params_global = nullptr;
-static uint32_t kernel_param_count = 0;
+// static uint32_t kernel_param_count = 0;
 
 /// Ensure uniqueness of globals/callables arrays
 GlobalsMap globals_map;
@@ -294,21 +293,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                  "periodically running jit_eval() to break the computation "
                  "into smaller chunks.", kernel_params.size());
 
-    kernel_param_count = (uint32_t) kernel_params.size();
     n_ops_total = n_regs;
-
-    // Pass parameters through global memory if too large or using OptiX
-    if (backend == JitBackend::CUDA &&
-        (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT)) {
-        size_t size = kernel_param_count * sizeof(void *);
-        uint8_t *tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, size);
-        kernel_params_global = (uint8_t *) jitc_malloc(AllocType::Device, size);
-        memcpy(tmp, kernel_params.data(), size);
-        jitc_memcpy_async(backend, kernel_params_global, tmp, size);
-        jitc_free(tmp);
-        kernel_params.clear();
-        kernel_params.push_back(kernel_params_global);
-    }
 
     bool trace = std::max(state.log_level_stderr, state.log_level_callback) >=
                  LogLevel::Trace;
@@ -344,7 +329,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     buffer.clear();
     if (backend == JitBackend::CUDA)
-        jitc_cuda_assemble(ts, group, n_regs, kernel_param_count);
+        jitc_cuda_assemble(ts, group, n_regs, kernel_params.size());
     else
         jitc_llvm_assemble(ts, group);
 
@@ -517,8 +502,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 
     Task* ret_task = nullptr;
-    ret_task = ts->launch(kernel, group.size, &kernel_params,
-                          kernel_param_count, kernel_params_global);
+    ret_task = ts->launch(kernel, group.size, &kernel_params);
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         if (ts->backend == JitBackend::CUDA) {
@@ -661,11 +645,6 @@ void jitc_eval_impl(ThreadState *ts) {
         jitc_assemble(ts, group);
 
         scheduled_tasks.push_back(jitc_run(ts, group));
-
-        if (ts->backend == JitBackend::CUDA) {
-            jitc_free(kernel_params_global);
-            kernel_params_global = nullptr;
-        }
     }
 
     if (ts->backend == JitBackend::LLVM) {

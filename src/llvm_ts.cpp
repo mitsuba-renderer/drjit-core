@@ -3,10 +3,7 @@
 #include "var.h"
 #include "common.h"
 #include "profile.h"
-#include "eval.h"
-
-const static char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
-                                                             "min",  "max", "and", "or" };
+#include "util.h"
 
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
 
@@ -136,9 +133,7 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
 }
 
 Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
-                              std::vector<void *> *kernel_params,
-                              uint32_t /* kernel_param_count */,
-                              const uint8_t* /* kernel_params_global */) {
+                              std::vector<void *> *kernel_params) {
     Task *ret_task = nullptr;
 
     uint32_t packet_size = jitc_llvm_vector_width,
