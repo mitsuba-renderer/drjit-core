@@ -509,6 +509,8 @@ public:
 
     template <typename T> string &operator+=(const T &s) { return put(s); }
 
+    char *data() { return m_data.get(); }
+    const char *data() const { return m_data.get(); }
     char *begin() { return m_data.get(); }
     char *end() { return m_data.get() + m_size; }
     const char *begin() const { return m_data.get(); }
