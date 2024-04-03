@@ -1,4 +1,5 @@
 #include "llvm_ts.h"
+#include "eval.h"
 #include "log.h"
 #include "var.h"
 #include "common.h"
@@ -6,6 +7,8 @@
 #include "util.h"
 
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
+
+static std::vector<void *> kernel_params;
 
 template <typename Value>
 static Reduction reduce_create(ReduceOp op) {
@@ -133,8 +136,36 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
 }
 
 Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
-                              std::vector<void *> *kernel_params) {
+                              std::vector<ScheduledVariable> &scheduled) {
     Task *ret_task = nullptr;
+
+    // Collect kernel parameters
+    kernel_params.clear();
+    
+    // First 3 parameters reserved for: kernel ptr, size, ITT identifier
+    for (int i = 0; i < 3; ++i)
+        kernel_params.push_back(nullptr);
+    
+    for (ScheduledVariable &sv : scheduled){
+        uint32_t index = sv.index;
+        Variable *v = jitc_var(index);
+
+        if (v->is_evaluated()) {
+            kernel_params.push_back(v->data);
+        } else if (v->output_flag && v->size == size) {
+            kernel_params.push_back(sv.data);
+        } else if (v->is_literal() && (VarType) v->type == VarType::Pointer) {
+            kernel_params.push_back((void *) v->literal);
+        }else{
+            jitc_fail(
+                "CUDAThreadState::launch(): Variable %u could not be used as a "
+                "kernel parameter. Kernel parameters must either be evaluated, "
+                "marked as output or represent literal pointers.",
+                index);
+        }
+    }
+
+    // Launch the kernel
 
     uint32_t packet_size = jitc_llvm_vector_width,
              desired_block_size = jitc_llvm_block_size,
@@ -199,8 +230,8 @@ Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
 #endif
     };
 
-    (*kernel_params)[0] = (void *) kernel.llvm.reloc[0];
-    (*kernel_params)[1] = (void *) ((((uintptr_t) block_size) << 32) +
+    kernel_params[0] = (void *) kernel.llvm.reloc[0];
+    kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) +
                                  (uintptr_t) size);
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
@@ -213,8 +244,8 @@ Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
 
     ret_task = task_submit_dep(
         nullptr, &jitc_task, 1, blocks,
-        callback, kernel_params->data(),
-        (uint32_t) (kernel_params->size() * sizeof(void *)),
+        callback, kernel_params.data(),
+        (uint32_t) (kernel_params.size() * sizeof(void *)),
         nullptr
     );
 

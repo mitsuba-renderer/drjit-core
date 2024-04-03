@@ -6,6 +6,7 @@
 #include "eval.h"
 
 static uint8_t *kernel_params_global = nullptr;
+static std::vector<void *> kernel_params;
 
 static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
                        uint32_t thread_count, uint32_t shared_mem_bytes,
@@ -41,19 +42,46 @@ static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
 }
 
 Task *CUDAThreadState::launch(Kernel kernel, uint32_t size,
-                              std::vector<void *> *kernel_params) {
+                              std::vector<ScheduledVariable> &scheduled) {
+
+    // Collect actual kernel parameters for CUDA
     
-    uint32_t kernel_param_count = (uint32_t) kernel_params->size();
+    // Add size parameter
+    kernel_params.clear();
+    uintptr_t size_ = 0;
+    memcpy(&size_, &size, sizeof(uint32_t));
+    kernel_params.push_back((void *) size_);
+
+    for (ScheduledVariable &sv : scheduled){
+        uint32_t index = sv.index;
+        Variable *v = jitc_var(index);
+
+        if (v->is_evaluated()) {
+            kernel_params.push_back(v->data);
+        } else if (v->output_flag && v->size == size) {
+            kernel_params.push_back(sv.data);
+        } else if (v->is_literal() && (VarType) v->type == VarType::Pointer) {
+            kernel_params.push_back((void *) v->literal);
+        }else{
+            jitc_fail(
+                "CUDAThreadState::launch(): Variable %u could not be used as a "
+                "kernel parameter. Kernel parameters must either be evaluated, "
+                "marked as output or represent literal pointers.",
+                index);
+        }
+    }
+    
+    uint32_t kernel_param_count = (uint32_t) kernel_params.size();
     // Pass parameters through global memory if too large or using OptiX
     if (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT){
         size_t param_size = kernel_param_count * sizeof(void *);
         uint8_t *tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, param_size);
         kernel_params_global = (uint8_t *) jitc_malloc(AllocType::Device, param_size);
-        memcpy(tmp, kernel_params->data(), param_size);
+        memcpy(tmp, kernel_params.data(), param_size);
         jitc_memcpy_async(backend, kernel_params_global, tmp, param_size);
         jitc_free(tmp);
-        kernel_params->clear();
-        kernel_params->push_back(kernel_params_global);
+        kernel_params.clear();
+        kernel_params.push_back(kernel_params_global);
     }
 
     
@@ -64,11 +92,11 @@ Task *CUDAThreadState::launch(Kernel kernel, uint32_t size,
 #endif
 
     if (!uses_optix) {
-        size_t buffer_size = kernel_params->size() * sizeof(void *);
+        size_t buffer_size = kernel_params.size() * sizeof(void *);
 
         void *config[] = {
             CU_LAUNCH_PARAM_BUFFER_POINTER,
-            kernel_params->data(),
+            kernel_params.data(),
             CU_LAUNCH_PARAM_BUFFER_SIZE,
             &buffer_size,
             CU_LAUNCH_PARAM_END
