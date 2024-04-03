@@ -54,9 +54,8 @@ struct VisitedKeyHash {
 static tsl::robin_set<VisitedKey, VisitedKeyHash> visited;
 
 /// Kernel parameter buffer and device copy
-static std::vector<void *> kernel_params;
-static uint8_t *kernel_params_global = nullptr;
-static uint32_t kernel_param_count = 0;
+static std::vector<ScheduledVariable> kernel_params;
+// static uint32_t kernel_param_count = 0;
 
 /// Ensure uniqueness of globals/callables arrays
 GlobalsMap globals_map;
@@ -190,7 +189,8 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
 void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     JitBackend backend = ts->backend;
 
-    kernel_params.clear();
+    uint32_t kernel_param_count = 0;
+    // kernel_params.clear();
     globals.clear();
     globals_map.clear();
     alloca_size = alloca_align = -1;
@@ -209,16 +209,19 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
              n_regs         = 0;
 
     if (backend == JitBackend::CUDA) {
-        uintptr_t size = 0;
-        memcpy(&size, &group.size, sizeof(uint32_t));
-        kernel_params.push_back((void *) size);
+        // uintptr_t size = 0;
+        // memcpy(&size, &group.size, sizeof(uint32_t));
+        // kernel_params.push_back((void *) size);
+        kernel_param_count++;
 
         // The first 3 variables are reserved on the CUDA backend
         n_regs = 4;
     } else {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
-        for (int i = 0; i < 3; ++i)
-            kernel_params.push_back(nullptr);
+        // for (int i = 0; i < 3; ++i)
+        //     kernel_param_count++;
+            // kernel_params.push_back(nullptr);
+        kernel_param_count += 3;
         n_regs = 1;
     }
 
@@ -241,13 +244,14 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         if (unlikely(v->is_dirty()))
             jitc_fail("jit_assemble(): dirty variable r%u encountered!", index);
 
-        v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
+        v->param_offset = (uint32_t) kernel_param_count * sizeof(void *);
         v->reg_index = n_regs++;
 
         if (v->is_evaluated()) {
             n_params_in++;
             v->param_type = ParamType::Input;
-            kernel_params.push_back(v->data);
+            kernel_param_count++;
+            // kernel_params.push_back(v->data);
         } else if (v->output_flag && v->size == group.size) {
             n_params_out++;
             v->param_type = ParamType::Output;
@@ -264,11 +268,13 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                                             : AllocType::HostAsync,
                 dsize); // Note: unsafe to access 'v' after jitc_malloc().
 
-            kernel_params.push_back(sv.data);
+            kernel_param_count++;
+            // kernel_params.push_back(sv.data);
         } else if (v->is_literal() && (VarType) v->type == VarType::Pointer) {
             n_params_in++;
             v->param_type = ParamType::Input;
-            kernel_params.push_back((void *) v->literal);
+            kernel_param_count++;
+            // kernel_params.push_back((void *) v->literal);
         } else {
             n_side_effects += (uint32_t) v->side_effect;
             v->param_type = ParamType::Register;
@@ -287,28 +293,14 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                  "periodically running jit_eval() to break the computation "
                  "into smaller chunks.", n_regs);
 
-    if (unlikely(kernel_params.size() > 0xFFFF))
+    if (unlikely(kernel_param_count > 0xFFFF))
         jitc_log(Warn,
                  "jit_run(): The generated kernel accesses more than 64K "
-                 "arrays (%zu) and will likely not run efficiently. Consider "
+                 "arrays (%u) and will likely not run efficiently. Consider "
                  "periodically running jit_eval() to break the computation "
-                 "into smaller chunks.", kernel_params.size());
+                 "into smaller chunks.", kernel_param_count);
 
-    kernel_param_count = (uint32_t) kernel_params.size();
     n_ops_total = n_regs;
-
-    // Pass parameters through global memory if too large or using OptiX
-    if (backend == JitBackend::CUDA &&
-        (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT)) {
-        size_t size = kernel_param_count * sizeof(void *);
-        uint8_t *tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, size);
-        kernel_params_global = (uint8_t *) jitc_malloc(AllocType::Device, size);
-        memcpy(tmp, kernel_params.data(), size);
-        jitc_memcpy_async(backend, kernel_params_global, tmp, size);
-        jitc_free(tmp);
-        kernel_params.clear();
-        kernel_params.push_back(kernel_params_global);
-    }
 
     bool trace = std::max(state.log_level_stderr, state.log_level_callback) >=
                  LogLevel::Trace;
@@ -516,9 +508,23 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         cuda_check(cuEventRecord((CUevent) e.event_start, ts->stream));
     }
 
+    // Collect kernel_param scheduled variables
+    for (uint32_t group_index = group.start; group_index < group.end; ++group_index){
+        ScheduledVariable &sv = schedule[group_index];
+        uint32_t index = sv.index;
+        Variable *v = jitc_var(index);
+        
+        if (v->is_evaluated()) {
+            kernel_params.push_back(sv);
+        }else if (v->output_flag && v->size == group.size){
+            kernel_params.push_back(sv);
+        }else if (v->is_literal() && (VarType) v->type == VarType::Pointer){
+            kernel_params.push_back(sv);
+        }
+    }
+
     Task* ret_task = nullptr;
-    ret_task = ts->launch(kernel, group.size, &kernel_params,
-                          kernel_param_count, kernel_params_global);
+    ret_task = ts->launch(kernel, group.size, kernel_params);
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         if (ts->backend == JitBackend::CUDA) {
@@ -661,11 +667,6 @@ void jitc_eval_impl(ThreadState *ts) {
         jitc_assemble(ts, group);
 
         scheduled_tasks.push_back(jitc_run(ts, group));
-
-        if (ts->backend == JitBackend::CUDA) {
-            jitc_free(kernel_params_global);
-            kernel_params_global = nullptr;
-        }
     }
 
     if (ts->backend == JitBackend::LLVM) {
