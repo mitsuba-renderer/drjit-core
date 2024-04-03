@@ -55,7 +55,6 @@ static tsl::robin_set<VisitedKey, VisitedKeyHash> visited;
 
 /// Kernel parameter buffer and device copy
 static std::vector<ScheduledVariable> kernel_params;
-// static uint32_t kernel_param_count = 0;
 
 /// Ensure uniqueness of globals/callables arrays
 GlobalsMap globals_map;
@@ -190,7 +189,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     JitBackend backend = ts->backend;
 
     uint32_t kernel_param_count = 0;
-    // kernel_params.clear();
     globals.clear();
     globals_map.clear();
     alloca_size = alloca_align = -1;
@@ -209,18 +207,12 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
              n_regs         = 0;
 
     if (backend == JitBackend::CUDA) {
-        // uintptr_t size = 0;
-        // memcpy(&size, &group.size, sizeof(uint32_t));
-        // kernel_params.push_back((void *) size);
         kernel_param_count++;
 
         // The first 3 variables are reserved on the CUDA backend
         n_regs = 4;
     } else {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
-        // for (int i = 0; i < 3; ++i)
-        //     kernel_param_count++;
-            // kernel_params.push_back(nullptr);
         kernel_param_count += 3;
         n_regs = 1;
     }
@@ -251,7 +243,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             n_params_in++;
             v->param_type = ParamType::Input;
             kernel_param_count++;
-            // kernel_params.push_back(v->data);
         } else if (v->output_flag && v->size == group.size) {
             n_params_out++;
             v->param_type = ParamType::Output;
@@ -269,12 +260,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                 dsize); // Note: unsafe to access 'v' after jitc_malloc().
 
             kernel_param_count++;
-            // kernel_params.push_back(sv.data);
         } else if (v->is_literal() && (VarType) v->type == VarType::Pointer) {
             n_params_in++;
             v->param_type = ParamType::Input;
             kernel_param_count++;
-            // kernel_params.push_back((void *) v->literal);
         } else {
             n_side_effects += (uint32_t) v->side_effect;
             v->param_type = ParamType::Register;
@@ -509,6 +498,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 
     // Collect kernel_param scheduled variables
+    kernel_params.clear();
     for (uint32_t group_index = group.start; group_index < group.end; ++group_index){
         ScheduledVariable &sv = schedule[group_index];
         uint32_t index = sv.index;
