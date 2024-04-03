@@ -674,6 +674,11 @@ VarType jit_var_type(uint32_t index) {
     return jitc_var_type(index);
 }
 
+const char *jit_var_kind_name(uint32_t index) {
+    lock_guard guard(state.lock);
+    return var_kind_name[jitc_var(index)->kind];
+}
+
 int jit_var_is_dirty(uint32_t index) {
     if (index == 0)
         return 0;
