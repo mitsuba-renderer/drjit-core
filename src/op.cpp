@@ -1018,6 +1018,40 @@ uint32_t jitc_var_clz(uint32_t a0) {
 // --------------------------------------------------------------------------
 
 template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bool>> = 0>
+T eval_brev(T) { jitc_fail("eval_brev(): unsupported operands!"); }
+
+template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
+T eval_brev(T value_) {
+    using Tu = std::make_unsigned_t<T>;
+    Tu value = (Tu) value_;
+    Tu result = 0;
+
+    for (size_t i = 0; i < sizeof(Tu) * 8; ++i) {
+        result = (result << 1) | (value & 1);
+        value >>= 1;
+    }
+
+    return result;
+}
+
+uint32_t jitc_var_brev(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsInt>("jit_var_brev", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_brev(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, VarKind::Brev, info.type,
+                                     info.size, info.symbolic, a0, v0);
+
+    jitc_trace("jit_var_brev(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bool>> = 0>
 T eval_ctz(T) { jitc_fail("eval_ctz(): unsupported operands!"); }
 
 template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
@@ -2175,6 +2209,7 @@ uint32_t jitc_var_op(JitOp op, const uint32_t *dep) {
         case JitOp::Ge:     return jitc_var_ge(dep[0], dep[1]);
         case JitOp::Popc:   return jitc_var_popc(dep[0]);
         case JitOp::Clz:    return jitc_var_clz(dep[0]);
+        case JitOp::Brev:   return jitc_var_brev(dep[0]);
         case JitOp::Ctz:    return jitc_var_ctz(dep[0]);
         case JitOp::Shr:    return jitc_var_shr(dep[0], dep[1]);
         case JitOp::Shl:    return jitc_var_shl(dep[0], dep[1]);

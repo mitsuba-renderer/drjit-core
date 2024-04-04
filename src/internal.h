@@ -62,7 +62,7 @@ enum VarKind : uint32_t {
     Select,
 
     // Bit-level counting operations
-    Popc, Clz, Ctz,
+    Popc, Clz, Ctz, Brev,
 
     // Bit-wise operations
     And, Or, Xor,

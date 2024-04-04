@@ -695,6 +695,11 @@ static void jitc_llvm_render(Variable *v) {
             fmt("    $v = call $T @llvm.cttz.v$w$h($V, i1 0)\n", v, v, a0, a0);
             break;
 
+        case VarKind::Brev:
+            fmt_intrinsic("declare $T @llvm.bitreverse.v$w$h($T)", v, a0, a0);
+            fmt("    $v = call $T @llvm.bitreverse.v$w$h($V)\n", v, v, a0, a0);
+            break;
+
         case VarKind::And:
             if (a0->type != a1->type)
                 fmt("    $v = select $V, $V, $T $z\n",
