@@ -561,6 +561,10 @@ static void jitc_cuda_render(Variable *v) {
                     "    cvt.$t.u32 $v, %r3;\n", v, a0, v, v);
             break;
 
+        case VarKind::Brev:
+            fmt("    brev.$b $v, $v;\n", v, v, a0);
+            break;
+
         case VarKind::Ctz:
             if (type_size[v->type] == 4)
                 fmt("    brev.$b $v, $v;\n"

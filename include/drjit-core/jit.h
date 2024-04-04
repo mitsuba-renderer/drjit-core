@@ -604,7 +604,7 @@ enum class JitOp : uint32_t {
     Select,
 
     // Bit-level counting operations
-    Popc, Clz, Ctz,
+    Popc, Clz, Ctz, Brev,
 
     /// Bit-wise operations
     And, Or, Xor,
@@ -741,6 +741,9 @@ extern JIT_EXPORT uint32_t jit_var_clz(uint32_t a0);
 
 /// Count trailing zeros of `a0` and return a variable representing the result
 extern JIT_EXPORT uint32_t jit_var_ctz(uint32_t a0);
+
+/// Reverse the bits of `a0` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_brev(uint32_t a0);
 
 /// Compute `a0 & a1` and return a variable representing the result
 extern JIT_EXPORT uint32_t jit_var_and(uint32_t a0, uint32_t a1);

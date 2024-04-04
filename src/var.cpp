@@ -150,7 +150,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "select",
 
     // Bit-level counting operations
-    "popc", "clz", "ctz",
+    "popc", "clz", "ctz", "brev",
 
     // Bit-wise operations
     "and", "or", "xor",

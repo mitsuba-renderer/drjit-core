@@ -80,6 +80,7 @@ extern uint32_t jitc_var_select(uint32_t a0, uint32_t a1, uint32_t a2);
 extern uint32_t jitc_var_popc(uint32_t a0);
 extern uint32_t jitc_var_clz(uint32_t a0);
 extern uint32_t jitc_var_ctz(uint32_t a0);
+extern uint32_t jitc_var_brev(uint32_t a0);
 
 /// Bit-wise operations
 extern uint32_t jitc_var_and(uint32_t a0, uint32_t a1);

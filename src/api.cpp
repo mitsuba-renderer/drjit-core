@@ -1226,6 +1226,11 @@ uint32_t jit_var_ctz(uint32_t a0) {
     return jitc_var_ctz(a0);
 }
 
+uint32_t jit_var_brev(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_brev(a0);
+}
+
 uint32_t jit_var_and(uint32_t a0, uint32_t a1) {
     lock_guard guard(state.lock);
     return jitc_var_and(a0, a1);
