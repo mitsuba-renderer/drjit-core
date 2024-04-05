@@ -8,7 +8,6 @@
 */
 
 #include "common.h"
-#include <cuda_fp16.h>
 
 template <typename Value, typename Reduce, uint32_t BlockSize>
 __device__ void reduce(const Value *data, uint32_t size, Value *out) {
@@ -20,14 +19,14 @@ __device__ void reduce(const Value *data, uint32_t size, Value *out) {
              offset = BlockSize * 2 * bid + tid,
              stride = BlockSize * 2 * nb;
 
-    Reduce reduce;
-    Value value = reduce.init();
+    Reduce red;
+    Value value = red.init();
 
     // Grid-stride loop to reduce elements
     for (uint32_t i = offset; i < size; i += stride) {
-        value = reduce(value, data[i]);
+        value = red(value, data[i]);
         if (i + BlockSize < size)
-            value = reduce(value, data[i + BlockSize]);
+            value = red(value, data[i + BlockSize]);
     }
 
     // Write to shared memory and wait for all threads to reach this point
@@ -36,28 +35,28 @@ __device__ void reduce(const Value *data, uint32_t size, Value *out) {
 
     // Block-level reduction from nb*BlockSize -> nb*32 values
     if (BlockSize >= 1024 && tid < 512)
-        shared[tid] = value = reduce(value, shared[tid + 512]);
+        shared[tid] = value = red(value, shared[tid + 512]);
     __syncthreads();
 
     if (BlockSize >= 512 && tid < 256)
-        shared[tid] = value = reduce(value, shared[tid + 256]);
+        shared[tid] = value = red(value, shared[tid + 256]);
     __syncthreads();
 
     if (BlockSize >= 256 && tid < 128)
-        shared[tid] = value = reduce(value, shared[tid + 128]);
+        shared[tid] = value = red(value, shared[tid + 128]);
     __syncthreads();
 
     if (BlockSize >= 128 && tid < 64)
-       shared[tid] = value = reduce(value, shared[tid + 64]);
+       shared[tid] = value = red(value, shared[tid + 64]);
     __syncthreads();
 
     if (tid < 32) {
         if (BlockSize >= 64)
-            value = reduce(value, shared[tid + 32]);
+            value = red(value, shared[tid + 32]);
 
         // Block-level reduction from nb*32 -> nb values
-        for (uint32_t offset = WARP_SIZE / 2; offset > 0; offset /= 2)
-            value = reduce(value, __shfl_down_sync(FULL_MASK, value, offset, WARP_SIZE));
+        for (uint32_t i = 1; i < WARP_SIZE; i *= 2)
+            value = red(value, __shfl_xor_sync(FULL_MASK, value, i));
 
         if (tid == 0)
             out[bid] = value;
@@ -67,28 +66,14 @@ __device__ void reduce(const Value *data, uint32_t size, Value *out) {
 template <typename Value> struct reduction_add {
     __device__ Value init() { return (Value) 0; }
     __device__ Value operator()(Value a, Value b) const {
-        return a + b;
-    }
-};
-
-template <> struct reduction_add<half> {
-    __device__ half init() { return (half) 0; }
-    __device__ half operator()(half a, half b) const {
-        return __hadd(a, b);
+        return add_(a, b);
     }
 };
 
 template <typename Value> struct reduction_mul {
     __device__ Value init() { return (Value) 1; }
     __device__ Value operator()(Value a, Value b) const {
-        return a * b;
-    }
-};
-
-template <> struct reduction_mul<half> {
-    __device__ half init() { return (half) 1; }
-    __device__ half operator()(half a, half b) const {
-        return (float)a * (float)b;
+        return mul_(a, b);
     }
 };
 
@@ -99,14 +84,14 @@ template <typename Value> struct reduction_max {
                    : -std::numeric_limits<Value>::infinity();
     }
     __device__ Value operator()(Value a, Value b) const {
-        return max(a, b);
+        return max_(a, b);
     }
 };
 
 template <> struct reduction_max<half> {
-    __device__ half init() { return __ushort_as_half((unsigned short)0xFC00U); }
+    __device__ half init() { return __ushort_as_half((unsigned short) 0xFC00U); }
     __device__ half operator()(half a, half b) const {
-        return max((float)a, (float)b);
+        return max_(a, b);
     }
 };
 
@@ -117,14 +102,14 @@ template <typename Value> struct reduction_min {
                    : std::numeric_limits<Value>::infinity();
     }
     __device__ Value operator()(Value a, Value b) const {
-        return min(a, b);
+        return min_(a, b);
     }
 };
 
 template <> struct reduction_min<half> {
-    __device__ half init() { return __ushort_as_half((unsigned short)0x7BFFU); }
+    __device__ half init() { return __ushort_as_half((unsigned short) 0x7BFFU); }
     __device__ half operator()(half a, half b) const {
-        return min((float)a, (float)b);
+        return min_(a, b);
     }
 };
 
@@ -167,3 +152,6 @@ HORIZ_OP_ALL(reduce_max, reduction_max)
 
 HORIZ_OP(reduce_or,  reduction_or,  uint32_t, u32)
 HORIZ_OP(reduce_and, reduction_and, uint32_t, u32)
+
+#undef HORIZ_OP
+#undef HORIZ_OP_ALL
