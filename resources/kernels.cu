@@ -8,6 +8,7 @@
 */
 
 #include "reduce.cuh"
+#include "reduce_2.cuh"
 #include "prefix_sum.cuh"
 #include "compress.cuh"
 #include "mkperm.cuh"
