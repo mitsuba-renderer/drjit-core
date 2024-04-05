@@ -36,6 +36,7 @@ CUfunction *jitc_cuda_poke[(int)VarType::Count] { };
 CUfunction *jitc_cuda_block_sum [(int) VarType::Count][10] { };
 CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                 [(int) VarType::Count] = { };
+CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count] = { };
 CUfunction *jitc_cuda_aggregate = nullptr;
 
 std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf, bool release_state_lock) {
@@ -173,6 +174,7 @@ bool jitc_cuda_init() {
         jitc_cuda_prefix_sum_inc_large[k] = (CUfunction *) malloc_check_zero(asize);
         for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++)
             jitc_cuda_reductions[j][k] = (CUfunction *) malloc_check_zero(asize);
+        jitc_cuda_reduce_dot[k] = (CUfunction *) malloc_check_zero(asize);
     }
 
     jitc_cuda_module =
@@ -346,6 +348,12 @@ bool jitc_cuda_init() {
                 cuda_check(cuModuleGetFunction(&func, m, name));
                 jitc_cuda_prefix_sum_inc_large[k][i] = func;
             }
+
+            snprintf(name, sizeof(name), "reduce_dot_%s", type_name_short[k]);
+            if (strstr(kernels_list, name)) {
+                cuda_check(cuModuleGetFunction(&func, m, name));
+                jitc_cuda_reduce_dot[k][i] = func;
+            }
         }
 
         Device device;
@@ -443,6 +451,7 @@ void jitc_cuda_shutdown() {
             Z(jitc_cuda_block_sum[k][l]);
         for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++)
             Z(jitc_cuda_reductions[j][k]);
+        Z(jitc_cuda_reduce_dot[k]);
     }
 
     jitc_cuda_api_shutdown();

@@ -72,17 +72,6 @@ template <typename Value> struct reduction_dot {
     }
 };
 
-template <typename Value> struct reduction_norm2 {
-    __device__ Value init() { return (Value) 0; }
-    __device__ Value operator()(Value accum, Value value) const {
-        return add_(accum, value);
-    }
-    __device__ Value operator()(Value accum, Value in_1, Value in_2) const {
-        Value diff = sub_(in_1, in_2);
-        return fma_(diff, diff, accum);
-    }
-};
-
 #define HORIZ_OP(Name, Reduction, Type, Suffix)                                \
     KERNEL void Name##_##Suffix(const Type *in_1, const Type *in_2,            \
                                 uint32_t size, Type *out) {                    \
@@ -95,7 +84,6 @@ template <typename Value> struct reduction_norm2 {
     HORIZ_OP(Name, Reduction, double, f64)
 
 HORIZ_OP_ALL(reduce_dot, reduction_dot)
-HORIZ_OP_ALL(reduce_norm2, reduction_norm2)
 
 #undef HORIZ_OP
 #undef HORIZ_OP_ALL

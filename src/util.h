@@ -23,6 +23,11 @@ extern void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size,
 extern void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype,
                         const void *ptr, uint32_t size, void *out);
 
+/// Dot product reduction
+extern void jitc_reduce_dot(JitBackend backend, VarType type,
+                            const void *ptr_1, const void *ptr_2,
+                            uint32_t size, void *out);
+
 /// 'All' reduction for boolean arrays
 extern bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size);
 

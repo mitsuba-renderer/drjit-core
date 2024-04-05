@@ -211,6 +211,10 @@ extern bool jitc_var_any(uint32_t index);
 extern uint32_t jitc_var_reduce(JitBackend backend, VarType vt,
                                 ReduceOp reduce_op, uint32_t index);
 
+/// Dot product reduction of two variables
+extern uint32_t jitc_var_reduce_dot(uint32_t index_1,
+                                    uint32_t index_2);
+
 /// Reduce a variable over blocks
 uint32_t jitc_var_block_sum(uint32_t index, uint32_t block_size, int symbolic);
 

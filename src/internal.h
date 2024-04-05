@@ -596,6 +596,11 @@ struct ThreadState {
     virtual void reduce(VarType type, ReduceOp rtype, const void *ptr,
                         uint32_t size, void *out) = 0;
 
+    /// Compute a dot product of two equal-sized arrays
+    virtual void reduce_dot(VarType type, const void *ptr_1,
+                            const void *ptr_2,
+                            uint32_t size, void *out) = 0;
+
     /// 'All' reduction for boolean arrays
     virtual bool all(uint8_t *values, uint32_t size) = 0;
 

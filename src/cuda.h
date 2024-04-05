@@ -90,4 +90,5 @@ extern CUfunction *jitc_cuda_poke[(int) VarType::Count];
 extern CUfunction *jitc_cuda_block_sum [(int) VarType::Count][10];
 extern CUfunction *jitc_cuda_reductions[(int) ReduceOp::Count]
                                        [(int) VarType::Count];
+extern CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count];
 extern CUfunction *jitc_cuda_aggregate;

@@ -16,6 +16,11 @@ struct CUDAThreadState: ThreadState{
     void reduce(VarType type, ReduceOp rtype, const void *ptr, uint32_t size,
                 void *out) override;
 
+    /// Compute a dot product of two equal-sized arrays
+    void reduce_dot(VarType type, const void *ptr_1,
+                    const void *ptr_2,
+                    uint32_t size, void *out) override;
+
     /// 'All' reduction for boolean arrays
     bool all(uint8_t *values, uint32_t size) override;
 

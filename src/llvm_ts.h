@@ -6,7 +6,7 @@ struct LLVMThreadState: ThreadState{
                  std::vector<void *> *kernel_params,
                  uint32_t kernel_param_count,
                  const uint8_t *kernel_params_global) override;
-    
+
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
                       const void *src) override;
@@ -14,6 +14,11 @@ struct LLVMThreadState: ThreadState{
     /// Reduce the given array to a single value
     void reduce(VarType type, ReduceOp rtype, const void *ptr, uint32_t size,
                 void *out) override;
+
+    /// Compute a dot product of two equal-sized arrays
+    void reduce_dot(VarType type, const void *ptr_1,
+                    const void *ptr_2,
+                    uint32_t size, void *out) override;
 
     /// 'All' reduction for boolean arrays
     bool all(uint8_t *values, uint32_t size) override;

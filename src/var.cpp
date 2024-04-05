@@ -1989,6 +1989,52 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
     return jitc_var_mem_map(backend, vt, data, 1, 1);
 }
 
+uint32_t jitc_var_reduce_dot(uint32_t index_1,
+                             uint32_t index_2) {
+    if (index_1 == 0 && index_2 == 0)
+        return 0;
+
+    if ((index_1 == 0) != (index_2 == 0))
+        jitc_raise("jitc_var_reduce_dot(): one of the operands is empty!");
+
+    const Variable *v1 = jitc_var(index_1),
+                   *v2 = jitc_var(index_2);
+
+    VarType vt = (VarType) v1->type;
+    JitBackend backend = (JitBackend) v1->backend;
+
+    if (v1->backend != v2->backend)
+        jitc_raise("jitc_var_reduce_dot(): incompatible backends!");
+
+    if (v1->type != v2->type)
+        jitc_raise("jitc_var_reduce_dot(): incompatible types!");
+
+    if (jitc_is_float(v1) && v1->size == v2->size &&
+        (v1->is_evaluated() || v2->is_evaluated())) {
+        uint32_t size = v1->size;
+
+        // Fast path
+        if (jitc_var_eval(index_1))
+            v1 = jitc_var(index_1);
+        if (jitc_var_eval(index_2))
+            v2 = jitc_var(index_2);
+
+        void *ptr_1 = v1->data,
+             *ptr_2 = v2->data,
+             *data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
+                                                             : AllocType::HostAsync,
+                                 (size_t) type_size[(int) vt]);
+
+        jitc_reduce_dot(backend, vt, ptr_1, ptr_2, size, data);
+
+        return jitc_var_mem_map(backend, vt, data, 1, 1);
+    } else {
+        // General case
+        Ref tmp = steal(jitc_var_mul(index_1, index_2));
+        return jitc_var_reduce(backend, vt, ReduceOp::Add, tmp);
+    }
+}
+
 uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
     if (!index)
         return index;

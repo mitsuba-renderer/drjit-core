@@ -9,6 +9,7 @@ const static char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul
                                                              "min",  "max", "and", "or" };
 
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
+using Reduction2 = void (*) (const void *ptr_1, const void *ptr_2, uint32_t start, uint32_t end, void *out);
 
 template <typename Value>
 static Reduction reduce_create(ReduceOp op) {
@@ -97,6 +98,31 @@ static Reduction jitc_reduce_create(VarType type, ReduceOp op) {
         default: jitc_raise("jit_reduce_create(): unsupported data type!");
     }
 }
+
+template <typename Value>
+static Reduction2 reduce_dot_create() {
+    return [](const void *ptr_1_, const void *ptr_2_,
+              uint32_t start, uint32_t end, void *out) JIT_NO_UBSAN {
+        const Value *ptr_1 = (const Value *) ptr_1_;
+        const Value *ptr_2 = (const Value *) ptr_2_;
+        Value result = 0;
+        for (uint32_t i = start; i != end; ++i) {
+            result = std::fma(ptr_1[i], ptr_2[i], result);
+        }
+        *((Value *) out) = result;
+    };
+}
+
+static Reduction2 jitc_reduce_dot_create(VarType type) {
+    using half = drjit::half;
+    switch (type) {
+        case VarType::Float16: return reduce_dot_create<half  >();
+        case VarType::Float32: return reduce_dot_create<float >();
+        case VarType::Float64: return reduce_dot_create<double>();
+        default: jitc_raise("jit_reduce_dot_create(): unsupported data type!");
+    }
+}
+
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
@@ -325,6 +351,45 @@ void LLVMThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
 
     if (blocks > 1) {
         this->reduce(type, op, target, blocks, out);
+        jitc_free(target);
+    }
+}
+
+void LLVMThreadState::reduce_dot(VarType type, const void *ptr_1,
+                                 const void *ptr_2,
+                                 uint32_t size, void *out) {
+
+    jitc_log(Debug, "jit_reduce_dot(" DRJIT_PTR ", " DRJIT_PTR ", type=%s, size=%u)",
+             (uintptr_t) ptr_1, (uintptr_t) ptr_2, type_name[(int) type],
+             size);
+
+    uint32_t tsize = type_size[(int) type];
+
+    // LLVM specific
+    uint32_t block_size = size, blocks = 1;
+    if (pool_size() > 1) {
+        block_size = jitc_llvm_block_size;
+        blocks     = (size + block_size - 1) / block_size;
+    }
+
+    void *target = out;
+    if (blocks > 1)
+        target = jitc_malloc(AllocType::HostAsync, blocks * tsize);
+
+    Reduction2 reduction = jitc_reduce_dot_create(type);
+    submit_cpu(
+        KernelType::Reduce,
+        [block_size, size, tsize, ptr_1, ptr_2, reduction, target](uint32_t index) {
+            reduction(ptr_1, ptr_2, index * block_size,
+                      std::min((index + 1) * block_size, size),
+                      (uint8_t *) target + index * tsize);
+        },
+
+        size,
+        std::max(1u, blocks));
+
+    if (blocks > 1) {
+        this->reduce(type, ReduceOp::Add, target, blocks, out);
         jitc_free(target);
     }
 }
