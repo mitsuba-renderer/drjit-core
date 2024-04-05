@@ -1848,6 +1848,10 @@ extern JIT_EXPORT uint32_t jit_var_reduce(JitBackend backend, VarType vt,
                                           JIT_ENUM ReduceOp reduce_op,
                                           uint32_t index);
 
+/// Perform a dot product reduction of two compatible arrays
+extern JIT_EXPORT uint32_t jit_var_reduce_dot(uint32_t index_1,
+                                              uint32_t index_2);
+
 /// Sum-reduce a avariable within blocks of size 'block_size'
 extern JIT_EXPORT uint32_t jit_var_block_sum(uint32_t index, uint32_t block_size, int symbolic);
 
