@@ -659,6 +659,10 @@ uint32_t jitc_var_min(uint32_t a0, uint32_t a1) {
         if (info.literal)
             result = jitc_eval_literal(
                 info, [](auto l0, auto l1) { return std::min(l0, l1); }, v0, v1);
+        else if (jitc_is_max(v0) || jitc_is_min(v1))
+            result = jitc_var_resize(a1, info.size);
+        else if (jitc_is_max(v1) || jitc_is_min(v0))
+            result = jitc_var_resize(a0, info.size);
         else if (a0 == a1)
             result = jitc_var_resize(a0, info.size);
     }
@@ -681,10 +685,13 @@ uint32_t jitc_var_max(uint32_t a0, uint32_t a1) {
         if (info.literal)
             result = jitc_eval_literal(
                 info, [](auto l0, auto l1) { return std::max(l0, l1); }, v0, v1);
+        else if (jitc_is_min(v0) || jitc_is_max(v1))
+            result = jitc_var_resize(a1, info.size);
+        else if (jitc_is_min(v1) || jitc_is_max(v0))
+            result = jitc_var_resize(a0, info.size);
         else if (a0 == a1)
             result = jitc_var_resize(a0, info.size);
     }
-
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Max, info.type,

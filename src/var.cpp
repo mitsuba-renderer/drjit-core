@@ -109,6 +109,14 @@ const uint64_t type_max[(int) VarType::Count] {
     0x7c00, 0x7f800000, 0x7ff0000000000000ull
 };
 
+bool jitc_is_max(Variable *v) {
+    return v->is_literal() && type_max[v->type] == v->literal;
+}
+
+bool jitc_is_min(Variable *v) {
+    return v->is_literal() && type_min[v->type] == v->literal;
+}
+
 /// Label for each VarKind entry (used for trace messages in jitc_var_new)
 const char *var_kind_name[(int) VarKind::Count] {
     "invalid",
