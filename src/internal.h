@@ -978,4 +978,7 @@ inline bool jitc_is_one(Variable *v) {
     return v->literal == one;
 }
 
+extern bool jitc_is_max(Variable *v);
+extern bool jitc_is_min(Variable *v);
+
 extern const char *var_kind_name[(int) VarKind::Count];
