@@ -49,6 +49,9 @@ Task *CUDAThreadState::launch(Kernel kernel, uint32_t size,
     if (unlikely(uses_optix))
         jitc_optix_launch(this, kernel, size, kernel_params_global,
                           kernel_param_count);
+#else
+    (void) kernel_param_count;
+    (void) kernel_params_global;
 #endif
 
     if (!uses_optix) {
