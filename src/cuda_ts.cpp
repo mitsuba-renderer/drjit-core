@@ -1,9 +1,11 @@
 #include "cuda_ts.h"
+#include "util.h"
 #include "var.h"
 #include "log.h"
 #include "optix.h"
 #include "eval.h"
-#include "util.h"
+
+static uint8_t *kernel_params_global = nullptr;
 
 static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
                        uint32_t thread_count, uint32_t shared_mem_bytes,
@@ -39,9 +41,22 @@ static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
 }
 
 Task *CUDAThreadState::launch(Kernel kernel, uint32_t size,
-                              std::vector<void *> *kernel_params,
-                              uint32_t kernel_param_count,
-                              const uint8_t *kernel_params_global) {
+                              std::vector<void *> *kernel_params) {
+
+    uint32_t kernel_param_count = kernel_params->size();
+    
+    // Pass parameters through global memory if too large or using OptiX
+    if (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT) {
+      size_t param_size = kernel_param_count * sizeof(void *);
+      uint8_t *tmp = (uint8_t *)jitc_malloc(AllocType::HostPinned, param_size);
+      kernel_params_global = (uint8_t *)jitc_malloc(AllocType::Device, param_size);
+      memcpy(tmp, kernel_params->data(), param_size);
+      jitc_memcpy_async(backend, kernel_params_global, tmp, param_size);
+      jitc_free(tmp);
+      kernel_params->clear();
+      kernel_params->push_back(kernel_params_global);
+    }
+
 #if defined(DRJIT_ENABLE_OPTIX)
     if (unlikely(uses_optix))
         jitc_optix_launch(this, kernel, size, kernel_params_global,
@@ -77,6 +92,11 @@ Task *CUDAThreadState::launch(Kernel kernel, uint32_t size,
 
     if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
         cuda_check(cuStreamSynchronize(stream));
+
+
+    // Cleanup global kernel parameters
+    jitc_free(kernel_params_global);
+    kernel_params_global = nullptr;
 
     return nullptr;
 }
