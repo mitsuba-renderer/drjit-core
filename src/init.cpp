@@ -10,6 +10,7 @@
 #include "internal.h"
 #include "cuda_ts.h"
 #include "llvm_ts.h"
+#include "record_ts.h"
 #include "malloc.h"
 #include "internal.h"
 #include "log.h"
@@ -333,7 +334,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
     ThreadState *ts;
 
     if (backend == JitBackend::CUDA) {
-        ts = new CUDAThreadState();
+        ts = new RecordThreadState<CUDAThreadState>();
         if ((state.backends & (uint32_t) JitBackend::CUDA) == 0) {
             delete ts;
 
@@ -392,7 +393,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->sync_stream_event = device.sync_stream_event;
         thread_state_cuda = ts;
     } else {
-        ts = new LLVMThreadState();
+        ts = new RecordThreadState<LLVMThreadState>();
         if ((state.backends & (uint32_t) JitBackend::LLVM) == 0) {
             delete ts;
             #if defined(_WIN32)
