@@ -559,7 +559,7 @@ static void jitc_llvm_render(Variable *v) {
 
         case VarKind::Fma:
             if (jitc_is_float(v)) {
-                fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)\n",
+                fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)",
                     v, v, a0, a1, a2);
                 fmt("    $v = call $T @llvm.fma.v$w$h($V, $V, $V)\n",
                     v, v, v, a0, a1, a2);

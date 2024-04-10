@@ -1850,7 +1850,7 @@ uint32_t jitc_var_block_sum(uint32_t index, uint32_t block_size, int symbolic) {
                                                     : AllocType::HostAsync,
                         reduced * type_size[(int) vt]);
         Ref out_v = steal(jitc_var_mem_map(backend, vt, out, reduced, 1));
-        jitc_block_sum(backend, vt, v->data, out, v->size, block_size);
+        jitc_block_sum(backend, vt, jitc_var(index)->data, out, size, block_size);
 
         return out_v.release();
     } else {
