@@ -2,6 +2,10 @@
 #include "drjit-core/jit.h"
 #include "internal.h"
 #include "log.h"
+#include <cstdint>
+
+// HashMap used to deduplicate variables
+using VariableCache = tsl::robin_map<uintptr_t, uint32_t>;
 
 enum class OpType{
     KernelLaunch,
@@ -9,6 +13,8 @@ enum class OpType{
 
 struct Operation{
     OpType type;
+    // Indices into the dependencies vector
+    std::pair<uint32_t, uint32_t> dependency_range;
 };
 
 
@@ -20,6 +26,22 @@ struct RecordThreadState: TS{
     
     Task *launch(Kernel kernel, uint32_t size,
                  std::vector<void *> *kernel_params) override{
+        
+        uint32_t start = this->dependencies.size();
+
+        uint32_t param_index = this->backend == JitBackend::CUDA ? 1 : 3;
+        for (; param_index < kernel_params->size(); ++param_index){
+            uint32_t id = this->get_or_insert_variable(kernel_params->at(param_index));
+            this->dependencies.push_back(id);
+        }
+
+        uint32_t end = this->dependencies.size();
+
+        this->operations.push_back(Operation{
+            .type = OpType::KernelLaunch,
+            .dependency_range = std::pair(start, end)
+        });
+        
         return TS::launch(kernel, size, kernel_params);
     }
 
@@ -100,5 +122,29 @@ struct RecordThreadState: TS{
 
 
     ~RecordThreadState(){}
+
+private:
+    uint32_t variable_count;
+    std::vector<uint32_t> dependencies;
+    // Mapping from variable index in State to variable in this struct.
+    VariableCache variable_cache;
+
+    std::vector<Operation> operations;
+
+    // Insert the variable index, deduplicating it and returning a index into the
+    // `variables` field.
+    uint32_t get_or_insert_variable(void *ptr) {
+        uintptr_t hash_index = (uintptr_t)ptr;
+        
+        auto it = this->variable_cache.find(hash_index);
+
+        if (it == this->variable_cache.end()) {
+            uint32_t id = this->variable_count++;
+            this->variable_cache.insert({hash_index, id});
+            return id;
+        } else {
+            return it.value();
+        }
+    }
 
 };
