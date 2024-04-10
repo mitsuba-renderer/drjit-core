@@ -1673,7 +1673,9 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
     {
         /// Variables with _v subscript only inspected in this scope
         if (src_v->symbolic)
-            jitc_raise("jit_var_gather(): cannot gather from a symbolic variable!");
+            jitc_raise("jit_var_gather(): cannot gather from a symbolic "
+                       "variable (r%u, kind=%s)!",
+                       src_, var_kind_name[(int) src_v->kind]);
 
         if (mask_v->is_literal() && mask_v->literal == 0) {
             var_info.type = src_info.type;
