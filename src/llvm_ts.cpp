@@ -846,9 +846,9 @@ void LLVMThreadState::block_sum(enum VarType type, const void *in, void *out,
 
     submit_cpu(
         KernelType::Other,
-        [in, out, op, work_unit_size, size, block_size](uint32_t index) {
+        [in, out, op, work_unit_size, reduced, block_size](uint32_t index) {
             uint32_t start = index * work_unit_size,
-                     end = std::min(start + work_unit_size, size);
+                     end = std::min(start + work_unit_size, reduced);
 
             op(in, out, start, end, block_size);
         },
