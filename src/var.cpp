@@ -1477,7 +1477,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         jitc_eval(thread_state(v->backend));
         v = jitc_var(index);
         if (v->is_dirty())
-            jitc_raise("jit_var_resize(): variable remains dirty following evaluation!");
+            jitc_raise("jit_var_resize(r%u, %zu): variable remains dirty following evaluation!", index, size);
     }
 
     uint32_t result;

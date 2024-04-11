@@ -1796,7 +1796,9 @@ void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     unwrap(target_2, target_2_v);
 
     if (target_1_v->symbolic || target_2_v->symbolic)
-        jitc_raise("jit_var_scatter_add_kahan(): cannot scatter to a symbolic variable.");
+        jitc_raise("jit_var_scatter_add_kahan(): cannot scatter to a symbolic "
+                   "variable (r%u, r%u).",
+                   (uint32_t) target_1, (uint32_t) target_2);
 
     if (target_1_v->type != value_v->type || target_2_v->type != value_v->type)
         jitc_raise("jit_var_scatter_add_kahan(): target/value type mismatch.");
@@ -1889,7 +1891,9 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     unwrap(target, target_v);
 
     if (target_v->symbolic)
-        jitc_raise("jit_var_scatter_inc(): cannot scatter to a symbolic variable.");
+        jitc_raise(
+            "jit_var_scatter_inc(): cannot scatter to a symbolic variable (r%u).",
+            (uint32_t) target);
 
     if ((VarType) target_v->type != VarType::UInt32)
         jitc_raise("jit_var_scatter_inc(): 'target' must be an unsigned 32-bit array.");
@@ -1922,7 +1926,8 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
         index_2 = steal(jitc_scatter_gather_index(target, index));
 
     if (flags & (uint32_t) JitFlag::Debug)
-        mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::ScatterInc, index, mask_2, target_info.size));
+        mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::ScatterInc, index,
+                                             mask_2, target_info.size));
 
     var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
@@ -2024,7 +2029,9 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         jitc_raise("jit_var_scatter(): ReduceOp.Mul unsupported for atomic reductions!");
 
     if (target_v->symbolic)
-        jitc_raise("jit_var_scatter(): cannot scatter to a symbolic variable!");
+        jitc_raise(
+            "jit_var_scatter(): cannot scatter to a symbolic variable (r%u)!",
+            (uint32_t) target);
 
     uint32_t flags = jitc_flags();
     var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
