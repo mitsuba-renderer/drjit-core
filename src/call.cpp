@@ -71,7 +71,7 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
         const Variable *mask_v = jitc_var(mask_);
         size = std::max(size, mask_v->size);
         symbolic |= (bool) mask_v->symbolic;
-        dirty |= (bool) mask_v->symbolic;
+        dirty |= (bool) mask_v->is_dirty();
         if ((VarType) mask_v->type != VarType::Bool)
             jitc_raise(
                 "jit_var_call(): 'mask' argument must be a boolean array");
