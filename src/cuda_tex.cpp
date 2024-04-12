@@ -66,13 +66,15 @@ struct DrJitCudaTexture {
      * not released.
      */
     bool release_texture(size_t index) {
-        ThreadState *ts = thread_state(JitBackend::CUDA);
-        scoped_set_context guard(ts->context);
+        if (state.backends & (uint32_t) JitBackend::CUDA) {
+            // Only run the following code if the CUDA context is still alive
+            ThreadState *ts = thread_state(JitBackend::CUDA);
+            scoped_set_context guard(ts->context);
+            cuda_check(cuArrayDestroy(arrays[index]));
+            cuda_check(cuTexObjectDestroy(textures[index]));
+        }
 
-        cuda_check(cuArrayDestroy(arrays[index]));
-        cuda_check(cuTexObjectDestroy(textures[index]));
-
-        return (--n_referenced_textures) > 0;
+        return --n_referenced_textures > 0;
     }
 };
 
