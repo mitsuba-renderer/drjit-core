@@ -538,9 +538,13 @@ uint32_t jitc_var_mod(uint32_t a0, uint32_t a1) {
     auto [info, v0, v1] = jitc_var_check<IsIntOrBool>("jit_var_mod", a0, a1);
 
     uint32_t result = 0;
-    if (info.simplify && info.literal)
+    if (info.simplify && info.literal) {
         result = jitc_eval_literal(
             info, [](auto l0, auto l1) { return eval_mod(l0, l1); }, v0, v1);
+    } else if (v1->is_literal() && jitc_is_one(v1)) {
+        uint64_t value = 0;
+        result = jitc_var_literal(info.backend, info.type, &value, info.size, 0);
+    }
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Mod, info.type,
