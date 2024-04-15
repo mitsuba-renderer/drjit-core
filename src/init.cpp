@@ -334,7 +334,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
     ThreadState *ts;
 
     if (backend == JitBackend::CUDA) {
-        ts = new RecordThreadState<CUDAThreadState>();
+        ts = new CUDAThreadState();
         if ((state.backends & (uint32_t) JitBackend::CUDA) == 0) {
             delete ts;
 
@@ -393,7 +393,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->sync_stream_event = device.sync_stream_event;
         thread_state_cuda = ts;
     } else {
-        ts = new RecordThreadState<LLVMThreadState>();
+        ts = new LLVMThreadState();
         if ((state.backends & (uint32_t) JitBackend::LLVM) == 0) {
             delete ts;
             #if defined(_WIN32)
@@ -416,7 +416,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
 
     ts->backend = backend;
     ts->scope = ++state.scope_ctr;
-    state.tss.push_back(ts);
+    state.tss.push_back(new RecordThreadState(ts));
     return ts;
 }
 
