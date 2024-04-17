@@ -598,6 +598,8 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
         LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
         for (uint32_t index_2: loop->inner_out)
             jitc_var_call_analyze(call, inst_id, index_2, data_offset);
+        for (uint32_t index_2: loop->outer_in)
+            jitc_var_call_analyze(call, inst_id, index_2, data_offset);
     } else if (kind == VarKind::TraceRay) {
         TraceData *td = (TraceData *) v->data;
         for (uint32_t index_2: td->indices)
