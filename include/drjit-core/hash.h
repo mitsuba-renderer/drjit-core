@@ -43,7 +43,7 @@ struct UInt64Hasher {
 };
 
 struct PointerHasher {
-    size_t operator()(void *p) const {
+    size_t operator()(const void *p) const {
         if constexpr (sizeof(void *) == 4)
             return (size_t) fmix32((uint32_t) (uintptr_t) p);
         else

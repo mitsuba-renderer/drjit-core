@@ -28,7 +28,6 @@ struct DomainKey {
             return hash_str(k.domain, (size_t) k.backend);
         }
     };
-
 };
 
 struct Ptr {
@@ -108,12 +107,14 @@ uint32_t jitc_registry_put(JitBackend backend, const char *domain_name, void *pt
 /// Remove a pointer from the registry
 void jitc_registry_remove(const void *ptr) {
     Registry &r = registry;
-    auto it = r.rev_map.find((void *) ptr);
+    size_t ptr_hash = PointerHasher()(ptr);
+
+    auto it = r.rev_map.find((void *) ptr, ptr_hash);
     if (it == r.rev_map.end())
         jitc_raise("jit_registry_remove(ptr=%p): pointer is not registered!", ptr);
 
     ReverseKey rk = it->second;
-    r.rev_map.erase(it);
+    r.rev_map.erase((void *) ptr, ptr_hash);
 
     Domain &domain = r.domains[rk.domain_id];
     domain.free_pq.push(rk.index);
