@@ -2040,10 +2040,12 @@ uint32_t jitc_var_reduce_dot(uint32_t index_1,
         uint32_t size = v1->size;
 
         // Fast path
-        if (jitc_var_eval(index_1))
+        bool eval = jitc_var_eval(index_1);
+        eval |= jitc_var_eval(index_2);
+        if (eval) {
             v1 = jitc_var(index_1);
-        if (jitc_var_eval(index_2))
             v2 = jitc_var(index_2);
+        }
 
         void *ptr_1 = v1->data,
              *ptr_2 = v2->data,
