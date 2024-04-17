@@ -269,7 +269,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
     uint32_t width = jitc_llvm_vector_width, callables_local = callable_count;
-    fmt("define void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<$w x i1> %mask");
+    fmt("define fastcc void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<$w x i1> %mask");
 
     if (call->use_self)
         fmt(", <$w x i32> %self");
@@ -1538,7 +1538,7 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
     }
 
     // Perform the actual function call
-    fmt("    call void %u$u_func(<$w x i1> %u$u_active",
+    fmt("    call fastcc void %u$u_func(<$w x i1> %u$u_active",
         call_reg, call_reg);
 
     if (call->use_self)
