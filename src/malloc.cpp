@@ -218,11 +218,14 @@ void jitc_free(void *ptr) {
     if (!ptr)
         return;
 
-    auto it = state.alloc_used.find((uintptr_t) ptr);
+    uintptr_t key = (uintptr_t) ptr;
+    size_t hash = UInt64Hasher()(key);
+
+    auto it = state.alloc_used.find(key, hash);
     if (unlikely(it == state.alloc_used.end()))
         jitc_raise("jit_free(): unknown address " DRJIT_PTR "!", (uintptr_t) ptr);
     AllocInfo info = it->second;
-    state.alloc_used.erase(it);
+    state.alloc_used.erase(key, hash);
 
     auto [size, type, device] = alloc_info_decode(info);
     state.alloc_usage[(int) type] -= size;

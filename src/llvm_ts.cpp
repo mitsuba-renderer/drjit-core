@@ -258,9 +258,9 @@ Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
 void LLVMThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
                                    const void *src){
     if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
-        jitc_raise("LLVMThreadState::jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
+        jitc_raise("jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
 
-    jitc_trace("LLVMThreadState::jit_memset_async(" DRJIT_PTR ", isize=%u, size=%u)",
+    jitc_trace("jit_memset_async(" DRJIT_PTR ", isize=%u, size=%u)",
               (uintptr_t) ptr, isize, size_);
 
     if (size_ == 0)
