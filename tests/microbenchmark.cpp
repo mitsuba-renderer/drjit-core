@@ -7,6 +7,7 @@
 
 #include <drjit-core/array.h>
 #include <chrono>
+#include <cstdio>
 
 namespace dr = drjit;
 

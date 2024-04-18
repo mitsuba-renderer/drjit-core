@@ -134,3 +134,4 @@ private:
     LogLevel m_cb_level;
     LogLevel m_stderr_level;
 };
+

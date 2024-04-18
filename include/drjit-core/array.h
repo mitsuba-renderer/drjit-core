@@ -304,6 +304,13 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return result;
     }
 
+    static JitArray borrow(uint32_t index) {
+        JitArray result;
+        result.m_index = index;
+        jit_var_inc_ref(index);
+        return result;
+    }
+
     static JitArray<Backend_, uint32_t> counter(size_t size) {
         return JitArray<Backend_, uint32_t>::steal(
             jit_var_counter(Backend, size));

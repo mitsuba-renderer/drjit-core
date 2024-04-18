@@ -715,7 +715,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     break;
 
                 case 'e':
-                    if (jitc_llvm_version_major < 16)
+                    if (jitc_llvm_version_major < 12)
                         put_unchecked(".experimental");
                     break;
 

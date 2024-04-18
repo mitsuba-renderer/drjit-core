@@ -1,8 +1,6 @@
 enable_testing()
 
-set(TEST_FILES basics.cpp mem.cpp graphviz.cpp reductions.cpp)
-# vcall.cpp
-# loop.cpp
+set(TEST_FILES basics.cpp mem.cpp loop.cpp vcall.cpp graphviz.cpp reductions.cpp)
 
 add_executable(test_half half.cpp)
 add_test(NAME test_half COMMAND test_half
@@ -40,7 +38,7 @@ endif()
 
 set_property(TARGET test_basics PROPERTY CXX_STANDARD 17)
 #set_property(TARGET test_vcall PROPERTY CXX_STANDARD 17)
-# set_property(TARGET test_loop PROPERTY CXX_STANDARD 17)
+set_property(TARGET test_loop PROPERTY CXX_STANDARD 17)
 
 if (DRJIT_ENABLE_OPTIX)
  add_executable(triangle triangle.cpp optix_stubs.h optix_stubs.cpp)

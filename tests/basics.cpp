@@ -173,6 +173,9 @@ template <typename T> bool test_const_prop() {
     constexpr bool IsInt = !IsFloat && !IsMask;
     constexpr size_t Size = IsMask ? 2 : 10, Size2 = 2 * Size;
 
+    bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
+    jit_set_flag(JitFlag::FastMath, false);
+
     bool fail = false;
     Value values[Size2];
     for (uint32_t i = 0; i < Size2; ++i) {
@@ -461,6 +464,8 @@ template <typename T> bool test_const_prop() {
         for (int i = 0; i < 4; ++i)
             jit_var_dec_ref(in_b[i]);
     }
+
+    jit_set_flag(JitFlag::FastMath, fast_math);
 
     return fail;
 }

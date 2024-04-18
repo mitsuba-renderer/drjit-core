@@ -167,7 +167,7 @@ struct alignas(64) Variable {
     uint32_t dep[4];
 
     // ======  Size & encoded instruction (IR statement, literal, data) =======
-    // (6*4 = 24 bytes)
+    // (8 + 3*4 = 20 bytes)
 
     /// The 'kind' field determines which entry of the following union is used
     union {
@@ -183,6 +183,9 @@ struct alignas(64) Variable {
 
     /// How many times has this variable entry been (re-) used?
     uint32_t counter;
+
+    /// Unused
+    uint32_t unused;
 
     // ================  Essential flags used in the LVN key  =================
     // (+15 bits)
@@ -218,7 +221,7 @@ struct alignas(64) Variable {
     uint32_t side_effect : 1;
 
     /// Unused flag
-    bool unused: 1;
+    uint32_t unused_2: 1;
 
     // =========== Entries that are temporarily used in jitc_eval() ============
     // (+11 bits -> 32 bits with all the preceding individiual bits = 4 bytes)
@@ -243,7 +246,7 @@ struct alignas(64) Variable {
     uint32_t reduce_op : 3;
 
     /// Unused for now
-    uint32_t unused_2 : 3;
+    uint32_t unused_3 : 3;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;

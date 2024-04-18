@@ -1,106 +1,37 @@
 #include "test.h"
 #include "traits.h"
-#include <drjit-core/tinystl.h>
-#include <utility>
 
 namespace dr = drjit;
 
 namespace drjit {
-namespace detail {
-    struct dr_index_vector : vector<uint32_t> {
-        using Base = vector<uint32_t>;
-        using Base::Base;
-        using Base::operator=;
 
-        dr_index_vector(size_t size) : Base(size, 0) { }
-        ~dr_index_vector() { clear(); }
-
-        void push_back(uint32_t value) {
-            jit_var_inc_ref_impl(value);
-            Base::push_back(value);
+    /// RAII helper to temporarily record symbolic computation
+    struct scoped_record {
+        scoped_record(JitBackend backend, const char *name = nullptr,
+                      bool new_scope = false)
+            : backend(backend) {
+            checkpoint = jit_record_begin(backend, name);
+            if (new_scope)
+                scope = jit_new_scope(backend);
         }
 
-        void clear() {
-            for (size_t i = 0; i < size(); ++i)
-                jit_var_dec_ref_impl(operator[](i));
-            Base::clear();
+        ~scoped_record() {
+            jit_record_end(backend, checkpoint, cleanup);
         }
+
+        uint32_t checkpoint_and_rewind() {
+            jit_set_scope(backend, scope);
+            return jit_record_checkpoint(backend);
+        }
+
+        void disarm() { cleanup = false; }
+
+        JitBackend backend;
+        uint32_t checkpoint, scope;
+        bool cleanup = true;
     };
 
-    template <typename Value, enable_if_t<Value::IsArray> = 0>
-    void collect_indices(dr_index_vector &indices, const Value &value) {
-        indices.push_back(value.index());
-    }
-
-    template <typename Value, enable_if_t<Value::IsArray> = 0>
-    void update_indices(dr_index_vector &indices, Value &value, uint32_t &offset) {
-        uint32_t &index = indices[offset++];
-        value = Value::steal(index);
-        index = 0;
-    }
-
-    template <typename... Ts, size_t... Is>
-    void collect_indices_tuple(dr_index_vector &indices,
-                               const tuple<Ts...> &value,
-                               std::index_sequence<Is...>) {
-        (collect_indices(indices, value.template get<Is>()), ...);
-    }
-
-    template <typename... Ts>
-    void collect_indices(dr_index_vector &indices, const tuple<Ts...> &value) {
-        collect_indices_tuple(indices, value, std::make_index_sequence<sizeof...(Ts)>());
-    }
-
-    template <typename... Ts, size_t... Is>
-    void update_indices_tuple(dr_index_vector &indices, tuple<Ts...> &value,
-                             uint32_t &offset, std::index_sequence<Is...>) {
-        (update_indices(indices, value.template get<Is>(), offset), ...);
-    }
-
-    template <typename... Ts>
-    void update_indices(dr_index_vector &indices, tuple<Ts...> &value,
-                             uint32_t &offset) {
-        update_indices_tuple(indices, value, offset, std::make_index_sequence<sizeof...(Ts)>());
-    }
-
-    inline bool extract_mask() { return true; }
-    template <typename T> decltype(auto) extract_mask(const T &) {
-        return true;
-    }
-
-    template <typename T, typename... Ts, enable_if_t<sizeof...(Ts) != 0> = 0>
-    decltype(auto) extract_mask(const T &, const Ts &... vs) {
-        return extract_mask(vs...);
-    }
-
-    template <size_t I, size_t N, typename T>
-    decltype(auto) set_mask_true(const T &v) {
-        return v;
-    }
-
-    template <typename T> T wrap_vcall(const T &value) {
-        if constexpr (array_depth_v<T> > 1) {
-            T result;
-            for (size_t i = 0; i < value.derived().size(); ++i)
-                result.derived().entry(i) = wrap_vcall(value.derived().entry(i));
-            return result;
-        } else if constexpr (is_diff_array_v<T>) {
-            return wrap_vcall(value.detach_());
-        } else if constexpr (is_jit_array_v<T>) {
-            return T::steal(jit_var_wrap_vcall(value.index()));
-        } else if constexpr (is_drjit_struct_v<T>) {
-            T result;
-            struct_support_t<T>::apply_2(
-                result, value,
-                [](auto &x, const auto &y) {
-                    x = wrap_vcall(y);
-                });
-            return result;
-        } else {
-            return (const T &) value;
-        }
-    }
-
+    /// RAII helper to temporarily push a mask onto the Dr.Jit mask stack
     struct scoped_set_mask {
         scoped_set_mask(JitBackend backend, uint32_t index) : backend(backend) {
             jit_var_mask_push(backend, index);
@@ -114,16 +45,17 @@ namespace detail {
         JitBackend backend;
     };
 
+    /// RAII helper to temporarily set the 'self' instance
     struct scoped_set_self {
         scoped_set_self(JitBackend backend, uint32_t value, uint32_t self_index = 0)
             : m_backend(backend) {
-            jit_vcall_self(backend, &m_self_value, &m_self_index);
+            jit_var_self(backend, &m_self_value, &m_self_index);
             jit_var_inc_ref(m_self_index);
-            jit_vcall_set_self(m_backend, value, self_index);
+            jit_var_set_self(m_backend, value, self_index);
         }
 
         ~scoped_set_self() {
-            jit_vcall_set_self(m_backend, m_self_value, m_self_index);
+            jit_var_set_self(m_backend, m_self_value, m_self_index);
             jit_var_dec_ref(m_self_index);
         }
 
@@ -133,106 +65,80 @@ namespace detail {
         uint32_t m_self_index;
     };
 
-    struct scoped_record {
-        scoped_record(JitBackend backend, const char *name) : backend(backend) {
-            checkpoint = jit_record_begin(backend, name);
-            scope = jit_new_scope(backend);
-        }
-
-        uint32_t checkpoint_and_rewind() {
-            jit_set_scope(backend, scope);
-            return jit_record_checkpoint(backend);
-        }
-
-        ~scoped_record() {
-            jit_record_end(backend, checkpoint);
-        }
-
-        JitBackend backend;
-        uint32_t checkpoint, scope;
-    };
-} // namespace detail
 } // namespace drjit
 
-template <typename Result, typename Func, JitBackend Backend, typename Base,
-          typename... Args, size_t... Is>
-Result vcall_impl(const char *domain, uint32_t n_inst, const Func &func,
-                  const JitArray<Backend, Base *> &self,
-                  const JitArray<Backend, bool> &mask,
-                  std::index_sequence<Is...>, const Args &... args) {
-    using Mask = JitArray<Backend, bool>;
-    constexpr size_t N = sizeof...(Args);
-    (void) N;
-    Result result;
+// Basic wrapper for recording a symbolic call used by tests exclusively
+template <size_t n_callables, size_t n_inputs, size_t n_outputs>
+void symbolic_call(
+        JitBackend backend,
+        const char* domain,
+        bool symbolic,
+        uint32_t self,
+        uint32_t mask,
+        void (*call) (void*, uint32_t*, uint32_t*),
+        uint32_t* inputs,
+        uint32_t* outputs) {
 
-    detail::dr_index_vector indices_in, indices_out_all;
-    vector<uint32_t> state(n_inst + 1, 0);
-    vector<uint32_t> inst_id(n_inst, 0);
+    uint32_t checkpoints[n_callables + 1] = { 0 };
+    uint32_t inst_id[n_callables] = { 0 };
 
-    (detail::collect_indices(indices_in, args), ...);
+    uint32_t call_inputs[n_inputs == 0 ? 1 : n_inputs] = { 0 };
+    uint32_t rv_values[n_outputs == 0 ? 1 : n_callables * n_outputs] = { 0 };
 
+    jit_new_scope(backend);
     {
-        detail::scoped_record rec(Backend, "Test");
+        dr::scoped_record rec(backend, domain, true);
 
-        state[0] = jit_record_checkpoint(Backend);
-
-        for (uint32_t i = 1; i <= n_inst; ++i) {
-            char label[128];
-            snprintf(label, sizeof(label), "VCall: %s [instance %u]", domain, i);
-            Base *base = (Base *) jit_registry_ptr(Backend, domain, i);
-            detail::scoped_set_mask mask_guard(Backend, jit_var_vcall_mask(Backend));
-            detail::scoped_set_self self_guard(Backend, i);
-
-            if constexpr (std::is_same_v<Result, std::nullptr_t>)
-                func(base, (detail::set_mask_true<Is, N>(args))...);
-            else
-                detail::collect_indices(indices_out_all, func(base, args...));
-
-            state[i] = jit_record_checkpoint(Backend);
-
-            inst_id[i - 1] = i;
+        for (size_t i = 0; i < n_inputs; ++i) {
+            call_inputs[i] = jit_var_call_input(inputs[i]);
         }
-    }
 
-    detail::dr_index_vector indices_out(indices_out_all.size() / n_inst);
+        {
+            dr::scoped_set_mask mask_guard(backend, jit_var_call_mask(backend));
+            for (size_t i = 0; i < n_callables; ++i) {
+                checkpoints[i] = rec.checkpoint_and_rewind();
 
-    uint32_t se = jit_var_vcall(
-        domain, self.index(), mask.index(), n_inst, inst_id.data(),
-        (uint32_t) indices_in.size(), indices_in.data(),
-        (uint32_t) indices_out_all.size(), indices_out_all.data(), state.data(),
-        indices_out.data());
+                uint32_t call_index =  (uint32_t) i + 1;
 
-    jit_var_mark_side_effect(se);
-    jit_new_scope(Backend);
+                void *ptr = jit_registry_ptr(backend, domain,
+                    call_index);
 
-    if constexpr (!std::is_same_v<Result, std::nullptr_t>) {
-        uint32_t offset = 0;
-        detail::update_indices(indices_out, result, offset);
-        return result;
-    } else {
-        (void) result;
-        return nullptr;
+                scoped_set_self set_self(backend, 
+                    call_index);
+
+                call(ptr, call_inputs, &rv_values[i * n_outputs]);
+                inst_id[i] = call_index;
+            }
+
+            checkpoints[n_callables] = rec.checkpoint_and_rewind();
+        }
+
+        jit_new_scope(backend);
+
+        jit_var_call(
+            domain, symbolic,
+            self, mask,
+            (uint32_t) n_callables,
+            inst_id,
+            (uint32_t) n_inputs,
+            call_inputs,
+            (uint32_t) n_callables * n_outputs,
+            rv_values,
+            checkpoints,
+            outputs
+        );
+
+        for (size_t i = 0; i < n_inputs; ++i) {
+            jit_var_dec_ref(call_inputs[i]);
+        }
+
+        for (size_t i = 0; i < n_callables * n_outputs; ++i) {
+            jit_var_dec_ref(rv_values[i]);
+        }
+
+        rec.disarm();
     }
 }
-
-template <typename Func, JitBackend Backend, typename Base,
-          typename... Args>
-auto vcall(const char *domain, const Func &func,
-           const JitArray<Backend, Base *> &self, const Args &... args) {
-    using Result = decltype(func(std::declval<Base *>(), args...));
-    constexpr bool IsVoid = std::is_void_v<Result>;
-    using Result_2 = std::conditional_t<IsVoid, std::nullptr_t, Result>;
-    using Bool = JitArray<Backend, bool>;
-
-    uint32_t n_inst = jit_registry_id_bound(Backend, domain);
-
-    return vcall_impl<Result_2>(
-        domain, n_inst, func, self,
-        Bool(detail::extract_mask(args...)),
-        std::make_index_sequence<sizeof...(Args)>(),
-        detail::wrap_vcall(args)...);
-}
-
 
 TEST_BOTH(01_recorded_vcall) {
     /// Test a simple virtual function call
@@ -255,25 +161,54 @@ TEST_BOTH(01_recorded_vcall) {
     A1 a1;
     A2 a2;
 
-    // jit_llvm_set_target("skylake-avx512", "+avx512f,+avx512dq,+avx512vl,+avx512cd", 16);
-    uint32_t i1 = jit_registry_put(Backend, "Base", &a1);
-    uint32_t i2 = jit_registry_put(Backend, "Base", &a2);
+    const char* domain = "Base";
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 1;
+    const size_t n_outputs      = 1;
+
+    uint32_t i1 = jit_registry_put(Backend, domain, &a1);
+    uint32_t i2 = jit_registry_put(Backend, domain, &a2);
     jit_assert(i1 == 1 && i2 == 2);
 
     using BasePtr = Array<Base *>;
     Float x = arange<Float>(10);
     BasePtr self = arange<UInt32>(10) % 3;
 
-    for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
-        Float y = vcall(
-            "Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
-        jit_assert(strcmp(y.str(), "[0, 22, 204, 0, 28, 210, 0, 34, 216, 0]") == 0);
+    auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
+        Base* base = (Base*)self2;
+        Float x2 = Float::borrow(inputs[0]);
+        Float rv = base->f(x2);
+        jit_var_inc_ref(rv.index());
+
+        outputs[0] = rv.index();
+    };
+
+    for (size_t i = 0; i < 2; ++i) {
+        jit_set_flag(JitFlag::OptimizeCalls, i);
+
+        uint32_t inputs[n_inputs] = { x.index() };
+        uint32_t outputs[n_outputs] = { 0 };
+
+        Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+        symbolic_call<n_callables, n_inputs, n_outputs>(
+            Backend, domain,
+            false, /* symbolic */
+            self.index(), mask.index(),
+            f_call,
+            inputs,
+            outputs);
+
+        Float y = Float::steal(outputs[0]);
+
+        jit_assert(strcmp(y.str(), 
+            "[0, 22, 204, 0, 28, 210, 0, 34, 216, 0]") == 0);
     }
 
     jit_registry_remove(&a1);
     jit_registry_remove(&a2);
 }
+
 
 TEST_BOTH(02_calling_conventions) {
     /* This tests 4 things at once: passing masks, reordering inputs/outputs to
@@ -310,13 +245,39 @@ TEST_BOTH(02_calling_conventions) {
 
     B1 b1; B2 b2; B3 b3;
 
+    const char* domain = "Base";
+    const size_t n_callables    = 3;
+    const size_t n_inputs       = 5;
+    const size_t n_outputs      = 5;
+
     uint32_t i1 = jit_registry_put(Backend, "Base", &b1);
     uint32_t i2 = jit_registry_put(Backend, "Base", &b2);
     uint32_t i3 = jit_registry_put(Backend, "Base", &b3);
     (void) i1; (void) i2; (void) i3;
 
+    auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
+        Base* base  = (Base*)self2;
+        Mask p0     = Mask::borrow(inputs[0]);
+        Float p1    = Float::borrow(inputs[1]);
+        Double p2   = Double::borrow(inputs[2]);
+        Float p3    = Float::borrow(inputs[3]);
+        Mask p4     = Mask::borrow(inputs[4]);
+
+        auto [rv0, rv1, rv2, rv3, rv4] = base->f(p0, p1, p2, p3, p4);
+
+        outputs[0] = rv0.index();
+        outputs[1] = rv1.index();
+        outputs[2] = rv2.index();
+        outputs[3] = rv3.index();
+        outputs[4] = rv4.index();
+
+        for (size_t i = 0; i < 5; ++i) {
+            jit_var_inc_ref(outputs[i]);
+        }
+    };
+
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        jit_set_flag(JitFlag::OptimizeCalls, i);
 
         using BasePtr = Array<Base *>;
         BasePtr self = arange<UInt32>(10) % 3;
@@ -327,24 +288,37 @@ TEST_BOTH(02_calling_conventions) {
         Float p3(56);
         Mask p4(true);
 
-        auto result = vcall(
-            "Base",
-            [](Base *self2, Mask p0, Float p1, Double p2, Float p3, Mask p4) {
-                return self2->f(p0, p1, p2, p3, p4);
-            },
-            self, p0, p1, p2, p3, p4);
+        Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
-        jit_var_schedule(result.template get<0>().index());
-        jit_var_schedule(result.template get<1>().index());
-        jit_var_schedule(result.template get<2>().index());
-        jit_var_schedule(result.template get<3>().index());
-        jit_var_schedule(result.template get<4>().index());
+        uint32_t inputs[n_inputs] = { 
+            p0.index(), p1.index(), p2.index(), p3.index(), p4.index() };
+        uint32_t outputs[n_outputs] = { 0 };
 
-        jit_assert(strcmp(result.template get<0>().str(), "[0, 0, 1, 0, 0, 1, 0, 0, 1, 0]") == 0);
-        jit_assert(strcmp(result.template get<1>().str(), "[0, 12, 13, 0, 12, 13, 0, 12, 13, 0]") == 0);
-        jit_assert(strcmp(result.template get<2>().str(), "[0, 34, 36, 0, 34, 36, 0, 34, 36, 0]") == 0);
-        jit_assert(strcmp(result.template get<3>().str(), "[0, 56, 59, 0, 56, 59, 0, 56, 59, 0]") == 0);
-        jit_assert(strcmp(result.template get<4>().str(), "[0, 1, 0, 0, 1, 0, 0, 1, 0, 0]") == 0);
+        symbolic_call<n_callables, n_inputs, n_outputs>(
+            Backend, domain,
+            false, /* symbolic */
+            self.index(), mask.index(),
+            f_call,
+            inputs,
+            outputs);
+
+        jit_var_schedule(outputs[0]);
+        jit_var_schedule(outputs[1]);
+        jit_var_schedule(outputs[2]);
+        jit_var_schedule(outputs[3]);
+        jit_var_schedule(outputs[4]);
+
+        Mask rv0    = Mask::steal(outputs[0]);
+        Float rv1   = Float::steal(outputs[1]);
+        Double rv2  = Double::steal(outputs[2]);
+        Float rv3   = Float::steal(outputs[3]);
+        Mask rv4    = Mask::steal(outputs[4]);
+
+        jit_assert(strcmp(rv0.str(), "[0, 0, 1, 0, 0, 1, 0, 0, 1, 0]") == 0);
+        jit_assert(strcmp(rv1.str(), "[0, 12, 13, 0, 12, 13, 0, 12, 13, 0]") == 0);
+        jit_assert(strcmp(rv2.str(), "[0, 34, 36, 0, 34, 36, 0, 34, 36, 0]") == 0);
+        jit_assert(strcmp(rv3.str(), "[0, 56, 59, 0, 56, 59, 0, 56, 59, 0]") == 0);
+        jit_assert(strcmp(rv4.str(), "[0, 1, 0, 0, 1, 0, 0, 1, 0, 0]") == 0);
     }
 
     jit_registry_remove(&b1);
@@ -352,76 +326,8 @@ TEST_BOTH(02_calling_conventions) {
     jit_registry_remove(&b3);
 }
 
-TEST_BOTH(03_optimize_away_outputs) {
-    /* This test checks that unreferenced outputs are detected by the virtual
-       function call interface, and that garbage collection propagates from
-       outputs to inputs. It also checks that functions with identical code are
-       collapsed, and that inputs which aren't referenced in the first place
-       get optimized away. */
-    struct Base {
-        virtual tuple<Float, Float> f(Float p1, Float p2, Float& p3) = 0;
-    };
 
-    struct C12 : Base {
-        tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
-            return { p2 + 2.34567f, p1 + 1.f };
-        }
-    };
-
-    struct C3 : Base {
-        tuple<Float, Float> f(Float p1, Float p2, Float& /* p3 */) override {
-            return { p2 + 1.f, p1 + 2.f };
-        }
-    };
-
-    C12 c1; C12 c2; C3 c3;
-    uint32_t i1 = jit_registry_put(Backend, "Base", &c1);
-    uint32_t i2 = jit_registry_put(Backend, "Base", &c2);
-    uint32_t i3 = jit_registry_put(Backend, "Base", &c3);
-    jit_assert(i1 == 1 && i2 == 2 && i3 == 3);
-
-    Float p1 = dr::opaque<Float>(12);
-    Float p2 = dr::opaque<Float>(34);
-    Float p3 = dr::opaque<Float>(56);
-
-    using BasePtr = Array<Base *>;
-    BasePtr self = arange<UInt32>(10) % 4;
-
-    for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
-
-        jit_assert(jit_var_ref(p3.index()) == 1);
-        jit_set_log_level_stderr((LogLevel) 10);
-
-        auto result = vcall(
-            "Base",
-            [](Base *self2, Float p1, Float p2, Float p3) {
-                return self2->f(p1, p2, p3);
-            },
-            self, p1, p2, p3);
-
-        jit_assert(jit_var_ref(p1.index()) == 3);
-        jit_assert(jit_var_ref(p2.index()) == 3);
-
-        // Irrelevant input optimized away
-        jit_assert(jit_var_ref(p3.index()) == 2 - i);
-
-        result.template get<0>() = Float(0);
-
-        jit_assert(jit_var_ref(p1.index()) == 3);
-        jit_assert(jit_var_ref(p2.index()) == 3 - 2*i);
-        jit_assert(jit_var_ref(p3.index()) == 2 - i);
-
-        jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
-                            "[0, 13, 13, 14, 0, 13, 13, 14, 0, 13]") == 0);
-    }
-
-    jit_registry_remove(&c1);
-    jit_registry_remove(&c2);
-    jit_registry_remove(&c3);
-}
-
-TEST_BOTH(04_devirtualize) {
+TEST_BOTH(03_devirtualize) {
     /* This test checks that outputs which produce identical values across
        all instances are moved out of the virtual call interface. */
     struct Base {
@@ -440,13 +346,34 @@ TEST_BOTH(04_devirtualize) {
         }
     };
 
+    const char* domain = "Base";
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 2;
+    const size_t n_outputs      = 3;
+
     D1 d1; D2 d2;
-    uint32_t i1 = jit_registry_put(Backend, "Base", &d1);
-    uint32_t i2 = jit_registry_put(Backend, "Base", &d2);
+    uint32_t i1 = jit_registry_put(Backend, domain, &d1);
+    uint32_t i2 = jit_registry_put(Backend, domain, &d2);
     jit_assert(i1 == 1 && i2 == 2);
 
     using BasePtr = Array<Base *>;
     BasePtr self = arange<UInt32>(10) % 3;
+
+    auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
+        Base* base  = (Base*)self2;
+        Float p1    = Float::borrow(inputs[0]);
+        Float p2    = Float::borrow(inputs[1]);
+
+        auto [rv0, rv1, rv2] = base->f(p1, p2);
+
+        outputs[0] = rv0.index();
+        outputs[1] = rv1.index();
+        outputs[2] = rv2.index();
+
+        for (size_t i = 0; i < 3; ++i) {
+            jit_var_inc_ref(outputs[i]);
+        }
+    };
 
     for (uint32_t k = 0; k < 2; ++k) {
         for (uint32_t i = 0; i < 2; ++i) {
@@ -459,21 +386,28 @@ TEST_BOTH(04_devirtualize) {
                 p2 = dr::opaque<Float>(34);
             }
 
-            jit_set_flag(JitFlag::VCallOptimize, i);
+            jit_set_flag(JitFlag::OptimizeCalls, i);
             uint32_t scope = jit_scope(Backend);
 
             scoped_set_log_level x((LogLevel) 10);
-            auto result = vcall(
-                "Base",
-                [](Base *self2, Float p1, Float p2) {
-                    return self2->f(p1, p2);
-                },
-                self, p1, p2);
+
+            Mask call_mask = Mask::steal(jit_var_bool(Backend, true));
+
+            uint32_t inputs[n_inputs] = { p1.index(), p2.index() };
+            uint32_t outputs[n_outputs] = { 0 };
+
+            symbolic_call<n_callables, n_inputs, n_outputs>(
+                Backend, domain,
+                false, /* symbolic */
+                self.index(), call_mask.index(),
+                f_call,
+                inputs,
+                outputs);
 
             jit_set_scope(Backend, scope + 1);
 
-            Float p1_wrap = Float::steal(jit_var_wrap_vcall(p1.index()));
-            Float p2_wrap = Float::steal(jit_var_wrap_vcall(p2.index()));
+            Float p1_wrap = Float::steal(jit_var_call_input(p1.index()));
+            Float p2_wrap = Float::steal(jit_var_call_input(p2.index()));
 
             Mask mask = neq(self, nullptr),
                  mask_combined = Mask::steal(jit_var_mask_apply(mask.index(), 10));
@@ -484,19 +418,29 @@ TEST_BOTH(04_devirtualize) {
 
             jit_set_scope(Backend, scope + 2);
 
-            jit_assert((result.template get<0>().index() == alt0.index()) == ((i == 1) && (k == 0)));
-            jit_assert((result.template get<1>().index() != alt1.index()));
-            jit_assert((result.template get<2>().index() == alt2.index()) == (i == 1));
+            Float rv0 = Float::steal(outputs[0]);
+            Float rv1 = Float::steal(outputs[1]);
+            Float rv2 = Float::steal(outputs[2]);
 
-            jit_assert((jit_var_state(result.template get<2>().index()) == VarState::Literal) == (i == 1));
+            auto is_call_output = [](uint32_t index) {
+                return strcmp(jit_var_kind_name(index), "call_output") == 0;
+            };
 
-            jit_var_schedule(result.template get<0>().index());
-            jit_var_schedule(result.template get<1>().index());
+            bool literal_input   = k == 0;
+            bool optimize_output = i == 1;
+
+            jit_assert(is_call_output(rv0.index()) != (optimize_output && literal_input));
+            jit_assert(is_call_output(rv1.index()) == true);
+            jit_assert(is_call_output(rv2.index()) != optimize_output);
+
+            jit_var_schedule(rv0.index());
+            jit_var_schedule(rv1.index());
 
             jit_assert(
-                strcmp(jit_var_str(result.template get<0>().index()),
+                strcmp(rv0.str(),
                             "[0, 36, 36, 0, 36, 36, 0, 36, 36, 0]") == 0);
-            jit_assert(strcmp(jit_var_str(result.template get<1>().index()),
+            jit_assert(
+                strcmp(rv1.str(),
                             "[0, 13, 14, 0, 13, 14, 0, 13, 14, 0]") == 0);
         }
     }
@@ -504,7 +448,8 @@ TEST_BOTH(04_devirtualize) {
     jit_registry_remove(&d2);
 }
 
-TEST_BOTH(05_extra_data) {
+
+TEST_BOTH(04_extra_data) {
     using Double = Array<double>;
 
     /// Ensure that evaluated scalar fields in instances can be accessed
@@ -524,10 +469,25 @@ TEST_BOTH(05_extra_data) {
         Float f(Float x) override { return local_1 + Float(Double(x) * local_2); }
     };
 
+    const char* domain = "Base";
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 1;
+    const size_t n_outputs      = 1;
+
     E1 e1; E2 e2;
-    uint32_t i1 = jit_registry_put(Backend, "Base", &e1);
-    uint32_t i2 = jit_registry_put(Backend, "Base", &e2);
+    uint32_t i1 = jit_registry_put(Backend, domain, &e1);
+    uint32_t i2 = jit_registry_put(Backend, domain, &e2);
     jit_assert(i1 == 1 && i2 == 2);
+
+    auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
+        Base* base  = (Base*)self2;
+        Float x    = Float::borrow(inputs[0]);
+
+        auto rv0 = base->f(x);
+
+        outputs[0] = rv0.index();
+        jit_var_inc_ref(outputs[0]);
+    };
 
     using BasePtr = Array<Base *>;
     BasePtr self = arange<UInt32>(10) % 3;
@@ -542,18 +502,32 @@ TEST_BOTH(05_extra_data) {
         }
 
         for (uint32_t i = 0; i < 2; ++i) {
-            jit_set_flag(JitFlag::VCallOptimize, i);
-            Float result = vcall(
-                "Base", [](Base *self2, Float x) { return self2->f(x); }, self,
-                x);
-            jit_assert(strcmp(result.str(), "[0, 9, 13, 0, 21, 28, 0, 33, 43, 0]") == 0);
+            jit_set_flag(JitFlag::OptimizeCalls, i);
+
+            Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+            uint32_t inputs[n_inputs] = { x.index() };
+            uint32_t outputs[n_outputs] = { 0 };
+
+            symbolic_call<n_callables, n_inputs, n_outputs>(
+                Backend, domain,
+                false, /* symbolic */
+                self.index(), mask.index(),
+                f_call,
+                inputs,
+                outputs);
+
+            Float result = Float::steal(outputs[0]);
+            jit_assert(strcmp(result.str(), 
+                "[0, 9, 13, 0, 21, 28, 0, 33, 43, 0]") == 0);
         }
     }
     jit_registry_remove(&e1);
     jit_registry_remove(&e2);
 }
 
-TEST_BOTH_FP32(06_side_effects) {
+
+TEST_BOTH_FP32(05_side_effects) {
     /*  This tests three things:
        - side effects in virtual functions
        - functions without inputs/outputs
@@ -582,15 +556,33 @@ TEST_BOTH_FP32(06_side_effects) {
     using BasePtr = Array<Base *>;
     BasePtr self = arange<UInt32>(11) % 3;
 
+    const char* domain = "Base";
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 0;
+    const size_t n_outputs      = 0;
+
+    auto f_call = [](void *self, uint32_t* /*inputs*/, uint32_t* /*outputs*/) {
+        ((Base*)self)->go();
+    };
+
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        jit_set_flag(JitFlag::OptimizeCalls, i);
 
         F1 f1; F2 f2;
-        uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
-        uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
+        uint32_t i1 = jit_registry_put(Backend, domain, &f1);
+        uint32_t i2 = jit_registry_put(Backend, domain, &f2);
         jit_assert(i1 == 1 && i2 == 2);
 
-        vcall("Base", [](Base *self2) { self2->go(); }, self);
+        Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+        symbolic_call<n_callables, n_inputs, n_outputs>(
+            Backend, domain,
+            false, /* symbolic */
+            self.index(), mask.index(),
+            f_call,
+            nullptr,
+            nullptr);
+
         jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
         jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
 
@@ -599,7 +591,8 @@ TEST_BOTH_FP32(06_side_effects) {
     }
 }
 
-TEST_BOTH_FP32(07_side_effects_only_once) {
+
+TEST_BOTH_FP32(06_side_effects_only_once) {
     /* This tests ensures that side effects baked into a function only happen
        once, even when that function is evaluated multiple times. */
 
@@ -626,17 +619,46 @@ TEST_BOTH_FP32(07_side_effects_only_once) {
     using BasePtr = Array<Base *>;
     BasePtr self = arange<UInt32>(11) % 3;
 
+    const char* domain = "Base";
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 0;
+    const size_t n_outputs      = 2;
+
+    auto f_call = [](void *self2, uint32_t* /*inputs*/, uint32_t* outputs) {
+        Base* base  = (Base*)self2;
+
+        auto [rv0, rv1] = base->f();
+
+        outputs[0] = rv0.index();
+        outputs[1] = rv1.index();
+        for (size_t i = 0; i < 2; ++i) {
+            jit_var_inc_ref(outputs[i]);
+        }
+    };
+
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        jit_set_flag(JitFlag::OptimizeCalls, i);
 
         G1 g1; G2 g2;
-        uint32_t i1 = jit_registry_put(Backend, "Base", &g1);
-        uint32_t i2 = jit_registry_put(Backend, "Base", &g2);
+        uint32_t i1 = jit_registry_put(Backend, domain, &g1);
+        uint32_t i2 = jit_registry_put(Backend, domain, &g2);
         jit_assert(i1 == 1 && i2 == 2);
 
-        auto result = vcall("Base", [](Base *self2) { return self2->f(); }, self);
-        Float f1 = result.template get<0>();
-        Float f2 = result.template get<1>();
+        uint32_t outputs[n_outputs] = { 0 };
+
+        Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+        symbolic_call<n_callables, n_inputs, n_outputs>(
+            Backend, domain,
+            false, /* symbolic */
+            self.index(), mask.index(),
+            f_call,
+            nullptr,
+            outputs);
+
+        Float f1 = Float::steal(outputs[0]);
+        Float f2 = Float::steal(outputs[1]);
+
         jit_assert(strcmp(f1.str(), "[0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1]") == 0);
         jit_assert(strcmp(g1.buffer.str(), "[0, 4, 0, 0, 0]") == 0);
         jit_assert(strcmp(g2.buffer.str(), "[0, 0, 3, 0, 0]") == 0);
@@ -649,7 +671,8 @@ TEST_BOTH_FP32(07_side_effects_only_once) {
     }
 }
 
-TEST_BOTH(08_multiple_calls) {
+
+TEST_BOTH(07_multiple_calls) {
     /* This tests ensures that a function can be called several times,
        reusing the generated code (at least in the function-based variant).
        This reuse cannot be verified automatically via assertions, you must
@@ -672,21 +695,58 @@ TEST_BOTH(08_multiple_calls) {
         }
     };
 
+    const char* domain = "Base";
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 1;
+    const size_t n_outputs      = 1;
+
     using BasePtr = Array<Base *>;
     BasePtr self = arange<UInt32>(10) % 3;
     Float x = opaque<Float>(10, 1);
 
     H1 h1; H2 h2;
-    uint32_t i1 = jit_registry_put(Backend, "Base", &h1);
-    uint32_t i2 = jit_registry_put(Backend, "Base", &h2);
+    uint32_t i1 = jit_registry_put(Backend, domain, &h1);
+    uint32_t i2 = jit_registry_put(Backend, domain, &h2);
     jit_assert(i1 == 1 && i2 == 2);
 
+    auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
+        Base* base  = (Base*)self2;
+        Float x     = Float::borrow(inputs[0]);
+
+        Float rv0 = base->f(x);
+
+        outputs[0] = rv0.index();
+        jit_var_inc_ref(outputs[0]);
+    };
 
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        jit_set_flag(JitFlag::OptimizeCalls, i);
 
-        Float y = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, x);
-        Float z = vcall("Base", [](Base *self2, Float x2) { return self2->f(x2); }, self, y);
+        Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+        uint32_t inputs[n_inputs] = { x.index() };
+        uint32_t outputs[n_outputs] = { 0 };
+
+        symbolic_call<n_callables, n_inputs, n_outputs>(
+            Backend, domain,
+            false, /* symbolic */
+            self.index(), mask.index(),
+            f_call,
+            inputs,
+            outputs);
+
+        Float y = Float::steal(outputs[0]);
+        inputs[0] = y.index();
+
+        symbolic_call<n_callables, n_inputs, n_outputs>(
+            Backend, domain,
+            false, /* symbolic */
+            self.index(), mask.index(),
+            f_call,
+            inputs,
+            outputs);
+
+        Float z = Float::steal(outputs[0]);
 
         jit_assert(strcmp(z.str(), "[0, 12, 14, 0, 12, 14, 0, 12, 14, 0]") == 0);
     }
@@ -695,7 +755,8 @@ TEST_BOTH(08_multiple_calls) {
     jit_registry_remove(&h2);
 }
 
-TEST_BOTH(09_big) {
+
+TEST_BOTH(08_big) {
     /* This performs two vcalls with different numbers of instances, and
        relatively many of them. This tests the various tables, offset
        calculations, binary search trees, etc. */
@@ -722,14 +783,19 @@ TEST_BOTH(09_big) {
     (void) i1;
     (void) i2;
 
+    const char* domain1 = "Base1";
+    const char* domain2 = "Base2";
+    const size_t n_inputs        = 0;
+    const size_t n_outputs       = 1;
+
     for (int i = 0; i < n1; ++i) {
         v1[i].v = (Float) (float) i;
-        i1[i] = jit_registry_put(Backend, "Base1", &v1[i]);
+        i1[i] = jit_registry_put(Backend, domain1, &v1[i]);
     }
 
     for (int i = 0; i < n2; ++i) {
         v2[i].v = (Float) (100.f + (float) i);
-        i2[i] = jit_registry_put(Backend, "Base2", &v2[i]);
+        i2[i] = jit_registry_put(Backend, domain2, &v2[i]);
     }
 
     using Base1Ptr = Array<Base1 *>;
@@ -740,11 +806,51 @@ TEST_BOTH(09_big) {
     self1 = select(self1 <= n1, self1, 0);
     self2 = select(self2 <= n2, self2, 0);
 
-    for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+    auto f_call1 = [](void *self2, uint32_t* /*inputs*/, uint32_t* outputs) {
+        Base1* base  = (Base1*)self2;
 
-        Float x = vcall("Base1", [](Base1 *self_) { return self_->f(); }, Base1Ptr(self1));
-        Float y = vcall("Base2", [](Base2 *self_) { return self_->f(); }, Base2Ptr(self2));
+        Float rv0 = base->f();
+
+        outputs[0] = rv0.index();
+        jit_var_inc_ref(outputs[0]);
+    };
+
+    auto f_call2 = [](void *self2, uint32_t* /*inputs*/, uint32_t* outputs) {
+        Base2* base  = (Base2*)self2;
+
+        Float rv0 = base->f();
+
+        outputs[0] = rv0.index();
+        jit_var_inc_ref(outputs[0]);
+    };
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        jit_set_flag(JitFlag::OptimizeCalls, i);
+
+        Mask mask1 = Mask::steal(jit_var_bool(Backend, true));
+        Mask mask2 = Mask::steal(jit_var_bool(Backend, true));
+
+        uint32_t outputs1[n_outputs] = { 0 };
+        uint32_t outputs2[n_outputs] = { 0 };
+
+        symbolic_call<n1, n_inputs, n_outputs>(
+            Backend, domain1,
+            false, /* symbolic */
+            self1.index(), mask1.index(),
+            f_call1,
+            nullptr,
+            outputs1);
+
+        symbolic_call<n2, n_inputs, n_outputs>(
+            Backend, domain2,
+            false, /* symbolic */
+            self2.index(), mask2.index(),
+            f_call2,
+            nullptr,
+            outputs2);
+
+        Float x = Float::steal(outputs1[0]);
+        Float y = Float::steal(outputs2[0]);
 
         jit_var_schedule(x.index());
         jit_var_schedule(y.index());
@@ -769,6 +875,7 @@ TEST_BOTH(09_big) {
         jit_registry_remove(&v2[i]);
 }
 
+
 TEST_BOTH(09_self) {
     struct Base;
     using BasePtr = Array<Base *>;
@@ -776,25 +883,48 @@ TEST_BOTH(09_self) {
     struct Base { virtual Array<Base *> f() = 0; };
     struct I : Base { BasePtr f() {
         BasePtr result = this;
-        // jit_assert(strstr(jit_var_get_stmt(result.index()), "self")); /// XXX
         return result;
     } };
 
+    const char* domain = "Base";
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 0;
+    const size_t n_outputs      = 1;
+
     I i1, i2;
-    uint32_t i1_id = jit_registry_put(Backend, "Base", &i1);
-    uint32_t i2_id = jit_registry_put(Backend, "Base", &i2);
+    uint32_t i1_id = jit_registry_put(Backend, domain, &i1);
+    uint32_t i2_id = jit_registry_put(Backend, domain, &i2);
 
     UInt32 self(i1_id, i2_id);
-    UInt32 y = vcall(
-        "Base",
-        [](Base *self_) { return self_->f(); },
-        BasePtr(self));
+
+    auto f_call = [](void *self2, uint32_t* /*inputs*/, uint32_t* outputs) {
+        Base* base  = (Base*)self2;
+
+        UInt32 rv0 = base->f();
+        outputs[0] = rv0.index();
+        jit_var_inc_ref(outputs[0]);
+    };
+
+    uint32_t outputs[n_outputs] = { 0 };
+
+    Mask mask = Mask::steal(jit_var_mask_default(Backend, self.size()));
+
+    symbolic_call<n_callables, n_inputs, n_outputs>(
+        Backend, domain,
+        false, /* symbolic */
+        self.index(), mask.index(),
+        f_call,
+        nullptr,
+        outputs);
+
+    UInt32 y = UInt32::steal(outputs[0]);
 
     jit_assert(strcmp(y.str(), "[1, 2]") == 0);
 
     jit_registry_remove(&i1);
     jit_registry_remove(&i2);
 }
+
 
 TEST_BOTH(10_recursion) {
     struct Base1 { virtual Float f(const Float &x) = 0; };
@@ -809,8 +939,36 @@ TEST_BOTH(10_recursion) {
     };
 
     struct I2 : Base2 {
+
         Float g(const Base1Ptr &ptr, const Float &x) override {
-            return vcall("Base1", [&](Base1 *self_, Float x_) { return self_->f(x_); }, ptr, x) + 1;
+
+            const size_t n_callables    = 2;
+            const size_t n_inputs       = 1;
+            const size_t n_outputs      = 1;
+
+            auto f_call = [](void *self1, uint32_t* inputs, uint32_t* outputs) {
+                Base1* base = (Base1*)self1;
+                Float x     = Float::borrow(inputs[0]);
+
+                Float rv0 = base->f(x);
+                outputs[0] = rv0.index();
+                jit_var_inc_ref(outputs[0]);
+            };
+
+            uint32_t inputs[n_inputs] = { x.index() };
+            uint32_t outputs[n_outputs] = { 0 };
+
+            Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+            symbolic_call<n_callables, n_inputs, n_outputs>(
+                Backend, "Base1",
+                true, /* symbolic */
+                ptr.index(), mask.index(),
+                f_call,
+                inputs,
+                outputs);
+
+            return Float::steal(outputs[0]) + 1;
         }
     };
 
@@ -823,16 +981,38 @@ TEST_BOTH(10_recursion) {
     uint32_t i21_id = jit_registry_put(Backend, "Base2", &i21);
     uint32_t i22_id = jit_registry_put(Backend, "Base2", &i22);
 
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 2;
+    const size_t n_outputs      = 1;
+
+    auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
+        Base2* base     = (Base2*)self2;
+        UInt32 self1    = UInt32::borrow(inputs[0]);
+        Float x         = Float::borrow(inputs[1]);
+
+        Float rv0 = base->g(self1, x);
+        outputs[0] = rv0.index();
+        jit_var_inc_ref(outputs[0]);
+    };
+
     UInt32 self1(i11_id, i12_id);
     UInt32 self2(i21_id, i22_id);
     Float x(3.f, 5.f);
 
-    Float y = vcall(
-        "Base2",
-        [](Base2 *self_, const Base1Ptr &ptr_, const Float &x_) {
-            return self_->g(ptr_, x_);
-        },
-        Base2Ptr(self2), Base1Ptr(self1), x);
+    uint32_t inputs[n_inputs] = { self1.index(), x.index() };
+    uint32_t outputs[n_outputs] = { 0 };
+
+    Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+    symbolic_call<n_callables, n_inputs, n_outputs>(
+        Backend, "Base2",
+        false, /* symbolic */
+        self2.index(), mask.index(),
+        f_call,
+        inputs,
+        outputs);
+
+    Float y = Float::steal(outputs[0]);
 
     jit_assert(strcmp(y.str(), "[7, 16]") == 0);
 
@@ -841,6 +1021,7 @@ TEST_BOTH(10_recursion) {
     jit_registry_remove(&i21);
     jit_registry_remove(&i22);
 }
+
 
 TEST_BOTH(11_recursion_with_local) {
     struct Base1 { virtual Float f(const Float &x) = 0; };
@@ -856,7 +1037,34 @@ TEST_BOTH(11_recursion_with_local) {
 
     struct I2 : Base2 {
         Float g(const Base1Ptr &ptr, const Float &x) override {
-            return vcall("Base1", [&](Base1 *self_, Float x_) { return self_->f(x_); }, ptr, x) + 1;
+
+            const size_t n_callables    = 2;
+            const size_t n_inputs       = 1;
+            const size_t n_outputs      = 1;
+
+            auto f_call = [](void *self1, uint32_t* inputs, uint32_t* outputs) {
+                Base1* base = (Base1*)self1;
+                Float x     = Float::borrow(inputs[0]);
+
+                Float rv0 = base->f(x);
+                outputs[0] = rv0.index();
+                jit_var_inc_ref(outputs[0]);
+            };
+
+            uint32_t inputs[n_inputs] = { x.index() };
+            uint32_t outputs[n_outputs] = { 0 };
+
+            Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+            symbolic_call<n_callables, n_inputs, n_outputs>(
+                Backend, "Base1",
+                true, /* symbolic */
+                ptr.index(), mask.index(),
+                f_call,
+                inputs,
+                outputs);
+
+            return Float::steal(outputs[0]) + 1;
         }
     };
 
@@ -869,16 +1077,38 @@ TEST_BOTH(11_recursion_with_local) {
     uint32_t i21_id = jit_registry_put(Backend, "Base2", &i21);
     uint32_t i22_id = jit_registry_put(Backend, "Base2", &i22);
 
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 2;
+    const size_t n_outputs      = 1;
+
+    auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
+        Base2* base     = (Base2*)self2;
+        UInt32 self1    = UInt32::borrow(inputs[0]);
+        Float x         = Float::borrow(inputs[1]);
+
+        Float rv0 = base->g(self1, x);
+        outputs[0] = rv0.index();
+        jit_var_inc_ref(outputs[0]);
+    };
+
     UInt32 self1(i11_id, i12_id);
     UInt32 self2(i21_id, i22_id);
     Float x(3.f, 5.f);
 
-    Float y = vcall(
-        "Base2",
-        [](Base2 *self_, const Base1Ptr &ptr_, const Float &x_) {
-            return self_->g(ptr_, x_);
-        },
-        Base2Ptr(self2), Base1Ptr(self1), x);
+    uint32_t inputs[n_inputs] = { self1.index(), x.index() };
+    uint32_t outputs[n_outputs] = { 0 };
+
+    Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+    symbolic_call<n_callables, n_inputs, n_outputs>(
+        Backend, "Base2",
+        false, /* symbolic */
+        self2.index(), mask.index(),
+        f_call,
+        inputs,
+        outputs);
+
+    Float y = Float::steal(outputs[0]);
 
     jit_assert(strcmp(y.str(), "[7, 16]") == 0);
 
@@ -897,9 +1127,28 @@ TEST_BOTH_FP32(12_nested_with_side_effects) {
 
     struct F1 : Base {
         Float buffer = zeros<Float>(5);
+        BasePtr self = full<UInt32>(1, 11);
+
         void f() override {
-            BasePtr self = full<UInt32>(1, 11);
-            vcall("Base", [](Base *self2) { self2->g(); }, self);
+
+            const size_t n_callables    = 2;
+            const size_t n_inputs       = 0;
+            const size_t n_outputs      = 0;
+
+            Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+            auto f_call = [](void *self, uint32_t* /*inputs*/, uint32_t* /*outputs*/) {
+                Base* base = (Base*)self;
+                base->g();
+            };
+
+            symbolic_call<n_callables, n_inputs, n_outputs>(
+                Backend, "Base",
+                true, /* symbolic */
+                self.index(), mask.index(),
+                f_call,
+                nullptr,
+                nullptr);
         }
 
         void g() override {
@@ -919,15 +1168,36 @@ TEST_BOTH_FP32(12_nested_with_side_effects) {
 
     BasePtr self = arange<UInt32>(11) % 3;
 
+    auto f_call = [](void *self, uint32_t* /*inputs*/, uint32_t* /*outputs*/) {
+        Base* base = (Base*)self;
+        base->f();
+    };
+
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 0;
+    const size_t n_outputs      = 0;
+
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        jit_set_flag(JitFlag::OptimizeCalls, i);
 
         F1 f1; F2 f2;
         uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
         uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
         jit_assert(i1 == 1 && i2 == 2);
 
-        vcall("Base", [](Base *self2) { self2->f(); }, self);
+        Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+        symbolic_call<n_callables, n_inputs, n_outputs>(
+            Backend, "Base",
+            false, /* symbolic */
+            self.index(), mask.index(),
+            f_call,
+            nullptr,
+            nullptr);
+
+        jit_var_schedule(f1.buffer.index());
+        jit_var_schedule(f2.buffer.index());
+
         jit_assert(strcmp(f1.buffer.str(), "[0, 4, 0, 8, 0]") == 0);
         jit_assert(strcmp(f2.buffer.str(), "[0, 1, 5, 3]") == 0);
 
@@ -935,6 +1205,7 @@ TEST_BOTH_FP32(12_nested_with_side_effects) {
         jit_registry_remove(&f2);
     }
 }
+
 
 TEST_BOTH(13_load_bool_data) {
     struct Base {
@@ -960,17 +1231,40 @@ TEST_BOTH(13_load_bool_data) {
         }
     };
 
+    auto f_call = [](void *self2, uint32_t* /*inputs*/, uint32_t* outputs) {
+        Base* base  = (Base*)self2;
+
+        Float rv0 = base->f();
+        outputs[0] = rv0.index();
+        jit_var_inc_ref(outputs[0]);
+    };
+
+    const size_t n_callables    = 2;
+    const size_t n_inputs       = 0;
+    const size_t n_outputs      = 1;
+
     BasePtr self = arange<UInt32>(5) % 3;
     for (uint32_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::VCallOptimize, i);
+        jit_set_flag(JitFlag::OptimizeCalls, i);
 
         F1 f1; F2 f2;
         uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
         uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
         jit_assert(i1 == 1 && i2 == 2);
 
-        Float result = vcall(
-            "Base", [](Base *self2) { return self2->f(); }, self);
+        uint32_t outputs[n_outputs] = { 0 };
+
+        Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+        symbolic_call<n_callables, n_inputs, n_outputs>(
+            Backend, "Base",
+            false, /* symbolic */
+            self.index(), mask.index(),
+            f_call,
+            nullptr,
+            outputs);
+
+        Float result = Float::steal(outputs[0]);
 
         jit_var_schedule(result.index());
         jit_assert(strcmp(result.str(), "[0, 1, 4, 0, 1]") == 0);

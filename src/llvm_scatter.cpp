@@ -55,18 +55,23 @@ static const char *jitc_llvm_atomicrmw_name(VarType vt, ReduceOp op) {
               (int) op, (int) vt);
 }
 
-static drjit::tuple<const char *, const char *, const char *, const char *>
+static drjit::tuple<const char *, const char *, const char *, const char *, const char*>
 jitc_llvm_vector_reduce_config(VarType vt, ReduceOp op) {
     const char *name = nullptr,
                *modifier = "",
                *identity = "",
-               *identity_type = "";
+               *identity_type = "",
+               *version ="";
 
     if (jitc_is_float(vt)) {
+
         switch (op) {
             case ReduceOp::Add:
                 name = "fadd";
                 modifier = "reassoc ";
+
+                if (jitc_llvm_version_major < 12)
+                    version = ".v2";
 
                 switch (vt) {
                     case VarType::Float16:
@@ -136,7 +141,7 @@ jitc_llvm_vector_reduce_config(VarType vt, ReduceOp op) {
                   "supported by the LLVM backend (op %i, vt %i)",
                   (int) op, (int) vt);
 
-    return {name, modifier, identity, identity_type};
+    return {name, modifier, identity, identity_type ,version};
 }
 
 static const char *reduce_op_name[(int) ReduceOp::Count] = {
@@ -224,10 +229,11 @@ static const char *append_reduce_op_local(VarType vt, ReduceOp op, const Variabl
                *cmp_op = jitc_is_float(v) ? "fcmp one" : "icmp ne";
 
     auto [vector_reduce_name, vector_reduce_modifier, vector_reduce_identity,
-          vector_reduce_identity_type] = jitc_llvm_vector_reduce_config(vt, op);
+          vector_reduce_identity_type, vector_reduce_version] 
+            = jitc_llvm_vector_reduce_config(vt, op);
 
-    fmt_intrinsic("declare $t @llvm.vector.reduce.$s.v$w$h($s$T)",
-                  v, vector_reduce_name, v, vector_reduce_identity_type, v);
+    fmt_intrinsic("declare $t @llvm$e.vector.reduce$s.$s.v$w$h($s$T)",
+                  v, vector_reduce_version, vector_reduce_name, v, vector_reduce_identity_type, v);
 
     Variable id_v{};
     id_v.type = (uint32_t) vt;
@@ -279,7 +285,7 @@ static const char *append_reduce_op_local(VarType vt, ReduceOp op, const Variabl
         "    %ptrlo_8 = shufflevector <$w x i32> %ptrlo_7, <$w x i32> undef, <$w x i32> $z\n"
         "    %ptr_diff = icmp ne <$w x i32> %ptrlo_8, %ptrlo_3\n"
         "    %red_in = select <$w x i1> %ptr_diff, $T %identity_1, $T %value\n"
-        "    %red_out = call $s$t @llvm.vector.reduce.$s.v$w$h($s$T %red_in)\n"
+        "    %red_out = call $s$t @llvm$e.vector.reduce$s.$s.v$w$h($s$T %red_in)\n"
         "    atomicrmw $s $p %ptr_i, $t %red_out monotonic\n"
         "    %active_next = and <$w x i1> %active, %ptr_diff\n"
         "    br label %loop_suffix\n\n"
@@ -315,7 +321,7 @@ static const char *append_reduce_op_local(VarType vt, ReduceOp op, const Variabl
         v,
         shiftamt,
         v, v,
-        vector_reduce_modifier, v, vector_reduce_name, v, vector_reduce_identity, v,
+        vector_reduce_modifier, v, vector_reduce_version, vector_reduce_name, v, vector_reduce_identity, v,
         atomicrmw_name, v, v
     );
 
@@ -332,10 +338,11 @@ static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Va
 
 
     auto [vector_reduce_name, vector_reduce_modifier, vector_reduce_identity,
-          vector_reduce_identity_type] = jitc_llvm_vector_reduce_config(vt, op);
+          vector_reduce_identity_type, vector_reduce_version] 
+            = jitc_llvm_vector_reduce_config(vt, op);
 
-    fmt_intrinsic("declare $t @llvm.vector.reduce.$s.v$w$h($s$T)",
-                  v, vector_reduce_name, v, vector_reduce_identity_type, v);
+    fmt_intrinsic("declare $t @llvm$e.vector.reduce$s.$s.v$w$h($s$T)",
+                  v, vector_reduce_version, vector_reduce_name, v, vector_reduce_identity_type, v);
 
     bool is_float = jitc_is_float(v),
          is_sint = jitc_is_sint(v);
@@ -449,7 +456,7 @@ static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Va
         "    %ptrlo_8 = shufflevector <$w x i32> %ptrlo_7, <$w x i32> undef, <$w x i32> $z\n"
         "    %ptr_diff = icmp ne <$w x i32> %ptrlo_8, %ptrlo_3\n"
         "    %red_in = select <$w x i1> %ptr_diff, $T %identity_1, $T %value\n"
-        "    %red_out = call $s$t @llvm.vector.reduce.$s.v$w$h($s$T %red_in)\n"
+        "    %red_out = call $s$t @llvm$e.vector.reduce$s.$s.v$w$h($s$T %red_in)\n"
         "    %before = load $t, $p %ptr_i, align $a\n"
         "    %after = $s\n"
         "    store $t %after, $p %ptr_i, align $a\n"
@@ -487,7 +494,7 @@ static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Va
         v,
         shiftamt,
         v, v,
-        vector_reduce_modifier, v, vector_reduce_name, v, vector_reduce_identity, v,
+        vector_reduce_modifier, v, vector_reduce_version, vector_reduce_name, v, vector_reduce_identity, v,
 
         v, v, v,
         scalar_op,
@@ -546,7 +553,7 @@ void jitc_llvm_render_scatter_inc(Variable *v, const Variable *ptr,
         v, v, v, mask);
 
     fmt_intrinsic("declare i32 @llvm.cttz.i32(i32, i1)");
-    fmt_intrinsic("declare i64 @llvm.vector.reduce.umax.v$wi64(<$w x i64>)");
+    fmt_intrinsic("declare i64 @llvm$e.vector.reduce.umax.v$wi64(<$w x i64>)");
 
     fmt_intrinsic(
         "define internal fastcc <$w x i32> @reduce_inc_u32(<$w x {i32*}> %ptrs_in, <$w x i1> %active_in) #0 ${\n"
@@ -557,7 +564,7 @@ void jitc_llvm_render_scatter_inc(Variable *v, const Variable *ptr,
         "L1:\n"
         "    %ptrs = phi <$w x i64> [ %ptrs_start_1, %L0 ], [ %ptrs_next, %L4 ]\n"
         "    %out = phi <$w x i32> [ $z, %L0 ], [ %out_next, %L4 ]\n"
-        "    %ptr = call i64 @llvm.vector.reduce.umax.v$wi64(<$w x i64> %ptrs)\n"
+        "    %ptr = call i64 @llvm$e.vector.reduce.umax.v$wi64(<$w x i64> %ptrs)\n"
         "    %done = icmp eq i64 %ptr, 0\n"
         "    br i1 %done, label %L5, label %L2\n\n"
         ""
