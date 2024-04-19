@@ -124,7 +124,8 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
         VarType vt = (VarType) v_t->type;
 
         storage += type_size[(int) vt];
-        if (i_t == i_f || v_f->is_dirty()) {
+        if (i_t == i_f || v_f->is_dirty() ||
+            (v_f->is_literal() && v_t->is_literal() && v_f->literal == v_t->literal)) {
             jitc_var_inc_ref(i_f, v_f);
             rv_out[i] = i_f;
             cd->indices_out.emplace_back(0, 0);
