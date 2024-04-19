@@ -8,6 +8,7 @@
 */
 
 #include "internal.h"
+#include "record_ts.h"
 #include "var.h"
 #include "eval.h"
 #include "log.h"
@@ -1460,4 +1461,27 @@ uint32_t jit_array_write(uint32_t target, uint32_t offset, uint32_t value, uint3
 size_t jit_array_length(uint32_t index) {
     lock_guard guard(state.lock);
     return jitc_array_length(index);
+}
+    
+void jit_record_start(JitBackend backend, const uint32_t *inputs,
+                      uint32_t n_inputs) {
+    lock_guard guard(state.lock);
+    return jitc_record_start(backend, inputs, n_inputs);
+}
+
+RecordThreadState *jit_record_stop(JitBackend backend, const uint32_t *outputs,
+                                   uint32_t n_outputs) {
+    lock_guard guard(state.lock);
+    return jitc_record_stop(backend, outputs, n_outputs);
+}
+
+void jit_record_replay(RecordThreadState *ts, const uint32_t *inputs,
+                       uint32_t *outputs) {
+    lock_guard guard(state.lock);
+    return ts->replay(inputs, outputs);
+}
+
+void jit_record_destroy(RecordThreadState *ts){
+    lock_guard guard(state.lock);
+    delete ts;
 }
