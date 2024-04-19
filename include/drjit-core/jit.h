@@ -2413,6 +2413,7 @@ extern JIT_EXPORT uint32_t jit_array_write(uint32_t target, uint32_t offset,
  */
 extern JIT_EXPORT uint32_t jit_array_read(uint32_t source, uint32_t offset,
                                           uint32_t mask);
+extern JIT_EXPORT void jitc_test_record(JitBackend backend);
 
 #if defined(__cplusplus)
 }
