@@ -154,7 +154,7 @@ struct RecordThreadState: ThreadState{
 
     ~RecordThreadState(){}
 
-    std::vector<uint32_t> replay(uint32_t *replay_input, uint32_t n_inputs){
+    void replay(const uint32_t *replay_input, uint32_t *outputs){
 
         // This struct holds the data and tracks the size of varaibles, 
         // used during replay.
@@ -168,7 +168,7 @@ struct RecordThreadState: ThreadState{
         std::vector<Task*> scheduled_tasks;
 
         // Populate with input variables
-        for (uint32_t i = 0; i < n_inputs; ++i){
+        for (uint32_t i = 0; i < this->inputs.size(); ++i){
             Variable* input_variable = jitc_var(replay_input[i]);
             ReplayVariable &replay_variable = variables[this->inputs[i]];
             replay_variable.size = input_variable->size;
@@ -186,7 +186,7 @@ struct RecordThreadState: ThreadState{
                     
                     if (backend == JitBackend::CUDA) {
                         uintptr_t size = 0;
-                        memcpy(&size, &op.size, sizeof(uint32_t));
+                        std::memcpy(&size, &op.size, sizeof(uint32_t));
                         kernel_params.push_back((void *) size);
                     } else {
                         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
@@ -239,8 +239,6 @@ struct RecordThreadState: ThreadState{
             }
         }
 
-        std::vector<uint32_t> output_variables;
-
         for(uint32_t i = 0; i < this->outputs.size(); ++i){
             uint32_t index = this->outputs[i];
             ReplayVariable &rv = variables[index];
@@ -250,9 +248,8 @@ struct RecordThreadState: ThreadState{
             v.size = rv.size;
             v.data = rv.data;
             v.backend = (uint32_t) this->backend;
-            output_variables.push_back(jitc_var_new(v));
+            outputs[i] = jitc_var_new(v);
         }
-        return output_variables;
     }
 
     void set_input(void *input){
@@ -298,8 +295,8 @@ private:
 
 };
 
+void jitc_record_start(JitBackend backend, const uint32_t *inputs,
+                       uint32_t n_inputs);
 
-void jitc_record_start(JitBackend backend, uint32_t *inputs, size_t n_inputs);
-RecordThreadState *jitc_record_stop(JitBackend backend, uint32_t *outputs, size_t n_outputs);
-
-void jitc_test_record(JitBackend backend);
+RecordThreadState *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
+                                    uint32_t n_outputs);
