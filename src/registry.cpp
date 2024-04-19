@@ -114,7 +114,7 @@ void jitc_registry_remove(const void *ptr) {
         jitc_raise("jit_registry_remove(ptr=%p): pointer is not registered!", ptr);
 
     ReverseKey rk = it->second;
-    r.rev_map.erase((void *) ptr, ptr_hash);
+    r.rev_map.erase_fast(it);
 
     Domain &domain = r.domains[rk.domain_id];
     domain.free_pq.push(rk.index);

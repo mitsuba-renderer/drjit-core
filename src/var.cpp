@@ -433,7 +433,7 @@ void jitc_lvn_drop(uint32_t index, const Variable *v) {
     LVNMap &cache = state.lvn_map;
     LVNMap::iterator it = cache.find(key, hash);
     if (it != cache.end() && it.value() == index)
-        cache.erase(key, hash);
+        cache.erase_fast(it);
 }
 
 /// Register a variable with cache used for common subexpression elimination
