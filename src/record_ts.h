@@ -3,6 +3,7 @@
 #include "drjit-core/jit.h"
 #include "internal.h"
 #include "log.h"
+#include "var.h"
 #include <cstdint>
 
 // HashMap used to deduplicate variables
@@ -16,8 +17,14 @@ struct Operation{
     OpType type;
     // Indices into the dependencies vector
     std::pair<uint32_t, uint32_t> dependency_range;
+    // Kernel hash if a kernel was launched
+    Kernel kernel;
+    size_t size;
 };
 
+struct RecordVariable{
+    VarType type;
+};
 
 struct RecordThreadState: ThreadState{
 
@@ -27,16 +34,24 @@ struct RecordThreadState: ThreadState{
         this->event = internal->event;
         this->sync_stream_event = internal->sync_stream_event;
         this->device = internal->device;
-        this->compute_capability = compute_capability;
+        this->compute_capability = internal->compute_capability;
         this->ptx_version = internal->ptx_version;
         this->memory_pool = internal->memory_pool;
+        
+        this->backend = internal->backend;
+        this->scope = internal->scope;
+        this->call_self_value = internal->call_self_value;
+        this->call_self_index = internal->call_self_index;
 
 #if defined(DRJIT_ENABLE_OPTIX)
         this->optix_pipeline = internal->optix_pipeline;
         this->optix_sbt = internal->optix_sbt;
 #endif
 
+        this->internal = internal;
     };
+
+    
     
     Task *launch(Kernel kernel, uint32_t size,
                  std::vector<void *> *kernel_params) override{
@@ -53,7 +68,9 @@ struct RecordThreadState: ThreadState{
 
         this->operations.push_back(Operation{
             /*type=*/OpType::KernelLaunch,
-            /*dependency_range=*/std::pair(start, end)
+            /*dependency_range=*/std::pair(start, end),
+            /*kernel=*/kernel,
+            /*size=*/size,
         });
         
         return this->internal->launch(kernel, size, kernel_params);
@@ -137,20 +154,127 @@ struct RecordThreadState: ThreadState{
 
     ~RecordThreadState(){}
 
-    void replay(std::vector<void *> &input){
+    std::vector<uint32_t> replay(uint32_t *replay_input, uint32_t n_inputs){
+
+        // This struct holds the data and tracks the size of varaibles, 
+        // used during replay.
+        struct ReplayVariable{
+            void *data;
+            uint32_t size;
+        };
         
+        std::vector<ReplayVariable> variables(this->variables.size());
+        std::vector<void *> kernel_params;
+        std::vector<Task*> scheduled_tasks;
+
+        // Populate with input variables
+        for (uint32_t i = 0; i < n_inputs; ++i){
+            Variable* input_variable = jitc_var(replay_input[i]);
+            ReplayVariable &replay_variable = variables[this->inputs[i]];
+            replay_variable.size = input_variable->size;
+            replay_variable.data = input_variable->data;
+        }
+
+        // Execute kernels and allocate missing output variables
+
+        for (uint32_t i = 0; i < this->operations.size(); ++i){
+            Operation& op = this->operations[i];
+
+            switch (op.type) {
+                case OpType::KernelLaunch:
+                    kernel_params.clear();
+                    
+                    if (backend == JitBackend::CUDA) {
+                        uintptr_t size = 0;
+                        memcpy(&size, &op.size, sizeof(uint32_t));
+                        kernel_params.push_back((void *) size);
+                    } else {
+                        // First 3 parameters reserved for: kernel ptr, size, ITT identifier
+                        for (int i = 0; i < 3; ++i)
+                            kernel_params.push_back(nullptr);
+                    }
+                    
+                    // Allocate Missing variables for kernel launch.
+                    // The assumption here is that for every kernel launch, the inputs are already allocated.
+                    // Therefore we only allocate output variables, which have the same size as the kernel.
+                    // TODO: deallocate unused memory.
+                    for (uint32_t j = op.dependency_range.first; j < op.dependency_range.second; ++j){
+                        ReplayVariable &replay_variable = variables[this->dependencies[j]];
+                        if (replay_variable.data == nullptr){
+                            jitc_log(LogLevel::Info, "Allocating output variable of size %zu.", op.size);
+                            
+                            RecordVariable &rv = this->variables[this->dependencies[j]];
+                            uint32_t dsize = op.size * type_size[(int) rv.type];
+                            
+                            replay_variable.data = jitc_malloc(AllocType::Device, dsize);
+                            replay_variable.size = op.size;
+                        }
+                        kernel_params.push_back(replay_variable.data);
+                    }
+
+                    scheduled_tasks.push_back(this->internal->launch(op.kernel, op.size, &kernel_params));
+                    
+                    break;
+                default:
+                    jitc_fail("An operation has been recorded, that is not known to the replay functionality!");
+                    break;
+            }
+        }
+        
+        if (this->backend == JitBackend::LLVM) {
+            if (scheduled_tasks.size() == 1) {
+                task_release(jitc_task);
+                jitc_task = scheduled_tasks[0];
+            } else {
+                jitc_assert(!scheduled_tasks.empty(),
+                            "jit_eval(): no tasks generated!");
+
+                // Insert a barrier task
+                Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
+                                                 (uint32_t) scheduled_tasks.size());
+                task_release(jitc_task);
+                for (Task *t : scheduled_tasks)
+                task_release(t);
+                jitc_task = new_task;
+            }
+        }
+
+        std::vector<uint32_t> output_variables;
+
+        for(uint32_t i = 0; i < this->outputs.size(); ++i){
+            uint32_t index = this->outputs[i];
+            ReplayVariable &rv = variables[index];
+            Variable v;
+            v.kind = VarKind::Evaluated;
+            v.type = (uint32_t) VarType::UInt32;
+            v.size = rv.size;
+            v.data = rv.data;
+            v.backend = (uint32_t) this->backend;
+            output_variables.push_back(jitc_var_new(v));
+        }
+        return output_variables;
     }
 
-private:
+    void set_input(void *input){
+        this->inputs.push_back(this->get_or_insert_variable(input));
+    }
+    void set_output(void *output){
+        this->outputs.push_back(this->get_or_insert_variable(output));
+    }
+
 
     ThreadState *internal;
     
-    uint32_t variable_count;
+    std::vector<RecordVariable> variables;
 
-    std::vector<uint32_t> input;
+    std::vector<uint32_t> inputs;
+    std::vector<uint32_t> outputs;
 
     std::vector<Operation> operations;
     std::vector<uint32_t> dependencies;
+    
+private:
+    
     // Mapping from variable index in State to variable in this struct.
     VariableCache variable_cache;
 
@@ -161,7 +285,10 @@ private:
         auto it = this->variable_cache.find(ptr);
 
         if (it == this->variable_cache.end()) {
-            uint32_t id = this->variable_count++;
+            uint32_t id = this->variables.size();
+            this->variables.push_back(RecordVariable{
+                /*type=*/VarType::UInt32,
+            });
             this->variable_cache.insert({ptr, id});
             return id;
         } else {
@@ -169,10 +296,10 @@ private:
         }
     }
 
-    void set_input(std::vector<void *> &inputs){
-        for (void * input : inputs){
-            this->input.push_back(this->get_or_insert_variable(input));
-        }
-    }
-
 };
+
+
+void jitc_record_start(JitBackend backend, uint32_t *inputs, size_t n_inputs);
+RecordThreadState *jitc_record_stop(JitBackend backend, uint32_t *outputs, size_t n_outputs);
+
+void jitc_test_record(JitBackend backend);

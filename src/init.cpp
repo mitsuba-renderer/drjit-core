@@ -416,7 +416,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
 
     ts->backend = backend;
     ts->scope = ++state.scope_ctr;
-    state.tss.push_back(new RecordThreadState(ts));
+    state.tss.push_back(ts);
     return ts;
 }
 
