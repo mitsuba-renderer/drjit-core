@@ -372,7 +372,27 @@ static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Va
     char scalar_op[128];
     const char *tp  = type_name_llvm[(int) v->type],
                *tph = type_name_llvm_abbrev[(int) v->type];
-    if (scalar_intrinsic) {
+
+    bool intrinsic_generated = false;
+#if !defined(__aarch64__)
+    if ((op == ReduceOp::Min || op == ReduceOp::Max) && vt == VarType::Float16) {
+        fmt_intrinsic(
+            "define internal fastcc half @$s.f16(half %arg0, half %arg1) #0 ${\n"
+            "    %p = fcmp $s half %arg0, %arg1\n"
+            "    %f = select i1 %p, half %arg0, half %arg1\n"
+            "    ret half %f\n"
+            "$}",
+            scalar_op_name,
+            op == ReduceOp::Max ? "ogt" : "olt"
+        );
+        snprintf(scalar_op, sizeof(scalar_op), "call fastcc half @%s.%s(half %%before, half %%red_out)",
+                 scalar_op_name, tph);
+        intrinsic_generated = true;
+    }
+#endif
+    if (intrinsic_generated) {
+        ;
+    } else if (scalar_intrinsic) {
         fmt_intrinsic("declare $t @llvm.$s.$h($t, $t)", v, scalar_op_name, v, v, v);
         snprintf(scalar_op, sizeof(scalar_op), "call %s @llvm.%s.%s(%s %%before, %s %%red_out)",
                  tp, scalar_op_name, tph, tp, tp);

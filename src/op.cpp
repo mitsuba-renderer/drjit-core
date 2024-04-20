@@ -2003,7 +2003,10 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     unwrap(target, target_v);
     target_ = target;
 
-    switch ((VarType) target_v->type) {
+    ThreadState *ts = thread_state(target_v->backend);
+    VarType vt = (VarType) target_v->type;
+
+    switch (vt) {
         case VarType::Bool:
             if (op != ReduceOp::Identity)
                 jitc_raise("jit_var_scatter(): atomic reductions are not "
@@ -2011,6 +2014,22 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
             break;
 
         case VarType::Float16:
+            if (var_info.backend == JitBackend::CUDA &&
+                (op == ReduceOp::Min || op == ReduceOp::Max) &&
+                ts->compute_capability < 90)
+                jitc_raise("jit_var_scatter(): your GPU does not support "
+                           "float16 min/max atomics (this requires compute "
+                           "capability 9.0)");
+
+            if (var_info.backend == JitBackend::CUDA &&
+                (op == ReduceOp::Min || op == ReduceOp::Max) &&
+                ts->compute_capability < 90)
+                jitc_raise("jit_var_scatter(): your GPU does not support "
+                           "float16 min/max atomics (this requires compute "
+                           "capability 9.0)");
+
+            [[fallthrough]];
+
         case VarType::Float32:
         case VarType::Float64:
             if (op == ReduceOp::Or || op == ReduceOp::And)
@@ -2019,11 +2038,19 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
 
             if (var_info.backend == JitBackend::CUDA &&
                 (op == ReduceOp::Min || op == ReduceOp::Max) &&
-                ((VarType) target_v->type) != VarType::Float16)
-                jitc_raise("jit_var_scatter(): min/max reductions are "
+                vt != VarType::Float16)
+                jitc_raise("jit_var_scatter(): min/max reductions on CUDA are "
                            "supported for integer and float16 operands but "
-                           "*not* float32/float64 operands! This is an "
-                           "inherited limitation of CUDA/PTX.");
+                           "curiously *not* float32/float64 operands! This is "
+                           "a limitation CUDA/PTX, which lacks instructions "
+                           "for this combination.");
+
+            if (var_info.backend == JitBackend::CUDA &&
+                vt == VarType::Float64 && ts->compute_capability < 60)
+                jitc_raise("jit_var_scatter(): your GPU does not support "
+                           "float64 atomics (this requires compute "
+                           "capability 6.0)");
+
             break;
 
         default: break;
