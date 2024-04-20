@@ -32,7 +32,7 @@ RecordThreadState *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
     if (backend == JitBackend::CUDA) {
         thread_state_cuda = record_ts->internal;
     } else {
-        thread_state_llvm = record_ts;
+        thread_state_llvm = record_ts->internal;
     }
     return record_ts;
 }
