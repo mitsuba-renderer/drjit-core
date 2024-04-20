@@ -4,7 +4,7 @@
 TEST_BOTH(01_basic_replay) {
     // jitc_test_record(Backend);
     
-    Int32 r(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    UInt32 r(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
 
     uint32_t inputs[] = {
         r.index()
@@ -12,7 +12,7 @@ TEST_BOTH(01_basic_replay) {
 
     jit_record_start(Backend, inputs, 1);
 
-    Int32 result = r + 1;
+    UInt32 result = r + 1;
     result.eval();
 
     uint32_t outputs[] = {
@@ -23,7 +23,7 @@ TEST_BOTH(01_basic_replay) {
 
 
     {
-        Int32 r2(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+        UInt32 r2(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
         jit_log(LogLevel::Info, "r2: %s", jit_var_str(r2.index()));
         
         uint32_t inputs[] = {

@@ -287,7 +287,8 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
 }
 
 Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
-                              std::vector<void *> *kernel_params) {
+                              std::vector<void *> *kernel_params,
+                              const std::vector<uint32_t> *) {
     Task *ret_task = nullptr;
 
     uint32_t packet_size = jitc_llvm_vector_width,

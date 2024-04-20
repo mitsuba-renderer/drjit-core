@@ -11,6 +11,7 @@ using VariableCache = tsl::robin_map<void *, uint32_t, PointerHasher>;
 
 enum class OpType{
     KernelLaunch,
+    Barrier,
 };
 
 struct Operation{
@@ -52,15 +53,32 @@ struct RecordThreadState: ThreadState{
     };
 
     
+    void barrier() override{
+        uint32_t start = this->dependencies.size();
+        this->operations.push_back(Operation{
+            /*type=*/OpType::Barrier,
+            /*dependency_range=*/std::pair(start, start),
+            /*kernel=*/Kernel{},
+            /*size=*/0,
+        });
+        return this->internal->barrier();
+    }
     
     Task *launch(Kernel kernel, uint32_t size,
-                 std::vector<void *> *kernel_params) override{
+                 std::vector<void *> *kernel_params,
+                 const std::vector<uint32_t> *kernel_param_ids) override{
         
         uint32_t start = this->dependencies.size();
 
-        uint32_t param_index = this->backend == JitBackend::CUDA ? 1 : 3;
-        for (; param_index < kernel_params->size(); ++param_index){
-            uint32_t id = this->get_or_insert_variable(kernel_params->at(param_index));
+        uint32_t kernel_param_offset = this->backend == JitBackend::CUDA ? 1 : 3;
+
+        for (uint32_t param_index = 0; param_index < kernel_param_ids->size(); param_index++){
+            Variable *v = jitc_var(kernel_param_ids->at(param_index));
+            uint32_t id = this->get_or_insert_variable(
+                kernel_params->at(kernel_param_offset + param_index),
+                RecordVariable{
+                    /*type=*/(VarType) v->type,
+                });
             this->dependencies.push_back(id);
         }
 
@@ -73,7 +91,7 @@ struct RecordThreadState: ThreadState{
             /*size=*/size,
         });
         
-        return this->internal->launch(kernel, size, kernel_params);
+        return this->internal->launch(kernel, size, kernel_params, kernel_param_ids);
     }
 
     /// Fill a device memory region with constants of a given type
@@ -212,8 +230,32 @@ struct RecordThreadState: ThreadState{
                         kernel_params.push_back(replay_variable.data);
                     }
 
-                    scheduled_tasks.push_back(this->internal->launch(op.kernel, op.size, &kernel_params));
+                    {
+                        std::vector<uint32_t> tmp;
+                        scheduled_tasks.push_back(this->internal->launch(op.kernel, op.size, &kernel_params, &tmp));
+                    }
                     
+                    break;
+                case OpType::Barrier:
+                    
+                    if (this->backend == JitBackend::LLVM) {
+                        if (scheduled_tasks.size() == 1) {
+                            task_release(jitc_task);
+                            jitc_task = scheduled_tasks[0];
+                        } else {
+                            jitc_assert(!scheduled_tasks.empty(),
+                                        "jit_eval(): no tasks generated!");
+
+                            // Insert a barrier task
+                            Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
+                                                             (uint32_t) scheduled_tasks.size());
+                            task_release(jitc_task);
+                            for (Task *t : scheduled_tasks)
+                            task_release(t);
+                            jitc_task = new_task;
+                        }
+                    }
+
                     break;
                 default:
                     jitc_fail("An operation has been recorded, that is not known to the replay functionality!");
@@ -221,30 +263,13 @@ struct RecordThreadState: ThreadState{
             }
         }
         
-        if (this->backend == JitBackend::LLVM) {
-            if (scheduled_tasks.size() == 1) {
-                task_release(jitc_task);
-                jitc_task = scheduled_tasks[0];
-            } else {
-                jitc_assert(!scheduled_tasks.empty(),
-                            "jit_eval(): no tasks generated!");
-
-                // Insert a barrier task
-                Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
-                                                 (uint32_t) scheduled_tasks.size());
-                task_release(jitc_task);
-                for (Task *t : scheduled_tasks)
-                task_release(t);
-                jitc_task = new_task;
-            }
-        }
-
         for(uint32_t i = 0; i < this->outputs.size(); ++i){
             uint32_t index = this->outputs[i];
             ReplayVariable &rv = variables[index];
+            RecordVariable &record_variable = this->variables[index];
             Variable v;
             v.kind = VarKind::Evaluated;
-            v.type = (uint32_t) VarType::UInt32;
+            v.type = (uint32_t) record_variable.type;
             v.size = rv.size;
             v.data = rv.data;
             v.backend = (uint32_t) this->backend;
@@ -252,11 +277,17 @@ struct RecordThreadState: ThreadState{
         }
     }
 
-    void set_input(void *input){
-        this->inputs.push_back(this->get_or_insert_variable(input));
+    void set_input(uint32_t input){
+        Variable *v = jitc_var(input);
+        this->inputs.push_back(this->get_or_insert_variable(v->data, RecordVariable{
+            /*type=*/(VarType) v->type,
+        }));
     }
-    void set_output(void *output){
-        this->outputs.push_back(this->get_or_insert_variable(output));
+    void set_output(uint32_t output){
+        Variable *v = jitc_var(output);
+        this->outputs.push_back(this->get_or_insert_variable(v->data, RecordVariable{
+            /*type=*/(VarType) v->type,
+        }));
     }
 
 
@@ -275,18 +306,19 @@ private:
     // Mapping from variable index in State to variable in this struct.
     VariableCache variable_cache;
 
-    // Insert the variable index, deduplicating it and returning a index into the
+    // Insert the variable by pointer, deduplicating it and returning a index into the
     // `variables` field.
-    uint32_t get_or_insert_variable(void *ptr) {
+    uint32_t get_or_insert_variable(void *ptr, RecordVariable rv) {
         
         auto it = this->variable_cache.find(ptr);
 
         if (it == this->variable_cache.end()) {
             uint32_t id = this->variables.size();
-            this->variables.push_back(RecordVariable{
-                /*type=*/VarType::UInt32,
-            });
+            
+            this->variables.push_back(rv);
+            
             this->variable_cache.insert({ptr, id});
+            
             return id;
         } else {
             return it.value();

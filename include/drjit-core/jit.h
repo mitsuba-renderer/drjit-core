@@ -2340,7 +2340,6 @@ extern JIT_EXPORT size_t jit_llvm_expand_threshold() JIT_NOEXCEPT;
 /// Return the identity element of a particular type of reduction
 extern JIT_EXPORT uint64_t jit_reduce_identity(VarType vt, ReduceOp op);
 
-<<<<<<< HEAD
 /**
  * \brief Create a variable array
  *
@@ -2414,13 +2413,12 @@ extern JIT_EXPORT uint32_t jit_array_write(uint32_t target, uint32_t offset,
  */
 extern JIT_EXPORT uint32_t jit_array_read(uint32_t source, uint32_t offset,
                                           uint32_t mask);
-extern JIT_EXPORT void jitc_test_record(JitBackend backend);
+
+struct RecordThreadState;
 
 extern JIT_EXPORT void jit_record_start(JitBackend backend, 
                                         const uint32_t *inputs, 
                                         uint32_t n_inputs);
-
-struct RecordThreadState;
 
 extern JIT_EXPORT RecordThreadState *jit_record_stop(JitBackend backend, 
                                                      const uint32_t *outputs, 
