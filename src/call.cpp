@@ -714,6 +714,15 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *domain,
     else
         jitc_log(InfoSym, "jit_var_call_reduce(r%u)", index);
 
+    if (jitc_flags() & (uint32_t) JitFlag::Debug) {
+        Ref max_idx_v = steal(jitc_var_reduce(backend, VarType::UInt32, ReduceOp::Max, index));
+        uint32_t max_idx = 0;
+        jitc_var_read(max_idx_v, 0, &max_idx);
+        if (max_idx >= bucket_count)
+            jitc_raise("jit_var_call_reduce(): out-of-bounds callable ID %u "
+                       "(must be < %u).", max_idx, bucket_count);
+    }
+
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
            offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
 
