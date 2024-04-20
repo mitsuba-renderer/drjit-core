@@ -224,7 +224,9 @@ struct RecordThreadState: ThreadState{
                             RecordVariable &rv = this->variables[this->dependencies[j]];
                             uint32_t dsize = op.size * type_size[(int) rv.type];
                             
-                            replay_variable.data = jitc_malloc(AllocType::Device, dsize);
+                            AllocType alloc_type = this->backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
+                            
+                            replay_variable.data = jitc_malloc(alloc_type, dsize);
                             replay_variable.size = op.size;
                         }
                         kernel_params.push_back(replay_variable.data);
