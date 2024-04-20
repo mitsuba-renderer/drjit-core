@@ -15,6 +15,10 @@ struct LLVMThreadState: ThreadState{
     void reduce(VarType type, ReduceOp rtype, const void *ptr, uint32_t size,
                 void *out) override;
 
+    /// Reduce elements within blocks
+    void block_reduce(VarType type, ReduceOp op, const void *in,
+                      uint32_t size, uint32_t block_size, void *out) override;
+
     /// Compute a dot product of two equal-sized arrays
     void reduce_dot(VarType type, const void *ptr_1,
                     const void *ptr_2,
@@ -43,10 +47,6 @@ struct LLVMThreadState: ThreadState{
 
     /// Perform an assynchronous copy operation
     void memcpy_async(void *dst, const void *src, size_t size) override;
-
-    /// Sum over elements within blocks
-    void block_sum(enum VarType type, const void *in, void *out, uint32_t size,
-                   uint32_t block_size) override;
 
     /// Asynchronously update a single element in memory
     void poke(void *dst, const void *src, uint32_t size) override;

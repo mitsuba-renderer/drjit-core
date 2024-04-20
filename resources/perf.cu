@@ -48,11 +48,11 @@ void jit_scan_u32(const uint32_t *in, uint32_t *out, uint32_t size) {
 
     printf("jit_scan(%p -> %p , size=%u)\n", in, out, size);
 
-    uint64_t *block_sums;
-    cuda_check(cudaMalloc(&block_sums, (block_count + 32) * sizeof(uint64_t)));
-    scan_large_u32_init<<<72, 1024>>>(block_sums, block_count + 32);
-    scan_large_u32<<<block_count, thread_count, shared_size>>>(in, out, block_sums + 32);
-    cudaFree(block_sums);
+    uint64_t *block_reduces;
+    cuda_check(cudaMalloc(&block_reduces, (block_count + 32) * sizeof(uint64_t)));
+    scan_large_u32_init<<<72, 1024>>>(block_reduces, block_count + 32);
+    scan_large_u32<<<block_count, thread_count, shared_size>>>(in, out, block_reduces + 32);
+    cudaFree(block_reduces);
 }
 
 void jit_scan_u32(const uint32_t *in, uint32_t *out, uint32_t size) {

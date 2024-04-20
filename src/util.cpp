@@ -20,8 +20,8 @@
 #  pragma warning (disable: 4146) // unary minus operator applied to unsigned type, result still unsigned
 #endif
 
-const char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
-                                                      "min", "max", "and", "or" };
+const char *red_name[(int) ReduceOp::Count] = { "none", "add", "mul",
+                                                "min", "max", "and", "or" };
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
@@ -118,6 +118,13 @@ void jitc_reduce(JitBackend backend, VarType type, ReduceOp op,
     thread_state(backend)->reduce(type, op, ptr, size, out);
 }
 
+/// Sum over elements within blocks
+void jitc_block_reduce(JitBackend backend, VarType vt, ReduceOp op, const void *in,
+                       uint32_t size, uint32_t block_size, void *out) {
+    thread_state(backend)->block_reduce(vt, op, in, size, block_size, out);
+}
+
+
 void jitc_reduce_dot(JitBackend backend, VarType type,
                      const void *ptr_1, const void *ptr_2,
                      uint32_t size, void *out) {
@@ -153,12 +160,6 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
 
     ProfilerPhase profiler(profiler_region_mkperm);
     return thread_state(backend)->mkperm(ptr, size, bucket_count, perm, offsets);
-}
-
-/// Sum over elements within blocks
-void jitc_block_sum(JitBackend backend, enum VarType type, const void *in, void *out,
-                    uint32_t size, uint32_t block_size) {
-    thread_state(backend)->block_sum(type, in, out, size, block_size);
 }
 
 /// Asynchronously update a single element in memory

@@ -904,10 +904,16 @@ void jit_memcpy_async(JitBackend backend, void *dst, const void *src, size_t siz
     jitc_memcpy_async(backend, dst, src, size);
 }
 
-void jit_reduce(JitBackend backend, VarType type, ReduceOp rtype, const void *ptr,
+void jit_reduce(JitBackend backend, VarType type, ReduceOp op, const void *ptr,
                 uint32_t size, void *out) {
     lock_guard guard(state.lock);
-    jitc_reduce(backend, type, rtype, ptr, size, out);
+    jitc_reduce(backend, type, op, ptr, size, out);
+}
+
+void jit_block_reduce(JitBackend backend, VarType type, ReduceOp op, const void *in,
+                      uint32_t size, uint32_t block_size, void *out) {
+    lock_guard guard(state.lock);
+    jitc_block_reduce(backend, type, op, in, size, block_size, out);
 }
 
 void jit_prefix_sum(JitBackend backend, VarType type, int exclusive, const void *in,
@@ -925,12 +931,6 @@ uint32_t jit_mkperm(JitBackend backend, const uint32_t *values, uint32_t size,
                     uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
     lock_guard guard(state.lock);
     return jitc_mkperm(backend, values, size, bucket_count, perm, offsets);
-}
-
-void jit_block_sum(JitBackend backend, enum VarType type, const void *in, void *out,
-                   uint32_t size, uint32_t block_size) {
-    lock_guard guard(state.lock);
-    jitc_block_sum(backend, type, in, out, size, block_size);
 }
 
 uint32_t jit_registry_put(JitBackend backend, const char *domain, void *ptr) {
@@ -1413,12 +1413,12 @@ uint32_t jit_var_reduce_identity(JitBackend backend, VarType vt, ReduceOp reduce
     return jitc_var_new(v);
 }
 
-uint32_t jit_var_block_sum(uint32_t index, uint32_t block_size, int symbolic) {
+uint32_t jit_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, int symbolic) {
     lock_guard guard(state.lock);
-    return jitc_var_block_sum(index, block_size, symbolic);
+    return jitc_var_block_reduce(op, index, block_size, symbolic);
 }
 
-uint32_t jit_var_block_copy(uint32_t index, uint32_t block_size) {
+uint32_t jit_var_tile(uint32_t index, uint32_t count) {
     lock_guard guard(state.lock);
-    return jitc_var_block_copy(index, block_size);
+    return jitc_var_tile(index, count);
 }

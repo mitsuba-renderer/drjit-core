@@ -14,8 +14,11 @@ __device__ void reduce_2(const Value *in_1, const Value *in_2, uint32_t size,
                          Value *out) {
     Value *shared = SharedMemory<Value>::get();
 
-    uint32_t tid = threadIdx.x, bid = blockIdx.x, nb = gridDim.x,
-             offset = BlockSize * 2 * bid + tid, stride = BlockSize * 2 * nb;
+    uint32_t tid = threadIdx.x,
+             bid = blockIdx.x,
+             nb = gridDim.x,
+             offset = BlockSize * 2 * bid + tid,
+             stride = BlockSize * 2 * nb;
 
     Reduce red;
     Value value = red.init();

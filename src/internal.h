@@ -596,6 +596,10 @@ struct ThreadState {
     virtual void reduce(VarType type, ReduceOp rtype, const void *ptr,
                         uint32_t size, void *out) = 0;
 
+    /// Reduce within blocks
+    virtual void block_reduce(VarType type, ReduceOp op, const void *in,
+                              uint32_t size, uint32_t block_size, void *out) = 0;
+
     /// Compute a dot product of two equal-sized arrays
     virtual void reduce_dot(VarType type, const void *ptr_1,
                             const void *ptr_2,
@@ -625,10 +629,6 @@ struct ThreadState {
 
     /// Perform an assynchronous copy operation
     virtual void memcpy_async(void *dst, const void *src, size_t size) = 0;
-
-    /// Sum over elements within blocks
-    virtual void block_sum(enum VarType type, const void *in, void *out,
-                           uint32_t size, uint32_t block_size) = 0;
 
     /// Asynchronously update a single element in memory
     virtual void poke(void *dst, const void *src, uint32_t size) = 0;

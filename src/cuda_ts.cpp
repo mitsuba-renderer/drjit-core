@@ -3,10 +3,7 @@
 #include "log.h"
 #include "optix.h"
 #include "eval.h"
-
-const static char *reduction_name[(int) ReduceOp::Count] = {
-    "none", "sum", "mul", "min", "max", "and", "or"
-};
+#include "util.h"
 
 static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
                        uint32_t thread_count, uint32_t shared_mem_bytes,
@@ -141,25 +138,43 @@ void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
     }
 }
 
-void CUDAThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
+static VarType make_int_type_unsigned(VarType type) {
+    switch (type) {
+        case VarType::Int8:  return VarType::UInt8;
+        case VarType::Int16: return VarType::UInt16;
+        case VarType::Int32: return VarType::UInt32;
+        case VarType::Int64: return VarType::UInt64;
+        default: return type;
+    }
+}
+
+void CUDAThreadState::reduce(VarType vt, ReduceOp op, const void *ptr,
                              uint32_t size, void *out) {
     const Device &dev = state.devices[device];
-    CUfunction func = jitc_cuda_reductions[(int) op][(int) type][dev.id];
+
+    // Signed integer sum reductions are handled using the unsigned implementation
+    VarType vtu = (op == ReduceOp::Add) ? make_int_type_unsigned(vt) : vt;
+
+    // Half precision reductions internally accumulate into single precision buffers
+    VarType vts = vt == VarType::Float16 ? VarType::Float32 : vt;
+
+    CUfunction func = jitc_cuda_reduce[(int) op][(int) vtu][dev.id];
 
     if (!func)
         jitc_raise("jit_reduce(): no existing kernel for type=%s, op=%s!",
-                  type_name[(int) type], reduction_name[(int) op]);
+                  type_name[(int) vt], red_name[(int) op]);
 
     uint32_t thread_count = 1024,
-             tsize = type_size[(int) type],
+             tsize = type_size[(int) vts],
              shared_size = thread_count * tsize,
              block_count = (size + thread_count * 2 - 1) / (thread_count * 2);
 
     block_count = std::min(dev.sm_count * 4, block_count);
 
-    jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u, smem=%u, blocks=%u)",
-            (uintptr_t) ptr, type_name[(int) type],
-            reduction_name[(int) op], size, shared_size, block_count);
+    jitc_log(Debug, "jit_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+             ", type=%s, op=%s, size=%u, smem=%u, blocks=%u)",
+             (uintptr_t) ptr, (uintptr_t) out, type_name[(int) vt],
+             red_name[(int) op], size, shared_size, block_count);
 
     scoped_set_context guard(context);
     if (block_count == 1) {
@@ -187,27 +202,95 @@ void CUDAThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
     }
 }
 
-void CUDAThreadState::reduce_dot(VarType type, const void *ptr_1,
+void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, const void *in,
+                                   uint32_t size, uint32_t block_size, void *out) {
+    if (block_size == 0)
+        jitc_raise("jit_block_reduce(): 'block_size' cannot be zero!");
+
+    uint32_t tsize = type_size[(int) vt];
+
+    if (block_size == 1) {
+        memcpy_async(out, in, size * tsize);
+        return;
+    }
+
+    if (block_size & (block_size - 1))
+        jitc_raise(
+            "jit_block_reduce(): 'block_size' must be a power of two! (got %u)",
+            block_size);
+
+    if (block_size > 1024) {
+        // Our largest kernel can reduce 1K elements. Split into several steps.
+        uint32_t tmp_size = size / 1024;
+        void *tmp = jitc_malloc(AllocType::Device, tmp_size * tsize);
+        block_reduce(vt, op, in, size, 1024, tmp);
+        block_reduce(vt, op, tmp, tmp_size, block_size / 1024, out);
+        jitc_free(tmp);
+        return;
+    }
+
+    // Signed integer sum reductions are handled using the unsigned implementation
+    VarType vtu = (op == ReduceOp::Add) ? make_int_type_unsigned(vt) : vt;
+
+    // Half precision reductions internally accumulate into single precision buffers
+    VarType vts = vt == VarType::Float16 ? VarType::Float32 : vt;
+
+    // Do a few reductions within each CUDA block if block_size < 128
+    uint32_t thread_count = std::max(128u, block_size);
+
+    // Don't bother if the actual work size is tiny. Though we need at least 1 warp.
+    thread_count = std::max(std::min(thread_count, size), 32u);
+
+    uint32_t kernel_id = log2i_ceil(block_size) - 1,
+             block_count = (size + thread_count - 1) / thread_count;
+
+    // The block reduction kernel only needs shared memory when the size
+    // of the blocks to be reduced exceeds the warp size
+    uint32_t smem_bytes = 0;
+    if (block_size > 32)
+        smem_bytes = thread_count * type_size[(int) vts];
+
+    jitc_log(Debug, "jit_block_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+             ", type=%s, op=%s, smem=%u, thread_count=%u, blocks=%u)",
+            (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
+            red_name[(int) op], smem_bytes, thread_count, block_count);
+
+    scoped_set_context guard(context);
+    const Device &dev = state.devices[device];
+
+    CUfunction func = jitc_cuda_block_reduce[(int) op][(int) vtu][kernel_id][dev.id];
+    if (!func)
+        jitc_raise("jit_block_reduce(): no existing kernel for type=%s, op=%s, id=%u!",
+                  type_name[(int) vt], red_name[(int) op], kernel_id);
+
+    void *args[] = { &in, &out, &size };
+    submit_gpu(KernelType::Other, func, block_count, thread_count,
+               smem_bytes, stream, args, nullptr, size);
+}
+
+
+void CUDAThreadState::reduce_dot(VarType vt, const void *ptr_1,
                                  const void *ptr_2, uint32_t size, void *out) {
     const Device &dev = state.devices[device];
 
-    CUfunction red_dot = jitc_cuda_reduce_dot[(int) type][dev.id],
-               red_sum = jitc_cuda_reductions[(int) ReduceOp::Add][(int) type][dev.id];
+    CUfunction red_dot = jitc_cuda_reduce_dot[(int) vt][dev.id],
+               red_sum = jitc_cuda_reduce[(int) ReduceOp::Add][(int) vt][dev.id];
 
     if (!red_dot || !red_sum)
         jitc_raise("jit_reduce_dot(): no existing kernel for type=%s!",
-                   type_name[(int) type]);
+                   type_name[(int) vt]);
 
     uint32_t thread_count = 1024,
-             tsize = type_size[(int) type],
+             tsize = type_size[(int) vt],
              shared_size = thread_count * tsize,
              block_count = (size + thread_count * 2 - 1) / (thread_count * 2);
 
     block_count = std::min(dev.sm_count * 4, block_count);
 
-    jitc_log(Debug, "jit_reduce_dot(" DRJIT_PTR ", " DRJIT_PTR ", type=%s, size=%u, smem=%u, blocks=%u)",
-            (uintptr_t) ptr_1, (uintptr_t) ptr_2, type_name[(int) type],
-            size, shared_size, block_count);
+    jitc_log(Debug, "jit_reduce_dot(" DRJIT_PTR ", " DRJIT_PTR
+             ", type=%s, size=%u, smem=%u, blocks=%u)",
+             (uintptr_t) ptr_1, (uintptr_t) ptr_2, type_name[(int) vt],
+             size, shared_size, block_count);
 
     scoped_set_context guard(context);
     if (block_count == 1) {
@@ -654,68 +737,6 @@ void CUDAThreadState::memcpy_async(void *dst, const void *src, size_t size) {
     scoped_set_context guard(context);
     cuda_check(cuMemcpyAsync((CUdeviceptr) dst, (CUdeviceptr) src, size,
                              stream));
-}
-
-static VarType make_int_type_unsigned(VarType type) {
-    switch (type) {
-        case VarType::Int8:  return VarType::UInt8;
-        case VarType::Int16: return VarType::UInt16;
-        case VarType::Int32: return VarType::UInt32;
-        case VarType::Int64: return VarType::UInt64;
-        default: return type;
-    }
-}
-
-void CUDAThreadState::block_sum(enum VarType type, const void *in, void *out,
-                                uint32_t size, uint32_t block_size) {
-    if (block_size == 0)
-        jitc_raise("jit_block_sum(): 'block_size' cannot be zero!");
-
-    uint32_t tsize = type_size[(int) type];
-
-    if (block_size == 1) {
-        memcpy_async(out, in, size * tsize);
-        return;
-    }
-
-    if (block_size & (block_size - 1))
-        jitc_raise(
-            "jit_block_sum(): 'block_size' must be a power of two! (got %u)",
-            block_size);
-
-    if (block_size > 1024) {
-        // Our largest kernel can reduce 1K elements. Split into several steps.
-        uint32_t tmp_size = size / 1024;
-        void *tmp = jitc_malloc(AllocType::Device, tmp_size * tsize);
-        block_sum(type, in, tmp, size, 1024);
-        block_sum(type, tmp, out, tmp_size, block_size / 1024);
-        jitc_free(tmp);
-        return;
-    }
-
-    uint32_t thread_count = block_size / 2, // detail of the implementation
-             log_thread_count = log2i_ceil(thread_count),
-             block_count = size / block_size,
-             smem_bytes = thread_count * type_size[(int) type];
-
-    jitc_log(Debug,
-            "jit_block_sum(" DRJIT_PTR " -> " DRJIT_PTR
-            ", type=%s, block_size=%u, thread_count=%u, block_count=%u)",
-            (uintptr_t) in, (uintptr_t) out,
-            type_name[(int) type], block_size, thread_count, block_count);
-
-    scoped_set_context guard(context);
-    const Device &dev = state.devices[device];
-
-    CUfunction func = jitc_cuda_block_sum[(int) make_int_type_unsigned(type)]
-                                         [log_thread_count][dev.id];
-    if (!func)
-        jitc_raise("jit_block_sum(): no existing kernel for type=%s!",
-                  type_name[(int) type]);
-
-    void *args[] = { &in, &out };
-    submit_gpu(KernelType::Other, func, block_count, thread_count, smem_bytes,
-               stream, args, nullptr, size);
 }
 
 void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {

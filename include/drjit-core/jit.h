@@ -1844,19 +1844,21 @@ extern JIT_EXPORT int jit_var_all(uint32_t index);
 extern JIT_EXPORT int jit_var_any(uint32_t index);
 
 /// Reduce a variable to a single value (asynchronous)
-extern JIT_EXPORT uint32_t jit_var_reduce(JitBackend backend, VarType vt,
+extern JIT_EXPORT uint32_t jit_var_reduce(JIT_ENUM JitBackend backend,
+                                          JIT_ENUM VarType vt,
                                           JIT_ENUM ReduceOp reduce_op,
                                           uint32_t index);
+
+/// Reduce a avariable within blocks of size 'block_size'
+extern JIT_EXPORT uint32_t jit_var_block_reduce(JIT_ENUM ReduceOp op, uint32_t index,
+                                                uint32_t block_size, int symbolic);
+
+/// Replicate values of an array into larger blocks
+extern JIT_EXPORT uint32_t jit_var_tile(uint32_t index, uint32_t count);
 
 /// Perform a dot product reduction of two compatible arrays
 extern JIT_EXPORT uint32_t jit_var_reduce_dot(uint32_t index_1,
                                               uint32_t index_2);
-
-/// Sum-reduce a avariable within blocks of size 'block_size'
-extern JIT_EXPORT uint32_t jit_var_block_sum(uint32_t index, uint32_t block_size, int symbolic);
-
-/// Replicate values of an array into larger blocks
-extern JIT_EXPORT uint32_t jit_var_block_copy(uint32_t index, uint32_t block_size);
 
 /// Compute an exclusive (exclusive == 1) or inclusive (exclusive == 0) prefix sum (asynchronous)
 extern JIT_EXPORT uint32_t jit_var_prefix_sum(uint32_t index, int exclusive);
@@ -1894,8 +1896,23 @@ extern JIT_EXPORT void jit_memcpy_async(JIT_ENUM JitBackend backend, void *dst, 
  * Runs asynchronously.
  */
 extern JIT_EXPORT void jit_reduce(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
-                                  JIT_ENUM ReduceOp rtype,
+                                  JIT_ENUM ReduceOp op,
                                   const void *in, uint32_t size, void *out);
+
+/**
+ * \brief Redduce elements within blocks
+ *
+ * This function reduces elements in contiguous blocks of size \c block_size
+ * in the input array \c in and writes them to \c out. For example, a sum reduction of
+ * <tt>a, b, * c, d, e, f</tt> turns into <tt>a+b, c+d, e+f</tt> when the
+ * c block_size is set to \c 2. The input array must contain
+ * <tt>size * block_size</tt> elements, and the output array must have space for
+ * <tt>size</tt> elements.
+ */
+extern JIT_EXPORT void jit_block_sum(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
+                                     JIT_ENUM ReduceOp op,
+                                     const void *in, uint32_t size,
+                                     uint32_t block_size, void *out);
 
 /** \brief Compute n prefix sum over the given input array
  *
@@ -2056,18 +2073,6 @@ extern JIT_EXPORT struct CallBucket *
 jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *domain,
                      uint32_t index, uint32_t *bucket_count_inout);
 
-/**
- * \brief Sum over elements within blocks
- *
- * This function adds all elements of contiguous blocks of size \c block_size
- * in the input array \c in and writes them to \c out. For example, <tt>a, b,
- * c, d, e, f</tt> turns into <tt>a+b, c+d, e+f</tt> when the \c block_size is
- * set to \c 2. The input array must contain <tt>size * block_size</tt> elements,
- * and the output array must have space for <tt>size</tt> elements.
- */
-extern JIT_EXPORT void jit_block_sum(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
-                                     const void *in, void *out, uint32_t size,
-                                     uint32_t block_size);
 /**
  * \brief Insert a function call to a ray tracing functor into the LLVM program
  *

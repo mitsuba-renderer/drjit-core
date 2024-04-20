@@ -9,9 +9,9 @@
 
 #include "common.h"
 
-template <typename Value, typename Reduce, uint32_t BlockSize>
-__device__ void reduce(const Value *data, uint32_t size, Value *out) {
-    Value *shared = SharedMemory<Value>::get();
+template <typename Reduce, typename Ts, typename Tv, uint32_t BlockSize>
+__device__ void reduce(const Ts *data, uint32_t size, Ts *out) {
+    Tv *shared = SharedMemory<Tv>::get();
 
     uint32_t tid    = threadIdx.x,
              bid    = blockIdx.x,
@@ -20,13 +20,13 @@ __device__ void reduce(const Value *data, uint32_t size, Value *out) {
              stride = BlockSize * 2 * nb;
 
     Reduce red;
-    Value value = red.init();
+    Tv value = red.init();
 
     // Grid-stride loop to reduce elements
     for (uint32_t i = offset; i < size; i += stride) {
-        value = red(value, data[i]);
+        value = red(value, Tv(data[i]));
         if (i + BlockSize < size)
-            value = red(value, data[i + BlockSize]);
+            value = red(value, Tv(data[i + BlockSize]));
     }
 
     // Write to shared memory and wait for all threads to reach this point
@@ -59,7 +59,7 @@ __device__ void reduce(const Value *data, uint32_t size, Value *out) {
             value = red(value, __shfl_xor_sync(FULL_MASK, value, i));
 
         if (tid == 0)
-            out[bid] = value;
+            out[bid] = Ts(value);
     }
 }
 
@@ -129,29 +129,37 @@ template <typename Value> struct reduction_and {
 
 // ----------------------------------------------------------------------------
 
-#define HORIZ_OP(Name, Reduction, Type, Suffix)                                \
-    KERNEL void Name##_##Suffix(const Type *data, uint32_t size, Type *out) {  \
-        reduce<Type, Reduction<Type>, 1024>(data, size, out);                  \
+#define RED(name, Ts, Tv, suffix)                                      \
+    KERNEL void reduce_##name##_##suffix(const Ts *data,               \
+                                         uint32_t size, Ts *out) {     \
+        reduce<reduction_##name<Ts>, Ts, Tv, 1024>(data, size, out);   \
     }
 
-#define HORIZ_OP_ALL(Name, Reduction)                                          \
-    HORIZ_OP(Name, Reduction, int32_t, i32)                                    \
-    HORIZ_OP(Name, Reduction, uint32_t, u32)                                   \
-    HORIZ_OP(Name, Reduction, int64_t, i64)                                    \
-    HORIZ_OP(Name, Reduction, uint64_t, u64)                                   \
-    HORIZ_OP(Name, Reduction, half, f16)                                       \
-    HORIZ_OP(Name, Reduction, float, f32)                                      \
-    HORIZ_OP(Name, Reduction, double, f64)
+#define RED_ALL_U(Name)                                                \
+    RED(Name, uint32_t, uint32_t, u32)                                 \
+    RED(Name, uint64_t, uint64_t, u64)                                 \
+    RED(Name, half, float, f16)                                        \
+    RED(Name, float, float, f32)                                       \
+    RED(Name, double, double, f64)
 
-HORIZ_OP_ALL(reduce_sum, reduction_add)
-HORIZ_OP_ALL(reduce_mul, reduction_mul)
-HORIZ_OP_ALL(reduce_min, reduction_min)
-HORIZ_OP_ALL(reduce_max, reduction_max)
+#define RED_ALL(Name)                                                  \
+    RED(Name, int32_t, int32_t, i32)                                   \
+    RED(Name, uint32_t, uint32_t, u32)                                 \
+    RED(Name, int64_t, int64_t, i64)                                   \
+    RED(Name, uint64_t, uint64_t, u64)                                 \
+    RED(Name, half, float, f16)                                        \
+    RED(Name, float, float, f32)                                       \
+    RED(Name, double, double, f64)
+
+RED_ALL_U(add)
+RED_ALL(mul)
+RED_ALL(min)
+RED_ALL(max)
 
 // ----------------------------------------------------------------------------
 
-HORIZ_OP(reduce_or,  reduction_or,  uint32_t, u32)
-HORIZ_OP(reduce_and, reduction_and, uint32_t, u32)
+RED(or,  uint32_t, uint32_t, u32)
+RED(and, uint32_t, uint32_t, u32)
 
-#undef HORIZ_OP
-#undef HORIZ_OP_ALL
+#undef RED
+#undef RED_ALL

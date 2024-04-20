@@ -1807,7 +1807,7 @@ uint32_t jitc_var_compress(uint32_t index) {
     }
 }
 
-uint32_t jitc_var_block_sum(uint32_t index, uint32_t block_size, int symbolic) {
+uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, int symbolic) {
     if (index == 0) {
         return 0;
     } else if (block_size == 1) {
@@ -1823,7 +1823,7 @@ uint32_t jitc_var_block_sum(uint32_t index, uint32_t block_size, int symbolic) {
              reduced = size / block_size;
 
     if (reduced * block_size != size)
-        jitc_raise("jit_var_block_sum(r%u): variable size (%u) must be an integer "
+        jitc_raise("jit_var_block_reduce(r%u): variable size (%u) must be an integer "
                    "multiple of 'block_size' (%u)", index, size, block_size);
 
     if (symbolic == -1) {
@@ -1839,40 +1839,43 @@ uint32_t jitc_var_block_sum(uint32_t index, uint32_t block_size, int symbolic) {
     }
 
     if (symbolic == 1) {
-        uint64_t zero_u64 = 0, bsize_u64 = block_size, one_u64 = 1;
+        uint64_t identity = jitc_reduce_identity(op, vt);
+
+        uint64_t bsize_u64 = block_size, one_u64 = 1;
+
         Ref counter = steal(jitc_var_counter(backend, size, true)),
             bsize   = steal(jitc_var_literal(backend, VarType::UInt32, &bsize_u64, 1, 0)),
             offset  = steal(jitc_var_div(counter, bsize)),
             t_mask  = steal(jitc_var_literal(backend, VarType::Bool, &one_u64, 1, 0)),
-            target  = steal(jitc_var_literal(backend, vt, &zero_u64, reduced, 0));
+            target  = steal(jitc_var_literal(backend, vt, &identity, reduced, 0));
 
-        return jitc_var_scatter(target, index, offset, t_mask, ReduceOp::Add, ReduceMode::Auto);
+        return jitc_var_scatter(target, index, offset, t_mask, op, ReduceMode::Auto);
     } else if (symbolic == 0) {
         jitc_var_eval(index);
 
-        jitc_log(Debug, "jit_var_block_sum(r%u, block_size=%u)", index, block_size);
+        jitc_log(Debug, "jit_var_block_reduce(r%u, block_size=%u)", index, block_size);
 
         void *out =
             jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
                                                     : AllocType::HostAsync,
-                        reduced * type_size[(int) vt]);
+                        reduced * (size_t) type_size[(int) vt]);
         Ref out_v = steal(jitc_var_mem_map(backend, vt, out, reduced, 1));
-        jitc_block_sum(backend, vt, jitc_var(index)->data, out, size, block_size);
+        jitc_block_reduce(backend, vt, op, jitc_var(index)->data, size, block_size, out);
 
         return out_v.release();
     } else {
-        jitc_raise("jit_var_block_sum(): 'symbolic' must equal -1, 0, or -1");
+        jitc_raise("jit_var_block_reduce(): 'symbolic' must equal -1, 0, or -1");
     }
 }
 
-uint32_t jitc_var_block_copy(uint32_t index, uint32_t block_size) {
+uint32_t jitc_var_tile(uint32_t index, uint32_t block_size) {
     const Variable *v = jitc_var(index);
 
     JitBackend backend = (JitBackend) v->backend;
     size_t size = v->size,
            out_size = size * block_size;
 
-    jitc_check_size("jit_var_block_copy", out_size);
+    jitc_check_size("jit_var_tile", out_size);
 
     uint64_t bsize_u64 = block_size, one_u64 = 1;
     Ref counter = steal(jitc_var_counter(backend, out_size, true)),
@@ -1988,7 +1991,7 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
     }
 
     jitc_log(Debug, "jit_var_reduce(r%u, reduce_op=%s)", index,
-             reduction_name[(int) reduce_op]);
+             red_name[(int) reduce_op]);
 
     if (jitc_var_eval(index))
         v = jitc_var(index);

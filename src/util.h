@@ -13,7 +13,7 @@
 #include "cuda.h"
 
 /// Descriptive names for the various reduction operations
-extern const char *reduction_name[(int) ReduceOp::Count];
+extern const char *red_name[(int) ReduceOp::Count];
 
 /// Fill a device memory region with constants of a given type
 extern void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size,
@@ -22,6 +22,11 @@ extern void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size,
 /// Reduce the given array to a single value
 extern void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype,
                         const void *ptr, uint32_t size, void *out);
+
+/// Reduce elements within blocks
+extern void jitc_block_reduce(JitBackend backend, VarType type, ReduceOp op,
+                              const void *in, uint32_t size, uint32_t block_size,
+                              void *out);
 
 /// Dot product reduction
 extern void jitc_reduce_dot(JitBackend backend, VarType type,
@@ -52,10 +57,6 @@ extern void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t s
 
 /// Perform an assynchronous copy operation
 extern void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t size);
-
-/// Sum over elements within blocks
-extern void jitc_block_sum(JitBackend backend, enum VarType type, const void *in,
-                           void *out, uint32_t size, uint32_t block_size);
 
 /// Asynchronously update a single element in memory
 extern void jitc_poke(JitBackend backend, void *dst, const void *src, uint32_t size);
