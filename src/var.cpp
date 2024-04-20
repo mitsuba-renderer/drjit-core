@@ -1013,6 +1013,10 @@ const char *jitc_var_str(uint32_t index) {
     size_t size            = v->size,
            isize           = type_size[v->type],
            limit_remainder = std::min(5u, (state.print_limit + 3) / 4) * 2;
+    VarType vt = (VarType) v->type;
+    JitBackend backend = (JitBackend) v->backend;
+    bool is_evaluated = v->is_evaluated();
+    const void *v_data = v->data;
 
     uint8_t dst[8] { };
 
@@ -1028,13 +1032,13 @@ const char *jitc_var_str(uint32_t index) {
             continue;
         }
 
-        if (v->is_evaluated()) {
-            const uint8_t *src_offset = (const uint8_t *) v->data + i * isize;
-            jitc_memcpy((JitBackend) v->backend, dst, src_offset, isize);
+        if (is_evaluated) {
+            const uint8_t *src_offset = (const uint8_t *) v_data + i * isize;
+            jitc_memcpy((JitBackend) backend, dst, src_offset, isize);
         }
 
         const char *comma = i + 1 < (uint32_t) size ? ", " : "";
-        switch ((VarType) v->type) {
+        switch (vt) {
             case VarType::Bool:    var_buffer.fmt("%"   PRIu8  "%s", *(( uint8_t *) dst), comma); break;
             case VarType::Int8:    var_buffer.fmt("%"   PRId8  "%s", *((  int8_t *) dst), comma); break;
             case VarType::UInt8:   var_buffer.fmt("%"   PRIu8  "%s", *(( uint8_t *) dst), comma); break;
