@@ -17,11 +17,7 @@ void jitc_record_start(JitBackend backend, const uint32_t *inputs,
     }
 
     for (uint32_t i = 0; i < n_inputs; ++i) {
-        Variable *variable = jitc_var(inputs[i]);
-
-        // TODO: asserts
-
-        record_ts->set_input(variable->data);
+        record_ts->set_input(inputs[i]);
     }
 }
 RecordThreadState *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
@@ -30,8 +26,7 @@ RecordThreadState *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
     RecordThreadState *record_ts = dynamic_cast<RecordThreadState *>(ts);
 
     for (uint32_t i = 0; i < n_outputs; ++i) {
-        Variable *variable = jitc_var(outputs[i]);
-        record_ts->set_output(variable->data);
+        record_ts->set_output(outputs[i]);
     }
 
     if (backend == JitBackend::CUDA) {

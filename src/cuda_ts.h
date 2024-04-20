@@ -3,8 +3,11 @@
 
 struct CUDAThreadState: ThreadState{
 
+    void barrier() override{}
+
     Task *launch(Kernel kernel, uint32_t size,
-                 std::vector<void *> *kernel_params) override;
+                 std::vector<void *> *kernel_params,
+                 const std::vector<uint32_t> *) override;
 
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
