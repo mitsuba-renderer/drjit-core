@@ -1402,12 +1402,12 @@ size_t jit_llvm_expand_threshold() noexcept {
     return llvm_expand_threshold;
 }
 
-uint32_t jit_var_reduce_identity(JitBackend backend, VarType vt, ReduceOp reduce_op) {
+uint32_t jit_var_reduce_identity(JitBackend backend, VarType vt, ReduceOp reduce_op, uint32_t size) {
     Variable v;
     v.literal = jitc_reduce_identity(reduce_op, vt);
     v.kind = (uint32_t) VarKind::Literal;
     v.type = (uint32_t) vt;
-    v.size = 1;
+    v.size = size;
     v.backend = (uint32_t) backend;
     lock_guard guard(state.lock);
     return jitc_var_new(v);

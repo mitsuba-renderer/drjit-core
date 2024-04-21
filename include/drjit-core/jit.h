@@ -967,7 +967,7 @@ extern JIT_EXPORT void jit_var_scatter_add_kahan(uint32_t *target_1,
  * \brief Atomically increment a counter and return the old value
  *
  * This operation is just like ``jit_var_scatter`` invoked with 32-bit unsigned
- * integer operands, the value ``1``, and reduce_op=ReduceOp::Add.
+ * integer operands, the value ``1``, and op=ReduceOp::Add.
  *
  * The main difference is that this variant returns the *old* value before the
  * atomic write (in contrast to the more general scatter reduction, where doing
@@ -1850,7 +1850,7 @@ extern JIT_EXPORT int jit_var_any(uint32_t index);
 /// Reduce a variable to a single value (asynchronous)
 extern JIT_EXPORT uint32_t jit_var_reduce(JIT_ENUM JitBackend backend,
                                           JIT_ENUM VarType vt,
-                                          JIT_ENUM ReduceOp reduce_op,
+                                          JIT_ENUM ReduceOp op,
                                           uint32_t index);
 
 /// Reduce a avariable within blocks of size 'block_size'
@@ -2303,7 +2303,8 @@ extern JIT_EXPORT size_t jit_llvm_expand_threshold() JIT_NOEXCEPT;
 /// Return the identity element of a particular type of reduction
 extern JIT_EXPORT uint32_t jit_var_reduce_identity(JitBackend backend,
                                                    VarType vt,
-                                                   ReduceOp reduce_op);
+                                                   ReduceOp op,
+                                                   uint32_t size);
 
 #if defined(__cplusplus)
 }
