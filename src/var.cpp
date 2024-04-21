@@ -1827,14 +1827,18 @@ uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size,
                    "multiple of 'block_size' (%u)", index, size, block_size);
 
     if (symbolic == -1) {
-        if (v->is_evaluated())
+        if (op == ReduceOp::Mul)
+            symbolic = 0;
+        else if ((op == ReduceOp::Min || op == ReduceOp::Max) && backend == JitBackend::CUDA)
+            symbolic = 0;
+        else if (v->is_evaluated())
             symbolic = 0;
         else if (v->symbolic)
             symbolic = 1;
         else
-            symbolic = size >= 1024u*1024u*1024u /* 1 GiB */;
+            symbolic = size * type_size[(int) vt] >= 1024u*1024u*1024u /* 1 GiB */;
 
-        if (backend == JitBackend::CUDA && (block_size & (block_size - 1)))
+        if (backend == JitBackend::CUDA && (block_size & (block_size - 1)) != 0)
             symbolic = 1; // CUDA backend requires power-of-two block sizes for evaluated mode
     }
 

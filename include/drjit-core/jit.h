@@ -852,7 +852,7 @@ enum class ReduceOp : uint32_t {
 
 /// For scatter-reductions, this enumeration specifies the strategy to be used
 enum class ReduceMode : uint32_t {
-    /// Inspect the JIT flags to choose between 'AtomicReduceLocal' (the
+    /// Inspect the JIT flags to choose between 'ScatterReduceLocal' (the
     /// default) and 'Atomic'
     Auto,
 
@@ -940,6 +940,10 @@ extern JIT_EXPORT uint32_t jit_var_scatter(uint32_t target, uint32_t value,
                                            uint32_t index, uint32_t mask,
                                            JIT_ENUM ReduceOp op JIT_DEF(ReduceOp::Identity),
                                            JIT_ENUM ReduceMode mode JIT_DEF(ReduceMode::Auto));
+
+/// Check if a backend supports the specified type of scatter-reduction
+extern JIT_EXPORT int jit_can_scatter_reduce(JitBackend backend, VarType vt,
+                                             ReduceOp op);
 
 /**
  * \brief Schedule a Kahan-compensated floating point atomic scatter-write
@@ -1531,7 +1535,7 @@ enum JitFlag {
     JitFlagPrintIR = 1 << 13,
     JitFlagKernelHistory = 1 << 14,
     JitFlagLaunchBlocking = 1 << 15,
-    JitFlagAtomicReduceLocal = 1 << 16,
+    JitFlagScatterReduceLocal = 1 << 16,
     JitFlagSymbolic = 1 << 17
 };
 #endif

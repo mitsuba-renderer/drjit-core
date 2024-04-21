@@ -35,6 +35,8 @@ extern uint32_t jitc_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t 
 extern uint32_t jitc_var_cast(uint32_t index, VarType target_type,
                               int reinterpret);
 
+/// Check if a backend supports a desired type of scatter-reduction
+extern bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op);
 
 // Common unary operations
 extern uint32_t jitc_var_neg(uint32_t a0);

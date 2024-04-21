@@ -1,6 +1,7 @@
 #include <drjit-core/nanostl.h>
 #include <drjit-core/half.h>
 #include "internal.h"
+#include "llvm.h"
 #include "var.h"
 #include "log.h"
 #include "eval.h"
@@ -1968,6 +1969,64 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
 
 extern size_t llvm_expand_threshold;
 
+// Determine whether or not a particular type of reduction is supported
+// by the backend. It's quite complicated!
+bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
+    if (op == ReduceOp::Identity)
+        return true;
+
+    // Bitwise reductions of floating point values not permitted
+    if ((vt == VarType::Float16 || vt == VarType::Float32 ||
+         vt == VarType::Float64) &&
+        (op == ReduceOp::Or || op == ReduceOp::And))
+        return false;
+
+    // No multiplication reduction atomics
+    if (op == ReduceOp::Mul)
+        return false;
+
+    // LLVM prior to v15.0.0 lacks minimum/maximum atomic reduction intrinsics
+    if (backend == JitBackend::LLVM && (op == ReduceOp::Min || op == ReduceOp::Max) &&
+        jitc_llvm_version_major < 15)
+        return false;
+
+    size_t compute_capability = (size_t) -1;
+    if (backend == JitBackend::CUDA)
+        compute_capability = thread_state(backend)->compute_capability;
+
+    switch (vt) {
+        case VarType::Bool:
+            // Scatter-reductions of masks not implemented
+            return false;
+
+        case VarType::Float16:
+            // Half-precision sum reduction require sm_60
+            if (op == ReduceOp::Add && compute_capability < 60)
+                return false;
+
+            // Half-precision min/max reductions require sm_90
+            if ((op == ReduceOp::Min || op == ReduceOp::Max) &&
+                compute_capability < 90)
+                return false;
+
+            // Half precision atomics too spotty on LLVM before v16.0.0
+            if (backend == JitBackend::LLVM && jitc_llvm_version_major < 16)
+                return false;
+            break;
+
+        case VarType::Float64:
+            // Double precision reductions require sm_60
+            if (compute_capability < 60)
+                return false;
+            break;
+
+        default:
+            break;
+    }
+
+    return true;
+}
+
 uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
                           uint32_t mask, ReduceOp op, ReduceMode mode) {
     Ref target = borrow(target_), ptr;
@@ -2003,61 +2062,15 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     unwrap(target, target_v);
     target_ = target;
 
-    ThreadState *ts = thread_state(target_v->backend);
+    JitBackend backend = (JitBackend) target_v->backend;
     VarType vt = (VarType) target_v->type;
 
-    switch (vt) {
-        case VarType::Bool:
-            if (op != ReduceOp::Identity)
-                jitc_raise("jit_var_scatter(): atomic reductions are not "
-                           "supported for masks!");
-            break;
-
-        case VarType::Float16:
-            if (var_info.backend == JitBackend::CUDA &&
-                (op == ReduceOp::Min || op == ReduceOp::Max) &&
-                ts->compute_capability < 90)
-                jitc_raise("jit_var_scatter(): your GPU does not support "
-                           "float16 min/max atomics (this requires compute "
-                           "capability 9.0)");
-
-            if (var_info.backend == JitBackend::CUDA &&
-                (op == ReduceOp::Min || op == ReduceOp::Max) &&
-                ts->compute_capability < 90)
-                jitc_raise("jit_var_scatter(): your GPU does not support "
-                           "float16 min/max atomics (this requires compute "
-                           "capability 9.0)");
-
-            [[fallthrough]];
-
-        case VarType::Float32:
-        case VarType::Float64:
-            if (op == ReduceOp::Or || op == ReduceOp::And)
-                jitc_raise("jit_var_scatter(): bitwise reductions are not "
-                           "supported for floating point operands!");
-
-            if (var_info.backend == JitBackend::CUDA &&
-                (op == ReduceOp::Min || op == ReduceOp::Max) &&
-                vt != VarType::Float16)
-                jitc_raise("jit_var_scatter(): min/max reductions on CUDA are "
-                           "supported for integer and float16 operands but "
-                           "curiously *not* float32/float64 operands! This is "
-                           "a limitation CUDA/PTX, which lacks instructions "
-                           "for this combination.");
-
-            if (var_info.backend == JitBackend::CUDA &&
-                vt == VarType::Float64 && ts->compute_capability < 60)
-                jitc_raise("jit_var_scatter(): your GPU does not support "
-                           "float64 atomics (this requires compute "
-                           "capability 6.0)");
-
-            break;
-
-        default: break;
-    }
-
-    if (op == ReduceOp::Mul)
-        jitc_raise("jit_var_scatter(): ReduceOp.Mul unsupported for atomic reductions!");
+    if (!jitc_can_scatter_reduce(backend, vt, op))
+        jitc_raise(
+            "jit_var_scatter(): the %s backend does not support the requested "
+            "type of atomic reduction (%s) for variables of type (%s)",
+            backend == JitBackend::CUDA ? "CUDA" : "LLVM", red_name[(int) op],
+            type_name[(int) vt]);
 
     if (target_v->symbolic)
         jitc_raise(

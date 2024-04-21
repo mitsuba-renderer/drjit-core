@@ -1418,6 +1418,11 @@ uint32_t jit_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, 
     return jitc_var_block_reduce(op, index, block_size, symbolic);
 }
 
+int jit_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
+    lock_guard guard(state.lock);
+    return jitc_can_scatter_reduce(backend, vt, op);
+}
+
 uint32_t jit_var_tile(uint32_t index, uint32_t count) {
     lock_guard guard(state.lock);
     return jitc_var_tile(index, count);
