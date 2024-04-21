@@ -295,7 +295,10 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
 
     alloca_size = alloca_align = -1;
 
-    for (ScheduledVariable &sv : schedule) {
+    // Warning: do not rewrite this into a range-based for loop.
+    // The memory location of 'schedule' may change.
+    for (size_t i = 0; i < schedule.size(); ++i) {
+        ScheduledVariable &sv = schedule[i];
         Variable *v = jitc_var(sv.index);
         VarType vt = (VarType) v->type;
         VarKind kind = (VarKind) v->kind;

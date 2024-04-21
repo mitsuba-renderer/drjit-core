@@ -266,7 +266,10 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
         call->name.c_str(), n_regs, n_regs, n_regs, n_regs, n_regs, n_regs,
         n_regs, n_regs);
 
-    for (ScheduledVariable &sv : schedule) {
+    // Warning: do not rewrite this into a range-based for loop.
+    // The memory location of 'schedule' may change.
+    for (size_t i = 0; i < schedule.size(); ++i) {
+        ScheduledVariable &sv = schedule[i];
         Variable *v = jitc_var(sv.index);
         const uint32_t vti = v->type;
         const VarType vt = (VarType) vti;

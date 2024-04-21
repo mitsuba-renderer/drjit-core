@@ -1627,7 +1627,7 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
 
                     case BoundsCheckType::Call:
                         msg = "Attempted to invoke callable with index";
-                        msg2 = ", but this value must be smaller than";
+                        msg2 = ", but this value must be strictly smaller than";
                         captured--;
                         size--;
                         break;
