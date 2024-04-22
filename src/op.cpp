@@ -1692,10 +1692,9 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
         if (!result && unlikely(index_v->is_dirty() || src_v->is_dirty())) {
             jitc_eval(thread_state(src_info.backend));
             if (jitc_var(index)->is_dirty())
-                jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!", index);
+                jitc_raise_dirty_error(index);
             if (jitc_var(src)->is_dirty())
-                jitc_fail("jit_var_gather(): operand r%u remains dirty following evaluation!",
-                          (uint32_t) src);
+                jitc_raise_dirty_error(src);
 
             src_v = jitc_var(src);
             index_v = jitc_var(index);

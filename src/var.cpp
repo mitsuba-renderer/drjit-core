@@ -836,10 +836,10 @@ uint32_t jitc_var_new_node_1(JitBackend backend, VarKind kind, VarType vt,
 
     if (unlikely(v0->is_dirty())) {
         jitc_eval(thread_state(backend));
+
         v0 = jitc_var(a0);
         if (v0->is_dirty())
-            jitc_fail("jit_var_new_node(): variable remains dirty following "
-                      "evaluation!");
+            jitc_raise_dirty_error(a0);
     }
 
     Variable v;
@@ -863,9 +863,14 @@ uint32_t jitc_var_new_node_2(JitBackend backend, VarKind kind, VarType vt,
 
     if (unlikely(v0->is_dirty() || v1->is_dirty())) {
         jitc_eval(thread_state(backend));
-        v0 = jitc_var(a0); v1 = jitc_var(a1);
-        if (v0->is_dirty() || v1->is_dirty())
-            jitc_fail("jit_var_new_node(): variable remains dirty!");
+
+        v0 = jitc_var(a0);
+        if (v0->is_dirty())
+            jitc_raise_dirty_error(a0);
+
+        v1 = jitc_var(a1);
+        if (v1->is_dirty())
+            jitc_raise_dirty_error(a1);
     }
 
     Variable v;
@@ -890,9 +895,18 @@ uint32_t jitc_var_new_node_3(JitBackend backend, VarKind kind, VarType vt,
                              uint32_t a2, Variable *v2, uint64_t payload) {
     if (unlikely(v0->is_dirty() || v1->is_dirty() || v2->is_dirty())) {
         jitc_eval(thread_state(backend));
-        v0 = jitc_var(a0); v1 = jitc_var(a1); v2 = jitc_var(a2);
-        if (v0->is_dirty() || v1->is_dirty() || v2->is_dirty())
-            jitc_fail("jit_var_new_node(): variable remains dirty!");
+
+        v0 = jitc_var(a0);
+        if (v0->is_dirty())
+            jitc_raise_dirty_error(a0);
+
+        v1 = jitc_var(a1);
+        if (v1->is_dirty())
+            jitc_raise_dirty_error(a1);
+
+        v2 = jitc_var(a2);
+        if (v1->is_dirty())
+            jitc_raise_dirty_error(a2);
     }
 
     Variable v;
@@ -920,9 +934,22 @@ uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind, VarType vt,
                              uint64_t payload) {
     if (unlikely(v0->is_dirty() || v1->is_dirty() || v2->is_dirty() || v3->is_dirty())) {
         jitc_eval(thread_state(backend));
-        v0 = jitc_var(a0); v1 = jitc_var(a1); v2 = jitc_var(a2); v3 = jitc_var(a3);
-        if (v0->is_dirty() || v1->is_dirty() || v2->is_dirty() || v3->is_dirty())
-            jitc_fail("jit_var_new_node(): variable remains dirty!");
+
+        v0 = jitc_var(a0);
+        if (v0->is_dirty())
+            jitc_raise_dirty_error(a0);
+
+        v1 = jitc_var(a1);
+        if (v1->is_dirty())
+            jitc_raise_dirty_error(a1);
+
+        v2 = jitc_var(a2);
+        if (v1->is_dirty())
+            jitc_raise_dirty_error(a2);
+
+        v3 = jitc_var(a3);
+        if (v1->is_dirty())
+            jitc_raise_dirty_error(a3);
     }
 
     Variable v;
@@ -1058,6 +1085,53 @@ const char *jitc_var_str(uint32_t index) {
     return var_buffer.get();
 }
 
+void jitc_raise_dirty_error(uint32_t index) {
+    jitc_raise(
+        "Variable r%u remains dirty despite an attempt to evaluate it.\n"
+        "This normally indicates the following situation:\n"
+        "\n"
+        "1. You executed an operation causing a *side effect*, e.g., a\n"
+        "\n"
+        "    - Scatter: dr.scatter(), dr.scatter_reduce(), etc., or\n"
+        "\n"
+        "    - Reduction (via the 'symbolic' strategy): dr.reduce(), \n"
+        "      dr.block_reduce(), dr.all(), dr.sum(), dr.min(), etc.\n"
+        "\n"
+        "    - Indirect assignment: a[index_vector] = ...\n"
+        "\n"
+        "2. You did so within a symbolic operation such as dr.switch(),\n"
+        "   dr.if_stmt(), dr.while_loop(), etc. Or perhaps you are using\n"
+        "   @dr.syntax-decorated functions that automatically insert\n"
+        "   calls to such symbolic operations. You can read more about\n"
+        "   symbolic execution here:\n"
+        "   https://drjit.readthedocs.io/en/latest/cflow.html#symbolic-versus-evaluated-modes\n"
+        "\n"
+        "3. You then tried to evaluate the modified array, while still\n"
+        "   inside the symbolic operation.\n"
+        "\n"
+        "This is not permitted. Side effects inside symbolic regions are\n"
+        "tracked by Dr.Jit, but they cannot be materialized until the\n"
+        "program has exited the outermost symbolic operation.\n"
+        "\n"
+        "Here is an example of a histogram routine with this flaw:\n"
+        "\n"
+        "from drjit.auto import UInt32, Float\n"
+        "\n"
+        "@dr.syntax\n"
+        "def histogram(index: UInt32, bin_count: int = 10) -> Float:\n"
+        "    hist = dr.zeros(Float, bin_count)\n"
+        "    if index < bin_count:\n"
+        "        dr.scatter_add(hist, 1, index)\n"
+        "        hist /= len(index) # <-- oops\n"
+        "    return hist\n"
+        "\n"
+        "This example can be fixed dedenting the commented line so that\n"
+        "it is no longer contained within the symbolic 'if' statement.\n",
+        index
+    );
+}
+
+
 static void jitc_raise_symbolic_error(const char *func, uint32_t index) {
     jitc_raise(
         "%s(r%u): not permitted.\n\n"
@@ -1149,8 +1223,7 @@ uint32_t jitc_var_data(uint32_t index, bool eval_dirty, void **ptr_out) {
             v = jitc_var(index);
 
             if (unlikely(v->is_dirty()))
-                jitc_raise("jitc_var_data(): variable r%u remains dirty after "
-                           "evaluation!", index);
+                jitc_raise_dirty_error(index);
         }
     } else if (v->is_node()) {
         jitc_var_eval(index);
@@ -1238,7 +1311,7 @@ int jitc_var_eval(uint32_t index) {
 
     v = jitc_var(index);
     if (unlikely(v->is_dirty()))
-        jitc_raise("jit_var_eval(): variable r%u remains dirty after evaluation!", index);
+        jitc_raise_dirty_error(index);
     else if (unlikely(!v->is_evaluated() || !v->data))
         jitc_raise("jit_var_eval(): invalid/uninitialized variable r%u!", index);
 
@@ -1388,8 +1461,7 @@ uint32_t jitc_var_copy(uint32_t index) {
         jitc_var_eval(index);
         v = jitc_var(index);
         if (unlikely(v->is_dirty()))
-            jitc_raise("jit_var_copy(): variable r%u remains dirty following "
-                       "evaluation!", index);
+            jitc_raise_dirty_error(index);
     }
 
     if (unlikely(v->consumed))
@@ -1484,7 +1556,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         jitc_eval(thread_state(v->backend));
         v = jitc_var(index);
         if (v->is_dirty())
-            jitc_raise("jit_var_resize(r%u, %zu): variable remains dirty following evaluation!", index, size);
+            jitc_raise_dirty_error(index);
     }
 
     uint32_t result;

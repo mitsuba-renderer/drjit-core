@@ -520,8 +520,7 @@ Variable jitc_cuda_tex_check(VarType out_type, size_t ndim, const uint32_t *pos)
         jitc_eval(thread_state(backend));
         for (size_t i = 0; i < ndim; ++i) {
             if (jitc_var(pos[i])->is_dirty())
-                jitc_fail("jit_cuda_tex_check(): operand r%u remains dirty "
-                          "following evaluation!", pos[i]);
+                jitc_raise_dirty_error(pos[i]);
         }
     }
 

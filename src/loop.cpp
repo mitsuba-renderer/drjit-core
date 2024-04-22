@@ -39,8 +39,7 @@ uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, 
         jitc_eval(thread_state(backend));
         for (size_t i = 0; i < n_indices; ++i) {
             if (jitc_var(indices[i])->is_dirty())
-                jitc_raise("jit_var_loop_start(): input %zu (r%u) remains "
-                           "dirty after evaluation", i, indices[i]);
+                jitc_raise_dirty_error(indices[i]);
         }
     }
 

@@ -1119,11 +1119,10 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
         jitc_eval(thread_state(JitBackend::LLVM));
         dirty = false;
 
-        for (uint32_t i = 0; i < n_args; ++i)
-            dirty |= jitc_var(in[i])->is_dirty();
-
-        if (dirty)
-            jitc_raise("jit_llvm_ray_trace(): inputs remain dirty after evaluation!");
+        for (uint32_t i = 0; i < n_args; ++i) {
+            if (jitc_var(in[i])->is_dirty())
+                jitc_raise_dirty_error(in[i]);
+        }
     }
 
     // ----------------------------------------------------------

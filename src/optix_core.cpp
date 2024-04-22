@@ -541,15 +541,12 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
 
     if (dirty) {
         jitc_eval(thread_state(JitBackend::CUDA));
-        dirty = false;
 
         for (uint32_t i = 0; i <= n_args; ++i) {
             uint32_t index = (i < n_args) ? args[i] : mask;
-            dirty |= jitc_var(index)->is_dirty();
+            if (jitc_var(index)->is_dirty())
+                jitc_raise_dirty_error(index);
         }
-
-        if (dirty)
-            jitc_raise("jit_optix_ray_trace(): inputs remain dirty after evaluation!");
     }
 
     // Potentially apply any masks on the mask stack

@@ -118,15 +118,24 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
     if (dirty) {
         jitc_eval(ts);
 
-        dirty = jitc_var(self)->is_dirty() || jitc_var(mask_)->is_dirty();
+        uint32_t dirty_index = 0;
+        if (jitc_var(self)->is_dirty())
+            dirty_index = self;
+        if (jitc_var(mask_)->is_dirty())
+            dirty_index = mask_;
+
         for (uint32_t i = 0; i < n_in; ++i) {
             const Variable *v = jitc_var(in[i]);
-            if ((VarKind) v->kind == VarKind::CallInput)
-                dirty |= jitc_var(v->dep[0])->is_dirty();
+            if ((VarKind) v->kind == VarKind::CallInput) {
+                if (jitc_var(v->dep[0])->is_dirty()) {
+                    dirty_index = v->dep[0];
+                    break;
+                }
+            }
         }
 
-        if (unlikely(dirty))
-            jitc_raise("jit_var_call(): inputs remain dirty after evaluation!");
+        if (unlikely(dirty_index))
+            jitc_raise_dirty_error(dirty_index);
     }
 
     // =====================================================

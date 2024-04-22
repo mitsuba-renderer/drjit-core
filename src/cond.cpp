@@ -11,9 +11,11 @@ uint32_t jitc_var_cond_start(const char *name, bool symbolic, uint32_t cond_t, u
     if (cond_t_v->is_dirty() || cond_f_v->is_dirty()) {
         jitc_eval(thread_state(cond_t_v->backend));
         cond_t_v = jitc_var(cond_t);
+        if (cond_t_v->is_dirty())
+            jitc_raise_dirty_error(cond_t);
         cond_f_v = jitc_var(cond_f);
-        if (cond_t_v->is_dirty() || cond_f_v->is_dirty())
-            jitc_raise("jit_var_cond_start(): variable remains dirty following evaluation!");
+        if (cond_f_v->is_dirty())
+            jitc_raise_dirty_error(cond_f);
     }
 
     Variable v2;

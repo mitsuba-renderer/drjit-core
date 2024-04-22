@@ -266,6 +266,9 @@ extern std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp re
 /// Undo the above
 extern void jitc_var_reduce_expanded(uint32_t index);
 
+/// Generate an informative error message about variables that remain dirty following evaluation
+extern void jitc_raise_dirty_error(uint32_t index);
+
 /// Identify different types of bounds checks (used to choose a suitable error message)
 enum class BoundsCheckType {
     Scatter,
