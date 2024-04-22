@@ -1985,8 +1985,21 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
         return false;
 
     // LLVM prior to v15.0.0 lacks minimum/maximum atomic reduction intrinsics
-    if (backend == JitBackend::LLVM && (op == ReduceOp::Min || op == ReduceOp::Max) &&
-        jitc_llvm_version_major < 15)
+    if (backend == JitBackend::LLVM && (op == ReduceOp::Min || op == ReduceOp::Max)) {
+        if (jitc_llvm_version_major < 15)
+            return false;
+
+#if !defined(__aarch64__)
+        // FP16 min/max reduction requires a global offset table on x86_64,
+        // which breaks the compilation
+        if (vt == VarType::Float16)
+            return false;
+#endif
+    }
+
+    // CUDA does not have minimum/maximum atomic reduction for FP16/FP32
+    if (backend == JitBackend::CUDA && (op == ReduceOp::Min || op == ReduceOp::Max) &&
+        (vt == VarType::Float32 || vt == VarType::Float64))
         return false;
 
     size_t compute_capability = (size_t) -1;
