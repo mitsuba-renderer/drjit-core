@@ -446,10 +446,6 @@ void LLVMThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
 void LLVMThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
                              uint32_t size, void *out) {
 
-    jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u)",
-             (uintptr_t) ptr, type_name[(int) type],
-             red_name[(int) op], size);
-
     uint32_t tsize = type_size[(int) type];
 
     // LLVM specific
@@ -458,6 +454,9 @@ void LLVMThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
         block_size = jitc_llvm_block_size;
         blocks     = (size + block_size - 1) / block_size;
     }
+
+    jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u, block_size=%u, blocks=%u)",
+             (uintptr_t) ptr, type_name[(int) type], red_name[(int) op], size, block_size, blocks);
 
     void *target = out;
     if (blocks > 1)

@@ -231,7 +231,7 @@ static const char *append_reduce_op_local(VarType vt, ReduceOp op, const Variabl
 
     Variable id_v{};
     id_v.type = (uint32_t) vt;
-    id_v.literal = jitc_reduce_identity(op, vt);
+    id_v.literal = jitc_reduce_identity(vt, op);
 
     // Failed experiment: skipping to the next element via ctz() wasn't
     // faster because of the resulting inter-instruction dependency
@@ -403,7 +403,7 @@ static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Va
 
     Variable id_v{};
     id_v.type = (uint32_t) vt;
-    id_v.literal = jitc_reduce_identity(op, vt);
+    id_v.literal = jitc_reduce_identity(vt, op);
 
     fmt_intrinsic(
         "define internal fastcc void @reduce_$s_$h_noconflict($P %ptr, $T %value, i$w %active_in) #0 ${\n"

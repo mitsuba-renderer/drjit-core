@@ -1919,7 +1919,7 @@ uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size,
     }
 
     if (symbolic == 1) {
-        uint64_t identity = jitc_reduce_identity(op, vt);
+        uint64_t identity = jitc_reduce_identity(vt, op);
 
         uint64_t bsize_u64 = block_size, one_u64 = 1;
 
@@ -2006,8 +2006,8 @@ void jitc_var_self(JitBackend backend, uint32_t *value, uint32_t *index) {
 }
 
 /// Return the identity element for different horizontal reductions
-uint64_t jitc_reduce_identity(ReduceOp reduce_op, VarType vt) {
-    switch (reduce_op) {
+uint64_t jitc_reduce_identity(VarType vt, ReduceOp op) {
+    switch (op) {
         case ReduceOp::Or:
         case ReduceOp::Add: return 0; break;
         case ReduceOp::And: return type_all_ones[(int) vt]; break;
@@ -2019,16 +2019,16 @@ uint64_t jitc_reduce_identity(ReduceOp reduce_op, VarType vt) {
     }
 }
 
-uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
+uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp op,
                          uint32_t index) {
-    if (unlikely(reduce_op == ReduceOp::And || reduce_op == ReduceOp::Or))
+    if (unlikely(op == ReduceOp::And || op == ReduceOp::Or))
         jitc_raise("jit_var_reduce(): does not support And/Or operation!");
 
     if (unlikely(index == 0)) {
         if (backend == JitBackend::None || vt == VarType::Void)
             jitc_raise("jit_var_reduce(): missing backend/type information!");
 
-        uint64_t identity = jitc_reduce_identity(reduce_op, vt);
+        uint64_t identity = jitc_reduce_identity(vt, op);
         return jitc_var_literal(backend, vt, &identity, 1, 0);
     }
 
@@ -2047,7 +2047,7 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
         uint32_t size = v->size;
 
         // Tricky cases
-        if (size != 1 && reduce_op == ReduceOp::Add) {
+        if (size != 1 && op == ReduceOp::Add) {
             using half = drjit::half;
             switch ((VarType) v->type) {
                 case VarType::Int8:    jitc_var_reduce_scalar<int8_t>  (size, &value); break;
@@ -2063,15 +2063,15 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
                 case VarType::Float64: jitc_var_reduce_scalar<double>  (size, &value); break;
                 default: jitc_raise("jit_var_reduce(): unsupported operand type!");
             }
-        } else if (size != 1 && reduce_op == ReduceOp::Mul) {
+        } else if (size != 1 && op == ReduceOp::Mul) {
             jitc_raise("jit_var_reduce(): ReduceOp::Mul is not supported for vector values!");
         }
 
         return jitc_var_literal(backend, vt, &value, 1, 0);
     }
 
-    jitc_log(Debug, "jit_var_reduce(r%u, reduce_op=%s)", index,
-             red_name[(int) reduce_op]);
+    jitc_log(Debug, "jit_var_reduce(r%u, op=%s)", index,
+             red_name[(int) op]);
 
     if (jitc_var_eval(index))
         v = jitc_var(index);
@@ -2083,12 +2083,11 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
         jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
                                                 : AllocType::HostAsync,
                     (size_t) type_size[(int) vt]);
-    jitc_reduce(backend, vt, reduce_op, values, size, data);
+    jitc_reduce(backend, vt, op, values, size, data);
     return jitc_var_mem_map(backend, vt, data, 1, 1);
 }
 
-uint32_t jitc_var_reduce_dot(uint32_t index_1,
-                             uint32_t index_2) {
+uint32_t jitc_var_reduce_dot(uint32_t index_1, uint32_t index_2) {
     if (index_1 == 0 && index_2 == 0)
         return 0;
 
@@ -2174,7 +2173,7 @@ uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
 }
 
 
-std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op) {
+std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
     Variable *v = jitc_var(index);
     VarType vt = (VarType) v->type;
 
@@ -2191,7 +2190,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op
         return { index, 1 };
     }
 
-    if (v->reduce_op == (uint32_t) reduce_op) {
+    if (v->reduce_op == (uint32_t) op) {
         jitc_var_inc_ref(index);
         return { index, index_scale };
     }
@@ -2202,7 +2201,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op
                    "not possible, as this would expand the array size beyond 4 "
                    "billion entries!");
 
-    uint64_t identity = jitc_reduce_identity(reduce_op, vt);
+    uint64_t identity = jitc_reduce_identity(vt, op);
 
     Ref dst;
     void *dst_addr = nullptr;
@@ -2218,7 +2217,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op
     }
 
     Variable *v2 = jitc_var(dst);
-    v2->reduce_op = (uint32_t) reduce_op;
+    v2->reduce_op = (uint32_t) op;
     v2->size = size;
 
     jitc_log(Debug, "jit_var_expand(): %s r%u[%zu] = expand(r%u, factor=%zu)",

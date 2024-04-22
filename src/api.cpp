@@ -807,10 +807,10 @@ int jit_var_all(uint32_t index) {
     return jitc_var_all(index);
 }
 
-uint32_t jit_var_reduce(JitBackend backend, VarType vt, ReduceOp reduce_op,
+uint32_t jit_var_reduce(JitBackend backend, VarType vt, ReduceOp op,
                         uint32_t index) {
     lock_guard guard(state.lock);
-    return jitc_var_reduce(backend, vt, reduce_op, index);
+    return jitc_var_reduce(backend, vt, op, index);
 }
 
 uint32_t jit_var_reduce_dot(uint32_t index_1,
@@ -1402,15 +1402,9 @@ size_t jit_llvm_expand_threshold() noexcept {
     return llvm_expand_threshold;
 }
 
-uint32_t jit_var_reduce_identity(JitBackend backend, VarType vt, ReduceOp reduce_op, uint32_t size) {
-    Variable v;
-    v.literal = jitc_reduce_identity(reduce_op, vt);
-    v.kind = (uint32_t) VarKind::Literal;
-    v.type = (uint32_t) vt;
-    v.size = size;
-    v.backend = (uint32_t) backend;
+uint64_t jit_reduce_identity(VarType vt, ReduceOp op) {
     lock_guard guard(state.lock);
-    return jitc_var_new(v);
+    return jitc_reduce_identity(vt, op);
 }
 
 uint32_t jit_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, int symbolic) {

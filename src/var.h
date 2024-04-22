@@ -209,7 +209,7 @@ extern bool jitc_var_any(uint32_t index);
 
 /// Reduce a variable to a single value
 extern uint32_t jitc_var_reduce(JitBackend backend, VarType vt,
-                                ReduceOp reduce_op, uint32_t index);
+                                ReduceOp op, uint32_t index);
 
 /// Dot product reduction of two variables
 extern uint32_t jitc_var_reduce_dot(uint32_t index_1,
@@ -258,10 +258,10 @@ extern uint64_t jitc_var_stash_ref(uint32_t index);
 extern void jitc_var_unstash_ref(uint64_t handle);
 
 /// Return the identity element for different horizontal reductions
-extern uint64_t jitc_reduce_identity(ReduceOp reduce_op, VarType vt);
+extern uint64_t jitc_reduce_identity(VarType vt, ReduceOp op);
 
 /// LLVM: expand a variable to a larger storage area to avoid atomic scatters
-extern std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp reduce_op);
+extern std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op);
 
 /// Undo the above
 extern void jitc_var_reduce_expanded(uint32_t index);

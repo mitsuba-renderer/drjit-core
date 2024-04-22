@@ -2301,10 +2301,7 @@ extern JIT_EXPORT void jit_llvm_set_expand_threshold(size_t size);
 extern JIT_EXPORT size_t jit_llvm_expand_threshold() JIT_NOEXCEPT;
 
 /// Return the identity element of a particular type of reduction
-extern JIT_EXPORT uint32_t jit_var_reduce_identity(JitBackend backend,
-                                                   VarType vt,
-                                                   ReduceOp op,
-                                                   uint32_t size);
+extern JIT_EXPORT uint64_t jit_reduce_identity(VarType vt, ReduceOp op);
 
 #if defined(__cplusplus)
 }

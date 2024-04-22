@@ -2026,6 +2026,15 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
     return true;
 }
 
+static const char *mode_name[] = {
+    "auto",
+    "direct",
+    "local",
+    "no_conflict",
+    "expand",
+    "permute"
+};
+
 uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
                           uint32_t mask, ReduceOp op, ReduceMode mode) {
     Ref target = borrow(target_), ptr;
@@ -2034,14 +2043,15 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         if (result_node)
             jitc_log(Debug,
                      "jit_var_scatter(): r%u[r%u] %s r%u (mask=r%u, ptr=r%u, "
-                     "se=r%u, out=r%u) [%s]",
+                     "se=r%u, out=r%u, mode=%s) [%s]",
                      target_, index, reduce_op_symbol[(int) op], value,
-                     mask, (uint32_t) ptr, result_node, (uint32_t) target, msg);
+                     mask, (uint32_t) ptr, result_node, (uint32_t) target,
+                     mode_name[(int) mode], msg);
         else
             jitc_log(Debug,
-                     "jit_var_scatter(): r%u[r%u] %s r%u (mask=r%u, ptr=r%u) [%s]",
+                     "jit_var_scatter(): r%u[r%u] %s r%u (mask=r%u, ptr=r%u, mode=%s) [%s]",
                      target_, index, reduce_op_symbol[(int) op], value,
-                     mask, (uint32_t) ptr, msg);
+                     mask, (uint32_t) ptr, mode_name[(int) mode], msg);
     };
 
     if (value == 0 && index == 0) {
