@@ -1984,26 +1984,16 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
     if (op == ReduceOp::Mul)
         return false;
 
+    bool is_llvm = backend == JitBackend::LLVM;
+    bool is_cuda = backend == JitBackend::CUDA;
+
     // LLVM prior to v15.0.0 lacks minimum/maximum atomic reduction intrinsics
-    if (backend == JitBackend::LLVM && (op == ReduceOp::Min || op == ReduceOp::Max)) {
-        if (jitc_llvm_version_major < 15)
-            return false;
-
-#if !defined(__aarch64__)
-        // FP16 min/max reduction requires a global offset table on x86_64,
-        // which breaks the compilation
-        if (vt == VarType::Float16)
-            return false;
-#endif
-    }
-
-    // CUDA does not have minimum/maximum atomic reduction for FP16/FP32
-    if (backend == JitBackend::CUDA && (op == ReduceOp::Min || op == ReduceOp::Max) &&
-        (vt == VarType::Float32 || vt == VarType::Float64))
+    if (is_llvm && (op == ReduceOp::Min || op == ReduceOp::Max) &&
+        jitc_llvm_version_major < 15)
         return false;
 
     size_t compute_capability = (size_t) -1;
-    if (backend == JitBackend::CUDA)
+    if (is_cuda)
         compute_capability = thread_state(backend)->compute_capability;
 
     switch (vt) {
@@ -2022,13 +2012,25 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
                 return false;
 
             // Half precision atomics too spotty on LLVM before v16.0.0
-            if (backend == JitBackend::LLVM && jitc_llvm_version_major < 16)
+            if (is_llvm && jitc_llvm_version_major < 16)
+                return false;
+
+#if defined(__x86_64__)
+            // FP16 min/max reduction requires a global offset table on x86_64,
+            // which breaks the compilation
+            if (is_llvm && (op == ReduceOp::Min || op == ReduceOp::Max))
+                return false;
+#endif
+            break;
+
+        case VarType::Float32:
+            if (is_cuda && op != ReduceOp::Add)
                 return false;
             break;
 
         case VarType::Float64:
             // Double precision reductions require sm_60
-            if (compute_capability < 60)
+            if (is_cuda && (op != ReduceOp::Add || compute_capability < 60))
                 return false;
             break;
 
