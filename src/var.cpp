@@ -251,53 +251,88 @@ StringBuffer var_buffer(0);
                     "which exceeds the limit of 2^32 == 4294967296 entries.",  \
                size)
 
+static std::vector<uint32_t> free_list;
+
 /// Cleanup handler, called when the internal/external reference count reaches zero
-void jitc_var_free(uint32_t index, Variable *v) {
-    jitc_trace("jit_var_free(r%u)", index);
+JIT_NOINLINE void jitc_process_free_list() noexcept {
+    State &state = ::state;
 
-    if (v->is_evaluated()) {
-        // Release memory referenced by this variable
-        if (!v->retain_data)
-            jitc_free(v->data);
-    } else {
-        // Unevaluated variable, drop from CSE cache
-        jitc_lvn_drop(index, v);
-    }
+    // Deallocate using a list to avoid overflowing the stack in long dependent calculations
+    while (!free_list.empty()) {
+        uint32_t index = free_list.back();
+        free_list.pop_back();
+        Variable *v = &state.variables[index];
 
-    uint32_t dep[4];
-    bool write_ptr = v->write_ptr;
-    memcpy(dep, v->dep, sizeof(uint32_t) * 4);
-    v->counter++;
-
-    if (unlikely(v->extra)) {
-        uint32_t index2 = v->extra;
-        VariableExtra &extra = state.extra[index2];
-        char *label = extra.label;
-
-        /* Notify callback that the variable was freed.
-           Do this first, before freeing any dependencies */
-        if (extra.callback) {
-            if (extra.callback_internal) {
-                extra.callback(index, 1, extra.callback_data);
-            } else {
-                unlock_guard guard(state.lock);
-                extra.callback(index, 1, extra.callback_data);
-            }
+        jitc_trace("jit_var_free(r%u)", index);
+        if (v->is_evaluated()) {
+            // Release memory referenced by this variable
+            if (!v->retain_data)
+                jitc_free(v->data);
+        } else {
+            // Unevaluated variable, drop from CSE cache
+            jitc_lvn_drop(index, v);
         }
 
-        free(label);
-        state.unused_extra.push(index2);
-    }
+        uint32_t dep[4];
+        bool write_ptr = v->write_ptr;
+        memcpy(dep, v->dep, sizeof(uint32_t) * 4);
+        v->counter++;
 
-    // Remove from unused variable list
-    state.unused_variables.push(index);
+        if (unlikely(v->extra)) {
+            uint32_t index2 = v->extra;
+            VariableExtra &extra = state.extra[index2];
+            char *label = extra.label;
 
-    if (likely(!write_ptr)) {
-        // Decrease reference count of dependencies
-        for (int i = 0; i < 4; ++i)
-            jitc_var_dec_ref(dep[i]);
-    } else {
-        jitc_var_dec_ref_se(dep[3]);
+            /* Notify callback that the variable was freed.
+               Do this first, before freeing any dependencies */
+            if (extra.callback) {
+                if (extra.callback_internal) {
+                    extra.callback(index, 1, extra.callback_data);
+                } else {
+                    unlock_guard guard(state.lock);
+                    extra.callback(index, 1, extra.callback_data);
+                }
+            }
+
+            free(label);
+            state.unused_extra.push(index2);
+        }
+
+        // Remove from unused variable list
+        state.unused_variables.push(index);
+
+        if (likely(!write_ptr)) {
+            for (int i = 0; i < 4; ++i) {
+                // Manually inlined version of jitc_var_dec_ref
+                uint32_t index2 = dep[i];
+                if (!index2)
+                    continue;
+
+                Variable *v2 = &state.variables[dep[i]];
+
+                if (unlikely(v2->ref_count == 0))
+                    jitc_fail("jit_var_dec_ref(): variable r%u has no references!", index2);
+
+                jitc_trace("jit_var_dec_ref(r%u): %u", index2, (uint32_t) v2->ref_count - 1);
+                v2->ref_count--;
+
+                if (v2->ref_count == 0 && v2->ref_count_se == 0)
+                    free_list.push_back(index2);
+            }
+        } else if (dep[3]) {
+            // Manually inlined version of jitc_var_dec_ref_se
+            uint32_t index2 = dep[3];
+            Variable *v2 = &state.variables[index2];
+
+            if (unlikely(v2->ref_count_se == 0))
+                jitc_fail("jit_var_dec_ref_se(): variable r%u has no side effect references!", index2);
+
+            jitc_trace("jit_var_dec_ref_se(r%u): %u", index2, (uint32_t) v2->ref_count_se - 1);
+            v2->ref_count_se--;
+
+            if (v2->ref_count == 0 && v2->ref_count_se == 0)
+                free_list.push_back(index);
+        }
     }
 
     // Optional: intense internal sanitation instrumentation
@@ -398,14 +433,18 @@ void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept {
     jitc_trace("jit_var_dec_ref(r%u): %u", index, (uint32_t) v->ref_count - 1);
     v->ref_count--;
 
-    if (v->ref_count == 0 && v->ref_count_se == 0)
-        jitc_var_free(index, v);
+    if (v->ref_count || v->ref_count_se)
+        return;
+
+    free_list.push_back(index);
+    jitc_process_free_list();
 }
 
 /// Decrease the external reference count of a given variable
 void jitc_var_dec_ref(uint32_t index) noexcept {
-    if (index != 0)
-        jitc_var_dec_ref(index, jitc_var(index));
+    if (index == 0)
+        return;
+    jitc_var_dec_ref(index, jitc_var(index));
 }
 
 /// Decrease the side effect reference count of a given variable
@@ -416,8 +455,11 @@ void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept {
     jitc_trace("jit_var_dec_ref_se(r%u): %u", index, (uint32_t) v->ref_count_se - 1);
     v->ref_count_se--;
 
-    if (v->ref_count == 0 && v->ref_count_se == 0)
-        jitc_var_free(index, v);
+    if (v->ref_count || v->ref_count_se)
+        return;
+
+    free_list.push_back(index);
+    jitc_process_free_list();
 }
 
 /// Decrease the side effect reference count of a given variable
