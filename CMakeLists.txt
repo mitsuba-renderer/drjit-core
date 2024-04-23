@@ -227,6 +227,11 @@ if (UNIX)
   target_link_libraries(drjit-core PRIVATE dl pthread)
 endif()
 
+
+if (DRJIT_USE_STD_MUTEX)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_USE_STD_MUTEX)
+endif()
+
 set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE        TRUE)
 set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL     TRUE)
 set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO FALSE)

@@ -32,7 +32,7 @@
   extern void jitc_sanitation_checkpoint();
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) && !defined(DRJIT_USE_STD_MUTEX)
 #include <pthread.h>
 using Lock = pthread_spinlock_t;
 
@@ -42,7 +42,7 @@ inline void lock_init(Lock &lock) { pthread_spin_init(&lock, PTHREAD_PROCESS_PRI
 inline void lock_destroy(Lock &lock) { pthread_spin_destroy(&lock); }
 inline void lock_acquire(Lock &lock) { pthread_spin_lock(&lock); }
 inline void lock_release(Lock &lock) { pthread_spin_unlock(&lock); }
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && !defined(DRJIT_USE_STD_MUTEX)
 #include <os/lock.h>
 
 using Lock = os_unfair_lock_s;
