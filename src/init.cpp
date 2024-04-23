@@ -58,10 +58,6 @@ State state;
 __itt_domain *drjit_domain = __itt_domain_create("drjit");
 #endif
 
-static_assert(
-    sizeof(VariableKey) == 9 * sizeof(uint32_t),
-    "VariableKey: incorrect size, likely an issue with padding/packing!");
-
 static ProfilerRegion profiler_region_init("jit_init");
 
 #if defined(_WIN32)

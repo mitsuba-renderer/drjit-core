@@ -470,11 +470,9 @@ void jitc_var_dec_ref_se(uint32_t index) noexcept {
 
 /// Remove a variable from the cache used for common subexpression elimination
 void jitc_lvn_drop(uint32_t index, const Variable *v) {
-    VariableKey key(*v);
-    size_t hash = VariableKeyHasher()(key);
     LVNMap &cache = state.lvn_map;
-    LVNMap::iterator it = cache.find(key, hash);
-    if (it != cache.end() && it.value() == index)
+    LVNMap::iterator it = cache.find(VariableKey(*v));
+    if (it != cache.end() && it->second == index)
         cache.erase_fast(it);
 }
 

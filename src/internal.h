@@ -297,31 +297,39 @@ struct VariableExtra {
 /// Abbreviated version of the Variable data structure for Local Value Numbering (LVN)
 struct VariableKey {
     uint32_t size;
-    uint32_t scope;
     uint32_t dep[4];
     uint32_t kind      : 8;
     uint32_t backend   : 2;
     uint32_t type      : 4;
     uint32_t write_ptr : 1;
-    uint32_t unused    : 17;
+    uint32_t unused    : 1;
+    uint32_t scope_lo  : 16;
     uint64_t literal;
 
+    // The LVN data structure is significantly more efficient when
+    // a single key fits into exactly 32 bytes. Hence the elaborate
+    // bit packing below.
     VariableKey(const Variable &v) {
+        uint32_t scope_hi = v.scope;
         size = v.size;
-        scope = v.scope;
-        for (int i = 0; i < 4; ++i)
-            dep[i] = v.dep[i];
-        literal = v.literal;
-
+        for (int i = 0; i < 4; ++i) {
+            uint32_t d = v.dep[i];
+            d ^= scope_hi & 0xF0000000;
+            dep[i] = d;
+            scope_hi <<= 4;
+        }
         kind = v.kind;
         backend = v.backend;
         type = v.type;
         write_ptr = v.write_ptr;
         unused = 0;
+        scope_lo = v.scope;
+        literal = v.literal;
     }
 
     bool operator==(const VariableKey &v) const {
-        return memcmp((const void *) this, (const void *) &v, 9 * sizeof(uint32_t)) == 0;
+        return memcmp((const void *) this, (const void *) &v,
+                      8 * sizeof(uint32_t)) == 0;
     }
 };
 
@@ -330,7 +338,9 @@ struct VariableKey {
 /// Helper class to hash VariableKey instances
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        return hash((const void *) &k, 9 * sizeof(uint32_t), 0);
+        // 'scope_hi' field not included in hash key, the hash function
+        // is faster when processing exactly 32 bytes.
+        return hash((const void *) &k, 8 * sizeof(uint32_t), 0);
     }
 };
 
@@ -340,6 +350,10 @@ using LVNMap =
                    std::equal_to<VariableKey>,
                    std::allocator<std::pair<VariableKey, uint32_t>>,
                    /* StoreHash = */ true>;
+
+static_assert(
+    sizeof(VariableKey) == 8 * sizeof(uint32_t),
+    "VariableKey: incorrect size, likely an issue with padding/packing!");
 
 /// Caches basic information about a CUDA device
 struct Device {
