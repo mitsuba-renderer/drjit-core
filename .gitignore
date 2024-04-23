@@ -35,4 +35,5 @@ tests/test_loop
 tests/test_mem
 tests/test_half
 tests/triangle
+tests/microbenchmark
 /resources/generate

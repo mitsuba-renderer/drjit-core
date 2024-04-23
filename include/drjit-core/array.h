@@ -125,6 +125,14 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return steal(jit_var_mod(m_index, v.m_index));
     }
 
+    JitArray operator&(const JitArray &v) const {
+        return steal(jit_var_and(m_index, v.m_index));
+    }
+
+    JitArray operator|(const JitArray &v) const {
+        return steal(jit_var_or(m_index, v.m_index));
+    }
+
     Mask operator>(const JitArray &v) const {
         return Mask::steal(jit_var_gt(m_index, v.m_index));
     }
@@ -467,21 +475,6 @@ Array linspace(typename Array::Value min, typename Array::Value max, size_t size
     Value step = (max - min) / Value(size - 1);
     return fmadd(Array(UInt32::counter(size)), Array(step), Array(min));
 }
-
-#if 0
-template <typename... Args, enable_if_t<(sizeof...(Args) > 1)> = 0>
-void jit_var_schedule(Args&&... args) {
-    bool unused[] = { (jit_var_schedule(args), false)..., false };
-    (void) unused;
-}
-
-template <typename... Args, enable_if_t<(sizeof...(Args) > 0)> = 0>
-void jit_eval(Args&&... args) {
-    jit_var_schedule(args...);
-    if (sizeof...(Args) > 0)
-        ::jit_eval();
-}
-#endif
 
 template <typename T> using CUDAArray = JitArray<JitBackend::CUDA, T>;
 template <typename T> using LLVMArray = JitArray<JitBackend::LLVM, T>;
