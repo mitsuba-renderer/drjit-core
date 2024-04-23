@@ -150,11 +150,12 @@ enum VarKind : uint32_t {
 };
 
 /// Central variable data structure, which represents an assignment in SSA form
-struct Variable {
+struct alignas(64) Variable {
     /// Zero-initialize by default
     Variable() { memset((void *) this, 0, sizeof(Variable)); }
 
     // =================  Reference count, dependencies, scope ================
+    // (6*4 = 24 bytes)
 
     /// Number of times that this variable is referenced elsewhere
     uint32_t ref_count;
@@ -165,10 +166,8 @@ struct Variable {
     /// Up to 4 dependencies of this instruction
     uint32_t dep[4];
 
-    /// Unused, to be eventually used to upgrade to 64 bit array sizes
-    uint32_t unused;
-
     // ======  Size & encoded instruction (IR statement, literal, data) =======
+    // (6*4 = 24 bytes)
 
     /// The 'kind' field determines which entry of the following union is used
     union {
@@ -186,6 +185,7 @@ struct Variable {
     uint32_t counter;
 
     // ================  Essential flags used in the LVN key  =================
+    // (+15 bits)
 
     // Variable kind (IR statement / literal constant / data)
     uint32_t kind : 8;
@@ -200,6 +200,7 @@ struct Variable {
     uint32_t write_ptr : 1;
 
     // =======================  Miscellaneous flags ==========================
+    // (+6 bits)
 
     /// If set, 'data' will not be deallocated when the variable is destructed
     uint32_t retain_data : 1;
@@ -216,7 +217,12 @@ struct Variable {
     /// If set, evaluation will have side effects on other variables
     uint32_t side_effect : 1;
 
+    /// Unused flag
+    bool unused: 1;
+
     // =========== Entries that are temporarily used in jitc_eval() ============
+    // (+11 bits -> 32 bits with all the preceding individiual bits = 4 bytes)
+    // (+2*4 = 8 bytes)
 
     /// Tracks if an SSA (LLVM) implicit f32 cast has been performed during assembly
     uint32_t ssa_f32_cast : 1;
@@ -237,7 +243,7 @@ struct Variable {
     uint32_t reduce_op : 3;
 
     /// Unused for now
-    uint32_t unused_2 : 4;
+    uint32_t unused_2 : 3;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;
@@ -246,6 +252,7 @@ struct Variable {
     uint32_t reg_index;
 
     // ========================  Side effect tracking  =========================
+    // (+2*4 = 8 bytes)
 
     /// Number of queued side effects
     uint32_t ref_count_se : 16;
@@ -264,6 +271,8 @@ struct Variable {
     bool is_node()      const { return (uint32_t) kind > VarKind::Literal; }
     bool is_dirty()     const { return ref_count_se > 0; }
 };
+
+static_assert(sizeof(Variable) == 64);
 
 /// This record represents additional information that can *optionally* be
 /// associated with a 'Variable' instance. These are factored out into a struct
