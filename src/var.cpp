@@ -1101,7 +1101,7 @@ void jitc_raise_dirty_error(uint32_t index) {
         "\n"
         "2. You did so within a symbolic operation such as dr.switch(),\n"
         "   dr.if_stmt(), dr.while_loop(), etc. Or perhaps you are using\n"
-        "   @dr.syntax-decorated functions that automatically insert\n"
+        "   @dr.syntax-decorated functions that automatically inserts\n"
         "   calls to such symbolic operations. You can read more about\n"
         "   symbolic execution here:\n"
         "   https://drjit.readthedocs.io/en/latest/cflow.html#symbolic-versus-evaluated-modes\n"
@@ -1125,7 +1125,7 @@ void jitc_raise_dirty_error(uint32_t index) {
         "        hist /= len(index) # <-- oops\n"
         "    return hist\n"
         "\n"
-        "This example can be fixed dedenting the commented line so that\n"
+        "This example can be fixed by dedenting the commented line so that\n"
         "it is no longer contained within the symbolic 'if' statement.\n",
         index
     );
