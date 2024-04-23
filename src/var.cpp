@@ -1855,27 +1855,33 @@ uint32_t jitc_var_compress(uint32_t index) {
         return 0;
 
     const Variable *v = jitc_var(index);
+    JitBackend backend = (JitBackend) v->backend;
 
     if (unlikely((VarType) v->type != VarType::Bool))
         jitc_raise("jit_var_compress(r%u): requires a boolean array as input!", index);
 
-    if (jitc_var_eval(index))
-        v = jitc_var(index);
-
-    JitBackend backend = (JitBackend) v->backend;
-    const uint32_t size_in = v->size;
-    const uint8_t *ptr = (const uint8_t *) v->data;
-
-    uint32_t *indices_out = (uint32_t *) jitc_malloc(
-        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync,
-        size_in * sizeof(uint32_t));
-
-    uint32_t size_out = jitc_compress(backend, ptr, size_in, indices_out);
-    if (size_out > 0) {
-        return jitc_var_mem_map(backend, VarType::UInt32, indices_out, size_out, 1);
-    } else {
-        jitc_free(indices_out);
+    if (v->is_literal() && v->literal != 0) {
+        return jitc_var_counter(backend, v->size, true);
+    } else if ((v->is_literal() && v->literal == 0) || v->is_undefined()) {
         return 0;
+    } else {
+        if (jitc_var_eval(index))
+            v = jitc_var(index);
+
+        const uint32_t size_in = v->size;
+        const uint8_t *ptr = (const uint8_t *) v->data;
+
+        uint32_t *indices_out = (uint32_t *) jitc_malloc(
+            backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync,
+            size_in * sizeof(uint32_t));
+
+        uint32_t size_out = jitc_compress(backend, ptr, size_in, indices_out);
+        if (size_out > 0) {
+            return jitc_var_mem_map(backend, VarType::UInt32, indices_out, size_out, 1);
+        } else {
+            jitc_free(indices_out);
+            return 0;
+        }
     }
 }
 
