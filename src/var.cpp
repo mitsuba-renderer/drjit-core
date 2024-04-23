@@ -251,19 +251,16 @@ StringBuffer var_buffer(0);
                     "which exceeds the limit of 2^32 == 4294967296 entries.",  \
                size)
 
-static std::vector<uint32_t> free_list;
+static std::vector<uint32_t> free_todo;
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
-JIT_NOINLINE void jitc_process_free_list() noexcept {
+JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
     State &state = ::state;
 
     // Deallocate using a list to avoid overflowing the stack in long dependent calculations
-    while (!free_list.empty()) {
-        uint32_t index = free_list.back();
-        free_list.pop_back();
-        Variable *v = &state.variables[index];
-
+    do {
         jitc_trace("jit_var_free(r%u)", index);
+
         if (v->is_evaluated()) {
             // Release memory referenced by this variable
             if (!v->retain_data)
@@ -301,6 +298,8 @@ JIT_NOINLINE void jitc_process_free_list() noexcept {
         // Remove from unused variable list
         state.unused_variables.push(index);
 
+        index = 0;
+
         if (likely(!write_ptr)) {
             for (int i = 0; i < 4; ++i) {
                 // Manually inlined version of jitc_var_dec_ref
@@ -308,7 +307,7 @@ JIT_NOINLINE void jitc_process_free_list() noexcept {
                 if (!index2)
                     continue;
 
-                Variable *v2 = &state.variables[dep[i]];
+                Variable *v2 = &state.variables[index2];
 
                 if (unlikely(v2->ref_count == 0))
                     jitc_fail("jit_var_dec_ref(): variable r%u has no references!", index2);
@@ -316,8 +315,12 @@ JIT_NOINLINE void jitc_process_free_list() noexcept {
                 jitc_trace("jit_var_dec_ref(r%u): %u", index2, (uint32_t) v2->ref_count - 1);
                 v2->ref_count--;
 
-                if (v2->ref_count == 0 && v2->ref_count_se == 0)
-                    free_list.push_back(index2);
+                if (v2->ref_count == 0 && v2->ref_count_se == 0) {
+                    if (!index)
+                        index = index2; // free this variable next
+                    else
+                        free_todo.push_back(index2); // push on TODO list
+                }
             }
         } else if (dep[3]) {
             // Manually inlined version of jitc_var_dec_ref_se
@@ -331,9 +334,20 @@ JIT_NOINLINE void jitc_process_free_list() noexcept {
             v2->ref_count_se--;
 
             if (v2->ref_count == 0 && v2->ref_count_se == 0)
-                free_list.push_back(index);
+                index = index2; // free this variable next
         }
-    }
+
+        if (!index) {
+            // Out of work, pull from todo list
+            if (free_todo.empty())
+                break;
+
+            index = free_todo.back();
+            free_todo.pop_back();
+        }
+
+        v = &state.variables[index];
+    } while (true);
 
     // Optional: intense internal sanitation instrumentation
 #if defined(DRJIT_SANITIZE_INTENSE)
@@ -436,8 +450,7 @@ void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept {
     if (v->ref_count || v->ref_count_se)
         return;
 
-    free_list.push_back(index);
-    jitc_process_free_list();
+    jitc_var_free(index, v);
 }
 
 /// Decrease the external reference count of a given variable
@@ -458,8 +471,7 @@ void jitc_var_dec_ref_se(uint32_t index, Variable *v) noexcept {
     if (v->ref_count || v->ref_count_se)
         return;
 
-    free_list.push_back(index);
-    jitc_process_free_list();
+    jitc_var_free(index, v);
 }
 
 /// Decrease the side effect reference count of a given variable
