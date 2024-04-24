@@ -103,9 +103,6 @@ static std::vector<VisitedKey> visit_later;
 
 // ====================================================================
 
-// Forward declaration
-static void jitc_clear_scheduled_variable(ScheduledVariable sv);
-
 // Don't perform scatters, whose output buffer is found to be unreferenced
 bool jitc_var_maybe_suppress_scatter(uint32_t index, Variable *v, uint32_t depth) {
     Variable *target = jitc_var(v->dep[0]);
