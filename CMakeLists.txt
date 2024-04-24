@@ -104,6 +104,7 @@ add_library(
   src/log.h           src/log.cpp
   src/strbuf.h        src/strbuf.cpp
   src/var.h           src/var.cpp
+  src/array.h         src/array.cpp
   src/op.h            src/op.cpp
   src/malloc.h        src/malloc.cpp
   src/registry.h      src/registry.cpp
@@ -122,6 +123,8 @@ add_library(
   src/cuda_scatter.cpp
   src/cuda_packet.h
   src/cuda_packet.cpp
+  src/cuda_array.h
+  src/cuda_array.cpp
 
   # OptiX backend
   ${DRJIT_OPTIX_FILES}
@@ -142,6 +145,8 @@ add_library(
   src/llvm_scatter.cpp
   src/llvm_packet.h
   src/llvm_packet.cpp
+  src/llvm_array.h
+  src/llvm_array.cpp
 
   src/io.h       src/io.cpp
   src/eval.h     src/eval.cpp

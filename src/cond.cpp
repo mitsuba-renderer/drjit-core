@@ -58,7 +58,7 @@ uint32_t jitc_var_cond_append(uint32_t index, const uint32_t *rv, size_t count) 
     JitBackend backend = (JitBackend) v->backend;
 
     Variable v2;
-    v2.kind = (uint32_t) cd->labels[0] ? VarKind::CondEnd : VarKind::CondMid;
+    v2.kind = (uint32_t) (cd->labels[0] ? VarKind::CondEnd : VarKind::CondMid);
     v2.type = (uint32_t) VarType::Void;
     v2.size = v->size;
     v2.backend = (uint32_t) backend;
@@ -126,6 +126,28 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
         VarType vt = (VarType) v_t->type;
 
         storage += type_size[(int) vt];
+
+        if (v_f->is_array()) {
+            Variable v3;
+            v3.kind = (uint32_t) VarKind::ArrayPhi;
+            v3.backend = (uint32_t) backend;
+            v3.type = (uint32_t) vt;
+            v3.symbolic = symbolic;
+            v3.size = std::max(size, size);
+            v3.array_state = (uint32_t) ArrayState::Clean;
+            v3.array_length = v_f->array_length;
+            v3.dep[0] = i_f;
+            v3.dep[1] = i_t;
+            v3.dep[2] = pred;
+            jitc_var_inc_ref(i_f);
+            jitc_var_inc_ref(i_t);
+            jitc_var_inc_ref(pred);
+
+            rv_out[i] = jitc_var_new(v3, true);
+            cd->indices_out.emplace_back(0, 0);
+            continue;
+        }
+
         if (i_t == i_f || v_f->is_dirty() ||
             (v_f->is_literal() && v_t->is_literal() && v_f->literal == v_t->literal)) {
             jitc_var_inc_ref(i_f, v_f);

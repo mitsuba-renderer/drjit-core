@@ -2288,6 +2288,7 @@ struct VarInfo {
     JitBackend backend;
     VarType type;
     size_t size;
+    bool is_array;
 };
 
 /**
@@ -2338,6 +2339,80 @@ extern JIT_EXPORT size_t jit_llvm_expand_threshold() JIT_NOEXCEPT;
 
 /// Return the identity element of a particular type of reduction
 extern JIT_EXPORT uint64_t jit_reduce_identity(VarType vt, ReduceOp op);
+
+/**
+ * \brief Create a variable array
+ *
+ * This operation creates a memory region that is local to each thread of the
+ * compiled program.
+ *
+ * Variable arrays may only be accessed using the ``jit_array_*`` API, as well
+ * as ``jit_var_inc_ref()``,``jit_var_dec_ref()``, ``jit_var_schedule()``, and
+ * ``jit_var_eval()``.
+ *
+ * \param backend
+ *    The JIT backend in which the variable should be created
+ *
+ * \param vt
+ *    The variable type of the allocation
+ *
+ * \param size
+ *    Specifies the *size*, which refers to the number of threads of the
+ *    underlying parallel computation.
+ *
+ * \param length
+ *    Specifies the *length*, which refers to the number of array elements per
+ *    thread.
+ *
+ * \return
+ *    The index of the created variable
+ */
+extern JIT_EXPORT uint32_t jit_array_create(JitBackend backend, VarType vt,
+                                            size_t size, size_t length);
+
+/**
+ * \brief Initialize an array variable
+ *
+ * This function sets entries an array variable to the value of a provided (non-array)
+ * variable. It return a new array variable representing the result.
+ */
+extern JIT_EXPORT uint32_t jit_array_init(uint32_t target, uint32_t value);
+
+/// Return the length of the specified array
+extern JIT_EXPORT size_t jit_array_length(uint32_t index);
+
+/**
+ * \brief Write to a variable array
+ *
+ * \param target
+ *     Index of a variable array
+ *
+ * \param offset
+ *     Offset of the write. Must be an unsigned 32-bit integer.
+ *
+ * \param value
+ *     Value to be written.
+ *
+ * \return
+ *     A new index representing the variable array following the write.
+ */
+extern JIT_EXPORT uint32_t jit_array_write(uint32_t target, uint32_t offset,
+                                           uint32_t value, uint32_t mask);
+
+/**
+ * \brief Read from a variable array
+ *
+ * \param source
+ *     Index of a variable array
+ *
+ * \param offset
+ *     Offset of the read. Must be an unsigned 32-bit integer.
+ *
+ * \return
+ *     Index of a variable representing the result of the read operation.
+ */
+extern JIT_EXPORT uint32_t jit_array_read(uint32_t source, uint32_t offset,
+                                          uint32_t mask);
 
 #if defined(__cplusplus)
 }

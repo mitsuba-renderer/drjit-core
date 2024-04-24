@@ -269,6 +269,7 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                     arg++;
                     break;
 
+                case 'B':
                 case 'b':
                 case 't':
                     (void) va_arg(args, const Variable *); arg++;
@@ -276,6 +277,7 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                     break;
 
                 case 'v':
+                case 'V':
                     (void) va_arg(args, const Variable *); arg++;
                     len += MAXSIZE_U32 + MAXSIZE_TYPE_PREFIX;
                     break;
@@ -342,9 +344,26 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                     }
                     break;
 
+                case 'B': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_unchecked(type_name_ptx_bin2[v->type]);
+                    }
+                    break;
+
                 case 'b': {
                         const Variable *v = va_arg(args2, const Variable *);
                         put_unchecked(type_name_ptx_bin[v->type]);
+                    }
+                    break;
+
+                case 'V': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        if (v->type == (uint32_t) VarType::Bool) {
+                            put_unchecked("%w0");
+                        } else {
+                            put_unchecked(type_prefix[v->type]);
+                            put_u32_unchecked(v->reg_index);
+                        }
                     }
                     break;
 

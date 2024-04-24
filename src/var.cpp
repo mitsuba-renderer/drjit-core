@@ -34,6 +34,12 @@ const char *type_name_ptx[(int) VarType::Count] {
     "u32", "s64",  "u64", "u64", "f16", "f32", "f64"
 };
 
+/// CUDA PTX type names (binary view, even for masks)
+const char *type_name_ptx_bin2[(int) VarType::Count] {
+    "???", "b8", "b8",  "b8",  "b16", "b16", "b32",
+    "b32", "b64",  "b64", "b64", "b16", "b32", "b64"
+};
+
 /// CUDA PTX type names (binary view)
 const char *type_name_ptx_bin[(int) VarType::Count] {
     "???", "pred", "b8",  "b8",  "b16", "b16", "b32",
@@ -235,6 +241,9 @@ const char *var_kind_name[(int) VarKind::Count] {
     // SSA Phi variable at end of loop
     "loop_output",
 
+    // SSA Phi variable at end of loop (special version for array variables)
+    "array_phi",
+
     // Variable marking the start of a conditional statement
     "cond_start",
 
@@ -245,17 +254,23 @@ const char *var_kind_name[(int) VarKind::Count] {
     "cond_end",
 
     // SSA Phi variable marking an output of a conditional statement
-    "cond_output"
+    "cond_output",
+
+    // Create an uninitialized variable array
+    "array",
+
+    // Initialize the entries of a variable array with a literal constant
+    "array_init",
+
+    // Read an element from a variable array
+    "array_read",
+
+    // Write an element to a variable array
+    "array_write"
 };
 
 /// Temporary string buffer for miscellaneous variable-related tasks
 StringBuffer var_buffer(0);
-
-#define jitc_check_size(name, size)                                            \
-    if (unlikely(size > 0xFFFFFFFF))                                           \
-    jitc_raise(name "(): tried to create an array with %zu entries, "          \
-                    "which exceeds the limit of 2^32 == 4294967296 entries.",  \
-               size)
 
 static std::vector<uint32_t> free_todo;
 
@@ -401,7 +416,7 @@ uint64_t jitc_var_stash_ref(uint32_t index) {
         return 0;
 
     Variable *v = jitc_var(index);
-    if (v->ref_count_stashed)
+    if (v->ref_count_stashed || v->is_array())
         return 0;
 
     v->ref_count_stashed = v->ref_count;
@@ -829,7 +844,7 @@ uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size) {
 
     jitc_check_size("jit_var_undefined", size);
     Variable v;
-    v.kind = VarKind::Undefined;
+    v.kind = (uint32_t) VarKind::Undefined;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) type;
     v.size = (uint32_t) size;
@@ -846,7 +861,7 @@ uint32_t jitc_var_counter(JitBackend backend, size_t size,
 
     jitc_check_size("jit_var_counter", size);
     Variable v;
-    v.kind = VarKind::Counter;
+    v.kind = (uint32_t) VarKind::Counter;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) VarType::UInt32;
     v.size = (uint32_t) size;
@@ -891,7 +906,7 @@ uint32_t jitc_new_scope(JitBackend backend) {
 }
 
 /**
- * \brie Create a new IR node
+ * \brief Create a new IR node
  *
  * The following functions build on `jitc_var_new()`. They additionally
  *
@@ -906,7 +921,7 @@ uint32_t jitc_var_new_node_0(JitBackend backend, VarKind kind, VarType vt,
     Variable v;
     v.literal = payload;
     v.size = size;
-    v.kind = kind;
+    v.kind = (uint32_t) kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
     v.symbolic = symbolic;
@@ -930,7 +945,7 @@ uint32_t jitc_var_new_node_1(JitBackend backend, VarKind kind, VarType vt,
     v.dep[0] = a0;
     v.literal = payload;
     v.size = size;
-    v.kind = kind;
+    v.kind = (uint32_t) kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
     v.symbolic = symbolic;
@@ -962,7 +977,7 @@ uint32_t jitc_var_new_node_2(JitBackend backend, VarKind kind, VarType vt,
     v.dep[1] = a1;
     v.literal = payload;
     v.size = size;
-    v.kind = kind;
+    v.kind = (uint32_t) kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
     v.symbolic = symbolic;
@@ -999,7 +1014,7 @@ uint32_t jitc_var_new_node_3(JitBackend backend, VarKind kind, VarType vt,
     v.dep[2] = a2;
     v.literal = payload;
     v.size = size;
-    v.kind = kind;
+    v.kind = (uint32_t) kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
     v.symbolic = symbolic;
@@ -1043,7 +1058,7 @@ uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind, VarType vt,
     v.dep[3] = a3;
     v.literal = payload;
     v.size = size;
-    v.kind = kind;
+    v.kind = (uint32_t) kind;
     v.backend = (uint32_t) backend;
     v.type = (uint32_t) vt;
     v.symbolic = symbolic;
@@ -1119,6 +1134,9 @@ const char *jitc_var_str(uint32_t index) {
     if (!v->is_literal() && (!v->is_evaluated() || v->is_dirty())) {
         jitc_var_eval(index);
         v = jitc_var(index);
+
+        if (v->is_dirty())
+            jitc_raise_dirty_error(index);
     }
 
     size_t size            = v->size,
@@ -1822,6 +1840,7 @@ VariableExtra *jitc_var_extra(Variable *v) {
         v->extra = index;
         st.extra[index] = VariableExtra();
     }
+
     return &st.extra[index];
 }
 
@@ -2134,7 +2153,7 @@ void jitc_var_set_self(JitBackend backend, uint32_t value, uint32_t index) {
             ts->call_self_index = index;
         } else {
             Variable v;
-            v.kind = VarKind::CallSelf;
+            v.kind = (uint32_t) VarKind::CallSelf;
             v.backend = (uint32_t) backend;
             v.size = 1u;
             v.type = (uint32_t) VarType::UInt32;

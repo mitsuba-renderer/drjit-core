@@ -23,7 +23,7 @@ void jitc_llvm_render_scatter(const Variable *v, const Variable *ptr,
          value, value, value, mask);
 
     fmt("{    $v_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
-         "    $v_1 = getelementptr $t, $<$p$> {$v_0|$v}, $V\n"
+         "    $v_1 = getelementptr inbounds $t, $<$p$> {$v_0|$v}, $V\n"
          "    call void @llvm.masked.scatter.v$w$h($V, <$w x $p> $v_1, i32 $a, $V)\n",
          v, ptr, value,
          v, value, value, v, ptr, index,
@@ -179,8 +179,8 @@ static const char *append_reduce_op_direct(VarType vt, ReduceOp op, const Variab
         "    br i1 %do_scatter_i, label %do_scatter, label %loop_suffix\n\n"
         ""
         "do_scatter:\n"
-        "    %ptr_p = getelementptr [$w x $p], {[$w x $p]*} %ptr_a, i32 0, i32 %index\n"
-        "    %val_p = getelementptr [$w x $t], {[$w x $t]*} %val_a, i32 0, i32 %index\n"
+        "    %ptr_p = getelementptr inbounds [$w x $p], {[$w x $p]*} %ptr_a, i32 0, i32 %index\n"
+        "    %val_p = getelementptr inbounds [$w x $t], {[$w x $t]*} %val_a, i32 0, i32 %index\n"
         "    %ptr_i = load $p, {$p*} %ptr_p, align $u\n"
         "    %val_i = load $t, $p %val_p, align $a\n"
         "    atomicrmw $s $p %ptr_i, $t %val_i monotonic\n"
@@ -276,7 +276,7 @@ static const char *append_reduce_op_local(VarType vt, ReduceOp op, const Variabl
         "    br i1 %active_4, label %do_scatter, label %loop_suffix\n\n"
         ""
         "do_scatter:\n"
-        "    %ptr_p = getelementptr [$w x $p], {[$w x $p]*} %ptr_a, i32 0, i32 %index\n"
+        "    %ptr_p = getelementptr inbounds [$w x $p], {[$w x $p]*} %ptr_a, i32 0, i32 %index\n"
         "    %ptr_i = load $p, {$p*} %ptr_p, align $u\n"
         "    %ptrlo_4 = ptrtoint $p %ptr_i to i64\n"
         "    %ptrlo_5 = lshr i64 %ptrlo_4, $u\n"
@@ -447,7 +447,7 @@ static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Va
         "    br i1 %active_4, label %do_scatter, label %loop_suffix\n\n"
         ""
         "do_scatter:\n"
-        "    %ptr_p = getelementptr [$w x $p], {[$w x $p]*} %ptr_a, i32 0, i32 %index\n"
+        "    %ptr_p = getelementptr inbounds [$w x $p], {[$w x $p]*} %ptr_a, i32 0, i32 %index\n"
         "    %ptr_i = load $p, {$p*} %ptr_p, align $u\n"
         "    %ptrlo_4 = ptrtoint $p %ptr_i to i64\n"
         "    %ptrlo_5 = lshr i64 %ptrlo_4, $u\n"
@@ -534,7 +534,7 @@ void jitc_llvm_render_scatter_reduce(const Variable *v,
     }
 
     fmt("{    $v_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
-         "    $v_1 = getelementptr $t, $<$p$> {$v_0|$v}, $V\n"
+         "    $v_1 = getelementptr inbounds $t, $<$p$> {$v_0|$v}, $V\n"
          "    $v_2 = bitcast $V to i$w\n"
          "    call fastcc void @reduce_$s_$h_$s(<$w x $p> $v_1, $V, i$w $v_2)\n",
         v, ptr, value,
@@ -546,7 +546,7 @@ void jitc_llvm_render_scatter_reduce(const Variable *v,
 void jitc_llvm_render_scatter_inc(Variable *v, const Variable *ptr,
                                   const Variable *index, const Variable *mask) {
     fmt("{    $v_0 = bitcast $<i8*$> $v to $<i32*$>\n|}"
-         "    $v_1 = getelementptr i32, $<{i32*}$> {$v_0|$v}, $V\n"
+         "    $v_1 = getelementptr inbounds i32, $<{i32*}$> {$v_0|$v}, $V\n"
          "    $v = call fastcc $T @reduce_inc_u32(<$w x {i32*}> $v_1, $V)\n",
         v, ptr,
         v, v, ptr, index,
@@ -617,9 +617,9 @@ void jitc_llvm_render_scatter_add_kahan(const Variable *v,
     fmt_intrinsic("declare $t @llvm.fabs.$h($t)", value, value, value);
 
     fmt("{    $v_ptr1 = bitcast $<i8*$> $v to $<$t*$>\n|}"
-         "    $v_target1 = getelementptr $t, $<$p$> {$v_ptr1|$v}, $V\n"
+         "    $v_target1 = getelementptr inbounds $t, $<$p$> {$v_ptr1|$v}, $V\n"
         "{    $v_ptr2 = bitcast $<i8*$> $v to $<$t*$>\n|}"
-         "    $v_target2 = getelementptr $t, $<$p$> {$v_ptr2|$v}, $V\n"
+         "    $v_target2 = getelementptr inbounds $t, $<$p$> {$v_ptr2|$v}, $V\n"
          "    br label %l$u_0\n\n"
          "l$u_0:\n"
          "    br label %l$u_1\n\n",

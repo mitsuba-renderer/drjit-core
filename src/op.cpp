@@ -75,6 +75,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
 
     bool symbolic = false,
          simplify = false,
+         array = false,
          literal = true;
 
     JitBackend backend = JitBackend::None;
@@ -152,6 +153,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
 
         size = std::max(size, vi->size);
         symbolic |= (bool) vi->symbolic;
+        array |= (bool) vi->is_array();
         bool is_literal = vi->is_literal();
         literal &= is_literal;
         simplify |= is_literal;
@@ -178,6 +180,15 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
         if (simplify)
             simplify = jitc_flags() & (uint32_t) JitFlag::ConstantPropagation;
     }
+
+#if !defined(NDEBUG)
+    if (unlikely(array)) {
+        err = "array operands are not supported";
+        goto fail;
+    }
+#else
+    (void) array;
+#endif
 
     return drjit::tuple(
         OpInfo{ backend, type, size, simplify, literal, symbolic },
@@ -1524,7 +1535,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
     Ref dep[4];
     bool rebuild = v->size != size && v->size != 1;
 
-    if (v->kind == VarKind::DefaultMask && rebuild)
+    if (v->kind == (uint32_t) VarKind::DefaultMask && rebuild)
         // Do not re-index the mask, only resize it
         return jitc_var_mask_default((JitBackend) v->backend, size);
 
@@ -1534,7 +1545,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             if (!index_2)
                 continue;
 
-            if (v->kind == VarKind::Gather && i == 2) {
+            if (v->kind == (uint32_t) VarKind::Gather && i == 2) {
                 // Gather nodes must have their masks replaced rather than reindexed
                 JitBackend backend = (JitBackend) v->backend;
                 Ref default_mask = steal(jitc_var_mask_default(backend, size));
@@ -1551,7 +1562,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
     }
 
 
-    if (v->kind == VarKind::Counter) {
+    if (v->kind == (uint32_t) VarKind::Counter) {
         return jitc_var_new_ref(new_index);
     } else if (rebuild) {
         Variable v2;
@@ -1661,7 +1672,7 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
 
 static void unwrap(Ref &index, Variable *&v) {
     while (true) {
-        if (v->kind == VarKind::LoopPhi) {
+        if (v->kind == (uint32_t) VarKind::LoopPhi) {
             index = borrow(v->dep[3]);
             v = jitc_var(index);
         } else {

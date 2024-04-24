@@ -27,7 +27,15 @@
  * --------------------------------------------------------------------------
  *  $o      Variable      `5`                Variable offset in param. array
  * --------------------------------------------------------------------------
+ *  $a      Variable      `4`                Variable alignment in bytes
+ * --------------------------------------------------------------------------
  *  $l      Variable      `1`                Literal value of variable (hex)
+ * --------------------------------------------------------------------------
+ *  The following format strings facilitate loading/storing of predicates,
+ *  which are a somewhat of a corner case in PTX.
+ * --------------------------------------------------------------------------
+ *  $B      Variable      `b32`              Like $b. For predicates: 'b8'
+ *  $V      Variable      `%f1234`           Like $v. For predicates: '%w0'
  * --------------------------------------------------------------------------
  */
 
@@ -41,6 +49,7 @@
 #include "optix.h"
 #include "trace.h"
 #include "cuda_eval.h"
+#include "cuda_array.h"
 #include "cuda_scatter.h"
 #include "cuda_packet.h"
 
@@ -125,6 +134,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
             state.devices[ts->device].compute_capability);
     } else {
         put("    call (%r0), _optix_get_launch_index_x, ();\n"
+            "    call (%r2), _optix_get_launch_dimension_x, ();\n"
             "    ld.const.u32 %r1, [params + 4];\n"
             "    add.u32 %r0, %r0, %r1;\n\n"
             "body:\n");
@@ -166,13 +176,13 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
             if (size > 1)
                 fmt("    mad.wide.u32 %rd0, %r0, $a, %rd0;\n", v);
 
-            if (vt != VarType::Bool) {
-                fmt("    $s$b $v, [%rd0];\n",
+            if (!v->is_array()) {
+                fmt("    $s$B $V, [%rd0];\n",
                     size > 1 ? "ld.global.cs." : "ldu.global.", v, v);
+                if (vt == VarType::Bool)
+                    fmt("    setp.ne.u16 $v, %w0, 0;\n", v);
             } else {
-                fmt("    $s %w0, [%rd0];\n"
-                    "    setp.ne.u16 $v, %w0, 0;\n",
-                    size > 1 ? "ld.global.cs.u8" : "ldu.global.u8", v);
+                jitc_cuda_render_array_memcpy_in(v);
             }
             continue;
         } else {
@@ -187,11 +197,12 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                 "    mad.wide.u32 %rd0, %r0, $a, %rd0;\n",
                 params_type, params_base, v, v);
 
-            if (vt != VarType::Bool) {
-                fmt("    st.global.cs.$b [%rd0], $v;\n", v, v);
+            if (!v->is_array()) {
+                if (vt == VarType::Bool)
+                    fmt("    selp.u16 %w0, 1, 0, $v;\n", v);
+                fmt("    st.global.cs.$B [%rd0], $V;\n", v, v);
             } else {
-                fmt("    selp.u16 %w0, 1, 0, $v;\n"
-                    "    st.global.cs.u8 [%rd0], %w0;\n", v);
+                jitc_cuda_render_array_memcpy_out(v);
             }
         }
     }
@@ -345,7 +356,7 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
 }
 
 static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
-    switch(kind) {
+    switch (kind) {
         case VarKind::Sqrt:
         case VarKind::Div:
         case VarKind::Rcp:
@@ -383,7 +394,7 @@ static void jitc_cuda_render(Variable *v) {
         }
     }
 
-    switch (v->kind) {
+    switch ((VarKind) v->kind) {
         case VarKind::Undefined:
         case VarKind::Literal:
             fmt("    mov.$b $v, $l;\n", v, v, v);
@@ -536,6 +547,26 @@ static void jitc_cuda_render(Variable *v) {
             fmt(jitc_is_uint(a0) ? "    setp.hs.$t $v, $v, $v;\n"
                                  : "    setp.ge.$t $v, $v, $v;\n",
                 a0, v, a0, a1);
+            break;
+
+        case VarKind::Array:
+            jitc_cuda_render_array(v, a0);
+            break;
+
+        case VarKind::ArrayInit:
+            jitc_cuda_render_array_init(v, a0 ,a1);
+            break;
+
+        case VarKind::ArrayWrite:
+            jitc_cuda_render_array_write(v, a0, a1, a2, a3);
+            break;
+
+        case VarKind::ArrayRead:
+            jitc_cuda_render_array_read(v, a0, a1, a2);
+            break;
+
+        case VarKind::ArrayPhi:
+            v->reg_index = a0->reg_index;
             break;
 
         case VarKind::Select:
@@ -1163,7 +1194,7 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     put("        }\n\n");
 
     // =====================================================
-    // 6. Special handling for predicates return value(s)
+    // 6. Special handling for predicate return value(s)
     // =====================================================
 
     for (uint32_t i = 0; i < call->n_out; ++i) {

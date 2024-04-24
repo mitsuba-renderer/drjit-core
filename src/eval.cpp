@@ -8,6 +8,7 @@
 */
 
 #include "internal.h"
+#include "llvm.h"
 #include "log.h"
 #include "var.h"
 #include "eval.h"
@@ -18,6 +19,7 @@
 #include "call.h"
 #include "trace.h"
 #include "op.h"
+#include "array.h"
 #include <tsl/robin_set.h>
 
 // ====================================================================
@@ -130,8 +132,16 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
                 return;
             break;
 
+        case VarKind::ArrayWrite:
+            jitc_var_traverse(size, jitc_array_buffer(index), depth);
+            break;
+
         case VarKind::LoopPhi: {
                 LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
+                if (!loop)
+                    jitc_raise("jit_var_traverse(): internal error: "
+                               "computation references variables from a loop "
+                               "that was optimized away!");
                 jitc_var_traverse(size, loop->outer_in[v->literal], depth);
                 visit_later.emplace_back(
                     size, loop->inner_out[v->literal], depth);
@@ -140,6 +150,10 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
 
         case VarKind::LoopOutput: {
                 LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
+                if (!loop)
+                    jitc_raise("jit_var_traverse(): internal error: "
+                               "computation references variables from a loop "
+                               "that was optimized away!");
                 jitc_var_traverse(size, loop->inner_out[v->literal], depth);
                 jitc_var_traverse(size, loop->outer_in[v->literal], depth);
                 jitc_var_traverse(size, loop->inner_in[v->literal], depth);
@@ -232,7 +246,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     uint32_t n_params_in    = 0,
              n_params_out   = 0,
              n_side_effects = 0,
-             n_regs         = 0;
+             n_regs         = 0,
+             width = jitc_llvm_vector_width;
 
     if (backend == JitBackend::CUDA) {
         uintptr_t size = 0;
@@ -270,6 +285,16 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
         v->reg_index = n_regs++;
 
+        VarKind kind = (VarKind) v->kind;
+
+        if (unlikely(kind == VarKind::Array ||
+                     kind == VarKind::ArrayInit ||
+                     kind == VarKind::ArrayPhi ||
+                     kind == VarKind::ArrayWrite ||
+                     kind == VarKind::ArrayRead)) {
+            jitc_process_array_op(kind, v);
+        }
+
         if (v->is_evaluated()) {
             n_params_in++;
             v->param_type = ParamType::Input;
@@ -279,10 +304,16 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             v->param_type = ParamType::Output;
 
             size_t isize = (size_t) type_size[v->type],
-                   dsize = (size_t) group.size * isize;
+                   dsize = (size_t) group.size;
+
+            if (backend == JitBackend::LLVM)
+                dsize = (dsize + width - 1) / width * width;
+            if (v->is_array())
+                dsize *= v->array_length;
+            dsize *= isize;
 
             // Padding to support out-of-bounds accesses in LLVM gather operations
-            if (backend == JitBackend::LLVM && isize < 4)
+            if (backend == JitBackend::LLVM && isize == 1)
                 dsize += 4 - isize;
 
             sv.data = jitc_malloc(

@@ -33,6 +33,7 @@ tests/test_vcall
 tests/test_graphviz
 tests/test_loop
 tests/test_mem
+tests/test_array
 tests/test_half
 tests/triangle
 tests/microbenchmark

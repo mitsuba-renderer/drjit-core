@@ -65,6 +65,7 @@
 
 #include "eval.h"
 #include "internal.h"
+#include "llvm.h"
 #include "log.h"
 #include "cond.h"
 #include "var.h"
@@ -73,6 +74,7 @@
 #include "op.h"
 #include "trace.h"
 #include "llvm_scatter.h"
+#include "llvm_array.h"
 #include "llvm_eval.h"
 #include "llvm_packet.h"
 
@@ -117,8 +119,11 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
             fmt("    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
                 "    $v = load {i8*}, {i8**} $v_p1, align 8, !alias.scope !2\n",
                 v, v, v, v);
+        } else if (v->is_array()) {
+            if (ptype == ParamType::Input)
+                jitc_llvm_render_array_memcpy_in(v);
         } else if (ptype != ParamType::Register) {
-            // Case 2: read an input/output parameter
+            // Case 3: read a regular input/output parameter
 
             fmt( "    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
                  "    $v_p{2|3} = load {i8*}, {i8**} $v_p1, align 8, !alias.scope !2\n"
@@ -133,7 +138,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         }
 
         if (likely(ptype == ParamType::Input)) {
-            if (v->is_literal())
+            if (v->is_literal() || v->is_array())
                 continue;
 
             if (size != 1) {
@@ -171,13 +176,18 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
             jitc_assert(jitc_var(index) == v,
                         "Unexpected mutation of the variable data structure.");
 
-            if (vt != VarType::Bool) {
-                fmt("    store $V, {$T*} $v_p5, align $A, !noalias !2, !nontemporal !3\n",
-                    v, v, v, v);
+            if (!v->is_array()) {
+                // Store a regular output variable
+                const char *ext = "";
+                if (vt == VarType::Bool) {
+                    // zero-extend to 8 bits
+                    fmt("    $v_e = zext $V to $M\n", v, v, v);
+                    ext = "_e";
+                }
+                fmt("    store $M $v$s, {$M*} $v_p5, align $A, !noalias !2, !nontemporal !3\n",
+                    v, v, ext, v, v, v);
             } else {
-                fmt("    $v_e = zext $V to $M\n"
-                    "    store $M $v_e, {$M*} $v_p5, align $A, !noalias !2, !nontemporal !3\n",
-                    v, v, v, v, v, v, v, v);
+                jitc_llvm_render_array_memcpy_out(v);
             }
         }
     }
@@ -429,9 +439,9 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
 }
 
 static inline bool jitc_fp16_supported_llvm(VarKind kind) {
-    switch(kind) {
-        case Min:
-        case Max:
+    switch (kind) {
+        case VarKind::Min:
+        case VarKind::Max:
 #if !defined (__aarch64__)
             return false;
 #endif
@@ -466,7 +476,7 @@ static void jitc_llvm_render(Variable *v) {
         }
     }
 
-    switch (v->kind) {
+    switch ((VarKind) v->kind) {
         case VarKind::Undefined:
         case VarKind::Literal:
             fmt("    $v_1 = insertelement $T undef, $t $l, i32 0\n"
@@ -814,7 +824,7 @@ static void jitc_llvm_render(Variable *v) {
                     v, v, v, a2, v);
 
                 fmt("{    $v_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
-                     "    $v_1 = getelementptr $t, $<$p$> {$v_0|$v}, $V\n"
+                     "    $v_1 = getelementptr inbounds $t, $<$p$> {$v_0|$v}, $V\n"
                      "    $v$s = call $T @llvm.masked.gather.v$w$h($P $v_1, i32 $a, $V, $T $z)\n",
                      v, a0, v,
                      v, v, v, v, a0, a1,
@@ -870,7 +880,7 @@ static void jitc_llvm_render(Variable *v) {
 
             if (callable_depth == 0)
                 fmt("{    $v_5 = bitcast i8* $v to i32 *\n|}"
-                     "    $v_6 = getelementptr i32, {i32*} {$v_5|$v}, <$w x i32> $z\n"
+                     "    $v_6 = getelementptr inbounds i32, {i32*} {$v_5|$v}, <$w x i32> $z\n"
                      "    call void @llvm.masked.scatter.v$wi32($V, <$w x {i32*}> $v_6, i32 4, <$w x i1> $v_3)\n",
                      v, a2,
                      v, v, a2,
@@ -892,10 +902,8 @@ static void jitc_llvm_render(Variable *v) {
             fmt("    $v_0 = trunc i64 %index to $t\n"
                 "    $v_1 = insertelement $T undef, $t $v_0, i32 0\n"
                 "    $v_2 = shufflevector $V_1, $T undef, <$w x i32> $z\n"
-                "    $v = add $V_2, <",
-                v, v, v, v, v, v, v, v, v, v, v);
-            for (uint32_t i = 0; i < jitc_llvm_vector_width; ++i)
-                fmt("i32 $u$s", i, i + 1 < jitc_llvm_vector_width ? ", " : ">\n");
+                "    $v = add $V_2, $s\n",
+                v, v, v, v, v, v, v, v, v, v, v, jitc_llvm_u32_arange_str);
             break;
 
         case VarKind::DefaultMask:
@@ -986,6 +994,10 @@ static void jitc_llvm_render(Variable *v) {
             // No code generated for this node
             break;
 
+        case VarKind::ArrayPhi:
+            v->reg_index = a0->reg_index;
+            break;
+
         case VarKind::CondStart: {
                 const CondData *cd = (CondData *) v->data;
                 fmt_intrinsic("declare i1 @llvm$e.vector.reduce.or.v$wi1($T)", a0);
@@ -1065,6 +1077,22 @@ static void jitc_llvm_render(Variable *v) {
             break;
 
         case VarKind::CondOutput: // No output
+            break;
+
+        case VarKind::Array:
+            jitc_llvm_render_array(v, a0);
+            break;
+
+        case VarKind::ArrayInit:
+            jitc_llvm_render_array_init(v, a0, a1);
+            break;
+
+        case VarKind::ArrayWrite:
+            jitc_llvm_render_array_write(v, a0, a1, a2, a3);
+            break;
+
+        case VarKind::ArrayRead:
+            jitc_llvm_render_array_read(v, a0, a1, a2);
             break;
 
         default:

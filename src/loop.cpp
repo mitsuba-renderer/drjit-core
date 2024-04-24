@@ -75,17 +75,24 @@ uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, 
         Variable *v2 = jitc_var(index);
         jitc_var_inc_ref(index, v2);
         jitc_var_inc_ref(index, v2);
-        ld->outer_in.push_back(index);
 
-        v_phi.type = v2->type;
-        v_phi.literal = (uint64_t) i;
-        v_phi.size = v2->size;
-        v_phi.dep[3] = index;
-        jitc_var_inc_ref(ld->loop_start);
-        uint32_t index_new = jitc_var_new(v_phi, true);
-        ld->inner_in.push_back(index_new);
-        jitc_var_inc_ref(index_new);
-        indices[i] = index_new;
+        if (v2->is_array()) {
+            ld->outer_in.push_back(index);
+            ld->inner_in.push_back(index);
+            jitc_var_inc_ref(index, v2);
+        } else {
+            ld->outer_in.push_back(index);
+
+            v_phi.type = v2->type;
+            v_phi.literal = (uint64_t) i;
+            v_phi.size = v2->size;
+            v_phi.dep[3] = index;
+            jitc_var_inc_ref(ld->loop_start);
+            uint32_t index_new = jitc_var_new(v_phi, true);
+            ld->inner_in.push_back(index_new);
+            jitc_var_inc_ref(index_new);
+            indices[i] = index_new;
+        }
     }
 
     jitc_new_scope(backend);
@@ -102,8 +109,12 @@ uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, 
     jitc_var_set_callback(
         loop_holder,
         [](uint32_t, int free, void *p) {
-            if (free)
-                delete (LoopData *) p;
+            LoopData *ld = (LoopData *) p;
+            if (free) {
+                if (ld->loop_start)
+                    jitc_var(ld->loop_start)->data = nullptr;
+                delete (LoopData *) ld;
+            }
         },
         ld.release(), true);
 
@@ -167,7 +178,9 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                            *v2 = jitc_var(indices[i]);
 
             bool eliminate = false;
-            if (v2->is_dirty()) {
+            if (v2->is_array()) {
+                continue;
+            } else if (v2->is_dirty()) {
                 // Remove variables that are the target of side effects from the loop state
                 eliminate = true;
             } else if (indices[i] == ld->inner_in[i]) {
@@ -236,7 +249,10 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             Variable *v2 = jitc_var(index);
 
             uint32_t new_index;
-            if (ld->inner_in[i] != ld->outer_in[i]) {
+            if (v2->is_array() || v2->is_dirty()) {
+                jitc_var_inc_ref(index);
+                new_index = index;
+            } else if (ld->inner_in[i] != ld->outer_in[i]) {
                 if (v2->size != size && size != 1 && v2->size != 1)
                     jitc_raise(
                         "jit_var_loop_end(): loop state variable %zu (r%u) has "
@@ -252,9 +268,6 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                     new_index = index;
                     jitc_var_inc_ref(index);
                 }
-            } else if (v2->is_dirty()) {
-                jitc_var_inc_ref(index);
-                new_index = index;
             } else {
                 if (index != ld->inner_in[i] &&
                     !(v2->is_literal() && v1->is_literal() && v1->literal == v2->literal))
@@ -298,14 +311,34 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
            state_vars_actual_size = 0;
     for (size_t i = 0; i < ld->size; ++i) {
         uint32_t index = indices[i], index_new;
+        const Variable *v2 = jitc_var(index);
+        uint32_t array_length = 1;
+        VarType vt = (VarType) v2->type;
 
-        if (ld->inner_in[i] != ld->outer_in[i]) {
-            const Variable *v2 = jitc_var(index);
+        if (v2->is_array()) {
+            array_length = v2->array_length;
+
+            Variable v3;
+            v3.kind = (uint32_t) VarKind::ArrayPhi;
+            v3.backend = (uint32_t) backend;
+            v3.type = (uint32_t) vt;
+            v3.symbolic = ld->symbolic;
+            v3.size = std::max(v2->size, size);
+            v3.array_state = (uint32_t) ArrayState::Clean;
+            v3.array_length = array_length;
+            v3.dep[0] = index;
+            v3.dep[1] = loop_end;
+            jitc_var_inc_ref(loop_end);
+            jitc_var_inc_ref(index);
+            index_new = jitc_var_new(v3, true);
+            state_vars_actual_size += type_size[(int) vt]*array_length;
+            state_vars_actual++;
+        } else if (ld->inner_in[i] != ld->outer_in[i]) {
             v_phi.literal = (uint64_t) i;
-            v_phi.type = v2->type;
+            v_phi.type = (uint32_t) vt;
             jitc_var_inc_ref(ld->loop_start);
             jitc_var_inc_ref(loop_end);
-            state_vars_actual_size += type_size[v2->type];
+            state_vars_actual_size += type_size[(int) vt];
             state_vars_actual++;
             index_new = jitc_var_new(v_phi, true);
         } else {
@@ -313,7 +346,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             jitc_var_inc_ref(index_new);
         }
 
-        state_vars_size += type_size[jitc_var(index_new)->type];
+        state_vars_size += type_size[(int) vt]*array_length;
         indices[i] = index_new;
         ld->outer_out.emplace_back(index_new, jitc_var(index_new)->counter);
     }

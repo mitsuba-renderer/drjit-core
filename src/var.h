@@ -12,7 +12,7 @@
 #include <drjit-core/jit.h>
 #include <utility>
 
-enum VarKind : uint32_t;
+enum class VarKind : uint32_t;
 
 struct Variable;
 struct VariableExtra;
@@ -292,6 +292,12 @@ enum class BoundsCheckType {
 extern uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
                                       uint32_t mask, uint32_t size);
 
+#define jitc_check_size(name, size)                                            \
+    if (unlikely(size > 0xFFFFFFFF))                                           \
+    jitc_raise(name "(): tried to create an array with %zu entries, "          \
+                    "which exceeds the limit of 2^32 == 4294967296 entries.",  \
+               size)
+
 /// Descriptive names and byte sizes for the various variable types
 extern const char *type_name      [(int) VarType::Count];
 extern const char *type_name_short[(int) VarType::Count];
@@ -304,5 +310,6 @@ extern const char *type_name_llvm_abbrev[(int) VarType::Count];
 extern const char *type_name_llvm_big   [(int) VarType::Count];
 extern const char *type_name_ptx        [(int) VarType::Count];
 extern const char *type_name_ptx_bin    [(int) VarType::Count];
+extern const char *type_name_ptx_bin2   [(int) VarType::Count];
 extern const char *type_prefix          [(int) VarType::Count];
 extern const char *type_size_str        [(int) VarType::Count];

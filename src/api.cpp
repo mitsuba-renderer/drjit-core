@@ -20,6 +20,7 @@
 #include "loop.h"
 #include "cond.h"
 #include "profile.h"
+#include "array.h"
 #include <thread>
 #include <condition_variable>
 #include <drjit-core/half.h>
@@ -1327,7 +1328,8 @@ VarInfo jit_set_backend(uint32_t index) noexcept {
     lock_guard guard(state.lock);
     Variable *var = jitc_var(index);
     default_backend = (JitBackend) var->backend;
-    return VarInfo{ (JitBackend) var->backend, (VarType) var->type, var->size };
+    return VarInfo{ (JitBackend) var->backend, (VarType) var->type,
+                    var->size, var->is_array() };
 }
 
 uint32_t jit_var_loop_start(const char *name, bool symbolic, size_t n_indices, uint32_t *indices) {
@@ -1432,4 +1434,30 @@ int jit_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
 uint32_t jit_var_tile(uint32_t index, uint32_t count) {
     lock_guard guard(state.lock);
     return jitc_var_tile(index, count);
+}
+
+uint32_t jit_array_create(JitBackend backend, VarType vt, size_t size,
+                          size_t length) {
+    lock_guard guard(state.lock);
+    return jitc_array_create(backend, vt, size, length);
+}
+
+uint32_t jit_array_init(uint32_t target, uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_array_init(target, index);
+}
+
+uint32_t jit_array_read(uint32_t source, uint32_t offset, uint32_t mask) {
+    lock_guard guard(state.lock);
+    return jitc_array_read(source, offset, mask);
+}
+
+uint32_t jit_array_write(uint32_t target, uint32_t offset, uint32_t value, uint32_t mask) {
+    lock_guard guard(state.lock);
+    return jitc_array_write(target, offset, value, mask);
+}
+
+size_t jit_array_length(uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_array_length(index);
 }

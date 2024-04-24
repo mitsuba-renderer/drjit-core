@@ -46,8 +46,16 @@ uint32_t jitc_llvm_max_align = 0;
 /// Should the LLVM IR use typed (e.g., "i8*") or untyped ("ptr") pointers?
 bool jitc_llvm_opaque_pointers = false;
 
-/// Strings related to the vector width, used by template engine
+// Strings related to the vector width, used by template engine
+
+/// String of all ones, for different variable types
 char **jitc_llvm_ones_str = nullptr;
+
+/// <i32 0, i32 1, ... > (up to the current vector width)
+char *jitc_llvm_u32_arange_str = nullptr;
+
+/// <i32 width, i32 width, ... > (up to the current vector width)
+char *jitc_llvm_u32_width_str = nullptr;
 
 /// Current top-level task in the task queue
 Task *jitc_task = nullptr;
@@ -209,6 +217,10 @@ void jitc_llvm_shutdown() {
         free(jitc_llvm_ones_str);
     }
     jitc_llvm_ones_str = nullptr;
+    free(jitc_llvm_u32_arange_str);
+    jitc_llvm_u32_arange_str = nullptr;
+    free(jitc_llvm_u32_width_str);
+    jitc_llvm_u32_width_str = nullptr;
 
     jitc_llvm_init_success = false;
     jitc_llvm_init_attempted = false;
@@ -256,6 +268,32 @@ void jitc_llvm_update_strings() {
         buf.put('>');
         jitc_llvm_ones_str[i] = strdup(buf.get());
     }
+
+    buf.clear();
+    buf.put('<');
+    for (uint32_t j = 0; j < width; ++j) {
+        buf.put("i32 ");
+        buf.put_u32(j);
+        if (j + 1 < width)
+            buf.put(", ");
+    }
+    buf.put('>');
+
+    free(jitc_llvm_u32_arange_str);
+    jitc_llvm_u32_arange_str = strdup(buf.get());
+
+    buf.clear();
+    buf.put('<');
+    for (uint32_t j = 0; j < width; ++j) {
+        buf.put("i32 ");
+        buf.put_u32(width);
+        if (j + 1 < width)
+            buf.put(", ");
+    }
+    buf.put('>');
+
+    free(jitc_llvm_u32_width_str);
+    jitc_llvm_u32_width_str = strdup(buf.get());
 }
 
 void jitc_llvm_set_target(const char *target_cpu,

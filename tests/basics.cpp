@@ -606,15 +606,15 @@ TEST_BOTH_FLOAT_AGNOSTIC(07_and_or_mixed) {
         for (int j = 0; j < 2; ++j) {
             bool b = (i & 1);
             uint32_t v0 = jit_var_literal(Backend, VarType::Bool,
-                                              &b, 1, i < 2);
+                                          &b, 1, i < 2);
 
             uint32_t u = 1234;
             uint32_t v1 = jit_var_literal(Backend, VarType::UInt32,
-                                              &u, 1, j == 0);
+                                          &u, 1, j == 0);
 
             float f = 1234;
             uint32_t v2 = jit_var_literal(Backend, VarType::Float32,
-                                              &f, 1, j == 0);
+                                          &f, 1, j == 0);
 
             uint32_t v3 = jit_var_and(v1, v0);
             uint32_t v4 = jit_var_and(v2, v0);

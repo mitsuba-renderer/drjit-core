@@ -287,9 +287,11 @@ int main(int argc, char **argv) {
 
     int log_level_stderr = (int) LogLevel::Warn;
     bool test_cuda = true, test_optix = true, test_llvm = true,
-         write_ref = false, help = false;
+         check_test_files = false, write_ref = false, help = false;
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "-w") == 0) {
+        if (strcmp(argv[i], "-t") == 0) {
+            check_test_files = true;
+        } else if (strcmp(argv[i], "-w") == 0) {
             write_ref = true;
         } else if (strcmp(argv[i], "-v") == 0) {
             log_level_stderr = std::max((int) LogLevel::Info, log_level_stderr + 1);
@@ -314,12 +316,13 @@ int main(int argc, char **argv) {
         printf("Syntax: %s [options]\n\n", argv[0]);
         printf("Options:\n\n");
         printf(" -h   Display this help text.\n\n");
-        printf(" -w   Write reference output to tests/out_*.\n\n");
         printf(" -e   Stop after the first failing test\n\n");
         printf(" -c   Only run CUDA tests\n\n");
         printf(" -l   Only run LLVM tests\n\n");
         printf(" -o   Only run OptiX tests\n\n");
         printf(" -v   Be more verbose (can be repeated)\n\n");
+        printf(" -t   Compare output against tests files\n\n");
+        printf(" -w   Write reference test output to tests/out_*.\n\n");
         return 0;
     }
 
@@ -327,7 +330,8 @@ int main(int argc, char **argv) {
         jit_set_log_level_stderr((LogLevel) log_level_stderr);
         jit_init((test_llvm ? (uint32_t) JitBackend::LLVM : 0) |
                  ((test_cuda || test_optix) ? (uint32_t) JitBackend::CUDA : 0));
-        jit_set_log_level_callback(LogLevel::Trace, log_level_callback);
+        if (check_test_files)
+            jit_set_log_level_callback(LogLevel::Trace, log_level_callback);
         fprintf(stdout, "\n");
 
         test_cuda &= (bool) jit_has_backend(JitBackend::CUDA);
@@ -376,8 +380,8 @@ int main(int argc, char **argv) {
 #endif
 
 #if !defined(__aarch64__)
-            if (test_llvm)
-                jit_llvm_set_target("skylake", nullptr, 8);
+            //if (test_llvm)
+            //    jit_llvm_set_target("skylake", nullptr, 8);
 #endif
 
             auto before = std::chrono::high_resolution_clock::now();
@@ -389,7 +393,7 @@ int main(int argc, char **argv) {
                     .count();
             jit_shutdown(1);
 
-            if (test_check_log(test.name, (char *) log_value.c_str(), write_ref) != 0) {
+            if (check_test_files || test_check_log(test.name, (char *) log_value.c_str(), write_ref) != 0) {
                 tests_passed++;
                 fprintf(stdout, "passed (%.2f ms).\n", duration);
             } else {
@@ -410,6 +414,6 @@ int main(int argc, char **argv) {
 
         return tests_failed == 0 ? 0 : EXIT_FAILURE;
     } catch (const std::exception &e) {
-        fprintf(stderr, "Exception: %s!\n", e.what());
+        fprintf(stderr, "Exception: %s\n", e.what());
     }
 }

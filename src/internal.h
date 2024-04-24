@@ -21,7 +21,7 @@
 #include <nanothread/nanothread.h>
 
 /// List of operations in Dr.Jit-Core's intermediate representation (see ``Variable::kind``)
-enum VarKind : uint32_t {
+enum class VarKind : uint32_t {
     // Invalid operation (default initialization in the Variable class)
     Invalid,
 
@@ -139,6 +139,9 @@ enum VarKind : uint32_t {
     // SSA Phi variable at end of loop
     LoopOutput,
 
+    // SSA Phi variable at end of loop (special version for array variables)
+    ArrayPhi,
+
     // Variable marking the start of a conditional statement
     CondStart,
 
@@ -151,8 +154,36 @@ enum VarKind : uint32_t {
     // SSA Phi variable marking an output of a conditional statement
     CondOutput,
 
+    // Create an uninitialized array
+    Array,
+
+    // Initialize the entries of a variable array with a literal constant
+    ArrayInit,
+
+    // Read an element from a variable array
+    ArrayRead,
+
+    // Write an element to a variable array
+    ArrayWrite,
+
     // Denotes the number of different node types
     Count
+};
+
+/// Temporary state value of variable arrays during compilation
+enum class ArrayState : uint32_t {
+    /// This variable is not an array
+    Invalid,
+
+    /// Newly created or copied array
+    Clean,
+
+    /// The array has been modified by a write operation. Subsequent
+    /// reads/writes will cause it to enter 'Conflicted' mode
+    Modified,
+
+    /// Conflicting reads/writes have been detected for this array
+    Conflicted
 };
 
 /// Central variable data structure, which represents an assignment in SSA form
@@ -251,8 +282,8 @@ struct alignas(64) Variable {
     /// according to the ReduceOp operation encoded by this integer.
     uint32_t reduce_op : 3;
 
-    /// Unused for now
-    uint32_t unused_3 : 3;
+    /// State of the variable array during compilation (see \ref ArrayState)
+    uint32_t array_state : 3;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;
@@ -264,10 +295,15 @@ struct alignas(64) Variable {
     // (+2*4 = 8 bytes)
 
     /// Number of queued side effects
-    uint32_t ref_count_se : 16;
+    uint16_t ref_count_se;
 
-    /// Reference count stash, see \ref jit_var_stash_ref()
-    uint32_t ref_count_stashed : 16;
+    union {
+        /// Reference count stash, see \ref jit_var_stash_ref()
+        uint16_t ref_count_stashed;
+
+        /// Variable arrays (is_array() == 1) store their array length here
+        uint16_t array_length;
+    };
 
     /// If nonzero, references an associated 'VariableExtra' field in 'state.extra'
     uint32_t extra;
@@ -277,8 +313,9 @@ struct alignas(64) Variable {
     bool is_evaluated() const { return kind == (uint32_t) VarKind::Evaluated; }
     bool is_literal()   const { return kind == (uint32_t) VarKind::Literal; }
     bool is_undefined() const { return kind == (uint32_t) VarKind::Undefined; }
-    bool is_node()      const { return (uint32_t) kind > VarKind::Literal; }
+    bool is_node()      const { return (uint32_t) kind > (uint32_t) VarKind::Literal; }
     bool is_dirty()     const { return ref_count_se > 0; }
+    bool is_array()     const { return array_state != (uint32_t) ArrayState::Invalid; }
 };
 
 static_assert(sizeof(Variable) == 64);

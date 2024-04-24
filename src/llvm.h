@@ -61,7 +61,15 @@ extern int jitc_llvm_version_minor;
 extern int jitc_llvm_version_patch;
 
 /// Pre-generated strings for use by the template engine
+
+/// String of all ones, for different variable types
 extern char **jitc_llvm_ones_str;
+
+/// <i32 0, i32 1, ... > (up to the current vector width)
+extern char *jitc_llvm_u32_arange_str;
+
+/// <i32 width, i32 width, ... > (up to the current vector width)
+extern char *jitc_llvm_u32_width_str;
 
 extern uint32_t jitc_llvm_block_size;
 
