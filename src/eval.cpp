@@ -103,6 +103,23 @@ static std::vector<VisitedKey> visit_later;
 
 // ====================================================================
 
+// Forward declaration
+static void jitc_clear_scheduled_variable(ScheduledVariable sv);
+
+// Don't perform scatters, whose output buffer is found to be unreferenced
+bool jitc_var_maybe_suppress_scatter(uint32_t index, Variable *v, uint32_t depth) {
+    Variable *target = jitc_var(v->dep[0]);
+    Variable *target_ptr = jitc_var(target->dep[3]);
+    if (target_ptr->ref_count != 0 || depth != 0)
+        return false;
+
+    jitc_log(Warn, "jit_eval(): eliding scatter r%u, whose output is unreferenced.", index);
+    if (callable_depth == 0)
+        jitc_var_dec_ref(index, v);
+    return true;
+}
+
+
 /// Recursively traverse the computation graph to find variables needed by a computation
 static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0) {
     if (!visited.emplace(size, index, depth).second)
@@ -110,6 +127,11 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
 
     Variable *v = jitc_var(index);
     switch ((VarKind) v->kind) {
+        case VarKind::Scatter:
+            if (jitc_var_maybe_suppress_scatter(index, v, depth))
+                return;
+            break;
+
         case VarKind::LoopPhi: {
                 LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
                 jitc_var_traverse(size, loop->outer_in[v->literal], depth);
@@ -746,6 +768,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
     visited.clear();
     visit_later.clear();
     schedule.clear();
+    callable_depth++;
 
     const std::vector<uint32_t> &check = call->checkpoints;
 
@@ -787,7 +810,6 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
 
     size_t kernel_offset = buffer.size();
 
-    callable_depth++;
     switch (call->backend) {
         case JitBackend::LLVM:
             jitc_llvm_assemble_func(call, inst);

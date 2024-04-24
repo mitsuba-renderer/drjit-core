@@ -504,10 +504,6 @@ static void jitc_llvm_render(Variable *v) {
                     v, v, v, a0);
             }
             break;
-        case VarKind::CallInput:
-            fmt("    $v = BAD BAD\n", v);
-            break;
-
 
         case VarKind::Add:
             fmt(jitc_is_float(v) ? "    $v = fadd $V, $v\n"
