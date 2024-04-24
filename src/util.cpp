@@ -20,7 +20,7 @@
 #  pragma warning (disable: 4146) // unary minus operator applied to unsigned type, result still unsigned
 #endif
 
-const char *red_name[(int) ReduceOp::Count] = { "none", "add", "mul",
+const char *red_name[(int) ReduceOp::Count] = { "identity", "add", "mul",
                                                 "min", "max", "and", "or" };
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)

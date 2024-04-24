@@ -92,7 +92,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
 
     if (!uses_optix) {
         fmt(".entry drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
-            ".param .align 8 .b8 params[$u]) { \n",
+            ".param .align 8 .b8 params[$u]) {\n",
             params_global ? 8u : (n_params * (uint32_t) sizeof(void *)));
     } else {
         fmt(".const .align 8 .b8 params[$u];\n\n"
