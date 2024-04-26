@@ -26,9 +26,9 @@ extern void jitc_var_call_analyze(CallData *call, uint32_t inst_id,
                                   uint32_t index, uint32_t &data_offset);
 
 /// Weave a virtual function call into the computation graph
-void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
-                   uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
-                   const uint32_t *in, uint32_t n_inner_out,
+void jitc_var_call(const char *name, bool symbolic, uint32_t self,
+                   uint32_t mask_, uint32_t n_inst, const uint32_t *inst_id,
+                   uint32_t n_in, const uint32_t *in, uint32_t n_inner_out,
                    const uint32_t *inner_out, const uint32_t *checkpoints,
                    uint32_t *out) {
 
@@ -51,15 +51,15 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
         jitc_raise("jit_var_call('%s'): list of all output indices must be a "
                    "multiple of the instance count (n_inner_out=%u, n_inst=%u)!",
                    name, n_inner_out, n_inst);
+    uint32_t flags = jitc_flags();
 
     uint32_t n_out = n_inner_out / n_inst, size = 0;
-    bool symbolic = false, dirty = false;
+    bool dirty = false;
 
     JitBackend backend;
     /* Check 'self' */ {
         const Variable *self_v = jitc_var(self);
         size = self_v->size;
-        symbolic |= (bool) self_v->symbolic;
         dirty |= self_v->is_dirty();
         backend = (JitBackend) self_v->backend;
         if ((VarType) self_v->type != VarType::UInt32)
@@ -70,7 +70,6 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
     /* Check 'mask' */ {
         const Variable *mask_v = jitc_var(mask_);
         size = std::max(size, mask_v->size);
-        symbolic |= (bool) mask_v->symbolic;
         dirty |= (bool) mask_v->is_dirty();
         if ((VarType) mask_v->type != VarType::Bool)
             jitc_raise(
@@ -84,7 +83,6 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
                 jitc_raise("jit_var_call(): symbolic variable r%u does not "
                            "reference another input!", in[i]);
             Variable *v2 = jitc_var(v->dep[0]);
-            symbolic |= (bool) v2->symbolic;
             dirty |= v2->is_dirty();
             size = std::max(size, v2->size);
         } else if (!v->is_literal()) {
@@ -142,7 +140,6 @@ void jitc_var_call(const char *name, uint32_t self, uint32_t mask_,
     // 3. Apply any masks on the stack, ignore self==NULL
     // =====================================================
 
-    uint32_t flags = jitc_flags();
     bool optimize = flags & (uint32_t) JitFlag::OptimizeCalls,
          debug = flags & (uint32_t) JitFlag::Debug;
 

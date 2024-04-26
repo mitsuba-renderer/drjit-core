@@ -1765,6 +1765,9 @@ extern JIT_EXPORT void jit_var_self(JIT_ENUM JitBackend backend,
  *     A descriptive name that will be used to label various created nodes in
  *     the computation graph.
  *
+ * \param symbolic
+ *     Is this operation nested into another symbolic operation?
+ *
  * \param self
  *     Instance index (a variable of type <tt>VarType::UInt32</tt>), where
  *     0 indicates that the function call should be masked. All outputs
@@ -1795,8 +1798,8 @@ extern JIT_EXPORT void jit_var_self(JIT_ENUM JitBackend backend,
  *     The final output variables representing the result of the operation
  *     are written into this argument (size <tt>n_out_nested / n_inst</tt>)
  */
-extern JIT_EXPORT void jit_var_call(const char *name, uint32_t self,
-                                    uint32_t mask, uint32_t n_inst,
+extern JIT_EXPORT void jit_var_call(const char *name, int symbolic,
+                                    uint32_t self, uint32_t mask, uint32_t n_inst,
                                     const uint32_t *inst_id, uint32_t n_in,
                                     const uint32_t *in, uint32_t n_out_nested,
                                     const uint32_t *out_nested,

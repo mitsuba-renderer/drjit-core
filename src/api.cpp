@@ -978,14 +978,14 @@ void jit_var_self(JitBackend backend, uint32_t *value, uint32_t *index) {
     jitc_var_self(backend, value, index);
 }
 
-void jit_var_call(const char *name, uint32_t self, uint32_t mask,
+void jit_var_call(const char *name, int symbolic, uint32_t self, uint32_t mask,
                   uint32_t n_inst, const uint32_t *inst_id, uint32_t n_in,
                   const uint32_t *in, uint32_t n_out_nested,
                   const uint32_t *out_nested, const uint32_t *se_offset,
                   uint32_t *out) {
     lock_guard guard(state.lock);
-    jitc_var_call(name, self, mask, n_inst, inst_id, n_in, in, n_out_nested,
-                  out_nested, se_offset, out);
+    jitc_var_call(name, (bool) symbolic, self, mask, n_inst, inst_id, n_in, in,
+                  n_out_nested, out_nested, se_offset, out);
 }
 
 void jit_aggregate(JitBackend backend, void *dst, AggregationEntry *agg,
