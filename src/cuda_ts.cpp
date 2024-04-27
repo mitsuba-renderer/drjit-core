@@ -48,14 +48,14 @@ Task *CUDAThreadState::launch(Kernel kernel, uint32_t size,
     
     // Pass parameters through global memory if too large or using OptiX
     if (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT) {
-      size_t param_size = kernel_param_count * sizeof(void *);
-      uint8_t *tmp = (uint8_t *)jitc_malloc(AllocType::HostPinned, param_size);
-      kernel_params_global = (uint8_t *)jitc_malloc(AllocType::Device, param_size);
-      memcpy(tmp, kernel_params->data(), param_size);
-      jitc_memcpy_async(backend, kernel_params_global, tmp, param_size);
-      jitc_free(tmp);
-      kernel_params->clear();
-      kernel_params->push_back(kernel_params_global);
+        size_t param_size = kernel_param_count * sizeof(void *);
+        uint8_t *tmp = (uint8_t *)jitc_malloc(AllocType::HostPinned, param_size);
+        kernel_params_global = (uint8_t *)jitc_malloc(AllocType::Device, param_size);
+        memcpy(tmp, kernel_params->data(), param_size);
+        jitc_memcpy_async(backend, kernel_params_global, tmp, param_size);
+        jitc_free(tmp);
+        kernel_params->clear();
+        kernel_params->push_back(kernel_params_global);
     }
 
 #if defined(DRJIT_ENABLE_OPTIX)
