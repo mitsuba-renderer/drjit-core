@@ -144,9 +144,15 @@ struct RecordThreadState: ThreadState{
     }
 
     /// Sum over elements within blocks
-    void block_sum(enum VarType type, const void *in, void *out, uint32_t size,
-                   uint32_t block_size) override{
-        return this->internal->block_sum(type, in, out, size, block_size);
+    void block_reduce(VarType type, ReduceOp op, const void *in, uint32_t size,
+                      uint32_t block_size, void *out) override {
+        return this->internal->block_reduce(type, op, in, size, block_size, out);
+    }
+
+    /// Compute a dot product of two equal-sized arrays
+    void reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
+                    uint32_t size, void *out) override {
+        return this->internal->reduce_dot(type, ptr_1, ptr_2, size, out);
     }
 
     /// Asynchronously update a single element in memory

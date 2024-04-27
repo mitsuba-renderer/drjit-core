@@ -4,6 +4,7 @@
 #include "log.h"
 #include "optix.h"
 #include "eval.h"
+#include "util.h"
 
 static uint8_t *kernel_params_global = nullptr;
 
