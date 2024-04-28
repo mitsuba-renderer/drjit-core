@@ -1937,6 +1937,56 @@ uint32_t jitc_var_compress(uint32_t index) {
     }
 }
 
+template <typename T> static void jitc_var_reduce_scalar_add(uint32_t size, void *ptr) {
+    T value;
+    memcpy(&value, ptr, sizeof(T));
+    value = T(value * T(size));
+    memcpy(ptr, &value, sizeof(T));
+}
+
+template <typename T> static void jitc_var_reduce_scalar_mul(uint32_t size, void *ptr) {
+    T value;
+    memcpy(&value, ptr, sizeof(T));
+    value = T(std::pow((double) value, (double) T(size)));
+    memcpy(ptr, &value, sizeof(T));
+}
+
+void jitc_reduce_scalar_add(VarType vt, uint32_t size, void *ptr) {
+    using half = drjit::half;
+    switch (vt) {
+        case VarType::Int8:    jitc_var_reduce_scalar_add<int8_t>  (size, ptr); break;
+        case VarType::UInt8:   jitc_var_reduce_scalar_add<uint8_t> (size, ptr); break;
+        case VarType::Int16:   jitc_var_reduce_scalar_add<int16_t> (size, ptr); break;
+        case VarType::UInt16:  jitc_var_reduce_scalar_add<uint16_t>(size, ptr); break;
+        case VarType::Int32:   jitc_var_reduce_scalar_add<int32_t> (size, ptr); break;
+        case VarType::UInt32:  jitc_var_reduce_scalar_add<uint32_t>(size, ptr); break;
+        case VarType::Int64:   jitc_var_reduce_scalar_add<int64_t> (size, ptr); break;
+        case VarType::UInt64:  jitc_var_reduce_scalar_add<uint64_t>(size, ptr); break;
+        case VarType::Float16: jitc_var_reduce_scalar_add<half>    (size, ptr); break;
+        case VarType::Float32: jitc_var_reduce_scalar_add<float>   (size, ptr); break;
+        case VarType::Float64: jitc_var_reduce_scalar_add<double>  (size, ptr); break;
+        default: jitc_raise("jit_var_reduce(): unsupported operand type!");
+    }
+}
+
+void jitc_reduce_scalar_mul(VarType vt, uint32_t size, void *ptr) {
+    using half = drjit::half;
+    switch (vt) {
+        case VarType::Int8:    jitc_var_reduce_scalar_mul<int8_t>  (size, ptr); break;
+        case VarType::UInt8:   jitc_var_reduce_scalar_mul<uint8_t> (size, ptr); break;
+        case VarType::Int16:   jitc_var_reduce_scalar_mul<int16_t> (size, ptr); break;
+        case VarType::UInt16:  jitc_var_reduce_scalar_mul<uint16_t>(size, ptr); break;
+        case VarType::Int32:   jitc_var_reduce_scalar_mul<int32_t> (size, ptr); break;
+        case VarType::UInt32:  jitc_var_reduce_scalar_mul<uint32_t>(size, ptr); break;
+        case VarType::Int64:   jitc_var_reduce_scalar_mul<int64_t> (size, ptr); break;
+        case VarType::UInt64:  jitc_var_reduce_scalar_mul<uint64_t>(size, ptr); break;
+        case VarType::Float16: jitc_var_reduce_scalar_mul<half>    (size, ptr); break;
+        case VarType::Float32: jitc_var_reduce_scalar_mul<float>   (size, ptr); break;
+        case VarType::Float64: jitc_var_reduce_scalar_mul<double>  (size, ptr); break;
+        default: jitc_raise("jit_var_reduce(): unsupported operand type!");
+    }
+}
+
 uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, int symbolic) {
     if (index == 0) {
         return 0;
@@ -1955,6 +2005,17 @@ uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size,
     if (reduced * block_size != size)
         jitc_raise("jit_var_block_reduce(r%u): variable size (%u) must be an integer "
                    "multiple of 'block_size' (%u)", index, size, block_size);
+
+    if (v->is_literal()) {
+        uint64_t value = v->literal;
+        switch (op) {
+            case ReduceOp::Add: jitc_reduce_scalar_add(vt, block_size, &value); break;
+            case ReduceOp::Mul: jitc_reduce_scalar_mul(vt, block_size, &value); break;
+            default: break; // Nothing to do for the other reducion types
+        }
+        return jitc_var_literal((JitBackend) v->backend, (VarType) v->type,
+                                &value, reduced, 0);
+    }
 
     if (symbolic == -1) {
         bool can_scatter_reduce = jitc_can_scatter_reduce(backend, vt, op),
@@ -2022,13 +2083,6 @@ uint32_t jitc_var_tile(uint32_t index, uint32_t block_size) {
         t_mask  = steal(jitc_var_literal(backend, VarType::Bool, &one_u64, 1, 0));
 
     return jitc_var_gather(index, offset, t_mask);
-}
-
-template <typename T> static void jitc_var_reduce_scalar(uint32_t size, void *ptr) {
-    T value;
-    memcpy(&value, ptr, sizeof(T));
-    value = T(value * T(size));
-    memcpy(ptr, &value, sizeof(T));
 }
 
 void jitc_var_set_self(JitBackend backend, uint32_t value, uint32_t index) {
@@ -2104,25 +2158,12 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp op,
         uint64_t value = v->literal;
         uint32_t size = v->size;
 
-        // Tricky cases
-        if (size != 1 && op == ReduceOp::Add) {
-            using half = drjit::half;
-            switch ((VarType) v->type) {
-                case VarType::Int8:    jitc_var_reduce_scalar<int8_t>  (size, &value); break;
-                case VarType::UInt8:   jitc_var_reduce_scalar<uint8_t> (size, &value); break;
-                case VarType::Int16:   jitc_var_reduce_scalar<int16_t> (size, &value); break;
-                case VarType::UInt16:  jitc_var_reduce_scalar<uint16_t>(size, &value); break;
-                case VarType::Int32:   jitc_var_reduce_scalar<int32_t> (size, &value); break;
-                case VarType::UInt32:  jitc_var_reduce_scalar<uint32_t>(size, &value); break;
-                case VarType::Int64:   jitc_var_reduce_scalar<int64_t> (size, &value); break;
-                case VarType::UInt64:  jitc_var_reduce_scalar<uint64_t>(size, &value); break;
-                case VarType::Float16: jitc_var_reduce_scalar<half>    (size, &value); break;
-                case VarType::Float32: jitc_var_reduce_scalar<float>   (size, &value); break;
-                case VarType::Float64: jitc_var_reduce_scalar<double>  (size, &value); break;
-                default: jitc_raise("jit_var_reduce(): unsupported operand type!");
+        if (size > 1) {
+            switch (op) {
+                case ReduceOp::Add: jitc_reduce_scalar_add(vt, size, &value); break;
+                case ReduceOp::Mul: jitc_reduce_scalar_mul(vt, size, &value); break;
+                default: break; // Nothing to do for the other reducion types
             }
-        } else if (size != 1 && op == ReduceOp::Mul) {
-            jitc_raise("jit_var_reduce(): ReduceOp::Mul is not supported for vector values!");
         }
 
         return jitc_var_literal(backend, vt, &value, 1, 0);
