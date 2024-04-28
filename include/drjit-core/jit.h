@@ -2414,21 +2414,82 @@ extern JIT_EXPORT uint32_t jit_array_write(uint32_t target, uint32_t offset,
 extern JIT_EXPORT uint32_t jit_array_read(uint32_t source, uint32_t offset,
                                           uint32_t mask);
 
+
+/// Opaque data structure, storing the recodring of a thread state
 struct Recording;
 
+/**
+ * \brief Start recording operations which can be replayed later without tracing
+ * operations.
+ *
+ * \param backend
+ *      The backend for which recording should be started.
+ * 
+ * \param inputs
+ *      An array of input variable indices.
+ *      They have to be specified before starting the recording and can be
+ *      changed when replaying the recording.
+ *
+ * \param n_inputs
+ *      The number of input variables for the recording
+ */
 extern JIT_EXPORT void jit_record_start(JitBackend backend, 
                                         const uint32_t *inputs, 
                                         uint32_t n_inputs);
 
+/**
+ * \brief Stop recording operations and return a struct containing the
+ * recording.
+ *
+ * The recording is returned as an opaque pointer and has to be destroyed
+ * afterwards.
+ *
+ * \param backend
+ *      The backend on which recording should be stoped.
+ *
+ *  \param outputs
+ *      An array of output variable indieces.
+ *      When replaying these variables are returned from the replay function.
+ *
+ *  \param n_outputs
+ *      The number of output variables of the recording.
+ */
 extern JIT_EXPORT Recording *jit_record_stop(JitBackend backend, 
-                                                     const uint32_t *outputs, 
-                                                     uint32_t n_outputs);
+                                             const uint32_t *outputs, 
+                                             uint32_t n_outputs);
 
-extern JIT_EXPORT void jit_record_replay(Recording *ts,
+/**
+ * \brief Replay a recording with different inputs.
+ *
+ * Replaying a recording with different inputs results in different output
+ * variables.
+ * They get put into the outputs array.
+ *
+ * \param recording
+ *      The recording to replay given different inputs.
+ *
+ * \param inputs
+ *      An array of input variable indices for replaying the recording.
+ *      The number of inputs taken from the array is equal to the number of
+ *      inputs supplied to the jit_start_record function.
+ *
+ * \param outpus
+ *      This array is filled with the output variable indices, created when
+ *      replaying the recording.
+ *      The size of the array has to be equal to the number of output variables
+ *      supplied to the jit_record_stop function.
+ */
+extern JIT_EXPORT void jit_record_replay(Recording *recording,
                                          const uint32_t *inputs,
                                          uint32_t *outputs);
 
-extern JIT_EXPORT void jit_record_destroy(Recording * ts);
+/**
+ * \brief Destroys a recording and frees the asociated memory.
+ *
+ * \param recording
+ *      The recording to destroy.
+ */
+extern JIT_EXPORT void jit_record_destroy(Recording *recording);
 
 #if defined(__cplusplus)
 }

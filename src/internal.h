@@ -652,6 +652,7 @@ struct ThreadState {
     ThreadState() = default;
     ThreadState(const ThreadState &other) = default;
 
+    /// Inserts a barrier task
     virtual void barrier() = 0;
 
     virtual Task *launch(Kernel kernel, uint32_t size,
