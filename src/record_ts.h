@@ -27,6 +27,128 @@ struct RecordVariable{
     VarType type;
 };
 
+struct Recording{
+    std::vector<RecordVariable> variables;
+
+    std::vector<uint32_t> inputs;
+    std::vector<uint32_t> outputs;
+
+    std::vector<Operation> operations;
+    std::vector<uint32_t> dependencies;
+
+    JitBackend backend;
+
+    void replay(const uint32_t *replay_input, uint32_t *outputs){
+
+        ThreadState *ts = thread_state(backend);
+
+        // This struct holds the data and tracks the size of varaibles, 
+        // used during replay.
+        struct ReplayVariable{
+            void *data;
+            uint32_t size;
+        };
+        
+        std::vector<ReplayVariable> variables(this->variables.size());
+        std::vector<void *> kernel_params;
+        std::vector<Task*> scheduled_tasks;
+
+        // Populate with input variables
+        for (uint32_t i = 0; i < this->inputs.size(); ++i){
+            Variable* input_variable = jitc_var(replay_input[i]);
+            ReplayVariable &replay_variable = variables[this->inputs[i]];
+            replay_variable.size = input_variable->size;
+            replay_variable.data = input_variable->data;
+        }
+
+        // Execute kernels and allocate missing output variables
+
+        for (uint32_t i = 0; i < this->operations.size(); ++i){
+            Operation& op = this->operations[i];
+
+            switch (op.type) {
+                case OpType::KernelLaunch:
+                    kernel_params.clear();
+                    
+                    if (backend == JitBackend::CUDA) {
+                        uintptr_t size = 0;
+                        std::memcpy(&size, &op.size, sizeof(uint32_t));
+                        kernel_params.push_back((void *) size);
+                    } else {
+                        // First 3 parameters reserved for: kernel ptr, size, ITT identifier
+                        for (int i = 0; i < 3; ++i)
+                            kernel_params.push_back(nullptr);
+                    }
+                    
+                    // Allocate Missing variables for kernel launch.
+                    // The assumption here is that for every kernel launch, the inputs are already allocated.
+                    // Therefore we only allocate output variables, which have the same size as the kernel.
+                    // TODO: deallocate unused memory.
+                    for (uint32_t j = op.dependency_range.first; j < op.dependency_range.second; ++j){
+                        ReplayVariable &replay_variable = variables[this->dependencies[j]];
+                        if (replay_variable.data == nullptr){
+                            jitc_log(LogLevel::Info, "Allocating output variable of size %zu.", op.size);
+                            
+                            RecordVariable &rv = this->variables[this->dependencies[j]];
+                            uint32_t dsize = op.size * type_size[(int) rv.type];
+                            
+                            AllocType alloc_type = this->backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
+                            
+                            replay_variable.data = jitc_malloc(alloc_type, dsize);
+                            replay_variable.size = op.size;
+                        }
+                        kernel_params.push_back(replay_variable.data);
+                    }
+
+                    {
+                        scoped_set_context guard2(ts->context);
+                        std::vector<uint32_t> tmp;
+                        scheduled_tasks.push_back(ts->launch(op.kernel, op.size, &kernel_params, &tmp));
+                    }
+                    
+                    break;
+                case OpType::Barrier:
+                    
+                    if (this->backend == JitBackend::LLVM) {
+                        if (scheduled_tasks.size() == 1) {
+                            task_release(jitc_task);
+                            jitc_task = scheduled_tasks[0];
+                        } else {
+                            jitc_assert(!scheduled_tasks.empty(),
+                                        "jit_eval(): no tasks generated!");
+
+                            // Insert a barrier task
+                            Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
+                                                             (uint32_t) scheduled_tasks.size());
+                            task_release(jitc_task);
+                            for (Task *t : scheduled_tasks)
+                            task_release(t);
+                            jitc_task = new_task;
+                        }
+                    }
+
+                    break;
+                default:
+                    jitc_fail("An operation has been recorded, that is not known to the replay functionality!");
+                    break;
+            }
+        }
+        
+        for(uint32_t i = 0; i < this->outputs.size(); ++i){
+            uint32_t index = this->outputs[i];
+            ReplayVariable &rv = variables[index];
+            RecordVariable &record_variable = this->variables[index];
+            Variable v;
+            v.kind = VarKind::Evaluated;
+            v.type = (uint32_t) record_variable.type;
+            v.size = rv.size;
+            v.data = rv.data;
+            v.backend = (uint32_t) this->backend;
+            outputs[i] = jitc_var_new(v);
+        }
+    }
+};
+
 struct RecordThreadState: ThreadState{
 
     RecordThreadState(ThreadState *internal){
@@ -50,12 +172,14 @@ struct RecordThreadState: ThreadState{
 #endif
 
         this->internal = internal;
+    
+        this->recording.backend = internal->backend;
     };
 
     
     void barrier() override{
-        uint32_t start = this->dependencies.size();
-        this->operations.push_back(Operation{
+        uint32_t start = this->recording.dependencies.size();
+        this->recording.operations.push_back(Operation{
             /*type=*/OpType::Barrier,
             /*dependency_range=*/std::pair(start, start),
             /*kernel=*/Kernel{},
@@ -68,7 +192,7 @@ struct RecordThreadState: ThreadState{
                  std::vector<void *> *kernel_params,
                  const std::vector<uint32_t> *kernel_param_ids) override{
         
-        uint32_t start = this->dependencies.size();
+        uint32_t start = this->recording.dependencies.size();
 
         uint32_t kernel_param_offset = this->backend == JitBackend::CUDA ? 1 : 3;
 
@@ -79,18 +203,23 @@ struct RecordThreadState: ThreadState{
                 RecordVariable{
                     /*type=*/(VarType) v->type,
                 });
-            this->dependencies.push_back(id);
+            this->recording.dependencies.push_back(id);
         }
 
-        uint32_t end = this->dependencies.size();
+        uint32_t end = this->recording.dependencies.size();
 
-        this->operations.push_back(Operation{
+        this->recording.operations.push_back(Operation{
             /*type=*/OpType::KernelLaunch,
             /*dependency_range=*/std::pair(start, end),
             /*kernel=*/kernel,
             /*size=*/size,
         });
         
+        // Re-assign optix specific variables to internal thread state since they might have changed
+#if defined(DRJIT_ENABLE_OPTIX)
+        this->internal->optix_pipeline = this->optix_pipeline;
+        this->internal->optix_sbt = this->optix_sbt;
+#endif
         return this->internal->launch(kernel, size, kernel_params, kernel_param_ids);
     }
 
@@ -178,122 +307,15 @@ struct RecordThreadState: ThreadState{
 
     ~RecordThreadState(){}
 
-    void replay(const uint32_t *replay_input, uint32_t *outputs){
-
-        // This struct holds the data and tracks the size of varaibles, 
-        // used during replay.
-        struct ReplayVariable{
-            void *data;
-            uint32_t size;
-        };
-        
-        std::vector<ReplayVariable> variables(this->variables.size());
-        std::vector<void *> kernel_params;
-        std::vector<Task*> scheduled_tasks;
-
-        // Populate with input variables
-        for (uint32_t i = 0; i < this->inputs.size(); ++i){
-            Variable* input_variable = jitc_var(replay_input[i]);
-            ReplayVariable &replay_variable = variables[this->inputs[i]];
-            replay_variable.size = input_variable->size;
-            replay_variable.data = input_variable->data;
-        }
-
-        // Execute kernels and allocate missing output variables
-
-        for (uint32_t i = 0; i < this->operations.size(); ++i){
-            Operation& op = this->operations[i];
-
-            switch (op.type) {
-                case OpType::KernelLaunch:
-                    kernel_params.clear();
-                    
-                    if (backend == JitBackend::CUDA) {
-                        uintptr_t size = 0;
-                        std::memcpy(&size, &op.size, sizeof(uint32_t));
-                        kernel_params.push_back((void *) size);
-                    } else {
-                        // First 3 parameters reserved for: kernel ptr, size, ITT identifier
-                        for (int i = 0; i < 3; ++i)
-                            kernel_params.push_back(nullptr);
-                    }
-                    
-                    // Allocate Missing variables for kernel launch.
-                    // The assumption here is that for every kernel launch, the inputs are already allocated.
-                    // Therefore we only allocate output variables, which have the same size as the kernel.
-                    // TODO: deallocate unused memory.
-                    for (uint32_t j = op.dependency_range.first; j < op.dependency_range.second; ++j){
-                        ReplayVariable &replay_variable = variables[this->dependencies[j]];
-                        if (replay_variable.data == nullptr){
-                            jitc_log(LogLevel::Info, "Allocating output variable of size %zu.", op.size);
-                            
-                            RecordVariable &rv = this->variables[this->dependencies[j]];
-                            uint32_t dsize = op.size * type_size[(int) rv.type];
-                            
-                            AllocType alloc_type = this->backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
-                            
-                            replay_variable.data = jitc_malloc(alloc_type, dsize);
-                            replay_variable.size = op.size;
-                        }
-                        kernel_params.push_back(replay_variable.data);
-                    }
-
-                    {
-                        std::vector<uint32_t> tmp;
-                        scheduled_tasks.push_back(this->internal->launch(op.kernel, op.size, &kernel_params, &tmp));
-                    }
-                    
-                    break;
-                case OpType::Barrier:
-                    
-                    if (this->backend == JitBackend::LLVM) {
-                        if (scheduled_tasks.size() == 1) {
-                            task_release(jitc_task);
-                            jitc_task = scheduled_tasks[0];
-                        } else {
-                            jitc_assert(!scheduled_tasks.empty(),
-                                        "jit_eval(): no tasks generated!");
-
-                            // Insert a barrier task
-                            Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
-                                                             (uint32_t) scheduled_tasks.size());
-                            task_release(jitc_task);
-                            for (Task *t : scheduled_tasks)
-                            task_release(t);
-                            jitc_task = new_task;
-                        }
-                    }
-
-                    break;
-                default:
-                    jitc_fail("An operation has been recorded, that is not known to the replay functionality!");
-                    break;
-            }
-        }
-        
-        for(uint32_t i = 0; i < this->outputs.size(); ++i){
-            uint32_t index = this->outputs[i];
-            ReplayVariable &rv = variables[index];
-            RecordVariable &record_variable = this->variables[index];
-            Variable v;
-            v.kind = VarKind::Evaluated;
-            v.type = (uint32_t) record_variable.type;
-            v.size = rv.size;
-            v.data = rv.data;
-            v.backend = (uint32_t) this->backend;
-            outputs[i] = jitc_var_new(v);
-        }
-    }
-
     void set_input(uint32_t input){
         Variable *v = jitc_var(input);
-        this->inputs.push_back(this->get_or_insert_variable(v->data, RecordVariable{
+        this->recording.inputs.push_back(this->get_or_insert_variable(v->data, RecordVariable{
             /*type=*/(VarType) v->type,
         }));
     }
     void set_output(uint32_t output){
         Variable *v = jitc_var(output);
-        this->outputs.push_back(this->get_or_insert_variable(v->data, RecordVariable{
+        this->recording.outputs.push_back(this->get_or_insert_variable(v->data, RecordVariable{
             /*type=*/(VarType) v->type,
         }));
     }
@@ -301,31 +323,25 @@ struct RecordThreadState: ThreadState{
 
     ThreadState *internal;
     
-    std::vector<RecordVariable> variables;
-
-    std::vector<uint32_t> inputs;
-    std::vector<uint32_t> outputs;
-
-    std::vector<Operation> operations;
-    std::vector<uint32_t> dependencies;
+    Recording recording;
     
 private:
     
-    // Mapping from variable index in State to variable in this struct.
-    VariableCache variable_cache;
+    // Mapping from variable index in State to slot index in the recording.
+    VariableCache ptr_to_slot;
 
     // Insert the variable by pointer, deduplicating it and returning a index into the
     // `variables` field.
     uint32_t get_or_insert_variable(void *ptr, RecordVariable rv) {
         
-        auto it = this->variable_cache.find(ptr);
+        auto it = this->ptr_to_slot.find(ptr);
 
-        if (it == this->variable_cache.end()) {
-            uint32_t id = this->variables.size();
+        if (it == this->ptr_to_slot.end()) {
+            uint32_t id = this->recording.variables.size();
             
-            this->variables.push_back(rv);
+            this->recording.variables.push_back(rv);
             
-            this->variable_cache.insert({ptr, id});
+            this->ptr_to_slot.insert({ptr, id});
             
             return id;
         } else {
@@ -338,5 +354,5 @@ private:
 void jitc_record_start(JitBackend backend, const uint32_t *inputs,
                        uint32_t n_inputs);
 
-RecordThreadState *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
+Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
                                     uint32_t n_outputs);

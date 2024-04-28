@@ -2,8 +2,6 @@
 #include "test.h"
 
 TEST_BOTH(01_basic_replay) {
-    // jitc_test_record(Backend);
-    
     UInt32 r(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
 
     uint32_t inputs[] = {
@@ -19,7 +17,7 @@ TEST_BOTH(01_basic_replay) {
         result.index()
     };
 
-    RecordThreadState *record = jit_record_stop(Backend, outputs, 1);
+    Recording *record = jit_record_stop(Backend, outputs, 1);
 
 
     {

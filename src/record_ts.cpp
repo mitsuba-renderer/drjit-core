@@ -20,7 +20,7 @@ void jitc_record_start(JitBackend backend, const uint32_t *inputs,
         record_ts->set_input(inputs[i]);
     }
 }
-RecordThreadState *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
+Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
                                     uint32_t n_outputs) {
     ThreadState *ts = thread_state(backend);
     RecordThreadState *record_ts = dynamic_cast<RecordThreadState *>(ts);
@@ -34,5 +34,5 @@ RecordThreadState *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
     } else {
         thread_state_llvm = record_ts->internal;
     }
-    return record_ts;
+    return new Recording(record_ts->recording);
 }
