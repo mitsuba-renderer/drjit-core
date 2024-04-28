@@ -1469,19 +1469,19 @@ void jit_record_start(JitBackend backend, const uint32_t *inputs,
     return jitc_record_start(backend, inputs, n_inputs);
 }
 
-RecordThreadState *jit_record_stop(JitBackend backend, const uint32_t *outputs,
+Recording *jit_record_stop(JitBackend backend, const uint32_t *outputs,
                                    uint32_t n_outputs) {
     lock_guard guard(state.lock);
     return jitc_record_stop(backend, outputs, n_outputs);
 }
 
-void jit_record_replay(RecordThreadState *ts, const uint32_t *inputs,
+void jit_record_replay(Recording *ts, const uint32_t *inputs,
                        uint32_t *outputs) {
     lock_guard guard(state.lock);
     return ts->replay(inputs, outputs);
 }
 
-void jit_record_destroy(RecordThreadState *ts){
+void jit_record_destroy(Recording *recording){
     lock_guard guard(state.lock);
-    delete ts;
+    delete recording;
 }
