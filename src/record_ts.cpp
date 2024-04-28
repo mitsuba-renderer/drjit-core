@@ -18,6 +18,7 @@ static std::vector<void *> kernel_params;
 /// Temporary scratch space for scheduled tasks (LLVM only)
 static std::vector<Task *> scheduled_tasks;
 
+/// Temporary variables used for replaying a recording.
 static std::vector<ReplayVariable> replay_variables;
 
 void Recording::replay(const uint32_t *replay_input, uint32_t *outputs){
@@ -99,7 +100,7 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs){
                                                          (uint32_t) scheduled_tasks.size());
                         task_release(jitc_task);
                         for (Task *t : scheduled_tasks)
-                        task_release(t);
+                            task_release(t);
                         jitc_task = new_task;
                     }
                 }
