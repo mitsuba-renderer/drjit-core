@@ -110,7 +110,7 @@ bool jitc_var_maybe_suppress_scatter(uint32_t index, Variable *v, uint32_t depth
     if (target_ptr->ref_count != 0 || depth != 0)
         return false;
 
-    jitc_log(Warn, "jit_eval(): eliding scatter r%u, whose output is unreferenced.", index);
+    jitc_log(Debug, "jit_eval(): eliding scatter r%u, whose output is unreferenced.", index);
     if (callable_depth == 0)
         jitc_var_dec_ref(index, v);
     return true;
