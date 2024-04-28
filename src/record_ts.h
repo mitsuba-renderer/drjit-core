@@ -7,7 +7,7 @@
 #include <cstdint>
 
 // HashMap used to deduplicate variables
-using VariableCache = tsl::robin_map<void *, uint32_t, PointerHasher>;
+using PtrToSlot = tsl::robin_map<void *, uint32_t, PointerHasher>;
 
 enum class OpType{
     KernelLaunch,
@@ -327,11 +327,11 @@ struct RecordThreadState: ThreadState{
     
 private:
     
-    // Mapping from variable index in State to slot index in the recording.
-    VariableCache ptr_to_slot;
+    // Mapping from data pointer of a variable to a index into the slot of the recording.
+    PtrToSlot ptr_to_slot;
 
     // Insert the variable by pointer, deduplicating it and returning a index into the
-    // `variables` field.
+    // `variables` field of the recording.
     uint32_t get_or_insert_variable(void *ptr, RecordVariable rv) {
         
         auto it = this->ptr_to_slot.find(ptr);
