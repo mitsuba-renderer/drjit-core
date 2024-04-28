@@ -4,27 +4,38 @@
 #include "internal.h"
 #include "log.h"
 
+// This struct holds the data and tracks the size of varaibles, 
+// used during replay.
+struct ReplayVariable{
+    void *data;
+    uint32_t size;
+};
+
+
+/// Kernel parameter buffer
+static std::vector<void *> kernel_params;
+
+/// Temporary scratch space for scheduled tasks (LLVM only)
+static std::vector<Task *> scheduled_tasks;
+
+static std::vector<ReplayVariable> replay_variables;
+
 void Recording::replay(const uint32_t *replay_input, uint32_t *outputs){
     
     ThreadState *ts = thread_state(backend);
 
-    // This struct holds the data and tracks the size of varaibles, 
-    // used during replay.
-    struct ReplayVariable{
-        void *data;
-        uint32_t size;
-    };
+    kernel_params.clear();
+    replay_variables.clear();
+    scheduled_tasks.clear();
 
-    std::vector<ReplayVariable> variables(this->variables.size());
-    std::vector<void *> kernel_params;
-    std::vector<Task*> scheduled_tasks;
+    replay_variables.resize(this->record_variables.size());
 
     // Populate with input variables
     for (uint32_t i = 0; i < this->inputs.size(); ++i){
         Variable* input_variable = jitc_var(replay_input[i]);
-        ReplayVariable &replay_variable = variables[this->inputs[i]];
-        replay_variable.size = input_variable->size;
-        replay_variable.data = input_variable->data;
+        ReplayVariable &rv = replay_variables[this->inputs[i]];
+        rv.size = input_variable->size;
+        rv.data = input_variable->data;
     }
 
     // Execute kernels and allocate missing output variables
@@ -51,12 +62,12 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs){
                 // Therefore we only allocate output variables, which have the same size as the kernel.
                 // TODO: deallocate unused memory.
                 for (uint32_t j = op.dependency_range.first; j < op.dependency_range.second; ++j){
-                    ReplayVariable &replay_variable = variables[this->dependencies[j]];
+                    ReplayVariable &replay_variable = replay_variables[this->dependencies[j]];
                     if (replay_variable.data == nullptr){
                         jitc_log(LogLevel::Info, "Allocating output variable of size %zu.", op.size);
 
-                        RecordVariable &rv = this->variables[this->dependencies[j]];
-                        uint32_t dsize = op.size * type_size[(int) rv.type];
+                        RecordVariable &record_variable = this->record_variables[this->dependencies[j]];
+                        uint32_t dsize = op.size * type_size[(int) record_variable.type];
 
                         AllocType alloc_type = this->backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
 
@@ -102,8 +113,8 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs){
 
     for(uint32_t i = 0; i < this->outputs.size(); ++i){
         uint32_t index = this->outputs[i];
-        ReplayVariable &rv = variables[index];
-        RecordVariable &record_variable = this->variables[index];
+        ReplayVariable &rv = replay_variables[index];
+        RecordVariable &record_variable = this->record_variables[index];
         Variable v;
         v.kind = VarKind::Evaluated;
         v.type = (uint32_t) record_variable.type;

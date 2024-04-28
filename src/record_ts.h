@@ -29,7 +29,7 @@ struct RecordVariable{
 
 struct Recording{
     
-    std::vector<RecordVariable> variables;
+    std::vector<RecordVariable> record_variables;
 
     std::vector<uint32_t> inputs;
     std::vector<uint32_t> outputs;
@@ -231,9 +231,9 @@ private:
         auto it = this->ptr_to_slot.find(ptr);
 
         if (it == this->ptr_to_slot.end()) {
-            uint32_t id = this->recording.variables.size();
+            uint32_t id = this->recording.record_variables.size();
             
-            this->recording.variables.push_back(rv);
+            this->recording.record_variables.push_back(rv);
             
             this->ptr_to_slot.insert({ptr, id});
             
