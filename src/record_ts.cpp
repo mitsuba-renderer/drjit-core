@@ -107,6 +107,53 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs){
                 scheduled_tasks.clear();
 
                 break;
+            case OpType::MemsetAsync:
+                {
+                    uint32_t dependency_index = op.dependency_range.first;
+                    
+                    uint32_t ptr_index = this->dependencies[dependency_index];
+                    uint32_t src_index = this->dependencies[dependency_index+1];
+                    
+                    ReplayVariable &ptr_var = replay_variables[ptr_index];
+                    ReplayVariable &src_var = replay_variables[src_index];
+
+                    VarType type = record_variables[src_index].type;
+
+                    ts->memset_async(ptr_var.data, op.size,type_size[(uint32_t) type], src_var.data);
+                }
+                break;
+            case OpType::Reduce:
+                {
+                    uint32_t dependency_index = op.dependency_range.first;
+                    
+                    uint32_t ptr_index = this->dependencies[dependency_index];
+                    uint32_t out_index = this->dependencies[dependency_index+1];
+                    
+                    ReplayVariable &ptr_var = replay_variables[ptr_index];
+                    ReplayVariable &out_var = replay_variables[out_index];
+
+                    RecordVariable &ptr_record_var = record_variables[ptr_index];
+
+                    // Allocate output variable if data is missing.
+                    if (out_var.data == nullptr){
+                        RecordVariable &out_record_var = record_variables[out_index];
+
+                        uint32_t dsize = 1 * type_size[(int) out_record_var.type];
+                        AllocType alloc_type = this->backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
+                        
+                        out_var.data = jitc_malloc(alloc_type, dsize);
+                        out_var.size = 1;
+                    }
+
+                    
+                    VarType type = ptr_record_var.type;
+                    ReduceOp rtype = op.rtype;
+
+                    jitc_log(LogLevel::Info, "out_ptr: %p", out_var.data);
+
+                    ts->reduce(type, rtype, ptr_var.data, ptr_var.size, out_var.data);
+                }
+                break;
             default:
                 jitc_fail("An operation has been recorded, that is not known to the replay functionality!");
                 break;

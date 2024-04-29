@@ -7,11 +7,13 @@
 #include <cstdint>
 
 // HashMap used to deduplicate variables
-using PtrToSlot = tsl::robin_map<void *, uint32_t, PointerHasher>;
+using PtrToSlot = tsl::robin_map<const void *, uint32_t, PointerHasher>;
 
 enum class OpType{
-    KernelLaunch,
     Barrier,
+    KernelLaunch,
+    MemsetAsync,
+    Reduce,
 };
 
 struct Operation{
@@ -21,6 +23,7 @@ struct Operation{
     // Kernel hash if a kernel was launched
     Kernel kernel;
     size_t size;
+    ReduceOp rtype;
 };
 
 struct RecordVariable{
@@ -78,6 +81,7 @@ struct RecordThreadState: ThreadState{
             /*dependency_range=*/std::pair(start, start),
             /*kernel=*/Kernel{},
             /*size=*/0,
+            /*rtype=*/ReduceOp(),
         });
         return this->internal->barrier();
     }
@@ -107,6 +111,7 @@ struct RecordThreadState: ThreadState{
             /*dependency_range=*/std::pair(start, end),
             /*kernel=*/kernel,
             /*size=*/size,
+            /*rtype=*/ReduceOp(),
         });
         
         // Re-assign optix specific variables to internal thread state since they might have changed
@@ -120,12 +125,53 @@ struct RecordThreadState: ThreadState{
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
                       const void *src) override{
+        
+        uint32_t start = this->recording.dependencies.size();
+
+        // TODO: Insert if missing
+        uint32_t ptr_id = this->get_variable(ptr);
+        uint32_t src_id = this->get_variable(src);
+        
+        this->recording.dependencies.push_back(ptr_id);
+        this->recording.dependencies.push_back(src_id);
+        
+        uint32_t end = this->recording.dependencies.size();
+
+        this->recording.operations.push_back(Operation{
+            /*type=*/OpType::MemsetAsync,
+            /*dependency_range=*/std::pair(start, end),
+            /*kernel=*/Kernel(),
+            /*size=*/size,
+            /*rtype=*/ReduceOp(),
+        });
+        
         return this->internal->memset_async(ptr, size, isize, src);
     }
 
     /// Reduce the given array to a single value
     void reduce(VarType type, ReduceOp rtype, const void *ptr, uint32_t size,
                 void *out) override{
+        
+        uint32_t start = this->recording.dependencies.size();
+
+        uint32_t ptr_id = this->get_variable(ptr);
+        uint32_t out_id = this->get_or_insert_variable(out, RecordVariable{
+            /*type=*/type,
+        });
+        
+        this->recording.dependencies.push_back(ptr_id);
+        this->recording.dependencies.push_back(out_id);
+        
+        uint32_t end = this->recording.dependencies.size();
+
+        this->recording.operations.push_back(Operation{
+            /*type=*/OpType::Reduce,
+            /*dependency_range=*/std::pair(start, end),
+            /*kernel=*/Kernel(),
+            /*size=*/size,
+            /*rtype=*/rtype,
+        });
+        
         return this->internal->reduce(type, rtype, ptr, size, out);
     }
 
@@ -245,7 +291,7 @@ private:
 
     // Return the slot index given the data pointer of a variable.
     // This fails if the variable has not been added.
-    uint32_t get_variable(void *ptr) {
+    uint32_t get_variable(const void *ptr) {
         auto it = this->ptr_to_slot.find(ptr);
 
         jitc_assert(it != this->ptr_to_slot.end(),
