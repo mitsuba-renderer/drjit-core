@@ -104,6 +104,7 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs){
                         jitc_task = new_task;
                     }
                 }
+                scheduled_tasks.clear();
 
                 break;
             default:
