@@ -30,7 +30,7 @@ TEST_BOTH(01_basic_replay) {
 
         recording = jit_record_stop(Backend, outputs, 1);
 
-        jit_log(LogLevel::Info, "result: %s", jit_var_str(outputs[0]));
+        jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
         jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
     }
 
@@ -47,7 +47,7 @@ TEST_BOTH(01_basic_replay) {
 
         jit_record_replay(recording, inputs, outputs);
 
-        jit_log(LogLevel::Info, "result: %s", jit_var_str(outputs[0]));
+        jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
         jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
     }
 
