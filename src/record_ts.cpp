@@ -153,9 +153,31 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs){
                     VarType type = ptr_var.type;
                     ReduceOp rtype = op.rtype;
 
-                    jitc_log(LogLevel::Info, "out_ptr: %p", out_var.data);
-
                     ts->reduce(type, rtype, ptr_var.data, ptr_var.size, out_var.data);
+                }
+                break;
+            case OpType::PrefixSum:
+                {
+                    uint32_t dependency_index = op.dependency_range.first;
+                    
+                    uint32_t in_index = this->dependencies[dependency_index];
+                    uint32_t out_index = this->dependencies[dependency_index+1];
+                    
+                    ReplayVariable &in_var = replay_variables[in_index];
+                    ReplayVariable &out_var = replay_variables[out_index];
+                    
+                    // Allocate output variable if data is missing.
+                    if (out_var.data == nullptr){
+                        uint32_t dsize = 1 * type_size[(int) out_var.type];
+                        AllocType alloc_type = this->backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
+                        
+                        out_var.data = jitc_malloc(alloc_type, dsize);
+                        out_var.size = op.size;
+                    }
+                    
+                    VarType type = in_var.type;
+
+                    ts->prefix_sum(type, op.exclusive, in_var.data, op.size, out_var.data);
                 }
                 break;
             default:
@@ -164,6 +186,7 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs){
         }
     }
 
+    // Create output variables
     for(uint32_t i = 0; i < this->outputs.size(); ++i){
         uint32_t index = this->outputs[i];
         ReplayVariable &rv = replay_variables[index];
