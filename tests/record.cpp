@@ -5,7 +5,8 @@
 /**
  * Basic addition test.
  * Supplying a different input should replay the operation, with this input.
- * In this case, the input at replay is incremented and should result in an incremented output.
+ * In this case, the input at replay is incremented and should result in an
+ * incremented output.
  */
 TEST_BOTH(01_basic_replay) {
     Recording *recording;
@@ -15,18 +16,14 @@ TEST_BOTH(01_basic_replay) {
         UInt32 i0(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
         UInt32 r0(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 
-        uint32_t inputs[] = {
-            i0.index()
-        };
+        uint32_t inputs[] = {i0.index()};
 
         jit_record_start(Backend, inputs, 1);
 
         UInt32 o0 = i0 + 1;
         o0.eval();
 
-        uint32_t outputs[] = {
-            o0.index()
-        };
+        uint32_t outputs[] = {o0.index()};
 
         recording = jit_record_stop(Backend, outputs, 1);
 
@@ -34,15 +31,12 @@ TEST_BOTH(01_basic_replay) {
         jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
     }
 
-
     jit_log(LogLevel::Info, "Replay:");
     {
         UInt32 i0(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
         UInt32 r0(2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
 
-        uint32_t inputs[] = {
-            i0.index()
-        };
+        uint32_t inputs[] = {i0.index()};
         uint32_t outputs[1];
 
         jit_record_replay(recording, inputs, outputs);
@@ -99,7 +93,6 @@ TEST_BOTH(02_MIMO) {
         UInt32 i1(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
         UInt32 r0(2, 4, 6, 8, 10, 12, 14, 16, 18, 20);
         UInt32 r1(1, 4, 9, 16, 25, 36, 49, 64, 81, 100);
-        
 
         uint32_t inputs[] = {
             i0.index(),
@@ -163,7 +156,6 @@ TEST_BOTH(03_deduplicating_input) {
         UInt32 i0(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
         UInt32 r0(2, 4, 6, 8, 10, 12, 14, 16, 18, 20);
         UInt32 r1(1, 4, 9, 16, 25, 36, 49, 64, 81, 100);
-        
 
         uint32_t inputs[] = {
             i0.index(),
@@ -229,7 +221,6 @@ TEST_BOTH(04_deduplicating_output) {
         UInt32 i1(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
         UInt32 r0(2, 4, 6, 8, 10, 12, 14, 16, 18, 20);
         UInt32 r1(2, 4, 6, 8, 10, 12, 14, 16, 18, 20);
-        
 
         uint32_t inputs[] = {
             i0.index(),
@@ -305,8 +296,9 @@ TEST_BOTH(05_sequential_kernels) {
 
 /**
  * This tests, weather it is possible to record multiple kernels in parallel.
- * The variables of the kernels are of different size, therefore two kernels are generated.
- * At replay these can be executed in parallel (LLVM) or sequence (CUDA).
+ * The variables of the kernels are of different size, therefore two kernels are
+ * generated. At replay these can be executed in parallel (LLVM) or sequence
+ * (CUDA).
  */
 TEST_BOTH(06_parallel_kernels) {
     Recording *recording;
@@ -378,7 +370,7 @@ TEST_BOTH(07_reduce_hsum) {
     {
         UInt32 i0(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
         UInt32 r0 = opaque<UInt32>(45, 1);
-        
+
         uint32_t inputs[] = {
             i0.index(),
         };
@@ -403,7 +395,7 @@ TEST_BOTH(07_reduce_hsum) {
     {
         UInt32 i0(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
         UInt32 r0 = opaque<UInt32>(55, 1);
-        
+
         uint32_t inputs[] = {
             i0.index(),
         };
@@ -420,7 +412,8 @@ TEST_BOTH(07_reduce_hsum) {
 
 // TODO: fix unknown type
 // /**
-//  * This tests recording and replay of a horizontal reduction operation (hsum).
+//  * This tests recording and replay of a horizontal reduction operation
+//  (hsum).
 //  */
 // TEST_BOTH(08_memset_async) {
 //     Recording *recording;
@@ -428,7 +421,7 @@ TEST_BOTH(07_reduce_hsum) {
 //     jit_log(LogLevel::Info, "Recording:");
 //     {
 //         UInt32 r0(1, 1, 1);
-//         
+//
 //         uint32_t inputs[] = {};
 //
 //         jit_record_start(Backend, inputs, 0);
@@ -450,9 +443,9 @@ TEST_BOTH(07_reduce_hsum) {
 //     jit_log(LogLevel::Info, "Replay:");
 //     {
 //         UInt32 r0(1, 1, 1);
-//         
+//
 //         uint32_t inputs[] = {};
-//         
+//
 //         uint32_t outputs[1];
 //
 //         jit_record_replay(recording, inputs, outputs);
@@ -463,3 +456,54 @@ TEST_BOTH(07_reduce_hsum) {
 //
 //     jit_record_destroy(recording);
 // }
+
+
+/**
+ * Tests recording of a prefix sum operation with different inputs at replay.
+ */
+TEST_BOTH(09_prefix_sum) {
+    Recording *recording;
+
+    jit_log(LogLevel::Info, "Recording:");
+    {
+        UInt32 i0(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+        UInt32 r0(0, 1, 3, 6, 10, 15, 21, 28, 36, 45);
+
+        uint32_t inputs[] = {
+            i0.index(),
+        };
+
+        jit_record_start(Backend, inputs, 1);
+
+        uint32_t o0 = jit_var_prefix_sum(i0.index(), 0);
+        jit_var_schedule(o0);
+        jit_eval();
+
+        uint32_t outputs[] = {
+            o0,
+        };
+
+        recording = jit_record_stop(Backend, outputs, 1);
+
+        jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
+        jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
+    }
+
+    jit_log(LogLevel::Info, "Replay:");
+    {
+        UInt32 i0(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+        UInt32 r0(1, 3, 6, 10, 15, 21, 28, 36, 45, 55);
+
+        uint32_t inputs[] = {
+            i0.index(),
+        };
+        uint32_t outputs[1];
+
+        jit_record_replay(recording, inputs, outputs);
+
+        jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
+        jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
+    }
+
+    jit_record_destroy(recording);
+}

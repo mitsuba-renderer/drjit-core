@@ -14,6 +14,7 @@ enum class OpType{
     KernelLaunch,
     MemsetAsync,
     Reduce,
+    PrefixSum,
 };
 
 struct Operation{
@@ -21,9 +22,12 @@ struct Operation{
     // Indices into the dependencies vector
     std::pair<uint32_t, uint32_t> dependency_range;
     // Kernel hash if a kernel was launched
-    Kernel kernel;
+    union{
+        Kernel kernel;
+        ReduceOp rtype;
+        bool exclusive;
+    };
     size_t size;
-    ReduceOp rtype;
 };
 
 struct RecordVariable{
@@ -76,13 +80,12 @@ struct RecordThreadState: ThreadState{
     
     void barrier() override{
         uint32_t start = this->recording.dependencies.size();
-        this->recording.operations.push_back(Operation{
-            /*type=*/OpType::Barrier,
-            /*dependency_range=*/std::pair(start, start),
-            /*kernel=*/Kernel{},
-            /*size=*/0,
-            /*rtype=*/ReduceOp(),
-        });
+        
+        Operation op;
+        op.type = OpType::Barrier;
+        op.dependency_range = std::pair(start, start);
+        this->recording.operations.push_back(op);
+        
         return this->internal->barrier();
     }
     
@@ -106,13 +109,12 @@ struct RecordThreadState: ThreadState{
 
         uint32_t end = this->recording.dependencies.size();
 
-        this->recording.operations.push_back(Operation{
-            /*type=*/OpType::KernelLaunch,
-            /*dependency_range=*/std::pair(start, end),
-            /*kernel=*/kernel,
-            /*size=*/size,
-            /*rtype=*/ReduceOp(),
-        });
+        Operation op;
+        op.type = OpType::KernelLaunch;
+        op.dependency_range = std::pair(start, end);
+        op.kernel = kernel;
+        op.size = size;
+        this->recording.operations.push_back(op);
         
         // Re-assign optix specific variables to internal thread state since they might have changed
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -137,13 +139,11 @@ struct RecordThreadState: ThreadState{
         
         uint32_t end = this->recording.dependencies.size();
 
-        this->recording.operations.push_back(Operation{
-            /*type=*/OpType::MemsetAsync,
-            /*dependency_range=*/std::pair(start, end),
-            /*kernel=*/Kernel(),
-            /*size=*/size,
-            /*rtype=*/ReduceOp(),
-        });
+        Operation op;
+        op.type = OpType::MemsetAsync;
+        op.dependency_range = std::pair(start, end);
+        op.size = size;
+        this->recording.operations.push_back(op);
         
         return this->internal->memset_async(ptr, size, isize, src);
     }
@@ -164,13 +164,12 @@ struct RecordThreadState: ThreadState{
         
         uint32_t end = this->recording.dependencies.size();
 
-        this->recording.operations.push_back(Operation{
-            /*type=*/OpType::Reduce,
-            /*dependency_range=*/std::pair(start, end),
-            /*kernel=*/Kernel(),
-            /*size=*/size,
-            /*rtype=*/rtype,
-        });
+        Operation op;
+        op.type = OpType::Reduce;
+        op.dependency_range = std::pair(start, end);
+        op.rtype = rtype;
+        op.size = size;
+        this->recording.operations.push_back(op);
         
         return this->internal->reduce(type, rtype, ptr, size, out);
     }
@@ -188,6 +187,26 @@ struct RecordThreadState: ThreadState{
     /// Exclusive prefix sum
     void prefix_sum(VarType vt, bool exclusive, const void *in, uint32_t size,
                     void *out) override{
+        
+        uint32_t start = this->recording.dependencies.size();
+
+        uint32_t in_id = this->get_variable(in);
+        uint32_t out_id = this->get_or_insert_variable(out, RecordVariable{
+            /*type=*/vt
+        });
+
+        this->recording.dependencies.push_back(in_id);
+        this->recording.dependencies.push_back(out_id);
+        
+        uint32_t end = this->recording.dependencies.size();
+
+        Operation op;
+        op.type = OpType::PrefixSum;
+        op.dependency_range = std::pair(start, end);
+        op.exclusive = exclusive;
+        op.size = size;
+        this->recording.operations.push_back(op);
+        
         return this->internal->prefix_sum(vt, exclusive, in ,size, out);
     }
 
