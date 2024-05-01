@@ -1276,6 +1276,8 @@ TEST_BOTH(13_load_bool_data) {
 }
 
 TEST_BOTH(14_kernel_record) {
+    jit_set_flag(JitFlag::VCallOptimize, true);
+    
     Recording *recording;
     
     struct Base {
@@ -1361,17 +1363,18 @@ TEST_BOTH(14_kernel_record) {
         jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
         jit_log(LogLevel::Info, "r0: %s", jit_var_str(r0.index()));
         
-        auto success = (jit_var_all(jit_var_eq(r0.index(), outputs[0])));
-        jit_var_eval(success);
+        jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
     }
 
     jit_log(LogLevel::Info, "Replay:");
     {
         BasePtr self = (arange<UInt32>(10)) % 3;
+        // BasePtr self = arange<UInt32>(10) % 3;
         self.eval();
         UInt32 i0 = arange<UInt32>(10);
+        // UInt32 i0 = full<UInt32>(0, 10);
         i0.eval();
-        UInt32 r0(1, 4, 0, 4, 6, 0, 8, 10, 0, 10);
+        UInt32 r0(1, 3, 0, 4, 6, 0, 7, 9, 0, 10);
 
         uint32_t inputs[] = {
             self.index(),
