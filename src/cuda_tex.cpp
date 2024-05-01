@@ -535,7 +535,7 @@ Variable jitc_cuda_tex_check(VarType out_type, size_t ndim, const uint32_t *pos)
 void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
                           const uint32_t *pos, uint32_t active, uint32_t *out) {
     DrJitCudaTexture &tex = *((DrJitCudaTexture *) texture_handle);
-    VarType out_type = tex.type_size == 4 ? VarType::Float32 : VarType::Float16;
+    VarType out_type = VarType::Float32;
     Variable v = jitc_cuda_tex_check(out_type, ndim, pos);
 
     for (size_t ti = 0; ti < tex.n_textures; ++ti) {
@@ -578,7 +578,7 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
         jitc_raise("jitc_cuda_tex_bilerp_fetch(): only 2D textures are supported!");
 
     DrJitCudaTexture &tex = *((DrJitCudaTexture *) texture_handle);
-    VarType out_type = tex.type_size == 4 ? VarType::Float32 : VarType::Float16;
+    VarType out_type = VarType::Float32;
     Variable v = jitc_cuda_tex_check(out_type, ndim, pos);
 
     for (size_t ti = 0; ti < tex.n_textures; ++ti) {
