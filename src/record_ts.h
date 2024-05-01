@@ -1,4 +1,3 @@
-
 #include "drjit-core/hash.h"
 #include "drjit-core/jit.h"
 #include "internal.h"
@@ -75,6 +74,8 @@ struct RecordThreadState: ThreadState{
         this->internal = internal;
     
         this->recording.backend = internal->backend;
+
+        this->scope = internal->scope;
     };
 
     
