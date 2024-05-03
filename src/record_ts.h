@@ -31,6 +31,7 @@ struct Operation{
 
 struct RecordVariable{
     VarType type;
+    uint32_t size;
 };
 
 struct Recording{
@@ -104,6 +105,7 @@ struct RecordThreadState: ThreadState{
                 kernel_params->at(kernel_param_offset + param_index),
                 RecordVariable{
                     /*type=*/(VarType) v->type,
+                    /*size=*/v->size,
                 });
             this->recording.dependencies.push_back(id);
         }
@@ -158,6 +160,7 @@ struct RecordThreadState: ThreadState{
         uint32_t ptr_id = this->get_variable(ptr);
         uint32_t out_id = this->get_or_insert_variable(out, RecordVariable{
             /*type=*/type,
+            /*size=*/1,
         });
         
         this->recording.dependencies.push_back(ptr_id);
@@ -193,7 +196,8 @@ struct RecordThreadState: ThreadState{
 
         uint32_t in_id = this->get_variable(in);
         uint32_t out_id = this->get_or_insert_variable(out, RecordVariable{
-            /*type=*/vt
+            /*type=*/vt,
+            /*size=*/size,
         });
 
         this->recording.dependencies.push_back(in_id);
@@ -271,12 +275,14 @@ struct RecordThreadState: ThreadState{
         Variable *v = jitc_var(input);
         this->recording.inputs.push_back(this->get_or_insert_variable(v->data, RecordVariable{
             /*type=*/(VarType) v->type,
+            /*size=*/v->size,
         }));
     }
     void set_output(uint32_t output){
         Variable *v = jitc_var(output);
         this->recording.outputs.push_back(this->get_or_insert_variable(v->data, RecordVariable{
             /*type=*/(VarType) v->type,
+            /*size=*/v->size,
         }));
     }
 
