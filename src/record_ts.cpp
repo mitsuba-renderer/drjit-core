@@ -13,6 +13,7 @@ struct ReplayVariable {
 
     ReplayVariable(RecordVariable &rv) {
         this->type = rv.type;
+        this->size = rv.size;
     }
 };
 
@@ -26,8 +27,6 @@ static std::vector<Task *> scheduled_tasks;
 static std::vector<ReplayVariable> replay_variables;
 
 void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
-
-    jitc_log(LogLevel::Info, "operations: %zu", this->operations.size());
 
     ThreadState *ts = thread_state(backend);
 
@@ -81,7 +80,7 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
                              "Allocating output variable of size %zu.",
                              op.size);
 
-                    uint32_t dsize = op.size * type_size[(int)rv.type];
+                    uint32_t dsize = rv.size * type_size[(int)rv.type];
 
                     AllocType alloc_type = this->backend == JitBackend::CUDA
                                                ? AllocType::Device
@@ -149,13 +148,12 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
 
             // Allocate output variable if data is missing.
             if (out_var.data == nullptr) {
-                uint32_t dsize = 1 * type_size[(int)out_var.type];
+                uint32_t dsize = out_var.size * type_size[(int)out_var.type];
                 AllocType alloc_type = this->backend == JitBackend::CUDA
                                            ? AllocType::Device
                                            : AllocType::Host;
 
                 out_var.data = jitc_malloc(alloc_type, dsize);
-                out_var.size = 1;
             }
 
             VarType type = ptr_var.type;
@@ -174,13 +172,12 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
 
             // Allocate output variable if data is missing.
             if (out_var.data == nullptr) {
-                uint32_t dsize = 1 * type_size[(int)out_var.type];
+                uint32_t dsize = out_var.size * type_size[(int)out_var.type];
                 AllocType alloc_type = this->backend == JitBackend::CUDA
                                            ? AllocType::Device
                                            : AllocType::Host;
 
                 out_var.data = jitc_malloc(alloc_type, dsize);
-                out_var.size = op.size;
             }
 
             VarType type = in_var.type;
@@ -236,7 +233,8 @@ Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
     // variables
     internal->scope = ts->scope;
 
-    jitc_assert(ts->record_stack.empty(), "Kernel recording ended while still recording loop!");
+    jitc_assert(ts->record_stack.empty(),
+                "Kernel recording ended while still recording loop!");
 
     for (uint32_t i = 0; i < n_outputs; ++i) {
         ts->set_output(outputs[i]);
