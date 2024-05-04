@@ -107,9 +107,9 @@ void jitc_init(uint32_t backends) {
     if (rv == -1) {
         jitc_log(Info, "jit_init(): creating directory \"%s\" ..", temp_path);
 #if !defined(_WIN32)
-        if (mkdir(temp_path, 0700) == -1)
+        if (mkdir(temp_path, 0700) == -1 && errno != EEXIST)
 #else
-        if (_wmkdir(temp_path_w) == -1)
+        if (_wmkdir(temp_path_w) == -1 && errno != EEXIST)
 #endif
             jitc_fail("jit_init(): creation of directory \"%s\" failed: %s",
                 temp_path, strerror(errno));
