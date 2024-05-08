@@ -507,3 +507,49 @@ TEST_BOTH(09_prefix_sum) {
 
     jit_record_destroy(recording);
 }
+
+/**
+ * Basic addition test.
+ * Supplying a different input should replay the operation, with this input.
+ * In this case, the input at replay is incremented and should result in an
+ * incremented output.
+ */
+TEST_BOTH(10_resized_input) {
+    Recording *recording;
+
+    jit_log(LogLevel::Info, "Recording:");
+    {
+        UInt32 i0(0, 1, 2);
+        UInt32 r0(1, 2, 3);
+
+        uint32_t inputs[] = {i0.index()};
+
+        jit_record_start(Backend, inputs, 1);
+
+        UInt32 o0 = i0 + 1;
+        o0.eval();
+
+        uint32_t outputs[] = {o0.index()};
+
+        recording = jit_record_stop(Backend, outputs, 1);
+
+        jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
+        jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
+    }
+
+    jit_log(LogLevel::Info, "Replay:");
+    {
+        UInt32 i0(1, 2, 3, 4);
+        UInt32 r0(2, 3, 4, 5);
+
+        uint32_t inputs[] = {i0.index()};
+        uint32_t outputs[1];
+
+        jit_record_replay(recording, inputs, outputs);
+
+        jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
+        jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
+    }
+
+    jit_record_destroy(recording);
+}
