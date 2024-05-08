@@ -53,7 +53,7 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
         Operation &op = this->operations[i];
 
         switch (op.type) {
-        case OpType::KernelLaunch:
+        case OpType::KernelLaunch: {
             kernel_params.clear();
 
             if (backend == JitBackend::CUDA) {
@@ -67,6 +67,27 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
                     kernel_params.push_back(nullptr);
             }
 
+            // Inferr kernel size.
+            uint32_t inferred_size = 0;
+            for (uint32_t j = op.dependency_range.first;
+                 j < op.dependency_range.second; ++j) {
+                ParamInfo info = this->dependencies[j];
+                ReplayVariable &rv = replay_variables[info.index];
+
+                if (info.type == ParamType::Input) {
+                    jitc_assert(
+                        rv.data != nullptr,
+                        "replay(): Kernel input variable not allocated!");
+
+                    inferred_size = std::max(inferred_size, rv.size);
+                }
+            }
+            if (inferred_size == 0) {
+                jitc_log(LogLevel::Warn, "replay(): Could not infer launch "
+                                         "size, using recorded size");
+                inferred_size = op.size;
+            }
+
             // Allocate Missing variables for kernel launch.
             // The assumption here is that for every kernel launch, the inputs
             // are already allocated. Therefore we only allocate output
@@ -76,12 +97,18 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
                  j < op.dependency_range.second; ++j) {
                 ParamInfo info = this->dependencies[j];
                 ReplayVariable &rv = replay_variables[info.index];
-                if (rv.data == nullptr) {
-                    jitc_assert(info.type == ParamType::Output,
-                                "replay(): Input variable not allocated!");
-                    jitc_log(LogLevel::Info,
-                             "Allocating output variable of size %zu.",
-                             op.size);
+
+                if (info.type == ParamType::Output) {
+                    jitc_assert(rv.data == nullptr,
+                                "replay(): Output parameters should not be "
+                                "allocate before replaying the kernel!");
+
+                    rv.size = inferred_size;
+
+                    jitc_log(
+                        LogLevel::Info,
+                        "replay(): Allocating output variable of size %zu.",
+                        op.size);
 
                     uint32_t dsize = rv.size * type_size[(int)rv.type];
 
@@ -90,7 +117,6 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
                                                : AllocType::Host;
 
                     rv.data = jitc_malloc(alloc_type, dsize);
-                    rv.size = op.size;
                 }
                 kernel_params.push_back(rv.data);
             }
@@ -99,10 +125,12 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
                 scoped_set_context_maybe guard2(ts->context);
                 std::vector<uint32_t> tmp;
                 scheduled_tasks.push_back(
-                    ts->launch(op.kernel, op.size, &kernel_params, &tmp));
+                    ts->launch(op.kernel, inferred_size, &kernel_params, &tmp));
             }
 
-            break;
+        }
+
+        break;
         case OpType::Barrier:
 
             if (this->backend == JitBackend::LLVM) {
