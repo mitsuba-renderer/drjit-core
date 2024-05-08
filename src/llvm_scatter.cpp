@@ -160,7 +160,7 @@ static const char *append_reduce_op_direct(VarType vt, ReduceOp op, const Variab
                *atomicrmw_name = jitc_llvm_atomicrmw_name(vt, op);
 
     fmt_intrinsic(
-        "define internal fastcc void @reduce_$s_$h_atomic($P %ptr, $T %val, i$w %active) #0 ${\n"
+        "define internal fastcc void @reduce_$s_$h_atomic($P %ptr, $T %val, i$w %active) local_unnamed_addr #0 ${\n"
         "prelude:\n"
         "    %ptr_a = alloca [$w x $p], align $u\n"
         "    %val_a = alloca [$w x $t], align $A\n"
@@ -242,7 +242,7 @@ static const char *append_reduce_op_local(VarType vt, ReduceOp op, const Variabl
     // Failed experiment: skipping to the next element via ctz() wasn't
     // faster because of the resulting inter-instruction dependency
     fmt_intrinsic(
-        "define internal fastcc void @reduce_$s_$h_atomic_local($P %ptr, $T %value, i$w %active_in) #0 ${\n"
+        "define internal fastcc void @reduce_$s_$h_atomic_local($P %ptr, $T %value, i$w %active_in) local_unnamed_addr #0 ${\n"
         "prelude:\n"
         "    %ptr_a = alloca [$w x $p], align $u\n"
        "{    %ptr_a2 = bitcast [$w x $p]* %ptr_a to $P*\n|}"
@@ -413,7 +413,7 @@ static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Va
     id_v.literal = jitc_reduce_identity(vt, op);
 
     fmt_intrinsic(
-        "define internal fastcc void @reduce_$s_$h_noconflict($P %ptr, $T %value, i$w %active_in) #0 ${\n"
+        "define internal fastcc void @reduce_$s_$h_noconflict($P %ptr, $T %value, i$w %active_in) local_unnamed_addr #0 ${\n"
         "prelude:\n"
         "    %ptr_a = alloca [$w x $p], align $u\n"
        "{    %ptr_a2 = bitcast [$w x $p]* %ptr_a to $P*\n|}"
@@ -556,7 +556,7 @@ void jitc_llvm_render_scatter_inc(Variable *v, const Variable *ptr,
     fmt_intrinsic("declare i64 @llvm$e.vector.reduce.umax.v$wi64(<$w x i64>)");
 
     fmt_intrinsic(
-        "define internal fastcc <$w x i32> @reduce_inc_u32(<$w x {i32*}> %ptrs_in, <$w x i1> %active_in) #0 ${\n"
+        "define internal fastcc <$w x i32> @reduce_inc_u32(<$w x {i32*}> %ptrs_in, <$w x i1> %active_in) local_unnamed_addr #0 ${\n"
         "L0:\n"
         "    %ptrs_start_0 = select <$w x i1> %active_in, <$w x {i32*}> %ptrs_in, <$w x {i32*}> $z\n"
         "    %ptrs_start_1 = ptrtoint <$w x {i32*}> %ptrs_start_0 to <$w x i64>\n"

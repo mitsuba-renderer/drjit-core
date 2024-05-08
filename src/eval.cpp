@@ -17,6 +17,7 @@
 #include "loop.h"
 #include "call.h"
 #include "trace.h"
+#include "op.h"
 #include <tsl/robin_set.h>
 
 // ====================================================================
@@ -182,7 +183,13 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
                 TraceData *call = (TraceData *) v->data;
                 for (uint32_t i: call->indices)
                     jitc_var_traverse(size, i, depth);
+            }
+            break;
 
+        case VarKind::PacketScatter: {
+                PacketScatterData *psd = (PacketScatterData *) v->data;
+                for (uint32_t i : psd->values)
+                    jitc_var_traverse(size, i, depth);
             }
             break;
 

@@ -18,10 +18,20 @@ extern uint32_t jitc_var_op(JitOp ot, const uint32_t *dep);
 extern uint32_t jitc_var_gather(uint32_t source, uint32_t index,
                                 uint32_t mask);
 
+/// Gather a contiguous vector of values
+extern void jitc_var_gather_packet(size_t n, uint32_t source, uint32_t index,
+                              uint32_t mask, uint32_t *out);
+
 /// Schedule a scatter opartion that writes to an array
 extern uint32_t jitc_var_scatter(uint32_t target, uint32_t value,
                                  uint32_t index, uint32_t mask,
                                  ReduceOp op, ReduceMode mode);
+
+/// Scatter or scatter-reduce a contigous vector of values
+extern uint32_t jitc_var_scatter_packet(size_t n, uint32_t target,
+                                        const uint32_t *values, uint32_t index,
+                                        uint32_t mask, ReduceOp op,
+                                        ReduceMode mode);
 
 /// Atomic Kahan summation
 extern void jitc_var_scatter_add_kahan(uint32_t *target_1, uint32_t *target_2,
@@ -102,3 +112,16 @@ extern uint32_t jitc_var_sin_intrinsic(uint32_t a0);
 extern uint32_t jitc_var_cos_intrinsic(uint32_t a0);
 extern uint32_t jitc_var_exp2_intrinsic(uint32_t a0);
 extern uint32_t jitc_var_log2_intrinsic(uint32_t a0);
+
+/// Extra data describing a packet scatter operatoin
+struct PacketScatterData {
+    ReduceOp op;
+    ReduceMode mode;
+    std::vector<uint32_t> values;
+    WeakRef to_reduce;
+
+    ~PacketScatterData() {
+        for (uint32_t index: values)
+            jitc_var_dec_ref(index);
+    }
+};

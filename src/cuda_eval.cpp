@@ -42,6 +42,7 @@
 #include "trace.h"
 #include "cuda_eval.h"
 #include "cuda_scatter.h"
+#include "cuda_packet.h"
 
 // Forward declarations
 static void jitc_cuda_render(Variable *v);
@@ -672,7 +673,7 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::Gather: {
                 bool index_zero = a1->is_literal() && a1->literal == 0;
-                bool masked = !a2->is_literal() || a2->literal != 1;
+                bool is_masked = !a2->is_literal() || a2->literal != 1;
                 bool is_bool = v->type == (uint32_t) VarType::Bool;
 
                 if (index_zero) {
@@ -685,7 +686,7 @@ static void jitc_cuda_render(Variable *v) {
                         a1, a1, v, a0);
                 }
 
-                if (masked) {
+                if (is_masked) {
                     if (is_bool)
                         fmt("    mov.b16 %w0, 0;\n");
                     else
@@ -695,12 +696,11 @@ static void jitc_cuda_render(Variable *v) {
                     put("    ");
                 }
 
-                if (is_bool) {
+                if (is_bool)
                     fmt("ld.global.nc.u8 %w0, [%rd3];\n"
                         "    setp.ne.u16 $v, %w0, 0;\n", v);
-                } else {
+                else
                     fmt("ld.global.nc.$b $v, [%rd3];\n", v, v);
-                }
             }
             break;
 
@@ -709,6 +709,14 @@ static void jitc_cuda_render(Variable *v) {
                 jitc_cuda_render_scatter_reduce(v, a0, a1, a2, a3);
             else
                 jitc_cuda_render_scatter(v, a0, a1, a2, a3);
+            break;
+
+        case VarKind::PacketGather:
+            jitc_cuda_render_gather_packet(v, a0, a1, a2);
+            break;
+
+        case VarKind::PacketScatter:
+            jitc_cuda_render_scatter_packet(v, a0, a1, a2);
             break;
 
         case VarKind::ScatterInc:

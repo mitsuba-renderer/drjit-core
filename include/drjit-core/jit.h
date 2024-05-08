@@ -822,6 +822,20 @@ extern JIT_EXPORT uint32_t jit_var_pointer(JIT_ENUM JitBackend backend,
 extern JIT_EXPORT uint32_t jit_var_gather(uint32_t source, uint32_t index,
                                           uint32_t mask);
 
+/**
+ * \brief Gather a contiguous packet of values
+ *
+ * This function is analogous to (but generally more efficient than)
+ * four separate gathers from indices ``index*n+ [0,1,.., n-1]``.
+ * The number ``n`` must be a power of two.
+ *
+ * The output variable indices are written to ``out``, which must point
+ * to a memory region of size ``sizeof(uint32_t)*n``.
+ */
+extern JIT_EXPORT void jit_var_gather_packet(size_t n, uint32_t source,
+                                             uint32_t index, uint32_t mask,
+                                             uint32_t *out);
+
 #if defined(__cplusplus)
 /// Reduction operations for \ref jit_var_scatter() \ref jit_reduce()
 enum class ReduceOp : uint32_t {
@@ -940,6 +954,21 @@ extern JIT_EXPORT uint32_t jit_var_scatter(uint32_t target, uint32_t value,
                                            uint32_t index, uint32_t mask,
                                            JIT_ENUM ReduceOp op JIT_DEF(ReduceOp::Identity),
                                            JIT_ENUM ReduceMode mode JIT_DEF(ReduceMode::Auto));
+
+/**
+ * \brief Scatter or scatter-reduce a contiguous packet of values
+ *
+ * This function is analogous to (but generally more efficient than)
+ * four separate scatters from indices ``index*n+ [0,1,.., n-1]``.
+ * The number ``n`` must be a power of two.
+ *
+ * The input variable indices are given via ``values``, which must point
+ * to a memory region of size ``sizeof(uint32_t)*n``.
+ */
+extern JIT_EXPORT uint32_t jit_var_scatter_packet(size_t n, uint32_t target, const uint32_t *values,
+                                                  uint32_t index, uint32_t mask,
+                                                  JIT_ENUM ReduceOp op JIT_DEF(ReduceOp::Identity),
+                                                  JIT_ENUM ReduceMode mode JIT_DEF(ReduceMode::Auto));
 
 /// Check if a backend supports the specified type of scatter-reduction
 extern JIT_EXPORT int jit_can_scatter_reduce(JitBackend backend, VarType vt,
@@ -1480,26 +1509,29 @@ enum class JitFlag : uint32_t {
     /// and combining their results.
     SymbolicConditionals = 1 << 11,
 
+    /// Turn gathers that access 4 adjacent elements into packet loads?
+    PacketOps = 1 << 12,
+
     /// Force execution through OptiX even if a kernel doesn't use ray tracing
-    ForceOptiX = 1 << 12,
+    ForceOptiX = 1 << 13,
 
     /// Print the intermediate representation of generated programs
-    PrintIR = 1 << 13,
+    PrintIR = 1 << 14,
 
     /// Maintain a history of kernel launches. Useful for profiling Dr.Jit code.
-    KernelHistory = 1 << 14,
+    KernelHistory = 1 << 15,
 
     /* Force synchronization after every kernel launch. This is useful to
        isolate crashes to a specific kernel, and to benchmark kernel runtime
        along with the KernelHistory feature. */
-    LaunchBlocking = 1 << 15,
+    LaunchBlocking = 1 << 16,
 
     /// Perform a local (warp/SIMD) reduction before issuing global atomics
-    ScatterReduceLocal = 1 << 16,
+    ScatterReduceLocal = 1 << 17,
 
     /// Set to \c true when Dr.Jit is capturing symbolic computation. This flag
     /// is managed automatically and should not be set by application code.
-    SymbolicScope = 1 << 17,
+    SymbolicScope = 1 << 18,
 
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
@@ -1507,7 +1539,7 @@ enum class JitFlag : uint32_t {
               (uint32_t) OptimizeLoops | (uint32_t) SymbolicCalls |
               (uint32_t) MergeFunctions | (uint32_t) OptimizeCalls |
               (uint32_t) SymbolicConditionals | (uint32_t) ReuseIndices |
-              (uint32_t) ScatterReduceLocal,
+              (uint32_t) ScatterReduceLocal | (uint32_t) PacketOps,
 
     // Deprecated aliases, will be removed in a future version of Dr.Jit
     LoopRecord = SymbolicLoops,
@@ -1531,12 +1563,13 @@ enum JitFlag {
     JitFlagOptimizeCalls = 1 << 9,
     JitFlagMergeFunctions = 1 << 10,
     JitFlagSymbolicConditionals = 1 << 11,
-    JitFlagForceOptiX = 1 << 12,
-    JitFlagPrintIR = 1 << 13,
-    JitFlagKernelHistory = 1 << 14,
-    JitFlagLaunchBlocking = 1 << 15,
-    JitFlagScatterReduceLocal = 1 << 16,
-    JitFlagSymbolic = 1 << 17
+    JitFlagPacketOps = 1 << 12,
+    JitFlagForceOptiX = 1 << 13,
+    JitFlagPrintIR = 1 << 14,
+    JitFlagKernelHistory = 1 << 15,
+    JitFlagLaunchBlocking = 1 << 16,
+    JitFlagScatterReduceLocal = 1 << 17,
+    JitFlagSymbolic = 1 << 18
 };
 #endif
 

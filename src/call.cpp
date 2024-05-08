@@ -606,6 +606,10 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
             jitc_var_call_analyze(call, inst_id, index_2, data_offset);
         for (uint32_t index_2: loop->outer_in)
             jitc_var_call_analyze(call, inst_id, index_2, data_offset);
+    } else if (kind == VarKind::PacketScatter) {
+        PacketScatterData *psd = (PacketScatterData *) v->data;
+        for (uint32_t i : psd->values)
+            jitc_var_call_analyze(call, inst_id, i, data_offset);
     } else if (kind == VarKind::TraceRay) {
         TraceData *td = (TraceData *) v->data;
         for (uint32_t index_2: td->indices)
@@ -618,11 +622,10 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
 
         if (v->size != 1)
             jitc_raise(
-                "jit_var_call(): the virtual function call associated with "
-                "instance %u accesses an evaluated variable r%u of type "
-                "%s and size %u. However, only *scalar* (size == 1) "
-                "evaluated variables can be accessed while recording "
-                "virtual function calls",
+                "jit_var_call(): an indirect call to instance %u accesses an "
+                "evaluated variable r%u of type %s and size %u. However, only "
+                "*scalar* (size == 1) evaluated variables can be accessed "
+                "while recording indirect function calls",
                 inst_id, index, type_name[v->type], v->size);
     }
 

@@ -116,10 +116,12 @@ add_library(
   src/cuda_tex.h
   src/cuda_tex.cpp
   src/cuda_eval.cpp
-  src/cuda_scatter.h
-  src/cuda_scatter.cpp
   src/cuda_ts.h
   src/cuda_ts.cpp
+  src/cuda_scatter.h
+  src/cuda_scatter.cpp
+  src/cuda_packet.h
+  src/cuda_packet.cpp
 
   # OptiX backend
   ${DRJIT_OPTIX_FILES}
@@ -134,10 +136,12 @@ add_library(
   src/llvm_orcv2.cpp
   src/llvm_eval.h
   src/llvm_eval.cpp
-  src/llvm_scatter.h
-  src/llvm_scatter.cpp
   src/llvm_ts.h
   src/llvm_ts.cpp
+  src/llvm_scatter.h
+  src/llvm_scatter.cpp
+  src/llvm_packet.h
+  src/llvm_packet.cpp
 
   src/io.h       src/io.cpp
   src/eval.h     src/eval.cpp

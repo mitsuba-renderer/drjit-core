@@ -33,6 +33,8 @@
  *                                           (masks promoted to 8 bits)
  *  $M      Variable      `<8 x i8>`         Vector variable type
  *                                           (masks promoted to 8 bits)
+ *  $H      Variable      `f32`              Type abbreviation for intrinsics
+ *                                           (masks promoted to 8 bits)
  * --------------------------------------------------------------------------
  *  $v      Variable      `%p1234`           Variable name
  * --------------------------------------------------------------------------
@@ -72,6 +74,7 @@
 #include "trace.h"
 #include "llvm_scatter.h"
 #include "llvm_eval.h"
+#include "llvm_packet.h"
 
 // Forward declaration
 static void jitc_llvm_render(Variable *v);
@@ -823,7 +826,6 @@ static void jitc_llvm_render(Variable *v) {
                 }
             }
             break;
-
         case VarKind::Scatter:
             if (v->literal)
                 jitc_llvm_render_scatter_reduce(v, a0, a1, a2, a3);
@@ -837,6 +839,14 @@ static void jitc_llvm_render(Variable *v) {
 
         case VarKind::ScatterKahan:
             jitc_llvm_render_scatter_add_kahan(v, a0, a1, a2, a3);
+            break;
+
+        case VarKind::PacketGather:
+            jitc_llvm_render_gather_packet(v, a0, a1, a2);
+            break;
+
+        case VarKind::PacketScatter:
+            jitc_llvm_render_scatter_packet(v, a0, a1, a2);
             break;
 
         case VarKind::BoundsCheck:

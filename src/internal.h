@@ -85,6 +85,12 @@ enum VarKind : uint32_t {
     // Memory-related operations
     Gather, Scatter, ScatterInc, ScatterKahan,
 
+    // Gather multiple contiguous values at once
+    PacketGather,
+
+    // Scatter multiple contiguous values at once
+    PacketScatter,
+
     // Counter node to determine the current lane ID
     Counter,
 
@@ -557,7 +563,7 @@ struct ThreadState {
     char *prefix = nullptr;
 
     /// Identifier associated with the current basic block
-    uint32_t scope = 0;
+    uint32_t scope = 2;
 
     /// Registry index of the 'self' pointer of the call being recorded
     uint32_t call_self_value = 0;
@@ -744,7 +750,7 @@ struct State {
     UnusedPQ unused_extra;
 
     /// Counter to create variable scopes that enforce a variable ordering
-    uint32_t scope_ctr = 0;
+    uint32_t scope_ctr = 2;
     size_t variable_counter = 0;
 
     /// Must be held to execute jitc_eval()

@@ -181,6 +181,12 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Memory-related operations
     "gather", "scatter", "scatter_inc", "scatter_kahan",
 
+    // Gather multiple contiguous values at once
+    "packet_gather",
+
+    // Scatter multiple contiguous values at once
+    "packet_scatter",
+
     // Counter node to determine the current lane ID
     "counter",
 
@@ -764,8 +770,28 @@ uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
     }
 }
 
+uint32_t jitc_var_bool(JitBackend backend, bool value) {
+    Variable v;
+    memcpy(&v.literal, &value, sizeof(bool));
+    v.kind = (uint32_t) VarKind::Literal;
+    v.type = (uint32_t) VarType::Bool;
+    v.size = 1;
+    v.backend = (uint32_t) backend;
+    return jitc_var_new(v);
+}
+
+uint32_t jitc_var_u32(JitBackend backend, uint32_t value) {
+    Variable v;
+    memcpy(&v.literal, &value, sizeof(uint32_t));
+    v.kind = (uint32_t) VarKind::Literal;
+    v.type = (uint32_t) VarType::UInt32;
+    v.size = 1;
+    v.backend = (uint32_t) backend;
+    return jitc_var_new(v);
+}
+
 uint32_t jitc_var_pointer(JitBackend backend, const void *value,
-                              uint32_t dep, int write) {
+                          uint32_t dep, int write) {
     Variable v;
     v.kind = (uint32_t) VarKind::Literal;
     v.type = (uint32_t) VarType::Pointer;
@@ -788,7 +814,13 @@ uint32_t jitc_var_pointer(JitBackend backend, const void *value,
     else
         jitc_var_inc_ref(dep);
 
-    return jitc_var_new(v);
+    /// Pointer variables live in a global scope with ID '1'
+    ThreadState *ts = thread_state(backend);
+    uint32_t scope_backup = 1;
+    std::swap(scope_backup, ts->scope);
+    uint32_t result = jitc_var_new(v);
+    std::swap(scope_backup, ts->scope);
+    return result;
 }
 
 uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size) {

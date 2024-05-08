@@ -1578,10 +1578,10 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
     auto [info, v_index, v_mask] =
         jitc_var_check<Disabled>("jit_var_check_bounds", index, mask);
 
-    uint64_t zero = 0;
-    Ref buf =
-        steal(jitc_var_literal(info.backend, VarType::UInt32, &zero, 1, 1));
-    Ref buffer_ptr = steal(jitc_var_pointer(info.backend, jitc_var(buf)->data, buf, 1));
+    uint64_t zero;
+    Ref buf = steal(jitc_var_literal(info.backend, VarType::UInt32, &zero, 1, 1)),
+        buffer_ptr =
+            steal(jitc_var_pointer(info.backend, jitc_var(buf)->data, buf, 1));
 
     Ref result = steal(jitc_var_new_node_3(
         info.backend, VarKind::BoundsCheck, VarType::Bool, info.size,
@@ -1610,12 +1610,24 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
                         msg = "drjit.gather(): out-of-bounds read from position";
                         break;
 
+                    case BoundsCheckType::PacketGather:
+                        msg = "drjit.gather(): out-of-bounds packet read from position";
+                        break;
+
                     case BoundsCheckType::Scatter:
                         msg = "drjit.scatter(): out-of-bounds write to position";
                         break;
 
+                    case BoundsCheckType::PacketScatter:
+                        msg = "drjit.scatter(): out-of-bounds packet write to position";
+                        break;
+
                     case BoundsCheckType::ScatterReduce:
                         msg = "drjit.scatter_reduce(): out-of-bounds write to position";
+                        break;
+
+                    case BoundsCheckType::PacketScatterReduce:
+                        msg = "drjit.scatter_reduce(): out-of-bounds packet write to position";
                         break;
 
                     case BoundsCheckType::ScatterInc:
@@ -1749,14 +1761,19 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
         msg = " [elided, memcpy]";
     }
 
+    // If 'result' is not set, none of the special cases above were triggered,
+    // and we will need to either generate a Gather IR node.
     if (!result) {
-        Ref ptr_2   = steal(jitc_var_pointer(src_info.backend, jitc_var(src)->data, src, 0)),
-            index_2 = steal(jitc_scatter_gather_index(src, index)),
-            mask_2  = steal(jitc_var_mask_apply(mask, var_info.size));
+        Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size)),
+            ptr_2  = steal(jitc_var_pointer(src_info.backend, jitc_var(src)->data, src, 0));
 
-        uint32_t flags = jit_flags();
-        if (flags & (uint32_t) JitFlag::Debug)
-            mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::Gather, index, mask_2, src_info.size));
+        ptr = (uint32_t) ptr_2;
+
+        Ref index_2 = steal(jitc_scatter_gather_index(src, index));
+
+        if (jit_flag(JitFlag::Debug))
+            mask_2 = steal(jitc_var_check_bounds(
+                BoundsCheckType::Gather, index, mask_2, src_info.size));
 
         var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
 
@@ -1764,7 +1781,6 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
             src_info.backend, VarKind::Gather, src_info.type, var_info.size,
             var_info.symbolic, ptr_2, jitc_var(ptr_2), index_2,
             jitc_var(index_2), mask_2, jitc_var(mask_2));
-        ptr = (uint32_t) ptr_2;
     }
 
     jitc_log(Debug,
@@ -1773,6 +1789,110 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
              (uint32_t) src, index, mask, ptr, msg);
 
     return result;
+}
+
+void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t mask, uint32_t *out) {
+    if (index == 0) {
+        for (size_t i = 0; i < n; ++i)
+            out[i] = 0;
+        return;
+    }
+
+    Ref src = borrow(src_);
+
+    auto [src_info, src_v] =
+        jitc_var_check("jit_var_gather_packet", src_);
+    auto [var_info, index_v, mask_v] =
+        jitc_var_check("jit_var_gather_packet", index, mask);
+
+    if ((n & (n-1)) || n == 1)
+        jitc_raise("jitc_var_gather_packet(): vector size must be a power of two "
+                   "and >= 1 (got %zu)!", n);
+
+    if ((src_info.size & (n-1)) != 0 && src_info.size != 1)
+        jitc_raise("jitc_var_gather_packet(): source r%u has size %u, which is not "
+                   "divisible by %zu!", index, src_info.size, n);
+
+    // Go to the original if 'src' is wrapped into a loop state variable
+    unwrap(src, src_v);
+
+    Ref scale = steal(jitc_var_u32(var_info.backend, n));
+
+    uint32_t flags = jitc_flags();
+
+    /// Revert to separate gathers in special various cases
+    if (src_v->symbolic || // This will likely fail, let jitc_var_gather() generate an error
+        !(flags & (uint32_t) JitFlag::PacketOps) ||      // Packet gathers are disabled
+        (mask_v->is_literal() && mask_v->literal == 0) ||   // Masked load
+        src_v->size == 1 ||                                 // Scalar load
+        (var_info.size == 1 && var_info.literal) ||         // Memcpy
+        src_v->unaligned) {                                 // Source must be aligned
+        for (size_t i = 0; i < n; ++i) {
+            Ref index2 = steal(jitc_var_u32(var_info.backend, (uint32_t) i));
+            Ref index3 = steal(jitc_var_fma(index, scale, index2));
+            out[i] = jitc_var_gather(src_, index3, mask);
+        }
+        return;
+    }
+
+    // Packet size 8 is the max. for the LLVM backend. Split larger requests.
+    uint32_t max_width = std::min(8u, jitc_llvm_vector_width);
+    if (n > max_width && var_info.backend == JitBackend::LLVM) {
+        Ref step = steal(jitc_var_u32(var_info.backend, 1)),
+            scale = steal(jitc_var_u32(var_info.backend, n/max_width)),
+            index2 = steal(jitc_var_mul(index, scale));
+
+        for (size_t i = 0; i < n; i += max_width) {
+            jitc_var_gather_packet(max_width, src_, index2, mask, out+i);
+            index2 = steal(jitc_var_add(index2, step));
+        }
+        return;
+    }
+
+    /// Make sure that the src and index variables doesn't have pending side effects
+    if (unlikely(index_v->is_dirty() || src_v->is_dirty())) {
+        jitc_eval(thread_state(src_info.backend));
+        if (jitc_var(index)->is_dirty())
+            jitc_raise_dirty_error(index);
+        if (jitc_var(src)->is_dirty())
+            jitc_raise_dirty_error(src);
+
+        src_v = jitc_var(src);
+        index_v = jitc_var(index);
+    }
+
+    // At this point, we *will* have to evalute the source, if not done already.
+    jitc_var_eval(src);
+
+    Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size)),
+        ptr_2  = steal(jitc_var_pointer(src_info.backend, jitc_var(src)->data, src, 0));
+
+    Ref index_2 = steal(jitc_scatter_gather_index(src, index));
+
+    if (jit_flag(JitFlag::Debug)) {
+        Ref scaled_index = steal(jitc_var_mul(scale, index));
+        mask_2 = steal(jitc_var_check_bounds(
+            BoundsCheckType::PacketGather, scaled_index, mask_2, src_info.size));
+    }
+
+    size_t op_size = std::max(var_info.size, jitc_var(mask_2)->size);
+
+    Ref gather_op = steal(jitc_var_new_node_3(
+        src_info.backend, VarKind::PacketGather, src_info.type,
+        op_size, var_info.symbolic, ptr_2,
+        jitc_var(ptr_2), index_2, jitc_var(index_2), mask_2,
+        jitc_var(mask_2), n));
+
+    for (size_t i = 0; i < n; ++i)
+        out[i] = jitc_var_new_node_1(
+            src_info.backend, VarKind::Extract, src_info.type, var_info.size,
+            var_info.symbolic, gather_op, jitc_var(gather_op), i);
+
+    jitc_log(Debug,
+             "jit_var_gather_packet(): %s <base r%u>[%u] = r%u[r%u] "
+             "(mask=r%u, ptr=r%u)",
+             type_name[(int) src_info.type], (uint32_t) gather_op, var_info.size,
+             (uint32_t) src, index, mask, (uint32_t) ptr_2);
 }
 
 static const char *reduce_op_symbol[(int) ReduceOp::Count] = {
@@ -2044,9 +2164,76 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
 static const char *mode_name[] = { "auto",        "direct", "local",
                                    "no_conflict", "expand", "permute" };
 
-uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
+/// Logic related to choosing the 'ReduceMode' of a scatter(-reduction)
+static std::pair<ReduceMode, bool>
+jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
+                           Ref &index, ReduceOp op, ReduceMode mode) {
+    bool reduce_expanded = false;
+
+    // Raise an error if the target array is currently stored in an expanded
+    // form that isn't compatible with the operation to be performed.
+    uint32_t op_cur = jitc_var(target)->reduce_op;
+    if (op_cur && op_cur != (uint32_t) op)
+        jitc_raise(
+            "%s(): it is not legal to mix different types of "
+            "scatter-reductions when using dr.ReduceMode.Expand. Evaluate the "
+            "array first before using a different kind of reduction.", name);
+
+    if (op != ReduceOp::Identity) {
+        if (mode == ReduceMode::Permute)
+            jitc_raise("%s(): drjit.ReduceMode.Permute is not a "
+                       "valid mode for scatter-reductions.", name);
+
+        if (backend == JitBackend::LLVM) {
+            uint32_t tsize = jitc_var(target)->size;
+            if (mode == ReduceMode::Auto && tsize <= llvm_expand_threshold)
+                mode = ReduceMode::Expand;
+        } else {
+            // ReduceMode::Expand is only supported on the LLVM backend
+            if (mode == ReduceMode::Expand)
+                mode = ReduceMode::Auto;
+        }
+
+        if (mode == ReduceMode::Auto)
+            mode = jit_flag(JitFlag::ScatterReduceLocal)
+                       ? ReduceMode::Local
+                       : ReduceMode::Direct;
+
+        if (mode == ReduceMode::Expand) {
+            index = steal(jitc_var_cast(index, VarType::UInt32, 0));
+            const Variable *index_v2 = jitc_var(index);
+            uint32_t size = index_v2->size;
+
+            // Track if this is the first time that 'jit_var_expand' is called
+            reduce_expanded =
+                jitc_var(target)->reduce_op == (uint32_t) ReduceOp::Identity;
+
+            auto [target_i, expand_i] = jitc_var_expand(target, op);
+            target = steal(target_i);
+
+            Variable v{};
+            v.kind = (uint32_t) VarKind::ThreadIndex;
+            v.type = (uint32_t) VarType::UInt32;
+            v.size = (uint32_t) size;
+            v.backend = (uint32_t) backend;
+
+            Ref expand = steal(jitc_var_u32(backend, expand_i)),
+                thread_idx = steal(jitc_var_new(v));
+
+            index = steal(jitc_var_fma(thread_idx, expand, index));
+
+            mode = ReduceMode::NoConflicts;
+        }
+    } else {
+        mode = ReduceMode::Auto;
+    }
+
+    return { mode, reduce_expanded };
+}
+
+uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
                           uint32_t mask, ReduceOp op, ReduceMode mode) {
-    Ref target = borrow(target_), ptr;
+    Ref target = borrow(target_), index = borrow(index_), ptr;
 
     auto print_log = [&](const char *msg, uint32_t result_node = 0) {
         int type_id = 0;
@@ -2054,18 +2241,18 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
             type_id = jitc_var(value)->type;
         if (result_node)
             jitc_log(Debug,
-                     "jit_var_scatter(): r%u[r%u] %s r%u (type=%s, mask=r%u, ptr=r%u, "
-                     "se=r%u, out=r%u, mode=%s) [%s]",
-                     target_, index, reduce_op_symbol[(int) op], value,
-                     type_name[type_id],
-                     mask, (uint32_t) ptr, result_node, (uint32_t) target,
-                     mode_name[(int) mode], msg);
+                     "jit_var_scatter(): r%u[r%u] %s r%u (type=%s, mask=r%u, "
+                     "ptr=r%u, se=r%u, out=r%u, mode=%s) [%s]",
+                     target_, index_, reduce_op_symbol[(int) op], value,
+                     type_name[type_id], mask, (uint32_t) ptr, result_node,
+                     (uint32_t) target, mode_name[(int) mode], msg);
         else
             jitc_log(Debug,
-                     "jit_var_scatter(): r%u[r%u] %s r%u (type=%s, mask=r%u, ptr=r%u, mode=%s) [%s]",
-                     target_, index, reduce_op_symbol[(int) op], value,
-                     type_name[type_id],
-                     mask, (uint32_t) ptr, mode_name[(int) mode], msg);
+                     "jit_var_scatter(): r%u[r%u] %s r%u (type=%s, mask=r%u, "
+                     "ptr=r%u, mode=%s) [%s]",
+                     target_, index_, reduce_op_symbol[(int) op], value,
+                     type_name[type_id], mask, (uint32_t) ptr,
+                     mode_name[(int) mode], msg);
     };
 
     if (value == 0 && index == 0) {
@@ -2077,16 +2264,16 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         jitc_raise("jit_var_scatter(): attempted to scatter to an empty array!");
 
     auto [var_info, value_v, index_v, mask_v] =
-        jitc_var_check("jit_var_scatter", value, index, mask);
+        jitc_var_check("jit_var_scatter", value, index_, mask);
 
     Variable *target_v = jitc_var(target);
+    const uint32_t target_size = target_v->size;
+    const JitBackend backend = var_info.backend;
+    VarType vt = (VarType) target_v->type;
 
     // Go to the original if 'target' is wrapped into a loop state variable
     unwrap(target, target_v);
     target_ = target;
-
-    JitBackend backend = (JitBackend) target_v->backend;
-    VarType vt = (VarType) target_v->type;
 
     if (!jitc_can_scatter_reduce(backend, vt, op))
         jitc_raise(
@@ -2101,7 +2288,11 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
             (uint32_t) target);
 
     uint32_t flags = jitc_flags();
-    var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
+    bool symbolic = flags & (uint32_t) JitFlag::SymbolicScope;
+    if (var_info.symbolic && !symbolic)
+        jitc_raise(
+            "jit_var_scatter(): input arrays are symbolic, but the operation "
+            "was issued outside of a symbolic recording session.");
 
     if (target_v->type != value_v->type)
         jitc_raise("jit_var_scatter(): target/value type mismatch!");
@@ -2123,67 +2314,13 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         return target.release();
     }
 
-    const uint32_t target_size = target_v->size;
-
-    // Raise an error if the target array is currently stored in an expanded
-    // form that isn't compatible with the operation to be performed.
-    if (target_v->reduce_op && target_v->reduce_op != (uint32_t) op)
-        jitc_raise(
-            "jitc_var_scatter(): it is not legal to mix different types of "
-            "scatter-reductions when using dr.ReduceMode.Expand. Evaluate the "
-            "array first before using a different kind of reduction.");
-
     // The backends may employ various strategies to reduce the number of
     // atomic memory operations, or to avoid them altogether. Check if the user
     // requested this.
-    Ref index_2 = borrow(index);
-    uint32_t reduce_expanded = 0;
-    if (op != ReduceOp::Identity) {
-        if (mode == ReduceMode::Permute)
-            jitc_raise("jitc_var_scatter(): drjit.ReduceMode.Permute is not a "
-                       "valid mode for scatter-reductions.");
-
-        if (var_info.backend == JitBackend::LLVM) {
-            uint32_t tsize = jitc_var(target)->size;
-            if (mode == ReduceMode::Auto && tsize <= llvm_expand_threshold)
-                mode = ReduceMode::Expand;
-        } else {
-            // ReduceMode::Expand is only supported on the LLVM backend
-            if (mode == ReduceMode::Expand)
-                mode = ReduceMode::Auto;
-        }
-
-        if (mode == ReduceMode::Auto)
-            mode = (flags & (uint32_t) JitFlag::ScatterReduceLocal)
-                       ? ReduceMode::Local
-                       : ReduceMode::Direct;
-
-        if (mode == ReduceMode::Expand) {
-            index_2 = steal(jitc_var_cast(index_2, VarType::UInt32, 0));
-            const Variable *index_v2 = jitc_var(index_2);
-            uint32_t size = index_v2->size;
-
-            auto [target_i, expand_i] = jitc_var_expand(target, op);
-            target = steal(target_i);
-            reduce_expanded = target_i;
-
-            Variable v{};
-            v.kind = (uint32_t) VarKind::ThreadIndex;
-            v.type = (uint32_t) VarType::UInt32;
-            v.size = (uint32_t) size;
-            v.backend = (uint32_t) var_info.backend;
-
-            Ref expand = steal(jitc_var_literal(
-                    var_info.backend, VarType::UInt32, &expand_i, size, 0)),
-                thread_idx = steal(jitc_var_new(v));
-
-            index_2 = steal(jitc_var_fma(thread_idx, expand, index_2));
-
-            mode = ReduceMode::NoConflicts;
-        }
-    } else {
-        mode = ReduceMode::Auto;
-    }
+    // Warning: this operation might invalidate variable pointers
+    bool reduce_expanded = false;
+    std::tie(mode, reduce_expanded) = jitc_var_infer_reduce_mode(
+        "jit_var_scatter", var_info.backend, target, index, op, mode);
 
     // Check if it is safe to directly write to ``target``. We borrowed
     // ``target`` above, and the caller also owns one reference. Therefore, the
@@ -2198,45 +2335,39 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
     // Get a pointer to the array data. This evaluates the array if needed
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
-
-    // Construct the scatter operation
     ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 1));
 
+    // Apply default masks
     Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size));
-    index_2 = steal(jitc_scatter_gather_index(target, index_2));
+    index = steal(jitc_scatter_gather_index(target, index));
 
+    // Insert a bounds check in debug mode
     if (flags & (uint32_t) JitFlag::Debug)
         mask_2 = steal(jitc_var_check_bounds(
             op == ReduceOp::Identity ? BoundsCheckType::Scatter
                                      : BoundsCheckType::ScatterReduce,
-            index /* original index */, mask_2, target_size));
-
-    var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
-
-    bool symbolic = jit_flag(JitFlag::SymbolicScope);
-    if (var_info.symbolic && !symbolic)
-        jitc_raise(
-            "jit_var_scatter(): input arrays are symbolic, but the operation "
-            "was issued outside of a symbolic recording session.");
+            index_ /* original index */, mask_2, target_size));
 
     // Encode the 'op' and 'mode' variables into variable's literal field
     uint64_t literal = (((uint64_t) mode) << 32) + ((uint64_t) op);
 
-    uint32_t result = jitc_var_new_node_4(
+    uint32_t op_size = std::max(var_info.size, jitc_var(mask_2)->size);
+    uint32_t scatter_op = jitc_var_new_node_4(
         var_info.backend, VarKind::Scatter, VarType::Void,
-        var_info.size, symbolic, ptr, jitc_var(ptr),
-        value, jitc_var(value), index_2, jitc_var(index_2),
+        op_size, symbolic, ptr, jitc_var(ptr),
+        value, jitc_var(value), index, jitc_var(index),
         mask_2, jitc_var(mask_2), literal);
 
-    print_log(((uint32_t) target == target_) ? "direct" : "copied target", result);
-
+    print_log(((uint32_t) target == target_) ? "direct" : "copied target",
+              scatter_op);
 
     if (reduce_expanded) {
+        // Potentially call jitc_var_reduce_expanded following evaluation
         WeakRef wr(target, jitc_var(target)->counter);
         uintptr_t wr_i = memcpy_cast<uintptr_t>(wr);
 
         jitc_var_set_callback(
-            result,
+            scatter_op,
             [](uint32_t, int free, void *p) {
                 if (free)
                     return;
@@ -2249,10 +2380,235 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index,
         );
     }
 
-    jitc_var_mark_side_effect(result);
+    jitc_var_mark_side_effect(scatter_op);
 
     return target.release();
 }
+
+uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
+                                 const uint32_t *values, uint32_t index_,
+                                 uint32_t mask, ReduceOp op, ReduceMode mode) {
+    Ref target = borrow(target_), index = borrow(index_), ptr;
+
+    auto print_log = [&](const char *msg, uint32_t result_node = 0) {
+        int type_id = 0;
+        if (target_)
+            type_id = jitc_var(target_)->type;
+        jitc_log(Debug,
+                 "jit_var_scatter_packet(): r%u[r%u] %s (...) (type=%s, mask=r%u, "
+                 "ptr=r%u, se=r%u, out=r%u, mode=%s) [%s]",
+                 target_, index_, reduce_op_symbol[(int) op],
+                 type_name[type_id], mask, (uint32_t) ptr, result_node,
+                 (uint32_t) target, mode_name[(int) mode], msg);
+    };
+
+    bool some_empty = false, all_empty = true;
+    for (size_t i = 0; i < n; ++i) {
+        uint32_t index = values[i];
+        some_empty |= index == 0;
+        all_empty &= index == 0;
+    }
+
+    if (index_ == 0 && all_empty) {
+        print_log("empty scatter");
+        return target.release();
+    }
+
+    if (target == 0)
+        jitc_raise("jit_var_scatter_packet(): attempted to scatter to an empty array!");
+
+    if (some_empty || index_ == 0 || mask == 0)
+        jitc_raise("jit_var_scatter_packet(): index, value(s), and mask must "
+                   "have a compatible size!");
+
+    auto [target_info, target_v] =
+        jitc_var_check("jit_var_scatter_packet", (uint32_t) target);
+    auto [var_info, index_v, mask_v] =
+        jitc_var_check("jit_var_scatter", index_, mask);
+    const uint32_t target_size = target_v->size;
+    const JitBackend backend = var_info.backend;
+
+    // Go to the original if 'target' is wrapped into a loop state variable
+    unwrap(target, target_v);
+    target_ = target;
+
+    if (target_v->symbolic)
+        jitc_raise(
+            "jit_var_scatter_packet(): cannot scatter to a symbolic variable (r%u)!",
+            (uint32_t) target);
+
+    uint32_t flags = jitc_flags();
+    bool symbolic = flags & (uint32_t) JitFlag::SymbolicScope;
+    if (var_info.symbolic && !symbolic)
+        jitc_raise(
+            "jit_var_scatter(): input arrays are symbolic, but the operation "
+            "was issued outside of a symbolic recording session.");
+
+    if ((n & (n-1)) || n == 1)
+        jitc_raise("jitc_var_scatter_packet(): vector size must be a power of two "
+                   "and >= 1 (got %zu)!", n);
+
+    if ((target_info.size & (n-1)) != 0 && target_info.size != 1)
+        jitc_raise("jitc_var_scatter_packet(): target r%u has size %u, which is not "
+                   "divisible by %zu!", index_, target_info.size, n);
+
+    drjit::unique_ptr<PacketScatterData> psd(new PacketScatterData());
+
+    bool all_zero = true, same_value = true;
+    for (size_t i = 0; i < n; ++i) {
+        const Variable *v = jitc_var(values[i]);
+
+        if (v->type != target_v->type)
+            jitc_raise("jit_var_scatter_packet(): target/value type mismatch!");
+
+        if (v->size != var_info.size && v->size != 1 && var_info.size != 1)
+            jitc_raise("jit_var_scatter_packet(): argument size mismatch (%u vs %u)!",
+                       v->size, var_info.size);
+
+        all_zero &= v->is_literal() && v->literal == 0;
+        same_value &= v->is_literal() && target_v->is_literal() &&
+                      v->literal == target_v->literal;
+        jitc_var_inc_ref(values[i]);
+        psd->values.push_back(values[i]);
+        var_info.size = std::max(v->size, var_info.size);
+    }
+
+    if (mask_v->is_literal() && mask_v->literal == 0) {
+        print_log("skipped, always masked");
+        return target.release();
+    }
+
+    if (all_zero && op == ReduceOp::Add) {
+        print_log("skipped, scatter-addition with zero-valued source variable");
+        return target.release();
+    }
+
+    if (same_value && op == ReduceOp::Identity) {
+        print_log("skipped, target/source are value variables with the "
+                  "same value");
+        return target.release();
+    }
+
+    bool use_packet_op = false;
+
+    if (flags & (uint32_t) JitFlag::PacketOps) {
+        if (op == ReduceOp::Identity) {
+            use_packet_op = mode == ReduceMode::Auto ||
+                            mode == ReduceMode::Expand ||
+                            mode == ReduceMode::Permute ||
+                            mode == ReduceMode::NoConflicts;
+        } else if (op == ReduceOp::Add && backend == JitBackend::LLVM) {
+            use_packet_op = (mode == ReduceMode::Expand ||
+                             mode == ReduceMode::Permute ||
+                             mode == ReduceMode::NoConflicts ||
+                             (mode == ReduceMode::Auto &&
+                              target_info.size <= llvm_expand_threshold));
+        }
+    }
+
+    Ref scale = steal(jitc_var_u32(backend, n));
+
+    // Potentially reduce to a sequence of scatters
+    if (!use_packet_op) {
+        for (size_t i = 0; i < n; ++i) {
+            Ref index2 = steal(jitc_var_u32(backend, (uint32_t) i));
+            Ref index3 = steal(jitc_var_fma(index, scale, index2));
+
+            uint32_t index_t = target;
+            if (index_t == target_)
+                target.reset();
+
+            target = steal(jitc_var_scatter(index_t, values[i], index3, mask, op, mode));
+        }
+        return target.release();
+    }
+
+    // Packet size 8 is the max. for the LLVM backend. Split larger requests.
+    uint32_t max_width = std::min(8u, jitc_llvm_vector_width);
+    if (n > max_width && var_info.backend == JitBackend::LLVM) {
+        Ref step = steal(jitc_var_u32(var_info.backend, 1)),
+            scale = steal(jitc_var_u32(var_info.backend, n/max_width)),
+            index2 = steal(jitc_var_mul(index, scale));
+
+        for (size_t i = 0; i < n; i += max_width) {
+
+            uint32_t index_t = target;
+            if (index_t == target_)
+                target.reset();
+
+            target = steal(jitc_var_scatter_packet(
+                max_width, index_t, values + i, index2, mask, op, mode));
+            index2 = steal(jitc_var_add(index2, step));
+        }
+
+        return target.release();
+    }
+
+    // Must compute final index before potentially expanding below
+    index = steal(jitc_var_mul(index, scale));
+
+    // Infer the ReduceOp parameter (if it is set to ReduceOp::Auto)
+    // This operation may invalidate variable pointers.
+    bool reduce_expanded = false;
+    std::tie(mode, reduce_expanded) = jitc_var_infer_reduce_mode(
+        "jit_var_scatter_packet()", backend, target, index, op, mode);
+
+    // Check if it is safe to directly write to ``target``.
+    // See the original scatter operation for details.
+    target_v = jitc_var(target);
+    if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
+        target = steal(jitc_var_copy(target));
+
+    // Get a pointer to the array data. This evaluates the array if needed
+    void *target_addr = nullptr;
+    target = steal(jitc_var_data(target, false, &target_addr));
+    ptr = steal(jitc_var_pointer(backend, target_addr, target, 1));
+
+    // Apply default masks
+    Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size));
+    Ref index_2 = steal(jitc_scatter_gather_index(target, index));
+
+    // Insert a bounds check in debug mode
+    if (flags & (uint32_t) JitFlag::Debug) {
+        mask_2 = steal(jitc_var_check_bounds(
+            op == ReduceOp::Identity ? BoundsCheckType::PacketScatter
+                                     : BoundsCheckType::PacketScatterReduce,
+            /* original index */ index, mask_2, target_size));
+    }
+
+    uint32_t op_size = std::max(var_info.size, jitc_var(mask_2)->size);
+    uint32_t scatter_op = jitc_var_new_node_3(
+        backend, VarKind::PacketScatter, VarType::Void,
+        op_size, symbolic, ptr, jitc_var(ptr), index_2,
+        jitc_var(index_2), mask_2, jitc_var(mask_2), (uint64_t) (uintptr_t) psd.get());
+
+    psd->mode = mode;
+    psd->op = op;
+    if (reduce_expanded)
+        psd->to_reduce = WeakRef(target, jitc_var(target)->counter);
+
+    print_log(((uint32_t) target == target_) ? "direct" : "copied target",
+              scatter_op);
+
+    jitc_var_set_callback(
+        scatter_op,
+        [](uint32_t, int free, void *p) {
+            PacketScatterData *psd = (PacketScatterData *) p;
+            if (free) {
+                delete psd;
+            } else {
+                if (jitc_var(psd->to_reduce))
+                    jitc_var_reduce_expanded(psd->to_reduce.index);
+            }
+        },
+        psd.release(), true
+    );
+
+    jitc_var_mark_side_effect(scatter_op);
+
+    return target.release();
+}
+
 
 // --------------------------------------------------------------------------
 // Dynamic interface to operations

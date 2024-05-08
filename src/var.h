@@ -29,6 +29,12 @@ extern uint32_t jitc_var_literal(JitBackend backend, VarType type,
                                  const void *value, size_t size,
                                  int eval);
 
+/// Simple version of jitc_var_literal to make boolean literals
+extern uint32_t jitc_var_bool(JitBackend backend, bool value);
+
+/// Simple version of jitc_var_literal to make uint32_t literals
+extern uint32_t jitc_var_u32(JitBackend backend, uint32_t value);
+
 /// Create a variable counting from 0 ... size - 1
 extern uint32_t jitc_var_counter(JitBackend backend, size_t size,
                                  bool simplify_scalar);
@@ -276,6 +282,9 @@ enum class BoundsCheckType {
     ScatterAddKahan,
     ScatterInc,
     Gather,
+    PacketGather,
+    PacketScatter,
+    PacketScatterReduce,
     Call
 };
 

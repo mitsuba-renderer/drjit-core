@@ -536,11 +536,23 @@ uint32_t jit_var_gather(uint32_t source, uint32_t index, uint32_t mask) {
     return jitc_var_gather(source, index, mask);
 }
 
+void jit_var_gather_packet(size_t n, uint32_t source, uint32_t index, uint32_t mask, uint32_t *out) {
+    lock_guard guard(state.lock);
+    jitc_var_gather_packet(n, source, index, mask, out);
+}
+
 uint32_t jit_var_scatter(uint32_t target, uint32_t value,
                          uint32_t index, uint32_t mask,
                          ReduceOp op, ReduceMode mode) {
     lock_guard guard(state.lock);
     return jitc_var_scatter(target, value, index, mask, op, mode);
+}
+
+uint32_t jit_var_scatter_packet(size_t n, uint32_t target,
+                                const uint32_t *values, uint32_t index,
+                                uint32_t mask, ReduceOp op, ReduceMode mode) {
+    lock_guard guard(state.lock);
+    return jitc_var_scatter_packet(n, target, values, index, mask, op, mode);
 }
 
 void jit_var_scatter_add_kahan(uint32_t *target_1, uint32_t *target_2,

@@ -434,6 +434,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     break;
 
                 case 'h':
+                case 'H':
                     (void) va_arg(args, const Variable *); arg++;
                     len += MAXSIZE_TYPE_ABBREV;
                     break;
@@ -584,6 +585,13 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     }
                     break;
 
+                case 'H': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_unchecked(v->type == (uint32_t) VarType::Bool
+                                          ? "i8"
+                                          : type_name_llvm_abbrev[v->type]);
+                    }
+                    break;
 
                 case 'h': {
                         const Variable *v = va_arg(args2, const Variable *);
