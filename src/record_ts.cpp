@@ -74,8 +74,11 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
             // TODO: deallocate unused memory.
             for (uint32_t j = op.dependency_range.first;
                  j < op.dependency_range.second; ++j) {
-                ReplayVariable &rv = replay_variables[this->dependencies[j]];
+                ParamInfo info = this->dependencies[j];
+                ReplayVariable &rv = replay_variables[info.index];
                 if (rv.data == nullptr) {
+                    jitc_assert(info.type == ParamType::Output,
+                                "replay(): Input variable not allocated!");
                     jitc_log(LogLevel::Info,
                              "Allocating output variable of size %zu.",
                              op.size);
@@ -126,13 +129,13 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
         case OpType::MemsetAsync: {
             uint32_t dependency_index = op.dependency_range.first;
 
-            uint32_t ptr_index = this->dependencies[dependency_index];
-            uint32_t src_index = this->dependencies[dependency_index + 1];
+            ParamInfo ptr_info = this->dependencies[dependency_index];
+            ParamInfo src_info = this->dependencies[dependency_index + 1];
 
-            ReplayVariable &ptr_var = replay_variables[ptr_index];
-            ReplayVariable &src_var = replay_variables[src_index];
+            ReplayVariable &ptr_var = replay_variables[ptr_info.index];
+            ReplayVariable &src_var = replay_variables[src_info.index];
 
-            VarType type = replay_variables[src_index].type;
+            VarType type = replay_variables[src_info.index].type;
 
             ts->memset_async(ptr_var.data, op.size, type_size[(uint32_t)type],
                              src_var.data);
@@ -140,11 +143,11 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
         case OpType::Reduce: {
             uint32_t dependency_index = op.dependency_range.first;
 
-            uint32_t ptr_index = this->dependencies[dependency_index];
-            uint32_t out_index = this->dependencies[dependency_index + 1];
+            ParamInfo ptr_info = this->dependencies[dependency_index];
+            ParamInfo out_info = this->dependencies[dependency_index + 1];
 
-            ReplayVariable &ptr_var = replay_variables[ptr_index];
-            ReplayVariable &out_var = replay_variables[out_index];
+            ReplayVariable &ptr_var = replay_variables[ptr_info.index];
+            ReplayVariable &out_var = replay_variables[out_info.index];
 
             // Allocate output variable if data is missing.
             if (out_var.data == nullptr) {
@@ -164,11 +167,11 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
         case OpType::PrefixSum: {
             uint32_t dependency_index = op.dependency_range.first;
 
-            uint32_t in_index = this->dependencies[dependency_index];
-            uint32_t out_index = this->dependencies[dependency_index + 1];
+            ParamInfo in_info = this->dependencies[dependency_index];
+            ParamInfo out_info = this->dependencies[dependency_index + 1];
 
-            ReplayVariable &in_var = replay_variables[in_index];
-            ReplayVariable &out_var = replay_variables[out_index];
+            ReplayVariable &in_var = replay_variables[in_info.index];
+            ReplayVariable &out_var = replay_variables[out_info.index];
 
             // Allocate output variable if data is missing.
             if (out_var.data == nullptr) {
