@@ -338,15 +338,23 @@ struct RecordThreadState : ThreadState {
         auto it = this->ptr_to_slot.find(ptr);
 
         if (it == this->ptr_to_slot.end()) {
-            uint32_t id = this->recording.record_variables.size();
+            uint32_t slot = this->recording.record_variables.size();
 
             this->recording.record_variables.push_back(rv);
 
-            this->ptr_to_slot.insert({ptr, id});
+            this->ptr_to_slot.insert({ptr, slot});
 
-            return id;
+            return slot;
         } else {
-            return it.value();
+            uint32_t slot = it.value();
+
+            if (rv.is_input) {
+                RecordVariable &dst = recording.record_variables[slot];
+                dst.is_input = rv.is_input;
+                dst.input_index = rv.input_index;
+            }
+
+            return slot;
         }
     }
 

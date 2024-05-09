@@ -244,8 +244,6 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             uint32_t var_index = replay_inputs[rv.input_index];
             jitc_var_inc_ref(var_index);
             outputs[i] = var_index;
-            jitc_log(LogLevel::Info, "replay(): using input %u for ouput %u",
-                     rv.input_index, i);
         } else {
             Variable v;
             v.kind = VarKind::Evaluated;
