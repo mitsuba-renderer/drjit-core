@@ -10,10 +10,14 @@ struct ReplayVariable {
     void *data = 0;
     uint32_t size = 0;
     VarType type;
+    uint32_t input_index;
+    bool is_input;
 
     ReplayVariable(RecordVariable &rv) {
         this->type = rv.type;
         this->size = rv.size;
+        this->input_index = rv.input_index;
+        this->is_input = rv.is_input;
     }
 };
 
@@ -26,7 +30,7 @@ static std::vector<Task *> scheduled_tasks;
 /// Temporary variables used for replaying a recording.
 static std::vector<ReplayVariable> replay_variables;
 
-void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
+void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
     ThreadState *ts = thread_state(backend);
 
@@ -40,7 +44,7 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
 
     // Populate with input variables
     for (uint32_t i = 0; i < this->inputs.size(); ++i) {
-        Variable *input_variable = jitc_var(replay_input[i]);
+        Variable *input_variable = jitc_var(replay_inputs[i]);
         ReplayVariable &rv = replay_variables[this->inputs[i]];
         rv.size = input_variable->size;
         rv.data = input_variable->data;
@@ -235,13 +239,22 @@ void Recording::replay(const uint32_t *replay_input, uint32_t *outputs) {
     for (uint32_t i = 0; i < this->outputs.size(); ++i) {
         uint32_t index = this->outputs[i];
         ReplayVariable &rv = replay_variables[index];
-        Variable v;
-        v.kind = VarKind::Evaluated;
-        v.type = (uint32_t)rv.type;
-        v.size = rv.size;
-        v.data = rv.data;
-        v.backend = (uint32_t)this->backend;
-        outputs[i] = jitc_var_new(v);
+        if (rv.is_input) {
+            // Use input variable
+            uint32_t var_index = replay_inputs[rv.input_index];
+            jitc_var_inc_ref(var_index);
+            outputs[i] = var_index;
+            jitc_log(LogLevel::Info, "replay(): using input %u for ouput %u",
+                     rv.input_index, i);
+        } else {
+            Variable v;
+            v.kind = VarKind::Evaluated;
+            v.type = (uint32_t)rv.type;
+            v.size = rv.size;
+            v.data = rv.data;
+            v.backend = (uint32_t)this->backend;
+            outputs[i] = jitc_var_new(v);
+        }
     }
 }
 
