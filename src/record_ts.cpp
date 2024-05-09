@@ -12,12 +12,14 @@ struct ReplayVariable {
     VarType type;
     uint32_t input_index;
     bool is_input;
+    uint32_t rc;
 
     ReplayVariable(RecordVariable &rv) {
         this->type = rv.type;
         this->size = rv.size;
         this->input_index = rv.input_index;
         this->is_input = rv.is_input;
+        this->rc = rv.rc;
     }
 };
 
@@ -48,6 +50,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
         ReplayVariable &rv = replay_variables[this->inputs[i]];
         rv.size = input_variable->size;
         rv.data = input_variable->data;
+        jitc_log(LogLevel::Info, "input: %u", this->inputs[i]);
     }
 
     // Execute kernels and allocate missing output variables
@@ -77,6 +80,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ParamInfo info = this->dependencies[j];
                 ReplayVariable &rv = replay_variables[info.index];
 
+                jitc_log(LogLevel::Info, "info.index: %u", info.index);
                 if (info.type == ParamType::Input) {
                     jitc_assert(
                         rv.data != nullptr,
@@ -238,10 +242,15 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     // Create output variables
     for (uint32_t i = 0; i < this->outputs.size(); ++i) {
         uint32_t index = this->outputs[i];
+        jitc_log(LogLevel::Info, "replay(): output: %u", index);
         ReplayVariable &rv = replay_variables[index];
         if (rv.is_input) {
             // Use input variable
+            jitc_log(LogLevel::Info,
+                     "replay(): output %u ata slot %u uses input %u", i, index,
+                     rv.input_index);
             uint32_t var_index = replay_inputs[rv.input_index];
+            jitc_log(LogLevel::Info, "test");
             jitc_var_inc_ref(var_index);
             outputs[i] = var_index;
         } else {

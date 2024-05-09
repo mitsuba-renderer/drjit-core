@@ -33,7 +33,10 @@ struct RecordVariable {
     VarType type;
     uint32_t size;
     uint32_t input_index;
-    bool is_input;
+    bool is_input = false;
+    // Nubmer of operations that reference this variable
+    // used to deallocate unused variables during replay.
+    uint32_t rc = 0;
 
     RecordVariable(VarType type, uint32_t size) : type(type), size(size) {
     }
@@ -111,6 +114,7 @@ struct RecordThreadState : ThreadState {
     Task *launch(Kernel kernel, uint32_t size,
                  std::vector<void *> *kernel_params,
                  const std::vector<uint32_t> *kernel_param_ids) override {
+        jitc_log(LogLevel::Info, "record(): recording kernel");
 
         uint32_t start = this->recording.dependencies.size();
 
@@ -126,6 +130,9 @@ struct RecordThreadState : ThreadState {
                     /*type=*/(VarType)v->type,
                     /*size=*/v->size,
                 });
+            jitc_log(LogLevel::Info,
+                     " -> recording param %u = variable %u at slot %u",
+                     param_index, kernel_param_ids->at(param_index), id);
             this->recording.dependencies.push_back(ParamInfo{
                 /*index=*/id,
                 /*type=*/(ParamType)v->param_type,
@@ -301,25 +308,35 @@ struct RecordThreadState : ThreadState {
     }
 
     void set_input(uint32_t input) {
-        Variable *v = jitc_var(input);
         uint32_t input_index = this->recording.inputs.size();
-        this->recording.inputs.push_back(this->get_or_insert_variable(
+        Variable *v = jitc_var(input);
+        uint32_t slot = this->get_or_insert_variable(
             v->data, RecordVariable{
                          /*type=*/(VarType)v->type,
                          /*size=*/v->size,
                          /*is_input=*/true,
                          /*input_index=*/input_index,
-                     }));
+                     });
+        jitc_log(LogLevel::Info,
+                 "record(): Adding variable %u input %u to slot %u", input,
+                 input_index, slot);
+        this->recording.inputs.push_back(slot);
     }
     void set_output(uint32_t output) {
+        uint32_t output_index = this->recording.outputs.size();
         Variable *v = jitc_var(output);
-        this->recording.outputs.push_back(
+        uint32_t slot =
             this->get_or_insert_variable(v->data, RecordVariable{
                                                       /*type=*/(VarType)v->type,
                                                       /*size=*/v->size,
                                                       /*is_input=*/false,
                                                       /*input_index=*/0,
-                                                  }));
+                                                  });
+
+        jitc_log(LogLevel::Info,
+                 "record(): Adding variable %u output %u to slot %u", output,
+                 output_index, slot);
+        this->recording.outputs.push_back(slot);
     }
 
     ThreadState *internal;
