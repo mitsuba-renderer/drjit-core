@@ -69,6 +69,7 @@ struct Recording {
     JitBackend backend;
 
     void replay(const uint32_t *replay_input, uint32_t *outputs);
+    void compute_rc();
 };
 
 struct RecordThreadState : ThreadState {

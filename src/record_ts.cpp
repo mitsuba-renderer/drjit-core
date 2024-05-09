@@ -1,6 +1,5 @@
 #include "record_ts.h"
 #include "common.h"
-#include "drjit-core/jit.h"
 #include "internal.h"
 #include "log.h"
 
@@ -38,6 +37,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
     replay_variables.clear();
     scheduled_tasks.clear();
+    uint32_t last_barrier = 0;
 
     replay_variables.reserve(this->record_variables.size());
     for (RecordVariable &rv : this->record_variables) {
@@ -105,6 +105,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ParamInfo info = this->dependencies[j];
                 ReplayVariable &rv = replay_variables[info.index];
 
+                jitc_log(LogLevel::Info,
+                         "replay(): has dependency slot %u with rc=%u",
+                         info.index, rv.rc);
+
                 if (info.type == ParamType::Output) {
                     jitc_assert(rv.data == nullptr,
                                 "replay(): Output parameters should not be "
@@ -149,6 +153,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
         break;
         case OpType::Barrier:
 
+            // Synchronize tasks
             if (this->backend == JitBackend::LLVM) {
                 if (scheduled_tasks.size() == 1) {
                     task_release(jitc_task);
@@ -167,6 +172,28 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     jitc_task = new_task;
                 }
             }
+            // Free unused memory, allocated since last barrier
+            for (uint32_t j = last_barrier; j < i; ++j) {
+                jitc_log(LogLevel::Info, "replay(): gc for operation %u", j);
+                Operation &op = this->operations[j];
+                for (uint32_t p = op.dependency_range.first;
+                     p < op.dependency_range.second; ++p) {
+                    ParamInfo &info = this->dependencies[p];
+                    ReplayVariable &rv = replay_variables[info.index];
+                    rv.rc--;
+                    jitc_log(LogLevel::Info,
+                             "replay(): decrement rc for slot %u new rc=%u",
+                             info.index, rv.rc);
+                    if (rv.rc == 0) {
+                        jitc_log(LogLevel::Info,
+                                 "replay(): free memory for slot %u",
+                                 info.index);
+                        jitc_free(rv.data);
+                        rv.data = nullptr;
+                    }
+                }
+            }
+            last_barrier = i;
             scheduled_tasks.clear();
 
             break;
@@ -247,13 +274,16 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
         if (rv.is_input) {
             // Use input variable
             jitc_log(LogLevel::Info,
-                     "replay(): output %u ata slot %u uses input %u", i, index,
+                     "replay(): output %u at slot %u uses input %u", i, index,
                      rv.input_index);
+            jitc_assert(rv.data, "replay(): freed an input variable "
+                                 "that is passed through!");
             uint32_t var_index = replay_inputs[rv.input_index];
             jitc_log(LogLevel::Info, "test");
             jitc_var_inc_ref(var_index);
             outputs[i] = var_index;
         } else {
+            jitc_assert(rv.data, "replay(): freed variable used for output.");
             Variable v;
             v.kind = VarKind::Evaluated;
             v.type = (uint32_t)rv.type;
@@ -262,6 +292,28 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             v.backend = (uint32_t)this->backend;
             outputs[i] = jitc_var_new(v);
         }
+    }
+}
+
+void Recording::compute_rc() {
+    for (auto &op : this->operations) {
+        for (uint32_t j = op.dependency_range.first;
+             j < op.dependency_range.second; ++j) {
+            ParamInfo &info = this->dependencies[j];
+            RecordVariable &rv = this->record_variables[info.index];
+            rv.rc++;
+        }
+    }
+    // Do not touch inputs/outputs therefore increment their refcount
+    for (uint32_t slot : this->outputs) {
+        RecordVariable &rv = this->record_variables[slot];
+        rv.rc++;
+    }
+    // TODO: inputs should be fine, but have to be freed by decrementing
+    // variable refcount.
+    for (uint32_t slot : this->inputs) {
+        RecordVariable &rv = this->record_variables[slot];
+        rv.rc++;
     }
 }
 
@@ -304,5 +356,7 @@ Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
     } else {
         thread_state_llvm = internal;
     }
-    return new Recording(ts->recording);
+    Recording *recording = new Recording(ts->recording);
+    recording->compute_rc();
+    return recording;
 }
