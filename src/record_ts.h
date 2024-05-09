@@ -32,6 +32,15 @@ struct Operation {
 struct RecordVariable {
     VarType type;
     uint32_t size;
+    uint32_t input_index;
+    bool is_input;
+
+    RecordVariable(VarType type, uint32_t size) : type(type), size(size) {
+    }
+    RecordVariable(VarType type, uint32_t size, bool is_input,
+                   uint32_t input_index)
+        : type(type), size(size), input_index(input_index), is_input(is_input) {
+    }
 };
 
 struct ParamInfo {
@@ -293,11 +302,14 @@ struct RecordThreadState : ThreadState {
 
     void set_input(uint32_t input) {
         Variable *v = jitc_var(input);
-        this->recording.inputs.push_back(
-            this->get_or_insert_variable(v->data, RecordVariable{
-                                                      /*type=*/(VarType)v->type,
-                                                      /*size=*/v->size,
-                                                  }));
+        uint32_t input_index = this->recording.inputs.size();
+        this->recording.inputs.push_back(this->get_or_insert_variable(
+            v->data, RecordVariable{
+                         /*type=*/(VarType)v->type,
+                         /*size=*/v->size,
+                         /*is_input=*/true,
+                         /*input_index=*/input_index,
+                     }));
     }
     void set_output(uint32_t output) {
         Variable *v = jitc_var(output);
@@ -305,6 +317,8 @@ struct RecordThreadState : ThreadState {
             this->get_or_insert_variable(v->data, RecordVariable{
                                                       /*type=*/(VarType)v->type,
                                                       /*size=*/v->size,
+                                                      /*is_input=*/false,
+                                                      /*input_index=*/0,
                                                   }));
     }
 

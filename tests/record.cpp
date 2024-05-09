@@ -457,7 +457,6 @@ TEST_BOTH(07_reduce_hsum) {
 //     jit_record_destroy(recording);
 // }
 
-
 /**
  * Tests recording of a prefix sum operation with different inputs at replay.
  */
@@ -549,6 +548,50 @@ TEST_BOTH(10_resized_input) {
 
         jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
         jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
+    }
+
+    jit_record_destroy(recording);
+}
+
+TEST_BOTH(11_input_passthrough) {
+    Recording *recording;
+
+    jit_log(LogLevel::Info, "Recording:");
+    {
+        UInt32 i0(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+        UInt32 r0(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+        uint32_t inputs[] = {i0.index()};
+
+        jit_record_start(Backend, inputs, 1);
+
+        UInt32 o0 = i0 + 1;
+        o0.eval();
+
+        uint32_t outputs[] = {o0.index(), i0.index()};
+
+        recording = jit_record_stop(Backend, outputs, 2);
+
+        jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
+        jit_log(LogLevel::Info, "o1: %s", jit_var_str(outputs[1]));
+        jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
+        jit_assert(jit_var_all(jit_var_eq(i0.index(), outputs[1])));
+    }
+
+    jit_log(LogLevel::Info, "Replay:");
+    {
+        UInt32 i0(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+        UInt32 r0(2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
+
+        uint32_t inputs[] = {i0.index()};
+        uint32_t outputs[2];
+
+        jit_record_replay(recording, inputs, outputs);
+
+        jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
+        jit_log(LogLevel::Info, "o1: %s", jit_var_str(outputs[1]));
+        jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
+        jit_assert(jit_var_all(jit_var_eq(i0.index(), outputs[1])));
     }
 
     jit_record_destroy(recording);
