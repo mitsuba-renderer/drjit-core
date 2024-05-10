@@ -37,7 +37,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
     replay_variables.clear();
     scheduled_tasks.clear();
-    uint32_t last_barrier = 0;
+    uint32_t last_free = 0;
 
     replay_variables.reserve(this->record_variables.size());
     for (RecordVariable &rv : this->record_variables) {
@@ -172,28 +172,6 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     jitc_task = new_task;
                 }
             }
-            // Free unused memory, allocated since last barrier
-            for (uint32_t j = last_barrier; j < i; ++j) {
-                jitc_log(LogLevel::Info, "replay(): gc for operation %u", j);
-                Operation &op = this->operations[j];
-                for (uint32_t p = op.dependency_range.first;
-                     p < op.dependency_range.second; ++p) {
-                    ParamInfo &info = this->dependencies[p];
-                    ReplayVariable &rv = replay_variables[info.index];
-                    rv.rc--;
-                    jitc_log(LogLevel::Info,
-                             "replay(): decrement rc for slot %u new rc=%u",
-                             info.index, rv.rc);
-                    if (rv.rc == 0) {
-                        jitc_log(LogLevel::Info,
-                                 "replay(): free memory for slot %u",
-                                 info.index);
-                        jitc_free(rv.data);
-                        rv.data = nullptr;
-                    }
-                }
-            }
-            last_barrier = i;
             scheduled_tasks.clear();
 
             break;
@@ -264,6 +242,38 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                       "the replay functionality!");
             break;
         }
+
+        // Only Kernel launches are synchronized
+        if (op.type != OpType::KernelLaunch) {
+            // Free unused memory, allocated since last barrier
+            for (uint32_t j = last_free; j < i; ++j) {
+                jitc_log(LogLevel::Info, "replay(): gc for operation %u", j);
+                Operation &op = this->operations[j];
+                for (uint32_t p = op.dependency_range.first;
+                     p < op.dependency_range.second; ++p) {
+                    ParamInfo &info = this->dependencies[p];
+                    ReplayVariable &rv = replay_variables[info.index];
+                    rv.rc--;
+                    jitc_log(LogLevel::Info,
+                             "replay(): decrement rc for slot %u new rc=%u",
+                             info.index, rv.rc);
+                    if (rv.rc == 0) {
+                        jitc_log(LogLevel::Info,
+                                 "replay(): free memory for slot %u",
+                                 info.index);
+                        jitc_free(rv.data);
+                        rv.data = nullptr;
+                    }
+                }
+            }
+            last_free = i;
+        }
+    }
+
+    for (uint32_t i = 0; i < replay_variables.size(); ++i) {
+        ReplayVariable &rv = replay_variables[i];
+        jitc_log(LogLevel::Info, "replay(): rv(%u, rc=%u, is_input:%u)", i,
+                 rv.rc, rv.is_input);
     }
 
     // Create output variables
