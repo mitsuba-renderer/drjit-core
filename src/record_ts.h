@@ -34,15 +34,19 @@ struct RecordVariable {
     uint32_t size;
     uint32_t input_index;
     bool is_input = false;
+    bool is_literal = false;
     // Nubmer of operations that reference this variable
     // used to deallocate unused variables during replay.
     uint32_t rc = 0;
 
+    RecordVariable() {
+    }
     RecordVariable(VarType type, uint32_t size) : type(type), size(size) {
     }
-    RecordVariable(VarType type, uint32_t size, bool is_input,
+    RecordVariable(VarType type, uint32_t size, bool is_literal, bool is_input,
                    uint32_t input_index)
-        : type(type), size(size), input_index(input_index), is_input(is_input) {
+        : type(type), size(size), input_index(input_index), is_input(is_input),
+          is_literal(is_literal) {
     }
 };
 
@@ -125,12 +129,15 @@ struct RecordThreadState : ThreadState {
         for (uint32_t param_index = 0; param_index < kernel_param_ids->size();
              param_index++) {
             Variable *v = jitc_var(kernel_param_ids->at(param_index));
+            
+            RecordVariable rv;
+            rv.type = (VarType)v->type;
+            rv.size = v->size;
+            rv.is_literal = v->is_literal();
+
             uint32_t id = this->get_or_insert_variable(
-                kernel_params->at(kernel_param_offset + param_index),
-                RecordVariable{
-                    /*type=*/(VarType)v->type,
-                    /*size=*/v->size,
-                });
+                kernel_params->at(kernel_param_offset + param_index), rv);
+            
             jitc_log(LogLevel::Info,
                      " -> recording param %u = variable %u at slot %u",
                      param_index, kernel_param_ids->at(param_index), id);
@@ -162,6 +169,8 @@ struct RecordThreadState : ThreadState {
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
                       const void *src) override {
+
+        jitc_fail("RecordThreadState::memset_async(): unsupported function recording!");
 
         uint32_t start = this->recording.dependencies.size();
 
@@ -212,11 +221,13 @@ struct RecordThreadState : ThreadState {
 
     /// 'All' reduction for boolean arrays
     bool all(uint8_t *values, uint32_t size) override {
+        jitc_fail("RecordThreadState::all(): unsupported function recording!");
         return this->internal->all(values, size);
     }
 
     /// 'Any' reduction for boolean arrays
     bool any(uint8_t *values, uint32_t size) override {
+        jitc_fail("RecordThreadState::any(): unsupported function recording!");
         return this->internal->any(values, size);
     }
 
@@ -250,6 +261,7 @@ struct RecordThreadState : ThreadState {
     /// Mask compression
     uint32_t compress(const uint8_t *in, uint32_t size,
                       uint32_t *out) override {
+        jitc_fail("RecordThreadState::compress(): unsupported function recording!");
         return this->internal->compress(in, size, out);
     }
 
@@ -257,23 +269,27 @@ struct RecordThreadState : ThreadState {
     uint32_t mkperm(const uint32_t *values, uint32_t size,
                     uint32_t bucket_count, uint32_t *perm,
                     uint32_t *offsets) override {
+        jitc_fail("RecordThreadState::mkperm(): unsupported function recording!");
         return this->internal->mkperm(values, size, bucket_count, perm,
                                       offsets);
     }
 
     /// Perform a synchronous copy operation
     void memcpy(void *dst, const void *src, size_t size) override {
+        jitc_fail("RecordThreadState::memcpy(): unsupported function recording!");
         return this->internal->memcpy(dst, src, size);
     }
 
     /// Perform an assynchronous copy operation
     void memcpy_async(void *dst, const void *src, size_t size) override {
+        jitc_fail("RecordThreadState::memcpy_async(): unsupported function recording!");
         return this->internal->memcpy_async(dst, src, size);
     }
 
     /// Sum over elements within blocks
     void block_reduce(VarType type, ReduceOp op, const void *in, uint32_t size,
                       uint32_t block_size, void *out) override {
+        jitc_fail("RecordThreadState::block_reduce(): unsupported function recording!");
         return this->internal->block_reduce(type, op, in, size, block_size,
                                             out);
     }
@@ -281,15 +297,18 @@ struct RecordThreadState : ThreadState {
     /// Compute a dot product of two equal-sized arrays
     void reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
                     uint32_t size, void *out) override {
+        jitc_fail("RecordThreadState::reduce_dot(): unsupported function recording!");
         return this->internal->reduce_dot(type, ptr_1, ptr_2, size, out);
     }
 
     /// Asynchronously update a single element in memory
     void poke(void *dst, const void *src, uint32_t size) override {
+        jitc_fail("RecordThreadState::poke(): unsupported function recording!");
         return this->internal->poke(dst, src, size);
     }
 
     void aggregate(void *dst, AggregationEntry *agg, uint32_t size) override {
+        jitc_fail("RecordThreadState::aggregate(): unsupported function recording!");
         return this->internal->aggregate(dst, agg, size);
     }
 
@@ -302,6 +321,7 @@ struct RecordThreadState : ThreadState {
     /// dr.ReduceOp.Expand
     void reduce_expanded(VarType vt, ReduceOp op, void *data, uint32_t exp,
                          uint32_t size) override {
+        jitc_fail("RecordThreadState::reduce_expanded(): unsupported function recording!");
         return this->internal->reduce_expanded(vt, op, data, exp, size);
     }
 
@@ -315,6 +335,7 @@ struct RecordThreadState : ThreadState {
             v->data, RecordVariable{
                          /*type=*/(VarType)v->type,
                          /*size=*/v->size,
+                         /*is_literal=*/v->is_literal(),
                          /*is_input=*/true,
                          /*input_index=*/input_index,
                      });
@@ -326,13 +347,14 @@ struct RecordThreadState : ThreadState {
     void set_output(uint32_t output) {
         uint32_t output_index = this->recording.outputs.size();
         Variable *v = jitc_var(output);
-        uint32_t slot =
-            this->get_or_insert_variable(v->data, RecordVariable{
-                                                      /*type=*/(VarType)v->type,
-                                                      /*size=*/v->size,
-                                                      /*is_input=*/false,
-                                                      /*input_index=*/0,
-                                                  });
+        uint32_t slot = this->get_or_insert_variable(
+            v->data, RecordVariable{
+                         /*type=*/(VarType)v->type,
+                         /*size=*/v->size,
+                         /*is_literal=*/v->is_literal(),
+                         /*is_input=*/false,
+                         /*input_index=*/0,
+                     });
 
         jitc_log(LogLevel::Info,
                  "record(): Adding variable %u output %u to slot %u", output,
@@ -365,12 +387,6 @@ struct RecordThreadState : ThreadState {
             return slot;
         } else {
             uint32_t slot = it.value();
-
-            if (rv.is_input) {
-                RecordVariable &dst = recording.record_variables[slot];
-                dst.is_input = rv.is_input;
-                dst.input_index = rv.input_index;
-            }
 
             return slot;
         }
