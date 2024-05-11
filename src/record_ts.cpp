@@ -10,6 +10,7 @@ struct ReplayVariable {
     uint32_t size = 0;
     VarType type;
     uint32_t input_index;
+    bool is_literal;
     bool is_input;
     uint32_t rc;
 
@@ -17,8 +18,25 @@ struct ReplayVariable {
         this->type = rv.type;
         this->size = rv.size;
         this->input_index = rv.input_index;
+        this->is_literal = rv.is_literal;
         this->is_input = rv.is_input;
         this->rc = rv.rc;
+    }
+
+    void alloc(JitBackend backend) {
+        jitc_assert(data == nullptr,
+                    "replay(): Output parameters should not be "
+                    "allocate before replaying the kernel!");
+
+        jitc_log(LogLevel::Info,
+                 "replay(): Allocating output variable of size %u.", size);
+
+        uint32_t dsize = size * type_size[(int)type];
+
+        AllocType alloc_type =
+            backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
+
+        data = jitc_malloc(alloc_type, dsize);
     }
 };
 
@@ -60,6 +78,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
         switch (op.type) {
         case OpType::KernelLaunch: {
+            jitc_log(LogLevel::Info, "replay(): launching kernel():");
             kernel_params.clear();
 
             if (backend == JitBackend::CUDA) {
@@ -80,7 +99,6 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ParamInfo info = this->dependencies[j];
                 ReplayVariable &rv = replay_variables[info.index];
 
-                jitc_log(LogLevel::Info, "info.index: %u", info.index);
                 if (info.type == ParamType::Input) {
                     jitc_assert(
                         rv.data != nullptr,
@@ -106,27 +124,12 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ReplayVariable &rv = replay_variables[info.index];
 
                 jitc_log(LogLevel::Info,
-                         "replay(): has dependency slot %u with rc=%u",
+                         "  -> has dependency slot(%u, rc=%u)",
                          info.index, rv.rc);
 
                 if (info.type == ParamType::Output) {
-                    jitc_assert(rv.data == nullptr,
-                                "replay(): Output parameters should not be "
-                                "allocate before replaying the kernel!");
-
                     rv.size = launch_size;
-
-                    jitc_log(LogLevel::Info,
-                             "replay(): Allocating output variable of size %u.",
-                             rv.size);
-
-                    uint32_t dsize = rv.size * type_size[(int)rv.type];
-
-                    AllocType alloc_type = this->backend == JitBackend::CUDA
-                                               ? AllocType::Device
-                                               : AllocType::Host;
-
-                    rv.data = jitc_malloc(alloc_type, dsize);
+                    rv.alloc(backend);
                 }
                 kernel_params.push_back(rv.data);
             }
@@ -139,7 +142,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             }
 
             {
-                jitc_log(LogLevel::Info, "replay(): launching kernel (n=%u)",
+                jitc_log(LogLevel::Info, "    kernel (n=%u)",
                          launch_size);
                 scoped_set_context_maybe guard2(ts->context);
                 std::vector<uint32_t> tmp;
@@ -289,7 +292,6 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             jitc_assert(rv.data, "replay(): freed an input variable "
                                  "that is passed through!");
             uint32_t var_index = replay_inputs[rv.input_index];
-            jitc_log(LogLevel::Info, "test");
             jitc_var_inc_ref(var_index);
             outputs[i] = var_index;
         } else {
