@@ -139,7 +139,7 @@ struct RecordThreadState : ThreadState {
                 kernel_params->at(kernel_param_offset + param_index), rv);
             
             jitc_log(LogLevel::Info,
-                     " -> recording param %u = variable %u at slot %u",
+                     "  -> recording param %u = variable %u at slot %u",
                      param_index, kernel_param_ids->at(param_index), id);
             this->recording.dependencies.push_back(ParamInfo{
                 /*index=*/id,
@@ -261,7 +261,7 @@ struct RecordThreadState : ThreadState {
     /// Mask compression
     uint32_t compress(const uint8_t *in, uint32_t size,
                       uint32_t *out) override {
-        jitc_fail("RecordThreadState::compress(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::compress(): unsupported function recording!");
         return this->internal->compress(in, size, out);
     }
 
@@ -269,27 +269,27 @@ struct RecordThreadState : ThreadState {
     uint32_t mkperm(const uint32_t *values, uint32_t size,
                     uint32_t bucket_count, uint32_t *perm,
                     uint32_t *offsets) override {
-        jitc_fail("RecordThreadState::mkperm(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::mkperm(): unsupported function recording!");
         return this->internal->mkperm(values, size, bucket_count, perm,
                                       offsets);
     }
 
     /// Perform a synchronous copy operation
     void memcpy(void *dst, const void *src, size_t size) override {
-        jitc_fail("RecordThreadState::memcpy(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::memcpy(): unsupported function recording!");
         return this->internal->memcpy(dst, src, size);
     }
 
     /// Perform an assynchronous copy operation
     void memcpy_async(void *dst, const void *src, size_t size) override {
-        jitc_fail("RecordThreadState::memcpy_async(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::memcpy_async(): unsupported function recording!");
         return this->internal->memcpy_async(dst, src, size);
     }
 
     /// Sum over elements within blocks
     void block_reduce(VarType type, ReduceOp op, const void *in, uint32_t size,
                       uint32_t block_size, void *out) override {
-        jitc_fail("RecordThreadState::block_reduce(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::block_reduce(): unsupported function recording!");
         return this->internal->block_reduce(type, op, in, size, block_size,
                                             out);
     }
@@ -297,18 +297,18 @@ struct RecordThreadState : ThreadState {
     /// Compute a dot product of two equal-sized arrays
     void reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
                     uint32_t size, void *out) override {
-        jitc_fail("RecordThreadState::reduce_dot(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::reduce_dot(): unsupported function recording!");
         return this->internal->reduce_dot(type, ptr_1, ptr_2, size, out);
     }
 
     /// Asynchronously update a single element in memory
     void poke(void *dst, const void *src, uint32_t size) override {
-        jitc_fail("RecordThreadState::poke(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::poke(): unsupported function recording!");
         return this->internal->poke(dst, src, size);
     }
 
     void aggregate(void *dst, AggregationEntry *agg, uint32_t size) override {
-        jitc_fail("RecordThreadState::aggregate(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::aggregate(): unsupported function recording!");
         return this->internal->aggregate(dst, agg, size);
     }
 
@@ -321,7 +321,7 @@ struct RecordThreadState : ThreadState {
     /// dr.ReduceOp.Expand
     void reduce_expanded(VarType vt, ReduceOp op, void *data, uint32_t exp,
                          uint32_t size) override {
-        jitc_fail("RecordThreadState::reduce_expanded(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::reduce_expanded(): unsupported function recording!");
         return this->internal->reduce_expanded(vt, op, data, exp, size);
     }
 
