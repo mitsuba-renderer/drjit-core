@@ -2484,6 +2484,25 @@ extern JIT_EXPORT void jit_record_replay(Recording *recording,
                                          uint32_t *outputs);
 
 /**
+ * \brief Pause recording the ThreadState for this backend.
+ *      Returns true if recording has already been paused.
+ *
+ * \param backend
+ *      The backend for which to pause recording the thread state.
+ */
+extern JIT_EXPORT bool jit_record_pause(JitBackend backend);
+
+/**
+ * \brief Resume recording the ThreadState for this backend.
+ *      Returns true if recording has already been resumed 
+ *      or never paused.
+ *
+ * \param backend
+ *      The backend for which to pause recording the thread state.
+ */
+extern JIT_EXPORT bool jit_record_resume(JitBackend backend);
+
+/**
  * \brief Destroys a recording and frees the asociated memory.
  *
  * \param recording

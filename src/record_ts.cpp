@@ -123,8 +123,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ParamInfo info = this->dependencies[j];
                 ReplayVariable &rv = replay_variables[info.index];
 
-                jitc_log(LogLevel::Info,
-                         "  -> has dependency slot(%u, rc=%u)",
+                jitc_log(LogLevel::Info, "  -> has dependency slot(%u, rc=%u)",
                          info.index, rv.rc);
 
                 if (info.type == ParamType::Output) {
@@ -142,8 +141,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             }
 
             {
-                jitc_log(LogLevel::Info, "    kernel (n=%u)",
-                         launch_size);
+                jitc_log(LogLevel::Info, "    kernel (n=%u)", launch_size);
                 scoped_set_context_maybe guard2(ts->context);
                 std::vector<uint32_t> tmp;
                 Kernel kernel = op.kernel;
@@ -342,33 +340,67 @@ void jitc_record_start(JitBackend backend, const uint32_t *inputs,
     }
 
     for (uint32_t i = 0; i < n_inputs; ++i) {
-        record_ts->set_input(inputs[i]);
+        record_ts->add_input(inputs[i]);
     }
 }
 Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
                             uint32_t n_outputs) {
-    // ThreadState *ts = thread_state(backend);
-    RecordThreadState *ts =
-        dynamic_cast<RecordThreadState *>(thread_state(backend));
-    ThreadState *internal = ts->internal;
+    if (RecordThreadState *rts =
+            dynamic_cast<RecordThreadState *>(thread_state(backend));
+        rts != nullptr) {
+        ThreadState *internal = rts->internal;
 
-    // Perform reasignments to internal thread-state of possibly changed
-    // variables
-    internal->scope = ts->scope;
+        // Perform reasignments to internal thread-state of possibly changed
+        // variables
+        internal->scope = rts->scope;
 
-    jitc_assert(ts->record_stack.empty(),
-                "Kernel recording ended while still recording loop!");
+        jitc_assert(rts->record_stack.empty(),
+                    "Kernel recording ended while still recording loop!");
 
-    for (uint32_t i = 0; i < n_outputs; ++i) {
-        ts->set_output(outputs[i]);
-    }
+        for (uint32_t i = 0; i < n_outputs; ++i) {
+            rts->add_output(outputs[i]);
+        }
 
-    if (backend == JitBackend::CUDA) {
-        thread_state_cuda = internal;
+        if (backend == JitBackend::CUDA) {
+            thread_state_cuda = internal;
+        } else {
+            thread_state_llvm = internal;
+        }
+        Recording *recording = new Recording(rts->recording);
+        recording->compute_rc();
+        return recording;
     } else {
-        thread_state_llvm = internal;
+        jitc_fail(
+            "jit_record_stop(): Tried to stop recording a thread state "
+            "for backend %u, while no recording was started for this backend. "
+            "Try to start the recording with jit_record_start.",
+            (uint32_t)backend);
     }
-    Recording *recording = new Recording(ts->recording);
-    recording->compute_rc();
-    return recording;
+}
+bool jitc_record_pause(JitBackend backend) {
+
+    if (RecordThreadState *rts =
+            dynamic_cast<RecordThreadState *>(thread_state(backend));
+        rts != nullptr) {
+        return rts->pause();
+    } else {
+        jitc_fail(
+            "jit_record_stop(): Tried to pause recording a thread state "
+            "for backend %u, while no recording was started for this backend. "
+            "Try to start the recording with jit_record_start.",
+            (uint32_t)backend);
+    }
+}
+bool jitc_record_resume(JitBackend backend) {
+    if (RecordThreadState *rts =
+            dynamic_cast<RecordThreadState *>(thread_state(backend));
+        rts != nullptr) {
+        return rts->resume();
+    } else {
+        jitc_fail(
+            "jit_record_stop(): Tried to resume recording a thread state "
+            "for backend %u, while no recording was started for this backend. "
+            "Try to start the recording with jit_record_start.",
+            (uint32_t)backend);
+    }
 }
