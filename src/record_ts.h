@@ -170,24 +170,7 @@ struct RecordThreadState : ThreadState {
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
                       const void *src) override {
 
-        jitc_fail("RecordThreadState::memset_async(): unsupported function recording!");
-
-        uint32_t start = this->recording.dependencies.size();
-
-        // TODO: Insert if missing
-        uint32_t ptr_id = this->get_variable(ptr);
-        uint32_t src_id = this->get_variable(src);
-
-        this->recording.dependencies.push_back(ptr_id);
-        this->recording.dependencies.push_back(src_id);
-
-        uint32_t end = this->recording.dependencies.size();
-
-        Operation op;
-        op.type = OpType::MemsetAsync;
-        op.dependency_range = std::pair(start, end);
-        op.size = size;
-        this->recording.operations.push_back(op);
+        jitc_log(LogLevel::Warn, "RecordThreadState::memset_async(): unsupported function recording!");
 
         return this->internal->memset_async(ptr, size, isize, src);
     }
@@ -221,13 +204,13 @@ struct RecordThreadState : ThreadState {
 
     /// 'All' reduction for boolean arrays
     bool all(uint8_t *values, uint32_t size) override {
-        jitc_fail("RecordThreadState::all(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::all(): unsupported function recording!");
         return this->internal->all(values, size);
     }
 
     /// 'Any' reduction for boolean arrays
     bool any(uint8_t *values, uint32_t size) override {
-        jitc_fail("RecordThreadState::any(): unsupported function recording!");
+        jitc_log(LogLevel::Warn, "RecordThreadState::any(): unsupported function recording!");
         return this->internal->any(values, size);
     }
 
