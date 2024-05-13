@@ -131,55 +131,59 @@ struct RecordThreadState : ThreadState {
         op.dependency_range = std::pair(start, start);
         this->recording.operations.push_back(op);
 
+        scoped_pause();
         return this->internal->barrier();
     }
 
     Task *launch(Kernel kernel, uint32_t size,
                  std::vector<void *> *kernel_params,
                  const std::vector<uint32_t> *kernel_param_ids) override {
-        jitc_log(LogLevel::Info, "record(): recording kernel");
+        if (!paused) {
+            jitc_log(LogLevel::Info, "record(): recording kernel");
 
-        uint32_t start = this->recording.dependencies.size();
+            uint32_t start = this->recording.dependencies.size();
 
-        uint32_t kernel_param_offset =
-            this->backend == JitBackend::CUDA ? 1 : 3;
+            uint32_t kernel_param_offset =
+                this->backend == JitBackend::CUDA ? 1 : 3;
 
-        for (uint32_t param_index = 0; param_index < kernel_param_ids->size();
-             param_index++) {
-            Variable *v = jitc_var(kernel_param_ids->at(param_index));
+            for (uint32_t param_index = 0;
+                 param_index < kernel_param_ids->size(); param_index++) {
+                Variable *v = jitc_var(kernel_param_ids->at(param_index));
 
-            RecordVariable rv;
-            rv.type = (VarType)v->type;
-            rv.size = v->size;
-            rv.is_literal = v->is_literal();
+                RecordVariable rv;
+                rv.type = (VarType)v->type;
+                rv.size = v->size;
+                rv.is_literal = v->is_literal();
 
-            uint32_t id = this->add_variable(
-                kernel_params->at(kernel_param_offset + param_index), rv);
+                uint32_t id = this->add_variable(
+                    kernel_params->at(kernel_param_offset + param_index), rv);
 
-            jitc_log(LogLevel::Info,
-                     "  -> recording param %u = variable %u at slot %u",
-                     param_index, kernel_param_ids->at(param_index), id);
-            this->recording.dependencies.push_back(ParamInfo{
-                /*index=*/id,
-                /*type=*/(ParamType)v->param_type,
-            });
-        }
+                jitc_log(LogLevel::Info,
+                         "  -> recording param %u = variable %u at slot %u",
+                         param_index, kernel_param_ids->at(param_index), id);
+                this->recording.dependencies.push_back(ParamInfo{
+                    /*index=*/id,
+                    /*type=*/(ParamType)v->param_type,
+                });
+            }
 
-        uint32_t end = this->recording.dependencies.size();
+            uint32_t end = this->recording.dependencies.size();
 
-        Operation op;
-        op.type = OpType::KernelLaunch;
-        op.dependency_range = std::pair(start, end);
-        op.kernel = kernel;
-        op.size = size;
-        this->recording.operations.push_back(op);
+            Operation op;
+            op.type = OpType::KernelLaunch;
+            op.dependency_range = std::pair(start, end);
+            op.kernel = kernel;
+            op.size = size;
+            this->recording.operations.push_back(op);
 
-        // Re-assign optix specific variables to internal thread state since
-        // they might have changed
+            // Re-assign optix specific variables to internal thread state since
+            // they might have changed
 #if defined(DRJIT_ENABLE_OPTIX)
-        this->internal->optix_pipeline = this->optix_pipeline;
-        this->internal->optix_sbt = this->optix_sbt;
+            this->internal->optix_pipeline = this->optix_pipeline;
+            this->internal->optix_sbt = this->optix_sbt;
 #endif
+        }
+        scoped_pause();
         return this->internal->launch(kernel, size, kernel_params,
                                       kernel_param_ids);
     }
@@ -191,33 +195,35 @@ struct RecordThreadState : ThreadState {
         jitc_log(LogLevel::Warn, "RecordThreadState::memset_async(): "
                                  "unsupported function recording!");
 
+        scoped_pause();
         return this->internal->memset_async(ptr, size, isize, src);
     }
 
     /// Reduce the given array to a single value
     void reduce(VarType type, ReduceOp rtype, const void *ptr, uint32_t size,
                 void *out) override {
+        if (!paused) {
 
-        uint32_t start = this->recording.dependencies.size();
+            uint32_t ptr_id = this->get_variable(ptr);
+            uint32_t out_id = this->add_variable(out, RecordVariable{
+                                                          /*type=*/type,
+                                                          /*size=*/1,
+                                                      });
 
-        uint32_t ptr_id = this->get_variable(ptr);
-        uint32_t out_id = this->add_variable(out, RecordVariable{
-                                                      /*type=*/type,
-                                                      /*size=*/1,
-                                                  });
+            uint32_t start = this->recording.dependencies.size();
+            this->recording.dependencies.push_back(ptr_id);
+            this->recording.dependencies.push_back(out_id);
+            uint32_t end = this->recording.dependencies.size();
 
-        this->recording.dependencies.push_back(ptr_id);
-        this->recording.dependencies.push_back(out_id);
+            Operation op;
+            op.type = OpType::Reduce;
+            op.dependency_range = std::pair(start, end);
+            op.rtype = rtype;
+            op.size = size;
+            this->recording.operations.push_back(op);
+        }
 
-        uint32_t end = this->recording.dependencies.size();
-
-        Operation op;
-        op.type = OpType::Reduce;
-        op.dependency_range = std::pair(start, end);
-        op.rtype = rtype;
-        op.size = size;
-        this->recording.operations.push_back(op);
-
+        scoped_pause();
         return this->internal->reduce(type, rtype, ptr, size, out);
     }
 
@@ -225,6 +231,7 @@ struct RecordThreadState : ThreadState {
     bool all(uint8_t *values, uint32_t size) override {
         jitc_log(LogLevel::Warn,
                  "RecordThreadState::all(): unsupported function recording!");
+        scoped_pause();
         return this->internal->all(values, size);
     }
 
@@ -232,33 +239,35 @@ struct RecordThreadState : ThreadState {
     bool any(uint8_t *values, uint32_t size) override {
         jitc_log(LogLevel::Warn,
                  "RecordThreadState::any(): unsupported function recording!");
+        scoped_pause();
         return this->internal->any(values, size);
     }
 
     /// Exclusive prefix sum
     void prefix_sum(VarType vt, bool exclusive, const void *in, uint32_t size,
                     void *out) override {
+        if (!paused) {
+            uint32_t start = this->recording.dependencies.size();
 
-        uint32_t start = this->recording.dependencies.size();
+            uint32_t in_id = this->get_variable(in);
+            uint32_t out_id = this->add_variable(out, RecordVariable{
+                                                          /*type=*/vt,
+                                                          /*size=*/size,
+                                                      });
 
-        uint32_t in_id = this->get_variable(in);
-        uint32_t out_id = this->add_variable(out, RecordVariable{
-                                                      /*type=*/vt,
-                                                      /*size=*/size,
-                                                  });
+            this->recording.dependencies.push_back(in_id);
+            this->recording.dependencies.push_back(out_id);
 
-        this->recording.dependencies.push_back(in_id);
-        this->recording.dependencies.push_back(out_id);
+            uint32_t end = this->recording.dependencies.size();
 
-        uint32_t end = this->recording.dependencies.size();
-
-        Operation op;
-        op.type = OpType::PrefixSum;
-        op.dependency_range = std::pair(start, end);
-        op.exclusive = exclusive;
-        op.size = size;
-        this->recording.operations.push_back(op);
-
+            Operation op;
+            op.type = OpType::PrefixSum;
+            op.dependency_range = std::pair(start, end);
+            op.exclusive = exclusive;
+            op.size = size;
+            this->recording.operations.push_back(op);
+        }
+        scoped_pause();
         return this->internal->prefix_sum(vt, exclusive, in, size, out);
     }
 
@@ -268,6 +277,7 @@ struct RecordThreadState : ThreadState {
         jitc_log(
             LogLevel::Warn,
             "RecordThreadState::compress(): unsupported function recording!");
+        scoped_pause();
         return this->internal->compress(in, size, out);
     }
 
@@ -278,6 +288,7 @@ struct RecordThreadState : ThreadState {
         jitc_log(
             LogLevel::Warn,
             "RecordThreadState::mkperm(): unsupported function recording!");
+        scoped_pause();
         return this->internal->mkperm(values, size, bucket_count, perm,
                                       offsets);
     }
@@ -287,6 +298,7 @@ struct RecordThreadState : ThreadState {
         jitc_log(
             LogLevel::Warn,
             "RecordThreadState::memcpy(): unsupported function recording!");
+        scoped_pause();
         return this->internal->memcpy(dst, src, size);
     }
 
@@ -294,6 +306,7 @@ struct RecordThreadState : ThreadState {
     void memcpy_async(void *dst, const void *src, size_t size) override {
         jitc_log(LogLevel::Warn, "RecordThreadState::memcpy_async(): "
                                  "unsupported function recording!");
+        scoped_pause();
         return this->internal->memcpy_async(dst, src, size);
     }
 
@@ -302,6 +315,7 @@ struct RecordThreadState : ThreadState {
                       uint32_t block_size, void *out) override {
         jitc_log(LogLevel::Warn, "RecordThreadState::block_reduce(): "
                                  "unsupported function recording!");
+        scoped_pause();
         return this->internal->block_reduce(type, op, in, size, block_size,
                                             out);
     }
@@ -312,6 +326,7 @@ struct RecordThreadState : ThreadState {
         jitc_log(
             LogLevel::Warn,
             "RecordThreadState::reduce_dot(): unsupported function recording!");
+        scoped_pause();
         return this->internal->reduce_dot(type, ptr_1, ptr_2, size, out);
     }
 
@@ -319,6 +334,7 @@ struct RecordThreadState : ThreadState {
     void poke(void *dst, const void *src, uint32_t size) override {
         jitc_log(LogLevel::Warn,
                  "RecordThreadState::poke(): unsupported function recording!");
+        scoped_pause();
         return this->internal->poke(dst, src, size);
     }
 
@@ -326,11 +342,13 @@ struct RecordThreadState : ThreadState {
         jitc_log(
             LogLevel::Warn,
             "RecordThreadState::aggregate(): unsupported function recording!");
+        scoped_pause();
         return this->internal->aggregate(dst, agg, size);
     }
 
     // Enqueue a function to be run on the host once backend computation is done
     void enqueue_host_func(void (*callback)(void *), void *payload) override {
+        scoped_pause();
         return this->internal->enqueue_host_func(callback, payload);
     }
 
@@ -340,13 +358,14 @@ struct RecordThreadState : ThreadState {
                          uint32_t size) override {
         jitc_log(LogLevel::Warn, "RecordThreadState::reduce_expanded(): "
                                  "unsupported function recording!");
+        scoped_pause();
         return this->internal->reduce_expanded(vt, op, data, exp, size);
     }
 
     ~RecordThreadState() {
     }
 
-    void set_input(uint32_t input) {
+    void add_input(uint32_t input) {
         uint32_t input_index = this->recording.inputs.size();
         Variable *v = jitc_var(input);
         uint32_t slot =
@@ -362,7 +381,7 @@ struct RecordThreadState : ThreadState {
                  input_index, slot);
         this->recording.inputs.push_back(slot);
     }
-    void set_output(uint32_t output) {
+    void add_output(uint32_t output) {
         uint32_t output_index = this->recording.outputs.size();
         Variable *v = jitc_var(output);
         uint32_t slot =
@@ -380,9 +399,37 @@ struct RecordThreadState : ThreadState {
         this->recording.outputs.push_back(slot);
     }
 
+    bool pause() {
+        bool tmp = paused;
+        paused = true;
+        return tmp;
+    }
+    bool resume() {
+        bool tmp = paused;
+        paused = false;
+        return tmp;
+    }
+
+    struct pause_scope {
+        RecordThreadState *rts;
+        bool tmp;
+
+        pause_scope(RecordThreadState *rts) : rts(rts), tmp(rts->pause()) {
+        }
+        ~pause_scope() {
+            rts->paused = tmp;
+        }
+    };
+
+    pause_scope scoped_pause() {
+        return pause_scope(this);
+    }
+
     ThreadState *internal;
 
     Recording recording;
+
+    bool paused = false;
 
   private:
     // Mapping from data pointer of a variable to a index into the slot of the
@@ -431,3 +478,7 @@ void jitc_record_start(JitBackend backend, const uint32_t *inputs,
 
 Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
                             uint32_t n_outputs);
+
+bool jitc_record_pause(JitBackend backend);
+
+bool jitc_record_resume(JitBackend backend);

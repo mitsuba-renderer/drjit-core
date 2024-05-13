@@ -1475,6 +1475,16 @@ Recording *jit_record_stop(JitBackend backend, const uint32_t *outputs,
     return jitc_record_stop(backend, outputs, n_outputs);
 }
 
+bool jit_record_pause(JitBackend backend) {
+    lock_guard guard(state.lock);
+    return jitc_record_pause(backend);
+}
+
+bool jit_record_resume(JitBackend backend) {
+    lock_guard guard(state.lock);
+    return jitc_record_resume(backend);
+}
+
 void jit_record_replay(Recording *ts, const uint32_t *inputs,
                        uint32_t *outputs) {
     lock_guard guard(state.lock);
