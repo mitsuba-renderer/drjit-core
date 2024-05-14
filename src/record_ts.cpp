@@ -367,6 +367,7 @@ Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
         }
         Recording *recording = new Recording(rts->recording);
         recording->compute_rc();
+        delete rts;
         return recording;
     } else {
         jitc_fail(
