@@ -71,10 +71,12 @@ struct RecordVariable {
 struct ParamInfo {
     uint32_t index;
     ParamType type;
+    bool pointer_access;
 
     ParamInfo(uint32_t index) : index(index) {
     }
-    ParamInfo(uint32_t index, ParamType type) : index(index), type(type) {
+    ParamInfo(uint32_t index, ParamType type, bool pointer_access)
+        : index(index), type(type), pointer_access(pointer_access) {
     }
 };
 
@@ -148,22 +150,30 @@ struct RecordThreadState : ThreadState {
 
             for (uint32_t param_index = 0;
                  param_index < kernel_param_ids->size(); param_index++) {
+                bool pointer_access = false;
+                
                 Variable *v = jitc_var(kernel_param_ids->at(param_index));
+
+                if ((VarType)v->type == VarType::Pointer) {
+                    v = jitc_var(v->dep[3]);
+                    pointer_access = true;
+                }
 
                 RecordVariable rv;
                 rv.type = (VarType)v->type;
                 rv.size = v->size;
                 rv.is_literal = v->is_literal();
 
-                uint32_t id = this->add_variable(
+                uint32_t slot = this->add_variable(
                     kernel_params->at(kernel_param_offset + param_index), rv);
 
                 jitc_log(LogLevel::Info,
                          "  -> recording param %u = variable %u at slot %u",
-                         param_index, kernel_param_ids->at(param_index), id);
+                         param_index, kernel_param_ids->at(param_index), slot);
                 this->recording.dependencies.push_back(ParamInfo{
-                    /*index=*/id,
+                    /*index=*/slot,
                     /*type=*/(ParamType)v->param_type,
+                    /*pointer_access=*/pointer_access,
                 });
             }
 

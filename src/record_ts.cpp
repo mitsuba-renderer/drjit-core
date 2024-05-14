@@ -117,7 +117,6 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             // The assumption here is that for every kernel launch, the inputs
             // are already allocated. Therefore we only allocate output
             // variables, which have the same size as the kernel.
-            // TODO: deallocate unused memory.
             for (uint32_t j = op.dependency_range.first;
                  j < op.dependency_range.second; ++j) {
                 ParamInfo info = this->dependencies[j];
