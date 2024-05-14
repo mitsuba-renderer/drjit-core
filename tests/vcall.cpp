@@ -1276,7 +1276,7 @@ TEST_BOTH(13_load_bool_data) {
 }
 
 TEST_BOTH(14_kernel_record) {
-    jit_set_flag(JitFlag::VCallOptimize, false);
+    jit_set_flag(JitFlag::VCallOptimize, true);
     
     Recording *recording;
     
@@ -1388,7 +1388,7 @@ TEST_BOTH(14_kernel_record) {
         jit_record_replay(recording, inputs, outputs);
 
         jit_log(LogLevel::Info, "o0: %s", jit_var_str(outputs[0]));
-        // jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
+        jit_assert(jit_var_all(jit_var_eq(r0.index(), outputs[0])));
     }
     
     jit_record_destroy(recording);
