@@ -151,10 +151,13 @@ struct RecordThreadState : ThreadState {
             for (uint32_t param_index = 0;
                  param_index < kernel_param_ids->size(); param_index++) {
                 bool pointer_access = false;
-                
+
                 Variable *v = jitc_var(kernel_param_ids->at(param_index));
 
                 if ((VarType)v->type == VarType::Pointer) {
+                    jitc_assert(v->is_literal(),
+                                "record(): Recording non-literal pointers are "
+                                "not yet supported!");
                     v = jitc_var(v->dep[3]);
                     pointer_access = true;
                 }
