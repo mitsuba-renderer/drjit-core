@@ -535,6 +535,8 @@ void jitc_record_start(JitBackend backend, const uint32_t *inputs,
 Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
                             uint32_t n_outputs);
 
+void jitc_record_destroy(Recording *recording);
+
 bool jitc_record_pause(JitBackend backend);
 
 bool jitc_record_resume(JitBackend backend);

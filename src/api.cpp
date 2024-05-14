@@ -1493,5 +1493,5 @@ void jit_record_replay(Recording *ts, const uint32_t *inputs,
 
 void jit_record_destroy(Recording *recording){
     lock_guard guard(state.lock);
-    delete recording;
+    jitc_record_destroy(recording);
 }

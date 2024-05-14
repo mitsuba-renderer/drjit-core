@@ -401,6 +401,16 @@ Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
             (uint32_t)backend);
     }
 }
+
+void jitc_record_destroy(Recording *recording) {
+    for (RecordVariable &rv : recording->record_variables) {
+        if (rv.rv_type == RecordType::Captured) {
+            jitc_var_dec_ref(rv.index);
+        }
+    }
+    delete recording;
+}
+
 bool jitc_record_pause(JitBackend backend) {
 
     if (RecordThreadState *rts =
