@@ -29,12 +29,25 @@ struct Operation {
     size_t size;
 };
 
+/// Denotes the type of variable.
+///
+/// Output variables are only tracked through the outputs array, as this
+/// information is only needed when constructing the output variables.
+///
+enum class RecordType {
+    Other,
+    Input,
+    Captured,
+};
+
 struct RecordVariable {
     VarType type = VarType::Void;
     uint32_t size;
-    uint32_t input_index;
-    bool is_input = false;
+    /// Stores index into input array if variable is input or index of captured
+    /// variable
+    uint32_t index;
     bool is_literal = false;
+    RecordType rv_type = RecordType::Other;
     // Nubmer of operations that reference this variable
     // used to deallocate unused variables during replay.
     uint32_t rc = 0;
@@ -43,10 +56,10 @@ struct RecordVariable {
     }
     RecordVariable(VarType type, uint32_t size) : type(type), size(size) {
     }
-    RecordVariable(VarType type, uint32_t size, bool is_literal, bool is_input,
-                   uint32_t input_index)
-        : type(type), size(size), input_index(input_index), is_input(is_input),
-          is_literal(is_literal) {
+    RecordVariable(VarType type, uint32_t size, bool is_literal,
+                   RecordType rv_type, uint32_t input_index)
+        : type(type), size(size), index(input_index), is_literal(is_literal),
+          rv_type(rv_type) {
     }
 
     /**
@@ -59,9 +72,9 @@ struct RecordVariable {
             this->type = rhs.type;
         if (this->size == 0)
             this->size = rhs.size;
-        if (!this->is_input) {
-            this->is_input = rhs.is_input;
-            this->input_index = rhs.input_index;
+        if (this->rv_type == RecordType::Other) {
+            this->rv_type = rhs.rv_type;
+            this->index = rhs.index;
         }
         this->is_literal |= rhs.is_literal;
         return *this;
@@ -150,14 +163,24 @@ struct RecordThreadState : ThreadState {
 
             for (uint32_t param_index = 0;
                  param_index < kernel_param_ids->size(); param_index++) {
-                bool pointer_access = false;
 
-                Variable *v = jitc_var(kernel_param_ids->at(param_index));
+                bool pointer_access = false;
+                uint32_t index = kernel_param_ids->at(param_index);
+                Variable *v = jitc_var(index);
+                // Note, the ptr might not come from the variable but the
+                // `ScheduledVariable` if it is an output.
+                void *ptr =
+                    kernel_params->at(kernel_param_offset + param_index);
+                ParamType param_type = (ParamType)v->param_type;
 
                 if ((VarType)v->type == VarType::Pointer) {
                     jitc_assert(v->is_literal(),
                                 "record(): Recording non-literal pointers are "
                                 "not yet supported!");
+                    jitc_assert(param_type != ParamType::Output,
+                                "record(): A pointer, pointing to a kernel "
+                                "ouptut is not yet supported!");
+
                     v = jitc_var(v->dep[3]);
                     pointer_access = true;
                 }
@@ -167,15 +190,29 @@ struct RecordThreadState : ThreadState {
                 rv.size = v->size;
                 rv.is_literal = v->is_literal();
 
-                uint32_t slot = this->add_variable(
-                    kernel_params->at(kernel_param_offset + param_index), rv);
+                // It could happen, that a variable is created while recording.
+                // This occurs for example, when recording vcalls, where the
+                // `offset` buffer is created.
+                // Those variables are captured here and kept for replay.
+                if (param_type == ParamType::Input && !has_variable(ptr)) {
+                    jitc_log(LogLevel::Warn,
+                             "record(): Variable %u was not created in this "
+                             "recording, but is used by a kernel! The variable "
+                             "will be captured by the recording.",
+                             index);
+                    rv.rv_type = RecordType::Captured;
+                    rv.index = index;
+                    jitc_var_inc_ref(index);
+                }
+
+                uint32_t slot = this->add_variable(ptr, rv);
 
                 jitc_log(LogLevel::Info,
                          "  -> recording param %u = variable %u at slot %u",
                          param_index, kernel_param_ids->at(param_index), slot);
                 this->recording.dependencies.push_back(ParamInfo{
                     /*index=*/slot,
-                    /*type=*/(ParamType)v->param_type,
+                    /*type=*/param_type,
                     /*pointer_access=*/pointer_access,
                 });
             }
@@ -386,7 +423,7 @@ struct RecordThreadState : ThreadState {
                                             /*type=*/(VarType)v->type,
                                             /*size=*/v->size,
                                             /*is_literal=*/v->is_literal(),
-                                            /*is_input=*/true,
+                                            /*rv_type=*/RecordType::Input,
                                             /*input_index=*/input_index,
                                         });
         jitc_log(LogLevel::Info,
@@ -402,7 +439,7 @@ struct RecordThreadState : ThreadState {
                                             /*type=*/(VarType)v->type,
                                             /*size=*/v->size,
                                             /*is_literal=*/v->is_literal(),
-                                            /*is_input=*/false,
+                                            /*rv_type=*/RecordType::Other,
                                             /*input_index=*/0,
                                         });
 
@@ -483,6 +520,12 @@ struct RecordThreadState : ThreadState {
                     ptr);
 
         return it.value();
+    }
+
+    bool has_variable(const void *ptr) {
+        auto it = this->ptr_to_slot.find(ptr);
+
+        return it != this->ptr_to_slot.end();
     }
 };
 

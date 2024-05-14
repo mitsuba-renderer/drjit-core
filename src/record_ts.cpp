@@ -9,18 +9,26 @@ struct ReplayVariable {
     void *data = 0;
     uint32_t size = 0;
     VarType type;
-    uint32_t input_index;
+    uint32_t index;
     bool is_literal;
-    bool is_input;
+    RecordType rv_type;
+    // bool is_input;
+    // bool is_captured;
     uint32_t rc;
 
     ReplayVariable(RecordVariable &rv) {
         this->type = rv.type;
         this->size = rv.size;
-        this->input_index = rv.input_index;
+        this->index = rv.index;
         this->is_literal = rv.is_literal;
-        this->is_input = rv.is_input;
         this->rc = rv.rc;
+
+        this->rv_type = rv.rv_type;
+
+        if (rv_type == RecordType::Captured) {
+            Variable *v = jitc_var(this->index);
+            this->data = v->data;
+        }
     }
 
     void alloc(JitBackend backend) {
@@ -129,6 +137,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     rv.size = launch_size;
                     rv.alloc(backend);
                 }
+                jitc_assert(
+                    rv.data,
+                    "replay(): Encountered nullptr in kernel parameters.");
                 kernel_params.push_back(rv.data);
             }
 
@@ -272,8 +283,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
     for (uint32_t i = 0; i < replay_variables.size(); ++i) {
         ReplayVariable &rv = replay_variables[i];
-        jitc_log(LogLevel::Info, "replay(): rv(%u, rc=%u, is_input:%u)", i,
-                 rv.rc, rv.is_input);
+        jitc_log(LogLevel::Info, "replay(): rv(%u, rc=%u, is_input=%u)", i,
+                 rv.rc, rv.rv_type == RecordType::Input);
     }
 
     // Create output variables
@@ -281,16 +292,26 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
         uint32_t index = this->outputs[i];
         jitc_log(LogLevel::Info, "replay(): output: %u", index);
         ReplayVariable &rv = replay_variables[index];
-        if (rv.is_input) {
+        if (rv.rv_type == RecordType::Input) {
             // Use input variable
             jitc_log(LogLevel::Info,
                      "replay(): output %u at slot %u uses input %u", i, index,
-                     rv.input_index);
+                     rv.index);
             jitc_assert(rv.data, "replay(): freed an input variable "
                                  "that is passed through!");
-            uint32_t var_index = replay_inputs[rv.input_index];
+            uint32_t var_index = replay_inputs[rv.index];
             jitc_var_inc_ref(var_index);
             outputs[i] = var_index;
+        } else if (rv.rv_type == RecordType::Captured) {
+            jitc_log(LogLevel::Info,
+                     "replay(): output %u at slot %u uses captured variable %u",
+                     i, index, rv.index);
+            jitc_assert(rv.data, "replay(): freed an input variable "
+                                 "that is passed through!");
+
+            jitc_var_inc_ref(rv.index);
+
+            outputs[i] = rv.index;
         } else {
             jitc_assert(rv.data, "replay(): freed variable used for output.");
             Variable v;
@@ -313,14 +334,17 @@ void Recording::compute_rc() {
             rv.rc++;
         }
     }
-    // Do not touch inputs/outputs therefore increment their refcount
-    for (uint32_t slot : this->outputs) {
-        RecordVariable &rv = this->record_variables[slot];
-        rv.rc++;
-    }
+    // Captured and Input variables should not be garbage collected.
     // TODO: inputs should be fine, but have to be freed by decrementing
     // variable refcount.
-    for (uint32_t slot : this->inputs) {
+    for (RecordVariable &rv : this->record_variables) {
+        if (rv.rv_type == RecordType::Input ||
+            rv.rv_type == RecordType::Captured) {
+            rv.rc++;
+        }
+    }
+    // Do not touch inputs/outputs therefore increment their refcount
+    for (uint32_t slot : this->outputs) {
         RecordVariable &rv = this->record_variables[slot];
         rv.rc++;
     }
