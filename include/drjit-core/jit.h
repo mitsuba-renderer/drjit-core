@@ -1533,13 +1533,17 @@ enum class JitFlag : uint32_t {
     /// is managed automatically and should not be set by application code.
     SymbolicScope = 1 << 18,
 
+    /// Freeze functions annotated with dr.freeze
+    KernelFreezing = 1 << 19,
+
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
               (uint32_t) OptimizeLoops | (uint32_t) SymbolicCalls |
               (uint32_t) MergeFunctions | (uint32_t) OptimizeCalls |
               (uint32_t) SymbolicConditionals | (uint32_t) ReuseIndices |
-              (uint32_t) ScatterReduceLocal | (uint32_t) PacketOps,
+              (uint32_t) ScatterReduceLocal | (uint32_t) PacketOps |
+              (uint32_t) KernelFreezing,
 
     // Deprecated aliases, will be removed in a future version of Dr.Jit
     LoopRecord = SymbolicLoops,
