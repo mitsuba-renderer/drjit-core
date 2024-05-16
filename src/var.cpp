@@ -1524,9 +1524,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
             cuda_check(rv);
             jitc_free(host_ptr);
         } else {
-            cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
-                                     (CUdeviceptr) ptr, total_size,
-                                     ts->stream));
+            jitc_memcpy_async(backend, target_ptr, ptr, total_size);
         }
     } else {
         if (atype == AllocType::HostAsync) {
@@ -1541,9 +1539,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
             target_ptr = jitc_malloc_migrate(target_ptr, AllocType::HostAsync, 1);
         } else {
             target_ptr = jitc_malloc(AllocType::HostPinned, total_size);
-            cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
-                                     (CUdeviceptr) ptr, total_size,
-                                     ts->stream));
+            jitc_memcpy_async(backend, target_ptr, ptr, total_size);
         }
     }
 

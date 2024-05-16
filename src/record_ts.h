@@ -14,6 +14,7 @@ enum class OpType {
     MemsetAsync,
     Reduce,
     PrefixSum,
+    MemcpyAsync,
 };
 
 struct Operation {
@@ -181,7 +182,8 @@ struct RecordThreadState : ThreadState {
                                 "record(): A pointer, pointing to a kernel "
                                 "ouptut is not yet supported!");
 
-                    v = jitc_var(v->dep[3]);
+                    index = v->dep[3];
+                    v = jitc_var(index);
                     pointer_access = true;
                 }
 
@@ -195,11 +197,12 @@ struct RecordThreadState : ThreadState {
                 // `offset` buffer is created.
                 // Those variables are captured here and kept for replay.
                 if (param_type == ParamType::Input && !has_variable(ptr)) {
-                    jitc_log(LogLevel::Warn,
-                             "record(): Variable %u was not created in this "
-                             "recording, but is used by a kernel! The variable "
-                             "will be captured by the recording.",
-                             index);
+                    jitc_log(
+                        LogLevel::Warn,
+                        "record(): Variable %u -> %p was not created in this "
+                        "recording, but is used by a kernel! The variable "
+                        "will be captured by the recording.",
+                        index, ptr);
                     rv.rv_type = RecordType::Captured;
                     rv.index = index;
                     jitc_var_inc_ref(index);
@@ -356,6 +359,31 @@ struct RecordThreadState : ThreadState {
     void memcpy_async(void *dst, const void *src, size_t size) override {
         jitc_log(LogLevel::Warn, "RecordThreadState::memcpy_async(): "
                                  "unsupported function recording!");
+
+        if (!paused) {
+            if (has_variable(src)) {
+                jitc_log(LogLevel::Info,
+                         "record(): memcpy_async(dst=%p, src=%p, size=%zu)",
+                         dst, src, size);
+                uint32_t start = this->recording.dependencies.size();
+
+                uint32_t src_id = this->get_variable(src);
+                // Add an empty RecordVariable and hope that it will get filled
+                // in by a kernel invocation.
+                uint32_t dst_id = this->add_variable(dst, RecordVariable());
+
+                this->recording.dependencies.push_back(src_id);
+                this->recording.dependencies.push_back(dst_id);
+
+                uint32_t end = this->recording.dependencies.size();
+
+                Operation op;
+                op.type = OpType::MemcpyAsync;
+                op.dependency_range = std::pair(start, end);
+                op.size = size;
+                this->recording.operations.push_back(op);
+            }
+        }
         scoped_pause();
         return this->internal->memcpy_async(dst, src, size);
     }
