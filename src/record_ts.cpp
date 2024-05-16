@@ -109,8 +109,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     kernel_params.push_back(nullptr);
             }
 
-            // Inferr kernel size.
+            // Inferr launch size.
             uint32_t launch_size = 0;
+
             for (uint32_t j = op.dependency_range.first;
                  j < op.dependency_range.second; ++j) {
                 ParamInfo info = this->dependencies[j];
@@ -122,6 +123,31 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                         "replay(): Kernel input variable not allocated!");
 
                     launch_size = std::max(launch_size, rv.size);
+                }
+            }
+            if (op.input_size > 0) {
+                // If we only have pointer inputs
+                if (op.size > op.input_size) {
+                    jitc_assert(op.size % op.input_size == 0,
+                                "replay(): Could not infer launch size, from "
+                                "pointer inputs!");
+                    size_t ratio = op.size / op.input_size;
+                    jitc_log(LogLevel::Warn,
+                             "replay(): Inferring launch size by heuristic, "
+                             "launch_size(%u) *= ratio(%zu)",
+                             launch_size, ratio);
+                    launch_size = launch_size * ratio;
+                } else {
+                    jitc_assert(op.input_size % op.size == 0,
+                                "replay(): Could not infer launch size, from "
+                                "pointer inputs!");
+
+                    uint32_t fraction = op.input_size / op.size;
+                    jitc_log(LogLevel::Warn,
+                             "replay(): Inferring launch size by heuristic, "
+                             "launch_size(%u) /= fraction(%u)",
+                             launch_size, fraction);
+                    launch_size = launch_size / fraction;
                 }
             }
             if (launch_size == 0) {
