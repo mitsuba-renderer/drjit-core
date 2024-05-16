@@ -3,6 +3,7 @@
 #include "internal.h"
 #include "log.h"
 #include "var.h"
+#include <algorithm>
 #include <cstdint>
 
 // HashMap used to deduplicate variables
@@ -28,6 +29,7 @@ struct Operation {
         bool exclusive;
     };
     size_t size;
+    size_t input_size = 0;
 };
 
 /// Denotes the type of variable.
@@ -162,6 +164,9 @@ struct RecordThreadState : ThreadState {
             uint32_t kernel_param_offset =
                 this->backend == JitBackend::CUDA ? 1 : 3;
 
+            size_t input_size = 0;
+            uint32_t n_pointers = 0;
+            uint32_t n_inputs = 0;
             for (uint32_t param_index = 0;
                  param_index < kernel_param_ids->size(); param_index++) {
 
@@ -185,6 +190,12 @@ struct RecordThreadState : ThreadState {
                     index = v->dep[3];
                     v = jitc_var(index);
                     pointer_access = true;
+                    n_pointers++;
+                }
+
+                if (param_type == ParamType::Input) {
+                    n_inputs++;
+                    input_size = std::max(input_size, (size_t)v->size);
                 }
 
                 RecordVariable rv;
@@ -227,6 +238,13 @@ struct RecordThreadState : ThreadState {
             op.dependency_range = std::pair(start, end);
             op.kernel = kernel;
             op.size = size;
+
+            // Record max_input_size if we have only pointer inputs.
+            // Therefore, if max_input_size > 0 we know this at replay.
+            if (n_inputs == n_pointers) {
+                op.input_size = input_size;
+            }
+
             this->recording.operations.push_back(op);
 
             // Re-assign optix specific variables to internal thread state since
