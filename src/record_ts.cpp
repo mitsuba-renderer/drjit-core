@@ -2,6 +2,7 @@
 #include "common.h"
 #include "internal.h"
 #include "log.h"
+#include "var.h"
 
 // This struct holds the data and tracks the size of varaibles,
 // used during replay.
@@ -58,6 +59,14 @@ static std::vector<Task *> scheduled_tasks;
 static std::vector<ReplayVariable> replay_variables;
 
 void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
+
+    // Perform validation
+    for (uint32_t i = 0; i < this->record_variables.size(); ++i) {
+        RecordVariable &rv = this->record_variables[i];
+        jitc_assert(
+            rv.type != VarType::Void,
+            "Recorded Variable at slot(%u) was added, but not completed!", i);
+    }
 
     ThreadState *ts = thread_state(backend);
 
@@ -247,6 +256,20 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             ts->prefix_sum(type, op.exclusive, in_var.data, op.size,
                            out_var.data);
+        } break;
+        case OpType::MemcpyAsync: {
+            uint32_t dependency_index = op.dependency_range.first;
+            ParamInfo src_info = this->dependencies[dependency_index];
+            ParamInfo dst_info = this->dependencies[dependency_index + 1];
+
+            ReplayVariable &src_var = replay_variables[src_info.index];
+            ReplayVariable &dst_var = replay_variables[dst_info.index];
+
+            dst_var.alloc(backend);
+
+            size_t size = src_var.size * type_size[(uint32_t)src_var.type];
+
+            ts->memcpy_async(dst_var.data, src_var.data, size);
         } break;
         default:
             jitc_fail("An operation has been recorded, that is not known to "
